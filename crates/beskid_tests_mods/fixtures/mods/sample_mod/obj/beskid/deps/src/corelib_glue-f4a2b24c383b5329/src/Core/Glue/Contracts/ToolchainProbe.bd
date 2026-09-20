@@ -1,0 +1,11 @@
+/// ToolchainProbe contract: discovers and validates external tools (rustc,
+/// cargo, dotnet, linkers) for a glue backend. Fail-closed: rejects any
+/// drift in path, version, or hash before link or load. Mirrors the ABI-v5
+/// runtime-kit validation discipline.
+///
+/// 0.4: contract declaration and host scaffold. Full implementation lands
+/// in 0.5.
+pub contract ToolchainProbe {
+    string ResolveTool(string name, string capability);
+    bool ValidateTool(string name, string expectedSha256);
+}

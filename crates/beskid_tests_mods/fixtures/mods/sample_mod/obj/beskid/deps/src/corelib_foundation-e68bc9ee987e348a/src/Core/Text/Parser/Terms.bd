@@ -1,0 +1,57 @@
+/// Term-level character class parsers.
+use Core.Text.Cursor;
+use Core.Text.Parser.Result;
+use Core.Text.Parser.Literals;
+use Core.String;
+
+string LowerAlphabet() {
+    return "abcdefghijklmnopqrstuvwxyz";
+}
+
+string UpperAlphabet() {
+    return "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+}
+
+string DigitAlphabet() {
+    return "0123456789";
+}
+
+TextParseResult<string> MatchAlphabetChar(
+    Cursor.TextCursor c,
+    string rule,
+    string alphabet
+) {
+    if Cursor.AtEnd(c) {
+        return Literals.Fail(c, ParseErrorKind::ExpectedRule(rule), rule);
+    }
+    string ch = Cursor.Slice(c, c.pos, 1);
+    if !String.Contains(alphabet, ch) {
+        return Literals.Fail(c, ParseErrorKind::ExpectedRule(rule), rule);
+    }
+    Cursor.TextCursor rest = Cursor.Advance(c, 1);
+    return Result.Success<string>(ch, rest);
+}
+
+pub TextParseResult<string> Digit(Cursor.TextCursor c, string rule) {
+    return MatchAlphabetChar(c, rule, DigitAlphabet());
+}
+
+pub TextParseResult<string> Lower(Cursor.TextCursor c, string rule) {
+    return MatchAlphabetChar(c, rule, LowerAlphabet());
+}
+
+pub TextParseResult<string> Upper(Cursor.TextCursor c, string rule) {
+    return MatchAlphabetChar(c, rule, UpperAlphabet());
+}
+
+pub TextParseResult<string> WhiteSpace(Cursor.TextCursor c, string rule) {
+    return Literals.Text(c, " ", rule);
+}
+
+pub TextParseResult<string> NonWhiteSpace(Cursor.TextCursor c, string rule) {
+    TextParseResult<string> space = Literals.Text(c, " ", rule);
+    if IsOk<string>(space) {
+        return Literals.Fail(c, ParseErrorKind::ExpectedRule(rule), rule);
+    }
+    return Literals.Any(c, rule);
+}

@@ -1,0 +1,9 @@
+/// File system error variants for `Core.FS` helpers.
+/// @tier(supported)
+pub enum FsError {
+    NotFound(string path),
+    PermissionDenied(string path),
+    IOError(string path),
+    InvalidPath(string path),
+    AlreadyExists(string path),
+}

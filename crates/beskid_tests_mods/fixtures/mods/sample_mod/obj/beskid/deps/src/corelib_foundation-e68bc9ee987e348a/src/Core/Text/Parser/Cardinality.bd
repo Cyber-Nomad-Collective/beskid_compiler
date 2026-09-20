@@ -1,0 +1,60 @@
+/// Repeat and optional combinators.
+/// These are pure step-termination functions — the caller drives the loop
+/// via `while` and chains the pre-parsed step results through these helpers.
+use Core.Text.Cursor;
+use Core.Text.Parser.Result;
+use Core.Text.Parser.Literals;
+
+/// Tries one match; returns `Ok("", c)` when `inner` failed (zero-or-one).
+pub TextParseResult<string> ZeroOrOne(
+    Cursor.TextCursor c,
+    string rule,
+    TextParseResult<string> inner
+) {
+    if IsOk<string>(inner) {
+        return inner;
+    }
+    return Pure("", c);
+}
+
+/// Zero-or-many termination: returns `Ok("", endCur)` when `step` failed
+/// (stop condition reached). The caller advances the cursor and re-invokes
+/// the parse function in its loop body; this combinator only terminates.
+pub TextParseResult<string> ZeroOrMany(
+    Cursor.TextCursor c,
+    string rule,
+    TextParseResult<string> step,
+    Cursor.TextCursor endCur
+) {
+    if !IsOk<string>(step) {
+        return Pure("", endCur);
+    }
+    return step;
+}
+
+/// One-or-many step handler: fails when count == 0 and no successful step
+/// has been recorded; otherwise returns `Ok("", endCur)` for the caller
+/// to continue its loop.
+pub TextParseResult<string> OneOrMany(
+    Cursor.TextCursor c,
+    string rule,
+    i64 count,
+    Cursor.TextCursor endCur
+) {
+    if count < 1 {
+        return Literals.Fail(c, ParseErrorKind::ExpectedRule(rule), rule);
+    }
+    return Pure("", endCur);
+}
+
+/// Negative lookahead: fails when `inner` succeeds, succeeds when `inner` fails.
+pub TextParseResult<string> Not(
+    Cursor.TextCursor c,
+    string rule,
+    TextParseResult<string> inner
+) {
+    if IsOk<string>(inner) {
+        return Literals.Fail(c, ParseErrorKind::ExpectedRule(rule), rule);
+    }
+    return Pure("", c);
+}

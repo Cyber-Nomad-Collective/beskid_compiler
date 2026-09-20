@@ -1,0 +1,53 @@
+/// LIFO stack backed by typed `T[]` storage.
+/// @tier(supported)
+use Core.Collections.Array;
+use Core.Results;
+
+pub type Stack<T> {
+    T[] storage,
+    i64 count,
+
+    pub i64 Count() {
+        return count;
+    }
+
+    pub bool IsEmpty() {
+        return count == 0;
+    }
+
+    pub Stack<T> Push(T value) {
+        mut T[] nextStorage = storage;
+        Array.Append<T>(nextStorage, value);
+        return Stack<T> { storage: nextStorage, count: count + 1 };
+    }
+
+    pub Stack<T> Pop() {
+        if count == 0 {
+            return self;
+        }
+        return Stack<T> { storage: Array.RemoveLast<T>(storage), count: count - 1 };
+    }
+
+    pub Result<T, string> Peek() {
+        if count == 0 {
+            return Result::Error("stack is empty");
+        }
+        return Result::Ok(Array.Get<T>(storage, count - 1));
+    }
+}
+
+pub Stack<T> New<T>() {
+    return Stack<T> { storage: Array.Empty<T>(), count: 0 };
+}
+
+/// Bulk constructor: packs call-site scalars into a stack.
+/// Iterates the bulk array and pushes each value via `Stack.Push`.
+pub Stack<T> Of<T>(bulk T[] values) {
+    mut Stack<T> result = Stack.New<T>();
+    mut i64 index = 0;
+    while index < Array.Len<T>(values) {
+        result = result.Push(Array.Get<T>(values, index));
+        index = index + 1;
+    }
+    return result;
+}

@@ -1,0 +1,56 @@
+/// Homogeneous multichannel wait (round-robin fairness in runtime).
+use Concurrency.Channel;
+use Concurrency.Channel.SendOk;
+use Concurrency.HubError;
+use Concurrency.HubReceiveResult;
+use Concurrency.Status;
+use Core.Results;
+
+/// Multiplexes `Channel<T>` members with `WaitReceive`.
+pub type Hub<T> {
+    i64 handle,
+}
+
+pub Hub<T> Create<T>() {
+    i64 handle = __hub_create();
+    return Hub<T> { handle: handle };
+}
+
+/// Test and setup helper: create an i64 member channel without importing `Concurrency.Channel` at call sites.
+pub Channel<i64> CreateMemberChannel() {
+    return Channel<i64>.Create();
+}
+
+/// Registers `channel` at `index` (max 256 members in v1).
+pub Core.Results.Result<SendOk, HubError> Register<T>(
+    Hub<T> self,
+    i64 index,
+    Channel<T> channel
+) {
+    i64 raw = __hub_register(self.handle, index, Channel.Handle<T>(channel));
+    Status status = Status.FromCode(raw);
+    return match status {
+        Status::Ok => Core.Results.Result<Concurrency.Channel.SendOk, Concurrency.HubError>::Ok(SendOk { }),
+        Status::HubLimit(cap) => Core.Results.Result<Concurrency.Channel.SendOk, Concurrency.HubError>::Error(HubError::Limit(cap, index)),
+        Status::HubNotFound(idx) => Core.Results.Result<Concurrency.Channel.SendOk, Concurrency.HubError>::Error(HubError::Closed(idx)),
+        _ => Core.Results.Result<Concurrency.Channel.SendOk, Concurrency.HubError>::Error(HubError::Closed(0)),
+    };
+}
+
+pub unit Unregister<T>(Hub<T> self, i64 index) {
+    __hub_unregister(self.handle, index);
+    return;
+}
+
+/// Blocks until a member can satisfy `Receive` (round-robin among ready channels).
+pub Core.Results.Result<HubReceiveResult<T>, HubError> WaitReceive<T>(Hub<T> self) {
+    i64 raw = __hub_wait_receive(self.handle);
+    Status status = Status.FromCode(raw);
+    return match status {
+        Status::Ok => Results.Success<HubReceiveResult<T>, HubError>(HubReceiveResult<T> { index: __hub_wait_receive_index(self.handle), value: __hub_wait_receive_value<T>(self.handle) }),
+        Status::Cancelled(reason) => Results.Failure<HubReceiveResult<T>, HubError>(HubError::Cancelled(reason)),
+        Status::HubEmpty => Results.Failure<HubReceiveResult<T>, HubError>(HubError::Closed(-1_i64)),
+        Status::HubNotFound(idx) => Results.Failure<HubReceiveResult<T>, HubError>(HubError::Closed(idx)),
+        _ => Results.Failure<HubReceiveResult<T>, HubError>(HubError::Closed(0_i64)),
+    };
+}

@@ -51,6 +51,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Regenerate the sample-module materialized corelib from the checked-out source
+  and assert that lockfile replay cannot restore either removed UTF-8 append route.
 - Remove the public lossy UTF-8 append routes and reject legacy consumers at
   source lowering. Extend native canonical decoding evidence for punctuation,
   two-/three-/four-byte scalars, and invalid Unicode scalar encodings.

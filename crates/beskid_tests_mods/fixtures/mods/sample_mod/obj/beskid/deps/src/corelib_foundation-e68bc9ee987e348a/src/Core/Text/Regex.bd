@@ -1,0 +1,119 @@
+/// Regex hub — matching, finding, and pattern validation.
+/// Types in Core.Text.Regex.Types; engine in Core.Text.Regex.Engine.
+/// Generated parser combinators in Core.Text.Regex.Generated.
+pub mod Core.Text.Regex.Types;
+pub mod Core.Text.Regex.Engine;
+pub mod Core.Text.Regex.Generated;
+
+use Core.Optional.Option;
+use Core.String;
+use Core.Text.Cursor;
+use Core.Text.Parser;
+use Core.Text.Regex.Engine;
+use Core.Text.Regex.Types;
+
+pub i64 MaxInputLen() {
+    return 1048576;
+}
+
+pub bool InputTooLong(string text) {
+    return Core.String.Len(text) > MaxInputLen();
+}
+
+pub bool IsValidPattern(string pattern) {
+    if Core.String.Len(pattern) < 1 {
+        return false;
+    }
+    Parser.Result.TextParseResult<string> parsed = Generated.ParsePat(Cursor.From(pattern));
+    if !Parser.IsOk(parsed) {
+        return false;
+    }
+    Cursor.TextCursor rest = Parser.RestOnOk(parsed, Cursor.From(pattern));
+    return Cursor.AtEnd(rest);
+}
+
+pub Option<MatchSpan> Match(string pattern, string text) {
+    if InputTooLong(text) {
+        return Option<MatchSpan>::None;
+    }
+    if !IsValidPattern(pattern) {
+        return Option<MatchSpan>::None;
+    }
+    MatchStep step = Engine.MatchPat(pattern, 0, text, 0);
+    if !step.ok {
+        return Option<MatchSpan>::None;
+    }
+    if step.text_pos < 1 {
+        return Option<MatchSpan>::None;
+    }
+    return Option<MatchSpan>::Some(MatchSpan { start: 0, end: step.text_pos });
+}
+
+pub Option<MatchSpan> Find(string pattern, string text) {
+    if InputTooLong(text) {
+        return Option<MatchSpan>::None;
+    }
+    if !IsValidPattern(pattern) {
+        return Option<MatchSpan>::None;
+    }
+    i64 n = Core.String.Len(text);
+    mut i64 pos = 0;
+    while pos <= n {
+        MatchStep step = Engine.MatchPat(pattern, 0, text, pos);
+        if step.ok && step.text_pos > pos {
+            return Option<MatchSpan>::Some(MatchSpan { start: pos, end: step.text_pos });
+        }
+        pos = pos + 1;
+    }
+    return Option<MatchSpan>::None;
+}
+
+pub bool IsFindAllEmpty(MatchSpanList list) {
+    return match list {
+        MatchSpanList::Nil => true,
+        MatchSpanList::Cons(_, _) => false,
+    };
+}
+
+pub MatchSpanList FindAll(string pattern, string text) {
+    if InputTooLong(text) {
+        return MatchSpanList::Nil;
+    }
+    if !IsValidPattern(pattern) {
+        return MatchSpanList::Nil;
+    }
+    return FindAllFrom(pattern, text, 0, MatchSpanList::Nil);
+}
+
+pub Option<MatchSpan> MatchLowerRun(string pattern, string text) {
+    return Match(pattern, text);
+}
+
+pub bool HasMatch(Option<MatchSpan> value) {
+    return match value {
+        Option::Some(_) => true,
+        Option::None => false,
+    };
+}
+
+pub bool Matches(string pattern, string text) {
+    return HasMatch(Match(pattern, text));
+}
+
+pub bool Finds(string pattern, string text) {
+    return HasMatch(Find(pattern, text));
+}
+
+MatchSpanList FindAllFrom(string pattern, string text, i64 start, MatchSpanList acc) {
+    i64 n = Core.String.Len(text);
+    if start > n {
+        return acc;
+    }
+    MatchStep step = Engine.MatchPat(pattern, 0, text, start);
+    if step.ok && step.text_pos > start {
+        MatchSpan span = MatchSpan { start: start, end: step.text_pos };
+        MatchSpanList next = MatchSpanList::Cons(span, acc);
+        return FindAllFrom(pattern, text, step.text_pos, next);
+    }
+    return FindAllFrom(pattern, text, start + 1, acc);
+}

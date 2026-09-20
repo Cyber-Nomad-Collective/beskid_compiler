@@ -1,0 +1,25 @@
+corelib_console {
+  name = "corelib_console"
+  version = "0.1.0"
+  root = "src"
+  readme = "README.md"
+}
+
+dependency "corelib_runtime" {
+  source = "path"
+  path = "../runtime"
+}
+
+dependency "corelib_foundation" {
+  source = "path"
+  path = "../foundation"
+}
+
+dependency "corelib_concurrency" {
+  source = "path"
+  path = "../concurrency"
+}
+
+target "ConsoleLib" {
+  kind = Lib
+}

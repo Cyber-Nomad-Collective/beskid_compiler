@@ -1,0 +1,86 @@
+/// Construction options for Channel<T>.Create.
+/// Uses discriminated unions throughout — no bool flags or raw i64 bitfields.
+/// @tier(standard)
+pub enum ChannelCapacity {
+    Unbounded(),
+    Bounded(i64 capacity),
+}
+
+pub enum ReaderHint {
+    Multiple(),
+    Single(),
+}
+
+pub enum WriterHint {
+    Multiple(),
+    Single(),
+}
+
+/// Channel factory options.
+pub type ChannelOptions {
+    ChannelCapacity capacity,
+    ReaderHint reader,
+    WriterHint writer,
+}
+
+/// Default: unbounded, multiple-reader, multiple-writer.
+pub ChannelOptions Default() {
+    return ChannelOptions {
+        capacity: ChannelCapacity::Unbounded(),
+        reader: ReaderHint::Multiple(),
+        writer: WriterHint::Multiple(),
+    };
+}
+
+/// Explicit unbounded queue.
+pub ChannelOptions Unbounded() {
+    return Default();
+}
+
+/// Bounded queue; senders park when full.
+pub ChannelOptions Bounded(i64 capacity) {
+    return ChannelOptions {
+        capacity: ChannelCapacity::Bounded(capacity),
+        reader: ReaderHint::Multiple(),
+        writer: WriterHint::Multiple(),
+    };
+}
+
+/// Unbounded, single-reader optimized.
+pub ChannelOptions SingleReader() {
+    return ChannelOptions {
+        capacity: ChannelCapacity::Unbounded(),
+        reader: ReaderHint::Single(),
+        writer: WriterHint::Multiple(),
+    };
+}
+
+/// Unbounded, single-writer optimized.
+pub ChannelOptions SingleWriter() {
+    return ChannelOptions {
+        capacity: ChannelCapacity::Unbounded(),
+        reader: ReaderHint::Multiple(),
+        writer: WriterHint::Single(),
+    };
+}
+
+/// Encodes capacity for __channel_create (0 = dynamically growing storage).
+/// Unbounded channels have no fixed 16-entry limit; allocation/root exhaustion traps.
+pub i64 EncodeCapacity(ChannelOptions options) {
+    return match options.capacity {
+        ChannelCapacity::Unbounded() => 0_i64,
+        ChannelCapacity::Bounded(capacity) => capacity,
+    };
+}
+
+/// Encodes reader/writer hint flags for __channel_create.
+pub i64 EncodeFlags(ChannelOptions options) {
+    mut i64 flags = 0;
+    if options.reader == ReaderHint::Single() {
+        flags = flags + 1;
+    }
+    if options.writer == WriterHint::Single() {
+        flags = flags + 2;
+    }
+    return flags;
+}

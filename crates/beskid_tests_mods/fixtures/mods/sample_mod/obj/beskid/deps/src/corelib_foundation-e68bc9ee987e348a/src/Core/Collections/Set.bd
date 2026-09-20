@@ -1,0 +1,68 @@
+/// Unordered set backed by a linear typed-array scan.
+/// @tier(supported)
+use Core.Collections.Array;
+
+pub type Set<T> {
+    T[] storage,
+    i64 count,
+
+    pub i64 Count() {
+        return count;
+    }
+
+    pub bool IsEmpty() {
+        return count == 0;
+    }
+
+    pub bool Contains(T value) {
+        mut i64 index = 0;
+        while index < count {
+            if Array.Get<T>(storage, index) == value {
+                return true;
+            }
+            index = index + 1;
+        }
+        return false;
+    }
+
+    pub Set<T> Add(T value) {
+        if Contains(value) {
+            return self;
+        }
+        mut T[] nextStorage = storage;
+        Array.Append<T>(nextStorage, value);
+        return Set<T> { storage: nextStorage, count: count + 1 };
+    }
+
+    pub Set<T> Remove(T value) {
+        mut i64 index = 0;
+        while index < count {
+            if Array.Get<T>(storage, index) == value {
+                mut i64 shift = index;
+                while shift + 1 < count {
+                    Array.Set<T>(storage, shift, Array.Get<T>(storage, shift + 1));
+                    shift = shift + 1;
+                }
+                return Set<T> { storage: Array.RemoveLast<T>(storage), count: count - 1 };
+            }
+            index = index + 1;
+        }
+        return self;
+    }
+}
+
+pub Set<T> New<T>() {
+    return Set<T> { storage: Array.Empty<T>(), count: 0 };
+}
+
+/// Bulk constructor: packs call-site scalars into a set.
+/// Iterates the bulk array and inserts each value via `Set.Add`.
+pub Set<T> Of<T>(bulk T[] values) {
+    mut Set<T> result = Set.New<T>();
+    mut i64 index = 0;
+    while index < Array.Len<T>(values) {
+        result = result.Add(Array.Get<T>(values, index));
+        index = index + 1;
+    }
+    return result;
+}

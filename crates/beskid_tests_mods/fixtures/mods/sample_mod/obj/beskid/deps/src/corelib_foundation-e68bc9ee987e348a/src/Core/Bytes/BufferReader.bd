@@ -1,0 +1,45 @@
+use Core.Bytes.ByteReader;
+use Core.Bytes.Errors;
+use Core.Bytes.Slice;
+use Core.Results;
+
+/// A checked cursor over a fixed range of a byte buffer; reads produce owned copies.
+/// @tier(standard)
+pub type BufferReader: ByteReader {
+    u8[] buffer,
+    i64 start,
+    i64 capacity,
+    i64 position,
+
+    bool IsValid() {
+        return Slice.IsValidRange(Slice.Len(buffer), start, capacity) && position >= 0_i64 && position <= capacity;
+    }
+
+    pub Result<i64, BytesError> Position() {
+        if !IsValid() { return Result::Error(BytesError::InvalidRange()); }
+        return Result::Ok(position);
+    }
+
+    pub Result<i64, BytesError> Capacity() {
+        if !IsValid() { return Result::Error(BytesError::InvalidRange()); }
+        return Result::Ok(capacity);
+    }
+
+    pub Result<u8[], BytesError> Read(i64 count) {
+        if !IsValid() || count < 0_i64 { return Result::Error(BytesError::InvalidRange()); }
+        i64 remaining = capacity - position;
+        if count > remaining { return Result::Error(BytesError::OutOfBounds()); }
+        i64 offset = start + position;
+        u8[] result = Slice.SubSlice(buffer, offset, count);
+        i64 next = position + count;
+        position = next;
+        return Result::Ok(result);
+    }
+}
+
+pub Result<BufferReader, BytesError> Create(u8[] source, i64 offset, i64 count) {
+    if !Slice.IsValidRange(Slice.Len(source), offset, count) {
+        return Result::Error(BytesError::InvalidRange());
+    }
+    return Result::Ok(BufferReader { buffer: source, start: offset, capacity: count, position: 0_i64 });
+}

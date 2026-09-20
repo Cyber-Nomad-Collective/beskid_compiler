@@ -1,0 +1,3 @@
+// Terminal console markup subset (see ADR D-CORE-TEXT-0001).
+bold = { "**" ~ (!"**" ~ ANY)+ ~ "**" }
+italic = { "*" ~ (!"*" ~ ANY)+ ~ "*" }

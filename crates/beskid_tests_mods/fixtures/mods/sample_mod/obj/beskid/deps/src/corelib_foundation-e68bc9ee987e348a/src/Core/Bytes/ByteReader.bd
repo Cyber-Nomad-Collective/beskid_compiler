@@ -1,0 +1,9 @@
+use Core.Bytes.Errors;
+
+/// A bounded byte cursor. Failed and zero-length reads preserve position.
+/// @tier(standard)
+pub contract ByteReader {
+    Core.Results.Result<i64, BytesError> Position();
+    Core.Results.Result<i64, BytesError> Capacity();
+    Core.Results.Result<u8[], BytesError> Read(i64 count);
+}

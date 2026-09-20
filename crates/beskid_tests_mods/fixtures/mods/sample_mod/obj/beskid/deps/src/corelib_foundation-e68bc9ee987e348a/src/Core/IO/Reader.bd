@@ -1,0 +1,8 @@
+use Core.IO.IoError;
+
+/// A partial byte reader. Validate ranges before effects; valid empty reads bypass work.
+/// A non-empty successful zero count is EOF. Only the returned destination prefix may change.
+/// @tier(standard)
+pub contract Reader {
+    Core.Results.Result<i64, IoError> Read(u8[] destination, i64 offset, i64 count);
+}

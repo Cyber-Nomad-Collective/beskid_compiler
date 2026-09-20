@@ -41,6 +41,12 @@ fn foundation_utf8_does_not_expose_lossy_append_route() {
 }
 
 #[test]
+fn foundation_string_does_not_expose_lossy_utf8_append_route() {
+    let result = lower_foundation_fixture("foundation_string_legacy_append.bd");
+    assert!(result.is_err(), "the Core.String forwarding append route must not be a public callable");
+}
+
+#[test]
 fn foundation_byte_cursors_validate_ranges_and_preserve_position_on_failure() {
     run_foundation_fixture("foundation_bytes.bd");
 }

@@ -1,0 +1,9 @@
+/// Errors for blocking channel operations (`Send`, `Receive`).
+/// @variant(Closed) Endpoint closed; carries the endpoint id.
+/// @variant(Cancelled) Owning fiber was cancelled; carries a cancel reason.
+/// Before send commit the sender retains the value; after commit the queue retains
+/// it despite Cancelled. Close never disposes committed resource values.
+pub enum ChannelError {
+    Closed(i64 endpoint),
+    Cancelled(i64 reason),
+}

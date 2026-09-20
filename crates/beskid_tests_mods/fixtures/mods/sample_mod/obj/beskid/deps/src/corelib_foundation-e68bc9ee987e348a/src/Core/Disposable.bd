@@ -1,0 +1,13 @@
+use Core.Results;
+
+/// A lexically owned resource released by a scoped `use` binding.
+/// Cleanup runs exactly once on each supported scope exit, in reverse binding order.
+/// A failure is propagated as the enclosing Result error through an explicit cleanup conversion.
+pub contract Disposable {
+    Core.Results.Result<unit, DisposeError> Dispose();
+}
+
+/// A resource could not complete its cleanup operation.
+pub enum DisposeError {
+    Failed(),
+}

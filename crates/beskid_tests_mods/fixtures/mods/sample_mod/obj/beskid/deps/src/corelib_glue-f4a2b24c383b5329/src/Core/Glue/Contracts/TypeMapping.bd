@@ -1,0 +1,8 @@
+/// TypeMapping contract: maps a Beskid surface type to an
+/// `Interop.Contracts` type-shape class. Per-language glue mods implement this
+/// to declare how each Beskid type crosses the foreign boundary.
+///
+/// 0.4: contract declaration only. Concrete mappings land in 0.5.
+pub contract TypeMapping {
+    string MapType(string beskidTypeName);
+}

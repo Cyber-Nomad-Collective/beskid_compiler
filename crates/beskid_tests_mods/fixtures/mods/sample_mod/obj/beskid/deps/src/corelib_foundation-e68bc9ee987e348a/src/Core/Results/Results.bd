@@ -1,0 +1,49 @@
+/// Discriminated success or failure carrier used across corelib and user code.
+/// @par(TValue) Type of the successful payload.
+/// @par(TError) Type of the failure payload.
+/// @variant(Ok) Successful branch carrying `value`.
+/// @variant(Error) Failure branch carrying `error`.
+pub enum Result<TValue, TError> {
+    /// Carries the successful payload.
+    Ok(TValue value),
+    /// Carries the failure payload.
+    Error(TError error),
+}
+
+/// Constructs a successful result.
+pub Result<TValue, TError> Success<TValue, TError>(TValue value) {
+    return Result::Ok(value);
+}
+
+/// Constructs a failed result.
+pub Result<TValue, TError> Failure<TValue, TError>(TError error) {
+    return Result::Error(error);
+}
+
+/// Returns true when result carries `Ok`.
+/// @arg(value) Result to inspect.
+/// @returns `true` when `value` is `Ok`.
+pub bool IsOk<TValue, TError>(Result<TValue, TError> value) {
+    return match value {
+        Result::Ok(_) => true,
+        Result::Error(_) => false,
+    };
+}
+
+/// Returns true when result carries `Error`.
+/// @arg(value) Result to inspect.
+/// @returns `true` when `value` is `Error`.
+pub bool IsError<TValue, TError>(Result<TValue, TError> value) {
+    return match value {
+        Result::Ok(_) => false,
+        Result::Error(_) => true,
+    };
+}
+
+/// Maps a successful payload while preserving the original error value exactly.
+pub Result<TNext, TError> Map<TValue, TNext, TError>(Result<TValue, TError> value, TNext mapped) {
+    return match value {
+        Result::Ok(_) => Result::Ok(mapped),
+        Result::Error(error) => Result::Error(error),
+    };
+}

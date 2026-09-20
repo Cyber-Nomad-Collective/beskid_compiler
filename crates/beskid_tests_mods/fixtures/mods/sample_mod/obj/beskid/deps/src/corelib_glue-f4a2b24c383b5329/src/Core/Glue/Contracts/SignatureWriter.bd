@@ -1,0 +1,9 @@
+/// SignatureWriter contract: writes foreign signatures for a generated
+/// library. Per-language glue mods implement this to encode the
+/// foreign-side method/type signatures (e.g. ECMA-335 blob encoding for
+/// .NET via dotscope).
+///
+/// 0.4: contract declaration only. Concrete writing lands in 0.5.
+pub contract SignatureWriter {
+    string WriteSignatures(string outputPath);
+}

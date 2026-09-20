@@ -1,0 +1,474 @@
+/// Emit Beskid combinator parser modules from parsed Pest rules.
+use Core.Collections.Array;
+use Core.String;
+use Core.Text.Pest.Expr;
+use Core.Text.Pest.Grammar;
+use Core.Text.Casing;
+use Core.Results;
+
+pub string Nl() {
+    return Grammar.Newline();
+}
+
+pub string Line(string text) {
+    return text + Nl();
+}
+
+pub string IndentBlock(string body, i64 spaces) {
+    if Core.String.Len(body) < 1 {
+        return "";
+    }
+    mut string pad = "";
+    mut i64 i = 0;
+    while i < spaces {
+        pad = pad + " ";
+        i = i + 1;
+    }
+    mut string out = "";
+    mut i64 pos = 0;
+    i64 len = Core.String.Len(body);
+    while pos <= len {
+        i64 nextNl = Core.String.IndexOfFrom(body, pos, Nl());
+        string line = "";
+        if nextNl < 0 {
+            line = Core.String.SubSlice(body, pos, len - pos);
+            pos = len + 1;
+        } else {
+            line = Core.String.SubSlice(body, pos, nextNl - pos);
+            pos = nextNl + 1;
+        }
+        if Core.String.Len(line) > 0 {
+            out = out + pad + line;
+        }
+        if pos <= len {
+            out = out + Nl();
+        }
+        if pos > len {
+            break;
+        }
+    }
+    return out;
+}
+
+pub bool IsBeskidStringRepresentable(string value) {
+    mut i64 i = 0;
+    i64 len = Core.String.Len(value);
+    while i < len {
+        u8 b = Core.String.ByteAt(value, i);
+        if b == 32 {
+            i = i + 1;
+            continue;
+        }
+        if b < 33 || b > 126 {
+            return false;
+        }
+        i = i + 1;
+    }
+    return true;
+}
+
+pub string EscapeBeskidString(string value) {
+    mut string out = "";
+    mut i64 i = 0;
+    i64 len = Core.String.Len(value);
+    while i < len {
+        u8 b = Core.String.ByteAt(value, i);
+        if b == 92 {
+            out = out + "\\\\";
+        } else if b == 34 {
+            out = out + "\\" + "\"";
+        } else if b == 36 && i + 1 < len && Core.String.ByteAt(value, i + 1) == 123 {
+            out = out + "\\" + "$";
+        } else {
+            out = out + Core.String.CodeUnitChar(b);
+        }
+        i = i + 1;
+    }
+    return out;
+}
+
+pub string EmitLiteralExpr(string value, string cursor, string rule, string target, string retKind) {
+    if !IsBeskidStringRepresentable(value) {
+        return "Parser.Result.TextParseResult<string> " + target + " = Parser.Fail(" + cursor + ", Parser.Result.ParseErrorKind::ExpectedLiteral(\"" + rule + ": unrepresentable literal\"), \"" + rule + ": unrepresentable literal\");";
+    }
+    string escaped = EscapeBeskidString(value);
+    if retKind == "return" {
+        return "return Parser.Literal(" + cursor + ", \"" + escaped + "\", \"" + rule + "\");";
+    }
+    return "Parser.Result.TextParseResult<string> " + target + " = Parser.Literal(" + cursor + ", \"" + escaped + "\", \"" + rule + "\");";
+}
+
+pub string EmitRuleRef(string name, string cursor, string target, string retKind) {
+    string callable = Casing.CallableFromSnake(name, "Parse");
+    if retKind == "return" {
+        return "return " + callable + "(" + cursor + ");";
+    }
+    return "Parser.Result.TextParseResult<string> " + target + " = " + callable + "(" + cursor + ");";
+}
+
+pub string EmitAny(string cursor, string rule, string target, string retKind) {
+    if retKind == "return" {
+        return "return Parser.Satisfy(" + cursor + ", \"" + rule + "\");";
+    }
+    return "Parser.Result.TextParseResult<string> " + target + " = Parser.Satisfy(" + cursor + ", \"" + rule + "\");";
+}
+
+pub string EmitFail(string cursor, string rule, string message) {
+    return "return Parser.Fail(" + cursor + ", Parser.Result.ParseErrorKind::ExpectedRule(\"" + rule + ": " + message + "\"), \"" + rule + ": " + message + "\");";
+}
+
+pub string EmitStepOnCursor(
+    string cursor,
+    PestExpr node,
+    string rule,
+    GrammarRule[] rules,
+    string varName
+) {
+    string direct = EmitDirectMutableStep(cursor, node, rule, rules, varName);
+    if Core.String.Len(direct) > 0 {
+        return direct;
+    }
+    return Line("mut Parser.Result.TextParseResult<string> " + varName + " = Parser.Pure(\"\", " + cursor + ");")
+        + EmitAssignmentOnCursor(cursor, node, rule, rules, varName);
+}
+
+pub string EmitDirectMutableStep(
+    string cursor,
+    PestExpr node,
+    string rule,
+    GrammarRule[] rules,
+    string varName
+) {
+    return match node {
+        PestExpr::Literal(value) => EmitLiteralExpr(value, cursor, rule, varName, "assign"),
+        PestExpr::RuleRef(name) => EmitDirectMutableRuleRef(cursor, name, rule, rules, varName),
+        PestExpr::Any => EmitAny(cursor, rule, varName, "assign"),
+        PestExpr::Group(inner) => EmitDirectMutableStep(cursor, inner, rule, rules, varName),
+        _ => "",
+    };
+}
+
+pub string EmitDirectMutableRuleRef(
+    string cursor,
+    string name,
+    string rule,
+    GrammarRule[] rules,
+    string varName
+) {
+    if RuleExists(rules, name) {
+        return EmitRuleRef(name, cursor, varName, "assign");
+    }
+    return "";
+}
+
+pub string EmitLiteralAssignment(string cursor, string value, string rule, string target) {
+    if !IsBeskidStringRepresentable(value) {
+        return target + " = Parser.Fail(" + cursor + ", Parser.Result.ParseErrorKind::ExpectedLiteral(\"" + rule + ": unrepresentable literal\"), \"" + rule + ": unrepresentable literal\");";
+    }
+    return target + " = Parser.Literal(" + cursor + ", \"" + EscapeBeskidString(value) + "\", \"" + rule + "\");";
+}
+
+pub string EmitRuleRefAssignment(string cursor, string name, string rule, GrammarRule[] rules, string target) {
+    if RuleExists(rules, name) {
+        return target + " = " + Casing.CallableFromSnake(name, "Parse") + "(" + cursor + ");";
+    }
+    return target + " = Parser.Fail(" + cursor + ", Parser.Result.ParseErrorKind::ExpectedRule(\"" + rule + ": unknown rule " + name + "\"), \"" + rule + ": unknown rule " + name + "\");";
+}
+
+pub string EmitSeqAssignment(string cursor, PestExpr[] parts, string rule, GrammarRule[] rules, string target) {
+    string seqCursor = target + "SeqCur";
+    mut string out = "mut Cursor.TextCursor " + seqCursor + " = " + cursor + ";";
+    mut i64 i = 0;
+    i64 n = ExprCount(parts);
+    while i < n {
+        string assignment = IndentBlock(EmitAssignmentOnCursor(seqCursor, ExprAt(parts, i), rule, rules, target), 4);
+        out = out + Nl() + Line("if Parser.IsOk(" + target + ") {");
+        out = out + assignment + Nl();
+        out = out + Line("    if Parser.IsOk(" + target + ") {");
+        out = out + Line("        " + seqCursor + " = Parser.RestOnOk(" + target + ", " + seqCursor + ");");
+        out = out + Line("    }");
+        out = out + "}";
+        i = i + 1;
+    }
+    return out;
+}
+
+pub string EmitChoiceAssignment(string cursor, PestExpr[] parts, string rule, GrammarRule[] rules, string target) {
+    mut string out = target + " = Parser.Fail(" + cursor + ", Parser.Result.ParseErrorKind::ChoiceFailed(\"" + rule + "\"), \"" + rule + "\");";
+    mut i64 i = 0;
+    i64 n = ExprCount(parts);
+    while i < n {
+        string assignment = IndentBlock(EmitAssignmentOnCursor(cursor, ExprAt(parts, i), rule, rules, target), 4);
+        out = out + Nl() + Line("if !Parser.IsOk(" + target + ") {");
+        out = out + assignment + Nl() + "}";
+        i = i + 1;
+    }
+    return out;
+}
+
+pub string EmitRepeatAssignment(
+    string cursor,
+    PestExpr inner,
+    string rule,
+    GrammarRule[] rules,
+    string target,
+    bool oneOrMore
+) {
+    string repeatCursor = target + "ManyCur";
+    string repeatCount = target + "ManyCount";
+    string repeatPos = target + "ManyPos";
+    string repeatRest = target + "ManyRest";
+    string assignment = IndentBlock(EmitAssignmentOnCursor(repeatCursor, inner, rule, rules, target), 4);
+    mut string out = Line("mut Cursor.TextCursor " + repeatCursor + " = " + cursor + ";");
+    out = out + Line("mut i64 " + repeatCount + " = 0;");
+    out = out + Line("while Parser.IsOk(" + target + ") {");
+    out = out + Line("    i64 " + repeatPos + " = Cursor.Position(" + repeatCursor + ");");
+    out = out + assignment + Nl();
+    out = out + Line("    if !Parser.IsOk(" + target + ") {");
+    out = out + Line("        " + target + " = Parser.Pure(\"\", " + repeatCursor + ");");
+    out = out + Line("        break;");
+    out = out + Line("    }");
+    out = out + Line("    Cursor.TextCursor " + repeatRest + " = Parser.RestOnOk(" + target + ", " + repeatCursor + ");");
+    out = out + Line("    if Cursor.Position(" + repeatRest + ") == " + repeatPos + " {");
+    out = out + Line("        " + target + " = Parser.Fail(" + repeatCursor + ", Parser.Result.ParseErrorKind::ZeroWidthRepeat(\"" + rule + "\"), \"" + rule + "\");");
+    out = out + Line("        break;");
+    out = out + Line("    }");
+    out = out + Line("    " + repeatCursor + " = " + repeatRest + ";");
+    out = out + Line("    " + repeatCount + " = " + repeatCount + " + 1;");
+    out = out + "}";
+    if oneOrMore {
+        out = out + Nl() + Line("if Parser.IsOk(" + target + ") && " + repeatCount + " < 1 {");
+        out = out + Line("    " + target + " = Parser.Fail(" + cursor + ", Parser.Result.ParseErrorKind::ExpectedRule(\"" + rule + "\"), \"" + rule + "\");");
+        out = out + "}";
+    }
+    return out;
+}
+
+pub string EmitAssignmentOnCursor(
+    string cursor,
+    PestExpr node,
+    string rule,
+    GrammarRule[] rules,
+    string target
+) {
+    return match node {
+        PestExpr::Literal(value) => EmitLiteralAssignment(cursor, value, rule, target),
+        PestExpr::RuleRef(name) => EmitRuleRefAssignment(cursor, name, rule, rules, target),
+        PestExpr::Any => target + " = Parser.Satisfy(" + cursor + ", \"" + rule + "\");",
+        PestExpr::Group(inner) => EmitAssignmentOnCursor(cursor, inner, rule, rules, target),
+        PestExpr::Opt(inner) => EmitAssignmentOnCursor(cursor, inner, rule, rules, target)
+            + Nl()
+            + Line("if !Parser.IsOk(" + target + ") {")
+            + Line("    " + target + " = Parser.Pure(\"\", " + cursor + ");")
+            + "}",
+        PestExpr::Not(inner) => EmitAssignmentOnCursor(cursor, inner, rule, rules, target)
+            + Nl()
+            + Line("if Parser.IsOk(" + target + ") {")
+            + Line("    " + target + " = Parser.Fail(" + cursor + ", Parser.Result.ParseErrorKind::ExpectedRule(\"" + rule + "\"), \"" + rule + "\");")
+            + Line("} else {")
+            + Line("    " + target + " = Parser.Pure(\"\", " + cursor + ");")
+            + "}",
+        PestExpr::Repeat(inner, kind) => EmitRepeatAssignment(cursor, inner, rule, rules, target, kind == PestRepeatKind::OneOrMore),
+        PestExpr::Seq(parts) => EmitSeqAssignment(cursor, parts, rule, rules, target),
+        PestExpr::Choice(parts) => EmitChoiceAssignment(cursor, parts, rule, rules, target),
+    };
+}
+
+pub string EmitMany(string cursor, PestExpr inner, string rule, GrammarRule[] rules, bool oneOrMore) {
+    string step = EmitStepOnCursor("manyCur", inner, rule, rules, "manyStep");
+    mut string out = Line("mut Cursor.TextCursor manyCur = " + cursor + ";");
+    out = out + Line("mut i64 manyCount = 0;");
+    out = out + Line("while true {");
+    out = out + Line("    i64 manyPos = Cursor.Position(manyCur);");
+    out = out + "    " + step + Nl();
+    out = out + Line("    if !Parser.IsOk(manyStep) {");
+    out = out + Line("        break;");
+    out = out + Line("    }");
+    out = out + Line("    Cursor.TextCursor manyRest = Parser.RestOnOk(manyStep, manyCur);");
+    out = out + Line("    if Cursor.Position(manyRest) == manyPos {");
+    out = out + Line("        return Parser.Fail(manyCur, Parser.Result.ParseErrorKind::ZeroWidthRepeat(\"" + rule + "\"), \"" + rule + "\");");
+    out = out + Line("    }");
+    out = out + Line("    manyCur = manyRest;");
+    out = out + Line("    manyCount = manyCount + 1;");
+    out = out + Line("}");
+    if oneOrMore {
+        out = out + Line("if manyCount < 1 {");
+        out = out + Line("    return Parser.Fail(" + cursor + ", Parser.Result.ParseErrorKind::ExpectedRule(\"" + rule + "\"), \"" + rule + "\");");
+        out = out + Line("}");
+    }
+    out = out + "return Parser.Pure(\"\", manyCur);";
+    return out;
+}
+
+pub string EmitSeq(string cursor, PestExpr[] parts, string rule, GrammarRule[] rules) {
+    i64 n = ExprCount(parts);
+    if n < 1 {
+        return "return Parser.Pure(\"\", " + cursor + ");";
+    }
+    if n == 1 {
+        return EmitNodeFromCursor(cursor, ExprAt(parts, 0), rule, rules);
+    }
+    mut string out = Line("mut Cursor.TextCursor seqCur = " + cursor + ";");
+    mut i64 i = 0;
+    while i < n {
+        PestExpr part = ExprAt(parts, i);
+        string varName = "seq" + Core.String.DigitChar(i);
+        string step = EmitStepOnCursor("seqCur", part, rule, rules, varName);
+        out = out + step + Nl();
+        out = out + Line("if !Parser.IsOk(" + varName + ") {");
+        out = out + Line("    return " + varName + ";");
+        out = out + Line("}");
+        out = out + Line("seqCur = Parser.RestOnOk(" + varName + ", seqCur);");
+        i = i + 1;
+    }
+    out = out + "return Parser.Pure(\"\", seqCur);";
+    return out;
+}
+
+pub string EmitChoice(string cursor, PestExpr[] parts, string rule, GrammarRule[] rules) {
+    i64 n = ExprCount(parts);
+    if n < 1 {
+        return "return Parser.Fail(" + cursor + ", Parser.Result.ParseErrorKind::ChoiceFailed(\"" + rule + "\"), \"" + rule + "\");";
+    }
+    if n == 1 {
+        return EmitNodeFromCursor(cursor, ExprAt(parts, 0), rule, rules);
+    }
+    mut string out = "";
+    mut i64 i = 0;
+    while i < n {
+        PestExpr part = ExprAt(parts, i);
+        string varName = "choice" + Core.String.DigitChar(i);
+        string step = EmitStepOnCursor(cursor, part, rule, rules, varName);
+        out = out + step + Nl();
+        out = out + Line("if Parser.IsOk(" + varName + ") {");
+        out = out + Line("    return " + varName + ";");
+        out = out + Line("}");
+        i = i + 1;
+    }
+    out = out + "return Parser.Fail(" + cursor + ", Parser.Result.ParseErrorKind::ChoiceFailed(\"" + rule + "\"), \"" + rule + "\");";
+    return out;
+}
+
+pub string EmitOptInnerFromBody(string body) {
+    return Line("Parser.Result.TextParseResult<string> optInner = {") + "    " + body + Nl() + "};";
+}
+
+pub string EmitNodeOnCursor(string cursor, PestExpr node, string rule, GrammarRule[] rules) {
+    return match node {
+        PestExpr::Literal(value) => EmitLiteralExpr(value, cursor, rule, "optInner", "assign"),
+        PestExpr::RuleRef(name) => EmitRuleRef(name, cursor, "optInner", "assign"),
+        PestExpr::Any => EmitAny(cursor, rule, "optInner", "assign"),
+        PestExpr::Group(inner) => EmitNodeOnCursor(cursor, inner, rule, rules),
+        _ => EmitOptInnerFromBody(EmitNodeFromCursor(cursor, node, rule, rules)),
+    };
+}
+
+pub string EmitRuleRefNode(string cursor, string name, string rule, GrammarRule[] rules) {
+    if RuleExists(rules, name) {
+        return EmitRuleRef(name, cursor, "", "return");
+    }
+    return EmitFail(cursor, rule, "unknown rule " + name);
+}
+
+pub string EmitOptNode(string cursor, PestExpr inner, string rule, GrammarRule[] rules) {
+    string innerCode = EmitNodeOnCursor(cursor, inner, rule, rules);
+    return innerCode
+        + Line("if Parser.IsOk(optInner) {")
+        + "    return optInner;"
+        + Nl()
+        + "}"
+        + Nl()
+        + "return Parser.Pure(\"\", " + cursor + ");";
+}
+
+pub string EmitRepeatNode(string cursor, PestExpr inner, PestRepeatKind kind, string rule, GrammarRule[] rules) {
+    if kind == PestRepeatKind::OneOrMore {
+        return EmitMany(cursor, inner, rule, rules, true);
+    }
+    return EmitMany(cursor, inner, rule, rules, false);
+}
+
+pub string EmitNotNode(string cursor, PestExpr inner, string rule, GrammarRule[] rules) {
+    string innerCode = EmitStepOnCursor(cursor, inner, rule, rules, "notInner");
+    return innerCode
+        + Nl()
+        + Line("if Parser.IsOk(notInner) {")
+        + Line("    return Parser.Fail(" + cursor + ", Parser.Result.ParseErrorKind::ExpectedRule(\"" + rule + "\"), \"" + rule + "\");")
+        + "}"
+        + Nl()
+        + "return Parser.Pure(\"\", " + cursor + ");";
+}
+
+pub string EmitNode(PestExpr node, string rule, GrammarRule[] rules) {
+    return EmitNodeFromCursor("c", node, rule, rules);
+}
+
+pub string EmitNodeFromCursor(string cursor, PestExpr node, string rule, GrammarRule[] rules) {
+    return match node {
+        PestExpr::Literal(value) => EmitLiteralExpr(value, cursor, rule, "", "return"),
+        PestExpr::RuleRef(name) => EmitRuleRefNode(cursor, name, rule, rules),
+        PestExpr::Any => EmitAny(cursor, rule, "", "return"),
+        PestExpr::Group(inner) => EmitNodeFromCursor(cursor, inner, rule, rules),
+        PestExpr::Opt(inner) => EmitOptNode(cursor, inner, rule, rules),
+        PestExpr::Not(inner) => EmitNotNode(cursor, inner, rule, rules),
+        PestExpr::Repeat(inner, kind) => EmitRepeatNode(cursor, inner, kind, rule, rules),
+        PestExpr::Seq(parts) => EmitSeq(cursor, parts, rule, rules),
+        PestExpr::Choice(parts) => EmitChoice(cursor, parts, rule, rules),
+    };
+}
+
+pub string EmitRuleBody(string expr, string rule, GrammarRule[] rules) {
+    string builtin = EmitBuiltinTerm(expr, rule);
+    if Core.String.Len(builtin) > 0 {
+        return "return Core.Text.Parser.Terms." + builtin + "(c, \"" + rule + "\");";
+    }
+    Result<PestExpr, string> parsed = ParseExpr(expr);
+    if Result.IsError(parsed) {
+        string message = match parsed {
+            Result::Ok(_) => "parse error",
+            Result::Error(msg) => msg,
+        };
+        return EmitFail("c", rule, message);
+    }
+    PestExpr node = match parsed {
+        Result::Ok(value) => value,
+        Result::Error(_) => PestExpr::Any,
+    };
+    return EmitNode(node, rule, rules);
+}
+
+pub string EmitBuiltinTerm(string expr, string rule) {
+    if rule == "digit" && expr == "\"0\" | \"1\" | \"2\" | \"3\" | \"4\" | \"5\" | \"6\" | \"7\" | \"8\" | \"9\"" {
+        return "Digit";
+    }
+    if rule == "lower" && expr == "\"a\" | \"b\" | \"c\" | \"d\" | \"e\" | \"f\" | \"g\" | \"h\" | \"i\" | \"j\" | \"k\" | \"l\" | \"m\" | \"n\" | \"o\" | \"p\" | \"q\" | \"r\" | \"s\" | \"t\" | \"u\" | \"v\" | \"w\" | \"x\" | \"y\" | \"z\"" {
+        return "Lower";
+    }
+    if rule == "upper" && expr == "\"A\" | \"B\" | \"C\" | \"D\" | \"E\" | \"F\" | \"G\" | \"H\" | \"I\" | \"J\" | \"K\" | \"L\" | \"M\" | \"N\" | \"O\" | \"P\" | \"Q\" | \"R\" | \"S\" | \"T\" | \"U\" | \"V\" | \"W\" | \"X\" | \"Y\" | \"Z\"" {
+        return "Upper";
+    }
+    return "";
+}
+
+pub string EmitRuleCallable(string ruleName, string expression, GrammarRule[] rules) {
+    string callable = Casing.CallableFromSnake(ruleName, "Parse");
+    string body = EmitRuleBody(expression, ruleName, rules);
+    return Line("pub Parser.Result.TextParseResult<string> " + callable + "(Cursor.TextCursor c) {") + IndentBlock(body, 4) + Nl() + "}" + Nl();
+}
+
+pub string EmitCombinatorModule(string moduleName, GrammarRule[] rules) {
+    mut string out = Line("// CHECKED IN: regenerated by corelib_pest_gen");
+    out = out + Line("/// Generated combinator parser module for `" + moduleName + "`.");
+    out = out + Line("use Core.Text.Cursor;");
+    out = out + Line("use Core.Text.Parser;");
+    out = out + Line("use Core.Text.Parser.Terms;");
+    out = out + Nl();
+    mut i64 i = 0;
+    i64 n = RuleCount(rules);
+    while i < n {
+        GrammarRule rule = RuleAt(rules, i);
+        out = out + EmitRuleCallable(rule.name, rule.expression, rules) + Nl();
+        i = i + 1;
+    }
+    return Core.String.SubSlice(out, 0, Core.String.Len(out) - 1);
+}

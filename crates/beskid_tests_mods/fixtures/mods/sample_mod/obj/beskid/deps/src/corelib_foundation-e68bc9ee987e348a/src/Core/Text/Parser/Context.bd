@@ -1,0 +1,31 @@
+/// Parser context and whitespace configuration.
+use Core.String;
+use Core.Text.Cursor;
+use Core.Text.Parser.Literals;
+
+pub type ParseContext {
+    bool skipWhiteSpace,
+}
+
+pub ParseContext DefaultContext() {
+    return ParseContext { skipWhiteSpace: false };
+}
+
+/// Skips leading whitespace when `ctx.skipWhiteSpace` is set.
+/// Returns the cursor unchanged otherwise.
+pub Cursor.TextCursor WithWhiteSpaceParser(Cursor.TextCursor c, ParseContext ctx) {
+    if !ctx.skipWhiteSpace {
+        return c;
+    }
+    mut Cursor.TextCursor cur = c;
+    while !Cursor.AtEnd(cur) {
+        string ch = Cursor.Slice(cur, cur.pos, 1);
+        u8 byte = Core.String.ByteAt(ch, 0);
+        if ch == " " || byte == 9 || byte == 10 || byte == 13 {
+            cur = Cursor.Advance(cur, 1);
+        } else {
+            break;
+        }
+    }
+    return cur;
+}

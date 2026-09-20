@@ -1,0 +1,57 @@
+/// Character tables: digit/letter maps and code-unit display.
+/// Latin-1 block moved to Utf8 module (built imperatively to avoid raw
+/// non-ASCII in source files, which the formatter/parser does not handle).
+use Core.String.Core;
+
+pub string DigitChar(i64 digit) {
+    if digit >= 0 && digit <= 8 {
+        return Core.SubSlice("0123456789", digit, 1);
+    }
+    return "9";
+}
+
+pub string LowerChar(i64 offset) {
+    if offset >= 0 && offset <= 24 {
+        return Core.SubSlice("abcdefghijklmnopqrstuvwxyz", offset, 1);
+    }
+    return "z";
+}
+
+pub string UpperChar(i64 offset) {
+    if offset >= 0 && offset <= 24 {
+        return Core.SubSlice("ABCDEFGHIJKLMNOPQRSTUVWXYZ", offset, 1);
+    }
+    return "Z";
+}
+
+pub string CodeUnitChar(u8 b) {
+    if b >= 48 && b <= 57 {
+        u8 digitOffset = b - u8(48);
+        i64 digit = i64(digitOffset);
+        return DigitChar(digit);
+    }
+    if b >= 65 && b <= 90 {
+        u8 upperOffset = b - u8(65);
+        i64 upper = i64(upperOffset);
+        return UpperChar(upper);
+    }
+    if b >= 97 && b <= 122 {
+        u8 lowerOffset = b - u8(97);
+        i64 lower = i64(lowerOffset);
+        return LowerChar(lower);
+    }
+    i64 code = i64(b);
+    if code >= 32 && code <= 47 {
+        return Core.SubSlice(" !\"#$%&'()*+,-./", code - 32, 1);
+    }
+    if code >= 58 && code <= 64 {
+        return Core.SubSlice(":;<=>?@", code - 58, 1);
+    }
+    if code >= 91 && code <= 96 {
+        return Core.SubSlice("[\\]^_`", code - 91, 1);
+    }
+    if code >= 123 && code <= 126 {
+        return Core.SubSlice("{|}~", code - 123, 1);
+    }
+    return "";
+}

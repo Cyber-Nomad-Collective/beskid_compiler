@@ -1,0 +1,37 @@
+/// Parser flow helpers (pure values and sequencing hooks).
+use Core.Text.Cursor;
+use Core.Text.Parser.Result;
+
+pub TextParseResult<string> Pure(string value, Cursor.TextCursor c) {
+    return Result.Success<string>(value, c);
+}
+
+pub TextParseResult<string> Then(
+    TextParseResult<string> first,
+    TextParseResult<string> second
+) {
+    if !IsOk<string>(first) {
+        return first;
+    }
+    return second;
+}
+
+pub TextParseResult<string> Discard(
+    TextParseResult<string> first,
+    TextParseResult<string> second
+) {
+    if !IsOk<string>(first) {
+        return first;
+    }
+    if !IsOk<string>(second) {
+        return second;
+    }
+    return match second {
+        TextParseResult::Ok(success) => Result.Success<string>("", success.rest),
+        TextParseResult::Err(err) => TextParseResult::Err(err),
+    };
+}
+
+pub TextParseResult<string> Always(string value, Cursor.TextCursor c) {
+    return Pure(value, c);
+}

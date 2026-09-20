@@ -1,0 +1,10 @@
+/// Interop view types for the C ABI boundary.
+///
+/// Per the `language-meta--interop--interop-contracts` spec, Beskid `string`
+/// and `T[]` MUST NOT cross the user FFI boundary as ordinary GC references.
+/// They cross as interop view types: `CStringView`, `CBuffer`, and
+/// `CArrayView`. These records carry a pointer and length (and capacity for
+/// arrays) and align with the runtime `BeskidStr` / `BeskidArray` headers.
+pub mod Core.Interop.CStringView;
+pub mod Core.Interop.CBuffer;
+pub mod Core.Interop.CArrayView;

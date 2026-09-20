@@ -1,0 +1,29 @@
+/// C ABI string view: a bounded UTF-8 range passed across the FFI boundary.
+///
+/// `CStringView` carries a pointer and length and aligns with the runtime
+/// `BeskidStr` header. Beskid `string` values MUST NOT cross the user FFI
+/// boundary as ordinary GC references; they cross as `CStringView`.
+pub type CStringView {
+    pub pointer ptr;
+    pub i64 len;
+}
+
+/// Constructs a view from a pointer and length.
+pub CStringView New(pointer ptr, i64 len) {
+    return CStringView { ptr: ptr, len: len };
+}
+
+/// Returns the pointer field.
+pub pointer Ptr(CStringView view) {
+    return view.ptr;
+}
+
+/// Returns the length field.
+pub i64 Len(CStringView view) {
+    return view.len;
+}
+
+/// Returns true when the view is empty.
+pub bool IsEmpty(CStringView view) {
+    return view.len == 0;
+}

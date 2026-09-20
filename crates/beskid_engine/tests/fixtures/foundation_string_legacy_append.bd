@@ -1,0 +1,10 @@
+use Core.String;
+
+/// This consumer documents the deliberately removed Core.String forwarding route.
+pub i64 RunFoundationFixture() {
+    u8[] punctuation = [47_u8];
+    if String.AppendUtf8Rune("", punctuation, 0_i64, 1_i64) == "/" {
+        return 42_i64;
+    }
+    return 1_i64;
+}

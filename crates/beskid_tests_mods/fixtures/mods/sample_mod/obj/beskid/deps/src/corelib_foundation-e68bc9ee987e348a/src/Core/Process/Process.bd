@@ -1,0 +1,18 @@
+/// Process metadata and control helpers backed by canonical Corelib services.
+
+pub i32 Id() {
+    return __process_getpid();
+}
+
+pub unit Exit(i32 code) {
+    __process_exit(code);
+    return;
+}
+
+pub i32 CurrentId() {
+    return Id();
+}
+
+pub bool IsCurrentProcess(i32 pid) {
+    return pid == Id();
+}

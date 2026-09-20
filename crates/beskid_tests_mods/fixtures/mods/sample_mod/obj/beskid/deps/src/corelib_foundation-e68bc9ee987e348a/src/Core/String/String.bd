@@ -1,0 +1,70 @@
+/// Core.String hub — string helpers, character tables, and UTF-8 rune decoding.
+/// Core helpers in Core.String.Core; char tables in Core.String.Chars;
+/// UTF-8 decoding in Core.String.Utf8.
+pub mod Core.String.Core;
+pub mod Core.String.Chars;
+pub mod Core.String.Utf8;
+
+use Core.String.Core;
+use Core.String.Chars;
+use Core.String.Utf8;
+
+pub i64 Len(string text) {
+    return Core.Len(text);
+}
+
+pub bool IsEmpty(string text) {
+    return Core.IsEmpty(text);
+}
+
+pub i64 IndexOfFrom(string haystack, i64 start, string needle) {
+    return Core.IndexOfFrom(haystack, start, needle);
+}
+
+pub bool Contains(string text, string needle) {
+    return Core.Contains(text, needle);
+}
+
+pub string SubSlice(string text, i64 start, i64 count) {
+    return Core.SubSlice(text, start, count);
+}
+
+pub string Trim(string text) {
+    return Core.Trim(text);
+}
+
+pub u8 ByteAt(string text, i64 index) {
+    return Core.ByteAt(text, index);
+}
+
+pub string Latin1Block() {
+    return Utf8.Latin1Block();
+}
+
+pub string DigitChar(i64 digit) {
+    return Chars.DigitChar(digit);
+}
+
+pub string LowerChar(i64 offset) {
+    return Chars.LowerChar(offset);
+}
+
+pub string UpperChar(i64 offset) {
+    return Chars.UpperChar(offset);
+}
+
+pub string CodeUnitChar(u8 b) {
+    return Chars.CodeUnitChar(b);
+}
+
+pub i64 Utf8RuneByteLen(u8 lead) {
+    return Utf8.Utf8RuneByteLen(lead);
+}
+
+pub string Latin1Rune(u8 lead, u8 trail) {
+    return Utf8.Latin1Rune(lead, trail);
+}
+
+pub string FromUtf8CodeUnits(u8[] data) {
+    return Utf8.FromUtf8CodeUnits(data);
+}

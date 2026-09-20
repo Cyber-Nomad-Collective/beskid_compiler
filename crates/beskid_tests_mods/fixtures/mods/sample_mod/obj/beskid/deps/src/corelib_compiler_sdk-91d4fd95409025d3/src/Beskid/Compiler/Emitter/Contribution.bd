@@ -1,0 +1,51 @@
+// CHECKED IN: hand-maintained Mod SDK emit helpers (generator contribution assembly).
+use Beskid.Compiler.Collect;
+use Core.Collections.Array;
+
+/// Assemble a generator contribution from typed top-level items.
+pub GeneratedSyntaxContribution From(SyntaxContributionItem[] items) {
+    return GeneratedSyntaxContribution { items: items, codeOutputs: [] };
+}
+
+pub GeneratedSyntaxContribution FromCodeOutputs(CodeContribution[] codeOutputs) {
+    return GeneratedSyntaxContribution { items: [], codeOutputs: codeOutputs };
+}
+
+pub GeneratedSyntaxContribution Combine(
+    SyntaxContributionItem[] items,
+    CodeContribution[] codeOutputs
+) {
+    return GeneratedSyntaxContribution { items: items, codeOutputs: codeOutputs };
+}
+
+pub GeneratedSyntaxContribution Empty() {
+    return GeneratedSyntaxContribution { items: [], codeOutputs: [] };
+}
+
+pub GeneratedSyntaxContribution AppendItem(
+    GeneratedSyntaxContribution contribution,
+    SyntaxContributionItem item
+) {
+    return GeneratedSyntaxContribution {
+        items: Array.Append<SyntaxContributionItem>(contribution.items, item),
+        codeOutputs: contribution.codeOutputs,
+    };
+}
+
+pub GeneratedSyntaxContribution AppendCode(
+    GeneratedSyntaxContribution contribution,
+    CodeContribution output
+) {
+    return GeneratedSyntaxContribution {
+        items: contribution.items,
+        codeOutputs: Array.Append<CodeContribution>(contribution.codeOutputs, output),
+    };
+}
+
+pub CodeContribution CodeOutput(string modulePath, string fileName, CodeString body) {
+    return CodeContribution { modulePath: modulePath, fileName: fileName, body: body };
+}
+
+pub CodeString CodeBody(string language, string body) {
+    return CodeString { language: language, body: body };
+}

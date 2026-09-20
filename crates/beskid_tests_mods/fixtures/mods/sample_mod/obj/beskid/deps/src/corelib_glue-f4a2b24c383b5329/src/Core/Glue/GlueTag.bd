@@ -1,0 +1,25 @@
+/// Host typed tag object: an opaque handle representing one imported foreign
+/// library. The stdio bridge fiber uses one tag per imported library to route
+/// messages. The tag is opaque: the Beskid side holds and returns it but does
+/// not inspect its layout.
+pub type GlueTag {
+    pub i64 handle;
+}
+
+/// Constructs a glue tag from a raw handle.
+pub GlueTag New(i64 handle) {
+    return GlueTag { handle: handle };
+}
+
+/// Returns the raw handle.
+pub i64 Handle(GlueTag tag) {
+    return tag.handle;
+}
+
+/// Glue backend kind, mirroring the host `BackendKind` enum. A glue mod
+/// selects one backend; the default is `Clif`.
+pub enum GlueBackendKind {
+    Clif,
+    RustSource,
+    DotnetProject,
+}

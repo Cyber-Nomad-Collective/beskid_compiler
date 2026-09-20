@@ -16,6 +16,40 @@ const SAMPLE_MOD_PROJECT_MANIFEST: &str = "SampleMod.bproj";
 const SAMPLE_MOD_PROJECT: &str = include_str!("../../fixtures/mods/sample_mod/SampleMod.bproj");
 const SAMPLE_MOD_SOURCE: &str = include_str!("../../fixtures/mods/sample_mod/Src/Mod.bd");
 
+#[test]
+fn sample_mod_materialized_foundation_replays_no_lossy_utf8_append_route() {
+    let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("fixtures/mods/sample_mod");
+    let dependencies = fixture.join("obj/beskid/deps/src");
+    let lock = fs::read_to_string(fixture.join("Project.lock")).expect("read fixture lockfile");
+    let lock_entry = lock
+        .lines()
+        .find(|line| line.starts_with("- name=corelib_foundation;"))
+        .expect("foundation lock entry");
+    let foundation_name = lock_entry
+        .split("materialized_root=")
+        .nth(1)
+        .and_then(|path| PathBuf::from(path).file_name().map(|name| name.to_string_lossy().into_owned()))
+        .expect("foundation materialized-root basename");
+    assert!(
+        dependencies.join(&foundation_name).is_dir(),
+        "lock must replay a checked-in materialized foundation snapshot: {lock_entry}"
+    );
+
+    for source in ["String.bd", "Utf8.bd"] {
+        let source = fs::read_to_string(
+            dependencies
+                .join(&foundation_name)
+                .join("src/Core/String")
+                .join(source),
+        )
+        .expect("read materialized Core.String source");
+        assert!(
+            !source.contains("AppendUtf8Rune"),
+            "materialized corelib must not reintroduce the removed lossy UTF-8 append route"
+        );
+    }
+}
+
 /// One per-test workspace materialized under `temp_case_dir(prefix)`.
 pub(crate) struct ModFixtureWorkspace {
     pub(crate) root: PathBuf,

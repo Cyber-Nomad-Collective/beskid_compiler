@@ -1,0 +1,8 @@
+/// StdioBridge contract: generates the stdio message-bridge fiber protocol
+/// for a set of `[GlueImport]` bindings. Per-language glue mods implement
+/// this to declare how calls are encoded/decoded over stdio.
+///
+/// 0.4: contract declaration only. Protocol implementation lands in 0.5.
+pub contract StdioBridge {
+    string GenerateBridge(string libraryName);
+}

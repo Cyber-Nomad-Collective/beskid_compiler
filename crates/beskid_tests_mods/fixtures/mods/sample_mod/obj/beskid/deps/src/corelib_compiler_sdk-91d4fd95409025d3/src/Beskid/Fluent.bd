@@ -1,0 +1,20 @@
+// CHECKED IN: hand-maintained compiler-sdk surface for attribute-driven fluent generation.
+
+/// Marks a wrapper type that participates in the core fluent step-contract pattern.
+pub attribute FluentStep(TypeDefinition) {
+    stepName: string,
+    innerField: string,
+}
+
+/// Chain method on a fluent wrapper: returns the step type for further chaining.
+pub attribute FluentChain(MethodDefinition) { }
+
+/// Terminal method on a fluent wrapper: unwraps the backing inner value.
+pub attribute FluentTerminal(MethodDefinition) { }
+
+/// Marks the backing field on a fluent wrapper type.
+pub attribute FluentInner(Field) { }
+
+pub string FluentFacadeVersion() {
+    return "0.1.0";
+}

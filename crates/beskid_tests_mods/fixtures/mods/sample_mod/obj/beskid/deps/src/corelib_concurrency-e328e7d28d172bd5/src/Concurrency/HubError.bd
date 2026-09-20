@@ -1,0 +1,9 @@
+/// Errors from `Hub.WaitReceive`.
+/// @variant(Limit) Registration cap exceeded; carries cap and attempted index.
+/// @variant(Cancelled) Waiting fiber was cancelled; carries a cancel reason.
+/// @variant(Closed) Member channel(s) closed; carries the member index.
+pub enum HubError {
+    Limit(i64 cap, i64 attemptedIndex),
+    Cancelled(i64 reason),
+    Closed(i64 memberIndex),
+}

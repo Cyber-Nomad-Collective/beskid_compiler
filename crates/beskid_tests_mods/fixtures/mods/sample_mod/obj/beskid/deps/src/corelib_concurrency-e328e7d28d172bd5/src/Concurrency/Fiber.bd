@@ -1,0 +1,45 @@
+/// Move-only cooperative fiber handle returned by `spawn`.
+use Concurrency.FiberError;
+use Core.Results;
+
+pub type Fiber<T> {
+    i64 handle,
+
+    /// Consumes this handle and moves its typed terminal result exactly once.
+    pub Result<T, FiberError> Join() {
+        i64 status = __fiber_join_status(handle);
+        if status == 0 {
+            return Results.Success<T, FiberError>(__fiber_join_value<T>(handle));
+        }
+        if status == 1 {
+            i64 reason = __fiber_join_detail(handle, 0);
+            i64 canceler = __fiber_join_detail(handle, 1);
+            __fiber_join_error_finish(handle);
+            return Results.Failure<T, FiberError>(FiberError::Cancelled(reason, canceler));
+        }
+        if status == 3 {
+            i64 limit = __fiber_join_detail(handle, 2);
+            i64 requested = __fiber_join_detail(handle, 3);
+            __fiber_join_error_finish(handle);
+            return Results.Failure<T, FiberError>(FiberError::StackOverflow(limit, requested));
+        }
+        if status == 2 {
+            string message = __fiber_join_message(handle);
+            __fiber_join_error_finish(handle);
+            return Results.Failure<T, FiberError>(FiberError::Panicked(2_i64, message));
+        }
+        __panic_str("Fiber.Join observed a non-terminal outcome");
+    }
+
+    /// Consumes this handle and relinquishes its shutdown join obligation.
+    pub unit Detach() {
+        __fiber_detach(handle);
+        return;
+    }
+
+    /// Requests cancellation idempotently without consuming the handle.
+    pub unit Cancel() {
+        __fiber_cancel(handle, 0_i64);
+        return;
+    }
+}

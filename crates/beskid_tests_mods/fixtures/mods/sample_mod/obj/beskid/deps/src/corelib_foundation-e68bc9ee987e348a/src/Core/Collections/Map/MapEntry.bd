@@ -1,0 +1,6 @@
+/// Key/value pair stored in typed map-entry arrays.
+/// @tier(supported)
+pub type MapEntry<TKey, TValue> {
+    TKey key,
+    TValue value,
+}

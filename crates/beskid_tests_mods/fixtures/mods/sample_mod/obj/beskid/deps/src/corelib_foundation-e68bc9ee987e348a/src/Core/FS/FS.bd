@@ -1,0 +1,99 @@
+/// File system helper API backed by compiler-minted Corelib services.
+/// Types are split under `Core/FS/` with one type per file.
+/// @tier(supported)
+/// @ref(Core.Results.Result) envelopes for read/write helpers.
+
+use Core.FS.FsError;
+use Core.Results;
+
+Core.Results.Result<unit, FsError> MutationResult(i32 status, string path) {
+    if status == 0 {
+        return Result<unit, FsError>::Ok(());
+    }
+    if status == 1 {
+        return Result<unit, FsError>::Error(FsError::NotFound(path));
+    }
+    if status == 2 {
+        return Result<unit, FsError>::Error(FsError::PermissionDenied(path));
+    }
+    if status == 3 {
+        return Result<unit, FsError>::Error(FsError::IOError(path));
+    }
+    if status == 4 {
+        return Result<unit, FsError>::Error(FsError::InvalidPath(path));
+    }
+    if status == 5 {
+        return Result<unit, FsError>::Error(FsError::AlreadyExists(path));
+    }
+    return Result<unit, FsError>::Error(FsError::IOError(path));
+}
+
+pub Core.Results.Result<string, FsError> ReadAllText(string path) {
+    mut string text = "";
+    i32 status = __fs_read_text(path, text);
+    if status == 0 {
+        return Result<string, FsError>::Ok(text);
+    }
+    if status == 1 {
+        return Result<string, FsError>::Error(FsError::NotFound(path));
+    }
+    if status == 2 {
+        return Result<string, FsError>::Error(FsError::PermissionDenied(path));
+    }
+    if status == 3 {
+        return Result<string, FsError>::Error(FsError::IOError(path));
+    }
+    if status == 4 {
+        return Result<string, FsError>::Error(FsError::InvalidPath(path));
+    }
+    if status == 5 {
+        return Result<string, FsError>::Error(FsError::AlreadyExists(path));
+    }
+    return Result<string, FsError>::Error(FsError::IOError(path));
+}
+
+pub Core.Results.Result<unit, FsError> WriteAllText(string path, string text) {
+    i32 status = __fs_write_text(path, text);
+    return MutationResult(status, path);
+}
+
+pub Core.Results.Result<unit, FsError> Delete(string path) {
+    i32 status = __fs_delete(path);
+    return MutationResult(status, path);
+}
+
+pub Core.Results.Result<unit, FsError> CreateDirectory(string path) {
+    i32 status = __fs_mkdir(path);
+    return MutationResult(status, path);
+}
+
+pub Core.Results.Result<bool, FsError> Exists(string path) {
+    i32 status = __fs_exists(path);
+    if status == 0 {
+        return Result<bool, FsError>::Ok(true);
+    }
+    if status == 1 {
+        return Result<bool, FsError>::Ok(false);
+    }
+    if status == 2 {
+        return Result<bool, FsError>::Error(FsError::PermissionDenied(path));
+    }
+    if status == 3 {
+        return Result<bool, FsError>::Error(FsError::IOError(path));
+    }
+    if status == 4 {
+        return Result<bool, FsError>::Error(FsError::InvalidPath(path));
+    }
+    if status == 5 {
+        return Result<bool, FsError>::Error(FsError::AlreadyExists(path));
+    }
+    return Result<bool, FsError>::Error(FsError::IOError(path));
+}
+
+pub Core.Results.Result<unit, FsError> Copy(string source, string destination) {
+    Core.Results.Result<string, FsError> read = ReadAllText(source);
+    return match read {
+        Result::Ok(text) => WriteAllText(destination, text),
+        Result::Error(err) => Result<unit, FsError>::Error(err),
+    };
+}

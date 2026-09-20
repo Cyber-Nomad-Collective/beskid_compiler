@@ -1,0 +1,10 @@
+corelib_glue {
+  name = "corelib_glue"
+  version = "0.1.0"
+  root = "src"
+  readme = "readme.md"
+}
+
+target "GlueLib" {
+  kind = Lib
+}

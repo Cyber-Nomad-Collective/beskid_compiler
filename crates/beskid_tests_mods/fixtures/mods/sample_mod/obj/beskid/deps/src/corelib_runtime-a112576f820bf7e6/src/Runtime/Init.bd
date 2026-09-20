@@ -1,0 +1,7 @@
+/// Canonical runtime service initialization.
+/// ABI v5: host/runtime split; `RegisterHandlers()` remains a stable exported no-op for callers
+/// that still expect the `Runtime.Init` hook symbol (tests, generated stubs, older docs).
+
+pub i64 RegisterHandlers() {
+    return 0;
+}
