@@ -1151,6 +1151,28 @@ fn enum_match_ownership_environment(
     if definition.generics.is_empty() {
         return Ok(HashMap::new());
     }
+    if matches!(expression.scrutinee.node, beskid_analysis::syntax::Expression::Call(_)) {
+        let scrutinee = index
+            .direct_child_id(
+                program,
+                key.node,
+                beskid_analysis::syntax_query::DynNodeRef::from(expression.scrutinee.as_ref()),
+            )
+            .ok_or_else(|| SemanticError::unavailable("enum_match"))?;
+        let call = AstNodeKey { node: normalized_expression_node(index, scrutinee), ..key };
+        let GenericSourceTypeIdentity::Nominal { arguments, .. } = generic_source_expression_identity(db, call)? else {
+            return Err(SemanticError::unavailable("enum_match"));
+        };
+        if arguments.len() != definition.generics.len() {
+            return Err(SemanticError::unavailable("enum_match"));
+        }
+        return Ok(definition
+            .generics
+            .iter()
+            .zip(arguments.iter())
+            .map(|(parameter, argument)| (parameter.node.name.clone(), argument.managed_reference_kind()))
+            .collect());
+    }
     let Some(path) = enum_match_scrutinee_explicit_type_path(program, index, key, expression) else {
         // Other supported scrutinee shapes retain their existing conservative field inference.
         // In particular, pointer-shaped generic fields remain unavailable rather than guessed.
@@ -1255,27 +1277,11 @@ fn enum_layout_for_direct_call_result(
     db: &dyn Db,
     call: AstNodeKey,
 ) -> Result<(AstNodeKey, EnumLayoutFact), SemanticError> {
-    let instance = generic_specialization_instance_for_call(db, call)?;
-    let callable_syntax = db
-        .syntax_unit(instance.declaration.unit)
-        .filter(|syntax| syntax.accepts_key(db, instance.declaration))
-        .ok_or_else(|| SemanticError::unavailable("enum_match"))?;
-    let callable = callable_syntax
-        .syntax_index(db)
-        .node_at(callable_syntax.expanded_program(db), instance.declaration.node)
-        .ok_or_else(|| SemanticError::unavailable("enum_match"))?;
-    let return_type = callable
-        .of::<beskid_analysis::syntax::FunctionDefinition>()
-        .and_then(|function| function.return_type.as_ref())
-        .or_else(|| {
-            callable.of::<beskid_analysis::syntax::MethodDefinition>().and_then(|method| method.return_type.as_ref())
-        })
-        .ok_or_else(|| SemanticError::unavailable("enum_match"))?;
-    let beskid_analysis::syntax::Type::Complex(path) = &return_type.node else {
+    let identity = generic_source_expression_identity(db, call)?;
+    let GenericSourceTypeIdentity::Nominal { arguments, .. } = &identity else {
         return Err(SemanticError::unavailable("enum_match"));
     };
-    let declaration = resolve_type_declaration(db, instance.declaration, &path.node)
-        .ok_or_else(|| SemanticError::unavailable("enum_match"))?;
+    let declaration = enum_match_source_nominal_declaration(db, call, &identity)?;
     let enum_syntax = db
         .syntax_unit(declaration.unit)
         .filter(|syntax| syntax.accepts_key(db, declaration))
@@ -1296,26 +1302,20 @@ fn enum_layout_for_direct_call_result(
         )
         .map(|layout| (declaration, layout));
     }
-    let terminal = path.node.segments.last().ok_or_else(|| SemanticError::unavailable("enum_match"))?;
-    if terminal.node.type_args.len() != definition.generics.len() {
+    if arguments.len() != definition.generics.len() {
         return Err(SemanticError::unavailable("enum_match"));
     }
-    let callable_substitutions = instance
-        .substitutions
-        .iter()
-        .map(|substitution| (substitution.parameter.as_ref(), substitution.argument))
-        .collect::<HashMap<_, _>>();
     let substitutions = definition
         .generics
         .iter()
-        .zip(terminal.node.type_args.iter())
+        .zip(arguments.iter())
         .map(|(generic, argument)| {
-            let shape = specialized_call_result_argument_shape(
-                db,
-                instance.declaration,
-                &argument.node,
-                &callable_substitutions,
-            )?;
+            let shape = match argument {
+                GenericSourceTypeIdentity::Nominal { .. } => {
+                    AggregateFieldShape::Nominal(enum_match_source_nominal_declaration(db, call, argument)?)
+                }
+                _ => AggregateFieldShape::Scalar(argument.abi_type()),
+            };
             Ok((generic.node.name.clone(), shape))
         })
         .collect::<Result<HashMap<_, _>, SemanticError>>()?;
@@ -1330,18 +1330,36 @@ fn enum_layout_for_direct_call_result(
     .map(|layout| (declaration, layout))
 }
 
-fn specialized_call_result_argument_shape(
+/// Recover a proven nominal's declaration using its full identity and current generation.
+/// The terminal spelling only selects candidates; exact identity remains mandatory.
+fn enum_match_source_nominal_declaration(
     db: &dyn Db,
-    declaration: AstNodeKey,
-    syntax_type: &beskid_analysis::syntax::Type,
-    substitutions: &HashMap<&str, SemanticTypeId>,
-) -> Result<AggregateFieldShape, SemanticError> {
-    if let beskid_analysis::syntax::Type::Complex(path) = syntax_type
-        && let [segment] = path.node.segments.as_slice()
-        && segment.node.type_args.is_empty()
-        && let Some(argument) = substitutions.get(segment.node.name.node.name.as_str())
-    {
-        return Ok(AggregateFieldShape::Scalar(*argument));
+    key: AstNodeKey,
+    identity: &GenericSourceTypeIdentity,
+) -> Result<AstNodeKey, SemanticError> {
+    let GenericSourceTypeIdentity::Nominal { qualified_name, arguments } = identity else {
+        return Err(SemanticError::unavailable("enum_match"));
+    };
+    let name = qualified_name.rsplit("::").next().ok_or_else(|| SemanticError::unavailable("enum_match"))?;
+    let mut units = {
+        let registry = db.syntax_dependency_registry().lock().expect("syntax dependency registry");
+        registry
+            .modules
+            .iter()
+            .filter(|((generation, module), _)| {
+                *generation == key.generation && qualified_name.starts_with(&format!("{}::", module.join("::")))
+            })
+            .flat_map(|(_, units)| units.iter().copied())
+            .collect::<HashSet<_>>()
+    };
+    units.insert(key.unit);
+    let mut candidates = units.into_iter().filter_map(|unit| {
+        let declaration = super::common::unique_type_in_unit(db, unit, key.generation, name, arguments.len())?;
+        (stable_declaration_identity(db, declaration).as_ref() == Some(qualified_name)).then_some(declaration)
+    });
+    let declaration = candidates.next().ok_or_else(|| SemanticError::unavailable("enum_match"))?;
+    if candidates.next().is_some() {
+        return Err(SemanticError::unavailable("enum_match"));
     }
-    aggregate_shape_from_applied_type(db, declaration, syntax_type)
+    Ok(declaration)
 }

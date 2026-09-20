@@ -1,0 +1,37 @@
+use Concurrency.Fiber;
+use Concurrency.FiberError;
+use Core.Results;
+
+[Extern(Abi:"C")]
+pub contract Probe { unit gc_collect(); }
+
+FiberError ReturnCancellation() { return FiberError::Cancelled(73_i64, 91_i64); }
+FiberError ReturnOverflow() { return FiberError::StackOverflow(8388608_i64, 8388731_i64); }
+FiberError ReturnPanic() { return FiberError::Panicked(2_i64, "payload probe"); }
+i64 Points(bool correct) { if correct { return 42_i64; } return -1000_i64; }
+i64 Score(FiberError error) {
+    Probe.gc_collect();
+    return match error {
+        FiberError::Cancelled(reason, canceler) => Points(reason == 73_i64 && canceler == 91_i64),
+        FiberError::StackOverflow(limit, requested) => Points(limit == 8388608_i64 && requested == 8388731_i64),
+        FiberError::Panicked(code, message) => Points(code == 2_i64 && message == "payload probe"),
+    };
+}
+i64 ScorePanic(i64 code, string message) {
+    Probe.gc_collect();
+    return Points(code == 2_i64 && message == "payload probe");
+}
+
+i64 RunFiberErrorFixture() {
+    Fiber<FiberError> cancellation = spawn ReturnCancellation();
+    Fiber<FiberError> overflow = spawn ReturnOverflow();
+    Fiber<FiberError> panic = spawn ReturnPanic();
+    Probe.gc_collect();
+    i64 first = match cancellation.Join() { Result::Ok(error) => Score(error), _ => -1000_i64, };
+    i64 second = match overflow.Join() { Result::Ok(error) => Score(error), _ => -1000_i64, };
+    i64 third = match panic.Join() {
+        Result::Ok(FiberError::Panicked(code, message)) => ScorePanic(code, message),
+        _ => -1000_i64,
+    };
+    return first + second + third;
+}

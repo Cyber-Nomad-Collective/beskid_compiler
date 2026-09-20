@@ -16,6 +16,11 @@ fn source_fiber_values_survive_collection_in_jit_aot_and_native_kit() {
 }
 
 #[test]
+fn source_fiber_error_direct_join_matches_survive_collection_in_jit_aot_and_native_kit() {
+    source_transfer_fixture("fiber_error", "RunFiberErrorFixture", 126);
+}
+
+#[test]
 fn source_channel_values_survive_collection_in_jit_aot_and_native_kit() {
     source_transfer_fixture("channel", "RunChannelFixture", 126);
 }

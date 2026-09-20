@@ -58,6 +58,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Preserve source nominal identity and managed ownership when matching direct
+  generic call results, including nested FiberError payloads returned by Fiber.Join.
 - Make v1 materialized dependency roots portable across worktree locations and
   fail closed during LSP replay for malformed, duplicate, escaping, or
   untrusted lockfile entries.
