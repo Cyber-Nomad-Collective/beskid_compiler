@@ -15,9 +15,13 @@ fn foundation_utf8_rejects_non_scalar_and_non_shortest_sequences() {
 }
 
 #[test]
-// Intentionally RED until normative per-parameter static contract specialization exists.
 fn foundation_io_contract_dispatches_reader_implementation() {
     run_foundation_fixture("foundation_contract_dispatch.bd");
+}
+
+#[test]
+fn foundation_contract_witnesses_preserve_distinct_receivers_through_forwarding_and_collection() {
+    run_foundation_fixture("foundation_contract_witnesses.bd");
 }
 
 #[test]
@@ -46,7 +50,8 @@ fn foundation_copy_rejects_every_invalid_range_before_mutation() {
 }
 
 #[test]
-// Intentionally RED; keep the required public signatures, with no concrete fallback.
+// F6 remains RED at IO.bd:32: block-arm enum construction loses contextual Result arguments.
+// Static contract specialization and direct array-literal argument admission now pass.
 fn foundation_io_transfers_validate_ranges_and_handle_partial_eof_and_progress() {
     run_foundation_fixture("foundation_io.bd");
 }
@@ -155,8 +160,14 @@ fn foundation_numeric_panic_preserves_process_trap_code() {
 fn run_foundation_fixture(fixture: &str) {
     let compiler = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..").canonicalize().unwrap();
     let foundation = compiler.join("corelib/packages/foundation/src");
+    let concurrency = compiler.join("corelib/packages/concurrency/src");
     let fixtures = compiler.join("crates/beskid_engine/tests/fixtures");
     let mut paths = vec![(fixtures.join(fixture), fixture.to_owned())];
+    if fixture == "foundation_contract_witnesses.bd" {
+        for relative in ["Concurrency/Fiber.bd", "Concurrency/FiberError.bd"] {
+            paths.push((concurrency.join(relative), relative.to_owned()));
+        }
+    }
     for relative in [
         "Core/Results/Results.bd",
         "Core/Bytes/Slice.bd",
@@ -221,7 +232,10 @@ fn run_foundation_fixture(fixture: &str) {
     let assembly = Arc::new(ProgramAssembly::new(
         EffectiveCompilationRoots {
             host: RootEntry { dependency_name: None, source_root: fixtures },
-            dependencies: vec![RootEntry { dependency_name: Some("foundation".into()), source_root: foundation }],
+            dependencies: vec![
+                RootEntry { dependency_name: Some("foundation".into()), source_root: foundation },
+                RootEntry { dependency_name: Some("concurrency".into()), source_root: concurrency },
+            ],
         },
         Arc::new(units),
         0,

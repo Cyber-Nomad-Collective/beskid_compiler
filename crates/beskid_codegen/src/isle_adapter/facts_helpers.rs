@@ -10,25 +10,11 @@ impl SyntaxNodeFacts<'_> {
         service: beskid_abi::runtime_source::CorelibService,
     ) -> Option<(&'static str, SemanticTypeId)> {
         let dispatch = beskid_abi::runtime_source::canonical_corelib_service_value_dispatch(service)?;
-        let assembly = &self.input.typed_program().assembly;
-        let unit_index =
-            assembly.units.iter().position(|unit| unit.path.as_path() == key.unit.path(self.db).as_path())?;
-        let program = &assembly.units[unit_index].program;
-        let index = &assembly.syntax_indexes[unit_index];
-        let call = index.node_at(program, key.node)?.of::<beskid_analysis::syntax::CallExpression>()?;
-        let beskid_analysis::syntax::Expression::Path(callee) = &call.callee.node else { return None };
-        let [terminal] = callee.node.path.node.segments.as_slice() else { return None };
-        let [argument] = terminal.node.type_args.as_slice() else { return None };
-        let beskid_analysis::syntax::Type::Complex(argument_path) = &argument.node else { return None };
-        let [parameter] = argument_path.node.segments.as_slice() else { return None };
-        if !parameter.node.type_args.is_empty() {
-            return None;
-        }
-        let binding = self
-            .current_item_specialization()?
-            .substitutions
-            .iter()
-            .find(|binding| binding.parameter.as_ref() == parameter.node.name.node.name.as_str())?;
+        let binding = self.query(beskid_queries::specialized_corelib_value_service_result(
+            self.db,
+            key,
+            self.current_item_specialization()?,
+        ))?;
         select_typed_corelib_value_service(dispatch, binding.managed_reference_kind(), binding.argument)
     }
 
@@ -36,6 +22,9 @@ impl SyntaxNodeFacts<'_> {
     /// lowered. Generic parameter paths must use their concrete source substitution: their
     /// pointer-shaped ABI alone cannot distinguish a managed nominal/string from a native pointer.
     pub(super) fn managed_reference_in_context(&self, key: AstNodeKey) -> Option<ManagedReferenceFact> {
+        if let Some(receiver) = self.query(nominal_member_receiver(self.db, key)) {
+            return self.managed_reference_in_context(receiver);
+        }
         if self.typed_array_plan(key).is_some() || self.query(implicit_method_receiver(self.db, key)).is_some() {
             return Some(ManagedReferenceFact::GcManaged);
         }
@@ -470,8 +459,10 @@ impl SyntaxNodeFacts<'_> {
         if self.query(implicit_method_receiver(self.db, key)).is_some() {
             return Some(SemanticTypeId::POINTER);
         }
-        if self.query(generic_call_template(self.db, key)).is_some() {
-            return Some(self.generic_call_specialization_in_context(key)?.signature.result);
+        if self.query(node_kind(self.db, key)) == Some(beskid_queries::IndexedNodeKind::CallExpression)
+            && let Some(instance) = self.generic_call_specialization_in_context(key)
+        {
+            return Some(instance.signature.result);
         }
         if self.query(node_kind(self.db, key)) == Some(beskid_queries::IndexedNodeKind::CallExpression)
             && let Some(signature) = self.query(call_abi_signature(self.db, key))

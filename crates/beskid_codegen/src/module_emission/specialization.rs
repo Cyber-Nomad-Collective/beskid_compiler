@@ -8,7 +8,7 @@ use beskid_queries::{
 };
 
 use super::contracts::{SyntaxModuleEmissionError, emission_verification};
-use super::items::{ResolvedSyntaxModuleItem, SyntaxModuleItem};
+use super::items::{ResolvedSyntaxModuleItem, SyntaxModuleItem, syntax_item_symbol};
 use super::trace::{format_declaration_for_trace, trace_key};
 use crate::CodegenInput;
 
@@ -44,8 +44,33 @@ pub(super) fn resolve_module_items(
         })?;
     }
 
+    // Witness resolution discovers concrete implementation bodies after source reachability.
+    // Add those bodies and their ordinary direct dependencies to this same module worklist.
+    let mut source_items = source_items.to_vec();
+    let mut present = source_items.iter().map(|item| item.key).collect::<std::collections::HashSet<_>>();
+    let mut pending = specializations.keys().copied().collect::<Vec<_>>();
+    while let Some(key) = pending.pop() {
+        if !present.insert(key) {
+            continue;
+        }
+        source_items.push(SyntaxModuleItem {
+            key,
+            symbol: syntax_item_symbol(input, key)
+                .ok_or_else(|| emission_verification("specialization declaration symbol is unavailable"))?,
+        });
+        if is_concrete_executable_item(db, key)? {
+            collect_generic_call_specializations(db, key, &mut specializations)?;
+        }
+        pending.extend(
+            beskid_queries::direct_callees(db, key)
+                .map_err(|error| emission_verification(error.to_string()))?
+                .into_iter()
+                .flat_map(|callees| callees.iter().copied().collect::<Vec<_>>()),
+        );
+        pending.extend(specializations.keys().filter(|key| !present.contains(key)).copied());
+    }
     let mut resolved = Vec::with_capacity(source_items.len());
-    for item in source_items {
+    for item in &source_items {
         if item_abi_signature(db, item.key).ok().flatten().is_some() {
             resolved.push(ResolvedSyntaxModuleItem {
                 key: item.key,
@@ -53,7 +78,6 @@ pub(super) fn resolve_module_items(
                 callee: DirectCallee::item(item.key),
                 specialization: None,
             });
-            continue;
         }
         let kind = node_kind(db, item.key).map_err(|error| emission_verification(error.to_string()))?;
         if !matches!(
@@ -75,6 +99,11 @@ pub(super) fn resolve_module_items(
             continue;
         };
         for specialization in signatures {
+            // Conformance can select an ordinary concrete method. Its declaration-level item
+            // above is already the sole executable body; no duplicate specialization is needed.
+            if specialization.substitutions.is_empty() && specialization.contract_witnesses.is_empty() {
+                continue;
+            }
             let identity = generic_specialization_identity(specialization);
             resolved.push(ResolvedSyntaxModuleItem {
                 key: item.key,
@@ -156,17 +185,31 @@ fn collect_generic_call_specializations_in_environment(
             }
         }
     }
-    if let Some(declaration) = direct_generic_call_declaration(db, key).map_err(|error| {
-        emission_verification(format!(
-            "generic call analysis failed at {}: {error}",
-            beskid_queries::format_ast_node_site(db, key)
-        ))
-    })? {
-        let environment_specialization = environment
+    let environment_specialization = if node_kind(db, key).map_err(|error| emission_verification(error.to_string()))?
+        == Some(beskid_queries::IndexedNodeKind::CallExpression)
+        && matches!(call_lowering(db, key), Ok(Some(CallLowering::Direct(_))))
+    {
+        environment
             .map(|enclosing| generic_call_specialization_in_environment(db, key, enclosing))
             .transpose()
-            .map_err(|error| emission_verification(error.to_string()))?
-            .flatten();
+            .map_err(|error| {
+                emission_verification(format!(
+                    "call specialization failed at {}: {error}",
+                    beskid_queries::format_ast_node_site(db, key)
+                ))
+            })?
+            .flatten()
+    } else {
+        None
+    };
+    if let Some(declaration) = environment_specialization.as_ref().map(|instance| instance.declaration).or(
+        direct_generic_call_declaration(db, key).map_err(|error| {
+            emission_verification(format!(
+                "generic call analysis failed at {}: {error}",
+                beskid_queries::format_ast_node_site(db, key)
+            ))
+        })?,
+    ) {
         let specialization = if let Some(specialization) = environment_specialization {
             specialization
         } else {
@@ -251,8 +294,8 @@ fn direct_generic_call_declaration(
     }
     match item_abi_signature(db, declaration) {
         Ok(Some(_)) => Ok(None),
-        // Function definitions are ABI-less only when generic. The generic call fact below
-        // must now prove one exact ABI shape, otherwise the caller is rejected fail-closed.
+        // Positively classified generic/contract templates are ABI-less. The call fact must
+        // prove one exact specialization, otherwise the caller is rejected fail-closed.
         Ok(None) => Ok(Some(declaration)),
         // An unavailable ABI on a non-generic declaration is not evidence of specialization.
         // It must remain unavailable rather than entering this collector under a false identity.

@@ -43,7 +43,11 @@ pub(in crate::semantic_contract) fn generic_call_specialization_tracked(
                 return None;
             }
         };
-        generic_callable_parameters(db, declaration)?;
+        if generic_callable_parameters(db, declaration).is_none()
+            && contract_parameter_declarations(db, declaration).is_empty()
+        {
+            return None;
+        }
         let instance = match generic_specialization_instance_for_call(db, key) {
             Ok(instance) => instance,
             Err(error) => return Some(Err(error)),
@@ -52,6 +56,7 @@ pub(in crate::semantic_contract) fn generic_call_specialization_tracked(
             declaration: instance.declaration,
             signature: instance.signature,
             substitutions: instance.substitutions,
+            contract_witnesses: instance.contract_witnesses,
         }))
     })?
     .transpose()
@@ -346,6 +351,14 @@ fn generic_source_callable_result_identity(
         .syntax_index(db)
         .node_at(syntax.expanded_program(db), declaration.node)
         .ok_or_else(|| SemanticError::unavailable("source_expression_type"))?;
+    if let Some(signature) = node.of::<beskid_analysis::syntax::ContractMethodSignature>() {
+        return signature
+            .return_type
+            .as_ref()
+            .map_or(Ok(GenericSourceTypeIdentity::Abi(SemanticTypeId::UNIT)), |result| {
+                generic_source_type_identity(db, declaration, &result.node)
+            });
+    }
     let result = node
         .of::<beskid_analysis::syntax::FunctionDefinition>()
         .and_then(|function| function.return_type.as_ref())

@@ -11,12 +11,71 @@ use beskid_analysis::projects::{
 use beskid_analysis::services::parse_program;
 use beskid_analysis::syntax_query::{NodeKind, SyntaxIndex};
 use beskid_queries::{
-    AstNodeKey, BeskidDatabase, ProjectSession, SemanticTypeId, SourceUnitId, SyntaxGenerationId,
-    abi_type, build_canonical_corelib_syscall_typed_program, build_typed_program_with_corelib_services,
+    AstNodeKey, BeskidDatabase, ProjectSession, SemanticTypeId, SourceUnitId, SyntaxGenerationId, abi_type,
+    build_canonical_corelib_syscall_typed_program, build_typed_program_with_corelib_services,
     build_typed_program_with_corelib_syscall_services, call_abi_signature, call_lowering, primitive_numeric_conversion,
     runtime_intrinsic, value_abi_type,
 };
 use std::sync::Arc;
+
+#[test]
+fn typed_value_service_preserves_source_result_and_rejects_native_pointer_payloads() {
+    let logical = "Concurrency/Fiber.bd";
+    let source = canonical_corelib_service_sources().into_iter().find(|source| source.logical_path == logical).unwrap();
+    let path = canonical_corelib_service_source_path(logical).unwrap();
+    let program = parse_program(&source.source).unwrap();
+    let generation = SyntaxGenerationId(76);
+    let index = SyntaxIndex::from_program(&program, generation);
+    let target = TargetMetadata::supported()
+        .into_iter()
+        .find(|target| target.triple.as_str() == "x86_64-unknown-linux-gnu")
+        .unwrap();
+    let manifest = AbiManifestV5::canonical_runtime(target);
+    let mut db = BeskidDatabase::default();
+    let source_root = path.ancestors().nth(2).unwrap().to_path_buf();
+    let project = ProjectSession::new(&db, source_root.clone(), path.clone(), "concurrency".into(), "test".into());
+    let assembly = Arc::new(ProgramAssembly::new(
+        EffectiveCompilationRoots { host: RootEntry { dependency_name: None, source_root }, dependencies: Vec::new() },
+        Arc::new(vec![SourceUnit { path: path.clone(), logical_name: logical.into(), source: source.source, program }]),
+        0,
+        AssemblyDiscovery::ImportClosure,
+        Arc::new(ModuleIndex::empty()),
+        false,
+        generation,
+    ));
+    build_typed_program_with_corelib_services(
+        &mut db,
+        project,
+        generation,
+        assembly,
+        canonical_corelib_service_capability(&manifest).unwrap(),
+    )
+    .unwrap();
+    let unit = SourceUnitId::new(&db, path);
+    let call = index.ids_of_kind(NodeKind::CallExpression).map(|node| AstNodeKey { unit, generation, node })
+        .find(|key| matches!(call_lowering(&db, *key), Ok(Some(beskid_queries::CallLowering::CorelibService(service))) if service.name == "__fiber_join_value")).unwrap();
+    let declaration = key(unit, generation, &index, NodeKind::MethodDefinition, 0);
+    for source_type in [SemanticTypeId::I64, SemanticTypeId::STRING, SemanticTypeId::POINTER] {
+        let enclosing = beskid_queries::GenericSpecializationInstance {
+            declaration,
+            declaration_identity: "Concurrency.Fiber.Join".into(),
+            signature: beskid_queries::ItemSignature { parameters: Arc::from([]), result: source_type },
+            substitutions: Arc::from([beskid_queries::GenericSubstitution::inferred("T", source_type)]),
+            contract_witnesses: Arc::from([]),
+        };
+        let result = beskid_queries::specialized_corelib_value_service_result(&db, call, &enclosing);
+        if source_type == SemanticTypeId::POINTER {
+            assert!(result.unwrap_err().to_string().contains("proven managed source identity"));
+        } else {
+            assert_eq!(result.unwrap().unwrap().argument, source_type);
+        }
+        assert_eq!(
+            call_abi_signature(&db, call).unwrap().unwrap().result,
+            SemanticTypeId::U8,
+            "transport ABI remains status-only"
+        );
+    }
+}
 
 #[test]
 fn runtime_intrinsic_uses_the_manifest_owned_builtin_index() {

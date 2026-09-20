@@ -340,6 +340,9 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
             return None;
         };
         if let Some(specialization) = self.generic_call_specialization_in_context(key) {
+            if specialization.substitutions.is_empty() && specialization.contract_witnesses.is_empty() {
+                return Some(DirectCallee::item(specialization.declaration));
+            }
             return Some(DirectCallee::specialized_item(
                 specialization.declaration,
                 specialization_identity(&specialization),
@@ -508,7 +511,7 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
             return self.isa.map(|isa| isa.pointer_type());
         }
         if self.node_kind(key) == Some(NodeKind::ArrayLiteralExpression) {
-            return self.isa.map(|isa| isa.pointer_type());
+            return map_signature_type(self.isa?, self.query(abi_type(self.db, key))?);
         }
         if self.node_kind(key) == Some(NodeKind::EnumLiteralExpression)
             && (self.query(enum_constructor(self.db, key)).is_some()

@@ -22,6 +22,8 @@ pub(in crate::semantic_contract) fn call_lowering_for_node(
                 Ok(CallLowering::Direct(declaration))
             } else if let Some((declaration, _)) = nominal_local_member_receiver(db, program, index, key, path) {
                 Ok(CallLowering::Direct(declaration))
+            } else if let Some(receiver) = contract_member_receiver(db, program, index, key, path) {
+                receiver.map(|(method, _)| CallLowering::Direct(method))
             } else if path.segments.iter().any(|segment| !segment.node.type_args.is_empty()) {
                 if let Some(instantiation) = generic_call_instantiation_for_node(db, program, index, key, path) {
                     Ok(CallLowering::Direct(instantiation.declaration))
@@ -323,7 +325,12 @@ pub(in crate::semantic_contract) fn nominal_member_receiver_tracked(
 ) -> SemanticQueryResult<AstNodeKey> {
     with_node(db, syntax, key, |program, index, node| {
         let path = node.of::<beskid_analysis::syntax::PathExpression>()?;
-        nominal_local_member_receiver(db, program, index, key, &path.path.node).map(|(_, receiver)| Ok(receiver))
+        nominal_local_member_receiver(db, program, index, key, &path.path.node)
+            .map(|(_, receiver)| Ok(receiver))
+            .or_else(|| {
+                contract_member_receiver(db, program, index, key, &path.path.node)
+                    .map(|receiver| receiver.map(|(_, receiver)| receiver))
+            })
     })?
     .transpose()
 }

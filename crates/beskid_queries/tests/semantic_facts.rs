@@ -24,6 +24,8 @@ mod imported_generics;
 #[rustfmt::skip]
 #[path = "semantic_facts/generic_inference.rs"]
 mod generic_inference;
+#[path = "semantic_facts/contract_specialization.rs"]
+mod contract_specialization;
 #[rustfmt::skip]
 #[path = "semantic_facts/node_enum_typing.rs"]
 mod node_enum_typing;

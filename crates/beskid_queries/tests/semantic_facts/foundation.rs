@@ -114,6 +114,7 @@ fn generic_specialization_identity_is_reproducible_across_syntax_generations() {
     let db = BeskidDatabase::default();
     let unit = SourceUnitId::new(&db, PathBuf::from("/tmp/project/src/Generic.bd"));
     let instance = |generation| GenericSpecializationInstance {
+        contract_witnesses: Arc::from([]),
         declaration: AstNodeKey {
             unit,
             generation: SyntaxGenerationId(generation),

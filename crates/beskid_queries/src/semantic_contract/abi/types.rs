@@ -212,6 +212,11 @@ pub(in crate::semantic_contract) fn abi_type_tracked(
     key: AstNodeKey,
 ) -> SemanticQueryResult<SemanticTypeId> {
     with_node(db, syntax, key, |program, index, node| {
+        if node.of::<beskid_analysis::syntax::ArrayLiteralExpression>().is_some() {
+            // Array values have one managed-pointer representation, independently of the
+            // element representation validated by array construction/lowering.
+            return Some(Ok(SemanticTypeId::POINTER));
+        }
         if node.of::<beskid_analysis::syntax::SpawnExpression>().is_some() {
             return Some(spawn_handle_type(db, key).and_then(|fact| {
                 fact.map(|_| SemanticTypeId::POINTER).ok_or_else(|| SemanticError::unavailable("abi_type"))
@@ -250,7 +255,9 @@ pub(in crate::semantic_contract) fn abi_type_tracked(
         if let Some(path) = node.of::<beskid_analysis::syntax::PathExpression>() {
             return Some(abi_type_for_local_path(db, program, index, key, &path.path.node));
         }
-        if node.of::<beskid_analysis::syntax::AssignExpression>().is_some() {
+        if node.of::<beskid_analysis::syntax::AssignExpression>().is_some()
+            || node.of::<beskid_analysis::syntax::IndexExpression>().is_some()
+        {
             // An index assignment is expression-valued only after the same declared-array fact
             // that authorizes its element store proves the destination representation. Other
             // assignment shapes intentionally retain no syntax ABI fact here.
@@ -350,7 +357,7 @@ pub(in crate::semantic_contract) fn abi_type_for_expression(
     use beskid_analysis::syntax::Expression;
 
     match expression {
-        Expression::Spawn(_) => {
+        Expression::Spawn(_) | Expression::ArrayLiteral(_) => {
             let spawn = normalized_expression_node(index, key.node);
             abi_type(db, AstNodeKey { node: spawn, ..key })?.ok_or_else(|| SemanticError::unavailable("abi_type"))
         }
@@ -362,6 +369,11 @@ pub(in crate::semantic_contract) fn abi_type_for_expression(
                 return Err(SemanticError::unavailable("abi_type"));
             }
             abi_type(db, AstNodeKey { node: inner, ..key })?.ok_or_else(|| SemanticError::unavailable("abi_type"))
+        }
+        Expression::Index(_) => {
+            let indexed = normalized_expression_node(index, key.node);
+            array_index_element_abi_type(db, AstNodeKey { node: indexed, ..key })?
+                .ok_or_else(|| SemanticError::unavailable("abi_type"))
         }
         Expression::Call(call) => {
             let call = index

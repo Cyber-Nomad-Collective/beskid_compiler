@@ -568,6 +568,19 @@ pub struct GenericCallSpecialization {
     /// environment with the identity is what lets a later body walk substitute `T` in a nested
     /// generic call instead of lowering the declaration once as though `T` were concrete.
     pub substitutions: Arc<[GenericSubstitution]>,
+    pub contract_witnesses: Arc<[ContractParameterWitness]>,
+}
+
+/// A proven conformance for one callable parameter, not one contract name.
+/// These facts exist only during compilation; the argument retains its original value.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub struct ContractParameterWitness {
+    pub parameter: AstNodeKey,
+    pub position: u32,
+    pub contract: AstNodeKey,
+    pub concrete: AstNodeKey,
+    pub(in crate::semantic_contract) source_identity: GenericSourceTypeIdentity,
+    pub(in crate::semantic_contract) methods: Arc<[(AstNodeKey, AstNodeKey)]>,
 }
 
 /// Exact source-backed application of a generic nominal method receiver.
@@ -668,6 +681,7 @@ pub struct GenericSpecializationInstance {
     pub declaration_identity: Arc<str>,
     pub signature: ItemSignature,
     pub substitutions: Arc<[GenericSubstitution]>,
+    pub contract_witnesses: Arc<[ContractParameterWitness]>,
 }
 
 /// A nested generic call whose source type arguments refer to the enclosing declaration's
@@ -697,6 +711,11 @@ pub fn generic_specialization_identity(instance: &GenericSpecializationInstance)
         identity.push(u32::try_from(binding.parameter.len()).unwrap_or(u32::MAX));
         identity.extend(binding.parameter.bytes().map(u32::from));
         append_generic_source_type_identity(&mut identity, &binding.source_identity);
+    }
+    identity.push(u32::try_from(instance.contract_witnesses.len()).unwrap_or(u32::MAX));
+    for witness in instance.contract_witnesses.iter() {
+        identity.push(witness.position);
+        append_generic_source_type_identity(&mut identity, &witness.source_identity);
     }
     identity.push(u32::MAX);
     identity.extend(instance.signature.parameters.iter().map(|semantic| semantic.0));

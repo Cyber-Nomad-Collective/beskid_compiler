@@ -101,7 +101,8 @@ pub(in crate::semantic_contract) fn call_arguments_tracked(
             };
             arguments.push(AstNodeKey { node: normalized_expression_node(index, callee), ..key });
         } else if let beskid_analysis::syntax::Expression::Path(path) = &call.callee.node
-            && nominal_local_member_receiver(db, program, index, key, &path.node.path.node).is_some()
+            && (nominal_local_member_receiver(db, program, index, key, &path.node.path.node).is_some()
+                || contract_member_receiver(db, program, index, key, &path.node.path.node).is_some())
         {
             let Some(callee) = index.direct_child_id(
                 program,

@@ -34,6 +34,32 @@ fn retired_public_codegen_facade_is_absent() {
     }
 }
 
+#[test]
+fn contract_specialization_module_admission_rejects_unproved_calls_and_hidden_members() {
+    for (implementation, body) in [
+        ("type Source { pub i64 Read() { return 1_i64; } }", "return reader.Read();"),
+        ("type Source: Reader {}", "return reader.Read();"),
+        ("type Source: Reader { i64 Read() { return 1_i64; } }", "return reader.Read();"),
+        ("type Source: Reader { pub i32 Read() { return 1; } }", "return reader.Read();"),
+        (
+            "type Source: Reader { pub i64 Read() { return 1_i64; } pub i64 Reset() { return 2_i64; } }",
+            "return reader.Reset();",
+        ),
+    ] {
+        let source = format!(
+            "contract Reader {{ i64 Read(); }} {implementation} i64 ReadOne(Reader reader) {{ {body} }} i64 Main() {{ return ReadOne(Source {{}}); }}"
+        );
+        let root = tempfile::tempdir().unwrap();
+        let assembly = parse_production_units(root.path(), &[("Main.bd", "Main.bd", &source)]);
+        let (target, isa) = x86_64_target_and_isa();
+        let mut db = beskid_queries::BeskidDatabase::default();
+        assert!(
+            lower_syntax_assembly_entrypoint(&mut db, assembly, "Main", target, isa.as_ref()).is_err(),
+            "invalid contract call must not emit: {source}"
+        );
+    }
+}
+
 fn parse_production_units(root: &std::path::Path, units: &[(&str, &str, &str)]) -> Arc<ProgramAssembly> {
     let mut source_units = Vec::with_capacity(units.len());
     for (relative_path, logical_name, source) in units {

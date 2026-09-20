@@ -20,6 +20,7 @@ mod calls;
 mod cleanup;
 mod closures_spawn;
 mod completion;
+mod contracts;
 mod layouts;
 mod locals;
 mod model;
@@ -72,6 +73,10 @@ use closures_spawn::{
     runtime_intrinsic_name_tracked, runtime_intrinsic_tracked, spawn_entry_operand, spawn_entry_validation_tracked,
     spawn_handle_type_tracked, spawn_legality_tracked, spawn_stack_capture, spawn_target_tracked,
 };
+use contracts::{
+    contract_member_receiver, contract_method_specialization, contract_parameter_declarations,
+    contract_witnesses_for_call, specialized_source_expression_identity,
+};
 use layouts::{
     abi_local_declaration_type, abi_type_for_direct_aggregate_field_projection, abi_type_for_local_path,
     aggregate_field_access_tracked, aggregate_field_layout, aggregate_layout_from_definition, aggregate_layout_tracked,
@@ -91,6 +96,7 @@ use locals::{
     local_slot_tracked, mutable_local_assignment_tracked, nearest_ancestor, parent_node, resolve_lexical_declaration,
     resolved_local_tracked,
 };
+use model::ContractParameterWitness;
 use model::GenericSourceTypeIdentity;
 use queries::with_registered_syntax;
 use resolution::{
@@ -117,6 +123,7 @@ use typing::{
 
 pub use abi::{
     generic_call_specialization_in_environment, generic_call_specialization_instance, generic_specialization_instance,
+    specialized_corelib_value_service_result,
 };
 pub use calls::extern_contract_import_for_declaration;
 pub use completion::{

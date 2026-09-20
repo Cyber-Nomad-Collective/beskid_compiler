@@ -109,6 +109,7 @@ unit Main() {
     assert_eq!(
         generic_call_specialization(&db, call).expect("generic direct-field specialization"),
         Some(beskid_queries::GenericCallSpecialization {
+            contract_witnesses: Arc::from([]),
             declaration: key(unit, generation, &index, NodeKind::FunctionDefinition, 0),
             signature: ItemSignature {
                 parameters: Arc::from([SemanticTypeId::I64, SemanticTypeId::I64]),

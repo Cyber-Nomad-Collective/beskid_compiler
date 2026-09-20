@@ -220,6 +220,9 @@ fn managed_reference_kind_for_callable_result(
         .and_then(|function| function.return_type.as_ref())
         .or_else(|| {
             node.of::<beskid_analysis::syntax::MethodDefinition>().and_then(|method| method.return_type.as_ref())
+        })
+        .or_else(|| {
+            node.of::<beskid_analysis::syntax::ContractMethodSignature>().and_then(|method| method.return_type.as_ref())
         });
     let Some(return_type) = return_type else {
         return Some(Ok(ManagedReferenceKind::NativeOrScalar));

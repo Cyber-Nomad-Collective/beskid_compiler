@@ -8,6 +8,7 @@ mod types;
 
 pub use specialization::{
     generic_call_specialization_in_environment, generic_call_specialization_instance, generic_specialization_instance,
+    specialized_corelib_value_service_result,
 };
 
 pub(in crate::semantic_contract) use control_flow::{

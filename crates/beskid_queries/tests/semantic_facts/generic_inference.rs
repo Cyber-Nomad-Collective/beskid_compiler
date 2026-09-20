@@ -111,6 +111,7 @@ Entry<TKey, TValue>[] Entries<TKey, TValue>() { return Empty<Entry<TKey, TValue>
         .find(|call| matches!(call_lowering(&db, *call), Ok(Some(CallLowering::Direct(_)))))
         .expect("nested Empty<Entry<TKey, TValue>> call");
     let enclosing = beskid_queries::GenericSpecializationInstance {
+        contract_witnesses: Arc::from([]),
         declaration: entries,
         declaration_identity: Arc::from("Entries"),
         signature: ItemSignature { parameters: Arc::from([]), result: SemanticTypeId::POINTER },
@@ -154,6 +155,7 @@ unit Main() {
         .iter()
         .map(|specialization| {
             generic_specialization_identity(&beskid_queries::GenericSpecializationInstance {
+                contract_witnesses: Arc::from([]),
                 declaration: specialization.declaration,
                 declaration_identity: Arc::from("Use"),
                 signature: specialization.signature.clone(),
@@ -194,6 +196,7 @@ unit Main() { Consume<Choice>(Choice::Left()); }
 
     assert_eq!(specialization.substitutions[0].argument, SemanticTypeId::POINTER);
     let identity = generic_specialization_identity(&beskid_queries::GenericSpecializationInstance {
+        contract_witnesses: Arc::from([]),
         declaration: specialization.declaration,
         declaration_identity: Arc::from("Consume"),
         signature: specialization.signature,
@@ -233,6 +236,7 @@ unit Main() {
         .into_iter()
         .map(|specialization| {
             generic_specialization_identity(&beskid_queries::GenericSpecializationInstance {
+                contract_witnesses: Arc::from([]),
                 declaration: specialization.declaration,
                 declaration_identity: Arc::from("Use"),
                 signature: specialization.signature,
@@ -267,6 +271,7 @@ unit Main() {
                 .expect("inferred enum specialization query")
                 .expect("inferred enum specialization");
             generic_specialization_identity(&beskid_queries::GenericSpecializationInstance {
+                contract_witnesses: Arc::from([]),
                 declaration: specialization.declaration,
                 declaration_identity: Arc::from("Use"),
                 signature: specialization.signature,
@@ -315,6 +320,7 @@ unit Main(Outer<Left> left, Outer<Right> right) {
         .into_iter()
         .map(|specialization| {
             generic_specialization_identity(&beskid_queries::GenericSpecializationInstance {
+                contract_witnesses: Arc::from([]),
                 declaration: specialization.declaration,
                 declaration_identity: Arc::from("Project"),
                 signature: specialization.signature,
@@ -432,6 +438,7 @@ unit Main() { Equal(1, 1, "because"); return; }
     assert_eq!(
         generic_call_specialization(&db, call).expect("inferred generic specialization"),
         Some(beskid_queries::GenericCallSpecialization {
+            contract_witnesses: Arc::from([]),
             declaration: key(unit, generation, &index, NodeKind::FunctionDefinition, 0),
             signature: ItemSignature {
                 parameters: Arc::from([SemanticTypeId::I32, SemanticTypeId::I32, SemanticTypeId::STRING,]),
@@ -461,6 +468,7 @@ unit Main(Result<string, string> result) {
     assert_eq!(
         generic_call_specialization(&db, call).expect("pattern-binding generic specialization"),
         Some(beskid_queries::GenericCallSpecialization {
+            contract_witnesses: Arc::from([]),
             declaration: equal,
             signature: ItemSignature {
                 parameters: Arc::from([SemanticTypeId::STRING, SemanticTypeId::STRING, SemanticTypeId::STRING]),
@@ -498,6 +506,7 @@ unit Main(List<i64> list) { list.Echo(1_i64); }
     assert_eq!(
         generic_call_specialization(&db, call).expect("generic nominal method specialization"),
         Some(beskid_queries::GenericCallSpecialization {
+            contract_witnesses: Arc::from([]),
             declaration: method,
             signature: ItemSignature {
                 parameters: Arc::from([SemanticTypeId::POINTER, SemanticTypeId::I64]),
@@ -570,6 +579,7 @@ unit Main() { Equal(Position(), -1, "negative position"); return; }
     assert_eq!(
         generic_call_specialization(&db, call).expect("negative-literal generic specialization"),
         Some(beskid_queries::GenericCallSpecialization {
+            contract_witnesses: Arc::from([]),
             declaration: key(unit, generation, &index, NodeKind::FunctionDefinition, 1),
             signature: ItemSignature {
                 parameters: Arc::from([SemanticTypeId::I64, SemanticTypeId::I64, SemanticTypeId::STRING,]),
