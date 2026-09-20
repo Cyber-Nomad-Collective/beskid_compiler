@@ -56,9 +56,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Share array-literal and indexed-element ABI facts between semantic validation and
   code generation, and distinguish typed Corelib service source results from their
   status/out-slot transport ABI during nested generic specialization.
-- Execute the original Reader dispatch and mixed-reader forwarding regressions.
-  Core.IO transfer coverage remains blocked by contextual enum construction in
-  block-bodied match arms; this does not complete F6.
+- Execute the original Reader dispatch, mixed-reader forwarding, and Core.IO
+  transfer regressions. Contextual generic enum construction now follows only
+  proven block-result and match-arm value edges, never non-final statements or
+  match scrutinees; this does not complete the remaining F6 close/cleanup gates.
 - Preserve numeric process-panic trap codes through the canonical runtime while
   retaining child-fiber `Panicked` code 2; authorize byte-copy bounds failures
   through the existing `__panic` service without introducing another trap ABI.

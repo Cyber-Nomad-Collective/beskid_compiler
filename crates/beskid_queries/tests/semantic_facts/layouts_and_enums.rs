@@ -640,6 +640,73 @@ unit Main() {
 }
 
 #[test]
+fn enum_constructor_in_block_match_arm_uses_the_enclosing_return_annotation() {
+    let source = r#"
+enum Result<TValue, TError> { Ok(TValue value), Error(TError error) }
+Result<i64, string> Forward(Result<i64, string> result) {
+    return match result {
+        Result::Error(error) => { Result::Error(error); },
+        Result::Ok(completed) => {
+            Result::Ok(completed);
+        },
+    };
+}
+"#;
+    let (db, _project, unit, generation, index) = setup(source);
+    let ok = key(unit, generation, &index, NodeKind::EnumConstructorExpression, 1);
+
+    let layout = enum_layout(&db, ok)
+        .expect("block-arm constructor layout query")
+        .expect("the enclosing typed return must instantiate Result in the block arm");
+    assert_eq!(layout.variants.len(), 2);
+    assert_eq!(layout.variants[0].fields.len(), 1);
+    assert_eq!(layout.variants[0].fields[0].1, AggregateFieldShape::Scalar(SemanticTypeId::I64));
+}
+
+#[test]
+fn enum_constructor_in_nonfinal_block_statement_has_no_enclosing_result_context() {
+    let source = r#"
+enum Result<TValue, TError> { Ok(TValue value), Error(TError error) }
+Result<i64, string> Forward(Result<i64, string> result) {
+    return match result {
+        Result::Error(error) => { Result::Error(error); 0_i64; },
+        Result::Ok(completed) => {
+            Result::Ok(completed);
+            0_i64;
+        },
+    };
+}
+"#;
+    let (db, _project, unit, generation, index) = setup(source);
+    let ok = key(unit, generation, &index, NodeKind::EnumConstructorExpression, 1);
+
+    assert!(
+        enum_layout(&db, ok).is_err(),
+        "a non-final block statement must not inherit a match or function result annotation"
+    );
+}
+
+#[test]
+fn enum_constructor_in_match_scrutinee_has_no_match_result_context() {
+    let source = r#"
+enum Result<TValue, TError> { Ok(TValue value), Error(TError error) }
+Result<i64, string> Forward() {
+    return match Result::Ok(7_i64) {
+        Result::Error(error) => Result::Error(error),
+        Result::Ok(completed) => Result::Ok(completed),
+    };
+}
+"#;
+    let (db, _project, unit, generation, index) = setup(source);
+    let scrutinee = key(unit, generation, &index, NodeKind::EnumConstructorExpression, 0);
+
+    assert!(
+        enum_layout(&db, scrutinee).is_err(),
+        "a match scrutinee must not inherit the result type reserved for its arm bodies"
+    );
+}
+
+#[test]
 fn enum_match_keeps_source_ordered_nullary_variant_arms() {
     let source = "enum Choice { None(), Some() } i32 Main() { return match Choice::Some() { Choice::None() => 1, Choice::Some() => 2, }; }";
     let (db, _project, unit, generation, index) = setup(source);

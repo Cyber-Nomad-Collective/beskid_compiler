@@ -178,8 +178,11 @@ pub(in crate::semantic_contract) fn enum_layout_tracked(
     .transpose()
 }
 
-/// Return an explicitly applied enum type from the immediate typed context of a genericless
-/// constructor. This intentionally declines all inferred, nested, and control-flow contexts.
+/// Return an explicitly applied enum type from a genericless constructor's proven value context.
+///
+/// The walk follows only transparent expression/match wrappers plus the final expression statement
+/// of a block expression. It intentionally declines inferred values, non-final block statements,
+/// local initializers, lambdas, and other nested control-flow contexts.
 pub(in crate::semantic_contract) fn contextual_enum_constructor_type_path(
     db: &dyn Db,
     program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
@@ -194,14 +197,47 @@ pub(in crate::semantic_contract) fn contextual_enum_constructor_type_path(
     }
     let constructor_name = terminal.node.name.node.name.as_str();
     let mut current = parent_node(index, key.node)?;
-    while matches!(
-        index.kind(current)?,
-        beskid_analysis::syntax_query::NodeKind::Expression
-            | beskid_analysis::syntax_query::NodeKind::Statement
-            | beskid_analysis::syntax_query::NodeKind::MatchArm
-            | beskid_analysis::syntax_query::NodeKind::MatchExpression
-    ) {
-        current = parent_node(index, current)?;
+    let mut value_child = key.node;
+    let mut call_argument_root = key.node;
+    loop {
+        use beskid_analysis::syntax_query::NodeKind;
+
+        match index.kind(current)? {
+            NodeKind::Expression | NodeKind::Statement => {
+                value_child = current;
+                current = parent_node(index, current)?;
+            }
+            NodeKind::MatchArm => {
+                let arm = index.node_at(program, current)?.of::<beskid_analysis::syntax::MatchArm>()?;
+                let body = index.direct_child_id(
+                    program,
+                    current,
+                    beskid_analysis::syntax_query::DynNodeRef::from(&arm.value),
+                )?;
+                (body == value_child).then_some(())?;
+                value_child = current;
+                current = parent_node(index, current)?;
+            }
+            NodeKind::MatchExpression => {
+                (index.kind(value_child)? == NodeKind::MatchArm).then_some(())?;
+                value_child = current;
+                current = parent_node(index, current)?;
+            }
+            NodeKind::ExpressionStatement => {
+                let statement_wrapper = parent_node(index, current)?;
+                (index.kind(statement_wrapper)? == NodeKind::Statement).then_some(())?;
+                let block = parent_node(index, statement_wrapper)?;
+                (index.kind(block)? == NodeKind::Block).then_some(())?;
+                let statements = block_statement_nodes(db, AstNodeKey { node: block, ..key }).ok()??;
+                (statements.last().is_some_and(|statement| statement.node == current)).then_some(())?;
+                let block_expression = parent_node(index, block)?;
+                (index.kind(block_expression)? == NodeKind::BlockExpression).then_some(())?;
+                call_argument_root = block_expression;
+                value_child = block_expression;
+                current = parent_node(index, block_expression)?;
+            }
+            _ => break,
+        }
     }
 
     let expected = match index.kind(current)? {
@@ -233,7 +269,13 @@ pub(in crate::semantic_contract) fn contextual_enum_constructor_type_path(
             explicit_local_declaration_type(program, index, assignment.declaration.node)
         }
         beskid_analysis::syntax_query::NodeKind::CallExpression => {
-            return expected_explicit_call_argument_type(db, program, index, key).and_then(|expected| {
+            return expected_explicit_call_argument_type(
+                db,
+                program,
+                index,
+                AstNodeKey { node: call_argument_root, ..key },
+            )
+            .and_then(|expected| {
                 let beskid_analysis::syntax::Type::Complex(path) = expected else { return None };
                 let expected_path = path.node;
                 let expected_terminal = expected_path.segments.last()?;
