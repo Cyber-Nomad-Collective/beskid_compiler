@@ -41,6 +41,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Register scoped-use native lowering regressions in the complete ISLE node-kind
+  evidence inventory.
 - Keep live enum construction objects and managed struct/call arguments rooted
   across nested scoped disposal. Release abandoned expression roots and array
   construction handles through the existing lexical exit stack, including cleanup

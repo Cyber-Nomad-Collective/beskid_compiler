@@ -128,6 +128,7 @@ fn unsupported_kinds_are_intentionally_release_rejected_for_0_4() {
 fn every_isle_lowered_kind_has_verified_clif_evidence() {
     let isle_tests = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests");
     let codegen_tests = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..").join("beskid_codegen").join("tests");
+    let engine_tests = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..").join("beskid_engine").join("tests");
     let evidence: &[(NodeKind, PathBuf)] = &[
         (NodeKind::Program, isle_tests.join("rule_coverage.rs")),
         (NodeKind::FunctionDefinition, isle_tests.join("function_emitter.rs")),
@@ -136,6 +137,10 @@ fn every_isle_lowered_kind_has_verified_clif_evidence() {
         (NodeKind::ExpressionStatement, isle_tests.join("statement_emitter.rs")),
         (NodeKind::ReturnStatement, isle_tests.join("statement_emitter.rs")),
         (NodeKind::LetStatement, isle_tests.join("locals.rs")),
+        // scoped_cleanup_runs_once_in_reverse_order_on_every_structured_exit and
+        // scoped_cleanup_preserves_constructor_and_argument_roots compile source
+        // through ISLE and verifier-enabled AOT, then execute JIT and native kits.
+        (NodeKind::ScopedUseStatement, engine_tests.join("scoped_cleanup_native.rs")),
         (NodeKind::IfStatement, isle_tests.join("if_else.rs")),
         (NodeKind::WhileStatement, isle_tests.join("while_transfer.rs")),
         (NodeKind::BreakStatement, isle_tests.join("while_transfer.rs")),
