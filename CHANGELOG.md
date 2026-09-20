@@ -18,9 +18,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   retain managed receivers through collection and fiber suspension.
 - Add source-level Foundation byte, encoding and syscall regressions across JIT,
   static AOT and shared native kits, plus observed native bounds-trap tests.
-- Stage the Core.IO public contracts and transfer-loop source with two active
-  failing regressions: static contract-parameter specialization remains required
-  before these I/O APIs can execute. This is a partial F6 checkpoint, not release completion.
+- Stage the Core.IO public contracts and centralized transfer-loop source. The
+  later native fixture acceptance closes the initial contract-dispatch,
+  lifecycle, scoped-cleanup, and boundary-coverage gap without another policy
+  or cleanup implementation.
 
 - Add scoped `use Type name = expression;` and explicit
   `use (Type name = expression) { ... }` without changing module imports.
@@ -76,7 +77,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Execute the original Reader dispatch, mixed-reader forwarding, and Core.IO
   transfer regressions. Contextual generic enum construction now follows only
   proven block-result and match-arm value edges, never non-final statements or
-  match scrutinees; this does not complete the remaining F6 close/cleanup gates.
+  match scrutinees; the later fixture acceptance proves the F6 close/cleanup
+  gates through the existing compiler seams.
 - Require contextual generic enum applications to resolve to the constructor's
   exact nominal declaration, preventing qualified same-spelled enums from
   borrowing each other's applied type arguments.
