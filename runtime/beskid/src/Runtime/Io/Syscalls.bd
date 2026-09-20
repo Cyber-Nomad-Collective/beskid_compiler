@@ -94,7 +94,14 @@ pub i64 SyscallWriteBytes(i32 nativeHandle, pointer data, word len) {
 }
 
 [Export(Abi:"C", Symbol:"beskid_trap_code")]
-pub never Panic(i64 code) { FiberPanic(NativePointer(0)); }
+pub never Panic(i64 code) {
+    word index = SchedulerCurrentFiber();
+    if index == FIBER_NONE || !FiberExists(index) {
+        if code < 1 || code > 10 { Trap(9, NativePointer(0), 0); }
+        Trap(u8(code), NativePointer(0), 0);
+    }
+    FiberPanic(NativePointer(0));
+}
 
 [Export(Abi:"C", Symbol:"beskid_trap_message")]
 pub never PanicStr(pointer message) {

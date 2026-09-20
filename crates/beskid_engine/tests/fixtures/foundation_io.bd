@@ -1,0 +1,77 @@
+use Core.IO;
+use Core.IO.Reader;
+use Core.IO.Writer;
+use Core.IO.IoError;
+use Core.Bytes.Slice;
+use Core.Results;
+
+type PartialReader: Reader {
+    i64[] state,
+    pub Result<i64, IoError> Read(u8[] destination, i64 offset, i64 count) {
+        i64[] cursor = state;
+        cursor[0] = cursor[0] + 1_i64;
+        if !Slice.IsValidRange(Slice.Len(destination), offset, count) { return Result::Error(IoError::InvalidRange()); }
+        if count == 0_i64 || cursor[1] >= 3_i64 { return Result::Ok(0_i64); }
+        destination[offset] = 42_u8;
+        cursor[1] = cursor[1] + 1_i64;
+        return Result::Ok(1_i64);
+    }
+}
+type PartialWriter: Writer {
+    i64[] state,
+    bool stall,
+    pub Result<i64, IoError> Write(u8[] source, i64 offset, i64 count) {
+        i64[] cursor = state;
+        cursor[0] = cursor[0] + 1_i64;
+        if !Slice.IsValidRange(Slice.Len(source), offset, count) { return Result::Error(IoError::InvalidRange()); }
+        if count == 0_i64 || stall { return Result::Ok(0_i64); }
+        u8 byte = source[offset];
+        cursor[1] = cursor[1] * 10_i64 + i64(byte);
+        return Result::Ok(1_i64);
+    }
+}
+bool IsRange(Result<unit, IoError> result) {
+    return match result {
+        Result::Ok(_) => false,
+        Result::Error(error) => match error {
+            IoError::InvalidRange() => true, IoError::UnexpectedEof(_) => false,
+            IoError::NoProgress() => false, IoError::ReadFailed() => false,
+            IoError::WriteFailed() => false, IoError::CloseFailed() => false,
+        },
+    };
+}
+pub i64 RunFoundationFixture() {
+    i64[] reads = [0_i64, 0_i64];
+    PartialReader reader = PartialReader { state: reads };
+    u8[] destination = [9_u8, 9_u8, 9_u8, 9_u8, 9_u8, 9_u8, 9_u8];
+    if !IsRange(IO.ReadExact(reader, destination, -1_i64, 1_i64)) { return 1_i64; }
+    if !IsRange(IO.ReadExact(reader, destination, 0_i64, -1_i64)) { return 2_i64; }
+    if !IsRange(IO.ReadExact(reader, destination, 9223372036854775807_i64, 1_i64)) { return 3_i64; }
+    if !IsRange(IO.ReadExact(reader, destination, 7_i64, 1_i64)) { return 4_i64; }
+    Result<unit, IoError> empty = IO.ReadExact(reader, destination, 7_i64, 0_i64);
+    if reads[0] != 0_i64 { return 5_i64; }
+    Result<unit, IoError> partial = IO.ReadExact(reader, destination, 1_i64, 5_i64);
+    i64 completed = match partial {
+        Result::Ok(_) => -1_i64,
+        Result::Error(error) => match error {
+            IoError::UnexpectedEof(count) => count, IoError::InvalidRange() => -2_i64,
+            IoError::NoProgress() => -3_i64, IoError::ReadFailed() => -4_i64,
+            IoError::WriteFailed() => -5_i64, IoError::CloseFailed() => -6_i64,
+        },
+    };
+    if completed != 3_i64 || destination[0] != 9_u8 || destination[1] != 42_u8 || destination[3] != 42_u8 || destination[4] != 9_u8 || destination[6] != 9_u8 { return 6_i64; }
+    i64[] writes = [0_i64, 0_i64];
+    PartialWriter writer = PartialWriter { state: writes, stall: false };
+    Result<unit, IoError> written = IO.WriteAll(writer, [1_u8, 2_u8, 3_u8], 0_i64, 3_i64);
+    if writes[0] != 3_i64 || writes[1] != 123_i64 { return 7_i64; }
+    PartialWriter stalled = PartialWriter { state: writes, stall: true };
+    Result<unit, IoError> noProgress = IO.WriteAll(stalled, [1_u8], 0_i64, 1_i64);
+    return match noProgress {
+        Result::Ok(_) => 8_i64,
+        Result::Error(error) => match error {
+            IoError::NoProgress() => 42_i64, IoError::UnexpectedEof(_) => 9_i64,
+            IoError::InvalidRange() => 10_i64, IoError::ReadFailed() => 11_i64,
+            IoError::WriteFailed() => 12_i64, IoError::CloseFailed() => 13_i64,
+        },
+    };
+}

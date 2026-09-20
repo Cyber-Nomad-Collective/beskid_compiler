@@ -1,0 +1,22 @@
+use Core.Bytes.Slice;
+[Extern(Abi:"C")]
+pub contract CopyProbe {
+    unit Remember(u8[] buffer);
+    i64 Case();
+}
+pub i64 RunFoundationFixture() {
+    u8[] buffer = [1_u8, 2_u8, 3_u8, 4_u8, 5_u8];
+    CopyProbe.Remember(buffer);
+    i64 caseId = CopyProbe.Case();
+    if caseId == 0_i64 { Slice.Copy(buffer, -1_i64, buffer, 0_i64, 1_i64); }
+    if caseId == 1_i64 { Slice.Copy(buffer, 0_i64, buffer, 0_i64, -1_i64); }
+    if caseId == 2_i64 { Slice.Copy(buffer, 9223372036854775807_i64, buffer, 0_i64, 1_i64); }
+    if caseId == 3_i64 { Slice.Copy(buffer, 4_i64, buffer, 0_i64, 2_i64); }
+    if caseId == 4_i64 { Slice.Copy(buffer, 0_i64, buffer, 4_i64, 2_i64); }
+    if caseId == 5_i64 { Slice.Copy(buffer, 6_i64, buffer, 0_i64, 0_i64); }
+    if caseId == 6_i64 { Slice.Copy(buffer, 5_i64, buffer, 5_i64, 0_i64); }
+    if caseId == 7_i64 { Slice.Copy(buffer, 0_i64, buffer, -1_i64, 1_i64); }
+    if caseId == 8_i64 { Slice.Copy(buffer, 0_i64, buffer, 9223372036854775807_i64, 1_i64); }
+    if caseId == 9_i64 { Slice.Copy(buffer, 0_i64, buffer, 6_i64, 0_i64); }
+    return 42_i64;
+}

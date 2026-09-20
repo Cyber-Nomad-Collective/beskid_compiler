@@ -1,0 +1,19 @@
+enum Error { Failed() }
+enum Result<T, E> { Ok(T value), Error(E error) }
+contract Reader { Result<i64, Error> Read(u8[] bytes, i64 offset, i64 count); }
+type Source: Reader {
+    pub Result<i64, Error> Read(u8[] bytes, i64 offset, i64 count) {
+        bytes[offset] = 42_u8;
+        return Result::Ok(1_i64);
+    }
+}
+i64 ThroughReader(Reader source, u8[] bytes) {
+    Result<i64, Error> result = source.Read(bytes, 0_i64, 1_i64);
+    return match result { Result::Ok(count) => count, Result::Error(_) => 0_i64 };
+}
+pub i64 RunFoundationFixture() {
+    Source source = Source {};
+    u8[] bytes = [0_u8];
+    if ThroughReader(source, bytes) != 1_i64 { return 1_i64; }
+    return i64(bytes[0]);
+}

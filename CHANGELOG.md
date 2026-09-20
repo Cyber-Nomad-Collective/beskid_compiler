@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add source-level Foundation byte, encoding and syscall regressions across JIT,
+  static AOT and shared native kits, plus observed native bounds-trap tests.
+- Stage the Core.IO public contracts and transfer-loop source with two active
+  failing regressions: static contract-parameter specialization remains required
+  before these I/O APIs can execute. This is a partial F6 checkpoint, not release completion.
+
 - Add scoped `use Type name = expression;` and explicit
   `use (Type name = expression) { ... }` without changing module imports.
   Require a source-proven fresh acquisition, nonescaping receiver use, the exact
@@ -40,6 +46,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   transport audit for the subsequent Fiber and Channel migrations.
 
 ### Fixed
+
+- Preserve numeric process-panic trap codes through the canonical runtime while
+  retaining child-fiber `Panicked` code 2; authorize byte-copy bounds failures
+  through the existing `__panic` service without introducing another trap ABI.
+- Pin the corelib correction for byte-array syscall results, strict codecs,
+  overlap-safe range-first copying and checked fixed-buffer cursors.
 
 - Register scoped-use native lowering regressions in the complete ISLE node-kind
   evidence inventory.

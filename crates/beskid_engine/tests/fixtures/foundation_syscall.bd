@@ -1,0 +1,31 @@
+use Core.Syscall;
+use Core.Syscall.SyscallError;
+use Core.Syscall.ReadBytesRequest;
+use Core.Syscall.Descriptor;
+use Core.Syscall.ReadLimit;
+use Core.Results;
+use Core.Bytes.Slice;
+
+i64 CheckPayload(u8[] bytes) {
+    if Slice.Len(bytes) != 3_i64 { return 5_i64; }
+    if bytes[0] != 0_u8 || bytes[1] != 255_u8 || bytes[2] != 42_u8 { return 6_i64; }
+    return 42_i64;
+}
+
+pub i64 RunFoundationFixture() {
+    ReadBytesRequest request = ReadBytesRequest { descriptor: Descriptor::Raw(-1_i64), limit: ReadLimit::UpTo(4_i64) };
+    Result<u8[], SyscallError> result = Syscall.ReadBytesWith(request);
+    i64 invalid = match result {
+        Result::Ok(_) => 1_i64,
+        Result::Error(error) => match error {
+            SyscallError::InvalidFd(fd) => 42_i64,
+            SyscallError::UnsupportedReadFd(_) => 2_i64,
+            SyscallError::InvalidReadLimit(_) => 3_i64,
+            SyscallError::IoFailure(_) => 4_i64,
+        },
+    };
+    if invalid != 42_i64 { return invalid; }
+    ReadBytesRequest valid = ReadBytesRequest { descriptor: Descriptor::Raw(198_i64), limit: ReadLimit::UpTo(8_i64) };
+    Result<u8[], SyscallError> payload = Syscall.ReadBytesWith(valid);
+    return match payload { Result::Ok(bytes) => CheckPayload(bytes), Result::Error(_) => 7_i64 };
+}

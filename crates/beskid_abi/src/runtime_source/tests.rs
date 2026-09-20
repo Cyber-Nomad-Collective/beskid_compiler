@@ -2,6 +2,35 @@ use super::*;
 use crate::abi_v5::AbiManifestV5;
 
 #[test]
+fn canonical_bytes_copy_owns_only_the_numeric_bounds_trap_service() {
+    for target in crate::abi_v5::TargetMetadata::supported() {
+        let manifest = AbiManifestV5::canonical_runtime(target);
+        let capability = canonical_corelib_service_capability(&manifest).unwrap();
+        let services = capability
+            .services()
+            .iter()
+            .filter(|service| service.source_path == "Core/Bytes/Slice.bd")
+            .map(|service| (service.name, service.symbol))
+            .collect::<Vec<_>>();
+        assert_eq!(services, [("__panic", "beskid_trap_code")]);
+        assert!(capability.service_for_source("app/Slice.bd", "__panic").is_none());
+        let read =
+            capability.service_for_source(CANONICAL_CORELIB_SYSCALL_SOURCE_PATH, "__syscall_read_bytes").unwrap();
+        assert_eq!(
+            canonical_corelib_service_abi(read),
+            Some(CorelibServiceAbi {
+                parameters: vec![
+                    CorelibServiceAbiType::I32,
+                    CorelibServiceAbiType::Pointer,
+                    CorelibServiceAbiType::Usize
+                ],
+                result: CorelibServiceAbiType::I64,
+            })
+        );
+    }
+}
+
+#[test]
 fn canonical_concurrency_facade_exposes_its_exact_scheduler_services() {
     let source = canonical_corelib_service_sources()
         .into_iter()

@@ -1,0 +1,29 @@
+use Core.Encoding.Utf8;
+use Core.Encoding.EncodingError;
+use Core.Results;
+
+bool RejectDecode(u8[] bytes) {
+    Result<string, EncodingError> result = Utf8.DecodeFromBytes(bytes);
+    return match result { Result::Ok(_) => false, Result::Error(error) => match error {
+        EncodingError::InvalidSequence(_) => true, EncodingError::InvalidPadding(_) => false, EncodingError::OddLength(_) => false,
+    } };
+}
+
+pub i64 RunFoundationFixture() {
+    u8[] overlong = [192_u8, 128_u8];
+    if Utf8.IsValid(overlong) { return 1; }
+    if !RejectDecode(overlong) { return 7; }
+    u8[] surrogate = [237_u8, 160_u8, 128_u8];
+    if Utf8.IsValid(surrogate) { return 2; }
+    if !RejectDecode(surrogate) { return 8; }
+    u8[] tooLarge = [244_u8, 144_u8, 128_u8, 128_u8];
+    if Utf8.IsValid(tooLarge) { return 3; }
+    if !RejectDecode(tooLarge) { return 9; }
+    u8[] truncated = [226_u8, 130_u8];
+    if Utf8.IsValid(truncated) { return 4; }
+    u8[] badContinuation = [226_u8, 65_u8, 172_u8];
+    if Utf8.IsValid(badContinuation) { return 5; }
+    u8[] boundaries = [0_u8, 127_u8, 194_u8, 128_u8, 224_u8, 160_u8, 128_u8, 237_u8, 159_u8, 191_u8, 240_u8, 144_u8, 128_u8, 128_u8, 244_u8, 143_u8, 191_u8, 191_u8];
+    if !Utf8.IsValid(boundaries) { return 6; }
+    return 42;
+}

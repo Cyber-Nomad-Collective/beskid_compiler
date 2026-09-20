@@ -65,6 +65,7 @@ pub const CANONICAL_CORELIB_HUB_SOURCE_PATH: &str = "Concurrency/Hub.bd";
 pub const CANONICAL_CORELIB_WAIT_GROUP_SOURCE_PATH: &str = "Concurrency/WaitGroup.bd";
 /// Canonical Foundation array facade eligible for compiler-owned typed allocation lowering.
 pub const CANONICAL_FOUNDATION_ARRAY_SOURCE_PATH: &str = "Core/Collections/Array.bd";
+pub const CANONICAL_FOUNDATION_BYTES_SLICE_SOURCE_PATH: &str = "Core/Bytes/Slice.bd";
 /// Canonical Foundation environment facade eligible for host environment runtime services.
 pub const CANONICAL_FOUNDATION_ENVIRONMENT_SOURCE_PATH: &str = "Core/Environment/Environment.bd";
 /// Canonical Foundation path facade eligible for string-slice runtime services.
@@ -193,6 +194,8 @@ const CANONICAL_FOUNDATION_ARRAY_SOURCE: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../../corelib/packages/foundation/src/Core/Collections/Array.bd"
 ));
+const CANONICAL_FOUNDATION_BYTES_SLICE_SOURCE: &str =
+    include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../corelib/packages/foundation/src/Core/Bytes/Slice.bd"));
 const CANONICAL_FOUNDATION_ENVIRONMENT_SOURCE: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../../corelib/packages/foundation/src/Core/Environment/Environment.bd"
@@ -385,6 +388,10 @@ pub fn canonical_corelib_service_sources() -> Vec<SourceUnit> {
     sources.push(SourceUnit {
         logical_path: CANONICAL_FOUNDATION_ARRAY_SOURCE_PATH.into(),
         source: CANONICAL_FOUNDATION_ARRAY_SOURCE.into(),
+    });
+    sources.push(SourceUnit {
+        logical_path: CANONICAL_FOUNDATION_BYTES_SLICE_SOURCE_PATH.into(),
+        source: CANONICAL_FOUNDATION_BYTES_SLICE_SOURCE.into(),
     });
     sources.push(SourceUnit {
         logical_path: CANONICAL_FOUNDATION_ENVIRONMENT_SOURCE_PATH.into(),
