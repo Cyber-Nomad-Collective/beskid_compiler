@@ -53,7 +53,7 @@ type ErrorReader: Reader {
     pub Result<i64, IoError> Read(u8[] destination, i64 offset, i64 count) {
         i64[] calls = state;
         calls[0] = calls[0] + 1_i64;
-        return Result::Error(IoError::ReadFailed());
+        return Result::Error(IoError::CloseFailed());
     }
 }
 type ErrorWriter: Writer {
@@ -61,7 +61,7 @@ type ErrorWriter: Writer {
     pub Result<i64, IoError> Write(u8[] source, i64 offset, i64 count) {
         i64[] calls = state;
         calls[0] = calls[0] + 1_i64;
-        return Result::Error(IoError::WriteFailed());
+        return Result::Error(IoError::NoProgress());
     }
 }
 type TestStream: Stream, Closer, Disposable {
@@ -210,7 +210,7 @@ i64 DirectTransferBoundaryProof() {
     if IoResultCode(IO.Read(oversizeReader, destination, 0_i64, 1_i64)) != -1_i64 || oversizeReaderCalls[0] != 1_i64 { return 10_i64; }
     i64[] errorReaderCalls = [0_i64];
     ErrorReader errorReader = ErrorReader { state: errorReaderCalls };
-    if IoResultCode(IO.Read(errorReader, destination, 0_i64, 1_i64)) != -1_i64 || errorReaderCalls[0] != 1_i64 { return 11_i64; }
+    if IoResultCode(IO.Read(errorReader, destination, 0_i64, 1_i64)) != -2_i64 || errorReaderCalls[0] != 1_i64 { return 11_i64; }
 
     u8[] source = [7_u8, 8_u8, 9_u8];
     i64[] writeCalls = [0_i64];
@@ -236,7 +236,7 @@ i64 DirectTransferBoundaryProof() {
     if IoResultCode(IO.Write(oversizeWriter, source, 0_i64, 1_i64)) != -6_i64 || oversizeWriterCalls[0] != 1_i64 { return 22_i64; }
     i64[] errorWriterCalls = [0_i64];
     ErrorWriter errorWriter = ErrorWriter { state: errorWriterCalls };
-    if IoResultCode(IO.Write(errorWriter, source, 0_i64, 1_i64)) != -6_i64 || errorWriterCalls[0] != 1_i64 { return 23_i64; }
+    if IoResultCode(IO.Write(errorWriter, source, 0_i64, 1_i64)) != -5_i64 || errorWriterCalls[0] != 1_i64 { return 23_i64; }
     return 0_i64;
 }
 pub i64 RunFoundationFixture() {
