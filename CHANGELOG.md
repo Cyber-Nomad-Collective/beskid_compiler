@@ -41,6 +41,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Transport Channel queue cells, parked sends, and exclusive receive receipts
   through traced ABI owner slots; exercise forced-GC bytes, aggregates, and opaque
   resources across JIT, static AOT, and native kits.
+- Add source-level disposable resource ownership acceptance for ordinary
+  Channel close/drain, abandoned receipt recovery, and real pre-/post-commit
+  sender cancellation across JIT, static AOT, and shared native kits.
 - Grow unbounded channels with stable linked cells beyond the old 16-entry ring.
 
 - Return typed `Fiber<T>` handles from `spawn`, with generation-bound move-only
