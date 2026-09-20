@@ -144,7 +144,7 @@ impl ReplayLockCase {
         let dependency = root.join("dependency");
         let materialized = project.join("obj/beskid/deps/src/foundation");
         fs::create_dir_all(project.join("Src")).expect("project source root");
-        fs::create_dir_all(dependency.join("Src")).expect("dependency source root");
+        fs::create_dir_all(dependency.join("src")).expect("dependency source root");
         fs::create_dir_all(materialized.join("src")).expect("materialized source root");
         let plan = CompilePlan {
             project_root: project.clone(),
@@ -157,7 +157,7 @@ impl ReplayLockCase {
                 manifest_path: dependency.join("Foundation.bproj"),
                 project_root: dependency.clone(),
                 project_name: "foundation".to_string(),
-                source_root: dependency.join("Src"),
+                source_root: dependency.join("src"),
             }],
             unresolved_dependencies: Vec::new(),
             has_std_dependency: false,
