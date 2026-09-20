@@ -21,7 +21,7 @@ fn source_channel_values_survive_collection_in_jit_aot_and_native_kit() {
 }
 
 #[test]
-fn source_channel_claim_cancellation_cleanup_preserves_typed_value() {
+fn source_channel_disposable_resource_ownership_survives_close_cancellation_and_receipt_cleanup() {
     source_transfer_fixture("channel_receipt", "RunChannelReceiptFixture", 126);
 }
 
@@ -50,6 +50,7 @@ fn source_transfer_fixture(kind: &str, entry: &str, expected: i64) {
         (&concurrency, "Concurrency/Hub.bd"),
         (&concurrency, "Concurrency/HubError.bd"),
         (&concurrency, "Concurrency/HubReceiveResult.bd"),
+        (&foundation, "Core/Disposable.bd"),
         (&foundation, "Core/Results/Results.bd"),
     ] {
         paths.push((base.join(relative), relative));

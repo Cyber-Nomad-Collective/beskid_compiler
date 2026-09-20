@@ -4,6 +4,7 @@ use Concurrency.ChannelOptions;
 use Concurrency.TryResult;
 use Concurrency.Fiber;
 use Concurrency.FiberError;
+use Core.Disposable;
 use Core.Results;
 
 [Extern(Abi:"C")]
@@ -16,10 +17,51 @@ pub contract Probe {
     unit beskid_rt_v5_fiber_yield();
 }
 pub type Aggregate { u8[] bytes, i64 marker, }
-pub type OwnedResource { i64 token, }
+pub type OwnedResource: Disposable {
+    i64 token,
+    i64[] disposalCount,
+
+    pub Result<unit, DisposeError> Dispose() {
+        i64[] count = disposalCount;
+        if count[0] != 0_i64 { return Result::Error(DisposeError::Failed()); }
+        count[0] = 1_i64;
+        return Result::Ok(());
+    }
+}
 i64 Bytes(u8[] value) { u8 first = value[0]; return i64(first); }
 i64 AggregateValue(Aggregate value) { return Bytes(value.bytes) + value.marker - 7_i64; }
 i64 ResourceValue(OwnedResource value) { return value.token; }
+
+i64 CounterIsZero(i64[] count) {
+    if count[0] != 0_i64 { return -1000_i64; }
+    return 0_i64;
+}
+i64 CounterIsOne(i64[] count) {
+    if count[0] != 1_i64 { return -1000_i64; }
+    return 0_i64;
+}
+i64 DisposeReceived(OwnedResource value) {
+    if ResourceValue(value) != 42_i64 { return -1000_i64; }
+    i64[] count = value.disposalCount;
+    if count[0] != 0_i64 { return -1000_i64; }
+    i64 disposed = match value.Dispose() { Result::Ok(_) => 0_i64, _ => -1000_i64, };
+    if count[0] != 1_i64 { return -1000_i64; }
+    return disposed;
+}
+i64 Closed(Channel<OwnedResource> channel) {
+    return match Channel.TryReceive<OwnedResource>(channel) {
+        TryResult::Err(ChannelError::Closed(_)) => 0_i64, _ => -1000_i64,
+    };
+}
+i64 ReceiveAndDispose(Channel<OwnedResource> channel) {
+    Result<OwnedResource, ChannelError> received = Channel.Receive<OwnedResource>(channel);
+    return match received { Result::Ok(value) => DisposeReceived(value), _ => -1000_i64, };
+}
+i64 SendResource(Channel<OwnedResource> channel, OwnedResource value) {
+    return match Channel.Send<OwnedResource>(channel, value) {
+        Result::Ok(_) => 0_i64, _ => 1_i64,
+    };
+}
 
 // Exercise the public split native claim, then abandon it through real source
 // cancellation/return. Cleanup must restore ownership for a typed facade receive.
@@ -35,13 +77,14 @@ i64 AbandonReceipt(i64 channel) {
 i64 Cancelled(Result<i64, FiberError> result) {
     return match result { Result::Error(FiberError::Cancelled(_, _)) => 0_i64, _ => -1000_i64, };
 }
-i64 RunChannelReceiptFixture() {
+i64 RunChannelReceiptScenarios() {
     Channel<u8[]> bytes = Channel<u8[]>.Create();
     Channel<Aggregate> aggregate = Channel<Aggregate>.Create();
     Channel<OwnedResource> resource = Channel<OwnedResource>.Create();
+    i64[] receiptCount = [0_i64];
     let sentBytes = Channel.TrySend<u8[]>(bytes, [42_u8]);
     let sentAggregate = Channel.TrySend<Aggregate>(aggregate, Aggregate { bytes: [42_u8], marker: 7_i64 });
-    let sentResource = Channel.TrySend<OwnedResource>(resource, OwnedResource { token: 42_i64 });
+    let sentResource = Channel.TrySend<OwnedResource>(resource, OwnedResource { token: 42_i64, disposalCount: receiptCount });
     i64 firstHandle = Channel.Handle<u8[]>(bytes);
     i64 secondHandle = Channel.Handle<Aggregate>(aggregate);
     i64 thirdHandle = Channel.Handle<OwnedResource>(resource);
@@ -63,10 +106,60 @@ i64 RunChannelReceiptFixture() {
         Result::Ok(value) => AggregateValue(value), _ => -1000_i64,
     };
     i64 c = match thirdValue {
-        Result::Ok(value) => ResourceValue(value), _ => -1000_i64,
+        Result::Ok(value) => ResourceValue(value) + CounterIsZero(receiptCount) + DisposeReceived(value), _ => -1000_i64,
     };
-    i64 drained = match Channel.TryReceive<OwnedResource>(resource) {
-        TryResult::Err(ChannelError::Closed(_)) => 0_i64, _ => -1000_i64,
-    };
-    return a + b + c + cancelled + drained;
+    i64 drained = Closed(resource);
+
+    Channel<OwnedResource> ordinary = Channel<OwnedResource>.Create();
+    i64[] ordinaryCount = [0_i64];
+    let ordinarySent = Channel.TrySend<OwnedResource>(ordinary, OwnedResource { token: 42_i64, disposalCount: ordinaryCount });
+    i64 ordinaryAfterSend = CounterIsZero(ordinaryCount);
+    Channel.Close<OwnedResource>(ordinary);
+    i64 ordinaryAfterClose = CounterIsZero(ordinaryCount);
+    i64 ordinaryDisposed = ReceiveAndDispose(ordinary);
+    i64 ordinaryDrained = Closed(ordinary);
+
+    Channel<OwnedResource> bounded = Channel<OwnedResource>.CreateWithOptions(ChannelOptions.Bounded(1_i64));
+    i64[] preCommittedCount = [0_i64];
+    i64[] preCancelledCount = [0_i64];
+    TryResult<Channel.SendOk, ChannelError> preCommitted = Channel.TrySend<OwnedResource>(bounded, OwnedResource { token: 42_i64, disposalCount: preCommittedCount });
+    i64 preInitiallyQueued = match preCommitted { TryResult::Ok(_) => 0_i64, _ => -1000_i64, };
+    OwnedResource pending = OwnedResource { token: 43_i64, disposalCount: preCancelledCount };
+    Fiber<i64> parkedSender = spawn (() => SendResource(bounded, pending));
+    Probe.beskid_rt_v5_fiber_yield();
+    parkedSender.Cancel();
+    i64 parkedCancelled = Cancelled(parkedSender.Join());
+    Channel.Close<OwnedResource>(bounded);
+    Probe.gc_collect();
+    i64 preCancelledZero = CounterIsZero(preCancelledCount);
+    i64 preCommittedZero = CounterIsZero(preCommittedCount);
+    i64 preDisposed = ReceiveAndDispose(bounded);
+    i64 preCommittedDisposed = CounterIsOne(preCommittedCount);
+    i64 preCancelledAfterDispose = CounterIsZero(preCancelledCount);
+    i64 preNoSecond = Closed(bounded);
+
+    Channel<OwnedResource> available = Channel<OwnedResource>.Create();
+    i64[] postCommittedCount = [0_i64];
+    OwnedResource committed = OwnedResource { token: 42_i64, disposalCount: postCommittedCount };
+    Fiber<i64> committedSender = spawn (() => SendResource(available, committed));
+    Probe.beskid_rt_v5_fiber_yield();
+    committedSender.Cancel();
+    i64 committedCancelled = Cancelled(committedSender.Join());
+    Channel.Close<OwnedResource>(available);
+    Probe.gc_collect();
+    i64 postBeforeReceive = CounterIsZero(postCommittedCount);
+    i64 postDisposed = ReceiveAndDispose(available);
+    i64 postDrained = Closed(available);
+
+    return a + b + c + cancelled + drained
+        + ordinaryAfterSend + ordinaryAfterClose + ordinaryDisposed + ordinaryDrained
+        + preInitiallyQueued + parkedCancelled + preCancelledZero + preCommittedZero + preDisposed
+        + preCommittedDisposed + preCancelledAfterDispose + preNoSecond
+        + committedCancelled + postBeforeReceive + postDisposed + postDrained;
+}
+
+i64 RunChannelReceiptFixture() {
+    Fiber<i64> controller = spawn (() => RunChannelReceiptScenarios());
+    Result<i64, FiberError> completed = controller.Join();
+    return match completed { Result::Ok(value) => value, _ => -1000_i64, };
 }
