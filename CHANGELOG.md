@@ -54,6 +54,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Make v1 materialized dependency roots portable across worktree locations and
   fail closed during LSP replay for malformed, duplicate, escaping, or
   untrusted lockfile entries.
+- Reject repeated v1 dependency fields and repeated dependency-section markers
+  before LSP root replay.
 - Exercise contained legacy absolute-root replay with case-correct source
   segments on case-sensitive hosts.
 - Replay the dash-prefixed dependency entries emitted by v1 lockfiles, so LSP

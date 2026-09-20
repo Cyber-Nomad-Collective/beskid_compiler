@@ -86,14 +86,32 @@ impl ProjectLockDependencyEntry {
                 .split_once('=')
                 .ok_or_else(|| ProjectError::Validation(format!("invalid lockfile dependency field `{part}`")))?;
             match key {
-                "name" => name = Some(value.to_string()),
-                "manifest" => manifest = Some(value.to_string()),
-                "project" => project = Some(value.to_string()),
-                "source_root" => source_root = Some(value.to_string()),
-                "materialized_root" => materialized_root = Some(value.to_string()),
-                "resolved_version" => resolved_version = Some(value.to_string()),
-                "artifact_digest" => artifact_digest = Some(value.to_string()),
-                "registry" => registry = Some(value.to_string()),
+                "name" if name.replace(value.to_string()).is_some() => {
+                    return Err(ProjectError::Validation("lockfile dependency duplicates `name`".to_string()));
+                }
+                "manifest" if manifest.replace(value.to_string()).is_some() => {
+                    return Err(ProjectError::Validation("lockfile dependency duplicates `manifest`".to_string()));
+                }
+                "project" if project.replace(value.to_string()).is_some() => {
+                    return Err(ProjectError::Validation("lockfile dependency duplicates `project`".to_string()));
+                }
+                "source_root" if source_root.replace(value.to_string()).is_some() => {
+                    return Err(ProjectError::Validation("lockfile dependency duplicates `source_root`".to_string()));
+                }
+                "materialized_root" if materialized_root.replace(value.to_string()).is_some() => {
+                    return Err(ProjectError::Validation("lockfile dependency duplicates `materialized_root`".to_string()));
+                }
+                "resolved_version" if resolved_version.replace(value.to_string()).is_some() => {
+                    return Err(ProjectError::Validation("lockfile dependency duplicates `resolved_version`".to_string()));
+                }
+                "artifact_digest" if artifact_digest.replace(value.to_string()).is_some() => {
+                    return Err(ProjectError::Validation("lockfile dependency duplicates `artifact_digest`".to_string()));
+                }
+                "registry" if registry.replace(value.to_string()).is_some() => {
+                    return Err(ProjectError::Validation("lockfile dependency duplicates `registry`".to_string()));
+                }
+                "name" | "manifest" | "project" | "source_root" | "materialized_root" | "resolved_version"
+                | "artifact_digest" | "registry" => {}
                 _ => {}
             }
         }
@@ -169,6 +187,9 @@ impl ProjectLockfileV1 {
                 continue;
             }
             if line == "dependencies:" {
+                if in_dependencies {
+                    return Err(ProjectError::Validation("lockfile duplicates `dependencies:`".to_string()));
+                }
                 in_dependencies = true;
                 continue;
             }
