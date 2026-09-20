@@ -195,7 +195,6 @@ pub(in crate::semantic_contract) fn contextual_enum_constructor_type_path(
     if !terminal.node.type_args.is_empty() {
         return None;
     }
-    let constructor_name = terminal.node.name.node.name.as_str();
     let mut current = parent_node(index, key.node)?;
     let mut value_child = key.node;
     let mut call_argument_root = key.node;
@@ -277,11 +276,7 @@ pub(in crate::semantic_contract) fn contextual_enum_constructor_type_path(
             )
             .and_then(|expected| {
                 let beskid_analysis::syntax::Type::Complex(path) = expected else { return None };
-                let expected_path = path.node;
-                let expected_terminal = expected_path.segments.last()?;
-                (expected_terminal.node.name.node.name == constructor_name
-                    && !expected_terminal.node.type_args.is_empty())
-                .then_some(expected_path)
+                contextual_enum_candidate_type_path(db, key, constructor_path, &path.node)
             });
         }
         _ => None,
@@ -290,9 +285,32 @@ pub(in crate::semantic_contract) fn contextual_enum_constructor_type_path(
         return None;
     };
     let expected_path = &path.node;
-    let expected_terminal = expected_path.segments.last()?;
-    (expected_terminal.node.name.node.name == constructor_name && !expected_terminal.node.type_args.is_empty())
-        .then_some(expected_path.clone())
+    contextual_enum_candidate_type_path(db, key, constructor_path, expected_path)
+}
+
+/// Admit a contextual generic enum application only when it resolves to the same nominal
+/// declaration as the constructor. Matching the terminal spelling alone would let
+/// `A.Result::Ok` inherit `B.Result<T, E>` arguments.
+fn contextual_enum_candidate_type_path(
+    db: &dyn Db,
+    key: AstNodeKey,
+    constructor_path: &beskid_analysis::syntax::Path,
+    candidate_path: &beskid_analysis::syntax::Path,
+) -> Option<beskid_analysis::syntax::Path> {
+    let candidate_terminal = candidate_path.segments.last()?;
+    (!candidate_terminal.node.type_args.is_empty()).then_some(())?;
+    // Constructors written without type arguments cannot resolve a generic declaration by arity.
+    // Apply the candidate's explicit arguments only to resolve the constructor's own qualified
+    // path, then compare declarations before retaining the candidate application.
+    let mut constructor_application = constructor_path.clone();
+    constructor_application
+        .segments
+        .last_mut()?
+        .node
+        .type_args = candidate_terminal.node.type_args.clone();
+    let constructor = resolve_type_declaration(db, key, &constructor_application)?;
+    let candidate = resolve_type_declaration(db, key, candidate_path)?;
+    (constructor == candidate).then_some(candidate_path.clone())
 }
 
 fn explicit_local_declaration_type<'a>(

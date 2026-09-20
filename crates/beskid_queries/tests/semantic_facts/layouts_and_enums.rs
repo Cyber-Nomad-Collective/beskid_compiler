@@ -706,6 +706,90 @@ Result<i64, string> Forward() {
     );
 }
 
+fn setup_homonymous_qualified_result_context(
+    return_module: &str,
+) -> (BeskidDatabase, SourceUnitId, SyntaxGenerationId, SyntaxIndex) {
+    let mut db = BeskidDatabase::default();
+    let root = PathBuf::from("/tmp/homonymous-qualified-result-context/project/src");
+    let main_path = root.join("Main.bd");
+    let a_path = root.join("Core/A/A.bd");
+    let b_path = root.join("Core/B/B.bd");
+    let main_source = format!(
+        r#"
+use Core.A;
+use Core.B;
+{return_module}.Result<i64, string> Forward(A.Result<i64, string> result) {{
+    return match result {{
+        A.Result::Error(error) => A.Result::Error(error),
+        A.Result::Ok(value) => {{ A.Result::Ok(value); }},
+    }};
+}}
+"#
+    );
+    let a_source = "pub enum Result<TValue, TError> { Ok(TValue value), Error(TError error) }";
+    let b_source = "pub enum Result<TValue, TError> { Ok(TValue value), Error(TError error), Other() }";
+    let sources = [(&main_path, main_source.as_str()), (&a_path, a_source), (&b_path, b_source)];
+    let units = sources
+        .iter()
+        .map(|(path, source)| SourceUnit {
+            logical_name: path.display().to_string(),
+            path: (*path).clone(),
+            source: (*source).to_string(),
+            program: expand_program(parse_program(source).expect("parse"), DEFAULT_MAX_MACRO_EXPANSION_DEPTH),
+        })
+        .collect::<Vec<_>>();
+    let main_program = units[0].program.clone();
+    let generation = SyntaxGenerationId(210);
+    let assembly = Arc::new(ProgramAssembly::new(
+        EffectiveCompilationRoots {
+            host: RootEntry { dependency_name: None, source_root: root.clone() },
+            dependencies: Vec::new(),
+        },
+        Arc::new(units),
+        0,
+        AssemblyDiscovery::ImportClosure,
+        Arc::new(ModuleIndex::empty()),
+        false,
+        generation,
+    ));
+    let main_unit = SourceUnitId::new(&db, main_path);
+    let project = ProjectSession::new(
+        &db,
+        root.parent().expect("project root").to_path_buf(),
+        main_unit.path(&db).clone(),
+        "App".to_string(),
+        "lock".to_string(),
+    );
+    build_typed_program(&mut db, project, generation, assembly).expect("typed syntax program");
+    (db, main_unit, generation, SyntaxIndex::from_program(&main_program, generation))
+}
+
+#[test]
+fn qualified_homonymous_enum_constructor_rejects_a_different_return_declaration() {
+    let (db, unit, generation, index) = setup_homonymous_qualified_result_context("B");
+    let constructor = key(unit, generation, &index, NodeKind::EnumConstructorExpression, 1);
+
+    assert!(
+        enum_layout(&db, constructor).is_err(),
+        "a same-spelled but distinct qualified enum must not supply contextual type arguments"
+    );
+}
+
+#[test]
+fn qualified_enum_constructor_keeps_the_same_return_declaration_context() {
+    let (db, unit, generation, index) = setup_homonymous_qualified_result_context("A");
+    let constructor = key(unit, generation, &index, NodeKind::EnumConstructorExpression, 1);
+
+    assert_eq!(
+        enum_layout(&db, constructor)
+            .expect("same-declaration qualified constructor layout query")
+            .expect("the matching qualified return declaration must contextualize the constructor")
+            .variants
+            .len(),
+        2
+    );
+}
+
 #[test]
 fn enum_match_keeps_source_ordered_nullary_variant_arms() {
     let source = "enum Choice { None(), Some() } i32 Main() { return match Choice::Some() { Choice::None() => 1, Choice::Some() => 2, }; }";

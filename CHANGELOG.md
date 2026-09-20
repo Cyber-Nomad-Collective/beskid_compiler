@@ -60,6 +60,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   transfer regressions. Contextual generic enum construction now follows only
   proven block-result and match-arm value edges, never non-final statements or
   match scrutinees; this does not complete the remaining F6 close/cleanup gates.
+- Require contextual generic enum applications to resolve to the constructor's
+  exact nominal declaration, preventing qualified same-spelled enums from
+  borrowing each other's applied type arguments.
 - Preserve numeric process-panic trap codes through the canonical runtime while
   retaining child-fiber `Panicked` code 2; authorize byte-copy bounds failures
   through the existing `__panic` service without introducing another trap ABI.
