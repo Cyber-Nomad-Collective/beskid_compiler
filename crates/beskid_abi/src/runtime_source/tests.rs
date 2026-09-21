@@ -352,9 +352,31 @@ fn embedded_service_sources_and_service_descriptors_have_one_exact_path_inventor
 
     assert_eq!(embedded, described, "source bytes and service descriptors must not maintain divergent path lists");
     for logical_path in embedded {
+        let identity = corelib_service_source_identity(&logical_path).expect("complete source identity");
         let physical = canonical_corelib_service_source_path(&logical_path)
             .unwrap_or_else(|| panic!("{logical_path} has no canonical physical path descriptor"));
         assert!(physical.is_file(), "{} must resolve to one canonical regular file", physical.display());
+        assert_eq!(identity.canonical_path, physical);
+        assert_eq!(identity.declared_path.canonicalize().unwrap(), physical);
+        assert!(!identity.declared_path.components().any(|part| matches!(part, std::path::Component::ParentDir)));
+    }
+    assert!(corelib_service_source_identity("user/Core/Syscall/Syscall.bd").is_none());
+}
+
+#[cfg(windows)]
+#[test]
+fn source_location_comparison_only_equates_drive_prefix_representations() {
+    use std::path::Path;
+    let normal = Path::new(r"C:\compiler\corelib\Syscall.bd");
+    assert!(corelib_source_locations_match(normal, Path::new(r"\\?\C:\compiler\corelib\Syscall.bd")));
+    for different in [
+        r"D:\compiler\corelib\Syscall.bd",
+        r"C:\user\Syscall.bd",
+        r"C:\compiler\alias\..\corelib\Syscall.bd",
+        r"\\.\C:\compiler\corelib\Syscall.bd",
+        r"\\?\UNC\compiler\corelib\Syscall.bd",
+    ] {
+        assert!(!corelib_source_locations_match(normal, Path::new(different)), "{different}");
     }
 }
 

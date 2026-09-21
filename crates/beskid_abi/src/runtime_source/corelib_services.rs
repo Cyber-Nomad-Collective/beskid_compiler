@@ -26,6 +26,18 @@ use super::sources::{
 /// The returned path is the canonical physical identity used by source assembly. Failure to
 /// resolve the checked-in file fails closed rather than granting authority to a lexical alias.
 pub fn canonical_corelib_service_source_path(logical_path: &str) -> Option<std::path::PathBuf> {
+    Some(corelib_service_source_identity(logical_path)?.canonical_path)
+}
+
+/// Declared compiler location and resolved physical identity from the one source inventory.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CorelibServiceSourceIdentity {
+    pub declared_path: std::path::PathBuf,
+    pub canonical_path: std::path::PathBuf,
+}
+
+/// Resolve both source identities without resolving a caller-supplied origin.
+pub fn corelib_service_source_identity(logical_path: &str) -> Option<CorelibServiceSourceIdentity> {
     let (package, relative) = match logical_path {
         CANONICAL_CORELIB_SYSCALL_SOURCE_PATH => ("foundation", "Core/Syscall/Syscall.bd"),
         CANONICAL_CORELIB_ARGS_SOURCE_PATH => ("foundation", "Core/Args/Args.bd"),
@@ -55,14 +67,40 @@ pub fn canonical_corelib_service_source_path(logical_path: &str) -> Option<std::
         CANONICAL_FOUNDATION_ERROR_SOURCE_PATH => ("foundation", "Core/Error/Error.bd"),
         _ => return None,
     };
-    std::fs::canonicalize(
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../corelib/packages")
-            .join(package)
-            .join("src")
-            .join(relative),
-    )
-    .ok()
+    let declared_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()?
+        .parent()?
+        .join("corelib/packages")
+        .join(package)
+        .join("src")
+        .join(relative);
+    let canonical_path = std::fs::canonicalize(&declared_path).ok()?;
+    Some(CorelibServiceSourceIdentity { declared_path, canonical_path })
+}
+
+/// Compare source locations without filesystem resolution or parent traversal folding.
+/// Only Windows drive/verbatim-drive prefixes are interchangeable; device and UNC namespaces
+/// retain their exact component identity. This comparison alone grants no source authority.
+pub fn corelib_source_locations_match(left: &std::path::Path, right: &std::path::Path) -> bool {
+    let mut left = left.components();
+    let mut right = right.components();
+    loop {
+        match (left.next(), right.next()) {
+            (None, None) => return true,
+            #[cfg(windows)]
+            (Some(std::path::Component::Prefix(left)), Some(std::path::Component::Prefix(right))) => {
+                use std::path::Prefix;
+                match (left.kind(), right.kind()) {
+                    (Prefix::Disk(a) | Prefix::VerbatimDisk(a), Prefix::Disk(b) | Prefix::VerbatimDisk(b))
+                        if a == b => {}
+                    _ if left == right => {}
+                    _ => return false,
+                }
+            }
+            (Some(left), Some(right)) if left == right => {}
+            _ => return false,
+        }
+    }
 }
 
 /// One source-independent ABI slot selected for a source-authorized Corelib service.

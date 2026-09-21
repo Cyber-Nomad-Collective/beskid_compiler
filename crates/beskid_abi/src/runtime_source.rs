@@ -14,9 +14,10 @@ pub use capabilities::{
 };
 pub use corelib_services::{
     CorelibService, CorelibServiceAbi, CorelibServiceAbiType, CorelibServiceCapability, CorelibServiceProof,
-    CorelibServiceValueDispatch, canonical_corelib_service_abi, canonical_corelib_service_abi_for_adapter,
-    canonical_corelib_service_capability, canonical_corelib_service_source_path,
-    canonical_corelib_service_value_dispatch, canonical_corelib_syscall_service_capability,
+    CorelibServiceSourceIdentity, CorelibServiceValueDispatch, canonical_corelib_service_abi,
+    canonical_corelib_service_abi_for_adapter, canonical_corelib_service_capability,
+    canonical_corelib_service_source_path, canonical_corelib_service_value_dispatch,
+    canonical_corelib_syscall_service_capability, corelib_service_source_identity, corelib_source_locations_match,
 };
 pub use kits::{
     CanonicalRuntimeKitBuildError, CanonicalRuntimeKitError, build_canonical_runtime_kit, resolve_canonical_runtime_kit,

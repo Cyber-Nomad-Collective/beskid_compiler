@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use beskid_abi::runtime_source::{
-    CorelibService, CorelibServiceCapability, RuntimeIntrinsicCapability, canonical_corelib_service_source_path,
-    canonical_corelib_service_sources,
+    CorelibService, CorelibServiceCapability, RuntimeIntrinsicCapability, canonical_corelib_service_sources,
+    corelib_service_source_identity, corelib_source_locations_match,
 };
 use beskid_analysis::projects::ProgramAssembly;
 use beskid_analysis::syntax::SyntaxGenerationId;
@@ -286,7 +286,7 @@ fn canonical_corelib_service_units(
     canonical_corelib_service_sources()
         .into_iter()
         .filter_map(|expected| {
-            let canonical_path = canonical_corelib_service_source_path(&expected.logical_path)?;
+            let identity = corelib_service_source_identity(&expected.logical_path)?;
             let candidates = assembly
                 .units
                 .iter()
@@ -295,17 +295,19 @@ fn canonical_corelib_service_units(
                         return false;
                     }
 
-                    // Direct compiler sources retain their canonical lexical identity.
-                    // Compare lexically (after normalize_lexically in the path helper) so
-                    // a user-project symlink to the same inode cannot acquire authority.
-                    let authorized_path = unit.path == canonical_path
-                        // Materialized dependency copies lose that physical identity. The
-                        // assembly loader supplies this separate, origin-checked path list
-                        // only after resolving the original dependency from compiler Corelib.
+                    // Origin is request evidence, distinct from the canonical semantic key.
+                    // Never resolve a user origin to decide whether it is compiler-owned.
+                    let direct = unit.path == identity.canonical_path
+                        && (corelib_source_locations_match(&unit.origin_path, &identity.declared_path)
+                            || corelib_source_locations_match(&unit.origin_path, &identity.canonical_path));
+                    let authorized_path = direct
+                        // Resolve only the destination issued by the loader, never the user's
+                        // origin. Both the selected location and physical identity must match.
                         || assembly
                             .trusted_corelib_service_paths
                             .iter()
-                            .any(|trusted| trusted == &unit.path);
+                            .any(|trusted| corelib_source_locations_match(&unit.origin_path, trusted)
+                                && trusted.canonicalize().is_ok_and(|path| path == unit.path));
                     authorized_path
                         && std::fs::symlink_metadata(&unit.path)
                             .is_ok_and(|metadata| metadata.file_type().is_file() && !metadata.file_type().is_symlink())
