@@ -57,6 +57,29 @@ static void observe(const TimerValidationMetadata *metadata, const TimerResultLa
     }
 }
 
+static const char *timer_environment(const char *name) {
+#ifdef _WIN32
+    char *value = NULL;
+    size_t length = 0;
+    int error = _dupenv_s(&value, &length, name);
+    assert(error == 0);
+    return value;
+#else
+    return getenv(name);
+#endif
+}
+
+static void release_timer_environment(const char *value) {
+#ifdef _WIN32
+    free((void *)value);
+#else
+    (void)value;
+#endif
+}
+
+#ifdef _WIN32
+__declspec(dllexport)
+#endif
 size_t RunTimerValidation(const TimerValidationMetadata *metadata) {
     assert(metadata->pointer_bytes == sizeof(void *));
     assert(metadata->word_bytes == sizeof(size_t));
@@ -67,9 +90,9 @@ size_t RunTimerValidation(const TimerValidationMetadata *metadata) {
     check_result_layout(&metadata->status, 0);
     assert(metadata->error_size >= sizeof(uint32_t));
     assert(metadata->error_tag_offset <= metadata->error_size - sizeof(uint32_t));
-    const char *fatal_case = getenv("BESKID_TEST_TIMER_FATAL_CASE");
+    const char *fatal_case = timer_environment("BESKID_TEST_TIMER_FATAL_CASE");
     if (fatal_case) {
-        const char *route = getenv("BESKID_TEST_TIMER_FATAL_ROUTE");
+        const char *route = timer_environment("BESKID_TEST_TIMER_FATAL_ROUTE");
         assert(route && (strcmp(route, "engine") == 0 || strcmp(route, "static") == 0 || strcmp(route, "shared") == 0));
         char *end;
         errno = 0;
@@ -79,6 +102,8 @@ size_t RunTimerValidation(const TimerValidationMetadata *metadata) {
          * scheduler-owned fiber. Engine already owns its initialized runtime. */
         fprintf(stderr, "timer fatal route=%s status=%zu\n", route, (size_t)status);
         fflush(stderr);
+        release_timer_environment(route);
+        release_timer_environment(fatal_case);
         (void)metadata->result_from_status((size_t)status);
         fprintf(stderr, "timer fatal helper unexpectedly returned\n");
         return 0;

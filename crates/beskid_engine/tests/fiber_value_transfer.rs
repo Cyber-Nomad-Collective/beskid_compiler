@@ -1,4 +1,11 @@
-#![cfg(unix)]
+#![cfg(any(
+    all(target_os = "linux", target_arch = "x86_64"),
+    all(target_os = "macos", target_arch = "aarch64"),
+    all(target_os = "windows", target_arch = "x86_64", target_env = "msvc"),
+))]
+
+#[path = "support/native_fixture.rs"]
+mod native_fixture;
 
 use anyhow::Context;
 use beskid_abi::{
@@ -24,17 +31,13 @@ use beskid_queries::{
     SourceUnitId, SyntaxGenerationId, build_typed_program_with_corelib_services, direct_callees, enum_layout,
     item_abi_signature, item_name, project_session_for_syntax_assembly, reachable_items,
 };
+#[cfg(windows)]
+use beskid_tests_support::native_harness::place_shared_runtime;
+use beskid_tests_support::native_harness::{executable_name, native_c_compiler, run_bounded, shared_library_name};
 use beskid_tools::toolchain::runtime_kit::{RuntimeKitProfile, build_native_host};
-use std::{
-    collections::HashSet,
-    ffi::CString,
-    io::{Read, Seek},
-    path::Path,
-    process::{Command, Stdio},
-    sync::Arc,
-    time::{Duration, Instant},
-};
+use std::{collections::HashSet, path::Path, process::Command, sync::Arc, time::Duration};
 
+const ROUTE_LIMIT: Duration = Duration::from_secs(180);
 const TIMER_FATAL_TEST: &str = "source_timer_sleep_invalid_runtime_status_fails_closed";
 const TIMER_FATAL_CASE: &str = "BESKID_TEST_TIMER_FATAL_CASE";
 const TIMER_FATAL_ROUTE: &str = "BESKID_TEST_TIMER_FATAL_ROUTE";
@@ -64,33 +67,11 @@ fn timer_fatal_cases() -> [String; 4] {
 }
 
 fn run_timer_fatal_child(command: &mut Command, route: &str, case: &str) -> anyhow::Result<()> {
-    // File-backed capture cannot deadlock if compiler/runtime diagnostics fill a pipe.
-    let mut stdout = tempfile::tempfile()?;
-    let mut stderr = tempfile::tempfile()?;
-    let mut child = command
-        .env(TIMER_FATAL_CASE, case)
-        .env(TIMER_FATAL_ROUTE, route)
-        .stdout(Stdio::from(stdout.try_clone()?))
-        .stderr(Stdio::from(stderr.try_clone()?))
-        .spawn()
-        .with_context(|| format!("{route}/{case}: fatal child launch"))?;
-    let deadline = Instant::now() + Duration::from_secs(180);
-    let status = loop {
-        if let Some(status) = child.try_wait()? {
-            break status;
-        }
-        if Instant::now() >= deadline {
-            let _ = child.kill();
-            let _ = child.wait();
-            anyhow::bail!("{route}/{case}: fatal child timeout (not an invariant observation)");
-        }
-        std::thread::sleep(Duration::from_millis(20));
-    };
-    stdout.rewind()?;
-    stderr.rewind()?;
-    let mut output = std::process::Output { status, stdout: Vec::new(), stderr: Vec::new() };
-    stdout.read_to_end(&mut output.stdout)?;
-    stderr.read_to_end(&mut output.stderr)?;
+    let output = run_bounded(
+        &format!("{route}/{case}: fatal child"),
+        command.env(TIMER_FATAL_CASE, case).env(TIMER_FATAL_ROUTE, route),
+        ROUTE_LIMIT,
+    );
     require_timer_fatal_output(route, case, &output)
 }
 
@@ -147,7 +128,7 @@ fn source_timer_sleep_deadline_validation_uses_production_helpers() {
         .assembly
         .units
         .iter()
-        .find(|unit| &unit.path == artifact.sleep.unit.path(db))
+        .find(|unit| SourceUnitId::new(db, unit.path.clone()) == artifact.sleep.unit)
         .unwrap();
     require_canonical_timer_source(&time.path, &time.source).unwrap();
     assert!(require_canonical_timer_source(&time.path, time.source.trim_end()).is_err());
@@ -248,7 +229,7 @@ fn timer_validation_metadata(artifact: &TimerValidationArtifact<'_>) -> anyhow::
             .assembly
             .units
             .iter()
-            .find(|unit| &unit.path == key.unit.path(db))
+            .find(|unit| SourceUnitId::new(db, unit.path.clone()) == key.unit)
             .context("timer helper source unavailable")?;
         let index = SyntaxIndex::from_program(&unit.program, key.generation);
         let mut pending = vec![key.node];
@@ -308,7 +289,7 @@ fn timer_validation_metadata(artifact: &TimerValidationArtifact<'_>) -> anyhow::
         .assembly
         .units
         .iter()
-        .find(|unit| &unit.path == deadline_error.unit.path(db))
+        .find(|unit| SourceUnitId::new(db, unit.path.clone()) == deadline_error.unit)
         .context("TimerError source unavailable")?;
     let error_index = SyntaxIndex::from_program(&error_unit.program, deadline_error.generation);
     anyhow::ensure!(
@@ -370,27 +351,44 @@ fn timer_validation_observations(
         kit.metadata.artifacts.static_library.sha256,
         kit.metadata.artifacts.shared_library.sha256
     );
+    #[cfg(unix)]
+    let shared_link_library = &kit.shared_library;
+    #[cfg(windows)]
+    let shared_link_library = {
+        let library = kit.shared_import_library.as_ref().expect("Windows ABI-v5 kit requires a COFF import library");
+        eprintln!(
+            "timer validation kit: import={} path={}",
+            kit.metadata.artifacts.shared_import_library.as_ref().expect("Windows import metadata").sha256,
+            library.display()
+        );
+        library
+    };
     let driver = root.join("tests/fixtures/timer_validation.c");
     let compiler = || {
-        let mut cc = Command::new("cc");
-        cc.args(["-std=c11", "-Wall", "-Wextra", "-Werror", "-I"]).arg(root.join("../beskid_abi/include"));
+        let mut cc = native_c_compiler();
+        cc.args(["-Wall", "-Wextra", "-Werror", "-I"]).arg(root.join("../beskid_abi/include"));
         cc
     };
-    let fixture_library = prefix.path().join(if cfg!(target_os = "macos") { "timer.dylib" } else { "timer.so" });
-    let output = compiler()
-        .args(if cfg!(target_os = "macos") { vec!["-dynamiclib"] } else { vec!["-shared", "-fPIC"] })
-        .arg(&driver)
-        .arg(&kit.shared_library)
-        .args(["-lpthread", "-lm", "-o"])
-        .arg(&fixture_library)
-        .output()
-        .context("engine timer driver compiler launch")?;
+    // The callback shares the exact DLL directory loaded by Engine below.
+    let fixture_library = kit.shared_library.parent().unwrap().join(shared_library_name("timer-validation"));
+    let mut cc = compiler();
+    #[cfg(target_os = "macos")]
+    cc.arg("-dynamiclib");
+    #[cfg(target_os = "linux")]
+    cc.args(["-shared", "-fPIC"]);
+    #[cfg(windows)]
+    cc.arg("-shared");
+    cc.arg(&driver).arg(shared_link_library);
+    #[cfg(unix)]
+    cc.args(["-lpthread", "-lm"]);
+    cc.arg("-o").arg(&fixture_library).current_dir(fixture_library.parent().unwrap());
+    let output = run_bounded("engine timer driver build", &mut cc, ROUTE_LIMIT);
     anyhow::ensure!(output.status.success(), "engine driver build: {}", String::from_utf8_lossy(&output.stderr));
     let mut counts = [("engine", 0), ("static", 0), ("shared", 0)];
     if validation_mode == TimerValidationMode::FatalParent {
         for case in timer_fatal_cases() {
             let mut command = Command::new(std::env::current_exe()?);
-            command.args([TIMER_FATAL_TEST, "--exact", "--nocapture"]);
+            command.args([TIMER_FATAL_TEST, "--exact", "--nocapture", "--test-threads=1"]);
             command.env("BESKID_TEST_TIMER_FATAL_BUILD_ROOT", prefix.path());
             run_timer_fatal_child(&mut command, "engine", &case)?;
             counts[0].1 += 1;
@@ -402,7 +400,6 @@ fn timer_validation_observations(
             BuildProfile::Debug,
         )?;
         engine.compile_artifact(&artifact.artifact).context("engine timer compilation")?;
-        let path = CString::new(fixture_library.to_str().context("engine driver path encoding")?)?;
         // SAFETY: the C fixture defines this exact repr(C) transport and entry ABI.
         // Every generated callback was checked against queries and emitted CLIF above;
         // engine, artifact, shared runtime, and fixture remain alive for the call.
@@ -418,29 +415,18 @@ fn timer_validation_observations(
                 Some(std::mem::transmute::<*const u8, unsafe extern "C" fn(usize) -> *mut u8>(
                     engine.entrypoint_ptr(&artifact.selected[2].item.symbol)?,
                 ));
-            let library = libc::dlopen(path.as_ptr(), libc::RTLD_NOW | libc::RTLD_LOCAL);
-            anyhow::ensure!(
-                !library.is_null(),
-                "engine timer driver dlopen failed: {:?}",
-                std::ffi::CStr::from_ptr(libc::dlerror())
-            );
-            let symbol = libc::dlsym(library, c"RunTimerValidation".as_ptr());
-            if symbol.is_null() {
-                libc::dlclose(library);
-                anyhow::bail!("engine timer driver missing RunTimerValidation");
-            }
-            let run = std::mem::transmute::<
-                *mut libc::c_void,
-                unsafe extern "C" fn(*const TimerValidationMetadata) -> usize,
-            >(symbol);
-            counts[0].1 = run(&metadata);
-            libc::dlclose(library);
+            let fixture =
+                native_fixture::NativeFixture::<unsafe extern "C" fn(*const TimerValidationMetadata) -> usize>::load(
+                    &fixture_library,
+                    c"RunTimerValidation",
+                );
+            counts[0].1 = (fixture.entry)(&metadata);
         }
     }
     if validation_mode == TimerValidationMode::EngineFatalChild {
         anyhow::bail!("engine fatal invocation unexpectedly returned");
     }
-    let object_path = prefix.path().join("timer.o");
+    let object_path = prefix.path().join(if cfg!(windows) { "timer.obj" } else { "timer.o" });
     let symbols = artifact
         .selected
         .iter()
@@ -472,9 +458,11 @@ fn timer_validation_observations(
         metadata.overflow_tag,
         metadata.cancelled_tag
     );
-    for (slot, library) in [(1, &kit.static_library), (2, &kit.shared_library)] {
+    for (slot, library) in [(1, &kit.static_library), (2, shared_link_library)] {
         let mode = counts[slot].0;
-        let executable = prefix.path().join(mode);
+        let directory = prefix.path().join(mode);
+        std::fs::create_dir(&directory)?;
+        let executable = directory.join(executable_name("timer-validation"));
         let mut cc = compiler();
         cc.arg("-DTIMER_VALIDATION_STANDALONE").arg(format!("-DTIMER_VALIDATION_METADATA={c_metadata}"));
         for (define, symbol) in
@@ -482,20 +470,22 @@ fn timer_validation_observations(
         {
             cc.arg(format!("-D{define}=\"{}{symbol}\"", if cfg!(target_os = "macos") { "_" } else { "" }));
         }
-        let output = cc
-            .arg(&driver)
-            .arg(&object_path)
-            .arg(library)
-            .args(["-lpthread", "-lm", "-o"])
-            .arg(&executable)
-            .output()
-            .with_context(|| format!("{mode} timer driver compiler launch"))?;
+        cc.arg(&driver).arg(&object_path).arg(library);
+        #[cfg(unix)]
+        cc.args(["-lpthread", "-lm"]);
+        cc.arg("-o").arg(&executable).current_dir(&directory);
+        let output = run_bounded(&format!("{mode} timer driver build"), &mut cc, ROUTE_LIMIT);
         anyhow::ensure!(
             output.status.success(),
             "{mode} timer driver build: {}",
             String::from_utf8_lossy(&output.stderr)
         );
+        #[cfg(windows)]
+        if mode == "shared" {
+            place_shared_runtime(&directory, &kit.shared_library);
+        }
         let mut command = Command::new(&executable);
+        #[cfg(unix)]
         command.env(
             if cfg!(target_os = "macos") { "DYLD_LIBRARY_PATH" } else { "LD_LIBRARY_PATH" },
             kit.shared_library.parent().unwrap(),
@@ -507,7 +497,7 @@ fn timer_validation_observations(
             }
             continue;
         }
-        let output = command.output().with_context(|| format!("{mode} timer driver launch"))?;
+        let output = run_bounded(&format!("{mode} timer driver"), &mut command, ROUTE_LIMIT);
         anyhow::ensure!(
             output.status.success(),
             "{mode} timer driver execution {:?}: {}",
@@ -621,7 +611,8 @@ fn timer_validation_artifact(db: &mut BeskidDatabase) -> anyhow::Result<TimerVal
             .ok_or_else(|| anyhow::anyhow!("timer helper reachable closure incomplete"))?;
         for key in reachable.iter().copied().filter(|key| seen.insert(*key)) {
             let name = item_name(db, key)?.ok_or_else(|| anyhow::anyhow!("unnamed timer closure item"))?;
-            let source = assembly.units.iter().find(|source| &source.path == key.unit.path(db)).unwrap();
+            let source =
+                assembly.units.iter().find(|source| SourceUnitId::new(db, source.path.clone()) == key.unit).unwrap();
             let logical = source
                 .logical_name
                 .chars()
@@ -696,7 +687,9 @@ fn source_external_cancellation_is_sticky_across_new_waits_but_not_fiber_reuse()
 
 fn source_transfer_assembly(kind: &str) -> Arc<ProgramAssembly> {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let compiler = root.join("../..").canonicalize().unwrap();
+    // Match the lexical CARGO_MANIFEST_DIR-based paths owned by source authority;
+    // Windows canonicalize() would introduce a different verbatim-path prefix.
+    let compiler = root.ancestors().nth(2).expect("Engine crate must be nested under compiler/crates");
     let concurrency = compiler.join("corelib/packages/concurrency/src");
     let foundation = compiler.join("corelib/packages/foundation/src");
     let application_root = root.join("tests/fixtures");
@@ -777,6 +770,18 @@ fn source_transfer_fixture(kind: &str, entry: &str, expected: i64) {
         kit.metadata.artifacts.static_library.sha256,
         kit.metadata.artifacts.shared_library.sha256,
     );
+    #[cfg(unix)]
+    let shared_link_library = &kit.shared_library;
+    #[cfg(windows)]
+    let shared_link_library = {
+        let library = kit.shared_import_library.as_ref().expect("Windows ABI-v5 kit requires a COFF import library");
+        eprintln!(
+            "{kind} native kit: import={} path={}",
+            kit.metadata.artifacts.shared_import_library.as_ref().expect("Windows import metadata").sha256,
+            library.display()
+        );
+        library
+    };
     {
         let mut engine = beskid_engine::Engine::with_runtime_kit(prefix.path(), target, BuildProfile::Debug).unwrap();
         engine.compile_artifact(&lowered.artifact).expect("JIT typed Fiber artifact");
@@ -784,18 +789,19 @@ fn source_transfer_fixture(kind: &str, entry: &str, expected: i64) {
         let run: extern "C" fn() -> i64 = unsafe { std::mem::transmute(entry) };
         eprintln!("Fiber JIT execution start");
         assert_eq!(run(), expected);
-        eprintln!("Fiber JIT execution complete");
+        eprintln!("{kind} engine execution complete result={expected}");
     }
-    let object_path = prefix.path().join("fiber.o");
+    let object_path = prefix.path().join(if cfg!(windows) { "fiber.obj" } else { "fiber.o" });
     let native_symbol = beskid_codegen::object_link_symbol(&lowered.symbol, &lowered.artifact.exports);
     let mut object = beskid_aot::object_module::BeskidObjectModule::new(None, beskid_aot::BuildProfile::Debug).unwrap();
     object.compile_artifact_with_exports(&lowered.artifact, &HashSet::from([native_symbol.clone()]), None).unwrap();
     object.finalize_to_path(&object_path).unwrap();
-    for (mode, library) in [("aot", &kit.static_library), ("native-kit", &kit.shared_library)] {
-        let executable = prefix.path().join(mode);
-        let output = Command::new("cc")
-            .arg("-std=c11")
-            .arg("-I")
+    for (mode, library) in [("aot", &kit.static_library), ("native-kit", shared_link_library)] {
+        let directory = prefix.path().join(mode);
+        std::fs::create_dir(&directory).unwrap();
+        let executable = directory.join(executable_name("fiber-value-transfer"));
+        let mut cc = native_c_compiler();
+        cc.arg("-I")
             .arg(root.join("../beskid_abi/include"))
             .arg(format!(
                 "-DFIBER_FIXTURE_SYMBOL=\"{}{}\"",
@@ -804,20 +810,24 @@ fn source_transfer_fixture(kind: &str, entry: &str, expected: i64) {
             ))
             .arg(root.join("tests/fixtures/fiber_value_transfer.c"))
             .arg(&object_path)
-            .arg(library)
-            .args(["-lpthread", "-lm", "-o"])
-            .arg(&executable)
-            .output()
-            .unwrap();
+            .arg(library);
+        #[cfg(unix)]
+        cc.args(["-lpthread", "-lm"]);
+        cc.arg("-o").arg(&executable).current_dir(&directory);
+        let output = run_bounded(&format!("{kind} {mode} build"), &mut cc, ROUTE_LIMIT);
         assert!(output.status.success(), "{mode}: {}", String::from_utf8_lossy(&output.stderr));
-        let output = Command::new(executable)
-            .env(
-                if cfg!(target_os = "macos") { "DYLD_LIBRARY_PATH" } else { "LD_LIBRARY_PATH" },
-                kit.shared_library.parent().unwrap(),
-            )
-            .output()
-            .unwrap();
+        #[cfg(windows)]
+        if mode == "native-kit" {
+            place_shared_runtime(&directory, &kit.shared_library);
+        }
+        let mut command = Command::new(&executable);
+        #[cfg(unix)]
+        command.env(
+            if cfg!(target_os = "macos") { "DYLD_LIBRARY_PATH" } else { "LD_LIBRARY_PATH" },
+            kit.shared_library.parent().unwrap(),
+        );
+        let output = run_bounded(&format!("{kind} {mode} execution"), &mut command, ROUTE_LIMIT);
         assert!(output.status.success(), "{mode}: {}", String::from_utf8_lossy(&output.stderr));
-        eprintln!("{kind} {mode} execution complete");
+        eprintln!("{kind} {mode} execution complete result={expected}");
     }
 }

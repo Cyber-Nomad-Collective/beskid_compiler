@@ -4,6 +4,9 @@
     all(target_os = "windows", target_arch = "x86_64", target_env = "msvc"),
 ))]
 
+#[path = "support/native_fixture.rs"]
+mod native_fixture;
+
 use beskid_abi::runtime_kit::{BuildProfile, host_runtime_target, resolve_installed_runtime_kit};
 use beskid_engine::JitRuntimeKit;
 #[cfg(windows)]
@@ -167,85 +170,12 @@ fn run_jit_fixture() {
     // SAFETY: the fixture and JIT entry use these exact C signatures; the
     // runtime, fixture library and JIT module remain live through the call.
     unsafe {
-        let (library, run) = fixture_loader::load_fixture(&fixture_library);
+        let fixture = native_fixture::NativeFixture::<unsafe extern "C" fn(TryComplete, i32) -> i32>::load(
+            &fixture_library,
+            c"RunExternalWaitFixture",
+        );
         let complete: TryComplete = std::mem::transmute(module.get_finalized_function(entry));
-        let result = run(complete, 0);
-        fixture_loader::close_fixture(library);
+        let result = (fixture.entry)(complete, 0);
         assert_eq!(result, 0);
-    }
-}
-
-#[cfg(unix)]
-mod fixture_loader {
-    use super::{Path, TryComplete};
-    use std::{
-        ffi::{CStr, CString, c_void},
-        os::unix::ffi::OsStrExt,
-    };
-
-    pub unsafe fn load_fixture(path: &Path) -> (*mut c_void, unsafe extern "C" fn(TryComplete, i32) -> i32) {
-        let encoded = CString::new(path.as_os_str().as_bytes()).unwrap();
-        unsafe {
-            let library = libc::dlopen(encoded.as_ptr(), libc::RTLD_NOW | libc::RTLD_LOCAL);
-            if library.is_null() {
-                panic!("dlopen {}: {}", path.display(), CStr::from_ptr(libc::dlerror()).to_string_lossy());
-            }
-            let symbol = libc::dlsym(library, c"RunExternalWaitFixture".as_ptr());
-            if symbol.is_null() {
-                libc::dlclose(library);
-                panic!("RunExternalWaitFixture missing from {}", path.display());
-            }
-            (library, std::mem::transmute::<*mut c_void, unsafe extern "C" fn(TryComplete, i32) -> i32>(symbol))
-        }
-    }
-
-    pub unsafe fn close_fixture(library: *mut c_void) {
-        unsafe {
-            libc::dlclose(library);
-        }
-    }
-}
-
-#[cfg(all(target_os = "windows", target_arch = "x86_64", target_env = "msvc"))]
-mod fixture_loader {
-    use super::{Path, TryComplete};
-    use std::{ffi::c_void, os::windows::ffi::OsStrExt};
-
-    type HMODULE = *mut c_void;
-    const LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR: u32 = 0x00000100;
-    const LOAD_LIBRARY_SEARCH_DEFAULT_DIRS: u32 = 0x00001000;
-
-    #[link(name = "kernel32")]
-    unsafe extern "system" {
-        fn LoadLibraryExW(path: *const u16, file: *mut c_void, flags: u32) -> HMODULE;
-        fn GetProcAddress(module: HMODULE, name: *const u8) -> *mut c_void;
-        fn GetLastError() -> u32;
-        fn FreeLibrary(module: HMODULE) -> i32;
-    }
-
-    pub unsafe fn load_fixture(path: &Path) -> (HMODULE, unsafe extern "system" fn(TryComplete, i32) -> i32) {
-        assert!(path.is_absolute(), "fixture DLL path must be absolute: {}", path.display());
-        let wide = path.as_os_str().encode_wide().chain(Some(0)).collect::<Vec<_>>();
-        unsafe {
-            let library = LoadLibraryExW(
-                wide.as_ptr(),
-                std::ptr::null_mut(),
-                LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_DEFAULT_DIRS,
-            );
-            assert!(!library.is_null(), "LoadLibraryExW {} failed: GetLastError={}", path.display(), GetLastError());
-            let symbol = GetProcAddress(library, b"RunExternalWaitFixture\0".as_ptr());
-            if symbol.is_null() {
-                let error = GetLastError();
-                FreeLibrary(library);
-                panic!("GetProcAddress RunExternalWaitFixture in {} failed: GetLastError={error}", path.display());
-            }
-            (library, std::mem::transmute::<*mut c_void, unsafe extern "system" fn(TryComplete, i32) -> i32>(symbol))
-        }
-    }
-
-    pub unsafe fn close_fixture(library: HMODULE) {
-        unsafe {
-            FreeLibrary(library);
-        }
     }
 }
