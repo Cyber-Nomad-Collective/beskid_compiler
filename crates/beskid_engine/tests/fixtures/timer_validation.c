@@ -1,7 +1,10 @@
 #include "beskid_runtime_abi_v5.h"
 #include <assert.h>
+#include <errno.h>
+#include <inttypes.h>
 #include <limits.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 /* Host transport records, not Beskid object representations. Every object
@@ -64,6 +67,22 @@ size_t RunTimerValidation(const TimerValidationMetadata *metadata) {
     check_result_layout(&metadata->status, 0);
     assert(metadata->error_size >= sizeof(uint32_t));
     assert(metadata->error_tag_offset <= metadata->error_size - sizeof(uint32_t));
+    const char *fatal_case = getenv("BESKID_TEST_TIMER_FATAL_CASE");
+    if (fatal_case) {
+        const char *route = getenv("BESKID_TEST_TIMER_FATAL_ROUTE");
+        assert(route && (strcmp(route, "engine") == 0 || strcmp(route, "static") == 0 || strcmp(route, "shared") == 0));
+        char *end;
+        errno = 0;
+        uintmax_t status = strtoumax(fatal_case, &end, 10);
+        assert(errno == 0 && end != fatal_case && *end == '\0' && status <= SIZE_MAX);
+        /* Invoke the genuine selected helper on this native thread, outside a
+         * scheduler-owned fiber. Engine already owns its initialized runtime. */
+        fprintf(stderr, "timer fatal route=%s status=%zu\n", route, (size_t)status);
+        fflush(stderr);
+        (void)metadata->result_from_status((size_t)status);
+        fprintf(stderr, "timer fatal helper unexpectedly returned\n");
+        return 0;
+    }
     const struct { const char *name; int64_t now, duration; int ok; size_t error_tag; } deadlines[] = {
         {"negative-one", -1, 0, 0, metadata->unavailable_tag},
         {"negative-min", INT64_MIN, 0, 0, metadata->unavailable_tag},

@@ -2,7 +2,7 @@
 
 use anyhow::Context;
 use beskid_abi::{
-    abi_v5::AbiManifestV5,
+    abi_v5::{AbiManifestV5, TRAP_DIAGNOSTIC_PREFIX},
     runtime_kit::BuildProfile,
     runtime_source::{
         CANONICAL_FOUNDATION_TIME_SOURCE_PATH, canonical_corelib_service_capability,
@@ -25,7 +25,98 @@ use beskid_queries::{
     item_abi_signature, item_name, project_session_for_syntax_assembly, reachable_items,
 };
 use beskid_tools::toolchain::runtime_kit::{RuntimeKitProfile, build_native_host};
-use std::{collections::HashSet, ffi::CString, path::Path, process::Command, sync::Arc};
+use std::{
+    collections::HashSet,
+    ffi::CString,
+    io::{Read, Seek},
+    path::Path,
+    process::{Command, Stdio},
+    sync::Arc,
+    time::{Duration, Instant},
+};
+
+const TIMER_FATAL_TEST: &str = "source_timer_sleep_invalid_runtime_status_fails_closed";
+const TIMER_FATAL_CASE: &str = "BESKID_TEST_TIMER_FATAL_CASE";
+const TIMER_FATAL_ROUTE: &str = "BESKID_TEST_TIMER_FATAL_ROUTE";
+const TIMER_FATAL_DIAGNOSTIC: &str = "Core.Time.Sleep observed an invalid runtime status";
+
+#[test]
+fn source_timer_sleep_invalid_runtime_status_fails_closed() {
+    let mut db = BeskidDatabase::default();
+    let artifact = timer_validation_artifact(&mut db).expect("production timer helper selection and lowering");
+    if let Some(case) = std::env::var_os(TIMER_FATAL_CASE) {
+        assert_eq!(std::env::var(TIMER_FATAL_ROUTE).unwrap(), "engine");
+        assert!(
+            timer_fatal_cases().iter().any(|expected| case.as_os_str() == std::ffi::OsStr::new(expected)),
+            "unknown fatal child case"
+        );
+        timer_validation_observations(&artifact, TimerValidationMode::EngineFatalChild).unwrap();
+        panic!("engine fatal child returned without terminating");
+    }
+    for (route, executed) in timer_validation_observations(&artifact, TimerValidationMode::FatalParent).unwrap() {
+        assert_eq!(executed, 4, "{route}: all four isolated invalid-status cases must execute");
+    }
+}
+
+fn timer_fatal_cases() -> [String; 4] {
+    // Metadata checks require the selected target's word width to equal usize.
+    ["1".into(), "2".into(), "5".into(), usize::MAX.to_string()]
+}
+
+fn run_timer_fatal_child(command: &mut Command, route: &str, case: &str) -> anyhow::Result<()> {
+    // File-backed capture cannot deadlock if compiler/runtime diagnostics fill a pipe.
+    let mut stdout = tempfile::tempfile()?;
+    let mut stderr = tempfile::tempfile()?;
+    let mut child = command
+        .env(TIMER_FATAL_CASE, case)
+        .env(TIMER_FATAL_ROUTE, route)
+        .stdout(Stdio::from(stdout.try_clone()?))
+        .stderr(Stdio::from(stderr.try_clone()?))
+        .spawn()
+        .with_context(|| format!("{route}/{case}: fatal child launch"))?;
+    let deadline = Instant::now() + Duration::from_secs(180);
+    let status = loop {
+        if let Some(status) = child.try_wait()? {
+            break status;
+        }
+        if Instant::now() >= deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            anyhow::bail!("{route}/{case}: fatal child timeout (not an invariant observation)");
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    };
+    stdout.rewind()?;
+    stderr.rewind()?;
+    let mut output = std::process::Output { status, stdout: Vec::new(), stderr: Vec::new() };
+    stdout.read_to_end(&mut output.stdout)?;
+    stderr.read_to_end(&mut output.stderr)?;
+    require_timer_fatal_output(route, case, &output)
+}
+
+fn require_timer_fatal_output(route: &str, case: &str, output: &std::process::Output) -> anyhow::Result<()> {
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let marker = format!("timer fatal route={route} status={case}");
+    anyhow::ensure!(stderr.lines().any(|line| line == marker), "{route}/{case}: missing invocation marker: {stderr}");
+    anyhow::ensure!(!output.status.success(), "{route}/{case}: invalid status returned successfully");
+    let diagnostic = format!("{TRAP_DIAGNOSTIC_PREFIX}: {TIMER_FATAL_DIAGNOSTIC}");
+    anyhow::ensure!(
+        stderr.lines().any(|line| line == diagnostic),
+        "{route}/{case}: unrelated failure {:?}, missing invariant diagnostic: {stderr}",
+        output.status
+    );
+    for line in stderr
+        .lines()
+        .filter(|line| line.starts_with("timer validation kit:") || *line == marker || *line == diagnostic)
+    {
+        eprintln!("{route}/{case}: {line}");
+    }
+    eprintln!(
+        "timer fatal passed route={route} status={case} exit={} diagnostic={TIMER_FATAL_DIAGNOSTIC}",
+        output.status
+    );
+    Ok(())
+}
 
 #[test]
 fn source_timer_sleep_deadline_validation_uses_production_helpers() {
@@ -64,7 +155,7 @@ fn source_timer_sleep_deadline_validation_uses_production_helpers() {
     let copied_path = copied.path().join("Time.bd");
     std::fs::copy(&time.path, &copied_path).unwrap();
     assert!(require_canonical_timer_source(&copied_path, &time.source).is_err());
-    for (route, executed) in timer_validation_observations(&artifact).unwrap() {
+    for (route, executed) in timer_validation_observations(&artifact, TimerValidationMode::Nonfatal).unwrap() {
         assert_eq!(executed, 9, "{route}: all six deadline and three status cases must execute");
     }
 }
@@ -249,10 +340,28 @@ fn timer_validation_metadata(artifact: &TimerValidationArtifact<'_>) -> anyhow::
     })
 }
 
-fn timer_validation_observations(artifact: &TimerValidationArtifact<'_>) -> anyhow::Result<[(&'static str, usize); 3]> {
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum TimerValidationMode {
+    Nonfatal,
+    FatalParent,
+    EngineFatalChild,
+}
+
+fn timer_validation_observations(
+    artifact: &TimerValidationArtifact<'_>,
+    validation_mode: TimerValidationMode,
+) -> anyhow::Result<[(&'static str, usize); 3]> {
     let mut metadata = timer_validation_metadata(artifact)?;
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let prefix = tempfile::tempdir()?;
+    // The parent owns fatal-child build directories because a process trap
+    // cannot run the child's TempDir destructor.
+    let prefix = if validation_mode == TimerValidationMode::EngineFatalChild {
+        tempfile::tempdir_in(
+            std::env::var_os("BESKID_TEST_TIMER_FATAL_BUILD_ROOT").context("missing child build root")?,
+        )?
+    } else {
+        tempfile::tempdir()?
+    };
     let kit = build_native_host(prefix.path().to_path_buf(), RuntimeKitProfile::Debug)?;
     eprintln!(
         "timer validation kit: target={} source={} static={} shared={}",
@@ -278,7 +387,15 @@ fn timer_validation_observations(artifact: &TimerValidationArtifact<'_>) -> anyh
         .context("engine timer driver compiler launch")?;
     anyhow::ensure!(output.status.success(), "engine driver build: {}", String::from_utf8_lossy(&output.stderr));
     let mut counts = [("engine", 0), ("static", 0), ("shared", 0)];
-    {
+    if validation_mode == TimerValidationMode::FatalParent {
+        for case in timer_fatal_cases() {
+            let mut command = Command::new(std::env::current_exe()?);
+            command.args([TIMER_FATAL_TEST, "--exact", "--nocapture"]);
+            command.env("BESKID_TEST_TIMER_FATAL_BUILD_ROOT", prefix.path());
+            run_timer_fatal_child(&mut command, "engine", &case)?;
+            counts[0].1 += 1;
+        }
+    } else {
         let mut engine = beskid_engine::Engine::with_runtime_kit(
             prefix.path(),
             artifact.input.target().clone(),
@@ -319,6 +436,9 @@ fn timer_validation_observations(artifact: &TimerValidationArtifact<'_>) -> anyh
             counts[0].1 = run(&metadata);
             libc::dlclose(library);
         }
+    }
+    if validation_mode == TimerValidationMode::EngineFatalChild {
+        anyhow::bail!("engine fatal invocation unexpectedly returned");
     }
     let object_path = prefix.path().join("timer.o");
     let symbols = artifact
@@ -375,13 +495,19 @@ fn timer_validation_observations(artifact: &TimerValidationArtifact<'_>) -> anyh
             "{mode} timer driver build: {}",
             String::from_utf8_lossy(&output.stderr)
         );
-        let output = Command::new(&executable)
-            .env(
-                if cfg!(target_os = "macos") { "DYLD_LIBRARY_PATH" } else { "LD_LIBRARY_PATH" },
-                kit.shared_library.parent().unwrap(),
-            )
-            .output()
-            .with_context(|| format!("{mode} timer driver launch"))?;
+        let mut command = Command::new(&executable);
+        command.env(
+            if cfg!(target_os = "macos") { "DYLD_LIBRARY_PATH" } else { "LD_LIBRARY_PATH" },
+            kit.shared_library.parent().unwrap(),
+        );
+        if validation_mode == TimerValidationMode::FatalParent {
+            for case in timer_fatal_cases() {
+                run_timer_fatal_child(&mut command, counts[slot].0, &case)?;
+                counts[slot].1 += 1;
+            }
+            continue;
+        }
+        let output = command.output().with_context(|| format!("{mode} timer driver launch"))?;
         anyhow::ensure!(
             output.status.success(),
             "{mode} timer driver execution {:?}: {}",
