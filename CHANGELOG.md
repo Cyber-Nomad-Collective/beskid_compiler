@@ -383,6 +383,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   as package publication.
 ### Changed
 
+- Prove full legal external-wait admission from the generated scheduler layout,
+  reject duplicate registration without disturbing its deadline, and verify
+  release/reuse leaves stale controller handles and generations harmless.
 - Preserve committed channel values across close and cancellation, release channel
   locks before parking, and report cancellation on the owning operation's stack.
 - Share one typed slot adapter across Fiber, Channel, and Hub receive; remove scalar

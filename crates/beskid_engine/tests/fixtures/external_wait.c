@@ -95,6 +95,114 @@ static void race_matrix(void) {
             (unsigned long long)first_source, (unsigned long long)beskid_rt_v5_external_active_count());
 }
 
+enum {
+    BESKID_TEST_SCHEDULER_FIBER_CAPACITY =
+        (BESKID_SCHEDULER_STATE_SIZE - BESKID_SCHEDULER_STATE_FIBERS_OFFSET) /
+        BESKID_FIBER_RECORD_SIZE,
+    CAPACITY_WAITERS = BESKID_TEST_SCHEDULER_FIBER_CAPACITY - 1,
+};
+_Static_assert(BESKID_TEST_SCHEDULER_FIBER_CAPACITY >= 2,
+    "scheduler requires controller plus waiter");
+
+static uintptr_t capacity_tokens[CAPACITY_WAITERS];
+static int64_t capacity_handles[CAPACITY_WAITERS];
+static size_t capacity_registered, capacity_released;
+static int64_t capacity_controller_handle;
+static uintptr_t capacity_old_token, capacity_current_token;
+static size_t capacity_active_waiters, capacity_active_full, capacity_active_duplicate;
+static size_t capacity_active_timeout, capacity_active_reused, capacity_active_current_release;
+
+static void *capacity_waiter_entry(void *argument) {
+    size_t index = capacity_registered;
+    int64_t handle = fiber_current_id();
+    uintptr_t current = beskid_rt_v5_external_wait_register(handle, 9, -1);
+    assert(handle >= 0 && current != 0);
+    capacity_handles[index] = handle;
+    capacity_tokens[index] = current;
+    ++capacity_registered;
+    assert(beskid_rt_v5_external_wait_park(current) == 1);
+    assert(beskid_rt_v5_external_wait_release(current));
+    ++capacity_released;
+    return argument;
+}
+
+static void *capacity_controller_entry(void *argument) {
+    while (capacity_registered != CAPACITY_WAITERS) beskid_rt_v5_fiber_yield();
+    capacity_active_waiters = beskid_rt_v5_external_active_count();
+    assert(capacity_active_waiters == CAPACITY_WAITERS);
+
+    int64_t handle = fiber_current_id();
+    int64_t capacity_deadline = clock_monotonic_nanos() + 1000000000;
+    capacity_old_token = beskid_rt_v5_external_wait_register(handle, 9, capacity_deadline);
+    capacity_active_full = beskid_rt_v5_external_active_count();
+    assert(capacity_old_token && capacity_active_full == BESKID_TEST_SCHEDULER_FIBER_CAPACITY);
+    assert(!beskid_rt_v5_external_wait_register(handle, 9, -1));
+    capacity_active_duplicate = beskid_rt_v5_external_active_count();
+    assert(capacity_active_duplicate == BESKID_TEST_SCHEDULER_FIBER_CAPACITY);
+
+    beskid_rt_v5_external_pump(capacity_deadline);
+    assert(beskid_rt_v5_external_wait_park(capacity_old_token) == 4);
+    capacity_active_timeout = beskid_rt_v5_external_active_count();
+    assert(capacity_active_timeout == CAPACITY_WAITERS);
+    assert(beskid_rt_v5_external_wait_release(capacity_old_token));
+
+    capacity_current_token = beskid_rt_v5_external_wait_register(handle, 9, -1);
+    capacity_active_reused = beskid_rt_v5_external_active_count();
+    assert(capacity_current_token && capacity_current_token != capacity_old_token);
+    assert(capacity_active_reused == BESKID_TEST_SCHEDULER_FIBER_CAPACITY);
+    assert(beskid_rt_v5_external_wait_post(owner, capacity_old_token, 3));
+    assert(beskid_rt_v5_external_wait_post(owner, capacity_current_token, 1));
+    beskid_rt_v5_external_pump(-1);
+    assert(beskid_rt_v5_external_wait_park(capacity_current_token) == 1);
+    assert(beskid_rt_v5_external_wait_release(capacity_current_token));
+    capacity_active_current_release = beskid_rt_v5_external_active_count();
+    assert(capacity_active_current_release == CAPACITY_WAITERS);
+
+    for (size_t i = 0; i < CAPACITY_WAITERS; ++i)
+        assert(beskid_rt_v5_external_wait_post(owner, capacity_tokens[i], 1));
+    beskid_rt_v5_external_pump(-1);
+    while (capacity_released != CAPACITY_WAITERS) beskid_rt_v5_fiber_yield();
+    assert(beskid_rt_v5_external_active_count() == 0);
+    fprintf(stderr,
+        "capacity=%u registered=%zu active=%zu/%zu/%zu/%zu/%zu/%zu old_generation=%llu current_generation=%llu final=%zu\n",
+        (unsigned)BESKID_TEST_SCHEDULER_FIBER_CAPACITY, capacity_registered + 1,
+        capacity_active_waiters, capacity_active_full, capacity_active_duplicate,
+        capacity_active_timeout, capacity_active_reused, capacity_active_current_release,
+        (unsigned long long)(capacity_old_token >> 32),
+        (unsigned long long)(capacity_current_token >> 32),
+        (size_t)beskid_rt_v5_external_active_count());
+    return argument;
+}
+
+static void *capacity_replacement_entry(void *argument) {
+    assert(!fiber_cancel(capacity_controller_handle, 9));
+    for (uintptr_t source = 1; source <= 4; ++source)
+        assert(!complete_wait(capacity_old_token & UINT32_MAX, capacity_old_token >> 32, source));
+    uintptr_t current = beskid_rt_v5_external_wait_register(fiber_current_id(), 9, -1);
+    assert(current);
+    assert(beskid_rt_v5_external_wait_post(owner, current, 1));
+    beskid_rt_v5_external_pump(-1);
+    assert(beskid_rt_v5_external_wait_park(current) == 1);
+    assert(beskid_rt_v5_external_wait_release(current));
+    return argument;
+}
+
+static void full_legal_capacity(void) {
+    int64_t waiters[CAPACITY_WAITERS];
+    memset(capacity_tokens, 0, sizeof(capacity_tokens));
+    memset(capacity_handles, 0, sizeof(capacity_handles));
+    capacity_registered = capacity_released = 0;
+    for (size_t i = 0; i < CAPACITY_WAITERS; ++i)
+        waiters[i] = fiber_spawn((void *)capacity_waiter_entry, value);
+    capacity_controller_handle = fiber_spawn((void *)capacity_controller_entry, value);
+    join_success(capacity_controller_handle);
+    int64_t replacement = fiber_spawn((void *)capacity_replacement_entry, value);
+    assert((uint32_t)replacement == (uint32_t)capacity_controller_handle);
+    assert(replacement != capacity_controller_handle);
+    join_success(replacement);
+    for (size_t i = 0; i < CAPACITY_WAITERS; ++i) join_success(waiters[i]);
+}
+
 static void *timer_entry(void *argument) {
     int64_t start = clock_monotonic_nanos();
     assert(beskid_rt_v5_external_sleep_until(start + 2000000) == 4);
@@ -252,6 +360,7 @@ int RunExternalWaitFixture(TryComplete complete, int deadlock) {
         fiber_join_status(fiber_spawn((void *)deadlock_entry, value));
         return 0;
     }
+    full_legal_capacity();
     race_matrix();
     join_success(fiber_spawn((void *)timer_reuse_entry, value));
     join_success(fiber_spawn((void *)timer_entry, value));
