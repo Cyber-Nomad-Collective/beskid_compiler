@@ -64,6 +64,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Remove the alternate public Core.Syscall authority constructor. Corelib
+  service facts now enter only through physical compiler-source or
+  loader-proven materialized origin evidence, so byte-identical user copies
+  cannot acquire syscall service authority.
 - Preserve source nominal identity and managed ownership when matching direct
   generic call results, including nested FiberError payloads returned by Fiber.Join.
 - Make v1 materialized dependency roots portable across worktree locations and

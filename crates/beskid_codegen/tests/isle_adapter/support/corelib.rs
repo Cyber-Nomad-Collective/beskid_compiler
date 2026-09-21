@@ -3,40 +3,36 @@ use super::prelude::{
     AbiManifestV5, Arc, AssemblyDiscovery, AstNodeId, AstNodeKey, BeskidDatabase, CANONICAL_CORELIB_ARGS_SOURCE_PATH,
     CANONICAL_CORELIB_SYSCALL_SOURCE_PATH, CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH, CodegenInput,
     EffectiveCompilationRoots, ModuleIndex, ProgramAssembly, ProjectSession, RootEntry, SourceUnit, SourceUnitId,
-    SyntaxGenerationId, SyntaxIndex, SyntaxModuleItem, TargetMetadata, build_canonical_corelib_syscall_typed_program,
-    build_typed_program_with_corelib_services, canonical_corelib_service_capability,
-    canonical_corelib_service_source_path, canonical_corelib_syscall_service_capability,
-    canonical_corelib_syscall_sources, isa, item_name, lower_syntax_program, parse_program_with_source_name, settings,
+    SyntaxGenerationId, SyntaxIndex, SyntaxModuleItem, TargetMetadata, build_typed_program_with_corelib_services,
+    canonical_corelib_service_capability, canonical_corelib_service_source_path, canonical_corelib_syscall_sources,
+    isa, item_name, lower_syntax_program, parse_program_with_source_name, settings,
 };
 
 pub(in super::super) fn canonical_corelib_syscall_fixture()
 -> (CodegenInput<'static>, Arc<dyn cranelift_codegen::isa::TargetIsa>, AstNodeKey) {
     let mut db = Box::new(BeskidDatabase::default());
-    let directory = tempfile::tempdir().expect("Corelib syscall project").keep();
-    let source = canonical_corelib_syscall_sources().pop().expect("embedded Core.Syscall source");
-    let source_path = directory.join("Syscall.bd");
-    std::fs::write(&source_path, &source.source).expect("write embedded Core.Syscall source");
-    let program = parse_program_with_source_name(source_path.to_str().unwrap(), &source.source)
-        .expect("parse embedded Core.Syscall source");
+    let source_path = canonical_corelib_service_source_path(CANONICAL_CORELIB_SYSCALL_SOURCE_PATH)
+        .expect("compiler-owned Core.Syscall source");
+    let source_root = source_path.ancestors().nth(3).expect("foundation source root").to_path_buf();
+    let source = std::fs::read_to_string(&source_path).expect("read compiler-owned Core.Syscall source");
+    let program = parse_program_with_source_name(source_path.to_str().unwrap(), &source)
+        .expect("parse compiler-owned Core.Syscall source");
     let entry = SourceUnitId::new(&*db, source_path.clone());
     let project = ProjectSession::new(
         &*db,
-        directory.clone(),
+        source_root.clone(),
         source_path.clone(),
         "beskid-corelib".into(),
         "corelib-source".into(),
     );
     let generation = SyntaxGenerationId(92);
     let assembly = Arc::new(ProgramAssembly::new(
-        EffectiveCompilationRoots {
-            host: RootEntry { dependency_name: None, source_root: directory },
-            dependencies: Vec::new(),
-        },
+        EffectiveCompilationRoots { host: RootEntry { dependency_name: None, source_root }, dependencies: Vec::new() },
         Arc::new(vec![SourceUnit {
             logical_name: CANONICAL_CORELIB_SYSCALL_SOURCE_PATH.into(),
             origin_path: source_path.clone(),
-            path: source_path,
-            source: source.source,
+            path: source_path.clone(),
+            source,
             program,
         }]),
         0,
@@ -50,14 +46,14 @@ pub(in super::super) fn canonical_corelib_syscall_fixture()
         .find(|target| target.triple.as_str() == "x86_64-unknown-linux-gnu")
         .expect("linux target");
     let manifest = AbiManifestV5::canonical_runtime(target.clone());
-    let typed = build_canonical_corelib_syscall_typed_program(
+    let typed = build_typed_program_with_corelib_services(
         &mut db,
         project,
         generation,
         assembly,
-        canonical_corelib_syscall_service_capability(&manifest).expect("Corelib service authority"),
+        canonical_corelib_service_capability(&manifest).expect("Corelib service authority"),
     )
-    .expect("exact embedded Core.Syscall source receives service authority");
+    .expect("compiler-owned Core.Syscall source receives service authority");
     let root = AstNodeKey { unit: entry, generation, node: AstNodeId(0) };
     let leaked: &'static BeskidDatabase = Box::leak(db);
     let input =

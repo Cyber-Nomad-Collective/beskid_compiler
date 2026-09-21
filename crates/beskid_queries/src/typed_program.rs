@@ -188,45 +188,6 @@ pub fn build_typed_program(
     })
 }
 
-/// Attach the separately-minted Corelib syscall service authority only after verifying the exact
-/// embedded Foundation facade. This deliberately cannot produce runtime intrinsic authority.
-pub fn build_canonical_corelib_syscall_typed_program(
-    db: &mut BeskidDatabase,
-    project: ProjectSession,
-    generation: SyntaxGenerationId,
-    assembly: Arc<ProgramAssembly>,
-    capability: CorelibServiceCapability,
-) -> Result<TypedProgram, SemanticError> {
-    let expected = beskid_abi::runtime_source::canonical_corelib_syscall_sources();
-    let actual = assembly
-        .units
-        .iter()
-        .map(|unit| beskid_abi::abi_v5::SourceUnit {
-            logical_path: unit.logical_name.clone(),
-            source: unit.source.clone(),
-        })
-        .collect::<Vec<_>>();
-    let exact_corpus = actual.len() == expected.len()
-        && actual.iter().all(|source| {
-            capability.authorizes_source(&source.logical_path) && expected.iter().any(|expected| expected == source)
-        });
-    if !exact_corpus {
-        return Err(SemanticError::new("syntax assembly is not the compiler-embedded Corelib syscall corpus"));
-    }
-
-    let mut typed = build_typed_program(db, project, generation, assembly)?;
-    let entry = typed.entry;
-    let services = capability
-        .services()
-        .iter()
-        .copied()
-        .filter(|service| service.source_path == expected[0].logical_path)
-        .collect();
-    attach_corelib_services(db, &mut typed, entry, services);
-    typed.corelib_service_capability = Some(Arc::new(capability));
-    Ok(typed)
-}
-
 /// Build a normal multi-unit syntax program and, when it contains the exact compiler-embedded
 /// Corelib syscall facade, grant service facts to that unit alone.
 ///

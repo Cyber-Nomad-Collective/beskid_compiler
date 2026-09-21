@@ -13,9 +13,8 @@ use beskid_analysis::syntax::{CallExpression, Expression};
 use beskid_analysis::syntax_query::{NodeKind, SyntaxIndex};
 use beskid_queries::{
     AstNodeKey, BeskidDatabase, ProjectSession, SemanticTypeId, SourceUnitId, SyntaxGenerationId, abi_type,
-    build_canonical_corelib_syscall_typed_program, build_typed_program_with_corelib_services,
-    build_typed_program_with_corelib_syscall_services, call_abi_signature, call_lowering, primitive_numeric_conversion,
-    runtime_intrinsic, value_abi_type,
+    build_typed_program_with_corelib_services, build_typed_program_with_corelib_syscall_services, call_abi_signature,
+    call_lowering, primitive_numeric_conversion, runtime_intrinsic, value_abi_type,
 };
 use std::sync::Arc;
 
@@ -632,30 +631,27 @@ fn canonical_concurrency_facade_gets_service_authority_but_copied_source_does_no
 #[test]
 fn corelib_syscall_source_gets_a_distinct_service_lowering_but_app_code_cannot_forge_it() {
     let mut db = BeskidDatabase::default();
-    let directory = tempfile::tempdir().expect("corelib project").keep();
-    let source = canonical_corelib_syscall_sources().pop().expect("embedded Core.Syscall source");
-    let source_path = directory.join("Syscall.bd");
-    std::fs::write(&source_path, &source.source).expect("write Core.Syscall source");
-    let program = parse_program(&source.source).expect("parse Core.Syscall source");
+    let source_path = canonical_corelib_service_source_path(CANONICAL_CORELIB_SYSCALL_SOURCE_PATH)
+        .expect("compiler-owned Core.Syscall source");
+    let source_root = source_path.ancestors().nth(3).expect("foundation source root").to_path_buf();
+    let source = std::fs::read_to_string(&source_path).expect("read compiler-owned Core.Syscall source");
+    let program = parse_program(&source).expect("parse compiler-owned Core.Syscall source");
     let generation = SyntaxGenerationId(71);
     let index = SyntaxIndex::from_program(&program, generation);
     let project = ProjectSession::new(
         &db,
-        directory.clone(),
+        source_root.clone(),
         source_path.clone(),
         "beskid-corelib".into(),
         "corelib-source".into(),
     );
     let assembly = Arc::new(ProgramAssembly::new(
-        EffectiveCompilationRoots {
-            host: RootEntry { dependency_name: None, source_root: directory },
-            dependencies: Vec::new(),
-        },
+        EffectiveCompilationRoots { host: RootEntry { dependency_name: None, source_root }, dependencies: Vec::new() },
         Arc::new(vec![SourceUnit {
             logical_name: CANONICAL_CORELIB_SYSCALL_SOURCE_PATH.into(),
             origin_path: source_path.clone(),
             path: source_path.clone(),
-            source: source.source.clone(),
+            source: source.clone(),
             program,
         }]),
         0,
@@ -669,14 +665,14 @@ fn corelib_syscall_source_gets_a_distinct_service_lowering_but_app_code_cannot_f
         .find(|target| target.triple.as_str() == "x86_64-unknown-linux-gnu")
         .expect("linux target");
     let manifest = AbiManifestV5::canonical_runtime(target);
-    build_canonical_corelib_syscall_typed_program(
+    build_typed_program_with_corelib_services(
         &mut db,
         project,
         generation,
         assembly,
-        canonical_corelib_syscall_service_capability(&manifest).expect("Corelib authority"),
+        canonical_corelib_service_capability(&manifest).expect("Corelib authority"),
     )
-    .expect("exact Core.Syscall source obtains service authority");
+    .expect("compiler-owned Core.Syscall source obtains service authority");
 
     let syscall_write = index
         .ids_of_kind(NodeKind::CallExpression)
@@ -706,7 +702,7 @@ fn corelib_syscall_source_gets_a_distinct_service_lowering_but_app_code_cannot_f
     let mut forged_db = BeskidDatabase::default();
     let forged_directory = tempfile::tempdir().expect("forged Corelib project").keep();
     let forged_path = forged_directory.join("Syscall.bd");
-    let forged_source = source.source.replacen("__syscall_write", "__syscall_writex", 1);
+    let forged_source = source.replacen("__syscall_write", "__syscall_writex", 1);
     std::fs::write(&forged_path, &forged_source).expect("write forged Corelib source");
     let forged_program = parse_program(&forged_source).expect("parse forged Corelib source");
     let forged_project = ProjectSession::new(
@@ -732,17 +728,18 @@ fn corelib_syscall_source_gets_a_distinct_service_lowering_but_app_code_cannot_f
         AssemblyDiscovery::ImportClosure,
         Arc::new(ModuleIndex::empty()),
         false,
-        generation,
+        SyntaxGenerationId(72),
     ));
+    let forged_typed = build_typed_program_with_corelib_services(
+        &mut forged_db,
+        forged_project,
+        SyntaxGenerationId(72),
+        forged_assembly,
+        canonical_corelib_service_capability(&manifest).expect("Corelib authority for forge check"),
+    )
+    .expect("altered user source remains an ordinary syntax program");
     assert!(
-        build_canonical_corelib_syscall_typed_program(
-            &mut forged_db,
-            forged_project,
-            SyntaxGenerationId(72),
-            forged_assembly,
-            canonical_corelib_syscall_service_capability(&manifest).expect("Corelib authority for forge check"),
-        )
-        .is_err(),
+        forged_typed.corelib_service_capability.is_none(),
         "altering the Corelib source must not mint its service capability"
     );
 }

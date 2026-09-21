@@ -117,7 +117,6 @@ pub use typed_entry_bundle::{
     clear_typed_entry_cache, file_revision_for, is_typed_bundle_stale, reset_typed_entry_inputs,
     typed_entry_bundle_tracked, typed_entry_bundle_with_db, typed_entry_state_with_db, typed_prepare_revision_for,
 };
-pub use typed_program::build_canonical_corelib_syscall_typed_program;
 pub use typed_program::build_canonical_runtime_typed_program;
 pub use typed_program::build_typed_program;
 pub use typed_program::build_typed_program_with_corelib_services;
