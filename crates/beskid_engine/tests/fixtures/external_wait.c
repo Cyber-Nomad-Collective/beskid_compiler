@@ -337,6 +337,137 @@ static void timer_heap(void) {
     const size_t expected[] = {0, 5, 7, 1, 9, 3, 10, 6, 8, 4, 2, 11};
     assert(timer_finished == 12 && memcmp(timer_order, expected, sizeof(expected)) == 0);
 }
+
+static int64_t timer_winner_handle;
+static uintptr_t timer_winner_token, timer_winner_source;
+static int64_t timer_winner_deadline;
+static int timer_winner_registered, timer_winner_released;
+
+static void *timer_winner_waiter_entry(void *argument) {
+    timer_winner_handle = fiber_current_id();
+    timer_winner_token = beskid_rt_v5_external_wait_register(
+        timer_winner_handle, 9, timer_winner_deadline);
+    assert(timer_winner_handle >= 0 && timer_winner_token);
+    timer_winner_registered = 1;
+    timer_winner_source = beskid_rt_v5_external_wait_park(timer_winner_token);
+    assert(timer_winner_source == 4);
+    assert(beskid_rt_v5_external_wait_release(timer_winner_token));
+    timer_winner_released = 1;
+    return argument;
+}
+
+static void *timer_winner_controller_entry(void *argument) {
+    while (!timer_winner_registered) beskid_rt_v5_fiber_yield();
+    beskid_rt_v5_external_pump(timer_winner_deadline);
+    assert(beskid_rt_v5_external_active_count() == 0);
+    assert(fiber_cancel(timer_winner_handle, 9));
+    while (!timer_winner_released) beskid_rt_v5_fiber_yield();
+    fprintf(stderr, "case=timer-winner owner=%llu generation=%llu winner=%llu active=%zu\n",
+        (unsigned long long)owner, (unsigned long long)(timer_winner_token >> 32),
+        (unsigned long long)timer_winner_source,
+        (size_t)beskid_rt_v5_external_active_count());
+    return argument;
+}
+
+static void timer_winner_before_resume(void) {
+    timer_winner_handle = -1;
+    timer_winner_token = timer_winner_source = 0;
+    timer_winner_registered = timer_winner_released = 0;
+    timer_winner_deadline = clock_monotonic_nanos() + 1000000000;
+    int64_t peer = fiber_spawn((void *)timer_winner_waiter_entry, value);
+    int64_t controller = fiber_spawn((void *)timer_winner_controller_entry, value);
+    join_success(controller);
+    assert(timer_winner_released && timer_winner_source == 4);
+    assert(fiber_join_status(peer) == 1);
+    assert(fiber_join_error_finish(peer));
+}
+
+static uintptr_t command_token, command_source;
+static int64_t command_deadline;
+static int command_registered, command_released;
+static uintptr_t equal_tokens[2], equal_sources[2];
+static int64_t equal_deadline;
+static size_t equal_registered, equal_released, equal_completions[2];
+
+static void *command_waiter_entry(void *argument) {
+    int64_t handle = fiber_current_id();
+    command_token = beskid_rt_v5_external_wait_register(handle, 9, command_deadline);
+    assert(handle >= 0 && command_token);
+    command_registered = 1;
+    command_source = beskid_rt_v5_external_wait_park(command_token);
+    assert(command_source == 1);
+    assert(beskid_rt_v5_external_wait_release(command_token));
+    command_released = 1;
+    return argument;
+}
+
+static void *equal_deadline_waiter_entry(void *argument) {
+    size_t index = equal_registered++;
+    uintptr_t current = beskid_rt_v5_external_wait_register(
+        fiber_current_id(), 9, equal_deadline);
+    assert(index < 2 && current);
+    equal_tokens[index] = current;
+    equal_sources[index] = beskid_rt_v5_external_wait_park(current);
+    assert(equal_sources[index] == 4);
+    ++equal_completions[index];
+    assert(beskid_rt_v5_external_wait_release(current));
+    ++equal_released;
+    return argument;
+}
+
+static void *pump_order_controller_entry(void *argument) {
+    while (!command_registered) beskid_rt_v5_fiber_yield();
+    assert(beskid_rt_v5_external_wait_post(owner, command_token, 1));
+    beskid_rt_v5_external_pump(command_deadline);
+    assert(beskid_rt_v5_external_active_count() == 0);
+    while (!command_released) beskid_rt_v5_fiber_yield();
+    assert(command_source == 1);
+    fprintf(stderr, "case=pump-command owner=%llu generation=%llu winner=%llu active=%zu\n",
+        (unsigned long long)owner, (unsigned long long)(command_token >> 32),
+        (unsigned long long)command_source,
+        (size_t)beskid_rt_v5_external_active_count());
+
+    return argument;
+}
+
+static void *equal_deadline_controller_entry(void *argument) {
+    while (equal_registered != 2) beskid_rt_v5_fiber_yield();
+    beskid_rt_v5_external_pump(equal_deadline);
+    assert(beskid_rt_v5_external_active_count() == 0);
+    while (equal_released != 2) beskid_rt_v5_fiber_yield();
+    assert(equal_tokens[0] != equal_tokens[1]);
+    assert(equal_sources[0] == 4 && equal_sources[1] == 4);
+    assert(equal_completions[0] == 1 && equal_completions[1] == 1);
+    fprintf(stderr, "case=pump-equal owner=%llu generation=%llu/%llu winner=%llu/%llu active=%zu\n",
+        (unsigned long long)owner, (unsigned long long)(equal_tokens[0] >> 32),
+        (unsigned long long)(equal_tokens[1] >> 32),
+        (unsigned long long)equal_sources[0], (unsigned long long)equal_sources[1],
+        (size_t)beskid_rt_v5_external_active_count());
+    return argument;
+}
+
+static void pump_order_cases(void) {
+    command_token = command_source = 0;
+    command_registered = command_released = 0;
+    command_deadline = clock_monotonic_nanos() + 1000000000;
+    int64_t command_peer = fiber_spawn((void *)command_waiter_entry, value);
+    int64_t command_controller = fiber_spawn((void *)pump_order_controller_entry, value);
+    join_success(command_peer);
+    join_success(command_controller);
+
+    equal_deadline = clock_monotonic_nanos() + 1000000000;
+    memset(equal_tokens, 0, sizeof(equal_tokens));
+    memset(equal_sources, 0, sizeof(equal_sources));
+    memset(equal_completions, 0, sizeof(equal_completions));
+    equal_registered = equal_released = 0;
+    int64_t first_equal_peer = fiber_spawn((void *)equal_deadline_waiter_entry, value);
+    int64_t second_equal_peer = fiber_spawn((void *)equal_deadline_waiter_entry, value);
+    int64_t equal_controller = fiber_spawn((void *)equal_deadline_controller_entry, value);
+    join_success(first_equal_peer);
+    join_success(second_equal_peer);
+    join_success(equal_controller);
+}
+
 static int detached_started;
 static void *detached_timer_entry(void *argument) {
     (void)argument;
@@ -362,6 +493,8 @@ int RunExternalWaitFixture(TryComplete complete, int deadlock) {
     }
     full_legal_capacity();
     race_matrix();
+    timer_winner_before_resume();
+    pump_order_cases();
     join_success(fiber_spawn((void *)timer_reuse_entry, value));
     join_success(fiber_spawn((void *)timer_entry, value));
     timer_heap();
