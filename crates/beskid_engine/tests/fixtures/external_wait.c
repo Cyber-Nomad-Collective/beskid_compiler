@@ -1,9 +1,116 @@
 #include "beskid_runtime_abi_v5.h"
 #include <assert.h>
-#include <unistd.h>
-#include <pthread.h>
 #include <stdio.h>
 #include <string.h>
+
+#ifdef _WIN32
+#include <windows.h>
+#include <process.h>
+
+typedef SRWLOCK FixtureMutex;
+typedef CONDITION_VARIABLE FixtureCondition;
+typedef HANDLE FixtureThread;
+#define FIXTURE_MUTEX_INIT SRWLOCK_INIT
+#define FIXTURE_CONDITION_INIT CONDITION_VARIABLE_INIT
+#define FIXTURE_THREAD_ENTRY unsigned __stdcall
+#define FIXTURE_THREAD_RETURN(value) return (unsigned)(uintptr_t)(value)
+
+static void fixture_lock(FixtureMutex *lock) {
+    AcquireSRWLockExclusive(lock);
+}
+
+static void fixture_unlock(FixtureMutex *lock) {
+    ReleaseSRWLockExclusive(lock);
+}
+
+static void fixture_wait(FixtureCondition *condition, FixtureMutex *lock) {
+    assert(SleepConditionVariableSRW(condition, lock, INFINITE, 0));
+}
+
+static void fixture_signal(FixtureCondition *condition) {
+    WakeConditionVariable(condition);
+}
+
+static void fixture_thread_start(
+    FixtureThread *thread, unsigned (__stdcall *entry)(void *), void *argument) {
+    uintptr_t handle = _beginthreadex(NULL, 0, entry, argument, 0, NULL);
+    assert(handle != 0);
+    *thread = (HANDLE)handle;
+}
+
+static void fixture_thread_join(FixtureThread thread) {
+    assert(WaitForSingleObject(thread, INFINITE) == WAIT_OBJECT_0);
+    assert(CloseHandle(thread));
+}
+
+static void fixture_pipe_open(int32_t descriptors[2]) {
+    HANDLE read_handle = NULL;
+    HANDLE write_handle = NULL;
+    assert(CreatePipe(&read_handle, &write_handle, NULL, 0));
+    assert(read_handle != NULL && read_handle != INVALID_HANDLE_VALUE);
+    assert(write_handle != NULL && write_handle != INVALID_HANDLE_VALUE);
+    descriptors[0] = (int32_t)(intptr_t)read_handle;
+    descriptors[1] = (int32_t)(intptr_t)write_handle;
+}
+
+static void fixture_pipe_write(int32_t descriptor, const void *bytes, DWORD count) {
+    DWORD written = 0;
+    assert(WriteFile((HANDLE)(intptr_t)descriptor, bytes, count, &written, NULL));
+    assert(written == count);
+}
+
+static void fixture_pipe_close(int32_t descriptor) {
+    assert(CloseHandle((HANDLE)(intptr_t)descriptor));
+}
+#else
+#include <unistd.h>
+#include <pthread.h>
+
+typedef pthread_mutex_t FixtureMutex;
+typedef pthread_cond_t FixtureCondition;
+typedef pthread_t FixtureThread;
+#define FIXTURE_MUTEX_INIT PTHREAD_MUTEX_INITIALIZER
+#define FIXTURE_CONDITION_INIT PTHREAD_COND_INITIALIZER
+#define FIXTURE_THREAD_ENTRY void *
+#define FIXTURE_THREAD_RETURN(value) return (value)
+
+static void fixture_lock(FixtureMutex *lock) {
+    assert(pthread_mutex_lock(lock) == 0);
+}
+
+static void fixture_unlock(FixtureMutex *lock) {
+    assert(pthread_mutex_unlock(lock) == 0);
+}
+
+static void fixture_wait(FixtureCondition *condition, FixtureMutex *lock) {
+    assert(pthread_cond_wait(condition, lock) == 0);
+}
+
+static void fixture_signal(FixtureCondition *condition) {
+    assert(pthread_cond_signal(condition) == 0);
+}
+
+static void fixture_thread_start(
+    FixtureThread *thread, void *(*entry)(void *), void *argument) {
+    assert(pthread_create(thread, NULL, entry, argument) == 0);
+}
+
+static void fixture_thread_join(FixtureThread thread) {
+    assert(pthread_join(thread, NULL) == 0);
+}
+
+static void fixture_pipe_open(int32_t descriptors[2]) {
+    assert(pipe(descriptors) == 0);
+}
+
+static void fixture_pipe_write(int32_t descriptor, const void *bytes, size_t count) {
+    assert(write(descriptor, bytes, count) == (ssize_t)count);
+}
+
+static void fixture_pipe_close(int32_t descriptor) {
+    close(descriptor);
+}
+#endif
 
 static void *value;
 typedef uint8_t (*TryComplete)(uintptr_t, uintptr_t, uintptr_t);
@@ -13,8 +120,8 @@ static uintptr_t first_source, second_source;
 static int phase;
 static int completions;
 static int64_t old_fiber;
-static pthread_mutex_t barrier_lock = PTHREAD_MUTEX_INITIALIZER;
-static pthread_cond_t barrier_ready = PTHREAD_COND_INITIALIZER;
+static FixtureMutex barrier_lock = FIXTURE_MUTEX_INIT;
+static FixtureCondition barrier_ready = FIXTURE_CONDITION_INIT;
 static int publish;
 
 static void join_success(int64_t fiber) {
@@ -31,13 +138,13 @@ static void post_pair(void) {
     assert(beskid_rt_v5_external_wait_post(owner, token, second_source));
 }
 static void *post_entry(void *argument) { post_pair(); return argument; }
-static void *foreign_post(void *unused) {
+static FIXTURE_THREAD_ENTRY foreign_post(void *unused) {
     (void)unused;
-    pthread_mutex_lock(&barrier_lock);
-    while (!publish) pthread_cond_wait(&barrier_ready, &barrier_lock);
-    pthread_mutex_unlock(&barrier_lock);
+    fixture_lock(&barrier_lock);
+    while (!publish) fixture_wait(&barrier_ready, &barrier_lock);
+    fixture_unlock(&barrier_lock);
     post_pair(); /* this thread has no attached runtime/TLS */
-    return NULL;
+    FIXTURE_THREAD_RETURN(NULL);
 }
 static void *wait_entry(void *argument) {
     int64_t current_fiber = fiber_current_id();
@@ -53,10 +160,10 @@ static void *wait_entry(void *argument) {
     }
     if (phase == 0) post_pair(); /* published before park checks */
     if (phase == 2) {
-        pthread_mutex_lock(&barrier_lock);
+        fixture_lock(&barrier_lock);
         publish = 1;
-        pthread_cond_signal(&barrier_ready);
-        pthread_mutex_unlock(&barrier_lock);
+        fixture_signal(&barrier_ready);
+        fixture_unlock(&barrier_lock);
     }
     assert(beskid_rt_v5_external_wait_park(token) == first_source);
     ++completions;
@@ -77,13 +184,13 @@ static void race_matrix(void) {
             for (size_t a = 0; a < 5; ++a) for (size_t b = 0; b < 5; ++b) {
                 first_source = sources[a]; second_source = sources[b];
                 publish = 0;
-                pthread_t producer;
-                if (phase == 2) assert(pthread_create(&producer, NULL, foreign_post, NULL) == 0);
+                FixtureThread producer;
+                if (phase == 2) fixture_thread_start(&producer, foreign_post, NULL);
                 int64_t fiber = fiber_spawn((void *)wait_entry, value);
                 int64_t controller = phase == 1 ? fiber_spawn((void *)post_entry, value) : -1;
                 join_success(fiber);
                 if (controller >= 0) join_success(controller);
-                if (phase == 2) assert(pthread_join(producer, NULL) == 0);
+                if (phase == 2) fixture_thread_join(producer);
                 /* Flush the losing command before reusing the slot. */
                 beskid_rt_v5_external_pump(clock_monotonic_nanos());
             }
@@ -236,8 +343,8 @@ static void *deadlock_entry(void *argument) {
     return NULL;
 }
 
-static int descriptors[2];
-static int retry_descriptors[2];
+static int32_t descriptors[2];
+static int32_t retry_descriptors[2];
 static int64_t reader;
 static int resumed;
 static void *read_entry(void *argument) {
@@ -248,7 +355,6 @@ static void *read_entry(void *argument) {
     /* Cancellation is a persistent fiber property, not a one-wait message.
      * Repeated Cancel is accepted without publishing another cancel command. */
     assert(fiber_cancel(fiber_current_id(), 10));
-    alarm(3);
     assert(beskid_rt_v5_external_sleep_until(clock_monotonic_nanos() + 30000000000) == 3);
     assert(beskid_rt_v5_external_active_count() == 0);
     assert(fiber_cancel(fiber_current_id(), 11));
@@ -256,7 +362,6 @@ static void *read_entry(void *argument) {
     assert(byte == 0 && beskid_rt_v5_external_active_count() == 0);
     assert(beskid_rt_v5_external_sleep_until(clock_monotonic_nanos() + 30000000000) == 3);
     assert(beskid_rt_v5_external_active_count() == 0);
-    alarm(0);
     return argument;
 }
 static void *cancel_entry(void *argument) {
@@ -268,8 +373,8 @@ static void *late_completion_entry(void *argument) {
      * native request may now finish, but cannot publish into the new wait. */
     assert((uint32_t)fiber_current_id() != (uint32_t)reader);
     assert(beskid_rt_v5_external_active_count() == 1);
-    assert(write(descriptors[1], "x", 1) == 1);
-    assert(write(retry_descriptors[1], "y", 1) == 1);
+    fixture_pipe_write(descriptors[1], "x", 1);
+    fixture_pipe_write(retry_descriptors[1], "y", 1);
     post_pair();
     return argument;
 }
@@ -280,20 +385,20 @@ static void *ready_entry(void *argument) {
     assert(byte == 'r');
     return argument;
 }
-static void *writer_thread(void *unused) {
+static FIXTURE_THREAD_ENTRY writer_thread(void *unused) {
     (void)unused;
-    pthread_mutex_lock(&barrier_lock);
-    while (!publish) pthread_cond_wait(&barrier_ready, &barrier_lock);
-    pthread_mutex_unlock(&barrier_lock);
-    assert(write(descriptors[1], "r", 1) == 1);
-    return NULL;
+    fixture_lock(&barrier_lock);
+    while (!publish) fixture_wait(&barrier_ready, &barrier_lock);
+    fixture_unlock(&barrier_lock);
+    fixture_pipe_write(descriptors[1], "r", 1);
+    FIXTURE_THREAD_RETURN(NULL);
 }
 static void *other_runnable_entry(void *argument) {
     assert(beskid_rt_v5_external_active_count() == 1);
-    pthread_mutex_lock(&barrier_lock);
+    fixture_lock(&barrier_lock);
     publish = 1;
-    pthread_cond_signal(&barrier_ready);
-    pthread_mutex_unlock(&barrier_lock);
+    fixture_signal(&barrier_ready);
+    fixture_unlock(&barrier_lock);
     return argument;
 }
 
@@ -477,7 +582,13 @@ static void *detached_timer_entry(void *argument) {
     return NULL;
 }
 static void *sentinel_entry(void *argument) { return argument; }
-int RunExternalWaitFixture(TryComplete complete, int deadlock) {
+#ifdef _WIN32
+#define EXTERNAL_WAIT_EXPORT __declspec(dllexport)
+#else
+#define EXTERNAL_WAIT_EXPORT
+#endif
+
+EXTERNAL_WAIT_EXPORT int RunExternalWaitFixture(TryComplete complete, int deadlock) {
     complete_wait = complete;
     _Alignas(8) unsigned char runtime[BESKID_RUNTIME_STATE_SIZE] = {0};
     assert(beskid_rt_v5_process_init(runtime) == runtime);
@@ -498,18 +609,18 @@ int RunExternalWaitFixture(TryComplete complete, int deadlock) {
     join_success(fiber_spawn((void *)timer_reuse_entry, value));
     join_success(fiber_spawn((void *)timer_entry, value));
     timer_heap();
-    assert(pipe(descriptors) == 0);
+    fixture_pipe_open(descriptors);
     publish = 0;
-    pthread_t writer;
-    assert(pthread_create(&writer, NULL, writer_thread, NULL) == 0);
+    FixtureThread writer;
+    fixture_thread_start(&writer, writer_thread, NULL);
     int64_t ready_reader = fiber_spawn((void *)ready_entry, value);
     int64_t other = fiber_spawn((void *)other_runnable_entry, value);
     join_success(ready_reader); join_success(other);
-    assert(pthread_join(writer, NULL) == 0);
-    close(descriptors[0]); close(descriptors[1]);
-    assert(pipe(descriptors) == 0);
+    fixture_thread_join(writer);
+    fixture_pipe_close(descriptors[0]); fixture_pipe_close(descriptors[1]);
+    fixture_pipe_open(descriptors);
     reader = fiber_spawn((void *)read_entry, value);
-    assert(pipe(retry_descriptors) == 0);
+    fixture_pipe_open(retry_descriptors);
     int64_t canceler = fiber_spawn((void *)cancel_entry, value);
     assert(fiber_join_status(reader) == 1);
     assert(resumed == 1); /* cancellation must return through the owner operation */
@@ -526,11 +637,9 @@ int RunExternalWaitFixture(TryComplete complete, int deadlock) {
     join_success(fiber_spawn((void *)sentinel_entry, value));
     assert(detached_started && beskid_rt_v5_external_active_count() == 1);
     gc_unregister_root(&value);
-    close(descriptors[0]); close(descriptors[1]);
-    close(retry_descriptors[0]); close(retry_descriptors[1]);
-    alarm(3); /* a detached deadline must not retain scheduler liveness */
+    fixture_pipe_close(descriptors[0]); fixture_pipe_close(descriptors[1]);
+    fixture_pipe_close(retry_descriptors[0]); fixture_pipe_close(retry_descriptors[1]);
     beskid_rt_v5_process_shutdown(runtime);
-    alarm(0);
     return 0;
 }
 #ifdef EXTERNAL_WAIT_STANDALONE
