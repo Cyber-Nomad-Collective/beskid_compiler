@@ -1,6 +1,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use super::trusted_paths::trusted_corelib_service_paths;
@@ -12,8 +13,11 @@ use crate::projects::{MaterializedDependencyProject, PreparedProjectWorkspace, S
 use crate::services::parse_program_with_source_name;
 
 fn temp_project_root(label: &str) -> PathBuf {
+    static NEXT_TEMP_ROOT: AtomicU64 = AtomicU64::new(0);
     let nanos = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0);
-    std::env::temp_dir().join(format!("beskid_asm_{label}_{nanos}"))
+    let nonce = NEXT_TEMP_ROOT.fetch_add(1, Ordering::Relaxed);
+    let process = std::process::id();
+    std::env::temp_dir().join(format!("beskid_asm_{label}_{process}_{nanos}_{nonce}"))
 }
 
 fn write_bd(root: &Path, relative: &str, source: &str) {
@@ -193,8 +197,7 @@ fn resolved_foundation_source_root_still_trusts_materialized_assert() {
 }
 
 fn no_entry_plan_with_source(source: &str) -> (CompilePlan, PathBuf) {
-    let nanos = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0);
-    let project_root = std::env::temp_dir().join(format!("beskid_asm_test_{nanos}"));
+    let project_root = temp_project_root("test");
     let source_root = project_root.join("src");
     fs::create_dir_all(&source_root).expect("create source root");
     fs::write(source_root.join("Main.bd"), source).expect("write Main.bd");
