@@ -531,6 +531,15 @@ mod native_jit_policy_tests {
         assert_eq!(unsafe { veneer.byte_add(6).cast::<u64>().read_unaligned() }, expected_target.addr() as u64);
     }
 
+    fn assert_near_direct_call(caller: *const u8, reloc_offset: usize, expected_target: *const u8) {
+        let branch = caller.wrapping_byte_add(reloc_offset);
+        assert!(
+            branch.addr().abs_diff(expected_target.addr()) <= i32::MAX as usize,
+            "mixed provider did not establish an in-range direct-call displacement"
+        );
+        assert_eq!(branch_destination(caller, reloc_offset), expected_target);
+    }
+
     #[test]
     fn far_x86_production_builder_executes_direct_and_tail_transfers_in_both_directions() {
         let (builder, requested_exec_sizes) =
@@ -600,6 +609,104 @@ mod native_jit_policy_tests {
         assert_eq!(sizes[1], high_caller_code_len + VENEER_SIZE);
         assert_eq!(sizes[2], 5 + VENEER_SIZE);
         drop(sizes);
+        unsafe { module.free_memory() };
+    }
+
+    #[test]
+    fn x86_production_builder_executes_near_direct_calls_with_far_function_and_data_addresses() {
+        let (builder, _) =
+            far_builder([Placement::Low, Placement::Low, Placement::Low, Placement::High], [Placement::High]);
+        let mut module = JITModule::new(builder);
+        let data_id = module.declare_anonymous_data(false, false).unwrap();
+        let mut data = DataDescription::new();
+        data.define(vec![42].into_boxed_slice());
+        module.define_data(data_id, &data).unwrap();
+
+        let mut call_signature = module.make_signature();
+        call_signature.returns.push(AbiParam::new(types::I32));
+        let near_target = module.declare_function("mixed_near_target", Linkage::Local, &call_signature).unwrap();
+        let near_caller = module.declare_function("mixed_near_caller", Linkage::Local, &call_signature).unwrap();
+        module.define_function_bytes(near_target, 1, &[0xb8, 42, 0, 0, 0, 0xc3], &[]).unwrap();
+
+        let mut caller_context = module.make_context();
+        caller_context.func.name = UserFuncName::user(0, near_caller.as_u32());
+        caller_context.func.signature = call_signature;
+        let near_target_reference = module.declare_func_in_func(near_target, &mut caller_context.func);
+        let mut caller_builder_context = FunctionBuilderContext::new();
+        {
+            let mut function = FunctionBuilder::new(&mut caller_context.func, &mut caller_builder_context);
+            let block = function.create_block();
+            function.switch_to_block(block);
+            let call = function.ins().call(near_target_reference, &[]);
+            let result = function.inst_results(call)[0];
+            function.ins().return_(&[result]);
+            function.seal_all_blocks();
+            function.finalize(module.target_config());
+        }
+        module.define_function(near_caller, &mut caller_context).unwrap();
+        let near_caller_reloc_offset = caller_context
+            .compiled_code()
+            .expect("compiled near direct call")
+            .buffer
+            .relocs()
+            .iter()
+            .find(|relocation| relocation.kind == Reloc::X86CallPCRel4)
+            .expect("near direct-call relocation")
+            .offset as usize;
+
+        let mut address_signature = module.make_signature();
+        address_signature.returns.push(AbiParam::new(module.target_config().pointer_type()));
+        let data_address = module.declare_function("mixed_data_address", Linkage::Local, &address_signature).unwrap();
+        let function_address =
+            module.declare_function("mixed_function_address", Linkage::Local, &address_signature).unwrap();
+
+        let mut data_context = module.make_context();
+        data_context.func.name = UserFuncName::user(0, data_address.as_u32());
+        data_context.func.signature = address_signature.clone();
+        let data_reference = module.declare_data_in_func(data_id, &mut data_context.func);
+        let mut data_builder_context = FunctionBuilderContext::new();
+        {
+            let mut function = FunctionBuilder::new(&mut data_context.func, &mut data_builder_context);
+            let block = function.create_block();
+            function.switch_to_block(block);
+            let address = function.ins().symbol_value(module.target_config().pointer_type(), data_reference);
+            function.ins().return_(&[address]);
+            function.seal_all_blocks();
+            function.finalize(module.target_config());
+        }
+        module.define_function(data_address, &mut data_context).unwrap();
+
+        let mut function_context = module.make_context();
+        function_context.func.name = UserFuncName::user(0, function_address.as_u32());
+        function_context.func.signature = address_signature;
+        let target_reference = module.declare_func_in_func(near_target, &mut function_context.func);
+        let mut function_builder_context = FunctionBuilderContext::new();
+        {
+            let mut function = FunctionBuilder::new(&mut function_context.func, &mut function_builder_context);
+            let block = function.create_block();
+            function.switch_to_block(block);
+            let address = function.ins().func_addr(module.target_config().pointer_type(), target_reference);
+            function.ins().return_(&[address]);
+            function.seal_all_blocks();
+            function.finalize(module.target_config());
+        }
+        module.define_function(function_address, &mut function_context).unwrap();
+        module.finalize_definitions().expect("production JIT policy must support mixed near and far relocations");
+
+        let target_pointer = module.get_finalized_function(near_target);
+        let caller_pointer = module.get_finalized_function(near_caller);
+        let data_address_pointer = module.get_finalized_function(data_address);
+        let function_address_pointer = module.get_finalized_function(function_address);
+        let (data_pointer, _) = module.get_finalized_data(data_id);
+        assert_near_direct_call(caller_pointer, near_caller_reloc_offset, target_pointer);
+        assert!(data_address_pointer.addr().abs_diff(data_pointer.addr()) > i32::MAX as usize);
+        assert!(function_address_pointer.addr().abs_diff(target_pointer.addr()) > i32::MAX as usize);
+        let call_near: extern "C" fn() -> u32 = unsafe { mem::transmute(caller_pointer) };
+        let load_data_address: extern "C" fn() -> usize = unsafe { mem::transmute(data_address_pointer) };
+        let load_function_address: extern "C" fn() -> usize = unsafe { mem::transmute(function_address_pointer) };
+        assert_eq!(call_near(), 42);
+        assert_eq!(load_data_address(), data_pointer.addr());
+        assert_eq!(load_function_address(), target_pointer.addr());
         unsafe { module.free_memory() };
     }
 
