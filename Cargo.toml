@@ -75,13 +75,13 @@ tachyonfx = "0.25"
 ratkit = { path = "vendor/ratkit", default-features = false }
 tuirealm = { version = "4.1.0", default-features = false, features = ["crossterm"] }
 
-cranelift-codegen = "0.128.3"
-cranelift-frontend = "0.128.3"
-cranelift-isle = "0.128.3"
-cranelift-jit = "0.128.3"
-cranelift-module = "0.128.3"
-cranelift-native = "0.128.3"
-cranelift-object = "0.128.3"
+cranelift-codegen = "0.136.0"
+cranelift-frontend = "0.136.0"
+cranelift-isle = "0.136.0"
+cranelift-jit = "0.136.0"
+cranelift-module = "0.136.0"
+cranelift-native = "0.136.0"
+cranelift-object = "0.136.0"
 cargo-cross = { path = "vendor/cargo-cross-patched" }
 
 # --- Build profiles (consolidated here; Cargo only reliably reads [profile]

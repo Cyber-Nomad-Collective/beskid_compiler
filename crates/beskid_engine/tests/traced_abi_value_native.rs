@@ -107,7 +107,7 @@ fn traced_values_survive_collection_and_transfer_in_native_aot_and_jit() {
         let call = function.ins().call(callee, &args);
         let result = function.inst_results(call)[0];
         function.ins().return_(&[result]);
-        function.finalize();
+        function.finalize(module.isa().frontend_config());
     }
     module.define_function(entry, &mut context).unwrap();
     module.finalize_definitions().unwrap();

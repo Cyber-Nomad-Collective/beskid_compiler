@@ -47,9 +47,10 @@ fn integer_rule_emits_verified_stock_clif() {
         let block = builder.create_block();
         builder.switch_to_block(block);
         builder.seal_block(block);
-        let value = lower_expression(&mut IsleContext::new(&mut builder, &facts), key).expect("integer rule");
+        let value = lower_expression(&mut IsleContext::new(&mut builder, &facts, isa.frontend_config()), key)
+            .expect("integer rule");
         builder.ins().return_(&[value]);
-        builder.finalize();
+        builder.finalize(isa.frontend_config());
     }
 
     verify_function(&function, isa.flags()).expect("valid stock CLIF");
@@ -176,11 +177,12 @@ fn missing_leaf_fact_is_a_keyed_lowering_error() {
         generation: SyntaxGenerationId(2),
         node: AstNodeId(8),
     };
+    let isa = super::support::test_isa();
     let mut function = Function::new();
     function.signature.call_conv = CallConv::Fast;
     let mut builder_context = FunctionBuilderContext::new();
     let mut builder = FunctionBuilder::new(&mut function, &mut builder_context);
-    let error = lower_expression(&mut IsleContext::new(&mut builder, &MissingFacts), key)
+    let error = lower_expression(&mut IsleContext::new(&mut builder, &MissingFacts, isa.frontend_config()), key)
         .expect_err("missing fact must not fall back");
 
     assert_eq!(error.key(), key);

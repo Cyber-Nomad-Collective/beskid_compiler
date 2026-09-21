@@ -6,8 +6,10 @@
 //! use beskid_isle::generated;
 //! ```
 
+extern crate alloc;
+
 pub use cranelift_codegen::ir::{
-    AbiParam, Block, FuncRef, Function, MemFlags, Signature, StackSlotData, StackSlotKind, TrapCode, Type,
+    AbiParam, Block, FuncRef, Function, MemFlagsData, Signature, StackSlotData, StackSlotKind, TrapCode, Type,
     UserFuncName, Value,
 };
 

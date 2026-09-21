@@ -415,8 +415,8 @@ pub(super) fn emit_scheduler_fiber_entry(
         builder.switch_to_block(block);
         builder.seal_block(block);
         let fiber = builder.block_params(block)[0];
-        let entry = builder.ins().load(pointer, cranelift_codegen::ir::MemFlags::trusted(), fiber, 8);
-        let argument = builder.ins().load(pointer, cranelift_codegen::ir::MemFlags::trusted(), fiber, 16);
+        let entry = builder.ins().load(pointer, cranelift_codegen::ir::MemFlagsData::trusted(), fiber, 8);
+        let argument = builder.ins().load(pointer, cranelift_codegen::ir::MemFlagsData::trusted(), fiber, 16);
         let mut body_signature = Signature::new(isa.default_call_conv());
         body_signature.params.push(AbiParam::new(pointer));
         body_signature.returns.push(AbiParam::new(types::I64));
@@ -455,7 +455,7 @@ pub(super) fn emit_scheduler_fiber_entry(
             // return address on targets without the x86-64 System V tail-transfer path.
             builder.ins().return_(&[]);
         }
-        builder.finalize();
+        builder.finalize(isa.frontend_config());
     }
     verify_function(&function, isa.flags())
         .map_err(|error| emission_verification(format!("scheduler fiber entry verification failed: {error}")))?;
@@ -517,7 +517,7 @@ pub(super) fn emit_scheduler_return_trampoline(
         );
         let scheduler_call = builder.ins().call(scheduler_context, &[]);
         let scheduler = builder.inst_results(scheduler_call)[0];
-        let fiber_context = builder.ins().load(pointer, cranelift_codegen::ir::MemFlags::trusted(), fiber, 104);
+        let fiber_context = builder.ins().load(pointer, cranelift_codegen::ir::MemFlagsData::trusted(), fiber, 104);
         if let SchedulerCompletionTransfer::Tail { context_switch_symbol } = completion_transfer {
             let switch = import_with_call_conv(
                 &mut builder,
@@ -543,7 +543,7 @@ pub(super) fn emit_scheduler_return_trampoline(
             builder.ins().call(switch, &[fiber_context, scheduler]);
             builder.ins().return_(&[]);
         }
-        builder.finalize();
+        builder.finalize(isa.frontend_config());
     }
     verify_function(&function, isa.flags())
         .map_err(|error| emission_verification(format!("scheduler return trampoline verification failed: {error}")))?;
@@ -714,7 +714,7 @@ pub(super) fn emit_spawn_trampoline(
                 pointer.bytes(),
                 3,
             ));
-            builder.ins().stack_store(result, slot, 0);
+            builder.ins().stack_store(pointer, result, slot, 0);
             let address = builder.ins().stack_addr(pointer, slot, 0);
             let register = import_local(&mut builder, "gc_register_root", &[pointer], Some(types::I8));
             let call = builder.ins().call(register, &[address]);
@@ -730,13 +730,13 @@ pub(super) fn emit_spawn_trampoline(
             colocated: false,
             tls: false,
         });
-        let request = builder.ins().global_value(pointer, request);
+        let request = builder.ins().symbol_value(pointer, request);
         let allocate = import_local(&mut builder, "beskid_rt_v5_managed_object_allocate", &[pointer], Some(pointer));
         let call = builder.ins().call(allocate, &[request]);
         let boxed = builder.inst_results(call)[0];
         builder.ins().trapz(boxed, cranelift_codegen::ir::TrapCode::unwrap_user(5));
         builder.ins().store(
-            cranelift_codegen::ir::MemFlags::new(),
+            cranelift_codegen::ir::MemFlagsData::new(),
             result,
             boxed,
             trampoline.result_plan.fields[0].field_offset as i32,
@@ -746,7 +746,7 @@ pub(super) fn emit_spawn_trampoline(
             builder.ins().call(unregister, &[root]);
         }
         builder.ins().return_(&[boxed]);
-        builder.finalize();
+        builder.finalize(isa.frontend_config());
     }
     verify_function(&function, isa.flags()).map_err(|error| {
         emission_verification(format!("spawn trampoline `{}` verification failed: {error}", trampoline.symbol))

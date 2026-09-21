@@ -75,12 +75,13 @@ impl IsleContext<'_, '_, '_, '_> {
         let DirectCallee::CorelibService(symbol) = callee else {
             return Some((source_signature.clone(), arguments));
         };
-        let native_signature = corelib_service_native_signature(self.builder.func.signature.call_conv, symbol)?;
-        let pointer = dispatch::pointer_type();
+        let native_signature =
+            corelib_service_native_signature(self.frontend_config, self.builder.func.signature.call_conv, symbol)?;
+        let pointer = dispatch::pointer_type(self.frontend_config);
         let word = pointer;
         let header_parts = |builder: &mut FunctionBuilder<'_>, value: Value| {
-            let data = builder.ins().load(pointer, MemFlags::new(), value, 0);
-            let len = builder.ins().load(word, MemFlags::new(), value, i32::try_from(pointer.bytes()).ok()?);
+            let data = builder.ins().load(pointer, MemFlagsData::new(), value, 0);
+            let len = builder.ins().load(word, MemFlagsData::new(), value, i32::try_from(pointer.bytes()).ok()?);
             Some((data, len))
         };
         let adapted = match (*symbol, arguments.as_slice()) {
@@ -117,7 +118,7 @@ impl IsleContext<'_, '_, '_, '_> {
             self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidArrayLayout });
             return None;
         }
-        let pointer = dispatch::pointer_type();
+        let pointer = dispatch::pointer_type(self.frontend_config);
         let request = self.symbol_global(allocation.allocation_request_symbol.as_ref(), pointer)?;
         let root_slot = self.builder.create_sized_stack_slot(StackSlotData::new(
             StackSlotKind::ExplicitSlot,
@@ -134,7 +135,7 @@ impl IsleContext<'_, '_, '_, '_> {
         self.track_expression_root(root)?;
         // `BeskidArray.ptr` remains at offset zero.  The backing bytes are owned by the same
         // descriptor-backed GC allocation; they are never a stack temporary.
-        let data = self.builder.ins().load(pointer, MemFlags::new(), array, 0);
+        let data = self.builder.ins().load(pointer, MemFlagsData::new(), array, 0);
         for (index, element) in elements.into_iter().enumerate() {
             let value = generated::constructor_lower_expression(self, element)?;
             if self.builder.func.dfg.value_type(value) != layout.element_type {
@@ -143,8 +144,8 @@ impl IsleContext<'_, '_, '_, '_> {
             }
             let offset =
                 u32::try_from(index).ok()?.checked_mul(layout.stride).and_then(|offset| i32::try_from(offset).ok())?;
-            let address = self.builder.ins().iadd_imm(data, i64::from(offset));
-            self.builder.ins().store(MemFlags::new(), value, address, 0);
+            let address = self.builder.ins().iadd_imm_s(data, i64::from(offset));
+            self.builder.ins().store(MemFlagsData::new(), value, address, 0);
             if layout.element_type == pointer {
                 let barrier = self.import_runtime_helper(
                     "beskid_rt_v5_array_write_barrier",
@@ -204,7 +205,7 @@ impl IsleContext<'_, '_, '_, '_> {
     pub(super) fn emit_collection_operation_value(&mut self, key: AstNodeKey) -> Option<Value> {
         let operation = self.facts.collection_operation(key)?;
         let arguments = self.facts.call_arguments(key)?;
-        let pointer = dispatch::pointer_type();
+        let pointer = dispatch::pointer_type(self.frontend_config);
         let word = pointer;
         let element_type = self.facts.collection_element_type(key)?;
         let stride = element_type.bytes();
@@ -218,7 +219,12 @@ impl IsleContext<'_, '_, '_, '_> {
                 let array = generated::constructor_lower_expression(self, *array)?;
                 (self.builder.func.dfg.value_type(array) == pointer).then_some(())?;
                 self.builder.ins().trapz(array, TrapCode::unwrap_user(1));
-                Some(self.builder.ins().load(word, MemFlags::new(), array, i32::try_from(pointer.bytes() * 2).ok()?))
+                Some(self.builder.ins().load(
+                    word,
+                    MemFlagsData::new(),
+                    array,
+                    i32::try_from(pointer.bytes() * 2).ok()?,
+                ))
             }
             CollectionOperation::Append { owner: mutation_owner } => {
                 let [array_key, value_key] = arguments.as_slice() else { return None };
@@ -256,8 +262,8 @@ impl IsleContext<'_, '_, '_, '_> {
                 (self.builder.func.dfg.value_type(value) == element_type).then_some(())?;
                 let value_root = self.root_temporary_if_needed(*value_key, value)?;
                 let length_offset = i32::try_from(pointer.bytes()).ok()?;
-                let length = self.builder.ins().load(word, MemFlags::new(), owner, length_offset);
-                let next_length = self.builder.ins().iadd_imm(length, 1);
+                let length = self.builder.ins().load(word, MemFlagsData::new(), owner, length_offset);
+                let next_length = self.builder.ins().iadd_imm_s(length, 1);
                 let overflow = self.builder.ins().icmp(IntCC::UnsignedLessThanOrEqual, next_length, length);
                 self.builder.ins().trapnz(overflow, TrapCode::unwrap_user(3));
                 let root_slot = self.builder.create_sized_stack_slot(StackSlotData::new(
@@ -274,10 +280,11 @@ impl IsleContext<'_, '_, '_, '_> {
                 let grow_call = self.builder.ins().call(grow, &[owner, next_length, root_out]);
                 let array = self.builder.inst_results(grow_call).first().copied()?;
                 self.builder.ins().trapz(array, TrapCode::unwrap_user(5));
-                let data = self.builder.ins().load(pointer, MemFlags::new(), array, 0);
-                let offset = if stride == 1 { length } else { self.builder.ins().imul_imm(length, i64::from(stride)) };
+                let data = self.builder.ins().load(pointer, MemFlagsData::new(), array, 0);
+                let offset =
+                    if stride == 1 { length } else { self.builder.ins().imul_imm_s(length, i64::from(stride)) };
                 let address = self.builder.ins().iadd(data, offset);
-                self.builder.ins().store(MemFlags::new(), value, address, 0);
+                self.builder.ins().store(MemFlagsData::new(), value, address, 0);
                 if element_type == pointer {
                     let barrier = self.import_runtime_helper(
                         "beskid_rt_v5_array_write_barrier",
@@ -288,7 +295,7 @@ impl IsleContext<'_, '_, '_, '_> {
                     let published = self.builder.inst_results(call).first().copied()?;
                     self.builder.ins().trapz(published, TrapCode::unwrap_user(8));
                 }
-                self.builder.ins().store(MemFlags::new(), next_length, array, length_offset);
+                self.builder.ins().store(MemFlagsData::new(), next_length, array, length_offset);
                 match mutation_owner {
                     CollectionMutationOwner::Local(slot) => {
                         self.publish_managed_local(slot, array)?;
@@ -308,12 +315,12 @@ impl IsleContext<'_, '_, '_, '_> {
                                 Some(LoweringError { key, kind: LoweringErrorKind::UnprovenCollectionOwner });
                             return None;
                         }
-                        self.builder.ins().store(MemFlags::new(), array, base, i32::try_from(field.offset).ok()?);
+                        self.builder.ins().store(MemFlagsData::new(), array, base, i32::try_from(field.offset).ok()?);
                         let barrier = self.import_runtime_helper("gc_write_barrier", &[pointer, pointer], None)?;
                         self.builder.ins().call(barrier, &[base, array]);
                     }
                 }
-                let root_handle = self.builder.ins().stack_load(pointer, root_slot, 0);
+                let root_handle = self.builder.ins().stack_load(pointer, pointer, root_slot, 0);
                 let finish =
                     self.import_runtime_helper("beskid_rt_v5_array_construction_finish", &[pointer], Some(types::I8))?;
                 let finish_call = self.builder.ins().call(finish, &[root_handle]);
@@ -331,18 +338,18 @@ impl IsleContext<'_, '_, '_, '_> {
                 .then_some(())?;
                 self.builder.ins().trapz(array, TrapCode::unwrap_user(1));
                 let length =
-                    self.builder.ins().load(word, MemFlags::new(), array, i32::try_from(pointer.bytes()).ok()?);
+                    self.builder.ins().load(word, MemFlagsData::new(), array, i32::try_from(pointer.bytes()).ok()?);
                 let out_of_bounds = self.builder.ins().icmp(IntCC::UnsignedGreaterThanOrEqual, index, length);
                 self.builder.ins().trapnz(out_of_bounds, TrapCode::HEAP_OUT_OF_BOUNDS);
-                let data = self.builder.ins().load(pointer, MemFlags::new(), array, 0);
-                let offset = if stride == 1 { index } else { self.builder.ins().imul_imm(index, i64::from(stride)) };
+                let data = self.builder.ins().load(pointer, MemFlagsData::new(), array, 0);
+                let offset = if stride == 1 { index } else { self.builder.ins().imul_imm_s(index, i64::from(stride)) };
                 let address = self.builder.ins().iadd(data, offset);
                 let zero = if element_type == types::F64 {
                     self.builder.ins().f64const(Ieee64::with_float(0.0))
                 } else {
                     self.builder.ins().iconst(element_type, 0)
                 };
-                self.builder.ins().store(MemFlags::new(), zero, address, 0);
+                self.builder.ins().store(MemFlagsData::new(), zero, address, 0);
                 Some(array)
             }
             CollectionOperation::RemoveLast => {
@@ -351,21 +358,24 @@ impl IsleContext<'_, '_, '_, '_> {
                 (self.builder.func.dfg.value_type(array) == pointer).then_some(())?;
                 self.builder.ins().trapz(array, TrapCode::unwrap_user(1));
                 let length_offset = i32::try_from(pointer.bytes()).ok()?;
-                let length = self.builder.ins().load(word, MemFlags::new(), array, length_offset);
-                let empty = self.builder.ins().icmp_imm(IntCC::Equal, length, 0);
+                let length = self.builder.ins().load(word, MemFlagsData::new(), array, length_offset);
+                let empty = self.builder.ins().icmp_imm_s(IntCC::Equal, length, 0);
                 self.builder.ins().trapnz(empty, TrapCode::HEAP_OUT_OF_BOUNDS);
-                let next_length = self.builder.ins().iadd_imm(length, -1);
-                let data = self.builder.ins().load(pointer, MemFlags::new(), array, 0);
-                let offset =
-                    if stride == 1 { next_length } else { self.builder.ins().imul_imm(next_length, i64::from(stride)) };
+                let next_length = self.builder.ins().iadd_imm_s(length, -1);
+                let data = self.builder.ins().load(pointer, MemFlagsData::new(), array, 0);
+                let offset = if stride == 1 {
+                    next_length
+                } else {
+                    self.builder.ins().imul_imm_s(next_length, i64::from(stride))
+                };
                 let address = self.builder.ins().iadd(data, offset);
                 let zero = if element_type == types::F64 {
                     self.builder.ins().f64const(Ieee64::with_float(0.0))
                 } else {
                     self.builder.ins().iconst(element_type, 0)
                 };
-                self.builder.ins().store(MemFlags::new(), zero, address, 0);
-                self.builder.ins().store(MemFlags::new(), next_length, array, length_offset);
+                self.builder.ins().store(MemFlagsData::new(), zero, address, 0);
+                self.builder.ins().store(MemFlagsData::new(), next_length, array, length_offset);
                 Some(array)
             }
         }
@@ -394,7 +404,7 @@ impl IsleContext<'_, '_, '_, '_> {
             return None;
         };
         let handle = generated::constructor_lower_expression(self, *argument)?;
-        let pointer = dispatch::pointer_type();
+        let pointer = dispatch::pointer_type(self.frontend_config);
         let slot = self.builder.create_sized_stack_slot(StackSlotData::new(
             StackSlotKind::ExplicitSlot,
             layout.slot_size,
@@ -402,15 +412,16 @@ impl IsleContext<'_, '_, '_, '_> {
         ));
         let zero = self.builder.ins().iconst(pointer, 0);
         for offset in (0..layout.slot_size).step_by(pointer.bytes() as usize) {
-            self.builder.ins().stack_store(zero, slot, offset as i32);
+            self.builder.ins().stack_store(self.frontend_config.pointer_type(), zero, slot, offset as i32);
         }
         let destination = self.builder.ins().stack_addr(pointer, slot, 0);
         let transfer = self.import_runtime_helper(layout.symbol, &[types::I64, pointer], Some(types::I8))?;
         let call = self.builder.ins().call(transfer, &[handle, destination]);
         let moved = self.builder.inst_results(call)[0];
         self.builder.ins().trapz(moved, TrapCode::unwrap_user(10));
-        let payload = self.builder.ins().stack_load(pointer, slot, layout.payload_offset);
-        let value = result_type.map(|ty| self.builder.ins().load(ty, MemFlags::new(), payload, layout.value_offset));
+        let payload = self.builder.ins().stack_load(pointer, pointer, slot, layout.payload_offset);
+        let value =
+            result_type.map(|ty| self.builder.ins().load(ty, MemFlagsData::new(), payload, layout.value_offset));
         // Clear is non-allocating: no safepoint exists between the rooted payload
         // read and the caller installing the ordinary result/local root.
         let clear = self.import_runtime_helper("beskid_rt_v5_abi_value_clear", &[pointer], Some(types::I8))?;
@@ -428,7 +439,7 @@ impl IsleContext<'_, '_, '_, '_> {
         };
         let handle = generated::constructor_lower_expression(self, *handle)?;
         let boxed = generated::constructor_lower_expression(self, *boxed)?;
-        let pointer = dispatch::pointer_type();
+        let pointer = dispatch::pointer_type(self.frontend_config);
         let slot = self.builder.create_sized_stack_slot(StackSlotData::new(
             StackSlotKind::ExplicitSlot,
             layout.slot_size,
@@ -436,10 +447,10 @@ impl IsleContext<'_, '_, '_, '_> {
         ));
         let zero = self.builder.ins().iconst(pointer, 0);
         for offset in (0..layout.slot_size).step_by(pointer.bytes() as usize) {
-            self.builder.ins().stack_store(zero, slot, offset as i32);
+            self.builder.ins().stack_store(self.frontend_config.pointer_type(), zero, slot, offset as i32);
         }
         let owner = self.builder.ins().stack_addr(pointer, slot, 0);
-        let descriptor = self.builder.ins().load(pointer, MemFlags::new(), boxed, 0);
+        let descriptor = self.builder.ins().load(pointer, MemFlagsData::new(), boxed, 0);
         let tag = self.builder.ins().iconst(pointer, 1);
         let init = self.import_runtime_helper(
             "beskid_rt_v5_abi_value_initialize",
@@ -491,7 +502,7 @@ impl IsleContext<'_, '_, '_, '_> {
         &mut self,
         environment: &InlineClosureEnvironment,
     ) -> Option<(Value, StackSlot)> {
-        let pointer = dispatch::pointer_type();
+        let pointer = dispatch::pointer_type(self.frontend_config);
         let request = self.symbol_global(environment.allocation_request_symbol.as_ref(), pointer)?;
         let allocate =
             self.import_runtime_helper("beskid_rt_v5_closure_environment_allocate", &[pointer], Some(pointer))?;
@@ -515,8 +526,8 @@ impl IsleContext<'_, '_, '_, '_> {
                 let ok = self.builder.inst_results(store_call).first().copied()?;
                 self.builder.ins().trapz(ok, TrapCode::unwrap_user(8));
             } else {
-                let address = self.builder.ins().iadd_imm(env_ptr, i64::from(capture.field_offset));
-                self.builder.ins().store(MemFlags::new(), value, address, 0);
+                let address = self.builder.ins().iadd_imm_s(env_ptr, i64::from(capture.field_offset));
+                self.builder.ins().store(MemFlagsData::new(), value, address, 0);
             }
         }
         Some((env_ptr, root))
@@ -529,7 +540,7 @@ impl IsleContext<'_, '_, '_, '_> {
             colocated: false,
             tls: false,
         });
-        Some(self.builder.ins().global_value(pointer, global))
+        Some(self.builder.ins().symbol_value(pointer, global))
     }
 
     pub(super) fn import_runtime_helper(
@@ -567,11 +578,15 @@ impl IsleContext<'_, '_, '_, '_> {
     }
 }
 
-fn corelib_service_native_signature(call_conv: CallConv, symbol: &str) -> Option<Signature> {
+fn corelib_service_native_signature(
+    frontend_config: TargetFrontendConfig,
+    call_conv: CallConv,
+    symbol: &str,
+) -> Option<Signature> {
     use beskid_abi::runtime_source::CorelibServiceAbiType;
 
     let abi = beskid_abi::runtime_source::canonical_corelib_service_abi_for_adapter(symbol)?;
-    let pointer = dispatch::pointer_type();
+    let pointer = dispatch::pointer_type(frontend_config);
     let abi_type = |ty| match ty {
         CorelibServiceAbiType::Pointer | CorelibServiceAbiType::String | CorelibServiceAbiType::Usize => Some(pointer),
         CorelibServiceAbiType::I64 => Some(types::I64),
@@ -610,7 +625,7 @@ macro_rules! generated_call_methods {
 
         fn emit_spawn(&mut self, key: AstNodeKey) -> Option<Value> {
             let entry = self.facts.spawn_entry(key)?;
-            let pointer = dispatch::pointer_type();
+            let pointer = dispatch::pointer_type(self.frontend_config);
             let mut signature = Signature::new(self.builder.func.signature.call_conv);
             signature.params.push(AbiParam::new(pointer));
             signature.returns.push(AbiParam::new(types::I64));
@@ -645,7 +660,7 @@ macro_rules! generated_call_methods {
             let handle = self.builder.inst_results(spawn_call).first().copied()?;
             self.release_temporary_root(environment_root)?;
             let failed =
-                self.builder.ins().icmp_imm(cranelift_codegen::ir::condcodes::IntCC::SignedLessThan, handle, 0);
+                self.builder.ins().icmp_imm_s(cranelift_codegen::ir::condcodes::IntCC::SignedLessThan, handle, 0);
             self.builder.ins().trapnz(failed, TrapCode::unwrap_user(5));
             let request = self.symbol_global(&entry.handle_request_symbol, pointer)?;
             let allocate =
@@ -653,7 +668,7 @@ macro_rules! generated_call_methods {
             let allocation = self.builder.ins().call(allocate, &[request]);
             let value = self.builder.inst_results(allocation).first().copied()?;
             self.builder.ins().trapz(value, TrapCode::unwrap_user(5));
-            self.builder.ins().store(MemFlags::new(), handle, value, entry.handle_field_offset);
+            self.builder.ins().store(MemFlagsData::new(), handle, value, entry.handle_field_offset);
             Some(value)
         }
 
@@ -665,7 +680,7 @@ macro_rules! generated_call_methods {
         /// from the environment at its first-parameter pointer.
         fn emit_lambda(&mut self, key: AstNodeKey) -> Option<Value> {
             let entry = self.facts.lambda_entry(key)?;
-            let pointer = dispatch::pointer_type();
+            let pointer = dispatch::pointer_type(self.frontend_config);
             let mut signature = Signature::new(self.builder.func.signature.call_conv);
             // The trampoline always receives the environment pointer as its first argument.
             signature.params.push(AbiParam::new(pointer));

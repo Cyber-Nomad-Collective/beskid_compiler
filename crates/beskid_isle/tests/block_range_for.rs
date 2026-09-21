@@ -239,7 +239,7 @@ fn range_facts(start: i64, end: i64, step: i64, inclusive: bool) -> RangeForFact
     RangeForFacts { nodes: keys("/tmp/RangeFor.bd", 21), start, end, step, inclusive }
 }
 
-fn run_range(start: i64, end: i64, step: i64, inclusive: bool, index: u32) -> (i32, String) {
+fn run_range(start: i64, end: i64, step: i64, inclusive: bool, index: u32) -> (i32, cranelift_codegen::ir::Function) {
     let isa = cranelift_codegen::isa::lookup(Triple::host())
         .expect("host ISA")
         .finish(settings::Flags::new(settings::builder()))
@@ -250,24 +250,33 @@ fn run_range(start: i64, end: i64, step: i64, inclusive: bool, index: u32) -> (i
     let function = emitter
         .emit_statement(UserFuncName::user(0, index), signature.clone(), &facts, facts.nodes[0])
         .expect("verified range for");
-    let clif = function.display().to_string();
     let mut module = JITModule::new(JITBuilder::with_isa(isa, default_libcall_names()));
     let function_id = module.declare_function("range_for", Linkage::Local, &signature).expect("declare");
     let mut context = module.make_context();
-    context.func = function;
+    context.func = function.clone();
     module.define_function(function_id, &mut context).expect("define");
     module.finalize_definitions().expect("finalize");
     let code = module.get_finalized_function(function_id);
     let run: extern "C" fn() -> i32 = unsafe { std::mem::transmute(code) };
-    (run(), clif)
+    (run(), function)
 }
 
 #[test]
 fn exclusive_range_for_executes_and_emits_stock_loop_clif() {
-    let (result, clif) = run_range(1, 4, 1, false, 34);
+    let (result, function) = run_range(1, 4, 1, false, 34);
     assert_eq!(result, 6);
-    assert!(clif.contains("brif"), "{clif}");
-    assert!(clif.contains("iadd_imm"), "{clif}");
+    let opcodes = function
+        .layout
+        .blocks()
+        .flat_map(|block| function.layout.block_insts(block))
+        .map(|inst| function.dfg.insts[inst].opcode())
+        .collect::<Vec<_>>();
+    assert!(opcodes.contains(&cranelift_codegen::ir::Opcode::Brif), "loop condition");
+    assert_eq!(
+        opcodes.iter().filter(|opcode| **opcode == cranelift_codegen::ir::Opcode::Iadd).count(),
+        2,
+        "loop body accumulation and induction update"
+    );
 }
 
 #[test]

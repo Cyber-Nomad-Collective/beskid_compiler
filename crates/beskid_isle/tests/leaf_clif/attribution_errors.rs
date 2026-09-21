@@ -48,6 +48,7 @@ fn block_cursor_reports_unsupported_child_instead_of_enclosing_block() {
     };
     let unsupported = AstNodeKey { node: AstNodeId(2), ..block };
     let facts = BlockFacts { block, unsupported };
+    let isa = super::support::test_isa();
     let mut function = Function::new();
     let mut builder_context = FunctionBuilderContext::new();
     let mut builder = FunctionBuilder::new(&mut function, &mut builder_context);
@@ -55,7 +56,7 @@ fn block_cursor_reports_unsupported_child_instead_of_enclosing_block() {
     builder.switch_to_block(entry);
     builder.seal_block(entry);
 
-    let error = lower_statement(&mut IsleContext::new(&mut builder, &facts), block)
+    let error = lower_statement(&mut IsleContext::new(&mut builder, &facts, isa.frontend_config()), block)
         .expect_err("unsupported child must fail closed");
 
     assert_eq!(error.key(), unsupported);
@@ -109,6 +110,7 @@ fn if_statement_reports_unsupported_condition_instead_of_enclosing_if() {
     let unsupported_condition = AstNodeKey { node: AstNodeId(2), ..if_node };
     let then_statement = AstNodeKey { node: AstNodeId(3), ..if_node };
     let facts = IfFacts { if_node, unsupported_condition, then_statement };
+    let isa = super::support::test_isa();
     let mut function = Function::new();
     let mut builder_context = FunctionBuilderContext::new();
     let mut builder = FunctionBuilder::new(&mut function, &mut builder_context);
@@ -116,7 +118,7 @@ fn if_statement_reports_unsupported_condition_instead_of_enclosing_if() {
     builder.switch_to_block(entry);
     builder.seal_block(entry);
 
-    let error = lower_statement(&mut IsleContext::new(&mut builder, &facts), if_node)
+    let error = lower_statement(&mut IsleContext::new(&mut builder, &facts, isa.frontend_config()), if_node)
         .expect_err("unsupported condition must fail closed");
 
     assert_eq!(error.key(), unsupported_condition);

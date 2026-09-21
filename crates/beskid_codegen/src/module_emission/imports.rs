@@ -30,7 +30,7 @@ impl StringInterner for ArtifactStringInterner<'_> {
             colocated: false,
             tls: false,
         });
-        let bytes = builder.ins().global_value(self.pointer_type, global);
+        let bytes = builder.ins().symbol_value(self.pointer_type, global);
         let byte_len = builder.ins().iconst(self.pointer_type, text.len() as i64);
         let mut signature = Signature::new(builder.func.signature.call_conv);
         signature.params.push(cranelift_codegen::ir::AbiParam::new(self.pointer_type));

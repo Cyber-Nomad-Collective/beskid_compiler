@@ -21,7 +21,13 @@ impl IsleContext<'_, '_, '_, '_> {
         if pointer_type != types::I64 && semantic == SemanticTypeId::I64 {
             // keep i64 as-is
         }
-        self.emit_corelib_service_call(key, "str_from_i64", &[coerced], &[types::I64], Some(dispatch::pointer_type()))
+        self.emit_corelib_service_call(
+            key,
+            "str_from_i64",
+            &[coerced],
+            &[types::I64],
+            Some(dispatch::pointer_type(self.frontend_config)),
+        )
     }
 
     pub(super) fn emit_string_compare(&mut self, key: AstNodeKey, invert: bool) -> Option<Value> {
@@ -29,7 +35,7 @@ impl IsleContext<'_, '_, '_, '_> {
         let right_key = self.facts.child(key, 1)?;
         let left = self.coerce_expression_to_string(left_key)?;
         let right = self.coerce_expression_to_string(right_key)?;
-        let pointer = dispatch::pointer_type();
+        let pointer = dispatch::pointer_type(self.frontend_config);
         let eq_flag =
             self.emit_corelib_service_call(key, "str_eq", &[left, right], &[pointer, pointer], Some(types::I64))?;
         let zero = self.builder.ins().iconst(types::I64, 0);
@@ -59,7 +65,7 @@ macro_rules! generated_string_methods {
             let right_key = self.facts.child(key, 1)?;
             let left = self.coerce_expression_to_string(left_key)?;
             let right = self.coerce_expression_to_string(right_key)?;
-            let pointer = dispatch::pointer_type();
+            let pointer = dispatch::pointer_type(self.frontend_config);
             self.emit_corelib_service_call(key, "str_concat", &[left, right], &[pointer, pointer], Some(pointer))
         }
 
@@ -80,12 +86,12 @@ macro_rules! generated_string_methods {
             if !pointer_type.is_int() || !self.builder.func.dfg.value_type(index).is_int() {
                 return None;
             }
-            let ptr = self.builder.ins().load(pointer_type, MemFlags::new(), handle, 0);
-            let len = self.builder.ins().load(pointer_type, MemFlags::new(), handle, 8);
+            let ptr = self.builder.ins().load(pointer_type, MemFlagsData::new(), handle, 0);
+            let len = self.builder.ins().load(pointer_type, MemFlagsData::new(), handle, 8);
             let out_of_bounds = self.builder.ins().icmp(IntCC::UnsignedGreaterThanOrEqual, index, len);
             self.builder.ins().trapnz(out_of_bounds, TrapCode::unwrap_user(2));
             let addr = self.builder.ins().iadd(ptr, index);
-            Some(self.builder.ins().load(types::I8, MemFlags::new(), addr, 0))
+            Some(self.builder.ins().load(types::I8, MemFlagsData::new(), addr, 0))
         }
     };
 }

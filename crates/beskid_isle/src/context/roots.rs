@@ -2,7 +2,7 @@ use super::*;
 
 impl IsleContext<'_, '_, '_, '_> {
     pub(super) fn local_managed_reference(&self, key: AstNodeKey, value_type: Type) -> Option<ManagedReferenceFact> {
-        if value_type == dispatch::pointer_type() {
+        if value_type == dispatch::pointer_type(self.frontend_config) {
             self.facts.managed_reference(key)
         } else {
             Some(ManagedReferenceFact::NativeOrScalar)
@@ -10,18 +10,18 @@ impl IsleContext<'_, '_, '_, '_> {
     }
 
     fn new_root_slot(&mut self, value: Value) -> StackSlot {
-        let pointer = dispatch::pointer_type();
+        let pointer = dispatch::pointer_type(self.frontend_config);
         let slot = self.builder.create_sized_stack_slot(StackSlotData::new(
             StackSlotKind::ExplicitSlot,
             pointer.bytes(),
             pointer.bytes().ilog2() as u8,
         ));
-        self.builder.ins().stack_store(value, slot, 0);
+        self.builder.ins().stack_store(self.frontend_config.pointer_type(), value, slot, 0);
         slot
     }
 
     fn register_root_slot(&mut self, slot: StackSlot) -> Option<()> {
-        let pointer = dispatch::pointer_type();
+        let pointer = dispatch::pointer_type(self.frontend_config);
         let address = self.builder.ins().stack_addr(pointer, slot, 0);
         let register = self.import_runtime_helper("gc_register_root", &[pointer], Some(types::I8))?;
         let call = self.builder.ins().call(register, &[address]);
@@ -31,7 +31,7 @@ impl IsleContext<'_, '_, '_, '_> {
     }
 
     fn unregister_root_slot(&mut self, slot: StackSlot) -> Option<()> {
-        let pointer = dispatch::pointer_type();
+        let pointer = dispatch::pointer_type(self.frontend_config);
         let address = self.builder.ins().stack_addr(pointer, slot, 0);
         let unregister = self.import_runtime_helper("gc_unregister_root", &[pointer], None)?;
         self.builder.ins().call(unregister, &[address]);
@@ -49,7 +49,7 @@ impl IsleContext<'_, '_, '_, '_> {
         let variable = self.builder.declare_var(value_type);
         self.builder.def_var(variable, value);
         let root_slot = if managed_reference == ManagedReferenceFact::GcManaged {
-            (value_type == dispatch::pointer_type()).then_some(())?;
+            (value_type == dispatch::pointer_type(self.frontend_config)).then_some(())?;
             let root_slot = self.new_root_slot(value);
             self.register_root_slot(root_slot)?;
             Some(root_slot)
@@ -66,7 +66,7 @@ impl IsleContext<'_, '_, '_, '_> {
         (self.builder.func.dfg.value_type(value) == binding.value_type).then_some(())?;
         self.builder.def_var(binding.variable, value);
         if let Some(root_slot) = binding.root_slot {
-            self.builder.ins().stack_store(value, root_slot, 0);
+            self.builder.ins().stack_store(self.frontend_config.pointer_type(), value, root_slot, 0);
         }
         Some(())
     }
@@ -78,7 +78,7 @@ impl IsleContext<'_, '_, '_, '_> {
     }
 
     pub(super) fn root_temporary(&mut self, value: Value) -> Option<StackSlot> {
-        (self.builder.func.dfg.value_type(value) == dispatch::pointer_type()).then_some(())?;
+        (self.builder.func.dfg.value_type(value) == dispatch::pointer_type(self.frontend_config)).then_some(())?;
         let slot = self.new_root_slot(value);
         self.register_root_slot(slot)?;
         Some(slot)
@@ -148,8 +148,8 @@ impl IsleContext<'_, '_, '_, '_> {
         match root {
             ScopedTemporaryRoot::Managed(slot) => self.unregister_root_slot(slot),
             ScopedTemporaryRoot::ArrayConstruction(slot) => {
-                let pointer = dispatch::pointer_type();
-                let handle = self.builder.ins().stack_load(pointer, slot, 0);
+                let pointer = dispatch::pointer_type(self.frontend_config);
+                let handle = self.builder.ins().stack_load(pointer, pointer, slot, 0);
                 let finish =
                     self.import_runtime_helper("beskid_rt_v5_array_construction_finish", &[pointer], Some(types::I8))?;
                 let call = self.builder.ins().call(finish, &[handle]);

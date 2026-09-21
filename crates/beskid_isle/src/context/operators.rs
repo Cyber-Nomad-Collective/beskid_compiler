@@ -113,13 +113,13 @@ impl IsleContext<'_, '_, '_, '_> {
         }
         let left_tag = self.builder.ins().load(
             layout.tag.value_type,
-            MemFlags::new(),
+            MemFlagsData::new(),
             left,
             i32::try_from(layout.tag.offset).ok()?,
         );
         let right_tag = self.builder.ins().load(
             layout.tag.value_type,
-            MemFlags::new(),
+            MemFlagsData::new(),
             right,
             i32::try_from(layout.tag.offset).ok()?,
         );
@@ -248,10 +248,10 @@ macro_rules! generated_operator_methods {
             })
         }
         fn clif_iadd_imm(&mut self, value: Value, imm: i64) -> Value {
-            self.builder.ins().iadd_imm(value, imm)
+            self.builder.ins().iadd_imm_s(value, imm)
         }
         fn clif_imul_imm(&mut self, value: Value, imm: i64) -> Value {
-            self.builder.ins().imul_imm(value, imm)
+            self.builder.ins().imul_imm_s(value, imm)
         }
 
         fn clif_eq(&mut self, left: Value, right: Value) -> Value {
@@ -272,9 +272,10 @@ macro_rules! generated_operator_methods {
                 && let (Ok(left_offset), Ok(right_offset)) =
                     (i32::try_from(left_layout.tag.offset), i32::try_from(right_layout.tag.offset))
             {
-                let left_tag = self.builder.ins().load(left_layout.tag.value_type, MemFlags::new(), left, left_offset);
+                let left_tag =
+                    self.builder.ins().load(left_layout.tag.value_type, MemFlagsData::new(), left, left_offset);
                 let right_tag =
-                    self.builder.ins().load(right_layout.tag.value_type, MemFlags::new(), right, right_offset);
+                    self.builder.ins().load(right_layout.tag.value_type, MemFlagsData::new(), right, right_offset);
                 return self.builder.ins().icmp(IntCC::Equal, left_tag, right_tag);
             }
             self.clif_eq(left, right)
@@ -298,9 +299,10 @@ macro_rules! generated_operator_methods {
                 && let (Ok(left_offset), Ok(right_offset)) =
                     (i32::try_from(left_layout.tag.offset), i32::try_from(right_layout.tag.offset))
             {
-                let left_tag = self.builder.ins().load(left_layout.tag.value_type, MemFlags::new(), left, left_offset);
+                let left_tag =
+                    self.builder.ins().load(left_layout.tag.value_type, MemFlagsData::new(), left, left_offset);
                 let right_tag =
-                    self.builder.ins().load(right_layout.tag.value_type, MemFlags::new(), right, right_offset);
+                    self.builder.ins().load(right_layout.tag.value_type, MemFlagsData::new(), right, right_offset);
                 return self.builder.ins().icmp(IntCC::NotEqual, left_tag, right_tag);
             }
             self.clif_ne(left, right)
@@ -344,7 +346,7 @@ macro_rules! generated_operator_methods {
         }
 
         fn clif_logical_not(&mut self, value: Value) -> Value {
-            self.builder.ins().icmp_imm(IntCC::Equal, value, 0)
+            self.builder.ins().icmp_imm_s(IntCC::Equal, value, 0)
         }
 
         fn emit_primitive_numeric_conversion(&mut self, key: AstNodeKey) -> Option<Value> {

@@ -1,4 +1,4 @@
-use cranelift_codegen::ir::{AbiParam, Function, InstBuilder, MemFlags, Signature, Type, UserFuncName};
+use cranelift_codegen::ir::{AbiParam, Function, InstBuilder, MemFlagsData, Signature, Type, UserFuncName};
 use cranelift_codegen::isa::TargetIsa;
 use cranelift_codegen::verify_function;
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
@@ -119,10 +119,11 @@ impl<'isa> FunctionEmitter<'isa> {
             builder.seal_block(entry);
             let environment = builder.block_params(entry)[0];
             let value = {
-                let mut context = IsleContext::new_with_call_importer(&mut builder, facts, call_importer);
+                let mut context =
+                    IsleContext::new_with_call_importer(&mut builder, facts, call_importer, self.isa.frontend_config());
                 for capture in captures {
-                    let address = context.builder.ins().iadd_imm(environment, i64::from(capture.field_offset));
-                    let value = context.builder.ins().load(capture.value_type, MemFlags::new(), address, 0);
+                    let address = context.builder.ins().iadd_imm_s(environment, i64::from(capture.field_offset));
+                    let value = context.builder.ins().load(capture.value_type, MemFlagsData::new(), address, 0);
                     let managed_reference = if capture.pointer_map_index.is_some() {
                         ManagedReferenceFact::GcManaged
                     } else {
@@ -142,7 +143,7 @@ impl<'isa> FunctionEmitter<'isa> {
                 return Err(FunctionEmissionError::verification(body, "closure lambda entry result type mismatch"));
             }
             builder.ins().return_(&[value]);
-            builder.finalize();
+            builder.finalize(self.isa.frontend_config());
         }
         verify_function(&function, self.isa.flags())
             .map_err(|error| FunctionEmissionError::verification(body, format!("closure lambda entry: {error}")))?;
@@ -196,6 +197,7 @@ impl<'isa> FunctionEmitter<'isa> {
                 request.facts,
                 services.string_interner,
                 services.call_importer,
+                self.isa.frontend_config(),
             );
             if let Some(item) = request.item {
                 materialize_parameters(&mut context, item)?;
@@ -219,7 +221,7 @@ impl<'isa> FunctionEmitter<'isa> {
                     ));
                 }
             }
-            builder.finalize();
+            builder.finalize(self.isa.frontend_config());
         }
         verify_function(&function, self.isa.flags())
             .map_err(|error| FunctionEmissionError::verification(verification_site, error.to_string()))?;
@@ -291,12 +293,18 @@ impl<'isa> FunctionEmitter<'isa> {
             builder.switch_to_block(entry);
             builder.seal_block(entry);
             let value = lower_expression(
-                &mut IsleContext::new_with_services(&mut builder, facts, string_interner, call_importer),
+                &mut IsleContext::new_with_services(
+                    &mut builder,
+                    facts,
+                    string_interner,
+                    call_importer,
+                    self.isa.frontend_config(),
+                ),
                 body,
             )
             .map_err(FunctionEmissionError::Lowering)?;
             builder.ins().return_(&[value]);
-            builder.finalize();
+            builder.finalize(self.isa.frontend_config());
         }
         verify_function(&function, self.isa.flags())
             .map_err(|error| FunctionEmissionError::verification(body, error.to_string()))?;

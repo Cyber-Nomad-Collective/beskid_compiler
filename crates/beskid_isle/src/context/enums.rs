@@ -105,14 +105,14 @@ impl IsleContext<'_, '_, '_, '_> {
             return None;
         }
         let variant = layout.variants.get(variant)?;
-        let pointer = dispatch::pointer_type();
+        let pointer = dispatch::pointer_type(self.frontend_config);
         let request = self.symbol_global(allocation.allocation_request_symbol.as_ref(), pointer)?;
         let allocate = self.import_runtime_helper("beskid_rt_v5_managed_object_allocate", &[pointer], Some(pointer))?;
         let call = self.builder.ins().call(allocate, &[request]);
         let object = self.builder.inst_results(call).first().copied()?;
         self.builder.ins().trapz(object, TrapCode::unwrap_user(5));
         let tag = self.builder.ins().iconst(layout.tag.value_type, variant.discriminant as i64);
-        self.builder.ins().store(MemFlags::new(), tag, object, i32::try_from(layout.tag.offset).ok()?);
+        self.builder.ins().store(MemFlagsData::new(), tag, object, i32::try_from(layout.tag.offset).ok()?);
         Some(object)
     }
 
@@ -174,7 +174,7 @@ impl IsleContext<'_, '_, '_, '_> {
                 }
                 let value = self.builder.ins().load(
                     layout.value_type,
-                    MemFlags::new(),
+                    MemFlagsData::new(),
                     object,
                     i32::try_from(layout.offset).ok()?,
                 );
@@ -190,8 +190,12 @@ impl IsleContext<'_, '_, '_, '_> {
                     self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidMatchArms });
                     return None;
                 }
-                let actual =
-                    self.builder.ins().load(value_type, MemFlags::new(), object, i32::try_from(layout.offset).ok()?);
+                let actual = self.builder.ins().load(
+                    value_type,
+                    MemFlagsData::new(),
+                    object,
+                    i32::try_from(layout.offset).ok()?,
+                );
                 let expected = generated::constructor_lower_expression(self, expression)?;
                 if self.builder.func.dfg.value_type(expected) != value_type {
                     self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidMatchArms });
@@ -218,7 +222,7 @@ impl IsleContext<'_, '_, '_, '_> {
                 }
                 let nested = self.builder.ins().load(
                     parent_layout.value_type,
-                    MemFlags::new(),
+                    MemFlagsData::new(),
                     object,
                     i32::try_from(parent_layout.offset).ok()?,
                 );
@@ -247,7 +251,7 @@ impl IsleContext<'_, '_, '_, '_> {
         let variant = matched.layout.variants.iter().find(|variant| variant.discriminant == discriminant)?;
         let tag = self.builder.ins().load(
             matched.layout.tag.value_type,
-            MemFlags::new(),
+            MemFlagsData::new(),
             matched.object,
             i32::try_from(matched.layout.tag.offset).ok()?,
         );
@@ -407,7 +411,7 @@ impl IsleContext<'_, '_, '_, '_> {
                     self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidEnumLayout });
                     return None;
                 }
-                self.builder.ins().store(MemFlags::new(), payload, object, i32::try_from(field.offset).ok()?);
+                self.builder.ins().store(MemFlagsData::new(), payload, object, i32::try_from(field.offset).ok()?);
             } else if self.facts.semantic_type(payload_key) == Some(beskid_queries::SemanticTypeId::UNIT) {
                 self.lower_expression_for_effect(payload_key)?;
             } else {
@@ -481,7 +485,7 @@ macro_rules! generated_enum_methods {
 
             let tag = self.builder.ins().load(
                 layout.tag.value_type,
-                MemFlags::new(),
+                MemFlagsData::new(),
                 operand,
                 i32::try_from(layout.tag.offset).ok()?,
             );
@@ -495,8 +499,12 @@ macro_rules! generated_enum_methods {
 
             self.builder.switch_to_block(success_block);
             self.builder.seal_block(success_block);
-            let value =
-                self.builder.ins().load(payload_type, MemFlags::new(), operand, i32::try_from(payload.offset).ok()?);
+            let value = self.builder.ins().load(
+                payload_type,
+                MemFlagsData::new(),
+                operand,
+                i32::try_from(payload.offset).ok()?,
+            );
             self.builder.ins().jump(merge_block, &[value.into()]);
 
             self.builder.switch_to_block(error_block);

@@ -61,30 +61,42 @@ fn named_aggregate_fields_lower_in_declaration_layout_order() {
         panic!("expected two physical fields: {plan:?}");
     };
 
-    let clif = emit_isle_item(&input, isa.as_ref(), function)
-        .expect("named fields may be written in a different order from their declaration")
-        .display()
-        .to_string();
-
-    let instruction_result = |needle: &str| {
-        clif.lines().find_map(|line| {
-            let (result, instruction) = line.trim().split_once(" = ")?;
-            instruction.contains(needle).then(|| result.to_string())
-        })
+    let function = emit_isle_item(&input, isa.as_ref(), function)
+        .expect("named fields may be written in a different order from their declaration");
+    let clif = function.display().to_string();
+    use cranelift_codegen::ir::{InstructionData, Opcode, ValueDef, types};
+    let definition = |value| {
+        let ValueDef::Result(inst, _) = function.dfg.value_def(value) else { panic!("instruction result: {clif}") };
+        &function.dfg.insts[inst]
     };
-    let narrow_value = instruction_result("iconst.i32 7").expect("narrow constant");
-    let wide_value = instruction_result("iconst.i64 9").expect("wide constant");
-    let narrow_address = instruction_result(&format!(", {}", narrow_layout.field_offset)).expect("narrow address");
-    let wide_address = instruction_result(&format!(", {}", wide_layout.field_offset)).expect("wide address");
-
-    assert!(
-        clif.lines().any(|line| line.trim().starts_with(&format!("store {narrow_value}, {narrow_address}"))),
-        "the named `narrow` value must target its declared layout offset: {clif}"
-    );
-    assert!(
-        clif.lines().any(|line| line.trim().starts_with(&format!("store {wide_value}, {wide_address}"))),
-        "the named `wide` value must target its declared layout offset: {clif}"
-    );
+    for (expected, ty, layout) in [(7, types::I32, narrow_layout), (9, types::I64, wide_layout)] {
+        let stores = function
+            .layout
+            .blocks()
+            .flat_map(|block| function.layout.block_insts(block))
+            .filter_map(|inst| {
+                let InstructionData::Store { args, offset, .. } = function.dfg.insts[inst] else { return None };
+                let InstructionData::UnaryImm { opcode: Opcode::Iconst, imm } = definition(args[0]) else {
+                    return None;
+                };
+                (i64::from(*imm) == expected && function.dfg.value_type(args[0]) == ty).then_some((args[1], offset))
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(stores.len(), 1, "field value must be stored exactly once: {clif}");
+        let (address, offset) = stores[0];
+        assert_eq!(i32::from(offset), 0);
+        let InstructionData::Binary { opcode: Opcode::Iadd, args } = definition(address) else {
+            panic!("field address: {clif}")
+        };
+        let InstructionData::UnaryImm { opcode: Opcode::Iconst, imm } = definition(args[1]) else {
+            panic!("field offset: {clif}")
+        };
+        assert_eq!(
+            u64::try_from(i64::from(*imm)).expect("positive field offset"),
+            layout.field_offset,
+            "field uses its declared offset: {clif}"
+        );
+    }
 }
 
 #[test]
@@ -139,7 +151,10 @@ fn parsed_struct_literal_uses_source_aggregate_layout_without_hir() {
         clif.contains("beskid_rt_v5_managed_object_allocate"),
         "aggregate literals must allocate through the canonical managed-object ABI: {clif}"
     );
-    assert!(!clif.contains("stack_store"), "aggregate literals must not return escaped stack storage: {clif}");
+    assert!(
+        function.sized_stack_slots.is_empty(),
+        "aggregate literals must not allocate escaping stack storage: {clif}"
+    );
 }
 
 #[test]

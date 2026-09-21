@@ -224,7 +224,11 @@ fn corelib_syscall_write_links_from_the_process_builtin_registry() {
     builder.ins().call(syscall, &[fd, value]);
     builder.ins().return_(&[]);
     builder.seal_all_blocks();
-    builder.finalize();
+    let isa = cranelift_codegen::isa::lookup(target.triple.as_str().parse().expect("kit target triple"))
+        .expect("kit target ISA")
+        .finish(cranelift_codegen::settings::Flags::new(cranelift_codegen::settings::builder()))
+        .expect("kit target flags");
+    builder.finalize(isa.frontend_config());
 
     let artifact = CodegenArtifact {
         functions: vec![LoweredFunction { name: "Main".into(), function }],

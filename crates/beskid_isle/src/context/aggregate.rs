@@ -38,7 +38,7 @@ macro_rules! generated_aggregate_methods {
                 self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidArrayLayout });
                 return None;
             }
-            let pointer = dispatch::pointer_type();
+            let pointer = dispatch::pointer_type(self.frontend_config);
             let request = self.symbol_global(allocation.allocation_request_symbol.as_ref(), pointer)?;
             let root_slot = self.builder.create_sized_stack_slot(StackSlotData::new(
                 StackSlotKind::ExplicitSlot,
@@ -55,7 +55,7 @@ macro_rules! generated_aggregate_methods {
             self.track_expression_root(root)?;
             // `BeskidArray.ptr` remains at offset zero.  The backing bytes are owned by the same
             // descriptor-backed GC allocation; they are never a stack temporary.
-            let data = self.builder.ins().load(pointer, MemFlags::new(), array, 0);
+            let data = self.builder.ins().load(pointer, MemFlagsData::new(), array, 0);
             for (index, element) in elements.into_iter().enumerate() {
                 let value = generated::constructor_lower_expression(self, element)?;
                 if self.builder.func.dfg.value_type(value) != layout.element_type {
@@ -66,8 +66,8 @@ macro_rules! generated_aggregate_methods {
                     .ok()?
                     .checked_mul(layout.stride)
                     .and_then(|offset| i32::try_from(offset).ok())?;
-                let address = self.builder.ins().iadd_imm(data, i64::from(offset));
-                self.builder.ins().store(MemFlags::new(), value, address, 0);
+                let address = self.builder.ins().iadd_imm_s(data, i64::from(offset));
+                self.builder.ins().store(MemFlagsData::new(), value, address, 0);
                 if layout.element_type == pointer {
                     let barrier = self.import_runtime_helper(
                         "beskid_rt_v5_array_write_barrier",
@@ -108,18 +108,22 @@ macro_rules! generated_aggregate_methods {
             } else {
                 index
             };
-            let length =
-                self.builder.ins().load(pointer_type, MemFlags::new(), base, i32::try_from(pointer_type.bytes()).ok()?);
+            let length = self.builder.ins().load(
+                pointer_type,
+                MemFlagsData::new(),
+                base,
+                i32::try_from(pointer_type.bytes()).ok()?,
+            );
             let out_of_bounds = self.builder.ins().icmp(IntCC::UnsignedGreaterThanOrEqual, pointer_index, length);
             self.builder.ins().trapnz(out_of_bounds, TrapCode::HEAP_OUT_OF_BOUNDS);
             let offset = if layout.stride == 1 {
                 pointer_index
             } else {
-                self.builder.ins().imul_imm(pointer_index, i64::from(layout.stride))
+                self.builder.ins().imul_imm_s(pointer_index, i64::from(layout.stride))
             };
-            let data = self.builder.ins().load(pointer_type, MemFlags::new(), base, 0);
+            let data = self.builder.ins().load(pointer_type, MemFlagsData::new(), base, 0);
             let address = self.builder.ins().iadd(data, offset);
-            Some(self.builder.ins().load(layout.element_type, MemFlags::new(), address, 0))
+            Some(self.builder.ins().load(layout.element_type, MemFlagsData::new(), address, 0))
         }
 
         fn emit_index_assign(&mut self, key: AstNodeKey) -> Option<Value> {
@@ -152,18 +156,22 @@ macro_rules! generated_aggregate_methods {
             } else {
                 index
             };
-            let length =
-                self.builder.ins().load(pointer_type, MemFlags::new(), base, i32::try_from(pointer_type.bytes()).ok()?);
+            let length = self.builder.ins().load(
+                pointer_type,
+                MemFlagsData::new(),
+                base,
+                i32::try_from(pointer_type.bytes()).ok()?,
+            );
             let out_of_bounds = self.builder.ins().icmp(IntCC::UnsignedGreaterThanOrEqual, pointer_index, length);
             self.builder.ins().trapnz(out_of_bounds, TrapCode::HEAP_OUT_OF_BOUNDS);
             let offset = if layout.stride == 1 {
                 pointer_index
             } else {
-                self.builder.ins().imul_imm(pointer_index, i64::from(layout.stride))
+                self.builder.ins().imul_imm_s(pointer_index, i64::from(layout.stride))
             };
-            let data = self.builder.ins().load(pointer_type, MemFlags::new(), base, 0);
+            let data = self.builder.ins().load(pointer_type, MemFlagsData::new(), base, 0);
             let address = self.builder.ins().iadd(data, offset);
-            self.builder.ins().store(MemFlags::new(), value, address, 0);
+            self.builder.ins().store(MemFlagsData::new(), value, address, 0);
             if layout.element_type == pointer_type {
                 let barrier = self.import_runtime_helper(
                     "beskid_rt_v5_array_write_barrier",
@@ -210,8 +218,8 @@ macro_rules! generated_aggregate_methods {
             let object = self.builder.inst_results(allocation_call).first().copied()?;
             self.builder.ins().trapz(object, TrapCode::unwrap_user(5));
             for (value, field_layout, _) in &values {
-                let address = self.builder.ins().iadd_imm(object, i64::from(field_layout.offset));
-                self.builder.ins().store(MemFlags::new(), *value, address, 0);
+                let address = self.builder.ins().iadd_imm_s(object, i64::from(field_layout.offset));
+                self.builder.ins().store(MemFlagsData::new(), *value, address, 0);
             }
             for (_, _, root) in values.into_iter().rev() {
                 self.release_expression_root(root)?;
@@ -237,7 +245,12 @@ macro_rules! generated_aggregate_methods {
                 return None;
             }
             let base = self.field_base_pointer(key)?;
-            Some(self.builder.ins().load(field.value_type, MemFlags::new(), base, i32::try_from(field.offset).ok()?))
+            Some(self.builder.ins().load(
+                field.value_type,
+                MemFlagsData::new(),
+                base,
+                i32::try_from(field.offset).ok()?,
+            ))
         }
 
         fn emit_field_assign(&mut self, key: AstNodeKey) -> Option<Value> {
@@ -263,7 +276,7 @@ macro_rules! generated_aggregate_methods {
                 self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidStructLayout });
                 return None;
             }
-            self.builder.ins().store(MemFlags::new(), value, base, i32::try_from(field.offset).ok()?);
+            self.builder.ins().store(MemFlagsData::new(), value, base, i32::try_from(field.offset).ok()?);
             Some(value)
         }
     };

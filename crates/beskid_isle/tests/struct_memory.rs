@@ -122,7 +122,7 @@ fn valid_layout() -> StructLayout {
     )
 }
 
-fn emit(root: Root, field_index: u32, function_index: u32) -> String {
+fn emit(root: Root, field_index: u32, function_index: u32) -> cranelift_codegen::ir::Function {
     let isa = cranelift_codegen::isa::lookup(Triple::host())
         .expect("host ISA")
         .finish(settings::Flags::new(settings::builder()))
@@ -133,20 +133,32 @@ fn emit(root: Root, field_index: u32, function_index: u32) -> String {
     let function = emitter
         .emit_expression(UserFuncName::user(0, function_index), signature.clone(), &facts, facts.nodes[0])
         .expect("verified struct field lowering");
-    function.display().to_string()
+    function
 }
 
 #[test]
 fn struct_literal_and_field_read_emit_managed_clif() {
-    let clif = emit(Root::Read, 1, 22);
+    let function = emit(Root::Read, 1, 22);
+    let clif = function.display().to_string();
     assert!(clif.contains("beskid_rt_v5_managed_object_allocate"), "{clif}");
-    assert!(!clif.contains("stack_store"), "{clif}");
+    assert!(function.sized_stack_slots.is_empty(), "managed object fields must not use stack storage: {clif}");
+    let memory = function
+        .layout
+        .blocks()
+        .flat_map(|block| function.layout.block_insts(block))
+        .filter_map(|inst| function.dfg.insts[inst].memflags_data(&function.dfg))
+        .collect::<Vec<_>>();
+    assert!(!memory.is_empty(), "fixture must access managed fields");
+    assert!(
+        memory.iter().all(|flags| !flags.notrap() && !flags.aligned()),
+        "managed field accesses retain untrusted flags: {clif}"
+    );
     assert!(clif.contains("load.i32"), "{clif}");
 }
 
 #[test]
 fn field_assignment_emits_managed_clif_store() {
-    let clif = emit(Root::Write, 1, 23);
+    let clif = emit(Root::Write, 1, 23).display().to_string();
     assert!(clif.lines().any(|line| line.trim_start().starts_with("store ")), "{clif}");
 }
 

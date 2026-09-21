@@ -94,7 +94,51 @@ fn managed_local_reassignment_updates_its_existing_root_slot() {
 
     assert_eq!(clif.matches("gc_register_root").count(), 3, "{clif}");
     assert_eq!(clif.matches("gc_unregister_root").count(), 3, "{clif}");
-    assert_eq!(clif.matches("stack_store").count(), 4, "local reassignment must refresh its root slot:\n{clif}");
+    use cranelift_codegen::ir::{InstructionData, ValueDef};
+    let slots = function.sized_stack_slots.iter().map(|(slot, _)| slot).collect::<Vec<_>>();
+    assert_eq!(slots.len(), 3, "parameters and local each own a root slot:\n{clif}");
+    let params = function.dfg.block_params(function.layout.entry_block().expect("entry"));
+    let slot_for_address = |value| {
+        let ValueDef::Result(inst, _) = function.dfg.value_def(value) else { panic!("root address: {clif}") };
+        let InstructionData::StackAddr { stack_slot, offset, .. } = function.dfg.insts[inst] else {
+            panic!("root address must refer to a stack slot: {clif}")
+        };
+        assert_eq!(i32::from(offset), 0);
+        assert_eq!(function.dfg.value_type(value), isa.pointer_type());
+        stack_slot
+    };
+    let mut stores = Vec::new();
+    let mut registrations = Vec::new();
+    let mut cleanups = Vec::new();
+    for (position, inst) in function.layout.blocks().flat_map(|block| function.layout.block_insts(block)).enumerate() {
+        match function.dfg.insts[inst] {
+            InstructionData::Store { args, offset, .. } => {
+                assert_eq!(i32::from(offset), 0);
+                stores.push((position, slot_for_address(args[1]), args[0]));
+            }
+            InstructionData::Call { func_ref, .. } => {
+                let name = &function.dfg.ext_funcs[func_ref].name;
+                let slot = slot_for_address(function.dfg.inst_args(inst)[0]);
+                if *name == cranelift_codegen::ir::ExternalName::testcase("gc_register_root") {
+                    registrations.push((position, slot));
+                } else if *name == cranelift_codegen::ir::ExternalName::testcase("gc_unregister_root") {
+                    cleanups.push((position, slot));
+                }
+            }
+            _ => {}
+        }
+    }
+    assert_eq!(
+        stores.iter().map(|(_, slot, value)| (*slot, *value)).collect::<Vec<_>>(),
+        [(slots[0], params[0]), (slots[1], params[1]), (slots[2], params[0]), (slots[2], params[1])],
+        "reassignment must publish the second parameter into the existing local root: {clif}"
+    );
+    assert_eq!(registrations.iter().map(|(_, slot)| *slot).collect::<Vec<_>>(), slots);
+    assert_eq!(cleanups.iter().map(|(_, slot)| *slot).collect::<Vec<_>>(), [slots[2], slots[1], slots[0]]);
+    for index in 0..3 {
+        assert!(stores[index].0 < registrations[index].0, "initialize before registration: {clif}");
+    }
+    assert!(registrations[2].0 < stores[3].0 && stores[3].0 < cleanups[0].0, "refresh while rooted: {clif}");
 }
 
 #[test]

@@ -400,7 +400,7 @@ macro_rules! generated_control_flow_methods {
             self.builder.switch_to_block(latch);
             self.builder.seal_block(latch);
             let current = self.builder.use_var(iterator);
-            let next = self.builder.ins().iadd_imm(current, range.step);
+            let next = self.builder.ins().iadd_imm_s(current, range.step);
             self.builder.def_var(iterator, next);
             self.builder.ins().jump(header, &[]);
 

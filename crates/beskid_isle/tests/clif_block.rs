@@ -67,11 +67,11 @@ fn clif_block_call_emits_verified_clif() {
         b.switch_to_block(e);
         b.seal_block(e);
         let p = b.block_params(e)[0];
-        let mut c = IsleContext::new(&mut b, &facts);
+        let mut c = IsleContext::new(&mut b, &facts, isa.frontend_config());
         c.function_param_values.push(p);
         let v = lower_expression(&mut c, kn).unwrap();
         b.ins().return_(&[v]);
-        b.finalize();
+        b.finalize(isa.frontend_config());
     }
     verify_function(&func, isa.flags()).unwrap();
     assert!(func.display().to_string().contains("call"));
@@ -99,11 +99,11 @@ fn clif_block_return_param_emits_verified_clif() {
         b.switch_to_block(e);
         b.seal_block(e);
         let p = b.block_params(e)[0];
-        let mut c = IsleContext::new(&mut b, &facts);
+        let mut c = IsleContext::new(&mut b, &facts, isa.frontend_config());
         c.function_param_values.push(p);
         let v = lower_expression(&mut c, kn).unwrap();
         b.ins().return_(&[v]);
-        b.finalize();
+        b.finalize(isa.frontend_config());
     }
     verify_function(&func, isa.flags()).unwrap();
     assert!(func.display().to_string().contains("return"));
@@ -132,12 +132,12 @@ fn clif_block_two_arg_call_emits_verified_clif() {
         b.seal_block(e);
         let p0 = b.block_params(e)[0];
         let p1 = b.block_params(e)[1];
-        let mut c = IsleContext::new(&mut b, &facts);
+        let mut c = IsleContext::new(&mut b, &facts, isa.frontend_config());
         c.function_param_values.push(p0);
         c.function_param_values.push(p1);
         let v = lower_expression(&mut c, kn).unwrap();
         b.ins().return_(&[v]);
-        b.finalize();
+        b.finalize(isa.frontend_config());
     }
     verify_function(&func, isa.flags()).unwrap();
     assert!(func.display().to_string().contains("call"));

@@ -1,4 +1,4 @@
-(decl partial lower_expression (AstNodeKey) Value)
+(decl partial rec lower_expression (AstNodeKey) Value)
 (decl partial emit_block_expression (AstNodeKey) Value)
 (extern constructor emit_block_expression emit_block_expression)
 (decl partial emit_spawn (AstNodeKey) Value)

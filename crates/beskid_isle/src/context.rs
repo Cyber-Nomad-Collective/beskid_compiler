@@ -5,11 +5,11 @@ use cranelift_codegen::ir::condcodes::{FloatCC, IntCC};
 use cranelift_codegen::ir::immediates::{Ieee32, Ieee64};
 use cranelift_codegen::ir::types;
 use cranelift_codegen::ir::{
-    AbiParam, Block, ExtFuncData, FuncRef, MemFlags, Signature, StackSlot, StackSlotData, StackSlotKind, TrapCode,
+    AbiParam, Block, ExtFuncData, FuncRef, MemFlagsData, Signature, StackSlot, StackSlotData, StackSlotKind, TrapCode,
     Type, Value,
 };
 use cranelift_codegen::ir::{ExternalName, GlobalValueData};
-use cranelift_codegen::isa::CallConv;
+use cranelift_codegen::isa::{CallConv, TargetFrontendConfig};
 use cranelift_frontend::{FunctionBuilder, Variable};
 
 use crate::dispatch;
@@ -114,6 +114,7 @@ pub trait CallImporter {
 pub struct IsleContext<'builder, 'function, 'facts, 'interner> {
     pub(crate) builder: &'builder mut FunctionBuilder<'function>,
     pub(crate) facts: &'facts dyn NodeFacts,
+    frontend_config: TargetFrontendConfig,
     string_interner: Option<&'interner mut dyn StringInterner>,
     call_importer: Option<&'interner mut dyn CallImporter>,
     loop_stack: Vec<LoopTargets>,
@@ -124,10 +125,15 @@ pub struct IsleContext<'builder, 'function, 'facts, 'interner> {
 }
 
 impl<'builder, 'function, 'facts, 'interner> IsleContext<'builder, 'function, 'facts, 'interner> {
-    pub fn new(builder: &'builder mut FunctionBuilder<'function>, facts: &'facts dyn NodeFacts) -> Self {
+    pub fn new(
+        builder: &'builder mut FunctionBuilder<'function>,
+        facts: &'facts dyn NodeFacts,
+        frontend_config: TargetFrontendConfig,
+    ) -> Self {
         Self {
             builder,
             facts,
+            frontend_config,
             string_interner: None,
             call_importer: None,
             loop_stack: Vec::new(),
@@ -142,10 +148,12 @@ impl<'builder, 'function, 'facts, 'interner> IsleContext<'builder, 'function, 'f
         builder: &'builder mut FunctionBuilder<'function>,
         facts: &'facts dyn NodeFacts,
         string_interner: &'interner mut dyn StringInterner,
+        frontend_config: TargetFrontendConfig,
     ) -> Self {
         Self {
             builder,
             facts,
+            frontend_config,
             string_interner: Some(string_interner),
             call_importer: None,
             loop_stack: Vec::new(),
@@ -160,10 +168,12 @@ impl<'builder, 'function, 'facts, 'interner> IsleContext<'builder, 'function, 'f
         builder: &'builder mut FunctionBuilder<'function>,
         facts: &'facts dyn NodeFacts,
         call_importer: &'interner mut dyn CallImporter,
+        frontend_config: TargetFrontendConfig,
     ) -> Self {
         Self {
             builder,
             facts,
+            frontend_config,
             string_interner: None,
             call_importer: Some(call_importer),
             loop_stack: Vec::new(),
@@ -179,10 +189,12 @@ impl<'builder, 'function, 'facts, 'interner> IsleContext<'builder, 'function, 'f
         facts: &'facts dyn NodeFacts,
         string_interner: Option<&'interner mut dyn StringInterner>,
         call_importer: Option<&'interner mut dyn CallImporter>,
+        frontend_config: TargetFrontendConfig,
     ) -> Self {
         Self {
             builder,
             facts,
+            frontend_config,
             string_interner,
             call_importer,
             loop_stack: Vec::new(),

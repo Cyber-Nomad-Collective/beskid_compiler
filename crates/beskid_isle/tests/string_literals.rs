@@ -65,7 +65,7 @@ impl StringInterner for ModuleStringInterner {
             .map_err(|_| StringMaterializationError::Artifact("define literal data"))?;
         let global = self.module.declare_data_in_func(data, builder.func);
         self.interned.push(text.to_owned());
-        Ok(builder.ins().global_value(self.module.isa().pointer_type(), global))
+        Ok(builder.ins().symbol_value(self.module.isa().pointer_type(), global))
     }
 }
 
@@ -110,7 +110,14 @@ fn string_rule_interns_data_and_emits_verified_stock_clif() {
 
     assert_eq!(interner.interned, ["Beskid"]);
     let clif = function.display().to_string();
-    assert!(clif.contains("global_value"), "{clif}");
+    assert!(
+        function
+            .layout
+            .blocks()
+            .flat_map(|block| function.layout.block_insts(block))
+            .any(|inst| function.dfg.insts[inst].opcode() == cranelift_codegen::ir::Opcode::SymbolValue),
+        "{clif}"
+    );
 }
 
 #[test]

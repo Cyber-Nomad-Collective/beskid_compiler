@@ -20,7 +20,7 @@
 (extern constructor finish_statements finish_statements)
 (decl sequence_statements (Unit Unit) Unit)
 (extern constructor sequence_statements sequence_statements)
-(decl partial lower_statement_cursor (StatementCursor) Unit)
+(decl partial rec lower_statement_cursor (StatementCursor) Unit)
 (decl partial lower_nested_statement (AstNodeKey) Unit)
 (extern constructor lower_nested_statement lower_nested_statement)
 

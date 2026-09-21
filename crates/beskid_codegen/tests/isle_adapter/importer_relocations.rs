@@ -63,7 +63,7 @@ fn aarch64_materialized_item_address_uses_an_unbounded_absolute_relocation() {
     let reference = importer.import(&mut builder, callee, &callee_signature).expect("import function address");
     let address = builder.ins().func_addr(types::I64, reference);
     builder.ins().return_(&[address]);
-    builder.finalize();
+    builder.finalize(isa.frontend_config());
 
     let mut context = Context::for_function(caller);
     let compiled = context.compile(isa.as_ref(), &mut ControlPlane::default()).expect("compile AArch64 fixture");
