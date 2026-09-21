@@ -51,6 +51,47 @@ pub i64 RunNegativeDescriptorFixture() { return CheckInvalidDescriptor(-1_i64); 
 pub i64 RunOverflowDescriptorFixture() { return CheckInvalidDescriptor(2147483648_i64); }
 pub i64 RunAliasingDescriptorFixture() { return CheckInvalidDescriptor(4294967494_i64); }
 
+i64 CheckInvalidByteWriteDescriptor(i64 original) {
+    WriteBytesRequest request = WriteBytesRequest { descriptor: Descriptor::Raw(original), data: [42_u8] };
+    Result<i64, SyscallError> result = Syscall.WriteBytesWith(request);
+    return match result {
+        Result::Error(SyscallError::InvalidFd(value)) => value,
+        _ => -99_i64,
+    };
+}
+
+i64 CheckInvalidTextWriteDescriptor(i64 original) {
+    Result<i64, SyscallError> result = Syscall.Write(original, "x");
+    return match result {
+        Result::Error(SyscallError::InvalidFd(value)) => value,
+        _ => -99_i64,
+    };
+}
+
+i64 CheckInvalidTextReadDescriptor(i64 original) {
+    Result<string, SyscallError> result = Syscall.Read(original, 1_i64);
+    return match result {
+        Result::Error(SyscallError::InvalidFd(value)) => value,
+        _ => -99_i64,
+    };
+}
+
+pub i64 RunByteWriteOverflowDescriptorFixture() { return CheckInvalidByteWriteDescriptor(2147483648_i64); }
+pub i64 RunTextWriteAliasingDescriptorFixture() { return CheckInvalidTextWriteDescriptor(4294967494_i64); }
+pub i64 RunTextReadNegativeDescriptorFixture() { return CheckInvalidTextReadDescriptor(-1_i64); }
+
+// `-1` is only the private guard's invalid sentinel: fd 0 must advance to the
+// next ReadBytes validation instead of being classified as InvalidFd.
+pub i64 RunDescriptorZeroIsNotSentinelFixture() {
+    ReadBytesRequest request = ReadBytesRequest { descriptor: Descriptor::Raw(0_i64), limit: ReadLimit::UpTo(0_i64) };
+    Result<u8[], SyscallError> result = Syscall.ReadBytesWith(request);
+    return match result {
+        Result::Error(SyscallError::InvalidReadLimit(0_i64)) => 42_i64,
+        Result::Error(SyscallError::InvalidFd(_)) => -99_i64,
+        _ => -98_i64,
+    };
+}
+
 pub i64 RunShortReadThenEofFixture() {
     ReadBytesRequest request = ReadBytesRequest { descriptor: Descriptor::Raw(198_i64), limit: ReadLimit::UpTo(8_i64) };
     Result<u8[], SyscallError> first = Syscall.ReadBytesWith(request);

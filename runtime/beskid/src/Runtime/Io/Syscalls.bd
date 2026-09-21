@@ -23,7 +23,8 @@ i64 FinishSyscallRequest(pointer request, pointer managedBuffer) {
     return result;
 }
 
-pub i64 SyscallSubmitAndPark(word nativeHandle, pointer managedBuffer, word len, word operation) {
+pub i64 SyscallSubmitAndPark(word descriptor, pointer managedBuffer, word len, word operation) {
+    if descriptor > 2147483647 { return -1; }
     mut word allocation = len;
     if allocation == 0 { allocation = 1; }
     pointer nativeBuffer = SystemAllocate(allocation, 8);
@@ -34,7 +35,7 @@ pub i64 SyscallSubmitAndPark(word nativeHandle, pointer managedBuffer, word len,
     if request == NativePointer(0) { SystemFree(nativeBuffer, allocation); return -1; }
     memory_set(request, 0, BESKID_WORKER_REQUEST_SIZE);
     raw_word_store(pointer_add(request, 16), operation);
-    raw_word_store(pointer_add(request, 24), nativeHandle);
+    raw_word_store(pointer_add(request, 24), descriptor);
     raw_word_store(pointer_add(request, 32), NativeWord(nativeBuffer));
     raw_word_store(pointer_add(request, 40), len);
 
@@ -75,22 +76,23 @@ pub i64 SyscallSubmitAndPark(word nativeHandle, pointer managedBuffer, word len,
 }
 
 [Export(Abi:"C", Symbol:"syscall_read")]
-pub i64 SyscallRead(i32 nativeHandle, pointer buffer, word len) {
-    return SyscallSubmitAndPark(word(nativeHandle), buffer, len, SYSCALL_READ);
+pub i64 SyscallRead(i32 descriptor, pointer buffer, word len) {
+    return SyscallSubmitAndPark(word(descriptor), buffer, len, SYSCALL_READ);
 }
 
 [Export(Abi:"C", Symbol:"syscall_read_bytes")]
-pub i64 SyscallReadBytes(i32 nativeHandle, pointer data, word len) { return SyscallRead(nativeHandle, data, len); }
+pub i64 SyscallReadBytes(i32 descriptor, pointer data, word len) { return SyscallRead(descriptor, data, len); }
 
 [Export(Abi:"C", Symbol:"syscall_write")]
-pub i64 SyscallWrite(i64 nativeHandle, pointer value) {
+pub i64 SyscallWrite(i64 descriptor, pointer value) {
     if value == NativePointer(0) { return -1; }
-    return SyscallSubmitAndPark(word(nativeHandle), StringViewData(value), StringViewLength(value), SYSCALL_WRITE);
+    if descriptor < 0 || descriptor > 2147483647 { return -1; }
+    return SyscallSubmitAndPark(word(descriptor), StringViewData(value), StringViewLength(value), SYSCALL_WRITE);
 }
 
 [Export(Abi:"C", Symbol:"syscall_write_bytes")]
-pub i64 SyscallWriteBytes(i32 nativeHandle, pointer data, word len) {
-    return SyscallSubmitAndPark(word(nativeHandle), data, len, SYSCALL_WRITE);
+pub i64 SyscallWriteBytes(i32 descriptor, pointer data, word len) {
+    return SyscallSubmitAndPark(word(descriptor), data, len, SYSCALL_WRITE);
 }
 
 [Export(Abi:"C", Symbol:"beskid_trap_code")]

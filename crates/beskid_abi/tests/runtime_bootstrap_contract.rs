@@ -46,6 +46,39 @@ fn windows_descriptor_primitives_use_application_ucrt_import_authority() {
 }
 
 #[test]
+fn raw_descriptor_abi_rejects_before_allocation_or_native_admission() {
+    let source = include_str!("../../../runtime/beskid/src/Runtime/Io/Syscalls.bd");
+    let submit = source.find("pub i64 SyscallSubmitAndPark").unwrap();
+    let reject = source[submit..].find("if descriptor > 2147483647 { return -1; }").unwrap() + submit;
+    let allocation = source[submit..].find("pointer nativeBuffer = SystemAllocate").unwrap() + submit;
+    assert!(reject < allocation, "raw descriptor admission must precede native allocation");
+
+    let write = source.find("pub i64 SyscallWrite(i64 descriptor, pointer value)").unwrap();
+    let write_reject =
+        source[write..].find("if descriptor < 0 || descriptor > 2147483647 { return -1; }").unwrap() + write;
+    let native_admission = source[write..].find("SyscallSubmitAndPark(word(descriptor)").unwrap() + write;
+    assert!(write_reject < native_admission, "the i64 raw ABI must not narrow/admit an invalid descriptor");
+}
+
+#[test]
+fn descriptor_worker_ownership_is_disjoint_from_the_existing_abandoned_protocol() {
+    let source = include_str!("../assembly/common/external_wait.h");
+    assert!(source.contains("BESKID_WORKER_ABANDONED = 1u"));
+    assert!(source.contains("BESKID_WORKER_OWNS_DESCRIPTOR = UINT32_C(0x80000000)"));
+    assert!(source.contains("request->abandoned |= BESKID_WORKER_OWNS_DESCRIPTOR"));
+    assert!(source.contains("r->abandoned |= BESKID_WORKER_ABANDONED"));
+    assert!(!source.contains("r->abandoned = 1"));
+    assert!(
+        source.contains("BeskidWorkerCloseDescriptor(request);"),
+        "every request free releases its owned duplicate"
+    );
+    assert!(
+        source.contains("if (beskid_workers_stop || beskid_request_count >= BESKID_REQUEST_MAX) {\n    BeskidWorkerCloseDescriptor(r);"),
+        "queue rejection must release its duplicate before returning"
+    );
+}
+
+#[test]
 fn canonical_contract_has_the_exact_lifecycle_closure_and_trap_exports() {
     let manifest = AbiManifestV5::canonical_runtime(supported_targets()[0].clone());
     manifest.validate().expect("canonical runtime contract");
@@ -284,6 +317,7 @@ fn target_system_imports_are_exact_and_unknown_contracts_are_rejected() {
         "close",
         "cos",
         "fabs",
+        "fcntl",
         "floor",
         "fstat",
         "getcwd",
@@ -320,6 +354,12 @@ fn target_system_imports_are_exact_and_unknown_contracts_are_rejected() {
         "write",
     ];
     let windows_imports = [
+        "_close",
+        "_dup",
+        "_read",
+        "_set_thread_local_invalid_parameter_handler",
+        "_setmode",
+        "_write",
         "AcquireSRWLockExclusive",
         "CloseHandle",
         "CreateDirectoryW",
@@ -368,6 +408,8 @@ fn target_system_imports_are_exact_and_unknown_contracts_are_rejected() {
         "tan",
     ];
     let math_imports = ["atan2", "ceil", "cos", "fabs", "floor", "log", "log10", "log2", "pow", "sin", "sqrt", "tan"];
+    let windows_ucrt_descriptor_imports =
+        ["_close", "_dup", "_read", "_set_thread_local_invalid_parameter_handler", "_setmode", "_write"];
     for target in supported_targets() {
         let is_windows = target.triple.as_str() == "x86_64-pc-windows-msvc";
         let (mut expected_symbols, expected_library) = match target.triple.as_str() {
@@ -401,7 +443,9 @@ fn target_system_imports_are_exact_and_unknown_contracts_are_rejected() {
                 for entry in &manifest.platform_imports {
                     let expected = if is_windows && entry.symbol == "memset" {
                         "vcruntime"
-                    } else if math_imports.contains(&entry.symbol.as_str()) {
+                    } else if math_imports.contains(&entry.symbol.as_str())
+                        || (is_windows && windows_ucrt_descriptor_imports.contains(&entry.symbol.as_str()))
+                    {
                         math
                     } else {
                         platform

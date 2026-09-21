@@ -134,6 +134,38 @@ fn foundation_syscall_aliasing_descriptor_preserves_original_i64_and_input() {
 }
 
 #[test]
+fn foundation_syscall_byte_write_overflow_preserves_original_i64_before_native_admission() {
+    run_foundation_case("foundation_syscall.bd", "RunByteWriteOverflowDescriptorFixture", 2147483648, 0);
+}
+
+#[test]
+fn foundation_syscall_text_write_aliasing_descriptor_preserves_original_i64_before_native_admission() {
+    run_foundation_case("foundation_syscall.bd", "RunTextWriteAliasingDescriptorFixture", 4294967494, 0);
+}
+
+#[test]
+fn foundation_syscall_text_read_negative_descriptor_is_invalid_before_stdin_routing() {
+    run_foundation_case("foundation_syscall.bd", "RunTextReadNegativeDescriptorFixture", -1, 0);
+}
+
+#[test]
+fn foundation_syscall_descriptor_zero_is_admitted_before_later_read_validation() {
+    run_foundation_case("foundation_syscall.bd", "RunDescriptorZeroIsNotSentinelFixture", 42, 0);
+}
+
+#[test]
+fn foundation_syscall_descriptor_narrowing_is_confined_to_the_private_guard() {
+    let path =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corelib/packages/foundation/src/Core/Syscall/Syscall.bd");
+    let source = std::fs::read_to_string(path).unwrap();
+    assert!(source.contains("i32 CheckedDescriptor(i64 descriptor)"));
+    assert!(!source.contains("pub i32 CheckedDescriptor"));
+    assert_eq!(source.matches("i32(").count(), 1, "CheckedDescriptor must be the only i64-to-i32 narrowing");
+    assert!(source.contains("return -1_i32;"), "only invalid source descriptors produce the sentinel");
+    assert!(source.contains("return i32(descriptor);"));
+}
+
+#[test]
 fn foundation_syscall_short_read_is_followed_by_empty_eof() {
     run_foundation_case("foundation_syscall.bd", "RunShortReadThenEofFixture", 42, 1);
 }

@@ -1,6 +1,11 @@
 #include "../../include/beskid_runtime_abi_v5.h"
 #include "../common/args_utf16.h"
+#include <errno.h>
+#include <fcntl.h>
+#include <io.h>
+#include <limits.h>
 #include <stddef.h>
+#include <stdlib.h>
 #include <stdint.h>
 #include <windows.h>
 
@@ -125,6 +130,8 @@ void beskid_rt_v5_intrinsic_guarded_stack_free(void *usable_base,
 }
 
 #pragma comment(lib, "kernel32.lib")
+/* Descriptor workers must share the host application's dynamic UCRT. */
+#pragma comment(lib, "ucrt.lib")
 /* Provider for C compiler-emitted memory operations. */
 #pragma comment(lib, "vcruntime.lib")
 

@@ -2,6 +2,10 @@
  * One lock protects mailbox publication and worker request lifetime. No foreign
  * thread touches the managed heap, a fiber record, or a scheduler run queue. */
 
+#ifndef _WIN32
+#include <fcntl.h>
+#endif
+
 extern void *beskid_rt_v5_intrinsic_system_allocate(size_t, size_t);
 extern void beskid_rt_v5_intrinsic_system_free(void *, size_t);
 extern int64_t beskid_rt_v5_intrinsic_clock_monotonic_nanos(void);
@@ -150,6 +154,13 @@ int32_t beskid_rt_v5_intrinsic_wait_claim(uint64_t *state, uint64_t source) {
 
 enum { BESKID_WORKER_READ = 1, BESKID_WORKER_WRITE = 2,
        BESKID_WORKER_QUEUED = 1, BESKID_WORKER_RUNNING = 2, BESKID_WORKER_COMPLETE = 3 };
+enum {
+  /* The low bit is the existing cancellation protocol; the high bit is private
+   * ownership state. They cannot collide because abandonment has always been
+   * written as zero or one. An owned duplicate may itself be descriptor zero. */
+  BESKID_WORKER_ABANDONED = 1u,
+  BESKID_WORKER_OWNS_DESCRIPTOR = UINT32_C(0x80000000)
+};
 struct BeskidWorkerRequest {
   struct BeskidWorkerRequest *next;
   uint64_t tag;
@@ -165,7 +176,66 @@ struct BeskidWorkerRequest {
 _Static_assert(sizeof(struct BeskidWorkerRequest) == BESKID_WORKER_REQUEST_SIZE, "manifest worker request size");
 _Static_assert(offsetof(struct BeskidWorkerRequest, owner) == BESKID_WORKER_REQUEST_OWNER_SCHEDULER_ID_OFFSET, "manifest owner route offset");
 _Static_assert(offsetof(struct BeskidWorkerRequest, state) == BESKID_WORKER_REQUEST_STATE_OFFSET, "manifest request state offset");
+static int BeskidWorkerIsAbandoned(const struct BeskidWorkerRequest *request) {
+  return (request->abandoned & BESKID_WORKER_ABANDONED) != 0;
+}
+static int BeskidWorkerOwnsDescriptor(const struct BeskidWorkerRequest *request) {
+  return (request->abandoned & BESKID_WORKER_OWNS_DESCRIPTOR) != 0;
+}
+#ifdef _WIN32
+static void BeskidWorkerInvalidParameter(const wchar_t *expression,
+                                         const wchar_t *function,
+                                         const wchar_t *file,
+                                         unsigned int line,
+                                         uintptr_t reserved) {
+  (void)expression; (void)function; (void)file; (void)line; (void)reserved;
+}
+static void BeskidWorkerCloseDescriptor(struct BeskidWorkerRequest *request) {
+  if (!BeskidWorkerOwnsDescriptor(request)) return;
+  _invalid_parameter_handler previous =
+      _set_thread_local_invalid_parameter_handler(BeskidWorkerInvalidParameter);
+  (void)_close((int)request->native_handle);
+  _set_thread_local_invalid_parameter_handler(previous);
+  request->abandoned &= ~BESKID_WORKER_OWNS_DESCRIPTOR;
+}
+static int BeskidWorkerAcquireDescriptor(struct BeskidWorkerRequest *request) {
+  if (request->native_handle > INT_MAX) { request->result = -1; request->error = EBADF; return 0; }
+  _invalid_parameter_handler previous =
+      _set_thread_local_invalid_parameter_handler(BeskidWorkerInvalidParameter);
+  errno = 0;
+  int descriptor = _dup((int)request->native_handle);
+  int error = errno;
+  if (descriptor >= 0) {
+    errno = 0;
+    if (_setmode(descriptor, _O_BINARY) < 0) {
+      error = errno;
+      (void)_close(descriptor);
+      descriptor = -1;
+    }
+  }
+  _set_thread_local_invalid_parameter_handler(previous);
+  if (descriptor < 0) { request->result = -1; request->error = error; return 0; }
+  request->native_handle = (uintptr_t)descriptor;
+  request->abandoned |= BESKID_WORKER_OWNS_DESCRIPTOR;
+  return 1;
+}
+#else
+static void BeskidWorkerCloseDescriptor(struct BeskidWorkerRequest *request) {
+  if (!BeskidWorkerOwnsDescriptor(request)) return;
+  (void)close((int)request->native_handle);
+  request->abandoned &= ~BESKID_WORKER_OWNS_DESCRIPTOR;
+}
+static int BeskidWorkerAcquireDescriptor(struct BeskidWorkerRequest *request) {
+  if (request->native_handle > INT_MAX) { request->result = -1; request->error = EBADF; return 0; }
+  int descriptor = fcntl((int)request->native_handle, F_DUPFD_CLOEXEC, 0);
+  if (descriptor < 0) { request->result = -1; request->error = errno; return 0; }
+  request->native_handle = (uintptr_t)descriptor;
+  request->abandoned |= BESKID_WORKER_OWNS_DESCRIPTOR;
+  return 1;
+}
+#endif
 static void BeskidWorkerFree(struct BeskidWorkerRequest *request) {
+  BeskidWorkerCloseDescriptor(request);
   beskid_rt_v5_intrinsic_system_free(request->buffer, request->length ? request->length : 1);
   beskid_rt_v5_intrinsic_system_free(request, sizeof(*request));
 }
@@ -181,14 +251,16 @@ static int beskid_workers_stop;
 static struct BeskidWorkerRequest *beskid_work_head, *beskid_work_tail;
 static void BeskidWorkerPerform(struct BeskidWorkerRequest *r) {
 #ifdef _WIN32
-  DWORD transferred = 0;
-  BOOL ok = r->operation == BESKID_WORKER_READ
-      ? ReadFile((HANDLE)r->native_handle, r->buffer, (DWORD)r->length, &transferred, NULL)
-      : WriteFile((HANDLE)r->native_handle, r->buffer, (DWORD)r->length, &transferred, NULL);
-  r->result = ok ? (intptr_t)transferred : -1;
-  r->error = ok ? 0 : (int32_t)GetLastError();
+  _invalid_parameter_handler previous =
+      _set_thread_local_invalid_parameter_handler(BeskidWorkerInvalidParameter);
+  errno = 0;
+  r->result = r->operation == BESKID_WORKER_READ
+      ? _read((int)r->native_handle, r->buffer, (unsigned int)r->length)
+      : _write((int)r->native_handle, r->buffer, (unsigned int)r->length);
+  int error = errno;
+  _set_thread_local_invalid_parameter_handler(previous);
+  r->error = r->result < 0 ? error : 0;
 #else
-  if (r->native_handle > INT_MAX) { r->result = -1; r->error = EBADF; return; }
   errno = 0;
   r->result = r->operation == BESKID_WORKER_READ
       ? read((int)r->native_handle, r->buffer, r->length)
@@ -210,12 +282,12 @@ static void *beskid_worker_main(void *unused) {
     beskid_work_head = request->next;
     if (!beskid_work_head) beskid_work_tail = NULL;
     request->next = NULL;
-    if (request->abandoned) { --beskid_request_count; BeskidWorkerFree(request); continue; }
+    if (BeskidWorkerIsAbandoned(request)) { --beskid_request_count; BeskidWorkerFree(request); continue; }
     request->state = BESKID_WORKER_RUNNING;
     BeskidUnlock();
     BeskidWorkerPerform(request);
     BeskidLock();
-    if (request->abandoned) { --beskid_request_count; BeskidWorkerFree(request); }
+    if (BeskidWorkerIsAbandoned(request)) { --beskid_request_count; BeskidWorkerFree(request); }
     else {
       request->state = BESKID_WORKER_COMPLETE;
       /* This is transport publication, never terminal wait completion. */
@@ -256,10 +328,15 @@ void beskid_rt_v5_intrinsic_worker_pool_shutdown(void) {
 int32_t beskid_rt_v5_intrinsic_worker_submit(struct BeskidWorkerRequest *r) {
   if (!r || !beskid_worker_count || (r->operation != BESKID_WORKER_READ && r->operation != BESKID_WORKER_WRITE)) return -1;
 #ifdef _WIN32
-  if (r->length > UINT32_MAX) return -1;
+  if (r->length > INT_MAX) return -1;
 #endif
+  if (!BeskidWorkerAcquireDescriptor(r)) return -1;
   BeskidLock();
-  if (beskid_workers_stop || beskid_request_count >= BESKID_REQUEST_MAX) { BeskidUnlock(); return -1; }
+  if (beskid_workers_stop || beskid_request_count >= BESKID_REQUEST_MAX) {
+    BeskidWorkerCloseDescriptor(r);
+    BeskidUnlock();
+    return -1;
+  }
   r->state = BESKID_WORKER_QUEUED;
   r->next = NULL;
   ++beskid_request_count;
@@ -282,7 +359,7 @@ void beskid_rt_v5_intrinsic_worker_release(struct BeskidWorkerRequest *r) {
   } else {
     /* Cancellation unregisters the source. The worker retains its native
      * storage until its OS call returns; it cannot publish another command. */
-    r->abandoned = 1;
+    r->abandoned |= BESKID_WORKER_ABANDONED;
     r->owner = 0;
   }
   BeskidUnlock();

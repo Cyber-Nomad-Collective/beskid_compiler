@@ -1426,6 +1426,7 @@ platform_import "strlen" { target = "x86_64-unknown-linux-gnu" library = libc pa
 platform_import "write" { target = "x86_64-unknown-linux-gnu" library = libc params = [{ name = fd, type = i32 }, { name = buffer, type = pointer }, { name = length, type = usize }] returns = isize }
 platform_import "open" { target = "x86_64-unknown-linux-gnu" library = libc params = [{ name = path, type = pointer }, { name = flags, type = i32 }, { name = mode, type = u32 }] returns = i32 }
 platform_import "fstat" { target = "x86_64-unknown-linux-gnu" library = libc params = [{ name = fd, type = i32 }, { name = status, type = pointer }] returns = i32 }
+platform_import "fcntl" { target = "x86_64-unknown-linux-gnu" library = libc params = [{ name = fd, type = i32 }, { name = command, type = i32 }, { name = argument, type = i32 }] returns = i32 }
 platform_import "read" { target = "x86_64-unknown-linux-gnu" library = libc params = [{ name = fd, type = i32 }, { name = buffer, type = pointer }, { name = length, type = usize }] returns = isize }
 platform_import "pthread_mutex_lock" { target = "x86_64-unknown-linux-gnu" library = libc params = [{ name = mutex, type = pointer }] returns = i32 }
 platform_import "pthread_mutex_unlock" { target = "x86_64-unknown-linux-gnu" library = libc params = [{ name = mutex, type = pointer }] returns = i32 }
@@ -1472,6 +1473,7 @@ platform_import "strlen" { target = "aarch64-apple-darwin" library = libSystem p
 platform_import "write" { target = "aarch64-apple-darwin" library = libSystem params = [{ name = fd, type = i32 }, { name = buffer, type = pointer }, { name = length, type = usize }] returns = isize }
 platform_import "open" { target = "aarch64-apple-darwin" library = libSystem params = [{ name = path, type = pointer }, { name = flags, type = i32 }, { name = mode, type = u32 }] returns = i32 }
 platform_import "fstat" { target = "aarch64-apple-darwin" library = libSystem params = [{ name = fd, type = i32 }, { name = status, type = pointer }] returns = i32 }
+platform_import "fcntl" { target = "aarch64-apple-darwin" library = libSystem params = [{ name = fd, type = i32 }, { name = command, type = i32 }, { name = argument, type = i32 }] returns = i32 }
 platform_import "read" { target = "aarch64-apple-darwin" library = libSystem params = [{ name = fd, type = i32 }, { name = buffer, type = pointer }, { name = length, type = usize }] returns = isize }
 platform_import "pthread_mutex_lock" { target = "aarch64-apple-darwin" library = libSystem params = [{ name = mutex, type = pointer }] returns = i32 }
 platform_import "pthread_mutex_unlock" { target = "aarch64-apple-darwin" library = libSystem params = [{ name = mutex, type = pointer }] returns = i32 }
@@ -1515,6 +1517,14 @@ platform_import "InitOnceExecuteOnce" { target = "x86_64-pc-windows-msvc" librar
 platform_import "TlsAlloc" { target = "x86_64-pc-windows-msvc" library = kernel32 params = [] returns = u32 }
 platform_import "TlsGetValue" { target = "x86_64-pc-windows-msvc" library = kernel32 params = [{ name = index, type = u32 }] returns = pointer }
 platform_import "TlsSetValue" { target = "x86_64-pc-windows-msvc" library = kernel32 params = [{ name = index, type = u32 }, { name = value, type = pointer }] returns = i32 }
+
+# Descriptor worker primitives share the application's dynamic UCRT.
+platform_import "_dup" { target = "x86_64-pc-windows-msvc" library = ucrt params = [{ name = fd, type = i32 }] returns = i32 }
+platform_import "_close" { target = "x86_64-pc-windows-msvc" library = ucrt params = [{ name = fd, type = i32 }] returns = i32 }
+platform_import "_read" { target = "x86_64-pc-windows-msvc" library = ucrt params = [{ name = fd, type = i32 }, { name = buffer, type = pointer }, { name = length, type = u32 }] returns = i32 }
+platform_import "_write" { target = "x86_64-pc-windows-msvc" library = ucrt params = [{ name = fd, type = i32 }, { name = buffer, type = pointer }, { name = length, type = u32 }] returns = i32 }
+platform_import "_setmode" { target = "x86_64-pc-windows-msvc" library = ucrt params = [{ name = fd, type = i32 }, { name = mode, type = i32 }] returns = i32 }
+platform_import "_set_thread_local_invalid_parameter_handler" { target = "x86_64-pc-windows-msvc" library = ucrt params = [{ name = handler, type = pointer }] returns = pointer }
 
 platform_import "floor" { target = "x86_64-pc-windows-msvc" library = ucrt params = [{ name = x, type = f64 }] returns = f64 }
 platform_import "ceil" { target = "x86_64-pc-windows-msvc" library = ucrt params = [{ name = x, type = f64 }] returns = f64 }

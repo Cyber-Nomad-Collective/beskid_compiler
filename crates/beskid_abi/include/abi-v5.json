@@ -3053,6 +3053,26 @@
       "result": "f64"
     },
     {
+      "symbol": "fcntl",
+      "target": "aarch64-apple-darwin",
+      "library": "libSystem",
+      "params": [
+        {
+          "name": "fd",
+          "type": "i32"
+        },
+        {
+          "name": "command",
+          "type": "i32"
+        },
+        {
+          "name": "argument",
+          "type": "i32"
+        }
+      ],
+      "result": "i32"
+    },
+    {
       "symbol": "floor",
       "target": "aarch64-apple-darwin",
       "library": "libSystem",
@@ -4160,6 +4180,98 @@
       "result": "i32"
     },
     {
+      "symbol": "_close",
+      "target": "x86_64-pc-windows-msvc",
+      "library": "ucrt",
+      "params": [
+        {
+          "name": "fd",
+          "type": "i32"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "symbol": "_dup",
+      "target": "x86_64-pc-windows-msvc",
+      "library": "ucrt",
+      "params": [
+        {
+          "name": "fd",
+          "type": "i32"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "symbol": "_read",
+      "target": "x86_64-pc-windows-msvc",
+      "library": "ucrt",
+      "params": [
+        {
+          "name": "fd",
+          "type": "i32"
+        },
+        {
+          "name": "buffer",
+          "type": "pointer"
+        },
+        {
+          "name": "length",
+          "type": "u32"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "symbol": "_set_thread_local_invalid_parameter_handler",
+      "target": "x86_64-pc-windows-msvc",
+      "library": "ucrt",
+      "params": [
+        {
+          "name": "handler",
+          "type": "pointer"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
+      "symbol": "_setmode",
+      "target": "x86_64-pc-windows-msvc",
+      "library": "ucrt",
+      "params": [
+        {
+          "name": "fd",
+          "type": "i32"
+        },
+        {
+          "name": "mode",
+          "type": "i32"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "symbol": "_write",
+      "target": "x86_64-pc-windows-msvc",
+      "library": "ucrt",
+      "params": [
+        {
+          "name": "fd",
+          "type": "i32"
+        },
+        {
+          "name": "buffer",
+          "type": "pointer"
+        },
+        {
+          "name": "length",
+          "type": "u32"
+        }
+      ],
+      "result": "i32"
+    },
+    {
       "symbol": "atan2",
       "target": "x86_64-pc-windows-msvc",
       "library": "ucrt",
@@ -4422,6 +4534,26 @@
         }
       ],
       "result": "f64"
+    },
+    {
+      "symbol": "fcntl",
+      "target": "x86_64-unknown-linux-gnu",
+      "library": "libc",
+      "params": [
+        {
+          "name": "fd",
+          "type": "i32"
+        },
+        {
+          "name": "command",
+          "type": "i32"
+        },
+        {
+          "name": "argument",
+          "type": "i32"
+        }
+      ],
+      "result": "i32"
     },
     {
       "symbol": "floor",
