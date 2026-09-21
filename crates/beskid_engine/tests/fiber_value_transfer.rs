@@ -1,5 +1,6 @@
 #![cfg(unix)]
 
+use anyhow::Context;
 use beskid_abi::{
     abi_v5::AbiManifestV5,
     runtime_kit::BuildProfile,
@@ -11,7 +12,7 @@ use beskid_abi::{
 use beskid_analysis::{
     projects::{AssemblyDiscovery, EffectiveCompilationRoots, ModuleIndex, ProgramAssembly, RootEntry, SourceUnit},
     services::parse_program_with_source_name,
-    syntax::{FunctionDefinition, Visibility},
+    syntax::{EnumDefinition, FunctionDefinition, Visibility},
     syntax_query::{NodeKind, SyntaxIndex},
 };
 use beskid_codegen::{
@@ -19,16 +20,15 @@ use beskid_codegen::{
     syntax_item_signature,
 };
 use beskid_queries::{
-    AstNodeId, AstNodeKey, BeskidDatabase, ItemSignature, SemanticTypeId, SourceUnitId, SyntaxGenerationId,
-    build_typed_program_with_corelib_services, direct_callees, item_abi_signature, item_name,
-    project_session_for_syntax_assembly, reachable_items,
+    AggregateFieldShape, AstNodeId, AstNodeKey, BeskidDatabase, EnumLayoutFact, ItemSignature, SemanticTypeId,
+    SourceUnitId, SyntaxGenerationId, build_typed_program_with_corelib_services, direct_callees, enum_layout,
+    item_abi_signature, item_name, project_session_for_syntax_assembly, reachable_items,
 };
 use beskid_tools::toolchain::runtime_kit::{RuntimeKitProfile, build_native_host};
-use std::{collections::HashSet, path::Path, process::Command, sync::Arc};
+use std::{collections::HashSet, ffi::CString, path::Path, process::Command, sync::Arc};
 
 #[test]
 fn source_timer_sleep_deadline_validation_uses_production_helpers() {
-    // Preflight only: native observations of the validation outcomes are a separate slice.
     let mut db = BeskidDatabase::default();
     let artifact = timer_validation_artifact(&mut db).expect("production timer helper selection and lowering");
     let db = artifact.input.database();
@@ -64,6 +64,338 @@ fn source_timer_sleep_deadline_validation_uses_production_helpers() {
     let copied_path = copied.path().join("Time.bd");
     std::fs::copy(&time.path, &copied_path).unwrap();
     assert!(require_canonical_timer_source(&copied_path, &time.source).is_err());
+    for (route, executed) in timer_validation_observations(&artifact).unwrap() {
+        assert_eq!(executed, 9, "{route}: all six deadline and three status cases must execute");
+    }
+}
+
+// These repr(C) records describe the callback transport only. Object offsets,
+// discriminants, and unit's absence of storage come from semantic layout facts.
+#[repr(C)]
+#[derive(Debug)]
+struct TimerResultLayout {
+    size: usize,
+    tag_offset: usize,
+    ok_tag: usize,
+    error_tag: usize,
+    ok_offset: usize,
+    error_offset: usize,
+}
+
+#[repr(C)]
+struct TimerValidationMetadata {
+    pointer_bytes: usize,
+    word_bytes: usize,
+    i64_bytes: usize,
+    tag_bytes: usize,
+    deadline: TimerResultLayout,
+    status: TimerResultLayout,
+    error_size: usize,
+    error_tag_offset: usize,
+    unavailable_tag: usize,
+    overflow_tag: usize,
+    cancelled_tag: usize,
+    from_nanoseconds: Option<unsafe extern "C" fn(i64) -> *mut u8>,
+    deadline_from_sample: Option<unsafe extern "C" fn(*mut u8, i64) -> *mut u8>,
+    result_from_status: Option<unsafe extern "C" fn(usize) -> *mut u8>,
+}
+
+fn timer_validation_metadata(artifact: &TimerValidationArtifact<'_>) -> anyhow::Result<TimerValidationMetadata> {
+    let input = &artifact.input;
+    let db = input.database();
+    let width = input.target().pointer_width;
+    let bytes = |ty: SemanticTypeId| -> anyhow::Result<usize> {
+        Ok(ty.scalar_abi_layout(width).context("timer scalar ABI layout unavailable")?.size.try_into()?)
+    };
+    anyhow::ensure!(bytes(SemanticTypeId::POINTER)? == size_of::<*mut u8>());
+    anyhow::ensure!(bytes(SemanticTypeId::WORD)? == size_of::<usize>());
+    anyhow::ensure!(bytes(SemanticTypeId::I64)? == size_of::<i64>());
+    anyhow::ensure!(bytes(SemanticTypeId::I32)? == size_of::<u32>());
+    let settings = beskid_codegen::cranelift_host::production_isa_settings_builder()?;
+    let isa = cranelift_native::builder()
+        .map_err(anyhow::Error::msg)?
+        .finish(cranelift_codegen::settings::Flags::new(settings))?;
+    use cranelift_codegen::ir::{AbiParam, Signature, types};
+    // Independently check the C transport signatures, including calling convention,
+    // extensions and hidden parameters, against both queries and emitted code.
+    for (selected, parameters) in
+        artifact.selected.iter().zip([vec![types::I64], vec![isa.pointer_type(), types::I64], vec![isa.pointer_type()]])
+    {
+        let mut c_signature = Signature::new(isa.default_call_conv());
+        c_signature.params.extend(parameters.into_iter().map(AbiParam::new));
+        c_signature.returns.push(AbiParam::new(isa.pointer_type()));
+        let query = syntax_item_signature(input, isa.as_ref(), selected.item.key)
+            .map_err(|error| anyhow::anyhow!("timer signature query: {error:?}"))?;
+        anyhow::ensure!(query == c_signature, "{} cannot use the C callback ABI", selected.item.symbol);
+        let emitted = artifact
+            .artifact
+            .functions
+            .iter()
+            .find(|function| function.name == selected.item.symbol)
+            .context("selected timer emission missing")?;
+        anyhow::ensure!(emitted.function.signature == c_signature, "{} emitted C ABI mismatch", selected.item.symbol);
+    }
+    let header = input
+        .abi_manifest()
+        .layouts
+        .iter()
+        .find(|layout| layout.name == "BeskidObjectHeader")
+        .context("managed object header unavailable")?;
+    let physical = |fact: &EnumLayoutFact| {
+        fact.scalar_payload_object_layout(width, header.size, header.alignment)
+            .context("timer physical enum layout unavailable")
+    };
+    let variant = |fact: &EnumLayoutFact, name: &str| {
+        fact.variants
+            .iter()
+            .position(|variant| variant.name.as_ref() == name)
+            .with_context(|| format!("timer enum variant {name} unavailable"))
+    };
+    let result_layout = |key: AstNodeKey, ok_type| -> anyhow::Result<(TimerResultLayout, AstNodeKey)> {
+        let unit = input
+            .typed_program()
+            .assembly
+            .units
+            .iter()
+            .find(|unit| &unit.path == key.unit.path(db))
+            .context("timer helper source unavailable")?;
+        let index = SyntaxIndex::from_program(&unit.program, key.generation);
+        let mut pending = vec![key.node];
+        let mut layouts = Vec::new();
+        while let Some(node) = pending.pop() {
+            pending.extend(index.children(node).unwrap_or_default());
+            if index.kind(node) == Some(NodeKind::EnumConstructorExpression) {
+                let fact =
+                    enum_layout(db, AstNodeKey { node, ..key })?.context("timer constructor layout unavailable")?;
+                if fact.variants.iter().any(|variant| variant.name.as_ref() == "Ok") {
+                    layouts.push(fact);
+                }
+            }
+        }
+        let fact = layouts.first().context("no specialized Result constructors in timer helper")?;
+        anyhow::ensure!(layouts.iter().all(|layout| layout == fact), "inconsistent specialized Result layouts");
+        anyhow::ensure!(fact.variants.len() == 2, "Result must have exactly Ok and Error");
+        let ok = variant(fact, "Ok")?;
+        let error = variant(fact, "Error")?;
+        anyhow::ensure!(fact.variants[ok].fields.len() == 1 && fact.variants[error].fields.len() == 1);
+        anyhow::ensure!(
+            fact.variants[ok].fields[0].1 == AggregateFieldShape::Scalar(ok_type),
+            "Result specialization mismatch"
+        );
+        let AggregateFieldShape::Nominal(error_key) = fact.variants[error].fields[0].1 else {
+            anyhow::bail!("Result error must retain its nominal TimerError identity");
+        };
+        let layout = physical(fact)?;
+        let ok_offset = match layout.variants[ok].payload_fields[0] {
+            None if ok_type == SemanticTypeId::UNIT => usize::MAX,
+            Some((ty, offset)) if ty == ok_type => offset.try_into()?,
+            _ => anyhow::bail!("Result Ok storage mismatch"),
+        };
+        let (error_type, error_offset) =
+            layout.variants[error].payload_fields[0].context("missing TimerError storage")?;
+        anyhow::ensure!(
+            error_type == SemanticTypeId::POINTER && layout.pointer_map_offsets.contains(&error_offset),
+            "Result must trace its TimerError payload"
+        );
+        Ok((
+            TimerResultLayout {
+                size: layout.object_size.try_into()?,
+                tag_offset: layout.tag_offset.try_into()?,
+                ok_tag: ok,
+                error_tag: error,
+                ok_offset,
+                error_offset: error_offset.try_into()?,
+            },
+            error_key,
+        ))
+    };
+    let (deadline, deadline_error) = result_layout(artifact.selected[1].item.key, SemanticTypeId::I64)?;
+    let (status, status_error) = result_layout(artifact.selected[2].item.key, SemanticTypeId::UNIT)?;
+    anyhow::ensure!(deadline_error == status_error, "timer helpers must return the same nominal error");
+    let error_unit = input
+        .typed_program()
+        .assembly
+        .units
+        .iter()
+        .find(|unit| &unit.path == deadline_error.unit.path(db))
+        .context("TimerError source unavailable")?;
+    let error_index = SyntaxIndex::from_program(&error_unit.program, deadline_error.generation);
+    anyhow::ensure!(
+        error_index
+            .node_at(&error_unit.program, deadline_error.node)
+            .and_then(|node| node.of::<EnumDefinition>())
+            .is_some_and(|definition| definition.name.node.name == "TimerError"),
+        "unexpected error nominal"
+    );
+    let error = enum_layout(db, deadline_error)?.context("TimerError layout unavailable")?;
+    anyhow::ensure!(error.variants.iter().all(|variant| variant.fields.is_empty()), "TimerError must have no payloads");
+    let error_layout = physical(&error)?;
+    eprintln!("timer query layouts: deadline={deadline:?} status={status:?} error={error_layout:?}");
+    Ok(TimerValidationMetadata {
+        pointer_bytes: bytes(SemanticTypeId::POINTER)?,
+        word_bytes: bytes(SemanticTypeId::WORD)?,
+        i64_bytes: bytes(SemanticTypeId::I64)?,
+        tag_bytes: bytes(SemanticTypeId::I32)?,
+        deadline,
+        status,
+        error_size: error_layout.object_size.try_into()?,
+        error_tag_offset: error_layout.tag_offset.try_into()?,
+        unavailable_tag: variant(&error, "Unavailable")?,
+        overflow_tag: variant(&error, "DeadlineOverflow")?,
+        cancelled_tag: variant(&error, "Cancelled")?,
+        from_nanoseconds: None,
+        deadline_from_sample: None,
+        result_from_status: None,
+    })
+}
+
+fn timer_validation_observations(artifact: &TimerValidationArtifact<'_>) -> anyhow::Result<[(&'static str, usize); 3]> {
+    let mut metadata = timer_validation_metadata(artifact)?;
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let prefix = tempfile::tempdir()?;
+    let kit = build_native_host(prefix.path().to_path_buf(), RuntimeKitProfile::Debug)?;
+    eprintln!(
+        "timer validation kit: target={} source={} static={} shared={}",
+        kit.metadata.target.triple.as_str(),
+        kit.metadata.source_hash,
+        kit.metadata.artifacts.static_library.sha256,
+        kit.metadata.artifacts.shared_library.sha256
+    );
+    let driver = root.join("tests/fixtures/timer_validation.c");
+    let compiler = || {
+        let mut cc = Command::new("cc");
+        cc.args(["-std=c11", "-Wall", "-Wextra", "-Werror", "-I"]).arg(root.join("../beskid_abi/include"));
+        cc
+    };
+    let fixture_library = prefix.path().join(if cfg!(target_os = "macos") { "timer.dylib" } else { "timer.so" });
+    let output = compiler()
+        .args(if cfg!(target_os = "macos") { vec!["-dynamiclib"] } else { vec!["-shared", "-fPIC"] })
+        .arg(&driver)
+        .arg(&kit.shared_library)
+        .args(["-lpthread", "-lm", "-o"])
+        .arg(&fixture_library)
+        .output()
+        .context("engine timer driver compiler launch")?;
+    anyhow::ensure!(output.status.success(), "engine driver build: {}", String::from_utf8_lossy(&output.stderr));
+    let mut counts = [("engine", 0), ("static", 0), ("shared", 0)];
+    {
+        let mut engine = beskid_engine::Engine::with_runtime_kit(
+            prefix.path(),
+            artifact.input.target().clone(),
+            BuildProfile::Debug,
+        )?;
+        engine.compile_artifact(&artifact.artifact).context("engine timer compilation")?;
+        let path = CString::new(fixture_library.to_str().context("engine driver path encoding")?)?;
+        // SAFETY: the C fixture defines this exact repr(C) transport and entry ABI.
+        // Every generated callback was checked against queries and emitted CLIF above;
+        // engine, artifact, shared runtime, and fixture remain alive for the call.
+        unsafe {
+            metadata.from_nanoseconds = Some(std::mem::transmute::<*const u8, unsafe extern "C" fn(i64) -> *mut u8>(
+                engine.entrypoint_ptr(&artifact.selected[0].item.symbol)?,
+            ));
+            metadata.deadline_from_sample =
+                Some(std::mem::transmute::<*const u8, unsafe extern "C" fn(*mut u8, i64) -> *mut u8>(
+                    engine.entrypoint_ptr(&artifact.selected[1].item.symbol)?,
+                ));
+            metadata.result_from_status =
+                Some(std::mem::transmute::<*const u8, unsafe extern "C" fn(usize) -> *mut u8>(
+                    engine.entrypoint_ptr(&artifact.selected[2].item.symbol)?,
+                ));
+            let library = libc::dlopen(path.as_ptr(), libc::RTLD_NOW | libc::RTLD_LOCAL);
+            anyhow::ensure!(
+                !library.is_null(),
+                "engine timer driver dlopen failed: {:?}",
+                std::ffi::CStr::from_ptr(libc::dlerror())
+            );
+            let symbol = libc::dlsym(library, c"RunTimerValidation".as_ptr());
+            if symbol.is_null() {
+                libc::dlclose(library);
+                anyhow::bail!("engine timer driver missing RunTimerValidation");
+            }
+            let run = std::mem::transmute::<
+                *mut libc::c_void,
+                unsafe extern "C" fn(*const TimerValidationMetadata) -> usize,
+            >(symbol);
+            counts[0].1 = run(&metadata);
+            libc::dlclose(library);
+        }
+    }
+    let object_path = prefix.path().join("timer.o");
+    let symbols = artifact
+        .selected
+        .iter()
+        .map(|function| beskid_codegen::object_link_symbol(&function.item.symbol, &artifact.artifact.exports))
+        .collect::<Vec<_>>();
+    let mut object = beskid_aot::object_module::BeskidObjectModule::new(None, beskid_aot::BuildProfile::Debug)
+        .context("static/shared timer object module")?;
+    object
+        .compile_artifact_with_exports(&artifact.artifact, &symbols.iter().cloned().collect(), None)
+        .context("static/shared timer object compilation")?;
+    object.finalize_to_path(&object_path).context("static/shared timer object emission")?;
+    let c_layout = |layout: &TimerResultLayout| {
+        format!(
+            "{{{},{},{},{},{}ULL,{}}}",
+            layout.size, layout.tag_offset, layout.ok_tag, layout.error_tag, layout.ok_offset, layout.error_offset
+        )
+    };
+    let c_metadata = format!(
+        "{{{},{},{},{},{},{},{},{},{},{},{},NULL,NULL,NULL}}",
+        metadata.pointer_bytes,
+        metadata.word_bytes,
+        metadata.i64_bytes,
+        metadata.tag_bytes,
+        c_layout(&metadata.deadline),
+        c_layout(&metadata.status),
+        metadata.error_size,
+        metadata.error_tag_offset,
+        metadata.unavailable_tag,
+        metadata.overflow_tag,
+        metadata.cancelled_tag
+    );
+    for (slot, library) in [(1, &kit.static_library), (2, &kit.shared_library)] {
+        let mode = counts[slot].0;
+        let executable = prefix.path().join(mode);
+        let mut cc = compiler();
+        cc.arg("-DTIMER_VALIDATION_STANDALONE").arg(format!("-DTIMER_VALIDATION_METADATA={c_metadata}"));
+        for (define, symbol) in
+            ["TIMER_FROM_NANOSECONDS_SYMBOL", "TIMER_DEADLINE_SYMBOL", "TIMER_STATUS_SYMBOL"].iter().zip(&symbols)
+        {
+            cc.arg(format!("-D{define}=\"{}{symbol}\"", if cfg!(target_os = "macos") { "_" } else { "" }));
+        }
+        let output = cc
+            .arg(&driver)
+            .arg(&object_path)
+            .arg(library)
+            .args(["-lpthread", "-lm", "-o"])
+            .arg(&executable)
+            .output()
+            .with_context(|| format!("{mode} timer driver compiler launch"))?;
+        anyhow::ensure!(
+            output.status.success(),
+            "{mode} timer driver build: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let output = Command::new(&executable)
+            .env(
+                if cfg!(target_os = "macos") { "DYLD_LIBRARY_PATH" } else { "LD_LIBRARY_PATH" },
+                kit.shared_library.parent().unwrap(),
+            )
+            .output()
+            .with_context(|| format!("{mode} timer driver launch"))?;
+        anyhow::ensure!(
+            output.status.success(),
+            "{mode} timer driver execution {:?}: {}",
+            output.status,
+            String::from_utf8_lossy(&output.stderr)
+        );
+        counts[slot].1 = String::from_utf8(output.stdout)?
+            .trim()
+            .parse()
+            .with_context(|| format!("{mode} timer case count missing"))?;
+        eprintln!("{mode}: {}", String::from_utf8_lossy(&output.stderr));
+    }
+    eprintln!("timer validation executed: {counts:?}");
+    Ok(counts)
 }
 
 struct TimerValidationFunction {
