@@ -1,4 +1,8 @@
-#![cfg(unix)]
+#![cfg(any(
+    all(target_os = "linux", target_arch = "x86_64"),
+    all(target_os = "macos", target_arch = "aarch64"),
+    all(target_os = "windows", target_arch = "x86_64", target_env = "msvc"),
+))]
 
 use beskid_abi::runtime_kit::BuildProfile;
 use beskid_analysis::{
@@ -6,8 +10,13 @@ use beskid_analysis::{
     services::parse_program_with_source_name,
 };
 use beskid_queries::{BeskidDatabase, SyntaxGenerationId};
+#[cfg(windows)]
+use beskid_tests_support::native_harness::place_shared_runtime;
+use beskid_tests_support::native_harness::{executable_name, native_c_compiler, run_bounded};
 use beskid_tools::toolchain::runtime_kit::{RuntimeKitProfile, build_native_host};
-use std::{path::Path, sync::Arc};
+use std::{path::Path, process::Command, sync::Arc, time::Duration};
+
+const ROUTE_LIMIT: Duration = Duration::from_secs(60);
 
 #[test]
 fn scoped_cleanup_runs_once_in_reverse_order_on_every_structured_exit() {
@@ -54,13 +63,7 @@ fn run_cleanup_fixture(fixture: &str) {
     .expect("scoped cleanup must lower through source facts");
     let prefix = tempfile::tempdir().unwrap();
     let kit = build_native_host(prefix.path().to_path_buf(), RuntimeKitProfile::Debug).unwrap();
-    let mut engine = beskid_engine::Engine::with_runtime_kit(prefix.path(), target, BuildProfile::Debug).unwrap();
-    engine.compile_artifact(&lowered.artifact).expect("compile scoped cleanup artifact");
-    let entry = unsafe { engine.entrypoint_ptr(&lowered.symbol) }.unwrap();
-    let run: extern "C" fn() -> i64 = unsafe { std::mem::transmute(entry) };
-    assert_eq!(run(), 42, "fixture returns a distinct failure code for each cleanup obligation");
-    drop(engine);
-    let object_path = prefix.path().join("cleanup.o");
+    let object_path = prefix.path().join(if cfg!(windows) { "cleanup.obj" } else { "cleanup.o" });
     let native_symbol = beskid_codegen::object_link_symbol(&lowered.symbol, &lowered.artifact.exports);
     let mut object = beskid_aot::object_module::BeskidObjectModule::new(None, beskid_aot::BuildProfile::Debug).unwrap();
     object
@@ -71,32 +74,57 @@ fn run_cleanup_fixture(fixture: &str) {
         )
         .unwrap();
     object.finalize_to_path(&object_path).unwrap();
-    for (mode, library) in [("aot", &kit.static_library), ("native-kit", &kit.shared_library)] {
-        let executable = prefix.path().join(mode);
-        let output = std::process::Command::new("cc")
-            .arg("-std=c11")
-            .arg("-I")
-            .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("../beskid_abi/include"))
-            .arg(format!(
-                "-DCLEANUP_FIXTURE_SYMBOL=\"{}{}\"",
-                if cfg!(target_os = "macos") { "_" } else { "" },
-                native_symbol
-            ))
-            .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/scoped_cleanup.c"))
-            .arg(&object_path)
-            .arg(library)
-            .args(["-lpthread", "-lm", "-o"])
-            .arg(&executable)
-            .output()
-            .unwrap();
-        assert!(output.status.success(), "{mode}: {}", String::from_utf8_lossy(&output.stderr));
-        let output = std::process::Command::new(executable)
-            .env(
-                if cfg!(target_os = "macos") { "DYLD_LIBRARY_PATH" } else { "LD_LIBRARY_PATH" },
-                kit.shared_library.parent().unwrap(),
-            )
-            .output()
-            .unwrap();
-        assert!(output.status.success(), "{mode}: {}", String::from_utf8_lossy(&output.stderr));
-    }
+    let run_native_routes = || {
+        #[cfg(unix)]
+        let shared_link_library = &kit.shared_library;
+        #[cfg(windows)]
+        let shared_link_library =
+            kit.shared_import_library.as_ref().expect("Windows ABI-v5 kit must contain a COFF import library");
+        for (mode, library) in [("aot", &kit.static_library), ("native-kit", shared_link_library)] {
+            let directory = prefix.path().join(mode);
+            std::fs::create_dir(&directory).unwrap();
+            let executable = directory.join(executable_name("scoped-cleanup"));
+            let mut command = native_c_compiler();
+            command
+                .args(["-Wall", "-Wextra", "-Werror"])
+                .arg("-I")
+                .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("../beskid_abi/include"))
+                .arg(format!(
+                    "-DCLEANUP_FIXTURE_SYMBOL=\"{}{}\"",
+                    if cfg!(target_os = "macos") { "_" } else { "" },
+                    native_symbol
+                ))
+                .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/scoped_cleanup.c"))
+                .arg(&object_path)
+                .arg(library);
+            #[cfg(unix)]
+            command.args(["-lpthread", "-lm"]);
+            command.arg("-o").arg(&executable).current_dir(&directory);
+            let output = run_bounded(&format!("{mode}: compile"), &mut command, ROUTE_LIMIT);
+            assert!(output.status.success(), "{mode}: {}", String::from_utf8_lossy(&output.stderr));
+            #[cfg(windows)]
+            if mode == "native-kit" {
+                place_shared_runtime(&directory, &kit.shared_library);
+            }
+            let mut command = Command::new(&executable);
+            #[cfg(unix)]
+            if mode == "native-kit" {
+                command.env(
+                    if cfg!(target_os = "macos") { "DYLD_LIBRARY_PATH" } else { "LD_LIBRARY_PATH" },
+                    kit.shared_library.parent().unwrap(),
+                );
+            }
+            let output = run_bounded(&format!("{mode}: execute"), &mut command, ROUTE_LIMIT);
+            assert!(output.status.success(), "{mode}: {}", String::from_utf8_lossy(&output.stderr));
+        }
+    };
+    #[cfg(windows)]
+    run_native_routes();
+    let mut engine = beskid_engine::Engine::with_runtime_kit(prefix.path(), target, BuildProfile::Debug).unwrap();
+    engine.compile_artifact(&lowered.artifact).expect("compile scoped cleanup artifact");
+    let entry = unsafe { engine.entrypoint_ptr(&lowered.symbol) }.unwrap();
+    let run: extern "C" fn() -> i64 = unsafe { std::mem::transmute(entry) };
+    assert_eq!(run(), 42, "fixture returns a distinct failure code for each cleanup obligation");
+    #[cfg(unix)]
+    run_native_routes();
 }
