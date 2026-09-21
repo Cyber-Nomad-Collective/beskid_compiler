@@ -69,5 +69,17 @@ fn native_owner_wake_closes_each_park_window_and_routes_only_to_its_owner() {
         String::from_utf8_lossy(&run.stdout),
         String::from_utf8_lossy(&run.stderr),
     );
+    assert!(
+        String::from_utf8_lossy(&run.stdout).contains("close-rebind=preserved"),
+        "fixture did not prove that an admitted worker duplicate survives caller close/rebind:\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr),
+    );
+    assert!(
+        String::from_utf8_lossy(&run.stdout).contains("queue-rejection=released"),
+        "fixture did not prove that a duplicate acquired before queue-full rejection is released:\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr),
+    );
     print!("{}", String::from_utf8_lossy(&run.stdout));
 }

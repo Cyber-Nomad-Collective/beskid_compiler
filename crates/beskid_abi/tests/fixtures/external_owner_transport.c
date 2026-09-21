@@ -1,11 +1,14 @@
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#include <fcntl.h>
+#include <io.h>
 #include <process.h>
 #else
 #define _DARWIN_C_SOURCE
 #define _POSIX_C_SOURCE 200809L
 #include <errno.h>
+#include <fcntl.h>
 #include <pthread.h>
 #include <sched.h>
 #include <time.h>
@@ -47,20 +50,23 @@ static void fixture_thread_join(FixtureThread thread) {
 }
 static void fixture_yield(void) { SwitchToThread(); }
 static int64_t fixture_monotonic_nanos(void) { return (int64_t)GetTickCount64() * INT64_C(1000000); }
-static void fixture_pipe_open(uintptr_t descriptors[2]) {
-    HANDLE read_end, write_end;
-    assert(CreatePipe(&read_end, &write_end, NULL, 0));
-    assert(read_end != INVALID_HANDLE_VALUE && write_end != INVALID_HANDLE_VALUE);
-    descriptors[0] = (uintptr_t)read_end;
-    descriptors[1] = (uintptr_t)write_end;
+static void fixture_pipe_open(int32_t descriptors[2]) {
+    assert(_pipe(descriptors, 4096, _O_BINARY) == 0);
+    assert(descriptors[0] >= 0 && descriptors[1] >= 0);
 }
-static void fixture_pipe_write(uintptr_t descriptor, const void *bytes, size_t length) {
-    DWORD written;
-    assert(length <= UINT32_MAX);
-    assert(WriteFile((HANDLE)descriptor, bytes, (DWORD)length, &written, NULL));
-    assert(written == length);
+static void fixture_pipe_write(int32_t descriptor, const void *bytes, size_t length) {
+    assert(length <= INT_MAX);
+    assert(_write(descriptor, bytes, (unsigned int)length) == (int)length);
 }
-static void fixture_pipe_close(uintptr_t descriptor) { assert(CloseHandle((HANDLE)descriptor)); }
+static void fixture_pipe_close(int32_t descriptor) { assert(_close(descriptor) == 0); }
+static void fixture_descriptor_rebind(int32_t source, int32_t destination) {
+    assert(_dup2(source, destination) == 0);
+}
+static int32_t fixture_descriptor_duplicate(int32_t descriptor) {
+    int duplicate = _dup(descriptor);
+    assert(duplicate >= 0);
+    return duplicate;
+}
 #else
 typedef pthread_mutex_t FixtureMutex;
 typedef pthread_cond_t FixtureCondition;
@@ -83,19 +89,26 @@ static int64_t fixture_monotonic_nanos(void) {
     assert(clock_gettime(CLOCK_MONOTONIC, &time) == 0);
     return time.tv_sec * INT64_C(1000000000) + time.tv_nsec;
 }
-static void fixture_pipe_open(uintptr_t descriptors[2]) {
+static void fixture_pipe_open(int32_t descriptors[2]) {
     int native_descriptors[2];
     assert(pipe(native_descriptors) == 0);
-    descriptors[0] = (uintptr_t)native_descriptors[0];
-    descriptors[1] = (uintptr_t)native_descriptors[1];
+    assert(native_descriptors[0] >= 0 && native_descriptors[1] >= 0);
+    descriptors[0] = native_descriptors[0];
+    descriptors[1] = native_descriptors[1];
 }
-static void fixture_pipe_write(uintptr_t descriptor, const void *bytes, size_t length) {
-    assert(descriptor <= INT_MAX);
-    assert(write((int)descriptor, bytes, length) == (ssize_t)length);
+static void fixture_pipe_write(int32_t descriptor, const void *bytes, size_t length) {
+    assert(write(descriptor, bytes, length) == (ssize_t)length);
 }
-static void fixture_pipe_close(uintptr_t descriptor) {
-    assert(descriptor <= INT_MAX);
-    assert(close((int)descriptor) == 0);
+static void fixture_pipe_close(int32_t descriptor) {
+    assert(close(descriptor) == 0);
+}
+static void fixture_descriptor_rebind(int32_t source, int32_t destination) {
+    assert(dup2(source, destination) == destination);
+}
+static int32_t fixture_descriptor_duplicate(int32_t descriptor) {
+    int duplicate = fcntl(descriptor, F_DUPFD_CLOEXEC, 0);
+    assert(duplicate >= 0);
+    return duplicate;
 }
 #endif
 
@@ -188,11 +201,12 @@ static void consume(void) {
     assert(command.wait == 123 && command.source == 1);
     assert(!beskid_rt_v5_intrinsic_owner_pop(owner, &command));
 }
-static struct BeskidWorkerRequest *request_for(uintptr_t native_handle, uint64_t id, uint64_t token) {
+static struct BeskidWorkerRequest *request_for(int32_t descriptor, uint64_t id, uint64_t token) {
+    assert(descriptor >= 0);
     struct BeskidWorkerRequest *request = beskid_rt_v5_intrinsic_system_allocate(sizeof(*request), 8);
     *request = (struct BeskidWorkerRequest){0};
     request->operation = BESKID_WORKER_READ;
-    request->native_handle = native_handle;
+    request->native_handle = (uintptr_t)descriptor;
     request->buffer = beskid_rt_v5_intrinsic_system_allocate(1, 8);
     request->length = 1;
     request->owner = id;
@@ -205,6 +219,9 @@ static void await_running(struct BeskidWorkerRequest *request) {
         if (running) return;
         fixture_yield();
     }
+}
+static void await_complete(struct BeskidWorkerRequest *request) {
+    while (!beskid_rt_v5_intrinsic_worker_poll(request)) fixture_yield();
 }
 int main(void) {
     owner = beskid_rt_v5_intrinsic_owner_create();
@@ -247,11 +264,15 @@ int main(void) {
     }
     intercept_wait = 0;
     assert(beskid_rt_v5_intrinsic_worker_pool_init(2) == 0);
-    uintptr_t descriptors[2];
+    int32_t descriptors[2];
     fixture_pipe_open(descriptors);
     struct BeskidWorkerRequest *canceled = request_for(descriptors[0], owner, 123);
     assert(beskid_rt_v5_intrinsic_worker_submit(canceled) == 0);
     await_running(canceled); /* deterministic in-flight OS read, not merely queued */
+    int32_t rebound_descriptors[2];
+    fixture_pipe_open(rebound_descriptors);
+    fixture_descriptor_rebind(rebound_descriptors[0], descriptors[0]);
+    fixture_pipe_close(rebound_descriptors[0]);
     size_t retained = atomic_load(&live_allocations);
     beskid_rt_v5_intrinsic_worker_release(canceled);
     assert(atomic_load(&live_allocations) == retained); /* native memory is still worker-owned */
@@ -271,17 +292,50 @@ int main(void) {
     struct BeskidWorkerRequest *current = request_for(descriptors[0], replacement, 456);
     assert(beskid_rt_v5_intrinsic_worker_submit(current) == 0);
     await_running(current);
-    fixture_pipe_write(descriptors[1], "y", 1);
+    fixture_pipe_write(rebound_descriptors[1], "y", 1);
     beskid_rt_v5_intrinsic_owner_wait(replacement, -1);
     assert(beskid_rt_v5_intrinsic_owner_pop(replacement, &command));
     assert(command.wait == 456 && command.source == 1);
     assert(beskid_rt_v5_intrinsic_worker_poll(current) && current->result == 1 && current->buffer[0] == 'y');
     beskid_rt_v5_intrinsic_worker_release(current);
+
+    /* Fill both running slots and every queue slot with blocked descriptor
+     * reads. The next submit must acquire then release its private duplicate
+     * on the queue-full path. Reusing that exact descriptor slot proves the
+     * duplicate was closed without consulting private worker ownership bits. */
+    int32_t saturation_descriptors[2];
+    fixture_pipe_open(saturation_descriptors);
+    struct BeskidWorkerRequest *saturated[BESKID_REQUEST_MAX];
+    size_t saturation_baseline = atomic_load(&live_allocations);
+    for (size_t index = 0; index < BESKID_REQUEST_MAX; ++index) {
+        saturated[index] = request_for(saturation_descriptors[0], replacement, 512 + index);
+        assert(beskid_rt_v5_intrinsic_worker_submit(saturated[index]) == 0);
+    }
+    BeskidLock(); assert(beskid_request_count == BESKID_REQUEST_MAX); BeskidUnlock();
+    struct BeskidWorkerRequest *rejected = request_for(saturation_descriptors[0], replacement, 1024);
+    assert(beskid_rt_v5_intrinsic_worker_submit(rejected) == -1);
+    int32_t released_descriptor = (int32_t)rejected->native_handle;
+    assert(released_descriptor >= 0);
+    int32_t reused_descriptor = fixture_descriptor_duplicate(saturation_descriptors[0]);
+    assert(reused_descriptor == released_descriptor);
+    fixture_pipe_close(reused_descriptor);
+    beskid_rt_v5_intrinsic_worker_release(rejected);
+    for (size_t index = 0; index < BESKID_REQUEST_MAX; ++index)
+        fixture_pipe_write(saturation_descriptors[1], "q", 1);
+    for (size_t index = 0; index < BESKID_REQUEST_MAX; ++index) {
+        await_complete(saturated[index]);
+        assert(saturated[index]->result == 1 && saturated[index]->buffer[0] == 'q');
+        beskid_rt_v5_intrinsic_worker_release(saturated[index]);
+    }
+    assert(atomic_load(&live_allocations) == saturation_baseline);
+    fixture_pipe_close(saturation_descriptors[0]);
+    fixture_pipe_close(saturation_descriptors[1]);
     beskid_rt_v5_intrinsic_worker_pool_shutdown();
     fixture_pipe_close(descriptors[0]); fixture_pipe_close(descriptors[1]);
+    fixture_pipe_close(rebound_descriptors[1]);
     beskid_rt_v5_intrinsic_owner_destroy(replacement);
     beskid_rt_v5_intrinsic_owner_destroy(other);
     assert(atomic_load(&live_allocations) == 0);
-    puts("owner_transport matrix=64 stale-owner=rejected in-flight=worker-owned shutdown=complete");
+    puts("owner_transport matrix=64 stale-owner=rejected close-rebind=preserved queue-rejection=released in-flight=worker-owned shutdown=complete");
     return 0;
 }

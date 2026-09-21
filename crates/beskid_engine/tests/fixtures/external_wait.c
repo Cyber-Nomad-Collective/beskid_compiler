@@ -1,10 +1,13 @@
 #include "beskid_runtime_abi_v5.h"
 #include <assert.h>
+#include <limits.h>
 #include <stdio.h>
 #include <string.h>
 
 #ifdef _WIN32
 #include <windows.h>
+#include <fcntl.h>
+#include <io.h>
 #include <process.h>
 
 typedef SRWLOCK FixtureMutex;
@@ -44,23 +47,21 @@ static void fixture_thread_join(FixtureThread thread) {
 }
 
 static void fixture_pipe_open(int32_t descriptors[2]) {
-    HANDLE read_handle = NULL;
-    HANDLE write_handle = NULL;
-    assert(CreatePipe(&read_handle, &write_handle, NULL, 0));
-    assert(read_handle != NULL && read_handle != INVALID_HANDLE_VALUE);
-    assert(write_handle != NULL && write_handle != INVALID_HANDLE_VALUE);
-    descriptors[0] = (int32_t)(intptr_t)read_handle;
-    descriptors[1] = (int32_t)(intptr_t)write_handle;
+    assert(_pipe(descriptors, 4096, _O_BINARY) == 0);
+    assert(descriptors[0] >= 0 && descriptors[1] >= 0);
 }
 
-static void fixture_pipe_write(int32_t descriptor, const void *bytes, DWORD count) {
-    DWORD written = 0;
-    assert(WriteFile((HANDLE)(intptr_t)descriptor, bytes, count, &written, NULL));
-    assert(written == count);
+static void fixture_pipe_write(int32_t descriptor, const void *bytes, size_t count) {
+    assert(count <= INT_MAX);
+    assert(_write(descriptor, bytes, (unsigned int)count) == (int)count);
 }
 
 static void fixture_pipe_close(int32_t descriptor) {
-    assert(CloseHandle((HANDLE)(intptr_t)descriptor));
+    assert(_close(descriptor) == 0);
+}
+
+static void fixture_descriptor_rebind(int32_t source, int32_t destination) {
+    assert(_dup2(source, destination) == 0);
 }
 #else
 #include <unistd.h>
@@ -108,7 +109,11 @@ static void fixture_pipe_write(int32_t descriptor, const void *bytes, size_t cou
 }
 
 static void fixture_pipe_close(int32_t descriptor) {
-    close(descriptor);
+    assert(close(descriptor) == 0);
+}
+
+static void fixture_descriptor_rebind(int32_t source, int32_t destination) {
+    assert(dup2(source, destination) == destination);
 }
 #endif
 
@@ -345,6 +350,7 @@ static void *deadlock_entry(void *argument) {
 
 static int32_t descriptors[2];
 static int32_t retry_descriptors[2];
+static int32_t rebound_descriptors[2];
 static int64_t reader;
 static int resumed;
 static void *read_entry(void *argument) {
@@ -395,6 +401,12 @@ static FIXTURE_THREAD_ENTRY writer_thread(void *unused) {
 }
 static void *other_runnable_entry(void *argument) {
     assert(beskid_rt_v5_external_active_count() == 1);
+    /* The worker has admitted and duplicated descriptors[0]. Replace the
+     * caller slot before publishing the original pipe's byte. The read below
+     * must consume that original byte, never the rebound pipe. */
+    fixture_pipe_open(rebound_descriptors);
+    fixture_descriptor_rebind(rebound_descriptors[0], descriptors[0]);
+    fixture_pipe_close(rebound_descriptors[0]);
     fixture_lock(&barrier_lock);
     publish = 1;
     fixture_signal(&barrier_ready);
@@ -617,7 +629,9 @@ EXTERNAL_WAIT_EXPORT int RunExternalWaitFixture(TryComplete complete, int deadlo
     int64_t other = fiber_spawn((void *)other_runnable_entry, value);
     join_success(ready_reader); join_success(other);
     fixture_thread_join(writer);
+    fprintf(stderr, "descriptor-close-rebind=preserved\n");
     fixture_pipe_close(descriptors[0]); fixture_pipe_close(descriptors[1]);
+    fixture_pipe_close(rebound_descriptors[1]);
     fixture_pipe_open(descriptors);
     reader = fiber_spawn((void *)read_entry, value);
     fixture_pipe_open(retry_descriptors);

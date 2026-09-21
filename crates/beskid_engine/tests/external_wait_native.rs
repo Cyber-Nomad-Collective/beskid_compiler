@@ -114,6 +114,10 @@ fn owner_routed_waits_and_deadlines_have_one_winner() {
         }
         let output = run_bounded(&format!("{mode} success"), &mut command, ROUTE_LIMIT);
         assert!(output.status.success(), "{mode}: {output:?}");
+        assert!(
+            String::from_utf8_lossy(&output.stderr).contains("descriptor-close-rebind=preserved"),
+            "{mode} fixture did not prove that an admitted worker duplicate survives caller close/rebind: {output:?}",
+        );
         let deadlock = run_bounded(&format!("{mode} deadlock"), command.arg("deadlock"), ROUTE_LIMIT);
         assert_eq!(deadlock.status.code(), Some(101), "{mode}: {deadlock:?}");
         assert!(String::from_utf8_lossy(&deadlock.stderr).contains("beskid runtime trap v5"), "{mode}: {deadlock:?}");
@@ -129,6 +133,10 @@ fn owner_routed_waits_and_deadlines_have_one_winner() {
         ROUTE_LIMIT,
     );
     assert!(output.status.success(), "jit callback: {output:?}");
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("descriptor-close-rebind=preserved"),
+        "jit callback fixture did not prove that an admitted worker duplicate survives caller close/rebind: {output:?}",
+    );
     eprintln!("jit callback: {}", String::from_utf8_lossy(&output.stderr));
 }
 
