@@ -25,6 +25,7 @@ libc = "0.2"
 extern_dlopen = []
 
 [dev-dependencies]
+beskid_tests_support = { path = "../beskid_tests_support" }
 beskid_aot = { path = "../beskid_aot" }
 beskid_tools = { path = "../beskid_tools" }
 cranelift-frontend = { workspace = true }

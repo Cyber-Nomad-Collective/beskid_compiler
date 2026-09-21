@@ -6,17 +6,18 @@
 
 use beskid_abi::runtime_kit::{BuildProfile, host_runtime_target, resolve_installed_runtime_kit};
 use beskid_engine::JitRuntimeKit;
+#[cfg(windows)]
+use beskid_tests_support::native_harness::place_shared_runtime;
+use beskid_tests_support::native_harness::{executable_name, native_c_compiler, run_bounded, shared_library_name};
 use beskid_tools::toolchain::runtime_kit::{RuntimeKitProfile, build_native_host};
 use cranelift_codegen::ir::{AbiParam, InstBuilder, types};
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
 use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::{Linkage, Module, default_libcall_names};
 use std::{
-    io::Read,
     path::{Path, PathBuf},
-    process::{Command, Output, Stdio},
-    thread,
-    time::{Duration, Instant},
+    process::{Command, Output},
+    time::Duration,
 };
 
 const CHILD_MODE: &str = "BESKID_EXTERNAL_WAIT_CHILD_MODE";
@@ -25,36 +26,10 @@ const CHILD_FIXTURE: &str = "BESKID_EXTERNAL_WAIT_CHILD_FIXTURE";
 const ROUTE_LIMIT: Duration = Duration::from_secs(60);
 type TryComplete = unsafe extern "C" fn(usize, usize, usize) -> u8;
 
-fn fixture_suffix() -> &'static str {
-    if cfg!(windows) {
-        ".dll"
-    } else if cfg!(target_os = "macos") {
-        ".dylib"
-    } else {
-        ".so"
-    }
-}
-
-fn executable_suffix() -> &'static str {
-    if cfg!(windows) { ".exe" } else { "" }
-}
-
-fn fixture_compiler() -> Command {
-    #[cfg(unix)]
-    let command = Command::new("cc");
-    #[cfg(windows)]
-    let command = {
-        let mut command = Command::new("clang");
-        command.arg("--target=x86_64-pc-windows-msvc");
-        command
-    };
-    command
-}
-
 fn compile_standalone(root: &Path, output: &Path, library: &Path) -> Output {
-    let mut command = fixture_compiler();
+    let mut command = native_c_compiler();
     command
-        .args(["-std=c11", "-DEXTERNAL_WAIT_STANDALONE", "-I"])
+        .args(["-DEXTERNAL_WAIT_STANDALONE", "-I"])
         .arg(root.join("../beskid_abi/include"))
         .arg(root.join("tests/fixtures/external_wait.c"))
         .arg(library);
@@ -65,8 +40,7 @@ fn compile_standalone(root: &Path, output: &Path, library: &Path) -> Output {
 }
 
 fn compile_fixture_library(root: &Path, output: &Path, import_library: &Path) -> Output {
-    let mut command = fixture_compiler();
-    command.arg("-std=c11");
+    let mut command = native_c_compiler();
     #[cfg(target_os = "macos")]
     command.arg("-dynamiclib");
     #[cfg(target_os = "linux")]
@@ -82,47 +56,6 @@ fn compile_fixture_library(root: &Path, output: &Path, import_library: &Path) ->
     command.arg("-lpthread");
     command.arg("-o").arg(output).current_dir(output.parent().unwrap());
     run_bounded("compile fixture library", &mut command, ROUTE_LIMIT)
-}
-
-fn run_bounded(label: &str, command: &mut Command, limit: Duration) -> Output {
-    let mut child = command
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .unwrap_or_else(|error| panic!("{label}: spawn failed: {error}"));
-    // Drain both pipes while polling so a full output pipe cannot hide completion.
-    let mut stdout = child.stdout.take().unwrap();
-    let mut stderr = child.stderr.take().unwrap();
-    let stdout = thread::spawn(move || {
-        let mut bytes = Vec::new();
-        stdout.read_to_end(&mut bytes).map(|_| bytes)
-    });
-    let stderr = thread::spawn(move || {
-        let mut bytes = Vec::new();
-        stderr.read_to_end(&mut bytes).map(|_| bytes)
-    });
-    let started = Instant::now();
-    let failure = loop {
-        match child.try_wait() {
-            Ok(Some(_)) => break None,
-            Ok(None) if started.elapsed() < limit => thread::sleep(Duration::from_millis(10)),
-            Ok(None) => break Some(format!("deadline exceeded ({limit:?})")),
-            Err(error) => break Some(format!("try_wait failed: {error}")),
-        }
-    };
-    let kill_error = failure.as_ref().and_then(|_| child.kill().err());
-    let status = child.wait();
-    let stdout = stdout.join().expect("stdout reader panicked").expect("stdout read failed");
-    let stderr = stderr.join().expect("stderr reader panicked").expect("stderr read failed");
-    if let Some(failure) = failure {
-        panic!(
-            "{label}: {failure}; limit={limit:?}; status={status:?}; kill_error={kill_error:?}\nstdout:\n{}\nstderr:\n{}",
-            String::from_utf8_lossy(&stdout),
-            String::from_utf8_lossy(&stderr),
-        );
-    }
-    Output { status: status.unwrap_or_else(|error| panic!("{label}: wait failed: {error}")), stdout, stderr }
 }
 
 fn child_command(mode: &str) -> Command {
@@ -161,12 +94,12 @@ fn owner_routed_waits_and_deadlines_have_one_winner() {
     for (mode, library) in [("aot", &kit.static_library), ("native-kit", shared_link_library)] {
         let directory = prefix_path.join(mode);
         std::fs::create_dir(&directory).unwrap();
-        let executable = directory.join(format!("external-wait{}", executable_suffix()));
+        let executable = directory.join(executable_name("external-wait"));
         let output = compile_standalone(root, &executable, library);
-        assert!(output.status.success(), "{mode}: {}", String::from_utf8_lossy(&output.stderr));
+        assert!(output.status.success(), "{mode}: {output:?}");
         #[cfg(windows)]
         if mode == "native-kit" {
-            std::fs::copy(&kit.shared_library, directory.join(kit.shared_library.file_name().unwrap())).unwrap();
+            place_shared_runtime(&directory, &kit.shared_library);
         }
         let mut command = Command::new(&executable);
         #[cfg(unix)]
@@ -177,22 +110,22 @@ fn owner_routed_waits_and_deadlines_have_one_winner() {
             );
         }
         let output = run_bounded(&format!("{mode} success"), &mut command, ROUTE_LIMIT);
-        assert!(output.status.success(), "{mode}: {}", String::from_utf8_lossy(&output.stderr));
+        assert!(output.status.success(), "{mode}: {output:?}");
         let deadlock = run_bounded(&format!("{mode} deadlock"), command.arg("deadlock"), ROUTE_LIMIT);
         assert_eq!(deadlock.status.code(), Some(101), "{mode}: {deadlock:?}");
         assert!(String::from_utf8_lossy(&deadlock.stderr).contains("beskid runtime trap v5"), "{mode}: {deadlock:?}");
         eprintln!("{mode}: {}", String::from_utf8_lossy(&output.stderr));
     }
     // The fixture lives beside the exact kit DLL; Windows dependency search is constrained to this directory.
-    let fixture_library = kit.shared_library.parent().unwrap().join(format!("wait-fixture{}", fixture_suffix()));
+    let fixture_library = kit.shared_library.parent().unwrap().join(shared_library_name("wait-fixture"));
     let compiled = compile_fixture_library(root, &fixture_library, shared_link_library);
-    assert!(compiled.status.success(), "{}", String::from_utf8_lossy(&compiled.stderr));
+    assert!(compiled.status.success(), "{compiled:?}");
     let output = run_bounded(
         "jit callback",
         child_command("jit").env(CHILD_PREFIX, &prefix_path).env(CHILD_FIXTURE, &fixture_library),
         ROUTE_LIMIT,
     );
-    assert!(output.status.success(), "jit callback: {}", String::from_utf8_lossy(&output.stderr));
+    assert!(output.status.success(), "jit callback: {output:?}");
     eprintln!("jit callback: {}", String::from_utf8_lossy(&output.stderr));
 }
 
