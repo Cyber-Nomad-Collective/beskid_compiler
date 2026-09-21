@@ -24,6 +24,42 @@ fn write_bd(root: &Path, relative: &str, source: &str) {
     fs::write(path, source).expect("write bd source");
 }
 
+#[cfg(any(unix, windows))]
+fn assert_symlink_entry_origin(discovery: AssemblyDiscovery) {
+    let disk_source = "i32 Main() { return 0; }";
+    let entry_source = "i32 Main() { return 7; }";
+    let (mut plan, _) = no_entry_plan_with_source(disk_source);
+    let real = plan.source_root.join("Main.bd");
+    let alias = plan.source_root.join("Alias.bd");
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(&real, &alias).expect("create entry symlink");
+    #[cfg(windows)]
+    std::os::windows::fs::symlink_file(&real, &alias).expect("create entry symlink");
+    plan.target.entry = Some("Alias.bd".into());
+    let options = AssemblyOptions { discovery, ..AssemblyOptions::default() };
+
+    let assembly = assemble_program(&plan, None, &alias, Some(entry_source), &options, None).expect("assemble alias");
+    let unit = assembly.entry_unit();
+    assert_eq!(unit.origin_path, alias);
+    assert_eq!(unit.path, fs::canonicalize(&real).unwrap());
+    assert_eq!(unit.logical_name, alias.display().to_string());
+    assert_eq!(unit.source, entry_source, "caller entry text must still override disk text");
+    assert_eq!(assembly.units.len(), 1, "real and alias remain one physical unit");
+    let _ = fs::remove_dir_all(plan.project_root);
+}
+
+#[cfg(any(unix, windows))]
+#[test]
+fn import_closure_retains_symlink_entry_origin() {
+    assert_symlink_entry_origin(AssemblyDiscovery::ImportClosure);
+}
+
+#[cfg(any(unix, windows))]
+#[test]
+fn workspace_scan_retains_symlink_entry_origin() {
+    assert_symlink_entry_origin(AssemblyDiscovery::WorkspaceScan);
+}
+
 #[test]
 fn materialized_compiler_foundation_path_retains_service_provenance_but_a_copy_does_not() {
     let source = beskid_abi::runtime_source::canonical_corelib_service_sources()

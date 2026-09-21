@@ -51,23 +51,29 @@ fn builder_retains_symlink_request_origin_on_cold_parse() {
 
 #[test]
 fn builder_rebinds_disk_snapshot_origin_in_both_request_orders() {
-    for alias_first in [false, true] {
-        let root = ProjectRoot::new();
-        let real = root.0.join("Real.bd");
-        let alias = root.0.join("Alias.bd");
-        fs::write(&real, SOURCE).unwrap();
-        symlink_file(&real, &alias);
-        let (first, second) = if alias_first { (&alias, &real) } else { (&real, &alias) };
-        let builder = UnitBuilder::new(&root.0);
-        let (first_unit, _) = builder.build_unit(first, SOURCE, SyntaxGenerationId(1)).unwrap();
-        assert_eq!(&first_unit.origin_path, first);
-        assert!(ArtifactStore::new(&root.0).read_ast(&content_fingerprint(SOURCE)).is_some());
+    for use_copy in [false, true] {
+        for alias_first in [false, true] {
+            let root = ProjectRoot::new();
+            let real = root.0.join("Real.bd");
+            let alias = root.0.join("Alias.bd");
+            fs::write(&real, SOURCE).unwrap();
+            if use_copy {
+                fs::copy(&real, &alias).unwrap();
+            } else {
+                symlink_file(&real, &alias);
+            }
+            let (first, second) = if alias_first { (&alias, &real) } else { (&real, &alias) };
+            let builder = UnitBuilder::new(&root.0);
+            let (first_unit, _) = builder.build_unit(first, SOURCE, SyntaxGenerationId(1)).unwrap();
+            assert_eq!(&first_unit.origin_path, first);
+            assert!(ArtifactStore::new(&root.0).read_ast(&content_fingerprint(SOURCE)).is_some());
 
-        let unexpected_parse = |_: &Path, _: &str, _: SyntaxGenerationId| panic!("expected a disk snapshot hit");
-        let cached_builder = UnitBuilder::new(&root.0).with_salsa_build(&unexpected_parse);
-        let (second_unit, _) = cached_builder.build_unit(second, SOURCE, SyntaxGenerationId(2)).unwrap();
-        assert_eq!(&second_unit.origin_path, second);
-        assert_eq!(second_unit.path, fs::canonicalize(&real).unwrap());
-        assert_eq!(second_unit.logical_name, second.display().to_string());
+            let unexpected_parse = |_: &Path, _: &str, _: SyntaxGenerationId| panic!("expected a disk snapshot hit");
+            let cached_builder = UnitBuilder::new(&root.0).with_salsa_build(&unexpected_parse);
+            let (second_unit, _) = cached_builder.build_unit(second, SOURCE, SyntaxGenerationId(2)).unwrap();
+            assert_eq!(&second_unit.origin_path, second);
+            assert_eq!(second_unit.path, fs::canonicalize(second).unwrap());
+            assert_eq!(second_unit.logical_name, second.display().to_string());
+        }
     }
 }
