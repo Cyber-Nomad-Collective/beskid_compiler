@@ -9,6 +9,8 @@ use beskid_analysis::projects::{
     AssemblyDiscovery, EffectiveCompilationRoots, ModuleIndex, ProgramAssembly, RootEntry, SourceUnit,
 };
 use beskid_analysis::services::parse_program;
+#[cfg(target_os = "windows")]
+use beskid_analysis::syntax::{CallExpression, Expression};
 use beskid_analysis::syntax_query::{NodeKind, SyntaxIndex};
 use beskid_queries::{
     AstNodeKey, BeskidDatabase, ProjectSession, SemanticTypeId, SourceUnitId, SyntaxGenerationId, abi_type,
@@ -17,6 +19,109 @@ use beskid_queries::{
     runtime_intrinsic, value_abi_type,
 };
 use std::sync::Arc;
+
+#[cfg(target_os = "windows")]
+#[test]
+fn canonicalized_windows_syscall_source_keeps_exact_service_authority() {
+    let logical_path = CANONICAL_CORELIB_SYSCALL_SOURCE_PATH;
+    let embedded = canonical_corelib_service_sources()
+        .into_iter()
+        .find(|source| source.logical_path == logical_path)
+        .expect("embedded Core.Syscall source");
+    // The Foundation harness constructs units this way. On Windows this is an extended-length
+    // physical path, so this test proves the public builder compares the same source identity.
+    let physical_path = std::fs::canonicalize(
+        canonical_corelib_service_source_path(logical_path).expect("compiler-owned Core.Syscall path"),
+    )
+    .expect("canonical Core.Syscall path");
+    let target = TargetMetadata::supported()
+        .into_iter()
+        .find(|target| target.triple.as_str() == "x86_64-pc-windows-msvc")
+        .expect("Windows target");
+    let manifest = AbiManifestV5::canonical_runtime(target);
+
+    let assert_syscall_write_lowering = |path: std::path::PathBuf, source: String, authorized: bool| {
+        let mut db = BeskidDatabase::default();
+        let program = parse_program(&source).expect("parse Core.Syscall source");
+        let generation = SyntaxGenerationId(91);
+        let index = SyntaxIndex::from_program(&program, generation);
+        let source_root = path.parent().expect("Core.Syscall parent").to_path_buf();
+        let project = ProjectSession::new(
+            &db,
+            source_root.clone(),
+            path.clone(),
+            "beskid-corelib".into(),
+            "windows-canonical-service-identity".into(),
+        );
+        let assembly = Arc::new(ProgramAssembly::new(
+            EffectiveCompilationRoots {
+                host: RootEntry { dependency_name: None, source_root },
+                dependencies: Vec::new(),
+            },
+            Arc::new(vec![SourceUnit {
+                logical_name: logical_path.into(),
+                path: path.clone(),
+                source,
+                program: program.clone(),
+            }]),
+            0,
+            AssemblyDiscovery::ImportClosure,
+            Arc::new(ModuleIndex::empty()),
+            false,
+            generation,
+        ));
+        build_typed_program_with_corelib_services(
+            &mut db,
+            project,
+            generation,
+            assembly,
+            canonical_corelib_service_capability(&manifest).expect("Corelib service authority"),
+        )
+        .expect("typed program");
+        let syscall_write = index
+            .ids_of_kind(NodeKind::CallExpression)
+            .find(|node| {
+                index.node_at(&program, *node).and_then(|node| node.of::<CallExpression>()).is_some_and(|call| {
+                    matches!(
+                        &call.callee.node,
+                        Expression::Path(path)
+                            if path.node.path.node.segments.last().is_some_and(|segment| segment.node.name.node.name == "__syscall_write")
+                    )
+                })
+            });
+        let syscall_write = syscall_write.expect("Core.Syscall __syscall_write call");
+        let syscall_write = AstNodeKey { unit: SourceUnitId::new(&db, path), generation, node: syscall_write };
+        if authorized {
+            assert!(matches!(
+                call_lowering(&db, syscall_write),
+                Ok(Some(beskid_queries::CallLowering::CorelibService(service)))
+                    if service.name == "__syscall_write" && service.symbol == "syscall_write"
+            ));
+        } else {
+            assert!(
+                !matches!(
+                    call_lowering(&db, syscall_write),
+                    Ok(Some(beskid_queries::CallLowering::CorelibService(service)))
+                        if service.name == "__syscall_write"
+                ),
+                "the copied or altered __syscall_write call must not acquire Corelib service authority"
+            );
+        }
+    };
+
+    assert_syscall_write_lowering(physical_path, embedded.source.clone(), true);
+
+    let copied_directory = tempfile::tempdir().expect("copied Core.Syscall directory");
+    let copied_path = copied_directory.path().join("Syscall.bd");
+    std::fs::write(&copied_path, &embedded.source).expect("write copied Core.Syscall source");
+    assert_syscall_write_lowering(copied_path, embedded.source.clone(), false);
+
+    let altered_directory = tempfile::tempdir().expect("altered Core.Syscall directory");
+    let altered_path = altered_directory.path().join("Syscall.bd");
+    let altered_source = format!("{}\n// altered source must not inherit compiler authority\n", embedded.source);
+    std::fs::write(&altered_path, &altered_source).expect("write altered Core.Syscall source");
+    assert_syscall_write_lowering(altered_path, altered_source, false);
+}
 
 #[test]
 fn typed_value_service_preserves_source_result_and_rejects_native_pointer_payloads() {

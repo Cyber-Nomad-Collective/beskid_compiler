@@ -23,10 +23,8 @@ use super::sources::{
 /// Authority is tied to this checked-in file identity as well as embedded bytes and logical
 /// module path. A user project that copies `Testing/Assert.bd` cannot acquire it.
 ///
-/// The returned path is lexically normalized so `Path::starts_with` / equality against
-/// resolved Foundation `source_root` values succeed. Leaving `../..` from
-/// `CARGO_MANIFEST_DIR` intact made materialized Corelib deps drop panic/syscall provenance
-/// and fall through to Dynamic `__panic_str` (Corelib gate).
+/// The returned path is the canonical physical identity used by source assembly. Failure to
+/// resolve the checked-in file fails closed rather than granting authority to a lexical alias.
 pub fn canonical_corelib_service_source_path(logical_path: &str) -> Option<std::path::PathBuf> {
     let (package, relative) = match logical_path {
         CANONICAL_CORELIB_SYSCALL_SOURCE_PATH => ("foundation", "Core/Syscall/Syscall.bd"),
@@ -57,27 +55,14 @@ pub fn canonical_corelib_service_source_path(logical_path: &str) -> Option<std::
         CANONICAL_FOUNDATION_ERROR_SOURCE_PATH => ("foundation", "Core/Error/Error.bd"),
         _ => return None,
     };
-    Some(normalize_lexically(
-        &std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+    std::fs::canonicalize(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../corelib/packages")
             .join(package)
             .join("src")
             .join(relative),
-    ))
-}
-
-/// Collapse `.` / `..` components without requiring the path to exist on disk.
-fn normalize_lexically(path: &std::path::Path) -> std::path::PathBuf {
-    use std::path::{Component, PathBuf};
-    let mut out = PathBuf::new();
-    path.components().for_each(|component| match component {
-        Component::ParentDir => {
-            out.pop();
-        }
-        Component::CurDir => {}
-        other => out.push(other.as_os_str()),
-    });
-    out
+    )
+    .ok()
 }
 
 /// One source-independent ABI slot selected for a source-authorized Corelib service.
