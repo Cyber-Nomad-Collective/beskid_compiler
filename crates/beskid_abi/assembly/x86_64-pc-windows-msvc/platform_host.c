@@ -125,6 +125,8 @@ void beskid_rt_v5_intrinsic_guarded_stack_free(void *usable_base,
 }
 
 #pragma comment(lib, "kernel32.lib")
+/* Provider for C compiler-emitted memory operations. */
+#pragma comment(lib, "vcruntime.lib")
 
 int64_t beskid_rt_v5_intrinsic_clock_monotonic_nanos(void) {
   return (int64_t)(GetTickCount64() * UINT64_C(1000000));

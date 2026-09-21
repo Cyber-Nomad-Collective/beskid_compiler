@@ -151,29 +151,83 @@ fn linux_host_platform_pair_exports_canonical_runtime_and_native_boundary() {
 fn windows_host_platform_pair_emits_a_coff_import_library_for_the_shared_runtime() {
     let authority = require_canonical_host_emit_authority().expect("canonical host authority");
     let temp = tempfile::tempdir().expect("tempdir");
-    let pair =
-        emit_host_platform_library_pair(&authority, temp.path().join("out"), "beskid_runtime", BuildProfile::Debug)
+    for (label, profile) in [("debug", BuildProfile::Debug), ("release", BuildProfile::Release)] {
+        let pair = emit_host_platform_library_pair(&authority, temp.path().join(label), "beskid_runtime", profile)
             .expect("emit Windows platform pair");
 
-    let import_library = pair.shared_import_library.expect("Windows shared runtime must emit its COFF import library");
-    assert!(import_library.is_file(), "missing import library: {}", import_library.display());
-    assert_eq!(import_library.file_name().and_then(|name| name.to_str()), Some("beskid_runtime_import.lib"));
-    assert!(pair.shared_library.is_file());
-    assert!(pair.static_library.is_file());
-    for symbol in [
-        "beskid_rt_v5_intrinsic_system_allocate",
-        "beskid_rt_v5_intrinsic_system_free",
-        "beskid_rt_v5_intrinsic_guarded_stack_allocate",
-        "beskid_rt_v5_intrinsic_guarded_stack_free",
-        "beskid_rt_v5_intrinsic_tls_get",
-        "beskid_rt_v5_intrinsic_tls_set",
-    ] {
+        let import_library =
+            pair.shared_import_library.expect("Windows shared runtime must emit its COFF import library");
+        assert!(import_library.is_file(), "missing import library: {}", import_library.display());
+        assert_eq!(import_library.file_name().and_then(|name| name.to_str()), Some("beskid_runtime_import.lib"));
+        assert!(pair.shared_library.is_file());
+        assert!(pair.static_library.is_file());
+        for symbol in [
+            "beskid_rt_v5_intrinsic_system_allocate",
+            "beskid_rt_v5_intrinsic_system_free",
+            "beskid_rt_v5_intrinsic_guarded_stack_allocate",
+            "beskid_rt_v5_intrinsic_guarded_stack_free",
+            "beskid_rt_v5_intrinsic_tls_get",
+            "beskid_rt_v5_intrinsic_tls_set",
+        ] {
+            assert!(
+                pair.static_archive_inventory.defined.contains(&symbol.to_owned())
+                    && pair.shared_image_inventory.defined.contains(&symbol.to_owned()),
+                "Windows {label} platform pair omitted {symbol}"
+            );
+        }
+        for symbol in ["memset", "memcpy", "memmove", "memcmp"] {
+            assert!(!pair.static_archive_inventory.defined.contains(&symbol.to_owned()));
+            assert!(!pair.shared_image_inventory.defined.contains(&symbol.to_owned()));
+        }
+        assert_windows_memory_provider(&pair.shared_library);
+
+        // No C-driver startup or explicit CRT libraries: extracting the owner helper
+        // from the canonical archive must carry its provider directive to consumers.
+        let consumer = temp.path().join(format!("{label}-static-consumer.dll"));
+        let output = Command::new("lld-link")
+            .args(["/NOLOGO", "/DLL", "/NOENTRY", "/INCLUDE:beskid_rt_v5_intrinsic_owner_create"])
+            .arg(format!("/OUT:{}", consumer.display()))
+            .arg(&pair.static_library)
+            .output()
+            .expect("link canonical static archive consumer");
         assert!(
-            pair.static_archive_inventory.defined.contains(&symbol.to_owned())
-                && pair.shared_image_inventory.defined.contains(&symbol.to_owned()),
-            "Windows platform pair omitted {symbol}"
+            output.status.success(),
+            "{label} static archive consumer link failed: {}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
         );
+        assert_windows_memory_provider(&consumer);
+        eprintln!("Windows {label}: static/shared/import artifacts and VCRUNTIME140.dll!memset verified");
     }
+}
+
+#[cfg(all(target_os = "windows", target_arch = "x86_64"))]
+fn assert_windows_memory_provider(image: &std::path::Path) {
+    let output =
+        Command::new("llvm-readobj").arg("--coff-imports").arg(image).output().expect("inspect PE import providers");
+    assert!(output.status.success(), "PE import inspection failed: {}", String::from_utf8_lossy(&output.stderr));
+    let imports = String::from_utf8(output.stdout).expect("UTF-8 PE imports");
+    let mut memory_imports = Vec::new();
+    let mut vcruntime_imports = Vec::new();
+    for import in imports.split("Import {").skip(1) {
+        let mut library = None;
+        for line in import.lines().map(str::trim).take_while(|line| *line != "}") {
+            if let Some(name) = line.strip_prefix("Name: ") {
+                library = Some(name);
+            } else if let Some(symbol) = line.strip_prefix("Symbol: ") {
+                let symbol = symbol.split_whitespace().next().expect("PE import symbol");
+                let library = library.expect("PE import library before its symbols");
+                if ["memset", "memcpy", "memmove", "memcmp"].contains(&symbol) {
+                    memory_imports.push((library, symbol));
+                }
+                if library.to_ascii_lowercase().starts_with("vcruntime") {
+                    vcruntime_imports.push((library, symbol));
+                }
+            }
+        }
+    }
+    assert_eq!(memory_imports, [("VCRUNTIME140.dll", "memset")], "{} imports: {imports}", image.display());
+    assert_eq!(vcruntime_imports, [("VCRUNTIME140.dll", "memset")], "{} imports: {imports}", image.display());
 }
 
 #[test]

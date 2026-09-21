@@ -4262,7 +4262,7 @@
     {
       "symbol": "memset",
       "target": "x86_64-pc-windows-msvc",
-      "library": "ucrt",
+      "library": "vcruntime",
       "params": [
         {
           "name": "destination",

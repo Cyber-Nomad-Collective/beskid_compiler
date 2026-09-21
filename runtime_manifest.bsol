@@ -1541,7 +1541,7 @@ platform_import "ReleaseSRWLockExclusive" { target = "x86_64-pc-windows-msvc" li
 platform_import "InitializeConditionVariable" { target = "x86_64-pc-windows-msvc" library = kernel32 params = [{ name = condition, type = pointer }] returns = void }
 platform_import "WakeAllConditionVariable" { target = "x86_64-pc-windows-msvc" library = kernel32 params = [{ name = condition, type = pointer }] returns = void }
 platform_import "SleepConditionVariableSRW" { target = "x86_64-pc-windows-msvc" library = kernel32 params = [{ name = condition, type = pointer }, { name = lock, type = pointer }, { name = timeout, type = u32 }, { name = flags, type = u32 }] returns = i32 }
-platform_import "memset" { target = "x86_64-pc-windows-msvc" library = ucrt params = [{ name = destination, type = pointer }, { name = value, type = i32 }, { name = length, type = usize }] returns = pointer }
+platform_import "memset" { target = "x86_64-pc-windows-msvc" library = vcruntime params = [{ name = destination, type = pointer }, { name = value, type = i32 }, { name = length, type = usize }] returns = pointer }
 platform_import "CreateThread" { target = "x86_64-pc-windows-msvc" library = kernel32 params = [{ name = security, type = pointer }, { name = stack_size, type = usize }, { name = entry, type = pointer }, { name = argument, type = pointer }, { name = flags, type = u32 }, { name = thread_id, type = pointer }] returns = pointer }
 platform_import "WaitForSingleObject" { target = "x86_64-pc-windows-msvc" library = kernel32 params = [{ name = handle, type = pointer }, { name = milliseconds, type = u32 }] returns = u32 }
 platform_import "GetFileAttributesW" { target = "x86_64-pc-windows-msvc" library = kernel32 params = [{ name = path, type = pointer }] returns = u32 }
