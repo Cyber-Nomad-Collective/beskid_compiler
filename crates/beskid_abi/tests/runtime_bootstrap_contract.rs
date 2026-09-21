@@ -35,13 +35,19 @@ fn windows_descriptor_primitives_use_application_ucrt_import_authority() {
     let target =
         supported_targets().into_iter().find(|target| target.triple.as_str() == "x86_64-pc-windows-msvc").unwrap();
     let manifest = AbiManifestV5::canonical_runtime(target);
-    for symbol in ["_dup", "_close", "_read", "_write", "_setmode", "_set_thread_local_invalid_parameter_handler"] {
+    for symbol in
+        ["_errno", "_dup", "_close", "_read", "_write", "_setmode", "_set_thread_local_invalid_parameter_handler"]
+    {
         let import = manifest
             .platform_imports
             .iter()
             .find(|import| import.symbol == symbol)
             .unwrap_or_else(|| panic!("missing application UCRT descriptor import: {symbol}"));
         assert_eq!(import.library, "ucrt", "{symbol} must share the application's dynamic UCRT");
+        if symbol == "_errno" {
+            assert!(import.params.is_empty(), "_errno has no parameters");
+            assert_eq!(import.result, AbiType::Pointer, "_errno returns the thread-local errno address");
+        }
     }
 }
 
@@ -356,6 +362,7 @@ fn target_system_imports_are_exact_and_unknown_contracts_are_rejected() {
     let windows_imports = [
         "_close",
         "_dup",
+        "_errno",
         "_read",
         "_set_thread_local_invalid_parameter_handler",
         "_setmode",
@@ -409,7 +416,7 @@ fn target_system_imports_are_exact_and_unknown_contracts_are_rejected() {
     ];
     let math_imports = ["atan2", "ceil", "cos", "fabs", "floor", "log", "log10", "log2", "pow", "sin", "sqrt", "tan"];
     let windows_ucrt_descriptor_imports =
-        ["_close", "_dup", "_read", "_set_thread_local_invalid_parameter_handler", "_setmode", "_write"];
+        ["_close", "_dup", "_errno", "_read", "_set_thread_local_invalid_parameter_handler", "_setmode", "_write"];
     for target in supported_targets() {
         let is_windows = target.triple.as_str() == "x86_64-pc-windows-msvc";
         let (mut expected_symbols, expected_library) = match target.triple.as_str() {

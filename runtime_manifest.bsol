@@ -1519,6 +1519,7 @@ platform_import "TlsGetValue" { target = "x86_64-pc-windows-msvc" library = kern
 platform_import "TlsSetValue" { target = "x86_64-pc-windows-msvc" library = kernel32 params = [{ name = index, type = u32 }, { name = value, type = pointer }] returns = i32 }
 
 # Descriptor worker primitives share the application's dynamic UCRT.
+platform_import "_errno" { target = "x86_64-pc-windows-msvc" library = ucrt params = [] returns = pointer }
 platform_import "_dup" { target = "x86_64-pc-windows-msvc" library = ucrt params = [{ name = fd, type = i32 }] returns = i32 }
 platform_import "_close" { target = "x86_64-pc-windows-msvc" library = ucrt params = [{ name = fd, type = i32 }] returns = i32 }
 platform_import "_read" { target = "x86_64-pc-windows-msvc" library = ucrt params = [{ name = fd, type = i32 }, { name = buffer, type = pointer }, { name = length, type = u32 }] returns = i32 }

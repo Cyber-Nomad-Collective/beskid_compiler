@@ -4204,6 +4204,13 @@
       "result": "i32"
     },
     {
+      "symbol": "_errno",
+      "target": "x86_64-pc-windows-msvc",
+      "library": "ucrt",
+      "params": [],
+      "result": "pointer"
+    },
+    {
       "symbol": "_read",
       "target": "x86_64-pc-windows-msvc",
       "library": "ucrt",
