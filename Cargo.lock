@@ -617,6 +617,7 @@ dependencies = [
  "cranelift-native",
  "cranelift-object",
  "libc",
+ "target-lexicon",
  "tempfile",
 ]
 

@@ -16,7 +16,6 @@ use beskid_pipeline::PipelineObserver;
 use beskid_queries::{AstNodeKey, ProjectSession, build_typed_program, item_signature, reachable_items};
 use beskid_queries::{BeskidDatabase, SemanticTypeId, with_db};
 use cranelift_codegen::isa::TargetIsa;
-use cranelift_codegen::settings;
 
 use super::SyntaxEntrypointArtifact;
 #[cfg(test)]
@@ -183,12 +182,7 @@ pub fn lower_syntax_assembly_entrypoint(
 }
 
 fn native_isa() -> Result<Arc<dyn TargetIsa>> {
-    let builder = cranelift_native::builder().map_err(|error| anyhow::anyhow!("native ISA unavailable: {error}"))?;
-    let settings = beskid_codegen::cranelift_host::production_isa_settings_builder()
-        .map_err(|error| anyhow::anyhow!("native ISA settings failed: {error}"))?;
-    builder
-        .finish(settings::Flags::new(settings))
-        .map_err(|error| anyhow::anyhow!("native ISA construction failed: {error}"))
+    crate::jit_module::native_jit_isa().map_err(|error| anyhow::anyhow!("native JIT ISA construction failed: {error}"))
 }
 
 #[cfg(test)]
