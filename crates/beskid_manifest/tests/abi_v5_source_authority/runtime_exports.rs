@@ -57,7 +57,8 @@ fn source_exports(root: &Path) -> BTreeMap<String, (Vec<String>, String)> {
                     (!parameter.is_empty()).then(|| {
                         let mut tokens = parameter.split_whitespace();
                         let first = tokens.next().expect("Export parameter type");
-                        let ty = if first == "mut" { tokens.next().expect("mutable Export parameter type") } else { first };
+                        let ty =
+                            if first == "mut" { tokens.next().expect("mutable Export parameter type") } else { first };
                         source_type(ty).to_owned()
                     })
                 })
@@ -125,4 +126,33 @@ fn canonical_runtime_source_exports_exactly_match_manifest_provenance() {
         declared.len() + 2 + manifest.assembly.len(),
         "runtime provenance is source exports plus generated Core.Args adapters plus assembly"
     );
+}
+
+#[test]
+fn descriptor_syscalls_preserve_source_and_manifest_abi_on_every_target() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let manifest = load_v5_manifest_source(&fs::read_to_string(root.join("runtime_manifest.bsol")).unwrap()).unwrap();
+    let source = source_exports(&root);
+    for (service_name, symbol, parameters) in [
+        ("__syscall_read", "syscall_read", vec!["i32", "pointer", "usize"]),
+        ("__syscall_read_bytes", "syscall_read_bytes", vec!["i32", "pointer", "usize"]),
+        ("__syscall_write_bytes", "syscall_write_bytes", vec!["i32", "pointer", "usize"]),
+        ("__syscall_write", "syscall_write", vec!["i64", "pointer"]),
+    ] {
+        let expected = (parameters.iter().map(|ty| (*ty).to_owned()).collect::<Vec<_>>(), "i64".to_owned());
+        let service = manifest.corelib_services.iter().find(|service| service.name == service_name).unwrap();
+        assert_eq!(service.adapter, symbol);
+        assert_eq!(
+            (service.params.iter().map(|parameter| parameter.ty.clone()).collect::<Vec<_>>(), service.result.clone()),
+            expected,
+            "{service_name}: descriptor ABI must not widen to HANDLE or return a source array"
+        );
+        assert_eq!(source.get(symbol), Some(&expected), "{symbol}: canonical source disagrees with the descriptor ABI");
+        assert_eq!(service.target_bindings.len(), 3);
+        for target in ["x86_64-unknown-linux-gnu", "aarch64-apple-darwin", "x86_64-pc-windows-msvc"] {
+            let binding = service.target_bindings.iter().find(|binding| binding.target == target).unwrap();
+            assert_eq!(binding.implementation, symbol, "{target}: canonical descriptor entry");
+            assert!(binding.os_imports.is_empty(), "OS descriptor adaptation belongs to the native worker");
+        }
+    }
 }

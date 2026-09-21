@@ -17,6 +17,35 @@ fn supported_targets() -> Vec<TargetMetadata> {
 }
 
 #[test]
+fn descriptor_worker_layout_preserves_abi_v5_offsets() {
+    for target in supported_targets() {
+        let manifest = AbiManifestV5::canonical_runtime(target);
+        let worker = manifest.layouts.iter().find(|layout| layout.name == "BeskidWorkerRequest").unwrap();
+        assert_eq!((worker.size, worker.alignment), (72, 8));
+        let descriptor = worker.fields.iter().find(|field| field.offset == 24).unwrap();
+        assert_eq!(descriptor.ty, "usize", "pointer-width storage remains a checked descriptor slot");
+        for (name, offset) in [("buffer", 32), ("length", 40), ("result", 48), ("owner_scheduler_id", 64)] {
+            assert_eq!(worker.fields.iter().find(|field| field.name == name).unwrap().offset, offset);
+        }
+    }
+}
+
+#[test]
+fn windows_descriptor_primitives_use_application_ucrt_import_authority() {
+    let target =
+        supported_targets().into_iter().find(|target| target.triple.as_str() == "x86_64-pc-windows-msvc").unwrap();
+    let manifest = AbiManifestV5::canonical_runtime(target);
+    for symbol in ["_dup", "_close", "_read", "_write", "_setmode", "_set_thread_local_invalid_parameter_handler"] {
+        let import = manifest
+            .platform_imports
+            .iter()
+            .find(|import| import.symbol == symbol)
+            .unwrap_or_else(|| panic!("missing application UCRT descriptor import: {symbol}"));
+        assert_eq!(import.library, "ucrt", "{symbol} must share the application's dynamic UCRT");
+    }
+}
+
+#[test]
 fn canonical_contract_has_the_exact_lifecycle_closure_and_trap_exports() {
     let manifest = AbiManifestV5::canonical_runtime(supported_targets()[0].clone());
     manifest.validate().expect("canonical runtime contract");

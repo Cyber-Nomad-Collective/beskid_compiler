@@ -1,4 +1,11 @@
-#![cfg(unix)]
+#![cfg(any(
+    all(target_os = "linux", target_arch = "x86_64"),
+    all(target_os = "macos", target_arch = "aarch64"),
+    all(target_os = "windows", target_arch = "x86_64", target_env = "msvc"),
+))]
+
+#[path = "support/native_fixture.rs"]
+mod native_fixture;
 
 use beskid_abi::runtime_kit::BuildProfile;
 use beskid_analysis::{
@@ -6,8 +13,20 @@ use beskid_analysis::{
     services::parse_program_with_source_name,
 };
 use beskid_queries::{BeskidDatabase, SyntaxGenerationId};
+use beskid_tests_support::native_harness::{
+    executable_name, native_c_compiler, place_shared_runtime, run_bounded, shared_library_name,
+};
 use beskid_tools::toolchain::runtime_kit::{RuntimeKitProfile, build_native_host};
-use std::{path::Path, sync::Arc};
+use std::{
+    path::Path,
+    process::Command,
+    sync::{Arc, Mutex},
+    time::Duration,
+};
+
+const ROUTE_LIMIT: Duration = Duration::from_secs(60);
+// Descriptor 198/199 belong to the process, so parallel source fixtures must serialize.
+static DESCRIPTOR_FIXTURE: Mutex<()> = Mutex::new(());
 
 #[test]
 fn foundation_utf8_rejects_non_scalar_and_non_shortest_sequences() {
@@ -57,6 +76,7 @@ fn foundation_http_ascii_and_hex_decode_strictly() {
 }
 
 #[test]
+#[cfg(unix)]
 fn foundation_copy_rejects_every_invalid_range_before_mutation() {
     run_foundation_fixture("foundation_copy.bd");
 }
@@ -99,6 +119,37 @@ fn foundation_syscall_read_bytes_with_preserves_bytes_result() {
 }
 
 #[test]
+fn foundation_syscall_negative_descriptor_preserves_original_i64() {
+    run_foundation_case("foundation_syscall.bd", "RunNegativeDescriptorFixture", -1, 1);
+}
+
+#[test]
+fn foundation_syscall_overflow_descriptor_preserves_original_i64() {
+    run_foundation_case("foundation_syscall.bd", "RunOverflowDescriptorFixture", 2147483648, 1);
+}
+
+#[test]
+fn foundation_syscall_aliasing_descriptor_preserves_original_i64_and_input() {
+    run_foundation_case("foundation_syscall.bd", "RunAliasingDescriptorFixture", 4294967494, 1);
+}
+
+#[test]
+fn foundation_syscall_short_read_is_followed_by_empty_eof() {
+    run_foundation_case("foundation_syscall.bd", "RunShortReadThenEofFixture", 42, 1);
+}
+
+#[test]
+fn foundation_syscall_binary_corpus_preserves_bytes_and_caller_modes() {
+    run_foundation_case("foundation_syscall.bd", "RunBinaryCorpusFixture", 42, 2);
+}
+
+#[test]
+fn foundation_syscall_closed_descriptor_returns_io_failure() {
+    run_foundation_case("foundation_syscall.bd", "RunClosedDescriptorFixture", -1, 3);
+}
+
+#[test]
+#[cfg(unix)]
 fn foundation_numeric_panic_preserves_process_trap_code() {
     let compiler = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let prefix = tempfile::tempdir().unwrap();
@@ -173,6 +224,10 @@ fn foundation_numeric_panic_preserves_process_trap_code() {
 }
 
 fn lower_foundation_fixture(fixture: &str) -> anyhow::Result<beskid_codegen::PreparedSyntaxEntrypoint> {
+    lower_foundation_entry(fixture, "RunFoundationFixture")
+}
+
+fn lower_foundation_entry(fixture: &str, entry: &str) -> anyhow::Result<beskid_codegen::PreparedSyntaxEntrypoint> {
     let compiler = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..").canonicalize().unwrap();
     let foundation = compiler.join("corelib/packages/foundation/src");
     let concurrency = compiler.join("corelib/packages/concurrency/src");
@@ -265,20 +320,33 @@ fn lower_foundation_fixture(fixture: &str) -> anyhow::Result<beskid_codegen::Pre
     beskid_codegen::lower_syntax_assembly_entrypoint(
         &mut BeskidDatabase::default(),
         assembly,
-        "RunFoundationFixture",
+        entry,
         target.clone(),
         isa.as_ref(),
     )
 }
 
 fn run_foundation_fixture(fixture: &str) {
+    run_foundation_case(fixture, "RunFoundationFixture", 42, i32::from(fixture == "foundation_syscall.bd"));
+}
+
+fn run_foundation_case(fixture: &str, entry: &str, expected: i64, input_mode: i32) {
+    let _descriptor_guard = DESCRIPTOR_FIXTURE.lock().unwrap_or_else(|poison| poison.into_inner());
     let compiler = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..").canonicalize().unwrap();
     let target = beskid_engine::host_runtime_target().unwrap();
-    let lowered = lower_foundation_fixture(fixture).expect("Foundation fixture source lowering");
+    let lowered = lower_foundation_entry(fixture, entry).expect("Foundation fixture source lowering");
     eprintln!("{fixture}: source lowering complete");
     let prefix = tempfile::tempdir().unwrap();
     let kit = build_native_host(prefix.path().to_path_buf(), RuntimeKitProfile::Debug).unwrap();
     eprintln!("{fixture}: native kit complete");
+    eprintln!(
+        "{entry}: target={} profile={:?} source_hash={} layout_hash={} artifacts={:?}",
+        kit.metadata.target.triple.as_str(),
+        kit.metadata.profile,
+        kit.metadata.source_hash,
+        kit.metadata.layout_hash,
+        kit.metadata.artifacts,
+    );
     if fixture == "foundation_copy.bd" {
         let object_path = prefix.path().join("copy.o");
         let symbol = beskid_codegen::object_link_symbol(&lowered.symbol, &lowered.artifact.exports);
@@ -337,31 +405,7 @@ fn run_foundation_fixture(fixture: &str) {
         }
         return;
     }
-    let mut engine = beskid_engine::Engine::with_runtime_kit(prefix.path(), target, BuildProfile::Debug).unwrap();
-    engine.compile_artifact(&lowered.artifact).expect("Foundation JIT");
-    let entry = unsafe { engine.entrypoint_ptr(&lowered.symbol) }.unwrap();
-    let run: extern "C" fn() -> i64 = unsafe { std::mem::transmute(entry) };
-    if fixture == "foundation_syscall.bd" {
-        let mut descriptors = [-1; 2];
-        unsafe {
-            assert_eq!(libc::fcntl(198, libc::F_GETFD), -1, "test descriptor must be unused");
-            assert_eq!(std::io::Error::last_os_error().raw_os_error(), Some(libc::EBADF));
-            assert_eq!(libc::pipe(descriptors.as_mut_ptr()), 0);
-            assert!(!descriptors.contains(&198), "reserved fixture descriptor");
-            assert_eq!(libc::write(descriptors[1], [0_u8, 255, 42].as_ptr().cast(), 3), 3);
-            assert_eq!(libc::dup2(descriptors[0], 198), 198);
-            libc::close(descriptors[0]);
-            libc::close(descriptors[1]);
-        }
-    }
-    assert_eq!(run(), 42, "{fixture}: Foundation behavior failure code");
-    if fixture == "foundation_syscall.bd" {
-        unsafe {
-            libc::close(198);
-        }
-    }
-    drop(engine);
-    let object_path = prefix.path().join("foundation.o");
+    let object_path = prefix.path().join(if cfg!(windows) { "foundation.obj" } else { "foundation.o" });
     let native_symbol = beskid_codegen::object_link_symbol(&lowered.symbol, &lowered.artifact.exports);
     let mut object = beskid_aot::object_module::BeskidObjectModule::new(None, beskid_aot::BuildProfile::Debug).unwrap();
     object
@@ -372,33 +416,88 @@ fn run_foundation_fixture(fixture: &str) {
         )
         .unwrap();
     object.finalize_to_path(&object_path).unwrap();
-    for (mode, library) in [("aot", &kit.static_library), ("native-kit", &kit.shared_library)] {
-        let executable = prefix.path().join(mode);
-        let output = std::process::Command::new("cc")
-            .arg("-std=c11")
-            .arg("-I")
-            .arg(compiler.join("crates/beskid_abi/include"))
-            .arg(format!("-DSYSCALL_INPUT={}", i32::from(fixture == "foundation_syscall.bd")))
-            .arg(format!(
-                "-DFOUNDATION_FIXTURE_SYMBOL=\"{}{}\"",
-                if cfg!(target_os = "macos") { "_" } else { "" },
-                native_symbol
-            ))
-            .arg(compiler.join("crates/beskid_engine/tests/fixtures/foundation_io.c"))
-            .arg(&object_path)
-            .arg(library)
-            .args(["-lpthread", "-lm", "-o"])
-            .arg(&executable)
-            .output()
-            .unwrap();
-        assert!(output.status.success(), "{fixture} {mode}: {}", String::from_utf8_lossy(&output.stderr));
-        let output = std::process::Command::new(executable)
-            .env(
+    let run_jit = || {
+        let mut engine =
+            beskid_engine::Engine::with_runtime_kit(prefix.path(), target.clone(), BuildProfile::Debug).unwrap();
+        engine.compile_artifact(&lowered.artifact).expect("Foundation JIT");
+        let pointer = unsafe { engine.entrypoint_ptr(&lowered.symbol) }.unwrap();
+        let run: extern "C" fn() -> i64 = unsafe { std::mem::transmute(pointer) };
+        let actual = if input_mode == 0 {
+            run()
+        } else {
+            let producer = prefix.path().join(shared_library_name("foundation-producer"));
+            let mut command = native_c_compiler();
+            command.args(["-Wall", "-Wextra", "-Werror", "-DFOUNDATION_PRODUCER_ONLY=1"]);
+            command.arg(if cfg!(target_os = "macos") { "-dynamiclib" } else { "-shared" });
+            #[cfg(unix)]
+            command.arg("-fPIC");
+            command
+                .arg("-I")
+                .arg(compiler.join("crates/beskid_abi/include"))
+                .arg(compiler.join("crates/beskid_engine/tests/fixtures/foundation_io.c"))
+                .arg("-o")
+                .arg(&producer);
+            let output = run_bounded("foundation JIT producer compile", &mut command, ROUTE_LIMIT);
+            assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+            type Producer = unsafe extern "C" fn(extern "C" fn() -> i64, i32) -> i64;
+            let producer =
+                unsafe { native_fixture::NativeFixture::<Producer>::load(&producer, c"RunWithFoundationInput") };
+            unsafe { (producer.entry)(run, input_mode) }
+        };
+        eprintln!("{entry}: jit result={actual} expected={expected}");
+        assert_eq!(actual, expected, "{entry}: JIT Foundation behavior failure code");
+    };
+    #[cfg(unix)]
+    let shared_link_library = &kit.shared_library;
+    #[cfg(windows)]
+    let shared_link_library = kit.shared_import_library.as_ref().expect("Windows kit COFF import library");
+    let mut failed = Vec::new();
+    // Keep all three route results, including an independently failing Windows JIT.
+    // A route failure never turns another route into an acceptance substitute.
+    for (mode, library) in [("aot", &kit.static_library), ("native-kit", shared_link_library)] {
+        let route = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let directory = prefix.path().join(mode);
+            std::fs::create_dir(&directory).unwrap();
+            let executable = directory.join(executable_name("foundation"));
+            let mut command = native_c_compiler();
+            command
+                .args(["-Wall", "-Wextra", "-Werror"])
+                .arg("-I")
+                .arg(compiler.join("crates/beskid_abi/include"))
+                .arg(format!("-DSYSCALL_INPUT={input_mode}"))
+                .arg(format!("-DFOUNDATION_EXPECTED={expected}LL"))
+                .arg(format!(
+                    "-DFOUNDATION_FIXTURE_SYMBOL=\"{}{}\"",
+                    if cfg!(target_os = "macos") { "_" } else { "" },
+                    native_symbol
+                ))
+                .arg(compiler.join("crates/beskid_engine/tests/fixtures/foundation_io.c"))
+                .arg(&object_path)
+                .arg(library);
+            #[cfg(unix)]
+            command.args(["-lpthread", "-lm"]);
+            command.arg("-o").arg(&executable).current_dir(&directory);
+            let output = run_bounded(&format!("{entry} {mode}: compile"), &mut command, ROUTE_LIMIT);
+            assert!(output.status.success(), "{fixture} {mode}: {}", String::from_utf8_lossy(&output.stderr));
+            if mode == "native-kit" {
+                place_shared_runtime(&directory, &kit.shared_library);
+            }
+            let mut command = Command::new(executable);
+            #[cfg(unix)]
+            command.env(
                 if cfg!(target_os = "macos") { "DYLD_LIBRARY_PATH" } else { "LD_LIBRARY_PATH" },
                 kit.shared_library.parent().unwrap(),
-            )
-            .output()
-            .unwrap();
-        assert!(output.status.success(), "{fixture} {mode}: {}", String::from_utf8_lossy(&output.stderr));
+            );
+            let output = run_bounded(&format!("{entry} {mode}: execute"), &mut command, ROUTE_LIMIT);
+            eprintln!("{entry} {mode}: status={} {}", output.status, String::from_utf8_lossy(&output.stderr));
+            assert!(output.status.success(), "{fixture} {mode}: {}", String::from_utf8_lossy(&output.stderr));
+        }));
+        if route.is_err() {
+            failed.push(mode);
+        }
     }
+    if std::panic::catch_unwind(std::panic::AssertUnwindSafe(run_jit)).is_err() {
+        failed.push("jit");
+    }
+    assert!(failed.is_empty(), "{entry}: failed source execution routes: {failed:?}");
 }
