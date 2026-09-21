@@ -46,7 +46,13 @@ fn user_copy_of_foundation_output_cannot_import_the_panic_service() {
             host: RootEntry { dependency_name: None, source_root: workspace },
             dependencies: Vec::new(),
         },
-        Arc::new(vec![SourceUnit { logical_name: "Core/Output/Output.bd".into(), path: source_path, source, program }]),
+        Arc::new(vec![SourceUnit {
+            logical_name: "Core/Output/Output.bd".into(),
+            origin_path: source_path.clone(),
+            path: source_path,
+            source,
+            program,
+        }]),
         0,
         AssemblyDiscovery::ImportClosure,
         Arc::new(ModuleIndex::empty()),
@@ -170,12 +176,14 @@ fn canonical_foundation_assert_equal_specialization_lowers_through_syntax_isle()
         Arc::new(vec![
             SourceUnit {
                 logical_name: "Main".into(),
+                origin_path: main_path.clone(),
                 path: main_path,
                 source: main_source.into(),
                 program: main_program,
             },
             SourceUnit {
                 logical_name: CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH.into(),
+                origin_path: assert_path.clone(),
                 path: assert_path,
                 source: assert_source,
                 program: assert_program,
@@ -253,7 +261,13 @@ fn canonical_foundation_string_len_lowers_through_syntax_isle() {
     let generation = SyntaxGenerationId(96);
     let assembly = Arc::new(ProgramAssembly::new(
         EffectiveCompilationRoots { host: RootEntry { dependency_name: None, source_root }, dependencies: Vec::new() },
-        Arc::new(vec![SourceUnit { logical_name: "Core/String/Core.bd".into(), path: source_path, source, program }]),
+        Arc::new(vec![SourceUnit {
+            logical_name: "Core/String/Core.bd".into(),
+            origin_path: source_path.clone(),
+            path: source_path,
+            source,
+            program,
+        }]),
         0,
         AssemblyDiscovery::ImportClosure,
         Arc::new(ModuleIndex::empty()),
@@ -328,6 +342,7 @@ fn copied_foundation_string_source_cannot_receive_string_service_authority() {
         },
         Arc::new(vec![SourceUnit {
             logical_name: CANONICAL_FOUNDATION_STRING_CORE_SOURCE_PATH.into(),
+            origin_path: source_path.clone(),
             path: source_path.clone(),
             source,
             program,
@@ -388,6 +403,7 @@ fn copied_and_altered_foundation_assert_source_cannot_receive_runtime_service_au
         },
         Arc::new(vec![SourceUnit {
             logical_name: CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH.into(),
+            origin_path: source_path.clone(),
             path: source_path.clone(),
             source: altered_source,
             program: program.clone(),
@@ -465,6 +481,7 @@ fn symlinked_foundation_assert_source_cannot_receive_panic_authority() {
         },
         Arc::new(vec![SourceUnit {
             logical_name: CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH.into(),
+            origin_path: source_path.clone(),
             path: source_path.clone(),
             source: source.source,
             program: program.clone(),

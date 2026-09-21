@@ -328,7 +328,7 @@ fn lower_foundation_entry(fixture: &str, entry: &str) -> anyhow::Result<beskid_c
         .map(|(path, logical_name)| {
             let source = std::fs::read_to_string(&path).unwrap();
             let program = parse_program_with_source_name(path.to_str().unwrap(), &source).unwrap();
-            SourceUnit { path, logical_name, source, program }
+            SourceUnit { origin_path: path.clone(), path, logical_name, source, program }
         })
         .collect();
     let assembly = Arc::new(ProgramAssembly::new(

@@ -37,7 +37,13 @@ impl CanonicalRuntimeCorpus {
                 std::fs::write(&path, &source.source).expect("write canonical source");
                 let program = parse_program_with_source_name(path.to_str().unwrap(), &source.source)
                     .expect("parse canonical runtime source");
-                SourceUnit { logical_name: source.logical_path, path, source: source.source, program }
+                SourceUnit {
+                    logical_name: source.logical_path,
+                    origin_path: path.clone(),
+                    path,
+                    source: source.source,
+                    program,
+                }
             })
             .collect::<Vec<_>>();
         let entry_index = units
@@ -412,12 +418,14 @@ fn exact_canonical_runtime_corpus_resolves_bootstrap_helpers_but_ordinary_assemb
         Arc::new(vec![
             SourceUnit {
                 logical_name: "Helper".into(),
+                origin_path: helper_path.clone(),
                 path: helper_path.clone(),
                 source: helper.into(),
                 program: parse_program_with_source_name(helper_path.to_str().unwrap(), helper).expect("parse helper"),
             },
             SourceUnit {
                 logical_name: "Main".into(),
+                origin_path: main_path.clone(),
                 path: main_path.clone(),
                 source: main.into(),
                 program: parse_program_with_source_name(main_path.to_str().unwrap(), main).expect("parse main"),

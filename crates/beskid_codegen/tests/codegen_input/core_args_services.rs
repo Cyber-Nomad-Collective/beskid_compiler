@@ -27,7 +27,13 @@ fn core_args_input(
     );
     let assembly = Arc::new(ProgramAssembly::new(
         EffectiveCompilationRoots { host: RootEntry { dependency_name: None, source_root }, dependencies: Vec::new() },
-        Arc::new(vec![SourceUnit { logical_name: logical_name.into(), path: source_path, source, program }]),
+        Arc::new(vec![SourceUnit {
+            logical_name: logical_name.into(),
+            origin_path: source_path.clone(),
+            path: source_path,
+            source,
+            program,
+        }]),
         0,
         AssemblyDiscovery::ImportClosure,
         Arc::new(ModuleIndex::empty()),

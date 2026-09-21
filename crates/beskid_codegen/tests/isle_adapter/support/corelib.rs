@@ -34,6 +34,7 @@ pub(in super::super) fn canonical_corelib_syscall_fixture()
         },
         Arc::new(vec![SourceUnit {
             logical_name: CANONICAL_CORELIB_SYSCALL_SOURCE_PATH.into(),
+            origin_path: source_path.clone(),
             path: source_path,
             source: source.source,
             program,
@@ -98,6 +99,7 @@ pub(in super::super) fn materialized_corelib_syscall_fixture()
         },
         units: Arc::new(vec![SourceUnit {
             logical_name: source_path.display().to_string(),
+            origin_path: source_path.clone(),
             path: source_path.clone(),
             source: source.source,
             program: program.clone(),
@@ -160,6 +162,7 @@ pub(in super::super) fn core_args_fixture(
         },
         units: Arc::new(vec![SourceUnit {
             logical_name: CANONICAL_CORELIB_ARGS_SOURCE_PATH.into(),
+            origin_path: source_path.clone(),
             path: source_path,
             source,
             program: program.clone(),
@@ -246,6 +249,7 @@ pub(in super::super) fn canonical_foundation_assert_fixture()
         EffectiveCompilationRoots { host: RootEntry { dependency_name: None, source_root }, dependencies: Vec::new() },
         Arc::new(vec![SourceUnit {
             logical_name: CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH.into(),
+            origin_path: source_path.clone(),
             path: source_path,
             source: source.source,
             program,
@@ -313,7 +317,13 @@ pub(in super::super) fn canonical_foundation_service_fixture(
     let generation = SyntaxGenerationId(96);
     let assembly = Arc::new(ProgramAssembly::new(
         EffectiveCompilationRoots { host: RootEntry { dependency_name: None, source_root }, dependencies: Vec::new() },
-        Arc::new(vec![SourceUnit { logical_name: source_relative_path.into(), path: source_path, source, program }]),
+        Arc::new(vec![SourceUnit {
+            logical_name: source_relative_path.into(),
+            origin_path: source_path.clone(),
+            path: source_path,
+            source,
+            program,
+        }]),
         0,
         AssemblyDiscovery::ImportClosure,
         Arc::new(ModuleIndex::empty()),

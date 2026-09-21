@@ -229,6 +229,7 @@ fn invalid_scoped_cleanup_is_rejected_before_a_typed_program_is_admitted() {
             dependencies: vec![],
         },
         Arc::new(vec![SourceUnit {
+            origin_path: PathBuf::from("/tmp/project/src/Main.bd"),
             path: PathBuf::from("/tmp/project/src/Main.bd"),
             logical_name: "Main".into(),
             source,
@@ -256,6 +257,7 @@ fn canonical_foundation_disposal_resolves_across_registered_modules() {
     let source = "use Core.Disposable; use Core.Results; type Resource: Disposable { pub Core.Results.Result<unit, DisposeError> Dispose() { return Result::Ok(()); } } Result<unit, DisposeError> Main() { use Resource resource = Resource {}; return Result::Ok(()); }";
     let (mut db, project, unit, generation, index) = setup(source);
     let mut units = vec![SourceUnit {
+        origin_path: PathBuf::from("/tmp/project/src/Main.bd"),
         path: PathBuf::from("/tmp/project/src/Main.bd"),
         logical_name: "Main".into(),
         source: source.into(),
@@ -265,7 +267,7 @@ fn canonical_foundation_disposal_resolves_across_registered_modules() {
         let path = foundation.join(relative);
         let source = std::fs::read_to_string(&path).unwrap();
         let program = beskid_analysis::services::parse_program(&source).unwrap();
-        units.push(SourceUnit { path, logical_name: relative.into(), source, program });
+        units.push(SourceUnit { origin_path: path.clone(), path, logical_name: relative.into(), source, program });
     }
     let assembly = Arc::new(ProgramAssembly::new(
         EffectiveCompilationRoots {

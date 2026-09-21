@@ -23,6 +23,7 @@ fn imported_list_fixture(
         .iter()
         .map(|(path, source)| SourceUnit {
             logical_name: path.display().to_string(),
+            origin_path: path.clone(),
             path: path.clone(),
             source: source.clone(),
             program: parse_program_with_source_name(path.to_str().expect("UTF-8 path"), source).expect("parse source"),

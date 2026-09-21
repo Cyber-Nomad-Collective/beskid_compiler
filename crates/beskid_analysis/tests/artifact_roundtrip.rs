@@ -28,6 +28,7 @@ fn expanded_syntax_unit_snapshot_roundtrips() {
         .expect("parse");
     let unit = beskid_analysis::projects::assembly::SourceUnit {
         logical_name: "Main.bd".to_string(),
+        origin_path: std::path::PathBuf::from("/tmp/Main.bd"),
         path: std::path::PathBuf::from("/tmp/Main.bd"),
         source: source.to_string(),
         program,

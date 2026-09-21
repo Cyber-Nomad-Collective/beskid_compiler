@@ -53,5 +53,11 @@ fn parse_unit(
         parse_program_with_source_name(&logical_name, source).map(expand_syntax_for_assembly).map_err(|err| {
             beskid_analysis::projects::AssemblyError::Parse { path: path.clone(), message: err.to_string() }
         })?;
-    Ok(beskid_analysis::projects::assembly::SourceUnit { logical_name, path, source: source.to_string(), program })
+    Ok(beskid_analysis::projects::assembly::SourceUnit {
+        logical_name,
+        origin_path: path.clone(),
+        path,
+        source: source.to_string(),
+        program,
+    })
 }

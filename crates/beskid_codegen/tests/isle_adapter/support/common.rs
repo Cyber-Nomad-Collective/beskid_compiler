@@ -53,7 +53,13 @@ pub(in super::super) fn item_fixture_with_root(
             host: RootEntry { dependency_name: None, source_root: directory },
             dependencies: Vec::new(),
         },
-        Arc::new(vec![SourceUnit { logical_name: "Main".into(), path: source_path, source: source.into(), program }]),
+        Arc::new(vec![SourceUnit {
+            logical_name: "Main".into(),
+            origin_path: source_path.clone(),
+            path: source_path,
+            source: source.into(),
+            program,
+        }]),
         0,
         AssemblyDiscovery::ImportClosure,
         Arc::new(ModuleIndex::empty()),
@@ -105,6 +111,7 @@ pub(in super::super) fn canonical_runtime_test_assembly(
             .expect("parse canonical runtime source");
         source_units.push(SourceUnit {
             logical_name: canonical.logical_path.clone(),
+            origin_path: sp.clone(),
             path: sp,
             source: canonical.source.clone(),
             program,

@@ -40,6 +40,7 @@ fn materialized_compiler_foundation_path_retains_service_provenance_but_a_copy_d
     let materialized_path = materialized_source_root.join(relative);
     let unit = SourceUnit {
         logical_name: materialized_path.display().to_string(),
+        origin_path: materialized_path.clone(),
         path: materialized_path.clone(),
         source: source.source.clone(),
         program: parse_program_with_source_name("materialized syscall", &source.source).expect("parse syscall source"),
@@ -114,6 +115,7 @@ fn resolved_foundation_source_root_still_trusts_materialized_assert() {
     let materialized_path = materialized_source_root.join(relative);
     let unit = SourceUnit {
         logical_name: materialized_path.display().to_string(),
+        origin_path: materialized_path.clone(),
         path: materialized_path.clone(),
         source: source.source.clone(),
         program: parse_program_with_source_name("materialized assert", &source.source).expect("parse Assert source"),

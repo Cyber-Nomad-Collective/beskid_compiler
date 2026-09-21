@@ -96,7 +96,13 @@ fn materialize_parsed_unit_from_text(db: &dyn Db, path: &std::path::Path, text: 
     let logical_name = path.display().to_string();
     let program =
         parse_program_with_source_name(&logical_name, text).map(expand_syntax_for_assembly).expect("unit must parse");
-    let unit = SourceUnit { logical_name, path: path.to_path_buf(), source: text.to_string(), program };
+    let unit = SourceUnit {
+        logical_name,
+        origin_path: path.to_path_buf(),
+        path: path.to_path_buf(),
+        source: text.to_string(),
+        program,
+    };
     db.unit_cache().lock().expect("unit cache").source_units.insert(content_fp.to_string(), Arc::new(unit.clone()));
     unit
 }

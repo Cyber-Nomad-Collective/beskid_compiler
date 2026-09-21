@@ -719,6 +719,7 @@ mod tests {
         let program = parse_program_with_source_name("Main.bd", entry_source).expect("parse entry");
         let entry_unit = SourceUnit {
             logical_name: "Main.bd".to_owned(),
+            origin_path: std::path::PathBuf::from("/tmp/Main.bd"),
             path: std::path::PathBuf::from("/tmp/Main.bd"),
             source: entry_source.to_owned(),
             program,

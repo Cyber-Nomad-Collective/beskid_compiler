@@ -25,7 +25,13 @@ fn parsed_enum_constructor_uses_source_layout_without_hir() {
             host: RootEntry { dependency_name: None, source_root: directory },
             dependencies: Vec::new(),
         },
-        Arc::new(vec![SourceUnit { logical_name: "Main".into(), path: source_path, source: source.into(), program }]),
+        Arc::new(vec![SourceUnit {
+            logical_name: "Main".into(),
+            origin_path: source_path.clone(),
+            path: source_path,
+            source: source.into(),
+            program,
+        }]),
         0,
         AssemblyDiscovery::ImportClosure,
         Arc::new(ModuleIndex::empty()),
@@ -354,6 +360,7 @@ fn cross_unit_generic_receiver_direct_match_preserves_nominal_value() {
         std::fs::write(&source_path, &source).unwrap();
         let mut units = vec![SourceUnit {
             program: parse_program_with_source_name(source_path.to_str().unwrap(), &source).unwrap(),
+            origin_path: source_path.clone(),
             path: source_path,
             logical_name: "Main.bd".into(),
             source,
@@ -368,6 +375,7 @@ fn cross_unit_generic_receiver_direct_match_preserves_nominal_value() {
             let source = std::fs::read_to_string(&path).unwrap();
             units.push(SourceUnit {
                 program: parse_program_with_source_name(path.to_str().unwrap(), &source).unwrap(),
+                origin_path: path.clone(),
                 path,
                 logical_name: relative.into(),
                 source,
@@ -846,6 +854,7 @@ fn cross_unit_generic_receiver_match_preserves_a_concrete_nominal_error() {
         logical_name: path.display().to_string(),
         program: parse_program_with_source_name(path.to_str().expect("UTF-8 source path"), source)
             .expect("parse source"),
+        origin_path: path.clone(),
         path,
         source: source.into(),
     })
@@ -1189,6 +1198,7 @@ fn imported_single_payload_enum_constructor_exposes_its_layout_to_isle() {
         logical_name: path.display().to_string(),
         program: parse_program_with_source_name(path.to_str().expect("UTF-8 source path"), source)
             .expect("parse source"),
+        origin_path: path.clone(),
         path,
         source: source.into(),
     })
@@ -1238,6 +1248,7 @@ fn imported_nullary_enum_constructor_lowers_from_an_ordinary_function_block() {
             logical_name: path.display().to_string(),
             program: parse_program_with_source_name(path.to_str().expect("UTF-8 source path"), source)
                 .expect("parse source"),
+            origin_path: path.clone(),
             path,
             source: source.into(),
         })
@@ -1298,6 +1309,7 @@ fn imported_result_write_with_lowers_through_an_ordinary_function_block_match() 
             logical_name: path.display().to_string(),
             program: parse_program_with_source_name(path.to_str().expect("UTF-8 source path"), source)
                 .expect("parse source"),
+            origin_path: path.clone(),
             path,
             source: source.into(),
         })

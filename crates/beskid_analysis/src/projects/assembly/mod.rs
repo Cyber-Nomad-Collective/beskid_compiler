@@ -33,9 +33,19 @@ use crate::syntax_query::SyntaxIndex;
 #[derive(Debug, Clone)]
 pub struct SourceUnit {
     pub logical_name: String,
+    /// Requested source location before resolving filesystem aliases; not a semantic key or authority grant.
+    pub origin_path: PathBuf,
+    /// Canonical semantic key, derived independently from the requested origin.
     pub path: PathBuf,
     pub source: String,
     pub program: Spanned<Program>,
+}
+
+impl SourceUnit {
+    /// Bind reusable syntax to the current source request without inheriting cached path metadata.
+    pub fn bind_request(origin_path: PathBuf, logical_name: String, source: String, program: Spanned<Program>) -> Self {
+        Self { path: crate::paths::unit_path_key(&origin_path), origin_path, logical_name, source, program }
+    }
 }
 
 /// Generation-bound syntax project shared by analysis and IDE query boundaries.

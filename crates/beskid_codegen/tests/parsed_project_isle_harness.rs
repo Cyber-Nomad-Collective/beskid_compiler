@@ -70,7 +70,13 @@ fn parse_production_units(root: &std::path::Path, units: &[(&str, &str, &str)]) 
         std::fs::write(&path, source).expect("write project source");
         let program = parse_program_with_source_name(path.to_str().expect("UTF-8 source path"), source)
             .expect("production source parse");
-        source_units.push(SourceUnit { logical_name: (*logical_name).into(), path, source: (*source).into(), program });
+        source_units.push(SourceUnit {
+            logical_name: (*logical_name).into(),
+            origin_path: path.clone(),
+            path,
+            source: (*source).into(),
+            program,
+        });
     }
     Arc::new(ProgramAssembly::new(
         EffectiveCompilationRoots {
@@ -250,7 +256,7 @@ fn canonical_fiber_join_lowers_the_typed_traced_result_move() {
         .into_iter()
         .map(|(path, logical_name, source)| {
             let program = parse_program_with_source_name(path.to_str().unwrap(), &source).unwrap();
-            SourceUnit { path, logical_name, source, program }
+            SourceUnit { origin_path: path.clone(), path, logical_name, source, program }
         })
         .collect();
     let assembly = Arc::new(ProgramAssembly::new(

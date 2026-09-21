@@ -365,6 +365,7 @@ unit Write() {
         .iter()
         .map(|(path, source)| SourceUnit {
             logical_name: path.display().to_string(),
+            origin_path: (*path).clone(),
             path: (*path).clone(),
             source: (*source).to_string(),
             program: expand_program(parse_program(source).expect("parse"), DEFAULT_MAX_MACRO_EXPANSION_DEPTH),
@@ -441,6 +442,7 @@ unit Main() {
         .iter()
         .map(|(path, source)| SourceUnit {
             logical_name: path.display().to_string(),
+            origin_path: (*path).clone(),
             path: (*path).clone(),
             source: (*source).to_string(),
             program: expand_program(parse_program(source).expect("parse"), DEFAULT_MAX_MACRO_EXPANSION_DEPTH),
@@ -521,6 +523,7 @@ unit Main() {
         .iter()
         .map(|(path, source)| SourceUnit {
             logical_name: path.display().to_string(),
+            origin_path: (*path).clone(),
             path: (*path).clone(),
             source: (*source).to_string(),
             program: expand_program(parse_program(source).expect("parse"), DEFAULT_MAX_MACRO_EXPANSION_DEPTH),
@@ -733,6 +736,7 @@ use Core.B;
         .iter()
         .map(|(path, source)| SourceUnit {
             logical_name: path.display().to_string(),
+            origin_path: (*path).clone(),
             path: (*path).clone(),
             source: (*source).to_string(),
             program: expand_program(parse_program(source).expect("parse"), DEFAULT_MAX_MACRO_EXPANSION_DEPTH),

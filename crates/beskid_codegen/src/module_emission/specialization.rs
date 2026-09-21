@@ -341,6 +341,7 @@ mod tests {
             },
             Arc::new(vec![SourceUnit {
                 logical_name: "Main".into(),
+                origin_path: source_path.clone(),
                 path: source_path,
                 source: source.into(),
                 program,

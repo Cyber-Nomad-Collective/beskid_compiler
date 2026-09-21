@@ -41,6 +41,7 @@ fn qualified_import_resolution_follows_public_reexports_and_declared_modules() {
         .iter()
         .map(|(path, source)| SourceUnit {
             logical_name: path.display().to_string(),
+            origin_path: (*path).clone(),
             path: (*path).clone(),
             source: (*source).to_string(),
             program: expand_program(parse_program(source).expect("parse"), DEFAULT_MAX_MACRO_EXPANSION_DEPTH),

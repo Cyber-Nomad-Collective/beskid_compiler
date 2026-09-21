@@ -69,12 +69,14 @@ fn genuine_imported_contract_parameter_still_mints_a_concrete_witness() {
         },
         Arc::new(vec![
             SourceUnit {
+                origin_path: main_path.clone(),
                 path: main_path.clone(),
                 logical_name: "Main.bd".into(),
                 source: main_source.into(),
                 program: main_program,
             },
             SourceUnit {
+                origin_path: root.join("Api/Reader.bd"),
                 path: root.join("Api/Reader.bd"),
                 logical_name: "Api/Reader.bd".into(),
                 source: contract_source.into(),

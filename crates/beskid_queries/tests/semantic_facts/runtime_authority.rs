@@ -60,6 +60,7 @@ fn canonicalized_windows_syscall_source_keeps_exact_service_authority() {
             },
             Arc::new(vec![SourceUnit {
                 logical_name: logical_path.into(),
+                origin_path: path.clone(),
                 path: path.clone(),
                 source,
                 program: program.clone(),
@@ -141,7 +142,13 @@ fn typed_value_service_preserves_source_result_and_rejects_native_pointer_payloa
     let project = ProjectSession::new(&db, source_root.clone(), path.clone(), "concurrency".into(), "test".into());
     let assembly = Arc::new(ProgramAssembly::new(
         EffectiveCompilationRoots { host: RootEntry { dependency_name: None, source_root }, dependencies: Vec::new() },
-        Arc::new(vec![SourceUnit { path: path.clone(), logical_name: logical.into(), source: source.source, program }]),
+        Arc::new(vec![SourceUnit {
+            origin_path: path.clone(),
+            path: path.clone(),
+            logical_name: logical.into(),
+            source: source.source,
+            program,
+        }]),
         0,
         AssemblyDiscovery::ImportClosure,
         Arc::new(ModuleIndex::empty()),
@@ -281,6 +288,7 @@ fn canonical_concurrency_facade_gets_service_authority_but_copied_source_does_no
         EffectiveCompilationRoots { host: RootEntry { dependency_name: None, source_root }, dependencies: Vec::new() },
         Arc::new(vec![SourceUnit {
             logical_name: CANONICAL_CORELIB_CHANNEL_SOURCE_PATH.into(),
+            origin_path: canonical_path.clone(),
             path: canonical_path.clone(),
             source: source.source.clone(),
             program: program.clone(),
@@ -350,6 +358,7 @@ fn corelib_syscall_source_gets_a_distinct_service_lowering_but_app_code_cannot_f
         },
         Arc::new(vec![SourceUnit {
             logical_name: CANONICAL_CORELIB_SYSCALL_SOURCE_PATH.into(),
+            origin_path: source_path.clone(),
             path: source_path.clone(),
             source: source.source.clone(),
             program,
@@ -419,6 +428,7 @@ fn corelib_syscall_source_gets_a_distinct_service_lowering_but_app_code_cannot_f
         },
         Arc::new(vec![SourceUnit {
             logical_name: CANONICAL_CORELIB_SYSCALL_SOURCE_PATH.into(),
+            origin_path: forged_path.clone(),
             path: forged_path,
             source: forged_source,
             program: forged_program,
@@ -466,12 +476,14 @@ fn corelib_service_authority_is_registered_for_only_the_exact_syscall_unit_in_an
         Arc::new(vec![
             SourceUnit {
                 logical_name: "Core/Syscall/Syscall.bd".into(),
+                origin_path: syscall_path.clone(),
                 path: syscall_path.clone(),
                 source: source.source.clone(),
                 program: syscall_program.clone(),
             },
             SourceUnit {
                 logical_name: "Main.bd".into(),
+                origin_path: application_path.clone(),
                 path: application_path.clone(),
                 source: application_source.into(),
                 program: application_program.clone(),
@@ -544,6 +556,7 @@ fn corelib_service_authority_is_registered_for_only_the_exact_syscall_unit_in_an
         assembly.roots.clone(),
         Arc::new(vec![SourceUnit {
             logical_name: "Core/Syscall/Syscall.bd".into(),
+            origin_path: syscall_path.clone(),
             path: syscall_path.clone(),
             source: forged_source,
             program: forged_program.clone(),

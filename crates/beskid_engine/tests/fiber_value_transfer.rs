@@ -731,7 +731,7 @@ fn source_transfer_assembly(kind: &str) -> Arc<ProgramAssembly> {
         .map(|(path, logical_name)| {
             let source = std::fs::read_to_string(&path).unwrap();
             let program = parse_program_with_source_name(path.to_str().unwrap(), &source).unwrap();
-            SourceUnit { path, logical_name: logical_name.into(), source, program }
+            SourceUnit { origin_path: path.clone(), path, logical_name: logical_name.into(), source, program }
         })
         .collect();
     Arc::new(ProgramAssembly::new(

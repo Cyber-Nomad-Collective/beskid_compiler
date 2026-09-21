@@ -70,6 +70,7 @@ fn nested_module_static_call_results_are_valid_comparison_operands() {
         .iter()
         .map(|(path, source)| SourceUnit {
             logical_name: path.display().to_string(),
+            origin_path: (*path).clone(),
             path: (*path).clone(),
             source: (*source).to_string(),
             program: parse_program_with_source_name(path.to_str().expect("UTF-8 path"), source).expect("parse"),
@@ -158,6 +159,7 @@ fn nested_direct_call_adapts_scalars_at_the_exact_inner_parameter_boundary() {
         .iter()
         .map(|(path, source)| SourceUnit {
             logical_name: path.display().to_string(),
+            origin_path: (*path).clone(),
             path: (*path).clone(),
             source: (*source).to_string(),
             program: parse_program_with_source_name(path.to_str().expect("UTF-8 path"), source).expect("parse"),
@@ -868,18 +870,21 @@ fn canonical_generic_array_operations_preserve_concrete_types_through_nested_cal
         Arc::new(vec![
             SourceUnit {
                 logical_name: "Main.bd".into(),
+                origin_path: application_path.clone(),
                 path: application_path,
                 source: application_source.into(),
                 program: application_program,
             },
             SourceUnit {
                 logical_name: "Core/Collections/Array.bd".into(),
+                origin_path: array_path.clone(),
                 path: array_path,
                 source: array_source,
                 program: array_program,
             },
             SourceUnit {
                 logical_name: "Core/Collections/Array/ArrayIter.bd".into(),
+                origin_path: array_iter_path.clone(),
                 path: array_iter_path,
                 source: array_iter_source,
                 program: array_iter_program,
@@ -1058,12 +1063,14 @@ fn parsed_program_specializes_a_qualified_imported_generic_call_without_hir() {
         Arc::new(vec![
             SourceUnit {
                 logical_name: "Main".into(),
+                origin_path: main_path.clone(),
                 path: main_path,
                 source: main_source.into(),
                 program: main_program,
             },
             SourceUnit {
                 logical_name: "Testing.Assert".into(),
+                origin_path: assert_path.clone(),
                 path: assert_path,
                 source: assert_source.into(),
                 program: assert_program,

@@ -1,5 +1,7 @@
 //! Postcard encode/decode for expanded syntax unit snapshots.
 
+use std::path::Path;
+
 use beskid_artifacts::{AstUnitSnapshot, UnitArtifactMeta, content_fingerprint, grammar_revision};
 use postcard::Error as PostcardError;
 
@@ -31,12 +33,16 @@ pub fn source_unit_snapshot(unit: &SourceUnit, imports: &[String]) -> Result<Ast
     ))
 }
 
-pub fn source_unit_from_ast_snapshot(snapshot: &AstUnitSnapshot, source: &str) -> Result<SourceUnit, PostcardError> {
+pub fn source_unit_from_ast_snapshot(
+    snapshot: &AstUnitSnapshot,
+    origin_path: &Path,
+    source: &str,
+) -> Result<SourceUnit, PostcardError> {
     let program = decode_syntax_program(&snapshot.program_wire)?;
-    Ok(SourceUnit {
-        logical_name: snapshot.meta.logical_name.clone(),
-        path: crate::paths::unit_path_key(&snapshot.meta.source_path),
-        source: source.to_string(),
+    Ok(SourceUnit::bind_request(
+        origin_path.to_path_buf(),
+        origin_path.display().to_string(),
+        source.to_string(),
         program,
-    })
+    ))
 }
