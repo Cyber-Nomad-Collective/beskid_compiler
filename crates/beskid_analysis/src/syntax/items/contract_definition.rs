@@ -4,12 +4,15 @@ use pest::iterators::Pair;
 use crate::parser::Rule;
 use crate::parsing::error::ParseError;
 use crate::parsing::parsable::Parsable;
-use crate::syntax::items::parse_helpers::{parse_attributes, parse_doc_attached_with, parse_visibility_or_default};
+use crate::syntax::items::parse_helpers::{
+    parse_attributes, parse_doc_attached_with, parse_identifier_list, parse_visibility_or_default,
+};
 use crate::syntax::{Attribute, ContractNode, Identifier, SpanInfo, Spanned, Visibility};
 
 use beskid_ast_derive::AstNode;
 
-/// `contract` interface: members (method signatures and embeddings) with per-item docs.
+/// `contract` interface: optional generic parameters, then members (method signatures and
+/// embeddings) with per-item docs.
 #[derive(AstNode, Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ContractDefinition {
     #[ast(children)]
@@ -18,6 +21,8 @@ pub struct ContractDefinition {
     pub visibility: Spanned<Visibility>,
     #[ast(child)]
     pub name: Spanned<Identifier>,
+    #[ast(children)]
+    pub generics: Vec<Spanned<Identifier>>,
     #[ast(children)]
     pub items: Vec<Spanned<ContractNode>>,
     #[ast(skip)]
@@ -31,6 +36,10 @@ impl Parsable for ContractDefinition {
         let attributes = parse_attributes(&mut inner)?;
         let visibility = parse_visibility_or_default(&pair, &mut inner)?;
         let name = Identifier::parse(inner.next().ok_or(ParseError::missing(Rule::Identifier))?)?;
+        let mut generics = Vec::new();
+        if inner.peek().is_some_and(|next| next.as_rule() == Rule::GenericParameters) {
+            generics = parse_identifier_list(inner.next().expect("peeked GenericParameters"))?;
+        }
         let mut items = Vec::new();
         let mut item_docs = Vec::new();
         for pair in inner {
@@ -42,6 +51,6 @@ impl Parsable for ContractDefinition {
         }
         debug_assert_eq!(items.len(), item_docs.len());
 
-        Ok(Spanned::new(Self { attributes, visibility, name, items, item_docs }, span))
+        Ok(Spanned::new(Self { attributes, visibility, name, generics, items, item_docs }, span))
     }
 }

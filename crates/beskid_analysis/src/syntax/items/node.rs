@@ -307,4 +307,52 @@ mod tests {
         assert!(formatted.contains("host AppHost(string[] args) : ConsoleHost"));
         assert!(!formatted.contains("with"));
     }
+
+    #[test]
+    fn generic_contract_definition_declares_its_type_parameter() {
+        use crate::syntax::items::Node;
+
+        let src = r#"
+            contract Iterator<T> {
+                Option<T> Current();
+            }
+        "#;
+        let pair = BeskidParser::parse(Rule::Program, src)
+            .expect("generic contract should parse")
+            .next()
+            .expect("program pair");
+        let program = Program::parse(pair).expect("generic contract should build AST");
+
+        let contract = match &program.node.items[0].node {
+            Node::ContractDefinition(contract) => &contract.node,
+            other => panic!("expected Node::ContractDefinition, got {other:?}"),
+        };
+        assert_eq!(
+            contract.generics.iter().map(|g| g.node.name.as_str()).collect::<Vec<_>>(),
+            vec!["T"],
+            "the contract's own generic parameter list must be preserved by parsing"
+        );
+    }
+
+    #[test]
+    fn non_generic_contract_definition_still_parses_with_no_generics() {
+        use crate::syntax::items::Node;
+
+        let src = r#"
+            contract Loggable {
+                unit Log();
+            }
+        "#;
+        let pair = BeskidParser::parse(Rule::Program, src)
+            .expect("non-generic contract should parse")
+            .next()
+            .expect("program pair");
+        let program = Program::parse(pair).expect("non-generic contract should build AST");
+
+        let contract = match &program.node.items[0].node {
+            Node::ContractDefinition(contract) => &contract.node,
+            other => panic!("expected Node::ContractDefinition, got {other:?}"),
+        };
+        assert!(contract.generics.is_empty(), "a plain `contract Loggable {{ }}` has no generic parameters");
+    }
 }

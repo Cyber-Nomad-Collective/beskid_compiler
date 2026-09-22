@@ -235,11 +235,11 @@ EnumVariantList = { EnumVariantWithDocs ~ ("," ~ DocGap* ~ EnumVariantWithDocs)*
 EnumVariantWithDocs = { (DocRun ~ EnumVariant) | EnumVariant }
 EnumVariant = { Identifier ~ ("(" ~ FieldList? ~ ")")? }
 
-ContractDefinition = { AttributeList? ~ Visibility? ~ "contract" ~ Identifier ~ "{" ~ ContractItemWithDocs* ~ "}" }
+ContractDefinition = { AttributeList? ~ Visibility? ~ "contract" ~ Identifier ~ GenericParameters? ~ "{" ~ ContractItemWithDocs* ~ "}" }
 ContractItemWithDocs = { ((DocRun ~ ContractItem) | ContractItem) ~ DocGap* }
 ContractItem = _{ ContractMethodSignature | ContractEmbedding }
 ContractMethodSignature = { AttributeList? ~ BeskidType ~ Identifier ~ "(" ~ ParameterList? ~ ")" ~ ";" }
-ContractEmbedding = { Identifier ~ ";"? }
+ContractEmbedding = { Identifier ~ GenericArguments? ~ ";"? }
 
 RegistrationLifetime = { "single" | "transient" }
 RegistrationTarget = { "for" ~ Path }
