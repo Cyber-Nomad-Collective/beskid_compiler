@@ -50,6 +50,7 @@ impl Emit for Node {
             Node::Function(f) => f.emit(w, cx),
             Node::ConstantDefinition(c) => c.emit(w, cx),
             Node::Method(m) => m.emit(w, cx),
+            Node::ImplBlock(i) => i.emit(w, cx),
             Node::ExtendTypeDefinition(e) => e.emit(w, cx),
             Node::TypeDefinition(t) => t.emit(w, cx),
             Node::EnumDefinition(e) => e.emit(w, cx),

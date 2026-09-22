@@ -93,6 +93,37 @@ impl Resolver {
                     }
                 }
             }
+            // Conformance-edge population (`impl T : Contract`) is added by a later slice;
+            // this arm resolves the receiver type and methods only, matching `ExtendTypeDefinition`.
+            Node::ImplBlock(def) => {
+                self.resolve_type(&def.node.receiver_type);
+                for conformance in &def.node.conformances {
+                    self.resolve_type_path(conformance);
+                }
+                for method in &def.node.methods {
+                    self.resolve_type(&method.node.receiver_type);
+                    let previous_receiver = self.current_receiver_item_id;
+                    if include_bodies {
+                        self.push_scope();
+                        self.current_receiver_item_id = self.receiver_item_id_for_type(&method.node.receiver_type);
+                        self.insert_local("this", method.node.receiver_type.span);
+                    }
+                    for param in &method.node.parameters {
+                        self.resolve_type(&param.node.ty);
+                        if include_bodies {
+                            self.insert_local(&param.node.name.node.name, param.node.name.span);
+                        }
+                    }
+                    if let Some(return_type) = &method.node.return_type {
+                        self.resolve_type(return_type);
+                    }
+                    if include_bodies {
+                        self.resolve_block(&method.node.body);
+                        self.current_receiver_item_id = previous_receiver;
+                        self.pop_scope();
+                    }
+                }
+            }
             Node::TestDefinition(def) => {
                 if !include_bodies {
                     return;

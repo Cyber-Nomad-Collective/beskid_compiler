@@ -36,6 +36,7 @@ node_kinds!(
     WithStatement,
     LaunchStatement,
     MethodDefinition,
+    ImplBlock,
     ExtendTypeDefinition,
     TypeDefinition,
     EnumDefinition,

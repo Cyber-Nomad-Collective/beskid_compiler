@@ -63,6 +63,11 @@ impl<'a> TypeSurfaceBuilder<'a> {
         for item in &program.node.items {
             match &item.node {
                 Node::Method(def) => self.seed_method_receiver(item.span, def),
+                Node::ImplBlock(def) => {
+                    for method in &def.node.methods {
+                        self.seed_method_receiver(method.span, method);
+                    }
+                }
                 Node::ExtendTypeDefinition(def) => {
                     for method in &def.node.methods {
                         self.seed_method_receiver(method.span, method);

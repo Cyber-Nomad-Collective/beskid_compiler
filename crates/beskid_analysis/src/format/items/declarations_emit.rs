@@ -248,6 +248,17 @@ impl Emit for ImplBlock {
         cx.token(w, "impl")?;
         cx.space(w)?;
         self.receiver_type.emit(w, cx)?;
+        if !self.conformances.is_empty() {
+            cx.space(w)?;
+            w.write_char(':')?;
+            cx.space(w)?;
+            for (i, c) in self.conformances.iter().enumerate() {
+                if i > 0 {
+                    cx.token(w, ", ")?;
+                }
+                c.emit(w, cx)?;
+            }
+        }
         if self.methods.is_empty() {
             cx.space(w)?;
             w.write_str("{ }")?;

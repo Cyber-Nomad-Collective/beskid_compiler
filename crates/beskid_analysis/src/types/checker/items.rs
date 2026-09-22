@@ -150,6 +150,7 @@ impl<'a> TypeChecker<'a> {
             match &item.node {
                 Node::Function(_)
                 | Node::Method(_)
+                | Node::ImplBlock(_)
                 | Node::ExtendTypeDefinition(_)
                 | Node::TypeDefinition(_)
                 | Node::TestDefinition(_) => {
@@ -202,6 +203,12 @@ impl<'a> TypeChecker<'a> {
             }
             Node::Method(def) => {
                 self.type_method_definition(item.span, def);
+            }
+            Node::ImplBlock(def) => {
+                self.type_id_for_type(&def.node.receiver_type);
+                for method in &def.node.methods {
+                    self.type_method_definition(method.span, method);
+                }
             }
             Node::ExtendTypeDefinition(def) => {
                 self.type_id_for_type(&def.node.target_type);

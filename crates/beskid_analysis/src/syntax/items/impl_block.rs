@@ -6,13 +6,21 @@ use crate::parsing::error::ParseError;
 use crate::parsing::parsable::Parsable;
 use crate::syntax::items::method_definition::parse_receiver_type;
 use crate::syntax::items::parse_helpers::parse_doc_attached_with;
-use crate::syntax::{MethodDefinition, SpanInfo, Spanned, Type};
+use crate::syntax::{MethodDefinition, Path, SpanInfo, Spanned, Type};
 
-/// `impl` block for a concrete receiver type and its methods (with per-method leading docs).
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+use beskid_ast_derive::AstNode;
+
+/// `impl` block for a concrete receiver type and its methods (with per-method leading docs),
+/// optionally naming the contracts it conforms to (`impl T : Contract { ... }`).
+#[derive(AstNode, Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ImplBlock {
+    #[ast(child)]
     pub receiver_type: Spanned<Type>,
+    #[ast(children)]
+    pub conformances: Vec<Spanned<Path>>,
+    #[ast(children)]
     pub methods: Vec<Spanned<MethodDefinition>>,
+    #[ast(skip)]
     pub method_docs: Vec<Option<LeadingDocComment>>,
 }
 
@@ -24,16 +32,22 @@ impl Parsable for ImplBlock {
         let receiver_pair = inner.next().ok_or(ParseError::missing(Rule::ReceiverType))?;
         let receiver_type = parse_receiver_type(receiver_pair)?;
 
+        let mut conformances = Vec::new();
         let mut methods = Vec::new();
         let mut method_docs = Vec::new();
-        for method_pair in inner {
-            let (doc_opt, method) = parse_doc_attached_with(method_pair, Rule::ImplMethodWithDocs, |inner_pair| {
+        for item_pair in inner {
+            if item_pair.as_rule() == Rule::ImplConformanceList {
+                let path_list = item_pair.into_inner().next().ok_or(ParseError::missing(Rule::PathList))?;
+                conformances = path_list.into_inner().map(Path::parse).collect::<Result<Vec<_>, _>>()?;
+                continue;
+            }
+            let (doc_opt, method) = parse_doc_attached_with(item_pair, Rule::ImplMethodWithDocs, |inner_pair| {
                 MethodDefinition::parse_with_receiver(inner_pair, receiver_type.clone())
             })?;
             methods.push(method);
             method_docs.push(doc_opt);
         }
 
-        Ok(Spanned::new(Self { receiver_type, methods, method_docs }, span))
+        Ok(Spanned::new(Self { receiver_type, conformances, methods, method_docs }, span))
     }
 }

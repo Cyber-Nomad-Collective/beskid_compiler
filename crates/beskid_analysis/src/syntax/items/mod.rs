@@ -38,6 +38,7 @@ pub use host_definition::{
     HostBodyItem, HostDefinition, InjectQualifier, LaunchStatement, RegistrationLifetime, RegistryBlock, RegistryEntry,
     ScopeDefinition, ScopeHook, ScopeHookKind, WithStatement,
 };
+pub use impl_block::ImplBlock;
 pub use inline_module::InlineModule;
 pub use macro_definition::{MacroDefinition, MacroFragmentKind, MacroParameter};
 pub use method_definition::MethodDefinition;

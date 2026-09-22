@@ -118,6 +118,7 @@ pub fn collect_document_symbols(snapshot: &DocumentAnalysisSnapshot) -> Vec<Docu
                 selection_end: definition.node.name.span.end,
             }),
             Node::ExtendTypeDefinition(_) => None,
+            Node::ImplBlock(_) => None,
             Node::TestDefinition(definition) => Some(DocumentSymbolInfo {
                 name: definition.node.name.node.name.clone(),
                 kind: AnalysisSymbolKind::Test,
