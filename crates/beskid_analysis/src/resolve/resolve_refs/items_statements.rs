@@ -242,6 +242,10 @@ impl Resolver {
                 self.pop_generic_scope();
             }
             Node::ContractDefinition(def) => {
+                self.push_generic_scope();
+                for generic in &def.node.generics {
+                    self.insert_generic(&generic.node.name);
+                }
                 for node in &def.node.items {
                     match &node.node {
                         ContractNode::MethodSignature(signature) => {
@@ -252,9 +256,14 @@ impl Resolver {
                                 self.resolve_type(return_type);
                             }
                         }
-                        ContractNode::Embedding(_) => {}
+                        ContractNode::Embedding(embedding) => {
+                            for type_arg in &embedding.node.type_args {
+                                self.resolve_type(type_arg);
+                            }
+                        }
                     }
                 }
+                self.pop_generic_scope();
             }
             Node::AttributeDeclaration(_) => {}
             Node::ModuleDeclaration(_) | Node::UseDeclaration(_) => {}

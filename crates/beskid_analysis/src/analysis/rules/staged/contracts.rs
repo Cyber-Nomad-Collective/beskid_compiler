@@ -3,7 +3,7 @@ use crate::analysis::diagnostic_kinds::SemanticIssueKind;
 use crate::analysis::rules::RuleContext;
 use crate::resolve::Resolution;
 use crate::syntax::Spanned;
-use crate::syntax::{ContractNode, Node, Program, Type};
+use crate::syntax::{ContractNode, Node, Path, Program, Type};
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 
@@ -30,6 +30,53 @@ impl MethodSignature {
             parameter_types: parameters.iter().map(|param| param.node.ty.node.clone()).collect(),
             return_type: return_type.map(|ty| ty.node.clone()),
         }
+    }
+
+    /// Replaces the contract's own generic parameter names (e.g. `T`) with the concrete type
+    /// arguments supplied at the conformance site (`Box<i32>` -> `T` becomes `i32`), so a
+    /// generic contract's expected signature is compared against the implementor's concrete
+    /// one, not against the bare, unresolved generic-parameter name.
+    fn substitute(&self, subst: &HashMap<String, Type>) -> Self {
+        if subst.is_empty() {
+            return self.clone();
+        }
+        Self {
+            parameter_types: self.parameter_types.iter().map(|ty| substitute_type(ty, subst)).collect(),
+            return_type: self.return_type.as_ref().map(|ty| substitute_type(ty, subst)),
+        }
+    }
+}
+
+/// Structural substitution of generic-parameter names in a declared syntax `Type`. Only the
+/// contract's own generic parameters (single-segment, no-args `Type::Complex` paths named in
+/// `subst`) are replaced; every other shape recurses.
+fn substitute_type(ty: &Type, subst: &HashMap<String, Type>) -> Type {
+    match ty {
+        Type::Complex(path) => {
+            if let [segment] = path.node.segments.as_slice()
+                && segment.node.type_args.is_empty()
+                && let Some(replacement) = subst.get(segment.node.name.node.name.as_str())
+            {
+                return replacement.clone();
+            }
+            let mut substituted_path = path.clone();
+            for segment in &mut substituted_path.node.segments {
+                for arg in &mut segment.node.type_args {
+                    arg.node = substitute_type(&arg.node, subst);
+                }
+            }
+            Type::Complex(substituted_path)
+        }
+        Type::Array(element) => {
+            let mut element = element.clone();
+            element.node = substitute_type(&element.node, subst);
+            Type::Array(element)
+        }
+        Type::Function { return_type, parameters } => Type::Function {
+            return_type: Box::new(Spanned::new(substitute_type(&return_type.node, subst), return_type.span)),
+            parameters: parameters.iter().map(|p| Spanned::new(substitute_type(&p.node, subst), p.span)).collect(),
+        },
+        Type::Primitive(_) | Type::Associated { .. } => ty.clone(),
     }
 }
 
@@ -132,7 +179,15 @@ impl SemanticPipelineRule {
                 let Some(expected_methods) = contracts.get(&contract_name) else {
                     continue;
                 };
+                let generics = self.contract_generics(program, &contract_name);
+                let expected_type_args = if generics.is_empty() {
+                    Vec::new()
+                } else {
+                    self.conformance_type_args(program, &type_name, &contract_name)
+                };
+                let subst: HashMap<String, Type> = generics.into_iter().zip(expected_type_args).collect();
                 for (method_name, expected) in expected_methods {
+                    let expected = expected.substitute(&subst);
                     let actual = self.impl_method_signature_for_type(program, &type_name, method_name.as_str());
                     let Some(actual) = actual else {
                         ctx.emit_issue(
@@ -145,7 +200,7 @@ impl SemanticPipelineRule {
                         );
                         continue;
                     };
-                    if &actual != expected {
+                    if actual != expected {
                         ctx.emit_issue(
                             *conformance_span,
                             SemanticIssueKind::ContractImplementationSignatureMismatch {
@@ -158,6 +213,56 @@ impl SemanticPipelineRule {
                 }
             }
         }
+    }
+
+    /// The contract's own generic parameter names, in declaration order (empty for a
+    /// non-generic contract).
+    fn contract_generics(&self, program: &Spanned<Program>, contract_name: &str) -> Vec<String> {
+        program
+            .node
+            .items
+            .iter()
+            .find_map(|item| match &item.node {
+                Node::ContractDefinition(def) if def.node.name.node.name == contract_name => {
+                    Some(def.node.generics.iter().map(|generic| generic.node.name.clone()).collect())
+                }
+                _ => None,
+            })
+            .unwrap_or_default()
+    }
+
+    /// The concrete type arguments supplied at a `type X : Contract<Arg, ...>` or
+    /// `impl X : Contract<Arg, ...>` conformance site, in declaration order (empty when the
+    /// contract is not generic or was embedded without type arguments).
+    fn conformance_type_args(&self, program: &Spanned<Program>, type_name: &str, contract_name: &str) -> Vec<Type> {
+        for item in &program.node.items {
+            let conformances: &[Spanned<Path>] = match &item.node {
+                Node::TypeDefinition(def) if def.node.name.node.name == type_name => &def.node.conformances,
+                Node::ImplBlock(impl_block) => {
+                    let Type::Complex(receiver_path) = &impl_block.node.receiver_type.node else {
+                        continue;
+                    };
+                    let Some(receiver_name) =
+                        receiver_path.node.segments.last().map(|segment| segment.node.name.node.name.as_str())
+                    else {
+                        continue;
+                    };
+                    if receiver_name != type_name {
+                        continue;
+                    }
+                    &impl_block.node.conformances
+                }
+                _ => continue,
+            };
+            for conformance in conformances {
+                if let Some(last_segment) = conformance.node.segments.last()
+                    && last_segment.node.name.node.name == contract_name
+                {
+                    return last_segment.node.type_args.iter().map(|arg| arg.node.clone()).collect();
+                }
+            }
+        }
+        Vec::new()
     }
 
     fn collect_contract_signatures(&self, program: &Spanned<Program>) -> HashMap<String, HashMap<String, MethodSignature>> {
@@ -410,6 +515,109 @@ mod tests {
         assert!(
             result.diagnostics.iter().any(|diagnostic| diagnostic.code.as_deref() == Some("E1602")),
             "a return-type mismatch with equal arity must be flagged E1602 (signature mismatch); got: {:?}",
+            result.diagnostics
+        );
+    }
+
+    /// `stage2_type_check` in the `run_rules`/`analyze()` diagnostics pipeline is structural
+    /// immutability checks only ("full type-check runs in the lower spine" -- its own doc
+    /// comment); the real `TypeChecker` (where `type_id_for_path_with_args`'s generic-arity
+    /// check lives) is driven separately through `resolve_and_type_program`. Arity assertions
+    /// use that driver directly instead of `analyze()`, which can never see a `TypeError`.
+    fn resolve_and_type(source: &str) -> Result<crate::types::TypeResult, Vec<crate::types::result::TypeError>> {
+        let program = crate::services::parse_program(source).expect("source should parse");
+        match crate::services::resolve_and_type_program(&program) {
+            Ok((_, _, typed)) => Ok(typed),
+            Err(crate::services::SemanticFactsError::Type { errors, .. }) => Err(errors),
+            Err(other) => panic!("expected type-check to run (resolution must succeed first); got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn generic_contract_conformance_with_too_many_type_arguments_is_rejected() {
+        // `Box<T>` declares exactly one generic parameter; supplying two type arguments at the
+        // conformance site must be caught as a generic-argument-count mismatch (E1204 at the
+        // diagnostics layer), the same mechanism `type X<T> { }` already uses for its own
+        // generic arity (task 3.1's "reuses the same mechanism as Gap 2 GenericArgumentMismatch").
+        let source = r#"
+            contract Box<T> {
+                T Get();
+            }
+
+            type Container : Box<i32, i32> {
+                i32 Get() {
+                    return 0;
+                }
+            }
+        "#;
+
+        let errors = resolve_and_type(source).expect_err(
+            "a 1-param generic contract conformance supplied with 2 type arguments must be rejected",
+        );
+
+        assert!(
+            errors.iter().any(|error| matches!(
+                error,
+                crate::types::result::TypeError::GenericArgumentMismatch { expected: 1, actual: 2, .. }
+            )),
+            "expected a GenericArgumentMismatch{{expected: 1, actual: 2}}; got: {errors:?}"
+        );
+    }
+
+    #[test]
+    fn generic_contract_conformance_with_the_correct_arity_type_checks_cleanly() {
+        // The positive case for the same mechanism: `Box<i32>` supplies exactly the one type
+        // argument `Box<T>` declares, so no generic-argument-count mismatch is raised.
+        let source = r#"
+            contract Box<T> {
+                T Get();
+            }
+
+            type Container : Box<i32> {
+                i32 Get() {
+                    return 0;
+                }
+            }
+        "#;
+
+        let result = resolve_and_type(source);
+        assert!(
+            result.is_ok(),
+            "a correctly-arity'd generic contract conformance must type-check cleanly; got: {result:?}"
+        );
+    }
+
+    #[test]
+    fn generic_contract_type_parameter_resolves_inside_its_own_method_signatures() {
+        // `T` inside `Box<T>`'s own method signature must resolve to the contract's own generic
+        // parameter (not an unresolved/global type), so a correctly-arity'd conformance produces
+        // no spurious generic-argument-count diagnostic.
+        let source = r#"
+            contract Box<T> {
+                T Get();
+            }
+
+            type Container : Box<i32> {
+                i32 Get() {
+                    return 0;
+                }
+            }
+        "#;
+
+        let result = analyze(source);
+
+        assert!(
+            !result.diagnostics.iter().any(|diagnostic| diagnostic.code.as_deref() == Some("E1204")),
+            "a correctly-arity'd generic contract conformance must not be flagged; got: {:?}",
+            result.diagnostics
+        );
+        assert!(
+            !result
+                .diagnostics
+                .iter()
+                .any(|diagnostic| matches!(diagnostic.code.as_deref(), Some("E1005") | Some("E1201"))),
+            "`T` inside `Box<T>`'s own method signature must resolve to the contract's own \
+             generic parameter, not an unresolved/global type; got: {:?}",
             result.diagnostics
         );
     }

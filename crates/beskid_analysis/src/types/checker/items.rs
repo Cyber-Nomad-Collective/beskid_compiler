@@ -1,5 +1,5 @@
-use crate::resolve::ItemId;
-use crate::syntax::{Node, PrimitiveType, Program, Type, TypeDefinition};
+use crate::resolve::{ItemId, ItemKind};
+use crate::syntax::{ContractNode, Node, PrimitiveType, Program, Type, TypeDefinition};
 use crate::syntax::{SpanInfo, Spanned};
 use crate::types::TypeId;
 use crate::types::result::{FunctionSignature, TypeError};
@@ -206,6 +206,9 @@ impl<'a> TypeChecker<'a> {
             }
             Node::ImplBlock(def) => {
                 self.type_id_for_type(&def.node.receiver_type);
+                for conformance in &def.node.conformances {
+                    self.type_id_for_path_with_args(conformance);
+                }
                 for method in &def.node.methods {
                     self.type_method_definition(method.span, method);
                 }
@@ -241,6 +244,9 @@ impl<'a> TypeChecker<'a> {
                     let type_id = self.type_table.intern(crate::types::TypeInfo::GenericParam(name.clone()));
                     self.generic_params.insert(name.clone(), type_id);
                     inserted.push(name);
+                }
+                for conformance in &def.node.conformances {
+                    self.type_id_for_path_with_args(conformance);
                 }
                 self.register_struct_definition_fields(item.span, &def.node, true);
                 for method in &def.node.methods {
@@ -282,7 +288,47 @@ impl<'a> TypeChecker<'a> {
                     self.generic_params.remove(&name);
                 }
             }
-            Node::ContractDefinition(_) => {}
+            Node::ContractDefinition(def) => {
+                let mut inserted = Vec::new();
+                for generic in &def.node.generics {
+                    let name = generic.node.name.clone();
+                    let type_id = self.type_table.intern(crate::types::TypeInfo::GenericParam(name.clone()));
+                    self.generic_params.insert(name.clone(), type_id);
+                    inserted.push(name);
+                }
+                for contract_item in &def.node.items {
+                    match &contract_item.node {
+                        ContractNode::MethodSignature(signature) => {
+                            for param in &signature.node.parameters {
+                                self.type_id_for_type_in_generic_scope(&param.node.ty);
+                            }
+                            if let Some(return_type) = &signature.node.return_type {
+                                self.type_id_for_type_in_generic_scope(return_type);
+                            }
+                        }
+                        ContractNode::Embedding(embedding) => {
+                            if !embedding.node.type_args.is_empty()
+                                && let Some(embedded_id) =
+                                    self.item_id_for_name(&embedding.node.name.node.name, ItemKind::Contract)
+                                && let Some(expected) = self.generic_items.get(&embedded_id)
+                                && expected.len() != embedding.node.type_args.len()
+                            {
+                                self.errors.push(TypeError::GenericArgumentMismatch {
+                                    span: embedding.span,
+                                    expected: expected.len(),
+                                    actual: embedding.node.type_args.len(),
+                                });
+                            }
+                            for type_arg in &embedding.node.type_args {
+                                self.type_id_for_type_in_generic_scope(type_arg);
+                            }
+                        }
+                    }
+                }
+                for name in inserted {
+                    self.generic_params.remove(&name);
+                }
+            }
             Node::AttributeDeclaration(_) => {}
             Node::InlineModule(def) => {
                 for item in &def.node.items {

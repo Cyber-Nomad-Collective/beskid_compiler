@@ -227,6 +227,7 @@ impl<'a> TypeChecker<'a> {
                 Node::Function(def) => (item.span, &def.node.generics),
                 Node::TypeDefinition(def) => (item.span, &def.node.generics),
                 Node::EnumDefinition(def) => (item.span, &def.node.generics),
+                Node::ContractDefinition(def) => (item.span, &def.node.generics),
                 Node::InlineModule(m) => {
                     self.seed_generics_from_items(&m.node.items);
                     continue;

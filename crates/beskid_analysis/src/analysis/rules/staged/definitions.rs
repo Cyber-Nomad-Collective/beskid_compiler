@@ -228,7 +228,7 @@ impl SemanticPipelineRule {
         }
 
         for definition in Query::from(&program.node).of::<crate::syntax::ContractDefinition>() {
-            let generic_names = HashSet::new();
+            let generic_names = self.collect_generic_names(&definition.generics);
             for signature in Query::from(definition).of::<crate::syntax::ContractMethodSignature>() {
                 for parameter in &signature.parameters {
                     Self::validate_type_reference(ctx, &parameter.node.ty, &known_types, &generic_names);
