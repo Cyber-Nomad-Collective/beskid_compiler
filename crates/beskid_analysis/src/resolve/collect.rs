@@ -110,6 +110,8 @@ impl Resolver {
         source_path: Option<&PathBuf>,
     ) {
         self.module_imports.clear();
+        self.imported_scope_origins.clear();
+        self.module_import_origins.clear();
         self.current_source_path = source_path.map(|path| crate::paths::unit_path_key(path));
         if resolver::file_scoped_module_index(program).is_some() {
             self.collect_program(program);
@@ -121,6 +123,8 @@ impl Resolver {
 
     pub fn collect_program(&mut self, program: &Spanned<crate::syntax::Program>) {
         self.module_imports.clear();
+        self.imported_scope_origins.clear();
+        self.module_import_origins.clear();
         let file_scoped_module_index = resolver::file_scoped_module_index(program);
         self.current_module = resolver::file_scoped_module_path(program)
             .map(|path| self.module_graph.ensure_module_path(&path))
@@ -135,6 +139,8 @@ impl Resolver {
         logical_module_path: Option<&[String]>,
     ) {
         self.module_imports.clear();
+        self.imported_scope_origins.clear();
+        self.module_import_origins.clear();
         let file_scoped_module_index = resolver::file_scoped_module_index(program);
         self.current_module = logical_module_path
             .map(|path| self.module_graph.ensure_module_path(path))
@@ -228,9 +234,16 @@ impl Resolver {
             Node::HostDefinition(_) => {
                 return;
             }
-            // Module constants are resolved by generation-bound syntax facts, never as a
-            // callable or allocatable legacy resolver item.
-            Node::ConstantDefinition(_) => {
+            // Preserve the literal fact without inventing a callable item or storage slot.
+            Node::ConstantDefinition(definition) => {
+                let key = (self.current_module, definition.node.name.node.name.clone());
+                if let Some(previous) = self.constants.insert(key, definition.node.value.clone()) {
+                    self.errors.push(ResolveError::DuplicateItem {
+                        name: definition.node.name.node.name.clone(),
+                        span: item.span,
+                        previous: previous.span,
+                    });
+                }
                 return;
             }
             Node::Function(def) => {
@@ -399,12 +412,13 @@ impl Resolver {
                 .push(ResolveError::UnknownModulePath { path: module_path.join("::"), span: def.node.path.span });
             return;
         }
-        self.module_imports.insert(alias, module_path.clone());
-        self.import_public_items_from_module(&module_path);
+        self.module_imports.insert(alias.clone(), module_path.clone());
+        self.module_import_origins.insert(alias, def.node.path.span);
+        self.import_public_items_from_module(&module_path, def.node.path.span);
     }
 
     /// Bring public items from a used module into the current module scope (types, enums, functions).
-    fn import_public_items_from_module(&mut self, module_path: &[String]) {
+    fn import_public_items_from_module(&mut self, module_path: &[String], origin_span: syntax::SpanInfo) {
         let Some(target_module_id) = self.module_graph.module_id(module_path) else {
             return;
         };
@@ -428,10 +442,23 @@ impl Resolver {
             })
             .collect();
         for (name, item_id) in imports {
-            if let Some(_prev) = self.module_graph.insert_item(self.current_module, name, item_id) {
+            if let Some(_prev) = self.module_graph.insert_item(self.current_module, name.clone(), item_id) {
                 // Import collides with an existing local declaration — silently skip
                 continue;
             }
+            self.imported_scope_origins.insert(name, origin_span);
+        }
+    }
+
+    pub(crate) fn mark_imported_scope_name_used(&mut self, name: &str) {
+        if let Some(span) = self.imported_scope_origins.get(name) {
+            self.tables.used_import_spans.insert(*span);
+        }
+    }
+
+    pub(crate) fn mark_module_import_alias_used(&mut self, alias: &str) {
+        if let Some(span) = self.module_import_origins.get(alias) {
+            self.tables.used_import_spans.insert(*span);
         }
     }
 
@@ -533,5 +560,39 @@ mod tests {
 
         let resolution = resolver.resolve_program(&entry).expect("resolve entry with implicit Core namespace");
         assert_eq!(resolution.module_imports.get("Core"), Some(&vec!["Core".to_owned()]));
+    }
+
+    #[test]
+    fn records_the_exact_use_declaration_that_supplies_a_public_item() {
+        let results =
+            parse_program("pub enum Result<T, E> { Ok(T value), Error(E error) }").expect("parse Core.Results");
+        let errors = parse_program("pub enum NetworkError { Closed() }").expect("parse Network.Errors");
+        let entry = parse_program(
+            "use Core.Results; use Network.Errors; Result<unit, NetworkError> Main() { return Result::Ok(()); }",
+        )
+        .expect("parse entry");
+        let use_spans = entry
+            .node
+            .items
+            .iter()
+            .filter_map(|item| match &item.node {
+                crate::syntax::Node::UseDeclaration(use_decl) => Some(use_decl.node.path.span),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+
+        let mut resolver = Resolver::new();
+        resolver.collect_program_in_module(&results, &["Core".to_owned(), "Results".to_owned()], None);
+        resolver.collect_program_in_module(&errors, &["Network".to_owned(), "Errors".to_owned()], None);
+
+        let resolution = resolver.resolve_program(&entry).expect("resolve imported public items");
+
+        assert_eq!(resolution.tables.used_import_spans.len(), 2);
+        for span in use_spans {
+            assert!(
+                resolution.tables.used_import_spans.contains(&span),
+                "resolved imported declaration must retain its originating use span: {span:?}"
+            );
+        }
     }
 }

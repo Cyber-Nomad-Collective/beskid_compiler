@@ -86,6 +86,7 @@ pub(in super::super) fn materialized_corelib_syscall_fixture()
     );
     let generation = SyntaxGenerationId(97);
     let assembly = ProgramAssembly {
+        runtime_fixture: None,
         roots: EffectiveCompilationRoots {
             host: RootEntry { dependency_name: None, source_root: directory.clone() },
             dependencies: vec![RootEntry {
@@ -152,6 +153,7 @@ pub(in super::super) fn core_args_fixture(
     );
     let generation = SyntaxGenerationId(98);
     let assembly = ProgramAssembly {
+        runtime_fixture: None,
         roots: EffectiveCompilationRoots {
             host: RootEntry { dependency_name: None, source_root },
             dependencies: Vec::new(),

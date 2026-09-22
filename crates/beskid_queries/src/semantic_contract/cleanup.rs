@@ -23,6 +23,7 @@ pub enum ScopedCleanupDiagnostic {
 pub enum ScopedAcquisition {
     FreshConstruction(AstNodeKey),
     FreshFactory(AstNodeKey),
+    FreshTry(AstNodeKey),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
@@ -231,7 +232,8 @@ fn scoped_acquisition(
     let node = index.direct_child_id(program, fact.binding.node, DynNodeRef::from(&binding.value))?;
     let expression = AstNodeKey { node: normalized_expression_node(index, node), ..fact.binding };
     let mut constructed = false;
-    if !fresh_cleanup_expression(db, expression, resource, &mut HashSet::new(), &mut constructed) || !constructed {
+    if !fresh_cleanup_expression(db, expression, resource, None, &mut HashSet::new(), &mut constructed) || !constructed
+    {
         return None;
     }
     match index.kind(expression.node)? {
@@ -240,14 +242,23 @@ fn scoped_acquisition(
             CallLowering::Direct(factory) => Some(ScopedAcquisition::FreshFactory(factory)),
             _ => None,
         },
+        NodeKind::TryExpression => Some(ScopedAcquisition::FreshTry(expression)),
         _ => None,
     }
+}
+
+/// A validated `?` supplies the exact Result identity. Only its Ok payload can
+/// acquire ownership; Error exits before there is a scoped resource to dispose.
+struct FreshResultSuccess {
+    identity: GenericSourceTypeIdentity,
+    declaration: AstNodeKey,
 }
 
 fn fresh_cleanup_expression(
     db: &dyn Db,
     expression: AstNodeKey,
     resource: AstNodeKey,
+    result: Option<&FreshResultSuccess>,
     visited: &mut HashSet<AstNodeKey>,
     constructed: &mut bool,
 ) -> bool {
@@ -256,7 +267,47 @@ fn fresh_cleanup_expression(
     };
     let index = syntax.syntax_index(db);
     let expression = AstNodeKey { node: normalized_expression_node(index, expression.node), ..expression };
-    if index.kind(expression.node) == Some(NodeKind::StructLiteralExpression) {
+    if let Some(result) = result {
+        if generic_source_expression_identity(db, expression).ok().as_ref() != Some(&result.identity) {
+            return false;
+        }
+        if index.kind(expression.node) == Some(NodeKind::EnumConstructorExpression) {
+            let Some(constructor) = enum_constructor(db, expression).ok().flatten() else {
+                return false;
+            };
+            if constructor.declaration != result.declaration {
+                return false;
+            }
+            return match (constructor.variant_index, constructor.payloads.as_ref()) {
+                (0, [payload]) => fresh_cleanup_expression(db, *payload, resource, None, visited, constructed),
+                // A propagated error is not evidence of fresh ownership. The caller
+                // still requires at least one concrete successful construction leaf.
+                (1, [_]) => true,
+                _ => false,
+            };
+        }
+    } else if index.kind(expression.node) == Some(NodeKind::TryExpression) {
+        let Some(fact) = try_expression_fact(db, expression).ok().flatten() else {
+            return false;
+        };
+        if contracts::concrete_declaration(db, expression, &fact.payload_identity) != Some(resource) {
+            return false;
+        }
+        let Ok(identity) = generic_source_expression_identity(db, fact.operand) else {
+            return false;
+        };
+        let Ok((declaration, _)) = layouts::enum_layout_for_source_identity(db, fact.operand, &identity) else {
+            return false;
+        };
+        return fresh_cleanup_expression(
+            db,
+            fact.operand,
+            resource,
+            Some(&FreshResultSuccess { identity, declaration }),
+            visited,
+            constructed,
+        );
+    } else if index.kind(expression.node) == Some(NodeKind::StructLiteralExpression) {
         let fresh = aggregate_literal_declaration(db, expression).ok().flatten() == Some(resource);
         *constructed |= fresh;
         return fresh;
@@ -265,7 +316,9 @@ fn fresh_cleanup_expression(
         return false;
     };
     if !visited.insert(factory) {
-        return true;
+        // Preserve the existing direct-factory policy, but do not infer a fresh
+        // Result success through a cyclic fallible factory.
+        return result.is_none();
     }
     let Some(syntax) = db.syntax_unit(factory.unit).filter(|syntax| syntax.accepts_key(db, factory)) else {
         return false;
@@ -293,7 +346,7 @@ fn fresh_cleanup_expression(
     if returns.is_empty() {
         return false;
     }
-    returns.into_iter().all(|node| {
+    let fresh = returns.into_iter().all(|node| {
         let value = index
             .node_at(program, node)
             .and_then(|node| node.of::<beskid_analysis::syntax::ReturnStatement>())
@@ -304,8 +357,12 @@ fn fresh_cleanup_expression(
         let Some(value) = index.direct_child_id(program, node, DynNodeRef::from(value)) else {
             return false;
         };
-        fresh_cleanup_expression(db, AstNodeKey { node: value, ..factory }, resource, visited, constructed)
-    })
+        fresh_cleanup_expression(db, AstNodeKey { node: value, ..factory }, resource, result, visited, constructed)
+    });
+    if result.is_some() {
+        visited.remove(&factory);
+    }
+    fresh
 }
 
 fn scoped_resource_escape(

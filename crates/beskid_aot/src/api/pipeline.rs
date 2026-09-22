@@ -6,12 +6,13 @@ use cargo_cross::env::sanitize_cargo_env;
 
 use crate::error::{AotError, AotResult};
 use crate::linker::{LinkRequest, link};
+use crate::object_module::EXECUTABLE_PROGRAM_ENTRY;
 use crate::runtime::{RuntimeBuildRequest, prepare_runtime};
-use crate::target::detect_target;
+use crate::runtime::merged_link_libraries;
 
 use super::model::{AotBuildRequest, AotBuildResult, BuildOutputKind};
 use super::object_stage::{ObjectStageResult, emit_object_stage};
-use super::validation::{core_args_entry_adapter, native_link_entrypoint, requires_entrypoint, validate_request};
+use super::validation::{native_link_entrypoint, requires_entrypoint, validate_request};
 /// Emit a single object file; fails unless `req.output_kind` is [`BuildOutputKind::ObjectOnly`].
 pub fn emit_object_only(req: AotBuildRequest) -> AotResult<AotBuildResult> {
     if req.output_kind != BuildOutputKind::ObjectOnly {
@@ -41,7 +42,7 @@ pub fn build(req: AotBuildRequest) -> AotResult<AotBuildResult> {
     }
 
     if requires_entrypoint(req.output_kind) {
-        ensure_entrypoint_exported(&req, &object_stage.exported_symbols)?;
+        ensure_entrypoint_emitted(&req, &object_stage)?;
     }
     let runtime = prepare_runtime_stage(&req)?;
     let link_result = link_stage(&req, &object_stage, &runtime)?;
@@ -54,24 +55,11 @@ pub fn build(req: AotBuildRequest) -> AotResult<AotBuildResult> {
     })
 }
 
-fn ensure_entrypoint_exported(req: &AotBuildRequest, exported_symbols: &[String]) -> AotResult<()> {
-    let target = detect_target(req.target_triple.as_deref())?;
-    if let Some(adapter) = core_args_entry_adapter(&req.artifact, &target.triple)?
-        && exported_symbols.iter().any(|symbol| symbol == adapter.program_entry)
-    {
+fn ensure_entrypoint_emitted(req: &AotBuildRequest, object_stage: &ObjectStageResult) -> AotResult<()> {
+    if object_stage.executable_program_entry.as_deref() == Some(EXECUTABLE_PROGRAM_ENTRY) {
         return Ok(());
     }
-    let native = native_link_entrypoint(&req.entrypoint);
-    if exported_symbols.iter().any(|sym| symbol_matches_entrypoint(sym, &req.entrypoint, native)) {
-        return Ok(());
-    }
-
     Err(AotError::MissingEntrypoint { symbol: req.entrypoint.clone() })
-}
-fn symbol_matches_entrypoint(symbol: &str, entrypoint: &str, native: &str) -> bool {
-    symbol == entrypoint
-        || symbol == native
-        || symbol.strip_prefix(entrypoint).is_some_and(|suffix| suffix.starts_with('#'))
 }
 
 fn prepare_runtime_stage(req: &AotBuildRequest) -> AotResult<crate::runtime::RuntimeArtifact> {
@@ -97,13 +85,13 @@ fn link_stage(
             runtime_staticlib: Some(runtime.staticlib_path.clone()),
             host_staticlib: None,
             entrypoint_symbol: object_stage
-                .executable_entry
+                .executable_program_entry
                 .clone()
                 .unwrap_or_else(|| native_link_entrypoint(&req.entrypoint).to_owned()),
             exported_symbols: object_stage.exported_symbols.clone(),
             link_mode: req.link_mode,
             verbose: req.verbose_link,
-            external_libraries: req.external_libraries.clone(),
+            external_libraries: merged_link_libraries(&req.external_libraries, &runtime.platform_libraries),
             library_search_paths: req.library_search_paths.clone(),
         })
     })

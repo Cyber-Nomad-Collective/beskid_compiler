@@ -19,7 +19,9 @@
 #include <time.h>
 #include <unistd.h>
 
+#define BESKID_NETWORK_TRANSPORT 1
 #include "../common/external_wait.h"
+#include "../common/network_posix.h"
 
 struct BeskidStr {
   const uint8_t *ptr;

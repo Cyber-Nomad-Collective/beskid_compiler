@@ -111,7 +111,24 @@ pub(in crate::semantic_contract) fn call_arguments_tracked(
             ) else {
                 return Some(Err(SemanticError::unavailable("call_arguments")));
             };
-            arguments.push(AstNodeKey { node: normalized_expression_node(index, callee), ..key });
+            // A field-chain receiver is denoted by its own path segment; only an unqualified
+            // local receiver is carried by the callee path expression itself.
+            let receiver = if path.node.path.node.segments.len() > 2 {
+                nominal_local_member_receiver(db, program, index, key, &path.node.path.node)?.1
+            } else {
+                let implicit_field_root = path.node.path.node.segments.first().is_some_and(|segment| {
+                    nominal_local_receiver_declaration(db, program, index, key, segment.node.name.node.name.as_str())
+                        .is_none()
+                });
+                match implicit_field_root
+                    .then(|| nominal_local_member_receiver(db, program, index, key, &path.node.path.node))
+                    .flatten()
+                {
+                    Some((_, receiver)) => receiver,
+                    None => AstNodeKey { node: normalized_expression_node(index, callee), ..key },
+                }
+            };
+            arguments.push(receiver);
         }
         let explicit = match call
             .args
@@ -205,40 +222,70 @@ pub(in crate::semantic_contract) fn try_expression_fact_for_node(
     key: AstNodeKey,
     node: beskid_analysis::syntax_query::DynNodeRef<'_>,
 ) -> Result<TryExpressionFact, SemanticError> {
-    let (operand, declaration) = try_operand_parameter_declaration(program, index, key, node)?;
-    let parameter = parent_node(index, declaration)
-        .filter(|parent| index.kind(*parent) == Some(beskid_analysis::syntax_query::NodeKind::Parameter))
-        .and_then(|parent| {
-            index.node_at(program, parent).and_then(|node| node.of::<beskid_analysis::syntax::Parameter>())
-        })
+    let expression = node
+        .of::<beskid_analysis::syntax::TryExpression>()
         .ok_or_else(|| SemanticError::unavailable("try_expression"))?;
-    let parameter_type = &parameter.ty;
-    let result_definition = canonical_result_definition_for_type(db, key, &parameter_type.node)
+    let operand = index
+        .direct_child_id(program, key.node, beskid_analysis::syntax_query::DynNodeRef::from(expression.expr.as_ref()))
+        .map(|node| normalized_expression_node(index, node))
         .ok_or_else(|| SemanticError::unavailable("try_expression"))?;
-    let (payload, error) =
-        result_type_parts(&parameter_type.node).ok_or_else(|| SemanticError::unavailable("try_expression"))?;
-    let function =
-        nearest_ancestor(index, key.node, |kind| kind == beskid_analysis::syntax_query::NodeKind::FunctionDefinition)
-            .and_then(|function| {
-                index
-                    .node_at(program, function)
-                    .and_then(|node| node.of::<beskid_analysis::syntax::FunctionDefinition>())
-            })
-            .ok_or_else(|| SemanticError::unavailable("try_expression"))?;
-    let return_type = function.return_type.as_ref().ok_or_else(|| SemanticError::unavailable("try_expression"))?;
-    if canonical_result_definition_for_type(db, key, &return_type.node) != Some(result_definition) {
+    let operand = AstNodeKey { node: operand, ..key };
+    if index.kind(operand.node) == Some(beskid_analysis::syntax_query::NodeKind::CallExpression) {
+        let Some(CallLowering::Direct(declaration)) = call_lowering(db, operand)? else {
+            return Err(SemanticError::unavailable("try_expression"));
+        };
+        if !matches!(
+            node_kind(db, declaration)?,
+            Some(IndexedNodeKind::FunctionDefinition | IndexedNodeKind::MethodDefinition)
+        ) {
+            return Err(SemanticError::unavailable("try_expression"));
+        }
+    } else {
+        // A spelling or pointer ABI does not prove an arbitrary member or computed value: the
+        // operand must name one lexical declaration (parameter or `let`) whose declared or
+        // initialized identity the generic source identity can prove.
+        try_operand_declaration(program, index, key, node)?;
+    }
+    let operand_identity = generic_source_expression_identity(db, operand)?;
+    let callable = super::super::locals::enclosing_executable_callable(index, key.node)
+        .and_then(|callable| index.node_at(program, callable))
+        .ok_or_else(|| SemanticError::unavailable("try_expression"))?;
+    let return_type = super::super::abi::declared_callable_return_type(callable)
+        .ok_or_else(|| SemanticError::unavailable("try_expression"))?;
+    let result_definition = canonical_result_definition_for_type(db, key, &return_type.node)
+        .ok_or_else(|| SemanticError::unavailable("try_expression"))?;
+    let return_identity = generic_source_type_identity(db, key, &return_type.node)?;
+    let (
+        GenericSourceTypeIdentity::Nominal { qualified_name: operand_name, arguments: operand_arguments },
+        GenericSourceTypeIdentity::Nominal { qualified_name: return_name, arguments: return_arguments },
+    ) = (&operand_identity, &return_identity)
+    else {
+        return Err(SemanticError::unavailable("try_expression"));
+    };
+    let ([payload, error], [_, return_error]) = (operand_arguments.as_ref(), return_arguments.as_ref()) else {
+        return Err(SemanticError::unavailable("try_expression"));
+    };
+    if operand_name != return_name || error != return_error {
         return Err(SemanticError::unavailable("try_expression"));
     }
-    if !same_type_syntax(&parameter_type.node, &return_type.node) {
+    let (operand_definition, operand_layout) =
+        super::super::layouts::enum_layout_for_source_identity(db, operand, &operand_identity)?;
+    let (return_definition, return_layout) =
+        super::super::layouts::enum_layout_for_source_identity(db, key, &return_identity)?;
+    if operand_definition != result_definition || return_definition != result_definition {
         return Err(SemanticError::unavailable("try_expression"));
     }
 
     Ok(TryExpressionFact {
         expression: key,
-        operand: AstNodeKey { node: operand, ..key },
-        payload_type: abi_type_from_syntax(db, key, &payload.node)?,
-        error_type: abi_type_from_syntax(db, key, &error.node)?,
-        enclosing_return: abi_type_from_syntax(db, key, &return_type.node)?,
+        operand,
+        payload_identity: payload.clone(),
+        payload_type: payload.abi_type(),
+        error_type: error.abi_type(),
+        enclosing_return: return_identity.abi_type(),
+        operand_layout,
+        return_layout,
+        error_managed: error.managed_reference_kind() == ManagedReferenceKind::GcManaged,
     })
 }
 
@@ -296,12 +343,11 @@ pub(in crate::semantic_contract) fn canonical_result_variant(
         && type_syntax_is_generic_parameter_reference(&field.node.ty.node, generic_parameter.node.name.as_str())
 }
 
-/// Resolve the only operand shape currently eligible for syntax `Result` propagation.
+/// Resolve the explicitly typed parameter form of syntax `Result` propagation.
 ///
-/// Reusing this guard for both the propagation fact and the concrete enum-layout query keeps
-/// layout authority tied to the same direct, explicitly typed function parameter; local values,
-/// calls, members, and inferred types do not gain a layout fallback.
-pub(in crate::semantic_contract) fn try_operand_parameter_declaration(
+/// The propagation fact handles proven ordinary calls separately. Local values,
+/// member fields, and inferred types do not gain a layout fallback through this guard.
+pub(in crate::semantic_contract) fn try_operand_declaration(
     program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
     index: &beskid_analysis::syntax_query::SyntaxIndex,
     key: AstNodeKey,
@@ -331,7 +377,15 @@ pub(in crate::semantic_contract) fn try_operand_parameter_declaration(
     let declaration = resolve_lexical_declaration(program, index, operand, segment.node.name.node.name.as_str())
         .ok_or_else(|| SemanticError::unavailable("try_expression"))?;
     parent_node(index, declaration)
-        .filter(|parent| index.kind(*parent) == Some(beskid_analysis::syntax_query::NodeKind::Parameter))
+        .filter(|parent| {
+            matches!(
+                index.kind(*parent),
+                Some(
+                    beskid_analysis::syntax_query::NodeKind::Parameter
+                        | beskid_analysis::syntax_query::NodeKind::LetStatement
+                )
+            )
+        })
         .ok_or_else(|| SemanticError::unavailable("try_expression"))?;
     Ok((operand, declaration))
 }
@@ -353,76 +407,4 @@ pub(in crate::semantic_contract) fn result_type_parts(
         return None;
     };
     Some((payload, error))
-}
-
-pub(in crate::semantic_contract) fn same_type_syntax(
-    left: &beskid_analysis::syntax::Type,
-    right: &beskid_analysis::syntax::Type,
-) -> bool {
-    use beskid_analysis::syntax::Type;
-
-    match (left, right) {
-        (Type::Primitive(left), Type::Primitive(right)) => left.node == right.node,
-        (Type::Complex(left), Type::Complex(right)) => same_path_syntax(&left.node, &right.node),
-        (
-            Type::Associated { contract: left_contract, name: left_name },
-            Type::Associated { contract: right_contract, name: right_name },
-        ) => same_path_syntax(&left_contract.node, &right_contract.node) && left_name.node.name == right_name.node.name,
-        (Type::Array(left), Type::Array(right)) => same_type_syntax(&left.node, &right.node),
-        (
-            Type::Function { return_type: left_return, parameters: left_parameters },
-            Type::Function { return_type: right_return, parameters: right_parameters },
-        ) => {
-            same_type_syntax(&left_return.node, &right_return.node)
-                && left_parameters.len() == right_parameters.len()
-                && left_parameters
-                    .iter()
-                    .zip(right_parameters)
-                    .all(|(left, right)| same_type_syntax(&left.node, &right.node))
-        }
-        _ => false,
-    }
-}
-
-fn same_path_syntax(left: &beskid_analysis::syntax::Path, right: &beskid_analysis::syntax::Path) -> bool {
-    left.segments.len() == right.segments.len()
-        && left.segments.iter().zip(&right.segments).all(|(left, right)| {
-            left.node.name.node.name == right.node.name.node.name
-                && left.node.type_args.len() == right.node.type_args.len()
-                && left
-                    .node
-                    .type_args
-                    .iter()
-                    .zip(&right.node.type_args)
-                    .all(|(left, right)| same_type_syntax(&left.node, &right.node))
-        })
-}
-
-#[cfg(test)]
-mod tests {
-    use beskid_analysis::services::parse_program;
-    use beskid_analysis::syntax::{Type, items::Node};
-
-    use super::same_type_syntax;
-
-    #[test]
-    fn associated_type_syntax_compares_contract_and_member_structurally() {
-        let item = parse_type("Iterator::Item");
-        let same_item = parse_type("Iterator::Item");
-        let other_member = parse_type("Iterator::Element");
-        let other_contract = parse_type("Iterable::Item");
-
-        assert!(same_type_syntax(&item.node, &same_item.node));
-        assert!(!same_type_syntax(&item.node, &other_member.node));
-        assert!(!same_type_syntax(&item.node, &other_contract.node));
-    }
-
-    fn parse_type(source: &str) -> beskid_analysis::syntax::Spanned<Type> {
-        let program =
-            parse_program(&format!("{source} Current() {{ return; }}")).expect("associated type should parse");
-        let Node::Function(function) = &program.node.items[0].node else {
-            panic!("expected function item");
-        };
-        function.node.return_type.clone().expect("expected function return type")
-    }
 }

@@ -3,6 +3,7 @@ use Core.Encoding.EncodingError;
 use Core.Results;
 use Core.String;
 
+[Export(Abi:"C", Symbol:"RunFoundationFixture")]
 pub i64 RunFoundationFixture() {
     // HTTP punctuation/control bytes, U+03BB, U+20AC, and U+1F600.
     u8[] input = [72_u8, 84_u8, 84_u8, 80_u8, 47_u8, 49_u8, 46_u8, 49_u8, 32_u8, 13_u8, 10_u8, 206_u8, 187_u8, 226_u8, 130_u8, 172_u8, 240_u8, 159_u8, 152_u8, 128_u8];

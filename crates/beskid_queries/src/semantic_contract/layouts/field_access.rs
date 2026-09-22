@@ -1,6 +1,7 @@
 //! Canonical semantic layout implementation.
 
 use super::super::*;
+use beskid_analysis::syntax_query::DynNodeRef;
 
 #[salsa::tracked(persist)]
 pub(in crate::semantic_contract) fn aggregate_field_access_tracked(
@@ -43,6 +44,9 @@ fn aggregate_field_access_for_environment(
     ambient: Option<&HashMap<String, AggregateFieldShape>>,
     enclosing: Option<&GenericSpecializationInstance>,
 ) -> Option<Result<AggregateFieldAccess, SemanticError>> {
+    if let Some(projection) = nominal_field_projection(db, key) {
+        return Some(projection.map(|(access, _)| access));
+    }
     if let Some(member) = node.of::<beskid_analysis::syntax::MemberExpression>() {
         let receiver = index.direct_child_id(
             program,
@@ -82,6 +86,268 @@ fn aggregate_field_access_for_environment(
             .ok_or_else(|| SemanticError::unavailable("aggregate_field_access"))?;
         Ok(AggregateFieldAccess { declaration, receiver, index, layout })
     }))
+}
+
+/// A dotted value path has real indexed segment nodes. A segment denotes the prefix ending
+/// there; these keys let consumers lower intermediate projections without synthesizing syntax.
+pub(in crate::semantic_contract) fn path_projection_segment(
+    db: &dyn Db,
+    key: AstNodeKey,
+    position: usize,
+) -> Option<AstNodeKey> {
+    let syntax = db.syntax_unit(key.unit).filter(|syntax| syntax.accepts_key(db, key))?;
+    let index = syntax.syntax_index(db);
+    let program = syntax.expanded_program(db);
+    let node = index.node_at(program, key.node)?;
+    let path = node.of::<beskid_analysis::syntax::PathExpression>()?;
+    let path_node = index.direct_child_id(program, key.node, DynNodeRef::from(&path.path))?;
+    let segment = path.path.node.segments.get(position)?;
+    let node = index.direct_child_id(program, path_node, DynNodeRef::from(segment))?;
+    Some(AstNodeKey { node, ..key })
+}
+
+/// Prove a nominal projection from an explicitly typed lexical root or a source-proven value. Source substitutions
+/// follow each declared field type, never the pointer-shaped ABI. Unknown and inaccessible
+/// fields fail closed. A full path with only one field keeps its established fact path.
+pub(in crate::semantic_contract) fn nominal_field_projection(
+    db: &dyn Db,
+    key: AstNodeKey,
+) -> Option<Result<(AggregateFieldAccess, GenericSourceTypeIdentity), SemanticError>> {
+    let syntax = db.syntax_unit(key.unit).filter(|syntax| syntax.accepts_key(db, key))?;
+    let program = syntax.expanded_program(db);
+    let index = syntax.syntax_index(db);
+    let node = index.node_at(program, key.node)?;
+    if let Some(member) = node.of::<beskid_analysis::syntax::MemberExpression>() {
+        // Existing generic-call-result projections keep their established specialized path.
+        if matches!(member.target.node, beskid_analysis::syntax::Expression::Call(_)) {
+            return None;
+        }
+        let receiver = index.direct_child_id(program, key.node, DynNodeRef::from(member.target.as_ref()))?;
+        let receiver = AstNodeKey { node: normalized_expression_node(index, receiver), ..key };
+        return Some(
+            generic_source_expression_identity(db, receiver)
+                .and_then(|identity| project_nominal_field(db, key, receiver, &identity, &member.member.node.name)),
+        );
+    }
+    let (path_key, last) = if let Some(path) = node.of::<beskid_analysis::syntax::PathExpression>() {
+        if path.path.node.segments.len() < 3 {
+            return None;
+        }
+        (key, path.path.node.segments.len() - 1)
+    } else if node.of::<beskid_analysis::syntax::PathSegment>().is_some() {
+        let path_node = parent_node(index, key.node)?;
+        let expression = parent_node(index, path_node)?;
+        let path = index.node_at(program, expression)?.of::<beskid_analysis::syntax::PathExpression>()?;
+        let expression = AstNodeKey { node: expression, ..key };
+        let position = (0..path.path.node.segments.len())
+            .find(|position| path_projection_segment(db, expression, *position) == Some(key))?;
+        if position == 0 {
+            // The first segment of a dotted path is ordinarily a lexical root, not a
+            // projection. Inside a method the same spelling can instead name a field of the
+            // implicit receiver, which is a real projection from `this`.
+            let segment = path.path.node.segments.first()?;
+            if !segment.node.type_args.is_empty()
+                || resolve_lexical_declaration(program, index, expression.node, segment.node.name.node.name.as_str())
+                    .is_some()
+            {
+                return None;
+            }
+            let field_name = segment.node.name.node.name.as_str();
+            return implicit_receiver_field_projection(db, program, index, expression, field_name);
+        }
+        (expression, position)
+    } else {
+        return None;
+    };
+    let path = &index.node_at(program, path_key.node)?.of::<beskid_analysis::syntax::PathExpression>()?.path.node;
+    if path.segments[..=last].iter().any(|segment| !segment.node.type_args.is_empty()) {
+        return None;
+    }
+    let root = resolve_lexical_declaration(program, index, path_key.node, &path.segments[0].node.name.node.name)?;
+    let annotation = explicit_local_complex_type_path(program, index, root);
+    // An enum-pattern binding has no written annotation; its enum match fact is the sole
+    // authority for the exact applied payload identity. Other unannotated roots stay unproven.
+    let binding = match annotation {
+        Some(_) => None,
+        None => Some(pattern_binding_fact(db, index, path_key, root)?),
+    };
+    Some((|| {
+        let mut identity = match (annotation, binding) {
+            (Some(annotation), _) => generic_source_type_identity(
+                db,
+                path_key,
+                &beskid_analysis::syntax::Type::Complex(beskid_analysis::syntax::Spanned::new(
+                    annotation.clone(),
+                    path.segments[0].span,
+                )),
+            )?,
+            (None, Some(binding)) => {
+                binding?.source_identity.ok_or_else(|| SemanticError::unavailable("nominal_field_projection"))?
+            }
+            (None, None) => return Err(SemanticError::unavailable("nominal_field_projection")),
+        };
+        let mut receiver = AstNodeKey { node: root, ..key };
+        let mut result = None;
+        for position in 1..=last {
+            let (access, next_identity) =
+                project_nominal_field(db, key, receiver, &identity, &path.segments[position].node.name.node.name)?;
+            receiver = path_projection_segment(db, path_key, position)
+                .ok_or_else(|| SemanticError::unavailable("nominal_field_projection"))?;
+            identity = next_identity;
+            result = Some(access);
+        }
+        Ok((result.ok_or_else(|| SemanticError::unavailable("nominal_field_projection"))?, identity))
+    })())
+}
+
+/// Project one field of the implicit method receiver named by an unqualified path root.
+///
+/// Inside a method body `field.Member` spells a projection from `this`. The enclosing method's
+/// own type definition is the sole authority: a unique declared value field proves the
+/// projection, and every other spelling (no enclosing method, a generic enclosing type, an
+/// unknown or ambiguous field name) stays unproven rather than guessed.
+pub(in crate::semantic_contract) fn implicit_receiver_field_projection(
+    db: &dyn Db,
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    reference: AstNodeKey,
+    field_name: &str,
+) -> Option<Result<(AggregateFieldAccess, GenericSourceTypeIdentity), SemanticError>> {
+    let method = nearest_ancestor(index, reference.node, |kind| {
+        kind == beskid_analysis::syntax_query::NodeKind::MethodDefinition
+    })?;
+    let declaration = parent_node(index, method)?;
+    let definition = index.node_at(program, declaration)?.of::<beskid_analysis::syntax::TypeDefinition>()?;
+    // A generic enclosing receiver needs its applied arguments; only the non-generic
+    // spelling is proven by the definition alone.
+    if !definition.generics.is_empty() {
+        return None;
+    }
+    let declaration = AstNodeKey { node: declaration, ..reference };
+    let matches = definition
+        .fields
+        .iter()
+        .filter(|field| field.node.kind == beskid_analysis::syntax::FieldKind::Value)
+        .enumerate()
+        .filter(|(_, field)| field.node.name.node.name == field_name)
+        .collect::<Vec<_>>();
+    let [(field_index, field)] = matches.as_slice() else {
+        return None;
+    };
+    let field_index = u32::try_from(*field_index).ok()?;
+    let field_type = field.node.ty.node.clone();
+    Some((|| {
+        let layout =
+            aggregate_layout_from_definition(db, program, index, declaration, definition, None)?;
+        let identity =
+            generic_source_type_identity_with_substitutions(db, declaration, &field_type, &HashMap::new())?;
+        let access = AggregateFieldAccess {
+            declaration,
+            receiver: AstNodeKey { node: method, ..reference },
+            index: field_index,
+            layout,
+        };
+        Ok((access, identity))
+    })())
+}
+
+fn project_nominal_field(
+    db: &dyn Db,
+    key: AstNodeKey,
+    receiver: AstNodeKey,
+    identity: &GenericSourceTypeIdentity,
+    field_name: &str,
+) -> Result<(AggregateFieldAccess, GenericSourceTypeIdentity), SemanticError> {
+    let (declaration, layout) = nominal_identity_layout(db, key, identity)?;
+    let target = db
+        .syntax_unit(declaration.unit)
+        .filter(|syntax| syntax.accepts_key(db, declaration))
+        .ok_or_else(|| SemanticError::unavailable("nominal_field_projection"))?;
+    let definition = target
+        .syntax_index(db)
+        .node_at(target.expanded_program(db), declaration.node)
+        .and_then(|node| node.of::<beskid_analysis::syntax::TypeDefinition>())
+        .ok_or_else(|| SemanticError::unavailable("nominal_field_projection"))?;
+    let GenericSourceTypeIdentity::Nominal { arguments, .. } = identity else { unreachable!() };
+    let environment = definition
+        .generics
+        .iter()
+        .zip(arguments.iter())
+        .map(|(generic, argument)| (generic.node.name.as_str(), argument))
+        .collect::<HashMap<_, _>>();
+    let matches = definition
+        .fields
+        .iter()
+        .filter(|field| field.node.kind == beskid_analysis::syntax::FieldKind::Value)
+        .enumerate()
+        .filter(|(_, field)| field.node.name.node.name == field_name)
+        .collect::<Vec<_>>();
+    let [(field_index, field)] = matches.as_slice() else {
+        return Err(SemanticError::unavailable("nominal_field_projection"));
+    };
+    if declaration.unit != key.unit && field.node.visibility.node != beskid_analysis::syntax::Visibility::Public {
+        return Err(SemanticError::unavailable("nominal_field_projection.visibility"));
+    }
+    let next_identity =
+        generic_source_type_identity_with_substitutions(db, declaration, &field.node.ty.node, &environment)?;
+    let access = AggregateFieldAccess {
+        declaration,
+        receiver,
+        index: u32::try_from(*field_index).map_err(|_| SemanticError::unavailable("nominal_field_projection"))?,
+        layout,
+    };
+    Ok((access, next_identity))
+}
+
+/// Instantiate the aggregate layout denoted by an exact source-proven nominal identity. Each
+/// applied argument keeps its own nominal declaration; only scalar arguments use their ABI.
+fn nominal_identity_layout(
+    db: &dyn Db,
+    key: AstNodeKey,
+    identity: &GenericSourceTypeIdentity,
+) -> Result<(AstNodeKey, AggregateLayoutFact), SemanticError> {
+    let declaration = super::super::contracts::concrete_declaration(db, key, identity)
+        .ok_or_else(|| SemanticError::unavailable("nominal_field_projection"))?;
+    let target = db
+        .syntax_unit(declaration.unit)
+        .filter(|syntax| syntax.accepts_key(db, declaration))
+        .ok_or_else(|| SemanticError::unavailable("nominal_field_projection"))?;
+    let definition = target
+        .syntax_index(db)
+        .node_at(target.expanded_program(db), declaration.node)
+        .and_then(|node| node.of::<beskid_analysis::syntax::TypeDefinition>())
+        .ok_or_else(|| SemanticError::unavailable("nominal_field_projection"))?;
+    let GenericSourceTypeIdentity::Nominal { arguments, .. } = identity else {
+        return Err(SemanticError::unavailable("nominal_field_projection"));
+    };
+    if definition.generics.len() != arguments.len() {
+        return Err(SemanticError::unavailable("nominal_field_projection"));
+    }
+    let shapes = definition
+        .generics
+        .iter()
+        .zip(arguments.iter())
+        .map(|(generic, argument)| {
+            let shape = if matches!(argument, GenericSourceTypeIdentity::Nominal { .. }) {
+                AggregateFieldShape::Nominal(
+                    super::super::contracts::concrete_declaration(db, key, argument)
+                        .ok_or_else(|| SemanticError::unavailable("nominal_field_projection"))?,
+                )
+            } else {
+                AggregateFieldShape::Scalar(argument.abi_type())
+            };
+            Ok((generic.node.name.clone(), shape))
+        })
+        .collect::<Result<HashMap<_, _>, SemanticError>>()?;
+    let layout = aggregate_layout_from_definition(
+        db,
+        target.expanded_program(db),
+        target.syntax_index(db),
+        declaration,
+        definition,
+        (!definition.generics.is_empty()).then_some(&shapes),
+    )?;
+    Ok((declaration, layout))
 }
 
 fn applied_call_result_layout(
@@ -227,6 +493,16 @@ fn applied_pattern_binding_layout(
     };
     let scrutinee_path = match &expression.scrutinee.node {
         beskid_analysis::syntax::Expression::Path(path) => &path.node.path.node,
+        // A call scrutinee has no written local type. The enum match fact proves the applied
+        // payload identity from the call's own source result type; that exact identity is the
+        // only authority here, so an unproven or non-nominal payload stays unavailable.
+        beskid_analysis::syntax::Expression::Call(_) => {
+            let binding = pattern_binding_fact(db, index, key, declaration)
+                .ok_or_else(|| SemanticError::unavailable("aggregate_field_access"))??;
+            let identity =
+                binding.source_identity.ok_or_else(|| SemanticError::unavailable("aggregate_field_access"))?;
+            return nominal_identity_layout(db, key, &identity);
+        }
         _ => return Err(SemanticError::unavailable("aggregate_field_access")),
     };
     let [scrutinee] = scrutinee_path.segments.as_slice() else {
@@ -269,6 +545,18 @@ fn applied_pattern_binding_layout(
     let [field] = variant.node.fields.as_slice() else {
         return Err(SemanticError::unavailable("aggregate_field_access"));
     };
+    // A payload declared as a bare enum generic (`Ok(TValue value)`) takes its nominal identity
+    // from the scrutinee's applied type argument. That argument is source written at the use
+    // site, so it resolves there with its own type arguments intact rather than through the
+    // enum declaration's scope, where the generic name denotes no type.
+    if let Some(parameter) = generic_parameter_reference_name(&field.node.ty.node)
+        && let Some(position) = enum_definition.generics.iter().position(|generic| generic.node.name == parameter)
+    {
+        let beskid_analysis::syntax::Type::Complex(argument) = &terminal.node.type_args[position].node else {
+            return Err(SemanticError::unavailable("aggregate_field_access"));
+        };
+        return instantiated_aggregate_layout_for_path(db, key, &argument.node, ambient);
+    }
     let beskid_analysis::syntax::Type::Complex(payload) = &field.node.ty.node else {
         return Err(SemanticError::unavailable("aggregate_field_access"));
     };

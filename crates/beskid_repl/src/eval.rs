@@ -109,12 +109,14 @@ fn format_lower_error(error: anyhow::Error) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::{exact_kit_engine, serial};
     use beskid_abi::runtime_kit::BuildProfile;
     use beskid_engine::host_runtime_target;
     use beskid_tools::toolchain::runtime_kit::{RuntimeKitProfile, build_native_host};
 
     #[test]
     fn wraps_expression_as_i64_main() {
+        let _serial = serial();
         let wrapped = wrap_snippet("1 + 1").expect("wrap");
         assert!(wrapped.source.contains("i64 Main()"));
         assert_eq!(wrapped.return_type, "i64");
@@ -122,28 +124,15 @@ mod tests {
 
     #[test]
     fn wraps_statement_as_unit_main() {
+        let _serial = serial();
         let wrapped = wrap_snippet("let x = 1;").expect("wrap");
         assert!(wrapped.source.starts_with("unit Main()"));
         assert_eq!(wrapped.return_type, "unit");
     }
 
-    fn shared_exact_kit_prefix() -> &'static std::path::Path {
-        use std::sync::OnceLock;
-        static PREFIX: OnceLock<std::path::PathBuf> = OnceLock::new();
-        PREFIX.get_or_init(|| {
-            let prefix = tempfile::tempdir().expect("exact kit prefix").keep();
-            build_native_host(prefix.clone(), RuntimeKitProfile::Debug).expect("publish exact native kit");
-            prefix
-        })
-    }
-
-    fn exact_kit_engine() -> Engine {
-        let target = host_runtime_target().expect("supported native host target");
-        Engine::with_runtime_kit(shared_exact_kit_prefix(), target, BuildProfile::Debug).expect("load exact kit")
-    }
-
     #[test]
     fn eval_i64_expression() {
+        let _serial = serial();
         let mut engine = exact_kit_engine();
         let outcome = eval_snippet(&mut engine, "41 + 1");
         assert_eq!(outcome, EvalOutcome::Value("42".to_string()));
@@ -151,6 +140,7 @@ mod tests {
 
     #[test]
     fn eval_uses_a_fresh_native_runtime_kit() {
+        let _serial = serial();
         let mut engine = exact_kit_engine();
         assert_eq!(eval_snippet(&mut engine, "true"), EvalOutcome::Value("true".to_string()));
     }
@@ -158,6 +148,7 @@ mod tests {
     #[test]
     #[ignore = "requires the staged native runtime-kit matrix prefix"]
     fn staged_native_runtime_kit_evaluates_a_snippet() {
+        let _serial = serial();
         let prefix = std::env::var_os("BESKID_RUNTIME_PREFIX")
             .map(std::path::PathBuf::from)
             .expect("native evidence must set BESKID_RUNTIME_PREFIX");
@@ -175,6 +166,7 @@ mod tests {
 
     #[test]
     fn eval_unit_statement() {
+        let _serial = serial();
         let mut engine = exact_kit_engine();
         let outcome = eval_snippet(&mut engine, "let x = 1;");
         assert_eq!(outcome, EvalOutcome::Unit);
@@ -182,12 +174,14 @@ mod tests {
 
     #[test]
     fn type_of_expression() {
+        let _serial = serial();
         let outcome = type_of_snippet("1 + 1");
         assert_eq!(outcome, EvalOutcome::Type("i64".to_string()));
     }
 
     #[test]
     fn eval_reuses_engine() {
+        let _serial = serial();
         let mut engine = exact_kit_engine();
         assert_eq!(eval_snippet(&mut engine, "10 + 5"), EvalOutcome::Value("15".to_string()));
         assert_eq!(eval_snippet(&mut engine, "6 * 7"), EvalOutcome::Value("42".to_string()));
@@ -195,6 +189,7 @@ mod tests {
 
     #[test]
     fn eval_reports_type_error() {
+        let _serial = serial();
         let mut engine = exact_kit_engine();
         let outcome = eval_snippet(&mut engine, "let x = true + 1;");
         assert!(matches!(outcome, EvalOutcome::Error(_)));
@@ -207,9 +202,11 @@ mod tests {
 
     #[test]
     fn repl_session_fails_closed_when_exact_kit_manifest_is_missing() {
+        let _serial = serial();
         let empty = tempfile::tempdir().expect("empty prefix");
         let previous = std::env::var_os("BESKID_RUNTIME_PREFIX");
-        // SAFETY: this integration target serializes around the process environment and restores it.
+        // SAFETY: `serial` excludes every other case in this binary while the variable is replaced,
+        // and the previous value is restored before the guard is released.
         unsafe { std::env::set_var("BESKID_RUNTIME_PREFIX", empty.path()) };
         let error = match crate::session::ReplSession::try_new() {
             Ok(_) => panic!("missing exact kit must fail closed for REPL"),
@@ -231,6 +228,7 @@ mod tests {
 
     #[test]
     fn eval_fails_closed_when_exact_kit_is_tampered() {
+        let _serial = serial();
         let Ok(target) = host_runtime_target() else {
             return;
         };

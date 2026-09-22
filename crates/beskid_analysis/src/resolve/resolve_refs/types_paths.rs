@@ -49,6 +49,14 @@ impl Resolver {
                 self.tables.insert_value(path.span, ResolvedValue::Local(local));
                 return;
             }
+            if let Some(value) = self
+                .constants
+                .get(&(self.current_module, name.clone()))
+                .or_else(|| self.shared_constants.get(name).and_then(Option::as_ref))
+            {
+                self.tables.integer_constants.insert((self.current_source_path.clone(), path.span), value.clone());
+                return;
+            }
             if self.receiver_has_field(name)
                 && let Some(this_local) = self.resolve_local("this")
             {
@@ -57,6 +65,7 @@ impl Resolver {
             }
             if let Some(item) = self.resolve_item_in_scope(name) {
                 self.tables.insert_value(path.span, ResolvedValue::Item(item));
+                self.mark_imported_scope_name_used(name);
                 return;
             }
             self.errors.push(ResolveError::UnknownValue { name: (*name).clone(), span: path.span });
@@ -79,6 +88,10 @@ impl Resolver {
         match self.resolve_item_in_module_path(&segments, &lookup_segments) {
             ModulePathLookup::Found(item) => {
                 self.tables.insert_value(path.span, ResolvedValue::Item(item));
+                if let Some(root) = segments.first() {
+                    self.mark_imported_scope_name_used(root);
+                    self.mark_module_import_alias_used(root);
+                }
             }
             ModulePathLookup::ModuleMissing => {
                 if let Some(local) = self.resolve_local(&segments[0]) {
@@ -124,6 +137,7 @@ impl Resolver {
                 && is_type_item(item)
             {
                 self.tables.insert_type(path.span, ResolvedType::Item(item));
+                self.mark_imported_scope_name_used(name);
                 return;
             }
             if let Some(module_path) = self.module_imports.get(name)
@@ -131,6 +145,7 @@ impl Resolver {
                 && is_type_item(item)
             {
                 self.tables.insert_type(path.span, ResolvedType::Item(item));
+                self.mark_module_import_alias_used(name);
                 return;
             }
             self.errors.push(ResolveError::UnknownType { name: (*name).clone(), span: path.span });
@@ -140,6 +155,10 @@ impl Resolver {
         match self.resolve_item_in_module_path(&segments, &lookup_segments) {
             ModulePathLookup::Found(item) => {
                 self.tables.insert_type(path.span, ResolvedType::Item(item));
+                if let Some(root) = segments.first() {
+                    self.mark_imported_scope_name_used(root);
+                    self.mark_module_import_alias_used(root);
+                }
             }
             ModulePathLookup::ModuleMissing => {
                 self.errors.push(ResolveError::UnknownModulePath {

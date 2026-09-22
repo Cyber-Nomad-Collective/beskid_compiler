@@ -2,9 +2,10 @@
 
 use std::{
     ffi::OsString,
-    io::Read,
+    io::{Read, Write},
     path::{Path, PathBuf},
     process::{Command, Output, Stdio},
+    sync::mpsc,
     thread,
     time::{Duration, Instant},
 };
@@ -62,12 +63,27 @@ pub fn native_c_compiler() -> Command {
 /// Run a direct child with closed stdin, draining both output pipes concurrently.
 /// On failure, kill and reap the child before reporting its complete diagnostics.
 pub fn run_bounded(label: &str, command: &mut Command, limit: Duration) -> Output {
+    run_bounded_with_stdin(label, command, &[], limit)
+}
+
+/// Run a direct child with supplied standard-input bytes, draining both output pipes concurrently.
+/// On failure, kill and reap the child before reporting its complete diagnostics.
+pub fn run_bounded_with_stdin(label: &str, command: &mut Command, stdin: &[u8], limit: Duration) -> Output {
+    let started = Instant::now();
     let mut child = command
-        .stdin(Stdio::null())
+        .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
         .unwrap_or_else(|error| panic!("{label}: spawn failed: {error}"));
+    let mut child_stdin = child.stdin.take().expect("piped stdin must be available");
+    let input = stdin.to_vec();
+    let (input_result_tx, input_result_rx) = mpsc::channel();
+    let stdin = thread::spawn(move || {
+        let result = child_stdin.write_all(&input);
+        drop(child_stdin);
+        let _ = input_result_tx.send(result);
+    });
     let mut stdout = child.stdout.take().unwrap();
     let mut stderr = child.stderr.take().unwrap();
     let stdout = thread::spawn(move || {
@@ -78,8 +94,14 @@ pub fn run_bounded(label: &str, command: &mut Command, limit: Duration) -> Outpu
         let mut bytes = Vec::new();
         stderr.read_to_end(&mut bytes).map(|_| bytes)
     });
-    let started = Instant::now();
-    let failure = loop {
+    let mut input_result = None;
+    let mut failure = loop {
+        if input_result.is_none() {
+            input_result = input_result_rx.try_recv().ok();
+        }
+        if let Some(Err(error)) = &input_result {
+            break Some(format!("stdin write failed: {error}"));
+        }
         match child.try_wait() {
             Ok(Some(_)) => break None,
             Ok(None) if started.elapsed() < limit => thread::sleep(Duration::from_millis(10)),
@@ -89,6 +111,13 @@ pub fn run_bounded(label: &str, command: &mut Command, limit: Duration) -> Outpu
     };
     let kill_error = failure.as_ref().and_then(|_| child.kill().err());
     let status = child.wait();
+    // Reaping closes the direct child's pipe ends before joining the workers.
+    // In particular, a writer blocked on a full pipe is released by timeout cleanup.
+    stdin.join().expect("stdin writer panicked");
+    let input_result = input_result.unwrap_or_else(|| input_result_rx.recv().expect("stdin writer result"));
+    if failure.is_none() {
+        failure = input_result.err().map(|error| format!("stdin write failed: {error}"));
+    }
     let stdout = stdout.join().expect("stdout reader panicked").expect("stdout read failed");
     let stderr = stderr.join().expect("stderr reader panicked").expect("stderr read failed");
     if let Some(failure) = failure {
@@ -208,6 +237,14 @@ mod tests {
     #[test]
     fn child_probe() {
         match std::env::var(CHILD_MODE).as_deref() {
+            Ok("blocked-stdin") => {
+                println!("blocked-stdin-stdout");
+                eprintln!("blocked-stdin-stderr");
+                std::thread::sleep(Duration::from_secs(2));
+            }
+            Ok("early-exit") => {
+                eprintln!("early-exit-stderr");
+            }
             Ok("timeout") => {
                 println!("timeout-stdout-marker");
                 eprintln!("timeout-stderr-marker");
@@ -262,5 +299,41 @@ mod tests {
         assert_eq!(output.stderr.iter().filter(|&&byte| byte == b'E').count(), 1024 * 1024);
         assert!(output.stdout.ends_with(b"\n") && String::from_utf8_lossy(&output.stdout).contains("stdout-complete"));
         assert!(String::from_utf8_lossy(&output.stderr).contains("stderr-complete"));
+    }
+
+    #[test]
+    fn full_stdin_pipe_is_covered_by_the_deadline() {
+        let started = Instant::now();
+        let failure = std::panic::catch_unwind(AssertUnwindSafe(|| {
+            run_bounded_with_stdin(
+                "blocked stdin probe",
+                &mut child("blocked-stdin"),
+                &vec![b'I'; 4 * 1024 * 1024],
+                Duration::from_millis(250),
+            );
+        }))
+        .expect_err("a child that does not read must time out");
+        assert!(started.elapsed() < Duration::from_secs(1), "stdin bypassed the deadline");
+        let diagnostic = failure.downcast_ref::<String>().unwrap();
+        for marker in ["deadline exceeded", "status=Ok(", "blocked-stdin-stdout", "blocked-stdin-stderr"] {
+            assert!(diagnostic.contains(marker), "missing {marker}: {diagnostic}");
+        }
+    }
+
+    #[test]
+    fn early_exit_during_stdin_transfer_is_reaped_with_diagnostics() {
+        let failure = std::panic::catch_unwind(AssertUnwindSafe(|| {
+            run_bounded_with_stdin(
+                "early exit probe",
+                &mut child("early-exit"),
+                &vec![b'I'; 4 * 1024 * 1024],
+                Duration::from_secs(1),
+            );
+        }))
+        .expect_err("unconsumed input must be reported");
+        let diagnostic = failure.downcast_ref::<String>().unwrap();
+        for marker in ["stdin write failed", "status=Ok(", "early-exit-stderr"] {
+            assert!(diagnostic.contains(marker), "missing {marker}: {diagnostic}");
+        }
     }
 }

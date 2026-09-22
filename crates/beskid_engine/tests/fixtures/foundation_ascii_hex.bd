@@ -12,6 +12,7 @@ i64 CheckHex(u8[] bytes) {
     if bytes[0] != 0_u8 || bytes[1] != 127_u8 || bytes[2] != 255_u8 { return 4_i64; }
     return 42_i64;
 }
+[Export(Abi:"C", Symbol:"RunFoundationFixture")]
 pub i64 RunFoundationFixture() {
     Result<string, EncodingError> invalid = Encoding.DecodeHttpAscii([128_u8]);
     bool rejected = match invalid { Result::Ok(_) => false, Result::Error(_) => true };

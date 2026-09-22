@@ -176,6 +176,22 @@ pub fn build_typed_program(
                 )));
             }
         }
+        // BSP-REQ-35580A7D7B75: a discarded growth of a `mut T[]` parameter that the body never
+        // publishes leaves the caller with the ungrown array. Fail closed before lowering.
+        let index = syntax.syntax_index(db);
+        let program = syntax.expanded_program(db);
+        for node in index
+            .ids_of_kind(beskid_analysis::syntax_query::NodeKind::CallExpression)
+            .filter(|node| crate::is_growth_call_candidate(program, index, *node))
+        {
+            let key = crate::AstNodeKey { unit: identity, generation, node };
+            if crate::dead_collection_growth(db, key)?.is_some() {
+                return Err(SemanticError::new(format!(
+                    "DeadCollectionGrowth: the grown handle of a `mut T[]` parameter is discarded and the body never publishes the parameter, so the caller keeps the ungrown array; return or rebind the grown handle at {}",
+                    crate::format_ast_node_site(db, key)
+                )));
+            }
+        }
     }
 
     Ok(TypedProgram {
@@ -258,7 +274,7 @@ fn canonical_corelib_service_units(
 
                     // Origin is request evidence, distinct from the canonical semantic key.
                     // Never resolve a user origin to decide whether it is compiler-owned.
-                    let direct = unit.path == identity.canonical_path
+                    let direct = corelib_source_locations_match(&unit.path, &identity.canonical_path)
                         && (corelib_source_locations_match(&unit.origin_path, &identity.declared_path)
                             || corelib_source_locations_match(&unit.origin_path, &identity.canonical_path));
                     let authorized_path = direct
@@ -329,9 +345,13 @@ pub fn build_canonical_runtime_typed_program(
 /// public names remain unresolved through `unique_imported_function`.
 fn attach_canonical_runtime_cross_unit_scope(db: &BeskidDatabase, typed: &TypedProgram) {
     let units = typed.assembly.units.iter().map(|unit| SourceUnitId::new(db, unit.path.clone())).collect::<Vec<_>>();
+    attach_private_runtime_scope(db, typed.generation, &units);
+}
+
+fn attach_private_runtime_scope(db: &BeskidDatabase, generation: SyntaxGenerationId, units: &[SourceUnitId]) {
     let mut registry = db.syntax_dependency_registry().lock().expect("syntax dependency registry");
-    for owner in &units {
-        let imports = registry.imports.entry((*owner, typed.generation)).or_default();
+    for owner in units {
+        let imports = registry.imports.entry((*owner, generation)).or_default();
         for target in units.iter().copied().filter(|target| target != owner) {
             if imports.iter().any(|import| {
                 import.target == target
@@ -349,4 +369,65 @@ fn attach_canonical_runtime_cross_unit_scope(db: &BeskidDatabase, typed: &TypedP
             });
         }
     }
+}
+
+/// A fixture is an explicitly proved sibling of the complete production corpus, never a
+/// substitute for part of it. Corelib dependencies retain only their own service authority.
+pub fn build_runtime_fixture_typed_program(
+    db: &mut BeskidDatabase,
+    project: ProjectSession,
+    generation: SyntaxGenerationId,
+    assembly: Arc<ProgramAssembly>,
+    manifest: &beskid_abi::abi_v5::AbiManifestV5,
+) -> Result<TypedProgram, SemanticError> {
+    let proof =
+        assembly.runtime_fixture.as_ref().ok_or_else(|| SemanticError::new("runtime fixture proof is absent"))?;
+    let fixture = proof.fixture();
+    if assembly.entry_unit().logical_name != fixture.logical_path
+        || assembly.entry_unit().source != fixture.source
+        || assembly.units.iter().filter(|unit| unit.logical_name == fixture.logical_path).count() != 1
+    {
+        return Err(SemanticError::new("runtime fixture source differs from its proof"));
+    }
+    let runtime_units =
+        assembly.units.iter().filter(|unit| unit.logical_name.starts_with("src/Runtime/")).cloned().collect::<Vec<_>>();
+    let runtime = Arc::new(ProgramAssembly::new(
+        assembly.roots.clone(),
+        Arc::new(runtime_units),
+        0,
+        assembly.discovery,
+        assembly.module_index.clone(),
+        false,
+        generation,
+    ));
+    // Keep the original exact-corpus constructor as the sole production authority check.
+    build_canonical_runtime_typed_program(
+        db,
+        project,
+        generation,
+        runtime,
+        beskid_abi::runtime_source::canonical_runtime_intrinsic_capability(manifest)
+            .map_err(|_| SemanticError::new("canonical runtime capability unavailable"))?,
+    )?;
+    let mut typed = build_typed_program_with_corelib_services(
+        db,
+        project,
+        generation,
+        assembly.clone(),
+        beskid_abi::runtime_source::canonical_corelib_service_capability(manifest)
+            .map_err(|_| SemanticError::new("canonical corelib capability unavailable"))?,
+    )?;
+    let scope = assembly
+        .units
+        .iter()
+        .filter(|unit| unit.logical_name.starts_with("src/Runtime/") || unit.logical_name == fixture.logical_path)
+        .map(|unit| SourceUnitId::new(db, unit.path.clone()))
+        .collect::<Vec<_>>();
+    attach_private_runtime_scope(db, generation, &scope);
+    typed.runtime_intrinsic_capability = Some(Arc::new(
+        proof
+            .intrinsic_capability(manifest)
+            .map_err(|_| SemanticError::new("runtime fixture capability unavailable"))?,
+    ));
+    Ok(typed)
 }

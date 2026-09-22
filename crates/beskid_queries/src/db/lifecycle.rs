@@ -15,7 +15,20 @@ impl Default for BeskidDatabase {
 
 impl BeskidDatabase {
     pub fn new(persistence_root: Option<PathBuf>) -> Self {
-        let mut db = Self {
+        let mut db = Self::uninitialized(persistence_root);
+        // Snapshot loading owns a separate candidate and publishes it only after
+        // successful deserialization. The fallback remains entirely pristine.
+        if let Some(root) = db.persistence_root.clone() {
+            let _ = crate::persistence::ensure_salsa_dir(&root);
+            crate::persistence::load_db_snapshot(&mut db, &root);
+        }
+        let _ = db.grammar_revision();
+        db
+    }
+
+    /// Empty storage for transactional snapshot loading, before input allocation.
+    pub(crate) fn uninitialized(persistence_root: Option<PathBuf>) -> Self {
+        Self {
             storage: salsa::Storage::default(),
             file_registry: Arc::new(Mutex::new(HashMap::new())),
             project_registry: Arc::new(Mutex::new(HashMap::new())),
@@ -27,17 +40,7 @@ impl BeskidDatabase {
             grammar_revision: None,
             syntax_parse_count: Arc::new(AtomicU64::new(0)),
             syntax_index_build_count: Arc::new(AtomicU64::new(0)),
-        };
-        // Load the cross-run salsa snapshot BEFORE allocating the GrammarRevision input.
-        // Salsa's deserializer asserts that persisted input entries are re-allocated in
-        // allocation order; pre-allocating GrammarRevision here would give it Id(0), so the
-        // snapshot's GrammarRevision (also Id(0)) would be re-allocated as Id(1) and panic.
-        if let Some(root) = db.persistence_root.clone() {
-            let _ = crate::persistence::ensure_salsa_dir(&root);
-            crate::persistence::load_db_snapshot(&mut db, &root);
         }
-        let _ = db.grammar_revision();
-        db
     }
 
     pub fn with_persistence(project_root: &Path) -> Self {

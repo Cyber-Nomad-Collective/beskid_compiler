@@ -1,0 +1,9 @@
+use Core.Output;
+
+unit Main() {
+    Output.WriteLine("unit-start");
+}
+
+pub unit Start() {
+    Main();
+}

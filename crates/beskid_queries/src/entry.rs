@@ -77,7 +77,14 @@ pub fn prepare_compilation_with_db(
 ) -> Result<PreparedCompilation> {
     trace_query("prepare_compilation_with_db", false);
     let resolved = assemble_resolved_input_with_db(db, resolved, &options)?;
-    let result = beskid_analysis::services::prepare_compilation(&resolved, options, pipeline)?;
+    let (result, _, _) = beskid_analysis::services::prepare_compilation_with_try_authority(
+        &resolved,
+        options,
+        pipeline,
+        false,
+        false,
+        &mut |assembly, program| invalid_try_spans(db, assembly, program),
+    )?;
     touch_from_prepare(&resolved);
     emit_salsa_stats(pipeline);
     Ok(result)
@@ -91,7 +98,14 @@ pub fn prepare_compilation_diagnostics_with_db(
 ) -> Result<(PreparedCompilation, Vec<SemanticDiagnostic>, Vec<beskid_analysis::SyntaxFix>)> {
     trace_query("prepare_compilation_diagnostics_with_db", false);
     let resolved = assemble_resolved_input_with_db(db, resolved, &options)?;
-    let result = beskid_analysis::services::prepare_compilation_diagnostics(&resolved, options, pipeline)?;
+    let result = beskid_analysis::services::prepare_compilation_with_try_authority(
+        &resolved,
+        options,
+        pipeline,
+        true,
+        false,
+        &mut |assembly, program| invalid_try_spans(db, assembly, program),
+    )?;
     if let Some(fp) = session_fingerprint(&resolved) {
         let _ = semantic_snapshot(db, &fingerprint_key(&fp));
     }
@@ -99,6 +113,66 @@ pub fn prepare_compilation_diagnostics_with_db(
     touch_from_prepare(&resolved);
     emit_salsa_stats(pipeline);
     Ok(result)
+}
+
+/// Diagnose an owned editor job with the same generation-bound try query used by
+/// codegen. This database is local to the job; no mutable process cache or second
+/// syntax representation participates in its semantic decisions.
+pub fn prepare_compilation_diagnostics_isolated(
+    resolved: &ResolvedInput,
+    options: PrepareOptions,
+    pipeline: Option<&dyn PipelineObserver>,
+) -> Result<(PreparedCompilation, Vec<SemanticDiagnostic>, Vec<beskid_analysis::SyntaxFix>)> {
+    let mut db = BeskidDatabase::default();
+    beskid_analysis::services::prepare_compilation_with_try_authority(
+        resolved,
+        options,
+        pipeline,
+        true,
+        true,
+        &mut |assembly, program| invalid_try_spans(&mut db, assembly, program),
+    )
+}
+
+fn invalid_try_spans(
+    db: &mut BeskidDatabase,
+    assembly: &beskid_analysis::projects::ProgramAssembly,
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+) -> Result<Vec<beskid_analysis::syntax::SpanInfo>> {
+    use crate::{
+        AstNodeKey, IndexedNodeKind, build_typed_program, project_session_for_syntax_assembly, try_expression_fact,
+    };
+    use std::sync::Arc;
+    let mut units = assembly.units.as_ref().clone();
+    units[assembly.entry_index].program = program.clone();
+    let syntax = Arc::new(
+        beskid_analysis::projects::ProgramAssembly::new(
+            assembly.roots.clone(),
+            Arc::new(units),
+            assembly.entry_index,
+            assembly.discovery,
+            Arc::clone(&assembly.module_index),
+            assembly.has_std_dependency,
+            assembly.generation,
+        )
+        .with_trusted_corelib_service_paths(Arc::clone(&assembly.trusted_corelib_service_paths))
+        .with_runtime_fixture(assembly.runtime_fixture.clone()),
+    );
+    let project = project_session_for_syntax_assembly(db, &syntax, "try-diagnostics", "source-authority")?;
+    let typed = build_typed_program(db, project, syntax.generation, Arc::clone(&syntax))?;
+    let index = syntax.entry_syntax_index();
+    let mut invalid = Vec::new();
+    for node in index.ids_of_kind(IndexedNodeKind::TryExpression) {
+        let key = AstNodeKey { unit: typed.entry, generation: syntax.generation, node };
+        if !matches!(try_expression_fact(db, key), Ok(Some(_))) {
+            let span = index
+                .node_at(program, node)
+                .and_then(|node| node.span())
+                .ok_or_else(|| anyhow::anyhow!("try diagnostic requires its exact source span"))?;
+            invalid.push(span);
+        }
+    }
+    Ok(invalid)
 }
 
 pub fn typed_entry_bundle(

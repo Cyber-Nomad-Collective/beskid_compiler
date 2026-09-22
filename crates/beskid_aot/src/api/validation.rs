@@ -92,14 +92,7 @@ pub(super) fn requires_entrypoint(output_kind: BuildOutputKind) -> bool {
 }
 
 fn canonical_logical_name(logical: &str) -> String {
-    let lower = logical.trim().to_ascii_lowercase();
-    let stripped_prefix = lower.strip_prefix("lib").unwrap_or(&lower);
-    let stripped_suffix = stripped_prefix
-        .strip_suffix(".so")
-        .or_else(|| stripped_prefix.strip_suffix(".dylib"))
-        .or_else(|| stripped_prefix.strip_suffix(".a"))
-        .unwrap_or(stripped_prefix);
-    stripped_suffix.to_string()
+    crate::linker::canonical_link_library_name(&logical.to_ascii_lowercase())
 }
 
 pub(super) fn validate_extern_libraries(artifact: &CodegenArtifact, external_libraries: &[String]) -> AotResult<()> {

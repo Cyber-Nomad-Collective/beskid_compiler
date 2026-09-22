@@ -51,6 +51,43 @@ fn parsed_u8_to_i64_conversion_lowers_as_a_direct_return() {
 }
 
 #[test]
+fn parsed_unary_integer_conversion_preserves_signed_operand_abi() {
+    use beskid_queries::{IndexedNodeKind, PrimitiveNumericConversion, SemanticTypeId, abi_type, child_nodes};
+
+    let (input, isa, root) = item_fixture_with_root("i32 Main(i64 count) { return i32(-count); }");
+    let item = named_function(&input, root, "Main");
+    let function = emit_isle_item(&input, isa.as_ref(), item)
+        .expect("a negated i64 must retain its ABI fact through explicit i32 conversion");
+    let db = input.database();
+    let unary = super::support::find_nodes_of_kind(db, item, IndexedNodeKind::UnaryExpression)[0];
+    let wrapper = super::support::find_nodes_of_kind(db, item, IndexedNodeKind::Expression)
+        .into_iter()
+        .find(|key| child_nodes(db, *key).ok().flatten().is_some_and(|children| children.contains(&unary)))
+        .expect("unary expression wrapper");
+    for key in [unary, wrapper] {
+        assert_eq!(abi_type(db, key).expect("unary ABI fact"), Some(SemanticTypeId::I64));
+    }
+    let call = find_call_expression(db, item).expect("integer conversion");
+    assert_eq!(
+        beskid_queries::primitive_numeric_conversion(db, call).expect("integer conversion fact"),
+        Some(PrimitiveNumericConversion { from: SemanticTypeId::I64, to: SemanticTypeId::I32 })
+    );
+    let clif = function.display().to_string();
+    assert!(clif.contains("ineg"), "{clif}");
+    assert!(clif.contains("ireduce.i32"), "{clif}");
+}
+
+#[test]
+fn parsed_unary_boolean_conversion_remains_unavailable() {
+    let (input, isa, root) = item_fixture_with_root("i32 Main(bool flag) { return i32(!flag); }");
+    let item = named_function(&input, root, "Main");
+    let call = find_call_expression(input.database(), item).expect("rejected conversion");
+    assert!(beskid_queries::primitive_numeric_conversion(input.database(), call).is_err());
+    let error = emit_isle_item(&input, isa.as_ref(), item).expect_err("boolean operands must not become integers");
+    assert!(error.display_with_db(input.database()).contains("MissingRuleOrFact"));
+}
+
+#[test]
 fn parsed_u8_to_i64_conversion_lowers_as_a_direct_call_argument() {
     let (input, isa, root) = item_fixture_with_root(
         r#"

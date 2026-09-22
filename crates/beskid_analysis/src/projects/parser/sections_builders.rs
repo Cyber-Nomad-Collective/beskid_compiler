@@ -7,7 +7,7 @@ use super::super::{
     model::{
         Dependency, DependencySource, GrammarOutputEntry, ModGeneratedOutput, ProjectGrammarSection, ProjectKind,
         ProjectLinkSection, ProjectManifest, ProjectModSection, ProjectSchemasSection, ProjectSection,
-        ProjectTemplateSection, SchemaExport, Target, TargetKind,
+        ProjectTemplateSection, SchemaExport, Target, TargetKind, project_root_block_matches_package_name,
     },
 };
 use super::{
@@ -249,11 +249,11 @@ pub(super) fn build_manifest(parsed: ParsedBlocks) -> Result<ProjectManifest, Pr
         .ok_or_else(|| ProjectError::Validation("missing required named project root block".to_string()))?;
 
     let project_section = assemble_project_section(&project)?;
-    if project_section.block_kind != project_section.name {
+    if !project_root_block_matches_package_name(&project_section.block_kind, &project_section.name) {
         return Err(ProjectError::meta_contract(
             "E1896",
             format!(
-                "project root block kind `{}` must match `name = \"{}\"`",
+                "project root block kind `{}` must match `name = \"{}\"` or its underscore projection",
                 project_section.block_kind, project_section.name
             ),
         ));

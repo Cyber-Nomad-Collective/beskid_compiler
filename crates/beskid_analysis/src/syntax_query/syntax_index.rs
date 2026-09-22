@@ -24,6 +24,7 @@ pub struct SyntaxIndex {
 impl SyntaxIndex {
     /// Index `program` in deterministic pre-order after expansion has completed.
     pub fn from_program(program: &Spanned<Program>, generation: SyntaxGenerationId) -> Self {
+        generation.resume_after();
         let mut metadata = Vec::new();
         let mut children = Vec::new();
         let mut paths = Vec::new();

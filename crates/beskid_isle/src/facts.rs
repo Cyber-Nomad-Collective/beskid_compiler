@@ -553,6 +553,10 @@ pub trait NodeFacts {
     fn try_expression_fact(&self, _key: AstNodeKey) -> Option<beskid_queries::TryExpressionFact> {
         None
     }
+
+    fn try_return_layout(&self, _key: AstNodeKey) -> Option<EnumLayout> {
+        None
+    }
     fn runtime_intrinsic_kind(&self, _key: AstNodeKey) -> Option<RuntimeIntrinsicKind> {
         None
     }

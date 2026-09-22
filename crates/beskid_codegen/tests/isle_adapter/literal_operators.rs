@@ -273,6 +273,29 @@ fn grouped_nested_word_modulo_retains_unsigned_operand_authority() {
 }
 
 #[test]
+fn nested_word_conversion_arithmetic_retains_unsigned_comparison_facts() {
+    let (input, isa, item) =
+        item_fixture("bool Main(i64 offset, i64 count, word length) { return word(count) > length - word(offset); }");
+    let function = emit_isle_item(&input, isa.as_ref(), item)
+        .expect("nested word conversion and subtraction lower through the unsigned comparison path");
+    let subtraction = find_nodes_of_kind(input.database(), item, beskid_queries::IndexedNodeKind::BinaryExpression)
+        .into_iter()
+        .find(|key| {
+            beskid_queries::operator_fact(input.database(), *key).ok().flatten()
+                == Some(beskid_queries::OperatorFact::Sub)
+        })
+        .expect("nested subtraction expression");
+    assert_eq!(
+        beskid_queries::value_abi_type(input.database(), subtraction).expect("nested arithmetic ABI fact"),
+        Some(beskid_queries::SemanticTypeId::WORD)
+    );
+    let clif = function.display().to_string();
+    assert!(clif.contains("isub"), "the source subtraction must be emitted:\n{clif}");
+    assert!(clif.contains("icmp ugt"), "the word comparison must remain unsigned:\n{clif}");
+    assert!(!clif.contains("icmp sgt"), "word must not acquire signed comparison semantics:\n{clif}");
+}
+
+#[test]
 fn parsed_mutable_range_accumulator_exposes_local_write_syntax_facts() {
     let (input, _isa, root) =
         item_fixture_with_root("i32 Main() { mut i32 sum = 0; for i in range(0, 4) { sum = sum + i; } return sum; }");
@@ -391,4 +414,27 @@ fn parsed_syntax_string_literal_materializes_runtime_string_abi() {
         .expect("remap literal data and str_new references");
     module.define_function(function_ids["Main"], &mut context).expect("define literal-producing function");
     module.finalize_definitions().expect("finalize literal-producing function and its data relocation");
+}
+
+#[test]
+fn native_pointer_identity_comparison_lowers_against_a_pointer_parameter() {
+    let (input, isa, item) = item_fixture(
+        "pub pointer Main(pointer config) { if config == NativePointer(0) { return NativePointer(0); } return config; }",
+    );
+    let function = emit_isle_item(&input, isa.as_ref(), item)
+        .expect("a native pointer parameter compared to NativePointer(0) must lower");
+    let clif = function.display().to_string();
+    assert!(clif.contains("icmp"), "the null check must remain a direct comparison:\n{clif}");
+}
+
+#[test]
+fn word_comparison_against_a_module_constant_adopts_the_declared_operand_type() {
+    let (input, isa, item) = item_fixture(
+        "const RUNTIME_UNINITIALIZED = 0; const RUNTIME_SHUT_DOWN = 4; bool Main(word lifecycle) { return lifecycle != RUNTIME_UNINITIALIZED && lifecycle != RUNTIME_SHUT_DOWN; }",
+    );
+    let function = emit_isle_item(&input, isa.as_ref(), item)
+        .expect("an untyped module constant must adopt the compared word operand type");
+    let clif = function.display().to_string();
+    assert!(clif.contains("icmp ne"), "each constant comparison must remain a direct integer test:\n{clif}");
+    assert!(!clif.contains("icmp.i32"), "the constant must not be materialized at a narrower type:\n{clif}");
 }

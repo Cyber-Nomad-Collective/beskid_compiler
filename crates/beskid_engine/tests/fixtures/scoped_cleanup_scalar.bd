@@ -10,6 +10,7 @@ Result<i64, i64> Work() {
     use Resource resource = Resource {};
     return Result::Ok(7_i64);
 }
-i64 RunCleanupFixture() {
+[Export(Abi:"C", Symbol:"RunCleanupFixture")]
+pub i64 RunCleanupFixture() {
     return match Work() { Result::Ok(_) => 1_i64, Result::Error(error) => error, };
 }

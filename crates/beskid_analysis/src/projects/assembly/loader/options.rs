@@ -16,6 +16,8 @@ pub type UnitMaterializer = std::sync::Arc<
 
 #[derive(Debug, Error)]
 pub enum AssemblyError {
+    #[error("syntax generation identities exhausted")]
+    GenerationExhausted,
     #[error("failed to read {path}: {source}")]
     Read { path: PathBuf, source: std::io::Error },
     #[error("failed to parse {path}: {message}")]

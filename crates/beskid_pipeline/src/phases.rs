@@ -35,8 +35,6 @@ pub const MOD_GENERATE: &str = "mod.generate";
 pub const SYNTAX_GENERATION: &str = "syntax.generation";
 /// Semantic rules / diagnostics gate.
 pub const SEMANTIC: &str = "semantic";
-/// Lower parsed AST to HIR inside the semantic rule pipeline.
-pub const SEMANTIC_AST_LOWER: &str = "semantic.ast_lower";
 /// Collect and validate top-level definitions.
 pub const SEMANTIC_DEFINITIONS: &str = "semantic.definitions";
 /// Control-flow and pattern checks before name resolution.

@@ -2,7 +2,7 @@ use std::process::Command;
 
 use crate::error::{AotError, AotResult};
 
-use super::LinkRequest;
+use super::{LinkRequest, canonical_link_library_name};
 
 pub(super) fn append_library_search_paths(req: &LinkRequest, target: &str, cmd: &mut Command) -> AotResult<()> {
     if req.library_search_paths.is_empty() {
@@ -31,7 +31,7 @@ pub(super) fn append_external_libraries(req: &LinkRequest, target: &str, cmd: &m
         return Ok(());
     }
     for library in &req.external_libraries {
-        let name = library.trim();
+        let name = canonical_link_library_name(library);
         if name.is_empty() {
             continue;
         }

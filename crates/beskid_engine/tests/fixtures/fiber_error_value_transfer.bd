@@ -22,7 +22,8 @@ i64 ScorePanic(i64 code, string message) {
     return Points(code == 2_i64 && message == "payload probe");
 }
 
-i64 RunFiberErrorFixture() {
+[Export(Abi:"C", Symbol:"RunFiberErrorFixture")]
+pub i64 RunFiberErrorFixture() {
     Fiber<FiberError> cancellation = spawn ReturnCancellation();
     Fiber<FiberError> overflow = spawn ReturnOverflow();
     Fiber<FiberError> panic = spawn ReturnPanic();

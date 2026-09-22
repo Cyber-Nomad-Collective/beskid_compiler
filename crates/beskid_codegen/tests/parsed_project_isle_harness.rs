@@ -467,6 +467,52 @@ fn parsed_capturing_lambda_spawn_allocates_roots_and_dispatches_fiber_entry() {
 }
 
 #[test]
+fn parsed_unit_capturing_lambda_spawn_preserves_zero_return_entry() {
+    let project = tempfile::tempdir().expect("project directory");
+    let source = "
+        pub type Fiber<T> { i64 handle, }
+        unit Serve(i64 listener) { return; }
+        i64 Main() { i64 listener = 41_i64; let child = spawn (() => Serve(listener)); return 0_i64; }
+    ";
+    let assembly = parse_production_units(project.path(), &[("Main.bd", "Main", source)]);
+    let (target, isa) = x86_64_target_and_isa();
+    let lowered = lower_verified_entrypoint(assembly, target, isa.as_ref());
+    assert_eq!(lowered.artifact.closure_static_plans[0].captures.len(), 1);
+    for lambda in lowered.artifact.functions.iter().filter(|function| {
+        function.name.starts_with("__beskid_spawn_lambda_syntax_")
+            || function.name.starts_with("__beskid_lambda_entry_syntax_")
+    }) {
+        assert_eq!(lambda.function.signature.params.len(), 1, "capture environment");
+        assert!(lambda.function.signature.returns.is_empty(), "unit has no ABI return register");
+        let clif = lambda.function.display().to_string();
+        assert!(clif.contains("Serve#syntax_"), "unit body keeps its effect: {clif}");
+        assert!(clif.contains("load.i64"), "body reads its capture: {clif}");
+    }
+    let trampoline = lowered
+        .artifact
+        .functions
+        .iter()
+        .find(|function| function.name.starts_with("__beskid_spawn_entry_syntax_"))
+        .expect("spawn trampoline");
+    assert_eq!(trampoline.function.signature.returns.len(), 1, "transport still returns its owned result box");
+    let entry = lowered
+        .artifact
+        .functions
+        .iter()
+        .find(|function| function.name.starts_with("__beskid_spawn_lambda_syntax_"))
+        .expect("spawned lambda entry");
+    let target_signature = trampoline
+        .function
+        .dfg
+        .ext_funcs
+        .values()
+        .find(|function| function.name == ExternalName::testcase(entry.name.as_bytes()))
+        .map(|function| &trampoline.function.dfg.signatures[function.signature])
+        .expect("trampoline invokes the source-owned entry");
+    assert!(target_signature.returns.is_empty());
+}
+
+#[test]
 fn multi_unit_parsed_project_lowers_through_codegen_input_isle_only() {
     let project = tempfile::tempdir().expect("project directory");
     let util_source = "pub i32 Double(i32 value) { return value + value; }";
@@ -774,6 +820,35 @@ fn canonical_runtime_production_path_lowers_trusted_intrinsics_to_verified_clif(
         "canonical runtime lowering must retain the Scheduler-owned fiber spawn ABI export",
     );
     let actual_exports = artifact.exports.iter().map(|export| export.exported_symbol.clone()).collect::<BTreeSet<_>>();
+    // Keep Network's actual source closure in this production lowering gate. Analyzer-only
+    // coverage cannot prove mutable assignment facts or emitted control-flow bodies.
+    for service in [
+        "open",
+        "accept",
+        "close",
+        "read",
+        "write",
+        "address",
+        "options",
+        "set_options",
+        "shutdown_write",
+        "udp_connect",
+        "receive",
+        "send",
+        "dns_resolve",
+        "dns_count",
+        "dns_address",
+        "dns_release",
+    ] {
+        let symbol = format!("beskid_rt_v5_network_{service}");
+        assert!(actual_exports.contains(&symbol), "canonical Network source export `{symbol}` must lower");
+    }
+    for helper in ["NetworkTableLocked", "NetworkRequestUnlinkLocked", "NetworkPump", "NetworkShutdown"] {
+        assert!(
+            artifact.functions.iter().any(|function| function.name.starts_with(&format!("{helper}#syntax_"))),
+            "canonical Network helper `{helper}` must emit its real body"
+        );
+    }
     assert!(
         expected_exports.is_subset(&actual_exports),
         "canonical lowering must publish the complete public ABI manifest surface"

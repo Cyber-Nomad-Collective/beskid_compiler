@@ -55,13 +55,13 @@ pub(crate) fn prepare_project_syntax_facts(
 
 /// Run downstream diagnostics from an already assembled, owned input.
 ///
-/// This phase does not access Salsa, so the LSP can release writer exclusivity
-/// before performing full dependency analysis.
+/// The owned job uses an isolated generation-bound query database, so the LSP can
+/// release its session writer before performing full dependency analysis.
 pub(crate) fn prepare_project_diagnostics_from_assembled(
     resolved: &ResolvedInput,
     dependency_typing: DependencyTypingPolicy,
 ) -> anyhow::Result<PreparedSyntaxFacts> {
-    let (prepared, diagnostics, fixes) = services::prepare_compilation_diagnostics_isolated(
+    let (prepared, diagnostics, fixes) = beskid_queries::prepare_compilation_diagnostics_isolated(
         resolved,
         PrepareOptions {
             front_end: FrontEndOptions {

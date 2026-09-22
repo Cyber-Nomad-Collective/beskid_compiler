@@ -77,6 +77,7 @@ fn format_test_row(row: &TestRow) -> Line<'static> {
         TestRowState::Failed => ("fail", Style::default().fg(Color::Red)),
         TestRowState::Skipped => ("skip", Style::default().fg(Color::Blue)),
         TestRowState::FilteredOut => ("filt", Style::default().fg(Color::DarkGray)),
+        TestRowState::TimedOut => ("time", Style::default().fg(Color::Yellow)),
     };
     let time = row.duration.map(format_duration).unwrap_or_else(|| "—".to_owned());
     Line::from(vec![

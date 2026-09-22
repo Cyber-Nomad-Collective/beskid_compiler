@@ -4,12 +4,7 @@ use crate::types::{TypeId, TypeInfo, TypeTable};
 use super::substitution::primitive_type_id;
 
 pub(super) fn is_numeric(types: &TypeTable, id: TypeId) -> bool {
-    matches!(
-        types.get(id),
-        Some(TypeInfo::Primitive(
-            PrimitiveType::I32 | PrimitiveType::I64 | PrimitiveType::U32 | PrimitiveType::U8 | PrimitiveType::F64
-        ))
-    )
+    crate::types::inference::is_numeric(types, id)
 }
 
 pub(super) fn is_never(types: &TypeTable, id: TypeId) -> bool {

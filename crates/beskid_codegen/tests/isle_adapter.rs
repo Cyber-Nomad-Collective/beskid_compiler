@@ -1,3 +1,5 @@
+#[path = "isle_adapter/binding_field_receivers.rs"]
+mod binding_field_receivers;
 #[path = "isle_adapter/calls_conversions.rs"]
 mod calls_conversions;
 #[path = "isle_adapter/channel_conditions.rs"]

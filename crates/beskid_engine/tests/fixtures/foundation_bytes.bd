@@ -54,6 +54,7 @@ i64 CheckWriter(BufferWriter writer) {
     if WritePosition(writer) != 1_i64 { return 23_i64; }
     return 42_i64;
 }
+[Export(Abi:"C", Symbol:"RunFoundationFixture")]
 pub i64 RunFoundationFixture() {
     if Slice.IsValidRange(4_i64, -1_i64, 1_i64) { return 1_i64; }
     if Slice.IsValidRange(4_i64, 0_i64, -1_i64) { return 2_i64; }

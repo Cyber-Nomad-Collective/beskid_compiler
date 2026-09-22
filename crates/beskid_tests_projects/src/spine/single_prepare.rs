@@ -40,7 +40,6 @@ impl PipelineObserver for PhaseStartRecorder {
 }
 
 const SEMANTIC_SUB_PHASE_IDS: &[&str] = &[
-    phases::SEMANTIC_AST_LOWER,
     phases::SEMANTIC_DEFINITIONS,
     phases::SEMANTIC_CONTROL_FLOW,
     phases::SEMANTIC_NAME_RESOLUTION,

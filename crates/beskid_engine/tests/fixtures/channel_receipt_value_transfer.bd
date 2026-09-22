@@ -158,7 +158,8 @@ i64 RunChannelReceiptScenarios() {
         + committedCancelled + postBeforeReceive + postDisposed + postDrained;
 }
 
-i64 RunChannelReceiptFixture() {
+[Export(Abi:"C", Symbol:"RunChannelReceiptFixture")]
+pub i64 RunChannelReceiptFixture() {
     Fiber<i64> controller = spawn (() => RunChannelReceiptScenarios());
     Result<i64, FiberError> completed = controller.Join();
     return match completed { Result::Ok(value) => value, _ => -1000_i64, };

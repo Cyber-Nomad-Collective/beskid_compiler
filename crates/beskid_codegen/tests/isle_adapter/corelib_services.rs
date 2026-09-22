@@ -9,6 +9,130 @@ use super::support::{
     item_name, lower_syntax_program, parse_program_with_source_name, settings,
 };
 
+fn network_internal_panic_fixture(
+    copied: bool,
+    include_receive_dependencies: bool,
+) -> (CodegenInput<'static>, Arc<dyn cranelift_codegen::isa::TargetIsa>, AstNodeKey) {
+    use beskid_abi::runtime_source::CANONICAL_NETWORK_INTERNAL_SOURCE_PATH;
+
+    let mut db = Box::new(BeskidDatabase::default());
+    let canonical_path = canonical_corelib_service_source_path(CANONICAL_NETWORK_INTERNAL_SOURCE_PATH)
+        .expect("canonical Network.Internal path");
+    let source_root = canonical_path.ancestors().nth(2).expect("network source root").to_path_buf();
+    let copied_root = copied.then(|| tempfile::tempdir().expect("untrusted Network copy").keep());
+    let mut units = Vec::new();
+    let slice_path = canonical_corelib_service_source_path("Core/Bytes/Slice.bd").unwrap();
+    let foundation_root = slice_path.ancestors().nth(3).unwrap().to_path_buf();
+    let mut sources = vec!["Network/Internal.bd", "Network/Errors.bd"];
+    if include_receive_dependencies {
+        sources.extend(["Core/Bytes/Slice.bd", "Core/Collections/Array.bd", "Core/Collections/Array/ArrayIter.bd"]);
+    }
+    for relative in sources {
+        let original =
+            if relative.starts_with("Core/") { foundation_root.join(relative) } else { source_root.join(relative) };
+        let source = std::fs::read_to_string(&original).expect("canonical Network source");
+        let path = if let Some(root) = &copied_root {
+            let path = root.join(relative);
+            std::fs::create_dir_all(path.parent().unwrap()).expect("copied source directory");
+            std::fs::write(&path, &source).expect("identical copied source");
+            path
+        } else {
+            original
+        };
+        let program = parse_program_with_source_name(path.to_str().unwrap(), &source).expect("Network syntax");
+        units.push(SourceUnit { logical_name: relative.into(), origin_path: path.clone(), path, source, program });
+    }
+    let source_root = copied_root.unwrap_or(source_root);
+    let entry_path = units[0].path.clone();
+    let generation = SyntaxGenerationId(103);
+    let roots: Arc<[AstNodeKey]> = units
+        .iter()
+        .map(|unit| AstNodeKey { unit: SourceUnitId::new(&*db, unit.path.clone()), generation, node: AstNodeId(0) })
+        .collect();
+    let root = roots[0];
+    let project =
+        ProjectSession::new(&*db, source_root.clone(), entry_path, "network-panic".into(), "source-authority".into());
+    let assembly = Arc::new(ProgramAssembly::new(
+        EffectiveCompilationRoots {
+            host: RootEntry { dependency_name: None, source_root },
+            dependencies: vec![RootEntry { dependency_name: Some("foundation".into()), source_root: foundation_root }],
+        },
+        Arc::new(units),
+        0,
+        AssemblyDiscovery::ImportClosure,
+        Arc::new(ModuleIndex::empty()),
+        false,
+        generation,
+    ));
+    let target = TargetMetadata::supported()
+        .into_iter()
+        .find(|target| target.triple.as_str() == "x86_64-unknown-linux-gnu")
+        .expect("linux target");
+    let manifest = AbiManifestV5::canonical_runtime(target.clone());
+    let typed = build_typed_program_with_corelib_services(
+        &mut db,
+        project,
+        generation,
+        assembly,
+        canonical_corelib_service_capability(&manifest).expect("canonical service capability"),
+    )
+    .expect("typed Network source");
+    let input = CodegenInput::new(Box::leak(db), typed, roots, target, manifest).expect("Network codegen input");
+    let isa =
+        isa::lookup_by_name("x86_64").expect("ISA").finish(settings::Flags::new(settings::builder())).expect("flags");
+    (input, isa, root)
+}
+
+#[test]
+fn canonical_network_internal_panic_lowers_with_manifest_backed_never_abi() {
+    let (input, isa, root) = network_internal_panic_fixture(false, false);
+    let error_mapper = super::support::named_function(&input, root, "Error");
+    let artifact =
+        lower_syntax_program(&input, isa.as_ref(), &[SyntaxModuleItem { key: error_mapper, symbol: "Error".into() }])
+            .expect("canonical Network error mapper lowers through its scoped panic service");
+    let call = find_corelib_service_call(input.database(), error_mapper, "__panic_str").expect("authorized panic");
+    assert!(matches!(
+        call_lowering(input.database(), call).expect("panic lowering"),
+        Some(beskid_queries::CallLowering::CorelibService(service))
+            if service.symbol == "beskid_trap_message"
+    ));
+    assert_eq!(
+        call_abi_signature(input.database(), call).expect("panic ABI").expect("signature").result,
+        beskid_queries::SemanticTypeId::NEVER
+    );
+    assert!(artifact.extern_imports.iter().any(|import| import.symbol == "beskid_trap_message"));
+}
+
+#[test]
+fn canonical_network_receive_owns_its_length_invariant_and_lowers() {
+    let (input, isa, root) = network_internal_panic_fixture(false, true);
+    let receive = super::support::named_function(&input, root, "Receive");
+    find_corelib_service_call(input.database(), receive, "__panic_str")
+        .expect("the private receive bridge must validate its native completion length");
+    find_corelib_service_call(input.database(), receive, "__network_receive").expect("same source owns receive ABI");
+    let length = super::support::named_function(&input, input.roots()[2], "Len");
+    lower_syntax_program(
+        &input,
+        isa.as_ref(),
+        &[
+            SyntaxModuleItem { key: receive, symbol: "Receive".into() },
+            SyntaxModuleItem { key: length, symbol: "Len".into() },
+        ],
+    )
+    .expect("canonical receive and its invariant lower under one source-scoped authority");
+}
+
+#[test]
+fn copied_network_internal_panic_remains_unauthorized() {
+    let (input, isa, root) = network_internal_panic_fixture(true, false);
+    let error_mapper = super::support::named_function(&input, root, "Error");
+    assert!(find_corelib_service_call(input.database(), error_mapper, "__panic_str").is_none());
+    let error =
+        lower_syntax_program(&input, isa.as_ref(), &[SyntaxModuleItem { key: error_mapper, symbol: "Error".into() }])
+            .expect_err("identical untrusted Network source must not gain panic authority");
+    assert!(error.to_string().contains("MissingRuleOrFact"), "{error}");
+}
+
 #[test]
 fn unknown_qualified_payload_type_remains_unavailable_to_isle() {
     let (input, _isa, root) =

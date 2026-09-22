@@ -68,7 +68,8 @@ i64 CancelAndRepeatTimer() {
     return -1000_i64;
 }
 
-i64 RunTimerFixture() {
+[Export(Abi:"C", Symbol:"RunTimerFixture")]
+pub i64 RunTimerFixture() {
     Result<unit, TimerError> result = Time.Sleep(Duration { nanos: -1_i64 });
     bool invalid = match result { Result::Error(TimerError::InvalidDuration()) => true, _ => false, };
     RequireTimer(invalid);

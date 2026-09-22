@@ -9,6 +9,7 @@ bool RejectDecode(u8[] bytes) {
     } };
 }
 
+[Export(Abi:"C", Symbol:"RunFoundationFixture")]
 pub i64 RunFoundationFixture() {
     u8[] overlong = [192_u8, 128_u8];
     if Utf8.IsValid(overlong) { return 1; }

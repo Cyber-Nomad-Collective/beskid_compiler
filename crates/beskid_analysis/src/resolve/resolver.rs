@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use crate::syntax::Spanned;
-use crate::syntax::{Node, Program};
+use crate::syntax::{Node, Program, SpanInfo};
 
 use super::errors::ResolveResult;
 
@@ -16,6 +16,8 @@ use super::tables::ResolutionTables;
 
 #[derive(Debug, Default)]
 pub struct Resolver {
+    pub(crate) constants: HashMap<(ModuleId, String), crate::syntax::Spanned<crate::syntax::Literal>>,
+    pub(crate) shared_constants: HashMap<String, Option<crate::syntax::Spanned<crate::syntax::Literal>>>,
     pub(crate) items: Vec<ItemInfo>,
     pub(crate) module_graph: ModuleGraph,
     pub(crate) current_module: ModuleId,
@@ -26,6 +28,10 @@ pub struct Resolver {
     pub(crate) warnings: Vec<ResolveWarning>,
     pub(crate) builtin_items: HashMap<ItemId, usize>,
     pub(crate) module_imports: HashMap<String, Vec<String>>,
+    /// Successful public-item scope imports, keyed by the imported item name.
+    pub(crate) imported_scope_origins: HashMap<String, SpanInfo>,
+    /// Successful module-import aliases, keyed by the usable module alias.
+    pub(crate) module_import_origins: HashMap<String, SpanInfo>,
     pub(crate) current_source_path: Option<PathBuf>,
     pub(crate) symbols: SymbolRegistry,
     pub(crate) by_symbol: HashMap<SymbolId, ItemId>,

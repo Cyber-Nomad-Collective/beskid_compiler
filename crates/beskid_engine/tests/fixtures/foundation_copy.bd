@@ -4,6 +4,7 @@ pub contract CopyProbe {
     unit Remember(u8[] buffer);
     i64 Case();
 }
+[Export(Abi:"C", Symbol:"RunFoundationFixture")]
 pub i64 RunFoundationFixture() {
     u8[] buffer = [1_u8, 2_u8, 3_u8, 4_u8, 5_u8];
     CopyProbe.Remember(buffer);

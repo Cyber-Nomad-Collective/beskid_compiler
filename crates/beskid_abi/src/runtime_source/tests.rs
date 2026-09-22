@@ -285,6 +285,29 @@ fn canonical_assert_source_can_force_collection_without_granting_other_units_gc_
 }
 
 #[test]
+fn canonical_time_source_alone_owns_the_manifest_sleep_binding() {
+    for target in crate::abi_v5::TargetMetadata::supported() {
+        let manifest = AbiManifestV5::canonical_runtime(target);
+        let capability = canonical_corelib_service_capability(&manifest).expect("Corelib service capability");
+        let service = capability
+            .service_for_source(CANONICAL_FOUNDATION_TIME_SOURCE_PATH, "__timer_sleep_until")
+            .expect("Core.Time owns the scheduler sleep binding");
+        assert_eq!(service.symbol, "beskid_rt_v5_external_sleep_until");
+        assert_eq!(
+            preflight_corelib_service_import(&capability, &manifest, service).expect("manifest source builtin"),
+            CorelibServiceAbi { parameters: vec![CorelibServiceAbiType::I64], result: CorelibServiceAbiType::Usize },
+            "the sleep binding must keep the export's word-sized status result"
+        );
+        assert!(
+            capability.services().iter().filter(|candidate| candidate.name == "__timer_sleep_until").count() == 1,
+            "no other Corelib unit may acquire scheduler sleep authority"
+        );
+        assert!(capability.service_for_source("app/Core/Time/Time.bd", "__timer_sleep_until").is_none());
+        assert!(capability.service_for_source(CANONICAL_CORELIB_FIBER_SOURCE_PATH, "__timer_sleep_until").is_none());
+    }
+}
+
+#[test]
 fn canonical_foundation_service_table_covers_every_implemented_raw_call_and_nothing_else() {
     let target = crate::abi_v5::TargetMetadata::supported()
         .into_iter()
@@ -450,6 +473,99 @@ fn every_source_authorized_service_selects_one_generated_abi_shape() {
                 service.name, service.source_path
             )
         });
+    }
+}
+
+#[test]
+fn every_source_authorized_service_passes_the_exact_target_import_preflight() {
+    for target in crate::abi_v5::TargetMetadata::supported() {
+        let manifest = AbiManifestV5::canonical_runtime(target);
+        let capability = canonical_corelib_service_capability(&manifest).expect("Corelib service capability");
+        for service in capability.services() {
+            let preflight =
+                preflight_corelib_service_import(&capability, &manifest, *service).unwrap_or_else(|error| {
+                    panic!("{} in {} failed import preflight: {error}", service.name, service.source_path)
+                });
+            assert_eq!(preflight, canonical_corelib_service_abi(*service).expect("canonical service ABI"));
+        }
+    }
+}
+
+#[test]
+fn corelib_import_preflight_rejects_unknown_source_and_mismatched_adapter_declarations() {
+    let target = crate::abi_v5::TargetMetadata::supported()
+        .into_iter()
+        .find(|target| target.triple.as_str() == "x86_64-unknown-linux-gnu")
+        .expect("linux target");
+    let manifest = AbiManifestV5::canonical_runtime(target);
+    let capability = canonical_corelib_service_capability(&manifest).expect("Corelib service capability");
+    let service = capability
+        .service_for_source(CANONICAL_CORELIB_SYSCALL_SOURCE_PATH, "__syscall_read_bytes")
+        .expect("canonical syscall service");
+
+    assert!(matches!(
+        preflight_corelib_service_declaration(
+            &capability,
+            &manifest,
+            "Copied/Core/Syscall/Syscall.bd",
+            service.name,
+            service.symbol,
+        ),
+        Err(CorelibServiceImportPreflightError::UnauthorizedDeclaration { .. })
+    ));
+    assert!(matches!(
+        preflight_corelib_service_declaration(
+            &capability,
+            &manifest,
+            service.source_path,
+            service.name,
+            "copied_runtime_adapter",
+        ),
+        Err(CorelibServiceImportPreflightError::UnauthorizedDeclaration { .. })
+    ));
+
+    assert!(capability.service_for_source(CANONICAL_CORELIB_CHANNEL_SOURCE_PATH, "__channel_receive").is_none());
+    assert!(capability.service_for_source(CANONICAL_CORELIB_CHANNEL_SOURCE_PATH, "__channel_receive_status").is_some());
+}
+
+#[test]
+fn networking_imports_are_source_scoped_and_target_shape_exact() {
+    const NETWORK_SERVICES: &[(&str, &str)] = &[
+        ("__network_open", "beskid_rt_v5_network_open"),
+        ("__network_accept", "beskid_rt_v5_network_accept"),
+        ("__network_close", "beskid_rt_v5_network_close"),
+        ("__network_read", "beskid_rt_v5_network_read"),
+        ("__network_write", "beskid_rt_v5_network_write"),
+        ("__network_address", "beskid_rt_v5_network_address"),
+        ("__network_options", "beskid_rt_v5_network_options"),
+        ("__network_set_options", "beskid_rt_v5_network_set_options"),
+        ("__network_shutdown_write", "beskid_rt_v5_network_shutdown_write"),
+        ("__network_udp_connect", "beskid_rt_v5_network_udp_connect"),
+        ("__network_receive", "beskid_rt_v5_network_receive"),
+        ("__network_send", "beskid_rt_v5_network_send"),
+        ("__network_dns_resolve", "beskid_rt_v5_network_dns_resolve"),
+        ("__network_dns_count", "beskid_rt_v5_network_dns_count"),
+        ("__network_dns_address", "beskid_rt_v5_network_dns_address"),
+        ("__network_dns_release", "beskid_rt_v5_network_dns_release"),
+    ];
+
+    for target in crate::abi_v5::TargetMetadata::supported() {
+        let manifest = AbiManifestV5::canonical_runtime(target);
+        let capability = canonical_corelib_service_capability(&manifest).expect("Corelib service capability");
+        for (name, symbol) in NETWORK_SERVICES {
+            let abi = preflight_corelib_service_declaration(
+                &capability,
+                &manifest,
+                CANONICAL_NETWORK_INTERNAL_SOURCE_PATH,
+                name,
+                symbol,
+            )
+            .unwrap_or_else(|error| panic!("network declaration {name} / {symbol} failed preflight: {error}"));
+            assert!(
+                !abi.parameters.is_empty() || !matches!(abi.result, CorelibServiceAbiType::Void),
+                "network service {name} must retain a concrete target shape"
+            );
+        }
     }
 }
 

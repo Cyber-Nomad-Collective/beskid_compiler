@@ -124,7 +124,10 @@ fn fingerprint_diagnostics(diagnostics: &[crate::analysis::SemanticDiagnostic]) 
 }
 
 /// Register assembly for an entry (see [`super::entry_session::get_or_insert_assembly`]).
-pub fn session_for_assembly(fingerprint: SessionFingerprint, assembly: ProgramAssembly) -> Arc<CompilationSession> {
+pub fn session_for_assembly(
+    fingerprint: SessionFingerprint,
+    assembly: ProgramAssembly,
+) -> anyhow::Result<Arc<CompilationSession>> {
     super::entry_session::get_or_insert_assembly(fingerprint, assembly)
 }
 

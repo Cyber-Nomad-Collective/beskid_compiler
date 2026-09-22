@@ -13,6 +13,11 @@ impl<'a> TypeChecker<'a> {
         span: crate::syntax::SpanInfo,
         path: &Spanned<Path>,
     ) -> Option<TypeId> {
+        if let Some(value) =
+            self.resolution.tables.integer_constants.get(&(self.current_source_path.clone(), span)).cloned()
+        {
+            return self.type_id_for_literal(&value);
+        }
         if path.node.segments.len() == 1 {
             let field_name = path.node.segments[0].node.name.node.name.as_str();
             if let Some(ResolvedValue::Local(local_id)) = self.resolved_value_at(span)

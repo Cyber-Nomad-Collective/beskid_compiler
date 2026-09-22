@@ -289,8 +289,8 @@ fn checked_in_corelib_mvp_modules_reference_runtime_backed_symbols() {
         string_mod.contains("pub mod Core.String.Core;") && string_mod.contains("Core.Len(text)"),
         "Core.String hub should re-export Core.String.Core and delegate Len to it"
     );
-    let array_mod = fs::read_to_string(foundation_src().join("Collections/Array.bd")).expect("read Array");
-    assert!(array_mod.contains("__array_len"), "Collections.Array should use __array_len for slice length");
+    let array_mod = fs::read_to_string(foundation_src().join("Core/Collections/Array.bd")).expect("read Array");
+    assert!(array_mod.contains("__array_len"), "Core.Collections.Array should use __array_len for slice length");
     assert!(!output_mod.contains("__sys_print"), "Core.Output must not reference purged __sys_print builtins");
     assert!(
         output_mod.contains("Core.Syscall.WriteWith") && output_mod.contains("WriteLine"),

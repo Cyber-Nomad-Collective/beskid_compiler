@@ -71,11 +71,14 @@ pub struct TestReportSummary {
     pub failed: usize,
     pub skipped: usize,
     pub filtered_out: usize,
+    /// Tests never started because the target's execution budget expired first. Distinct
+    /// from `skipped`, which means an explicit `skip.condition` was true.
+    pub timed_out: usize,
 }
 
 impl TestReportSummary {
     pub fn total(&self) -> usize {
-        self.passed + self.failed + self.skipped + self.filtered_out
+        self.passed + self.failed + self.skipped + self.filtered_out + self.timed_out
     }
 
     pub fn into_command_summary(self, title: impl Into<String>) -> CommandSummary {
@@ -110,14 +113,21 @@ impl TestReportSummary {
                 color: Color::DarkGray,
             });
         }
+        if self.timed_out > 0 {
+            slices.push(SummarySlice {
+                label: "time".into(),
+                percent: self.timed_out as f64 * 100.0 / total,
+                color: Color::Yellow,
+            });
+        }
         if slices.is_empty() {
             slices.push(SummarySlice { label: "empty".into(), percent: 100.0, color: Color::DarkGray });
         }
         CommandSummary {
             title: title.clone(),
             headline: format!(
-                "passed={} failed={} skipped={} filtered={}",
-                self.passed, self.failed, self.skipped, self.filtered_out
+                "passed={} failed={} skipped={} filtered={} timed_out={}",
+                self.passed, self.failed, self.skipped, self.filtered_out, self.timed_out
             ),
             stats: vec![
                 SummaryStat { label: "passed".into(), value: self.passed.to_string(), color: Some(Color::Green) },
@@ -127,6 +137,11 @@ impl TestReportSummary {
                     label: "filtered".into(),
                     value: self.filtered_out.to_string(),
                     color: Some(Color::DarkGray),
+                },
+                SummaryStat {
+                    label: "timed_out".into(),
+                    value: self.timed_out.to_string(),
+                    color: Some(Color::Yellow),
                 },
             ],
             slices,

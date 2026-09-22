@@ -1,6 +1,7 @@
 //! JIT regression for corelib `Console.Controls.Frame.Repeat` via project resolution.
 
 use std::path::PathBuf;
+use std::sync::Mutex;
 
 use beskid_abi::runtime_kit::BuildProfile;
 use beskid_analysis::services::{PrepareOptions, resolve_input};
@@ -8,6 +9,14 @@ use beskid_engine::Engine;
 use beskid_engine::services::run_entrypoint_from_front_end_with_engine;
 use beskid_queries::{configure_db_for_project, prepare_compilation_with_db, with_db};
 use beskid_tools::toolchain::runtime_kit::{RuntimeKitProfile, build_native_host};
+
+/// Serializes cases in this binary.
+///
+/// Every case prepares an entry of the same corelib test project, so concurrent cases share
+/// the process-wide query database project and entry-session registry fingerprint, and each
+/// activates an engine against the runtime kit. The production CLI prepares and runs one entry
+/// at a time per process; this lock restores that model under libtest's parallel runner.
+static CORELIB_JIT_LOCK: Mutex<()> = Mutex::new(());
 
 fn corelib_tests_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../corelib/beskid_corelib/tests/corelib_tests")
@@ -21,6 +30,7 @@ fn run_corelib_test(entry: &str, target_name: &str, test_name: &str) -> String {
 }
 
 fn run_corelib_tests(entry: &str, target_name: &str, test_names: &[&str]) -> Vec<String> {
+    let _serial = CORELIB_JIT_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     let runtime_prefix = tempfile::tempdir().expect("exact runtime-kit prefix");
     build_native_host(runtime_prefix.path().to_path_buf(), RuntimeKitProfile::Debug)
         .expect("publish exact native runtime kit");

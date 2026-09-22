@@ -1,0 +1,60 @@
+use Runtime.Bootstrap.Lifecycle;
+use Runtime.Bootstrap.Native;
+use Runtime.Fiber.Scheduler.Core;
+use Runtime.Fiber.Scheduler.Context;
+use Runtime.Fiber.Scheduler.External;
+use Runtime.Fiber.Scheduler.Loop;
+use Testing.Assert;
+
+pub unit CheckHostWorkSurvivesWait(word winner) {
+    pointer runtime = Native.SystemAllocate(64, 8);
+    memory_set(runtime, 0, 64);
+    Assert.True(Lifecycle.ProcessInit(runtime) == runtime, "runtime initialized");
+    // This owner is parked before any step. Use the runtime's typed entry-address
+    // seam rather than treating a language callable as an untyped native pointer.
+    word fiber = Core.FiberAlloc(Native.NativeWord(Context.SchedulerFiberEntryAddress()), 0, 0, FIBER_NONE);
+    Assert.True(fiber != FIBER_NONE, "wait owner allocated");
+    Core.FiberSetState(fiber, FIBER_STATE_PARKED);
+    mut i64 deadline = -1;
+    if winner == EXTERNAL_TIMEOUT { deadline = 0; }
+    word token = External.ExternalWaitRegister(Core.FiberHandle(fiber), 32, deadline);
+    Assert.True(token != 0, "resolver wait registered");
+    External.ExternalWorkRetain();
+    Assert.Equal(External.ExternalActiveCount(), 2, "wait and live host resolver own independent obligations");
+
+    if winner == EXTERNAL_TIMEOUT {
+        External.ExternalPump(0);
+    } else {
+        Assert.True(External.ExternalTryComplete(token & 0xFFFFFFFF, token >> 32, winner), "cancellation wins the wait");
+    }
+    Assert.Equal(raw_word_load(pointer_add(External.ExternalWaitRecord(token), 32)), winner, "one terminal source owns the wait");
+    Assert.Equal(External.ExternalActiveCount(), 1, "settled wait retains live host resolver liveness");
+    Assert.Equal(External.ExternalNextDeadline(), -1, "winner removes the timer");
+    Assert.True(!External.ExternalTryComplete(token & 0xFFFFFFFF, token >> 32, EXTERNAL_READY), "late readiness cannot win twice");
+    Assert.True(External.ExternalRelease(token), "terminal wait storage released");
+    Assert.True(!External.ExternalRelease(token), "duplicate release cannot consume the host obligation");
+    Assert.True(!Loop.SchedStep(), "no runnable work exists while host resolver remains active");
+    Assert.Equal(External.ExternalActiveCount(), 1, "idle scheduler still observes host work");
+
+    word replacement = External.ExternalWaitRegister(Core.FiberHandle(fiber), 32, -1);
+    Assert.True(replacement != 0 && replacement != token, "fiber can register a fresh generation before old host work exits");
+    Assert.True(!External.ExternalTryComplete(token & 0xFFFFFFFF, token >> 32, EXTERNAL_READY), "stale host completion cannot settle reused wait storage");
+    Assert.Equal(External.ExternalActiveCount(), 2, "stale completion preserves both live obligations");
+    Assert.True(External.ExternalTryComplete(replacement & 0xFFFFFFFF, replacement >> 32, EXTERNAL_READY), "new wait completes independently");
+    Assert.True(External.ExternalRelease(replacement), "new wait storage released");
+    External.ExternalWorkRelease();
+    Assert.Equal(External.ExternalActiveCount(), 0, "observed host exit releases the final obligation exactly once");
+    Core.FiberSetState(fiber, FIBER_STATE_CANCELLED);
+    Assert.True(Core.SchedShutdown(), "owner teardown succeeds after host drain");
+    Lifecycle.ProcessShutdown(runtime);
+    Native.SystemFree(runtime, 64);
+    return;
+}
+
+test cancelled_wait_retains_host_work_until_host_exit {
+    CheckHostWorkSurvivesWait(EXTERNAL_CANCELLED);
+}
+
+test expired_wait_retains_host_work_until_host_exit {
+    CheckHostWorkSurvivesWait(EXTERNAL_TIMEOUT);
+}

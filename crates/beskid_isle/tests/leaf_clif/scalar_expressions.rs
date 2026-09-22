@@ -1,7 +1,7 @@
 use super::support::{
     AbiParam, AstNodeId, AstNodeKey, BeskidDatabase, Function, FunctionBuilder, FunctionBuilderContext, InstBuilder,
     IsleContext, JITBuilder, JITModule, Linkage, LiteralKind, Module, NodeFacts, NodeKind, OperatorFact, PathBuf,
-    Signature, SourceUnitId, SyntaxGenerationId, Triple, default_libcall_names, lower_expression, settings, types,
+    SemanticTypeId, Signature, SourceUnitId, SyntaxGenerationId, Triple, default_libcall_names, lower_expression, settings, types,
     verify_function,
 };
 
@@ -256,6 +256,11 @@ fn binary_u8_less_than_emits_unsigned_compare() {
         fn scalar_type(&self, key: AstNodeKey) -> Option<cranelift_codegen::ir::Type> {
             if key == self.root || key == self.left || key == self.right { Some(types::I8) } else { None }
         }
+
+        // Integer compare signedness comes from the operands' semantic types, not the CLIF width.
+        fn semantic_type(&self, key: AstNodeKey) -> Option<SemanticTypeId> {
+            (key == self.left || key == self.right).then_some(SemanticTypeId::U8)
+        }
     }
 
     let db = BeskidDatabase::default();
@@ -328,6 +333,11 @@ fn sdiv_traps_on_zero_divisor() {
 
         fn scalar_type(&self, key: AstNodeKey) -> Option<cranelift_codegen::ir::Type> {
             (key == self.root || key == self.left || key == self.right).then_some(types::I32)
+        }
+
+        // Integer division signedness comes from the operands' semantic types.
+        fn semantic_type(&self, key: AstNodeKey) -> Option<SemanticTypeId> {
+            (key == self.left || key == self.right).then_some(SemanticTypeId::I32)
         }
     }
 

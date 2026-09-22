@@ -17,8 +17,8 @@ pub(in crate::semantic_contract) use control_flow::{
 };
 
 pub(in crate::semantic_contract) use signatures::{
-    call_abi_signature_for_call, call_abi_signature_tracked, item_abi_signature_tracked, item_signature_for_node,
-    item_signature_tracked, signature_from_syntax,
+    call_abi_signature_for_call, call_abi_signature_tracked, declared_callable_return_type, item_abi_signature_tracked,
+    item_signature_for_node, item_signature_tracked, signature_from_syntax,
 };
 
 pub(in crate::semantic_contract) use specialization::{

@@ -1118,6 +1118,365 @@
       "targetBindings": []
     },
     {
+      "name": "network_address",
+      "symbol": "beskid_rt_v5_intrinsic_network_address",
+      "capability": "runtime.adapter.network_address",
+      "params": [
+        {
+          "name": "socket",
+          "type": "pointer"
+        },
+        {
+          "name": "peer",
+          "type": "u8"
+        },
+        {
+          "name": "address",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32",
+      "resultStatus": null,
+      "targetBindings": []
+    },
+    {
+      "name": "network_bind",
+      "symbol": "beskid_rt_v5_intrinsic_network_bind",
+      "capability": "runtime.adapter.network_bind",
+      "params": [
+        {
+          "name": "socket",
+          "type": "pointer"
+        },
+        {
+          "name": "address",
+          "type": "pointer"
+        },
+        {
+          "name": "backlog",
+          "type": "i32"
+        }
+      ],
+      "result": "i32",
+      "resultStatus": null,
+      "targetBindings": []
+    },
+    {
+      "name": "network_cancel",
+      "symbol": "beskid_rt_v5_intrinsic_network_cancel",
+      "capability": "runtime.adapter.network_cancel",
+      "params": [
+        {
+          "name": "reactor",
+          "type": "pointer"
+        },
+        {
+          "name": "request",
+          "type": "pointer"
+        }
+      ],
+      "result": "void",
+      "resultStatus": null,
+      "targetBindings": []
+    },
+    {
+      "name": "network_close",
+      "symbol": "beskid_rt_v5_intrinsic_network_close",
+      "capability": "runtime.adapter.network_close",
+      "params": [
+        {
+          "name": "socket",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32",
+      "resultStatus": null,
+      "targetBindings": []
+    },
+    {
+      "name": "network_dns_count",
+      "symbol": "beskid_rt_v5_intrinsic_network_dns_count",
+      "capability": "runtime.adapter.network_dns_count",
+      "params": [
+        {
+          "name": "request",
+          "type": "pointer"
+        }
+      ],
+      "result": "i64",
+      "resultStatus": null,
+      "targetBindings": []
+    },
+    {
+      "name": "network_dns_get",
+      "symbol": "beskid_rt_v5_intrinsic_network_dns_get",
+      "capability": "runtime.adapter.network_dns_get",
+      "params": [
+        {
+          "name": "request",
+          "type": "pointer"
+        },
+        {
+          "name": "index",
+          "type": "usize"
+        },
+        {
+          "name": "address",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32",
+      "resultStatus": null,
+      "targetBindings": []
+    },
+    {
+      "name": "network_dns_release",
+      "symbol": "beskid_rt_v5_intrinsic_network_dns_release",
+      "capability": "runtime.adapter.network_dns_release",
+      "params": [
+        {
+          "name": "request",
+          "type": "pointer"
+        }
+      ],
+      "result": "void",
+      "resultStatus": null,
+      "targetBindings": []
+    },
+    {
+      "name": "network_dns_start",
+      "symbol": "beskid_rt_v5_intrinsic_network_dns_start",
+      "capability": "runtime.adapter.network_dns_start",
+      "params": [
+        {
+          "name": "host",
+          "type": "pointer"
+        },
+        {
+          "name": "port",
+          "type": "usize"
+        },
+        {
+          "name": "family",
+          "type": "i32"
+        },
+        {
+          "name": "owner",
+          "type": "usize"
+        },
+        {
+          "name": "token",
+          "type": "usize"
+        }
+      ],
+      "result": "pointer",
+      "resultStatus": null,
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "beskid_rt_v5_intrinsic_network_dns_start",
+          "osImports": [
+            "__memcpy_chk",
+            "__memset_chk"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "network_get_options",
+      "symbol": "beskid_rt_v5_intrinsic_network_get_options",
+      "capability": "runtime.adapter.network_get_options",
+      "params": [
+        {
+          "name": "socket",
+          "type": "pointer"
+        }
+      ],
+      "result": "i64",
+      "resultStatus": null,
+      "targetBindings": []
+    },
+    {
+      "name": "network_open",
+      "symbol": "beskid_rt_v5_intrinsic_network_open",
+      "capability": "runtime.adapter.network_open",
+      "params": [
+        {
+          "name": "kind",
+          "type": "i32"
+        },
+        {
+          "name": "family",
+          "type": "i32"
+        },
+        {
+          "name": "output",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32",
+      "resultStatus": null,
+      "targetBindings": []
+    },
+    {
+      "name": "network_options",
+      "symbol": "beskid_rt_v5_intrinsic_network_options",
+      "capability": "runtime.adapter.network_options",
+      "params": [
+        {
+          "name": "socket",
+          "type": "pointer"
+        },
+        {
+          "name": "bits",
+          "type": "usize"
+        }
+      ],
+      "result": "i32",
+      "resultStatus": null,
+      "targetBindings": []
+    },
+    {
+      "name": "network_reactor_create",
+      "symbol": "beskid_rt_v5_intrinsic_network_reactor_create",
+      "capability": "runtime.adapter.network_reactor_create",
+      "params": [],
+      "result": "pointer",
+      "resultStatus": null,
+      "targetBindings": []
+    },
+    {
+      "name": "network_reactor_destroy",
+      "symbol": "beskid_rt_v5_intrinsic_network_reactor_destroy",
+      "capability": "runtime.adapter.network_reactor_destroy",
+      "params": [
+        {
+          "name": "reactor",
+          "type": "pointer"
+        }
+      ],
+      "result": "void",
+      "resultStatus": null,
+      "targetBindings": []
+    },
+    {
+      "name": "network_reactor_poll",
+      "symbol": "beskid_rt_v5_intrinsic_network_reactor_poll",
+      "capability": "runtime.adapter.network_reactor_poll",
+      "params": [
+        {
+          "name": "reactor",
+          "type": "pointer"
+        },
+        {
+          "name": "timeout",
+          "type": "i32"
+        }
+      ],
+      "result": "i32",
+      "resultStatus": null,
+      "targetBindings": []
+    },
+    {
+      "name": "network_report_leak",
+      "symbol": "beskid_rt_v5_intrinsic_network_report_leak",
+      "capability": "runtime.adapter.network_report_leak",
+      "params": [
+        {
+          "name": "slot",
+          "type": "usize"
+        },
+        {
+          "name": "generation",
+          "type": "usize"
+        },
+        {
+          "name": "owner",
+          "type": "usize"
+        },
+        {
+          "name": "kind",
+          "type": "usize"
+        }
+      ],
+      "result": "void",
+      "resultStatus": null,
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "beskid_rt_v5_intrinsic_network_report_leak",
+          "osImports": [
+            "__memcpy_chk",
+            "__stack_chk_fail",
+            "__stack_chk_guard"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "network_shutdown_write",
+      "symbol": "beskid_rt_v5_intrinsic_network_shutdown_write",
+      "capability": "runtime.adapter.network_shutdown_write",
+      "params": [
+        {
+          "name": "socket",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32",
+      "resultStatus": null,
+      "targetBindings": []
+    },
+    {
+      "name": "network_submit",
+      "symbol": "beskid_rt_v5_intrinsic_network_submit",
+      "capability": "runtime.adapter.network_submit",
+      "params": [
+        {
+          "name": "reactor",
+          "type": "pointer"
+        },
+        {
+          "name": "socket",
+          "type": "pointer"
+        },
+        {
+          "name": "request",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32",
+      "resultStatus": null,
+      "targetBindings": []
+    },
+    {
+      "name": "network_table_lock",
+      "symbol": "beskid_rt_v5_intrinsic_network_table_lock",
+      "capability": "runtime.adapter.network_table_lock",
+      "params": [],
+      "result": "void",
+      "resultStatus": null,
+      "targetBindings": []
+    },
+    {
+      "name": "network_table_root",
+      "symbol": "beskid_rt_v5_intrinsic_network_table_root",
+      "capability": "runtime.adapter.network_table_root",
+      "params": [],
+      "result": "pointer",
+      "resultStatus": null,
+      "targetBindings": []
+    },
+    {
+      "name": "network_table_unlock",
+      "symbol": "beskid_rt_v5_intrinsic_network_table_unlock",
+      "capability": "runtime.adapter.network_table_unlock",
+      "params": [],
+      "result": "void",
+      "resultStatus": null,
+      "targetBindings": []
+    },
+    {
       "name": "owner_create",
       "symbol": "beskid_rt_v5_intrinsic_owner_create",
       "capability": "runtime.scheduler.owner_create",
@@ -2095,6 +2454,87 @@
       ]
     },
     {
+      "name": "BeskidNetworkHandle",
+      "target": null,
+      "size": 8,
+      "alignment": 8,
+      "fields": [
+        {
+          "name": "slot",
+          "offset": 0,
+          "type": "u32"
+        },
+        {
+          "name": "generation",
+          "offset": 4,
+          "type": "u32"
+        }
+      ]
+    },
+    {
+      "name": "BeskidNetworkRequest",
+      "target": null,
+      "size": 88,
+      "alignment": 8,
+      "fields": [
+        {
+          "name": "token",
+          "offset": 0,
+          "type": "usize"
+        },
+        {
+          "name": "owner",
+          "offset": 8,
+          "type": "usize"
+        },
+        {
+          "name": "operation",
+          "offset": 16,
+          "type": "usize"
+        },
+        {
+          "name": "buffer",
+          "offset": 24,
+          "type": "pointer"
+        },
+        {
+          "name": "length",
+          "offset": 32,
+          "type": "usize"
+        },
+        {
+          "name": "address",
+          "offset": 40,
+          "type": "pointer"
+        },
+        {
+          "name": "count",
+          "offset": 48,
+          "type": "usize"
+        },
+        {
+          "name": "status",
+          "offset": 56,
+          "type": "i32"
+        },
+        {
+          "name": "accepted",
+          "offset": 64,
+          "type": "pointer"
+        },
+        {
+          "name": "native_state",
+          "offset": 72,
+          "type": "pointer"
+        },
+        {
+          "name": "truncated",
+          "offset": 80,
+          "type": "usize"
+        }
+      ]
+    },
+    {
       "name": "BeskidObjectHeader",
       "target": null,
       "size": 16,
@@ -2957,6 +3397,26 @@
       "result": "never"
     },
     {
+      "symbol": "accept",
+      "target": "aarch64-apple-darwin",
+      "library": "libSystem",
+      "params": [
+        {
+          "name": "socket",
+          "type": "i32"
+        },
+        {
+          "name": "address",
+          "type": "pointer"
+        },
+        {
+          "name": "length",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32"
+    },
+    {
       "symbol": "atan2",
       "target": "aarch64-apple-darwin",
       "library": "libSystem",
@@ -2971,6 +3431,26 @@
         }
       ],
       "result": "f64"
+    },
+    {
+      "symbol": "bind",
+      "target": "aarch64-apple-darwin",
+      "library": "libSystem",
+      "params": [
+        {
+          "name": "socket",
+          "type": "i32"
+        },
+        {
+          "name": "address",
+          "type": "pointer"
+        },
+        {
+          "name": "length",
+          "type": "u32"
+        }
+      ],
+      "result": "i32"
     },
     {
       "symbol": "bzero",
@@ -3024,6 +3504,26 @@
         {
           "name": "fd",
           "type": "i32"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "symbol": "connect",
+      "target": "aarch64-apple-darwin",
+      "library": "libSystem",
+      "params": [
+        {
+          "name": "socket",
+          "type": "i32"
+        },
+        {
+          "name": "address",
+          "type": "pointer"
+        },
+        {
+          "name": "length",
+          "type": "u32"
         }
       ],
       "result": "i32"
@@ -3085,6 +3585,18 @@
       "result": "f64"
     },
     {
+      "symbol": "freeaddrinfo",
+      "target": "aarch64-apple-darwin",
+      "library": "libSystem",
+      "params": [
+        {
+          "name": "addresses",
+          "type": "pointer"
+        }
+      ],
+      "result": "void"
+    },
+    {
       "symbol": "fstat",
       "target": "aarch64-apple-darwin",
       "library": "libSystem",
@@ -3095,6 +3607,30 @@
         },
         {
           "name": "status",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "symbol": "getaddrinfo",
+      "target": "aarch64-apple-darwin",
+      "library": "libSystem",
+      "params": [
+        {
+          "name": "host",
+          "type": "pointer"
+        },
+        {
+          "name": "service",
+          "type": "pointer"
+        },
+        {
+          "name": "hints",
+          "type": "pointer"
+        },
+        {
+          "name": "output",
           "type": "pointer"
         }
       ],
@@ -3129,10 +3665,78 @@
       "result": "pointer"
     },
     {
+      "symbol": "getpeername",
+      "target": "aarch64-apple-darwin",
+      "library": "libSystem",
+      "params": [
+        {
+          "name": "socket",
+          "type": "i32"
+        },
+        {
+          "name": "address",
+          "type": "pointer"
+        },
+        {
+          "name": "length",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32"
+    },
+    {
       "symbol": "getpid",
       "target": "aarch64-apple-darwin",
       "library": "libSystem",
       "params": [],
+      "result": "i32"
+    },
+    {
+      "symbol": "getsockname",
+      "target": "aarch64-apple-darwin",
+      "library": "libSystem",
+      "params": [
+        {
+          "name": "socket",
+          "type": "i32"
+        },
+        {
+          "name": "address",
+          "type": "pointer"
+        },
+        {
+          "name": "length",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "symbol": "getsockopt",
+      "target": "aarch64-apple-darwin",
+      "library": "libSystem",
+      "params": [
+        {
+          "name": "socket",
+          "type": "i32"
+        },
+        {
+          "name": "level",
+          "type": "i32"
+        },
+        {
+          "name": "option",
+          "type": "i32"
+        },
+        {
+          "name": "value",
+          "type": "pointer"
+        },
+        {
+          "name": "length",
+          "type": "pointer"
+        }
+      ],
       "result": "i32"
     },
     {
@@ -3151,6 +3755,61 @@
         {
           "name": "value",
           "type": "pointer"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "symbol": "kevent",
+      "target": "aarch64-apple-darwin",
+      "library": "libSystem",
+      "params": [
+        {
+          "name": "queue",
+          "type": "i32"
+        },
+        {
+          "name": "changes",
+          "type": "pointer"
+        },
+        {
+          "name": "change_count",
+          "type": "i32"
+        },
+        {
+          "name": "events",
+          "type": "pointer"
+        },
+        {
+          "name": "event_count",
+          "type": "i32"
+        },
+        {
+          "name": "timeout",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "symbol": "kqueue",
+      "target": "aarch64-apple-darwin",
+      "library": "libSystem",
+      "params": [],
+      "result": "i32"
+    },
+    {
+      "symbol": "listen",
+      "target": "aarch64-apple-darwin",
+      "library": "libSystem",
+      "params": [
+        {
+          "name": "socket",
+          "type": "i32"
+        },
+        {
+          "name": "backlog",
+          "type": "i32"
         }
       ],
       "result": "i32"
@@ -3331,6 +3990,18 @@
         {
           "name": "mode",
           "type": "u32"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "symbol": "pipe",
+      "target": "aarch64-apple-darwin",
+      "library": "libSystem",
+      "params": [
+        {
+          "name": "descriptors",
+          "type": "pointer"
         }
       ],
       "result": "i32"
@@ -3512,6 +4183,106 @@
       "result": "isize"
     },
     {
+      "symbol": "recv",
+      "target": "aarch64-apple-darwin",
+      "library": "libSystem",
+      "params": [
+        {
+          "name": "socket",
+          "type": "i32"
+        },
+        {
+          "name": "buffer",
+          "type": "pointer"
+        },
+        {
+          "name": "length",
+          "type": "usize"
+        },
+        {
+          "name": "flags",
+          "type": "i32"
+        }
+      ],
+      "result": "isize"
+    },
+    {
+      "symbol": "recvmsg",
+      "target": "aarch64-apple-darwin",
+      "library": "libSystem",
+      "params": [
+        {
+          "name": "socket",
+          "type": "i32"
+        },
+        {
+          "name": "message",
+          "type": "pointer"
+        },
+        {
+          "name": "flags",
+          "type": "i32"
+        }
+      ],
+      "result": "isize"
+    },
+    {
+      "symbol": "send",
+      "target": "aarch64-apple-darwin",
+      "library": "libSystem",
+      "params": [
+        {
+          "name": "socket",
+          "type": "i32"
+        },
+        {
+          "name": "buffer",
+          "type": "pointer"
+        },
+        {
+          "name": "length",
+          "type": "usize"
+        },
+        {
+          "name": "flags",
+          "type": "i32"
+        }
+      ],
+      "result": "isize"
+    },
+    {
+      "symbol": "sendto",
+      "target": "aarch64-apple-darwin",
+      "library": "libSystem",
+      "params": [
+        {
+          "name": "socket",
+          "type": "i32"
+        },
+        {
+          "name": "buffer",
+          "type": "pointer"
+        },
+        {
+          "name": "length",
+          "type": "usize"
+        },
+        {
+          "name": "flags",
+          "type": "i32"
+        },
+        {
+          "name": "address",
+          "type": "pointer"
+        },
+        {
+          "name": "address_length",
+          "type": "u32"
+        }
+      ],
+      "result": "isize"
+    },
+    {
       "symbol": "setenv",
       "target": "aarch64-apple-darwin",
       "library": "libSystem",
@@ -3532,6 +4303,50 @@
       "result": "i32"
     },
     {
+      "symbol": "setsockopt",
+      "target": "aarch64-apple-darwin",
+      "library": "libSystem",
+      "params": [
+        {
+          "name": "socket",
+          "type": "i32"
+        },
+        {
+          "name": "level",
+          "type": "i32"
+        },
+        {
+          "name": "option",
+          "type": "i32"
+        },
+        {
+          "name": "value",
+          "type": "pointer"
+        },
+        {
+          "name": "length",
+          "type": "u32"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "symbol": "shutdown",
+      "target": "aarch64-apple-darwin",
+      "library": "libSystem",
+      "params": [
+        {
+          "name": "socket",
+          "type": "i32"
+        },
+        {
+          "name": "direction",
+          "type": "i32"
+        }
+      ],
+      "result": "i32"
+    },
+    {
       "symbol": "sin",
       "target": "aarch64-apple-darwin",
       "library": "libSystem",
@@ -3542,6 +4357,26 @@
         }
       ],
       "result": "f64"
+    },
+    {
+      "symbol": "socket",
+      "target": "aarch64-apple-darwin",
+      "library": "libSystem",
+      "params": [
+        {
+          "name": "domain",
+          "type": "i32"
+        },
+        {
+          "name": "kind",
+          "type": "i32"
+        },
+        {
+          "name": "protocol",
+          "type": "i32"
+        }
+      ],
+      "result": "i32"
     },
     {
       "symbol": "sqrt",
@@ -3640,6 +4475,22 @@
       "result": "void"
     },
     {
+      "symbol": "CancelIoEx",
+      "target": "x86_64-pc-windows-msvc",
+      "library": "kernel32",
+      "params": [
+        {
+          "name": "file",
+          "type": "pointer"
+        },
+        {
+          "name": "overlapped",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32"
+    },
+    {
       "symbol": "CloseHandle",
       "target": "x86_64-pc-windows-msvc",
       "library": "kernel32",
@@ -3699,6 +4550,30 @@
         {
           "name": "template_file",
           "type": "pointer"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
+      "symbol": "CreateIoCompletionPort",
+      "target": "x86_64-pc-windows-msvc",
+      "library": "kernel32",
+      "params": [
+        {
+          "name": "file",
+          "type": "pointer"
+        },
+        {
+          "name": "port",
+          "type": "pointer"
+        },
+        {
+          "name": "key",
+          "type": "usize"
+        },
+        {
+          "name": "threads",
+          "type": "u32"
         }
       ],
       "result": "pointer"
@@ -3854,6 +4729,34 @@
       "result": "u32"
     },
     {
+      "symbol": "GetQueuedCompletionStatus",
+      "target": "x86_64-pc-windows-msvc",
+      "library": "kernel32",
+      "params": [
+        {
+          "name": "port",
+          "type": "pointer"
+        },
+        {
+          "name": "bytes",
+          "type": "pointer"
+        },
+        {
+          "name": "key",
+          "type": "pointer"
+        },
+        {
+          "name": "overlapped",
+          "type": "pointer"
+        },
+        {
+          "name": "timeout",
+          "type": "u32"
+        }
+      ],
+      "result": "i32"
+    },
+    {
       "symbol": "GetStdHandle",
       "target": "x86_64-pc-windows-msvc",
       "library": "kernel32",
@@ -3948,6 +4851,30 @@
         {
           "name": "output_length",
           "type": "i32"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "symbol": "PostQueuedCompletionStatus",
+      "target": "x86_64-pc-windows-msvc",
+      "library": "kernel32",
+      "params": [
+        {
+          "name": "port",
+          "type": "pointer"
+        },
+        {
+          "name": "bytes",
+          "type": "u32"
+        },
+        {
+          "name": "key",
+          "type": "usize"
+        },
+        {
+          "name": "overlapped",
+          "type": "pointer"
         }
       ],
       "result": "i32"
@@ -4124,6 +5051,265 @@
       "result": "i32"
     },
     {
+      "symbol": "WSAGetLastError",
+      "target": "x86_64-pc-windows-msvc",
+      "library": "ws2_32",
+      "params": [],
+      "result": "i32"
+    },
+    {
+      "symbol": "WSAIoctl",
+      "target": "x86_64-pc-windows-msvc",
+      "library": "ws2_32",
+      "params": [
+        {
+          "name": "socket",
+          "type": "usize"
+        },
+        {
+          "name": "code",
+          "type": "u32"
+        },
+        {
+          "name": "input",
+          "type": "pointer"
+        },
+        {
+          "name": "input_length",
+          "type": "u32"
+        },
+        {
+          "name": "output",
+          "type": "pointer"
+        },
+        {
+          "name": "output_length",
+          "type": "u32"
+        },
+        {
+          "name": "bytes",
+          "type": "pointer"
+        },
+        {
+          "name": "overlapped",
+          "type": "pointer"
+        },
+        {
+          "name": "completion",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "symbol": "WSARecv",
+      "target": "x86_64-pc-windows-msvc",
+      "library": "ws2_32",
+      "params": [
+        {
+          "name": "socket",
+          "type": "usize"
+        },
+        {
+          "name": "buffers",
+          "type": "pointer"
+        },
+        {
+          "name": "count",
+          "type": "u32"
+        },
+        {
+          "name": "received",
+          "type": "pointer"
+        },
+        {
+          "name": "flags",
+          "type": "pointer"
+        },
+        {
+          "name": "overlapped",
+          "type": "pointer"
+        },
+        {
+          "name": "completion",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "symbol": "WSARecvFrom",
+      "target": "x86_64-pc-windows-msvc",
+      "library": "ws2_32",
+      "params": [
+        {
+          "name": "socket",
+          "type": "usize"
+        },
+        {
+          "name": "buffers",
+          "type": "pointer"
+        },
+        {
+          "name": "count",
+          "type": "u32"
+        },
+        {
+          "name": "received",
+          "type": "pointer"
+        },
+        {
+          "name": "flags",
+          "type": "pointer"
+        },
+        {
+          "name": "address",
+          "type": "pointer"
+        },
+        {
+          "name": "address_length",
+          "type": "pointer"
+        },
+        {
+          "name": "overlapped",
+          "type": "pointer"
+        },
+        {
+          "name": "completion",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "symbol": "WSASend",
+      "target": "x86_64-pc-windows-msvc",
+      "library": "ws2_32",
+      "params": [
+        {
+          "name": "socket",
+          "type": "usize"
+        },
+        {
+          "name": "buffers",
+          "type": "pointer"
+        },
+        {
+          "name": "count",
+          "type": "u32"
+        },
+        {
+          "name": "sent",
+          "type": "pointer"
+        },
+        {
+          "name": "flags",
+          "type": "u32"
+        },
+        {
+          "name": "overlapped",
+          "type": "pointer"
+        },
+        {
+          "name": "completion",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "symbol": "WSASendTo",
+      "target": "x86_64-pc-windows-msvc",
+      "library": "ws2_32",
+      "params": [
+        {
+          "name": "socket",
+          "type": "usize"
+        },
+        {
+          "name": "buffers",
+          "type": "pointer"
+        },
+        {
+          "name": "count",
+          "type": "u32"
+        },
+        {
+          "name": "sent",
+          "type": "pointer"
+        },
+        {
+          "name": "flags",
+          "type": "u32"
+        },
+        {
+          "name": "address",
+          "type": "pointer"
+        },
+        {
+          "name": "address_length",
+          "type": "i32"
+        },
+        {
+          "name": "overlapped",
+          "type": "pointer"
+        },
+        {
+          "name": "completion",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "symbol": "WSASocketW",
+      "target": "x86_64-pc-windows-msvc",
+      "library": "ws2_32",
+      "params": [
+        {
+          "name": "family",
+          "type": "i32"
+        },
+        {
+          "name": "kind",
+          "type": "i32"
+        },
+        {
+          "name": "protocol",
+          "type": "i32"
+        },
+        {
+          "name": "info",
+          "type": "pointer"
+        },
+        {
+          "name": "group",
+          "type": "u32"
+        },
+        {
+          "name": "flags",
+          "type": "u32"
+        }
+      ],
+      "result": "usize"
+    },
+    {
+      "symbol": "WSAStartup",
+      "target": "x86_64-pc-windows-msvc",
+      "library": "ws2_32",
+      "params": [
+        {
+          "name": "version",
+          "type": "u16"
+        },
+        {
+          "name": "data",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32"
+    },
+    {
       "symbol": "WaitForSingleObject",
       "target": "x86_64-pc-windows-msvc",
       "library": "kernel32",
@@ -4295,6 +5481,26 @@
       "result": "f64"
     },
     {
+      "symbol": "bind",
+      "target": "x86_64-pc-windows-msvc",
+      "library": "ws2_32",
+      "params": [
+        {
+          "name": "socket",
+          "type": "usize"
+        },
+        {
+          "name": "address",
+          "type": "pointer"
+        },
+        {
+          "name": "length",
+          "type": "i32"
+        }
+      ],
+      "result": "i32"
+    },
+    {
       "symbol": "ceil",
       "target": "x86_64-pc-windows-msvc",
       "library": "ucrt",
@@ -4305,6 +5511,38 @@
         }
       ],
       "result": "f64"
+    },
+    {
+      "symbol": "closesocket",
+      "target": "x86_64-pc-windows-msvc",
+      "library": "ws2_32",
+      "params": [
+        {
+          "name": "socket",
+          "type": "usize"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "symbol": "connect",
+      "target": "x86_64-pc-windows-msvc",
+      "library": "ws2_32",
+      "params": [
+        {
+          "name": "socket",
+          "type": "usize"
+        },
+        {
+          "name": "address",
+          "type": "pointer"
+        },
+        {
+          "name": "length",
+          "type": "i32"
+        }
+      ],
+      "result": "i32"
     },
     {
       "symbol": "cos",
@@ -4343,6 +5581,126 @@
       "result": "f64"
     },
     {
+      "symbol": "freeaddrinfo",
+      "target": "x86_64-pc-windows-msvc",
+      "library": "ws2_32",
+      "params": [
+        {
+          "name": "addresses",
+          "type": "pointer"
+        }
+      ],
+      "result": "void"
+    },
+    {
+      "symbol": "getaddrinfo",
+      "target": "x86_64-pc-windows-msvc",
+      "library": "ws2_32",
+      "params": [
+        {
+          "name": "host",
+          "type": "pointer"
+        },
+        {
+          "name": "service",
+          "type": "pointer"
+        },
+        {
+          "name": "hints",
+          "type": "pointer"
+        },
+        {
+          "name": "output",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "symbol": "getpeername",
+      "target": "x86_64-pc-windows-msvc",
+      "library": "ws2_32",
+      "params": [
+        {
+          "name": "socket",
+          "type": "usize"
+        },
+        {
+          "name": "address",
+          "type": "pointer"
+        },
+        {
+          "name": "length",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "symbol": "getsockname",
+      "target": "x86_64-pc-windows-msvc",
+      "library": "ws2_32",
+      "params": [
+        {
+          "name": "socket",
+          "type": "usize"
+        },
+        {
+          "name": "address",
+          "type": "pointer"
+        },
+        {
+          "name": "length",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "symbol": "getsockopt",
+      "target": "x86_64-pc-windows-msvc",
+      "library": "ws2_32",
+      "params": [
+        {
+          "name": "socket",
+          "type": "usize"
+        },
+        {
+          "name": "level",
+          "type": "i32"
+        },
+        {
+          "name": "option",
+          "type": "i32"
+        },
+        {
+          "name": "value",
+          "type": "pointer"
+        },
+        {
+          "name": "length",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "symbol": "listen",
+      "target": "x86_64-pc-windows-msvc",
+      "library": "ws2_32",
+      "params": [
+        {
+          "name": "socket",
+          "type": "usize"
+        },
+        {
+          "name": "backlog",
+          "type": "i32"
+        }
+      ],
+      "result": "i32"
+    },
+    {
       "symbol": "log",
       "target": "x86_64-pc-windows-msvc",
       "library": "ucrt",
@@ -4379,6 +5737,26 @@
       "result": "f64"
     },
     {
+      "symbol": "memcpy",
+      "target": "x86_64-pc-windows-msvc",
+      "library": "vcruntime",
+      "params": [
+        {
+          "name": "destination",
+          "type": "pointer"
+        },
+        {
+          "name": "source",
+          "type": "pointer"
+        },
+        {
+          "name": "length",
+          "type": "usize"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
       "symbol": "memset",
       "target": "x86_64-pc-windows-msvc",
       "library": "vcruntime",
@@ -4413,6 +5791,50 @@
         }
       ],
       "result": "f64"
+    },
+    {
+      "symbol": "setsockopt",
+      "target": "x86_64-pc-windows-msvc",
+      "library": "ws2_32",
+      "params": [
+        {
+          "name": "socket",
+          "type": "usize"
+        },
+        {
+          "name": "level",
+          "type": "i32"
+        },
+        {
+          "name": "option",
+          "type": "i32"
+        },
+        {
+          "name": "value",
+          "type": "pointer"
+        },
+        {
+          "name": "length",
+          "type": "i32"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "symbol": "shutdown",
+      "target": "x86_64-pc-windows-msvc",
+      "library": "ws2_32",
+      "params": [
+        {
+          "name": "socket",
+          "type": "usize"
+        },
+        {
+          "name": "direction",
+          "type": "i32"
+        }
+      ],
+      "result": "i32"
     },
     {
       "symbol": "sin",
@@ -4463,6 +5885,26 @@
       "result": "never"
     },
     {
+      "symbol": "accept",
+      "target": "x86_64-unknown-linux-gnu",
+      "library": "libc",
+      "params": [
+        {
+          "name": "socket",
+          "type": "i32"
+        },
+        {
+          "name": "address",
+          "type": "pointer"
+        },
+        {
+          "name": "length",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32"
+    },
+    {
       "symbol": "atan2",
       "target": "x86_64-unknown-linux-gnu",
       "library": "libm",
@@ -4477,6 +5919,26 @@
         }
       ],
       "result": "f64"
+    },
+    {
+      "symbol": "bind",
+      "target": "x86_64-unknown-linux-gnu",
+      "library": "libc",
+      "params": [
+        {
+          "name": "socket",
+          "type": "i32"
+        },
+        {
+          "name": "address",
+          "type": "pointer"
+        },
+        {
+          "name": "length",
+          "type": "u32"
+        }
+      ],
+      "result": "i32"
     },
     {
       "symbol": "ceil",
@@ -4519,6 +5981,26 @@
       "result": "i32"
     },
     {
+      "symbol": "connect",
+      "target": "x86_64-unknown-linux-gnu",
+      "library": "libc",
+      "params": [
+        {
+          "name": "socket",
+          "type": "i32"
+        },
+        {
+          "name": "address",
+          "type": "pointer"
+        },
+        {
+          "name": "length",
+          "type": "u32"
+        }
+      ],
+      "result": "i32"
+    },
+    {
       "symbol": "cos",
       "target": "x86_64-unknown-linux-gnu",
       "library": "libm",
@@ -4529,6 +6011,66 @@
         }
       ],
       "result": "f64"
+    },
+    {
+      "symbol": "epoll_create1",
+      "target": "x86_64-unknown-linux-gnu",
+      "library": "libc",
+      "params": [
+        {
+          "name": "flags",
+          "type": "i32"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "symbol": "epoll_ctl",
+      "target": "x86_64-unknown-linux-gnu",
+      "library": "libc",
+      "params": [
+        {
+          "name": "queue",
+          "type": "i32"
+        },
+        {
+          "name": "operation",
+          "type": "i32"
+        },
+        {
+          "name": "socket",
+          "type": "i32"
+        },
+        {
+          "name": "event",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "symbol": "epoll_wait",
+      "target": "x86_64-unknown-linux-gnu",
+      "library": "libc",
+      "params": [
+        {
+          "name": "queue",
+          "type": "i32"
+        },
+        {
+          "name": "events",
+          "type": "pointer"
+        },
+        {
+          "name": "capacity",
+          "type": "i32"
+        },
+        {
+          "name": "timeout",
+          "type": "i32"
+        }
+      ],
+      "result": "i32"
     },
     {
       "symbol": "fabs",
@@ -4575,6 +6117,18 @@
       "result": "f64"
     },
     {
+      "symbol": "freeaddrinfo",
+      "target": "x86_64-unknown-linux-gnu",
+      "library": "libc",
+      "params": [
+        {
+          "name": "addresses",
+          "type": "pointer"
+        }
+      ],
+      "result": "void"
+    },
+    {
       "symbol": "fstat",
       "target": "x86_64-unknown-linux-gnu",
       "library": "libc",
@@ -4585,6 +6139,30 @@
         },
         {
           "name": "status",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "symbol": "getaddrinfo",
+      "target": "x86_64-unknown-linux-gnu",
+      "library": "libc",
+      "params": [
+        {
+          "name": "host",
+          "type": "pointer"
+        },
+        {
+          "name": "service",
+          "type": "pointer"
+        },
+        {
+          "name": "hints",
+          "type": "pointer"
+        },
+        {
+          "name": "output",
           "type": "pointer"
         }
       ],
@@ -4619,10 +6197,78 @@
       "result": "pointer"
     },
     {
+      "symbol": "getpeername",
+      "target": "x86_64-unknown-linux-gnu",
+      "library": "libc",
+      "params": [
+        {
+          "name": "socket",
+          "type": "i32"
+        },
+        {
+          "name": "address",
+          "type": "pointer"
+        },
+        {
+          "name": "length",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32"
+    },
+    {
       "symbol": "getpid",
       "target": "x86_64-unknown-linux-gnu",
       "library": "libc",
       "params": [],
+      "result": "i32"
+    },
+    {
+      "symbol": "getsockname",
+      "target": "x86_64-unknown-linux-gnu",
+      "library": "libc",
+      "params": [
+        {
+          "name": "socket",
+          "type": "i32"
+        },
+        {
+          "name": "address",
+          "type": "pointer"
+        },
+        {
+          "name": "length",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "symbol": "getsockopt",
+      "target": "x86_64-unknown-linux-gnu",
+      "library": "libc",
+      "params": [
+        {
+          "name": "socket",
+          "type": "i32"
+        },
+        {
+          "name": "level",
+          "type": "i32"
+        },
+        {
+          "name": "option",
+          "type": "i32"
+        },
+        {
+          "name": "value",
+          "type": "pointer"
+        },
+        {
+          "name": "length",
+          "type": "pointer"
+        }
+      ],
       "result": "i32"
     },
     {
@@ -4641,6 +6287,22 @@
         {
           "name": "value",
           "type": "pointer"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "symbol": "listen",
+      "target": "x86_64-unknown-linux-gnu",
+      "library": "libc",
+      "params": [
+        {
+          "name": "socket",
+          "type": "i32"
+        },
+        {
+          "name": "backlog",
+          "type": "i32"
         }
       ],
       "result": "i32"
@@ -4821,6 +6483,18 @@
         {
           "name": "mode",
           "type": "u32"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "symbol": "pipe",
+      "target": "x86_64-unknown-linux-gnu",
+      "library": "libc",
+      "params": [
+        {
+          "name": "descriptors",
+          "type": "pointer"
         }
       ],
       "result": "i32"
@@ -5042,6 +6716,106 @@
       "result": "isize"
     },
     {
+      "symbol": "recv",
+      "target": "x86_64-unknown-linux-gnu",
+      "library": "libc",
+      "params": [
+        {
+          "name": "socket",
+          "type": "i32"
+        },
+        {
+          "name": "buffer",
+          "type": "pointer"
+        },
+        {
+          "name": "length",
+          "type": "usize"
+        },
+        {
+          "name": "flags",
+          "type": "i32"
+        }
+      ],
+      "result": "isize"
+    },
+    {
+      "symbol": "recvmsg",
+      "target": "x86_64-unknown-linux-gnu",
+      "library": "libc",
+      "params": [
+        {
+          "name": "socket",
+          "type": "i32"
+        },
+        {
+          "name": "message",
+          "type": "pointer"
+        },
+        {
+          "name": "flags",
+          "type": "i32"
+        }
+      ],
+      "result": "isize"
+    },
+    {
+      "symbol": "send",
+      "target": "x86_64-unknown-linux-gnu",
+      "library": "libc",
+      "params": [
+        {
+          "name": "socket",
+          "type": "i32"
+        },
+        {
+          "name": "buffer",
+          "type": "pointer"
+        },
+        {
+          "name": "length",
+          "type": "usize"
+        },
+        {
+          "name": "flags",
+          "type": "i32"
+        }
+      ],
+      "result": "isize"
+    },
+    {
+      "symbol": "sendto",
+      "target": "x86_64-unknown-linux-gnu",
+      "library": "libc",
+      "params": [
+        {
+          "name": "socket",
+          "type": "i32"
+        },
+        {
+          "name": "buffer",
+          "type": "pointer"
+        },
+        {
+          "name": "length",
+          "type": "usize"
+        },
+        {
+          "name": "flags",
+          "type": "i32"
+        },
+        {
+          "name": "address",
+          "type": "pointer"
+        },
+        {
+          "name": "address_length",
+          "type": "u32"
+        }
+      ],
+      "result": "isize"
+    },
+    {
       "symbol": "setenv",
       "target": "x86_64-unknown-linux-gnu",
       "library": "libc",
@@ -5062,6 +6836,50 @@
       "result": "i32"
     },
     {
+      "symbol": "setsockopt",
+      "target": "x86_64-unknown-linux-gnu",
+      "library": "libc",
+      "params": [
+        {
+          "name": "socket",
+          "type": "i32"
+        },
+        {
+          "name": "level",
+          "type": "i32"
+        },
+        {
+          "name": "option",
+          "type": "i32"
+        },
+        {
+          "name": "value",
+          "type": "pointer"
+        },
+        {
+          "name": "length",
+          "type": "u32"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "symbol": "shutdown",
+      "target": "x86_64-unknown-linux-gnu",
+      "library": "libc",
+      "params": [
+        {
+          "name": "socket",
+          "type": "i32"
+        },
+        {
+          "name": "direction",
+          "type": "i32"
+        }
+      ],
+      "result": "i32"
+    },
+    {
       "symbol": "sin",
       "target": "x86_64-unknown-linux-gnu",
       "library": "libm",
@@ -5072,6 +6890,26 @@
         }
       ],
       "result": "f64"
+    },
+    {
+      "symbol": "socket",
+      "target": "x86_64-unknown-linux-gnu",
+      "library": "libc",
+      "params": [
+        {
+          "name": "domain",
+          "type": "i32"
+        },
+        {
+          "name": "kind",
+          "type": "i32"
+        },
+        {
+          "name": "protocol",
+          "type": "i32"
+        }
+      ],
+      "result": "i32"
     },
     {
       "symbol": "sqrt",
@@ -7455,6 +9293,558 @@
       ]
     },
     {
+      "name": "__network_accept",
+      "adapter": "beskid_rt_v5_network_accept",
+      "params": [
+        {
+          "name": "handle",
+          "type": "usize"
+        },
+        {
+          "name": "output",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "beskid_rt_v5_network_accept",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "beskid_rt_v5_network_accept",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "beskid_rt_v5_network_accept",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__network_address",
+      "adapter": "beskid_rt_v5_network_address",
+      "params": [
+        {
+          "name": "handle",
+          "type": "usize"
+        },
+        {
+          "name": "peer",
+          "type": "u8"
+        },
+        {
+          "name": "output",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "beskid_rt_v5_network_address",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "beskid_rt_v5_network_address",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "beskid_rt_v5_network_address",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__network_close",
+      "adapter": "beskid_rt_v5_network_close",
+      "params": [
+        {
+          "name": "handle",
+          "type": "usize"
+        }
+      ],
+      "result": "i32",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "beskid_rt_v5_network_close",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "beskid_rt_v5_network_close",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "beskid_rt_v5_network_close",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__network_dns_address",
+      "adapter": "beskid_rt_v5_network_dns_address",
+      "params": [
+        {
+          "name": "lease",
+          "type": "usize"
+        },
+        {
+          "name": "index",
+          "type": "i64"
+        },
+        {
+          "name": "output",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "beskid_rt_v5_network_dns_address",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "beskid_rt_v5_network_dns_address",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "beskid_rt_v5_network_dns_address",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__network_dns_count",
+      "adapter": "beskid_rt_v5_network_dns_count",
+      "params": [
+        {
+          "name": "lease",
+          "type": "usize"
+        }
+      ],
+      "result": "i64",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "beskid_rt_v5_network_dns_count",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "beskid_rt_v5_network_dns_count",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "beskid_rt_v5_network_dns_count",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__network_dns_release",
+      "adapter": "beskid_rt_v5_network_dns_release",
+      "params": [
+        {
+          "name": "lease",
+          "type": "usize"
+        }
+      ],
+      "result": "void",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "beskid_rt_v5_network_dns_release",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "beskid_rt_v5_network_dns_release",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "beskid_rt_v5_network_dns_release",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__network_dns_resolve",
+      "adapter": "beskid_rt_v5_network_dns_resolve",
+      "params": [
+        {
+          "name": "host",
+          "type": "pointer"
+        },
+        {
+          "name": "port",
+          "type": "i64"
+        },
+        {
+          "name": "family",
+          "type": "i64"
+        },
+        {
+          "name": "output",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "beskid_rt_v5_network_dns_resolve",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "beskid_rt_v5_network_dns_resolve",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "beskid_rt_v5_network_dns_resolve",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__network_open",
+      "adapter": "beskid_rt_v5_network_open",
+      "params": [
+        {
+          "name": "kind",
+          "type": "i64"
+        },
+        {
+          "name": "address",
+          "type": "pointer"
+        },
+        {
+          "name": "options",
+          "type": "i64"
+        },
+        {
+          "name": "backlog",
+          "type": "i64"
+        },
+        {
+          "name": "output",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "beskid_rt_v5_network_open",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "beskid_rt_v5_network_open",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "beskid_rt_v5_network_open",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__network_options",
+      "adapter": "beskid_rt_v5_network_options",
+      "params": [
+        {
+          "name": "handle",
+          "type": "usize"
+        }
+      ],
+      "result": "i64",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "beskid_rt_v5_network_options",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "beskid_rt_v5_network_options",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "beskid_rt_v5_network_options",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__network_read",
+      "adapter": "beskid_rt_v5_network_read",
+      "params": [
+        {
+          "name": "handle",
+          "type": "usize"
+        },
+        {
+          "name": "buffer",
+          "type": "pointer"
+        },
+        {
+          "name": "offset",
+          "type": "i64"
+        },
+        {
+          "name": "count",
+          "type": "i64"
+        }
+      ],
+      "result": "i64",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "beskid_rt_v5_network_read",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "beskid_rt_v5_network_read",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "beskid_rt_v5_network_read",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__network_receive",
+      "adapter": "beskid_rt_v5_network_receive",
+      "params": [
+        {
+          "name": "handle",
+          "type": "usize"
+        },
+        {
+          "name": "payload",
+          "type": "pointer"
+        },
+        {
+          "name": "metadata",
+          "type": "pointer"
+        },
+        {
+          "name": "connected",
+          "type": "u8"
+        }
+      ],
+      "result": "i64",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "beskid_rt_v5_network_receive",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "beskid_rt_v5_network_receive",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "beskid_rt_v5_network_receive",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__network_send",
+      "adapter": "beskid_rt_v5_network_send",
+      "params": [
+        {
+          "name": "handle",
+          "type": "usize"
+        },
+        {
+          "name": "payload",
+          "type": "pointer"
+        },
+        {
+          "name": "address",
+          "type": "pointer"
+        },
+        {
+          "name": "connected",
+          "type": "u8"
+        }
+      ],
+      "result": "i64",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "beskid_rt_v5_network_send",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "beskid_rt_v5_network_send",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "beskid_rt_v5_network_send",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__network_set_options",
+      "adapter": "beskid_rt_v5_network_set_options",
+      "params": [
+        {
+          "name": "handle",
+          "type": "usize"
+        },
+        {
+          "name": "bits",
+          "type": "i64"
+        }
+      ],
+      "result": "i32",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "beskid_rt_v5_network_set_options",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "beskid_rt_v5_network_set_options",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "beskid_rt_v5_network_set_options",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__network_shutdown_write",
+      "adapter": "beskid_rt_v5_network_shutdown_write",
+      "params": [
+        {
+          "name": "handle",
+          "type": "usize"
+        }
+      ],
+      "result": "i32",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "beskid_rt_v5_network_shutdown_write",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "beskid_rt_v5_network_shutdown_write",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "beskid_rt_v5_network_shutdown_write",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__network_udp_connect",
+      "adapter": "beskid_rt_v5_network_udp_connect",
+      "params": [
+        {
+          "name": "handle",
+          "type": "usize"
+        },
+        {
+          "name": "address",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "beskid_rt_v5_network_udp_connect",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "beskid_rt_v5_network_udp_connect",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "beskid_rt_v5_network_udp_connect",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__network_write",
+      "adapter": "beskid_rt_v5_network_write",
+      "params": [
+        {
+          "name": "handle",
+          "type": "usize"
+        },
+        {
+          "name": "buffer",
+          "type": "pointer"
+        },
+        {
+          "name": "offset",
+          "type": "i64"
+        },
+        {
+          "name": "count",
+          "type": "i64"
+        }
+      ],
+      "result": "i64",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "beskid_rt_v5_network_write",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "beskid_rt_v5_network_write",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "beskid_rt_v5_network_write",
+          "osImports": []
+        }
+      ]
+    },
+    {
       "name": "__panic",
       "adapter": "beskid_trap_code",
       "params": [
@@ -8093,7 +10483,7 @@
       "capture": "utf8_argv",
       "handoff": "beskid_rt_v5_args_handoff_utf8",
       "ownership": "process_lifetime_copied_beskid_str_arena",
-      "entrySource": "args_entry.S",
+      "entrySource": "../common/executable_bootstrap.c",
       "osImports": [
         "memcpy",
         "mmap",
@@ -8108,7 +10498,7 @@
       "capture": "utf16_wargv",
       "handoff": "beskid_rt_v5_args_handoff_utf16",
       "ownership": "process_lifetime_copied_beskid_str_arena",
-      "entrySource": "args_entry.asm",
+      "entrySource": "../common/executable_bootstrap.c",
       "osImports": [
         "VirtualAlloc"
       ]
@@ -8121,7 +10511,7 @@
       "capture": "utf8_argv",
       "handoff": "beskid_rt_v5_args_handoff_utf8",
       "ownership": "process_lifetime_copied_beskid_str_arena",
-      "entrySource": "args_entry.S",
+      "entrySource": "../common/executable_bootstrap.c",
       "osImports": [
         "memcpy",
         "mmap",
@@ -8417,6 +10807,92 @@
     }
   ],
   "statuses": [
+    {
+      "name": "BeskidNetworkStatus",
+      "repr": "i32",
+      "values": [
+        {
+          "name": "Ok",
+          "value": 0
+        },
+        {
+          "name": "AddressInUse",
+          "value": 1
+        },
+        {
+          "name": "AddressNotAvailable",
+          "value": 2
+        },
+        {
+          "name": "ConnectionAborted",
+          "value": 3
+        },
+        {
+          "name": "ConnectionRefused",
+          "value": 4
+        },
+        {
+          "name": "ConnectionReset",
+          "value": 5
+        },
+        {
+          "name": "HostNotFound",
+          "value": 6
+        },
+        {
+          "name": "InvalidAddress",
+          "value": 7
+        },
+        {
+          "name": "MessageTooLarge",
+          "value": 8
+        },
+        {
+          "name": "NetworkDown",
+          "value": 9
+        },
+        {
+          "name": "NotConnected",
+          "value": 10
+        },
+        {
+          "name": "PermissionDenied",
+          "value": 11
+        },
+        {
+          "name": "TimedOut",
+          "value": 12
+        },
+        {
+          "name": "Cancelled",
+          "value": 13
+        },
+        {
+          "name": "Closed",
+          "value": 14
+        },
+        {
+          "name": "Busy",
+          "value": 15
+        },
+        {
+          "name": "CleanupFailed",
+          "value": 16
+        },
+        {
+          "name": "Unsupported",
+          "value": 17
+        },
+        {
+          "name": "ResourceExhausted",
+          "value": 18
+        },
+        {
+          "name": "Pending",
+          "value": 19
+        }
+      ]
+    },
     {
       "name": "BeskidFsStatus",
       "repr": "i32",

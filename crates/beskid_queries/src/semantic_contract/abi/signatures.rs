@@ -2,6 +2,15 @@
 
 use super::super::*;
 
+/// Declared return authority for executable functions and methods, not contract signatures.
+pub(in crate::semantic_contract) fn declared_callable_return_type<'a>(
+    node: beskid_analysis::syntax_query::DynNodeRef<'a>,
+) -> Option<&'a beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Type>> {
+    node.of::<beskid_analysis::syntax::FunctionDefinition>().and_then(|function| function.return_type.as_ref()).or_else(
+        || node.of::<beskid_analysis::syntax::MethodDefinition>().and_then(|method| method.return_type.as_ref()),
+    )
+}
+
 #[salsa::tracked(persist)]
 pub(in crate::semantic_contract) fn item_signature_tracked(
     db: &dyn Db,
@@ -14,11 +23,12 @@ pub(in crate::semantic_contract) fn item_signature_tracked(
 pub(in crate::semantic_contract) fn item_signature_for_node(
     node: beskid_analysis::syntax_query::DynNodeRef<'_>,
 ) -> Option<Result<ItemSignature, SemanticError>> {
+    let return_type = declared_callable_return_type(node);
     if let Some(function) = node.of::<beskid_analysis::syntax::FunctionDefinition>() {
-        return Some(signature_from_syntax(&function.parameters, function.return_type.as_ref()));
+        return Some(signature_from_syntax(&function.parameters, return_type));
     }
     if let Some(method) = node.of::<beskid_analysis::syntax::MethodDefinition>() {
-        return Some(signature_from_syntax(&method.parameters, method.return_type.as_ref()));
+        return Some(signature_from_syntax(&method.parameters, return_type));
     }
     if node.of::<beskid_analysis::syntax::TestDefinition>().is_some() {
         return Some(Ok(ItemSignature { parameters: Arc::from([]), result: SemanticTypeId::UNIT }));
@@ -54,6 +64,7 @@ pub(in crate::semantic_contract) fn item_abi_signature_tracked(
     key: AstNodeKey,
 ) -> SemanticQueryResult<ItemSignature> {
     with_node(db, syntax, key, |program, index, node| {
+        let return_type = declared_callable_return_type(node);
         if let Some(function) = node.of::<beskid_analysis::syntax::FunctionDefinition>() {
             // Generic declarations have no single item ABI. Call sites must prove a concrete
             // specialization; otherwise module emission would register `Item` while calls import
@@ -61,12 +72,12 @@ pub(in crate::semantic_contract) fn item_abi_signature_tracked(
             if !function.generics.is_empty() {
                 return None;
             }
-            match contract_template_signature(db, key, &function.parameters, function.return_type.as_ref()) {
+            match contract_template_signature(db, key, &function.parameters, return_type) {
                 Ok(true) => return None,
                 Ok(false) => (),
                 Err(error) => return Some(Err(error)),
             }
-            return Some(abi_signature_from_syntax(db, key, &function.parameters, function.return_type.as_ref()));
+            return Some(abi_signature_from_syntax(db, key, &function.parameters, return_type));
         }
         if let Some(method) = node.of::<beskid_analysis::syntax::MethodDefinition>() {
             let generic_owner = parent_node(index, key.node)
@@ -78,16 +89,15 @@ pub(in crate::semantic_contract) fn item_abi_signature_tracked(
                 // a direct receiver call proves that concrete owner environment.
                 return None;
             }
-            match contract_template_signature(db, key, &method.parameters, method.return_type.as_ref()) {
+            match contract_template_signature(db, key, &method.parameters, return_type) {
                 Ok(true) => return None,
                 Ok(false) => (),
                 Err(error) => return Some(Err(error)),
             }
-            let mut signature =
-                match abi_signature_from_syntax(db, key, &method.parameters, method.return_type.as_ref()) {
-                    Ok(signature) => signature,
-                    Err(error) => return Some(Err(error)),
-                };
+            let mut signature = match abi_signature_from_syntax(db, key, &method.parameters, return_type) {
+                Ok(signature) => signature,
+                Err(error) => return Some(Err(error)),
+            };
             let mut parameters = Vec::with_capacity(signature.parameters.len() + 1);
             parameters.push(SemanticTypeId::POINTER);
             parameters.extend(signature.parameters.iter().copied());

@@ -16,6 +16,15 @@ pub(super) fn managed_reference_kind_tracked(
                     .and_then(|kind| kind.ok_or_else(|| SemanticError::unavailable("managed_reference_kind"))),
             );
         }
+        if node.of::<beskid_analysis::syntax::TryExpression>().is_some() {
+            return Some(try_expression_fact(db, key).and_then(|fact| {
+                fact.map(|fact| fact.payload_identity.managed_reference_kind())
+                    .ok_or_else(|| SemanticError::unavailable("managed_reference_kind"))
+            }));
+        }
+        if let Some(projection) = layouts::nominal_field_projection(db, key) {
+            return Some(projection.map(|(_, identity)| identity.managed_reference_kind()));
+        }
         if let Some(syntax_type) = node.of::<beskid_analysis::syntax::Type>() {
             return Some(managed_reference_kind_for_syntax_type(syntax_type));
         }
@@ -254,6 +263,14 @@ pub(super) fn node_type_tracked(
     key: AstNodeKey,
 ) -> SemanticQueryResult<SemanticTypeId> {
     with_node(db, syntax, key, |program, index, node| {
+        if node.of::<beskid_analysis::syntax::TryExpression>().is_some()
+            || matches!(
+                node.of::<beskid_analysis::syntax::Expression>(),
+                Some(beskid_analysis::syntax::Expression::Try(_))
+            )
+        {
+            return Some(abi_type(db, key).and_then(|ty| ty.ok_or_else(|| SemanticError::unavailable("node_type"))));
+        }
         if let Some(binary) = node.of::<beskid_analysis::syntax::BinaryExpression>() {
             return Some(abi_type_for_binary_expression(db, program, index, key, binary));
         }
@@ -277,6 +294,14 @@ pub(super) fn node_type_tracked(
         if let Some(binding_type) = pattern_binding_semantic_type(db, program, index, key, node) {
             return Some(binding_type);
         }
+        // A block expression whose statements cannot fall through (for example a match arm
+        // ending in `return`) never produces a value. The same syntax-only control-flow fact
+        // that proves function bodies terminate is the authority; value blocks stay untyped here.
+        if let Some(block) = node.of::<beskid_analysis::syntax::BlockExpression>()
+            && !block_may_fall_through(&block.block.node)
+        {
+            return Some(Ok(SemanticTypeId::NEVER));
+        }
         if node.of::<beskid_analysis::syntax::PathExpression>().is_some()
             && matches!(constant_integer(db, key), Ok(Some(_)))
         {
@@ -293,9 +318,8 @@ pub(super) fn node_type_tracked(
                 .map(|node| AstNodeKey { node, ..key })
                 .ok_or_else(|| SemanticError::unavailable("node_type"));
             return Some(call.and_then(|call| {
-                call_abi_signature(db, call)?
-                    .map(|signature| signature.result)
-                    .ok_or_else(|| SemanticError::unavailable("node_type"))
+                // The normalized call owns both primitive conversion and ordinary call typing.
+                node_type(db, call)?.ok_or_else(|| SemanticError::unavailable("node_type"))
             }));
         }
         semantic_type_for_node(program, index, key.node, node)
@@ -376,6 +400,21 @@ pub(super) fn pattern_binding_fact(
     key: AstNodeKey,
     declaration: beskid_analysis::syntax::AstNodeId,
 ) -> Option<Result<EnumMatchBindingFact, SemanticError>> {
+    pattern_binding_fact_in_environment(db, index, key, declaration, None)
+}
+
+/// Resolve an enum-pattern binding through the immutable specialization of the enclosing item.
+///
+/// A generic outer match can provide the source identity of a nested binding even when its
+/// target ABI is only a pointer. The ordinary fact deliberately remains target-neutral, while
+/// this path is available only to a concrete item specialization.
+pub(in crate::semantic_contract) fn pattern_binding_fact_in_environment(
+    db: &dyn Db,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    key: AstNodeKey,
+    declaration: beskid_analysis::syntax::AstNodeId,
+    enclosing: Option<&Arc<[GenericSubstitution]>>,
+) -> Option<Result<EnumMatchBindingFact, SemanticError>> {
     if index.kind(parent_node(index, declaration)?)? != beskid_analysis::syntax_query::NodeKind::Pattern {
         return None;
     }
@@ -386,7 +425,11 @@ pub(super) fn pattern_binding_fact(
         return None;
     }
     let outer_match = AstNodeKey { node: outer_match, ..key };
-    let fact = match enum_match(db, outer_match) {
+    let query = match enclosing {
+        Some(enclosing) => enum_match_specialization(db, outer_match, enclosing.clone()),
+        None => enum_match(db, outer_match),
+    };
+    let fact = match query {
         Ok(Some(fact)) => fact,
         Ok(None) | Err(_) => return Some(Err(SemanticError::unavailable("pattern_binding"))),
     };
@@ -398,12 +441,42 @@ pub(super) fn pattern_binding_fact(
         .or_else(|| Some(Err(SemanticError::unavailable("pattern_binding"))))
 }
 
+/// Return the exact specialized fact for a path which resolves to an enum-pattern binding.
+///
+/// This is deliberately keyed by the path use rather than a synthetic binding identity, so the
+/// generation-safe local resolver remains the sole authority for lexical scope.
+pub fn pattern_binding_specialization(
+    db: &dyn Db,
+    key: AstNodeKey,
+    enclosing: Arc<[GenericSubstitution]>,
+) -> SemanticQueryResult<EnumMatchBindingFact> {
+    let syntax = db
+        .syntax_unit(key.unit)
+        .filter(|syntax| syntax.accepts_key(db, key))
+        .ok_or_else(|| SemanticError::unavailable("pattern_binding_specialization"))?;
+    let program = syntax.expanded_program(db);
+    let index = syntax.syntax_index(db);
+    let path = index
+        .node_at(program, key.node)
+        .and_then(|node| node.of::<beskid_analysis::syntax::PathExpression>())
+        .ok_or_else(|| SemanticError::unavailable("pattern_binding_specialization"))?;
+    let [segment] = path.path.node.segments.as_slice() else {
+        return Ok(None);
+    };
+    if !segment.node.type_args.is_empty() {
+        return Ok(None);
+    }
+    let declaration = resolve_lexical_declaration(program, index, key.node, segment.node.name.node.name.as_str())
+        .ok_or_else(|| SemanticError::unavailable("pattern_binding_specialization"))?;
+    pattern_binding_fact_in_environment(db, index, key, declaration, Some(&enclosing)).transpose()
+}
+
 fn enum_match_pattern_binding(
     pattern: &EnumMatchPatternFact,
     declaration: beskid_analysis::syntax::AstNodeId,
 ) -> Option<EnumMatchBindingFact> {
     match pattern {
-        EnumMatchPatternFact::Binding(binding) if binding.declaration.node == declaration => Some(*binding),
+        EnumMatchPatternFact::Binding(binding) if binding.declaration.node == declaration => Some(binding.clone()),
         EnumMatchPatternFact::Enum(pattern) => {
             pattern.items.iter().find_map(|item| enum_match_pattern_binding(item, declaration))
         }

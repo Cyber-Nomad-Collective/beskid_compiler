@@ -21,6 +21,35 @@ use beskid_pipeline::{PipelineObserver, emit_work_unit, phases::AOT_EMIT_OBJECT}
 use crate::api::BuildProfile;
 use crate::error::{AotError, AotResult};
 
+/// Fixed C boundary called by the portable executable bootstrap.
+pub(crate) const EXECUTABLE_PROGRAM_ENTRY: &str = "beskid_program_main";
+
+/// One logical Beskid function remapped to the executable-host program boundary.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct ExecutableEntrySymbol<'a> {
+    pub(crate) logical: &'a str,
+    pub(crate) symbol: &'a str,
+}
+
+pub(crate) fn emitted_object_symbol(
+    name: &str,
+    exports: &[beskid_codegen::ExportEntry],
+    executable_entry: Option<ExecutableEntrySymbol<'_>>,
+) -> String {
+    if let Some(entry) = executable_entry.filter(|entry| name.split('#').next() == Some(entry.logical)) {
+        entry.symbol.to_owned()
+    } else if executable_entry.is_some()
+        && name.split('#').next() == Some("Main")
+        && !exports.iter().any(|export| export.beskid_name == "Main" || export.beskid_name == name)
+    {
+        // In an executable, the portable host owns C `main`. An unselected
+        // Beskid Main is an ordinary callable function, not a second startup.
+        name.to_owned()
+    } else {
+        beskid_codegen::object_link_symbol(name, exports)
+    }
+}
+
 /// Owns a Cranelift object builder until [`Self::finalize_to_path`] consumes it.
 pub struct BeskidObjectModule {
     module: Option<ObjectModule>,
@@ -79,15 +108,15 @@ impl BeskidObjectModule {
         exported_symbols: &HashSet<String>,
         pipeline: Option<&dyn PipelineObserver>,
     ) -> AotResult<()> {
-        self.compile_artifact_with_exports_and_entry_adapter(artifact, exported_symbols, None, pipeline)
+        self.compile_artifact_with_exports_and_executable_entry(artifact, exported_symbols, None, pipeline)
     }
 
-    /// Compile an artifact, optionally reserving native `main` for the generated Core.Args entry adapter.
-    pub fn compile_artifact_with_exports_and_entry_adapter(
+    /// Compile an artifact, optionally reserving one internal symbol for the executable host.
+    pub(crate) fn compile_artifact_with_exports_and_executable_entry(
         &mut self,
         artifact: &CodegenArtifact,
         exported_symbols: &HashSet<String>,
-        entry_adapter_program: Option<&str>,
+        executable_entry: Option<ExecutableEntrySymbol<'_>>,
         pipeline: Option<&dyn PipelineObserver>,
     ) -> AotResult<()> {
         let module = self
@@ -108,15 +137,7 @@ impl BeskidObjectModule {
             module,
             artifact,
             &mut self.func_ids,
-            |name| {
-                if let Some(program_entry) =
-                    entry_adapter_program.filter(|_| name.split('#').next().is_some_and(|logical| logical == "Main"))
-                {
-                    program_entry.to_owned()
-                } else {
-                    beskid_codegen::object_link_symbol(name, &exports)
-                }
-            },
+            |name| emitted_object_symbol(name, &exports, executable_entry),
             |symbol| {
                 if exported_symbols.contains(symbol) { Linkage::Export } else { Linkage::Local }
             },
@@ -207,6 +228,27 @@ fn ObjectCodegenFlags(profile: BuildProfile) -> AotResult<settings::Flags> {
     };
     flagBuilder.set("opt_level", optimizationLevel).map_err(|err| AotError::IsaInit { message: err.to_string() })?;
     Ok(settings::Flags::new(flagBuilder))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{EXECUTABLE_PROGRAM_ENTRY, ExecutableEntrySymbol, emitted_object_symbol};
+
+    #[test]
+    fn executable_entry_remapping_only_changes_the_selected_logical_entry() {
+        let entry = ExecutableEntrySymbol { logical: "Start", symbol: EXECUTABLE_PROGRAM_ENTRY };
+
+        assert_eq!(emitted_object_symbol("Start#0", &[], Some(entry)), EXECUTABLE_PROGRAM_ENTRY);
+        assert_eq!(emitted_object_symbol("Helper#0", &[], Some(entry)), "Helper#0");
+        assert_eq!(emitted_object_symbol("Main#0", &[], Some(entry)), "Main#0");
+        assert_eq!(emitted_object_symbol("Main#0", &[], None), "main");
+        let exports = [beskid_codegen::ExportEntry {
+            beskid_name: "Main".into(),
+            exported_symbol: "PublicHelper".into(),
+            abi: "C".into(),
+        }];
+        assert_eq!(emitted_object_symbol("Main#0", &exports, Some(entry)), "PublicHelper");
+    }
 }
 
 /// Construct the exact ISA used by AOT object emission for a validated ABI target.

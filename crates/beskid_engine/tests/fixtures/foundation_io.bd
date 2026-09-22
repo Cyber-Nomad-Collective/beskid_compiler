@@ -5,6 +5,7 @@ use Core.IO.Closer;
 use Core.IO.Stream;
 use Core.Disposable;
 use Core.IO.IoError;
+use Core.IO.TransferFailure;
 use Core.Results;
 
 type PartialReader: Reader {
@@ -64,6 +65,24 @@ type ErrorWriter: Writer {
         return Result::Error(IoError::NoProgress());
     }
 }
+type CauseReader: Reader {
+    pub Result<i64, IoError> Read(u8[] destination, i64 offset, i64 count) {
+        return Result::Error(IoError::ReadFailed(TransferFailure::PeerReset()));
+    }
+}
+bool IsUnspecifiedTransfer(Result<i64, IoError> result) {
+    return match result {
+        Result::Error(IoError::ReadFailed(cause)) => match cause { TransferFailure::Unspecified() => true, _ => false, },
+        Result::Error(IoError::WriteFailed(cause)) => match cause { TransferFailure::Unspecified() => true, _ => false, },
+        _ => false,
+    };
+}
+bool IsPeerResetRead(Result<unit, IoError> result) {
+    return match result {
+        Result::Error(IoError::ReadFailed(cause)) => match cause { TransferFailure::PeerReset() => true, _ => false, },
+        _ => false,
+    };
+}
 type TestStream: Stream, Closer, Disposable {
     i64[] state,
     i64[] trace,
@@ -104,7 +123,7 @@ bool IsCloseFailure(Result<unit, IoError> result) {
         Result::Error(error) => match error {
             IoError::CloseFailed() => true, IoError::InvalidRange() => false,
             IoError::UnexpectedEof(_) => false, IoError::NoProgress() => false,
-            IoError::ReadFailed() => false, IoError::WriteFailed() => false,
+            IoError::ReadFailed(_) => false, IoError::WriteFailed(_) => false,
         },
     };
 }
@@ -169,9 +188,9 @@ i64 IoResultCode(Result<i64, IoError> result) {
     return match result {
         Result::Ok(value) => value,
         Result::Error(error) => match error {
-            IoError::ReadFailed() => -1_i64, IoError::CloseFailed() => -2_i64,
+            IoError::ReadFailed(_) => -1_i64, IoError::CloseFailed() => -2_i64,
             IoError::InvalidRange() => -3_i64, IoError::UnexpectedEof(_) => -4_i64,
-            IoError::NoProgress() => -5_i64, IoError::WriteFailed() => -6_i64,
+            IoError::NoProgress() => -5_i64, IoError::WriteFailed(_) => -6_i64,
         },
     };
 }
@@ -180,8 +199,8 @@ bool IsRange(Result<unit, IoError> result) {
         Result::Ok(_) => false,
         Result::Error(error) => match error {
             IoError::InvalidRange() => true, IoError::UnexpectedEof(_) => false,
-            IoError::NoProgress() => false, IoError::ReadFailed() => false,
-            IoError::WriteFailed() => false, IoError::CloseFailed() => false,
+            IoError::NoProgress() => false, IoError::ReadFailed(_) => false,
+            IoError::WriteFailed(_) => false, IoError::CloseFailed() => false,
         },
     };
 }
@@ -237,8 +256,13 @@ i64 DirectTransferBoundaryProof() {
     i64[] errorWriterCalls = [0_i64];
     ErrorWriter errorWriter = ErrorWriter { state: errorWriterCalls };
     if IoResultCode(IO.Write(errorWriter, source, 0_i64, 1_i64)) != -5_i64 || errorWriterCalls[0] != 1_i64 { return 23_i64; }
+    if !IsUnspecifiedTransfer(IO.Read(negativeReader, destination, 0_i64, 1_i64)) { return 24_i64; }
+    if !IsUnspecifiedTransfer(IO.Write(oversizeWriter, source, 0_i64, 1_i64)) { return 25_i64; }
+    CauseReader causeReader = CauseReader {};
+    if !IsPeerResetRead(IO.ReadExact(causeReader, destination, 0_i64, 1_i64)) { return 26_i64; }
     return 0_i64;
 }
+[Export(Abi:"C", Symbol:"RunFoundationFixture")]
 pub i64 RunFoundationFixture() {
     i64[] reads = [0_i64, 0_i64];
     PartialReader reader = PartialReader { state: reads };
@@ -254,8 +278,8 @@ pub i64 RunFoundationFixture() {
         Result::Ok(_) => -1_i64,
         Result::Error(error) => match error {
             IoError::UnexpectedEof(count) => count, IoError::InvalidRange() => -2_i64,
-            IoError::NoProgress() => -3_i64, IoError::ReadFailed() => -4_i64,
-            IoError::WriteFailed() => -5_i64, IoError::CloseFailed() => -6_i64,
+            IoError::NoProgress() => -3_i64, IoError::ReadFailed(_) => -4_i64,
+            IoError::WriteFailed(_) => -5_i64, IoError::CloseFailed() => -6_i64,
         },
     };
     if completed != 3_i64 || destination[0] != 9_u8 || destination[1] != 42_u8 || destination[3] != 42_u8 || destination[4] != 9_u8 || destination[6] != 9_u8 { return 6_i64; }
@@ -269,8 +293,8 @@ pub i64 RunFoundationFixture() {
         Result::Ok(_) => { return 8_i64; },
         Result::Error(error) => match error {
             IoError::NoProgress() => {}, IoError::UnexpectedEof(_) => { return 9_i64; },
-            IoError::InvalidRange() => { return 10_i64; }, IoError::ReadFailed() => { return 11_i64; },
-            IoError::WriteFailed() => { return 12_i64; }, IoError::CloseFailed() => { return 13_i64; },
+            IoError::InvalidRange() => { return 10_i64; }, IoError::ReadFailed(_) => { return 11_i64; },
+            IoError::WriteFailed(_) => { return 12_i64; }, IoError::CloseFailed() => { return 13_i64; },
         },
     };
     i64[] closed = [0_i64, 0_i64, 0_i64];
@@ -293,7 +317,7 @@ pub i64 RunFoundationFixture() {
     i64[] returned = [0_i64, 0_i64, 0_i64];
     if IoResultCode(ReturnFromScope(returned)) != 302_i64 || returned[1] != 1_i64 { return 24_i64; }
     i64[] propagated = [0_i64, 0_i64, 0_i64];
-    Result<i64, IoError> readFailure = Result::Error(IoError::ReadFailed());
+    Result<i64, IoError> readFailure = Result::Error(IoError::ReadFailed(TransferFailure::Unspecified()));
     if IoResultCode(PropagateFromScope(propagated, readFailure)) != -1_i64 || propagated[1] != 1_i64 { return 25_i64; }
     i64[] cleanupFailure = [0_i64, 0_i64, 1_i64];
     if IoResultCode(CleanupFailureFromScope(cleanupFailure)) != -2_i64 || cleanupFailure[1] != 1_i64 { return 26_i64; }

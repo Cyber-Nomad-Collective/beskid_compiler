@@ -1,6 +1,7 @@
 use super::{parse_manifest, parse_workspace_manifest};
 use crate::projects::error::ProjectError;
-use crate::projects::model::{DependencySource, TargetKind};
+use crate::projects::model::{DependencySource, TargetKind, project_root_block_matches_package_name};
+use crate::projects::validator::validate_manifest;
 
 fn minimal_project(kind: &str, source_field: &str) -> String {
     format!(
@@ -46,6 +47,70 @@ target "t" { kind = Lib entry = "e.bd" }
 "#;
     let err = parse_manifest(src).expect_err("name unquoted");
     assert!(matches!(err, ProjectError::ParseAt { .. }));
+}
+
+#[test]
+fn hyphenated_package_name_accepts_its_exact_underscore_root_projection() {
+    let src = r#"beskid_runtime_native {
+  name = "beskid-runtime-native"
+  version = "0.1.0"
+}
+target "native" {
+  kind = Lib
+}
+"#;
+
+    let manifest = parse_manifest(src).expect("hyphenated package root projection must parse");
+    assert_eq!(manifest.project.block_kind, "beskid_runtime_native");
+    assert_eq!(manifest.project.name, "beskid-runtime-native");
+    validate_manifest(&manifest).expect("validator must accept the canonical root projection");
+}
+
+#[test]
+fn project_root_rejects_noncanonical_package_name_mismatch() {
+    let src = r#"beskid_runtime {
+  name = "beskid-runtime-native"
+  version = "0.1.0"
+}
+target "native" {
+  kind = Lib
+}
+"#;
+
+    let err = parse_manifest(src).expect_err("noncanonical project root must fail");
+    match err {
+        ProjectError::MetaContractViolation { code, .. } => assert_eq!(code, "E1896"),
+        other => panic!("expected MetaContractViolation E1896, got {other:?}"),
+    }
+}
+
+#[test]
+fn validator_rejects_noncanonical_package_name_mismatch() {
+    let src = r#"beskid_runtime_native {
+  name = "beskid-runtime-native"
+  version = "0.1.0"
+}
+target "native" {
+  kind = Lib
+}
+"#;
+
+    let mut manifest = parse_manifest(src).expect("canonical package root must parse");
+    manifest.project.block_kind = "beskid_runtime".to_string();
+
+    let err = validate_manifest(&manifest).expect_err("validator must reject a noncanonical root");
+    match err {
+        ProjectError::MetaContractViolation { code, .. } => assert_eq!(code, "E1896"),
+        other => panic!("expected MetaContractViolation E1896, got {other:?}"),
+    }
+}
+
+#[test]
+fn package_root_projection_only_maps_hyphens_to_underscores() {
+    assert!(project_root_block_matches_package_name("beskid_runtime_native", "beskid-runtime-native"));
+    assert!(project_root_block_matches_package_name("beskid_runtime_native", "beskid_runtime_native"));
+    assert!(!project_root_block_matches_package_name("beskid-runtime-native", "beskid_runtime_native"));
+    assert!(!project_root_block_matches_package_name("beskid_runtime", "beskid-runtime-native"));
 }
 
 #[test]

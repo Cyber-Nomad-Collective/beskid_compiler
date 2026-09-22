@@ -5,7 +5,7 @@ pub(super) use beskid_isle::{
     AstNodeKey, EnumLayout, EnumVariantLayout, FieldLayout, IsleContext, LoweringErrorKind, NodeFacts, NodeKind,
     lower_expression, lower_statement,
 };
-pub(super) use beskid_queries::{AstNodeId, BeskidDatabase, SourceUnitId, SyntaxGenerationId};
+pub(super) use beskid_queries::{AstNodeId, BeskidDatabase, SemanticTypeId, SourceUnitId, SyntaxGenerationId};
 pub(super) use cranelift_codegen::ir::{AbiParam, Function, InstBuilder, Signature, types};
 pub(super) use cranelift_codegen::isa::CallConv;
 pub(super) use cranelift_codegen::settings;

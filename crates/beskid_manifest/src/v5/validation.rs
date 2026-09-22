@@ -37,7 +37,7 @@ pub(super) fn validate(manifest: &RuntimeManifestV5) -> Result<(), String> {
             "main",
             "utf8_argv",
             "beskid_rt_v5_args_handoff_utf8",
-            "args_entry.S",
+            "../common/executable_bootstrap.c",
             &["memcpy", "mmap", "strlen"][..],
         ),
         (
@@ -45,7 +45,7 @@ pub(super) fn validate(manifest: &RuntimeManifestV5) -> Result<(), String> {
             "main",
             "utf8_argv",
             "beskid_rt_v5_args_handoff_utf8",
-            "args_entry.S",
+            "../common/executable_bootstrap.c",
             &["memcpy", "mmap", "strlen"][..],
         ),
         (
@@ -53,7 +53,7 @@ pub(super) fn validate(manifest: &RuntimeManifestV5) -> Result<(), String> {
             "wmain",
             "utf16_wargv",
             "beskid_rt_v5_args_handoff_utf16",
-            "args_entry.asm",
+            "../common/executable_bootstrap.c",
             &["VirtualAlloc"][..],
         ),
     ];
@@ -118,6 +118,22 @@ pub(super) fn validate(manifest: &RuntimeManifestV5) -> Result<(), String> {
     let expected_corelib_services = [
         "__array_new",
         "__array_len",
+        "__network_open",
+        "__network_accept",
+        "__network_close",
+        "__network_read",
+        "__network_write",
+        "__network_address",
+        "__network_options",
+        "__network_set_options",
+        "__network_shutdown_write",
+        "__network_udp_connect",
+        "__network_receive",
+        "__network_send",
+        "__network_dns_resolve",
+        "__network_dns_count",
+        "__network_dns_address",
+        "__network_dns_release",
         "__bytes_compare",
         "__bytes_copy",
         "__bytes_from_str",
@@ -230,6 +246,8 @@ pub(super) fn validate(manifest: &RuntimeManifestV5) -> Result<(), String> {
             .strip_prefix("__")
             .ok_or_else(|| format!("corelib service `{}` must use a compiler-owned name", service.name))?;
         if service.adapter != expected_adapter
+            && !(service.name.starts_with("__network_")
+                && service.adapter == format!("beskid_rt_v5_{expected_adapter}"))
             && !matches!(
                 service.name.as_str(),
                 "__args_count"

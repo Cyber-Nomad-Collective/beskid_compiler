@@ -11,6 +11,7 @@ i64 ThroughReader(Reader source, u8[] bytes) {
     Result<i64, Error> result = source.Read(bytes, 0_i64, 1_i64);
     return match result { Result::Ok(count) => count, Result::Error(_) => 0_i64 };
 }
+[Export(Abi:"C", Symbol:"RunFoundationFixture")]
 pub i64 RunFoundationFixture() {
     Source source = Source {};
     u8[] bytes = [0_u8];

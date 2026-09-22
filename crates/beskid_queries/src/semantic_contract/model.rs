@@ -804,17 +804,20 @@ pub struct BulkParameterFact {
 
 /// Syntax-proven payload/error shapes for one postfix `Result` propagation expression.
 ///
-/// The operand must be a direct, explicitly typed function parameter with the exact
-/// `Result<TPayload, TError>` syntax. The enclosing function must return `Result<_, TError>`
-/// using the same error syntax. Other propagation forms remain unavailable until they have
-/// their own syntax facts.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+/// The operand is a typed parameter or a proven ordinary direct call. Both Result
+/// instantiations share one declaration and the exact error source identity; their
+/// success identities and physical layouts may differ.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct TryExpressionFact {
     pub expression: AstNodeKey,
     pub operand: AstNodeKey,
+    pub(in crate::semantic_contract) payload_identity: GenericSourceTypeIdentity,
     pub payload_type: SemanticTypeId,
     pub error_type: SemanticTypeId,
     pub enclosing_return: SemanticTypeId,
+    pub operand_layout: EnumLayoutFact,
+    pub return_layout: EnumLayoutFact,
+    pub error_managed: bool,
 }
 
 /// Callable item signature expressed entirely in semantic type identities.
@@ -840,10 +843,10 @@ pub struct AggregateLayoutFact {
 /// Source names paired with the current-generation value expressions of one aggregate literal.
 pub type AggregateLiteralFieldValues = Arc<[(Arc<str>, AstNodeKey)]>;
 
-/// Exact nominal field selected by a direct local or implicit method receiver field path.
+/// Exact nominal field selected by a local, nominal field chain, or implicit method receiver.
 ///
 /// The receiver must resolve through the current syntax generation to a parameter, an explicitly
-/// typed local, the enclosing nominal method, or a generic call result whose complete
+/// typed local, a real path-segment projection, the enclosing nominal method, or a generic call result whose complete
 /// specialization proves one nominal return layout. More dynamic member shapes intentionally
 /// remain unavailable until they have their own syntax authority.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
@@ -926,7 +929,7 @@ pub struct EnumConstructorSpecialization {
 }
 
 /// One identifier binding within a recursively matched enum payload.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct EnumMatchBindingFact {
     /// Exact identifier declaration introduced by the match pattern.
     pub declaration: AstNodeKey,
@@ -934,6 +937,8 @@ pub struct EnumMatchBindingFact {
     pub payload: AggregateFieldShape,
     /// Source-proven ownership class retained independently of pointer-shaped ABI storage.
     pub managed_reference: ManagedReferenceKind,
+    /// Exact applied payload identity, when source syntax proves it. Never recovered from ABI.
+    pub(in crate::semantic_contract) source_identity: Option<GenericSourceTypeIdentity>,
 }
 
 /// One scalar literal comparison in a recursive match pattern.

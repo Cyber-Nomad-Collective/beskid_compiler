@@ -101,14 +101,14 @@ impl<'isa> FunctionEmitter<'isa> {
     pub fn emit_closure_lambda_entry_with_call_importer(
         &self,
         name: UserFuncName,
-        result: Type,
+        result: Option<Type>,
         facts: &dyn NodeFacts,
         body: AstNodeKey,
         captures: &[InlineCaptureField],
         call_importer: &mut dyn CallImporter,
     ) -> Result<Function, FunctionEmissionError> {
         let pointer = self.isa.pointer_type();
-        let signature = self.signature([pointer], [result]);
+        let signature = self.signature([pointer], result);
         let mut function = Function::with_name_signature(name, signature);
         let mut builder_context = FunctionBuilderContext::new();
         {
@@ -133,16 +133,31 @@ impl<'isa> FunctionEmitter<'isa> {
                         .bind_local(capture.local_slot, value, capture.value_type, managed_reference)
                         .ok_or_else(|| FunctionEmissionError::verification(body, "closure capture root is invalid"))?;
                 }
-                let value = lower_expression(&mut context, body).map_err(FunctionEmissionError::Lowering)?;
-                context.release_managed_local_roots().ok_or_else(|| {
-                    FunctionEmissionError::verification(body, "closure capture root cleanup is invalid")
+                let value = if result.is_some() {
+                    Some(lower_expression(&mut context, body).map_err(FunctionEmissionError::Lowering)?)
+                } else {
+                    lower_statement(&mut context, body).map_err(FunctionEmissionError::Lowering)?;
+                    None
+                };
+                let final_block = context.builder.current_block().ok_or_else(|| {
+                    FunctionEmissionError::verification(body, "closure lambda entry has no final block")
                 })?;
+                if !block_is_terminated(context.builder, final_block) {
+                    context.release_managed_local_roots().ok_or_else(|| {
+                        FunctionEmissionError::verification(body, "closure capture root cleanup is invalid")
+                    })?;
+                }
                 value
             };
-            if builder.func.dfg.value_type(value) != result {
+            if value.map(|value| builder.func.dfg.value_type(value)) != result {
                 return Err(FunctionEmissionError::verification(body, "closure lambda entry result type mismatch"));
             }
-            builder.ins().return_(&[value]);
+            let final_block = builder
+                .current_block()
+                .ok_or_else(|| FunctionEmissionError::verification(body, "closure lambda entry has no final block"))?;
+            if !block_is_terminated(&builder, final_block) {
+                builder.ins().return_(value.as_slice());
+            }
             builder.finalize(self.isa.frontend_config());
         }
         verify_function(&function, self.isa.flags())

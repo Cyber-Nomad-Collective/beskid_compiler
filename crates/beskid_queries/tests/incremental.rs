@@ -28,6 +28,7 @@ fn semantic_snapshot_query_hits_registry() {
     get_or_insert_assembly(
         fp.clone(),
         beskid_analysis::projects::ProgramAssembly {
+            runtime_fixture: None,
             roots: beskid_analysis::projects::EffectiveCompilationRoots {
                 host: beskid_analysis::projects::RootEntry {
                     dependency_name: None,
@@ -44,7 +45,8 @@ fn semantic_snapshot_query_hits_registry() {
             has_std_dependency: false,
             trusted_corelib_service_paths: std::sync::Arc::from([]),
         },
-    );
+    )
+    .unwrap();
     update_semantic_snapshot(&fp, SemanticSnapshot::from_diagnostics(&[], 1, "semantic"));
     let db = BeskidDatabase::default();
     reset();

@@ -1,0 +1,15 @@
+use Core.Args;
+use Core.Output;
+use Core.Results;
+
+pub i64 Main() {
+    mut i64 index = 0;
+    while index < Args.Count() {
+        match Args.Get(index) {
+            Result::Ok(value) => Output.WriteLine(value),
+            Result::Error(_) => { return 99; },
+        };
+        index = index + 1;
+    }
+    return Args.Count();
+}

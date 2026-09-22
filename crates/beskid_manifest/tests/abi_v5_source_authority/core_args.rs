@@ -122,7 +122,7 @@ fn core_args_adapter_bindings_generate_exact_target_facts() {
 fn core_args_entry_adapter_rejects_missing_generated_provenance() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let source = fs::read_to_string(root.join("runtime_manifest.bsol")).unwrap();
-    let source = source.replacen("  entry_source = \"args_entry.S\"\n", "", 1);
+    let source = source.replacen("  entry_source = \"../common/executable_bootstrap.c\"\n", "", 1);
     assert!(load_v5_manifest_source(&source)
         .expect_err("entry adapter source is mandatory")
         .contains("missing `entry_source`"));

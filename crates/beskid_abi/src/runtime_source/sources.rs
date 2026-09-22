@@ -88,6 +88,8 @@ pub const CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH: &str = "Testing/Assert.bd";
 pub const CANONICAL_FOUNDATION_OUTPUT_SOURCE_PATH: &str = "Core/Output/Output.bd";
 /// Canonical Foundation error helper eligible to import the panic runtime service.
 pub const CANONICAL_FOUNDATION_ERROR_SOURCE_PATH: &str = "Core/Error/Error.bd";
+/// Canonical Network facade that alone owns the compiler-authorized socket ABI calls.
+pub const CANONICAL_NETWORK_INTERNAL_SOURCE_PATH: &str = "Network/Internal.bd";
 
 const CANONICAL_BOOTSTRAP_SOURCE: &str =
     include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../runtime/beskid/src/Runtime/Bootstrap.bd"));
@@ -220,10 +222,28 @@ const CANONICAL_FOUNDATION_OUTPUT_SOURCE: &str =
     include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../corelib/packages/foundation/src/Core/Output/Output.bd"));
 const CANONICAL_FOUNDATION_ERROR_SOURCE: &str =
     include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../corelib/packages/foundation/src/Core/Error/Error.bd"));
+const CANONICAL_NETWORK_INTERNAL_SOURCE: &str =
+    include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../corelib/packages/network/src/Network/Internal.bd"));
 
 /// The runtime source corpus built into this compiler version.
 pub fn canonical_runtime_sources() -> Vec<SourceUnit> {
     vec![
+        SourceUnit {
+            logical_path: "src/Runtime/Network/Table.bd".into(),
+            source: include_str!("../../../../runtime/beskid/src/Runtime/Network/Table.bd").into(),
+        },
+        SourceUnit {
+            logical_path: "src/Runtime/Network/Operations.bd".into(),
+            source: include_str!("../../../../runtime/beskid/src/Runtime/Network/Operations.bd").into(),
+        },
+        SourceUnit {
+            logical_path: "src/Runtime/Network/Sockets.bd".into(),
+            source: include_str!("../../../../runtime/beskid/src/Runtime/Network/Sockets.bd").into(),
+        },
+        SourceUnit {
+            logical_path: "src/Runtime/Network/Dns.bd".into(),
+            source: include_str!("../../../../runtime/beskid/src/Runtime/Network/Dns.bd").into(),
+        },
         SourceUnit {
             logical_path: "src/Runtime/Mem/AbiValue.bd".into(),
             source: format!(
@@ -436,6 +456,10 @@ pub fn canonical_corelib_service_sources() -> Vec<SourceUnit> {
     sources.push(SourceUnit {
         logical_path: CANONICAL_FOUNDATION_ERROR_SOURCE_PATH.into(),
         source: CANONICAL_FOUNDATION_ERROR_SOURCE.into(),
+    });
+    sources.push(SourceUnit {
+        logical_path: CANONICAL_NETWORK_INTERNAL_SOURCE_PATH.into(),
+        source: CANONICAL_NETWORK_INTERNAL_SOURCE.into(),
     });
     sources
 }

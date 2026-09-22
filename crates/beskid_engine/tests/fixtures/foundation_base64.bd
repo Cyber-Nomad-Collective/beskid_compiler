@@ -10,6 +10,7 @@ i64 CheckBytes(u8[] bytes) {
     if bytes[0] != 102_u8 || bytes[1] != 111_u8 || bytes[2] != 111_u8 || bytes[3] != 98_u8 { return 8_i64; }
     return 42_i64;
 }
+[Export(Abi:"C", Symbol:"RunFoundationFixture")]
 pub i64 RunFoundationFixture() {
     if !Rejected([90_u8, 104_u8, 61_u8, 61_u8]) { return 1_i64; }
     if !Rejected([90_u8, 109_u8, 57_u8, 61_u8]) { return 2_i64; }

@@ -173,6 +173,10 @@ struct BeskidWorkerRequest {
   uint32_t abandoned;
   uint64_t owner;
 };
+#ifdef BESKID_NETWORK_TRANSPORT
+static void BeskidNetworkDnsPerform(struct BeskidWorkerRequest *request);
+static void BeskidNetworkDnsFree(struct BeskidWorkerRequest *request);
+#endif
 _Static_assert(sizeof(struct BeskidWorkerRequest) == BESKID_WORKER_REQUEST_SIZE, "manifest worker request size");
 _Static_assert(offsetof(struct BeskidWorkerRequest, owner) == BESKID_WORKER_REQUEST_OWNER_SCHEDULER_ID_OFFSET, "manifest owner route offset");
 _Static_assert(offsetof(struct BeskidWorkerRequest, state) == BESKID_WORKER_REQUEST_STATE_OFFSET, "manifest request state offset");
@@ -235,6 +239,9 @@ static int BeskidWorkerAcquireDescriptor(struct BeskidWorkerRequest *request) {
 }
 #endif
 static void BeskidWorkerFree(struct BeskidWorkerRequest *request) {
+#ifdef BESKID_NETWORK_TRANSPORT
+  if (request->operation == 3) BeskidNetworkDnsFree(request);
+#endif
   BeskidWorkerCloseDescriptor(request);
   beskid_rt_v5_intrinsic_system_free(request->buffer, request->length ? request->length : 1);
   beskid_rt_v5_intrinsic_system_free(request, sizeof(*request));
@@ -250,6 +257,9 @@ static size_t beskid_worker_count, beskid_request_count;
 static int beskid_workers_stop;
 static struct BeskidWorkerRequest *beskid_work_head, *beskid_work_tail;
 static void BeskidWorkerPerform(struct BeskidWorkerRequest *r) {
+#ifdef BESKID_NETWORK_TRANSPORT
+  if (r->operation == 3) { BeskidNetworkDnsPerform(r); return; }
+#endif
 #ifdef _WIN32
   _invalid_parameter_handler previous =
       _set_thread_local_invalid_parameter_handler(BeskidWorkerInvalidParameter);
@@ -326,11 +336,16 @@ void beskid_rt_v5_intrinsic_worker_pool_shutdown(void) {
   beskid_worker_count = 0;
 }
 int32_t beskid_rt_v5_intrinsic_worker_submit(struct BeskidWorkerRequest *r) {
-  if (!r || !beskid_worker_count || (r->operation != BESKID_WORKER_READ && r->operation != BESKID_WORKER_WRITE)) return -1;
+  if (!r || !beskid_worker_count) return -1;
+#ifdef BESKID_NETWORK_TRANSPORT
+  if (r->operation != BESKID_WORKER_READ && r->operation != BESKID_WORKER_WRITE && r->operation != 3) return -1;
+#else
+  if (r->operation != BESKID_WORKER_READ && r->operation != BESKID_WORKER_WRITE) return -1;
+#endif
 #ifdef _WIN32
   if (r->length > INT_MAX) return -1;
 #endif
-  if (!BeskidWorkerAcquireDescriptor(r)) return -1;
+  if (r->operation != 3 && !BeskidWorkerAcquireDescriptor(r)) return -1;
   BeskidLock();
   if (beskid_workers_stop || beskid_request_count >= BESKID_REQUEST_MAX) {
     BeskidWorkerCloseDescriptor(r);

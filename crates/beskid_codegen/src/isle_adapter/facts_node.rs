@@ -80,6 +80,11 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
     }
 
     fn child(&self, key: AstNodeKey, index: u8) -> Option<AstNodeKey> {
+        if index == 0
+            && let Some(access) = self.aggregate_field_access_in_context(key)
+        {
+            return Some(access.receiver);
+        }
         let children = if self.node_kind(key) == Some(NodeKind::TestDefinition) {
             self.query(test_statement_nodes(self.db, key))?
         } else if self.node_kind(key) == Some(NodeKind::BlockExpression) {
@@ -256,6 +261,10 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
 
     fn try_expression_fact(&self, key: AstNodeKey) -> Option<beskid_queries::TryExpressionFact> {
         self.query(try_expression_fact(self.db, key))
+    }
+
+    fn try_return_layout(&self, key: AstNodeKey) -> Option<EnumLayout> {
+        self.enum_layout_from_fact(&self.query(try_expression_fact(self.db, key))?.return_layout)
     }
 
     fn index_target_is_string(&self, key: AstNodeKey) -> bool {
@@ -502,9 +511,6 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
     }
 
     fn scalar_type(&self, key: AstNodeKey) -> Option<Type> {
-        if let Some(try_expression) = self.try_expression_fact(key) {
-            return map_signature_type(self.isa?, try_expression.payload_type);
-        }
         if self.node_kind(key) == Some(NodeKind::StructLiteralExpression)
             && self.query(aggregate_literal_declaration(self.db, key)).is_some()
         {

@@ -47,6 +47,7 @@ pub use db::{
     BeskidDatabase, Db, UnitArtifactCache, configure_compilation_database_for_project, replace_compilation_database,
     reset_compilation_database,
 };
+pub use entry::prepare_compilation_diagnostics_isolated;
 pub use entry::{
     assemble_resolved_input_with_db, cached_semantic_snapshot_for_key, entry_resolution_with_db, fingerprint_key,
     invalidate_entry_sessions, prepare_compilation_diagnostics_with_db, prepare_compilation_with_db,
@@ -69,6 +70,7 @@ pub use persistence::{
     SalsaPersistenceManifest, cache_root_for_project, ensure_salsa_dir, load_db_snapshot, load_manifest,
     persist_session_snapshot, save_db_snapshot,
 };
+pub use semantic_contract::{DeadCollectionGrowth, dead_collection_growth, is_growth_call_candidate};
 pub use semantic_contract::{
     AggregateFieldAccess, AggregateFieldShape, AggregateLayoutFact, AggregateLiteralFieldValues,
     ArrayIndexElementTemplate, AstNodeKey, BulkParameterFact, CallLowering, CaptureStorageClass, CastIntent,
@@ -76,7 +78,8 @@ pub use semantic_contract::{
     ClosureLoweringStatus, ClosurePointerMapRequirement, CollectionMutationOwner, CollectionOperation,
     CompletionCandidate, CompletionContext, CompletionKind, CompletionMemberSurface, ControlFlow, CorelibService,
     EnumConstructorFact, EnumConstructorSpecialization, EnumConstructorTemplate, EnumLayoutFact,
-    EnumLayoutTemplateArgument, EnumMatchArmFact, EnumMatchFact, EnumMatchPatternFact, EnumMatchScalarLiteralFact,
+    EnumLayoutTemplateArgument, EnumMatchArmFact, EnumMatchBindingFact, EnumMatchFact, EnumMatchPatternFact,
+    EnumMatchScalarLiteralFact,
     EnumMatchVariantPatternFact, EnumScalarPayloadObjectLayout, EnumScalarPayloadVariantLayout, EnumVariantLayoutFact,
     ExportSymbol, FiberOwnership, ForIteratorFact, GenericCallInstantiation, GenericCallSpecialization,
     GenericCallTemplate, GenericNominalMethodReceiver, GenericSpecializationInstance, GenericSubstitution,
@@ -101,7 +104,8 @@ pub use semantic_contract::{
     generic_nominal_method_receiver, generic_specialization_identity, generic_specialization_instance,
     implicit_method_receiver, item_abi_signature, item_body, item_export_symbol, item_name, item_signature,
     literal_fact, local_slot, managed_reference_kind, mutable_local_assignment, node_kind, node_span, node_type,
-    nominal_member_receiver, operator_fact, parameter_generic_reference, primitive_numeric_conversion, range_for_fact,
+    nominal_member_receiver, operator_fact, parameter_generic_reference, pattern_binding_specialization,
+    primitive_numeric_conversion, range_for_fact,
     reachable_items, resolved_item, resolved_local, runtime_intrinsic, runtime_intrinsic_name, scoped_cleanup,
     spawn_entry_validation, spawn_handle_type, spawn_legality, spawn_target,
     specialized_call_result_managed_reference_kind, specialized_corelib_value_service_result, test_item,
@@ -118,6 +122,7 @@ pub use typed_entry_bundle::{
     typed_entry_bundle_tracked, typed_entry_bundle_with_db, typed_entry_state_with_db, typed_prepare_revision_for,
 };
 pub use typed_program::build_canonical_runtime_typed_program;
+pub use typed_program::build_runtime_fixture_typed_program;
 pub use typed_program::build_typed_program;
 pub use typed_program::build_typed_program_with_corelib_services;
 pub use typed_program::build_typed_program_with_corelib_syscall_services;

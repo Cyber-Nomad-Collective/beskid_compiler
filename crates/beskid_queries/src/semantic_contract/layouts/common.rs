@@ -251,6 +251,23 @@ pub(in crate::semantic_contract) fn abi_local_declaration_type(
     }
 }
 
+/// Return an explicit local or parameter type annotation without inferring from its value.
+///
+/// Contextual lowering uses this when the source construct itself requires a declared type.  In
+/// particular, callers must not turn a local initializer, an assignment, or a pointer-shaped ABI
+/// into type authority.
+pub(in crate::semantic_contract) fn explicit_local_declaration_type<'a>(
+    program: &'a beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    declaration: beskid_analysis::syntax::AstNodeId,
+) -> Option<&'a beskid_analysis::syntax::Type> {
+    let declaration = index.node_at(program, parent_node(index, declaration)?)?;
+    declaration
+        .of::<beskid_analysis::syntax::LetStatement>()
+        .and_then(|statement| statement.type_annotation.as_ref().map(|annotation| &annotation.node))
+        .or_else(|| declaration.of::<beskid_analysis::syntax::Parameter>().map(|parameter| &parameter.ty.node))
+}
+
 pub(in crate::semantic_contract) fn resolve_type_declaration(
     db: &dyn Db,
     key: AstNodeKey,

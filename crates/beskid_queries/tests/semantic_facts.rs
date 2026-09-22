@@ -53,3 +53,6 @@ mod statement_result_storage;
 #[rustfmt::skip]
 #[path = "semantic_facts/iterators_and_operators.rs"]
 mod iterators_and_operators;
+#[rustfmt::skip]
+#[path = "semantic_facts/dead_growth.rs"]
+mod dead_growth;

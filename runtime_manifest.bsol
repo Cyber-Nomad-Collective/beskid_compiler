@@ -1,4 +1,68 @@
 # Sole source of truth for the Beskid native runtime ABI.
+# Networking transport imports are audited against these target declarations.
+platform_import "socket" { target = "x86_64-unknown-linux-gnu" library = libc params = [{ name = domain, type = i32 }, { name = kind, type = i32 }, { name = protocol, type = i32 }] returns = i32 }
+platform_import "bind" { target = "x86_64-unknown-linux-gnu" library = libc params = [{ name = socket, type = i32 }, { name = address, type = pointer }, { name = length, type = u32 }] returns = i32 }
+platform_import "listen" { target = "x86_64-unknown-linux-gnu" library = libc params = [{ name = socket, type = i32 }, { name = backlog, type = i32 }] returns = i32 }
+platform_import "accept" { target = "x86_64-unknown-linux-gnu" library = libc params = [{ name = socket, type = i32 }, { name = address, type = pointer }, { name = length, type = pointer }] returns = i32 }
+platform_import "connect" { target = "x86_64-unknown-linux-gnu" library = libc params = [{ name = socket, type = i32 }, { name = address, type = pointer }, { name = length, type = u32 }] returns = i32 }
+platform_import "getsockopt" { target = "x86_64-unknown-linux-gnu" library = libc params = [{ name = socket, type = i32 }, { name = level, type = i32 }, { name = option, type = i32 }, { name = value, type = pointer }, { name = length, type = pointer }] returns = i32 }
+platform_import "setsockopt" { target = "x86_64-unknown-linux-gnu" library = libc params = [{ name = socket, type = i32 }, { name = level, type = i32 }, { name = option, type = i32 }, { name = value, type = pointer }, { name = length, type = u32 }] returns = i32 }
+platform_import "getpeername" { target = "x86_64-unknown-linux-gnu" library = libc params = [{ name = socket, type = i32 }, { name = address, type = pointer }, { name = length, type = pointer }] returns = i32 }
+platform_import "getsockname" { target = "x86_64-unknown-linux-gnu" library = libc params = [{ name = socket, type = i32 }, { name = address, type = pointer }, { name = length, type = pointer }] returns = i32 }
+platform_import "recv" { target = "x86_64-unknown-linux-gnu" library = libc params = [{ name = socket, type = i32 }, { name = buffer, type = pointer }, { name = length, type = usize }, { name = flags, type = i32 }] returns = isize }
+platform_import "send" { target = "x86_64-unknown-linux-gnu" library = libc params = [{ name = socket, type = i32 }, { name = buffer, type = pointer }, { name = length, type = usize }, { name = flags, type = i32 }] returns = isize }
+platform_import "sendto" { target = "x86_64-unknown-linux-gnu" library = libc params = [{ name = socket, type = i32 }, { name = buffer, type = pointer }, { name = length, type = usize }, { name = flags, type = i32 }, { name = address, type = pointer }, { name = address_length, type = u32 }] returns = isize }
+platform_import "recvmsg" { target = "x86_64-unknown-linux-gnu" library = libc params = [{ name = socket, type = i32 }, { name = message, type = pointer }, { name = flags, type = i32 }] returns = isize }
+platform_import "shutdown" { target = "x86_64-unknown-linux-gnu" library = libc params = [{ name = socket, type = i32 }, { name = direction, type = i32 }] returns = i32 }
+platform_import "getaddrinfo" { target = "x86_64-unknown-linux-gnu" library = libc params = [{ name = host, type = pointer }, { name = service, type = pointer }, { name = hints, type = pointer }, { name = output, type = pointer }] returns = i32 }
+platform_import "freeaddrinfo" { target = "x86_64-unknown-linux-gnu" library = libc params = [{ name = addresses, type = pointer }] returns = void }
+platform_import "pipe" { target = "x86_64-unknown-linux-gnu" library = libc params = [{ name = descriptors, type = pointer }] returns = i32 }
+platform_import "socket" { target = "aarch64-apple-darwin" library = libSystem params = [{ name = domain, type = i32 }, { name = kind, type = i32 }, { name = protocol, type = i32 }] returns = i32 }
+platform_import "bind" { target = "aarch64-apple-darwin" library = libSystem params = [{ name = socket, type = i32 }, { name = address, type = pointer }, { name = length, type = u32 }] returns = i32 }
+platform_import "listen" { target = "aarch64-apple-darwin" library = libSystem params = [{ name = socket, type = i32 }, { name = backlog, type = i32 }] returns = i32 }
+platform_import "accept" { target = "aarch64-apple-darwin" library = libSystem params = [{ name = socket, type = i32 }, { name = address, type = pointer }, { name = length, type = pointer }] returns = i32 }
+platform_import "connect" { target = "aarch64-apple-darwin" library = libSystem params = [{ name = socket, type = i32 }, { name = address, type = pointer }, { name = length, type = u32 }] returns = i32 }
+platform_import "getsockopt" { target = "aarch64-apple-darwin" library = libSystem params = [{ name = socket, type = i32 }, { name = level, type = i32 }, { name = option, type = i32 }, { name = value, type = pointer }, { name = length, type = pointer }] returns = i32 }
+platform_import "setsockopt" { target = "aarch64-apple-darwin" library = libSystem params = [{ name = socket, type = i32 }, { name = level, type = i32 }, { name = option, type = i32 }, { name = value, type = pointer }, { name = length, type = u32 }] returns = i32 }
+platform_import "getpeername" { target = "aarch64-apple-darwin" library = libSystem params = [{ name = socket, type = i32 }, { name = address, type = pointer }, { name = length, type = pointer }] returns = i32 }
+platform_import "getsockname" { target = "aarch64-apple-darwin" library = libSystem params = [{ name = socket, type = i32 }, { name = address, type = pointer }, { name = length, type = pointer }] returns = i32 }
+platform_import "recv" { target = "aarch64-apple-darwin" library = libSystem params = [{ name = socket, type = i32 }, { name = buffer, type = pointer }, { name = length, type = usize }, { name = flags, type = i32 }] returns = isize }
+platform_import "send" { target = "aarch64-apple-darwin" library = libSystem params = [{ name = socket, type = i32 }, { name = buffer, type = pointer }, { name = length, type = usize }, { name = flags, type = i32 }] returns = isize }
+platform_import "sendto" { target = "aarch64-apple-darwin" library = libSystem params = [{ name = socket, type = i32 }, { name = buffer, type = pointer }, { name = length, type = usize }, { name = flags, type = i32 }, { name = address, type = pointer }, { name = address_length, type = u32 }] returns = isize }
+platform_import "recvmsg" { target = "aarch64-apple-darwin" library = libSystem params = [{ name = socket, type = i32 }, { name = message, type = pointer }, { name = flags, type = i32 }] returns = isize }
+platform_import "shutdown" { target = "aarch64-apple-darwin" library = libSystem params = [{ name = socket, type = i32 }, { name = direction, type = i32 }] returns = i32 }
+platform_import "getaddrinfo" { target = "aarch64-apple-darwin" library = libSystem params = [{ name = host, type = pointer }, { name = service, type = pointer }, { name = hints, type = pointer }, { name = output, type = pointer }] returns = i32 }
+platform_import "freeaddrinfo" { target = "aarch64-apple-darwin" library = libSystem params = [{ name = addresses, type = pointer }] returns = void }
+platform_import "pipe" { target = "aarch64-apple-darwin" library = libSystem params = [{ name = descriptors, type = pointer }] returns = i32 }
+platform_import "epoll_create1" { target = "x86_64-unknown-linux-gnu" library = libc params = [{ name = flags, type = i32 }] returns = i32 }
+platform_import "epoll_ctl" { target = "x86_64-unknown-linux-gnu" library = libc params = [{ name = queue, type = i32 }, { name = operation, type = i32 }, { name = socket, type = i32 }, { name = event, type = pointer }] returns = i32 }
+platform_import "epoll_wait" { target = "x86_64-unknown-linux-gnu" library = libc params = [{ name = queue, type = i32 }, { name = events, type = pointer }, { name = capacity, type = i32 }, { name = timeout, type = i32 }] returns = i32 }
+platform_import "kqueue" { target = "aarch64-apple-darwin" library = libSystem params = [] returns = i32 }
+platform_import "kevent" { target = "aarch64-apple-darwin" library = libSystem params = [{ name = queue, type = i32 }, { name = changes, type = pointer }, { name = change_count, type = i32 }, { name = events, type = pointer }, { name = event_count, type = i32 }, { name = timeout, type = pointer }] returns = i32 }
+platform_import "WSAStartup" { target = "x86_64-pc-windows-msvc" library = ws2_32 params = [{ name = version, type = u16 }, { name = data, type = pointer }] returns = i32 }
+platform_import "WSASocketW" { target = "x86_64-pc-windows-msvc" library = ws2_32 params = [{ name = family, type = i32 }, { name = kind, type = i32 }, { name = protocol, type = i32 }, { name = info, type = pointer }, { name = group, type = u32 }, { name = flags, type = u32 }] returns = usize }
+platform_import "WSAGetLastError" { target = "x86_64-pc-windows-msvc" library = ws2_32 params = [] returns = i32 }
+platform_import "closesocket" { target = "x86_64-pc-windows-msvc" library = ws2_32 params = [{ name = socket, type = usize }] returns = i32 }
+platform_import "WSAIoctl" { target = "x86_64-pc-windows-msvc" library = ws2_32 params = [{ name = socket, type = usize }, { name = code, type = u32 }, { name = input, type = pointer }, { name = input_length, type = u32 }, { name = output, type = pointer }, { name = output_length, type = u32 }, { name = bytes, type = pointer }, { name = overlapped, type = pointer }, { name = completion, type = pointer }] returns = i32 }
+platform_import "WSARecv" { target = "x86_64-pc-windows-msvc" library = ws2_32 params = [{ name = socket, type = usize }, { name = buffers, type = pointer }, { name = count, type = u32 }, { name = received, type = pointer }, { name = flags, type = pointer }, { name = overlapped, type = pointer }, { name = completion, type = pointer }] returns = i32 }
+platform_import "WSASend" { target = "x86_64-pc-windows-msvc" library = ws2_32 params = [{ name = socket, type = usize }, { name = buffers, type = pointer }, { name = count, type = u32 }, { name = sent, type = pointer }, { name = flags, type = u32 }, { name = overlapped, type = pointer }, { name = completion, type = pointer }] returns = i32 }
+platform_import "WSARecvFrom" { target = "x86_64-pc-windows-msvc" library = ws2_32 params = [{ name = socket, type = usize }, { name = buffers, type = pointer }, { name = count, type = u32 }, { name = received, type = pointer }, { name = flags, type = pointer }, { name = address, type = pointer }, { name = address_length, type = pointer }, { name = overlapped, type = pointer }, { name = completion, type = pointer }] returns = i32 }
+platform_import "WSASendTo" { target = "x86_64-pc-windows-msvc" library = ws2_32 params = [{ name = socket, type = usize }, { name = buffers, type = pointer }, { name = count, type = u32 }, { name = sent, type = pointer }, { name = flags, type = u32 }, { name = address, type = pointer }, { name = address_length, type = i32 }, { name = overlapped, type = pointer }, { name = completion, type = pointer }] returns = i32 }
+platform_import "bind" { target = "x86_64-pc-windows-msvc" library = ws2_32 params = [{ name = socket, type = usize }, { name = address, type = pointer }, { name = length, type = i32 }] returns = i32 }
+platform_import "listen" { target = "x86_64-pc-windows-msvc" library = ws2_32 params = [{ name = socket, type = usize }, { name = backlog, type = i32 }] returns = i32 }
+platform_import "connect" { target = "x86_64-pc-windows-msvc" library = ws2_32 params = [{ name = socket, type = usize }, { name = address, type = pointer }, { name = length, type = i32 }] returns = i32 }
+platform_import "getsockopt" { target = "x86_64-pc-windows-msvc" library = ws2_32 params = [{ name = socket, type = usize }, { name = level, type = i32 }, { name = option, type = i32 }, { name = value, type = pointer }, { name = length, type = pointer }] returns = i32 }
+platform_import "setsockopt" { target = "x86_64-pc-windows-msvc" library = ws2_32 params = [{ name = socket, type = usize }, { name = level, type = i32 }, { name = option, type = i32 }, { name = value, type = pointer }, { name = length, type = i32 }] returns = i32 }
+platform_import "getpeername" { target = "x86_64-pc-windows-msvc" library = ws2_32 params = [{ name = socket, type = usize }, { name = address, type = pointer }, { name = length, type = pointer }] returns = i32 }
+platform_import "getsockname" { target = "x86_64-pc-windows-msvc" library = ws2_32 params = [{ name = socket, type = usize }, { name = address, type = pointer }, { name = length, type = pointer }] returns = i32 }
+platform_import "shutdown" { target = "x86_64-pc-windows-msvc" library = ws2_32 params = [{ name = socket, type = usize }, { name = direction, type = i32 }] returns = i32 }
+platform_import "getaddrinfo" { target = "x86_64-pc-windows-msvc" library = ws2_32 params = [{ name = host, type = pointer }, { name = service, type = pointer }, { name = hints, type = pointer }, { name = output, type = pointer }] returns = i32 }
+platform_import "freeaddrinfo" { target = "x86_64-pc-windows-msvc" library = ws2_32 params = [{ name = addresses, type = pointer }] returns = void }
+platform_import "CreateIoCompletionPort" { target = "x86_64-pc-windows-msvc" library = kernel32 params = [{ name = file, type = pointer }, { name = port, type = pointer }, { name = key, type = usize }, { name = threads, type = u32 }] returns = pointer }
+platform_import "GetQueuedCompletionStatus" { target = "x86_64-pc-windows-msvc" library = kernel32 params = [{ name = port, type = pointer }, { name = bytes, type = pointer }, { name = key, type = pointer }, { name = overlapped, type = pointer }, { name = timeout, type = u32 }] returns = i32 }
+platform_import "PostQueuedCompletionStatus" { target = "x86_64-pc-windows-msvc" library = kernel32 params = [{ name = port, type = pointer }, { name = bytes, type = u32 }, { name = key, type = usize }, { name = overlapped, type = pointer }] returns = i32 }
+platform_import "CancelIoEx" { target = "x86_64-pc-windows-msvc" library = kernel32 params = [{ name = file, type = pointer }, { name = overlapped, type = pointer }] returns = i32 }
+platform_import "memcpy" { target = "x86_64-pc-windows-msvc" library = vcruntime params = [{ name = destination, type = pointer }, { name = source, type = pointer }, { name = length, type = usize }] returns = pointer }
 # All Rust, C, GNU-as, MASM, abi.json, and audit artifacts are generated from this file.
 manifest {
   abi_version = 5
@@ -197,6 +261,50 @@ intrinsic "owner_post" { symbol = "beskid_rt_v5_intrinsic_owner_post" capability
 intrinsic "owner_pop" { symbol = "beskid_rt_v5_intrinsic_owner_pop" capability = "runtime.scheduler.owner_pop" params = [{ name = owner, type = usize }, { name = command, type = pointer }] returns = i32 }
 intrinsic "owner_wait" { symbol = "beskid_rt_v5_intrinsic_owner_wait" capability = "runtime.scheduler.owner_wait" params = [{ name = owner, type = usize }, { name = deadline, type = i64 }] returns = void }
 intrinsic "wait_claim" { symbol = "beskid_rt_v5_intrinsic_wait_claim" capability = "runtime.scheduler.wait_claim" params = [{ name = state, type = pointer }, { name = source, type = usize }] returns = i32 }
+# Private networking host transport. Pending is never a public NetworkError.
+intrinsic "network_open" { symbol = "beskid_rt_v5_intrinsic_network_open" capability = "runtime.adapter.network_open" params = [{ name = kind, type = i32 }, { name = family, type = i32 }, { name = output, type = pointer }] returns = i32 }
+intrinsic "network_close" { symbol = "beskid_rt_v5_intrinsic_network_close" capability = "runtime.adapter.network_close" params = [{ name = socket, type = pointer }] returns = i32 }
+intrinsic "network_bind" { symbol = "beskid_rt_v5_intrinsic_network_bind" capability = "runtime.adapter.network_bind" params = [{ name = socket, type = pointer }, { name = address, type = pointer }, { name = backlog, type = i32 }] returns = i32 }
+intrinsic "network_address" { symbol = "beskid_rt_v5_intrinsic_network_address" capability = "runtime.adapter.network_address" params = [{ name = socket, type = pointer }, { name = peer, type = u8 }, { name = address, type = pointer }] returns = i32 }
+intrinsic "network_options" { symbol = "beskid_rt_v5_intrinsic_network_options" capability = "runtime.adapter.network_options" params = [{ name = socket, type = pointer }, { name = bits, type = usize }] returns = i32 }
+intrinsic "network_get_options" { symbol = "beskid_rt_v5_intrinsic_network_get_options" capability = "runtime.adapter.network_get_options" params = [{ name = socket, type = pointer }] returns = i64 }
+intrinsic "network_shutdown_write" { symbol = "beskid_rt_v5_intrinsic_network_shutdown_write" capability = "runtime.adapter.network_shutdown_write" params = [{ name = socket, type = pointer }] returns = i32 }
+intrinsic "network_reactor_create" { symbol = "beskid_rt_v5_intrinsic_network_reactor_create" capability = "runtime.adapter.network_reactor_create" params = [] returns = pointer }
+intrinsic "network_reactor_destroy" { symbol = "beskid_rt_v5_intrinsic_network_reactor_destroy" capability = "runtime.adapter.network_reactor_destroy" params = [{ name = reactor, type = pointer }] returns = void }
+intrinsic "network_submit" { symbol = "beskid_rt_v5_intrinsic_network_submit" capability = "runtime.adapter.network_submit" params = [{ name = reactor, type = pointer }, { name = socket, type = pointer }, { name = request, type = pointer }] returns = i32 }
+intrinsic "network_cancel" { symbol = "beskid_rt_v5_intrinsic_network_cancel" capability = "runtime.adapter.network_cancel" params = [{ name = reactor, type = pointer }, { name = request, type = pointer }] returns = void }
+intrinsic "network_reactor_poll" { symbol = "beskid_rt_v5_intrinsic_network_reactor_poll" capability = "runtime.adapter.network_reactor_poll" params = [{ name = reactor, type = pointer }, { name = timeout, type = i32 }] returns = i32 }
+intrinsic "network_report_leak" {
+  symbol = "beskid_rt_v5_intrinsic_network_report_leak"
+  capability = "runtime.adapter.network_report_leak"
+  params = [{ name = slot, type = usize }, { name = generation, type = usize }, { name = owner, type = usize }, { name = kind, type = usize }]
+  returns = void
+  # Apple SDK fortified copies and compiler-protected stack buffers depend on
+  # these exact libSystem C identities. The guard is data, not a callable import.
+  target_bindings = [
+    { target = "aarch64-apple-darwin", implementation = "beskid_rt_v5_intrinsic_network_report_leak", os_imports = [__memcpy_chk, __stack_chk_fail, __stack_chk_guard] }
+  ]
+}
+intrinsic "network_table_lock" { symbol = "beskid_rt_v5_intrinsic_network_table_lock" capability = "runtime.adapter.network_table_lock" params = [] returns = void }
+intrinsic "network_table_unlock" { symbol = "beskid_rt_v5_intrinsic_network_table_unlock" capability = "runtime.adapter.network_table_unlock" params = [] returns = void }
+intrinsic "network_table_root" { symbol = "beskid_rt_v5_intrinsic_network_table_root" capability = "runtime.adapter.network_table_root" params = [] returns = pointer }
+intrinsic "network_dns_start" {
+  symbol = "beskid_rt_v5_intrinsic_network_dns_start"
+  capability = "runtime.adapter.network_dns_start"
+  params = [{ name = host, type = pointer }, { name = port, type = usize }, { name = family, type = i32 }, { name = owner, type = usize }, { name = token, type = usize }]
+  returns = pointer
+  # The selected SDK fortifies the resolver job allocation and host-name copy.
+  target_bindings = [
+    { target = "aarch64-apple-darwin", implementation = "beskid_rt_v5_intrinsic_network_dns_start", os_imports = [__memcpy_chk, __memset_chk] }
+  ]
+}
+intrinsic "network_dns_count" { symbol = "beskid_rt_v5_intrinsic_network_dns_count" capability = "runtime.adapter.network_dns_count" params = [{ name = request, type = pointer }] returns = i64 }
+intrinsic "network_dns_get" { symbol = "beskid_rt_v5_intrinsic_network_dns_get" capability = "runtime.adapter.network_dns_get" params = [{ name = request, type = pointer }, { name = index, type = usize }, { name = address, type = pointer }] returns = i32 }
+intrinsic "network_dns_release" { symbol = "beskid_rt_v5_intrinsic_network_dns_release" capability = "runtime.adapter.network_dns_release" params = [{ name = request, type = pointer }] returns = void }
+status "BeskidNetworkStatus" { repr = i32 values = [{ name = Ok, value = 0 }, { name = AddressInUse, value = 1 }, { name = AddressNotAvailable, value = 2 }, { name = ConnectionAborted, value = 3 }, { name = ConnectionRefused, value = 4 }, { name = ConnectionReset, value = 5 }, { name = HostNotFound, value = 6 }, { name = InvalidAddress, value = 7 }, { name = MessageTooLarge, value = 8 }, { name = NetworkDown, value = 9 }, { name = NotConnected, value = 10 }, { name = PermissionDenied, value = 11 }, { name = TimedOut, value = 12 }, { name = Cancelled, value = 13 }, { name = Closed, value = 14 }, { name = Busy, value = 15 }, { name = CleanupFailed, value = 16 }, { name = Unsupported, value = 17 }, { name = ResourceExhausted, value = 18 }, { name = Pending, value = 19 }] }
+layout "BeskidNetworkHandle" { size = 8 alignment = 8 project_to_runtime = constants fields = [{ name = slot, offset = 0, type = u32 }, { name = generation, offset = 4, type = u32 }] }
+layout "BeskidNetworkRequest" { size = 88 alignment = 8 project_to_runtime = constants fields = [{ name = token, offset = 0, type = usize }, { name = owner, offset = 8, type = usize }, { name = operation, offset = 16, type = usize }, { name = buffer, offset = 24, type = pointer }, { name = length, offset = 32, type = usize }, { name = address, offset = 40, type = pointer }, { name = count, offset = 48, type = usize }, { name = status, offset = 56, type = i32 }, { name = accepted, offset = 64, type = pointer }, { name = native_state, offset = 72, type = pointer }, { name = truncated, offset = 80, type = usize }] }
+
 export "beskid_rt_v5_external_owner_id" { params = [] returns = usize }
 export "beskid_rt_v5_external_active_count" { params = [] returns = usize }
 export "beskid_rt_v5_external_wait_register" { params = [{ name = fiber_handle, type = usize }, { name = operation, type = usize }, { name = deadline, type = i64 }] returns = usize }
@@ -225,6 +333,167 @@ soft_builtin "__str_len" { symbol = "str_len" adapter_service = "__str_len" para
 
 # Canonical process-linked runtime services. These exact symbols are compiler-owned
 # corelib/runtime contracts and contribute to runtime-kit provenance on every target.
+corelib_service "__network_open" {
+  adapter = "beskid_rt_v5_network_open"
+  params = [{ name = kind, type = i64 }, { name = address, type = pointer }, { name = options, type = i64 }, { name = backlog, type = i64 }, { name = output, type = pointer }]
+  returns = i32
+  target_bindings = [
+    { target = "x86_64-unknown-linux-gnu", implementation = "beskid_rt_v5_network_open", os_imports = [] },
+    { target = "aarch64-apple-darwin", implementation = "beskid_rt_v5_network_open", os_imports = [] },
+    { target = "x86_64-pc-windows-msvc", implementation = "beskid_rt_v5_network_open", os_imports = [] }
+  ]
+}
+corelib_service "__network_accept" {
+  adapter = "beskid_rt_v5_network_accept"
+  params = [{ name = handle, type = usize }, { name = output, type = pointer }]
+  returns = i32
+  target_bindings = [
+    { target = "x86_64-unknown-linux-gnu", implementation = "beskid_rt_v5_network_accept", os_imports = [] },
+    { target = "aarch64-apple-darwin", implementation = "beskid_rt_v5_network_accept", os_imports = [] },
+    { target = "x86_64-pc-windows-msvc", implementation = "beskid_rt_v5_network_accept", os_imports = [] }
+  ]
+}
+corelib_service "__network_close" {
+  adapter = "beskid_rt_v5_network_close"
+  params = [{ name = handle, type = usize }]
+  returns = i32
+  target_bindings = [
+    { target = "x86_64-unknown-linux-gnu", implementation = "beskid_rt_v5_network_close", os_imports = [] },
+    { target = "aarch64-apple-darwin", implementation = "beskid_rt_v5_network_close", os_imports = [] },
+    { target = "x86_64-pc-windows-msvc", implementation = "beskid_rt_v5_network_close", os_imports = [] }
+  ]
+}
+corelib_service "__network_read" {
+  adapter = "beskid_rt_v5_network_read"
+  params = [{ name = handle, type = usize }, { name = buffer, type = pointer }, { name = offset, type = i64 }, { name = count, type = i64 }]
+  returns = i64
+  target_bindings = [
+    { target = "x86_64-unknown-linux-gnu", implementation = "beskid_rt_v5_network_read", os_imports = [] },
+    { target = "aarch64-apple-darwin", implementation = "beskid_rt_v5_network_read", os_imports = [] },
+    { target = "x86_64-pc-windows-msvc", implementation = "beskid_rt_v5_network_read", os_imports = [] }
+  ]
+}
+corelib_service "__network_write" {
+  adapter = "beskid_rt_v5_network_write"
+  params = [{ name = handle, type = usize }, { name = buffer, type = pointer }, { name = offset, type = i64 }, { name = count, type = i64 }]
+  returns = i64
+  target_bindings = [
+    { target = "x86_64-unknown-linux-gnu", implementation = "beskid_rt_v5_network_write", os_imports = [] },
+    { target = "aarch64-apple-darwin", implementation = "beskid_rt_v5_network_write", os_imports = [] },
+    { target = "x86_64-pc-windows-msvc", implementation = "beskid_rt_v5_network_write", os_imports = [] }
+  ]
+}
+corelib_service "__network_address" {
+  adapter = "beskid_rt_v5_network_address"
+  params = [{ name = handle, type = usize }, { name = peer, type = u8 }, { name = output, type = pointer }]
+  returns = i32
+  target_bindings = [
+    { target = "x86_64-unknown-linux-gnu", implementation = "beskid_rt_v5_network_address", os_imports = [] },
+    { target = "aarch64-apple-darwin", implementation = "beskid_rt_v5_network_address", os_imports = [] },
+    { target = "x86_64-pc-windows-msvc", implementation = "beskid_rt_v5_network_address", os_imports = [] }
+  ]
+}
+corelib_service "__network_options" {
+  adapter = "beskid_rt_v5_network_options"
+  params = [{ name = handle, type = usize }]
+  returns = i64
+  target_bindings = [
+    { target = "x86_64-unknown-linux-gnu", implementation = "beskid_rt_v5_network_options", os_imports = [] },
+    { target = "aarch64-apple-darwin", implementation = "beskid_rt_v5_network_options", os_imports = [] },
+    { target = "x86_64-pc-windows-msvc", implementation = "beskid_rt_v5_network_options", os_imports = [] }
+  ]
+}
+corelib_service "__network_set_options" {
+  adapter = "beskid_rt_v5_network_set_options"
+  params = [{ name = handle, type = usize }, { name = bits, type = i64 }]
+  returns = i32
+  target_bindings = [
+    { target = "x86_64-unknown-linux-gnu", implementation = "beskid_rt_v5_network_set_options", os_imports = [] },
+    { target = "aarch64-apple-darwin", implementation = "beskid_rt_v5_network_set_options", os_imports = [] },
+    { target = "x86_64-pc-windows-msvc", implementation = "beskid_rt_v5_network_set_options", os_imports = [] }
+  ]
+}
+corelib_service "__network_shutdown_write" {
+  adapter = "beskid_rt_v5_network_shutdown_write"
+  params = [{ name = handle, type = usize }]
+  returns = i32
+  target_bindings = [
+    { target = "x86_64-unknown-linux-gnu", implementation = "beskid_rt_v5_network_shutdown_write", os_imports = [] },
+    { target = "aarch64-apple-darwin", implementation = "beskid_rt_v5_network_shutdown_write", os_imports = [] },
+    { target = "x86_64-pc-windows-msvc", implementation = "beskid_rt_v5_network_shutdown_write", os_imports = [] }
+  ]
+}
+corelib_service "__network_udp_connect" {
+  adapter = "beskid_rt_v5_network_udp_connect"
+  params = [{ name = handle, type = usize }, { name = address, type = pointer }]
+  returns = i32
+  target_bindings = [
+    { target = "x86_64-unknown-linux-gnu", implementation = "beskid_rt_v5_network_udp_connect", os_imports = [] },
+    { target = "aarch64-apple-darwin", implementation = "beskid_rt_v5_network_udp_connect", os_imports = [] },
+    { target = "x86_64-pc-windows-msvc", implementation = "beskid_rt_v5_network_udp_connect", os_imports = [] }
+  ]
+}
+corelib_service "__network_receive" {
+  adapter = "beskid_rt_v5_network_receive"
+  params = [{ name = handle, type = usize }, { name = payload, type = pointer }, { name = metadata, type = pointer }, { name = connected, type = u8 }]
+  returns = i64
+  target_bindings = [
+    { target = "x86_64-unknown-linux-gnu", implementation = "beskid_rt_v5_network_receive", os_imports = [] },
+    { target = "aarch64-apple-darwin", implementation = "beskid_rt_v5_network_receive", os_imports = [] },
+    { target = "x86_64-pc-windows-msvc", implementation = "beskid_rt_v5_network_receive", os_imports = [] }
+  ]
+}
+corelib_service "__network_send" {
+  adapter = "beskid_rt_v5_network_send"
+  params = [{ name = handle, type = usize }, { name = payload, type = pointer }, { name = address, type = pointer }, { name = connected, type = u8 }]
+  returns = i64
+  target_bindings = [
+    { target = "x86_64-unknown-linux-gnu", implementation = "beskid_rt_v5_network_send", os_imports = [] },
+    { target = "aarch64-apple-darwin", implementation = "beskid_rt_v5_network_send", os_imports = [] },
+    { target = "x86_64-pc-windows-msvc", implementation = "beskid_rt_v5_network_send", os_imports = [] }
+  ]
+}
+corelib_service "__network_dns_resolve" {
+  adapter = "beskid_rt_v5_network_dns_resolve"
+  params = [{ name = host, type = pointer }, { name = port, type = i64 }, { name = family, type = i64 }, { name = output, type = pointer }]
+  returns = i32
+  target_bindings = [
+    { target = "x86_64-unknown-linux-gnu", implementation = "beskid_rt_v5_network_dns_resolve", os_imports = [] },
+    { target = "aarch64-apple-darwin", implementation = "beskid_rt_v5_network_dns_resolve", os_imports = [] },
+    { target = "x86_64-pc-windows-msvc", implementation = "beskid_rt_v5_network_dns_resolve", os_imports = [] }
+  ]
+}
+corelib_service "__network_dns_count" {
+  adapter = "beskid_rt_v5_network_dns_count"
+  params = [{ name = lease, type = usize }]
+  returns = i64
+  target_bindings = [
+    { target = "x86_64-unknown-linux-gnu", implementation = "beskid_rt_v5_network_dns_count", os_imports = [] },
+    { target = "aarch64-apple-darwin", implementation = "beskid_rt_v5_network_dns_count", os_imports = [] },
+    { target = "x86_64-pc-windows-msvc", implementation = "beskid_rt_v5_network_dns_count", os_imports = [] }
+  ]
+}
+corelib_service "__network_dns_address" {
+  adapter = "beskid_rt_v5_network_dns_address"
+  params = [{ name = lease, type = usize }, { name = index, type = i64 }, { name = output, type = pointer }]
+  returns = i32
+  target_bindings = [
+    { target = "x86_64-unknown-linux-gnu", implementation = "beskid_rt_v5_network_dns_address", os_imports = [] },
+    { target = "aarch64-apple-darwin", implementation = "beskid_rt_v5_network_dns_address", os_imports = [] },
+    { target = "x86_64-pc-windows-msvc", implementation = "beskid_rt_v5_network_dns_address", os_imports = [] }
+  ]
+}
+corelib_service "__network_dns_release" {
+  adapter = "beskid_rt_v5_network_dns_release"
+  params = [{ name = lease, type = usize }]
+  returns = void
+  target_bindings = [
+    { target = "x86_64-unknown-linux-gnu", implementation = "beskid_rt_v5_network_dns_release", os_imports = [] },
+    { target = "aarch64-apple-darwin", implementation = "beskid_rt_v5_network_dns_release", os_imports = [] },
+    { target = "x86_64-pc-windows-msvc", implementation = "beskid_rt_v5_network_dns_release", os_imports = [] }
+  ]
+}
+
 corelib_service "__array_new" {
   adapter = "array_new"
   params = [{ name = elementSize, type = usize }, { name = count, type = usize }]
@@ -1335,7 +1604,7 @@ entry_adapter "Core.Args" {
   capture = utf8_argv
   handoff = beskid_rt_v5_args_handoff_utf8
   ownership = process_lifetime_copied_beskid_str_arena
-  entry_source = "args_entry.S"
+  entry_source = "../common/executable_bootstrap.c"
   os_imports = [memcpy, mmap, strlen]
 }
 entry_adapter "Core.Args" {
@@ -1345,7 +1614,7 @@ entry_adapter "Core.Args" {
   capture = utf8_argv
   handoff = beskid_rt_v5_args_handoff_utf8
   ownership = process_lifetime_copied_beskid_str_arena
-  entry_source = "args_entry.S"
+  entry_source = "../common/executable_bootstrap.c"
   os_imports = [memcpy, mmap, strlen]
 }
 entry_adapter "Core.Args" {
@@ -1355,7 +1624,7 @@ entry_adapter "Core.Args" {
   capture = utf16_wargv
   handoff = beskid_rt_v5_args_handoff_utf16
   ownership = process_lifetime_copied_beskid_str_arena
-  entry_source = "args_entry.asm"
+  entry_source = "../common/executable_bootstrap.c"
   os_imports = [VirtualAlloc]
 }
 

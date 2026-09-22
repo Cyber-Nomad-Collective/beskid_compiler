@@ -8,8 +8,9 @@
 use std::sync::Arc;
 
 use beskid_queries::{
-    AstNodeKey, CallLowering, GenericSpecializationInstance, IndexedNodeKind, SemanticTypeId, bulk_parameter,
-    call_arguments, call_lowering, child_nodes, empty_array_literal_element_abi_type,
+    AstNodeKey, CallLowering, GenericSpecializationInstance, IndexedNodeKind, SemanticTypeId,
+    aggregate_literal_declaration, bulk_parameter, call_arguments, call_lowering, child_nodes,
+    empty_array_literal_element_abi_type,
     empty_array_literal_element_specialization, generic_specialization_identity, node_kind, node_type,
     typed_array_allocation,
 };
@@ -151,6 +152,20 @@ impl CodegenInput<'_> {
         })
     }
 
+    /// The nominal `type` declaration constructed by one element expression, looking through the
+    /// structural `Expression` wrapper the syntax index keeps between a literal and its parent.
+    fn nominal_literal_declaration(&self, mut key: AstNodeKey) -> Option<AstNodeKey> {
+        loop {
+            if let Some(declaration) = aggregate_literal_declaration(self.database(), key).ok().flatten() {
+                return Some(declaration);
+            }
+            if node_kind(self.database(), key).ok().flatten()? != IndexedNodeKind::Expression {
+                return None;
+            }
+            key = *child_nodes(self.database(), key).ok().flatten()?.first()?;
+        }
+    }
+
     /// Create source-authorized typed-array metadata.
     ///
     /// A non-empty literal proves its element ABI from every element. An empty literal is valid
@@ -162,14 +177,25 @@ impl CodegenInput<'_> {
             .then_some(())?;
         let elements = child_nodes(self.database(), literal).ok().flatten()?;
         let element_type = match elements.first().copied() {
-            Some(first) => {
-                let element_type = node_type(self.database(), first).ok().flatten()?;
-                elements
+            Some(first) => match node_type(self.database(), first).ok().flatten() {
+                Some(element_type) => elements
                     .iter()
                     .copied()
                     .all(|element| node_type(self.database(), element).ok().flatten() == Some(element_type))
-                    .then_some(element_type)?
-            }
+                    .then_some(element_type)?,
+                // A nominal struct literal carries no scalar `node_type`; its constructed
+                // declaration is the only authority proving the element is one managed
+                // reference. Every element must construct the same declaration so the
+                // element pointer map stays exact.
+                None => {
+                    let declaration = self.nominal_literal_declaration(first)?;
+                    elements
+                        .iter()
+                        .copied()
+                        .all(|element| self.nominal_literal_declaration(element) == Some(declaration))
+                        .then_some(SemanticTypeId::POINTER)?
+                }
+            },
             None => empty_array_literal_element_abi_type(self.database(), literal).ok().flatten()?,
         };
         let length = u64::try_from(elements.len()).ok()?;

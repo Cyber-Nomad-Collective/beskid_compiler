@@ -13,7 +13,7 @@ use beskid_abi::{
     runtime_kit::BuildProfile,
     runtime_source::{
         CANONICAL_FOUNDATION_TIME_SOURCE_PATH, canonical_corelib_service_capability,
-        canonical_corelib_service_source_path, canonical_corelib_service_sources,
+        canonical_corelib_service_source_path, canonical_corelib_service_sources, corelib_source_locations_match,
     },
 };
 use beskid_analysis::{
@@ -535,7 +535,10 @@ fn require_canonical_timer_source(path: &Path, source: &str) -> anyhow::Result<(
         .into_iter()
         .find(|unit| unit.logical_path == CANONICAL_FOUNDATION_TIME_SOURCE_PATH)
         .ok_or_else(|| anyhow::anyhow!("embedded Core.Time source unavailable"))?;
-    anyhow::ensure!(path == expected_path && source == expected.source, "Core.Time source authority mismatch");
+    anyhow::ensure!(
+        corelib_source_locations_match(path, &expected_path) && source == expected.source,
+        "Core.Time source authority mismatch"
+    );
     let metadata = std::fs::symlink_metadata(path)?;
     anyhow::ensure!(metadata.file_type().is_file(), "Core.Time must be a canonical regular file");
     Ok(())
@@ -618,7 +621,11 @@ fn timer_validation_artifact(db: &mut BeskidDatabase) -> anyhow::Result<TimerVal
                 .chars()
                 .map(|character| if character.is_ascii_alphanumeric() { character } else { '_' })
                 .collect::<String>();
-            items.push(SyntaxModuleItem { key, symbol: format!("{name}#syntax_{logical}_{}", key.node.0) });
+            // This fixture passes its private helper functions directly to a C driver.
+            // Keep the test bridge distinct from production syntax identities: `#` is
+            // valid in the compiler's internal symbol space, but starts a comment in
+            // GNU assembler identifiers.
+            items.push(SyntaxModuleItem { key, symbol: format!("timer_validation_{logical}_{name}_{}", key.node.0) });
         }
     }
     let settings = beskid_codegen::cranelift_host::production_isa_settings_builder()?;
@@ -687,8 +694,10 @@ fn source_external_cancellation_is_sticky_across_new_waits_but_not_fiber_reuse()
 
 fn source_transfer_assembly(kind: &str) -> Arc<ProgramAssembly> {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-    // Match the lexical CARGO_MANIFEST_DIR-based paths owned by source authority;
-    // Windows canonicalize() would introduce a different verbatim-path prefix.
+    // Preserve the lexical paths used by the manual fixture assembly. Service
+    // authority recognizes only the compiler-owned physical identity and its
+    // equivalent Windows drive-prefix representation; a copied source is not
+    // accepted.
     let compiler = root.ancestors().nth(2).expect("Engine crate must be nested under compiler/crates");
     let concurrency = compiler.join("corelib/packages/concurrency/src");
     let foundation = compiler.join("corelib/packages/foundation/src");

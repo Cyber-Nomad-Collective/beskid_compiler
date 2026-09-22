@@ -1,4 +1,4 @@
-use crate::abi_v5::{AbiManifestV5, canonical_runtime_package, canonical_source_hash};
+use crate::abi_v5::{AbiManifestV5, TargetMetadata, canonical_runtime_package, canonical_source_hash};
 use crate::{AbiParamKind, AbiReturnKind};
 
 use super::capabilities::RuntimeCapabilityError;
@@ -15,7 +15,7 @@ use super::sources::{
     CANONICAL_FOUNDATION_PATH_SOURCE_PATH, CANONICAL_FOUNDATION_PROCESS_SOURCE_PATH,
     CANONICAL_FOUNDATION_RANDOM_SOURCE_PATH, CANONICAL_FOUNDATION_STRING_CORE_SOURCE_PATH,
     CANONICAL_FOUNDATION_STRING_UTF8_SOURCE_PATH, CANONICAL_FOUNDATION_TEXT_CURSOR_SOURCE_PATH,
-    CANONICAL_FOUNDATION_TIME_SOURCE_PATH, canonical_corelib_service_sources,
+    CANONICAL_FOUNDATION_TIME_SOURCE_PATH, CANONICAL_NETWORK_INTERNAL_SOURCE_PATH, canonical_corelib_service_sources,
 };
 
 /// The canonical compiler-owned source file for one Foundation service unit.
@@ -65,6 +65,7 @@ pub fn corelib_service_source_identity(logical_path: &str) -> Option<CorelibServ
         CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH => ("foundation", "Testing/Assert.bd"),
         CANONICAL_FOUNDATION_OUTPUT_SOURCE_PATH => ("foundation", "Core/Output/Output.bd"),
         CANONICAL_FOUNDATION_ERROR_SOURCE_PATH => ("foundation", "Core/Error/Error.bd"),
+        CANONICAL_NETWORK_INTERNAL_SOURCE_PATH => ("network", "Network/Internal.bd"),
         _ => return None,
     };
     let declared_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -125,6 +126,61 @@ pub struct CorelibServiceAbi {
     pub result: CorelibServiceAbiType,
 }
 
+/// Why a native Corelib import was denied before it could enter a backend artifact.
+///
+/// This is deliberately separate from user-FFI validation. A Corelib service is not a user
+/// extern: its authority is the exact `(source path, service name, adapter)` declaration plus
+/// the selected canonical ABI-v5 target contract. Glue does not participate in this decision.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CorelibServiceImportPreflightError {
+    InvalidManifest,
+    NonCanonicalManifest { target: String },
+    UnauthorizedDeclaration { name: String, symbol: String, source_path: String },
+    MissingManifestService { name: String },
+    DuplicateManifestDeclaration { name: String },
+    TargetCoverageMismatch { name: String, expected: Vec<String>, actual: Vec<String> },
+    DuplicateTargetBinding { name: String, target: String },
+    AdapterMismatch { name: String, expected: String, actual: String },
+    ImplementationMismatch { name: String, expected: String, actual: String, target: String },
+    TargetShapeMismatch { name: String, target: String },
+}
+
+impl std::fmt::Display for CorelibServiceImportPreflightError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::InvalidManifest => f.write_str("Corelib import requires a valid ABI-v5 manifest"),
+            Self::NonCanonicalManifest { target } => {
+                write!(f, "Corelib import requires the canonical ABI-v5 manifest for `{target}`")
+            }
+            Self::UnauthorizedDeclaration { name, symbol, source_path } => {
+                write!(f, "unauthorized Corelib import `{name}` / `{symbol}` from `{source_path}`")
+            }
+            Self::MissingManifestService { name } => write!(f, "Corelib import `{name}` has no manifest service"),
+            Self::DuplicateManifestDeclaration { name } => {
+                write!(f, "Corelib import `{name}` has duplicate manifest declarations")
+            }
+            Self::TargetCoverageMismatch { name, expected, actual } => {
+                write!(f, "Corelib import `{name}` target coverage mismatch: expected={expected:?}, actual={actual:?}")
+            }
+            Self::DuplicateTargetBinding { name, target } => {
+                write!(f, "Corelib import `{name}` has duplicate `{target}` target bindings")
+            }
+            Self::AdapterMismatch { name, expected, actual } => {
+                write!(f, "Corelib import `{name}` adapter mismatch: expected `{expected}`, actual `{actual}`")
+            }
+            Self::ImplementationMismatch { name, expected, actual, target } => write!(
+                f,
+                "Corelib import `{name}` implementation mismatch for `{target}`: expected `{expected}`, actual `{actual}`"
+            ),
+            Self::TargetShapeMismatch { name, target } => {
+                write!(f, "Corelib import `{name}` has a target-shape mismatch at `{target}`")
+            }
+        }
+    }
+}
+
+impl std::error::Error for CorelibServiceImportPreflightError {}
+
 /// One traced native value adapter owned by one exact source service.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CorelibServiceValueDispatch {
@@ -150,8 +206,8 @@ pub fn canonical_corelib_service_value_dispatch(service: CorelibService) -> Opti
 
 /// Resolve a service adapter against the canonical ABI-v5 bindings.
 ///
-/// Generated Corelib-service bindings and soft builtins intentionally share this one lookup.
-/// Conflicting target shapes or duplicate soft-builtin declarations fail closed.
+/// Generated Corelib-service bindings, manifest source builtins, and soft builtins intentionally
+/// share this one lookup. Conflicting target shapes or duplicate declarations fail closed.
 pub fn canonical_corelib_service_abi(service: CorelibService) -> Option<CorelibServiceAbi> {
     canonical_corelib_service_abi_for_adapter(service.symbol)
 }
@@ -168,6 +224,23 @@ pub fn canonical_corelib_service_abi_for_adapter(symbol: &str) -> Option<Corelib
         return Some(CorelibServiceAbi {
             parameters: binding.params.iter().copied().map(corelib_service_abi_type).collect::<Option<Vec<_>>>()?,
             result: corelib_service_abi_type(binding.result)?,
+        });
+    }
+
+    // Manifest source builtins carry the exact export types (for example a word-sized `usize`
+    // status). They take precedence over the coarser soft-builtin register classes so the
+    // source-facing ABI and the import preflight select one identical shape.
+    let mut declarations = crate::generated::abi_v5_contract::ABI_V5_SOURCE_BUILTINS
+        .iter()
+        .filter(|declaration| declaration.symbol == symbol);
+    if let Some(declaration) = declarations.next() {
+        if declarations.any(|candidate| candidate.params != declaration.params || candidate.result != declaration.result)
+        {
+            return None;
+        }
+        return Some(CorelibServiceAbi {
+            parameters: declaration.params.iter().copied().map(corelib_service_abi_type).collect::<Option<Vec<_>>>()?,
+            result: corelib_service_abi_type(declaration.result)?,
         });
     }
 
@@ -275,6 +348,91 @@ impl<'de> serde::Deserialize<'de> for CorelibService {
 }
 
 const CORELIB_SERVICES: &[CorelibService] = &[
+    CorelibService {
+        name: "__panic_str",
+        symbol: "beskid_trap_message",
+        source_path: CANONICAL_NETWORK_INTERNAL_SOURCE_PATH,
+    },
+    CorelibService {
+        name: "__network_open",
+        symbol: "beskid_rt_v5_network_open",
+        source_path: CANONICAL_NETWORK_INTERNAL_SOURCE_PATH,
+    },
+    CorelibService {
+        name: "__network_accept",
+        symbol: "beskid_rt_v5_network_accept",
+        source_path: CANONICAL_NETWORK_INTERNAL_SOURCE_PATH,
+    },
+    CorelibService {
+        name: "__network_close",
+        symbol: "beskid_rt_v5_network_close",
+        source_path: CANONICAL_NETWORK_INTERNAL_SOURCE_PATH,
+    },
+    CorelibService {
+        name: "__network_read",
+        symbol: "beskid_rt_v5_network_read",
+        source_path: CANONICAL_NETWORK_INTERNAL_SOURCE_PATH,
+    },
+    CorelibService {
+        name: "__network_write",
+        symbol: "beskid_rt_v5_network_write",
+        source_path: CANONICAL_NETWORK_INTERNAL_SOURCE_PATH,
+    },
+    CorelibService {
+        name: "__network_address",
+        symbol: "beskid_rt_v5_network_address",
+        source_path: CANONICAL_NETWORK_INTERNAL_SOURCE_PATH,
+    },
+    CorelibService {
+        name: "__network_options",
+        symbol: "beskid_rt_v5_network_options",
+        source_path: CANONICAL_NETWORK_INTERNAL_SOURCE_PATH,
+    },
+    CorelibService {
+        name: "__network_set_options",
+        symbol: "beskid_rt_v5_network_set_options",
+        source_path: CANONICAL_NETWORK_INTERNAL_SOURCE_PATH,
+    },
+    CorelibService {
+        name: "__network_shutdown_write",
+        symbol: "beskid_rt_v5_network_shutdown_write",
+        source_path: CANONICAL_NETWORK_INTERNAL_SOURCE_PATH,
+    },
+    CorelibService {
+        name: "__network_udp_connect",
+        symbol: "beskid_rt_v5_network_udp_connect",
+        source_path: CANONICAL_NETWORK_INTERNAL_SOURCE_PATH,
+    },
+    CorelibService {
+        name: "__network_receive",
+        symbol: "beskid_rt_v5_network_receive",
+        source_path: CANONICAL_NETWORK_INTERNAL_SOURCE_PATH,
+    },
+    CorelibService {
+        name: "__network_send",
+        symbol: "beskid_rt_v5_network_send",
+        source_path: CANONICAL_NETWORK_INTERNAL_SOURCE_PATH,
+    },
+    CorelibService {
+        name: "__network_dns_resolve",
+        symbol: "beskid_rt_v5_network_dns_resolve",
+        source_path: CANONICAL_NETWORK_INTERNAL_SOURCE_PATH,
+    },
+    CorelibService {
+        name: "__network_dns_count",
+        symbol: "beskid_rt_v5_network_dns_count",
+        source_path: CANONICAL_NETWORK_INTERNAL_SOURCE_PATH,
+    },
+    CorelibService {
+        name: "__network_dns_address",
+        symbol: "beskid_rt_v5_network_dns_address",
+        source_path: CANONICAL_NETWORK_INTERNAL_SOURCE_PATH,
+    },
+    CorelibService {
+        name: "__network_dns_release",
+        symbol: "beskid_rt_v5_network_dns_release",
+        source_path: CANONICAL_NETWORK_INTERNAL_SOURCE_PATH,
+    },
     CorelibService {
         name: "__syscall_write",
         symbol: "syscall_write",
@@ -408,7 +566,7 @@ const CORELIB_SERVICES: &[CorelibService] = &[
         source_path: CANONICAL_CORELIB_CHANNEL_SOURCE_PATH,
     },
     CorelibService {
-        name: "__channel_receive",
+        name: "__channel_receive_status",
         symbol: "channel_receive_status",
         source_path: CANONICAL_CORELIB_CHANNEL_SOURCE_PATH,
     },
@@ -448,7 +606,7 @@ const CORELIB_SERVICES: &[CorelibService] = &[
         source_path: CANONICAL_CORELIB_HUB_SOURCE_PATH,
     },
     CorelibService {
-        name: "__hub_wait_receive",
+        name: "__hub_wait_receive_status",
         symbol: "hub_wait_receive_status",
         source_path: CANONICAL_CORELIB_HUB_SOURCE_PATH,
     },
@@ -535,6 +693,11 @@ const CORELIB_SERVICES: &[CorelibService] = &[
     CorelibService {
         name: "__clock_monotonic_nanos",
         symbol: "clock_monotonic_nanos",
+        source_path: CANONICAL_FOUNDATION_TIME_SOURCE_PATH,
+    },
+    CorelibService {
+        name: "__timer_sleep_until",
+        symbol: "beskid_rt_v5_external_sleep_until",
         source_path: CANONICAL_FOUNDATION_TIME_SOURCE_PATH,
     },
     CorelibService {
@@ -641,4 +804,201 @@ pub fn canonical_corelib_syscall_service_capability(
     manifest: &AbiManifestV5,
 ) -> Result<CorelibServiceCapability, RuntimeCapabilityError> {
     canonical_corelib_service_capability(manifest)
+}
+
+/// Preflight one compiler-owned Corelib declaration before a backend imports its native adapter.
+///
+/// The check deliberately joins all three authorities that otherwise live at separate seams:
+/// source-scoped Corelib capability, the exact canonical target manifest, and the generated
+/// target binding table. It accepts no inferred symbol, target fallback, or compatibility alias.
+/// That makes this the pre-Glue interop gate for every Corelib native service, including the
+/// Networking facade once its source inventory is registered.
+pub fn preflight_corelib_service_declaration(
+    capability: &CorelibServiceCapability,
+    manifest: &AbiManifestV5,
+    source_path: &str,
+    name: &str,
+    symbol: &str,
+) -> Result<CorelibServiceAbi, CorelibServiceImportPreflightError> {
+    let service = capability.service_for_source(source_path, name).ok_or_else(|| {
+        CorelibServiceImportPreflightError::UnauthorizedDeclaration {
+            name: name.to_owned(),
+            symbol: symbol.to_owned(),
+            source_path: source_path.to_owned(),
+        }
+    })?;
+    if service.symbol != symbol {
+        return Err(CorelibServiceImportPreflightError::UnauthorizedDeclaration {
+            name: name.to_owned(),
+            symbol: symbol.to_owned(),
+            source_path: source_path.to_owned(),
+        });
+    }
+    preflight_corelib_service_import(capability, manifest, service)
+}
+
+/// Preflight an already source-authorized Corelib service fact before lowering its native call.
+///
+/// Codegen uses this form because semantic facts retain a [`CorelibService`] rather than a
+/// re-parsed declaration. It still rechecks the source authority so stale, forged, or otherwise
+/// detached facts cannot be turned into a native import.
+pub fn preflight_corelib_service_import(
+    capability: &CorelibServiceCapability,
+    manifest: &AbiManifestV5,
+    service: CorelibService,
+) -> Result<CorelibServiceAbi, CorelibServiceImportPreflightError> {
+    if manifest.validate().is_err() {
+        return Err(CorelibServiceImportPreflightError::InvalidManifest);
+    }
+    let target = manifest.target.triple.as_str().to_owned();
+    if manifest != &AbiManifestV5::canonical_runtime(manifest.target.clone()) {
+        return Err(CorelibServiceImportPreflightError::NonCanonicalManifest { target });
+    }
+    if capability.service_for_source(service.source_path, service.name) != Some(service) {
+        return Err(CorelibServiceImportPreflightError::UnauthorizedDeclaration {
+            name: service.name.to_owned(),
+            symbol: service.symbol.to_owned(),
+            source_path: service.source_path.to_owned(),
+        });
+    }
+
+    let bindings = crate::generated::abi_v5_contract::ABI_V5_CORELIB_SERVICE_BINDINGS
+        .iter()
+        .filter(|binding| binding.service == service.name)
+        .collect::<Vec<_>>();
+    if bindings.is_empty() {
+        return preflight_corelib_source_builtin(service);
+    }
+
+    let mut seen_targets = std::collections::BTreeSet::new();
+    for binding in &bindings {
+        if !seen_targets.insert(binding.target) {
+            return Err(CorelibServiceImportPreflightError::DuplicateTargetBinding {
+                name: service.name.to_owned(),
+                target: binding.target.to_owned(),
+            });
+        }
+    }
+
+    let mut expected_targets = TargetMetadata::supported()
+        .into_iter()
+        .map(|candidate| candidate.triple.as_str().to_owned())
+        .collect::<Vec<_>>();
+    expected_targets.sort();
+    expected_targets.dedup();
+    let mut actual_targets = bindings.iter().map(|binding| binding.target.to_owned()).collect::<Vec<_>>();
+    actual_targets.sort();
+    actual_targets.dedup();
+    if actual_targets != expected_targets {
+        return Err(CorelibServiceImportPreflightError::TargetCoverageMismatch {
+            name: service.name.to_owned(),
+            expected: expected_targets,
+            actual: actual_targets,
+        });
+    }
+
+    let first = bindings[0];
+    let expected_abi =
+        corelib_binding_abi(first).ok_or_else(|| CorelibServiceImportPreflightError::TargetShapeMismatch {
+            name: service.name.to_owned(),
+            target: first.target.to_owned(),
+        })?;
+    for binding in &bindings {
+        if binding.adapter != service.symbol {
+            return Err(CorelibServiceImportPreflightError::AdapterMismatch {
+                name: service.name.to_owned(),
+                expected: service.symbol.to_owned(),
+                actual: binding.adapter.to_owned(),
+            });
+        }
+        if binding.implementation != service.symbol {
+            return Err(CorelibServiceImportPreflightError::ImplementationMismatch {
+                name: service.name.to_owned(),
+                expected: service.symbol.to_owned(),
+                actual: binding.implementation.to_owned(),
+                target: binding.target.to_owned(),
+            });
+        }
+        if binding.params != first.params || binding.result != first.result {
+            return Err(CorelibServiceImportPreflightError::TargetShapeMismatch {
+                name: service.name.to_owned(),
+                target: binding.target.to_owned(),
+            });
+        }
+        if corelib_binding_abi(binding).as_ref() != Some(&expected_abi) {
+            return Err(CorelibServiceImportPreflightError::TargetShapeMismatch {
+                name: service.name.to_owned(),
+                target: binding.target.to_owned(),
+            });
+        }
+    }
+
+    let current =
+        bindings.iter().filter(|binding| binding.target == manifest.target.triple.as_str()).collect::<Vec<_>>();
+    if current.len() != 1 {
+        return Err(if current.is_empty() {
+            CorelibServiceImportPreflightError::TargetCoverageMismatch {
+                name: service.name.to_owned(),
+                expected: vec![manifest.target.triple.as_str().to_owned()],
+                actual: Vec::new(),
+            }
+        } else {
+            CorelibServiceImportPreflightError::DuplicateTargetBinding {
+                name: service.name.to_owned(),
+                target: manifest.target.triple.as_str().to_owned(),
+            }
+        });
+    }
+    Ok(expected_abi)
+}
+
+/// Validate the small target-independent source-builtin class.
+///
+/// These declarations have no per-target service rows because their generated source declaration
+/// is shared verbatim by every canonical ABI-v5 target. They still retain exact source name,
+/// symbol, and shape authority; absence or duplication remains a hard failure.
+fn preflight_corelib_source_builtin(
+    service: CorelibService,
+) -> Result<CorelibServiceAbi, CorelibServiceImportPreflightError> {
+    let declarations = crate::generated::abi_v5_contract::ABI_V5_SOURCE_BUILTINS
+        .iter()
+        .filter(|declaration| declaration.name == service.name)
+        .collect::<Vec<_>>();
+    let [declaration] = declarations.as_slice() else {
+        return Err(if declarations.is_empty() {
+            CorelibServiceImportPreflightError::MissingManifestService { name: service.name.to_owned() }
+        } else {
+            CorelibServiceImportPreflightError::DuplicateManifestDeclaration { name: service.name.to_owned() }
+        });
+    };
+    if declaration.symbol != service.symbol {
+        return Err(CorelibServiceImportPreflightError::AdapterMismatch {
+            name: service.name.to_owned(),
+            expected: service.symbol.to_owned(),
+            actual: declaration.symbol.to_owned(),
+        });
+    }
+    let Some(parameters) = declaration.params.iter().copied().map(corelib_service_abi_type).collect::<Option<Vec<_>>>()
+    else {
+        return Err(CorelibServiceImportPreflightError::TargetShapeMismatch {
+            name: service.name.to_owned(),
+            target: "all supported targets".to_owned(),
+        });
+    };
+    let Some(result) = corelib_service_abi_type(declaration.result) else {
+        return Err(CorelibServiceImportPreflightError::TargetShapeMismatch {
+            name: service.name.to_owned(),
+            target: "all supported targets".to_owned(),
+        });
+    };
+    Ok(CorelibServiceAbi { parameters, result })
+}
+
+fn corelib_binding_abi(
+    binding: &crate::generated::abi_v5_contract::GeneratedCorelibServiceBinding,
+) -> Option<CorelibServiceAbi> {
+    Some(CorelibServiceAbi {
+        parameters: binding.params.iter().copied().map(corelib_service_abi_type).collect::<Option<Vec<_>>>()?,
+        result: corelib_service_abi_type(binding.result)?,
+    })
 }

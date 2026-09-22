@@ -349,11 +349,34 @@ dependency "missing" {
         assert_eq!(unresolved, vec!["missing".to_string()]);
     }
 
+    /// Locate the VS Code extension's command snapshot.
+    ///
+    /// `beskid_vscode` is a sibling submodule of `compiler` in the root repository, so the
+    /// compiler may sit directly under the root or inside a root-level worktree directory.
+    /// `BESKID_VSCODE_ROOT` names the extension checkout explicitly for other layouts.
+    fn vscode_contract_snapshot_path() -> PathBuf {
+        const SNAPSHOT: &str = "test/fixtures/lsp-project-explorer-commands.json";
+        if let Some(root) = std::env::var_os("BESKID_VSCODE_ROOT") {
+            return PathBuf::from(root).join(SNAPSHOT);
+        }
+        let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let compiler_root = manifest_dir.join("../..").canonicalize().expect("compiler root");
+        let candidates = compiler_root
+            .ancestors()
+            .skip(1)
+            .map(|ancestor| ancestor.join("beskid_vscode").join(SNAPSHOT))
+            .collect::<Vec<_>>();
+        candidates.iter().find(|candidate| candidate.is_file()).cloned().unwrap_or_else(|| {
+            panic!(
+                "beskid_vscode command snapshot not found; set BESKID_VSCODE_ROOT or check out the \
+                 beskid_vscode submodule beside compiler. Tried: {candidates:#?}"
+            )
+        })
+    }
+
     #[test]
     fn project_explorer_command_contract_matches_snapshot() {
-        let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
-        let snapshot_path =
-            manifest_dir.join("../../../beskid_vscode/test/fixtures/lsp-project-explorer-commands.json");
+        let snapshot_path = vscode_contract_snapshot_path();
         let text = fs::read_to_string(&snapshot_path)
             .unwrap_or_else(|err| panic!("read contract snapshot at {}: {err}", snapshot_path.display()));
         let snapshot: Value = serde_json::from_str(&text).expect("parse contract snapshot");

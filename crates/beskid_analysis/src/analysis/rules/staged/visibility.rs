@@ -1,18 +1,24 @@
 use super::SemanticPipelineRule;
 use crate::analysis::diagnostic_kinds::SemanticIssueKind;
 use crate::analysis::rules::RuleContext;
+use crate::resolve::Resolution;
 use crate::syntax::Spanned;
-use crate::syntax::{Block, Expression, Node, Path, Program, Statement, Type, UseDeclaration, Visibility};
+use crate::syntax::{Block, Expression, Node, Path, Program, Statement, Type, Visibility};
 use crate::syntax_query::Query;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
 impl SemanticPipelineRule {
-    pub(super) fn stage5_modules_and_visibility(&self, ctx: &mut RuleContext, program: &Spanned<Program>) {
+    pub(super) fn stage5_modules_and_visibility(
+        &self,
+        ctx: &mut RuleContext,
+        program: &Spanned<Program>,
+        resolution: &Resolution,
+    ) {
         self.check_module_not_found(ctx, program);
         self.check_visibility_violations(ctx, program);
         self.check_extend_type_private_member_access(ctx, program);
-        self.check_unused_imports(ctx, program);
+        self.check_unused_imports(ctx, program, resolution);
         self.check_unused_private_items(ctx, program);
     }
 
@@ -74,15 +80,12 @@ impl SemanticPipelineRule {
         }
     }
 
-    fn check_unused_imports(&self, ctx: &mut RuleContext, program: &Spanned<Program>) {
-        let used_names = self.collect_used_value_names(program);
-
+    fn check_unused_imports(&self, ctx: &mut RuleContext, program: &Spanned<Program>, resolution: &Resolution) {
         for item in &program.node.items {
             let Node::UseDeclaration(use_decl) = &item.node else {
                 continue;
             };
-            let imported_name = self.imported_name_stage5(&use_decl.node);
-            if used_names.contains(&imported_name) {
+            if resolution.tables.used_import_spans.contains(&use_decl.node.path.span) {
                 continue;
             }
             ctx.emit_issue(
@@ -335,14 +338,6 @@ impl SemanticPipelineRule {
         path.node.segments.iter().map(|segment| segment.node.name.node.name.clone()).collect::<Vec<_>>().join(".")
     }
 
-    fn imported_name_stage5(&self, use_decl: &UseDeclaration) -> String {
-        use_decl
-            .alias
-            .as_ref()
-            .map(|alias| alias.node.name.clone())
-            .unwrap_or_else(|| self.path_tail_stage5(&use_decl.path))
-    }
-
     fn collect_type_field_visibility(
         &self,
         program: &Spanned<Program>,
@@ -439,6 +434,8 @@ mod tests {
     use crate::analysis::{AnalysisOptions, RuleContext, Severity, builtin_rules, run_rules};
     use crate::parser::{BeskidParser, Rule};
     use crate::parsing::parsable::Parsable;
+    use crate::resolve::{Resolution, Resolver};
+    use crate::services::parse_program;
     use crate::syntax::Program;
     use pest::Parser;
 
@@ -447,6 +444,15 @@ mod tests {
             BeskidParser::parse(Rule::Program, source).expect("source should parse").next().expect("program pair");
         let program = Program::parse(pair).expect("source should build AST");
         run_rules(&program.node, "test.bd", source, &builtin_rules(), AnalysisOptions::default())
+    }
+
+    fn resolve_with_sdk_payload(source: &str) -> (crate::syntax::Spanned<Program>, Resolution) {
+        let payload = parse_program("pub type Payload { }").expect("parse Sdk.Payload");
+        let entry = parse_program(source).expect("parse entry");
+        let mut resolver = Resolver::new();
+        resolver.collect_program_in_module(&payload, &["Sdk".to_owned(), "Payload".to_owned()], None);
+        let resolution = resolver.resolve_program(&entry).expect("resolve entry");
+        (entry, resolution)
     }
 
     #[test]
@@ -492,26 +498,32 @@ mod tests {
     }
 
     #[test]
-    fn imported_types_used_in_annotations_constructors_and_generic_arguments_are_not_unused() {
-        let source = r#"
-            use Sdk.Payload;
-            use Sdk.Constructor;
-            use Collections.Array;
+    fn resolved_public_items_mark_their_module_imports_used() {
+        let results =
+            parse_program("pub enum Result<T, E> { Ok(T value), Error(E error) }").expect("parse Core.Results");
+        let errors = parse_program("pub enum NetworkError { Closed() }").expect("parse Network.Errors");
+        let unused = parse_program("pub type Unused { }").expect("parse Network.Unused");
+        let reexport = parse_program("use Core.Results;").expect("parse Network.Outcome");
+        let source = "use Core.Results; use Network.Errors; use Network.Unused; use Network.Outcome as Outcome; Result<unit, NetworkError> Main() { Outcome.Result<unit, NetworkError> mirrored = Result::Ok(()); return mirrored; }";
+        let entry = parse_program(source).expect("parse entry");
 
-            test imported_types_are_used {
-                Payload[] values = Array.Empty<Payload>();
-                Constructor item = Constructor { value: 0 };
-            }
-        "#;
-        let pair =
-            BeskidParser::parse(Rule::Program, source).expect("source should parse").next().expect("program pair");
-        let program = Program::parse(pair).expect("source should build AST");
+        let mut resolver = Resolver::new();
+        resolver.collect_program_in_module(&results, &["Core".to_owned(), "Results".to_owned()], None);
+        resolver.collect_program_in_module(&errors, &["Network".to_owned(), "Errors".to_owned()], None);
+        resolver.collect_program_in_module(&unused, &["Network".to_owned(), "Unused".to_owned()], None);
+        resolver.collect_program_in_module(&reexport, &["Network".to_owned(), "Outcome".to_owned()], None);
+        let resolution = resolver.resolve_program(&entry).expect("resolve imported declarations");
+        let mut context = RuleContext::new("test.bd", source, AnalysisOptions::default());
 
-        let used = SemanticPipelineRule.collect_used_value_names(&program);
+        SemanticPipelineRule.check_unused_imports(&mut context, &entry, &resolution);
 
-        for expected in ["Payload", "Constructor", "Array"] {
-            assert!(used.contains(expected), "{expected} must count as used, got: {used:?}");
-        }
+        let unused = context
+            .diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.code.as_deref() == Some("W1503"))
+            .map(|diagnostic| diagnostic.message.clone())
+            .collect::<Vec<_>>();
+        assert_eq!(unused, vec!["unused import `Network.Unused`"]);
     }
 
     #[test]
@@ -524,12 +536,10 @@ mod tests {
             }
         "#;
 
-        let pair =
-            BeskidParser::parse(Rule::Program, source).expect("source should parse").next().expect("program pair");
-        let program = Program::parse(pair).expect("source should build AST");
+        let (program, resolution) = resolve_with_sdk_payload(source);
         let mut context = RuleContext::new("test.bd", source, AnalysisOptions::default());
 
-        SemanticPipelineRule.check_unused_imports(&mut context, &program);
+        SemanticPipelineRule.check_unused_imports(&mut context, &program, &resolution);
 
         assert!(
             context.diagnostics.iter().any(|diagnostic| diagnostic.code.as_deref() == Some("W1503")),
@@ -550,12 +560,10 @@ mod tests {
             }
         "#;
 
-        let pair =
-            BeskidParser::parse(Rule::Program, source).expect("source should parse").next().expect("program pair");
-        let program = Program::parse(pair).expect("source should build AST");
+        let (program, resolution) = resolve_with_sdk_payload(source);
         let mut context = RuleContext::new("test.bd", source, AnalysisOptions::default());
 
-        SemanticPipelineRule.check_unused_imports(&mut context, &program);
+        SemanticPipelineRule.check_unused_imports(&mut context, &program, &resolution);
 
         assert!(
             context.diagnostics.iter().any(|diagnostic| diagnostic.code.as_deref() == Some("W1503")),

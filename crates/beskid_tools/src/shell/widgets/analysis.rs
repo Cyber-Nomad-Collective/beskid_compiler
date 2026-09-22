@@ -115,6 +115,7 @@ pub fn draw_build_report(area: Rect, frame: &mut Frame, ctx: &mut WidgetContext<
                     crate::pipeline::tui::TestRowState::Pending => ("○", Color::DarkGray),
                     crate::pipeline::tui::TestRowState::Running => ("▶", Color::Yellow),
                     crate::pipeline::tui::TestRowState::FilteredOut => continue,
+                    crate::pipeline::tui::TestRowState::TimedOut => ("⏱", Color::Yellow),
                 };
                 let suffix = match &row.failure_detail {
                     Some(reason) if !reason.is_empty() => {

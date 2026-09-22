@@ -255,6 +255,9 @@ impl<'a> TypeChecker<'a> {
         ret: bool,
     ) -> Option<TypeId> {
         if b == BuiltinType::Ptr {
+            if spec.beskid_path.len() == 1 && !spec.beskid_path[0].starts_with("__") {
+                return self.primitive_type_id(PrimitiveType::Pointer);
+            }
             let p = spec.beskid_path;
             if ret
                 && matches!(
@@ -293,6 +296,7 @@ impl<'a> TypeChecker<'a> {
             BuiltinType::Never => self.primitive_type_id(PrimitiveType::Never),
             BuiltinType::F64 => self.primitive_type_id(PrimitiveType::F64),
             BuiltinType::I32 => self.primitive_type_id(PrimitiveType::I32),
+            BuiltinType::Usize => self.primitive_type_id(PrimitiveType::Word),
             _ => self.primitive_type_id(PrimitiveType::I64),
         }
     }

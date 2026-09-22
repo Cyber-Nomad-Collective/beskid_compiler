@@ -9,6 +9,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Prove scoped acquisition through a validated `?` only when the exact Result
+  success payload is recursively source-proven fresh. Keep borrowed values,
+  aliases, cyclic fallible factories, and error-only results unowned; reuse the
+  existing disposal and explicit cleanup-conversion behavior for Network scopes.
+
+- Add the `corelib_http` bounded HTTP/1.1 package over Foundation Core.IO and
+  Network TCP. It provides strict octet framing, canonical header validation,
+  content-length/chunked conflict rejection, chunk decoding, serialization,
+  client exchange, listener-backed server operations, and Beskid corelib
+  parser/serialization fixtures without a second socket or I/O loop.
+
+- Add one fail-closed Corelib-native-import preflight at module emission. It
+  preserves the exact source/service/adapter declaration until the canonical
+  ABI-v5 target manifest proves full target coverage, one implementation per
+  target, and one shared ABI shape; copied, unknown, mismatched, or incomplete
+  services cannot enter JIT or AOT artifacts. The same rule covers all Network
+  services without a Glue path or compatibility alias.
+
+- Add manifest-owned private Network services, portable native status/address
+  transport, epoll/kqueue readiness adapters, Winsock IOCP operations with detached
+  cancellation storage, and DNS jobs in the existing Foundation worker pool.
+  Add a Beskid native lifecycle fixture for ephemeral binding, opaque generation
+  reuse, stale close rejection, and leak accounting; target execution is pending.
+
 - Bind `Core.Time.Sleep` to the existing external timer export through one
   manifest-owned source builtin. Generate source-call authority for export-backed
   soft bindings only after exact ABI validation, and authorize Time's existing
@@ -64,6 +88,147 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Preserve exact specialized enum-pattern payload identity for generic Result
+  matches, including imported nominal errors and nested error matches, so
+  generated ISLE retains both payload ABI and managed ownership without HIR.
+
+- Authorize descriptor-backed empty array allocation from a direct explicitly
+  declared local `T[]` initializer, retaining rejection for inferred locals,
+  assignments, nested expressions, and all other unproven contexts.
+
+- Determine unused module imports from successful resolver provenance rather
+  than module-tail spelling, so `Core.Results`/`Result`,
+  `Network.Errors`/`NetworkError`, aliases, and re-exports are exact while
+  unresolved, colliding, and generic-shadowed declarations remain unused.
+
+- Lower indexed nominal array fields using their exact declared element identity
+  and generic substitutions; reject inaccessible, ambiguous, non-array and
+  unproven projections without deriving storage from pointer ABI.
+
+- Resolve Result propagation inside method bodies through the shared executable
+  callable scope and declared signature return authority, retaining nested
+  callable boundaries and exact error-variant re-layout validation.
+
+- Propagate validated Result-try payload identity through ordinary expression,
+  argument ABI and managed-reference facts, including nested call arguments.
+  Preserve exact error compatibility and existing Result re-layout lowering.
+- Validate datagram completion lengths in the canonical Network.Internal receive
+  bridge, keeping native calls and fail-closed invariant diagnostics under one
+  source-scoped service authority.
+
+- Resume the shared checked syntax-generation allocator from fully restored
+  snapshot authority before preparing edited sources. Fresh syntax construction
+  and entry sessions share that allocator; unchanged-generation rejection and
+  transactional snapshot admission remain intact. Admit each current assembly
+  before executable-cache lookup, replace obsolete entry-session generations,
+  and reject late semantic/executable results from older source revisions.
+
+- Replace UDP test fixtures' unauthorized private panic helper with Result
+  propagation and exhaustive public assertion wrappers, matching TCP conventions.
+
+- Restore typed Salsa dependency access after snapshot reload through a narrowly
+  documented Salsa 0.26.2 vendor patch. Share the existing database-view authority
+  across dependency verification and accumulator traversal, and reject unknown
+  views without query warm-ups or cache bypasses.
+
+- Load Salsa snapshots transactionally through ordered, borrowed JSON into a
+  fresh candidate database. Reject incompatible compiler/schema identities,
+  damaged payloads, and invalid ingredient ordering before publication; retain
+  the usable current database when deserialization fails.
+
+- Emit captured unit-returning lambda entries with zero ABI return registers,
+  retaining their effects and capture cleanup through existing statement lowering
+  and the existing Fiber result transport; preserve scalar-result emission and
+  reject unsupported multi-result entry signatures.
+
+- Resolve postfix `?` on proven imported Result-returning calls through one
+  generation-bound source-identity fact shared by diagnostics and lowering.
+  Preserve exact error identity across different success types, reconstructing
+  the enclosing error variant with existing rooted enum allocation when its
+  layout differs, and reject unproven operands and mismatched error types.
+- Express Network TCP fixture failures through Result propagation and public
+  Testing.Assert control flow instead of an unauthorized private panic service.
+
+- Authorize Network.Internal's invariant panic through its exact canonical source
+  and the existing manifest-backed never-returning service; reject identical
+  copied sources before emitting the panic adapter import.
+
+- Preserve normalized primitive-conversion type facts through expression wrappers,
+  allowing typed array literals such as `[word(0)]` to lower without treating
+  conversions as callable declarations or guessing their storage representation.
+
+- Contextualize inline generic enum constructors from proven ordinary function
+  parameters, retaining exact source type identity and rejecting ambiguous,
+  inaccessible, unresolved, or wrong-arity calls without ABI-based inference.
+
+- Retain exact enum payload and indexed-element source identities through static
+  member resolution, allowing generic calls on match-bound nominal array elements
+  without inferring types from pointer storage or adding another semantic snapshot.
+
+- Resolve typed nominal field chains through generation-bound source identities,
+  so imported methods such as `address.port.Value()` can specialize generic calls
+  and lower their actual receivers through ISLE without legacy semantic snapshots.
+  Preserve declared generic arguments and reject unproven or inaccessible members.
+
+- Declare macOS Network adapter hardening dependencies through target-owned
+  manifest symbol bindings, preserving fortified copies and stack protection.
+  Accept exact declared imports in raw or normalized Mach-O spelling without
+  allowing similar undeclared symbols or treating the stack guard as a function.
+
+- Translate manifest and extern library identities through one case-preserving
+  linker-name normalizer, so `libSystem` and `libc` produce `-lSystem` and `-lc`.
+  Render actual link commands in diagnostics, including library and search flags.
+
+- Preserve the existing unary operand type through normalized and wrapper ABI
+  facts so signed negation can feed explicit integer conversions, while boolean
+  operands remain rejected by the primitive conversion contract.
+
+- Encode private Network peer/truncation flags with explicit typed byte branches,
+  preserving the language's rejection of boolean-to-integer numeric conversions.
+
+- Preserve explicit primitive-conversion ABI facts through expression wrappers in
+  nested arithmetic and unsigned comparisons, reusing normalized call semantics
+  rather than treating conversions as ordinary callable declarations.
+
+- Declare reassigned Network runtime locals explicitly mutable and require every
+  Network export plus its real scheduler/request helpers in the canonical verified
+  CLIF lowering regression, preserving the language's immutable-binding checks.
+
+- Assemble the declared compiler-owned runtime semantic fixtures beside the exact
+  embedded runtime corpus, preserving private runtime scope without granting it to
+  ordinary packages or adding fixture sources to the production closure. Prove the
+  complete embedded fixture manifest as well as its physical path and source text,
+  rejecting changed dependency and target composition. Resolve
+  actual `pointer`/`word` signatures and integer constants in ordinary analysis;
+  keep raw builtin argument positions aligned and register the Network runtime
+  modules in the canonical source inventory. Runtime fixtures depend explicitly on
+  checkout Corelib and call the owning runtime modules directly.
+
+- Accept the canonical underscore root-block projection of a hyphenated BSOL
+  package name throughout project-manifest parsing and validation, while
+  continuing to reject every other package/root mismatch.
+- Keep scheduler liveness while non-interruptible Network resolver work remains
+  after cancellation or deadline settlement, using one checked owner counter
+  with independent wait and host-work obligations. Pump Network completion
+  through Foundation arbitration and audit Network shutdown before owner teardown.
+
+- Route every native executable through one portable lifecycle host: it initializes
+  and shuts down the ABI-v5 runtime, hands Core.Args off before user code, and
+  leaves Core.IO descriptor, EOF, no-progress, and close semantics in Core.IO.
+  Windows console executables now use CRT-selected `main`/`wmain` startup rather
+  than a raw PE entrypoint; Foundation output newline facades emit actual newline
+  bytes under redirected standard streams.
+- Audit Windows runtime DLL and import-library surfaces from manifest-owned
+  descriptor imports and loader exports. Bound native-test stdin, stdout, stderr,
+  deadline, and cleanup in one concurrent lifecycle, and reject executable export
+  aliases that could collide with the host-owned startup boundary.
+- Require schema-v3 native runtime-kit evidence to prove one clean Git closure:
+  superproject, compiler, Corelib, and BSOL commits must match their committed
+  Gitlinks. The aggregate verifier now rejects legacy, dirty, incomplete, or
+  cross-target-divergent closure receipts.
+- Seal the selected native source closure locally as verified Git bundles with a
+  canonical digest receipt. Replay rejects altered, ambiguous, or platform-
+  unsafe paths and makes diagnostic overlays ineligible for matrix evidence.
 - Remove the alternate public Core.Syscall authority constructor. Corelib
   service facts now enter only through physical compiler-source or
   loader-proven materialized origin evidence, so byte-identical user copies

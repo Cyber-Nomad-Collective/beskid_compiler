@@ -38,7 +38,8 @@ Fiber<OwnedResource> StartResource() {
     return spawn (() => KeepResource(value));
 }
 
-i64 RunFiberFixture() {
+[Export(Abi:"C", Symbol:"RunFiberFixture")]
+pub i64 RunFiberFixture() {
     Fiber<unit> cancelled = spawn CompleteUnit();
     cancelled.Cancel();
     cancelled.Cancel();

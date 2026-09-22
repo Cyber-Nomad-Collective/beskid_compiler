@@ -314,7 +314,11 @@ pub(super) fn specialized_source_expression_identity(
     generic_source_expression_identity(db, key)
 }
 
-fn concrete_declaration(db: &dyn Db, key: AstNodeKey, source: &GenericSourceTypeIdentity) -> Option<AstNodeKey> {
+pub(super) fn concrete_declaration(
+    db: &dyn Db,
+    key: AstNodeKey,
+    source: &GenericSourceTypeIdentity,
+) -> Option<AstNodeKey> {
     let GenericSourceTypeIdentity::Nominal { qualified_name, arguments } = source else {
         return None;
     };

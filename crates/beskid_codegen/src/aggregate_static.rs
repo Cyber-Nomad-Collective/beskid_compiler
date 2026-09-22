@@ -248,9 +248,10 @@ impl CodegenInput<'_> {
                 .ok()
                 .flatten()
         });
-        let layout = specialized
-            .as_ref()
-            .map(|fact| fact.layout.clone())
+        let propagated = beskid_queries::try_expression_fact(self.database(), literal).ok().flatten();
+        let layout = propagated
+            .map(|fact| fact.return_layout)
+            .or_else(|| specialized.as_ref().map(|fact| fact.layout.clone()))
             .or_else(|| enum_layout(self.database(), literal).ok().flatten())
             .or_else(|| enum_match(self.database(), literal).ok().flatten().map(|fact| fact.layout))?;
         let header = self.abi_manifest().layouts.iter().find(|layout| layout.name == "BeskidObjectHeader")?;

@@ -212,6 +212,14 @@ pub(in crate::semantic_contract) fn abi_type_tracked(
     key: AstNodeKey,
 ) -> SemanticQueryResult<SemanticTypeId> {
     with_node(db, syntax, key, |program, index, node| {
+        if node.of::<beskid_analysis::syntax::TryExpression>().is_some() {
+            return Some(try_expression_fact(db, key).and_then(|fact| {
+                fact.map(|fact| fact.payload_type).ok_or_else(|| SemanticError::unavailable("abi_type"))
+            }));
+        }
+        if let Some(projection) = super::super::layouts::nominal_field_projection(db, key) {
+            return Some(projection.map(|(_, identity)| identity.abi_type()));
+        }
         if node.of::<beskid_analysis::syntax::ArrayLiteralExpression>().is_some() {
             // Array values have one managed-pointer representation, independently of the
             // element representation validated by array construction/lowering.
@@ -224,6 +232,11 @@ pub(in crate::semantic_contract) fn abi_type_tracked(
         }
         if let Some(binary) = node.of::<beskid_analysis::syntax::BinaryExpression>() {
             return Some(abi_type_for_binary_expression(db, program, index, key, binary));
+        }
+        if node.of::<beskid_analysis::syntax::UnaryExpression>().is_some() {
+            // Unary semantic typing already validates the operator and preserves the
+            // operand type; expose that same authority at ABI conversion boundaries.
+            return Some(node_type(db, key).and_then(|ty| ty.ok_or_else(|| SemanticError::unavailable("abi_type"))));
         }
         if let Some(expression) = node.of::<beskid_analysis::syntax::Expression>() {
             return Some(abi_type_for_expression(db, program, index, key, expression));
@@ -357,9 +370,9 @@ pub(in crate::semantic_contract) fn abi_type_for_expression(
     use beskid_analysis::syntax::Expression;
 
     match expression {
-        Expression::Spawn(_) | Expression::ArrayLiteral(_) => {
-            let spawn = normalized_expression_node(index, key.node);
-            abi_type(db, AstNodeKey { node: spawn, ..key })?.ok_or_else(|| SemanticError::unavailable("abi_type"))
+        Expression::Spawn(_) | Expression::ArrayLiteral(_) | Expression::Unary(_) | Expression::Try(_) => {
+            let normalized = normalized_expression_node(index, key.node);
+            abi_type(db, AstNodeKey { node: normalized, ..key })?.ok_or_else(|| SemanticError::unavailable("abi_type"))
         }
         Expression::Literal(literal) => Ok(semantic_type_for_literal(&literal.node.literal.node)),
         Expression::Path(path) => abi_type_for_local_path(db, program, index, key, &path.node.path.node),
@@ -380,9 +393,9 @@ pub(in crate::semantic_contract) fn abi_type_for_expression(
                 .direct_child_id(program, key.node, beskid_analysis::syntax_query::DynNodeRef::from(call))
                 .map(|node| AstNodeKey { node, ..key })
                 .ok_or_else(|| SemanticError::unavailable("abi_type"))?;
-            call_abi_signature(db, call)?
-                .map(|signature| signature.result)
-                .ok_or_else(|| SemanticError::unavailable("abi_type"))
+            // Preserve the normalized call's conversion authority as well as ordinary
+            // callable signatures; primitive conversions are not callable declarations.
+            abi_type(db, call)?.ok_or_else(|| SemanticError::unavailable("abi_type"))
         }
         Expression::Binary(binary) => {
             let binary_key = index

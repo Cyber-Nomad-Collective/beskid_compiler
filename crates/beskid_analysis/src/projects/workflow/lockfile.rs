@@ -99,13 +99,19 @@ impl ProjectLockDependencyEntry {
                     return Err(ProjectError::Validation("lockfile dependency duplicates `source_root`".to_string()));
                 }
                 "materialized_root" if materialized_root.replace(value.to_string()).is_some() => {
-                    return Err(ProjectError::Validation("lockfile dependency duplicates `materialized_root`".to_string()));
+                    return Err(ProjectError::Validation(
+                        "lockfile dependency duplicates `materialized_root`".to_string(),
+                    ));
                 }
                 "resolved_version" if resolved_version.replace(value.to_string()).is_some() => {
-                    return Err(ProjectError::Validation("lockfile dependency duplicates `resolved_version`".to_string()));
+                    return Err(ProjectError::Validation(
+                        "lockfile dependency duplicates `resolved_version`".to_string(),
+                    ));
                 }
                 "artifact_digest" if artifact_digest.replace(value.to_string()).is_some() => {
-                    return Err(ProjectError::Validation("lockfile dependency duplicates `artifact_digest`".to_string()));
+                    return Err(ProjectError::Validation(
+                        "lockfile dependency duplicates `artifact_digest`".to_string(),
+                    ));
                 }
                 "registry" if registry.replace(value.to_string()).is_some() => {
                     return Err(ProjectError::Validation("lockfile dependency duplicates `registry`".to_string()));

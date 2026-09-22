@@ -1,0 +1,14 @@
+use Core.Input;
+use Core.Output;
+use Core.Error;
+use Core.Results;
+
+pub i64 Main() {
+    match Input.ReadLine() {
+        Result::Ok(line) => Output.WriteLine(line),
+        Result::Error(_) => { return 1; },
+    };
+    Output.WriteLine("redirected-stdout");
+    Error.WriteLine("redirected-stderr");
+    return 0;
+}

@@ -17,7 +17,8 @@ i64 ResourceValue(OwnedResource value) { return value.token; }
 i64 HubValue(HubReceiveResult<OwnedResource> item) {
     return ResourceValue(item.value) + item.index - 49_i64;
 }
-i64 RunChannelFixture() {
+[Export(Abi:"C", Symbol:"RunChannelFixture")]
+pub i64 RunChannelFixture() {
     Channel<i64> scalars = Channel.Create<i64>();
     mut i64 index = 0;
     while index < 24 {

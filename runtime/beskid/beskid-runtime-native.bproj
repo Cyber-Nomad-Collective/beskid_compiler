@@ -7,3 +7,8 @@ beskid_runtime_native {
 target "RuntimeNative" {
   kind = Lib
 }
+
+dependency "corelib" {
+  source = "path"
+  path = "../../corelib/beskid_corelib"
+}

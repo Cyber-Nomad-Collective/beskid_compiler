@@ -7,9 +7,14 @@
 #include <stddef.h>
 #include <stdlib.h>
 #include <stdint.h>
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#include <mswsock.h>
 #include <windows.h>
 
+#define BESKID_NETWORK_TRANSPORT 1
 #include "../common/external_wait.h"
+#include "network_iocp.h"
 
 struct BeskidStr {
   const uint8_t *ptr;

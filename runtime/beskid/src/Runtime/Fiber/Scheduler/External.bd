@@ -1,5 +1,6 @@
 // Owner-only wait state. Adapters publish immutable (owner, token, source)
-// commands; only ExternalTryComplete may claim, unregister, count down and wake.
+// commands; only ExternalTryComplete may claim, unregister, release a wait's
+// liveness obligation and wake its fiber.
 const EXTERNAL_STATE_SIZE = 2624;
 const EXTERNAL_WAIT_COUNT = 32;
 const EXTERNAL_WAIT_SIZE = 64;
@@ -27,6 +28,24 @@ pub unit ExternalInit(pointer scheduler) {
 pub word ExternalOwnerId() { return raw_word_load(ExternalState()); }
 [Export(Abi:"C", Symbol:"beskid_rt_v5_external_active_count")]
 pub word ExternalActiveCount() { return raw_word_load(pointer_add(ExternalState(), 8)); }
+
+// One owner-only liveness counter covers independently owned obligations. Each
+// wait retains once until its terminal winner; non-interruptible host work
+// retains separately until the owner observes that the host job has finished.
+// Cancelling the wait cannot release the host job's obligation.
+pub unit ExternalWorkRetain() {
+    word active = ExternalActiveCount();
+    if active == 0xFFFFFFFFFFFFFFFF { Trap(10, NativePointer(0), 0); }
+    raw_word_store(pointer_add(ExternalState(), 8), active + 1);
+    return;
+}
+
+pub unit ExternalWorkRelease() {
+    word active = ExternalActiveCount();
+    if active == 0 { Trap(10, NativePointer(0), 0); }
+    raw_word_store(pointer_add(ExternalState(), 8), active - 1);
+    return;
+}
 
 pub pointer ExternalWaitRecord(word token) {
     word slot = token & 0xFFFFFFFF;
@@ -121,7 +140,7 @@ pub word ExternalWaitRegister(word fiberHandle, word operation, i64 deadline) {
     word token = generation << 32 | (available + 1);
     if deadline >= 0 { ExternalTimerPush(token, word(deadline)); }
     // Publication is complete before this increment, and submission follows it.
-    raw_word_store(pointer_add(state, 8), ExternalActiveCount() + 1);
+    ExternalWorkRetain();
     return token;
 }
 
@@ -140,9 +159,7 @@ pub bool ExternalTryComplete(word waitId, word generation, word source) {
         worker_release(request);
         raw_word_store(pointer_add(record, 40), 0);
     }
-    word active = ExternalActiveCount();
-    if active == 0 { Trap(10, NativePointer(0), 0); }
-    raw_word_store(pointer_add(ExternalState(), 8), active - 1);
+    ExternalWorkRelease();
     word handle = raw_word_load(pointer_add(record, 8));
     if raw_word_load(pointer_add(record, 48)) != 0 && FiberHandleValid(handle) && FiberParked(FiberHandleIndex(handle)) {
         WakeEnqueue(FiberHandleIndex(handle));
@@ -155,6 +172,9 @@ pub bool ExternalWaitPost(word owner, word token, word source) { return owner_po
 
 [Export(Abi:"C", Symbol:"beskid_rt_v5_external_pump")]
 pub unit ExternalPump(i64 now) {
+    // Reap owner host work on both sides of completion arbitration. A resolver
+    // can finish after its wait already lost to cancellation or a deadline.
+    NetworkPump();
     pointer command = pointer_add(ExternalState(), 32);
     while owner_pop(ExternalOwnerId(), command) != 0 {
         word token = raw_word_load(command);
@@ -166,6 +186,7 @@ pub unit ExternalPump(i64 now) {
         word token = raw_word_load(pointer_add(timer, 8));
         if !ExternalTryComplete(token & 0xFFFFFFFF, token >> 32, EXTERNAL_TIMEOUT) { ExternalTimerRemove(token); }
     }
+    NetworkPump();
     return;
 }
 
@@ -237,6 +258,7 @@ pub word ExternalSleepUntil(i64 deadline) {
 }
 
 pub unit ExternalShutdown(pointer scheduler) {
+    if scheduler != SchedTable() || SchedulerCurrentFiber() != FIBER_NONE { Trap(10, NativePointer(0), 0); }
     pointer state = ExternalState();
     mut word slot = 0;
     while slot < EXTERNAL_WAIT_COUNT {
@@ -248,6 +270,9 @@ pub unit ExternalShutdown(pointer scheduler) {
         }
         slot = slot + 1;
     }
+    // Wait winners have released their own obligations above. Any remaining
+    // retain belongs to live host work and forbids destroying its owner mailbox.
+    if ExternalActiveCount() != 0 { Trap(10, NativePointer(0), 0); }
     owner_destroy(raw_word_load(state));
     SystemFree(state, EXTERNAL_STATE_SIZE);
     raw_word_store(pointer_add(scheduler, BESKID_SCHEDULER_STATE_EXTERNAL_STATE_OFFSET), 0);

@@ -8,6 +8,42 @@ use super::support::{
 use beskid_queries::contextual_integer_literal_abi_type;
 
 #[test]
+fn primitive_conversion_array_literal_preserves_wrapper_type_and_lowers() {
+    use beskid_queries::{IndexedNodeKind, SemanticTypeId, child_nodes, node_type};
+
+    let (input, isa, root) = item_fixture_with_root("word[] Main() { word[] result = [word(0)]; return result; }");
+    let item = find_function_definition(input.database(), root).expect("Main");
+    let function = emit_isle_item(&input, isa.as_ref(), item)
+        .expect("primitive conversion array elements lower through real ISLE");
+    let array = find_node(input.database(), item, IndexedNodeKind::ArrayLiteralExpression).expect("array");
+    let wrapper = child_nodes(input.database(), array).unwrap().unwrap()[0];
+    let call = find_node(input.database(), wrapper, IndexedNodeKind::CallExpression).expect("conversion");
+    for key in [wrapper, call] {
+        assert_eq!(node_type(input.database(), key).unwrap(), Some(SemanticTypeId::WORD));
+    }
+    let plan = input.array_static_plan(array).expect("typed array plan");
+    assert_eq!(plan.element_type, SemanticTypeId::WORD);
+    assert_eq!(plan.stride, u64::from(isa.pointer_type().bytes()));
+    assert!(plan.pointer_map_offsets.is_empty(), "words are untraced integers, not pointers");
+    let clif = function.display().to_string();
+    assert!(clif.contains("beskid_rt_v5_array_allocate_rooted"), "{clif}");
+    assert!(clif.contains("store"), "{clif}");
+}
+
+#[test]
+fn primitive_conversion_array_literal_rejects_invalid_conversions() {
+    for expression in ["word(true)", "word(native)", "word(Unknown())", "word(0, 1)"] {
+        let source = format!("word[] Main(pointer native) {{ return [{expression}]; }}");
+        let (input, isa, root) = item_fixture_with_root(&source);
+        let item = find_function_definition(input.database(), root).expect("Main");
+        let array = find_node(input.database(), item, beskid_queries::IndexedNodeKind::ArrayLiteralExpression).unwrap();
+        assert!(input.array_static_plan(array).is_none(), "invalid conversion cannot authorize storage: {expression}");
+        let error = emit_isle_item(&input, isa.as_ref(), item).expect_err("invalid conversion must remain unavailable");
+        assert!(error.display_with_db(input.database()).contains("MissingRuleOrFact"), "{expression}: {error:?}");
+    }
+}
+
+#[test]
 fn applied_generic_aggregate_plans_distinguish_pointer_and_scalar_fields() {
     let source = "type Applied<T> { T value, i64 rest } i64 Main() { Applied<string> pointerValue = Applied<string> { value: \"ok\", rest: 1_i64 }; Applied<i32> scalarValue = Applied<i32> { value: 2, rest: 3_i64 }; return scalarValue.rest; }";
     let (input, _isa, root) = item_fixture_with_root(source);
@@ -183,6 +219,48 @@ fn parsed_empty_array_field_uses_declared_nominal_element_abi_without_hir() {
         clif.contains("beskid_rt_v5_managed_object_allocate"),
         "the enclosing nominal aggregate remains a managed object: {clif}"
     );
+}
+
+#[test]
+fn parsed_empty_array_local_uses_its_direct_declared_element_abi_without_hir() {
+    let (input, isa, root) = item_fixture_with_root(
+        "u8[] Main() { mut u8[] output = []; return output; }",
+    );
+    let array = find_node(input.database(), root, beskid_queries::IndexedNodeKind::ArrayLiteralExpression)
+        .expect("empty array literal");
+
+    assert_eq!(
+        empty_array_literal_element_abi_type(input.database(), array).expect("empty array local fact"),
+        Some(beskid_queries::SemanticTypeId::U8),
+        "only the direct explicit local annotation supplies the empty array element ABI"
+    );
+    assert!(input.array_static_plan(array).is_some(), "empty local array has source-authorized static metadata");
+
+    let function = find_function_definition(input.database(), root).expect("Main definition");
+    let clif = emit_isle_item(&input, isa.as_ref(), function)
+        .expect("declared empty local array lowers through generated ISLE")
+        .display()
+        .to_string();
+    assert!(
+        clif.contains("beskid_rt_v5_array_allocate_rooted"),
+        "empty array allocation must retain its descriptor-backed construction root: {clif}"
+    );
+}
+
+#[test]
+fn empty_array_local_context_rejects_inferred_assignment_and_nested_literals() {
+    for source in ["unit Main() { let values = []; }", "u8[] Main() { u8[] values = { [] }; return values; }"] {
+        let (input, _isa, root) = item_fixture_with_root(source);
+        let arrays = find_nodes_of_kind(input.database(), root, beskid_queries::IndexedNodeKind::ArrayLiteralExpression);
+        assert_eq!(arrays.len(), 1, "fixture has one empty literal: {source}");
+        assert!(input.array_static_plan(arrays[0]).is_none(), "unproven empty literal context must stay unavailable: {source}");
+    }
+
+    let (input, _isa, root) = item_fixture_with_root("unit Main() { mut u8[] values = []; values = []; }");
+    let arrays = find_nodes_of_kind(input.database(), root, beskid_queries::IndexedNodeKind::ArrayLiteralExpression);
+    assert_eq!(arrays.len(), 2, "fixture has initializer and assignment literals");
+    assert!(input.array_static_plan(arrays[0]).is_some(), "direct explicit initializer stays authorized");
+    assert!(input.array_static_plan(arrays[1]).is_none(), "an assignment is not an initialization context");
 }
 
 #[test]

@@ -204,9 +204,12 @@ pub fn lower_syntax_assembly_entrypoint(
     let manifest = AbiManifestV5::canonical_runtime(target.clone());
     let capability = canonical_corelib_syscall_service_capability(&manifest)
         .map_err(|error| anyhow::anyhow!("Corelib syscall service capability unavailable: {error:?}"))?;
-    let typed =
+    let typed = (if assembly.runtime_fixture.is_some() {
+        beskid_queries::build_runtime_fixture_typed_program(db, project, generation, Arc::clone(&assembly), &manifest)
+    } else {
         build_typed_program_with_corelib_syscall_services(db, project, generation, Arc::clone(&assembly), capability)
-            .map_err(|error| anyhow::anyhow!("syntax program preparation failed: {error}"))?;
+    })
+    .map_err(|error| anyhow::anyhow!("syntax program preparation failed: {error}"))?;
     let roots = assembly
         .units
         .iter()
@@ -248,8 +251,9 @@ pub fn lower_syntax_assembly_entrypoint(
         .ok_or_else(|| anyhow::anyhow!("reachable item is not a syntax function or test"))?;
     let symbol = syntax_item_symbol(db, &input, entry)
         .ok_or_else(|| anyhow::anyhow!("entrypoint `{entrypoint}` is not a syntax function or test"))?;
-    let artifact = lower_syntax_program(&input, isa, &items)
+    let mut artifact = lower_syntax_program(&input, isa, &items)
         .map_err(|error| anyhow::anyhow!("syntax ISLE lowering failed: {error}"))?;
+    artifact.exports = syntax_export_entries(db, &items)?;
     Ok(PreparedSyntaxEntrypoint { artifact, symbol, return_type: signature.result })
 }
 
@@ -272,9 +276,12 @@ pub fn lower_prepared_syntax_module(
     let manifest = AbiManifestV5::canonical_runtime(target.clone());
     let capability = canonical_corelib_syscall_service_capability(&manifest)
         .map_err(|error| anyhow::anyhow!("Corelib syscall service capability unavailable: {error:?}"))?;
-    let typed =
+    let typed = (if assembly.runtime_fixture.is_some() {
+        beskid_queries::build_runtime_fixture_typed_program(db, project, generation, Arc::clone(&assembly), &manifest)
+    } else {
         build_typed_program_with_corelib_syscall_services(db, project, generation, Arc::clone(&assembly), capability)
-            .map_err(|error| anyhow::anyhow!("syntax program preparation failed: {error}"))?;
+    })
+    .map_err(|error| anyhow::anyhow!("syntax program preparation failed: {error}"))?;
     let roots = assembly
         .units
         .iter()

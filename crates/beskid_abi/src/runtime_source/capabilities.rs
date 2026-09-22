@@ -32,6 +32,9 @@ pub struct RuntimeIntrinsicCapability {
 }
 
 impl RuntimeIntrinsicCapability {
+    pub(super) fn authorize_fixture(&mut self, logical_path: String) {
+        self.proof.source_paths.push(logical_path);
+    }
     pub fn source_hash(&self) -> &str {
         self.proof.source_hash()
     }

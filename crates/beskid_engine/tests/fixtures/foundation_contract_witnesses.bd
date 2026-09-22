@@ -26,6 +26,7 @@ i64 RunChild() {
     return Suspended(MemoryReader { bytes: [17_u8] }, FileReader { bytes: [24_u8] });
 }
 unit Collect() { Probe.gc_collect(); }
+[Export(Abi:"C", Symbol:"RunFoundationFixture")]
 pub i64 RunFoundationFixture() {
     MemoryReader memory = MemoryReader { bytes: [17_u8] };
     FileReader file = FileReader { bytes: [24_u8] };

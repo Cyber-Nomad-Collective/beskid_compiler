@@ -221,7 +221,15 @@ pub(super) fn local_declaration_owner(
     ) {
         return None;
     }
-    nearest_ancestor(index, parent, |kind| {
+    enclosing_executable_callable(index, parent)
+}
+
+/// Find the nearest executable scope without crossing a nested lambda or test body.
+pub(super) fn enclosing_executable_callable(
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    node: beskid_analysis::syntax::AstNodeId,
+) -> Option<beskid_analysis::syntax::AstNodeId> {
+    nearest_ancestor(index, node, |kind| {
         matches!(
             kind,
             beskid_analysis::syntax_query::NodeKind::FunctionDefinition

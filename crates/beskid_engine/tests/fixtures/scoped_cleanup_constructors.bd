@@ -62,7 +62,8 @@ i64 CheckArray(Result<i64[], DisposeError> result) {
 i64 CheckArgument(bool fail) {
     return match Argument(fail) { Result::Ok(value) => value, Result::Error(_) => 105_i64, };
 }
-i64 RunCleanupFixture() {
+[Export(Abi:"C", Symbol:"RunCleanupFixture")]
+pub i64 RunCleanupFixture() {
     let roots = Probe.gc_external_root_count();
     Probe.gc_collect();
     if CheckScalar(false) != 7_i64 { return 1_i64; }

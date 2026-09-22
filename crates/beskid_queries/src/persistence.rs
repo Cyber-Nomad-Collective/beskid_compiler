@@ -94,10 +94,14 @@ pub fn cache_root_for_project(project_root: &Path) -> PathBuf {
 
 /// On-disk snapshot envelope. `version` gates reload; `db` is the serialized salsa DB.
 #[cfg(feature = "persistence")]
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct SnapshotEnvelope {
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SnapshotEnvelope<'a> {
     version: String,
-    db: serde_json::Value,
+    compiler: String,
+    digest: String,
+    #[serde(borrow)]
+    db: &'a serde_json::value::RawValue,
 }
 
 /// Version gate for the on-disk snapshot. Combines the `beskid_queries` crate
@@ -108,7 +112,118 @@ struct SnapshotEnvelope {
 /// a literal usable by `concat!`.
 #[cfg(feature = "persistence")]
 fn snapshot_format_version() -> String {
-    format!("beskid-queries:{}:grammar:{}", env!("CARGO_PKG_VERSION"), beskid_pipeline::GRAMMAR_REVISION,)
+    format!("beskid-queries:{}:grammar:{}:snapshot:2", env!("CARGO_PKG_VERSION"), beskid_pipeline::GRAMMAR_REVISION,)
+}
+
+/// Exact executable identity includes the ingredient schema, compiler semantics,
+/// feature set and embedded ABI. Package versions alone do not change on rebuild.
+#[cfg(feature = "persistence")]
+fn compiler_fingerprint() -> std::io::Result<String> {
+    use sha2::{Digest, Sha256};
+    use std::io::Read;
+    static FINGERPRINT: std::sync::OnceLock<Result<String, String>> = std::sync::OnceLock::new();
+    FINGERPRINT
+        .get_or_init(|| {
+            let compute = || -> std::io::Result<String> {
+                let mut executable = fs::File::open(std::env::current_exe()?)?;
+                let mut digest = Sha256::new();
+                let mut buffer = [0_u8; 65536];
+                loop {
+                    let count = executable.read(&mut buffer)?;
+                    if count == 0 {
+                        break;
+                    }
+                    digest.update(&buffer[..count]);
+                }
+                Ok(format!("{:x}", digest.finalize()))
+            };
+            compute().map_err(|error| error.to_string())
+        })
+        .clone()
+        .map_err(std::io::Error::other)
+}
+
+#[cfg(feature = "persistence")]
+fn payload_digest(payload: &str) -> String {
+    use sha2::{Digest, Sha256};
+    format!("{:x}", Sha256::digest(payload.as_bytes()))
+}
+
+/// Inspect Salsa's serialized ordering without allocating any database entries.
+/// Borrowed raw values keep both object order and string lifetimes intact.
+#[cfg(feature = "persistence")]
+struct OrderedObject<'a>(Vec<(&'a str, &'a serde_json::value::RawValue)>);
+
+#[cfg(feature = "persistence")]
+impl<'de: 'a, 'a> Deserialize<'de> for OrderedObject<'a> {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct Visitor;
+        impl<'de> serde::de::Visitor<'de> for Visitor {
+            type Value = OrderedObject<'de>;
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("an ordered Salsa object")
+            }
+            fn visit_map<M: serde::de::MapAccess<'de>>(self, mut map: M) -> Result<Self::Value, M::Error> {
+                let mut entries = Vec::new();
+                while let Some(entry) = map.next_entry()? {
+                    entries.push(entry);
+                }
+                Ok(OrderedObject(entries))
+            }
+        }
+        deserializer.deserialize_map(Visitor).map(|object| OrderedObject(object.0))
+    }
+}
+
+#[cfg(feature = "persistence")]
+fn validate_payload_order(payload: &str) -> Result<(), String> {
+    #[derive(Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct Payload<'a> {
+        #[serde(borrow)]
+        runtime: &'a serde_json::value::RawValue,
+        #[serde(borrow)]
+        ingredients: OrderedObject<'a>,
+    }
+    let payload: Payload<'_> = serde_json::from_str(payload).map_err(|error| error.to_string())?;
+    let _ = payload.runtime;
+    let mut ingredients = std::collections::HashSet::new();
+    let mut allocated = std::collections::HashSet::new();
+    let mut memos_started = false;
+    for (ingredient, entries) in payload.ingredients.0 {
+        let ingredient: u32 = ingredient.parse().map_err(|_| "invalid ingredient index")?;
+        if ingredient > i32::MAX as u32 || !ingredients.insert(ingredient) {
+            return Err("duplicate or invalid ingredient index".into());
+        }
+        let entries: OrderedObject<'_> = serde_json::from_str(entries.get()).map_err(|error| error.to_string())?;
+        let mut keys = std::collections::HashSet::new();
+        let mut previous_slot = 0;
+        for (key, _) in entries.0 {
+            if !keys.insert(key) {
+                return Err("duplicate ingredient entry".into());
+            }
+            if let Some((owner, slot)) = key.split_once(':') {
+                let owner: u32 = owner.parse().map_err(|_| "invalid memo owner")?;
+                let slot: u64 = slot.parse().map_err(|_| "invalid memo slot")?;
+                if !allocated.contains(&(owner, slot)) {
+                    return Err("memo precedes or references an absent struct entry".into());
+                }
+                memos_started = true;
+            } else {
+                if memos_started {
+                    return Err("struct entry follows a memo ingredient".into());
+                }
+                let slot: u64 = key.parse().map_err(|_| "invalid struct slot")?;
+                let index = slot as u32;
+                if index == 0 || index <= previous_slot {
+                    return Err("struct entries are not in allocation order".into());
+                }
+                previous_slot = index;
+                allocated.insert((ingredient, slot));
+            }
+        }
+    }
+    Ok(())
 }
 
 #[cfg(feature = "persistence")]
@@ -123,10 +238,18 @@ fn snapshot_path(root: &Path) -> PathBuf {
 /// is disabled so callers need not feature-gate their call sites.
 #[cfg(feature = "persistence")]
 pub fn save_db_snapshot(db: &mut crate::db::BeskidDatabase, root: &Path) -> std::io::Result<()> {
-    let _ = ensure_salsa_dir(root);
-    let serialized = serde_json::to_value(<dyn salsa::Database>::as_serialize(db))
+    ensure_salsa_dir(root)?;
+    // Salsa deliberately serializes structs before memos. Never pass through
+    // Value: its map ordering and owned-string deserializer break that protocol.
+    let serialized = serde_json::to_string(&<dyn salsa::Database>::as_serialize(db))
         .map_err(|err| std::io::Error::other(err.to_string()))?;
-    let envelope = SnapshotEnvelope { version: snapshot_format_version(), db: serialized };
+    let raw = serde_json::value::RawValue::from_string(serialized).map_err(std::io::Error::other)?;
+    let envelope = SnapshotEnvelope {
+        version: snapshot_format_version(),
+        compiler: compiler_fingerprint()?,
+        digest: payload_digest(raw.get()),
+        db: &raw,
+    };
     let bytes = serde_json::to_vec_pretty(&envelope).map_err(|err| std::io::Error::other(err.to_string()))?;
     let path = snapshot_path(root);
     let tmp = path.with_extension("json.tmp");
@@ -140,8 +263,8 @@ pub fn save_db_snapshot(db: &mut crate::db::BeskidDatabase, root: &Path) -> std:
 ///
 /// Returns `true` when a snapshot was loaded and applied. Returns `false`
 /// (without touching `db`) when persistence is disabled, the snapshot is absent,
-/// or the version gate rejects it. Never panics on a corrupt snapshot — a
-/// deserialization failure is logged and treated as a cache miss.
+/// or validation/deserialization rejects it. Rejections are logged, and Salsa
+/// deserialization mutates only a disposable candidate until fully successful.
 #[cfg(feature = "persistence")]
 pub fn load_db_snapshot(db: &mut crate::db::BeskidDatabase, root: &Path) -> bool {
     let Ok(bytes) = fs::read(snapshot_path(root)) else { return false };
@@ -161,13 +284,41 @@ pub fn load_db_snapshot(db: &mut crate::db::BeskidDatabase, root: &Path) -> bool
         );
         return false;
     }
-    // `serde_json::Value` implements `serde::Deserializer`, so we can feed the
-    // already-parsed snapshot directly to salsa's `DeserializeDatabase` seed.
-    if let Err(err) = <dyn salsa::Database>::deserialize(db, envelope.db) {
+    let compiler = match compiler_fingerprint() {
+        Ok(value) => value,
+        Err(error) => {
+            log::warn!("beskid salsa snapshot rejected: compiler identity unavailable: {error}");
+            return false;
+        }
+    };
+    if envelope.compiler != compiler || envelope.digest != payload_digest(envelope.db.get()) {
+        log::warn!("beskid salsa snapshot rejected: compiler/schema identity or payload integrity mismatch");
+        return false;
+    }
+    if let Err(error) = validate_payload_order(envelope.db.get()) {
+        log::warn!("beskid salsa snapshot rejected: invalid payload order: {error}");
+        return false;
+    }
+    let mut candidate = crate::db::BeskidDatabase::uninitialized(db.persistence_root().map(Path::to_path_buf));
+    let mut deserializer = serde_json::Deserializer::from_str(envelope.db.get());
+    if let Err(err) = <dyn salsa::Database>::deserialize(&mut candidate, &mut deserializer) {
         log::warn!("beskid salsa snapshot rejected: deserialize error: {err}");
         return false;
     }
-    rehydrate_registries(db);
+    if let Err(err) = deserializer.end() {
+        log::warn!("beskid salsa snapshot rejected: trailing payload: {err}");
+        return false;
+    }
+    let restored_generation = rehydrate_registries(&mut candidate);
+    candidate.grammar_revision();
+    // Restored dependency memos may be verified through erased Salsa access
+    // before their generated query accessor runs. Publish the existing typed
+    // compiler view, not a query-specific warm-up list or an inferred cast.
+    <dyn crate::db::Db as crate::db::Db>::zalsa_register_downcaster(&candidate);
+    if let Some(generation) = restored_generation {
+        generation.resume_after();
+    }
+    crate::db::replace_compilation_database(db, candidate);
     true
 }
 
@@ -175,7 +326,7 @@ pub fn load_db_snapshot(db: &mut crate::db::BeskidDatabase, root: &Path) -> bool
 /// input entries so subsequent `set_file_text` / `ensure_file_text` calls reuse
 /// the existing `FileText` IDs instead of allocating duplicates.
 #[cfg(feature = "persistence")]
-fn rehydrate_registries(db: &mut crate::db::BeskidDatabase) {
+fn rehydrate_registries(db: &mut crate::db::BeskidDatabase) -> Option<crate::SyntaxGenerationId> {
     use crate::db::Db;
     use salsa::plumbing::ZalsaDatabase;
 
@@ -197,9 +348,11 @@ fn rehydrate_registries(db: &mut crate::db::BeskidDatabase) {
 
     let mut syntax_units: Vec<(crate::semantic_contract::SourceUnitId, crate::semantic_contract::SyntaxUnitInput)> =
         Vec::new();
+    let mut restored_generation = None;
     for entry in crate::semantic_contract::SyntaxUnitInput::ingredient(db).entries(db.zalsa()) {
         let input = entry.as_struct();
         let unit = input.unit(db);
+        restored_generation = restored_generation.max(Some(input.generation(db)));
         syntax_units.push((unit, input));
     }
 
@@ -222,6 +375,7 @@ fn rehydrate_registries(db: &mut crate::db::BeskidDatabase) {
             registry.entry(unit).or_insert(input);
         }
     }
+    restored_generation
 }
 
 // No-op stubs when the `persistence` feature is disabled. Keeps call sites in

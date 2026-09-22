@@ -23,6 +23,9 @@ pub struct AnalysisOptions {
     pub entry_source_path: Option<PathBuf>,
     /// Full assembly for dependency-aware type checking in staged rules.
     pub program_assembly: Option<crate::projects::ProgramAssembly>,
+    /// A project preparation owner will validate postfix try with its generation-bound
+    /// semantic authority after the final source rewrite, rather than the local precheck.
+    pub defer_try_diagnostics: bool,
 }
 
 impl Default for AnalysisOptions {
@@ -34,6 +37,7 @@ impl Default for AnalysisOptions {
             program_assembly_module_index: None,
             entry_source_path: None,
             program_assembly: None,
+            defer_try_diagnostics: false,
         }
     }
 }

@@ -15,6 +15,9 @@ pub enum TestRowState {
     Failed,
     Skipped,
     FilteredOut,
+    /// The target's execution budget expired before this test could run. Distinct from
+    /// `Skipped` (an explicit `skip.condition`): coverage was lost, not intentionally skipped.
+    TimedOut,
 }
 
 #[derive(Debug, Clone)]
@@ -111,6 +114,13 @@ impl<'a> TestRunUi<'a> {
                     }
                 }
                 TestRowState::FilteredOut => eprintln!("FILT {name}"),
+                TestRowState::TimedOut => {
+                    if let Some(reason) = detail {
+                        eprintln!("TIME {name}: {reason}");
+                    } else {
+                        eprintln!("TIME {name}");
+                    }
+                }
                 TestRowState::Pending | TestRowState::Running => eprintln!("???? {name}"),
             }
             return super::terminal::reset_stderr_ansi();
@@ -129,10 +139,12 @@ impl<'a> TestRunUi<'a> {
         failed: usize,
         skipped: usize,
         filtered_out: usize,
+        timed_out: usize,
     ) -> io::Result<()> {
-        let summary = TestReportSummary { passed, failed, skipped, filtered_out };
-        let summary_line =
-            format!("Result: passed={passed}, failed={failed}, skipped={skipped}, filtered_out={filtered_out}");
+        let summary = TestReportSummary { passed, failed, skipped, filtered_out, timed_out };
+        let summary_line = format!(
+            "Result: passed={passed}, failed={failed}, skipped={skipped}, filtered_out={filtered_out}, timed_out={timed_out}"
+        );
         if self.plain {
             println!("{summary_line}");
             return Ok(());

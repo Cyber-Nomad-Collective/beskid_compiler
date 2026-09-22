@@ -1,0 +1,195 @@
+pub i32 NetworkConnectHandle(word handle, pointer address) {
+    network_table_lock();
+    pointer table = NativePointer(raw_word_load(network_table_root()));
+    pointer slot = NetworkFindLocked(table, handle);
+    if slot == NativePointer(0) { network_table_unlock(); return NETWORK_CLOSED; }
+    if raw_word_load(pointer_add(slot, NETWORK_SLOT_KIND)) == NETWORK_LISTENER { network_table_unlock(); return NETWORK_UNSUPPORTED; }
+    if raw_word_load(NetworkSlotToken(slot, 0)) != 0 || raw_word_load(NetworkSlotToken(slot, 1)) != 0 { network_table_unlock(); return NETWORK_BUSY; }
+    pointer request = NetworkRequest(NETWORK_CONNECT, NativePointer(0), 0, address);
+    if request == NativePointer(0) { network_table_unlock(); return NETWORK_RESOURCE_EXHAUSTED; }
+    i32 start = NetworkStartLocked(table, slot, request);
+    network_table_unlock();
+    if start != 0 { NetworkRequestFree(request); return start; }
+    i32 status = NetworkFinish(handle, request);
+    NetworkRequestFree(request);
+    return status;
+}
+
+[Export(Abi:"C", Symbol:"beskid_rt_v5_network_open")]
+pub i32 NetworkOpen(i64 kind, pointer addressArray, i64 options, i64 backlog, pointer handleArray) {
+    SchedInit();
+    pointer output = NetworkArrayData(handleArray, 1);
+    pointer input = NetworkArrayData(addressArray, 19);
+    if output == NativePointer(0) || !NetworkWireValid(input) || kind < 1 || kind > 3 || options < 0 || options > 3 { return NETWORK_INVALID_ADDRESS; }
+    if kind == 1 && (backlog <= 0 || backlog > 2147483647) { return NETWORK_INVALID_ADDRESS; }
+    if kind == 2 && raw_byte_load(pointer_add(input, 1)) == 0 && raw_byte_load(pointer_add(input, 2)) == 0 { return NETWORK_INVALID_ADDRESS; }
+    raw_word_store(output, 0);
+    pointer storage = SystemAllocate(32, 8);
+    if storage == NativePointer(0) { return NETWORK_RESOURCE_EXHAUSTED; }
+    memory_set(storage, 0, 32);
+    pointer address = pointer_add(storage, 8);
+    memory_copy(address, input, 19);
+    mut i32 nativeKind = 1;
+    if kind == 3 { nativeKind = 2; }
+    mut i32 status = network_open(nativeKind, i32(raw_byte_load(address)), storage);
+    if status != 0 { SystemFree(storage, 32); return status; }
+    pointer native = NativePointer(raw_word_load(storage));
+    if kind == 1 || kind == 3 { status = network_bind(native, address, i32(backlog)); }
+    if status == 0 && kind == 2 { status = network_options(native, word(options)); }
+    if status != 0 { network_close(native); SystemFree(storage, 32); return status; }
+    network_table_lock();
+    pointer table = NetworkTableLocked();
+    word handle = NetworkAdoptLocked(table, native, word(kind), word(options));
+    network_table_unlock();
+    if handle == 0 { network_close(native); SystemFree(storage, 32); return NETWORK_RESOURCE_EXHAUSTED; }
+    SystemFree(storage, 32);
+    if kind == 2 { status = NetworkConnectHandle(handle, NetworkArrayData(addressArray, 19)); }
+    if status != 0 { NetworkClose(handle); return status; }
+    // Re-read the rooted array after the potentially suspending connect.
+    raw_word_store(NetworkArrayData(handleArray, 1), handle);
+    return 0;
+}
+
+[Export(Abi:"C", Symbol:"beskid_rt_v5_network_accept")]
+pub i32 NetworkAccept(word handle, pointer handleArray) {
+    if NetworkArrayData(handleArray, 1) == NativePointer(0) { return NETWORK_INVALID_ADDRESS; }
+    raw_word_store(NetworkArrayData(handleArray, 1), 0);
+    network_table_lock();
+    pointer table = NativePointer(raw_word_load(network_table_root()));
+    pointer slot = NetworkFindLocked(table, handle);
+    if slot == NativePointer(0) { network_table_unlock(); return NETWORK_CLOSED; }
+    if raw_word_load(pointer_add(slot, NETWORK_SLOT_KIND)) != NETWORK_LISTENER { network_table_unlock(); return NETWORK_UNSUPPORTED; }
+    if raw_word_load(NetworkSlotToken(slot, 0)) != 0 { network_table_unlock(); return NETWORK_BUSY; }
+    pointer request = NetworkRequest(NETWORK_ACCEPT, NativePointer(0), 0, NativePointer(0));
+    if request == NativePointer(0) { network_table_unlock(); return NETWORK_RESOURCE_EXHAUSTED; }
+    i32 start = NetworkStartLocked(table, slot, request);
+    network_table_unlock();
+    if start != 0 { NetworkRequestFree(request); return start; }
+    i32 status = NetworkFinish(handle, request);
+    pointer accepted = NativePointer(raw_word_load(pointer_add(request, BESKID_NETWORK_REQUEST_ACCEPTED_OFFSET)));
+    NetworkRequestFree(request);
+    if status != 0 {
+        if accepted != NativePointer(0) { network_close(accepted); }
+        return status;
+    }
+    if accepted == NativePointer(0) { return NETWORK_CONNECTION_ABORTED; }
+    network_table_lock();
+    word result = NetworkAdoptLocked(table, accepted, NETWORK_STREAM, 0);
+    network_table_unlock();
+    if result == 0 { network_close(accepted); return NETWORK_RESOURCE_EXHAUSTED; }
+    raw_word_store(NetworkArrayData(handleArray, 1), result);
+    return 0;
+}
+
+[Export(Abi:"C", Symbol:"beskid_rt_v5_network_address")]
+pub i32 NetworkAddress(word handle, bool peer, pointer addressArray) {
+    pointer output = NetworkArrayData(addressArray, 19);
+    if output == NativePointer(0) { return NETWORK_INVALID_ADDRESS; }
+    network_table_lock();
+    pointer table = NativePointer(raw_word_load(network_table_root()));
+    pointer slot = NetworkFindLocked(table, handle);
+    if slot == NativePointer(0) { network_table_unlock(); return NETWORK_CLOSED; }
+    mut u8 peerFlag = 0;
+    if peer { peerFlag = 1; }
+    i32 status = network_address(NativePointer(raw_word_load(pointer_add(slot, NETWORK_SLOT_NATIVE))), peerFlag, output);
+    network_table_unlock();
+    return status;
+}
+
+[Export(Abi:"C", Symbol:"beskid_rt_v5_network_options")]
+pub i64 NetworkOptions(word handle) {
+    network_table_lock();
+    pointer table = NativePointer(raw_word_load(network_table_root()));
+    pointer slot = NetworkFindLocked(table, handle);
+    if slot == NativePointer(0) { network_table_unlock(); return -i64(NETWORK_CLOSED); }
+    if raw_word_load(pointer_add(slot, NETWORK_SLOT_KIND)) != NETWORK_STREAM { network_table_unlock(); return -i64(NETWORK_UNSUPPORTED); }
+    i64 result = network_get_options(NativePointer(raw_word_load(pointer_add(slot, NETWORK_SLOT_NATIVE))));
+    network_table_unlock();
+    return result;
+}
+
+[Export(Abi:"C", Symbol:"beskid_rt_v5_network_set_options")]
+pub i32 NetworkSetOptions(word handle, i64 bits) {
+    if bits < 0 || bits > 3 { return NETWORK_UNSUPPORTED; }
+    network_table_lock();
+    pointer table = NativePointer(raw_word_load(network_table_root()));
+    pointer slot = NetworkFindLocked(table, handle);
+    if slot == NativePointer(0) { network_table_unlock(); return NETWORK_CLOSED; }
+    if raw_word_load(pointer_add(slot, NETWORK_SLOT_KIND)) != NETWORK_STREAM { network_table_unlock(); return NETWORK_UNSUPPORTED; }
+    if raw_word_load(NetworkSlotToken(slot, 0)) != 0 || raw_word_load(NetworkSlotToken(slot, 1)) != 0 { network_table_unlock(); return NETWORK_BUSY; }
+    i32 result = network_options(NativePointer(raw_word_load(pointer_add(slot, NETWORK_SLOT_NATIVE))), word(bits));
+    if result == 0 { raw_word_store(pointer_add(slot, NETWORK_SLOT_OPTIONS), word(bits)); }
+    network_table_unlock();
+    return result;
+}
+
+[Export(Abi:"C", Symbol:"beskid_rt_v5_network_shutdown_write")]
+pub i32 NetworkShutdownWrite(word handle) {
+    network_table_lock();
+    pointer table = NativePointer(raw_word_load(network_table_root()));
+    pointer slot = NetworkFindLocked(table, handle);
+    if slot == NativePointer(0) { network_table_unlock(); return NETWORK_CLOSED; }
+    if raw_word_load(pointer_add(slot, NETWORK_SLOT_KIND)) != NETWORK_STREAM { network_table_unlock(); return NETWORK_UNSUPPORTED; }
+    if raw_word_load(pointer_add(slot, NETWORK_SLOT_WRITE_SHUTDOWN)) != 0 { network_table_unlock(); return 0; }
+    if raw_word_load(NetworkSlotToken(slot, 1)) != 0 { network_table_unlock(); return NETWORK_BUSY; }
+    i32 result = network_shutdown_write(NativePointer(raw_word_load(pointer_add(slot, NETWORK_SLOT_NATIVE))));
+    if result == 0 { raw_word_store(pointer_add(slot, NETWORK_SLOT_WRITE_SHUTDOWN), 1); }
+    network_table_unlock();
+    return result;
+}
+
+[Export(Abi:"C", Symbol:"beskid_rt_v5_network_udp_connect")]
+pub i32 NetworkUdpConnect(word handle, pointer addressArray) {
+    pointer input = NetworkArrayData(addressArray, 19);
+    if !NetworkWireValid(input) { return NETWORK_INVALID_ADDRESS; }
+    if raw_byte_load(pointer_add(input, 1)) == 0 && raw_byte_load(pointer_add(input, 2)) == 0 { return NETWORK_INVALID_ADDRESS; }
+    network_table_lock();
+    pointer table = NativePointer(raw_word_load(network_table_root()));
+    pointer slot = NetworkFindLocked(table, handle);
+    if slot == NativePointer(0) { network_table_unlock(); return NETWORK_CLOSED; }
+    bool isUdp = raw_word_load(pointer_add(slot, NETWORK_SLOT_KIND)) == NETWORK_UDP;
+    network_table_unlock();
+    if !isUdp { return NETWORK_UNSUPPORTED; }
+    return NetworkConnectHandle(handle, input);
+}
+
+pub i32 NetworkConnected(word handle) {
+    pointer address = SystemAllocate(19, 8);
+    if address == NativePointer(0) { return NETWORK_RESOURCE_EXHAUSTED; }
+    network_table_lock();
+    pointer table = NativePointer(raw_word_load(network_table_root()));
+    pointer slot = NetworkFindLocked(table, handle);
+    mut i32 status = NETWORK_CLOSED;
+    if slot != NativePointer(0) { status = network_address(NativePointer(raw_word_load(pointer_add(slot, NETWORK_SLOT_NATIVE))), 1, address); }
+    network_table_unlock();
+    SystemFree(address, 19);
+    return status;
+}
+
+[Export(Abi:"C", Symbol:"beskid_rt_v5_network_receive")]
+pub i64 NetworkReceive(word handle, pointer destination, pointer metadataArray, bool connected) {
+    if NetworkArrayData(metadataArray, 20) == NativePointer(0) { return -i64(NETWORK_INVALID_ADDRESS); }
+    if connected {
+        i32 status = NetworkConnected(handle);
+        if status != 0 { return -i64(status); }
+    }
+    pointer metadata = NetworkArrayData(metadataArray, 20);
+    memory_set(metadata, 0, 20);
+    i64 result = NetworkTransfer(handle, destination, 0, i64(NetworkArrayLength(destination)), NETWORK_RECEIVE, metadata);
+    return result;
+}
+
+[Export(Abi:"C", Symbol:"beskid_rt_v5_network_send")]
+pub i64 NetworkSend(word handle, pointer source, pointer addressArray, bool connected) {
+    mut pointer address = NativePointer(0);
+    if connected {
+        i32 status = NetworkConnected(handle);
+        if status != 0 { return -i64(status); }
+    } else {
+        pointer input = NetworkArrayData(addressArray, 19);
+        if !NetworkWireValid(input) { return -i64(NETWORK_INVALID_ADDRESS); }
+        address = input;
+    }
+    i64 result = NetworkTransfer(handle, source, 0, i64(NetworkArrayLength(source)), NETWORK_SEND, address);
+    return result;
+}

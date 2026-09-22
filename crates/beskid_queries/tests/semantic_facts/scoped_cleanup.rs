@@ -176,6 +176,70 @@ fn scoped_acquisition_requires_source_proven_fresh_ownership() {
 }
 
 #[test]
+fn scoped_fallible_acquisition_proves_only_fresh_success_payloads() {
+    for factory in [
+        "Result<Resource, DisposeError> Acquire() { return Result::Ok(Resource {}); }",
+        "Result<Resource, DisposeError> Acquire() { return Result::Ok(Open()); }",
+        "Result<Resource, DisposeError> Inner() { if false { return Result::Error(DisposeError::Failed(1_i64)); } return Result::Ok(Resource {}); } Result<Resource, DisposeError> Acquire() { return Inner(); }",
+    ] {
+        let source = format!(
+            "{CONTRACT} {factory} Result<unit, DisposeError> Main() {{ use Resource resource = Acquire()?; return Result::Ok(()); }}"
+        );
+        let (db, _, unit, generation, index) = setup(&source);
+        let expression = key(unit, generation, &index, NodeKind::TryExpression, 0);
+        assert!(beskid_queries::try_expression_fact(&db, expression).unwrap().is_some(), "{source}");
+        let fact = beskid_queries::scoped_cleanup(&db, key(unit, generation, &index, NodeKind::ScopedUseStatement, 0))
+            .unwrap()
+            .unwrap();
+        assert!(fact.diagnostic.is_none(), "{source}: {fact:?}");
+        assert!(fact.acquisition.is_some());
+    }
+}
+
+#[test]
+fn scoped_fallible_acquisition_rejects_aliases_cycles_and_unproven_successes() {
+    for (factory, initializer) in [
+        ("", "existing?"),
+        (
+            "Result<Resource, DisposeError> Acquire(Resource borrowed) { return Result::Ok(borrowed); }",
+            "Acquire(borrowed)?",
+        ),
+        (
+            "Result<Resource, DisposeError> Acquire() { Resource alias = Resource {}; return Result::Ok(alias); }",
+            "Acquire()?",
+        ),
+        ("Result<Resource, DisposeError> Acquire() { return Acquire(); }", "Acquire()?"),
+        (
+            "Result<Resource, DisposeError> Acquire() { if true { return Result::Ok(Resource {}); } return Acquire(); }",
+            "Acquire()?",
+        ),
+        (
+            "Result<Resource, DisposeError> Acquire() { return Result::Error(DisposeError::Failed(1_i64)); }",
+            "Acquire()?",
+        ),
+        ("Result<Resource, DisposeError> Acquire() { return Result::Ok(Unknown()); }", "Acquire()?"),
+        (
+            "Result<Resource, DisposeError> Acquire(Resource borrowed) { if true { return Result::Ok(Resource {}); } return Result::Ok(borrowed); }",
+            "Acquire(borrowed)?",
+        ),
+        (
+            "enum OtherError { Failed() } Result<Resource, OtherError> Acquire() { return Result::Ok(Resource {}); }",
+            "Acquire()?",
+        ),
+    ] {
+        let source = format!(
+            "{CONTRACT} {factory} Result<unit, DisposeError> Main(Resource borrowed, Result<Resource, DisposeError> existing) {{ use Resource resource = {initializer}; return Result::Ok(()); }}"
+        );
+        let (db, _, unit, generation, index) = setup(&source);
+        let fact = beskid_queries::scoped_cleanup(&db, key(unit, generation, &index, NodeKind::ScopedUseStatement, 0))
+            .unwrap()
+            .unwrap();
+        assert_eq!(fact.diagnostic, Some(beskid_queries::ScopedCleanupDiagnostic::ResourceEscapesScope), "{source}");
+        assert!(fact.acquisition.is_none());
+    }
+}
+
+#[test]
 fn scoped_binding_is_not_resolvable_after_its_lexical_block() {
     for region in [
         "if true { use Resource resource = Open(); resource.Dispose(); }",

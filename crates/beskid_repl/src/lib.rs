@@ -13,6 +13,8 @@
 pub mod eval;
 pub mod readline;
 pub mod session;
+#[cfg(test)]
+mod test_support;
 pub mod tui;
 
 pub use session::ReplSession;

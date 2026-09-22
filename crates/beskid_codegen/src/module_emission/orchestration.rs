@@ -111,7 +111,8 @@ fn lower_resolved_syntax_program(
         .and_then(|index| runtime_intrinsics.get(&DirectCallee::runtime_intrinsic(index)))
         .cloned();
     symbols.extend(runtime_intrinsics.iter().map(|(callee, symbol)| (callee.clone(), symbol.clone())));
-    let corelib_services = corelib_service_symbols(input, items);
+    let corelib_services = corelib_service_symbols(input, items)
+        .map_err(|error| emission_verification(format!("Corelib import preflight: {error}")))?;
     symbols.extend(corelib_services.iter().map(|(callee, symbol)| (callee.clone(), symbol.clone())));
     let extern_contracts = extern_contract_symbols(input, items);
     symbols.extend(extern_contracts.iter().map(|(callee, symbol)| (callee.clone(), symbol.clone())));
@@ -220,12 +221,11 @@ fn lower_resolved_syntax_program(
     }
     for trampoline in &trampolines {
         if let Some(body) = trampoline.lambda_body {
-            let result = trampoline
-                .target_signature
-                .returns
-                .first()
-                .map(|parameter| parameter.value_type)
-                .ok_or_else(|| emission_verification("spawned lambda entry must return an ABI value"))?;
+            let result = match trampoline.target_signature.returns.as_slice() {
+                [] => None,
+                [parameter] => Some(parameter.value_type),
+                _ => return Err(emission_verification("spawned lambda entry has multiple ABI return values")),
+            };
             let function = {
                 let mut importer = ArtifactCallImporter { symbols: &symbols };
                 if let Some(captures) = &trampoline.closure_captures {
@@ -240,12 +240,11 @@ fn lower_resolved_syntax_program(
         }
     }
     for trampoline in &lambda_trampolines {
-        let result = trampoline
-            .target_signature
-            .returns
-            .first()
-            .map(|parameter| parameter.value_type)
-            .ok_or_else(|| emission_verification("lambda entry must return an ABI value"))?;
+        let result = match trampoline.target_signature.returns.as_slice() {
+            [] => None,
+            [parameter] => Some(parameter.value_type),
+            _ => return Err(emission_verification("lambda entry has multiple ABI return values")),
+        };
         let function = {
             let mut importer = ArtifactCallImporter { symbols: &symbols };
             if let Some(captures) = &trampoline.closure_captures {

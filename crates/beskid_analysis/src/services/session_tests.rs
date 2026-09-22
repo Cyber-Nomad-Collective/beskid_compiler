@@ -53,6 +53,7 @@ fn test_plan(lock_bytes: Option<&[u8]>) -> (CompilePlan, SessionFingerprint, Pat
 
 fn empty_assembly(plan: &CompilePlan) -> ProgramAssembly {
     ProgramAssembly {
+        runtime_fixture: None,
         roots: EffectiveCompilationRoots {
             host: RootEntry { dependency_name: None, source_root: plan.source_root.clone() },
             dependencies: Vec::new(),
@@ -72,12 +73,13 @@ fn empty_assembly(plan: &CompilePlan) -> ProgramAssembly {
 fn store_and_retrieve_semantic_snapshot() {
     let _guard = REGISTRY_TEST_LOCK.lock().expect("registry test lock");
     let (plan, fp, root, _entry_path) = test_plan(None);
-    get_or_insert_assembly(fp.clone(), empty_assembly(&plan));
-    let snap = SemanticSnapshot::from_diagnostics(&[], 1, "semantic");
+    let session = get_or_insert_assembly(fp.clone(), empty_assembly(&plan)).unwrap();
+    let generation = session.assembly.generation.0;
+    let snap = SemanticSnapshot::from_diagnostics(&[], generation, "semantic");
     update_semantic_snapshot(&fp, snap.clone());
     let loaded = cached_semantic_snapshot(&fp).expect("snapshot");
     assert_eq!(loaded.staged_through, "semantic");
-    assert_eq!(loaded.syntax_generation_id, 1);
+    assert_eq!(loaded.syntax_generation_id, generation);
     assert!(cached_compilation_session(&fp).is_some());
     invalidate_project(&root);
 }
@@ -86,8 +88,8 @@ fn store_and_retrieve_semantic_snapshot() {
 fn registry_invalidates_on_lockfile_change() {
     let _guard = REGISTRY_TEST_LOCK.lock().expect("registry test lock");
     let (plan_a, fp_a, root, entry_path) = test_plan(Some(b"lock-a"));
-    get_or_insert_assembly(fp_a.clone(), empty_assembly(&plan_a));
-    update_semantic_snapshot(&fp_a, SemanticSnapshot::from_diagnostics(&[], 1, "semantic"));
+    let session = get_or_insert_assembly(fp_a.clone(), empty_assembly(&plan_a)).unwrap();
+    update_semantic_snapshot(&fp_a, SemanticSnapshot::from_diagnostics(&[], session.assembly.generation.0, "semantic"));
     assert!(cached_semantic_snapshot(&fp_a).is_some());
 
     std::fs::write(root.join("Project.lock"), b"lock-b").expect("rewrite lock");
@@ -98,4 +100,28 @@ fn registry_invalidates_on_lockfile_change() {
 
     invalidate_project(&root);
     assert!(cached_semantic_snapshot(&fp_a).is_none());
+}
+
+#[test]
+fn newer_assembly_replaces_session_and_rejects_late_semantic_snapshot() {
+    let _guard = REGISTRY_TEST_LOCK.lock().expect("registry test lock");
+    let (plan, fp, root, _) = test_plan(None);
+    let mut original = empty_assembly(&plan);
+    original.generation = SyntaxGenerationId::allocate().unwrap();
+    let previous = original.generation;
+    get_or_insert_assembly(fp.clone(), original.clone()).unwrap();
+    update_semantic_snapshot(&fp, SemanticSnapshot::from_diagnostics(&[], previous.0, "semantic"));
+    let mut edited = empty_assembly(&plan);
+    edited.generation = SyntaxGenerationId::allocate().unwrap();
+    let next = edited.generation;
+    let session = get_or_insert_assembly(fp.clone(), edited.clone()).unwrap();
+    assert_eq!(session.assembly.generation, next);
+    assert!(session.semantic_snapshot.is_none());
+    update_semantic_snapshot(&fp, SemanticSnapshot::from_diagnostics(&[], previous.0, "semantic"));
+    assert!(cached_semantic_snapshot(&fp).is_none(), "late work must not publish over newer authority");
+    assert!(get_or_insert_assembly(fp.clone(), original).is_err(), "stale jobs cannot replace current authority");
+    assert!(std::sync::Arc::ptr_eq(&session, &get_or_insert_assembly(fp.clone(), edited.clone()).unwrap()));
+    edited.roots.host.source_root = root.join("different-source-root");
+    assert!(get_or_insert_assembly(fp.clone(), edited).is_err(), "same-generation source conflicts must fail closed");
+    invalidate_project(&root);
 }

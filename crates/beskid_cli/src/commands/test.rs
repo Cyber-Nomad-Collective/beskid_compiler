@@ -53,6 +53,24 @@ pub struct TestArgs {
     /// Run every Test target in the project manifest in one process (shared session).
     #[arg(long)]
     pub all_targets: bool,
+
+    /// Per-target execution budget in seconds before a target is reported as timed out
+    /// (also `BESKID_TARGET_TIMEOUT_SECS`; the flag wins if both are set)
+    #[arg(long, env = "BESKID_TARGET_TIMEOUT_SECS")]
+    pub target_timeout: Option<u64>,
+}
+
+impl TestArgs {
+    /// Resolves the configured execution budgets, applying [`TestArgs::target_timeout`]
+    /// (CLI flag or `BESKID_TARGET_TIMEOUT_SECS` env var, flag wins) over the default
+    /// target budget. The matrix budget is not currently overridable.
+    pub(crate) fn execution_budgets(&self) -> ExecutionBudgets {
+        let mut budgets = ExecutionBudgets::default();
+        if let Some(seconds) = self.target_timeout {
+            budgets.target = Duration::from_secs(seconds);
+        }
+        budgets
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -62,6 +80,10 @@ enum TestOutcome {
     Failed,
     Skipped,
     FilteredOut,
+    /// The target's execution budget expired before this test could run. Distinct from
+    /// `Skipped` (which means the test's own `skip.condition` was true): a timed-out test
+    /// would otherwise have run, so it must not be silently folded into "skipped" coverage.
+    TimedOut,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -81,6 +103,10 @@ pub(crate) struct TestSummary {
     pub(crate) failed: usize,
     pub(crate) skipped: usize,
     pub(crate) filtered_out: usize,
+    /// Tests never started because the target's execution budget expired first. Reported
+    /// separately from `skipped` so budget-expiry coverage loss is never silent.
+    #[serde(default)]
+    pub(crate) timed_out: usize,
 }
 
 /// Run the test harness for the resolved project and print human or `--json` results.
@@ -100,7 +126,8 @@ pub fn execute_for_hi(msg_tx: Sender<RuntimeOp>, args: TestArgs) -> Result<()> {
 }
 
 fn execute_single_target(args: TestArgs, hi_tx: Option<Sender<RuntimeOp>>) -> Result<()> {
-    let mut workspace = PreparedWorkspace::prepare(&args, hi_tx, ExecutionBudgets::default(), Cancellation::default())?;
+    let budgets = args.execution_budgets();
+    let mut workspace = PreparedWorkspace::prepare(&args, hi_tx, budgets, Cancellation::default())?;
     let target_name = workspace
         .test_targets()
         .into_iter()
@@ -166,11 +193,15 @@ pub(crate) fn execute_prepared_target(
     let mut executions = Vec::new();
     let mut summary = TestSummary::default();
     let mut timeout_error = None;
+    let mut budget_expired = false;
     let mut first_failure = None;
     let mut last_started_test = None;
-    for (test, row_index, initial) in planned {
+    let mut planned = planned.into_iter();
+    while let Some((test, row_index, initial)) = planned.next() {
         if let Err(error) = workspace.check_budget(&target.name, "execute_tests", Some(target_started)) {
             timeout_error = Some(error);
+            budget_expired = true;
+            record_timed_out_test(&mut test_ui, &mut executions, &mut summary, emit, args.json, row_index, test)?;
             break;
         }
         if !args.plain && workspace.session().pipeline().interrupted() {
@@ -216,14 +247,6 @@ pub(crate) fn execute_prepared_target(
         match workspace.run_entrypoint(&front, &source_name, &target.resolved.source, &test.qualified_name) {
             Ok(output) => {
                 let duration = started.elapsed();
-                if target_started.elapsed() >= workspace.target_timeout() {
-                    timeout_error = Some(anyhow!(
-                        "120-second target budget expired for `{}` in phase `execute_tests`",
-                        target.name
-                    ));
-                    workspace.cancellation().cancel();
-                    break;
-                }
                 if emit && !args.json {
                     test_ui.finish_row(row_index, TestRowState::Passed, duration, None)?;
                     if !args.plain {
@@ -238,6 +261,16 @@ pub(crate) fn execute_prepared_target(
                     output: Some(output),
                 });
                 summary.passed += 1;
+                if target_started.elapsed() >= workspace.target_timeout() {
+                    timeout_error = Some(anyhow!(
+                        "{}-second target budget expired for `{}` in phase `execute_tests`",
+                        workspace.target_timeout().as_secs(),
+                        target.name
+                    ));
+                    budget_expired = true;
+                    workspace.cancellation().cancel();
+                    break;
+                }
             }
             Err(error) => {
                 let duration = started.elapsed();
@@ -270,6 +303,11 @@ pub(crate) fn execute_prepared_target(
             }
         }
     }
+    if budget_expired {
+        for (test, row_index, _initial) in planned {
+            record_timed_out_test(&mut test_ui, &mut executions, &mut summary, emit, args.json, row_index, test)?;
+        }
+    }
 
     let result = if timeout_error.is_some() {
         TargetResult::TimedOut
@@ -290,7 +328,13 @@ pub(crate) fn execute_prepared_target(
         } else if tests.is_empty() {
             println!("No tests found.");
         } else {
-            test_ui.print_summary(summary.passed, summary.failed, summary.skipped, summary.filtered_out)?;
+            test_ui.print_summary(
+                summary.passed,
+                summary.failed,
+                summary.skipped,
+                summary.filtered_out,
+                summary.timed_out,
+            )?;
             if !args.plain && !hi_attached {
                 workspace.session().pipeline().wait_for_dismiss()?;
             }
@@ -326,6 +370,32 @@ pub(crate) fn execute_prepared_target(
     })
 }
 
+/// Records a test that never ran because the target's execution budget expired first.
+/// Distinct from a `skip.condition`-driven skip: this test would otherwise have executed,
+/// so folding it into "skipped" would silently understate lost coverage.
+fn record_timed_out_test(
+    test_ui: &mut TestRunUi<'_>,
+    executions: &mut Vec<TestExecution>,
+    summary: &mut TestSummary,
+    emit: bool,
+    json: bool,
+    row_index: usize,
+    test: &SyntaxTestItem,
+) -> Result<()> {
+    if emit && !json {
+        test_ui.finish_row(row_index, TestRowState::TimedOut, Duration::ZERO, Some("target execution budget expired"))?;
+    }
+    executions.push(TestExecution {
+        name: test.name.to_string(),
+        qualified_name: test.qualified_name.clone(),
+        outcome: TestOutcome::TimedOut,
+        reason: Some("target execution budget expired before this test could run".to_string()),
+        output: None,
+    });
+    summary.timed_out += 1;
+    Ok(())
+}
+
 fn phase_record(phase: &str, started_unix_ms: u64, started: Instant, result: TargetResult) -> PhaseRecord {
     PhaseRecord {
         phase: phase.to_string(),
@@ -356,4 +426,105 @@ fn is_filtered_out(
         return test.group.as_ref().is_none_or(|group| !group.starts_with(prefix));
     }
     false
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use beskid_analysis::syntax::common::span::SpanInfo;
+
+    fn sample_project_resolve_args() -> ProjectResolveArgs {
+        ProjectResolveArgs { project: None, target: None, workspace_member: None }
+    }
+
+    fn sample_lockfile_args() -> LockfilePolicyArgs {
+        LockfilePolicyArgs { frozen: false, locked: false }
+    }
+
+    fn sample_test(name: &str) -> SyntaxTestItem {
+        SyntaxTestItem {
+            name: name.to_string(),
+            qualified_name: format!("Suite.{name}"),
+            tags: Vec::new(),
+            group: None,
+            skip_condition: None,
+            skip_reason: None,
+            selection_span: SpanInfo { start: 0, end: 0, line_col_start: (1, 1), line_col_end: (1, 1) },
+        }
+    }
+
+    #[test]
+    fn timed_out_outcome_serializes_distinctly_from_skipped() {
+        let timed_out = serde_json::to_value(&TestOutcome::TimedOut).unwrap();
+        let skipped = serde_json::to_value(&TestOutcome::Skipped).unwrap();
+        assert_eq!(timed_out, serde_json::json!("timed_out"));
+        assert_eq!(skipped, serde_json::json!("skipped"));
+        assert_ne!(timed_out, skipped);
+    }
+
+    #[test]
+    fn test_summary_default_has_zero_timed_out() {
+        assert_eq!(TestSummary::default().timed_out, 0);
+    }
+
+    #[test]
+    fn test_summary_deserializes_without_timed_out_field_present() {
+        // Older/other-process JSON (e.g. the matrix worker protocol) predating this field
+        // must still deserialize, defaulting the count to zero.
+        let summary: TestSummary =
+            serde_json::from_str(r#"{"passed":1,"failed":0,"skipped":0,"filtered_out":0}"#).unwrap();
+        assert_eq!(summary.timed_out, 0);
+        assert_eq!(summary.passed, 1);
+    }
+
+    #[test]
+    fn record_timed_out_test_reports_timeout_not_skip() {
+        let mut test_ui = TestRunUi::new(true, None);
+        let mut executions = Vec::new();
+        let mut summary = TestSummary::default();
+        let test = sample_test("UnexecutedTest");
+
+        record_timed_out_test(&mut test_ui, &mut executions, &mut summary, true, false, 0, &test).unwrap();
+
+        assert_eq!(summary.timed_out, 1);
+        assert_eq!(summary.skipped, 0);
+        assert_eq!(executions.len(), 1);
+        assert!(matches!(executions[0].outcome, TestOutcome::TimedOut));
+        assert_eq!(executions[0].qualified_name, "Suite.UnexecutedTest");
+        assert!(executions[0].reason.as_deref().unwrap().contains("budget expired"));
+    }
+
+    #[test]
+    fn execution_budgets_defaults_to_120_seconds_target_timeout() {
+        let args = TestArgs {
+            input: None,
+            project: sample_project_resolve_args(),
+            lockfile: sample_lockfile_args(),
+            include_tags: Vec::new(),
+            exclude_tags: Vec::new(),
+            group: None,
+            json: false,
+            plain: true,
+            all_targets: false,
+            target_timeout: None,
+        };
+        assert_eq!(args.execution_budgets().target, Duration::from_secs(120));
+    }
+
+    #[test]
+    fn execution_budgets_honors_explicit_target_timeout() {
+        let args = TestArgs {
+            input: None,
+            project: sample_project_resolve_args(),
+            lockfile: sample_lockfile_args(),
+            include_tags: Vec::new(),
+            exclude_tags: Vec::new(),
+            group: None,
+            json: false,
+            plain: true,
+            all_targets: false,
+            target_timeout: Some(5),
+        };
+        assert_eq!(args.execution_budgets().target, Duration::from_secs(5));
+    }
 }

@@ -68,6 +68,12 @@ impl NodeFacts for BlockFacts {
     fn local_slot(&self, key: AstNodeKey) -> Option<LocalSlotId> {
         (key == self.nodes[1] || key == self.nodes[3]).then_some(LocalSlotId { owner_node: 0, index: 0 })
     }
+
+    // The block's tail value is a plain scalar local read, not a GC-managed handle; the
+    // block-expression emitter now roots GC-managed tails and requires this fact for any tail.
+    fn managed_reference(&self, key: AstNodeKey) -> Option<beskid_isle::ManagedReferenceFact> {
+        (key == self.nodes[3]).then_some(beskid_isle::ManagedReferenceFact::NativeOrScalar)
+    }
 }
 
 fn keys<const N: usize>(path: &str, generation: u64) -> [AstNodeKey; N] {

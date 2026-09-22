@@ -14,7 +14,7 @@ use beskid_analysis::{
 };
 use beskid_queries::{BeskidDatabase, SyntaxGenerationId};
 use beskid_tests_support::native_harness::{
-    executable_name, native_c_compiler, place_shared_runtime, run_bounded, shared_library_name,
+    executable_name, native_c_compiler, place_shared_runtime, run_bounded, run_bounded_with_stdin, shared_library_name,
 };
 use beskid_tools::toolchain::runtime_kit::{RuntimeKitProfile, build_native_host};
 use std::{
@@ -27,6 +27,25 @@ use std::{
 const ROUTE_LIMIT: Duration = Duration::from_secs(60);
 // Descriptor 198/199 belong to the process, so parallel source fixtures must serialize.
 static DESCRIPTOR_FIXTURE: Mutex<()> = Mutex::new(());
+
+#[test]
+fn direct_executable_acceptance_sources_lower_with_their_selected_entry() {
+    for (fixture, entry) in [
+        ("foundation_redirected_input.bd", "Main"),
+        ("foundation_redirected_streams.bd", "Main"),
+        ("foundation_redirected_args.bd", "Main"),
+        ("foundation_redirected_unit.bd", "Start"),
+    ] {
+        let lowered = lower_foundation_entry(fixture, entry).expect(fixture);
+        let function = lowered
+            .artifact
+            .functions
+            .iter()
+            .find(|function| function.name.split('#').next() == Some(entry))
+            .expect("selected entry");
+        assert_eq!(function.function.signature.returns.is_empty(), entry == "Start", "{fixture} return ABI");
+    }
+}
 
 #[test]
 fn foundation_utf8_rejects_non_scalar_and_non_shortest_sequences() {
@@ -89,6 +108,177 @@ fn foundation_io_transfers_validate_ranges_and_handle_partial_eof_and_progress()
 #[test]
 fn foundation_io_closer_stream_and_scoped_cleanup_are_native_safe() {
     run_foundation_fixture("foundation_io.bd");
+}
+
+#[test]
+#[ignore = "requires the staged native runtime-kit matrix prefix"]
+fn staged_runtime_kit_emitted_binary_round_trips_redirected_standard_streams() {
+    run_staged_standard_stream_fixture(
+        "foundation_redirected_streams.bd",
+        b"redirected-stdin\n",
+        b"redirected-stdin\nredirected-stdout\n",
+        b"redirected-stderr\n",
+    );
+}
+
+#[test]
+#[ignore = "requires the staged native runtime-kit matrix prefix"]
+fn staged_runtime_kit_emitted_binary_reads_redirected_standard_input() {
+    run_staged_standard_stream_fixture(
+        "foundation_redirected_input.bd",
+        b"redirected-stdin\n",
+        b"redirected-stdin\n",
+        b"",
+    );
+}
+
+#[test]
+#[ignore = "requires the staged native runtime-kit matrix prefix"]
+fn staged_runtime_kit_emitted_binary_writes_redirected_standard_output() {
+    run_staged_standard_stream_fixture("foundation_redirected_output.bd", b"", b"redirected-stdout\n", b"");
+}
+
+#[test]
+#[ignore = "requires the staged native runtime-kit matrix prefix"]
+fn staged_runtime_kit_emitted_binary_writes_redirected_standard_error() {
+    run_staged_standard_stream_fixture("foundation_redirected_stderr.bd", b"", b"", b"redirected-stderr\n");
+}
+
+#[test]
+#[ignore = "requires the staged native runtime-kit matrix prefix"]
+fn staged_runtime_kit_emitted_binary_handoffs_core_args_through_the_executable_host() {
+    let (output_dir, executable) = build_staged_foundation_executable("foundation_redirected_args.bd", "Main");
+    #[cfg(all(target_os = "windows", target_arch = "x86_64", target_env = "msvc"))]
+    {
+        let directives = Command::new("llvm-readobj")
+            .arg("--coff-directives")
+            .arg(output_dir.path().join("beskid.executable_bootstrap.obj"))
+            .output()
+            .expect("inspect bootstrap CRT directives");
+        assert!(
+            directives.status.success(),
+            "COFF directive inspection failed: {}",
+            String::from_utf8_lossy(&directives.stderr)
+        );
+        let directives = String::from_utf8(directives.stdout).expect("UTF-8 COFF directives").to_ascii_uppercase();
+        assert!(directives.contains("/DEFAULTLIB:MSVCRT"), "bootstrap must request dynamic CRT startup: {directives}");
+        assert!(
+            !directives.contains("/DEFAULTLIB:LIBCMT"),
+            "bootstrap must not request static CRT startup: {directives}"
+        );
+        let imports = Command::new("llvm-readobj")
+            .args(["--coff-imports", executable.to_str().expect("UTF-8 executable path")])
+            .output()
+            .expect("inspect emitted executable PE imports");
+        assert!(imports.status.success(), "PE import inspection failed: {}", String::from_utf8_lossy(&imports.stderr));
+        let imports = String::from_utf8(imports.stdout).expect("UTF-8 PE imports");
+        let providers = imports
+            .lines()
+            .filter_map(|line| line.trim().strip_prefix("Name: "))
+            .map(str::to_ascii_lowercase)
+            .collect::<Vec<_>>();
+        assert!(
+            providers.iter().any(|provider| {
+                provider == "ucrtbase.dll" || (provider.starts_with("api-ms-win-crt-") && provider.ends_with(".dll"))
+            }),
+            "emitted executable must import the dynamic UCRT: {imports}"
+        );
+        assert!(
+            !providers.iter().any(|provider| provider == "msvcrt.dll"),
+            "emitted executable must not link the legacy msvcrt import library: {imports}"
+        );
+    }
+    let _ = output_dir;
+    let mut command = Command::new(&executable);
+    command.args(["alpha", "beta"]);
+    let result = run_bounded("Core.Args executable", &mut command, ROUTE_LIMIT);
+    assert_eq!(
+        result.status.code(),
+        Some(3),
+        "Core.Args executable stderr:\n{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    assert_eq!(
+        result.stdout,
+        format!("{}\nalpha\nbeta\n", executable.display()).as_bytes(),
+        "argv-zero, order, and values"
+    );
+    assert!(result.stderr.is_empty(), "Core.Args executable wrote unexpected stderr");
+
+    #[cfg(windows)]
+    {
+        let mut command = Command::new(&executable);
+        command.args(["zażółć-🙂", "", "final"]);
+        let result = run_bounded("Core.Args wide executable", &mut command, ROUTE_LIMIT);
+        assert_eq!(result.status.code(), Some(4), "UTF-16 argument capture: {result:?}");
+        assert_eq!(result.stdout, format!("{}\nzażółć-🙂\n\nfinal\n", executable.display()).as_bytes());
+        assert!(result.stderr.is_empty());
+    }
+}
+
+#[test]
+#[ignore = "requires the staged native runtime-kit matrix prefix"]
+fn staged_runtime_kit_emitted_binary_runs_a_custom_unit_entry() {
+    let (_output, executable) = build_staged_foundation_executable("foundation_redirected_unit.bd", "Start");
+    let result = run_bounded("custom unit executable", &mut Command::new(&executable), ROUTE_LIMIT);
+    assert_eq!(result.status.code(), Some(0), "unit entry must return success: {result:?}");
+    assert_eq!(result.stdout, b"unit-start\n");
+    assert!(result.stderr.is_empty());
+}
+
+fn run_staged_standard_stream_fixture(fixture: &str, stdin: &[u8], stdout: &[u8], stderr: &[u8]) {
+    let (_output, executable) = build_staged_foundation_executable(fixture, "Main");
+    let mut command = Command::new(&executable);
+    command.env("BESKID_AOT_MAIN", "1");
+    let result = run_bounded_with_stdin("redirected standard-stream executable", &mut command, stdin, ROUTE_LIMIT);
+
+    assert_eq!(
+        result.status.code().unwrap_or(-1),
+        0,
+        "redirected standard-stream program failed:\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&result.stdout),
+        String::from_utf8_lossy(&result.stderr),
+    );
+    assert_eq!(result.stdout, stdout, "{fixture} stdout mismatch");
+    assert_eq!(result.stderr, stderr, "{fixture} stderr mismatch");
+}
+
+fn build_staged_foundation_executable(fixture: &str, entry: &str) -> (tempfile::TempDir, std::path::PathBuf) {
+    let prefix = std::env::var_os("BESKID_RUNTIME_PREFIX")
+        .map(std::path::PathBuf::from)
+        .expect("native runtime-kit evidence must set BESKID_RUNTIME_PREFIX");
+    let profile = match std::env::var("BESKID_RUNTIME_KIT_PROFILE").as_deref() {
+        Ok("debug") => beskid_aot::BuildProfile::Debug,
+        Ok("release") => beskid_aot::BuildProfile::Release,
+        value => panic!("unsupported staged runtime profile: {value:?}"),
+    };
+    let target = beskid_engine::host_runtime_target().expect("supported native host target");
+    let lowered = lower_foundation_entry(fixture, entry).expect("redirected standard-stream source lowering");
+    let output = tempfile::tempdir().expect("redirected standard-stream output");
+    let runtime = beskid_aot::installed_runtime_strategy(&prefix, profile, None)
+        .expect("resolve the exact staged ABI-v5 static runtime artifact");
+    let build = beskid_aot::build(beskid_aot::AotBuildRequest {
+        artifact: lowered.artifact,
+        output_kind: beskid_aot::BuildOutputKind::Exe,
+        output_path: output.path().join(fixture),
+        object_path: None,
+        target_triple: Some(target.triple.as_str().to_owned()),
+        profile,
+        entrypoint: entry.to_owned(),
+        export_policy: beskid_aot::ExportPolicy::PublicOnly,
+        link_mode: beskid_aot::LinkMode::Auto,
+        runtime: Some(runtime),
+        verbose_link: false,
+        external_libraries: Vec::new(),
+        library_search_paths: Vec::new(),
+        pipeline: None,
+    })
+    .expect("link redirected standard-stream program against the staged static runtime");
+    assert!(
+        !build.exported_symbols.iter().any(|symbol| symbol == "beskid_program_main"),
+        "host linkage is not a public export"
+    );
+    (output, build.final_path.expect("emitted staged Foundation executable"))
 }
 
 #[test]
@@ -300,7 +490,17 @@ fn lower_foundation_entry(fixture: &str, entry: &str) -> anyhow::Result<beskid_c
             paths.push((foundation.join(relative), relative.to_owned()));
         }
     }
-    if fixture == "foundation_syscall.bd" {
+    let redirected_stream_fixture = matches!(
+        fixture,
+        "foundation_redirected_streams.bd"
+            | "foundation_redirected_input.bd"
+            | "foundation_redirected_output.bd"
+            | "foundation_redirected_stderr.bd"
+            | "foundation_redirected_args.bd"
+            | "foundation_redirected_unit.bd"
+    );
+    let redirected_args_fixture = fixture == "foundation_redirected_args.bd";
+    if fixture == "foundation_syscall.bd" || redirected_stream_fixture {
         for file in [
             "Syscall",
             "SyscallError",
@@ -316,8 +516,19 @@ fn lower_foundation_entry(fixture: &str, entry: &str) -> anyhow::Result<beskid_c
             paths.push((foundation.join(&relative), relative));
         }
     }
+    if redirected_stream_fixture {
+        for file in ["Input/Input", "Output/Output", "Error/Error"] {
+            let relative = format!("Core/{file}.bd");
+            paths.push((foundation.join(&relative), relative));
+        }
+    }
+    if redirected_args_fixture {
+        for relative in ["Core/Args/Args.bd", "Core/Args/ArgsError.bd", "Core/Optional/Option.bd"] {
+            paths.push((foundation.join(relative), relative.to_owned()));
+        }
+    }
     if fixture == "foundation_io.bd" {
-        for file in ["IO", "Reader", "Writer", "Closer", "Stream", "IoError"] {
+        for file in ["IO", "Reader", "Writer", "Closer", "Stream", "IoError", "TransferFailure"] {
             let relative = format!("Core/IO/{file}.bd");
             paths.push((foundation.join(&relative), relative));
         }

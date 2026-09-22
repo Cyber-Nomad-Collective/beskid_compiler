@@ -1,6 +1,7 @@
 //! Generation-safe identities for expanded syntax nodes.
 
 use std::fmt;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 /// Dense node identity within one expanded source-unit generation.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
@@ -36,6 +37,26 @@ impl fmt::Display for AstNodeId {
 /// Identity of one expanded syntax generation.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
 pub struct SyntaxGenerationId(pub u64);
+
+static LAST_SYNTAX_GENERATION: AtomicU64 = AtomicU64::new(0);
+
+impl SyntaxGenerationId {
+    /// Allocate after every generation constructed or successfully restored in
+    /// this process. Exhaustion is an error, never a wrap or a reused identity.
+    pub fn allocate() -> Option<Self> {
+        LAST_SYNTAX_GENERATION
+            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |last| last.checked_add(1))
+            .ok()
+            .map(|last| Self(last + 1))
+    }
+
+    /// Observe existing syntax authority before allocating any newer assembly.
+    /// Snapshot readers call this only after the whole candidate is accepted;
+    /// merely deserializing an untrusted candidate must not advance allocation.
+    pub fn resume_after(self) {
+        LAST_SYNTAX_GENERATION.fetch_max(self.0, Ordering::Relaxed);
+    }
+}
 
 impl fmt::Debug for SyntaxGenerationId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -92,6 +113,18 @@ impl<UnitId: fmt::Display> fmt::Display for AstNodeKey<UnitId> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn allocation_resumes_after_constructed_syntax_without_regressing() {
+        let first = SyntaxGenerationId::allocate().unwrap();
+        let observed = SyntaxGenerationId(first.0 + 100);
+        let program = crate::services::parse_program("i64 Main() { return 1_i64; }").unwrap();
+        crate::syntax_query::SyntaxIndex::from_program(&program, observed);
+        first.resume_after();
+        let next = SyntaxGenerationId::allocate().unwrap();
+        assert!(next > observed);
+        assert!(SyntaxGenerationId::allocate().unwrap() > next);
+    }
 
     #[test]
     fn formats_generation_and_node_cursors() {

@@ -49,9 +49,7 @@ pub fn assemble_program_with_materializer(
     materializer: Option<UnitMaterializer>,
     pipeline: Option<&dyn PipelineObserver>,
 ) -> Result<ProgramAssembly, AssemblyError> {
-    static NEXT_ASSEMBLY_GENERATION: AtomicU64 = AtomicU64::new(1);
-
-    let generation = SyntaxGenerationId(NEXT_ASSEMBLY_GENERATION.fetch_add(1, Ordering::Relaxed));
+    let generation = SyntaxGenerationId::allocate().ok_or(AssemblyError::GenerationExhausted)?;
     let roots = effective_roots_for_plan(plan, workspace);
     let module_roots: Vec<PathBuf> = super::roots::module_roots_from_effective(&roots);
 
@@ -301,15 +299,19 @@ pub fn assemble_program_with_materializer(
 
     let trusted_corelib_service_paths = trusted_corelib_service_paths(plan, workspace, &units);
 
-    Ok(ProgramAssembly {
-        roots,
-        units: Arc::new(units),
-        syntax_indexes: Arc::new(syntax_indexes),
-        generation,
-        entry_index,
-        discovery: options.discovery,
-        module_index,
-        has_std_dependency: plan.has_std_dependency,
-        trusted_corelib_service_paths,
-    })
+    super::super::runtime_fixture::attach_runtime_fixture(
+        ProgramAssembly {
+            runtime_fixture: None,
+            roots,
+            units: Arc::new(units),
+            syntax_indexes: Arc::new(syntax_indexes),
+            generation,
+            entry_index,
+            discovery: options.discovery,
+            module_index,
+            has_std_dependency: plan.has_std_dependency,
+            trusted_corelib_service_paths,
+        },
+        plan,
+    )
 }

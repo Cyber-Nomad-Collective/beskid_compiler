@@ -66,7 +66,8 @@ pub fn effective_roots_from_lockfile(plan: &CompilePlan, lockfile_path: &Path) -
     let Some(trusted_dependencies_root) = plan.project_root.join("obj/beskid/deps/src").canonicalize().ok() else {
         return base;
     };
-    let Some(replayed_dependencies) = replayed_dependency_roots(plan, lockfile_path, &entries, &trusted_dependencies_root)
+    let Some(replayed_dependencies) =
+        replayed_dependency_roots(plan, lockfile_path, &entries, &trusted_dependencies_root)
     else {
         return base;
     };
@@ -92,11 +93,8 @@ fn replayed_dependency_roots(
     entries: &[ProjectLockDependencyEntry],
     trusted_dependencies_root: &Path,
 ) -> Option<Vec<RootEntry>> {
-    let expected_names: HashSet<_> = plan
-        .dependency_projects
-        .iter()
-        .map(|dependency| dependency.dependency_name.as_str())
-        .collect();
+    let expected_names: HashSet<_> =
+        plan.dependency_projects.iter().map(|dependency| dependency.dependency_name.as_str()).collect();
     let entry_names: HashSet<_> = entries.iter().map(ProjectLockDependencyEntry::name).collect();
     if expected_names != entry_names || entries.len() != expected_names.len() {
         return None;
@@ -105,10 +103,8 @@ fn replayed_dependency_roots(
     let lock_root = lockfile_path.parent()?;
     let mut replayed = Vec::with_capacity(entries.len());
     for entry in entries {
-        let dependency = plan
-            .dependency_projects
-            .iter()
-            .find(|dependency| dependency.dependency_name == entry.name())?;
+        let dependency =
+            plan.dependency_projects.iter().find(|dependency| dependency.dependency_name == entry.name())?;
         let materialized = resolve_lock_path(lock_root, Path::new(entry.materialized_root()));
         let materialized = materialized.canonicalize().ok()?;
         if !materialized.starts_with(trusted_dependencies_root) {
@@ -122,17 +118,17 @@ fn replayed_dependency_roots(
             project.join(entry.source_root())
         };
         let relative = source_root.strip_prefix(&project).ok()?;
-        if relative.components().any(|component| matches!(component, Component::ParentDir | Component::RootDir | Component::Prefix(_))) {
+        if relative
+            .components()
+            .any(|component| matches!(component, Component::ParentDir | Component::RootDir | Component::Prefix(_)))
+        {
             return None;
         }
         let effective = materialized.join(relative).canonicalize().ok()?;
         if !effective.starts_with(&materialized) {
             return None;
         }
-        replayed.push(RootEntry {
-            dependency_name: Some(dependency.dependency_name.clone()),
-            source_root: effective,
-        });
+        replayed.push(RootEntry { dependency_name: Some(dependency.dependency_name.clone()), source_root: effective });
     }
     Some(replayed)
 }

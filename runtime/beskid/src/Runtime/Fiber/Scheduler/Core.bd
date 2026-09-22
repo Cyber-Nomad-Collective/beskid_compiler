@@ -667,6 +667,10 @@ pub bool SchedShutdownForced(bool forced) {
         if FiberExists(index) && !FiberFinished(index) { return false; }
         index = index + 1;
     }
+    // Host-work retains have drained while the owner and its mailbox remain
+    // alive. Close this owner's sockets before dropping stacks or owner state;
+    // the network audit reports opaque handle details before failing on leaks.
+    if NetworkShutdown(ExternalOwnerId()) != 0 { Trap(10, NativePointer(0), 0); }
     index = 0;
     while index < count {
         if FiberExists(index) { FiberCleanup(index); }

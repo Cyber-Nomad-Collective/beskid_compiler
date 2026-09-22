@@ -166,7 +166,24 @@ fn build_current_cli_command(workspace: &Path) -> Command {
 }
 
 fn default_binary_path() -> PathBuf {
-    workspace_root().join("target").join("debug").join(binary_name())
+    cargo_target_dir().join("debug").join(binary_name())
+}
+
+/// Target directory the nested `cargo build -p beskid_cli` writes to.
+///
+/// The nested build inherits this process environment, so an explicit `CARGO_TARGET_DIR`
+/// (absolute, or relative to the workspace where the nested build runs) selects the same
+/// directory Cargo uses. Without it Cargo writes to `<workspace>/target`.
+fn cargo_target_dir() -> PathBuf {
+    target_dir_from(std::env::var_os("CARGO_TARGET_DIR"), &workspace_root())
+}
+
+fn target_dir_from(configured: Option<std::ffi::OsString>, workspace: &Path) -> PathBuf {
+    match configured.filter(|value| !value.is_empty()).map(PathBuf::from) {
+        Some(dir) if dir.is_absolute() => dir,
+        Some(dir) => workspace.join(dir),
+        None => workspace.join("target"),
+    }
 }
 
 fn workspace_root() -> PathBuf {
@@ -194,5 +211,16 @@ mod tests {
         assert_eq!(command.get_program(), "cargo");
         assert_eq!(command.get_args().collect::<Vec<_>>(), ["build", "-p", "beskid_cli"].map(std::ffi::OsStr::new));
         assert_eq!(command.get_current_dir(), Some(workspace_root().as_path()));
+    }
+
+    #[test]
+    fn default_cli_path_follows_the_cargo_target_dir_of_the_nested_build() {
+        let workspace = std::env::temp_dir().join("compiler");
+        let absolute = std::env::temp_dir().join("cache-env");
+
+        assert_eq!(target_dir_from(None, &workspace), workspace.join("target"));
+        assert_eq!(target_dir_from(Some("".into()), &workspace), workspace.join("target"));
+        assert_eq!(target_dir_from(Some(absolute.clone().into_os_string()), &workspace), absolute);
+        assert_eq!(target_dir_from(Some("out/env".into()), &workspace), workspace.join("out/env"));
     }
 }

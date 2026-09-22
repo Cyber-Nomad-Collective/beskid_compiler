@@ -11,7 +11,10 @@ use std::path::PathBuf;
 
 use crate::api::{BuildOutputKind, LinkMode};
 
+pub use common::canonical_link_library_name;
 pub use orchestration::link;
+#[cfg(test)]
+pub(crate) use orchestration::unix_link_command;
 
 /// Arguments for [`link`]: object path, optional runtime archive, output shape, and exports.
 #[derive(Debug, Clone)]

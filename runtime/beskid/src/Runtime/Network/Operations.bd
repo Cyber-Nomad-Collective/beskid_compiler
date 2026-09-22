@@ -1,0 +1,157 @@
+// Every native request has one Foundation wait. No network code changes fiber
+// states or resumes a fiber. Native readiness only posts an immutable owner command.
+// Private tail after the manifest request: list next@88, owner@96. The host
+// interprets only the first 88 bytes. This tracks allocations of detached fibers.
+const NETWORK_CONNECT = 1;
+const NETWORK_ACCEPT = 2;
+const NETWORK_READ = 3;
+const NETWORK_WRITE = 4;
+const NETWORK_RECEIVE = 5;
+const NETWORK_SEND = 6;
+
+pub pointer NetworkRequest(word operation, pointer buffer, word length, pointer address) {
+    pointer request = SystemAllocate(BESKID_NETWORK_REQUEST_SIZE + 16, 8);
+    if request == NativePointer(0) { return NativePointer(0); }
+    memory_set(request, 0, BESKID_NETWORK_REQUEST_SIZE + 16);
+    raw_word_store(pointer_add(request, BESKID_NETWORK_REQUEST_OPERATION_OFFSET), operation);
+    raw_word_store(pointer_add(request, BESKID_NETWORK_REQUEST_BUFFER_OFFSET), NativeWord(buffer));
+    raw_word_store(pointer_add(request, BESKID_NETWORK_REQUEST_LENGTH_OFFSET), length);
+    if address != NativePointer(0) {
+        pointer ownedAddress = SystemAllocate(20, 8);
+        if ownedAddress == NativePointer(0) { SystemFree(request, BESKID_NETWORK_REQUEST_SIZE + 16); return NativePointer(0); }
+        memory_set(ownedAddress, 0, 20);
+        memory_copy(ownedAddress, address, 19);
+        raw_word_store(pointer_add(request, BESKID_NETWORK_REQUEST_ADDRESS_OFFSET), NativeWord(ownedAddress));
+    }
+    raw_word_store(pointer_add(request, BESKID_NETWORK_REQUEST_STATUS_OFFSET), NETWORK_PENDING);
+    return request;
+}
+
+pub unit NetworkRequestFree(pointer request) {
+    pointer address = NativePointer(raw_word_load(pointer_add(request, BESKID_NETWORK_REQUEST_ADDRESS_OFFSET)));
+    if address != NativePointer(0) { SystemFree(address, 20); }
+    SystemFree(request, BESKID_NETWORK_REQUEST_SIZE + 16);
+    return;
+}
+
+pub unit NetworkRequestUnlinkLocked(pointer table, pointer request) {
+    mut pointer link = pointer_add(table, NETWORK_TABLE_REQUESTS);
+    mut pointer current = NativePointer(raw_word_load(link));
+    while current != NativePointer(0) {
+        if current == request { raw_word_store(link, raw_word_load(pointer_add(current, BESKID_NETWORK_REQUEST_SIZE))); return; }
+        link = pointer_add(current, BESKID_NETWORK_REQUEST_SIZE);
+        current = NativePointer(raw_word_load(link));
+    }
+    return;
+}
+
+pub word NetworkDirection(word operation) {
+    if operation == NETWORK_CONNECT || operation == NETWORK_WRITE || operation == NETWORK_SEND { return 1; }
+    return 0;
+}
+
+// Registers and submits under the table lock. Busy is checked before registering
+// a Foundation wait, so a rejected peer never acquires cancellation/timer state.
+pub i32 NetworkStartLocked(pointer table, pointer slot, pointer request) {
+    word operation = raw_word_load(pointer_add(request, BESKID_NETWORK_REQUEST_OPERATION_OFFSET));
+    word direction = NetworkDirection(operation);
+    word current = SchedulerCurrentFiber();
+    if current == FIBER_NONE { return NETWORK_UNSUPPORTED; }
+    if raw_word_load(NetworkSlotToken(slot, direction)) != 0 { return NETWORK_BUSY; }
+    if direction == 1 && raw_word_load(pointer_add(slot, NETWORK_SLOT_WRITE_SHUTDOWN)) != 0 { return NETWORK_NOT_CONNECTED; }
+    // This API revision is unbounded (-1). It consumes Foundation's canonical
+    // one-winner state; a typed deadline context requires its own specification.
+    word token = ExternalWaitRegister(FiberHandle(current), 16 + operation, -1);
+    if token == 0 { return NETWORK_BUSY; }
+    raw_word_store(request, token);
+    raw_word_store(pointer_add(request, BESKID_NETWORK_REQUEST_OWNER_OFFSET), ExternalOwnerId());
+    raw_word_store(NetworkSlotToken(slot, direction), token);
+    raw_word_store(NetworkSlotTokenOwner(slot, direction), ExternalOwnerId());
+    raw_word_store(NetworkSlotRequest(slot, direction), NativeWord(request));
+    raw_word_store(pointer_add(request, BESKID_NETWORK_REQUEST_SIZE), raw_word_load(pointer_add(table, NETWORK_TABLE_REQUESTS)));
+    raw_word_store(pointer_add(request, BESKID_NETWORK_REQUEST_SIZE + 8), ExternalOwnerId());
+    raw_word_store(pointer_add(table, NETWORK_TABLE_REQUESTS), NativeWord(request));
+    i32 status = network_submit(NativePointer(raw_word_load(table)), NativePointer(raw_word_load(pointer_add(slot, NETWORK_SLOT_NATIVE))), request);
+    if status != i32(NETWORK_PENDING) {
+        raw_word_store(pointer_add(request, BESKID_NETWORK_REQUEST_STATUS_OFFSET), word(status));
+        ExternalTryComplete(token & 0xFFFFFFFF, token >> 32, EXTERNAL_READY);
+    }
+    return 0;
+}
+
+// The caller owns request/buffer until this returns. Cancel detaches host state
+// before release, including IOCP completion state which retains its own native copy.
+pub i32 NetworkFinish(word handle, pointer request) {
+    word token = raw_word_load(request);
+    word winner = ExternalWaitPark(token);
+    network_table_lock();
+    pointer table = NativePointer(raw_word_load(network_table_root()));
+    pointer slot = NetworkFindLocked(table, handle);
+    word direction = NetworkDirection(raw_word_load(pointer_add(request, BESKID_NETWORK_REQUEST_OPERATION_OFFSET)));
+    if table != NativePointer(0) { network_cancel(NativePointer(raw_word_load(table)), request); }
+    if table != NativePointer(0) { NetworkRequestUnlinkLocked(table, request); }
+    if slot != NativePointer(0) && raw_word_load(NetworkSlotRequest(slot, direction)) == NativeWord(request) {
+        raw_word_store(NetworkSlotRequest(slot, direction), 0);
+        raw_word_store(NetworkSlotToken(slot, direction), 0);
+        raw_word_store(NetworkSlotTokenOwner(slot, direction), 0);
+    }
+    network_table_unlock();
+    ExternalRelease(token);
+    if winner == EXTERNAL_CANCELLED { return NETWORK_CANCELLED; }
+    if winner == EXTERNAL_TIMEOUT { return NETWORK_TIMED_OUT; }
+    if winner == EXTERNAL_CLOSED { return NETWORK_CLOSED; }
+    if winner != EXTERNAL_READY { return NETWORK_UNSUPPORTED; }
+    i32 status = i32(raw_word_load(pointer_add(request, BESKID_NETWORK_REQUEST_STATUS_OFFSET)) & 0xFFFFFFFF);
+    if status < 0 || status > i32(NETWORK_RESOURCE_EXHAUSTED) { Trap(10, NativePointer(0), 0); }
+    return status;
+}
+
+pub i64 NetworkTransfer(word handle, pointer array, i64 offset, i64 count, word operation, pointer address) {
+    if offset < 0 || count < 0 || word(offset) > NetworkArrayLength(array) || word(count) > NetworkArrayLength(array) - word(offset) { return -i64(NETWORK_MESSAGE_TOO_LARGE); }
+    word length = word(count);
+    word direction = NetworkDirection(operation);
+    network_table_lock();
+    pointer table = NativePointer(raw_word_load(network_table_root()));
+    pointer slot = NetworkFindLocked(table, handle);
+    if slot == NativePointer(0) { network_table_unlock(); return -i64(NETWORK_CLOSED); }
+    mut word expectedKind = NETWORK_STREAM;
+    if operation == NETWORK_RECEIVE || operation == NETWORK_SEND { expectedKind = NETWORK_UDP; }
+    if raw_word_load(pointer_add(slot, NETWORK_SLOT_KIND)) != expectedKind { network_table_unlock(); return -i64(NETWORK_UNSUPPORTED); }
+    if raw_word_load(NetworkSlotToken(slot, direction)) != 0 { network_table_unlock(); return -i64(NETWORK_BUSY); }
+    mut word allocation = length;
+    if allocation == 0 { allocation = 1; }
+    pointer buffer = SystemAllocate(allocation, 8);
+    if buffer == NativePointer(0) { network_table_unlock(); return -i64(NETWORK_RESOURCE_EXHAUSTED); }
+    if direction == 1 && length != 0 { memory_copy(buffer, pointer_add(NetworkArrayData(array, word(offset) + length), word(offset)), length); }
+    pointer request = NetworkRequest(operation, buffer, length, address);
+    if request == NativePointer(0) { SystemFree(buffer, allocation); network_table_unlock(); return -i64(NETWORK_RESOURCE_EXHAUSTED); }
+    i32 start = NetworkStartLocked(table, slot, request);
+    network_table_unlock();
+    if start != 0 { NetworkRequestFree(request); SystemFree(buffer, allocation); return -i64(start); }
+    i32 status = NetworkFinish(handle, request);
+    word completed = raw_word_load(pointer_add(request, BESKID_NETWORK_REQUEST_COUNT_OFFSET));
+    if status == 0 && completed > length { Trap(10, NativePointer(0), 0); }
+    if status == 0 && direction == 0 && completed != 0 {
+        memory_copy(pointer_add(NetworkArrayData(array, word(offset) + completed), word(offset)), buffer, completed);
+    }
+    if status == 0 && operation == NETWORK_RECEIVE && address != NativePointer(0) {
+        memory_copy(address, NativePointer(raw_word_load(pointer_add(request, BESKID_NETWORK_REQUEST_ADDRESS_OFFSET))), 19);
+        mut u8 truncated = 0;
+        if raw_word_load(pointer_add(request, BESKID_NETWORK_REQUEST_TRUNCATED_OFFSET)) != 0 { truncated = 1; }
+        raw_byte_store(pointer_add(address, 19), truncated);
+    }
+    NetworkRequestFree(request);
+    SystemFree(buffer, allocation);
+    if status != 0 { return -i64(status); }
+    return i64(completed);
+}
+
+[Export(Abi:"C", Symbol:"beskid_rt_v5_network_read")]
+pub i64 NetworkRead(word handle, pointer destination, i64 offset, i64 count) {
+    return NetworkTransfer(handle, destination, offset, count, NETWORK_READ, NativePointer(0));
+}
+
+[Export(Abi:"C", Symbol:"beskid_rt_v5_network_write")]
+pub i64 NetworkWrite(word handle, pointer source, i64 offset, i64 count) {
+    return NetworkTransfer(handle, source, offset, count, NETWORK_WRITE, NativePointer(0));
+}

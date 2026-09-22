@@ -180,7 +180,7 @@ fn trusted_intrinsics_are_typed_and_owned_only_by_the_canonical_package() {
     assert_eq!(package.name(), CANONICAL_RUNTIME_PACKAGE_NAME);
     assert_eq!(package.abi_version(), ABI_V5);
     let names = manifest.trusted_runtime_intrinsics.iter().map(|intrinsic| intrinsic.name.as_str()).collect::<Vec<_>>();
-    assert_eq!(names.len(), 48);
+    assert_eq!(names.len(), 68);
     assert!(names.contains(&"pointer_add"));
     assert!(names.contains(&"raw_word_load"));
     assert!(names.contains(&"system_allocate"));
@@ -200,6 +200,30 @@ fn trusted_intrinsics_are_typed_and_owned_only_by_the_canonical_package() {
         ["worker_release", "owner_create", "owner_destroy", "owner_post", "owner_pop", "owner_wait", "wait_claim"]
     {
         assert!(names.contains(&name));
+    }
+    for name in [
+        "network_open",
+        "network_close",
+        "network_bind",
+        "network_address",
+        "network_options",
+        "network_get_options",
+        "network_shutdown_write",
+        "network_reactor_create",
+        "network_reactor_destroy",
+        "network_submit",
+        "network_cancel",
+        "network_reactor_poll",
+        "network_report_leak",
+        "network_table_lock",
+        "network_table_unlock",
+        "network_table_root",
+        "network_dns_start",
+        "network_dns_count",
+        "network_dns_get",
+        "network_dns_release",
+    ] {
+        assert!(names.contains(&name), "missing private networking transport intrinsic {name}");
     }
     assert!(manifest.intrinsic_metadata("pointer_add").is_some());
 
@@ -257,6 +281,8 @@ fn canonical_layouts_freeze_common_and_target_context_offsets() {
                 "BeskidGcHandleSlot",
                 "BeskidHandle",
                 "BeskidHeapState",
+                "BeskidNetworkHandle",
+                "BeskidNetworkRequest",
                 "BeskidObjectHeader",
                 "BeskidPendingSpawn",
                 "BeskidPollLink",
@@ -414,6 +440,48 @@ fn target_system_imports_are_exact_and_unknown_contracts_are_rejected() {
         "sqrt",
         "tan",
     ];
+    let unix_network_imports = [
+        "accept",
+        "bind",
+        "connect",
+        "freeaddrinfo",
+        "getaddrinfo",
+        "getpeername",
+        "getsockname",
+        "getsockopt",
+        "listen",
+        "pipe",
+        "recv",
+        "recvmsg",
+        "send",
+        "sendto",
+        "setsockopt",
+        "shutdown",
+        "socket",
+    ];
+    let windows_winsock_imports = [
+        "WSAGetLastError",
+        "WSAIoctl",
+        "WSARecv",
+        "WSARecvFrom",
+        "WSASend",
+        "WSASendTo",
+        "WSASocketW",
+        "WSAStartup",
+        "bind",
+        "closesocket",
+        "connect",
+        "freeaddrinfo",
+        "getaddrinfo",
+        "getpeername",
+        "getsockname",
+        "getsockopt",
+        "listen",
+        "setsockopt",
+        "shutdown",
+    ];
+    let windows_completion_imports =
+        ["CancelIoEx", "CreateIoCompletionPort", "GetQueuedCompletionStatus", "PostQueuedCompletionStatus"];
     let math_imports = ["atan2", "ceil", "cos", "fabs", "floor", "log", "log10", "log2", "pow", "sin", "sqrt", "tan"];
     let windows_ucrt_descriptor_imports =
         ["_close", "_dup", "_errno", "_read", "_set_thread_local_invalid_parameter_handler", "_setmode", "_write"];
@@ -422,11 +490,14 @@ fn target_system_imports_are_exact_and_unknown_contracts_are_rejected() {
         let (mut expected_symbols, expected_library) = match target.triple.as_str() {
             "aarch64-apple-darwin" => {
                 let mut imports = unix_imports.to_vec();
-                imports.extend(["bzero", "pthread_cond_timedwait_relative_np"]);
+                imports.extend(unix_network_imports);
+                imports.extend(["bzero", "pthread_cond_timedwait_relative_np", "kevent", "kqueue"]);
                 (imports, None)
             }
             "x86_64-unknown-linux-gnu" => {
                 let mut imports = unix_imports.to_vec();
+                imports.extend(unix_network_imports);
+                imports.extend(["epoll_create1", "epoll_ctl", "epoll_wait"]);
                 imports.extend([
                     "pthread_cond_timedwait",
                     "pthread_condattr_init",
@@ -435,7 +506,13 @@ fn target_system_imports_are_exact_and_unknown_contracts_are_rejected() {
                 ]);
                 (imports, Some(("libc", "libm")))
             }
-            "x86_64-pc-windows-msvc" => (windows_imports.to_vec(), Some(("kernel32", "ucrt"))),
+            "x86_64-pc-windows-msvc" => {
+                let mut imports = windows_imports.to_vec();
+                imports.extend(windows_winsock_imports);
+                imports.extend(windows_completion_imports);
+                imports.push("memcpy");
+                (imports, Some(("kernel32", "ucrt")))
+            }
             unsupported => panic!("unsupported target in contract test: {unsupported}"),
         };
         expected_symbols.sort_unstable();
@@ -448,8 +525,10 @@ fn target_system_imports_are_exact_and_unknown_contracts_are_rejected() {
             None => assert!(manifest.platform_imports.iter().all(|entry| entry.library == "libSystem")),
             Some((platform, math)) => {
                 for entry in &manifest.platform_imports {
-                    let expected = if is_windows && entry.symbol == "memset" {
+                    let expected = if is_windows && matches!(entry.symbol.as_str(), "memcpy" | "memset") {
                         "vcruntime"
+                    } else if is_windows && windows_winsock_imports.contains(&entry.symbol.as_str()) {
+                        "ws2_32"
                     } else if math_imports.contains(&entry.symbol.as_str())
                         || (is_windows && windows_ucrt_descriptor_imports.contains(&entry.symbol.as_str()))
                     {
@@ -692,4 +771,96 @@ fn abi_json_rejects_unknown_fields() {
     let mut contract = serde_json::to_value(&metadata.abi_contract).unwrap();
     contract.as_object_mut().unwrap().insert("surprise".into(), serde_json::Value::Bool(true));
     assert!(serde_json::from_value::<AbiManifestV5>(contract).is_err());
+}
+
+fn network_status_values() -> Vec<(String, i64)> {
+    let source: serde_json::Value =
+        serde_json::from_str(beskid_abi::generated::abi_v5_contract::ABI_V5_SOURCE_JSON).unwrap();
+    let status = source["statuses"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|status| status["name"] == "BeskidNetworkStatus")
+        .expect("manifest declares BeskidNetworkStatus");
+    status["values"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|value| (value["name"].as_str().unwrap().to_owned(), value["value"].as_i64().unwrap()))
+        .collect()
+}
+
+fn screaming_snake(name: &str) -> String {
+    let mut output = String::new();
+    for (index, character) in name.chars().enumerate() {
+        if character.is_ascii_uppercase() && index != 0 {
+            output.push('_');
+        }
+        output.push(character.to_ascii_uppercase());
+    }
+    output
+}
+
+fn workspace_source(relative: &str) -> String {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..").join(relative);
+    std::fs::read_to_string(&path).unwrap_or_else(|error| panic!("read {}: {error}", path.display()))
+}
+
+#[test]
+fn network_status_manifest_c_enum_runtime_constants_and_corelib_errors_agree() {
+    let statuses = network_status_values();
+    for (index, (_, value)) in statuses.iter().enumerate() {
+        assert_eq!(*value, index as i64, "network statuses are dense and positional");
+    }
+    let names = statuses.iter().map(|(name, _)| name.as_str()).collect::<Vec<_>>();
+    assert_eq!(names.first(), Some(&"Ok"));
+    assert_eq!(names.last(), Some(&"Pending"), "exactly one internal pending status follows the public statuses");
+    assert_eq!(names.iter().filter(|name| **name == "Pending").count(), 1);
+    let value = |name: &str| statuses.iter().find(|(status, _)| status == name).unwrap().1;
+    assert_eq!((value("NetworkDown"), value("ResourceExhausted"), value("Pending")), (9, 18, 19));
+
+    let header = workspace_source("crates/beskid_abi/assembly/common/network.h");
+    let start = header.find("enum { NET_OK").expect("network.h declares the positional status enum");
+    let end = start + header[start..].find("};").unwrap();
+    let c_names = header[start + "enum {".len()..end]
+        .split(',')
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
+    let expected = names.iter().map(|name| format!("NET_{}", screaming_snake(name))).collect::<Vec<_>>();
+    assert_eq!(c_names, expected, "network.h status enum mirrors the manifest positionally");
+    assert!(header.contains("_Static_assert(NET_RESOURCE_EXHAUSTED == 18 && NET_PENDING == 19"));
+
+    let public = &names[1..names.len() - 1];
+    let errors = workspace_source("corelib/packages/network/src/Network/Errors.bd");
+    let body = &errors[errors.find("pub enum NetworkError {").unwrap()..];
+    let body = &body[body.find('{').unwrap() + 1..body.find('}').unwrap()];
+    let variants = body
+        .split(',')
+        .map(|variant| variant.trim().trim_end_matches("()"))
+        .filter(|variant| !variant.is_empty())
+        .collect::<Vec<_>>();
+    assert_eq!(variants, public, "NetworkError declaration order is the status order");
+
+    let internal = workspace_source("corelib/packages/network/src/Network/Internal.bd");
+    for (name, status) in statuses.iter().filter(|(name, _)| public.contains(&name.as_str())) {
+        let line = format!("if status == {status}_i64 {{ return NetworkError::{name}; }}");
+        assert!(internal.contains(&line), "Network.Internal.Error maps status {status} to {name}");
+    }
+    assert!(!internal.contains(&format!("if status == {}_i64 {{ return NetworkError::", value("Pending"))));
+
+    let table = workspace_source("runtime/beskid/src/Runtime/Network/Table.bd");
+    let mut checked = 0;
+    for line in table.lines().filter_map(|line| line.strip_prefix("const NETWORK_")) {
+        let (constant, rest) = line.split_once(" = ").unwrap();
+        let number = rest.trim_end_matches(';').parse::<i64>().unwrap();
+        if let Some((_, expected)) = statuses.iter().find(|(name, _)| screaming_snake(name) == constant) {
+            assert_eq!(number, *expected, "Table.bd NETWORK_{constant} matches the manifest");
+            checked += 1;
+        }
+    }
+    assert!(table.contains("const NETWORK_RESOURCE_EXHAUSTED = 18;") && table.contains("const NETWORK_PENDING = 19;"));
+    assert!(checked >= 10, "Table.bd names its status constants after manifest statuses");
+    assert!(!table.contains("const NETWORK_DOWN"), "runtime-owned failures never report NetworkDown");
 }

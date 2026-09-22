@@ -73,6 +73,32 @@ impl ModuleIndex {
     /// resolve against the full assembled closure.
     fn seed_resolver_from_assembly(&self, resolver: &mut Resolver, assembly: &ProgramAssembly) {
         let source_path = resolver.current_source_path.clone();
+        if let Some(proof) = assembly.runtime_fixture.as_ref()
+            && source_path.as_ref().is_some_and(|path| {
+                assembly.units.iter().any(|unit| {
+                    &unit.path == path
+                        && (unit.logical_name.starts_with("src/Runtime/")
+                            || unit.logical_name == proof.fixture().logical_path)
+                })
+            })
+        {
+            for unit in assembly.units.iter().filter(|unit| unit.logical_name.starts_with("src/Runtime/")) {
+                for item in &unit.program.node.items {
+                    if let crate::syntax::Node::ConstantDefinition(definition) = &item.node {
+                        let value = definition.node.value.clone();
+                        resolver
+                            .shared_constants
+                            .entry(definition.node.name.node.name.clone())
+                            .and_modify(|previous| {
+                                if previous.as_ref().is_some_and(|previous| previous.node != value.node) {
+                                    *previous = None;
+                                }
+                            })
+                            .or_insert(Some(value));
+                    }
+                }
+            }
+        }
         for path in &self.known_paths {
             resolver.module_graph.ensure_module_path(path);
         }

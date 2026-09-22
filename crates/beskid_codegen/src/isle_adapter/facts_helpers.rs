@@ -54,6 +54,14 @@ impl SyntaxNodeFacts<'_> {
         {
             return Some(managed);
         }
+        if self.query(node_kind(self.db, key)) == Some(beskid_queries::IndexedNodeKind::PathExpression)
+            && let Some(binding) = self.specialized_pattern_binding(key)
+        {
+            return Some(match binding.managed_reference {
+                ManagedReferenceKind::GcManaged => ManagedReferenceFact::GcManaged,
+                ManagedReferenceKind::NativeOrScalar => ManagedReferenceFact::NativeOrScalar,
+            });
+        }
         if let Some(kind) = self.query(managed_reference_kind(self.db, key)) {
             return Some(match kind {
                 ManagedReferenceKind::GcManaged => ManagedReferenceFact::GcManaged,
@@ -483,6 +491,12 @@ impl SyntaxNodeFacts<'_> {
         if self.query(node_kind(self.db, key)) == Some(beskid_queries::IndexedNodeKind::ForStatement) {
             return self.query(for_iterator_fact(self.db, key)).map(|fact| fact.element_type);
         }
+        if let Some(binding) = self.specialized_pattern_binding(key) {
+            return Some(match binding.payload {
+                AggregateFieldShape::Scalar(semantic) => semantic,
+                AggregateFieldShape::Nominal(_) => SemanticTypeId::POINTER,
+            });
+        }
         self.specialized_direct_parameter_type(key)
             .or_else(|| {
                 self.query(beskid_queries::value_abi_type(self.db, key))
@@ -520,6 +534,14 @@ impl SyntaxNodeFacts<'_> {
                     })
                 })
             })
+    }
+
+    /// Project one pattern binding from the same immutable item specialization used for the
+    /// enclosing match. This retains source ownership after pointer ABI erasure without HIR.
+    fn specialized_pattern_binding(&self, key: AstNodeKey) -> Option<beskid_queries::EnumMatchBindingFact> {
+        (self.query(node_kind(self.db, key)) == Some(beskid_queries::IndexedNodeKind::PathExpression)).then_some(())?;
+        let enclosing = self.current_item_specialization()?;
+        self.query(beskid_queries::pattern_binding_specialization(self.db, key, enclosing.substitutions.clone()))
     }
 
     pub(super) fn literal(&self, key: AstNodeKey) -> Option<LiteralFact> {

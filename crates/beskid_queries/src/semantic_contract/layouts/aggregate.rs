@@ -1,6 +1,7 @@
 //! Canonical semantic layout implementation.
 
 use super::super::*;
+use super::explicit_local_declaration_type;
 
 #[salsa::tracked(persist)]
 pub(in crate::semantic_contract) fn aggregate_layout_tracked(
@@ -170,10 +171,11 @@ pub(in crate::semantic_contract) fn aggregate_literal_declaration_tracked(
     })
 }
 
-/// Derive the element ABI of an empty array literal only from its direct nominal aggregate-field
-/// context.  An empty literal carries no element expression from which to infer a representation,
-/// so standalone, local-inferred, nested, and mismatched-field uses remain unavailable.  The
-/// enclosing aggregate declaration and its exact declared `T[]` field are the sole authority.
+/// Derive the element ABI of an empty array literal only from a direct declared `T[]` storage
+/// context. An empty literal carries no element expression from which to infer a representation,
+/// so standalone, local-inferred, nested, assignment, and mismatched-field uses remain
+/// unavailable. The enclosing aggregate declaration or direct explicit-local annotation is the
+/// sole authority.
 #[salsa::tracked(persist)]
 pub(in crate::semantic_contract) fn empty_array_literal_element_abi_type_tracked(
     db: &dyn Db,
@@ -186,12 +188,41 @@ pub(in crate::semantic_contract) fn empty_array_literal_element_abi_type_tracked
             return None;
         }
 
-        // The AST preserves the direct `StructLiteralField -> Expression -> []` ownership chain.
-        // Do not walk arbitrary ancestors: that would turn contextual syntax into inference.
+        // The AST preserves a direct `Expression -> []` ownership chain. Do not walk arbitrary
+        // ancestors: that would turn contextual syntax into inference.
         let expression = parent_node(index, key.node)?;
         if index.kind(expression) != Some(beskid_analysis::syntax_query::NodeKind::Expression) {
             return None;
         }
+
+        // An explicitly typed local gives an empty literal the same declared element authority as
+        // an aggregate field, but only when the literal is that binding's direct initializer.
+        // `u8[] value = { [] }` and `value = []` deliberately do not enter this path.
+        let local_node = parent_node(index, expression)?;
+        if index.kind(local_node) == Some(beskid_analysis::syntax_query::NodeKind::LetStatement) {
+            let local = index.node_at(program, local_node)?.of::<beskid_analysis::syntax::LetStatement>()?;
+            let initializer = index.direct_child_id(
+                program,
+                local_node,
+                beskid_analysis::syntax_query::DynNodeRef::from(&local.value),
+            )?;
+            if initializer != expression {
+                return None;
+            }
+            let declaration = index.direct_child_id(
+                program,
+                local_node,
+                beskid_analysis::syntax_query::DynNodeRef::from(&local.name),
+            )?;
+            let declared = explicit_local_declaration_type(program, index, declaration)?;
+            let beskid_analysis::syntax::Type::Array(element) = declared else {
+                return Some(Err(SemanticError::unavailable("empty_array_literal_element_abi_type")));
+            };
+            return Some(abi_type_from_syntax(db, AstNodeKey { node: declaration, ..key }, &element.node));
+        }
+
+        // The AST preserves the direct `StructLiteralField -> Expression -> []` ownership chain.
+        // Do not walk arbitrary ancestors: that would turn contextual syntax into inference.
         let field_node = parent_node(index, expression)?;
         let literal_node = parent_node(index, field_node)?;
         let field = index.node_at(program, field_node)?.of::<beskid_analysis::syntax::StructLiteralField>()?;
@@ -277,12 +308,12 @@ pub fn empty_array_literal_element_specialization(
     .transpose()
 }
 
-/// Return the element ABI for an indexed, explicitly declared local array.
+/// Return the element ABI for an indexed, explicitly declared array or proven nominal field.
 ///
 /// Array literals own allocation metadata, but an index operation may address an array supplied
 /// by a parameter or constructed by a runtime intrinsic. In that case the declaration's `T[]`
-/// syntax is the only authority for the element representation. Inferred, non-local, generic,
-/// string, and stale targets deliberately remain unavailable.
+/// syntax or the nominal field's exact substituted source identity owns the element representation.
+/// Unproven, string, and stale targets deliberately remain unavailable.
 #[salsa::tracked(persist)]
 pub(in crate::semantic_contract) fn array_index_element_abi_type_tracked(
     db: &dyn Db,
@@ -328,7 +359,20 @@ pub(in crate::semantic_contract) fn array_index_element_template_tracked(
                 beskid_analysis::syntax_query::DynNodeRef::from(indexed.target.as_ref()),
             )
             .map(|target| normalized_expression_node(index, target))?;
-        let target = index.node_at(program, target)?.of::<beskid_analysis::syntax::PathExpression>()?;
+        let target_node = index.node_at(program, target)?;
+        if target_node.of::<beskid_analysis::syntax::MemberExpression>().is_some()
+            || target_node
+                .of::<beskid_analysis::syntax::PathExpression>()
+                .is_some_and(|path| path.path.node.segments.len() > 1)
+        {
+            // The source query proves the field declaration, substitutions and integer index;
+            // an erased array pointer is never sufficient to authorize element storage.
+            return Some(
+                generic_source_expression_identity(db, AstNodeKey { node: index_node, ..key })
+                    .map(|element| ArrayIndexElementTemplate::Concrete(element.abi_type())),
+            );
+        }
+        let target = target_node.of::<beskid_analysis::syntax::PathExpression>()?;
         let [segment] = target.path.node.segments.as_slice() else {
             return Some(Err(SemanticError::unavailable("array_index_element_abi_type")));
         };
@@ -338,6 +382,12 @@ pub(in crate::semantic_contract) fn array_index_element_template_tracked(
         let declaration =
             resolve_lexical_declaration(program, index, index_node, segment.node.name.node.name.as_str())?;
         let parent = parent_node(index, declaration)?;
+        if index.kind(parent) == Some(beskid_analysis::syntax_query::NodeKind::Pattern) {
+            return Some(
+                generic_source_expression_identity(db, AstNodeKey { node: index_node, ..key })
+                    .map(|element| ArrayIndexElementTemplate::Concrete(element.abi_type())),
+            );
+        }
         let array_type = match index.kind(parent)? {
             beskid_analysis::syntax_query::NodeKind::Parameter => index
                 .node_at(program, parent)?

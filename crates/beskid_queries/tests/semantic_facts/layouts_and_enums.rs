@@ -121,7 +121,7 @@ unit Main() {
 }
 
 #[test]
-fn aggregate_field_projection_abi_remains_closed_for_inferred_and_chained_receivers_for_cyb_140() {
+fn aggregate_field_projection_abi_requires_typed_roots_and_resolves_chained_receivers() {
     let inferred = r#"
 type ProgressBar<T> { T percent }
 unit Main() {
@@ -157,7 +157,7 @@ unit Main() {
         NodeKind::PathExpression,
         chained.find("outer.bar.percent").expect("chained projection"),
     );
-    assert_unavailable(abi_type(&db, projection));
+    assert_eq!(abi_type(&db, projection), Ok(Some(SemanticTypeId::I64)));
 }
 
 #[test]

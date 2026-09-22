@@ -4,6 +4,7 @@ mod discovery;
 mod loader;
 mod module_index;
 mod roots;
+mod runtime_fixture;
 mod unit_builder;
 mod unit_cache;
 
@@ -51,6 +52,7 @@ impl SourceUnit {
 /// Generation-bound syntax project shared by analysis and IDE query boundaries.
 #[derive(Clone)]
 pub struct ProgramAssembly {
+    pub runtime_fixture: Option<Arc<beskid_abi::runtime_source::RuntimeFixtureProof>>,
     pub roots: EffectiveCompilationRoots,
     pub units: Arc<Vec<SourceUnit>>,
     /// Syntax indexes in exactly the same order as `units`.
@@ -91,6 +93,7 @@ impl ProgramAssembly {
         let syntax_indexes =
             Arc::new(units.iter().map(|unit| SyntaxIndex::from_program(&unit.program, generation)).collect::<Vec<_>>());
         Self {
+            runtime_fixture: None,
             roots,
             units,
             syntax_indexes,
@@ -105,6 +108,11 @@ impl ProgramAssembly {
 
     pub fn entry_unit(&self) -> &SourceUnit {
         &self.units[self.entry_index]
+    }
+
+    pub fn with_runtime_fixture(mut self, proof: Option<Arc<beskid_abi::runtime_source::RuntimeFixtureProof>>) -> Self {
+        self.runtime_fixture = proof;
+        self
     }
 
     pub fn entry_syntax_index(&self) -> &SyntaxIndex {

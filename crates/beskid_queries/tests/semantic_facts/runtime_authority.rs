@@ -628,6 +628,20 @@ fn canonical_concurrency_facade_gets_service_authority_but_copied_source_does_no
     );
 }
 
+/// `i32(value)`-style conversions are classified by their own primitive-conversion fact, which
+/// codegen consults before call lowering; they are never ordinary or Dynamic calls. Every other
+/// call scanned before a service call must still have an available call lowering.
+fn proven_primitive_conversion(db: &BeskidDatabase, call: AstNodeKey) -> bool {
+    if !matches!(primitive_numeric_conversion(db, call), Ok(Some(_))) {
+        return false;
+    }
+    assert!(
+        !matches!(call_lowering(db, call), Ok(Some(beskid_queries::CallLowering::Dynamic))),
+        "a primitive numeric conversion must not lower through dynamic dispatch"
+    );
+    true
+}
+
 #[test]
 fn corelib_syscall_source_gets_a_distinct_service_lowering_but_app_code_cannot_forge_it() {
     let mut db = BeskidDatabase::default();
@@ -678,6 +692,9 @@ fn corelib_syscall_source_gets_a_distinct_service_lowering_but_app_code_cannot_f
         .ids_of_kind(NodeKind::CallExpression)
         .map(|node| AstNodeKey { unit: SourceUnitId::new(&db, source_path.clone()), generation, node })
         .find(|key| {
+            if proven_primitive_conversion(&db, *key) {
+                return false;
+            }
             matches!(
                 call_lowering(&db, *key).expect("Core.Syscall lowering"),
                 Some(beskid_queries::CallLowering::CorelibService(service))
@@ -816,6 +833,9 @@ fn corelib_service_authority_is_registered_for_only_the_exact_syscall_unit_in_an
         .ids_of_kind(NodeKind::CallExpression)
         .map(|node| AstNodeKey { unit: SourceUnitId::new(&db, syscall_path.clone()), generation, node })
         .find(|key| {
+            if proven_primitive_conversion(&db, *key) {
+                return false;
+            }
             matches!(
                 call_lowering(&db, *key).expect("Core.Syscall lowering"),
                 Some(beskid_queries::CallLowering::CorelibService(service))

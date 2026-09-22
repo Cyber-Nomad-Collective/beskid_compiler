@@ -33,7 +33,8 @@ i64 FreshTimer() {
     if result != 4 || Probe.beskid_rt_v5_external_active_count() != 0 { Probe.beskid_trap_code(19_i64); }
     return 126_i64;
 }
-i64 RunExternalCancellationFixture() {
+[Export(Abi:"C", Symbol:"RunExternalCancellationFixture")]
+pub i64 RunExternalCancellationFixture() {
     Fiber<i64> cancelled = spawn CancelAndRetry();
     i64 score = match cancelled.Join() {
         Result::Error(FiberError::Cancelled(_, _)) => 0_i64,

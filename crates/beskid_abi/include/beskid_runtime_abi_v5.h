@@ -113,6 +113,23 @@ struct BeskidStr;
 #define BESKID_HEAP_STATE_EXTERNAL_ROOTS_OFFSET 128
 #define BESKID_HEAP_STATE_HANDLE_COUNT_OFFSET 632
 #define BESKID_HEAP_STATE_HANDLES_OFFSET 640
+#define BESKID_NETWORK_HANDLE_SIZE 8
+#define BESKID_NETWORK_HANDLE_ALIGNMENT 8
+#define BESKID_NETWORK_HANDLE_SLOT_OFFSET 0
+#define BESKID_NETWORK_HANDLE_GENERATION_OFFSET 4
+#define BESKID_NETWORK_REQUEST_SIZE 88
+#define BESKID_NETWORK_REQUEST_ALIGNMENT 8
+#define BESKID_NETWORK_REQUEST_TOKEN_OFFSET 0
+#define BESKID_NETWORK_REQUEST_OWNER_OFFSET 8
+#define BESKID_NETWORK_REQUEST_OPERATION_OFFSET 16
+#define BESKID_NETWORK_REQUEST_BUFFER_OFFSET 24
+#define BESKID_NETWORK_REQUEST_LENGTH_OFFSET 32
+#define BESKID_NETWORK_REQUEST_ADDRESS_OFFSET 40
+#define BESKID_NETWORK_REQUEST_COUNT_OFFSET 48
+#define BESKID_NETWORK_REQUEST_STATUS_OFFSET 56
+#define BESKID_NETWORK_REQUEST_ACCEPTED_OFFSET 64
+#define BESKID_NETWORK_REQUEST_NATIVE_STATE_OFFSET 72
+#define BESKID_NETWORK_REQUEST_TRUNCATED_OFFSET 80
 #define BESKID_OBJECT_HEADER_SIZE 16
 #define BESKID_OBJECT_HEADER_ALIGNMENT 8
 #define BESKID_OBJECT_HEADER_DESCRIPTOR_OFFSET 0
@@ -413,6 +430,22 @@ void * mutex_create(void);
 int32_t mutex_lock(void * id);
 int32_t mutex_try_lock(void * id);
 void mutex_unlock(void * id);
+int32_t beskid_rt_v5_network_accept(size_t handle, void * output);
+int32_t beskid_rt_v5_network_address(size_t handle, uint8_t peer, void * output);
+int32_t beskid_rt_v5_network_close(size_t handle);
+int32_t beskid_rt_v5_network_dns_address(size_t lease, int64_t index, void * output);
+int64_t beskid_rt_v5_network_dns_count(size_t lease);
+void beskid_rt_v5_network_dns_release(size_t lease);
+int32_t beskid_rt_v5_network_dns_resolve(void * host, int64_t port, int64_t family, void * output);
+int32_t beskid_rt_v5_network_open(int64_t kind, void * address, int64_t options, int64_t backlog, void * output);
+int64_t beskid_rt_v5_network_options(size_t handle);
+int64_t beskid_rt_v5_network_read(size_t handle, void * buffer, int64_t offset, int64_t count);
+int64_t beskid_rt_v5_network_receive(size_t handle, void * payload, void * metadata, uint8_t connected);
+int64_t beskid_rt_v5_network_send(size_t handle, void * payload, void * address, uint8_t connected);
+int32_t beskid_rt_v5_network_set_options(size_t handle, int64_t bits);
+int32_t beskid_rt_v5_network_shutdown_write(size_t handle);
+int32_t beskid_rt_v5_network_udp_connect(size_t handle, void * address);
+int64_t beskid_rt_v5_network_write(size_t handle, void * buffer, int64_t offset, int64_t count);
 void beskid_trap_code(int64_t code);
 void beskid_trap_message(void * message);
 void process_exit(int32_t code);
