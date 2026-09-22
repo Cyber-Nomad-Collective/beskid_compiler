@@ -1,5 +1,6 @@
-use cranelift_codegen::ir::{Type, types};
+use cranelift_codegen::ir::Type;
+use cranelift_codegen::isa::TargetFrontendConfig;
 
-pub fn pointer_type() -> Type {
-    if cfg!(target_pointer_width = "64") { types::I64 } else { types::I32 }
+pub fn pointer_type(frontend_config: TargetFrontendConfig) -> Type {
+    frontend_config.pointer_type()
 }

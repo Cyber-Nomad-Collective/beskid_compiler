@@ -221,7 +221,15 @@ pub(super) fn local_declaration_owner(
     ) {
         return None;
     }
-    nearest_ancestor(index, parent, |kind| {
+    enclosing_executable_callable(index, parent)
+}
+
+/// Find the nearest executable scope without crossing a nested lambda or test body.
+pub(super) fn enclosing_executable_callable(
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    node: beskid_analysis::syntax::AstNodeId,
+) -> Option<beskid_analysis::syntax::AstNodeId> {
+    nearest_ancestor(index, node, |kind| {
         matches!(
             kind,
             beskid_analysis::syntax_query::NodeKind::FunctionDefinition
@@ -287,6 +295,16 @@ pub(super) fn local_declaration_scope(
         beskid_analysis::syntax_query::NodeKind::LetStatement => {
             if declaration.0 >= reference.0 || is_ancestor(index, parent, reference) {
                 return None;
+            }
+            if let Some(scoped) = parent_node(index, parent)
+                && index.kind(scoped) == Some(beskid_analysis::syntax_query::NodeKind::ScopedUseStatement)
+                && let Some(body) = index
+                    .children(scoped)?
+                    .iter()
+                    .copied()
+                    .find(|child| index.kind(*child) == Some(beskid_analysis::syntax_query::NodeKind::Block))
+            {
+                return is_ancestor(index, body, reference).then_some(body);
             }
             nearest_ancestor(index, parent, |kind| {
                 matches!(

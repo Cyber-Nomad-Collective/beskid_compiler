@@ -38,6 +38,7 @@ MutKeyword = @{ "mut" ~ !(ASCII_ALPHANUMERIC | "_") }
 BulkKeyword = @{ "bulk" ~ !(ASCII_ALPHANUMERIC | "_") }
 ModKeyword = { "mod" }
 UseKeyword = { "use" }
+UsingKeyword = { "using" }
 PubKeyword = { "pub" }
 TestKeyword = { "test" }
 SkipKeyword = { "skip" }
@@ -86,6 +87,7 @@ Keyword = {
       | BulkKeyword
       | ModKeyword
       | UseKeyword
+      | UsingKeyword
       | PubKeyword
       | TestKeyword
       | SkipKeyword
@@ -266,7 +268,10 @@ Block = { "{" ~ Statement* ~ "}" }
 
 WithStatement = { "with" ~ Identifier ~ "(" ~ ArgumentList? ~ ")" ~ Block }
 LaunchStatement = { "launch" ~ Path ~ "(" ~ ArgumentList? ~ ")" ~ ";" }
-Statement = _{ LetStatement | ReturnStatement | BreakStatement | ContinueStatement | WhileStatement | ForStatement | IfStatement | WithStatement | LaunchStatement | ExpressionStatement }
+Statement = _{ ScopedUseStatement | LetStatement | ReturnStatement | BreakStatement | ContinueStatement | WhileStatement | ForStatement | IfStatement | WithStatement | LaunchStatement | ExpressionStatement }
+
+ScopedUseStatement = { "use" ~ ("(" ~ ScopedUseBinding ~ ")" ~ Block | ScopedUseBinding ~ ";") }
+ScopedUseBinding = { BeskidType ~ Identifier ~ "=" ~ Expression }
 
 LetStatement = { TypedLetStatement | InferredLetStatement }
 TypedLetStatement = { MutKeyword? ~ BeskidType ~ Identifier ~ ("=" ~ Expression)? ~ ";" }

@@ -161,6 +161,11 @@ pub fn map_statement(
             n.node.value = map_expression(ls.node.value.clone(), f);
             Statement::Let(n)
         }
+        Statement::Use(mut scoped) => {
+            scoped.node.binding.node.value = map_expression(scoped.node.binding.node.value, f);
+            scoped.node.body = scoped.node.body.map(|body| map_block(body, f));
+            Statement::Use(scoped)
+        }
         Statement::Return(rs) => {
             let mut n = rs.clone();
             if let Some(v) = &rs.node.value {

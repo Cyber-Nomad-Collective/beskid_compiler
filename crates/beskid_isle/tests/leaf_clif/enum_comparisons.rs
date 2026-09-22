@@ -75,6 +75,7 @@ fn enum_equality_compares_discriminant_tags_primary() {
     );
     let facts = EnumEqFacts { root: node(1), left: node(2), right: node(3), layout };
 
+    let isa = super::support::test_isa();
     let mut function = Function::new();
     let mut builder_context = FunctionBuilderContext::new();
     {
@@ -82,9 +83,10 @@ fn enum_equality_compares_discriminant_tags_primary() {
         let block = builder.create_block();
         builder.switch_to_block(block);
         builder.seal_block(block);
-        let value = lower_expression(&mut IsleContext::new(&mut builder, &facts), facts.root).expect("enum eq rule");
+        let value = lower_expression(&mut IsleContext::new(&mut builder, &facts, isa.frontend_config()), facts.root)
+            .expect("enum eq rule");
         builder.ins().return_(&[value]);
-        builder.finalize();
+        builder.finalize(isa.frontend_config());
     }
 
     let clif = function.display().to_string();
@@ -160,6 +162,7 @@ fn enum_not_equality_compares_discriminant_tags_negated_primary() {
     );
     let facts = EnumNeFacts { root: node(1), left: node(2), right: node(3), layout };
 
+    let isa = super::support::test_isa();
     let mut function = Function::new();
     let mut builder_context = FunctionBuilderContext::new();
     {
@@ -167,9 +170,10 @@ fn enum_not_equality_compares_discriminant_tags_negated_primary() {
         let block = builder.create_block();
         builder.switch_to_block(block);
         builder.seal_block(block);
-        let value = lower_expression(&mut IsleContext::new(&mut builder, &facts), facts.root).expect("enum ne rule");
+        let value = lower_expression(&mut IsleContext::new(&mut builder, &facts, isa.frontend_config()), facts.root)
+            .expect("enum ne rule");
         builder.ins().return_(&[value]);
-        builder.finalize();
+        builder.finalize(isa.frontend_config());
     }
 
     let clif = function.display().to_string();
@@ -249,6 +253,7 @@ fn enum_equality_compares_discriminant_tags() {
     );
     let facts = EnumEqFacts { root: node(1), left: node(2), right: node(3), layout };
 
+    let isa = super::support::test_isa();
     let mut function = Function::new();
     let mut builder_context = FunctionBuilderContext::new();
     {
@@ -256,9 +261,10 @@ fn enum_equality_compares_discriminant_tags() {
         let block = builder.create_block();
         builder.switch_to_block(block);
         builder.seal_block(block);
-        let value = lower_expression(&mut IsleContext::new(&mut builder, &facts), facts.root).expect("enum eq rule");
+        let value = lower_expression(&mut IsleContext::new(&mut builder, &facts, isa.frontend_config()), facts.root)
+            .expect("enum eq rule");
         builder.ins().return_(&[value]);
-        builder.finalize();
+        builder.finalize(isa.frontend_config());
     }
 
     let clif = function.display().to_string();
@@ -334,6 +340,7 @@ fn enum_not_equality_compares_discriminant_tags_negated() {
     );
     let facts = EnumNeFacts { root: node(1), left: node(2), right: node(3), layout };
 
+    let isa = super::support::test_isa();
     let mut function = Function::new();
     let mut builder_context = FunctionBuilderContext::new();
     {
@@ -341,9 +348,10 @@ fn enum_not_equality_compares_discriminant_tags_negated() {
         let block = builder.create_block();
         builder.switch_to_block(block);
         builder.seal_block(block);
-        let value = lower_expression(&mut IsleContext::new(&mut builder, &facts), facts.root).expect("enum ne rule");
+        let value = lower_expression(&mut IsleContext::new(&mut builder, &facts, isa.frontend_config()), facts.root)
+            .expect("enum ne rule");
         builder.ins().return_(&[value]);
-        builder.finalize();
+        builder.finalize(isa.frontend_config());
     }
 
     let clif = function.display().to_string();

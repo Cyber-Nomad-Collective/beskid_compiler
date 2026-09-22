@@ -109,6 +109,7 @@ unit Main() {
     assert_eq!(
         generic_call_specialization(&db, call).expect("generic direct-field specialization"),
         Some(beskid_queries::GenericCallSpecialization {
+            contract_witnesses: Arc::from([]),
             declaration: key(unit, generation, &index, NodeKind::FunctionDefinition, 0),
             signature: ItemSignature {
                 parameters: Arc::from([SemanticTypeId::I64, SemanticTypeId::I64]),
@@ -120,7 +121,7 @@ unit Main() {
 }
 
 #[test]
-fn aggregate_field_projection_abi_remains_closed_for_inferred_and_chained_receivers_for_cyb_140() {
+fn aggregate_field_projection_abi_requires_typed_roots_and_resolves_chained_receivers() {
     let inferred = r#"
 type ProgressBar<T> { T percent }
 unit Main() {
@@ -156,7 +157,7 @@ unit Main() {
         NodeKind::PathExpression,
         chained.find("outer.bar.percent").expect("chained projection"),
     );
-    assert_unavailable(abi_type(&db, projection));
+    assert_eq!(abi_type(&db, projection), Ok(Some(SemanticTypeId::I64)));
 }
 
 #[test]
@@ -364,6 +365,7 @@ unit Write() {
         .iter()
         .map(|(path, source)| SourceUnit {
             logical_name: path.display().to_string(),
+            origin_path: (*path).clone(),
             path: (*path).clone(),
             source: (*source).to_string(),
             program: expand_program(parse_program(source).expect("parse"), DEFAULT_MAX_MACRO_EXPANSION_DEPTH),
@@ -440,6 +442,7 @@ unit Main() {
         .iter()
         .map(|(path, source)| SourceUnit {
             logical_name: path.display().to_string(),
+            origin_path: (*path).clone(),
             path: (*path).clone(),
             source: (*source).to_string(),
             program: expand_program(parse_program(source).expect("parse"), DEFAULT_MAX_MACRO_EXPANSION_DEPTH),
@@ -520,6 +523,7 @@ unit Main() {
         .iter()
         .map(|(path, source)| SourceUnit {
             logical_name: path.display().to_string(),
+            origin_path: (*path).clone(),
             path: (*path).clone(),
             source: (*source).to_string(),
             program: expand_program(parse_program(source).expect("parse"), DEFAULT_MAX_MACRO_EXPANSION_DEPTH),
@@ -635,6 +639,158 @@ unit Main() {
     assert_eq!(
         contextual_integer_literal_abi_type(&db, nested).expect("nested enum payload"),
         Some(SemanticTypeId::I32),
+    );
+}
+
+#[test]
+fn enum_constructor_in_block_match_arm_uses_the_enclosing_return_annotation() {
+    let source = r#"
+enum Result<TValue, TError> { Ok(TValue value), Error(TError error) }
+Result<i64, string> Forward(Result<i64, string> result) {
+    return match result {
+        Result::Error(error) => { Result::Error(error); },
+        Result::Ok(completed) => {
+            Result::Ok(completed);
+        },
+    };
+}
+"#;
+    let (db, _project, unit, generation, index) = setup(source);
+    let ok = key(unit, generation, &index, NodeKind::EnumConstructorExpression, 1);
+
+    let layout = enum_layout(&db, ok)
+        .expect("block-arm constructor layout query")
+        .expect("the enclosing typed return must instantiate Result in the block arm");
+    assert_eq!(layout.variants.len(), 2);
+    assert_eq!(layout.variants[0].fields.len(), 1);
+    assert_eq!(layout.variants[0].fields[0].1, AggregateFieldShape::Scalar(SemanticTypeId::I64));
+}
+
+#[test]
+fn enum_constructor_in_nonfinal_block_statement_has_no_enclosing_result_context() {
+    let source = r#"
+enum Result<TValue, TError> { Ok(TValue value), Error(TError error) }
+Result<i64, string> Forward(Result<i64, string> result) {
+    return match result {
+        Result::Error(error) => { Result::Error(error); 0_i64; },
+        Result::Ok(completed) => {
+            Result::Ok(completed);
+            0_i64;
+        },
+    };
+}
+"#;
+    let (db, _project, unit, generation, index) = setup(source);
+    let ok = key(unit, generation, &index, NodeKind::EnumConstructorExpression, 1);
+
+    assert!(
+        enum_layout(&db, ok).is_err(),
+        "a non-final block statement must not inherit a match or function result annotation"
+    );
+}
+
+#[test]
+fn enum_constructor_in_match_scrutinee_has_no_match_result_context() {
+    let source = r#"
+enum Result<TValue, TError> { Ok(TValue value), Error(TError error) }
+Result<i64, string> Forward() {
+    return match Result::Ok(7_i64) {
+        Result::Error(error) => Result::Error(error),
+        Result::Ok(completed) => Result::Ok(completed),
+    };
+}
+"#;
+    let (db, _project, unit, generation, index) = setup(source);
+    let scrutinee = key(unit, generation, &index, NodeKind::EnumConstructorExpression, 0);
+
+    assert!(
+        enum_layout(&db, scrutinee).is_err(),
+        "a match scrutinee must not inherit the result type reserved for its arm bodies"
+    );
+}
+
+fn setup_homonymous_qualified_result_context(
+    return_module: &str,
+) -> (BeskidDatabase, SourceUnitId, SyntaxGenerationId, SyntaxIndex) {
+    let mut db = BeskidDatabase::default();
+    let root = PathBuf::from("/tmp/homonymous-qualified-result-context/project/src");
+    let main_path = root.join("Main.bd");
+    let a_path = root.join("Core/A/A.bd");
+    let b_path = root.join("Core/B/B.bd");
+    let main_source = format!(
+        r#"
+use Core.A;
+use Core.B;
+{return_module}.Result<i64, string> Forward(A.Result<i64, string> result) {{
+    return match result {{
+        A.Result::Error(error) => A.Result::Error(error),
+        A.Result::Ok(value) => {{ A.Result::Ok(value); }},
+    }};
+}}
+"#
+    );
+    let a_source = "pub enum Result<TValue, TError> { Ok(TValue value), Error(TError error) }";
+    let b_source = "pub enum Result<TValue, TError> { Ok(TValue value), Error(TError error), Other() }";
+    let sources = [(&main_path, main_source.as_str()), (&a_path, a_source), (&b_path, b_source)];
+    let units = sources
+        .iter()
+        .map(|(path, source)| SourceUnit {
+            logical_name: path.display().to_string(),
+            origin_path: (*path).clone(),
+            path: (*path).clone(),
+            source: (*source).to_string(),
+            program: expand_program(parse_program(source).expect("parse"), DEFAULT_MAX_MACRO_EXPANSION_DEPTH),
+        })
+        .collect::<Vec<_>>();
+    let main_program = units[0].program.clone();
+    let generation = SyntaxGenerationId(210);
+    let assembly = Arc::new(ProgramAssembly::new(
+        EffectiveCompilationRoots {
+            host: RootEntry { dependency_name: None, source_root: root.clone() },
+            dependencies: Vec::new(),
+        },
+        Arc::new(units),
+        0,
+        AssemblyDiscovery::ImportClosure,
+        Arc::new(ModuleIndex::empty()),
+        false,
+        generation,
+    ));
+    let main_unit = SourceUnitId::new(&db, main_path);
+    let project = ProjectSession::new(
+        &db,
+        root.parent().expect("project root").to_path_buf(),
+        main_unit.path(&db).clone(),
+        "App".to_string(),
+        "lock".to_string(),
+    );
+    build_typed_program(&mut db, project, generation, assembly).expect("typed syntax program");
+    (db, main_unit, generation, SyntaxIndex::from_program(&main_program, generation))
+}
+
+#[test]
+fn qualified_homonymous_enum_constructor_rejects_a_different_return_declaration() {
+    let (db, unit, generation, index) = setup_homonymous_qualified_result_context("B");
+    let constructor = key(unit, generation, &index, NodeKind::EnumConstructorExpression, 1);
+
+    assert!(
+        enum_layout(&db, constructor).is_err(),
+        "a same-spelled but distinct qualified enum must not supply contextual type arguments"
+    );
+}
+
+#[test]
+fn qualified_enum_constructor_keeps_the_same_return_declaration_context() {
+    let (db, unit, generation, index) = setup_homonymous_qualified_result_context("A");
+    let constructor = key(unit, generation, &index, NodeKind::EnumConstructorExpression, 1);
+
+    assert_eq!(
+        enum_layout(&db, constructor)
+            .expect("same-declaration qualified constructor layout query")
+            .expect("the matching qualified return declaration must contextualize the constructor")
+            .variants
+            .len(),
+        2
     );
 }
 

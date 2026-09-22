@@ -1,0 +1,67 @@
+/// Low-level parser combinator primitives over Core.Text.Cursor.
+pub mod Core.Text.Parser.Result;
+pub mod Core.Text.Parser.Context;
+pub mod Core.Text.Parser.Literals;
+pub mod Core.Text.Parser.Terms;
+pub mod Core.Text.Parser.Combine;
+pub mod Core.Text.Parser.Cardinality;
+pub mod Core.Text.Parser.Coordination;
+pub mod Core.Text.Parser.Flow;
+pub mod Core.Text.Parser.Mapper;
+
+use Core.Text.Cursor;
+use Core.Text.Parser.Result;
+use Core.Text.Parser.Literals;
+use Core.Text.Parser.Flow;
+use Core.Text.Parser.Combine;
+use Core.Text.Parser.Mapper;
+
+/// Flat `Parser.*` helpers. Defined here (not via `pub use`) so import-closure
+/// consumers and generated parsers resolve them directly. Types remain at
+/// `Parser.Result.*`.
+
+pub bool IsOk(Result.TextParseResult<string> result) {
+    return Result.IsOk<string>(result);
+}
+
+pub Cursor.TextCursor RestOnOk(Result.TextParseResult<string> result, Cursor.TextCursor fallback) {
+    return Result.RestOnOk<string>(result, fallback);
+}
+
+pub Result.TextParseResult<string> Fail(Cursor.TextCursor c, ParseErrorKind kind, string rule) {
+    return Literals.Fail(c, kind, rule);
+}
+
+pub Result.TextParseResult<string> Pure(string value, Cursor.TextCursor c) {
+    return Flow.Pure(value, c);
+}
+
+pub Result.TextParseResult<string> Literal(Cursor.TextCursor c, string text, string rule) {
+    return Literals.Text(c, text, rule);
+}
+
+pub Result.TextParseResult<string> Satisfy(Cursor.TextCursor c, string rule) {
+    return Literals.Any(c, rule);
+}
+
+pub Result.TextParseResult<string> Choice2(
+    Cursor.TextCursor c,
+    string rule,
+    Result.TextParseResult<string> left,
+    Result.TextParseResult<string> right
+) {
+    return Combine.Or(c, rule, left, right);
+}
+
+pub Result.TextParseResult<string> Map(
+    Result.TextParseResult<string> result,
+    string value
+) {
+    return Mapper.Map(result, value);
+}
+
+pub Result.TextParseResult<string> Tap(
+    Result.TextParseResult<string> result
+) {
+    return Mapper.Tap(result);
+}

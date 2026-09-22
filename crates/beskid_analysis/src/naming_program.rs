@@ -292,8 +292,14 @@ fn walk_block_mut(block: &mut Block, visit: &mut impl FnMut(NamingRole, &mut Ide
 }
 
 fn walk_statement(stmt: &Statement, visit: &mut impl FnMut(NamingRole, &Spanned<Identifier>)) {
+    if let Statement::Use(scoped) = stmt
+        && let Some(body) = &scoped.node.body
+    {
+        walk_block(&body.node, visit);
+    }
     match stmt {
-        Statement::Let(let_stmt) => {
+        Statement::Let(let_stmt)
+        | Statement::Use(Spanned { node: crate::syntax::ScopedUseStatement { binding: let_stmt, .. }, .. }) => {
             visit(NamingRole::Binding, &let_stmt.node.name);
             walk_expression(&let_stmt.node.value.node, visit);
         }
@@ -327,8 +333,14 @@ fn walk_statement(stmt: &Statement, visit: &mut impl FnMut(NamingRole, &Spanned<
 }
 
 fn walk_statement_mut(stmt: &mut Statement, visit: &mut impl FnMut(NamingRole, &mut Identifier)) {
+    if let Statement::Use(scoped) = stmt
+        && let Some(body) = &mut scoped.node.body
+    {
+        walk_block_mut(&mut body.node, visit);
+    }
     match stmt {
-        Statement::Let(let_stmt) => {
+        Statement::Let(let_stmt)
+        | Statement::Use(Spanned { node: crate::syntax::ScopedUseStatement { binding: let_stmt, .. }, .. }) => {
             visit(NamingRole::Binding, &mut let_stmt.node.name.node);
             walk_expression_mut(&mut let_stmt.node.value.node, visit);
         }

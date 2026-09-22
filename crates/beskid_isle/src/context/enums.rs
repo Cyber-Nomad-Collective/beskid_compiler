@@ -94,6 +94,129 @@ fn payload_patterns_are_exhaustive(patterns: &[&MatchPayloadPatternFact]) -> boo
 }
 
 impl IsleContext<'_, '_, '_, '_> {
+    /// Propagate the exact error payload through the enclosing Result layout.
+    /// Identical layouts can forward the immutable value; distinct layouts use
+    /// the same rooted enum construction as an explicit Error constructor.
+    pub(super) fn emit_try_dispatch(&mut self, key: AstNodeKey) -> Option<Option<Value>> {
+        let fact = self.facts.try_expression_fact(key)?;
+        if fact.expression != key {
+            return None;
+        }
+        let layout = self.facts.enum_layout(key)?;
+        let returned = self.facts.try_return_layout(key)?;
+        if !layout.is_valid() || !returned.is_valid() || layout.variants.len() != 2 || returned.variants.len() != 2 {
+            return None;
+        }
+        let success = layout.variants.first()?;
+        let [payload] = success.payload_fields.as_slice() else {
+            return None;
+        };
+        let operand = generated::constructor_lower_expression(self, fact.operand)?;
+        let operand_type = self.builder.func.dfg.value_type(operand);
+        if self.builder.func.signature.returns.first()?.value_type != operand_type {
+            return None;
+        }
+        let payload_type = if fact.payload_type == beskid_queries::SemanticTypeId::UNIT {
+            if payload.is_some() {
+                return None;
+            }
+            None
+        } else {
+            let ty = self.facts.scalar_type(key)?;
+            if payload.as_ref()?.value_type != ty {
+                return None;
+            }
+            Some(ty)
+        };
+        let tag = self.builder.ins().load(
+            layout.tag.value_type,
+            MemFlagsData::new(),
+            operand,
+            i32::try_from(layout.tag.offset).ok()?,
+        );
+        let is_success = self.builder.ins().icmp_imm_s(IntCC::Equal, tag, success.discriminant as i64);
+        let success_block = self.builder.create_block();
+        let error_block = self.builder.create_block();
+        let merge = self.builder.create_block();
+        if let Some(ty) = payload_type {
+            self.builder.append_block_param(merge, ty);
+        }
+        self.builder.ins().brif(is_success, success_block, &[], error_block, &[]);
+        self.builder.switch_to_block(success_block);
+        self.builder.seal_block(success_block);
+        if let Some(ty) = payload_type {
+            let value = self.builder.ins().load(
+                ty,
+                MemFlagsData::new(),
+                operand,
+                i32::try_from(payload.as_ref()?.offset).ok()?,
+            );
+            self.builder.ins().jump(merge, &[value.into()]);
+        } else {
+            self.builder.ins().jump(merge, &[]);
+        }
+        self.builder.switch_to_block(error_block);
+        self.builder.seal_block(error_block);
+        let error_result = if fact.operand_layout == fact.return_layout {
+            operand
+        } else {
+            let source_error = layout.variants.get(1)?;
+            let target_error = returned.variants.get(1)?;
+            let [source_field] = source_error.payload_fields.as_slice() else {
+                return None;
+            };
+            let [target_field] = target_error.payload_fields.as_slice() else {
+                return None;
+            };
+            let error_value = match (source_field, target_field) {
+                (Some(source), Some(target)) if source.value_type == target.value_type => {
+                    Some(self.builder.ins().load(
+                        source.value_type,
+                        MemFlagsData::new(),
+                        operand,
+                        i32::try_from(source.offset).ok()?,
+                    ))
+                }
+                (None, None) => None,
+                _ => return None,
+            };
+            let root = if fact.error_managed { Some(self.root_temporary(error_value?)?) } else { None };
+            let allocation = self.facts.managed_struct_allocation(key)?;
+            let result = self.allocate_enum_variant(&allocation, &returned, 1)?;
+            if let (Some(value), Some(field)) = (error_value, target_field) {
+                self.builder.ins().store(MemFlagsData::new(), value, result, i32::try_from(field.offset).ok()?);
+            }
+            self.release_temporary_root(root)?;
+            result
+        };
+        self.return_with_cleanup(error_result)?;
+        self.builder.switch_to_block(merge);
+        self.builder.seal_block(merge);
+        Some(payload_type.and_then(|_| self.builder.block_params(merge).first().copied()))
+    }
+
+    /// Shared managed enum construction for source constructors and cleanup errors.
+    pub(super) fn allocate_enum_variant(
+        &mut self,
+        allocation: &crate::ManagedStructAllocation,
+        layout: &EnumLayout,
+        variant: usize,
+    ) -> Option<Value> {
+        if !layout.is_valid() {
+            return None;
+        }
+        let variant = layout.variants.get(variant)?;
+        let pointer = dispatch::pointer_type(self.frontend_config);
+        let request = self.symbol_global(allocation.allocation_request_symbol.as_ref(), pointer)?;
+        let allocate = self.import_runtime_helper("beskid_rt_v5_managed_object_allocate", &[pointer], Some(pointer))?;
+        let call = self.builder.ins().call(allocate, &[request]);
+        let object = self.builder.inst_results(call).first().copied()?;
+        self.builder.ins().trapz(object, TrapCode::unwrap_user(5));
+        let tag = self.builder.ins().iconst(layout.tag.value_type, variant.discriminant as i64);
+        self.builder.ins().store(MemFlagsData::new(), tag, object, i32::try_from(layout.tag.offset).ok()?);
+        Some(object)
+    }
+
     fn emit_match_payload_branch(
         &mut self,
         key: AstNodeKey,
@@ -152,7 +275,7 @@ impl IsleContext<'_, '_, '_, '_> {
                 }
                 let value = self.builder.ins().load(
                     layout.value_type,
-                    MemFlags::new(),
+                    MemFlagsData::new(),
                     object,
                     i32::try_from(layout.offset).ok()?,
                 );
@@ -168,8 +291,12 @@ impl IsleContext<'_, '_, '_, '_> {
                     self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidMatchArms });
                     return None;
                 }
-                let actual =
-                    self.builder.ins().load(value_type, MemFlags::new(), object, i32::try_from(layout.offset).ok()?);
+                let actual = self.builder.ins().load(
+                    value_type,
+                    MemFlagsData::new(),
+                    object,
+                    i32::try_from(layout.offset).ok()?,
+                );
                 let expected = generated::constructor_lower_expression(self, expression)?;
                 if self.builder.func.dfg.value_type(expected) != value_type {
                     self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidMatchArms });
@@ -196,7 +323,7 @@ impl IsleContext<'_, '_, '_, '_> {
                 }
                 let nested = self.builder.ins().load(
                     parent_layout.value_type,
-                    MemFlags::new(),
+                    MemFlagsData::new(),
                     object,
                     i32::try_from(parent_layout.offset).ok()?,
                 );
@@ -225,7 +352,7 @@ impl IsleContext<'_, '_, '_, '_> {
         let variant = matched.layout.variants.iter().find(|variant| variant.discriminant == discriminant)?;
         let tag = self.builder.ins().load(
             matched.layout.tag.value_type,
-            MemFlags::new(),
+            MemFlagsData::new(),
             matched.object,
             i32::try_from(matched.layout.tag.offset).ok()?,
         );
@@ -344,7 +471,7 @@ impl IsleContext<'_, '_, '_, '_> {
                     self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidMatchArms });
                     return None;
                 }
-                self.end_local_root_scope(true)?;
+                self.end_local_root_scope(true, None)?;
                 self.builder.ins().jump(merge, &[value.into()]);
                 merge_reachable = true;
             } else {
@@ -385,7 +512,7 @@ impl IsleContext<'_, '_, '_, '_> {
                     self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidEnumLayout });
                     return None;
                 }
-                self.builder.ins().store(MemFlags::new(), payload, object, i32::try_from(field.offset).ok()?);
+                self.builder.ins().store(MemFlagsData::new(), payload, object, i32::try_from(field.offset).ok()?);
             } else if self.facts.semantic_type(payload_key) == Some(beskid_queries::SemanticTypeId::UNIT) {
                 self.lower_expression_for_effect(payload_key)?;
             } else {
@@ -417,81 +544,20 @@ macro_rules! generated_enum_methods {
                 self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidEnumLayout });
                 return None;
             }
-            let request = self.symbol_global(allocation.allocation_request_symbol.as_ref(), pointer_type)?;
-            let allocate = self.import_runtime_helper(
-                "beskid_rt_v5_managed_object_allocate",
-                &[pointer_type],
-                Some(pointer_type),
-            )?;
-            let allocation_call = self.builder.ins().call(allocate, &[request]);
-            let object = self.builder.inst_results(allocation_call).first().copied()?;
-            self.builder.ins().trapz(object, TrapCode::unwrap_user(5));
-            let tag = self.builder.ins().iconst(layout.tag.value_type, variant.discriminant as i64);
-            self.builder.ins().store(MemFlags::new(), tag, object, i32::try_from(layout.tag.offset).ok()?);
+            let object = self.allocate_enum_variant(&allocation, &layout, variant_index as usize)?;
+            let root = self.root_expression_value(object)?;
             let payloads = self.facts.enum_payloads(key)?;
             self.emit_enum_constructor_payloads(key, object, &variant.payload_fields, &payloads)?;
+            self.release_expression_root(Some(root))?;
             Some(object)
         }
 
-        /// Branch over a syntax-proven `Result<T, E>` propagation expression.
-        ///
-        /// The error path returns the original managed enum object unchanged, while the success path
-        /// loads the canonical first-variant payload. No runtime helper or replacement error object is
-        /// synthesized at this boundary.
         fn emit_try_expression(&mut self, key: AstNodeKey) -> Option<Value> {
-            let fact = self.facts.try_expression_fact(key)?;
-            if fact.expression != key {
-                return None;
-            }
-            let layout = self.facts.enum_layout(key)?;
-            let Some(success) = layout.variants.first() else {
-                self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidEnumLayout });
-                return None;
-            };
-            let [Some(payload)] = success.payload_fields.as_slice() else {
-                self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidEnumLayout });
-                return None;
-            };
-            if !layout.is_valid() || layout.variants.len() != 2 || !layout.tag.value_type.is_int() {
-                self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidEnumLayout });
-                return None;
-            }
-            let operand = generated::constructor_lower_expression(self, fact.operand)?;
-            let operand_type = self.builder.func.dfg.value_type(operand);
-            let payload_type = self.facts.scalar_type(key)?;
-            let return_type = self.builder.func.signature.returns.first()?.value_type;
-            if !operand_type.is_int() || payload.value_type != payload_type || return_type != operand_type {
-                self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidEnumLayout });
-                return None;
-            }
+            self.emit_try_dispatch(key)?
+        }
 
-            let tag = self.builder.ins().load(
-                layout.tag.value_type,
-                MemFlags::new(),
-                operand,
-                i32::try_from(layout.tag.offset).ok()?,
-            );
-            let success_tag = self.builder.ins().iconst(layout.tag.value_type, success.discriminant as i64);
-            let is_success = self.builder.ins().icmp(IntCC::Equal, tag, success_tag);
-            let success_block = self.builder.create_block();
-            let error_block = self.builder.create_block();
-            let merge_block = self.builder.create_block();
-            self.builder.append_block_param(merge_block, payload_type);
-            self.builder.ins().brif(is_success, success_block, &[], error_block, &[]);
-
-            self.builder.switch_to_block(success_block);
-            self.builder.seal_block(success_block);
-            let value =
-                self.builder.ins().load(payload_type, MemFlags::new(), operand, i32::try_from(payload.offset).ok()?);
-            self.builder.ins().jump(merge_block, &[value.into()]);
-
-            self.builder.switch_to_block(error_block);
-            self.builder.seal_block(error_block);
-            self.builder.ins().return_(&[operand]);
-
-            self.builder.switch_to_block(merge_block);
-            self.builder.seal_block(merge_block);
-            self.builder.block_params(merge_block).first().copied()
+        fn emit_try_statement(&mut self, key: AstNodeKey) -> Option<()> {
+            self.emit_try_dispatch(key).map(|_| ())
         }
 
         fn emit_match(&mut self, key: AstNodeKey) -> Option<Value> {

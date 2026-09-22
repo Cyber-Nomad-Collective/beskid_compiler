@@ -10,6 +10,7 @@ pub(crate) fn signature_for_item(isa: &dyn TargetIsa, item: ItemSignature) -> Op
         .parameters
         .iter()
         .copied()
+        .filter(|semantic| *semantic != SemanticTypeId::UNIT)
         .map(|semantic| map_signature_type(isa, semantic))
         .collect::<Option<Vec<_>>>()?;
     let returns = match item.result {

@@ -30,7 +30,7 @@ beskid_arch_v5_context_init PROC
     mov rax, rdx
     and rax, -BESKID_X86_64_PC_WINDOWS_MSVC_STACK_ALIGNMENT
     sub rax, BESKID_X86_64_PC_WINDOWS_MSVC_SHADOW_SPACE + 8
-    lea r11, context_return
+    lea r11, [rip + context_return]
     mov [rax], r11
     mov [rcx + BESKID_X86_64_PC_WINDOWS_MSVC_CONTEXT_RSP_OFFSET], rax
     mov [rcx + BESKID_X86_64_PC_WINDOWS_MSVC_CONTEXT_RIP_OFFSET], r8
@@ -55,7 +55,7 @@ beskid_arch_v5_context_switch PROC
     mov [rcx + BESKID_X86_64_PC_WINDOWS_MSVC_CONTEXT_R14_OFFSET], r14
     mov [rcx + BESKID_X86_64_PC_WINDOWS_MSVC_CONTEXT_R15_OFFSET], r15
     mov [rcx + BESKID_X86_64_PC_WINDOWS_MSVC_CONTEXT_RSP_OFFSET], rsp
-    lea rax, context_resume
+    lea rax, [rip + context_resume]
     mov [rcx + BESKID_X86_64_PC_WINDOWS_MSVC_CONTEXT_RIP_OFFSET], rax
     movdqu [rcx + BESKID_X86_64_PC_WINDOWS_MSVC_CONTEXT_XMM6_OFFSET], xmm6
     movdqu [rcx + BESKID_X86_64_PC_WINDOWS_MSVC_CONTEXT_XMM7_OFFSET], xmm7

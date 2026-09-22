@@ -1,0 +1,17 @@
+/// Shared encoding failure variants.
+/// @tier(standard)
+pub type EncodingErrorDetail {
+    /// Zero-based source position associated with the failure.
+    i64 position,
+    /// Offending byte or padding value; zero when no byte is available.
+    i64 value,
+}
+
+pub enum EncodingError {
+    /// Byte sequence is not valid for this encoding.
+    InvalidSequence(EncodingErrorDetail detail),
+    /// Base64 padding or length is invalid.
+    InvalidPadding(EncodingErrorDetail detail),
+    /// Hex input has odd length; carries the length received.
+    OddLength(i64 length),
+}

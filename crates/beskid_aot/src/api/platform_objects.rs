@@ -130,22 +130,15 @@ pub(super) fn compile_platform_objects(
     Ok(vec![object, tls_object, adapter_object])
 }
 
-pub(super) fn compile_core_args_entry_adapter(
-    adapter: &GeneratedCoreArgsEntryAdapter,
+pub(super) fn compile_executable_bootstrap(
+    target: &str,
+    core_args: Option<&GeneratedCoreArgsEntryAdapter>,
     output_dir: &std::path::Path,
     name: &str,
+    program_returns_void: bool,
 ) -> AotResult<PathBuf> {
-    let plan = platform_object_plan(adapter.target)?;
-    let assembly_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../beskid_abi/assembly").join(adapter.target);
-    let source = assembly_root.join(adapter.entry_source);
-    let object = output_dir.join(format!("{name}.core_args_entry.{}", plan.object_extension));
-    let mut command = Command::new(plan.assembly_program);
-    command.args(&plan.assembly_args);
-    if plan.assembly_output_before_source {
-        command.arg(&object).arg(&source);
-    } else {
-        command.arg(&source).arg("-o").arg(&object);
-    }
+    let (mut command, object) =
+        executable_bootstrap_command(target, core_args, output_dir, name, program_returns_void)?;
     let output = command.output().map_err(|_| AotError::LinkerUnavailable)?;
     if !output.status.success() {
         return Err(AotError::LinkFailed {
@@ -155,6 +148,61 @@ pub(super) fn compile_core_args_entry_adapter(
         });
     }
     Ok(object)
+}
+
+fn executable_bootstrap_command(
+    target: &str,
+    core_args: Option<&GeneratedCoreArgsEntryAdapter>,
+    output_dir: &std::path::Path,
+    name: &str,
+    program_returns_void: bool,
+) -> AotResult<(Command, PathBuf)> {
+    let plan = platform_object_plan(target)?;
+    let assembly_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../beskid_abi/assembly");
+    let source = executable_bootstrap_source(&assembly_root, core_args);
+    let object = output_dir.join(format!("{name}.executable_bootstrap.{}", plan.object_extension));
+    let windows = target.contains("windows");
+    let mut command = if windows { Command::new("cl") } else { Command::new(plan.tls_program) };
+    if windows {
+        command.args(["/nologo", "/std:c11", "/MD", "/c"]);
+    } else {
+        command.args(&plan.tls_args);
+    }
+    if program_returns_void {
+        command.arg("-DBESKID_EXECUTABLE_PROGRAM_RETURNS_VOID");
+    }
+    if let Some(adapter) = core_args {
+        match adapter.capture {
+            "utf8_argv" => {
+                command.arg("-DBESKID_EXECUTABLE_CORE_ARGS_UTF8");
+            }
+            "utf16_wargv" => {
+                command.arg("-DBESKID_EXECUTABLE_CORE_ARGS_UTF16");
+            }
+            capture => {
+                return Err(AotError::InvalidRequest {
+                    message: format!("Core.Args adapter `{}` has unsupported capture `{capture}`", adapter.target),
+                });
+            }
+        }
+    }
+    if windows {
+        command.arg(format!("/Fo{}", object.display())).arg(&source);
+    } else {
+        command.arg(&source).arg("-o").arg(&object);
+    }
+    Ok((command, object))
+}
+
+/// Resolve the bootstrap source from the generated Core.Args provenance when it is active.
+/// Non-argument executables use the same common source directly.
+fn executable_bootstrap_source(
+    assembly_root: &std::path::Path,
+    core_args: Option<&GeneratedCoreArgsEntryAdapter>,
+) -> PathBuf {
+    core_args
+        .map(|adapter| assembly_root.join(&adapter.target).join(&adapter.entry_source))
+        .unwrap_or_else(|| assembly_root.join("common/executable_bootstrap.c"))
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -241,7 +289,76 @@ fn platform_object_plan(target: &str) -> AotResult<PlatformObjectPlan> {
 
 #[cfg(test)]
 mod platform_object_tests {
-    use super::platform_object_plan;
+    use std::path::Path;
+
+    use beskid_abi::generated::abi_v5_contract::GeneratedCoreArgsEntryAdapter;
+
+    use super::{executable_bootstrap_command, executable_bootstrap_source, platform_object_plan};
+
+    #[test]
+    fn windows_executable_bootstrap_selects_the_dynamic_crt_at_compilation() {
+        let (command, _) =
+            executable_bootstrap_command("x86_64-pc-windows-msvc", None, Path::new("build"), "app", false)
+                .expect("Windows bootstrap command");
+        assert_eq!(command.get_program(), "cl");
+        let args = command.get_args().collect::<Vec<_>>();
+        assert!(args.iter().any(|arg| *arg == "/MD"), "bootstrap must select dynamic CRT defaults: {command:?}");
+        assert!(!args.iter().any(|arg| *arg == "/MT" || *arg == "/MDd"));
+    }
+
+    #[test]
+    fn unit_executable_host_initializes_zeroed_state_and_shuts_down_after_program_return() {
+        let target = crate::target::detect_target(None).unwrap();
+        let temp = tempfile::tempdir().unwrap();
+        let bootstrap = super::compile_executable_bootstrap(&target.triple, None, temp.path(), "unit", true).unwrap();
+        let witness = temp.path().join("lifecycle.c");
+        std::fs::write(
+            &witness,
+            r#"
+#include "beskid_runtime_abi_v5.h"
+#include <stdlib.h>
+#include <stdio.h>
+static int phase;
+static void *observed_state;
+void *beskid_rt_v5_process_init(void *state) {
+    if ((uintptr_t)state % BESKID_RUNTIME_STATE_ALIGNMENT != 0) _Exit(81);
+    for (size_t i = 0; i < BESKID_RUNTIME_STATE_SIZE; ++i)
+        if (((unsigned char *)state)[i] != 0) _Exit(82);
+    observed_state = state;
+    phase = 1;
+    return state;
+}
+void beskid_program_main(void) {
+    if (phase != 1) _Exit(83);
+    phase = 2;
+}
+void beskid_rt_v5_process_shutdown(void *state) {
+    if (phase != 2 || state != observed_state) _Exit(84);
+    phase = 3;
+    fputs("shutdown-after-unit-return", stdout);
+}
+"#,
+        )
+        .unwrap();
+        let include = Path::new(env!("CARGO_MANIFEST_DIR")).join("../beskid_abi/include");
+        let executable = temp.path().join(if cfg!(windows) { "lifecycle.exe" } else { "lifecycle" });
+        let mut compiler = std::process::Command::new(if cfg!(windows) { "cl" } else { "cc" });
+        compiler.current_dir(temp.path());
+        if cfg!(windows) {
+            compiler
+                .args(["/nologo", "/std:c11", "/MD"])
+                .arg(format!("/I{}", include.display()))
+                .arg(format!("/Fe{}", executable.display()));
+        } else {
+            compiler.args(["-std=c11", "-I"]).arg(include).arg("-o").arg(&executable);
+        }
+        let output = compiler.arg(witness).arg(bootstrap).output().unwrap();
+        assert!(output.status.success(), "lifecycle witness link: {}", String::from_utf8_lossy(&output.stderr));
+        let result = crate::run_linked_executable(&executable).unwrap();
+        assert_eq!(result.exit_code, 0, "unit return must yield status zero: {result:?}");
+        assert_eq!(result.stdout, b"shutdown-after-unit-return");
+        assert!(result.stderr.is_empty());
+    }
 
     #[test]
     fn windows_platform_plan_uses_coff_sources_and_windows_toolchain_arguments() {
@@ -254,5 +371,26 @@ mod platform_object_tests {
         assert_eq!(plan.tls_program, "clang");
         assert_eq!(plan.tls_args, vec!["--target=x86_64-pc-windows-msvc", "-std=c11", "-c"]);
         assert_eq!(plan.object_extension, "obj");
+    }
+
+    #[test]
+    fn executable_bootstrap_uses_core_args_generated_source_provenance() {
+        let adapter = GeneratedCoreArgsEntryAdapter {
+            target: "test-target",
+            executable_entry: "main",
+            program_entry: "beskid_program_main",
+            capture: "utf8_argv",
+            handoff: "beskid_rt_v5_args_handoff_utf8",
+            ownership: "process_lifetime_copied_beskid_str_arena",
+            entry_source: "generated/executable_bootstrap.c",
+            os_imports: &[],
+        };
+        let assembly = Path::new("/runtime-assembly");
+
+        assert_eq!(
+            executable_bootstrap_source(assembly, Some(&adapter)),
+            assembly.join("test-target/generated/executable_bootstrap.c")
+        );
+        assert_eq!(executable_bootstrap_source(assembly, None), assembly.join("common/executable_bootstrap.c"));
     }
 }

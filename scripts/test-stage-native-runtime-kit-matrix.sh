@@ -114,6 +114,20 @@ chmod +x "${fixture_root}/bin/llvm-readobj"
 
 prefix="${fixture_root}/prefix"
 mkdir -p "${fixture_root}/captured-symbols"
+
+assert_lifecycle_smokes() {
+  while IFS=':' read -r consumer test_name; do
+    test "$(grep -Fc -- "test --locked -p beskid_engine --test foundation_io_native ${test_name} -- --ignored --exact" "${fixture_root}/cargo-calls")" = 2
+  done <<'EOF'
+native-executable-streams:staged_runtime_kit_emitted_binary_round_trips_redirected_standard_streams
+native-executable-stdin:staged_runtime_kit_emitted_binary_reads_redirected_standard_input
+native-executable-stdout:staged_runtime_kit_emitted_binary_writes_redirected_standard_output
+native-executable-stderr:staged_runtime_kit_emitted_binary_writes_redirected_standard_error
+native-executable-args:staged_runtime_kit_emitted_binary_handoffs_core_args_through_the_executable_host
+native-executable-unit-entry:staged_runtime_kit_emitted_binary_runs_a_custom_unit_entry
+EOF
+}
+
 (
   cd "${fixture_root}"
   PATH="${fixture_root}/bin:${PATH}" \
@@ -155,6 +169,7 @@ test "$(grep -Fc -- '-p beskid_engine --test native_runtime_kit_smoke staged_run
 test "$(grep -Fc -- '-p beskid_aot --test abi_v5_runtime_kit staged_runtime_kit_links_and_executes_with_the_canonical_static_archive -- --ignored --exact' "${fixture_root}/cargo-calls")" = 2
 test "$(grep -Fc -- '-p beskid_repl eval::tests::staged_native_runtime_kit_evaluates_a_snippet -- --ignored --exact' "${fixture_root}/cargo-calls")" = 2
 test "$(grep -Fc -- 'run -q -p beskid_cli -- run ' "${fixture_root}/cargo-calls")" = 1
+assert_lifecycle_smokes
 
 rm -rf "${prefix}" "${fixture_root}/captured-symbols"
 mkdir -p "${fixture_root}/captured-symbols"
@@ -187,8 +202,40 @@ for profile in debug release; do
 done
 test "$(grep -c -- '--coff-exports' "${fixture_root}/readobj-calls")" = 2
 test "$(grep -c -- '--coff-imports' "${fixture_root}/readobj-calls")" = 2
+assert_lifecycle_smokes
 if grep -F -- '.dll' "${fixture_root}/nm-calls" >/dev/null; then
   echo 'Windows DLL provenance still uses llvm-nm' >&2
   exit 1
 fi
+
+rm -rf "${prefix}" "${fixture_root}/captured-symbols"
+mkdir -p "${fixture_root}/captured-symbols"
+: >"${fixture_root}/cargo-calls"
+: >"${fixture_root}/nm-calls"
+: >"${fixture_root}/readobj-calls"
+(
+  cd "${fixture_root}"
+  PATH="${fixture_root}/bin:${PATH}" \
+  BESKID_RUNTIME_PREFIX="${prefix}" \
+  BESKID_MATRIX_CARGO_CWDS="${fixture_root}/cargo-cwds" \
+  BESKID_MATRIX_CARGO_CALLS="${fixture_root}/cargo-calls" \
+  BESKID_MATRIX_NM_CALLS="${fixture_root}/nm-calls" \
+  BESKID_MATRIX_READOBJ_CALLS="${fixture_root}/readobj-calls" \
+  BESKID_MATRIX_UNAME_S="Linux" \
+  BESKID_MATRIX_UNAME_M="x86_64" \
+  BESKID_MATRIX_TARGET="x86_64-unknown-linux-gnu" \
+  BESKID_MATRIX_STATIC_NAME="libbeskid_runtime.a" \
+  BESKID_MATRIX_SHARED_NAME="libbeskid_runtime.so" \
+  BESKID_MATRIX_CAPTURE_DIR="${fixture_root}/captured-symbols" \
+    "${compiler_root}/scripts/stage-native-runtime-kit-matrix.sh" >/dev/null
+)
+for profile in debug release; do
+  for linkage in static shared; do
+    symbols="${fixture_root}/captured-symbols/${profile}-${linkage}.symbols"
+    grep -Fx 'target=x86_64-unknown-linux-gnu' "${symbols}" >/dev/null
+    grep -Fx 'defined=beskid_rt_v5_entrypoint' "${symbols}" >/dev/null
+    grep -Fx 'undefined=clock_gettime' "${symbols}" >/dev/null
+  done
+done
+assert_lifecycle_smokes
 echo "native runtime-kit matrix workspace test passed"

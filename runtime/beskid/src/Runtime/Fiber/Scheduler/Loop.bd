@@ -4,9 +4,9 @@ use Bootstrap.Native;
 pub bool SchedStep() {
     pointer table = SchedTable();
     if table == NativePointer(0) { return false; }
-    SchedulerPollWorkerCompletions();
     ApplyPendingSpawns();
     ApplyPendingCancels();
+    ExternalPump(clock_monotonic_nanos());
     ApplyPendingWakes();
 
     // Poll exactly one queued task before selecting a fiber. The exported
@@ -28,7 +28,7 @@ pub bool SchedStep() {
         if !alive {
             return pollWorked; // Scheduler is done only when neither executor made progress.
         }
-        return pollWorked || SchedulerHasWorkerRequests(); // Native completions may wake parked fibers.
+        return pollWorked; // SchedRun waits on the owner primitive when external waits remain.
     }
 
     word next = RunQueuePop();
@@ -48,7 +48,7 @@ pub bool SchedStep() {
     return true;
 }
 
-// Run the scheduler until quiescence. Returns the main fiber's result.
+// Run the scheduler until quiescence. Typed results remain owned by their handles.
 pub i64 SchedRun() {
     SchedInit();
     while true {
@@ -64,20 +64,17 @@ pub i64 SchedRun() {
                 i = i + 1;
             }
             if anyRunnable { break; }
+            if ExternalActiveCount() != 0 {
+                owner_wait(ExternalOwnerId(), ExternalNextDeadline());
+                continue;
+            }
             // Pending poll tasks are externally wakeable quiescence, not a
-            // fiber deadlock. Leave their state intact for run_once/wake.
+            // fiber deadlock. Leave their state intact for run_once/wake only
+            // after servicing registered external fiber waits.
             if PollExecutorHasActiveTasks() { break; }
-            if SchedulerHasWorkerRequests() { continue; }
             if anyAlive { Trap(7, NativePointer(0), 0); }
             break;
         }
-    }
-    pointer table = SchedTable();
-    word main = raw_word_load(pointer_add(table, 8));
-    if main != FIBER_NONE && FiberExists(main) {
-        word status = FiberJoinStatusWord(main);
-        if status == FIBER_JOIN_OK { return i64(raw_word_load(pointer_add(FiberRecord(main), 56))); }
-        if status != FIBER_JOIN_NOT_DONE { Trap(6, NativePointer(0), 0); }
     }
     return 0;
 }

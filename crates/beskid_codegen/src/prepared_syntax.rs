@@ -59,7 +59,13 @@ pub fn lower_canonical_runtime_prepared_syntax(
                 parse_program_with_source_name(path.to_str().unwrap_or_default(), &source.source).map_err(|error| {
                     anyhow::anyhow!("canonical runtime parse failed for {}: {error}", source.logical_path)
                 })?;
-            Ok(SourceUnit { logical_name: source.logical_path, path, source: source.source, program })
+            Ok(SourceUnit {
+                logical_name: source.logical_path,
+                origin_path: path.clone(),
+                path,
+                source: source.source,
+                program,
+            })
         })
         .collect::<Result<Vec<_>>>()?;
     let bootstrap_index = units
@@ -123,7 +129,15 @@ pub fn lower_canonical_runtime_prepared_syntax(
     }
     let mut items = Vec::new();
     let mut selected = HashSet::new();
-    for (export, entry) in &exported_items {
+    let mut entry_roots = exported_items.iter().map(|(name, key)| (name.clone(), *key)).collect::<Vec<_>>();
+    for key in input.roots().iter().copied().flat_map(|root| function_definitions(input.database(), root)) {
+        if let Some(name) = item_name(input.database(), key)?
+            && crate::module_emission::SCHEDULER_ENTRY_HELPERS.contains(&name.as_ref())
+        {
+            entry_roots.push((name.to_string(), key));
+        }
+    }
+    for (export, entry) in &entry_roots {
         let entry = *entry;
         let program = input
             .roots()
@@ -190,9 +204,12 @@ pub fn lower_syntax_assembly_entrypoint(
     let manifest = AbiManifestV5::canonical_runtime(target.clone());
     let capability = canonical_corelib_syscall_service_capability(&manifest)
         .map_err(|error| anyhow::anyhow!("Corelib syscall service capability unavailable: {error:?}"))?;
-    let typed =
+    let typed = (if assembly.runtime_fixture.is_some() {
+        beskid_queries::build_runtime_fixture_typed_program(db, project, generation, Arc::clone(&assembly), &manifest)
+    } else {
         build_typed_program_with_corelib_syscall_services(db, project, generation, Arc::clone(&assembly), capability)
-            .map_err(|error| anyhow::anyhow!("syntax program preparation failed: {error}"))?;
+    })
+    .map_err(|error| anyhow::anyhow!("syntax program preparation failed: {error}"))?;
     let roots = assembly
         .units
         .iter()
@@ -234,8 +251,9 @@ pub fn lower_syntax_assembly_entrypoint(
         .ok_or_else(|| anyhow::anyhow!("reachable item is not a syntax function or test"))?;
     let symbol = syntax_item_symbol(db, &input, entry)
         .ok_or_else(|| anyhow::anyhow!("entrypoint `{entrypoint}` is not a syntax function or test"))?;
-    let artifact = lower_syntax_program(&input, isa, &items)
+    let mut artifact = lower_syntax_program(&input, isa, &items)
         .map_err(|error| anyhow::anyhow!("syntax ISLE lowering failed: {error}"))?;
+    artifact.exports = syntax_export_entries(db, &items)?;
     Ok(PreparedSyntaxEntrypoint { artifact, symbol, return_type: signature.result })
 }
 
@@ -258,9 +276,12 @@ pub fn lower_prepared_syntax_module(
     let manifest = AbiManifestV5::canonical_runtime(target.clone());
     let capability = canonical_corelib_syscall_service_capability(&manifest)
         .map_err(|error| anyhow::anyhow!("Corelib syscall service capability unavailable: {error:?}"))?;
-    let typed =
+    let typed = (if assembly.runtime_fixture.is_some() {
+        beskid_queries::build_runtime_fixture_typed_program(db, project, generation, Arc::clone(&assembly), &manifest)
+    } else {
         build_typed_program_with_corelib_syscall_services(db, project, generation, Arc::clone(&assembly), capability)
-            .map_err(|error| anyhow::anyhow!("syntax program preparation failed: {error}"))?;
+    })
+    .map_err(|error| anyhow::anyhow!("syntax program preparation failed: {error}"))?;
     let roots = assembly
         .units
         .iter()

@@ -15,16 +15,26 @@ const GC_HANDLE_CAPACITY = 8;
 const GC_HANDLE_SLOT_SIZE = 16;
 
 
-[Export(Abi:"C", Symbol:"gc_register_root")]
-pub bool GcRegisterRoot(pointer ptrAddr) {
+// Root identity is the stable storage address, not a copyable payload or owner-state bit.
+pub bool GcIsRegisteredRoot(pointer ptrAddr) {
     pointer heap = Heap();
     if heap == NativePointer(0) || ptrAddr == NativePointer(0) { return false; }
     word count = raw_word_load(pointer_add(heap, HEAP_EXTERNAL_ROOT_COUNT));
+    if count > GC_EXTERNAL_ROOT_CAPACITY { return false; }
     mut word index = 0;
     while index < count {
         if raw_word_load(pointer_add(heap, HEAP_EXTERNAL_ROOTS + index * 8)) == NativeWord(ptrAddr) { return true; }
         index = index + 1;
     }
+    return false;
+}
+
+[Export(Abi:"C", Symbol:"gc_register_root")]
+pub bool GcRegisterRoot(pointer ptrAddr) {
+    pointer heap = Heap();
+    if heap == NativePointer(0) || ptrAddr == NativePointer(0) { return false; }
+    if GcIsRegisteredRoot(ptrAddr) { return true; }
+    word count = raw_word_load(pointer_add(heap, HEAP_EXTERNAL_ROOT_COUNT));
     if count >= GC_EXTERNAL_ROOT_CAPACITY { return false; }
     raw_word_store(pointer_add(heap, HEAP_EXTERNAL_ROOTS + count * 8), NativeWord(ptrAddr));
     raw_word_store(pointer_add(heap, HEAP_EXTERNAL_ROOT_COUNT), count + 1);

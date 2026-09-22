@@ -1,0 +1,6 @@
+use Core.Output;
+
+pub i64 Main() {
+    Output.WriteLine("redirected-stdout");
+    return 0;
+}

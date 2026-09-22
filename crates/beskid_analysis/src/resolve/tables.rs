@@ -1,6 +1,6 @@
 //! Span-keyed resolution products and local symbol table used by type checking and codegen.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
 use crate::paths::same_file_opt;
@@ -38,8 +38,14 @@ pub struct LocalInfo {
 /// Maps expression/type spans to resolved symbols plus conformance edges.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct ResolutionTables {
+    /// Literal facts, not callable items or storage slots. Source identity prevents span collisions.
+    pub integer_constants: HashMap<(Option<PathBuf>, SpanInfo), crate::syntax::Spanned<crate::syntax::Literal>>,
     pub resolved_values: HashMap<SpanInfo, ResolvedValue>,
     pub resolved_types: HashMap<SpanInfo, ResolvedType>,
+    /// `use` path spans that supplied a symbol which resolved successfully.
+    ///
+    /// This is resolution provenance rather than a source-spelling approximation.
+    pub used_import_spans: HashSet<SpanInfo>,
     /// Per-unit value resolutions merged from dependency compilation units.
     pub scoped_resolved_values: HashMap<PathBuf, HashMap<SpanInfo, ResolvedValue>>,
     /// Per-unit type resolutions merged from dependency compilation units.
@@ -195,6 +201,7 @@ impl ResolutionTables {
 
     /// Merge span-keyed products from `other`, remapping [`LocalId`] values from dependency units.
     pub fn merge_from(&mut self, other: &ResolutionTables, unit_source_path: PathBuf) {
+        self.integer_constants.extend(other.integer_constants.clone());
         let mut local_remap: HashMap<LocalId, LocalId> = HashMap::new();
         for local in &other.locals {
             if let Some(existing) = self.local_id_for_span(local.span, local.source_path.as_ref()) {

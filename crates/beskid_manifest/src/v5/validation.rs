@@ -37,7 +37,7 @@ pub(super) fn validate(manifest: &RuntimeManifestV5) -> Result<(), String> {
             "main",
             "utf8_argv",
             "beskid_rt_v5_args_handoff_utf8",
-            "args_entry.S",
+            "../common/executable_bootstrap.c",
             &["memcpy", "mmap", "strlen"][..],
         ),
         (
@@ -45,7 +45,7 @@ pub(super) fn validate(manifest: &RuntimeManifestV5) -> Result<(), String> {
             "main",
             "utf8_argv",
             "beskid_rt_v5_args_handoff_utf8",
-            "args_entry.S",
+            "../common/executable_bootstrap.c",
             &["memcpy", "mmap", "strlen"][..],
         ),
         (
@@ -53,7 +53,7 @@ pub(super) fn validate(manifest: &RuntimeManifestV5) -> Result<(), String> {
             "wmain",
             "utf16_wargv",
             "beskid_rt_v5_args_handoff_utf16",
-            "args_entry.asm",
+            "../common/executable_bootstrap.c",
             &["VirtualAlloc"][..],
         ),
     ];
@@ -118,6 +118,22 @@ pub(super) fn validate(manifest: &RuntimeManifestV5) -> Result<(), String> {
     let expected_corelib_services = [
         "__array_new",
         "__array_len",
+        "__network_open",
+        "__network_accept",
+        "__network_close",
+        "__network_read",
+        "__network_write",
+        "__network_address",
+        "__network_options",
+        "__network_set_options",
+        "__network_shutdown_write",
+        "__network_udp_connect",
+        "__network_receive",
+        "__network_send",
+        "__network_dns_resolve",
+        "__network_dns_count",
+        "__network_dns_address",
+        "__network_dns_release",
         "__bytes_compare",
         "__bytes_copy",
         "__bytes_from_str",
@@ -141,6 +157,9 @@ pub(super) fn validate(manifest: &RuntimeManifestV5) -> Result<(), String> {
         "__fiber_detach",
         "__fiber_join_status",
         "__fiber_join_value",
+        "__fiber_join_detail",
+        "__fiber_join_message",
+        "__fiber_join_error_finish",
         "__fiber_now_millis",
         "__fiber_processor_count",
         "__fiber_current_id",
@@ -198,9 +217,6 @@ pub(super) fn validate(manifest: &RuntimeManifestV5) -> Result<(), String> {
         "__channel_receive_value",
         "__channel_try_receive",
         "__channel_close",
-        "__channel_send_ptr",
-        "__channel_try_send_ptr",
-        "__channel_receive_ptr",
         "__mutex_create",
         "__mutex_lock",
         "__mutex_try_lock",
@@ -230,6 +246,8 @@ pub(super) fn validate(manifest: &RuntimeManifestV5) -> Result<(), String> {
             .strip_prefix("__")
             .ok_or_else(|| format!("corelib service `{}` must use a compiler-owned name", service.name))?;
         if service.adapter != expected_adapter
+            && !(service.name.starts_with("__network_")
+                && service.adapter == format!("beskid_rt_v5_{expected_adapter}"))
             && !matches!(
                 service.name.as_str(),
                 "__args_count"
@@ -352,6 +370,13 @@ pub(super) fn validate(manifest: &RuntimeManifestV5) -> Result<(), String> {
             return Err(format!("soft builtin `{}` has an invalid declaration", entry.name));
         }
         unique(entry.params.iter().map(|param| param.name.as_str()), "soft builtin parameter")?;
+        if let Some(export) = manifest.exports.iter().find(|export| export.symbol == entry.symbol) {
+            if entry.result != export.result
+                || !entry.params.iter().map(|param| &param.ty).eq(export.params.iter().map(|param| &param.ty))
+            {
+                return Err(format!("soft builtin `{}` does not match runtime export `{}`", entry.name, entry.symbol));
+            }
+        }
         if let Some(service_name) = &entry.adapter_service {
             let service =
                 manifest.corelib_services.iter().find(|service| &service.name == service_name).ok_or_else(|| {

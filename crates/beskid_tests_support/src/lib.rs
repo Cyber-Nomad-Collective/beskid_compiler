@@ -1,8 +1,9 @@
-//! Shared filesystem helpers for project-resolution and workspace test suites.
+//! Shared filesystem and native-fixture helpers for test suites.
 //!
-//! Used by `beskid_tests_projects` and `beskid_tests_mods`. This crate has no external
-//! dependencies (std only) so it adds nothing to the dep graph of its consumers.
+//! This crate has no external dependencies (std only), so it adds nothing to the
+//! dependency graph of its consumers.
 
+pub mod native_harness;
 pub mod test_harness;
 
 pub use test_harness::*;

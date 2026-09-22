@@ -492,17 +492,20 @@ impl<'a> TypeChecker<'a> {
         }
 
         if let Some(kinds) = builtin_param_kinds.as_ref() {
-            let mut typed_index = 0usize;
-            for (arg, kind) in call.node.args.iter().zip(kinds.iter()) {
-                let _ = self.type_expression(arg);
-                if matches!(kind, BuiltinType::Ptr) {
-                    continue;
-                }
-                if let Some(expected) = substituted_params.get(typed_index) {
+            for (index, (arg, kind)) in call.node.args.iter().zip(kinds.iter()).enumerate() {
+                if let Some(expected) = substituted_params.get(index) {
+                    // Legacy managed Corelib bridges retain their surface adapters. Raw
+                    // pointer primitives have an actual type and consume their ABI slot just
+                    // like every other parameter; skipping it must never shift later arguments.
+                    if matches!(kind, BuiltinType::Ptr)
+                        && !matches!(self.type_table.get(*expected), Some(TypeInfo::Primitive(PrimitiveType::Pointer)))
+                    {
+                        let _ = self.type_expression(arg);
+                        continue;
+                    }
                     if let Some(actual) = self.type_argument_with_expected(arg, *expected) {
                         self.require_same_type(arg.span, *expected, actual);
                     }
-                    typed_index += 1;
                 }
             }
         } else {

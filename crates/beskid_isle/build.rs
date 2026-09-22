@@ -27,6 +27,9 @@ fn main() {
     }
 
     let options = cranelift_isle::codegen::CodegenOptions {
+        emit_logging: false,
+        split_match_arms: false,
+        match_arm_split_threshold: None,
         exclude_global_allow_pragmas: true,
         prefixes: vec![cranelift_isle::codegen::Prefix {
             prefix: path_text(&manifest_dir),

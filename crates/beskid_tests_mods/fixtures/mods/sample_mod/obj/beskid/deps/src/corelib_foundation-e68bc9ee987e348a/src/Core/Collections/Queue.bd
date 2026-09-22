@@ -1,0 +1,58 @@
+/// FIFO queue backed by typed `T[]` storage.
+/// @tier(supported)
+use Core.Collections.Array;
+use Core.Results;
+
+pub type Queue<T> {
+    T[] storage,
+    i64 head,
+    i64 count,
+
+    pub i64 Count() {
+        return count;
+    }
+
+    pub bool IsEmpty() {
+        return count == 0;
+    }
+
+    pub Queue<T> Enqueue(T value) {
+        mut T[] nextStorage = storage;
+        Array.Append<T>(nextStorage, value);
+        return Queue<T> { storage: nextStorage, head: head, count: count + 1 };
+    }
+
+    pub Queue<T> Dequeue() {
+        if count == 0 {
+            return self;
+        }
+        if count == 1 {
+            return Queue<T> { storage: Array.Empty<T>(), head: 0, count: 0 };
+        }
+        T[] nextStorage = Array.Clear<T>(storage, head);
+        return Queue<T> { storage: nextStorage, head: head + 1, count: count - 1 };
+    }
+
+    pub Result<T, string> Peek() {
+        if count == 0 {
+            return Result::Error("queue is empty");
+        }
+        return Result::Ok(Array.Get<T>(storage, head));
+    }
+}
+
+pub Queue<T> New<T>() {
+    return Queue<T> { storage: Array.Empty<T>(), head: 0, count: 0 };
+}
+
+/// Bulk constructor: packs call-site scalars into a queue.
+/// Iterates the bulk array and enqueues each value via `Queue.Enqueue`.
+pub Queue<T> Of<T>(bulk T[] values) {
+    mut Queue<T> result = Queue.New<T>();
+    mut i64 index = 0;
+    while index < Array.Len<T>(values) {
+        result = result.Enqueue(Array.Get<T>(values, index));
+        index = index + 1;
+    }
+    return result;
+}

@@ -147,7 +147,8 @@ impl ProjectModSection {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProjectSection {
-    /// Block kind in the manifest file (must equal `name`).
+    /// Block kind in the manifest file (must equal `name`, or the canonical
+    /// underscore projection of a hyphenated package name).
     pub block_kind: String,
     pub name: String,
     pub version: String,
@@ -161,6 +162,17 @@ pub struct ProjectSection {
     pub readme: Option<String>,
     /// Additional root-block keys not interpreted by the compiler.
     pub extras: HashMap<String, String>,
+}
+
+/// Whether a BSOL project-root block names the package declared by `name`.
+///
+/// BSOL block identifiers cannot contain `-`, while package names can. A
+/// hyphenated package therefore uses the exact underscore projection of its
+/// package name as its root block kind (for example,
+/// `beskid-runtime-native` -> `beskid_runtime_native`). All other name
+/// mismatches remain invalid.
+pub(crate) fn project_root_block_matches_package_name(block_kind: &str, package_name: &str) -> bool {
+    block_kind == package_name || block_kind == package_name.replace('-', "_")
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

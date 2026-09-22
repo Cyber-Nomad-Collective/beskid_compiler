@@ -1,0 +1,101 @@
+use Runtime.Bootstrap.Lifecycle;
+use Runtime.Bootstrap.Native;
+use Runtime.Fiber.Scheduler.External;
+use Runtime.Network.Table;
+use Runtime.Network.Sockets;
+use Runtime.Network.Dns;
+use Testing.Assert;
+
+// The portable service fixture runs unchanged over epoll, kqueue and IOCP kits.
+// Only ABI-managed array descriptors cross these runtime entrypoints.
+pub pointer NetworkTestArray(word length, word stride) {
+    pointer allocation = Native.SystemAllocate(16 + length * stride, 8);
+    Assert.True(allocation != Native.NativePointer(0), "network fixture allocation");
+    memory_set(allocation, 0, 16 + length * stride);
+    raw_word_store(allocation, Native.NativeWord(pointer_add(allocation, 16)));
+    raw_word_store(pointer_add(allocation, 8), length);
+    return allocation;
+}
+
+test native_network_bind_address_close_and_generation_are_portable {
+    pointer runtime = Native.SystemAllocate(64, 8);
+    memory_set(runtime, 0, 64);
+    Assert.True(Lifecycle.ProcessInit(runtime) == runtime, "native runtime initialized");
+    pointer address = NetworkTestArray(19, 1);
+    pointer wire = pointer_add(address, 16);
+    raw_byte_store(wire, 4);
+    raw_byte_store(pointer_add(wire, 3), 127);
+    raw_byte_store(pointer_add(wire, 6), 1);
+    pointer output = NetworkTestArray(1, 8);
+    pointer observed = NetworkTestArray(19, 1);
+
+    Assert.Equal(Sockets.NetworkOpen(1, address, 0, 8, output), 0, "TCP listener binds an ephemeral loopback endpoint");
+    word previous = raw_word_load(pointer_add(output, 16));
+    Assert.True(previous != 0, "listener owns an opaque generation handle");
+    Assert.Equal(Sockets.NetworkAddress(previous, false, observed), 0, "listener exposes portable local address");
+    pointer result = pointer_add(observed, 16);
+    Assert.Equal(raw_byte_load(result), 4, "address family is portable IPv4");
+    Assert.True(raw_byte_load(pointer_add(result, 1)) != 0 || raw_byte_load(pointer_add(result, 2)) != 0, "port zero selected a bound port");
+    Assert.Equal(raw_byte_load(pointer_add(result, 3)), 127, "loopback address survives the native bridge");
+    Assert.Equal(Table.NetworkClose(previous), 0, "listener closes once");
+    Assert.Equal(Table.NetworkClose(previous), 0, "duplicate close is idempotent");
+
+    Assert.Equal(Sockets.NetworkOpen(3, address, 0, 0, output), 0, "UDP socket uses the same portable ownership table");
+    word replacement = raw_word_load(pointer_add(output, 16));
+    Assert.True(replacement != previous, "slot reuse changes handle generation");
+    Assert.Equal(replacement & 0xFFFFFFFF, previous & 0xFFFFFFFF, "fixture exercises actual slot reuse");
+    Assert.Equal(Sockets.NetworkAddress(previous, false, observed), 14, "stale handle cannot access a replacement socket");
+    Assert.Equal(Table.NetworkClose(previous), 0, "stale close cannot close the replacement socket");
+    Assert.Equal(Sockets.NetworkAddress(replacement, false, observed), 0, "replacement remains live after stale close");
+    Assert.Equal(Table.NetworkClose(replacement), 0, "UDP socket closes exactly once");
+    Assert.Equal(Dns.NetworkShutdown(External.ExternalOwnerId()), 0, "native socket lifecycle leaves no live handles");
+
+    Native.SystemFree(observed, 35);
+    Native.SystemFree(output, 24);
+    Native.SystemFree(address, 35);
+    Lifecycle.ProcessShutdown(runtime);
+    Native.SystemFree(runtime, 64);
+}
+
+// Table exhaustion and host descriptor exhaustion (EMFILE before the table fills)
+// both report ResourceExhausted (18), never NetworkDown (9).
+test native_network_socket_exhaustion_reports_resource_exhausted {
+    pointer runtime = Native.SystemAllocate(64, 8);
+    memory_set(runtime, 0, 64);
+    Assert.True(Lifecycle.ProcessInit(runtime) == runtime, "native runtime initialized");
+    pointer address = NetworkTestArray(19, 1);
+    pointer wire = pointer_add(address, 16);
+    raw_byte_store(wire, 4);
+    raw_byte_store(pointer_add(wire, 3), 127);
+    raw_byte_store(pointer_add(wire, 6), 1);
+    pointer output = NetworkTestArray(1, 8);
+    pointer handleArray = NetworkTestArray(257, 8);
+    pointer handles = pointer_add(handleArray, 16);
+
+    mut word count = 0;
+    mut i32 status = 0;
+    while count < 257 {
+        status = Sockets.NetworkOpen(3, address, 0, 0, output);
+        if status != 0 { break; }
+        raw_word_store(pointer_add(handles, count * 8), raw_word_load(pointer_add(output, 16)));
+        count = count + 1;
+    }
+    Assert.Equal(status, 18, "exhaustion reports ResourceExhausted");
+    Assert.True(count > 0 && count <= 256, "exhaustion occurs at or before the slot count");
+    word last = raw_word_load(pointer_add(handles, (count - 1) * 8));
+    Assert.Equal(Table.NetworkClose(last), 0, "one live socket closes");
+    Assert.Equal(Sockets.NetworkOpen(3, address, 0, 0, output), 0, "the freed slot admits the next bind");
+    raw_word_store(pointer_add(handles, (count - 1) * 8), raw_word_load(pointer_add(output, 16)));
+    mut word index = 0;
+    while index < count {
+        Assert.Equal(Table.NetworkClose(raw_word_load(pointer_add(handles, index * 8))), 0, "exhaustion fixture closes every socket");
+        index = index + 1;
+    }
+    Assert.Equal(Dns.NetworkShutdown(External.ExternalOwnerId()), 0, "exhaustion fixture leaves no live handles");
+
+    Native.SystemFree(handleArray, 2072);
+    Native.SystemFree(output, 24);
+    Native.SystemFree(address, 35);
+    Lifecycle.ProcessShutdown(runtime);
+    Native.SystemFree(runtime, 64);
+}

@@ -1,0 +1,7 @@
+# Project.lock v1
+root_manifest=/Users/mikserek/Projects/beskid/compiler/corelib/packages/console/corelib_console.bproj
+project_name=corelib_console
+dependencies:
+- name=corelib_concurrency;manifest=/Users/mikserek/Projects/beskid/compiler/corelib/packages/concurrency/corelib_concurrency.bproj;project=/Users/mikserek/Projects/beskid/compiler/corelib/packages/concurrency;source_root=/Users/mikserek/Projects/beskid/compiler/corelib/packages/concurrency/src;materialized_root=/Users/mikserek/Projects/beskid/compiler/corelib/packages/console/obj/beskid/deps/src/corelib_concurrency-a0120fdf3e3ebd3a
+- name=corelib_foundation;manifest=/Users/mikserek/Projects/beskid/compiler/corelib/packages/foundation/corelib_foundation.bproj;project=/Users/mikserek/Projects/beskid/compiler/corelib/packages/foundation;source_root=/Users/mikserek/Projects/beskid/compiler/corelib/packages/foundation/src;materialized_root=/Users/mikserek/Projects/beskid/compiler/corelib/packages/console/obj/beskid/deps/src/corelib_foundation-51342cd5b303c73f
+- name=corelib_runtime;manifest=/Users/mikserek/Projects/beskid/compiler/corelib/packages/runtime/corelib_runtime.bproj;project=/Users/mikserek/Projects/beskid/compiler/corelib/packages/runtime;source_root=/Users/mikserek/Projects/beskid/compiler/corelib/packages/runtime/src;materialized_root=/Users/mikserek/Projects/beskid/compiler/corelib/packages/console/obj/beskid/deps/src/corelib_runtime-c491a3642c17d877

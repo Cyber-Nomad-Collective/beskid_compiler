@@ -1,0 +1,9 @@
+use Core.Bytes.Errors;
+
+/// A bounded byte cursor. Failed and zero-length writes preserve position.
+/// @tier(standard)
+pub contract ByteWriter {
+    Core.Results.Result<i64, BytesError> Position();
+    Core.Results.Result<i64, BytesError> Capacity();
+    Core.Results.Result<unit, BytesError> Write(u8[] source, i64 offset, i64 count);
+}

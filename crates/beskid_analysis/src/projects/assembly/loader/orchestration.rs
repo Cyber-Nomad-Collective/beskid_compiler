@@ -49,9 +49,7 @@ pub fn assemble_program_with_materializer(
     materializer: Option<UnitMaterializer>,
     pipeline: Option<&dyn PipelineObserver>,
 ) -> Result<ProgramAssembly, AssemblyError> {
-    static NEXT_ASSEMBLY_GENERATION: AtomicU64 = AtomicU64::new(1);
-
-    let generation = SyntaxGenerationId(NEXT_ASSEMBLY_GENERATION.fetch_add(1, Ordering::Relaxed));
+    let generation = SyntaxGenerationId::allocate().ok_or(AssemblyError::GenerationExhausted)?;
     let roots = effective_roots_for_plan(plan, workspace);
     let module_roots: Vec<PathBuf> = super::roots::module_roots_from_effective(&roots);
 
@@ -78,18 +76,19 @@ pub fn assemble_program_with_materializer(
     match options.discovery {
         AssemblyDiscovery::ImportClosure => {
             let mut queue = VecDeque::new();
-            queue.push_back(entry_canonical.clone());
+            queue.push_back(entry_path.to_path_buf());
 
             while let Some(path) = queue.pop_front() {
                 if discovered_sources.len() >= options.max_units {
                     return Err(AssemblyError::MaxUnits { max: options.max_units });
                 }
                 let key = path.canonicalize().unwrap_or_else(|_| path.clone());
+                let is_entry = key == entry_canonical;
                 if !seen.insert(key) {
                     continue;
                 }
 
-                let source = if path == entry_canonical {
+                let source = if is_entry {
                     if let Some(entry_text) = entry_source {
                         entry_text.to_string()
                     } else {
@@ -129,7 +128,7 @@ pub fn assemble_program_with_materializer(
         }
         AssemblyDiscovery::WorkspaceScan => {
             if entry_canonical.is_file() {
-                enqueue(entry_canonical.clone(), &mut discovered, &mut seen);
+                enqueue(entry_path.to_path_buf(), &mut discovered, &mut seen);
             }
 
             let mut paths: Vec<PathBuf> = Vec::new();
@@ -160,7 +159,7 @@ pub fn assemble_program_with_materializer(
             "unit cache manifest skipped"
         );
     }
-    let entry_key = entry_canonical.canonicalize().unwrap_or(entry_canonical.clone());
+    let entry_key = entry_canonical;
 
     struct UnitBuildInput {
         path: PathBuf,
@@ -300,15 +299,19 @@ pub fn assemble_program_with_materializer(
 
     let trusted_corelib_service_paths = trusted_corelib_service_paths(plan, workspace, &units);
 
-    Ok(ProgramAssembly {
-        roots,
-        units: Arc::new(units),
-        syntax_indexes: Arc::new(syntax_indexes),
-        generation,
-        entry_index,
-        discovery: options.discovery,
-        module_index,
-        has_std_dependency: plan.has_std_dependency,
-        trusted_corelib_service_paths,
-    })
+    super::super::runtime_fixture::attach_runtime_fixture(
+        ProgramAssembly {
+            runtime_fixture: None,
+            roots,
+            units: Arc::new(units),
+            syntax_indexes: Arc::new(syntax_indexes),
+            generation,
+            entry_index,
+            discovery: options.discovery,
+            module_index,
+            has_std_dependency: plan.has_std_dependency,
+            trusted_corelib_service_paths,
+        },
+        plan,
+    )
 }

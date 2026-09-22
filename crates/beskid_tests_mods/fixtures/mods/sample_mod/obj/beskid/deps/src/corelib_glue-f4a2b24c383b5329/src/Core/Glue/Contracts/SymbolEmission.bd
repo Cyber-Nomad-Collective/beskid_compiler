@@ -1,0 +1,8 @@
+/// SymbolEmission contract: emits a foreign symbol for a Beskid function or
+/// type. Per-language glue mods implement this to generate the foreign-side
+/// symbol name and declaration.
+///
+/// 0.4: contract declaration only. Concrete emission lands in 0.5.
+pub contract SymbolEmission {
+    string EmitSymbol(string beskidName, string foreignKind);
+}

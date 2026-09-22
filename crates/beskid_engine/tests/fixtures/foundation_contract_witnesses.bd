@@ -1,0 +1,43 @@
+use Concurrency.Fiber;
+use Concurrency.FiberError;
+use Core.Results;
+[Extern(Abi:"C")]
+pub contract Probe { unit gc_collect(); unit beskid_rt_v5_fiber_yield(); }
+contract Reader { i64 Read(); }
+type MemoryReader: Reader {
+    u8[] bytes,
+    pub i64 Read() { Probe.gc_collect(); u8[] data = bytes; return i64(data[0]); }
+}
+type FileReader: Reader {
+    u8[] bytes,
+    pub i64 Read() { Probe.gc_collect(); u8[] data = bytes; return i64(data[0]) + 1_i64; }
+}
+i64 ReadBoth(Reader left, Reader right) {
+    Probe.gc_collect();
+    return left.Read() * 100_i64 + right.Read();
+}
+i64 Forward<T>(Reader left, Reader right, T token) { return ReadBoth(right, left); }
+i64 Outer<T>(Reader left, Reader right, T token) { return Forward<T>(left, right, token); }
+i64 Suspended(Reader left, Reader right) {
+    Probe.beskid_rt_v5_fiber_yield();
+    return ReadBoth(left, right);
+}
+i64 RunChild() {
+    return Suspended(MemoryReader { bytes: [17_u8] }, FileReader { bytes: [24_u8] });
+}
+unit Collect() { Probe.gc_collect(); }
+[Export(Abi:"C", Symbol:"RunFoundationFixture")]
+pub i64 RunFoundationFixture() {
+    MemoryReader memory = MemoryReader { bytes: [17_u8] };
+    FileReader file = FileReader { bytes: [24_u8] };
+    if ReadBoth(memory, file) != 1725_i64 { return 1_i64; }
+    if ReadBoth(file, memory) != 2517_i64 { return 2_i64; }
+    if Outer<i64>(memory, file, 3_i64) != 2517_i64 { return 3_i64; }
+    Fiber<i64> child = spawn RunChild();
+    Fiber<unit> collector = spawn Collect();
+    Result<i64, FiberError> read = child.Join();
+    Result<unit, FiberError> collected = collector.Join();
+    i64 value = match read { Result::Ok(value) => value, Result::Error(_) => -1_i64 };
+    if value != 1725_i64 { return 4_i64; }
+    return 42_i64;
+}

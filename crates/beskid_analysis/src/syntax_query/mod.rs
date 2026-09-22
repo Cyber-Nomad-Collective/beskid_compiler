@@ -60,6 +60,7 @@ node_kinds!(
     Block,
     Statement,
     LetStatement,
+    ScopedUseStatement,
     ReturnStatement,
     BreakStatement,
     ContinueStatement,

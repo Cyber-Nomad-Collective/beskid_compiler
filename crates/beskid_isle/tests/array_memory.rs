@@ -249,7 +249,20 @@ fn array_literal_and_index_emit_checked_stock_clif_and_execute() {
         .expect("verified array index");
     let clif = function.display().to_string();
     assert!(clif.contains("beskid_rt_v5_array_allocate_rooted"), "{clif}");
-    assert!(!clif.contains("stack_store"), "{clif}");
+    let mut element_stores = 0;
+    for inst in function.layout.blocks().flat_map(|block| function.layout.block_insts(block)) {
+        if let cranelift_codegen::ir::InstructionData::Store { args, .. } = function.dfg.insts[inst] {
+            element_stores += 1;
+            let cranelift_codegen::ir::ValueDef::Result(address, _) = function.dfg.value_def(args[1]) else {
+                panic!("array element address must be computed: {clif}")
+            };
+            assert!(
+                !matches!(function.dfg.insts[address], cranelift_codegen::ir::InstructionData::StackAddr { .. }),
+                "array elements must be stored in managed backing storage: {clif}"
+            );
+        }
+    }
+    assert_eq!(element_stores, 3, "all literal elements must be initialized: {clif}");
     assert!(clif.contains("trapnz"), "{clif}");
     assert!(clif.contains("load.i32"), "{clif}");
 

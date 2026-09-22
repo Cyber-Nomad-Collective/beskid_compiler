@@ -13,55 +13,58 @@ impl<'a> TypeChecker<'a> {
 
     pub(super) fn type_statement(&mut self, statement: &Spanned<Statement>) {
         match &statement.node {
-            Statement::Let(let_stmt) => match &let_stmt.node.type_annotation {
-                Some(ty) => {
-                    let expected = self.type_id_for_type(ty);
-                    let previous_contextual = self.contextual_expected_type;
-                    if let Some(expected_type) = expected {
-                        self.contextual_expected_type = Some(expected_type);
-                    }
-                    let actual = match (expected, &let_stmt.node.value.node) {
-                        (Some(expected), Expression::Lambda(lambda)) => {
-                            self.type_lambda_expression_with_expected(lambda, Some(expected))
+            Statement::Let(let_stmt)
+            | Statement::Use(Spanned { node: crate::syntax::ScopedUseStatement { binding: let_stmt, .. }, .. }) => {
+                match &let_stmt.node.type_annotation {
+                    Some(ty) => {
+                        let expected = self.type_id_for_type(ty);
+                        let previous_contextual = self.contextual_expected_type;
+                        if let Some(expected_type) = expected {
+                            self.contextual_expected_type = Some(expected_type);
                         }
-                        (Some(expected), Expression::Match(match_expr)) => {
-                            self.type_match_expression_with_expected(match_expr, Some(expected))
-                        }
-                        (Some(_), _) => {
-                            // `contextual_expected_type` was set above to the annotation's type.
-                            // Type the expression directly so expected-type-sensitive forms
-                            // (enum constructors of generic enums, struct literals, ...) receive
-                            // the annotation's type arguments. `infer_local_type_from_expression`
-                            // clears the contextual type and would lose the substitution.
-                            self.type_expression(&let_stmt.node.value)
-                        }
-                        (None, _) => {
-                            self.infer_local_type_from_expression(let_stmt.node.name.span, &let_stmt.node.value)
-                        }
-                    };
-                    self.contextual_expected_type = previous_contextual;
-                    if let Some(expected) = expected {
-                        if let Some(actual) = actual {
+                        let actual = match (expected, &let_stmt.node.value.node) {
+                            (Some(expected), Expression::Lambda(lambda)) => {
+                                self.type_lambda_expression_with_expected(lambda, Some(expected))
+                            }
+                            (Some(expected), Expression::Match(match_expr)) => {
+                                self.type_match_expression_with_expected(match_expr, Some(expected))
+                            }
+                            (Some(_), _) => {
+                                // `contextual_expected_type` was set above to the annotation's type.
+                                // Type the expression directly so expected-type-sensitive forms
+                                // (enum constructors of generic enums, struct literals, ...) receive
+                                // the annotation's type arguments. `infer_local_type_from_expression`
+                                // clears the contextual type and would lose the substitution.
+                                self.type_expression(&let_stmt.node.value)
+                            }
+                            (None, _) => {
+                                self.infer_local_type_from_expression(let_stmt.node.name.span, &let_stmt.node.value)
+                            }
+                        };
+                        self.contextual_expected_type = previous_contextual;
+                        if let Some(expected) = expected {
+                            if let Some(actual) = actual {
+                                self.record_node_type(let_stmt.node.value.id, actual);
+                                self.require_same_type(let_stmt.node.name.span, expected, actual);
+                            }
+                            self.insert_local_type(let_stmt.node.name.span, expected);
+                        } else if let Some(actual) = actual {
                             self.record_node_type(let_stmt.node.value.id, actual);
-                            self.require_same_type(let_stmt.node.name.span, expected, actual);
+                            self.insert_local_type(let_stmt.node.name.span, actual);
                         }
-                        self.insert_local_type(let_stmt.node.name.span, expected);
-                    } else if let Some(actual) = actual {
-                        self.record_node_type(let_stmt.node.value.id, actual);
-                        self.insert_local_type(let_stmt.node.name.span, actual);
+                    }
+                    None => {
+                        if let Some(actual) =
+                            self.infer_local_type_from_expression(let_stmt.node.name.span, &let_stmt.node.value)
+                        {
+                            if matches!(self.type_table.get(actual), Some(crate::types::TypeInfo::Fiber(_))) {
+                                self.register_fiber_handle_local(let_stmt.node.name.span, let_stmt.node.value.id);
+                            }
+                            self.insert_local_type(let_stmt.node.name.span, actual);
+                        }
                     }
                 }
-                None => {
-                    if let Some(actual) =
-                        self.infer_local_type_from_expression(let_stmt.node.name.span, &let_stmt.node.value)
-                    {
-                        if matches!(self.type_table.get(actual), Some(crate::types::TypeInfo::Fiber(_))) {
-                            self.register_fiber_handle_local(let_stmt.node.name.span, let_stmt.node.value.id);
-                        }
-                        self.insert_local_type(let_stmt.node.name.span, actual);
-                    }
-                }
-            },
+            }
             Statement::Return(return_stmt) => {
                 let previous_contextual = self.contextual_expected_type;
                 if let Some(expected) = self.current_return_type {
@@ -105,6 +108,11 @@ impl<'a> TypeChecker<'a> {
             }
             Statement::Break(_) | Statement::Continue(_) => {}
             Statement::With(_) | Statement::Launch(_) => {}
+        }
+        if let Statement::Use(scoped) = &statement.node
+            && let Some(body) = &scoped.node.body
+        {
+            self.type_block(body);
         }
     }
 

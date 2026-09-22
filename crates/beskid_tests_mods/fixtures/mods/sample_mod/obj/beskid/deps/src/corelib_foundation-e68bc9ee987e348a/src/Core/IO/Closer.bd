@@ -1,0 +1,7 @@
+use Core.IO.IoError;
+
+/// An idempotent close operation. Repeated calls release the resource at most once.
+/// @tier(standard)
+pub contract Closer {
+    Core.Results.Result<unit, IoError> Close();
+}

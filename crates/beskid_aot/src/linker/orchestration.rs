@@ -42,29 +42,7 @@ pub fn link(req: &LinkRequest) -> AotResult<LinkResult> {
     if target.contains("windows") {
         return link_windows(req, &target);
     }
-    let mut cmd = Command::new(&compiler);
-    cmd.arg(&req.object_path);
-    cmd.args(&req.additional_object_paths);
-    if let Some(runtime_staticlib) = &req.runtime_staticlib {
-        append_static_archive(&mut cmd, &target, runtime_staticlib);
-    }
-    if let Some(host_staticlib) = &req.host_staticlib {
-        append_static_archive(&mut cmd, &target, host_staticlib);
-    }
-    cmd.arg("-o").arg(&req.output_path);
-    append_library_search_paths(req, &target, &mut cmd)?;
-    append_external_libraries(req, &target, &mut cmd)?;
-
-    if matches!(req.output_kind, BuildOutputKind::SharedLib) {
-        cmd.arg("-shared");
-        if let LinkMode::PreferStatic = req.link_mode {
-            cmd.arg("-Wl,-Bstatic");
-        }
-        if let LinkMode::PreferDynamic = req.link_mode {
-            cmd.arg("-Wl,-Bdynamic");
-        }
-        append_export_policy_flags(req, &target, &mut cmd)?;
-    }
+    let mut cmd = unix_link_command(req, &target, &compiler)?;
 
     if req.verbose {
         eprintln!("[aot] link command: {:?}", cmd);
@@ -75,14 +53,41 @@ pub fn link(req: &LinkRequest) -> AotResult<LinkResult> {
     if !output.status.success() {
         return Err(AotError::LinkFailed {
             status: output.status.code().unwrap_or(-1),
-            command: format_link_command(&compiler, req, &target),
+            command: format_link_command(&cmd),
             detail: format_link_detail(&output),
         });
     }
 
     Ok(LinkResult {
         output_path: req.output_path.clone(),
-        command_line: format_link_command(&compiler, req, &target),
+        command_line: format_link_command(&cmd),
         exported_symbols: req.exported_symbols.clone(),
     })
+}
+
+pub(crate) fn unix_link_command(req: &LinkRequest, target: &str, compiler: &str) -> AotResult<Command> {
+    let mut cmd = Command::new(compiler);
+    cmd.arg(&req.object_path);
+    cmd.args(&req.additional_object_paths);
+    if let Some(runtime_staticlib) = &req.runtime_staticlib {
+        append_static_archive(&mut cmd, target, runtime_staticlib);
+    }
+    if let Some(host_staticlib) = &req.host_staticlib {
+        append_static_archive(&mut cmd, target, host_staticlib);
+    }
+    cmd.arg("-o").arg(&req.output_path);
+    append_library_search_paths(req, target, &mut cmd)?;
+    append_external_libraries(req, target, &mut cmd)?;
+
+    if matches!(req.output_kind, BuildOutputKind::SharedLib) {
+        cmd.arg("-shared");
+        if let LinkMode::PreferStatic = req.link_mode {
+            cmd.arg("-Wl,-Bstatic");
+        }
+        if let LinkMode::PreferDynamic = req.link_mode {
+            cmd.arg("-Wl,-Bdynamic");
+        }
+        append_export_policy_flags(req, target, &mut cmd)?;
+    }
+    Ok(cmd)
 }

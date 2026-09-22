@@ -1,0 +1,3 @@
+# Local materialization and machine-specific dependency paths.
+obj/
+Project.lock

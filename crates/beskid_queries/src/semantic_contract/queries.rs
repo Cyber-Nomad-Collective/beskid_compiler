@@ -136,8 +136,8 @@ pub fn for_iterator_fact(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<Fo
 
 /// Return the payload, error, and enclosing-return ABI facts for postfix `Result` propagation.
 ///
-/// The query accepts only a direct local parameter operand and an enclosing function returning
-/// the same syntactic `Result<TPayload, TError>` instantiation. All other forms fail closed as unavailable.
+/// Typed parameters and proven ordinary direct calls retain exact Result/error source
+/// identity. Success types may differ; unproven operands remain unavailable.
 pub fn try_expression_fact(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<TryExpressionFact> {
     with_registered_syntax(db, key, try_expression_fact_tracked)
 }
@@ -213,10 +213,15 @@ pub fn collection_operation(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult
             } else {
                 let access = aggregate_field_access(db, array)?
                     .ok_or_else(|| SemanticError::unavailable("collection_operation"))?;
-                let receiver = resolved_local(db, access.receiver)?
-                    .and_then(|resolved| local_slot(db, resolved.declaration).transpose())
-                    .transpose()?
-                    .ok_or_else(|| SemanticError::unavailable("collection_operation"))?;
+                // A dotted value path already names its declaration identifier; a member
+                // expression names the receiver expression, which must resolve lexically first.
+                let receiver = match local_slot(db, access.receiver)? {
+                    Some(slot) => slot,
+                    None => resolved_local(db, access.receiver)?
+                        .and_then(|resolved| local_slot(db, resolved.declaration).transpose())
+                        .transpose()?
+                        .ok_or_else(|| SemanticError::unavailable("collection_operation"))?,
+                };
                 CollectionMutationOwner::AggregateField {
                     receiver,
                     declaration: access.declaration,
@@ -490,6 +495,14 @@ pub fn callable_signature(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<I
 /// `StackReferenceEscapesSpawn`. Stale, unregistered, and non-spawn nodes contain no fact.
 pub fn spawn_legality(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<SpawnLegality> {
     with_registered_syntax(db, key, spawn_legality_tracked)
+}
+
+pub fn callable_fiber_ownership(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<FiberOwnership> {
+    with_registered_syntax(db, key, callable_fiber_ownership_tracked)
+}
+
+pub fn spawn_handle_type(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<SpawnHandleType> {
+    with_registered_syntax(db, key, spawn_handle_type_tracked)
 }
 
 /// Return source-only zero-argument spawn-entry validation for the current syntax generation.

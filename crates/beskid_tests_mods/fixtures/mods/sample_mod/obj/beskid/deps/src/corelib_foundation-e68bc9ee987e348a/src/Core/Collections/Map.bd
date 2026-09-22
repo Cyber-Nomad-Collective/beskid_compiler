@@ -1,0 +1,83 @@
+/// Key/value map backed by a typed `MapEntry[]` linear scan.
+/// @tier(supported)
+pub mod Core.Collections.Map.MapEntry;
+
+use Core.Collections.Array;
+use Core.Collections.Map.MapEntry;
+use Core.Results;
+
+pub type Map<TKey, TValue> {
+    MapEntry<TKey, TValue>[] entries,
+    i64 count,
+
+    pub i64 Count() {
+        return count;
+    }
+
+    pub bool IsEmpty() {
+        return count == 0;
+    }
+
+    pub Map<TKey, TValue> Insert(TKey key, TValue value) {
+        mut i64 index = 0;
+        while index < count {
+            MapEntry<TKey, TValue> entry = Array.Get<MapEntry<TKey, TValue>>(entries, index);
+            if entry.key == key {
+                MapEntry<TKey, TValue> updated = MapEntry<TKey, TValue> { key: key, value: value };
+                Array.Set<MapEntry<TKey, TValue>>(entries, index, updated);
+                return self;
+            }
+            index = index + 1;
+        }
+        MapEntry<TKey, TValue> fresh = MapEntry<TKey, TValue> { key: key, value: value };
+        mut MapEntry<TKey, TValue>[] nextEntries = entries;
+        Array.Append<MapEntry<TKey, TValue>>(nextEntries, fresh);
+        return Map<TKey, TValue> { entries: nextEntries, count: count + 1 };
+    }
+
+    pub Result<TValue, string> Get(TKey key) {
+        mut i64 index = 0;
+        while index < count {
+            MapEntry<TKey, TValue> entry = Array.Get<MapEntry<TKey, TValue>>(entries, index);
+            if entry.key == key {
+                return Result::Ok(entry.value);
+            }
+            index = index + 1;
+        }
+        return Result::Error("key not found");
+    }
+
+    pub bool ContainsKey(TKey key) {
+        mut i64 index = 0;
+        while index < count {
+            if Array.Get<MapEntry<TKey, TValue>>(entries, index).key == key {
+                return true;
+            }
+            index = index + 1;
+        }
+        return false;
+    }
+
+    pub Map<TKey, TValue> Remove(TKey key) {
+        mut i64 index = 0;
+        while index < count {
+            if Array.Get<MapEntry<TKey, TValue>>(entries, index).key == key {
+                mut i64 shift = index;
+                while shift + 1 < count {
+                    Array.Set<MapEntry<TKey, TValue>>(entries, shift, Array.Get<MapEntry<TKey, TValue>>(entries, shift + 1));
+                    shift = shift + 1;
+                }
+                return Map<TKey, TValue> {
+                    entries: Array.RemoveLast<MapEntry<TKey, TValue>>(entries),
+                    count: count - 1,
+                };
+            }
+            index = index + 1;
+        }
+        return self;
+    }
+}
+
+pub Map<TKey, TValue> New<TKey, TValue>() {
+    return Map<TKey, TValue> { entries: Array.Empty<MapEntry<TKey, TValue>>(), count: 0 };
+}

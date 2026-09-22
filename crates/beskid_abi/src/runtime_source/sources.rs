@@ -19,6 +19,7 @@ pub const CANONICAL_SCHEDULER_SOURCE_PATH: &str = "src/Runtime/Fiber/Scheduler.b
 pub const CANONICAL_SCHEDULER_CONTEXT_SOURCE_PATH: &str = "src/Runtime/Fiber/Scheduler/Context.bd";
 pub const CANONICAL_SCHEDULER_CORE_SOURCE_PATH: &str = "src/Runtime/Fiber/Scheduler/Core.bd";
 pub const CANONICAL_SCHEDULER_STORAGE_SOURCE_PATH: &str = "src/Runtime/Fiber/Scheduler/Storage.bd";
+pub const CANONICAL_SCHEDULER_EXTERNAL_SOURCE_PATH: &str = "src/Runtime/Fiber/Scheduler/External.bd";
 pub const CANONICAL_SCHEDULER_QUEUE_SOURCE_PATH: &str = "src/Runtime/Fiber/Scheduler/Queue.bd";
 pub const CANONICAL_SCHEDULER_LOOP_SOURCE_PATH: &str = "src/Runtime/Fiber/Scheduler/Loop.bd";
 pub const CANONICAL_SCHEDULER_POLL_SOURCE_PATH: &str = "src/Runtime/Fiber/Scheduler/Poll.bd";
@@ -64,6 +65,7 @@ pub const CANONICAL_CORELIB_HUB_SOURCE_PATH: &str = "Concurrency/Hub.bd";
 pub const CANONICAL_CORELIB_WAIT_GROUP_SOURCE_PATH: &str = "Concurrency/WaitGroup.bd";
 /// Canonical Foundation array facade eligible for compiler-owned typed allocation lowering.
 pub const CANONICAL_FOUNDATION_ARRAY_SOURCE_PATH: &str = "Core/Collections/Array.bd";
+pub const CANONICAL_FOUNDATION_BYTES_SLICE_SOURCE_PATH: &str = "Core/Bytes/Slice.bd";
 /// Canonical Foundation environment facade eligible for host environment runtime services.
 pub const CANONICAL_FOUNDATION_ENVIRONMENT_SOURCE_PATH: &str = "Core/Environment/Environment.bd";
 /// Canonical Foundation path facade eligible for string-slice runtime services.
@@ -86,6 +88,8 @@ pub const CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH: &str = "Testing/Assert.bd";
 pub const CANONICAL_FOUNDATION_OUTPUT_SOURCE_PATH: &str = "Core/Output/Output.bd";
 /// Canonical Foundation error helper eligible to import the panic runtime service.
 pub const CANONICAL_FOUNDATION_ERROR_SOURCE_PATH: &str = "Core/Error/Error.bd";
+/// Canonical Network facade that alone owns the compiler-authorized socket ABI calls.
+pub const CANONICAL_NETWORK_INTERNAL_SOURCE_PATH: &str = "Network/Internal.bd";
 
 const CANONICAL_BOOTSTRAP_SOURCE: &str =
     include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../runtime/beskid/src/Runtime/Bootstrap.bd"));
@@ -125,6 +129,8 @@ const CANONICAL_SCHEDULER_CORE_SOURCE: &str =
     include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../runtime/beskid/src/Runtime/Fiber/Scheduler/Core.bd"));
 const CANONICAL_SCHEDULER_STORAGE_SOURCE: &str =
     include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../runtime/beskid/src/Runtime/Fiber/Scheduler/Storage.bd"));
+const CANONICAL_SCHEDULER_EXTERNAL_SOURCE: &str =
+    include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../runtime/beskid/src/Runtime/Fiber/Scheduler/External.bd"));
 const CANONICAL_SCHEDULER_QUEUE_SOURCE: &str =
     include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../runtime/beskid/src/Runtime/Fiber/Scheduler/Queue.bd"));
 const CANONICAL_SCHEDULER_LOOP_SOURCE: &str =
@@ -190,6 +196,8 @@ const CANONICAL_FOUNDATION_ARRAY_SOURCE: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../../corelib/packages/foundation/src/Core/Collections/Array.bd"
 ));
+const CANONICAL_FOUNDATION_BYTES_SLICE_SOURCE: &str =
+    include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../corelib/packages/foundation/src/Core/Bytes/Slice.bd"));
 const CANONICAL_FOUNDATION_ENVIRONMENT_SOURCE: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../../corelib/packages/foundation/src/Core/Environment/Environment.bd"
@@ -214,10 +222,36 @@ const CANONICAL_FOUNDATION_OUTPUT_SOURCE: &str =
     include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../corelib/packages/foundation/src/Core/Output/Output.bd"));
 const CANONICAL_FOUNDATION_ERROR_SOURCE: &str =
     include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../corelib/packages/foundation/src/Core/Error/Error.bd"));
+const CANONICAL_NETWORK_INTERNAL_SOURCE: &str =
+    include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../corelib/packages/network/src/Network/Internal.bd"));
 
 /// The runtime source corpus built into this compiler version.
 pub fn canonical_runtime_sources() -> Vec<SourceUnit> {
     vec![
+        SourceUnit {
+            logical_path: "src/Runtime/Network/Table.bd".into(),
+            source: include_str!("../../../../runtime/beskid/src/Runtime/Network/Table.bd").into(),
+        },
+        SourceUnit {
+            logical_path: "src/Runtime/Network/Operations.bd".into(),
+            source: include_str!("../../../../runtime/beskid/src/Runtime/Network/Operations.bd").into(),
+        },
+        SourceUnit {
+            logical_path: "src/Runtime/Network/Sockets.bd".into(),
+            source: include_str!("../../../../runtime/beskid/src/Runtime/Network/Sockets.bd").into(),
+        },
+        SourceUnit {
+            logical_path: "src/Runtime/Network/Dns.bd".into(),
+            source: include_str!("../../../../runtime/beskid/src/Runtime/Network/Dns.bd").into(),
+        },
+        SourceUnit {
+            logical_path: "src/Runtime/Mem/AbiValue.bd".into(),
+            source: format!(
+                "{}{}",
+                crate::generated::abi_v5_contract::ABI_V5_RUNTIME_LAYOUT_SOURCE,
+                include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../runtime/beskid/src/Runtime/Mem/AbiValue.bd"))
+            ),
+        },
         SourceUnit { logical_path: CANONICAL_BOOTSTRAP_SOURCE_PATH.into(), source: CANONICAL_BOOTSTRAP_SOURCE.into() },
         SourceUnit {
             logical_path: CANONICAL_BOOTSTRAP_NATIVE_SOURCE_PATH.into(),
@@ -272,6 +306,10 @@ pub fn canonical_runtime_sources() -> Vec<SourceUnit> {
         SourceUnit {
             logical_path: CANONICAL_SCHEDULER_STORAGE_SOURCE_PATH.into(),
             source: CANONICAL_SCHEDULER_STORAGE_SOURCE.into(),
+        },
+        SourceUnit {
+            logical_path: CANONICAL_SCHEDULER_EXTERNAL_SOURCE_PATH.into(),
+            source: CANONICAL_SCHEDULER_EXTERNAL_SOURCE.into(),
         },
         SourceUnit {
             logical_path: CANONICAL_SCHEDULER_QUEUE_SOURCE_PATH.into(),
@@ -372,6 +410,10 @@ pub fn canonical_corelib_service_sources() -> Vec<SourceUnit> {
         source: CANONICAL_FOUNDATION_ARRAY_SOURCE.into(),
     });
     sources.push(SourceUnit {
+        logical_path: CANONICAL_FOUNDATION_BYTES_SLICE_SOURCE_PATH.into(),
+        source: CANONICAL_FOUNDATION_BYTES_SLICE_SOURCE.into(),
+    });
+    sources.push(SourceUnit {
         logical_path: CANONICAL_FOUNDATION_ENVIRONMENT_SOURCE_PATH.into(),
         source: CANONICAL_FOUNDATION_ENVIRONMENT_SOURCE.into(),
     });
@@ -414,6 +456,10 @@ pub fn canonical_corelib_service_sources() -> Vec<SourceUnit> {
     sources.push(SourceUnit {
         logical_path: CANONICAL_FOUNDATION_ERROR_SOURCE_PATH.into(),
         source: CANONICAL_FOUNDATION_ERROR_SOURCE.into(),
+    });
+    sources.push(SourceUnit {
+        logical_path: CANONICAL_NETWORK_INTERNAL_SOURCE_PATH.into(),
+        source: CANONICAL_NETWORK_INTERNAL_SOURCE.into(),
     });
     sources
 }

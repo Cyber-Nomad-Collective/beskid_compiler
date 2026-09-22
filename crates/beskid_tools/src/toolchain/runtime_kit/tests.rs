@@ -40,14 +40,16 @@ fn native_host_builder_publishes_the_canonical_runtime_to_an_empty_prefix() {
 #[test]
 #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
 fn native_host_builder_publishes_coff_import_library_for_windows_kits() {
-    let prefix = TempDir::new("native-host-windows-import-lib");
-    let built =
-        build_native_host(prefix.0.clone(), RuntimeKitProfile::Debug).expect("publish Windows native host runtime kit");
-    let import = built.shared_import_library.as_ref().expect("Windows ABI-v5 kits must publish a COFF import library");
-    assert!(import.is_file(), "missing COFF import library: {}", import.display());
-    assert_eq!(import.file_name().and_then(|name| name.to_str()), Some("beskid_runtime_import.lib"));
-    assert!(built.static_library.is_file());
-    assert!(built.shared_library.is_file());
+    for profile in [RuntimeKitProfile::Debug, RuntimeKitProfile::Release] {
+        let prefix = TempDir::new(profile.as_str());
+        let built = build_native_host(prefix.0.clone(), profile).expect("publish Windows native host runtime kit");
+        let import =
+            built.shared_import_library.as_ref().expect("Windows ABI-v5 kits must publish a COFF import library");
+        assert!(import.is_file(), "missing COFF import library: {}", import.display());
+        assert_eq!(import.file_name().and_then(|name| name.to_str()), Some("beskid_runtime_import.lib"));
+        assert!(built.static_library.is_file());
+        assert!(built.shared_library.is_file());
+    }
 }
 
 #[test]

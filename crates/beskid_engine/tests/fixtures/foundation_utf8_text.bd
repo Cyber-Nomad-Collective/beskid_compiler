@@ -1,0 +1,30 @@
+use Core.Encoding.Utf8;
+use Core.Encoding.EncodingError;
+use Core.Results;
+use Core.String;
+
+[Export(Abi:"C", Symbol:"RunFoundationFixture")]
+pub i64 RunFoundationFixture() {
+    // HTTP punctuation/control bytes, U+03BB, U+20AC, and U+1F600.
+    u8[] input = [72_u8, 84_u8, 84_u8, 80_u8, 47_u8, 49_u8, 46_u8, 49_u8, 32_u8, 13_u8, 10_u8, 206_u8, 187_u8, 226_u8, 130_u8, 172_u8, 240_u8, 159_u8, 152_u8, 128_u8];
+    // Surrogate and values beyond U+10FFFF are invalid Unicode scalars.
+    u8[] surrogate = [237_u8, 160_u8, 128_u8];
+    u8[] tooLarge = [244_u8, 144_u8, 128_u8, 128_u8];
+    Result<string, EncodingError> result = Utf8.DecodeFromBytes(input);
+    Result<string, EncodingError> surrogateResult = Utf8.DecodeFromBytes(surrogate);
+    Result<string, EncodingError> tooLargeResult = Utf8.DecodeFromBytes(tooLarge);
+    return match surrogateResult {
+        Result::Error(_) => match tooLargeResult {
+            Result::Error(_) => match result {
+                Result::Ok(text) => {
+                    if String.Len(text) != 20_i64 { return 1_i64; }
+                    if String.ByteAt(text, 4_i64) != 47_u8 || String.ByteAt(text, 6_i64) != 46_u8 || String.ByteAt(text, 8_i64) != 32_u8 || String.ByteAt(text, 9_i64) != 13_u8 || String.ByteAt(text, 10_i64) != 10_u8 || String.ByteAt(text, 11_i64) != 206_u8 || String.ByteAt(text, 13_i64) != 226_u8 || String.ByteAt(text, 16_i64) != 240_u8 || String.ByteAt(text, 19_i64) != 128_u8 { return 2_i64; }
+                    42_i64;
+                },
+                Result::Error(_) => 3_i64,
+            },
+            Result::Ok(_) => 4_i64,
+        },
+        Result::Ok(_) => 5_i64,
+    };
+}

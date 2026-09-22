@@ -1,0 +1,94 @@
+use Core.Time;
+use Core.Time.Duration;
+use Core.Time.TimerError;
+use Core.Results;
+use Core.Time.Instant;
+use Concurrency.Fiber;
+use Concurrency.FiberError;
+
+[Extern(Abi:"C")]
+pub contract TimerProbe {
+    i64 fiber_current_id();
+    bool fiber_cancel(i64 fiber, i64 reason);
+    word beskid_rt_v5_external_active_count();
+    unit beskid_rt_v5_fiber_yield();
+    unit beskid_trap_code(i64 code);
+}
+
+unit RequireTimer(bool condition) {
+    if !condition { TimerProbe.beskid_trap_code(19_i64); }
+}
+
+bool TimerSucceeded(Result<unit, TimerError> result) {
+    return match result { Result::Ok(_) => true, _ => false, };
+}
+
+bool TimerCancelled(Result<unit, TimerError> result) {
+    return match result { Result::Error(TimerError::Cancelled()) => true, _ => false, };
+}
+
+i64 RepeatedTimer() {
+    mut i64 calls = 0_i64;
+    while calls < 80_i64 {
+        Result<unit, TimerError> result = Time.Sleep(Duration { nanos: 0_i64 });
+        RequireTimer(TimerSucceeded(result));
+        RequireTimer(TimerProbe.beskid_rt_v5_external_active_count() == 0);
+        calls = calls + 1_i64;
+    }
+    return 0_i64;
+}
+
+i64 PositiveTimer() {
+    Instant before = Time.MonotonicNow();
+    Result<unit, TimerError> result = Time.Sleep(Duration { nanos: 20000000_i64 });
+    Instant after = Time.MonotonicNow();
+    RequireTimer(TimerSucceeded(result));
+    RequireTimer(after.nanos >= before.nanos + 20000000_i64);
+    RequireTimer(TimerProbe.beskid_rt_v5_external_active_count() == 0);
+    return 0_i64;
+}
+
+i64 SiblingDuringTimer() {
+    RequireTimer(TimerProbe.beskid_rt_v5_external_active_count() == 1);
+    return 0_i64;
+}
+
+i64 CancelAndRepeatTimer() {
+    i64 self = TimerProbe.fiber_current_id();
+    bool requested = TimerProbe.fiber_cancel(self, 9_i64);
+    RequireTimer(requested);
+    Result<unit, TimerError> zero = Time.Sleep(Duration { nanos: 0_i64 });
+    RequireTimer(TimerCancelled(zero));
+    RequireTimer(TimerProbe.beskid_rt_v5_external_active_count() == 0);
+    Result<unit, TimerError> repeated = Time.Sleep(Duration { nanos: 1000000_i64 });
+    RequireTimer(TimerCancelled(repeated));
+    RequireTimer(TimerProbe.beskid_rt_v5_external_active_count() == 0);
+    // Observe the operation locally before the independent lifecycle cancellation.
+    TimerProbe.beskid_rt_v5_fiber_yield();
+    return -1000_i64;
+}
+
+[Export(Abi:"C", Symbol:"RunTimerFixture")]
+pub i64 RunTimerFixture() {
+    Result<unit, TimerError> result = Time.Sleep(Duration { nanos: -1_i64 });
+    bool invalid = match result { Result::Error(TimerError::InvalidDuration()) => true, _ => false, };
+    RequireTimer(invalid);
+    Result<unit, TimerError> overflow = Time.Sleep(Duration { nanos: 9223372036854775807_i64 });
+    bool overflowed = match overflow { Result::Error(TimerError::DeadlineOverflow()) => true, _ => false, };
+    RequireTimer(overflowed);
+    Result<unit, TimerError> hostResult = Time.Sleep(Duration { nanos: 0_i64 });
+    bool unavailable = match hostResult { Result::Error(TimerError::Unavailable()) => true, _ => false, };
+    RequireTimer(unavailable);
+    RequireTimer(TimerProbe.beskid_rt_v5_external_active_count() == 0);
+    Fiber<i64> repeated = spawn RepeatedTimer();
+    i64 score = match repeated.Join() { Result::Ok(value) => value, _ => -1000_i64, };
+    Fiber<i64> positive = spawn PositiveTimer();
+    Fiber<i64> sibling = spawn SiblingDuringTimer();
+    i64 positiveScore = match positive.Join() { Result::Ok(value) => value, _ => -1000_i64, };
+    i64 siblingScore = match sibling.Join() { Result::Ok(value) => value, _ => -1000_i64, };
+    Fiber<i64> cancelled = spawn CancelAndRepeatTimer();
+    i64 cancelledScore = match cancelled.Join() { Result::Error(FiberError::Cancelled(_, _)) => 0_i64, _ => -1000_i64, };
+    Fiber<i64> fresh = spawn RepeatedTimer();
+    i64 freshScore = match fresh.Join() { Result::Ok(value) => value, _ => -1000_i64, };
+    return 126_i64 + score + positiveScore + siblingScore + cancelledScore + freshScore;
+}

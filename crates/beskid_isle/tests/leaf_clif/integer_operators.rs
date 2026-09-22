@@ -57,6 +57,7 @@ fn binary_rule_recurses_through_ast_keys_and_emits_iadd() {
     let generation = SyntaxGenerationId(3);
     let node = |id| AstNodeKey { unit, generation, node: AstNodeId(id) };
     let facts = BinaryFacts { root: node(1), left: node(2), right: node(3) };
+    let isa = super::support::test_isa();
     let mut function = Function::new();
     let mut builder_context = FunctionBuilderContext::new();
     {
@@ -64,9 +65,10 @@ fn binary_rule_recurses_through_ast_keys_and_emits_iadd() {
         let block = builder.create_block();
         builder.switch_to_block(block);
         builder.seal_block(block);
-        let value = lower_expression(&mut IsleContext::new(&mut builder, &facts), facts.root).expect("binary rule");
+        let value = lower_expression(&mut IsleContext::new(&mut builder, &facts, isa.frontend_config()), facts.root)
+            .expect("binary rule");
         builder.ins().return_(&[value]);
-        builder.finalize();
+        builder.finalize(isa.frontend_config());
     }
 
     let clif = function.display().to_string();
@@ -129,6 +131,7 @@ fn integer_bitwise_and_rule_emits_band() {
     let generation = SyntaxGenerationId(3);
     let node = |id| AstNodeKey { unit, generation, node: AstNodeId(id) };
     let facts = BitwiseAndFacts { root: node(1), left: node(2), right: node(3) };
+    let isa = super::support::test_isa();
     let mut function = Function::new();
     let mut builder_context = FunctionBuilderContext::new();
     {
@@ -136,10 +139,10 @@ fn integer_bitwise_and_rule_emits_band() {
         let block = builder.create_block();
         builder.switch_to_block(block);
         builder.seal_block(block);
-        let value =
-            lower_expression(&mut IsleContext::new(&mut builder, &facts), facts.root).expect("bitwise AND rule");
+        let value = lower_expression(&mut IsleContext::new(&mut builder, &facts, isa.frontend_config()), facts.root)
+            .expect("bitwise AND rule");
         builder.ins().return_(&[value]);
-        builder.finalize();
+        builder.finalize(isa.frontend_config());
     }
 
     let clif = function.display().to_string();
@@ -211,6 +214,7 @@ fn integer_shift_and_or_rules_emit_stock_clif() {
     let generation = SyntaxGenerationId(3);
     let node = |id| AstNodeKey { unit, generation, node: AstNodeId(id) };
     let facts = ShiftFacts { root: node(1), shift: node(2), generation: node(3), amount: node(4), slot: node(5) };
+    let isa = super::support::test_isa();
     let mut function = Function::new();
     let mut builder_context = FunctionBuilderContext::new();
     {
@@ -218,10 +222,10 @@ fn integer_shift_and_or_rules_emit_stock_clif() {
         let block = builder.create_block();
         builder.switch_to_block(block);
         builder.seal_block(block);
-        let value =
-            lower_expression(&mut IsleContext::new(&mut builder, &facts), facts.root).expect("shift and OR rules");
+        let value = lower_expression(&mut IsleContext::new(&mut builder, &facts, isa.frontend_config()), facts.root)
+            .expect("shift and OR rules");
         builder.ins().return_(&[value]);
-        builder.finalize();
+        builder.finalize(isa.frontend_config());
     }
 
     let clif = function.display().to_string();
@@ -278,6 +282,7 @@ fn integer_logical_right_shift_rule_emits_ushr() {
     let unit = SourceUnitId::new(&db, PathBuf::from("/tmp/ShiftRight.bd"));
     let node = |id| AstNodeKey { unit, generation: SyntaxGenerationId(3), node: AstNodeId(id) };
     let facts = ShiftFacts { root: node(1), left: node(2), right: node(3) };
+    let isa = super::support::test_isa();
     let mut function = Function::new();
     let mut builder_context = FunctionBuilderContext::new();
     {
@@ -285,10 +290,10 @@ fn integer_logical_right_shift_rule_emits_ushr() {
         let block = builder.create_block();
         builder.switch_to_block(block);
         builder.seal_block(block);
-        let value = lower_expression(&mut IsleContext::new(&mut builder, &facts), facts.root)
+        let value = lower_expression(&mut IsleContext::new(&mut builder, &facts, isa.frontend_config()), facts.root)
             .expect("logical right shift rule");
         builder.ins().return_(&[value]);
-        builder.finalize();
+        builder.finalize(isa.frontend_config());
     }
     assert!(function.display().to_string().contains("ushr"));
 }

@@ -1,0 +1,100 @@
+enum DisposeError { Failed() }
+enum Result<T, E> { Ok(T value), Error(E error) }
+enum Envelope { Wrap(i64 value) }
+type Box { i64[] item, i64 digit, }
+contract Disposable { Result<unit, DisposeError> Dispose(); }
+[Extern(Abi:"C")]
+pub contract Probe {
+    unit gc_collect();
+    i64 gc_object_count();
+    i64 gc_external_root_count();
+}
+type Resource: Disposable {
+    i64 minimum,
+    bool collect,
+    bool fail,
+    pub Result<unit, DisposeError> Dispose() {
+        if collect { Probe.gc_collect(); }
+        if Probe.gc_object_count() < minimum { return Result::Error(DisposeError::Failed()); }
+        if fail { return Result::Error(DisposeError::Failed()); }
+        return Result::Ok(());
+    }
+}
+Result<i64, DisposeError> Scalar(bool collect, bool fail) {
+    return Result::Ok({ use Resource resource = Resource { minimum: 2_i64, collect: collect, fail: fail }; 7_i64; });
+}
+Result<Envelope, DisposeError> Nested() {
+    return Result::Ok(Envelope::Wrap({ use Resource resource = Resource { minimum: 3_i64, collect: true, fail: false }; 7_i64; }));
+}
+Result<Box, DisposeError> Struct() {
+    return Result::Ok(Box {
+        item: [1_i64],
+        digit: { use Resource resource = Resource { minimum: 3_i64, collect: true, fail: false }; 7_i64; },
+    });
+}
+Result<i64[], DisposeError> Array() {
+    i64[] values = [1_i64, ArrayElement()];
+    return Result::Ok(values);
+}
+i64 ArrayElement() { Probe.gc_collect(); return 7_i64; }
+i64 BulkSum(bulk i64[] values) { return values[0_i64] + values[1_i64]; }
+Result<i64, DisposeError> Bulk(bool fail) {
+    return Result::Ok(BulkSum(1_i64, { use Resource resource = Resource { minimum: 3_i64, collect: true, fail: fail }; 7_i64; }));
+}
+i64 Consume(i64[] item, i64 digit) { return item[0_i64] + digit; }
+Result<i64, DisposeError> Argument(bool fail) {
+    return Result::Ok(Consume([1_i64], { use Resource resource = Resource { minimum: 3_i64, collect: true, fail: fail }; 7_i64; }));
+}
+i64 CheckScalar(bool collect) {
+    return match Scalar(collect, false) { Result::Ok(value) => value, Result::Error(_) => 101_i64, };
+}
+i64 CheckNested() {
+    return match Nested() { Result::Ok(value) => match value { Envelope::Wrap(digit) => digit, }, Result::Error(_) => 102_i64, };
+}
+i64 StructValue(Box value) { i64[] item = value.item; return item[0_i64] + value.digit; }
+i64 ArrayValue(i64[] value) { return value[0_i64] + value[1_i64]; }
+i64 CheckStruct() {
+    return match Struct() { Result::Ok(value) => StructValue(value), Result::Error(_) => 103_i64, };
+}
+i64 CheckArray(Result<i64[], DisposeError> result) {
+    return match result { Result::Ok(value) => ArrayValue(value), Result::Error(_) => 104_i64, };
+}
+i64 CheckArgument(bool fail) {
+    return match Argument(fail) { Result::Ok(value) => value, Result::Error(_) => 105_i64, };
+}
+[Export(Abi:"C", Symbol:"RunCleanupFixture")]
+pub i64 RunCleanupFixture() {
+    let roots = Probe.gc_external_root_count();
+    Probe.gc_collect();
+    if CheckScalar(false) != 7_i64 { return 1_i64; }
+    Probe.gc_collect();
+    if CheckScalar(true) != 7_i64 { return 2_i64; }
+    if Probe.gc_external_root_count() != roots { return 12_i64; }
+    Probe.gc_collect();
+    if CheckNested() != 7_i64 { return 3_i64; }
+    if Probe.gc_external_root_count() != roots { return 13_i64; }
+    Probe.gc_collect();
+    if CheckStruct() != 8_i64 { return 4_i64; }
+    if Probe.gc_external_root_count() != roots { return 14_i64; }
+    Probe.gc_collect();
+    if CheckArray(Array()) != 8_i64 { return 5_i64; }
+    if Probe.gc_external_root_count() != roots { return 15_i64; }
+    Probe.gc_collect();
+    if CheckArgumentResult(Bulk(true)) != 105_i64 { return 6_i64; }
+    if Probe.gc_external_root_count() != roots { return 16_i64; }
+    Probe.gc_collect();
+    if CheckArgument(false) != 8_i64 { return 7_i64; }
+    if Probe.gc_external_root_count() != roots { return 17_i64; }
+    Probe.gc_collect();
+    if CheckArgument(true) != 105_i64 { return 8_i64; }
+    if Probe.gc_external_root_count() != roots { return 18_i64; }
+    if CheckArgumentResult(Bulk(false)) != 8_i64 { return 20_i64; }
+    if CheckArgumentResult(Scalar(true, true)) != 105_i64 { return 21_i64; }
+    if Probe.gc_external_root_count() != roots { return 24_i64; }
+    Probe.gc_collect();
+    if Probe.gc_object_count() != 0_i64 { return 19_i64; }
+    return 42_i64;
+}
+i64 CheckArgumentResult(Result<i64, DisposeError> result) {
+    return match result { Result::Ok(value) => value, Result::Error(_) => 105_i64, };
+}

@@ -59,5 +59,5 @@ pub use readme::{
 pub use validator::{MOD_CAPABILITY_NAMES, validate_manifest, validate_workspace_manifest};
 pub use workflow::{
     PROJECT_LOCK_FILE_NAME, ProjectLockDependencyEntry, WorkspacePrepareOptions, load_project_lock_dependencies,
-    prepare_project_workspace, prepare_project_workspace_with_options,
+    load_project_lock_dependencies_from_path, prepare_project_workspace, prepare_project_workspace_with_options,
 };

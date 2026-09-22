@@ -17,6 +17,74 @@ fn supported_targets() -> Vec<TargetMetadata> {
 }
 
 #[test]
+fn descriptor_worker_layout_preserves_abi_v5_offsets() {
+    for target in supported_targets() {
+        let manifest = AbiManifestV5::canonical_runtime(target);
+        let worker = manifest.layouts.iter().find(|layout| layout.name == "BeskidWorkerRequest").unwrap();
+        assert_eq!((worker.size, worker.alignment), (72, 8));
+        let descriptor = worker.fields.iter().find(|field| field.offset == 24).unwrap();
+        assert_eq!(descriptor.ty, "usize", "pointer-width storage remains a checked descriptor slot");
+        for (name, offset) in [("buffer", 32), ("length", 40), ("result", 48), ("owner_scheduler_id", 64)] {
+            assert_eq!(worker.fields.iter().find(|field| field.name == name).unwrap().offset, offset);
+        }
+    }
+}
+
+#[test]
+fn windows_descriptor_primitives_use_application_ucrt_import_authority() {
+    let target =
+        supported_targets().into_iter().find(|target| target.triple.as_str() == "x86_64-pc-windows-msvc").unwrap();
+    let manifest = AbiManifestV5::canonical_runtime(target);
+    for symbol in
+        ["_errno", "_dup", "_close", "_read", "_write", "_setmode", "_set_thread_local_invalid_parameter_handler"]
+    {
+        let import = manifest
+            .platform_imports
+            .iter()
+            .find(|import| import.symbol == symbol)
+            .unwrap_or_else(|| panic!("missing application UCRT descriptor import: {symbol}"));
+        assert_eq!(import.library, "ucrt", "{symbol} must share the application's dynamic UCRT");
+        if symbol == "_errno" {
+            assert!(import.params.is_empty(), "_errno has no parameters");
+            assert_eq!(import.result, AbiType::Pointer, "_errno returns the thread-local errno address");
+        }
+    }
+}
+
+#[test]
+fn raw_descriptor_abi_rejects_before_allocation_or_native_admission() {
+    let source = include_str!("../../../runtime/beskid/src/Runtime/Io/Syscalls.bd");
+    let submit = source.find("pub i64 SyscallSubmitAndPark").unwrap();
+    let reject = source[submit..].find("if descriptor > 2147483647 { return -1; }").unwrap() + submit;
+    let allocation = source[submit..].find("pointer nativeBuffer = SystemAllocate").unwrap() + submit;
+    assert!(reject < allocation, "raw descriptor admission must precede native allocation");
+
+    let write = source.find("pub i64 SyscallWrite(i64 descriptor, pointer value)").unwrap();
+    let write_reject =
+        source[write..].find("if descriptor < 0 || descriptor > 2147483647 { return -1; }").unwrap() + write;
+    let native_admission = source[write..].find("SyscallSubmitAndPark(word(descriptor)").unwrap() + write;
+    assert!(write_reject < native_admission, "the i64 raw ABI must not narrow/admit an invalid descriptor");
+}
+
+#[test]
+fn descriptor_worker_ownership_is_disjoint_from_the_existing_abandoned_protocol() {
+    let source = include_str!("../assembly/common/external_wait.h");
+    assert!(source.contains("BESKID_WORKER_ABANDONED = 1u"));
+    assert!(source.contains("BESKID_WORKER_OWNS_DESCRIPTOR = UINT32_C(0x80000000)"));
+    assert!(source.contains("request->abandoned |= BESKID_WORKER_OWNS_DESCRIPTOR"));
+    assert!(source.contains("r->abandoned |= BESKID_WORKER_ABANDONED"));
+    assert!(!source.contains("r->abandoned = 1"));
+    assert!(
+        source.contains("BeskidWorkerCloseDescriptor(request);"),
+        "every request free releases its owned duplicate"
+    );
+    assert!(
+        source.contains("if (beskid_workers_stop || beskid_request_count >= BESKID_REQUEST_MAX) {\n    BeskidWorkerCloseDescriptor(r);"),
+        "queue rejection must release its duplicate before returning"
+    );
+}
+
+#[test]
 fn canonical_contract_has_the_exact_lifecycle_closure_and_trap_exports() {
     let manifest = AbiManifestV5::canonical_runtime(supported_targets()[0].clone());
     manifest.validate().expect("canonical runtime contract");
@@ -31,6 +99,14 @@ fn canonical_contract_has_the_exact_lifecycle_closure_and_trap_exports() {
         vec![
             ("beskid_library_attach_v5", &[AbiType::Pointer][..], AbiType::I32,),
             ("beskid_library_detach_v5", &[AbiType::Pointer][..], AbiType::Void,),
+            ("beskid_rt_v5_abi_value_clear", &[AbiType::Pointer][..], AbiType::U8),
+            (
+                "beskid_rt_v5_abi_value_initialize",
+                &[AbiType::Pointer, AbiType::USize, AbiType::Pointer, AbiType::Pointer][..],
+                AbiType::U8
+            ),
+            ("beskid_rt_v5_abi_value_move_out", &[AbiType::Pointer, AbiType::Pointer][..], AbiType::U8),
+            ("beskid_rt_v5_abi_value_replace_with_barrier", &[AbiType::Pointer, AbiType::Pointer][..], AbiType::U8),
             ("beskid_rt_v5_abi_version", &[][..], AbiType::U32),
             ("beskid_rt_v5_array_allocate_rooted", &[AbiType::Pointer, AbiType::Pointer][..], AbiType::Pointer,),
             ("beskid_rt_v5_array_construction_finish", &[AbiType::Pointer][..], AbiType::U8,),
@@ -52,11 +128,19 @@ fn canonical_contract_has_the_exact_lifecycle_closure_and_trap_exports() {
                 AbiType::U8,
             ),
             ("beskid_rt_v5_closure_environment_root_current", &[AbiType::USize, AbiType::Pointer][..], AbiType::U8,),
+            ("beskid_rt_v5_external_active_count", &[][..], AbiType::USize),
+            ("beskid_rt_v5_external_owner_id", &[][..], AbiType::USize),
+            ("beskid_rt_v5_external_pump", &[AbiType::I64][..], AbiType::Void),
+            ("beskid_rt_v5_external_sleep_until", &[AbiType::I64][..], AbiType::USize),
+            ("beskid_rt_v5_external_try_complete", &[AbiType::USize, AbiType::USize, AbiType::USize][..], AbiType::U8),
+            ("beskid_rt_v5_external_wait_park", &[AbiType::USize][..], AbiType::USize),
+            ("beskid_rt_v5_external_wait_post", &[AbiType::USize, AbiType::USize, AbiType::USize][..], AbiType::U8),
             (
-                "beskid_rt_v5_fiber_spawn_with_cancel_slot",
-                &[AbiType::Pointer, AbiType::Pointer, AbiType::Pointer][..],
-                AbiType::I64,
+                "beskid_rt_v5_external_wait_register",
+                &[AbiType::USize, AbiType::USize, AbiType::I64][..],
+                AbiType::USize
             ),
+            ("beskid_rt_v5_external_wait_release", &[AbiType::USize][..], AbiType::U8),
             ("beskid_rt_v5_fiber_yield", &[][..], AbiType::Void,),
             ("beskid_rt_v5_managed_object_allocate", &[AbiType::Pointer][..], AbiType::Pointer,),
             ("beskid_rt_v5_poll_executor_run_once", &[][..], AbiType::I32,),
@@ -96,7 +180,7 @@ fn trusted_intrinsics_are_typed_and_owned_only_by_the_canonical_package() {
     assert_eq!(package.name(), CANONICAL_RUNTIME_PACKAGE_NAME);
     assert_eq!(package.abi_version(), ABI_V5);
     let names = manifest.trusted_runtime_intrinsics.iter().map(|intrinsic| intrinsic.name.as_str()).collect::<Vec<_>>();
-    assert_eq!(names.len(), 41);
+    assert_eq!(names.len(), 68);
     assert!(names.contains(&"pointer_add"));
     assert!(names.contains(&"raw_word_load"));
     assert!(names.contains(&"system_allocate"));
@@ -112,6 +196,35 @@ fn trusted_intrinsics_are_typed_and_owned_only_by_the_canonical_package() {
     assert!(names.contains(&"fs_read_text"));
     assert!(names.contains(&"tty_winsize"));
     assert!(names.contains(&"worker_submit"));
+    for name in
+        ["worker_release", "owner_create", "owner_destroy", "owner_post", "owner_pop", "owner_wait", "wait_claim"]
+    {
+        assert!(names.contains(&name));
+    }
+    for name in [
+        "network_open",
+        "network_close",
+        "network_bind",
+        "network_address",
+        "network_options",
+        "network_get_options",
+        "network_shutdown_write",
+        "network_reactor_create",
+        "network_reactor_destroy",
+        "network_submit",
+        "network_cancel",
+        "network_reactor_poll",
+        "network_report_leak",
+        "network_table_lock",
+        "network_table_unlock",
+        "network_table_root",
+        "network_dns_start",
+        "network_dns_count",
+        "network_dns_get",
+        "network_dns_release",
+    ] {
+        assert!(names.contains(&name), "missing private networking transport intrinsic {name}");
+    }
     assert!(manifest.intrinsic_metadata("pointer_add").is_some());
 
     let mut unauthorized = manifest.clone();
@@ -156,6 +269,7 @@ fn canonical_layouts_freeze_common_and_target_context_offsets() {
         assert_eq!(
             names,
             vec![
+                "BeskidAbiValue",
                 "BeskidAllocationRequest",
                 "BeskidArrayAllocationRequest",
                 "BeskidArrayElementDescriptor",
@@ -167,6 +281,8 @@ fn canonical_layouts_freeze_common_and_target_context_offsets() {
                 "BeskidGcHandleSlot",
                 "BeskidHandle",
                 "BeskidHeapState",
+                "BeskidNetworkHandle",
+                "BeskidNetworkRequest",
                 "BeskidObjectHeader",
                 "BeskidPendingSpawn",
                 "BeskidPollLink",
@@ -233,6 +349,7 @@ fn target_system_imports_are_exact_and_unknown_contracts_are_rejected() {
         "close",
         "cos",
         "fabs",
+        "fcntl",
         "floor",
         "fstat",
         "getcwd",
@@ -243,14 +360,21 @@ fn target_system_imports_are_exact_and_unknown_contracts_are_rejected() {
         "log10",
         "log2",
         "memcpy",
+        "memset",
         "mkdir",
         "mmap",
         "mprotect",
         "munmap",
         "open",
         "pow",
+        "pthread_cond_broadcast",
+        "pthread_cond_destroy",
+        "pthread_cond_init",
+        "pthread_cond_wait",
         "pthread_create",
         "pthread_join",
+        "pthread_mutex_lock",
+        "pthread_mutex_unlock",
         "read",
         "setenv",
         "sin",
@@ -262,6 +386,14 @@ fn target_system_imports_are_exact_and_unknown_contracts_are_rejected() {
         "write",
     ];
     let windows_imports = [
+        "_close",
+        "_dup",
+        "_errno",
+        "_read",
+        "_set_thread_local_invalid_parameter_handler",
+        "_setmode",
+        "_write",
+        "AcquireSRWLockExclusive",
         "CloseHandle",
         "CreateDirectoryW",
         "CreateFileW",
@@ -279,16 +411,20 @@ fn target_system_imports_are_exact_and_unknown_contracts_are_rejected() {
         "GetSystemTimeAsFileTime",
         "GetTickCount64",
         "InitOnceExecuteOnce",
+        "InitializeConditionVariable",
         "MultiByteToWideChar",
         "ReadFile",
+        "ReleaseSRWLockExclusive",
         "SetEnvironmentVariableW",
         "SetLastError",
+        "SleepConditionVariableSRW",
         "TlsAlloc",
         "TlsGetValue",
         "TlsSetValue",
         "VirtualAlloc",
         "VirtualFree",
         "WaitForSingleObject",
+        "WakeAllConditionVariable",
         "WriteFile",
         "atan2",
         "ceil",
@@ -298,22 +434,88 @@ fn target_system_imports_are_exact_and_unknown_contracts_are_rejected() {
         "log",
         "log10",
         "log2",
+        "memset",
         "pow",
         "sin",
         "sqrt",
         "tan",
     ];
+    let unix_network_imports = [
+        "accept",
+        "bind",
+        "connect",
+        "freeaddrinfo",
+        "getaddrinfo",
+        "getpeername",
+        "getsockname",
+        "getsockopt",
+        "listen",
+        "pipe",
+        "recv",
+        "recvmsg",
+        "send",
+        "sendto",
+        "setsockopt",
+        "shutdown",
+        "socket",
+    ];
+    let windows_winsock_imports = [
+        "WSAGetLastError",
+        "WSAIoctl",
+        "WSARecv",
+        "WSARecvFrom",
+        "WSASend",
+        "WSASendTo",
+        "WSASocketW",
+        "WSAStartup",
+        "bind",
+        "closesocket",
+        "connect",
+        "freeaddrinfo",
+        "getaddrinfo",
+        "getpeername",
+        "getsockname",
+        "getsockopt",
+        "listen",
+        "setsockopt",
+        "shutdown",
+    ];
+    let windows_completion_imports =
+        ["CancelIoEx", "CreateIoCompletionPort", "GetQueuedCompletionStatus", "PostQueuedCompletionStatus"];
     let math_imports = ["atan2", "ceil", "cos", "fabs", "floor", "log", "log10", "log2", "pow", "sin", "sqrt", "tan"];
-    let windows_ucrt_imports =
-        ["atan2", "ceil", "cos", "fabs", "floor", "log", "log10", "log2", "pow", "sin", "sqrt", "tan"];
+    let windows_ucrt_descriptor_imports =
+        ["_close", "_dup", "_errno", "_read", "_set_thread_local_invalid_parameter_handler", "_setmode", "_write"];
     for target in supported_targets() {
         let is_windows = target.triple.as_str() == "x86_64-pc-windows-msvc";
-        let (expected_symbols, expected_library) = match target.triple.as_str() {
-            "aarch64-apple-darwin" => (&unix_imports[..], None),
-            "x86_64-unknown-linux-gnu" => (&unix_imports[..], Some(("libc", "libm"))),
-            "x86_64-pc-windows-msvc" => (&windows_imports[..], Some(("kernel32", "ucrt"))),
+        let (mut expected_symbols, expected_library) = match target.triple.as_str() {
+            "aarch64-apple-darwin" => {
+                let mut imports = unix_imports.to_vec();
+                imports.extend(unix_network_imports);
+                imports.extend(["bzero", "pthread_cond_timedwait_relative_np", "kevent", "kqueue"]);
+                (imports, None)
+            }
+            "x86_64-unknown-linux-gnu" => {
+                let mut imports = unix_imports.to_vec();
+                imports.extend(unix_network_imports);
+                imports.extend(["epoll_create1", "epoll_ctl", "epoll_wait"]);
+                imports.extend([
+                    "pthread_cond_timedwait",
+                    "pthread_condattr_init",
+                    "pthread_condattr_destroy",
+                    "pthread_condattr_setclock",
+                ]);
+                (imports, Some(("libc", "libm")))
+            }
+            "x86_64-pc-windows-msvc" => {
+                let mut imports = windows_imports.to_vec();
+                imports.extend(windows_winsock_imports);
+                imports.extend(windows_completion_imports);
+                imports.push("memcpy");
+                (imports, Some(("kernel32", "ucrt")))
+            }
             unsupported => panic!("unsupported target in contract test: {unsupported}"),
         };
+        expected_symbols.sort_unstable();
         let mut manifest = AbiManifestV5::canonical_runtime(target);
         assert_eq!(
             manifest.platform_imports.iter().map(|entry| entry.symbol.as_str()).collect::<Vec<_>>(),
@@ -322,10 +524,20 @@ fn target_system_imports_are_exact_and_unknown_contracts_are_rejected() {
         match expected_library {
             None => assert!(manifest.platform_imports.iter().all(|entry| entry.library == "libSystem")),
             Some((platform, math)) => {
-                let adapter_imports = if is_windows { &windows_ucrt_imports[..] } else { &math_imports[..] };
-                assert!(manifest.platform_imports.iter().all(|entry| {
-                    entry.library == if adapter_imports.contains(&entry.symbol.as_str()) { math } else { platform }
-                }));
+                for entry in &manifest.platform_imports {
+                    let expected = if is_windows && matches!(entry.symbol.as_str(), "memcpy" | "memset") {
+                        "vcruntime"
+                    } else if is_windows && windows_winsock_imports.contains(&entry.symbol.as_str()) {
+                        "ws2_32"
+                    } else if math_imports.contains(&entry.symbol.as_str())
+                        || (is_windows && windows_ucrt_descriptor_imports.contains(&entry.symbol.as_str()))
+                    {
+                        math
+                    } else {
+                        platform
+                    };
+                    assert_eq!(entry.library, expected, "incorrect provider for {}", entry.symbol);
+                }
             }
         }
         manifest.platform_imports.pop();
@@ -559,4 +771,96 @@ fn abi_json_rejects_unknown_fields() {
     let mut contract = serde_json::to_value(&metadata.abi_contract).unwrap();
     contract.as_object_mut().unwrap().insert("surprise".into(), serde_json::Value::Bool(true));
     assert!(serde_json::from_value::<AbiManifestV5>(contract).is_err());
+}
+
+fn network_status_values() -> Vec<(String, i64)> {
+    let source: serde_json::Value =
+        serde_json::from_str(beskid_abi::generated::abi_v5_contract::ABI_V5_SOURCE_JSON).unwrap();
+    let status = source["statuses"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|status| status["name"] == "BeskidNetworkStatus")
+        .expect("manifest declares BeskidNetworkStatus");
+    status["values"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|value| (value["name"].as_str().unwrap().to_owned(), value["value"].as_i64().unwrap()))
+        .collect()
+}
+
+fn screaming_snake(name: &str) -> String {
+    let mut output = String::new();
+    for (index, character) in name.chars().enumerate() {
+        if character.is_ascii_uppercase() && index != 0 {
+            output.push('_');
+        }
+        output.push(character.to_ascii_uppercase());
+    }
+    output
+}
+
+fn workspace_source(relative: &str) -> String {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..").join(relative);
+    std::fs::read_to_string(&path).unwrap_or_else(|error| panic!("read {}: {error}", path.display()))
+}
+
+#[test]
+fn network_status_manifest_c_enum_runtime_constants_and_corelib_errors_agree() {
+    let statuses = network_status_values();
+    for (index, (_, value)) in statuses.iter().enumerate() {
+        assert_eq!(*value, index as i64, "network statuses are dense and positional");
+    }
+    let names = statuses.iter().map(|(name, _)| name.as_str()).collect::<Vec<_>>();
+    assert_eq!(names.first(), Some(&"Ok"));
+    assert_eq!(names.last(), Some(&"Pending"), "exactly one internal pending status follows the public statuses");
+    assert_eq!(names.iter().filter(|name| **name == "Pending").count(), 1);
+    let value = |name: &str| statuses.iter().find(|(status, _)| status == name).unwrap().1;
+    assert_eq!((value("NetworkDown"), value("ResourceExhausted"), value("Pending")), (9, 18, 19));
+
+    let header = workspace_source("crates/beskid_abi/assembly/common/network.h");
+    let start = header.find("enum { NET_OK").expect("network.h declares the positional status enum");
+    let end = start + header[start..].find("};").unwrap();
+    let c_names = header[start + "enum {".len()..end]
+        .split(',')
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
+    let expected = names.iter().map(|name| format!("NET_{}", screaming_snake(name))).collect::<Vec<_>>();
+    assert_eq!(c_names, expected, "network.h status enum mirrors the manifest positionally");
+    assert!(header.contains("_Static_assert(NET_RESOURCE_EXHAUSTED == 18 && NET_PENDING == 19"));
+
+    let public = &names[1..names.len() - 1];
+    let errors = workspace_source("corelib/packages/network/src/Network/Errors.bd");
+    let body = &errors[errors.find("pub enum NetworkError {").unwrap()..];
+    let body = &body[body.find('{').unwrap() + 1..body.find('}').unwrap()];
+    let variants = body
+        .split(',')
+        .map(|variant| variant.trim().trim_end_matches("()"))
+        .filter(|variant| !variant.is_empty())
+        .collect::<Vec<_>>();
+    assert_eq!(variants, public, "NetworkError declaration order is the status order");
+
+    let internal = workspace_source("corelib/packages/network/src/Network/Internal.bd");
+    for (name, status) in statuses.iter().filter(|(name, _)| public.contains(&name.as_str())) {
+        let line = format!("if status == {status}_i64 {{ return NetworkError::{name}; }}");
+        assert!(internal.contains(&line), "Network.Internal.Error maps status {status} to {name}");
+    }
+    assert!(!internal.contains(&format!("if status == {}_i64 {{ return NetworkError::", value("Pending"))));
+
+    let table = workspace_source("runtime/beskid/src/Runtime/Network/Table.bd");
+    let mut checked = 0;
+    for line in table.lines().filter_map(|line| line.strip_prefix("const NETWORK_")) {
+        let (constant, rest) = line.split_once(" = ").unwrap();
+        let number = rest.trim_end_matches(';').parse::<i64>().unwrap();
+        if let Some((_, expected)) = statuses.iter().find(|(name, _)| screaming_snake(name) == constant) {
+            assert_eq!(number, *expected, "Table.bd NETWORK_{constant} matches the manifest");
+            checked += 1;
+        }
+    }
+    assert!(table.contains("const NETWORK_RESOURCE_EXHAUSTED = 18;") && table.contains("const NETWORK_PENDING = 19;"));
+    assert!(checked >= 10, "Table.bd names its status constants after manifest statuses");
+    assert!(!table.contains("const NETWORK_DOWN"), "runtime-owned failures never report NetworkDown");
 }

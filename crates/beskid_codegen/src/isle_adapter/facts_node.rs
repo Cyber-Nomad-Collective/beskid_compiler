@@ -1,6 +1,31 @@
 use super::*;
 
 impl NodeFacts for SyntaxNodeFacts<'_> {
+    fn scoped_cleanup(&self, key: AstNodeKey) -> Option<beskid_isle::ScopedCleanupPlan> {
+        let fact = self.query(beskid_queries::scoped_cleanup(self.db, key))?;
+        if fact.diagnostic.is_some() {
+            return None;
+        }
+        let dispose = fact.dispose?;
+        let conversion = match fact.conversion {
+            Some(item) => Some((
+                DirectCallee::item(item),
+                signature_for_item(self.isa?, self.query(item_abi_signature(self.db, item))?)?,
+            )),
+            None => None,
+        };
+        Some(beskid_isle::ScopedCleanupPlan {
+            binding: fact.binding,
+            body: fact.body,
+            dispose: DirectCallee::item(dispose),
+            dispose_signature: signature_for_item(self.isa?, self.query(item_abi_signature(self.db, dispose))?)?,
+            dispose_layout: self.enum_layout_from_fact(&fact.dispose_layout?)?,
+            conversion,
+            enclosing_layout: self.enum_layout_from_fact(&fact.enclosing_layout?)?,
+            allocation: self.managed_struct_allocation(key)?,
+            converted_error_managed: fact.converted_error_managed,
+        })
+    }
     fn node_kind(&self, key: AstNodeKey) -> Option<NodeKind> {
         if self.aggregate_field_access_in_context(key).is_some() {
             return Some(NodeKind::FieldExpression);
@@ -55,6 +80,11 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
     }
 
     fn child(&self, key: AstNodeKey, index: u8) -> Option<AstNodeKey> {
+        if index == 0
+            && let Some(access) = self.aggregate_field_access_in_context(key)
+        {
+            return Some(access.receiver);
+        }
         let children = if self.node_kind(key) == Some(NodeKind::TestDefinition) {
             self.query(test_statement_nodes(self.db, key))?
         } else if self.node_kind(key) == Some(NodeKind::BlockExpression) {
@@ -214,6 +244,14 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
     }
 
     fn semantic_type(&self, key: AstNodeKey) -> Option<SemanticTypeId> {
+        if let Some(CallLowering::CorelibService(service)) = self.query(call_lowering(self.db, key))
+            && beskid_abi::runtime_source::canonical_corelib_service_value_dispatch(service).is_some()
+        {
+            return self.typed_corelib_value_service(key, service).map(|(_, result)| result);
+        }
+        if let Some(specialization) = self.generic_call_specialization_in_context(key) {
+            return Some(specialization.signature.result);
+        }
         self.specialized_direct_parameter_type(key).or_else(|| self.scalar_semantic_type(key))
     }
 
@@ -223,6 +261,10 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
 
     fn try_expression_fact(&self, key: AstNodeKey) -> Option<beskid_queries::TryExpressionFact> {
         self.query(try_expression_fact(self.db, key))
+    }
+
+    fn try_return_layout(&self, key: AstNodeKey) -> Option<EnumLayout> {
+        self.enum_layout_from_fact(&self.query(try_expression_fact(self.db, key))?.return_layout)
     }
 
     fn index_target_is_string(&self, key: AstNodeKey) -> bool {
@@ -307,6 +349,9 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
             return None;
         };
         if let Some(specialization) = self.generic_call_specialization_in_context(key) {
+            if specialization.substitutions.is_empty() && specialization.contract_witnesses.is_empty() {
+                return Some(DirectCallee::item(specialization.declaration));
+            }
             return Some(DirectCallee::specialized_item(
                 specialization.declaration,
                 specialization_identity(&specialization),
@@ -466,16 +511,13 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
     }
 
     fn scalar_type(&self, key: AstNodeKey) -> Option<Type> {
-        if let Some(try_expression) = self.try_expression_fact(key) {
-            return map_signature_type(self.isa?, try_expression.payload_type);
-        }
         if self.node_kind(key) == Some(NodeKind::StructLiteralExpression)
             && self.query(aggregate_literal_declaration(self.db, key)).is_some()
         {
             return self.isa.map(|isa| isa.pointer_type());
         }
         if self.node_kind(key) == Some(NodeKind::ArrayLiteralExpression) {
-            return self.isa.map(|isa| isa.pointer_type());
+            return map_signature_type(self.isa?, self.query(abi_type(self.db, key))?);
         }
         if self.node_kind(key) == Some(NodeKind::EnumLiteralExpression)
             && (self.query(enum_constructor(self.db, key)).is_some()
@@ -653,7 +695,51 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
             }
             _ => return None,
         };
-        Some(beskid_isle::SpawnEntry { trampoline: DirectCallee::spawn_trampoline(key), closure_environment })
+        let handle = self.input.spawn_handle_static_plan(key)?;
+        Some(beskid_isle::SpawnEntry {
+            trampoline: DirectCallee::spawn_trampoline(key),
+            closure_environment,
+            handle_request_symbol: handle.allocation_request_symbol.into(),
+            handle_field_offset: i32::try_from(handle.fields[0].field_offset).ok()?,
+        })
+    }
+
+    fn traced_fiber_join_layout(&self, key: AstNodeKey) -> Option<beskid_isle::TracedFiberJoinLayout> {
+        let DirectCallee::CorelibService(
+            symbol @ ("fiber_join_value" | "channel_receive_value" | "hub_wait_receive_value"),
+        ) = self.direct_callee(key)?
+        else {
+            return None;
+        };
+        let slot = self.input.abi_manifest().layouts.iter().find(|layout| layout.name == "BeskidAbiValue")?;
+        let header = self.input.abi_manifest().layouts.iter().find(|layout| layout.name == "BeskidObjectHeader")?;
+        Some(beskid_isle::TracedFiberJoinLayout {
+            symbol,
+            slot_size: u32::try_from(slot.size).ok()?,
+            alignment_shift: u8::try_from(slot.alignment.ilog2()).ok()?,
+            payload_offset: i32::try_from(slot.fields.iter().find(|field| field.name == "payload")?.offset).ok()?,
+            value_offset: i32::try_from(header.size).ok()?,
+        })
+    }
+
+    fn traced_channel_send_layout(&self, key: AstNodeKey) -> Option<beskid_isle::TracedFiberJoinLayout> {
+        let DirectCallee::CorelibService(symbol @ ("channel_send" | "channel_try_send")) = self.direct_callee(key)?
+        else {
+            return None;
+        };
+        let arguments = self.call_arguments(key)?;
+        let [_, value] = arguments.as_slice() else {
+            return None;
+        };
+        (self.managed_reference_in_context(*value)? == beskid_isle::ManagedReferenceFact::GcManaged).then_some(())?;
+        let slot = self.input.abi_manifest().layouts.iter().find(|layout| layout.name == "BeskidAbiValue")?;
+        Some(beskid_isle::TracedFiberJoinLayout {
+            symbol,
+            slot_size: u32::try_from(slot.size).ok()?,
+            alignment_shift: u8::try_from(slot.alignment.ilog2()).ok()?,
+            payload_offset: i32::try_from(slot.fields.iter().find(|field| field.name == "payload")?.offset).ok()?,
+            value_offset: 0,
+        })
     }
 
     fn lambda_entry(&self, key: AstNodeKey) -> Option<beskid_isle::LambdaEntry> {
@@ -685,7 +771,6 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
             Some(beskid_isle::InlineClosureEnvironment {
                 allocation_request_symbol: authority.plan.allocation_request_symbol.clone().into(),
                 descriptor_symbol: authority.plan.descriptor_symbol.clone().into(),
-                root_slot_index: authority.root.slot_index,
                 captures,
             })
         };

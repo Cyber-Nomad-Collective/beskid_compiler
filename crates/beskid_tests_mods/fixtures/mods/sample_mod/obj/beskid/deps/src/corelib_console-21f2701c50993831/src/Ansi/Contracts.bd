@@ -1,0 +1,129 @@
+/// Fluent ANSI builder contracts (implementations return the same step type).
+
+pub contract AnsiStyleStep {
+    /// Applies bold SGR (1).
+    AnsiStyleStep Bold();
+    /// Applies dim SGR (2).
+    AnsiStyleStep Dim();
+    /// Applies italic SGR (3).
+    AnsiStyleStep Italic();
+    /// Applies underline SGR (4).
+    AnsiStyleStep Underline();
+    /// Applies inverse SGR (7).
+    AnsiStyleStep Inverse();
+    /// Applies strikethrough SGR (9).
+    AnsiStyleStep Strike();
+    /// Sets 8/16-color foreground (30–37, 90–97).
+    AnsiStyleStep FgBasic(i64 code);
+    /// Sets 8/16-color background (40–47, 100–107).
+    AnsiStyleStep BgBasic(i64 code);
+    /// Sets 256-color foreground (`38;5;n`).
+    AnsiStyleStep Fg256(i64 index);
+    /// Sets 256-color background (`48;5;n`).
+    AnsiStyleStep Bg256(i64 index);
+    /// Sets 24-bit foreground (`38;2;r;g;b`), downgraded per effective color model.
+    AnsiStyleStep FgRgb(i64 r, i64 g, i64 b);
+    /// Sets 24-bit background (`48;2;r;g;b`), downgraded per effective color model.
+    AnsiStyleStep BgRgb(i64 r, i64 g, i64 b);
+    /// Wraps plain text with open SGR and trailing reset (`0m`).
+    string ApplyTo(string text);
+    /// Returns only the escape prefix (no text, no reset).
+    string IntoPrefix();
+}
+
+pub contract AnsiCursorStep {
+    /// Moves cursor up # lines (`CSI # A`).
+    AnsiCursorStep Up(i64 count);
+    /// Moves cursor down # lines (`CSI # B`).
+    AnsiCursorStep Down(i64 count);
+    /// Moves cursor right # columns (`CSI # C`).
+    AnsiCursorStep Right(i64 count);
+    /// Moves cursor left # columns (`CSI # D`).
+    AnsiCursorStep Left(i64 count);
+    /// Moves cursor to beginning of next line, # lines down (`CSI # E`).
+    AnsiCursorStep NextLine(i64 count);
+    /// Moves cursor to beginning of previous line, # lines up (`CSI # F`).
+    AnsiCursorStep PrevLine(i64 count);
+    /// Moves cursor to column # (`CSI # G`).
+    AnsiCursorStep Column(i64 col);
+    /// Moves cursor to home (0, 0) (`CSI H`).
+    AnsiCursorStep Home();
+    /// Moves cursor to row/column (`CSI row;col H`).
+    AnsiCursorStep Position(i64 row, i64 col);
+    /// DEC save cursor (`ESC 7`).
+    AnsiCursorStep SaveDec();
+    /// DEC restore cursor (`ESC 8`).
+    AnsiCursorStep RestoreDec();
+    /// Concatenated escape bytes for the chain.
+    string IntoSequence();
+}
+
+pub contract AnsiEraseStep {
+    /// Erase from cursor to end of display (`CSI 0 J`).
+    AnsiEraseStep DisplayFromCursor();
+    /// Erase from cursor to beginning of display (`CSI 1 J`).
+    AnsiEraseStep DisplayToCursor();
+    /// Erase entire display (`CSI 2 J`).
+    AnsiEraseStep DisplayAll();
+    /// Erase saved lines (`CSI 3 J`).
+    AnsiEraseStep DisplaySaved();
+    /// Erase from cursor to end of line (`CSI 0 K`).
+    AnsiEraseStep LineFromCursor();
+    /// Erase from start of line to cursor (`CSI 1 K`).
+    AnsiEraseStep LineToCursor();
+    /// Erase entire line (`CSI 2 K`).
+    AnsiEraseStep LineAll();
+    string IntoSequence();
+}
+
+pub contract AnsiScreenStep {
+    /// Enables alternative screen buffer (`CSI ?1049 h`).
+    AnsiScreenStep EnableAltScreen();
+    /// Disables alternative screen buffer (`CSI ?1049 l`).
+    AnsiScreenStep DisableAltScreen();
+    /// Shows cursor (`CSI ?25 h`).
+    AnsiScreenStep ShowCursor();
+    /// Hides cursor (`CSI ?25 l`).
+    AnsiScreenStep HideCursor();
+    /// Saves screen (`CSI ?47 h`).
+    AnsiScreenStep SaveScreen();
+    /// Restores screen (`CSI ?47 l`).
+    AnsiScreenStep RestoreScreen();
+    /// Enables line wrapping (`CSI ?7 h`).
+    AnsiScreenStep EnableLineWrap();
+    /// Disables line wrapping (`CSI ?7 l`).
+    AnsiScreenStep DisableLineWrap();
+    /// Sets scroll region top/bottom inclusive (`CSI top;bottom r`).
+    AnsiScreenStep ScrollRegion(i64 top, i64 bottom);
+    string IntoSequence();
+}
+
+pub contract AnsiOscStep {
+    /// Sets window/icon title (`OSC 0 ; title BEL`).
+    AnsiOscStep SetTitle(string title);
+    /// Wraps label with OSC 8 hyperlink open/close.
+    string Hyperlink(string uri, string label);
+    string IntoSequence();
+}
+
+pub contract AnsiInputModeStep {
+    /// Enables basic mouse click reporting (`CSI ?1000 h`).
+    AnsiInputModeStep EnableMouseClick();
+    /// Disables basic mouse click reporting (`CSI ?1000 l`).
+    AnsiInputModeStep DisableMouseClick();
+    /// Enables button-event mouse tracking (`CSI ?1002 h`).
+    AnsiInputModeStep EnableMouseDrag();
+    /// Disables button-event mouse tracking (`CSI ?1002 l`).
+    AnsiInputModeStep DisableMouseDrag();
+    /// Enables any-motion mouse tracking (`CSI ?1003 h`).
+    AnsiInputModeStep EnableMouseMotion();
+    /// Disables any-motion mouse tracking (`CSI ?1003 l`).
+    AnsiInputModeStep DisableMouseMotion();
+    /// Enables SGR extended mouse coordinates (`CSI ?1006 h`).
+    AnsiInputModeStep EnableSgrMouse();
+    /// Disables SGR extended mouse coordinates (`CSI ?1006 l`).
+    AnsiInputModeStep DisableSgrMouse();
+    /// Redefines a keyboard key (`CSI code ; string p`).
+    AnsiInputModeStep RedefineKey(i64 code, string binding);
+    string IntoSequence();
+}

@@ -166,13 +166,14 @@ fn parsed_capturing_immediate_lambda_call_lowers_through_abi_v5_closure_environm
     };
     let clif = function.display().to_string();
     assert!(clif.contains("beskid_rt_v5_closure_environment_allocate"), "{clif}");
-    assert!(clif.contains("beskid_rt_v5_closure_environment_root_current"), "{clif}");
+    assert!(clif.contains("gc_register_root"), "{clif}");
+    assert!(clif.contains("gc_unregister_root"), "{clif}");
     assert!(clif.contains("__beskid_closure_allocation_request_"), "{clif}");
     assert!(clif.contains("iadd"), "{clif}");
 }
 
 #[test]
-fn closure_lowering_authority_reserves_root_slot_without_tls_pointer() {
+fn closure_lowering_authority_preserves_current_site_without_fabricated_tls_slot() {
     let (input, _isa, root) = item_fixture_with_root("i32 Main(i32 outer) { return (() => outer)(); }");
     let call =
         find_node(input.database(), root, beskid_queries::IndexedNodeKind::CallExpression).expect("immediate call");
@@ -180,9 +181,8 @@ fn closure_lowering_authority_reserves_root_slot_without_tls_pointer() {
         .expect("capturing lambda");
     let authority =
         input.closure_lowering_authority(call, lambda).expect("current transferable capture receives root authority");
-    assert_eq!(authority.root.root_helper, "beskid_rt_v5_closure_environment_root_current");
+    assert_eq!(authority.site, call);
     assert!(authority.plan.runtime_root_context().is_none());
-    assert!(authority.root.slot_index < 64);
 }
 
 #[test]

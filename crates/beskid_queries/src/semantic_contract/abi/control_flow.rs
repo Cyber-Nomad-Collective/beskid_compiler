@@ -65,6 +65,9 @@ pub(in crate::semantic_contract) fn statement_may_fall_through(statement: &beski
         beskid_analysis::syntax::Statement::With(with_statement) => {
             block_may_fall_through(&with_statement.node.body.node)
         }
+        beskid_analysis::syntax::Statement::Use(scoped) => {
+            scoped.node.body.as_ref().is_none_or(|body| block_may_fall_through(&body.node))
+        }
         beskid_analysis::syntax::Statement::Let(_)
         | beskid_analysis::syntax::Statement::While(_)
         | beskid_analysis::syntax::Statement::For(_)

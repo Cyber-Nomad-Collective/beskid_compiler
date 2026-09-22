@@ -12,7 +12,7 @@ use anyhow::{Result, anyhow};
 use serde::{Deserialize, Serialize};
 
 use super::prepared_matrix::{
-    Cancellation, ExecutionBudgets, MatrixReport, PreparedWorkspace, RevisionSnapshot, TargetReport, TargetResult,
+    Cancellation, MatrixReport, PreparedWorkspace, RevisionSnapshot, TargetReport, TargetResult,
     WorkerExitCause, duration_ms, unix_ms,
 };
 use super::test::{TestArgs, TestSummary, execute_prepared_target};
@@ -63,7 +63,7 @@ pub fn execute_all_targets(args: TestArgs) -> Result<()> {
 }
 
 fn execute_worker(args: TestArgs) -> Result<()> {
-    let budgets = ExecutionBudgets::default();
+    let budgets = args.execution_budgets();
     let cancellation = Cancellation::default();
     let mut workspace = match PreparedWorkspace::prepare(&args, None, budgets, cancellation) {
         Ok(workspace) => workspace,
@@ -112,7 +112,7 @@ fn execute_worker(args: TestArgs) -> Result<()> {
 }
 
 fn supervise_worker(args: TestArgs) -> Result<()> {
-    let budgets = ExecutionBudgets::default();
+    let budgets = args.execution_budgets();
     let matrix_started = Instant::now();
     let mut child = spawn_worker(&args)?;
     let stdout = child.stdout.take().ok_or_else(|| anyhow!("matrix worker stdout was not piped"))?;
@@ -239,6 +239,9 @@ fn spawn_worker(args: &TestArgs) -> Result<Child> {
     }
     if let Some(group) = &args.group {
         command.arg("--group").arg(group);
+    }
+    if let Some(target_timeout) = args.target_timeout {
+        command.arg("--target-timeout").arg(target_timeout.to_string());
     }
     command.arg("--all-targets").arg("--plain");
     command
@@ -645,5 +648,18 @@ mod tests {
         let event = decode_worker_line(&line, &mut output).expect("decode target event").expect("framed event");
 
         assert!(matches!(event, WorkerEvent::TargetFinished { report } if report.duration_ms == 2));
+    }
+
+    #[test]
+    fn spawn_worker_forwards_target_timeout_to_the_child() {
+        let source = include_str!("../matrix_test.rs");
+        assert!(
+            source.contains("if let Some(target_timeout) = args.target_timeout"),
+            "spawn_worker must forward --target-timeout to the isolated matrix worker"
+        );
+        assert!(
+            source.contains("command.arg(\"--target-timeout\").arg(target_timeout.to_string())"),
+            "spawn_worker must pass the resolved timeout as `--target-timeout <secs>`"
+        );
     }
 }

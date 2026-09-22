@@ -1,0 +1,15 @@
+/// Beskid.Glue hub: attributes, host typed tag objects, and the stdio bridge
+/// fiber type. Per-language glue mods implement the seven atomized contracts
+/// (see Core.Glue.Contracts) and the host dispatches them.
+///
+/// 0.4 delivery: declarations and contracts only. Language-specific
+/// emission, signature reading, and stdio protocol implementation land in 0.5.
+pub mod Core.Glue.GlueTag;
+pub mod Core.Glue.StdioBridge;
+pub mod Core.Glue.Contracts.TypeMapping;
+pub mod Core.Glue.Contracts.SymbolEmission;
+pub mod Core.Glue.Contracts.LinkArgs;
+pub mod Core.Glue.Contracts.SignatureReader;
+pub mod Core.Glue.Contracts.SignatureWriter;
+pub mod Core.Glue.Contracts.ToolchainProbe;
+pub mod Core.Glue.Contracts.StdioBridge;

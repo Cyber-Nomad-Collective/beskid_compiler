@@ -1,8 +1,8 @@
 //! Static, artifact-owned closure allocation metadata and generation-safe root authority.
 //!
 //! Static planning turns the current syntax generation's closure capture facts into deterministic
-//! descriptor/pointer-map/allocation-request identities. Rooting never invents a TLS pointer:
-//! generated code may only call the manifest-owned current-thread helper.
+//! descriptor/pointer-map/allocation-request identities. Generated code holds live allocations
+//! with ordinary explicit temporary roots, never a fabricated TLS pointer or hashed root slot.
 
 use std::sync::Arc;
 
@@ -14,7 +14,6 @@ use crate::CodegenInput;
 /// Manifest-approved ABI-v5 helpers consumed by captured-closure lowering.
 pub const ABI_V5_CLOSURE_ENVIRONMENT_ALLOCATE: &str = "beskid_rt_v5_closure_environment_allocate";
 pub const ABI_V5_CLOSURE_CAPTURE_STORE: &str = "beskid_rt_v5_closure_capture_store";
-pub const ABI_V5_CLOSURE_ENVIRONMENT_ROOT_CURRENT: &str = "beskid_rt_v5_closure_environment_root_current";
 
 /// The source capture represented by one static closure-environment field.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -33,21 +32,12 @@ pub struct ClosureCaptureStaticField {
 #[derive(Debug)]
 pub enum RuntimeRootContext {}
 
-/// Source-authorized current-thread root ownership for one closure lowering site.
-///
-/// This fact never carries a TLS or root-frame pointer. Lowering may only emit a call to
-/// [`ABI_V5_CLOSURE_ENVIRONMENT_ROOT_CURRENT`] with the reserved `slot_index`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ClosureRootAuthority {
-    pub slot_index: u64,
-    pub root_helper: &'static str,
-}
-
 /// Generation-safe authority required before captured-closure ISLE lowering may proceed.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ClosureLoweringAuthority {
     pub plan: ClosureStaticPlan,
-    pub root: ClosureRootAuthority,
+    /// Exact current lowering site; ordinary temporary roots own the live allocation.
+    pub site: AstNodeKey,
 }
 
 /// Deterministic static data required by ABI-v5 closure-environment allocation.
@@ -78,13 +68,6 @@ impl ClosureStaticPlan {
     /// Static planning never has a runtime value for the current TLS/root frame.
     pub const fn runtime_root_context(&self) -> Option<RuntimeRootContext> {
         None
-    }
-}
-
-impl ClosureRootAuthority {
-    /// Construct current-thread root authority only when the helper is the canonical export.
-    pub fn current_thread(slot_index: u64) -> Option<Self> {
-        Some(Self { slot_index, root_helper: ABI_V5_CLOSURE_ENVIRONMENT_ROOT_CURRENT })
     }
 }
 
@@ -156,13 +139,11 @@ impl CodegenInput<'_> {
         let plan = self.closure_static_plan(lambda)?;
         if !self.manifest_exports_symbol(ABI_V5_CLOSURE_ENVIRONMENT_ALLOCATE)
             || !self.manifest_exports_symbol(ABI_V5_CLOSURE_CAPTURE_STORE)
-            || !self.manifest_exports_symbol(ABI_V5_CLOSURE_ENVIRONMENT_ROOT_CURRENT)
         {
             return None;
         }
-        let slot_index = root_slot_index(self, site)?;
-        let root = ClosureRootAuthority::current_thread(slot_index)?;
-        Some(ClosureLoweringAuthority { plan, root })
+        closure_identity(self, site)?;
+        Some(ClosureLoweringAuthority { plan, site })
     }
 
     fn manifest_exports_symbol(&self, symbol: &str) -> bool {
@@ -264,19 +245,6 @@ fn closure_identity(input: &CodegenInput<'_>, lambda: AstNodeKey) -> Option<Stri
         .map(|character| if character.is_ascii_alphanumeric() { character } else { '_' })
         .collect::<String>();
     Some(format!("{namespace}_u{unit_index}_g{}_n{}", lambda.generation.0, lambda.node.0))
-}
-
-/// Reserve one deterministic root-slot owner identity for a lowering site.
-///
-/// The index is derived from the site's generation-safe syntax identity so two call/spawn sites
-/// never share a slot reservation without also sharing that exact syntax key.
-fn root_slot_index(input: &CodegenInput<'_>, site: AstNodeKey) -> Option<u64> {
-    let identity = closure_identity(input, site)?;
-    let mut hash = 0u64;
-    for byte in identity.as_bytes() {
-        hash = hash.wrapping_mul(131).wrapping_add(u64::from(*byte));
-    }
-    Some(hash % 64)
 }
 
 fn paths_match(left: &std::path::Path, right: &std::path::Path) -> bool {

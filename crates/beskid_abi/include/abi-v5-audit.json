@@ -467,34 +467,6 @@
       ]
     },
     {
-      "name": "__channel_receive_ptr",
-      "adapter": "channel_receive_ptr",
-      "params": [
-        {
-          "name": "id",
-          "type": "i64"
-        }
-      ],
-      "result": "pointer",
-      "targetBindings": [
-        {
-          "target": "aarch64-apple-darwin",
-          "implementation": "channel_receive_ptr",
-          "osImports": []
-        },
-        {
-          "target": "x86_64-pc-windows-msvc",
-          "implementation": "channel_receive_ptr",
-          "osImports": []
-        },
-        {
-          "target": "x86_64-unknown-linux-gnu",
-          "implementation": "channel_receive_ptr",
-          "osImports": []
-        }
-      ]
-    },
-    {
       "name": "__channel_receive_status",
       "adapter": "channel_receive_status",
       "params": [
@@ -529,9 +501,13 @@
         {
           "name": "id",
           "type": "i64"
+        },
+        {
+          "name": "destination",
+          "type": "pointer"
         }
       ],
-      "result": "i64",
+      "result": "u8",
       "targetBindings": [
         {
           "target": "aarch64-apple-darwin",
@@ -559,39 +535,7 @@
           "type": "i64"
         },
         {
-          "name": "value",
-          "type": "i64"
-        }
-      ],
-      "result": "i64",
-      "targetBindings": [
-        {
-          "target": "aarch64-apple-darwin",
-          "implementation": "channel_send",
-          "osImports": []
-        },
-        {
-          "target": "x86_64-pc-windows-msvc",
-          "implementation": "channel_send",
-          "osImports": []
-        },
-        {
-          "target": "x86_64-unknown-linux-gnu",
-          "implementation": "channel_send",
-          "osImports": []
-        }
-      ]
-    },
-    {
-      "name": "__channel_send_ptr",
-      "adapter": "channel_send_ptr",
-      "params": [
-        {
-          "name": "id",
-          "type": "i64"
-        },
-        {
-          "name": "valuePtr",
+          "name": "sender",
           "type": "pointer"
         }
       ],
@@ -599,17 +543,17 @@
       "targetBindings": [
         {
           "target": "aarch64-apple-darwin",
-          "implementation": "channel_send_ptr",
+          "implementation": "channel_send",
           "osImports": []
         },
         {
           "target": "x86_64-pc-windows-msvc",
-          "implementation": "channel_send_ptr",
+          "implementation": "channel_send",
           "osImports": []
         },
         {
           "target": "x86_64-unknown-linux-gnu",
-          "implementation": "channel_send_ptr",
+          "implementation": "channel_send",
           "osImports": []
         }
       ]
@@ -651,39 +595,7 @@
           "type": "i64"
         },
         {
-          "name": "value",
-          "type": "i64"
-        }
-      ],
-      "result": "i64",
-      "targetBindings": [
-        {
-          "target": "aarch64-apple-darwin",
-          "implementation": "channel_try_send",
-          "osImports": []
-        },
-        {
-          "target": "x86_64-pc-windows-msvc",
-          "implementation": "channel_try_send",
-          "osImports": []
-        },
-        {
-          "target": "x86_64-unknown-linux-gnu",
-          "implementation": "channel_try_send",
-          "osImports": []
-        }
-      ]
-    },
-    {
-      "name": "__channel_try_send_ptr",
-      "adapter": "channel_try_send_ptr",
-      "params": [
-        {
-          "name": "id",
-          "type": "i64"
-        },
-        {
-          "name": "valuePtr",
+          "name": "sender",
           "type": "pointer"
         }
       ],
@@ -691,17 +603,17 @@
       "targetBindings": [
         {
           "target": "aarch64-apple-darwin",
-          "implementation": "channel_try_send_ptr",
+          "implementation": "channel_try_send",
           "osImports": []
         },
         {
           "target": "x86_64-pc-windows-msvc",
-          "implementation": "channel_try_send_ptr",
+          "implementation": "channel_try_send",
           "osImports": []
         },
         {
           "target": "x86_64-unknown-linux-gnu",
-          "implementation": "channel_try_send_ptr",
+          "implementation": "channel_try_send",
           "osImports": []
         }
       ]
@@ -1457,6 +1369,94 @@
       ]
     },
     {
+      "name": "__fiber_join_detail",
+      "adapter": "fiber_join_detail",
+      "params": [
+        {
+          "name": "fiberId",
+          "type": "i64"
+        },
+        {
+          "name": "detail",
+          "type": "usize"
+        }
+      ],
+      "result": "i64",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "fiber_join_detail",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "fiber_join_detail",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "fiber_join_detail",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__fiber_join_error_finish",
+      "adapter": "fiber_join_error_finish",
+      "params": [
+        {
+          "name": "fiberId",
+          "type": "i64"
+        }
+      ],
+      "result": "u8",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "fiber_join_error_finish",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "fiber_join_error_finish",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "fiber_join_error_finish",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__fiber_join_message",
+      "adapter": "fiber_join_message",
+      "params": [
+        {
+          "name": "fiberId",
+          "type": "i64"
+        }
+      ],
+      "result": "pointer",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "fiber_join_message",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "fiber_join_message",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "fiber_join_message",
+          "osImports": []
+        }
+      ]
+    },
+    {
       "name": "__fiber_join_status",
       "adapter": "fiber_join_status",
       "params": [
@@ -1491,9 +1491,13 @@
         {
           "name": "fiberId",
           "type": "i64"
+        },
+        {
+          "name": "destination",
+          "type": "pointer"
         }
       ],
-      "result": "i64",
+      "result": "u8",
       "targetBindings": [
         {
           "target": "aarch64-apple-darwin",
@@ -2174,9 +2178,13 @@
         {
           "name": "hubId",
           "type": "i64"
+        },
+        {
+          "name": "destination",
+          "type": "pointer"
         }
       ],
-      "result": "i64",
+      "result": "u8",
       "targetBindings": [
         {
           "target": "aarch64-apple-darwin",
@@ -2298,6 +2306,558 @@
         {
           "target": "x86_64-unknown-linux-gnu",
           "implementation": "mutex_unlock",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__network_accept",
+      "adapter": "beskid_rt_v5_network_accept",
+      "params": [
+        {
+          "name": "handle",
+          "type": "usize"
+        },
+        {
+          "name": "output",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "beskid_rt_v5_network_accept",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "beskid_rt_v5_network_accept",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "beskid_rt_v5_network_accept",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__network_address",
+      "adapter": "beskid_rt_v5_network_address",
+      "params": [
+        {
+          "name": "handle",
+          "type": "usize"
+        },
+        {
+          "name": "peer",
+          "type": "u8"
+        },
+        {
+          "name": "output",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "beskid_rt_v5_network_address",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "beskid_rt_v5_network_address",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "beskid_rt_v5_network_address",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__network_close",
+      "adapter": "beskid_rt_v5_network_close",
+      "params": [
+        {
+          "name": "handle",
+          "type": "usize"
+        }
+      ],
+      "result": "i32",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "beskid_rt_v5_network_close",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "beskid_rt_v5_network_close",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "beskid_rt_v5_network_close",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__network_dns_address",
+      "adapter": "beskid_rt_v5_network_dns_address",
+      "params": [
+        {
+          "name": "lease",
+          "type": "usize"
+        },
+        {
+          "name": "index",
+          "type": "i64"
+        },
+        {
+          "name": "output",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "beskid_rt_v5_network_dns_address",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "beskid_rt_v5_network_dns_address",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "beskid_rt_v5_network_dns_address",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__network_dns_count",
+      "adapter": "beskid_rt_v5_network_dns_count",
+      "params": [
+        {
+          "name": "lease",
+          "type": "usize"
+        }
+      ],
+      "result": "i64",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "beskid_rt_v5_network_dns_count",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "beskid_rt_v5_network_dns_count",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "beskid_rt_v5_network_dns_count",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__network_dns_release",
+      "adapter": "beskid_rt_v5_network_dns_release",
+      "params": [
+        {
+          "name": "lease",
+          "type": "usize"
+        }
+      ],
+      "result": "void",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "beskid_rt_v5_network_dns_release",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "beskid_rt_v5_network_dns_release",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "beskid_rt_v5_network_dns_release",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__network_dns_resolve",
+      "adapter": "beskid_rt_v5_network_dns_resolve",
+      "params": [
+        {
+          "name": "host",
+          "type": "pointer"
+        },
+        {
+          "name": "port",
+          "type": "i64"
+        },
+        {
+          "name": "family",
+          "type": "i64"
+        },
+        {
+          "name": "output",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "beskid_rt_v5_network_dns_resolve",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "beskid_rt_v5_network_dns_resolve",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "beskid_rt_v5_network_dns_resolve",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__network_open",
+      "adapter": "beskid_rt_v5_network_open",
+      "params": [
+        {
+          "name": "kind",
+          "type": "i64"
+        },
+        {
+          "name": "address",
+          "type": "pointer"
+        },
+        {
+          "name": "options",
+          "type": "i64"
+        },
+        {
+          "name": "backlog",
+          "type": "i64"
+        },
+        {
+          "name": "output",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "beskid_rt_v5_network_open",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "beskid_rt_v5_network_open",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "beskid_rt_v5_network_open",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__network_options",
+      "adapter": "beskid_rt_v5_network_options",
+      "params": [
+        {
+          "name": "handle",
+          "type": "usize"
+        }
+      ],
+      "result": "i64",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "beskid_rt_v5_network_options",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "beskid_rt_v5_network_options",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "beskid_rt_v5_network_options",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__network_read",
+      "adapter": "beskid_rt_v5_network_read",
+      "params": [
+        {
+          "name": "handle",
+          "type": "usize"
+        },
+        {
+          "name": "buffer",
+          "type": "pointer"
+        },
+        {
+          "name": "offset",
+          "type": "i64"
+        },
+        {
+          "name": "count",
+          "type": "i64"
+        }
+      ],
+      "result": "i64",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "beskid_rt_v5_network_read",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "beskid_rt_v5_network_read",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "beskid_rt_v5_network_read",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__network_receive",
+      "adapter": "beskid_rt_v5_network_receive",
+      "params": [
+        {
+          "name": "handle",
+          "type": "usize"
+        },
+        {
+          "name": "payload",
+          "type": "pointer"
+        },
+        {
+          "name": "metadata",
+          "type": "pointer"
+        },
+        {
+          "name": "connected",
+          "type": "u8"
+        }
+      ],
+      "result": "i64",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "beskid_rt_v5_network_receive",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "beskid_rt_v5_network_receive",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "beskid_rt_v5_network_receive",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__network_send",
+      "adapter": "beskid_rt_v5_network_send",
+      "params": [
+        {
+          "name": "handle",
+          "type": "usize"
+        },
+        {
+          "name": "payload",
+          "type": "pointer"
+        },
+        {
+          "name": "address",
+          "type": "pointer"
+        },
+        {
+          "name": "connected",
+          "type": "u8"
+        }
+      ],
+      "result": "i64",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "beskid_rt_v5_network_send",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "beskid_rt_v5_network_send",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "beskid_rt_v5_network_send",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__network_set_options",
+      "adapter": "beskid_rt_v5_network_set_options",
+      "params": [
+        {
+          "name": "handle",
+          "type": "usize"
+        },
+        {
+          "name": "bits",
+          "type": "i64"
+        }
+      ],
+      "result": "i32",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "beskid_rt_v5_network_set_options",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "beskid_rt_v5_network_set_options",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "beskid_rt_v5_network_set_options",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__network_shutdown_write",
+      "adapter": "beskid_rt_v5_network_shutdown_write",
+      "params": [
+        {
+          "name": "handle",
+          "type": "usize"
+        }
+      ],
+      "result": "i32",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "beskid_rt_v5_network_shutdown_write",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "beskid_rt_v5_network_shutdown_write",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "beskid_rt_v5_network_shutdown_write",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__network_udp_connect",
+      "adapter": "beskid_rt_v5_network_udp_connect",
+      "params": [
+        {
+          "name": "handle",
+          "type": "usize"
+        },
+        {
+          "name": "address",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "beskid_rt_v5_network_udp_connect",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "beskid_rt_v5_network_udp_connect",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "beskid_rt_v5_network_udp_connect",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__network_write",
+      "adapter": "beskid_rt_v5_network_write",
+      "params": [
+        {
+          "name": "handle",
+          "type": "usize"
+        },
+        {
+          "name": "buffer",
+          "type": "pointer"
+        },
+        {
+          "name": "offset",
+          "type": "i64"
+        },
+        {
+          "name": "count",
+          "type": "i64"
+        }
+      ],
+      "result": "i64",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "beskid_rt_v5_network_write",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "beskid_rt_v5_network_write",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "beskid_rt_v5_network_write",
           "osImports": []
         }
       ]
@@ -2941,7 +3501,7 @@
       "capture": "utf8_argv",
       "handoff": "beskid_rt_v5_args_handoff_utf8",
       "ownership": "process_lifetime_copied_beskid_str_arena",
-      "entrySource": "args_entry.S",
+      "entrySource": "../common/executable_bootstrap.c",
       "osImports": [
         "memcpy",
         "mmap",
@@ -2956,7 +3516,7 @@
       "capture": "utf16_wargv",
       "handoff": "beskid_rt_v5_args_handoff_utf16",
       "ownership": "process_lifetime_copied_beskid_str_arena",
-      "entrySource": "args_entry.asm",
+      "entrySource": "../common/executable_bootstrap.c",
       "osImports": [
         "VirtualAlloc"
       ]
@@ -2969,7 +3529,7 @@
       "capture": "utf8_argv",
       "handoff": "beskid_rt_v5_args_handoff_utf8",
       "ownership": "process_lifetime_copied_beskid_str_arena",
-      "entrySource": "args_entry.S",
+      "entrySource": "../common/executable_bootstrap.c",
       "osImports": [
         "memcpy",
         "mmap",

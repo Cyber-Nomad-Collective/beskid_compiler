@@ -1,5 +1,7 @@
-use std::process::Command;
+use std::{collections::BTreeSet, process::Command};
 
+#[cfg(all(target_os = "windows", target_arch = "x86_64"))]
+use beskid_abi::{abi_v5::RuntimeAuditMetadata, runtime_source::canonical_runtime_source_hash};
 use beskid_abi::{
     abi_v5::{AbiManifestV5, TargetMetadata},
     runtime_provenance::{RuntimeProvenanceAudit, parse_symbol_list},
@@ -151,29 +153,231 @@ fn linux_host_platform_pair_exports_canonical_runtime_and_native_boundary() {
 fn windows_host_platform_pair_emits_a_coff_import_library_for_the_shared_runtime() {
     let authority = require_canonical_host_emit_authority().expect("canonical host authority");
     let temp = tempfile::tempdir().expect("tempdir");
-    let pair =
-        emit_host_platform_library_pair(&authority, temp.path().join("out"), "beskid_runtime", BuildProfile::Debug)
+    let target = TargetMetadata::for_triple("x86_64-pc-windows-msvc").expect("Windows ABI-v5 target");
+    let manifest = AbiManifestV5::canonical_runtime(target);
+    let audit = RuntimeAuditMetadata::for_manifest(&manifest, &canonical_runtime_source_hash())
+        .expect("canonical Windows runtime audit metadata");
+    let descriptor_imports = manifest
+        .platform_imports
+        .iter()
+        .filter(|entry| entry.library == "ucrt" && entry.symbol.starts_with('_'))
+        .map(|entry| entry.symbol.as_str())
+        .collect::<BTreeSet<_>>();
+    assert!(!descriptor_imports.is_empty(), "Windows manifest must declare UCRT descriptor imports");
+    for (label, profile) in [("debug", BuildProfile::Debug), ("release", BuildProfile::Release)] {
+        let pair = emit_host_platform_library_pair(&authority, temp.path().join(label), "beskid_runtime", profile)
             .expect("emit Windows platform pair");
 
-    let import_library = pair.shared_import_library.expect("Windows shared runtime must emit its COFF import library");
-    assert!(import_library.is_file(), "missing import library: {}", import_library.display());
-    assert_eq!(import_library.file_name().and_then(|name| name.to_str()), Some("beskid_runtime_import.lib"));
-    assert!(pair.shared_library.is_file());
-    assert!(pair.static_library.is_file());
-    for symbol in [
-        "beskid_rt_v5_intrinsic_system_allocate",
-        "beskid_rt_v5_intrinsic_system_free",
-        "beskid_rt_v5_intrinsic_guarded_stack_allocate",
-        "beskid_rt_v5_intrinsic_guarded_stack_free",
-        "beskid_rt_v5_intrinsic_tls_get",
-        "beskid_rt_v5_intrinsic_tls_set",
-    ] {
+        let import_library =
+            pair.shared_import_library.expect("Windows shared runtime must emit its COFF import library");
+        assert!(import_library.is_file(), "missing import library: {}", import_library.display());
+        assert_eq!(import_library.file_name().and_then(|name| name.to_str()), Some("beskid_runtime_import.lib"));
+        assert!(pair.shared_library.is_file());
+        assert!(pair.static_library.is_file());
+        assert_windows_ucrt_descriptor_imports(&pair.shared_library, &descriptor_imports);
+        let import_library_symbols = read_windows_import_library_symbols(&import_library);
+        for symbol in &audit.loader_required_exports {
+            assert!(
+                import_library_symbols.direct_callable.contains(symbol),
+                "Windows {label} import library is missing direct callable export {symbol}: {import_library_symbols:?}"
+            );
+            assert!(
+                import_library_symbols.import_thunks.contains(&format!("__imp_{symbol}")),
+                "Windows {label} import library is missing IAT thunk for {symbol}: {import_library_symbols:?}"
+            );
+        }
+        for symbol in [
+            "beskid_rt_v5_intrinsic_system_allocate",
+            "beskid_rt_v5_intrinsic_system_free",
+            "beskid_rt_v5_intrinsic_guarded_stack_allocate",
+            "beskid_rt_v5_intrinsic_guarded_stack_free",
+            "beskid_rt_v5_intrinsic_tls_get",
+            "beskid_rt_v5_intrinsic_tls_set",
+        ] {
+            assert!(
+                pair.static_archive_inventory.defined.contains(&symbol.to_owned())
+                    && pair.shared_image_inventory.defined.contains(&symbol.to_owned()),
+                "Windows {label} platform pair omitted {symbol}"
+            );
+        }
+        for symbol in ["memset", "memcpy", "memmove", "memcmp"] {
+            assert!(!pair.static_archive_inventory.defined.contains(&symbol.to_owned()));
+            assert!(!pair.shared_image_inventory.defined.contains(&symbol.to_owned()));
+        }
+        assert_windows_memory_provider(&pair.shared_library);
+
+        // No C-driver startup or explicit CRT libraries: extracting the owner helper
+        // from the canonical archive must carry its provider directive to consumers.
+        let consumer = temp.path().join(format!("{label}-static-consumer.dll"));
+        let output = Command::new("lld-link")
+            .args(["/NOLOGO", "/DLL", "/NOENTRY", "/INCLUDE:beskid_rt_v5_intrinsic_owner_create"])
+            .arg(format!("/OUT:{}", consumer.display()))
+            .arg(&pair.static_library)
+            .output()
+            .expect("link canonical static archive consumer");
         assert!(
-            pair.static_archive_inventory.defined.contains(&symbol.to_owned())
-                && pair.shared_image_inventory.defined.contains(&symbol.to_owned()),
-            "Windows platform pair omitted {symbol}"
+            output.status.success(),
+            "{label} static archive consumer link failed: {}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_windows_memory_provider(&consumer);
+        eprintln!("Windows {label}: static/shared/import artifacts and VCRUNTIME140.dll!memset verified");
+    }
+}
+
+#[cfg(all(target_os = "windows", target_arch = "x86_64"))]
+fn assert_windows_ucrt_descriptor_imports(image: &std::path::Path, expected_symbols: &BTreeSet<&str>) {
+    let imports = read_windows_coff_imports(image);
+    assert!(
+        imports.iter().all(|(library, _)| !library.eq_ignore_ascii_case("msvcrt.dll")),
+        "{} must not import msvcrt.dll: {imports:?}",
+        image.display()
+    );
+    for symbol in expected_symbols {
+        assert!(
+            imports
+                .iter()
+                .any(|(library, imported_symbol)| { is_supported_ucrt_provider(library) && imported_symbol == symbol }),
+            "{} does not import manifest UCRT descriptor symbol {symbol} from ucrtbase.dll or api-ms-win-crt-*.dll: {imports:?}",
+            image.display()
         );
     }
+}
+
+#[cfg(all(target_os = "windows", target_arch = "x86_64"))]
+fn read_windows_coff_imports(image: &std::path::Path) -> Vec<(String, String)> {
+    let output = Command::new("llvm-readobj")
+        .arg("--coff-imports")
+        .arg(image)
+        .output()
+        .expect("inspect Windows PE import table");
+    assert!(
+        output.status.success(),
+        "PE import inspection failed for {}: {}",
+        image.display(),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let imports = String::from_utf8(output.stdout).expect("UTF-8 PE imports");
+    parse_windows_coff_imports(&imports)
+}
+
+fn parse_windows_coff_imports(imports: &str) -> Vec<(String, String)> {
+    let mut parsed = Vec::new();
+    for import in imports.split("Import {").skip(1) {
+        let mut library = None;
+        for line in import.lines().map(str::trim).take_while(|line| *line != "}") {
+            if let Some(name) = line.strip_prefix("Name: ") {
+                library = Some(name.to_owned());
+            } else if let Some(symbol) = line.strip_prefix("Symbol: ") {
+                let symbol = symbol.split_whitespace().next().expect("PE import symbol");
+                parsed.push((library.clone().expect("PE import library before its symbols"), symbol.to_owned()));
+            }
+        }
+    }
+    parsed
+}
+
+#[cfg(all(target_os = "windows", target_arch = "x86_64"))]
+fn is_supported_ucrt_provider(library: &str) -> bool {
+    let library = library.to_ascii_lowercase();
+    library == "ucrtbase.dll" || (library.starts_with("api-ms-win-crt-") && library.ends_with(".dll"))
+}
+
+#[derive(Debug, Default)]
+struct WindowsCoffImportLibrarySymbols {
+    direct_callable: BTreeSet<String>,
+    import_thunks: BTreeSet<String>,
+    // Keep llvm-nm import-data (`I`/`i`) records distinct from callable thunks.
+    // Import archives contain metadata entries in addition to public callable
+    // symbols; dropping them would erase their reported COFF classification.
+    import_data: BTreeSet<String>,
+}
+
+#[cfg(all(target_os = "windows", target_arch = "x86_64"))]
+fn read_windows_import_library_symbols(import_library: &std::path::Path) -> WindowsCoffImportLibrarySymbols {
+    let output =
+        Command::new("llvm-nm").arg("--extern-only").arg(import_library).output().expect("inspect COFF import library");
+    assert!(
+        output.status.success(),
+        "COFF import library inspection failed for {}: {}",
+        import_library.display(),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let symbols = String::from_utf8(output.stdout).expect("UTF-8 llvm-nm output");
+    parse_windows_import_library_symbols(&symbols)
+}
+
+fn parse_windows_import_library_symbols(symbols: &str) -> WindowsCoffImportLibrarySymbols {
+    let mut parsed = WindowsCoffImportLibrarySymbols::default();
+    for line in symbols.lines() {
+        let mut fields = line.split_whitespace().rev();
+        let Some(symbol) = fields.next() else {
+            continue;
+        };
+        let Some(class) = fields.next() else {
+            continue;
+        };
+        match class {
+            "T" | "t" if symbol.starts_with("__imp_") => {
+                parsed.import_thunks.insert(symbol.to_owned());
+            }
+            "T" | "t" => {
+                parsed.direct_callable.insert(symbol.to_owned());
+            }
+            "I" | "i" => {
+                parsed.import_data.insert(symbol.to_owned());
+                if symbol.starts_with("__imp_") {
+                    parsed.import_thunks.insert(symbol.to_owned());
+                }
+            }
+            _ => {}
+        }
+    }
+    parsed
+}
+
+#[test]
+fn windows_coff_artifact_parsers_preserve_import_thunks_and_import_data_classes() {
+    let imports =
+        parse_windows_coff_imports("Import {\n  Name: api-ms-win-crt-stdio-l1-1-0.dll\n  Symbol: _read (0)\n}\n");
+    assert_eq!(imports, [("api-ms-win-crt-stdio-l1-1-0.dll".into(), "_read".into())]);
+
+    let symbols = parse_windows_import_library_symbols(
+        "beskid_runtime.dll:\n00000000 T beskid_rt_v5_process_init\n00000000 T __imp_beskid_rt_v5_process_init\n00000000 I __IMPORT_DESCRIPTOR_beskid_runtime\n",
+    );
+    assert!(symbols.direct_callable.contains("beskid_rt_v5_process_init"));
+    assert!(symbols.import_thunks.contains("__imp_beskid_rt_v5_process_init"));
+    assert!(symbols.import_data.contains("__IMPORT_DESCRIPTOR_beskid_runtime"));
+}
+
+#[cfg(all(target_os = "windows", target_arch = "x86_64"))]
+fn assert_windows_memory_provider(image: &std::path::Path) {
+    let output =
+        Command::new("llvm-readobj").arg("--coff-imports").arg(image).output().expect("inspect PE import providers");
+    assert!(output.status.success(), "PE import inspection failed: {}", String::from_utf8_lossy(&output.stderr));
+    let imports = String::from_utf8(output.stdout).expect("UTF-8 PE imports");
+    let mut memory_imports = Vec::new();
+    let mut vcruntime_imports = Vec::new();
+    for import in imports.split("Import {").skip(1) {
+        let mut library = None;
+        for line in import.lines().map(str::trim).take_while(|line| *line != "}") {
+            if let Some(name) = line.strip_prefix("Name: ") {
+                library = Some(name);
+            } else if let Some(symbol) = line.strip_prefix("Symbol: ") {
+                let symbol = symbol.split_whitespace().next().expect("PE import symbol");
+                let library = library.expect("PE import library before its symbols");
+                if ["memset", "memcpy", "memmove", "memcmp"].contains(&symbol) {
+                    memory_imports.push((library, symbol));
+                }
+                if library.to_ascii_lowercase().starts_with("vcruntime") {
+                    vcruntime_imports.push((library, symbol));
+                }
+            }
+        }
+    }
+    assert_eq!(memory_imports, [("VCRUNTIME140.dll", "memset")], "{} imports: {imports}", image.display());
+    assert_eq!(vcruntime_imports, [("VCRUNTIME140.dll", "memset")], "{} imports: {imports}", image.display());
 }
 
 #[test]

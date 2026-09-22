@@ -1,7 +1,7 @@
 use super::support::{
     AbiParam, AstNodeId, AstNodeKey, BeskidDatabase, Function, FunctionBuilder, FunctionBuilderContext, InstBuilder,
     IsleContext, JITBuilder, JITModule, Linkage, LiteralKind, Module, NodeFacts, NodeKind, OperatorFact, PathBuf,
-    Signature, SourceUnitId, SyntaxGenerationId, Triple, default_libcall_names, lower_expression, settings, types,
+    SemanticTypeId, Signature, SourceUnitId, SyntaxGenerationId, Triple, default_libcall_names, lower_expression, settings, types,
     verify_function,
 };
 
@@ -56,10 +56,10 @@ fn grouped_expression_unwraps_child_and_emits_verified_stock_clif() {
         let block = builder.create_block();
         builder.switch_to_block(block);
         builder.seal_block(block);
-        let value = lower_expression(&mut IsleContext::new(&mut builder, &facts), facts.group)
+        let value = lower_expression(&mut IsleContext::new(&mut builder, &facts, isa.frontend_config()), facts.group)
             .expect("grouped expression rule");
         builder.ins().return_(&[value]);
-        builder.finalize();
+        builder.finalize(isa.frontend_config());
     }
 
     verify_function(&function, isa.flags()).expect("valid stock CLIF");
@@ -190,6 +190,7 @@ fn binary_float_add_emits_fadd() {
     let generation = SyntaxGenerationId(3);
     let node = |id| AstNodeKey { unit, generation, node: AstNodeId(id) };
     let facts = BinaryFacts { root: node(1), left: node(2), right: node(3) };
+    let isa = super::support::test_isa();
     let mut function = Function::new();
     let mut builder_context = FunctionBuilderContext::new();
     {
@@ -197,9 +198,10 @@ fn binary_float_add_emits_fadd() {
         let block = builder.create_block();
         builder.switch_to_block(block);
         builder.seal_block(block);
-        let value = lower_expression(&mut IsleContext::new(&mut builder, &facts), facts.root).expect("float add rule");
+        let value = lower_expression(&mut IsleContext::new(&mut builder, &facts, isa.frontend_config()), facts.root)
+            .expect("float add rule");
         builder.ins().return_(&[value]);
-        builder.finalize();
+        builder.finalize(isa.frontend_config());
     }
 
     let clif = function.display().to_string();
@@ -254,6 +256,11 @@ fn binary_u8_less_than_emits_unsigned_compare() {
         fn scalar_type(&self, key: AstNodeKey) -> Option<cranelift_codegen::ir::Type> {
             if key == self.root || key == self.left || key == self.right { Some(types::I8) } else { None }
         }
+
+        // Integer compare signedness comes from the operands' semantic types, not the CLIF width.
+        fn semantic_type(&self, key: AstNodeKey) -> Option<SemanticTypeId> {
+            (key == self.left || key == self.right).then_some(SemanticTypeId::U8)
+        }
     }
 
     let db = BeskidDatabase::default();
@@ -261,6 +268,7 @@ fn binary_u8_less_than_emits_unsigned_compare() {
     let generation = SyntaxGenerationId(3);
     let node = |id| AstNodeKey { unit, generation, node: AstNodeId(id) };
     let facts = BinaryFacts { root: node(1), left: node(2), right: node(3) };
+    let isa = super::support::test_isa();
     let mut function = Function::new();
     let mut builder_context = FunctionBuilderContext::new();
     {
@@ -268,9 +276,10 @@ fn binary_u8_less_than_emits_unsigned_compare() {
         let block = builder.create_block();
         builder.switch_to_block(block);
         builder.seal_block(block);
-        let value = lower_expression(&mut IsleContext::new(&mut builder, &facts), facts.root).expect("u8 lt rule");
+        let value = lower_expression(&mut IsleContext::new(&mut builder, &facts, isa.frontend_config()), facts.root)
+            .expect("u8 lt rule");
         builder.ins().return_(&[value]);
-        builder.finalize();
+        builder.finalize(isa.frontend_config());
     }
 
     let clif = function.display().to_string();
@@ -324,6 +333,11 @@ fn sdiv_traps_on_zero_divisor() {
 
         fn scalar_type(&self, key: AstNodeKey) -> Option<cranelift_codegen::ir::Type> {
             (key == self.root || key == self.left || key == self.right).then_some(types::I32)
+        }
+
+        // Integer division signedness comes from the operands' semantic types.
+        fn semantic_type(&self, key: AstNodeKey) -> Option<SemanticTypeId> {
+            (key == self.left || key == self.right).then_some(SemanticTypeId::I32)
         }
     }
 

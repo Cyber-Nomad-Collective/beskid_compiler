@@ -1,0 +1,36 @@
+/// C ABI array view: a length-associated element range with capacity, passed
+/// across the FFI boundary.
+///
+/// `CArrayView` carries a pointer, length, and capacity and aligns with the
+/// runtime `BeskidArray` header. Beskid `T[]` values MUST NOT cross the user
+/// FFI boundary as ordinary GC references; they cross as `CArrayView`.
+pub type CArrayView {
+    pub pointer ptr;
+    pub i64 len;
+    pub i64 cap;
+}
+
+/// Constructs an array view from a pointer, length, and capacity.
+pub CArrayView New(pointer ptr, i64 len, i64 cap) {
+    return CArrayView { ptr: ptr, len: len, cap: cap };
+}
+
+/// Returns the pointer field.
+pub pointer Ptr(CArrayView view) {
+    return view.ptr;
+}
+
+/// Returns the length field.
+pub i64 Len(CArrayView view) {
+    return view.len;
+}
+
+/// Returns the capacity field.
+pub i64 Cap(CArrayView view) {
+    return view.cap;
+}
+
+/// Returns true when the array view is empty.
+pub bool IsEmpty(CArrayView view) {
+    return view.len == 0;
+}

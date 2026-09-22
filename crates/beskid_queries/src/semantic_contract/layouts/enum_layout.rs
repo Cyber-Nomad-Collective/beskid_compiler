@@ -4,7 +4,8 @@
 mod scalar_payload_tests;
 
 use super::super::*;
-use crate::semantic_contract::typing::managed_reference_kind_for_syntax_type;
+use super::explicit_local_declaration_type;
+use crate::semantic_contract::typing::{managed_reference_kind_for_syntax_type, pattern_binding_fact_in_environment};
 
 impl EnumLayoutFact {
     /// Compute the sole target-specific physical authority for ABI-v5 enum payloads.
@@ -142,6 +143,12 @@ pub(in crate::semantic_contract) fn enum_layout_tracked(
     key: AstNodeKey,
 ) -> SemanticQueryResult<EnumLayoutFact> {
     with_node(db, syntax, key, |program, index, node| {
+        if node.of::<beskid_analysis::syntax::ScopedUseStatement>().is_some() {
+            return Some(scoped_cleanup(db, key).and_then(|fact| {
+                fact.and_then(|fact| fact.enclosing_layout)
+                    .ok_or_else(|| SemanticError::unavailable("scoped_cleanup_layout"))
+            }));
+        }
         if let Some(definition) = node.of::<beskid_analysis::syntax::EnumDefinition>() {
             return Some(enum_layout_from_definition(db, program, index, key, definition, None));
         }
@@ -152,28 +159,18 @@ pub(in crate::semantic_contract) fn enum_layout_tracked(
                 instantiated_enum_layout_for_path(db, key, &type_path)
             })
             .or_else(|| {
-                node.of::<beskid_analysis::syntax::TryExpression>().map(|_| {
-                    // The layout is available only after the full propagation fact has proven the
-                    // Result/error contract. Re-read the parameter annotation solely to instantiate
-                    // the existing canonical enum-layout machinery for that exact source path.
-                    try_expression_fact_for_node(db, program, index, key, node)?;
-                    let (_, declaration) = try_operand_parameter_declaration(program, index, key, node)?;
-                    let parameter = parent_node(index, declaration)
-                        .and_then(|parent| index.node_at(program, parent))
-                        .and_then(|parameter| parameter.of::<beskid_analysis::syntax::Parameter>())
-                        .ok_or_else(|| SemanticError::unavailable("try_expression"))?;
-                    let beskid_analysis::syntax::Type::Complex(path) = &parameter.ty.node else {
-                        return Err(SemanticError::unavailable("try_expression"));
-                    };
-                    instantiated_enum_layout_for_path(db, key, &path.node)
-                })
+                node.of::<beskid_analysis::syntax::TryExpression>()
+                    .map(|_| Ok(try_expression_fact_for_node(db, program, index, key, node)?.operand_layout))
             })
     })?
     .transpose()
 }
 
-/// Return an explicitly applied enum type from the immediate typed context of a genericless
-/// constructor. This intentionally declines all inferred, nested, and control-flow contexts.
+/// Return an explicitly applied enum type from a genericless constructor's proven value context.
+///
+/// The walk follows only transparent expression/match wrappers plus the final expression statement
+/// of a block expression. It intentionally declines inferred values, non-final block statements,
+/// local initializers, lambdas, and other nested control-flow contexts.
 pub(in crate::semantic_contract) fn contextual_enum_constructor_type_path(
     db: &dyn Db,
     program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
@@ -186,16 +183,48 @@ pub(in crate::semantic_contract) fn contextual_enum_constructor_type_path(
     if !terminal.node.type_args.is_empty() {
         return None;
     }
-    let constructor_name = terminal.node.name.node.name.as_str();
     let mut current = parent_node(index, key.node)?;
-    while matches!(
-        index.kind(current)?,
-        beskid_analysis::syntax_query::NodeKind::Expression
-            | beskid_analysis::syntax_query::NodeKind::Statement
-            | beskid_analysis::syntax_query::NodeKind::MatchArm
-            | beskid_analysis::syntax_query::NodeKind::MatchExpression
-    ) {
-        current = parent_node(index, current)?;
+    let mut value_child = key.node;
+    let mut call_argument_root = key.node;
+    loop {
+        use beskid_analysis::syntax_query::NodeKind;
+
+        match index.kind(current)? {
+            NodeKind::Expression | NodeKind::Statement => {
+                value_child = current;
+                current = parent_node(index, current)?;
+            }
+            NodeKind::MatchArm => {
+                let arm = index.node_at(program, current)?.of::<beskid_analysis::syntax::MatchArm>()?;
+                let body = index.direct_child_id(
+                    program,
+                    current,
+                    beskid_analysis::syntax_query::DynNodeRef::from(&arm.value),
+                )?;
+                (body == value_child).then_some(())?;
+                value_child = current;
+                current = parent_node(index, current)?;
+            }
+            NodeKind::MatchExpression => {
+                (index.kind(value_child)? == NodeKind::MatchArm).then_some(())?;
+                value_child = current;
+                current = parent_node(index, current)?;
+            }
+            NodeKind::ExpressionStatement => {
+                let statement_wrapper = parent_node(index, current)?;
+                (index.kind(statement_wrapper)? == NodeKind::Statement).then_some(())?;
+                let block = parent_node(index, statement_wrapper)?;
+                (index.kind(block)? == NodeKind::Block).then_some(())?;
+                let statements = block_statement_nodes(db, AstNodeKey { node: block, ..key }).ok()??;
+                (statements.last().is_some_and(|statement| statement.node == current)).then_some(())?;
+                let block_expression = parent_node(index, block)?;
+                (index.kind(block_expression)? == NodeKind::BlockExpression).then_some(())?;
+                call_argument_root = block_expression;
+                value_child = block_expression;
+                current = parent_node(index, block_expression)?;
+            }
+            _ => break,
+        }
     }
 
     let expected = match index.kind(current)? {
@@ -227,13 +256,15 @@ pub(in crate::semantic_contract) fn contextual_enum_constructor_type_path(
             explicit_local_declaration_type(program, index, assignment.declaration.node)
         }
         beskid_analysis::syntax_query::NodeKind::CallExpression => {
-            return expected_explicit_call_argument_type(db, program, index, key).and_then(|expected| {
+            return expected_explicit_call_argument_type(
+                db,
+                program,
+                index,
+                AstNodeKey { node: call_argument_root, ..key },
+            )
+            .and_then(|expected| {
                 let beskid_analysis::syntax::Type::Complex(path) = expected else { return None };
-                let expected_path = path.node;
-                let expected_terminal = expected_path.segments.last()?;
-                (expected_terminal.node.name.node.name == constructor_name
-                    && !expected_terminal.node.type_args.is_empty())
-                .then_some(expected_path)
+                contextual_enum_candidate_type_path(db, key, constructor_path, &path.node)
             });
         }
         _ => None,
@@ -242,21 +273,39 @@ pub(in crate::semantic_contract) fn contextual_enum_constructor_type_path(
         return None;
     };
     let expected_path = &path.node;
-    let expected_terminal = expected_path.segments.last()?;
-    (expected_terminal.node.name.node.name == constructor_name && !expected_terminal.node.type_args.is_empty())
-        .then_some(expected_path.clone())
+    contextual_enum_candidate_type_path(db, key, constructor_path, expected_path)
 }
 
-fn explicit_local_declaration_type<'a>(
-    program: &'a beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
-    index: &beskid_analysis::syntax_query::SyntaxIndex,
-    declaration: beskid_analysis::syntax::AstNodeId,
-) -> Option<&'a beskid_analysis::syntax::Type> {
-    let declaration = index.node_at(program, parent_node(index, declaration)?)?;
-    declaration
-        .of::<beskid_analysis::syntax::LetStatement>()
-        .and_then(|statement| statement.type_annotation.as_ref().map(|annotation| &annotation.node))
-        .or_else(|| declaration.of::<beskid_analysis::syntax::Parameter>().map(|parameter| &parameter.ty.node))
+/// Admit a contextual generic enum application only when it resolves to the same nominal
+/// declaration as the constructor. Matching the terminal spelling alone would let
+/// `A.Result::Ok` inherit `B.Result<T, E>` arguments.
+///
+/// One unqualified constructor whose own name resolves to no declaration in this unit is the
+/// single exception: there is no other declaration it could name, so the proven value context
+/// is its only possible application. The spelling must still match the candidate's terminal
+/// name, and any constructor that does resolve keeps the exact declaration comparison.
+fn contextual_enum_candidate_type_path(
+    db: &dyn Db,
+    key: AstNodeKey,
+    constructor_path: &beskid_analysis::syntax::Path,
+    candidate_path: &beskid_analysis::syntax::Path,
+) -> Option<beskid_analysis::syntax::Path> {
+    let candidate_terminal = candidate_path.segments.last()?;
+    (!candidate_terminal.node.type_args.is_empty()).then_some(())?;
+    // Constructors written without type arguments cannot resolve a generic declaration by arity.
+    // Apply the candidate's explicit arguments only to resolve the constructor's own qualified
+    // path, then compare declarations before retaining the candidate application.
+    let mut constructor_application = constructor_path.clone();
+    constructor_application.segments.last_mut()?.node.type_args = candidate_terminal.node.type_args.clone();
+    let candidate = resolve_type_declaration(db, key, candidate_path)?;
+    let Some(constructor) = resolve_type_declaration(db, key, &constructor_application) else {
+        let [segment] = constructor_path.segments.as_slice() else {
+            return None;
+        };
+        return (segment.node.name.node.name == candidate_terminal.node.name.node.name)
+            .then(|| candidate_path.clone());
+    };
+    (constructor == candidate).then_some(candidate_path.clone())
 }
 
 pub(in crate::semantic_contract) fn instantiated_enum_layout_for_path(
@@ -605,8 +654,7 @@ pub(in crate::semantic_contract) fn enum_match_tracked(
             Some(Err(error)) => return Some(Err(error)),
             None => return Some(Err(SemanticError::unavailable("enum_match"))),
         };
-        let environment = match enum_match_ownership_environment(db, program, index, key, expression, declaration, None)
-        {
+        let environment = match enum_match_source_environment(db, program, index, key, expression, declaration, None) {
             Ok(environment) => environment,
             Err(error) => return Some(Err(error)),
         };
@@ -640,7 +688,7 @@ pub fn enum_match_specialization(
         enum_match_scrutinee_layout_in_environment(db, program, index, key, expression, &enclosing)?
             .ok_or_else(|| SemanticError::unavailable("enum_match_specialization"))?;
     let environment =
-        enum_match_ownership_environment(db, program, index, key, expression, declaration, Some(&enclosing))?;
+        enum_match_source_environment(db, program, index, key, expression, declaration, Some(&enclosing))?;
     let context = EnumMatchMaterializer { db, program, index, key, environment: &environment };
     materialize_enum_match(&context, expression, declaration, layout).map(Some)
 }
@@ -650,7 +698,7 @@ struct EnumMatchMaterializer<'a> {
     program: &'a beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
     index: &'a beskid_analysis::syntax_query::SyntaxIndex,
     key: AstNodeKey,
-    environment: &'a HashMap<String, ManagedReferenceKind>,
+    environment: &'a HashMap<String, GenericSourceTypeIdentity>,
 }
 
 fn materialize_enum_match(
@@ -690,6 +738,7 @@ fn materialize_enum_match(
             pattern_node,
             &arm.node.pattern,
             MatchPatternExpectation::NominalEnum { declaration, layout: layout.clone() },
+            None,
         )?;
         arms.push(EnumMatchArmFact { pattern, body });
     }
@@ -726,6 +775,7 @@ fn materialize_match_pattern(
     pattern_node: beskid_analysis::syntax::AstNodeId,
     pattern: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Pattern>,
     expected: MatchPatternExpectation,
+    source_identity: Option<GenericSourceTypeIdentity>,
 ) -> Result<EnumMatchPatternFact, SemanticError> {
     match &pattern.node {
         beskid_analysis::syntax::Pattern::Wildcard => Ok(EnumMatchPatternFact::Wildcard),
@@ -745,6 +795,7 @@ fn materialize_match_pattern(
                 declaration: AstNodeKey { node: declaration, ..context.key },
                 payload: expected.binding_shape(),
                 managed_reference: expected.managed_reference(),
+                source_identity,
             }))
         }
         beskid_analysis::syntax::Pattern::Literal(literal) => {
@@ -796,7 +847,28 @@ fn materialize_match_pattern(
                 }
                 MatchPatternExpectation::Scalar { .. } => return Err(SemanticError::unavailable("enum_match")),
             };
-            materialize_enum_pattern(context, pattern_node, enum_pattern, (declaration, layout))
+            if let Some(GenericSourceTypeIdentity::Nominal { arguments, .. }) = source_identity {
+                let syntax =
+                    context.db.syntax_unit(declaration.unit).ok_or_else(|| SemanticError::unavailable("enum_match"))?;
+                let definition = syntax
+                    .syntax_index(context.db)
+                    .node_at(syntax.expanded_program(context.db), declaration.node)
+                    .and_then(|node| node.of::<beskid_analysis::syntax::EnumDefinition>())
+                    .ok_or_else(|| SemanticError::unavailable("enum_match"))?;
+                if definition.generics.len() != arguments.len() {
+                    return Err(SemanticError::unavailable("enum_match"));
+                }
+                let environment = definition
+                    .generics
+                    .iter()
+                    .zip(arguments.iter().cloned())
+                    .map(|(parameter, argument)| (parameter.node.name.clone(), argument))
+                    .collect();
+                let nested = EnumMatchMaterializer { environment: &environment, ..*context };
+                materialize_enum_pattern(&nested, pattern_node, enum_pattern, (declaration, layout))
+            } else {
+                materialize_enum_pattern(context, pattern_node, enum_pattern, (declaration, layout))
+            }
         }
     }
 }
@@ -867,7 +939,27 @@ fn materialize_enum_pattern(
                 },
                 AggregateFieldShape::Nominal(declaration) => MatchPatternExpectation::Nominal(*declaration),
             };
-            materialize_match_pattern(context, item_node, item, expected)
+            let syntax =
+                context.db.syntax_unit(declaration.unit).ok_or_else(|| SemanticError::unavailable("enum_match"))?;
+            let definition = syntax
+                .syntax_index(context.db)
+                .node_at(syntax.expanded_program(context.db), declaration.node)
+                .and_then(|node| node.of::<beskid_analysis::syntax::EnumDefinition>())
+                .ok_or_else(|| SemanticError::unavailable("enum_match"))?;
+            let field = definition
+                .variants
+                .get(variant_index)
+                .and_then(|variant| variant.node.fields.get(field_index))
+                .ok_or_else(|| SemanticError::unavailable("enum_match"))?;
+            let substitutions = context.environment.iter().map(|(name, identity)| (name.as_str(), identity)).collect();
+            let identity = generic_source_type_identity_with_substitutions(
+                context.db,
+                declaration,
+                &field.node.ty.node,
+                &substitutions,
+            )
+            .ok();
+            materialize_match_pattern(context, item_node, item, expected, identity)
         })
         .collect::<Result<Vec<_>, _>>()?;
     Ok(EnumMatchPatternFact::Enum(EnumMatchVariantPatternFact {
@@ -884,7 +976,7 @@ fn enum_variant_field_managed_reference(
     variant_index: usize,
     field_index: usize,
     applied_shape: AggregateFieldShape,
-    environment: &HashMap<String, ManagedReferenceKind>,
+    environment: &HashMap<String, GenericSourceTypeIdentity>,
 ) -> Result<ManagedReferenceKind, SemanticError> {
     let syntax = db
         .syntax_unit(declaration.unit)
@@ -903,7 +995,7 @@ fn enum_variant_field_managed_reference(
 
     if let Some(parameter) = generic_parameter_reference_name(&field.node.ty.node) {
         if let Some(managed_reference) = environment.get(parameter) {
-            return Ok(*managed_reference);
+            return Ok(managed_reference.managed_reference_kind());
         }
         return match applied_shape {
             AggregateFieldShape::Nominal(_) | AggregateFieldShape::Scalar(SemanticTypeId::STRING) => {
@@ -1058,13 +1150,13 @@ fn enum_match_scrutinee_local_declaration(
     resolve_lexical_declaration(program, index, key.node, segment.node.name.node.name.as_str())
 }
 
-/// Project an applied generic enum type into the ownership facts needed by pattern bindings.
+/// Project an applied generic enum type into the source identities needed by pattern bindings.
 ///
 /// Physical enum layouts collapse arrays, functions, nominals, and native pointers to pointer
 /// shapes. This environment preserves the source distinction without adding a second layout path.
 /// If an applied argument still names an enclosing generic, only an explicit call specialization
-/// may provide its ownership; missing substitutions fail closed.
-fn enum_match_ownership_environment(
+/// may provide its identity and ownership; missing substitutions fail closed.
+fn enum_match_source_environment(
     db: &dyn Db,
     program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
     index: &beskid_analysis::syntax_query::SyntaxIndex,
@@ -1072,7 +1164,7 @@ fn enum_match_ownership_environment(
     expression: &beskid_analysis::syntax::MatchExpression,
     declaration: AstNodeKey,
     enclosing: Option<&[GenericSubstitution]>,
-) -> Result<HashMap<String, ManagedReferenceKind>, SemanticError> {
+) -> Result<HashMap<String, GenericSourceTypeIdentity>, SemanticError> {
     let syntax = db
         .syntax_unit(declaration.unit)
         .filter(|syntax| syntax.accepts_key(db, declaration))
@@ -1084,6 +1176,28 @@ fn enum_match_ownership_environment(
         .ok_or_else(|| SemanticError::unavailable("enum_match"))?;
     if definition.generics.is_empty() {
         return Ok(HashMap::new());
+    }
+    if matches!(expression.scrutinee.node, beskid_analysis::syntax::Expression::Call(_)) {
+        let scrutinee = index
+            .direct_child_id(
+                program,
+                key.node,
+                beskid_analysis::syntax_query::DynNodeRef::from(expression.scrutinee.as_ref()),
+            )
+            .ok_or_else(|| SemanticError::unavailable("enum_match"))?;
+        let call = AstNodeKey { node: normalized_expression_node(index, scrutinee), ..key };
+        let GenericSourceTypeIdentity::Nominal { arguments, .. } = generic_source_expression_identity(db, call)? else {
+            return Err(SemanticError::unavailable("enum_match"));
+        };
+        if arguments.len() != definition.generics.len() {
+            return Err(SemanticError::unavailable("enum_match"));
+        }
+        return Ok(definition
+            .generics
+            .iter()
+            .zip(arguments.iter())
+            .map(|(parameter, argument)| (parameter.node.name.clone(), argument.clone()))
+            .collect());
     }
     let Some(path) = enum_match_scrutinee_explicit_type_path(program, index, key, expression) else {
         // Other supported scrutinee shapes retain their existing conservative field inference.
@@ -1099,22 +1213,13 @@ fn enum_match_ownership_environment(
         .iter()
         .zip(terminal.node.type_args.iter())
         .map(|(parameter, argument)| {
-            let ownership = if let Some(name) = generic_parameter_reference_name(&argument.node) {
-                if let Some(binding) =
-                    enclosing.and_then(|bindings| bindings.iter().find(|binding| binding.parameter.as_ref() == name))
-                {
-                    binding.managed_reference_kind()
-                } else if aggregate_shape_from_applied_type(db, key, &argument.node).is_ok() {
-                    // A one-segment nominal path has the same syntax shape as a generic parameter.
-                    // A resolvable applied nominal is concrete and therefore managed.
-                    managed_reference_kind_for_syntax_type(&argument.node)?
-                } else {
-                    return Err(SemanticError::unavailable("enum_match"));
-                }
-            } else {
-                managed_reference_kind_for_syntax_type(&argument.node)?
-            };
-            Ok((parameter.node.name.clone(), ownership))
+            let substitutions = enclosing
+                .unwrap_or_default()
+                .iter()
+                .map(|binding| (binding.parameter.as_ref(), binding.source_identity()))
+                .collect();
+            let identity = generic_source_type_identity_with_substitutions(db, key, &argument.node, &substitutions)?;
+            Ok((parameter.node.name.clone(), identity))
         })
         .collect()
 }
@@ -1127,13 +1232,29 @@ fn enum_match_scrutinee_layout_in_environment(
     expression: &beskid_analysis::syntax::MatchExpression,
     enclosing: &[GenericSubstitution],
 ) -> Result<Option<(AstNodeKey, EnumLayoutFact)>, SemanticError> {
-    let Some(path) = enum_match_scrutinee_explicit_type_path(program, index, key, expression) else {
-        return Ok(None);
-    };
-    let declaration = resolve_type_declaration(db, key, &path)
+    if let Some(path) = enum_match_scrutinee_explicit_type_path(program, index, key, expression) {
+        let declaration = resolve_type_declaration(db, key, &path)
+            .ok_or_else(|| SemanticError::unavailable("enum_match_specialization"))?;
+        let layout = instantiated_enum_layout_for_path_in_environment(db, key, &path, enclosing)?;
+        return Ok(Some((declaration, layout)));
+    }
+
+    let local = enum_match_scrutinee_local_declaration(program, index, key, expression)
         .ok_or_else(|| SemanticError::unavailable("enum_match_specialization"))?;
-    let layout = instantiated_enum_layout_for_path_in_environment(db, key, &path, enclosing)?;
-    Ok(Some((declaration, layout)))
+    if index.kind(parent_node(index, local).ok_or_else(|| SemanticError::unavailable("enum_match_specialization"))?)
+        != Some(beskid_analysis::syntax_query::NodeKind::Pattern)
+    {
+        return Ok(None);
+    }
+    let enclosing = Arc::<[GenericSubstitution]>::from(enclosing);
+    let binding = pattern_binding_fact_in_environment(db, index, key, local, Some(&enclosing))
+        .transpose()?
+        .ok_or_else(|| SemanticError::unavailable("enum_match_specialization"))?;
+    let identity = binding
+        .source_identity
+        .as_ref()
+        .ok_or_else(|| SemanticError::unavailable("enum_match_specialization"))?;
+    enum_layout_for_source_identity(db, key, identity).map(Some)
 }
 
 fn instantiated_enum_layout_for_path_in_environment(
@@ -1189,27 +1310,19 @@ fn enum_layout_for_direct_call_result(
     db: &dyn Db,
     call: AstNodeKey,
 ) -> Result<(AstNodeKey, EnumLayoutFact), SemanticError> {
-    let instance = generic_specialization_instance_for_call(db, call)?;
-    let callable_syntax = db
-        .syntax_unit(instance.declaration.unit)
-        .filter(|syntax| syntax.accepts_key(db, instance.declaration))
-        .ok_or_else(|| SemanticError::unavailable("enum_match"))?;
-    let callable = callable_syntax
-        .syntax_index(db)
-        .node_at(callable_syntax.expanded_program(db), instance.declaration.node)
-        .ok_or_else(|| SemanticError::unavailable("enum_match"))?;
-    let return_type = callable
-        .of::<beskid_analysis::syntax::FunctionDefinition>()
-        .and_then(|function| function.return_type.as_ref())
-        .or_else(|| {
-            callable.of::<beskid_analysis::syntax::MethodDefinition>().and_then(|method| method.return_type.as_ref())
-        })
-        .ok_or_else(|| SemanticError::unavailable("enum_match"))?;
-    let beskid_analysis::syntax::Type::Complex(path) = &return_type.node else {
+    let identity = generic_source_expression_identity(db, call)?;
+    enum_layout_for_source_identity(db, call, &identity)
+}
+
+pub(in crate::semantic_contract) fn enum_layout_for_source_identity(
+    db: &dyn Db,
+    call: AstNodeKey,
+    identity: &GenericSourceTypeIdentity,
+) -> Result<(AstNodeKey, EnumLayoutFact), SemanticError> {
+    let GenericSourceTypeIdentity::Nominal { arguments, .. } = &identity else {
         return Err(SemanticError::unavailable("enum_match"));
     };
-    let declaration = resolve_type_declaration(db, instance.declaration, &path.node)
-        .ok_or_else(|| SemanticError::unavailable("enum_match"))?;
+    let declaration = enum_match_source_nominal_declaration(db, call, identity)?;
     let enum_syntax = db
         .syntax_unit(declaration.unit)
         .filter(|syntax| syntax.accepts_key(db, declaration))
@@ -1230,26 +1343,20 @@ fn enum_layout_for_direct_call_result(
         )
         .map(|layout| (declaration, layout));
     }
-    let terminal = path.node.segments.last().ok_or_else(|| SemanticError::unavailable("enum_match"))?;
-    if terminal.node.type_args.len() != definition.generics.len() {
+    if arguments.len() != definition.generics.len() {
         return Err(SemanticError::unavailable("enum_match"));
     }
-    let callable_substitutions = instance
-        .substitutions
-        .iter()
-        .map(|substitution| (substitution.parameter.as_ref(), substitution.argument))
-        .collect::<HashMap<_, _>>();
     let substitutions = definition
         .generics
         .iter()
-        .zip(terminal.node.type_args.iter())
+        .zip(arguments.iter())
         .map(|(generic, argument)| {
-            let shape = specialized_call_result_argument_shape(
-                db,
-                instance.declaration,
-                &argument.node,
-                &callable_substitutions,
-            )?;
+            let shape = match argument {
+                GenericSourceTypeIdentity::Nominal { .. } => {
+                    AggregateFieldShape::Nominal(enum_match_source_nominal_declaration(db, call, argument)?)
+                }
+                _ => AggregateFieldShape::Scalar(argument.abi_type()),
+            };
             Ok((generic.node.name.clone(), shape))
         })
         .collect::<Result<HashMap<_, _>, SemanticError>>()?;
@@ -1264,18 +1371,36 @@ fn enum_layout_for_direct_call_result(
     .map(|layout| (declaration, layout))
 }
 
-fn specialized_call_result_argument_shape(
+/// Recover a proven nominal's declaration using its full identity and current generation.
+/// The terminal spelling only selects candidates; exact identity remains mandatory.
+fn enum_match_source_nominal_declaration(
     db: &dyn Db,
-    declaration: AstNodeKey,
-    syntax_type: &beskid_analysis::syntax::Type,
-    substitutions: &HashMap<&str, SemanticTypeId>,
-) -> Result<AggregateFieldShape, SemanticError> {
-    if let beskid_analysis::syntax::Type::Complex(path) = syntax_type
-        && let [segment] = path.node.segments.as_slice()
-        && segment.node.type_args.is_empty()
-        && let Some(argument) = substitutions.get(segment.node.name.node.name.as_str())
-    {
-        return Ok(AggregateFieldShape::Scalar(*argument));
+    key: AstNodeKey,
+    identity: &GenericSourceTypeIdentity,
+) -> Result<AstNodeKey, SemanticError> {
+    let GenericSourceTypeIdentity::Nominal { qualified_name, arguments } = identity else {
+        return Err(SemanticError::unavailable("enum_match"));
+    };
+    let name = qualified_name.rsplit("::").next().ok_or_else(|| SemanticError::unavailable("enum_match"))?;
+    let mut units = {
+        let registry = db.syntax_dependency_registry().lock().expect("syntax dependency registry");
+        registry
+            .modules
+            .iter()
+            .filter(|((generation, module), _)| {
+                *generation == key.generation && qualified_name.starts_with(&format!("{}::", module.join("::")))
+            })
+            .flat_map(|(_, units)| units.iter().copied())
+            .collect::<HashSet<_>>()
+    };
+    units.insert(key.unit);
+    let mut candidates = units.into_iter().filter_map(|unit| {
+        let declaration = super::common::unique_type_in_unit(db, unit, key.generation, name, arguments.len())?;
+        (stable_declaration_identity(db, declaration).as_ref() == Some(qualified_name)).then_some(declaration)
+    });
+    let declaration = candidates.next().ok_or_else(|| SemanticError::unavailable("enum_match"))?;
+    if candidates.next().is_some() {
+        return Err(SemanticError::unavailable("enum_match"));
     }
-    aggregate_shape_from_applied_type(db, declaration, syntax_type)
+    Ok(declaration)
 }

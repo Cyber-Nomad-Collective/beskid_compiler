@@ -78,12 +78,14 @@ mod tests {
             Arc::new(vec![
                 SourceUnit {
                     logical_name: main_path.display().to_string(),
+                    origin_path: main_path.clone(),
                     path: main_path.clone(),
                     source: main_source.to_string(),
                     program: main_program.clone(),
                 },
                 SourceUnit {
                     logical_name: output_path.display().to_string(),
+                    origin_path: output_path.clone(),
                     path: output_path.clone(),
                     source: output_source.to_string(),
                     program: output_program,

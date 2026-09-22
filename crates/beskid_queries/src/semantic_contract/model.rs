@@ -326,6 +326,8 @@ pub enum SpawnDiagnosticKind {
     /// empty-arg `spawn Entry()` sugar (normalized to `Entry`) are legal.
     CalleeArgumentsUnsupported,
     StackReferenceEscapesSpawn,
+    DiscardedHandle,
+    UseAfterMove,
 }
 
 /// One precise diagnostic selected from current syntax facts for a spawn expression.
@@ -334,6 +336,14 @@ pub struct SpawnDiagnostic {
     pub kind: SpawnDiagnosticKind,
     pub span: SourceSpan,
     pub capture: Option<CaptureStorage>,
+}
+
+/// Move-only Fiber capabilities in one callable, bound to the current syntax generation.
+/// Spawn legality and emission both consume this fact, including callables without a spawn.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub struct FiberOwnership {
+    pub callable: AstNodeKey,
+    pub diagnostics: Arc<[SpawnDiagnostic]>,
 }
 
 /// Authoritative spawn lowering facts and any source-owned legality diagnostics.
@@ -347,6 +357,13 @@ pub struct SpawnLegality {
     pub result: Option<SemanticTypeId>,
     pub span: SourceSpan,
     pub diagnostics: Arc<[SpawnDiagnostic]>,
+}
+
+/// Nominal handle application projected from the authoritative spawn legality fact.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub struct SpawnHandleType {
+    pub declaration: AstNodeKey,
+    pub payload: GenericSubstitution,
 }
 
 /// Source-only validation of whether a spawn target is a legal zero-argument entry.
@@ -551,6 +568,19 @@ pub struct GenericCallSpecialization {
     /// environment with the identity is what lets a later body walk substitute `T` in a nested
     /// generic call instead of lowering the declaration once as though `T` were concrete.
     pub substitutions: Arc<[GenericSubstitution]>,
+    pub contract_witnesses: Arc<[ContractParameterWitness]>,
+}
+
+/// A proven conformance for one callable parameter, not one contract name.
+/// These facts exist only during compilation; the argument retains its original value.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub struct ContractParameterWitness {
+    pub parameter: AstNodeKey,
+    pub position: u32,
+    pub contract: AstNodeKey,
+    pub concrete: AstNodeKey,
+    pub(in crate::semantic_contract) source_identity: GenericSourceTypeIdentity,
+    pub(in crate::semantic_contract) methods: Arc<[(AstNodeKey, AstNodeKey)]>,
 }
 
 /// Exact source-backed application of a generic nominal method receiver.
@@ -651,6 +681,7 @@ pub struct GenericSpecializationInstance {
     pub declaration_identity: Arc<str>,
     pub signature: ItemSignature,
     pub substitutions: Arc<[GenericSubstitution]>,
+    pub contract_witnesses: Arc<[ContractParameterWitness]>,
 }
 
 /// A nested generic call whose source type arguments refer to the enclosing declaration's
@@ -680,6 +711,11 @@ pub fn generic_specialization_identity(instance: &GenericSpecializationInstance)
         identity.push(u32::try_from(binding.parameter.len()).unwrap_or(u32::MAX));
         identity.extend(binding.parameter.bytes().map(u32::from));
         append_generic_source_type_identity(&mut identity, &binding.source_identity);
+    }
+    identity.push(u32::try_from(instance.contract_witnesses.len()).unwrap_or(u32::MAX));
+    for witness in instance.contract_witnesses.iter() {
+        identity.push(witness.position);
+        append_generic_source_type_identity(&mut identity, &witness.source_identity);
     }
     identity.push(u32::MAX);
     identity.extend(instance.signature.parameters.iter().map(|semantic| semantic.0));
@@ -768,17 +804,20 @@ pub struct BulkParameterFact {
 
 /// Syntax-proven payload/error shapes for one postfix `Result` propagation expression.
 ///
-/// The operand must be a direct, explicitly typed function parameter with the exact
-/// `Result<TPayload, TError>` syntax. The enclosing function must return `Result<_, TError>`
-/// using the same error syntax. Other propagation forms remain unavailable until they have
-/// their own syntax facts.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+/// The operand is a typed parameter or a proven ordinary direct call. Both Result
+/// instantiations share one declaration and the exact error source identity; their
+/// success identities and physical layouts may differ.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct TryExpressionFact {
     pub expression: AstNodeKey,
     pub operand: AstNodeKey,
+    pub(in crate::semantic_contract) payload_identity: GenericSourceTypeIdentity,
     pub payload_type: SemanticTypeId,
     pub error_type: SemanticTypeId,
     pub enclosing_return: SemanticTypeId,
+    pub operand_layout: EnumLayoutFact,
+    pub return_layout: EnumLayoutFact,
+    pub error_managed: bool,
 }
 
 /// Callable item signature expressed entirely in semantic type identities.
@@ -804,10 +843,10 @@ pub struct AggregateLayoutFact {
 /// Source names paired with the current-generation value expressions of one aggregate literal.
 pub type AggregateLiteralFieldValues = Arc<[(Arc<str>, AstNodeKey)]>;
 
-/// Exact nominal field selected by a direct local or implicit method receiver field path.
+/// Exact nominal field selected by a local, nominal field chain, or implicit method receiver.
 ///
 /// The receiver must resolve through the current syntax generation to a parameter, an explicitly
-/// typed local, the enclosing nominal method, or a generic call result whose complete
+/// typed local, a real path-segment projection, the enclosing nominal method, or a generic call result whose complete
 /// specialization proves one nominal return layout. More dynamic member shapes intentionally
 /// remain unavailable until they have their own syntax authority.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
@@ -890,7 +929,7 @@ pub struct EnumConstructorSpecialization {
 }
 
 /// One identifier binding within a recursively matched enum payload.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct EnumMatchBindingFact {
     /// Exact identifier declaration introduced by the match pattern.
     pub declaration: AstNodeKey,
@@ -898,6 +937,8 @@ pub struct EnumMatchBindingFact {
     pub payload: AggregateFieldShape,
     /// Source-proven ownership class retained independently of pointer-shaped ABI storage.
     pub managed_reference: ManagedReferenceKind,
+    /// Exact applied payload identity, when source syntax proves it. Never recovered from ABI.
+    pub(in crate::semantic_contract) source_identity: Option<GenericSourceTypeIdentity>,
 }
 
 /// One scalar literal comparison in a recursive match pattern.

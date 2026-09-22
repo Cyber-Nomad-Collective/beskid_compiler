@@ -1,0 +1,18 @@
+// CHECKED IN: hand-maintained Mod SDK emit helpers (contribution item wrappers).
+use Beskid.Compiler.Collect;
+use Beskid.Syntax.Nodes;
+
+/// Wrap a contract definition as a syntax contribution item.
+pub SyntaxContributionItem ContractItem(ContractDefinition definition) {
+    return SyntaxContributionItem.ContractDefinition(definition);
+}
+
+/// Wrap a type definition as a syntax contribution item.
+pub SyntaxContributionItem TypeItem(TypeDefinition definition) {
+    return SyntaxContributionItem.TypeDefinition(definition);
+}
+
+/// Wrap a function definition as a syntax contribution item.
+pub SyntaxContributionItem FunctionItem(FunctionDefinition definition) {
+    return SyntaxContributionItem.FunctionDefinition(definition);
+}

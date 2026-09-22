@@ -16,6 +16,8 @@ impl<'a> TypeChecker<'a> {
             PrimitiveType::I64,
             PrimitiveType::U32,
             PrimitiveType::U8,
+            PrimitiveType::Pointer,
+            PrimitiveType::Word,
             PrimitiveType::F64,
             PrimitiveType::Char,
             PrimitiveType::String,
@@ -283,6 +285,8 @@ impl<'a> TypeChecker<'a> {
         match (left_prim, right_prim) {
             (Some(PrimitiveType::I64), Some(PrimitiveType::I32)) => (left, i64_id),
             (Some(PrimitiveType::I32), Some(PrimitiveType::I64)) => (i64_id, right),
+            (Some(PrimitiveType::Word), Some(PrimitiveType::I32 | PrimitiveType::I64)) => (left, left),
+            (Some(PrimitiveType::I32 | PrimitiveType::I64), Some(PrimitiveType::Word)) => (right, right),
             _ => (left, right),
         }
     }
@@ -382,12 +386,7 @@ impl<'a> TypeChecker<'a> {
     }
 
     pub(super) fn is_numeric(&self, type_id: TypeId) -> bool {
-        matches!(
-            self.type_table.get(type_id),
-            Some(TypeInfo::Primitive(
-                PrimitiveType::I32 | PrimitiveType::I64 | PrimitiveType::U32 | PrimitiveType::U8 | PrimitiveType::F64
-            ))
-        )
+        crate::types::inference::is_numeric(&self.type_table, type_id)
     }
 
     pub(super) fn is_bool(&self, type_id: TypeId) -> bool {
@@ -414,7 +413,7 @@ impl<'a> TypeChecker<'a> {
                 | Some(TypeInfo::GenericParam(_))
                 | Some(TypeInfo::Function { .. })
                 | Some(TypeInfo::Array(_))
-                | Some(TypeInfo::Primitive(PrimitiveType::String))
+                | Some(TypeInfo::Primitive(PrimitiveType::String | PrimitiveType::Pointer))
         )
     }
 

@@ -637,4 +637,56 @@ mod tests {
         assert_eq!(args.release_static_provenance_symbol_list, Path::new("out/release/static.symbols"));
         assert_eq!(args.release_shared_provenance_symbol_list, Path::new("out/release/shared.symbols"));
     }
+
+    #[test]
+    fn test_target_timeout_defaults_to_none() {
+        let cli = Cli::try_parse_from(["beskid", "test", "Main.bd"]).expect("parse cli");
+        let Commands::Test(args) = cli.command else {
+            panic!("expected test command");
+        };
+        assert_eq!(args.target_timeout, None);
+        assert_eq!(args.execution_budgets().target, std::time::Duration::from_secs(120));
+    }
+
+    #[test]
+    fn test_target_timeout_flag_sets_budget() {
+        let cli = Cli::try_parse_from(["beskid", "test", "--target-timeout", "5", "Main.bd"]).expect("parse cli");
+        let Commands::Test(args) = cli.command else {
+            panic!("expected test command");
+        };
+        assert_eq!(args.target_timeout, Some(5));
+        assert_eq!(args.execution_budgets().target, std::time::Duration::from_secs(5));
+    }
+
+    // Guards the two env-var tests below, which mutate a process-wide env var, against
+    // cargo's default multi-threaded test runner racing on the same key.
+    static TARGET_TIMEOUT_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    #[test]
+    fn test_target_timeout_env_var_sets_budget() {
+        let _guard = TARGET_TIMEOUT_ENV_LOCK.lock().unwrap();
+        // SAFETY: serialized by TARGET_TIMEOUT_ENV_LOCK; no other test reads/writes this key.
+        unsafe { std::env::set_var("BESKID_TARGET_TIMEOUT_SECS", "42") };
+        let result = Cli::try_parse_from(["beskid", "test", "Main.bd"]);
+        unsafe { std::env::remove_var("BESKID_TARGET_TIMEOUT_SECS") };
+        let cli = result.expect("parse cli");
+        let Commands::Test(args) = cli.command else {
+            panic!("expected test command");
+        };
+        assert_eq!(args.target_timeout, Some(42));
+    }
+
+    #[test]
+    fn test_target_timeout_flag_wins_over_env_var() {
+        let _guard = TARGET_TIMEOUT_ENV_LOCK.lock().unwrap();
+        // SAFETY: serialized by TARGET_TIMEOUT_ENV_LOCK; no other test reads/writes this key.
+        unsafe { std::env::set_var("BESKID_TARGET_TIMEOUT_SECS", "42") };
+        let result = Cli::try_parse_from(["beskid", "test", "--target-timeout", "7", "Main.bd"]);
+        unsafe { std::env::remove_var("BESKID_TARGET_TIMEOUT_SECS") };
+        let cli = result.expect("parse cli");
+        let Commands::Test(args) = cli.command else {
+            panic!("expected test command");
+        };
+        assert_eq!(args.target_timeout, Some(7));
+    }
 }

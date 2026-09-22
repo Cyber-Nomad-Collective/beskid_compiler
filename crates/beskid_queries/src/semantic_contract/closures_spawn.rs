@@ -8,11 +8,12 @@ pub(super) fn closure_environment_tracked(
     syntax: SyntaxUnitInput,
     key: AstNodeKey,
 ) -> SemanticQueryResult<ClosureEnvironment> {
-    with_node(db, syntax, key, |program, index, node| closure_environment_for_node(program, index, key, node))?
+    with_node(db, syntax, key, |program, index, node| closure_environment_for_node(db, program, index, key, node))?
         .transpose()
 }
 
 pub(super) fn closure_environment_for_node(
+    db: &dyn Db,
     program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
     index: &beskid_analysis::syntax_query::SyntaxIndex,
     key: AstNodeKey,
@@ -43,7 +44,7 @@ pub(super) fn closure_environment_for_node(
         Ok(parameters) => parameters,
         Err(error) => return Some(Err(error)),
     };
-    let captures = match closure_captures(program, index, key) {
+    let captures = match closure_captures(db, program, index, key) {
         Ok(captures) => captures.into(),
         Err(error) => return Some(Err(error)),
     };
@@ -76,7 +77,7 @@ pub(super) fn closure_signature_for_node(
         Some(Err(error)) => return Some(Err(error)),
         None => return None,
     };
-    let environment = match closure_environment_for_node(program, index, key, node) {
+    let environment = match closure_environment_for_node(db, program, index, key, node) {
         Some(Ok(environment)) => environment,
         Some(Err(error)) => return Some(Err(error)),
         None => return None,
@@ -85,8 +86,8 @@ pub(super) fn closure_signature_for_node(
         .captures
         .iter()
         .map(|capture| {
-            local_declaration_type(program, index, capture.declaration.node)
-                .unwrap_or_else(|| Err(SemanticError::unavailable("closure_signature")))
+            abi_type(db, capture.declaration)
+                .and_then(|ty| ty.ok_or_else(|| SemanticError::unavailable("closure_signature")))
                 .map(|abi_type| ClosureEnvironmentField { capture: *capture, abi_type })
         })
         .collect::<Result<Vec<_>, _>>()
@@ -162,7 +163,28 @@ pub(super) fn closure_call_target_tracked(
     }))
 }
 
+/// Capture local values and source-resolved nominal method receivers using the
+/// same declaration identity as ordinary method calls. Unknown qualified paths
+/// are not evidence of a captured receiver.
+fn closure_capture_declaration(
+    db: &dyn Db,
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    key: AstNodeKey,
+    path: &beskid_analysis::syntax::Path,
+) -> Option<AstNodeKey> {
+    if let [segment] = path.segments.as_slice() {
+        if !segment.node.type_args.is_empty() {
+            return None;
+        }
+        return resolve_lexical_declaration(program, index, key.node, &segment.node.name.node.name)
+            .map(|node| AstNodeKey { node, ..key });
+    }
+    nominal_local_member_receiver(db, program, index, key, path).map(|(_, receiver)| receiver)
+}
+
 pub(super) fn closure_captures(
+    db: &dyn Db,
     program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
     index: &beskid_analysis::syntax_query::SyntaxIndex,
     lambda: AstNodeKey,
@@ -178,18 +200,14 @@ pub(super) fn closure_captures(
         let Some(path) = node.of::<beskid_analysis::syntax::PathExpression>() else {
             return Err(SemanticError::unavailable("closure_environment"));
         };
-        let Some(declaration) = resolve_lexical_declaration(
-            program,
-            index,
-            path_id,
-            path.path.node.segments.first().map(|segment| segment.node.name.node.name.as_str()).unwrap_or_default(),
-        ) else {
+        let Some(declaration) =
+            closure_capture_declaration(db, program, index, AstNodeKey { node: path_id, ..lambda }, &path.path.node)
+        else {
             continue;
         };
-        if path.path.node.segments.len() != 1 || is_ancestor(index, lambda.node, declaration) {
+        if is_ancestor(index, lambda.node, declaration.node) {
             continue;
         }
-        let declaration = AstNodeKey { node: declaration, ..lambda };
         if captures.iter().any(|capture| capture.declaration == declaration) {
             continue;
         }
@@ -199,7 +217,7 @@ pub(super) fn closure_captures(
         let Some(span) = node.span() else {
             return Err(SemanticError::unavailable("closure_environment"));
         };
-        let class = capture_storage_class(program, index, declaration)?;
+        let class = capture_storage_class(db, program, index, declaration)?;
         captures.push(ClosureCapture { declaration, slot: slot?, class, span });
     }
     Ok(captures)
@@ -211,29 +229,29 @@ pub(super) fn capture_storage_tracked(
     syntax: SyntaxUnitInput,
     key: AstNodeKey,
 ) -> SemanticQueryResult<CaptureStorage> {
-    with_node(db, syntax, key, |program, index, node| capture_storage_for_node(program, index, key, node))?.transpose()
+    with_node(db, syntax, key, |program, index, node| capture_storage_for_node(db, program, index, key, node))?
+        .transpose()
 }
 
 pub(super) fn capture_storage_for_node(
+    db: &dyn Db,
     program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
     index: &beskid_analysis::syntax_query::SyntaxIndex,
     key: AstNodeKey,
     node: beskid_analysis::syntax_query::DynNodeRef<'_>,
 ) -> Option<Result<CaptureStorage, SemanticError>> {
     let path = node.of::<beskid_analysis::syntax::PathExpression>()?;
-    let [segment] = path.path.node.segments.as_slice() else {
-        return None;
-    };
-    if !segment.node.type_args.is_empty() {
-        return None;
-    }
-    let declaration = resolve_lexical_declaration(program, index, key.node, segment.node.name.node.name.as_str())?;
-    let declaration = AstNodeKey { node: declaration, ..key };
+    let declaration = closure_capture_declaration(db, program, index, key, &path.path.node)?;
     let span = node.span()?;
-    Some(capture_storage_class(program, index, declaration).map(|class| CaptureStorage { declaration, class, span }))
+    Some(capture_storage_class(db, program, index, declaration).map(|class| CaptureStorage {
+        declaration,
+        class,
+        span,
+    }))
 }
 
 pub(super) fn capture_storage_class(
+    db: &dyn Db,
     program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
     index: &beskid_analysis::syntax_query::SyntaxIndex,
     declaration: AstNodeKey,
@@ -243,9 +261,11 @@ pub(super) fn capture_storage_class(
         .node_at(program, parent)
         .and_then(|node| node.of::<beskid_analysis::syntax::LetStatement>())
         .is_some_and(|binding| binding.mutable);
-    let semantic_type = local_declaration_type(program, index, declaration.node)
-        .unwrap_or_else(|| Err(SemanticError::unavailable("capture_storage")))?;
-    Ok(if mutable || semantic_type == SemanticTypeId::POINTER {
+    let semantic_type = abi_type(db, declaration)?.ok_or_else(|| SemanticError::unavailable("capture_storage"))?;
+    // ABI pointers alone carry no ownership provenance. The existing source-type
+    // query distinguishes native pointers from managed arrays and nominal values.
+    let managed = managed_reference_kind(db, declaration).ok().flatten() == Some(ManagedReferenceKind::GcManaged);
+    Ok(if mutable || (semantic_type == SemanticTypeId::POINTER && !managed) {
         CaptureStorageClass::StackReference
     } else {
         CaptureStorageClass::TransferableValue
@@ -279,11 +299,17 @@ pub(super) fn callable_signature_for_node(
             .map(|parameter| {
                 parameter.node.ty.as_ref().map_or_else(
                     || Err(SemanticError::unavailable("callable_signature")),
-                    |ty| semantic_type_from_syntax(&ty.node),
+                    |ty| abi_type_from_syntax(db, key, &ty.node),
                 )
             })
             .collect::<Result<Vec<_>, _>>();
-        let result = semantic_type_for_expression(program, index, key.node, &lambda.body.node);
+        let result = index
+            .direct_child_id(program, key.node, beskid_analysis::syntax_query::DynNodeRef::from(lambda.body.as_ref()))
+            .ok_or_else(|| SemanticError::unavailable("callable_signature"))
+            .and_then(|node| {
+                value_abi_type(db, AstNodeKey { node: normalized_expression_node(index, node), ..key })?
+                    .ok_or_else(|| SemanticError::unavailable("callable_signature"))
+            });
         return Some(
             parameters
                 .and_then(|parameters| result.map(|result| ItemSignature { parameters: parameters.into(), result })),
@@ -308,8 +334,10 @@ pub(super) fn callable_signature_for_path(
     path: &beskid_analysis::syntax::Path,
 ) -> Option<Result<ItemSignature, SemanticError>> {
     let declaration = resolve_item_declaration(db, program, index, key, path)?;
-    let declaration = index.node_at(program, declaration.node)?;
-    item_signature_for_node(declaration)
+    Some(
+        item_abi_signature(db, declaration)
+            .and_then(|signature| signature.ok_or_else(|| SemanticError::unavailable("callable_signature"))),
+    )
 }
 
 #[salsa::tracked(persist)]
@@ -331,7 +359,7 @@ pub(super) fn spawn_target_tracked(
             Err(error) => return Some(Err(error)),
         };
         let captures = if index.kind(callee.node) == Some(beskid_analysis::syntax_query::NodeKind::LambdaExpression) {
-            match closure_captures(program, index, callee) {
+            match closure_captures(db, program, index, callee) {
                 Ok(captures) => captures.into(),
                 Err(error) => return Some(Err(error)),
             }
@@ -388,6 +416,91 @@ pub(super) fn normalized_expression_node(
 }
 
 #[salsa::tracked(persist)]
+pub(super) fn spawn_handle_type_tracked(
+    db: &dyn Db,
+    syntax: SyntaxUnitInput,
+    key: AstNodeKey,
+) -> SemanticQueryResult<SpawnHandleType> {
+    // Source identity is needed to compute ownership, so it cannot depend on
+    // ownership legality. Only spawn legality/entry validation authorize emission.
+    let Some(target) = spawn_target_tracked(db, syntax, key)? else {
+        return Ok(None);
+    };
+    let declaration =
+        layouts::unique_assembled_type_in_module(db, key, &["Concurrency".into(), "Fiber".into()], "Fiber", 1)
+            .or_else(|| unique_type_in_unit(db, key.unit, key.generation, "Fiber", 1))
+            .ok_or_else(|| SemanticError::unavailable("spawn_handle_type"))?;
+    let target = target.callee;
+    let identity = if let Some(lambda) = closure_signature(db, target)? {
+        generic_source_expression_identity(db, lambda.body)?
+    } else {
+        let callable =
+            resolved_item(db, target)?.ok_or_else(|| SemanticError::unavailable("spawn_handle_type"))?.declaration;
+        let callable_syntax =
+            db.syntax_unit(callable.unit).ok_or_else(|| SemanticError::unavailable("spawn_handle_type"))?;
+        let function = callable_syntax
+            .syntax_index(db)
+            .node_at(callable_syntax.expanded_program(db), callable.node)
+            .and_then(|node| node.of::<beskid_analysis::syntax::FunctionDefinition>())
+            .ok_or_else(|| SemanticError::unavailable("spawn_handle_type"))?;
+        match function.return_type.as_ref() {
+            Some(result) => generic_source_type_identity(db, callable, &result.node)?,
+            None => GenericSourceTypeIdentity::Abi(SemanticTypeId::UNIT),
+        }
+    };
+    let declaration_syntax =
+        db.syntax_unit(declaration.unit).ok_or_else(|| SemanticError::unavailable("spawn_handle_type"))?;
+    let parameter = declaration_syntax
+        .syntax_index(db)
+        .node_at(declaration_syntax.expanded_program(db), declaration.node)
+        .and_then(|node| node.of::<beskid_analysis::syntax::TypeDefinition>())
+        .and_then(|definition| definition.generics.first())
+        .ok_or_else(|| SemanticError::unavailable("spawn_handle_type"))?;
+    Ok(Some(SpawnHandleType {
+        declaration,
+        payload: GenericSubstitution::from_source(parameter.node.name.as_str(), identity.abi_type(), identity),
+    }))
+}
+
+/// Project a Fiber receiver from the ordinary source-identity authority, including moves and
+/// callable returns. This never reconstructs a nominal payload from its erased pointer ABI.
+pub(super) fn inferred_spawn_handle(db: &dyn Db, receiver: AstNodeKey) -> Option<SpawnHandleType> {
+    let syntax = db.syntax_unit(receiver.unit)?;
+    let index = syntax.syntax_index(db);
+    let program = syntax.expanded_program(db);
+    let parent = parent_node(index, receiver.node)?;
+    let statement = index.node_at(program, parent)?.of::<beskid_analysis::syntax::LetStatement>()?;
+    let initializer =
+        index.direct_child_id(program, parent, beskid_analysis::syntax_query::DynNodeRef::from(&statement.value))?;
+    let identity = generic_source_expression_identity(
+        db,
+        AstNodeKey { node: normalized_expression_node(index, initializer), ..receiver },
+    )
+    .ok()?;
+    let GenericSourceTypeIdentity::Nominal { qualified_name, arguments } = identity else {
+        return None;
+    };
+    let declaration =
+        layouts::unique_assembled_type_in_module(db, receiver, &["Concurrency".into(), "Fiber".into()], "Fiber", 1)
+            .or_else(|| unique_type_in_unit(db, receiver.unit, receiver.generation, "Fiber", 1))?;
+    if stable_declaration_identity(db, declaration)? != qualified_name || arguments.len() != 1 {
+        return None;
+    }
+    let target = db.syntax_unit(declaration.unit)?;
+    let parameter = target
+        .syntax_index(db)
+        .node_at(target.expanded_program(db), declaration.node)?
+        .of::<beskid_analysis::syntax::TypeDefinition>()?
+        .generics
+        .first()?;
+    let payload = arguments[0].clone();
+    Some(SpawnHandleType {
+        declaration,
+        payload: GenericSubstitution::from_source(parameter.node.name.as_str(), payload.abi_type(), payload),
+    })
+}
+
+#[salsa::tracked(persist)]
 pub(super) fn spawn_legality_tracked(
     db: &dyn Db,
     syntax: SyntaxUnitInput,
@@ -441,17 +554,250 @@ pub(super) fn spawn_legality_tracked(
     }
 
     let capture = spawn_stack_capture(db, syntax, target.callee, &target.captures)?;
-    let diagnostics = capture.map_or_else(
-        || Arc::from([]),
-        |capture| {
-            Arc::from([SpawnDiagnostic {
-                kind: SpawnDiagnosticKind::StackReferenceEscapesSpawn,
-                span: capture.span,
-                capture: Some(capture),
-            }])
-        },
-    );
+    let diagnostics = match capture {
+        None => containing_fiber_callable(index, key.node)
+            .map(|node| callable_fiber_ownership_tracked(db, syntax, AstNodeKey { node, ..key }))
+            .transpose()?
+            .flatten()
+            .map_or_else(|| Arc::from([]), |fact| fact.diagnostics),
+        Some(capture) => Arc::from([SpawnDiagnostic {
+            kind: SpawnDiagnosticKind::StackReferenceEscapesSpawn,
+            span: capture.span,
+            capture: Some(capture),
+        }]),
+    };
     Ok(Some(SpawnLegality { target, result: Some(signature.result), span, diagnostics }))
+}
+
+fn containing_fiber_callable(
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    node: beskid_analysis::syntax::AstNodeId,
+) -> Option<beskid_analysis::syntax::AstNodeId> {
+    use beskid_analysis::syntax_query::NodeKind;
+    nearest_ancestor(index, node, |kind| {
+        matches!(
+            kind,
+            NodeKind::FunctionDefinition
+                | NodeKind::MethodDefinition
+                | NodeKind::TestDefinition
+                | NodeKind::LambdaExpression
+        )
+    })
+}
+
+#[salsa::tracked(persist)]
+pub(super) fn callable_fiber_ownership_tracked(
+    db: &dyn Db,
+    syntax: SyntaxUnitInput,
+    key: AstNodeKey,
+) -> SemanticQueryResult<FiberOwnership> {
+    use beskid_analysis::syntax_query::NodeKind;
+    with_node(db, syntax, key, |program, index, _node| {
+        if !matches!(
+            index.kind(key.node),
+            Some(
+                NodeKind::FunctionDefinition
+                    | NodeKind::MethodDefinition
+                    | NodeKind::TestDefinition
+                    | NodeKind::LambdaExpression
+            )
+        ) {
+            return None;
+        }
+        Some(FiberOwnership { callable: key, diagnostics: spawn_handle_diagnostics(db, program, index, key).into() })
+    })
+}
+
+/// A nominal Fiber annotation is evidence; a pointer-shaped ABI is not.
+fn fiber_type_declaration(db: &dyn Db, key: AstNodeKey, ty: &beskid_analysis::syntax::Type) -> Option<AstNodeKey> {
+    let beskid_analysis::syntax::Type::Complex(path) = ty else {
+        return None;
+    };
+    let actual = resolve_type_declaration(db, key, &path.node)?;
+    let fiber = layouts::unique_assembled_type_in_module(db, key, &["Concurrency".into(), "Fiber".into()], "Fiber", 1)
+        .or_else(|| unique_type_in_unit(db, key.unit, key.generation, "Fiber", 1))?;
+    (actual == fiber).then_some(actual)
+}
+
+/// Seed ownership from declared parameters/locals, spawn, or resolved callable result identity.
+/// Ordinary source identity preserves method receiver and generic substitutions, without
+/// deriving nominal ownership from a pointer-shaped ABI or querying ownership legality.
+fn fiber_owner_seed(
+    db: &dyn Db,
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    key: AstNodeKey,
+) -> Option<beskid_analysis::syntax::AstNodeId> {
+    use beskid_analysis::syntax::{LetStatement, Parameter};
+    let node = index.node_at(program, key.node)?;
+    if let Some(parameter) = node.of::<Parameter>() {
+        fiber_type_declaration(db, key, &parameter.ty.node)?;
+        return index.direct_child_id(
+            program,
+            key.node,
+            beskid_analysis::syntax_query::DynNodeRef::from(&parameter.name),
+        );
+    }
+    let binding = node.of::<LetStatement>()?;
+    let initializer =
+        index.direct_child_id(program, key.node, beskid_analysis::syntax_query::DynNodeRef::from(&binding.value))?;
+    let initializer = normalized_expression_node(index, initializer);
+    let is_fiber = if index.kind(initializer) == Some(beskid_analysis::syntax_query::NodeKind::SpawnExpression) {
+        true
+    } else if let Some(annotation) = &binding.type_annotation {
+        fiber_type_declaration(db, key, &annotation.node).is_some()
+    } else if index.kind(initializer) == Some(beskid_analysis::syntax_query::NodeKind::CallExpression) {
+        let GenericSourceTypeIdentity::Nominal { qualified_name, arguments } =
+            generic_source_expression_identity(db, AstNodeKey { node: initializer, ..key }).ok()?
+        else {
+            return None;
+        };
+        let fiber =
+            layouts::unique_assembled_type_in_module(db, key, &["Concurrency".into(), "Fiber".into()], "Fiber", 1)
+                .or_else(|| unique_type_in_unit(db, key.unit, key.generation, "Fiber", 1))?;
+        stable_declaration_identity(db, fiber)? == qualified_name && arguments.len() == 1
+    } else {
+        false
+    };
+    is_fiber
+        .then(|| {
+            index.direct_child_id(program, key.node, beskid_analysis::syntax_query::DynNodeRef::from(&binding.name))
+        })
+        .flatten()
+}
+
+/// Handle ownership belongs to one generation-bound callable fact, projected into spawn legality.
+/// Resolve terminal uses by declaration identity, so a shadowing local never consumes its parent.
+fn spawn_handle_diagnostics(
+    db: &dyn Db,
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    key: AstNodeKey,
+) -> Vec<SpawnDiagnostic> {
+    use beskid_analysis::{
+        syntax::{LetStatement, PathExpression},
+        syntax_query::NodeKind,
+    };
+    type BranchPath = Vec<(beskid_analysis::syntax::AstNodeId, beskid_analysis::syntax::AstNodeId)>;
+    let mut owners = HashMap::<_, Vec<BranchPath>>::new();
+    for kind in [NodeKind::Parameter, NodeKind::LetStatement] {
+        for node in index.ids_of_kind(kind).filter(|node| containing_fiber_callable(index, *node) == Some(key.node)) {
+            if let Some(owner) = fiber_owner_seed(db, program, index, AstNodeKey { node, ..key }) {
+                owners.insert(owner, Vec::new());
+            }
+        }
+    }
+    let mut diagnostics = Vec::new();
+    for spawn in index
+        .ids_of_kind(NodeKind::SpawnExpression)
+        .filter(|node| containing_fiber_callable(index, *node) == Some(key.node))
+    {
+        let mut owner = spawn;
+        while let Some(parent) = parent_node(index, owner) {
+            match index.kind(parent) {
+                Some(NodeKind::Expression | NodeKind::GroupedExpression) => owner = parent,
+                Some(NodeKind::ExpressionStatement) => {
+                    if let Some(span) = index.node_at(program, spawn).and_then(|node| node.span()) {
+                        diagnostics.push(SpawnDiagnostic {
+                            kind: SpawnDiagnosticKind::DiscardedHandle,
+                            span,
+                            capture: None,
+                        });
+                    }
+                    break;
+                }
+                _ => break,
+            }
+        }
+    }
+    let mut uses = index
+        .ids_of_kind(NodeKind::PathExpression)
+        .filter_map(|use_id| {
+            if !is_ancestor(index, key.node, use_id) {
+                return None;
+            }
+            let node = index.node_at(program, use_id)?;
+            let path = node.of::<PathExpression>()?;
+            let [receiver, rest @ ..] = path.path.node.segments.as_slice() else {
+                return None;
+            };
+            let local = resolve_lexical_declaration(program, index, use_id, &receiver.node.name.node.name)?;
+            let method = rest.first().map(|segment| segment.node.name.node.name.as_str());
+            Some((node.span()?, use_id, local, method))
+        })
+        .collect::<Vec<_>>();
+    uses.sort_by_key(|(span, ..)| span.start);
+    for (span, use_id, local, method) in uses {
+        let Some(consumed) = owners.get_mut(&local) else {
+            continue;
+        };
+        let mut branches = BranchPath::new();
+        let mut repeated_move = false;
+        let mut child = use_id;
+        while let Some(parent) = parent_node(index, child) {
+            if index.kind(parent) == Some(NodeKind::LambdaExpression) && !is_ancestor(index, parent, local) {
+                // Ordinary closures are repeatable; they cannot own a consuming
+                // Fiber capture. A lambda directly transferred to spawn has one
+                // invocation and is checked as that one-shot ownership transfer.
+                // The spawn-target fact shares spawn_entry_operand normalization
+                // with emission, including the empty-call entry spelling.
+                let one_shot = nearest_ancestor(index, parent, |kind| kind == NodeKind::SpawnExpression)
+                    .and_then(|node| spawn_target(db, AstNodeKey { node, ..key }).ok().flatten())
+                    .is_some_and(|target| target.callee.node == parent);
+                repeated_move |= !one_shot;
+            }
+            if index.kind(parent) == Some(NodeKind::IfStatement)
+                && matches!(index.kind(child), Some(NodeKind::Block | NodeKind::ElseBranch))
+            {
+                branches.push((parent, child));
+            }
+            if matches!(index.kind(parent), Some(NodeKind::WhileStatement | NodeKind::ForStatement)) {
+                let loop_span = index.node_at(program, parent).and_then(|node| node.span());
+                let declaration_span = index.node_at(program, local).and_then(|node| node.span());
+                if let (Some(loop_span), Some(declaration_span)) = (loop_span, declaration_span) {
+                    repeated_move |= declaration_span.start < loop_span.start;
+                }
+            }
+            child = parent;
+        }
+        let consumed_on_this_path = consumed.iter().any(|prior| {
+            !prior.iter().any(|(condition, arm)| {
+                branches.iter().any(|(other, other_arm)| condition == other && arm != other_arm)
+            })
+        });
+        if consumed_on_this_path || (repeated_move && method != Some("Cancel")) {
+            diagnostics.push(SpawnDiagnostic { kind: SpawnDiagnosticKind::UseAfterMove, span, capture: None });
+            continue;
+        }
+        if method == Some("Cancel") {
+            continue;
+        }
+        consumed.push(branches);
+        // A local assignment transfers the join capability to the new declaration.
+        // Passing/returning the value consumes this owner without manufacturing a copy.
+        if method.is_none() {
+            let mut container = use_id;
+            while let Some(parent) = parent_node(index, container) {
+                match index.kind(parent) {
+                    Some(NodeKind::Expression | NodeKind::GroupedExpression) => container = parent,
+                    Some(NodeKind::LetStatement) => {
+                        if let Some(binding) = index.node_at(program, parent).and_then(|node| node.of::<LetStatement>())
+                            && let Some(alias) = index.direct_child_id(
+                                program,
+                                parent,
+                                beskid_analysis::syntax_query::DynNodeRef::from(&binding.name),
+                            )
+                        {
+                            owners.insert(alias, Vec::new());
+                        }
+                        break;
+                    }
+                    _ => break,
+                }
+            }
+        }
+    }
+    diagnostics
 }
 
 #[salsa::tracked(persist)]

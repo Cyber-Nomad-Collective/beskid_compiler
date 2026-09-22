@@ -1,3 +1,4 @@
+use beskid_abi::runtime_source::{corelib_service_source_identity, corelib_source_locations_match};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -17,29 +18,29 @@ pub(super) fn trusted_corelib_service_paths(
     for logical_path in
         beskid_abi::runtime_source::canonical_corelib_service_sources().into_iter().map(|source| source.logical_path)
     {
-        let Some(canonical_path) = beskid_abi::runtime_source::canonical_corelib_service_source_path(&logical_path)
-        else {
+        let Some(identity) = corelib_service_source_identity(&logical_path) else {
             continue;
         };
-        // Lexically clean both sides so `../..` from CARGO_MANIFEST_DIR matches a resolved
-        // Foundation `source_root`. Do not canonicalize: symlink resolution would let a
-        // user-project link to the compiler-owned file inherit panic/syscall provenance.
-        let Some((index, dependency)) = plan.dependency_projects.iter().enumerate().find(|(_, dependency)| {
+        // The graph already resolves dependency identity. Preserve that policy, accepting
+        // ordinary/verbatim Windows drive spelling without resolving a new user alias here.
+        let Some((index, relative)) = plan.dependency_projects.iter().enumerate().find_map(|(index, dependency)| {
             let source_root = normalize_lexically(&dependency.source_root);
-            canonical_path.starts_with(&source_root)
+            [&identity.declared_path, &identity.canonical_path].into_iter().find_map(|path| {
+                path.ancestors()
+                    .find(|ancestor| corelib_source_locations_match(ancestor, &source_root))
+                    .and_then(|ancestor| path.strip_prefix(ancestor).ok())
+                    .map(|relative| (index, relative.to_path_buf()))
+            })
         }) else {
-            continue;
-        };
-        let source_root = normalize_lexically(&dependency.source_root);
-        let Ok(relative) = canonical_path.strip_prefix(&source_root) else {
             continue;
         };
         let effective_path = workspace
             .and_then(|workspace| workspace.materialized_dependencies.get(index))
             .map(|dependency| dependency.materialized_source_root.join(relative))
-            .unwrap_or(canonical_path);
-        if let Some(unit) = units.iter().find(|unit| paths_match(&unit.path, &effective_path)) {
-            trusted.push(unit.path.clone());
+            .unwrap_or(identity.canonical_path);
+        if units.iter().any(|unit| corelib_source_locations_match(&unit.origin_path, &effective_path)) {
+            // Retain the issuer's destination, not a canonicalized requesting unit's path.
+            trusted.push(effective_path);
         }
     }
     trusted.sort();
@@ -60,9 +61,4 @@ fn normalize_lexically(path: &Path) -> PathBuf {
         }
     }
     out
-}
-
-fn paths_match(left: &Path, right: &Path) -> bool {
-    left.canonicalize().unwrap_or_else(|_| left.to_path_buf())
-        == right.canonicalize().unwrap_or_else(|_| right.to_path_buf())
 }

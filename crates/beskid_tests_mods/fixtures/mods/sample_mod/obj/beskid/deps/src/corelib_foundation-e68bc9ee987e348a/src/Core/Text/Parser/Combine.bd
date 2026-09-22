@@ -1,0 +1,71 @@
+/// Combinators for ordered choice and sequence.
+use Core.Text.Cursor;
+use Core.Text.Parser.Result;
+use Core.Text.Parser.Literals;
+
+pub TextParseResult<string> Or(
+    Cursor.TextCursor c,
+    string rule,
+    TextParseResult<string> first,
+    TextParseResult<string> second
+) {
+    if IsOk<string>(first) {
+        return first;
+    }
+    if IsOk<string>(second) {
+        return second;
+    }
+    return Literals.Fail(c, ParseErrorKind::ChoiceFailed(rule), rule);
+}
+
+pub TextParseResult<string> And(
+    Cursor.TextCursor c,
+    string rule,
+    TextParseResult<string> first,
+    TextParseResult<string> second
+) {
+    if !IsOk<string>(first) {
+        return first;
+    }
+    if !IsOk<string>(second) {
+        return second;
+    }
+    return match second {
+        TextParseResult::Ok(success) => Result.Success<string>("", success.rest),
+        TextParseResult::Err(err) => TextParseResult::Err(err),
+    };
+}
+
+pub TextParseResult<string> AndSkip(
+    Cursor.TextCursor c,
+    string rule,
+    TextParseResult<string> first,
+    TextParseResult<string> second
+) {
+    if !IsOk<string>(first) {
+        return first;
+    }
+    if !IsOk<string>(second) {
+        return second;
+    }
+    return match second {
+        TextParseResult::Ok(secondSuccess) => match first {
+            TextParseResult::Ok(firstSuccess) => Result.Success<string>(firstSuccess.value, secondSuccess.rest),
+            TextParseResult::Err(err) => TextParseResult::Err(err),
+        },
+        TextParseResult::Err(err) => TextParseResult::Err(err),
+    };
+}
+
+
+pub TextParseResult<string> SkipAnd(
+    Cursor.TextCursor c,
+    string rule,
+    TextParseResult<string> first,
+    TextParseResult<string> second
+) {
+    if !IsOk<string>(first) {
+        return first;
+    }
+    return second;
+}

@@ -1,0 +1,10 @@
+use Core.IO.IoError;
+
+/// A byte stream implementing the Reader, Writer, and idempotent Closer obligations.
+/// Transport implementations reuse Core.IO.ReadExact and WriteAll.
+/// @tier(standard)
+pub contract Stream {
+    Core.Results.Result<i64, IoError> Read(u8[] destination, i64 offset, i64 count);
+    Core.Results.Result<i64, IoError> Write(u8[] source, i64 offset, i64 count);
+    Core.Results.Result<unit, IoError> Close();
+}

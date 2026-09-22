@@ -1,0 +1,77 @@
+use Core.Bytes.Slice;
+use Core.Bytes.Errors;
+use Core.Bytes.BufferReader;
+use Core.Bytes.BufferWriter;
+use Core.Results;
+
+i64 ReadPosition(BufferReader reader) {
+    Result<i64, BytesError> result = reader.Position();
+    return match result { Result::Ok(position) => position, Result::Error(_) => -1_i64 };
+}
+i64 WritePosition(BufferWriter writer) {
+    Result<i64, BytesError> result = writer.Position();
+    return match result { Result::Ok(position) => position, Result::Error(_) => -1_i64 };
+}
+bool Bounds(Result<u8[], BytesError> result) {
+    return match result { Result::Ok(_) => false, Result::Error(error) => match error { BytesError::OutOfBounds() => true, BytesError::InvalidRange() => false } };
+}
+bool InvalidWrite(Result<unit, BytesError> result) {
+    return match result { Result::Ok(_) => false, Result::Error(error) => match error { BytesError::InvalidRange() => true, BytesError::OutOfBounds() => false } };
+}
+bool WriteBounds(Result<unit, BytesError> result) {
+    return match result { Result::Ok(_) => false, Result::Error(error) => match error { BytesError::OutOfBounds() => true, BytesError::InvalidRange() => false } };
+}
+bool FirstByte(u8[] bytes) { return Slice.Len(bytes) == 1_i64 && bytes[0] == 2_u8; }
+i64 CheckReader(BufferReader reader) {
+    if ReadPosition(reader) != 0_i64 { return 10_i64; }
+    Result<u8[], BytesError> first = reader.Read(1_i64);
+    bool value = match first { Result::Ok(bytes) => FirstByte(bytes), Result::Error(_) => false };
+    if !value { return 15_i64; }
+    Result<i64, BytesError> capacity = reader.Capacity();
+    i64 length = match capacity { Result::Ok(count) => count, Result::Error(_) => -1_i64 };
+    if length != 2_i64 { return 16_i64; }
+    if ReadPosition(reader) != 1_i64 { return 11_i64; }
+    if !Bounds(reader.Read(2_i64)) { return 12_i64; }
+    if ReadPosition(reader) != 1_i64 { return 13_i64; }
+    Result<u8[], BytesError> empty = reader.Read(0_i64);
+    i64 emptyLength = match empty { Result::Ok(bytes) => Slice.Len(bytes), Result::Error(_) => -1_i64 };
+    if emptyLength != 0_i64 { return 17_i64; }
+    if ReadPosition(reader) != 1_i64 { return 14_i64; }
+    return 42_i64;
+}
+i64 CheckWriter(BufferWriter writer) {
+    Result<unit, BytesError> first = writer.Write([8_u8, 9_u8], 1_i64, 1_i64);
+    if WritePosition(writer) != 1_i64 { return 20_i64; }
+    Result<unit, BytesError> overflow = writer.Write([1_u8], 9223372036854775807_i64, 1_i64);
+    if !InvalidWrite(overflow) { return 25_i64; }
+    if WritePosition(writer) != 1_i64 { return 21_i64; }
+    Result<unit, BytesError> bounds = writer.Write([1_u8, 2_u8], 0_i64, 2_i64);
+    if !WriteBounds(bounds) { return 26_i64; }
+    if WritePosition(writer) != 1_i64 { return 22_i64; }
+    Result<unit, BytesError> empty = writer.Write([1_u8], 1_i64, 0_i64);
+    bool emptyOk = match empty { Result::Ok(_) => true, Result::Error(_) => false };
+    if !emptyOk { return 27_i64; }
+    if WritePosition(writer) != 1_i64 { return 23_i64; }
+    return 42_i64;
+}
+[Export(Abi:"C", Symbol:"RunFoundationFixture")]
+pub i64 RunFoundationFixture() {
+    if Slice.IsValidRange(4_i64, -1_i64, 1_i64) { return 1_i64; }
+    if Slice.IsValidRange(4_i64, 0_i64, -1_i64) { return 2_i64; }
+    if Slice.IsValidRange(4_i64, 9223372036854775807_i64, 1_i64) { return 3_i64; }
+    if Slice.IsValidRange(4_i64, 4_i64, 1_i64) { return 4_i64; }
+    if !Slice.IsValidRange(4_i64, 4_i64, 0_i64) { return 5_i64; }
+    u8[] buffer = [1_u8, 2_u8, 3_u8, 4_u8, 5_u8];
+    Slice.Copy(buffer, 1_i64, buffer, 0_i64, 4_i64);
+    if buffer[1] != 1_u8 || buffer[2] != 2_u8 || buffer[3] != 3_u8 || buffer[4] != 4_u8 { return 6_i64; }
+    Slice.Copy(buffer, 0_i64, buffer, 1_i64, 4_i64);
+    if buffer[0] != 1_u8 || buffer[1] != 2_u8 || buffer[2] != 3_u8 || buffer[3] != 4_u8 { return 7_i64; }
+    Result<BufferReader, BytesError> openedReader = BufferReader.Create(buffer, 1_i64, 2_i64);
+    i64 read = match openedReader { Result::Ok(reader) => { BufferReader typedReader = reader; CheckReader(typedReader); }, Result::Error(_) => 8_i64 };
+    if read != 42_i64 { return read; }
+    Result<BufferWriter, BytesError> openedWriter = BufferWriter.Create(buffer, 1_i64, 2_i64);
+    i64 write = match openedWriter { Result::Ok(writer) => { BufferWriter typedWriter = writer; CheckWriter(typedWriter); }, Result::Error(_) => 9_i64 };
+    if write != 42_i64 { return write; }
+    if buffer[1] != 9_u8 || buffer[0] != 1_u8 || buffer[2] != 3_u8 { return 24_i64; }
+    return 42_i64;
+}

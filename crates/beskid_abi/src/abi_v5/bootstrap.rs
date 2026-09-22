@@ -208,6 +208,12 @@ impl RuntimeAuditMetadata {
 
     fn normalized_symbol(&self, raw: &str) -> Result<String, String> {
         reject_forbidden_provenance(raw, &self.forbidden_rust_symbols)?;
+        // Object readers may already have removed Mach-O decoration. Preserve an
+        // exact manifest-owned import identity before stripping another underscore;
+        // undeclared names still take the ordinary one-prefix, fail-closed path.
+        if self.object_format == "macho" && self.allowed_imports.iter().any(|symbol| symbol == raw) {
+            return Ok(raw.into());
+        }
         let normalized = normalize_object_symbol(raw, &self.object_format, &self.symbol_prefix);
         // Darwin's `_exit` platform import, C11 TLS `_tlv_bootstrap` helper, and libc `__error`
         // errno accessor all have a leading underscore in their native C names before Mach-O

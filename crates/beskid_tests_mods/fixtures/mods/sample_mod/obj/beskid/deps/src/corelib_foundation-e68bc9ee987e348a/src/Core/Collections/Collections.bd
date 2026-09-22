@@ -1,0 +1,8 @@
+/// Core.Collections hub — canonical array-backed collection modules.
+/// @tier(standard)
+pub mod Core.Collections.Array;
+pub mod Core.Collections.List;
+pub mod Core.Collections.Map;
+pub mod Core.Collections.Set;
+pub mod Core.Collections.Queue;
+pub mod Core.Collections.Stack;

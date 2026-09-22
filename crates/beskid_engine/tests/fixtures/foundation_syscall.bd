@@ -1,0 +1,155 @@
+use Core.Syscall;
+use Core.Syscall.SyscallError;
+use Core.Syscall.ReadBytesRequest;
+use Core.Syscall.WriteBytesRequest;
+use Core.Syscall.Descriptor;
+use Core.Syscall.ReadLimit;
+use Core.Results;
+use Core.Bytes.Slice;
+
+i64 CheckPayload(u8[] bytes) {
+    if Slice.Len(bytes) != 3_i64 { return 5_i64; }
+    if bytes[0] != 0_u8 || bytes[1] != 255_u8 || bytes[2] != 42_u8 { return 6_i64; }
+    return 42_i64;
+}
+
+[Export(Abi:"C", Symbol:"RunFoundationFixture")]
+pub i64 RunFoundationFixture() {
+    ReadBytesRequest request = ReadBytesRequest { descriptor: Descriptor::Raw(-1_i64), limit: ReadLimit::UpTo(4_i64) };
+    Result<u8[], SyscallError> result = Syscall.ReadBytesWith(request);
+    i64 invalid = match result {
+        Result::Ok(_) => 1_i64,
+        Result::Error(error) => match error {
+            SyscallError::InvalidFd(fd) => 42_i64,
+            SyscallError::UnsupportedReadFd(_) => 2_i64,
+            SyscallError::InvalidReadLimit(_) => 3_i64,
+            SyscallError::IoFailure(_) => 4_i64,
+        },
+    };
+    if invalid != 42_i64 { return invalid; }
+    ReadBytesRequest valid = ReadBytesRequest { descriptor: Descriptor::Raw(198_i64), limit: ReadLimit::UpTo(8_i64) };
+    Result<u8[], SyscallError> payload = Syscall.ReadBytesWith(valid);
+    return match payload { Result::Ok(bytes) => CheckPayload(bytes), Result::Error(_) => 7_i64 };
+}
+
+// A narrowed descriptor must neither hide the original diagnostic nor consume fd 198.
+i64 CheckInvalidDescriptor(i64 original) {
+    ReadBytesRequest request = ReadBytesRequest { descriptor: Descriptor::Raw(original), limit: ReadLimit::UpTo(8_i64) };
+    Result<u8[], SyscallError> result = Syscall.ReadBytesWith(request);
+    i64 reported = match result {
+        Result::Error(SyscallError::InvalidFd(value)) => value,
+        _ => -99_i64,
+    };
+    if reported != original { return reported; }
+    ReadBytesRequest valid = ReadBytesRequest { descriptor: Descriptor::Raw(198_i64), limit: ReadLimit::UpTo(8_i64) };
+    Result<u8[], SyscallError> payload = Syscall.ReadBytesWith(valid);
+    i64 intact = match payload { Result::Ok(bytes) => CheckPayload(bytes), Result::Error(_) => 7_i64 };
+    if intact != 42_i64 { return -98_i64; }
+    return reported;
+}
+
+[Export(Abi:"C", Symbol:"RunNegativeDescriptorFixture")]
+pub i64 RunNegativeDescriptorFixture() { return CheckInvalidDescriptor(-1_i64); }
+[Export(Abi:"C", Symbol:"RunOverflowDescriptorFixture")]
+pub i64 RunOverflowDescriptorFixture() { return CheckInvalidDescriptor(2147483648_i64); }
+[Export(Abi:"C", Symbol:"RunAliasingDescriptorFixture")]
+pub i64 RunAliasingDescriptorFixture() { return CheckInvalidDescriptor(4294967494_i64); }
+
+i64 CheckInvalidByteWriteDescriptor(i64 original) {
+    WriteBytesRequest request = WriteBytesRequest { descriptor: Descriptor::Raw(original), data: [42_u8] };
+    Result<i64, SyscallError> result = Syscall.WriteBytesWith(request);
+    return match result {
+        Result::Error(SyscallError::InvalidFd(value)) => value,
+        _ => -99_i64,
+    };
+}
+
+i64 CheckInvalidTextWriteDescriptor(i64 original) {
+    Result<i64, SyscallError> result = Syscall.Write(original, "x");
+    return match result {
+        Result::Error(SyscallError::InvalidFd(value)) => value,
+        _ => -99_i64,
+    };
+}
+
+i64 CheckInvalidTextReadDescriptor(i64 original) {
+    Result<string, SyscallError> result = Syscall.Read(original, 1_i64);
+    return match result {
+        Result::Error(SyscallError::InvalidFd(value)) => value,
+        _ => -99_i64,
+    };
+}
+
+[Export(Abi:"C", Symbol:"RunByteWriteOverflowDescriptorFixture")]
+pub i64 RunByteWriteOverflowDescriptorFixture() { return CheckInvalidByteWriteDescriptor(2147483648_i64); }
+[Export(Abi:"C", Symbol:"RunTextWriteAliasingDescriptorFixture")]
+pub i64 RunTextWriteAliasingDescriptorFixture() { return CheckInvalidTextWriteDescriptor(4294967494_i64); }
+[Export(Abi:"C", Symbol:"RunTextReadNegativeDescriptorFixture")]
+pub i64 RunTextReadNegativeDescriptorFixture() { return CheckInvalidTextReadDescriptor(-1_i64); }
+
+// `-1` is only the private guard's invalid sentinel: fd 0 must advance to the
+// next ReadBytes validation instead of being classified as InvalidFd.
+[Export(Abi:"C", Symbol:"RunDescriptorZeroIsNotSentinelFixture")]
+pub i64 RunDescriptorZeroIsNotSentinelFixture() {
+    ReadBytesRequest request = ReadBytesRequest { descriptor: Descriptor::Raw(0_i64), limit: ReadLimit::UpTo(0_i64) };
+    Result<u8[], SyscallError> result = Syscall.ReadBytesWith(request);
+    return match result {
+        Result::Error(SyscallError::InvalidReadLimit(0_i64)) => 42_i64,
+        Result::Error(SyscallError::InvalidFd(_)) => -99_i64,
+        _ => -98_i64,
+    };
+}
+
+[Export(Abi:"C", Symbol:"RunShortReadThenEofFixture")]
+pub i64 RunShortReadThenEofFixture() {
+    ReadBytesRequest request = ReadBytesRequest { descriptor: Descriptor::Raw(198_i64), limit: ReadLimit::UpTo(8_i64) };
+    Result<u8[], SyscallError> first = Syscall.ReadBytesWith(request);
+    i64 prefix = match first { Result::Ok(bytes) => CheckPayload(bytes), Result::Error(_) => 11_i64 };
+    if prefix != 42_i64 { return prefix; }
+    Result<u8[], SyscallError> second = Syscall.ReadBytesWith(request);
+    return match second {
+        Result::Ok(bytes) => CheckEmpty(bytes),
+        Result::Error(_) => 13_i64,
+    };
+}
+
+i64 CheckEmpty(u8[] bytes) {
+    if Slice.Len(bytes) == 0_i64 { return 42_i64; }
+    return 12_i64;
+}
+
+[Export(Abi:"C", Symbol:"RunClosedDescriptorFixture")]
+pub i64 RunClosedDescriptorFixture() {
+    ReadBytesRequest request = ReadBytesRequest { descriptor: Descriptor::Raw(198_i64), limit: ReadLimit::UpTo(8_i64) };
+    Result<u8[], SyscallError> result = Syscall.ReadBytesWith(request);
+    return match result {
+        Result::Error(SyscallError::IoFailure(value)) => value,
+        _ => -99_i64,
+    };
+}
+
+[Export(Abi:"C", Symbol:"RunBinaryCorpusFixture")]
+pub i64 RunBinaryCorpusFixture() {
+    ReadBytesRequest request = ReadBytesRequest { descriptor: Descriptor::Raw(198_i64), limit: ReadLimit::UpTo(32_i64) };
+    Result<u8[], SyscallError> result = Syscall.ReadBytesWith(request);
+    return match result {
+        Result::Ok(bytes) => CheckBinaryCorpus(bytes),
+        Result::Error(_) => 21_i64,
+    };
+}
+
+i64 CheckBinaryCorpus(u8[] bytes) {
+    if Slice.Len(bytes) != 9_i64 { return 22_i64; }
+    if bytes[0] != 13_u8 || bytes[1] != 10_u8 || bytes[2] != 10_u8 || bytes[3] != 26_u8 || bytes[4] != 0_u8 || bytes[5] != 255_u8 || bytes[6] != 192_u8 || bytes[7] != 175_u8 || bytes[8] != 42_u8 { return 23_i64; }
+    WriteBytesRequest request = WriteBytesRequest { descriptor: Descriptor::Raw(199_i64), data: bytes };
+    Result<i64, SyscallError> result = Syscall.WriteBytesWith(request);
+    return match result {
+        Result::Ok(count) => CheckWrittenCount(count),
+        Result::Error(_) => 25_i64,
+    };
+}
+
+i64 CheckWrittenCount(i64 count) {
+    if count == 9_i64 { return 42_i64; }
+    return 24_i64;
+}

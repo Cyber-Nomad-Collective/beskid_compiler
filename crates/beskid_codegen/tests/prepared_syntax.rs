@@ -4,6 +4,7 @@ use beskid_analysis::services::{
 };
 use beskid_codegen::{
     lower_prepared_syntax_entrypoint, lower_prepared_syntax_module, lower_syntax_assembly_entrypoint,
+    object_link_symbol,
 };
 use beskid_queries::{compile_front_end_from_resolved_input, with_db};
 use cranelift_codegen::{isa, settings};
@@ -189,6 +190,52 @@ pub unit plugin_init() { return; }
         }),
         "syntax lowering must retain [Export] metadata for AOT/JIT interop"
     );
+    std::fs::remove_dir_all(directory).expect("remove project");
+}
+
+#[test]
+fn syntax_assembly_entrypoint_preserves_explicit_interop_export_metadata() {
+    let directory =
+        std::env::temp_dir().join(format!("beskid_codegen_prepared_syntax_entrypoint_exports_{}", std::process::id()));
+    std::fs::create_dir_all(&directory).expect("create project");
+    let path = directory.join("Plugin.bd");
+    let source = r#"
+pub i64 Helper() { return 41; }
+[Export(Abi:"C", Symbol:"beskid_entry")]
+pub i64 Main() { return Helper() + 1; }
+"#;
+    std::fs::write(&path, source).expect("write source");
+    let plan = synthetic_compile_plan_for_source(&path);
+    let resolved: ResolvedInput = resolved_input_from_plan(path, source.into(), plan, None, None);
+    let front = compile_front_end_from_resolved_input(
+        &resolved,
+        FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
+        None,
+    )
+    .expect("prepare frontend");
+    let target = TargetMetadata::supported()
+        .into_iter()
+        .find(|target| target.triple.as_str().starts_with("x86_64-"))
+        .expect("x86_64 ABI target");
+    let isa = isa::lookup_by_name("x86_64")
+        .expect("x86 ISA")
+        .finish(settings::Flags::new(settings::builder()))
+        .expect("finish ISA");
+
+    let lowered = with_db(|db| {
+        lower_syntax_assembly_entrypoint(db, std::sync::Arc::new(front.syntax_assembly()), "Main", target, isa.as_ref())
+    })
+    .expect("syntax assembly entrypoint lowering");
+
+    assert_eq!(
+        lowered.artifact.exports,
+        vec![beskid_codegen::ExportEntry {
+            beskid_name: "Main".into(),
+            exported_symbol: "beskid_entry".into(),
+            abi: "C".into(),
+        }]
+    );
+    assert_eq!(object_link_symbol(&lowered.symbol, &lowered.artifact.exports), "beskid_entry");
     std::fs::remove_dir_all(directory).expect("remove project");
 }
 

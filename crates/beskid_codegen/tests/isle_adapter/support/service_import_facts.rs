@@ -44,6 +44,16 @@ impl CorelibServiceImportFacts {
 }
 
 impl NodeFacts for CorelibServiceImportFacts {
+    fn managed_reference(&self, key: AstNodeKey) -> Option<beskid_isle::ManagedReferenceFact> {
+        if key == self.buffer {
+            Some(beskid_isle::ManagedReferenceFact::GcManaged)
+        } else if key == self.fd || key == self.limit {
+            Some(beskid_isle::ManagedReferenceFact::NativeOrScalar)
+        } else {
+            None
+        }
+    }
+
     fn node_kind(&self, key: AstNodeKey) -> Option<beskid_isle::NodeKind> {
         (key == self.call).then_some(beskid_isle::NodeKind::CallExpression).or_else(|| {
             (key == self.fd || key == self.buffer || key == self.limit)

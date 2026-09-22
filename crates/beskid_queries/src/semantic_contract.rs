@@ -17,8 +17,11 @@ mod abi;
 mod bulk;
 mod call_abi;
 mod calls;
+mod cleanup;
 mod closures_spawn;
+mod growth;
 mod completion;
+mod contracts;
 mod layouts;
 mod locals;
 mod model;
@@ -27,6 +30,8 @@ mod resolution;
 mod syntax_facts;
 mod typed_arrays;
 mod typing;
+
+pub use typing::{pattern_binding_specialization, specialized_call_result_managed_reference_kind};
 
 use abi::{
     abi_signature_from_syntax, abi_type_for_binary_expression, abi_type_for_expression, abi_type_from_syntax,
@@ -55,17 +60,24 @@ use calls::{
     is_transparent_binary_operand_path, method_declaration_for_member_receiver, nominal_local_member_receiver,
     nominal_member_receiver_tracked, primitive_integer, primitive_numeric, primitive_numeric_conversion_target,
     primitive_numeric_conversion_tracked, range_for_fact_tracked, resolve_local_extern_contract_method,
-    result_type_parts, same_type_syntax, stable_declaration_identity, substitute_explicit_type,
-    try_expression_fact_for_node, try_expression_fact_tracked, try_operand_parameter_declaration,
+    result_type_parts, stable_declaration_identity, substitute_explicit_type, try_expression_fact_for_node,
+    try_expression_fact_tracked, try_operand_declaration,
     type_syntax_is_enclosing_generic_parameter_reference, type_syntax_is_generic_parameter_reference,
     unique_nominal_method_declaration, unqualified_enclosing_method_call,
 };
+pub use cleanup::{ScopedAcquisition, ScopedCleanup, ScopedCleanupDiagnostic, scoped_cleanup};
+pub use growth::{DeadCollectionGrowth, dead_collection_growth, is_growth_call_candidate};
 use closures_spawn::{
-    callable_signature_for_node, callable_signature_for_path, callable_signature_tracked, capture_storage_class,
-    capture_storage_for_node, capture_storage_tracked, closure_call_target_tracked, closure_captures,
-    closure_environment_for_node, closure_environment_tracked, closure_signature_for_node, closure_signature_tracked,
-    normalized_expression_node, runtime_intrinsic_name_tracked, runtime_intrinsic_tracked, spawn_entry_operand,
-    spawn_entry_validation_tracked, spawn_legality_tracked, spawn_stack_capture, spawn_target_tracked,
+    callable_fiber_ownership_tracked, callable_signature_for_node, callable_signature_for_path,
+    callable_signature_tracked, capture_storage_class, capture_storage_for_node, capture_storage_tracked,
+    closure_call_target_tracked, closure_captures, closure_environment_for_node, closure_environment_tracked,
+    closure_signature_for_node, closure_signature_tracked, inferred_spawn_handle, normalized_expression_node,
+    runtime_intrinsic_name_tracked, runtime_intrinsic_tracked, spawn_entry_operand, spawn_entry_validation_tracked,
+    spawn_handle_type_tracked, spawn_legality_tracked, spawn_stack_capture, spawn_target_tracked,
+};
+use contracts::{
+    contract_member_receiver, contract_method_specialization, contract_parameter_declarations,
+    contract_witnesses_for_call, specialized_source_expression_identity,
 };
 use layouts::{
     abi_local_declaration_type, abi_type_for_direct_aggregate_field_projection, abi_type_for_local_path,
@@ -86,6 +98,7 @@ use locals::{
     local_slot_tracked, mutable_local_assignment_tracked, nearest_ancestor, parent_node, resolve_lexical_declaration,
     resolved_local_tracked,
 };
+use model::ContractParameterWitness;
 use model::GenericSourceTypeIdentity;
 use queries::with_registered_syntax;
 use resolution::{
@@ -112,6 +125,7 @@ use typing::{
 
 pub use abi::{
     generic_call_specialization_in_environment, generic_call_specialization_instance, generic_specialization_instance,
+    specialized_corelib_value_service_result,
 };
 pub use calls::extern_contract_import_for_declaration;
 pub use completion::{
@@ -132,27 +146,29 @@ pub use model::{
     EnumConstructorSpecialization, EnumConstructorTemplate, EnumLayoutFact, EnumLayoutTemplateArgument,
     EnumMatchArmFact, EnumMatchBindingFact, EnumMatchFact, EnumMatchPatternFact, EnumMatchScalarLiteralFact,
     EnumMatchVariantPatternFact, EnumScalarPayloadObjectLayout, EnumScalarPayloadVariantLayout, EnumVariantLayoutFact,
-    ExportSymbol, ForIteratorFact, GenericCallInstantiation, GenericCallSpecialization, GenericCallTemplate,
-    GenericNominalMethodReceiver, GenericSpecializationInstance, GenericSubstitution, IndexedNodeKind, ItemSignature,
-    LiteralFact, LocalSlot, ManagedReferenceKind, ManifestBuiltin, MutableLocalAssignment, OperatorFact,
-    PrimitiveNumericConversion, RangeForFact, ResolvedItem, ResolvedLocal, RuntimeIntrinsic, RuntimeIntrinsicName,
-    ScalarAbiLayout, SemanticError, SemanticQueryResult, SemanticTypeId, SourceSpan, SourceUnitId, SpawnDiagnostic,
-    SpawnDiagnosticKind, SpawnEntryValidation, SpawnLegality, SpawnTarget, SyntaxUnitInput, SyntaxUnitRevision,
-    TestItem, TryExpressionFact, TypedArrayAllocation, TypedProgram, format_ast_node_key, format_ast_node_site,
-    format_ast_node_trace, format_source_span_range, generic_specialization_identity,
+    ExportSymbol, FiberOwnership, ForIteratorFact, GenericCallInstantiation, GenericCallSpecialization,
+    GenericCallTemplate, GenericNominalMethodReceiver, GenericSpecializationInstance, GenericSubstitution,
+    IndexedNodeKind, ItemSignature, LiteralFact, LocalSlot, ManagedReferenceKind, ManifestBuiltin,
+    MutableLocalAssignment, OperatorFact, PrimitiveNumericConversion, RangeForFact, ResolvedItem, ResolvedLocal,
+    RuntimeIntrinsic, RuntimeIntrinsicName, ScalarAbiLayout, SemanticError, SemanticQueryResult, SemanticTypeId,
+    SourceSpan, SourceUnitId, SpawnDiagnostic, SpawnDiagnosticKind, SpawnEntryValidation, SpawnHandleType,
+    SpawnLegality, SpawnTarget, SyntaxUnitInput, SyntaxUnitRevision, TestItem, TryExpressionFact, TypedArrayAllocation,
+    TypedProgram, format_ast_node_key, format_ast_node_site, format_ast_node_trace, format_source_span_range,
+    generic_specialization_identity,
 };
 pub use queries::{
     abi_type, aggregate_field_access, aggregate_layout, aggregate_literal_declaration, aggregate_literal_field_values,
     aggregate_literal_layout, array_index_element_abi_type, binary_operand_abi_type, block_statement_nodes,
-    bulk_parameter, call_abi_signature, call_argument_abi_type, call_arguments, call_lowering, callable_signature,
-    capture_storage, cast_intents, child_nodes, clif_block_body, closure_call_target, closure_environment,
-    closure_signature, collection_operation, constant_integer, contextual_integer_literal_abi_type, control_flow,
-    direct_callees, empty_array_literal_element_abi_type, enum_constructor, enum_constructor_template, enum_layout,
-    enum_match, for_iterator_fact, generic_call_instantiation, generic_call_specialization, generic_call_template,
-    generic_nominal_method_receiver, implicit_method_receiver, item_abi_signature, item_body, item_export_symbol,
-    item_name, item_signature, literal_fact, local_slot, managed_reference_kind, mutable_local_assignment, node_kind,
-    node_span, node_type, nominal_member_receiver, operator_fact, parameter_generic_reference,
-    primitive_numeric_conversion, range_for_fact, reachable_items, resolved_item, resolved_local, runtime_intrinsic,
-    runtime_intrinsic_name, spawn_entry_validation, spawn_legality, spawn_target, test_item, test_statement_nodes,
-    try_expression_fact, typed_array_allocation, value_abi_type,
+    bulk_parameter, call_abi_signature, call_argument_abi_type, call_arguments, call_lowering,
+    callable_fiber_ownership, callable_signature, capture_storage, cast_intents, child_nodes, clif_block_body,
+    closure_call_target, closure_environment, closure_signature, collection_operation, constant_integer,
+    contextual_integer_literal_abi_type, control_flow, direct_callees, empty_array_literal_element_abi_type,
+    enum_constructor, enum_constructor_template, enum_layout, enum_match, for_iterator_fact,
+    generic_call_instantiation, generic_call_specialization, generic_call_template, generic_nominal_method_receiver,
+    implicit_method_receiver, item_abi_signature, item_body, item_export_symbol, item_name, item_signature,
+    literal_fact, local_slot, managed_reference_kind, mutable_local_assignment, node_kind, node_span, node_type,
+    nominal_member_receiver, operator_fact, parameter_generic_reference, primitive_numeric_conversion, range_for_fact,
+    reachable_items, resolved_item, resolved_local, runtime_intrinsic, runtime_intrinsic_name, spawn_entry_validation,
+    spawn_handle_type, spawn_legality, spawn_target, test_item, test_statement_nodes, try_expression_fact,
+    typed_array_allocation, value_abi_type,
 };

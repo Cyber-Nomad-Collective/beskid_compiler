@@ -19,6 +19,7 @@ use super::model::{
 use super::object_stage::emit_object_stage;
 use super::platform_objects::{compile_context_assembly, compile_platform_objects};
 use super::validation::validate_extern_libraries;
+use crate::runtime::canonical_runtime_platform_libraries;
 
 /// Mint host-emit authority from the exact compiler-embedded ABI-v5 runtime corpus.
 ///
@@ -127,6 +128,7 @@ fn emit_library_pair_with_objects(
     provenance_policy: ProvenancePolicy,
 ) -> AotResult<NativeLibraryPair> {
     let target = detect_target(target_triple.as_deref())?;
+    let runtime_libraries = provenance_policy.link_libraries();
     std::fs::create_dir_all(&output_dir)
         .map_err(|err| AotError::Io { path: output_dir.clone(), message: err.to_string() })?;
     let object_path = output_dir.join(format!("{name}.{}", target.object_ext));
@@ -169,7 +171,7 @@ fn emit_library_pair_with_objects(
             exported_symbols: linked_exports.clone(),
             link_mode: LinkMode::Auto,
             verbose: false,
-            external_libraries: Vec::new(),
+            external_libraries: runtime_libraries.clone(),
             library_search_paths: Vec::new(),
         })?;
     }
@@ -194,12 +196,73 @@ fn emit_library_pair_with_objects(
     })
 }
 
+#[cfg(test)]
+mod link_tests {
+    use super::*;
+
+    fn command(target: &str, libraries: Vec<String>) -> std::process::Command {
+        crate::linker::unix_link_command(
+            &LinkRequest {
+                target_triple: Some(target.into()),
+                output_kind: BuildOutputKind::SharedLib,
+                output_path: "runtime.dylib".into(),
+                object_path: "runtime.o".into(),
+                additional_object_paths: Vec::new(),
+                runtime_staticlib: None,
+                host_staticlib: None,
+                entrypoint_symbol: String::new(),
+                exported_symbols: Vec::new(),
+                link_mode: LinkMode::Auto,
+                verbose: false,
+                external_libraries: libraries,
+                library_search_paths: Vec::new(),
+            },
+            target,
+            "cc",
+        )
+        .expect("native link command")
+    }
+
+    #[test]
+    fn canonical_runtime_manifest_libraries_reach_host_linker_with_native_spelling() {
+        for (triple, logical, flag) in
+            [("aarch64-apple-darwin", "libSystem", "-lSystem"), ("x86_64-unknown-linux-gnu", "libc", "-lc")]
+        {
+            let target = TargetMetadata::for_triple(triple).expect("supported target");
+            let manifest = AbiManifestV5::canonical_runtime(target.clone());
+            assert!(manifest.platform_imports.iter().any(|import| import.library == logical));
+            let libraries = ProvenancePolicy::CanonicalRuntime(target).link_libraries();
+            let command = command(triple, libraries);
+            let arguments = command.get_args().map(|arg| arg.to_string_lossy().into_owned()).collect::<Vec<_>>();
+            assert!(arguments.iter().any(|arg| arg == flag), "{triple}: {arguments:?}");
+            assert!(!arguments.iter().any(|arg| arg.starts_with("-llib")), "{triple}: {arguments:?}");
+        }
+    }
+
+    #[test]
+    fn ordinary_library_names_keep_their_case_and_existing_link_flags() {
+        for (logical, expected) in [("libc", "-lc"), ("c", "-lc"), ("System", "-lSystem"), ("-lSystem", "-lSystem")] {
+            let command = command("aarch64-apple-darwin", vec![logical.into()]);
+            let libraries =
+                command.get_args().filter(|arg| arg.to_string_lossy().starts_with("-l")).collect::<Vec<_>>();
+            assert_eq!(libraries, [std::ffi::OsStr::new(expected)], "{logical}");
+        }
+    }
+}
+
 enum ProvenancePolicy {
     Exact(TargetMetadata),
     CanonicalRuntime(TargetMetadata),
 }
 
 impl ProvenancePolicy {
+    fn link_libraries(&self) -> Vec<String> {
+        match self {
+            Self::Exact(_) => Vec::new(),
+            Self::CanonicalRuntime(target) => canonical_runtime_platform_libraries(target),
+        }
+    }
+
     fn symbol_prefix(&self) -> &str {
         match self {
             Self::Exact(target) => &target.symbol_prefix,

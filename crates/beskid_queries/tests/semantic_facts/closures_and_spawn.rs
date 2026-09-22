@@ -10,6 +10,125 @@ use beskid_queries::{
 use std::sync::Arc;
 
 #[test]
+fn removed_parent_owned_cancel_slot_builtin_is_unavailable() {
+    assert!(beskid_analysis::builtins::builtin_for_path(&["__fiber_spawn_with_cancel_slot".into()]).is_none());
+}
+
+#[test]
+fn inferred_spawn_handle_preserves_nominal_receiver_and_result_identity() {
+    let source = "pub type Fiber<T> { i64 handle, pub unit Cancel() { return; } } i64 Compute() { return 42_i64; } unit Main() { let child = spawn Compute(); child.Cancel(); return; }";
+    let (db, _project, unit, generation, index) = setup(source);
+    let spawn = key(unit, generation, &index, NodeKind::SpawnExpression, 0);
+    assert_eq!(beskid_queries::abi_type(&db, spawn).unwrap(), Some(SemanticTypeId::POINTER));
+    let call = key(unit, generation, &index, NodeKind::CallExpression, 1);
+    let receiver =
+        beskid_queries::generic_nominal_method_receiver(&db, call).unwrap().expect("inferred Fiber receiver");
+    assert_eq!(receiver.substitutions[0].argument, SemanticTypeId::I64);
+}
+
+#[test]
+fn spawn_heap_array_capture_is_transferable_but_native_pointer_is_not() {
+    for (ty, legal) in [("u8[]", true), ("pointer", false)] {
+        let source = format!("i32 Main({ty} buffer) {{ let child = spawn (() => buffer); return 0; }}");
+        let (db, _project, unit, generation, index) = setup(&source);
+        let spawn = key(unit, generation, &index, NodeKind::SpawnExpression, 0);
+        let fact = spawn_legality(&db, spawn).unwrap().unwrap();
+        assert_eq!(fact.is_legal(), legal, "{ty}: {fact:?}");
+    }
+}
+
+#[test]
+fn moved_and_returned_fiber_bindings_preserve_the_nominal_receiver() {
+    for body in [
+        "let child = spawn Compute(); let next = child; next.Cancel();",
+        "let child = Start(); child.Cancel();",
+        "let next = parameter; next.Cancel();",
+    ] {
+        let source = format!(
+            "pub type Fiber<T> {{ i64 handle, pub unit Cancel() {{ return; }} }} i64 Compute() {{ return 42_i64; }} Fiber<i64> Start() {{ return spawn Compute(); }} unit Main(Fiber<i64> parameter) {{ {body} return; }}"
+        );
+        let (db, _project, unit, generation, index) = setup(&source);
+        let call = beskid_queries::AstNodeKey {
+            unit,
+            generation,
+            node: index.ids_of_kind(NodeKind::CallExpression).last().unwrap(),
+        };
+        let receiver = beskid_queries::generic_nominal_method_receiver(&db, call)
+            .unwrap()
+            .expect("inferred Fiber receiver after ownership transfer");
+        assert_eq!(receiver.substitutions[0].argument, SemanticTypeId::I64, "{body}");
+    }
+}
+
+#[test]
+fn spawn_handle_terminal_ownership_is_checked_from_current_syntax() {
+    for (body, expected) in [
+        ("spawn Compute();", Some("DiscardedHandle")),
+        ("let child = spawn Compute(); child.Join(); child.Join();", Some("UseAfterMove")),
+        ("let child = spawn Compute(); child.Detach(); child.Join();", Some("UseAfterMove")),
+        ("let child = spawn Compute(); child.Cancel(); child.Cancel(); child.Join();", None),
+        ("let child = spawn Compute(); child.Detach();", None),
+        ("let child = spawn Compute(); let next = child; child.Join();", Some("UseAfterMove")),
+        ("let child = spawn Compute(); let next = child; next.Join(); next.Join();", Some("UseAfterMove")),
+        ("let child = spawn Compute(); let next = child; next.Cancel(); next.Join();", None),
+        ("let child = spawn Compute(); if true { child.Join(); } else { child.Detach(); }", None),
+        ("let child = spawn Compute(); if true { child.Join(); } child.Join();", Some("UseAfterMove")),
+        ("let child = spawn Compute(); while true { child.Join(); }", Some("UseAfterMove")),
+    ] {
+        let source = format!("i64 Compute() {{ return 42; }} unit Main() {{ {body} return; }}");
+        let (db, _project, unit, generation, index) = setup(&source);
+        let spawn = key(unit, generation, &index, NodeKind::SpawnExpression, 0);
+        let fact = spawn_legality(&db, spawn).unwrap().unwrap();
+        match expected {
+            Some(expected) => assert!(format!("{:?}", fact.diagnostics).contains(expected), "{body}: {fact:?}"),
+            None => assert!(fact.is_legal(), "{body}: {fact:?}"),
+        }
+    }
+}
+
+#[test]
+fn closure_environment_retains_only_resolved_nominal_method_receivers() {
+    for (method, expected) in [("Join", 1), ("Missing", 0)] {
+        let source = format!(
+            "pub type Fiber<T> {{ i64 handle, pub i64 Join() {{ return 1_i64; }} }} unit Main(Fiber<i64> child) {{ let next = spawn (() => child.{method}()); return; }}"
+        );
+        let (db, _project, unit, generation, index) = setup(&source);
+        let lambda = key(unit, generation, &index, NodeKind::LambdaExpression, 0);
+        let captures = closure_environment(&db, lambda).unwrap().unwrap().captures;
+        assert_eq!(captures.len(), expected, "{method}: {captures:?}");
+        if expected == 1 {
+            assert_eq!(captures[0].class, CaptureStorageClass::TransferableValue);
+            let path =
+                key_at_start(unit, generation, &index, NodeKind::PathExpression, source.find("child.Join").unwrap());
+            assert_eq!(capture_storage(&db, path).unwrap().unwrap().declaration, captures[0].declaration);
+        }
+    }
+    let source = "pub type Fiber<T> { i64 handle, pub i64 Join() { return 1_i64; } } unit Main() { mut Fiber<i64> child = Fiber<i64> { handle: 1_i64 }; let next = spawn (() => child.Join())(); return; }";
+    let (db, _project, unit, generation, index) = setup(source);
+    let spawn = key(unit, generation, &index, NodeKind::SpawnExpression, 0);
+    let legality = spawn_legality(&db, spawn).unwrap().unwrap();
+    assert!(legality.diagnostics.iter().any(|d| d.kind == SpawnDiagnosticKind::StackReferenceEscapesSpawn));
+}
+
+#[test]
+fn inferred_capture_provenance_uses_source_identity_not_pointer_abi() {
+    for (initializer, expected) in [
+        ("spawn Compute()", CaptureStorageClass::TransferableValue),
+        ("buffer", CaptureStorageClass::TransferableValue),
+        ("native", CaptureStorageClass::StackReference),
+    ] {
+        let source = format!(
+            "pub type Fiber<T> {{ i64 handle, }} i64 Compute() {{ return 42_i64; }} unit Main(u8[] buffer, pointer native) {{ let value = {initializer}; let next = spawn (() => value); return; }}"
+        );
+        let (db, _project, unit, generation, index) = setup(&source);
+        let lambda = key(unit, generation, &index, NodeKind::LambdaExpression, 0);
+        let captures = closure_environment(&db, lambda).unwrap().unwrap().captures;
+        assert_eq!(captures.len(), 1);
+        assert_eq!(captures[0].class, expected, "{initializer}");
+    }
+}
+
+#[test]
 fn closure_environment_reports_only_outer_lexical_captures() {
     let source = r#"i32 Main(i32 outer) {
     let copied = outer;
@@ -41,6 +160,140 @@ fn closure_environment_reports_only_outer_lexical_captures() {
             span: node_span(&db, copied_use).expect("copied use span").expect("copied use span fact"),
         }]
     );
+}
+
+#[test]
+fn spawn_legality_projects_ownership_of_returned_and_parameter_handles() {
+    for body in ["let child = Start(); child.Join(); child.Join();", "parameter.Detach(); parameter.Join();"] {
+        let source = format!(
+            "pub type Fiber<T> {{ i64 handle, }} i64 Compute() {{ return 42_i64; }} Fiber<i64> Start() {{ return spawn Compute(); }} unit Main(Fiber<i64> parameter) {{ let marker = spawn Compute(); {body} return; }}"
+        );
+        let (db, _project, unit, generation, index) = setup(&source);
+        let spawn = key(unit, generation, &index, NodeKind::SpawnExpression, 1);
+        let fact = spawn_legality(&db, spawn).unwrap().unwrap();
+        assert!(
+            fact.diagnostics.iter().any(|diagnostic| diagnostic.kind == SpawnDiagnosticKind::UseAfterMove),
+            "{body}: {fact:?}"
+        );
+    }
+}
+
+#[test]
+fn callable_fiber_ownership_covers_handles_without_local_spawn() {
+    for (body, rejected) in [
+        ("let child = Start(); child.Join(); child.Join();", true),
+        ("parameter.Detach(); parameter.Join();", true),
+        ("parameter.Join(); parameter.Cancel();", true),
+        ("let next = parameter; parameter.Join();", true),
+        ("let next = parameter; next.Join(); next.Detach();", true),
+        ("let next = parameter; next.Cancel(); next.Join();", false),
+        ("let child = Start(); if true { child.Join(); } else { child.Detach(); }", false),
+        ("if true { parameter.Join(); } else { parameter.Detach(); }", false),
+        ("if true { parameter.Join(); } parameter.Join();", true),
+        ("parameter.Cancel(); parameter.Cancel(); parameter.Join();", false),
+    ] {
+        let source = format!(
+            "pub type Fiber<T> {{ i64 handle, }} Fiber<i64> Start() {{ return Fiber<i64> {{ handle: 1_i64 }}; }} unit Main(Fiber<i64> parameter) {{ {body} return; }}"
+        );
+        let (db, _project, unit, generation, index) = setup(&source);
+        assert_eq!(index.ids_of_kind(NodeKind::SpawnExpression).count(), 0);
+        let callable = key(unit, generation, &index, NodeKind::FunctionDefinition, 1);
+        let fact = beskid_queries::callable_fiber_ownership(&db, callable).unwrap().unwrap();
+        assert_eq!(fact.callable, callable);
+        assert_eq!(
+            fact.diagnostics.iter().any(|diagnostic| diagnostic.kind == SpawnDiagnosticKind::UseAfterMove),
+            rejected,
+            "{body}: {fact:?}"
+        );
+        assert!(
+            beskid_queries::callable_fiber_ownership(
+                &db,
+                beskid_queries::AstNodeKey { generation: SyntaxGenerationId(generation.0 + 1), ..callable }
+            )
+            .unwrap()
+            .is_none()
+        );
+    }
+}
+
+#[test]
+fn fiber_ownership_rejects_repeatable_closures_consuming_captures() {
+    for (body, rejected) in [
+        ("let run = () => child.Join(); run(); run();", true),
+        ("let run = () => child.Detach(); run();", true),
+        ("let run = () => child; let next = run;", true),
+        ("let run = () => child.Cancel(); run(); run(); child.Join();", false),
+        ("let run = () => 42_i64; run(); run(); child.Join();", false),
+        ("let next = spawn (() => child.Join());", false),
+        ("let next = spawn (() => child.Join())();", false),
+        ("let next = spawn (() => child.Join())(); child.Join();", true),
+        ("let run = () => child.Join(); let next = spawn run();", true),
+    ] {
+        let source = format!(
+            "pub type Fiber<T> {{ i64 handle, pub i64 Join() {{ return 1_i64; }} pub unit Cancel() {{ return; }} }} i64 Compute() {{ return 42_i64; }} unit Main() {{ let child = spawn Compute(); {body} return; }}"
+        );
+        let (db, _project, unit, generation, index) = setup(&source);
+        let callable = key(unit, generation, &index, NodeKind::FunctionDefinition, 1);
+        let fact = beskid_queries::callable_fiber_ownership(&db, callable).unwrap().unwrap();
+        assert_eq!(
+            fact.diagnostics.iter().any(|d| d.kind == SpawnDiagnosticKind::UseAfterMove),
+            rejected,
+            "{body}: {fact:?}"
+        );
+    }
+}
+
+#[test]
+fn fiber_ownership_tracks_inferred_factory_method_results() {
+    for (factory, parameter) in [
+        (
+            "pub type Factory { i64 value, pub Fiber<i64> Start() { return Fiber<i64> { handle: 1_i64 }; } }",
+            "Factory factory",
+        ),
+        (
+            "pub type Factory<T> { T value, pub Fiber<T> Start() { return Fiber<T> { handle: 1_i64 }; } }",
+            "Factory<i64> factory",
+        ),
+        ("pub type Factory<T> { T value, pub T Start() { return this.value; } }", "Factory<Fiber<i64>> factory"),
+    ] {
+        for (body, rejected) in [
+            ("child.Join(); child.Join();", true),
+            ("let next = child; next.Detach(); next.Join();", true),
+            ("child.Cancel(); child.Cancel(); child.Join();", false),
+            ("if true { child.Join(); } else { child.Detach(); }", false),
+        ] {
+            let source = format!(
+                "pub type Fiber<T> {{ i64 handle, }} {factory} unit Main({parameter}) {{ let child = factory.Start(); {body} return; }}"
+            );
+            let (db, _project, unit, generation, index) = setup(&source);
+            let callable = key(unit, generation, &index, NodeKind::FunctionDefinition, 0);
+            let fact = beskid_queries::callable_fiber_ownership(&db, callable).unwrap().unwrap();
+            assert_eq!(
+                fact.diagnostics.iter().any(|d| d.kind == SpawnDiagnosticKind::UseAfterMove),
+                rejected,
+                "{parameter}, {body}: {fact:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn fiber_ownership_does_not_invent_capabilities_for_other_factory_results() {
+    let source = "pub type Fiber<T> { i64 handle, } pub type Value { i64 raw, pub unit Join() { return; } } pub type Factory { i64 raw, pub Value Start() { return Value { raw: 1_i64 }; } } unit Main(Factory factory) { let value = factory.Start(); value.Join(); value.Join(); return; }";
+    let (db, _project, unit, generation, index) = setup(source);
+    let callable = key(unit, generation, &index, NodeKind::FunctionDefinition, 0);
+    assert!(beskid_queries::callable_fiber_ownership(&db, callable).unwrap().unwrap().diagnostics.is_empty());
+}
+
+#[test]
+fn fiber_source_identity_does_not_depend_on_terminal_ownership_legality() {
+    let source = "pub type Fiber<T> { i64 handle, pub T Join() { return 1_i64; } } i64 Compute() { return 42_i64; } unit Main() { let child = spawn Compute(); let value = child.Join(); child.Join(); return; }";
+    let (db, _project, unit, generation, index) = setup(source);
+    let spawn = key(unit, generation, &index, NodeKind::SpawnExpression, 0);
+    assert!(beskid_queries::spawn_handle_type(&db, spawn).unwrap().is_some());
+    let callable = key(unit, generation, &index, NodeKind::FunctionDefinition, 1);
+    let fact = beskid_queries::callable_fiber_ownership(&db, callable).unwrap().unwrap();
+    assert!(fact.diagnostics.iter().any(|d| d.kind == SpawnDiagnosticKind::UseAfterMove));
 }
 
 #[test]

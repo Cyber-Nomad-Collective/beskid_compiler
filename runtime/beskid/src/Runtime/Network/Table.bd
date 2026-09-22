@@ -1,0 +1,150 @@
+// Process-wide socket ownership is language-owned. The host supplies only a
+// root word and a lock; it never interprets this table or manufactures handles.
+const NETWORK_SLOT_COUNT = 256;
+const NETWORK_SLOT_SIZE = 96;
+const NETWORK_TABLE_SIZE = 24600;
+const NETWORK_LISTENER = 1;
+const NETWORK_STREAM = 2;
+const NETWORK_UDP = 3;
+const NETWORK_CLOSED = 14;
+const NETWORK_BUSY = 15;
+const NETWORK_UNSUPPORTED = 17;
+const NETWORK_RESOURCE_EXHAUSTED = 18;
+// Native pending follows the last public status and never reaches corelib.
+const NETWORK_PENDING = 19;
+
+// Status values mirror Network.Errors.NetworkError declaration order (1-based).
+const NETWORK_CONNECTION_ABORTED = 3;
+const NETWORK_INVALID_ADDRESS = 7;
+const NETWORK_MESSAGE_TOO_LARGE = 8;
+const NETWORK_NOT_CONNECTED = 10;
+const NETWORK_TIMED_OUT = 12;
+const NETWORK_CANCELLED = 13;
+
+// Table header and slot field offsets; see the layout comment below.
+const NETWORK_TABLE_DNS = 8;
+const NETWORK_TABLE_REQUESTS = 16;
+const NETWORK_SLOT_NATIVE = 8;
+const NETWORK_SLOT_KIND = 16;
+const NETWORK_SLOT_OPTIONS = 56;
+const NETWORK_SLOT_WRITE_SHUTDOWN = 64;
+const NETWORK_SLOT_CREATOR = 72;
+
+// Direction 0 is read/accept/receive; 1 is write/connect/send.
+pub pointer NetworkSlotToken(pointer slot, word direction) { return pointer_add(slot, 24 + direction * 16); }
+pub pointer NetworkSlotTokenOwner(pointer slot, word direction) { return pointer_add(slot, 32 + direction * 16); }
+pub pointer NetworkSlotRequest(pointer slot, word direction) { return pointer_add(slot, 80 + direction * 8); }
+
+// Header: reactor@0, DNS list@8, active request list@16. Slot: generation@0, native@8,
+// kind@16, read token/owner@24/32, write token/owner@40/48, options@56,
+// write shutdown@64, creator owner@72, read/write requests@80/88.
+// Callers hold network_table_lock throughout table access and native submission.
+pub pointer NetworkTableLocked() {
+    pointer root = network_table_root();
+    mut pointer table = NativePointer(raw_word_load(root));
+    if table != NativePointer(0) {
+        if raw_word_load(table) == 0 {
+            pointer reactor = network_reactor_create();
+            if reactor == NativePointer(0) { return NativePointer(0); }
+            raw_word_store(table, NativeWord(reactor));
+        }
+        return table;
+    }
+    table = SystemAllocate(NETWORK_TABLE_SIZE, 8);
+    if table == NativePointer(0) { return NativePointer(0); }
+    memory_set(table, 0, NETWORK_TABLE_SIZE);
+    pointer reactor = network_reactor_create();
+    if reactor == NativePointer(0) { SystemFree(table, NETWORK_TABLE_SIZE); return NativePointer(0); }
+    raw_word_store(table, NativeWord(reactor));
+    raw_word_store(root, NativeWord(table));
+    return table;
+}
+
+pub pointer NetworkSlot(pointer table, word index) {
+    return pointer_add(table, 24 + index * NETWORK_SLOT_SIZE);
+}
+
+pub pointer NetworkFindLocked(pointer table, word handle) {
+    word index = handle & 0xFFFFFFFF;
+    word generation = handle >> 32;
+    if table == NativePointer(0) || index == 0 || index > NETWORK_SLOT_COUNT || generation == 0 { return NativePointer(0); }
+    pointer slot = NetworkSlot(table, index - 1);
+    if raw_word_load(slot) != generation || raw_word_load(pointer_add(slot, NETWORK_SLOT_NATIVE)) == 0 { return NativePointer(0); }
+    return slot;
+}
+
+pub word NetworkAdoptLocked(pointer table, pointer native, word kind, word options) {
+    if table == NativePointer(0) || native == NativePointer(0) { return 0; }
+    mut word index = 0;
+    while index < NETWORK_SLOT_COUNT {
+        pointer slot = NetworkSlot(table, index);
+        word previous = raw_word_load(slot);
+        if raw_word_load(pointer_add(slot, NETWORK_SLOT_NATIVE)) == 0 && previous < 0xFFFFFFFF {
+            word generation = previous + 1;
+            memory_set(slot, 0, NETWORK_SLOT_SIZE);
+            raw_word_store(slot, generation);
+            raw_word_store(pointer_add(slot, NETWORK_SLOT_NATIVE), NativeWord(native));
+            raw_word_store(pointer_add(slot, NETWORK_SLOT_KIND), kind);
+            raw_word_store(pointer_add(slot, NETWORK_SLOT_OPTIONS), options);
+            raw_word_store(pointer_add(slot, NETWORK_SLOT_CREATOR), ExternalOwnerId());
+            return generation << 32 | (index + 1);
+        }
+        index = index + 1;
+    }
+    return 0;
+}
+
+pub bool NetworkWireValid(pointer address) {
+    if address == NativePointer(0) { return false; }
+    word family = raw_byte_load(address);
+    if family == 6 { return true; }
+    if family != 4 { return false; }
+    mut word index = 7;
+    while index < 19 {
+        if raw_byte_load(pointer_add(address, index)) != 0 { return false; }
+        index = index + 1;
+    }
+    return true;
+}
+
+pub pointer NetworkArrayData(pointer array, word minimum) {
+    if array == NativePointer(0) || raw_word_load(pointer_add(array, 8)) < minimum { return NativePointer(0); }
+    return NativePointer(raw_word_load(array));
+}
+
+pub word NetworkArrayLength(pointer array) {
+    if array == NativePointer(0) { return 0; }
+    return raw_word_load(pointer_add(array, 8));
+}
+
+// Invalidate before deregistration. Repeated or stale close cannot touch a
+// subsequently reused slot. Pending winners are routed to their owning scheduler.
+pub i32 NetworkCloseLocked(pointer table, word handle) {
+    pointer slot = NetworkFindLocked(table, handle);
+    if slot == NativePointer(0) { return 0; }
+    pointer native = NativePointer(raw_word_load(pointer_add(slot, NETWORK_SLOT_NATIVE)));
+    raw_word_store(pointer_add(slot, NETWORK_SLOT_NATIVE), 0);
+    pointer reactor = NativePointer(raw_word_load(table));
+    mut word direction = 0;
+    while direction < 2 {
+        pointer request = NativePointer(raw_word_load(NetworkSlotRequest(slot, direction)));
+        word token = raw_word_load(NetworkSlotToken(slot, direction));
+        word owner = raw_word_load(NetworkSlotTokenOwner(slot, direction));
+        if request != NativePointer(0) { network_cancel(reactor, request); }
+        raw_word_store(NetworkSlotRequest(slot, direction), 0);
+        raw_word_store(NetworkSlotToken(slot, direction), 0);
+        raw_word_store(NetworkSlotTokenOwner(slot, direction), 0);
+        if token != 0 { ExternalWaitPost(owner, token, EXTERNAL_CLOSED); }
+        direction = direction + 1;
+    }
+    return network_close(native);
+}
+
+[Export(Abi:"C", Symbol:"beskid_rt_v5_network_close")]
+pub i32 NetworkClose(word handle) {
+    network_table_lock();
+    pointer table = NativePointer(raw_word_load(network_table_root()));
+    i32 status = NetworkCloseLocked(table, handle);
+    network_table_unlock();
+    return status;
+}

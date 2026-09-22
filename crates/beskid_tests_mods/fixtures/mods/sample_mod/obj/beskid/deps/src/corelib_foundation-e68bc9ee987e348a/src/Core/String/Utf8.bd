@@ -1,0 +1,49 @@
+/// UTF-8 rune decoding and code-unit-to-string materialization.
+use Core.Bytes.Slice;
+
+/// Latin-1 supplement U+0080-U+00FF, built imperatively.
+pub string Latin1Block() {
+    mut string out = "";
+    mut i64 c = 128;
+    while c <= 255 {
+        u8 lead = u8(194 + c / 64);
+        u8 trail = u8(128 + c % 64);
+        u8[] pair = Slice.New(2);
+        pair[0] = lead;
+        pair[1] = trail;
+        string rune = __str_from_bytes_utf8(pair);
+        out = out + rune;
+        c = c + 1;
+    }
+    return out;
+}
+
+pub i64 Utf8RuneByteLen(u8 lead) {
+    if lead < 128 {
+        return 1;
+    }
+    if lead < 192 {
+        return 0;
+    }
+    if lead < 224 {
+        return 2;
+    }
+    if lead < 240 {
+        return 3;
+    }
+    if lead < 248 {
+        return 4;
+    }
+    return 0;
+}
+
+pub string Latin1Rune(u8 lead, u8 trail) {
+    i64 cp = (i64(lead) - 192) * 64 + (i64(trail) - 128);
+    i64 offset = (cp - 128) * 2;
+    return __str_slice(Latin1Block(), offset, 2);
+}
+
+/// Materializes validated UTF-8 code units into a `string` without `__bytes_from_str`.
+pub string FromUtf8CodeUnits(u8[] data) {
+    return __str_from_bytes_utf8(data);
+}

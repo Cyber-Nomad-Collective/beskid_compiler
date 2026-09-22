@@ -1,0 +1,42 @@
+/// Mutual exclusion between fibers (not for cross-fiber data transfer).
+use Concurrency.MutexError;
+use Concurrency.MutexGuard;
+use Concurrency.Status;
+use Concurrency.TryResult;
+use Core.Results;
+
+pub type Mutex {
+    i64 handle,
+}
+
+pub Mutex Create() {
+    i64 handle = __mutex_create();
+    return Mutex { handle: handle };
+}
+
+/// Parks until the mutex is acquired or the fiber is cancelled.
+pub Core.Results.Result<MutexGuard, MutexError> Lock(Mutex mutex) {
+    i64 raw = __mutex_lock(mutex.handle);
+    Status status = Status.FromCode(raw);
+    return match status {
+        Status::Ok => Results.Success<MutexGuard, MutexError>(MutexGuard { mutexHandle: mutex.handle }),
+        Status::Cancelled(reason) => Results.Failure<MutexGuard, MutexError>(MutexError::Cancelled(reason)),
+        _ => Results.Failure<MutexGuard, MutexError>(MutexError::Cancelled(0)),
+    };
+}
+
+/// Returns `WouldBlock` when contended, `Err` on cancel.
+pub TryResult<MutexGuard, MutexError> TryLock(Mutex mutex) {
+    i64 raw = __mutex_try_lock(mutex.handle);
+    Status status = Status.FromCode(raw);
+    return match status {
+        Status::Ok => TryResult::Ok(MutexGuard { mutexHandle: mutex.handle }),
+        Status::Cancelled(reason) => TryResult::Err(MutexError::Cancelled(reason)),
+        _ => TryResult::WouldBlock,
+    };
+}
+
+pub unit Unlock(MutexGuard guard) {
+    __mutex_unlock(guard.mutexHandle);
+    return;
+}

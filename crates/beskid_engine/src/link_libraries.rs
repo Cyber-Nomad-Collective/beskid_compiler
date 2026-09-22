@@ -1,6 +1,7 @@
 //! Build `AotBuildRequest` linker inputs from extern imports and project `link` metadata.
 
 use beskid_analysis::projects::{CompilePlan, load_manifest_from_path};
+use beskid_aot::linker::canonical_link_library_name;
 use beskid_codegen::CodegenArtifact;
 use std::collections::HashSet;
 
@@ -27,8 +28,8 @@ pub fn link_libraries_for_artifact(artifact: &CodegenArtifact, plan: Option<&Com
 
     for import in &artifact.extern_imports {
         if let Some(library) = import.library.as_deref() {
-            let canon = canonical_logical_name(library);
-            if !libraries.iter().any(|name| canonical_logical_name(name) == canon) {
+            let canon = canonical_link_library_name(library);
+            if !libraries.iter().any(|name| canonical_link_library_name(name) == canon) {
                 libraries.push(canon);
             }
         }
@@ -47,7 +48,7 @@ fn merge_libraries(existing: &[String], extra: &[String]) -> Vec<String> {
     let mut seen = HashSet::new();
     let mut out = Vec::new();
     for name in existing.iter().chain(extra.iter()) {
-        let canon = canonical_logical_name(name);
+        let canon = canonical_link_library_name(name);
         if seen.insert(canon.clone()) {
             out.push(canon);
         }
@@ -67,17 +68,6 @@ fn merge_search_paths(existing: &[std::path::PathBuf], extra: &[std::path::PathB
     out
 }
 
-fn canonical_logical_name(logical: &str) -> String {
-    let lower = logical.trim().to_ascii_lowercase();
-    let stripped_prefix = lower.strip_prefix("lib").unwrap_or(&lower);
-    let stripped_suffix = stripped_prefix
-        .strip_suffix(".so")
-        .or_else(|| stripped_prefix.strip_suffix(".dylib"))
-        .or_else(|| stripped_prefix.strip_suffix(".a"))
-        .unwrap_or(stripped_prefix);
-    stripped_suffix.to_string()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -85,15 +75,19 @@ mod tests {
 
     #[test]
     fn extern_import_libraries_are_discovered() {
-        let artifact = CodegenArtifact {
-            extern_imports: vec![ExternImport {
-                symbol: "getpid".into(),
-                abi: Some("C".into()),
-                library: Some("libc".into()),
-            }],
-            ..Default::default()
-        };
-        let inputs = link_libraries_for_artifact(&artifact, None);
-        assert!(inputs.external_libraries.contains(&"c".to_string()));
+        for (logical, expected) in [("libc", "c"), ("libSystem", "System")] {
+            let artifact = CodegenArtifact {
+                extern_imports: vec![ExternImport {
+                    symbol: "getpid".into(),
+                    abi: Some("C".into()),
+                    library: Some(logical.into()),
+                }],
+                ..Default::default()
+            };
+            let inputs = link_libraries_for_artifact(&artifact, None);
+            assert_eq!(inputs.external_libraries, [expected]);
+            let merged = merge_libraries(&inputs.external_libraries, &[logical.into()]);
+            assert_eq!(merged, [expected]);
+        }
     }
 }

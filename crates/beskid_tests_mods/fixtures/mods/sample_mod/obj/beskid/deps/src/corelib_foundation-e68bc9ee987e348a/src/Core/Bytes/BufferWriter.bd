@@ -1,0 +1,47 @@
+use Core.Bytes.ByteWriter;
+use Core.Bytes.Errors;
+use Core.Bytes.Slice;
+use Core.Results;
+
+/// A checked cursor writing into a fixed range; the caller retains the buffer.
+/// @tier(standard)
+pub type BufferWriter: ByteWriter {
+    u8[] buffer,
+    i64 start,
+    i64 capacity,
+    i64 position,
+
+    bool IsValid() {
+        return Slice.IsValidRange(Slice.Len(buffer), start, capacity) && position >= 0_i64 && position <= capacity;
+    }
+
+    pub Result<i64, BytesError> Position() {
+        if !IsValid() { return Result::Error(BytesError::InvalidRange()); }
+        return Result::Ok(position);
+    }
+
+    pub Result<i64, BytesError> Capacity() {
+        if !IsValid() { return Result::Error(BytesError::InvalidRange()); }
+        return Result::Ok(capacity);
+    }
+
+    pub Result<unit, BytesError> Write(u8[] source, i64 offset, i64 count) {
+        if !IsValid() || !Slice.IsValidRange(Slice.Len(source), offset, count) {
+            return Result::Error(BytesError::InvalidRange());
+        }
+        i64 remaining = capacity - position;
+        if count > remaining { return Result::Error(BytesError::OutOfBounds()); }
+        i64 destinationOffset = start + position;
+        Slice.Copy(buffer, destinationOffset, source, offset, count);
+        i64 next = position + count;
+        position = next;
+        return Result::Ok(());
+    }
+}
+
+pub Result<BufferWriter, BytesError> Create(u8[] destination, i64 offset, i64 count) {
+    if !Slice.IsValidRange(Slice.Len(destination), offset, count) {
+        return Result::Error(BytesError::InvalidRange());
+    }
+    return Result::Ok(BufferWriter { buffer: destination, start: offset, capacity: count, position: 0_i64 });
+}

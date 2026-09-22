@@ -14,9 +14,17 @@ import subprocess
 import sys
 from typing import Any
 
-SCHEMA_VERSION = 2
-PROFILES = ("debug", "release")
-LINKAGES = ("static", "shared")
+from native_runtime_kit_evidence_contract import (
+    CONSUMER_LINKAGES,
+    LINKAGES,
+    PROFILES,
+    SCHEMA_VERSION,
+    consumers_for,
+    smoke_coordinates,
+    success_exit_code,
+)
+from native_runtime_source_closure import discover_source_closure
+
 EXPECTED_ARTIFACTS = {
     "x86_64-unknown-linux-gnu": (
         "static/libbeskid_runtime.a",
@@ -53,13 +61,6 @@ def sha256(path: pathlib.Path) -> str:
     return digest.hexdigest()
 
 
-def git(root: pathlib.Path, *args: str) -> str:
-    result = subprocess.run(
-        ["git", "-C", str(root), *args], check=True, text=True, capture_output=True
-    )
-    return result.stdout.strip()
-
-
 def write_json(path: pathlib.Path, value: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_suffix(path.suffix + ".tmp")
@@ -77,23 +78,14 @@ def command_init(args: argparse.Namespace) -> None:
     output = evidence_dir()
     output.mkdir(parents=True, exist_ok=True)
     compiler_root = pathlib.Path(args.compiler_root).resolve()
-    superproject_root = compiler_root.parent
-    dirty = bool(git(compiler_root, "status", "--porcelain"))
-    if dirty:
-        raise RuntimeError(
-            "native runtime-kit evidence rejects a dirty compiler checkout"
-        )
+    superproject_root, revisions = discover_source_closure(compiler_root)
+    revisions["github_sha"] = os.environ.get("GITHUB_SHA", "")
     openspec_catalog = superproject_root / "openspec" / "catalog.json"
     producer = {
         "schema_version": SCHEMA_VERSION,
         "target": args.target,
         "started_at_utc": utc_now(),
-        "revisions": {
-            "superproject_sha": git(superproject_root, "rev-parse", "HEAD"),
-            "compiler_sha": git(compiler_root, "rev-parse", "HEAD"),
-            "github_sha": os.environ.get("GITHUB_SHA", ""),
-            "compiler_dirty": dirty,
-        },
+        "revisions": revisions,
         "source_identities": {
             "runtime_manifest_sha256": sha256(compiler_root / "runtime_manifest.bsol"),
             "openspec_catalog_sha256": sha256(openspec_catalog)
@@ -149,6 +141,19 @@ def command_init(args: argparse.Namespace) -> None:
 def command_smoke(args: argparse.Namespace) -> None:
     if args.status not in ("passed", "failed"):
         raise ValueError("smoke status must be passed or failed")
+    expected_linkage = smoke_coordinates().get((args.profile, args.consumer))
+    if expected_linkage != args.linkage:
+        raise ValueError(
+            f"invalid smoke coordinate {args.profile}/{args.consumer}: "
+            f"expected {expected_linkage!r} linkage, got {args.linkage!r}"
+        )
+    if args.status == "passed" and args.exit_code != success_exit_code(
+        args.profile, args.consumer
+    ):
+        raise ValueError(
+            f"invalid successful smoke exit code for {args.profile}/{args.consumer}: "
+            f"expected {success_exit_code(args.profile, args.consumer)}, got {args.exit_code}"
+        )
     record = {
         "schema_version": SCHEMA_VERSION,
         "target": args.target,
@@ -287,7 +292,7 @@ def command_finish(args: argparse.Namespace) -> None:
                     report = output / cell["verifier"][report_key]
                     require_regular(report)
                     cell["verifier"][f"{report_key}_sha256"] = sha256(report)
-                consumers = ("aot",) if linkage == "static" else ("jit", "repl", "cli")
+                consumers = consumers_for(profile, linkage)
                 cell["smokes"] = []
                 for consumer in consumers:
                     smoke_path = output / "smokes" / f"{profile}-{consumer}.json"
@@ -329,18 +334,26 @@ def command_finish(args: argparse.Namespace) -> None:
             raise RuntimeError("debug and release metadata identities differ")
         expected_smokes = {
             f"{profile}-{consumer}.json"
-            for profile in PROFILES
-            for consumer in ("jit", "aot", "repl")
+            for profile, consumer in smoke_coordinates()
         }
-        expected_smokes.add("debug-cli.json")
         actual_smokes = {path.name for path in (output / "smokes").glob("*.json")}
         if actual_smokes != expected_smokes:
             raise RuntimeError(
                 f"smoke cardinality mismatch: expected {sorted(expected_smokes)}, got {sorted(actual_smokes)}"
             )
-        for path in (output / "smokes").glob("*.json"):
+        for (profile, consumer), linkage in smoke_coordinates().items():
+            path = output / "smokes" / f"{profile}-{consumer}.json"
             smoke = json.loads(path.read_text(encoding="utf-8"))
-            if smoke.get("status") != "passed" or smoke.get("target") != args.target:
+            if (
+                smoke.get("schema_version") != SCHEMA_VERSION
+                or smoke.get("target") != args.target
+                or smoke.get("profile") != profile
+                or smoke.get("consumer") != consumer
+                or smoke.get("linkage_boundary") != linkage
+                or smoke.get("status") != "passed"
+                or smoke.get("exit_code") != success_exit_code(profile, consumer)
+                or smoke.get("output_path") != f"smokes/{profile}-{consumer}.log"
+            ):
                 raise RuntimeError(f"failed or mismatched smoke record: {path}")
         write_hash_inventory(runtime_root, output / "kit-sha256.txt")
         write_hash_inventory(output / "symbols", output / "symbol-report-sha256.txt")
@@ -366,8 +379,8 @@ def parser() -> argparse.ArgumentParser:
     smoke = commands.add_parser("smoke")
     smoke.add_argument("target")
     smoke.add_argument("profile", choices=PROFILES)
-    smoke.add_argument("consumer", choices=("jit", "aot", "repl", "cli"))
-    smoke.add_argument("linkage")
+    smoke.add_argument("consumer", choices=tuple(CONSUMER_LINKAGES))
+    smoke.add_argument("linkage", choices=LINKAGES)
     smoke.add_argument("status")
     smoke.add_argument("exit_code", type=int)
     smoke.add_argument("output_path")

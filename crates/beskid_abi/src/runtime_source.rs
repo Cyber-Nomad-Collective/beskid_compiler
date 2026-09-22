@@ -5,6 +5,7 @@
 
 mod capabilities;
 mod corelib_services;
+mod fixtures;
 mod kits;
 mod sources;
 
@@ -13,10 +14,15 @@ pub use capabilities::{
     prove_canonical_runtime_corpus,
 };
 pub use corelib_services::{
-    CorelibService, CorelibServiceAbi, CorelibServiceAbiType, CorelibServiceCapability, CorelibServiceProof,
-    CorelibServiceValueDispatch, canonical_corelib_service_abi, canonical_corelib_service_abi_for_adapter,
-    canonical_corelib_service_capability, canonical_corelib_service_source_path,
-    canonical_corelib_service_value_dispatch, canonical_corelib_syscall_service_capability,
+    CorelibService, CorelibServiceAbi, CorelibServiceAbiType, CorelibServiceCapability,
+    CorelibServiceImportPreflightError, CorelibServiceProof, CorelibServiceSourceIdentity, CorelibServiceValueDispatch,
+    canonical_corelib_service_abi, canonical_corelib_service_abi_for_adapter, canonical_corelib_service_capability,
+    canonical_corelib_service_source_path, canonical_corelib_service_value_dispatch,
+    canonical_corelib_syscall_service_capability, corelib_service_source_identity, corelib_source_locations_match,
+    preflight_corelib_service_declaration, preflight_corelib_service_import,
+};
+pub use fixtures::{
+    RuntimeFixtureProof, canonical_runtime_fixture_sources, prove_runtime_fixture, runtime_fixture_project_root,
 };
 pub use kits::{
     CanonicalRuntimeKitBuildError, CanonicalRuntimeKitError, build_canonical_runtime_kit, resolve_canonical_runtime_kit,
@@ -40,12 +46,13 @@ pub use sources::{
     CANONICAL_FOUNDATION_TIME_SOURCE_PATH, CANONICAL_GC_ALLOCATION_SOURCE_PATH, CANONICAL_GC_COLLECTION_SOURCE_PATH,
     CANONICAL_GC_MARKING_SOURCE_PATH, CANONICAL_GC_ROOTS_HANDLES_SOURCE_PATH, CANONICAL_GC_SOURCE_PATH,
     CANONICAL_GC_STATE_SOURCE_PATH, CANONICAL_GC_SWEEP_SOURCE_PATH, CANONICAL_HUB_SOURCE_PATH,
-    CANONICAL_MUTEX_SOURCE_PATH, CANONICAL_PROCESS_SOURCE_PATH, CANONICAL_SCHEDULER_CONTEXT_SOURCE_PATH,
-    CANONICAL_SCHEDULER_CORE_SOURCE_PATH, CANONICAL_SCHEDULER_EXPORTS_SOURCE_PATH,
-    CANONICAL_SCHEDULER_LOOP_SOURCE_PATH, CANONICAL_SCHEDULER_POLL_SOURCE_PATH, CANONICAL_SCHEDULER_QUEUE_SOURCE_PATH,
-    CANONICAL_SCHEDULER_SOURCE_PATH, CANONICAL_SCHEDULER_STORAGE_SOURCE_PATH, CANONICAL_STRINGS_SOURCE_PATH,
-    CANONICAL_SYSCALLS_SOURCE_PATH, CANONICAL_WAITGROUP_SOURCE_PATH, canonical_corelib_service_sources,
-    canonical_corelib_syscall_sources, canonical_runtime_source_hash, canonical_runtime_sources,
+    CANONICAL_MUTEX_SOURCE_PATH, CANONICAL_NETWORK_INTERNAL_SOURCE_PATH, CANONICAL_PROCESS_SOURCE_PATH,
+    CANONICAL_SCHEDULER_CONTEXT_SOURCE_PATH, CANONICAL_SCHEDULER_CORE_SOURCE_PATH,
+    CANONICAL_SCHEDULER_EXPORTS_SOURCE_PATH, CANONICAL_SCHEDULER_LOOP_SOURCE_PATH,
+    CANONICAL_SCHEDULER_POLL_SOURCE_PATH, CANONICAL_SCHEDULER_QUEUE_SOURCE_PATH, CANONICAL_SCHEDULER_SOURCE_PATH,
+    CANONICAL_SCHEDULER_STORAGE_SOURCE_PATH, CANONICAL_STRINGS_SOURCE_PATH, CANONICAL_SYSCALLS_SOURCE_PATH,
+    CANONICAL_WAITGROUP_SOURCE_PATH, canonical_corelib_service_sources, canonical_corelib_syscall_sources,
+    canonical_runtime_source_hash, canonical_runtime_sources,
 };
 
 #[cfg(test)]

@@ -1,0 +1,8 @@
+/// SignatureReader contract: reads foreign signatures from a compiled
+/// library. For .NET, the glue mod uses dotscope to read ECMA-335 method/type
+/// signature blobs. For Rust, the glue mod reads the crate metadata.
+///
+/// 0.4: contract declaration only. Concrete reading lands in 0.5.
+pub contract SignatureReader {
+    string ReadSignatures(string libraryPath);
+}

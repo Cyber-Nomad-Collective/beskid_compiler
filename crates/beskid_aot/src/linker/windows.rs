@@ -113,7 +113,10 @@ fn windows_link_command(req: &LinkRequest, target: &str, linker: &str) -> AotRes
         cmd.arg(format!("/IMPLIB:{}", windows_import_library_path(&req.output_path).display()));
     } else if req.output_kind == BuildOutputKind::Exe {
         cmd.arg("/SUBSYSTEM:CONSOLE");
-        cmd.arg(format!("/ENTRY:{}", req.entrypoint_symbol));
+        // The native runtime deliberately shares the application's dynamic UCRT. Linking the
+        // console import library gives the linker its standard `main`/`wmain` startup thunk
+        // without reintroducing a raw PE entrypoint or a static CRT into the runtime archive.
+        cmd.arg("msvcrt.lib");
     }
     cmd.arg(&req.object_path);
     cmd.args(&req.additional_object_paths);
@@ -198,7 +201,7 @@ mod tests {
     }
 
     #[test]
-    fn windows_executable_uses_the_requested_entrypoint_without_crt_startup() {
+    fn windows_executable_lets_the_crt_select_console_startup() {
         let command = windows_link_command(
             &LinkRequest {
                 target_triple: Some("x86_64-pc-windows-msvc".into()),
@@ -221,9 +224,12 @@ mod tests {
         .expect("build Windows executable link command");
         let arguments = command.get_args().map(|argument| argument.to_string_lossy().into_owned()).collect::<Vec<_>>();
 
-        for required in ["/SUBSYSTEM:CONSOLE", "/ENTRY:main"] {
+        for required in ["/SUBSYSTEM:CONSOLE", "msvcrt.lib"] {
             assert!(arguments.iter().any(|argument| argument == required), "missing {required}: {arguments:?}");
         }
-        assert!(!arguments.iter().any(|argument| argument == "/ENTRY:mainCRTStartup"));
+        assert!(
+            !arguments.iter().any(|argument| argument.starts_with("/ENTRY:")),
+            "Windows console executables must leave startup selection to the CRT: {arguments:?}"
+        );
     }
 }

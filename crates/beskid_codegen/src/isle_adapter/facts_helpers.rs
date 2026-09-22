@@ -10,25 +10,11 @@ impl SyntaxNodeFacts<'_> {
         service: beskid_abi::runtime_source::CorelibService,
     ) -> Option<(&'static str, SemanticTypeId)> {
         let dispatch = beskid_abi::runtime_source::canonical_corelib_service_value_dispatch(service)?;
-        let assembly = &self.input.typed_program().assembly;
-        let unit_index =
-            assembly.units.iter().position(|unit| unit.path.as_path() == key.unit.path(self.db).as_path())?;
-        let program = &assembly.units[unit_index].program;
-        let index = &assembly.syntax_indexes[unit_index];
-        let call = index.node_at(program, key.node)?.of::<beskid_analysis::syntax::CallExpression>()?;
-        let beskid_analysis::syntax::Expression::Path(callee) = &call.callee.node else { return None };
-        let [terminal] = callee.node.path.node.segments.as_slice() else { return None };
-        let [argument] = terminal.node.type_args.as_slice() else { return None };
-        let beskid_analysis::syntax::Type::Complex(argument_path) = &argument.node else { return None };
-        let [parameter] = argument_path.node.segments.as_slice() else { return None };
-        if !parameter.node.type_args.is_empty() {
-            return None;
-        }
-        let binding = self
-            .current_item_specialization()?
-            .substitutions
-            .iter()
-            .find(|binding| binding.parameter.as_ref() == parameter.node.name.node.name.as_str())?;
+        let binding = self.query(beskid_queries::specialized_corelib_value_service_result(
+            self.db,
+            key,
+            self.current_item_specialization()?,
+        ))?;
         select_typed_corelib_value_service(dispatch, binding.managed_reference_kind(), binding.argument)
     }
 
@@ -36,15 +22,70 @@ impl SyntaxNodeFacts<'_> {
     /// lowered. Generic parameter paths must use their concrete source substitution: their
     /// pointer-shaped ABI alone cannot distinguish a managed nominal/string from a native pointer.
     pub(super) fn managed_reference_in_context(&self, key: AstNodeKey) -> Option<ManagedReferenceFact> {
+        if let Some(receiver) = self.query(nominal_member_receiver(self.db, key)) {
+            return self.managed_reference_in_context(receiver);
+        }
+        if self.typed_array_plan(key).is_some() || self.query(implicit_method_receiver(self.db, key)).is_some() {
+            return Some(ManagedReferenceFact::GcManaged);
+        }
+        if let Some(instance) = self.generic_call_specialization_in_context(key) {
+            return self
+                .query(beskid_queries::specialized_call_result_managed_reference_kind(self.db, key, &instance))
+                .map(|kind| match kind {
+                    ManagedReferenceKind::GcManaged => ManagedReferenceFact::GcManaged,
+                    ManagedReferenceKind::NativeOrScalar => ManagedReferenceFact::NativeOrScalar,
+                });
+        }
+        // These compiler-authorized intrinsics produce native addresses. Their
+        // pointer-shaped ABI alone cannot prove that category to the source query.
+        if matches!(
+            self.runtime_intrinsic_kind(key),
+            Some(
+                RuntimeIntrinsicKind::PointerFromNativeWord
+                    | RuntimeIntrinsicKind::PointerAdd
+                    | RuntimeIntrinsicKind::SchedulerFiberEntryAddress
+                    | RuntimeIntrinsicKind::SchedulerReturnTrampolineAddress
+            )
+        ) {
+            return Some(ManagedReferenceFact::NativeOrScalar);
+        }
         if self.query(node_kind(self.db, key)) == Some(beskid_queries::IndexedNodeKind::PathExpression)
             && let Some(managed) = self.specialized_local_managed_reference(key)
         {
             return Some(managed);
         }
+        if self.query(node_kind(self.db, key)) == Some(beskid_queries::IndexedNodeKind::PathExpression)
+            && let Some(binding) = self.specialized_pattern_binding(key)
+        {
+            return Some(match binding.managed_reference {
+                ManagedReferenceKind::GcManaged => ManagedReferenceFact::GcManaged,
+                ManagedReferenceKind::NativeOrScalar => ManagedReferenceFact::NativeOrScalar,
+            });
+        }
         if let Some(kind) = self.query(managed_reference_kind(self.db, key)) {
             return Some(match kind {
                 ManagedReferenceKind::GcManaged => ManagedReferenceFact::GcManaged,
                 ManagedReferenceKind::NativeOrScalar => ManagedReferenceFact::NativeOrScalar,
+            });
+        }
+        if let Some(operator) = self.operator_fact(key) {
+            return Some(if operator == OperatorFact::StringAdd {
+                ManagedReferenceFact::GcManaged
+            } else {
+                ManagedReferenceFact::NativeOrScalar
+            });
+        }
+        // Contextual scalar ABI facts also cover expressions such as native-word
+        // arithmetic that have no independently inferred node_type. Only a distinct
+        // scalar/string identity is sufficient here; POINTER remains ambiguous.
+        if let Some(semantic) =
+            self.scalar_semantic_type(key).or_else(|| self.query(call_argument_abi_type(self.db, key)))
+            && semantic != SemanticTypeId::POINTER
+        {
+            return Some(if semantic == SemanticTypeId::STRING {
+                ManagedReferenceFact::GcManaged
+            } else {
+                ManagedReferenceFact::NativeOrScalar
             });
         }
         (self.query(node_kind(self.db, key)) == Some(beskid_queries::IndexedNodeKind::LetStatement))
@@ -189,9 +230,10 @@ impl SyntaxNodeFacts<'_> {
 
     pub(super) fn enum_layout_for(&self, key: AstNodeKey) -> Option<EnumLayout> {
         let source = self
-            .query(enum_layout(self.db, key))
-            .or_else(|| self.specialized_enum_constructor(key).map(|fact| fact.layout))
-            .or_else(|| self.enum_match_in_context(key).map(|fact| fact.layout))?;
+            .specialized_enum_constructor(key)
+            .map(|fact| fact.layout)
+            .or_else(|| self.enum_match_in_context(key).map(|fact| fact.layout))
+            .or_else(|| self.query(enum_layout(self.db, key)))?;
         self.enum_layout_from_fact(&source)
     }
 
@@ -362,6 +404,8 @@ impl SyntaxNodeFacts<'_> {
         key: AstNodeKey,
         parameters: &mut Vec<ParameterSlot>,
     ) -> Option<()> {
+        let mut source_position =
+            usize::from(self.query(node_kind(self.db, key)) == Some(beskid_queries::IndexedNodeKind::MethodDefinition));
         for child in self.raw_children(key) {
             match self.query(node_kind(self.db, child))? {
                 beskid_queries::IndexedNodeKind::Block => continue,
@@ -373,24 +417,25 @@ impl SyntaxNodeFacts<'_> {
                     let specialization = self
                         .item_specializations
                         .get(&key)
-                        .and_then(|specialization| specialization.signature.parameters.get(parameters.len()))
+                        .and_then(|specialization| specialization.signature.parameters.get(source_position))
                         .copied();
-                    let value_type = specialization
+                    let semantic = specialization
                         .or_else(|| {
                             self.query(item_abi_signature(self.db, key))
-                                .and_then(|signature| signature.parameters.get(parameters.len()).copied())
+                                .and_then(|signature| signature.parameters.get(source_position).copied())
                         })
-                        .or_else(|| self.scalar_semantic_type(identifier))
-                        .and_then(|semantic| {
-                            if matches!(
-                                semantic,
-                                SemanticTypeId::WORD | SemanticTypeId::POINTER | SemanticTypeId::STRING
-                            ) {
-                                self.isa.map(|isa| isa.pointer_type())
-                            } else {
-                                map_scalar_type(semantic)
-                            }
-                        })?;
+                        .or_else(|| self.scalar_semantic_type(identifier))?;
+                    source_position += 1;
+                    if semantic == SemanticTypeId::UNIT {
+                        continue;
+                    }
+                    let value_type = Some(semantic).and_then(|semantic| {
+                        if matches!(semantic, SemanticTypeId::WORD | SemanticTypeId::POINTER | SemanticTypeId::STRING) {
+                            self.isa.map(|isa| isa.pointer_type())
+                        } else {
+                            map_scalar_type(semantic)
+                        }
+                    })?;
                     let managed_reference =
                         if let Some(parameter_name) = self.query(parameter_generic_reference(self.db, child)) {
                             let binding = self
@@ -422,8 +467,10 @@ impl SyntaxNodeFacts<'_> {
         if self.query(implicit_method_receiver(self.db, key)).is_some() {
             return Some(SemanticTypeId::POINTER);
         }
-        if self.query(generic_call_template(self.db, key)).is_some() {
-            return Some(self.generic_call_specialization_in_context(key)?.signature.result);
+        if self.query(node_kind(self.db, key)) == Some(beskid_queries::IndexedNodeKind::CallExpression)
+            && let Some(instance) = self.generic_call_specialization_in_context(key)
+        {
+            return Some(instance.signature.result);
         }
         if self.query(node_kind(self.db, key)) == Some(beskid_queries::IndexedNodeKind::CallExpression)
             && let Some(signature) = self.query(call_abi_signature(self.db, key))
@@ -443,6 +490,12 @@ impl SyntaxNodeFacts<'_> {
         }
         if self.query(node_kind(self.db, key)) == Some(beskid_queries::IndexedNodeKind::ForStatement) {
             return self.query(for_iterator_fact(self.db, key)).map(|fact| fact.element_type);
+        }
+        if let Some(binding) = self.specialized_pattern_binding(key) {
+            return Some(match binding.payload {
+                AggregateFieldShape::Scalar(semantic) => semantic,
+                AggregateFieldShape::Nominal(_) => SemanticTypeId::POINTER,
+            });
         }
         self.specialized_direct_parameter_type(key)
             .or_else(|| {
@@ -481,6 +534,14 @@ impl SyntaxNodeFacts<'_> {
                     })
                 })
             })
+    }
+
+    /// Project one pattern binding from the same immutable item specialization used for the
+    /// enclosing match. This retains source ownership after pointer ABI erasure without HIR.
+    fn specialized_pattern_binding(&self, key: AstNodeKey) -> Option<beskid_queries::EnumMatchBindingFact> {
+        (self.query(node_kind(self.db, key)) == Some(beskid_queries::IndexedNodeKind::PathExpression)).then_some(())?;
+        let enclosing = self.current_item_specialization()?;
+        self.query(beskid_queries::pattern_binding_specialization(self.db, key, enclosing.substitutions.clone()))
     }
 
     pub(super) fn literal(&self, key: AstNodeKey) -> Option<LiteralFact> {
@@ -537,11 +598,9 @@ fn select_typed_corelib_value_service(
     semantic: SemanticTypeId,
 ) -> Option<(&'static str, SemanticTypeId)> {
     match (managed, semantic) {
-        (ManagedReferenceKind::GcManaged, SemanticTypeId::POINTER) => {
-            Some((dispatch.managed_symbol, SemanticTypeId::POINTER))
-        }
+        (ManagedReferenceKind::GcManaged, SemanticTypeId::POINTER) => Some((dispatch.symbol, SemanticTypeId::POINTER)),
         (ManagedReferenceKind::NativeOrScalar, semantic) if semantic != SemanticTypeId::POINTER => {
-            Some((dispatch.scalar_symbol, semantic))
+            Some((dispatch.symbol, semantic))
         }
         _ => None,
     }
@@ -552,20 +611,17 @@ mod typed_corelib_value_service_tests {
     use super::*;
 
     const DISPATCH: beskid_abi::runtime_source::CorelibServiceValueDispatch =
-        beskid_abi::runtime_source::CorelibServiceValueDispatch {
-            scalar_symbol: "channel_receive_value",
-            managed_symbol: "channel_receive_ptr",
-        };
+        beskid_abi::runtime_source::CorelibServiceValueDispatch { symbol: "channel_receive_value" };
 
     #[test]
-    fn scalar_and_managed_values_select_distinct_canonical_adapters() {
+    fn scalar_and_managed_values_select_one_canonical_slot_adapter() {
         assert_eq!(
             select_typed_corelib_value_service(DISPATCH, ManagedReferenceKind::NativeOrScalar, SemanticTypeId::I64),
             Some(("channel_receive_value", SemanticTypeId::I64))
         );
         assert_eq!(
             select_typed_corelib_value_service(DISPATCH, ManagedReferenceKind::GcManaged, SemanticTypeId::POINTER),
-            Some(("channel_receive_ptr", SemanticTypeId::POINTER))
+            Some(("channel_receive_value", SemanticTypeId::POINTER))
         );
     }
 

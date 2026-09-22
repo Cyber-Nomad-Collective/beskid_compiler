@@ -1,4 +1,4 @@
-use beskid_abi::abi_v5::{TargetMetadata, TargetTriple};
+use beskid_abi::abi_v5::{AbiManifestV5, RuntimeAuditMetadata, TargetMetadata, TargetTriple};
 use beskid_abi::runtime_provenance::{RuntimeProvenanceAudit, SymbolList, SymbolListError, parse_symbol_list};
 
 fn target(triple: &str) -> TargetMetadata {
@@ -6,6 +6,62 @@ fn target(triple: &str) -> TargetMetadata {
         .into_iter()
         .find(|candidate| candidate.triple == TargetTriple::from(triple))
         .expect("supported target")
+}
+
+const DARWIN_NETWORK_HARDENING_IMPORTS: &[&str] =
+    &["__memcpy_chk", "__memset_chk", "__stack_chk_fail", "__stack_chk_guard"];
+
+#[test]
+fn darwin_network_hardening_imports_accept_raw_and_normalized_declared_identities() {
+    let audit = RuntimeProvenanceAudit::canonical(target("aarch64-apple-darwin")).unwrap();
+    for symbol in DARWIN_NETWORK_HARDENING_IMPORTS {
+        for spelling in [format!("_{symbol}"), (*symbol).to_owned()] {
+            let mut symbols = audit.fixture_symbol_list().unwrap();
+            symbols.undefined = vec![spelling.clone()];
+            audit.verify_static_archive(&symbols).unwrap_or_else(|error| panic!("{spelling}: {error}"));
+            audit.verify_shared(&symbols).unwrap_or_else(|error| panic!("{spelling}: {error}"));
+        }
+    }
+}
+
+#[test]
+fn darwin_network_hardening_authority_disappears_when_target_binding_is_removed() {
+    let mut manifest = AbiManifestV5::canonical_runtime(target("aarch64-apple-darwin"));
+    let mut audit = RuntimeAuditMetadata::for_manifest(&manifest, "test-source").unwrap();
+    for intrinsic in &mut manifest.trusted_runtime_intrinsics {
+        for binding in &mut intrinsic.target_bindings {
+            binding.os_imports.retain(|symbol| !DARWIN_NETWORK_HARDENING_IMPORTS.contains(&symbol.as_str()));
+        }
+    }
+    assert!(
+        RuntimeAuditMetadata::for_manifest(&manifest, "test-source").is_err(),
+        "a modified binding must not acquire canonical manifest authority"
+    );
+    audit.allowed_imports.retain(|symbol| !DARWIN_NETWORK_HARDENING_IMPORTS.contains(&symbol.as_str()));
+    for symbol in DARWIN_NETWORK_HARDENING_IMPORTS {
+        for spelling in [format!("_{symbol}"), (*symbol).to_owned()] {
+            assert!(
+                audit.audit_linked_runtime_symbol_tables(&[], std::iter::empty(), [spelling.as_str()]).is_err(),
+                "undeclared hardening import {spelling} acquired authority"
+            );
+        }
+    }
+    for triple in ["x86_64-unknown-linux-gnu", "x86_64-pc-windows-msvc"] {
+        let audit = RuntimeProvenanceAudit::canonical(target(triple)).unwrap();
+        assert!(
+            !audit.allowed_imports.iter().any(|symbol| DARWIN_NETWORK_HARDENING_IMPORTS.contains(&symbol.as_str()))
+        );
+    }
+}
+
+#[test]
+fn darwin_network_hardening_imports_reject_similar_undeclared_spellings() {
+    let audit = RuntimeProvenanceAudit::canonical(target("aarch64-apple-darwin")).unwrap();
+    for spelling in ["_memcpy_chk", "____memcpy_chk", "__memcpy_chk_extra", "___stack_chk_guard_extra"] {
+        let mut symbols = audit.fixture_symbol_list().unwrap();
+        symbols.undefined = vec![spelling.into()];
+        assert!(audit.verify_static_archive(&symbols).is_err(), "unexpected import {spelling} acquired authority");
+    }
 }
 
 #[test]

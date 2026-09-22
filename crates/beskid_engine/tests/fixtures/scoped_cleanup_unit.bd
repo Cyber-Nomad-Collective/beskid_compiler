@@ -1,0 +1,16 @@
+enum DisposeError { Failed() }
+enum Result<T, E> { Ok(T value), Error(E error) }
+contract Disposable { Result<unit, DisposeError> Dispose(); }
+type Resource: Disposable {
+    pub Result<unit, DisposeError> Dispose() { return Result::Error(DisposeError::Failed()); }
+}
+[CleanupConversion]
+unit ConvertCleanup(DisposeError error) { return; }
+Result<i64, unit> Work() {
+    use Resource resource = Resource {};
+    return Result::Ok(7_i64);
+}
+[Export(Abi:"C", Symbol:"RunCleanupFixture")]
+pub i64 RunCleanupFixture() {
+    return match Work() { Result::Ok(_) => 1_i64, Result::Error(()) => 42_i64, };
+}

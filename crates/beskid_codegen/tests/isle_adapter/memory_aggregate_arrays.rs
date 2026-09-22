@@ -8,6 +8,42 @@ use super::support::{
 use beskid_queries::contextual_integer_literal_abi_type;
 
 #[test]
+fn primitive_conversion_array_literal_preserves_wrapper_type_and_lowers() {
+    use beskid_queries::{IndexedNodeKind, SemanticTypeId, child_nodes, node_type};
+
+    let (input, isa, root) = item_fixture_with_root("word[] Main() { word[] result = [word(0)]; return result; }");
+    let item = find_function_definition(input.database(), root).expect("Main");
+    let function = emit_isle_item(&input, isa.as_ref(), item)
+        .expect("primitive conversion array elements lower through real ISLE");
+    let array = find_node(input.database(), item, IndexedNodeKind::ArrayLiteralExpression).expect("array");
+    let wrapper = child_nodes(input.database(), array).unwrap().unwrap()[0];
+    let call = find_node(input.database(), wrapper, IndexedNodeKind::CallExpression).expect("conversion");
+    for key in [wrapper, call] {
+        assert_eq!(node_type(input.database(), key).unwrap(), Some(SemanticTypeId::WORD));
+    }
+    let plan = input.array_static_plan(array).expect("typed array plan");
+    assert_eq!(plan.element_type, SemanticTypeId::WORD);
+    assert_eq!(plan.stride, u64::from(isa.pointer_type().bytes()));
+    assert!(plan.pointer_map_offsets.is_empty(), "words are untraced integers, not pointers");
+    let clif = function.display().to_string();
+    assert!(clif.contains("beskid_rt_v5_array_allocate_rooted"), "{clif}");
+    assert!(clif.contains("store"), "{clif}");
+}
+
+#[test]
+fn primitive_conversion_array_literal_rejects_invalid_conversions() {
+    for expression in ["word(true)", "word(native)", "word(Unknown())", "word(0, 1)"] {
+        let source = format!("word[] Main(pointer native) {{ return [{expression}]; }}");
+        let (input, isa, root) = item_fixture_with_root(&source);
+        let item = find_function_definition(input.database(), root).expect("Main");
+        let array = find_node(input.database(), item, beskid_queries::IndexedNodeKind::ArrayLiteralExpression).unwrap();
+        assert!(input.array_static_plan(array).is_none(), "invalid conversion cannot authorize storage: {expression}");
+        let error = emit_isle_item(&input, isa.as_ref(), item).expect_err("invalid conversion must remain unavailable");
+        assert!(error.display_with_db(input.database()).contains("MissingRuleOrFact"), "{expression}: {error:?}");
+    }
+}
+
+#[test]
 fn applied_generic_aggregate_plans_distinguish_pointer_and_scalar_fields() {
     let source = "type Applied<T> { T value, i64 rest } i64 Main() { Applied<string> pointerValue = Applied<string> { value: \"ok\", rest: 1_i64 }; Applied<i32> scalarValue = Applied<i32> { value: 2, rest: 3_i64 }; return scalarValue.rest; }";
     let (input, _isa, root) = item_fixture_with_root(source);
@@ -61,30 +97,42 @@ fn named_aggregate_fields_lower_in_declaration_layout_order() {
         panic!("expected two physical fields: {plan:?}");
     };
 
-    let clif = emit_isle_item(&input, isa.as_ref(), function)
-        .expect("named fields may be written in a different order from their declaration")
-        .display()
-        .to_string();
-
-    let instruction_result = |needle: &str| {
-        clif.lines().find_map(|line| {
-            let (result, instruction) = line.trim().split_once(" = ")?;
-            instruction.contains(needle).then(|| result.to_string())
-        })
+    let function = emit_isle_item(&input, isa.as_ref(), function)
+        .expect("named fields may be written in a different order from their declaration");
+    let clif = function.display().to_string();
+    use cranelift_codegen::ir::{InstructionData, Opcode, ValueDef, types};
+    let definition = |value| {
+        let ValueDef::Result(inst, _) = function.dfg.value_def(value) else { panic!("instruction result: {clif}") };
+        &function.dfg.insts[inst]
     };
-    let narrow_value = instruction_result("iconst.i32 7").expect("narrow constant");
-    let wide_value = instruction_result("iconst.i64 9").expect("wide constant");
-    let narrow_address = instruction_result(&format!(", {}", narrow_layout.field_offset)).expect("narrow address");
-    let wide_address = instruction_result(&format!(", {}", wide_layout.field_offset)).expect("wide address");
-
-    assert!(
-        clif.lines().any(|line| line.trim().starts_with(&format!("store {narrow_value}, {narrow_address}"))),
-        "the named `narrow` value must target its declared layout offset: {clif}"
-    );
-    assert!(
-        clif.lines().any(|line| line.trim().starts_with(&format!("store {wide_value}, {wide_address}"))),
-        "the named `wide` value must target its declared layout offset: {clif}"
-    );
+    for (expected, ty, layout) in [(7, types::I32, narrow_layout), (9, types::I64, wide_layout)] {
+        let stores = function
+            .layout
+            .blocks()
+            .flat_map(|block| function.layout.block_insts(block))
+            .filter_map(|inst| {
+                let InstructionData::Store { args, offset, .. } = function.dfg.insts[inst] else { return None };
+                let InstructionData::UnaryImm { opcode: Opcode::Iconst, imm } = definition(args[0]) else {
+                    return None;
+                };
+                (i64::from(*imm) == expected && function.dfg.value_type(args[0]) == ty).then_some((args[1], offset))
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(stores.len(), 1, "field value must be stored exactly once: {clif}");
+        let (address, offset) = stores[0];
+        assert_eq!(i32::from(offset), 0);
+        let InstructionData::Binary { opcode: Opcode::Iadd, args } = definition(address) else {
+            panic!("field address: {clif}")
+        };
+        let InstructionData::UnaryImm { opcode: Opcode::Iconst, imm } = definition(args[1]) else {
+            panic!("field offset: {clif}")
+        };
+        assert_eq!(
+            u64::try_from(i64::from(*imm)).expect("positive field offset"),
+            layout.field_offset,
+            "field uses its declared offset: {clif}"
+        );
+    }
 }
 
 #[test]
@@ -103,7 +151,13 @@ fn parsed_struct_literal_uses_source_aggregate_layout_without_hir() {
             host: RootEntry { dependency_name: None, source_root: directory },
             dependencies: Vec::new(),
         },
-        Arc::new(vec![SourceUnit { logical_name: "Main".into(), path: source_path, source: source.into(), program }]),
+        Arc::new(vec![SourceUnit {
+            logical_name: "Main".into(),
+            origin_path: source_path.clone(),
+            path: source_path,
+            source: source.into(),
+            program,
+        }]),
         0,
         AssemblyDiscovery::ImportClosure,
         Arc::new(ModuleIndex::empty()),
@@ -133,7 +187,10 @@ fn parsed_struct_literal_uses_source_aggregate_layout_without_hir() {
         clif.contains("beskid_rt_v5_managed_object_allocate"),
         "aggregate literals must allocate through the canonical managed-object ABI: {clif}"
     );
-    assert!(!clif.contains("stack_store"), "aggregate literals must not return escaped stack storage: {clif}");
+    assert!(
+        function.sized_stack_slots.is_empty(),
+        "aggregate literals must not allocate escaping stack storage: {clif}"
+    );
 }
 
 #[test]
@@ -162,6 +219,48 @@ fn parsed_empty_array_field_uses_declared_nominal_element_abi_without_hir() {
         clif.contains("beskid_rt_v5_managed_object_allocate"),
         "the enclosing nominal aggregate remains a managed object: {clif}"
     );
+}
+
+#[test]
+fn parsed_empty_array_local_uses_its_direct_declared_element_abi_without_hir() {
+    let (input, isa, root) = item_fixture_with_root(
+        "u8[] Main() { mut u8[] output = []; return output; }",
+    );
+    let array = find_node(input.database(), root, beskid_queries::IndexedNodeKind::ArrayLiteralExpression)
+        .expect("empty array literal");
+
+    assert_eq!(
+        empty_array_literal_element_abi_type(input.database(), array).expect("empty array local fact"),
+        Some(beskid_queries::SemanticTypeId::U8),
+        "only the direct explicit local annotation supplies the empty array element ABI"
+    );
+    assert!(input.array_static_plan(array).is_some(), "empty local array has source-authorized static metadata");
+
+    let function = find_function_definition(input.database(), root).expect("Main definition");
+    let clif = emit_isle_item(&input, isa.as_ref(), function)
+        .expect("declared empty local array lowers through generated ISLE")
+        .display()
+        .to_string();
+    assert!(
+        clif.contains("beskid_rt_v5_array_allocate_rooted"),
+        "empty array allocation must retain its descriptor-backed construction root: {clif}"
+    );
+}
+
+#[test]
+fn empty_array_local_context_rejects_inferred_assignment_and_nested_literals() {
+    for source in ["unit Main() { let values = []; }", "u8[] Main() { u8[] values = { [] }; return values; }"] {
+        let (input, _isa, root) = item_fixture_with_root(source);
+        let arrays = find_nodes_of_kind(input.database(), root, beskid_queries::IndexedNodeKind::ArrayLiteralExpression);
+        assert_eq!(arrays.len(), 1, "fixture has one empty literal: {source}");
+        assert!(input.array_static_plan(arrays[0]).is_none(), "unproven empty literal context must stay unavailable: {source}");
+    }
+
+    let (input, _isa, root) = item_fixture_with_root("unit Main() { mut u8[] values = []; values = []; }");
+    let arrays = find_nodes_of_kind(input.database(), root, beskid_queries::IndexedNodeKind::ArrayLiteralExpression);
+    assert_eq!(arrays.len(), 2, "fixture has initializer and assignment literals");
+    assert!(input.array_static_plan(arrays[0]).is_some(), "direct explicit initializer stays authorized");
+    assert!(input.array_static_plan(arrays[1]).is_none(), "an assignment is not an initialization context");
 }
 
 #[test]

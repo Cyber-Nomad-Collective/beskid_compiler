@@ -13,6 +13,9 @@ impl SemanticPipelineRule {
         program: &Spanned<Program>,
         resolution: &Resolution,
     ) {
+        if ctx.options.defer_try_diagnostics {
+            return;
+        }
         for span in invalid_try_expression_spans(resolution, program) {
             ctx.emit_issue(span, SemanticIssueKind::TypeInvalidTryTarget);
         }

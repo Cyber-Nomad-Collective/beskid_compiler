@@ -5,18 +5,22 @@
 
 use cranelift_codegen::ir::condcodes::IntCC;
 use cranelift_codegen::ir::immediates::Offset32;
-use cranelift_codegen::ir::{BlockArg, InstBuilder, MemFlags, StackSlot, StackSlotData, StackSlotKind, Value, types};
+use cranelift_codegen::ir::{
+    BlockArg, InstBuilder, MemFlagsData, StackSlot, StackSlotData, StackSlotKind, Value, types,
+};
+use cranelift_codegen::isa::TargetFrontendConfig;
 use cranelift_frontend::FunctionBuilder;
 
 /// ISLE-aligned trusted CLIF helpers over an active [`FunctionBuilder`].
 pub struct ClifPrimitives<'a, 'f> {
     builder: &'a mut FunctionBuilder<'f>,
     scratch_i64_slot: Option<StackSlot>,
+    frontend_config: TargetFrontendConfig,
 }
 
 impl<'a, 'f> ClifPrimitives<'a, 'f> {
-    pub fn new(builder: &'a mut FunctionBuilder<'f>) -> Self {
-        Self { builder, scratch_i64_slot: None }
+    pub fn new(builder: &'a mut FunctionBuilder<'f>, frontend_config: TargetFrontendConfig) -> Self {
+        Self { builder, scratch_i64_slot: None, frontend_config }
     }
 
     pub fn builder(&self) -> &FunctionBuilder<'f> {
@@ -33,12 +37,12 @@ impl<'a, 'f> ClifPrimitives<'a, 'f> {
 
     fn trusted_load(&mut self, ty: types::Type, base: Value, offset: i64) -> Option<Value> {
         let offset = Self::offset32(offset)?;
-        Some(self.builder.ins().load(ty, MemFlags::trusted(), base, offset))
+        Some(self.builder.ins().load(ty, MemFlagsData::trusted(), base, offset))
     }
 
     fn trusted_store(&mut self, base: Value, offset: i64, val: Value) -> Option<Value> {
         let offset = Self::offset32(offset)?;
-        self.builder.ins().store(MemFlags::trusted(), val, base, offset);
+        self.builder.ins().store(MemFlagsData::trusted(), val, base, offset);
         Some(val)
     }
 
@@ -94,12 +98,12 @@ impl<'a, 'f> ClifPrimitives<'a, 'f> {
     /// Explicit-slot `stack_load` for helpers that need addressable i64 scratch (locals use SSA).
     pub fn stack_load_i64(&mut self, offset: i32) -> Value {
         let slot = self.ensure_scratch_i64_slot();
-        self.builder.ins().stack_load(types::I64, slot, offset)
+        self.builder.ins().stack_load(self.frontend_config.pointer_type(), types::I64, slot, offset)
     }
 
     pub fn stack_store_i64(&mut self, val: Value, offset: i32) -> Value {
         let slot = self.ensure_scratch_i64_slot();
-        self.builder.ins().stack_store(val, slot, offset);
+        self.builder.ins().stack_store(self.frontend_config.pointer_type(), val, slot, offset);
         val
     }
 
@@ -113,7 +117,7 @@ impl<'a, 'f> ClifPrimitives<'a, 'f> {
     }
 
     pub fn ptr_add(&mut self, base: Value, imm: i64) -> Value {
-        self.builder.ins().iadd_imm(base, imm)
+        self.builder.ins().iadd_imm_s(base, imm)
     }
 
     pub fn icmp_eq(&mut self, left: Value, right: Value) -> Value {
@@ -207,13 +211,13 @@ impl<'a, 'f> ClifPrimitives<'a, 'f> {
         builder.switch_to_block(body);
         let lptr = builder.ins().iadd(left, idx);
         let rptr = builder.ins().iadd(right, idx);
-        let lb = builder.ins().load(types::I8, MemFlags::trusted(), lptr, Offset32::new(0));
-        let rb = builder.ins().load(types::I8, MemFlags::trusted(), rptr, Offset32::new(0));
+        let lb = builder.ins().load(types::I8, MemFlagsData::trusted(), lptr, Offset32::new(0));
+        let rb = builder.ins().load(types::I8, MemFlagsData::trusted(), rptr, Offset32::new(0));
         let lb64 = builder.ins().uextend(types::I64, lb);
         let rb64 = builder.ins().uextend(types::I64, rb);
         let bytes_eq = builder.ins().icmp(IntCC::Equal, lb64, rb64);
         let mismatch = builder.create_block();
-        let next_idx = builder.ins().iadd_imm(idx, 1);
+        let next_idx = builder.ins().iadd_imm_s(idx, 1);
         builder.ins().brif(bytes_eq, loop_block, &[BlockArg::Value(next_idx)], mismatch, &[]);
 
         builder.switch_to_block(mismatch);

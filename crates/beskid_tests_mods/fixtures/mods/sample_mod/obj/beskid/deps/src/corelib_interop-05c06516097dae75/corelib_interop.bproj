@@ -1,0 +1,10 @@
+corelib_interop {
+  name = "corelib_interop"
+  version = "0.1.0"
+  root = "src"
+  readme = "readme.md"
+}
+
+target "InteropLib" {
+  kind = Lib
+}

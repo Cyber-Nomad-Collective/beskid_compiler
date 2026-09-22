@@ -2,7 +2,7 @@ use super::support::{assert_unavailable, key, setup};
 use beskid_analysis::syntax_query::NodeKind;
 use beskid_queries::{
     AstNodeKey, BeskidDatabase, GenericSpecializationInstance, ItemSignature, SemanticTypeId, SourceUnitId,
-    SyntaxGenerationId, TryExpressionFact, abi_type, generic_specialization_identity, literal_fact, node_type,
+    SyntaxGenerationId, abi_type, generic_specialization_identity, literal_fact, node_type,
     primitive_numeric_conversion, try_expression_fact,
 };
 use std::path::PathBuf;
@@ -61,25 +61,23 @@ fn try_expression_fact_resolves_result_payload_and_enclosing_error_return() {
     let (db, _project, unit, generation, index) = setup(source);
     let expression = key(unit, generation, &index, NodeKind::TryExpression, 0);
 
-    assert_eq!(
-        try_expression_fact(&db, expression).expect("try expression query"),
-        Some(TryExpressionFact {
-            expression,
-            operand: key(unit, generation, &index, NodeKind::PathExpression, 0),
-            payload_type: SemanticTypeId::I32,
-            error_type: SemanticTypeId::POINTER,
-            enclosing_return: SemanticTypeId::POINTER,
-        })
-    );
+    let fact = try_expression_fact(&db, expression).expect("try expression query").expect("try fact");
+    assert_eq!(fact.expression, expression);
+    assert_eq!(fact.operand, key(unit, generation, &index, NodeKind::PathExpression, 0));
+    assert_eq!(fact.payload_type, SemanticTypeId::I32);
+    assert_eq!(fact.error_type, SemanticTypeId::POINTER);
+    assert_eq!(fact.enclosing_return, SemanticTypeId::POINTER);
+    assert_eq!(fact.operand_layout, fact.return_layout);
 }
 
 #[test]
-fn try_expression_fact_rejects_differing_result_payload_instantiation() {
+fn try_expression_fact_accepts_distinct_success_with_exact_error_identity() {
     let source = "enum Error { Failed() } enum Result<TValue, TError> { Ok(TValue value), Error(TError error) } Result<i64, Error> Main(Result<i32, Error> value) { return value?; }";
     let (db, _project, unit, generation, index) = setup(source);
     let expression = key(unit, generation, &index, NodeKind::TryExpression, 0);
 
-    assert_unavailable(try_expression_fact(&db, expression));
+    let fact = try_expression_fact(&db, expression).expect("compatible propagation").expect("try fact");
+    assert_ne!(fact.operand_layout, fact.return_layout);
 }
 
 #[test]
@@ -114,6 +112,7 @@ fn generic_specialization_identity_is_reproducible_across_syntax_generations() {
     let db = BeskidDatabase::default();
     let unit = SourceUnitId::new(&db, PathBuf::from("/tmp/project/src/Generic.bd"));
     let instance = |generation| GenericSpecializationInstance {
+        contract_witnesses: Arc::from([]),
         declaration: AstNodeKey {
             unit,
             generation: SyntaxGenerationId(generation),

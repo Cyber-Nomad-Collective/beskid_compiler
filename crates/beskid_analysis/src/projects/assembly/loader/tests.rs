@@ -1,6 +1,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use super::trusted_paths::trusted_corelib_service_paths;
@@ -12,8 +13,11 @@ use crate::projects::{MaterializedDependencyProject, PreparedProjectWorkspace, S
 use crate::services::parse_program_with_source_name;
 
 fn temp_project_root(label: &str) -> PathBuf {
+    static NEXT_TEMP_ROOT: AtomicU64 = AtomicU64::new(0);
     let nanos = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0);
-    std::env::temp_dir().join(format!("beskid_asm_{label}_{nanos}"))
+    let nonce = NEXT_TEMP_ROOT.fetch_add(1, Ordering::Relaxed);
+    let process = std::process::id();
+    std::env::temp_dir().join(format!("beskid_asm_{label}_{process}_{nanos}_{nonce}"))
 }
 
 fn write_bd(root: &Path, relative: &str, source: &str) {
@@ -22,6 +26,42 @@ fn write_bd(root: &Path, relative: &str, source: &str) {
         fs::create_dir_all(parent).expect("create parent dirs");
     }
     fs::write(path, source).expect("write bd source");
+}
+
+#[cfg(any(unix, windows))]
+fn assert_symlink_entry_origin(discovery: AssemblyDiscovery) {
+    let disk_source = "i32 Main() { return 0; }";
+    let entry_source = "i32 Main() { return 7; }";
+    let (mut plan, _) = no_entry_plan_with_source(disk_source);
+    let real = plan.source_root.join("Main.bd");
+    let alias = plan.source_root.join("Alias.bd");
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(&real, &alias).expect("create entry symlink");
+    #[cfg(windows)]
+    std::os::windows::fs::symlink_file(&real, &alias).expect("create entry symlink");
+    plan.target.entry = Some("Alias.bd".into());
+    let options = AssemblyOptions { discovery, ..AssemblyOptions::default() };
+
+    let assembly = assemble_program(&plan, None, &alias, Some(entry_source), &options, None).expect("assemble alias");
+    let unit = assembly.entry_unit();
+    assert_eq!(unit.origin_path, alias);
+    assert_eq!(unit.path, fs::canonicalize(&real).unwrap());
+    assert_eq!(unit.logical_name, alias.display().to_string());
+    assert_eq!(unit.source, entry_source, "caller entry text must still override disk text");
+    assert_eq!(assembly.units.len(), 1, "real and alias remain one physical unit");
+    let _ = fs::remove_dir_all(plan.project_root);
+}
+
+#[cfg(any(unix, windows))]
+#[test]
+fn import_closure_retains_symlink_entry_origin() {
+    assert_symlink_entry_origin(AssemblyDiscovery::ImportClosure);
+}
+
+#[cfg(any(unix, windows))]
+#[test]
+fn workspace_scan_retains_symlink_entry_origin() {
+    assert_symlink_entry_origin(AssemblyDiscovery::WorkspaceScan);
 }
 
 #[test]
@@ -40,6 +80,7 @@ fn materialized_compiler_foundation_path_retains_service_provenance_but_a_copy_d
     let materialized_path = materialized_source_root.join(relative);
     let unit = SourceUnit {
         logical_name: materialized_path.display().to_string(),
+        origin_path: materialized_path.clone(),
         path: materialized_path.clone(),
         source: source.source.clone(),
         program: parse_program_with_source_name("materialized syscall", &source.source).expect("parse syscall source"),
@@ -114,6 +155,7 @@ fn resolved_foundation_source_root_still_trusts_materialized_assert() {
     let materialized_path = materialized_source_root.join(relative);
     let unit = SourceUnit {
         logical_name: materialized_path.display().to_string(),
+        origin_path: materialized_path.clone(),
         path: materialized_path.clone(),
         source: source.source.clone(),
         program: parse_program_with_source_name("materialized assert", &source.source).expect("parse Assert source"),
@@ -155,8 +197,7 @@ fn resolved_foundation_source_root_still_trusts_materialized_assert() {
 }
 
 fn no_entry_plan_with_source(source: &str) -> (CompilePlan, PathBuf) {
-    let nanos = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0);
-    let project_root = std::env::temp_dir().join(format!("beskid_asm_test_{nanos}"));
+    let project_root = temp_project_root("test");
     let source_root = project_root.join("src");
     fs::create_dir_all(&source_root).expect("create source root");
     fs::write(source_root.join("Main.bd"), source).expect("write Main.bd");

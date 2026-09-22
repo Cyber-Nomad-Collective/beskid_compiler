@@ -90,14 +90,16 @@ impl<'db> SyntaxNodeFacts<'db> {
         Some(InlineClosureEnvironment {
             allocation_request_symbol: authority.plan.allocation_request_symbol.into(),
             descriptor_symbol: authority.plan.descriptor_symbol.into(),
-            root_slot_index: authority.root.slot_index,
             captures,
         })
     }
 
     pub(super) fn specialized_direct_parameter_type(&self, key: AstNodeKey) -> Option<SemanticTypeId> {
         (self.query(node_kind(self.db, key)) == Some(beskid_queries::IndexedNodeKind::PathExpression)).then_some(())?;
-        let declaration = self.query(resolved_local(self.db, key))?.declaration;
+        let declaration = self
+            .query(resolved_local(self.db, key))
+            .map(|resolved| resolved.declaration)
+            .or_else(|| self.query(nominal_member_receiver(self.db, key)))?;
         let slot = self.query(local_slot(self.db, declaration))?;
         let parameter = usize::try_from(slot.index).ok()?;
         // Specialized method signatures carry their implicit nominal receiver first, while the

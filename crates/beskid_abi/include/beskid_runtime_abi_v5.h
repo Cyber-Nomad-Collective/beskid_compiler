@@ -7,6 +7,13 @@
 #define BESKID_TRAP_EXIT_STATUS 101
 #define BESKID_TRAP_DIAGNOSTIC "beskid runtime trap v5"
 struct BeskidStr;
+#define BESKID_ABI_VALUE_SIZE 40
+#define BESKID_ABI_VALUE_ALIGNMENT 8
+#define BESKID_ABI_VALUE_TAG_OFFSET 0
+#define BESKID_ABI_VALUE_PAYLOAD_OFFSET 8
+#define BESKID_ABI_VALUE_DESCRIPTOR_OFFSET 16
+#define BESKID_ABI_VALUE_OWNER_HEAP_OFFSET 24
+#define BESKID_ABI_VALUE_OWNER_STATE_OFFSET 32
 #define BESKID_ALLOCATION_REQUEST_SIZE 24
 #define BESKID_ALLOCATION_REQUEST_ALIGNMENT 8
 #define BESKID_ALLOCATION_REQUEST_SIZE_OFFSET 0
@@ -53,7 +60,7 @@ struct BeskidStr;
 #define BESKID_COMPOSITION_SCOPE_PARENT_SCOPE_OFFSET 8
 #define BESKID_COMPOSITION_SCOPE_OWNED_COUNT_OFFSET 16
 #define BESKID_COMPOSITION_SCOPE_OWNED_VALUES_OFFSET 24
-#define BESKID_FIBER_RECORD_SIZE 128
+#define BESKID_FIBER_RECORD_SIZE 240
 #define BESKID_FIBER_RECORD_ALIGNMENT 8
 #define BESKID_FIBER_RECORD_STATE_OFFSET 0
 #define BESKID_FIBER_RECORD_ENTRY_OFFSET 8
@@ -62,9 +69,11 @@ struct BeskidStr;
 #define BESKID_FIBER_RECORD_PARENT_OFFSET 32
 #define BESKID_FIBER_RECORD_DETACHED_OFFSET 40
 #define BESKID_FIBER_RECORD_CANCELLED_OFFSET 41
+#define BESKID_FIBER_RECORD_CONSUMED_OFFSET 42
+#define BESKID_FIBER_RECORD_CHANNEL_OPERATION_OFFSET 43
 #define BESKID_FIBER_RECORD_GENERATION_OFFSET 44
 #define BESKID_FIBER_RECORD_OUTCOME_KIND_OFFSET 48
-#define BESKID_FIBER_RECORD_OUTCOME_VALUE_OFFSET 56
+#define BESKID_FIBER_RECORD_PANIC_MESSAGE_OFFSET 56
 #define BESKID_FIBER_RECORD_COMPOSITION_SCOPE_OFFSET 64
 #define BESKID_FIBER_RECORD_COMPOSITION_DEPTH_OFFSET 72
 #define BESKID_FIBER_RECORD_ROOT_FRAME_OFFSET 80
@@ -73,6 +82,12 @@ struct BeskidStr;
 #define BESKID_FIBER_RECORD_ARCH_CONTEXT_OFFSET 104
 #define BESKID_FIBER_RECORD_ARCH_CONTEXT_SIZE_OFFSET 112
 #define BESKID_FIBER_RECORD_STACK_USABLE_SIZE_OFFSET 120
+#define BESKID_FIBER_RECORD_OUTCOME_REASON_OFFSET 128
+#define BESKID_FIBER_RECORD_OUTCOME_CANCELER_OFFSET 136
+#define BESKID_FIBER_RECORD_OUTCOME_LIMIT_OFFSET 144
+#define BESKID_FIBER_RECORD_OUTCOME_REQUESTED_OFFSET 152
+#define BESKID_FIBER_RECORD_RESULT_OFFSET 160
+#define BESKID_FIBER_RECORD_CAPTURE_OFFSET 200
 #define BESKID_GC_HANDLE_SLOT_SIZE 16
 #define BESKID_GC_HANDLE_SLOT_ALIGNMENT 8
 #define BESKID_GC_HANDLE_SLOT_VALUE_OFFSET 0
@@ -98,6 +113,23 @@ struct BeskidStr;
 #define BESKID_HEAP_STATE_EXTERNAL_ROOTS_OFFSET 128
 #define BESKID_HEAP_STATE_HANDLE_COUNT_OFFSET 632
 #define BESKID_HEAP_STATE_HANDLES_OFFSET 640
+#define BESKID_NETWORK_HANDLE_SIZE 8
+#define BESKID_NETWORK_HANDLE_ALIGNMENT 8
+#define BESKID_NETWORK_HANDLE_SLOT_OFFSET 0
+#define BESKID_NETWORK_HANDLE_GENERATION_OFFSET 4
+#define BESKID_NETWORK_REQUEST_SIZE 88
+#define BESKID_NETWORK_REQUEST_ALIGNMENT 8
+#define BESKID_NETWORK_REQUEST_TOKEN_OFFSET 0
+#define BESKID_NETWORK_REQUEST_OWNER_OFFSET 8
+#define BESKID_NETWORK_REQUEST_OPERATION_OFFSET 16
+#define BESKID_NETWORK_REQUEST_BUFFER_OFFSET 24
+#define BESKID_NETWORK_REQUEST_LENGTH_OFFSET 32
+#define BESKID_NETWORK_REQUEST_ADDRESS_OFFSET 40
+#define BESKID_NETWORK_REQUEST_COUNT_OFFSET 48
+#define BESKID_NETWORK_REQUEST_STATUS_OFFSET 56
+#define BESKID_NETWORK_REQUEST_ACCEPTED_OFFSET 64
+#define BESKID_NETWORK_REQUEST_NATIVE_STATE_OFFSET 72
+#define BESKID_NETWORK_REQUEST_TRUNCATED_OFFSET 80
 #define BESKID_OBJECT_HEADER_SIZE 16
 #define BESKID_OBJECT_HEADER_ALIGNMENT 8
 #define BESKID_OBJECT_HEADER_DESCRIPTOR_OFFSET 0
@@ -164,7 +196,7 @@ struct BeskidStr;
 #define BESKID_RUNTIME_STATE_TLS_KEY_OFFSET 48
 #define BESKID_RUNTIME_STATE_LIFECYCLE_STATE_OFFSET 56
 #define BESKID_RUNTIME_STATE_LIFECYCLE_GENERATION_OFFSET 60
-#define BESKID_SCHEDULER_STATE_SIZE 3512
+#define BESKID_SCHEDULER_STATE_SIZE 7888
 #define BESKID_SCHEDULER_STATE_ALIGNMENT 8
 #define BESKID_SCHEDULER_STATE_FIBER_COUNT_OFFSET 0
 #define BESKID_SCHEDULER_STATE_MAIN_FIBER_OFFSET 8
@@ -179,14 +211,16 @@ struct BeskidStr;
 #define BESKID_SCHEDULER_STATE_PENDING_DETACH_COUNT_OFFSET 1136
 #define BESKID_SCHEDULER_STATE_PENDING_WAKES_OFFSET 1144
 #define BESKID_SCHEDULER_STATE_PENDING_WAKE_COUNT_OFFSET 1400
-#define BESKID_SCHEDULER_STATE_FIBERS_OFFSET 1408
+#define BESKID_SCHEDULER_STATE_EXTERNAL_STATE_OFFSET 1408
 #define BESKID_SCHEDULER_STATE_CHANNEL_TABLE_OFFSET 3456
 #define BESKID_SCHEDULER_STATE_MUTEX_TABLE_OFFSET 3464
 #define BESKID_SCHEDULER_STATE_WAITGROUP_TABLE_OFFSET 3472
 #define BESKID_SCHEDULER_STATE_CURRENT_FIBER_OFFSET 3480
 #define BESKID_SCHEDULER_STATE_HUB_TABLE_OFFSET 3488
 #define BESKID_SCHEDULER_STATE_SCHEDULER_CONTEXT_OFFSET 3496
-#define BESKID_SCHEDULER_STATE_POLL_STATE_OFFSET 3504
+#define BESKID_SCHEDULER_STATE_MUTATOR_TOKEN_OFFSET 4032
+#define BESKID_SCHEDULER_STATE_POLL_STATE_OFFSET 4040
+#define BESKID_SCHEDULER_STATE_FIBERS_OFFSET 4048
 #define BESKID_TLS_STATE_SIZE 48
 #define BESKID_TLS_STATE_ALIGNMENT 8
 #define BESKID_TLS_STATE_RUNTIME_OFFSET 0
@@ -203,7 +237,7 @@ struct BeskidStr;
 #define BESKID_TYPE_DESCRIPTOR_POINTER_COUNT_OFFSET 24
 #define BESKID_TYPE_DESCRIPTOR_FLAGS_OFFSET 32
 #define BESKID_TYPE_DESCRIPTOR_RESERVED_OFFSET 36
-#define BESKID_WORKER_REQUEST_SIZE 64
+#define BESKID_WORKER_REQUEST_SIZE 72
 #define BESKID_WORKER_REQUEST_ALIGNMENT 8
 #define BESKID_WORKER_REQUEST_NEXT_OFFSET 0
 #define BESKID_WORKER_REQUEST_TAG_OFFSET 8
@@ -214,7 +248,8 @@ struct BeskidStr;
 #define BESKID_WORKER_REQUEST_LENGTH_OFFSET 40
 #define BESKID_WORKER_REQUEST_RESULT_OFFSET 48
 #define BESKID_WORKER_REQUEST_ERROR_OFFSET 56
-#define BESKID_WORKER_REQUEST_PADDING_OFFSET 60
+#define BESKID_WORKER_REQUEST_ABANDONED_OFFSET 60
+#define BESKID_WORKER_REQUEST_OWNER_SCHEDULER_ID_OFFSET 64
 #define BESKID_ARCH_CONTEXT_AARCH64_DARWIN_SIZE 176
 #define BESKID_ARCH_CONTEXT_AARCH64_DARWIN_ALIGNMENT 16
 #define BESKID_ARCH_CONTEXT_AARCH64_DARWIN_X19_OFFSET 0
@@ -273,6 +308,10 @@ struct BeskidStr;
 #define BESKID_ARCH_CONTEXT_X86_64_SYS_V_RIP_OFFSET 56
 int32_t beskid_library_attach_v5(void * runtime);
 void beskid_library_detach_v5(void * runtime);
+uint8_t beskid_rt_v5_abi_value_clear(void * slot);
+uint8_t beskid_rt_v5_abi_value_initialize(void * slot, size_t tag, void * payload, void * descriptor);
+uint8_t beskid_rt_v5_abi_value_move_out(void * source, void * destination);
+uint8_t beskid_rt_v5_abi_value_replace_with_barrier(void * destination, void * source);
 uint32_t beskid_rt_v5_abi_version(void);
 void * beskid_rt_v5_array_allocate_rooted(void * request, void * root_handle_out);
 uint8_t beskid_rt_v5_array_construction_finish(void * root_handle);
@@ -282,7 +321,15 @@ uint8_t beskid_rt_v5_closure_capture_store(void * environment, void * descriptor
 void * beskid_rt_v5_closure_environment_allocate(void * request);
 uint8_t beskid_rt_v5_closure_environment_root(void * tls_state, size_t slot_index, void * environment);
 uint8_t beskid_rt_v5_closure_environment_root_current(size_t slot_index, void * environment);
-int64_t beskid_rt_v5_fiber_spawn_with_cancel_slot(void * entry, void * environment, void * cancelled_slot);
+size_t beskid_rt_v5_external_active_count(void);
+size_t beskid_rt_v5_external_owner_id(void);
+void beskid_rt_v5_external_pump(int64_t now);
+size_t beskid_rt_v5_external_sleep_until(int64_t deadline);
+uint8_t beskid_rt_v5_external_try_complete(size_t wait_id, size_t generation, size_t source);
+size_t beskid_rt_v5_external_wait_park(size_t token);
+uint8_t beskid_rt_v5_external_wait_post(size_t owner, size_t token, size_t source);
+size_t beskid_rt_v5_external_wait_register(size_t fiber_handle, size_t operation, int64_t deadline);
+uint8_t beskid_rt_v5_external_wait_release(size_t token);
 void beskid_rt_v5_fiber_yield(void);
 void * beskid_rt_v5_managed_object_allocate(void * request);
 int32_t beskid_rt_v5_poll_executor_run_once(void);
@@ -318,14 +365,11 @@ uint8_t bytes_get(void * bytes, size_t index);
 void bytes_set(void * bytes, size_t index, uint8_t value);
 void channel_close(int64_t id);
 int64_t channel_create(int64_t capacity, int64_t flags);
-void * channel_receive_ptr(int64_t id);
 int64_t channel_receive_status(int64_t id);
-int64_t channel_receive_value(int64_t id);
-int64_t channel_send(int64_t id, int64_t value);
-int64_t channel_send_ptr(int64_t id, void * valuePtr);
+uint8_t channel_receive_value(int64_t id, void * destination);
+int64_t channel_send(int64_t id, void * sender);
 int64_t channel_try_receive(int64_t id);
-int64_t channel_try_send(int64_t id, int64_t value);
-int64_t channel_try_send_ptr(int64_t id, void * valuePtr);
+int64_t channel_try_send(int64_t id, void * sender);
 int64_t clock_monotonic_nanos(void);
 int64_t clock_realtime_nanos(void);
 void * composition_container_create(size_t slot_count);
@@ -352,8 +396,11 @@ size_t event_unsubscribe_first(void * eventSlot, void * handler);
 uint8_t fiber_cancel(int64_t fiberId, int64_t reason);
 int64_t fiber_current_id(void);
 void fiber_detach(int64_t fiberId);
+int64_t fiber_join_detail(int64_t fiberId, size_t detail);
+uint8_t fiber_join_error_finish(int64_t fiberId);
+void * fiber_join_message(int64_t fiberId);
 int32_t fiber_join_status(int64_t fiberId);
-int64_t fiber_join_value(int64_t fiberId);
+uint8_t fiber_join_value(int64_t fiberId, void * destination);
 int64_t fiber_now_millis(void);
 size_t fiber_processor_count(void);
 int64_t fiber_spawn(void * entry, void * argument);
@@ -378,11 +425,27 @@ int64_t hub_register(int64_t hubId, int64_t index, int64_t channelId);
 int64_t hub_unregister(int64_t hubId, int64_t index);
 int64_t hub_wait_receive_index(int64_t hubId);
 int64_t hub_wait_receive_status(int64_t hubId);
-int64_t hub_wait_receive_value(int64_t hubId);
+uint8_t hub_wait_receive_value(int64_t hubId, void * destination);
 void * mutex_create(void);
 int32_t mutex_lock(void * id);
 int32_t mutex_try_lock(void * id);
 void mutex_unlock(void * id);
+int32_t beskid_rt_v5_network_accept(size_t handle, void * output);
+int32_t beskid_rt_v5_network_address(size_t handle, uint8_t peer, void * output);
+int32_t beskid_rt_v5_network_close(size_t handle);
+int32_t beskid_rt_v5_network_dns_address(size_t lease, int64_t index, void * output);
+int64_t beskid_rt_v5_network_dns_count(size_t lease);
+void beskid_rt_v5_network_dns_release(size_t lease);
+int32_t beskid_rt_v5_network_dns_resolve(void * host, int64_t port, int64_t family, void * output);
+int32_t beskid_rt_v5_network_open(int64_t kind, void * address, int64_t options, int64_t backlog, void * output);
+int64_t beskid_rt_v5_network_options(size_t handle);
+int64_t beskid_rt_v5_network_read(size_t handle, void * buffer, int64_t offset, int64_t count);
+int64_t beskid_rt_v5_network_receive(size_t handle, void * payload, void * metadata, uint8_t connected);
+int64_t beskid_rt_v5_network_send(size_t handle, void * payload, void * address, uint8_t connected);
+int32_t beskid_rt_v5_network_set_options(size_t handle, int64_t bits);
+int32_t beskid_rt_v5_network_shutdown_write(size_t handle);
+int32_t beskid_rt_v5_network_udp_connect(size_t handle, void * address);
+int64_t beskid_rt_v5_network_write(size_t handle, void * buffer, int64_t offset, int64_t count);
 void beskid_trap_code(int64_t code);
 void beskid_trap_message(void * message);
 void process_exit(int32_t code);

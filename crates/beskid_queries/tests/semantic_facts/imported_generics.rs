@@ -35,12 +35,14 @@ fn generic_imported_static_call_resolves_to_its_exact_syntax_item() {
         Arc::new(vec![
             SourceUnit {
                 logical_name: main_path.display().to_string(),
+                origin_path: main_path.clone(),
                 path: main_path.clone(),
                 source: main_source.to_string(),
                 program: main_program.clone(),
             },
             SourceUnit {
                 logical_name: channel_path.display().to_string(),
+                origin_path: channel_path.clone(),
                 path: channel_path.clone(),
                 source: channel_source.to_string(),
                 program: channel_program.clone(),
@@ -95,12 +97,14 @@ fn imported_generic_type_annotation_resolves_without_registry_reentrance() {
         Arc::new(vec![
             SourceUnit {
                 logical_name: main_path.display().to_string(),
+                origin_path: main_path.clone(),
                 path: main_path.clone(),
                 source: main_source.to_string(),
                 program: main_program.clone(),
             },
             SourceUnit {
                 logical_name: envelope_path.display().to_string(),
+                origin_path: envelope_path.clone(),
                 path: envelope_path.clone(),
                 source: envelope_source.to_string(),
                 program: envelope_program,
@@ -148,12 +152,14 @@ fn imported_generic_nominal_calls_require_receiver_instantiation() {
         Arc::new(vec![
             SourceUnit {
                 logical_name: main_path.display().to_string(),
+                origin_path: main_path.clone(),
                 path: main_path.clone(),
                 source: main_source.to_string(),
                 program: main_program.clone(),
             },
             SourceUnit {
                 logical_name: hub_path.display().to_string(),
+                origin_path: hub_path.clone(),
                 path: hub_path.clone(),
                 source: hub_source.to_string(),
                 program: hub_program.clone(),
@@ -239,12 +245,14 @@ fn generic_imported_terminal_call_requires_an_exact_declared_generic_arity() {
         Arc::new(vec![
             SourceUnit {
                 logical_name: main_path.display().to_string(),
+                origin_path: main_path.clone(),
                 path: main_path.clone(),
                 source: main_source.to_string(),
                 program: main_program.clone(),
             },
             SourceUnit {
                 logical_name: channel_path.display().to_string(),
+                origin_path: channel_path.clone(),
                 path: channel_path.clone(),
                 source: channel_source.to_string(),
                 program: channel_program.clone(),
@@ -321,12 +329,14 @@ pub Hub<T> Create<T>() { return Hub<T> { value: 0_i64 }; }
         Arc::new(vec![
             SourceUnit {
                 logical_name: main_path.display().to_string(),
+                origin_path: main_path.clone(),
                 path: main_path.clone(),
                 source: main_source.to_string(),
                 program: main_program.clone(),
             },
             SourceUnit {
                 logical_name: hub_path.display().to_string(),
+                origin_path: hub_path.clone(),
                 path: hub_path.clone(),
                 source: hub_source.to_string(),
                 program: hub_program.clone(),
@@ -414,6 +424,7 @@ pub Core.Results.Result<i64, Core.Syscall.SyscallError> Write() {
         .iter()
         .map(|(path, source)| SourceUnit {
             logical_name: path.display().to_string(),
+            origin_path: (*path).clone(),
             path: (*path).clone(),
             source: (*source).to_string(),
             program: expand_program(parse_program(source).expect("parse"), DEFAULT_MAX_MACRO_EXPANSION_DEPTH),
@@ -509,6 +520,7 @@ pub Console.ConsoleSize Winsize() {
         .iter()
         .map(|(path, source)| SourceUnit {
             logical_name: path.display().to_string(),
+            origin_path: (*path).clone(),
             path: (*path).clone(),
             source: (*source).to_string(),
             program: expand_program(parse_program(source).expect("parse"), DEFAULT_MAX_MACRO_EXPANSION_DEPTH),
@@ -591,6 +603,7 @@ test corelib_generic_specialization {
         .iter()
         .map(|(path, source)| SourceUnit {
             logical_name: path.display().to_string(),
+            origin_path: path.clone(),
             path: path.clone(),
             source: source.clone(),
             program: expand_program(parse_program(source).expect("parse"), DEFAULT_MAX_MACRO_EXPANSION_DEPTH),
@@ -689,6 +702,7 @@ fn canonical_core_error_qualified_write_has_a_direct_semantic_fact() {
         .iter()
         .map(|(path, source)| SourceUnit {
             logical_name: path.display().to_string(),
+            origin_path: path.clone(),
             path: path.clone(),
             source: source.clone(),
             program: expand_program(
@@ -768,12 +782,14 @@ pub type List<T> {
         Arc::new(vec![
             SourceUnit {
                 logical_name: main_path.display().to_string(),
+                origin_path: main_path.clone(),
                 path: main_path.clone(),
                 source: main_source.to_string(),
                 program: main_program.clone(),
             },
             SourceUnit {
                 logical_name: list_path.display().to_string(),
+                origin_path: list_path.clone(),
                 path: list_path.clone(),
                 source: list_source.to_string(),
                 program: list_program.clone(),
@@ -857,18 +873,21 @@ pub type List<T> {
         Arc::new(vec![
             SourceUnit {
                 logical_name: main_path.display().to_string(),
+                origin_path: main_path.clone(),
                 path: main_path.clone(),
                 source: main_source.to_string(),
                 program: main_program.clone(),
             },
             SourceUnit {
                 logical_name: list_path.display().to_string(),
+                origin_path: list_path.clone(),
                 path: list_path,
                 source: list_source.to_string(),
                 program: list_program.clone(),
             },
             SourceUnit {
                 logical_name: result_path.display().to_string(),
+                origin_path: result_path.clone(),
                 path: result_path,
                 source: result_source.to_string(),
                 program: result_program,

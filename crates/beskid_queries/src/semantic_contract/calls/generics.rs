@@ -43,7 +43,11 @@ pub(in crate::semantic_contract) fn generic_call_specialization_tracked(
                 return None;
             }
         };
-        generic_callable_parameters(db, declaration)?;
+        if generic_callable_parameters(db, declaration).is_none()
+            && contract_parameter_declarations(db, declaration).is_empty()
+        {
+            return None;
+        }
         let instance = match generic_specialization_instance_for_call(db, key) {
             Ok(instance) => instance,
             Err(error) => return Some(Err(error)),
@@ -52,6 +56,7 @@ pub(in crate::semantic_contract) fn generic_call_specialization_tracked(
             declaration: instance.declaration,
             signature: instance.signature,
             substitutions: instance.substitutions,
+            contract_witnesses: instance.contract_witnesses,
         }))
     })?
     .transpose()
@@ -118,18 +123,56 @@ pub(in crate::semantic_contract) fn generic_nominal_method_receiver_tracked(
 ) -> SemanticQueryResult<GenericNominalMethodReceiver> {
     with_node(db, syntax, key, |program, index, node| {
         let call = node.of::<beskid_analysis::syntax::CallExpression>()?;
-        let beskid_analysis::syntax::Expression::Path(path) = &call.callee.node else {
-            return None;
+        let (method, receiver) = match &call.callee.node {
+            beskid_analysis::syntax::Expression::Path(path) => {
+                nominal_local_member_receiver(db, program, index, key, &path.node.path.node)?
+            }
+            beskid_analysis::syntax::Expression::Member(member) => {
+                let method = method_declaration_for_member_receiver(db, program, index, key, call, member)?;
+                let receiver = *call_arguments(db, key).ok()??.first()?;
+                (method, receiver)
+            }
+            _ => return None,
         };
-        let (method, receiver) = nominal_local_member_receiver(db, program, index, key, &path.node.path.node)?;
         let method_syntax = db.syntax_unit(method.unit)?;
         let owner_node = parent_node(method_syntax.syntax_index(db), method.node)?;
         let owner = AstNodeKey { node: owner_node, ..method };
+        if let Some(handle) = inferred_spawn_handle(db, receiver) {
+            return Some(Ok(GenericNominalMethodReceiver {
+                method,
+                receiver,
+                owner,
+                substitutions: Arc::from([handle.payload]),
+            }));
+        }
         let owner_definition = method_syntax
             .syntax_index(db)
             .node_at(method_syntax.expanded_program(db), owner_node)?
             .of::<beskid_analysis::syntax::TypeDefinition>()?;
         (!owner_definition.generics.is_empty()).then_some(())?;
+        if index.kind(receiver.node) != Some(beskid_analysis::syntax_query::NodeKind::Identifier) {
+            return Some(generic_source_expression_identity(db, receiver).and_then(|identity| {
+                let GenericSourceTypeIdentity::Nominal { arguments, .. } = identity else {
+                    return Err(SemanticError::unavailable("generic_nominal_method_receiver"));
+                };
+                if arguments.len() != owner_definition.generics.len() {
+                    return Err(SemanticError::unavailable("generic_nominal_method_receiver"));
+                }
+                let substitutions = owner_definition
+                    .generics
+                    .iter()
+                    .zip(arguments.iter())
+                    .map(|(generic, argument)| {
+                        GenericSubstitution::from_source(
+                            generic.node.name.as_str(),
+                            argument.abi_type(),
+                            argument.clone(),
+                        )
+                    })
+                    .collect::<Vec<_>>();
+                Ok(GenericNominalMethodReceiver { method, receiver, owner, substitutions: substitutions.into() })
+            }));
+        }
         let receiver_parent = parent_node(index, receiver.node)?;
         let annotation = match index.kind(receiver_parent)? {
             beskid_analysis::syntax_query::NodeKind::Parameter => index
@@ -233,6 +276,27 @@ pub(in crate::semantic_contract) fn generic_source_expression_identity(
         index.node_at(program, normalized).ok_or_else(|| SemanticError::unavailable("source_expression_type"))?;
     let normalized_key = AstNodeKey { node: normalized, ..key };
 
+    if node.of::<beskid_analysis::syntax::TryExpression>().is_some() {
+        return try_expression_fact(db, normalized_key)?
+            .map(|fact| fact.payload_identity)
+            .ok_or_else(|| SemanticError::unavailable("source_expression_type"));
+    }
+
+    if let Some(projection) = super::super::layouts::nominal_field_projection(db, normalized_key) {
+        return projection.map(|(_, identity)| identity);
+    }
+
+    if node.of::<beskid_analysis::syntax::SpawnExpression>().is_some() {
+        let handle = spawn_handle_type(db, normalized_key)?
+            .ok_or_else(|| SemanticError::unavailable("source_expression_type"))?;
+        let qualified_name = stable_declaration_identity(db, handle.declaration)
+            .ok_or_else(|| SemanticError::unavailable("source_expression_type"))?;
+        return Ok(GenericSourceTypeIdentity::Nominal {
+            qualified_name,
+            arguments: Arc::from([handle.payload.source_identity().clone()]),
+        });
+    }
+
     if let Some(literal) = node.of::<beskid_analysis::syntax::LiteralExpression>() {
         return Ok(GenericSourceTypeIdentity::Abi(semantic_type_for_literal(&literal.literal.node)));
     }
@@ -257,9 +321,54 @@ pub(in crate::semantic_contract) fn generic_source_expression_identity(
                 return Ok(identity);
             }
             if let Some(binding) = pattern_binding_fact(db, index, normalized_key, declaration) {
-                return generic_source_field_shape_identity(db, binding?.payload);
+                let binding = binding?;
+                return binding
+                    .source_identity
+                    .map(Ok)
+                    .unwrap_or_else(|| generic_source_field_shape_identity(db, binding.payload));
             }
         }
+    }
+    if let Some(indexed) = node.of::<beskid_analysis::syntax::IndexExpression>() {
+        let target = index
+            .direct_child_id(
+                program,
+                normalized,
+                beskid_analysis::syntax_query::DynNodeRef::from(indexed.target.as_ref()),
+            )
+            .ok_or_else(|| SemanticError::unavailable("source_expression_type"))?;
+        let subscript = index
+            .direct_child_id(
+                program,
+                normalized,
+                beskid_analysis::syntax_query::DynNodeRef::from(indexed.index.as_ref()),
+            )
+            .ok_or_else(|| SemanticError::unavailable("source_expression_type"))?;
+        let subscript_type = abi_type(db, AstNodeKey { node: subscript, ..key })?
+            .ok_or_else(|| SemanticError::unavailable("source_expression_type"))?;
+        if !primitive_integer(subscript_type) {
+            return Err(SemanticError::unavailable("source_expression_type"));
+        }
+        let target = AstNodeKey { node: normalized_expression_node(index, target), ..key };
+        let target_node =
+            index.node_at(program, target.node).ok_or_else(|| SemanticError::unavailable("source_expression_type"))?;
+        let target_identity = if let Some(path) = target_node.of::<beskid_analysis::syntax::PathExpression>()
+            && path.path.node.segments.len() > 1
+        {
+            // The terminal segment is the existing source-proven projection authority for
+            // even a single field. It retains T[] substitutions and rejects private/ambiguous fields.
+            let field = super::super::layouts::path_projection_segment(db, target, path.path.node.segments.len() - 1)
+                .ok_or_else(|| SemanticError::unavailable("source_expression_type"))?;
+            super::super::layouts::nominal_field_projection(db, field)
+                .ok_or_else(|| SemanticError::unavailable("source_expression_type"))??
+                .1
+        } else {
+            generic_source_expression_identity(db, target)?
+        };
+        let GenericSourceTypeIdentity::Array(element) = target_identity else {
+            return Err(SemanticError::unavailable("source_expression_type"));
+        };
+        return Ok(*element);
     }
     if node.of::<beskid_analysis::syntax::CallExpression>().is_some()
         && let Some(CallLowering::Direct(declaration)) = call_lowering(db, normalized_key)?
@@ -327,6 +436,14 @@ fn generic_source_callable_result_identity(
         .syntax_index(db)
         .node_at(syntax.expanded_program(db), declaration.node)
         .ok_or_else(|| SemanticError::unavailable("source_expression_type"))?;
+    if let Some(signature) = node.of::<beskid_analysis::syntax::ContractMethodSignature>() {
+        return signature
+            .return_type
+            .as_ref()
+            .map_or(Ok(GenericSourceTypeIdentity::Abi(SemanticTypeId::UNIT)), |result| {
+                generic_source_type_identity(db, declaration, &result.node)
+            });
+    }
     let result = node
         .of::<beskid_analysis::syntax::FunctionDefinition>()
         .and_then(|function| function.return_type.as_ref())
@@ -413,11 +530,14 @@ fn generic_source_local_identity(
                 .node_at(program, parent)
                 .and_then(|node| node.of::<beskid_analysis::syntax::LetStatement>())
                 .ok_or_else(|| SemanticError::unavailable("source_expression_type"))?;
-            let annotation = statement
-                .type_annotation
-                .as_ref()
-                .ok_or_else(|| SemanticError::unavailable("source_expression_type"))?;
-            generic_source_type_identity(db, key, &annotation.node)
+            if let Some(annotation) = statement.type_annotation.as_ref() {
+                generic_source_type_identity(db, key, &annotation.node)
+            } else {
+                let initializer = index
+                    .direct_child_id(program, parent, beskid_analysis::syntax_query::DynNodeRef::from(&statement.value))
+                    .ok_or_else(|| SemanticError::unavailable("source_expression_type"))?;
+                generic_source_expression_identity(db, AstNodeKey { node: initializer, ..key })
+            }
         }
         _ => Err(SemanticError::unavailable("source_expression_type")),
     }
@@ -499,7 +619,7 @@ pub(in crate::semantic_contract) fn explicit_generic_type_argument_syntax(
     }
 }
 
-/// Instantiate the declared parameter type for the explicit call argument containing `key`.
+/// Prove the declared parameter type for the call argument containing `key`.
 ///
 /// This is the source-type authority for contextual expression lowering. It deliberately uses
 /// only the call and declaration syntax: consulting ABI specialization here would both erase
@@ -528,8 +648,28 @@ pub(in crate::semantic_contract) fn expected_explicit_call_argument_type(
     let beskid_analysis::syntax::Expression::Path(callee) = &call.callee.node else {
         return None;
     };
-    let type_arguments = explicit_generic_type_argument_syntax(&callee.node.path.node)?;
     let call_key = AstNodeKey { node: call_node, ..key };
+    let Some(type_arguments) = explicit_generic_type_argument_syntax(&callee.node.path.node) else {
+        if callee.node.path.node.segments.iter().any(|segment| !segment.node.type_args.is_empty()) {
+            return None;
+        }
+        let declaration = resolve_item_declaration(db, program, index, call_key, &callee.node.path.node)?;
+        let syntax = db.syntax_unit(declaration.unit).filter(|syntax| syntax.accepts_key(db, declaration))?;
+        let function = syntax
+            .syntax_index(db)
+            .node_at(syntax.expanded_program(db), declaration.node)?
+            .of::<beskid_analysis::syntax::FunctionDefinition>()?;
+        if !function.generics.is_empty() || function.parameters.len() != call.args.len() {
+            return None;
+        }
+        let expected = &function.parameters.get(argument_index)?.node.ty.node;
+        // Syntax returned to the caller must still denote the exact declared concrete type.
+        // Reject unresolved parameters and shadowed/import-dependent spellings, never infer
+        // their identity from an ABI pointer or from the constructor being contextualized.
+        let declared = generic_source_type_identity(db, declaration, expected).ok()?;
+        let contextual = generic_source_type_identity(db, call_key, expected).ok()?;
+        return (declared == contextual).then(|| expected.clone());
+    };
     let instantiation = generic_call_instantiation_for_node(db, program, index, call_key, &callee.node.path.node)?;
     if usize::from(instantiation.argument_count) != type_arguments.len()
         || instantiation.arguments.len() != type_arguments.len()

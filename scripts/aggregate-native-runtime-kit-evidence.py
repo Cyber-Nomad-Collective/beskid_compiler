@@ -10,14 +10,21 @@ import pathlib
 import sys
 from typing import Any
 
-SCHEMA_VERSION = 2
+from native_runtime_kit_evidence_contract import (
+    AGGREGATE_SMOKE_COUNT,
+    LINKAGES,
+    PROFILES,
+    SCHEMA_VERSION,
+    smoke_coordinates,
+    success_exit_code,
+)
+from native_runtime_source_closure import validate_source_closure
+
 TARGETS = {
     "windows-x86_64": "x86_64-pc-windows-msvc",
     "linux-x86_64": "x86_64-unknown-linux-gnu",
     "macos-arm64": "aarch64-apple-darwin",
 }
-PROFILES = ("debug", "release")
-LINKAGES = ("static", "shared")
 ARTIFACTS = {
     "x86_64-unknown-linux-gnu": {
         "static": "libbeskid_runtime.a",
@@ -32,7 +39,6 @@ ARTIFACTS = {
         "shared": "beskid_runtime.dll",
     },
 }
-SMOKE_LINKAGES = {"jit": "shared", "aot": "static", "repl": "shared", "cli": "shared"}
 
 
 def sha256(path: pathlib.Path) -> str:
@@ -105,13 +111,7 @@ def verify_hash(
 
 
 def expected_smokes() -> dict[tuple[str, str], str]:
-    coordinates = {
-        (profile, consumer): SMOKE_LINKAGES[consumer]
-        for profile in PROFILES
-        for consumer in ("jit", "aot", "repl")
-    }
-    coordinates[("debug", "cli")] = "shared"
-    return coordinates
+    return smoke_coordinates()
 
 
 def verify_smoke(
@@ -132,7 +132,7 @@ def verify_smoke(
             "consumer": consumer,
             "linkage_boundary": linkage,
             "status": "passed",
-            "exit_code": 0,
+            "exit_code": success_exit_code(profile, consumer),
             "output_path": f"smokes/{profile}-{consumer}.log",
         },
         f"smoke {target}/{profile}/{consumer}",
@@ -146,8 +146,7 @@ def verify_smoke(
 
 def verify(args: argparse.Namespace) -> dict[str, Any]:
     root = pathlib.Path(args.download_root).resolve(strict=True)
-    revisions: set[str] = set()
-    compiler_revisions: set[str] = set()
+    source_closures: set[tuple[str, ...]] = set()
     cells = profiles = smokes = imports = 0
     target_results = []
     smoke_coordinates = expected_smokes()
@@ -170,14 +169,10 @@ def verify(args: argparse.Namespace) -> dict[str, Any]:
             {"schema_version": SCHEMA_VERSION, "target": target},
             f"producer {target}",
         )
-        revision = producer.get("revisions")
-        if (
-            not isinstance(revision, dict)
-            or revision.get("compiler_dirty") is not False
-        ):
-            raise RuntimeError(f"dirty or malformed compiler evidence for {target}")
-        revisions.add(revision.get("superproject_sha", ""))
-        compiler_revisions.add(revision.get("compiler_sha", ""))
+        closure = validate_source_closure(producer.get("revisions"))
+        source_closures.add(closure)
+        if validate_source_closure(summary.get("revisions")) != closure:
+            raise RuntimeError(f"summary source closure differs from producer for {target}")
 
         expected_cell_names = {
             f"{profile}-{linkage}.json" for profile in PROFILES for linkage in LINKAGES
@@ -207,6 +202,8 @@ def verify(args: argparse.Namespace) -> dict[str, Any]:
                 },
                 f"profile {target}/{profile}",
             )
+            if validate_source_closure(profile_result.get("revisions")) != closure:
+                raise RuntimeError(f"profile source closure differs from producer for {target}/{profile}")
             profiles += 1
             for linkage in LINKAGES:
                 coordinate = (target, profile, linkage)
@@ -351,24 +348,22 @@ def verify(args: argparse.Namespace) -> dict[str, Any]:
         smokes += len(actual_names)
         target_results.append({"target": target, "status": "passed"})
 
-    if (
-        "" in revisions
-        or "" in compiler_revisions
-        or len(revisions) != 1
-        or len(compiler_revisions) != 1
-    ):
-        raise RuntimeError("platform evidence revisions do not agree")
-    if args.expected_root_sha and revisions != {args.expected_root_sha}:
+    if len(source_closures) != 1:
+        raise RuntimeError("platform evidence full source closure revisions do not agree")
+    root_sha, compiler_sha, corelib_sha, bsol_sha = next(iter(source_closures))
+    if args.expected_root_sha and root_sha != args.expected_root_sha:
         raise RuntimeError("evidence root revision does not match workflow revision")
-    if (profiles, cells, imports, smokes) != (6, 12, 2, 21):
+    if (profiles, cells, imports, smokes) != (6, 12, 2, AGGREGATE_SMOKE_COUNT):
         raise RuntimeError(
             f"aggregate cardinality mismatch: profiles={profiles}, cells={cells}, imports={imports}, smokes={smokes}"
         )
     return {
         "schema_version": 1,
         "status": "passed",
-        "root_sha": next(iter(revisions)),
-        "compiler_sha": next(iter(compiler_revisions)),
+        "root_sha": root_sha,
+        "compiler_sha": compiler_sha,
+        "corelib_sha": corelib_sha,
+        "bsol_sha": bsol_sha,
         "cardinality": {
             "targets": 3,
             "profiles": profiles,

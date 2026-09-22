@@ -1,0 +1,58 @@
+/// ABI status codes returned by channel, hub, mutex, and wait-group builtins.
+/// Carries its payload as variant arguments. Use pattern matching.
+/// @tier(standard)
+pub enum Status {
+    /// Operation completed successfully.
+    Ok,
+    /// Endpoint or queue is closed.
+    Closed(i64 endpoint),
+    /// Owning fiber was cancelled.
+    Cancelled(i64 reason),
+    /// Non-blocking operation would block.
+    WouldBlock,
+    /// Hub has no registered channels.
+    HubEmpty,
+    /// Hub registration cap reached.
+    HubLimit(i64 cap),
+    /// Hub handle not found or not registered.
+    HubNotFound(i64 index),
+}
+
+/// Constructs a Status from an ABI discriminant code.
+pub Status FromCode(i64 code) {
+    if code == 0 {
+        return Status::Ok;
+    }
+    if code == 1 {
+        return Status::Closed(0);
+    }
+    if code == 2 {
+        return Status::Cancelled(0);
+    }
+    if code == 3 {
+        return Status::WouldBlock;
+    }
+    if code == 4 {
+        return Status::HubEmpty;
+    }
+    if code == 5 {
+        return Status::HubLimit(0);
+    }
+    if code == 6 {
+        return Status::HubNotFound(0);
+    }
+    return Status::Ok;
+}
+
+/// Extracts the ABI discriminant from a Status.
+pub i64 Discriminant(Status status) {
+    return match status {
+        Status::Ok => 0,
+        Status::Closed(_) => 1,
+        Status::Cancelled(_) => 2,
+        Status::WouldBlock => 3,
+        Status::HubEmpty => 4,
+        Status::HubLimit(_) => 5,
+        Status::HubNotFound(_) => 6,
+    };
+}

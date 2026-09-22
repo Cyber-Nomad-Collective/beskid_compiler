@@ -431,7 +431,9 @@ fn runtime_memory_set_does_not_materialize_a_literal_length_as_a_runtime_constan
     let FunctionEmissionError::Lowering(error) = error else {
         panic!("literal must fail lowering rather than verification");
     };
-    assert_eq!(error.key(), facts.nodes[0]);
+    // The lowering failure is now keyed to the runtime-intrinsic call itself, not the
+    // enclosing expression statement.
+    assert_eq!(error.key(), facts.nodes[1]);
     assert_eq!(error.kind(), LoweringErrorKind::MissingRuleOrFact);
 }
 
@@ -501,6 +503,8 @@ fn runtime_raw_word_store_does_not_materialize_a_nested_literal_offset() {
     let FunctionEmissionError::Lowering(error) = error else {
         panic!("literal offset must fail lowering rather than verification");
     };
-    assert_eq!(error.key(), facts.nodes[0]);
+    // The lowering failure is now keyed to the runtime-intrinsic call itself, not the
+    // enclosing expression statement.
+    assert_eq!(error.key(), facts.nodes[1]);
     assert_eq!(error.kind(), LoweringErrorKind::MissingRuleOrFact);
 }

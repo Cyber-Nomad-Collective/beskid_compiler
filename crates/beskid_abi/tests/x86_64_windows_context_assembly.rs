@@ -93,9 +93,35 @@ fn coff_object_exports_exactly_two_symbols_and_contains_no_unwind_sections() {
     symbols.sort();
     assert_eq!(symbols, ["beskid_arch_v5_context_init".to_owned(), "beskid_arch_v5_context_switch".to_owned(),]);
 
-    let sections = String::from_utf8(output(Command::new(llvm_objdump).arg("-h").arg(&object)).stdout).unwrap();
+    let sections = String::from_utf8(output(Command::new(&llvm_objdump).arg("-h").arg(&object)).stdout).unwrap();
     assert!(!sections.contains(".pdata"));
     assert!(!sections.contains(".xdata"));
+
+    let relocations = String::from_utf8(output(Command::new(&llvm_objdump).arg("-r").arg(&object)).stdout).unwrap();
+    let disassembly = String::from_utf8(
+        output(Command::new(&llvm_objdump).args(["-d", "--x86-asm-syntax=intel"]).arg(&object)).stdout,
+    )
+    .unwrap();
+    // Local labels can resolve at assembly time, leaving no relocation. Require
+    // a 64-bit RIP-relative LEA as well, so an absent relocation cannot conceal
+    // an absolute/truncated address or the wrong continuation target.
+    let mut failures = Vec::new();
+    for (label, register) in [("context_return", "r11"), ("context_resume", "rax")] {
+        let label_relocations =
+            relocations.lines().filter(|line| line.split_whitespace().last() == Some(label)).collect::<Vec<_>>();
+        let relative_relocations =
+            label_relocations.iter().all(|line| line.split_whitespace().nth(1) == Some("IMAGE_REL_AMD64_REL32"));
+        let relative_lea = disassembly.lines().any(|line| {
+            let instruction = line.split_whitespace().collect::<Vec<_>>().join(" ");
+            instruction.contains(&format!("lea {register}, [rip +")) && instruction.ends_with(&format!("<{label}>"))
+        });
+        if !relative_relocations || !relative_lea {
+            failures.push(format!(
+                "{label}: expected 64-bit RIP-relative LEA into {register}; relocations={label_relocations:?}; RIP-relative LEA={relative_lea}"
+            ));
+        }
+    }
+    assert!(failures.is_empty(), "unsafe context continuation addresses:\n{}", failures.join("\n"));
 }
 
 #[test]
@@ -123,7 +149,6 @@ fn masm_source_saves_the_complete_manifest_preserved_register_set() {
     }
     assert!(source.contains("BESKID_CONTEXT_INIT_RETURN_TRAMPOLINE_STACK_OPERAND"));
     assert!(source.contains("mov [rcx + BESKID_X86_64_PC_WINDOWS_MSVC_CONTEXT_R13_OFFSET], r10"));
-    assert!(source.contains("lea r11, context_return"));
     assert!(source.contains("sub rsp, 8"));
     assert!(source.contains("jmp r13"));
     assert!(!source.contains(".pushreg"));

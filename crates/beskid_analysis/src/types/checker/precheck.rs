@@ -130,9 +130,19 @@ fn collect_invalid_try_targets_in_block(
     spans: &mut Vec<SpanInfo>,
 ) {
     for statement in &block.node.statements {
+        if let Statement::Use(scoped) = &statement.node
+            && let Some(body) = &scoped.node.body
+        {
+            collect_invalid_try_targets_in_block(checker, body, spans);
+        }
         if let Statement::Expression(expr_stmt) = &statement.node {
             collect_invalid_try_targets_in_expression(checker, &expr_stmt.node.expression, spans);
-        } else if let Statement::Let(let_stmt) = &statement.node {
+        } else if let Statement::Let(let_stmt)
+        | Statement::Use(Spanned {
+            node: crate::syntax::ScopedUseStatement { binding: let_stmt, .. },
+            ..
+        }) = &statement.node
+        {
             collect_invalid_try_targets_in_expression(checker, &let_stmt.node.value, spans);
         } else if let Statement::Return(return_stmt) = &statement.node
             && let Some(value) = &return_stmt.node.value
@@ -223,9 +233,19 @@ fn collect_try_targets_in_block(
     map: &mut HashMap<SpanInfo, TryDesugarTarget>,
 ) {
     for statement in &block.node.statements {
+        if let Statement::Use(scoped) = &statement.node
+            && let Some(body) = &scoped.node.body
+        {
+            collect_try_targets_in_block(checker, body, map);
+        }
         if let Statement::Expression(expr_stmt) = &statement.node {
             collect_try_targets_in_expression(checker, &expr_stmt.node.expression, map);
-        } else if let Statement::Let(let_stmt) = &statement.node {
+        } else if let Statement::Let(let_stmt)
+        | Statement::Use(Spanned {
+            node: crate::syntax::ScopedUseStatement { binding: let_stmt, .. },
+            ..
+        }) = &statement.node
+        {
             collect_try_targets_in_expression(checker, &let_stmt.node.value, map);
         } else if let Statement::Return(return_stmt) = &statement.node
             && let Some(value) = &return_stmt.node.value
@@ -341,8 +361,14 @@ fn collect_array_fors_in_statement(
     statement: &Spanned<Statement>,
     set: &mut HashSet<SpanInfo>,
 ) {
+    if let Statement::Use(scoped) = &statement.node
+        && let Some(body) = &scoped.node.body
+    {
+        collect_array_fors_in_block(checker, body, set);
+    }
     match &statement.node {
-        Statement::Let(let_stmt) => {
+        Statement::Let(let_stmt)
+        | Statement::Use(Spanned { node: crate::syntax::ScopedUseStatement { binding: let_stmt, .. }, .. }) => {
             collect_array_fors_in_expression(checker, &let_stmt.node.value, set);
         }
         Statement::Return(ret) => {

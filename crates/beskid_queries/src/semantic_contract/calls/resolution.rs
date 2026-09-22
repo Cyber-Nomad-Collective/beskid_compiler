@@ -1,6 +1,7 @@
 //! Focused call-semantics implementation.
 
 use super::super::*;
+use beskid_analysis::syntax_query::DynNodeRef;
 
 pub(in crate::semantic_contract) fn call_lowering_for_node(
     db: &dyn Db,
@@ -22,6 +23,8 @@ pub(in crate::semantic_contract) fn call_lowering_for_node(
                 Ok(CallLowering::Direct(declaration))
             } else if let Some((declaration, _)) = nominal_local_member_receiver(db, program, index, key, path) {
                 Ok(CallLowering::Direct(declaration))
+            } else if let Some(receiver) = contract_member_receiver(db, program, index, key, path) {
+                receiver.map(|(method, _)| CallLowering::Direct(method))
             } else if path.segments.iter().any(|segment| !segment.node.type_args.is_empty()) {
                 if let Some(instantiation) = generic_call_instantiation_for_node(db, program, index, key, path) {
                     Ok(CallLowering::Direct(instantiation.declaration))
@@ -233,10 +236,9 @@ pub fn extern_contract_import_for_declaration(
     Some((method.name.node.name.clone(), abi, library))
 }
 
-/// Resolve one syntax-authorized nominal receiver and its uniquely declared method. Struct
-/// literals and unqualified locals with explicit nominal parameter or let annotations provide
-/// the required declaration authority. Inferred locals, extensions, overloads, and chained
-/// receivers remain unavailable rather than reconstructing retired HIR type information.
+/// Resolve one source-proven nominal receiver and its uniquely declared method. Literal, local,
+/// projection, and indexed-value identities share generation-bound declaration authority.
+/// Unproven receivers remain unavailable rather than reconstructing retired HIR information.
 pub(in crate::semantic_contract) fn method_declaration_for_member_receiver(
     db: &dyn Db,
     program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
@@ -257,19 +259,30 @@ pub(in crate::semantic_contract) fn method_declaration_for_member_receiver(
         beskid_analysis::syntax_query::DynNodeRef::from(member.node.target.as_ref()),
     )?;
     let receiver = AstNodeKey { node: normalized_expression_node(index, receiver), ..key };
-    let declaration = aggregate_literal_declaration(db, receiver).ok().flatten().or_else(|| {
-        let receiver_node = index.node_at(program, receiver.node)?;
-        let path = receiver_node.of::<beskid_analysis::syntax::PathExpression>()?;
-        let [segment] = path.path.node.segments.as_slice() else {
-            return None;
-        };
-        if !segment.node.type_args.is_empty() {
-            return None;
-        }
-        nominal_local_receiver_declaration(db, program, index, key, segment.node.name.node.name.as_str())
-            .map(|(declaration, _)| declaration)
-    })?;
-    unique_nominal_method_declaration(db, declaration, &member.node.member.node.name)
+    let declaration = generic_source_expression_identity(db, receiver)
+        .ok()
+        .and_then(|identity| super::super::contracts::concrete_declaration(db, key, &identity))
+        .or_else(|| aggregate_literal_declaration(db, receiver).ok().flatten())
+        .or_else(|| {
+            let receiver_node = index.node_at(program, receiver.node)?;
+            let path = receiver_node.of::<beskid_analysis::syntax::PathExpression>()?;
+            let [segment] = path.path.node.segments.as_slice() else {
+                return None;
+            };
+            if !segment.node.type_args.is_empty() {
+                return None;
+            }
+            nominal_local_receiver_declaration(db, program, index, key, segment.node.name.node.name.as_str())
+                .map(|(declaration, _)| declaration)
+        })?;
+    let method = unique_nominal_method_declaration(db, declaration, &member.node.member.node.name)?;
+    let target = db.syntax_unit(method.unit).filter(|syntax| syntax.accepts_key(db, method))?;
+    let definition = target
+        .syntax_index(db)
+        .node_at(target.expanded_program(db), method.node)?
+        .of::<beskid_analysis::syntax::MethodDefinition>()?;
+    (method.unit == key.unit || definition.visibility.node == beskid_analysis::syntax::Visibility::Public)
+        .then_some(method)
 }
 
 /// Module-qualified calls like `Core.IsEmpty(text)` parse as `MemberExpression` where the
@@ -296,8 +309,8 @@ pub(in crate::semantic_contract) fn flatten_member_as_path_declaration(
 }
 
 /// Resolve an ordinary `local.Method()` spelling only when `local` resolves to an explicitly
-/// annotated nominal parameter or let. Qualified static paths and inferred locals are left to
-/// their existing path rules or remain unavailable.
+/// annotated nominal parameter or let, or a declared nominal field chain rooted in one.
+/// Qualified static paths and inferred locals retain their existing rules.
 pub(in crate::semantic_contract) fn nominal_local_member_receiver(
     db: &dyn Db,
     program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
@@ -305,6 +318,39 @@ pub(in crate::semantic_contract) fn nominal_local_member_receiver(
     key: AstNodeKey,
     path: &beskid_analysis::syntax::Path,
 ) -> Option<(AstNodeKey, AstNodeKey)> {
+    // A two-segment spelling is a field chain when its root is not a lexical local: inside a
+    // method `field.Method()` projects the implicit receiver before the call.
+    let chained = path.segments.len() > 2
+        || (path.segments.len() == 2 && {
+            let root = path.segments[0].node.name.node.name.as_str();
+            nominal_local_receiver_declaration(db, program, index, key, root).is_none()
+        });
+    if chained {
+        let node = index.node_at(program, key.node)?;
+        let path_key = if let Some(call) = node.of::<beskid_analysis::syntax::CallExpression>() {
+            let callee = index.direct_child_id(program, key.node, DynNodeRef::from(call.callee.as_ref()))?;
+            AstNodeKey { node: normalized_expression_node(index, callee), ..key }
+        } else {
+            key
+        };
+        let receiver = super::super::layouts::path_projection_segment(db, path_key, path.segments.len() - 2)?;
+        let (_, identity) = super::super::layouts::nominal_field_projection(db, receiver)?.ok()?;
+        let declaration = super::super::contracts::concrete_declaration(db, key, &identity)?;
+        let member = path.segments.last()?;
+        if !member.node.type_args.is_empty() {
+            return None;
+        }
+        let method = unique_nominal_method_declaration(db, declaration, &member.node.name.node.name)?;
+        let target = db.syntax_unit(method.unit).filter(|syntax| syntax.accepts_key(db, method))?;
+        let definition = target
+            .syntax_index(db)
+            .node_at(target.expanded_program(db), method.node)?
+            .of::<beskid_analysis::syntax::MethodDefinition>()?;
+        if method.unit != key.unit && definition.visibility.node != beskid_analysis::syntax::Visibility::Public {
+            return None;
+        }
+        return Some((method, receiver));
+    }
     let [receiver, member] = path.segments.as_slice() else {
         return None;
     };
@@ -323,7 +369,12 @@ pub(in crate::semantic_contract) fn nominal_member_receiver_tracked(
 ) -> SemanticQueryResult<AstNodeKey> {
     with_node(db, syntax, key, |program, index, node| {
         let path = node.of::<beskid_analysis::syntax::PathExpression>()?;
-        nominal_local_member_receiver(db, program, index, key, &path.path.node).map(|(_, receiver)| Ok(receiver))
+        nominal_local_member_receiver(db, program, index, key, &path.path.node)
+            .map(|(_, receiver)| Ok(receiver))
+            .or_else(|| {
+                contract_member_receiver(db, program, index, key, &path.path.node)
+                    .map(|receiver| receiver.map(|(_, receiver)| receiver))
+            })
     })?
     .transpose()
 }

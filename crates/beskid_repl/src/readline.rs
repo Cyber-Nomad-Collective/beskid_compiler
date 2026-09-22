@@ -141,29 +141,15 @@ fn handle_command(session: &mut ReplSession, command: &str) -> LineAction {
 mod tests {
     use super::*;
     use crate::eval::EvalOutcome;
-    use beskid_abi::runtime_kit::BuildProfile;
-    use beskid_engine::{Engine, host_runtime_target};
-    use beskid_tools::toolchain::runtime_kit::{RuntimeKitProfile, build_native_host};
-
-    fn shared_exact_kit_prefix() -> &'static std::path::Path {
-        use std::sync::OnceLock;
-        static PREFIX: OnceLock<std::path::PathBuf> = OnceLock::new();
-        PREFIX.get_or_init(|| {
-            let prefix = tempfile::tempdir().expect("exact kit prefix").keep();
-            build_native_host(prefix.clone(), RuntimeKitProfile::Debug).expect("publish exact native kit");
-            prefix
-        })
-    }
+    use crate::test_support::{exact_kit_engine, serial};
 
     fn exact_kit_session() -> ReplSession {
-        let target = host_runtime_target().expect("host target");
-        let engine =
-            Engine::with_runtime_kit(shared_exact_kit_prefix(), target, BuildProfile::Debug).expect("load exact kit");
-        ReplSession::from_engine(engine)
+        ReplSession::from_engine(exact_kit_engine())
     }
 
     #[test]
     fn quit_command_stops_loop() {
+        let _serial = serial();
         let mut session = exact_kit_session();
         let lines = vec![":quit".to_string()];
         let mut input = BufferInput::new(&lines);
@@ -172,6 +158,7 @@ mod tests {
 
     #[test]
     fn eval_from_buffer_input() {
+        let _serial = serial();
         let mut session = exact_kit_session();
         let lines = vec!["2 + 3".to_string(), ":quit".to_string()];
         let mut input = BufferInput::new(&lines);
@@ -180,6 +167,7 @@ mod tests {
 
     #[test]
     fn reset_command_clears_session() {
+        let _serial = serial();
         let mut session = exact_kit_session();
         assert_eq!(session.eval("1 + 1"), EvalOutcome::Value("2".to_string()));
         assert!(matches!(handle_line(&mut session, ":reset"), LineAction::Print(_)));
@@ -188,6 +176,7 @@ mod tests {
 
     #[test]
     fn type_command_prints_inferred_type() {
+        let _serial = serial();
         let mut session = exact_kit_session();
         match handle_line(&mut session, ":type 1 + 1") {
             LineAction::Print(value) => assert_eq!(value, "i64"),

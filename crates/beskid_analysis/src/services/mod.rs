@@ -14,6 +14,8 @@ mod parse;
 mod parse_recovery;
 mod prepare;
 mod project;
+#[cfg(test)]
+mod runtime_types_tests;
 mod semantic_facts;
 mod unit_ops;
 
@@ -67,8 +69,8 @@ pub use parse::{
     parse_program_with_source_name_and_diagnostics,
 };
 pub use prepare::{
-    PrepareOptions, PreparedCompilation, prepare_compilation, prepare_compilation_diagnostics,
-    prepare_compilation_diagnostics_isolated, resolved_input_from_plan,
+    PrepareOptions, PreparedCompilation, TryDiagnosticAuthority, prepare_compilation, prepare_compilation_diagnostics,
+    prepare_compilation_diagnostics_isolated, prepare_compilation_with_try_authority, resolved_input_from_plan,
 };
 pub use project::{ResolvedProject, resolve_project, resolve_project_with_policy};
 pub use render::render_program_tree;

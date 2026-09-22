@@ -1,7 +1,7 @@
 use super::support::{
     AbiManifestV5, Arc, AssemblyDiscovery, AstNodeId, AstNodeKey, BeskidDatabase,
     CANONICAL_BOOTSTRAP_NATIVE_SOURCE_PATH, CANONICAL_BOOTSTRAP_SOURCE_PATH, CANONICAL_EVENTS_SOURCE_PATH,
-    CANONICAL_SCHEDULER_CONTEXT_SOURCE_PATH, CANONICAL_SCHEDULER_CORE_SOURCE_PATH,
+    CANONICAL_FIBER_SOURCE_PATH, CANONICAL_SCHEDULER_CONTEXT_SOURCE_PATH, CANONICAL_SCHEDULER_CORE_SOURCE_PATH,
     CANONICAL_SCHEDULER_POLL_SOURCE_PATH, CallKind, CodegenInput, EffectiveCompilationRoots, IndexedNodeKind,
     ModuleIndex, NodeFacts, PathBuf, ProgramAssembly, ProjectSession, RootEntry, SemanticTypeId, SourceUnit,
     SourceUnitId, SyntaxGenerationId, SyntaxNodeFacts, TypedProgram, build_canonical_runtime_typed_program,
@@ -37,7 +37,13 @@ impl CanonicalRuntimeCorpus {
                 std::fs::write(&path, &source.source).expect("write canonical source");
                 let program = parse_program_with_source_name(path.to_str().unwrap(), &source.source)
                     .expect("parse canonical runtime source");
-                SourceUnit { logical_name: source.logical_path, path, source: source.source, program }
+                SourceUnit {
+                    logical_name: source.logical_path,
+                    origin_path: path.clone(),
+                    path,
+                    source: source.source,
+                    program,
+                }
             })
             .collect::<Vec<_>>();
         let entry_index = units
@@ -343,10 +349,17 @@ fn exact_canonical_runtime_corpus_resolves_bootstrap_helpers_but_ordinary_assemb
         generation,
         node: AstNodeId(0),
     };
-    let wrapper = find_node_matching(&db, scheduler_root, IndexedNodeKind::FunctionDefinition, |item| {
-        matches!(item_name(&db, item).ok().flatten().as_deref(), Some("FiberSpawnWithCancelSlot"))
+    // `fiber_spawn` (`FiberSpawn`) is the sole spawn ABI wrapper: it owns the cancellation slot
+    // before handing the fiber record to `SchedulerSpawn`.
+    let fiber_root = AstNodeKey {
+        unit: SourceUnitId::new(&db, corpus.unit_path(CANONICAL_FIBER_SOURCE_PATH)),
+        generation,
+        node: AstNodeId(0),
+    };
+    let wrapper = find_node_matching(&db, fiber_root, IndexedNodeKind::FunctionDefinition, |item| {
+        matches!(item_name(&db, item).ok().flatten().as_deref(), Some("FiberSpawn"))
     })
-    .expect("Scheduler ABI wrapper");
+    .expect("Scheduler spawn ABI wrapper");
     let native_pointer_call = find_node_matching(&db, wrapper, IndexedNodeKind::CallExpression, |call| {
         matches!(
             call_lowering(&db, call).ok().flatten(),
@@ -354,7 +367,7 @@ fn exact_canonical_runtime_corpus_resolves_bootstrap_helpers_but_ordinary_assemb
                 if matches!(item_name(&db, declaration).ok().flatten().as_deref(), Some("NativePointer"))
         )
     });
-    assert!(native_pointer_call.is_some(), "canonical Scheduler reaches Bootstrap NativePointer directly");
+    assert!(native_pointer_call.is_some(), "canonical Fiber spawn wrapper reaches Bootstrap NativePointer directly");
 
     let scheduler_spawn = find_node_matching(&db, scheduler_root, IndexedNodeKind::FunctionDefinition, |item| {
         matches!(item_name(&db, item).ok().flatten().as_deref(), Some("SchedulerSpawn"))
@@ -412,12 +425,14 @@ fn exact_canonical_runtime_corpus_resolves_bootstrap_helpers_but_ordinary_assemb
         Arc::new(vec![
             SourceUnit {
                 logical_name: "Helper".into(),
+                origin_path: helper_path.clone(),
                 path: helper_path.clone(),
                 source: helper.into(),
                 program: parse_program_with_source_name(helper_path.to_str().unwrap(), helper).expect("parse helper"),
             },
             SourceUnit {
                 logical_name: "Main".into(),
+                origin_path: main_path.clone(),
                 path: main_path.clone(),
                 source: main.into(),
                 program: parse_program_with_source_name(main_path.to_str().unwrap(), main).expect("parse main"),

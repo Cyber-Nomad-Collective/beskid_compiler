@@ -12,3 +12,6 @@ sha2 = "0.10"
 
 [build-dependencies]
 beskid_manifest = { path = "../beskid_manifest" }
+
+[dev-dependencies]
+beskid_tests_support = { path = "../beskid_tests_support" }

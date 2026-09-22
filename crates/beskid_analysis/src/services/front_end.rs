@@ -49,6 +49,7 @@ impl FrontEndTypedResult {
             assembly.generation,
         )
         .with_trusted_corelib_service_paths(std::sync::Arc::clone(&assembly.trusted_corelib_service_paths))
+        .with_runtime_fixture(assembly.runtime_fixture.clone())
     }
 }
 

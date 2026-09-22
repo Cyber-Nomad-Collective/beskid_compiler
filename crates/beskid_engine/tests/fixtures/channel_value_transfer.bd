@@ -1,0 +1,71 @@
+use Concurrency.Channel;
+use Concurrency.ChannelError;
+use Concurrency.ChannelOptions;
+use Concurrency.TryResult;
+use Concurrency.Hub;
+use Concurrency.HubError;
+use Concurrency.HubReceiveResult;
+use Core.Results;
+
+[Extern(Abi:"C")]
+pub contract Probe { unit gc_collect(); }
+pub type Aggregate { u8[] bytes, i64 marker, }
+pub type OwnedResource { i64 token, }
+i64 Bytes(u8[] bytes) { u8 first = bytes[0]; return i64(first); }
+i64 AggregateValue(Aggregate value) { return Bytes(value.bytes); }
+i64 ResourceValue(OwnedResource value) { return value.token; }
+i64 HubValue(HubReceiveResult<OwnedResource> item) {
+    return ResourceValue(item.value) + item.index - 49_i64;
+}
+[Export(Abi:"C", Symbol:"RunChannelFixture")]
+pub i64 RunChannelFixture() {
+    Channel<i64> scalars = Channel.Create<i64>();
+    mut i64 index = 0;
+    while index < 24 {
+        let sent = Channel.TrySend<i64>(scalars, index);
+        Probe.gc_collect();
+        index = index + 1;
+    }
+    Channel.Close<i64>(scalars);
+    index = 0;
+    mut i64 scalarScore = 0;
+    while index < 24 {
+        Result<i64, ChannelError> value = Channel.Receive<i64>(scalars);
+        i64 difference = match value { Result::Ok(number) => number - index, _ => -1000_i64, };
+        scalarScore = scalarScore + difference;
+        index = index + 1;
+    }
+    Hub<OwnedResource> hub = Hub.Create<OwnedResource>();
+    Channel<OwnedResource> member = Channel.Create<OwnedResource>();
+    let registered = Hub.Register<OwnedResource>(hub, 7_i64, member);
+    let published = Channel.Send<OwnedResource>(member, OwnedResource { token: 42_i64 });
+    Probe.gc_collect();
+    Channel.Close<OwnedResource>(member);
+    Result<HubReceiveResult<OwnedResource>, HubError> selected = Hub.WaitReceive<OwnedResource>(hub);
+    i64 hubScore = match selected {
+        Result::Ok(item) => HubValue(item),
+        _ => -1000_i64,
+    };
+    Channel<u8[]> bytes = Channel<u8[]>.Create();
+    Channel<Aggregate> aggregates = Channel<Aggregate>.Create();
+    Channel<OwnedResource> resources = Channel<OwnedResource>.Create();
+    u8[] input = [42_u8];
+    let sentBytes = Channel.Send<u8[]>(bytes, input);
+    let sentAggregate = Channel.Send<Aggregate>(aggregates, Aggregate { bytes: [42_u8], marker: 7_i64 });
+    let sentResource = Channel.Send<OwnedResource>(resources, OwnedResource { token: 42_i64 });
+    Probe.gc_collect();
+    Channel.Close<u8[]>(bytes);
+    Channel.Close<Aggregate>(aggregates);
+    Channel.Close<OwnedResource>(resources);
+    Result<u8[], ChannelError> first = Channel.Receive<u8[]>(bytes);
+    Result<Aggregate, ChannelError> second = Channel.Receive<Aggregate>(aggregates);
+    Result<OwnedResource, ChannelError> third = Channel.Receive<OwnedResource>(resources);
+    Probe.gc_collect();
+    i64 a = match first { Result::Ok(value) => Bytes(value), _ => -1000_i64, };
+    i64 b = match second { Result::Ok(value) => AggregateValue(value), _ => -1000_i64, };
+    i64 c = match third { Result::Ok(value) => ResourceValue(value), _ => -1000_i64, };
+    i64 drained = match Channel.TryReceive<OwnedResource>(resources) {
+        TryResult::Err(ChannelError::Closed(_)) => 0_i64, _ => -1000_i64,
+    };
+    return a + b + c + drained + scalarScore + hubScore;
+}

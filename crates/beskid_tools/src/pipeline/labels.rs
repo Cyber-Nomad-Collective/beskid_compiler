@@ -4,13 +4,13 @@ use beskid_pipeline::phases;
 
 /// Semantic rule pipeline sub-phases under [`phases::SEMANTIC`].
 pub const SEMANTIC_SUB_PHASE_ORDER: &[&str] = &[
-    phases::SEMANTIC_AST_LOWER,
     phases::SEMANTIC_DEFINITIONS,
     phases::SEMANTIC_CONTROL_FLOW,
     phases::SEMANTIC_NAME_RESOLUTION,
     phases::SEMANTIC_VISIBILITY,
     phases::SEMANTIC_CONTRACTS,
     phases::SEMANTIC_ERROR_HANDLING,
+    phases::SEMANTIC_TYPE_CHECK,
     phases::SEMANTIC_NAMING_STYLE,
 ];
 
@@ -67,7 +67,6 @@ pub fn phase_label(id: &str) -> &str {
         phases::MOD_GENERATE => "Generate from mods",
         phases::SYNTAX_GENERATION => "Syntax generation",
         phases::SEMANTIC => "Semantic analysis",
-        phases::SEMANTIC_AST_LOWER => "Lower AST to HIR",
         phases::SEMANTIC_DEFINITIONS => "Collect definitions",
         phases::SEMANTIC_CONTROL_FLOW => "Check control flow",
         phases::SEMANTIC_NAME_RESOLUTION => "Resolve names",

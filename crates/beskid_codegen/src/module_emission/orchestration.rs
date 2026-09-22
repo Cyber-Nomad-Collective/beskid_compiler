@@ -25,15 +25,13 @@ use crate::array_static::{
     ABI_V5_ARRAY_ALLOCATE_ROOTED, ABI_V5_ARRAY_CONSTRUCTION_FINISH, ABI_V5_ARRAY_GROW_ROOTED, emit_array_static_data,
 };
 use crate::closure_static::{
-    ABI_V5_CLOSURE_CAPTURE_STORE, ABI_V5_CLOSURE_ENVIRONMENT_ALLOCATE, ABI_V5_CLOSURE_ENVIRONMENT_ROOT_CURRENT,
-    emit_closure_static_data,
+    ABI_V5_CLOSURE_CAPTURE_STORE, ABI_V5_CLOSURE_ENVIRONMENT_ALLOCATE, emit_closure_static_data,
 };
 use crate::{
     CodegenArtifact, CodegenContext, CodegenInput, ExternImport, emit_isle_closure_lambda_entry,
     emit_isle_expression_with_call_importer, emit_isle_item_with_services, emit_isle_item_with_services_specialization,
 };
 
-const ABI_V5_FIBER_SPAWN_WITH_CANCEL_SLOT: &str = "beskid_rt_v5_fiber_spawn_with_cancel_slot";
 const ABI_V5_SCHEDULER_STACK_CHECK: &str = "beskid_rt_v5_scheduler_stack_check";
 const ABI_V5_SCHEDULER_STACK_OVERFLOW_OBSERVED: &str = "beskid_rt_v5_scheduler_stack_overflow_observed";
 
@@ -113,7 +111,8 @@ fn lower_resolved_syntax_program(
         .and_then(|index| runtime_intrinsics.get(&DirectCallee::runtime_intrinsic(index)))
         .cloned();
     symbols.extend(runtime_intrinsics.iter().map(|(callee, symbol)| (callee.clone(), symbol.clone())));
-    let corelib_services = corelib_service_symbols(input, items);
+    let corelib_services = corelib_service_symbols(input, items)
+        .map_err(|error| emission_verification(format!("Corelib import preflight: {error}")))?;
     symbols.extend(corelib_services.iter().map(|(callee, symbol)| (callee.clone(), symbol.clone())));
     let extern_contracts = extern_contract_symbols(input, items);
     symbols.extend(extern_contracts.iter().map(|(callee, symbol)| (callee.clone(), symbol.clone())));
@@ -139,14 +138,7 @@ fn lower_resolved_syntax_program(
     // selected, require the complete set and fail closed on a partial scheduler corpus. The stack
     // check and overflow seam functions are only invoked by spawn trampolines, so they are
     // resolved lazily as well.
-    let scheduler_entry_names = [
-        "SchedulerContext",
-        "SchedulerSetCurrentFiber",
-        "ContextSwitch",
-        "SchedulerCurrentFiber",
-        "FiberRecord",
-        "FiberDone",
-    ];
+    let scheduler_entry_names = super::SCHEDULER_ENTRY_HELPERS;
     let includes_scheduler_entry = input.runtime_intrinsic_capability().is_some()
         && items.iter().any(|item| {
             beskid_queries::item_name(input.database(), item.key)
@@ -229,12 +221,11 @@ fn lower_resolved_syntax_program(
     }
     for trampoline in &trampolines {
         if let Some(body) = trampoline.lambda_body {
-            let result = trampoline
-                .target_signature
-                .returns
-                .first()
-                .map(|parameter| parameter.value_type)
-                .ok_or_else(|| emission_verification("spawned lambda entry must return an ABI value"))?;
+            let result = match trampoline.target_signature.returns.as_slice() {
+                [] => None,
+                [parameter] => Some(parameter.value_type),
+                _ => return Err(emission_verification("spawned lambda entry has multiple ABI return values")),
+            };
             let function = {
                 let mut importer = ArtifactCallImporter { symbols: &symbols };
                 if let Some(captures) = &trampoline.closure_captures {
@@ -249,12 +240,11 @@ fn lower_resolved_syntax_program(
         }
     }
     for trampoline in &lambda_trampolines {
-        let result = trampoline
-            .target_signature
-            .returns
-            .first()
-            .map(|parameter| parameter.value_type)
-            .ok_or_else(|| emission_verification("lambda entry must return an ABI value"))?;
+        let result = match trampoline.target_signature.returns.as_slice() {
+            [] => None,
+            [parameter] => Some(parameter.value_type),
+            _ => return Err(emission_verification("lambda entry has multiple ABI return values")),
+        };
         let function = {
             let mut importer = ArtifactCallImporter { symbols: &symbols };
             if let Some(captures) = &trampoline.closure_captures {
@@ -335,7 +325,7 @@ fn lower_resolved_syntax_program(
     let mut extern_imports = runtime_intrinsics
         .into_values()
         .chain(corelib_services.into_values())
-        .chain((!trampolines.is_empty()).then_some(ABI_V5_FIBER_SPAWN_WITH_CANCEL_SLOT.to_owned()))
+        .chain((!trampolines.is_empty()).then_some("fiber_spawn".to_owned()))
         .chain(imports_scheduler_stack.then_some(ABI_V5_SCHEDULER_STACK_CHECK.to_owned()))
         .chain(imports_scheduler_stack.then_some(ABI_V5_SCHEDULER_STACK_OVERFLOW_OBSERVED.to_owned()))
         .map(|symbol| ExternImport { symbol, abi: Some("C".into()), library: None })
@@ -348,15 +338,54 @@ fn lower_resolved_syntax_program(
 
     let closure_static_plans = collect_closure_static_plans(input, items, &trampolines, &lambda_trampolines);
     if !closure_static_plans.is_empty() {
-        for symbol in
-            [ABI_V5_CLOSURE_ENVIRONMENT_ALLOCATE, ABI_V5_CLOSURE_CAPTURE_STORE, ABI_V5_CLOSURE_ENVIRONMENT_ROOT_CURRENT]
-        {
+        for symbol in [
+            ABI_V5_CLOSURE_ENVIRONMENT_ALLOCATE,
+            ABI_V5_CLOSURE_CAPTURE_STORE,
+            "gc_register_root",
+            "gc_unregister_root",
+        ] {
             if !extern_imports.iter().any(|existing| existing.symbol == symbol) {
                 extern_imports.push(ExternImport { symbol: symbol.to_owned(), abi: Some("C".into()), library: None });
             }
         }
     }
-    let aggregate_static_plans = collect_aggregate_static_plans(input, items);
+    let mut aggregate_static_plans = collect_aggregate_static_plans(input, items);
+    if extern_imports.iter().any(|import| {
+        matches!(
+            import.symbol.as_str(),
+            "fiber_join_value"
+                | "channel_receive_value"
+                | "hub_wait_receive_value"
+                | "channel_send"
+                | "channel_try_send"
+        )
+    }) {
+        extern_imports.push(ExternImport {
+            symbol: "beskid_rt_v5_abi_value_clear".to_owned(),
+            abi: Some("C".into()),
+            library: None,
+        });
+        extern_imports.push(ExternImport {
+            symbol: "beskid_rt_v5_abi_value_initialize".to_owned(),
+            abi: Some("C".into()),
+            library: None,
+        });
+    }
+    aggregate_static_plans.extend(trampolines.iter().map(|trampoline| trampoline.result_plan.clone()));
+    for trampoline in &trampolines {
+        aggregate_static_plans.push(
+            input
+                .spawn_handle_static_plan(trampoline.spawn)
+                .ok_or_else(|| emission_verification("source Fiber<T> handle layout unavailable"))?,
+        );
+    }
+    if trampolines.iter().any(|trampoline| !trampoline.result_plan.pointer_map_offsets.is_empty()) {
+        for symbol in ["gc_register_root", "gc_unregister_root"] {
+            if !extern_imports.iter().any(|existing| existing.symbol == symbol) {
+                extern_imports.push(ExternImport { symbol: symbol.to_owned(), abi: Some("C".into()), library: None });
+            }
+        }
+    }
     if !aggregate_static_plans.is_empty()
         && !extern_imports.iter().any(|existing| existing.symbol == ABI_V5_MANAGED_OBJECT_ALLOCATE)
     {

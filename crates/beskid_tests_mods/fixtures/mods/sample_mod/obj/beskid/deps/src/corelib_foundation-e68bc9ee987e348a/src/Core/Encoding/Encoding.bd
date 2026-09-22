@@ -1,0 +1,26 @@
+/// Core.Encoding hub — shared errors, contract, and concrete codecs.
+/// @tier(standard)
+pub mod Core.Encoding.EncodingError;
+pub mod Core.Encoding.Contract;
+pub mod Core.Encoding.Utf8;
+pub mod Core.Encoding.Hex;
+pub mod Core.Encoding.Base64;
+
+use Core.Bytes.Slice;
+use Core.Encoding.EncodingError;
+use Core.Encoding.Utf8;
+use Core.Results;
+
+/// Decodes the ASCII subset used by HTTP syntax without accepting high-bit bytes.
+pub Result<string, EncodingError> DecodeHttpAscii(u8[] input) {
+    i64 length = Slice.Len(input);
+    mut i64 position = 0_i64;
+    while position < length {
+        u8 value = input[position];
+        if value > 127_u8 {
+            return Result::Error(EncodingError::InvalidSequence(EncodingErrorDetail { position: position, value: i64(value) }));
+        }
+        position = position + 1_i64;
+    }
+    return Utf8.DecodeFromBytes(input);
+}

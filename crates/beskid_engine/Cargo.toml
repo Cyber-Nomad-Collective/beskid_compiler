@@ -10,6 +10,7 @@ cranelift-jit = { workspace = true }
 cranelift-module = { workspace = true }
 cranelift-native = { workspace = true }
 cranelift-object = { workspace = true }
+target-lexicon = "0.13"
 beskid_analysis = { path = "../beskid_analysis" }
 beskid_abi = { path = "../beskid_abi" }
 beskid_aot = { path = "../beskid_aot" }
@@ -25,6 +26,7 @@ libc = "0.2"
 extern_dlopen = []
 
 [dev-dependencies]
+beskid_tests_support = { path = "../beskid_tests_support" }
 beskid_aot = { path = "../beskid_aot" }
 beskid_tools = { path = "../beskid_tools" }
 cranelift-frontend = { workspace = true }

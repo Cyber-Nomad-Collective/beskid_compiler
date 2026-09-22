@@ -1,0 +1,6 @@
+use Core.Error;
+
+pub i64 Main() {
+    Error.WriteLine("redirected-stderr");
+    return 0;
+}

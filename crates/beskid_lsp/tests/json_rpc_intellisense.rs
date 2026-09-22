@@ -65,7 +65,11 @@ fn json_rpc_completion_and_hover_use_dependency_syntax_facts() {
         .parent()
         .and_then(std::path::Path::parent)
         .expect("compiler root");
-    let project = tempfile::tempdir_in(compiler_root.join("target")).expect("temporary project");
+    // The project stays inside the compiler tree so the LSP discovers the in-tree corelib.
+    // `<compiler>/target` is absent when `CARGO_TARGET_DIR` points elsewhere, so create it.
+    let project_parent = compiler_root.join("target");
+    std::fs::create_dir_all(&project_parent).expect("temporary project parent");
+    let project = tempfile::tempdir_in(&project_parent).expect("temporary project");
     std::fs::create_dir(project.path().join("Src")).expect("source directory");
     std::fs::write(
         project.path().join("ProtocolSmoke.bproj"),

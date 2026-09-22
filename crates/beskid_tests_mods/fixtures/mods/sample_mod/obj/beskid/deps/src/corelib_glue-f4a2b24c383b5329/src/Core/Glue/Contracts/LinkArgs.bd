@@ -1,0 +1,8 @@
+/// LinkArgs contract: resolves linker arguments for a foreign library.
+/// Per-language glue mods implement this to produce the linker flags the
+/// host passes to the system linker.
+///
+/// 0.4: contract declaration only. Concrete resolution lands in 0.5.
+pub contract LinkArgs {
+    string ResolveLinkArgs(string library);
+}

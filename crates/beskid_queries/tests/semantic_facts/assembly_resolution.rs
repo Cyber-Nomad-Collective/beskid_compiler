@@ -34,12 +34,14 @@ fn qualified_import_resolution_uses_registered_dependency_syntax() {
         Arc::new(vec![
             SourceUnit {
                 logical_name: main_path.display().to_string(),
+                origin_path: main_path.clone(),
                 path: main_path.clone(),
                 source: main_source.to_string(),
                 program: main_program.clone(),
             },
             SourceUnit {
                 logical_name: tools_path.display().to_string(),
+                origin_path: tools_path.clone(),
                 path: tools_path.clone(),
                 source: tools_source.to_string(),
                 program: tools_program.clone(),
@@ -132,6 +134,7 @@ fn qualified_import_resolution_follows_public_module_reexports() {
         .iter()
         .map(|(path, source)| SourceUnit {
             logical_name: path.display().to_string(),
+            origin_path: (*path).clone(),
             path: (*path).clone(),
             source: (*source).to_string(),
             program: expand_program(parse_program(source).expect("parse"), DEFAULT_MAX_MACRO_EXPANSION_DEPTH),
@@ -213,12 +216,14 @@ fn imported_assembly_module_call_resolves_through_its_use_binding() {
         Arc::new(vec![
             SourceUnit {
                 logical_name: terminal_path.display().to_string(),
+                origin_path: terminal_path.clone(),
                 path: terminal_path.clone(),
                 source: terminal_source.to_string(),
                 program: terminal_program.clone(),
             },
             SourceUnit {
                 logical_name: string_path.display().to_string(),
+                origin_path: string_path.clone(),
                 path: string_path.clone(),
                 source: string_source.to_string(),
                 program: string_program.clone(),
@@ -270,6 +275,7 @@ fn hub_declaration_shadows_the_same_name_reached_through_its_public_reexport() {
         .iter()
         .map(|(path, source)| SourceUnit {
             logical_name: path.display().to_string(),
+            origin_path: (*path).clone(),
             path: (*path).clone(),
             source: (*source).to_string(),
             program: expand_program(parse_program(source).expect("parse"), DEFAULT_MAX_MACRO_EXPANSION_DEPTH),
@@ -330,12 +336,14 @@ fn imported_type_qualified_static_call_resolves_to_its_exact_syntax_item() {
         Arc::new(vec![
             SourceUnit {
                 logical_name: main_path.display().to_string(),
+                origin_path: main_path.clone(),
                 path: main_path.clone(),
                 source: main_source.to_string(),
                 program: main_program.clone(),
             },
             SourceUnit {
                 logical_name: progress_path.display().to_string(),
+                origin_path: progress_path.clone(),
                 path: progress_path.clone(),
                 source: progress_source.to_string(),
                 program: progress_program.clone(),
@@ -391,12 +399,14 @@ fn syntax_facts_resolve_core_output_writeline_without_hir() {
         Arc::new(vec![
             SourceUnit {
                 logical_name: main_path.display().to_string(),
+                origin_path: main_path.clone(),
                 path: main_path.clone(),
                 source: main_source.to_string(),
                 program: main_program.clone(),
             },
             SourceUnit {
                 logical_name: output_path.display().to_string(),
+                origin_path: output_path.clone(),
                 path: output_path.clone(),
                 source: output_source.to_string(),
                 program: output_program.clone(),
@@ -455,12 +465,14 @@ fn syntax_facts_resolve_core_output_writeline_via_import_alias() {
         Arc::new(vec![
             SourceUnit {
                 logical_name: main_path.display().to_string(),
+                origin_path: main_path.clone(),
                 path: main_path.clone(),
                 source: main_source.to_string(),
                 program: main_program.clone(),
             },
             SourceUnit {
                 logical_name: output_path.display().to_string(),
+                origin_path: output_path.clone(),
                 path: output_path.clone(),
                 source: output_source.to_string(),
                 program: output_program.clone(),
@@ -516,12 +528,14 @@ fn syntax_facts_do_not_resolve_core_output_writeline_through_alias() {
         Arc::new(vec![
             SourceUnit {
                 logical_name: main_path.display().to_string(),
+                origin_path: main_path.clone(),
                 path: main_path.clone(),
                 source: main_source.to_string(),
                 program: main_program.clone(),
             },
             SourceUnit {
                 logical_name: output_path.display().to_string(),
+                origin_path: output_path.clone(),
                 path: output_path,
                 source: output_source.to_string(),
                 program: output_program,
@@ -578,18 +592,21 @@ fn qualified_import_alias_ambiguity_has_no_syntax_item_fact() {
         Arc::new(vec![
             SourceUnit {
                 logical_name: main_path.display().to_string(),
+                origin_path: main_path.clone(),
                 path: main_path.clone(),
                 source: main_source.to_string(),
                 program: main_program.clone(),
             },
             SourceUnit {
                 logical_name: left_path.display().to_string(),
+                origin_path: left_path.clone(),
                 path: left_path,
                 source: tools_source.to_string(),
                 program: tools_program.clone(),
             },
             SourceUnit {
                 logical_name: right_path.display().to_string(),
+                origin_path: right_path.clone(),
                 path: right_path,
                 source: tools_source.to_string(),
                 program: tools_program,
@@ -645,12 +662,14 @@ fn unqualified_import_resolution_requires_one_registered_syntax_target() {
         Arc::new(vec![
             SourceUnit {
                 logical_name: main_path.display().to_string(),
+                origin_path: main_path.clone(),
                 path: main_path.clone(),
                 source: main_source.to_string(),
                 program: main_program.clone(),
             },
             SourceUnit {
                 logical_name: tools_path.display().to_string(),
+                origin_path: tools_path.clone(),
                 path: tools_path.clone(),
                 source: tools_source.to_string(),
                 program: tools_program.clone(),

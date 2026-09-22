@@ -30,7 +30,7 @@ impl StringInterner for ArtifactStringInterner<'_> {
             colocated: false,
             tls: false,
         });
-        let bytes = builder.ins().global_value(self.pointer_type, global);
+        let bytes = builder.ins().symbol_value(self.pointer_type, global);
         let byte_len = builder.ins().iconst(self.pointer_type, text.len() as i64);
         let mut signature = Signature::new(builder.func.signature.call_conv);
         signature.params.push(cranelift_codegen::ir::AbiParam::new(self.pointer_type));
@@ -132,7 +132,7 @@ const ALWAYS_AVAILABLE_STRING_SERVICES: &[&str] = &["str_new", "str_from_i64", "
 pub(super) fn corelib_service_symbols(
     input: &CodegenInput<'_>,
     items: &[ResolvedSyntaxModuleItem],
-) -> HashMap<DirectCallee, String> {
+) -> Result<HashMap<DirectCallee, String>, String> {
     let mut manifest_builtins = HashSet::new();
     let mut corelib_services = HashSet::new();
     for item in items {
@@ -147,28 +147,28 @@ pub(super) fn corelib_service_symbols(
             symbols.insert(DirectCallee::corelib_service(symbol), symbol.to_owned());
         }
     }
-    if let Some(capability) = input.corelib_service_capability() {
-        for service in capability.services() {
-            if corelib_services.contains(&service.symbol) && !ALWAYS_AVAILABLE_STRING_SERVICES.contains(&service.symbol)
-            {
-                symbols.insert(DirectCallee::corelib_service(service.symbol), service.symbol.to_owned());
-                if let Some(dispatch) = beskid_abi::runtime_source::canonical_corelib_service_value_dispatch(*service) {
-                    symbols.insert(
-                        DirectCallee::corelib_service(dispatch.managed_symbol),
-                        dispatch.managed_symbol.to_owned(),
-                    );
-                }
+    let capability = input.corelib_service_capability();
+    if !corelib_services.is_empty() && capability.is_none() {
+        return Err("Corelib service call has no source-scoped capability".to_owned());
+    }
+    if let Some(capability) = capability {
+        for service in corelib_services {
+            if ALWAYS_AVAILABLE_STRING_SERVICES.contains(&service.symbol) {
+                continue;
             }
+            beskid_abi::runtime_source::preflight_corelib_service_import(capability, input.abi_manifest(), service)
+                .map_err(|error| error.to_string())?;
+            symbols.insert(DirectCallee::corelib_service(service.symbol), service.symbol.to_owned());
         }
     }
-    symbols
+    Ok(symbols)
 }
 
 fn collect_manifest_service_callees(
     db: &dyn beskid_queries::Db,
     key: AstNodeKey,
     manifest_builtins: &mut HashSet<&'static str>,
-    corelib_services: &mut HashSet<&'static str>,
+    corelib_services: &mut HashSet<beskid_abi::runtime_source::CorelibService>,
 ) {
     if let Ok(Some(lowering)) = call_lowering(db, key) {
         match lowering {
@@ -176,7 +176,7 @@ fn collect_manifest_service_callees(
                 manifest_builtins.insert(builtin.symbol);
             }
             CallLowering::CorelibService(service) => {
-                corelib_services.insert(service.symbol);
+                corelib_services.insert(service);
             }
             CallLowering::Direct(_) | CallLowering::Dynamic | CallLowering::Runtime(_) => {}
         }

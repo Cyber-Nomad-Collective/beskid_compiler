@@ -2,6 +2,35 @@ use super::*;
 use crate::abi_v5::AbiManifestV5;
 
 #[test]
+fn canonical_bytes_copy_owns_only_the_numeric_bounds_trap_service() {
+    for target in crate::abi_v5::TargetMetadata::supported() {
+        let manifest = AbiManifestV5::canonical_runtime(target);
+        let capability = canonical_corelib_service_capability(&manifest).unwrap();
+        let services = capability
+            .services()
+            .iter()
+            .filter(|service| service.source_path == "Core/Bytes/Slice.bd")
+            .map(|service| (service.name, service.symbol))
+            .collect::<Vec<_>>();
+        assert_eq!(services, [("__panic", "beskid_trap_code")]);
+        assert!(capability.service_for_source("app/Slice.bd", "__panic").is_none());
+        let read =
+            capability.service_for_source(CANONICAL_CORELIB_SYSCALL_SOURCE_PATH, "__syscall_read_bytes").unwrap();
+        assert_eq!(
+            canonical_corelib_service_abi(read),
+            Some(CorelibServiceAbi {
+                parameters: vec![
+                    CorelibServiceAbiType::I32,
+                    CorelibServiceAbiType::Pointer,
+                    CorelibServiceAbiType::Usize
+                ],
+                result: CorelibServiceAbiType::I64,
+            })
+        );
+    }
+}
+
+#[test]
 fn canonical_concurrency_facade_exposes_its_exact_scheduler_services() {
     let source = canonical_corelib_service_sources()
         .into_iter()
@@ -41,9 +70,9 @@ fn canonical_fiber_facade_exposes_one_exact_join_and_cancel_contract() {
         .into_iter()
         .find(|source| source.logical_path == FIBER_FACADE)
         .expect("compiler embeds canonical Fiber facade");
-    assert!(source.source.contains("__fiber_join_status(self.handle)"));
-    assert!(!source.source.contains("__fiber_join(self.handle)"));
-    assert!(source.source.contains("__fiber_cancel(self.handle, reason)"));
+    assert!(source.source.contains("__fiber_join_status(handle)"));
+    assert!(!source.source.contains("__fiber_join(handle)"));
+    assert!(source.source.contains("__fiber_cancel(handle, 0_i64)"));
 
     let target = crate::abi_v5::TargetMetadata::supported()
         .into_iter()
@@ -63,6 +92,9 @@ fn canonical_fiber_facade_exposes_one_exact_join_and_cancel_contract() {
         [
             ("__fiber_cancel", "fiber_cancel"),
             ("__fiber_detach", "fiber_detach"),
+            ("__fiber_join_detail", "fiber_join_detail"),
+            ("__fiber_join_message", "fiber_join_message"),
+            ("__fiber_join_error_finish", "fiber_join_error_finish"),
             ("__fiber_join_status", "fiber_join_status"),
             ("__fiber_join_value", "fiber_join_value"),
             ("__panic_str", "beskid_trap_message"),
@@ -106,18 +138,13 @@ fn canonical_channel_facade_uses_one_atomic_try_receive_claim_before_value_selec
     let value = capability
         .service_for_source(CANONICAL_CORELIB_CHANNEL_SOURCE_PATH, "__channel_receive_value")
         .expect("typed Channel value service");
-    let dispatch = canonical_corelib_service_value_dispatch(value).expect("scalar/managed value dispatch");
-    assert_eq!(dispatch.scalar_symbol, "channel_receive_value");
-    assert_eq!(dispatch.managed_symbol, "channel_receive_ptr");
+    let dispatch = canonical_corelib_service_value_dispatch(value).expect("one traced value adapter");
+    assert_eq!(dispatch.symbol, "channel_receive_value");
     assert_eq!(
-        canonical_corelib_service_abi_for_adapter(dispatch.scalar_symbol),
-        Some(CorelibServiceAbi { parameters: vec![CorelibServiceAbiType::I64], result: CorelibServiceAbiType::I64 })
-    );
-    assert_eq!(
-        canonical_corelib_service_abi_for_adapter(dispatch.managed_symbol),
+        canonical_corelib_service_abi_for_adapter(dispatch.symbol),
         Some(CorelibServiceAbi {
-            parameters: vec![CorelibServiceAbiType::I64],
-            result: CorelibServiceAbiType::Pointer,
+            parameters: vec![CorelibServiceAbiType::I64, CorelibServiceAbiType::Pointer],
+            result: CorelibServiceAbiType::U8
         })
     );
 }
@@ -258,6 +285,29 @@ fn canonical_assert_source_can_force_collection_without_granting_other_units_gc_
 }
 
 #[test]
+fn canonical_time_source_alone_owns_the_manifest_sleep_binding() {
+    for target in crate::abi_v5::TargetMetadata::supported() {
+        let manifest = AbiManifestV5::canonical_runtime(target);
+        let capability = canonical_corelib_service_capability(&manifest).expect("Corelib service capability");
+        let service = capability
+            .service_for_source(CANONICAL_FOUNDATION_TIME_SOURCE_PATH, "__timer_sleep_until")
+            .expect("Core.Time owns the scheduler sleep binding");
+        assert_eq!(service.symbol, "beskid_rt_v5_external_sleep_until");
+        assert_eq!(
+            preflight_corelib_service_import(&capability, &manifest, service).expect("manifest source builtin"),
+            CorelibServiceAbi { parameters: vec![CorelibServiceAbiType::I64], result: CorelibServiceAbiType::Usize },
+            "the sleep binding must keep the export's word-sized status result"
+        );
+        assert!(
+            capability.services().iter().filter(|candidate| candidate.name == "__timer_sleep_until").count() == 1,
+            "no other Corelib unit may acquire scheduler sleep authority"
+        );
+        assert!(capability.service_for_source("app/Core/Time/Time.bd", "__timer_sleep_until").is_none());
+        assert!(capability.service_for_source(CANONICAL_CORELIB_FIBER_SOURCE_PATH, "__timer_sleep_until").is_none());
+    }
+}
+
+#[test]
 fn canonical_foundation_service_table_covers_every_implemented_raw_call_and_nothing_else() {
     let target = crate::abi_v5::TargetMetadata::supported()
         .into_iter()
@@ -325,9 +375,31 @@ fn embedded_service_sources_and_service_descriptors_have_one_exact_path_inventor
 
     assert_eq!(embedded, described, "source bytes and service descriptors must not maintain divergent path lists");
     for logical_path in embedded {
+        let identity = corelib_service_source_identity(&logical_path).expect("complete source identity");
         let physical = canonical_corelib_service_source_path(&logical_path)
             .unwrap_or_else(|| panic!("{logical_path} has no canonical physical path descriptor"));
         assert!(physical.is_file(), "{} must resolve to one canonical regular file", physical.display());
+        assert_eq!(identity.canonical_path, physical);
+        assert_eq!(identity.declared_path.canonicalize().unwrap(), physical);
+        assert!(!identity.declared_path.components().any(|part| matches!(part, std::path::Component::ParentDir)));
+    }
+    assert!(corelib_service_source_identity("user/Core/Syscall/Syscall.bd").is_none());
+}
+
+#[cfg(windows)]
+#[test]
+fn source_location_comparison_only_equates_drive_prefix_representations() {
+    use std::path::Path;
+    let normal = Path::new(r"C:\compiler\corelib\Syscall.bd");
+    assert!(corelib_source_locations_match(normal, Path::new(r"\\?\C:\compiler\corelib\Syscall.bd")));
+    for different in [
+        r"D:\compiler\corelib\Syscall.bd",
+        r"C:\user\Syscall.bd",
+        r"C:\compiler\alias\..\corelib\Syscall.bd",
+        r"\\.\C:\compiler\corelib\Syscall.bd",
+        r"\\?\UNC\compiler\corelib\Syscall.bd",
+    ] {
+        assert!(!corelib_source_locations_match(normal, Path::new(different)), "{different}");
     }
 }
 
@@ -401,6 +473,99 @@ fn every_source_authorized_service_selects_one_generated_abi_shape() {
                 service.name, service.source_path
             )
         });
+    }
+}
+
+#[test]
+fn every_source_authorized_service_passes_the_exact_target_import_preflight() {
+    for target in crate::abi_v5::TargetMetadata::supported() {
+        let manifest = AbiManifestV5::canonical_runtime(target);
+        let capability = canonical_corelib_service_capability(&manifest).expect("Corelib service capability");
+        for service in capability.services() {
+            let preflight =
+                preflight_corelib_service_import(&capability, &manifest, *service).unwrap_or_else(|error| {
+                    panic!("{} in {} failed import preflight: {error}", service.name, service.source_path)
+                });
+            assert_eq!(preflight, canonical_corelib_service_abi(*service).expect("canonical service ABI"));
+        }
+    }
+}
+
+#[test]
+fn corelib_import_preflight_rejects_unknown_source_and_mismatched_adapter_declarations() {
+    let target = crate::abi_v5::TargetMetadata::supported()
+        .into_iter()
+        .find(|target| target.triple.as_str() == "x86_64-unknown-linux-gnu")
+        .expect("linux target");
+    let manifest = AbiManifestV5::canonical_runtime(target);
+    let capability = canonical_corelib_service_capability(&manifest).expect("Corelib service capability");
+    let service = capability
+        .service_for_source(CANONICAL_CORELIB_SYSCALL_SOURCE_PATH, "__syscall_read_bytes")
+        .expect("canonical syscall service");
+
+    assert!(matches!(
+        preflight_corelib_service_declaration(
+            &capability,
+            &manifest,
+            "Copied/Core/Syscall/Syscall.bd",
+            service.name,
+            service.symbol,
+        ),
+        Err(CorelibServiceImportPreflightError::UnauthorizedDeclaration { .. })
+    ));
+    assert!(matches!(
+        preflight_corelib_service_declaration(
+            &capability,
+            &manifest,
+            service.source_path,
+            service.name,
+            "copied_runtime_adapter",
+        ),
+        Err(CorelibServiceImportPreflightError::UnauthorizedDeclaration { .. })
+    ));
+
+    assert!(capability.service_for_source(CANONICAL_CORELIB_CHANNEL_SOURCE_PATH, "__channel_receive").is_none());
+    assert!(capability.service_for_source(CANONICAL_CORELIB_CHANNEL_SOURCE_PATH, "__channel_receive_status").is_some());
+}
+
+#[test]
+fn networking_imports_are_source_scoped_and_target_shape_exact() {
+    const NETWORK_SERVICES: &[(&str, &str)] = &[
+        ("__network_open", "beskid_rt_v5_network_open"),
+        ("__network_accept", "beskid_rt_v5_network_accept"),
+        ("__network_close", "beskid_rt_v5_network_close"),
+        ("__network_read", "beskid_rt_v5_network_read"),
+        ("__network_write", "beskid_rt_v5_network_write"),
+        ("__network_address", "beskid_rt_v5_network_address"),
+        ("__network_options", "beskid_rt_v5_network_options"),
+        ("__network_set_options", "beskid_rt_v5_network_set_options"),
+        ("__network_shutdown_write", "beskid_rt_v5_network_shutdown_write"),
+        ("__network_udp_connect", "beskid_rt_v5_network_udp_connect"),
+        ("__network_receive", "beskid_rt_v5_network_receive"),
+        ("__network_send", "beskid_rt_v5_network_send"),
+        ("__network_dns_resolve", "beskid_rt_v5_network_dns_resolve"),
+        ("__network_dns_count", "beskid_rt_v5_network_dns_count"),
+        ("__network_dns_address", "beskid_rt_v5_network_dns_address"),
+        ("__network_dns_release", "beskid_rt_v5_network_dns_release"),
+    ];
+
+    for target in crate::abi_v5::TargetMetadata::supported() {
+        let manifest = AbiManifestV5::canonical_runtime(target);
+        let capability = canonical_corelib_service_capability(&manifest).expect("Corelib service capability");
+        for (name, symbol) in NETWORK_SERVICES {
+            let abi = preflight_corelib_service_declaration(
+                &capability,
+                &manifest,
+                CANONICAL_NETWORK_INTERNAL_SOURCE_PATH,
+                name,
+                symbol,
+            )
+            .unwrap_or_else(|error| panic!("network declaration {name} / {symbol} failed preflight: {error}"));
+            assert!(
+                !abi.parameters.is_empty() || !matches!(abi.result, CorelibServiceAbiType::Void),
+                "network service {name} must retain a concrete target shape"
+            );
+        }
     }
 }
 

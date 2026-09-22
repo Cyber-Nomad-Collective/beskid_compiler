@@ -8,10 +8,10 @@ fn append_publicates_the_proven_owner_before_exactly_one_finish() {
     let append = append.split("CollectionOperation::Clear").next().expect("append lowering boundary");
 
     let grow = append.find("beskid_rt_v5_array_grow_rooted").expect("rooted grow");
-    let element_store = append.find("store(MemFlags::new(), value, address, 0)").expect("typed element store");
-    let owner_store = append.find("self.builder.def_var(variable, array)").expect("local owner-slot store");
-    let field_store = append.find("store(MemFlags::new(), array, base").expect("aggregate owner-field store");
-    let publication = append.find("owner_barrier").expect("owner publication barrier");
+    let element_store = append.find("store(MemFlagsData::new(), value, address, 0)").expect("typed element store");
+    let owner_store = append.find("self.publish_managed_local(slot, array)").expect("local owner-slot store");
+    let field_store = append.find("store(MemFlagsData::new(), array, base").expect("aggregate owner-field store");
+    let publication = append.find("gc_write_barrier").expect("owner publication barrier");
     let finish = append.find("beskid_rt_v5_array_construction_finish").expect("construction finish");
 
     assert!(grow < element_store);
@@ -21,7 +21,7 @@ fn append_publicates_the_proven_owner_before_exactly_one_finish() {
     assert!(field_store < publication);
     assert!(publication < finish);
     assert_eq!(append.matches("beskid_rt_v5_array_construction_finish").count(), 1);
-    assert!(!append.contains("call(owner_barrier, &[owner, array])"));
+    assert!(!append.contains("call(barrier, &[owner, array])"), "publication barrier must not reuse the stale pre-grow owner pointer");
 }
 
 #[test]

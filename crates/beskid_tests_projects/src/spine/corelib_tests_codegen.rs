@@ -11,7 +11,6 @@ use crate::projects::fixture_harness::{
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use beskid_analysis::syntax::SyntaxGenerationId;
 use beskid_analysis::syntax_query::{NodeKind, SyntaxIndex};
 use beskid_queries::{
     AstNodeId, AstNodeKey, IndexedNodeKind, ItemSignature, SemanticTypeId, SourceUnitId, build_typed_program,
@@ -34,7 +33,7 @@ fn syscall_result_predicates_have_call_derived_pointer_specializations() {
                     "prepared-syscall-result-specialization",
                 )
                 .expect("corelib syntax project session");
-                let generation = SyntaxGenerationId(139);
+                let generation = syntax_assembly.generation;
                 let typed =
                     build_typed_program(db, project, generation, syntax_assembly).expect("corelib syntax program");
                 let entry = typed.assembly.entry_unit();

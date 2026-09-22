@@ -6,6 +6,7 @@ use std::sync::{Arc, Mutex, OnceLock, Weak};
 
 use crate::composition::CompositionSnapshot;
 use crate::projects::ProgramAssembly;
+use crate::syntax::SyntaxGenerationId;
 
 use super::front_end::FrontEndTypedResult;
 use super::session::{CompilationSession, SemanticSnapshot, SessionFingerprint};
@@ -31,9 +32,9 @@ fn registry() -> &'static Mutex<EntrySessionRegistry> {
 /// Monotonic syntax generation id for an entry (bumps after mod-host re-parse).
 pub fn next_syntax_generation_id(fingerprint: &SessionFingerprint) -> u64 {
     let mut guard = registry().lock().expect("entry session registry");
-    let next =
-        guard.syntax_generation.entry(fingerprint.clone()).and_modify(|id| *id = id.saturating_add(1)).or_insert(1);
-    *next
+    let next = SyntaxGenerationId::allocate().expect("syntax generation identities exhausted").0;
+    guard.syntax_generation.insert(fingerprint.clone(), next);
+    next
 }
 
 /// Current syntax generation without bumping.
@@ -42,12 +43,46 @@ pub fn current_syntax_generation_id(fingerprint: &SessionFingerprint) -> u64 {
     guard.syntax_generation.get(fingerprint).copied().unwrap_or(1)
 }
 
-pub fn get_or_insert_assembly(fingerprint: SessionFingerprint, assembly: ProgramAssembly) -> Arc<CompilationSession> {
+pub fn get_or_insert_assembly(
+    fingerprint: SessionFingerprint,
+    assembly: ProgramAssembly,
+) -> anyhow::Result<Arc<CompilationSession>> {
     let mut guard = registry().lock().expect("entry session registry");
     if let Some(session) = guard.sessions.get(&fingerprint) {
-        return Arc::clone(session);
+        anyhow::ensure!(
+            assembly.generation >= session.assembly.generation,
+            "entry session syntax generation cannot regress"
+        );
+        if assembly.generation == session.assembly.generation {
+            anyhow::ensure!(
+                assembly.roots == session.assembly.roots
+                    && assembly.entry_index == session.assembly.entry_index
+                    && assembly.discovery == session.assembly.discovery
+                    && assembly.has_std_dependency == session.assembly.has_std_dependency
+                    && assembly.trusted_corelib_service_paths == session.assembly.trusted_corelib_service_paths
+                    && assembly.module_index.module_graph() == session.assembly.module_index.module_graph()
+                    && assembly.module_index.prefetched_paths() == session.assembly.module_index.prefetched_paths()
+                    && match (&assembly.runtime_fixture, &session.assembly.runtime_fixture) {
+                        (Some(incoming), Some(current)) => Arc::ptr_eq(incoming, current),
+                        (None, None) => true,
+                        _ => false,
+                    }
+                    && assembly.units.len() == session.assembly.units.len()
+                    && assembly.units.iter().zip(session.assembly.units.iter()).all(|(incoming, current)| {
+                        incoming.path == current.path
+                            && incoming.origin_path == current.origin_path
+                            && incoming.logical_name == current.logical_name
+                            && incoming.source == current.source
+                            && incoming.program == current.program
+                    }),
+                "one entry session syntax generation cannot describe different sources"
+            );
+            return Ok(Arc::clone(session));
+        }
     }
-    guard.syntax_generation.entry(fingerprint.clone()).or_insert(1);
+    assembly.generation.resume_after();
+    guard.syntax_generation.insert(fingerprint.clone(), assembly.generation.0);
+    guard.executable_weak.remove(&fingerprint);
     let session = Arc::new(CompilationSession {
         fingerprint: fingerprint.clone(),
         assembly: Arc::new(assembly),
@@ -55,7 +90,7 @@ pub fn get_or_insert_assembly(fingerprint: SessionFingerprint, assembly: Program
         semantic_snapshot: None,
     });
     guard.sessions.insert(fingerprint, Arc::clone(&session));
-    session
+    Ok(session)
 }
 
 pub fn update_semantic_snapshot(fingerprint: &SessionFingerprint, snapshot: SemanticSnapshot) {
@@ -63,6 +98,9 @@ pub fn update_semantic_snapshot(fingerprint: &SessionFingerprint, snapshot: Sema
     let Some(session) = guard.sessions.get_mut(fingerprint) else {
         return;
     };
+    if snapshot.syntax_generation_id != session.assembly.generation.0 {
+        return;
+    }
     let updated = Arc::new(CompilationSession {
         fingerprint: session.fingerprint.clone(),
         assembly: Arc::clone(&session.assembly),
@@ -79,6 +117,11 @@ pub fn store_executable_and_snapshot(
 ) -> Option<Arc<FrontEndTypedResult>> {
     let mut guard = registry().lock().expect("entry session registry");
     let session = guard.sessions.get(fingerprint).cloned()?;
+    if snapshot.syntax_generation_id != session.assembly.generation.0
+        || executable.as_ref().is_some_and(|front| front.assembly.generation != session.assembly.generation)
+    {
+        return None;
+    }
     let stored = executable.map(Arc::new);
     if let Some(arc) = stored.as_ref() {
         guard.executable_weak.insert(fingerprint.clone(), Arc::downgrade(arc));
@@ -108,15 +151,22 @@ pub fn cached_executable(fingerprint: &SessionFingerprint) -> Option<Arc<FrontEn
 }
 
 /// Cached executable when the entry fingerprint and syntax generation still match.
-pub fn cached_executable_if_valid(fingerprint: &SessionFingerprint) -> Option<Arc<FrontEndTypedResult>> {
-    let snapshot = cached_semantic_snapshot(fingerprint)?;
-    if snapshot.syntax_generation_id != current_syntax_generation_id(fingerprint) {
+pub fn cached_executable_if_valid(
+    fingerprint: &SessionFingerprint,
+    generation: SyntaxGenerationId,
+) -> Option<Arc<FrontEndTypedResult>> {
+    let guard = registry().lock().expect("entry session registry");
+    let session = guard.sessions.get(fingerprint)?;
+    let snapshot = session.semantic_snapshot.as_ref()?;
+    if session.assembly.generation != generation
+        || snapshot.syntax_generation_id != generation.0
+        || guard.syntax_generation.get(fingerprint).copied() != Some(generation.0)
+        || !snapshot.satisfies_minimum("executable")
+    {
         return None;
     }
-    if !snapshot.satisfies_minimum("executable") {
-        return None;
-    }
-    cached_executable(fingerprint)
+    let executable = guard.executable_weak.get(fingerprint)?.upgrade()?;
+    (executable.assembly.generation == generation).then_some(executable)
 }
 
 fn canonical_path(path: &Path) -> std::path::PathBuf {

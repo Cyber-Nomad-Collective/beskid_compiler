@@ -4,8 +4,8 @@ pub(super) use std::sync::Arc;
 pub(super) use beskid_abi::abi_v5::{AbiManifestV5, TargetMetadata};
 pub(super) use beskid_abi::runtime_source::{
     CANONICAL_BOOTSTRAP_NATIVE_SOURCE_PATH, CANONICAL_BOOTSTRAP_SOURCE_PATH, CANONICAL_CORELIB_ARGS_SOURCE_PATH,
-    CANONICAL_EVENTS_SOURCE_PATH, CANONICAL_SCHEDULER_CONTEXT_SOURCE_PATH, CANONICAL_SCHEDULER_CORE_SOURCE_PATH,
-    CANONICAL_SCHEDULER_POLL_SOURCE_PATH, canonical_corelib_service_capability, canonical_corelib_service_source_path,
+    CANONICAL_EVENTS_SOURCE_PATH, CANONICAL_FIBER_SOURCE_PATH, CANONICAL_SCHEDULER_CONTEXT_SOURCE_PATH,
+    CANONICAL_SCHEDULER_CORE_SOURCE_PATH, CANONICAL_SCHEDULER_POLL_SOURCE_PATH, canonical_corelib_service_capability, canonical_corelib_service_source_path,
     canonical_corelib_service_sources, canonical_runtime_intrinsic_capability, canonical_runtime_sources,
 };
 pub(super) use beskid_analysis::projects::{
@@ -38,7 +38,13 @@ pub(super) fn input_fixture() -> (BeskidDatabase, TypedProgram, AstNodeKey, Targ
             host: RootEntry { dependency_name: None, source_root: directory },
             dependencies: Vec::new(),
         },
-        Arc::new(vec![SourceUnit { logical_name: "Main".into(), path: source_path, source: source.into(), program }]),
+        Arc::new(vec![SourceUnit {
+            logical_name: "Main".into(),
+            origin_path: source_path.clone(),
+            path: source_path,
+            source: source.into(),
+            program,
+        }]),
         0,
         AssemblyDiscovery::ImportClosure,
         Arc::new(ModuleIndex::empty()),

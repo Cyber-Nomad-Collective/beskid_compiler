@@ -1,0 +1,92 @@
+/// Core.Random — pseudorandom number generation using PCG (Permuted Congruential Generator).
+/// @tier(supported)
+/// Takes `mut Random` and returns the generated value, advancing state in-place.
+/// PCG state: one 64-bit seed value with multiplier and increment.
+/// Algorithm: PCG RXS M XS 64-bit (minimal C implementation).
+pub type Random {
+    i64 state,
+}
+
+/// Default multiplier (6364136223846793005).
+i64 multiplier() {
+    return 6364136223846793005;
+}
+
+/// Default increment (1442695040888963407).
+i64 increment() {
+    return 1442695040888963407;
+}
+
+/// Creates a Random generator seeded from the monotonic clock.
+pub Random New() {
+    i64 seed = __clock_monotonic_nanos();
+    i64 state = seed + increment();
+    return Random { state: state };
+}
+
+/// Creates a Random generator with an explicit seed (deterministic).
+pub Random NewSeeded(i64 seed) {
+    i64 state = seed + increment();
+    return Random { state: state };
+}
+
+/// Advances the PCG state in-place and returns the next pseudorandom i64.
+i64 NextState(mut Random self) {
+    i64 old = self.state;
+    self.state = old * multiplier() + increment();
+    i64 shifted = old / 32;
+    i64 xorshifted = ((shifted | old) - (shifted & old)) / 4194304;
+    i64 rot = old / 67108864;
+    i64 result = (xorshifted >> rot) | (xorshifted << ((-rot) & 63));
+    return result;
+}
+
+/// Returns the next i64 in [0, max). Advances state in-place.
+pub i64 NextI64(mut Random self, i64 max) {
+    i64 value = NextState(self) % max;
+    if value < 0 {
+        return value + max;
+    }
+    return value;
+}
+
+/// Returns the next i64 in [min, max] inclusive. Advances state in-place.
+pub i64 NextI64Range(mut Random self, i64 min, i64 max) {
+    i64 range = max - min + 1;
+    i64 value = NextI64(self, range);
+    return min + value;
+}
+
+/// Returns the next f64 in [0.0, 1.0). Advances state in-place.
+pub f64 NextF64(mut Random self) {
+    mut i64 raw = NextState(self);
+    if raw < 0 {
+        raw = -raw;
+    }
+    f64 result = f64(raw);
+    // Normalize to [0.0, 1.0) by dividing by 2^63.
+    return result / 9223372036854775808.0;
+}
+
+/// Returns the next bool. Advances state in-place.
+pub bool NextBool(mut Random self) {
+    i64 raw = NextState(self);
+    return (raw % 2) != 0;
+}
+
+/// Fills `count` bytes into `dest` starting at `offset`. Advances state in-place.
+pub unit NextBytes(mut Random self, u8[] dest, i64 offset, i64 count) {
+    mut i64 i = 0;
+    while i < count {
+        i64 raw = NextState(self);
+        u8 byte = raw % 256;
+        dest[offset + i] = byte;
+        i = i + 1;
+    }
+    return;
+}
+
+/// Returns true when the PRNG has cycled (degenerate state — guard only).
+pub bool IsExhausted(Random self) {
+    return self.state == 0;
+}

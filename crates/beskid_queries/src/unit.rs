@@ -65,7 +65,10 @@ pub fn parse_and_expand_unit(db: &dyn Db, project: ProjectSession, path: PathBuf
     let cache_hit = db.unit_cache().lock().expect("unit cache").source_units.contains_key(&content_fp);
     trace_query("parse_and_expand_unit", cache_hit);
     let _ = parse_and_expand_unit_tracked(db, project, grammar, path.clone(), content_fp.clone());
-    db.unit_cache().lock().expect("unit cache").source_units.get(&content_fp).expect("parsed unit").as_ref().clone()
+    let cache = db.unit_cache().lock().expect("unit cache");
+    let unit = cache.source_units.get(&content_fp).expect("parsed unit");
+    let logical_name = path.display().to_string();
+    SourceUnit::bind_request(path, logical_name, unit.source.clone(), unit.program.clone())
 }
 
 /// Parsed source unit using caller-provided source (parallel-safe; no file registry write).
@@ -78,7 +81,8 @@ pub fn parse_and_expand_unit_with_source(
     let content_fp = fingerprint(&path, text);
     if let Some(cached) = db.unit_cache().lock().expect("unit cache").source_units.get(&content_fp) {
         trace_query("parse_and_expand_unit_with_source", true);
-        return (**cached).clone();
+        let logical_name = path.display().to_string();
+        return SourceUnit::bind_request(path, logical_name, text.to_string(), cached.program.clone());
     }
     trace_query("parse_and_expand_unit_with_source", false);
     materialize_parsed_unit_from_text(db, &path, text, &content_fp)
@@ -96,7 +100,7 @@ fn materialize_parsed_unit_from_text(db: &dyn Db, path: &std::path::Path, text: 
     let logical_name = path.display().to_string();
     let program =
         parse_program_with_source_name(&logical_name, text).map(expand_syntax_for_assembly).expect("unit must parse");
-    let unit = SourceUnit { logical_name, path: path.to_path_buf(), source: text.to_string(), program };
+    let unit = SourceUnit::bind_request(path.to_path_buf(), logical_name, text.to_string(), program);
     db.unit_cache().lock().expect("unit cache").source_units.insert(content_fp.to_string(), Arc::new(unit.clone()));
     unit
 }
@@ -150,4 +154,45 @@ pub fn seed_file_from_disk(db: &mut BeskidDatabase, path: PathBuf) {
         .or_else(|| std::fs::read_to_string(&canonical).ok())
         .unwrap_or_default();
     db.ensure_file_text(canonical, text);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn assert_public_query_rebinds_content_cache(supplied_source: bool) {
+        let root = tempfile::tempdir().unwrap();
+        let real = root.path().join("Real.bd");
+        let copy = root.path().join("Copy.bd");
+        let source = "i32 Main() { return 0; }";
+        std::fs::write(&real, source).unwrap();
+        std::fs::write(&copy, source).unwrap();
+        let real = real.canonicalize().unwrap();
+        let copy = copy.canonicalize().unwrap();
+        for paths in [[&real, &copy, &real], [&copy, &real, &copy]] {
+            let db = BeskidDatabase::default();
+            let session = ProjectSession::new(&db, root.path().into(), real.clone(), "App".into(), "lock".into());
+            for path in paths {
+                let unit = if supplied_source {
+                    parse_and_expand_unit_with_source(&db, session, path.clone(), source)
+                } else {
+                    parse_and_expand_unit(&db, session, path.clone())
+                };
+                assert_eq!(&unit.origin_path, path, "supplied_source={supplied_source}");
+                assert_eq!(&unit.path, path);
+                assert_eq!(unit.logical_name, path.display().to_string());
+                assert_eq!(db.unit_cache().lock().unwrap().source_units.len(), 1);
+            }
+        }
+    }
+
+    #[test]
+    fn public_query_rebinds_content_cache_origin_in_both_request_orders() {
+        assert_public_query_rebinds_content_cache(false);
+    }
+
+    #[test]
+    fn supplied_source_query_rebinds_content_cache_origin_in_both_request_orders() {
+        assert_public_query_rebinds_content_cache(true);
+    }
 }

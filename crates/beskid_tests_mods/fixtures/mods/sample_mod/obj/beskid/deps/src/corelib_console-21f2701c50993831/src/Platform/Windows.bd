@@ -1,0 +1,17 @@
+/// Windows terminal probes through the canonical runtime adapter.
+pub bool IsAtty(i64 fd) {
+    return __tty_winsize(fd) != 0;
+}
+
+pub Console.ConsoleSize Winsize() {
+    if !IsAtty(1) {
+        return Console.ConsoleSize { columns: 0, rows: 0 };
+    }
+    i64 packed = __tty_winsize(1);
+    if packed == 0 {
+        return Console.ConsoleSize { columns: 80, rows: 24 };
+    }
+    i32 columns = packed / 65536;
+    i32 rows = packed % 65536;
+    return Console.ConsoleSize { columns: columns, rows: rows };
+}

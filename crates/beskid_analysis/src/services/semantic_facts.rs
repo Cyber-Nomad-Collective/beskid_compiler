@@ -100,7 +100,10 @@ pub fn type_resolved_program(
             &dependency_programs,
             (!dependency_paths.is_empty()).then_some(dependency_paths.as_slice()),
             entry_path,
-            policy.type_dependency_bodies(),
+            // The proved runtime corpus is checked by its existing generation-bound runtime
+            // lowering route. Check the fixture body and actual dependency signatures here;
+            // do not reinterpret canonical runtime private scope through the legacy resolver.
+            policy.type_dependency_bodies() && assembly.is_none_or(|assembly| assembly.runtime_fixture.is_none()),
             module_index,
             assembly,
             None,

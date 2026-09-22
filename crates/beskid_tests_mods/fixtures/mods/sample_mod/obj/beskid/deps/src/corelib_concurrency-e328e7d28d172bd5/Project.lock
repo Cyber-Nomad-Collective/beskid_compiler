@@ -1,0 +1,5 @@
+# Project.lock v1
+root_manifest=/Users/mikserek/Projects/beskid/compiler/corelib/packages/concurrency/corelib_concurrency.bproj
+project_name=corelib_concurrency
+dependencies:
+- name=corelib_foundation;manifest=/Users/mikserek/Projects/beskid/compiler/corelib/packages/foundation/corelib_foundation.bproj;project=/Users/mikserek/Projects/beskid/compiler/corelib/packages/foundation;source_root=/Users/mikserek/Projects/beskid/compiler/corelib/packages/foundation/src;materialized_root=/Users/mikserek/Projects/beskid/compiler/corelib/packages/concurrency/obj/beskid/deps/src/corelib_foundation-51342cd5b303c73f

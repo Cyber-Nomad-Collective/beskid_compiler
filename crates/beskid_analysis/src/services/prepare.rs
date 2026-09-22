@@ -24,9 +24,7 @@ use crate::projects::{
 use crate::syntax::Spanned;
 
 use super::composition::{composition_result_to_diagnostics, resolve_program_composition};
-use super::entry_session::{
-    cached_executable_if_valid, current_syntax_generation_id, store_executable_and_snapshot, update_semantic_snapshot,
-};
+use super::entry_session::{cached_executable_if_valid, store_executable_and_snapshot, update_semantic_snapshot};
 use super::front_end::{FrontEndOptions, FrontEndTypedResult};
 use super::input::ResolvedInput;
 use super::semantic::{require_no_semantic_errors, semantic_rule_diagnostics_for_program_with_pipeline};
@@ -102,6 +100,7 @@ impl PreparedCompilation {
             self.assembly.generation,
         )
         .with_trusted_corelib_service_paths(Arc::clone(&self.assembly.trusted_corelib_service_paths))
+        .with_runtime_fixture(self.assembly.runtime_fixture.clone())
     }
 }
 
@@ -126,6 +125,7 @@ pub fn prepare_compilation(
         pipeline,
         false,
         true,
+        None,
     )?;
 
     Ok(spine.prepared)
@@ -157,6 +157,7 @@ pub fn prepare_compilation_diagnostics(
         pipeline,
         true,
         true,
+        None,
     )?;
     diagnostics.extend(spine.collected_diagnostics);
     fixes.extend(spine.collected_fixes);
@@ -191,6 +192,7 @@ pub fn prepare_compilation_diagnostics_isolated(
         pipeline,
         true,
         false,
+        None,
     )?;
     Ok((spine.prepared, spine.collected_diagnostics, spine.collected_fixes))
 }
@@ -199,6 +201,41 @@ struct PrepareSpineOutput {
     prepared: PreparedCompilation,
     collected_diagnostics: Vec<SemanticDiagnostic>,
     collected_fixes: Vec<SyntaxFix>,
+}
+
+/// Inversion seam for a generation-bound semantic owner. The callback consumes
+/// the final rewritten entry and its actual assembly, not a second frontend tree.
+pub type TryDiagnosticAuthority<'a> =
+    dyn FnMut(&ProgramAssembly, &Spanned<crate::syntax::Program>) -> Result<Vec<crate::syntax::SpanInfo>> + 'a;
+
+pub fn prepare_compilation_with_try_authority(
+    resolved: &ResolvedInput,
+    options: PrepareOptions,
+    pipeline: Option<&dyn PipelineObserver>,
+    collect_diagnostics: bool,
+    isolated: bool,
+    authority: &mut TryDiagnosticAuthority<'_>,
+) -> Result<(PreparedCompilation, Vec<SemanticDiagnostic>, Vec<SyntaxFix>)> {
+    let plan = resolved
+        .compile_plan
+        .as_ref()
+        .ok_or_else(|| anyhow::anyhow!("prepare_compilation requires project context"))?;
+    if isolated && resolved.assembly.is_none() {
+        return Err(anyhow::anyhow!("isolated diagnostics require an owned program assembly"));
+    }
+    let output = run_prepare_spine(
+        &resolved.source_path,
+        &resolved.source,
+        plan,
+        resolved.prepared_workspace.as_ref(),
+        resolved.assembly.as_ref(),
+        &options,
+        pipeline,
+        collect_diagnostics,
+        !isolated,
+        Some(authority),
+    )?;
+    Ok((output.prepared, output.collected_diagnostics, output.collected_fixes))
 }
 
 fn session_fingerprint_field(fingerprint: &SessionFingerprint) -> String {
@@ -215,6 +252,7 @@ fn run_prepare_spine(
     pipeline: Option<&dyn PipelineObserver>,
     collect_diagnostics: bool,
     use_session_cache: bool,
+    mut try_authority: Option<&mut TryDiagnosticAuthority<'_>>,
 ) -> Result<PrepareSpineOutput> {
     let assembly_options = assembly_options_for_prepare(plan, options.front_end.assembly_discovery);
 
@@ -228,10 +266,42 @@ fn run_prepare_spine(
     )
     .entered();
 
-    if use_session_cache && let Some(cached) = cached_executable_if_valid(&session_fingerprint) {
-        let syntax_generation_id = current_syntax_generation_id(&session_fingerprint);
+    // Admit the caller's actual source generation before consulting any cached
+    // executable. The entry fingerprint identifies a session, not its revision.
+    let assembled = if let Some(cached) = cached_assembly {
+        cached.clone()
+    } else {
+        observe_phase_result(pipeline, PROGRAM_ASSEMBLE, || {
+            assemble_program(plan, prepared_workspace, entry_path, Some(entry_source), &assembly_options, pipeline)
+                .map_err(|err| anyhow::anyhow!("{err}"))
+        })?
+    };
+    let assembly = if use_session_cache {
+        (*session_for_assembly(session_fingerprint.clone(), assembled)?.assembly).clone()
+    } else {
+        assembled
+    };
+
+    if use_session_cache && let Some(cached) = cached_executable_if_valid(&session_fingerprint, assembly.generation) {
+        let syntax_generation_id = assembly.generation.0;
         Span::current().record("syntax_generation_id", syntax_generation_id);
         let front = cached.as_ref();
+        let mut diagnostics = Vec::new();
+        if let Some(authority) = try_authority.as_mut() {
+            let mut ctx = RuleContext::new(
+                front.assembly.entry_unit().logical_name.clone(),
+                entry_source,
+                AnalysisOptions::default(),
+            );
+            for span in authority(&front.assembly, &front.program)? {
+                ctx.emit_issue(span, crate::analysis::diagnostic_kinds::SemanticIssueKind::TypeInvalidTryTarget);
+            }
+            if collect_diagnostics {
+                diagnostics = ctx.diagnostics;
+            } else {
+                require_no_semantic_errors(&ctx.diagnostics)?;
+            }
+        }
         return Ok(PrepareSpineOutput {
             prepared: PreparedCompilation {
                 assembly: front.assembly.clone(),
@@ -240,27 +310,10 @@ fn run_prepare_spine(
                 composition_snapshot: front.composition_snapshot.clone(),
                 typed: Some(cached),
             },
-            collected_diagnostics: Vec::new(),
+            collected_diagnostics: diagnostics,
             collected_fixes: Vec::new(),
         });
     }
-
-    let assembly = if let Some(cached) = cached_assembly
-        && !use_session_cache
-    {
-        cached.clone()
-    } else if let Some(cached) = cached_assembly {
-        let session = session_for_assembly(session_fingerprint.clone(), cached.clone());
-        (*session.assembly).clone()
-    } else {
-        observe_phase_result(pipeline, PROGRAM_ASSEMBLE, || {
-            let assembled =
-                assemble_program(plan, prepared_workspace, entry_path, Some(entry_source), &assembly_options, pipeline)
-                    .map_err(|err| anyhow::anyhow!("{err}"))?;
-            let session = session_for_assembly(session_fingerprint.clone(), assembled);
-            Ok::<crate::projects::ProgramAssembly, anyhow::Error>((*session.assembly).clone())
-        })?
-    };
 
     let entry_unit = assembly.entry_unit();
     let mut program = entry_unit.program.clone();
@@ -285,8 +338,7 @@ fn run_prepare_spine(
     program = generated.program;
 
     let mut collected_diagnostics = generated.macro_diagnostics;
-    let syntax_generation_id =
-        if use_session_cache { current_syntax_generation_id(&session_fingerprint) } else { assembly.generation.0 };
+    let syntax_generation_id = assembly.generation.0;
     Span::current().record("syntax_generation_id", syntax_generation_id);
     let mut local_semantic_snapshot = None;
 
@@ -296,6 +348,7 @@ fn run_prepare_spine(
     rule_options.program_assembly_module_index = Some((*assembly.module_index).clone());
     rule_options.entry_source_path = Some(entry_unit.path.clone());
     rule_options.program_assembly = Some(assembly.clone());
+    rule_options.defer_try_diagnostics = try_authority.is_some();
 
     if options.front_end.with_semantic_diagnostics || collect_diagnostics {
         let semantic = observe_phase_result(pipeline, SEMANTIC, || {
@@ -358,6 +411,19 @@ fn run_prepare_spine(
         )?
     };
     program = mod_rewrite.program;
+
+    if let Some(authority) = try_authority.as_mut() {
+        let spans = authority(&assembly, &program)?;
+        let mut ctx = RuleContext::new(entry_unit.logical_name.clone(), entry_source, rule_options.clone());
+        for span in spans {
+            ctx.emit_issue(span, crate::analysis::diagnostic_kinds::SemanticIssueKind::TypeInvalidTryTarget);
+        }
+        if collect_diagnostics {
+            collected_diagnostics.extend(ctx.diagnostics);
+        } else {
+            require_no_semantic_errors(&ctx.diagnostics)?;
+        }
+    }
 
     // Mod analyzer diagnostics are always collected so a mod `Error`-severity
     // diagnostic fails the typed/codegen build (mirrors `require_no_semantic_errors`
@@ -429,7 +495,9 @@ fn run_prepare_spine(
             if use_session_cache {
                 let stored =
                     store_executable_and_snapshot(&session_fingerprint, Some(typed_result), executable_snapshot)
-                        .ok_or_else(|| anyhow::anyhow!("entry session missing for executable cache store"))?;
+                        .ok_or_else(|| {
+                            anyhow::anyhow!("entry session missing or changed before executable cache store")
+                        })?;
                 Some(stored)
             } else {
                 Some(Arc::new(typed_result))
@@ -719,6 +787,7 @@ mod tests {
         let program = parse_program_with_source_name("Main.bd", entry_source).expect("parse entry");
         let entry_unit = SourceUnit {
             logical_name: "Main.bd".to_owned(),
+            origin_path: std::path::PathBuf::from("/tmp/Main.bd"),
             path: std::path::PathBuf::from("/tmp/Main.bd"),
             source: entry_source.to_owned(),
             program,

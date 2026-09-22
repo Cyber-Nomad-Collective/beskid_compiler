@@ -9,6 +9,11 @@ dependency "beskid-runtime-native" {
   path = "../.."
 }
 
+dependency "corelib" {
+  source = "path"
+  path = "../../../../corelib/beskid_corelib"
+}
+
 target "LifecycleTests" {
   kind = Lib
   entry = "LifecycleTests.bd"
@@ -24,6 +29,11 @@ target "SchedulerTests" {
   entry = "SchedulerTests.bd"
 }
 
+target "ExternalWorkTests" {
+  kind = Lib
+  entry = "ExternalWorkTests.bd"
+}
+
 target "GcTests" {
   kind = Lib
   entry = "GcTests.bd"
@@ -32,4 +42,9 @@ target "GcTests" {
 target "ProcessIoTests" {
   kind = Lib
   entry = "ProcessIoTests.bd"
+}
+
+target "NetworkNativeTests" {
+  kind = Lib
+  entry = "NetworkNativeTests.bd"
 }

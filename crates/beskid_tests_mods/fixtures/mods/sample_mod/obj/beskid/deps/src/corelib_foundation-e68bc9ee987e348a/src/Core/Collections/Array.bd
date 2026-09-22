@@ -1,0 +1,94 @@
+/// Core.Collections.Array hub — typed array helpers and checked iterators.
+/// @tier(standard)
+pub mod Core.Collections.Array.ArrayIter;
+
+use Core.Collections.Array.ArrayIter;
+
+/// Allocates an empty managed array using the descriptor for `T`.
+pub T[] Empty<T>() {
+    return __array_new<T>(0);
+}
+
+/// Bulk constructor: packs call-site scalars into a typed array.
+/// The `bulk` parameter is the array itself; `Of` is the identity that gives
+/// call-site packing semantics (N scalars → one rooted array).
+pub T[] Of<T>(bulk T[] values) {
+    return values;
+}
+
+/// Returns the array's logical element count.
+pub i64 Len<T>(T[] values) {
+    return __array_len(values);
+}
+
+pub bool IsEmpty<T>(T[] values) {
+    return Len<T>(values) == 0;
+}
+
+pub ArrayIter<T> Iterate<T>(T[] values) {
+    return ArrayIter<T> { index: 0, length: Len<T>(values) };
+}
+
+pub bool HasNext<T>(ArrayIter<T> iterator) {
+    return iterator.index < iterator.length;
+}
+
+pub T Current<T>(T[] values, ArrayIter<T> iterator) {
+    return values[iterator.index];
+}
+
+pub ArrayIter<T> Advance<T>(ArrayIter<T> iterator) {
+    return ArrayIter<T> { index: iterator.index + 1, length: iterator.length };
+}
+
+pub i64 Index<T>(ArrayIter<T> iterator) {
+    return iterator.index;
+}
+
+/// Uses direct typed bounds-checked array access.
+pub T Get<T>(T[] values, i64 index) {
+    return values[index];
+}
+
+/// Uses direct typed bounds-checked array access and returns the owning handle.
+pub T[] Set<T>(T[] values, i64 index, T value) {
+    values[index] = value;
+    return values;
+}
+
+/// Returns allocation capacity without changing logical length.
+pub i64 Capacity<T>(T[] values) {
+    // Canonical calls are lowered to a direct header read. This body remains ordinary and
+    // conservative when inspected independently.
+    return Len<T>(values);
+}
+
+/// Extends logical length by one through the compiler-owned rooted protocol.
+/// The first argument must identify mutable local or aggregate-field storage. Lowering validates
+/// overflow and emits grow, typed store/barrier, owner-slot store, owner publication, and exactly
+/// one construction finish. The return value is already published through that proven owner.
+pub T[] Append<T>(mut T[] values, T value) {
+    // Canonical calls are replaced by the compiler-owned rooted growth operation.
+    return values;
+}
+
+/// Clears a live slot through descriptor-aware typed storage.
+pub T[] Clear<T>(T[] values, i64 index) {
+    // Canonical calls lower to a descriptor-typed zero store at `index`.
+    return values;
+}
+
+/// Clears the final live slot and decreases logical length by one.
+pub T[] RemoveLast<T>(T[] values) {
+    // Canonical calls lower to a final-slot clear followed by a direct length update.
+    return values;
+}
+
+pub unit CopyRange<T>(T[] destination, i64 destinationOffset, T[] source, i64 sourceOffset, i64 length) {
+    mut i64 index = 0;
+    while index < length {
+        Set<T>(destination, destinationOffset + index, Get<T>(source, sourceOffset + index));
+        index = index + 1;
+    }
+    return;
+}

@@ -25,7 +25,13 @@ fn parsed_enum_constructor_uses_source_layout_without_hir() {
             host: RootEntry { dependency_name: None, source_root: directory },
             dependencies: Vec::new(),
         },
-        Arc::new(vec![SourceUnit { logical_name: "Main".into(), path: source_path, source: source.into(), program }]),
+        Arc::new(vec![SourceUnit {
+            logical_name: "Main".into(),
+            origin_path: source_path.clone(),
+            path: source_path,
+            source: source.into(),
+            program,
+        }]),
         0,
         AssemblyDiscovery::ImportClosure,
         Arc::new(ModuleIndex::empty()),
@@ -54,7 +60,7 @@ fn parsed_enum_constructor_uses_source_layout_without_hir() {
     let clif = function.display().to_string();
     assert!(input.enum_static_plan(constructor).is_some(), "enum static plan");
     assert!(clif.contains("beskid_rt_v5_managed_object_allocate"));
-    assert!(!clif.contains("stack_store"));
+    assert!(clif.contains("gc_register_root"));
     assert!(clif.contains("iconst.i32 1"));
 }
 
@@ -71,7 +77,7 @@ fn parsed_generic_enum_constructor_uses_concrete_source_layout_without_hir() {
 
     let clif = function.display().to_string();
     assert!(clif.contains("beskid_rt_v5_managed_object_allocate"), "{clif}");
-    assert!(!clif.contains("stack_store"), "{clif}");
+    assert!(clif.contains("gc_register_root"), "{clif}");
     assert!(clif.contains("iconst.i32 0"), "{clif}");
     assert!(clif.contains("iconst.i64 7"), "{clif}");
 }
@@ -172,6 +178,175 @@ fn parsed_result_try_lowers_to_verified_syntax_isle_control_flow() {
 }
 
 #[test]
+fn result_try_inside_method_body_lowers_with_its_declared_return_layout() {
+    let (input, isa, root) = item_fixture_with_root(
+        "enum Error { Closed() } enum Result<TValue, TError> { Ok(TValue value), Error(TError error) } unit Main() {} type Socket { pub Result<unit, Error> Complete(Result<i64, Error> value) { i64 output = value?; return Result::Ok(()); } }",
+    );
+    let method = find_node(input.database(), root, beskid_queries::IndexedNodeKind::MethodDefinition)
+        .expect("Result-returning method");
+    let expression = find_node(input.database(), method, beskid_queries::IndexedNodeKind::TryExpression)
+        .expect("propagation within the method body");
+    let fact = beskid_queries::try_expression_fact(input.database(), expression)
+        .expect("method owns its declared Result return authority")
+        .expect("method-body try fact");
+    assert_eq!(fact.payload_type, beskid_queries::SemanticTypeId::I64);
+    assert_ne!(fact.operand_layout, fact.return_layout, "distinct success types require error re-layout");
+    lower_syntax_program(&input, isa.as_ref(), &[SyntaxModuleItem { key: method, symbol: "Complete".into() }])
+        .expect("method-body propagation lowers through real module emission");
+}
+
+#[test]
+fn nested_result_try_as_a_concrete_call_argument_lowers() {
+    let (input, isa, root) = item_fixture_with_root(
+        "enum Error { Closed() } enum Result<TValue, TError> { Ok(TValue value), Error(TError error) } type AddressValue { i64 value, } Result<unit, Error> Main(Socket left, Socket right) { left.Connect(right.Address()?)?; return Result::Ok(()); } type Socket { pub Result<AddressValue, Error> Address() { return Result::Ok(AddressValue { value: 1_i64 }); } pub Result<unit, Error> Connect(AddressValue address) { return Result::Ok(()); } }",
+    );
+    let main = super::support::named_function(&input, root, "Main");
+    let expressions = find_nodes_of_kind(input.database(), main, beskid_queries::IndexedNodeKind::TryExpression);
+    assert_eq!(expressions.len(), 2);
+    for expression in expressions {
+        let fact = beskid_queries::try_expression_fact(input.database(), expression)
+            .expect("exact nested Result authority")
+            .expect("nested try fact");
+        assert_eq!(beskid_queries::abi_type(input.database(), expression).unwrap(), Some(fact.payload_type));
+        assert_eq!(beskid_queries::node_type(input.database(), expression).unwrap(), Some(fact.payload_type));
+        assert_eq!(
+            beskid_queries::managed_reference_kind(input.database(), expression).unwrap(),
+            Some(if fact.payload_type == beskid_queries::SemanticTypeId::UNIT {
+                beskid_queries::ManagedReferenceKind::NativeOrScalar
+            } else {
+                beskid_queries::ManagedReferenceKind::GcManaged
+            })
+        );
+        let index = input.typed_program().assembly.entry_syntax_index();
+        let parent = index.metadata_for(expression.generation, expression.node).unwrap().parent.unwrap();
+        if index.kind(parent) == Some(beskid_analysis::syntax_query::NodeKind::Expression) {
+            let wrapper = AstNodeKey { node: parent, ..expression };
+            assert_eq!(beskid_queries::abi_type(input.database(), wrapper).unwrap(), Some(fact.payload_type));
+            assert_eq!(beskid_queries::node_type(input.database(), wrapper).unwrap(), Some(fact.payload_type));
+            assert_eq!(
+                beskid_queries::managed_reference_kind(input.database(), wrapper).unwrap(),
+                beskid_queries::managed_reference_kind(input.database(), expression).unwrap()
+            );
+        }
+    }
+    let mut definitions = find_function_definitions(input.database(), root);
+    definitions.extend(find_nodes_of_kind(input.database(), root, beskid_queries::IndexedNodeKind::MethodDefinition));
+    let items = definitions
+        .into_iter()
+        .map(|key| SyntaxModuleItem { key, symbol: item_name(input.database(), key).unwrap().unwrap().to_string() })
+        .collect::<Vec<_>>();
+    lower_syntax_program(&input, isa.as_ref(), &items)
+        .expect("nested try arguments lower with actual module declaration imports and allocation services");
+}
+
+#[test]
+fn imported_direct_call_try_preserves_result_identity_with_distinct_success_types() {
+    assert_imported_result_lowering(&[
+        (
+            "Main.bd",
+            "use Core.Results; use Network.Api; Result<unit, NetworkError> Main(Listener listener) { Connection accepted = listener.Accept()?; Connection connected = Api.Connect()?; return Result::Ok(()); }",
+        ),
+        (
+            "Network/Api.bd",
+            "use Core.Results; pub enum NetworkError { Closed() } pub type Connection { i64 value, } pub type Listener { pub Result<Connection, NetworkError> Accept() { return Result::Ok(Connection { value: 1_i64 }); } } pub Result<Connection, NetworkError> Connect() { return Result::Error(NetworkError::Closed); }",
+        ),
+        ("Core/Results.bd", "pub enum Result<TValue, TError> { Ok(TValue value), Error(TError error) }"),
+    ]);
+}
+
+#[test]
+fn imported_scoped_fallible_acquisition_lowers_with_existing_cleanup_conversion() {
+    assert_imported_result_lowering(&[
+        (
+            "Main.bd",
+            "use Core.Results; use Core.Disposable; use Network.Api; Result<unit, NetworkError> Main() { use Resource resource = Api.Acquire()?; return Result::Ok(()); }",
+        ),
+        (
+            "Network/Api.bd",
+            "use Core.Results; use Core.Disposable; pub enum NetworkError { Closed() } [CleanupConversion] pub NetworkError Convert(DisposeError error) { return NetworkError::Closed; } pub type Resource: Disposable { pub Result<unit, DisposeError> Dispose() { return Result::Ok(()); } } Result<Resource, NetworkError> Fresh() { if false { return Result::Error(NetworkError::Closed); } return Result::Ok(Resource {}); } pub Result<Resource, NetworkError> Acquire() { return Fresh(); }",
+        ),
+        ("Core/Results.bd", "pub enum Result<TValue, TError> { Ok(TValue value), Error(TError error) }"),
+        (
+            "Core/Disposable.bd",
+            "use Core.Results; pub enum DisposeError { Failed(i64 code) } pub contract Disposable { Result<unit, DisposeError> Dispose(); }",
+        ),
+    ]);
+}
+
+fn assert_imported_result_lowering(sources: &[(&str, &str)]) {
+    let mut db = BeskidDatabase::default();
+    let directory = tempfile::tempdir().expect("try project");
+    let root = directory.path().to_path_buf();
+    let generation = SyntaxGenerationId(156);
+    let units = sources
+        .iter()
+        .copied()
+        .map(|(relative, source)| {
+            let path = root.join(relative);
+            std::fs::create_dir_all(path.parent().unwrap()).expect("source directory");
+            std::fs::write(&path, source).expect("source");
+            SourceUnit {
+                logical_name: relative.into(),
+                origin_path: path.clone(),
+                program: parse_program_with_source_name(path.to_str().unwrap(), source).expect("parse"),
+                path,
+                source: source.into(),
+            }
+        })
+        .collect::<Vec<_>>();
+    let project = ProjectSession::new(&db, root.clone(), units[0].path.clone(), "Try".into(), "lock".into());
+    let roots = units
+        .iter()
+        .map(|unit| AstNodeKey { unit: SourceUnitId::new(&db, unit.path.clone()), generation, node: AstNodeId(0) })
+        .collect::<Vec<_>>();
+    let assembly = Arc::new(ProgramAssembly::new(
+        EffectiveCompilationRoots {
+            host: RootEntry { dependency_name: None, source_root: root },
+            dependencies: vec![],
+        },
+        Arc::new(units),
+        0,
+        AssemblyDiscovery::ImportClosure,
+        Arc::new(ModuleIndex::empty()),
+        false,
+        generation,
+    ));
+    let typed = build_typed_program(&mut db, project, generation, assembly).expect("typed try source");
+    let target = TargetMetadata::supported()
+        .into_iter()
+        .find(|target| target.triple.as_str() == "x86_64-unknown-linux-gnu")
+        .unwrap();
+    let input =
+        CodegenInput::new(&db, typed, roots.clone().into(), target.clone(), AbiManifestV5::canonical_runtime(target))
+            .expect("input");
+    let isa = isa::lookup_by_name("x86_64").unwrap().finish(settings::Flags::new(settings::builder())).unwrap();
+    let items = roots
+        .iter()
+        .flat_map(|root| {
+            let mut functions = find_function_definitions(&db, *root);
+            functions.extend(find_nodes_of_kind(&db, *root, beskid_queries::IndexedNodeKind::MethodDefinition));
+            functions
+        })
+        .map(|key| SyntaxModuleItem { key, symbol: item_name(&db, key).unwrap().unwrap().to_string() })
+        .collect::<Vec<_>>();
+    let emitted = lower_syntax_program(&input, isa.as_ref(), &items)
+        .expect("imported Result calls with distinct success types lower through real ISLE");
+    for expression in find_nodes_of_kind(&db, roots[0], beskid_queries::IndexedNodeKind::TryExpression) {
+        let fact = beskid_queries::try_expression_fact(&db, expression).expect("try query").expect("try fact");
+        assert_eq!(fact.payload_type, beskid_queries::SemanticTypeId::POINTER);
+    }
+    for expression in find_nodes_of_kind(&db, roots[0], beskid_queries::IndexedNodeKind::ScopedUseStatement) {
+        let fact = beskid_queries::scoped_cleanup(&db, expression).expect("cleanup query").expect("cleanup fact");
+        assert!(fact.diagnostic.is_none(), "{fact:?}");
+        assert!(fact.acquisition.is_some());
+        assert!(fact.dispose.is_some());
+        assert!(fact.conversion.is_some());
+    }
+    let main = emitted.functions.iter().find(|function| function.name == "Main").expect("Main");
+    assert!(main.function.display().to_string().contains("brif"));
+}
+
+#[test]
 fn parsed_result_try_rejects_noncanonical_result_definition_before_clif() {
     let (input, isa, root) = item_fixture_with_root(
         "enum Error { Failed() } enum Result<TValue, TError> { Ok(TValue value), Err(TError error) } Result<i32, Error> Main(Result<i32, Error> value) { i32 output = value?; return Result::Ok(output); }",
@@ -187,6 +362,64 @@ fn parsed_result_try_rejects_noncanonical_result_definition_before_clif() {
 }
 
 #[test]
+fn parsed_result_try_reconstructs_distinct_error_layouts_and_accepts_unit_success() {
+    for (source_success, target_success, consume) in
+        [("i64", "unit", "i64 value = Make()?;"), ("unit", "i64", "Make()?;")]
+    {
+        let source = format!(
+            "enum Error {{ Failed() }} enum Result<TValue, TError> {{ Ok(TValue value), Error(TError error) }} Result<{source_success}, Error> Make() {{ return Result::Error(Error::Failed); }} Result<{target_success}, Error> Main() {{ {consume} return Result::Error(Error::Failed); }}"
+        );
+        let (input, isa, root) = item_fixture_with_root(&source);
+        let main = super::support::named_function(&input, root, "Main");
+        let expression = find_node(input.database(), main, beskid_queries::IndexedNodeKind::TryExpression).unwrap();
+        let fact = beskid_queries::try_expression_fact(input.database(), expression).unwrap().unwrap();
+        let source_layout = fact.operand_layout.scalar_payload_object_layout(64, 16, 8).unwrap();
+        let target_layout = fact.return_layout.scalar_payload_object_layout(64, 16, 8).unwrap();
+        assert_ne!(source_layout.variants[1].payload_fields, target_layout.variants[1].payload_fields);
+        let items = find_function_definitions(input.database(), root)
+            .into_iter()
+            .map(|key| SyntaxModuleItem { key, symbol: item_name(input.database(), key).unwrap().unwrap().to_string() })
+            .collect::<Vec<_>>();
+        let emitted =
+            lower_syntax_program(&input, isa.as_ref(), &items).expect("distinct Result layouts rewrap the exact error");
+        let main = emitted.functions.iter().find(|function| function.name == "Main").unwrap();
+        let clif = main.function.display().to_string();
+        assert!(clif.contains("gc_register_root"), "managed error survives allocation: {clif}");
+        assert!(input.enum_static_plan(expression).is_some(), "propagated error owns the target allocation descriptor");
+    }
+}
+
+/// A `let` local is a proven try operand: its declared annotation (or its initializer identity)
+/// carries the same Result application a parameter declaration would.
+#[test]
+fn parsed_result_try_accepts_a_declared_local_operand() {
+    let source = "enum Error { Failed() } enum Result<TValue, TError> { Ok(TValue value), Error(TError error) }                   Result<i64, Error> Make() { return Result::Ok(1_i64); }                   Result<unit, Error> Main() { Result<i64, Error> value = Make(); i64 output = value?; return Result::Ok(()); }";
+    let (input, isa, root) = item_fixture_with_root(source);
+    let main = super::support::named_function(&input, root, "Main");
+    let expression = find_node(input.database(), main, beskid_queries::IndexedNodeKind::TryExpression).unwrap();
+    assert!(beskid_queries::try_expression_fact(input.database(), expression).expect("try fact").is_some());
+    emit_isle_item(&input, isa.as_ref(), main).expect("declared local try operand lowers");
+}
+
+#[test]
+fn parsed_result_try_rejects_unproven_operands_and_mismatched_error_identity() {
+    for body in [
+        "i64 output = Missing()?;",
+        "i64 output = other.value?;",
+        "i64 output = Wrong()?;",
+    ] {
+        let source = format!(
+            "enum Error {{ Failed() }} enum OtherError {{ Failed() }} enum Result<TValue, TError> {{ Ok(TValue value), Error(TError error) }} type Holder {{ Result<i64, Error> value, }} Result<i64, Error> Make() {{ return Result::Ok(1_i64); }} Result<i64, OtherError> Wrong() {{ return Result::Error(OtherError::Failed); }} Result<unit, Error> Main(Holder other) {{ {body} return Result::Ok(()); }}"
+        );
+        let (input, isa, root) = item_fixture_with_root(&source);
+        let main = super::support::named_function(&input, root, "Main");
+        let expression = find_node(input.database(), main, beskid_queries::IndexedNodeKind::TryExpression).unwrap();
+        assert!(beskid_queries::try_expression_fact(input.database(), expression).is_err(), "{body}");
+        assert!(emit_isle_item(&input, isa.as_ref(), main).is_err(), "{body}");
+    }
+}
+
+#[test]
 fn parsed_nullary_enum_constructor_uses_source_layout_without_hir() {
     let (input, isa, root) = item_fixture_with_root(
         "enum Choice { None(), Some(i32 value) } i32 Main() { Choice choice = Choice::None(); return 0; }",
@@ -199,7 +432,7 @@ fn parsed_nullary_enum_constructor_uses_source_layout_without_hir() {
 
     let clif = function.display().to_string();
     assert!(clif.contains("beskid_rt_v5_managed_object_allocate"));
-    assert!(!clif.contains("stack_store"));
+    assert!(clif.contains("gc_register_root"));
     assert!(clif.contains("iconst.i32 0"));
 }
 
@@ -241,6 +474,172 @@ fn parsed_generic_enum_match_uses_explicit_scrutinee_layout_without_hir() {
 }
 
 #[test]
+fn direct_generic_call_match_preserves_nominal_payload_identity() {
+    let (input, isa, root) = item_fixture_with_root(
+        "enum Error { Value(i64 value) } enum Outcome<T> { Ok(T value), None } Outcome<T> Wrap<T>(T value) { return Outcome::Ok(value); } i64 Main() { Error error = Error::Value(7_i64); return match Wrap(error) { Outcome::Ok(value) => 21_i64, _ => -1_i64, }; }",
+    );
+    let expression = find_node(input.database(), root, beskid_queries::IndexedNodeKind::MatchExpression)
+        .expect("direct generic call match");
+    let error =
+        find_node(input.database(), root, beskid_queries::IndexedNodeKind::EnumDefinition).expect("Error declaration");
+    let fact = enum_match(input.database(), expression).expect("match query").expect("nominal match fact");
+    assert_eq!(fact.layout.variants[0].fields[0].1, beskid_queries::AggregateFieldShape::Nominal(error));
+    let beskid_queries::EnumMatchPatternFact::Enum(pattern) = &fact.arms[0].pattern else {
+        panic!("Ok variant pattern");
+    };
+    let beskid_queries::EnumMatchPatternFact::Binding(binding) = &pattern.items[0] else {
+        panic!("nominal payload binding");
+    };
+    assert_eq!(binding.payload, beskid_queries::AggregateFieldShape::Nominal(error));
+    assert_eq!(binding.managed_reference, beskid_queries::ManagedReferenceKind::GcManaged);
+    let items = find_function_definitions(input.database(), root)
+        .into_iter()
+        .map(|key| SyntaxModuleItem { key, symbol: item_name(input.database(), key).unwrap().unwrap().to_string() })
+        .collect::<Vec<_>>();
+    lower_syntax_program(&input, isa.as_ref(), &items).expect("direct nominal call-result match lowers");
+}
+
+#[test]
+fn direct_generic_call_match_supports_nested_nominal_payload_pattern() {
+    for (wrap, scrutinee) in [
+        ("Outcome<T> Wrap<T>(T value) { return Outcome::Ok(value); }", "Wrap(error)"),
+        ("Outcome<Error> Wrap(Error value) { return Outcome::Ok(value); }", "Wrap(error)"),
+        ("Outcome<T> Wrap<T>(T value) { return Outcome::Ok(value); }", "joined"),
+    ] {
+        let local = if scrutinee == "joined" { "Outcome<Error> joined = Wrap(error);" } else { "" };
+        let (input, isa, root) = item_fixture_with_root(&format!(
+            "enum Error {{ Value(i64 value) }} enum Outcome<T> {{ Ok(T value), None }} {wrap} i64 Main() {{ Error error = Error::Value(7_i64); {local} return match {scrutinee} {{ Outcome::Ok(Error::Value(value)) => value, _ => -1_i64, }}; }}"
+        ));
+        let expression = find_node(input.database(), root, beskid_queries::IndexedNodeKind::MatchExpression).unwrap();
+        let fact = enum_match(input.database(), expression).unwrap().expect("nested nominal match");
+        let beskid_queries::EnumMatchPatternFact::Enum(outer) = &fact.arms[0].pattern else {
+            panic!("outer enum pattern");
+        };
+        let beskid_queries::EnumMatchPatternFact::Enum(inner) = &outer.items[0] else {
+            panic!("nested nominal enum pattern");
+        };
+        assert!(matches!(&inner.items[0], beskid_queries::EnumMatchPatternFact::Binding(_)));
+        let items = find_function_definitions(input.database(), root)
+            .into_iter()
+            .map(|key| SyntaxModuleItem { key, symbol: item_name(input.database(), key).unwrap().unwrap().to_string() })
+            .collect::<Vec<_>>();
+        lower_syntax_program(&input, isa.as_ref(), &items).expect("nested match and controls lower");
+    }
+}
+
+#[test]
+fn direct_generic_call_match_distinguishes_scalar_array_and_native_pointer_ownership() {
+    for (ty, expected_shape, ownership) in [
+        ("i64", beskid_queries::SemanticTypeId::I64, beskid_queries::ManagedReferenceKind::NativeOrScalar),
+        ("u8[]", beskid_queries::SemanticTypeId::POINTER, beskid_queries::ManagedReferenceKind::GcManaged),
+        ("pointer", beskid_queries::SemanticTypeId::POINTER, beskid_queries::ManagedReferenceKind::NativeOrScalar),
+    ] {
+        let (input, isa, root) = item_fixture_with_root(&format!(
+            "enum Outcome<T> {{ Ok(T value), None }} Outcome<T> Wrap<T>(T value) {{ return Outcome::Ok(value); }} i64 Main({ty} value) {{ return match Wrap(value) {{ Outcome::Ok(payload) => 21_i64, _ => -1_i64, }}; }}"
+        ));
+        let expression = find_node(input.database(), root, beskid_queries::IndexedNodeKind::MatchExpression).unwrap();
+        let fact = enum_match(input.database(), expression).unwrap().expect("direct match fact");
+        let beskid_queries::EnumMatchPatternFact::Enum(pattern) = &fact.arms[0].pattern else {
+            panic!("Ok pattern");
+        };
+        let beskid_queries::EnumMatchPatternFact::Binding(binding) = &pattern.items[0] else {
+            panic!("payload binding");
+        };
+        assert_eq!(binding.payload, beskid_queries::AggregateFieldShape::Scalar(expected_shape), "{ty}");
+        assert_eq!(binding.managed_reference, ownership, "{ty}");
+        let items = find_function_definitions(input.database(), root)
+            .into_iter()
+            .map(|key| SyntaxModuleItem { key, symbol: item_name(input.database(), key).unwrap().unwrap().to_string() })
+            .collect::<Vec<_>>();
+        lower_syntax_program(&input, isa.as_ref(), &items).expect("source-proven scalar and pointer shapes lower");
+    }
+}
+
+#[test]
+fn cross_unit_generic_receiver_direct_match_preserves_nominal_value() {
+    let compiler = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..").canonicalize().unwrap();
+    let concurrency = compiler.join("corelib/packages/concurrency/src");
+    let foundation = compiler.join("corelib/packages/foundation/src");
+    for (payload, make, local, scrutinee, pattern) in [
+        ("FiberError", "FiberError::Cancelled(73_i64, 91_i64)", "", "child.Join()", "Result::Ok(error) => 21_i64"),
+        (
+            "FiberError",
+            "FiberError::Cancelled(73_i64, 91_i64)",
+            "",
+            "child.Join()",
+            "Result::Ok(FiberError::Cancelled(reason, canceler)) => reason + canceler",
+        ),
+        (
+            "FiberError",
+            "FiberError::Cancelled(73_i64, 91_i64)",
+            "Result<FiberError, FiberError> joined = child.Join();",
+            "joined",
+            "Result::Ok(error) => 21_i64",
+        ),
+        ("FiberError", "FiberError::Cancelled(73_i64, 91_i64)", "", "child.Join()", "Result::Error(error) => 21_i64"),
+        ("i64", "7_i64", "", "child.Join()", "Result::Ok(value) => value"),
+    ] {
+        let directory = tempfile::tempdir().unwrap();
+        let source_path = directory.path().join("Main.bd");
+        let source = format!(
+            "use Concurrency.Fiber; use Concurrency.FiberError; use Core.Results; {payload} Make() {{ return {make}; }} i64 Main() {{ Fiber<{payload}> child = spawn Make(); {local} return match {scrutinee} {{ {pattern}, _ => -1_i64, }}; }}"
+        );
+        std::fs::write(&source_path, &source).unwrap();
+        let mut units = vec![SourceUnit {
+            program: parse_program_with_source_name(source_path.to_str().unwrap(), &source).unwrap(),
+            origin_path: source_path.clone(),
+            path: source_path,
+            logical_name: "Main.bd".into(),
+            source,
+        }];
+        for (base, relative) in [
+            (&concurrency, "Concurrency/Fiber.bd"),
+            (&concurrency, "Concurrency/FiberError.bd"),
+            (&foundation, "Core/Disposable.bd"),
+            (&foundation, "Core/Results/Results.bd"),
+        ] {
+            let path = base.join(relative);
+            let source = std::fs::read_to_string(&path).unwrap();
+            units.push(SourceUnit {
+                program: parse_program_with_source_name(path.to_str().unwrap(), &source).unwrap(),
+                origin_path: path.clone(),
+                path,
+                logical_name: relative.into(),
+                source,
+            });
+        }
+        let assembly = Arc::new(ProgramAssembly::new(
+            EffectiveCompilationRoots {
+                host: RootEntry { dependency_name: None, source_root: directory.path().to_path_buf() },
+                dependencies: vec![
+                    RootEntry { dependency_name: Some("concurrency".into()), source_root: concurrency.clone() },
+                    RootEntry { dependency_name: Some("foundation".into()), source_root: foundation.clone() },
+                ],
+            },
+            Arc::new(units),
+            0,
+            AssemblyDiscovery::ImportClosure,
+            Arc::new(ModuleIndex::empty()),
+            false,
+            SyntaxGenerationId(151),
+        ));
+        let target = TargetMetadata::supported()
+            .into_iter()
+            .find(|target| target.triple.as_str() == "x86_64-unknown-linux-gnu")
+            .unwrap();
+        let isa = isa::lookup_by_name("x86_64").unwrap().finish(settings::Flags::new(settings::builder())).unwrap();
+        beskid_codegen::lower_syntax_assembly_entrypoint(
+            &mut BeskidDatabase::default(),
+            assembly,
+            "Main",
+            target,
+            isa.as_ref(),
+        )
+        .expect("real Fiber.Join direct match and controls lower");
+    }
+}
+
+#[test]
 fn generic_result_predicate_match_uses_each_call_specialization_for_its_scrutinee() {
     let (input, isa, root) = item_fixture_with_root(
         "enum Result<TValue, TError> { Ok(TValue value), Error(TError error) } bool IsOk<TValue, TError>(Result<TValue, TError> value) { return match value { Result::Ok(_) => true, Result::Error(_) => false, }; } bool Main(Result<i64, string> left, Result<string, i64> right) { return IsOk<i64, string>(left) && IsOk<string, i64>(right); }",
@@ -266,6 +665,32 @@ fn generic_result_predicate_match_uses_each_call_specialization_for_its_scrutine
         ],
     )
     .expect("a generic predicate match must consume the same call specialization as its parameter local");
+}
+
+#[test]
+fn imported_generic_result_match_specialization_preserves_payload_provenance() {
+    assert_imported_result_lowering(&[
+        (
+            "Main.bd",
+            "use Core.Results; use Http.Errors; use Http.Requests; T RequireHttp<T>(Result<T, HttpError> value, T fallback) { return match value { Result::Ok(result) => result, Result::Error(_) => fallback, }; } bool IsError<T>(Result<T, HttpError> result, HttpError expected) { return match result { Result::Ok(_) => false, Result::Error(value) => match value { HttpError::InvalidFraming => match expected { HttpError::InvalidFraming => true, HttpError::Closed => false, }, HttpError::Closed => match expected { HttpError::InvalidFraming => false, HttpError::Closed => true, }, }, }; } bool Main(Result<Request, HttpError> value, Request fallback, HttpError expected) { Request request = RequireHttp<Request>(value, fallback); if request.id == 0_i64 { return false; } return IsError<Request>(value, expected); }",
+        ),
+        ("Core/Results.bd", "pub enum Result<TValue, TError> { Ok(TValue value), Error(TError error) }"),
+        ("Http/Errors.bd", "pub enum HttpError { InvalidFraming(), Closed() }"),
+        ("Http/Requests.bd", "pub type Request { i64 id, }"),
+    ]);
+}
+
+#[test]
+fn imported_result_binding_array_field_flows_into_a_call_argument() {
+    assert_imported_result_lowering(&[
+        (
+            "Main.bd",
+            "use Core.Results; use Http.Errors; use Http.Requests; Result<i64, HttpError> Framing(Header[] headers) { return Result::Ok(0_i64); } bool Main(Result<Request, HttpError> head) { return match head { Result::Error(_) => false, Result::Ok(value) => { Result<i64, HttpError> framing = Framing(value.headers); return match framing { Result::Ok(_) => true, Result::Error(_) => false, }; }, }; }",
+        ),
+        ("Core/Results.bd", "pub enum Result<TValue, TError> { Ok(TValue value), Error(TError error) }"),
+        ("Http/Errors.bd", "pub enum HttpError { InvalidFraming(), Closed() }"),
+        ("Http/Requests.bd", "pub type Header { string name, } pub type Request { string method, Header[] headers, }"),
+    ]);
 }
 
 #[test]
@@ -318,6 +743,22 @@ fn parsed_generic_unit_payload_pattern_lowers_without_fabricating_storage() {
 }
 
 #[test]
+fn generic_unit_arguments_preserve_effects_without_fabricating_abi_storage() {
+    let (input, isa, root) = item_fixture_with_root(
+        "unit Effect() { return; } i64 Consume<T>(T value, i64 count) { return count; } i64 Main() { return Consume<unit>(Effect(), 42_i64); }",
+    );
+    let items = find_function_definitions(input.database(), root)
+        .into_iter()
+        .map(|key| SyntaxModuleItem { symbol: item_name(input.database(), key).unwrap().unwrap().to_string(), key })
+        .collect::<Vec<_>>();
+    let artifact = lower_syntax_program(&input, isa.as_ref(), &items).expect("zero-sized generic parameter erasure");
+    let consume = artifact.functions.iter().find(|function| function.name.starts_with("Consume")).unwrap();
+    assert_eq!(consume.function.signature.params.len(), 1);
+    let main = artifact.functions.iter().find(|function| function.name == "Main").unwrap();
+    assert!(main.function.display().to_string().contains("Effect"));
+}
+
+#[test]
 fn generic_enum_constructor_without_context_remains_unavailable() {
     let (input, _isa, root) = item_fixture_with_root(
         "enum Result<TValue, TError> { Ok(TValue value), Error(TError error) } enum SyscallError { InvalidFd(i64 fd) } unit Main() { Result::Error(SyscallError::InvalidFd(1_i64)); return; }",
@@ -362,6 +803,139 @@ fn generic_enum_constructor_uses_its_declared_return_context() {
         enum_constructor(input.database(), constructor).expect("declared-return constructor query").is_some(),
         "declared return context must supply the generic Result arguments"
     );
+}
+
+#[test]
+fn ordinary_call_contextualizes_inline_generic_enum_arguments() {
+    assert_ordinary_enum_argument_context(
+        "use Core.Optional.Option; use Network.Types; pub i64 Resolve(Option<AddressFamily> family) { return match family { Option::Some(_) => 4_i64, Option::None => 0_i64, }; }",
+        "use Core.Optional.Option; use Network.Types; use Network.Dns; i64 Main() { return Dns.Resolve(Option::Some(AddressFamily::V4)) + Dns.Resolve(Option::None); }",
+        true,
+    );
+}
+
+#[test]
+fn ordinary_call_enum_context_rejects_unproven_parameter_identity() {
+    let ordinary =
+        "use Core.Optional.Option; use Network.Types; pub i64 Resolve(Option<AddressFamily> family) { return 0_i64; }";
+    for (dns, main) in [
+        (
+            ordinary,
+            "use Core.Optional.Option; use Network.Types; use Network.Dns; i64 Main() { return Dns.Unknown(Option::None); }",
+        ),
+        (
+            ordinary,
+            "use Core.Optional.Option; use Network.Types; use Network.Dns; i64 Main() { return Dns.Resolve(Option::None, 0_i64); }",
+        ),
+        (
+            "use Core.Optional.Option; pub i64 Resolve<T>(Option<T> family) { return 0_i64; }",
+            "use Core.Optional.Option; use Network.Dns; i64 Main() { return Dns.Resolve(Option::None); }",
+        ),
+        (
+            "use Core.Optional.Option; pub i64 Resolve(Option<Unknown> family) { return 0_i64; }",
+            "use Core.Optional.Option; use Network.Dns; i64 Main() { return Dns.Resolve(Option::None); }",
+        ),
+        (
+            ordinary,
+            "use Core.Optional.Option; use Network.Dns; enum AddressFamily { Other } i64 Main() { return Dns.Resolve(Option::None); }",
+        ),
+        (
+            "use Core.Optional.Option; use Network.Types; pub i64 Resolve(Option<AddressFamily> family) { return 0_i64; } pub i64 Resolve(Option<AddressFamily> family) { return 1_i64; }",
+            "use Core.Optional.Option; use Network.Types; use Network.Dns; i64 Main() { return Dns.Resolve(Option::None); }",
+        ),
+        (
+            "use Core.Optional.Option; use Network.Types; i64 Resolve(Option<AddressFamily> family) { return 0_i64; }",
+            "use Core.Optional.Option; use Network.Types; use Network.Dns; i64 Main() { return Dns.Resolve(Option::None); }",
+        ),
+    ] {
+        assert_ordinary_enum_argument_context(dns, main, false);
+    }
+}
+
+fn assert_ordinary_enum_argument_context(dns: &str, main: &str, supported: bool) {
+    let mut db = BeskidDatabase::default();
+    let directory = tempfile::tempdir().expect("project");
+    let root = directory.path().to_path_buf();
+    let generation = SyntaxGenerationId(154);
+    let units = [
+        ("Main.bd", main),
+        ("Network/Dns.bd", dns),
+        ("Network/Types.bd", "pub enum AddressFamily { V4, V6 }"),
+        ("Core/Optional/Option.bd", "pub enum Option<T> { Some(T value), None }"),
+    ]
+    .into_iter()
+    .map(|(path, source)| {
+        let path = root.join(path);
+        std::fs::create_dir_all(path.parent().unwrap()).expect("source directory");
+        std::fs::write(&path, source).expect("source file");
+        SourceUnit {
+            logical_name: path.display().to_string(),
+            program: parse_program_with_source_name(path.to_str().unwrap(), source).expect("parse"),
+            origin_path: path.clone(),
+            path,
+            source: source.into(),
+        }
+    })
+    .collect::<Vec<_>>();
+    let main_path = units[0].path.clone();
+    let project = ProjectSession::new(&db, root.clone(), main_path.clone(), "App".into(), "lock".into());
+    let assembly = Arc::new(ProgramAssembly::new(
+        EffectiveCompilationRoots {
+            host: RootEntry { dependency_name: None, source_root: root },
+            dependencies: vec![],
+        },
+        Arc::new(units.clone()),
+        0,
+        AssemblyDiscovery::ImportClosure,
+        Arc::new(ModuleIndex::empty()),
+        false,
+        generation,
+    ));
+    let typed = build_typed_program(&mut db, project, generation, assembly).expect("typed source");
+    let roots = units
+        .iter()
+        .map(|unit| AstNodeKey { unit: SourceUnitId::new(&db, unit.path.clone()), generation, node: AstNodeId(0) })
+        .collect::<Vec<_>>();
+    let constructors = find_nodes_of_kind(&db, roots[0], beskid_queries::IndexedNodeKind::EnumConstructorExpression);
+    let option_constructors = constructors
+        .iter()
+        .copied()
+        .filter(|key| {
+            beskid_queries::node_span(&db, *key)
+                .ok()
+                .flatten()
+                .is_some_and(|span| main[span.start..span.end].starts_with("Option::"))
+        })
+        .collect::<Vec<_>>();
+    assert!(!option_constructors.is_empty());
+    if !supported {
+        for key in option_constructors {
+            assert!(
+                enum_constructor(&db, key).is_err(),
+                "unproven argument must not acquire a constructor layout: {dns} {main}"
+            );
+        }
+        return;
+    }
+    for key in option_constructors {
+        assert!(enum_constructor(&db, key).expect("concrete call parameter context").is_some());
+    }
+    let target = TargetMetadata::supported()
+        .into_iter()
+        .find(|target| target.triple.as_str() == "x86_64-unknown-linux-gnu")
+        .unwrap();
+    let input =
+        CodegenInput::new(&db, typed, roots.clone().into(), target.clone(), AbiManifestV5::canonical_runtime(target))
+            .expect("input");
+    let isa = isa::lookup_by_name("x86_64").unwrap().finish(settings::Flags::new(settings::builder())).unwrap();
+    let items = roots
+        .iter()
+        .flat_map(|root| find_function_definitions(&db, *root))
+        .map(|key| SyntaxModuleItem { key, symbol: item_name(&db, key).unwrap().unwrap().to_string() })
+        .collect::<Vec<_>>();
+    let emitted =
+        lower_syntax_program(&input, isa.as_ref(), &items).expect("ordinary call arguments lower through real ISLE");
+    assert!(emitted.functions.iter().any(|function| function.function.display().to_string().contains("call")));
 }
 
 #[test]
@@ -593,8 +1167,8 @@ fn enum_match_expression_accepts_a_never_returning_arm() {
         .copied()
         .find(|key| item_name(db, *key).ok().flatten().as_deref() == Some("Fail"))
         .expect("Fail item");
-    let expression = find_node(db, item, beskid_queries::IndexedNodeKind::MatchExpression)
-        .expect("match expression with never arm");
+    let expression =
+        find_node(db, item, beskid_queries::IndexedNodeKind::MatchExpression).expect("match expression with never arm");
 
     assert_eq!(
         node_type(db, expression).expect("match result type"),
@@ -606,10 +1180,7 @@ fn enum_match_expression_accepts_a_never_returning_arm() {
     let imported = module.declare_function("Fail", Linkage::Import, &signature).expect("declare never callee");
     let mut importer = ItemModuleImporter::new(&mut module, HashMap::from([(DirectCallee::item(fail), imported)]));
     if let Err(error) = emit_isle_item_with_call_importer(&input, isa.as_ref(), item, &mut importer) {
-        panic!(
-            "a never-returning arm terminates without supplying a merge value: {}",
-            error.display_with_db(db)
-        );
+        panic!("a never-returning arm terminates without supplying a merge value: {}", error.display_with_db(db));
     }
 }
 
@@ -641,21 +1212,21 @@ fn cross_unit_generic_receiver_match_preserves_a_concrete_nominal_error() {
     let project_root = tempfile::tempdir().expect("project").keep();
     let source_root = project_root.join("src");
     let main_path = source_root.join("Main.bd");
-    let fiber_path = source_root.join("Concurrency/Fiber.bd");
-    let fiber_error_path = source_root.join("Concurrency/FiberError.bd");
-    let fiber_status_path = source_root.join("Concurrency/FiberJoinStatus.bd");
+    let fiber_path = source_root.join("Concurrency/Work.bd");
+    let fiber_error_path = source_root.join("Concurrency/WorkError.bd");
+    let fiber_status_path = source_root.join("Concurrency/WorkStatus.bd");
     let results_path = source_root.join("Core/Results.bd");
-    let main_source = "use Concurrency.Fiber; unit Main() { Fiber<i64> fiber = Fiber<i64> { value: 7_i64, handle: -1_i64 }; Fiber<i64>.Join(fiber); return; }";
-    let fiber_source = "use Concurrency.FiberError; use Concurrency.FiberJoinStatus; use Core.Results; pub type Fiber<T> { T value, i64 handle } pub Core.Results.Result<T, FiberError> Join<T>(Fiber<T> self) { FiberJoinStatus status = FiberJoinStatus::Panicked(self.handle, \"panic\"); return match status { FiberJoinStatus::Ok(_) => Result::Ok(self.value), FiberJoinStatus::Cancelled(reason, cancelerId) => Result::Error(FiberError::Cancelled(reason, cancelerId)), FiberJoinStatus::StackOverflow(limitBytes, requestedBytes) => Result::Error(FiberError::StackOverflow(limitBytes, requestedBytes)), FiberJoinStatus::Panicked(code, message) => Result::Error(FiberError::Panicked(code, message)), FiberJoinStatus::NotDone => Result::Error(FiberError::Panicked(-1_i64, \"not done\")), }; }";
-    let fiber_error_source = "pub enum FiberError { Cancelled(i64 reason, i64 cancelerId), StackOverflow(i64 limitBytes, i64 requestedBytes), Panicked(i64 code, string message) }";
-    let fiber_status_source = "pub enum FiberJoinStatus { Ok(i64 value), Cancelled(i64 reason, i64 cancelerId), StackOverflow(i64 limitBytes, i64 requestedBytes), Panicked(i64 code, string message), NotDone }";
+    let main_source = "use Concurrency.Work; unit Main() { Work<i64> fiber = Work<i64> { value: 7_i64, handle: -1_i64 }; Work<i64>.Join(fiber); return; }";
+    let fiber_source = "use Concurrency.WorkError; use Concurrency.WorkStatus; use Core.Results; pub type Work<T> { T value, i64 handle } pub Core.Results.Result<T, WorkError> Join<T>(Work<T> self) { WorkStatus status = WorkStatus::Panicked(self.handle, \"panic\"); return match status { WorkStatus::Ok(_) => Result::Ok(self.value), WorkStatus::Cancelled(reason, cancelerId) => Result::Error(WorkError::Cancelled(reason, cancelerId)), WorkStatus::StackOverflow(limitBytes, requestedBytes) => Result::Error(WorkError::StackOverflow(limitBytes, requestedBytes)), WorkStatus::Panicked(code, message) => Result::Error(WorkError::Panicked(code, message)), WorkStatus::NotDone => Result::Error(WorkError::Panicked(-1_i64, \"not done\")), }; }";
+    let fiber_error_source = "pub enum WorkError { Cancelled(i64 reason, i64 cancelerId), StackOverflow(i64 limitBytes, i64 requestedBytes), Panicked(i64 code, string message) }";
+    let fiber_status_source = "pub enum WorkStatus { Ok(i64 value), Cancelled(i64 reason, i64 cancelerId), StackOverflow(i64 limitBytes, i64 requestedBytes), Panicked(i64 code, string message), NotDone }";
     let results_source = "pub enum Result<TValue, TError> { Ok(TValue value), Error(TError error) }";
     std::fs::create_dir_all(fiber_path.parent().expect("fiber parent")).expect("create source tree");
     std::fs::create_dir_all(results_path.parent().expect("results parent")).expect("create Core source tree");
     std::fs::write(&main_path, main_source).expect("write Main source");
-    std::fs::write(&fiber_path, fiber_source).expect("write Fiber source");
-    std::fs::write(&fiber_error_path, fiber_error_source).expect("write FiberError source");
-    std::fs::write(&fiber_status_path, fiber_status_source).expect("write FiberJoinStatus source");
+    std::fs::write(&fiber_path, fiber_source).expect("write Work source");
+    std::fs::write(&fiber_error_path, fiber_error_source).expect("write WorkError source");
+    std::fs::write(&fiber_status_path, fiber_status_source).expect("write WorkStatus source");
     std::fs::write(&results_path, results_source).expect("write Results source");
     let units = [
         (main_path.clone(), main_source),
@@ -669,6 +1240,7 @@ fn cross_unit_generic_receiver_match_preserves_a_concrete_nominal_error() {
         logical_name: path.display().to_string(),
         program: parse_program_with_source_name(path.to_str().expect("UTF-8 source path"), source)
             .expect("parse source"),
+        origin_path: path.clone(),
         path,
         source: source.into(),
     })
@@ -710,17 +1282,17 @@ fn cross_unit_generic_receiver_match_preserves_a_concrete_nominal_error() {
         .expect("host ISA")
         .finish(settings::Flags::new(settings::builder()))
         .expect("host flags");
-    let call = find_call_expression(input.database(), main).expect("Fiber<i64>.Join call");
+    let call = find_call_expression(input.database(), main).expect("Work<i64>.Join call");
     let specialization = beskid_queries::generic_call_specialization(input.database(), call)
         .expect("Join specialization query")
-        .expect("the applied Fiber receiver must specialize Join<T>");
+        .expect("the applied Work receiver must specialize Join<T>");
     let matched =
         find_node(input.database(), join, beskid_queries::IndexedNodeKind::MatchExpression).expect("Join status match");
     assert!(
         beskid_queries::enum_match_specialization(input.database(), matched, specialization.substitutions.clone(),)
             .expect("specialized Join match query")
             .is_some(),
-        "the imported concrete FiberError must survive beside the owner-propagated T"
+        "the imported concrete WorkError must survive beside the owner-propagated T"
     );
     for constructor in
         find_nodes_of_kind(input.database(), join, beskid_queries::IndexedNodeKind::EnumConstructorExpression)
@@ -1012,6 +1584,7 @@ fn imported_single_payload_enum_constructor_exposes_its_layout_to_isle() {
         logical_name: path.display().to_string(),
         program: parse_program_with_source_name(path.to_str().expect("UTF-8 source path"), source)
             .expect("parse source"),
+        origin_path: path.clone(),
         path,
         source: source.into(),
     })
@@ -1061,6 +1634,7 @@ fn imported_nullary_enum_constructor_lowers_from_an_ordinary_function_block() {
             logical_name: path.display().to_string(),
             program: parse_program_with_source_name(path.to_str().expect("UTF-8 source path"), source)
                 .expect("parse source"),
+            origin_path: path.clone(),
             path,
             source: source.into(),
         })
@@ -1121,6 +1695,7 @@ fn imported_result_write_with_lowers_through_an_ordinary_function_block_match() 
             logical_name: path.display().to_string(),
             program: parse_program_with_source_name(path.to_str().expect("UTF-8 source path"), source)
                 .expect("parse source"),
+            origin_path: path.clone(),
             path,
             source: source.into(),
         })
@@ -1348,4 +1923,103 @@ fn cyb169_enum_return_i64_main_must_lower() {
         Err(error) => panic!("CYB-169 enum return with i64 Main must lower: {error:?}"),
     };
     assert!(artifact.functions.iter().any(|f| f.name.contains("Main")), "Main missing from artifact");
+}
+
+#[test]
+fn imported_call_scrutinee_binding_field_infers_a_generic_argument() {
+    assert_imported_result_lowering(&[
+        (
+            "Main.bd",
+            "use Core.Results; use Http.Errors; use Http.Requests; use Testing.Assert; Result<Request, HttpError> Parse(i64 x) { return Result::Error(HttpError::Closed()); } unit Main() { match Parse(1_i64) { Result::Error(_) => Assert.Same(1_i64, 2_i64), Result::Ok(request) => { Assert.Same(request.method, \"POST\"); }, }; return; }",
+        ),
+        ("Core/Results.bd", "pub enum Result<TValue, TError> { Ok(TValue value), Error(TError error) }"),
+        ("Http/Errors.bd", "pub enum HttpError { InvalidFraming(), Closed() }"),
+        (
+            "Http/Requests.bd",
+            "pub type Header { string name, } pub type Request { pub string method, pub Header[] headers, }",
+        ),
+        ("Testing/Assert.bd", "pub unit Same<T>(T actual, T expected) { return; }"),
+    ]);
+}
+
+#[test]
+fn imported_local_scrutinee_binding_field_infers_a_generic_argument() {
+    assert_imported_result_lowering(&[
+        (
+            "Main.bd",
+            "use Core.Results; use Http.Errors; use Http.Requests; use Testing.Assert; Result<Request, HttpError> Parse(i64 x) { return Result::Error(HttpError::Closed()); } unit Main() { Result<Request, HttpError> parsed = Parse(1_i64); match parsed { Result::Error(_) => Assert.Same(1_i64, 2_i64), Result::Ok(request) => { Assert.Same(request.method, \"POST\"); }, }; return; }",
+        ),
+        ("Core/Results.bd", "pub enum Result<TValue, TError> { Ok(TValue value), Error(TError error) }"),
+        ("Http/Errors.bd", "pub enum HttpError { InvalidFraming(), Closed() }"),
+        (
+            "Http/Requests.bd",
+            "pub type Header { string name, } pub type Request { pub string method, pub Header[] headers, }",
+        ),
+        ("Testing/Assert.bd", "pub unit Same<T>(T actual, T expected) { return; }"),
+    ]);
+}
+
+#[test]
+fn imported_call_scrutinee_binding_indexed_field_infers_a_generic_argument() {
+    assert_imported_result_lowering(&[
+        (
+            "Main.bd",
+            "use Core.Results; use Http.Errors; use Http.Requests; use Testing.Assert; Result<Request, HttpError> Parse(i64 x) { return Result::Error(HttpError::Closed()); } unit Main() { match Parse(1_i64) { Result::Error(_) => Assert.Same(1_i64, 2_i64), Result::Ok(request) => { Assert.Same(request.headers[0].name, \"host\"); }, }; return; }",
+        ),
+        ("Core/Results.bd", "pub enum Result<TValue, TError> { Ok(TValue value), Error(TError error) }"),
+        ("Http/Errors.bd", "pub enum HttpError { InvalidFraming(), Closed() }"),
+        (
+            "Http/Requests.bd",
+            "pub type Header { pub string name, } pub type Request { pub string method, pub Header[] headers, pub u8[] body, }",
+        ),
+        ("Testing/Assert.bd", "pub unit Same<T>(T actual, T expected) { return; }"),
+    ]);
+}
+
+#[test]
+fn imported_call_scrutinee_binding_indexed_bytes_infer_a_generic_argument() {
+    assert_imported_result_lowering(&[
+        (
+            "Main.bd",
+            "use Core.Results; use Http.Errors; use Http.Requests; use Testing.Assert; Result<Request, HttpError> Parse(i64 x) { return Result::Error(HttpError::Closed()); } unit Main() { match Parse(1_i64) { Result::Error(_) => Assert.Same(1_i64, 2_i64), Result::Ok(request) => { Assert.Same(request.body[4], 101_u8); }, }; return; }",
+        ),
+        ("Core/Results.bd", "pub enum Result<TValue, TError> { Ok(TValue value), Error(TError error) }"),
+        ("Http/Errors.bd", "pub enum HttpError { InvalidFraming(), Closed() }"),
+        (
+            "Http/Requests.bd",
+            "pub type Header { pub string name, } pub type Request { pub string method, pub Header[] headers, pub u8[] body, }",
+        ),
+        ("Testing/Assert.bd", "pub unit Same<T>(T actual, T expected) { return; }"),
+    ]);
+}
+
+#[test]
+fn imported_local_scrutinee_binding_indexed_field_infers_a_generic_argument() {
+    assert_imported_result_lowering(&[
+        (
+            "Main.bd",
+            "use Core.Results; use Http.Errors; use Http.Requests; use Testing.Assert; Result<Request, HttpError> Parse(i64 x) { return Result::Error(HttpError::Closed()); } unit Main() { Result<Request, HttpError> parsed = Parse(1_i64); match parsed { Result::Error(_) => Assert.Same(1_i64, 2_i64), Result::Ok(request) => { Assert.Same(request.headers[0].name, \"host\"); }, }; return; }",
+        ),
+        ("Core/Results.bd", "pub enum Result<TValue, TError> { Ok(TValue value), Error(TError error) }"),
+        ("Http/Errors.bd", "pub enum HttpError { InvalidFraming(), Closed() }"),
+        (
+            "Http/Requests.bd",
+            "pub type Header { pub string name, } pub type Request { pub string method, pub Header[] headers, pub u8[] body, }",
+        ),
+        ("Testing/Assert.bd", "pub unit Same<T>(T actual, T expected) { return; }"),
+    ]);
+}
+
+#[test]
+fn imported_result_binding_array_field_owns_a_canonical_append() {
+    assert_imported_result_lowering(&[
+        (
+            "Main.bd",
+            "use Core.Results; use Core.Collections.Array; use Http.Errors; use Http.Requests; bool Main(Result<Request, HttpError> head, Header extra) { return match head { Result::Error(_) => false, Result::Ok(request) => { Array.Append<Header>(request.headers, extra); return true; }, }; }",
+        ),
+        ("Core/Results.bd", "pub enum Result<TValue, TError> { Ok(TValue value), Error(TError error) }"),
+        ("Core/Collections/Array.bd", "pub T[] Append<T>(mut T[] values, T value) { return values; }"),
+        ("Http/Errors.bd", "pub enum HttpError { InvalidFraming(), Closed() }"),
+        ("Http/Requests.bd", "pub type Header { string name, } pub type Request { string method, Header[] headers, }"),
+    ]);
 }

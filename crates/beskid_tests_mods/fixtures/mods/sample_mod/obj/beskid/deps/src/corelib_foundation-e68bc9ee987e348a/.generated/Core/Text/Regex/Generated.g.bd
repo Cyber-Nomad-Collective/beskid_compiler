@@ -1,0 +1,654 @@
+// CHECKED IN: materialized by corelib_pest_gen (PascalCase emit per PARSER-005)
+/// Generated combinator parser module for `regex`.
+use Core.Text.Cursor;
+use Core.Text.Parser;
+use Core.Text.Parser.Terms;
+
+pub Parser.Result.TextParseResult<string> ParseDigit(Cursor.TextCursor c) {
+    return Core.Text.Parser.Terms.Digit(c, "digit");
+}
+
+pub Parser.Result.TextParseResult<string> ParseLower(Cursor.TextCursor c) {
+    return Core.Text.Parser.Terms.Lower(c, "lower");
+}
+
+pub Parser.Result.TextParseResult<string> ParseUpper(Cursor.TextCursor c) {
+    return Core.Text.Parser.Terms.Upper(c, "upper");
+}
+
+pub Parser.Result.TextParseResult<string> ParseAlpha(Cursor.TextCursor c) {
+    Parser.Result.TextParseResult<string> choice0 = ParseLower(c);
+    if Parser.IsOk(choice0) {
+        return choice0;
+    }
+    Parser.Result.TextParseResult<string> choice1 = ParseUpper(c);
+    if Parser.IsOk(choice1) {
+        return choice1;
+    }
+    return Parser.Fail(c, Parser.Result.ParseErrorKind::ChoiceFailed("alpha"), "alpha");
+}
+
+pub Parser.Result.TextParseResult<string> ParseWordTail(Cursor.TextCursor c) {
+    Parser.Result.TextParseResult<string> choice0 = ParseAlpha(c);
+    if Parser.IsOk(choice0) {
+        return choice0;
+    }
+    Parser.Result.TextParseResult<string> choice1 = ParseDigit(c);
+    if Parser.IsOk(choice1) {
+        return choice1;
+    }
+    Parser.Result.TextParseResult<string> choice2 = Parser.Literal(c, "_", "word_tail");
+    if Parser.IsOk(choice2) {
+        return choice2;
+    }
+    return Parser.Fail(c, Parser.Result.ParseErrorKind::ChoiceFailed("word_tail"), "word_tail");
+}
+
+pub Parser.Result.TextParseResult<string> ParseSpace(Cursor.TextCursor c) {
+    return Parser.Literal(c, " ", "space");
+}
+
+pub Parser.Result.TextParseResult<string> ParseAnyUnit(Cursor.TextCursor c) {
+    return Parser.Satisfy(c, "any_unit");
+}
+
+pub Parser.Result.TextParseResult<string> ParseLowerRun(Cursor.TextCursor c) {
+    mut Cursor.TextCursor manyCur = c;
+    mut i64 manyCount = 0;
+    while true {
+        i64 manyPos = Cursor.Position(manyCur);
+        Parser.Result.TextParseResult<string> manyStep = ParseLower(manyCur);
+        if !Parser.IsOk(manyStep) {
+            break;
+        }
+        Cursor.TextCursor manyRest = Parser.RestOnOk(manyStep, manyCur);
+        if Cursor.Position(manyRest) == manyPos {
+            return Parser.Fail(manyCur, Parser.Result.ParseErrorKind::ZeroWidthRepeat("lower_run"), "lower_run");
+        }
+        manyCur = manyRest;
+        manyCount = manyCount + 1;
+    }
+    if manyCount < 1 {
+        return Parser.Fail(c, Parser.Result.ParseErrorKind::ExpectedRule("lower_run"), "lower_run");
+    }
+    return Parser.Pure("", manyCur);
+}
+
+pub Parser.Result.TextParseResult<string> ParseDigitRun(Cursor.TextCursor c) {
+    mut Cursor.TextCursor manyCur = c;
+    mut i64 manyCount = 0;
+    while true {
+        i64 manyPos = Cursor.Position(manyCur);
+        Parser.Result.TextParseResult<string> manyStep = ParseDigit(manyCur);
+        if !Parser.IsOk(manyStep) {
+            break;
+        }
+        Cursor.TextCursor manyRest = Parser.RestOnOk(manyStep, manyCur);
+        if Cursor.Position(manyRest) == manyPos {
+            return Parser.Fail(manyCur, Parser.Result.ParseErrorKind::ZeroWidthRepeat("digit_run"), "digit_run");
+        }
+        manyCur = manyRest;
+        manyCount = manyCount + 1;
+    }
+    if manyCount < 1 {
+        return Parser.Fail(c, Parser.Result.ParseErrorKind::ExpectedRule("digit_run"), "digit_run");
+    }
+    return Parser.Pure("", manyCur);
+}
+
+pub Parser.Result.TextParseResult<string> ParseWordRun(Cursor.TextCursor c) {
+    mut Cursor.TextCursor manyCur = c;
+    mut i64 manyCount = 0;
+    while true {
+        i64 manyPos = Cursor.Position(manyCur);
+        Parser.Result.TextParseResult<string> manyStep = ParseWordTail(manyCur);
+        if !Parser.IsOk(manyStep) {
+            break;
+        }
+        Cursor.TextCursor manyRest = Parser.RestOnOk(manyStep, manyCur);
+        if Cursor.Position(manyRest) == manyPos {
+            return Parser.Fail(manyCur, Parser.Result.ParseErrorKind::ZeroWidthRepeat("word_run"), "word_run");
+        }
+        manyCur = manyRest;
+        manyCount = manyCount + 1;
+    }
+    if manyCount < 1 {
+        return Parser.Fail(c, Parser.Result.ParseErrorKind::ExpectedRule("word_run"), "word_run");
+    }
+    return Parser.Pure("", manyCur);
+}
+
+pub Parser.Result.TextParseResult<string> ParseSpaceRun(Cursor.TextCursor c) {
+    mut Cursor.TextCursor manyCur = c;
+    mut i64 manyCount = 0;
+    while true {
+        i64 manyPos = Cursor.Position(manyCur);
+        Parser.Result.TextParseResult<string> manyStep = ParseSpace(manyCur);
+        if !Parser.IsOk(manyStep) {
+            break;
+        }
+        Cursor.TextCursor manyRest = Parser.RestOnOk(manyStep, manyCur);
+        if Cursor.Position(manyRest) == manyPos {
+            return Parser.Fail(manyCur, Parser.Result.ParseErrorKind::ZeroWidthRepeat("space_run"), "space_run");
+        }
+        manyCur = manyRest;
+        manyCount = manyCount + 1;
+    }
+    if manyCount < 1 {
+        return Parser.Fail(c, Parser.Result.ParseErrorKind::ExpectedRule("space_run"), "space_run");
+    }
+    return Parser.Pure("", manyCur);
+}
+
+pub Parser.Result.TextParseResult<string> ParsePat(Cursor.TextCursor c) {
+    mut Cursor.TextCursor seqCur = c;
+    Parser.Result.TextParseResult<string> seq0 = ParsePatBranch(seqCur);
+    if !Parser.IsOk(seq0) {
+        return seq0;
+    }
+        seqCur = Parser.RestOnOk(seq0, seqCur);
+    mut Parser.Result.TextParseResult<string> seq1 = Parser.Pure("", seqCur);
+    mut Cursor.TextCursor seq1ManyCur = seqCur;
+    mut i64 seq1ManyCount = 0;
+    while Parser.IsOk(seq1) {
+        i64 seq1ManyPos = Cursor.Position(seq1ManyCur);
+        mut Cursor.TextCursor seq1SeqCur = seq1ManyCur;
+        if Parser.IsOk(seq1) {
+            seq1 = Parser.Literal(seq1SeqCur, "|", "pat");
+            if Parser.IsOk(seq1) {
+                seq1SeqCur = Parser.RestOnOk(seq1, seq1SeqCur);
+            }
+        }
+        if Parser.IsOk(seq1) {
+            seq1 = ParsePatBranch(seq1SeqCur);
+            if Parser.IsOk(seq1) {
+                seq1SeqCur = Parser.RestOnOk(seq1, seq1SeqCur);
+            }
+        }
+        if !Parser.IsOk(seq1) {
+            seq1 = Parser.Pure("", seq1ManyCur);
+            break;
+        }
+        Cursor.TextCursor seq1ManyRest = Parser.RestOnOk(seq1, seq1ManyCur);
+        if Cursor.Position(seq1ManyRest) == seq1ManyPos {
+            seq1 = Parser.Fail(seq1ManyCur, Parser.Result.ParseErrorKind::ZeroWidthRepeat("pat"), "pat");
+            break;
+        }
+        seq1ManyCur = seq1ManyRest;
+        seq1ManyCount = seq1ManyCount + 1;
+    }
+    if !Parser.IsOk(seq1) {
+        return seq1;
+    }
+        seqCur = Parser.RestOnOk(seq1, seqCur);
+    return Parser.Pure("", seqCur);
+}
+
+pub Parser.Result.TextParseResult<string> ParsePatBranch(Cursor.TextCursor c) {
+    mut Cursor.TextCursor manyCur = c;
+    mut i64 manyCount = 0;
+    while true {
+        i64 manyPos = Cursor.Position(manyCur);
+        Parser.Result.TextParseResult<string> manyStep = ParsePatPiece(manyCur);
+        if !Parser.IsOk(manyStep) {
+            break;
+        }
+        Cursor.TextCursor manyRest = Parser.RestOnOk(manyStep, manyCur);
+        if Cursor.Position(manyRest) == manyPos {
+            return Parser.Fail(manyCur, Parser.Result.ParseErrorKind::ZeroWidthRepeat("pat_branch"), "pat_branch");
+        }
+        manyCur = manyRest;
+        manyCount = manyCount + 1;
+    }
+    if manyCount < 1 {
+        return Parser.Fail(c, Parser.Result.ParseErrorKind::ExpectedRule("pat_branch"), "pat_branch");
+    }
+    return Parser.Pure("", manyCur);
+}
+
+pub Parser.Result.TextParseResult<string> ParsePatPiece(Cursor.TextCursor c) {
+    Parser.Result.TextParseResult<string> choice0 = ParsePatAnchor(c);
+    if Parser.IsOk(choice0) {
+        return choice0;
+    }
+    Parser.Result.TextParseResult<string> choice1 = ParsePatGroupQuant(c);
+    if Parser.IsOk(choice1) {
+        return choice1;
+    }
+    Parser.Result.TextParseResult<string> choice2 = ParsePatClassQuant(c);
+    if Parser.IsOk(choice2) {
+        return choice2;
+    }
+    Parser.Result.TextParseResult<string> choice3 = ParsePatEscapeQuant(c);
+    if Parser.IsOk(choice3) {
+        return choice3;
+    }
+    Parser.Result.TextParseResult<string> choice4 = ParsePatDotQuant(c);
+    if Parser.IsOk(choice4) {
+        return choice4;
+    }
+    Parser.Result.TextParseResult<string> choice5 = ParsePatLitQuant(c);
+    if Parser.IsOk(choice5) {
+        return choice5;
+    }
+    return Parser.Fail(c, Parser.Result.ParseErrorKind::ChoiceFailed("pat_piece"), "pat_piece");
+}
+
+pub Parser.Result.TextParseResult<string> ParsePatAnchor(Cursor.TextCursor c) {
+    Parser.Result.TextParseResult<string> choice0 = Parser.Literal(c, "^", "pat_anchor");
+    if Parser.IsOk(choice0) {
+        return choice0;
+    }
+    Parser.Result.TextParseResult<string> choice1 = Parser.Literal(c, "$", "pat_anchor");
+    if Parser.IsOk(choice1) {
+        return choice1;
+    }
+    return Parser.Fail(c, Parser.Result.ParseErrorKind::ChoiceFailed("pat_anchor"), "pat_anchor");
+}
+
+pub Parser.Result.TextParseResult<string> ParsePatGroupQuant(Cursor.TextCursor c) {
+    mut Cursor.TextCursor seqCur = c;
+    Parser.Result.TextParseResult<string> seq0 = Parser.Literal(seqCur, "(", "pat_group_quant");
+    if !Parser.IsOk(seq0) {
+        return seq0;
+    }
+        seqCur = Parser.RestOnOk(seq0, seqCur);
+    Parser.Result.TextParseResult<string> seq1 = ParsePat(seqCur);
+    if !Parser.IsOk(seq1) {
+        return seq1;
+    }
+        seqCur = Parser.RestOnOk(seq1, seqCur);
+    Parser.Result.TextParseResult<string> seq2 = Parser.Literal(seqCur, ")", "pat_group_quant");
+    if !Parser.IsOk(seq2) {
+        return seq2;
+    }
+        seqCur = Parser.RestOnOk(seq2, seqCur);
+    mut Parser.Result.TextParseResult<string> seq3 = Parser.Pure("", seqCur);
+    seq3 = ParsePatQuant(seqCur);
+    if !Parser.IsOk(seq3) {
+        seq3 = Parser.Pure("", seqCur);
+    }
+    if !Parser.IsOk(seq3) {
+        return seq3;
+    }
+        seqCur = Parser.RestOnOk(seq3, seqCur);
+    return Parser.Pure("", seqCur);
+}
+
+pub Parser.Result.TextParseResult<string> ParsePatClassQuant(Cursor.TextCursor c) {
+    mut Cursor.TextCursor seqCur = c;
+    Parser.Result.TextParseResult<string> seq0 = Parser.Literal(seqCur, "[", "pat_class_quant");
+    if !Parser.IsOk(seq0) {
+        return seq0;
+    }
+        seqCur = Parser.RestOnOk(seq0, seqCur);
+    Parser.Result.TextParseResult<string> seq1 = ParsePatClassInner(seqCur);
+    if !Parser.IsOk(seq1) {
+        return seq1;
+    }
+        seqCur = Parser.RestOnOk(seq1, seqCur);
+    Parser.Result.TextParseResult<string> seq2 = Parser.Literal(seqCur, "]", "pat_class_quant");
+    if !Parser.IsOk(seq2) {
+        return seq2;
+    }
+        seqCur = Parser.RestOnOk(seq2, seqCur);
+    mut Parser.Result.TextParseResult<string> seq3 = Parser.Pure("", seqCur);
+    seq3 = ParsePatQuant(seqCur);
+    if !Parser.IsOk(seq3) {
+        seq3 = Parser.Pure("", seqCur);
+    }
+    if !Parser.IsOk(seq3) {
+        return seq3;
+    }
+        seqCur = Parser.RestOnOk(seq3, seqCur);
+    return Parser.Pure("", seqCur);
+}
+
+pub Parser.Result.TextParseResult<string> ParsePatClassInner(Cursor.TextCursor c) {
+    mut Cursor.TextCursor seqCur = c;
+    mut Parser.Result.TextParseResult<string> seq0 = Parser.Pure("", seqCur);
+    seq0 = ParsePatClassNeg(seqCur);
+    if !Parser.IsOk(seq0) {
+        seq0 = Parser.Pure("", seqCur);
+    }
+    if !Parser.IsOk(seq0) {
+        return seq0;
+    }
+        seqCur = Parser.RestOnOk(seq0, seqCur);
+    mut Parser.Result.TextParseResult<string> seq1 = Parser.Pure("", seqCur);
+    mut Cursor.TextCursor seq1ManyCur = seqCur;
+    mut i64 seq1ManyCount = 0;
+    while Parser.IsOk(seq1) {
+        i64 seq1ManyPos = Cursor.Position(seq1ManyCur);
+        seq1 = ParsePatClassItem(seq1ManyCur);
+        if !Parser.IsOk(seq1) {
+            seq1 = Parser.Pure("", seq1ManyCur);
+            break;
+        }
+        Cursor.TextCursor seq1ManyRest = Parser.RestOnOk(seq1, seq1ManyCur);
+        if Cursor.Position(seq1ManyRest) == seq1ManyPos {
+            seq1 = Parser.Fail(seq1ManyCur, Parser.Result.ParseErrorKind::ZeroWidthRepeat("pat_class_inner"), "pat_class_inner");
+            break;
+        }
+        seq1ManyCur = seq1ManyRest;
+        seq1ManyCount = seq1ManyCount + 1;
+    }
+    if Parser.IsOk(seq1) && seq1ManyCount < 1 {
+        seq1 = Parser.Fail(seqCur, Parser.Result.ParseErrorKind::ExpectedRule("pat_class_inner"), "pat_class_inner");
+    }
+    if !Parser.IsOk(seq1) {
+        return seq1;
+    }
+        seqCur = Parser.RestOnOk(seq1, seqCur);
+    return Parser.Pure("", seqCur);
+}
+
+pub Parser.Result.TextParseResult<string> ParsePatClassNeg(Cursor.TextCursor c) {
+    return Parser.Literal(c, "^", "pat_class_neg");
+}
+
+pub Parser.Result.TextParseResult<string> ParsePatClassItem(Cursor.TextCursor c) {
+    mut Cursor.TextCursor seqCur = c;
+    Parser.Result.TextParseResult<string> seq0 = ParsePatClassChar(seqCur);
+    if !Parser.IsOk(seq0) {
+        return seq0;
+    }
+        seqCur = Parser.RestOnOk(seq0, seqCur);
+    mut Parser.Result.TextParseResult<string> seq1 = Parser.Pure("", seqCur);
+    mut Cursor.TextCursor seq1SeqCur = seqCur;
+    if Parser.IsOk(seq1) {
+        seq1 = Parser.Literal(seq1SeqCur, "-", "pat_class_item");
+        if Parser.IsOk(seq1) {
+            seq1SeqCur = Parser.RestOnOk(seq1, seq1SeqCur);
+        }
+    }
+    if Parser.IsOk(seq1) {
+        seq1 = ParsePatClassChar(seq1SeqCur);
+        if Parser.IsOk(seq1) {
+            seq1SeqCur = Parser.RestOnOk(seq1, seq1SeqCur);
+        }
+    }
+    if !Parser.IsOk(seq1) {
+        seq1 = Parser.Pure("", seqCur);
+    }
+    if !Parser.IsOk(seq1) {
+        return seq1;
+    }
+        seqCur = Parser.RestOnOk(seq1, seqCur);
+    return Parser.Pure("", seqCur);
+}
+
+pub Parser.Result.TextParseResult<string> ParsePatClassChar(Cursor.TextCursor c) {
+    mut Cursor.TextCursor seqCur = c;
+    mut Parser.Result.TextParseResult<string> seq0 = Parser.Pure("", seqCur);
+    seq0 = Parser.Literal(seqCur, "]", "pat_class_char");
+    if Parser.IsOk(seq0) {
+        seq0 = Parser.Fail(seqCur, Parser.Result.ParseErrorKind::ExpectedRule("pat_class_char"), "pat_class_char");
+    } else {
+        seq0 = Parser.Pure("", seqCur);
+    }
+    if !Parser.IsOk(seq0) {
+        return seq0;
+    }
+        seqCur = Parser.RestOnOk(seq0, seqCur);
+    Parser.Result.TextParseResult<string> seq1 = Parser.Satisfy(seqCur, "pat_class_char");
+    if !Parser.IsOk(seq1) {
+        return seq1;
+    }
+        seqCur = Parser.RestOnOk(seq1, seqCur);
+    return Parser.Pure("", seqCur);
+}
+
+pub Parser.Result.TextParseResult<string> ParsePatEscapeQuant(Cursor.TextCursor c) {
+    mut Cursor.TextCursor seqCur = c;
+    Parser.Result.TextParseResult<string> seq0 = Parser.Literal(seqCur, "\\", "pat_escape_quant");
+    if !Parser.IsOk(seq0) {
+        return seq0;
+    }
+        seqCur = Parser.RestOnOk(seq0, seqCur);
+    Parser.Result.TextParseResult<string> seq1 = ParsePatEscChar(seqCur);
+    if !Parser.IsOk(seq1) {
+        return seq1;
+    }
+        seqCur = Parser.RestOnOk(seq1, seqCur);
+    mut Parser.Result.TextParseResult<string> seq2 = Parser.Pure("", seqCur);
+    seq2 = ParsePatQuant(seqCur);
+    if !Parser.IsOk(seq2) {
+        seq2 = Parser.Pure("", seqCur);
+    }
+    if !Parser.IsOk(seq2) {
+        return seq2;
+    }
+        seqCur = Parser.RestOnOk(seq2, seqCur);
+    return Parser.Pure("", seqCur);
+}
+
+pub Parser.Result.TextParseResult<string> ParsePatEscChar(Cursor.TextCursor c) {
+    Parser.Result.TextParseResult<string> choice0 = Parser.Literal(c, "d", "pat_esc_char");
+    if Parser.IsOk(choice0) {
+        return choice0;
+    }
+    Parser.Result.TextParseResult<string> choice1 = Parser.Literal(c, "w", "pat_esc_char");
+    if Parser.IsOk(choice1) {
+        return choice1;
+    }
+    Parser.Result.TextParseResult<string> choice2 = Parser.Literal(c, "s", "pat_esc_char");
+    if Parser.IsOk(choice2) {
+        return choice2;
+    }
+    Parser.Result.TextParseResult<string> choice3 = Parser.Literal(c, "D", "pat_esc_char");
+    if Parser.IsOk(choice3) {
+        return choice3;
+    }
+    Parser.Result.TextParseResult<string> choice4 = Parser.Literal(c, "W", "pat_esc_char");
+    if Parser.IsOk(choice4) {
+        return choice4;
+    }
+    Parser.Result.TextParseResult<string> choice5 = Parser.Literal(c, "S", "pat_esc_char");
+    if Parser.IsOk(choice5) {
+        return choice5;
+    }
+    Parser.Result.TextParseResult<string> choice6 = Parser.Literal(c, ".", "pat_esc_char");
+    if Parser.IsOk(choice6) {
+        return choice6;
+    }
+    Parser.Result.TextParseResult<string> choice7 = Parser.Literal(c, "\\", "pat_esc_char");
+    if Parser.IsOk(choice7) {
+        return choice7;
+    }
+    Parser.Result.TextParseResult<string> choice8 = Parser.Literal(c, "/", "pat_esc_char");
+    if Parser.IsOk(choice8) {
+        return choice8;
+    }
+    Parser.Result.TextParseResult<string> choice9 = Parser.Literal(c, "-", "pat_esc_char");
+    if Parser.IsOk(choice9) {
+        return choice9;
+    }
+    Parser.Result.TextParseResult<string> choice10 = Parser.Literal(c, "+", "pat_esc_char");
+    if Parser.IsOk(choice10) {
+        return choice10;
+    }
+    Parser.Result.TextParseResult<string> choice11 = Parser.Literal(c, "|", "pat_esc_char");
+    if Parser.IsOk(choice11) {
+        return choice11;
+    }
+    Parser.Result.TextParseResult<string> choice12 = Parser.Literal(c, "(", "pat_esc_char");
+    if Parser.IsOk(choice12) {
+        return choice12;
+    }
+    Parser.Result.TextParseResult<string> choice13 = Parser.Literal(c, ")", "pat_esc_char");
+    if Parser.IsOk(choice13) {
+        return choice13;
+    }
+    Parser.Result.TextParseResult<string> choice14 = Parser.Literal(c, "[", "pat_esc_char");
+    if Parser.IsOk(choice14) {
+        return choice14;
+    }
+    Parser.Result.TextParseResult<string> choice15 = Parser.Literal(c, "]", "pat_esc_char");
+    if Parser.IsOk(choice15) {
+        return choice15;
+    }
+    Parser.Result.TextParseResult<string> choice16 = Parser.Literal(c, "{", "pat_esc_char");
+    if Parser.IsOk(choice16) {
+        return choice16;
+    }
+    Parser.Result.TextParseResult<string> choice17 = Parser.Literal(c, "}", "pat_esc_char");
+    if Parser.IsOk(choice17) {
+        return choice17;
+    }
+    Parser.Result.TextParseResult<string> choice18 = Parser.Literal(c, ":", "pat_esc_char");
+    if Parser.IsOk(choice18) {
+        return choice18;
+    }
+    Parser.Result.TextParseResult<string> choice19 = Parser.Literal(c, "'", "pat_esc_char");
+    if Parser.IsOk(choice19) {
+        return choice19;
+    }
+    Parser.Result.TextParseResult<string> choice20 = Parser.Literal(c, "\"", "pat_esc_char");
+    if Parser.IsOk(choice20) {
+        return choice20;
+    }
+    return Parser.Fail(c, Parser.Result.ParseErrorKind::ChoiceFailed("pat_esc_char"), "pat_esc_char");
+}
+
+pub Parser.Result.TextParseResult<string> ParsePatDotQuant(Cursor.TextCursor c) {
+    mut Cursor.TextCursor seqCur = c;
+    Parser.Result.TextParseResult<string> seq0 = Parser.Literal(seqCur, ".", "pat_dot_quant");
+    if !Parser.IsOk(seq0) {
+        return seq0;
+    }
+        seqCur = Parser.RestOnOk(seq0, seqCur);
+    mut Parser.Result.TextParseResult<string> seq1 = Parser.Pure("", seqCur);
+    seq1 = ParsePatQuant(seqCur);
+    if !Parser.IsOk(seq1) {
+        seq1 = Parser.Pure("", seqCur);
+    }
+    if !Parser.IsOk(seq1) {
+        return seq1;
+    }
+        seqCur = Parser.RestOnOk(seq1, seqCur);
+    return Parser.Pure("", seqCur);
+}
+
+pub Parser.Result.TextParseResult<string> ParsePatLitQuant(Cursor.TextCursor c) {
+    mut Cursor.TextCursor seqCur = c;
+    Parser.Result.TextParseResult<string> seq0 = ParsePatLit(seqCur);
+    if !Parser.IsOk(seq0) {
+        return seq0;
+    }
+        seqCur = Parser.RestOnOk(seq0, seqCur);
+    mut Parser.Result.TextParseResult<string> seq1 = Parser.Pure("", seqCur);
+    seq1 = ParsePatQuant(seqCur);
+    if !Parser.IsOk(seq1) {
+        seq1 = Parser.Pure("", seqCur);
+    }
+    if !Parser.IsOk(seq1) {
+        return seq1;
+    }
+        seqCur = Parser.RestOnOk(seq1, seqCur);
+    return Parser.Pure("", seqCur);
+}
+
+pub Parser.Result.TextParseResult<string> ParsePatLit(Cursor.TextCursor c) {
+    Parser.Result.TextParseResult<string> choice0 = ParseLetter(c);
+    if Parser.IsOk(choice0) {
+        return choice0;
+    }
+    Parser.Result.TextParseResult<string> choice1 = ParseDigit(c);
+    if Parser.IsOk(choice1) {
+        return choice1;
+    }
+    Parser.Result.TextParseResult<string> choice2 = ParseSymSafe(c);
+    if Parser.IsOk(choice2) {
+        return choice2;
+    }
+    return Parser.Fail(c, Parser.Result.ParseErrorKind::ChoiceFailed("pat_lit"), "pat_lit");
+}
+
+pub Parser.Result.TextParseResult<string> ParsePatQuant(Cursor.TextCursor c) {
+    Parser.Result.TextParseResult<string> choice0 = Parser.Literal(c, "*", "pat_quant");
+    if Parser.IsOk(choice0) {
+        return choice0;
+    }
+    Parser.Result.TextParseResult<string> choice1 = Parser.Literal(c, "+", "pat_quant");
+    if Parser.IsOk(choice1) {
+        return choice1;
+    }
+    Parser.Result.TextParseResult<string> choice2 = Parser.Literal(c, "?", "pat_quant");
+    if Parser.IsOk(choice2) {
+        return choice2;
+    }
+    return Parser.Fail(c, Parser.Result.ParseErrorKind::ChoiceFailed("pat_quant"), "pat_quant");
+}
+
+pub Parser.Result.TextParseResult<string> ParseLetter(Cursor.TextCursor c) {
+    Parser.Result.TextParseResult<string> choice0 = ParseLower(c);
+    if Parser.IsOk(choice0) {
+        return choice0;
+    }
+    Parser.Result.TextParseResult<string> choice1 = ParseUpper(c);
+    if Parser.IsOk(choice1) {
+        return choice1;
+    }
+    return Parser.Fail(c, Parser.Result.ParseErrorKind::ChoiceFailed("letter"), "letter");
+}
+
+pub Parser.Result.TextParseResult<string> ParseDigitChar(Cursor.TextCursor c) {
+    return ParseDigit(c);
+}
+
+pub Parser.Result.TextParseResult<string> ParseSymSafe(Cursor.TextCursor c) {
+    Parser.Result.TextParseResult<string> choice0 = Parser.Literal(c, "!", "sym_safe");
+    if Parser.IsOk(choice0) {
+        return choice0;
+    }
+    Parser.Result.TextParseResult<string> choice1 = Parser.Literal(c, "#", "sym_safe");
+    if Parser.IsOk(choice1) {
+        return choice1;
+    }
+    Parser.Result.TextParseResult<string> choice2 = Parser.Literal(c, "%", "sym_safe");
+    if Parser.IsOk(choice2) {
+        return choice2;
+    }
+    Parser.Result.TextParseResult<string> choice3 = Parser.Literal(c, "&", "sym_safe");
+    if Parser.IsOk(choice3) {
+        return choice3;
+    }
+    Parser.Result.TextParseResult<string> choice4 = Parser.Literal(c, ",", "sym_safe");
+    if Parser.IsOk(choice4) {
+        return choice4;
+    }
+    Parser.Result.TextParseResult<string> choice5 = Parser.Literal(c, "/", "sym_safe");
+    if Parser.IsOk(choice5) {
+        return choice5;
+    }
+    Parser.Result.TextParseResult<string> choice6 = Parser.Literal(c, ":", "sym_safe");
+    if Parser.IsOk(choice6) {
+        return choice6;
+    }
+    Parser.Result.TextParseResult<string> choice7 = Parser.Literal(c, ";", "sym_safe");
+    if Parser.IsOk(choice7) {
+        return choice7;
+    }
+    Parser.Result.TextParseResult<string> choice8 = Parser.Literal(c, "=", "sym_safe");
+    if Parser.IsOk(choice8) {
+        return choice8;
+    }
+    Parser.Result.TextParseResult<string> choice9 = Parser.Literal(c, "@", "sym_safe");
+    if Parser.IsOk(choice9) {
+        return choice9;
+    }
+    Parser.Result.TextParseResult<string> choice10 = Parser.Literal(c, "_", "sym_safe");
+    if Parser.IsOk(choice10) {
+        return choice10;
+    }
+    Parser.Result.TextParseResult<string> choice11 = Parser.Literal(c, "`", "sym_safe");
+    if Parser.IsOk(choice11) {
+        return choice11;
+    }
+    Parser.Result.TextParseResult<string> choice12 = Parser.Literal(c, "~", "sym_safe");
+    if Parser.IsOk(choice12) {
+        return choice12;
+    }
+    return Parser.Fail(c, Parser.Result.ParseErrorKind::ChoiceFailed("sym_safe"), "sym_safe");
+}

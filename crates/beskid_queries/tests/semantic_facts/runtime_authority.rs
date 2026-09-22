@@ -9,14 +9,479 @@ use beskid_analysis::projects::{
     AssemblyDiscovery, EffectiveCompilationRoots, ModuleIndex, ProgramAssembly, RootEntry, SourceUnit,
 };
 use beskid_analysis::services::parse_program;
+use beskid_analysis::syntax::{CallExpression, Expression};
 use beskid_analysis::syntax_query::{NodeKind, SyntaxIndex};
 use beskid_queries::{
-    AstNodeKey, BeskidDatabase, ProjectSession, SemanticTypeId, SourceUnitId, SyntaxGenerationId,
-    abi_type, build_canonical_corelib_syscall_typed_program, build_typed_program_with_corelib_services,
-    build_typed_program_with_corelib_syscall_services, call_abi_signature, call_lowering, primitive_numeric_conversion,
-    runtime_intrinsic, value_abi_type,
+    AstNodeKey, BeskidDatabase, ProjectSession, SemanticTypeId, SourceUnitId, SyntaxGenerationId, abi_type,
+    build_typed_program_with_corelib_services, build_typed_program_with_corelib_syscall_services, call_abi_signature,
+    call_lowering, primitive_numeric_conversion, runtime_intrinsic, value_abi_type,
 };
 use std::sync::Arc;
+
+fn assert_syscall_origin_authority(assembly: ProgramAssembly, authorized: bool) {
+    let mut db = BeskidDatabase::default();
+    let generation = assembly.generation;
+    let unit = assembly.entry_unit();
+    let index = assembly.entry_syntax_index();
+    let write = index.ids_of_kind(NodeKind::CallExpression).find(|node| {
+        index.node_at(&unit.program, *node).and_then(|node| node.of::<CallExpression>()).is_some_and(|call| {
+            matches!(&call.callee.node, Expression::Path(path)
+                if path.node.path.node.segments.last().is_some_and(|segment| segment.node.name.node.name == "__syscall_write"))
+        })
+    }).expect("fixture contains __syscall_write");
+    let key = AstNodeKey { unit: SourceUnitId::new(&db, unit.path.clone()), generation, node: write };
+    let project = ProjectSession::new(
+        &db,
+        assembly.roots.host.source_root.clone(),
+        unit.path.clone(),
+        "source-origin".into(),
+        "source-origin".into(),
+    );
+    let target = TargetMetadata::supported()
+        .into_iter()
+        .find(|target| target.triple.as_str() == "x86_64-unknown-linux-gnu")
+        .unwrap();
+    let manifest = AbiManifestV5::canonical_runtime(target);
+    build_typed_program_with_corelib_services(
+        &mut db,
+        project,
+        generation,
+        Arc::new(assembly),
+        canonical_corelib_service_capability(&manifest).unwrap(),
+    )
+    .expect("build typed program");
+    let lowering = call_lowering(&db, key);
+    assert_eq!(
+        matches!(lowering, Ok(Some(beskid_queries::CallLowering::CorelibService(service)))
+        if service.name == "__syscall_write" && service.symbol == "syscall_write"),
+        authorized,
+        "__syscall_write authority: {lowering:?}"
+    );
+}
+
+fn syscall_builder_assembly(cache: &std::path::Path, path: &std::path::Path, source: &str) -> ProgramAssembly {
+    let generation = SyntaxGenerationId(101);
+    let (unit, _) = beskid_analysis::projects::assembly::UnitBuilder::new(cache)
+        .build_unit(path, source, generation)
+        .expect("build actual source request");
+    ProgramAssembly::new(
+        EffectiveCompilationRoots {
+            host: RootEntry { dependency_name: None, source_root: cache.to_path_buf() },
+            dependencies: Vec::new(),
+        },
+        Arc::new(vec![unit]),
+        0,
+        AssemblyDiscovery::ImportClosure,
+        Arc::new(ModuleIndex::empty()),
+        false,
+        generation,
+    )
+}
+
+fn syscall_origin_plan(root: &std::path::Path) -> beskid_analysis::projects::CompilePlan {
+    use beskid_analysis::projects::{CompilePlan, Target, TargetKind};
+    CompilePlan {
+        project_root: root.to_path_buf(),
+        manifest_path: root.join("App.bproj"),
+        project_name: "App".into(),
+        source_root: root.to_path_buf(),
+        target: Target { name: "App".into(), kind: TargetKind::App, entry: Some("Syscall.bd".into()) },
+        dependency_projects: Vec::new(),
+        unresolved_dependencies: Vec::new(),
+        has_std_dependency: false,
+    }
+}
+
+#[cfg(any(unix, windows))]
+fn source_origin_symlink(target: &std::path::Path, alias: &std::path::Path, directory: bool) {
+    #[cfg(unix)]
+    {
+        let _ = directory;
+        std::os::unix::fs::symlink(target, alias).expect("create source-origin symlink");
+    }
+    #[cfg(windows)]
+    if directory {
+        std::os::windows::fs::symlink_dir(target, alias)
+    } else {
+        std::os::windows::fs::symlink_file(target, alias)
+    }
+    .expect("create source-origin symlink");
+}
+
+#[cfg(any(unix, windows))]
+fn assert_user_syscall_alias_denied(directory: bool, discovery: Option<AssemblyDiscovery>) {
+    use beskid_analysis::projects::{AssemblyOptions, assemble_program_with_materializer};
+    let root = tempfile::tempdir().unwrap();
+    let real = canonical_corelib_service_source_path(CANONICAL_CORELIB_SYSCALL_SOURCE_PATH).unwrap();
+    let alias = if directory {
+        source_origin_symlink(real.parent().unwrap(), &root.path().join("linked"), true);
+        root.path().join("linked/Syscall.bd")
+    } else {
+        let alias = root.path().join("Syscall.bd");
+        source_origin_symlink(&real, &alias, false);
+        alias
+    };
+    if let Some(discovery) = discovery {
+        let plan = syscall_origin_plan(root.path());
+        let options = AssemblyOptions { discovery, ..AssemblyOptions::default() };
+        let source = std::fs::read_to_string(&alias).unwrap();
+        let assembly = assemble_program_with_materializer(&plan, None, &alias, Some(&source), &options, None, None)
+            .expect("load user source alias");
+        assert_eq!(assembly.entry_unit().origin_path, alias);
+        assert_eq!(assembly.entry_unit().path, real);
+        assert_syscall_origin_authority(assembly, false);
+    } else {
+        assert_syscall_origin_authority(
+            syscall_builder_assembly(root.path(), &alias, &std::fs::read_to_string(&alias).unwrap()),
+            false,
+        );
+    }
+}
+
+#[cfg(any(unix, windows))]
+#[test]
+fn syscall_origin_builder_denies_file_symlink() {
+    assert_user_syscall_alias_denied(false, None);
+}
+
+#[cfg(any(unix, windows))]
+#[test]
+fn syscall_origin_builder_denies_directory_symlink() {
+    assert_user_syscall_alias_denied(true, None);
+}
+
+#[cfg(any(unix, windows))]
+#[test]
+fn syscall_origin_loader_denies_file_symlink() {
+    assert_user_syscall_alias_denied(false, Some(AssemblyDiscovery::ImportClosure));
+}
+
+#[cfg(any(unix, windows))]
+#[test]
+fn syscall_origin_loader_denies_directory_symlink() {
+    assert_user_syscall_alias_denied(true, Some(AssemblyDiscovery::ImportClosure));
+}
+
+#[cfg(any(unix, windows))]
+#[test]
+fn syscall_origin_workspace_scan_denies_file_symlink() {
+    assert_user_syscall_alias_denied(false, Some(AssemblyDiscovery::WorkspaceScan));
+}
+
+#[cfg(any(unix, windows))]
+#[test]
+fn syscall_origin_workspace_scan_denies_directory_symlink() {
+    assert_user_syscall_alias_denied(true, Some(AssemblyDiscovery::WorkspaceScan));
+}
+
+#[cfg(any(unix, windows))]
+#[test]
+fn syscall_origin_loader_denies_imported_file_symlink() {
+    use beskid_analysis::projects::{AssemblyOptions, assemble_program_with_materializer};
+    let root = tempfile::tempdir().unwrap();
+    let real = canonical_corelib_service_source_path(CANONICAL_CORELIB_SYSCALL_SOURCE_PATH).unwrap();
+    let alias = root.path().join("Core/Syscall/Syscall.bd");
+    std::fs::create_dir_all(alias.parent().unwrap()).unwrap();
+    source_origin_symlink(&real, &alias, false);
+    let entry = root.path().join("Main.bd");
+    let source = "use Core.Syscall;\ni32 Main() { return 0; }";
+    std::fs::write(&entry, source).unwrap();
+    let assembly = assemble_program_with_materializer(
+        &syscall_origin_plan(root.path()),
+        None,
+        &entry,
+        Some(source),
+        &AssemblyOptions::default(),
+        None,
+        None,
+    )
+    .expect("load imported alias")
+    .with_entry_at(&real)
+    .expect("imported Syscall is in assembly");
+    assert_eq!(assembly.entry_unit().origin_path, alias);
+    assert_syscall_origin_authority(assembly, false);
+}
+
+#[test]
+fn syscall_origin_builder_accepts_actual_source_but_denies_copies_and_altered_bytes() {
+    let root = tempfile::tempdir().unwrap();
+    let real = canonical_corelib_service_source_path(CANONICAL_CORELIB_SYSCALL_SOURCE_PATH).unwrap();
+    let source = std::fs::read_to_string(&real).unwrap();
+    let declared = beskid_abi::runtime_source::corelib_service_source_identity(CANONICAL_CORELIB_SYSCALL_SOURCE_PATH)
+        .unwrap()
+        .declared_path;
+    assert_syscall_origin_authority(syscall_builder_assembly(root.path(), &declared, &source), true);
+    assert_syscall_origin_authority(syscall_builder_assembly(root.path(), &real, &source), true);
+    let copy = root.path().join("Syscall.bd");
+    std::fs::write(&copy, &source).unwrap();
+    assert_syscall_origin_authority(syscall_builder_assembly(root.path(), &copy, &source), false);
+    assert_syscall_origin_authority(
+        syscall_builder_assembly(root.path(), &real, &format!("{source}\n// altered\n")),
+        false,
+    );
+
+    let mut wrong_target = syscall_builder_assembly(root.path(), &real, &source);
+    Arc::make_mut(&mut wrong_target.units)[0].path = copy.canonicalize().unwrap();
+    assert_syscall_origin_authority(wrong_target, false);
+
+    let mut duplicate = syscall_builder_assembly(root.path(), &real, &source);
+    let extra = duplicate.entry_unit().clone();
+    Arc::make_mut(&mut duplicate.units).push(extra);
+    assert_syscall_origin_authority(duplicate, false);
+}
+
+#[cfg(any(unix, windows))]
+#[test]
+fn syscall_origin_materialized_loader_accepts_destination_but_denies_user_alias() {
+    use beskid_analysis::projects::{
+        AssemblyOptions, MaterializedDependencyProject, PreparedProjectWorkspace, ResolvedDependencyProject,
+        assemble_program_with_materializer,
+    };
+    let root = tempfile::tempdir().unwrap();
+    // Keep the loader's declared destination spelling; UnitBuilder independently resolves its key.
+    let root_path = root.path().to_path_buf();
+    let real = canonical_corelib_service_source_path(CANONICAL_CORELIB_SYSCALL_SOURCE_PATH).unwrap();
+    let source_root =
+        beskid_abi::runtime_source::corelib_service_source_identity(CANONICAL_CORELIB_SYSCALL_SOURCE_PATH)
+            .unwrap()
+            .declared_path
+            .ancestors()
+            .nth(3)
+            .unwrap()
+            .to_path_buf();
+    let mut plan = syscall_origin_plan(&root_path);
+    plan.dependency_projects.push(ResolvedDependencyProject {
+        dependency_name: "foundation".into(),
+        manifest_path: source_root.parent().unwrap().join("foundation.bproj"),
+        project_root: source_root.parent().unwrap().to_path_buf(),
+        project_name: "foundation".into(),
+        source_root,
+    });
+    let destination = root_path.join("deps/foundation/src/Core/Syscall/Syscall.bd");
+    std::fs::create_dir_all(destination.parent().unwrap()).unwrap();
+    std::fs::copy(&real, &destination).unwrap();
+    let workspace = PreparedProjectWorkspace {
+        lockfile_path: root_path.join("Project.lock"),
+        materialized_project_root: root_path.clone(),
+        materialized_source_root: root_path.clone(),
+        materialized_dependencies: vec![MaterializedDependencyProject {
+            dependency_name: "foundation".into(),
+            manifest_path: plan.dependency_projects[0].manifest_path.clone(),
+            project_name: "foundation".into(),
+            materialized_project_root: root_path.join("deps/foundation"),
+            materialized_source_root: root_path.join("deps/foundation/src"),
+        }],
+    };
+    let load = |path: &std::path::Path| {
+        assemble_program_with_materializer(&plan, Some(&workspace), path, None, &AssemblyOptions::default(), None, None)
+            .expect("load materialized dependency")
+    };
+    let assembly = load(&destination);
+    assert!(assembly.trusted_corelib_service_paths.contains(&destination));
+    assert_eq!(assembly.entry_unit().origin_path, destination);
+    assert_eq!(assembly.entry_unit().path, destination.canonicalize().unwrap());
+    // Keep the loader-issued evidence when a frontend selects an aliased request later.
+    let trusted = Arc::clone(&assembly.trusted_corelib_service_paths);
+    assert_syscall_origin_authority(assembly, true);
+    let altered = syscall_builder_assembly(
+        root.path(),
+        &destination,
+        &format!("{}\n// altered\n", std::fs::read_to_string(&destination).unwrap()),
+    )
+    .with_trusted_corelib_service_paths(Arc::clone(&trusted));
+    assert_syscall_origin_authority(altered, false);
+    let alias = root_path.join("Syscall.bd");
+    source_origin_symlink(&destination, &alias, false);
+    assert_syscall_origin_authority(load(&alias), false);
+    let aliased = syscall_builder_assembly(root.path(), &alias, &std::fs::read_to_string(&alias).unwrap())
+        .with_trusted_corelib_service_paths(Arc::clone(&trusted));
+    assert_syscall_origin_authority(aliased, false);
+    source_origin_symlink(destination.parent().unwrap(), &root_path.join("linked"), true);
+    assert_syscall_origin_authority(load(&root_path.join("linked/Syscall.bd")), false);
+
+    let source = std::fs::read_to_string(&destination).unwrap();
+    let copy = root_path.join("Copy.bd");
+    std::fs::write(&copy, &source).unwrap();
+    let mut wrong_target = syscall_builder_assembly(root.path(), &destination, &source)
+        .with_trusted_corelib_service_paths(Arc::clone(&trusted));
+    Arc::make_mut(&mut wrong_target.units)[0].path = copy.canonicalize().unwrap();
+    assert_syscall_origin_authority(wrong_target, false);
+
+    std::fs::rename(&destination, root_path.join("Saved.bd")).unwrap();
+    std::fs::create_dir(&destination).unwrap();
+    let non_file =
+        syscall_builder_assembly(root.path(), &destination, &source).with_trusted_corelib_service_paths(trusted);
+    assert_syscall_origin_authority(non_file, false);
+}
+
+#[cfg(target_os = "windows")]
+#[test]
+fn canonicalized_windows_syscall_source_keeps_exact_service_authority() {
+    let logical_path = CANONICAL_CORELIB_SYSCALL_SOURCE_PATH;
+    let embedded = canonical_corelib_service_sources()
+        .into_iter()
+        .find(|source| source.logical_path == logical_path)
+        .expect("embedded Core.Syscall source");
+    // The Foundation harness constructs units this way. On Windows this is an extended-length
+    // physical path, so this test proves the public builder compares the same source identity.
+    let physical_path = std::fs::canonicalize(
+        canonical_corelib_service_source_path(logical_path).expect("compiler-owned Core.Syscall path"),
+    )
+    .expect("canonical Core.Syscall path");
+    let target = TargetMetadata::supported()
+        .into_iter()
+        .find(|target| target.triple.as_str() == "x86_64-pc-windows-msvc")
+        .expect("Windows target");
+    let manifest = AbiManifestV5::canonical_runtime(target);
+
+    let assert_syscall_write_lowering = |path: std::path::PathBuf, source: String, authorized: bool| {
+        let mut db = BeskidDatabase::default();
+        let program = parse_program(&source).expect("parse Core.Syscall source");
+        let generation = SyntaxGenerationId(91);
+        let index = SyntaxIndex::from_program(&program, generation);
+        let source_root = path.parent().expect("Core.Syscall parent").to_path_buf();
+        let project = ProjectSession::new(
+            &db,
+            source_root.clone(),
+            path.clone(),
+            "beskid-corelib".into(),
+            "windows-canonical-service-identity".into(),
+        );
+        let assembly = Arc::new(ProgramAssembly::new(
+            EffectiveCompilationRoots {
+                host: RootEntry { dependency_name: None, source_root },
+                dependencies: Vec::new(),
+            },
+            Arc::new(vec![SourceUnit {
+                logical_name: logical_path.into(),
+                origin_path: path.clone(),
+                path: path.clone(),
+                source,
+                program: program.clone(),
+            }]),
+            0,
+            AssemblyDiscovery::ImportClosure,
+            Arc::new(ModuleIndex::empty()),
+            false,
+            generation,
+        ));
+        build_typed_program_with_corelib_services(
+            &mut db,
+            project,
+            generation,
+            assembly,
+            canonical_corelib_service_capability(&manifest).expect("Corelib service authority"),
+        )
+        .expect("typed program");
+        let syscall_write = index
+            .ids_of_kind(NodeKind::CallExpression)
+            .find(|node| {
+                index.node_at(&program, *node).and_then(|node| node.of::<CallExpression>()).is_some_and(|call| {
+                    matches!(
+                        &call.callee.node,
+                        Expression::Path(path)
+                            if path.node.path.node.segments.last().is_some_and(|segment| segment.node.name.node.name == "__syscall_write")
+                    )
+                })
+            });
+        let syscall_write = syscall_write.expect("Core.Syscall __syscall_write call");
+        let syscall_write = AstNodeKey { unit: SourceUnitId::new(&db, path), generation, node: syscall_write };
+        if authorized {
+            assert!(matches!(
+                call_lowering(&db, syscall_write),
+                Ok(Some(beskid_queries::CallLowering::CorelibService(service)))
+                    if service.name == "__syscall_write" && service.symbol == "syscall_write"
+            ));
+        } else {
+            assert!(
+                !matches!(
+                    call_lowering(&db, syscall_write),
+                    Ok(Some(beskid_queries::CallLowering::CorelibService(service)))
+                        if service.name == "__syscall_write"
+                ),
+                "the copied or altered __syscall_write call must not acquire Corelib service authority"
+            );
+        }
+    };
+
+    assert_syscall_write_lowering(physical_path, embedded.source.clone(), true);
+
+    let copied_directory = tempfile::tempdir().expect("copied Core.Syscall directory");
+    let copied_path = copied_directory.path().join("Syscall.bd");
+    std::fs::write(&copied_path, &embedded.source).expect("write copied Core.Syscall source");
+    assert_syscall_write_lowering(copied_path, embedded.source.clone(), false);
+
+    let altered_directory = tempfile::tempdir().expect("altered Core.Syscall directory");
+    let altered_path = altered_directory.path().join("Syscall.bd");
+    let altered_source = format!("{}\n// altered source must not inherit compiler authority\n", embedded.source);
+    std::fs::write(&altered_path, &altered_source).expect("write altered Core.Syscall source");
+    assert_syscall_write_lowering(altered_path, altered_source, false);
+}
+
+#[test]
+fn typed_value_service_preserves_source_result_and_rejects_native_pointer_payloads() {
+    let logical = "Concurrency/Fiber.bd";
+    let source = canonical_corelib_service_sources().into_iter().find(|source| source.logical_path == logical).unwrap();
+    let path = canonical_corelib_service_source_path(logical).unwrap();
+    let program = parse_program(&source.source).unwrap();
+    let generation = SyntaxGenerationId(76);
+    let index = SyntaxIndex::from_program(&program, generation);
+    let target = TargetMetadata::supported()
+        .into_iter()
+        .find(|target| target.triple.as_str() == "x86_64-unknown-linux-gnu")
+        .unwrap();
+    let manifest = AbiManifestV5::canonical_runtime(target);
+    let mut db = BeskidDatabase::default();
+    let source_root = path.ancestors().nth(2).unwrap().to_path_buf();
+    let project = ProjectSession::new(&db, source_root.clone(), path.clone(), "concurrency".into(), "test".into());
+    let assembly = Arc::new(ProgramAssembly::new(
+        EffectiveCompilationRoots { host: RootEntry { dependency_name: None, source_root }, dependencies: Vec::new() },
+        Arc::new(vec![SourceUnit {
+            origin_path: path.clone(),
+            path: path.clone(),
+            logical_name: logical.into(),
+            source: source.source,
+            program,
+        }]),
+        0,
+        AssemblyDiscovery::ImportClosure,
+        Arc::new(ModuleIndex::empty()),
+        false,
+        generation,
+    ));
+    build_typed_program_with_corelib_services(
+        &mut db,
+        project,
+        generation,
+        assembly,
+        canonical_corelib_service_capability(&manifest).unwrap(),
+    )
+    .unwrap();
+    let unit = SourceUnitId::new(&db, path);
+    let call = index.ids_of_kind(NodeKind::CallExpression).map(|node| AstNodeKey { unit, generation, node })
+        .find(|key| matches!(call_lowering(&db, *key), Ok(Some(beskid_queries::CallLowering::CorelibService(service))) if service.name == "__fiber_join_value")).unwrap();
+    let declaration = key(unit, generation, &index, NodeKind::MethodDefinition, 0);
+    for source_type in [SemanticTypeId::I64, SemanticTypeId::STRING, SemanticTypeId::POINTER] {
+        let enclosing = beskid_queries::GenericSpecializationInstance {
+            declaration,
+            declaration_identity: "Concurrency.Fiber.Join".into(),
+            signature: beskid_queries::ItemSignature { parameters: Arc::from([]), result: source_type },
+            substitutions: Arc::from([beskid_queries::GenericSubstitution::inferred("T", source_type)]),
+            contract_witnesses: Arc::from([]),
+        };
+        let result = beskid_queries::specialized_corelib_value_service_result(&db, call, &enclosing);
+        if source_type == SemanticTypeId::POINTER {
+            assert!(result.unwrap_err().to_string().contains("proven managed source identity"));
+        } else {
+            assert_eq!(result.unwrap().unwrap().argument, source_type);
+        }
+        assert_eq!(
+            call_abi_signature(&db, call).unwrap().unwrap().result,
+            SemanticTypeId::U8,
+            "transport ABI remains status-only"
+        );
+    }
+}
 
 #[test]
 fn runtime_intrinsic_uses_the_manifest_owned_builtin_index() {
@@ -117,6 +582,7 @@ fn canonical_concurrency_facade_gets_service_authority_but_copied_source_does_no
         EffectiveCompilationRoots { host: RootEntry { dependency_name: None, source_root }, dependencies: Vec::new() },
         Arc::new(vec![SourceUnit {
             logical_name: CANONICAL_CORELIB_CHANNEL_SOURCE_PATH.into(),
+            origin_path: canonical_path.clone(),
             path: canonical_path.clone(),
             source: source.source.clone(),
             program: program.clone(),
@@ -162,32 +628,44 @@ fn canonical_concurrency_facade_gets_service_authority_but_copied_source_does_no
     );
 }
 
+/// `i32(value)`-style conversions are classified by their own primitive-conversion fact, which
+/// codegen consults before call lowering; they are never ordinary or Dynamic calls. Every other
+/// call scanned before a service call must still have an available call lowering.
+fn proven_primitive_conversion(db: &BeskidDatabase, call: AstNodeKey) -> bool {
+    if !matches!(primitive_numeric_conversion(db, call), Ok(Some(_))) {
+        return false;
+    }
+    assert!(
+        !matches!(call_lowering(db, call), Ok(Some(beskid_queries::CallLowering::Dynamic))),
+        "a primitive numeric conversion must not lower through dynamic dispatch"
+    );
+    true
+}
+
 #[test]
 fn corelib_syscall_source_gets_a_distinct_service_lowering_but_app_code_cannot_forge_it() {
     let mut db = BeskidDatabase::default();
-    let directory = tempfile::tempdir().expect("corelib project").keep();
-    let source = canonical_corelib_syscall_sources().pop().expect("embedded Core.Syscall source");
-    let source_path = directory.join("Syscall.bd");
-    std::fs::write(&source_path, &source.source).expect("write Core.Syscall source");
-    let program = parse_program(&source.source).expect("parse Core.Syscall source");
+    let source_path = canonical_corelib_service_source_path(CANONICAL_CORELIB_SYSCALL_SOURCE_PATH)
+        .expect("compiler-owned Core.Syscall source");
+    let source_root = source_path.ancestors().nth(3).expect("foundation source root").to_path_buf();
+    let source = std::fs::read_to_string(&source_path).expect("read compiler-owned Core.Syscall source");
+    let program = parse_program(&source).expect("parse compiler-owned Core.Syscall source");
     let generation = SyntaxGenerationId(71);
     let index = SyntaxIndex::from_program(&program, generation);
     let project = ProjectSession::new(
         &db,
-        directory.clone(),
+        source_root.clone(),
         source_path.clone(),
         "beskid-corelib".into(),
         "corelib-source".into(),
     );
     let assembly = Arc::new(ProgramAssembly::new(
-        EffectiveCompilationRoots {
-            host: RootEntry { dependency_name: None, source_root: directory },
-            dependencies: Vec::new(),
-        },
+        EffectiveCompilationRoots { host: RootEntry { dependency_name: None, source_root }, dependencies: Vec::new() },
         Arc::new(vec![SourceUnit {
             logical_name: CANONICAL_CORELIB_SYSCALL_SOURCE_PATH.into(),
+            origin_path: source_path.clone(),
             path: source_path.clone(),
-            source: source.source.clone(),
+            source: source.clone(),
             program,
         }]),
         0,
@@ -201,19 +679,22 @@ fn corelib_syscall_source_gets_a_distinct_service_lowering_but_app_code_cannot_f
         .find(|target| target.triple.as_str() == "x86_64-unknown-linux-gnu")
         .expect("linux target");
     let manifest = AbiManifestV5::canonical_runtime(target);
-    build_canonical_corelib_syscall_typed_program(
+    build_typed_program_with_corelib_services(
         &mut db,
         project,
         generation,
         assembly,
-        canonical_corelib_syscall_service_capability(&manifest).expect("Corelib authority"),
+        canonical_corelib_service_capability(&manifest).expect("Corelib authority"),
     )
-    .expect("exact Core.Syscall source obtains service authority");
+    .expect("compiler-owned Core.Syscall source obtains service authority");
 
     let syscall_write = index
         .ids_of_kind(NodeKind::CallExpression)
         .map(|node| AstNodeKey { unit: SourceUnitId::new(&db, source_path.clone()), generation, node })
         .find(|key| {
+            if proven_primitive_conversion(&db, *key) {
+                return false;
+            }
             matches!(
                 call_lowering(&db, *key).expect("Core.Syscall lowering"),
                 Some(beskid_queries::CallLowering::CorelibService(service))
@@ -238,7 +719,7 @@ fn corelib_syscall_source_gets_a_distinct_service_lowering_but_app_code_cannot_f
     let mut forged_db = BeskidDatabase::default();
     let forged_directory = tempfile::tempdir().expect("forged Corelib project").keep();
     let forged_path = forged_directory.join("Syscall.bd");
-    let forged_source = source.source.replacen("__syscall_write", "__syscall_writex", 1);
+    let forged_source = source.replacen("__syscall_write", "__syscall_writex", 1);
     std::fs::write(&forged_path, &forged_source).expect("write forged Corelib source");
     let forged_program = parse_program(&forged_source).expect("parse forged Corelib source");
     let forged_project = ProjectSession::new(
@@ -255,6 +736,7 @@ fn corelib_syscall_source_gets_a_distinct_service_lowering_but_app_code_cannot_f
         },
         Arc::new(vec![SourceUnit {
             logical_name: CANONICAL_CORELIB_SYSCALL_SOURCE_PATH.into(),
+            origin_path: forged_path.clone(),
             path: forged_path,
             source: forged_source,
             program: forged_program,
@@ -263,17 +745,18 @@ fn corelib_syscall_source_gets_a_distinct_service_lowering_but_app_code_cannot_f
         AssemblyDiscovery::ImportClosure,
         Arc::new(ModuleIndex::empty()),
         false,
-        generation,
+        SyntaxGenerationId(72),
     ));
+    let forged_typed = build_typed_program_with_corelib_services(
+        &mut forged_db,
+        forged_project,
+        SyntaxGenerationId(72),
+        forged_assembly,
+        canonical_corelib_service_capability(&manifest).expect("Corelib authority for forge check"),
+    )
+    .expect("altered user source remains an ordinary syntax program");
     assert!(
-        build_canonical_corelib_syscall_typed_program(
-            &mut forged_db,
-            forged_project,
-            SyntaxGenerationId(72),
-            forged_assembly,
-            canonical_corelib_syscall_service_capability(&manifest).expect("Corelib authority for forge check"),
-        )
-        .is_err(),
+        forged_typed.corelib_service_capability.is_none(),
         "altering the Corelib source must not mint its service capability"
     );
 }
@@ -302,12 +785,14 @@ fn corelib_service_authority_is_registered_for_only_the_exact_syscall_unit_in_an
         Arc::new(vec![
             SourceUnit {
                 logical_name: "Core/Syscall/Syscall.bd".into(),
+                origin_path: syscall_path.clone(),
                 path: syscall_path.clone(),
                 source: source.source.clone(),
                 program: syscall_program.clone(),
             },
             SourceUnit {
                 logical_name: "Main.bd".into(),
+                origin_path: application_path.clone(),
                 path: application_path.clone(),
                 source: application_source.into(),
                 program: application_program.clone(),
@@ -348,6 +833,9 @@ fn corelib_service_authority_is_registered_for_only_the_exact_syscall_unit_in_an
         .ids_of_kind(NodeKind::CallExpression)
         .map(|node| AstNodeKey { unit: SourceUnitId::new(&db, syscall_path.clone()), generation, node })
         .find(|key| {
+            if proven_primitive_conversion(&db, *key) {
+                return false;
+            }
             matches!(
                 call_lowering(&db, *key).expect("Core.Syscall lowering"),
                 Some(beskid_queries::CallLowering::CorelibService(service))
@@ -380,6 +868,7 @@ fn corelib_service_authority_is_registered_for_only_the_exact_syscall_unit_in_an
         assembly.roots.clone(),
         Arc::new(vec![SourceUnit {
             logical_name: "Core/Syscall/Syscall.bd".into(),
+            origin_path: syscall_path.clone(),
             path: syscall_path.clone(),
             source: forged_source,
             program: forged_program.clone(),

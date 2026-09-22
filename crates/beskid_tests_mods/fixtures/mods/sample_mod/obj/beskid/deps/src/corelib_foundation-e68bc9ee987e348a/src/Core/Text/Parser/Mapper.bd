@@ -1,0 +1,18 @@
+/// Value-mapping combinators over TextParseResult.
+use Core.Text.Parser.Result;
+
+pub TextParseResult<string> Map(
+    TextParseResult<string> result,
+    string value
+) {
+    return match result {
+        TextParseResult::Ok(success) => Result.Success<string>(value, success.rest),
+        TextParseResult::Err(err) => TextParseResult::Err(err),
+    };
+}
+
+pub TextParseResult<string> Tap(
+    TextParseResult<string> result
+) {
+    return result;
+}

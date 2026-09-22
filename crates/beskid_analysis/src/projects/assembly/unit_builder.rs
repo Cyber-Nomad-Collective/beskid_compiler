@@ -48,7 +48,7 @@ impl<'a> UnitBuilder<'a> {
         let fp = content_fingerprint(source);
         if let Some(ast_snap) = self.store.read_ast(&fp)
             && ast_snap.meta.source_len == source.len()
-            && let Ok(unit) = source_unit_from_ast_snapshot(&ast_snap, source)
+            && let Ok(unit) = source_unit_from_ast_snapshot(&ast_snap, path, source)
         {
             let syntax_index = SyntaxIndex::from_program(&unit.program, generation);
             crate::projects::assembly::unit_cache::record_disk_hit();
@@ -65,8 +65,7 @@ impl<'a> UnitBuilder<'a> {
         let program = crate::services::parse_program_with_source_name(&logical_name, source)
             .map(expand_syntax_for_assembly)
             .map_err(|err| AssemblyError::Parse { path: path.to_path_buf(), message: err.to_string() })?;
-        let unit =
-            SourceUnit { logical_name, path: crate::paths::unit_path_key(path), source: source.to_string(), program };
+        let unit = SourceUnit::bind_request(path.to_path_buf(), logical_name, source.to_string(), program);
         let syntax_index = SyntaxIndex::from_program(&unit.program, generation);
         self.write_artifacts(&unit, source)?;
         Ok((unit, syntax_index))

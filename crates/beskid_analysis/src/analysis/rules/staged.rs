@@ -52,7 +52,7 @@ impl SemanticPipelineRule {
         });
 
         observe_stage(pipeline, phases::SEMANTIC_VISIBILITY, || {
-            self.stage5_modules_and_visibility(ctx, &program);
+            self.stage5_modules_and_visibility(ctx, &program, &resolution);
         });
         observe_stage(pipeline, phases::SEMANTIC_CONTRACTS, || {
             self.stage6_contracts_and_methods(ctx, &program, &resolution);

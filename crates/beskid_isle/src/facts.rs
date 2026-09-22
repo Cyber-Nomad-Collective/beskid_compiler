@@ -24,6 +24,7 @@ node_kinds!(
     ExpressionStatement,
     ReturnStatement,
     LetStatement,
+    ScopedUseStatement,
     IfStatement,
     WhileStatement,
     BreakStatement,
@@ -73,6 +74,7 @@ pub const fn classify_syntax_node_kind(kind: beskid_queries::IndexedNodeKind) ->
         Syntax::ExpressionStatement => IsleLowered(NodeKind::ExpressionStatement),
         Syntax::ReturnStatement => IsleLowered(NodeKind::ReturnStatement),
         Syntax::LetStatement => IsleLowered(NodeKind::LetStatement),
+        Syntax::ScopedUseStatement => IsleLowered(NodeKind::ScopedUseStatement),
         Syntax::IfStatement => IsleLowered(NodeKind::IfStatement),
         Syntax::WhileStatement => IsleLowered(NodeKind::WhileStatement),
         Syntax::BreakStatement => IsleLowered(NodeKind::BreakStatement),
@@ -351,6 +353,18 @@ impl DirectCallee {
 pub struct SpawnEntry {
     pub trampoline: DirectCallee,
     pub closure_environment: Option<InlineClosureEnvironment>,
+    pub handle_request_symbol: std::sync::Arc<str>,
+    pub handle_field_offset: i32,
+}
+
+/// Manifest-derived destination slot and boxed-value offsets for typed Fiber Join.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TracedFiberJoinLayout {
+    pub symbol: &'static str,
+    pub slot_size: u32,
+    pub alignment_shift: u8,
+    pub payload_offset: i32,
+    pub value_offset: i32,
 }
 
 /// One transferable capture field stored into an ABI-v5 closure environment before a call/spawn.
@@ -370,7 +384,6 @@ pub struct InlineCaptureField {
 pub struct InlineClosureEnvironment {
     pub allocation_request_symbol: std::sync::Arc<str>,
     pub descriptor_symbol: std::sync::Arc<str>,
-    pub root_slot_index: u64,
     pub captures: Vec<InlineCaptureField>,
 }
 
@@ -493,7 +506,23 @@ pub enum ManagedReferenceFact {
     GcManaged,
 }
 
+#[derive(Clone)]
+pub struct ScopedCleanupPlan {
+    pub binding: AstNodeKey,
+    pub body: Option<AstNodeKey>,
+    pub dispose: DirectCallee,
+    pub dispose_signature: Signature,
+    pub dispose_layout: crate::EnumLayout,
+    pub conversion: Option<(DirectCallee, Signature)>,
+    pub enclosing_layout: crate::EnumLayout,
+    pub allocation: ManagedStructAllocation,
+    pub converted_error_managed: bool,
+}
+
 pub trait NodeFacts {
+    fn scoped_cleanup(&self, _key: AstNodeKey) -> Option<ScopedCleanupPlan> {
+        None
+    }
     fn node_kind(&self, key: AstNodeKey) -> Option<NodeKind>;
     fn literal_kind(&self, _key: AstNodeKey) -> Option<LiteralKind> {
         None
@@ -522,6 +551,10 @@ pub trait NodeFacts {
     /// Implementations must return `None` for stale, foreign, unsupported, or otherwise
     /// unproven nodes so generated ISLE fails closed before CLIF.
     fn try_expression_fact(&self, _key: AstNodeKey) -> Option<beskid_queries::TryExpressionFact> {
+        None
+    }
+
+    fn try_return_layout(&self, _key: AstNodeKey) -> Option<EnumLayout> {
         None
     }
     fn runtime_intrinsic_kind(&self, _key: AstNodeKey) -> Option<RuntimeIntrinsicKind> {
@@ -627,6 +660,13 @@ pub trait NodeFacts {
         None
     }
     fn spawn_entry(&self, _key: AstNodeKey) -> Option<SpawnEntry> {
+        None
+    }
+    fn traced_fiber_join_layout(&self, _key: AstNodeKey) -> Option<TracedFiberJoinLayout> {
+        None
+    }
+
+    fn traced_channel_send_layout(&self, _key: AstNodeKey) -> Option<TracedFiberJoinLayout> {
         None
     }
     fn lambda_entry(&self, _key: AstNodeKey) -> Option<LambdaEntry> {

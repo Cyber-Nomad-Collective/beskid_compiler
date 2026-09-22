@@ -415,6 +415,22 @@ pub(super) fn direct_callees_for_item(
     item: AstNodeKey,
 ) -> Result<Arc<[AstNodeKey]>, SemanticError> {
     let mut callees = Vec::new();
+    // Scoped cleanup is an implicit direct call, but has no CallExpression node.
+    // Preserve the same exact semantic targets used by lowering in ordinary reachability.
+    for node in index.ids_of_kind(beskid_analysis::syntax_query::NodeKind::ScopedUseStatement) {
+        if !is_ancestor(index, item.node, node) {
+            continue;
+        }
+        if let Some(fact) = scoped_cleanup(db, AstNodeKey { node, ..item })?
+            && fact.diagnostic.is_none()
+        {
+            for target in fact.dispose.into_iter().chain(fact.conversion) {
+                if !callees.contains(&target) {
+                    callees.push(target);
+                }
+            }
+        }
+    }
     for call_id in index.ids_of_kind(beskid_analysis::syntax_query::NodeKind::CallExpression) {
         if !is_ancestor(index, item.node, call_id) {
             continue;
@@ -433,9 +449,9 @@ pub(super) fn direct_callees_for_item(
         if let CallLowering::Direct(declaration) = lowering
             && !callees.contains(&declaration)
         {
-            // Extern contract methods are import leaves (no syntax body). Including them
-            // as Direct reachability edges makes reachable_items fail closed.
-            if extern_contract_import_for_declaration(db, declaration).is_some() {
+            // Contract signatures have no executable syntax body. Extern signatures are import
+            // leaves; ordinary implementations enter reachability through proven witnesses.
+            if matches!(node_kind(db, declaration), Ok(Some(IndexedNodeKind::ContractMethodSignature))) {
                 continue;
             }
             callees.push(declaration);

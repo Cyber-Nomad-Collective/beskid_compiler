@@ -1,0 +1,8 @@
+/// Random error variants.
+/// @tier(supported)
+pub enum RandomError {
+    /// The requested range is invalid (min > max or max <= 0); carries min and max.
+    InvalidRange(i64 min, i64 max),
+    /// The PRNG state has been exhausted; carries the state value.
+    Exhausted(i64 state),
+}

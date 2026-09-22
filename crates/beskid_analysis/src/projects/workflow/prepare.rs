@@ -1,4 +1,5 @@
 use std::fs;
+use std::path::Path;
 
 use beskid_pipeline::{
     PipelineObserver, observe_phase_result,
@@ -67,7 +68,11 @@ pub fn prepare_project_workspace_with_options(
                 manifest: dependency.manifest_path.display().to_string(),
                 project: dependency.project_root.display().to_string(),
                 source_root: dependency.source_root.display().to_string(),
-                materialized_root: materialized_root.display().to_string(),
+                materialized_root: materialized_root
+                    .strip_prefix(&plan.project_root)
+                    .unwrap_or(&materialized_root)
+                    .display()
+                    .to_string(),
                 resolved_version: None,
                 artifact_digest: None,
                 registry: None,
@@ -109,6 +114,13 @@ pub fn prepare_project_workspace_with_options(
         }
         Ok::<(), ProjectError>(())
     })?;
+
+    for entry in &mut lock_entries {
+        let materialized_root = Path::new(&entry.materialized_root);
+        if let Ok(relative) = materialized_root.strip_prefix(&plan.project_root) {
+            entry.materialized_root = relative.display().to_string();
+        }
+    }
 
     lock_entries.sort_by_key(|entry| entry.to_v1_line());
     let lockfile_path = observe_phase_result(pipeline, WORKSPACE_MATERIALIZE_LOCKFILE, || {

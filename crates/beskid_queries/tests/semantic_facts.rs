@@ -1,6 +1,8 @@
 #[rustfmt::skip]
 #[path = "semantic_facts/support.rs"]
 mod support;
+#[path = "semantic_facts/scoped_cleanup.rs"]
+mod scoped_cleanup;
 #[rustfmt::skip]
 #[path = "semantic_facts/foundation.rs"]
 mod foundation;
@@ -22,6 +24,8 @@ mod imported_generics;
 #[rustfmt::skip]
 #[path = "semantic_facts/generic_inference.rs"]
 mod generic_inference;
+#[path = "semantic_facts/contract_specialization.rs"]
+mod contract_specialization;
 #[rustfmt::skip]
 #[path = "semantic_facts/node_enum_typing.rs"]
 mod node_enum_typing;
@@ -49,3 +53,6 @@ mod statement_result_storage;
 #[rustfmt::skip]
 #[path = "semantic_facts/iterators_and_operators.rs"]
 mod iterators_and_operators;
+#[rustfmt::skip]
+#[path = "semantic_facts/dead_growth.rs"]
+mod dead_growth;

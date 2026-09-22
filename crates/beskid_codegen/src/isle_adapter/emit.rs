@@ -5,7 +5,7 @@ pub fn emit_isle_closure_lambda_entry<'db>(
     input: &'db CodegenInput<'db>,
     isa: &dyn TargetIsa,
     body: AstNodeKey,
-    result: Type,
+    result: Option<Type>,
     captures: &[InlineCaptureField],
     importer: &mut dyn CallImporter,
 ) -> Result<cranelift_codegen::ir::Function, FunctionEmissionError> {
@@ -42,18 +42,17 @@ pub fn emit_isle_expression_with_call_importer<'db>(
     input: &'db CodegenInput<'db>,
     isa: &dyn TargetIsa,
     body: AstNodeKey,
-    result: Type,
+    result: Option<Type>,
     importer: &mut dyn CallImporter,
 ) -> Result<cranelift_codegen::ir::Function, FunctionEmissionError> {
     let emitter = FunctionEmitter::new(isa);
     let facts = SyntaxNodeFacts::new_with_isa(input, isa);
-    emitter.emit_expression_with_call_importer(
-        UserFuncName::user(0, 0),
-        emitter.signature([], [result]),
-        &facts,
-        body,
-        importer,
-    )
+    let signature = emitter.signature([], result);
+    if result.is_some() {
+        emitter.emit_expression_with_call_importer(UserFuncName::user(0, 0), signature, &facts, body, importer)
+    } else {
+        emitter.emit_statement_with_call_importer(UserFuncName::user(0, 0), signature, &facts, body, importer)
+    }
 }
 
 /// Emit a parsed item body through generated ISLE statement selection.

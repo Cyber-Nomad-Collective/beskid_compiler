@@ -87,8 +87,16 @@ impl NodeFacts for EnumFacts {
     }
 
     fn enum_payloads(&self, key: AstNodeKey) -> Option<Vec<AstNodeKey>> {
-        (key == self.nodes[1] && !matches!(self.arms, Arms::NestedExact | Arms::NestedMissing))
-            .then(|| vec![self.nodes[2]])
+        if key != self.nodes[1] {
+            return None;
+        }
+        // The nested-match fixtures construct the scrutinee as variant 7 (`nested_outer_layout`),
+        // which has zero payload fields, so the constructor needs an empty payload list rather
+        // than none at all; only the non-nested fixtures' single-field variant needs `nodes[2]`.
+        match self.arms {
+            Arms::NestedExact | Arms::NestedMissing => Some(vec![]),
+            _ => Some(vec![self.nodes[2]]),
+        }
     }
 
     fn match_arms(&self, key: AstNodeKey) -> Option<Vec<MatchArmFact>> {
@@ -213,7 +221,8 @@ fn emit(arms: Arms, function_index: u32) -> String {
 fn enum_literal_and_exhaustive_match_uses_managed_storage() {
     let clif = emit(Arms::Exact, 26);
     assert!(clif.contains("beskid_rt_v5_managed_object_allocate"), "{clif}");
-    assert!(!clif.contains("stack_store"), "{clif}");
+    // Stack slots may hold construction roots; the enum itself remains managed.
+    assert!(clif.contains("gc_register_root"), "{clif}");
     assert!(clif.contains("load.i32"), "{clif}");
     assert!(clif.contains("brif"), "{clif}");
 }
@@ -336,6 +345,12 @@ impl NodeFacts for UnitMatchFacts {
         (key == self.nodes[1]).then(|| ManagedStructAllocation {
             allocation_request_symbol: "__test_unit_enum_allocation_request".into(),
         })
+    }
+
+    // The scrutinee is constructed as variant 0 (`valid_layout`), which has zero payload
+    // fields; the constructor still needs an (empty) payload list to proceed.
+    fn enum_payloads(&self, key: AstNodeKey) -> Option<Vec<AstNodeKey>> {
+        (key == self.nodes[1]).then(Vec::new)
     }
 
     fn match_arms(&self, key: AstNodeKey) -> Option<Vec<MatchArmFact>> {

@@ -1,0 +1,67 @@
+use Concurrency.Fiber;
+use Concurrency.FiberError;
+use Core.Results;
+
+[Extern(Abi:"C")]
+pub contract Probe { unit gc_collect(); unit beskid_trap_message(string message); word str_len(string message); }
+
+pub type Aggregate { u8[] bytes, i64 marker, }
+// Foundation-local opaque token: transport does not dispose the resource.
+pub type OwnedResource { i64 token, }
+
+u8[] KeepBytes(u8[] value) { Probe.gc_collect(); return value; }
+Aggregate KeepAggregate(Aggregate value) { Probe.gc_collect(); return value; }
+OwnedResource KeepResource(OwnedResource value) { Probe.gc_collect(); return value; }
+unit CompleteUnit() { return; }
+unit PanicChild() { Probe.beskid_trap_message("child panic"); return; }
+i64 ReadBytes(u8[] value) { u8 first = value[0]; return i64(first); }
+i64 ReadAggregate(Aggregate value) { return ReadBytes(value.bytes); }
+i64 ReadResource(OwnedResource value) { return value.token; }
+Result<u8[], FiberError> JoinBytes(Fiber<u8[]> child) { return child.Join(); }
+i64 ReadPanic(FiberError error) {
+    return match error {
+        FiberError::Panicked(code, message) => code + i64(Probe.str_len(message)) - 13_i64,
+        _ => -1000_i64,
+    };
+}
+
+Fiber<u8[]> StartBytes() {
+    u8[] value = [42_u8];
+    return spawn (() => KeepBytes(value));
+}
+Fiber<Aggregate> StartAggregate() {
+    Aggregate value = Aggregate { bytes: [42_u8], marker: 7_i64 };
+    return spawn (() => KeepAggregate(value));
+}
+Fiber<OwnedResource> StartResource() {
+    OwnedResource value = OwnedResource { token: 42_i64 };
+    return spawn (() => KeepResource(value));
+}
+
+[Export(Abi:"C", Symbol:"RunFiberFixture")]
+pub i64 RunFiberFixture() {
+    Fiber<unit> cancelled = spawn CompleteUnit();
+    cancelled.Cancel();
+    cancelled.Cancel();
+    Result<unit, FiberError> cancelledResult = cancelled.Join();
+    i64 cancelledScore = match cancelledResult {
+        Result::Error(FiberError::Cancelled(_, _)) => 0_i64,
+        _ => -1000_i64,
+    };
+    Fiber<unit> panicked = spawn PanicChild();
+    Result<unit, FiberError> panicResult = panicked.Join();
+    i64 panicScore = match panicResult { Result::Error(error) => ReadPanic(error), _ => -1000_i64, };
+    Fiber<u8[]> bytes = StartBytes();
+    Fiber<Aggregate> aggregate = StartAggregate();
+    Fiber<OwnedResource> resource = StartResource();
+    Probe.gc_collect();
+    let movedBytes = bytes;
+    Result<u8[], FiberError> bytesResult = JoinBytes(movedBytes);
+    Result<Aggregate, FiberError> aggregateResult = aggregate.Join();
+    Result<OwnedResource, FiberError> resourceResult = resource.Join();
+    Probe.gc_collect();
+    i64 first = match bytesResult { Result::Ok(value) => ReadBytes(value), Result::Error(_) => -1000_i64, };
+    i64 second = match aggregateResult { Result::Ok(value) => ReadAggregate(value), Result::Error(_) => -1000_i64, };
+    i64 third = match resourceResult { Result::Ok(value) => ReadResource(value), Result::Error(_) => -1000_i64, };
+    return first + second + third + cancelledScore + panicScore;
+}

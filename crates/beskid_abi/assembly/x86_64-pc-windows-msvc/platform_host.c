@@ -1,116 +1,20 @@
 #include "../../include/beskid_runtime_abi_v5.h"
 #include "../common/args_utf16.h"
+#include <errno.h>
+#include <fcntl.h>
+#include <io.h>
+#include <limits.h>
 #include <stddef.h>
+#include <stdlib.h>
 #include <stdint.h>
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#include <mswsock.h>
 #include <windows.h>
 
-enum {
-  BESKID_WORKER_READ = 1,
-  BESKID_WORKER_WRITE = 2,
-  BESKID_WORKER_QUEUED = 1,
-  BESKID_WORKER_RUNNING = 2,
-  BESKID_WORKER_COMPLETE = 3
-};
-struct BeskidWorkerRequest {
-  void *next;
-  uint64_t tag;
-  uint32_t operation;
-  volatile LONG state;
-  uintptr_t native_handle;
-  uint8_t *buffer;
-  size_t length;
-  intptr_t result;
-  int32_t error;
-  uint32_t padding;
-};
-#define BESKID_WORKER_MAX 4
-#define BESKID_REQUEST_MAX 32
-static HANDLE beskid_workers[BESKID_WORKER_MAX];
-static size_t beskid_worker_count;
-static volatile LONG beskid_workers_stop;
-static struct BeskidWorkerRequest *volatile beskid_requests[BESKID_REQUEST_MAX];
-static DWORD WINAPI beskid_worker_main(LPVOID unused) {
-  (void)unused;
-  while (InterlockedCompareExchange(&beskid_workers_stop, 0, 0) == 0) {
-    for (size_t i = 0; i < BESKID_REQUEST_MAX; ++i) {
-      struct BeskidWorkerRequest *r = InterlockedCompareExchangePointer(
-          (PVOID volatile *)&beskid_requests[i], NULL, NULL);
-      if (!r || InterlockedCompareExchange(&r->state, BESKID_WORKER_RUNNING,
-                                           BESKID_WORKER_QUEUED) !=
-                    BESKID_WORKER_QUEUED)
-        continue;
-      DWORD transferred = 0;
-      HANDLE h = (HANDLE)r->native_handle;
-      BOOL ok =
-          r->operation == BESKID_WORKER_READ
-              ? ReadFile(h, r->buffer, (DWORD)r->length, &transferred, NULL)
-          : r->operation == BESKID_WORKER_WRITE
-              ? WriteFile(h, r->buffer, (DWORD)r->length, &transferred, NULL)
-              : FALSE;
-      r->result = ok ? (intptr_t)transferred : -1;
-      r->error = ok ? 0 : (int32_t)GetLastError();
-      InterlockedExchange(&r->state, BESKID_WORKER_COMPLETE);
-    }
-  }
-  return 0;
-}
-int32_t beskid_rt_v5_intrinsic_worker_pool_init(size_t count) {
-  if (beskid_worker_count || !count || count > BESKID_WORKER_MAX)
-    return -1;
-  InterlockedExchange(&beskid_workers_stop, 0);
-  for (size_t i = 0; i < count; ++i) {
-    beskid_workers[i] =
-        CreateThread(NULL, 0, beskid_worker_main, NULL, 0, NULL);
-    if (!beskid_workers[i]) {
-      InterlockedExchange(&beskid_workers_stop, 1);
-      while (i) {
-        --i;
-        WaitForSingleObject(beskid_workers[i], INFINITE);
-        CloseHandle(beskid_workers[i]);
-      }
-      return -1;
-    }
-  }
-  beskid_worker_count = count;
-  return 0;
-}
-void beskid_rt_v5_intrinsic_worker_pool_shutdown(void) {
-  InterlockedExchange(&beskid_workers_stop, 1);
-  for (size_t i = 0; i < beskid_worker_count; ++i) {
-    WaitForSingleObject(beskid_workers[i], INFINITE);
-    CloseHandle(beskid_workers[i]);
-  }
-  beskid_worker_count = 0;
-}
-int32_t beskid_rt_v5_intrinsic_worker_submit(struct BeskidWorkerRequest *r) {
-  if (!r)
-    return -1;
-  if (r->operation != BESKID_WORKER_READ &&
-      r->operation != BESKID_WORKER_WRITE) {
-    r->result = -1;
-    r->error = ERROR_INVALID_FUNCTION;
-    InterlockedExchange(&r->state, 0);
-    return -1;
-  }
-  if (!beskid_worker_count || r->length > UINT32_MAX)
-    return -1;
-  InterlockedExchange(&r->state, BESKID_WORKER_QUEUED);
-  for (size_t i = 0; i < BESKID_REQUEST_MAX; ++i)
-    if (InterlockedCompareExchangePointer((PVOID volatile *)&beskid_requests[i],
-                                          r, NULL) == NULL)
-      return 0;
-  InterlockedExchange(&r->state, 0);
-  return -1;
-}
-int32_t beskid_rt_v5_intrinsic_worker_poll(struct BeskidWorkerRequest *r) {
-  if (!r ||
-      InterlockedCompareExchange(&r->state, 0, 0) != BESKID_WORKER_COMPLETE)
-    return 0;
-  for (size_t i = 0; i < BESKID_REQUEST_MAX; ++i)
-    (void)InterlockedCompareExchangePointer(
-        (PVOID volatile *)&beskid_requests[i], NULL, r);
-  return 1;
-}
+#define BESKID_NETWORK_TRANSPORT 1
+#include "../common/external_wait.h"
+#include "network_iocp.h"
 
 struct BeskidStr {
   const uint8_t *ptr;
@@ -231,6 +135,10 @@ void beskid_rt_v5_intrinsic_guarded_stack_free(void *usable_base,
 }
 
 #pragma comment(lib, "kernel32.lib")
+/* Descriptor workers must share the host application's dynamic UCRT. */
+#pragma comment(lib, "ucrt.lib")
+/* Provider for C compiler-emitted memory operations. */
+#pragma comment(lib, "vcruntime.lib")
 
 int64_t beskid_rt_v5_intrinsic_clock_monotonic_nanos(void) {
   return (int64_t)(GetTickCount64() * UINT64_C(1000000));

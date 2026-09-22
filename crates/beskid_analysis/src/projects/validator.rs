@@ -4,6 +4,7 @@ use std::path::{Component, Path};
 use crate::projects::error::ProjectError;
 use crate::projects::model::{
     DependencySource, ProjectKind, ProjectLinkSection, ProjectManifest, TargetKind, WorkspaceManifest,
+    project_root_block_matches_package_name,
 };
 
 /// Closed capability names accepted in `project.mod.capabilities` (compiler-mod host bridge).
@@ -13,11 +14,11 @@ pub const MOD_CAPABILITY_NAMES: &[&str] =
 const MOD_ARTIFACT_POLICIES: &[&str] = &["reuse", "rebuild", "clean_rebuild"];
 
 pub fn validate_manifest(manifest: &ProjectManifest) -> Result<(), ProjectError> {
-    if manifest.project.block_kind != manifest.project.name {
+    if !project_root_block_matches_package_name(&manifest.project.block_kind, &manifest.project.name) {
         return Err(ProjectError::meta_contract(
             "E1896",
             format!(
-                "project root block kind `{}` must match `name` (`{}`)",
+                "project root block kind `{}` must match `name` (`{}`) or its underscore projection",
                 manifest.project.block_kind, manifest.project.name
             ),
         ));

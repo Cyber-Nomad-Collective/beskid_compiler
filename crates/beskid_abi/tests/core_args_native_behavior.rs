@@ -18,9 +18,13 @@ fn compile(temp: &Path, name: &str, source: &str, entry: bool) -> PathBuf {
     let executable = temp.join(name);
     fs::write(&harness, source).expect("write Core.Args harness");
     let mut command = Command::new("clang");
-    command.args(["-std=c11", "-arch", "arm64"]).arg(root.join("assembly/aarch64-apple-darwin/platform_host.c"));
+    // Only the argument seam is exercised by this isolated adapter fixture.
+    // Strip unrelated worker functions, whose allocator lives in platform.S.
+    command
+        .args(["-std=c11", "-arch", "arm64", "-Wl,-dead_strip"])
+        .arg(root.join("assembly/aarch64-apple-darwin/platform_host.c"));
     if entry {
-        command.arg(root.join("assembly/aarch64-apple-darwin/args_entry.S"));
+        command.arg("-DBESKID_EXECUTABLE_CORE_ARGS_UTF8").arg(root.join("assembly/common/executable_bootstrap.c"));
     }
     let output = command.arg(&harness).arg("-o").arg(&executable).output().expect("invoke clang");
     assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
@@ -43,7 +47,9 @@ extern int64_t beskid_rt_v5_args_count(void);
 extern struct BeskidStr *beskid_rt_v5_args_get(int64_t);
 _Noreturn void beskid_rt_v5_trap(uint8_t code, void *message, size_t len) { write(2, message, len); _exit(101); }
 void *str_new(void *data, size_t length) { (void)data; (void)length; return 0; }
-int beskid_program_main(void) {
+void *beskid_rt_v5_process_init(void *state) { return state; }
+void beskid_rt_v5_process_shutdown(void *state) { (void)state; }
+int64_t beskid_program_main(void) {
   if (beskid_rt_v5_args_count() != 3) return 10;
   struct BeskidStr *zero = beskid_rt_v5_args_get(0), *one = beskid_rt_v5_args_get(1), *two = beskid_rt_v5_args_get(2);
   if (zero->len == 0 || memcmp(one->ptr, "alpha", 5) || one->len != 5 || memcmp(two->ptr, "beta", 4) || two->len != 4) return 11;

@@ -1,0 +1,10 @@
+/// Typed transfer and close failures, independent of any transport.
+/// @tier(standard)
+pub enum IoError {
+    InvalidRange(),
+    UnexpectedEof(i64 completed),
+    NoProgress(),
+    ReadFailed(),
+    WriteFailed(),
+    CloseFailed(),
+}

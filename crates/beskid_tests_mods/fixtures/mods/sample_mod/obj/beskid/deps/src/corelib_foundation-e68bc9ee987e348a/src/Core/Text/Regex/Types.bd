@@ -1,0 +1,16 @@
+/// Data types for regex matching: spans, span lists, and internal match state.
+pub type MatchSpan {
+    i64 start,
+    i64 end,
+}
+
+pub enum MatchSpanList {
+    Nil,
+    Cons(MatchSpan head, MatchSpanList tail),
+}
+
+pub type MatchStep {
+    i64 pat_pos,
+    i64 text_pos,
+    bool ok,
+}

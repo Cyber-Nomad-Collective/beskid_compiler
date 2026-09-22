@@ -3,9 +3,20 @@ use cargo_cross::config::HostPlatform;
 use std::path::Path;
 use std::process::{Command, Output};
 
-use crate::api::BuildOutputKind;
-
-use super::LinkRequest;
+/// Normalize a logical library identity to its native short name without changing
+/// its spelling. Explicit `-l` flags already encode a native name and pass through.
+pub fn canonical_link_library_name(logical: &str) -> String {
+    let logical = logical.trim();
+    if logical.starts_with("-l") {
+        return logical.to_owned();
+    }
+    let name = logical.strip_prefix("lib").unwrap_or(logical);
+    name.strip_suffix(".so")
+        .or_else(|| name.strip_suffix(".dylib"))
+        .or_else(|| name.strip_suffix(".a"))
+        .unwrap_or(name)
+        .to_owned()
+}
 
 pub(super) fn detect_c_compiler() -> String {
     if let Ok(value) = std::env::var("CC") {
@@ -27,34 +38,8 @@ pub(super) fn append_static_archive(cmd: &mut Command, target: &str, archive: &P
     }
 }
 
-pub(super) fn format_link_command(compiler: &str, req: &LinkRequest, target: &str) -> String {
-    let mut command_line = format!("{} {}", compiler, req.object_path.display());
-    for object in &req.additional_object_paths {
-        command_line.push(' ');
-        command_line.push_str(&object.display().to_string());
-    }
-    if let Some(runtime_staticlib) = &req.runtime_staticlib {
-        if target.contains("darwin") || target.contains("macos") {
-            command_line.push_str(" -Wl,-force_load ");
-        } else {
-            command_line.push(' ');
-        }
-        command_line.push_str(&runtime_staticlib.display().to_string());
-    }
-    if let Some(host_staticlib) = &req.host_staticlib {
-        if target.contains("darwin") || target.contains("macos") {
-            command_line.push_str(" -Wl,-force_load ");
-        } else {
-            command_line.push(' ');
-        }
-        command_line.push_str(&host_staticlib.display().to_string());
-    }
-    command_line.push_str(" -o ");
-    command_line.push_str(&req.output_path.display().to_string());
-    if req.output_kind == BuildOutputKind::SharedLib {
-        command_line.push_str(" -shared");
-    }
-    command_line
+pub(super) fn format_link_command(command: &Command) -> String {
+    format!("{command:?}")
 }
 
 pub(super) fn format_link_detail(output: &Output) -> String {
@@ -71,4 +56,18 @@ pub(super) fn format_link_detail(output: &Output) -> String {
         detail.push_str(&stdout);
     }
     detail
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn link_command_diagnostics_preserve_actual_library_arguments() {
+        let mut command = Command::new("cc");
+        command.args(["runtime.o", "-L/sdk/lib", "-lSystem", "-shared"]);
+        let rendered = format_link_command(&command);
+        assert!(rendered.contains("-L/sdk/lib"), "{rendered}");
+        assert!(rendered.contains("-lSystem"), "{rendered}");
+    }
 }
