@@ -158,6 +158,32 @@ impl SemanticPipelineRule {
                         );
                     }
                 }
+                // `impl T { ... }` (with or without a `: Contract` conformance clause) is a
+                // first-class `Node::ImplBlock`, not flattened `Node::Method` items -- look up
+                // its methods the same way as `Node::TypeDefinition`'s inline methods.
+                Node::ImplBlock(impl_block) => {
+                    let Type::Complex(receiver_path) = &impl_block.node.receiver_type.node else {
+                        continue;
+                    };
+                    let Some(receiver_name) =
+                        receiver_path.node.segments.last().map(|segment| segment.node.name.node.name.as_str())
+                    else {
+                        continue;
+                    };
+                    if receiver_name != type_name {
+                        continue;
+                    }
+                    if let Some(method) =
+                        impl_block.node.methods.iter().find(|method| method.node.name.node.name == method_name)
+                    {
+                        return Some(
+                            self.method_signature_string(
+                                method.node.parameters.len(),
+                                method.node.return_type.is_some(),
+                            ),
+                        );
+                    }
+                }
                 _ => {}
             }
         }
@@ -207,6 +233,59 @@ mod tests {
         assert!(
             !result.diagnostics.iter().any(|diagnostic| diagnostic.code.as_deref() == Some("E1601")),
             "nested type method must satisfy Analyzer.Analyze; got: {:?}",
+            result.diagnostics
+        );
+    }
+
+    #[test]
+    fn impl_block_conformance_satisfied_produces_no_missing_implementation_diagnostic() {
+        let source = r#"
+            type Request {}
+            type Response {}
+
+            contract Analyzer {
+                Response Analyze(Request request);
+            }
+
+            type ConcreteAnalyzer {}
+
+            impl ConcreteAnalyzer : Analyzer {
+                Response Analyze(Request request) {
+                    return Response {};
+                }
+            }
+        "#;
+
+        let result = analyze(source);
+
+        assert!(
+            !result.diagnostics.iter().any(|diagnostic| diagnostic.code.as_deref() == Some("E1601")),
+            "impl-block method must satisfy Analyzer.Analyze; got: {:?}",
+            result.diagnostics
+        );
+    }
+
+    #[test]
+    fn impl_block_conformance_missing_method_is_flagged_e1601() {
+        let source = r#"
+            type Request {}
+            type Response {}
+
+            contract Analyzer {
+                Response Analyze(Request request);
+            }
+
+            type ConcreteAnalyzer {}
+
+            impl ConcreteAnalyzer : Analyzer {
+            }
+        "#;
+
+        let result = analyze(source);
+
+        assert!(
+            result.diagnostics.iter().any(|diagnostic| diagnostic.code.as_deref() == Some("E1601")),
+            "impl-block conformance without the required method must be flagged E1601; got: {:?}",
             result.diagnostics
         );
     }
