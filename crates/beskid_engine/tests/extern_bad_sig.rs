@@ -40,6 +40,7 @@ fn extern_signature_validation_rejects_disallowed_types() -> Result<()> {
             abi: Some("C".into()),
             library: Some("libc.so.6".into()),
         }],
+        trusted_extern_imports: vec![],
         exports: vec![],
     };
 

@@ -1,0 +1,117 @@
+use Concurrency.Fiber;
+use Core.Collections.Array;
+use Core.Results;
+
+[Extern(Abi:"C")]
+pub contract Probe {
+    unit gc_collect();
+    word gc_heap_region_count();
+    word gc_heap_committed();
+    word gc_heap_cap();
+}
+
+pub type Chunk { u8[] bytes, i64 marker, }
+
+u8[] NewFilledBytes(word length, u8 fill) {
+    mut u8[] buffer = Array.Empty<u8>();
+    mut word i = 0;
+    while i < length {
+        Array.Append<u8>(buffer, fill);
+        i = i + 1;
+    }
+    return buffer;
+}
+
+// ---- Size classes: one rooted, live object at or near every size-class boundary. ----
+// The 13 size classes (Span.bd) are 16, 32, 48, 64, 96, 128, 192, 256, 384, 512, 1024, 2048,
+// 4096 bytes; a managed array's element storage must round to each class in turn to prove every
+// class is reachable and reusable.
+i64 RunSizeClassSweep() {
+    mut i64 checksum = 0_i64;
+    mut word size = 8;
+    while size <= 4096 {
+        u8[] buffer = NewFilledBytes(size, u8(size % 251));
+        checksum = checksum + i64(buffer[0]) + Array.Len<u8>(buffer) - 1_i64;
+        size = size * 2;
+    }
+    Probe.gc_collect();
+    return checksum;
+}
+
+// ---- Growth past the 1 MiB initial region. ----
+// Keeps ~4 MiB of managed data reachable through a growing list of chunks, then reads the
+// region-count and committed-byte statistics the corelib services above expose.
+i64 RunGrowthPastOneRegion() {
+    mut Chunk[] kept = Array.Empty<Chunk>();
+    mut word total = 0;
+    while total < 4194304 {
+        u8[] bytes = NewFilledBytes(4096, 7_u8);
+        Array.Append<Chunk>(kept, Chunk { bytes: bytes, marker: Array.Len<Chunk>(kept) });
+        total = total + 4096;
+    }
+    word regions = Probe.gc_heap_region_count();
+    word committed = Probe.gc_heap_committed();
+    Probe.gc_collect();
+    mut i64 result = Array.Len<Chunk>(kept);
+    if regions < 2 { result = -1_i64; }
+    if committed <= 1048576 { result = -2_i64; }
+    return result;
+}
+
+// ---- Deep recursion: thousands of concurrently rooted locals and temporaries. ----
+// This is the regex/pest shape that actually caused the SIGILL (see
+// docs/superpowers/specs/2026-09-22-gc-span-heap-design.md, section 0): every recursion level
+// roots a fresh managed local across the call into the next level, the same pattern
+// `bind_local`/`root_temporary` (crates/beskid_isle/src/context/roots.rs) emit for every
+// GC-managed local. 6000 levels comfortably exceeds both the original 63-root ceiling and the
+// 4095-root stopgap.
+i64 RecurseHoldingLocals(word depth, word remaining) {
+    if remaining == 0 {
+        return i64(depth);
+    }
+    u8[] level = NewFilledBytes(24, u8(remaining % 251));
+    i64 fromBelow = RecurseHoldingLocals(depth + 1, remaining - 1);
+    return fromBelow + i64(level[0] % 2_u8);
+}
+
+i64 RunDeepRecursion() {
+    i64 result = RecurseHoldingLocals(0, 6000);
+    Probe.gc_collect();
+    return result;
+}
+
+// ---- Fiber stacks interact correctly with span-queued marking. ----
+// A managed value crosses the fiber boundary (rooted by `Runtime.Mem.AbiValue`'s existing
+// discipline, unchanged by this design) while other, unrelated allocation and collection happens
+// on the parent; `MarkSuspendedFiberRoots` must still find the child's rooted value.
+u8[] FiberHoldsBytes() {
+    u8[] value = NewFilledBytes(64, 9_u8);
+    Probe.gc_collect();
+    return value;
+}
+
+i64 RunFiberHeapInteraction() {
+    Fiber<u8[]> child = spawn (() => FiberHoldsBytes());
+    u8[] parentBytes = NewFilledBytes(64, 5_u8);
+    Probe.gc_collect();
+    Result<u8[], FiberError> joined = child.Join();
+    return match joined {
+        Result::Ok(bytes) => i64(bytes[0]) + i64(parentBytes[0]),
+        Result::Error(_) => -1000_i64,
+    };
+}
+
+// ---- Cap hit and `BESKID_HEAP_MAX_BYTES` configuration. ----
+// Keeps 3 MiB of managed data reachable; run under `BESKID_HEAP_MAX_BYTES=2M` (see the `.c`
+// fixture host), this allocation must trap through the diagnosable out-of-memory path rather
+// than crash. Run without a cap, it must simply succeed.
+i64 RunCapProbe() {
+    mut Chunk[] kept = Array.Empty<Chunk>();
+    mut word total = 0;
+    while total < 3145728 {
+        u8[] bytes = NewFilledBytes(4096, 3_u8);
+        Array.Append<Chunk>(kept, Chunk { bytes: bytes, marker: Array.Len<Chunk>(kept) });
+        total = total + 4096;
+    }
+    return Array.Len<Chunk>(kept);
+}

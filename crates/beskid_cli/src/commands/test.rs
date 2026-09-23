@@ -309,9 +309,24 @@ pub(crate) fn execute_prepared_target(
         }
     }
 
+    // A `compile-fail` project (by convention, an entry path with a `compile-fail` path
+    // component — see `corelib/packages/network/tests/compile-fail/` and
+    // `corelib/beskid_corelib/tests/corelib_tests/fixtures/compile-fail/`) exists to prove the
+    // compiler rejects its source. If the target's front end and lowering accepted it cleanly
+    // and it declares no `test` items, nothing was ever proven: reporting that as `Passed` would
+    // let the fixture regress silently (the exact scenario this check exists to close — see
+    // `network_rejections.bproj`'s `RawHandle`/`UdpIsNotStream` targets). A `compile-fail`
+    // project with `test` items still runs them normally: those targets prove rejection through
+    // a test assertion (e.g. `Assert.Fail` on the "unreachable if correctly rejected" path)
+    // rather than through a lowering error, so an empty-test vacuous pass is the only case that
+    // must fail closed here.
+    let compile_fail_target_without_tests = tests.is_empty() && is_compile_fail_source_path(&target.resolved.source_path);
+
     let result = if timeout_error.is_some() {
         TargetResult::TimedOut
     } else if summary.failed > 0 {
+        TargetResult::Failed
+    } else if compile_fail_target_without_tests {
         TargetResult::Failed
     } else {
         TargetResult::Passed
@@ -326,7 +341,15 @@ pub(crate) fn execute_prepared_target(
                 }))?
             );
         } else if tests.is_empty() {
-            println!("No tests found.");
+            if compile_fail_target_without_tests {
+                eprintln!(
+                    "No tests found, but `{}` is a compile-fail target: it must prove rejection through a \
+                     lowering error or a `test` item, and did neither.",
+                    source_name
+                );
+            } else {
+                println!("No tests found.");
+            }
         } else {
             test_ui.print_summary(
                 summary.passed,
@@ -341,15 +364,26 @@ pub(crate) fn execute_prepared_target(
         }
     }
 
-    let error = timeout_error.map(|error| error.to_string()).or_else(|| {
-        (summary.failed > 0).then(|| {
-            format!(
-                "{} test(s) failed; first failure: {}",
-                summary.failed,
-                first_failure.as_deref().unwrap_or("unknown test failure")
-            )
+    let error = timeout_error
+        .map(|error| error.to_string())
+        .or_else(|| {
+            (summary.failed > 0).then(|| {
+                format!(
+                    "{} test(s) failed; first failure: {}",
+                    summary.failed,
+                    first_failure.as_deref().unwrap_or("unknown test failure")
+                )
+            })
         })
-    });
+        .or_else(|| {
+            compile_fail_target_without_tests.then(|| {
+                format!(
+                    "compile-fail target `{}` compiled with no diagnostics and declared no `test` items; \
+                     it must prove rejection one of those two ways",
+                    target.name
+                )
+            })
+        });
     if result == TargetResult::Passed {
         workspace.session().pipeline().finish_session("Tests complete");
     } else {
@@ -403,6 +437,41 @@ fn phase_record(phase: &str, started_unix_ms: u64, started: Instant, result: Tar
         ended_unix_ms: unix_ms(),
         duration_ms: duration_ms(started.elapsed()),
         result,
+    }
+}
+
+/// Whether `path` sits under a `compile-fail` directory, by the convention already established
+/// by `corelib/packages/network/tests/compile-fail/` and
+/// `corelib/beskid_corelib/tests/corelib_tests/fixtures/compile-fail/`: a project whose entire
+/// purpose is proving the compiler rejects its source, so an empty test run there is a
+/// regression, not a pass. Matches the exact path component `compile-fail` case-sensitively, so
+/// an ordinary target's own naming (e.g. `compile_fail`, `CompileFail`) is never swept in by
+/// accident.
+fn is_compile_fail_source_path(source_path: &std::path::Path) -> bool {
+    source_path.components().any(|component| component.as_os_str() == "compile-fail")
+}
+
+#[cfg(test)]
+mod compile_fail_vacuous_pass_tests {
+    use super::is_compile_fail_source_path;
+    use std::path::Path;
+
+    #[test]
+    fn recognizes_the_established_compile_fail_directory_convention() {
+        assert!(is_compile_fail_source_path(Path::new(
+            "corelib/packages/network/tests/compile-fail/RawHandle.bd"
+        )));
+        assert!(is_compile_fail_source_path(Path::new(
+            "corelib/beskid_corelib/tests/corelib_tests/fixtures/compile-fail/LegacyCollectionsNamespace.bd"
+        )));
+    }
+
+    #[test]
+    fn does_not_match_an_ordinary_target_outside_a_compile_fail_directory() {
+        assert!(!is_compile_fail_source_path(Path::new("corelib/packages/network/src/Network/Tcp/TcpStream.bd")));
+        // A near-miss spelling must not accidentally match: this check is deliberately an exact
+        // path-component match, not a substring search.
+        assert!(!is_compile_fail_source_path(Path::new("src/compile_fail_notes/Notes.bd")));
     }
 }
 

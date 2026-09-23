@@ -505,6 +505,13 @@ pub bool FiberFinished(word index) {
     return s == FIBER_STATE_DONE || s == FIBER_STATE_CANCELLED;
 }
 
+const FIBER_RELEASE_HEAP_ROOT_STACK_HEAD = 168;
+// `BeskidRootStackBlock` (runtime-internal, see Runtime.Mem.Gc.RootsHandles): next(0), count(8),
+// slots(16, pointer[64]).
+const FIBER_RELEASE_ROOT_BLOCK_NEXT = 0;
+const FIBER_RELEASE_ROOT_BLOCK_COUNT = 8;
+const FIBER_RELEASE_ROOT_BLOCK_SLOTS = 16;
+
 // Terminal context transfer skips generated epilogues. Remove only this fiber's
 // stack-slot roots; scheduler-owned ABI slots and every other stack remain rooted.
 pub unit FiberReleaseStackRoots(word index) {
@@ -515,14 +522,24 @@ pub unit FiberReleaseStackRoots(word index) {
     word end = base + raw_word_load(pointer_add(fiber, 88));
     pointer heap = Heap();
     if heap == NativePointer(0) { return; }
-    mut word slot = 0;
-    while slot < GcExternalRootCount() {
-        word address = raw_word_load(pointer_add(heap, HEAP_EXTERNAL_ROOTS + slot * 8));
-        if address >= base && address < end {
-            GcUnregisterRoot(NativePointer(address));
-        } else {
-            slot = slot + 1;
+    // Roots now live in a segmented, growable chain of blocks (the fixed-array SIGILL fix, see
+    // docs/superpowers/specs/2026-09-22-gc-span-heap-design.md); walk every block, and for each
+    // matching address call the existing `GcUnregisterRoot` (address-identity removal). A
+    // removal swaps a different live entry from the end of the SAME block into this slot, so the
+    // slot index is rechecked rather than advanced whenever a match is removed.
+    mut pointer block = NativePointer(raw_word_load(pointer_add(heap, FIBER_RELEASE_HEAP_ROOT_STACK_HEAD)));
+    while block != NativePointer(0) {
+        pointer nextBlock = NativePointer(raw_word_load(pointer_add(block, FIBER_RELEASE_ROOT_BLOCK_NEXT)));
+        mut word slot = 0;
+        while slot < raw_word_load(pointer_add(block, FIBER_RELEASE_ROOT_BLOCK_COUNT)) {
+            word address = raw_word_load(pointer_add(block, FIBER_RELEASE_ROOT_BLOCK_SLOTS + slot * 8));
+            if address >= base && address < end {
+                GcUnregisterRoot(NativePointer(address));
+            } else {
+                slot = slot + 1;
+            }
         }
+        block = nextBlock;
     }
     return;
 }

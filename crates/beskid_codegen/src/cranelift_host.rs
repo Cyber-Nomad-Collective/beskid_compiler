@@ -201,7 +201,8 @@ pub fn collect_validated_extern_signatures<M: Module>(
         for (_func_ref, ext_func) in ctx_probe.func.dfg.ext_funcs.iter() {
             if let ExternalName::TestCase(name) = &ext_func.name {
                 let symbol = String::from_utf8_lossy(name.raw()).to_string();
-                if artifact.extern_imports.iter().any(|e| e.symbol == symbol) {
+                if artifact.extern_imports.iter().chain(artifact.trusted_extern_imports.iter()).any(|e| e.symbol == symbol)
+                {
                     let sig = ctx_probe.func.dfg.signatures[ext_func.signature].clone();
                     validate_ffi_signature(&sig, pointer)
                         .map_err(|msg| format!("extern signature not allowed for {symbol}: {msg}"))?;

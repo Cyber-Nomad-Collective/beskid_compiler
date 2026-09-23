@@ -130,7 +130,7 @@ fn loader_requires_only_metadata_loader_exports_and_retains_library() {
     assert_eq!(runtime.shared_library_path(), shared);
     assert!(runtime.symbols().iter().all(|(_, address)| !address.is_null()));
 
-    BeskidJitModule::new_with_runtime_kit(temp.path(), &target, BuildProfile::Debug, &[])
+    BeskidJitModule::new_with_runtime_kit(temp.path(), &target, BuildProfile::Debug, &[], &[])
         .expect("JIT owns loaded runtime for module lifetime");
 }
 
@@ -142,7 +142,46 @@ fn runtime_exports_cannot_be_overridden_by_external_symbol_registration() {
     let temp = TestDir::new();
     install_kit(temp.path(), &target, true, false, canonical_hash());
     let fake = [("beskid_rt_v5_abi_version".to_owned(), std::ptr::dangling::<u8>())];
-    assert!(BeskidJitModule::new_with_runtime_kit(temp.path(), &target, BuildProfile::Debug, &fake,).is_err());
+    assert!(BeskidJitModule::new_with_runtime_kit(temp.path(), &target, BuildProfile::Debug, &fake, &[]).is_err());
+}
+
+/// `trusted_intrinsic_ffi` is for addresses a caller already resolved from this exact kit's own
+/// shared library through the provenance-checked `CodegenArtifact::trusted_extern_imports` path
+/// (see `Engine::compile_artifact_with_pipeline`), never a caller-supplied guess: unlike
+/// `authorized_user_ffi`, it may legitimately name a symbol in the manifest `export_allowlist` —
+/// a `trusted_runtime_intrinsics` entry such as `system_allocate`, which `loader_required_exports`
+/// (and so `is_exact_runtime_symbol`/`kit_exports`) never covers, is exactly such a name. Passing
+/// the same name through `authorized_user_ffi` must still be rejected: only the dedicated
+/// parameter is exempt from the override check.
+#[test]
+fn trusted_intrinsic_ffi_may_supply_a_manifest_export_allowlist_symbol_that_authorized_user_ffi_cannot() {
+    let Some(target) = host_target() else {
+        return;
+    };
+    let temp = TestDir::new();
+    install_kit(temp.path(), &target, true, false, canonical_hash());
+    let manifest = AbiManifestV5::canonical_runtime(target.clone());
+    let intrinsic_symbol = manifest
+        .trusted_runtime_intrinsics
+        .iter()
+        .find(|intrinsic| intrinsic.name == "system_allocate")
+        .expect("canonical manifest declares system_allocate")
+        .symbol
+        .clone();
+
+    let via_authorized_user_ffi = [(intrinsic_symbol.clone(), std::ptr::dangling::<u8>())];
+    assert!(
+        BeskidJitModule::new_with_runtime_kit(temp.path(), &target, BuildProfile::Debug, &via_authorized_user_ffi, &[])
+            .is_err(),
+        "authorized_user_ffi must still reject a runtime-intrinsic name exactly as it rejects any other export"
+    );
+
+    let via_trusted_intrinsic_ffi = [(intrinsic_symbol, std::ptr::dangling::<u8>())];
+    assert!(
+        BeskidJitModule::new_with_runtime_kit(temp.path(), &target, BuildProfile::Debug, &[], &via_trusted_intrinsic_ffi)
+            .is_ok(),
+        "trusted_intrinsic_ffi must not be rejected as an export-allowlist override"
+    );
 }
 
 #[test]
@@ -190,7 +229,7 @@ fn unapproved_runtime_reference_is_rejected_before_process_symbol_fallback() {
     });
     let artifact =
         CodegenArtifact { functions: vec![LoweredFunction { name: "Main".into(), function }], ..Default::default() };
-    let mut jit = BeskidJitModule::new_with_runtime_kit(temp.path(), &target, BuildProfile::Debug, &[]).unwrap();
+    let mut jit = BeskidJitModule::new_with_runtime_kit(temp.path(), &target, BuildProfile::Debug, &[], &[]).unwrap();
     let error = jit.compile(&artifact).expect_err("unapproved process symbol must be rejected before dlsym fallback");
     assert!(error.to_string().contains("not approved"));
 }
@@ -235,7 +274,7 @@ fn corelib_syscall_write_links_from_the_process_builtin_registry() {
         extern_imports: vec![ExternImport { symbol: "syscall_write".into(), abi: Some("C".into()), library: None }],
         ..Default::default()
     };
-    let mut jit = BeskidJitModule::new_with_runtime_kit(temp.path(), &target, BuildProfile::Debug, &[])
+    let mut jit = BeskidJitModule::new_with_runtime_kit(temp.path(), &target, BuildProfile::Debug, &[], &[])
         .expect("exact ABI-v5 runtime kit loads before process builtin registration");
     jit.compile(&artifact).expect("Corelib syscall_write must link through the process builtin registry");
 }

@@ -52,7 +52,7 @@ impl Engine {
         target: TargetMetadata,
         profile: RuntimeKitProfile,
     ) -> Result<Self, JitError> {
-        let jit = BeskidJitModule::new_with_runtime_kit(prefix, &target, profile, &[])?;
+        let jit = BeskidJitModule::new_with_runtime_kit(prefix, &target, profile, &[], &[])?;
         // JIT'd code executes in this process against the kit just loaded, so the engine is the
         // ABI-v5 host: it owns the runtime-state reservation and the thread attachment that
         // scheduler, heap, and root-frame access require. Attaching here keeps that activation
@@ -91,6 +91,7 @@ impl Engine {
             &self.runtime_kit.target,
             self.runtime_kit.profile,
             &[],
+            &[],
         )?;
         self.replace_jit_and_runtime(jit)
     }
@@ -109,9 +110,18 @@ impl Engine {
         if requires_explicit_jit_arguments(artifact) && !self.arguments_initialized {
             return Err(JitError::Isa("Core.Args requires explicit JIT arguments".to_owned()));
         }
+        // `trusted_extern_imports` republishes (not replaces) the subset of `extern_imports` the
+        // compiler itself resolved through the canonical runtime intrinsic capability (see
+        // `CodegenArtifact::trusted_extern_imports`); a name appearing there can never have come
+        // from a source-level `[Extern]` declaration. Exclude that subset from the generic
+        // user-FFI path below — it is resolved separately, directly from this exact kit's shared
+        // library — rather than folding it into `kit_exports`, which stays the closed set covered
+        // by `loader_required_exports` (see `is_exact_runtime_symbol`).
+        let trusted_names: std::collections::HashSet<&str> =
+            artifact.trusted_extern_imports.iter().map(|import| import.symbol.as_str()).collect();
         let user_ffi_imports = beskid_codegen::referenced_extern_imports(artifact)
             .into_iter()
-            .filter(|entry| !self.jit.is_exact_runtime_symbol(&entry.symbol))
+            .filter(|entry| !self.jit.is_exact_runtime_symbol(&entry.symbol) && !trusted_names.contains(entry.symbol.as_str()))
             .collect::<Vec<_>>();
         validate_authorized_user_ffi(&user_ffi_imports)?;
 
@@ -139,12 +149,30 @@ impl Engine {
             Vec::new()
         };
 
+        // `trusted_extern_imports` carries only imports the compiler itself resolved through the
+        // canonical runtime intrinsic capability (see `CodegenArtifact::trusted_extern_imports`),
+        // never a source-level `[Extern]` declaration. Resolve each one straight from this exact
+        // kit's own shared library: their provenance is already proven by which artifact field
+        // they arrived in, so this does not widen `is_exact_runtime_symbol`/`kit_exports`, which
+        // stays the closed set covered by `loader_required_exports`.
+        let trusted_intrinsic_ffi = beskid_codegen::referenced_trusted_extern_imports(artifact)
+            .iter()
+            .map(|import| {
+                self.jit
+                    .runtime_kit()
+                    .resolve_trusted_symbol(&import.symbol)
+                    .map(|address| (import.symbol.clone(), address))
+                    .map_err(JitError::RuntimeKit)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+
         // Recreate the module per artifact while preserving the exact runtime-kit authority.
         let jit = BeskidJitModule::new_with_runtime_kit(
             &self.runtime_kit.prefix,
             &self.runtime_kit.target,
             self.runtime_kit.profile,
             &authorized_user_ffi,
+            &trusted_intrinsic_ffi,
         )?;
         self.replace_jit_and_runtime(jit)?;
 

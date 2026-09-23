@@ -322,6 +322,19 @@ fn lower_resolved_syntax_program(
             });
         }
     }
+    // `runtime_intrinsics` is non-empty only when `input.runtime_intrinsic_capability()` was
+    // proven (see `runtime_intrinsic_symbols`), i.e. only for the compiler-embedded canonical
+    // runtime corpus or a canonical runtime-fixture test compilation. `trusted_extern_imports`
+    // republishes exactly those entries (still also present in `extern_imports`, so AOT object
+    // emission and every existing `extern_imports`-based check keep working unchanged): a JIT host
+    // can additionally trust *this* field's provenance without a symbol-name pattern match, and
+    // resolve its entries directly from the loaded runtime kit's own shared library without
+    // widening the generic user-FFI authorization boundary (see
+    // `beskid_engine::runtime_kit::JitRuntimeKit::resolve_trusted_symbol`).
+    let trusted_extern_imports = runtime_intrinsics
+        .values()
+        .map(|symbol| ExternImport { symbol: symbol.clone(), abi: Some("C".into()), library: None })
+        .collect::<Vec<_>>();
     let mut extern_imports = runtime_intrinsics
         .into_values()
         .chain(corelib_services.into_values())
@@ -413,6 +426,7 @@ fn lower_resolved_syntax_program(
         functions,
         string_literals: context.string_literals,
         extern_imports,
+        trusted_extern_imports,
         closure_static_plans,
         aggregate_static_plans,
         array_static_plans,

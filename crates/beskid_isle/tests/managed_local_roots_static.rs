@@ -27,12 +27,17 @@ fn append_roots_managed_values_and_uses_owner_specific_publication() {
     let payload_root = append.find("root_temporary").expect("payload lifetime root");
     let grow = append.find("beskid_rt_v5_array_grow_rooted").expect("rooted grow");
     let local_publication = append.find("publish_managed_local").expect("local root publication");
-    let aggregate_publication = append.find("gc_write_barrier").expect("aggregate parent barrier");
     let finish = append.find("beskid_rt_v5_array_construction_finish").expect("construction finish");
 
     assert!(payload_root < grow);
     assert!(grow < local_publication);
-    assert!(grow < aggregate_publication);
     assert!(local_publication < finish);
-    assert!(aggregate_publication < finish);
+
+    // The span-heap design (docs/superpowers/specs/2026-09-22-gc-span-heap-design.md, section
+    // 6.3) removes the `gc_write_barrier` call generated code used to emit for an aggregate-field
+    // mutation owner: collection is stop-the-world, so a managed store can never race a
+    // concurrent marker, and a barrier that never fires is pure call overhead. The runtime export
+    // stays (for a future incremental collector) but no call site remains in generated code.
+    let call_site = append.find("self.builder.ins().call(barrier, &[base, array])");
+    assert!(call_site.is_none(), "no gc_write_barrier call should be emitted for the aggregate-field owner");
 }

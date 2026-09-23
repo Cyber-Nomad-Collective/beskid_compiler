@@ -10,13 +10,24 @@ const HEAP_COLLECTION_THRESHOLD = 56;
 const HEAP_GC_PHASE = 64;
 const HEAP_CAP_BYTES = 72;
 const HEAP_FAILURE_REASON = 88;
+const HEAP_MARK_FIFO_HEAD = 312;
+const HEAP_MARK_FIFO_TAIL = 320;
 
 const REGION_NEXT = 0;
-const REGION_BUMP = 16;
-const REGION_OBJECTS_START = 48;
+const REGION_SIZE = 8;
+const REGION_HEADER_SIZE = 64;
 
 const HEAP_MIN_THRESHOLD = 524288;
 const HEAP_INITIAL_REGION_SIZE = 1048576;
+
+const PAGE_SIZE = 8192;
+const SPAN_BASE = 8;
+const SPAN_SIZE_CLASS = 24;
+const SPAN_QUEUED = 32;
+const SPAN_MARK_BITS = 120;
+const SPAN_HEADER_SIZE = 256;
+const SPAN_BITMAP_WORDS = 8;
+const SIZE_CLASS_LARGE = 14;
 
 const GC_PHASE_MARKING = 1;
 const GC_PHASE_SWEEPING = 2;
@@ -102,28 +113,36 @@ pub u8 GcHeapSetCap(word bytes) {
     return 1;
 }
 
+// Rolls every span back to the pre-collection idle state after a failed mark pass: clears every
+// small span's mark/scanned bitmaps and `queued` flag (allocation bits, which describe what is
+// actually live, are untouched), resets every gray large object back to white, and empties the
+// mark FIFO. `alloc_bits`/allocated slots are never touched, since a failed mark pass must not
+// lose track of what is genuinely live.
 pub unit ResetMarkedObjects(pointer heap) {
     mut pointer region = NativePointer(raw_word_load(pointer_add(heap, HEAP_FIRST_REGION)));
     while region != NativePointer(0) {
-        mut pointer cursor = NativePointer(raw_word_load(pointer_add(region, REGION_OBJECTS_START)));
-        pointer bump = NativePointer(raw_word_load(pointer_add(region, REGION_BUMP)));
-        while NativeWord(cursor) < NativeWord(bump) {
-            word descriptorWord = raw_word_load(cursor);
-            mut word size;
-            if descriptorWord == 0 {
-                size = raw_word_load(pointer_add(cursor, 8));
-            } else {
-                pointer descriptor = NativePointer(descriptorWord);
-                if ValidateTypeDescriptor(descriptor) == false { return; }
-                size = ManagedObjectSize(cursor, descriptor);
-                if size == 0 { return; }
-                raw_word_store(pointer_add(cursor, 8), GcMarkWhite());
+        word regionSize = raw_word_load(pointer_add(region, REGION_SIZE));
+        word totalPages = regionSize / PAGE_SIZE;
+        mut word pageIndex = 0;
+        while pageIndex < totalPages {
+            pointer entry = pointer_add(region, REGION_HEADER_SIZE + pageIndex * SPAN_HEADER_SIZE);
+            word base = raw_word_load(pointer_add(entry, SPAN_BASE));
+            word sizeClass = raw_word_load(pointer_add(entry, SPAN_SIZE_CLASS));
+            if base != 0 && sizeClass != 0 && sizeClass != SIZE_CLASS_LARGE {
+                memory_set(pointer_add(entry, SPAN_MARK_BITS), 0, SPAN_BITMAP_WORDS * 8 * 2);
+                raw_word_store(pointer_add(entry, SPAN_QUEUED), 0);
+            } else if base != 0 && sizeClass == SIZE_CLASS_LARGE {
+                pointer object = NativePointer(base);
+                if raw_word_load(pointer_add(object, 8)) == GcMarkGrayState() {
+                    raw_word_store(pointer_add(object, 8), GcMarkWhite());
+                }
             }
-            if size < 16 || size % 8 != 0 { return; }
-            cursor = NativePointer(NativeWord(cursor) + size);
+            pageIndex = pageIndex + 1;
         }
         region = NativePointer(raw_word_load(pointer_add(region, REGION_NEXT)));
     }
+    raw_word_store(pointer_add(heap, HEAP_MARK_FIFO_HEAD), 0);
+    raw_word_store(pointer_add(heap, HEAP_MARK_FIFO_TAIL), 0);
     return;
 }
 
@@ -133,7 +152,7 @@ pub word GcCollect() {
     if heap == NativePointer(0) { return 0; }
     raw_word_store(pointer_add(heap, HEAP_GC_PHASE), GC_PHASE_MARKING);
     bool rootsOk = MarkRoots();
-    if rootsOk == false || ProcessGrayStack() == false {
+    if rootsOk == false || ProcessMarkWork() == false {
         ResetMarkedObjects(heap);
         raw_word_store(pointer_add(heap, HEAP_GC_PHASE), GC_PHASE_FAILED);
         return raw_word_load(pointer_add(heap, HEAP_LIVE_BYTES));

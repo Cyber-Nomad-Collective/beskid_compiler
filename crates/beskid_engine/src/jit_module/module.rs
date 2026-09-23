@@ -22,17 +22,28 @@ pub struct BeskidJitModule {
     func_ids: HashMap<String, FuncId>,
     runtime_kit: JitRuntimeKit,
     kit_exports: HashSet<String>,
+    /// `kit_exports` plus this construction's `trusted_intrinsic_ffi` names, used only for
+    /// declaring/validating externs — never for [`Self::is_exact_runtime_symbol`], which must
+    /// stay exactly `kit_exports` (see `crate::engine::compile_artifact_with_pipeline`).
+    declarable_exact_symbols: HashSet<String>,
     authorized_user_ffi: HashSet<String>,
     import_allowlist: HashSet<String>,
 }
 
 impl BeskidJitModule {
     /// JIT module backed only by an exact shared ABI-v5 runtime kit.
+    ///
+    /// `trusted_intrinsic_ffi` is for addresses the caller already resolved from this exact kit's
+    /// own shared library through a provenance-checked path (see
+    /// `CodegenArtifact::trusted_extern_imports`); unlike `authorized_user_ffi`, entries here are
+    /// allowed to match a manifest `export_allowlist` name, because they were not supplied by an
+    /// arbitrary caller — they are addresses of the same kit this module is loading.
     pub fn new_with_runtime_kit(
         prefix: &std::path::Path,
         target: &TargetMetadata,
         profile: RuntimeKitProfile,
         authorized_user_ffi: &[(String, *const u8)],
+        trusted_intrinsic_ffi: &[(String, *const u8)],
     ) -> Result<Self, JitError> {
         let runtime = JitRuntimeKit::load(prefix, target, profile).map_err(JitError::RuntimeKit)?;
         if let Some((name, _)) =
@@ -44,8 +55,11 @@ impl BeskidJitModule {
         }
         let kit_exports: HashSet<String> = runtime.symbols().iter().map(|(name, _)| name.clone()).collect();
         let authorized_user_ffi_names = authorized_user_ffi.iter().map(|(name, _)| name.clone()).collect();
+        let mut declarable_exact_symbols = kit_exports.clone();
+        declarable_exact_symbols.extend(trusted_intrinsic_ffi.iter().map(|(name, _)| name.clone()));
         let mut symbols = runtime.symbols().to_vec();
         symbols.extend_from_slice(authorized_user_ffi);
+        symbols.extend_from_slice(trusted_intrinsic_ffi);
         let import_allowlist: HashSet<String> = runtime.metadata().import_allowlist.iter().cloned().collect();
         let builder = new_builder(&symbols)?;
         Ok(Self {
@@ -53,6 +67,7 @@ impl BeskidJitModule {
             func_ids: HashMap::new(),
             runtime_kit: runtime,
             kit_exports,
+            declarable_exact_symbols,
             authorized_user_ffi: authorized_user_ffi_names,
             import_allowlist,
         })
@@ -76,13 +91,13 @@ impl BeskidJitModule {
     ) -> Result<(), JitError> {
         validate_exact_symbol_references(
             artifact,
-            &self.kit_exports,
+            &self.declarable_exact_symbols,
             &self.authorized_user_ffi,
             &self.import_allowlist,
         )?;
 
         declare_user_functions(&mut self.module, artifact, Linkage::Local, &mut self.func_ids)?;
-        declare_exact_runtime_imports(&mut self.module, artifact, &self.kit_exports, &mut self.func_ids)?;
+        declare_exact_runtime_imports(&mut self.module, artifact, &self.declarable_exact_symbols, &mut self.func_ids)?;
         declare_validated_extern_imports(&mut self.module, artifact, &mut self.func_ids)?;
         declare_import_allowlist_symbols(&mut self.module, artifact, &self.import_allowlist, &mut self.func_ids)?;
 

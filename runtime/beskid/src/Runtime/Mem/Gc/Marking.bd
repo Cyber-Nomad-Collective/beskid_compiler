@@ -1,4 +1,30 @@
-// Canonical heap-wide mark discovery and descriptor-driven tracing.
+// Canonical span-queued mark discovery and descriptor-driven tracing (Green Tea direction).
+//
+// Small-object spans are marked in span batches: shading an object sets its bit in the span's
+// mark bitmap and enqueues the span (once) on a heap-wide FIFO; draining a span scans every
+// slot marked but not yet scanned in one left-to-right pass. Large objects (their own dedicated
+// span, size class 0) have no bitmap worth the bookkeeping for one slot, so they keep the
+// object-header mark word (`gc_word`) and a simple work-until-quiescent scan over every region's
+// large spans, exactly the shape `ProcessGrayStack` used heap-wide before this design — just
+// narrowed to the rare large-object case. The two loops feed each other (a large object's field
+// can point at a small-span object and vice versa) until both are empty.
+
+const HEAP_FIRST_REGION_MARKING = 0;
+const HEAP_MARK_FIFO_HEAD = 312;
+const HEAP_MARK_FIFO_TAIL = 320;
+const REGION_NEXT_MARKING = 0;
+const REGION_SIZE_MARKING = 8;
+const REGION_HEADER_SIZE = 64;
+
+const PAGE_SIZE = 8192;
+const SPAN_NEXT = 0;
+const SPAN_BASE = 8;
+const SPAN_SIZE_CLASS = 24;
+const SPAN_QUEUED = 32;
+const SPAN_MARK_BITS = 120;
+const SPAN_SCANNED_BITS = 184;
+const SPAN_HEADER_SIZE = 256;
+const SIZE_CLASS_LARGE = 14;
 
 /// Resolves an ABI-visible managed reference to its exact GC object start.
 ///
@@ -27,90 +53,192 @@ pub pointer ManagedObjectForReference(pointer heap, pointer value) {
     return object;
 }
 
+// Pushes `entry` (a span header) onto the heap-wide mark FIFO if it is not already queued.
+pub unit EnqueueSpan(pointer heap, pointer entry) {
+    word queued = raw_word_load(pointer_add(entry, SPAN_QUEUED));
+    if queued != 0 {
+        return;
+    }
+    raw_word_store(pointer_add(entry, SPAN_QUEUED), 1);
+    raw_word_store(pointer_add(entry, SPAN_NEXT), 0);
+    pointer tail = NativePointer(raw_word_load(pointer_add(heap, HEAP_MARK_FIFO_TAIL)));
+    if tail == NativePointer(0) {
+        raw_word_store(pointer_add(heap, HEAP_MARK_FIFO_HEAD), NativeWord(entry));
+    } else {
+        raw_word_store(pointer_add(tail, SPAN_NEXT), NativeWord(entry));
+    }
+    raw_word_store(pointer_add(heap, HEAP_MARK_FIFO_TAIL), NativeWord(entry));
+    return;
+}
+
+pub pointer DequeueSpan(pointer heap) {
+    pointer head = NativePointer(raw_word_load(pointer_add(heap, HEAP_MARK_FIFO_HEAD)));
+    if head == NativePointer(0) {
+        return NativePointer(0);
+    }
+    word next = raw_word_load(pointer_add(head, SPAN_NEXT));
+    raw_word_store(pointer_add(heap, HEAP_MARK_FIFO_HEAD), next);
+    if next == 0 {
+        raw_word_store(pointer_add(heap, HEAP_MARK_FIFO_TAIL), 0);
+    }
+    raw_word_store(pointer_add(head, SPAN_QUEUED), 0);
+    return head;
+}
+
+// Shades `object`: on a small span, sets the slot's mark bit and enqueues the span; on a large
+// span (or any object without a resolvable span), falls back to the object-header mark word.
 pub unit GcMarkGray(pointer object) {
     pointer heap = Heap();
     pointer normalized = ManagedObjectForReference(heap, object);
     if normalized == NativePointer(0) {
         return;
     }
-    word state = raw_word_load(pointer_add(normalized, 8));
-    if state != GcMarkWhite() {
+    pointer region = FindHeapRegionContaining(heap, NativeWord(normalized));
+    if region == NativePointer(0) {
         return;
     }
-    raw_word_store(pointer_add(normalized, 8), GcMarkGrayState());
+    pointer entry = SpanEntryInRegion(region, NativeWord(normalized));
+    word sizeClass = raw_word_load(pointer_add(entry, SPAN_SIZE_CLASS));
+    if sizeClass == 0 {
+        // Defensive: `normalized` was already established allocated by `ManagedObjectForReference`
+        // (via `IsAllocatedObject`), so its span can never legitimately be free. Fail closed.
+        return;
+    }
+    if sizeClass == SIZE_CLASS_LARGE {
+        word state = raw_word_load(pointer_add(normalized, 8));
+        if state != GcMarkWhite() {
+            return;
+        }
+        raw_word_store(pointer_add(normalized, 8), GcMarkGrayState());
+        return;
+    }
+    word base = raw_word_load(pointer_add(entry, SPAN_BASE));
+    word classBytes = SizeClassBytes(sizeClass);
+    word idx = (NativeWord(normalized) - base) / classBytes;
+    if BitmapTestBit(pointer_add(entry, SPAN_MARK_BITS), idx) {
+        return;
+    }
+    BitmapSetBit(pointer_add(entry, SPAN_MARK_BITS), idx);
+    EnqueueSpan(heap, entry);
     return;
 }
 
-
-const HEAP_FIRST_REGION_MARKING = 0;
-const REGION_NEXT_MARKING = 0;
-const REGION_BUMP_MARKING = 16;
-const REGION_OBJECTS_START_MARKING = 48;
-
-// One outer "found any gray" loop wraps the region loop: gray objects in earlier regions
-// discovered while scanning later regions (children can live in any region; `GcMarkGray`
-// resolves them heap-wide through `HeapContains`) are processed on the next pass.
-pub bool ProcessGrayStack() {
-    pointer heap = Heap();
-    mut bool found = true;
-    while found {
-        found = false;
-        mut pointer region = NativePointer(raw_word_load(pointer_add(heap, HEAP_FIRST_REGION_MARKING)));
-        while region != NativePointer(0) {
-            mut pointer object = NativePointer(raw_word_load(pointer_add(region, REGION_OBJECTS_START_MARKING)));
-            pointer bump = NativePointer(raw_word_load(pointer_add(region, REGION_BUMP_MARKING)));
-            while NativeWord(object) < NativeWord(bump) {
-                word descriptorWord = raw_word_load(object);
-                mut word size;
-                if descriptorWord == 0 {
-                    size = raw_word_load(pointer_add(object, 8));
-                } else {
-                    pointer descriptor = NativePointer(descriptorWord);
-                    if ValidateTypeDescriptor(descriptor) == false { return false; }
-                    size = ManagedObjectSize(object, descriptor);
-                    if size == 0 { return false; }
-                    if raw_word_load(pointer_add(object, 8)) == GcMarkGrayState() {
-                        if TypeDescriptorFlags(descriptor) == TYPE_DESCRIPTOR_ARRAY {
-                            pointer element = NativePointer(raw_word_load(pointer_add(object, 16)));
-                            word stride = raw_word_load(element);
-                            pointer pointerMap = NativePointer(raw_word_load(pointer_add(element, 16)));
-                            word pointerCount = raw_word_load(pointer_add(element, 24));
-                            word length = raw_word_load(pointer_add(object, 32));
-                            word capacity = raw_word_load(pointer_add(object, 40));
-                            if length > capacity { return false; }
-                            mut word elementIndex = 0;
-                            while elementIndex < length {
-                                mut word mapIndex = 0;
-                                while mapIndex < pointerCount {
-                                    word offset = raw_word_load(pointer_add(pointerMap, mapIndex * 8));
-                                    if offset + 8 < offset || offset + 8 > stride { return false; }
-                                    pointer child = NativePointer(raw_word_load(pointer_add(object, 48 + elementIndex * stride + offset)));
-                                    if child != NativePointer(0) { GcMarkGray(child); }
-                                    mapIndex = mapIndex + 1;
-                                }
-                                elementIndex = elementIndex + 1;
-                            }
-                        } else {
-                            pointer pointerMap = TypeDescriptorPointerMap(descriptor);
-                            word pointerCount = TypeDescriptorPointerCount(descriptor);
-                            mut word index = 0;
-                            while index < pointerCount {
-                                word offset = raw_word_load(pointer_add(pointerMap, index * 8));
-                                pointer child = NativePointer(raw_word_load(pointer_add(object, offset)));
-                                if child != NativePointer(0) { GcMarkGray(child); }
-                                index = index + 1;
-                            }
-                        }
-                        raw_word_store(pointer_add(object, 8), GcMarkBlack());
-                        found = true;
-                    }
-                }
-                word next = NativeWord(object) + size;
-                if size < 16 || size % 8 != 0 || next <= NativeWord(object) || next > NativeWord(bump) { return false; }
-                object = NativePointer(next);
+// Traces one object's pointer fields (array or aggregate pointer-map walk), shading every
+// non-null child. Shared by the small-span slot scan and the large-object scan below.
+pub bool TraceObjectFields(pointer object, pointer descriptor) {
+    if TypeDescriptorFlags(descriptor) == TYPE_DESCRIPTOR_ARRAY {
+        pointer element = NativePointer(raw_word_load(pointer_add(object, 16)));
+        word stride = raw_word_load(element);
+        pointer pointerMap = NativePointer(raw_word_load(pointer_add(element, 16)));
+        word pointerCount = raw_word_load(pointer_add(element, 24));
+        word length = raw_word_load(pointer_add(object, 32));
+        word capacity = raw_word_load(pointer_add(object, 40));
+        if length > capacity { return false; }
+        mut word elementIndex = 0;
+        while elementIndex < length {
+            mut word mapIndex = 0;
+            while mapIndex < pointerCount {
+                word offset = raw_word_load(pointer_add(pointerMap, mapIndex * 8));
+                if offset + 8 < offset || offset + 8 > stride { return false; }
+                pointer child = NativePointer(raw_word_load(pointer_add(object, 48 + elementIndex * stride + offset)));
+                if child != NativePointer(0) { GcMarkGray(child); }
+                mapIndex = mapIndex + 1;
             }
-            region = NativePointer(raw_word_load(pointer_add(region, REGION_NEXT_MARKING)));
+            elementIndex = elementIndex + 1;
         }
+        return true;
+    }
+    pointer pointerMap = TypeDescriptorPointerMap(descriptor);
+    word pointerCount = TypeDescriptorPointerCount(descriptor);
+    mut word index = 0;
+    while index < pointerCount {
+        word offset = raw_word_load(pointer_add(pointerMap, index * 8));
+        pointer child = NativePointer(raw_word_load(pointer_add(object, offset)));
+        if child != NativePointer(0) { GcMarkGray(child); }
+        index = index + 1;
+    }
+    return true;
+}
+
+pub bool TraceObjectAt(pointer object) {
+    word descriptorWord = raw_word_load(object);
+    if descriptorWord == 0 { return false; }
+    pointer descriptor = NativePointer(descriptorWord);
+    if ValidateTypeDescriptor(descriptor) == false { return false; }
+    return TraceObjectFields(object, descriptor);
+}
+
+// Drains a dequeued small-object span: scans every slot marked but not yet scanned in one
+// left-to-right pass, tracing each and shading its children (which may re-enqueue this or any
+// other span).
+pub bool DrainSpan(pointer entry) {
+    word base = raw_word_load(pointer_add(entry, SPAN_BASE));
+    word sizeClass = raw_word_load(pointer_add(entry, SPAN_SIZE_CLASS));
+    word classBytes = SizeClassBytes(sizeClass);
+    word slotsPerSpan = PAGE_SIZE / classBytes;
+    pointer marks = pointer_add(entry, SPAN_MARK_BITS);
+    pointer scanned = pointer_add(entry, SPAN_SCANNED_BITS);
+    mut word idx = 0;
+    while idx < slotsPerSpan {
+        if BitmapTestBit(marks, idx) && BitmapTestBit(scanned, idx) == false {
+            BitmapSetBit(scanned, idx);
+            pointer object = NativePointer(base + idx * classBytes);
+            if TraceObjectAt(object) == false { return false; }
+        }
+        idx = idx + 1;
+    }
+    return true;
+}
+
+// One pass over every region's large (size class 0) spans, tracing any whose sole object is
+// gray. Returns 2 on a validation failure (propagated as a hard mark failure), 1 if any progress
+// was made (a large object was traced, so the caller should give the small-span FIFO another
+// chance to drain), 0 otherwise.
+pub word ProcessLargeObjectsOnce(pointer heap) {
+    mut word progress = 0;
+    mut pointer region = NativePointer(raw_word_load(pointer_add(heap, HEAP_FIRST_REGION_MARKING)));
+    while region != NativePointer(0) {
+        word regionSize = raw_word_load(pointer_add(region, REGION_SIZE_MARKING));
+        word totalPages = regionSize / PAGE_SIZE;
+        mut word pageIndex = 0;
+        while pageIndex < totalPages {
+            pointer entry = pointer_add(region, REGION_HEADER_SIZE + pageIndex * SPAN_HEADER_SIZE);
+            word base = raw_word_load(pointer_add(entry, SPAN_BASE));
+            word sizeClass = raw_word_load(pointer_add(entry, SPAN_SIZE_CLASS));
+            if base != 0 && sizeClass == SIZE_CLASS_LARGE {
+                pointer object = NativePointer(base);
+                if raw_word_load(pointer_add(object, 8)) == GcMarkGrayState() {
+                    if TraceObjectAt(object) == false { return 2; }
+                    raw_word_store(pointer_add(object, 8), GcMarkBlack());
+                    progress = 1;
+                }
+            }
+            pageIndex = pageIndex + 1;
+        }
+        region = NativePointer(raw_word_load(pointer_add(region, REGION_NEXT_MARKING)));
+    }
+    return progress;
+}
+
+// Drains the small-span FIFO and the large-object work in alternation until both are quiescent
+// in the same outer pass (a large object traced in this pass can gray a small-span object, which
+// re-enters the FIFO on the next inner drain; a small-span object traced can gray a large
+// object, caught by the next large-object pass).
+pub bool ProcessMarkWork() {
+    pointer heap = Heap();
+    if heap == NativePointer(0) { return false; }
+    mut bool progress = true;
+    while progress {
+        progress = false;
+        mut pointer entry = DequeueSpan(heap);
+        while entry != NativePointer(0) {
+            if DrainSpan(entry) == false { return false; }
+            progress = true;
+            entry = DequeueSpan(heap);
+        }
+        word largeStatus = ProcessLargeObjectsOnce(heap);
+        if largeStatus == 2 { return false; }
+        if largeStatus == 1 { progress = true; }
     }
     return true;
 }

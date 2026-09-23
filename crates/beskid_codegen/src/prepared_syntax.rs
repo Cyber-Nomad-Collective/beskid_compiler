@@ -243,12 +243,14 @@ pub fn lower_syntax_assembly_entrypoint(
     let reachable = reachable_items(db, entry_root, entry)
         .map_err(|error| anyhow::anyhow!("entrypoint reachability query failed: {error}"))?
         .ok_or_else(|| anyhow::anyhow!("incomplete direct-call facts for `{entrypoint}`"))?;
-    let items = reachable
+    let mut selected = reachable.iter().copied().collect::<HashSet<_>>();
+    let mut items = reachable
         .iter()
         .copied()
         .map(|key| syntax_item_symbol(db, &input, key).map(|symbol| SyntaxModuleItem { key, symbol }))
         .collect::<Option<Vec<_>>>()
         .ok_or_else(|| anyhow::anyhow!("reachable item is not a syntax function or test"))?;
+    close_scheduler_entry_reachability(db, &input, &mut selected, &mut items)?;
     let symbol = syntax_item_symbol(db, &input, entry)
         .ok_or_else(|| anyhow::anyhow!("entrypoint `{entrypoint}` is not a syntax function or test"))?;
     let mut artifact = lower_syntax_program(&input, isa, &items)
@@ -348,6 +350,63 @@ fn syntax_export_entries_matching(
         });
     }
     Ok(exports)
+}
+
+/// Close the scheduler-entry reachability gap for entrypoint (test/AOT/JIT) lowering.
+///
+/// [`SCHEDULER_ENTRY_HELPERS`](crate::module_emission::SCHEDULER_ENTRY_HELPERS) are invoked by
+/// compiler-generated scheduler entry/return trampolines, not by any source call, so ordinary
+/// call-graph reachability from an entrypoint can pull in some of them (via a normal call into
+/// the scheduler) while missing others (reached only through indirect context entry). Emission
+/// then fails closed with `canonical <name> item unavailable`
+/// (`crates/beskid_codegen/src/module_emission/orchestration.rs`). `lower_canonical_runtime_prepared_syntax`
+/// avoids this by always adding the helper set as extra reachability roots when building the
+/// runtime corpus itself; do the same here whenever this compilation's reachable item set already
+/// needs any one of them, so partial scheduler exposure never produces a partial helper set.
+fn close_scheduler_entry_reachability(
+    db: &BeskidDatabase,
+    input: &CodegenInput<'_>,
+    selected: &mut HashSet<AstNodeKey>,
+    items: &mut Vec<SyntaxModuleItem>,
+) -> Result<()> {
+    let already_needed = selected.iter().any(|key| {
+        item_name(db, *key)
+            .ok()
+            .flatten()
+            .is_some_and(|name| crate::module_emission::SCHEDULER_ENTRY_HELPERS.contains(&name.as_ref()))
+    });
+    if !already_needed {
+        return Ok(());
+    }
+    let mut entry_roots = Vec::new();
+    for key in input.roots().iter().copied().flat_map(|root| function_definitions(db, root)) {
+        if let Some(name) = item_name(db, key)?
+            && crate::module_emission::SCHEDULER_ENTRY_HELPERS.contains(&name.as_ref())
+        {
+            entry_roots.push((name.to_string(), key));
+        }
+    }
+    for (export, entry) in &entry_roots {
+        let entry = *entry;
+        let program = input
+            .roots()
+            .iter()
+            .copied()
+            .find(|root| root.unit == entry.unit)
+            .ok_or_else(|| anyhow::anyhow!("scheduler entry `{export}` has no source root"))?;
+        let reachable = reachable_items(db, program, entry)
+            .map_err(|error| anyhow::anyhow!("scheduler entry reachability failed for `{export}`: {error}"))?
+            .ok_or_else(|| anyhow::anyhow!("incomplete direct-call facts for scheduler entry `{export}`"))?;
+        for key in reachable.iter().copied() {
+            if !selected.insert(key) {
+                continue;
+            }
+            let symbol = syntax_item_symbol(db, input, key)
+                .ok_or_else(|| anyhow::anyhow!("scheduler entry reachable item is not a syntax function or test"))?;
+            items.push(SyntaxModuleItem { key, symbol });
+        }
+    }
+    Ok(())
 }
 
 fn find_entrypoint(db: &BeskidDatabase, input: &CodegenInput<'_>, entrypoint: &str) -> Option<AstNodeKey> {

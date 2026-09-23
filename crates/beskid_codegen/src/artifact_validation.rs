@@ -19,9 +19,24 @@ pub struct MissingSymbol {
 /// The full [`CodegenArtifact::extern_imports`] list may include contract symbols from every
 /// assembly unit (for link-plan completeness); JIT/AOT runtime resolution only needs this subset.
 pub fn referenced_extern_imports(artifact: &CodegenArtifact) -> Vec<ExternImport> {
+    referenced_imports_from(artifact, &artifact.extern_imports)
+}
+
+/// Same filter as [`referenced_extern_imports`], applied to [`CodegenArtifact::trusted_extern_imports`].
+///
+/// A capability-holding compilation's `trusted_extern_imports` lists every trusted runtime
+/// intrinsic the manifest declares, not only the ones this exact artifact calls (see
+/// `runtime_intrinsic_symbols` in `module_emission::imports`); a JIT host must resolve only the
+/// referenced subset, or an intrinsic absent from one target/profile's kit build would fail an
+/// artifact that never actually calls it.
+pub fn referenced_trusted_extern_imports(artifact: &CodegenArtifact) -> Vec<ExternImport> {
+    referenced_imports_from(artifact, &artifact.trusted_extern_imports)
+}
+
+fn referenced_imports_from(artifact: &CodegenArtifact, imports: &[ExternImport]) -> Vec<ExternImport> {
     let defined: HashSet<String> = artifact.functions.iter().map(|f| f.name.clone()).collect();
     let extern_by_symbol: std::collections::HashMap<&str, &ExternImport> =
-        artifact.extern_imports.iter().map(|entry| (entry.symbol.as_str(), entry)).collect();
+        imports.iter().map(|entry| (entry.symbol.as_str(), entry)).collect();
 
     let mut out = Vec::new();
     for symbol in collect_referenced_testcase_symbols(artifact) {
@@ -40,7 +55,12 @@ pub fn referenced_extern_imports(artifact: &CodegenArtifact) -> Vec<ExternImport
 /// in `artifact.functions` or is a known builtin/extern import.
 pub fn validate_artifact(artifact: &CodegenArtifact) -> Result<(), Vec<MissingSymbol>> {
     let defined: HashSet<String> = artifact.functions.iter().map(|f| f.name.clone()).collect();
-    let extern_syms: HashSet<String> = artifact.extern_imports.iter().map(|e| e.symbol.clone()).collect();
+    let extern_syms: HashSet<String> = artifact
+        .extern_imports
+        .iter()
+        .chain(artifact.trusted_extern_imports.iter())
+        .map(|e| e.symbol.clone())
+        .collect();
 
     let mut missing = Vec::new();
     for symbol in collect_referenced_testcase_symbols(artifact) {

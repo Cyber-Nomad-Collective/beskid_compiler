@@ -87,7 +87,10 @@ pub bool CompositionSlotStore(pointer container, word slot, pointer service) {
     if CompositionContainerValid(container) == 0 || service == NativePointer(0) { return false; }
     if raw_word_load(pointer_add(container, COMPOSITION_STATUS_OFFSET)) != COMPOSITION_CONFIGURING { return false; }
     word slotCount = raw_word_load(pointer_add(container, COMPOSITION_SLOT_COUNT_OFFSET));
-    if slot >= slotCount || GcExternalRootCount() >= GC_EXTERNAL_ROOT_CAPACITY { return false; }
+    // The root stack is now a growable chain (see Runtime.Mem.Gc.RootsHandles), not a
+    // fixed-capacity table, so there is no capacity to pre-check here; `GcRegisterRoot` below
+    // reports its own failure (only possible if the platform allocator refuses a new block).
+    if slot >= slotCount { return false; }
     pointer slots = NativePointer(raw_word_load(pointer_add(container, COMPOSITION_SLOTS_OFFSET)));
     pointer destination = pointer_add(slots, slot * 8);
     if raw_word_load(destination) != 0 { return false; }

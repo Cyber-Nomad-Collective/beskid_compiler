@@ -1,0 +1,109 @@
+// Test-mode heap verifier (docs/superpowers/specs/2026-09-22-gc-span-heap-design.md, section 5,
+// invariants 2 and 3): walks every region's span directory and checks that every small span's
+// allocated-slot count plus free-slot-list length equals its slot count (no slot is both
+// allocated and free, and none is missing from either), and that the free-slot list is
+// acyclic and no longer than the span. Exported so Rust tests can call it after a collection
+// without embedding this walk in every test's own harness.
+
+const HEAP_FIRST_REGION_VERIFY = 0;
+const REGION_NEXT_VERIFY = 0;
+const REGION_SIZE_VERIFY = 8;
+const REGION_HEADER_SIZE = 64;
+
+const PAGE_SIZE = 8192;
+const SPAN_BASE = 8;
+const SPAN_SIZE_CLASS = 24;
+const SPAN_FREE_SLOT = 48;
+const SPAN_ALLOC_BITS = 56;
+const SPAN_HEADER_SIZE = 256;
+const SIZE_CLASS_LARGE = 14;
+
+pub bool VerifySpan(pointer entry) {
+    word base = raw_word_load(pointer_add(entry, SPAN_BASE));
+    word sizeClass = raw_word_load(pointer_add(entry, SPAN_SIZE_CLASS));
+    if base == 0 || sizeClass == 0 || sizeClass == SIZE_CLASS_LARGE {
+        return true;
+    }
+    word classBytes = SizeClassBytes(sizeClass);
+    word slotsPerSpan = PAGE_SIZE / classBytes;
+    word allocCount = PopcountBitmap(pointer_add(entry, SPAN_ALLOC_BITS));
+    mut word freeCount = 0;
+    mut pointer cursor = NativePointer(raw_word_load(pointer_add(entry, SPAN_FREE_SLOT)));
+    while cursor != NativePointer(0) {
+        freeCount = freeCount + 1;
+        if freeCount > slotsPerSpan {
+            return false;
+        }
+        cursor = NativePointer(raw_word_load(cursor));
+    }
+    if allocCount + freeCount != slotsPerSpan {
+        return false;
+    }
+    return true;
+}
+
+[Export(Abi:"C", Symbol:"gc_heap_verify")]
+pub bool GcHeapVerify() {
+    pointer heap = Heap();
+    if heap == NativePointer(0) {
+        return false;
+    }
+    mut pointer region = NativePointer(raw_word_load(pointer_add(heap, HEAP_FIRST_REGION_VERIFY)));
+    while region != NativePointer(0) {
+        word regionSize = raw_word_load(pointer_add(region, REGION_SIZE_VERIFY));
+        word totalPages = regionSize / PAGE_SIZE;
+        mut word pageIndex = 0;
+        while pageIndex < totalPages {
+            pointer entry = pointer_add(region, REGION_HEADER_SIZE + pageIndex * SPAN_HEADER_SIZE);
+            if VerifySpan(entry) == false {
+                return false;
+            }
+            pageIndex = pageIndex + 1;
+        }
+        region = NativePointer(raw_word_load(pointer_add(region, REGION_NEXT_VERIFY)));
+    }
+    return true;
+}
+
+// Stress mode: force a collection every `n`-th allocation instead of waiting for the pacing
+// threshold, to shake out missed roots and wrong span bookkeeping in tests. `n == 0` disables it
+// (the default). Test-only: nothing in `GcAlloc`'s normal path reads this unless a test calls
+// `GcHeapSetStressInterval` first.
+const HEAP_STRESS_INTERVAL_OFFSET = 0;
+const HEAP_STRESS_COUNTER_OFFSET = 8;
+// Bytes 152..168 of `BeskidHeapState` (the diagnostic buffer's last 16 bytes, offset 104 + 48).
+const HEAP_STRESS_STATE_BASE = 152;
+
+pub pointer StressState() {
+    // Reuses the diagnostic buffer's tail as stress-mode scratch space: the diagnostic buffer is
+    // only live for the few instructions between an exhaustion failure and its trap, and stress
+    // mode is test-only and never runs concurrently with a real exhaustion report.
+    pointer heap = Heap();
+    if heap == NativePointer(0) { return NativePointer(0); }
+    return pointer_add(heap, HEAP_STRESS_STATE_BASE);
+}
+
+[Export(Abi:"C", Symbol:"gc_heap_set_stress_interval")]
+pub unit GcHeapSetStressInterval(word n) {
+    pointer state = StressState();
+    if state == NativePointer(0) { return; }
+    raw_word_store(pointer_add(state, HEAP_STRESS_INTERVAL_OFFSET), n);
+    raw_word_store(pointer_add(state, HEAP_STRESS_COUNTER_OFFSET), 0);
+    return;
+}
+
+// Called from `GcAlloc`'s slow path (see Allocation.bd) once per allocation when a stress
+// interval is configured; returns true when this allocation should force a collection.
+pub bool StressShouldCollect() {
+    pointer state = StressState();
+    if state == NativePointer(0) { return false; }
+    word interval = raw_word_load(pointer_add(state, HEAP_STRESS_INTERVAL_OFFSET));
+    if interval == 0 { return false; }
+    word counter = raw_word_load(pointer_add(state, HEAP_STRESS_COUNTER_OFFSET)) + 1;
+    if counter >= interval {
+        raw_word_store(pointer_add(state, HEAP_STRESS_COUNTER_OFFSET), 0);
+        return true;
+    }
+    raw_word_store(pointer_add(state, HEAP_STRESS_COUNTER_OFFSET), counter);
+    return false;
+}

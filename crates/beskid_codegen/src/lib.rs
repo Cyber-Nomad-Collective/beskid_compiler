@@ -32,7 +32,7 @@ pub use array_static::{
 pub use artifact::{
     CodegenArtifact, CodegenContext, ExportEntry, ExternImport, LoweredFunction, TypeDescriptorData, object_link_symbol,
 };
-pub use artifact_validation::{MissingSymbol, referenced_extern_imports, validate_artifact};
+pub use artifact_validation::{MissingSymbol, referenced_extern_imports, referenced_trusted_extern_imports, validate_artifact};
 pub use closure_static::{
     ABI_V5_CLOSURE_CAPTURE_STORE, ABI_V5_CLOSURE_ENVIRONMENT_ALLOCATE, ClosureCaptureStaticField,
     ClosureLoweringAuthority, ClosureStaticDataHandles, ClosureStaticPlan, RuntimeRootContext,

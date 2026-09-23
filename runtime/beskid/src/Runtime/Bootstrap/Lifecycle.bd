@@ -21,7 +21,7 @@ const TLS_RESERVED_OFFSET = 16;
 const TLS_ATTACH_DEPTH_OFFSET = 24;
 const TLS_COMPOSITION_SCOPE_OFFSET = 32;
 const TLS_COMPOSITION_DEPTH_OFFSET = 40;
-const HEAP_STATE_SIZE = 41136;
+const HEAP_STATE_SIZE = 328;
 const HEAP_INITIAL_REGION_SIZE = 1048576;
 const HEAP_DEFAULT_CAP = 1073741824;
 const HEAP_FIRST_REGION = 0;
@@ -81,6 +81,7 @@ pub pointer ProcessInit(pointer config) {
         raw_word_store(pointer_add(config, RUNTIME_HEAP_OFFSET), 0);
         raw_word_store(pointer_add(config, RUNTIME_CALLBACK_REGISTRY_OFFSET), 0);
         SystemFree(callbacks, CALLBACK_REGISTRY_SIZE);
+        FreeRootAndHandleStacks(heap);
         SystemFree(region, HEAP_INITIAL_REGION_SIZE);
         SystemFree(heap, HEAP_STATE_SIZE);
         raw_word_store(pointer_add(config, RUNTIME_ABI_VERSION_OFFSET), 0);
@@ -93,6 +94,7 @@ pub pointer ProcessInit(pointer config) {
         raw_word_store(pointer_add(config, RUNTIME_HEAP_OFFSET), 0);
         raw_word_store(pointer_add(config, RUNTIME_CALLBACK_REGISTRY_OFFSET), 0);
         SystemFree(callbacks, CALLBACK_REGISTRY_SIZE);
+        FreeRootAndHandleStacks(heap);
         SystemFree(region, HEAP_INITIAL_REGION_SIZE);
         SystemFree(heap, HEAP_STATE_SIZE);
         raw_word_store(pointer_add(config, RUNTIME_ABI_VERSION_OFFSET), 0);
@@ -105,6 +107,7 @@ pub pointer ProcessInit(pointer config) {
         raw_word_store(pointer_add(config, RUNTIME_HEAP_OFFSET), 0);
         raw_word_store(pointer_add(config, RUNTIME_CALLBACK_REGISTRY_OFFSET), 0);
         SystemFree(callbacks, CALLBACK_REGISTRY_SIZE);
+        FreeRootAndHandleStacks(heap);
         SystemFree(region, HEAP_INITIAL_REGION_SIZE);
         SystemFree(heap, HEAP_STATE_SIZE);
         raw_word_store(pointer_add(config, RUNTIME_ABI_VERSION_OFFSET), 0);
@@ -120,6 +123,7 @@ pub pointer ProcessInit(pointer config) {
         raw_word_store(pointer_add(config, RUNTIME_HEAP_OFFSET), 0);
         raw_word_store(pointer_add(config, RUNTIME_CALLBACK_REGISTRY_OFFSET), 0);
         SystemFree(callbacks, CALLBACK_REGISTRY_SIZE);
+        FreeRootAndHandleStacks(heap);
         SystemFree(region, HEAP_INITIAL_REGION_SIZE);
         SystemFree(heap, HEAP_STATE_SIZE);
         raw_word_store(pointer_add(config, RUNTIME_ABI_VERSION_OFFSET), 0);
@@ -150,6 +154,7 @@ pub unit ProcessShutdown(pointer runtime) {
     WorkerPoolShutdown();
     pointer heap = NativePointer(raw_word_load(pointer_add(runtime, RUNTIME_HEAP_OFFSET)));
     if GcExternalRootCount() != 0 || GcHandlesClear() == false { Trap(10, NativePointer(0), 0); }
+    if heap != NativePointer(0) { FreeRootAndHandleStacks(heap); }
     mut pointer region = NativePointer(raw_word_load(pointer_add(heap, HEAP_FIRST_REGION)));
     pointer thread = CurrentThreadState();
     if thread != NativePointer(0) {

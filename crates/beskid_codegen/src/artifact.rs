@@ -46,6 +46,15 @@ pub struct CodegenArtifact {
     pub aggregate_static_plans: Vec<crate::aggregate_static::AggregateStaticPlan>,
     pub array_static_plans: Vec<crate::array_static::ArrayStaticPlan>,
     pub extern_imports: Vec<ExternImport>,
+    /// Runtime-intrinsic imports resolved only because this artifact's compilation held the
+    /// canonical runtime intrinsic capability (see `runtime_intrinsic_symbols` in
+    /// `module_emission::imports`), kept separate from `extern_imports` so a JIT host can trust
+    /// their provenance by construction instead of by symbol-name pattern matching. An ordinary
+    /// compiled program — one whose source never held that capability — always has this empty,
+    /// even if it declares an `[Extern]` FFI import that happens to share a runtime-intrinsic
+    /// name; that import stays in `extern_imports` and is subject to the ordinary user-FFI
+    /// authorization path, which rejects a name collision with a runtime-owned symbol.
+    pub trusted_extern_imports: Vec<ExternImport>,
     pub exports: Vec<ExportEntry>,
 }
 

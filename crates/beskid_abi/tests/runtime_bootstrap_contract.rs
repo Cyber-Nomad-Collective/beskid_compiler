@@ -346,7 +346,7 @@ fn heap_state_and_heap_region_layouts_match_the_growable_heap_design() {
     let manifest = AbiManifestV5::canonical_runtime(supported_targets()[0].clone());
 
     let heap_state = manifest.layouts.iter().find(|layout| layout.name == "BeskidHeapState").unwrap();
-    assert_eq!((heap_state.size, heap_state.alignment), (41136, 8));
+    assert_eq!((heap_state.size, heap_state.alignment), (328, 8));
     let expected_heap_state_fields: &[(&str, u64)] = &[
         ("first_region", 0),
         ("current_region", 8),
@@ -362,10 +362,13 @@ fn heap_state_and_heap_region_layouts_match_the_growable_heap_design() {
         ("failure_reason", 88),
         ("failure_request_bytes", 96),
         ("diagnostic", 104),
-        ("external_root_count", 168),
-        ("external_roots", 176),
-        ("handle_count", 32936),
-        ("handles", 32944),
+        ("root_stack_head", 168),
+        ("root_stack_current", 176),
+        ("handle_stack_head", 184),
+        ("handle_stack_current", 192),
+        ("current_span_by_class", 200),
+        ("mark_fifo_head", 312),
+        ("mark_fifo_tail", 320),
     ];
     for (name, offset) in expected_heap_state_fields {
         assert_eq!(
@@ -375,15 +378,15 @@ fn heap_state_and_heap_region_layouts_match_the_growable_heap_design() {
         );
     }
     assert_eq!(heap_state.fields.iter().find(|field| field.name == "diagnostic").unwrap().ty, "u8[64]");
-    // Capacity raised from 63/8 (2026-09-22, sigill slice): a recursive-descent regex/PEG match
-    // can hold far more than 63 GC-managed locals live across its call stack at once, and every
-    // struct/array construction briefly takes one of the 8 handle slots — either table filling up
-    // mid-parse hits the compiler's deliberate `gc_register_root`/`gc_root_handle` failure trap
-    // (SIGILL, user8/user5/user10 in crates/beskid_isle/src/context/{calls,roots}.rs), which is
-    // exactly what reproduced as TextRegexTests/TextRegexIntegrationTests/PestEmitGoldenTests
-    // SIGILL. See runtime/beskid/src/Runtime/Mem/Gc/{State,RootsHandles}.bd.
-    assert_eq!(heap_state.fields.iter().find(|field| field.name == "external_roots").unwrap().ty, "pointer[4095]");
-    assert_eq!(heap_state.fields.iter().find(|field| field.name == "handles").unwrap().ty, "BeskidGcHandleSlot[512]");
+    // Root/handle capacity is unbounded (2026-09-22, span-heap redesign): the fixed
+    // `external_roots`/`handles` arrays (raised 63/8 -> 4095/512 as a stopgap, then found to be
+    // the real SIGILL cause: a recursive-descent regex/PEG match holds far more than any fixed
+    // ceiling of GC-managed locals live across its call stack at once) are replaced by segmented,
+    // growable root and handle stacks (`BeskidRootStackBlock`, `BeskidHandleStackBlock`,
+    // runtime-internal, not `runtime_manifest.bsol` layouts). See
+    // docs/superpowers/specs/2026-09-22-gc-span-heap-design.md and
+    // runtime/beskid/src/Runtime/Mem/Gc/{State,Span,RootsHandles}.bd.
+    assert_eq!(heap_state.fields.iter().find(|field| field.name == "current_span_by_class").unwrap().ty, "pointer[14]");
 
     let heap_region = manifest.layouts.iter().find(|layout| layout.name == "BeskidHeapRegion").unwrap();
     assert_eq!((heap_region.size, heap_region.alignment), (64, 8));
@@ -395,7 +398,7 @@ fn heap_state_and_heap_region_layouts_match_the_growable_heap_design() {
         ("free_bytes", 32),
         ("largest_free", 40),
         ("objects_start", 48),
-        ("reserved", 56),
+        ("free_span_list", 56),
     ];
     for (name, offset) in expected_heap_region_fields {
         assert_eq!(

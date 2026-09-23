@@ -1,73 +1,107 @@
-// Canonical non-moving sweep and coalesced in-region free-list rebuild.
+// Canonical per-span sweep. Walks every region's span directory once: a small span exchanges its
+// allocation bitmap for its mark bitmap (the classic bitmap swap) and rebuilds its free-slot list
+// from the newly free slots; a fully empty small span returns its page to the region's free-page
+// list. A large span with its object still marked survives; otherwise its page range is
+// abandoned (see Span.bd's `FreeSpanEntry` note — large-span page reclamation is deferred).
+// Sweeping never reads or writes the byte contents of a live object.
 
 const HEAP_FIRST_REGION = 0;
 const HEAP_LIVE_BYTES = 32;
 const HEAP_LIVE_COUNT = 40;
+const HEAP_CURRENT_SPAN_BY_CLASS = 200;
 
 const REGION_NEXT = 0;
-const REGION_BUMP = 16;
-const REGION_FREE_BYTES = 32;
-const REGION_LARGEST_FREE = 40;
-const REGION_OBJECTS_START = 48;
+const REGION_SIZE = 8;
+const REGION_HEADER_SIZE = 64;
 
-// Sweeps every region in chain order. Coalescing never spans a region boundary: `pendingFree`
-// resets at the start of each region. Per region, rebuilds `free_bytes` (sum of free-block
-// sizes) and `largest_free` (the largest coalesced free block seen). Heap-wide `live_bytes` and
-// `live_count` are summed across every region, as before.
+const PAGE_SIZE = 8192;
+const SPAN_BASE = 8;
+const SPAN_PAGE_COUNT = 16;
+const SPAN_SIZE_CLASS = 24;
+const SPAN_LIVE_COUNT = 40;
+const SPAN_FREE_SLOT = 48;
+const SPAN_ALLOC_BITS = 56;
+const SPAN_MARK_BITS = 120;
+const SPAN_SCANNED_BITS = 184;
+const SPAN_HEADER_SIZE = 256;
+const SPAN_BITMAP_WORDS = 8;
+const SIZE_CLASS_LARGE = 14;
+
+// Rebuilds `entry`'s free-slot list from its (just-copied) allocation bitmap: every slot whose
+// bit is clear is free. Also refreshes `HEAP_CURRENT_SPAN_BY_CLASS` for this span's class so the
+// next allocation of that class reuses newly freed slots instead of carving another span.
+pub word RebuildSmallSpanFreeList(pointer heap, pointer entry) {
+    word base = raw_word_load(pointer_add(entry, SPAN_BASE));
+    word sizeClass = raw_word_load(pointer_add(entry, SPAN_SIZE_CLASS));
+    word classBytes = SizeClassBytes(sizeClass);
+    word slotsPerSpan = PAGE_SIZE / classBytes;
+    pointer allocBits = pointer_add(entry, SPAN_ALLOC_BITS);
+    mut pointer head = NativePointer(0);
+    mut word freeCount = 0;
+    mut word idx = slotsPerSpan;
+    while idx > 0 {
+        idx = idx - 1;
+        if BitmapTestBit(allocBits, idx) == false {
+            pointer slot = NativePointer(base + idx * classBytes);
+            raw_word_store(slot, NativeWord(head));
+            head = slot;
+            freeCount = freeCount + 1;
+        }
+    }
+    raw_word_store(pointer_add(entry, SPAN_FREE_SLOT), NativeWord(head));
+    if freeCount > 0 {
+        raw_word_store(pointer_add(heap, HEAP_CURRENT_SPAN_BY_CLASS + sizeClass * 8), NativeWord(entry));
+    }
+    return slotsPerSpan - freeCount;
+}
+
 pub bool Sweep(pointer heap) {
-    mut pointer region = NativePointer(raw_word_load(pointer_add(heap, HEAP_FIRST_REGION)));
     mut word liveBytes = 0;
     mut word liveCount = 0;
+    mut pointer region = NativePointer(raw_word_load(pointer_add(heap, HEAP_FIRST_REGION)));
     while region != NativePointer(0) {
-        mut pointer cursor = NativePointer(raw_word_load(pointer_add(region, REGION_OBJECTS_START)));
-        pointer bump = NativePointer(raw_word_load(pointer_add(region, REGION_BUMP)));
-        mut pointer pendingFree = NativePointer(0);
-        mut word pendingSize = 0;
-        mut word regionFreeBytes = 0;
-        mut word regionLargestFree = 0;
-        while NativeWord(cursor) < NativeWord(bump) {
-            word descriptorWord = raw_word_load(cursor);
-            mut word blockSize;
-            mut bool live = false;
-            if descriptorWord == 0 {
-                blockSize = raw_word_load(pointer_add(cursor, 8));
-            } else {
-                pointer descriptor = NativePointer(descriptorWord);
-                if ValidateTypeDescriptor(descriptor) == false {
-                    return false;
-                }
-                blockSize = ManagedObjectSize(cursor, descriptor);
-                if blockSize == 0 { return false; }
-                if raw_word_load(pointer_add(cursor, 8)) == GcMarkBlack() {
-                    live = true;
-                }
-            }
-            word next = NativeWord(cursor) + blockSize;
-            if blockSize < 16 || blockSize % 8 != 0 || next <= NativeWord(cursor) || next > NativeWord(bump) {
-                return false;
-            }
-            if live {
-                raw_word_store(pointer_add(cursor, 8), GcMarkWhite());
-                liveBytes = liveBytes + blockSize;
-                liveCount = liveCount + 1;
-                pendingFree = NativePointer(0);
-                pendingSize = 0;
-            } else {
-                if pendingFree == NativePointer(0) {
-                    pendingFree = cursor;
-                    pendingSize = blockSize;
-                    raw_word_store(pendingFree, 0);
+        word regionSize = raw_word_load(pointer_add(region, REGION_SIZE));
+        word totalPages = regionSize / PAGE_SIZE;
+        mut word pageIndex = 0;
+        while pageIndex < totalPages {
+            pointer entry = pointer_add(region, REGION_HEADER_SIZE + pageIndex * SPAN_HEADER_SIZE);
+            word base = raw_word_load(pointer_add(entry, SPAN_BASE));
+            word sizeClass = raw_word_load(pointer_add(entry, SPAN_SIZE_CLASS));
+            if base != 0 && sizeClass != 0 && sizeClass != SIZE_CLASS_LARGE {
+                word classBytes = SizeClassBytes(sizeClass);
+                word nalloc = PopcountBitmap(pointer_add(entry, SPAN_MARK_BITS));
+                if nalloc == 0 {
+                    memory_set(pointer_add(entry, SPAN_ALLOC_BITS), 0, SPAN_BITMAP_WORDS * 8 * 3);
+                    FreeSpanEntry(region, entry);
                 } else {
-                    pendingSize = pendingSize + blockSize;
+                    mut word i = 0;
+                    while i < SPAN_BITMAP_WORDS {
+                        word markWord = raw_word_load(pointer_add(entry, SPAN_MARK_BITS + i * 8));
+                        raw_word_store(pointer_add(entry, SPAN_ALLOC_BITS + i * 8), markWord);
+                        raw_word_store(pointer_add(entry, SPAN_MARK_BITS + i * 8), 0);
+                        raw_word_store(pointer_add(entry, SPAN_SCANNED_BITS + i * 8), 0);
+                        i = i + 1;
+                    }
+                    raw_word_store(pointer_add(entry, SPAN_LIVE_COUNT), nalloc);
+                    RebuildSmallSpanFreeList(heap, entry);
+                    liveBytes = liveBytes + nalloc * classBytes;
+                    liveCount = liveCount + nalloc;
                 }
-                raw_word_store(pointer_add(pendingFree, 8), pendingSize);
-                regionFreeBytes = regionFreeBytes + blockSize;
-                if pendingSize > regionLargestFree { regionLargestFree = pendingSize; }
+            } else if base != 0 && sizeClass == SIZE_CLASS_LARGE {
+                pointer object = NativePointer(base);
+                if raw_word_load(pointer_add(object, 8)) == GcMarkBlack() {
+                    raw_word_store(pointer_add(object, 8), GcMarkWhite());
+                    word pageCount = raw_word_load(pointer_add(entry, SPAN_PAGE_COUNT));
+                    liveBytes = liveBytes + pageCount * PAGE_SIZE;
+                    liveCount = liveCount + 1;
+                } else {
+                    // Unmarked: the large object is dead. Return its pages to the region's
+                    // free-page list (exact-page-count reuse, see `CarveSpan`).
+                    FreeSpanEntry(region, entry);
+                }
             }
-            cursor = NativePointer(next);
+            pageIndex = pageIndex + 1;
         }
-        raw_word_store(pointer_add(region, REGION_FREE_BYTES), regionFreeBytes);
-        raw_word_store(pointer_add(region, REGION_LARGEST_FREE), regionLargestFree);
         region = NativePointer(raw_word_load(pointer_add(region, REGION_NEXT)));
     }
     raw_word_store(pointer_add(heap, HEAP_LIVE_BYTES), liveBytes);

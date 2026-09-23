@@ -3,13 +3,18 @@
 // Raw GC header mark states. These are machine words, not managed enum objects: allocation and
 // marking must remain possible without recursively allocating a value merely to compare or store
 // the collector's own state. Public accessors keep one authority across the split GC modules.
+//
+// Small-span objects no longer use this word for mark state (marks live in the span's bitmaps,
+// see Span.bd); large objects (their own dedicated span, size class 0) still use it, because they
+// have no span bitmap of their own worth the bookkeeping for a single slot.
 pub word GcMarkWhite() { return 0; }
 pub word GcMarkGrayState() { return 1; }
 pub word GcMarkBlack() { return 2; }
 
 // BeskidHeapState (see runtime_manifest.bsol) — the heap is a singly linked chain of
-// independently mapped regions. `current_region` (the chain tail) is the only region that
-// bump-allocates; earlier regions are served by their own free lists.
+// independently mapped regions, each carved into spans (see Span.bd). `current_region` (the
+// chain tail) is the only region new spans are carved from once earlier regions run out of
+// untouched pages; a region's own free-page list is tried first.
 const HEAP_FIRST_REGION = 0;
 const HEAP_CURRENT_REGION = 8;
 const HEAP_REGION_COUNT = 16;
@@ -25,18 +30,22 @@ const HEAP_FAILURE_REASON = 88;
 const HEAP_FAILURE_REQUEST_BYTES = 96;
 const HEAP_DIAGNOSTIC = 104;
 const HEAP_DIAGNOSTIC_SIZE = 64;
-const HEAP_EXTERNAL_ROOT_COUNT = 168;
-const HEAP_EXTERNAL_ROOTS = 176;
-const HEAP_HANDLE_COUNT = 32936;
-const HEAP_HANDLES = 32944;
-const HEAP_STATE_SIZE = 41136;
-const GC_EXTERNAL_ROOT_CAPACITY = 4095;
-const GC_HANDLE_CAPACITY = 512;
-const GC_HANDLE_SLOT_SIZE = 16;
+const HEAP_ROOT_STACK_HEAD = 168;
+const HEAP_ROOT_STACK_CURRENT = 176;
+const HEAP_HANDLE_STACK_HEAD = 184;
+const HEAP_HANDLE_STACK_CURRENT = 192;
+const HEAP_CURRENT_SPAN_BY_CLASS = 200;
+const HEAP_MARK_FIFO_HEAD = 312;
+const HEAP_MARK_FIFO_TAIL = 320;
+const HEAP_STATE_SIZE = 328;
 
 // BeskidHeapRegion (see runtime_manifest.bsol) — a 64-byte header at the base of every mapped
-// region. Objects start at `base + REGION_HEADER_SIZE`; the region header is outside the
-// `[objects_start, bump)` block range, so no walker can mistake it for an object or free block.
+// region. `bump` is the region's page cursor (always page-aligned): the first never-carved byte.
+// `objects_start` is the first page available for spans, after the region header and the span
+// directory that covers every page in the region. `reserved` is repurposed as the head of the
+// region's free 1-page-span list (every small-object span is exactly one page, see Span.bd, so a
+// single free list of 1-page spans is enough; multi-page large spans are never returned to it —
+// a known v0.5 limitation, see the design doc's migration section).
 const REGION_NEXT = 0;
 const REGION_SIZE = 8;
 const REGION_BUMP = 16;
@@ -44,24 +53,35 @@ const REGION_LIMIT = 24;
 const REGION_FREE_BYTES = 32;
 const REGION_LARGEST_FREE = 40;
 const REGION_OBJECTS_START = 48;
-const REGION_RESERVED = 56;
+const REGION_FREE_SPAN_LIST = 56;
 const REGION_HEADER_SIZE = 64;
 
-// Growth and pacing policy (Decision 2 of the growable-heap design).
+// Span.bd constants this file uses directly (each `.bd` file redeclares the constants it touches;
+// only `pub` functions are shared across files without redeclaration).
+const PAGE_SIZE = 8192;
+const SPAN_BASE = 8;
+const SPAN_SIZE_CLASS = 24;
+const SPAN_ALLOC_BITS = 56;
+const SPAN_HEADER_SIZE = 256;
+const SIZE_CLASS_LARGE = 14;
+
+// Growth and pacing policy (Decision 2 of the growable-heap design, unchanged by the span
+// redesign).
 const HEAP_MIN_THRESHOLD = 524288;
 const HEAP_INITIAL_REGION_SIZE = 1048576;
 const HEAP_MAX_REGION_SIZE = 67108864;
 const HEAP_DEFAULT_CAP = 1073741824;
 
-// Exhaustion failure reasons (Decision 3). 0 means no failure recorded.
+// Exhaustion failure reasons (Decision 3, extended with reason 4 for root/handle stack growth).
 const HEAP_FAILURE_NONE = 0;
 const HEAP_FAILURE_CAP_REACHED = 1;
 const HEAP_FAILURE_SYSTEM_ALLOCATE_FAILED = 2;
 const HEAP_FAILURE_REQUEST_LARGER_THAN_CAP = 3;
+const HEAP_FAILURE_ROOT_STACK_FAILED = 4;
 
-// Gray count uses two otherwise unreachable values while no gray entries exist.
-const GC_PHASE_SWEEPING = -1;
-const GC_PHASE_FAILED = -2;
+const GC_PHASE_MARKING_STATE = 1;
+const GC_PHASE_SWEEPING = 2;
+const GC_PHASE_FAILED = 3;
 
 pub pointer RuntimeState() {
     pointer tls = CurrentThreadState();
@@ -87,22 +107,31 @@ pub pointer StateRootFrame() {
     return NativePointer(raw_word_load(pointer_add(state, 40)));
 }
 
-// Writes the region header at `region` (whole mapping `size` bytes, header included) and
-// returns `region`. Does not touch the heap state; callers link the region into the chain.
+// Writes the region header at `region` (whole mapping `size` bytes, header included), reserves
+// and zeroes the span directory that covers every page in the region, and computes
+// `objects_start` as the first page after that directory. Does not touch the heap state; callers
+// link the region into the chain. `size` MUST be a whole multiple of `PAGE_SIZE` (see Span.bd);
+// growth always requests page-aligned sizes.
 pub pointer RegionInit(pointer region, word size) {
     raw_word_store(pointer_add(region, REGION_NEXT), 0);
     raw_word_store(pointer_add(region, REGION_SIZE), size);
-    word objectsStart = NativeWord(region) + REGION_HEADER_SIZE;
+    word totalPages = size / PAGE_SIZE;
+    word directoryBytes = totalPages * SPAN_HEADER_SIZE;
+    word rawObjectsStart = NativeWord(region) + REGION_HEADER_SIZE + directoryBytes;
+    word objectsStart = AlignUp(rawObjectsStart, PAGE_SIZE);
+    memory_set(pointer_add(region, REGION_HEADER_SIZE), 0, directoryBytes);
     raw_word_store(pointer_add(region, REGION_BUMP), objectsStart);
     raw_word_store(pointer_add(region, REGION_LIMIT), NativeWord(region) + size);
     raw_word_store(pointer_add(region, REGION_FREE_BYTES), 0);
     raw_word_store(pointer_add(region, REGION_LARGEST_FREE), 0);
     raw_word_store(pointer_add(region, REGION_OBJECTS_START), objectsStart);
-    raw_word_store(pointer_add(region, REGION_RESERVED), 0);
+    raw_word_store(pointer_add(region, REGION_FREE_SPAN_LIST), 0);
     return region;
 }
 
-// Finds the region whose `[objects_start, bump)` range contains `address`, or null.
+// Finds the region whose `[objects_start, bump)` range contains `address`, or null. Any address
+// ever handed out by the allocator satisfies this (the region's page cursor only moves forward
+// past a page once a span is carved from it).
 pub pointer FindHeapRegionContaining(pointer heap, word address) {
     if heap == NativePointer(0) {
         return NativePointer(0);
@@ -130,6 +159,9 @@ pub bool HeapContains(pointer heap, pointer object) {
     return FindHeapRegionContaining(heap, address) != NativePointer(0);
 }
 
+// True when `object` is the exact base address of a currently allocated slot (small span:
+// allocated per the span's `alloc_bits`; large span: the span's sole slot, whose descriptor word
+// is nonzero and whose mark state is not the sentinel used for a freed large span).
 pub bool IsAllocatedObject(pointer heap, pointer object) {
     if HeapContains(heap, object) == false {
         return false;
@@ -138,34 +170,22 @@ pub bool IsAllocatedObject(pointer heap, pointer object) {
     if region == NativePointer(0) {
         return false;
     }
-    mut pointer cursor = NativePointer(raw_word_load(pointer_add(region, REGION_OBJECTS_START)));
-    pointer bump = NativePointer(raw_word_load(pointer_add(region, REGION_BUMP)));
-    while NativeWord(cursor) < NativeWord(bump) {
-        word descriptorWord = raw_word_load(cursor);
-        mut word blockSize;
-        if descriptorWord == 0 {
-            blockSize = raw_word_load(pointer_add(cursor, 8));
-        } else {
-            pointer descriptor = NativePointer(descriptorWord);
-            if ValidateTypeDescriptor(descriptor) == false {
-                return false;
-            }
-            blockSize = ManagedObjectSize(cursor, descriptor);
-            if blockSize == 0 { return false; }
-        }
-        if blockSize < 16 || blockSize % 8 != 0 {
-            return false;
-        }
-        if cursor == object {
-            return descriptorWord != 0;
-        }
-        word next = NativeWord(cursor) + blockSize;
-        if next <= NativeWord(cursor) || next > NativeWord(bump) {
-            return false;
-        }
-        cursor = NativePointer(next);
+    pointer entry = SpanEntryInRegion(region, NativeWord(object));
+    word sizeClass = raw_word_load(pointer_add(entry, SPAN_SIZE_CLASS));
+    word base = raw_word_load(pointer_add(entry, SPAN_BASE));
+    if base == 0 || sizeClass == 0 {
+        return false;
     }
-    return false;
+    if sizeClass == SIZE_CLASS_LARGE {
+        return NativeWord(object) == base && raw_word_load(object) != 0;
+    }
+    word classBytes = SizeClassBytes(sizeClass);
+    word offset = NativeWord(object) - base;
+    if offset % classBytes != 0 {
+        return false;
+    }
+    word idx = offset / classBytes;
+    return BitmapTestBit(pointer_add(entry, SPAN_ALLOC_BITS), idx);
 }
 
 // Renders the unsigned decimal digits of `value` starting at `buffer + offset` (no sign, no

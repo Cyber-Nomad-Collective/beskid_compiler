@@ -393,7 +393,7 @@ fn parsed_result_try_reconstructs_distinct_error_layouts_and_accepts_unit_succes
 /// carries the same Result application a parameter declaration would.
 #[test]
 fn parsed_result_try_accepts_a_declared_local_operand() {
-    let source = "enum Error { Failed() } enum Result<TValue, TError> { Ok(TValue value), Error(TError error) }                   Result<i64, Error> Make() { return Result::Ok(1_i64); }                   Result<unit, Error> Main() { Result<i64, Error> value = Make(); i64 output = value?; return Result::Ok(()); }";
+    let source = "enum Error { Failed() } enum Result<TValue, TError> { Ok(TValue value), Error(TError error) }                   Result<unit, Error> Main() { Result<i64, Error> value = Result::Ok(1_i64); i64 output = value?; return Result::Ok(()); }";
     let (input, isa, root) = item_fixture_with_root(source);
     let main = super::support::named_function(&input, root, "Main");
     let expression = find_node(input.database(), main, beskid_queries::IndexedNodeKind::TryExpression).unwrap();

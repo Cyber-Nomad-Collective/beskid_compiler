@@ -316,8 +316,10 @@ impl IsleContext<'_, '_, '_, '_> {
                             return None;
                         }
                         self.builder.ins().store(MemFlagsData::new(), array, base, i32::try_from(field.offset).ok()?);
-                        let barrier = self.import_runtime_helper("gc_write_barrier", &[pointer, pointer], None)?;
-                        self.builder.ins().call(barrier, &[base, array]);
+                        // No write-barrier call: collection is stop-the-world, so a managed store can
+                        // never race a concurrent marker. `gc_write_barrier` stays exported for a future
+                        // incremental collector (see docs/superpowers/specs/2026-09-22-gc-span-heap-design.md
+                        // section 6.3), but generated code no longer calls it.
                     }
                 }
                 let root_handle = self.builder.ins().stack_load(pointer, pointer, root_slot, 0);

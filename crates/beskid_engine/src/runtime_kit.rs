@@ -52,6 +52,22 @@ impl JitRuntimeKit {
         self.symbols.iter().map(|(name, _)| name.as_str())
     }
 
+    /// Resolve one symbol directly from this exact loaded shared library, bypassing
+    /// `loader_required_exports`.
+    ///
+    /// `loader_required_exports` is the closed set of names [`Self::load`] eagerly resolves and
+    /// [`Self::symbols`]/`symbol_names` expose; it deliberately excludes `trusted_runtime_intrinsics`
+    /// (raw runtime-bootstrap builtins such as `system_allocate`, `raw_word_store`) so that an
+    /// ordinary compiled program can never have one of those powerful raw symbols silently wired
+    /// in by name collision alone (see `crate::engine::validate_authorized_user_ffi`). Callers of
+    /// this method own that provenance check themselves: only a caller that already knows, from
+    /// the artifact's own compiler-internal facts, that a requested name was resolved through the
+    /// canonical-runtime-intrinsic-capability path (not from an arbitrary source-level `[Extern]`
+    /// declaration) may call this on that exact name.
+    pub(crate) fn resolve_trusted_symbol(&self, name: &str) -> Result<*const u8, String> {
+        self._library.symbol(name)
+    }
+
     /// Copy one explicit argument vector into the selected runtime kit's process-lifetime arena.
     pub(crate) fn handoff_arguments(&self, target: &TargetMetadata, arguments: &[String]) -> Result<(), String> {
         let adapter = ABI_V5_CORE_ARGS_ENTRY_ADAPTERS
