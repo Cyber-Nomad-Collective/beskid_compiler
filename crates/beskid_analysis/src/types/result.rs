@@ -36,6 +36,7 @@ pub enum TypeError {
     NonBoolCondition { span: SpanInfo },
     UnsupportedExpression { span: SpanInfo },
     InvalidTryTarget { span: SpanInfo },
+    InvalidPrimitiveConversionArgument { span: SpanInfo },
     InvalidEventInvocationScope { span: SpanInfo },
     InvalidEventCapacity { span: SpanInfo },
     InvalidEventSubscriptionTarget { span: SpanInfo },
@@ -139,6 +140,9 @@ impl fmt::Display for TypeError {
             }
             TypeError::InvalidTryTarget { span } => {
                 write!(f, "invalid try target at {}", at(*span))
+            }
+            TypeError::InvalidPrimitiveConversionArgument { span } => {
+                write!(f, "invalid primitive conversion argument at {}", at(*span))
             }
             TypeError::InvalidEventInvocationScope { span } => {
                 write!(f, "invalid event invocation scope at {}", at(*span))

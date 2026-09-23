@@ -1835,6 +1835,98 @@
       ]
     },
     {
+      "name": "__gc_heap_cap",
+      "adapter": "gc_heap_cap",
+      "params": [],
+      "result": "usize",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "gc_heap_cap",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "gc_heap_cap",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "gc_heap_cap",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__gc_heap_committed",
+      "adapter": "gc_heap_committed",
+      "params": [],
+      "result": "usize",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "gc_heap_committed",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "gc_heap_committed",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "gc_heap_committed",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__gc_heap_failure_reason",
+      "adapter": "gc_heap_failure_reason",
+      "params": [],
+      "result": "usize",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "gc_heap_failure_reason",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "gc_heap_failure_reason",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "gc_heap_failure_reason",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__gc_heap_region_count",
+      "adapter": "gc_heap_region_count",
+      "params": [],
+      "result": "usize",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "gc_heap_region_count",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "gc_heap_region_count",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "gc_heap_region_count",
+          "osImports": []
+        }
+      ]
+    },
+    {
       "name": "__gc_object_count",
       "adapter": "gc_object_count",
       "params": [],

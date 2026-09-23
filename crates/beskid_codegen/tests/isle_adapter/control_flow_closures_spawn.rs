@@ -543,14 +543,27 @@ fn canonical_runtime_closure_descriptor_validation_and_rooting_execute_fail_clos
         unsafe { std::mem::transmute(allocate_environment) };
     let allocate_object: extern "C" fn(*const usize) -> *mut u8 = unsafe { std::mem::transmute(allocate_object) };
 
+    // The heap is a chain of headed regions (see the growable-heap design): the first 8 words of
+    // `heap_region` are its 64-byte `BeskidHeapRegion` header, and objects start immediately
+    // after it.
     let mut heap_region = [0usize; 128];
     let region_start = heap_region.as_mut_ptr() as usize;
-    let region_limit = region_start + std::mem::size_of_val(&heap_region);
-    let mut heap = [0usize; 90];
-    heap[0] = region_start;
-    heap[1] = std::mem::size_of_val(&heap_region);
-    heap[2] = region_start;
-    heap[3] = region_limit;
+    let region_size = std::mem::size_of_val(&heap_region);
+    let region_limit = region_start + region_size;
+    let objects_start = region_start + 64;
+    heap_region[0] = 0; // next
+    heap_region[1] = region_size; // size
+    heap_region[2] = objects_start; // bump
+    heap_region[3] = region_limit; // limit
+    heap_region[4] = 0; // free_bytes
+    heap_region[5] = 0; // largest_free
+    heap_region[6] = objects_start; // objects_start
+    heap_region[7] = 0; // reserved
+    let mut heap = [0usize; 102];
+    heap[0] = region_start; // first_region
+    heap[1] = region_start; // current_region
+    heap[2] = 1; // region_count
+    heap[3] = region_size; // committed_bytes
     let mut runtime_state = [0usize; 8];
     runtime_state[2] = heap.as_mut_ptr() as usize;
     let mut tls = [runtime_state.as_mut_ptr() as usize, 0, 0, 1];

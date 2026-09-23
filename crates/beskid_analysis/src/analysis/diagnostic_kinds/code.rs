@@ -83,6 +83,7 @@ impl SemanticIssueKind {
             Self::TypeNonBoolCondition => "E1208",
             Self::TypeUnsupportedExpression => "E1202",
             Self::TypeInvalidTryTarget => "E1222",
+            Self::TypeInvalidPrimitiveConversionArgument => "E1228",
             Self::TypeInvalidEventInvocationScope => "E1219",
             Self::TypeInvalidEventCapacity => "E1220",
             Self::TypeInvalidEventSubscriptionTarget => "E1221",

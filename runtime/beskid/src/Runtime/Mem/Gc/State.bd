@@ -7,23 +7,57 @@ pub word GcMarkWhite() { return 0; }
 pub word GcMarkGrayState() { return 1; }
 pub word GcMarkBlack() { return 2; }
 
-const HEAP_REGION_START = 0;
-const HEAP_REGION_SIZE = 8;
-const HEAP_BUMP = 16;
-const HEAP_LIMIT = 24;
+// BeskidHeapState (see runtime_manifest.bsol) — the heap is a singly linked chain of
+// independently mapped regions. `current_region` (the chain tail) is the only region that
+// bump-allocates; earlier regions are served by their own free lists.
+const HEAP_FIRST_REGION = 0;
+const HEAP_CURRENT_REGION = 8;
+const HEAP_REGION_COUNT = 16;
+const HEAP_COMMITTED_BYTES = 24;
 const HEAP_LIVE_BYTES = 32;
 const HEAP_LIVE_COUNT = 40;
 const HEAP_COLLECTION_COUNT = 48;
 const HEAP_COLLECTION_THRESHOLD = 56;
 const HEAP_GC_PHASE = 64;
-const HEAP_EXTERNAL_ROOT_COUNT = 72;
-const HEAP_EXTERNAL_ROOTS = 80;
-const HEAP_HANDLE_COUNT = 584;
-const HEAP_HANDLES = 592;
-const HEAP_STATE_SIZE = 720;
-const GC_EXTERNAL_ROOT_CAPACITY = 63;
-const GC_HANDLE_CAPACITY = 8;
+const HEAP_CAP_BYTES = 72;
+const HEAP_NEXT_REGION_SIZE = 80;
+const HEAP_FAILURE_REASON = 88;
+const HEAP_FAILURE_REQUEST_BYTES = 96;
+const HEAP_DIAGNOSTIC = 104;
+const HEAP_DIAGNOSTIC_SIZE = 64;
+const HEAP_EXTERNAL_ROOT_COUNT = 168;
+const HEAP_EXTERNAL_ROOTS = 176;
+const HEAP_HANDLE_COUNT = 32936;
+const HEAP_HANDLES = 32944;
+const HEAP_STATE_SIZE = 41136;
+const GC_EXTERNAL_ROOT_CAPACITY = 4095;
+const GC_HANDLE_CAPACITY = 512;
 const GC_HANDLE_SLOT_SIZE = 16;
+
+// BeskidHeapRegion (see runtime_manifest.bsol) — a 64-byte header at the base of every mapped
+// region. Objects start at `base + REGION_HEADER_SIZE`; the region header is outside the
+// `[objects_start, bump)` block range, so no walker can mistake it for an object or free block.
+const REGION_NEXT = 0;
+const REGION_SIZE = 8;
+const REGION_BUMP = 16;
+const REGION_LIMIT = 24;
+const REGION_FREE_BYTES = 32;
+const REGION_LARGEST_FREE = 40;
+const REGION_OBJECTS_START = 48;
+const REGION_RESERVED = 56;
+const REGION_HEADER_SIZE = 64;
+
+// Growth and pacing policy (Decision 2 of the growable-heap design).
+const HEAP_MIN_THRESHOLD = 524288;
+const HEAP_INITIAL_REGION_SIZE = 1048576;
+const HEAP_MAX_REGION_SIZE = 67108864;
+const HEAP_DEFAULT_CAP = 1073741824;
+
+// Exhaustion failure reasons (Decision 3). 0 means no failure recorded.
+const HEAP_FAILURE_NONE = 0;
+const HEAP_FAILURE_CAP_REACHED = 1;
+const HEAP_FAILURE_SYSTEM_ALLOCATE_FAILED = 2;
+const HEAP_FAILURE_REQUEST_LARGER_THAN_CAP = 3;
 
 // Gray count uses two otherwise unreachable values while no gray entries exist.
 const GC_PHASE_SWEEPING = -1;
@@ -53,22 +87,59 @@ pub pointer StateRootFrame() {
     return NativePointer(raw_word_load(pointer_add(state, 40)));
 }
 
+// Writes the region header at `region` (whole mapping `size` bytes, header included) and
+// returns `region`. Does not touch the heap state; callers link the region into the chain.
+pub pointer RegionInit(pointer region, word size) {
+    raw_word_store(pointer_add(region, REGION_NEXT), 0);
+    raw_word_store(pointer_add(region, REGION_SIZE), size);
+    word objectsStart = NativeWord(region) + REGION_HEADER_SIZE;
+    raw_word_store(pointer_add(region, REGION_BUMP), objectsStart);
+    raw_word_store(pointer_add(region, REGION_LIMIT), NativeWord(region) + size);
+    raw_word_store(pointer_add(region, REGION_FREE_BYTES), 0);
+    raw_word_store(pointer_add(region, REGION_LARGEST_FREE), 0);
+    raw_word_store(pointer_add(region, REGION_OBJECTS_START), objectsStart);
+    raw_word_store(pointer_add(region, REGION_RESERVED), 0);
+    return region;
+}
+
+// Finds the region whose `[objects_start, bump)` range contains `address`, or null.
+pub pointer FindHeapRegionContaining(pointer heap, word address) {
+    if heap == NativePointer(0) {
+        return NativePointer(0);
+    }
+    mut pointer region = NativePointer(raw_word_load(pointer_add(heap, HEAP_FIRST_REGION)));
+    while region != NativePointer(0) {
+        word objectsStart = raw_word_load(pointer_add(region, REGION_OBJECTS_START));
+        word bump = raw_word_load(pointer_add(region, REGION_BUMP));
+        if address >= objectsStart && address < bump {
+            return region;
+        }
+        region = NativePointer(raw_word_load(pointer_add(region, REGION_NEXT)));
+    }
+    return NativePointer(0);
+}
+
 pub bool HeapContains(pointer heap, pointer object) {
     if heap == NativePointer(0) || object == NativePointer(0) {
         return false;
     }
     word address = NativeWord(object);
-    word start = raw_word_load(pointer_add(heap, HEAP_REGION_START));
-    word bump = raw_word_load(pointer_add(heap, HEAP_BUMP));
-    return address >= start && address < bump && address % 8 == 0;
+    if address % 8 != 0 {
+        return false;
+    }
+    return FindHeapRegionContaining(heap, address) != NativePointer(0);
 }
 
 pub bool IsAllocatedObject(pointer heap, pointer object) {
     if HeapContains(heap, object) == false {
         return false;
     }
-    mut pointer cursor = NativePointer(raw_word_load(pointer_add(heap, HEAP_REGION_START)));
-    pointer bump = NativePointer(raw_word_load(pointer_add(heap, HEAP_BUMP)));
+    pointer region = FindHeapRegionContaining(heap, NativeWord(object));
+    if region == NativePointer(0) {
+        return false;
+    }
+    mut pointer cursor = NativePointer(raw_word_load(pointer_add(region, REGION_OBJECTS_START)));
+    pointer bump = NativePointer(raw_word_load(pointer_add(region, REGION_BUMP)));
     while NativeWord(cursor) < NativeWord(bump) {
         word descriptorWord = raw_word_load(cursor);
         mut word blockSize;
@@ -95,4 +166,31 @@ pub bool IsAllocatedObject(pointer heap, pointer object) {
         cursor = NativePointer(next);
     }
     return false;
+}
+
+// Renders the unsigned decimal digits of `value` starting at `buffer + offset` (no sign, no
+// leading zeros except for the value 0 itself) and returns the offset immediately after the
+// last digit written. Used only for the fixed-size, allocation-free exhaustion diagnostic
+// (`GcAlloc` cannot allocate a managed string while reporting that allocation itself failed).
+pub word WriteDecimal(pointer buffer, word offset, word value) {
+    if value == 0 {
+        raw_byte_store(pointer_add(buffer, offset), 48);
+        return offset + 1;
+    }
+    mut word digits = 0;
+    mut word probe = value;
+    while probe > 0 {
+        digits = digits + 1;
+        probe = probe / 10;
+    }
+    mut word pos = offset + digits;
+    word end = pos;
+    mut word remaining = value;
+    while remaining > 0 {
+        pos = pos - 1;
+        word digit = remaining % 10;
+        raw_byte_store(pointer_add(buffer, pos), u8(48 + digit));
+        remaining = remaining / 10;
+    }
+    return end;
 }

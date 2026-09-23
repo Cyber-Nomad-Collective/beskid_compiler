@@ -1,18 +1,25 @@
 // Canonical external roots, generation-tagged handles, and heap initialization.
 
-const HEAP_REGION_START = 0;
-const HEAP_REGION_SIZE = 8;
-const HEAP_BUMP = 16;
-const HEAP_LIMIT = 24;
+const HEAP_FIRST_REGION = 0;
+const HEAP_CURRENT_REGION = 8;
+const HEAP_REGION_COUNT = 16;
+const HEAP_COMMITTED_BYTES = 24;
 const HEAP_COLLECTION_THRESHOLD = 56;
-const HEAP_EXTERNAL_ROOT_COUNT = 72;
-const HEAP_EXTERNAL_ROOTS = 80;
-const HEAP_HANDLE_COUNT = 584;
-const HEAP_HANDLES = 592;
-const HEAP_STATE_SIZE = 720;
-const GC_EXTERNAL_ROOT_CAPACITY = 63;
-const GC_HANDLE_CAPACITY = 8;
+const HEAP_CAP_BYTES = 72;
+const HEAP_NEXT_REGION_SIZE = 80;
+const HEAP_EXTERNAL_ROOT_COUNT = 168;
+const HEAP_EXTERNAL_ROOTS = 176;
+const HEAP_HANDLE_COUNT = 32936;
+const HEAP_HANDLES = 32944;
+const HEAP_STATE_SIZE = 41136;
+const GC_EXTERNAL_ROOT_CAPACITY = 4095;
+const GC_HANDLE_CAPACITY = 512;
 const GC_HANDLE_SLOT_SIZE = 16;
+
+const HEAP_MIN_THRESHOLD = 524288;
+const HEAP_MAX_REGION_SIZE = 67108864;
+const REGION_HEADER_SIZE = 64;
+const HEAP_MIN_REGION_SIZE = 80;
 
 
 // Root identity is the stable storage address, not a copyable payload or owner-state bit.
@@ -177,17 +184,29 @@ pub bool MarkRoots() {
     return true;
 }
 
-pub unit HeapInit(pointer heapStruct, pointer region, word regionSize) {
-    if heapStruct == NativePointer(0) || region == NativePointer(0) || regionSize < 16 || regionSize % 8 != 0 || NativeWord(region) % 8 != 0 {
+// Writes the first region's header into `region` (whole mapping `regionSize` bytes) and
+// initializes `heapStruct` as a fresh one-region chain: `first_region == current_region ==
+// region`, `region_count = 1`, `committed_bytes = regionSize`, `next_region_size = 2 *
+// regionSize` (bounded), `cap_bytes = capBytes`, `collection_threshold = HEAP_MIN_THRESHOLD`.
+pub unit HeapInit(pointer heapStruct, pointer region, word regionSize, word capBytes) {
+    if heapStruct == NativePointer(0) || region == NativePointer(0) || regionSize < HEAP_MIN_REGION_SIZE ||
+       regionSize % 8 != 0 || NativeWord(region) % 8 != 0 {
         return;
     }
     word limit = NativeWord(region) + regionSize;
     if limit < NativeWord(region) { return; }
     memory_set(heapStruct, 0, HEAP_STATE_SIZE);
-    raw_word_store(pointer_add(heapStruct, HEAP_REGION_START), NativeWord(region));
-    raw_word_store(pointer_add(heapStruct, HEAP_REGION_SIZE), regionSize);
-    raw_word_store(pointer_add(heapStruct, HEAP_BUMP), NativeWord(region));
-    raw_word_store(pointer_add(heapStruct, HEAP_LIMIT), limit);
-    raw_word_store(pointer_add(heapStruct, HEAP_COLLECTION_THRESHOLD), regionSize / 2);
+    RegionInit(region, regionSize);
+    raw_word_store(pointer_add(heapStruct, HEAP_FIRST_REGION), NativeWord(region));
+    raw_word_store(pointer_add(heapStruct, HEAP_CURRENT_REGION), NativeWord(region));
+    raw_word_store(pointer_add(heapStruct, HEAP_REGION_COUNT), 1);
+    raw_word_store(pointer_add(heapStruct, HEAP_COMMITTED_BYTES), regionSize);
+    raw_word_store(pointer_add(heapStruct, HEAP_CAP_BYTES), capBytes);
+    mut word nextRegionSize = regionSize * 2;
+    if nextRegionSize > HEAP_MAX_REGION_SIZE || nextRegionSize < regionSize {
+        nextRegionSize = HEAP_MAX_REGION_SIZE;
+    }
+    raw_word_store(pointer_add(heapStruct, HEAP_NEXT_REGION_SIZE), nextRegionSize);
+    raw_word_store(pointer_add(heapStruct, HEAP_COLLECTION_THRESHOLD), HEAP_MIN_THRESHOLD);
     return;
 }

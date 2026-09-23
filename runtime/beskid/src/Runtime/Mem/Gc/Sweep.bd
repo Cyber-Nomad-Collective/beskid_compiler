@@ -1,55 +1,74 @@
 // Canonical non-moving sweep and coalesced in-region free-list rebuild.
 
-const HEAP_REGION_START = 0;
-const HEAP_BUMP = 16;
+const HEAP_FIRST_REGION = 0;
 const HEAP_LIVE_BYTES = 32;
 const HEAP_LIVE_COUNT = 40;
 
+const REGION_NEXT = 0;
+const REGION_BUMP = 16;
+const REGION_FREE_BYTES = 32;
+const REGION_LARGEST_FREE = 40;
+const REGION_OBJECTS_START = 48;
+
+// Sweeps every region in chain order. Coalescing never spans a region boundary: `pendingFree`
+// resets at the start of each region. Per region, rebuilds `free_bytes` (sum of free-block
+// sizes) and `largest_free` (the largest coalesced free block seen). Heap-wide `live_bytes` and
+// `live_count` are summed across every region, as before.
 pub bool Sweep(pointer heap) {
-    mut pointer cursor = NativePointer(raw_word_load(pointer_add(heap, HEAP_REGION_START)));
-    pointer bump = NativePointer(raw_word_load(pointer_add(heap, HEAP_BUMP)));
+    mut pointer region = NativePointer(raw_word_load(pointer_add(heap, HEAP_FIRST_REGION)));
     mut word liveBytes = 0;
     mut word liveCount = 0;
-    mut pointer pendingFree = NativePointer(0);
-    mut word pendingSize = 0;
-    while NativeWord(cursor) < NativeWord(bump) {
-        word descriptorWord = raw_word_load(cursor);
-        mut word blockSize;
-        mut bool live = false;
-        if descriptorWord == 0 {
-            blockSize = raw_word_load(pointer_add(cursor, 8));
-        } else {
-            pointer descriptor = NativePointer(descriptorWord);
-            if ValidateTypeDescriptor(descriptor) == false {
+    while region != NativePointer(0) {
+        mut pointer cursor = NativePointer(raw_word_load(pointer_add(region, REGION_OBJECTS_START)));
+        pointer bump = NativePointer(raw_word_load(pointer_add(region, REGION_BUMP)));
+        mut pointer pendingFree = NativePointer(0);
+        mut word pendingSize = 0;
+        mut word regionFreeBytes = 0;
+        mut word regionLargestFree = 0;
+        while NativeWord(cursor) < NativeWord(bump) {
+            word descriptorWord = raw_word_load(cursor);
+            mut word blockSize;
+            mut bool live = false;
+            if descriptorWord == 0 {
+                blockSize = raw_word_load(pointer_add(cursor, 8));
+            } else {
+                pointer descriptor = NativePointer(descriptorWord);
+                if ValidateTypeDescriptor(descriptor) == false {
+                    return false;
+                }
+                blockSize = ManagedObjectSize(cursor, descriptor);
+                if blockSize == 0 { return false; }
+                if raw_word_load(pointer_add(cursor, 8)) == GcMarkBlack() {
+                    live = true;
+                }
+            }
+            word next = NativeWord(cursor) + blockSize;
+            if blockSize < 16 || blockSize % 8 != 0 || next <= NativeWord(cursor) || next > NativeWord(bump) {
                 return false;
             }
-            blockSize = ManagedObjectSize(cursor, descriptor);
-            if blockSize == 0 { return false; }
-            if raw_word_load(pointer_add(cursor, 8)) == GcMarkBlack() {
-                live = true;
-            }
-        }
-        word next = NativeWord(cursor) + blockSize;
-        if blockSize < 16 || blockSize % 8 != 0 || next <= NativeWord(cursor) || next > NativeWord(bump) {
-            return false;
-        }
-        if live {
-            raw_word_store(pointer_add(cursor, 8), GcMarkWhite());
-            liveBytes = liveBytes + blockSize;
-            liveCount = liveCount + 1;
-            pendingFree = NativePointer(0);
-            pendingSize = 0;
-        } else {
-            if pendingFree == NativePointer(0) {
-                pendingFree = cursor;
-                pendingSize = blockSize;
-                raw_word_store(pendingFree, 0);
+            if live {
+                raw_word_store(pointer_add(cursor, 8), GcMarkWhite());
+                liveBytes = liveBytes + blockSize;
+                liveCount = liveCount + 1;
+                pendingFree = NativePointer(0);
+                pendingSize = 0;
             } else {
-                pendingSize = pendingSize + blockSize;
+                if pendingFree == NativePointer(0) {
+                    pendingFree = cursor;
+                    pendingSize = blockSize;
+                    raw_word_store(pendingFree, 0);
+                } else {
+                    pendingSize = pendingSize + blockSize;
+                }
+                raw_word_store(pointer_add(pendingFree, 8), pendingSize);
+                regionFreeBytes = regionFreeBytes + blockSize;
+                if pendingSize > regionLargestFree { regionLargestFree = pendingSize; }
             }
-            raw_word_store(pointer_add(pendingFree, 8), pendingSize);
+            cursor = NativePointer(next);
         }
-        cursor = NativePointer(next);
+        raw_word_store(pointer_add(region, REGION_FREE_BYTES), regionFreeBytes);
+        raw_word_store(pointer_add(region, REGION_LARGEST_FREE), regionLargestFree);
+        region = NativePointer(raw_word_load(pointer_add(region, REGION_NEXT)));
     }
     raw_word_store(pointer_add(heap, HEAP_LIVE_BYTES), liveBytes);
     raw_word_store(pointer_add(heap, HEAP_LIVE_COUNT), liveCount);

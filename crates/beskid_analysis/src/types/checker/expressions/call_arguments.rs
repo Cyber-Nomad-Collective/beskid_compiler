@@ -125,6 +125,36 @@ impl<'a> TypeChecker<'a> {
             return Some(return_type);
         }
 
+        // `i32(x)`/`i64(x)`/`u32(x)`/`u8(x)`/`byte(x)`/`word(x)`/`f64(x)`: a primitive numeric
+        // conversion call, classified by AST shape alone (kept in sync with
+        // `primitive_numeric_conversion_target` in
+        // `crates/beskid_queries/src/semantic_contract/calls/facts.rs`, and with
+        // `resolve::resolver::is_primitive_numeric_conversion_call`, which stops name resolution
+        // from treating this callee as an ordinary value reference). The callee never resolves to
+        // a declared item, so it is typed here directly instead of through the item-call paths
+        // below. Whether the argument's type is actually a primitive numeric type is judged by
+        // `primitive_numeric_conversion` during ISLE lowering (see
+        // `crates/beskid_isle/src/context/operators.rs`), which has the ABI facts to do so
+        // precisely; only the argument itself is typed here.
+        if let Expression::Path(path_expr) = &call.node.callee.node
+            && call.node.args.len() == 1
+            && let [segment] = path_expr.node.path.node.segments.as_slice()
+            && segment.node.type_args.is_empty()
+            && let Some(to) = primitive_numeric_conversion_target_type(segment.node.name.node.name.as_str())
+        {
+            // The ISLE lowering contract ("Explicit primitive numeric conversion lowering",
+            // `openspec/changes/hir-free-isle-abi-v5-native-runtime/specs/compiler--codegen-and-ir--isle-lowering-contract/spec.md`)
+            // limits conversions to exactly one primitive numeric argument. Judge that here,
+            // typed, rather than letting a non-numeric argument (e.g. `i32(flag)` on a `bool`)
+            // reach ISLE lowering and surface only as an opaque `MissingRuleOrFact`.
+            if let Some(arg_type) = self.type_expression(&call.node.args[0])
+                && !self.is_numeric(arg_type)
+            {
+                self.errors.push(TypeError::InvalidPrimitiveConversionArgument { span: call.node.args[0].span });
+            }
+            return self.primitive_type_id(to);
+        }
+
         if let Expression::Path(path_expr) = &call.node.callee.node {
             let path: Vec<String> =
                 path_expr.node.path.node.segments.iter().map(|segment| segment.node.name.node.name.clone()).collect();
@@ -540,4 +570,24 @@ fn integer_literal_value(expression: &Expression) -> Option<i64> {
         return None;
     };
     integer_literal_magnitude(text).parse().ok()
+}
+
+/// Maps a single-segment call callee name to its primitive numeric conversion target, or `None`
+/// when `name` does not name a conversion form.
+///
+/// Kept in sync with `primitive_numeric_conversion_target` in
+/// `crates/beskid_queries/src/semantic_contract/calls/facts.rs` (the two live in separate crates
+/// -- `beskid_queries` depends on `beskid_analysis`, not the reverse -- so the mapping cannot be
+/// shared and must be updated together) and with
+/// `resolve::resolver::PRIMITIVE_NUMERIC_CONVERSION_NAMES`.
+fn primitive_numeric_conversion_target_type(name: &str) -> Option<PrimitiveType> {
+    Some(match name {
+        "i32" => PrimitiveType::I32,
+        "i64" => PrimitiveType::I64,
+        "u32" => PrimitiveType::U32,
+        "u8" | "byte" => PrimitiveType::U8,
+        "word" => PrimitiveType::Word,
+        "f64" => PrimitiveType::F64,
+        _ => return None,
+    })
 }

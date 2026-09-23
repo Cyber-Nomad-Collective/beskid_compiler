@@ -242,3 +242,81 @@ unit Main() { Build(); return; }
     )
     .expect("a scalar array literal lowers as a struct literal field");
 }
+
+/// `appendown` slice reproducer: `Array.Append` on an array field reached through a match
+/// binding (`Result::Ok(request) => { Array.Append(request.headers, ...) }`). The owner proof
+/// this exercises is [`beskid_isle`]'s `CollectionMutationOwner::AggregateField` path in
+/// `emit_collection_operation_value` (crates/beskid_isle/src/context/calls.rs) -- distinct from
+/// the `mut T[]` *parameter*-passed-by-value growth rule covered by
+/// `mutable_local_array_append_inside_a_loop_preserves_its_owner_slot` in
+/// `method_owned_fields.rs`. This receiver is bound by an enum match arm rather than a `let`, so
+/// the reproducer proves whether the compiler's local-binding root-slot bookkeeping
+/// (`install_match_bindings` / `bind_local` in `crates/beskid_isle/src/context/roots.rs`)
+/// recognizes a match-bound struct as a rooted owner for a subsequent field mutation.
+const ARRAY_APPEND_SOURCE: &str = "pub T[] Append<T>(mut T[] values, T value) { return values; }";
+
+#[test]
+fn array_append_on_a_field_of_a_match_bound_struct_lowers() {
+    let entry_source = r#"
+use Core.Results;
+use Http.Errors;
+use Http.Requests;
+use Core.Collections.Array;
+Result<i64, HttpError> Framing(u8[] body) { return Result::Ok(0_i64); }
+bool Main(Result<Request, HttpError> head) {
+    return match head {
+        Result::Error(_) => false,
+        Result::Ok(value) => {
+            Array.Append<u8>(value.body, u8(1));
+            Result<i64, HttpError> framing = Framing(value.body);
+            return match framing {
+                Result::Ok(_) => true,
+                Result::Error(_) => false,
+            };
+        },
+    };
+}
+"#;
+    let (input, isa, root) = imported_fixture(
+        "Http/Server.bd",
+        entry_source,
+        &[
+            ("Core/Results/Results.bd", RESULT_SOURCE),
+            ("Http/Errors/Errors.bd", "pub enum HttpError { InvalidFraming(), Closed() }"),
+            ("Http/Requests/Requests.bd", "pub type Request { string method, u8[] body, }"),
+            ("Core/Collections/Array.bd", ARRAY_APPEND_SOURCE),
+        ],
+    );
+    let functions = find_function_definitions(input.database(), root);
+    let framing = functions[0];
+    let main = functions[1];
+
+    let appends = super::support::find_nodes_of_kind(
+        input.database(),
+        main,
+        beskid_queries::IndexedNodeKind::CallExpression,
+    )
+    .into_iter()
+    .map(|call| (call, beskid_queries::collection_operation(input.database(), call)))
+    .collect::<Vec<_>>();
+    assert!(
+        appends.iter().any(|(_, operation)| matches!(
+            operation,
+            Ok(Some(beskid_queries::CollectionOperation::Append { .. }))
+        )),
+        "Array.Append<u8>(value.body, ...) must resolve to a canonical Append collection operation: {appends:?}"
+    );
+
+    lower_syntax_program(
+        &input,
+        isa.as_ref(),
+        &[
+            SyntaxModuleItem { key: framing, symbol: "Framing".into() },
+            SyntaxModuleItem { key: main, symbol: "Main".into() },
+        ],
+    )
+    .expect(
+        "Array.Append on an array field of a struct reached through an enum match binding must \
+         lower through the AggregateField owner proof",
+    );
+}

@@ -17,6 +17,20 @@ fn generated_target_and_trap_tables_follow_manifest_facts() {
     assert!(artifacts.rust.contains("changed_null"));
 }
 
+/// The exhaustion-trap host print (`beskid_rt_v5_intrinsic_trap` in every `platform_host.c`)
+/// names the trap it is reporting by looking up `BESKID_TRAP_NAME(code)`, generated here from
+/// the manifest's `trap` blocks so the C host never hand-maintains a second trap-name table.
+#[test]
+fn c_header_renders_a_trap_name_table_and_lookup() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let source = fs::read_to_string(root.join("runtime_manifest.bsol")).unwrap();
+    let artifacts = generate_v5_artifacts(&load_v5_manifest_source(&source).unwrap()).unwrap();
+    assert!(artifacts.c_header.contains("#define BESKID_TRAP_NAME_5 \"out_of_memory\""));
+    assert!(artifacts.c_header.contains("static inline const char *BESKID_TRAP_NAME(unsigned char code)"));
+    assert!(artifacts.c_header.contains("case 5: return BESKID_TRAP_NAME_5;"));
+    assert!(artifacts.c_header.contains("default: return \"unknown\";"));
+}
+
 #[test]
 fn windows_stack_parameter_is_typed_and_renders_as_a_masm_operand() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");

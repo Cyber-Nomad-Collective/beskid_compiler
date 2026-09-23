@@ -157,9 +157,36 @@ int64_t beskid_rt_v5_intrinsic_clock_realtime_nanos(void) {
 _Noreturn void beskid_rt_v5_intrinsic_trap(uint8_t code, void *message,
                                            size_t message_len) {
   static const char prefix[] = "beskid runtime trap v5: ";
+  static const char open_paren[] = " (";
+  static const char close_paren[] = "): ";
   static const char newline[] = "\n";
-  (void)code;
+  const char *name = BESKID_TRAP_NAME(code);
+  size_t name_len = 0;
+  while (name[name_len] != 0)
+    name_len++;
+  char code_digits[4];
+  size_t code_len = 0;
+  {
+    unsigned value = code;
+    char reversed[4];
+    size_t reversed_len = 0;
+    if (value == 0) {
+      reversed[reversed_len++] = '0';
+    } else {
+      while (value > 0 && reversed_len < sizeof(reversed)) {
+        reversed[reversed_len++] = (char)('0' + (value % 10));
+        value /= 10;
+      }
+    }
+    while (reversed_len > 0) {
+      code_digits[code_len++] = reversed[--reversed_len];
+    }
+  }
   (void)write(STDERR_FILENO, prefix, sizeof(prefix) - 1);
+  (void)write(STDERR_FILENO, name, name_len);
+  (void)write(STDERR_FILENO, open_paren, sizeof(open_paren) - 1);
+  (void)write(STDERR_FILENO, code_digits, code_len);
+  (void)write(STDERR_FILENO, close_paren, sizeof(close_paren) - 1);
   if (message != NULL && message_len != 0)
     (void)write(STDERR_FILENO, message, message_len);
   (void)write(STDERR_FILENO, newline, sizeof(newline) - 1);

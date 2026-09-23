@@ -1,12 +1,23 @@
 // Canonical stop-the-world mark/sweep orchestration, statistics, and barrier.
 
-const HEAP_REGION_START = 0;
-const HEAP_BUMP = 16;
+const HEAP_FIRST_REGION = 0;
+const HEAP_REGION_COUNT = 16;
+const HEAP_COMMITTED_BYTES = 24;
 const HEAP_LIVE_BYTES = 32;
 const HEAP_LIVE_COUNT = 40;
 const HEAP_COLLECTION_COUNT = 48;
 const HEAP_COLLECTION_THRESHOLD = 56;
 const HEAP_GC_PHASE = 64;
+const HEAP_CAP_BYTES = 72;
+const HEAP_FAILURE_REASON = 88;
+
+const REGION_NEXT = 0;
+const REGION_BUMP = 16;
+const REGION_OBJECTS_START = 48;
+
+const HEAP_MIN_THRESHOLD = 524288;
+const HEAP_INITIAL_REGION_SIZE = 1048576;
+
 const GC_PHASE_MARKING = 1;
 const GC_PHASE_SWEEPING = 2;
 const GC_PHASE_FAILED = 3;
@@ -51,23 +62,67 @@ pub word GcPhase() {
     return raw_word_load(pointer_add(heap, HEAP_GC_PHASE));
 }
 
+[Export(Abi:"C", Symbol:"gc_heap_cap")]
+pub word GcHeapCap() {
+    pointer heap = Heap();
+    if heap == NativePointer(0) { return 0; }
+    return raw_word_load(pointer_add(heap, HEAP_CAP_BYTES));
+}
+
+[Export(Abi:"C", Symbol:"gc_heap_committed")]
+pub word GcHeapCommitted() {
+    pointer heap = Heap();
+    if heap == NativePointer(0) { return 0; }
+    return raw_word_load(pointer_add(heap, HEAP_COMMITTED_BYTES));
+}
+
+[Export(Abi:"C", Symbol:"gc_heap_region_count")]
+pub word GcHeapRegionCount() {
+    pointer heap = Heap();
+    if heap == NativePointer(0) { return 0; }
+    return raw_word_load(pointer_add(heap, HEAP_REGION_COUNT));
+}
+
+[Export(Abi:"C", Symbol:"gc_heap_failure_reason")]
+pub word GcHeapFailureReason() {
+    pointer heap = Heap();
+    if heap == NativePointer(0) { return 0; }
+    return raw_word_load(pointer_add(heap, HEAP_FAILURE_REASON));
+}
+
+[Export(Abi:"C", Symbol:"beskid_rt_v5_heap_set_cap")]
+pub u8 GcHeapSetCap(word bytes) {
+    pointer heap = Heap();
+    if heap == NativePointer(0) { return 0; }
+    word committed = raw_word_load(pointer_add(heap, HEAP_COMMITTED_BYTES));
+    if bytes < committed || bytes < HEAP_INITIAL_REGION_SIZE {
+        return 0;
+    }
+    raw_word_store(pointer_add(heap, HEAP_CAP_BYTES), bytes);
+    return 1;
+}
+
 pub unit ResetMarkedObjects(pointer heap) {
-    mut pointer cursor = NativePointer(raw_word_load(pointer_add(heap, HEAP_REGION_START)));
-    pointer bump = NativePointer(raw_word_load(pointer_add(heap, HEAP_BUMP)));
-    while NativeWord(cursor) < NativeWord(bump) {
-        word descriptorWord = raw_word_load(cursor);
-        mut word size;
-        if descriptorWord == 0 {
-            size = raw_word_load(pointer_add(cursor, 8));
-        } else {
-            pointer descriptor = NativePointer(descriptorWord);
-            if ValidateTypeDescriptor(descriptor) == false { return; }
-            size = ManagedObjectSize(cursor, descriptor);
-            if size == 0 { return; }
-            raw_word_store(pointer_add(cursor, 8), GcMarkWhite());
+    mut pointer region = NativePointer(raw_word_load(pointer_add(heap, HEAP_FIRST_REGION)));
+    while region != NativePointer(0) {
+        mut pointer cursor = NativePointer(raw_word_load(pointer_add(region, REGION_OBJECTS_START)));
+        pointer bump = NativePointer(raw_word_load(pointer_add(region, REGION_BUMP)));
+        while NativeWord(cursor) < NativeWord(bump) {
+            word descriptorWord = raw_word_load(cursor);
+            mut word size;
+            if descriptorWord == 0 {
+                size = raw_word_load(pointer_add(cursor, 8));
+            } else {
+                pointer descriptor = NativePointer(descriptorWord);
+                if ValidateTypeDescriptor(descriptor) == false { return; }
+                size = ManagedObjectSize(cursor, descriptor);
+                if size == 0 { return; }
+                raw_word_store(pointer_add(cursor, 8), GcMarkWhite());
+            }
+            if size < 16 || size % 8 != 0 { return; }
+            cursor = NativePointer(NativeWord(cursor) + size);
         }
-        if size < 16 || size % 8 != 0 { return; }
-        cursor = NativePointer(NativeWord(cursor) + size);
+        region = NativePointer(raw_word_load(pointer_add(region, REGION_NEXT)));
     }
     return;
 }
@@ -89,8 +144,13 @@ pub word GcCollect() {
         return raw_word_load(pointer_add(heap, HEAP_LIVE_BYTES));
     }
     raw_word_store(pointer_add(heap, HEAP_COLLECTION_COUNT), raw_word_load(pointer_add(heap, HEAP_COLLECTION_COUNT)) + 1);
+    word liveBytes = raw_word_load(pointer_add(heap, HEAP_LIVE_BYTES));
+    word doubledLive = liveBytes * 2;
+    mut word threshold = HEAP_MIN_THRESHOLD;
+    if doubledLive > threshold { threshold = doubledLive; }
+    raw_word_store(pointer_add(heap, HEAP_COLLECTION_THRESHOLD), threshold);
     raw_word_store(pointer_add(heap, HEAP_GC_PHASE), 0);
-    return raw_word_load(pointer_add(heap, HEAP_LIVE_BYTES));
+    return liveBytes;
 }
 
 [Export(Abi:"C", Symbol:"gc_collect_if_needed")]

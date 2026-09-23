@@ -125,12 +125,32 @@ impl<'a> TypeChecker<'a> {
         Some(self.type_table.intern(TypeInfo::Array(first_type)))
     }
 
+    /// Every diagnostic below uses `try_expr.span` (the `TryExpression` node's own span, which
+    /// covers the operand only — the parser's postfix-chain combinator assigns it before
+    /// widening the outer `Expression::Try` span to include the `?` token; see
+    /// `parse_postfix_expression` in `crates/beskid_analysis/src/syntax/expressions/expression.rs`).
+    /// This is deliberately the same span the query-authority path resolves from the indexed
+    /// `TryExpression` node (`crates/beskid_queries/src/entry.rs::invalid_try_spans`) and that
+    /// the precheck walker now reports (`collect_invalid_try_targets_in_expression`,
+    /// `collect_try_targets_in_expression`) — all three sites must agree byte-for-byte on the
+    /// same span for the same operator, or `dedupe_diagnostics` (item 2) cannot recognize a
+    /// lower-spine E1222 as the duplicate of an authority/precheck E1222 for the same `?`.
     fn type_try_expression(&mut self, try_expr: &Spanned<crate::syntax::TryExpression>) -> Option<TypeId> {
         let target_type = self.type_expression(&try_expr.node.expr)?;
         let Some(result_item_id) = self.named_item_id(target_type) else {
             self.errors.push(TypeError::InvalidTryTarget { span: try_expr.span });
             return None;
         };
+
+        // OpenSpec `language-meta--contracts-and-effects--error-handling`, "Postfix try
+        // operator": the operand MUST be a Result-shaped enum declaring both `Ok` and `Error`
+        // variants. An enum that only happens to declare `Ok` is not a try target. Shares
+        // `is_result_shaped_enum` with the precheck walker (`is_result_shaped_try_operand`) so
+        // this lower-spine check and the early diagnostic never disagree.
+        if !self.is_result_shaped_enum(result_item_id) {
+            self.errors.push(TypeError::InvalidTryTarget { span: try_expr.span });
+            return None;
+        }
 
         let ok_fields = self
             .enum_variants_ordered

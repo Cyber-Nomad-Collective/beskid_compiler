@@ -330,9 +330,14 @@ macro_rules! generated_control_flow_methods {
             self.builder.seal_block(body);
             let root_scope_depth = self.local_root_scope_depth();
             self.begin_local_root_scope();
-            self.loop_stack.push(LoopTargets { continue_block: header, break_block: exit, root_scope_depth });
+            self.loop_stack.push(LoopTargets {
+                continue_block: header,
+                break_block: exit,
+                root_scope_depth,
+                break_reached: false,
+            });
             let lowered = generated::constructor_lower_statement(self, body_key);
-            self.loop_stack.pop();
+            let break_reached = self.loop_stack.pop().is_some_and(|targets| targets.break_reached);
             lowered?;
             self.end_local_root_scope_for_current_block()?;
             // Body may nest `if`/`for` and leave the builder on a descendant block.
@@ -341,6 +346,15 @@ macro_rules! generated_control_flow_methods {
             self.builder.seal_block(header);
             self.builder.switch_to_block(exit);
             self.builder.seal_block(exit);
+            // A statically-true condition with no reachable `break` makes `exit` dead: every
+            // real execution either loops forever or escapes through a `return` inside the
+            // body. `brif` still gives `exit` a predecessor edge (the header's false arm), so
+            // CLIF requires it to end with a terminator. Plant the same "unreachable" trap
+            // `emit_if_else` uses for its own dead-merge case (CYB-129) instead of leaving
+            // `exit` unterminated for the caller.
+            if !break_reached && self.facts.boolean_literal(condition_key) == Some(true) {
+                self.builder.ins().trap(TrapCode::unwrap_user(1));
+            }
             Some(())
         }
 
@@ -385,7 +399,12 @@ macro_rules! generated_control_flow_methods {
             self.builder.seal_block(body);
             let root_scope_depth = self.local_root_scope_depth();
             self.begin_local_root_scope();
-            self.loop_stack.push(LoopTargets { continue_block: latch, break_block: exit, root_scope_depth });
+            self.loop_stack.push(LoopTargets {
+                continue_block: latch,
+                break_block: exit,
+                root_scope_depth,
+                break_reached: false,
+            });
             let lowered = generated::constructor_lower_statement(self, body_key);
             self.loop_stack.pop();
             if lowered.is_none() {
@@ -422,6 +441,7 @@ macro_rules! generated_control_flow_methods {
             self.release_local_roots_from(targets.root_scope_depth)?;
             let target = targets.break_block;
             self.builder.ins().jump(target, &[]);
+            self.loop_stack.last_mut()?.break_reached = true;
             Some(())
         }
 

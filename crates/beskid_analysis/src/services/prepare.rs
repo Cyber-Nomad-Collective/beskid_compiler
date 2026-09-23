@@ -516,9 +516,29 @@ fn run_prepare_spine(
 
     Ok(PrepareSpineOutput {
         prepared: PreparedCompilation { assembly, program, binding_plan, composition_snapshot, typed },
-        collected_diagnostics,
+        collected_diagnostics: dedupe_diagnostics(collected_diagnostics),
         collected_fixes: analyzer_fixes,
     })
+}
+
+/// Drop exact-duplicate diagnostics, keeping the first occurrence.
+///
+/// A genuine invalid `?` target is independently detected twice on the `try_authority` path: once
+/// by the authority callback (driven by the typed `try_expression_fact`, emitted just above) and
+/// again by `resolve_and_type_program_with_assembly`'s own full type check a few lines later,
+/// which runs the same `is_result_shaped_enum` judgment through `type_try_expression` and,
+/// on failure, surfaces `TypeError::InvalidTryTarget` via `semantic_facts_errors_to_diagnostics`.
+/// Both sites are correct in isolation; only the caller-facing duplicate needs suppressing, so
+/// this dedups by exact (span, code, message) rather than special-casing E1222 alone.
+fn dedupe_diagnostics(diagnostics: Vec<SemanticDiagnostic>) -> Vec<SemanticDiagnostic> {
+    let mut seen: std::collections::HashSet<(usize, usize, Option<String>, String)> = std::collections::HashSet::new();
+    diagnostics
+        .into_iter()
+        .filter(|diagnostic| {
+            let key = (diagnostic.span.offset(), diagnostic.span.len(), diagnostic.code.clone(), diagnostic.message.clone());
+            seen.insert(key)
+        })
+        .collect()
 }
 
 /// Build a [`ResolvedInput`] from paths for analyze/LSP when only a compile plan is available.

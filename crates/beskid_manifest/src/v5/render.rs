@@ -219,6 +219,19 @@ pub(super) fn render_c_header(manifest: &RuntimeManifestV5) -> String {
     if manifest.corelib_services.iter().any(|service| service.result == "string") {
         out.push_str("struct BeskidStr;\n");
     }
+    for trap in &manifest.traps {
+        writeln!(out, "#define BESKID_TRAP_NAME_{} {:?}", trap.code, trap.name).unwrap();
+    }
+    // Not every translation unit that includes this header calls the lookup (only the platform
+    // trap host does); guard against `-Wunused-function` under `-Werror` without relying on an
+    // ISO C11 construct the header's other consumers (MSVC) would reject.
+    out.push_str(
+        "#if defined(__GNUC__) || defined(__clang__)\n__attribute__((unused))\n#endif\nstatic inline const char *BESKID_TRAP_NAME(unsigned char code) {\n    switch (code) {\n",
+    );
+    for trap in &manifest.traps {
+        writeln!(out, "        case {}: return BESKID_TRAP_NAME_{};", trap.code, trap.code).unwrap();
+    }
+    out.push_str("        default: return \"unknown\";\n    }\n}\n");
     for layout in &manifest.layouts {
         let name = macro_name(layout.name.strip_prefix("Beskid").unwrap_or(&layout.name));
         writeln!(out, "#define BESKID_{name}_SIZE {}", layout.size).unwrap();
