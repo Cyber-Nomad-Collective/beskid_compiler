@@ -474,14 +474,17 @@ int RunAbiValueFixture(MoveValue move) {
     for (int mode = 0; mode < 3; ++mode) channel_receipt_abort(&sender, mode);
     for (int hub = 0; hub < 2; ++hub) channel_receipt_cleanup_wakes(&sender, hub);
     for (int mode = 4; mode < 7; ++mode) channel_receiver_wake(&sender, mode);
-    uintptr_t empty_roots[62] = {0};
-    for (size_t i = 0; i < 62; ++i) assert(gc_register_root(&empty_roots[i]));
-    assert(!move(&sender, &receiver)); /* Full root registry: retain sender ownership. */
-    assert(vacant(&receiver) && payload(&sender) == owned_resource);
-    gc_collect();
-    assert(gc_object_count() == 1);
-    for (size_t i = 0; i < 62; ++i) gc_unregister_root(&empty_roots[i]);
+    /* The root registry is a growable block chain (64 slots per block), so root
+     * capacity never refuses a move. Move while the destination root must land
+     * in a fresh block, then release the unrelated roots out of LIFO order. */
+    uintptr_t extra_roots[130] = {0};
+    for (size_t i = 0; i < 130; ++i) assert(gc_register_root(&extra_roots[i]));
     assert(move(&sender, &receiver));
+    assert(vacant(&sender) && payload(&receiver) == owned_resource);
+    gc_collect();
+    assert(gc_object_count() == 1 && payload(&receiver) == owned_resource);
+    for (size_t i = 0; i < 130; ++i) gc_unregister_root(&extra_roots[i]);
+    assert(gc_external_root_count() == 1);
     assert(vacant(&sender) && !move(&sender, &receiver));
     gc_collect();
     assert(payload(&receiver) == owned_resource && owned_resource[2] == UINT64_C(0xfedcba9876543210));

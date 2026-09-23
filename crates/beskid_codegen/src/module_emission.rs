@@ -18,6 +18,10 @@ pub(crate) const SCHEDULER_ENTRY_HELPERS: &[&str] = &[
     "FiberDone",
 ];
 
+/// Canonical source seams invoked only by compiler-generated spawn trampolines. They are extra
+/// reachability roots whenever a scheduler-backed compilation also contains a `spawn`.
+pub(crate) const SCHEDULER_STACK_HELPERS: &[&str] = &["SchedulerStackCheck", "SchedulerStackOverflowObserved"];
+
 pub use contracts::SyntaxModuleEmissionError;
 pub use data::{DescriptorHandles, emit_closure_static_plans, emit_string_literals, emit_type_descriptors};
 pub use items::SyntaxModuleItem;

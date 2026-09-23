@@ -87,8 +87,14 @@ fn json_rpc_completion_and_hover_use_dependency_syntax_facts() {
     let project_uri = url::Url::from_directory_path(project.path()).expect("project URI").to_string();
     let source_uri = url::Url::from_file_path(&source_path).expect("source URI").to_string();
     let sibling_uri = url::Url::from_file_path(&sibling_path).expect("sibling URI").to_string();
+    // `beskid_lsp` provisions its embedded Corelib into the resolved Corelib root on startup,
+    // replacing whatever is there. Give it a disposable root so an inherited
+    // `BESKID_CORELIB_ROOT` (for example the checked-in `corelib/` source tree) is never
+    // overwritten in place, and so the test uses exactly the bundle this binary embeds.
+    let corelib_root = tempfile::tempdir_in(&project_parent).expect("temporary corelib root");
     let mut child = Command::new(env!("CARGO_BIN_EXE_beskid_lsp"))
         .current_dir(compiler_root)
+        .env("BESKID_CORELIB_ROOT", corelib_root.path())
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())

@@ -94,6 +94,32 @@ impl<'db> SyntaxNodeFacts<'db> {
         })
     }
 
+    /// Map the artifact-owned spawn argument plan onto the eager argument expressions.
+    pub(super) fn spawn_argument_environment(
+        &self,
+        spawn: AstNodeKey,
+        arguments: &[AstNodeKey],
+    ) -> Option<beskid_isle::SpawnArgumentEnvironment> {
+        let isa = self.isa?;
+        let plan = self.input.spawn_argument_static_plan(spawn)?;
+        (plan.fields.len() == arguments.len()).then_some(())?;
+        let fields = arguments
+            .iter()
+            .zip(plan.fields.iter())
+            .map(|(argument, field)| {
+                Some(beskid_isle::SpawnArgumentField {
+                    argument: *argument,
+                    field_offset: i32::try_from(field.field_offset).ok()?,
+                    value_type: map_signature_type(isa, field.abi_type)?,
+                })
+            })
+            .collect::<Option<Vec<_>>>()?;
+        Some(beskid_isle::SpawnArgumentEnvironment {
+            allocation_request_symbol: plan.allocation_request_symbol.into(),
+            fields,
+        })
+    }
+
     pub(super) fn specialized_direct_parameter_type(&self, key: AstNodeKey) -> Option<SemanticTypeId> {
         (self.query(node_kind(self.db, key)) == Some(beskid_queries::IndexedNodeKind::PathExpression)).then_some(())?;
         let declaration = self

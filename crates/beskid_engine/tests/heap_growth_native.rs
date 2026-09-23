@@ -27,6 +27,14 @@ use std::{collections::HashSet, path::Path, process::Command, sync::Arc, time::D
 const ROUTE_LIMIT: Duration = Duration::from_secs(180);
 
 fn heap_growth_assembly() -> Arc<ProgramAssembly> {
+    heap_growth_assembly_with_fixture_source(None)
+}
+
+/// Same fixture assembly as [`heap_growth_assembly`], with the entry unit's source text replaced
+/// by `fixture_source` when given (otherwise read from disk as usual). Used by the negative
+/// legality-gate regression below, which needs the exact same corelib closure with one `use`
+/// line removed rather than a from-scratch fixture.
+fn heap_growth_assembly_with_fixture_source(fixture_source: Option<&str>) -> Arc<ProgramAssembly> {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let compiler = root.ancestors().nth(2).expect("Engine crate must be nested under compiler/crates");
     let concurrency = compiler.join("corelib/packages/concurrency/src");
@@ -49,7 +57,11 @@ fn heap_growth_assembly() -> Arc<ProgramAssembly> {
     let units = paths
         .into_iter()
         .map(|(path, logical_name)| {
-            let source = std::fs::read_to_string(&path).unwrap_or_else(|error| panic!("read {path:?}: {error}"));
+            let source = if logical_name == fixture_name && fixture_source.is_some() {
+                fixture_source.expect("checked Some above").to_owned()
+            } else {
+                std::fs::read_to_string(&path).unwrap_or_else(|error| panic!("read {path:?}: {error}"))
+            };
             let program = parse_program_with_source_name(path.to_str().unwrap(), &source).unwrap();
             SourceUnit { origin_path: path.clone(), path, logical_name: logical_name.into(), source, program }
         })
@@ -157,6 +169,13 @@ fn size_class_sweep_allocates_and_reuses_every_size_class() {
     run_heap_fixture("size_class_sweep", "RunSizeClassSweep", size_class_sweep_expected());
 }
 
+#[test]
+fn large_object_alone_allocates_and_reads_back_correctly() {
+    // Isolates the dedicated-span path from every other allocation in this fixture, to narrow
+    // down whether a failure elsewhere is specific to the large-object path.
+    run_heap_fixture("large_object_only", "RunLargeObjectOnly", 11 + 5000);
+}
+
 fn size_class_sweep_expected() -> i64 {
     let sizes: [i64; 10] = [8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096];
     sizes.iter().map(|size| ((size % 251) as i64) + (size - 1)).sum()
@@ -165,6 +184,30 @@ fn size_class_sweep_expected() -> i64 {
 #[test]
 fn growth_past_one_region_reports_multiple_regions_and_committed_bytes() {
     run_heap_fixture("growth_past_one_region", "RunGrowthPastOneRegion", 1024);
+}
+
+#[test]
+fn span_reuse_minimal_bisection_aid() {
+    // Temporary bisection aid, to be removed: phase 1 (fill+drop+collect) only, no cross-class
+    // pressure phase. If this alone crashes, the bug is in a rooted local surviving its own
+    // neighbor spans being freed, not in cross-class span reuse specifically.
+    run_heap_fixture("span_reuse_minimal", "RunSpanReuseMinimal", 42);
+}
+
+#[test]
+fn span_reuse_across_classes_after_collection_does_not_alias_objects() {
+    // Regression for the stale `HEAP_CURRENT_SPAN_BY_CLASS` cache bug (see the doc comment on
+    // `RunSpanReuseAcrossClasses` in heap_growth.bd): a span freed by `Sweep`'s empty-span path
+    // must not still be trusted by a later allocation of the class it used to serve, once
+    // `CarveSpan` has reused its page for a different class. Expected = survivor[0] (42) +
+    // freshOne[0] (200) + freshTwo[0] (201) + freshThree[0] (202) + (Array.Len(freshOne) - 1)
+    // (23) = 668, PROVIDED every object still reads back its own untouched content (no aliasing)
+    // and `gc_heap_verify` passed; either failure mode drives the result negative instead.
+    run_heap_fixture(
+        "span_reuse_across_classes",
+        "RunSpanReuseAcrossClasses",
+        42 + 200 + 201 + 202 + 23,
+    );
 }
 
 #[test]
@@ -188,6 +231,42 @@ fn deep_recursion_expected() -> i64 {
 #[test]
 fn fiber_boundary_survives_collection_on_both_sides() {
     run_heap_fixture("fiber_heap_interaction", "RunFiberHeapInteraction", 14);
+}
+
+/// Regression for the reachability-scoped semantic legality gate
+/// (`docs/superpowers/specs/2026-09-23-production-semantic-diagnostics-design.md`): before this
+/// gate existed, `RunFiberHeapInteraction`'s `Result<u8[], FiberError> joined = ...;` without its
+/// `use Concurrency.FiberError;` import failed only deep inside ISLE lowering, as an
+/// unrelated-looking `MissingRuleOrFact` (`enum_match` could not build `FiberError`'s layout).
+/// The gate must now reject it before specialization or ISLE ever runs, with a coded E1201 at the
+/// `let`, and lowering must never reach `MissingRuleOrFact` for this case again.
+#[test]
+fn missing_fiber_error_import_is_rejected_by_the_legality_gate_not_a_missing_lowering_rule() {
+    let source = std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/heap_growth.bd"))
+        .expect("read heap_growth.bd");
+    let without_fiber_error_import =
+        source.lines().filter(|line| *line != "use Concurrency.FiberError;").collect::<Vec<_>>().join("\n");
+    assert_ne!(without_fiber_error_import, source, "the fixture must still carry the import to remove");
+
+    let assembly = heap_growth_assembly_with_fixture_source(Some(&without_fiber_error_import));
+    let target = beskid_engine::host_runtime_target().unwrap();
+    let settings = beskid_codegen::cranelift_host::production_isa_settings_builder().unwrap();
+    let isa = cranelift_native::builder().unwrap().finish(cranelift_codegen::settings::Flags::new(settings)).unwrap();
+    let mut db = BeskidDatabase::default();
+
+    let result = lower_syntax_assembly_entrypoint(&mut db, assembly, "RunFiberHeapInteraction", target, isa.as_ref());
+    let error = match result {
+        Ok(_) => panic!("a `let` naming an unimported type must fail closed before lowering, not silently compile"),
+        Err(error) => error,
+    };
+    let rendered = format!("{error:#}");
+
+    assert!(rendered.contains("E1201"), "expected the legality gate's E1201 in: {rendered}");
+    assert!(rendered.contains("FiberError"), "expected the unresolved name in: {rendered}");
+    assert!(
+        !rendered.contains("MissingRuleOrFact"),
+        "the legality gate must stop this before ISLE ever reports a missing rule: {rendered}"
+    );
 }
 
 /// Builds a standalone executable for `entry` (static AOT, linked against `heap_growth.c`) and

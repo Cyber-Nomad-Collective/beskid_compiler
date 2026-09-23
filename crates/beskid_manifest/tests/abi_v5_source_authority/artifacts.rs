@@ -89,6 +89,29 @@ fn checked_in_v5_artifacts_are_fresh() {
     );
 }
 
+/// `runtime/beskid/src/Runtime/Mem/AbiValue.bd` is read from disk by every compilation path --
+/// CLI-embedded, fixture-substituted for the three named runtime-test targets, and an ordinary
+/// path dependency for every other runtime-test target -- so the generated ABI-v5 layout prelude
+/// (BESKID_ABI_VALUE_SIZE and friends) has to be checked in as the leading block of that file
+/// itself, not injected by one caller and not by others. Fail closed if it drifts from
+/// `runtime_manifest.bsol`.
+#[test]
+fn checked_in_abi_value_layout_prelude_is_fresh() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let source = fs::read_to_string(root.join("runtime_manifest.bsol")).unwrap();
+    let manifest = load_v5_manifest_source(&source).expect("workspace v5 source");
+    let layout_source = beskid_manifest::runtime_layout_source(&manifest).expect("layout source");
+    let abi_value_path = root.join("runtime/beskid/src/Runtime/Mem/AbiValue.bd");
+    let on_disk = fs::read_to_string(&abi_value_path).unwrap();
+    assert!(
+        on_disk.starts_with(&layout_source),
+        "{} must start with the current generated ABI-v5 layout prelude (regenerate it from \
+         runtime_manifest.bsol); the compiler-embedded corpus, the runtime-test fixture proof, \
+         and ordinary path-dependency compilation all read this file's on-disk text as-is",
+        abi_value_path.display()
+    );
+}
+
 #[test]
 fn intrinsic_linker_symbols_are_explicit_and_unique() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");

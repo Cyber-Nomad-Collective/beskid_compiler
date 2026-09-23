@@ -83,7 +83,7 @@ pub fn prepare_compilation_with_db(
         pipeline,
         false,
         false,
-        &mut |assembly, program| invalid_try_spans(db, assembly, program),
+        &mut |assembly, program| invalid_try_spans(db, Some(&resolved), assembly, program),
     )?;
     touch_from_prepare(&resolved);
     emit_salsa_stats(pipeline);
@@ -104,7 +104,7 @@ pub fn prepare_compilation_diagnostics_with_db(
         pipeline,
         true,
         false,
-        &mut |assembly, program| invalid_try_spans(db, assembly, program),
+        &mut |assembly, program| invalid_try_spans(db, Some(&resolved), assembly, program),
     )?;
     if let Some(fp) = session_fingerprint(&resolved) {
         let _ = semantic_snapshot(db, &fingerprint_key(&fp));
@@ -130,12 +130,21 @@ pub fn prepare_compilation_diagnostics_isolated(
         pipeline,
         true,
         true,
-        &mut |assembly, program| invalid_try_spans(&mut db, assembly, program),
+        &mut |assembly, program| invalid_try_spans(&mut db, None, assembly, program),
     )
 }
 
+/// Collect try expressions that have no generation-bound try fact.
+///
+/// `planned` is the resolved input of a planned project entry on the shared
+/// database. Its syntax is registered under the session that already owns the
+/// assembly's units, or else under the plan-keyed registry session, so later
+/// LSP/IDE fact queries over the same units find that owner instead of
+/// colliding with a second, unregistered session. Only the isolated, job-local
+/// database passes `None` and lets the assembly mint its own owner.
 fn invalid_try_spans(
     db: &mut BeskidDatabase,
+    planned: Option<&ResolvedInput>,
     assembly: &beskid_analysis::projects::ProgramAssembly,
     program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
 ) -> Result<Vec<beskid_analysis::syntax::SpanInfo>> {
@@ -158,7 +167,16 @@ fn invalid_try_spans(
         .with_trusted_corelib_service_paths(Arc::clone(&assembly.trusted_corelib_service_paths))
         .with_runtime_fixture(assembly.runtime_fixture.clone()),
     );
-    let project = project_session_for_syntax_assembly(db, &syntax, "try-diagnostics", "source-authority")?;
+    let project = match planned.and_then(|resolved| Some((resolved.compile_plan.as_ref()?, resolved))) {
+        Some((plan, resolved)) => crate::project_session_for_planned_syntax_assembly(
+            db,
+            &syntax,
+            plan,
+            &resolved.source_path,
+            crate::typed_entry_bundle::lockfile_digest_for_plan(plan),
+        )?,
+        None => project_session_for_syntax_assembly(db, &syntax, "try-diagnostics", "source-authority")?,
+    };
     let typed = build_typed_program(db, project, syntax.generation, Arc::clone(&syntax))?;
     let index = syntax.entry_syntax_index();
     let mut invalid = Vec::new();

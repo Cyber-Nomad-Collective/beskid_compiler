@@ -6,7 +6,7 @@ use beskid_isle::DirectCallee;
 use cranelift_codegen::isa::TargetIsa;
 use cranelift_module::{FuncId, Linkage, Module, ModuleError};
 
-use super::contracts::{SyntaxModuleEmissionError, emission_error, emission_verification};
+use super::contracts::{SyntaxModuleEmissionError, emission_error, emission_verification, render_legality_findings};
 use super::data::{collect_aggregate_static_plans, collect_array_static_plans, collect_closure_static_plans};
 use super::imports::{
     ArtifactCallImporter, ArtifactStringInterner, corelib_service_symbols, extern_contract_imports,
@@ -68,6 +68,13 @@ pub fn lower_syntax_program(
 ) -> Result<CodegenArtifact, SyntaxModuleEmissionError> {
     let started = Instant::now();
     crate::isle_trace::event(|| format!("event=clif.begin items={} roots={}", items.len(), input.roots().len()));
+    let db = input.database();
+    let requested_keys = items.iter().map(|item| item.key).collect::<Vec<_>>();
+    if let Err(findings) = beskid_queries::check_items(db, &requested_keys) {
+        let error = SyntaxModuleEmissionError::Legality(render_legality_findings(db, &findings));
+        crate::isle_trace::event(|| format!("event=isle.missing rule=legality_gate detail={error}"));
+        return Err(error);
+    }
     let items = match resolve_module_items(input, items).and_then(|items| expand_direct_spawn_items(input, items)) {
         Ok(items) => items,
         Err(error) => {
@@ -75,6 +82,18 @@ pub fn lower_syntax_program(
             return Err(error);
         }
     };
+    // Specialization and witness resolution can discover bodies the caller never named (contract
+    // witnesses, the `pending` worklist in `resolve_module_items`). Judge exactly the keys newly
+    // added by that discovery; keys already checked above are Salsa-memoized, so this costs
+    // nothing for them.
+    let discovered_keys = items.iter().map(|item| item.key).filter(|key| !requested_keys.contains(key)).collect::<Vec<_>>();
+    if !discovered_keys.is_empty()
+        && let Err(findings) = beskid_queries::check_items(db, &discovered_keys)
+    {
+        let error = SyntaxModuleEmissionError::Legality(render_legality_findings(db, &findings));
+        crate::isle_trace::event(|| format!("event=isle.missing rule=legality_gate detail={error}"));
+        return Err(error);
+    }
     let result = lower_resolved_syntax_program(input, isa, &items);
     crate::isle_trace::event(|| match &result {
         Ok(artifact) => format!(
@@ -385,6 +404,7 @@ fn lower_resolved_syntax_program(
         });
     }
     aggregate_static_plans.extend(trampolines.iter().map(|trampoline| trampoline.result_plan.clone()));
+    aggregate_static_plans.extend(trampolines.iter().filter_map(|trampoline| trampoline.argument_plan.clone()));
     for trampoline in &trampolines {
         aggregate_static_plans.push(
             input
@@ -392,7 +412,10 @@ fn lower_resolved_syntax_program(
                 .ok_or_else(|| emission_verification("source Fiber<T> handle layout unavailable"))?,
         );
     }
-    if trampolines.iter().any(|trampoline| !trampoline.result_plan.pointer_map_offsets.is_empty()) {
+    // Argument environments are rooted by the spawning function until the runtime owns them.
+    if trampolines.iter().any(|trampoline| {
+        !trampoline.result_plan.pointer_map_offsets.is_empty() || trampoline.argument_plan.is_some()
+    }) {
         for symbol in ["gc_register_root", "gc_unregister_root"] {
             if !extern_imports.iter().any(|existing| existing.symbol == symbol) {
                 extern_imports.push(ExternImport { symbol: symbol.to_owned(), abi: Some("C".into()), library: None });

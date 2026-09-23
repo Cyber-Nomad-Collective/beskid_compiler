@@ -511,7 +511,10 @@ pub(in crate::semantic_contract) fn generic_source_type_identity_with_substituti
     })
 }
 
-fn generic_source_local_identity(
+/// Source-proven type identity of a lexical local: its written parameter/let annotation, or,
+/// for an unannotated `let`, the identity of its initializer. This is the single local-type
+/// authority shared by expression typing and field projection; unknown stays unavailable.
+pub(in crate::semantic_contract) fn generic_source_local_identity(
     db: &dyn Db,
     program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
     index: &beskid_analysis::syntax_query::SyntaxIndex,

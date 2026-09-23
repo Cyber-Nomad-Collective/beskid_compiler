@@ -33,16 +33,15 @@ pub(super) fn resolve_module_items(
             })?;
         }
     }
-    // Also collect specializations from entry-point roots (test files) that may
-    // call generic functions defined in this module with concrete type arguments.
-    for root in input.roots() {
-        collect_generic_call_specializations(db, *root, &mut specializations).map_err(|error| {
-            emission_verification(format!(
-                "generic specialization collection failed for root {}: {error}",
-                format_declaration_for_trace(db, *root)
-            ))
-        })?;
-    }
+    // Deliberately does not also walk `input.roots()`: doing so treated every root of the
+    // assembly (every test file, not only the ones in `source_items`) as executable source for
+    // specialization collection, so a generic misuse in a root nothing in `source_items` calls
+    // could add a spurious specialization or (after the legality gate) get judged by items
+    // nothing here ever requested to lower. `source_items` is exactly what the caller asked to
+    // lower -- the requested roots, the scheduler helper closure, or the full executable module
+    // for `lower_prepared_syntax_module` -- so it already names every root this collection must
+    // see (owner decision, `docs/superpowers/specs/2026-09-23-production-semantic-diagnostics-design.md`
+    // section 2.4 / section 6 item 2).
 
     // Witness resolution discovers concrete implementation bodies after source reachability.
     // Add those bodies and their ordinary direct dependencies to this same module worklist.

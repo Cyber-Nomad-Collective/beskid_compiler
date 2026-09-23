@@ -6,6 +6,6 @@ mod parsing;
 mod render;
 mod validation;
 
-pub use artifacts::{generate_v5_artifacts, write_v5_artifacts};
+pub use artifacts::{generate_v5_artifacts, runtime_layout_source, write_v5_artifacts};
 pub use model::{GeneratedV5Artifacts, RuntimeManifestV5};
 pub use parsing::load_v5_manifest_source;

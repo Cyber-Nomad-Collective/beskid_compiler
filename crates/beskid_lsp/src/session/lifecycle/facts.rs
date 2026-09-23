@@ -44,7 +44,6 @@ pub(super) fn syntax_facts_for_assembly(
     let Some(plan) = resolved.compile_plan.as_ref() else {
         return SyntaxFacts::default();
     };
-    let project = db.ensure_project_session(plan, &resolved.source_path, lockfile_digest_for_plan(plan));
     let dependency_surface =
         parse_program_with_source_name(&resolved.source_path.display().to_string(), &resolved.source)
             .map(|program| beskid_queries::completion_dependency_surface_for_program(&assembly, &program))
@@ -57,7 +56,18 @@ pub(super) fn syntax_facts_for_assembly(
     // Fail closed to prepare-spine syntax authority: post-mod-rewrite entry program, never the
     // pre-rewrite ProgramAssembly units that still carry HIR compatibility state.
     let generation = SyntaxGenerationId(assembly.generation.0);
-    let Ok(typed) = build_typed_program(db, project, generation, assembly) else {
+    // Reuse the session that owns this assembly's registered syntax (the prepare
+    // spine registered it moments ago); a second session would be rejected as a
+    // source-unit reassignment and leave the editor without semantic facts.
+    let typed = beskid_queries::project_session_for_planned_syntax_assembly(
+        db,
+        &assembly,
+        plan,
+        &resolved.source_path,
+        lockfile_digest_for_plan(plan),
+    )
+    .and_then(|project| build_typed_program(db, project, generation, assembly));
+    let Ok(typed) = typed else {
         return SyntaxFacts {
             symbols: recoverable_symbols,
             completion: (!dependency_surface.is_empty())

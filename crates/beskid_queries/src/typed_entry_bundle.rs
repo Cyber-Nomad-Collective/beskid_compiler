@@ -139,7 +139,7 @@ fn project_session_for_resolved(db: &mut BeskidDatabase, resolved: &ResolvedInpu
     Some(db.ensure_project_session(plan, &resolved.source_path, lockfile_digest))
 }
 
-fn lockfile_digest_for_plan(plan: &beskid_analysis::projects::CompilePlan) -> String {
+pub(crate) fn lockfile_digest_for_plan(plan: &beskid_analysis::projects::CompilePlan) -> String {
     use std::collections::hash_map::DefaultHasher;
     use std::hash::{Hash, Hasher};
     let mut hasher = DefaultHasher::new();

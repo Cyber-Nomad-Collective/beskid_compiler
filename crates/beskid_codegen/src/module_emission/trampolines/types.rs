@@ -9,6 +9,9 @@ pub(in crate::module_emission) struct SpawnTrampoline {
     pub(in crate::module_emission) lambda_body: Option<AstNodeKey>,
     /// Present when the trampoline target is a capturing lambda that reads from the environment.
     pub(in crate::module_emission) closure_captures: Option<Vec<beskid_isle::InlineCaptureField>>,
+    /// Present when the target is a direct item spawned with eager arguments; the trampoline
+    /// loads one field per entry parameter from the environment pointer.
+    pub(in crate::module_emission) argument_plan: Option<crate::aggregate_static::AggregateStaticPlan>,
     pub(in crate::module_emission) symbol: String,
     pub(in crate::module_emission) result_plan: crate::aggregate_static::AggregateStaticPlan,
 }

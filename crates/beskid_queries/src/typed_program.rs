@@ -23,6 +23,42 @@ pub fn project_session_for_syntax_assembly(
     fallback_target_name: &str,
     fallback_lockfile_digest: &str,
 ) -> Result<ProjectSession, SemanticError> {
+    Ok(registered_syntax_owner(db, assembly)?.unwrap_or_else(|| {
+        ProjectSession::new(
+            db,
+            assembly.roots.host.source_root.clone(),
+            assembly.entry_unit().path.clone(),
+            fallback_target_name.into(),
+            fallback_lockfile_digest.into(),
+        )
+    }))
+}
+
+/// Owner for a prepared syntax assembly of a planned project entry.
+///
+/// Reuses the session that already owns any unit of the assembly (several
+/// entries of one project share dependency units, so they must share their
+/// owner). Otherwise the first owner is the plan-keyed registry session, never
+/// an unregistered one, so every later caller that resolves the same plan and
+/// entry (LSP/IDE facts, typed entry bundles, program assembly) finds the
+/// session that owns the registered syntax.
+pub fn project_session_for_planned_syntax_assembly(
+    db: &mut BeskidDatabase,
+    assembly: &ProgramAssembly,
+    plan: &beskid_analysis::projects::CompilePlan,
+    entry_path: &std::path::Path,
+    lockfile_digest: String,
+) -> Result<ProjectSession, SemanticError> {
+    if let Some(owner) = registered_syntax_owner(db, assembly)? {
+        return Ok(owner);
+    }
+    Ok(db.ensure_project_session(plan, entry_path, lockfile_digest))
+}
+
+fn registered_syntax_owner(
+    db: &BeskidDatabase,
+    assembly: &ProgramAssembly,
+) -> Result<Option<ProjectSession>, SemanticError> {
     let mut owner = None;
     for unit in assembly.units.iter() {
         let unit = SourceUnitId::new(db, unit.path.clone());
@@ -40,16 +76,7 @@ pub fn project_session_for_syntax_assembly(
             owner = Some(candidate);
         }
     }
-
-    Ok(owner.unwrap_or_else(|| {
-        ProjectSession::new(
-            db,
-            assembly.roots.host.source_root.clone(),
-            assembly.entry_unit().path.clone(),
-            fallback_target_name.into(),
-            fallback_lockfile_digest.into(),
-        )
-    }))
+    Ok(owner)
 }
 
 /// Register an expanded syntax assembly as one generation-safe typed-program identity.

@@ -90,6 +90,12 @@ const FIBER_OUTCOME_REQUESTED_OFFSET = 152;
 
 const FIBER_TABLE_MAX = 16;
 const FIBER_NONE = 0xFFFF;
+
+// Beskid `const` items have no `pub` visibility (see the grammar's `ConstantDefinition` rule):
+// they only resolve within their own declaring file. Callers in other packages — including
+// tests that are not part of the compiler-embedded runtime fixture allowlist — read the
+// no-fiber sentinel through this function instead of the bare constant.
+pub word FiberNone() { return FIBER_NONE; }
 // Guarded stacks are a scheduler-owned native reservation. The manifest-only
 // adapter derives the target's guard granularity; source owns the portable
 // usable-capacity policy and never addresses below the returned usable base.

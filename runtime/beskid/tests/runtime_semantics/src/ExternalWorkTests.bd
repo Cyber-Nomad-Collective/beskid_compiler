@@ -5,8 +5,10 @@ use Runtime.Fiber.Scheduler.Context;
 use Runtime.Fiber.Scheduler.External;
 use Runtime.Fiber.Scheduler.Loop;
 use Testing.Assert;
+use HostRuntimeSupport;
 
 pub unit CheckHostWorkSurvivesWait(word winner) {
+    pointer hostRuntime = SuspendHostRuntime();
     pointer runtime = Native.SystemAllocate(64, 8);
     memory_set(runtime, 0, 64);
     Assert.True(Lifecycle.ProcessInit(runtime) == runtime, "runtime initialized");
@@ -48,6 +50,7 @@ pub unit CheckHostWorkSurvivesWait(word winner) {
     Assert.True(Core.SchedShutdown(), "owner teardown succeeds after host drain");
     Lifecycle.ProcessShutdown(runtime);
     Native.SystemFree(runtime, 64);
+    ResumeHostRuntime(hostRuntime);
     return;
 }
 

@@ -29,6 +29,7 @@ mod enums;
 mod intrinsics;
 mod operators;
 mod roots;
+mod spawn_arguments;
 mod strings;
 
 use operators::CompareOp;

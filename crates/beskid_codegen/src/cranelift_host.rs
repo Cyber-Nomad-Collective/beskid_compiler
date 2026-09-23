@@ -19,9 +19,55 @@ use crate::CodegenArtifact;
 /// Cranelift's x64 tail-call emitter currently requires frame pointers. Keeping
 /// this invariant here prevents lowering and final machine emission from using
 /// different ISA contracts.
+///
+/// `enable_probestack`/`probestack_strategy` guard a single function's own stack
+/// frame: Cranelift defaults (`cranelift-codegen` 0.136.0, `src/settings.rs`) are
+/// `enable_probestack = false`, `probestack_strategy = "outline"`,
+/// `probestack_size_log2 = 12` (4 KiB, matching the OS guard-page granularity).
+/// Left at the default, a single frame larger than one guard page can `sub rsp`
+/// past the guard region in one instruction without ever touching it (a "stack
+/// clash"), landing in genuinely unmapped memory instead of faulting cleanly on
+/// the guard page -- this is a real gap for any Beskid function whose own locals
+/// exceed 4 KiB, independent of recursion depth. `probestack_strategy = "outline"`
+/// would instead emit a call to `ExternalName::LibCall(LibCall::Probestack)`,
+/// which both the JIT (`cranelift_jit` libcall symbol resolution) and the AOT
+/// object/link path (`crates/beskid_aot`) would then have to resolve to a real
+/// `__cranelift_probestack`-equivalent host export that does not exist anywhere
+/// in this runtime today -- introducing that symbol, and keeping the JIT and AOT
+/// resolution paths in sync for it, is its own surface. `"inline"` instead emits
+/// the probe directly in the function's own prologue (`gen_inline_probestack`,
+/// `cranelift-codegen` `src/isa/x64/abi.rs`): a store to each guard-sized page
+/// from the frame's top down to `rsp`, unrolled for small frames (<= 4 probes)
+/// or a loop for larger ones (`stack_probe_loop`), with no runtime symbol at all.
+/// Picked here for that reason -- self-contained, no new host export, no
+/// JIT/AOT resolution to keep in sync.
+///
+/// NOTE: this does not, by itself, bound *cumulative* recursion depth (many
+/// small frames that individually stay under one guard page never trigger a
+/// probe at all) -- it only guarantees a single oversized frame cannot skip the
+/// guard page. Cranelift's separate wasm-style `Function::stack_limit` /
+/// cumulative stack-check mechanism (`machinst/abi.rs`, `insert_stack_check`) is
+/// never set by `beskid_isle`/`beskid_codegen` (confirmed: no
+/// `stack_limit`/`ir::Function::stack_limit` references anywhere under
+/// `crates/beskid_isle`, `crates/beskid_codegen`, `crates/beskid_engine`,
+/// `crates/beskid_aot`), so deep recursion of small frames is still bounded only
+/// by whatever guard page exists on the stack actually in use -- this codebase's
+/// own growable guard-page mechanism (`GuardedStackAllocate` /
+/// `runtime/beskid/src/Runtime/Fiber/Scheduler/Context.bd`) only covers spawned
+/// fiber stacks, not a plain native-thread call into JIT code (see
+/// `crates/beskid_engine/tests/heap_growth_native.rs::run_heap_fixture`, which
+/// calls the JIT entrypoint directly on the calling thread). Whether that
+/// distinction is the actual cause of the `deep_recursion` SIGSEGV, or whether
+/// something is separately corrupting a return address before any guard page is
+/// reached, is exactly what still needs gdb evidence (unavailable while the
+/// remote builder is offline) to settle -- this probestack fix closes a real,
+/// independently-justified gap, but is not asserted here to be the fix for that
+/// specific crash.
 pub fn production_isa_settings_builder() -> Result<settings::Builder, settings::SetError> {
     let mut builder = settings::builder();
     builder.set("preserve_frame_pointers", "true")?;
+    builder.set("enable_probestack", "true")?;
+    builder.set("probestack_strategy", "inline")?;
     Ok(builder)
 }
 
@@ -255,11 +301,30 @@ pub fn declare_user_functions_with_link_symbols_and_linkage<M: Module>(
     let mut declared = Vec::with_capacity(artifact.functions.len());
     for function in &artifact.functions {
         let emitted_symbol = link_symbol(&function.name);
-        let func_id = module.declare_function(
-            &emitted_symbol,
-            linkage_for_symbol(&emitted_symbol),
-            &function.function.signature,
-        )?;
+        let linkage = linkage_for_symbol(&emitted_symbol);
+        // `link_symbol` (ordinarily `beskid_codegen::object_link_symbol`) is meant to resolve
+        // every name to either an explicit `[Export(Symbol:"...")]` identity or a mangled,
+        // link-name-safe internal identity -- never to a raw internal lowering key. A name that
+        // still fails the C-identifier / mangling alphabet here (most notably one still carrying
+        // a `#`-delimited trace id or other lowering-internal bookkeeping fragment, e.g.
+        // `#gN:nM`) must not be handed to the linker as a symbol other code can actually resolve
+        // against: fail closed instead of silently declaring an unlinkable or unstable exported
+        // symbol.
+        //
+        // `Linkage::Local` is exempt: a purely local Cranelift/JIT symbol never leaves this
+        // module's own bookkeeping (`beskid_engine`'s JIT path declares every function -- callee
+        // or not -- with a fixed `Linkage::Local` and an identity `link_symbol`, then always
+        // looks functions back up by `function.name` through its own `func_ids` map, never by the
+        // declared Cranelift symbol string), so a `#`-carrying local name here is inert rather
+        // than a real linked/exported symbol reaching an object file or an external consumer.
+        if linkage != Linkage::Local && !crate::artifact::is_valid_link_name(&emitted_symbol) {
+            return Err(ModuleError::Backend(anyhow::anyhow!(
+                "item `{}` produced an invalid link name `{emitted_symbol}` (contains a character \
+                 that is not valid in a C identifier or the mangling scheme)",
+                function.name
+            )));
+        }
+        let func_id = module.declare_function(&emitted_symbol, linkage, &function.function.signature)?;
         func_ids.insert(function.name.clone(), func_id);
         declared.push(emitted_symbol);
     }
@@ -329,4 +394,80 @@ pub fn remap_testcase_externals<M: Module>(
         *name = ExternalName::user(user_ref);
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+
+    use cranelift_codegen::ir::Function;
+    use cranelift_codegen::isa;
+    use cranelift_codegen::settings;
+    use cranelift_jit::{JITBuilder, JITModule};
+    use cranelift_module::{Linkage, default_libcall_names};
+
+    use super::declare_user_functions_with_link_symbols_and_linkage;
+    use crate::{CodegenArtifact, LoweredFunction};
+
+    fn jit_module() -> JITModule {
+        let isa = isa::lookup_by_name("x86_64")
+            .expect("x86_64 target supported")
+            .finish(settings::Flags::new(settings::builder()))
+            .expect("isa build");
+        JITModule::new(JITBuilder::with_isa(isa, default_libcall_names()))
+    }
+
+    /// A `link_symbol` closure that never resolves an internal lowering key to a clean export
+    /// name (as `object_link_symbol` would for a matched `[Export(Symbol:"...")]`) must not be
+    /// allowed to declare that raw key as the object's actual link name. This is exactly the
+    /// shape `object_link_symbol` produces today for a specialized generic or synthesized item
+    /// that has no matching export entry: it falls through and returns the lowering-internal
+    /// name (`Item#generic_1_2`, or an internal trace id fragment such as `#gN:nM`) unchanged.
+    #[test]
+    fn rejects_a_final_link_name_still_carrying_an_internal_trace_fragment() {
+        let mut module = jit_module();
+        let artifact = CodegenArtifact {
+            functions: vec![LoweredFunction { name: "Widget#gen1:nod2".into(), function: Function::new() }],
+            ..CodegenArtifact::default()
+        };
+        let mut func_ids = HashMap::new();
+
+        let result = declare_user_functions_with_link_symbols_and_linkage(
+            &mut module,
+            &artifact,
+            &mut func_ids,
+            |name| name.to_owned(),
+            |_| Linkage::Export,
+        );
+
+        let error = result.expect_err("a `#`-carrying link name must be rejected, not declared");
+        let message = error.to_string();
+        assert!(message.contains("Widget#gen1:nod2"), "error should name the offending link name: {message}");
+        assert!(func_ids.is_empty(), "no function should be declared once its link name is rejected");
+    }
+
+    /// An ordinary, already-mangled link name (the common case: a plain source name or an
+    /// `object_link_symbol` match against an explicit `[Export(Symbol:"...")]` entry) must still
+    /// declare successfully -- the new check must not reject legitimate names.
+    #[test]
+    fn accepts_an_ordinary_c_identifier_link_name() {
+        let mut module = jit_module();
+        let artifact = CodegenArtifact {
+            functions: vec![LoweredFunction { name: "beskid_widget_construct".into(), function: Function::new() }],
+            ..CodegenArtifact::default()
+        };
+        let mut func_ids = HashMap::new();
+
+        let declared = declare_user_functions_with_link_symbols_and_linkage(
+            &mut module,
+            &artifact,
+            &mut func_ids,
+            |name| name.to_owned(),
+            |_| Linkage::Export,
+        )
+        .expect("an ordinary C-identifier link name must be accepted");
+
+        assert_eq!(declared, vec!["beskid_widget_construct".to_owned()]);
+        assert!(func_ids.contains_key("beskid_widget_construct"));
+    }
 }

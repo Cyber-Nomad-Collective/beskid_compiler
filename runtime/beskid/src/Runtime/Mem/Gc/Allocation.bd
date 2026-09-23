@@ -38,6 +38,7 @@ const REGION_HEADER_SIZE_ALLOC = 64;
 
 const PAGE_SIZE = 8192;
 const SPAN_BASE = 8;
+const SPAN_SIZE_CLASS = 24;
 const SPAN_HEADER_SIZE = 256;
 const SIZE_CLASS_LARGE = 14;
 
@@ -76,8 +77,17 @@ pub pointer GcAllocSmall(pointer heap, word class) {
     word classBytes = SizeClassBytes(class);
     mut pointer slot = NativePointer(0);
     if entry != NativePointer(0) {
+        // Defensive: the cache can go stale (a sweep may have freed this exact span and handed
+        // its page to an unrelated class via `CarveSpan`'s free-list reuse before this class's
+        // next allocation ran) even though `FreeSpanEntry` now invalidates the cache on the path
+        // that frees a span directly — trusting `SPAN_FREE_SLOT` under a class mismatch would
+        // silently alias two classes' objects onto the same memory. Re-check the entry's own
+        // recorded class before popping a slot from it.
         word base = raw_word_load(pointer_add(entry, SPAN_BASE));
-        slot = PopFreeSlot(entry, classBytes, base);
+        word cachedClass = raw_word_load(pointer_add(entry, SPAN_SIZE_CLASS));
+        if base != 0 && cachedClass == class {
+            slot = PopFreeSlot(entry, classBytes, base);
+        }
     }
     if slot == NativePointer(0) {
         entry = RefillSpanForClass(heap, class);
@@ -101,7 +111,11 @@ pub pointer GcAllocLargeOnce(pointer heap, word size, word alignment) {
     if entry == NativePointer(0) {
         return NativePointer(0);
     }
-    return NativePointer(raw_word_load(pointer_add(entry, SPAN_BASE)));
+    word base = raw_word_load(pointer_add(entry, SPAN_BASE));
+    if base == 0 {
+        return NativePointer(0);
+    }
+    return NativePointer(base);
 }
 
 // ---- Growth (unchanged region-growth policy from the growable-heap design, page-granular) ----
@@ -132,7 +146,19 @@ pub word GcGrow(pointer heap, word size, word alignment) {
             return HEAP_FAILURE_CAP_REACHED;
         }
     }
-    pointer region = SystemAllocate(newSize, 8);
+    // `SystemAllocate` is `mmap`-backed and only ever returns OS-page-aligned (4096) storage — it
+    // rejects any alignment request above that (see `crates/beskid_abi/assembly/*/platform.S`).
+    // Over-allocate by one `PAGE_SIZE` (8192, the GC's own logical page size) and align up within
+    // that, exactly like `Lifecycle.bd`'s initial region; a grown region is never freed, so the
+    // pad (at most `PAGE_SIZE - 1` bytes) is a permanent but negligible leak, not a correctness
+    // issue. This removes the whole class of bug where a caller independently recomputes an
+    // expected page address as `region + pageIndex * PAGE_SIZE` instead of reading a span's own
+    // stored `base` — that only agrees with `CarveSpan` when `region` is itself PAGE_SIZE-aligned.
+    pointer rawRegionAllocation = SystemAllocate(newSize + PAGE_SIZE, 8);
+    mut pointer region = NativePointer(0);
+    if rawRegionAllocation != NativePointer(0) {
+        region = NativePointer(AlignUp(NativeWord(rawRegionAllocation), PAGE_SIZE));
+    }
     if region == NativePointer(0) {
         return HEAP_FAILURE_SYSTEM_ALLOCATE_FAILED;
     }
@@ -228,6 +254,23 @@ pub word GrowForRequest(pointer heap, word size, word alignment, word class) {
     return GcGrow(heap, size, alignment);
 }
 
+// Bytes actually occupied on the heap for this request: the size-class slot for a small object
+// (every slot in that span's page is exactly this size, whatever the request rounded up from),
+// or the whole dedicated span for a large object (`GcAllocLargeOnce`'s own page-count formula,
+// duplicated here rather than threaded back from it). `Sweep` (Sweep.bd) recomputes live bytes
+// the same way on every collection; `GcAlloc` below must track the identical quantity between
+// collections; using the raw requested size instead made the two accountings diverge, most
+// visibly right after a collection when only the slot-rounded amount is provably still live.
+pub word SlotBytesForRequest(word size, word alignment, word class) {
+    if class != 0 {
+        return SizeClassBytes(class);
+    }
+    word bytesNeeded = size + alignment;
+    mut word pages = AlignUp(bytesNeeded, PAGE_SIZE) / PAGE_SIZE;
+    if pages == 0 { pages = 1; }
+    return pages * PAGE_SIZE;
+}
+
 pub pointer GcAlloc(word size, word alignment) {
     pointer heap = Heap();
     if heap == NativePointer(0) || size < 16 || size % 8 != 0 || IsValidObjectAlignment(alignment) == false {
@@ -278,7 +321,8 @@ pub pointer GcAlloc(word size, word alignment) {
             GcReportExhaustion(heap, reason, size);
         }
     }
-    raw_word_store(pointer_add(heap, HEAP_LIVE_BYTES), raw_word_load(pointer_add(heap, HEAP_LIVE_BYTES)) + size);
+    word slotBytes = SlotBytesForRequest(size, alignment, class);
+    raw_word_store(pointer_add(heap, HEAP_LIVE_BYTES), raw_word_load(pointer_add(heap, HEAP_LIVE_BYTES)) + slotBytes);
     raw_word_store(pointer_add(heap, HEAP_LIVE_COUNT), raw_word_load(pointer_add(heap, HEAP_LIVE_COUNT)) + 1);
     return result;
 }

@@ -251,12 +251,18 @@ pub fn canonical_runtime_sources() -> Vec<SourceUnit> {
             source: include_str!("../../../../runtime/beskid/src/Runtime/Network/Dns.bd").into(),
         },
         SourceUnit {
+            // The generated ABI-v5 layout prelude (offsets/sizes/alignment consts) is checked in
+            // as the leading block of this file on disk, not injected here, so every compilation
+            // path that reads this file -- CLI-embedded, fixture-substituted, or an ordinary
+            // path dependency -- sees the identical, complete source. `checked_in_v5_artifacts_are_fresh`
+            // (crates/beskid_manifest/tests/abi_v5_source_authority/artifacts.rs) fails closed if
+            // the checked-in prelude drifts from `runtime_manifest.bsol`.
             logical_path: "src/Runtime/Mem/AbiValue.bd".into(),
-            source: format!(
-                "{}{}",
-                crate::generated::abi_v5_contract::ABI_V5_RUNTIME_LAYOUT_SOURCE,
-                include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../runtime/beskid/src/Runtime/Mem/AbiValue.bd"))
-            ),
+            source: include_str!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../../runtime/beskid/src/Runtime/Mem/AbiValue.bd"
+            ))
+            .into(),
         },
         SourceUnit { logical_path: CANONICAL_BOOTSTRAP_SOURCE_PATH.into(), source: CANONICAL_BOOTSTRAP_SOURCE.into() },
         SourceUnit {

@@ -44,7 +44,8 @@ pub(crate) fn emitted_object_symbol(
     {
         // In an executable, the portable host owns C `main`. An unselected
         // Beskid Main is an ordinary callable function, not a second startup.
-        name.to_owned()
+        // It still gets the same link-safe internal name as every other unexported function.
+        beskid_codegen::internal_link_symbol(name)
     } else {
         beskid_codegen::object_link_symbol(name, exports)
     }
@@ -239,8 +240,10 @@ mod tests {
         let entry = ExecutableEntrySymbol { logical: "Start", symbol: EXECUTABLE_PROGRAM_ENTRY };
 
         assert_eq!(emitted_object_symbol("Start#0", &[], Some(entry)), EXECUTABLE_PROGRAM_ENTRY);
-        assert_eq!(emitted_object_symbol("Helper#0", &[], Some(entry)), "Helper#0");
-        assert_eq!(emitted_object_symbol("Main#0", &[], Some(entry)), "Main#0");
+        // Non-entry functions keep their own identity, in the mangled link-safe form that
+        // `beskid_codegen::object_link_symbol` gives every unexported internal name.
+        assert_eq!(emitted_object_symbol("Helper#0", &[], Some(entry)), "Helper_H23_0");
+        assert_eq!(emitted_object_symbol("Main#0", &[], Some(entry)), "Main_H23_0");
         assert_eq!(emitted_object_symbol("Main#0", &[], None), "main");
         let exports = [beskid_codegen::ExportEntry {
             beskid_name: "Main".into(),

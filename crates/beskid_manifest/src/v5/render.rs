@@ -173,7 +173,7 @@ pub const ABI_V5_TRAPS: &[(&str, u8)] = &[\n{trap_rows}];\n",
 
 // Project offsets directly from the same layout used by C, assembly, and kit metadata.
 // Canonical runtime consumers never maintain a second list of offsets for these layouts.
-fn render_runtime_layout_source(manifest: &RuntimeManifestV5) -> String {
+pub(super) fn render_runtime_layout_source(manifest: &RuntimeManifestV5) -> String {
     let mut out = String::from("// @generated from runtime_manifest.bsol; do not edit.\n");
     for layout in manifest.layouts.iter().filter(|layout| layout.project_to_runtime.as_deref() == Some("constants")) {
         let name = macro_name(&layout.name);

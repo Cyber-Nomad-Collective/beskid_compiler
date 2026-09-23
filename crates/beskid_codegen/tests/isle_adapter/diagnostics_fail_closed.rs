@@ -269,3 +269,34 @@ fn closure_captures_and_spawn_target_are_independent_semantic_facts() {
     assert_eq!(target.callee, lambda);
     assert_eq!(target.captures, closure.captures);
 }
+
+/// Reassigning an immutable local must stop at the legality gate with E1214. Before the gate
+/// carried `immutable_local_assignment`, the write reached ISLE `emit_local_assign`, whose
+/// `mutable_local_assignment` fact fails closed, and surfaced as `MissingRuleOrFact
+/// AssignExpression` (seen with a `pointer` local reassigned inside a `while` in a test body).
+#[test]
+fn immutable_local_reassignment_is_rejected_with_e1214_before_isle() {
+    let function_cases = [
+        "unit Main(pointer p) { pointer q = p; while true { q = p; } return; }",
+        "unit Main() { i64 n = 0; while n < 3 { n = n + 1; } return; }",
+        "pub type Pair { i64 a } unit Main(bool c) { Pair v = Pair { a: 1 }; if c { v = Pair { a: 2 }; } return; }",
+    ];
+    for source in function_cases {
+        let (input, isa, root) = item_fixture_with_root(source);
+        let main = find_function_definitions(input.database(), root)[0];
+        let error = lower_syntax_program(&input, isa.as_ref(), &[SyntaxModuleItem { key: main, symbol: "Main".into() }])
+            .expect_err("immutable reassignment must not lower");
+        let rendered = error.to_string();
+        assert!(rendered.contains("E1214"), "{source}: {rendered}");
+        assert!(!rendered.contains("MissingRuleOrFact"), "{source}: {rendered}");
+    }
+
+    let (input, isa, root) =
+        item_fixture_with_root("test sample { i64 n = 0; while n < 3 { n = n + 1; } }");
+    let test = super::support::find_test_definition(input.database(), root).expect("test item");
+    let error = lower_syntax_program(&input, isa.as_ref(), &[SyntaxModuleItem { key: test, symbol: "sample".into() }])
+        .expect_err("immutable reassignment in a test body must not lower");
+    let rendered = error.to_string();
+    assert!(rendered.contains("E1214"), "{rendered}");
+    assert!(!rendered.contains("MissingRuleOrFact"), "{rendered}");
+}

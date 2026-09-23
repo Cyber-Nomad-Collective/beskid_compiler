@@ -9,20 +9,87 @@ const HEAP_FIRST_REGION_VERIFY = 0;
 const REGION_NEXT_VERIFY = 0;
 const REGION_SIZE_VERIFY = 8;
 const REGION_HEADER_SIZE = 64;
+const REGION_FREE_SPAN_LIST_VERIFY = 56;
 
 const PAGE_SIZE = 8192;
 const SPAN_BASE = 8;
+const SPAN_PAGE_COUNT_VERIFY = 16;
 const SPAN_SIZE_CLASS = 24;
 const SPAN_FREE_SLOT = 48;
 const SPAN_ALLOC_BITS = 56;
 const SPAN_HEADER_SIZE = 256;
 const SIZE_CLASS_LARGE = 14;
 
-pub bool VerifySpan(pointer entry) {
+// Large-span invariants (docs/superpowers/specs/2026-09-22-gc-span-heap-design.md, section 5):
+// an in-use large span's directory entry must (1) point back to a span whose base is exactly
+// this page's own address — the directory is addressed by page index from the region start, so
+// a mismatch means the entry and its page have drifted apart; (2) claim a page run that stays
+// inside the region and does not overlap a later span's own populated entry — only a span's
+// first page is ever populated, so every other page in its run must read as empty; (3) have a
+// live, valid type descriptor at its base, the same header word every other consumer
+// (`IsAllocatedObject`'s large branch, `ManagedObjectForReference`) treats as the liveness
+// signal; and (4) never also appear on the region's free-page list — an in-use span and a free
+// span are mutually exclusive by construction (`SIZE_CLASS_LARGE` vs. `size_class == 0`, see
+// Span.bd), so finding it there means a free and a live view of the same pages coexist.
+pub bool VerifyLargeSpan(pointer region, word pageIndex, word totalPages, pointer entry, word base) {
+    // The base<->entry round trip (now checked once, for every span, by `VerifySpan` before
+    // dispatching here) already covers "this entry is the one `base`'s own page maps to";
+    // recomputing `region + pageIndex * PAGE_SIZE` independently and comparing it to `base`
+    // would be a DIFFERENT, stricter claim (that `base` sits exactly on a `PAGE_SIZE`-aligned
+    // offset from `region` itself) that only holds when `region` is itself PAGE_SIZE-aligned —
+    // which `SystemAllocate`'s 8-byte alignment request does not guarantee, so that comparison
+    // does not belong here.
+    word pageCount = raw_word_load(pointer_add(entry, SPAN_PAGE_COUNT_VERIFY));
+    if pageCount == 0 || pageIndex + pageCount > totalPages {
+        return false;
+    }
+    pointer descriptor = NativePointer(raw_word_load(NativePointer(base)));
+    if descriptor == NativePointer(0) || ValidateTypeDescriptor(descriptor) == false {
+        return false;
+    }
+    mut word offset = 1;
+    while offset < pageCount {
+        pointer otherEntry = pointer_add(region, REGION_HEADER_SIZE + (pageIndex + offset) * SPAN_HEADER_SIZE);
+        word otherBase = raw_word_load(pointer_add(otherEntry, SPAN_BASE));
+        word otherSizeClass = raw_word_load(pointer_add(otherEntry, SPAN_SIZE_CLASS));
+        if otherBase != 0 || otherSizeClass != 0 {
+            return false;
+        }
+        offset = offset + 1;
+    }
+    mut pointer cursor = NativePointer(raw_word_load(pointer_add(region, REGION_FREE_SPAN_LIST_VERIFY)));
+    while cursor != NativePointer(0) {
+        if cursor == entry {
+            return false;
+        }
+        cursor = NativePointer(raw_word_load(cursor));
+    }
+    return true;
+}
+
+pub bool VerifySpan(pointer region, word pageIndex, word totalPages, pointer entry) {
     word base = raw_word_load(pointer_add(entry, SPAN_BASE));
     word sizeClass = raw_word_load(pointer_add(entry, SPAN_SIZE_CLASS));
-    if base == 0 || sizeClass == 0 || sizeClass == SIZE_CLASS_LARGE {
+    if base == 0 || sizeClass == 0 {
         return true;
+    }
+    // Round-trip invariant: the directory entry a span's own `base` maps back to via
+    // `SpanEntryInRegion` must be this exact entry — holds by construction whenever every writer
+    // of `base` used the same address-to-page-index formula `SpanEntryInRegion` uses for lookups.
+    if SpanEntryInRegion(region, base) != entry {
+        return false;
+    }
+    // Absolute page-alignment invariant: every region is now allocated with `PAGE_SIZE` alignment
+    // (Lifecycle.bd's initial region, Allocation.bd's `GcGrow`), so every carved span's `base`
+    // must itself land on a `PAGE_SIZE` boundary. Restored now that this holds unconditionally —
+    // it previously did not, when regions were only 8-byte aligned (root-caused the `object` /
+    // `base` disagreement in `IsAllocatedObject` this invariant, plus the round-trip check above,
+    // exists to catch).
+    if base % PAGE_SIZE != 0 {
+        return false;
+    }
+    if sizeClass == SIZE_CLASS_LARGE {
+        return VerifyLargeSpan(region, pageIndex, totalPages, entry, base);
     }
     word classBytes = SizeClassBytes(sizeClass);
     word slotsPerSpan = PAGE_SIZE / classBytes;
@@ -55,7 +122,7 @@ pub bool GcHeapVerify() {
         mut word pageIndex = 0;
         while pageIndex < totalPages {
             pointer entry = pointer_add(region, REGION_HEADER_SIZE + pageIndex * SPAN_HEADER_SIZE);
-            if VerifySpan(entry) == false {
+            if VerifySpan(region, pageIndex, totalPages, entry) == false {
                 return false;
             }
             pageIndex = pageIndex + 1;

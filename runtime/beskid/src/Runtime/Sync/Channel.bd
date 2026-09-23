@@ -23,6 +23,20 @@ const CHANNEL_OPERATION_RECEIPT_MASK = 252;
 
 pub pointer ChannelTable() { return SchedulerChannelTable(); }
 
+// Beskid `const` items have no `pub` visibility (see the grammar's `ConstantDefinition` rule):
+// they only resolve within their own declaring file. Callers in other packages — including
+// tests that are not part of the compiler-embedded runtime fixture allowlist — read the
+// channel status discriminants through these functions instead of the bare constants.
+// `i64`, not `word`: every channel status producer (`ChannelTrySend`, `ChannelSend`,
+// `ChannelTryReceive`, `ChannelCommit`, `ChannelPark`) returns `i64` (its `[Export(Abi:"C")]`
+// callers need a fixed-width type), and Beskid's generic `Assert.Equal<T>` requires an exact
+// declared-type match between its two arguments — `word` and `i64` are distinct declared types
+// despite sharing a 64-bit representation, so a `word` accessor here would make every comparison
+// against those callers fail to type-check.
+pub i64 ChannelStatusOk() { return CHANNEL_STATUS_OK; }
+pub i64 ChannelStatusClosed() { return CHANNEL_STATUS_CLOSED; }
+pub i64 ChannelStatusWouldBlock() { return CHANNEL_STATUS_WOULD_BLOCK; }
+
 // The scheduler has one heap mutator. Critical sections never switch context or
 // invoke a GC safepoint. This checked lock rejects reentrancy; foreign workers
 // are not permitted to mutate this heap.

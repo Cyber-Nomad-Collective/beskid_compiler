@@ -46,6 +46,10 @@ pub enum TypeError {
     ReturnTypeMismatch { span: SpanInfo, expected: TypeId, actual: Option<TypeId> },
     MissingTypeArguments { span: SpanInfo },
     GenericArgumentMismatch { span: SpanInfo, expected: usize, actual: usize },
+    /// Two call arguments inferred to the same generic parameter carry different declared
+    /// primitive types (e.g. `word` and `i64`). `first`/`second` are the conflicting types in
+    /// argument-position order; `parameter` is the generic parameter name.
+    GenericParameterConflict { span: SpanInfo, parameter: String, first: TypeId, second: TypeId },
     NonIterableForTarget { span: SpanInfo },
     IterableNextArityMismatch { span: SpanInfo, expected: usize, actual: usize },
     IterableNextReturnNotOption { span: SpanInfo },
@@ -188,6 +192,13 @@ impl fmt::Display for TypeError {
             TypeError::GenericArgumentMismatch { span, expected, actual } => {
                 write!(f, "generic argument count mismatch at {}: expected {expected}, got {actual}", at(*span))
             }
+            TypeError::GenericParameterConflict { span, parameter, first, second } => write!(
+                f,
+                "generic parameter `{parameter}` conflict at {}: {} vs {}",
+                at(*span),
+                type_id_label(*first),
+                type_id_label(*second)
+            ),
             TypeError::NonIterableForTarget { span } => {
                 write!(f, "non-iterable for-loop target at {}", at(*span))
             }

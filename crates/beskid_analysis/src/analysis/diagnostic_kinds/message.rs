@@ -168,6 +168,13 @@ impl SemanticIssueKind {
             Self::TypeGenericArgumentMismatch { expected, actual } => {
                 format!("generic argument mismatch: expected {expected}, got {actual}")
             }
+            Self::TypeGenericParameterConflict {
+                parameter,
+                first_name,
+                second_name,
+            } => format!(
+                "generic parameter `{parameter}` cannot be both `{first_name}` and `{second_name}`"
+            ),
             Self::TypeMismatch {
                 expected_name,
                 actual_name,

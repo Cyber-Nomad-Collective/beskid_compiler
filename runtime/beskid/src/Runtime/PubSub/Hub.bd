@@ -16,6 +16,15 @@ const HUB_STATUS_HUB_EMPTY = 4;
 const HUB_STATUS_HUB_LIMIT = 5;
 const HUB_STATUS_HUB_NOT_FOUND = 6;
 
+// Beskid `const` items have no `pub` visibility (see the grammar's `ConstantDefinition` rule):
+// they only resolve within their own declaring file. Callers in other packages — including
+// tests that are not part of the compiler-embedded runtime fixture allowlist — read the
+// hub-not-found status discriminant through this function instead of the bare constant.
+// `i64`, not `word`: `HubRegister` returns `i64` and `Assert.Equal<T>` requires an exact
+// declared-type match between its two arguments (see the matching note in Channel.bd's
+// `ChannelStatusOk`).
+pub i64 HubStatusHubNotFound() { return HUB_STATUS_HUB_NOT_FOUND; }
+
 // Hub status — enum-with-arguments for the logical type.
 // Mirrors corelib Concurrency.Status variants.
 pub enum HubStatus {

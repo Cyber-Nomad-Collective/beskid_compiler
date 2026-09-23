@@ -23,6 +23,8 @@ mod growth;
 mod completion;
 mod contracts;
 mod layouts;
+mod legality;
+mod local_type_resolution;
 mod locals;
 mod model;
 mod queries;
@@ -55,7 +57,8 @@ use calls::{
     for_iterator_fact_tracked, function_declares_generics, generic_call_instantiation_for_node,
     generic_call_instantiation_tracked, generic_call_specialization_tracked, generic_call_template_tracked,
     generic_call_uses_parameter_type_arguments, generic_callable_parameters, generic_nominal_method_receiver_tracked,
-    generic_source_expression_identity, generic_source_type_identity, generic_source_type_identity_with_substitutions,
+    generic_source_expression_identity, generic_source_local_identity, generic_source_type_identity,
+    generic_source_type_identity_with_substitutions,
     imported_call_receiver_exists, imported_generic_nominal_receiver_requires_instantiation,
     is_transparent_binary_operand_path, method_declaration_for_member_receiver, nominal_local_member_receiver,
     nominal_member_receiver_tracked, primitive_integer, primitive_numeric, primitive_numeric_conversion_target,
@@ -67,6 +70,8 @@ use calls::{
 };
 pub use cleanup::{ScopedAcquisition, ScopedCleanup, ScopedCleanupDiagnostic, scoped_cleanup};
 pub use growth::{DeadCollectionGrowth, dead_collection_growth, is_growth_call_candidate};
+pub use local_type_resolution::{UnresolvedTypeReference, unresolved_type_reference};
+pub use legality::{CallArityMismatch, ImmutableLocalAssignment, call_arity_mismatch, check_items, immutable_local_assignment};
 use closures_spawn::{
     callable_fiber_ownership_tracked, callable_signature_for_node, callable_signature_for_path,
     callable_signature_tracked, capture_storage_class, capture_storage_for_node, capture_storage_tracked,
@@ -77,7 +82,7 @@ use closures_spawn::{
 };
 use contracts::{
     contract_member_receiver, contract_method_specialization, contract_parameter_declarations,
-    contract_witnesses_for_call, specialized_source_expression_identity,
+    contract_witnesses_for_call, resolve_contract, specialized_source_expression_identity,
 };
 use layouts::{
     abi_local_declaration_type, abi_type_for_direct_aggregate_field_projection, abi_type_for_local_path,
@@ -150,7 +155,7 @@ pub use model::{
     GenericCallTemplate, GenericNominalMethodReceiver, GenericSpecializationInstance, GenericSubstitution,
     IndexedNodeKind, ItemSignature, LiteralFact, LocalSlot, ManagedReferenceKind, ManifestBuiltin,
     MutableLocalAssignment, OperatorFact, PrimitiveNumericConversion, RangeForFact, ResolvedItem, ResolvedLocal,
-    RuntimeIntrinsic, RuntimeIntrinsicName, ScalarAbiLayout, SemanticError, SemanticQueryResult, SemanticTypeId,
+    RuntimeIntrinsic, RuntimeIntrinsicName, ScalarAbiLayout, SemanticError, SemanticFinding, SemanticQueryResult, SemanticTypeId,
     SourceSpan, SourceUnitId, SpawnDiagnostic, SpawnDiagnosticKind, SpawnEntryValidation, SpawnHandleType,
     SpawnLegality, SpawnTarget, SyntaxUnitInput, SyntaxUnitRevision, TestItem, TryExpressionFact, TypedArrayAllocation,
     TypedProgram, format_ast_node_key, format_ast_node_site, format_ast_node_trace, format_source_span_range,

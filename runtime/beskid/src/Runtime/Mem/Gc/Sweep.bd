@@ -72,7 +72,7 @@ pub bool Sweep(pointer heap) {
                 word nalloc = PopcountBitmap(pointer_add(entry, SPAN_MARK_BITS));
                 if nalloc == 0 {
                     memory_set(pointer_add(entry, SPAN_ALLOC_BITS), 0, SPAN_BITMAP_WORDS * 8 * 3);
-                    FreeSpanEntry(region, entry);
+                    FreeSpanEntry(heap, region, entry);
                 } else {
                     mut word i = 0;
                     while i < SPAN_BITMAP_WORDS {
@@ -97,7 +97,7 @@ pub bool Sweep(pointer heap) {
                 } else {
                     // Unmarked: the large object is dead. Return its pages to the region's
                     // free-page list (exact-page-count reuse, see `CarveSpan`).
-                    FreeSpanEntry(region, entry);
+                    FreeSpanEntry(heap, region, entry);
                 }
             }
             pageIndex = pageIndex + 1;

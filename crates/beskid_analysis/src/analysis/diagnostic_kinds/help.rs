@@ -192,6 +192,10 @@ impl SemanticIssueKind {
             Self::TypeGenericArgumentMismatch { expected, actual } => Some(format!(
                 "the generic type expects {expected} argument(s) but got {actual}"
             )),
+            Self::TypeGenericParameterConflict { parameter, first_name, second_name } => Some(format!(
+                "an earlier argument fixed `{parameter}` to `{first_name}`, but this argument is `{second_name}` — \
+                 use matching declared types, or an explicit conversion, for every use of `{parameter}`"
+            )),
             Self::TypeMismatch { expected_name, actual_name } => Some(format!(
                 "expected `{expected_name}` but got `{actual_name}` — check the expression or add a cast"
             )),

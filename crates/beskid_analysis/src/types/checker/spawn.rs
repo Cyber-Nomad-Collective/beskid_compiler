@@ -19,6 +19,12 @@ impl<'a> TypeChecker<'a> {
             // Capture and move legality are generation-bound `spawn_legality` facts.
             // This legacy type projection must not create a second capture authority.
             typed.and_then(|fn_type| self.function_return_type(fn_type))
+        } else if let Expression::Call(call) = &spawn.node.callee.node
+            && !call.node.args.is_empty()
+        {
+            // `spawn Entry(args)`: the parent evaluates the arguments eagerly, so they are
+            // type-checked against the entry signature exactly like an ordinary call.
+            self.type_expression(&spawn.node.callee)
         } else if let Expression::Call(call) = &spawn.node.callee.node {
             self.spawn_return_type_for_entry(&call.node.callee, spawn.span)
         } else {

@@ -259,7 +259,18 @@ fn parses_runtime_kit_matrix_contract() {
 
 #[test]
 fn test_target_timeout_defaults_to_none() {
-    let cli = Cli::try_parse_from(["beskid", "test", "Main.bd"]).expect("parse cli");
+    // The default only holds when `BESKID_TARGET_TIMEOUT_SECS` is unset. Hold the env lock so the
+    // env-var tests below cannot set it mid-parse, and clear any value inherited from the caller's
+    // environment (restored afterwards) so the test does not depend on the shell it runs in.
+    let _guard = TARGET_TIMEOUT_ENV_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let inherited = std::env::var_os("BESKID_TARGET_TIMEOUT_SECS");
+    // SAFETY: serialized by TARGET_TIMEOUT_ENV_LOCK; no other test reads/writes this key.
+    unsafe { std::env::remove_var("BESKID_TARGET_TIMEOUT_SECS") };
+    let result = Cli::try_parse_from(["beskid", "test", "Main.bd"]);
+    if let Some(value) = inherited {
+        unsafe { std::env::set_var("BESKID_TARGET_TIMEOUT_SECS", value) };
+    }
+    let cli = result.expect("parse cli");
     let Commands::Test(args) = cli.command else {
         panic!("expected test command");
     };
@@ -283,7 +294,7 @@ static TARGET_TIMEOUT_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(())
 
 #[test]
 fn test_target_timeout_env_var_sets_budget() {
-    let _guard = TARGET_TIMEOUT_ENV_LOCK.lock().unwrap();
+    let _guard = TARGET_TIMEOUT_ENV_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     // SAFETY: serialized by TARGET_TIMEOUT_ENV_LOCK; no other test reads/writes this key.
     unsafe { std::env::set_var("BESKID_TARGET_TIMEOUT_SECS", "42") };
     let result = Cli::try_parse_from(["beskid", "test", "Main.bd"]);
@@ -297,7 +308,7 @@ fn test_target_timeout_env_var_sets_budget() {
 
 #[test]
 fn test_target_timeout_flag_wins_over_env_var() {
-    let _guard = TARGET_TIMEOUT_ENV_LOCK.lock().unwrap();
+    let _guard = TARGET_TIMEOUT_ENV_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     // SAFETY: serialized by TARGET_TIMEOUT_ENV_LOCK; no other test reads/writes this key.
     unsafe { std::env::set_var("BESKID_TARGET_TIMEOUT_SECS", "42") };
     let result = Cli::try_parse_from(["beskid", "test", "--target-timeout", "7", "Main.bd"]);

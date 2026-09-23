@@ -348,14 +348,37 @@ impl DirectCallee {
 
 /// Exact source entry selected for the first executable spawn lowering leaf.
 ///
-/// Capture-free entries keep a null environment. Capture-proven entries carry artifact-owned
-/// allocate/store/root authority; unsupported capture shapes remain unavailable.
+/// Capture-free, argument-free entries keep a null environment. Capture-proven lambda entries
+/// carry artifact-owned allocate/store/root authority; direct item entries with eager
+/// arguments carry an argument environment. The two environments are mutually exclusive;
+/// unsupported capture or argument shapes remain unavailable.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SpawnEntry {
     pub trampoline: DirectCallee,
     pub closure_environment: Option<InlineClosureEnvironment>,
+    pub argument_environment: Option<SpawnArgumentEnvironment>,
     pub handle_request_symbol: std::sync::Arc<str>,
     pub handle_field_offset: i32,
+}
+
+/// One eager `spawn Entry(args)` argument stored into the fiber's managed start environment.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SpawnArgumentField {
+    pub argument: AstNodeKey,
+    pub field_offset: i32,
+    pub value_type: Type,
+}
+
+/// Artifact-owned managed start environment for a direct item spawn with arguments.
+///
+/// The parent evaluates every argument in source order, allocates this descriptor-backed object
+/// through `beskid_rt_v5_managed_object_allocate`, stores the values, and passes the object as
+/// the fiber environment. The runtime roots it for the fiber's lifetime; the generated spawn
+/// trampoline loads the fields and calls the entry with them.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SpawnArgumentEnvironment {
+    pub allocation_request_symbol: std::sync::Arc<str>,
+    pub fields: Vec<SpawnArgumentField>,
 }
 
 /// Manifest-derived destination slot and boxed-value offsets for typed Fiber Join.

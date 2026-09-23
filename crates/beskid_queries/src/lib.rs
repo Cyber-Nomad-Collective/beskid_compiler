@@ -71,6 +71,11 @@ pub use persistence::{
     persist_session_snapshot, save_db_snapshot,
 };
 pub use semantic_contract::{DeadCollectionGrowth, dead_collection_growth, is_growth_call_candidate};
+pub use semantic_contract::{UnresolvedTypeReference, unresolved_type_reference};
+pub use semantic_contract::{
+    CallArityMismatch, ImmutableLocalAssignment, SemanticFinding, call_arity_mismatch, check_items,
+    immutable_local_assignment,
+};
 pub use semantic_contract::{
     AggregateFieldAccess, AggregateFieldShape, AggregateLayoutFact, AggregateLiteralFieldValues,
     ArrayIndexElementTemplate, AstNodeKey, BulkParameterFact, CallLowering, CaptureStorageClass, CastIntent,
@@ -127,6 +132,7 @@ pub use typed_program::build_typed_program;
 pub use typed_program::build_typed_program_with_corelib_services;
 pub use typed_program::build_typed_program_with_corelib_syscall_services;
 pub use typed_program::project_session_for_syntax_assembly;
+pub use typed_program::project_session_for_planned_syntax_assembly;
 pub use unit::{
     parse_and_expand_unit, parse_and_expand_unit_tracked, parse_and_expand_unit_with_source, seed_file_from_disk,
     unit_content_fingerprint, unit_imports,

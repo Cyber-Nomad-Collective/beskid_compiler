@@ -5,7 +5,7 @@ use std::path::Path;
 use serde::Serialize;
 
 use super::model::{CorelibServiceV5, EntryAdapterV5, GeneratedV5Artifacts, RuntimeManifestV5};
-use super::render::{render_asm_target, render_c_header, render_rust};
+use super::render::{render_asm_target, render_c_header, render_runtime_layout_source, render_rust};
 use super::validation::validate;
 
 #[derive(Serialize)]
@@ -43,6 +43,16 @@ pub fn generate_v5_artifacts(manifest: &RuntimeManifestV5) -> Result<GeneratedV5
             entry_adapters: &manifest.entry_adapters,
         })?,
     })
+}
+
+/// The generated ABI-v5 layout prelude (offsets/sizes/alignment consts), rendered exactly as it
+/// must appear checked in as the leading block of `runtime/beskid/src/Runtime/Mem/AbiValue.bd`.
+/// Every compilation path -- CLI-embedded, fixture-substituted, or an ordinary path dependency --
+/// reads that file straight off disk, so the prelude has to live there verbatim rather than be
+/// injected by any one caller. See `checked_in_v5_artifacts_are_fresh` for the freshness check.
+pub fn runtime_layout_source(manifest: &RuntimeManifestV5) -> Result<String, String> {
+    validate(manifest)?;
+    Ok(render_runtime_layout_source(&canonicalized(manifest)))
 }
 
 pub fn write_v5_artifacts(manifest: &RuntimeManifestV5, workspace: &Path) -> Result<(), String> {

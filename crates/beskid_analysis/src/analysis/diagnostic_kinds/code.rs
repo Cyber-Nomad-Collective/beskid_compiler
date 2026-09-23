@@ -72,6 +72,7 @@ impl SemanticIssueKind {
             Self::TypeMissingTypeAnnotation { .. } => "E1202",
             Self::TypeMissingTypeArguments => "E1203",
             Self::TypeGenericArgumentMismatch { .. } => "E1204",
+            Self::TypeGenericParameterConflict { .. } => "E1229",
             Self::TypeMismatch { .. } => "E1206",
             Self::TypeMatchArmMismatch { .. } => "E1305",
             Self::TypeCallArityMismatch { .. } => "E1204",

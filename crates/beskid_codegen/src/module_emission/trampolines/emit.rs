@@ -108,10 +108,42 @@ pub(in crate::module_emission) fn emit_spawn_trampoline(
             colocated: false,
             patchable: false,
         });
-        let call = if trampoline.closure_captures.is_some() {
-            builder.ins().call(target, &[environment])
-        } else {
-            builder.ins().call(target, &[])
+        let call = match (&trampoline.closure_captures, &trampoline.argument_plan) {
+            (Some(_), None) => builder.ins().call(target, &[environment]),
+            (None, Some(plan)) => {
+                // The runtime roots the environment for the fiber's lifetime; no safepoint lies
+                // between these loads and the entry call, whose prologue roots managed params.
+                let parameters = trampoline.target_signature.params.clone();
+                if parameters.len() != plan.fields.len() {
+                    return Err(emission_verification(format!(
+                        "spawn trampoline `{}` argument environment does not match its entry signature",
+                        trampoline.symbol
+                    )));
+                }
+                let mut arguments = Vec::with_capacity(parameters.len());
+                for (parameter, field) in parameters.iter().zip(plan.fields.iter()) {
+                    let offset = i32::try_from(field.field_offset).map_err(|_| {
+                        emission_verification(format!(
+                            "spawn trampoline `{}` argument offset is not representable",
+                            trampoline.symbol
+                        ))
+                    })?;
+                    arguments.push(builder.ins().load(
+                        parameter.value_type,
+                        cranelift_codegen::ir::MemFlagsData::new(),
+                        environment,
+                        offset,
+                    ));
+                }
+                builder.ins().call(target, &arguments)
+            }
+            (None, None) => builder.ins().call(target, &[]),
+            (Some(_), Some(_)) => {
+                return Err(emission_verification(format!(
+                    "spawn trampoline `{}` cannot carry both captures and arguments",
+                    trampoline.symbol
+                )));
+            }
         };
         let results = builder.inst_results(call).to_vec();
         let result = match results.as_slice() {

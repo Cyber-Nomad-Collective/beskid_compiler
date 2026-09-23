@@ -56,3 +56,6 @@ mod iterators_and_operators;
 #[rustfmt::skip]
 #[path = "semantic_facts/dead_growth.rs"]
 mod dead_growth;
+#[rustfmt::skip]
+#[path = "semantic_facts/local_type_resolution.rs"]
+mod local_type_resolution;

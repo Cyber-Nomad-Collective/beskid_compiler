@@ -9,7 +9,7 @@ use beskid_analysis::syntax_query::{DynNodeRef, NodeKind};
 
 /// Resolve a contract in the same lexical/import namespaces as its source annotation.
 /// Keeping this separate from aggregate lookup prevents contracts acquiring a nominal ABI.
-fn resolve_contract(db: &dyn Db, key: AstNodeKey, path: &Path) -> Option<AstNodeKey> {
+pub(super) fn resolve_contract(db: &dyn Db, key: AstNodeKey, path: &Path) -> Option<AstNodeKey> {
     let (terminal, prefix) = path.segments.split_last()?;
     if !terminal.node.type_args.is_empty() {
         return None;

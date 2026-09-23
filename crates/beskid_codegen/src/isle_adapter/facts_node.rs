@@ -677,20 +677,28 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
 
     fn spawn_entry(&self, key: AstNodeKey) -> Option<beskid_isle::SpawnEntry> {
         let validation = self.query(spawn_entry_validation(self.db, key))?;
-        if !validation.is_zero_argument_entry {
+        if !validation.is_legal_entry {
             return None;
         }
-        let closure_environment = match self.query(node_kind(self.db, validation.target))? {
+        let (closure_environment, argument_environment) = match self.query(node_kind(self.db, validation.target))? {
             beskid_queries::IndexedNodeKind::PathExpression => {
                 let _target = self.query(resolved_item(self.db, validation.target))?;
-                None
-            }
-            beskid_queries::IndexedNodeKind::LambdaExpression => {
-                let environment = self.query(closure_environment(self.db, validation.target))?;
-                if environment.captures.is_empty() {
+                let arguments = if validation.arguments.is_empty() {
                     None
                 } else {
-                    Some(self.inline_closure_environment(key, validation.target)?)
+                    Some(self.spawn_argument_environment(key, &validation.arguments)?)
+                };
+                (None, arguments)
+            }
+            beskid_queries::IndexedNodeKind::LambdaExpression => {
+                if !validation.arguments.is_empty() {
+                    return None;
+                }
+                let environment = self.query(closure_environment(self.db, validation.target))?;
+                if environment.captures.is_empty() {
+                    (None, None)
+                } else {
+                    (Some(self.inline_closure_environment(key, validation.target)?), None)
                 }
             }
             _ => return None,
@@ -699,6 +707,7 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
         Some(beskid_isle::SpawnEntry {
             trampoline: DirectCallee::spawn_trampoline(key),
             closure_environment,
+            argument_environment,
             handle_request_symbol: handle.allocation_request_symbol.into(),
             handle_field_offset: i32::try_from(handle.fields[0].field_offset).ok()?,
         })
