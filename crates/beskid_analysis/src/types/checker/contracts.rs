@@ -129,6 +129,20 @@ impl<'a> TypeChecker<'a> {
                 continue;
             };
 
+            // The implementor's own declared generics (`type ArrayIterator<T> : Iterator<T>`)
+            // must be in scope for the rest of this conformance check: they appear both in the
+            // conformance's own type-argument list (`Iterator<T>`'s `T`) and inside any
+            // associated-type binding syntax the implementor supplies (`type Item = T;`) -- both
+            // resolved below via `type_id_for_type[_in_generic_scope]`, which consults
+            // `self.generic_params` first. Popped at the end of this conformance's checks.
+            let implementor_generics = self.generic_items.get(&type_item_id).cloned().unwrap_or_default();
+            let mut implementor_generics_inserted = Vec::new();
+            for name in &implementor_generics {
+                let type_id = self.type_table.intern(crate::types::TypeInfo::GenericParam(name.clone()));
+                self.generic_params.insert(name.clone(), type_id);
+                implementor_generics_inserted.push(name.clone());
+            }
+
             let generics = self.generic_items.get(&contract_item_id).cloned().unwrap_or_default();
             let mut subst: HashMap<String, TypeId> = if generics.is_empty() {
                 HashMap::new()
@@ -138,9 +152,25 @@ impl<'a> TypeChecker<'a> {
             };
             // `This` in the contract's own signature always substitutes to the conforming
             // type's own identity at this conformance site (direct-impl case; a bounded generic
-            // `This` at a monomorphized call site is deferred to a later slice).
+            // `This` at a monomorphized call site is deferred to a later slice). When the
+            // implementor itself declares generics (`type Box<T> : Factory { ... }`), "its own
+            // identity" is *that type applied to its own generics* (`Box<T>`), not the bare
+            // unparameterized name -- otherwise an implementor's own `Box<T> Make()` return type
+            // (an `Applied` type) could never structurally equal the substituted `This` (a bare
+            // `Named` type), and every generic conformance to a `This`-returning contract would
+            // be spuriously rejected.
             if let Some(this_type_id) = self.named_types.get(&type_item_id).copied() {
-                subst.insert("This".to_string(), this_type_id);
+                let own_generics = self.generic_items.get(&type_item_id).cloned().unwrap_or_default();
+                let self_type_id = if own_generics.is_empty() {
+                    this_type_id
+                } else {
+                    let args: Vec<TypeId> = own_generics
+                        .iter()
+                        .map(|name| self.type_table.intern(crate::types::TypeInfo::GenericParam(name.clone())))
+                        .collect();
+                    self.type_table.intern(crate::types::TypeInfo::Applied { base: type_item_id, args })
+                };
+                subst.insert("This".to_string(), self_type_id);
             }
 
             // Associated types (Gap 4 remainder): every associated type the contract declares
@@ -248,6 +278,10 @@ impl<'a> TypeChecker<'a> {
                         actual,
                     });
                 }
+            }
+
+            for name in implementor_generics_inserted {
+                self.generic_params.remove(&name);
             }
         }
     }
@@ -966,5 +1000,94 @@ mod conformance_tests {
         "#;
         let result = resolve_and_type(source);
         assert!(result.is_ok(), "`This` must resolve the same way for `type X : Contract`; got: {result:?}");
+    }
+
+    #[test]
+    fn two_methods_in_a_generic_type_body_both_use_this() {
+        // Isolates whether `this` resolution breaks specifically with >1 method in a generic
+        // type body (no contracts/associated types involved at all).
+        let source = r#"
+            type Pair<T> {
+                T left,
+                T right,
+
+                Pair<T> First() {
+                    return this;
+                }
+
+                Pair<T> Second() {
+                    return this;
+                }
+            }
+        "#;
+        let result = resolve_and_type(source);
+        assert!(result.is_ok(), "`this` must resolve in every method of a generic type body; got: {result:?}");
+    }
+
+    #[test]
+    fn generic_iterator_style_contract_with_applied_associated_type_and_this() {
+        // Mirrors the real corelib shape (`Query.Iterator<T>` / `Query.ArrayIterator<T>`,
+        // slice 11): a generic contract whose associated type appears applied as a type
+        // argument (`Option<Item>`), implemented by a generic type binding `Item = T` and
+        // returning `This` from a second method.
+        let source = r#"
+            enum Option<T> {
+                Some(T value),
+                None,
+            }
+
+            contract Iterator<T> {
+                type Item;
+                Option<Item> Current();
+                This MoveNext();
+            }
+
+            type ArrayIterator<T> : Iterator<T> {
+                T[] source,
+
+                type Item = T;
+
+                Option<T> Current() {
+                    return Option::None();
+                }
+
+                ArrayIterator<T> MoveNext() {
+                    return this;
+                }
+            }
+        "#;
+        let result = resolve_and_type(source);
+        assert!(
+            result.is_ok(),
+            "a generic contract's associated type applied as a type argument (`Option<Item>`) must resolve and \
+             compare correctly against the generic implementor's binding; got: {result:?}"
+        );
+    }
+
+    #[test]
+    fn this_return_type_resolves_to_the_generic_implementors_own_applied_type() {
+        // A generic implementor's `This` must substitute to *its own* applied type (parameterized
+        // by its own declared generics, e.g. `Box<T>`), not the bare unparameterized name --
+        // otherwise every generic type implementing a `This`-returning contract is spuriously
+        // rejected as a signature mismatch (slice 11 finding, exercised by `ArrayIterator<T> :
+        // Iterator<T>`'s real `This MoveNext();` conformance).
+        let source = r#"
+            contract Factory {
+                This Make();
+            }
+
+            type Box<T> : Factory {
+                T value,
+
+                Box<T> Make() {
+                    return this;
+                }
+            }
+        "#;
+        let result = resolve_and_type(source);
+        assert!(
+            result.is_ok(),
+            "`This` at a generic implementor must substitute to that implementor's own applied type; got: {result:?}"
+        );
     }
 }

@@ -100,6 +100,7 @@ impl Resolver {
                 self.resolve_type(&def.node.receiver_type);
                 let receiver_item_id = self.receiver_item_id_for_type(&def.node.receiver_type);
                 for conformance in &def.node.conformances {
+                    self.resolve_path_type_arguments(conformance);
                     self.resolve_type_path(conformance);
                     let Some(receiver_item_id) = receiver_item_id else {
                         continue;
@@ -186,6 +187,7 @@ impl Resolver {
                 }
                 let type_item_id = self.resolve_item_in_scope(&def.node.name.node.name);
                 for conformance in &def.node.conformances {
+                    self.resolve_path_type_arguments(conformance);
                     self.resolve_type_path(conformance);
                     let Some(type_item_id) = type_item_id else {
                         continue;
