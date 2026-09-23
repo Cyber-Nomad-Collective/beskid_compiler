@@ -33,7 +33,7 @@ pub use contract_node::ContractNode;
 pub use enum_definition::EnumDefinition;
 pub use enum_variant::EnumVariant;
 pub use extend_type::ExtendTypeDefinition;
-pub use function_definition::FunctionDefinition;
+pub use function_definition::{FunctionDefinition, WhereBound};
 pub use host_definition::{
     HostBodyItem, HostDefinition, InjectQualifier, LaunchStatement, RegistrationLifetime, RegistryBlock, RegistryEntry,
     ScopeDefinition, ScopeHook, ScopeHookKind, WithStatement,

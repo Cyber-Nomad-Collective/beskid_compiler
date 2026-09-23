@@ -9,7 +9,7 @@ use beskid_analysis::syntax_query::{DynNodeRef, NodeKind};
 
 /// Resolve a contract in the same lexical/import namespaces as its source annotation.
 /// Keeping this separate from aggregate lookup prevents contracts acquiring a nominal ABI.
-fn resolve_contract(db: &dyn Db, key: AstNodeKey, path: &Path) -> Option<AstNodeKey> {
+pub(in crate::semantic_contract) fn resolve_contract(db: &dyn Db, key: AstNodeKey, path: &Path) -> Option<AstNodeKey> {
     let (terminal, prefix) = path.segments.split_last()?;
     if !terminal.node.type_args.is_empty() {
         return None;
@@ -376,6 +376,43 @@ fn impl_blocks_for_type(db: &dyn Db, concrete: AstNodeKey, type_name: &str) -> V
         .collect()
 }
 
+/// Whether `concrete` (a `TypeDefinition`, already fetched as `definition`) conforms to
+/// `contract`, checking both `type X : Contract { }` and `impl X : Contract { }` (Gap 2, task
+/// 2.5 -- one fact, two syntax sources; reused by call-site contract witnesses and by
+/// `where T: Contract` bound checking).
+pub(in crate::semantic_contract) fn type_declaration_conforms_to_contract(
+    db: &dyn Db,
+    concrete: AstNodeKey,
+    definition: &TypeDefinition,
+    contract: AstNodeKey,
+) -> bool {
+    let conforms_via_type_conformance = definition
+        .conformances
+        .iter()
+        .filter_map(|path| resolve_contract(db, concrete, &path.node))
+        .any(|candidate| contract_includes(db, candidate, contract, &mut HashSet::new()));
+    if conforms_via_type_conformance {
+        return true;
+    }
+    impl_blocks_for_type(db, concrete, &definition.name.node.name).into_iter().any(|impl_key| {
+        let Some(impl_syntax) = db.syntax_unit(impl_key.unit) else {
+            return false;
+        };
+        let Some(impl_block) = impl_syntax
+            .syntax_index(db)
+            .node_at(impl_syntax.expanded_program(db), impl_key.node)
+            .and_then(|node| node.of::<ImplBlock>())
+        else {
+            return false;
+        };
+        impl_block
+            .conformances
+            .iter()
+            .filter_map(|path| resolve_contract(db, impl_key, &path.node))
+            .any(|candidate| contract_includes(db, candidate, contract, &mut HashSet::new()))
+    })
+}
+
 fn contract_includes(
     db: &dyn Db,
     candidate: AstNodeKey,
@@ -435,33 +472,7 @@ pub(super) fn contract_witnesses_for_call(
                 .node_at(syntax.expanded_program(db), concrete.node)
                 .and_then(|node| node.of::<TypeDefinition>())
                 .ok_or_else(|| SemanticError::unavailable("contract_conformance"))?;
-            let conforms_via_type_conformance = definition
-                .conformances
-                .iter()
-                .filter_map(|path| resolve_contract(db, concrete, &path.node))
-                .any(|candidate| contract_includes(db, candidate, contract, &mut HashSet::new()));
-            // `impl X : Contract { }` feeds the same conformance fact as `type X : Contract { }`
-            // (Gap 2, task 2.5) -- it is a second syntax source, not a parallel table.
-            let conforms_via_impl_conformance = || {
-                impl_blocks_for_type(db, concrete, &definition.name.node.name).into_iter().any(|impl_key| {
-                    let Some(impl_syntax) = db.syntax_unit(impl_key.unit) else {
-                        return false;
-                    };
-                    let Some(impl_block) = impl_syntax
-                        .syntax_index(db)
-                        .node_at(impl_syntax.expanded_program(db), impl_key.node)
-                        .and_then(|node| node.of::<ImplBlock>())
-                    else {
-                        return false;
-                    };
-                    impl_block
-                        .conformances
-                        .iter()
-                        .filter_map(|path| resolve_contract(db, impl_key, &path.node))
-                        .any(|candidate| contract_includes(db, candidate, contract, &mut HashSet::new()))
-                })
-            };
-            if !conforms_via_type_conformance && !conforms_via_impl_conformance() {
+            if !type_declaration_conforms_to_contract(db, concrete, &definition, contract) {
                 return Err(SemanticError::new(format!(
                     "missing contract conformance for {}",
                     definition.name.node.name

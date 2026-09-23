@@ -7,9 +7,17 @@ use crate::parsing::parsable::Parsable;
 use crate::syntax::items::parse_helpers::{
     parse_attributes, parse_identifier_list, parse_parameter_list_with_docs, parse_visibility_or_default,
 };
-use crate::syntax::{Attribute, Block, Identifier, Parameter, SpanInfo, Spanned, Type, Visibility};
+use crate::syntax::{Attribute, Block, Identifier, Parameter, Path, SpanInfo, Spanned, Type, Visibility};
 
 use beskid_ast_derive::AstNode;
+
+/// A `where T: Contract` clause entry: the bound generic parameter name and the contract it
+/// must conform to.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct WhereBound {
+    pub parameter: Spanned<Identifier>,
+    pub contract: Spanned<Path>,
+}
 
 /// Top-level or nested function: visibility, signature, and body block.
 #[derive(AstNode, Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -22,6 +30,10 @@ pub struct FunctionDefinition {
     pub name: Spanned<Identifier>,
     #[ast(children)]
     pub generics: Vec<Spanned<Identifier>>,
+    /// `where T: Contract` bounds on this function's own generic parameters. Not yet supported
+    /// on `type`/`enum`/`impl` generics or on generic contracts (design.md task 2.3/2.7).
+    #[ast(skip)]
+    pub where_bounds: Vec<WhereBound>,
     #[ast(children)]
     pub parameters: Vec<Spanned<Parameter>>,
     #[ast(skip)]
@@ -42,6 +54,7 @@ impl Parsable for FunctionDefinition {
         let name = Identifier::parse(inner.next().ok_or(ParseError::missing(Rule::Identifier))?)?;
 
         let mut generics = Vec::new();
+        let mut where_bounds = Vec::new();
         let mut parameters = Vec::new();
         let mut parameter_docs = Vec::new();
         let mut body = None;
@@ -55,6 +68,20 @@ impl Parsable for FunctionDefinition {
                     let (parsed_parameters, parsed_docs) = parse_parameter_list_with_docs(item)?;
                     parameters = parsed_parameters;
                     parameter_docs = parsed_docs;
+                }
+                Rule::WhereClause => {
+                    where_bounds = item
+                        .into_inner()
+                        .map(|bound_pair| {
+                            let mut bound_inner = bound_pair.into_inner();
+                            let parameter = Identifier::parse(
+                                bound_inner.next().ok_or(ParseError::missing(Rule::Identifier))?,
+                            )?;
+                            let contract =
+                                Path::parse(bound_inner.next().ok_or(ParseError::missing(Rule::Path))?)?;
+                            Ok(WhereBound { parameter, contract })
+                        })
+                        .collect::<Result<Vec<_>, ParseError>>()?;
                 }
                 Rule::Block => {
                     body = Some(Block::parse(item)?);
@@ -70,6 +97,7 @@ impl Parsable for FunctionDefinition {
                 visibility,
                 name,
                 generics,
+                where_bounds,
                 parameters,
                 parameter_docs,
                 return_type,

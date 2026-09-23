@@ -22,6 +22,7 @@ AttributeDeclarationKeyword = { "attribute" }
 ImplKeyword = { "impl" }
 ExtendKeyword = { "extend" }
 ThisKeyword = { "This" }
+WhereKeyword = { "where" }
 MatchKeyword = { "match" }
 EventKeyword = { "event" }
 WhenKeyword = { "when" }
@@ -73,6 +74,7 @@ Keyword = {
       | ImplKeyword
       | ExtendKeyword
       | ThisKeyword
+      | WhereKeyword
       | MatchKeyword
       | WhenKeyword
       | IfKeyword
@@ -204,7 +206,9 @@ BeskidType = { ArrowFunctionType | FunctionType | ArrayType | TypeAtom }
 ////////////////////////////////////////////////////////////
 // 4) DEFINITIONS
 ////////////////////////////////////////////////////////////
-FunctionDefinition = { AttributeList? ~ Visibility? ~ BeskidType ~ Identifier ~ GenericParameters? ~ "(" ~ ParameterList? ~ ")" ~ Block }
+TypeBound = { Identifier ~ ":" ~ Path }
+WhereClause = { "where" ~ TypeBound ~ ("," ~ TypeBound)* }
+FunctionDefinition = { AttributeList? ~ Visibility? ~ BeskidType ~ Identifier ~ GenericParameters? ~ "(" ~ ParameterList? ~ ")" ~ WhereClause? ~ Block }
 ConstantDefinition = { "const" ~ Identifier ~ "=" ~ IntegerLiteral ~ ";" }
 ReceiverType = { PrimitiveType | Path }
 ImplConformanceList = { ":" ~ PathList }
