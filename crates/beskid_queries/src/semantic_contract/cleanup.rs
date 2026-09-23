@@ -472,8 +472,9 @@ fn scoped_receiver_method_escape(
         let Some(first) = path.path.node.segments.first() else {
             return Some(ResourceEscapesScope);
         };
-        let is_self =
-            first.node.name.node.name == "self" && resolve_lexical_declaration(program, index, node, "self").is_none();
+        let first_name = first.node.name.node.name.as_str();
+        let is_self = matches!(first_name, "self" | "this")
+            && resolve_lexical_declaration(program, index, node, first_name).is_none();
         if is_self && path.path.node.segments.len() == 1 {
             return Some(ResourceEscapesScope);
         }

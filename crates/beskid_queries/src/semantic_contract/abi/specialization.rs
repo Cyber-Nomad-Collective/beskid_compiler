@@ -119,8 +119,12 @@ fn specialization_for_call_in_environment(
                 None,
             )
         } else if let Some(method) = declaration_node.of::<beskid_analysis::syntax::MethodDefinition>() {
-            let owner_node = parent_node(declaration_syntax.syntax_index(db), declaration.node)
-                .ok_or_else(|| SemanticError::unavailable("call_abi_signature"))?;
+            let owner_node = method_owner_node(
+                declaration_syntax.expanded_program(db),
+                declaration_syntax.syntax_index(db),
+                declaration.node,
+            )
+            .ok_or_else(|| SemanticError::unavailable("call_abi_signature"))?;
             let parent = declaration_syntax
                 .syntax_index(db)
                 .node_at(declaration_syntax.expanded_program(db), owner_node)

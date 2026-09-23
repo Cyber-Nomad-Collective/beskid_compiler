@@ -399,6 +399,13 @@ impl<'a> TypeChecker<'a> {
         let receiver_type = self.type_id_for_type(&def.node.receiver_type);
         let previous_receiver = self.current_receiver_item_id;
         self.current_receiver_item_id = receiver_type.and_then(|type_id| self.named_item_id(type_id));
+        // `This` in a method's own signature and body is the method's receiver type (the
+        // implementor applied to its own generics for a generic owner), the same identity the
+        // conformance check substitutes for `This` in the contract signature.
+        let previous_this = match receiver_type {
+            Some(receiver_type) => Some(self.generic_params.insert("This".to_string(), receiver_type)),
+            None => None,
+        };
         let return_type = def
             .node
             .return_type
@@ -424,5 +431,14 @@ impl<'a> TypeChecker<'a> {
         }
         self.type_block(&def.node.body);
         self.current_receiver_item_id = previous_receiver;
+        match previous_this {
+            Some(Some(previous)) => {
+                self.generic_params.insert("This".to_string(), previous);
+            }
+            Some(None) => {
+                self.generic_params.remove("This");
+            }
+            None => {}
+        }
     }
 }

@@ -24,7 +24,21 @@ impl<'a> TypeChecker<'a> {
         let Some(method_item_id) = self.item_id_for_span(method_span) else {
             return;
         };
-        let Some(ResolvedType::Item(receiver_item_id)) = self.resolved_type_at(def.node.receiver_type.span) else {
+        // Each method's receiver type is re-spanned to the method itself, so the resolver's type
+        // fact sits on the receiver path, not on this span. The declared receiver type is then
+        // the authority, as in the unit surface (`surface/builder.rs::seed_method_receiver`).
+        let receiver_item_id = match self.resolved_type_at(def.node.receiver_type.span) {
+            Some(ResolvedType::Item(item_id)) => Some(item_id),
+            _ => {
+                // Seeding only looks the receiver up; the method's own typing pass reports an
+                // unresolvable receiver.
+                let errors_before = self.errors.len();
+                let receiver = self.type_id_for_type(&def.node.receiver_type);
+                self.errors.truncate(errors_before);
+                receiver.and_then(|type_id| self.named_item_id(type_id))
+            }
+        };
+        let Some(receiver_item_id) = receiver_item_id else {
             return;
         };
         self.methods_by_receiver.insert((receiver_item_id, def.node.name.node.name.clone()), method_item_id);
@@ -91,10 +105,27 @@ impl<'a> TypeChecker<'a> {
                 }
                 continue;
             };
+            // This unit's own contracts report unresolved signature types at the type itself
+            // (`contract_signature_type_id`), not again at each conformance.
+            self.contract_unresolved_methods.remove(&contract_item_id);
             for (method_name, signature) in signatures {
                 self.contract_signatures.insert((contract_item_id, method_name), signature);
             }
             if let Some(definition) = definitions.get(&contract_name) {
+                // Associated-type defaults resolve while the contract's own scope (generics,
+                // `This`, sibling associated types) is still pushed.
+                let mut associated = Vec::new();
+                for node in &definition.node.items {
+                    if let ContractNode::AssociatedType(assoc) = &node.node {
+                        let default = assoc.node.default.as_ref().and_then(|ty| self.type_id_for_type(ty));
+                        associated.push((assoc.node.name.node.name.clone(), default));
+                    }
+                }
+                if associated.is_empty() {
+                    self.contract_associated_types.remove(&contract_item_id);
+                } else {
+                    self.contract_associated_types.insert(contract_item_id, associated);
+                }
                 self.validate_extern_contract(definition);
             }
             for name in inserted {
@@ -112,12 +143,25 @@ impl<'a> TypeChecker<'a> {
     /// loop than the `type X : Contract` / `impl X : Contract` node that names it -- which is
     /// why this is a separate, later pass rather than inline in `type_item`.
     pub(super) fn check_contract_conformances(&mut self, program: &Spanned<Program>) {
+        // The resolution's conformance table also carries every dependency unit's edges. Only
+        // conformances declared in this unit's own syntax are checked here: the implementor
+        // syntax (conformance type arguments, associated-type bindings) and the diagnostic span
+        // both belong to this program. A dependency's conformances are checked when that unit is
+        // itself the entry.
+        let declared_here = Self::conformance_declarations(program);
         let conformances: Vec<(ItemId, ItemId, SpanInfo)> = self
             .resolution
             .tables
             .type_conformances
             .iter()
             .flat_map(|(type_id, edges)| edges.iter().map(move |(contract_id, span)| (*type_id, *contract_id, *span)))
+            .filter(|(type_id, _, span)| {
+                self.resolution
+                    .items
+                    .get(type_id.0)
+                    .and_then(|item| item.name.rsplit("::").next())
+                    .is_some_and(|name| declared_here.contains(&(name.to_string(), *span)))
+            })
             .collect();
 
         for (type_item_id, contract_item_id, span) in conformances {
@@ -179,48 +223,17 @@ impl<'a> TypeChecker<'a> {
             // default (`type Item = T;`, itself resolved through the contract-generic
             // substitution already computed above). Missing both is a fail-closed diagnostic
             // (spec scenario: "Missing associated type binding without default is rejected").
-            let contract_assoc_types: Vec<(String, Option<Spanned<Type>>)> = program
-                .node
-                .items
-                .iter()
-                .filter_map(|item| match &item.node {
-                    Node::ContractDefinition(def) if def.node.name.node.name == contract_name => Some(def),
-                    _ => None,
-                })
-                .flat_map(|def| {
-                    def.node.items.iter().filter_map(|node| match &node.node {
-                        ContractNode::AssociatedType(assoc) => {
-                            Some((assoc.node.name.node.name.clone(), assoc.node.default.clone()))
-                        }
-                        _ => None,
-                    })
-                })
-                .collect();
+            let contract_assoc_types: Vec<(String, Option<TypeId>)> =
+                self.contract_associated_types.get(&contract_item_id).cloned().unwrap_or_default();
 
             for (assoc_name, default) in contract_assoc_types {
                 let binding_syntax = self.associated_type_binding_syntax(program, &type_name, &assoc_name);
                 let resolved = if let Some(ty_syntax) = binding_syntax {
                     self.type_id_for_type_in_generic_scope(&ty_syntax)
-                } else if let Some(default_ty) = default {
-                    // The default may reference the contract's own generics (`type Item = T;`);
-                    // resolve it with those already-substituted to this conformance site's
-                    // concrete arguments.
-                    let mut pushed = Vec::new();
-                    for (name, id) in &subst {
-                        pushed.push((name.clone(), self.generic_params.insert(name.clone(), *id)));
-                    }
-                    let resolved = self.type_id_for_type(&default_ty);
-                    for (name, prev) in pushed {
-                        match prev {
-                            Some(previous) => {
-                                self.generic_params.insert(name, previous);
-                            }
-                            None => {
-                                self.generic_params.remove(&name);
-                            }
-                        }
-                    }
-                    resolved
+                } else if let Some(default) = default {
+                    // The default was resolved in the contract's own scope (`type Item = T;`
+                    // interns `GenericParam("T")`); substitute this conformance site's arguments.
+                    Some(self.substitute_type_id(default, &subst))
                 } else {
                     None
                 };
@@ -238,6 +251,13 @@ impl<'a> TypeChecker<'a> {
                         });
                     }
                 }
+            }
+
+            // A dependency contract method whose signature did not resolve in its declaring
+            // unit's surface has no signature to compare against: fail closed with E1201.
+            let unresolved_methods = self.contract_unresolved_methods.get(&contract_item_id).cloned().unwrap_or_default();
+            for method_name in unresolved_methods {
+                self.errors.push(TypeError::UnknownType { span, name: format!("{contract_name}::{method_name} signature") });
             }
 
             let method_names: Vec<String> = self
@@ -284,6 +304,34 @@ impl<'a> TypeChecker<'a> {
                 self.generic_params.remove(&name);
             }
         }
+    }
+
+    /// `(implementor name, conformance path span)` for every `type X : C` / `impl X : C`
+    /// conformance written in `program`. The span is the key the resolver records per edge.
+    fn conformance_declarations(program: &Spanned<Program>) -> HashSet<(String, SpanInfo)> {
+        let mut declared = HashSet::new();
+        for item in &program.node.items {
+            match &item.node {
+                Node::TypeDefinition(def) => {
+                    for conformance in &def.node.conformances {
+                        declared.insert((def.node.name.node.name.clone(), conformance.span));
+                    }
+                }
+                Node::ImplBlock(impl_block) => {
+                    let Type::Complex(receiver_path) = &impl_block.node.receiver_type.node else {
+                        continue;
+                    };
+                    let Some(receiver_name) = receiver_path.node.segments.last() else {
+                        continue;
+                    };
+                    for conformance in &impl_block.node.conformances {
+                        declared.insert((receiver_name.node.name.node.name.clone(), conformance.span));
+                    }
+                }
+                _ => {}
+            }
+        }
+        declared
     }
 
     /// The concrete type arguments (already resolved to `TypeId`s) supplied at a
@@ -362,6 +410,22 @@ impl<'a> TypeChecker<'a> {
         None
     }
 
+    /// Resolves one type written in a contract method signature. When resolution fails without
+    /// a diagnostic of its own, reports E1201 (`UnknownType`) at the type so the failure is never
+    /// silent.
+    fn contract_signature_type_id(&mut self, ty: &Spanned<Type>) -> Option<TypeId> {
+        let errors_before = self.errors.len();
+        let resolved = self.type_id_for_type(ty);
+        if resolved.is_none() && self.errors.len() == errors_before {
+            let name = match &ty.node {
+                Type::Complex(path) => super::types::path_display_name(path),
+                _ => "contract signature type".to_string(),
+            };
+            self.errors.push(TypeError::UnknownType { span: ty.span, name });
+        }
+        resolved
+    }
+
     fn collect_contract_signatures_recursive(
         &mut self,
         contract_name: &str,
@@ -388,10 +452,13 @@ impl<'a> TypeChecker<'a> {
                     if methods.iter().any(|(name, _)| name == &signature.node.name.node.name) {
                         continue;
                     }
+                    // Fail closed: a parameter or return type that does not resolve drops the
+                    // method and reports E1201. An unresolved return type must never read as
+                    // the omitted-return `unit`.
                     let mut params = Vec::new();
                     let mut valid = true;
                     for param in &signature.node.parameters {
-                        let Some(type_id) = self.type_id_for_type(&param.node.ty) else {
+                        let Some(type_id) = self.contract_signature_type_id(&param.node.ty) else {
                             valid = false;
                             break;
                         };
@@ -400,12 +467,10 @@ impl<'a> TypeChecker<'a> {
                     if !valid {
                         continue;
                     }
-                    let return_type = signature
-                        .node
-                        .return_type
-                        .as_ref()
-                        .and_then(|ty| self.type_id_for_type(ty))
-                        .or_else(|| self.primitive_type_id(PrimitiveType::Unit));
+                    let return_type = match signature.node.return_type.as_ref() {
+                        Some(ty) => self.contract_signature_type_id(ty),
+                        None => self.primitive_type_id(PrimitiveType::Unit),
+                    };
                     let Some(return_type) = return_type else {
                         continue;
                     };
@@ -851,6 +916,57 @@ mod conformance_tests {
     }
 
     #[test]
+    fn this_in_an_implementing_method_signature_is_the_receiver_type() {
+        let source = r#"
+            contract Step {
+                This Next(This previous);
+            }
+
+            type Walker : Step {
+                i64 steps,
+
+                This Next(This previous) {
+                    return Walker { steps: previous.steps + 1 };
+                }
+            }
+
+            type Widget {}
+
+            impl Widget : Step {
+                This Next(This previous) {
+                    return previous;
+                }
+            }
+
+            unit Main(Walker walker, Widget widget) {
+                Walker next = walker.Next(walker);
+                Widget same = widget.Next(widget);
+                return;
+            }
+        "#;
+        let result = resolve_and_type(source);
+        assert!(result.is_ok(), "`This` in an implementing method's signature must be its receiver type; got: {result:?}");
+    }
+
+    #[test]
+    fn this_in_a_method_signature_rejects_a_different_type() {
+        let source = r#"
+            type Other {}
+
+            type Walker {
+                This Next() {
+                    return Other {};
+                }
+            }
+        "#;
+        let errors = resolve_and_type(source).expect_err("returning another type from `This` must be rejected");
+        assert!(
+            !errors.iter().any(|error| matches!(error, TypeError::ThisUsedOutsideContractOrImpl { .. })),
+            "`This` in a method signature is in scope; got: {errors:?}"
+        );
+    }
+
+    #[test]
     fn this_return_type_rejects_the_wrong_concrete_type() {
         let source = r#"
             contract Factory {
@@ -1091,3 +1207,4 @@ mod conformance_tests {
         );
     }
 }
+

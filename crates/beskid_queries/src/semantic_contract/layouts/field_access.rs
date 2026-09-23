@@ -68,6 +68,16 @@ fn aggregate_field_access_for_environment(
     }
     let path = node.of::<beskid_analysis::syntax::PathExpression>()?;
     let resolved = match path.path.node.segments.as_slice() {
+        // `this.field` (or the older `self.field`) names a field of the implicit method receiver,
+        // exactly like the bare `field` spelling below, unless a lexical declaration shadows it.
+        [receiver, field]
+            if receiver.node.type_args.is_empty()
+                && field.node.type_args.is_empty()
+                && is_implicit_receiver_name(program, index, key, receiver.node.name.node.name.as_str()) =>
+        {
+            applied_method_receiver_layout(db, program, index, key, ambient)
+                .map(|(declaration, receiver, layout)| (declaration, receiver, layout, field.node.name.node.name.as_str()))
+        }
         [receiver, field] if receiver.node.type_args.is_empty() && field.node.type_args.is_empty() => {
             applied_local_receiver_layout(db, program, index, key, receiver.node.name.node.name.as_str(), ambient).map(
                 |(declaration, receiver, layout)| (declaration, receiver, layout, field.node.name.node.name.as_str()),
@@ -130,7 +140,14 @@ pub(in crate::semantic_contract) fn nominal_field_projection(
         );
     }
     let (path_key, last) = if let Some(path) = node.of::<beskid_analysis::syntax::PathExpression>() {
-        if path.path.node.segments.len() < 3 {
+        // `field.member` inside a method is a two-step projection from the implicit receiver
+        // when `field` is not a lexical local; other two-segment spellings keep their own facts.
+        let implicit_field_root = path.path.node.segments.len() == 2
+            && path.path.node.segments.iter().all(|segment| segment.node.type_args.is_empty())
+            && !is_implicit_receiver_name(program, index, key, &path.path.node.segments[0].node.name.node.name)
+            && resolve_lexical_declaration(program, index, key.node, &path.path.node.segments[0].node.name.node.name)
+                .is_none();
+        if path.path.node.segments.len() < 3 && !implicit_field_root {
             return None;
         }
         (key, path.path.node.segments.len() - 1)
@@ -141,6 +158,30 @@ pub(in crate::semantic_contract) fn nominal_field_projection(
         let expression = AstNodeKey { node: expression, ..key };
         let position = (0..path.path.node.segments.len())
             .find(|position| path_projection_segment(db, expression, *position) == Some(key))?;
+        let root = path.path.node.segments.first()?;
+        if root.node.type_args.is_empty()
+            && is_implicit_receiver_name(program, index, expression, root.node.name.node.name.as_str())
+        {
+            // `this.field...`: `this` itself is the receiver, not a projection; its first field
+            // is a projection from the implicit receiver.
+            match position {
+                0 => return None,
+                1 => {
+                    let field = path.path.node.segments.get(1)?;
+                    if !field.node.type_args.is_empty() {
+                        return None;
+                    }
+                    return implicit_receiver_field_projection(
+                        db,
+                        program,
+                        index,
+                        expression,
+                        field.node.name.node.name.as_str(),
+                    );
+                }
+                _ => {}
+            }
+        }
         if position == 0 {
             // The first segment of a dotted path is ordinarily a lexical root, not a
             // projection. Inside a method the same spelling can instead name a field of the
@@ -163,7 +204,44 @@ pub(in crate::semantic_contract) fn nominal_field_projection(
     if path.segments[..=last].iter().any(|segment| !segment.node.type_args.is_empty()) {
         return None;
     }
-    let root = resolve_lexical_declaration(program, index, path_key.node, &path.segments[0].node.name.node.name)?;
+    if is_implicit_receiver_name(program, index, path_key, &path.segments[0].node.name.node.name) {
+        // `this.a.b`: project `a` from the implicit receiver, then each later field from the
+        // previous segment, exactly like a lexical root's chain.
+        let first = implicit_receiver_field_projection(db, program, index, path_key, &path.segments[1].node.name.node.name)?;
+        return Some((|| {
+            let (mut result, mut identity) = first?;
+            let mut receiver = path_projection_segment(db, path_key, 1)
+                .ok_or_else(|| SemanticError::unavailable("nominal_field_projection"))?;
+            for position in 2..=last {
+                let (access, next_identity) =
+                    project_nominal_field(db, key, receiver, &identity, &path.segments[position].node.name.node.name)?;
+                receiver = path_projection_segment(db, path_key, position)
+                    .ok_or_else(|| SemanticError::unavailable("nominal_field_projection"))?;
+                identity = next_identity;
+                result = access;
+            }
+            Ok((result, identity))
+        })());
+    }
+    let Some(root) = resolve_lexical_declaration(program, index, path_key.node, &path.segments[0].node.name.node.name)
+    else {
+        // `field.a...` inside a method: the root names a field of the implicit receiver.
+        let first = implicit_receiver_field_projection(db, program, index, path_key, &path.segments[0].node.name.node.name)?;
+        return Some((|| {
+            let (mut result, mut identity) = first?;
+            let mut receiver = path_projection_segment(db, path_key, 0)
+                .ok_or_else(|| SemanticError::unavailable("nominal_field_projection"))?;
+            for position in 1..=last {
+                let (access, next_identity) =
+                    project_nominal_field(db, key, receiver, &identity, &path.segments[position].node.name.node.name)?;
+                receiver = path_projection_segment(db, path_key, position)
+                    .ok_or_else(|| SemanticError::unavailable("nominal_field_projection"))?;
+                identity = next_identity;
+                result = access;
+            }
+            Ok((result, identity))
+        })());
+    };
     let annotation = explicit_local_complex_type_path(program, index, root);
     // An enum-pattern binding has no written annotation; its enum match fact is the sole
     // authority for the exact applied payload identity. Other unannotated roots stay unproven.
@@ -216,7 +294,7 @@ pub(in crate::semantic_contract) fn implicit_receiver_field_projection(
     let method = nearest_ancestor(index, reference.node, |kind| {
         kind == beskid_analysis::syntax_query::NodeKind::MethodDefinition
     })?;
-    let declaration = parent_node(index, method)?;
+    let declaration = method_owner_node(program, index, method)?;
     let definition = index.node_at(program, declaration)?.of::<beskid_analysis::syntax::TypeDefinition>()?;
     // A generic enclosing receiver needs its applied arguments; only the non-generic
     // spelling is proven by the definition alone.
@@ -423,6 +501,20 @@ fn applied_local_receiver_layout(
         .map(|(declaration, layout)| (declaration, receiver, layout))
 }
 
+/// Whether `name` spells the implicit method receiver at `key`: `this` or `self` inside a
+/// method body, with no lexical declaration of that name in scope.
+pub(in crate::semantic_contract) fn is_implicit_receiver_name(
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    key: AstNodeKey,
+    name: &str,
+) -> bool {
+    matches!(name, "this" | "self")
+        && resolve_lexical_declaration(program, index, key.node, name).is_none()
+        && nearest_ancestor(index, key.node, |kind| kind == beskid_analysis::syntax_query::NodeKind::MethodDefinition)
+            .is_some()
+}
+
 fn applied_method_receiver_layout(
     db: &dyn Db,
     program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
@@ -433,7 +525,8 @@ fn applied_method_receiver_layout(
     let method =
         nearest_ancestor(index, key.node, |kind| kind == beskid_analysis::syntax_query::NodeKind::MethodDefinition)
             .ok_or_else(|| SemanticError::unavailable("aggregate_field_access"))?;
-    let declaration = parent_node(index, method).ok_or_else(|| SemanticError::unavailable("aggregate_field_access"))?;
+    let declaration =
+        method_owner_node(program, index, method).ok_or_else(|| SemanticError::unavailable("aggregate_field_access"))?;
     let definition = index
         .node_at(program, declaration)
         .and_then(|node| node.of::<beskid_analysis::syntax::TypeDefinition>())

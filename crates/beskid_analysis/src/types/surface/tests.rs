@@ -5,7 +5,7 @@ use crate::resolve::{ItemId, ItemKind, Resolver};
 use crate::services::parse_program;
 use crate::syntax::PrimitiveType;
 use crate::types::checker::TypeChecker;
-use crate::types::result::FunctionSignature;
+use crate::types::result::{FunctionSignature, TypeError};
 use crate::types::{TypeId, TypeInfo, UnitTypeSurface, build_unit_type_surface, merge_unit_surfaces};
 
 #[test]
@@ -749,4 +749,219 @@ unit Main() {
     );
 
     assert!(errors.is_empty(), "qualified Current calls must retain their module signature: {errors:#?}");
+}
+
+const CROSS_UNIT_OPTION: &str = r#"
+pub enum Option<T> {
+    Some(T value),
+    None,
+}
+"#;
+
+const CROSS_UNIT_ITERATOR: &str = r#"
+use Core.Optional.Option;
+
+pub contract Iterator<T> {
+    type Item;
+    Option<Item> Current();
+    This MoveNext();
+}
+"#;
+
+const CROSS_UNIT_ARRAY_ITERATOR: &str = r#"
+use Core.Optional.Option;
+use Query.Iterator;
+
+pub type ArrayIterator<T> : Iterator<T> {
+    T[] source,
+    i64 index,
+
+    type Item = T;
+
+    Option<T> Current() {
+        return Option::None();
+    }
+
+    ArrayIterator<T> MoveNext() {
+        return this;
+    }
+}
+
+pub ArrayIterator<T> Over<T>(T[] source) {
+    return ArrayIterator<T> { source: source, index: 0 };
+}
+"#;
+
+/// A generic contract declared in a dependency unit (`This`, an associated type applied as a
+/// type argument, a contract generic) must keep its real signature in the dependency surface,
+/// so a conformance written in the entry unit compares against it instead of `() -> unit`.
+#[test]
+fn conformance_to_a_dependency_generic_contract_uses_its_real_signatures() {
+    let root = PathBuf::from("/tmp/cross-unit-contract-conformance");
+    let option_path = root.join("Core/Optional/Option.bd");
+    let iterator_path = root.join("Query/Iterator.bd");
+    let entry_path = root.join("Query/ArrayIterator.bd");
+    let option = parse_program(CROSS_UNIT_OPTION).expect("parse Option");
+    let iterator = parse_program(CROSS_UNIT_ITERATOR).expect("parse Iterator");
+    let mut entry = parse_program(CROSS_UNIT_ARRAY_ITERATOR).expect("parse ArrayIterator");
+
+    let mut resolver = Resolver::new();
+    resolver.collect_program_in_module(
+        &option,
+        &["Core".to_owned(), "Optional".to_owned(), "Option".to_owned()],
+        Some(&option_path),
+    );
+    resolver.collect_program_in_module(&iterator, &["Query".to_owned(), "Iterator".to_owned()], Some(&iterator_path));
+    resolver.set_current_source_path(Some(entry_path.clone()));
+    let resolution = resolver.resolve_program(&entry).expect("resolve implementor entry");
+    let dependency_paths = [option_path, iterator_path];
+    let (_, errors) = TypeChecker::check_entry(
+        &mut entry,
+        &resolution,
+        &[&option, &iterator],
+        Some(&dependency_paths),
+        Some(entry_path),
+        false,
+        None,
+        None,
+        None,
+        None,
+    );
+
+    assert!(errors.is_empty(), "entry conformance to a dependency generic contract must check clean: {errors:#?}");
+}
+
+/// A unit that only uses a conforming type from a dependency must not re-check that
+/// dependency's conformance against its own syntax (no implementor syntax, wrong spans).
+#[test]
+fn dependency_conformances_are_not_rechecked_in_a_consuming_entry() {
+    let root = PathBuf::from("/tmp/cross-unit-contract-consumer");
+    let option_path = root.join("Core/Optional/Option.bd");
+    let iterator_path = root.join("Query/Iterator.bd");
+    let array_iterator_path = root.join("Query/ArrayIterator.bd");
+    let entry_path = root.join("Main.bd");
+    let option = parse_program(CROSS_UNIT_OPTION).expect("parse Option");
+    let iterator = parse_program(CROSS_UNIT_ITERATOR).expect("parse Iterator");
+    let array_iterator = parse_program(CROSS_UNIT_ARRAY_ITERATOR).expect("parse ArrayIterator");
+    let mut entry = parse_program(
+        r#"
+use Query.ArrayIterator;
+
+unit Main() {
+    i64[] values = [];
+    ArrayIterator<i64> iterator = ArrayIterator.Over<i64>(values);
+}
+"#,
+    )
+    .expect("parse consuming entry");
+
+    let mut resolver = Resolver::new();
+    resolver.collect_program_in_module(
+        &option,
+        &["Core".to_owned(), "Optional".to_owned(), "Option".to_owned()],
+        Some(&option_path),
+    );
+    resolver.collect_program_in_module(&iterator, &["Query".to_owned(), "Iterator".to_owned()], Some(&iterator_path));
+    resolver.collect_program_in_module(
+        &array_iterator,
+        &["Query".to_owned(), "ArrayIterator".to_owned()],
+        Some(&array_iterator_path),
+    );
+    resolver.set_current_source_path(Some(entry_path.clone()));
+    let mut resolution = resolver.resolve_program(&entry).expect("resolve consuming entry");
+    // A package build merges each dependency unit's conformance edges into the entry's
+    // resolution (`ResolutionTables::merge_declaration_types_from`); mirror that edge here.
+    let conformance_span = array_iterator
+        .node
+        .items
+        .iter()
+        .find_map(|item| match &item.node {
+            crate::syntax::Node::TypeDefinition(def) => def.node.conformances.first().map(|path| path.span),
+            _ => None,
+        })
+        .expect("ArrayIterator conformance span");
+    let item_id = |name: &str, kind: ItemKind| {
+        resolution
+            .items
+            .iter()
+            .find(|item| item.kind == kind && item.name.rsplit("::").next() == Some(name))
+            .map(|item| item.id)
+            .unwrap_or_else(|| panic!("{name} item"))
+    };
+    let array_iterator_id = item_id("ArrayIterator", ItemKind::Type);
+    let iterator_id = item_id("Iterator", ItemKind::Contract);
+    resolution.tables.insert_type_conformance(array_iterator_id, iterator_id, conformance_span);
+    let dependency_paths = [option_path, iterator_path, array_iterator_path];
+    let (_, errors) = TypeChecker::check_entry(
+        &mut entry,
+        &resolution,
+        &[&option, &iterator, &array_iterator],
+        Some(&dependency_paths),
+        Some(entry_path),
+        false,
+        None,
+        None,
+        None,
+        None,
+    );
+
+    assert!(errors.is_empty(), "a consuming entry must not re-check dependency conformances: {errors:#?}");
+}
+
+/// A dependency contract method whose return type does not resolve in the dependency surface
+/// must not be merged as `() -> unit`. A conformance to it fails closed with E1201.
+#[test]
+fn dependency_contract_with_unresolved_return_type_fails_closed() {
+    let root = PathBuf::from("/tmp/cross-unit-contract-unresolved");
+    let source_path = root.join("Dep/Source.bd");
+    let entry_path = root.join("Main.bd");
+    let source = parse_program(
+        r#"
+pub contract Source {
+    Missing Get();
+}
+"#,
+    )
+    .expect("parse Source");
+    let mut entry = parse_program(
+        r#"
+use Dep.Source;
+
+pub type Reader : Source {
+    i64 value,
+
+    i64 Get() {
+        return 0;
+    }
+}
+"#,
+    )
+    .expect("parse entry");
+
+    let mut resolver = Resolver::new();
+    resolver.collect_program_in_module(&source, &["Dep".to_owned(), "Source".to_owned()], Some(&source_path));
+    resolver.set_current_source_path(Some(entry_path.clone()));
+    let resolution = resolver.resolve_program(&entry).expect("resolve entry");
+    let dependency_paths = [source_path];
+    let (_, errors) = TypeChecker::check_entry(
+        &mut entry,
+        &resolution,
+        &[&source],
+        Some(&dependency_paths),
+        Some(entry_path),
+        false,
+        None,
+        None,
+        None,
+        None,
+    );
+
+    assert!(
+        errors.iter().any(|error| matches!(error, TypeError::UnknownType { name, .. } if name.contains("Get"))),
+        "an unresolved dependency contract signature must fail closed with E1201: {errors:#?}"
+    );
+    assert!(
+        !errors.iter().any(|error| matches!(error, TypeError::ContractImplementationSignatureMismatch { .. })),
+        "the unresolved return type must not read as unit: {errors:#?}"
+    );
 }

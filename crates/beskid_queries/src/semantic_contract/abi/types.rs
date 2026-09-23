@@ -375,7 +375,13 @@ pub(in crate::semantic_contract) fn abi_type_for_expression(
             abi_type(db, AstNodeKey { node: normalized, ..key })?.ok_or_else(|| SemanticError::unavailable("abi_type"))
         }
         Expression::Literal(literal) => Ok(semantic_type_for_literal(&literal.node.literal.node)),
-        Expression::Path(path) => abi_type_for_local_path(db, program, index, key, &path.node.path.node),
+        // Field facts are keyed by the path expression itself, not by its expression wrapper
+        // (the operand key a binary expression hands out): a bare receiver field inside a
+        // method resolves only through the path node.
+        Expression::Path(path) => {
+            let path_key = AstNodeKey { node: normalized_expression_node(index, key.node), ..key };
+            abi_type_for_local_path(db, program, index, path_key, &path.node.path.node)
+        }
         Expression::Grouped(_) => {
             let inner = normalized_expression_node(index, key.node);
             if inner == key.node {
@@ -512,7 +518,9 @@ pub(in crate::semantic_contract) fn abi_type_from_syntax(
         Type::Primitive(_) => semantic_type_from_syntax(syntax_type),
         Type::Complex(path) => nominal_aggregate_abi_type(db, key, &path.node),
         Type::Associated { .. } => Err(SemanticError::unavailable("abi_type")),
-        Type::This => Err(SemanticError::unavailable("abi_type")),
+        Type::This => method_this_type(db, key)
+            .ok_or_else(|| SemanticError::unavailable("abi_type"))
+            .and_then(|receiver| abi_type_from_syntax(db, key, &receiver)),
         Type::Array(_) => Ok(SemanticTypeId::POINTER),
         Type::Function { .. } => Err(SemanticError::unavailable("abi_type")),
     }

@@ -22,7 +22,7 @@ fn type_display_name(ty: &Spanned<Type>) -> String {
     }
 }
 
-fn path_display_name(path: &Spanned<Path>) -> String {
+pub(super) fn path_display_name(path: &Spanned<Path>) -> String {
     let segments = &path.node.segments;
     if segments.is_empty() {
         return "<unnamed>".to_string();

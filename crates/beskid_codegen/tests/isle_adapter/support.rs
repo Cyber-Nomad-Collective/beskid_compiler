@@ -25,7 +25,8 @@ pub(super) use lookup::{
 pub(super) use prelude::{
     AbiManifestV5, Arc, AssemblyDiscovery, AstNodeId, AstNodeKey, BeskidDatabase,
     CANONICAL_BOOTSTRAP_NATIVE_SOURCE_PATH, CANONICAL_BOOTSTRAP_OBJECTS_SOURCE_PATH,
-    CANONICAL_BOOTSTRAP_ROOTS_SOURCE_PATH, CANONICAL_CORELIB_ARGS_SOURCE_PATH, CANONICAL_FOUNDATION_ARRAY_SOURCE_PATH,
+    CANONICAL_BOOTSTRAP_ROOTS_SOURCE_PATH, CANONICAL_CORELIB_ARGS_SOURCE_PATH, CANONICAL_DYNAMIC_SOURCE_PATH,
+    CANONICAL_FOUNDATION_ARRAY_SOURCE_PATH,
     CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH, CANONICAL_FOUNDATION_STRING_CORE_SOURCE_PATH, CastIntent, CodegenInput,
     DirectCallee, EffectiveCompilationRoots, FunctionEmitter, HashMap, ItemModuleImporter, JITBuilder, JITModule,
     Linkage, Module, ModuleIndex, NodeFacts, NodeKind, Ordering, ProgramAssembly, ProjectSession, RootEntry,

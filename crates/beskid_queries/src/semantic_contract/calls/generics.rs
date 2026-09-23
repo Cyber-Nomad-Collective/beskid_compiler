@@ -135,7 +135,8 @@ pub(in crate::semantic_contract) fn generic_nominal_method_receiver_tracked(
             _ => return None,
         };
         let method_syntax = db.syntax_unit(method.unit)?;
-        let owner_node = parent_node(method_syntax.syntax_index(db), method.node)?;
+        let owner_node =
+            method_owner_node(method_syntax.expanded_program(db), method_syntax.syntax_index(db), method.node)?;
         let owner = AstNodeKey { node: owner_node, ..method };
         if let Some(handle) = inferred_spawn_handle(db, receiver) {
             return Some(Ok(GenericNominalMethodReceiver {
@@ -237,10 +238,15 @@ pub(in crate::semantic_contract) fn generic_source_type_identity(
             result: Box::new(generic_source_type_identity(db, key, &return_type.node)?),
         },
         Type::Associated { .. } => return Err(SemanticError::unavailable("generic_source_type_identity")),
-        // `This` inside a contract's own signature, used through generic-call specialization
-        // (as opposed to a direct `impl`/`type` conformance site, which `beskid_analysis`'s
-        // typechecker already substitutes): deferred, same as a bounded generic `This`.
-        Type::This => return Err(SemanticError::unavailable("generic_source_type_identity")),
+        // `This` in a method's own signature is its receiver type. `This` inside a contract's
+        // own signature, used through generic-call specialization (as opposed to a direct
+        // `impl`/`type` conformance site, which `beskid_analysis`'s typechecker already
+        // substitutes), stays deferred, same as a bounded generic `This`.
+        Type::This => {
+            let receiver =
+                method_this_type(db, key).ok_or_else(|| SemanticError::unavailable("generic_source_type_identity"))?;
+            return generic_source_type_identity(db, key, &receiver);
+        }
     })
 }
 
@@ -512,7 +518,11 @@ pub(in crate::semantic_contract) fn generic_source_type_identity_with_substituti
             )?),
         },
         Type::Associated { .. } => return Err(SemanticError::unavailable("source_expression_type")),
-        Type::This => return Err(SemanticError::unavailable("source_expression_type")),
+        Type::This => {
+            let receiver =
+                method_this_type(db, key).ok_or_else(|| SemanticError::unavailable("source_expression_type"))?;
+            return generic_source_type_identity_with_substitutions(db, key, &receiver, substitutions);
+        }
     })
 }
 
@@ -792,7 +802,7 @@ pub(in crate::semantic_contract) fn type_syntax_is_enclosing_generic_parameter_r
     if let Some(function) = enclosing_node.of::<beskid_analysis::syntax::FunctionDefinition>() {
         return function.generics.iter().any(|generic| generic.node.name == parameter_name);
     }
-    let Some(owner) = parent_node(index, enclosing)
+    let Some(owner) = method_owner_node(program, index, enclosing)
         .and_then(|owner| index.node_at(program, owner))
         .and_then(|owner| owner.of::<beskid_analysis::syntax::TypeDefinition>())
     else {
@@ -949,7 +959,7 @@ pub(in crate::semantic_contract) fn generic_callable_parameters(
             .then(|| (function.generics.iter().map(|generic| generic.node.name.as_str()).collect(), false));
     }
     node.of::<beskid_analysis::syntax::MethodDefinition>()?;
-    let owner = parent_node(syntax.syntax_index(db), declaration.node)
+    let owner = method_owner_node(syntax.expanded_program(db), syntax.syntax_index(db), declaration.node)
         .and_then(|parent| syntax.syntax_index(db).node_at(syntax.expanded_program(db), parent))
         .and_then(|node| node.of::<beskid_analysis::syntax::TypeDefinition>())?;
     (!owner.generics.is_empty())
