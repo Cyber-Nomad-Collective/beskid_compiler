@@ -356,6 +356,7 @@ impl SemanticPipelineRule {
                 .collect::<Vec<_>>()
                 .join("."),
             Type::Associated { contract, name } => format!("{}::{}", self.path_to_string(contract), name.node.name),
+            Type::This => "This".to_string(),
             Type::Array(inner) => format!("{}[]", self.type_to_string(inner)),
             Type::Function { return_type, parameters } => {
                 let params =
@@ -408,7 +409,10 @@ impl SemanticPipelineRule {
         generic_names: &HashSet<String>,
     ) {
         match &ty.node {
-            Type::Primitive(_) => {}
+            // `This` is a reserved keyword, never an unresolved user identifier; its validity
+            // in a given position is a typechecker concern (`generic_params["This"]`), not a
+            // "known type name" lookup concern.
+            Type::Primitive(_) | Type::This => {}
             Type::Complex(path) => {
                 if path.node.segments.len() > 1 {
                     return;

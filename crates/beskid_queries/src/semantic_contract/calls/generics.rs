@@ -237,6 +237,10 @@ pub(in crate::semantic_contract) fn generic_source_type_identity(
             result: Box::new(generic_source_type_identity(db, key, &return_type.node)?),
         },
         Type::Associated { .. } => return Err(SemanticError::unavailable("generic_source_type_identity")),
+        // `This` inside a contract's own signature, used through generic-call specialization
+        // (as opposed to a direct `impl`/`type` conformance site, which `beskid_analysis`'s
+        // typechecker already substitutes): deferred, same as a bounded generic `This`.
+        Type::This => return Err(SemanticError::unavailable("generic_source_type_identity")),
     })
 }
 
@@ -508,6 +512,7 @@ pub(in crate::semantic_contract) fn generic_source_type_identity_with_substituti
             )?),
         },
         Type::Associated { .. } => return Err(SemanticError::unavailable("source_expression_type")),
+        Type::This => return Err(SemanticError::unavailable("source_expression_type")),
     })
 }
 
@@ -739,6 +744,7 @@ pub(in crate::semantic_contract) fn substitute_explicit_type(
             Type::Function { return_type, parameters }
         }
         Type::Associated { .. } => return None,
+        Type::This => Type::This,
     })
 }
 

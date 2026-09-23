@@ -198,6 +198,9 @@ pub(in crate::semantic_contract) fn managed_reference_kind_for_syntax_type(
             ManagedReferenceKind::GcManaged
         }
         beskid_analysis::syntax::Type::Complex(_) => ManagedReferenceKind::GcManaged,
+        // `This` stands for whatever concrete type conforms; treated the same as an
+        // unresolved-generic `Complex` reference (conservative GC-managed default).
+        beskid_analysis::syntax::Type::This => ManagedReferenceKind::GcManaged,
         beskid_analysis::syntax::Type::Associated { .. } => {
             return Err(SemanticError::unavailable("managed_reference_kind"));
         }
@@ -253,6 +256,7 @@ fn managed_reference_kind_for_callable_result(
             }
         }
         beskid_analysis::syntax::Type::Associated { .. } => Err(SemanticError::unavailable("managed_reference_kind")),
+        beskid_analysis::syntax::Type::This => Ok(ManagedReferenceKind::GcManaged),
     })
 }
 

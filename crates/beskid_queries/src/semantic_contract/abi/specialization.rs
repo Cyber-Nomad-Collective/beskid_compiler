@@ -898,6 +898,10 @@ pub(in crate::semantic_contract) fn type_syntax_mentions_generic_parameter(
                     .iter()
                     .any(|parameter_type| type_syntax_mentions_generic_parameter(&parameter_type.node, parameter))
         }
+        // `This` is substituted with the conforming type's own identity before a call reaches
+        // ABI lowering (direct-impl sites, `beskid_analysis`'s typechecker); a bounded generic
+        // `This` at a monomorphized call site is deferred to a later slice.
+        beskid_analysis::syntax::Type::This => false,
     }
 }
 

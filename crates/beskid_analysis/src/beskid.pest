@@ -21,6 +21,7 @@ ContractDeclarationKeyword = { "contract" }
 AttributeDeclarationKeyword = { "attribute" }
 ImplKeyword = { "impl" }
 ExtendKeyword = { "extend" }
+ThisKeyword = { "This" }
 MatchKeyword = { "match" }
 EventKeyword = { "event" }
 WhenKeyword = { "when" }
@@ -71,6 +72,7 @@ Keyword = {
       | AttributeDeclarationKeyword
       | ImplKeyword
       | ExtendKeyword
+      | ThisKeyword
       | MatchKeyword
       | WhenKeyword
       | IfKeyword
@@ -186,7 +188,13 @@ GenericArguments = { "<" ~ BeskidType ~ ("," ~ BeskidType)* ~ ">" }
 
 TypeName = { PrimitiveType | Path }
 AssociatedTypeRef = { Path ~ "::" ~ Identifier }
-TypeAtom = { AssociatedTypeRef | TypeName }
+// Atomic: a non-atomic rule here would let pest's implicit whitespace insertion skip past the
+// word boundary before the lookahead runs, so `!ASCII_ALPHANUMERIC` would test the *next*
+// token's first character (e.g. "This Make()"'s `M`) instead of the character immediately
+// after "This" -- silently rejecting `This` whenever anything followed it. Same reasoning as
+// `Identifier`'s own atomic `!Keyword ~ ...` boundary check.
+ThisType = @{ "This" ~ !ASCII_ALPHANUMERIC }
+TypeAtom = { AssociatedTypeRef | ThisType | TypeName }
 ArrayType = { TypeAtom ~ "[" ~ "]" }
 FunctionType = { TypeAtom ~ "(" ~ BeskidTypeList? ~ ")" }
 ArrowFunctionType = { "(" ~ BeskidTypeList? ~ ")" ~ "=>" ~ BeskidType }

@@ -255,7 +255,7 @@ fn remap_type_spans(ty: &mut Spanned<crate::syntax::Type>, offset: usize, source
                 remap_type_spans(parameter, offset, source);
             }
         }
-        crate::syntax::Type::Primitive(_) => {}
+        crate::syntax::Type::Primitive(_) | crate::syntax::Type::This => {}
     }
 }
 

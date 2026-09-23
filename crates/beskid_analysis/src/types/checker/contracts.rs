@@ -57,6 +57,14 @@ impl<'a> TypeChecker<'a> {
                     self.generic_params.insert(name.clone(), type_id);
                     inserted.push(name);
                 }
+                // `This` inside a contract's own signature (`This Method();`) is a synthetic,
+                // always-present generic parameter, substituted with the conforming type's own
+                // `TypeId` by `check_contract_conformances` below -- not the contract's own
+                // nominal type (design.md: "`This` refers to the eventual implementing type,
+                // NOT the contract's own nominal type").
+                let this_type_id = self.type_table.intern(crate::types::TypeInfo::GenericParam("This".to_string()));
+                self.generic_params.insert("This".to_string(), this_type_id);
+                inserted.push("This".to_string());
             }
             let signatures = self.collect_contract_signatures_recursive(
                 contract_name.as_str(),
@@ -109,12 +117,18 @@ impl<'a> TypeChecker<'a> {
             };
 
             let generics = self.generic_items.get(&contract_item_id).cloned().unwrap_or_default();
-            let subst: HashMap<String, TypeId> = if generics.is_empty() {
+            let mut subst: HashMap<String, TypeId> = if generics.is_empty() {
                 HashMap::new()
             } else {
                 let type_arg_ids = self.conformance_type_arg_ids(program, &type_name, &contract_name);
                 generics.into_iter().zip(type_arg_ids).collect()
             };
+            // `This` in the contract's own signature always substitutes to the conforming
+            // type's own identity at this conformance site (direct-impl case; a bounded generic
+            // `This` at a monomorphized call site is deferred to a later slice).
+            if let Some(this_type_id) = self.named_types.get(&type_item_id).copied() {
+                subst.insert("This".to_string(), this_type_id);
+            }
 
             let method_names: Vec<String> = self
                 .contract_signatures
@@ -478,6 +492,7 @@ fn extern_disallowed_detail(ty: &Spanned<Type>, is_return: bool) -> String {
         Type::Array(_) => "array types must use CBuffer or CArrayView at the FFI boundary".to_string(),
         Type::Complex(_) => "only primitive types are permitted at the FFI boundary".to_string(),
         Type::Associated { .. } => "associated types are not permitted at the FFI boundary".to_string(),
+        Type::This => "This is not permitted at the FFI boundary".to_string(),
         Type::Function { .. } => "function types are not permitted at the FFI boundary".to_string(),
     }
 }
@@ -655,5 +670,69 @@ mod conformance_tests {
             )),
             "expected ContractImplementationSignatureMismatch for Get; got: {errors:?}"
         );
+    }
+
+    #[test]
+    fn this_return_type_resolves_to_the_impl_site_receiver_type() {
+        let source = r#"
+            contract Factory {
+                This Make();
+            }
+
+            type Widget {}
+
+            impl Widget : Factory {
+                Widget Make() {
+                    return Widget {};
+                }
+            }
+        "#;
+        let result = resolve_and_type(source);
+        assert!(result.is_ok(), "`This` at a direct impl site must substitute to the receiver type; got: {result:?}");
+    }
+
+    #[test]
+    fn this_return_type_rejects_the_wrong_concrete_type() {
+        let source = r#"
+            contract Factory {
+                This Make();
+            }
+
+            type Widget {}
+            type Other {}
+
+            impl Widget : Factory {
+                Other Make() {
+                    return Other {};
+                }
+            }
+        "#;
+        let errors = resolve_and_type(source)
+            .expect_err("implementing `This Make()` with the wrong concrete return type must be rejected");
+        assert!(
+            errors.iter().any(|error| matches!(
+                error,
+                TypeError::ContractImplementationSignatureMismatch { method_name, .. } if method_name == "Make"
+            )),
+            "expected ContractImplementationSignatureMismatch for Make; got: {errors:?}"
+        );
+    }
+
+    #[test]
+    fn this_return_type_works_for_type_conformance_too() {
+        // Same mechanism, `type X : Contract { }` syntax instead of `impl`.
+        let source = r#"
+            contract Factory {
+                This Make();
+            }
+
+            type Widget : Factory {
+                Widget Make() {
+                    return Widget {};
+                }
+            }
+        "#;
+        let result = resolve_and_type(source);
+        assert!(result.is_ok(), "`This` must resolve the same way for `type X : Contract`; got: {result:?}");
     }
 }

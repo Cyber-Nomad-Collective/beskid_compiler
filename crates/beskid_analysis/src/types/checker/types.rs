@@ -13,6 +13,7 @@ fn type_display_name(ty: &Spanned<Type>) -> String {
         Type::Primitive(primitive) => format!("{:?}", primitive.node),
         Type::Complex(path) => path_display_name(path),
         Type::Associated { contract, name } => format!("{}::{}", path_display_name(contract), name.node.name),
+        Type::This => "This".to_string(),
         Type::Array(inner) => format!("{}[]", type_display_name(inner)),
         Type::Function { return_type, parameters } => {
             let params = parameters.iter().map(type_display_name).collect::<Vec<_>>().join(", ");
@@ -64,6 +65,15 @@ impl<'a> TypeChecker<'a> {
             Type::Complex(path) => self.type_id_for_path_with_args(path),
             // Binding lookup belongs to the associated-type conformance pass.
             Type::Associated { .. } => None,
+            // `This` is treated as a synthetic, always-in-scope generic parameter named
+            // `"This"` (not a dedicated `TypeInfo` variant): a contract's own signature-seeding
+            // scope interns it via `TypeInfo::GenericParam("This")`
+            // (`types/checker/contracts.rs::seed_contract_signatures`), and the conformance
+            // equality pass substitutes it with the conforming type's own `TypeId`
+            // (`check_contract_conformances`) the same way a real generic parameter is
+            // substituted. Outside either scope (`This` used out of context) this resolves to
+            // `None`, matching every other unresolved-type case.
+            Type::This => self.generic_params.get("This").copied(),
             Type::Array(inner) => {
                 let inner_id = self.type_id_for_type(inner)?;
                 if let Some(existing) = self.type_table.find_array_of(inner_id) {

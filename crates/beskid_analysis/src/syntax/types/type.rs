@@ -12,6 +12,10 @@ pub enum Type {
     /// A contract-qualified associated type reference such as `Iterator::Item`.
     #[ast(children)]
     Associated { contract: Spanned<Path>, name: Spanned<Identifier> },
+    /// `This`: inside a contract body, the eventual implementing type; at an impl site, the
+    /// receiver type. A reserved keyword, not an ordinary identifier.
+    #[ast(skip)]
+    This,
     #[ast(child)]
     Array(Box<Spanned<Type>>),
     #[ast(children)]
@@ -105,6 +109,7 @@ impl crate::parsing::parsable::Parsable for Type {
                 let inner_type = Self::parse(type_name)?;
                 Self::Array(Box::new(inner_type))
             }
+            crate::parser::Rule::ThisType => Self::This,
             crate::parser::Rule::AssociatedTypeRef => {
                 let mut inner = pair.into_inner();
                 let contract = crate::syntax::Path::parse(

@@ -113,6 +113,7 @@ impl Emit for Type {
                 w.write_str("::")?;
                 name.emit(w, cx)
             }
+            Type::This => cx.token(w, "This"),
             Type::Array(inner) => {
                 inner.emit(w, cx)?;
                 w.write_str("[]")?;

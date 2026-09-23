@@ -469,7 +469,7 @@ pub(in crate::semantic_contract) fn semantic_type_from_syntax(
         }),
         // SemanticTypeId cannot encode nominal identity. ABI-only callers must use
         // `abi_type_from_syntax`, which proves the managed-reference representation separately.
-        Type::Complex(_) | Type::Associated { .. } | Type::Array(_) => {
+        Type::Complex(_) | Type::Associated { .. } | Type::Array(_) | Type::This => {
             Err(SemanticError::unavailable("item_signature"))
         }
         Type::Function { .. } => Err(SemanticError::unavailable("item_signature")),

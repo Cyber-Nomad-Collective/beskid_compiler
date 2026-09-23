@@ -517,7 +517,7 @@ impl<'a> TypeSurfaceBuilder<'a> {
 
     fn type_references_ambiguous_module_import(&self, ty: &Spanned<Type>) -> bool {
         match &ty.node {
-            Type::Primitive(_) => false,
+            Type::Primitive(_) | Type::This => false,
             Type::Complex(path) => self.path_references_ambiguous_module_import(path),
             Type::Associated { contract, .. } => self.path_references_ambiguous_module_import(contract),
             Type::Array(inner) => self.type_references_ambiguous_module_import(inner),
@@ -558,6 +558,9 @@ impl<'a> TypeSurfaceBuilder<'a> {
             Type::Primitive(primitive) => self.primitive_type_id(primitive.node),
             Type::Complex(path) => self.type_id_for_path_with_args(path),
             Type::Associated { .. } => None,
+            // This surface pass has no per-contract generic scope; `This` resolves during the
+            // real per-item typing pass (`types/checker/types.rs`), not here.
+            Type::This => None,
             Type::Array(inner) => {
                 let inner_id = self.type_id_for_type(inner)?;
                 Some(self.types.find_array_of(inner_id).unwrap_or_else(|| self.types.intern(TypeInfo::Array(inner_id))))

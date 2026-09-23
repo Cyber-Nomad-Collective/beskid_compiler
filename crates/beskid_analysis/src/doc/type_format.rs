@@ -38,6 +38,7 @@ pub fn format_type(ty: &Spanned<Type>) -> String {
                 .join("."),
             name.node.name
         ),
+        Type::This => "This".to_string(),
         Type::Array(inner) => format!("{}[]", format_type(inner)),
         Type::Function { return_type, parameters } => {
             let params = parameters.iter().map(format_type).collect::<Vec<_>>().join(", ");

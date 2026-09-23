@@ -315,6 +315,7 @@ fn type_name(ty: &Spanned<Type>) -> String {
             path.node.segments.iter().map(|segment| segment.node.name.node.name.clone()).collect::<Vec<_>>().join(".")
         }
         Type::Associated { contract, name } => format!("{}::{}", path_name(contract), name.node.name),
+        Type::This => "This".to_string(),
         Type::Array(inner) => type_name(inner),
         Type::Function { .. } => "Function".to_string(),
     }
