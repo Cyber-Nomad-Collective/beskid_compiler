@@ -80,7 +80,7 @@ pub(in crate::semantic_contract) fn item_abi_signature_tracked(
             return Some(abi_signature_from_syntax(db, key, &function.parameters, return_type));
         }
         if let Some(method) = node.of::<beskid_analysis::syntax::MethodDefinition>() {
-            let generic_owner = parent_node(index, key.node)
+            let generic_owner = method_owner_node(program, index, key.node)
                 .and_then(|parent| index.node_at(program, parent))
                 .and_then(|node| node.of::<beskid_analysis::syntax::TypeDefinition>())
                 .is_some_and(|definition| !definition.generics.is_empty());

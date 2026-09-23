@@ -100,7 +100,8 @@ use layouts::{
 use locals::{
     ancestor_distance, constant_integer_tracked, implicit_method_receiver_tracked, is_ancestor,
     local_declaration_is_mutable, local_declaration_owner, local_declaration_scope, local_slot_for_declaration,
-    local_slot_tracked, mutable_local_assignment_tracked, nearest_ancestor, parent_node, resolve_lexical_declaration,
+    local_slot_tracked, method_owner_node, method_this_type, mutable_local_assignment_tracked, nearest_ancestor, parent_node,
+    resolve_lexical_declaration,
     resolved_local_tracked,
 };
 use model::ContractParameterWitness;

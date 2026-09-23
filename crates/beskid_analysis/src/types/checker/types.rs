@@ -13,6 +13,7 @@ fn type_display_name(ty: &Spanned<Type>) -> String {
         Type::Primitive(primitive) => format!("{:?}", primitive.node),
         Type::Complex(path) => path_display_name(path),
         Type::Associated { contract, name } => format!("{}::{}", path_display_name(contract), name.node.name),
+        Type::This => "This".to_string(),
         Type::Array(inner) => format!("{}[]", type_display_name(inner)),
         Type::Function { return_type, parameters } => {
             let params = parameters.iter().map(type_display_name).collect::<Vec<_>>().join(", ");
@@ -21,7 +22,7 @@ fn type_display_name(ty: &Spanned<Type>) -> String {
     }
 }
 
-fn path_display_name(path: &Spanned<Path>) -> String {
+pub(super) fn path_display_name(path: &Spanned<Path>) -> String {
     let segments = &path.node.segments;
     if segments.is_empty() {
         return "<unnamed>".to_string();
@@ -62,8 +63,36 @@ impl<'a> TypeChecker<'a> {
                 self.primitive_type_id(mapped)
             }
             Type::Complex(path) => self.type_id_for_path_with_args(path),
-            // Binding lookup belongs to the associated-type conformance pass.
-            Type::Associated { .. } => None,
+            // Associated-type binding resolution (`T::Item`) needs the implementor's binding,
+            // which is only known once conformance sites have been scanned
+            // (`check_contract_conformances`, which runs *after* the main per-item typing
+            // pass this method is called from). A future slice can special-case the
+            // already-resolved-implementor case (e.g. `ArrayIterator::Item` naming a concrete,
+            // already-typed receiver) by consulting `self.associated_type_bindings` early; for
+            // now every `Type::Associated` reference fails closed with a diagnostic rather than
+            // silently vanishing, mirroring Gap 3's documented bounded-generic `This` deferral.
+            Type::Associated { name, .. } => {
+                self.errors.push(TypeError::UnresolvedAssociatedType {
+                    span: ty.span,
+                    name: name.node.name.clone(),
+                });
+                None
+            }
+            // `This` is treated as a synthetic, always-in-scope generic parameter named
+            // `"This"` (not a dedicated `TypeInfo` variant): a contract's own signature-seeding
+            // scope interns it via `TypeInfo::GenericParam("This")`
+            // (`types/checker/contracts.rs::seed_contract_signatures`), and the conformance
+            // equality pass substitutes it with the conforming type's own `TypeId`
+            // (`check_contract_conformances`) the same way a real generic parameter is
+            // substituted. Outside either scope (`This` used out of context) this resolves to
+            // `None` and emits a diagnostic.
+            Type::This => {
+                let resolved = self.generic_params.get("This").copied();
+                if resolved.is_none() {
+                    self.errors.push(TypeError::ThisUsedOutsideContractOrImpl { span: ty.span });
+                }
+                resolved
+            }
             Type::Array(inner) => {
                 let inner_id = self.type_id_for_type(inner)?;
                 if let Some(existing) = self.type_table.find_array_of(inner_id) {

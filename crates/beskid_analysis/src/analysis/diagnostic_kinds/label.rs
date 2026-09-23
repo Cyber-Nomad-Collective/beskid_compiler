@@ -32,6 +32,9 @@ impl SemanticIssueKind {
                 "contract implementation signature mismatch".to_string()
             }
             Self::ContractMethodMissingImplementation { .. } => "contract method missing implementation".to_string(),
+            Self::ContractAssociatedTypeMissingBinding { .. } => "associated type missing binding".to_string(),
+            Self::ThisUsedOutsideContractOrImpl => "`This` used outside a contract or impl".to_string(),
+            Self::UnresolvedAssociatedType { .. } => "unresolved associated type".to_string(),
             Self::ImmutableAssignment { .. } => "immutable assignment".to_string(),
             Self::MatchGuardMustBeBoolean => "guard type mismatch".to_string(),
             Self::MatchArmTypeMismatch { .. } => "match arm type mismatch".to_string(),

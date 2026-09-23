@@ -140,7 +140,19 @@ corelib_typecheck_test!(console_format_scan_tests_front_end_typechecks, "console
 corelib_typecheck_test!(console_style_tests_front_end_typechecks, "console/ConsoleStyleTests.bd");
 corelib_typecheck_test!(console_controls_frame_tests_front_end_typechecks, "console/ControlsFrameTests.bd");
 corelib_typecheck_test!(console_ansi_builders_tests_front_end_typechecks, "console/AnsiBuildersTests.bd");
+corelib_typecheck_test!(console_ansi_style_step_conformance_tests_front_end_typechecks, "console/AnsiStyleStepConformanceTests.bd");
+corelib_typecheck_test!(console_ansi_fluent_step_conformance_tests_front_end_typechecks, "console/AnsiFluentStepConformanceTests.bd");
 corelib_typecheck_test!(console_render_context_tests_front_end_typechecks, "console/RenderContextTests.bd");
+corelib_typecheck_test!(network_types_tests_front_end_typechecks, "network/TypesTests.bd");
+corelib_typecheck_test!(network_dns_tests_front_end_typechecks, "network/DnsTests.bd");
+corelib_typecheck_test!(network_tcp_tests_front_end_typechecks, "network/TcpTests.bd");
+corelib_typecheck_test!(network_udp_tests_front_end_typechecks, "network/UdpTests.bd");
+corelib_typecheck_test!(network_scope_tests_front_end_typechecks, "network/ScopeTests.bd");
+corelib_typecheck_test!(network_shutdown_leak_tests_front_end_typechecks, "network/ShutdownLeakTests.bd");
+corelib_typecheck_test!(network_disposable_tests_front_end_typechecks, "network/DisposableTests.bd");
+corelib_typecheck_test!(http_codec_tests_front_end_typechecks, "http/CodecTests.bd");
+corelib_typecheck_test!(http_serialization_tests_front_end_typechecks, "http/SerializationTests.bd");
+corelib_typecheck_test!(http_exchange_tests_front_end_typechecks, "http/ExchangeTests.bd");
 corelib_typecheck_test!(text_cursor_tests_front_end_typechecks, "text/TextCursorTests.bd");
 corelib_typecheck_test!(text_parser_tests_front_end_typechecks, "text/TextParserTests.bd");
 corelib_typecheck_test!(text_regex_tests_front_end_typechecks, "text/TextRegexTests.bd");
@@ -152,3 +164,4 @@ corelib_typecheck_test!(text_regex_integration_tests_front_end_typechecks, "text
 corelib_typecheck_test!(core_optional_tests_front_end_typechecks, "core/OptionalTests.bd");
 corelib_typecheck_test!(collections_tests_front_end_typechecks, "collections/CollectionsTests.bd");
 corelib_typecheck_test!(query_tests_front_end_typechecks, "query/QueryTests.bd");
+corelib_typecheck_test!(query_iterator_conformance_tests_front_end_typechecks, "query/QueryIteratorConformanceTests.bd");

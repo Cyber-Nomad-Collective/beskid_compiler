@@ -183,6 +183,15 @@ pub(crate) fn emit_type_error(ctx: &mut RuleContext, error: TypeError, result: O
                 },
             );
         }
+        TypeError::ThisUsedOutsideContractOrImpl { span } => {
+            ctx.emit_issue(span, SemanticIssueKind::ThisUsedOutsideContractOrImpl);
+        }
+        TypeError::UnresolvedAssociatedType { span, name } => {
+            ctx.emit_issue(span, SemanticIssueKind::UnresolvedAssociatedType { name });
+        }
+        TypeError::ContractAssociatedTypeMissingBinding { span, contract_name, assoc_name } => {
+            ctx.emit_issue(span, SemanticIssueKind::ContractAssociatedTypeMissingBinding { contract_name, assoc_name });
+        }
     }
 }
 

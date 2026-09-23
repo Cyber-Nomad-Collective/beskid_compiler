@@ -19,6 +19,9 @@ impl Resolver {
     pub(super) fn resolve_type(&mut self, ty: &Spanned<Type>) {
         match &ty.node {
             Type::Primitive(_) => {}
+            // `This` is not a path reference; it is substituted at the typechecker layer
+            // (`generic_params["This"]`), not resolved here.
+            Type::This => {}
             Type::Complex(path) => {
                 self.resolve_path_type_arguments(path);
                 self.resolve_type_path(path);

@@ -78,7 +78,7 @@ fn parse_enum_variant(
     helpers: Option<&HelperPaths>,
     type_params: &BTreeSet<String>,
 ) -> EnumVariantMirror {
-    let name = v.ident.to_string();
+    let name = crate::emit_idents::escape_beskid_variant_ident(&v.ident.to_string());
     let shape = match &v.fields {
         Fields::Unit => VariantShape::Unit,
         Fields::Unnamed(uf) => {

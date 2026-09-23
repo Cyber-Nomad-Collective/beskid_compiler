@@ -119,8 +119,12 @@ fn specialization_for_call_in_environment(
                 None,
             )
         } else if let Some(method) = declaration_node.of::<beskid_analysis::syntax::MethodDefinition>() {
-            let owner_node = parent_node(declaration_syntax.syntax_index(db), declaration.node)
-                .ok_or_else(|| SemanticError::unavailable("call_abi_signature"))?;
+            let owner_node = method_owner_node(
+                declaration_syntax.expanded_program(db),
+                declaration_syntax.syntax_index(db),
+                declaration.node,
+            )
+            .ok_or_else(|| SemanticError::unavailable("call_abi_signature"))?;
             let parent = declaration_syntax
                 .syntax_index(db)
                 .node_at(declaration_syntax.expanded_program(db), owner_node)
@@ -348,6 +352,49 @@ fn specialization_for_call_in_environment(
                 .any(|syntax_type| type_syntax_mentions_generic_parameter(syntax_type, generic))
     }) {
         return Err(SemanticError::unavailable("call_abi_signature"));
+    }
+    // `where T: Contract` (Gap 3, task 2.3/2.7): reject the call before monomorphization if an
+    // inferred/explicit generic argument does not conform to its bound. ISLE never sees a call
+    // that fails this check, since `DirectCallee::SpecializedItem` is only minted from a
+    // successful `Ok(GenericSpecializationInstance)`.
+    if let Some(function) = declaration_node.of::<beskid_analysis::syntax::FunctionDefinition>() {
+        for bound in &function.where_bounds {
+            let Some(contract) = contracts::resolve_contract(db, declaration, &bound.contract.node) else {
+                return Err(SemanticError::new(format!(
+                    "unknown contract `{}` in where clause",
+                    bound.contract.node.segments.last().map(|s| s.node.name.node.name.as_str()).unwrap_or("?")
+                )));
+            };
+            let Some(argument_type_id) = substitutions.get(bound.parameter.node.name.as_str()).copied() else {
+                continue;
+            };
+            let source_identity = source_substitutions
+                .get(bound.parameter.node.name.as_str())
+                .map(|binding| binding.source_identity().clone())
+                .unwrap_or(GenericSourceTypeIdentity::Abi(argument_type_id));
+            let Some(concrete) = contracts::concrete_declaration(db, declaration, &source_identity) else {
+                return Err(SemanticError::new(format!(
+                    "generic bound not satisfied: `{}` has no concrete conforming type for `where {}: {}`",
+                    bound.parameter.node.name,
+                    bound.parameter.node.name,
+                    bound.contract.node.segments.last().map(|s| s.node.name.node.name.as_str()).unwrap_or("?")
+                )));
+            };
+            let concrete_syntax =
+                db.syntax_unit(concrete.unit).ok_or_else(|| SemanticError::unavailable("call_abi_signature"))?;
+            let concrete_definition = concrete_syntax
+                .syntax_index(db)
+                .node_at(concrete_syntax.expanded_program(db), concrete.node)
+                .and_then(|node| node.of::<beskid_analysis::syntax::TypeDefinition>())
+                .ok_or_else(|| SemanticError::unavailable("call_abi_signature"))?;
+            if !contracts::type_declaration_conforms_to_contract(db, concrete, concrete_definition, contract) {
+                return Err(SemanticError::new(format!(
+                    "generic bound not satisfied: `{}` does not conform to `{}`",
+                    concrete_definition.name.node.name,
+                    bound.contract.node.segments.last().map(|s| s.node.name.node.name.as_str()).unwrap_or("?")
+                )));
+            }
+        }
     }
     let mut signature_parameters = parameters
         .iter()
@@ -898,6 +945,10 @@ pub(in crate::semantic_contract) fn type_syntax_mentions_generic_parameter(
                     .iter()
                     .any(|parameter_type| type_syntax_mentions_generic_parameter(&parameter_type.node, parameter))
         }
+        // `This` is substituted with the conforming type's own identity before a call reaches
+        // ABI lowering (direct-impl sites, `beskid_analysis`'s typechecker); a bounded generic
+        // `This` at a monomorphized call site is deferred to a later slice.
+        beskid_analysis::syntax::Type::This => false,
     }
 }
 

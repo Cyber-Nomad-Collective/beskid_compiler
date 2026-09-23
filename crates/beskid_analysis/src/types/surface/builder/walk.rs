@@ -102,6 +102,14 @@ impl<'a> TypeSurfaceBuilder<'a> {
                 self.seed_generic_item(item.span, &def.node.generics);
                 self.register_enum_definition(item.span, &def.node);
             }
+            Node::ContractDefinition(def) => {
+                self.seed_generic_item(item.span, &def.node.generics);
+            }
+            Node::ImplBlock(def) => {
+                for method in &def.node.methods {
+                    self.register_foreign_method(method.span, method);
+                }
+            }
             Node::ExtendTypeDefinition(def) => {
                 for method in &def.node.methods {
                     self.register_foreign_method(method.span, method);

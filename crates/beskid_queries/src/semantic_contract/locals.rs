@@ -19,7 +19,13 @@ pub(super) fn implicit_method_receiver_tracked(
         let method = nearest_ancestor(index, key.node, |kind| {
             kind == beskid_analysis::syntax_query::NodeKind::MethodDefinition
         })?;
-        if segment.node.name.node.name == "self" {
+        // `this` is the method receiver the resolver declares for every method body
+        // (`resolve_refs/items_statements.rs`); `self` is the older spelling. Either names the
+        // implicit receiver slot unless a lexical declaration shadows it.
+        let receiver_name = segment.node.name.node.name.as_str();
+        if receiver_name == "self"
+            || (receiver_name == "this" && resolve_lexical_declaration(program, index, key.node, "this").is_none())
+        {
             return Some(Ok(AstNodeKey { node: method, ..key }));
         }
         let call_node =
@@ -346,6 +352,66 @@ pub(super) fn parent_node(
     node: beskid_analysis::syntax::AstNodeId,
 ) -> Option<beskid_analysis::syntax::AstNodeId> {
     index.metadata().get(node.0 as usize)?.parent
+}
+
+/// `This` in a method's own signature or body denotes that method's receiver type (`Walker`, or
+/// `Cursor<T>` for a generic owner). `key` must be the method or a node inside it. `This`
+/// anywhere else (a contract signature, a free function) has no receiver and stays unproven.
+pub(super) fn method_this_type(db: &dyn Db, key: AstNodeKey) -> Option<beskid_analysis::syntax::Type> {
+    let syntax = db.syntax_unit(key.unit).filter(|syntax| syntax.accepts_key(db, key))?;
+    let index = syntax.syntax_index(db);
+    let method = nearest_ancestor(index, key.node, |kind| {
+        kind == beskid_analysis::syntax_query::NodeKind::MethodDefinition
+    })?;
+    let definition =
+        index.node_at(syntax.expanded_program(db), method)?.of::<beskid_analysis::syntax::MethodDefinition>()?;
+    (!matches!(definition.receiver_type.node, beskid_analysis::syntax::Type::This))
+        .then(|| definition.receiver_type.node.clone())
+}
+
+/// The `type` declaration that owns `method`: its parent `TypeDefinition`, or, for a method in
+/// an `impl T { }` block, the unique `TypeDefinition` named `T` in the same unit (the in-module
+/// form `impl` blocks take). A generic owner is accepted only when the block's receiver spells
+/// exactly the owner's own generic parameter names in order (`impl Box<T>` for `type Box<T>`), so
+/// owner substitutions keep their meaning. Every other shape stays unproven.
+pub(super) fn method_owner_node(
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    method: beskid_analysis::syntax::AstNodeId,
+) -> Option<beskid_analysis::syntax::AstNodeId> {
+    let parent = parent_node(index, method)?;
+    let parent_ref = index.node_at(program, parent)?;
+    if parent_ref.of::<beskid_analysis::syntax::TypeDefinition>().is_some() {
+        return Some(parent);
+    }
+    let impl_block = parent_ref.of::<beskid_analysis::syntax::ImplBlock>()?;
+    let beskid_analysis::syntax::Type::Complex(receiver) = &impl_block.receiver_type.node else {
+        return None;
+    };
+    let receiver = receiver.node.segments.last()?;
+    let candidates = index
+        .ids_of_kind(beskid_analysis::syntax_query::NodeKind::TypeDefinition)
+        .filter(|candidate| {
+            index
+                .node_at(program, *candidate)
+                .and_then(|node| node.of::<beskid_analysis::syntax::TypeDefinition>())
+                .is_some_and(|definition| definition.name.node.name == receiver.node.name.node.name)
+        })
+        .collect::<Vec<_>>();
+    let [owner] = candidates.as_slice() else {
+        return None;
+    };
+    let definition = index.node_at(program, *owner)?.of::<beskid_analysis::syntax::TypeDefinition>()?;
+    let spells_own_generics = receiver.node.type_args.len() == definition.generics.len()
+        && receiver.node.type_args.iter().zip(&definition.generics).all(|(argument, generic)| {
+            matches!(
+                &argument.node,
+                beskid_analysis::syntax::Type::Complex(path)
+                    if matches!(path.node.segments.as_slice(), [segment]
+                        if segment.node.type_args.is_empty() && segment.node.name.node.name == generic.node.name)
+            )
+        });
+    spells_own_generics.then_some(*owner)
 }
 
 pub(super) fn nearest_ancestor(

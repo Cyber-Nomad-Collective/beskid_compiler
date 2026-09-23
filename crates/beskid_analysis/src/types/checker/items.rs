@@ -296,6 +296,21 @@ impl<'a> TypeChecker<'a> {
                     self.generic_params.insert(name.clone(), type_id);
                     inserted.push(name);
                 }
+                // `This` and this contract's own associated types are in scope for its method
+                // signatures here too, mirroring `seed_contract_signatures` -- otherwise this
+                // per-item validation pass would spuriously flag every `This`/associated-type
+                // reference inside a contract body as used out of context.
+                let this_type_id = self.type_table.intern(crate::types::TypeInfo::GenericParam("This".to_string()));
+                self.generic_params.insert("This".to_string(), this_type_id);
+                inserted.push("This".to_string());
+                for contract_item in &def.node.items {
+                    if let ContractNode::AssociatedType(assoc) = &contract_item.node {
+                        let name = assoc.node.name.node.name.clone();
+                        let type_id = self.type_table.intern(crate::types::TypeInfo::GenericParam(name.clone()));
+                        self.generic_params.insert(name.clone(), type_id);
+                        inserted.push(name);
+                    }
+                }
                 for contract_item in &def.node.items {
                     match &contract_item.node {
                         ContractNode::MethodSignature(signature) => {
@@ -321,6 +336,11 @@ impl<'a> TypeChecker<'a> {
                             }
                             for type_arg in &embedding.node.type_args {
                                 self.type_id_for_type_in_generic_scope(type_arg);
+                            }
+                        }
+                        ContractNode::AssociatedType(assoc) => {
+                            if let Some(default) = &assoc.node.default {
+                                self.type_id_for_type_in_generic_scope(default);
                             }
                         }
                     }
@@ -379,6 +399,13 @@ impl<'a> TypeChecker<'a> {
         let receiver_type = self.type_id_for_type(&def.node.receiver_type);
         let previous_receiver = self.current_receiver_item_id;
         self.current_receiver_item_id = receiver_type.and_then(|type_id| self.named_item_id(type_id));
+        // `This` in a method's own signature and body is the method's receiver type (the
+        // implementor applied to its own generics for a generic owner), the same identity the
+        // conformance check substitutes for `This` in the contract signature.
+        let previous_this = match receiver_type {
+            Some(receiver_type) => Some(self.generic_params.insert("This".to_string(), receiver_type)),
+            None => None,
+        };
         let return_type = def
             .node
             .return_type
@@ -404,5 +431,14 @@ impl<'a> TypeChecker<'a> {
         }
         self.type_block(&def.node.body);
         self.current_receiver_item_id = previous_receiver;
+        match previous_this {
+            Some(Some(previous)) => {
+                self.generic_params.insert("This".to_string(), previous);
+            }
+            Some(None) => {
+                self.generic_params.remove("This");
+            }
+            None => {}
+        }
     }
 }

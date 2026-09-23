@@ -62,6 +62,7 @@ impl<'a> PrepWalker<'a> {
                 self.type_id_for_type_path(path)
             }
             Type::Associated { .. } => None,
+            Type::This => self.generic_params.get("This").copied(),
             Type::Array(inner) => {
                 let inner_id = self.type_id_for_program_type(inner)?;
                 self.surfaces.types.find_array_of(inner_id)

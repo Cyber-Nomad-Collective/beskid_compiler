@@ -33,6 +33,9 @@ impl SemanticIssueKind {
             Self::ContractMethodMissingImplementation { .. } => "E1601",
             Self::ContractImplementationSignatureMismatch { .. } => "E1602",
             Self::ContractMethodNotFound { .. } => "E1606",
+            Self::ContractAssociatedTypeMissingBinding { .. } => "E1607",
+            Self::ThisUsedOutsideContractOrImpl => "E1608",
+            Self::UnresolvedAssociatedType { .. } => "E1609",
 
             Self::ImmutableAssignment { .. } => "E1214",
 

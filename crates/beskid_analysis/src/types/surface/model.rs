@@ -16,6 +16,14 @@ pub struct UnitTypeSurface {
     pub struct_event_fields: HashMap<ItemId, HashMap<String, Option<usize>>>,
     pub contract_signatures: HashMap<(ItemId, String), FunctionSignature>,
     pub contract_method_order: HashMap<ItemId, Vec<String>>,
+    /// Declared associated types per contract (`type Item;` / `type Item = T;`), in declaration
+    /// order, with the default (if any) resolved in the contract's own generic scope. Carried
+    /// across units so a conformance to a contract declared in another unit can bind or default
+    /// each associated type.
+    pub contract_associated_types: HashMap<ItemId, Vec<(String, Option<TypeId>)>>,
+    /// Contract methods whose signature did not resolve when the declaring unit's surface was
+    /// built. A conformance to such a contract fails closed with E1201.
+    pub contract_unresolved_methods: HashMap<ItemId, Vec<String>>,
     pub methods_by_receiver: HashMap<(ItemId, String), ItemId>,
     pub named_type_names: HashMap<ItemId, String>,
 }
@@ -31,6 +39,14 @@ pub struct MergedTypeEnv {
     pub struct_event_fields: HashMap<ItemId, HashMap<String, Option<usize>>>,
     pub contract_signatures: HashMap<(ItemId, String), FunctionSignature>,
     pub contract_method_order: HashMap<ItemId, Vec<String>>,
+    /// Declared associated types per contract (`type Item;` / `type Item = T;`), in declaration
+    /// order, with the default (if any) resolved in the contract's own generic scope. Carried
+    /// across units so a conformance to a contract declared in another unit can bind or default
+    /// each associated type.
+    pub contract_associated_types: HashMap<ItemId, Vec<(String, Option<TypeId>)>>,
+    /// Contract methods whose signature did not resolve when the declaring unit's surface was
+    /// built. A conformance to such a contract fails closed with E1201.
+    pub contract_unresolved_methods: HashMap<ItemId, Vec<String>>,
     pub methods_by_receiver: HashMap<(ItemId, String), ItemId>,
     pub named_type_names: HashMap<ItemId, String>,
 }
@@ -48,6 +64,8 @@ impl MergedTypeEnv {
             struct_event_fields: self.struct_event_fields.clone(),
             contract_signatures: self.contract_signatures.clone(),
             contract_method_order: self.contract_method_order.clone(),
+            contract_associated_types: self.contract_associated_types.clone(),
+            contract_unresolved_methods: self.contract_unresolved_methods.clone(),
             methods_by_receiver: self.methods_by_receiver.clone(),
             named_type_names: self.named_type_names.clone(),
         }

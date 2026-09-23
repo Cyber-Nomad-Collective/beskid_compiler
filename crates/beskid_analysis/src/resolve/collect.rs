@@ -29,6 +29,7 @@ pub(super) fn type_name_for_method_receiver(receiver_type: &Spanned<Type>) -> St
                 .join("."),
             name.node.name
         ),
+        Type::This => "This".to_string(),
         Type::Array(_) => "Array".to_string(),
         Type::Function { .. } => "Function".to_string(),
     }

@@ -100,6 +100,7 @@ impl Resolver {
                 self.resolve_type(&def.node.receiver_type);
                 let receiver_item_id = self.receiver_item_id_for_type(&def.node.receiver_type);
                 for conformance in &def.node.conformances {
+                    self.resolve_path_type_arguments(conformance);
                     self.resolve_type_path(conformance);
                     let Some(receiver_item_id) = receiver_item_id else {
                         continue;
@@ -140,6 +141,9 @@ impl Resolver {
                         self.current_receiver_item_id = previous_receiver;
                         self.pop_scope();
                     }
+                }
+                for binding in &def.node.associated_type_bindings {
+                    self.resolve_type(&binding.node.ty);
                 }
             }
             Node::TestDefinition(def) => {
@@ -183,6 +187,7 @@ impl Resolver {
                 }
                 let type_item_id = self.resolve_item_in_scope(&def.node.name.node.name);
                 for conformance in &def.node.conformances {
+                    self.resolve_path_type_arguments(conformance);
                     self.resolve_type_path(conformance);
                     let Some(type_item_id) = type_item_id else {
                         continue;
@@ -227,6 +232,9 @@ impl Resolver {
                         self.pop_scope();
                     }
                 }
+                for binding in &def.node.associated_type_bindings {
+                    self.resolve_type(&binding.node.ty);
+                }
                 self.pop_generic_scope();
             }
             Node::EnumDefinition(def) => {
@@ -246,6 +254,14 @@ impl Resolver {
                 for generic in &def.node.generics {
                     self.insert_generic(&generic.node.name);
                 }
+                // The contract's own associated-type names are in scope like generics (bare
+                // `Item` inside its method signatures), mirroring `TypeChecker::
+                // seed_contract_signatures`'s `generic_params` push.
+                for node in &def.node.items {
+                    if let ContractNode::AssociatedType(assoc) = &node.node {
+                        self.insert_generic(&assoc.node.name.node.name);
+                    }
+                }
                 for node in &def.node.items {
                     match &node.node {
                         ContractNode::MethodSignature(signature) => {
@@ -259,6 +275,11 @@ impl Resolver {
                         ContractNode::Embedding(embedding) => {
                             for type_arg in &embedding.node.type_args {
                                 self.resolve_type(type_arg);
+                            }
+                        }
+                        ContractNode::AssociatedType(assoc) => {
+                            if let Some(default) = &assoc.node.default {
+                                self.resolve_type(default);
                             }
                         }
                     }

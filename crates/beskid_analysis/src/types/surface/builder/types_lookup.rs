@@ -8,7 +8,7 @@ use super::state::{ModuleImport, TypeSurfaceBuilder};
 impl<'a> TypeSurfaceBuilder<'a> {
     pub(super) fn type_references_ambiguous_module_import(&self, ty: &Spanned<Type>) -> bool {
         match &ty.node {
-            Type::Primitive(_) => false,
+            Type::Primitive(_) | Type::This => false,
             Type::Complex(path) => self.path_references_ambiguous_module_import(path),
             Type::Associated { contract, .. } => self.path_references_ambiguous_module_import(contract),
             Type::Array(inner) => self.type_references_ambiguous_module_import(inner),
@@ -49,6 +49,9 @@ impl<'a> TypeSurfaceBuilder<'a> {
             Type::Primitive(primitive) => self.primitive_type_id(primitive.node),
             Type::Complex(path) => self.type_id_for_path_with_args(path),
             Type::Associated { .. } => None,
+            // `This` is in scope only inside a contract signature (`seed_contract_signatures`
+            // pushes it as a synthetic generic parameter); anywhere else it does not resolve.
+            Type::This => self.generic_params.get("This").copied(),
             Type::Array(inner) => {
                 let inner_id = self.type_id_for_type(inner)?;
                 Some(self.types.find_array_of(inner_id).unwrap_or_else(|| self.types.intern(TypeInfo::Array(inner_id))))

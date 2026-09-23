@@ -1,6 +1,7 @@
 ArrayLiteralExpression
 AssignExpression
 AssignOp
+AssociatedTypeBinding
 Attribute
 AttributeArgument
 AttributeDeclaration
@@ -17,6 +18,7 @@ CodeStringLiteral
 CodeStringSegment
 ConstantDefinition
 ContinueStatement
+ContractAssociatedType
 ContractDefinition
 ContractEmbedding
 ContractMethodSignature
@@ -91,5 +93,6 @@ UnaryExpression
 UnaryOp
 UseDeclaration
 Visibility
+WhereBound
 WhileStatement
 WithStatement

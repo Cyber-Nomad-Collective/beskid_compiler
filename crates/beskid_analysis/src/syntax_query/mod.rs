@@ -50,6 +50,8 @@ node_kinds!(
     ContractNode,
     ContractMethodSignature,
     ContractEmbedding,
+    ContractAssociatedType,
+    AssociatedTypeBinding,
     Attribute,
     AttributeDeclaration,
     AttributeTarget,

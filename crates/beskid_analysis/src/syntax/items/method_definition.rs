@@ -66,6 +66,17 @@ impl MethodDefinition {
         receiver_type: Spanned<Type>,
     ) -> Result<Spanned<Self>, ParseError> {
         let span = SpanInfo::from_span(&pair.as_span());
+        // Every method in a `type X { }`/`impl X { }`/`extend type X { }` body is parsed with
+        // the SAME `receiver_type` value (built once per block, then `.clone()`d per method by
+        // the caller) -- if its span were kept as-is, every method's "this" local would be
+        // registered/looked-up under the identical span. `insert_local`/`intern_local` (resolver)
+        // and `local_id_for_span`/`insert_local_type` (typechecker) are span-keyed, so beyond the
+        // first method, "this"'s own distinct `LocalId` would never get a type
+        // (`local_id_for_span` always finds the *first* local at a shared span), and any
+        // reference to `this` -- explicit or an implicit bare-field access -- in the second and
+        // later methods would fail to type-check (`UnknownValueType`). Re-span to this specific
+        // method's own span so each method's "this" local is span-unique.
+        let receiver_type = Spanned::new(receiver_type.node, span);
         let mut inner = pair.clone().into_inner().peekable();
         let attributes = parse_attributes(&mut inner)?;
         let visibility = parse_visibility_or_default(&pair, &mut inner)?;

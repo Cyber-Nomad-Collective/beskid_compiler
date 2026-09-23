@@ -151,7 +151,9 @@ fn collect_type_positions(
 /// function/method.
 fn first_unresolved_nominal_reference(db: &dyn Db, key: AstNodeKey, ty: &Type) -> Option<String> {
     match ty {
-        Type::Primitive(_) | Type::Associated { .. } => None,
+        // `This` is not a nominal reference: the type checker owns its scope
+        // (`ThisUsedOutsideContractOrImpl`), like any enclosing generic parameter.
+        Type::Primitive(_) | Type::Associated { .. } | Type::This => None,
         Type::Array(inner) => first_unresolved_nominal_reference(db, key, &inner.node),
         Type::Function { return_type, parameters } => first_unresolved_nominal_reference(db, key, &return_type.node)
             .or_else(|| parameters.iter().find_map(|parameter| first_unresolved_nominal_reference(db, key, &parameter.node))),

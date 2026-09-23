@@ -9,7 +9,9 @@ use crate::syntax::items::parse_helpers::{
     parse_attributes, parse_doc_attached_list, parse_doc_attached_with, parse_identifier_list,
     parse_visibility_or_default,
 };
-use crate::syntax::{Attribute, Field, Identifier, Path, PathSegment, SpanInfo, Spanned, Type, Visibility};
+use crate::syntax::{
+    AssociatedTypeBinding, Attribute, Field, Identifier, Path, PathSegment, SpanInfo, Spanned, Type, Visibility,
+};
 
 use beskid_ast_derive::AstNode;
 
@@ -34,6 +36,8 @@ pub struct TypeDefinition {
     pub methods: Vec<Spanned<MethodDefinition>>,
     #[ast(skip)]
     pub method_docs: Vec<Option<LeadingDocComment>>,
+    #[ast(children)]
+    pub associated_type_bindings: Vec<Spanned<AssociatedTypeBinding>>,
 }
 
 fn receiver_type_for_definition(
@@ -81,6 +85,7 @@ impl Parsable for TypeDefinition {
         let mut field_docs = Vec::new();
         let mut methods = Vec::new();
         let mut method_docs = Vec::new();
+        let mut associated_type_bindings = Vec::new();
 
         for item in inner {
             match item.as_rule() {
@@ -107,6 +112,14 @@ impl Parsable for TypeDefinition {
                                 methods.push(method);
                                 method_docs.push(doc_opt);
                             }
+                            Rule::AssociatedTypeBindingWithDocs => {
+                                let (_doc_opt, binding) = parse_doc_attached_with(
+                                    member,
+                                    Rule::AssociatedTypeBindingWithDocs,
+                                    AssociatedTypeBinding::parse,
+                                )?;
+                                associated_type_bindings.push(binding);
+                            }
                             _ => return Err(ParseError::unexpected_rule(member, None)),
                         }
                     }
@@ -118,7 +131,18 @@ impl Parsable for TypeDefinition {
         debug_assert_eq!(methods.len(), method_docs.len());
 
         Ok(Spanned::new(
-            Self { attributes, visibility, name, generics, conformances, fields, field_docs, methods, method_docs },
+            Self {
+                attributes,
+                visibility,
+                name,
+                generics,
+                conformances,
+                fields,
+                field_docs,
+                methods,
+                method_docs,
+                associated_type_bindings,
+            },
             span,
         ))
     }

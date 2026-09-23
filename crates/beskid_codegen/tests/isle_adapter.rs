@@ -6,6 +6,8 @@ mod calls_conversions;
 mod channel_conditions;
 #[path = "isle_adapter/composition_conditions.rs"]
 mod composition_conditions;
+#[path = "isle_adapter/contract_method_bodies.rs"]
+mod contract_method_bodies;
 #[path = "isle_adapter/control_flow_closures_spawn.rs"]
 mod control_flow_closures_spawn;
 #[path = "isle_adapter/control_flow_loop_termination.rs"]

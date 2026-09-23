@@ -117,6 +117,28 @@ pub(in crate::semantic_contract) fn abi_type_for_local_path(
                 None => Err(SemanticError::unavailable("abi_type")),
             }
         }
+        // `this.field` is the implicit-receiver field access, same as the bare `field` spelling.
+        [receiver, field]
+            if receiver.node.type_args.is_empty()
+                && field.node.type_args.is_empty()
+                && super::field_access::is_implicit_receiver_name(
+                    program,
+                    index,
+                    key,
+                    receiver.node.name.node.name.as_str(),
+                ) =>
+        {
+            let access = aggregate_field_access(db, key)?.ok_or_else(|| SemanticError::unavailable("abi_type"))?;
+            match access
+                .layout
+                .fields
+                .get(usize::try_from(access.index).map_err(|_| SemanticError::unavailable("abi_type"))?)
+            {
+                Some((_, AggregateFieldShape::Scalar(semantic))) => Ok(*semantic),
+                Some((_, AggregateFieldShape::Nominal(_))) => Ok(SemanticTypeId::POINTER),
+                None => Err(SemanticError::unavailable("abi_type")),
+            }
+        }
         [receiver, field] if receiver.node.type_args.is_empty() && field.node.type_args.is_empty() => {
             abi_type_for_direct_aggregate_field_projection(
                 db,
@@ -469,7 +491,7 @@ pub(in crate::semantic_contract) fn semantic_type_from_syntax(
         }),
         // SemanticTypeId cannot encode nominal identity. ABI-only callers must use
         // `abi_type_from_syntax`, which proves the managed-reference representation separately.
-        Type::Complex(_) | Type::Associated { .. } | Type::Array(_) => {
+        Type::Complex(_) | Type::Associated { .. } | Type::Array(_) | Type::This => {
             Err(SemanticError::unavailable("item_signature"))
         }
         Type::Function { .. } => Err(SemanticError::unavailable("item_signature")),

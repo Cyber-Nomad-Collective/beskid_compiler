@@ -2,8 +2,8 @@ use crate::format::emit::{Emit, EmitCtx, EmitError};
 use crate::format::items::helpers::{emit_attribute_lines, emit_generics_list, emit_parameter_list};
 use crate::syntax::items::impl_block::ImplBlock;
 use crate::syntax::{
-    ContractDefinition, ContractEmbedding, ContractMethodSignature, ContractNode, EnumDefinition, EnumVariant,
-    ExtendTypeDefinition, ModuleDeclaration, Spanned, TypeDefinition, UseDeclaration,
+    ContractAssociatedType, ContractDefinition, ContractEmbedding, ContractMethodSignature, ContractNode,
+    EnumDefinition, EnumVariant, ExtendTypeDefinition, ModuleDeclaration, Spanned, TypeDefinition, UseDeclaration,
 };
 use std::fmt::Write;
 
@@ -200,11 +200,34 @@ impl Emit for Spanned<ContractEmbedding> {
     }
 }
 
+impl Emit for ContractAssociatedType {
+    fn emit<W: Write>(&self, w: &mut W, cx: &mut EmitCtx) -> Result<(), EmitError> {
+        cx.token(w, "type")?;
+        cx.space(w)?;
+        self.name.emit(w, cx)?;
+        if let Some(default) = &self.default {
+            cx.space(w)?;
+            w.write_char('=')?;
+            cx.space(w)?;
+            default.emit(w, cx)?;
+        }
+        w.write_char(';')?;
+        Ok(())
+    }
+}
+
+impl Emit for Spanned<ContractAssociatedType> {
+    fn emit<W: Write>(&self, w: &mut W, cx: &mut EmitCtx) -> Result<(), EmitError> {
+        self.node.emit(w, cx)
+    }
+}
+
 impl Emit for ContractNode {
     fn emit<W: Write>(&self, w: &mut W, cx: &mut EmitCtx) -> Result<(), EmitError> {
         match self {
             ContractNode::MethodSignature(m) => m.emit(w, cx),
             ContractNode::Embedding(e) => e.emit(w, cx),
+            ContractNode::AssociatedType(a) => a.emit(w, cx),
         }
     }
 }

@@ -70,6 +70,16 @@ pub fn escape_beskid_ident(raw: &str) -> String {
     if reserved_keyword_prefix_conflict(&lower) { format!("_{raw}") } else { raw.to_string() }
 }
 
+/// Case-sensitive Beskid keywords that a PascalCase Rust enum variant can spell exactly
+/// (`Type::This` -> the `This` type keyword). Lowercase keywords cannot collide with a variant.
+pub const BESKID_RESERVED_VARIANT_NAMES: &[&str] = &["This"];
+
+/// A Rust enum variant name as a valid Beskid variant identifier: an exact keyword gets the same
+/// `_` prefix that [`escape_beskid_ident`] gives field names (`This` -> `_This`).
+pub fn escape_beskid_variant_ident(raw: &str) -> String {
+    if BESKID_RESERVED_VARIANT_NAMES.contains(&raw) { format!("_{raw}") } else { raw.to_string() }
+}
+
 /// Rust `snake_case` (or synthetic `field_0` / `variant_field_0`) to **lowerCamelCase** for Mod SDK
 /// `.bd` field names, then [`escape_beskid_ident`] for keyword / `kw_` prefix safety.
 pub fn rust_snake_to_beskid_field_camel(raw: &str) -> String {
@@ -109,7 +119,14 @@ pub fn rust_snake_to_beskid_field_camel(raw: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{escape_beskid_ident, rust_snake_to_beskid_field_camel};
+    use super::{escape_beskid_ident, escape_beskid_variant_ident, rust_snake_to_beskid_field_camel};
+
+    #[test]
+    fn escapes_keyword_variant_names_only() {
+        assert_eq!(escape_beskid_variant_ident("This"), "_This");
+        assert_eq!(escape_beskid_variant_ident("Complex"), "Complex");
+        assert_eq!(escape_beskid_variant_ident("Thisish"), "Thisish");
+    }
 
     #[test]
     fn camel_case_return_type() {

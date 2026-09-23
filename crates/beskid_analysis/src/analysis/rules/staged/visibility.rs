@@ -309,7 +309,7 @@ impl SemanticPipelineRule {
                     self.collect_used_from_type(&parameter.node, shadowed, used);
                 }
             }
-            Type::Primitive(_) => {}
+            Type::Primitive(_) | Type::This => {}
         }
     }
 

@@ -98,6 +98,10 @@ pub fn collect_member_items(item: &Spanned<Node>, parent_name: &str) -> Vec<Memb
                             span: embedding.span,
                         });
                     }
+                    // Associated-type declarations resolve as in-scope generic parameters
+                    // during typechecking (`TypeChecker::seed_contract_signatures`), not as a
+                    // separate member `ItemId` -- no registration needed here.
+                    ContractNode::AssociatedType(_) => {}
                 }
             }
         }

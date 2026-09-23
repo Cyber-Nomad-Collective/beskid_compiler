@@ -263,3 +263,25 @@ fn impl_block_conformance_mints_the_same_contract_witness_as_type_conformance() 
         );
     }
 }
+
+#[test]
+fn where_bound_rejects_a_non_conforming_inferred_type_argument() {
+    // `where T: Reader` must reject `Consume(NotReader {})` before monomorphization -- the
+    // call never reaches ISLE.
+    let source = "contract Reader { i64 Read(); } type Source: Reader { pub i64 Read() { return 1_i64; } } type NotSource { } i64 Consume<T>(T value) where T: Reader { return 0_i64; } unit Main() { Consume(Source {}); Consume(NotSource {}); }";
+    let (db, _, unit, generation, index) = setup(source);
+
+    // First call (Consume(Source {})): Source conforms to Reader, must specialize cleanly.
+    let ok_call = key(unit, generation, &index, NodeKind::CallExpression, 0);
+    let ok_instance = generic_call_specialization(&db, ok_call);
+    assert!(ok_instance.is_ok(), "a conforming type argument must satisfy the where bound; got: {ok_instance:?}");
+
+    // Second call (Consume(NotSource {})): NotSource does not conform to Reader, must be
+    // rejected as a generic bound failure, not silently accepted.
+    let bad_call = key(unit, generation, &index, NodeKind::CallExpression, 1);
+    let bad_instance = generic_call_specialization(&db, bad_call);
+    assert!(
+        bad_instance.is_err() || bad_instance.as_ref().unwrap().is_none(),
+        "a non-conforming type argument must be rejected by the `where T: Reader` bound; got: {bad_instance:?}"
+    );
+}

@@ -13,6 +13,20 @@ impl Emit for FunctionDefinition {
         self.name.emit(w, cx)?;
         emit_generics_list(&self.generics, w, cx)?;
         emit_parameter_list(&self.parameters, w, cx)?;
+        if !self.where_bounds.is_empty() {
+            cx.space(w)?;
+            cx.token(w, "where")?;
+            cx.space(w)?;
+            for (i, bound) in self.where_bounds.iter().enumerate() {
+                if i > 0 {
+                    cx.token(w, ", ")?;
+                }
+                bound.parameter.emit(w, cx)?;
+                w.write_char(':')?;
+                cx.space(w)?;
+                bound.contract.emit(w, cx)?;
+            }
+        }
         cx.nl(w)?;
         cx.write_indent(w)?;
         self.body.emit(w, cx)

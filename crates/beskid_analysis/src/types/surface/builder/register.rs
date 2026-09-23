@@ -124,6 +124,11 @@ impl<'a> TypeSurfaceBuilder<'a> {
         {
             return;
         }
+        // `This` in a method signature is the method's receiver type (mirrors
+        // `TypeChecker::type_method_definition`).
+        let previous_this = self
+            .type_id_for_type(&def.node.receiver_type)
+            .map(|receiver_type| self.generic_params.insert("This".to_string(), receiver_type));
         let return_type = def
             .node
             .return_type
@@ -137,6 +142,15 @@ impl<'a> TypeSurfaceBuilder<'a> {
             if let Some(type_id) = type_id {
                 params.push(type_id);
             }
+        }
+        match previous_this {
+            Some(Some(previous)) => {
+                self.generic_params.insert("This".to_string(), previous);
+            }
+            Some(None) => {
+                self.generic_params.remove("This");
+            }
+            None => {}
         }
         self.record_signature(item_span, params.clone(), return_type);
         if let (Some(method_item_id), Some(return_type)) = (self.canonical_item_id_for_span(item_span), return_type) {

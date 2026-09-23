@@ -165,7 +165,13 @@ impl TypeChecker<'_> {
         // Conformance equality needs both the contract's declared signature and every
         // implementor's actual signature, so it runs after all of this unit's own items
         // (not just the conforming one) have been typed.
-        checker.check_contract_conformances(program);
+        // Reported as the `semantic.contracts` sub-phase: this is where contract conformance is
+        // checked since it moved out of the syntax-only staged rule pipeline.
+        beskid_pipeline::observe_phase(
+            progress.map(|(observer, _)| observer),
+            beskid_pipeline::phases::SEMANTIC_CONTRACTS,
+            || checker.check_contract_conformances(program),
+        );
 
         let checker_call_kinds = std::mem::take(&mut checker.call_kinds);
         let checker_result = checker.finish();
@@ -253,6 +259,11 @@ impl<'a> TypeChecker<'a> {
                     self.seed_method_receiver(item.span, def);
                 }
                 Node::ExtendTypeDefinition(def) => {
+                    for method in &def.node.methods {
+                        self.seed_method_receiver(method.span, method);
+                    }
+                }
+                Node::ImplBlock(def) => {
                     for method in &def.node.methods {
                         self.seed_method_receiver(method.span, method);
                     }

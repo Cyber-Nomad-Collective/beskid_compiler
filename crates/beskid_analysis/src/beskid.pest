@@ -21,6 +21,8 @@ ContractDeclarationKeyword = { "contract" }
 AttributeDeclarationKeyword = { "attribute" }
 ImplKeyword = { "impl" }
 ExtendKeyword = { "extend" }
+ThisKeyword = { "This" }
+WhereKeyword = { "where" }
 MatchKeyword = { "match" }
 EventKeyword = { "event" }
 WhenKeyword = { "when" }
@@ -71,6 +73,8 @@ Keyword = {
       | AttributeDeclarationKeyword
       | ImplKeyword
       | ExtendKeyword
+      | ThisKeyword
+      | WhereKeyword
       | MatchKeyword
       | WhenKeyword
       | IfKeyword
@@ -186,7 +190,13 @@ GenericArguments = { "<" ~ BeskidType ~ ("," ~ BeskidType)* ~ ">" }
 
 TypeName = { PrimitiveType | Path }
 AssociatedTypeRef = { Path ~ "::" ~ Identifier }
-TypeAtom = { AssociatedTypeRef | TypeName }
+// Atomic: a non-atomic rule here would let pest's implicit whitespace insertion skip past the
+// word boundary before the lookahead runs, so `!ASCII_ALPHANUMERIC` would test the *next*
+// token's first character (e.g. "This Make()"'s `M`) instead of the character immediately
+// after "This" -- silently rejecting `This` whenever anything followed it. Same reasoning as
+// `Identifier`'s own atomic `!Keyword ~ ...` boundary check.
+ThisType = @{ "This" ~ !ASCII_ALPHANUMERIC }
+TypeAtom = { AssociatedTypeRef | ThisType | TypeName }
 ArrayType = { TypeAtom ~ "[" ~ "]" }
 FunctionType = { TypeAtom ~ "(" ~ BeskidTypeList? ~ ")" }
 ArrowFunctionType = { "(" ~ BeskidTypeList? ~ ")" ~ "=>" ~ BeskidType }
@@ -196,11 +206,13 @@ BeskidType = { ArrowFunctionType | FunctionType | ArrayType | TypeAtom }
 ////////////////////////////////////////////////////////////
 // 4) DEFINITIONS
 ////////////////////////////////////////////////////////////
-FunctionDefinition = { AttributeList? ~ Visibility? ~ BeskidType ~ Identifier ~ GenericParameters? ~ "(" ~ ParameterList? ~ ")" ~ Block }
+TypeBound = { Identifier ~ ":" ~ Path }
+WhereClause = { "where" ~ TypeBound ~ ("," ~ TypeBound)* }
+FunctionDefinition = { AttributeList? ~ Visibility? ~ BeskidType ~ Identifier ~ GenericParameters? ~ "(" ~ ParameterList? ~ ")" ~ WhereClause? ~ Block }
 ConstantDefinition = { "const" ~ Identifier ~ "=" ~ IntegerLiteral ~ ";" }
 ReceiverType = { PrimitiveType | Path }
 ImplConformanceList = { ":" ~ PathList }
-ImplBlock = { "impl" ~ ReceiverType ~ ImplConformanceList? ~ "{" ~ ImplMethodWithDocs* ~ "}" }
+ImplBlock = { "impl" ~ ReceiverType ~ ImplConformanceList? ~ "{" ~ (AssociatedTypeBindingWithDocs | ImplMethodWithDocs)* ~ "}" }
 ExtendTypeDefinition = { "extend" ~ "type" ~ ReceiverType ~ "{" ~ ImplMethodWithDocs* ~ "}" }
 
 MacroFragmentKind = { "block" | "expression" | "statement" | "type" | "identifier" | "literal" | "pattern" | "path" | "item" | "node" }
@@ -227,7 +239,7 @@ Field = { AttributeList? ~ Visibility? ~ (InjectField | EventField | ValueField)
 TypeConformanceList = { ":" ~ PathList }
 // Fields are comma-separated; inline methods follow (commas inside method types must not split members).
 TypeFieldList = { FieldWithDocs ~ ("," ~ DocGap* ~ FieldWithDocs)* ~ ","? }
-TypeBody = { TypeFieldList? ~ ImplMethodWithDocs* }
+TypeBody = { TypeFieldList? ~ (AssociatedTypeBindingWithDocs | ImplMethodWithDocs)* }
 TypeDefinition = { AttributeList? ~ Visibility? ~ "type" ~ Identifier ~ GenericParameters? ~ TypeConformanceList? ~ "{" ~ TypeBody? ~ "}" }
 
 EnumDefinition = { Visibility? ~ "enum" ~ Identifier ~ GenericParameters? ~ "{" ~ EnumVariantList? ~ "}" }
@@ -237,9 +249,15 @@ EnumVariant = { Identifier ~ ("(" ~ FieldList? ~ ")")? }
 
 ContractDefinition = { AttributeList? ~ Visibility? ~ "contract" ~ Identifier ~ GenericParameters? ~ "{" ~ ContractItemWithDocs* ~ "}" }
 ContractItemWithDocs = { ((DocRun ~ ContractItem) | ContractItem) ~ DocGap* }
-ContractItem = _{ ContractMethodSignature | ContractEmbedding }
+ContractItem = _{ ContractAssociatedType | ContractMethodSignature | ContractEmbedding }
 ContractMethodSignature = { AttributeList? ~ BeskidType ~ Identifier ~ "(" ~ ParameterList? ~ ")" ~ ";" }
 ContractEmbedding = { Identifier ~ GenericArguments? ~ ";"? }
+ContractAssociatedType = { "type" ~ Identifier ~ ("=" ~ BeskidType)? ~ ";" }
+
+// An associated-type binding at an implementor site (`type Item = T;` inside a `type X : C { }`
+// or `impl X : C { }` body), parallel to `ImplMethodWithDocs`.
+AssociatedTypeBinding = { "type" ~ Identifier ~ "=" ~ BeskidType ~ ";" }
+AssociatedTypeBindingWithDocs = { ((DocRun ~ AssociatedTypeBinding) | AssociatedTypeBinding) ~ DocGap* }
 
 RegistrationLifetime = { "single" | "transient" }
 RegistrationTarget = { "for" ~ Path }

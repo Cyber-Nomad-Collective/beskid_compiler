@@ -77,6 +77,16 @@ fn merge_surface_into_remapped(target: &mut MergedTypeEnv, surface: &UnitTypeSur
         target.contract_signatures.insert(key.clone(), remap_signature(remap, signature));
     }
     target.contract_method_order.extend(surface.contract_method_order.clone());
+    for (item_id, associated) in &surface.contract_associated_types {
+        target.contract_associated_types.insert(
+            *item_id,
+            associated
+                .iter()
+                .map(|(name, default)| (name.clone(), default.map(|type_id| remap_type_id(remap, type_id))))
+                .collect(),
+        );
+    }
+    target.contract_unresolved_methods.extend(surface.contract_unresolved_methods.clone());
     target.methods_by_receiver.extend(surface.methods_by_receiver.clone());
     target.named_type_names.extend(surface.named_type_names.clone());
 }

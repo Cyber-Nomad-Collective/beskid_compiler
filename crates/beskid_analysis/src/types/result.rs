@@ -64,6 +64,10 @@ pub enum TypeError {
     // implementor's actual signature are available).
     ContractMethodMissingImplementation { span: SpanInfo, contract_name: String, method_name: String, expected: FunctionSignature },
     ContractImplementationSignatureMismatch { span: SpanInfo, method_name: String, expected: FunctionSignature, actual: FunctionSignature },
+    // Associated types (Gap 4 remainder).
+    ThisUsedOutsideContractOrImpl { span: SpanInfo },
+    UnresolvedAssociatedType { span: SpanInfo, name: String },
+    ContractAssociatedTypeMissingBinding { span: SpanInfo, contract_name: String, assoc_name: String },
 }
 
 fn type_error_span_loc(span: SpanInfo) -> String {
@@ -229,6 +233,19 @@ impl fmt::Display for TypeError {
             }
             TypeError::ContractImplementationSignatureMismatch { span, method_name, .. } => {
                 write!(f, "contract implementation signature mismatch for `{method_name}` at {}", at(*span))
+            }
+            TypeError::ThisUsedOutsideContractOrImpl { span } => {
+                write!(f, "`This` used outside a contract or impl-block scope at {}", at(*span))
+            }
+            TypeError::UnresolvedAssociatedType { span, name } => {
+                write!(f, "unresolved associated type `{name}` at {}", at(*span))
+            }
+            TypeError::ContractAssociatedTypeMissingBinding { span, contract_name, assoc_name } => {
+                write!(
+                    f,
+                    "missing binding for `{contract_name}::{assoc_name}` (no default and no implementor binding) at {}",
+                    at(*span)
+                )
             }
         }
     }
