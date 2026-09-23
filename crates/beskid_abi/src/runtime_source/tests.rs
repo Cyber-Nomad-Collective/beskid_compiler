@@ -620,3 +620,84 @@ fn recover_static_str_round_trips_canonical_and_fails_closed() {
     let err = serde_json::from_str::<Wrapper>("\"delta\"").expect_err("unknown symbol fails closed");
     assert!(err.to_string().contains("unknown test symbol `delta`"));
 }
+
+/// The growable-heap design (`docs/superpowers/specs/2026-09-22-growable-gc-heap-design.md`)
+/// fixes one canonical offset table shared by `runtime_manifest.bsol` (`BeskidHeapState`,
+/// `BeskidHeapRegion`) and the hand-written `HEAP_*`/`REGION_*` constants that every `.bd` GC
+/// module re-declares. Nothing before this test caught the two from drifting apart; this parses
+/// every `HEAP_*` and `REGION_*` numeric constant declared across the canonical GC sources and
+/// asserts each one that names a manifest offset or a layout size agrees with the manifest.
+#[test]
+fn heap_source_constants_match_the_manifest_heap_layouts() {
+    use crate::abi_v5::AbiManifestV5;
+    use std::collections::BTreeMap;
+
+    let heap_source_paths = [
+        CANONICAL_GC_STATE_SOURCE_PATH,
+        CANONICAL_GC_ALLOCATION_SOURCE_PATH,
+        CANONICAL_GC_COLLECTION_SOURCE_PATH,
+        CANONICAL_GC_SWEEP_SOURCE_PATH,
+        CANONICAL_GC_ROOTS_HANDLES_SOURCE_PATH,
+        CANONICAL_BOOTSTRAP_LIFECYCLE_SOURCE_PATH,
+    ];
+    let all_sources = canonical_runtime_sources();
+    let sources = heap_source_paths.into_iter().map(|logical_path| {
+        let unit = all_sources
+            .iter()
+            .find(|unit| unit.logical_path == logical_path)
+            .unwrap_or_else(|| panic!("compiler embeds canonical heap source {logical_path}"));
+        (logical_path, unit.source.as_str())
+    });
+
+    // name -> (value, first source path that declared it)
+    let mut declared: BTreeMap<String, (i64, &str)> = BTreeMap::new();
+    for (path, source) in sources {
+        for line in source.lines() {
+            let trimmed = line.trim();
+            let Some(rest) = trimmed.strip_prefix("const ") else { continue };
+            let Some((name, rest)) = rest.split_once('=') else { continue };
+            let name = name.trim();
+            if !(name.starts_with("HEAP_") || name.starts_with("REGION_")) {
+                continue;
+            }
+            let Some(value_text) = rest.trim().strip_suffix(';') else { continue };
+            let Ok(value) = value_text.trim().parse::<i64>() else { continue };
+            match declared.get(name) {
+                None => {
+                    declared.insert(name.to_string(), (value, path));
+                }
+                Some((existing, first_path)) => assert_eq!(
+                    *existing, value,
+                    "`{name}` disagrees between `{first_path}` ({existing}) and `{path}` ({value}); every canonical \
+                     GC source must declare the same heap-layout constants"
+                ),
+            }
+        }
+    }
+
+    let manifest = AbiManifestV5::canonical_runtime(crate::abi_v5::TargetMetadata::supported()[0].clone());
+    let heap_state = manifest.layouts.iter().find(|layout| layout.name == "BeskidHeapState").unwrap();
+    let heap_region = manifest.layouts.iter().find(|layout| layout.name == "BeskidHeapRegion").unwrap();
+
+    // Constant name -> expected value, derived from the manifest layouts.
+    let mut expected: BTreeMap<String, i64> = BTreeMap::new();
+    expected.insert("HEAP_STATE_SIZE".into(), heap_state.size as i64);
+    for field in &heap_state.fields {
+        expected.insert(format!("HEAP_{}", field.name.to_uppercase()), field.offset as i64);
+    }
+    expected.insert("REGION_HEADER_SIZE".into(), heap_region.size as i64);
+    for field in &heap_region.fields {
+        expected.insert(format!("REGION_{}", field.name.to_uppercase()), field.offset as i64);
+    }
+
+    for (name, expected_value) in &expected {
+        let (actual_value, path) = declared
+            .get(name)
+            .unwrap_or_else(|| panic!("no canonical GC source declares `{name}` (expected {expected_value})"));
+        assert_eq!(
+            actual_value, expected_value,
+            "`{name}` in `{path}` is {actual_value} but the manifest `BeskidHeapState`/`BeskidHeapRegion` layout \
+             says {expected_value}"
+        );
+    }
+}

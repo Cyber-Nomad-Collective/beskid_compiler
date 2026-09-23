@@ -77,6 +77,9 @@ pub(crate) fn emit_type_error(ctx: &mut RuleContext, error: TypeError, result: O
         TypeError::InvalidTryTarget { span } => {
             ctx.emit_issue(span, SemanticIssueKind::TypeInvalidTryTarget);
         }
+        TypeError::InvalidPrimitiveConversionArgument { span } => {
+            ctx.emit_issue(span, SemanticIssueKind::TypeInvalidPrimitiveConversionArgument);
+        }
         TypeError::InvalidEventInvocationScope { span } => {
             ctx.emit_issue(span, SemanticIssueKind::TypeInvalidEventInvocationScope);
         }

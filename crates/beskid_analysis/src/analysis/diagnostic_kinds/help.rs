@@ -223,6 +223,9 @@ impl SemanticIssueKind {
             Self::TypeInvalidTryTarget => {
                 Some("apply `?` only to a `Result<Ok, Error>` expression".to_string())
             }
+            Self::TypeInvalidPrimitiveConversionArgument => Some(
+                "primitive conversions like `i32(x)` accept exactly one primitive numeric argument".to_string(),
+            ),
             Self::TypeInvalidEventInvocationScope => Some(
                 "events can only be raised from within methods on their declaring type".to_string()
             ),

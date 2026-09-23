@@ -245,6 +245,7 @@ pub enum SemanticIssueKind {
     TypeNonBoolCondition,
     TypeUnsupportedExpression,
     TypeInvalidTryTarget,
+    TypeInvalidPrimitiveConversionArgument,
     TypeInvalidEventInvocationScope,
     TypeInvalidEventCapacity,
     TypeInvalidEventSubscriptionTarget,

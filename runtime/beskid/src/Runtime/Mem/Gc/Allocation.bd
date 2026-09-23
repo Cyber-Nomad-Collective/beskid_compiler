@@ -1,10 +1,45 @@
-// Canonical non-moving GC allocation and in-region free-list reuse.
+// Canonical span-based GC allocation. A request rounds to one of the fixed size classes (see
+// Span.bd) and is served by popping a free slot from the current span for that class; the
+// current span is refilled from the owning region's free-page list or untouched pages when
+// exhausted. A request above the largest size class gets a dedicated span sized to the request.
+//
+// `GcAlloc` never returns null for a valid request (`size >= 16`, 8-byte aligned, valid object
+// alignment): a request that cannot be satisfied even after collecting and growing is a typed
+// exhaustion trap (Decision 3 of the growable-heap design), not a silent null return.
 
-const HEAP_REGION_START = 0;
-const HEAP_BUMP = 16;
-const HEAP_LIMIT = 24;
+const HEAP_FIRST_REGION = 0;
+const HEAP_CURRENT_REGION = 8;
+const HEAP_REGION_COUNT = 16;
+const HEAP_COMMITTED_BYTES = 24;
 const HEAP_LIVE_BYTES = 32;
 const HEAP_LIVE_COUNT = 40;
+const HEAP_COLLECTION_THRESHOLD = 56;
+const HEAP_CAP_BYTES = 72;
+const HEAP_NEXT_REGION_SIZE = 80;
+const HEAP_FAILURE_REASON = 88;
+const HEAP_FAILURE_REQUEST_BYTES = 96;
+const HEAP_DIAGNOSTIC = 104;
+const HEAP_DIAGNOSTIC_SIZE = 64;
+const HEAP_CURRENT_SPAN_BY_CLASS = 200;
+
+const REGION_NEXT = 0;
+const REGION_BUMP = 16;
+const REGION_LIMIT = 24;
+
+const HEAP_MAX_REGION_SIZE = 67108864;
+
+const HEAP_FAILURE_NONE = 0;
+const HEAP_FAILURE_CAP_REACHED = 1;
+const HEAP_FAILURE_SYSTEM_ALLOCATE_FAILED = 2;
+const HEAP_FAILURE_REQUEST_LARGER_THAN_CAP = 3;
+const HEAP_FAILURE_ROOT_STACK_FAILED_ALLOC = 4;
+
+const REGION_HEADER_SIZE_ALLOC = 64;
+
+const PAGE_SIZE = 8192;
+const SPAN_BASE = 8;
+const SPAN_HEADER_SIZE = 256;
+const SIZE_CLASS_LARGE = 14;
 
 pub word AlignUp(word value, word alignment) {
     word remainder = value % alignment;
@@ -19,55 +54,178 @@ pub word AlignUp(word value, word alignment) {
     return aligned;
 }
 
-// Free blocks are linked implicitly by their address order. Their manifest object-header-sized
-// prefix is { descriptor = null, block_size }; sweep coalesces adjacent entries.
-pub pointer AllocateFromFreeList(pointer heap, word size, word alignment) {
-    mut pointer cursor = NativePointer(raw_word_load(pointer_add(heap, HEAP_REGION_START)));
-    mut pointer bump = NativePointer(raw_word_load(pointer_add(heap, HEAP_BUMP)));
-    while NativeWord(cursor) < NativeWord(bump) {
-        word descriptorWord = raw_word_load(cursor);
-        mut word blockSize;
-        if descriptorWord == 0 {
-            blockSize = raw_word_load(pointer_add(cursor, 8));
-            if blockSize < 16 || blockSize % 8 != 0 {
-                return NativePointer(0);
-            }
-            mut word aligned = AlignUp(NativeWord(cursor), alignment);
-            mut word prefix = aligned - NativeWord(cursor);
-            if prefix > 0 && prefix < 16 {
-                aligned = aligned + alignment;
-                prefix = aligned - NativeWord(cursor);
-            }
-            if aligned >= NativeWord(cursor) && prefix <= blockSize && blockSize - prefix >= size {
-                word remainder = blockSize - prefix - size;
-                if remainder == 0 || remainder >= 16 {
-                    if prefix >= 16 {
-                        raw_word_store(cursor, 0);
-                        raw_word_store(pointer_add(cursor, 8), prefix);
-                    }
-                    if remainder >= 16 {
-                        pointer rest = NativePointer(aligned + size);
-                        raw_word_store(rest, 0);
-                        raw_word_store(pointer_add(rest, 8), remainder);
-                    }
-                    return NativePointer(aligned);
-                }
-            }
-        } else {
-            pointer descriptor = NativePointer(descriptorWord);
-            if ValidateTypeDescriptor(descriptor) == false {
-                return NativePointer(0);
-            }
-            blockSize = ManagedObjectSize(cursor, descriptor);
-            if blockSize == 0 { return NativePointer(0); }
-        }
-        mut word next = NativeWord(cursor) + blockSize;
-        if blockSize < 16 || blockSize % 8 != 0 || next <= NativeWord(cursor) || next > NativeWord(bump) {
+// ---- Small-object path ----
+
+// Carves a fresh 1-page span for `class` from the heap's current region and threads its free
+// list. Returns null when the current region has no room (neither a free 1-page span nor an
+// untouched page); the caller decides whether to collect, grow, or fail.
+pub pointer RefillSpanForClass(pointer heap, word class) {
+    pointer region = NativePointer(raw_word_load(pointer_add(heap, HEAP_CURRENT_REGION)));
+    pointer entry = CarveSpan(region, 1, class);
+    if entry == NativePointer(0) {
+        return NativePointer(0);
+    }
+    word base = raw_word_load(pointer_add(entry, SPAN_BASE));
+    InitSmallSpanFreeList(entry, base, SizeClassBytes(class));
+    raw_word_store(pointer_add(heap, HEAP_CURRENT_SPAN_BY_CLASS + class * 8), NativeWord(entry));
+    return entry;
+}
+
+pub pointer GcAllocSmall(pointer heap, word class) {
+    mut pointer entry = NativePointer(raw_word_load(pointer_add(heap, HEAP_CURRENT_SPAN_BY_CLASS + class * 8)));
+    word classBytes = SizeClassBytes(class);
+    mut pointer slot = NativePointer(0);
+    if entry != NativePointer(0) {
+        word base = raw_word_load(pointer_add(entry, SPAN_BASE));
+        slot = PopFreeSlot(entry, classBytes, base);
+    }
+    if slot == NativePointer(0) {
+        entry = RefillSpanForClass(heap, class);
+        if entry == NativePointer(0) {
             return NativePointer(0);
         }
-        cursor = NativePointer(next);
+        word base = raw_word_load(pointer_add(entry, SPAN_BASE));
+        slot = PopFreeSlot(entry, classBytes, base);
     }
-    return NativePointer(0);
+    return slot;
+}
+
+// ---- Large-object path (size class 0: a dedicated span, one object) ----
+
+pub pointer GcAllocLargeOnce(pointer heap, word size, word alignment) {
+    pointer region = NativePointer(raw_word_load(pointer_add(heap, HEAP_CURRENT_REGION)));
+    word bytesNeeded = size + alignment;
+    mut word pages = AlignUp(bytesNeeded, PAGE_SIZE) / PAGE_SIZE;
+    if pages == 0 { pages = 1; }
+    pointer entry = CarveSpan(region, pages, SIZE_CLASS_LARGE);
+    if entry == NativePointer(0) {
+        return NativePointer(0);
+    }
+    return NativePointer(raw_word_load(pointer_add(entry, SPAN_BASE)));
+}
+
+// ---- Growth (unchanged region-growth policy from the growable-heap design, page-granular) ----
+
+pub word GcGrow(pointer heap, word size, word alignment) {
+    word nextRegionSize = raw_word_load(pointer_add(heap, HEAP_NEXT_REGION_SIZE));
+    word firstPass = AlignUp(size + REGION_HEADER_SIZE_ALLOC + alignment, PAGE_SIZE);
+    word firstPassPages = firstPass / PAGE_SIZE;
+    word directoryEstimate = firstPassPages * SPAN_HEADER_SIZE;
+    word requiredForRequest = AlignUp(firstPass + directoryEstimate, PAGE_SIZE);
+    mut word newSize = nextRegionSize;
+    if requiredForRequest > newSize {
+        newSize = requiredForRequest;
+    }
+    word committed = raw_word_load(pointer_add(heap, HEAP_COMMITTED_BYTES));
+    word cap = raw_word_load(pointer_add(heap, HEAP_CAP_BYTES));
+    word total = committed + newSize;
+    if total < committed || total > cap {
+        if requiredForRequest > cap {
+            return HEAP_FAILURE_REQUEST_LARGER_THAN_CAP;
+        }
+        mut word budget = 0;
+        if cap > committed { budget = cap - committed; }
+        word roundedBudget = budget - (budget % PAGE_SIZE);
+        if roundedBudget >= requiredForRequest {
+            newSize = roundedBudget;
+        } else {
+            return HEAP_FAILURE_CAP_REACHED;
+        }
+    }
+    pointer region = SystemAllocate(newSize, 8);
+    if region == NativePointer(0) {
+        return HEAP_FAILURE_SYSTEM_ALLOCATE_FAILED;
+    }
+    RegionInit(region, newSize);
+    pointer current = NativePointer(raw_word_load(pointer_add(heap, HEAP_CURRENT_REGION)));
+    raw_word_store(pointer_add(current, REGION_NEXT), NativeWord(region));
+    raw_word_store(pointer_add(heap, HEAP_CURRENT_REGION), NativeWord(region));
+    raw_word_store(pointer_add(heap, HEAP_COMMITTED_BYTES), committed + newSize);
+    raw_word_store(pointer_add(heap, HEAP_REGION_COUNT), raw_word_load(pointer_add(heap, HEAP_REGION_COUNT)) + 1);
+    mut word doubled = nextRegionSize * 2;
+    if doubled > HEAP_MAX_REGION_SIZE || doubled < nextRegionSize {
+        doubled = HEAP_MAX_REGION_SIZE;
+    }
+    raw_word_store(pointer_add(heap, HEAP_NEXT_REGION_SIZE), doubled);
+    return HEAP_FAILURE_NONE;
+}
+
+pub word GcGrowForClass(pointer heap, word class) {
+    return GcGrow(heap, PAGE_SIZE, 8);
+}
+
+// ---- Exhaustion diagnostic (Decision 3) ----
+
+pub never GcReportExhaustion(pointer heap, word reason, word requestBytes) {
+    raw_word_store(pointer_add(heap, HEAP_FAILURE_REASON), reason);
+    raw_word_store(pointer_add(heap, HEAP_FAILURE_REQUEST_BYTES), requestBytes);
+    pointer diagnostic = pointer_add(heap, HEAP_DIAGNOSTIC);
+    memory_set(diagnostic, 0, HEAP_DIAGNOSTIC_SIZE);
+    mut word offset = 0;
+    raw_byte_store(pointer_add(diagnostic, offset), 82); // 'R'
+    offset = offset + 1;
+    offset = WriteDecimal(diagnostic, offset, reason);
+    raw_byte_store(pointer_add(diagnostic, offset), 32); offset = offset + 1; // ' '
+    raw_byte_store(pointer_add(diagnostic, offset), 114); offset = offset + 1; // 'r'
+    raw_byte_store(pointer_add(diagnostic, offset), 101); offset = offset + 1; // 'e'
+    raw_byte_store(pointer_add(diagnostic, offset), 113); offset = offset + 1; // 'q'
+    raw_byte_store(pointer_add(diagnostic, offset), 61); offset = offset + 1; // '='
+    offset = WriteDecimal(diagnostic, offset, requestBytes);
+    raw_byte_store(pointer_add(diagnostic, offset), 32); offset = offset + 1; // ' '
+    raw_byte_store(pointer_add(diagnostic, offset), 108); offset = offset + 1; // 'l'
+    raw_byte_store(pointer_add(diagnostic, offset), 105); offset = offset + 1; // 'i'
+    raw_byte_store(pointer_add(diagnostic, offset), 118); offset = offset + 1; // 'v'
+    raw_byte_store(pointer_add(diagnostic, offset), 101); offset = offset + 1; // 'e'
+    raw_byte_store(pointer_add(diagnostic, offset), 61); offset = offset + 1; // '='
+    offset = WriteDecimal(diagnostic, offset, raw_word_load(pointer_add(heap, HEAP_LIVE_BYTES)));
+    raw_byte_store(pointer_add(diagnostic, offset), 32); offset = offset + 1; // ' '
+    raw_byte_store(pointer_add(diagnostic, offset), 99); offset = offset + 1; // 'c'
+    raw_byte_store(pointer_add(diagnostic, offset), 111); offset = offset + 1; // 'o'
+    raw_byte_store(pointer_add(diagnostic, offset), 109); offset = offset + 1; // 'm'
+    raw_byte_store(pointer_add(diagnostic, offset), 109); offset = offset + 1; // 'm'
+    raw_byte_store(pointer_add(diagnostic, offset), 105); offset = offset + 1; // 'i'
+    raw_byte_store(pointer_add(diagnostic, offset), 116); offset = offset + 1; // 't'
+    raw_byte_store(pointer_add(diagnostic, offset), 116); offset = offset + 1; // 't'
+    raw_byte_store(pointer_add(diagnostic, offset), 101); offset = offset + 1; // 'e'
+    raw_byte_store(pointer_add(diagnostic, offset), 100); offset = offset + 1; // 'd'
+    raw_byte_store(pointer_add(diagnostic, offset), 61); offset = offset + 1; // '='
+    offset = WriteDecimal(diagnostic, offset, raw_word_load(pointer_add(heap, HEAP_COMMITTED_BYTES)));
+    raw_byte_store(pointer_add(diagnostic, offset), 32); offset = offset + 1; // ' '
+    raw_byte_store(pointer_add(diagnostic, offset), 99); offset = offset + 1; // 'c'
+    raw_byte_store(pointer_add(diagnostic, offset), 97); offset = offset + 1; // 'a'
+    raw_byte_store(pointer_add(diagnostic, offset), 112); offset = offset + 1; // 'p'
+    raw_byte_store(pointer_add(diagnostic, offset), 61); offset = offset + 1; // '='
+    offset = WriteDecimal(diagnostic, offset, raw_word_load(pointer_add(heap, HEAP_CAP_BYTES)));
+    Trap(5, diagnostic, offset);
+}
+
+// A root/handle stack block failed to grow (`SystemAllocate` returned null). Distinct from heap
+// exhaustion (reason 4 instead of 1-3) so the diagnostic names the starved subsystem.
+pub never GcReportRootStackExhaustion(pointer heap) {
+    raw_word_store(pointer_add(heap, HEAP_FAILURE_REASON), HEAP_FAILURE_ROOT_STACK_FAILED_ALLOC);
+    raw_word_store(pointer_add(heap, HEAP_FAILURE_REQUEST_BYTES), 0);
+    pointer diagnostic = pointer_add(heap, HEAP_DIAGNOSTIC);
+    memory_set(diagnostic, 0, HEAP_DIAGNOSTIC_SIZE);
+    mut word offset = 0;
+    raw_byte_store(pointer_add(diagnostic, offset), 82); offset = offset + 1; // 'R'
+    offset = WriteDecimal(diagnostic, offset, HEAP_FAILURE_ROOT_STACK_FAILED_ALLOC);
+    Trap(5, diagnostic, offset);
+}
+
+// ---- Orchestration ----
+
+pub pointer TryAllocOnce(pointer heap, word size, word alignment, word class) {
+    if class != 0 {
+        return GcAllocSmall(heap, class);
+    }
+    return GcAllocLargeOnce(heap, size, alignment);
+}
+
+pub word GrowForRequest(pointer heap, word size, word alignment, word class) {
+    if class != 0 {
+        return GcGrowForClass(heap, class);
+    }
+    return GcGrow(heap, size, alignment);
 }
 
 pub pointer GcAlloc(word size, word alignment) {
@@ -75,45 +233,54 @@ pub pointer GcAlloc(word size, word alignment) {
     if heap == NativePointer(0) || size < 16 || size % 8 != 0 || IsValidObjectAlignment(alignment) == false {
         return NativePointer(0);
     }
-    mut pointer reused = AllocateFromFreeList(heap, size, alignment);
-    if reused != NativePointer(0) {
-        raw_word_store(pointer_add(heap, HEAP_LIVE_BYTES), raw_word_load(pointer_add(heap, HEAP_LIVE_BYTES)) + size);
-        raw_word_store(pointer_add(heap, HEAP_LIVE_COUNT), raw_word_load(pointer_add(heap, HEAP_LIVE_COUNT)) + 1);
-        return reused;
-    }
-    mut word bump = raw_word_load(pointer_add(heap, HEAP_BUMP));
-    mut word aligned = AlignUp(bump, alignment);
-    if aligned > bump && aligned - bump < 16 { aligned = aligned + alignment; }
-    word limit = raw_word_load(pointer_add(heap, HEAP_LIMIT));
-    mut word next = aligned + size;
-    if aligned < bump || next < aligned || next > limit {
+    // Stress mode (test-only, Verify.bd): collect BEFORE this allocation's object exists, not
+    // after. At this point every live object is already reachable from the root stack, the
+    // handle stack (construction temporaries hold a `gc_root_handle` slot before any nested
+    // allocation that could trigger this), or a fiber frame; the object this call is about to
+    // produce does not exist yet, so there is nothing new for the collector to lose. Collecting
+    // after allocating instead would sweep the just-allocated, not-yet-rooted object out from
+    // under its own caller.
+    if StressShouldCollect() {
         GcCollect();
-        reused = AllocateFromFreeList(heap, size, alignment);
-        if reused != NativePointer(0) {
-            raw_word_store(pointer_add(heap, HEAP_LIVE_BYTES), raw_word_load(pointer_add(heap, HEAP_LIVE_BYTES)) + size);
-            raw_word_store(pointer_add(heap, HEAP_LIVE_COUNT), raw_word_load(pointer_add(heap, HEAP_LIVE_COUNT)) + 1);
-            return reused;
-        }
-        bump = raw_word_load(pointer_add(heap, HEAP_BUMP));
-        aligned = AlignUp(bump, alignment);
-        if aligned > bump && aligned - bump < 16 { aligned = aligned + alignment; }
-        next = aligned + size;
-        if aligned < bump || next < aligned || next > limit {
-            return NativePointer(0);
+    }
+    word class = SizeClassForSize(size);
+    mut pointer result = TryAllocOnce(heap, size, alignment, class);
+    mut bool collected = false;
+    if result == NativePointer(0) {
+        word live = raw_word_load(pointer_add(heap, HEAP_LIVE_BYTES));
+        word threshold = raw_word_load(pointer_add(heap, HEAP_COLLECTION_THRESHOLD));
+        if live >= threshold {
+            GcCollect();
+            collected = true;
+            result = TryAllocOnce(heap, size, alignment, class);
         }
     }
-    // Keep every alignment prefix representable as an ordinary free-list header. When the first
-    // aligned address would leave a sub-header prefix, the next aligned address is used instead.
-    if aligned > bump {
-        word gap = aligned - bump;
-        pointer gapBlock = NativePointer(bump);
-        raw_word_store(gapBlock, 0);
-        raw_word_store(pointer_add(gapBlock, 8), gap);
+    if result == NativePointer(0) {
+        mut word growStatus = GrowForRequest(heap, size, alignment, class);
+        if growStatus == HEAP_FAILURE_CAP_REACHED && collected == false {
+            GcCollect();
+            collected = true;
+            result = TryAllocOnce(heap, size, alignment, class);
+            if result == NativePointer(0) {
+                growStatus = GrowForRequest(heap, size, alignment, class);
+            } else {
+                growStatus = HEAP_FAILURE_NONE;
+            }
+        }
+        if growStatus == HEAP_FAILURE_NONE && result == NativePointer(0) {
+            result = TryAllocOnce(heap, size, alignment, class);
+        }
+        if result == NativePointer(0) {
+            mut word reason = growStatus;
+            if reason == HEAP_FAILURE_NONE {
+                reason = HEAP_FAILURE_CAP_REACHED;
+            }
+            GcReportExhaustion(heap, reason, size);
+        }
     }
-    raw_word_store(pointer_add(heap, HEAP_BUMP), next);
     raw_word_store(pointer_add(heap, HEAP_LIVE_BYTES), raw_word_load(pointer_add(heap, HEAP_LIVE_BYTES)) + size);
     raw_word_store(pointer_add(heap, HEAP_LIVE_COUNT), raw_word_load(pointer_add(heap, HEAP_LIVE_COUNT)) + 1);
-    return NativePointer(aligned);
+    return result;
 }
 
 [Export(Abi:"C", Symbol:"alloc")]

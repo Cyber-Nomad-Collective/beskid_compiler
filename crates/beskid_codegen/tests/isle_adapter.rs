@@ -8,6 +8,8 @@ mod channel_conditions;
 mod composition_conditions;
 #[path = "isle_adapter/control_flow_closures_spawn.rs"]
 mod control_flow_closures_spawn;
+#[path = "isle_adapter/control_flow_loop_termination.rs"]
+mod control_flow_loop_termination;
 #[path = "isle_adapter/corelib_services.rs"]
 mod corelib_services;
 #[path = "isle_adapter/diagnostics_fail_closed.rs"]

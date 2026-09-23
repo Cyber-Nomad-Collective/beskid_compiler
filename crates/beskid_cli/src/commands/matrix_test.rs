@@ -652,7 +652,7 @@ mod tests {
 
     #[test]
     fn spawn_worker_forwards_target_timeout_to_the_child() {
-        let source = include_str!("../matrix_test.rs");
+        let source = include_str!("matrix_test.rs");
         assert!(
             source.contains("if let Some(target_timeout) = args.target_timeout"),
             "spawn_worker must forward --target-timeout to the isolated matrix worker"

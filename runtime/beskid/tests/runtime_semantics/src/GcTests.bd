@@ -1,5 +1,6 @@
 use Runtime.Bootstrap.Lifecycle;
 use Runtime.Bootstrap.Native;
+use Runtime.Bootstrap.Objects;
 use Runtime.Mem.Gc.Allocation;
 use Runtime.Mem.Gc.Collection;
 use Runtime.Mem.Gc.RootsHandles;
@@ -85,7 +86,7 @@ test gc_array_uses_distinct_descriptors_and_traces_variable_pointer_elements {
     raw_word_store(pointer_add(element, 16), NativeWord(pointerMap));
     raw_word_store(pointer_add(element, 24), 1);
     pointer arrayDescriptor = TestDescriptor(48, 8);
-    raw_word_store(pointer_add(arrayDescriptor, 32), TYPE_DESCRIPTOR_ARRAY);
+    raw_word_store(pointer_add(arrayDescriptor, 32), TypeDescriptorArrayFlag());
     pointer request = SystemAllocate(32, 8);
     memory_set(request, 0, 32);
     raw_word_store(request, NativeWord(element));
@@ -120,7 +121,7 @@ test gc_external_root_accepts_public_array_reference {
     raw_word_store(element, 8);
     raw_word_store(pointer_add(element, 8), 8);
     pointer arrayDescriptor = TestDescriptor(48, 8);
-    raw_word_store(pointer_add(arrayDescriptor, 32), TYPE_DESCRIPTOR_ARRAY);
+    raw_word_store(pointer_add(arrayDescriptor, 32), TypeDescriptorArrayFlag());
     pointer request = SystemAllocate(32, 8);
     memory_set(request, 0, 32);
     raw_word_store(request, NativeWord(element));
@@ -165,7 +166,7 @@ test gc_nested_array_reference_keeps_child_alive {
     raw_word_store(scalarElement, 8);
     raw_word_store(pointer_add(scalarElement, 8), 8);
     pointer arrayDescriptor = TestDescriptor(48, 8);
-    raw_word_store(pointer_add(arrayDescriptor, 32), TYPE_DESCRIPTOR_ARRAY);
+    raw_word_store(pointer_add(arrayDescriptor, 32), TypeDescriptorArrayFlag());
     pointer childRequest = SystemAllocate(32, 8);
     pointer parentRequest = SystemAllocate(32, 8);
     memory_set(childRequest, 0, 32);

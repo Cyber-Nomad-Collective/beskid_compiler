@@ -78,6 +78,7 @@ impl SemanticIssueKind {
             Self::TypeNonBoolCondition => "condition must be boolean".to_string(),
             Self::TypeUnsupportedExpression => "unsupported expression".to_string(),
             Self::TypeInvalidTryTarget => "invalid try target".to_string(),
+            Self::TypeInvalidPrimitiveConversionArgument => "invalid conversion argument".to_string(),
             Self::TypeInvalidEventInvocationScope => "invalid event invocation scope".to_string(),
             Self::TypeInvalidEventCapacity => "invalid event capacity".to_string(),
             Self::TypeInvalidEventSubscriptionTarget => "invalid event subscription target".to_string(),

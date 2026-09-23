@@ -543,14 +543,40 @@ fn canonical_runtime_closure_descriptor_validation_and_rooting_execute_fail_clos
         unsafe { std::mem::transmute(allocate_environment) };
     let allocate_object: extern "C" fn(*const usize) -> *mut u8 = unsafe { std::mem::transmute(allocate_object) };
 
-    let mut heap_region = [0usize; 128];
+    // The heap is a chain of headed regions carved into 8 KiB-page spans (see the span-heap
+    // design, docs/superpowers/specs/2026-09-22-gc-span-heap-design.md). The first 64 bytes of
+    // `heap_region` are its `BeskidHeapRegion` header; a span directory (one `BeskidSpanHeader`
+    // per page, 256 bytes each, zeroed here so every entry starts unpopulated) follows; objects
+    // start at the first page boundary after the directory. 16 pages (2 for header+directory
+    // overhead, 14 usable) is far more than this fixture's handful of small allocations need.
+    const PAGE_SIZE: usize = 8192;
+    const SPAN_HEADER_SIZE: usize = 256;
+    const REGION_HEADER_SIZE: usize = 64;
+    const REGION_PAGES: usize = 16;
+    let mut heap_region = [0usize; (REGION_PAGES * PAGE_SIZE) / 8];
     let region_start = heap_region.as_mut_ptr() as usize;
-    let region_limit = region_start + std::mem::size_of_val(&heap_region);
-    let mut heap = [0usize; 90];
-    heap[0] = region_start;
-    heap[1] = std::mem::size_of_val(&heap_region);
-    heap[2] = region_start;
-    heap[3] = region_limit;
+    let region_size = std::mem::size_of_val(&heap_region);
+    let region_limit = region_start + region_size;
+    let directory_bytes = REGION_PAGES * SPAN_HEADER_SIZE;
+    let raw_objects_start = region_start + REGION_HEADER_SIZE + directory_bytes;
+    let objects_start = raw_objects_start.div_ceil(PAGE_SIZE) * PAGE_SIZE;
+    heap_region[0] = 0; // next
+    heap_region[1] = region_size; // size
+    heap_region[2] = objects_start; // bump
+    heap_region[3] = region_limit; // limit
+    heap_region[4] = 0; // free_bytes (unused by the span allocator)
+    heap_region[5] = 0; // largest_free (unused by the span allocator)
+    heap_region[6] = objects_start; // objects_start
+    heap_region[7] = 0; // reserved / free_span_list head
+    // Span directory entries stay zeroed (base == 0, "never carved") except where carving writes
+    // them; nothing further to initialize here.
+    let mut heap = [0usize; 41]; // BeskidHeapState is 328 bytes = 41 words.
+    heap[0] = region_start; // first_region
+    heap[1] = region_start; // current_region
+    heap[2] = 1; // region_count
+    heap[3] = region_size; // committed_bytes
+    heap[9] = usize::MAX; // cap_bytes: generous, this fixture never grows or collects
+    heap[10] = PAGE_SIZE; // next_region_size (irrelevant: no growth expected in this fixture)
     let mut runtime_state = [0usize; 8];
     runtime_state[2] = heap.as_mut_ptr() as usize;
     let mut tls = [runtime_state.as_mut_ptr() as usize, 0, 0, 1];
@@ -580,6 +606,22 @@ fn canonical_runtime_closure_descriptor_validation_and_rooting_execute_fail_clos
     let object_header = object as *const usize;
     assert_eq!(unsafe { *object_header }, descriptor.as_mut_ptr() as usize);
     assert_eq!(unsafe { *object_header.add(1) }, 0, "managed allocation clears the GC word");
+
+    // Span-directory proof (docs/superpowers/specs/2026-09-22-gc-span-heap-design.md, section
+    // 9, slice 6.12/6.13): a 32-byte request lands on a size-class-2 span, and that span's
+    // directory entry records size class 2 and one allocated slot, not a mixed-class block walk.
+    const SPAN_HEADER_SIZE_WORDS: usize = 256 / 8;
+    const SPAN_SIZE_CLASS_WORD: usize = 24 / 8;
+    const SPAN_ALLOC_BITS_WORD: usize = 56 / 8;
+    let object_addr = object as usize;
+    let page_index = (object_addr - region_start) / PAGE_SIZE;
+    let entry_word = (REGION_HEADER_SIZE / 8) + page_index * SPAN_HEADER_SIZE_WORDS;
+    assert_eq!(heap_region[entry_word + SPAN_SIZE_CLASS_WORD], 2, "32-byte request must land on size class 2");
+    assert_eq!(
+        heap_region[entry_word + SPAN_ALLOC_BITS_WORD] & 1,
+        1,
+        "the first slot popped from a fresh span must be marked allocated"
+    );
     let mismatched_size = [40usize, 8, descriptor.as_mut_ptr() as usize];
     assert!(
         allocate_object(mismatched_size.as_ptr()).is_null(),

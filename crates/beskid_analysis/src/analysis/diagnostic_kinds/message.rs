@@ -194,6 +194,9 @@ impl SemanticIssueKind {
             Self::TypeInvalidTryTarget => {
                 "try operator requires a Result value with an Ok payload".to_string()
             }
+            Self::TypeInvalidPrimitiveConversionArgument => {
+                "primitive numeric conversion requires exactly one primitive numeric argument".to_string()
+            }
             Self::TypeInvalidEventInvocationScope => {
                 "events can only be invoked from methods on their declaring type".to_string()
             }

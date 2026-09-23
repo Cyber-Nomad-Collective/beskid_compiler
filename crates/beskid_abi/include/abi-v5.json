@@ -355,6 +355,16 @@
       "result": "void"
     },
     {
+      "symbol": "beskid_rt_v5_heap_set_cap",
+      "params": [
+        {
+          "name": "bytes",
+          "type": "usize"
+        }
+      ],
+      "result": "u8"
+    },
+    {
       "symbol": "beskid_rt_v5_managed_object_allocate",
       "params": [
         {
@@ -2376,18 +2386,18 @@
       ]
     },
     {
-      "name": "BeskidHeapState",
+      "name": "BeskidHeapRegion",
       "target": null,
-      "size": 768,
+      "size": 64,
       "alignment": 8,
       "fields": [
         {
-          "name": "region_start",
+          "name": "next",
           "offset": 0,
           "type": "pointer"
         },
         {
-          "name": "region_size",
+          "name": "size",
           "offset": 8,
           "type": "usize"
         },
@@ -2400,6 +2410,54 @@
           "name": "limit",
           "offset": 24,
           "type": "pointer"
+        },
+        {
+          "name": "free_bytes",
+          "offset": 32,
+          "type": "usize"
+        },
+        {
+          "name": "largest_free",
+          "offset": 40,
+          "type": "usize"
+        },
+        {
+          "name": "objects_start",
+          "offset": 48,
+          "type": "pointer"
+        },
+        {
+          "name": "free_span_list",
+          "offset": 56,
+          "type": "usize"
+        }
+      ]
+    },
+    {
+      "name": "BeskidHeapState",
+      "target": null,
+      "size": 328,
+      "alignment": 8,
+      "fields": [
+        {
+          "name": "first_region",
+          "offset": 0,
+          "type": "pointer"
+        },
+        {
+          "name": "current_region",
+          "offset": 8,
+          "type": "pointer"
+        },
+        {
+          "name": "region_count",
+          "offset": 16,
+          "type": "usize"
+        },
+        {
+          "name": "committed_bytes",
+          "offset": 24,
+          "type": "usize"
         },
         {
           "name": "live_bytes",
@@ -2422,34 +2480,69 @@
           "type": "usize"
         },
         {
-          "name": "gray_count",
+          "name": "gc_phase",
           "offset": 64,
           "type": "usize"
         },
         {
-          "name": "gray_entries",
+          "name": "cap_bytes",
           "offset": 72,
-          "type": "pointer[6]"
-        },
-        {
-          "name": "external_root_count",
-          "offset": 120,
           "type": "usize"
         },
         {
-          "name": "external_roots",
-          "offset": 128,
-          "type": "pointer[63]"
-        },
-        {
-          "name": "handle_count",
-          "offset": 632,
+          "name": "next_region_size",
+          "offset": 80,
           "type": "usize"
         },
         {
-          "name": "handles",
-          "offset": 640,
-          "type": "BeskidGcHandleSlot[8]"
+          "name": "failure_reason",
+          "offset": 88,
+          "type": "usize"
+        },
+        {
+          "name": "failure_request_bytes",
+          "offset": 96,
+          "type": "usize"
+        },
+        {
+          "name": "diagnostic",
+          "offset": 104,
+          "type": "u8[64]"
+        },
+        {
+          "name": "root_stack_head",
+          "offset": 168,
+          "type": "pointer"
+        },
+        {
+          "name": "root_stack_current",
+          "offset": 176,
+          "type": "pointer"
+        },
+        {
+          "name": "handle_stack_head",
+          "offset": 184,
+          "type": "pointer"
+        },
+        {
+          "name": "handle_stack_current",
+          "offset": 192,
+          "type": "pointer"
+        },
+        {
+          "name": "current_span_by_class",
+          "offset": 200,
+          "type": "pointer[14]"
+        },
+        {
+          "name": "mark_fifo_head",
+          "offset": 312,
+          "type": "pointer"
+        },
+        {
+          "name": "mark_fifo_tail",
+          "offset": 320,
+          "type": "pointer"
         }
       ]
     },
@@ -8812,6 +8905,177 @@
         {
           "target": "x86_64-unknown-linux-gnu",
           "implementation": "gc_external_root_count",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__gc_heap_cap",
+      "adapter": "gc_heap_cap",
+      "params": [],
+      "result": "usize",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "gc_heap_cap",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "gc_heap_cap",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "gc_heap_cap",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__gc_heap_committed",
+      "adapter": "gc_heap_committed",
+      "params": [],
+      "result": "usize",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "gc_heap_committed",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "gc_heap_committed",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "gc_heap_committed",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__gc_heap_failure_reason",
+      "adapter": "gc_heap_failure_reason",
+      "params": [],
+      "result": "usize",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "gc_heap_failure_reason",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "gc_heap_failure_reason",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "gc_heap_failure_reason",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__gc_heap_force_root_stack_failure",
+      "adapter": "gc_heap_force_root_stack_failure",
+      "params": [
+        {
+          "name": "enabled",
+          "type": "usize"
+        }
+      ],
+      "result": "void",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "gc_heap_force_root_stack_failure",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "gc_heap_force_root_stack_failure",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "gc_heap_force_root_stack_failure",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__gc_heap_region_count",
+      "adapter": "gc_heap_region_count",
+      "params": [],
+      "result": "usize",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "gc_heap_region_count",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "gc_heap_region_count",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "gc_heap_region_count",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__gc_heap_set_stress_interval",
+      "adapter": "gc_heap_set_stress_interval",
+      "params": [
+        {
+          "name": "n",
+          "type": "usize"
+        }
+      ],
+      "result": "void",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "gc_heap_set_stress_interval",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "gc_heap_set_stress_interval",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "gc_heap_set_stress_interval",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__gc_heap_verify",
+      "adapter": "gc_heap_verify",
+      "params": [],
+      "result": "u8",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "gc_heap_verify",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "gc_heap_verify",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "gc_heap_verify",
           "osImports": []
         }
       ]

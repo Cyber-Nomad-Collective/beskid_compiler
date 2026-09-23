@@ -1,6 +1,8 @@
 use Runtime.Bootstrap.Lifecycle;
 use Runtime.Bootstrap.Native;
-use Runtime.Fiber.Scheduler;
+use Runtime.Fiber.Scheduler.Core;
+use Runtime.Fiber.Scheduler.Loop;
+use Runtime.Fiber.Scheduler.Poll;
 use Runtime.Host.Callbacks;
 use Runtime.PubSub.Events;
 use Runtime.PubSub.Hub;

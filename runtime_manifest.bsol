@@ -107,6 +107,7 @@ export "beskid_library_attach_v5" { params = [{ name = runtime, type = pointer }
 export "beskid_library_detach_v5" { params = [{ name = runtime, type = pointer }] returns = void }
 export "beskid_rt_v5_process_init" { params = [{ name = config, type = pointer }] returns = pointer }
 export "beskid_rt_v5_process_shutdown" { params = [{ name = runtime, type = pointer }] returns = void }
+export "beskid_rt_v5_heap_set_cap" { params = [{ name = bytes, type = usize }] returns = u8 }
 export "beskid_rt_v5_thread_attach" { params = [{ name = runtime, type = pointer }] returns = pointer }
 export "beskid_rt_v5_thread_detach" { params = [{ name = thread, type = pointer }] returns = void }
 export "beskid_rt_v5_managed_object_allocate" { params = [{ name = request, type = pointer }] returns = pointer }
@@ -1187,6 +1188,83 @@ corelib_service "__gc_collect_if_needed" {
   ]
 }
 
+corelib_service "__gc_heap_cap" {
+  adapter = "gc_heap_cap"
+  params = []
+  returns = usize
+  target_bindings = [
+    { target = "x86_64-unknown-linux-gnu", implementation = "gc_heap_cap", os_imports = [] },
+    { target = "aarch64-apple-darwin", implementation = "gc_heap_cap", os_imports = [] },
+    { target = "x86_64-pc-windows-msvc", implementation = "gc_heap_cap", os_imports = [] }
+  ]
+}
+
+corelib_service "__gc_heap_committed" {
+  adapter = "gc_heap_committed"
+  params = []
+  returns = usize
+  target_bindings = [
+    { target = "x86_64-unknown-linux-gnu", implementation = "gc_heap_committed", os_imports = [] },
+    { target = "aarch64-apple-darwin", implementation = "gc_heap_committed", os_imports = [] },
+    { target = "x86_64-pc-windows-msvc", implementation = "gc_heap_committed", os_imports = [] }
+  ]
+}
+
+corelib_service "__gc_heap_region_count" {
+  adapter = "gc_heap_region_count"
+  params = []
+  returns = usize
+  target_bindings = [
+    { target = "x86_64-unknown-linux-gnu", implementation = "gc_heap_region_count", os_imports = [] },
+    { target = "aarch64-apple-darwin", implementation = "gc_heap_region_count", os_imports = [] },
+    { target = "x86_64-pc-windows-msvc", implementation = "gc_heap_region_count", os_imports = [] }
+  ]
+}
+
+corelib_service "__gc_heap_failure_reason" {
+  adapter = "gc_heap_failure_reason"
+  params = []
+  returns = usize
+  target_bindings = [
+    { target = "x86_64-unknown-linux-gnu", implementation = "gc_heap_failure_reason", os_imports = [] },
+    { target = "aarch64-apple-darwin", implementation = "gc_heap_failure_reason", os_imports = [] },
+    { target = "x86_64-pc-windows-msvc", implementation = "gc_heap_failure_reason", os_imports = [] }
+  ]
+}
+
+corelib_service "__gc_heap_verify" {
+  adapter = "gc_heap_verify"
+  params = []
+  returns = u8
+  target_bindings = [
+    { target = "x86_64-unknown-linux-gnu", implementation = "gc_heap_verify", os_imports = [] },
+    { target = "aarch64-apple-darwin", implementation = "gc_heap_verify", os_imports = [] },
+    { target = "x86_64-pc-windows-msvc", implementation = "gc_heap_verify", os_imports = [] }
+  ]
+}
+
+corelib_service "__gc_heap_set_stress_interval" {
+  adapter = "gc_heap_set_stress_interval"
+  params = [{ name = n, type = usize }]
+  returns = void
+  target_bindings = [
+    { target = "x86_64-unknown-linux-gnu", implementation = "gc_heap_set_stress_interval", os_imports = [] },
+    { target = "aarch64-apple-darwin", implementation = "gc_heap_set_stress_interval", os_imports = [] },
+    { target = "x86_64-pc-windows-msvc", implementation = "gc_heap_set_stress_interval", os_imports = [] }
+  ]
+}
+
+corelib_service "__gc_heap_force_root_stack_failure" {
+  adapter = "gc_heap_force_root_stack_failure"
+  params = [{ name = enabled, type = usize }]
+  returns = void
+  target_bindings = [
+    { target = "x86_64-unknown-linux-gnu", implementation = "gc_heap_force_root_stack_failure", os_imports = [] },
+    { target = "aarch64-apple-darwin", implementation = "gc_heap_force_root_stack_failure", os_imports = [] },
+    { target = "x86_64-pc-windows-msvc", implementation = "gc_heap_force_root_stack_failure", os_imports = [] }
+  ]
+}
+
 corelib_service "__gc_register_root" {
   adapter = "gc_register_root"
   params = [{ name = ptrAddr, type = pointer }]
@@ -1656,8 +1734,9 @@ layout "BeskidTypeDescriptor" { size = 40 alignment = 8 fields = [{ name = size,
 # element base and may therefore be zero.
 layout "BeskidArrayElementDescriptor" { size = 32 alignment = 8 fields = [{ name = stride, offset = 0, type = usize }, { name = alignment, offset = 8, type = usize }, { name = pointer_map, offset = 16, type = pointer }, { name = pointer_count, offset = 24, type = usize }] }
 layout "BeskidArrayAllocationRequest" { size = 32 alignment = 8 fields = [{ name = element, offset = 0, type = pointer }, { name = length, offset = 8, type = usize }, { name = descriptor, offset = 16, type = pointer }, { name = flags, offset = 24, type = u32 }, { name = reserved, offset = 28, type = u32 }] }
-layout "BeskidHeapState" { size = 768 alignment = 8 project_to_runtime = accessors fields = [{ name = region_start, offset = 0, type = pointer }, { name = region_size, offset = 8, type = usize }, { name = bump, offset = 16, type = pointer }, { name = limit, offset = 24, type = pointer }, { name = live_bytes, offset = 32, type = usize }, { name = live_count, offset = 40, type = usize }, { name = collection_count, offset = 48, type = usize }, { name = collection_threshold, offset = 56, type = usize }, { name = gray_count, offset = 64, type = usize }, { name = gray_entries, offset = 72, type = "pointer[6]" }, { name = external_root_count, offset = 120, type = usize }, { name = external_roots, offset = 128, type = "pointer[63]" }, { name = handle_count, offset = 632, type = usize }, { name = handles, offset = 640, type = "BeskidGcHandleSlot[8]" }] }
+layout "BeskidHeapState" { size = 328 alignment = 8 project_to_runtime = accessors fields = [{ name = first_region, offset = 0, type = pointer }, { name = current_region, offset = 8, type = pointer }, { name = region_count, offset = 16, type = usize }, { name = committed_bytes, offset = 24, type = usize }, { name = live_bytes, offset = 32, type = usize }, { name = live_count, offset = 40, type = usize }, { name = collection_count, offset = 48, type = usize }, { name = collection_threshold, offset = 56, type = usize }, { name = gc_phase, offset = 64, type = usize }, { name = cap_bytes, offset = 72, type = usize }, { name = next_region_size, offset = 80, type = usize }, { name = failure_reason, offset = 88, type = usize }, { name = failure_request_bytes, offset = 96, type = usize }, { name = diagnostic, offset = 104, type = "u8[64]" }, { name = root_stack_head, offset = 168, type = pointer }, { name = root_stack_current, offset = 176, type = pointer }, { name = handle_stack_head, offset = 184, type = pointer }, { name = handle_stack_current, offset = 192, type = pointer }, { name = current_span_by_class, offset = 200, type = "pointer[14]" }, { name = mark_fifo_head, offset = 312, type = pointer }, { name = mark_fifo_tail, offset = 320, type = pointer }] }
 layout "BeskidGcHandleSlot" { size = 16 alignment = 8 fields = [{ name = value, offset = 0, type = pointer }, { name = generation, offset = 8, type = usize }] }
+layout "BeskidHeapRegion" { size = 64 alignment = 8 fields = [{ name = next, offset = 0, type = pointer }, { name = size, offset = 8, type = usize }, { name = bump, offset = 16, type = pointer }, { name = limit, offset = 24, type = pointer }, { name = free_bytes, offset = 32, type = usize }, { name = largest_free, offset = 40, type = usize }, { name = objects_start, offset = 48, type = pointer }, { name = free_span_list, offset = 56, type = usize }] }
 layout "BeskidCallbackRegistry" { size = 1056 alignment = 8 project_to_runtime = accessors fields = [{ name = owner_runtime, offset = 0, type = pointer }, { name = callback_count, offset = 8, type = usize }, { name = handler_count, offset = 16, type = usize }, { name = composition_container, offset = 24, type = pointer }, { name = callbacks, offset = 32, type = "BeskidCallbackEntry[32]" }, { name = handlers, offset = 544, type = "BeskidCallbackEntry[32]" }] }
 layout "BeskidCallbackEntry" { size = 16 alignment = 8 fields = [{ name = identity, offset = 0, type = pointer }, { name = target, offset = 8, type = pointer }] }
 layout "BeskidPendingSpawn" { size = 40 alignment = 8 fields = [{ name = entry, offset = 0, type = pointer }, { name = argument, offset = 8, type = pointer }, { name = cancel_slot, offset = 16, type = pointer }, { name = parent, offset = 24, type = usize }, { name = reserved, offset = 32, type = usize }] }

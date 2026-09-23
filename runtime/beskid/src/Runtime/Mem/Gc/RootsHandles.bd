@@ -1,30 +1,80 @@
 // Canonical external roots, generation-tagged handles, and heap initialization.
+//
+// Roots and handles live in segmented, growable stacks (`BeskidRootStackBlock`,
+// `BeskidHandleStackBlock` — runtime-internal, not `runtime_manifest.bsol` layouts, same status
+// `BeskidSpanHeader` has) instead of a fixed-capacity inline array. Registering a root appends to
+// the current block, allocating and linking a new block through `SystemAllocate` (never
+// `GcAlloc`: registering a root must not itself require or trigger a collection) when the current
+// block is full. This is the actual fix for the regex/pest SIGILL: recursive descent needs
+// thousands of concurrently rooted locals and construction temporaries, not a bigger fixed
+// ceiling (the ceiling was raised 63 -> 4095 and 8 -> 512 as a stopgap; this replaces it with no
+// ceiling at all, bounded only by address space).
+//
+// BeskidRootStackBlock (runtime-internal): next(0, pointer), count(8, usize),
+//   slots(16, pointer[64]) — size 528, alignment 8.
+// BeskidHandleStackBlock (runtime-internal): next(0, pointer), count(8, usize),
+//   slots(16, BeskidGcHandleSlot[64]) — size 1040, alignment 8.
 
-const HEAP_REGION_START = 0;
-const HEAP_REGION_SIZE = 8;
-const HEAP_BUMP = 16;
-const HEAP_LIMIT = 24;
+const HEAP_FIRST_REGION = 0;
+const HEAP_CURRENT_REGION = 8;
+const HEAP_REGION_COUNT = 16;
+const HEAP_COMMITTED_BYTES = 24;
 const HEAP_COLLECTION_THRESHOLD = 56;
-const HEAP_EXTERNAL_ROOT_COUNT = 72;
-const HEAP_EXTERNAL_ROOTS = 80;
-const HEAP_HANDLE_COUNT = 584;
-const HEAP_HANDLES = 592;
-const HEAP_STATE_SIZE = 720;
-const GC_EXTERNAL_ROOT_CAPACITY = 63;
-const GC_HANDLE_CAPACITY = 8;
+const HEAP_CAP_BYTES = 72;
+const HEAP_NEXT_REGION_SIZE = 80;
+const HEAP_ROOT_STACK_HEAD = 168;
+const HEAP_ROOT_STACK_CURRENT = 176;
+const HEAP_HANDLE_STACK_HEAD = 184;
+const HEAP_HANDLE_STACK_CURRENT = 192;
+const HEAP_STATE_SIZE = 328;
+
+const HEAP_MIN_THRESHOLD = 524288;
+const HEAP_MAX_REGION_SIZE = 67108864;
+const HEAP_MIN_REGION_SIZE = 8192;
+const PAGE_SIZE = 8192;
+
+// Test-only fault-injection hook: when nonzero, the next `SystemAllocate` for a new root or
+// handle block is skipped and treated as if the platform allocator had refused it, so a test can
+// exercise the diagnosable-trap path (`GcReportRootStackExhaustion`) without exhausting real
+// address space. Stored in an unused 8 bytes of the diagnostic buffer (offset 104..168 in
+// `BeskidHeapState`); safe because it is only ever read here, before any real exhaustion report
+// would overwrite that buffer, and a real report never returns.
+const HEAP_TEST_FORCE_ROOT_STACK_FAILURE = 136;
+
+const ROOT_BLOCK_NEXT = 0;
+const ROOT_BLOCK_COUNT = 8;
+const ROOT_BLOCK_SLOTS = 16;
+const ROOT_BLOCK_CAPACITY = 64;
+const ROOT_BLOCK_SIZE = 528;
+
+const HANDLE_BLOCK_NEXT = 0;
+const HANDLE_BLOCK_COUNT = 8;
+const HANDLE_BLOCK_SLOTS = 16;
+const HANDLE_BLOCK_CAPACITY = 64;
+const HANDLE_BLOCK_SIZE = 1040;
 const GC_HANDLE_SLOT_SIZE = 16;
 
+[Export(Abi:"C", Symbol:"gc_heap_force_root_stack_failure")]
+pub unit GcHeapForceRootStackFailure(word enabled) {
+    pointer heap = Heap();
+    if heap == NativePointer(0) { return; }
+    raw_word_store(pointer_add(heap, HEAP_TEST_FORCE_ROOT_STACK_FAILURE), enabled);
+    return;
+}
 
 // Root identity is the stable storage address, not a copyable payload or owner-state bit.
 pub bool GcIsRegisteredRoot(pointer ptrAddr) {
     pointer heap = Heap();
     if heap == NativePointer(0) || ptrAddr == NativePointer(0) { return false; }
-    word count = raw_word_load(pointer_add(heap, HEAP_EXTERNAL_ROOT_COUNT));
-    if count > GC_EXTERNAL_ROOT_CAPACITY { return false; }
-    mut word index = 0;
-    while index < count {
-        if raw_word_load(pointer_add(heap, HEAP_EXTERNAL_ROOTS + index * 8)) == NativeWord(ptrAddr) { return true; }
-        index = index + 1;
+    mut pointer block = NativePointer(raw_word_load(pointer_add(heap, HEAP_ROOT_STACK_HEAD)));
+    while block != NativePointer(0) {
+        word count = raw_word_load(pointer_add(block, ROOT_BLOCK_COUNT));
+        mut word index = 0;
+        while index < count {
+            if raw_word_load(pointer_add(block, ROOT_BLOCK_SLOTS + index * 8)) == NativeWord(ptrAddr) { return true; }
+            index = index + 1;
+        }
+        block = NativePointer(raw_word_load(pointer_add(block, ROOT_BLOCK_NEXT)));
     }
     return false;
 }
@@ -33,29 +83,57 @@ pub bool GcIsRegisteredRoot(pointer ptrAddr) {
 pub bool GcRegisterRoot(pointer ptrAddr) {
     pointer heap = Heap();
     if heap == NativePointer(0) || ptrAddr == NativePointer(0) { return false; }
-    if GcIsRegisteredRoot(ptrAddr) { return true; }
-    word count = raw_word_load(pointer_add(heap, HEAP_EXTERNAL_ROOT_COUNT));
-    if count >= GC_EXTERNAL_ROOT_CAPACITY { return false; }
-    raw_word_store(pointer_add(heap, HEAP_EXTERNAL_ROOTS + count * 8), NativeWord(ptrAddr));
-    raw_word_store(pointer_add(heap, HEAP_EXTERNAL_ROOT_COUNT), count + 1);
+    mut pointer block = NativePointer(raw_word_load(pointer_add(heap, HEAP_ROOT_STACK_CURRENT)));
+    mut word count = raw_word_load(pointer_add(block, ROOT_BLOCK_COUNT));
+    if count >= ROOT_BLOCK_CAPACITY {
+        mut pointer next = NativePointer(0);
+        if raw_word_load(pointer_add(heap, HEAP_TEST_FORCE_ROOT_STACK_FAILURE)) == 0 {
+            next = SystemAllocate(ROOT_BLOCK_SIZE, 8);
+        }
+        if next == NativePointer(0) {
+            GcReportRootStackExhaustion(heap);
+        }
+        raw_word_store(pointer_add(next, ROOT_BLOCK_NEXT), 0);
+        raw_word_store(pointer_add(next, ROOT_BLOCK_COUNT), 0);
+        raw_word_store(pointer_add(block, ROOT_BLOCK_NEXT), NativeWord(next));
+        raw_word_store(pointer_add(heap, HEAP_ROOT_STACK_CURRENT), NativeWord(next));
+        block = next;
+        count = 0;
+    }
+    raw_word_store(pointer_add(block, ROOT_BLOCK_SLOTS + count * 8), NativeWord(ptrAddr));
+    raw_word_store(pointer_add(block, ROOT_BLOCK_COUNT), count + 1);
     return true;
 }
 
+// Scope exit is almost always LIFO (the last root registered is the first released), so the
+// common case is O(1): check the current block's last slot first. Out-of-order release still
+// works, at the cost of a full scan across blocks.
 [Export(Abi:"C", Symbol:"gc_unregister_root")]
 pub unit GcUnregisterRoot(pointer ptrAddr) {
     pointer heap = Heap();
     if heap == NativePointer(0) || ptrAddr == NativePointer(0) { return; }
-    word count = raw_word_load(pointer_add(heap, HEAP_EXTERNAL_ROOT_COUNT));
-    mut word index = 0;
-    while index < count {
-        pointer slot = pointer_add(heap, HEAP_EXTERNAL_ROOTS + index * 8);
-        if raw_word_load(slot) == NativeWord(ptrAddr) {
-            raw_word_store(slot, raw_word_load(pointer_add(heap, HEAP_EXTERNAL_ROOTS + (count - 1) * 8)));
-            raw_word_store(pointer_add(heap, HEAP_EXTERNAL_ROOTS + (count - 1) * 8), 0);
-            raw_word_store(pointer_add(heap, HEAP_EXTERNAL_ROOT_COUNT), count - 1);
-            return;
+    pointer current = NativePointer(raw_word_load(pointer_add(heap, HEAP_ROOT_STACK_CURRENT)));
+    word currentCount = raw_word_load(pointer_add(current, ROOT_BLOCK_COUNT));
+    if currentCount > 0 &&
+       raw_word_load(pointer_add(current, ROOT_BLOCK_SLOTS + (currentCount - 1) * 8)) == NativeWord(ptrAddr) {
+        raw_word_store(pointer_add(current, ROOT_BLOCK_COUNT), currentCount - 1);
+        return;
+    }
+    mut pointer block = NativePointer(raw_word_load(pointer_add(heap, HEAP_ROOT_STACK_HEAD)));
+    while block != NativePointer(0) {
+        word count = raw_word_load(pointer_add(block, ROOT_BLOCK_COUNT));
+        mut word index = 0;
+        while index < count {
+            pointer slot = pointer_add(block, ROOT_BLOCK_SLOTS + index * 8);
+            if raw_word_load(slot) == NativeWord(ptrAddr) {
+                raw_word_store(slot, raw_word_load(pointer_add(block, ROOT_BLOCK_SLOTS + (count - 1) * 8)));
+                raw_word_store(pointer_add(block, ROOT_BLOCK_SLOTS + (count - 1) * 8), 0);
+                raw_word_store(pointer_add(block, ROOT_BLOCK_COUNT), count - 1);
+                return;
+            }
+            index = index + 1;
         }
-        index = index + 1;
+        block = NativePointer(raw_word_load(pointer_add(block, ROOT_BLOCK_NEXT)));
     }
     return;
 }
@@ -64,43 +142,87 @@ pub unit GcUnregisterRoot(pointer ptrAddr) {
 pub word GcExternalRootCount() {
     pointer heap = Heap();
     if heap == NativePointer(0) { return 0; }
-    return raw_word_load(pointer_add(heap, HEAP_EXTERNAL_ROOT_COUNT));
+    mut word total = 0;
+    mut pointer block = NativePointer(raw_word_load(pointer_add(heap, HEAP_ROOT_STACK_HEAD)));
+    while block != NativePointer(0) {
+        total = total + raw_word_load(pointer_add(block, ROOT_BLOCK_COUNT));
+        block = NativePointer(raw_word_load(pointer_add(block, ROOT_BLOCK_NEXT)));
+    }
+    return total;
 }
 
 [Export(Abi:"C", Symbol:"gc_root_handle")]
 pub word GcRootHandle(pointer valuePtr) {
     pointer heap = Heap();
     if heap == NativePointer(0) || valuePtr == NativePointer(0) || IsAllocatedObject(heap, valuePtr) == false { return 0; }
-    word count = raw_word_load(pointer_add(heap, HEAP_HANDLE_COUNT));
-    mut word index = 0;
-    while index < count {
-        pointer slot = pointer_add(heap, HEAP_HANDLES + index * GC_HANDLE_SLOT_SIZE);
-        if raw_word_load(slot) == 0 {
-            mut word generation = raw_word_load(pointer_add(slot, 8));
-            if generation == 0 { generation = 1; }
-            raw_word_store(slot, NativeWord(valuePtr));
-            raw_word_store(pointer_add(slot, 8), generation);
-            return (generation << 32) | index;
+    // Reuse a cleared slot anywhere in the chain before growing, exactly as the fixed-table
+    // version did, so churn (root, unroot, root, ...) does not grow the chain unboundedly.
+    mut pointer block = NativePointer(raw_word_load(pointer_add(heap, HEAP_HANDLE_STACK_HEAD)));
+    mut word globalIndex = 0;
+    while block != NativePointer(0) {
+        word count = raw_word_load(pointer_add(block, HANDLE_BLOCK_COUNT));
+        mut word index = 0;
+        while index < count {
+            pointer slot = pointer_add(block, HANDLE_BLOCK_SLOTS + index * GC_HANDLE_SLOT_SIZE);
+            if raw_word_load(slot) == 0 {
+                mut word generation = raw_word_load(pointer_add(slot, 8));
+                if generation == 0 { generation = 1; }
+                raw_word_store(slot, NativeWord(valuePtr));
+                raw_word_store(pointer_add(slot, 8), generation);
+                return (generation << 32) | globalIndex;
+            }
+            index = index + 1;
+            globalIndex = globalIndex + 1;
         }
-        index = index + 1;
+        block = NativePointer(raw_word_load(pointer_add(block, HANDLE_BLOCK_NEXT)));
     }
-    if count >= GC_HANDLE_CAPACITY { return 0; }
-    pointer slot = pointer_add(heap, HEAP_HANDLES + count * GC_HANDLE_SLOT_SIZE);
+    mut pointer current = NativePointer(raw_word_load(pointer_add(heap, HEAP_HANDLE_STACK_CURRENT)));
+    mut word currentCount = raw_word_load(pointer_add(current, HANDLE_BLOCK_COUNT));
+    if currentCount >= HANDLE_BLOCK_CAPACITY {
+        pointer next = SystemAllocate(HANDLE_BLOCK_SIZE, 8);
+        if next == NativePointer(0) {
+            GcReportRootStackExhaustion(heap);
+        }
+        raw_word_store(pointer_add(next, HANDLE_BLOCK_NEXT), 0);
+        raw_word_store(pointer_add(next, HANDLE_BLOCK_COUNT), 0);
+        memory_set(pointer_add(next, HANDLE_BLOCK_SLOTS), 0, HANDLE_BLOCK_CAPACITY * GC_HANDLE_SLOT_SIZE);
+        raw_word_store(pointer_add(current, HANDLE_BLOCK_NEXT), NativeWord(next));
+        raw_word_store(pointer_add(heap, HEAP_HANDLE_STACK_CURRENT), NativeWord(next));
+        current = next;
+        currentCount = 0;
+    }
+    pointer slot = pointer_add(current, HANDLE_BLOCK_SLOTS + currentCount * GC_HANDLE_SLOT_SIZE);
     raw_word_store(slot, NativeWord(valuePtr));
     raw_word_store(pointer_add(slot, 8), 1);
-    raw_word_store(pointer_add(heap, HEAP_HANDLE_COUNT), count + 1);
-    return (word(1) << 32) | count;
+    raw_word_store(pointer_add(current, HANDLE_BLOCK_COUNT), currentCount + 1);
+    return (word(1) << 32) | globalIndex;
 }
 
+// Handles are addressed by `(generation << 32) | globalIndex` where `globalIndex` counts slots
+// from the chain head. Resolving that back to `(block, localIndex)` walks the chain — handles are
+// short-lived (construction scopes) and few concurrently, so this stays cheap in practice.
 [Export(Abi:"C", Symbol:"gc_unroot_handle")]
 pub unit GcUnrootHandle(word handle) {
     pointer heap = Heap();
     if heap == NativePointer(0) || handle == 0 { return; }
-    mut word index = handle & 0xFFFFFFFF;
-    mut word generation = handle >> 32;
-    word count = raw_word_load(pointer_add(heap, HEAP_HANDLE_COUNT));
-    if index >= count { return; }
-    pointer slot = pointer_add(heap, HEAP_HANDLES + index * GC_HANDLE_SLOT_SIZE);
+    word globalIndex = handle & 0xFFFFFFFF;
+    word generation = handle >> 32;
+    mut word localIndex = 0;
+    mut pointer block = NativePointer(0);
+    mut pointer cursor = NativePointer(raw_word_load(pointer_add(heap, HEAP_HANDLE_STACK_HEAD)));
+    mut word remaining = globalIndex;
+    while cursor != NativePointer(0) {
+        if remaining < HANDLE_BLOCK_CAPACITY {
+            block = cursor;
+            localIndex = remaining;
+            cursor = NativePointer(0);
+        } else {
+            remaining = remaining - HANDLE_BLOCK_CAPACITY;
+            cursor = NativePointer(raw_word_load(pointer_add(cursor, HANDLE_BLOCK_NEXT)));
+        }
+    }
+    if block == NativePointer(0) { return; }
+    pointer slot = pointer_add(block, HANDLE_BLOCK_SLOTS + localIndex * GC_HANDLE_SLOT_SIZE);
     if raw_word_load(slot) == 0 || raw_word_load(pointer_add(slot, 8)) != generation { return; }
     raw_word_store(slot, 0);
     mut word nextGeneration = generation + 1;
@@ -112,12 +234,15 @@ pub unit GcUnrootHandle(word handle) {
 pub bool GcHandlesClear() {
     pointer heap = Heap();
     if heap == NativePointer(0) { return true; }
-    word count = raw_word_load(pointer_add(heap, HEAP_HANDLE_COUNT));
-    if count > GC_HANDLE_CAPACITY { return false; }
-    mut word index = 0;
-    while index < count {
-        if raw_word_load(pointer_add(heap, HEAP_HANDLES + index * GC_HANDLE_SLOT_SIZE)) != 0 { return false; }
-        index = index + 1;
+    mut pointer block = NativePointer(raw_word_load(pointer_add(heap, HEAP_HANDLE_STACK_HEAD)));
+    while block != NativePointer(0) {
+        word count = raw_word_load(pointer_add(block, HANDLE_BLOCK_COUNT));
+        mut word index = 0;
+        while index < count {
+            if raw_word_load(pointer_add(block, HANDLE_BLOCK_SLOTS + index * GC_HANDLE_SLOT_SIZE)) != 0 { return false; }
+            index = index + 1;
+        }
+        block = NativePointer(raw_word_load(pointer_add(block, HANDLE_BLOCK_NEXT)));
     }
     return true;
 }
@@ -125,15 +250,22 @@ pub bool GcHandlesClear() {
 pub pointer GcResolveHandle(word handle) {
     pointer heap = Heap();
     if heap == NativePointer(0) || handle == 0 { return NativePointer(0); }
-    mut word index = handle & 0xFFFFFFFF;
-    mut word generation = handle >> 32;
-    word count = raw_word_load(pointer_add(heap, HEAP_HANDLE_COUNT));
-    if index >= count { return NativePointer(0); }
-    pointer slot = pointer_add(heap, HEAP_HANDLES + index * GC_HANDLE_SLOT_SIZE);
-    if raw_word_load(pointer_add(slot, 8)) != generation { return NativePointer(0); }
-    pointer value = NativePointer(raw_word_load(slot));
-    if IsAllocatedObject(heap, value) == false { return NativePointer(0); }
-    return value;
+    word globalIndex = handle & 0xFFFFFFFF;
+    word generation = handle >> 32;
+    mut pointer block = NativePointer(raw_word_load(pointer_add(heap, HEAP_HANDLE_STACK_HEAD)));
+    mut word remaining = globalIndex;
+    while block != NativePointer(0) {
+        if remaining < HANDLE_BLOCK_CAPACITY {
+            pointer slot = pointer_add(block, HANDLE_BLOCK_SLOTS + remaining * GC_HANDLE_SLOT_SIZE);
+            if raw_word_load(pointer_add(slot, 8)) != generation { return NativePointer(0); }
+            pointer value = NativePointer(raw_word_load(slot));
+            if IsAllocatedObject(heap, value) == false { return NativePointer(0); }
+            return value;
+        }
+        remaining = remaining - HANDLE_BLOCK_CAPACITY;
+        block = NativePointer(raw_word_load(pointer_add(block, HANDLE_BLOCK_NEXT)));
+    }
+    return NativePointer(0);
 }
 
 pub bool MarkRoots() {
@@ -154,40 +286,92 @@ pub bool MarkRoots() {
             frame = NativePointer(raw_word_load(frame));
         }
     }
-    word externalCount = raw_word_load(pointer_add(heap, HEAP_EXTERNAL_ROOT_COUNT));
-    if externalCount > GC_EXTERNAL_ROOT_CAPACITY { return false; }
-    mut word externalIndex = 0;
-    while externalIndex < externalCount {
-        pointer address = NativePointer(raw_word_load(pointer_add(heap, HEAP_EXTERNAL_ROOTS + externalIndex * 8)));
-        if address != NativePointer(0) {
-            pointer value = NativePointer(raw_word_load(address));
-            if value != NativePointer(0) { GcMarkGray(value); }
+    mut pointer rootBlock = NativePointer(raw_word_load(pointer_add(heap, HEAP_ROOT_STACK_HEAD)));
+    while rootBlock != NativePointer(0) {
+        word count = raw_word_load(pointer_add(rootBlock, ROOT_BLOCK_COUNT));
+        mut word index = 0;
+        while index < count {
+            pointer address = NativePointer(raw_word_load(pointer_add(rootBlock, ROOT_BLOCK_SLOTS + index * 8)));
+            if address != NativePointer(0) {
+                pointer value = NativePointer(raw_word_load(address));
+                if value != NativePointer(0) { GcMarkGray(value); }
+            }
+            index = index + 1;
         }
-        externalIndex = externalIndex + 1;
+        rootBlock = NativePointer(raw_word_load(pointer_add(rootBlock, ROOT_BLOCK_NEXT)));
     }
     if MarkSuspendedFiberRoots() == false { return false; }
-    word handleCount = raw_word_load(pointer_add(heap, HEAP_HANDLE_COUNT));
-    if handleCount > GC_HANDLE_CAPACITY { return false; }
-    mut word handleIndex = 0;
-    while handleIndex < handleCount {
-        pointer value = NativePointer(raw_word_load(pointer_add(heap, HEAP_HANDLES + handleIndex * GC_HANDLE_SLOT_SIZE)));
-        if value != NativePointer(0) { GcMarkGray(value); }
-        handleIndex = handleIndex + 1;
+    mut pointer handleBlock = NativePointer(raw_word_load(pointer_add(heap, HEAP_HANDLE_STACK_HEAD)));
+    while handleBlock != NativePointer(0) {
+        word count = raw_word_load(pointer_add(handleBlock, HANDLE_BLOCK_COUNT));
+        mut word index = 0;
+        while index < count {
+            pointer value = NativePointer(raw_word_load(pointer_add(handleBlock, HANDLE_BLOCK_SLOTS + index * GC_HANDLE_SLOT_SIZE)));
+            if value != NativePointer(0) { GcMarkGray(value); }
+            index = index + 1;
+        }
+        handleBlock = NativePointer(raw_word_load(pointer_add(handleBlock, HANDLE_BLOCK_NEXT)));
     }
     return true;
 }
 
-pub unit HeapInit(pointer heapStruct, pointer region, word regionSize) {
-    if heapStruct == NativePointer(0) || region == NativePointer(0) || regionSize < 16 || regionSize % 8 != 0 || NativeWord(region) % 8 != 0 {
+// Writes the first region's header into `region` (whole mapping `regionSize` bytes) and
+// initializes `heapStruct` as a fresh one-region chain with an empty root and handle stack:
+// `first_region == current_region == region`, `region_count = 1`, `committed_bytes =
+// regionSize`, `next_region_size = 2 * regionSize` (bounded), `cap_bytes = capBytes`,
+// `collection_threshold = HEAP_MIN_THRESHOLD`. The first root and handle blocks are allocated
+// here (once, at process init) rather than lazily on first use, so `GcRegisterRoot`'s "current
+// block" pointer is never null.
+pub unit HeapInit(pointer heapStruct, pointer region, word regionSize, word capBytes) {
+    if heapStruct == NativePointer(0) || region == NativePointer(0) || regionSize < HEAP_MIN_REGION_SIZE ||
+       regionSize % PAGE_SIZE != 0 || NativeWord(region) % 8 != 0 {
         return;
     }
     word limit = NativeWord(region) + regionSize;
     if limit < NativeWord(region) { return; }
     memory_set(heapStruct, 0, HEAP_STATE_SIZE);
-    raw_word_store(pointer_add(heapStruct, HEAP_REGION_START), NativeWord(region));
-    raw_word_store(pointer_add(heapStruct, HEAP_REGION_SIZE), regionSize);
-    raw_word_store(pointer_add(heapStruct, HEAP_BUMP), NativeWord(region));
-    raw_word_store(pointer_add(heapStruct, HEAP_LIMIT), limit);
-    raw_word_store(pointer_add(heapStruct, HEAP_COLLECTION_THRESHOLD), regionSize / 2);
+    RegionInit(region, regionSize);
+    raw_word_store(pointer_add(heapStruct, HEAP_FIRST_REGION), NativeWord(region));
+    raw_word_store(pointer_add(heapStruct, HEAP_CURRENT_REGION), NativeWord(region));
+    raw_word_store(pointer_add(heapStruct, HEAP_REGION_COUNT), 1);
+    raw_word_store(pointer_add(heapStruct, HEAP_COMMITTED_BYTES), regionSize);
+    raw_word_store(pointer_add(heapStruct, HEAP_CAP_BYTES), capBytes);
+    mut word nextRegionSize = regionSize * 2;
+    if nextRegionSize > HEAP_MAX_REGION_SIZE || nextRegionSize < regionSize {
+        nextRegionSize = HEAP_MAX_REGION_SIZE;
+    }
+    raw_word_store(pointer_add(heapStruct, HEAP_NEXT_REGION_SIZE), nextRegionSize);
+    raw_word_store(pointer_add(heapStruct, HEAP_COLLECTION_THRESHOLD), HEAP_MIN_THRESHOLD);
+    pointer rootBlock = SystemAllocate(ROOT_BLOCK_SIZE, 8);
+    if rootBlock == NativePointer(0) { return; }
+    raw_word_store(pointer_add(rootBlock, ROOT_BLOCK_NEXT), 0);
+    raw_word_store(pointer_add(rootBlock, ROOT_BLOCK_COUNT), 0);
+    raw_word_store(pointer_add(heapStruct, HEAP_ROOT_STACK_HEAD), NativeWord(rootBlock));
+    raw_word_store(pointer_add(heapStruct, HEAP_ROOT_STACK_CURRENT), NativeWord(rootBlock));
+    pointer handleBlock = SystemAllocate(HANDLE_BLOCK_SIZE, 8);
+    if handleBlock == NativePointer(0) { return; }
+    raw_word_store(pointer_add(handleBlock, HANDLE_BLOCK_NEXT), 0);
+    raw_word_store(pointer_add(handleBlock, HANDLE_BLOCK_COUNT), 0);
+    memory_set(pointer_add(handleBlock, HANDLE_BLOCK_SLOTS), 0, HANDLE_BLOCK_CAPACITY * GC_HANDLE_SLOT_SIZE);
+    raw_word_store(pointer_add(heapStruct, HEAP_HANDLE_STACK_HEAD), NativeWord(handleBlock));
+    raw_word_store(pointer_add(heapStruct, HEAP_HANDLE_STACK_CURRENT), NativeWord(handleBlock));
+    return;
+}
+
+// Frees every root and handle stack block. Called once from `ProcessShutdown`, after
+// `GcHandlesClear`/`GcExternalRootCount == 0` have already established nothing is still rooted.
+pub unit FreeRootAndHandleStacks(pointer heap) {
+    mut pointer rootBlock = NativePointer(raw_word_load(pointer_add(heap, HEAP_ROOT_STACK_HEAD)));
+    while rootBlock != NativePointer(0) {
+        pointer next = NativePointer(raw_word_load(pointer_add(rootBlock, ROOT_BLOCK_NEXT)));
+        SystemFree(rootBlock, ROOT_BLOCK_SIZE);
+        rootBlock = next;
+    }
+    mut pointer handleBlock = NativePointer(raw_word_load(pointer_add(heap, HEAP_HANDLE_STACK_HEAD)));
+    while handleBlock != NativePointer(0) {
+        pointer next = NativePointer(raw_word_load(pointer_add(handleBlock, HANDLE_BLOCK_NEXT)));
+        SystemFree(handleBlock, HANDLE_BLOCK_SIZE);
+        handleBlock = next;
+    }
     return;
 }

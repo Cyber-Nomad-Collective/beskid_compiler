@@ -7,6 +7,8 @@ pub const CANONICAL_BOOTSTRAP_ROOTS_SOURCE_PATH: &str = "src/Runtime/Bootstrap/R
 pub const CANONICAL_BOOTSTRAP_OBJECTS_SOURCE_PATH: &str = "src/Runtime/Bootstrap/Objects.bd";
 pub const CANONICAL_GC_SOURCE_PATH: &str = "src/Runtime/Mem/Gc.bd";
 pub const CANONICAL_GC_STATE_SOURCE_PATH: &str = "src/Runtime/Mem/Gc/State.bd";
+pub const CANONICAL_GC_SPAN_SOURCE_PATH: &str = "src/Runtime/Mem/Gc/Span.bd";
+pub const CANONICAL_GC_VERIFY_SOURCE_PATH: &str = "src/Runtime/Mem/Gc/Verify.bd";
 pub const CANONICAL_GC_MARKING_SOURCE_PATH: &str = "src/Runtime/Mem/Gc/Marking.bd";
 pub const CANONICAL_GC_ROOTS_HANDLES_SOURCE_PATH: &str = "src/Runtime/Mem/Gc/RootsHandles.bd";
 pub const CANONICAL_GC_SWEEP_SOURCE_PATH: &str = "src/Runtime/Mem/Gc/Sweep.bd";
@@ -105,6 +107,10 @@ const CANONICAL_GC_SOURCE: &str =
     include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../runtime/beskid/src/Runtime/Mem/Gc.bd"));
 const CANONICAL_GC_STATE_SOURCE: &str =
     include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../runtime/beskid/src/Runtime/Mem/Gc/State.bd"));
+const CANONICAL_GC_SPAN_SOURCE: &str =
+    include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../runtime/beskid/src/Runtime/Mem/Gc/Span.bd"));
+const CANONICAL_GC_VERIFY_SOURCE: &str =
+    include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../runtime/beskid/src/Runtime/Mem/Gc/Verify.bd"));
 const CANONICAL_GC_MARKING_SOURCE: &str =
     include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../runtime/beskid/src/Runtime/Mem/Gc/Marking.bd"));
 const CANONICAL_GC_ROOTS_HANDLES_SOURCE: &str =
@@ -271,6 +277,8 @@ pub fn canonical_runtime_sources() -> Vec<SourceUnit> {
         },
         SourceUnit { logical_path: CANONICAL_GC_SOURCE_PATH.into(), source: CANONICAL_GC_SOURCE.into() },
         SourceUnit { logical_path: CANONICAL_GC_STATE_SOURCE_PATH.into(), source: CANONICAL_GC_STATE_SOURCE.into() },
+        SourceUnit { logical_path: CANONICAL_GC_SPAN_SOURCE_PATH.into(), source: CANONICAL_GC_SPAN_SOURCE.into() },
+        SourceUnit { logical_path: CANONICAL_GC_VERIFY_SOURCE_PATH.into(), source: CANONICAL_GC_VERIFY_SOURCE.into() },
         SourceUnit {
             logical_path: CANONICAL_GC_MARKING_SOURCE_PATH.into(),
             source: CANONICAL_GC_MARKING_SOURCE.into(),

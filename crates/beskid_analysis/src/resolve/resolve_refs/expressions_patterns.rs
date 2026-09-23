@@ -35,7 +35,14 @@ impl Resolver {
                 self.resolve_expression(&unary_expr.node.expr);
             }
             Expression::Call(call_expr) => {
-                self.resolve_expression(&call_expr.node.callee);
+                // `i32(x)`/`i64(x)`/`u32(x)`/`u8(x)`/`byte(x)`/`word(x)`/`f64(x)` are primitive
+                // numeric conversion call forms classified purely from AST shape by
+                // `primitive_numeric_conversion_target` (beskid_queries::semantic_contract::calls::facts).
+                // Their callee is not a declared item, so resolving it as an ordinary value would
+                // always fail with an unknown-value error; skip callee resolution for this shape.
+                if !super::super::resolver::is_primitive_numeric_conversion_call(&call_expr.node) {
+                    self.resolve_expression(&call_expr.node.callee);
+                }
                 for arg in &call_expr.node.args {
                     self.resolve_expression(arg);
                 }

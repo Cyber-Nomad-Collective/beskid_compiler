@@ -50,6 +50,10 @@ struct LoopTargets {
     continue_block: Block,
     break_block: Block,
     root_scope_depth: usize,
+    /// Set once a `break` inside this loop has jumped to `break_block`. A literal-`true`
+    /// `while` loop with this still `false` after its body lowers has a provably dead exit
+    /// block (see `emit_while`'s trailing trap).
+    break_reached: bool,
 }
 
 #[derive(Default)]

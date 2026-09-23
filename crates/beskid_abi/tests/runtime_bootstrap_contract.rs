@@ -142,6 +142,7 @@ fn canonical_contract_has_the_exact_lifecycle_closure_and_trap_exports() {
             ),
             ("beskid_rt_v5_external_wait_release", &[AbiType::USize][..], AbiType::U8),
             ("beskid_rt_v5_fiber_yield", &[][..], AbiType::Void,),
+            ("beskid_rt_v5_heap_set_cap", &[AbiType::USize][..], AbiType::U8,),
             ("beskid_rt_v5_managed_object_allocate", &[AbiType::Pointer][..], AbiType::Pointer,),
             ("beskid_rt_v5_poll_executor_run_once", &[][..], AbiType::I32,),
             (
@@ -280,6 +281,7 @@ fn canonical_layouts_freeze_common_and_target_context_offsets() {
                 "BeskidFiberRecord",
                 "BeskidGcHandleSlot",
                 "BeskidHandle",
+                "BeskidHeapRegion",
                 "BeskidHeapState",
                 "BeskidNetworkHandle",
                 "BeskidNetworkRequest",
@@ -335,6 +337,74 @@ fn canonical_layouts_freeze_common_and_target_context_offsets() {
             runtime.fields.iter().find(|field| field.name == "root_frame").unwrap().offset,
             40,
             "RuntimeState.root_frame must stay distinct from TlsState.root_frame@8"
+        );
+    }
+}
+
+#[test]
+fn heap_state_and_heap_region_layouts_match_the_growable_heap_design() {
+    let manifest = AbiManifestV5::canonical_runtime(supported_targets()[0].clone());
+
+    let heap_state = manifest.layouts.iter().find(|layout| layout.name == "BeskidHeapState").unwrap();
+    assert_eq!((heap_state.size, heap_state.alignment), (328, 8));
+    let expected_heap_state_fields: &[(&str, u64)] = &[
+        ("first_region", 0),
+        ("current_region", 8),
+        ("region_count", 16),
+        ("committed_bytes", 24),
+        ("live_bytes", 32),
+        ("live_count", 40),
+        ("collection_count", 48),
+        ("collection_threshold", 56),
+        ("gc_phase", 64),
+        ("cap_bytes", 72),
+        ("next_region_size", 80),
+        ("failure_reason", 88),
+        ("failure_request_bytes", 96),
+        ("diagnostic", 104),
+        ("root_stack_head", 168),
+        ("root_stack_current", 176),
+        ("handle_stack_head", 184),
+        ("handle_stack_current", 192),
+        ("current_span_by_class", 200),
+        ("mark_fifo_head", 312),
+        ("mark_fifo_tail", 320),
+    ];
+    for (name, offset) in expected_heap_state_fields {
+        assert_eq!(
+            heap_state.fields.iter().find(|field| field.name == *name).unwrap().offset,
+            *offset,
+            "BeskidHeapState.{name} must stay at offset {offset}"
+        );
+    }
+    assert_eq!(heap_state.fields.iter().find(|field| field.name == "diagnostic").unwrap().ty, "u8[64]");
+    // Root/handle capacity is unbounded (2026-09-22, span-heap redesign): the fixed
+    // `external_roots`/`handles` arrays (raised 63/8 -> 4095/512 as a stopgap, then found to be
+    // the real SIGILL cause: a recursive-descent regex/PEG match holds far more than any fixed
+    // ceiling of GC-managed locals live across its call stack at once) are replaced by segmented,
+    // growable root and handle stacks (`BeskidRootStackBlock`, `BeskidHandleStackBlock`,
+    // runtime-internal, not `runtime_manifest.bsol` layouts). See
+    // docs/superpowers/specs/2026-09-22-gc-span-heap-design.md and
+    // runtime/beskid/src/Runtime/Mem/Gc/{State,Span,RootsHandles}.bd.
+    assert_eq!(heap_state.fields.iter().find(|field| field.name == "current_span_by_class").unwrap().ty, "pointer[14]");
+
+    let heap_region = manifest.layouts.iter().find(|layout| layout.name == "BeskidHeapRegion").unwrap();
+    assert_eq!((heap_region.size, heap_region.alignment), (64, 8));
+    let expected_heap_region_fields: &[(&str, u64)] = &[
+        ("next", 0),
+        ("size", 8),
+        ("bump", 16),
+        ("limit", 24),
+        ("free_bytes", 32),
+        ("largest_free", 40),
+        ("objects_start", 48),
+        ("free_span_list", 56),
+    ];
+    for (name, offset) in expected_heap_region_fields {
+        assert_eq!(
+            heap_region.fields.iter().find(|field| field.name == *name).unwrap().offset,
+            *offset,
+            "BeskidHeapRegion.{name} must stay at offset {offset}"
         );
     }
 }

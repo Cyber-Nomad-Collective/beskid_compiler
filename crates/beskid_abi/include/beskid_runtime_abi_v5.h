@@ -7,6 +7,34 @@
 #define BESKID_TRAP_EXIT_STATUS 101
 #define BESKID_TRAP_DIAGNOSTIC "beskid runtime trap v5"
 struct BeskidStr;
+#define BESKID_TRAP_NAME_1 "null_reference"
+#define BESKID_TRAP_NAME_2 "bounds"
+#define BESKID_TRAP_NAME_3 "arithmetic_overflow"
+#define BESKID_TRAP_NAME_4 "invalid_utf8"
+#define BESKID_TRAP_NAME_5 "out_of_memory"
+#define BESKID_TRAP_NAME_6 "invalid_or_stale_handle"
+#define BESKID_TRAP_NAME_7 "scheduler_deadlock"
+#define BESKID_TRAP_NAME_8 "abi_or_layout_mismatch"
+#define BESKID_TRAP_NAME_9 "unreachable_or_isle_invariant"
+#define BESKID_TRAP_NAME_10 "runtime_internal_corruption"
+#if defined(__GNUC__) || defined(__clang__)
+__attribute__((unused))
+#endif
+static inline const char *BESKID_TRAP_NAME(unsigned char code) {
+    switch (code) {
+        case 1: return BESKID_TRAP_NAME_1;
+        case 2: return BESKID_TRAP_NAME_2;
+        case 3: return BESKID_TRAP_NAME_3;
+        case 4: return BESKID_TRAP_NAME_4;
+        case 5: return BESKID_TRAP_NAME_5;
+        case 6: return BESKID_TRAP_NAME_6;
+        case 7: return BESKID_TRAP_NAME_7;
+        case 8: return BESKID_TRAP_NAME_8;
+        case 9: return BESKID_TRAP_NAME_9;
+        case 10: return BESKID_TRAP_NAME_10;
+        default: return "unknown";
+    }
+}
 #define BESKID_ABI_VALUE_SIZE 40
 #define BESKID_ABI_VALUE_ALIGNMENT 8
 #define BESKID_ABI_VALUE_TAG_OFFSET 0
@@ -97,22 +125,39 @@ struct BeskidStr;
 #define BESKID_HANDLE_SLOT_OFFSET 0
 #define BESKID_HANDLE_GENERATION_OFFSET 4
 #define BESKID_HANDLE_OWNER_COOKIE_OFFSET 8
-#define BESKID_HEAP_STATE_SIZE 768
+#define BESKID_HEAP_REGION_SIZE 64
+#define BESKID_HEAP_REGION_ALIGNMENT 8
+#define BESKID_HEAP_REGION_NEXT_OFFSET 0
+#define BESKID_HEAP_REGION_SIZE_OFFSET 8
+#define BESKID_HEAP_REGION_BUMP_OFFSET 16
+#define BESKID_HEAP_REGION_LIMIT_OFFSET 24
+#define BESKID_HEAP_REGION_FREE_BYTES_OFFSET 32
+#define BESKID_HEAP_REGION_LARGEST_FREE_OFFSET 40
+#define BESKID_HEAP_REGION_OBJECTS_START_OFFSET 48
+#define BESKID_HEAP_REGION_FREE_SPAN_LIST_OFFSET 56
+#define BESKID_HEAP_STATE_SIZE 328
 #define BESKID_HEAP_STATE_ALIGNMENT 8
-#define BESKID_HEAP_STATE_REGION_START_OFFSET 0
-#define BESKID_HEAP_STATE_REGION_SIZE_OFFSET 8
-#define BESKID_HEAP_STATE_BUMP_OFFSET 16
-#define BESKID_HEAP_STATE_LIMIT_OFFSET 24
+#define BESKID_HEAP_STATE_FIRST_REGION_OFFSET 0
+#define BESKID_HEAP_STATE_CURRENT_REGION_OFFSET 8
+#define BESKID_HEAP_STATE_REGION_COUNT_OFFSET 16
+#define BESKID_HEAP_STATE_COMMITTED_BYTES_OFFSET 24
 #define BESKID_HEAP_STATE_LIVE_BYTES_OFFSET 32
 #define BESKID_HEAP_STATE_LIVE_COUNT_OFFSET 40
 #define BESKID_HEAP_STATE_COLLECTION_COUNT_OFFSET 48
 #define BESKID_HEAP_STATE_COLLECTION_THRESHOLD_OFFSET 56
-#define BESKID_HEAP_STATE_GRAY_COUNT_OFFSET 64
-#define BESKID_HEAP_STATE_GRAY_ENTRIES_OFFSET 72
-#define BESKID_HEAP_STATE_EXTERNAL_ROOT_COUNT_OFFSET 120
-#define BESKID_HEAP_STATE_EXTERNAL_ROOTS_OFFSET 128
-#define BESKID_HEAP_STATE_HANDLE_COUNT_OFFSET 632
-#define BESKID_HEAP_STATE_HANDLES_OFFSET 640
+#define BESKID_HEAP_STATE_GC_PHASE_OFFSET 64
+#define BESKID_HEAP_STATE_CAP_BYTES_OFFSET 72
+#define BESKID_HEAP_STATE_NEXT_REGION_SIZE_OFFSET 80
+#define BESKID_HEAP_STATE_FAILURE_REASON_OFFSET 88
+#define BESKID_HEAP_STATE_FAILURE_REQUEST_BYTES_OFFSET 96
+#define BESKID_HEAP_STATE_DIAGNOSTIC_OFFSET 104
+#define BESKID_HEAP_STATE_ROOT_STACK_HEAD_OFFSET 168
+#define BESKID_HEAP_STATE_ROOT_STACK_CURRENT_OFFSET 176
+#define BESKID_HEAP_STATE_HANDLE_STACK_HEAD_OFFSET 184
+#define BESKID_HEAP_STATE_HANDLE_STACK_CURRENT_OFFSET 192
+#define BESKID_HEAP_STATE_CURRENT_SPAN_BY_CLASS_OFFSET 200
+#define BESKID_HEAP_STATE_MARK_FIFO_HEAD_OFFSET 312
+#define BESKID_HEAP_STATE_MARK_FIFO_TAIL_OFFSET 320
 #define BESKID_NETWORK_HANDLE_SIZE 8
 #define BESKID_NETWORK_HANDLE_ALIGNMENT 8
 #define BESKID_NETWORK_HANDLE_SLOT_OFFSET 0
@@ -331,6 +376,7 @@ uint8_t beskid_rt_v5_external_wait_post(size_t owner, size_t token, size_t sourc
 size_t beskid_rt_v5_external_wait_register(size_t fiber_handle, size_t operation, int64_t deadline);
 uint8_t beskid_rt_v5_external_wait_release(size_t token);
 void beskid_rt_v5_fiber_yield(void);
+uint8_t beskid_rt_v5_heap_set_cap(size_t bytes);
 void * beskid_rt_v5_managed_object_allocate(void * request);
 int32_t beskid_rt_v5_poll_executor_run_once(void);
 int64_t beskid_rt_v5_poll_executor_spawn(void * poll_entry, void * task_state, void * result_slot, void * cancel_slot);
@@ -413,6 +459,13 @@ size_t gc_bytes_allocated(void);
 size_t gc_collect(void);
 size_t gc_collect_if_needed(void);
 size_t gc_external_root_count(void);
+size_t gc_heap_cap(void);
+size_t gc_heap_committed(void);
+size_t gc_heap_failure_reason(void);
+void gc_heap_force_root_stack_failure(size_t enabled);
+size_t gc_heap_region_count(void);
+void gc_heap_set_stress_interval(size_t n);
+uint8_t gc_heap_verify(void);
 size_t gc_object_count(void);
 size_t gc_phase(void);
 uint8_t gc_register_root(void * ptrAddr);

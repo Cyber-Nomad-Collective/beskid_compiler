@@ -55,6 +55,20 @@ impl<'a> TypeChecker<'a> {
         Some(TryDesugarTarget { type_name, ok_variant })
     }
 
+    /// True when a `?` operand is a Result-shaped enum: it declares both an `Ok` and an `Error`
+    /// variant. An enum that only happens to declare `Ok` is not a try target. Delegates to the
+    /// single shared predicate ([`TypeChecker::is_result_shaped_enum`]) so this precheck and the
+    /// full type checker's lower-spine check can never disagree.
+    fn is_result_shaped_try_operand(&mut self, operand: &Spanned<Expression>) -> bool {
+        let Some(target_type) = self.infer_expression_type(operand) else {
+            return false;
+        };
+        let Some(item_id) = self.item_for_type_id(target_type) else {
+            return false;
+        };
+        self.is_result_shaped_enum(item_id)
+    }
+
     /// True when the iterable expression type is `T[]`.
     pub fn is_array_iterable(&mut self, iterable: &Spanned<Expression>) -> bool {
         let Some(target_type) = self.infer_expression_type(iterable) else {
@@ -67,6 +81,17 @@ impl<'a> TypeChecker<'a> {
     pub fn invalid_try_expression_spans(resolution: &'a Resolution, entry: &Spanned<Program>) -> Vec<SpanInfo> {
         let programs: Vec<&Spanned<Program>> = vec![entry];
         let mut checker = precheck_checker(resolution, &programs);
+        // A `?` operand is usually a parameter or `let` binding. Its type is only known once
+        // the enclosing body has been typed, so type the entry items exactly as `check_entry`
+        // does before judging operands. Body typing errors belong to the lower spine and are
+        // discarded here; an operand whose type still cannot be established stays invalid.
+        checker.seed_struct_definitions(entry);
+        checker.seed_generics_from_program(entry);
+        checker.seed_contract_signatures(entry);
+        checker.seed_method_receivers_from_items(&entry.node.items);
+        for item in &entry.node.items {
+            checker.type_item(item);
+        }
         let mut spans = Vec::new();
         collect_invalid_try_targets(&mut checker, entry, &mut spans);
         spans
@@ -81,6 +106,19 @@ impl<'a> TypeChecker<'a> {
         let mut programs: Vec<&Spanned<Program>> = dependency_programs.to_vec();
         programs.push(entry);
         let mut checker = precheck_checker(resolution, &programs);
+        // `precheck_checker` only seeds declaration surfaces (types/enums), never types function
+        // bodies. A `?` operand is frequently a `let`-bound local, whose type is only known once
+        // its enclosing body has been typed — so type the entry items the same way
+        // `invalid_try_expression_spans` does before walking for desugar targets. Without this,
+        // `infer_expression_type` on a local operand returns `None` and the target is silently
+        // dropped instead of desugared.
+        checker.seed_struct_definitions(entry);
+        checker.seed_generics_from_program(entry);
+        checker.seed_contract_signatures(entry);
+        checker.seed_method_receivers_from_items(&entry.node.items);
+        for item in &entry.node.items {
+            checker.type_item(item);
+        }
         let mut map = HashMap::new();
         collect_try_targets(&mut checker, entry, &mut map);
         map
@@ -148,6 +186,46 @@ fn collect_invalid_try_targets_in_block(
             && let Some(value) = &return_stmt.node.value
         {
             collect_invalid_try_targets_in_expression(checker, value, spans);
+        } else if let Statement::While(while_stmt) = &statement.node {
+            collect_invalid_try_targets_in_expression(checker, &while_stmt.node.condition, spans);
+            collect_invalid_try_targets_in_block(checker, &while_stmt.node.body, spans);
+        } else if let Statement::For(for_stmt) = &statement.node {
+            collect_invalid_try_targets_in_expression(checker, &for_stmt.node.iterable, spans);
+            collect_invalid_try_targets_in_block(checker, &for_stmt.node.body, spans);
+        } else if let Statement::If(if_stmt) = &statement.node {
+            collect_invalid_try_targets_in_expression(checker, &if_stmt.node.condition, spans);
+            collect_invalid_try_targets_in_block(checker, &if_stmt.node.then_block, spans);
+            if let Some(else_branch) = &if_stmt.node.else_branch {
+                collect_invalid_try_targets_in_else_branch(checker, else_branch, spans);
+            }
+        } else if let Statement::With(with_stmt) = &statement.node {
+            for arg in &with_stmt.node.arguments {
+                collect_invalid_try_targets_in_expression(checker, arg, spans);
+            }
+            collect_invalid_try_targets_in_block(checker, &with_stmt.node.body, spans);
+        } else if let Statement::Launch(launch_stmt) = &statement.node {
+            for arg in &launch_stmt.node.arguments {
+                collect_invalid_try_targets_in_expression(checker, arg, spans);
+            }
+        }
+    }
+}
+
+fn collect_invalid_try_targets_in_else_branch(
+    checker: &mut TypeChecker<'_>,
+    else_branch: &Spanned<crate::syntax::ElseBranch>,
+    spans: &mut Vec<SpanInfo>,
+) {
+    match &else_branch.node {
+        crate::syntax::ElseBranch::Block(block) => {
+            collect_invalid_try_targets_in_block(checker, block, spans);
+        }
+        crate::syntax::ElseBranch::If(nested) => {
+            collect_invalid_try_targets_in_expression(checker, &nested.node.condition, spans);
+            collect_invalid_try_targets_in_block(checker, &nested.node.then_block, spans);
+            if let Some(nested_else) = &nested.node.else_branch {
+                collect_invalid_try_targets_in_else_branch(checker, nested_else, spans);
+            }
         }
     }
 }
@@ -158,9 +236,17 @@ fn collect_invalid_try_targets_in_expression(
     spans: &mut Vec<SpanInfo>,
 ) {
     if let Expression::Try(try_expr) = &expr.node
-        && checker.try_desugar_target_for_operand(&try_expr.node.expr).is_none()
+        && !checker.is_result_shaped_try_operand(&try_expr.node.expr)
     {
-        spans.push(expr.span);
+        // `try_expr.span`, not the outer `expr.span`: the parser assigns the inner
+        // `Spanned<TryExpression>` the operand-only span (see `parse_postfix_expression` in
+        // `syntax/expressions/expression.rs`) before widening the outer expression span to
+        // include the `?` token. The lower-spine full check (`type_try_expression` in
+        // `checker/expressions/dispatch.rs`) and the query authority
+        // (`beskid_queries::entry::invalid_try_spans`, via the indexed `TryExpression` node)
+        // both report that same inner span for the same operator, so this early diagnostic must
+        // match it byte-for-byte or `dedupe_diagnostics` (item 2) cannot merge them.
+        spans.push(try_expr.span);
     }
     match &expr.node {
         Expression::Binary(binary) => {
@@ -251,6 +337,46 @@ fn collect_try_targets_in_block(
             && let Some(value) = &return_stmt.node.value
         {
             collect_try_targets_in_expression(checker, value, map);
+        } else if let Statement::While(while_stmt) = &statement.node {
+            collect_try_targets_in_expression(checker, &while_stmt.node.condition, map);
+            collect_try_targets_in_block(checker, &while_stmt.node.body, map);
+        } else if let Statement::For(for_stmt) = &statement.node {
+            collect_try_targets_in_expression(checker, &for_stmt.node.iterable, map);
+            collect_try_targets_in_block(checker, &for_stmt.node.body, map);
+        } else if let Statement::If(if_stmt) = &statement.node {
+            collect_try_targets_in_expression(checker, &if_stmt.node.condition, map);
+            collect_try_targets_in_block(checker, &if_stmt.node.then_block, map);
+            if let Some(else_branch) = &if_stmt.node.else_branch {
+                collect_try_targets_in_else_branch(checker, else_branch, map);
+            }
+        } else if let Statement::With(with_stmt) = &statement.node {
+            for arg in &with_stmt.node.arguments {
+                collect_try_targets_in_expression(checker, arg, map);
+            }
+            collect_try_targets_in_block(checker, &with_stmt.node.body, map);
+        } else if let Statement::Launch(launch_stmt) = &statement.node {
+            for arg in &launch_stmt.node.arguments {
+                collect_try_targets_in_expression(checker, arg, map);
+            }
+        }
+    }
+}
+
+fn collect_try_targets_in_else_branch(
+    checker: &mut TypeChecker<'_>,
+    else_branch: &Spanned<crate::syntax::ElseBranch>,
+    map: &mut HashMap<SpanInfo, TryDesugarTarget>,
+) {
+    match &else_branch.node {
+        crate::syntax::ElseBranch::Block(block) => {
+            collect_try_targets_in_block(checker, block, map);
+        }
+        crate::syntax::ElseBranch::If(nested) => {
+            collect_try_targets_in_expression(checker, &nested.node.condition, map);
+            collect_try_targets_in_block(checker, &nested.node.then_block, map);
+            if let Some(nested_else) = &nested.node.else_branch {
+                collect_try_targets_in_else_branch(checker, nested_else, map);
+            }
         }
     }
 }
@@ -263,7 +389,9 @@ fn collect_try_targets_in_expression(
     if let Expression::Try(try_expr) = &expr.node
         && let Some(target) = checker.try_desugar_target_for_operand(&try_expr.node.expr)
     {
-        map.insert(expr.span, target);
+        // `try_expr.span`, matching `collect_invalid_try_targets_in_expression` and the
+        // lower-spine/authority sites — see the comment there.
+        map.insert(try_expr.span, target);
     }
     match &expr.node {
         Expression::Binary(binary) => {

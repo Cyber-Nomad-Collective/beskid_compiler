@@ -1,0 +1,251 @@
+// Canonical span/page allocator metadata: size classes, the per-region span directory, span
+// carving, and the bitmap helpers marking and sweeping share.
+//
+// Every region is subdivided into fixed `PAGE_SIZE` pages. A span is a run of whole pages
+// holding objects of exactly one size class (or, for size class 0, one large object spanning
+// several pages). Span metadata (`BeskidSpanHeader`, see the field table below) lives outside
+// object memory, in a per-region directory placed immediately after the region header — the
+// same "metadata lives out of the span's own bytes" design Go's `heapArena.spans[]` uses. This
+// keeps every allocated byte in a span pure object data and makes address-to-span resolution an
+// O(1) arena-index computation instead of a walk.
+//
+// `BeskidSpanHeader` is NOT a `runtime_manifest.bsol` layout: nothing outside this runtime
+// package ever reads or writes it, so it carries no ABI-freeze cost (same status
+// `BeskidHeapRegion` had before the growable-heap design gave it a manifest entry). Its fields,
+// word-granular for simplicity (Go packs `spanclass`/`owned` into single bytes; this draft
+// trades a little space for straightforward `.bd` arithmetic):
+//
+//   0   next          pointer   free-page-list link OR mark-FIFO link (mutually exclusive by
+//                                state: a span is on the free list only while size_class == 0,
+//                                and queued only while size_class != 0, see `SPAN_QUEUED`)
+//   8   base          pointer   first byte of the span (its own first page)
+//   16  page_count    usize     pages in this span
+//   24  size_class    usize     0 = free or large; 1..SIZE_CLASS_COUNT = small-object class
+//   32  queued        usize     0/1: on the mark-phase span FIFO right now
+//   40  live_count    usize     slots with a live object, refreshed by sweep (diagnostic only)
+//   48  free_slot     pointer   head of the span's free-slot list; 0 = full or large
+//   56  alloc_bits    u64[8]    1 bit per slot: allocated since the last sweep or since
+//   120 mark_bits     u64[8]    1 bit per slot: marked in the current cycle
+//   184 scanned_bits  u64[8]    1 bit per slot: already scanned in the current cycle
+//                      = 248, padded to 256
+
+const PAGE_SIZE = 8192;
+
+const REGION_BUMP = 16;
+const REGION_LIMIT = 24;
+const REGION_FREE_SPAN_LIST = 56;
+const REGION_HEADER_SIZE = 64;
+
+const SPAN_NEXT = 0;
+const SPAN_BASE = 8;
+const SPAN_PAGE_COUNT = 16;
+const SPAN_SIZE_CLASS = 24;
+const SPAN_QUEUED = 32;
+const SPAN_LIVE_COUNT = 40;
+const SPAN_FREE_SLOT = 48;
+const SPAN_ALLOC_BITS = 56;
+const SPAN_MARK_BITS = 120;
+const SPAN_SCANNED_BITS = 184;
+const SPAN_HEADER_SIZE = 256;
+const SPAN_BITMAP_WORDS = 8;
+
+// Size classes. Every class is exactly one page: at 16 bytes (the smallest class), a page holds
+// 512 slots, the most any class needs, which is why `SPAN_BITMAP_WORDS = 8` (512 bits) covers
+// every class. Generated from `scripts/gen_size_classes.py`; regenerate rather than hand-edit if
+// the table changes.
+const SIZE_CLASS_COUNT = 13;
+const SIZE_CLASS_MAX_BYTES = 4096;
+// A span's `size_class` field is 0 for a FREE span (on the region's free-page list; `base` and
+// `page_count` stay valid so it can be reused, but nothing else about it is meaningful), 1..13
+// for a small-object span, and `SIZE_CLASS_LARGE` for an in-use large (dedicated, possibly
+// multi-page) object span. Every reader that branches on "is this span in use and large" MUST
+// check `size_class == SIZE_CLASS_LARGE`, never `size_class == 0` — a free span and an in-use
+// large span both have `base != 0`, and conflating them would make sweep or marking read
+// unrelated free memory as if it were a live object's header.
+const SIZE_CLASS_LARGE = 14;
+
+pub word SizeClassForSize(word size) {
+    if size <= 16 { return 1; }
+    if size <= 32 { return 2; }
+    if size <= 48 { return 3; }
+    if size <= 64 { return 4; }
+    if size <= 96 { return 5; }
+    if size <= 128 { return 6; }
+    if size <= 192 { return 7; }
+    if size <= 256 { return 8; }
+    if size <= 384 { return 9; }
+    if size <= 512 { return 10; }
+    if size <= 1024 { return 11; }
+    if size <= 2048 { return 12; }
+    if size <= 4096 { return 13; }
+    return 0;
+}
+
+pub word SizeClassBytes(word class) {
+    if class == 1 { return 16; }
+    if class == 2 { return 32; }
+    if class == 3 { return 48; }
+    if class == 4 { return 64; }
+    if class == 5 { return 96; }
+    if class == 6 { return 128; }
+    if class == 7 { return 192; }
+    if class == 8 { return 256; }
+    if class == 9 { return 384; }
+    if class == 10 { return 512; }
+    if class == 11 { return 1024; }
+    if class == 12 { return 2048; }
+    if class == 13 { return 4096; }
+    return 0;
+}
+
+// The directory entry for the page containing `address`, within `region`. Valid for any address
+// inside `region`'s mapped range; the caller is responsible for having already established that.
+// Only a span's first page ever has a populated entry (`base != 0`); every object address (small
+// or large) is addressed at or above its span's base and within its span's own page range, which
+// for a small span is exactly one page and for a large span starts at the first page — so this
+// always resolves directly to the owning span's entry with no back-walk.
+pub pointer SpanEntryInRegion(pointer region, word address) {
+    word pageIndex = (address - NativeWord(region)) / PAGE_SIZE;
+    return pointer_add(region, REGION_HEADER_SIZE + pageIndex * SPAN_HEADER_SIZE);
+}
+
+pub pointer SpanHeaderFor(pointer heap, word address) {
+    pointer region = FindHeapRegionContaining(heap, address);
+    if region == NativePointer(0) {
+        return NativePointer(0);
+    }
+    return SpanEntryInRegion(region, address);
+}
+
+pub unit InitSpanHeader(pointer entry, word base, word pageCount, word sizeClass) {
+    raw_word_store(pointer_add(entry, SPAN_NEXT), 0);
+    raw_word_store(pointer_add(entry, SPAN_BASE), base);
+    raw_word_store(pointer_add(entry, SPAN_PAGE_COUNT), pageCount);
+    raw_word_store(pointer_add(entry, SPAN_SIZE_CLASS), sizeClass);
+    raw_word_store(pointer_add(entry, SPAN_QUEUED), 0);
+    raw_word_store(pointer_add(entry, SPAN_LIVE_COUNT), 0);
+    raw_word_store(pointer_add(entry, SPAN_FREE_SLOT), 0);
+    memory_set(pointer_add(entry, SPAN_ALLOC_BITS), 0, SPAN_BITMAP_WORDS * 8 * 3);
+    return;
+}
+
+// Carves a `pageCount`-page span for `sizeClass` from `region`: reuses a free span of the exact
+// same page count if one is on the region's free-page list (an address-unordered singly linked
+// list; an exact-size search, not first-fit, keeps this simple at the cost of not coalescing
+// adjacent free runs of different sizes — acceptable in this draft because small spans are
+// always 1 page and large-object page counts cluster around a program's own type sizes).
+// Otherwise advances the region's page cursor (`bump`). Returns null when the region has no
+// room; the caller (allocation's slow path) decides whether to collect, grow, or fail.
+pub pointer CarveSpan(pointer region, word pageCount, word sizeClass) {
+    mut pointer previousFree = NativePointer(0);
+    mut pointer candidate = NativePointer(raw_word_load(pointer_add(region, REGION_FREE_SPAN_LIST)));
+    while candidate != NativePointer(0) {
+        word candidatePages = raw_word_load(pointer_add(candidate, SPAN_PAGE_COUNT));
+        pointer nextFree = NativePointer(raw_word_load(pointer_add(candidate, SPAN_NEXT)));
+        if candidatePages == pageCount {
+            if previousFree == NativePointer(0) {
+                raw_word_store(pointer_add(region, REGION_FREE_SPAN_LIST), NativeWord(nextFree));
+            } else {
+                raw_word_store(pointer_add(previousFree, SPAN_NEXT), NativeWord(nextFree));
+            }
+            word base = raw_word_load(pointer_add(candidate, SPAN_BASE));
+            InitSpanHeader(candidate, base, pageCount, sizeClass);
+            return candidate;
+        }
+        previousFree = candidate;
+        candidate = nextFree;
+    }
+    word bump = raw_word_load(pointer_add(region, REGION_BUMP));
+    word limit = raw_word_load(pointer_add(region, REGION_LIMIT));
+    word spanBytes = pageCount * PAGE_SIZE;
+    word next = bump + spanBytes;
+    if next < bump || next > limit {
+        return NativePointer(0);
+    }
+    pointer entry = SpanEntryInRegion(region, bump);
+    InitSpanHeader(entry, bump, pageCount, sizeClass);
+    raw_word_store(pointer_add(region, REGION_BUMP), next);
+    return entry;
+}
+
+// Returns a fully swept, empty span (small or large) to its region's free-page list, keyed by
+// its exact page count (see `CarveSpan`'s exact-size search above). `page_count` and `base` are
+// left untouched so a later request for the same page count reuses this span directly.
+pub unit FreeSpanEntry(pointer region, pointer entry) {
+    raw_word_store(pointer_add(entry, SPAN_SIZE_CLASS), 0);
+    raw_word_store(pointer_add(entry, SPAN_FREE_SLOT), 0);
+    raw_word_store(pointer_add(entry, SPAN_QUEUED), 0);
+    word head = raw_word_load(pointer_add(region, REGION_FREE_SPAN_LIST));
+    raw_word_store(pointer_add(entry, SPAN_NEXT), head);
+    raw_word_store(pointer_add(region, REGION_FREE_SPAN_LIST), NativeWord(entry));
+    return;
+}
+
+// Threads every slot of a freshly carved small span onto its free-slot list, using each free
+// slot's own first word to store the next free slot's address (the same free-list-through-freed-
+// memory convention the pre-span design used for its coalesced free blocks). A slot popped for
+// allocation has that word overwritten with the real descriptor before it is ever read as a
+// pointer, so there is no ambiguity between "free" and "live" content.
+pub unit InitSmallSpanFreeList(pointer entry, word base, word classBytes) {
+    word slotsPerSpan = PAGE_SIZE / classBytes;
+    mut word idx = slotsPerSpan;
+    mut pointer head = NativePointer(0);
+    while idx > 0 {
+        idx = idx - 1;
+        pointer slot = NativePointer(base + idx * classBytes);
+        raw_word_store(slot, NativeWord(head));
+        head = slot;
+    }
+    raw_word_store(pointer_add(entry, SPAN_FREE_SLOT), NativeWord(head));
+    return;
+}
+
+pub pointer PopFreeSlot(pointer entry, word classBytes, word base) {
+    pointer head = NativePointer(raw_word_load(pointer_add(entry, SPAN_FREE_SLOT)));
+    if head == NativePointer(0) {
+        return NativePointer(0);
+    }
+    word next = raw_word_load(head);
+    raw_word_store(pointer_add(entry, SPAN_FREE_SLOT), next);
+    word idx = (NativeWord(head) - base) / classBytes;
+    BitmapSetBit(pointer_add(entry, SPAN_ALLOC_BITS), idx);
+    return head;
+}
+
+// ---- Bitmap helpers shared by allocation, marking, and sweeping ----
+
+pub bool BitmapTestBit(pointer bitmapBase, word idx) {
+    word wordIndex = idx / 64;
+    word bitPos = idx % 64;
+    word w = raw_word_load(pointer_add(bitmapBase, wordIndex * 8));
+    return (w & (word(1) << bitPos)) != 0;
+}
+
+pub unit BitmapSetBit(pointer bitmapBase, word idx) {
+    word wordIndex = idx / 64;
+    word bitPos = idx % 64;
+    pointer wordPtr = pointer_add(bitmapBase, wordIndex * 8);
+    word w = raw_word_load(wordPtr);
+    raw_word_store(wordPtr, w | (word(1) << bitPos));
+    return;
+}
+
+pub word Popcount64(word value) {
+    mut word count = 0;
+    mut word v = value;
+    while v != 0 {
+        v = v & (v - 1);
+        count = count + 1;
+    }
+    return count;
+}
+
+pub word PopcountBitmap(pointer bitmapBase) {
+    mut word total = 0;
+    mut word i = 0;
+    while i < SPAN_BITMAP_WORDS {
+        total = total + Popcount64(raw_word_load(pointer_add(bitmapBase, i * 8)));
+        i = i + 1;
+    }
+    return total;
+}

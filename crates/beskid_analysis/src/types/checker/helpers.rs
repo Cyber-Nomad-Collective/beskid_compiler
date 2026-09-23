@@ -222,6 +222,14 @@ impl<'a> TypeChecker<'a> {
             .map(|(name, _)| name.clone())
     }
 
+    /// True when `enum_item_id` is `Result`-shaped: it declares both an `Ok` and an `Error`
+    /// variant. Single source of truth for the postfix-`?` operand contract (OpenSpec
+    /// `language-meta--contracts-and-effects--error-handling`, "Postfix try operator"), shared by
+    /// the precheck walker and the full type checker so both stages agree on the same enums.
+    pub(crate) fn is_result_shaped_enum(&self, enum_item_id: ItemId) -> bool {
+        self.ok_variant_name(enum_item_id, "Ok").is_some() && self.ok_variant_name(enum_item_id, "Error").is_some()
+    }
+
     pub(super) fn method_item_for_receiver(&self, receiver_type: TypeId, method_name: &str) -> Option<ItemId> {
         let receiver_item = self.named_item_id(receiver_type)?;
         self.methods_by_receiver

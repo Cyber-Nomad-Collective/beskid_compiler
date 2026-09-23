@@ -85,6 +85,36 @@ pub(crate) fn path_segments(path: &Spanned<crate::syntax::Path>) -> Vec<String> 
     path.node.segments.iter().map(|segment| segment.node.name.node.name.clone()).collect()
 }
 
+/// Names recognized as primitive numeric conversion call forms (`i32(x)`, `byte(x)`, ...).
+///
+/// Kept in sync with `primitive_numeric_conversion_target` in
+/// `crates/beskid_queries/src/semantic_contract/calls/facts.rs`, which classifies the same call
+/// shape purely from AST text for typing/lowering. The two lists intentionally live in separate
+/// crates (`beskid_queries` depends on `beskid_analysis`, not the reverse) and must be updated
+/// together.
+const PRIMITIVE_NUMERIC_CONVERSION_NAMES: &[&str] = &["i32", "i64", "u32", "u8", "byte", "word", "f64"];
+
+/// True when `call` has the shape of a primitive numeric conversion call: an unqualified,
+/// non-generic single-segment callee naming a conversion target, with exactly one argument.
+/// Such calls are classified by AST shape alone (see [`PRIMITIVE_NUMERIC_CONVERSION_NAMES`]) and
+/// never resolve to a declared item, so name resolution must not treat their callee as an
+/// ordinary value reference.
+pub(crate) fn is_primitive_numeric_conversion_call(call: &crate::syntax::CallExpression) -> bool {
+    if call.args.len() != 1 {
+        return false;
+    }
+    let crate::syntax::Expression::Path(path) = &call.callee.node else {
+        return false;
+    };
+    let [segment] = path.node.path.node.segments.as_slice() else {
+        return false;
+    };
+    if !segment.node.type_args.is_empty() {
+        return false;
+    }
+    PRIMITIVE_NUMERIC_CONVERSION_NAMES.contains(&segment.node.name.node.name.as_str())
+}
+
 pub(super) fn file_scoped_module_index(program: &Spanned<crate::syntax::Program>) -> Option<usize> {
     program.node.items.iter().position(|item| match &item.node {
         Node::ModuleDeclaration(def) => {

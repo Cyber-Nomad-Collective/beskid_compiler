@@ -391,7 +391,20 @@ pub(super) fn unique_imported_function(db: &dyn Db, key: AstNodeKey, name: &str)
         .into_iter()
         .filter_map(|target| unique_exported_function_in_unit(db, target, key.generation, name))
         .collect::<Vec<_>>();
-    let [declaration] = candidates.as_slice() else {
+    // Two distinct import targets can legitimately route to the exact same declaration: a hub
+    // unit that `pub mod`-re-exports another unit's function is reachable both directly and
+    // through the hub. That is one function reachable by two paths, not two candidate functions,
+    // so only a genuine distinct-declaration collision is ambiguous. This matters once every
+    // corpus unit becomes a private cross-unit import target of every other (see
+    // `attach_private_runtime_scope`): a bare corpus helper name can then be found once through
+    // its declaring unit and again through any hub that re-exports it.
+    let mut deduped: Vec<AstNodeKey> = Vec::with_capacity(candidates.len());
+    for candidate in candidates {
+        if !deduped.contains(&candidate) {
+            deduped.push(candidate);
+        }
+    }
+    let [declaration] = deduped.as_slice() else {
         return None;
     };
     Some(*declaration)

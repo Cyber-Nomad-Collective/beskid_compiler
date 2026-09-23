@@ -58,6 +58,15 @@ pub word TypeDescriptorFlags(pointer descriptor) {
 
 const TYPE_DESCRIPTOR_ARRAY = 1;
 
+// Beskid `const` items have no `pub` visibility (see the grammar's `ConstantDefinition` rule):
+// they only resolve within their own declaring file. Callers outside this module — including
+// tests that are not part of the compiler-embedded runtime fixture allowlist and so cannot
+// see cross-module constants either way — read the array type-descriptor flag through this
+// function instead of the bare constant.
+pub word TypeDescriptorArrayFlag() {
+    return TYPE_DESCRIPTOR_ARRAY;
+}
+
 pub bool ValidateArrayElementDescriptor(pointer descriptor) {
     if descriptor == NativePointer(0) { return false; }
     word stride = raw_word_load(descriptor);
