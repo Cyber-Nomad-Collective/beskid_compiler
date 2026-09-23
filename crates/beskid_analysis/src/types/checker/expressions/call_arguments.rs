@@ -468,6 +468,34 @@ impl<'a> TypeChecker<'a> {
                         if let Some(item_id) = callee_item_id {
                             self.record_generic_call_constraints(item_id, &arg_types, expected, call.span);
                         }
+                        // A genuine per-argument type conflict (e.g. `word` vs `i64` bound to
+                        // the same `T`) must fail closed with a clear diagnostic here, before
+                        // falling through to `infer_generic_args_from_call_types`'s numeric
+                        // widening silently picks one side and lets an inconsistent
+                        // specialization reach ABI/codegen as an opaque "unavailable" failure.
+                        if let Some(item_id) = callee_item_id
+                            && let Some(conflict) = crate::types::inference::first_generic_parameter_conflict(
+                                &self.type_table,
+                                &self.generic_items,
+                                &self.function_signatures,
+                                item_id,
+                                &arg_types,
+                                &call.node.args,
+                            )
+                        {
+                            let span = call
+                                .node
+                                .args
+                                .get(conflict.second_arg_index)
+                                .map_or(call.span, |arg| arg.span);
+                            self.errors.push(TypeError::GenericParameterConflict {
+                                span,
+                                parameter: conflict.parameter,
+                                first: conflict.first,
+                                second: conflict.second,
+                            });
+                            return Some(signature.return_type);
+                        }
                         let inferred = callee_item_id.and_then(|item_id| {
                             crate::types::inference::infer_generic_args_from_call_types(
                                 &self.type_table,

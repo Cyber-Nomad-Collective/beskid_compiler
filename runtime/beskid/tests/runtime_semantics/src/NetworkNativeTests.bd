@@ -5,6 +5,7 @@ use Runtime.Network.Table;
 use Runtime.Network.Sockets;
 use Runtime.Network.Dns;
 use Testing.Assert;
+use HostRuntimeSupport;
 
 // The portable service fixture runs unchanged over epoll, kqueue and IOCP kits.
 // Only ABI-managed array descriptors cross these runtime entrypoints.
@@ -18,6 +19,7 @@ pub pointer NetworkTestArray(word length, word stride) {
 }
 
 test native_network_bind_address_close_and_generation_are_portable {
+    pointer hostRuntime = SuspendHostRuntime();
     pointer runtime = Native.SystemAllocate(64, 8);
     memory_set(runtime, 0, 64);
     Assert.True(Lifecycle.ProcessInit(runtime) == runtime, "native runtime initialized");
@@ -55,11 +57,13 @@ test native_network_bind_address_close_and_generation_are_portable {
     Native.SystemFree(address, 35);
     Lifecycle.ProcessShutdown(runtime);
     Native.SystemFree(runtime, 64);
+    ResumeHostRuntime(hostRuntime);
 }
 
 // Table exhaustion and host descriptor exhaustion (EMFILE before the table fills)
 // both report ResourceExhausted (18), never NetworkDown (9).
 test native_network_socket_exhaustion_reports_resource_exhausted {
+    pointer hostRuntime = SuspendHostRuntime();
     pointer runtime = Native.SystemAllocate(64, 8);
     memory_set(runtime, 0, 64);
     Assert.True(Lifecycle.ProcessInit(runtime) == runtime, "native runtime initialized");
@@ -98,4 +102,5 @@ test native_network_socket_exhaustion_reports_resource_exhausted {
     Native.SystemFree(address, 35);
     Lifecycle.ProcessShutdown(runtime);
     Native.SystemFree(runtime, 64);
+    ResumeHostRuntime(hostRuntime);
 }

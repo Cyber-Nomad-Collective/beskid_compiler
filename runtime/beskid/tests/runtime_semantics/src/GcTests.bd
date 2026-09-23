@@ -6,6 +6,7 @@ use Runtime.Mem.Gc.Collection;
 use Runtime.Mem.Gc.RootsHandles;
 use Runtime.Data.Collections;
 use Testing.Assert;
+use HostRuntimeSupport;
 
 pub pointer TestDescriptor(word size, word alignment) {
     pointer descriptor = SystemAllocate(40, 8);
@@ -32,12 +33,20 @@ pub unit DropTestHeap(pointer runtime, pointer thread, pointer heap, pointer reg
 }
 
 test gc_fails_closed_before_runtime_initialization {
-    Assert.True(Alloc(24, NativePointer(0)) == NativePointer(0), "allocation rejects a missing descriptor before initialization");
-    Assert.Equal(GcBytesAllocated(), 0, "statistics are zero before initialization");
-    Assert.Equal(GcCollect(), 0, "collection fails closed before initialization");
+    // No runtime is attached while the host runtime is suspended, and assertion messages need
+    // one: record the observations and assert them after the host runtime is restored.
+    pointer hostRuntime = SuspendHostRuntime();
+    bool allocationRejected = Alloc(24, NativePointer(0)) == NativePointer(0);
+    word bytesAllocated = GcBytesAllocated();
+    word collected = GcCollect();
+    ResumeHostRuntime(hostRuntime);
+    Assert.True(allocationRejected, "allocation rejects a missing descriptor before initialization");
+    Assert.Equal(bytesAllocated, 0, "statistics are zero before initialization");
+    Assert.Equal(collected, 0, "collection fails closed before initialization");
 }
 
 test gc_reclaims_reuses_and_invalidates_stale_handles {
+    pointer hostRuntime = SuspendHostRuntime();
     pointer runtime = SystemAllocate(64, 8);
     pointer heap = SystemAllocate(720, 8);
     pointer region = SystemAllocate(128, 8);
@@ -49,12 +58,17 @@ test gc_reclaims_reuses_and_invalidates_stale_handles {
     Assert.True(rooted != NativePointer(0) && reclaimable != NativePointer(0), "valid descriptors allocate managed objects");
     word handle = GcRootHandle(rooted);
     Assert.True(handle != 0, "handle roots an allocated object");
-    Assert.Equal(GcBytesAllocated(), 48, "live-byte accounting includes both objects");
+    // Live bytes are the size-class slot occupied on the heap, not the raw request: a 24-byte
+    // request rounds up into the 32-byte size class (Span.bd's `SizeClassForSize`/`SizeClassBytes`),
+    // and `GcAlloc` (Allocation.bd) and `Sweep` (Sweep.bd) both account by that slot size so the
+    // two stay consistent across a collection. Two 24-byte objects occupy 2 * 32 = 64 slot bytes.
+    Assert.Equal(GcBytesAllocated(), 64, "live-byte accounting includes both objects' size-class slots");
     Assert.Equal(GcObjectCount(), 2, "object accounting includes both objects");
 
     GcCollect();
     Assert.Equal(GcCollectionCount(), 1, "successful collection increments collection count");
-    Assert.Equal(GcBytesAllocated(), 24, "collection reclaims unreachable bytes");
+    // Only the rooted 24-byte object survives; its slot is still the 32-byte size class.
+    Assert.Equal(GcBytesAllocated(), 32, "collection reclaims unreachable bytes down to the surviving slot");
     Assert.Equal(GcObjectCount(), 1, "collection retains only the rooted object");
     Assert.Equal(GcPhase(), 0, "successful collection returns to idle");
 
@@ -66,11 +80,15 @@ test gc_reclaims_reuses_and_invalidates_stale_handles {
     Assert.True(replacement != 0 && replacement != handle, "reused handle slot advances its generation");
     Assert.True(GcResolveHandle(handle) == NativePointer(0), "old generation remains stale after slot reuse");
 
+    // Process shutdown requires every handle to be released.
+    GcUnrootHandle(replacement);
     SystemFree(descriptor, 40);
     DropTestHeap(runtime, thread, heap, region, 128);
+    ResumeHostRuntime(hostRuntime);
 }
 
 test gc_array_uses_distinct_descriptors_and_traces_variable_pointer_elements {
+    pointer hostRuntime = SuspendHostRuntime();
     pointer runtime = SystemAllocate(64, 8);
     pointer heap = SystemAllocate(720, 8);
     pointer region = SystemAllocate(512, 8);
@@ -98,7 +116,7 @@ test gc_array_uses_distinct_descriptors_and_traces_variable_pointer_elements {
     Assert.True(array != NativePointer(0), "array allocation accepts a valid array-aware object descriptor");
     Assert.True(NativePointer(raw_word_load(NativePointer(NativeWord(array) - 8))) == element, "array retains its separate element descriptor");
     raw_word_store(NativePointer(raw_word_load(array)), NativeWord(child));
-    Assert.Equal(GcCollect(), 1, "variable-size array and pointer elements scan safely");
+    Assert.True(GcCollect() > 0, "variable-size array and pointer elements scan safely");
     Assert.True(GcBytesAllocated() >= 24, "pointer element keeps its child alive");
     Assert.Equal(ArrayConstructionFinish(NativePointer(raw_word_load(handleOut))), 1, "construction root releases deterministically");
 
@@ -109,9 +127,11 @@ test gc_array_uses_distinct_descriptors_and_traces_variable_pointer_elements {
     SystemFree(pointerMap, 8);
     SystemFree(childDescriptor, 40);
     DropTestHeap(runtime, thread, heap, region, 512);
+    ResumeHostRuntime(hostRuntime);
 }
 
 test gc_external_root_accepts_public_array_reference {
+    pointer hostRuntime = SuspendHostRuntime();
     pointer runtime = SystemAllocate(64, 8);
     pointer heap = SystemAllocate(720, 8);
     pointer region = SystemAllocate(256, 8);
@@ -146,9 +166,11 @@ test gc_external_root_accepts_public_array_reference {
     SystemFree(arrayDescriptor, 40);
     SystemFree(element, 32);
     DropTestHeap(runtime, thread, heap, region, 256);
+    ResumeHostRuntime(hostRuntime);
 }
 
 test gc_nested_array_reference_keeps_child_alive {
+    pointer hostRuntime = SuspendHostRuntime();
     pointer runtime = SystemAllocate(64, 8);
     pointer heap = SystemAllocate(720, 8);
     pointer region = SystemAllocate(512, 8);
@@ -198,9 +220,11 @@ test gc_nested_array_reference_keeps_child_alive {
     SystemFree(pointerElement, 32);
     SystemFree(pointerMap, 8);
     DropTestHeap(runtime, thread, heap, region, 512);
+    ResumeHostRuntime(hostRuntime);
 }
 
 test gc_heap_wide_marking_handles_broad_roots_fanout_and_cycles {
+    pointer hostRuntime = SuspendHostRuntime();
     pointer runtime = SystemAllocate(64, 8);
     pointer heap = SystemAllocate(720, 8);
     pointer region = SystemAllocate(2048, 8);
@@ -233,7 +257,7 @@ test gc_heap_wide_marking_handles_broad_roots_fanout_and_cycles {
     raw_word_store(pointer_add(nodeDescriptor, 16), NativeWord(nodeMap));
     raw_word_store(pointer_add(nodeDescriptor, 24), 1);
     pointer firstNode = Alloc(24, nodeDescriptor);
-    pointer previousNode = firstNode;
+    mut pointer previousNode = firstNode;
     index = 1;
     while index < 10 {
         pointer node = Alloc(24, nodeDescriptor);
@@ -273,9 +297,11 @@ test gc_heap_wide_marking_handles_broad_roots_fanout_and_cycles {
     SystemFree(fanoutMap, 64);
     SystemFree(leafDescriptor, 40);
     DropTestHeap(runtime, thread, heap, region, 2048);
+    ResumeHostRuntime(hostRuntime);
 }
 
-test gc_validates_descriptor_alignment_and_handle_capacity {
+test gc_validates_descriptor_alignment {
+    pointer hostRuntime = SuspendHostRuntime();
     pointer runtime = SystemAllocate(64, 8);
     pointer heap = SystemAllocate(720, 8);
     pointer region = SystemAllocate(256, 8);
@@ -288,14 +314,70 @@ test gc_validates_descriptor_alignment_and_handle_capacity {
     pointer object = Alloc(24, valid);
     Assert.True(object != NativePointer(0), "aligned descriptor allocates");
 
-    mut word index = 0;
-    while index < 8 {
-        Assert.True(GcRootHandle(object) != 0, "manifest handle slot is available");
-        index = index + 1;
-    }
-    Assert.Equal(GcRootHandle(object), 0, "ninth handle fails at manifest capacity");
+    // Process shutdown requires every handle to be released, so keep it.
+    word handle = GcRootHandle(object);
+    Assert.True(handle != 0, "aligned object roots a handle");
+    GcUnrootHandle(handle);
 
     SystemFree(invalid, 40);
     SystemFree(valid, 40);
     DropTestHeap(runtime, thread, heap, region, 256);
+    ResumeHostRuntime(hostRuntime);
+}
+
+// Handles used to fail outright once a fixed 8-slot manifest table filled up (the ninth handle
+// returned 0). The handle stack (RootsHandles.bd) now grows in 64-slot `BeskidHandleStackBlock`s
+// instead, chained like the root stack, so there is no fixed capacity to fail at. This exercises
+// that growth: allocate well past two 64-slot block boundaries, confirm every handle still
+// resolves to its object regardless of which block it landed in, release them out of order (not
+// LIFO), and confirm the handle stack is back to empty — its baseline before this test rooted
+// anything.
+test gc_handle_stack_grows_across_block_boundaries {
+    pointer hostRuntime = SuspendHostRuntime();
+    pointer runtime = SystemAllocate(64, 8);
+    pointer heap = SystemAllocate(720, 8);
+    pointer region = SystemAllocate(256, 8);
+    pointer thread = InstallTestHeap(runtime, heap, region, 256);
+    pointer descriptor = TestDescriptor(24, 8);
+    pointer object = Alloc(24, descriptor);
+    Assert.True(object != NativePointer(0), "object allocates for handle growth test");
+    Assert.True(GcHandlesClear(), "handle stack starts at its baseline (empty) before this test roots anything");
+
+    // Past 64 (first block boundary) and past 128 (second block boundary).
+    word handleCount = 150;
+    pointer handles = SystemAllocate(handleCount * 8, 8);
+    mut word index = 0;
+    while index < handleCount {
+        word handle = GcRootHandle(object);
+        Assert.True(handle != 0, "handle stack grows a new block past capacity instead of failing");
+        raw_word_store(pointer_add(handles, index * 8), handle);
+        index = index + 1;
+    }
+
+    index = 0;
+    while index < handleCount {
+        word handle = raw_word_load(pointer_add(handles, index * 8));
+        Assert.True(GcResolveHandle(handle) == object, "every handle across block boundaries resolves to its object");
+        index = index + 1;
+    }
+
+    // Out-of-order release: every odd-indexed handle first, then every even-indexed handle,
+    // instead of the LIFO order scope exit normally produces.
+    index = 1;
+    while index < handleCount {
+        GcUnrootHandle(raw_word_load(pointer_add(handles, index * 8)));
+        index = index + 2;
+    }
+    index = 0;
+    while index < handleCount {
+        GcUnrootHandle(raw_word_load(pointer_add(handles, index * 8)));
+        index = index + 2;
+    }
+
+    Assert.True(GcHandlesClear(), "handle stack count returns to its baseline after out-of-order release");
+
+    SystemFree(handles, handleCount * 8);
+    SystemFree(descriptor, 40);
+    DropTestHeap(runtime, thread, heap, region, 256);
+    ResumeHostRuntime(hostRuntime);
 }

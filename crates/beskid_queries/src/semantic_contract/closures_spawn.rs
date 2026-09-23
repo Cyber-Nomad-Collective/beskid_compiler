@@ -354,8 +354,8 @@ pub(super) fn spawn_target_tracked(
             beskid_analysis::syntax_query::DynNodeRef::from(spawn.callee.as_ref()),
         )?;
         let callee = AstNodeKey { node: normalized_expression_node(index, callee), ..key };
-        let callee = match spawn_entry_operand(program, index, callee) {
-            Ok(callee) => callee,
+        let (callee, arguments) = match spawn_entry_operand(program, index, callee) {
+            Ok(operand) => operand,
             Err(error) => return Some(Err(error)),
         };
         let captures = if index.kind(callee.node) == Some(beskid_analysis::syntax_query::NodeKind::LambdaExpression) {
@@ -366,34 +366,41 @@ pub(super) fn spawn_target_tracked(
         } else {
             Arc::from([])
         };
-        Some(Ok(SpawnTarget { callee, captures }))
+        Some(Ok(SpawnTarget { callee, arguments: arguments.into(), captures }))
     })?
     .transpose()
 }
 
-/// Resolve the fiber entry operand for one spawn callee expression.
+/// Resolve the fiber entry operand and eager arguments for one spawn callee expression.
 ///
-/// Empty-arg `spawn Entry()` sugar unwraps to `Entry`, matching production lowering. Call
-/// expressions that still carry arguments remain the CallExpression node so legality can reject
-/// them without inventing a trampoline.
+/// `spawn Entry()` and `spawn Entry(args)` unwrap to the `Entry` operand, matching production
+/// lowering; the normalized argument expressions are returned in source order. A bare callee
+/// has no arguments.
 pub(super) fn spawn_entry_operand(
     program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
     index: &beskid_analysis::syntax_query::SyntaxIndex,
     callee: AstNodeKey,
-) -> Result<AstNodeKey, SemanticError> {
+) -> Result<(AstNodeKey, Vec<AstNodeKey>), SemanticError> {
     let Some(node) = index.node_at(program, callee.node) else {
-        return Ok(callee);
+        return Ok((callee, Vec::new()));
     };
     let Some(call) = node.of::<beskid_analysis::syntax::CallExpression>() else {
-        return Ok(callee);
+        return Ok((callee, Vec::new()));
     };
-    if !call.args.is_empty() {
-        return Ok(callee);
-    }
     let entry = index
         .direct_child_id(program, callee.node, beskid_analysis::syntax_query::DynNodeRef::from(call.callee.as_ref()))
         .ok_or_else(|| SemanticError::unavailable("spawn_target"))?;
-    Ok(AstNodeKey { node: normalized_expression_node(index, entry), ..callee })
+    let arguments = call
+        .args
+        .iter()
+        .map(|argument| {
+            index
+                .direct_child_id(program, callee.node, beskid_analysis::syntax_query::DynNodeRef::from(argument))
+                .map(|node| AstNodeKey { node: normalized_expression_node(index, node), ..callee })
+                .ok_or_else(|| SemanticError::unavailable("spawn_target"))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok((AstNodeKey { node: normalized_expression_node(index, entry), ..callee }, arguments))
 }
 
 pub(super) fn normalized_expression_node(
@@ -512,9 +519,11 @@ pub(super) fn spawn_legality_tracked(
     };
     let span = node_span_tracked(db, syntax, key)?.ok_or_else(|| SemanticError::unavailable("spawn_legality"))?;
     let index = syntax.syntax_index(db);
-    if index.kind(target.callee.node) == Some(beskid_analysis::syntax_query::NodeKind::CallExpression) {
-        // Non-empty `spawn Entry(args)` left the CallExpression in place; fail closed before
-        // signature lookup so parameterized callees are not misdiagnosed as TargetRequiresArguments.
+    if !target.arguments.is_empty()
+        && index.kind(target.callee.node) != Some(beskid_analysis::syntax_query::NodeKind::PathExpression)
+    {
+        // Eager spawn arguments are transferred only to direct item entries. A lambda or other
+        // computed callee with arguments has no source-proven entry signature to receive them.
         return Ok(Some(SpawnLegality {
             target,
             result: None,
@@ -540,7 +549,7 @@ pub(super) fn spawn_legality_tracked(
         }));
     };
 
-    if !signature.parameters.is_empty() {
+    if signature.parameters.len() != target.arguments.len() {
         return Ok(Some(SpawnLegality {
             target,
             result: Some(signature.result),
@@ -810,13 +819,15 @@ pub(super) fn spawn_entry_validation_tracked(
         return Ok(None);
     };
     let callable = callable_signature_tracked(db, syntax, legality.target.callee)?;
-    let is_zero_argument_entry =
-        callable.as_ref().is_some_and(|callable| callable.parameters.is_empty()) && legality.is_legal();
+    let is_legal_entry = callable.as_ref().is_some_and(|callable| {
+        callable.parameters.len() == legality.target.arguments.len()
+    }) && legality.is_legal();
     Ok(Some(SpawnEntryValidation {
         spawn: key,
         target: legality.target.callee,
+        arguments: legality.target.arguments,
         callable,
-        is_zero_argument_entry,
+        is_legal_entry,
         diagnostics: legality.diagnostics,
     }))
 }

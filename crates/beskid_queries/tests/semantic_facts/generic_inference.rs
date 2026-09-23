@@ -648,3 +648,76 @@ unit Main() {
         Some(SemanticTypeId::POINTER)
     );
 }
+
+#[test]
+fn generic_call_infers_call_result_argument_matching_call_result_types() {
+    let source = r#"
+i64 First() { return 1_i64; }
+i64 Second() { return 2_i64; }
+unit Equal<T>(T actual, T expected, string because) { return; }
+unit Main() {
+    Equal(First(), Second(), "call results of the same type infer T");
+}
+"#;
+    let (db, _project, unit, generation, index) = setup(source);
+    let equal = key(unit, generation, &index, NodeKind::FunctionDefinition, 2);
+    let call = index
+        .ids_of_kind(NodeKind::CallExpression)
+        .map(|node| AstNodeKey { unit, generation, node })
+        .find(|call| matches!(call_lowering(&db, *call), Ok(Some(CallLowering::Direct(item))) if item == equal))
+        .expect("Equal call");
+
+    let specialization = beskid_queries::generic_call_specialization(&db, call).expect("same-type call results");
+    assert!(specialization.is_some(), "same-ABI call-result arguments must infer T");
+}
+
+#[test]
+fn generic_call_with_mismatched_primitive_call_result_arguments_is_unavailable() {
+    let source = r#"
+i64 AsI64() { return 1_i64; }
+word AsWord() { return 1_word; }
+unit Equal<T>(T actual, T expected, string because) { return; }
+unit Main() {
+    Equal(AsI64(), AsWord(), "call results with different declared primitive types");
+}
+"#;
+    let (db, _project, unit, generation, index) = setup(source);
+    let equal = key(unit, generation, &index, NodeKind::FunctionDefinition, 2);
+    let call = index
+        .ids_of_kind(NodeKind::CallExpression)
+        .map(|node| AstNodeKey { unit, generation, node })
+        .find(|call| matches!(call_lowering(&db, *call), Ok(Some(CallLowering::Direct(item))) if item == equal))
+        .expect("Equal call");
+
+    assert_unavailable(beskid_queries::generic_call_specialization(&db, call));
+}
+
+#[test]
+fn call_result_argument_type_matches_between_let_initializer_and_generic_argument_positions() {
+    let source = r#"
+i64 First() { return 1_i64; }
+unit Equal<T>(T actual, T expected, string because) { return; }
+unit Main() {
+    i64 captured = First();
+    Equal(First(), 1, "call result as generic argument");
+}
+"#;
+    let (db, _project, unit, generation, index) = setup(source);
+    let equal = key(unit, generation, &index, NodeKind::FunctionDefinition, 1);
+    let let_statement = key(unit, generation, &index, NodeKind::LetStatement, 0);
+    let equal_call = index
+        .ids_of_kind(NodeKind::CallExpression)
+        .map(|node| AstNodeKey { unit, generation, node })
+        .find(|call| matches!(call_lowering(&db, *call), Ok(Some(CallLowering::Direct(item))) if item == equal))
+        .expect("Equal call");
+
+    // The let initializer's call-result type resolves through `abi_type`/`value_abi_type`.
+    let let_initializer_abi = beskid_queries::abi_type(&db, let_statement).expect("let initializer ABI");
+    assert_eq!(let_initializer_abi, Some(SemanticTypeId::I64));
+
+    // The same call shape, used as a generic call argument, must resolve through source-identity
+    // inference rather than ABI-only typing.
+    let specialization =
+        beskid_queries::generic_call_specialization(&db, equal_call).expect("call result as generic argument");
+    assert!(specialization.is_some(), "First() as a generic argument must infer T = i64 from its declared return type");
+}

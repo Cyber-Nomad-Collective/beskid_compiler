@@ -129,6 +129,68 @@ impl CodegenInput<'_> {
         })
     }
 
+    /// Lay out the managed start environment that carries eager `spawn Entry(args)` arguments.
+    ///
+    /// One field per entry parameter, in parameter order, typed by the entry's ABI signature.
+    /// Every pointer-ABI field is in the pointer map, exactly like aggregate fields, so managed
+    /// arguments stay traced while the runtime roots the environment for the fiber's lifetime.
+    /// Zero-argument entries, illegal spawns, and unsupported parameter ABIs have no plan.
+    pub fn spawn_argument_static_plan(&self, spawn: AstNodeKey) -> Option<AggregateStaticPlan> {
+        let validation = beskid_queries::spawn_entry_validation(self.database(), spawn).ok().flatten()?;
+        if !validation.is_legal_entry || validation.arguments.is_empty() {
+            return None;
+        }
+        let callable = validation.callable.as_ref()?;
+        if callable.parameters.len() != validation.arguments.len() {
+            return None;
+        }
+        let header = self.abi_manifest().layouts.iter().find(|layout| layout.name == "BeskidObjectHeader")?;
+        let descriptor = self.abi_manifest().layouts.iter().find(|layout| layout.name == "BeskidTypeDescriptor")?;
+        let request = self.abi_manifest().layouts.iter().find(|layout| layout.name == "BeskidAllocationRequest")?;
+        if header.size < 16
+            || !valid_alignment(header.alignment)
+            || descriptor.size != 40
+            || descriptor.alignment != 8
+            || request.size != 24
+            || request.alignment != 8
+        {
+            return None;
+        }
+        let mut size = header.size;
+        let mut alignment = header.alignment;
+        let mut pointer_map_offsets = Vec::new();
+        let mut fields = Vec::with_capacity(callable.parameters.len());
+        for abi_type in callable.parameters.iter().copied() {
+            let scalar = abi_type.scalar_abi_layout(self.target().pointer_width)?;
+            size = align_to(size, scalar.alignment)?;
+            let field_offset = size;
+            size = size.checked_add(scalar.size)?;
+            alignment = alignment.max(scalar.alignment);
+            if scalar.is_pointer {
+                pointer_map_offsets.push(field_offset);
+            }
+            fields.push(AggregateStaticField { abi_type, field_offset });
+        }
+        let object_size = align_to(size, alignment)?;
+        let unit = self
+            .typed_program()
+            .assembly
+            .units
+            .iter()
+            .position(|unit| paths_match(&unit.path, spawn.unit.path(self.database())))?;
+        let identity = format!("{}_u{unit}_g{}_n{}", artifact_namespace(self), spawn.generation.0, spawn.node.0);
+        Some(AggregateStaticPlan {
+            literal: spawn,
+            descriptor_symbol: format!("__beskid_spawn_arguments_descriptor_{identity}"),
+            pointer_map_symbol: format!("__beskid_spawn_arguments_pointer_map_{identity}"),
+            allocation_request_symbol: format!("__beskid_spawn_arguments_request_{identity}"),
+            object_size,
+            object_alignment: alignment,
+            pointer_map_offsets: pointer_map_offsets.into(),
+            fields: fields.into(),
+        })
+    }
+
     /// Compute the header-relative field layout of a managed aggregate declaration.
     ///
     /// Field access lowering consumes this directly so that reads and writes address the same bytes

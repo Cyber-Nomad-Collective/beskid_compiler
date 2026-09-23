@@ -38,6 +38,14 @@ pub(crate) fn emit_type_error(ctx: &mut RuleContext, error: TypeError, result: O
         TypeError::GenericArgumentMismatch { span, expected, actual } => {
             ctx.emit_issue(span, SemanticIssueKind::TypeGenericArgumentMismatch { expected, actual });
         }
+        TypeError::GenericParameterConflict { span, parameter, first, second } => {
+            let first_name = render_type(result, first);
+            let second_name = render_type(result, second);
+            ctx.emit_issue(
+                span,
+                SemanticIssueKind::TypeGenericParameterConflict { parameter, first_name, second_name },
+            );
+        }
         TypeError::TypeMismatch { span, expected, actual } => {
             let expected_name = render_type(result, expected);
             let actual_name = render_type(result, actual);

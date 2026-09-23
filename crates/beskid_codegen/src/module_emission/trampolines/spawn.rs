@@ -13,7 +13,8 @@ use crate::module_emission::items::{ResolvedSyntaxModuleItem, syntax_item_symbol
 
 /// Spawn has no ordinary CallExpression edge, so the generic direct-call reachability query does
 /// not include its target. Add only entries proven by the same strict direct-item validation used
-/// for trampoline generation; this does not make lambda or argument-bearing spawns reachable.
+/// for trampoline generation, with or without eager arguments; lambda entries are emitted as
+/// their own trampoline bodies.
 pub(in crate::module_emission) fn expand_direct_spawn_items(
     input: &CodegenInput<'_>,
     mut items: Vec<ResolvedSyntaxModuleItem>,
@@ -29,7 +30,7 @@ pub(in crate::module_emission) fn expand_direct_spawn_items(
             else {
                 continue;
             };
-            if !validation.is_zero_argument_entry
+            if !validation.is_legal_entry
                 || node_kind(db, validation.target).map_err(|error| emission_verification(error.to_string()))?
                     != Some(beskid_queries::IndexedNodeKind::PathExpression)
             {
@@ -64,9 +65,10 @@ pub(in crate::module_emission) fn expand_direct_spawn_items(
     Ok(items)
 }
 
-/// Resolve source-proven zero-argument entries from generation-safe facts.
+/// Resolve source-proven fiber entries from generation-safe facts.
 ///
-/// Direct items and capture-free lambdas each receive syntax-owned trampoline targets. Capturing
+/// Direct items and capture-free lambdas each receive syntax-owned trampoline targets. Direct
+/// items with eager arguments also require an artifact-owned argument environment plan; capturing
 /// lambdas require generation-safe allocate/store/root authority before a trampoline is emitted.
 pub(in crate::module_emission) fn resolve_spawn_trampolines(
     input: &CodegenInput<'_>,
@@ -97,7 +99,7 @@ pub(in crate::module_emission) fn resolve_spawn_trampolines(
         else {
             continue;
         };
-        if !validation.is_zero_argument_entry {
+        if !validation.is_legal_entry {
             return Err(emission_verification(format!(
                 "spawn legality rejected {} at SpawnExpression: {:?}",
                 spawn.unit.path(db).display(),
@@ -117,7 +119,17 @@ pub(in crate::module_emission) fn resolve_spawn_trampolines(
                 else {
                     continue;
                 };
-                if !signature.params.is_empty() {
+                let argument_plan = if validation.arguments.is_empty() {
+                    None
+                } else {
+                    Some(input.spawn_argument_static_plan(spawn).ok_or_else(|| {
+                        emission_verification(format!(
+                            "spawn argument environment unavailable for {}",
+                            beskid_queries::format_ast_node_key(db, spawn)
+                        ))
+                    })?)
+                };
+                if signature.params.len() != argument_plan.as_ref().map_or(0, |plan| plan.fields.len()) {
                     continue;
                 }
                 let callee = DirectCallee::item(target.declaration);
@@ -133,11 +145,15 @@ pub(in crate::module_emission) fn resolve_spawn_trampolines(
                     target_signature: signature,
                     lambda_body: None,
                     closure_captures: None,
+                    argument_plan,
                     symbol,
                     result_plan,
                 });
             }
             Some(beskid_queries::IndexedNodeKind::LambdaExpression) => {
+                if !validation.arguments.is_empty() {
+                    continue;
+                }
                 let Some(environment) = closure_environment(db, validation.target)
                     .map_err(|error| emission_verification(error.to_string()))?
                 else {
@@ -193,6 +209,7 @@ pub(in crate::module_emission) fn resolve_spawn_trampolines(
                     target_signature: signature,
                     lambda_body: Some(lambda.body),
                     closure_captures,
+                    argument_plan: None,
                     symbol,
                     result_plan,
                 });

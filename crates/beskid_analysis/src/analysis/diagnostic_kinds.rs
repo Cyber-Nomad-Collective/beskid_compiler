@@ -219,6 +219,15 @@ pub enum SemanticIssueKind {
         expected: usize,
         actual: usize,
     },
+    /// Two call arguments bound to the same inferred generic parameter carry different
+    /// declared primitive types (e.g. `word` and `i64`) that only numeric-widening would
+    /// unify. This is reported explicitly instead of letting an inconsistent specialization
+    /// reach downstream ABI/codegen queries as an opaque "unavailable" failure.
+    TypeGenericParameterConflict {
+        parameter: String,
+        first_name: String,
+        second_name: String,
+    },
     TypeMismatch {
         expected_name: String,
         actual_name: String,

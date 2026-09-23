@@ -30,7 +30,8 @@ pub use array_static::{
     ABI_V5_ARRAY_ALLOCATE_ROOTED, ABI_V5_ARRAY_CONSTRUCTION_FINISH, ArrayStaticPlan, emit_array_static_data,
 };
 pub use artifact::{
-    CodegenArtifact, CodegenContext, ExportEntry, ExternImport, LoweredFunction, TypeDescriptorData, object_link_symbol,
+    CodegenArtifact, CodegenContext, ExportEntry, ExternImport, LoweredFunction, TypeDescriptorData, internal_link_symbol,
+    object_link_symbol,
 };
 pub use artifact_validation::{MissingSymbol, referenced_extern_imports, referenced_trusted_extern_imports, validate_artifact};
 pub use closure_static::{

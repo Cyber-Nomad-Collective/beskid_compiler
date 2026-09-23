@@ -23,6 +23,16 @@ const TLS_COMPOSITION_SCOPE_OFFSET = 32;
 const TLS_COMPOSITION_DEPTH_OFFSET = 40;
 const HEAP_STATE_SIZE = 328;
 const HEAP_INITIAL_REGION_SIZE = 1048576;
+// Every region must be page-aligned: `SpanEntryInRegion` derives a page index as
+// `(address - region) / PAGE_SIZE`, and `CarveSpan` writes a span's `base` using that same
+// region-relative math, so page-index arithmetic is internally self-consistent regardless of
+// `region`'s own alignment — but any OTHER site that independently recomputes an expected page
+// address as `region + pageIndex * PAGE_SIZE` (rather than reading the entry's own stored `base`,
+// or round-tripping through `SpanEntryInRegion`) silently disagrees with the carved layout unless
+// `region % PAGE_SIZE == 0`. Requesting `PAGE_SIZE` alignment here (matching Allocation.bd's
+// `GcGrow`) removes that whole class of bug outright rather than requiring every future page-math
+// call site to route through the region-relative form.
+const PAGE_SIZE = 8192;
 const HEAP_DEFAULT_CAP = 1073741824;
 const HEAP_FIRST_REGION = 0;
 const REGION_SIZE_FIELD = 8;
@@ -54,7 +64,22 @@ pub pointer ProcessInit(pointer config) {
         raw_word_store(pointer_add(config, RUNTIME_LIFECYCLE_STATE_OFFSET), RUNTIME_SHUT_DOWN | (generation << 32));
         return NativePointer(0);
     }
-    pointer region = SystemAllocate(HEAP_INITIAL_REGION_SIZE, 8);
+    // `SystemAllocate`'s native intrinsic is `mmap`-backed and only ever returns storage aligned
+    // to the OS page size (4096 on every supported target) — it explicitly rejects any alignment
+    // request above that (see `crates/beskid_abi/assembly/*/platform.S`). Regions must still be
+    // `PAGE_SIZE` (8192, the GC's own logical page size, not the OS's) aligned so every consumer
+    // that independently recomputes an expected page address as `region + pageIndex * PAGE_SIZE`
+    // (rather than reading a span's own stored `base`) agrees with `CarveSpan`. Over-allocate by
+    // one `PAGE_SIZE` and align up within that; `munmap` (via `SystemFree`) accepts unmapping any
+    // page-aligned sub-range of a larger mapping, so the same aligned pointer can be freed with
+    // the original (unpadded) size — the pad bytes stay mapped but untouched, a leak of at most
+    // `PAGE_SIZE - 1` bytes, only on this rare init-failure path (a grown region, see `GcGrow`,
+    // is never freed at all, so the same pad there is permanent but negligible).
+    pointer rawRegionAllocation = SystemAllocate(HEAP_INITIAL_REGION_SIZE + PAGE_SIZE, 8);
+    mut pointer region = NativePointer(0);
+    if rawRegionAllocation != NativePointer(0) {
+        region = NativePointer(AlignUp(NativeWord(rawRegionAllocation), PAGE_SIZE));
+    }
     if region == NativePointer(0) {
         SystemFree(heap, HEAP_STATE_SIZE);
         raw_word_store(pointer_add(config, RUNTIME_LIFECYCLE_STATE_OFFSET), RUNTIME_SHUT_DOWN | (generation << 32));

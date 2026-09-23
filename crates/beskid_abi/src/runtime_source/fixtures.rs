@@ -31,6 +31,13 @@ pub fn canonical_runtime_fixture_sources() -> Vec<SourceUnit> {
             "NetworkNativeTests",
             include_str!("../../../../runtime/beskid/tests/runtime_semantics/src/NetworkNativeTests.bd"),
         ),
+        (
+            "CompositionTests",
+            include_str!("../../../../runtime/beskid/tests/runtime_semantics/src/CompositionTests.bd"),
+        ),
+        ("GcTests", include_str!("../../../../runtime/beskid/tests/runtime_semantics/src/GcTests.bd")),
+        ("ProcessIoTests", include_str!("../../../../runtime/beskid/tests/runtime_semantics/src/ProcessIoTests.bd")),
+        ("SchedulerTests", include_str!("../../../../runtime/beskid/tests/runtime_semantics/src/SchedulerTests.bd")),
     ]
     .into_iter()
     .map(|(name, source)| SourceUnit {
@@ -82,17 +89,11 @@ impl RuntimeFixtureProof {
         &self.fixture
     }
 
-    /// AbiValue's generated ABI declarations are assembled by the compiler, not stored in its
-    /// source file. Every source-owned byte still has to equal this compiler's embedded text.
+    /// The generated ABI declarations (e.g. AbiValue's layout prelude) are checked in as part of
+    /// their owning source file, not assembled separately by the compiler, so every source-owned
+    /// byte must equal the on-disk text -- no per-file stripping required.
     pub fn source_file_text<'a>(&self, source: &'a SourceUnit) -> &'a str {
-        if source.logical_path == "src/Runtime/Mem/AbiValue.bd" {
-            source
-                .source
-                .strip_prefix(crate::generated::abi_v5_contract::ABI_V5_RUNTIME_LAYOUT_SOURCE)
-                .expect("canonical AbiValue includes generated ABI declarations")
-        } else {
-            &source.source
-        }
+        &source.source
     }
 
     pub fn intrinsic_capability(

@@ -287,13 +287,16 @@ pub struct ClosureCallTarget {
     pub callable: ItemSignature,
 }
 
-/// Exact callable operand and captures selected by a `spawn` expression.
+/// Exact callable operand, eager arguments, and captures selected by a `spawn` expression.
 ///
-/// Empty-arg `spawn Entry()` sugar stores the entry path (or lambda), not the CallExpression.
-/// Non-empty `spawn Entry(args)` keeps the CallExpression so [`spawn_legality`] can reject it.
+/// `spawn Entry()` and `spawn Entry(args)` both store the entry operand (path or lambda), never
+/// the CallExpression. `arguments` holds the normalized argument expressions in source order;
+/// the parent evaluates them before the spawn and transfers them in the fiber's start
+/// environment. Only direct item entries may take arguments.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct SpawnTarget {
     pub callee: AstNodeKey,
+    pub arguments: Arc<[AstNodeKey]>,
     pub captures: Arc<[ClosureCapture]>,
 }
 
@@ -322,8 +325,8 @@ pub struct CaptureStorage {
 pub enum SpawnDiagnosticKind {
     TargetNotCallable,
     TargetRequiresArguments,
-    /// `spawn Entry(args)` is not a zero-argument fiber entry; only bare callables or
-    /// empty-arg `spawn Entry()` sugar (normalized to `Entry`) are legal.
+    /// `spawn callee(args)` whose callee is not a direct item (for example a lambda or a local
+    /// closure value); only direct item entries receive eager spawn arguments.
     CalleeArgumentsUnsupported,
     StackReferenceEscapesSpawn,
     DiscardedHandle,
@@ -366,16 +369,18 @@ pub struct SpawnHandleType {
     pub payload: GenericSubstitution,
 }
 
-/// Source-only validation of whether a spawn target is a legal zero-argument entry.
+/// Source-only validation of whether a spawn target is a legal fiber entry.
 ///
-/// This mirrors current legality facts without claiming that a fiber trampoline, closure
-/// allocation, or runtime scheduling object has been generated.
+/// `arguments` are the eager argument expressions, one per `callable` parameter when
+/// `is_legal_entry` holds. This mirrors current legality facts without claiming that a fiber
+/// trampoline, closure allocation, or runtime scheduling object has been generated.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct SpawnEntryValidation {
     pub spawn: AstNodeKey,
     pub target: AstNodeKey,
+    pub arguments: Arc<[AstNodeKey]>,
     pub callable: Option<ItemSignature>,
-    pub is_zero_argument_entry: bool,
+    pub is_legal_entry: bool,
     pub diagnostics: Arc<[SpawnDiagnostic]>,
 }
 
@@ -1109,28 +1114,48 @@ pub struct SemanticError {
     message: Arc<str>,
     diagnostics: Arc<[Arc<str>]>,
     unavailable: bool,
+    /// Present only for [`SemanticError::unavailable_at`]: the site the caller had already
+    /// resolved to a key when the query it asked for came back unavailable. A compiler-gap
+    /// internal error rendered from this site is a genuine gap, never a user diagnostic (see
+    /// `docs/superpowers/specs/2026-09-23-production-semantic-diagnostics-design.md` section 2.3).
+    unavailable_site: Option<AstNodeKey>,
 }
 
 impl SemanticError {
     pub(crate) fn new(message: impl Into<Arc<str>>) -> Self {
         let message = message.into();
-        Self { diagnostics: Arc::from([Arc::clone(&message)]), message, unavailable: false }
+        Self { diagnostics: Arc::from([Arc::clone(&message)]), message, unavailable: false, unavailable_site: None }
     }
 
     pub(crate) fn from_diagnostics(messages: impl IntoIterator<Item = String>) -> Self {
         let diagnostics = messages.into_iter().map(Arc::<str>::from).collect::<Vec<_>>();
         let message = diagnostics.iter().map(AsRef::as_ref).collect::<Vec<_>>().join("\n");
-        Self { message: Arc::from(message), diagnostics: diagnostics.into(), unavailable: false }
+        Self { message: Arc::from(message), diagnostics: diagnostics.into(), unavailable: false, unavailable_site: None }
     }
 
     pub fn unavailable(query: &str) -> Self {
         let message =
             Arc::<str>::from(format!("semantic query `{query}` is unavailable until its AST/Salsa port is complete"));
-        Self { diagnostics: Arc::from([Arc::clone(&message)]), message, unavailable: true }
+        Self { diagnostics: Arc::from([Arc::clone(&message)]), message, unavailable: true, unavailable_site: None }
+    }
+
+    /// Same meaning as [`SemanticError::unavailable`], plus the generation-bound site the caller
+    /// already had in hand. A compiler-gap boundary (`beskid_codegen::module_emission::contracts`)
+    /// uses this site to render an internal error at the offending construct instead of an
+    /// unsited "unavailable" message.
+    pub fn unavailable_at(query: &str, site: AstNodeKey) -> Self {
+        let message =
+            Arc::<str>::from(format!("semantic query `{query}` is unavailable until its AST/Salsa port is complete"));
+        Self { diagnostics: Arc::from([Arc::clone(&message)]), message, unavailable: true, unavailable_site: Some(site) }
     }
 
     pub fn is_unavailable(&self) -> bool {
         self.unavailable
+    }
+
+    /// The site given to [`SemanticError::unavailable_at`], if any.
+    pub fn unavailable_site(&self) -> Option<AstNodeKey> {
+        self.unavailable_site
     }
 
     pub fn diagnostics(&self) -> &[Arc<str>] {
@@ -1139,3 +1164,17 @@ impl SemanticError {
 }
 
 pub type SemanticQueryResult<T> = Result<Option<T>, SemanticError>;
+
+/// One legality finding: a positive description of a user-facing semantic error located at a
+/// generation-bound source site, produced by a `beskid_queries::semantic_contract::legality`
+/// fact. `kind` owns the diagnostic code, message, label, and help text
+/// (`beskid_analysis::analysis::SemanticIssueKind`, `BSP-REQ-072159A73908`); the legality fact is
+/// the *detection* authority, `kind` is the *code* authority (see the design doc's ownership
+/// table, section 2.6). `related` names optional secondary sites (for example the earlier call
+/// argument a generic parameter conflict was first bound from).
+#[derive(Debug, Clone)]
+pub struct SemanticFinding {
+    pub kind: beskid_analysis::analysis::SemanticIssueKind,
+    pub site: AstNodeKey,
+    pub related: Vec<(AstNodeKey, &'static str)>,
+}

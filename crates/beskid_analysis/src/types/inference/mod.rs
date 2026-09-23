@@ -15,7 +15,7 @@ use crate::types::{TypeId, TypeTable};
 
 pub use crate::types::result::FunctionSignature;
 pub use constraint::{Constraint, ConstraintSet, TypeVar};
-pub use generic::infer_generic_args_from_call_types;
+pub use generic::{GenericParameterConflict, first_generic_parameter_conflict, infer_generic_args_from_call_types};
 pub use solve::solve_constraints;
 pub use unify::{is_numeric, unify_numeric_types, unify_types};
 

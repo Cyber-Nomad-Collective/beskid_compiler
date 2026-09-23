@@ -490,9 +490,11 @@ pub fn callable_signature(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<I
 
 /// Return authoritative spawn legality, result, and precise source diagnostics.
 ///
-/// The fact never inspects HIR. A non-callable target gets `TargetNotCallable`; an entry with
-/// parameters gets `TargetRequiresArguments`; a mutable or native-pointer closure capture gets
-/// `StackReferenceEscapesSpawn`. Stale, unregistered, and non-spawn nodes contain no fact.
+/// The fact never inspects HIR. A non-callable target gets `TargetNotCallable`; an entry whose
+/// parameter count differs from the eager `spawn Entry(args)` argument count gets
+/// `TargetRequiresArguments`; arguments on a non-item callee get `CalleeArgumentsUnsupported`;
+/// a mutable or native-pointer closure capture gets `StackReferenceEscapesSpawn`. Stale,
+/// unregistered, and non-spawn nodes contain no fact.
 pub fn spawn_legality(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<SpawnLegality> {
     with_registered_syntax(db, key, spawn_legality_tracked)
 }
@@ -505,7 +507,7 @@ pub fn spawn_handle_type(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<Sp
     with_registered_syntax(db, key, spawn_handle_type_tracked)
 }
 
-/// Return source-only zero-argument spawn-entry validation for the current syntax generation.
+/// Return source-only spawn-entry validation for the current syntax generation.
 ///
 /// This validation does not claim a generated trampoline, closure allocation, or runtime fiber
 /// object. Stale, unregistered, and non-spawn nodes contain no fact.

@@ -166,10 +166,20 @@ pub(in crate::semantic_contract) fn nominal_field_projection(
     let root = resolve_lexical_declaration(program, index, path_key.node, &path.segments[0].node.name.node.name)?;
     let annotation = explicit_local_complex_type_path(program, index, root);
     // An enum-pattern binding has no written annotation; its enum match fact is the sole
-    // authority for the exact applied payload identity. Other unannotated roots stay unproven.
+    // authority for the exact applied payload identity. An unannotated `let` takes the shared
+    // source-proven local identity of its initializer. Other unannotated roots stay unproven.
     let binding = match annotation {
         Some(_) => None,
-        None => Some(pattern_binding_fact(db, index, path_key, root)?),
+        None => Some(match pattern_binding_fact(db, index, path_key, root) {
+            Some(binding) => binding.and_then(|binding| {
+                binding.source_identity.ok_or_else(|| SemanticError::unavailable("nominal_field_projection"))
+            }),
+            // Only a proven nominal identity is a projection root; arrays, scalars and
+            // unproven locals keep their established non-projection paths.
+            None => Ok(generic_source_local_identity(db, program, index, path_key, root)
+                .ok()
+                .filter(|identity| matches!(identity, GenericSourceTypeIdentity::Nominal { .. }))?),
+        }),
     };
     Some((|| {
         let mut identity = match (annotation, binding) {
@@ -181,9 +191,7 @@ pub(in crate::semantic_contract) fn nominal_field_projection(
                     path.segments[0].span,
                 )),
             )?,
-            (None, Some(binding)) => {
-                binding?.source_identity.ok_or_else(|| SemanticError::unavailable("nominal_field_projection"))?
-            }
+            (None, Some(binding)) => binding?,
             (None, None) => return Err(SemanticError::unavailable("nominal_field_projection")),
         };
         let mut receiver = AstNodeKey { node: root, ..key };
@@ -417,10 +425,15 @@ fn applied_local_receiver_layout(
         return applied_pattern_binding_layout(db, program, index, key, local, ambient)
             .map(|(declaration, layout)| (declaration, receiver, layout));
     }
-    let path = explicit_local_complex_type_path(program, index, local)
-        .ok_or_else(|| SemanticError::unavailable("aggregate_field_access"))?;
-    instantiated_aggregate_layout_for_path(db, key, path, ambient)
-        .map(|(declaration, layout)| (declaration, receiver, layout))
+    if let Some(path) = explicit_local_complex_type_path(program, index, local) {
+        return instantiated_aggregate_layout_for_path(db, key, path, ambient)
+            .map(|(declaration, layout)| (declaration, receiver, layout));
+    }
+    // An unannotated local takes its type from the shared source-proven local identity
+    // (its initializer's identity). A non-nominal or unproven identity stays unavailable.
+    let identity = generic_source_local_identity(db, program, index, key, local)
+        .map_err(|_| SemanticError::unavailable("aggregate_field_access"))?;
+    nominal_identity_layout(db, key, &identity).map(|(declaration, layout)| (declaration, receiver, layout))
 }
 
 fn applied_method_receiver_layout(

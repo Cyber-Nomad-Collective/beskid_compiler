@@ -1,0 +1,26 @@
+use Runtime.Bootstrap.Lifecycle;
+use Runtime.Bootstrap.Native;
+use Runtime.Mem.Gc.State;
+use Testing.Assert;
+
+// The in-process test engine is itself an ABI-v5 host: before any test body runs it has
+// initialized a runtime and attached this thread to it. The runtime is a process singleton
+// (one TLS binding per thread, one native worker pool per process), so a fixture that acts as
+// its own host must retire the engine's runtime first and restore it before it returns.
+//
+// Assertion messages are managed strings and need an attached runtime. Between these two calls
+// only a runtime that the fixture itself initialized can be attached, so assert only while that
+// runtime is active, or record the observation and assert it after `ResumeHostRuntime`.
+pub pointer SuspendHostRuntime() {
+    pointer hostRuntime = State.RuntimeState();
+    if hostRuntime == Native.NativePointer(0) { return hostRuntime; }
+    Lifecycle.ProcessShutdown(hostRuntime);
+    return hostRuntime;
+}
+
+// Restores the runtime retired by `SuspendHostRuntime`. On a bare thread both calls are no-ops.
+pub unit ResumeHostRuntime(pointer hostRuntime) {
+    if hostRuntime == Native.NativePointer(0) { return; }
+    Assert.True(Lifecycle.ProcessInit(hostRuntime) == hostRuntime, "host runtime restored");
+    return;
+}

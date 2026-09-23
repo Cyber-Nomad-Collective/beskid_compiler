@@ -332,6 +332,7 @@ mod tests {
             .and_then(|p| p.parent())
             .expect("compiler workspace root")
             .to_path_buf();
+        let _fixture = crate::SHARED_FIXTURE_LOCK.blocking_lock();
         let previous = std::env::current_dir().expect("cwd");
         std::env::set_current_dir(&root).expect("chdir");
 

@@ -1048,6 +1048,7 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "tachyonfx",
+ "tempfile",
  "tokio",
  "tracing",
  "tracing-log",

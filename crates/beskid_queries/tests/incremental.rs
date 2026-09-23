@@ -256,3 +256,78 @@ fn manifest_digest_changes_when_manifest_or_lock_changes() {
     let digest_with_lock = manifest_digest(&manifest);
     assert_ne!(digest_v2, digest_with_lock);
 }
+
+/// Regression: the try-authority diagnostics prepare and the LSP/IDE fact path
+/// must register one project's source units under a single project session,
+/// even when the project root is spelled non-canonically (`nested/../app`).
+/// Before the fix the diagnostics path minted its own unregistered session, so
+/// `build_typed_program` over the plan-keyed session failed with
+/// "a source unit cannot be reassigned to another project session".
+///
+/// The project lives in its own temporary directory so no other test shares its
+/// process-global entry-session state.
+#[test]
+fn diagnostics_prepare_and_facts_share_one_session_for_noncanonical_root() {
+    use std::sync::Arc;
+
+    use beskid_analysis::projects::AssemblyDiscovery;
+    use beskid_analysis::services::{FrontEndOptions, PrepareOptions, resolve_input};
+    use beskid_queries::{
+        SyntaxGenerationId, build_typed_program, configure_db_for_project, prepare_compilation_diagnostics_with_db,
+        project_session_for_planned_syntax_assembly,
+    };
+
+    let temp = tempfile::tempdir().expect("temporary project parent");
+    let app = temp.path().join("app");
+    std::fs::create_dir_all(app.join("Src")).expect("source directory");
+    std::fs::create_dir_all(temp.path().join("nested")).expect("nested directory");
+    std::fs::write(
+        app.join("SessionKey.bproj"),
+        "SessionKey {\n  name = \"SessionKey\"\n  version = \"0.1.0\"\n}\n\ntarget \"App\" {\n  kind = App\n  entry = \"Main.bd\"\n}\n",
+    )
+    .expect("project manifest");
+    std::fs::write(
+        app.join("Src/Main.bd"),
+        "use Std.Core.Output;\n\ni32 Main() {\n    Output.WriteLine(\"ok\");\n    return 0;\n}\n",
+    )
+    .expect("entry source");
+
+    // Deliberately non-canonical spelling of the same project root.
+    let project_root = temp.path().join("nested/../app");
+    let main_path = project_root.join("Src/Main.bd");
+    let canonical_root = project_root.canonicalize().expect("canonical project root");
+    assert_ne!(project_root, canonical_root, "project root must be spelled non-canonically");
+
+    configure_db_for_project(&project_root);
+    let resolved = resolve_input(Some(&main_path), Some(&project_root), Some("App"), None, false, false)
+        .expect("resolve project");
+    let plan = resolved.compile_plan.clone().expect("compile plan");
+    let mut db = BeskidDatabase::default();
+    let options = PrepareOptions {
+        front_end: FrontEndOptions { assembly_discovery: AssemblyDiscovery::ImportClosure, ..Default::default() },
+        ..Default::default()
+    };
+    let (prepared, _, _) =
+        prepare_compilation_diagnostics_with_db(&mut db, &resolved, options, None).expect("diagnostics prepare");
+    let assembly = Arc::new(prepared.syntax_assembly());
+
+    // The plan-keyed session is keyed canonically ...
+    let facts_session = db.ensure_project_session(&plan, &resolved.source_path, "facts".into());
+    let mut canonical_plan = plan.clone();
+    canonical_plan.project_root = canonical_root.clone();
+    let canonical_session = db.ensure_project_session(
+        &canonical_plan,
+        &resolved.source_path.canonicalize().expect("canonical entry"),
+        "facts".into(),
+    );
+    assert!(facts_session == canonical_session, "session key must be canonical");
+    // ... and it is the session that owns the syntax the diagnostics prepare registered.
+    let owner =
+        project_session_for_planned_syntax_assembly(&mut db, &assembly, &plan, &resolved.source_path, "facts".into())
+            .expect("single owner");
+    assert!(owner == facts_session, "diagnostics prepare must register syntax under the plan-keyed session");
+
+    let generation = SyntaxGenerationId(assembly.generation.0);
+    build_typed_program(&mut db, facts_session, generation, assembly)
+        .expect("facts must reuse the diagnostics session's syntax registration");
+}

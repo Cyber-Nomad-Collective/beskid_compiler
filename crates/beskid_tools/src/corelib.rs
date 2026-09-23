@@ -1,5 +1,6 @@
 //! Install or refresh the bundled Beskid corelib snapshot in the resolved toolchain setup.
 
+use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::thread;
@@ -25,9 +26,53 @@ pub struct CorelibProvisioning {
     pub updated: bool,
 }
 
+/// `BESKID_CORELIB_ROOT` (or the resolved install root) exists, is non-empty, carries no
+/// `.beskid-bundle.sha256` marker, and does not look like a valid corelib package either — so it
+/// cannot be identified as either a managed bundle or a developer-provided checkout.
+///
+/// This is a fail-closed guard: [`ensure_bundled_corelib`] must never delete a directory it cannot
+/// prove is a bundle it manages, since that directory may be an uncommitted source checkout.
+#[derive(Debug)]
+pub struct UnrecognizedCorelibRootError {
+    pub path: PathBuf,
+}
+
+impl fmt::Display for UnrecognizedCorelibRootError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "corelib root `{}` is not empty, has no `{BUNDLE_FINGERPRINT_FILE}` bundle marker, and does not \
+             look like a valid corelib package (expected `beskid_corelib/corelib.bproj` or a workspace `.bws` \
+             manifest next to a `beskid_corelib` directory). Refusing to delete it in case it is a source \
+             checkout with uncommitted changes. Remove this directory yourself, or point BESKID_CORELIB_ROOT \
+             at an empty or managed location.",
+            self.path.display()
+        )
+    }
+}
+
+impl std::error::Error for UnrecognizedCorelibRootError {}
+
 /// Ensure the embedded corelib template is materialized when newer than any existing install.
+///
+/// The install root is treated as one of three kinds, and only the first two may ever be replaced:
+/// - missing or empty: materialize the embedded bundle into it.
+/// - a managed bundle (carries `.beskid-bundle.sha256`): replace it on a fingerprint/version mismatch.
+/// - anything else non-empty: never deleted. Used as-is if it looks like a valid corelib checkout
+///   (a developer-provided root), otherwise this fails closed with [`UnrecognizedCorelibRootError`].
 pub fn ensure_bundled_corelib() -> Result<CorelibProvisioning> {
     let target_root = corelib_install_root()?;
+
+    if is_unmanaged_nonempty_root(&target_root)? {
+        if !looks_like_corelib_checkout(&target_root) {
+            return Err(UnrecognizedCorelibRootError { path: target_root }.into());
+        }
+        let version = installed_version(&target_root)?.ok_or_else(|| {
+            anyhow::anyhow!("resolve corelib version at developer-provided root {}", target_root.display())
+        })?;
+        return Ok(CorelibProvisioning { root: target_root, version: version.to_string(), updated: false });
+    }
+
     let bundled_version = embedded_version()?;
     let installed_version = installed_version(&target_root)?;
     let bundled_fingerprint = embedded_fingerprint()?;
@@ -47,11 +92,59 @@ pub fn ensure_bundled_corelib() -> Result<CorelibProvisioning> {
         }
         fs::create_dir_all(&target_root).with_context(|| format!("create corelib root {}", target_root.display()))?;
         write_embedded_dir(&EMBEDDED_CORELIB, &target_root)?;
+        write_bundle_marker(&target_root, &bundled_fingerprint)?;
     } else {
         fs::create_dir_all(&target_root).with_context(|| format!("create corelib root {}", target_root.display()))?;
     }
 
     Ok(CorelibProvisioning { root: target_root, version: bundled_version.to_string(), updated: should_install })
+}
+
+/// True when `root` exists, has at least one entry, and carries no bundle marker — i.e. it is
+/// neither the "materialize into an empty/missing root" case nor the "replace a managed bundle"
+/// case, so it must be classified as a developer-provided root (valid checkout, or fail closed).
+fn is_unmanaged_nonempty_root(root: &Path) -> Result<bool> {
+    if !root.is_dir() {
+        return Ok(false);
+    }
+    let mut entries =
+        fs::read_dir(root).with_context(|| format!("read corelib root directory {}", root.display()))?;
+    if entries.next().is_none() {
+        return Ok(false);
+    }
+    if root.join(BUNDLE_FINGERPRINT_FILE).is_file() {
+        return Ok(false);
+    }
+    Ok(true)
+}
+
+/// Best-effort recognition of a developer-provided corelib checkout: either the aggregate
+/// `beskid_corelib/` package directly, or a workspace root (a `.bws` manifest alongside a
+/// `beskid_corelib/` directory).
+fn looks_like_corelib_checkout(root: &Path) -> bool {
+    if root.join("beskid_corelib/corelib.bproj").is_file() {
+        return true;
+    }
+    if !root.join("beskid_corelib").is_dir() {
+        return false;
+    }
+    fs::read_dir(root)
+        .into_iter()
+        .flatten()
+        .filter_map(Result::ok)
+        .any(|entry| entry.path().extension().is_some_and(|ext| ext.eq_ignore_ascii_case("bws")))
+}
+
+/// Write the bundle marker last, after every other file, via a same-directory rename so a reader
+/// never observes a marker whose bundle contents are only partially written.
+fn write_bundle_marker(destination: &Path, fingerprint: &str) -> Result<()> {
+    let marker_path = destination.join(BUNDLE_FINGERPRINT_FILE);
+    let tmp_path = destination.join(format!("{BUNDLE_FINGERPRINT_FILE}.tmp"));
+    fs::write(&tmp_path, format!("{fingerprint}\n"))
+        .with_context(|| format!("write corelib bundle marker {}", tmp_path.display()))?;
+    fs::rename(&tmp_path, &marker_path)
+        .with_context(|| format!("finalize corelib bundle marker {}", marker_path.display()))?;
+    Ok(())
 }
 
 fn should_install_corelib(
@@ -161,6 +254,10 @@ fn parse_project_manifest_version(content: &str, source: &str) -> Result<Version
 fn write_embedded_dir(source: &Dir<'_>, destination: &Path) -> Result<()> {
     for file in source.files() {
         let rel = file.path();
+        if rel == Path::new(BUNDLE_FINGERPRINT_FILE) {
+            // Written last, atomically, by `write_bundle_marker` once every other file lands.
+            continue;
+        }
         let target = destination.join(rel);
         if let Some(parent) = target.parent() {
             fs::create_dir_all(parent).with_context(|| format!("create corelib directory {}", parent.display()))?;
@@ -180,8 +277,12 @@ fn write_embedded_dir(source: &Dir<'_>, destination: &Path) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::EMBEDDED_CORELIB;
+    use super::{
+        BUNDLE_FINGERPRINT_FILE, EMBEDDED_CORELIB, UnrecognizedCorelibRootError, is_unmanaged_nonempty_root,
+        looks_like_corelib_checkout, write_bundle_marker,
+    };
     use semver::Version;
+    use std::fs;
 
     #[test]
     fn embedded_corelib_carries_its_license_and_notice() {
@@ -201,5 +302,108 @@ mod tests {
         assert!(super::should_install_corelib(&version, Some(&version), "current-bundle", Some("stale-bundle"),));
         assert!(super::should_install_corelib(&version, Some(&version), "current-bundle", None));
         assert!(!super::should_install_corelib(&version, Some(&version), "current-bundle", Some("current-bundle"),));
+    }
+
+    #[test]
+    fn missing_root_is_not_unmanaged() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let missing = dir.path().join("does-not-exist");
+
+        assert!(!is_unmanaged_nonempty_root(&missing).expect("classify missing root"));
+    }
+
+    #[test]
+    fn empty_root_is_not_unmanaged() {
+        let dir = tempfile::tempdir().expect("tempdir");
+
+        assert!(!is_unmanaged_nonempty_root(dir.path()).expect("classify empty root"));
+    }
+
+    #[test]
+    fn managed_bundle_root_is_not_unmanaged() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        fs::write(dir.path().join(BUNDLE_FINGERPRINT_FILE), "a".repeat(64)).expect("write marker");
+
+        assert!(!is_unmanaged_nonempty_root(dir.path()).expect("classify managed bundle root"));
+    }
+
+    #[test]
+    fn nonempty_root_without_marker_is_unmanaged() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        fs::write(dir.path().join("README.md"), "hello").expect("write file");
+
+        assert!(is_unmanaged_nonempty_root(dir.path()).expect("classify unmanaged root"));
+    }
+
+    #[test]
+    fn source_checkout_with_corelib_bproj_is_recognized() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        fs::create_dir_all(dir.path().join("beskid_corelib")).expect("create beskid_corelib");
+        fs::write(dir.path().join("beskid_corelib/corelib.bproj"), "name = \"corelib\"\n").expect("write bproj");
+
+        assert!(looks_like_corelib_checkout(dir.path()));
+    }
+
+    #[test]
+    fn source_checkout_with_workspace_manifest_is_recognized() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        fs::create_dir_all(dir.path().join("beskid_corelib")).expect("create beskid_corelib");
+        fs::write(dir.path().join("workspace.bws"), "").expect("write workspace manifest");
+
+        assert!(looks_like_corelib_checkout(dir.path()));
+    }
+
+    #[test]
+    fn unrelated_nonempty_directory_is_not_a_corelib_checkout() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        fs::write(dir.path().join("notes.txt"), "not a corelib").expect("write file");
+
+        assert!(!looks_like_corelib_checkout(dir.path()));
+    }
+
+    /// A source checkout (uncommitted edits, no bundle marker) must be classified for the
+    /// "use as-is" branch, not the "may be deleted and recreated" branch. This is the guard
+    /// against `ensure_bundled_corelib` running `remove_dir_all` on a developer's checkout.
+    #[test]
+    fn source_checkout_is_never_deleted() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        fs::create_dir_all(dir.path().join("beskid_corelib")).expect("create beskid_corelib");
+        fs::write(dir.path().join("beskid_corelib/corelib.bproj"), "name = \"corelib\"\nversion = \"0.4.1\"\n")
+            .expect("write bproj");
+        let sentinel = dir.path().join("beskid_corelib/uncommitted_edit.bd");
+        fs::write(&sentinel, "// local work in progress").expect("write sentinel file");
+
+        assert!(is_unmanaged_nonempty_root(dir.path()).expect("classify source checkout root"));
+        assert!(looks_like_corelib_checkout(dir.path()));
+
+        // Neither classification call may have touched the filesystem: the checkout, including
+        // the developer's uncommitted file, is exactly as it was written.
+        assert!(sentinel.is_file(), "uncommitted checkout file must survive classification untouched");
+    }
+
+    #[test]
+    fn unrecognized_root_error_names_the_path() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("weird-root");
+        let error = UnrecognizedCorelibRootError { path: path.clone() };
+
+        let message = error.to_string();
+        assert!(message.contains(&path.display().to_string()));
+        assert!(message.contains(BUNDLE_FINGERPRINT_FILE));
+    }
+
+    #[test]
+    fn bundle_marker_is_written_atomically_without_leaving_a_temp_file() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let fingerprint = "b".repeat(64);
+
+        write_bundle_marker(dir.path(), &fingerprint).expect("write marker");
+
+        let marker_path = dir.path().join(BUNDLE_FINGERPRINT_FILE);
+        let contents = fs::read_to_string(&marker_path).expect("read marker");
+        assert_eq!(contents.trim(), fingerprint);
+
+        let tmp_path = dir.path().join(format!("{BUNDLE_FINGERPRINT_FILE}.tmp"));
+        assert!(!tmp_path.exists(), "temp marker file must be renamed away, not left behind");
     }
 }

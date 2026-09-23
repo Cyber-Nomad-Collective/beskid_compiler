@@ -1,4 +1,5 @@
 use Concurrency.Fiber;
+use Concurrency.FiberError;
 use Core.Collections.Array;
 use Core.Results;
 
@@ -8,6 +9,7 @@ pub contract Probe {
     word gc_heap_region_count();
     word gc_heap_committed();
     word gc_heap_cap();
+    u8 gc_heap_verify();
 }
 
 pub type Chunk { u8[] bytes, i64 marker, }
@@ -26,7 +28,8 @@ u8[] NewFilledBytes(word length, u8 fill) {
 // The 13 size classes (Span.bd) are 16, 32, 48, 64, 96, 128, 192, 256, 384, 512, 1024, 2048,
 // 4096 bytes; a managed array's element storage must round to each class in turn to prove every
 // class is reachable and reusable.
-i64 RunSizeClassSweep() {
+[Export(Abi:"C", Symbol:"RunSizeClassSweep")]
+pub i64 RunSizeClassSweep() {
     mut i64 checksum = 0_i64;
     mut word size = 8;
     while size <= 4096 {
@@ -41,7 +44,8 @@ i64 RunSizeClassSweep() {
 // ---- Growth past the 1 MiB initial region. ----
 // Keeps ~4 MiB of managed data reachable through a growing list of chunks, then reads the
 // region-count and committed-byte statistics the corelib services above expose.
-i64 RunGrowthPastOneRegion() {
+[Export(Abi:"C", Symbol:"RunGrowthPastOneRegion")]
+pub i64 RunGrowthPastOneRegion() {
     mut Chunk[] kept = Array.Empty<Chunk>();
     mut word total = 0;
     while total < 4194304 {
@@ -55,6 +59,7 @@ i64 RunGrowthPastOneRegion() {
     mut i64 result = Array.Len<Chunk>(kept);
     if regions < 2 { result = -1_i64; }
     if committed <= 1048576 { result = -2_i64; }
+    if Probe.gc_heap_verify() == 0_u8 { result = -3_i64; }
     return result;
 }
 
@@ -74,7 +79,8 @@ i64 RecurseHoldingLocals(word depth, word remaining) {
     return fromBelow + i64(level[0] % 2_u8);
 }
 
-i64 RunDeepRecursion() {
+[Export(Abi:"C", Symbol:"RunDeepRecursion")]
+pub i64 RunDeepRecursion() {
     i64 result = RecurseHoldingLocals(0, 6000);
     Probe.gc_collect();
     return result;
@@ -90,7 +96,8 @@ u8[] FiberHoldsBytes() {
     return value;
 }
 
-i64 RunFiberHeapInteraction() {
+[Export(Abi:"C", Symbol:"RunFiberHeapInteraction")]
+pub i64 RunFiberHeapInteraction() {
     Fiber<u8[]> child = spawn (() => FiberHoldsBytes());
     u8[] parentBytes = NewFilledBytes(64, 5_u8);
     Probe.gc_collect();
@@ -101,11 +108,111 @@ i64 RunFiberHeapInteraction() {
     };
 }
 
+// ---- Large object, isolated. ----
+// One object whose 48-byte header plus its element bytes exceeds the largest small class (4096
+// bytes total), and nothing else — isolates the dedicated-span path (`GcAllocLargeOnce`) from
+// every other allocation in this fixture.
+[Export(Abi:"C", Symbol:"RunLargeObjectOnly")]
+pub i64 RunLargeObjectOnly() {
+    u8[] big = NewFilledBytes(5000, 11_u8);
+    Probe.gc_collect();
+    return i64(big[0]) + Array.Len<u8>(big);
+}
+
+// ---- Span reuse across size classes after a collection frees a span. ----
+// Regression for the stale `HEAP_CURRENT_SPAN_BY_CLASS` cache bug (gdb-localized by slice
+// deeprec, independently reproduced by slice chanrace): `Sweep`'s empty-span path returned a
+// fully-dead small span to the region's free-page list without invalidating the per-class "current
+// span" cache that could still be pointing at it. A later allocation of a DIFFERENT size class
+// could then have `CarveSpan` re-carve that same page (via the free-list reuse it is pushed onto
+// right there) for its own class, while a still-in-flight allocation of the ORIGINAL class kept
+// trusting the stale cache and the entry's now-repurposed `free_slot` chain — aliasing two
+// different classes' objects onto the same page. Phase 1 fills many same-sized objects, drops all
+// but one, and collects so their spans empty out and free. Phase 2 allocates many objects of a
+// different size (a different size class) to force `CarveSpan` to reuse those freed pages. Phase 3
+// allocates the ORIGINAL size again, directly exercising the stale-cache path. Every object's
+// content is then read back and checksummed; aliasing corrupts content, this is not a probe of
+// span metadata alone. `gc_heap_verify` also runs at the end for the shared metadata invariants.
+// Bisection aid (temporary, to be removed): phase 1 + collect + read survivor only, no phase 2/3
+// pressure allocation. Isolates whether a rooted local surviving ITS OWN spans's neighbors being
+// freed is already broken before any cross-class span reuse happens at all.
+[Export(Abi:"C", Symbol:"RunSpanReuseMinimal")]
+pub i64 RunSpanReuseMinimal() {
+    u8[] survivor = NewFilledBytes(24, 42_u8);
+    mut Chunk[] batch = Array.Empty<Chunk>();
+    mut word i = 0;
+    while i < 400 {
+        u8[] small = NewFilledBytes(24, u8(i % 251));
+        Array.Append<Chunk>(batch, Chunk { bytes: small, marker: i64(i) });
+        i = i + 1;
+    }
+    batch = Array.Empty<Chunk>();
+    Probe.gc_collect();
+    mut i64 result = i64(survivor[0]);
+    if i64(survivor[0]) != 42_i64 { result = -1000_i64; }
+    if Probe.gc_heap_verify() == 0_u8 { result = -2000_i64; }
+    return result;
+}
+
+[Export(Abi:"C", Symbol:"RunSpanReuseAcrossClasses")]
+pub i64 RunSpanReuseAcrossClasses() {
+    // Phase 0: one object of the class under test, rooted as its own local for the whole
+    // function (not stored in an array), so it stays live and directly readable across every
+    // later phase without needing struct-array indexing (a separate, unrelated ISLE gap this
+    // fixture avoids rather than works around).
+    u8[] survivor = NewFilledBytes(24, 42_u8);
+
+    // Phase 1: many same-sized (same size-class) temporaries, all dropped together so a
+    // collection frees their spans back to the region's free-page list.
+    mut Chunk[] batch = Array.Empty<Chunk>();
+    mut word i = 0;
+    while i < 400 {
+        u8[] small = NewFilledBytes(24, u8(i % 251));
+        Array.Append<Chunk>(batch, Chunk { bytes: small, marker: i64(i) });
+        i = i + 1;
+    }
+    batch = Array.Empty<Chunk>();
+    Probe.gc_collect();
+    if Probe.gc_heap_verify() == 0_u8 { return -3001_i64; }
+
+    // Phase 2: pressure-allocate many objects of a DIFFERENT size (a different size class) so
+    // `CarveSpan` reuses the pages phase 1 just freed for this other class.
+    mut Chunk[] batch2 = Array.Empty<Chunk>();
+    mut word j = 0;
+    while j < 400 {
+        u8[] mid = NewFilledBytes(90, u8((j + 7) % 251));
+        Array.Append<Chunk>(batch2, Chunk { bytes: mid, marker: i64(j) });
+        j = j + 1;
+    }
+    batch2 = Array.Empty<Chunk>();
+    if Probe.gc_heap_verify() == 0_u8 { return -3003_i64; }
+
+    // Phase 3: allocate the ORIGINAL size again — this directly exercises the stale
+    // `HEAP_CURRENT_SPAN_BY_CLASS` cache path (`GcAllocSmall` in Allocation.bd) for the exact
+    // class phase 1 freed and phase 2 caused to be reused by a different class.
+    u8[] freshOne = NewFilledBytes(24, 200_u8);
+    u8[] freshTwo = NewFilledBytes(24, 201_u8);
+    u8[] freshThree = NewFilledBytes(24, 202_u8);
+    if Probe.gc_heap_verify() == 0_u8 { return -3006_i64; }
+
+    mut i64 result = i64(survivor[0]) + i64(freshOne[0]) + i64(freshTwo[0]) + i64(freshThree[0]);
+    result = result + i64(Array.Len<u8>(freshOne)) - 1_i64;
+    if i64(survivor[0]) != 42_i64 { result = -1000_i64; }
+    if i64(freshOne[0]) != 200_i64 { result = -1001_i64; }
+    if i64(freshTwo[0]) != 201_i64 { result = -1002_i64; }
+    if i64(freshThree[0]) != 202_i64 { result = -1003_i64; }
+    if Probe.gc_heap_verify() == 0_u8 {
+        result = -2000_i64;
+    }
+    return result;
+}
+
 // ---- Cap hit and `BESKID_HEAP_MAX_BYTES` configuration. ----
 // Keeps 3 MiB of managed data reachable; run under `BESKID_HEAP_MAX_BYTES=2M` (see the `.c`
 // fixture host), this allocation must trap through the diagnosable out-of-memory path rather
 // than crash. Run without a cap, it must simply succeed.
-i64 RunCapProbe() {
+[Export(Abi:"C", Symbol:"RunCapProbe")]
+pub i64 RunCapProbe() {
     mut Chunk[] kept = Array.Empty<Chunk>();
     mut word total = 0;
     while total < 3145728 {

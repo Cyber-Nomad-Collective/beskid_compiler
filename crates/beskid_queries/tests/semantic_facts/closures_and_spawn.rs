@@ -421,8 +421,9 @@ fn closure_call_target_and_spawn_entry_validation_use_only_current_syntax_facts(
         Some(SpawnEntryValidation {
             spawn,
             target: lambda,
+            arguments: Arc::from([]),
             callable: Some(ItemSignature { parameters: Arc::from([]), result: SemanticTypeId::I32 }),
-            is_zero_argument_entry: true,
+            is_legal_entry: true,
             diagnostics: Arc::from([]),
         })
     );
@@ -665,7 +666,7 @@ fn stale_generation_never_reuses_spawn_legality_or_capture_storage() {
 }
 
 #[test]
-fn spawn_legality_normalizes_empty_call_entries_and_rejects_call_arguments() {
+fn spawn_legality_normalizes_call_entries_and_accepts_direct_item_arguments() {
     let empty_call_source = r#"i64 Worker() { return 7_i64; }
 i32 Main() { let task = spawn Worker(); return 0; }"#;
     let (db, _project, unit, generation, index) = setup(empty_call_source);
@@ -696,25 +697,67 @@ i32 Main() { let task = spawn Worker(); return 0; }"#;
     let entry = spawn_entry_validation(&db, spawn).expect("empty-call spawn entry").expect("empty-call entry fact");
     assert_eq!(entry.target, worker_path);
     assert_eq!(entry.callable, Some(ItemSignature { parameters: Arc::from([]), result: SemanticTypeId::I64 }));
-    assert!(entry.is_zero_argument_entry);
+    assert!(entry.is_legal_entry);
+    assert!(entry.arguments.is_empty());
 
     let args_source = r#"i64 Worker(i64 value) { return value; }
 i32 Main() { let task = spawn Worker(7_i64); return 0; }"#;
     let (db, _project, unit, generation, index) = setup(args_source);
     let spawn = key(unit, generation, &index, NodeKind::SpawnExpression, 0);
     let call = key(unit, generation, &index, NodeKind::CallExpression, 0);
+    let worker_path = key_at_start(
+        unit,
+        generation,
+        &index,
+        NodeKind::PathExpression,
+        args_source.find("spawn Worker(").map(|offset| offset + "spawn ".len()).expect("argful Worker path"),
+    );
+    let argument = key_at_start(
+        unit,
+        generation,
+        &index,
+        NodeKind::LiteralExpression,
+        args_source.find("7_i64);").expect("argful argument literal"),
+    );
 
     let target = spawn_target(&db, spawn).expect("argful spawn target").expect("argful spawn fact");
-    assert_eq!(target.callee, call, "spawn call arguments stay on the CallExpression so legality can fail closed");
+    assert_ne!(target.callee, call, "argful spawn call must not keep the CallExpression as the fiber entry");
+    assert_eq!(target.callee, worker_path, "argful spawn call must unwrap to the entry path operand");
+    assert_eq!(target.arguments.as_ref(), &[argument], "eager spawn arguments stay in source order");
 
     let legality = spawn_legality(&db, spawn).expect("argful spawn legality").expect("argful legality fact");
+    assert!(legality.is_legal(), "{:?}", legality.diagnostics);
+    assert_eq!(legality.result, Some(SemanticTypeId::I64));
+
+    let entry = spawn_entry_validation(&db, spawn).expect("argful spawn entry").expect("argful entry fact");
+    assert!(entry.is_legal_entry);
+    assert_eq!(entry.target, worker_path);
+    assert_eq!(entry.arguments.as_ref(), &[argument]);
+    assert_eq!(
+        entry.callable,
+        Some(ItemSignature { parameters: Arc::from([SemanticTypeId::I64]), result: SemanticTypeId::I64 })
+    );
+
+    let arity_source = r#"i64 Worker(i64 value, i64 other) { return value; }
+i32 Main() { let task = spawn Worker(7_i64); return 0; }"#;
+    let (db, _project, unit, generation, index) = setup(arity_source);
+    let spawn = key(unit, generation, &index, NodeKind::SpawnExpression, 0);
+    let legality = spawn_legality(&db, spawn).expect("arity spawn legality").expect("arity legality fact");
+    assert!(!legality.is_legal());
+    assert_eq!(legality.diagnostics.len(), 1);
+    assert_eq!(legality.diagnostics[0].kind, SpawnDiagnosticKind::TargetRequiresArguments);
+
+    let lambda_source = r#"i32 Main() { let task = spawn ((i64 value) => value)(7_i64); return 0; }"#;
+    let (db, _project, unit, generation, index) = setup(lambda_source);
+    let spawn = key(unit, generation, &index, NodeKind::SpawnExpression, 0);
+    let legality = spawn_legality(&db, spawn).expect("lambda-arg spawn legality").expect("lambda-arg legality fact");
     assert!(!legality.is_legal());
     assert_eq!(legality.result, None);
     assert_eq!(legality.diagnostics.len(), 1);
     assert_eq!(legality.diagnostics[0].kind, SpawnDiagnosticKind::CalleeArgumentsUnsupported);
     assert_eq!(
         legality.diagnostics[0].span,
-        node_span(&db, spawn).expect("argful spawn span").expect("argful spawn span fact")
+        node_span(&db, spawn).expect("lambda-arg spawn span").expect("lambda-arg spawn span fact")
     );
 }
 

@@ -363,6 +363,9 @@ fn syntax_export_entries_matching(
 /// avoids this by always adding the helper set as extra reachability roots when building the
 /// runtime corpus itself; do the same here whenever this compilation's reachable item set already
 /// needs any one of them, so partial scheduler exposure never produces a partial helper set.
+/// When a selected item also contains a `spawn`, the generated spawn trampoline calls the
+/// [`SCHEDULER_STACK_HELPERS`](crate::module_emission::SCHEDULER_STACK_HELPERS) seams, so they are
+/// added as roots too.
 fn close_scheduler_entry_reachability(
     db: &BeskidDatabase,
     input: &CodegenInput<'_>,
@@ -378,10 +381,12 @@ fn close_scheduler_entry_reachability(
     if !already_needed {
         return Ok(());
     }
+    let needs_stack_helpers = selected.iter().any(|key| contains_spawn(db, *key));
     let mut entry_roots = Vec::new();
     for key in input.roots().iter().copied().flat_map(|root| function_definitions(db, root)) {
         if let Some(name) = item_name(db, key)?
-            && crate::module_emission::SCHEDULER_ENTRY_HELPERS.contains(&name.as_ref())
+            && (crate::module_emission::SCHEDULER_ENTRY_HELPERS.contains(&name.as_ref())
+                || (needs_stack_helpers && crate::module_emission::SCHEDULER_STACK_HELPERS.contains(&name.as_ref())))
         {
             entry_roots.push((name.to_string(), key));
         }
@@ -407,6 +412,13 @@ fn close_scheduler_entry_reachability(
         }
     }
     Ok(())
+}
+
+fn contains_spawn(db: &BeskidDatabase, key: AstNodeKey) -> bool {
+    if beskid_queries::node_kind(db, key).ok().flatten() == Some(beskid_queries::IndexedNodeKind::SpawnExpression) {
+        return true;
+    }
+    child_nodes(db, key).ok().flatten().is_some_and(|children| children.iter().any(|child| contains_spawn(db, *child)))
 }
 
 fn find_entrypoint(db: &BeskidDatabase, input: &CodegenInput<'_>, entrypoint: &str) -> Option<AstNodeKey> {

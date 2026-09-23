@@ -1,5 +1,7 @@
+use Concurrency.Fiber;
 use Runtime.Bootstrap.Lifecycle;
 use Runtime.Bootstrap.Native;
+use Runtime.Fiber.Scheduler.Context;
 use Runtime.Fiber.Scheduler.Core;
 use Runtime.Fiber.Scheduler.Loop;
 use Runtime.Fiber.Scheduler.Poll;
@@ -9,13 +11,21 @@ use Runtime.PubSub.Hub;
 use Runtime.Sync.Channel;
 use Runtime.Sync.Mutex;
 use Runtime.Sync.WaitGroup;
+use Runtime.Mem.AbiValue;
 use Runtime.Mem.Gc.Allocation;
+use Runtime.Mem.Gc.Marking;
 use Runtime.Mem.Gc.RootsHandles;
+use Runtime.Mem.Gc.State;
 use Testing.Assert;
+use HostRuntimeSupport;
 
+// Scheduler fixtures host their own runtime. The 64-byte runtime record carries one trailing
+// word holding the suspended engine runtime, restored by `ReleaseSchedulerRuntime`.
 pub pointer InstallSchedulerRuntime() {
-    pointer runtime = SystemAllocate(64, 8);
-    memory_set(runtime, 0, 64);
+    pointer hostRuntime = SuspendHostRuntime();
+    pointer runtime = SystemAllocate(72, 8);
+    memory_set(runtime, 0, 72);
+    raw_word_store(pointer_add(runtime, 64), NativeWord(hostRuntime));
     Assert.True(ProcessInit(runtime) == runtime, "runtime initialized");
     Assert.True(CurrentThreadState() != NativePointer(0), "process initialization attached the mutator");
     Assert.True(SchedTable() != NativePointer(0), "scheduler initialized");
@@ -31,21 +41,98 @@ pub unit YieldingEntry(pointer argument) {
     return;
 }
 
+// Spawns YieldingEntry with an eager argument and returns only its scheduler handle, so the
+// GC-rooted `Fiber<unit>` local is released before the test shuts its own runtime down.
+pub i64 SpawnYieldingEntry(pointer argument) {
+    Fiber<unit> childFiber = spawn YieldingEntry(argument);
+    return childFiber.handle;
+}
+
 pub unit ShutdownSchedulerRuntime(pointer runtime) {
     Assert.True(SchedShutdown(), "idle scheduler tears down all owned storage");
     Assert.True(SchedTable() == NativePointer(0), "scheduler publication is cleared");
-    ProcessShutdown(runtime);
-    SystemFree(runtime, 64);
+    ReleaseSchedulerRuntime(runtime);
     return;
+}
+
+pub unit ReleaseSchedulerRuntime(pointer runtime) {
+    pointer hostRuntime = NativePointer(raw_word_load(pointer_add(runtime, 64)));
+    ProcessShutdown(runtime);
+    SystemFree(runtime, 72);
+    ResumeHostRuntime(hostRuntime);
+    return;
+}
+
+// ---- BeskidAbiValue slot helpers ----
+// `ChannelTrySend`/`ChannelReceiveValue` move values through a caller-owned, GC-traced
+// BeskidAbiValue slot (see runtime/beskid/src/Runtime/Mem/AbiValue.bd), not a raw pointer.
+// The slot's real layout (tag/payload/descriptor/owner_heap/owner_state, 40 bytes, 8-byte
+// aligned) is generated into `Runtime.Mem.AbiValue`'s own file scope and, like every Beskid
+// `const`, is not visible outside that file — so tests over-allocate a safely larger, aligned
+// block and only touch it through the package's `pub` AbiValue functions.
+pub pointer NewAbiValueSlot() {
+    pointer slot = SystemAllocate(64, 8);
+    memory_set(slot, 0, 64);
+    return slot;
+}
+
+// Boxes an already GC-tracked, descriptor-owned payload into a fresh, live AbiValue slot
+// ready to hand to `ChannelTrySend` as its `sender` argument.
+pub pointer Sendable(pointer payload) {
+    pointer object = ManagedObjectForReference(Heap(), payload);
+    word tag = raw_word_load(object);
+    pointer slot = NewAbiValueSlot();
+    Assert.True(AbiValueInitialize(slot, tag, payload, NativePointer(tag)), "abi value slot boxes the outgoing payload");
+    return slot;
+}
+
+// A managed object starts with the 16-byte `BeskidObjectHeader` (descriptor, gc word), and a
+// descriptor's size covers that header, so a one-word box is 24 bytes with its word at offset 16.
+// `Alloc` rejects any descriptor smaller than the header plus one word (returns null).
+// Descriptors outlive every slot that names them, so this helper never frees them.
+pub pointer BoxedWordDescriptor() {
+    pointer descriptor = SystemAllocate(40, 8);
+    memory_set(descriptor, 0, 40);
+    raw_word_store(descriptor, 24);
+    raw_word_store(pointer_add(descriptor, 8), 8);
+    return descriptor;
+}
+
+// Boxes `value` as a one-word GC-tracked managed payload (not yet wrapped in an AbiValue
+// slot). `FiberDone`'s `value` argument is this raw managed payload directly.
+pub pointer BoxedWord(word value) {
+    pointer payload = Alloc(24, BoxedWordDescriptor());
+    Assert.True(payload != NativePointer(0), "boxed word allocation succeeds");
+    raw_word_store(pointer_add(payload, 16), value);
+    return payload;
+}
+
+// Boxes `value` as a one-word GC-tracked payload and returns a live AbiValue slot for it.
+pub pointer SendableWord(word value) {
+    return Sendable(BoxedWord(value));
+}
+
+// Reads the boxed word payload out of a slot populated by a successful `ChannelReceiveValue`.
+pub word ReceivedWord(pointer slot) {
+    pointer payload = NativePointer(raw_word_load(pointer_add(slot, 8)));
+    return raw_word_load(pointer_add(payload, 16));
 }
 
 test scheduler_executes_argument_yield_resume_and_return_trampoline {
     pointer runtime = InstallSchedulerRuntime();
     pointer argument = SystemAllocate(8, 8);
     raw_word_store(argument, 0);
-    i64 handle = SchedulerSpawn(YieldingEntry, argument, NativePointer(0));
+    // Beskid has no source-level way to take the address of a plain function (see
+    // `crates/beskid_analysis/src/types/checker/expressions/paths.rs`'s
+    // `Some(ResolvedValue::Item(_)) => UnknownValueType` branch); only the compiler's own
+    // `spawn` lowering can materialize a real, callable entry address for `SchedulerSpawn`.
+    // This test steps the fiber and observes YieldingEntry's real side effects, so it must
+    // reach the raw scheduler primitive through `spawn` (not a dummy address) and read the
+    // resulting `Fiber<unit>`'s `i64 handle` field.
+    i64 handle = SpawnYieldingEntry(argument);
     Assert.True(handle >= 0, "real entry receives a generation-safe handle");
-    Assert.Equal(raw_word_load(pointer_add(SchedTable(), 8)), FiberHandleIndex(word(handle)), "first spawned fiber is installed as owned main fiber");
+    word handleIndex = FiberHandleIndex(word(handle));
+    Assert.Equal(raw_word_load(pointer_add(Core.SchedTable(), 8)), handleIndex, "first spawned fiber is installed as owned main fiber");
 
     Assert.True(SchedStep(), "entry runs to first yield");
     Assert.Equal(raw_word_load(argument), 1, "argument register reaches entry");
@@ -53,7 +140,8 @@ test scheduler_executes_argument_yield_resume_and_return_trampoline {
     Assert.Equal(raw_word_load(argument), 2, "second resume preserves context");
     Assert.True(SchedStep(), "entry returns through exact trampoline");
     Assert.Equal(raw_word_load(argument), 3, "return edge executes after repeated yields");
-    Assert.Equal(FiberJoinStatusWord(FiberHandleIndex(word(handle))), 0, "return trampoline records successful completion");
+    word joinStatus = FiberJoinStatusWord(FiberHandleIndex(word(handle)));
+    Assert.Equal(joinStatus, 0, "return trampoline records successful completion");
 
     SystemFree(argument, 8);
     ShutdownSchedulerRuntime(runtime);
@@ -62,18 +150,27 @@ test scheduler_executes_argument_yield_resume_and_return_trampoline {
 test synchronization_bounds_handles_and_teardown_are_deterministic {
     pointer runtime = InstallSchedulerRuntime();
 
-    Assert.Equal(ChannelCreate(17, 0), -1, "channel rejects capacity beyond its physical ring");
+    // Channels are linked cells, not a fixed ring: any non-negative capacity is valid
+    // (zero is unbounded), so only a negative capacity is rejected.
+    Assert.Equal(ChannelCreate(-1, 0), -1, "channel rejects a negative capacity");
     i64 channel = ChannelCreate(1, 0);
     Assert.Equal(channel, 0, "first channel has a stable table index");
-    Assert.Equal(ChannelTrySend(channel, 11), CHANNEL_STATUS_OK, "bounded channel accepts its first value");
-    Assert.Equal(ChannelTrySend(channel, 12), CHANNEL_STATUS_WOULD_BLOCK, "full channel reports pressure without overwrite");
-    Assert.Equal(ChannelTryReceive(channel), CHANNEL_STATUS_OK, "try receive atomically claims the first FIFO payload");
-    Assert.Equal(ChannelTryReceive(channel), CHANNEL_STATUS_WOULD_BLOCK, "a competing receive cannot claim the same payload");
-    Assert.Equal(ChannelReceiveValue(channel), 11, "the winning receive owns the claimed FIFO payload");
-    Assert.Equal(ChannelTryReceive(channel), CHANNEL_STATUS_WOULD_BLOCK, "empty channel reports WouldBlock");
-    Assert.Equal(ChannelTryReceive(63), CHANNEL_STATUS_CLOSED, "uncreated channel handle fails closed");
+    Assert.Equal(ChannelTrySend(channel, SendableWord(11)), ChannelStatusOk(), "bounded channel accepts its first value");
+    pointer blockedSender = SendableWord(12);
+    Assert.Equal(ChannelTrySend(channel, blockedSender), ChannelStatusWouldBlock(), "full channel reports pressure without overwrite");
+    Assert.True(AbiValueClear(blockedSender), "a would-block send retains and releases its own boxed root");
+    Assert.Equal(ChannelTryReceive(channel), ChannelStatusOk(), "try receive atomically claims the first FIFO payload");
+    Assert.Equal(ChannelTryReceive(channel), ChannelStatusWouldBlock(), "a competing receive cannot claim the same payload");
+    pointer received = NewAbiValueSlot();
+    Assert.True(ChannelReceiveValue(channel, received), "the winning receive owns the claimed FIFO payload");
+    Assert.Equal(ReceivedWord(received), 11, "the receipt slot holds the moved value");
+    Assert.True(AbiValueClear(received), "the receipt slot releases its own boxed root once read");
+    Assert.Equal(ChannelTryReceive(channel), ChannelStatusWouldBlock(), "empty channel reports WouldBlock");
+    Assert.Equal(ChannelTryReceive(63), ChannelStatusClosed(), "uncreated channel handle fails closed");
     ChannelClose(channel);
-    Assert.Equal(ChannelTrySend(channel, 13), CHANNEL_STATUS_CLOSED, "closed channel rejects publication");
+    pointer closedSender = SendableWord(13);
+    Assert.Equal(ChannelTrySend(channel, closedSender), ChannelStatusClosed(), "closed channel rejects publication");
+    Assert.True(AbiValueClear(closedSender), "a rejected send retains and releases its own boxed root");
 
     pointer mutex = MutexCreate();
     Assert.True(mutex != NativePointer(0), "first mutex uses a non-null opaque handle");
@@ -89,9 +186,9 @@ test synchronization_bounds_handles_and_teardown_are_deterministic {
     Assert.Equal(WaitGroupWait(NativePointer(16)), 1, "uncreated wait group handle fails closed");
 
     i64 hub = HubCreate();
-    Assert.Equal(HubRegister(hub, 7, 63), HUB_STATUS_HUB_NOT_FOUND, "hub rejects an uncreated channel");
-    Assert.Equal(HubRegister(hub, 7, channel), CHANNEL_STATUS_OK, "hub accepts a live channel");
-    Assert.Equal(HubRegister(15, 7, channel), HUB_STATUS_HUB_NOT_FOUND, "uncreated hub handle fails closed");
+    Assert.Equal(HubRegister(hub, 7, 63), HubStatusHubNotFound(), "hub rejects an uncreated channel");
+    Assert.Equal(HubRegister(hub, 7, channel), ChannelStatusOk(), "hub accepts a live channel");
+    Assert.Equal(HubRegister(15, 7, channel), HubStatusHubNotFound(), "uncreated hub handle fails closed");
 
     pointer eventSlot = SystemAllocate(8, 8);
     pointer firstHandler = SystemAllocate(8, 8);
@@ -140,8 +237,8 @@ test poll_slots_reuse_with_generation_and_stale_handle_denial_across_long_cycles
         word taskIndex = PollTaskAllocate();
         Assert.True(taskIndex != 0xFFFF, "bounded task table remains reusable");
         pointer task = PollTaskRecord(taskIndex);
-        raw_word_store(pointer_add(task, POLL_TASK_STATE), POLL_STATE_READY);
-        word taskHandle = PollHandle(taskIndex, raw_word_load(pointer_add(task, POLL_TASK_GENERATION)));
+        raw_word_store(pointer_add(task, PollTaskState()), PollStateReady());
+        word taskHandle = PollHandle(taskIndex, raw_word_load(pointer_add(task, PollTaskGeneration())));
         i64 monitor = PollReferenceNew(taskHandle, false);
         i64 link = PollReferenceNew(taskHandle, true);
         Assert.True(monitor >= 0 && link >= 0, "bounded reference tables remain reusable");
@@ -154,7 +251,7 @@ test poll_slots_reuse_with_generation_and_stale_handle_denial_across_long_cycles
         }
 
         Assert.True(PollTaskClaimTerminal(task), "one scheduler transition claims terminal ownership");
-        Assert.Equal(raw_word_load(pointer_add(task, POLL_TASK_STATE)), POLL_STATE_TERMINAL_CLAIMED, "claimed terminal state is not observable as published");
+        Assert.Equal(raw_word_load(pointer_add(task, PollTaskState())), PollStateTerminalClaimed(), "claimed terminal state is not observable as published");
         Assert.Equal(PollObservation(taskHandle, NativePointer(0)), 0, "outcome remains hidden before publication");
         PollTaskPublishTerminal(task, 3, 0);
         Assert.Equal(PollMonitorPoll(monitor, NativePointer(0)), 3, "published terminal outcome is observable");
@@ -176,13 +273,13 @@ test poll_terminal_transition_has_a_single_winner {
     pointer runtime = InstallSchedulerRuntime();
     word taskIndex = PollTaskAllocate();
     pointer task = PollTaskRecord(taskIndex);
-    raw_word_store(pointer_add(task, POLL_TASK_STATE), POLL_STATE_PENDING);
+    raw_word_store(pointer_add(task, PollTaskState()), PollStatePending());
     Assert.True(PollTaskClaimTerminal(task), "first terminal path wins");
     Assert.True(!PollTaskClaimTerminal(task), "split terminal path cannot claim again");
     PollTaskPublishTerminal(task, 4, 0);
     PollTaskPublishTerminal(task, 3, 0);
-    Assert.Equal(raw_word_load(pointer_add(task, POLL_TASK_OUTCOME)), 4, "later terminal publication cannot replace the winner");
-    Assert.True(raw_byte_load(pointer_add(task, POLL_TASK_ACTIVE)) == 0, "unreferenced terminal publication releases the task");
+    Assert.Equal(raw_word_load(pointer_add(task, PollTaskOutcome())), 4, "later terminal publication cannot replace the winner");
+    Assert.True(raw_byte_load(pointer_add(task, PollTaskActive())) == 0, "unreferenced terminal publication releases the task");
     ShutdownSchedulerRuntime(runtime);
 }
 
@@ -194,12 +291,19 @@ test channel_close_and_shutdown_drain_queued_pointer_handles {
     raw_word_store(pointer_add(descriptor, 8), 8);
     pointer value = Alloc(24, descriptor);
     i64 channel = ChannelCreate(2, 0);
-    Assert.Equal(ChannelTrySendPtr(channel, value), CHANNEL_STATUS_OK, "pointer publication owns a GC handle");
-    Assert.True(!GcHandlesClear(), "queued pointer remains rooted");
+    Assert.Equal(ChannelTrySend(channel, Sendable(value)), ChannelStatusOk(), "pointer publication owns a GC handle");
+    Assert.True(GcExternalRootCount() != 0, "queued pointer remains rooted");
     ChannelClose(channel);
-    Assert.True(GcHandlesClear(), "close drains and releases queued pointer handles");
+    // `ChannelClose` alone never drains queued cells (see Channel.bd's `ChannelDrain` comment:
+    // "Shutdown only. Close never calls this."); only the scheduler shutdown below drains and
+    // releases them via `SchedShutdown` -> `Storage.bd` -> `ChannelDrain`.
+    Assert.True(GcExternalRootCount() != 0, "close alone does not drain the queued root");
+    // Observe the drain on this runtime's own heap, before `ProcessShutdown` retires it. The
+    // descriptor must outlive the drain: `AbiValueClear` validates it before releasing the root.
+    Assert.True(SchedShutdown(), "idle scheduler tears down all owned storage");
+    Assert.Equal(GcExternalRootCount(), 0, "shutdown drains and releases the queued pointer root");
+    ReleaseSchedulerRuntime(runtime);
     SystemFree(descriptor, 40);
-    ShutdownSchedulerRuntime(runtime);
 }
 
 test channel_close_releases_an_unconsumed_pointer_receipt {
@@ -210,13 +314,17 @@ test channel_close_releases_an_unconsumed_pointer_receipt {
     raw_word_store(pointer_add(descriptor, 8), 8);
     pointer value = Alloc(24, descriptor);
     i64 channel = ChannelCreate(2, 0);
-    Assert.Equal(ChannelTrySendPtr(channel, value), CHANNEL_STATUS_OK, "pointer publication owns a GC handle");
-    Assert.Equal(ChannelTryReceive(channel), CHANNEL_STATUS_OK, "atomic receive retains the pointer receipt");
-    Assert.True(!GcHandlesClear(), "unconsumed pointer receipt remains rooted");
+    Assert.Equal(ChannelTrySend(channel, Sendable(value)), ChannelStatusOk(), "pointer publication owns a GC handle");
+    Assert.Equal(ChannelTryReceive(channel), ChannelStatusOk(), "atomic receive retains the pointer receipt");
+    Assert.True(GcExternalRootCount() != 0, "unconsumed pointer receipt remains rooted");
     ChannelClose(channel);
-    Assert.True(GcHandlesClear(), "close releases the unconsumed pointer receipt");
+    // Same as above: close alone does not drain the receipt slot, only shutdown does.
+    Assert.True(GcExternalRootCount() != 0, "close alone does not release the unconsumed pointer receipt");
+    // As above: observe the release before the runtime is retired, and free the descriptor last.
+    Assert.True(SchedShutdown(), "idle scheduler tears down all owned storage");
+    Assert.Equal(GcExternalRootCount(), 0, "shutdown releases the unconsumed pointer receipt");
+    ReleaseSchedulerRuntime(runtime);
     SystemFree(descriptor, 40);
-    ShutdownSchedulerRuntime(runtime);
 }
 
 test poll_task_pointer_roots_release_on_terminal_drop_and_slot_reuse {
@@ -228,7 +336,11 @@ test poll_task_pointer_roots_release_on_terminal_drop_and_slot_reuse {
     pointer taskState = Alloc(24, descriptor);
     pointer resultSlot = Alloc(24, descriptor);
     pointer cancelSlot = Alloc(24, descriptor);
-    i64 task = PollExecutorSpawn(YieldingEntry, taskState, resultSlot, cancelSlot);
+    // This task is force-completed below without ever being polled, so the entry pointer is
+    // never actually invoked; a real, non-null callable address is enough for the record
+    // bookkeeping under test (see the comment on `childFiber` above for why a plain Beskid
+    // function cannot be referenced as a value here).
+    i64 task = PollExecutorSpawn(SchedulerFiberEntryAddress(), taskState, resultSlot, cancelSlot);
     Assert.True(task >= 0, "poll task registers managed task, result, and cancel pointers");
     i64 monitor = PollMonitorNew(task);
     pointer record = PollTaskRecord(PollHandleIndex(word(task)));
@@ -247,19 +359,22 @@ test scheduler_shutdown_cancels_active_fiber_and_invalidates_reused_handle {
     pointer runtime = InstallSchedulerRuntime();
     pointer argument = SystemAllocate(8, 8);
     raw_word_store(argument, 0);
-    i64 stale = SchedulerSpawn(YieldingEntry, argument, NativePointer(0));
+    // Neither fiber below is ever stepped: both are force-completed by a direct `FiberDone`
+    // call to exercise raw slot/generation reuse. A real, non-null callable address is enough
+    // (see the comment on `childFiber` in the first test for why a plain Beskid function cannot
+    // be referenced as a value here).
+    i64 stale = SchedulerSpawn(SchedulerFiberEntryAddress(), argument, NativePointer(0));
     word first = FiberHandleIndex(word(stale));
-    FiberDone(first, 7);
+    FiberDone(first, BoxedWord(7));
     raw_byte_store(pointer_add(FiberRecord(first), 40), 1);
-    word replacement = FiberAlloc(NativeWord(YieldingEntry), NativeWord(argument), 0, FIBER_NONE);
+    word replacement = FiberAlloc(NativeWord(SchedulerFiberEntryAddress()), NativeWord(argument), 0, FiberNone());
     word current = FiberHandle(replacement);
-    FiberDone(replacement, 0);
+    FiberDone(replacement, BoxedWord(0));
     Assert.Equal(replacement, first, "detached terminal slot is reused");
     Assert.True(current != word(stale), "slot reuse advances generation");
     Assert.True(!FiberHandleValid(word(stale)), "stale generation fails closed");
 
     SystemFree(argument, 8);
     Assert.True(SchedShutdown(), "shutdown joins and drains scheduler-owned children");
-    ProcessShutdown(runtime);
-    SystemFree(runtime, 64);
+    ReleaseSchedulerRuntime(runtime);
 }

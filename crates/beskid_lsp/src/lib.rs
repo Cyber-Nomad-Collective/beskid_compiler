@@ -14,6 +14,16 @@ pub(crate) mod standalone_bsol;
 pub(crate) mod text_sync;
 pub(crate) mod workspace_scan;
 
+/// Serializes unit tests that share process-global state: the working directory
+/// and the process-wide entry-session / typed-entry registries keyed by the
+/// `beskid_e2e_tests/fixtures/corelib_mvp` entry. Each test owns a separate
+/// `State`, but concurrent prepares of the same entry race on those registries
+/// ("entry session syntax generation cannot regress"), which a real server
+/// avoids through its single `db_gate`.
+#[cfg(test)]
+pub(crate) static SHARED_FIXTURE_LOCK: std::sync::LazyLock<tokio::sync::Mutex<()>> =
+    std::sync::LazyLock::new(|| tokio::sync::Mutex::new(()));
+
 use server::backend::Backend;
 use std::collections::HashMap;
 use std::future::Future;

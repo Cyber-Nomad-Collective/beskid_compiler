@@ -45,6 +45,19 @@ const POLL_STATE_PENDING = 1;
 const POLL_STATE_TERMINAL_CLAIMED = 2;
 const POLL_STATE_TERMINAL_PUBLISHED = 3;
 
+// Beskid `const` items have no `pub` visibility (see the grammar's `ConstantDefinition` rule):
+// they only resolve within their own declaring file. Callers in other packages — including
+// tests that are not part of the compiler-embedded runtime fixture allowlist — read the poll
+// task state values and task-record field offsets through these functions instead of the bare
+// constants.
+pub word PollStateReady() { return POLL_STATE_READY; }
+pub word PollStatePending() { return POLL_STATE_PENDING; }
+pub word PollStateTerminalClaimed() { return POLL_STATE_TERMINAL_CLAIMED; }
+pub word PollTaskState() { return POLL_TASK_STATE; }
+pub word PollTaskGeneration() { return POLL_TASK_GENERATION; }
+pub word PollTaskOutcome() { return POLL_TASK_OUTCOME; }
+pub word PollTaskActive() { return POLL_TASK_ACTIVE; }
+
 pub pointer PollState() {
     SchedInit();
     pointer scheduler = SchedTable();

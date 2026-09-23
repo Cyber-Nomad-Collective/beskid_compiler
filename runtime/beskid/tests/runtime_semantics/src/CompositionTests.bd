@@ -2,8 +2,10 @@ use Runtime.Bootstrap.Lifecycle;
 use Runtime.Bootstrap.Native;
 use Runtime.Host.Composition;
 use Testing.Assert;
+use HostRuntimeSupport;
 
 test composition_activates_scopes_and_disposes_compiler_materialized_slots {
+    pointer hostRuntime = SuspendHostRuntime();
     pointer runtime = SystemAllocate(64, 8);
     memory_set(runtime, 0, 64);
     Assert.True(ProcessInit(runtime) == runtime, "runtime initialized");
@@ -30,9 +32,11 @@ test composition_activates_scopes_and_disposes_compiler_materialized_slots {
     SystemFree(second, 8);
     ProcessShutdown(runtime);
     SystemFree(runtime, 64);
+    ResumeHostRuntime(hostRuntime);
 }
 
 test composition_rejects_unmaterialized_duplicate_and_out_of_range_slots {
+    pointer hostRuntime = SuspendHostRuntime();
     pointer runtime = SystemAllocate(64, 8);
     memory_set(runtime, 0, 64);
     ProcessInit(runtime);
@@ -53,13 +57,16 @@ test composition_rejects_unmaterialized_duplicate_and_out_of_range_slots {
     SystemFree(service, 8);
     ProcessShutdown(runtime);
     SystemFree(runtime, 64);
+    ResumeHostRuntime(hostRuntime);
 }
 
 test composition_rejects_plan_sizes_outside_the_compiler_runtime_contract {
+    pointer hostRuntime = SuspendHostRuntime();
     pointer runtime = SystemAllocate(64, 8);
     memory_set(runtime, 0, 64);
     Assert.True(ProcessInit(runtime) == runtime, "runtime initialized");
     Assert.True(CompositionContainerCreate(257) == NativePointer(0), "oversized compiler plans fail closed");
     ProcessShutdown(runtime);
     SystemFree(runtime, 64);
+    ResumeHostRuntime(hostRuntime);
 }

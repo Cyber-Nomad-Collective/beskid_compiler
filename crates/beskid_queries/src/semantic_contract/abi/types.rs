@@ -225,6 +225,14 @@ pub(in crate::semantic_contract) fn abi_type_tracked(
             // element representation validated by array construction/lowering.
             return Some(Ok(SemanticTypeId::POINTER));
         }
+        if node.of::<beskid_analysis::syntax::StructLiteralExpression>().is_some() {
+            // A struct literal is a managed nominal reference once its written path proves a
+            // nominal source identity; an unresolved or non-nominal path stays unavailable.
+            return Some(generic_source_expression_identity(db, key).and_then(|identity| match identity {
+                GenericSourceTypeIdentity::Nominal { .. } => Ok(SemanticTypeId::POINTER),
+                _ => Err(SemanticError::unavailable("abi_type")),
+            }));
+        }
         if node.of::<beskid_analysis::syntax::SpawnExpression>().is_some() {
             return Some(spawn_handle_type(db, key).and_then(|fact| {
                 fact.map(|_| SemanticTypeId::POINTER).ok_or_else(|| SemanticError::unavailable("abi_type"))
@@ -370,7 +378,11 @@ pub(in crate::semantic_contract) fn abi_type_for_expression(
     use beskid_analysis::syntax::Expression;
 
     match expression {
-        Expression::Spawn(_) | Expression::ArrayLiteral(_) | Expression::Unary(_) | Expression::Try(_) => {
+        Expression::Spawn(_)
+        | Expression::ArrayLiteral(_)
+        | Expression::StructLiteral(_)
+        | Expression::Unary(_)
+        | Expression::Try(_) => {
             let normalized = normalized_expression_node(index, key.node);
             abi_type(db, AstNodeKey { node: normalized, ..key })?.ok_or_else(|| SemanticError::unavailable("abi_type"))
         }

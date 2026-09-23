@@ -64,6 +64,8 @@ const SIZE_CLASS_MAX_BYTES = 4096;
 // unrelated free memory as if it were a live object's header.
 const SIZE_CLASS_LARGE = 14;
 
+const HEAP_CURRENT_SPAN_BY_CLASS = 200;
+
 pub word SizeClassForSize(word size) {
     if size <= 16 { return 1; }
     if size <= 32 { return 2; }
@@ -171,7 +173,21 @@ pub pointer CarveSpan(pointer region, word pageCount, word sizeClass) {
 // Returns a fully swept, empty span (small or large) to its region's free-page list, keyed by
 // its exact page count (see `CarveSpan`'s exact-size search above). `page_count` and `base` are
 // left untouched so a later request for the same page count reuses this span directly.
-pub unit FreeSpanEntry(pointer region, pointer entry) {
+//
+// Before clearing `size_class`, invalidates `HEAP_CURRENT_SPAN_BY_CLASS[old class]` if it still
+// points at `entry`. Without this, `GcAllocSmall` could keep handing out slots from this span
+// through the stale cache after `CarveSpan` has already reused the same free-list entry (it is
+// pushed onto the region's free list right below) for an unrelated size class — silently aliasing
+// two different classes' objects onto the same memory. Large spans (`size_class ==
+// SIZE_CLASS_LARGE`) never populate the per-class cache, so this is a no-op for them.
+pub unit FreeSpanEntry(pointer heap, pointer region, pointer entry) {
+    word oldSizeClass = raw_word_load(pointer_add(entry, SPAN_SIZE_CLASS));
+    if oldSizeClass >= 1 && oldSizeClass <= SIZE_CLASS_COUNT {
+        pointer cacheSlot = pointer_add(heap, HEAP_CURRENT_SPAN_BY_CLASS + oldSizeClass * 8);
+        if NativePointer(raw_word_load(cacheSlot)) == entry {
+            raw_word_store(cacheSlot, 0);
+        }
+    }
     raw_word_store(pointer_add(entry, SPAN_SIZE_CLASS), 0);
     raw_word_store(pointer_add(entry, SPAN_FREE_SLOT), 0);
     raw_word_store(pointer_add(entry, SPAN_QUEUED), 0);

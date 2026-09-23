@@ -1,8 +1,10 @@
 use Runtime.Bootstrap.Lifecycle;
 use Runtime.Bootstrap.Native;
 use Testing.Assert;
+use HostRuntimeSupport;
 
 test lifecycle_uses_manifest_state_generation_and_48_byte_tls {
+    pointer hostRuntime = SuspendHostRuntime();
     pointer runtime = Native.SystemAllocate(64, 8);
     memory_set(runtime, 0, 64);
 
@@ -20,23 +22,38 @@ test lifecycle_uses_manifest_state_generation_and_48_byte_tls {
     Assert.Equal(raw_word_load(pointer_add(thread, 32)), 0, "composition scope is initialized");
     Assert.Equal(raw_word_load(pointer_add(thread, 40)), 0, "composition depth is initialized");
 
+    // Assertion messages are managed strings and need an attached runtime, which this shutdown
+    // removes. Record the observations and assert them after the host runtime is restored.
     Lifecycle.ProcessShutdown(runtime);
-    Assert.Equal(raw_word_load(pointer_add(runtime, 16)), 0, "shutdown clears heap publication");
-    Assert.Equal(raw_word_load(pointer_add(runtime, 24)), 0, "shutdown clears callback and composition publication");
-    Assert.Equal(raw_word_load(pointer_add(runtime, 32)), 0, "shutdown clears scheduler publication");
-    Assert.Equal(raw_word_load(pointer_add(runtime, 56)) & 0xFFFFFFFF, 4, "shutdown reaches ShutDown");
-    Assert.True(Lifecycle.ProcessInit(runtime) == runtime, "shut down runtime can initialize again");
-    Assert.Equal(raw_word_load(pointer_add(runtime, 56)) >> 32, 2, "reinitialization advances generation");
-    Lifecycle.ProcessShutdown(runtime);
+    word heapAfterShutdown = raw_word_load(pointer_add(runtime, 16));
+    word callbacksAfterShutdown = raw_word_load(pointer_add(runtime, 24));
+    word schedulerAfterShutdown = raw_word_load(pointer_add(runtime, 32));
+    word stateAfterShutdown = raw_word_load(pointer_add(runtime, 56)) & 0xFFFFFFFF;
+    bool reinitialized = Lifecycle.ProcessInit(runtime) == runtime;
+    word generationAfterReinitialization = raw_word_load(pointer_add(runtime, 56)) >> 32;
+    if reinitialized { Lifecycle.ProcessShutdown(runtime); }
     Native.SystemFree(runtime, 64);
+    ResumeHostRuntime(hostRuntime);
+
+    Assert.Equal(heapAfterShutdown, 0, "shutdown clears heap publication");
+    Assert.Equal(callbacksAfterShutdown, 0, "shutdown clears callback and composition publication");
+    Assert.Equal(schedulerAfterShutdown, 0, "shutdown clears scheduler publication");
+    Assert.Equal(stateAfterShutdown, 4, "shutdown reaches ShutDown");
+    Assert.True(reinitialized, "shut down runtime can initialize again");
+    Assert.Equal(generationAfterReinitialization, 2, "reinitialization advances generation");
 }
 
 test failed_thread_attach_does_not_publish_partial_state {
+    pointer hostRuntime = SuspendHostRuntime();
     pointer runtime = Native.SystemAllocate(64, 8);
     memory_set(runtime, 0, 64);
 
-    Assert.True(Lifecycle.ThreadAttach(runtime) == Native.NativePointer(0), "uninitialized runtime rejects thread attach");
-    Assert.True(Native.CurrentThreadState() == Native.NativePointer(0), "failed attach leaves TLS unchanged");
+    // No runtime is attached here, so assertion messages cannot be materialized yet.
+    bool attachRejected = Lifecycle.ThreadAttach(runtime) == Native.NativePointer(0);
+    bool threadStateUnchanged = Native.CurrentThreadState() == Native.NativePointer(0);
 
     Native.SystemFree(runtime, 64);
+    ResumeHostRuntime(hostRuntime);
+    Assert.True(attachRejected, "uninitialized runtime rejects thread attach");
+    Assert.True(threadStateUnchanged, "failed attach leaves TLS unchanged");
 }

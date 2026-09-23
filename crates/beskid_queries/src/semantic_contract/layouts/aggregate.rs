@@ -294,7 +294,11 @@ pub fn empty_array_literal_element_specialization(
                 item.of::<beskid_analysis::syntax::MethodDefinition>().and_then(|method| method.return_type.as_ref())
             })?;
         let beskid_analysis::syntax::Type::Array(element) = &return_type.node else { return None };
-        if let Some(parameter) = generic_parameter_reference_name(&element.node) {
+        // Only a type parameter declared by the enclosing item is substituted; a single-segment
+        // nominal element such as `Chunk[]` keeps its concrete declaration ABI.
+        if type_syntax_is_enclosing_generic_parameter_reference(db, key, &element.node)
+            && let Some(parameter) = generic_parameter_reference_name(&element.node)
+        {
             return Some(
                 enclosing
                     .iter()
@@ -404,7 +408,11 @@ pub(in crate::semantic_contract) fn array_index_element_template_tracked(
             let beskid_analysis::syntax::Type::Array(element) = array_type else {
                 return Err(SemanticError::unavailable("array_index_element_abi_type"));
             };
-            if let Some(parameter) = generic_parameter_reference_name(&element.node) {
+            // A single-segment element type is a template parameter only when the enclosing item
+            // declares it; `Chunk[]` names a concrete nominal element, not an erased `T[]`.
+            if type_syntax_is_enclosing_generic_parameter_reference(db, AstNodeKey { node: index_node, ..key }, &element.node)
+                && let Some(parameter) = generic_parameter_reference_name(&element.node)
+            {
                 return Ok(ArrayIndexElementTemplate::EnclosingParameter(Arc::from(parameter)));
             }
             abi_type_from_syntax(db, AstNodeKey { node: declaration, ..key }, &element.node)

@@ -14,8 +14,11 @@ impl BeskidDatabase {
         entry_path: &Path,
         lockfile_digest: String,
     ) -> ProjectSession {
+        // Key by canonical paths: one project spelled two ways (for example
+        // `crate/../fixtures/app` and `fixtures/app`) is one session, so its
+        // source units keep a single owner across LSP, diagnostics and codegen.
         let key = (
-            plan.project_root.clone(),
+            plan.project_root.canonicalize().unwrap_or_else(|_| plan.project_root.clone()),
             entry_path.canonicalize().unwrap_or_else(|_| entry_path.to_path_buf()),
             plan.target.name.clone(),
         );

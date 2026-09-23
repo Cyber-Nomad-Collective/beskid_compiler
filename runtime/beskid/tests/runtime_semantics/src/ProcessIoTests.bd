@@ -3,8 +3,10 @@ use Runtime.Bootstrap.Native;
 use Runtime.Host.Process;
 use Runtime.Io.Syscalls;
 use Testing.Assert;
+use HostRuntimeSupport;
 
 test process_and_byte_io_surface_is_target_consistent {
+    pointer hostRuntime = SuspendHostRuntime();
     pointer runtime = SystemAllocate(64, 8);
     memory_set(runtime, 0, 64);
     Assert.True(ProcessInit(runtime) == runtime, "runtime initialized");
@@ -15,4 +17,5 @@ test process_and_byte_io_surface_is_target_consistent {
     Assert.Equal(SyscallWriteBytes(1, NativePointer(0), 0), 0, "zero-length write preserves signed adapter result");
     ProcessShutdown(runtime);
     SystemFree(runtime, 64);
+    ResumeHostRuntime(hostRuntime);
 }

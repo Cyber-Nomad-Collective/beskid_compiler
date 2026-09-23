@@ -750,3 +750,79 @@ unit Main() {
 
     assert!(errors.is_empty(), "qualified Current calls must retain their module signature: {errors:#?}");
 }
+
+#[test]
+fn generic_call_with_mismatched_declared_primitive_arguments_reports_a_parameter_conflict() {
+    let entry_path = PathBuf::from("/tmp/surface-generic-conflict/Main.bd");
+    let mut entry = parse_program(
+        r#"
+i64 AsI64() { return 1; }
+word AsWord() { return 1; }
+unit Equal<T>(T actual, T expected) { return; }
+unit Main() {
+    Equal(AsI64(), AsWord());
+}
+"#,
+    )
+    .expect("parse entry with a generic-T call site whose arguments declare different primitives");
+
+    let mut resolver = Resolver::new();
+    resolver.set_current_source_path(Some(entry_path.clone()));
+    let resolution = resolver.resolve_program(&entry).expect("resolve entry");
+    let (_, errors) = TypeChecker::check_entry(
+        &mut entry,
+        &resolution,
+        &[],
+        None,
+        Some(entry_path),
+        false,
+        None,
+        None,
+        None,
+        None,
+    );
+
+    let conflict = errors
+        .iter()
+        .find(|error| matches!(error, crate::types::result::TypeError::GenericParameterConflict { .. }))
+        .unwrap_or_else(|| panic!("expected a GenericParameterConflict diagnostic, got: {errors:#?}"));
+    let crate::types::result::TypeError::GenericParameterConflict { parameter, .. } = conflict else { unreachable!() };
+    assert_eq!(parameter, "T", "the conflict must name the generic parameter it was inferring");
+}
+
+#[test]
+fn generic_call_with_matching_declared_primitive_arguments_does_not_report_a_parameter_conflict() {
+    let entry_path = PathBuf::from("/tmp/surface-generic-conflict-ok/Main.bd");
+    let mut entry = parse_program(
+        r#"
+i64 First() { return 1; }
+i64 Second() { return 2; }
+unit Equal<T>(T actual, T expected) { return; }
+unit Main() {
+    Equal(First(), Second());
+}
+"#,
+    )
+    .expect("parse entry with a generic-T call site whose arguments share one declared primitive");
+
+    let mut resolver = Resolver::new();
+    resolver.set_current_source_path(Some(entry_path.clone()));
+    let resolution = resolver.resolve_program(&entry).expect("resolve entry");
+    let (_, errors) = TypeChecker::check_entry(
+        &mut entry,
+        &resolution,
+        &[],
+        None,
+        Some(entry_path),
+        false,
+        None,
+        None,
+        None,
+        None,
+    );
+
+    assert!(
+        !errors.iter().any(|error| matches!(error, crate::types::result::TypeError::GenericParameterConflict { .. })),
+        "same-primitive call-result arguments must not report a conflict: {errors:#?}"
+    );
+}

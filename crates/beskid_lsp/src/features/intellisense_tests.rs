@@ -29,6 +29,7 @@ mod tests {
     }
 
     fn with_cwd_at_workspace_root<R>(root: &PathBuf, f: impl FnOnce() -> R) -> R {
+        let _fixture = crate::SHARED_FIXTURE_LOCK.blocking_lock();
         let previous = std::env::current_dir().expect("cwd");
         std::env::set_current_dir(root).expect("chdir");
         let out = f();
@@ -147,6 +148,7 @@ mod tests {
 
     #[tokio::test]
     async fn definition_on_printline_targets_dependency_file() {
+        let _fixture = crate::SHARED_FIXTURE_LOCK.lock().await;
         let root = compiler_workspace_root();
         let previous = std::env::current_dir().expect("cwd");
         std::env::set_current_dir(&root).expect("chdir");
@@ -294,6 +296,7 @@ mod tests {
 
     #[tokio::test]
     async fn lifecycle_build_document_corelib_mvp_has_resolution() {
+        let _fixture = crate::SHARED_FIXTURE_LOCK.lock().await;
         let root = compiler_workspace_root();
         let previous = std::env::current_dir().expect("cwd");
         std::env::set_current_dir(&root).expect("chdir");
@@ -315,11 +318,13 @@ mod tests {
 
     #[tokio::test]
     async fn lifecycle_build_document_parses_corelib_mvp() {
+        let _fixture = crate::SHARED_FIXTURE_LOCK.lock().await;
         let root = compiler_workspace_root();
-        let (uri, fixture) = with_cwd_at_workspace_root(&root, || {
-            let fixture = corelib_mvp_paths();
-            (fixture.uri.clone(), fixture)
-        });
+        let previous = std::env::current_dir().expect("cwd");
+        std::env::set_current_dir(&root).expect("chdir");
+        let fixture = corelib_mvp_paths();
+        let uri = fixture.uri.clone();
+        std::env::set_current_dir(previous).expect("restore cwd");
         let state = tokio::sync::RwLock::new(State::default());
         state.read().await.mark_initial_scan_complete();
         let doc = build_document(&state, &uri, 1, fixture.source.clone()).await;
@@ -352,6 +357,7 @@ mod tests {
 
     #[tokio::test]
     async fn references_on_printline_includes_dependency() {
+        let _fixture = crate::SHARED_FIXTURE_LOCK.lock().await;
         let root = compiler_workspace_root();
         let previous = std::env::current_dir().expect("cwd");
         std::env::set_current_dir(&root).expect("chdir");
@@ -378,6 +384,7 @@ mod tests {
 
     #[tokio::test]
     async fn hover_on_printline_range_in_dependency_file() {
+        let _fixture = crate::SHARED_FIXTURE_LOCK.lock().await;
         let root = compiler_workspace_root();
         let previous = std::env::current_dir().expect("cwd");
         std::env::set_current_dir(&root).expect("chdir");

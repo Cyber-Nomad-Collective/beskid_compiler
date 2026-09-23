@@ -641,11 +641,17 @@ macro_rules! generated_call_methods {
                     }
                 };
             let entry_ptr = self.builder.ins().func_addr(pointer, trampoline);
-            let (environment, environment_root) = if let Some(closure) = &entry.closure_environment {
-                let (value, root) = self.emit_inline_closure_environment(closure)?;
-                (value, Some(root))
-            } else {
-                (self.builder.ins().iconst(pointer, 0), None)
+            let (environment, environment_root) = match (&entry.closure_environment, &entry.argument_environment) {
+                (Some(closure), None) => {
+                    let (value, root) = self.emit_inline_closure_environment(closure)?;
+                    (value, Some(root))
+                }
+                (None, Some(arguments)) => {
+                    let (value, root) = self.emit_spawn_argument_environment(arguments)?;
+                    (value, Some(root))
+                }
+                (None, None) => (self.builder.ins().iconst(pointer, 0), None),
+                (Some(_), Some(_)) => return None,
             };
             let mut signature = Signature::new(self.builder.func.signature.call_conv);
             signature.params.push(AbiParam::new(pointer));

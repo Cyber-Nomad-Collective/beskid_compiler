@@ -154,7 +154,16 @@ pub word GcExternalRootCount() {
 [Export(Abi:"C", Symbol:"gc_root_handle")]
 pub word GcRootHandle(pointer valuePtr) {
     pointer heap = Heap();
-    if heap == NativePointer(0) || valuePtr == NativePointer(0) || IsAllocatedObject(heap, valuePtr) == false { return 0; }
+    if heap == NativePointer(0) || valuePtr == NativePointer(0) { return 0; }
+    // `valuePtr` is the ABI-visible managed reference, which for arrays is the `{ data, len, cap }`
+    // triple 24 bytes into the object, not the object header `IsAllocatedObject` addresses directly.
+    // `ManagedObjectForReference` is the one shared resolver `GcMarkGray` also goes through for the
+    // same reason (see Marking.bd) — every consumer of an ABI-visible reference must normalize
+    // through it before doing span/header work; calling `IsAllocatedObject` on the raw value here
+    // rejected every array root outright.
+    if ManagedObjectForReference(heap, valuePtr) == NativePointer(0) {
+        return 0;
+    }
     // Reuse a cleared slot anywhere in the chain before growing, exactly as the fixed-table
     // version did, so churn (root, unroot, root, ...) does not grow the chain unboundedly.
     mut pointer block = NativePointer(raw_word_load(pointer_add(heap, HEAP_HANDLE_STACK_HEAD)));
@@ -259,7 +268,10 @@ pub pointer GcResolveHandle(word handle) {
             pointer slot = pointer_add(block, HANDLE_BLOCK_SLOTS + remaining * GC_HANDLE_SLOT_SIZE);
             if raw_word_load(pointer_add(slot, 8)) != generation { return NativePointer(0); }
             pointer value = NativePointer(raw_word_load(slot));
-            if IsAllocatedObject(heap, value) == false { return NativePointer(0); }
+            // Same ABI-reference normalization as `GcRootHandle` above: `value` may be an array's
+            // `{ data, len, cap }` triple, not its object header, so validate through the shared
+            // resolver rather than `IsAllocatedObject` directly.
+            if ManagedObjectForReference(heap, value) == NativePointer(0) { return NativePointer(0); }
             return value;
         }
         remaining = remaining - HANDLE_BLOCK_CAPACITY;

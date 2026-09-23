@@ -35,7 +35,12 @@ impl SemanticPipelineRule {
                     }
                 }
                 crate::syntax::Node::TestDefinition(definition) => {
-                    let mut walker = AstWalker::new().with_visitor(Box::new(MutabilityVisitor::new(ctx)));
+                    // A test body is a statement list, not a `Block`, so no block scope opens for
+                    // its top-level `let`s. Open the body scope explicitly; without it those
+                    // bindings are never recorded and reassigning one escapes E1214.
+                    let mut visitor = MutabilityVisitor::new(ctx);
+                    visitor.scopes.push(HashMap::new());
+                    let mut walker = AstWalker::new().with_visitor(Box::new(visitor));
                     for statement in &definition.node.statements {
                         walker.walk(NodeRef::from(&statement.node));
                     }
@@ -135,5 +140,94 @@ impl Visit for MutabilityVisitor<'_> {
         }
 
         self.kind_stack.pop();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::analysis::AnalysisOptions;
+    use crate::services::parse_program;
+
+    fn immutable_assignment_names(src: &str) -> Vec<String> {
+        let program = parse_program(src).expect("parse");
+        let mut ctx = RuleContext::new("test.bd", src, AnalysisOptions::default());
+        SemanticPipelineRule.check_immutable_assignments(&mut ctx, &program);
+        ctx.diagnostics
+            .into_iter()
+            .filter(|diagnostic| diagnostic.code.as_deref() == Some("E1214"))
+            .map(|diagnostic| diagnostic.message)
+            .collect()
+    }
+
+    fn assert_reports(src: &str, name: &str) {
+        let messages = immutable_assignment_names(src);
+        assert_eq!(messages.len(), 1, "expected one E1214 for `{name}`: {messages:?}\n{src}");
+        assert!(messages[0].contains(name), "E1214 must name `{name}`: {messages:?}");
+    }
+
+    const PAIR: &str = "pub type Pair { i64 a }\n";
+
+    #[test]
+    fn function_top_level_reassignment_reports_e1214_for_each_type() {
+        assert_reports("pub unit F(pointer p) { pointer q = p; q = p; return; }", "q");
+        assert_reports("pub unit F() { i64 n = 0; n = 1; return; }", "n");
+        assert_reports(&format!("{PAIR}pub unit F() {{ Pair v = Pair {{ a: 1 }}; v = Pair {{ a: 2 }}; return; }}"), "v");
+    }
+
+    #[test]
+    fn function_while_reassignment_reports_e1214_for_each_type() {
+        assert_reports("pub unit F(pointer p) { pointer q = p; while true { q = p; } return; }", "q");
+        assert_reports("pub unit F() { i64 n = 0; while n < 3 { n = n + 1; } return; }", "n");
+        assert_reports(
+            &format!("{PAIR}pub unit F() {{ Pair v = Pair {{ a: 1 }}; while true {{ v = Pair {{ a: 2 }}; }} return; }}"),
+            "v",
+        );
+    }
+
+    #[test]
+    fn function_if_reassignment_reports_e1214_for_each_type() {
+        assert_reports("pub unit F(pointer p, bool c) { pointer q = p; if c { q = p; } return; }", "q");
+        assert_reports("pub unit F(bool c) { i64 n = 0; if c { n = 1; } return; }", "n");
+        assert_reports(
+            &format!("{PAIR}pub unit F(bool c) {{ Pair v = Pair {{ a: 1 }}; if c {{ v = Pair {{ a: 2 }}; }} return; }}"),
+            "v",
+        );
+    }
+
+    #[test]
+    fn function_for_reassignment_reports_e1214_for_each_type() {
+        assert_reports("pub unit F(pointer p) { pointer q = p; for i in range(0, 4) { q = p; } return; }", "q");
+        assert_reports("pub unit F() { i64 n = 0; for i in range(0, 4) { n = 1; } return; }", "n");
+        assert_reports(
+            &format!(
+                "{PAIR}pub unit F() {{ Pair v = Pair {{ a: 1 }}; for i in range(0, 4) {{ v = Pair {{ a: 2 }}; }} return; }}"
+            ),
+            "v",
+        );
+    }
+
+    #[test]
+    fn test_body_reassignment_reports_e1214_at_top_level_and_in_nested_control_flow() {
+        assert_reports("test t { i64 n = 0; n = 1; }", "n");
+        assert_reports("test t { pointer q = NativePointer(0); while true { q = NativePointer(0); } }", "q");
+        assert_reports("test t { i64 n = 0; if true { n = 1; } }", "n");
+        assert_reports("test t { i64 n = 0; for i in range(0, 4) { n = 1; } }", "n");
+        assert_reports(&format!("{PAIR}test t {{ Pair v = Pair {{ a: 1 }}; while true {{ v = Pair {{ a: 2 }}; }} }}"), "v");
+    }
+
+    #[test]
+    fn mutable_locals_and_parameters_may_be_reassigned() {
+        let src = format!(
+            "{PAIR}pub unit F(mut i64 m, pointer p) {{ mut pointer q = p; mut Pair v = Pair {{ a: 1 }}; \
+             while true {{ q = p; v = Pair {{ a: 2 }}; m = 1; }} return; }}\n\
+             test t {{ mut i64 n = 0; while n < 3 {{ n = n + 1; }} }}"
+        );
+        assert!(immutable_assignment_names(&src).is_empty());
+    }
+
+    #[test]
+    fn immutable_parameter_reassignment_reports_e1214() {
+        assert_reports("pub unit F(i64 n) { while true { n = 1; } return; }", "n");
     }
 }
