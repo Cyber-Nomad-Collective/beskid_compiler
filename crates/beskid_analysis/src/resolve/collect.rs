@@ -277,6 +277,25 @@ impl Resolver {
                 }
                 return;
             }
+            Node::ImplBlock(def) => {
+                for method in &def.node.methods {
+                    let receiver = type_name_for_method_receiver(&method.node.receiver_type);
+                    let method_name = format!("{}::{}", receiver, method.node.name.node.name);
+                    self.push_item(
+                        ItemId(self.items.len()),
+                        None,
+                        method_name,
+                        ItemKind::Method,
+                        method.node.visibility.node,
+                        method.span,
+                        Some(receiver),
+                        self.current_module_path(),
+                    );
+                    let method_id = ItemId(self.items.len() - 1);
+                    self.collect_member_items_for_method(method, method_id);
+                }
+                return;
+            }
             Node::TestDefinition(def) => {
                 (def.node.name.node.name.clone(), ItemKind::Test, def.node.visibility.node, None)
             }

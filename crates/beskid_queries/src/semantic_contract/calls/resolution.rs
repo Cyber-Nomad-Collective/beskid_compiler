@@ -387,7 +387,7 @@ pub(in crate::semantic_contract) fn unique_nominal_method_declaration(
     let declaration_syntax = db.syntax_unit(declaration.unit)?;
     let declaration_program = declaration_syntax.expanded_program(db);
     let declaration_index = declaration_syntax.syntax_index(db);
-    declaration_index
+    let type_definition = declaration_index
         .node_at(declaration_program, declaration.node)?
         .of::<beskid_analysis::syntax::TypeDefinition>()?;
     let methods = declaration_index
@@ -401,6 +401,54 @@ pub(in crate::semantic_contract) fn unique_nominal_method_declaration(
                 .is_some_and(|method| method.name.node.name == method_name)
         })
         .map(|node| AstNodeKey { unit: declaration.unit, generation: declaration.generation, node })
+        .collect::<Vec<_>>();
+    if let Some(unique) = (methods.len() == 1).then(|| methods[0]) {
+        return Some(unique);
+    }
+    if !methods.is_empty() {
+        // Ambiguous among the type's own inline methods: fail closed, do not also widen the
+        // search into `impl` blocks.
+        return None;
+    }
+    // `impl X : Contract { the conforming method here }` -- same conformance fact as
+    // `type X : Contract { }`, so the method may live in either place (Gap 2 #(task 2.5)).
+    unique_impl_block_method_declaration(db, declaration.unit, declaration.generation, &type_definition.name.node.name, method_name)
+}
+
+/// `impl` blocks in `unit` whose receiver names `type_name`, searched for a uniquely-named
+/// method. Same-unit only, matching `impl T : Contract`'s in-module form.
+fn unique_impl_block_method_declaration(
+    db: &dyn Db,
+    unit: SourceUnitId,
+    generation: SyntaxGenerationId,
+    type_name: &str,
+    method_name: &str,
+) -> Option<AstNodeKey> {
+    let syntax = db.syntax_unit(unit)?;
+    let program = syntax.expanded_program(db);
+    let index = syntax.syntax_index(db);
+    let methods = index
+        .ids_of_kind(beskid_analysis::syntax_query::NodeKind::ImplBlock)
+        .filter(|node| {
+            index
+                .node_at(program, *node)
+                .and_then(|node| node.of::<beskid_analysis::syntax::ImplBlock>())
+                .and_then(|impl_block| match &impl_block.receiver_type.node {
+                    beskid_analysis::syntax::Type::Complex(path) => path.node.segments.last(),
+                    _ => None,
+                })
+                .is_some_and(|segment| segment.node.name.node.name == type_name)
+        })
+        .filter_map(|impl_node| index.children(impl_node))
+        .flatten()
+        .copied()
+        .filter(|candidate| {
+            index
+                .node_at(program, *candidate)
+                .and_then(|node| node.of::<beskid_analysis::syntax::MethodDefinition>())
+                .is_some_and(|method| method.name.node.name == method_name)
+        })
+        .map(|node| AstNodeKey { unit, generation, node })
         .collect::<Vec<_>>();
     (methods.len() == 1).then(|| methods[0])
 }

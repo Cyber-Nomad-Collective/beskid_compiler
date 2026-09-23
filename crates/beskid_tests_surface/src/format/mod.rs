@@ -269,6 +269,7 @@ fn top_level_kinds(items: &[beskid_analysis::syntax::Spanned<Node>]) -> Vec<&'st
             Node::Function(_) => "function",
             Node::ConstantDefinition(_) => "constant",
             Node::Method(_) => "method",
+            Node::ImplBlock(_) => "impl",
             Node::TypeDefinition(_) => "type",
             Node::ExtendTypeDefinition(_) => "extend_type",
             Node::EnumDefinition(_) => "enum",
@@ -284,8 +285,9 @@ fn top_level_kinds(items: &[beskid_analysis::syntax::Spanned<Node>]) -> Vec<&'st
         .collect()
 }
 
-/// `impl` blocks parse as `Node::Method` items; the formatter may emit them as `function` items.
-/// Treat both as the same bucket for parse-preservation checks.
+/// `impl` blocks parse as first-class `Node::ImplBlock` items, but the formatter still emits a
+/// bare method (`Node::Method`) as a top-level `function` item. Treat both as the same bucket
+/// for parse-preservation checks.
 fn top_level_kinds_relaxed(items: &[beskid_analysis::syntax::Spanned<Node>]) -> Vec<&'static str> {
     top_level_kinds(items).into_iter().map(|k| if k == "method" { "function" } else { k }).collect()
 }

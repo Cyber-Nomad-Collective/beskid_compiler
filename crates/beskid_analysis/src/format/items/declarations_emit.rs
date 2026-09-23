@@ -179,6 +179,16 @@ impl Emit for Spanned<ContractMethodSignature> {
 impl Emit for ContractEmbedding {
     fn emit<W: Write>(&self, w: &mut W, cx: &mut EmitCtx) -> Result<(), EmitError> {
         self.name.emit(w, cx)?;
+        if !self.type_args.is_empty() {
+            w.write_char('<')?;
+            for (i, arg) in self.type_args.iter().enumerate() {
+                if i > 0 {
+                    cx.token(w, ", ")?;
+                }
+                arg.emit(w, cx)?;
+            }
+            w.write_char('>')?;
+        }
         w.write_char(';')?;
         Ok(())
     }
@@ -216,6 +226,7 @@ impl Emit for ContractDefinition {
         cx.token(w, "contract")?;
         cx.space(w)?;
         self.name.emit(w, cx)?;
+        emit_generics_list(&self.generics, w, cx)?;
         if self.items.is_empty() {
             cx.space(w)?;
             w.write_str("{ }")?;
@@ -248,6 +259,17 @@ impl Emit for ImplBlock {
         cx.token(w, "impl")?;
         cx.space(w)?;
         self.receiver_type.emit(w, cx)?;
+        if !self.conformances.is_empty() {
+            cx.space(w)?;
+            w.write_char(':')?;
+            cx.space(w)?;
+            for (i, c) in self.conformances.iter().enumerate() {
+                if i > 0 {
+                    cx.token(w, ", ")?;
+                }
+                c.emit(w, cx)?;
+            }
+        }
         if self.methods.is_empty() {
             cx.space(w)?;
             w.write_str("{ }")?;

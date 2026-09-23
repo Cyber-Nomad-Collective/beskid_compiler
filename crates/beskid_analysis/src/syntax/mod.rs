@@ -25,7 +25,7 @@ pub use identity::{AstNodeId, AstNodeKey, SyntaxGenerationId};
 pub use items::{
     Attribute, AttributeArgument, AttributeDeclaration, AttributeParameter, AttributeTarget, ConstantDefinition,
     ContractDefinition, ContractEmbedding, ContractMethodSignature, ContractNode, EnumDefinition, EnumVariant,
-    ExtendTypeDefinition, FunctionDefinition, HostBodyItem, HostDefinition, InjectQualifier, InlineModule,
+    ExtendTypeDefinition, FunctionDefinition, HostBodyItem, HostDefinition, ImplBlock, InjectQualifier, InlineModule,
     LaunchStatement, MacroDefinition, MacroFragmentKind, MacroParameter, MethodDefinition, ModuleDeclaration, Node,
     Program, RegistrationLifetime, RegistryBlock, RegistryEntry, ScopeDefinition, ScopeHook, ScopeHookKind,
     TestDefinition, TestMetaSection, TestMetadataEntry, TestSkipEntry, TestSkipSection, TypeDefinition, UseDeclaration,

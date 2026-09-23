@@ -260,6 +260,7 @@ impl SemanticPipelineRule {
                 Node::Function(definition) => &definition.node.generics,
                 Node::TypeDefinition(definition) => &definition.node.generics,
                 Node::EnumDefinition(definition) => &definition.node.generics,
+                Node::ContractDefinition(definition) => &definition.node.generics,
                 _ => &[],
             };
             let shadowed =

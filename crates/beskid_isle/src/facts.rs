@@ -113,6 +113,7 @@ pub const fn classify_syntax_node_kind(kind: beskid_queries::IndexedNodeKind) ->
         | Syntax::ConstantDefinition
         | Syntax::HostBodyItem
         | Syntax::ExtendTypeDefinition
+        | Syntax::ImplBlock
         | Syntax::TypeDefinition
         | Syntax::EnumDefinition
         | Syntax::EnumVariant

@@ -199,7 +199,8 @@ BeskidType = { ArrowFunctionType | FunctionType | ArrayType | TypeAtom }
 FunctionDefinition = { AttributeList? ~ Visibility? ~ BeskidType ~ Identifier ~ GenericParameters? ~ "(" ~ ParameterList? ~ ")" ~ Block }
 ConstantDefinition = { "const" ~ Identifier ~ "=" ~ IntegerLiteral ~ ";" }
 ReceiverType = { PrimitiveType | Path }
-ImplBlock = { "impl" ~ ReceiverType ~ "{" ~ ImplMethodWithDocs* ~ "}" }
+ImplConformanceList = { ":" ~ PathList }
+ImplBlock = { "impl" ~ ReceiverType ~ ImplConformanceList? ~ "{" ~ ImplMethodWithDocs* ~ "}" }
 ExtendTypeDefinition = { "extend" ~ "type" ~ ReceiverType ~ "{" ~ ImplMethodWithDocs* ~ "}" }
 
 MacroFragmentKind = { "block" | "expression" | "statement" | "type" | "identifier" | "literal" | "pattern" | "path" | "item" | "node" }
@@ -234,11 +235,11 @@ EnumVariantList = { EnumVariantWithDocs ~ ("," ~ DocGap* ~ EnumVariantWithDocs)*
 EnumVariantWithDocs = { (DocRun ~ EnumVariant) | EnumVariant }
 EnumVariant = { Identifier ~ ("(" ~ FieldList? ~ ")")? }
 
-ContractDefinition = { AttributeList? ~ Visibility? ~ "contract" ~ Identifier ~ "{" ~ ContractItemWithDocs* ~ "}" }
+ContractDefinition = { AttributeList? ~ Visibility? ~ "contract" ~ Identifier ~ GenericParameters? ~ "{" ~ ContractItemWithDocs* ~ "}" }
 ContractItemWithDocs = { ((DocRun ~ ContractItem) | ContractItem) ~ DocGap* }
 ContractItem = _{ ContractMethodSignature | ContractEmbedding }
 ContractMethodSignature = { AttributeList? ~ BeskidType ~ Identifier ~ "(" ~ ParameterList? ~ ")" ~ ";" }
-ContractEmbedding = { Identifier ~ ";"? }
+ContractEmbedding = { Identifier ~ GenericArguments? ~ ";"? }
 
 RegistrationLifetime = { "single" | "transient" }
 RegistrationTarget = { "for" ~ Path }

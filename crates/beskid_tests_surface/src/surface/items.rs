@@ -101,7 +101,11 @@ fn parses_method_definition_ast() {
     let node = &program.node.items[0];
 
     match &node.node {
-        Node::Method(method) => {
+        Node::ImplBlock(impl_block) => {
+            assert!(impl_block.node.conformances.is_empty());
+            assert_type_complex_path(&impl_block.node.receiver_type, &["Point"]);
+            assert_eq!(impl_block.node.methods.len(), 1);
+            let method = &impl_block.node.methods[0];
             assert_eq!(method.node.visibility.node, Visibility::Private);
             assert_eq!(method.node.name.node.name, "len");
             assert!(method.node.parameters.is_empty());
@@ -109,7 +113,7 @@ fn parses_method_definition_ast() {
             let return_type = method.node.return_type.as_ref().expect("return type");
             assert_type_primitive(return_type, beskid_analysis::syntax::PrimitiveType::I32);
         }
-        _ => panic!("expected method definition"),
+        _ => panic!("expected impl block"),
     }
 }
 
@@ -119,11 +123,14 @@ fn parses_method_with_primitive_receiver_ast() {
     assert_eq!(program.node.items.len(), 1);
     let node = &program.node.items[0];
     match &node.node {
-        Node::Method(method) => {
+        Node::ImplBlock(impl_block) => {
+            assert_type_primitive(&impl_block.node.receiver_type, beskid_analysis::syntax::PrimitiveType::I32);
+            assert_eq!(impl_block.node.methods.len(), 1);
+            let method = &impl_block.node.methods[0];
             assert_type_primitive(&method.node.receiver_type, beskid_analysis::syntax::PrimitiveType::I32);
             assert_eq!(method.node.name.node.name, "zero");
         }
-        _ => panic!("expected method definition"),
+        _ => panic!("expected impl block"),
     }
 }
 

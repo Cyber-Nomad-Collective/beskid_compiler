@@ -3,6 +3,7 @@ use pest::iterators::Pair;
 use crate::parser::Rule;
 use crate::parsing::error::ParseError;
 use crate::parsing::parsable::Parsable;
+use crate::syntax::items::impl_block::ImplBlock;
 use crate::syntax::items::InlineModule;
 use crate::syntax::{
     AttributeDeclaration, ConstantDefinition, ContractDefinition, EnumDefinition, ExtendTypeDefinition,
@@ -23,6 +24,8 @@ pub enum Node {
     ConstantDefinition(Spanned<ConstantDefinition>),
     #[ast(child)]
     Method(Spanned<MethodDefinition>),
+    #[ast(child)]
+    ImplBlock(Spanned<ImplBlock>),
     #[ast(child)]
     ExtendTypeDefinition(Spanned<ExtendTypeDefinition>),
     #[ast(child)]
@@ -78,6 +81,10 @@ fn parse_node(pair: Pair<Rule>) -> Result<Spanned<Node>, ParseError> {
         Rule::ExtendTypeDefinition => {
             let node = ExtendTypeDefinition::parse(pair)?;
             Ok(Spanned::new(Node::ExtendTypeDefinition(node), span))
+        }
+        Rule::ImplBlock => {
+            let node = ImplBlock::parse(pair)?;
+            Ok(Spanned::new(Node::ImplBlock(node), span))
         }
         Rule::MacroDefinition => {
             let node = MacroDefinition::parse(pair)?;
@@ -212,6 +219,67 @@ mod tests {
     }
 
     #[test]
+    fn impl_block_with_conformance_parses_as_a_first_class_node_with_the_conformance_list() {
+        use crate::syntax::items::Node;
+
+        let src = r#"
+            contract Loggable {
+                unit log();
+            }
+            type Widget {
+                i32 v,
+            }
+            impl Widget : Loggable {
+                pub unit log() {
+                    return;
+                }
+            }
+        "#;
+        let pair =
+            BeskidParser::parse(Rule::Program, src).expect("impl block with conformance should parse").next()
+                .expect("program pair");
+        let program = Program::parse(pair).expect("impl block with conformance should build AST");
+
+        assert_eq!(program.node.items.len(), 3, "impl block stays a single top-level syntax item, not flattened");
+
+        let impl_block = match &program.node.items[2].node {
+            Node::ImplBlock(impl_block) => &impl_block.node,
+            other => panic!("expected Node::ImplBlock, got {other:?}"),
+        };
+        assert_eq!(
+            impl_block.conformances.len(),
+            1,
+            "the `: Loggable` conformance clause must survive parsing, not be dropped"
+        );
+        assert_eq!(impl_block.conformances[0].node.segments.last().unwrap().node.name.node.name, "Loggable");
+        assert_eq!(impl_block.methods.len(), 1, "impl block methods stay attached to the block, not flattened out");
+    }
+
+    #[test]
+    fn plain_impl_block_without_conformance_still_parses_as_a_node_with_empty_conformances() {
+        use crate::syntax::items::Node;
+
+        let src = r#"
+            type Number { i32 v, }
+            impl Number {
+                pub i32 dbl(i32 x) { return x * 2; }
+            }
+        "#;
+        let pair = BeskidParser::parse(Rule::Program, src)
+            .expect("plain impl block should parse")
+            .next()
+            .expect("program pair");
+        let program = Program::parse(pair).expect("plain impl block should build AST");
+
+        let impl_block = match &program.node.items[1].node {
+            Node::ImplBlock(impl_block) => &impl_block.node,
+            other => panic!("expected Node::ImplBlock, got {other:?}"),
+        };
+        assert!(impl_block.conformances.is_empty(), "a plain `impl T {{ }}` has no conformance clause");
+        assert_eq!(impl_block.methods.len(), 1);
+    }
+
+    #[test]
     fn host_definition_parses_and_formats() {
         let src = r#"
             host AppHost(string[] args) : ConsoleHost {
@@ -238,5 +306,53 @@ mod tests {
         let formatted = format_program(&program).expect("host should format");
         assert!(formatted.contains("host AppHost(string[] args) : ConsoleHost"));
         assert!(!formatted.contains("with"));
+    }
+
+    #[test]
+    fn generic_contract_definition_declares_its_type_parameter() {
+        use crate::syntax::items::Node;
+
+        let src = r#"
+            contract Iterator<T> {
+                Option<T> Current();
+            }
+        "#;
+        let pair = BeskidParser::parse(Rule::Program, src)
+            .expect("generic contract should parse")
+            .next()
+            .expect("program pair");
+        let program = Program::parse(pair).expect("generic contract should build AST");
+
+        let contract = match &program.node.items[0].node {
+            Node::ContractDefinition(contract) => &contract.node,
+            other => panic!("expected Node::ContractDefinition, got {other:?}"),
+        };
+        assert_eq!(
+            contract.generics.iter().map(|g| g.node.name.as_str()).collect::<Vec<_>>(),
+            vec!["T"],
+            "the contract's own generic parameter list must be preserved by parsing"
+        );
+    }
+
+    #[test]
+    fn non_generic_contract_definition_still_parses_with_no_generics() {
+        use crate::syntax::items::Node;
+
+        let src = r#"
+            contract Loggable {
+                unit Log();
+            }
+        "#;
+        let pair = BeskidParser::parse(Rule::Program, src)
+            .expect("non-generic contract should parse")
+            .next()
+            .expect("program pair");
+        let program = Program::parse(pair).expect("non-generic contract should build AST");
+
+        let contract = match &program.node.items[0].node {
+            Node::ContractDefinition(contract) => &contract.node,
+            other => panic!("expected Node::ContractDefinition, got {other:?}"),
+        };
+        assert!(contract.generics.is_empty(), "a plain `contract Loggable {{ }}` has no generic parameters");
     }
 }

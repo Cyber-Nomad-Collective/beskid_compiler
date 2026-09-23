@@ -55,6 +55,11 @@ pub enum TypeError {
     ExternMissingLibrary { span: SpanInfo },
     ExternDisallowedParamType { span: SpanInfo, method: String, detail: String },
     ExternDisallowedReturnType { span: SpanInfo, method: String, detail: String },
+    // Contract conformance validation (TypeId-based `FunctionSignature` equality, run after
+    // the whole unit's items are typed so both the contract's declared signature and the
+    // implementor's actual signature are available).
+    ContractMethodMissingImplementation { span: SpanInfo, contract_name: String, method_name: String, expected: FunctionSignature },
+    ContractImplementationSignatureMismatch { span: SpanInfo, method_name: String, expected: FunctionSignature, actual: FunctionSignature },
 }
 
 fn type_error_span_loc(span: SpanInfo) -> String {
@@ -207,6 +212,12 @@ impl fmt::Display for TypeError {
             }
             TypeError::ExternDisallowedReturnType { span, method, detail } => {
                 write!(f, "extern method `{method}` has a disallowed return type ({detail}) at {}", at(*span))
+            }
+            TypeError::ContractMethodMissingImplementation { span, contract_name, method_name, .. } => {
+                write!(f, "missing implementation of `{contract_name}::{method_name}` at {}", at(*span))
+            }
+            TypeError::ContractImplementationSignatureMismatch { span, method_name, .. } => {
+                write!(f, "contract implementation signature mismatch for `{method_name}` at {}", at(*span))
             }
         }
     }

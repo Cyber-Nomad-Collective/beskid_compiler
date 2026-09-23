@@ -1,5 +1,5 @@
-use crate::resolve::ItemId;
-use crate::syntax::{Node, PrimitiveType, Program, Type, TypeDefinition};
+use crate::resolve::{ItemId, ItemKind};
+use crate::syntax::{ContractNode, Node, PrimitiveType, Program, Type, TypeDefinition};
 use crate::syntax::{SpanInfo, Spanned};
 use crate::types::TypeId;
 use crate::types::result::{FunctionSignature, TypeError};
@@ -150,6 +150,7 @@ impl<'a> TypeChecker<'a> {
             match &item.node {
                 Node::Function(_)
                 | Node::Method(_)
+                | Node::ImplBlock(_)
                 | Node::ExtendTypeDefinition(_)
                 | Node::TypeDefinition(_)
                 | Node::TestDefinition(_) => {
@@ -203,6 +204,15 @@ impl<'a> TypeChecker<'a> {
             Node::Method(def) => {
                 self.type_method_definition(item.span, def);
             }
+            Node::ImplBlock(def) => {
+                self.type_id_for_type(&def.node.receiver_type);
+                for conformance in &def.node.conformances {
+                    self.type_id_for_path_with_args(conformance);
+                }
+                for method in &def.node.methods {
+                    self.type_method_definition(method.span, method);
+                }
+            }
             Node::ExtendTypeDefinition(def) => {
                 self.type_id_for_type(&def.node.target_type);
                 for method in &def.node.methods {
@@ -234,6 +244,9 @@ impl<'a> TypeChecker<'a> {
                     let type_id = self.type_table.intern(crate::types::TypeInfo::GenericParam(name.clone()));
                     self.generic_params.insert(name.clone(), type_id);
                     inserted.push(name);
+                }
+                for conformance in &def.node.conformances {
+                    self.type_id_for_path_with_args(conformance);
                 }
                 self.register_struct_definition_fields(item.span, &def.node, true);
                 for method in &def.node.methods {
@@ -275,7 +288,47 @@ impl<'a> TypeChecker<'a> {
                     self.generic_params.remove(&name);
                 }
             }
-            Node::ContractDefinition(_) => {}
+            Node::ContractDefinition(def) => {
+                let mut inserted = Vec::new();
+                for generic in &def.node.generics {
+                    let name = generic.node.name.clone();
+                    let type_id = self.type_table.intern(crate::types::TypeInfo::GenericParam(name.clone()));
+                    self.generic_params.insert(name.clone(), type_id);
+                    inserted.push(name);
+                }
+                for contract_item in &def.node.items {
+                    match &contract_item.node {
+                        ContractNode::MethodSignature(signature) => {
+                            for param in &signature.node.parameters {
+                                self.type_id_for_type_in_generic_scope(&param.node.ty);
+                            }
+                            if let Some(return_type) = &signature.node.return_type {
+                                self.type_id_for_type_in_generic_scope(return_type);
+                            }
+                        }
+                        ContractNode::Embedding(embedding) => {
+                            if !embedding.node.type_args.is_empty()
+                                && let Some(embedded_id) =
+                                    self.item_id_for_name(&embedding.node.name.node.name, ItemKind::Contract)
+                                && let Some(expected) = self.generic_items.get(&embedded_id)
+                                && expected.len() != embedding.node.type_args.len()
+                            {
+                                self.errors.push(TypeError::GenericArgumentMismatch {
+                                    span: embedding.span,
+                                    expected: expected.len(),
+                                    actual: embedding.node.type_args.len(),
+                                });
+                            }
+                            for type_arg in &embedding.node.type_args {
+                                self.type_id_for_type_in_generic_scope(type_arg);
+                            }
+                        }
+                    }
+                }
+                for name in inserted {
+                    self.generic_params.remove(&name);
+                }
+            }
             Node::AttributeDeclaration(_) => {}
             Node::InlineModule(def) => {
                 for item in &def.node.items {
@@ -294,7 +347,16 @@ impl<'a> TypeChecker<'a> {
         params: Vec<TypeId>,
         return_type: Option<TypeId>,
     ) {
-        let Some(item_id) = self.canonical_item_id_for_span(item_span) else {
+        // `canonical_item_id_for_span` requires the item to have an exportable symbol; a
+        // `type X { method }` inline method never gets one (it is registered as a generic
+        // "member item" -- `symbol_shape_for_item` has no `Method`/`Member` shape for a
+        // receiver-less `ItemKind::Method` -- unlike `extend type`/`impl` methods, which are
+        // registered with an explicit receiver and do get a `SymbolShape::Method`). Fall back to
+        // the item's own (non-canonicalized) id so its signature is still recorded; this only
+        // adds a signature that used to be silently dropped, it never changes an item that
+        // already canonicalized successfully.
+        let Some(item_id) = self.canonical_item_id_for_span(item_span).or_else(|| self.item_id_for_span(item_span))
+        else {
             return;
         };
         let Some(return_type) = return_type else {
@@ -335,7 +397,9 @@ impl<'a> TypeChecker<'a> {
             }
         }
         self.record_signature(item_span, params.clone(), return_type);
-        if let (Some(method_item_id), Some(return_type)) = (self.canonical_item_id_for_span(item_span), return_type) {
+        let method_item_id =
+            self.canonical_item_id_for_span(item_span).or_else(|| self.item_id_for_span(item_span));
+        if let (Some(method_item_id), Some(return_type)) = (method_item_id, return_type) {
             self.method_function_signatures.insert(method_item_id, FunctionSignature { params, return_type });
         }
         self.type_block(&def.node.body);

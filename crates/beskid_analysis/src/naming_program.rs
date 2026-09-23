@@ -4,8 +4,8 @@ use crate::naming_case::NamingProfile;
 use crate::syntax::ContractNode;
 use crate::syntax::{
     Block, ContractDefinition, EnumDefinition, EnumVariant, Expression, ExtendTypeDefinition, Field,
-    FunctionDefinition, InlineModule, MethodDefinition, Node, Parameter, Pattern, Program, Statement, TestDefinition,
-    TypeDefinition,
+    FunctionDefinition, ImplBlock, InlineModule, MethodDefinition, Node, Parameter, Pattern, Program, Statement,
+    TestDefinition, TypeDefinition,
 };
 use crate::syntax::{Identifier, Spanned};
 
@@ -59,6 +59,7 @@ fn walk_node(node: &Node, visit: &mut impl FnMut(NamingRole, &Spanned<Identifier
         // uppercase ABI names which are intentionally outside local-binding style rules.
         Node::ConstantDefinition(_) => {}
         Node::Method(def) => walk_method_definition(&def.node, visit),
+        Node::ImplBlock(def) => walk_impl_block(&def.node, visit),
         Node::ExtendTypeDefinition(def) => walk_extend_type(&def.node, visit),
         Node::MacroDefinition(def) => {
             visit(NamingRole::Macro, &def.node.name);
@@ -79,6 +80,7 @@ fn walk_node_mut(node: &mut Node, visit: &mut impl FnMut(NamingRole, &mut Identi
         Node::Function(def) => walk_function_definition_mut(&mut def.node, visit),
         Node::ConstantDefinition(_) => {}
         Node::Method(def) => walk_method_definition_mut(&mut def.node, visit),
+        Node::ImplBlock(def) => walk_impl_block_mut(&mut def.node, visit),
         Node::ExtendTypeDefinition(def) => walk_extend_type_mut(&mut def.node, visit),
         Node::MacroDefinition(def) => visit(NamingRole::Macro, &mut def.node.name.node),
         Node::TestDefinition(def) => walk_test_definition_mut(&mut def.node, visit),
@@ -151,6 +153,9 @@ fn walk_enum_variant_mut(variant: &mut EnumVariant, visit: &mut impl FnMut(Namin
 
 fn walk_contract_definition(def: &ContractDefinition, visit: &mut impl FnMut(NamingRole, &Spanned<Identifier>)) {
     visit(NamingRole::TypeDeclaration, &def.name);
+    for generic in &def.generics {
+        visit(NamingRole::GenericParameter, generic);
+    }
     for item in &def.items {
         if let ContractNode::MethodSignature(sig) = &item.node {
             visit(NamingRole::Callable, &sig.node.name);
@@ -163,6 +168,9 @@ fn walk_contract_definition(def: &ContractDefinition, visit: &mut impl FnMut(Nam
 
 fn walk_contract_definition_mut(def: &mut ContractDefinition, visit: &mut impl FnMut(NamingRole, &mut Identifier)) {
     visit(NamingRole::TypeDeclaration, &mut def.name.node);
+    for generic in &mut def.generics {
+        visit(NamingRole::GenericParameter, &mut generic.node);
+    }
     for item in &mut def.items {
         if let ContractNode::MethodSignature(sig) = &mut item.node {
             visit(NamingRole::Callable, &mut sig.node.name.node);
@@ -218,6 +226,18 @@ fn walk_extend_type(def: &ExtendTypeDefinition, visit: &mut impl FnMut(NamingRol
 }
 
 fn walk_extend_type_mut(def: &mut ExtendTypeDefinition, visit: &mut impl FnMut(NamingRole, &mut Identifier)) {
+    for method in &mut def.methods {
+        walk_method_definition_mut(&mut method.node, visit);
+    }
+}
+
+fn walk_impl_block(def: &ImplBlock, visit: &mut impl FnMut(NamingRole, &Spanned<Identifier>)) {
+    for method in &def.methods {
+        walk_method_definition(&method.node, visit);
+    }
+}
+
+fn walk_impl_block_mut(def: &mut ImplBlock, visit: &mut impl FnMut(NamingRole, &mut Identifier)) {
     for method in &mut def.methods {
         walk_method_definition_mut(&mut method.node, visit);
     }

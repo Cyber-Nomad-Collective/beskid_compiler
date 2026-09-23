@@ -162,6 +162,11 @@ impl TypeChecker<'_> {
             checker.type_item(item);
         }
 
+        // Conformance equality needs both the contract's declared signature and every
+        // implementor's actual signature, so it runs after all of this unit's own items
+        // (not just the conforming one) have been typed.
+        checker.check_contract_conformances(program);
+
         let checker_call_kinds = std::mem::take(&mut checker.call_kinds);
         let checker_result = checker.finish();
         let lowering_surfaces = LoweringPrepSurfaces {
@@ -227,6 +232,7 @@ impl<'a> TypeChecker<'a> {
                 Node::Function(def) => (item.span, &def.node.generics),
                 Node::TypeDefinition(def) => (item.span, &def.node.generics),
                 Node::EnumDefinition(def) => (item.span, &def.node.generics),
+                Node::ContractDefinition(def) => (item.span, &def.node.generics),
                 Node::InlineModule(m) => {
                     self.seed_generics_from_items(&m.node.items);
                     continue;

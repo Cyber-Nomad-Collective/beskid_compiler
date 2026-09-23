@@ -43,23 +43,18 @@ pub fn collect_member_items(item: &Spanned<Node>, parent_name: &str) -> Vec<Memb
                     span: field.span,
                 });
             }
-            for method in &def.node.methods {
-                out.push(MemberItemSpec {
-                    name: format!("{}::{}", parent_name, method.node.name.node.name),
-                    kind: ItemKind::Method,
-                    span: method.span,
-                });
-                for parameter in &method.node.parameters {
-                    out.push(MemberItemSpec {
-                        name: format!(
-                            "{}::{}::{}",
-                            parent_name, method.node.name.node.name, parameter.node.name.node.name
-                        ),
-                        kind: ItemKind::Parameter,
-                        span: parameter.span,
-                    });
-                }
-            }
+            // Methods (and their own parameters) are NOT registered here: `Collector::collect_item`'s
+            // dedicated `Node::TypeDefinition` block (resolve/collect.rs) already registers each
+            // inline method with a proper receiver (`method_receiver: Some(receiver)`, giving it a
+            // real `SymbolShape::Method`) plus its parameters via `collect_member_items_for_method`.
+            // Registering them again here produced a second `ItemId` at the identical name+span with
+            // no receiver and no symbol -- `item_id_for_span`/`item_id_for_name` then had two
+            // candidates to choose between (or, for `item_id_for_span`, none at all, since its
+            // ambiguous-match case returns `None`), and `record_signature`'s `canonical_item_id_for_span`
+            // never recorded the plain member-item duplicate's signature (no symbol to canonicalize
+            // through), silently orphaning it. Corelib inline `type X { method }` shapes were previously
+            // untested at this level, so the collision was invisible until the contract-conformance
+            // work in this change needed both to agree on one `ItemId`.
         }
         Node::EnumDefinition(def) => {
             for variant in &def.node.variants {

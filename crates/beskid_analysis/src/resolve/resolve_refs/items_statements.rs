@@ -93,6 +93,55 @@ impl Resolver {
                     }
                 }
             }
+            // `impl T : Contract` populates `tables.type_conformances` the same way
+            // `type T : Contract { }` does above, so `stage6_contracts_and_methods` needs no
+            // new pass to validate impl-block conformance.
+            Node::ImplBlock(def) => {
+                self.resolve_type(&def.node.receiver_type);
+                let receiver_item_id = self.receiver_item_id_for_type(&def.node.receiver_type);
+                for conformance in &def.node.conformances {
+                    self.resolve_type_path(conformance);
+                    let Some(receiver_item_id) = receiver_item_id else {
+                        continue;
+                    };
+                    let Some(ResolvedType::Item(conformance_item_id)) =
+                        self.tables.resolved_types.get(&conformance.span)
+                    else {
+                        continue;
+                    };
+                    if self.items.get(conformance_item_id.0).is_some_and(|info| info.kind == ItemKind::Contract) {
+                        self.tables.insert_type_conformance(receiver_item_id, *conformance_item_id, conformance.span);
+                    } else if let Some(item) = self.items.get(conformance_item_id.0) {
+                        self.errors.push(ResolveError::InvalidConformanceTarget {
+                            name: item.name.clone(),
+                            span: conformance.span,
+                        });
+                    }
+                }
+                for method in &def.node.methods {
+                    self.resolve_type(&method.node.receiver_type);
+                    let previous_receiver = self.current_receiver_item_id;
+                    if include_bodies {
+                        self.push_scope();
+                        self.current_receiver_item_id = self.receiver_item_id_for_type(&method.node.receiver_type);
+                        self.insert_local("this", method.node.receiver_type.span);
+                    }
+                    for param in &method.node.parameters {
+                        self.resolve_type(&param.node.ty);
+                        if include_bodies {
+                            self.insert_local(&param.node.name.node.name, param.node.name.span);
+                        }
+                    }
+                    if let Some(return_type) = &method.node.return_type {
+                        self.resolve_type(return_type);
+                    }
+                    if include_bodies {
+                        self.resolve_block(&method.node.body);
+                        self.current_receiver_item_id = previous_receiver;
+                        self.pop_scope();
+                    }
+                }
+            }
             Node::TestDefinition(def) => {
                 if !include_bodies {
                     return;
@@ -193,6 +242,10 @@ impl Resolver {
                 self.pop_generic_scope();
             }
             Node::ContractDefinition(def) => {
+                self.push_generic_scope();
+                for generic in &def.node.generics {
+                    self.insert_generic(&generic.node.name);
+                }
                 for node in &def.node.items {
                     match &node.node {
                         ContractNode::MethodSignature(signature) => {
@@ -203,9 +256,14 @@ impl Resolver {
                                 self.resolve_type(return_type);
                             }
                         }
-                        ContractNode::Embedding(_) => {}
+                        ContractNode::Embedding(embedding) => {
+                            for type_arg in &embedding.node.type_args {
+                                self.resolve_type(type_arg);
+                            }
+                        }
                     }
                 }
+                self.pop_generic_scope();
             }
             Node::AttributeDeclaration(_) => {}
             Node::ModuleDeclaration(_) | Node::UseDeclaration(_) => {}
