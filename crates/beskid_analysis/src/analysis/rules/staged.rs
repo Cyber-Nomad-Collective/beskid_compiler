@@ -2,7 +2,6 @@ use crate::analysis::rules::{Rule, RuleContext};
 use crate::syntax::{Program, SpanInfo, Spanned};
 use beskid_pipeline::{PipelineObserver, observe_phase, phases};
 
-mod contracts;
 mod control_flow;
 mod definitions;
 mod error_handling;
@@ -54,9 +53,15 @@ impl SemanticPipelineRule {
         observe_stage(pipeline, phases::SEMANTIC_VISIBILITY, || {
             self.stage5_modules_and_visibility(ctx, &program, &resolution);
         });
-        observe_stage(pipeline, phases::SEMANTIC_CONTRACTS, || {
-            self.stage6_contracts_and_methods(ctx, &program, &resolution);
-        });
+        // Contract conformance (`type X : Contract` / `impl X : Contract`) is validated with
+        // real `TypeId`-based `FunctionSignature` equality inside the `TypeChecker` itself
+        // (`TypeChecker::check_contract_conformances`, called from `check_entry` after every
+        // item is typed) rather than here: this `run_stages`/`RuleContext` pipeline never runs
+        // full type checking (`stage2_type_check` below is structural-immutability-only), so a
+        // stage living here could only ever compare declared syntax shapes, not real types.
+        // Its `TypeError`s reach diagnostics via `emit_type_error` (analysis/rules/types.rs),
+        // which callers merge in through `SemanticFactsError::Type` (see
+        // services::resolve_and_type_program / prepare_compilation_diagnostics).
         observe_stage(pipeline, phases::SEMANTIC_ERROR_HANDLING, || {
             self.stage7_error_handling(ctx, &program, &resolution);
         });

@@ -152,6 +152,26 @@ pub(crate) fn emit_type_error(ctx: &mut RuleContext, error: TypeError, result: O
                 Severity::Error,
             );
         }
+        TypeError::ContractMethodMissingImplementation { span, contract_name, method_name, expected } => {
+            ctx.emit_issue(
+                span,
+                SemanticIssueKind::ContractMethodMissingImplementation {
+                    contract_name,
+                    method_name,
+                    expected: render_function_signature(result, &expected),
+                },
+            );
+        }
+        TypeError::ContractImplementationSignatureMismatch { span, method_name, expected, actual } => {
+            ctx.emit_issue(
+                span,
+                SemanticIssueKind::ContractImplementationSignatureMismatch {
+                    method_name,
+                    expected: render_function_signature(result, &expected),
+                    actual: render_function_signature(result, &actual),
+                },
+            );
+        }
     }
 }
 
@@ -160,4 +180,10 @@ fn render_type(result: Option<&TypeResult>, type_id: crate::types::TypeId) -> St
         return format!("type#{}", type_id.0);
     };
     format_type_id(result, None, type_id)
+}
+
+fn render_function_signature(result: Option<&TypeResult>, signature: &crate::types::result::FunctionSignature) -> String {
+    let params =
+        signature.params.iter().map(|type_id| render_type(result, *type_id)).collect::<Vec<_>>().join(", ");
+    format!("({params}) -> {}", render_type(result, signature.return_type))
 }

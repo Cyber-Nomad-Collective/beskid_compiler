@@ -347,7 +347,16 @@ impl<'a> TypeChecker<'a> {
         params: Vec<TypeId>,
         return_type: Option<TypeId>,
     ) {
-        let Some(item_id) = self.canonical_item_id_for_span(item_span) else {
+        // `canonical_item_id_for_span` requires the item to have an exportable symbol; a
+        // `type X { method }` inline method never gets one (it is registered as a generic
+        // "member item" -- `symbol_shape_for_item` has no `Method`/`Member` shape for a
+        // receiver-less `ItemKind::Method` -- unlike `extend type`/`impl` methods, which are
+        // registered with an explicit receiver and do get a `SymbolShape::Method`). Fall back to
+        // the item's own (non-canonicalized) id so its signature is still recorded; this only
+        // adds a signature that used to be silently dropped, it never changes an item that
+        // already canonicalized successfully.
+        let Some(item_id) = self.canonical_item_id_for_span(item_span).or_else(|| self.item_id_for_span(item_span))
+        else {
             return;
         };
         let Some(return_type) = return_type else {
@@ -388,7 +397,9 @@ impl<'a> TypeChecker<'a> {
             }
         }
         self.record_signature(item_span, params.clone(), return_type);
-        if let (Some(method_item_id), Some(return_type)) = (self.canonical_item_id_for_span(item_span), return_type) {
+        let method_item_id =
+            self.canonical_item_id_for_span(item_span).or_else(|| self.item_id_for_span(item_span));
+        if let (Some(method_item_id), Some(return_type)) = (method_item_id, return_type) {
             self.method_function_signatures.insert(method_item_id, FunctionSignature { params, return_type });
         }
         self.type_block(&def.node.body);
