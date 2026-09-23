@@ -89,6 +89,11 @@ impl SemanticIssueKind {
             } => {
                 format!("contract method `{contract_name}.{method_name}` is missing implementation")
             }
+            Self::ContractAssociatedTypeMissingBinding { contract_name, assoc_name } => {
+                format!("`{contract_name}::{assoc_name}` has no default and no implementor binding")
+            }
+            Self::ThisUsedOutsideContractOrImpl => "`This` used outside a contract or impl-block scope".to_string(),
+            Self::UnresolvedAssociatedType { name } => format!("unresolved associated type `{name}`"),
             Self::ImmutableAssignment { name } => {
                 format!("cannot assign to immutable binding `{name}`")
             }

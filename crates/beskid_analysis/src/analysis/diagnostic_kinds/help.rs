@@ -85,6 +85,15 @@ impl SemanticIssueKind {
             Self::ContractMethodMissingImplementation { expected, .. } => {
                 Some(format!("expected signature `{expected}`"))
             }
+            Self::ContractAssociatedTypeMissingBinding { contract_name, assoc_name } => Some(format!(
+                "declare `type {assoc_name} = <concrete type>;` in the implementor, or add a default to `{contract_name}`'s `type {assoc_name};`"
+            )),
+            Self::ThisUsedOutsideContractOrImpl => {
+                Some("`This` is only valid inside a contract's own method signatures or an impl block for a concrete receiver".to_string())
+            }
+            Self::UnresolvedAssociatedType { .. } => {
+                Some("check the contract name and that the referenced type conforms to it".to_string())
+            }
             Self::ImmutableAssignment { .. } => {
                 Some("declare it as `let mut` to allow assignment".to_string())
             }

@@ -65,6 +65,19 @@ impl<'a> TypeChecker<'a> {
                 let this_type_id = self.type_table.intern(crate::types::TypeInfo::GenericParam("This".to_string()));
                 self.generic_params.insert("This".to_string(), this_type_id);
                 inserted.push("This".to_string());
+                // A contract's own declared associated types (`type Item;`) are, like `This`,
+                // synthetic generic parameters in scope for the contract's own method
+                // signatures (design.md: "the bare associated-type name (`Item`) is in scope
+                // and MAY be used directly in method signatures"). Substituted per-implementor
+                // by `check_contract_conformances`.
+                for node in &definition.node.items {
+                    if let ContractNode::AssociatedType(assoc) = &node.node {
+                        let name = assoc.node.name.node.name.clone();
+                        let type_id = self.type_table.intern(crate::types::TypeInfo::GenericParam(name.clone()));
+                        self.generic_params.insert(name.clone(), type_id);
+                        inserted.push(name);
+                    }
+                }
             }
             let signatures = self.collect_contract_signatures_recursive(
                 contract_name.as_str(),
@@ -128,6 +141,73 @@ impl<'a> TypeChecker<'a> {
             // `This` at a monomorphized call site is deferred to a later slice).
             if let Some(this_type_id) = self.named_types.get(&type_item_id).copied() {
                 subst.insert("This".to_string(), this_type_id);
+            }
+
+            // Associated types (Gap 4 remainder): every associated type the contract declares
+            // must resolve to a concrete `TypeId` at this conformance site, either via the
+            // implementor's own `type Item = Concrete;` binding or the contract's declared
+            // default (`type Item = T;`, itself resolved through the contract-generic
+            // substitution already computed above). Missing both is a fail-closed diagnostic
+            // (spec scenario: "Missing associated type binding without default is rejected").
+            let contract_assoc_types: Vec<(String, Option<Spanned<Type>>)> = program
+                .node
+                .items
+                .iter()
+                .filter_map(|item| match &item.node {
+                    Node::ContractDefinition(def) if def.node.name.node.name == contract_name => Some(def),
+                    _ => None,
+                })
+                .flat_map(|def| {
+                    def.node.items.iter().filter_map(|node| match &node.node {
+                        ContractNode::AssociatedType(assoc) => {
+                            Some((assoc.node.name.node.name.clone(), assoc.node.default.clone()))
+                        }
+                        _ => None,
+                    })
+                })
+                .collect();
+
+            for (assoc_name, default) in contract_assoc_types {
+                let binding_syntax = self.associated_type_binding_syntax(program, &type_name, &assoc_name);
+                let resolved = if let Some(ty_syntax) = binding_syntax {
+                    self.type_id_for_type_in_generic_scope(&ty_syntax)
+                } else if let Some(default_ty) = default {
+                    // The default may reference the contract's own generics (`type Item = T;`);
+                    // resolve it with those already-substituted to this conformance site's
+                    // concrete arguments.
+                    let mut pushed = Vec::new();
+                    for (name, id) in &subst {
+                        pushed.push((name.clone(), self.generic_params.insert(name.clone(), *id)));
+                    }
+                    let resolved = self.type_id_for_type(&default_ty);
+                    for (name, prev) in pushed {
+                        match prev {
+                            Some(previous) => {
+                                self.generic_params.insert(name, previous);
+                            }
+                            None => {
+                                self.generic_params.remove(&name);
+                            }
+                        }
+                    }
+                    resolved
+                } else {
+                    None
+                };
+
+                match resolved {
+                    Some(type_id) => {
+                        subst.insert(assoc_name.clone(), type_id);
+                        self.associated_type_bindings.insert((type_item_id, assoc_name), type_id);
+                    }
+                    None => {
+                        self.errors.push(TypeError::ContractAssociatedTypeMissingBinding {
+                            span,
+                            contract_name: contract_name.clone(),
+                            assoc_name,
+                        });
+                    }
+                }
             }
 
             let method_names: Vec<String> = self
@@ -207,6 +287,47 @@ impl<'a> TypeChecker<'a> {
         arg_type_syntax.iter().filter_map(|ty| self.type_id_for_type_in_generic_scope(ty)).collect()
     }
 
+    /// The implementor's `type <assoc_name> = <Type>;` binding syntax for `type_name`, found in
+    /// either its `type X : Contract { }` body or a paired `impl X : Contract { }` body.
+    fn associated_type_binding_syntax(
+        &self,
+        program: &Spanned<Program>,
+        type_name: &str,
+        assoc_name: &str,
+    ) -> Option<Spanned<Type>> {
+        for item in &program.node.items {
+            match &item.node {
+                Node::TypeDefinition(def) if def.node.name.node.name == type_name => {
+                    for binding in &def.node.associated_type_bindings {
+                        if binding.node.name.node.name == assoc_name {
+                            return Some(binding.node.ty.clone());
+                        }
+                    }
+                }
+                Node::ImplBlock(impl_block) => {
+                    let Type::Complex(receiver_path) = &impl_block.node.receiver_type.node else {
+                        continue;
+                    };
+                    let Some(receiver_name) =
+                        receiver_path.node.segments.last().map(|segment| segment.node.name.node.name.as_str())
+                    else {
+                        continue;
+                    };
+                    if receiver_name != type_name {
+                        continue;
+                    }
+                    for binding in &impl_block.node.associated_type_bindings {
+                        if binding.node.name.node.name == assoc_name {
+                            return Some(binding.node.ty.clone());
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        None
+    }
+
     fn collect_contract_signatures_recursive(
         &mut self,
         contract_name: &str,
@@ -270,6 +391,10 @@ impl<'a> TypeChecker<'a> {
                         methods.push((method_name, signature));
                     }
                 }
+                // Associated-type declarations are not methods; they are handled separately by
+                // `seed_contract_signatures` (bare-name scope) and `check_contract_conformances`
+                // (per-implementor binding).
+                ContractNode::AssociatedType(_) => {}
             }
         }
 
@@ -716,6 +841,113 @@ mod conformance_tests {
             )),
             "expected ContractImplementationSignatureMismatch for Make; got: {errors:?}"
         );
+    }
+
+    #[test]
+    fn this_used_outside_contract_or_impl_is_rejected() {
+        // A top-level function using `This` as a return type has no enclosing contract/impl
+        // scope to substitute it from -- must fail closed with a diagnostic, not silently
+        // vanish (slice 9 / task 1.7).
+        let source = r#"
+            This orphan() {
+                return;
+            }
+        "#;
+        let errors = resolve_and_type(source).expect_err("`This` used outside a contract or impl must be rejected");
+        assert!(
+            errors.iter().any(|error| matches!(error, TypeError::ThisUsedOutsideContractOrImpl { .. })),
+            "expected ThisUsedOutsideContractOrImpl; got: {errors:?}"
+        );
+    }
+
+    #[test]
+    fn unresolved_associated_type_reference_is_rejected() {
+        // `Something::Item` names a real, resolvable type (`Something`) that has no associated
+        // type binding -- resolution succeeds (the path itself is valid), but type-checking
+        // must still fail closed with a diagnostic rather than silently vanishing (slice 9 /
+        // task 1.7): early binding-based resolution for `T::Item` is deferred to a future
+        // slice (see the `Type::Associated` arm in `types/checker/types.rs`).
+        let source = r#"
+            type Something {}
+
+            Something::Item orphan() {
+                return;
+            }
+        "#;
+        let errors = resolve_and_type(source).expect_err("an unresolved associated-type reference must be rejected");
+        assert!(
+            errors.iter().any(|error| matches!(error, TypeError::UnresolvedAssociatedType { name, .. } if name == "Item")),
+            "expected UnresolvedAssociatedType; got: {errors:?}"
+        );
+    }
+
+    #[test]
+    fn associated_type_bare_name_is_in_scope_inside_its_own_contract() {
+        let source = r#"
+            type Nothing {}
+
+            contract Iterator {
+                type Item;
+                Item Current();
+            }
+
+            type ArrayIterator : Iterator {
+                type Item = Nothing;
+
+                Nothing Current() {
+                    return Nothing {};
+                }
+            }
+        "#;
+        let result = resolve_and_type(source);
+        assert!(
+            result.is_ok(),
+            "a contract's own associated type must be in scope in its signatures, and an implementor's binding must \
+             satisfy conformance; got: {result:?}"
+        );
+    }
+
+    #[test]
+    fn associated_type_missing_binding_without_default_is_rejected() {
+        let source = r#"
+            contract Iterator {
+                type Item;
+                Item Current();
+            }
+
+            type ArrayIterator : Iterator {
+                i32 Current() {
+                    return 0;
+                }
+            }
+        "#;
+        let errors = resolve_and_type(source)
+            .expect_err("an associated type with no default and no implementor binding must be rejected");
+        assert!(
+            errors.iter().any(|error| matches!(
+                error,
+                TypeError::ContractAssociatedTypeMissingBinding { assoc_name, .. } if assoc_name == "Item"
+            )),
+            "expected ContractAssociatedTypeMissingBinding; got: {errors:?}"
+        );
+    }
+
+    #[test]
+    fn associated_type_default_is_used_when_implementor_omits_the_binding() {
+        let source = r#"
+            contract Box<T> {
+                type Item = T;
+                Item Get();
+            }
+
+            type Container : Box<i32> {
+                i32 Get() {
+                    return 0;
+                }
+            }
+        "#;
+        let result = resolve_and_type(source);
+        assert!(result.is_ok(), "an omitted binding with a declared default must fall back to the default; got: {result:?}");
     }
 
     #[test]

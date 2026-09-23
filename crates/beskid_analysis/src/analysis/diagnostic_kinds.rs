@@ -109,6 +109,14 @@ pub enum SemanticIssueKind {
         method_name: String,
         expected: String,
     },
+    ThisUsedOutsideContractOrImpl,
+    UnresolvedAssociatedType {
+        name: String,
+    },
+    ContractAssociatedTypeMissingBinding {
+        contract_name: String,
+        assoc_name: String,
+    },
 
     ImmutableAssignment {
         name: String,

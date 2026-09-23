@@ -43,6 +43,12 @@ pub struct TypeChecker<'a> {
     pub(super) generic_items: HashMap<ItemId, Vec<String>>,
     pub(super) methods_by_receiver: HashMap<(ItemId, String), ItemId>,
     pub(super) contract_signatures: HashMap<(ItemId, String), FunctionSignature>,
+    /// Per-implementor associated-type bindings (`type Item = i64;`), keyed by the
+    /// implementor's own `ItemId` and the associated type's name, populated by
+    /// `check_contract_conformances`. Not yet consulted by `Type::Associated` resolution during
+    /// the main per-item typing pass (which runs *before* this table is populated) -- see
+    /// `types/checker/types.rs`'s `Type::Associated` arm.
+    pub(super) associated_type_bindings: HashMap<(ItemId, String), TypeId>,
     pub(super) call_kinds: HashMap<AstNodeId, CallLoweringKind>,
     pub(super) contextual_expected_type: Option<TypeId>,
     pub(super) current_return_type: Option<TypeId>,
@@ -95,6 +101,7 @@ impl<'a> TypeChecker<'a> {
             generic_items: surface.generic_items.clone(),
             methods_by_receiver: surface.methods_by_receiver.clone(),
             contract_signatures: surface.contract_signatures.clone(),
+            associated_type_bindings: HashMap::new(),
             call_kinds: HashMap::new(),
             contextual_expected_type: None,
             current_return_type: None,

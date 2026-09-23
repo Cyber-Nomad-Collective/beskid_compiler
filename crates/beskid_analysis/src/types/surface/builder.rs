@@ -497,6 +497,10 @@ impl<'a> TypeSurfaceBuilder<'a> {
                         methods.push((method_name, signature));
                     }
                 }
+                // Associated-type declarations are not methods; not part of the cross-unit
+                // merged signature cache (associated-type binding is resolved per-conformance-
+                // site within a single unit's `TypeChecker::check_contract_conformances`).
+                ContractNode::AssociatedType(_) => {}
             }
         }
 

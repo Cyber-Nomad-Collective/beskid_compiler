@@ -164,6 +164,8 @@ fn contract_methods(
                 })?;
                 methods.extend(contract_methods(db, embedded, active)?);
             }
+            // Associated-type declarations are not methods and carry no dispatchable node.
+            ContractNode::AssociatedType(_) => {}
         }
     }
     active.remove(&contract);

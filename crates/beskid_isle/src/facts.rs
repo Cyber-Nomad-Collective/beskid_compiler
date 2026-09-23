@@ -125,6 +125,8 @@ pub const fn classify_syntax_node_kind(kind: beskid_queries::IndexedNodeKind) ->
         | Syntax::ContractNode
         | Syntax::ContractMethodSignature
         | Syntax::ContractEmbedding
+        | Syntax::ContractAssociatedType
+        | Syntax::AssociatedTypeBinding
         | Syntax::Attribute
         | Syntax::AttributeDeclaration
         | Syntax::AttributeTarget

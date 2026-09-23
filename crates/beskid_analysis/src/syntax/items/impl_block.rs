@@ -6,7 +6,7 @@ use crate::parsing::error::ParseError;
 use crate::parsing::parsable::Parsable;
 use crate::syntax::items::method_definition::parse_receiver_type;
 use crate::syntax::items::parse_helpers::parse_doc_attached_with;
-use crate::syntax::{MethodDefinition, Path, SpanInfo, Spanned, Type};
+use crate::syntax::{AssociatedTypeBinding, MethodDefinition, Path, SpanInfo, Spanned, Type};
 
 use beskid_ast_derive::AstNode;
 
@@ -22,6 +22,8 @@ pub struct ImplBlock {
     pub methods: Vec<Spanned<MethodDefinition>>,
     #[ast(skip)]
     pub method_docs: Vec<Option<LeadingDocComment>>,
+    #[ast(children)]
+    pub associated_type_bindings: Vec<Spanned<AssociatedTypeBinding>>,
 }
 
 impl Parsable for ImplBlock {
@@ -35,10 +37,20 @@ impl Parsable for ImplBlock {
         let mut conformances = Vec::new();
         let mut methods = Vec::new();
         let mut method_docs = Vec::new();
+        let mut associated_type_bindings = Vec::new();
         for item_pair in inner {
             if item_pair.as_rule() == Rule::ImplConformanceList {
                 let path_list = item_pair.into_inner().next().ok_or(ParseError::missing(Rule::PathList))?;
                 conformances = path_list.into_inner().map(Path::parse).collect::<Result<Vec<_>, _>>()?;
+                continue;
+            }
+            if item_pair.as_rule() == Rule::AssociatedTypeBindingWithDocs {
+                let (_doc_opt, binding) = parse_doc_attached_with(
+                    item_pair,
+                    Rule::AssociatedTypeBindingWithDocs,
+                    AssociatedTypeBinding::parse,
+                )?;
+                associated_type_bindings.push(binding);
                 continue;
             }
             let (doc_opt, method) = parse_doc_attached_with(item_pair, Rule::ImplMethodWithDocs, |inner_pair| {
@@ -48,6 +60,9 @@ impl Parsable for ImplBlock {
             method_docs.push(doc_opt);
         }
 
-        Ok(Spanned::new(Self { receiver_type, conformances, methods, method_docs }, span))
+        Ok(Spanned::new(
+            Self { receiver_type, conformances, methods, method_docs, associated_type_bindings },
+            span,
+        ))
     }
 }

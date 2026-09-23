@@ -1,7 +1,9 @@
 //! Top-level and inner items: declarations, modules, contracts, tests, and attributes.
 
+pub mod associated_type_binding;
 pub mod attribute;
 pub mod constant_definition;
+pub mod contract_associated_type;
 pub mod contract_definition;
 pub mod contract_embedding;
 pub mod contract_method_signature;
@@ -24,8 +26,10 @@ pub mod test_definition;
 pub mod type_definition;
 pub mod use_declaration;
 
+pub use associated_type_binding::AssociatedTypeBinding;
 pub use attribute::{Attribute, AttributeArgument, AttributeDeclaration, AttributeParameter, AttributeTarget};
 pub use constant_definition::ConstantDefinition;
+pub use contract_associated_type::ContractAssociatedType;
 pub use contract_definition::ContractDefinition;
 pub use contract_embedding::ContractEmbedding;
 pub use contract_method_signature::ContractMethodSignature;
