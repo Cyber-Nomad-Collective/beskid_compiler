@@ -8,7 +8,47 @@ use cargo_cross::config::{Arch, Os, get_target_config};
 use crate::error::{AotError, AotResult};
 
 fn tool_unavailable(tool: impl AsRef<std::ffi::OsStr>, error: std::io::Error) -> AotError {
-    AotError::NativeToolUnavailable { tool: tool.as_ref().to_string_lossy().into_owned(), message: error.to_string() }
+    let tool = tool.as_ref().to_string_lossy().into_owned();
+    let mut message = error.to_string();
+    if tool == "cl" {
+        message.push_str(
+            "; install the Visual Studio Build Tools `Desktop development with C++` workload (MSVC x64 and a \
+             Windows SDK) and run from an x64 Native Tools or Developer command prompt",
+        );
+    }
+    AotError::NativeToolUnavailable { tool, message }
+}
+
+/// Bootstrap C sources that every linked executable compiles, relative to the `beskid_abi` crate.
+///
+/// They are embedded so an installed compiler never reads its build machine's source tree: the
+/// `CARGO_MANIFEST_DIR` of a release build does not exist on an end-user machine.
+const EMBEDDED_BOOTSTRAP_SOURCES: &[(&str, &str)] = &[
+    (
+        "assembly/common/executable_bootstrap.c",
+        include_str!("../../../beskid_abi/assembly/common/executable_bootstrap.c"),
+    ),
+    ("include/beskid_runtime_abi_v5.h", include_str!("../../../beskid_abi/include/beskid_runtime_abi_v5.h")),
+];
+
+/// Write the embedded bootstrap sources below `output_dir` and return their `assembly` root.
+///
+/// The layout mirrors `beskid_abi` so the sources' relative `#include` lines and the generated
+/// Core.Args `entry_source` paths (relative to `assembly/<target>/`) resolve unchanged.
+fn materialize_bootstrap_sources(output_dir: &std::path::Path, target: &str) -> AotResult<PathBuf> {
+    let root = output_dir.join("beskid-bootstrap");
+    for (relative, contents) in EMBEDDED_BOOTSTRAP_SOURCES {
+        let path = root.join(relative);
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|err| AotError::Io { path: parent.to_path_buf(), message: err.to_string() })?;
+        }
+        std::fs::write(&path, contents).map_err(|err| AotError::Io { path: path.clone(), message: err.to_string() })?;
+    }
+    let target_root = root.join("assembly").join(target);
+    std::fs::create_dir_all(&target_root)
+        .map_err(|err| AotError::Io { path: target_root.clone(), message: err.to_string() })?;
+    Ok(root.join("assembly"))
 }
 
 pub(super) fn compile_context_assembly(
@@ -141,8 +181,15 @@ pub(super) fn compile_executable_bootstrap(
     name: &str,
     program_returns_void: bool,
 ) -> AotResult<PathBuf> {
+    let assembly_root = materialize_bootstrap_sources(output_dir, target)?;
+    let source = executable_bootstrap_source(&assembly_root, core_args);
+    if !source.is_file() {
+        return Err(AotError::InvalidRequest {
+            message: format!("executable bootstrap source `{}` is not embedded in this compiler", source.display()),
+        });
+    }
     let (mut command, object) =
-        executable_bootstrap_command(target, core_args, output_dir, name, program_returns_void)?;
+        executable_bootstrap_command(target, core_args, &assembly_root, output_dir, name, program_returns_void)?;
     let output = command.output().map_err(|error| tool_unavailable(command.get_program(), error))?;
     if !output.status.success() {
         return Err(AotError::LinkFailed {
@@ -157,13 +204,13 @@ pub(super) fn compile_executable_bootstrap(
 fn executable_bootstrap_command(
     target: &str,
     core_args: Option<&GeneratedCoreArgsEntryAdapter>,
+    assembly_root: &std::path::Path,
     output_dir: &std::path::Path,
     name: &str,
     program_returns_void: bool,
 ) -> AotResult<(Command, PathBuf)> {
     let plan = platform_object_plan(target)?;
-    let assembly_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../beskid_abi/assembly");
-    let source = executable_bootstrap_source(&assembly_root, core_args);
+    let source = executable_bootstrap_source(assembly_root, core_args);
     let object = output_dir.join(format!("{name}.executable_bootstrap.{}", plan.object_extension));
     let windows = target.contains("windows");
     let mut command = if windows { Command::new("cl") } else { Command::new(plan.tls_program) };
@@ -301,9 +348,15 @@ mod platform_object_tests {
 
     #[test]
     fn windows_executable_bootstrap_selects_the_dynamic_crt_at_compilation() {
-        let (command, _) =
-            executable_bootstrap_command("x86_64-pc-windows-msvc", None, Path::new("build"), "app", false)
-                .expect("Windows bootstrap command");
+        let (command, _) = executable_bootstrap_command(
+            "x86_64-pc-windows-msvc",
+            None,
+            Path::new("build/beskid-bootstrap/assembly"),
+            Path::new("build"),
+            "app",
+            false,
+        )
+        .expect("Windows bootstrap command");
         assert_eq!(command.get_program(), "cl");
         let args = command.get_args().collect::<Vec<_>>();
         assert!(args.iter().any(|arg| *arg == "/MD"), "bootstrap must select dynamic CRT defaults: {command:?}");
@@ -362,6 +415,37 @@ void beskid_rt_v5_process_shutdown(void *state) {
         assert_eq!(result.exit_code, 0, "unit return must yield status zero: {result:?}");
         assert_eq!(result.stdout, b"shutdown-after-unit-return");
         assert!(result.stderr.is_empty());
+    }
+
+    #[test]
+    fn executable_bootstrap_sources_are_embedded_not_read_from_the_build_tree() {
+        let temp = tempfile::tempdir().unwrap();
+        let assembly_root = super::materialize_bootstrap_sources(temp.path(), "x86_64-pc-windows-msvc").unwrap();
+        let abi = Path::new(env!("CARGO_MANIFEST_DIR")).join("../beskid_abi");
+        let windows = beskid_abi::generated::abi_v5_contract::ABI_V5_CORE_ARGS_ENTRY_ADAPTERS
+            .iter()
+            .find(|adapter| adapter.target == "x86_64-pc-windows-msvc")
+            .expect("Windows Core.Args adapter");
+        for source in [
+            executable_bootstrap_source(&assembly_root, None),
+            executable_bootstrap_source(&assembly_root, Some(windows)),
+        ] {
+            assert!(source.is_file(), "materialized bootstrap source missing: {}", source.display());
+        }
+        for (relative, contents) in super::EMBEDDED_BOOTSTRAP_SOURCES {
+            let checked_in = std::fs::read_to_string(abi.join(relative)).unwrap();
+            assert_eq!(*contents, checked_in, "embedded {relative} drifted from beskid_abi");
+            assert!(assembly_root.parent().unwrap().join(relative).is_file());
+        }
+        assert!(!assembly_root.starts_with(env!("CARGO_MANIFEST_DIR")));
+    }
+
+    #[test]
+    fn missing_msvc_compiler_names_the_windows_build_tools_prerequisite() {
+        let error = std::process::Command::new("beskid-definitely-missing-cl").output().unwrap_err();
+        let message = super::tool_unavailable("cl", error).to_string();
+        assert!(message.starts_with("[E4020] Native build tool `cl` not available"));
+        assert!(message.contains("Desktop development with C++"), "{message}");
     }
 
     #[test]
