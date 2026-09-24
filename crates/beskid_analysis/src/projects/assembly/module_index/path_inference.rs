@@ -72,7 +72,7 @@ pub(super) fn collapse_homonymous_module_segment(segments: &mut Vec<String>) {
 }
 
 pub(super) fn module_path_from_generated_suffix(path: &Path, has_std_dependency: bool) -> Option<Vec<String>> {
-    let path_str = path.to_string_lossy();
+    let path_str = path.to_string_lossy().replace('\\', "/");
     let marker = "/.generated/";
     let idx = path_str.find(marker)?;
     let rel = &path_str[idx + marker.len()..];
@@ -102,7 +102,7 @@ pub(super) fn module_path_from_generated_suffix(path: &Path, has_std_dependency:
 }
 
 pub(super) fn module_path_from_src_suffix(path: &std::path::Path, has_std_dependency: bool) -> Option<Vec<String>> {
-    let path_str = path.to_string_lossy();
+    let path_str = path.to_string_lossy().replace('\\', "/");
     let marker = "/src/";
     let idx = path_str.find(marker)?;
     let rel = std::path::Path::new(&path_str[idx + marker.len()..]).with_extension("");
