@@ -34,6 +34,42 @@ fn canonical_unbound_intrinsics_have_exact_platform_definitions() {
 }
 
 #[test]
+fn canonical_thread_yield_uses_a_host_specific_os_primitive() {
+    let expected = [
+        ("x86_64-unknown-linux-gnu", "sched_yield"),
+        ("aarch64-apple-darwin", "sched_yield"),
+        ("x86_64-pc-windows-msvc", "SwitchToThread"),
+    ];
+    for (triple, os_import) in expected {
+        let target = TargetMetadata::supported()
+            .into_iter()
+            .find(|target| target.triple.as_str() == triple)
+            .unwrap_or_else(|| panic!("supported target {triple}"));
+        let manifest = AbiManifestV5::canonical_runtime(target);
+        let intrinsic = manifest
+            .trusted_runtime_intrinsics
+            .iter()
+            .find(|intrinsic| intrinsic.name == "thread_yield")
+            .expect("canonical manifest declares thread_yield");
+        let binding = intrinsic
+            .target_bindings
+            .iter()
+            .find(|binding| binding.target == triple)
+            .expect("host-specific thread_yield binding");
+        assert_eq!(binding.os_imports, [os_import]);
+        let platform_source = fs::read_to_string(
+            compiler_root().join("crates/beskid_abi/assembly").join(triple).join("platform_host.c"),
+        )
+        .expect("platform host source");
+        assert!(
+            platform_source.contains("beskid_rt_v5_thread_yield("),
+            "{triple} must define its OS thread yield adapter"
+        );
+        assert!(platform_source.contains(os_import), "{triple} adapter must call {os_import}");
+    }
+}
+
+#[test]
 fn canonical_trap_export_delegates_to_a_distinct_platform_intrinsic() {
     for target in TargetMetadata::supported() {
         let manifest = AbiManifestV5::canonical_runtime(target.clone());

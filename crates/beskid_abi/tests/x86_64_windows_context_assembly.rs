@@ -55,7 +55,12 @@ fn prepare_include(temp: &Path) {
 }
 
 fn output(command: &mut Command) -> std::process::Output {
-    let output = command.output().unwrap();
+    let output = command.output().unwrap_or_else(|error| {
+        panic!(
+            "spawn {:?}: {error} (the Windows harness needs LLVM `llvm-ml` and `clang` on PATH, e.g. C:\\Program Files\\LLVM\\bin)",
+            command.get_program()
+        )
+    });
     assert!(output.status.success(), "command failed: {}", String::from_utf8_lossy(&output.stderr));
     output
 }

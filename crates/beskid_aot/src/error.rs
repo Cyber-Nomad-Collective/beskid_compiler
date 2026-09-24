@@ -28,8 +28,18 @@ pub enum AotError {
     #[error("[E4012] Runtime ABI version mismatch (expected {expected}, got {actual})")]
     RuntimeAbiMismatch { expected: u32, actual: u32 },
 
-    #[error("[E4020] Linker tool not available")]
+    #[error(
+        "[E4020] Linker tool not available: no host linker could be started (on Windows, install the Visual \
+         Studio Build Tools `Desktop development with C++` workload and run from an x64 Native Tools or \
+         Developer command prompt so `link.exe` and the MSVC/Windows SDK import libraries are found)"
+    )]
     LinkerUnavailable,
+
+    /// A native assembler or C compiler required by the runtime/bootstrap objects could not be
+    /// spawned. Names the tool so a missing PATH entry (for example LLVM's `llvm-ml`/`clang` on
+    /// Windows) is not reported as an anonymous linker failure.
+    #[error("[E4020] Native build tool `{tool}` not available: {message}")]
+    NativeToolUnavailable { tool: String, message: String },
 
     #[error("[E4021] Link step failed (exit {status}): {command}{detail}")]
     LinkFailed { status: i32, command: String, detail: String },

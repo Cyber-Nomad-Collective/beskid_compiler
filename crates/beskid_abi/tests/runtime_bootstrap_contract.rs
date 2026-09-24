@@ -17,6 +17,30 @@ fn supported_targets() -> Vec<TargetMetadata> {
 }
 
 #[test]
+fn windows_static_kit_archive_names_every_manifest_platform_import_library() {
+    // The static kit archive is linked directly by C hosts and test drivers, not only by the AOT
+    // linker that appends manifest libraries. Each manifest import library must therefore be a
+    // `/DEFAULTLIB` directive of the platform host object (a missing ws2_32 left WSAStartup and
+    // the other IOCP reactor imports unresolved for every direct static-kit link on Windows).
+    let windows = supported_targets().into_iter().find(|target| target.triple.as_str() == "x86_64-pc-windows-msvc");
+    let source = include_str!("../assembly/x86_64-pc-windows-msvc/platform_host.c");
+    let mut libraries = AbiManifestV5::canonical_runtime(windows.unwrap())
+        .platform_imports
+        .into_iter()
+        .map(|entry| entry.library)
+        .collect::<Vec<_>>();
+    libraries.sort();
+    libraries.dedup();
+    assert!(libraries.contains(&"ws2_32".to_owned()));
+    for library in libraries {
+        assert!(
+            source.contains(&format!("#pragma comment(lib, \"{library}.lib\")")),
+            "platform_host.c must embed a default-library directive for manifest import `{library}`"
+        );
+    }
+}
+
+#[test]
 fn descriptor_worker_layout_preserves_abi_v5_offsets() {
     for target in supported_targets() {
         let manifest = AbiManifestV5::canonical_runtime(target);
@@ -68,7 +92,9 @@ fn raw_descriptor_abi_rejects_before_allocation_or_native_admission() {
 
 #[test]
 fn descriptor_worker_ownership_is_disjoint_from_the_existing_abandoned_protocol() {
-    let source = include_str!("../assembly/common/external_wait.h");
+    // A Windows checkout with `core.autocrlf=true` materializes CRLF; the contract is about the
+    // statement sequence, not the checkout's line terminator.
+    let source = include_str!("../assembly/common/external_wait.h").replace("\r\n", "\n");
     assert!(source.contains("BESKID_WORKER_ABANDONED = 1u"));
     assert!(source.contains("BESKID_WORKER_OWNS_DESCRIPTOR = UINT32_C(0x80000000)"));
     assert!(source.contains("request->abandoned |= BESKID_WORKER_OWNS_DESCRIPTOR"));
@@ -181,7 +207,7 @@ fn trusted_intrinsics_are_typed_and_owned_only_by_the_canonical_package() {
     assert_eq!(package.name(), CANONICAL_RUNTIME_PACKAGE_NAME);
     assert_eq!(package.abi_version(), ABI_V5);
     let names = manifest.trusted_runtime_intrinsics.iter().map(|intrinsic| intrinsic.name.as_str()).collect::<Vec<_>>();
-    assert_eq!(names.len(), 68);
+    assert_eq!(names.len(), 69);
     assert!(names.contains(&"pointer_add"));
     assert!(names.contains(&"raw_word_load"));
     assert!(names.contains(&"system_allocate"));
@@ -191,6 +217,7 @@ fn trusted_intrinsics_are_typed_and_owned_only_by_the_canonical_package() {
     assert!(names.contains(&"tls_get"));
     assert!(names.contains(&"trap"));
     assert!(names.contains(&"clock_monotonic_nanos"));
+    assert!(names.contains(&"thread_yield"));
     assert!(names.contains(&"process_getpid"));
     assert!(names.contains(&"fiber_yield"));
     assert!(names.contains(&"env_get"));
@@ -446,6 +473,7 @@ fn target_system_imports_are_exact_and_unknown_contracts_are_rejected() {
         "pthread_mutex_lock",
         "pthread_mutex_unlock",
         "read",
+        "sched_yield",
         "setenv",
         "sin",
         "sqrt",
@@ -487,6 +515,7 @@ fn target_system_imports_are_exact_and_unknown_contracts_are_rejected() {
         "ReleaseSRWLockExclusive",
         "SetEnvironmentVariableW",
         "SetLastError",
+        "SwitchToThread",
         "SleepConditionVariableSRW",
         "TlsAlloc",
         "TlsGetValue",

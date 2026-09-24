@@ -11,7 +11,8 @@ use super::super::sources::{
     CANONICAL_FOUNDATION_PATH_SOURCE_PATH, CANONICAL_FOUNDATION_PROCESS_SOURCE_PATH,
     CANONICAL_FOUNDATION_RANDOM_SOURCE_PATH, CANONICAL_FOUNDATION_STRING_CORE_SOURCE_PATH,
     CANONICAL_FOUNDATION_STRING_UTF8_SOURCE_PATH, CANONICAL_FOUNDATION_TEXT_CURSOR_SOURCE_PATH,
-    CANONICAL_FOUNDATION_TIME_SOURCE_PATH, CANONICAL_NETWORK_INTERNAL_SOURCE_PATH,
+    CANONICAL_FOUNDATION_THREAD_SOURCE_PATH, CANONICAL_FOUNDATION_TIME_SOURCE_PATH,
+    CANONICAL_NETWORK_INTERNAL_SOURCE_PATH,
 };
 
 /// One ABI-facing service used by a compiler-owned Corelib source unit.
@@ -191,6 +192,11 @@ pub(super) const CORELIB_SERVICES: &[CorelibService] = &[
         name: "__fiber_yield",
         symbol: "beskid_rt_v5_fiber_yield",
         source_path: CANONICAL_CORELIB_CONCURRENCY_SOURCE_PATH,
+    },
+    CorelibService {
+        name: "__thread_yield",
+        symbol: "beskid_rt_v5_thread_yield",
+        source_path: CANONICAL_FOUNDATION_THREAD_SOURCE_PATH,
     },
     CorelibService {
         name: "__fiber_now_millis",

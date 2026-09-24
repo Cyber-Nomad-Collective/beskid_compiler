@@ -1723,6 +1723,37 @@
       "targetBindings": []
     },
     {
+      "name": "thread_yield",
+      "symbol": "beskid_rt_v5_thread_yield",
+      "capability": "runtime.adapter.thread_yield",
+      "params": [],
+      "result": "void",
+      "resultStatus": null,
+      "targetBindings": [
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "beskid_rt_v5_thread_yield",
+          "osImports": [
+            "sched_yield"
+          ]
+        },
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "beskid_rt_v5_thread_yield",
+          "osImports": [
+            "sched_yield"
+          ]
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "beskid_rt_v5_thread_yield",
+          "osImports": [
+            "SwitchToThread"
+          ]
+        }
+      ]
+    },
+    {
       "name": "tls_get",
       "symbol": "beskid_rt_v5_intrinsic_tls_get",
       "capability": "runtime.bootstrap.tls_get",
@@ -1943,6 +1974,12 @@
         }
       ],
       "result": "usize"
+    },
+    {
+      "name": "__thread_yield",
+      "symbol": "beskid_rt_v5_thread_yield",
+      "params": [],
+      "result": "void"
     },
     {
       "name": "__timer_sleep_until",
@@ -4320,6 +4357,13 @@
       "result": "isize"
     },
     {
+      "symbol": "sched_yield",
+      "target": "aarch64-apple-darwin",
+      "library": "libSystem",
+      "params": [],
+      "result": "i32"
+    },
+    {
       "symbol": "send",
       "target": "aarch64-apple-darwin",
       "library": "libSystem",
@@ -5062,6 +5106,13 @@
           "type": "u32"
         }
       ],
+      "result": "i32"
+    },
+    {
+      "symbol": "SwitchToThread",
+      "target": "x86_64-pc-windows-msvc",
+      "library": "kernel32",
+      "params": [],
       "result": "i32"
     },
     {
@@ -6851,6 +6902,13 @@
         }
       ],
       "result": "isize"
+    },
+    {
+      "symbol": "sched_yield",
+      "target": "x86_64-unknown-linux-gnu",
+      "library": "libc",
+      "params": [],
+      "result": "i32"
     },
     {
       "symbol": "send",
@@ -10599,6 +10657,35 @@
           "target": "x86_64-unknown-linux-gnu",
           "implementation": "syscall_write_bytes",
           "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__thread_yield",
+      "adapter": "beskid_rt_v5_thread_yield",
+      "params": [],
+      "result": "void",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "beskid_rt_v5_thread_yield",
+          "osImports": [
+            "sched_yield"
+          ]
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "beskid_rt_v5_thread_yield",
+          "osImports": [
+            "SwitchToThread"
+          ]
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "beskid_rt_v5_thread_yield",
+          "osImports": [
+            "sched_yield"
+          ]
         }
       ]
     },

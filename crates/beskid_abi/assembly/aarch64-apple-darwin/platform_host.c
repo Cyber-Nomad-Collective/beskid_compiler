@@ -5,6 +5,7 @@
 #include <fcntl.h>
 #include <limits.h>
 #include <pthread.h>
+#include <sched.h>
 #include <stdatomic.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -154,6 +155,7 @@ int64_t beskid_rt_v5_intrinsic_clock_monotonic_nanos(void) {
 int64_t beskid_rt_v5_intrinsic_clock_realtime_nanos(void) {
   return beskid_clock_nanos(CLOCK_REALTIME);
 }
+void beskid_rt_v5_thread_yield(void) { (void)sched_yield(); }
 _Noreturn void beskid_rt_v5_intrinsic_trap(uint8_t code, void *message,
                                            size_t message_len) {
   static const char prefix[] = "beskid runtime trap v5: ";

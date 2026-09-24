@@ -17,12 +17,7 @@ pub struct TargetInfo {
 /// Infer [`TargetInfo`] from `triple_override` or host platform; uses [`cargo_cross::config`]
 /// for structured target knowledge, then maps to platform extensions.
 pub fn detect_target(triple_override: Option<&str>) -> AotResult<TargetInfo> {
-    let triple = if let Some(explicit) = triple_override {
-        explicit.to_owned()
-    } else {
-        let host = HostPlatform::detect();
-        host.triple
-    };
+    let triple = if let Some(explicit) = triple_override { explicit.to_owned() } else { host_triple() };
 
     // ABI-v5 owns this target even when the vendored `cargo-cross` catalog does not.  Do not
     // make COFF object emission depend on an auxiliary tool's target list.
@@ -50,6 +45,19 @@ pub fn detect_target(triple_override: Option<&str>) -> AotResult<TargetInfo> {
             Ok(TargetInfo { triple, object_ext: "o", static_lib_ext: "a", shared_lib_ext: "so", exe_ext: "" })
         }
         _ => Err(AotError::UnsupportedOutputKind { target: triple, kind: BuildOutputKind::ObjectOnly }),
+    }
+}
+
+/// Host triple for an implicit native build.
+///
+/// A supported ABI-v5 host resolves from the compiled binary's own architecture and OS. End-user
+/// machines have no Rust toolchain, so this path must never ask `rustc -vV` (which
+/// [`HostPlatform::detect`] does) and fall back to a synthetic `<arch>-unknown-<os>` triple that no
+/// target table knows. Only an unsupported host falls through to the auxiliary detection.
+fn host_triple() -> String {
+    match beskid_abi::runtime_kit::host_runtime_triple() {
+        Ok(triple) => triple.to_owned(),
+        Err(_) => HostPlatform::detect().triple,
     }
 }
 
@@ -109,6 +117,13 @@ mod tests {
         };
 
         assert_eq!(output_filename("hello", BuildOutputKind::StaticLib, &target), "hello.lib");
+    }
+
+    #[test]
+    fn implicit_host_target_is_the_compiled_abi_v5_triple_without_a_rust_toolchain() {
+        let expected = beskid_abi::runtime_kit::host_runtime_triple().expect("supported test host");
+        assert_eq!(host_triple(), expected);
+        assert_eq!(detect_target(None).expect("host target").triple, expected);
     }
 
     #[test]

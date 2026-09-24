@@ -524,6 +524,12 @@ define_builtins! {
         returns: Unit,
         injected: true,
     },
+    &["thread_yield"] => {
+        symbol: "beskid_rt_v5_thread_yield",
+        params: [],
+        returns: Unit,
+        injected: true,
+    },
     &["clock_monotonic_nanos"] => {
         symbol: "beskid_rt_v5_intrinsic_clock_monotonic_nanos",
         params: [],
@@ -832,6 +838,12 @@ define_builtins! {
     },
     &["__fiber_yield"] => {
         symbol: "beskid_rt_v5_fiber_yield",
+        params: [],
+        returns: Unit,
+        injected: true,
+    },
+    &["__thread_yield"] => {
+        symbol: "beskid_rt_v5_thread_yield",
         params: [],
         returns: Unit,
         injected: true,
