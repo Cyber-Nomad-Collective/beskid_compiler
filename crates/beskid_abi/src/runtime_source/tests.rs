@@ -450,7 +450,8 @@ fn foundation_sources_do_not_directly_bind_raw_byte_buffer_services() {
             if path.extension().and_then(std::ffi::OsStr::to_str) != Some("bd") {
                 continue;
             }
-            let source = std::fs::read_to_string(&path).expect("read Foundation source");
+            let source = std::fs::read_to_string(&path)
+                .unwrap_or_else(|error| panic!("read Foundation source {}: {error}", path.display()));
             let logical_path = path
                 .strip_prefix(
                     std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corelib/packages/foundation/src"),
