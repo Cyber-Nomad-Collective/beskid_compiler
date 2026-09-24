@@ -17,18 +17,23 @@ def summarize(log: str) -> dict:
     complete = []
     failures = []
     active = None
+    active_passed = 0
     for line in ANSI.sub("", log).splitlines():
         running = RUNNING.search(line)
         if running:
             active = running.group(1)
+            active_passed = 0
             continue
         result = RESULT.match(line)
         if result and active:
             complete.append((active, int(result.group(1)), int(result.group(2))))
             active = None
+            active_passed = 0
+        if active and line.startswith("test ") and line.endswith(" ... ok"):
+            active_passed += 1
         if line.startswith("test ") and line.endswith(" ... FAILED"):
             failures.append(line)
-    return {"complete": complete, "active": active, "failures": failures}
+    return {"complete": complete, "active": active, "active_passed": active_passed, "failures": failures}
 
 
 def main() -> int:
@@ -40,7 +45,7 @@ def main() -> int:
     passed = sum(item[1] for item in result["complete"])
     failed = sum(item[2] for item in result["complete"])
     print(f"completed binaries: {len(result['complete'])}; tests: {passed} passed, {failed} failed")
-    print(f"active binary: {result['active'] or '(none)'}")
+    print(f"active binary: {result['active'] or '(none)'} ({result['active_passed']} tests passed so far)")
     for failure in result["failures"]:
         print(f"failure: {failure}")
     return 0

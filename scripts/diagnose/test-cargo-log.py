@@ -21,11 +21,13 @@ test two ... ok
 test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
      Running tests\\second.rs (target\\debug\\deps\\second.exe)
 running 1 test
+test ready ... ok
 test stuck has been running for over 60 seconds
 """
         result = cargo_log.summarize(log)
         self.assertEqual(result["complete"], [("first.rs", 2, 0)])
         self.assertEqual(result["active"], "second.rs")
+        self.assertEqual(result["active_passed"], 1)
         self.assertEqual(result["failures"], [])
 
     def test_failure_and_ansi(self):
