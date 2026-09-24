@@ -15,7 +15,7 @@ fn managed_local_rooting_is_one_atomized_lowering_seam() {
 
 #[test]
 fn append_roots_managed_values_and_uses_owner_specific_publication() {
-    let calls = include_str!("../src/context/calls.rs");
+    let calls = include_str!("../src/context/calls/collections.rs");
     let append = calls
         .split("CollectionOperation::Append { owner: mutation_owner }")
         .nth(1)

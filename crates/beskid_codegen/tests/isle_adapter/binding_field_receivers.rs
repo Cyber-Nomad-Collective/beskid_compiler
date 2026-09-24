@@ -246,7 +246,7 @@ unit Main() { Build(); return; }
 /// `appendown` slice reproducer: `Array.Append` on an array field reached through a match
 /// binding (`Result::Ok(request) => { Array.Append(request.headers, ...) }`). The owner proof
 /// this exercises is [`beskid_isle`]'s `CollectionMutationOwner::AggregateField` path in
-/// `emit_collection_operation_value` (crates/beskid_isle/src/context/calls.rs) -- distinct from
+/// `emit_collection_operation_value` (crates/beskid_isle/src/context/calls/collections.rs) -- distinct from
 /// the `mut T[]` *parameter*-passed-by-value growth rule covered by
 /// `mutable_local_array_append_inside_a_loop_preserves_its_owner_slot` in
 /// `method_owned_fields.rs`. This receiver is bound by an enum match arm rather than a `let`, so

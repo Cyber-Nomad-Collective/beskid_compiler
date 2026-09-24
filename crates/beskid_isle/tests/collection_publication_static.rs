@@ -1,6 +1,6 @@
 #[test]
 fn append_publicates_the_proven_owner_before_exactly_one_finish() {
-    let source = include_str!("../src/context/calls.rs");
+    let source = include_str!("../src/context/calls/collections.rs");
     let append = source
         .split("CollectionOperation::Append { owner: mutation_owner }")
         .nth(1)
