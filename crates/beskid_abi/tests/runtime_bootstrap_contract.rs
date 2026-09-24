@@ -68,7 +68,9 @@ fn raw_descriptor_abi_rejects_before_allocation_or_native_admission() {
 
 #[test]
 fn descriptor_worker_ownership_is_disjoint_from_the_existing_abandoned_protocol() {
-    let source = include_str!("../assembly/common/external_wait.h");
+    // A Windows checkout with `core.autocrlf=true` materializes CRLF; the contract is about the
+    // statement sequence, not the checkout's line terminator.
+    let source = include_str!("../assembly/common/external_wait.h").replace("\r\n", "\n");
     assert!(source.contains("BESKID_WORKER_ABANDONED = 1u"));
     assert!(source.contains("BESKID_WORKER_OWNS_DESCRIPTOR = UINT32_C(0x80000000)"));
     assert!(source.contains("request->abandoned |= BESKID_WORKER_OWNS_DESCRIPTOR"));

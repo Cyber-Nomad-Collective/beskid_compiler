@@ -7,6 +7,10 @@ use cargo_cross::config::{Arch, Os, get_target_config};
 
 use crate::error::{AotError, AotResult};
 
+fn tool_unavailable(tool: impl AsRef<std::ffi::OsStr>, error: std::io::Error) -> AotError {
+    AotError::NativeToolUnavailable { tool: tool.as_ref().to_string_lossy().into_owned(), message: error.to_string() }
+}
+
 pub(super) fn compile_context_assembly(
     target: &TargetMetadata,
     output_dir: &std::path::Path,
@@ -42,7 +46,7 @@ pub(super) fn compile_context_assembly(
             message: "no canonical context assembly invocation for target".to_owned(),
         });
     }
-    let output = command.output().map_err(|_| AotError::LinkerUnavailable)?;
+    let output = command.output().map_err(|error| tool_unavailable(command.get_program(), error))?;
     if !output.status.success() {
         return Err(AotError::LinkFailed {
             status: output.status.code().unwrap_or(-1),
@@ -73,7 +77,7 @@ pub(super) fn compile_platform_objects(
     } else {
         assembly.arg(&source).arg("-o").arg(&object);
     }
-    let output = assembly.output().map_err(|_| AotError::LinkerUnavailable)?;
+    let output = assembly.output().map_err(|error| tool_unavailable(plan.assembly_program, error))?;
     if !output.status.success() {
         return Err(AotError::LinkFailed {
             status: output.status.code().unwrap_or(-1),
@@ -93,7 +97,7 @@ pub(super) fn compile_platform_objects(
         .arg("-o")
         .arg(&tls_object)
         .output()
-        .map_err(|_| AotError::LinkerUnavailable)?;
+        .map_err(|error| tool_unavailable(plan.tls_program, error))?;
     if !output.status.success() {
         return Err(AotError::LinkFailed {
             status: output.status.code().unwrap_or(-1),
@@ -113,7 +117,7 @@ pub(super) fn compile_platform_objects(
         .arg("-o")
         .arg(&adapter_object)
         .output()
-        .map_err(|_| AotError::LinkerUnavailable)?;
+        .map_err(|error| tool_unavailable(plan.tls_program, error))?;
     if !output.status.success() {
         return Err(AotError::LinkFailed {
             status: output.status.code().unwrap_or(-1),
@@ -139,7 +143,7 @@ pub(super) fn compile_executable_bootstrap(
 ) -> AotResult<PathBuf> {
     let (mut command, object) =
         executable_bootstrap_command(target, core_args, output_dir, name, program_returns_void)?;
-    let output = command.output().map_err(|_| AotError::LinkerUnavailable)?;
+    let output = command.output().map_err(|error| tool_unavailable(command.get_program(), error))?;
     if !output.status.success() {
         return Err(AotError::LinkFailed {
             status: output.status.code().unwrap_or(-1),
@@ -358,6 +362,13 @@ void beskid_rt_v5_process_shutdown(void *state) {
         assert_eq!(result.exit_code, 0, "unit return must yield status zero: {result:?}");
         assert_eq!(result.stdout, b"shutdown-after-unit-return");
         assert!(result.stderr.is_empty());
+    }
+
+    #[test]
+    fn missing_native_tool_is_reported_by_name_not_as_an_anonymous_linker_failure() {
+        let error = std::process::Command::new("beskid-definitely-missing-assembler").output().unwrap_err();
+        let message = super::tool_unavailable("beskid-definitely-missing-assembler", error).to_string();
+        assert!(message.starts_with("[E4020] Native build tool `beskid-definitely-missing-assembler` not available"));
     }
 
     #[test]

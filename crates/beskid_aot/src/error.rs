@@ -31,6 +31,12 @@ pub enum AotError {
     #[error("[E4020] Linker tool not available")]
     LinkerUnavailable,
 
+    /// A native assembler or C compiler required by the runtime/bootstrap objects could not be
+    /// spawned. Names the tool so a missing PATH entry (for example LLVM's `llvm-ml`/`clang` on
+    /// Windows) is not reported as an anonymous linker failure.
+    #[error("[E4020] Native build tool `{tool}` not available: {message}")]
+    NativeToolUnavailable { tool: String, message: String },
+
     #[error("[E4021] Link step failed (exit {status}): {command}{detail}")]
     LinkFailed { status: i32, command: String, detail: String },
 
