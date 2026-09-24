@@ -300,3 +300,26 @@ fn immutable_local_reassignment_is_rejected_with_e1214_before_isle() {
     assert!(rendered.contains("E1214"), "{rendered}");
     assert!(!rendered.contains("MissingRuleOrFact"), "{rendered}");
 }
+
+/// A call whose callee names nothing must stop at the legality gate with a resolution code at
+/// the call. Before the gate carried `unresolved_call_target`, `call_lowering` failed closed with
+/// `unavailable("call_lowering")` and ISLE reported `MissingRuleOrFact CallExpression`.
+#[test]
+fn unknown_callee_is_rejected_with_a_resolution_code_before_isle() {
+    let cases = [
+        ("i64 Helper() { return 1; } i64 Main() { return Helpr(); }", 1, "E1101", "Helpr"),
+        ("i64 Main() { return Missing.Helper(); }", 0, "E1108", "Missing"),
+        ("T[] Empty<T>() { return []; } unit Main() { Empty(); return; }", 1, "E1203", ""),
+    ];
+    for (source, item, code, name) in cases {
+        let (input, isa, root) = item_fixture_with_root(source);
+        let db = input.database();
+        let main = find_function_definitions(db, root)[item];
+        let error = lower_syntax_program(&input, isa.as_ref(), &[SyntaxModuleItem { key: main, symbol: "Main".into() }])
+            .expect_err("an unknown callee must not lower");
+        let rendered = error.to_string();
+        assert!(rendered.contains(code), "{source}: {rendered}");
+        assert!(rendered.contains(name), "{source}: {rendered}");
+        assert!(!rendered.contains("MissingRuleOrFact"), "{source}: {rendered}");
+    }
+}

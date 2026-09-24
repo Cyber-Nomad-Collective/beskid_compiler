@@ -14,59 +14,7 @@ pub(in crate::semantic_contract) fn call_lowering_for_node(
     Some(match &call.callee.node {
         expression if expression_is_lambda(expression) => Ok(CallLowering::Dynamic),
         beskid_analysis::syntax::Expression::Path(path) => {
-            let path = &path.node.path.node;
-            if imported_generic_nominal_receiver_requires_instantiation(db, key, path) {
-                Err(SemanticError::unavailable("generic_receiver_instantiation"))
-            } else if let Some(service) = corelib_service_for(db, key, path) {
-                Ok(CallLowering::CorelibService(service))
-            } else if let Some((declaration, _)) = unqualified_enclosing_method_call(program, index, key, path) {
-                Ok(CallLowering::Direct(declaration))
-            } else if let Some((declaration, _)) = nominal_local_member_receiver(db, program, index, key, path) {
-                Ok(CallLowering::Direct(declaration))
-            } else if let Some(receiver) = contract_member_receiver(db, program, index, key, path) {
-                receiver.map(|(method, _)| CallLowering::Direct(method))
-            } else if path.segments.iter().any(|segment| !segment.node.type_args.is_empty()) {
-                if let Some(instantiation) = generic_call_instantiation_for_node(db, program, index, key, path) {
-                    Ok(CallLowering::Direct(instantiation.declaration))
-                } else if let Some(declaration) = resolve_item_declaration_candidate(db, program, index, key, path)
-                    && generic_call_uses_parameter_type_arguments(db, key, declaration, path)
-                {
-                    Ok(CallLowering::Direct(declaration))
-                } else if imported_call_receiver_exists(db, key, path) {
-                    Ok(CallLowering::Dynamic)
-                } else {
-                    Err(SemanticError::unavailable("generic_call_instantiation"))
-                }
-            } else if let Some(declaration) = resolve_item_declaration(db, program, index, key, path) {
-                if function_declares_generics(db, declaration) && call.args.is_empty() {
-                    Err(SemanticError::unavailable("generic_call_instantiation"))
-                } else {
-                    Ok(CallLowering::Direct(declaration))
-                }
-            } else if canonical_runtime_intrinsic_scope(db, key)
-                && let Some(intrinsic) = runtime_intrinsic(db, key).ok().flatten()
-            {
-                // The manifest-owned builtin index is the Salsa fact that separates canonical
-                // runtime intrinsics from ordinary Dynamic calls. Codegen still requires its
-                // separate canonical-source capability before it can emit this classification.
-                Ok(CallLowering::Runtime(intrinsic))
-            } else if path.segments.len() == 1
-                && let Some(builtin) = ManifestBuiltin::for_name(path.segments[0].node.name.node.name.as_str())
-            {
-                Ok(CallLowering::ManifestBuiltin(builtin))
-            } else if imported_call_receiver_exists(db, key, path)
-                || (path.segments.iter().all(|segment| segment.node.type_args.is_empty())
-                    && beskid_analysis::builtins::builtin_for_path(
-                        &path.segments.iter().map(|segment| segment.node.name.node.name.clone()).collect::<Vec<_>>(),
-                    )
-                    .is_some())
-            {
-                Ok(CallLowering::Dynamic)
-            } else if let Some(declaration) = resolve_local_extern_contract_method(program, index, key, path) {
-                Ok(CallLowering::Direct(declaration))
-            } else {
-                Err(SemanticError::unavailable("call_lowering"))
-            }
+            path_call_resolution(db, program, index, key, call, &path.node.path.node).into_query_result()
         }
         beskid_analysis::syntax::Expression::Member(member) => {
             // Nominal methods lower Direct when declaration authority exists.
@@ -84,6 +32,104 @@ pub(in crate::semantic_contract) fn call_lowering_for_node(
         }
         _ => Err(SemanticError::unavailable("call_lowering")),
     })
+}
+
+/// How one call with a path callee resolves, before it is folded into the public
+/// [`call_lowering`] tri-state. `call_lowering` and the `unresolved_call_target` legality fact
+/// both consume this single classification, so the legality gate reports an unknown callee
+/// exactly where lowering itself finds no call target, never by reinterpreting the text of an
+/// `unavailable` error.
+pub(in crate::semantic_contract) enum PathCallResolution {
+    Lowered(CallLowering),
+    /// A resolution authority matched the call but could not complete it (a compiler gap).
+    Unavailable(&'static str),
+    Failed(SemanticError),
+    /// No declaration, import, inline module, builtin, runtime intrinsic, or extern contract
+    /// member names the callee. The payload is the query name `call_lowering` reports.
+    UnresolvedTarget(&'static str),
+    /// The callee is a generic function called without type arguments and without value
+    /// arguments, so nothing can fix its type parameters.
+    MissingTypeArguments,
+}
+
+impl PathCallResolution {
+    fn into_query_result(self) -> Result<CallLowering, SemanticError> {
+        match self {
+            Self::Lowered(lowering) => Ok(lowering),
+            Self::Unavailable(query) | Self::UnresolvedTarget(query) => Err(SemanticError::unavailable(query)),
+            Self::Failed(error) => Err(error),
+            Self::MissingTypeArguments => Err(SemanticError::unavailable("generic_call_instantiation")),
+        }
+    }
+}
+
+/// Classify one call whose callee is a path. This is the body of [`call_lowering`] for path
+/// callees; see [`PathCallResolution`].
+pub(in crate::semantic_contract) fn path_call_resolution(
+    db: &dyn Db,
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    key: AstNodeKey,
+    call: &beskid_analysis::syntax::CallExpression,
+    path: &beskid_analysis::syntax::Path,
+) -> PathCallResolution {
+    if imported_generic_nominal_receiver_requires_instantiation(db, key, path) {
+        PathCallResolution::Unavailable("generic_receiver_instantiation")
+    } else if let Some(service) = corelib_service_for(db, key, path) {
+        PathCallResolution::Lowered(CallLowering::CorelibService(service))
+    } else if let Some((declaration, _)) = unqualified_enclosing_method_call(program, index, key, path) {
+        PathCallResolution::Lowered(CallLowering::Direct(declaration))
+    } else if let Some((declaration, _)) = nominal_local_member_receiver(db, program, index, key, path) {
+        PathCallResolution::Lowered(CallLowering::Direct(declaration))
+    } else if let Some(receiver) = contract_member_receiver(db, program, index, key, path) {
+        match receiver {
+            Ok((method, _)) => PathCallResolution::Lowered(CallLowering::Direct(method)),
+            Err(error) => PathCallResolution::Failed(error),
+        }
+    } else if path.segments.iter().any(|segment| !segment.node.type_args.is_empty()) {
+        if let Some(instantiation) = generic_call_instantiation_for_node(db, program, index, key, path) {
+            PathCallResolution::Lowered(CallLowering::Direct(instantiation.declaration))
+        } else if let Some(declaration) = resolve_item_declaration_candidate(db, program, index, key, path)
+            && generic_call_uses_parameter_type_arguments(db, key, declaration, path)
+        {
+            PathCallResolution::Lowered(CallLowering::Direct(declaration))
+        } else if imported_call_receiver_exists(db, key, path) {
+            PathCallResolution::Lowered(CallLowering::Dynamic)
+        } else if resolve_item_declaration_candidate(db, program, index, key, path).is_none() {
+            PathCallResolution::UnresolvedTarget("generic_call_instantiation")
+        } else {
+            PathCallResolution::Unavailable("generic_call_instantiation")
+        }
+    } else if let Some(declaration) = resolve_item_declaration(db, program, index, key, path) {
+        if function_declares_generics(db, declaration) && call.args.is_empty() {
+            PathCallResolution::MissingTypeArguments
+        } else {
+            PathCallResolution::Lowered(CallLowering::Direct(declaration))
+        }
+    } else if canonical_runtime_intrinsic_scope(db, key)
+        && let Some(intrinsic) = runtime_intrinsic(db, key).ok().flatten()
+    {
+        // The manifest-owned builtin index is the Salsa fact that separates canonical
+        // runtime intrinsics from ordinary Dynamic calls. Codegen still requires its
+        // separate canonical-source capability before it can emit this classification.
+        PathCallResolution::Lowered(CallLowering::Runtime(intrinsic))
+    } else if path.segments.len() == 1
+        && let Some(builtin) = ManifestBuiltin::for_name(path.segments[0].node.name.node.name.as_str())
+    {
+        PathCallResolution::Lowered(CallLowering::ManifestBuiltin(builtin))
+    } else if imported_call_receiver_exists(db, key, path)
+        || (path.segments.iter().all(|segment| segment.node.type_args.is_empty())
+            && beskid_analysis::builtins::builtin_for_path(
+                &path.segments.iter().map(|segment| segment.node.name.node.name.clone()).collect::<Vec<_>>(),
+            )
+            .is_some())
+    {
+        PathCallResolution::Lowered(CallLowering::Dynamic)
+    } else if let Some(declaration) = resolve_local_extern_contract_method(program, index, key, path) {
+        PathCallResolution::Lowered(CallLowering::Direct(declaration))
+    } else {
+        PathCallResolution::UnresolvedTarget("call_lowering")
+    }
 }
 
 /// Resolve `Method(args)` inside another method of the same nominal type.

@@ -73,8 +73,8 @@ pub use persistence::{
 pub use semantic_contract::{DeadCollectionGrowth, dead_collection_growth, is_growth_call_candidate};
 pub use semantic_contract::{UnresolvedTypeReference, unresolved_type_reference};
 pub use semantic_contract::{
-    CallArityMismatch, ImmutableLocalAssignment, SemanticFinding, call_arity_mismatch, check_items,
-    immutable_local_assignment,
+    CallArityMismatch, ImmutableLocalAssignment, SemanticFinding, UnresolvedCallKind, UnresolvedCallTarget,
+    call_arity_mismatch, check_items, immutable_local_assignment, unresolved_call_target,
 };
 pub use semantic_contract::{
     AggregateFieldAccess, AggregateFieldShape, AggregateLayoutFact, AggregateLiteralFieldValues,

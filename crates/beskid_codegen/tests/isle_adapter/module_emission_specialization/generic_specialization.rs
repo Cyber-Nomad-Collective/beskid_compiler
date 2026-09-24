@@ -90,9 +90,11 @@ fn parsed_program_rejects_a_generic_direct_call_without_a_provable_specializatio
     )
     .expect_err("a generic direct call without source-proven arguments must fail closed");
 
+    // Nothing fixes `T` in `Missing()`: the legality gate reports E1203 at the call before ISLE.
     let rendered = error.to_string();
-    assert!(rendered.contains("MissingRuleOrFact"), "{rendered}");
+    assert!(rendered.contains("E1203"), "{rendered}");
     assert!(rendered.contains("CallExpression@"), "{rendered}");
+    assert!(!rendered.contains("MissingRuleOrFact"), "{rendered}");
 }
 
 #[test]

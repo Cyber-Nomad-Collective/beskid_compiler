@@ -340,3 +340,49 @@ fn stale_generation_cannot_reuse_item_or_call_graph_facts() {
     assert_eq!(resolved_item(&db, helper_path).expect("stale item"), None);
     assert_eq!(direct_callees(&db, main).expect("stale callees"), None);
 }
+
+fn unresolved_call_in_item(source: &str, item: usize) -> Option<beskid_queries::UnresolvedCallTarget> {
+    let (db, _project, unit, generation, index) = setup(source);
+    let key = key(unit, generation, &index, NodeKind::FunctionDefinition, item);
+    beskid_queries::unresolved_call_target(&db, key).expect("unresolved_call_target query")
+}
+
+#[test]
+fn unresolved_call_target_reports_an_unknown_single_segment_callee_at_the_call() {
+    let source = "i64 Helper() { return 1; } i64 Main() { return Helpr(); }";
+    let (db, _project, unit, generation, index) = setup(source);
+    let main = key(unit, generation, &index, NodeKind::FunctionDefinition, 1);
+    let finding = beskid_queries::unresolved_call_target(&db, main).expect("query").expect("`Helpr` names nothing");
+    assert_eq!(finding.kind, beskid_queries::UnresolvedCallKind::UnknownValue { name: Arc::from("Helpr") });
+    assert_eq!(finding.call, key(unit, generation, &index, NodeKind::CallExpression, 0));
+}
+
+#[test]
+fn unresolved_call_target_reports_an_unknown_module_qualifier() {
+    let finding = unresolved_call_in_item("i64 Main() { return Missing.Helper(); }", 0).expect("`Missing` names nothing");
+    assert_eq!(finding.kind, beskid_queries::UnresolvedCallKind::UnknownModulePath { path: Arc::from("Missing") });
+}
+
+#[test]
+fn unresolved_call_target_reports_a_generic_call_without_inferable_type_arguments() {
+    let finding = unresolved_call_in_item("T[] Empty<T>() { return []; } unit Main() { Empty(); return; }", 1)
+        .expect("nothing fixes `T`");
+    assert_eq!(finding.kind, beskid_queries::UnresolvedCallKind::MissingTypeArguments);
+}
+
+#[test]
+fn unresolved_call_target_accepts_calls_other_authorities_own() {
+    let cases = [
+        ("i64 Helper() { return 1; } i64 Main() { return Helper(); }", 1),
+        ("i64 Main() { let f = (i64 value) => value; return f(1); }", 0),
+        ("unit Main() { for i in range(0, 4) { } return; }", 0),
+        ("u8 Main(u8 b) { return b - u8(97); }", 0),
+        ("T[] Empty<T>() { return []; } unit Main() { Empty<i64>(); return; }", 1),
+        // A qualifier that names a local type is a member path, not a module path; its member
+        // has other authorities.
+        ("pub type Pair { i64 a } i64 Main() { return Pair.Missing(); }", 0),
+    ];
+    for (source, item) in cases {
+        assert_eq!(unresolved_call_in_item(source, item), None, "{source}");
+    }
+}

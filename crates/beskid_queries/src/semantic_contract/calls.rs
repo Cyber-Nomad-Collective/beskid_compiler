@@ -33,6 +33,6 @@ pub(in crate::semantic_contract) use generics::{
 
 pub(in crate::semantic_contract) use resolution::{
     call_lowering_for_node, canonical_runtime_intrinsic_scope, corelib_service_for, flatten_member_as_path_declaration,
-    method_declaration_for_member_receiver, nominal_local_member_receiver, nominal_member_receiver_tracked,
-    resolve_local_extern_contract_method, unique_nominal_method_declaration, unqualified_enclosing_method_call,
+    PathCallResolution, method_declaration_for_member_receiver, nominal_local_member_receiver,
+    nominal_member_receiver_tracked, path_call_resolution, resolve_local_extern_contract_method, unique_nominal_method_declaration, unqualified_enclosing_method_call,
 };

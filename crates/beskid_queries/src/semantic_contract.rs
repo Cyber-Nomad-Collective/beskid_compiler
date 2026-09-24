@@ -49,7 +49,7 @@ use abi::{
 };
 use bulk::bulk_parameter_tracked;
 use calls::{
-    abi_semantic_type, call_arguments_tracked, call_lowering_for_node, call_lowering_tracked,
+    PathCallResolution, abi_semantic_type, call_arguments_tracked, call_lowering_for_node, call_lowering_tracked,
     canonical_intrinsic_parameter_type, canonical_result_definition_for_type, canonical_result_variant,
     canonical_runtime_intrinsic_scope, cast_intents_for_node, cast_intents_tracked, corelib_service_for,
     expected_cast_type, expected_explicit_call_argument_type, explicit_generic_type_argument_syntax,
@@ -61,7 +61,7 @@ use calls::{
     generic_source_type_identity_with_substitutions,
     imported_call_receiver_exists, imported_generic_nominal_receiver_requires_instantiation,
     is_transparent_binary_operand_path, method_declaration_for_member_receiver, nominal_local_member_receiver,
-    nominal_member_receiver_tracked, primitive_integer, primitive_numeric, primitive_numeric_conversion_target,
+    nominal_member_receiver_tracked, path_call_resolution, primitive_integer, primitive_numeric, primitive_numeric_conversion_target,
     primitive_numeric_conversion_tracked, range_for_fact_tracked, resolve_local_extern_contract_method,
     result_type_parts, stable_declaration_identity, substitute_explicit_type, try_expression_fact_for_node,
     try_expression_fact_tracked, try_operand_declaration,
@@ -71,7 +71,10 @@ use calls::{
 pub use cleanup::{ScopedAcquisition, ScopedCleanup, ScopedCleanupDiagnostic, scoped_cleanup};
 pub use growth::{DeadCollectionGrowth, dead_collection_growth, is_growth_call_candidate};
 pub use local_type_resolution::{UnresolvedTypeReference, unresolved_type_reference};
-pub use legality::{CallArityMismatch, ImmutableLocalAssignment, call_arity_mismatch, check_items, immutable_local_assignment};
+pub use legality::{
+    CallArityMismatch, ImmutableLocalAssignment, UnresolvedCallKind, UnresolvedCallTarget, call_arity_mismatch, check_items,
+    immutable_local_assignment, unresolved_call_target,
+};
 use closures_spawn::{
     callable_fiber_ownership_tracked, callable_signature_for_node, callable_signature_for_path,
     callable_signature_tracked, capture_storage_class, capture_storage_for_node, capture_storage_tracked,

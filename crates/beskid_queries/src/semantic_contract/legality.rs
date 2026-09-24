@@ -9,8 +9,9 @@
 //! `docs/superpowers/specs/2026-09-23-production-semantic-diagnostics-design.md` section 2.1).
 //!
 //! A legality fact is a positive, Salsa-tracked description of one user error
-//! (`unresolved_type_reference` for E1201, `call_arity_mismatch` for E1204): it is never string
-//! classification of an opaque `SemanticError::unavailable`. `check_items` collects every finding
+//! (`unresolved_type_reference` for E1201, `unresolved_call_target` for E1101/E1108/E1203,
+//! `call_arity_mismatch` for E1204): it is never string classification of an opaque
+//! `SemanticError::unavailable`. `check_items` collects every finding
 //! of the pass rather than stopping at the first, so `beskid test` and `beskid build` report every
 //! violation the requested items carry in one run.
 
@@ -18,6 +19,10 @@ use super::*;
 use beskid_analysis::analysis::SemanticIssueKind;
 use beskid_analysis::syntax::{FunctionDefinition, MethodDefinition};
 use beskid_analysis::syntax_query::{NodeKind, SyntaxIndex};
+
+mod calls;
+
+pub use calls::{UnresolvedCallKind, UnresolvedCallTarget, unresolved_call_target};
 
 /// A direct call whose supplied argument count does not match its resolved declaration's
 /// parameter count (plus one for an implicit or explicit method receiver).
@@ -200,6 +205,16 @@ pub fn check_items(db: &dyn Db, items: &[AstNodeKey]) -> Result<(), Vec<Semantic
                 site: finding.assignment,
                 related: Vec::new(),
             });
+        }
+        if let Ok(Some(finding)) = unresolved_call_target(db, item) {
+            let kind = match finding.kind {
+                UnresolvedCallKind::UnknownValue { name } => SemanticIssueKind::ResolveUnknownValue { name: name.to_string() },
+                UnresolvedCallKind::UnknownModulePath { path } => {
+                    SemanticIssueKind::ResolveUnknownModulePath { path: path.to_string() }
+                }
+                UnresolvedCallKind::MissingTypeArguments => SemanticIssueKind::TypeMissingTypeArguments,
+            };
+            findings.push(SemanticFinding { kind, site: finding.call, related: Vec::new() });
         }
         if let Ok(Some(finding)) = call_arity_mismatch(db, item) {
             findings.push(SemanticFinding {
