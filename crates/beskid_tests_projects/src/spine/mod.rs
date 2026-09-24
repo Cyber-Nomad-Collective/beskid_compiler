@@ -6,6 +6,7 @@ mod corelib_spine_harness;
 mod corelib_tests_codegen;
 mod corelib_tests_typecheck;
 mod diagnostics_parity;
+mod legality_compile_fail;
 mod link_completeness;
 mod materialization_parse;
 mod mutex_local_path;
