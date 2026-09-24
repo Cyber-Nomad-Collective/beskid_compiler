@@ -1,788 +1,221 @@
+//! `NodeFacts` for `SyntaxNodeFacts`: one delegator per fact, implemented by concern in submodules.
+
 use super::*;
+
+mod calls;
+mod collections;
+mod enums;
+mod literals;
+mod shape;
+mod structs;
+mod types;
 
 impl NodeFacts for SyntaxNodeFacts<'_> {
     fn scoped_cleanup(&self, key: AstNodeKey) -> Option<beskid_isle::ScopedCleanupPlan> {
-        let fact = self.query(beskid_queries::scoped_cleanup(self.db, key))?;
-        if fact.diagnostic.is_some() {
-            return None;
-        }
-        let dispose = fact.dispose?;
-        let conversion = match fact.conversion {
-            Some(item) => Some((
-                DirectCallee::item(item),
-                signature_for_item(self.isa?, self.query(item_abi_signature(self.db, item))?)?,
-            )),
-            None => None,
-        };
-        Some(beskid_isle::ScopedCleanupPlan {
-            binding: fact.binding,
-            body: fact.body,
-            dispose: DirectCallee::item(dispose),
-            dispose_signature: signature_for_item(self.isa?, self.query(item_abi_signature(self.db, dispose))?)?,
-            dispose_layout: self.enum_layout_from_fact(&fact.dispose_layout?)?,
-            conversion,
-            enclosing_layout: self.enum_layout_from_fact(&fact.enclosing_layout?)?,
-            allocation: self.managed_struct_allocation(key)?,
-            converted_error_managed: fact.converted_error_managed,
-        })
+        self.scoped_cleanup_impl(key)
     }
+
     fn node_kind(&self, key: AstNodeKey) -> Option<NodeKind> {
-        if self.aggregate_field_access_in_context(key).is_some() {
-            return Some(NodeKind::FieldExpression);
-        }
-        if self.query(range_for_fact(self.db, key)).is_some() {
-            return Some(NodeKind::RangeExpression);
-        }
-        self.query(node_kind(self.db, key)).and_then(map_node_kind)
+        self.node_kind_impl(key)
     }
 
     fn literal_kind(&self, key: AstNodeKey) -> Option<LiteralKind> {
-        self.literal(key).map(|fact| match fact {
-            LiteralFact::Integer(_) => LiteralKind::Integer,
-            LiteralFact::Float(_) => LiteralKind::Float,
-            LiteralFact::String(_) => LiteralKind::String,
-            LiteralFact::Char(_) => LiteralKind::Char,
-            LiteralFact::Bool(_) => LiteralKind::Boolean,
-        })
+        self.literal_kind_impl(key)
     }
 
     fn constant_integer(&self, key: AstNodeKey) -> Option<i64> {
-        self.query(constant_integer(self.db, key))
+        self.constant_integer_impl(key)
     }
 
     fn canonical_runtime_constant_integer(&self, key: AstNodeKey) -> Option<i64> {
-        if self.node_kind(key) != Some(NodeKind::PathExpression) || self.input.runtime_intrinsic_capability().is_none()
-        {
-            return None;
-        }
-        self.query(constant_integer(self.db, key))
+        self.canonical_runtime_constant_integer_impl(key)
     }
 
     fn operator_fact(&self, key: AstNodeKey) -> Option<OperatorFact> {
-        let operator = self.query(operator_fact(self.db, key))?;
-        let specialized_string_operands =
-            matches!(operator, beskid_queries::OperatorFact::Eq | beskid_queries::OperatorFact::NotEq)
-                && self.child(key, 0).and_then(|operand| self.scalar_semantic_type(operand))
-                    == Some(SemanticTypeId::STRING)
-                && self.child(key, 1).and_then(|operand| self.scalar_semantic_type(operand))
-                    == Some(SemanticTypeId::STRING);
-        let specialized_enum_operands =
-            matches!(operator, beskid_queries::OperatorFact::Eq | beskid_queries::OperatorFact::NotEq)
-                && !specialized_string_operands
-                && self.binary_enum_layout(key).is_some();
-        Some(match (operator, specialized_string_operands, specialized_enum_operands) {
-            (beskid_queries::OperatorFact::Eq, _, true) => OperatorFact::EnumEq,
-            (beskid_queries::OperatorFact::NotEq, _, true) => OperatorFact::EnumNotEq,
-            (beskid_queries::OperatorFact::Eq, true, _) => OperatorFact::StringEq,
-            (beskid_queries::OperatorFact::NotEq, true, _) => OperatorFact::StringNotEq,
-            (operator, _, _) => map_operator_fact(operator),
-        })
+        self.operator_fact_impl(key)
     }
 
     fn child(&self, key: AstNodeKey, index: u8) -> Option<AstNodeKey> {
-        if index == 0
-            && let Some(access) = self.aggregate_field_access_in_context(key)
-        {
-            return Some(access.receiver);
-        }
-        let children = if self.node_kind(key) == Some(NodeKind::TestDefinition) {
-            self.query(test_statement_nodes(self.db, key))?
-        } else if self.node_kind(key) == Some(NodeKind::BlockExpression) {
-            self.query(block_statement_nodes(self.db, key))?
-        } else if self.node_kind(key) == Some(NodeKind::BinaryExpression) {
-            self.children(key)
-                .iter()
-                .copied()
-                .filter(|child| {
-                    !matches!(self.query(node_kind(self.db, *child)), Some(beskid_queries::IndexedNodeKind::BinaryOp))
-                })
-                .collect()
-        } else if self.node_kind(key) == Some(NodeKind::UnaryExpression) {
-            // Operand-only view: UnaryOp is selected via `operator_fact`, not as a child.
-            self.children(key)
-                .iter()
-                .copied()
-                .filter(|child| {
-                    !matches!(self.query(node_kind(self.db, *child)), Some(beskid_queries::IndexedNodeKind::UnaryOp))
-                })
-                .collect()
-        } else if self.node_kind(key) == Some(NodeKind::ForStatement) {
-            self.children(key)
-                .iter()
-                .copied()
-                .filter(|child| {
-                    self.query(node_kind(self.db, *child)) != Some(beskid_queries::IndexedNodeKind::Identifier)
-                })
-                .collect()
-        } else {
-            self.children(key).into()
-        };
-        children.get(usize::from(index)).copied().and_then(|child| self.unwrap_transparent(child))
+        self.child_impl(key, index)
     }
 
     fn statement_count(&self, key: AstNodeKey) -> Option<u8> {
-        let kind = self.node_kind(key)?;
-        match kind {
-            NodeKind::BlockExpression => {
-                let nodes = self.query(block_statement_nodes(self.db, key))?;
-                let len =
-                    if self.query(node_kind(self.db, key)) == Some(beskid_queries::IndexedNodeKind::BlockExpression) {
-                        nodes.last().map_or(nodes.len(), |result_statement| {
-                            if self.node_kind(*result_statement) == Some(NodeKind::ExpressionStatement) {
-                                nodes.len() - 1
-                            } else {
-                                nodes.len()
-                            }
-                        })
-                    } else {
-                        nodes.len()
-                    };
-                if len > u8::MAX as usize {
-                    return None;
-                }
-                u8::try_from(len).ok()
-            }
-            NodeKind::TestDefinition => {
-                let nodes = self.query(test_statement_nodes(self.db, key))?;
-                let len = nodes.len();
-                if len > u8::MAX as usize {
-                    return None;
-                }
-                u8::try_from(len).ok()
-            }
-            _ => None,
-        }
+        self.statement_count_impl(key)
     }
 
     fn block_result(&self, key: AstNodeKey) -> Option<AstNodeKey> {
-        (self.query(node_kind(self.db, key)) == Some(beskid_queries::IndexedNodeKind::BlockExpression)).then_some(())?;
-        let result_statement = *self.query(block_statement_nodes(self.db, key))?.last()?;
-        (self.node_kind(result_statement) == Some(NodeKind::ExpressionStatement)).then_some(())?;
-        self.child(result_statement, 0)
+        self.block_result_impl(key)
     }
 
     fn let_initializer(&self, key: AstNodeKey) -> Option<AstNodeKey> {
-        (self.node_kind(key) == Some(NodeKind::LetStatement))
-            .then(|| self.children(key).last().copied())?
-            .and_then(|initializer| self.unwrap_transparent(initializer))
+        self.let_initializer_impl(key)
     }
 
     fn local_slot(&self, key: AstNodeKey) -> Option<LocalSlotId> {
-        match self.query(node_kind(self.db, key))? {
-            beskid_queries::IndexedNodeKind::PathExpression => {
-                if self.query(implicit_method_receiver(self.db, key)).is_some() {
-                    return Some(super::context::IMPLICIT_METHOD_RECEIVER_SLOT);
-                }
-                let declaration = self
-                    .query(resolved_local(self.db, key))
-                    .map(|resolved| resolved.declaration)
-                    .or_else(|| self.query(nominal_member_receiver(self.db, key)))?;
-                self.query(local_slot(self.db, declaration))
-                    .map(|slot| LocalSlotId { owner_node: slot.owner.node.0, index: slot.index })
-            }
-            beskid_queries::IndexedNodeKind::LetStatement => self
-                .raw_children(key)
-                .into_iter()
-                .find(|child| {
-                    self.query(node_kind(self.db, *child)) == Some(beskid_queries::IndexedNodeKind::Identifier)
-                })
-                .and_then(|identifier| self.query(local_slot(self.db, identifier)))
-                .map(|slot| LocalSlotId { owner_node: slot.owner.node.0, index: slot.index }),
-            beskid_queries::IndexedNodeKind::ForStatement => self
-                .query(for_iterator_fact(self.db, key))
-                .and_then(|fact| self.query(local_slot(self.db, fact.declaration)))
-                .map(|slot| LocalSlotId { owner_node: slot.owner.node.0, index: slot.index }),
-            _ => None,
-        }
+        self.local_slot_impl(key)
     }
 
     fn mutable_local_assignment_slot(&self, key: AstNodeKey) -> Option<LocalSlotId> {
-        self.query(mutable_local_assignment(self.db, key))
-            .map(|assignment| LocalSlotId { owner_node: assignment.slot.owner.node.0, index: assignment.slot.index })
+        self.mutable_local_assignment_slot_impl(key)
     }
 
     fn call_kind(&self, key: AstNodeKey) -> Option<CallKind> {
-        if self.query(beskid_queries::primitive_numeric_conversion(self.db, key)).is_some() {
-            return Some(CallKind::PrimitiveNumericConversion);
-        }
-        if self.runtime_intrinsic(key).is_some() || self.scheduler_compiler_operation(key).is_some() {
-            return Some(CallKind::RuntimeIntrinsic);
-        }
-        // Canonical `Array.Empty<T>` is a compiler-owned typed allocation form. Recognize its
-        // source- and specialization-backed descriptor plan before asking collection dispatch:
-        // the legacy `__array_new(size, length)` signature intentionally rejects this one-argument
-        // form, and that diagnostic must not misclassify the authorized typed constructor.
-        if self.typed_array_plan(key).is_some() {
-            return Some(CallKind::TypedArrayAllocation);
-        }
-        // An exact generation-bound closure target outranks domain-specific call probes. Stored
-        // lambdas use a local path as their callee; asking collection dispatch about that path can
-        // fail unavailable even though the closure call is fully proven.
-        if self.inline_lambda_call(key).is_some() {
-            return Some(CallKind::InlineLambda);
-        }
-        match beskid_queries::collection_operation(self.db, key) {
-            Ok(Some(_)) | Err(_) => return Some(CallKind::CollectionOperation),
-            Ok(None) => {}
-        }
-        // `Of` is a constructor, not a collection operation, so it never matches above. A bulk
-        // callee declares a `bulk T[]` parameter; its call site packs N scalars into a fresh
-        // rooted array before the direct call. This must precede the `Direct` fallback, which
-        // would otherwise reject the N-scalar-vs-one-array arity mismatch.
-        if self.callee_bulk_parameter(key).is_some() {
-            return Some(CallKind::Bulk);
-        }
-        matches!(
-            self.query(call_lowering(self.db, key)),
-            Some(CallLowering::Direct(_) | CallLowering::ManifestBuiltin(_) | CallLowering::CorelibService(_))
-        )
-        .then_some(CallKind::Direct)
+        self.call_kind_impl(key)
     }
 
     fn primitive_numeric_conversion(&self, key: AstNodeKey) -> Option<(SemanticTypeId, SemanticTypeId)> {
-        self.query(beskid_queries::primitive_numeric_conversion(self.db, key)).map(|fact| (fact.from, fact.to))
+        self.primitive_numeric_conversion_impl(key)
     }
 
     fn semantic_type(&self, key: AstNodeKey) -> Option<SemanticTypeId> {
-        if let Some(CallLowering::CorelibService(service)) = self.query(call_lowering(self.db, key))
-            && beskid_abi::runtime_source::canonical_corelib_service_value_dispatch(service).is_some()
-        {
-            return self.typed_corelib_value_service(key, service).map(|(_, result)| result);
-        }
-        if let Some(specialization) = self.generic_call_specialization_in_context(key) {
-            return Some(specialization.signature.result);
-        }
-        self.specialized_direct_parameter_type(key).or_else(|| self.scalar_semantic_type(key))
+        self.semantic_type_impl(key)
     }
 
     fn managed_reference(&self, key: AstNodeKey) -> Option<ManagedReferenceFact> {
-        self.managed_reference_in_context(key)
+        self.managed_reference_impl(key)
     }
 
     fn try_expression_fact(&self, key: AstNodeKey) -> Option<beskid_queries::TryExpressionFact> {
-        self.query(try_expression_fact(self.db, key))
+        self.try_expression_fact_impl(key)
     }
 
     fn try_return_layout(&self, key: AstNodeKey) -> Option<EnumLayout> {
-        self.enum_layout_from_fact(&self.query(try_expression_fact(self.db, key))?.return_layout)
+        self.try_return_layout_impl(key)
     }
 
     fn index_target_is_string(&self, key: AstNodeKey) -> bool {
-        self.child(key, 0).and_then(|target| self.scalar_semantic_type(target)) == Some(SemanticTypeId::STRING)
+        self.index_target_is_string_impl(key)
     }
 
     fn runtime_intrinsic_kind(&self, key: AstNodeKey) -> Option<RuntimeIntrinsicKind> {
-        if let Some(operation) = self.scheduler_compiler_operation(key) {
-            return Some(match operation {
-                crate::SchedulerCompilerOperation::FiberEntryAddress => {
-                    RuntimeIntrinsicKind::SchedulerFiberEntryAddress
-                }
-                crate::SchedulerCompilerOperation::ReturnTrampolineAddress => {
-                    RuntimeIntrinsicKind::SchedulerReturnTrampolineAddress
-                }
-                crate::SchedulerCompilerOperation::PollEntryInvoke => RuntimeIntrinsicKind::SchedulerPollEntryInvoke,
-            });
-        }
-        let (_, intrinsic) = self.runtime_intrinsic(key)?;
-        match intrinsic.name.as_str() {
-            "arch_context_size" => {
-                return Some(RuntimeIntrinsicKind::ArchContextSize(self.input.target_context_layout()?.size));
-            }
-            "arch_context_alignment" => {
-                return Some(RuntimeIntrinsicKind::ArchContextAlignment(self.input.target_context_layout()?.alignment));
-            }
-            _ => {}
-        }
-        runtime_intrinsic_kind_for_name(intrinsic.name.as_str())
+        self.runtime_intrinsic_kind_impl(key)
     }
 
     fn collection_operation(&self, key: AstNodeKey) -> Option<CollectionOperation> {
-        let operation = match beskid_queries::collection_operation(self.db, key) {
-            Ok(Some(operation)) => operation,
-            Err(_) => return Some(CollectionOperation::UnprovenMutationOwner),
-            Ok(None) => return None,
-        };
-        Some(match operation {
-            beskid_queries::CollectionOperation::Append { owner } => {
-                let owner = match owner {
-                    beskid_queries::CollectionMutationOwner::Local(slot) => {
-                        CollectionMutationOwner::Local(LocalSlotId { owner_node: slot.owner.node.0, index: slot.index })
-                    }
-                    beskid_queries::CollectionMutationOwner::AggregateField { receiver, index, .. } => {
-                        CollectionMutationOwner::AggregateField {
-                            receiver: LocalSlotId { owner_node: receiver.owner.node.0, index: receiver.index },
-                            field_index: index,
-                        }
-                    }
-                };
-                CollectionOperation::Append { owner }
-            }
-            beskid_queries::CollectionOperation::Capacity => CollectionOperation::Capacity,
-            beskid_queries::CollectionOperation::Clear => CollectionOperation::Clear,
-            beskid_queries::CollectionOperation::RemoveLast => CollectionOperation::RemoveLast,
-        })
+        self.collection_operation_impl(key)
     }
 
     fn collection_element_type(&self, key: AstNodeKey) -> Option<Type> {
-        let element = self.generic_call_specialization_in_context(key)?.substitutions.first()?.argument;
-        map_signature_type(self.isa?, element)
+        self.collection_element_type_impl(key)
     }
 
     fn direct_callee(&self, key: AstNodeKey) -> Option<DirectCallee> {
-        if let Some((index, _)) = self.runtime_intrinsic(key) {
-            return Some(DirectCallee::runtime_intrinsic(index));
-        }
-        let lowering = self.query(call_lowering(self.db, key))?;
-        if let CallLowering::ManifestBuiltin(builtin) = lowering {
-            return Some(DirectCallee::corelib_service(builtin.symbol));
-        }
-        if let CallLowering::CorelibService(service) = lowering {
-            self.input.corelib_service_capability()?;
-            let symbol = if beskid_abi::runtime_source::canonical_corelib_service_value_dispatch(service).is_some() {
-                self.typed_corelib_value_service(key, service)?.0
-            } else {
-                service.symbol
-            };
-            return Some(DirectCallee::corelib_service(symbol));
-        }
-        let CallLowering::Direct(declaration) = lowering else {
-            return None;
-        };
-        if let Some(specialization) = self.generic_call_specialization_in_context(key) {
-            if specialization.substitutions.is_empty() && specialization.contract_witnesses.is_empty() {
-                return Some(DirectCallee::item(specialization.declaration));
-            }
-            return Some(DirectCallee::specialized_item(
-                specialization.declaration,
-                specialization_identity(&specialization),
-            ));
-        }
-        Some(DirectCallee::item(declaration))
+        self.direct_callee_impl(key)
     }
 
     fn call_signature(&self, key: AstNodeKey) -> Option<Signature> {
-        if let Some((_, intrinsic)) = self.runtime_intrinsic(key) {
-            return signature_for_runtime_intrinsic(self.isa?, intrinsic);
-        }
-        if let Some(operation) = self.scheduler_compiler_operation(key) {
-            let emitter = FunctionEmitter::new(self.isa?);
-            let pointer = self.isa?.pointer_type();
-            return Some(match operation {
-                crate::SchedulerCompilerOperation::FiberEntryAddress
-                | crate::SchedulerCompilerOperation::ReturnTrampolineAddress => emitter.signature([], [pointer]),
-                crate::SchedulerCompilerOperation::PollEntryInvoke => {
-                    emitter.signature([pointer, pointer, pointer, pointer], [types::I32])
-                }
-            });
-        }
-        if let Some(CallLowering::CorelibService(service)) = self.query(call_lowering(self.db, key))
-            && beskid_abi::runtime_source::canonical_corelib_service_value_dispatch(service).is_some()
-        {
-            let (_, result) = self.typed_corelib_value_service(key, service)?;
-            return signature_for_item(
-                self.isa?,
-                ItemSignature { parameters: std::sync::Arc::from([SemanticTypeId::I64]), result },
-            );
-        }
-        if let Some(specialization) = self.generic_call_specialization_in_context(key) {
-            return signature_for_item(self.isa?, specialization.signature);
-        }
-        signature_for_item(self.isa?, self.query(call_abi_signature(self.db, key))?)
+        self.call_signature_impl(key)
     }
 
     fn call_arguments(&self, key: AstNodeKey) -> Option<Vec<AstNodeKey>> {
-        self.query(call_arguments(self.db, key))
-            .and_then(|arguments| arguments.iter().copied().map(|argument| self.unwrap_transparent(argument)).collect())
+        self.call_arguments_impl(key)
     }
 
     fn inline_lambda_call(&self, key: AstNodeKey) -> Option<InlineLambdaCall> {
-        let target = self.query(closure_call_target(self.db, key))?;
-        let environment = self.query(closure_environment(self.db, target.lambda))?;
-        if environment.parameters.len() != target.callable.parameters.len() {
-            return None;
-        }
-        let closure_environment = if environment.captures.is_empty() {
-            None
-        } else {
-            Some(self.inline_closure_environment(key, target.lambda)?)
-        };
-        let parameters = environment
-            .parameters
-            .iter()
-            .copied()
-            .zip(target.callable.parameters.iter().copied())
-            .map(|(parameter, semantic)| {
-                let slot = self.query(local_slot(self.db, parameter))?;
-                Some(ParameterSlot {
-                    slot: LocalSlotId { owner_node: slot.owner.node.0, index: slot.index },
-                    value_type: map_signature_type(self.isa?, semantic)?,
-                    managed_reference: self.managed_reference(parameter)?,
-                })
-            })
-            .collect::<Option<Vec<_>>>()?;
-        Some(InlineLambdaCall {
-            body: target.body,
-            parameters,
-            result_type: map_signature_type(self.isa?, target.callable.result)?,
-            closure_environment,
-        })
+        self.inline_lambda_call_impl(key)
     }
 
     fn array_elements(&self, key: AstNodeKey) -> Option<Vec<AstNodeKey>> {
-        self.array_elements_for_literal(key).or_else(|| self.typed_array_plan(key).map(|_| Vec::new()))
+        self.array_elements_impl(key)
     }
 
     fn array_layout(&self, key: AstNodeKey) -> Option<beskid_isle::ArrayLayout> {
-        self.array_layout_for_literal(key)
-            .or_else(|| self.array_layout_for_bulk(key))
-            .or_else(|| self.array_layout_for_typed_allocation(key))
-            .or_else(|| {
-                let element_type = map_signature_type(self.isa?, self.array_index_element_type_in_context(key)?)?;
-                let stride = element_type.bytes();
-                Some(beskid_isle::ArrayLayout::new(element_type, stride, 0, stride.ilog2() as u8))
-            })
+        self.array_layout_impl(key)
     }
 
     fn managed_array_allocation(&self, key: AstNodeKey) -> Option<beskid_isle::ManagedArrayAllocation> {
-        let plan = self
-            .input
-            .array_static_plan_for_specialization(key, self.current_item_specialization())
-            .or_else(|| self.input.bulk_array_static_plan(key))
-            .or_else(|| self.typed_array_plan(key))?;
-        Some(beskid_isle::ManagedArrayAllocation { allocation_request_symbol: plan.allocation_request_symbol.into() })
+        self.managed_array_allocation_impl(key)
     }
 
     fn function_parameters(&self, key: AstNodeKey) -> Option<Vec<ParameterSlot>> {
-        let mut parameters = Vec::new();
-        if self.query(node_kind(self.db, key)) == Some(beskid_queries::IndexedNodeKind::MethodDefinition) {
-            parameters.push(ParameterSlot {
-                // Methods cannot spell `self` in Beskid source. The ABI receiver still needs a
-                // materialized local so its declared pointer position is consumed by ISLE.
-                slot: super::context::IMPLICIT_METHOD_RECEIVER_SLOT,
-                value_type: self.isa?.pointer_type(),
-                managed_reference: ManagedReferenceFact::GcManaged,
-            });
-        }
-        self.collect_function_parameters(key, &mut parameters)?;
-        Some(parameters)
+        self.function_parameters_impl(key)
     }
 
     fn clif_block_body(&self, key: AstNodeKey) -> Option<String> {
-        self.clif_block_body_for(key)
+        self.clif_block_body_impl(key)
     }
 
     fn integer_literal(&self, key: AstNodeKey) -> Option<i64> {
-        let LiteralFact::Integer(text) = self.literal(key)? else {
-            return None;
-        };
-        let value = text.split_once('_').map_or(text.as_ref(), |(value, _)| value);
-        match value.strip_prefix("0x") {
-            Some(hexadecimal) => u64::from_str_radix(hexadecimal, 16).ok().map(|number| number as i64),
-            None => value.parse().ok(),
-        }
+        self.integer_literal_impl(key)
     }
 
     fn boolean_literal(&self, key: AstNodeKey) -> Option<bool> {
-        match self.literal(key)? {
-            LiteralFact::Bool(value) => Some(value),
-            _ => None,
-        }
+        self.boolean_literal_impl(key)
     }
 
     fn float_literal(&self, key: AstNodeKey) -> Option<f64> {
-        let LiteralFact::Float(text) = self.literal(key)? else {
-            return None;
-        };
-        text.parse().ok()
+        self.float_literal_impl(key)
     }
 
     fn char_literal(&self, key: AstNodeKey) -> Option<char> {
-        let LiteralFact::Char(text) = self.literal(key)? else {
-            return None;
-        };
-        text.trim_matches('\'').chars().next()
+        self.char_literal_impl(key)
     }
 
     fn string_literal(&self, key: AstNodeKey) -> Option<std::sync::Arc<str>> {
-        let LiteralFact::String(text) = self.literal(key)? else {
-            return None;
-        };
-        try_decode_string_literal_token(&text).map(Into::into)
+        self.string_literal_impl(key)
     }
 
     fn scalar_type(&self, key: AstNodeKey) -> Option<Type> {
-        if self.node_kind(key) == Some(NodeKind::StructLiteralExpression)
-            && self.query(aggregate_literal_declaration(self.db, key)).is_some()
-        {
-            return self.isa.map(|isa| isa.pointer_type());
-        }
-        if self.node_kind(key) == Some(NodeKind::ArrayLiteralExpression) {
-            return map_signature_type(self.isa?, self.query(abi_type(self.db, key))?);
-        }
-        if self.node_kind(key) == Some(NodeKind::EnumLiteralExpression)
-            && (self.query(enum_constructor(self.db, key)).is_some()
-                || self.specialized_enum_constructor(key).is_some())
-        {
-            return self.isa.map(|isa| isa.pointer_type());
-        }
-        if let Some((_, intrinsic)) = self.runtime_intrinsic(key) {
-            let signature = signature_for_runtime_intrinsic(self.isa?, intrinsic)?;
-            return signature.returns.first().map(|param| param.value_type);
-        }
-        if self.scheduler_compiler_operation(key).is_some() {
-            return self
-                .call_signature(key)
-                .and_then(|signature| signature.returns.first().map(|param| param.value_type));
-        }
-        if self.node_kind(key) == Some(NodeKind::CallExpression)
-            && let Some(signature) = self.call_signature(key)
-        {
-            return signature.returns.first().map(|parameter| parameter.value_type);
-        }
-        let contextual = self.query(contextual_integer_literal_abi_type(self.db, key));
-        let semantic = contextual
-            .or_else(|| {
-                (self.node_kind(key) == Some(NodeKind::CallExpression))
-                    .then(|| self.scalar_semantic_type(key))
-                    .flatten()
-            })
-            .or_else(|| self.query(call_argument_abi_type(self.db, key)))
-            .or_else(|| self.scalar_semantic_type(key))
-            .or_else(|| Some(self.query(call_abi_signature(self.db, key))?.result))?;
-        if matches!(semantic, SemanticTypeId::WORD | SemanticTypeId::POINTER | SemanticTypeId::STRING) {
-            return self.isa.map(|isa| isa.pointer_type());
-        }
-        map_scalar_type(semantic)
+        self.scalar_type_impl(key)
     }
 
     fn struct_fields(&self, key: AstNodeKey) -> Option<Vec<AstNodeKey>> {
-        self.struct_fields_in_layout_order(key)
+        self.struct_fields_impl(key)
     }
 
     fn struct_layout(&self, key: AstNodeKey) -> Option<StructLayout> {
-        self.struct_layout_for_literal(key).or_else(|| {
-            self.aggregate_field_access_in_context(key).and_then(|access| self.struct_layout_for_access(&access))
-        })
+        self.struct_layout_impl(key)
     }
 
     fn managed_struct_allocation(&self, key: AstNodeKey) -> Option<ManagedStructAllocation> {
-        Some(ManagedStructAllocation {
-            allocation_request_symbol: self
-                .input
-                .aggregate_static_plan_for_specialization(key, self.current_item_specialization())
-                .or_else(|| self.input.enum_static_plan_for_specialization(key, self.current_item_specialization()))?
-                .allocation_request_symbol
-                .into(),
-        })
+        self.managed_struct_allocation_impl(key)
     }
 
     fn field_index(&self, key: AstNodeKey) -> Option<u32> {
-        self.aggregate_field_access_in_context(key).map(|access| access.index)
+        self.field_index_impl(key)
     }
 
     fn field_receiver_slot(&self, key: AstNodeKey) -> Option<LocalSlotId> {
-        let access = self.aggregate_field_access_in_context(key)?;
-        if self.query(node_kind(self.db, access.receiver)) == Some(beskid_queries::IndexedNodeKind::MethodDefinition) {
-            return Some(super::context::IMPLICIT_METHOD_RECEIVER_SLOT);
-        }
-        self.query(local_slot(self.db, access.receiver))
-            .map(|slot| LocalSlotId { owner_node: slot.owner.node.0, index: slot.index })
+        self.field_receiver_slot_impl(key)
     }
 
     fn enum_layout(&self, key: AstNodeKey) -> Option<EnumLayout> {
-        self.enum_layout_for(key)
+        self.enum_layout_impl(key)
     }
 
     fn binary_enum_layout(&self, key: AstNodeKey) -> Option<EnumLayout> {
-        let left_key = self.child(key, 0)?;
-        let right_key = self.child(key, 1)?;
-        // Try to get the enum layout from either operand. Enum-literal operands
-        // (constructors) have a registered static plan and produce the full layout.
-        // Path-expression operands that name an enum variable don't have a static
-        // plan; we use the literal's layout and verify type compatibility.
-        let layout = self.enum_layout_for(left_key).or_else(|| self.enum_layout_for(right_key))?;
-        // When both operands are literals, verify tag layouts agree.
-        if let Some(right_layout) = self.enum_layout_for(right_key).or_else(|| self.enum_layout_for(left_key))
-            && (layout.tag.offset != right_layout.tag.offset || layout.tag.value_type != right_layout.tag.value_type)
-        {
-            return None;
-        }
-        // When one operand is a path expression, verify its semantic type matches
-        // the literal's type (both must be the same enum).
-        let left_type = self.scalar_semantic_type(left_key)?;
-        let right_type = self.scalar_semantic_type(right_key)?;
-        // Only nominal (non-primitive) types can be enums; primitive equality is
-        // handled by the integer/float comparison path.
-        if left_type != right_type
-            || matches!(
-                left_type,
-                SemanticTypeId::I32
-                    | SemanticTypeId::I64
-                    | SemanticTypeId::U32
-                    | SemanticTypeId::U8
-                    | SemanticTypeId::F64
-                    | SemanticTypeId::BOOL
-                    | SemanticTypeId::CHAR
-                    | SemanticTypeId::UNIT
-                    | SemanticTypeId::NEVER
-            )
-        {
-            return None;
-        }
-        Some(layout)
+        self.binary_enum_layout_impl(key)
     }
 
     fn enum_variant_index(&self, key: AstNodeKey) -> Option<u32> {
-        self.query(enum_constructor(self.db, key))
-            .or_else(|| self.specialized_enum_constructor(key).map(|fact| fact.constructor))
-            .map(|constructor| constructor.variant_index)
+        self.enum_variant_index_impl(key)
     }
 
     fn enum_payloads(&self, key: AstNodeKey) -> Option<Vec<AstNodeKey>> {
-        Some(
-            self.query(enum_constructor(self.db, key))
-                .or_else(|| self.specialized_enum_constructor(key).map(|fact| fact.constructor))?
-                .payloads
-                .to_vec(),
-        )
+        self.enum_payloads_impl(key)
     }
 
     fn match_arms(&self, key: AstNodeKey) -> Option<Vec<MatchArmFact>> {
-        let fact = self.enum_match_in_context(key)?;
-        fact.arms
-            .iter()
-            .map(|arm| match &arm.pattern {
-                beskid_queries::EnumMatchPatternFact::Wildcard => Some(MatchArmFact::wildcard(arm.body)),
-                beskid_queries::EnumMatchPatternFact::Enum(pattern)
-                    if pattern.declaration == fact.declaration && pattern.layout == fact.layout =>
-                {
-                    let payload = MatchPayloadPatternFact::Fields(
-                        pattern
-                            .items
-                            .iter()
-                            .map(|payload| self.match_payload_pattern(payload))
-                            .collect::<Option<Vec<_>>>()?,
-                    );
-                    Some(MatchArmFact::variant_with_payload(u64::from(pattern.variant_index), arm.body, payload))
-                }
-                _ => None,
-            })
-            .collect()
+        self.match_arms_impl(key)
     }
 
     fn range_fact(&self, key: AstNodeKey) -> Option<beskid_isle::RangeFact> {
-        let range = self.query(range_for_fact(self.db, key))?;
-        Some(beskid_isle::RangeFact::new(range.start, range.end, 1, false))
+        self.range_fact_impl(key)
     }
 
     fn spawn_entry(&self, key: AstNodeKey) -> Option<beskid_isle::SpawnEntry> {
-        let validation = self.query(spawn_entry_validation(self.db, key))?;
-        if !validation.is_legal_entry {
-            return None;
-        }
-        let (closure_environment, argument_environment) = match self.query(node_kind(self.db, validation.target))? {
-            beskid_queries::IndexedNodeKind::PathExpression => {
-                let _target = self.query(resolved_item(self.db, validation.target))?;
-                let arguments = if validation.arguments.is_empty() {
-                    None
-                } else {
-                    Some(self.spawn_argument_environment(key, &validation.arguments)?)
-                };
-                (None, arguments)
-            }
-            beskid_queries::IndexedNodeKind::LambdaExpression => {
-                if !validation.arguments.is_empty() {
-                    return None;
-                }
-                let environment = self.query(closure_environment(self.db, validation.target))?;
-                if environment.captures.is_empty() {
-                    (None, None)
-                } else {
-                    (Some(self.inline_closure_environment(key, validation.target)?), None)
-                }
-            }
-            _ => return None,
-        };
-        let handle = self.input.spawn_handle_static_plan(key)?;
-        Some(beskid_isle::SpawnEntry {
-            trampoline: DirectCallee::spawn_trampoline(key),
-            closure_environment,
-            argument_environment,
-            handle_request_symbol: handle.allocation_request_symbol.into(),
-            handle_field_offset: i32::try_from(handle.fields[0].field_offset).ok()?,
-        })
+        self.spawn_entry_impl(key)
     }
 
     fn traced_fiber_join_layout(&self, key: AstNodeKey) -> Option<beskid_isle::TracedFiberJoinLayout> {
-        let DirectCallee::CorelibService(
-            symbol @ ("fiber_join_value" | "channel_receive_value" | "hub_wait_receive_value"),
-        ) = self.direct_callee(key)?
-        else {
-            return None;
-        };
-        let slot = self.input.abi_manifest().layouts.iter().find(|layout| layout.name == "BeskidAbiValue")?;
-        let header = self.input.abi_manifest().layouts.iter().find(|layout| layout.name == "BeskidObjectHeader")?;
-        Some(beskid_isle::TracedFiberJoinLayout {
-            symbol,
-            slot_size: u32::try_from(slot.size).ok()?,
-            alignment_shift: u8::try_from(slot.alignment.ilog2()).ok()?,
-            payload_offset: i32::try_from(slot.fields.iter().find(|field| field.name == "payload")?.offset).ok()?,
-            value_offset: i32::try_from(header.size).ok()?,
-        })
+        self.traced_fiber_join_layout_impl(key)
     }
 
     fn traced_channel_send_layout(&self, key: AstNodeKey) -> Option<beskid_isle::TracedFiberJoinLayout> {
-        let DirectCallee::CorelibService(symbol @ ("channel_send" | "channel_try_send")) = self.direct_callee(key)?
-        else {
-            return None;
-        };
-        let arguments = self.call_arguments(key)?;
-        let [_, value] = arguments.as_slice() else {
-            return None;
-        };
-        (self.managed_reference_in_context(*value)? == beskid_isle::ManagedReferenceFact::GcManaged).then_some(())?;
-        let slot = self.input.abi_manifest().layouts.iter().find(|layout| layout.name == "BeskidAbiValue")?;
-        Some(beskid_isle::TracedFiberJoinLayout {
-            symbol,
-            slot_size: u32::try_from(slot.size).ok()?,
-            alignment_shift: u8::try_from(slot.alignment.ilog2()).ok()?,
-            payload_offset: i32::try_from(slot.fields.iter().find(|field| field.name == "payload")?.offset).ok()?,
-            value_offset: 0,
-        })
+        self.traced_channel_send_layout_impl(key)
     }
 
     fn lambda_entry(&self, key: AstNodeKey) -> Option<beskid_isle::LambdaEntry> {
-        let environment = self.query(closure_environment(self.db, key))?;
-        let _lambda = self.query(closure_signature(self.db, key))?;
-        // Only support capture-free or fully-resolved capture environments.
-        let closure_environment = if environment.captures.is_empty() {
-            None
-        } else {
-            let Some(authority) = self.input.closure_lowering_authority(key, key) else {
-                return None;
-            };
-            let captures = authority
-                .plan
-                .captures
-                .iter()
-                .map(|field| {
-                    Some(beskid_isle::InlineCaptureField {
-                        local_slot: beskid_isle::LocalSlotId {
-                            owner_node: field.capture.slot.owner.node.0,
-                            index: field.capture.slot.index,
-                        },
-                        field_offset: u32::try_from(field.field_offset).ok()?,
-                        pointer_map_index: field.pointer_map_index,
-                        value_type: map_signature_type(self.isa?, field.abi_type)?,
-                    })
-                })
-                .collect::<Option<Vec<_>>>()?;
-            Some(beskid_isle::InlineClosureEnvironment {
-                allocation_request_symbol: authority.plan.allocation_request_symbol.clone().into(),
-                descriptor_symbol: authority.plan.descriptor_symbol.clone().into(),
-                captures,
-            })
-        };
-        Some(beskid_isle::LambdaEntry { trampoline: DirectCallee::lambda_trampoline(key), closure_environment })
+        self.lambda_entry_impl(key)
     }
 }
