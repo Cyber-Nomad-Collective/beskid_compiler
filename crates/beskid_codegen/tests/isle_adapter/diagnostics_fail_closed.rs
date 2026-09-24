@@ -350,3 +350,19 @@ fn member_and_match_violations_are_rejected_with_their_codes_before_isle() {
         assert!(!rendered.contains("NonExhaustiveMatch"), "{source}: {rendered}");
     }
 }
+
+/// A `use` of a module the assembly does not contain is dropped by import registration. The
+/// legality gate audits it as E1105 at the `use` for the unit of a lowered item, but does not
+/// reject the lowering: valid runtime and Foundation code still carries such imports.
+#[test]
+fn unknown_import_in_the_unit_of_a_lowered_item_is_audited_as_e1105_without_rejecting() {
+    let (input, isa, root) = item_fixture_with_root("use Missing.Module;\ni64 Main() { return 0; }");
+    let db = input.database();
+    let main = find_function_definitions(db, root)[0];
+    let audit = beskid_queries::audit_imports(db, &[main]);
+    assert_eq!(audit.len(), 1, "{audit:?}");
+    assert_eq!(audit[0].kind.code(), "E1105");
+    assert!(format_ast_node_site(db, audit[0].site).contains("UseDeclaration@"));
+    lower_syntax_program(&input, isa.as_ref(), &[SyntaxModuleItem { key: main, symbol: "Main".into() }])
+        .expect("an unknown import is audited, not rejected");
+}

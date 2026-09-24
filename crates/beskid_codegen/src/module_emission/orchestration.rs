@@ -75,6 +75,18 @@ pub fn lower_syntax_program(
         crate::isle_trace::event(|| format!("event=isle.missing rule=legality_gate detail={error}"));
         return Err(error);
     }
+    // E1105 is audit-only (design slice 5): log each finding on the ISLE trace, never reject.
+    let audited = if crate::isle_trace::enabled() { beskid_queries::audit_imports(db, &requested_keys) } else { Vec::new() };
+    for finding in audited {
+        crate::isle_trace::event(|| {
+            format!(
+                "event=legality.audit rule=unresolved_import detail={} {} at {}",
+                finding.kind.code(),
+                finding.kind.message(),
+                beskid_queries::format_ast_node_site(db, finding.site)
+            )
+        });
+    }
     let items = match resolve_module_items(input, items).and_then(|items| expand_direct_spawn_items(input, items)) {
         Ok(items) => items,
         Err(error) => {

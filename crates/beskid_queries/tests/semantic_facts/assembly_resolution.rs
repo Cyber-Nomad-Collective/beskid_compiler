@@ -701,3 +701,72 @@ fn unqualified_import_resolution_requires_one_registered_syntax_target() {
         Some(beskid_queries::CallLowering::Direct(helper))
     );
 }
+
+/// E1105 is judged against the same assembled module registry import registration reads, and
+/// only for units that own a judged item. It is audit-only: it is reported, never rejected.
+#[test]
+fn unresolved_imports_are_judged_only_for_units_of_judged_items() {
+    let mut db = BeskidDatabase::default();
+    let root = PathBuf::from("/tmp/unresolved-import/project/src");
+    let main_path = root.join("Main.bd");
+    let tools_path = root.join("Lib/Tools.bd");
+    let main_source = "use Lib.Tools as Utility;\nuse Lib.Missing;\ni32 Main() { return Utility.Helper(); }";
+    let tools_source = "use Absent.Thing;\npub i32 Helper() { return 1; }";
+    let main_program =
+        expand_program(parse_program(main_source).expect("main parse"), DEFAULT_MAX_MACRO_EXPANSION_DEPTH);
+    let tools_program =
+        expand_program(parse_program(tools_source).expect("tools parse"), DEFAULT_MAX_MACRO_EXPANSION_DEPTH);
+    let generation = SyntaxGenerationId(19);
+    let unit = |path: &PathBuf, source: &str, program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>| {
+        SourceUnit {
+            logical_name: path.display().to_string(),
+            origin_path: path.clone(),
+            path: path.clone(),
+            source: source.to_string(),
+            program: program.clone(),
+        }
+    };
+    let assembly = Arc::new(ProgramAssembly::new(
+        EffectiveCompilationRoots {
+            host: RootEntry { dependency_name: None, source_root: root.clone() },
+            dependencies: Vec::new(),
+        },
+        Arc::new(vec![unit(&main_path, main_source, &main_program), unit(&tools_path, tools_source, &tools_program)]),
+        0,
+        AssemblyDiscovery::ImportClosure,
+        Arc::new(ModuleIndex::empty()),
+        false,
+        generation,
+    ));
+    let main_unit = SourceUnitId::new(&db, main_path);
+    let tools_unit = SourceUnitId::new(&db, tools_path);
+    let project = ProjectSession::new(
+        &db,
+        root.parent().expect("project root").to_path_buf(),
+        main_unit.path(&db).clone(),
+        "App".to_string(),
+        "lock".to_string(),
+    );
+    build_typed_program(&mut db, project, generation, assembly).expect("typed syntax program");
+    let main_index = SyntaxIndex::from_program(&main_program, generation);
+    let tools_index = SyntaxIndex::from_program(&tools_program, generation);
+    let main_root = key(main_unit, generation, &main_index, NodeKind::Program, 0);
+    let main = key(main_unit, generation, &main_index, NodeKind::FunctionDefinition, 0);
+    let helper = key(tools_unit, generation, &tools_index, NodeKind::FunctionDefinition, 0);
+
+    let imports = beskid_queries::unresolved_imports(&db, main_root).expect("query").expect("unit root");
+    assert_eq!(imports.iter().map(|import| import.path.as_ref()).collect::<Vec<_>>(), vec!["Lib.Missing"]);
+    assert_eq!(imports[0].site, key(main_unit, generation, &main_index, NodeKind::UseDeclaration, 1));
+
+    let codes = |items: &[AstNodeKey]| {
+        beskid_queries::audit_imports(&db, items)
+            .iter()
+            .map(|finding| (finding.kind.code(), finding.kind.message()))
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(codes(&[main]), vec![("E1105", "unknown import path `Lib.Missing`".to_string())]);
+    assert_eq!(codes(&[helper]), vec![("E1105", "unknown import path `Absent.Thing`".to_string())]);
+    assert_eq!(codes(&[main, main]).len(), 1, "a unit is audited once");
+    // Audit-only: E1105 never rejects a lowering request (owner decision 3 of the design).
+    assert!(beskid_queries::check_items(&db, &[main, helper]).is_ok());
+}

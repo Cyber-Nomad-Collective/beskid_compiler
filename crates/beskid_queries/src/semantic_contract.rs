@@ -73,8 +73,9 @@ pub use growth::{DeadCollectionGrowth, dead_collection_growth, is_growth_call_ca
 pub use local_type_resolution::{UnresolvedTypeReference, unresolved_type_reference};
 pub use legality::{
     CallArityMismatch, ImmutableLocalAssignment, MemberReferenceFinding, MemberReferenceKind, NonExhaustiveMatch,
-    UnresolvedCallKind, UnresolvedCallTarget, call_arity_mismatch, check_items, immutable_local_assignment,
-    match_exhaustiveness, member_reference_legality, unresolved_call_target,
+    UnresolvedCallKind, UnresolvedCallTarget, UnresolvedImport, audit_imports, call_arity_mismatch, check_items,
+    immutable_local_assignment, match_exhaustiveness, member_reference_legality, unresolved_call_target,
+    unresolved_imports,
 };
 use closures_spawn::{
     callable_fiber_ownership_tracked, callable_signature_for_node, callable_signature_for_path,
