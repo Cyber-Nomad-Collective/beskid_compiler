@@ -31,6 +31,8 @@ pub struct SyntaxDependencyRegistry {
     /// Compiler-minted Corelib service names available to one exact source unit generation.
     /// Ordinary program syntax never populates this registry entry.
     pub(crate) corelib_services: HashMap<(SourceUnitId, SyntaxGenerationId), Vec<CorelibService>>,
+    /// Canonical logical path proven by embedded bytes and trusted physical origin.
+    pub(crate) corelib_source_paths: HashMap<(SourceUnitId, SyntaxGenerationId), String>,
 }
 
 /// One explicit module import resolved to an assembled syntax unit.

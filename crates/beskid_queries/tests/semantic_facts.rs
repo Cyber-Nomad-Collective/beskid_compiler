@@ -47,6 +47,8 @@ mod closures_and_spawn;
 #[rustfmt::skip]
 #[path = "semantic_facts/runtime_authority.rs"]
 mod runtime_authority;
+#[path = "semantic_facts/deadline_projection.rs"]
+mod deadline_projection;
 #[rustfmt::skip]
 #[path = "semantic_facts/statement_result_storage.rs"]
 mod statement_result_storage;

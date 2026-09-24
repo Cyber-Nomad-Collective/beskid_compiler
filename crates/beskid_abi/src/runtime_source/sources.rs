@@ -84,6 +84,8 @@ pub const CANONICAL_FOUNDATION_STRING_UTF8_SOURCE_PATH: &str = "Core/String/Utf8
 pub const CANONICAL_FOUNDATION_TEXT_CURSOR_SOURCE_PATH: &str = "Core/Text/Cursor.bd";
 /// Canonical Foundation time facade eligible for realtime and monotonic clock services.
 pub const CANONICAL_FOUNDATION_TIME_SOURCE_PATH: &str = "Core/Time/Time.bd";
+/// Canonical opaque monotonic Deadline declaration eligible for Network's private projection.
+pub const CANONICAL_FOUNDATION_DEADLINE_SOURCE_PATH: &str = "Core/Time/Deadline.bd";
 /// Canonical Foundation assertion helper eligible to import the panic runtime service.
 pub const CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH: &str = "Testing/Assert.bd";
 /// Canonical Foundation output helper eligible to import the panic runtime service.
@@ -222,6 +224,8 @@ const CANONICAL_FOUNDATION_TEXT_CURSOR_SOURCE: &str =
     include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../corelib/packages/foundation/src/Core/Text/Cursor.bd"));
 const CANONICAL_FOUNDATION_TIME_SOURCE: &str =
     include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../corelib/packages/foundation/src/Core/Time/Time.bd"));
+const CANONICAL_FOUNDATION_DEADLINE_SOURCE: &str =
+    include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../corelib/packages/foundation/src/Core/Time/Deadline.bd"));
 const CANONICAL_FOUNDATION_ASSERT_SOURCE: &str =
     include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../corelib/packages/foundation/src/Testing/Assert.bd"));
 const CANONICAL_FOUNDATION_OUTPUT_SOURCE: &str =
@@ -476,6 +480,14 @@ pub fn canonical_corelib_service_sources() -> Vec<SourceUnit> {
         source: CANONICAL_NETWORK_INTERNAL_SOURCE.into(),
     });
     sources
+}
+
+/// The opaque Deadline declaration is source-attested separately from ABI service providers.
+pub fn canonical_corelib_deadline_source() -> SourceUnit {
+    SourceUnit {
+        logical_path: CANONICAL_FOUNDATION_DEADLINE_SOURCE_PATH.into(),
+        source: CANONICAL_FOUNDATION_DEADLINE_SOURCE.into(),
+    }
 }
 
 /// Hash of the corpus embedded in this compiler and eligible for ABI-v5 runtime authority.

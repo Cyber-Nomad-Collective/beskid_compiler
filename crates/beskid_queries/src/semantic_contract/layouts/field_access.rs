@@ -1,6 +1,9 @@
 //! Canonical semantic layout implementation.
 
 use super::super::*;
+use beskid_abi::runtime_source::{
+    CANONICAL_FOUNDATION_DEADLINE_SOURCE_PATH, CANONICAL_NETWORK_INTERNAL_SOURCE_PATH,
+};
 use beskid_analysis::syntax_query::DynNodeRef;
 
 #[salsa::tracked(persist)]
@@ -49,13 +52,34 @@ fn aggregate_field_access_for_environment(
     }
     let resolved = field_access_receiver(db, program, index, key, node, ambient, enclosing)?;
     Some(resolved.and_then(|FieldAccessReceiver { declaration, receiver, layout, field_name }| {
-        let index = layout
+        let field_index = layout
             .fields
             .iter()
             .position(|(name, _)| name.as_ref() == field_name)
             .and_then(|index| u32::try_from(index).ok())
             .ok_or_else(|| SemanticError::unavailable("aggregate_field_access"))?;
-        Ok(AggregateFieldAccess { declaration, receiver, index, layout })
+        if let Some(target) = db.syntax_unit(declaration.unit).filter(|syntax| syntax.accepts_key(db, declaration))
+            && let Some(definition) = target
+                .syntax_index(db)
+                .node_at(target.expanded_program(db), declaration.node)
+                .and_then(|node| node.of::<beskid_analysis::syntax::TypeDefinition>())
+        {
+            let field = definition
+                .fields
+                .iter()
+                .filter(|field| field.node.kind == beskid_analysis::syntax::FieldKind::Value)
+                .nth(field_index as usize)
+                .ok_or_else(|| SemanticError::unavailable("aggregate_field_access"))?;
+            if definition.name.node.name == "Deadline"
+                && field_name == "monotonicNanos"
+                && declaration.unit != key.unit
+                && field.node.visibility.node != beskid_analysis::syntax::Visibility::Public
+                && !canonical_network_deadline_projection(db, key, declaration, &definition.name.node.name, field_name)
+            {
+                return Err(SemanticError::unavailable("aggregate_field_access.visibility"));
+            }
+        }
+        Ok(AggregateFieldAccess { declaration, receiver, index: field_index, layout })
     }))
 }
 
@@ -395,7 +419,10 @@ fn project_nominal_field(
     let [(field_index, field)] = matches.as_slice() else {
         return Err(SemanticError::unavailable("nominal_field_projection"));
     };
-    if declaration.unit != key.unit && field.node.visibility.node != beskid_analysis::syntax::Visibility::Public {
+    if declaration.unit != key.unit
+        && field.node.visibility.node != beskid_analysis::syntax::Visibility::Public
+        && !canonical_network_deadline_projection(db, key, declaration, &definition.name.node.name, field_name)
+    {
         return Err(SemanticError::unavailable("nominal_field_projection.visibility"));
     }
     let next_identity =
@@ -407,6 +434,30 @@ fn project_nominal_field(
         layout,
     };
     Ok((access, next_identity))
+}
+
+/// Permit one private projection only when both sides are exact compiler-owned source units.
+/// The nominal declaration key, rather than its pointer-shaped ABI or written name alone,
+/// proves that a lookalike `Deadline` cannot reach the monotonic sample.
+fn canonical_network_deadline_projection(
+    db: &dyn Db,
+    key: AstNodeKey,
+    declaration: AstNodeKey,
+    type_name: &str,
+    field_name: &str,
+) -> bool {
+    if type_name != "Deadline" || field_name != "monotonicNanos" {
+        return false;
+    }
+    let registry = db.syntax_dependency_registry().lock().expect("syntax dependency registry");
+    registry
+        .corelib_source_paths
+        .get(&(key.unit, key.generation))
+        .is_some_and(|path| path == CANONICAL_NETWORK_INTERNAL_SOURCE_PATH)
+        && registry
+            .corelib_source_paths
+            .get(&(declaration.unit, declaration.generation))
+            .is_some_and(|path| path == CANONICAL_FOUNDATION_DEADLINE_SOURCE_PATH)
 }
 
 /// Instantiate the aggregate layout denoted by an exact source-proven nominal identity. Each
