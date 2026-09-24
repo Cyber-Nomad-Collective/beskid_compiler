@@ -45,6 +45,8 @@ pub const CANONICAL_CORELIB_SYSCALL_SOURCE_PATH: &str = "Core/Syscall/Syscall.bd
 pub const CANONICAL_CORELIB_ARGS_SOURCE_PATH: &str = "Core/Args/Args.bd";
 /// Canonical concurrency scheduler facade eligible for its private ABI-v5 services.
 pub const CANONICAL_CORELIB_CONCURRENCY_SOURCE_PATH: &str = "Concurrency.bd";
+/// Canonical Foundation OS-thread facade eligible for its private yield service.
+pub const CANONICAL_FOUNDATION_THREAD_SOURCE_PATH: &str = "Core/Threading/Thread.bd";
 /// Canonical concurrency Fiber facade eligible for lifecycle service authority.
 pub const CANONICAL_CORELIB_FIBER_SOURCE_PATH: &str = "Concurrency/Fiber.bd";
 /// Canonical Console Linux platform facade eligible for terminal service authority.
@@ -176,6 +178,10 @@ const CANONICAL_CORELIB_ARGS_SOURCE: &str =
     include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../corelib/packages/foundation/src/Core/Args/Args.bd"));
 const CANONICAL_CORELIB_CONCURRENCY_SOURCE: &str =
     include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../corelib/packages/concurrency/src/Concurrency.bd"));
+const CANONICAL_FOUNDATION_THREAD_SOURCE: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../corelib/packages/foundation/src/Core/Threading/Thread.bd"
+));
 const CANONICAL_CORELIB_FIBER_SOURCE: &str =
     include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../corelib/packages/concurrency/src/Concurrency/Fiber.bd"));
 const CANONICAL_CORELIB_CONSOLE_LINUX_SOURCE: &str =
@@ -378,6 +384,10 @@ pub fn canonical_corelib_service_sources() -> Vec<SourceUnit> {
     sources.push(SourceUnit {
         logical_path: CANONICAL_CORELIB_CONCURRENCY_SOURCE_PATH.into(),
         source: CANONICAL_CORELIB_CONCURRENCY_SOURCE.into(),
+    });
+    sources.push(SourceUnit {
+        logical_path: CANONICAL_FOUNDATION_THREAD_SOURCE_PATH.into(),
+        source: CANONICAL_FOUNDATION_THREAD_SOURCE.into(),
     });
     sources.push(SourceUnit {
         logical_path: CANONICAL_CORELIB_FIBER_SOURCE_PATH.into(),

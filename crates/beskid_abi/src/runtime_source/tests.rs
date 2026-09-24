@@ -64,6 +64,33 @@ fn canonical_concurrency_facade_exposes_its_exact_scheduler_services() {
 }
 
 #[test]
+fn canonical_thread_yield_is_source_authorized_and_platform_neutral() {
+    const THREAD_FACADE: &str = "Core/Threading/Thread.bd";
+    let source = canonical_corelib_service_sources()
+        .into_iter()
+        .find(|source| source.logical_path == THREAD_FACADE)
+        .expect("compiler embeds canonical Thread facade");
+    assert!(source.source.contains("__thread_yield()"));
+    assert!(!source.source.contains("sched_yield"));
+
+    let target = crate::abi_v5::TargetMetadata::supported()
+        .into_iter()
+        .find(|target| target.triple.as_str() == "x86_64-unknown-linux-gnu")
+        .expect("linux target");
+    let manifest = AbiManifestV5::canonical_runtime(target);
+    let capability = canonical_corelib_service_capability(&manifest).expect("Corelib service capability");
+    let service = capability
+        .service_for_source(THREAD_FACADE, "__thread_yield")
+        .expect("thread yield service is authorized only in its canonical facade");
+    assert_eq!(service.symbol, "beskid_rt_v5_thread_yield");
+    assert!(capability.service_for_source("app/Thread.bd", "__thread_yield").is_none());
+    assert_eq!(
+        canonical_corelib_service_abi(service),
+        Some(CorelibServiceAbi { parameters: vec![], result: CorelibServiceAbiType::Void })
+    );
+}
+
+#[test]
 fn canonical_fiber_facade_exposes_one_exact_join_and_cancel_contract() {
     const FIBER_FACADE: &str = "Concurrency/Fiber.bd";
     let source = canonical_corelib_service_sources()

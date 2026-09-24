@@ -157,6 +157,8 @@ int64_t beskid_rt_v5_intrinsic_clock_realtime_nanos(void) {
                    UINT64_C(100));
 }
 
+void beskid_rt_v5_thread_yield(void) { (void)SwitchToThread(); }
+
 __declspec(noreturn) void beskid_rt_v5_intrinsic_trap(uint8_t code,
                                                        void *message,
                                                        size_t message_len) {

@@ -207,7 +207,7 @@ fn trusted_intrinsics_are_typed_and_owned_only_by_the_canonical_package() {
     assert_eq!(package.name(), CANONICAL_RUNTIME_PACKAGE_NAME);
     assert_eq!(package.abi_version(), ABI_V5);
     let names = manifest.trusted_runtime_intrinsics.iter().map(|intrinsic| intrinsic.name.as_str()).collect::<Vec<_>>();
-    assert_eq!(names.len(), 68);
+    assert_eq!(names.len(), 69);
     assert!(names.contains(&"pointer_add"));
     assert!(names.contains(&"raw_word_load"));
     assert!(names.contains(&"system_allocate"));
@@ -217,6 +217,7 @@ fn trusted_intrinsics_are_typed_and_owned_only_by_the_canonical_package() {
     assert!(names.contains(&"tls_get"));
     assert!(names.contains(&"trap"));
     assert!(names.contains(&"clock_monotonic_nanos"));
+    assert!(names.contains(&"thread_yield"));
     assert!(names.contains(&"process_getpid"));
     assert!(names.contains(&"fiber_yield"));
     assert!(names.contains(&"env_get"));
@@ -472,6 +473,7 @@ fn target_system_imports_are_exact_and_unknown_contracts_are_rejected() {
         "pthread_mutex_lock",
         "pthread_mutex_unlock",
         "read",
+        "sched_yield",
         "setenv",
         "sin",
         "sqrt",
@@ -513,6 +515,7 @@ fn target_system_imports_are_exact_and_unknown_contracts_are_rejected() {
         "ReleaseSRWLockExclusive",
         "SetEnvironmentVariableW",
         "SetLastError",
+        "SwitchToThread",
         "SleepConditionVariableSRW",
         "TlsAlloc",
         "TlsGetValue",

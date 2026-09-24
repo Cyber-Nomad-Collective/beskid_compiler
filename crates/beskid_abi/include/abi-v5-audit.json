@@ -3524,6 +3524,35 @@
       ]
     },
     {
+      "name": "__thread_yield",
+      "adapter": "beskid_rt_v5_thread_yield",
+      "params": [],
+      "result": "void",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "beskid_rt_v5_thread_yield",
+          "osImports": [
+            "sched_yield"
+          ]
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "beskid_rt_v5_thread_yield",
+          "osImports": [
+            "SwitchToThread"
+          ]
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "beskid_rt_v5_thread_yield",
+          "osImports": [
+            "sched_yield"
+          ]
+        }
+      ]
+    },
+    {
       "name": "__tty_winsize",
       "adapter": "tty_winsize",
       "params": [

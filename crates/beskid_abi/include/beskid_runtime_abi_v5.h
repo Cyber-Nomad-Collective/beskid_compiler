@@ -515,6 +515,7 @@ int64_t syscall_read(int32_t fd, void * buffer, size_t len);
 int64_t syscall_read_bytes(int32_t fd, void * data, size_t len);
 int64_t syscall_write(int64_t fd, void * value);
 int64_t syscall_write_bytes(int32_t fd, void * data, size_t len);
+void beskid_rt_v5_thread_yield(void);
 int64_t tty_winsize(int64_t fd);
 void wait_group_add(void * id, int64_t delta);
 void * wait_group_create(void);

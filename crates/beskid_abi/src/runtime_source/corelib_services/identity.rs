@@ -11,7 +11,8 @@ use super::super::sources::{
     CANONICAL_FOUNDATION_PATH_SOURCE_PATH, CANONICAL_FOUNDATION_PROCESS_SOURCE_PATH,
     CANONICAL_FOUNDATION_RANDOM_SOURCE_PATH, CANONICAL_FOUNDATION_STRING_CORE_SOURCE_PATH,
     CANONICAL_FOUNDATION_STRING_UTF8_SOURCE_PATH, CANONICAL_FOUNDATION_TEXT_CURSOR_SOURCE_PATH,
-    CANONICAL_FOUNDATION_TIME_SOURCE_PATH, CANONICAL_NETWORK_INTERNAL_SOURCE_PATH,
+    CANONICAL_FOUNDATION_THREAD_SOURCE_PATH, CANONICAL_FOUNDATION_TIME_SOURCE_PATH,
+    CANONICAL_NETWORK_INTERNAL_SOURCE_PATH,
 };
 
 /// The canonical compiler-owned source file for one Foundation service unit.
@@ -50,6 +51,7 @@ pub fn corelib_service_source_identity(logical_path: &str) -> Option<CorelibServ
         CANONICAL_CORELIB_WAIT_GROUP_SOURCE_PATH => ("concurrency", "Concurrency/WaitGroup.bd"),
         CANONICAL_FOUNDATION_ARRAY_SOURCE_PATH => ("foundation", "Core/Collections/Array.bd"),
         CANONICAL_FOUNDATION_BYTES_SLICE_SOURCE_PATH => ("foundation", "Core/Bytes/Slice.bd"),
+        CANONICAL_FOUNDATION_THREAD_SOURCE_PATH => ("foundation", "Core/Threading/Thread.bd"),
         CANONICAL_FOUNDATION_ENVIRONMENT_SOURCE_PATH => ("foundation", "Core/Environment/Environment.bd"),
         CANONICAL_FOUNDATION_PATH_SOURCE_PATH => ("foundation", "Core/Path/Path.bd"),
         CANONICAL_FOUNDATION_PROCESS_SOURCE_PATH => ("foundation", "Core/Process/Process.bd"),
