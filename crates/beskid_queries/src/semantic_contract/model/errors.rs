@@ -24,12 +24,31 @@ pub struct SemanticError {
     /// internal error rendered from this site is a genuine gap, never a user diagnostic (see
     /// `docs/superpowers/specs/2026-09-23-production-semantic-diagnostics-design.md` section 2.3).
     unavailable_site: Option<AstNodeKey>,
+    /// Present only for [`SemanticError::generic_binding_conflict`]: the call specialization
+    /// authority could not bind one generic parameter because two arguments of the call fix it to
+    /// different types. Still an unavailable specialization for every existing consumer; the
+    /// legality gate reads this positive description to report E1229 at the call.
+    binding_conflict: Option<GenericBindingConflict>,
+}
+
+/// One generic parameter that a single call binds to two different types.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub struct GenericBindingConflict {
+    pub parameter: Arc<str>,
+    pub first: Arc<str>,
+    pub second: Arc<str>,
 }
 
 impl SemanticError {
     pub(crate) fn new(message: impl Into<Arc<str>>) -> Self {
         let message = message.into();
-        Self { diagnostics: Arc::from([Arc::clone(&message)]), message, unavailable: false, unavailable_site: None }
+        Self {
+            diagnostics: Arc::from([Arc::clone(&message)]),
+            message,
+            unavailable: false,
+            unavailable_site: None,
+            binding_conflict: None,
+        }
     }
 
     pub(crate) fn from_diagnostics(messages: impl IntoIterator<Item = String>) -> Self {
@@ -40,13 +59,20 @@ impl SemanticError {
             diagnostics: diagnostics.into(),
             unavailable: false,
             unavailable_site: None,
+            binding_conflict: None,
         }
     }
 
     pub fn unavailable(query: &str) -> Self {
         let message =
             Arc::<str>::from(format!("semantic query `{query}` is unavailable until its AST/Salsa port is complete"));
-        Self { diagnostics: Arc::from([Arc::clone(&message)]), message, unavailable: true, unavailable_site: None }
+        Self {
+            diagnostics: Arc::from([Arc::clone(&message)]),
+            message,
+            unavailable: true,
+            unavailable_site: None,
+            binding_conflict: None,
+        }
     }
 
     /// Same meaning as [`SemanticError::unavailable`], plus the generation-bound site the caller
@@ -61,7 +87,36 @@ impl SemanticError {
             message,
             unavailable: true,
             unavailable_site: Some(site),
+            binding_conflict: None,
         }
+    }
+
+    /// The call specialization authority's own rejection of a call that binds `parameter` to two
+    /// different types. It stays an unavailable `call_abi_signature` for every consumer that only
+    /// asks whether a specialization exists, and carries the conflict for the legality gate.
+    pub(crate) fn generic_binding_conflict(
+        parameter: impl Into<Arc<str>>,
+        first: impl Into<Arc<str>>,
+        second: impl Into<Arc<str>>,
+    ) -> Self {
+        let conflict =
+            GenericBindingConflict { parameter: parameter.into(), first: first.into(), second: second.into() };
+        let message = Arc::<str>::from(format!(
+            "semantic query `call_abi_signature` is unavailable: generic parameter `{}` is bound to both `{}` and `{}`",
+            conflict.parameter, conflict.first, conflict.second
+        ));
+        Self {
+            diagnostics: Arc::from([Arc::clone(&message)]),
+            message,
+            unavailable: true,
+            unavailable_site: None,
+            binding_conflict: Some(conflict),
+        }
+    }
+
+    /// The generic binding conflict given to [`SemanticError::generic_binding_conflict`], if any.
+    pub fn binding_conflict(&self) -> Option<&GenericBindingConflict> {
+        self.binding_conflict.as_ref()
     }
 
     pub fn is_unavailable(&self) -> bool {

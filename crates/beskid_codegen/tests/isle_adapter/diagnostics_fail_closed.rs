@@ -396,3 +396,32 @@ fn invalid_scoped_use_is_rejected_as_e1230_only_when_its_item_is_lowered() {
     assert!(rendered.contains("ScopedUseStatement@"), "{rendered}");
     assert!(!rendered.contains("MissingRuleOrFact"), "{rendered}");
 }
+
+/// Design slice 2 (E1229): a generic parameter bound to two types by one call is rejected at the
+/// call only when its item is lowered. An unrelated item lowers alone; requesting both reports
+/// exactly one E1229 and no opaque specialization failure.
+#[test]
+fn generic_parameter_conflict_is_rejected_as_e1229_only_for_the_misusing_item() {
+    let source = "i64 AsI64() { return 1_i64; } word AsWord() { return 1_word; } \
+                  unit Equal<T>(T actual, T expected) { return; } \
+                  unit Misuse() { Equal(AsI64(), AsWord()); return; } \
+                  unit Fine() { Equal(AsI64(), 2_i64); return; }";
+    let (input, isa, root) = item_fixture_with_root(source);
+    let db = input.database();
+    let functions = find_function_definitions(db, root);
+    let item = |key, symbol: &str| SyntaxModuleItem { key, symbol: symbol.into() };
+    let (as_i64, as_word, misuse, fine) = (functions[0], functions[1], functions[3], functions[4]);
+    lower_syntax_program(&input, isa.as_ref(), &[item(fine, "Fine"), item(as_i64, "AsI64")])
+        .expect("the consistent call lowers when requested alone");
+    let error = lower_syntax_program(
+        &input,
+        isa.as_ref(),
+        &[item(misuse, "Misuse"), item(fine, "Fine"), item(as_i64, "AsI64"), item(as_word, "AsWord")],
+    )
+    .expect_err("the conflicting binding must not lower");
+    let rendered = error.to_string();
+    assert_eq!(rendered.matches("E1229").count(), 1, "{rendered}");
+    assert!(rendered.contains("CallExpression@"), "{rendered}");
+    assert!(!rendered.contains("generic specialization facts are unavailable"), "{rendered}");
+    assert!(!rendered.contains("MissingRuleOrFact"), "{rendered}");
+}

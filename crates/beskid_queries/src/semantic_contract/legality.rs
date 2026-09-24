@@ -10,8 +10,8 @@
 //!
 //! A legality fact is a positive, Salsa-tracked description of one user error
 //! (`unresolved_type_reference` for E1201, `unresolved_call_target` for E1101/E1108/E1203,
-//! `call_arity_mismatch` for E1204, `member_reference_legality` for E1211/E1301/E1302/E1307,
-//! `match_exhaustiveness` for E1304; `unresolved_imports` for E1105, judged once per unit that owns
+//! `call_arity_mismatch` for E1204, `generic_parameter_conflict` for E1229,
+//! `member_reference_legality` for E1211/E1301/E1302/E1307, `match_exhaustiveness` for E1304; `unresolved_imports` for E1105, judged once per unit that owns
 //! a judged item; `scoped_cleanup` for E1230 and `dead_collection_growth` for E1231, which
 //! `build_typed_program` no longer judges eagerly for every unit): it is never string
 //! classification of an opaque `SemanticError::unavailable`.
@@ -25,10 +25,12 @@ use beskid_analysis::syntax_query::{NodeKind, SyntaxIndex};
 
 mod calls;
 mod cleanup;
+mod generics;
 mod imports;
 mod members;
 
 pub use calls::{UnresolvedCallKind, UnresolvedCallTarget, unresolved_call_target};
+pub use generics::{GenericParameterConflict, generic_parameter_conflict};
 pub use imports::{UnresolvedImport, unresolved_imports};
 pub use members::{
     MemberReferenceFinding, MemberReferenceKind, NonExhaustiveMatch, match_exhaustiveness, member_reference_legality,
@@ -248,6 +250,17 @@ pub fn check_items(db: &dyn Db, items: &[AstNodeKey]) -> Result<(), Vec<Semantic
             findings.push(SemanticFinding {
                 kind: SemanticIssueKind::MatchNonExhaustive { enum_name: finding.enum_name.to_string() },
                 site: finding.site,
+                related: Vec::new(),
+            });
+        }
+        if let Ok(Some(finding)) = generic_parameter_conflict(db, item) {
+            findings.push(SemanticFinding {
+                kind: SemanticIssueKind::TypeGenericParameterConflict {
+                    parameter: finding.conflict.parameter.to_string(),
+                    first_name: finding.conflict.first.to_string(),
+                    second_name: finding.conflict.second.to_string(),
+                },
+                site: finding.call,
                 related: Vec::new(),
             });
         }
@@ -493,5 +506,41 @@ mod tests {
         let main_item = function_definitions(&db, root)[1];
 
         assert_eq!(super::call_arity_mismatch(&db, main_item).expect("call_arity_mismatch query"), None);
+    }
+
+    const EQUAL: &str = "i64 AsI64() { return 1_i64; } word AsWord() { return 1_word; } \
+                         unit Equal<T>(T actual, T expected) { return; } ";
+
+    #[test]
+    fn generic_parameter_bound_to_two_types_by_one_call_is_reported_at_the_call() {
+        let source = format!("{EQUAL}unit Main() {{ Equal(AsI64(), AsWord()); return; }}");
+        let (db, root) = one_unit_assembly(&source, SyntaxGenerationId(140));
+        let main = function_definitions(&db, root)[3];
+        let finding = super::generic_parameter_conflict(&db, main).expect("query").expect("T is bound twice");
+        assert_eq!(finding.conflict.parameter.as_ref(), "T");
+        assert_eq!(finding.conflict.first.as_ref(), "i64");
+        assert_eq!(finding.conflict.second.as_ref(), "word");
+        assert_eq!(node_kind(&db, finding.call).expect("kind"), Some(IndexedNodeKind::CallExpression));
+        let findings = super::check_items(&db, &[main]).expect_err("legality gate rejects the call");
+        assert_eq!(findings.iter().filter(|finding| finding.kind.code() == "E1229").count(), 1, "{findings:?}");
+    }
+
+    #[test]
+    fn consistent_generic_bindings_and_generic_bodies_are_not_reported() {
+        let cases = [
+            "unit Main() { Equal(AsI64(), 2_i64); return; }",
+            "unit Main() { Equal(AsWord(), AsWord()); return; }",
+            // A bare integer literal inherits the binding of the other argument.
+            "unit Main() { Equal(AsI64(), 3); return; }",
+            // A generic body is specialized through its callers' environment, not judged alone.
+            "unit Forward<U>(U first, U second) { Equal(first, second); return; } unit Main() { Forward(1_i64, 2_i64); return; }",
+        ];
+        for (offset, body) in cases.into_iter().enumerate() {
+            let source = format!("{EQUAL}{body}");
+            let (db, root) = one_unit_assembly(&source, SyntaxGenerationId(141 + offset as u64));
+            for item in function_definitions(&db, root) {
+                assert_eq!(super::generic_parameter_conflict(&db, item).expect("query"), None, "{source}");
+            }
+        }
     }
 }

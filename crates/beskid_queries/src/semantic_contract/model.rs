@@ -19,7 +19,7 @@ pub use closures::{
     ClosurePointerMapRequirement, ClosureSignature, FiberOwnership, SpawnDiagnostic, SpawnDiagnosticKind,
     SpawnEntryValidation, SpawnHandleType, SpawnLegality, SpawnTarget,
 };
-pub use errors::{SemanticError, SemanticFinding, SemanticQueryResult};
+pub use errors::{GenericBindingConflict, SemanticError, SemanticFinding, SemanticQueryResult};
 pub use facts::{
     BulkParameterFact, CastIntent, ControlFlow, ForIteratorFact, ItemSignature, PrimitiveNumericConversion,
     RangeForFact, TryExpressionFact,

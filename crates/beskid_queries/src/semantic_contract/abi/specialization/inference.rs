@@ -248,7 +248,13 @@ pub(super) fn specialization_for_call_in_environment(
                     substitutions.insert(generic.to_owned(), actual);
                     source_substitutions.insert(generic.to_owned(), GenericSubstitution::inferred(generic, actual));
                 }
-                Some(_) => return Err(SemanticError::unavailable("call_abi_signature")),
+                Some(existing) => {
+                    return Err(SemanticError::generic_binding_conflict(
+                        generic,
+                        existing.display_name(),
+                        actual.display_name(),
+                    ));
+                }
             }
         } else if generic_abi_type(db, declaration, &parameter.node.ty.node, &substitutions)? != actual {
             return Err(SemanticError::unavailable("call_abi_signature"));
@@ -357,12 +363,20 @@ fn infer_source_substitutions(
         let abi = actual.abi_type();
         if let Some(existing) = source_substitutions.get(generic) {
             if existing.argument != abi || existing.source_identity() != actual {
-                return Err(SemanticError::unavailable("call_abi_signature"));
+                return Err(SemanticError::generic_binding_conflict(
+                    generic,
+                    existing.source_identity().display_name(),
+                    actual.display_name(),
+                ));
             }
             return Ok(());
         }
-        if abi_substitutions.get(generic).is_some_and(|existing| *existing != abi) {
-            return Err(SemanticError::unavailable("call_abi_signature"));
+        if let Some(existing) = abi_substitutions.get(generic).filter(|existing| **existing != abi) {
+            return Err(SemanticError::generic_binding_conflict(
+                generic,
+                existing.display_name(),
+                actual.display_name(),
+            ));
         }
         abi_substitutions.insert(generic.to_owned(), abi);
         source_substitutions.insert(generic.to_owned(), GenericSubstitution::from_source(generic, abi, actual.clone()));
