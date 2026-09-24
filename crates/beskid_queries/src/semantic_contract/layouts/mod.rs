@@ -33,6 +33,6 @@ pub use enum_layout::{enum_constructor_specialization, enum_match_specialization
 
 pub use field_access::aggregate_field_access_specialization;
 pub(in crate::semantic_contract) use field_access::{
-    aggregate_field_access_tracked, nominal_field_projection, nominal_local_receiver_declaration,
+    FieldAccessReceiver, aggregate_field_access_tracked, field_access_receiver, nominal_field_projection, nominal_local_receiver_declaration,
     path_projection_segment,
 };

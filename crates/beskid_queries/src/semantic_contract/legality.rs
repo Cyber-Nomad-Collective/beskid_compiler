@@ -10,7 +10,8 @@
 //!
 //! A legality fact is a positive, Salsa-tracked description of one user error
 //! (`unresolved_type_reference` for E1201, `unresolved_call_target` for E1101/E1108/E1203,
-//! `call_arity_mismatch` for E1204): it is never string classification of an opaque
+//! `call_arity_mismatch` for E1204, `member_reference_legality` for E1211/E1301/E1302/E1307,
+//! `match_exhaustiveness` for E1304): it is never string classification of an opaque
 //! `SemanticError::unavailable`. `check_items` collects every finding
 //! of the pass rather than stopping at the first, so `beskid test` and `beskid build` report every
 //! violation the requested items carry in one run.
@@ -21,8 +22,12 @@ use beskid_analysis::syntax::{FunctionDefinition, MethodDefinition};
 use beskid_analysis::syntax_query::{NodeKind, SyntaxIndex};
 
 mod calls;
+mod members;
 
 pub use calls::{UnresolvedCallKind, UnresolvedCallTarget, unresolved_call_target};
+pub use members::{
+    MemberReferenceFinding, MemberReferenceKind, NonExhaustiveMatch, match_exhaustiveness, member_reference_legality,
+};
 
 /// A direct call whose supplied argument count does not match its resolved declaration's
 /// parameter count (plus one for an implicit or explicit method receiver).
@@ -216,6 +221,31 @@ pub fn check_items(db: &dyn Db, items: &[AstNodeKey]) -> Result<(), Vec<Semantic
             };
             findings.push(SemanticFinding { kind, site: finding.call, related: Vec::new() });
         }
+        if let Ok(Some(finding)) = member_reference_legality(db, item) {
+            let kind = match finding.kind {
+                MemberReferenceKind::UnknownStructField { name } => {
+                    SemanticIssueKind::TypeUnknownStructField { name: name.to_string() }
+                }
+                MemberReferenceKind::UnknownEnumVariant { enum_name, variant } => SemanticIssueKind::UnknownEnumPath {
+                    enum_name: enum_name.to_string(),
+                    variant_name: variant.to_string(),
+                },
+                MemberReferenceKind::EnumConstructorArity { expected, actual } => {
+                    SemanticIssueKind::EnumConstructorArityMismatch { expected, actual }
+                }
+                MemberReferenceKind::PatternArity { expected, actual } => {
+                    SemanticIssueKind::PatternArityMismatch { expected, actual }
+                }
+            };
+            findings.push(SemanticFinding { kind, site: finding.site, related: Vec::new() });
+        }
+        if let Ok(Some(finding)) = match_exhaustiveness(db, item) {
+            findings.push(SemanticFinding {
+                kind: SemanticIssueKind::MatchNonExhaustive { enum_name: finding.enum_name.to_string() },
+                site: finding.site,
+                related: Vec::new(),
+            });
+        }
         if let Ok(Some(finding)) = call_arity_mismatch(db, item) {
             findings.push(SemanticFinding {
                 kind: SemanticIssueKind::TypeCallArityMismatch { expected: finding.expected, actual: finding.actual },
@@ -354,6 +384,75 @@ mod tests {
 
         assert_eq!(super::call_arity_mismatch(&db, main_item).expect("call_arity_mismatch query"), None);
         assert!(super::check_items(&db, &[main_item]).is_ok(), "bulk call must pass the legality gate");
+    }
+
+    fn member_finding(source: &str, generation: u64, item: usize) -> Option<MemberReferenceKind> {
+        let (db, root) = one_unit_assembly(source, SyntaxGenerationId(generation));
+        let key = function_definitions(&db, root)[item];
+        super::member_reference_legality(&db, key).expect("member_reference_legality query").map(|finding| finding.kind)
+    }
+
+    const SHAPE: &str = "pub type Pair { i64 a } enum Shape { Dot, Circle(i64 radius) } ";
+
+    #[test]
+    fn unknown_members_and_arities_are_reported_against_the_resolved_declaration() {
+        let cases = [
+            ("i64 Main() { Pair p = Pair { b: 1 }; return 0; }", MemberReferenceKind::UnknownStructField { name: "b".into() }),
+            ("i64 Main(Pair p) { return p.b; }", MemberReferenceKind::UnknownStructField { name: "b".into() }),
+            (
+                "i64 Main() { Shape s = Shape::Square; return 0; }",
+                MemberReferenceKind::UnknownEnumVariant { enum_name: "Shape".into(), variant: "Square".into() },
+            ),
+            (
+                "i64 Main() { Shape s = Shape::Circle(); return 0; }",
+                MemberReferenceKind::EnumConstructorArity { expected: 1, actual: 0 },
+            ),
+            (
+                "i64 Main(Shape s) { return match s { Shape::Dot => 0, Shape::Circle(r, extra) => r, }; }",
+                MemberReferenceKind::PatternArity { expected: 1, actual: 2 },
+            ),
+            (
+                "i64 Main(Shape s) { return match s { Shape::Dot => 0, Shape::Square => 1, _ => 2, }; }",
+                MemberReferenceKind::UnknownEnumVariant { enum_name: "Shape".into(), variant: "Square".into() },
+            ),
+        ];
+        for (offset, (body, expected)) in cases.into_iter().enumerate() {
+            let source = format!("{SHAPE}{body}");
+            assert_eq!(member_finding(&source, 100 + offset as u64, 0), Some(expected), "{source}");
+        }
+    }
+
+    #[test]
+    fn well_formed_members_are_not_reported() {
+        let cases = [
+            "i64 Main() { Pair p = Pair { a: 1 }; return p.a; }",
+            "i64 Main() { Shape s = Shape::Circle(2); Shape d = Shape::Dot; return 0; }",
+            "i64 Main(Shape s) { return match s { Shape::Dot => 0, Shape::Circle(r) => r, }; }",
+        ];
+        for (offset, body) in cases.into_iter().enumerate() {
+            let source = format!("{SHAPE}{body}");
+            assert_eq!(member_finding(&source, 110 + offset as u64, 0), None, "{source}");
+            let (db, root) = one_unit_assembly(&source, SyntaxGenerationId(120 + offset as u64));
+            let key = function_definitions(&db, root)[0];
+            assert_eq!(super::match_exhaustiveness(&db, key).expect("match_exhaustiveness query"), None, "{source}");
+        }
+    }
+
+    #[test]
+    fn match_without_an_arm_for_a_variant_is_reported_non_exhaustive() {
+        let source = format!("{SHAPE}i64 Main(Shape s) {{ return match s {{ Shape::Dot => 0, }}; }}");
+        let (db, root) = one_unit_assembly(&source, SyntaxGenerationId(130));
+        let key = function_definitions(&db, root)[0];
+        let finding = super::match_exhaustiveness(&db, key).expect("query").expect("`Circle` has no arm");
+        assert_eq!(finding.enum_name.as_ref(), "Shape");
+        assert_eq!(finding.missing_variant.as_ref(), "Circle");
+        let findings = super::check_items(&db, &[key]).expect_err("legality gate rejects the match");
+        assert!(findings.iter().any(|finding| finding.kind.code() == "E1304"), "{findings:?}");
+
+        let wildcard = format!("{SHAPE}i64 Main(Shape s) {{ return match s {{ Shape::Dot => 0, _ => 1, }}; }}");
+        let (db, root) = one_unit_assembly(&wildcard, SyntaxGenerationId(131));
+        let key = function_definitions(&db, root)[0];
+        assert_eq!(super::match_exhaustiveness(&db, key).expect("query"), None);
     }
 
     #[test]

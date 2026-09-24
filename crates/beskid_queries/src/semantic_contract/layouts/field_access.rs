@@ -47,6 +47,41 @@ fn aggregate_field_access_for_environment(
     if let Some(projection) = nominal_field_projection(db, key) {
         return Some(projection.map(|(access, _)| access));
     }
+    let resolved = field_access_receiver(db, program, index, key, node, ambient, enclosing)?;
+    Some(resolved.and_then(|FieldAccessReceiver { declaration, receiver, layout, field_name }| {
+        let index = layout
+            .fields
+            .iter()
+            .position(|(name, _)| name.as_ref() == field_name)
+            .and_then(|index| u32::try_from(index).ok())
+            .ok_or_else(|| SemanticError::unavailable("aggregate_field_access"))?;
+        Ok(AggregateFieldAccess { declaration, receiver, index, layout })
+    }))
+}
+
+/// The nominal receiver a single-step field access resolves against, before its field name is
+/// looked up in the receiver layout.
+pub(in crate::semantic_contract) struct FieldAccessReceiver<'a> {
+    pub(in crate::semantic_contract) declaration: AstNodeKey,
+    pub(in crate::semantic_contract) receiver: AstNodeKey,
+    pub(in crate::semantic_contract) layout: AggregateLayoutFact,
+    pub(in crate::semantic_contract) field_name: &'a str,
+}
+
+/// Resolve the receiver of a single-step field access (`call().field`, `this.field`,
+/// `local.field`, or a bare implicit-receiver `field`). This is the receiver authority of
+/// `aggregate_field_access` after `nominal_field_projection` declined the node; the legality gate
+/// reads it to tell an unknown field name (E1211) from a receiver that does not resolve.
+/// `None` when `node` is not such a shape; `Some(Err)` when its receiver does not resolve.
+pub(in crate::semantic_contract) fn field_access_receiver<'a>(
+    db: &dyn Db,
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    key: AstNodeKey,
+    node: beskid_analysis::syntax_query::DynNodeRef<'a>,
+    ambient: Option<&HashMap<String, AggregateFieldShape>>,
+    enclosing: Option<&GenericSpecializationInstance>,
+) -> Option<Result<FieldAccessReceiver<'a>, SemanticError>> {
     if let Some(member) = node.of::<beskid_analysis::syntax::MemberExpression>() {
         let receiver = index.direct_child_id(
             program,
@@ -55,16 +90,8 @@ fn aggregate_field_access_for_environment(
         )?;
         let receiver = AstNodeKey { node: normalized_expression_node(index, receiver), ..key };
         let resolved = applied_call_result_layout(db, receiver, &member.target.node, ambient, enclosing);
-        return Some(resolved.and_then(|(declaration, layout)| {
-            let field_name = member.member.node.name.as_str();
-            let index = layout
-                .fields
-                .iter()
-                .position(|(name, _)| name.as_ref() == field_name)
-                .and_then(|index| u32::try_from(index).ok())
-                .ok_or_else(|| SemanticError::unavailable("aggregate_field_access"))?;
-            Ok(AggregateFieldAccess { declaration, receiver, index, layout })
-        }));
+        let field_name = member.member.node.name.as_str();
+        return Some(resolved.map(|(declaration, layout)| FieldAccessReceiver { declaration, receiver, layout, field_name }));
     }
     let path = node.of::<beskid_analysis::syntax::PathExpression>()?;
     let resolved = match path.path.node.segments.as_slice() {
@@ -87,14 +114,11 @@ fn aggregate_field_access_for_environment(
             .map(|(declaration, receiver, layout)| (declaration, receiver, layout, field.node.name.node.name.as_str())),
         _ => return None,
     };
-    Some(resolved.and_then(|(declaration, receiver, layout, field_name)| {
-        let index = layout
-            .fields
-            .iter()
-            .position(|(name, _)| name.as_ref() == field_name)
-            .and_then(|index| u32::try_from(index).ok())
-            .ok_or_else(|| SemanticError::unavailable("aggregate_field_access"))?;
-        Ok(AggregateFieldAccess { declaration, receiver, index, layout })
+    Some(resolved.map(|(declaration, receiver, layout, field_name)| FieldAccessReceiver {
+        declaration,
+        receiver,
+        layout,
+        field_name,
     }))
 }
 

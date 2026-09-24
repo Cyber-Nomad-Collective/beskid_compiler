@@ -323,3 +323,30 @@ fn unknown_callee_is_rejected_with_a_resolution_code_before_isle() {
         assert!(!rendered.contains("MissingRuleOrFact"), "{source}: {rendered}");
     }
 }
+
+/// Unknown members, wrong enum payload counts and a match that leaves a variant without an arm
+/// must stop at the legality gate with their own codes at the offending site, not reach ISLE as
+/// an unavailable layout fact (`MissingRuleOrFact`) or `NonExhaustiveMatch`.
+#[test]
+fn member_and_match_violations_are_rejected_with_their_codes_before_isle() {
+    let shape = "pub type Pair { i64 a } enum Shape { Dot, Circle(i64 radius) } ";
+    let cases = [
+        ("i64 Main() { Pair p = Pair { b: 1 }; return 0; }", "E1211"),
+        ("i64 Main(Pair p) { return p.b; }", "E1211"),
+        ("i64 Main() { Shape s = Shape::Square; return 0; }", "E1301"),
+        ("i64 Main() { Shape s = Shape::Circle(); return 0; }", "E1302"),
+        ("i64 Main(Shape s) { return match s { Shape::Dot => 0, Shape::Circle(r, extra) => r, }; }", "E1307"),
+        ("i64 Main(Shape s) { return match s { Shape::Dot => 0, }; }", "E1304"),
+    ];
+    for (body, code) in cases {
+        let source = format!("{shape}{body}");
+        let (input, isa, root) = item_fixture_with_root(&source);
+        let main = find_function_definitions(input.database(), root)[0];
+        let error = lower_syntax_program(&input, isa.as_ref(), &[SyntaxModuleItem { key: main, symbol: "Main".into() }])
+            .expect_err("the violation must not lower");
+        let rendered = error.to_string();
+        assert!(rendered.contains(code), "{source}: {rendered}");
+        assert!(!rendered.contains("MissingRuleOrFact"), "{source}: {rendered}");
+        assert!(!rendered.contains("NonExhaustiveMatch"), "{source}: {rendered}");
+    }
+}

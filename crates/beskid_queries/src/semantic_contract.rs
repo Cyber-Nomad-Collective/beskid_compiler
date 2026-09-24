@@ -72,8 +72,9 @@ pub use cleanup::{ScopedAcquisition, ScopedCleanup, ScopedCleanupDiagnostic, sco
 pub use growth::{DeadCollectionGrowth, dead_collection_growth, is_growth_call_candidate};
 pub use local_type_resolution::{UnresolvedTypeReference, unresolved_type_reference};
 pub use legality::{
-    CallArityMismatch, ImmutableLocalAssignment, UnresolvedCallKind, UnresolvedCallTarget, call_arity_mismatch, check_items,
-    immutable_local_assignment, unresolved_call_target,
+    CallArityMismatch, ImmutableLocalAssignment, MemberReferenceFinding, MemberReferenceKind, NonExhaustiveMatch,
+    UnresolvedCallKind, UnresolvedCallTarget, call_arity_mismatch, check_items, immutable_local_assignment,
+    match_exhaustiveness, member_reference_legality, unresolved_call_target,
 };
 use closures_spawn::{
     callable_fiber_ownership_tracked, callable_signature_for_node, callable_signature_for_path,
@@ -88,7 +89,7 @@ use contracts::{
     contract_witnesses_for_call, resolve_contract, specialized_source_expression_identity,
 };
 use layouts::{
-    abi_local_declaration_type, abi_type_for_direct_aggregate_field_projection, abi_type_for_local_path,
+    FieldAccessReceiver, abi_local_declaration_type, field_access_receiver, nominal_field_projection, abi_type_for_direct_aggregate_field_projection, abi_type_for_local_path,
     aggregate_field_access_tracked, aggregate_field_layout, aggregate_layout_from_definition, aggregate_layout_tracked,
     aggregate_literal_declaration_tracked, aggregate_literal_layout_tracked, aggregate_shape_from_applied_type,
     applied_aggregate_shape, array_index_element_abi_type_tracked, array_index_element_template_tracked,
