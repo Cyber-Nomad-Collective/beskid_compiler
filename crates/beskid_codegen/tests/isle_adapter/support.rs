@@ -16,7 +16,7 @@ pub(super) use common::{
 pub(super) use corelib::{
     assert_args_module_cannot_emit_imports, canonical_corelib_syscall_fixture, canonical_foundation_assert_fixture,
     canonical_foundation_error_fixture, canonical_foundation_output_fixture, core_args_fixture,
-    materialized_corelib_syscall_fixture, named_function,
+    include_imported_corelib_modules, materialized_corelib_syscall_fixture, named_function,
 };
 pub(super) use lookup::{
     find_call_expression, find_corelib_service_call, find_definition_of_kind, find_function_definition,

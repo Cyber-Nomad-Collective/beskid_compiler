@@ -352,17 +352,20 @@ fn member_and_match_violations_are_rejected_with_their_codes_before_isle() {
 }
 
 /// A `use` of a module the assembly does not contain is dropped by import registration. The
-/// legality gate audits it as E1105 at the `use` for the unit of a lowered item, but does not
-/// reject the lowering: valid runtime and Foundation code still carries such imports.
+/// legality gate rejects it as E1105 at the `use` for the unit of a lowered item, before any
+/// ISLE rule selection.
 #[test]
-fn unknown_import_in_the_unit_of_a_lowered_item_is_audited_as_e1105_without_rejecting() {
+fn unknown_import_in_the_unit_of_a_lowered_item_is_rejected_as_e1105() {
     let (input, isa, root) = item_fixture_with_root("use Missing.Module;\ni64 Main() { return 0; }");
     let db = input.database();
     let main = find_function_definitions(db, root)[0];
-    let audit = beskid_queries::audit_imports(db, &[main]);
-    assert_eq!(audit.len(), 1, "{audit:?}");
-    assert_eq!(audit[0].kind.code(), "E1105");
-    assert!(format_ast_node_site(db, audit[0].site).contains("UseDeclaration@"));
-    lower_syntax_program(&input, isa.as_ref(), &[SyntaxModuleItem { key: main, symbol: "Main".into() }])
-        .expect("an unknown import is audited, not rejected");
+    let findings = beskid_queries::check_items(db, &[main]).expect_err("an unknown import is rejected");
+    assert_eq!(findings.len(), 1, "{findings:?}");
+    assert_eq!(findings[0].kind.code(), "E1105");
+    assert!(format_ast_node_site(db, findings[0].site).contains("UseDeclaration@"));
+    let error = lower_syntax_program(&input, isa.as_ref(), &[SyntaxModuleItem { key: main, symbol: "Main".into() }])
+        .expect_err("an unknown import must not lower");
+    let rendered = error.to_string();
+    assert!(rendered.contains("E1105"), "{rendered}");
+    assert!(!rendered.contains("MissingRuleOrFact"), "{rendered}");
 }

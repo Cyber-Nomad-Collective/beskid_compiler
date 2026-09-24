@@ -11,10 +11,10 @@
 //! A legality fact is a positive, Salsa-tracked description of one user error
 //! (`unresolved_type_reference` for E1201, `unresolved_call_target` for E1101/E1108/E1203,
 //! `call_arity_mismatch` for E1204, `member_reference_legality` for E1211/E1301/E1302/E1307,
-//! `match_exhaustiveness` for E1304; `unresolved_imports` for E1105 runs audit-only through
-//! `audit_imports`): it is never string classification of an opaque `SemanticError::unavailable`. `check_items` collects every finding
-//! of the pass rather than stopping at the first, so `beskid test` and `beskid build` report every
-//! violation the requested items carry in one run.
+//! `match_exhaustiveness` for E1304; `unresolved_imports` for E1105, judged once per unit that owns
+//! a judged item): it is never string classification of an opaque `SemanticError::unavailable`.
+//! `check_items` collects every finding of the pass rather than stopping at the first, so
+//! `beskid test` and `beskid build` report every violation the requested items carry in one run.
 
 use super::*;
 use beskid_analysis::analysis::SemanticIssueKind;
@@ -197,7 +197,7 @@ fn collect_nodes_of_kind(
 /// here: they surface at the module-emission boundary as an internal error instead, per section
 /// 2.3 of the design.
 pub fn check_items(db: &dyn Db, items: &[AstNodeKey]) -> Result<(), Vec<SemanticFinding>> {
-    let mut findings = Vec::new();
+    let mut findings = import_findings(db, items);
     for &item in items {
         if let Ok(Some(finding)) = unresolved_type_reference(db, item) {
             findings.push(SemanticFinding {
@@ -259,16 +259,11 @@ pub fn check_items(db: &dyn Db, items: &[AstNodeKey]) -> Result<(), Vec<Semantic
     if findings.is_empty() { Ok(()) } else { Err(findings) }
 }
 
-/// Audit-only E1105 pass (design section 4, slice 5; owner decision 3): every top-level `use`
-/// that names no assembled module, in each unit that owns one of `items`, once per unit.
-///
-/// This is deliberately not part of [`check_items`]. The audit of the corpus found `use` lines
-/// that name no assembled module in code that lowers and runs today: the embedded runtime
-/// (`use Bootstrap.Native;` in `Runtime/Fiber/Scheduler/Loop.bd`) and the partial Foundation and
-/// Network assemblies the codegen fixtures lower. Rejecting them would reject valid code, so the
-/// caller only logs these findings until the import registry and those fixtures agree; promoting
-/// E1105 to a rejection is a separate owner decision.
-pub fn audit_imports(db: &dyn Db, items: &[AstNodeKey]) -> Vec<SemanticFinding> {
+/// E1105: every top-level `use` that names no assembled module, in each unit that owns one of
+/// `items`, judged once per unit in first-owner order. A `use` inside a unit nothing requested is
+/// not judged, so an assembly may carry units whose imports reach outside it as long as nothing
+/// is lowered from them.
+fn import_findings(db: &dyn Db, items: &[AstNodeKey]) -> Vec<SemanticFinding> {
     let mut judged_units = Vec::new();
     let mut findings = Vec::new();
     for &item in items {

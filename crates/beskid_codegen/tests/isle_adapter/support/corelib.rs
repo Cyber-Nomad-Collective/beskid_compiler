@@ -140,7 +140,9 @@ pub(in super::super) fn core_args_fixture(
     trusted_corelib_service_paths: Arc<[std::path::PathBuf]>,
 ) -> (CodegenInput<'static>, Arc<dyn cranelift_codegen::isa::TargetIsa>, AstNodeKey) {
     let mut db = Box::new(BeskidDatabase::default());
-    let source_root = source_path.parent().expect("Core.Args source parent").to_path_buf();
+    // Every Core.Args fixture path ends in `Core/Args/Args.bd`; its package source root is where
+    // logical module paths start, so `Core.Args` and the modules it imports resolve by name.
+    let source_root = source_path.ancestors().nth(3).expect("Core.Args package source root").to_path_buf();
     let program =
         parse_program_with_source_name(source_path.to_str().unwrap(), &source).expect("parse Core.Args source");
     let entry = SourceUnitId::new(&*db, source_path.clone());
@@ -152,20 +154,22 @@ pub(in super::super) fn core_args_fixture(
         "core-args-authority".into(),
     );
     let generation = SyntaxGenerationId(98);
+    let mut roots =
+        EffectiveCompilationRoots { host: RootEntry { dependency_name: None, source_root }, dependencies: Vec::new() };
+    let mut units = vec![SourceUnit {
+        logical_name: CANONICAL_CORELIB_ARGS_SOURCE_PATH.into(),
+        origin_path: source_path.clone(),
+        path: source_path,
+        source,
+        program,
+    }];
+    include_imported_corelib_modules(&mut units, &mut roots);
+    let syntax_indexes = units.iter().map(|unit| SyntaxIndex::from_program(&unit.program, generation)).collect();
     let assembly = ProgramAssembly {
         runtime_fixture: None,
-        roots: EffectiveCompilationRoots {
-            host: RootEntry { dependency_name: None, source_root },
-            dependencies: Vec::new(),
-        },
-        units: Arc::new(vec![SourceUnit {
-            logical_name: CANONICAL_CORELIB_ARGS_SOURCE_PATH.into(),
-            origin_path: source_path.clone(),
-            path: source_path,
-            source,
-            program: program.clone(),
-        }]),
-        syntax_indexes: Arc::new(vec![SyntaxIndex::from_program(&program, generation)]),
+        roots,
+        units: Arc::new(units),
+        syntax_indexes: Arc::new(syntax_indexes),
         generation,
         entry_index: 0,
         discovery: AssemblyDiscovery::ImportClosure,
@@ -243,15 +247,19 @@ pub(in super::super) fn canonical_foundation_assert_fixture()
         "compiler-owned-foundation".into(),
     );
     let generation = SyntaxGenerationId(94);
+    let mut roots =
+        EffectiveCompilationRoots { host: RootEntry { dependency_name: None, source_root }, dependencies: Vec::new() };
+    let mut units = vec![SourceUnit {
+        logical_name: CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH.into(),
+        origin_path: source_path.clone(),
+        path: source_path,
+        source: source.source,
+        program,
+    }];
+    include_imported_corelib_modules(&mut units, &mut roots);
     let assembly = Arc::new(ProgramAssembly::new(
-        EffectiveCompilationRoots { host: RootEntry { dependency_name: None, source_root }, dependencies: Vec::new() },
-        Arc::new(vec![SourceUnit {
-            logical_name: CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH.into(),
-            origin_path: source_path.clone(),
-            path: source_path,
-            source: source.source,
-            program,
-        }]),
+        roots,
+        Arc::new(units),
         0,
         AssemblyDiscovery::ImportClosure,
         Arc::new(ModuleIndex::empty()),
@@ -350,4 +358,75 @@ pub(in super::super) fn canonical_foundation_service_fixture(
         .finish(settings::Flags::new(settings::builder()))
         .expect("host flags");
     (input, isa, root)
+}
+
+/// Complete a partial Corelib fixture assembly with the modules its units import.
+///
+/// Every module a top-level `use` of `units` names and that no unit already provides is read from
+/// the canonical Corelib package sources (Foundation, Network) and appended to `units`; the package
+/// source root it lives under becomes a dependency root when it is not already a compilation root.
+/// The legality gate rejects a `use` that names no assembled module (E1105), so a fixture that
+/// lowers an item must carry the modules that item's unit imports. The appended units' own imports
+/// stay outside the assembly: nothing is lowered from them, so the gate does not judge them.
+pub(in super::super) fn include_imported_corelib_modules(
+    units: &mut Vec<SourceUnit>,
+    roots: &mut EffectiveCompilationRoots,
+) {
+    let packages = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corelib/packages");
+    let package_roots = ["foundation", "network"]
+        .map(|package| std::fs::canonicalize(packages.join(package).join("src")).expect("Corelib package source root"));
+    let module_of = |unit: &SourceUnit, roots: &EffectiveCompilationRoots| {
+        beskid_analysis::projects::infer_logical_module_path(unit, roots, false)
+    };
+    let mut present = units.iter().filter_map(|unit| module_of(unit, roots)).collect::<Vec<_>>();
+    let imports = units
+        .iter()
+        .flat_map(|unit| unit.program.node.items.iter())
+        .filter_map(|item| match &item.node {
+            beskid_analysis::syntax::Node::UseDeclaration(declaration) => Some(
+                declaration
+                    .node
+                    .path
+                    .node
+                    .segments
+                    .iter()
+                    .map(|segment| segment.node.name.node.name.clone())
+                    .collect::<Vec<_>>(),
+            ),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    for module in imports {
+        if present.contains(&module) {
+            continue;
+        }
+        let relative = module.iter().collect::<std::path::PathBuf>();
+        let last = module.last().expect("non-empty import path");
+        let Some((package_root, path)) = package_roots.iter().find_map(|root| {
+            [root.join(&relative).with_extension("bd"), root.join(&relative).join(format!("{last}.bd"))]
+                .into_iter()
+                .find(|candidate| candidate.is_file())
+                .map(|candidate| (root, candidate))
+        }) else {
+            continue;
+        };
+        if roots.host.source_root != *package_root
+            && !roots.dependencies.iter().any(|dependency| dependency.source_root == *package_root)
+        {
+            roots.dependencies.push(RootEntry {
+                dependency_name: package_root
+                    .parent()
+                    .and_then(|package| package.file_name())
+                    .map(|name| name.to_string_lossy().into_owned()),
+                source_root: package_root.clone(),
+            });
+        }
+        let source = std::fs::read_to_string(&path).expect("imported Corelib module source");
+        let program = parse_program_with_source_name(path.to_str().unwrap(), &source).expect("parse imported module");
+        let unit =
+            SourceUnit { logical_name: path.display().to_string(), origin_path: path.clone(), path, source, program };
+        assert_eq!(module_of(&unit, roots).as_ref(), Some(&module), "imported module resolves to its own path");
+        present.push(module);
+        units.push(unit);
+    }
 }

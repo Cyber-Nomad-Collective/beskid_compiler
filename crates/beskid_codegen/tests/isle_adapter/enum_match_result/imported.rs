@@ -126,7 +126,7 @@ fn imported_result_write_with_lowers_through_an_ordinary_function_block_match() 
     let main_path = project_root.join("Main.bd");
     let descriptor_path = project_root.join("Core/Syscall/Descriptor.bd");
     let stream_path = project_root.join("Core/Syscall/StandardStream.bd");
-    let main_source = "use Core.Syscall.Descriptor; use Core.Syscall.StandardStream; use Core.Syscall.WriteRequest; use Core.Syscall.WriteWith; use Core.Syscall.Result; unit Main(string text) { StandardStream stream = StandardStream::Stdout(); Descriptor descriptor = Descriptor::Standard(stream); Result result = WriteWith(WriteRequest { descriptor: descriptor, data: text }); match result { Result::Ok(_) => {}, Result::Error(_) => {}, }; return; }";
+    let main_source = "use Core.Syscall.Descriptor; use Core.Syscall.StandardStream; unit Main(string text) { StandardStream stream = StandardStream::Stdout(); Descriptor descriptor = Descriptor::Standard(stream); Result result = WriteWith(WriteRequest { descriptor: descriptor, data: text }); match result { Result::Ok(_) => {}, Result::Error(_) => {}, }; return; }";
     let descriptor_source = "pub enum Descriptor { Standard(Core.Syscall.StandardStream stream), Raw(i64 fd), } pub type WriteRequest { Descriptor descriptor, string data } pub enum Result { Ok(i64 value), Error(i64 error), } pub Result WriteWith(WriteRequest request) { return Result::Ok(0_i64); }";
     let stream_source = "pub enum StandardStream { Stdin, Stdout, Stderr, }";
     std::fs::create_dir_all(descriptor_path.parent().expect("descriptor parent"))

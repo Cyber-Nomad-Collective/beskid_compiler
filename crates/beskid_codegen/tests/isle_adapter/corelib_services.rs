@@ -5,8 +5,8 @@ use super::support::{
     SourceUnitId, SyntaxGenerationId, SyntaxIndex, SyntaxModuleItem, TargetMetadata,
     build_typed_program_with_corelib_services, call_abi_signature, call_lowering, canonical_corelib_service_capability,
     canonical_corelib_service_source_path, canonical_foundation_assert_fixture, enum_layout, find_call_expression,
-    find_corelib_service_call, find_definition_of_kind, find_function_definitions, isa, item_fixture_with_root,
-    item_name, lower_syntax_program, parse_program_with_source_name, settings,
+    find_corelib_service_call, find_definition_of_kind, find_function_definitions, include_imported_corelib_modules,
+    isa, item_fixture_with_root, item_name, lower_syntax_program, parse_program_with_source_name, settings,
 };
 
 fn network_internal_panic_fixture(
@@ -45,18 +45,21 @@ fn network_internal_panic_fixture(
     let source_root = copied_root.unwrap_or(source_root);
     let entry_path = units[0].path.clone();
     let generation = SyntaxGenerationId(103);
-    let roots: Arc<[AstNodeKey]> = units
+    // The fixture's own units are the codegen roots; imported modules only complete the assembly.
+    let codegen_roots: Arc<[AstNodeKey]> = units
         .iter()
         .map(|unit| AstNodeKey { unit: SourceUnitId::new(&*db, unit.path.clone()), generation, node: AstNodeId(0) })
         .collect();
-    let root = roots[0];
+    let root = codegen_roots[0];
     let project =
         ProjectSession::new(&*db, source_root.clone(), entry_path, "network-panic".into(), "source-authority".into());
+    let mut roots = EffectiveCompilationRoots {
+        host: RootEntry { dependency_name: None, source_root },
+        dependencies: vec![RootEntry { dependency_name: Some("foundation".into()), source_root: foundation_root }],
+    };
+    include_imported_corelib_modules(&mut units, &mut roots);
     let assembly = Arc::new(ProgramAssembly::new(
-        EffectiveCompilationRoots {
-            host: RootEntry { dependency_name: None, source_root },
-            dependencies: vec![RootEntry { dependency_name: Some("foundation".into()), source_root: foundation_root }],
-        },
+        roots,
         Arc::new(units),
         0,
         AssemblyDiscovery::ImportClosure,
@@ -77,7 +80,8 @@ fn network_internal_panic_fixture(
         canonical_corelib_service_capability(&manifest).expect("canonical service capability"),
     )
     .expect("typed Network source");
-    let input = CodegenInput::new(Box::leak(db), typed, roots, target, manifest).expect("Network codegen input");
+    let input =
+        CodegenInput::new(Box::leak(db), typed, codegen_roots, target, manifest).expect("Network codegen input");
     let isa =
         isa::lookup_by_name("x86_64").expect("ISA").finish(settings::Flags::new(settings::builder())).expect("flags");
     (input, isa, root)
@@ -295,24 +299,28 @@ fn canonical_foundation_assert_equal_specialization_lowers_through_syntax_isle()
         "beskid-foundation".into(),
         "assert-equal-specialization".into(),
     );
+    let mut roots =
+        EffectiveCompilationRoots { host: RootEntry { dependency_name: None, source_root }, dependencies: Vec::new() };
+    let mut units = vec![
+        SourceUnit {
+            logical_name: "Main".into(),
+            origin_path: main_path.clone(),
+            path: main_path,
+            source: main_source.into(),
+            program: main_program,
+        },
+        SourceUnit {
+            logical_name: CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH.into(),
+            origin_path: assert_path.clone(),
+            path: assert_path,
+            source: assert_source,
+            program: assert_program,
+        },
+    ];
+    include_imported_corelib_modules(&mut units, &mut roots);
     let assembly = Arc::new(ProgramAssembly::new(
-        EffectiveCompilationRoots { host: RootEntry { dependency_name: None, source_root }, dependencies: Vec::new() },
-        Arc::new(vec![
-            SourceUnit {
-                logical_name: "Main".into(),
-                origin_path: main_path.clone(),
-                path: main_path,
-                source: main_source.into(),
-                program: main_program,
-            },
-            SourceUnit {
-                logical_name: CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH.into(),
-                origin_path: assert_path.clone(),
-                path: assert_path,
-                source: assert_source,
-                program: assert_program,
-            },
-        ]),
+        roots,
+        Arc::new(units),
         0,
         AssemblyDiscovery::ImportClosure,
         Arc::new(ModuleIndex::empty()),
@@ -383,15 +391,19 @@ fn canonical_foundation_string_len_lowers_through_syntax_isle() {
         "compiler-owned-foundation-string".into(),
     );
     let generation = SyntaxGenerationId(96);
+    let mut roots =
+        EffectiveCompilationRoots { host: RootEntry { dependency_name: None, source_root }, dependencies: Vec::new() };
+    let mut units = vec![SourceUnit {
+        logical_name: "Core/String/Core.bd".into(),
+        origin_path: source_path.clone(),
+        path: source_path,
+        source,
+        program,
+    }];
+    include_imported_corelib_modules(&mut units, &mut roots);
     let assembly = Arc::new(ProgramAssembly::new(
-        EffectiveCompilationRoots { host: RootEntry { dependency_name: None, source_root }, dependencies: Vec::new() },
-        Arc::new(vec![SourceUnit {
-            logical_name: "Core/String/Core.bd".into(),
-            origin_path: source_path.clone(),
-            path: source_path,
-            source,
-            program,
-        }]),
+        roots,
+        Arc::new(units),
         0,
         AssemblyDiscovery::ImportClosure,
         Arc::new(ModuleIndex::empty()),
