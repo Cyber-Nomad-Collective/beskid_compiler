@@ -52,16 +52,16 @@ pub word NetworkDirection(word operation) {
 
 // Registers and submits under the table lock. Busy is checked before registering
 // a Foundation wait, so a rejected peer never acquires cancellation/timer state.
-pub i32 NetworkStartLocked(pointer table, pointer slot, pointer request) {
+pub i32 NetworkStartLocked(pointer table, pointer slot, pointer request, i64 deadline) {
     word operation = raw_word_load(pointer_add(request, BESKID_NETWORK_REQUEST_OPERATION_OFFSET));
     word direction = NetworkDirection(operation);
     word current = SchedulerCurrentFiber();
     if current == FIBER_NONE { return NETWORK_UNSUPPORTED; }
     if raw_word_load(NetworkSlotToken(slot, direction)) != 0 { return NETWORK_BUSY; }
     if direction == 1 && raw_word_load(pointer_add(slot, NETWORK_SLOT_WRITE_SHUTDOWN)) != 0 { return NETWORK_NOT_CONNECTED; }
-    // This API revision is unbounded (-1). It consumes Foundation's canonical
-    // one-winner state; a typed deadline context requires its own specification.
-    word token = ExternalWaitRegister(FiberHandle(current), 16 + operation, -1);
+    // The caller passes an absolute monotonic deadline, or -1 for an unbounded wait.
+    // Foundation remains the sole timer and one-winner authority.
+    word token = ExternalWaitRegister(FiberHandle(current), 16 + operation, deadline);
     if token == 0 { return NETWORK_BUSY; }
     raw_word_store(request, token);
     raw_word_store(pointer_add(request, BESKID_NETWORK_REQUEST_OWNER_OFFSET), ExternalOwnerId());
@@ -106,7 +106,7 @@ pub i32 NetworkFinish(word handle, pointer request) {
     return status;
 }
 
-pub i64 NetworkTransfer(word handle, pointer array, i64 offset, i64 count, word operation, pointer address) {
+pub i64 NetworkTransfer(word handle, pointer array, i64 offset, i64 count, word operation, pointer address, i64 deadline) {
     if offset < 0 || count < 0 || word(offset) > NetworkArrayLength(array) || word(count) > NetworkArrayLength(array) - word(offset) { return -i64(NETWORK_MESSAGE_TOO_LARGE); }
     word length = word(count);
     word direction = NetworkDirection(operation);
@@ -125,7 +125,7 @@ pub i64 NetworkTransfer(word handle, pointer array, i64 offset, i64 count, word 
     if direction == 1 && length != 0 { memory_copy(buffer, pointer_add(NetworkArrayData(array, word(offset) + length), word(offset)), length); }
     pointer request = NetworkRequest(operation, buffer, length, address);
     if request == NativePointer(0) { SystemFree(buffer, allocation); network_table_unlock(); return -i64(NETWORK_RESOURCE_EXHAUSTED); }
-    i32 start = NetworkStartLocked(table, slot, request);
+    i32 start = NetworkStartLocked(table, slot, request, deadline);
     network_table_unlock();
     if start != 0 { NetworkRequestFree(request); SystemFree(buffer, allocation); return -i64(start); }
     i32 status = NetworkFinish(handle, request);
@@ -147,11 +147,11 @@ pub i64 NetworkTransfer(word handle, pointer array, i64 offset, i64 count, word 
 }
 
 [Export(Abi:"C", Symbol:"beskid_rt_v5_network_read")]
-pub i64 NetworkRead(word handle, pointer destination, i64 offset, i64 count) {
-    return NetworkTransfer(handle, destination, offset, count, NETWORK_READ, NativePointer(0));
+pub i64 NetworkRead(word handle, pointer destination, i64 offset, i64 count, i64 deadline) {
+    return NetworkTransfer(handle, destination, offset, count, NETWORK_READ, NativePointer(0), deadline);
 }
 
 [Export(Abi:"C", Symbol:"beskid_rt_v5_network_write")]
 pub i64 NetworkWrite(word handle, pointer source, i64 offset, i64 count) {
-    return NetworkTransfer(handle, source, offset, count, NETWORK_WRITE, NativePointer(0));
+    return NetworkTransfer(handle, source, offset, count, NETWORK_WRITE, NativePointer(0), -1);
 }

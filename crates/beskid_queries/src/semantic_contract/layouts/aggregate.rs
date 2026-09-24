@@ -2,6 +2,7 @@
 
 use super::super::*;
 use super::explicit_local_declaration_type;
+use beskid_abi::runtime_source::CANONICAL_FOUNDATION_DEADLINE_SOURCE_PATH;
 
 #[salsa::tracked(persist)]
 pub(in crate::semantic_contract) fn aggregate_layout_tracked(
@@ -132,7 +133,12 @@ pub(in crate::semantic_contract) fn aggregate_literal_layout_tracked(
 ) -> SemanticQueryResult<AggregateLayoutFact> {
     with_node(db, syntax, key, |_, _, node| {
         let literal = node.of::<beskid_analysis::syntax::StructLiteralExpression>()?;
-        Some(instantiated_aggregate_layout_for_path(db, key, &literal.path.node, None).map(|(_, layout)| layout))
+        Some(instantiated_aggregate_layout_for_path(db, key, &literal.path.node, None).and_then(
+            |(declaration, layout)| {
+                validate_aggregate_literal_visibility(db, key, declaration)?;
+                Ok(layout)
+            },
+        ))
     })?
     .transpose()
 }
@@ -151,10 +157,12 @@ pub fn aggregate_literal_specialization(
             .iter()
             .map(|binding| (binding.parameter.to_string(), AggregateFieldShape::Scalar(binding.argument)))
             .collect::<HashMap<_, _>>();
-        Some(
-            instantiated_aggregate_layout_for_path(db, key, &literal.path.node, Some(&ambient))
-                .map(|(_, layout)| layout),
-        )
+        Some(instantiated_aggregate_layout_for_path(db, key, &literal.path.node, Some(&ambient)).and_then(
+            |(declaration, layout)| {
+                validate_aggregate_literal_visibility(db, key, declaration)?;
+                Ok(layout)
+            },
+        ))
     })?
     .transpose()
 }
@@ -166,9 +174,50 @@ pub(in crate::semantic_contract) fn aggregate_literal_declaration_tracked(
     key: AstNodeKey,
 ) -> SemanticQueryResult<AstNodeKey> {
     with_node(db, syntax, key, |program, index, node| {
-        node.of::<beskid_analysis::syntax::StructLiteralExpression>()
-            .and_then(|literal| resolve_nominal_layout_declaration(db, program, index, key, &literal.path.node))
-    })
+        let literal = node.of::<beskid_analysis::syntax::StructLiteralExpression>()?;
+        let declaration = resolve_nominal_layout_declaration(db, program, index, key, &literal.path.node)?;
+        Some(validate_aggregate_literal_visibility(db, key, declaration).map(|()| declaration))
+    })?
+    .transpose()
+}
+
+/// Keep the checked monotonic Deadline opaque across source units. Other Foundation time
+/// aggregates currently expose their fields through literals without an explicit `pub` marker;
+/// their wider visibility contract is separate from this Deadline boundary.
+fn validate_aggregate_literal_visibility(
+    db: &dyn Db,
+    key: AstNodeKey,
+    declaration: AstNodeKey,
+) -> Result<(), SemanticError> {
+    if key.unit == declaration.unit {
+        return Ok(());
+    }
+    let syntax = db
+        .syntax_unit(declaration.unit)
+        .filter(|syntax| syntax.accepts_key(db, declaration))
+        .ok_or_else(|| SemanticError::unavailable("aggregate_literal.visibility"))?;
+    let definition = syntax
+        .syntax_index(db)
+        .node_at(syntax.expanded_program(db), declaration.node)
+        .and_then(|node| node.of::<beskid_analysis::syntax::TypeDefinition>())
+        .ok_or_else(|| SemanticError::unavailable("aggregate_literal.visibility"))?;
+    if definition.name.node.name == "Deadline"
+        && definition.fields.iter().any(|field| {
+            field.node.kind == beskid_analysis::syntax::FieldKind::Value
+                && field.node.name.node.name == "monotonicNanos"
+                && field.node.visibility.node != beskid_analysis::syntax::Visibility::Public
+        })
+        && db
+            .syntax_dependency_registry()
+            .lock()
+            .expect("syntax dependency registry")
+            .corelib_source_paths
+            .get(&(declaration.unit, declaration.generation))
+            .is_some_and(|path| path == CANONICAL_FOUNDATION_DEADLINE_SOURCE_PATH)
+    {
+        return Err(SemanticError::unavailable("aggregate_literal.visibility"));
+    }
+    Ok(())
 }
 
 /// Derive the element ABI of an empty array literal only from a direct declared `T[]` storage

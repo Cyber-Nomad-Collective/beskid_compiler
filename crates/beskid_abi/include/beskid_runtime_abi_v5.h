@@ -492,7 +492,7 @@ void beskid_rt_v5_network_dns_release(size_t lease);
 int32_t beskid_rt_v5_network_dns_resolve(void * host, int64_t port, int64_t family, void * output);
 int32_t beskid_rt_v5_network_open(int64_t kind, void * address, int64_t options, int64_t backlog, void * output);
 int64_t beskid_rt_v5_network_options(size_t handle);
-int64_t beskid_rt_v5_network_read(size_t handle, void * buffer, int64_t offset, int64_t count);
+int64_t beskid_rt_v5_network_read(size_t handle, void * buffer, int64_t offset, int64_t count, int64_t deadline);
 int64_t beskid_rt_v5_network_receive(size_t handle, void * payload, void * metadata, uint8_t connected);
 int64_t beskid_rt_v5_network_send(size_t handle, void * payload, void * address, uint8_t connected);
 int32_t beskid_rt_v5_network_set_options(size_t handle, int64_t bits);

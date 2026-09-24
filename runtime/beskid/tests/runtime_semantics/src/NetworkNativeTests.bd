@@ -1,9 +1,12 @@
 use Runtime.Bootstrap.Lifecycle;
 use Runtime.Bootstrap.Native;
 use Runtime.Fiber.Scheduler.External;
+use Runtime.Network.Operations;
 use Runtime.Network.Table;
 use Runtime.Network.Sockets;
 use Runtime.Network.Dns;
+use Concurrency.Fiber;
+use Core.Results;
 use Testing.Assert;
 use HostRuntimeSupport;
 
@@ -60,6 +63,32 @@ test native_network_bind_address_close_and_generation_are_portable {
     ResumeHostRuntime(hostRuntime);
 }
 
+test native_network_shutdown_reports_and_closes_live_socket_idempotently {
+    pointer hostRuntime = SuspendHostRuntime();
+    pointer runtime = Native.SystemAllocate(64, 8);
+    memory_set(runtime, 0, 64);
+    Assert.True(Lifecycle.ProcessInit(runtime) == runtime, "native runtime initialized");
+    pointer address = NetworkTestArray(19, 1);
+    pointer wire = pointer_add(address, 16);
+    raw_byte_store(wire, 4);
+    raw_byte_store(pointer_add(wire, 3), 127);
+    raw_byte_store(pointer_add(wire, 6), 1);
+    pointer output = NetworkTestArray(1, 8);
+
+    Assert.Equal(Sockets.NetworkOpen(3, address, 0, 0, output), 0, "UDP socket opens for shutdown leak check");
+    word handle = raw_word_load(pointer_add(output, 16));
+    Assert.True(handle != 0, "shutdown fixture owns a live socket handle");
+    Assert.Equal(Dns.NetworkShutdown(External.ExternalOwnerId()), 1, "shutdown reports one live socket leak");
+    Assert.Equal(Sockets.NetworkAddress(handle, false, address), 14, "shutdown closes the leaked socket handle");
+    Assert.Equal(Dns.NetworkShutdown(External.ExternalOwnerId()), 0, "repeated shutdown is idempotent after cleanup");
+
+    Native.SystemFree(output, 24);
+    Native.SystemFree(address, 35);
+    Lifecycle.ProcessShutdown(runtime);
+    Native.SystemFree(runtime, 64);
+    ResumeHostRuntime(hostRuntime);
+}
+
 // Table exhaustion and host descriptor exhaustion (EMFILE before the table fills)
 // both report ResourceExhausted (18), never NetworkDown (9).
 test native_network_socket_exhaustion_reports_resource_exhausted {
@@ -103,4 +132,52 @@ test native_network_socket_exhaustion_reports_resource_exhausted {
     Lifecycle.ProcessShutdown(runtime);
     Native.SystemFree(runtime, 64);
     ResumeHostRuntime(hostRuntime);
+}
+
+unit ExpiredReadKeepsTcpStreamOpen() {
+    pointer address = NetworkTestArray(19, 1);
+    pointer wire = pointer_add(address, 16);
+    raw_byte_store(wire, 4);
+    raw_byte_store(pointer_add(wire, 3), 127);
+    raw_byte_store(pointer_add(wire, 6), 1);
+    pointer listenerOut = NetworkTestArray(1, 8);
+    pointer clientOut = NetworkTestArray(1, 8);
+    pointer acceptedOut = NetworkTestArray(1, 8);
+    pointer boundAddress = NetworkTestArray(19, 1);
+    pointer bytes = NetworkTestArray(1, 1);
+
+    Assert.Equal(Sockets.NetworkOpen(1, address, 0, 8, listenerOut), 0, "listener binds loopback");
+    word listener = raw_word_load(pointer_add(listenerOut, 16));
+    Assert.Equal(Sockets.NetworkAddress(listener, false, boundAddress), 0, "listener reports selected port");
+    Assert.Equal(Sockets.NetworkOpen(2, boundAddress, 0, 0, clientOut), 0, "client connects");
+    word client = raw_word_load(pointer_add(clientOut, 16));
+    Assert.Equal(Sockets.NetworkAccept(listener, acceptedOut), 0, "server accepts");
+    word accepted = raw_word_load(pointer_add(acceptedOut, 16));
+
+    Assert.Equal(Operations.NetworkRead(client, bytes, 0, 1, 0), -12, "expired read reports TimedOut exactly once");
+    Assert.Equal(External.ExternalActiveCount(), 0, "timed-out read releases its one wait");
+    raw_byte_store(pointer_add(bytes, 16), 7);
+    Assert.Equal(Operations.NetworkWrite(accepted, bytes, 0, 1), 1, "server writes after client timeout");
+    raw_byte_store(pointer_add(bytes, 16), 0);
+    Assert.Equal(Operations.NetworkRead(client, bytes, 0, 1, -1), 1, "client remains readable after timeout");
+    Assert.Equal(raw_byte_load(pointer_add(bytes, 16)), 7, "later read receives the byte");
+    Assert.Equal(Table.NetworkClose(client), 0, "client closes normally");
+    Assert.Equal(Table.NetworkClose(accepted), 0, "accepted socket closes normally");
+    Assert.Equal(Table.NetworkClose(listener), 0, "listener closes normally");
+
+    Native.SystemFree(bytes, 17);
+    Native.SystemFree(boundAddress, 35);
+    Native.SystemFree(acceptedOut, 24);
+    Native.SystemFree(clientOut, 24);
+    Native.SystemFree(listenerOut, 24);
+    Native.SystemFree(address, 35);
+    return;
+}
+
+test native_network_expired_tcp_read_has_one_timeout_and_keeps_stream_open {
+    Fiber<unit> scenario = spawn ExpiredReadKeepsTcpStreamOpen();
+    match scenario.Join() {
+        Result::Ok(_) => (),
+        Result::Error(_) => Assert.Fail("expired-read scenario completes"),
+    };
 }

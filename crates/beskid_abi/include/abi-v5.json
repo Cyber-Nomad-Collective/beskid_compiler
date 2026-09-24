@@ -9875,6 +9875,10 @@
         {
           "name": "count",
           "type": "i64"
+        },
+        {
+          "name": "deadline",
+          "type": "i64"
         }
       ],
       "result": "i64",

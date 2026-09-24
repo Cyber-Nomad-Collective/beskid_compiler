@@ -366,7 +366,7 @@ corelib_service "__network_close" {
 }
 corelib_service "__network_read" {
   adapter = "beskid_rt_v5_network_read"
-  params = [{ name = handle, type = usize }, { name = buffer, type = pointer }, { name = offset, type = i64 }, { name = count, type = i64 }]
+  params = [{ name = handle, type = usize }, { name = buffer, type = pointer }, { name = offset, type = i64 }, { name = count, type = i64 }, { name = deadline, type = i64 }]
   returns = i64
   target_bindings = [
     { target = "x86_64-unknown-linux-gnu", implementation = "beskid_rt_v5_network_read", os_imports = [] },

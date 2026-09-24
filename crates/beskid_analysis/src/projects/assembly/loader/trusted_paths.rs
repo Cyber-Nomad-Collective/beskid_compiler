@@ -15,8 +15,10 @@ pub(super) fn trusted_corelib_service_paths(
     units: &[SourceUnit],
 ) -> Arc<[PathBuf]> {
     let mut trusted = Vec::new();
-    for logical_path in
-        beskid_abi::runtime_source::canonical_corelib_service_sources().into_iter().map(|source| source.logical_path)
+    for logical_path in beskid_abi::runtime_source::canonical_corelib_service_sources()
+        .into_iter()
+        .chain(std::iter::once(beskid_abi::runtime_source::canonical_corelib_deadline_source()))
+        .map(|source| source.logical_path)
     {
         let Some(identity) = corelib_service_source_identity(&logical_path) else {
             continue;

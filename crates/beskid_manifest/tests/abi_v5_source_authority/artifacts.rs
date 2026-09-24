@@ -60,6 +60,21 @@ fn public_builtin_must_match_its_manifest_adapter_shape() {
 }
 
 #[test]
+fn tcp_read_service_carries_one_absolute_monotonic_deadline() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let source = fs::read_to_string(root.join("runtime_manifest.bsol")).unwrap();
+    let manifest = load_v5_manifest_source(&source).expect("workspace v5 source");
+    let read = manifest
+        .corelib_services
+        .iter()
+        .find(|service| service.name == "__network_read")
+        .expect("TCP read service");
+    assert_eq!(read.params.len(), 5);
+    assert_eq!(read.params[4].name, "deadline");
+    assert_eq!(read.params[4].ty, "i64");
+}
+
+#[test]
 fn checked_in_v5_artifacts_are_fresh() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let source = fs::read_to_string(root.join("runtime_manifest.bsol")).unwrap();

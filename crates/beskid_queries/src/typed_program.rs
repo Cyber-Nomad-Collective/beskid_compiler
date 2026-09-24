@@ -1,8 +1,9 @@
 use std::sync::Arc;
 
 use beskid_abi::runtime_source::{
-    CorelibService, CorelibServiceCapability, RuntimeIntrinsicCapability, canonical_corelib_service_sources,
-    corelib_service_source_identity, corelib_source_locations_match,
+    CANONICAL_FOUNDATION_DEADLINE_SOURCE_PATH, CorelibService, CorelibServiceCapability, RuntimeIntrinsicCapability,
+    canonical_corelib_deadline_source, canonical_corelib_service_sources, corelib_service_source_identity,
+    corelib_source_locations_match,
 };
 use beskid_analysis::projects::ProgramAssembly;
 use beskid_analysis::syntax::SyntaxGenerationId;
@@ -247,12 +248,20 @@ pub fn build_typed_program_with_corelib_services(
 ) -> Result<TypedProgram, SemanticError> {
     let service_units = canonical_corelib_service_units(&assembly, &capability)
         .into_iter()
-        .map(|(path, services)| (SourceUnitId::new(db, path), services))
+        .map(|(path, logical_path, services)| (SourceUnitId::new(db, path), logical_path, services))
         .collect::<Vec<_>>();
+    let deadline_unit = canonical_corelib_deadline_unit(&assembly).map(|path| SourceUnitId::new(db, path));
     let mut typed = build_typed_program(db, project, generation, assembly)?;
+    if let Some(deadline_unit) = deadline_unit {
+        db.syntax_dependency_registry()
+            .lock()
+            .expect("syntax dependency registry")
+            .corelib_source_paths
+            .insert((deadline_unit, typed.generation), CANONICAL_FOUNDATION_DEADLINE_SOURCE_PATH.into());
+    }
     if !service_units.is_empty() {
-        for (service_unit, services) in service_units {
-            attach_corelib_services(db, &mut typed, service_unit, services);
+        for (service_unit, logical_path, services) in service_units {
+            attach_corelib_services(db, &mut typed, service_unit, logical_path, services);
         }
         typed.corelib_service_capability = Some(Arc::new(capability));
     }
@@ -274,60 +283,73 @@ fn attach_corelib_services(
     db: &BeskidDatabase,
     typed: &mut TypedProgram,
     service_unit: SourceUnitId,
+    logical_path: String,
     services: Vec<CorelibService>,
 ) {
-    db.syntax_dependency_registry()
-        .lock()
-        .expect("syntax dependency registry")
-        .corelib_services
-        .insert((service_unit, typed.generation), services);
+    let mut registry = db.syntax_dependency_registry().lock().expect("syntax dependency registry");
+    registry.corelib_services.insert((service_unit, typed.generation), services);
+    registry.corelib_source_paths.insert((service_unit, typed.generation), logical_path);
 }
 
 fn canonical_corelib_service_units(
     assembly: &ProgramAssembly,
     capability: &CorelibServiceCapability,
-) -> Vec<(std::path::PathBuf, Vec<CorelibService>)> {
+) -> Vec<(std::path::PathBuf, String, Vec<CorelibService>)> {
     canonical_corelib_service_sources()
         .into_iter()
         .filter_map(|expected| {
-            let identity = corelib_service_source_identity(&expected.logical_path)?;
-            let candidates = assembly
-                .units
+            let unit = exact_compiler_owned_corelib_unit(assembly, &expected)?;
+            let services = capability
+                .services()
                 .iter()
-                .filter(|unit| {
-                    if unit.source != expected.source {
-                        return false;
-                    }
-
-                    // Origin is request evidence, distinct from the canonical semantic key.
-                    // Never resolve a user origin to decide whether it is compiler-owned.
-                    let direct = corelib_source_locations_match(&unit.path, &identity.canonical_path)
-                        && (corelib_source_locations_match(&unit.origin_path, &identity.declared_path)
-                            || corelib_source_locations_match(&unit.origin_path, &identity.canonical_path));
-                    let authorized_path = direct
-                        // Resolve only the destination issued by the loader, never the user's
-                        // origin. Both the selected location and physical identity must match.
-                        || assembly
-                            .trusted_corelib_service_paths
-                            .iter()
-                            .any(|trusted| corelib_source_locations_match(&unit.origin_path, trusted)
-                                && trusted.canonicalize().is_ok_and(|path| path == unit.path));
-                    authorized_path
-                        && std::fs::symlink_metadata(&unit.path)
-                            .is_ok_and(|metadata| metadata.file_type().is_file() && !metadata.file_type().is_symlink())
-                })
-                .collect::<Vec<_>>();
-            (candidates.len() == 1).then(|| {
-                let services = capability
-                    .services()
-                    .iter()
-                    .copied()
-                    .filter(|service| service.source_path == expected.logical_path)
-                    .collect();
-                (candidates[0].path.clone(), services)
-            })
+                .copied()
+                .filter(|service| service.source_path == expected.logical_path)
+                .collect();
+            Some((unit.path.clone(), expected.logical_path, services))
         })
         .collect()
+}
+
+fn canonical_corelib_deadline_unit(assembly: &ProgramAssembly) -> Option<std::path::PathBuf> {
+    let expected = canonical_corelib_deadline_source();
+    exact_compiler_owned_corelib_unit(assembly, &expected).map(|unit| unit.path.clone())
+}
+
+fn exact_compiler_owned_corelib_unit<'a>(
+    assembly: &'a ProgramAssembly,
+    expected: &beskid_abi::abi_v5::SourceUnit,
+) -> Option<&'a beskid_analysis::projects::SourceUnit> {
+    let identity = corelib_service_source_identity(&expected.logical_path)?;
+    let candidates = assembly
+        .units
+        .iter()
+        .filter(|unit| {
+            if unit.source != expected.source {
+                return false;
+            }
+
+            // Origin is request evidence, distinct from the canonical semantic key.
+            // Never resolve a user origin to decide whether it is compiler-owned.
+            let direct = corelib_source_locations_match(&unit.path, &identity.canonical_path)
+                && (corelib_source_locations_match(&unit.origin_path, &identity.declared_path)
+                    || corelib_source_locations_match(&unit.origin_path, &identity.canonical_path));
+            let authorized_path = direct
+                // Resolve only the destination issued by the loader, never the user's
+                // origin. Both the selected location and physical identity must match.
+                || assembly
+                    .trusted_corelib_service_paths
+                    .iter()
+                    .any(|trusted| corelib_source_locations_match(&unit.origin_path, trusted)
+                        && trusted.canonicalize().is_ok_and(|path| path == unit.path));
+            authorized_path
+                && std::fs::symlink_metadata(&unit.path)
+                    .is_ok_and(|metadata| metadata.file_type().is_file() && !metadata.file_type().is_symlink())
+        })
+        .collect::<Vec<_>>();
+    match candidates.as_slice() {
+        [unit] => Some(*unit),
+        _ => None,
+    }
 }
 
 /// Attach compiler-minted runtime intrinsic authority after validating that the assembled syntax
