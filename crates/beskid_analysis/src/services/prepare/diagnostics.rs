@@ -12,23 +12,81 @@ use super::super::semantic_facts::SemanticFactsError;
 
 /// Drop exact-duplicate diagnostics, keeping the first occurrence.
 ///
-/// A genuine invalid `?` target is independently detected twice on the `try_authority` path: once
-/// by the authority callback (driven by the typed `try_expression_fact`, emitted just above) and
-/// again by `resolve_and_type_program_with_assembly`'s own full type check a few lines later,
-/// which runs the same `is_result_shaped_enum` judgment through `type_try_expression` and,
-/// on failure, surfaces `TypeError::InvalidTryTarget` via `semantic_facts_errors_to_diagnostics`.
-/// Both sites are correct in isolation; only the caller-facing duplicate needs suppressing, so
-/// this dedups by exact (span, code, message) rather than special-casing E1222 alone.
+/// A genuine invalid `?` target is independently detected twice on the fact-authority path: once
+/// by the authority callback (driven by the typed `try_expression_fact`) and again by
+/// `resolve_and_type_program_with_assembly`'s own full type check, which runs the same
+/// `is_result_shaped_enum` judgment through `type_try_expression` and, on failure, surfaces
+/// `TypeError::InvalidTryTarget` via `semantic_facts_errors_to_diagnostics`. Both sites are
+/// correct in isolation; only the caller-facing duplicate needs suppressing, so this dedups by
+/// exact (source, span, code, message) rather than special-casing E1222 alone. The source name is
+/// part of the identity: a dependency-unit finding at the same offset as an entry diagnostic is a
+/// different diagnostic.
 pub(super) fn dedupe_diagnostics(diagnostics: Vec<SemanticDiagnostic>) -> Vec<SemanticDiagnostic> {
-    let mut seen: std::collections::HashSet<(usize, usize, Option<String>, String)> = std::collections::HashSet::new();
+    let mut seen: std::collections::HashSet<(String, usize, usize, Option<String>, String)> =
+        std::collections::HashSet::new();
     diagnostics
         .into_iter()
         .filter(|diagnostic| {
-            let key =
-                (diagnostic.span.offset(), diagnostic.span.len(), diagnostic.code.clone(), diagnostic.message.clone());
+            let key = (
+                diagnostic.src.name().to_string(),
+                diagnostic.span.offset(),
+                diagnostic.span.len(),
+                diagnostic.code.clone(),
+                diagnostic.message.clone(),
+            );
             seen.insert(key)
         })
         .collect()
+}
+
+/// Render semantic-fact findings against the unit that owns each one: the entry unit renders
+/// against the spine's entry source, every other unit against its own assembled source. A
+/// finding naming a unit outside the assembly fails closed.
+pub(super) fn fact_findings_to_diagnostics(
+    assembly: &ProgramAssembly,
+    entry_source: &str,
+    findings: Vec<super::SemanticFactFinding>,
+) -> anyhow::Result<Vec<SemanticDiagnostic>> {
+    findings
+        .into_iter()
+        .map(|finding| {
+            let unit = assembly.units.get(finding.unit).ok_or_else(|| {
+                anyhow::anyhow!("semantic fact finding names unit {} outside the prepared assembly", finding.unit)
+            })?;
+            let source = if finding.unit == assembly.entry_index { entry_source } else { unit.source.as_str() };
+            Ok(crate::analysis::diagnostics::make_diagnostic(
+                &unit.logical_name,
+                source,
+                finding.span,
+                finding.kind.message(),
+                finding.kind.label(),
+                finding.kind.help(),
+                Some(finding.kind.code().to_string()),
+                finding.kind.severity(),
+            ))
+        })
+        .collect()
+}
+
+/// Append semantic-fact diagnostics to the spine's collected diagnostics, dropping a fact
+/// diagnostic that a World A rule already reported for the same code in the same unit at an
+/// overlapping span (the entry unit is judged by both; the two authorities may anchor the same
+/// error on slightly different nodes).
+pub(super) fn merge_fact_diagnostics(collected: &mut Vec<SemanticDiagnostic>, facts: Vec<SemanticDiagnostic>) {
+    let existing = collected.len();
+    for fact in facts {
+        let overlaps = |span: &miette::SourceSpan| {
+            let (start, end) = (span.offset(), span.offset() + span.len().max(1));
+            let (fact_start, fact_end) = (fact.span.offset(), fact.span.offset() + fact.span.len().max(1));
+            start < fact_end && fact_start < end
+        };
+        let reported = collected[..existing].iter().any(|diagnostic| {
+            diagnostic.code == fact.code && diagnostic.src.name() == fact.src.name() && overlaps(&diagnostic.span)
+        });
+        if !reported {
+            collected.push(fact);
+        }
+    }
 }
 
 /// Build a [`ResolvedInput`] from paths for analyze/LSP when only a compile plan is available.

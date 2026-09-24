@@ -10,16 +10,16 @@ pub(super) fn specialization_for_call_in_environment(
     enclosing: Option<&GenericSpecializationInstance>,
 ) -> Result<GenericSpecializationInstance, SemanticError> {
     let Some(CallLowering::Direct(declaration)) = call_lowering(db, key)? else {
-        return Err(SemanticError::unavailable("generic_specialization_instance"));
+        return Err(SemanticError::unavailable_at("generic_specialization_instance", key));
     };
     let declaration_syntax =
-        db.syntax_unit(declaration.unit).ok_or_else(|| SemanticError::unavailable("call_abi_signature"))?;
+        db.syntax_unit(declaration.unit).ok_or_else(|| SemanticError::unavailable_at("call_abi_signature", key))?;
     let declaration_node = declaration_syntax
         .syntax_index(db)
         .node_at(declaration_syntax.expanded_program(db), declaration.node)
-        .ok_or_else(|| SemanticError::unavailable("call_abi_signature"))?;
+        .ok_or_else(|| SemanticError::unavailable_at("call_abi_signature", key))?;
     let declaration_identity = stable_declaration_identity(db, declaration)
-        .ok_or_else(|| SemanticError::unavailable("generic_specialization_identity"))?;
+        .ok_or_else(|| SemanticError::unavailable_at("generic_specialization_identity", key))?;
     let (parameters, return_type, generic_names, is_method, method_owner) =
         if let Some(function) = declaration_node.of::<beskid_analysis::syntax::FunctionDefinition>() {
             (
@@ -35,12 +35,12 @@ pub(super) fn specialization_for_call_in_environment(
                 declaration_syntax.syntax_index(db),
                 declaration.node,
             )
-            .ok_or_else(|| SemanticError::unavailable("call_abi_signature"))?;
+            .ok_or_else(|| SemanticError::unavailable_at("call_abi_signature", key))?;
             let parent = declaration_syntax
                 .syntax_index(db)
                 .node_at(declaration_syntax.expanded_program(db), owner_node)
                 .and_then(|node| node.of::<beskid_analysis::syntax::TypeDefinition>())
-                .ok_or_else(|| SemanticError::unavailable("call_abi_signature"))?;
+                .ok_or_else(|| SemanticError::unavailable_at("call_abi_signature", key))?;
             (
                 method.parameters.iter().collect::<Vec<_>>(),
                 method.return_type.as_ref(),
@@ -49,8 +49,8 @@ pub(super) fn specialization_for_call_in_environment(
                 Some(AstNodeKey { node: owner_node, ..declaration }),
             )
         } else {
-            let signature =
-                item_abi_signature(db, declaration)?.ok_or_else(|| SemanticError::unavailable("call_abi_signature"))?;
+            let signature = item_abi_signature(db, declaration)?
+                .ok_or_else(|| SemanticError::unavailable_at("call_abi_signature", key))?;
             return Ok(GenericSpecializationInstance {
                 declaration,
                 declaration_identity,
@@ -60,8 +60,8 @@ pub(super) fn specialization_for_call_in_environment(
             });
         };
     if generic_names.is_empty() && contract_parameter_declarations(db, declaration).is_empty() {
-        let signature =
-            item_abi_signature(db, declaration)?.ok_or_else(|| SemanticError::unavailable("call_abi_signature"))?;
+        let signature = item_abi_signature(db, declaration)?
+            .ok_or_else(|| SemanticError::unavailable_at("call_abi_signature", key))?;
         return Ok(GenericSpecializationInstance {
             declaration,
             declaration_identity,
@@ -71,9 +71,9 @@ pub(super) fn specialization_for_call_in_environment(
         });
     }
 
-    let arguments = call_arguments(db, key)?.ok_or_else(|| SemanticError::unavailable("call_abi_signature"))?;
+    let arguments = call_arguments(db, key)?.ok_or_else(|| SemanticError::unavailable_at("call_abi_signature", key))?;
     if arguments.len() != parameters.len() + usize::from(is_method) {
-        return Err(SemanticError::unavailable("call_abi_signature"));
+        return Err(SemanticError::unavailable_at("call_abi_signature", key));
     }
     let contract_witnesses = contract_witnesses_for_call(db, declaration, &arguments, is_method, enclosing)?;
     let mut source_substitutions = HashMap::<String, GenericSubstitution>::new();
@@ -90,7 +90,7 @@ pub(super) fn specialization_for_call_in_environment(
         } else {
             generic_nominal_method_receiver(db, key)?
                 .filter(|receiver| receiver.method == declaration && receiver.owner == owner)
-                .ok_or_else(|| SemanticError::unavailable("call_abi_signature"))?
+                .ok_or_else(|| SemanticError::unavailable_at("call_abi_signature", key))?
                 .substitutions
         };
         source_substitutions.extend(bindings.iter().cloned().map(|binding| (binding.parameter.to_string(), binding)));
@@ -100,17 +100,18 @@ pub(super) fn specialization_for_call_in_environment(
     };
     let mut explicit_substitutions_complete = false;
     if let Some(enclosing) = enclosing {
-        let syntax = db.syntax_unit(key.unit).ok_or_else(|| SemanticError::unavailable("call_abi_signature"))?;
+        let syntax =
+            db.syntax_unit(key.unit).ok_or_else(|| SemanticError::unavailable_at("call_abi_signature", key))?;
         let call = syntax
             .syntax_index(db)
             .node_at(syntax.expanded_program(db), key.node)
             .and_then(|node| node.of::<beskid_analysis::syntax::CallExpression>())
-            .ok_or_else(|| SemanticError::unavailable("call_abi_signature"))?;
+            .ok_or_else(|| SemanticError::unavailable_at("call_abi_signature", key))?;
         if let beskid_analysis::syntax::Expression::Path(callee) = &call.callee.node
             && let Some(arguments) = explicit_generic_type_argument_syntax(&callee.node.path.node)
         {
             if generic_names.len() != arguments.len() {
-                return Err(SemanticError::unavailable("call_abi_signature"));
+                return Err(SemanticError::unavailable_at("call_abi_signature", key));
             }
             let environment = enclosing
                 .substitutions
@@ -133,19 +134,20 @@ pub(super) fn specialization_for_call_in_environment(
         && !instantiation.arguments.is_empty()
     {
         if instantiation.arguments.len() != generic_names.len() {
-            return Err(SemanticError::unavailable("call_abi_signature"));
+            return Err(SemanticError::unavailable_at("call_abi_signature", key));
         }
-        let call_syntax = db.syntax_unit(key.unit).ok_or_else(|| SemanticError::unavailable("call_abi_signature"))?;
+        let call_syntax =
+            db.syntax_unit(key.unit).ok_or_else(|| SemanticError::unavailable_at("call_abi_signature", key))?;
         let call_node = call_syntax
             .syntax_index(db)
             .node_at(call_syntax.expanded_program(db), key.node)
             .and_then(|node| node.of::<beskid_analysis::syntax::CallExpression>())
-            .ok_or_else(|| SemanticError::unavailable("call_abi_signature"))?;
+            .ok_or_else(|| SemanticError::unavailable_at("call_abi_signature", key))?;
         let beskid_analysis::syntax::Expression::Path(callee) = &call_node.callee.node else {
-            return Err(SemanticError::unavailable("call_abi_signature"));
+            return Err(SemanticError::unavailable_at("call_abi_signature", key));
         };
         let source_arguments = explicit_generic_type_argument_syntax(&callee.node.path.node)
-            .ok_or_else(|| SemanticError::unavailable("call_abi_signature"))?;
+            .ok_or_else(|| SemanticError::unavailable_at("call_abi_signature", key))?;
         for ((generic, argument), source_argument) in
             generic_names.iter().zip(instantiation.arguments.iter()).zip(source_arguments.iter())
         {
@@ -218,10 +220,11 @@ pub(super) fn specialization_for_call_in_environment(
                 Err(error) => return Err(error),
             }
         }
-        .ok_or_else(|| SemanticError::unavailable("call_abi_signature"))?;
+        .ok_or_else(|| SemanticError::unavailable_at("call_abi_signature", key))?;
         if infer_from_actual {
-            let source_identity =
-                proven_source_identity.as_ref().ok_or_else(|| SemanticError::unavailable("call_abi_signature"))?;
+            let source_identity = proven_source_identity
+                .as_ref()
+                .ok_or_else(|| SemanticError::unavailable_at("call_abi_signature", key))?;
             infer_source_substitutions(
                 db,
                 declaration,
@@ -248,10 +251,16 @@ pub(super) fn specialization_for_call_in_environment(
                     substitutions.insert(generic.to_owned(), actual);
                     source_substitutions.insert(generic.to_owned(), GenericSubstitution::inferred(generic, actual));
                 }
-                Some(_) => return Err(SemanticError::unavailable("call_abi_signature")),
+                Some(existing) => {
+                    return Err(SemanticError::generic_binding_conflict(
+                        generic,
+                        existing.display_name(),
+                        actual.display_name(),
+                    ));
+                }
             }
         } else if generic_abi_type(db, declaration, &parameter.node.ty.node, &substitutions)? != actual {
-            return Err(SemanticError::unavailable("call_abi_signature"));
+            return Err(SemanticError::unavailable_at("call_abi_signature", key));
         }
     }
     if generic_names.iter().any(|generic| {
@@ -262,7 +271,7 @@ pub(super) fn specialization_for_call_in_environment(
                 .chain(return_type.iter().map(|return_type| &return_type.node))
                 .any(|syntax_type| type_syntax_mentions_generic_parameter(syntax_type, generic))
     }) {
-        return Err(SemanticError::unavailable("call_abi_signature"));
+        return Err(SemanticError::unavailable_at("call_abi_signature", key));
     }
     // `where T: Contract` (Gap 3, task 2.3/2.7): reject the call before monomorphization if an
     // inferred/explicit generic argument does not conform to its bound. ISLE never sees a call
@@ -291,13 +300,14 @@ pub(super) fn specialization_for_call_in_environment(
                     bound.contract.node.segments.last().map(|s| s.node.name.node.name.as_str()).unwrap_or("?")
                 )));
             };
-            let concrete_syntax =
-                db.syntax_unit(concrete.unit).ok_or_else(|| SemanticError::unavailable("call_abi_signature"))?;
+            let concrete_syntax = db
+                .syntax_unit(concrete.unit)
+                .ok_or_else(|| SemanticError::unavailable_at("call_abi_signature", key))?;
             let concrete_definition = concrete_syntax
                 .syntax_index(db)
                 .node_at(concrete_syntax.expanded_program(db), concrete.node)
                 .and_then(|node| node.of::<beskid_analysis::syntax::TypeDefinition>())
-                .ok_or_else(|| SemanticError::unavailable("call_abi_signature"))?;
+                .ok_or_else(|| SemanticError::unavailable_at("call_abi_signature", key))?;
             if !contracts::type_declaration_conforms_to_contract(db, concrete, concrete_definition, contract) {
                 return Err(SemanticError::new(format!(
                     "generic bound not satisfied: `{}` does not conform to `{}`",
@@ -357,12 +367,20 @@ fn infer_source_substitutions(
         let abi = actual.abi_type();
         if let Some(existing) = source_substitutions.get(generic) {
             if existing.argument != abi || existing.source_identity() != actual {
-                return Err(SemanticError::unavailable("call_abi_signature"));
+                return Err(SemanticError::generic_binding_conflict(
+                    generic,
+                    existing.source_identity().display_name(),
+                    actual.display_name(),
+                ));
             }
             return Ok(());
         }
-        if abi_substitutions.get(generic).is_some_and(|existing| *existing != abi) {
-            return Err(SemanticError::unavailable("call_abi_signature"));
+        if let Some(existing) = abi_substitutions.get(generic).filter(|existing| **existing != abi) {
+            return Err(SemanticError::generic_binding_conflict(
+                generic,
+                existing.display_name(),
+                actual.display_name(),
+            ));
         }
         abi_substitutions.insert(generic.to_owned(), abi);
         source_substitutions.insert(generic.to_owned(), GenericSubstitution::from_source(generic, abi, actual.clone()));

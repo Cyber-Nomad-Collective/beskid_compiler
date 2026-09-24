@@ -46,9 +46,10 @@ pub(crate) fn prepare_project_syntax_facts(
         },
         None,
     )?;
+    let assembly = prepared.syntax_assembly();
     Ok(PreparedSyntaxFacts {
-        assembly: prepared.syntax_assembly(),
-        diagnostics: diagnostics.into_iter().map(syntax_diagnostic_from_semantic).collect(),
+        diagnostics: entry_buffer_diagnostics(&assembly, diagnostics).map(syntax_diagnostic_from_semantic).collect(),
+        assembly,
         fixes,
     })
 }
@@ -72,11 +73,30 @@ pub(crate) fn prepare_project_diagnostics_from_assembled(
         },
         None,
     )?;
+    let assembly = prepared.syntax_assembly();
     Ok(PreparedSyntaxFacts {
-        assembly: prepared.syntax_assembly(),
-        diagnostics: diagnostics.into_iter().map(syntax_diagnostic_from_semantic).collect(),
+        diagnostics: entry_buffer_diagnostics(&assembly, diagnostics).map(syntax_diagnostic_from_semantic).collect(),
+        assembly,
         fixes,
     })
+}
+
+/// Keep only the diagnostics located in the entry buffer. The prepare spine also reports a
+/// dependency-unit semantic-fact finding against that unit's own source; LSP facts are offsets
+/// into the one buffer being published, so such a finding belongs to that unit's own publish
+/// (where it is the entry) and never to this buffer's offsets.
+fn entry_buffer_diagnostics(
+    assembly: &ProgramAssembly,
+    diagnostics: Vec<SemanticDiagnostic>,
+) -> impl Iterator<Item = SemanticDiagnostic> {
+    let foreign = assembly
+        .units
+        .iter()
+        .enumerate()
+        .filter(|(index, _)| *index != assembly.entry_index)
+        .map(|(_, unit)| unit.logical_name.clone())
+        .collect::<std::collections::HashSet<_>>();
+    diagnostics.into_iter().filter(move |diagnostic| !foreign.contains(diagnostic.src.name()))
 }
 
 /// Collect generation-bound diagnostic facts and mod-origin quick-fixes for a `.bd`,
@@ -387,5 +407,95 @@ mod tests {
         assert_eq!(diagnostics[0].code.as_ref(), Some(&NumberOrString::String("E9999".to_string())));
         assert_eq!(diagnostics[0].message, "probe");
         assert_eq!(diagnostics[0].source.as_deref(), Some("beskid"));
+    }
+
+    /// Assemble `Main.bd` (calls into `Lib/Helper.bd`) and `Lib/Helper.bd` (whose reachable body
+    /// names an unimported type) with the unit at `entry` as the open buffer.
+    fn dependency_assembly_input(
+        entry: usize,
+        generation: u64,
+    ) -> (tempfile::TempDir, beskid_analysis::services::ResolvedInput) {
+        use beskid_analysis::projects::{
+            AssemblyDiscovery, EffectiveCompilationRoots, ModuleIndex, ProgramAssembly, RootEntry, SourceUnit,
+        };
+        use beskid_analysis::services::{parse_program_with_source_name, synthetic_compile_plan_for_source};
+        use beskid_analysis::syntax::SyntaxGenerationId;
+        use beskid_analysis::syntax_query::SyntaxIndex;
+        use std::sync::Arc;
+        let directory = tempfile::tempdir().expect("project");
+        let generation = SyntaxGenerationId(generation);
+        let sources = [
+            ("Main.bd", "use Lib.Helper;\ni64 Main() { return Helper.Run(); }"),
+            (
+                "Lib/Helper.bd",
+                "pub enum Slot<T> { Filled(T value), Empty() }\npub i64 Run() { Slot<Missing> slot = Slot::Empty(); return 0_i64; }",
+            ),
+        ];
+        let units = sources
+            .iter()
+            .map(|(relative, source)| {
+                let path = directory.path().join(relative);
+                std::fs::create_dir_all(path.parent().expect("parent")).expect("directory");
+                std::fs::write(&path, source).expect("source");
+                SourceUnit {
+                    logical_name: (*relative).into(),
+                    origin_path: path.clone(),
+                    program: parse_program_with_source_name(path.to_str().expect("path"), source).expect("parse"),
+                    path,
+                    source: (*source).into(),
+                }
+            })
+            .collect::<Vec<_>>();
+        let plan = synthetic_compile_plan_for_source(&units[entry].path);
+        let roots = EffectiveCompilationRoots {
+            host: RootEntry { dependency_name: None, source_root: directory.path().into() },
+            dependencies: vec![],
+        };
+        let indexes = units.iter().map(|unit| SyntaxIndex::from_program(&unit.program, generation)).collect::<Vec<_>>();
+        let index = Arc::new(ModuleIndex::build(&units, &indexes, &roots, &plan));
+        let resolved = beskid_analysis::services::ResolvedInput {
+            source_path: units[entry].path.clone(),
+            source: sources[entry].1.into(),
+            compile_plan: Some(plan),
+            prepared_workspace: None,
+            workspace_summary: None,
+            assembly: Some(ProgramAssembly::new(
+                roots,
+                Arc::new(units),
+                entry,
+                AssemblyDiscovery::ImportClosure,
+                index,
+                false,
+                generation,
+            )),
+        };
+        (directory, resolved)
+    }
+
+    /// Design slice 6: the prepare spine reports a dependency unit's legality finding against that
+    /// unit's source. The LSP publishes it for the dependency's own URI (when that unit is the
+    /// open buffer) and never at the entry buffer's offsets.
+    #[test]
+    fn dependency_legality_finding_is_published_only_for_its_own_unit() {
+        let (_main_dir, main_entry) = dependency_assembly_input(0, 511);
+        let main = super::prepare_project_diagnostics_from_assembled(
+            &main_entry,
+            beskid_analysis::services::DependencyTypingPolicy::FullClosure,
+        )
+        .expect("main diagnostics");
+        assert!(
+            main.diagnostics.iter().all(|diagnostic| diagnostic.code.as_deref() != Some("E1201")),
+            "the entry buffer must not carry the dependency's E1201: {:#?}",
+            main.diagnostics
+        );
+
+        let (_helper_dir, helper_entry) = dependency_assembly_input(1, 512);
+        let helper = super::prepare_project_diagnostics_from_assembled(
+            &helper_entry,
+            beskid_analysis::services::DependencyTypingPolicy::FullClosure,
+        )
+        .expect("helper diagnostics");
+        let found = helper.diagnostics.iter().filter(|diagnostic| diagnostic.code.as_deref() == Some("E1201")).count();
+        assert_eq!(found, 1, "the dependency's own publish carries its E1201 once: {:#?}", helper.diagnostics);
     }
 }

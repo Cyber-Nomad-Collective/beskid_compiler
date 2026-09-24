@@ -7,7 +7,7 @@ use beskid_queries::{
     item_abi_signature, node_kind,
 };
 
-use super::contracts::{SyntaxModuleEmissionError, emission_verification};
+use super::contracts::{SyntaxModuleEmissionError, emission_verification, semantic_fact_error};
 use super::items::{ResolvedSyntaxModuleItem, SyntaxModuleItem, syntax_item_symbol};
 use super::trace::{format_declaration_for_trace, trace_key};
 use crate::CodegenInput;
@@ -25,11 +25,13 @@ pub(super) fn resolve_module_items(
         // entry items seed the collection; each emitted generic item is represented solely by a
         // call-derived `DirectCallee::SpecializedItem` identity below.
         if is_concrete_executable_item(db, item.key)? {
-            collect_generic_call_specializations(db, item.key, &mut specializations).map_err(|error| {
-                emission_verification(format!(
+            collect_generic_call_specializations(db, item.key, &mut specializations).map_err(|error| match error {
+                // An internal error already names its own site; re-wrapping it would lose its code.
+                SyntaxModuleEmissionError::Internal { .. } => error,
+                error => emission_verification(format!(
                     "generic specialization collection failed for {}: {error}",
                     format_declaration_for_trace(db, item.key)
-                ))
+                )),
             })?;
         }
     }
@@ -129,10 +131,12 @@ fn is_concrete_executable_item(
         // Generic functions and generic-owner methods are both intentionally ABI-less until a
         // direct call has supplied their immutable specialization environment.
         Ok(None) => Ok(false),
-        Err(error) => Err(emission_verification(format!(
-            "item ABI signature is unavailable for {}: {error}",
-            format_declaration_for_trace(db, key)
-        ))),
+        Err(error) => Err(semantic_fact_error(
+            db,
+            key,
+            format_args!("item ABI signature is unavailable for {}", format_declaration_for_trace(db, key)),
+            error,
+        )),
     }
 }
 
@@ -192,10 +196,12 @@ fn collect_generic_call_specializations_in_environment(
             .map(|enclosing| generic_call_specialization_in_environment(db, key, enclosing))
             .transpose()
             .map_err(|error| {
-                emission_verification(format!(
-                    "call specialization failed at {}: {error}",
-                    beskid_queries::format_ast_node_site(db, key)
-                ))
+                semantic_fact_error(
+                    db,
+                    key,
+                    format_args!("call specialization failed at {}", beskid_queries::format_ast_node_site(db, key)),
+                    error,
+                )
             })?
             .flatten()
     } else {
@@ -214,11 +220,16 @@ fn collect_generic_call_specializations_in_environment(
         } else {
             let specialization = generic_call_specialization(db, key)
                 .map_err(|error| {
-                    emission_verification(format!(
-                        "generic specialization facts are unavailable at {} for declaration {}: {error}",
-                        beskid_queries::format_ast_node_site(db, key),
-                        format_declaration_for_trace(db, declaration),
-                    ))
+                    semantic_fact_error(
+                        db,
+                        key,
+                        format_args!(
+                            "generic specialization facts are unavailable at {} for declaration {}",
+                            beskid_queries::format_ast_node_site(db, key),
+                            format_declaration_for_trace(db, declaration),
+                        ),
+                        error,
+                    )
                 })?
                 .ok_or_else(|| {
                     emission_verification(format!(

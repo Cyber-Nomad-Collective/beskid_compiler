@@ -12,7 +12,6 @@ use tracing::Span;
 
 use crate::AnalysisOptions;
 use crate::analysis::SemanticDiagnostic;
-use crate::analysis::rules::RuleContext;
 use crate::mod_host::{
     ModHostInput, SyntaxFix, native_invoker_for_plan, run_analyze_rewrite_after_composition,
     run_analyze_rewrite_with_invoker, run_through_generate, run_through_generate_without_materializing_outputs,
@@ -47,7 +46,7 @@ pub(super) fn run_prepare_spine(
     pipeline: Option<&dyn PipelineObserver>,
     collect_diagnostics: bool,
     use_session_cache: bool,
-    mut try_authority: Option<&mut TryDiagnosticAuthority<'_>>,
+    mut fact_authority: Option<&mut SemanticFactAuthority<'_>>,
 ) -> Result<PrepareSpineOutput> {
     let assembly_options = assembly_options_for_prepare(plan, options.front_end.assembly_discovery);
 
@@ -82,19 +81,13 @@ pub(super) fn run_prepare_spine(
         Span::current().record("syntax_generation_id", syntax_generation_id);
         let front = cached.as_ref();
         let mut diagnostics = Vec::new();
-        if let Some(authority) = try_authority.as_mut() {
-            let mut ctx = RuleContext::new(
-                front.assembly.entry_unit().logical_name.clone(),
-                entry_source,
-                AnalysisOptions::default(),
-            );
-            for span in authority(&front.assembly, &front.program)? {
-                ctx.emit_issue(span, crate::analysis::diagnostic_kinds::SemanticIssueKind::TypeInvalidTryTarget);
-            }
+        if let Some(authority) = fact_authority.as_mut() {
+            let findings = authority(&front.assembly, &front.program)?;
+            let facts = fact_findings_to_diagnostics(&front.assembly, entry_source, findings)?;
             if collect_diagnostics {
-                diagnostics = ctx.diagnostics;
+                diagnostics = facts;
             } else {
-                require_no_semantic_errors(&ctx.diagnostics)?;
+                require_no_semantic_errors(&facts)?;
             }
         }
         return Ok(PrepareSpineOutput {
@@ -143,7 +136,7 @@ pub(super) fn run_prepare_spine(
     rule_options.program_assembly_module_index = Some((*assembly.module_index).clone());
     rule_options.entry_source_path = Some(entry_unit.path.clone());
     rule_options.program_assembly = Some(assembly.clone());
-    rule_options.defer_try_diagnostics = try_authority.is_some();
+    rule_options.defer_try_diagnostics = fact_authority.is_some();
 
     if options.front_end.with_semantic_diagnostics || collect_diagnostics {
         let semantic = observe_phase_result(pipeline, SEMANTIC, || {
@@ -207,16 +200,18 @@ pub(super) fn run_prepare_spine(
     };
     program = mod_rewrite.program;
 
-    if let Some(authority) = try_authority.as_mut() {
-        let spans = authority(&assembly, &program)?;
-        let mut ctx = RuleContext::new(entry_unit.logical_name.clone(), entry_source, rule_options.clone());
-        for span in spans {
-            ctx.emit_issue(span, crate::analysis::diagnostic_kinds::SemanticIssueKind::TypeInvalidTryTarget);
-        }
+    // Semantic-fact findings (invalid `?` targets and the reachability-scoped legality facts the
+    // lowering gate evaluates) for the entry's reachable items, possibly in dependency units. On
+    // the diagnostics path they are merged after World A has run, so an entry-unit error both
+    // authorities judge is reported once.
+    let mut fact_diagnostics = Vec::new();
+    if let Some(authority) = fact_authority.as_mut() {
+        let findings = authority(&assembly, &program)?;
+        let facts = fact_findings_to_diagnostics(&assembly, entry_source, findings)?;
         if collect_diagnostics {
-            collected_diagnostics.extend(ctx.diagnostics);
+            fact_diagnostics = facts;
         } else {
-            require_no_semantic_errors(&ctx.diagnostics)?;
+            require_no_semantic_errors(&facts)?;
         }
     }
 
@@ -309,6 +304,7 @@ pub(super) fn run_prepare_spine(
         Err(error) => return Err(error.into()),
     };
 
+    merge_fact_diagnostics(&mut collected_diagnostics, fact_diagnostics);
     Ok(PrepareSpineOutput {
         prepared: PreparedCompilation { assembly, program, binding_plan, composition_snapshot, typed },
         collected_diagnostics: dedupe_diagnostics(collected_diagnostics),

@@ -190,37 +190,9 @@ pub fn build_typed_program(
         registry.imports.insert((unit_id, generation), imports);
     }
     drop(registry);
-    for unit in assembly.units.iter() {
-        let identity = SourceUnitId::new(db, unit.path.clone());
-        let syntax = db.syntax_unit(identity).ok_or_else(|| SemanticError::new("registered syntax disappeared"))?;
-        for node in syntax.syntax_index(db).ids_of_kind(beskid_analysis::syntax_query::NodeKind::ScopedUseStatement) {
-            let key = crate::AstNodeKey { unit: identity, generation, node };
-            let cleanup =
-                crate::scoped_cleanup(db, key)?.ok_or_else(|| SemanticError::unavailable("scoped_cleanup"))?;
-            if let Some(diagnostic) = cleanup.diagnostic {
-                return Err(SemanticError::new(format!(
-                    "scoped use rejected: {diagnostic:?} at {}",
-                    crate::format_ast_node_site(db, key)
-                )));
-            }
-        }
-        // BSP-REQ-35580A7D7B75: a discarded growth of a `mut T[]` parameter that the body never
-        // publishes leaves the caller with the ungrown array. Fail closed before lowering.
-        let index = syntax.syntax_index(db);
-        let program = syntax.expanded_program(db);
-        for node in index
-            .ids_of_kind(beskid_analysis::syntax_query::NodeKind::CallExpression)
-            .filter(|node| crate::is_growth_call_candidate(program, index, *node))
-        {
-            let key = crate::AstNodeKey { unit: identity, generation, node };
-            if crate::dead_collection_growth(db, key)?.is_some() {
-                return Err(SemanticError::new(format!(
-                    "DeadCollectionGrowth: the grown handle of a `mut T[]` parameter is discarded and the body never publishes the parameter, so the caller keeps the ungrown array; return or rebind the grown handle at {}",
-                    crate::format_ast_node_site(db, key)
-                )));
-            }
-        }
-    }
+    // Scoped-cleanup (E1230) and dead-growth (E1231) legality are judged by the reachability-scoped
+    // legality gate (`legality::check_items`) for the items a lowering request actually lowers,
+    // never here for every unit: admission must not let an unreachable item poison the assembly.
 
     Ok(TypedProgram {
         project,

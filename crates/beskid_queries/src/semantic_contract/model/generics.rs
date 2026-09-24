@@ -118,6 +118,21 @@ impl GenericSubstitution {
 }
 
 impl GenericSourceTypeIdentity {
+    /// The source spelling of this identity for diagnostics (`i64`, `Core.Results.Result<i64>`,
+    /// `u8[]`, `(i64) -> unit`).
+    pub(in crate::semantic_contract) fn display_name(&self) -> String {
+        let list = |items: &[GenericSourceTypeIdentity]| {
+            items.iter().map(GenericSourceTypeIdentity::display_name).collect::<Vec<_>>().join(", ")
+        };
+        match self {
+            Self::Abi(argument) => argument.display_name(),
+            Self::Nominal { qualified_name, arguments } if arguments.is_empty() => qualified_name.to_string(),
+            Self::Nominal { qualified_name, arguments } => format!("{qualified_name}<{}>", list(arguments)),
+            Self::Array(element) => format!("{}[]", element.display_name()),
+            Self::Function { parameters, result } => format!("({}) -> {}", list(parameters), result.display_name()),
+        }
+    }
+
     pub(in crate::semantic_contract) fn abi_type(&self) -> SemanticTypeId {
         match self {
             Self::Abi(argument) => *argument,

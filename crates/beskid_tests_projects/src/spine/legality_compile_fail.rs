@@ -1,0 +1,97 @@
+//! Compile-fail corpus for the reachability-scoped semantic legality gate (design
+//! `docs/superpowers/specs/2026-09-23-production-semantic-diagnostics-design.md`, section 4
+//! slice 9).
+//!
+//! `corelib/beskid_corelib/tests/corelib_tests/fixtures/compile-fail/legality/` holds one
+//! `beskid test` target per legality code. Each target's test calls a helper in a dependency
+//! unit that carries exactly one legality violation, the shape World A never judges. Its entry
+//! declares the expected code on a `// EXPECT: <code>` line. `beskid test` rejects every target
+//! (a compile-fail target that compiled cleanly would itself be a regression,
+//! `beskid_cli/src/commands/test.rs`); this harness drives the same executable gate those
+//! targets hit (`prepare_compilation_diagnostics` with semantic diagnostics and the full
+//! dependency closure) and asserts each target reports its expected code as an error, in the
+//! dependency unit's own source, and no internal compiler error.
+
+use std::path::PathBuf;
+
+use beskid_analysis::Severity;
+use beskid_analysis::services::{DependencyTypingPolicy, FrontEndOptions, PrepareOptions};
+
+use crate::projects::fixture_harness::{resolve_fixture, with_project_test_env};
+
+fn corpus_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../corelib/beskid_corelib/tests/corelib_tests/fixtures/compile-fail/legality")
+}
+
+/// `(target, entry file, expected code)` for every compile-fail entry of the corpus.
+fn corpus_targets() -> Vec<(String, String, String)> {
+    let root = corpus_root();
+    let mut targets = std::fs::read_dir(&root)
+        .unwrap_or_else(|error| panic!("read compile-fail corpus {}: {error}", root.display()))
+        .map(|entry| entry.expect("corpus entry").path())
+        .filter(|path| path.extension().is_some_and(|extension| extension == "bd"))
+        .map(|path| {
+            let source = std::fs::read_to_string(&path).expect("read corpus entry");
+            let code = source
+                .lines()
+                .find_map(|line| line.strip_prefix("// EXPECT: "))
+                .unwrap_or_else(|| panic!("{} declares no `// EXPECT: <code>` line", path.display()))
+                .trim()
+                .to_owned();
+            let file = path.file_name().expect("file name").to_string_lossy().into_owned();
+            let target = path.file_stem().expect("file stem").to_string_lossy().into_owned();
+            (target, file, code)
+        })
+        .collect::<Vec<_>>();
+    targets.sort();
+    targets
+}
+
+#[test]
+fn every_legality_compile_fail_target_is_rejected_with_its_code_in_the_dependency_unit() {
+    let targets = corpus_targets();
+    let codes = targets.iter().map(|(_, _, code)| code.as_str()).collect::<std::collections::BTreeSet<_>>();
+    for expected in [
+        "E1101", "E1105", "E1108", "E1201", "E1203", "E1204", "E1211", "E1214", "E1229", "E1230", "E1231", "E1301",
+        "E1302", "E1304", "E1307",
+    ] {
+        assert!(codes.contains(expected), "the compile-fail corpus has no target for {expected}");
+    }
+    let root = corpus_root();
+    let mut failures = Vec::new();
+    with_project_test_env(&root, || {
+        for (target, entry, code) in &targets {
+            let resolved = resolve_fixture(&root, entry, target);
+            let result = beskid_queries::prepare_compilation_diagnostics(
+                &resolved,
+                PrepareOptions {
+                    front_end: FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
+                    dependency_typing: DependencyTypingPolicy::FullClosure,
+                },
+                None,
+            );
+            let diagnostics = match result {
+                Ok((_, diagnostics, _)) => diagnostics,
+                Err(error) => {
+                    failures.push(format!("{target}: prepare failed instead of reporting {code}: {error:#}"));
+                    continue;
+                }
+            };
+            let errors = diagnostics
+                .iter()
+                .filter(|diagnostic| diagnostic.severity == Severity::Error)
+                .map(|diagnostic| {
+                    (diagnostic.code.clone().unwrap_or_default(), diagnostic.src.name().to_owned(), diagnostic.message.clone())
+                })
+                .collect::<Vec<_>>();
+            let helper = format!("Helpers/{target}.bd");
+            let reported = errors.iter().any(|(found, source, _)| found == code && source.ends_with(&helper));
+            let internal = errors.iter().any(|(found, _, _)| found.starts_with("E21"));
+            if !reported || internal {
+                failures.push(format!("{target}: expected {code} in {helper}, got {errors:?}"));
+            }
+        }
+    });
+    assert!(failures.is_empty(), "compile-fail corpus regressions:\n{}", failures.join("\n"));
+}

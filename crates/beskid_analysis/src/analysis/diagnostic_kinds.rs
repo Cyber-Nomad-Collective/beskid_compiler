@@ -263,6 +263,25 @@ pub enum SemanticIssueKind {
     TypeUnsupportedExpression,
     TypeInvalidTryTarget,
     TypeInvalidPrimitiveConversionArgument,
+    /// A scoped `use` whose acquisition, disposal, or error conversion the scoped-cleanup fact
+    /// rejects; `reason` names which rule (for example `NotDisposable`, `ResourceEscapesScope`).
+    ScopedCleanupRejected {
+        reason: String,
+    },
+    /// `BSP-REQ-35580A7D7B75`: a discarded canonical growth of a `mut T[]` parameter whose body
+    /// never publishes the parameter, so the caller keeps the ungrown array.
+    DeadCollectionGrowth,
+    /// Internal compiler error (E2101-E2199 band): a semantic fact a lowering request needs is
+    /// still unavailable after the legality gate passed for its items. A compiler gap, never a
+    /// user error.
+    InternalSemanticFactUnavailable {
+        query: String,
+    },
+    /// Internal compiler error: no ISLE lowering rule or fact exists for a construct after the
+    /// legality gate passed for its item. A compiler gap, never a user error.
+    InternalLoweringRuleMissing {
+        construct: String,
+    },
     TypeInvalidEventInvocationScope,
     TypeInvalidEventCapacity,
     TypeInvalidEventSubscriptionTarget,

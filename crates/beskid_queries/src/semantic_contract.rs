@@ -72,10 +72,10 @@ pub use cleanup::{ScopedAcquisition, ScopedCleanup, ScopedCleanupDiagnostic, sco
 pub use growth::{DeadCollectionGrowth, dead_collection_growth, is_growth_call_candidate};
 pub use local_type_resolution::{UnresolvedTypeReference, unresolved_type_reference};
 pub use legality::{
-    CallArityMismatch, ImmutableLocalAssignment, MemberReferenceFinding, MemberReferenceKind, NonExhaustiveMatch,
+    CallArityMismatch, GenericParameterConflict, ImmutableLocalAssignment, MemberReferenceFinding, MemberReferenceKind, NonExhaustiveMatch,
     UnresolvedCallKind, UnresolvedCallTarget, UnresolvedImport, call_arity_mismatch, check_items,
-    immutable_local_assignment, match_exhaustiveness, member_reference_legality, unresolved_call_target,
-    unresolved_imports,
+    generic_parameter_conflict, immutable_local_assignment, match_exhaustiveness, member_reference_legality,
+    unresolved_call_target, unresolved_imports,
 };
 use closures_spawn::{
     callable_fiber_ownership_tracked, callable_signature_for_node, callable_signature_for_path,
@@ -161,7 +161,8 @@ pub use model::{
     GenericCallTemplate, GenericNominalMethodReceiver, GenericSpecializationInstance, GenericSubstitution,
     IndexedNodeKind, ItemSignature, LiteralFact, LocalSlot, ManagedReferenceKind, ManifestBuiltin,
     MutableLocalAssignment, OperatorFact, PrimitiveNumericConversion, RangeForFact, ResolvedItem, ResolvedLocal,
-    RuntimeIntrinsic, RuntimeIntrinsicName, ScalarAbiLayout, SemanticError, SemanticFinding, SemanticQueryResult, SemanticTypeId,
+    GenericBindingConflict, RuntimeIntrinsic, RuntimeIntrinsicName, ScalarAbiLayout, SemanticError, SemanticFinding,
+    SemanticQueryResult, SemanticTypeId,
     SourceSpan, SourceUnitId, SpawnDiagnostic, SpawnDiagnosticKind, SpawnEntryValidation, SpawnHandleType,
     SpawnLegality, SpawnTarget, SyntaxUnitInput, SyntaxUnitRevision, TestItem, TryExpressionFact, TypedArrayAllocation,
     TypedProgram, format_ast_node_key, format_ast_node_site, format_ast_node_trace, format_source_span_range,
