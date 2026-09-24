@@ -184,6 +184,11 @@ void beskid_rt_v5_intrinsic_network_cancel(void *reactor, void *value) {
   BeskidNetworkCancelLocked(request->native_state);
   ReleaseSRWLockExclusive(&beskid_network_lock);
 }
+static int BeskidNetworkCompletionError(DWORD error) {
+  // IOCP reports Win32 completion codes, which need not be WSA error codes.
+  if (error == ERROR_NETNAME_DELETED) return NET_CONNECTION_RESET;
+  return BeskidNetworkError((int)error);
+}
 int32_t beskid_rt_v5_intrinsic_network_reactor_poll(void *value, int32_t timeout) {
   struct BeskidNetworkReactor *reactor = value;
   if (!reactor) return -NET_CLOSED;
@@ -199,7 +204,7 @@ int32_t beskid_rt_v5_intrinsic_network_reactor_poll(void *value, int32_t timeout
   --reactor->pending;
   struct BeskidNetworkRequest *request = operation->request;
   if (request) {
-    int status = error ? BeskidNetworkError((int)error) : NET_OK;
+    int status = error ? BeskidNetworkCompletionError(error) : NET_OK;
     if (operation->operation == NET_RECEIVE && (error == WSAEMSGSIZE || error == ERROR_MORE_DATA)) { status = NET_OK; request->truncated = 1; bytes = (DWORD)operation->capacity; }
     if (!status && operation->operation == NET_CONNECT && setsockopt(operation->descriptor, SOL_SOCKET, SO_UPDATE_CONNECT_CONTEXT, NULL, 0)) status = BeskidNetworkError(WSAGetLastError());
     if (!status && operation->operation == NET_ACCEPT) {
