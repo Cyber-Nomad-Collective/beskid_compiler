@@ -369,3 +369,30 @@ fn unknown_import_in_the_unit_of_a_lowered_item_is_rejected_as_e1105() {
     assert!(rendered.contains("E1105"), "{rendered}");
     assert!(!rendered.contains("MissingRuleOrFact"), "{rendered}");
 }
+
+/// Design slice 7: an invalid scoped `use` is judged by the legality gate for the items a
+/// lowering request lowers (E1230), not while the typed program is admitted. An item nothing
+/// requested may carry one without poisoning an unrelated request.
+#[test]
+fn invalid_scoped_use_is_rejected_as_e1230_only_when_its_item_is_lowered() {
+    let source = "enum DisposeError { Failed(i64 code) } enum Result<T, E> { Ok(T value), Error(E error) } \
+                  contract Disposable { Result<unit, DisposeError> Dispose(); } \
+                  type Resource: Disposable { pub Result<unit, DisposeError> Dispose() { return Result::Ok(unit); } } \
+                  Resource Open() { return Resource {}; } \
+                  unit Bad() { use Resource resource = Open(); return; } \
+                  i32 Main() { return 1; }";
+    let (input, isa, root) = item_fixture_with_root(source);
+    let db = input.database();
+    let functions = find_function_definitions(db, root);
+    let bad = functions[functions.len() - 2];
+    let main = functions[functions.len() - 1];
+    lower_syntax_program(&input, isa.as_ref(), &[SyntaxModuleItem { key: main, symbol: "Main".into() }])
+        .expect("an unrequested invalid scoped use must not poison lowering");
+    let error = lower_syntax_program(&input, isa.as_ref(), &[SyntaxModuleItem { key: bad, symbol: "Bad".into() }])
+        .expect_err("the invalid scoped use must not lower");
+    let rendered = error.to_string();
+    assert!(rendered.contains("E1230"), "{rendered}");
+    assert!(rendered.contains("NonResultCallable"), "{rendered}");
+    assert!(rendered.contains("ScopedUseStatement@"), "{rendered}");
+    assert!(!rendered.contains("MissingRuleOrFact"), "{rendered}");
+}

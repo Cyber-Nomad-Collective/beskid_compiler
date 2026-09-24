@@ -263,6 +263,14 @@ pub enum SemanticIssueKind {
     TypeUnsupportedExpression,
     TypeInvalidTryTarget,
     TypeInvalidPrimitiveConversionArgument,
+    /// A scoped `use` whose acquisition, disposal, or error conversion the scoped-cleanup fact
+    /// rejects; `reason` names which rule (for example `NotDisposable`, `ResourceEscapesScope`).
+    ScopedCleanupRejected {
+        reason: String,
+    },
+    /// `BSP-REQ-35580A7D7B75`: a discarded canonical growth of a `mut T[]` parameter whose body
+    /// never publishes the parameter, so the caller keeps the ungrown array.
+    DeadCollectionGrowth,
     TypeInvalidEventInvocationScope,
     TypeInvalidEventCapacity,
     TypeInvalidEventSubscriptionTarget,

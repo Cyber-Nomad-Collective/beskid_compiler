@@ -239,6 +239,14 @@ impl SemanticIssueKind {
             Self::TypeInvalidPrimitiveConversionArgument => Some(
                 "primitive conversions like `i32(x)` accept exactly one primitive numeric argument".to_string(),
             ),
+            Self::ScopedCleanupRejected { .. } => Some(
+                "a scoped `use` needs a fresh disposable resource whose `Dispose` returns a `Result` convertible to \
+                 the enclosing function's error, and the resource must not escape or be disposed explicitly"
+                    .to_string(),
+            ),
+            Self::DeadCollectionGrowth => {
+                Some("return the parameter or rebind the grown handle so the caller sees the growth".to_string())
+            }
             Self::TypeInvalidEventInvocationScope => Some(
                 "events can only be raised from within methods on their declaring type".to_string()
             ),

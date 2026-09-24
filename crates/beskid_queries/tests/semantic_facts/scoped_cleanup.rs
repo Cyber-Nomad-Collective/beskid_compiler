@@ -279,14 +279,14 @@ fn explicit_use_body_shares_the_cleanup_fact_and_rejects_capture() {
 }
 
 #[test]
-fn invalid_scoped_cleanup_is_rejected_before_a_typed_program_is_admitted() {
+fn invalid_scoped_cleanup_is_rejected_by_the_legality_gate_not_at_admission() {
     use beskid_analysis::projects::{
         AssemblyDiscovery, EffectiveCompilationRoots, ModuleIndex, ProgramAssembly, RootEntry, SourceUnit,
     };
     use std::{path::PathBuf, sync::Arc};
     let source = format!("{CONTRACT} unit Main() {{ use Resource resource = Open(); return; }}");
     let program = beskid_analysis::services::parse_program(&source).unwrap();
-    let (mut db, project, _, generation, _) = setup(&source);
+    let (mut db, project, _, generation, index) = setup(&source);
     let assembly = Arc::new(ProgramAssembly::new(
         EffectiveCompilationRoots {
             host: RootEntry { dependency_name: None, source_root: PathBuf::from("/tmp/project/src") },
@@ -305,9 +305,18 @@ fn invalid_scoped_cleanup_is_rejected_before_a_typed_program_is_admitted() {
         false,
         generation,
     ));
-    let result = beskid_queries::build_typed_program(&mut db, project, generation, assembly);
-    assert!(result.is_err(), "invalid cleanup must fail semantic admission, before lowering");
-    assert!(result.err().unwrap().to_string().contains("NonResultCallable"));
+    let typed = beskid_queries::build_typed_program(&mut db, project, generation, assembly)
+        .expect("typed program admission does not judge item bodies");
+    let main = index
+        .ids_of_kind(NodeKind::FunctionDefinition)
+        .map(|node| beskid_queries::AstNodeKey { unit: typed.entry, generation, node })
+        .last()
+        .expect("Main");
+    let findings = beskid_queries::check_items(&db, &[main]).expect_err("invalid cleanup must stop lowering");
+    assert_eq!(findings.len(), 1, "{findings:?}");
+    assert_eq!(findings[0].kind.code(), "E1230");
+    assert!(findings[0].kind.message().contains("NonResultCallable"), "{}", findings[0].kind.message());
+    assert_eq!(findings[0].site, key(typed.entry, generation, &index, NodeKind::ScopedUseStatement, 0));
 }
 
 #[test]

@@ -1,5 +1,8 @@
-//! `BSP-REQ-35580A7D7B75` (`DeadCollectionGrowth`): a discarded canonical growth of a `mut T[]`
-//! parameter that the body never publishes is rejected; every legal corelib shape is not.
+//! `BSP-REQ-35580A7D7B75` (`DeadCollectionGrowth`, E1231): a discarded canonical growth of a
+//! `mut T[]` parameter that the body never publishes is rejected by the reachability-scoped
+//! legality gate for the item that contains it; every legal corelib shape is not. Admission of the
+//! typed program (`build_typed_program`) never judges bodies, so an unreachable item cannot poison
+//! an assembly.
 
 use super::support::{key, key_at_start};
 use beskid_analysis::macros::{DEFAULT_MAX_MACRO_EXPANSION_DEPTH, expand_program};
@@ -24,6 +27,8 @@ struct Fixture {
     generation: SyntaxGenerationId,
     index: SyntaxIndex,
     typed: Result<(), String>,
+    /// E-codes the legality gate reports for every function of the main unit.
+    gate: Vec<String>,
 }
 
 fn fixture(main_body: &str) -> Fixture {
@@ -73,7 +78,26 @@ fn fixture(main_body: &str) -> Fixture {
     );
     let typed = build_typed_program(&mut db, project, generation, assembly).map(|_| ()).map_err(|error| error.to_string());
     let index = SyntaxIndex::from_program(&main_program, generation);
-    Fixture { db, unit, generation, index, typed }
+    let items = index
+        .ids_of_kind(NodeKind::FunctionDefinition)
+        .map(|node| AstNodeKey { unit, generation, node })
+        .collect::<Vec<_>>();
+    let gate = match beskid_queries::check_items(&db, &items) {
+        Ok(()) => Vec::new(),
+        Err(findings) => findings.iter().map(|finding| finding.kind.code().to_string()).collect(),
+    };
+    Fixture { db, unit, generation, index, typed, gate }
+}
+
+/// The function definition that contains `node`.
+fn parent_item(fixture: &Fixture, node: AstNodeKey) -> AstNodeKey {
+    let mut current = node.node;
+    loop {
+        if fixture.index.kind(current) == Some(NodeKind::FunctionDefinition) {
+            return AstNodeKey { node: current, ..node };
+        }
+        current = fixture.index.metadata()[current.0 as usize].parent.expect("call is inside a function");
+    }
 }
 
 fn growth_call(fixture: &Fixture, occurrence: usize) -> AstNodeKey {
@@ -95,9 +119,10 @@ fn discarded_growth_of_an_unpublished_mut_array_parameter_is_dead() {
     let call = growth_call(&fixture, 0);
     let fact = dead_collection_growth(&fixture.db, call).expect("dead growth query").expect("dead growth fact");
     assert_eq!(fact, beskid_queries::DeadCollectionGrowth { call, parameter });
-    let error = fixture.typed.clone().expect_err("typed program must fail closed on dead growth");
-    assert!(error.contains("DeadCollectionGrowth"), "{error}");
-    assert!(error.contains("CallExpression@"), "diagnostic must name the growth call site: {error}");
+    assert!(fixture.typed.is_ok(), "typed program admission does not judge bodies: {:?}", fixture.typed);
+    assert_eq!(fixture.gate, vec!["E1231".to_string()], "the legality gate rejects the dead growth");
+    let findings = beskid_queries::check_items(&fixture.db, &[parent_item(&fixture, call)]).expect_err("gate rejects");
+    assert_eq!(findings[0].site, call, "E1231 is reported at the growth call");
 }
 
 #[test]
@@ -111,7 +136,7 @@ fn every_discarded_growth_of_the_same_dead_parameter_is_reported() {
         .filter(|call| dead_collection_growth(&fixture.db, *call).expect("dead growth query").is_some())
         .count();
     assert_eq!(calls, 2);
-    assert!(fixture.typed.is_err());
+    assert_eq!(fixture.gate, vec!["E1231".to_string(), "E1231".to_string()]);
 }
 
 #[test]
@@ -128,7 +153,7 @@ fn index_reads_and_self_assignment_do_not_publish_the_parameter() {
             .map(|node| AstNodeKey { unit: fixture.unit, generation: fixture.generation, node })
             .any(|call| dead_collection_growth(&fixture.db, call).expect("dead growth query").is_some());
         assert!(dead, "{body}");
-        assert!(fixture.typed.is_err(), "{body}");
+        assert_eq!(fixture.gate, vec!["E1231".to_string()], "{body}");
     }
 }
 
@@ -171,5 +196,6 @@ fn fixed_corelib_shapes_and_published_handles_are_not_dead() {
             .count();
         assert_eq!(dead, 0, "{body}");
         assert!(fixture.typed.is_ok(), "{body}: {:?}", fixture.typed);
+        assert!(fixture.gate.is_empty(), "{body}: {:?}", fixture.gate);
     }
 }

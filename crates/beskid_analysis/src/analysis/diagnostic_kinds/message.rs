@@ -209,6 +209,10 @@ impl SemanticIssueKind {
             Self::TypeInvalidPrimitiveConversionArgument => {
                 "primitive numeric conversion requires exactly one primitive numeric argument".to_string()
             }
+            Self::ScopedCleanupRejected { reason } => format!("scoped use rejected: {reason}"),
+            Self::DeadCollectionGrowth => "the grown handle of a `mut T[]` parameter is discarded and the body never \
+                                           publishes the parameter, so the caller keeps the ungrown array"
+                .to_string(),
             Self::TypeInvalidEventInvocationScope => {
                 "events can only be invoked from methods on their declaring type".to_string()
             }
