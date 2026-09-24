@@ -154,8 +154,10 @@ fn semantic_fact_findings(
     program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
 ) -> Result<Vec<beskid_analysis::services::SemanticFactFinding>> {
     use crate::{
-        AstNodeKey, IndexedNodeKind, build_typed_program, project_session_for_syntax_assembly, try_expression_fact,
+        AstNodeKey, IndexedNodeKind, build_runtime_fixture_typed_program, build_typed_program_with_corelib_services,
+        project_session_for_syntax_assembly, try_expression_fact,
     };
+    use beskid_abi::abi_v5::AbiManifestV5;
     use beskid_analysis::analysis::SemanticIssueKind;
     use beskid_analysis::services::SemanticFactFinding;
     use std::sync::Arc;
@@ -184,7 +186,19 @@ fn semantic_fact_findings(
         )?,
         None => project_session_for_syntax_assembly(db, &syntax, "try-diagnostics", "source-authority")?,
     };
-    let typed = build_typed_program(db, project, syntax.generation, Arc::clone(&syntax))?;
+    // Preparation runs before the codegen target is selected. Source authority is independent of
+    // target metadata, but must be installed with the same validated constructors codegen uses;
+    // otherwise the legality gate calls compiler-owned services and intrinsics "unknown".
+    let authority_target = beskid_abi::runtime_kit::host_runtime_target()
+        .map_err(|error| anyhow::anyhow!("host ABI-v5 target unavailable for source authority: {error}"))?;
+    let manifest = AbiManifestV5::canonical_runtime(authority_target);
+    let typed = if syntax.runtime_fixture.is_some() {
+        build_runtime_fixture_typed_program(db, project, syntax.generation, Arc::clone(&syntax), &manifest)?
+    } else {
+        let capability = beskid_abi::runtime_source::canonical_corelib_service_capability(&manifest)
+            .map_err(|error| anyhow::anyhow!("canonical Corelib service authority unavailable: {error:?}"))?;
+        build_typed_program_with_corelib_services(db, project, syntax.generation, Arc::clone(&syntax), capability)?
+    };
     let index = syntax.entry_syntax_index();
     let mut findings = Vec::new();
     for node in index.ids_of_kind(IndexedNodeKind::TryExpression) {
@@ -318,4 +332,101 @@ fn clone_resolved(resolved: &ResolvedInput) -> ResolvedInput {
 /// Clear entry-session registry slices for a project root (LSP / workspace invalidation).
 pub fn invalidate_entry_sessions(project_root: &std::path::Path) {
     invalidate_entry_sessions_for_project(project_root);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Arc;
+
+    use beskid_analysis::projects::{
+        AssemblyDiscovery, EffectiveCompilationRoots, ModuleIndex, ProgramAssembly, RootEntry, SourceUnit,
+    };
+    use beskid_analysis::services::{parse_program_with_source_name, synthetic_compile_plan_for_source};
+    use beskid_analysis::syntax::SyntaxGenerationId;
+    use beskid_analysis::syntax_query::SyntaxIndex;
+
+    /// The exact embedded Slice source has service authority. The prepare-time legality gate
+    /// must recognize `__panic` in its `Copy` method.
+    #[test]
+    fn canonical_corelib_service_survives_prepare_legality_gate() {
+        let source = beskid_abi::runtime_source::canonical_corelib_service_sources()
+            .into_iter()
+            .find(|source| source.logical_path == "Core/Bytes/Slice.bd")
+            .expect("embedded canonical Slice source");
+        let identity = beskid_abi::runtime_source::corelib_service_source_identity(&source.logical_path)
+            .expect("canonical Slice identity");
+        let path = identity.canonical_path;
+        let generation = SyntaxGenerationId(413);
+        let unit = SourceUnit {
+            logical_name: source.logical_path,
+            origin_path: path.clone(),
+            program: parse_program_with_source_name(path.to_str().unwrap(), &source.source).unwrap(),
+            path: path.clone(),
+            source: source.source.clone(),
+        };
+        let plan = synthetic_compile_plan_for_source(&path);
+        let roots = EffectiveCompilationRoots {
+            host: RootEntry { dependency_name: None, source_root: path.parent().unwrap().into() },
+            dependencies: vec![],
+        };
+        let indexes = vec![SyntaxIndex::from_program(&unit.program, generation)];
+        let index = Arc::new(ModuleIndex::build(std::slice::from_ref(&unit), &indexes, &roots, &plan));
+        let program = unit.program.clone();
+        let assembly = ProgramAssembly::new(
+            roots,
+            Arc::new(vec![unit]),
+            0,
+            AssemblyDiscovery::ImportClosure,
+            index,
+            false,
+            generation,
+        );
+        let mut db = BeskidDatabase::default();
+        let findings = semantic_fact_findings(&mut db, None, &assembly, &program)
+            .expect("canonical Corelib semantic fact findings");
+        assert!(
+            !findings.iter().any(|finding| {
+                matches!(&finding.kind, beskid_analysis::analysis::SemanticIssueKind::ResolveUnknownValue { name }
+                    if name == "__panic")
+            }),
+            "canonical Corelib service rejected by legality gate: {findings:?}"
+        );
+    }
+
+    /// The exact runtime fixture carries intrinsic authority into dependency units reached by
+    /// its tests; `NativePointer` is supplied by the compiler, not declared as a source function.
+    #[test]
+    fn runtime_fixture_intrinsic_survives_prepare_legality_gate() {
+        use beskid_abi::runtime_source::runtime_fixture_project_root;
+        use beskid_analysis::projects::{
+            assemble_program_with_materializer, assembly_options_for_plan, build_compile_plan, plan_entry_path,
+        };
+
+        let manifest = runtime_fixture_project_root().join("runtime_semantics.bproj");
+        let plan = build_compile_plan(&manifest, Some("LifecycleTests")).expect("runtime fixture plan");
+        let entry = plan_entry_path(&plan, &plan.source_root);
+        let source = std::fs::read_to_string(&entry).expect("runtime fixture source");
+        let assembly = assemble_program_with_materializer(
+            &plan,
+            None,
+            &entry,
+            Some(&source),
+            &assembly_options_for_plan(&plan),
+            None,
+            None,
+        )
+        .expect("exact runtime fixture assembly");
+        let program = assembly.entry_unit().program.clone();
+        let mut db = BeskidDatabase::default();
+        let findings =
+            semantic_fact_findings(&mut db, None, &assembly, &program).expect("runtime fixture semantic fact findings");
+        assert!(
+            !findings.iter().any(|finding| {
+                matches!(&finding.kind, beskid_analysis::analysis::SemanticIssueKind::ResolveUnknownValue { name }
+                    if name == "NativePointer" || name == "CurrentThreadState")
+            }),
+            "canonical runtime intrinsic rejected by legality gate: {findings:?}"
+        );
+    }
 }

@@ -47,6 +47,12 @@ The Python tools (`symbolize.py`, `whyfact.py`, `authority.py`, `visibility.py`)
 | `clifdiff.sh` | Dump and diff normalized CLIF between two slices/inputs, or two saved dumps | yes (unless `--files`) |
 | `status.sh` | One-shot snapshot: running processes, load average, newest log per slice | yes |
 | `stalled.sh` | Flag a log that looks in-progress but has no writer left | yes |
+| `matrix-log.py` | Summarize final matrix counts, the last target started, and distinct error headlines | no (accepts a local file or stdin) |
+
+For a large `beskid_cli test --all-targets` log, pipe it through `scripts/diagnose/matrix-log.py`
+or pass a local log path. It reports the final `matrix:` count and separate `release eligible:`
+status; raw PASS/FAIL markers are deliberately not attributed to target names because targets
+may run concurrently. An unfinished log has no final count.
 
 ## Error class -> tool -> usual fix
 
