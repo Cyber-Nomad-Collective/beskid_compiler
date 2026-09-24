@@ -63,6 +63,32 @@ test native_network_bind_address_close_and_generation_are_portable {
     ResumeHostRuntime(hostRuntime);
 }
 
+test native_network_shutdown_reports_and_closes_live_socket_idempotently {
+    pointer hostRuntime = SuspendHostRuntime();
+    pointer runtime = Native.SystemAllocate(64, 8);
+    memory_set(runtime, 0, 64);
+    Assert.True(Lifecycle.ProcessInit(runtime) == runtime, "native runtime initialized");
+    pointer address = NetworkTestArray(19, 1);
+    pointer wire = pointer_add(address, 16);
+    raw_byte_store(wire, 4);
+    raw_byte_store(pointer_add(wire, 3), 127);
+    raw_byte_store(pointer_add(wire, 6), 1);
+    pointer output = NetworkTestArray(1, 8);
+
+    Assert.Equal(Sockets.NetworkOpen(3, address, 0, 0, output), 0, "UDP socket opens for shutdown leak check");
+    word handle = raw_word_load(pointer_add(output, 16));
+    Assert.True(handle != 0, "shutdown fixture owns a live socket handle");
+    Assert.Equal(Dns.NetworkShutdown(External.ExternalOwnerId()), 1, "shutdown reports one live socket leak");
+    Assert.Equal(Sockets.NetworkAddress(handle, false, address), 14, "shutdown closes the leaked socket handle");
+    Assert.Equal(Dns.NetworkShutdown(External.ExternalOwnerId()), 0, "repeated shutdown is idempotent after cleanup");
+
+    Native.SystemFree(output, 24);
+    Native.SystemFree(address, 35);
+    Lifecycle.ProcessShutdown(runtime);
+    Native.SystemFree(runtime, 64);
+    ResumeHostRuntime(hostRuntime);
+}
+
 // Table exhaustion and host descriptor exhaustion (EMFILE before the table fills)
 // both report ResourceExhausted (18), never NetworkDown (9).
 test native_network_socket_exhaustion_reports_resource_exhausted {
