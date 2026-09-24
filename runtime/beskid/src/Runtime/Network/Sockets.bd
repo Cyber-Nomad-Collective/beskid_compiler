@@ -7,7 +7,7 @@ pub i32 NetworkConnectHandle(word handle, pointer address) {
     if raw_word_load(NetworkSlotToken(slot, 0)) != 0 || raw_word_load(NetworkSlotToken(slot, 1)) != 0 { network_table_unlock(); return NETWORK_BUSY; }
     pointer request = NetworkRequest(NETWORK_CONNECT, NativePointer(0), 0, address);
     if request == NativePointer(0) { network_table_unlock(); return NETWORK_RESOURCE_EXHAUSTED; }
-    i32 start = NetworkStartLocked(table, slot, request);
+    i32 start = NetworkStartLocked(table, slot, request, -1);
     network_table_unlock();
     if start != 0 { NetworkRequestFree(request); return start; }
     i32 status = NetworkFinish(handle, request);
@@ -62,7 +62,7 @@ pub i32 NetworkAccept(word handle, pointer handleArray) {
     if raw_word_load(NetworkSlotToken(slot, 0)) != 0 { network_table_unlock(); return NETWORK_BUSY; }
     pointer request = NetworkRequest(NETWORK_ACCEPT, NativePointer(0), 0, NativePointer(0));
     if request == NativePointer(0) { network_table_unlock(); return NETWORK_RESOURCE_EXHAUSTED; }
-    i32 start = NetworkStartLocked(table, slot, request);
+    i32 start = NetworkStartLocked(table, slot, request, -1);
     network_table_unlock();
     if start != 0 { NetworkRequestFree(request); return start; }
     i32 status = NetworkFinish(handle, request);
@@ -175,7 +175,7 @@ pub i64 NetworkReceive(word handle, pointer destination, pointer metadataArray, 
     }
     pointer metadata = NetworkArrayData(metadataArray, 20);
     memory_set(metadata, 0, 20);
-    i64 result = NetworkTransfer(handle, destination, 0, i64(NetworkArrayLength(destination)), NETWORK_RECEIVE, metadata);
+    i64 result = NetworkTransfer(handle, destination, 0, i64(NetworkArrayLength(destination)), NETWORK_RECEIVE, metadata, -1);
     return result;
 }
 
@@ -190,6 +190,6 @@ pub i64 NetworkSend(word handle, pointer source, pointer addressArray, bool conn
         if !NetworkWireValid(input) { return -i64(NETWORK_INVALID_ADDRESS); }
         address = input;
     }
-    i64 result = NetworkTransfer(handle, source, 0, i64(NetworkArrayLength(source)), NETWORK_SEND, address);
+    i64 result = NetworkTransfer(handle, source, 0, i64(NetworkArrayLength(source)), NETWORK_SEND, address, -1);
     return result;
 }

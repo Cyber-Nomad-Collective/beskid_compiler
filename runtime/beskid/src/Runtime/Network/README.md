@@ -25,7 +25,8 @@ The compiler must retain its established rooted array owner across the call.
 | open | i64 kind, pointer address, i64 options, i64 backlog, pointer handleOut | i32 status |
 | accept | word handle, pointer handleOut | i32 status |
 | close | word handle | i32 status |
-| read / write | word handle, pointer bytes, i64 offset, i64 count | i64 count or negative status |
+| read | word handle, pointer bytes, i64 offset, i64 count, i64 absolute monotonic deadline | i64 count or negative status |
+| write | word handle, pointer bytes, i64 offset, i64 count | i64 count or negative status |
 | address | word handle, bool peer, pointer addressOut | i32 status |
 | options | word handle | i64 option bits or negative status |
 | set_options | word handle, i64 bits | i32 status |
@@ -74,6 +75,8 @@ The generated request prefix is 88 bytes. Beskid privately allocates 104 bytes:
 the additional list-next word at 88 and owner word at 96 permit cleanup after
 forced fiber shutdown. Native adapters must access only the generated prefix.
 
-This API uses `ExternalWaitRegister(..., -1)` because there is no Foundation
-ambient deadline context. It must not introduce a fabricated deadline getter
-or a competing network timer implementation.
+TCP read passes its scalar absolute monotonic deadline to
+`ExternalWaitRegister`; `-1` retains the unbounded behavior of `TcpStream.Read`.
+The private `Network.Internal` facade alone projects a checked Foundation
+`Deadline`. Other operations remain unbounded, with no fabricated ambient
+deadline getter or competing network timer implementation.
