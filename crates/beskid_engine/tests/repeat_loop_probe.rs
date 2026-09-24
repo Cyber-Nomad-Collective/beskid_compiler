@@ -5,18 +5,25 @@ use beskid_engine::services::{prepare_jit_entrypoint, run_entrypoint};
 use beskid_engine::{Engine, host_runtime_target};
 use beskid_tools::toolchain::runtime_kit::{RuntimeKitProfile, build_native_host};
 
+/// Two tests in this binary override `BESKID_RUNTIME_PREFIX`; the default parallel harness let
+/// one test's restore remove the variable while the other was still resolving its kit, which
+/// surfaced as "current executable is not installed under `<prefix>/bin`". Serialize the override.
+static ENVIRONMENT_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 struct EnvironmentVariableGuard {
     key: &'static str,
     previous: Option<std::ffi::OsString>,
+    _lock: std::sync::MutexGuard<'static, ()>,
 }
 
 impl EnvironmentVariableGuard {
     fn set(key: &'static str, value: &Path) -> Self {
+        let lock = ENVIRONMENT_LOCK.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let previous = std::env::var_os(key);
-        // SAFETY: this integration target is run serially by its focused invocation, and Drop
-        // restores the process environment before the test exits.
+        // SAFETY: every environment override in this binary holds `ENVIRONMENT_LOCK`, and Drop
+        // restores the process environment before the lock is released.
         unsafe { std::env::set_var(key, value) };
-        Self { key, previous }
+        Self { key, previous, _lock: lock }
     }
 }
 

@@ -17,6 +17,30 @@ fn supported_targets() -> Vec<TargetMetadata> {
 }
 
 #[test]
+fn windows_static_kit_archive_names_every_manifest_platform_import_library() {
+    // The static kit archive is linked directly by C hosts and test drivers, not only by the AOT
+    // linker that appends manifest libraries. Each manifest import library must therefore be a
+    // `/DEFAULTLIB` directive of the platform host object (a missing ws2_32 left WSAStartup and
+    // the other IOCP reactor imports unresolved for every direct static-kit link on Windows).
+    let windows = supported_targets().into_iter().find(|target| target.triple.as_str() == "x86_64-pc-windows-msvc");
+    let source = include_str!("../assembly/x86_64-pc-windows-msvc/platform_host.c");
+    let mut libraries = AbiManifestV5::canonical_runtime(windows.unwrap())
+        .platform_imports
+        .into_iter()
+        .map(|entry| entry.library)
+        .collect::<Vec<_>>();
+    libraries.sort();
+    libraries.dedup();
+    assert!(libraries.contains(&"ws2_32".to_owned()));
+    for library in libraries {
+        assert!(
+            source.contains(&format!("#pragma comment(lib, \"{library}.lib\")")),
+            "platform_host.c must embed a default-library directive for manifest import `{library}`"
+        );
+    }
+}
+
+#[test]
 fn descriptor_worker_layout_preserves_abi_v5_offsets() {
     for target in supported_targets() {
         let manifest = AbiManifestV5::canonical_runtime(target);

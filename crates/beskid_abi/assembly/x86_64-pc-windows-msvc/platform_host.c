@@ -139,6 +139,9 @@ void beskid_rt_v5_intrinsic_guarded_stack_free(void *usable_base,
 #pragma comment(lib, "ucrt.lib")
 /* Provider for C compiler-emitted memory operations. */
 #pragma comment(lib, "vcruntime.lib")
+/* Winsock provider for the IOCP network reactor (WSAStartup, WSASocketW, ...).
+ * Direct consumers of the static kit archive link it without a Beskid linker. */
+#pragma comment(lib, "ws2_32.lib")
 
 int64_t beskid_rt_v5_intrinsic_clock_monotonic_nanos(void) {
   return (int64_t)(GetTickCount64() * UINT64_C(1000000));
