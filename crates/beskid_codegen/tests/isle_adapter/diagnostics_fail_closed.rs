@@ -425,3 +425,60 @@ fn generic_parameter_conflict_is_rejected_as_e1229_only_for_the_misusing_item() 
     assert!(!rendered.contains("generic specialization facts are unavailable"), "{rendered}");
     assert!(!rendered.contains("MissingRuleOrFact"), "{rendered}");
 }
+
+/// Design slice 8: after a clean legality gate, a construct no ISLE rule lowers is a compiler gap.
+/// It is reported as internal error E2102 carrying the construct and its site, never with a
+/// user-facing code, and converts into a source-excerpt diagnostic at the codegen boundary.
+#[test]
+fn missing_rule_after_a_clean_gate_is_internal_error_e2102_at_its_site() {
+    let source = "i32 Main() { code ```beskid\nlet generated = 1;\n```; return 0; }";
+    let (input, isa, root) = item_fixture_with_root(source);
+    let db = input.database();
+    let main = find_function_definitions(db, root)[0];
+    beskid_queries::check_items(db, &[main]).expect("the legality gate finds no user error");
+    let error = lower_syntax_program(&input, isa.as_ref(), &[SyntaxModuleItem { key: main, symbol: "Main".into() }])
+        .expect_err("an unported construct must not lower");
+    let rendered = error.to_string();
+    assert!(rendered.contains("E2102"), "{rendered}");
+    assert!(rendered.contains("internal compiler error"), "{rendered}");
+    // The unported code string surfaces at the statement that holds it.
+    assert!(rendered.contains("ExpressionStatement@"), "{rendered}");
+    assert!(rendered.contains("MissingRuleOrFact"), "{rendered}");
+    let user_code = rendered.match_indices('E').any(|(index, _)| {
+        let code = &rendered[index + 1..];
+        code.len() >= 4 && code[..4].chars().all(|c| c.is_ascii_digit()) && !code.starts_with("21")
+    });
+    assert!(!user_code, "an internal error carries no user code: {rendered}");
+
+    let report = error.into_report(&input, "syntax ISLE lowering failed");
+    assert!(report.to_string().contains("E2102"), "{report}");
+    let bundle = report
+        .downcast_ref::<beskid_analysis::services::SemanticDiagnosticsError>()
+        .expect("the internal error keeps its structured diagnostic");
+    let diagnostic = &bundle.diagnostics()[0];
+    assert_eq!(diagnostic.code.as_deref(), Some("E2102"));
+    let excerpt = &source[diagnostic.span.offset()..diagnostic.span.offset() + diagnostic.span.len()];
+    assert!(excerpt.starts_with("code ```beskid"), "the diagnostic points at the construct: `{excerpt}`");
+}
+
+/// Design slice 8: a legality rejection converts into one structured diagnostic per finding with
+/// the offending unit's source excerpt, so `beskid test` FAIL lines and `beskid build` render
+/// code, label, help and source instead of only `code message at site`.
+#[test]
+fn legality_rejection_converts_into_source_excerpt_diagnostics() {
+    let source = "unit Main() { i64 n = 0; n = 1; i64 m = 0; m = 2; return; }";
+    let (input, isa, root) = item_fixture_with_root(source);
+    let main = find_function_definitions(input.database(), root)[0];
+    let error = lower_syntax_program(&input, isa.as_ref(), &[SyntaxModuleItem { key: main, symbol: "Main".into() }])
+        .expect_err("immutable reassignment must not lower");
+    let report = error.into_report(&input, "syntax ISLE lowering failed");
+    assert!(report.to_string().starts_with("syntax ISLE lowering failed: legality gate rejected"), "{report}");
+    let bundle = report
+        .downcast_ref::<beskid_analysis::services::SemanticDiagnosticsError>()
+        .expect("legality findings keep their structured diagnostics");
+    let diagnostic = &bundle.diagnostics()[0];
+    assert_eq!(diagnostic.code.as_deref(), Some("E1214"));
+    assert_eq!(diagnostic.help, beskid_analysis::analysis::SemanticIssueKind::ImmutableAssignment { name: "n".into() }.help());
+    let excerpt = &source[diagnostic.span.offset()..diagnostic.span.offset() + diagnostic.span.len()];
+    assert!(excerpt.starts_with("n = 1"), "the diagnostic points at the assignment: `{excerpt}`");
+}

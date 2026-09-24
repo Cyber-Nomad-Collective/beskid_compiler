@@ -210,6 +210,12 @@ impl SemanticIssueKind {
                 "primitive numeric conversion requires exactly one primitive numeric argument".to_string()
             }
             Self::ScopedCleanupRejected { reason } => format!("scoped use rejected: {reason}"),
+            Self::InternalSemanticFactUnavailable { query } => {
+                format!("internal compiler error: semantic fact `{query}` is unavailable")
+            }
+            Self::InternalLoweringRuleMissing { construct } => format!(
+                "internal compiler error: no ISLE lowering rule or fact for `{construct}` (MissingRuleOrFact)"
+            ),
             Self::DeadCollectionGrowth => "the grown handle of a `mut T[]` parameter is discarded and the body never \
                                            publishes the parameter, so the caller keeps the ungrown array"
                 .to_string(),

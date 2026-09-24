@@ -244,6 +244,9 @@ impl SemanticIssueKind {
                  the enclosing function's error, and the resource must not escape or be disposed explicitly"
                     .to_string(),
             ),
+            Self::InternalSemanticFactUnavailable { .. } | Self::InternalLoweringRuleMissing { .. } => {
+                Some("this is an internal compiler error, please report it".to_string())
+            }
             Self::DeadCollectionGrowth => {
                 Some("return the parameter or rebind the grown handle so the caller sees the growth".to_string())
             }

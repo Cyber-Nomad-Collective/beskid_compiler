@@ -90,6 +90,8 @@ impl SemanticIssueKind {
             Self::TypeInvalidPrimitiveConversionArgument => "E1228",
             Self::ScopedCleanupRejected { .. } => "E1230",
             Self::DeadCollectionGrowth => "E1231",
+            Self::InternalSemanticFactUnavailable { .. } => "E2101",
+            Self::InternalLoweringRuleMissing { .. } => "E2102",
             Self::TypeInvalidEventInvocationScope => "E1219",
             Self::TypeInvalidEventCapacity => "E1220",
             Self::TypeInvalidEventSubscriptionTarget => "E1221",

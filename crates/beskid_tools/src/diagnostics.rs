@@ -125,5 +125,7 @@ fn semantic_diagnostics_bundle_report(bundle: &SemanticDiagnosticsError) -> Repo
     if diagnostics.len() == 1 {
         return Report::new(diagnostics[0].clone());
     }
-    Report::new(diagnostics[0].clone())
+    // The bundle renders its first diagnostic and every other one as `related`, so a FAIL line
+    // shows each finding of a legality pass with its own source excerpt.
+    Report::new(bundle.clone())
 }

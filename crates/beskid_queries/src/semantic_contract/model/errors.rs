@@ -18,7 +18,9 @@ use super::*;
 pub struct SemanticError {
     message: Arc<str>,
     diagnostics: Arc<[Arc<str>]>,
-    unavailable: bool,
+    /// The query whose port is incomplete, for every unavailable (compiler-gap) error. `None` for
+    /// an explicit rejection. The module-emission boundary names it in internal error E2101.
+    unavailable_query: Option<Arc<str>>,
     /// Present only for [`SemanticError::unavailable_at`]: the site the caller had already
     /// resolved to a key when the query it asked for came back unavailable. A compiler-gap
     /// internal error rendered from this site is a genuine gap, never a user diagnostic (see
@@ -45,7 +47,7 @@ impl SemanticError {
         Self {
             diagnostics: Arc::from([Arc::clone(&message)]),
             message,
-            unavailable: false,
+            unavailable_query: None,
             unavailable_site: None,
             binding_conflict: None,
         }
@@ -57,7 +59,7 @@ impl SemanticError {
         Self {
             message: Arc::from(message),
             diagnostics: diagnostics.into(),
-            unavailable: false,
+            unavailable_query: None,
             unavailable_site: None,
             binding_conflict: None,
         }
@@ -69,7 +71,7 @@ impl SemanticError {
         Self {
             diagnostics: Arc::from([Arc::clone(&message)]),
             message,
-            unavailable: true,
+            unavailable_query: Some(Arc::from(query)),
             unavailable_site: None,
             binding_conflict: None,
         }
@@ -85,7 +87,7 @@ impl SemanticError {
         Self {
             diagnostics: Arc::from([Arc::clone(&message)]),
             message,
-            unavailable: true,
+            unavailable_query: Some(Arc::from(query)),
             unavailable_site: Some(site),
             binding_conflict: None,
         }
@@ -108,7 +110,7 @@ impl SemanticError {
         Self {
             diagnostics: Arc::from([Arc::clone(&message)]),
             message,
-            unavailable: true,
+            unavailable_query: Some(Arc::from("call_abi_signature")),
             unavailable_site: None,
             binding_conflict: Some(conflict),
         }
@@ -120,7 +122,12 @@ impl SemanticError {
     }
 
     pub fn is_unavailable(&self) -> bool {
-        self.unavailable
+        self.unavailable_query.is_some()
+    }
+
+    /// The query named by an unavailable (compiler-gap) error.
+    pub fn unavailable_query(&self) -> Option<&str> {
+        self.unavailable_query.as_deref()
     }
 
     /// The site given to [`SemanticError::unavailable_at`], if any.

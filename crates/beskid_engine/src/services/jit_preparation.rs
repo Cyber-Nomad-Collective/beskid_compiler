@@ -144,7 +144,7 @@ fn lower_syntax_entrypoint(
     let isa = native_isa()?;
     let artifact = beskid_pipeline::observe_phase_result(pipeline, beskid_pipeline::phases::CODEGEN_CLIF, || {
         lower_syntax_program(&input, isa.as_ref(), &items)
-            .map_err(|error| anyhow::anyhow!("syntax ISLE lowering failed: {error}"))
+            .map_err(|error| error.into_report(&input, "syntax ISLE lowering failed"))
     })?;
     Ok(SyntaxEntrypointArtifact { artifact, symbol, return_type: signature.result })
 }

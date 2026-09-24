@@ -6,7 +6,7 @@ use beskid_isle::DirectCallee;
 use cranelift_codegen::isa::TargetIsa;
 use cranelift_module::{FuncId, Linkage, Module, ModuleError};
 
-use super::contracts::{SyntaxModuleEmissionError, emission_error, emission_verification, render_legality_findings};
+use super::contracts::{SyntaxModuleEmissionError, emission_error, emission_verification, legality_error};
 use super::data::{collect_aggregate_static_plans, collect_array_static_plans, collect_closure_static_plans};
 use super::imports::{
     ArtifactCallImporter, ArtifactStringInterner, corelib_service_symbols, extern_contract_imports,
@@ -71,7 +71,7 @@ pub fn lower_syntax_program(
     let db = input.database();
     let requested_keys = items.iter().map(|item| item.key).collect::<Vec<_>>();
     if let Err(findings) = beskid_queries::check_items(db, &requested_keys) {
-        let error = SyntaxModuleEmissionError::Legality(render_legality_findings(db, &findings));
+        let error = legality_error(db, findings);
         crate::isle_trace::event(|| format!("event=isle.missing rule=legality_gate detail={error}"));
         return Err(error);
     }
@@ -90,7 +90,7 @@ pub fn lower_syntax_program(
     if !discovered_keys.is_empty()
         && let Err(findings) = beskid_queries::check_items(db, &discovered_keys)
     {
-        let error = SyntaxModuleEmissionError::Legality(render_legality_findings(db, &findings));
+        let error = legality_error(db, findings);
         crate::isle_trace::event(|| format!("event=isle.missing rule=legality_gate detail={error}"));
         return Err(error);
     }

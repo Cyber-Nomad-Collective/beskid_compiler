@@ -165,7 +165,7 @@ pub fn lower_canonical_runtime_prepared_syntax(
         anyhow::bail!("canonical runtime source corpus has no declared exports");
     }
     let mut artifact = lower_syntax_program(&input, isa, &items)
-        .map_err(|error| anyhow::anyhow!("canonical runtime ISLE lowering failed: {error}"))?;
+        .map_err(|error| error.into_report(&input, "canonical runtime ISLE lowering failed"))?;
     artifact.exports = syntax_export_entries_matching(input.database(), &items, &runtime_source_exports)?;
     Ok(artifact)
 }
@@ -254,7 +254,7 @@ pub fn lower_syntax_assembly_entrypoint(
     let symbol = syntax_item_symbol(db, &input, entry)
         .ok_or_else(|| anyhow::anyhow!("entrypoint `{entrypoint}` is not a syntax function or test"))?;
     let mut artifact = lower_syntax_program(&input, isa, &items)
-        .map_err(|error| anyhow::anyhow!("syntax ISLE lowering failed: {error}"))?;
+        .map_err(|error| error.into_report(&input, "syntax ISLE lowering failed"))?;
     artifact.exports = syntax_export_entries(db, &items)?;
     Ok(PreparedSyntaxEntrypoint { artifact, symbol, return_type: signature.result })
 }
@@ -310,7 +310,7 @@ pub fn lower_prepared_syntax_module(
         anyhow::bail!("prepared syntax module contains no executable functions or methods");
     }
     let mut artifact = lower_syntax_program(&input, isa, &items)
-        .map_err(|error| anyhow::anyhow!("syntax ISLE module lowering failed: {error}"))?;
+        .map_err(|error| error.into_report(&input, "syntax ISLE module lowering failed"))?;
     artifact.exports = syntax_export_entries(input.database(), &items)?;
     Ok(artifact)
 }
