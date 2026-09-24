@@ -287,3 +287,95 @@ fn primitive_conversion_rejects_non_numeric_argument() {
     let e1228 = diagnostics.iter().filter(|diagnostic| diagnostic.code.as_deref() == Some("E1228")).count();
     assert_eq!(e1228, 1, "expected exactly one E1228 for a non-numeric conversion argument: {diagnostics:?}");
 }
+
+/// Build a multi-unit assembly (first unit is the entry) and prepare it through the shared and
+/// isolated query-backed authorities.
+fn fact_authority_diagnostics(
+    sources: &[(&str, &str)],
+    generation: u64,
+) -> (Vec<beskid_analysis::SemanticDiagnostic>, Vec<beskid_analysis::SemanticDiagnostic>) {
+    let directory = tempfile::tempdir().unwrap();
+    let generation = SyntaxGenerationId(generation);
+    let units = sources
+        .iter()
+        .map(|(relative, source)| {
+            let path = directory.path().join(relative);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(&path, source).unwrap();
+            SourceUnit {
+                logical_name: (*relative).into(),
+                origin_path: path.clone(),
+                program: parse_program_with_source_name(path.to_str().unwrap(), source).unwrap(),
+                path,
+                source: (*source).into(),
+            }
+        })
+        .collect::<Vec<_>>();
+    let plan = synthetic_compile_plan_for_source(&units[0].path);
+    let roots = EffectiveCompilationRoots {
+        host: RootEntry { dependency_name: None, source_root: directory.path().into() },
+        dependencies: vec![],
+    };
+    let indexes = units.iter().map(|unit| SyntaxIndex::from_program(&unit.program, generation)).collect::<Vec<_>>();
+    let index = Arc::new(ModuleIndex::build(&units, &indexes, &roots, &plan));
+    let resolved = ResolvedInput {
+        source_path: units[0].path.clone(),
+        source: sources[0].1.into(),
+        compile_plan: Some(plan),
+        prepared_workspace: None,
+        workspace_summary: None,
+        assembly: Some(ProgramAssembly::new(
+            roots,
+            Arc::new(units),
+            0,
+            AssemblyDiscovery::ImportClosure,
+            index,
+            false,
+            generation,
+        )),
+    };
+    let mut db = BeskidDatabase::default();
+    let (_, shared, _) = prepare_compilation_diagnostics_with_db(&mut db, &resolved, PrepareOptions::default(), None)
+        .expect("shared semantic fact authority");
+    let (_, isolated, _) = prepare_compilation_diagnostics_isolated(&resolved, PrepareOptions::default(), None)
+        .expect("isolated semantic fact authority");
+    (shared, isolated)
+}
+
+const HELPER_WITH_UNIMPORTED_TYPE: &str = "pub enum Slot<T> { Filled(T value), Empty() }\npub i64 Run() { Slot<Missing> slot = Slot::Empty(); return 0_i64; }";
+
+/// Design slice 6: a legality finding in a dependency unit reached from the entry surfaces in
+/// `analyze` (the prepare spine) with the same code the lowering gate reports, located in the
+/// dependency unit's own source -- World A never judges dependency bodies.
+#[test]
+fn dependency_unit_legality_finding_surfaces_in_the_prepare_spine() {
+    let (shared, isolated) = fact_authority_diagnostics(
+        &[
+            ("Main.bd", "use Lib.Helper;\ni64 Main() { return Helper.Run(); }"),
+            ("Lib/Helper.bd", HELPER_WITH_UNIMPORTED_TYPE),
+        ],
+        411,
+    );
+    for diagnostics in [&shared, &isolated] {
+        let found =
+            diagnostics.iter().filter(|diagnostic| diagnostic.code.as_deref() == Some("E1201")).collect::<Vec<_>>();
+        assert_eq!(found.len(), 1, "exactly one dependency-unit E1201 expected: {diagnostics:?}");
+        let diagnostic = found[0];
+        assert_eq!(diagnostic.src.name(), "Lib/Helper.bd", "{diagnostic:?}");
+        let offset = diagnostic.span.offset();
+        let excerpt = &HELPER_WITH_UNIMPORTED_TYPE[offset..offset + diagnostic.span.len()];
+        assert!(excerpt.contains("Missing"), "E1201 must point into the helper's source, got `{excerpt}`");
+    }
+}
+
+/// A dependency item nothing in the entry reaches is not judged.
+#[test]
+fn unreachable_dependency_item_is_not_judged_by_the_prepare_spine() {
+    let (shared, isolated) = fact_authority_diagnostics(
+        &[("Main.bd", "use Lib.Helper;\ni64 Main() { return 0_i64; }"), ("Lib/Helper.bd", HELPER_WITH_UNIMPORTED_TYPE)],
+        412,
+    );
+    for diagnostics in [&shared, &isolated] {
+        assert!(!diagnostics.iter().any(|diagnostic| diagnostic.code.as_deref() == Some("E1201")), "{diagnostics:?}");
+    }
+}

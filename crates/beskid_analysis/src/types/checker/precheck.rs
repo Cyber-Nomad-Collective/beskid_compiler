@@ -243,7 +243,7 @@ fn collect_invalid_try_targets_in_expression(
         // `syntax/expressions/expression.rs`) before widening the outer expression span to
         // include the `?` token. The lower-spine full check (`type_try_expression` in
         // `checker/expressions/dispatch.rs`) and the query authority
-        // (`beskid_queries::entry::invalid_try_spans`, via the indexed `TryExpression` node)
+        // (`beskid_queries::entry::semantic_fact_findings`, via the indexed `TryExpression` node)
         // both report that same inner span for the same operator, so this early diagnostic must
         // match it byte-for-byte or `dedupe_diagnostics` (item 2) cannot merge them.
         spans.push(try_expr.span);

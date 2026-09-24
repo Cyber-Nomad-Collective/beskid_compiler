@@ -1,4 +1,4 @@
-//! Public prepare entry points: full, diagnostics-only, isolated, and try-authority variants.
+//! Public prepare entry points: full, diagnostics-only, isolated, and fact-authority variants.
 
 use anyhow::Result;
 use beskid_pipeline::PipelineObserver;
@@ -105,18 +105,31 @@ pub fn prepare_compilation_diagnostics_isolated(
     Ok((spine.prepared, spine.collected_diagnostics, spine.collected_fixes))
 }
 
-/// Inversion seam for a generation-bound semantic owner. The callback consumes
-/// the final rewritten entry and its actual assembly, not a second frontend tree.
-pub type TryDiagnosticAuthority<'a> =
-    dyn FnMut(&ProgramAssembly, &Spanned<crate::syntax::Program>) -> Result<Vec<crate::syntax::SpanInfo>> + 'a;
+/// One positive semantic-fact finding from a generation-bound semantic owner: a registered
+/// diagnostic kind located in one unit of the assembly the spine prepared. `unit` indexes
+/// [`ProgramAssembly::units`]; a finding outside the entry unit renders against that unit's own
+/// source, so `analyze` and the LSP show a dependency-unit error where it is, not in the entry.
+#[derive(Debug, Clone)]
+pub struct SemanticFactFinding {
+    pub kind: crate::analysis::diagnostic_kinds::SemanticIssueKind,
+    pub unit: usize,
+    pub span: crate::syntax::SpanInfo,
+}
 
-pub fn prepare_compilation_with_try_authority(
+/// Inversion seam for a generation-bound semantic owner. The callback consumes the final
+/// rewritten entry and its actual assembly, not a second frontend tree, and returns every
+/// finding its facts produce for the entry's reachable items (invalid `?` targets and the
+/// reachability-scoped legality facts the lowering gate also evaluates).
+pub type SemanticFactAuthority<'a> =
+    dyn FnMut(&ProgramAssembly, &Spanned<crate::syntax::Program>) -> Result<Vec<SemanticFactFinding>> + 'a;
+
+pub fn prepare_compilation_with_fact_authority(
     resolved: &ResolvedInput,
     options: PrepareOptions,
     pipeline: Option<&dyn PipelineObserver>,
     collect_diagnostics: bool,
     isolated: bool,
-    authority: &mut TryDiagnosticAuthority<'_>,
+    authority: &mut SemanticFactAuthority<'_>,
 ) -> Result<(PreparedCompilation, Vec<SemanticDiagnostic>, Vec<SyntaxFix>)> {
     let plan = resolved
         .compile_plan

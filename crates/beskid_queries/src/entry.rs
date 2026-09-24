@@ -77,13 +77,13 @@ pub fn prepare_compilation_with_db(
 ) -> Result<PreparedCompilation> {
     trace_query("prepare_compilation_with_db", false);
     let resolved = assemble_resolved_input_with_db(db, resolved, &options)?;
-    let (result, _, _) = beskid_analysis::services::prepare_compilation_with_try_authority(
+    let (result, _, _) = beskid_analysis::services::prepare_compilation_with_fact_authority(
         &resolved,
         options,
         pipeline,
         false,
         false,
-        &mut |assembly, program| invalid_try_spans(db, Some(&resolved), assembly, program),
+        &mut |assembly, program| semantic_fact_findings(db, Some(&resolved), assembly, program),
     )?;
     touch_from_prepare(&resolved);
     emit_salsa_stats(pipeline);
@@ -98,13 +98,13 @@ pub fn prepare_compilation_diagnostics_with_db(
 ) -> Result<(PreparedCompilation, Vec<SemanticDiagnostic>, Vec<beskid_analysis::SyntaxFix>)> {
     trace_query("prepare_compilation_diagnostics_with_db", false);
     let resolved = assemble_resolved_input_with_db(db, resolved, &options)?;
-    let result = beskid_analysis::services::prepare_compilation_with_try_authority(
+    let result = beskid_analysis::services::prepare_compilation_with_fact_authority(
         &resolved,
         options,
         pipeline,
         true,
         false,
-        &mut |assembly, program| invalid_try_spans(db, Some(&resolved), assembly, program),
+        &mut |assembly, program| semantic_fact_findings(db, Some(&resolved), assembly, program),
     )?;
     if let Some(fp) = session_fingerprint(&resolved) {
         let _ = semantic_snapshot(db, &fingerprint_key(&fp));
@@ -124,17 +124,22 @@ pub fn prepare_compilation_diagnostics_isolated(
     pipeline: Option<&dyn PipelineObserver>,
 ) -> Result<(PreparedCompilation, Vec<SemanticDiagnostic>, Vec<beskid_analysis::SyntaxFix>)> {
     let mut db = BeskidDatabase::default();
-    beskid_analysis::services::prepare_compilation_with_try_authority(
+    beskid_analysis::services::prepare_compilation_with_fact_authority(
         resolved,
         options,
         pipeline,
         true,
         true,
-        &mut |assembly, program| invalid_try_spans(&mut db, None, assembly, program),
+        &mut |assembly, program| semantic_fact_findings(&mut db, None, assembly, program),
     )
 }
 
-/// Collect try expressions that have no generation-bound try fact.
+/// Collect the generation-bound semantic-fact findings of the entry's reachable items: every
+/// try expression of the entry unit that has no try fact (E1222), and every finding of the
+/// reachability-scoped legality gate (`check_items`, the same facts `lower_syntax_program`
+/// evaluates) over the entry unit's function, method, and test items plus the direct-call closure
+/// of each. A dependency-unit finding carries its own unit, so `analyze` and the LSP report it in
+/// that unit's source. Items nothing in the entry reaches are not judged.
 ///
 /// `planned` is the resolved input of a planned project entry on the shared
 /// database. Its syntax is registered under the session that already owns the
@@ -142,15 +147,17 @@ pub fn prepare_compilation_diagnostics_isolated(
 /// LSP/IDE fact queries over the same units find that owner instead of
 /// colliding with a second, unregistered session. Only the isolated, job-local
 /// database passes `None` and lets the assembly mint its own owner.
-fn invalid_try_spans(
+fn semantic_fact_findings(
     db: &mut BeskidDatabase,
     planned: Option<&ResolvedInput>,
     assembly: &beskid_analysis::projects::ProgramAssembly,
     program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
-) -> Result<Vec<beskid_analysis::syntax::SpanInfo>> {
+) -> Result<Vec<beskid_analysis::services::SemanticFactFinding>> {
     use crate::{
         AstNodeKey, IndexedNodeKind, build_typed_program, project_session_for_syntax_assembly, try_expression_fact,
     };
+    use beskid_analysis::analysis::SemanticIssueKind;
+    use beskid_analysis::services::SemanticFactFinding;
     use std::sync::Arc;
     let mut units = assembly.units.as_ref().clone();
     units[assembly.entry_index].program = program.clone();
@@ -179,7 +186,7 @@ fn invalid_try_spans(
     };
     let typed = build_typed_program(db, project, syntax.generation, Arc::clone(&syntax))?;
     let index = syntax.entry_syntax_index();
-    let mut invalid = Vec::new();
+    let mut findings = Vec::new();
     for node in index.ids_of_kind(IndexedNodeKind::TryExpression) {
         let key = AstNodeKey { unit: typed.entry, generation: syntax.generation, node };
         if !matches!(try_expression_fact(db, key), Ok(Some(_))) {
@@ -187,10 +194,52 @@ fn invalid_try_spans(
                 .node_at(program, node)
                 .and_then(|node| node.span())
                 .ok_or_else(|| anyhow::anyhow!("try diagnostic requires its exact source span"))?;
-            invalid.push(span);
+            findings.push(SemanticFactFinding {
+                kind: SemanticIssueKind::TypeInvalidTryTarget,
+                unit: syntax.entry_index,
+                span,
+            });
         }
     }
-    Ok(invalid)
+    let entry_root = AstNodeKey { unit: typed.entry, generation: syntax.generation, node: crate::AstNodeId(0) };
+    let mut items = Vec::new();
+    for kind in
+        [IndexedNodeKind::FunctionDefinition, IndexedNodeKind::MethodDefinition, IndexedNodeKind::TestDefinition]
+    {
+        for node in index.ids_of_kind(kind) {
+            let item = AstNodeKey { node, ..entry_root };
+            // An item whose direct-call closure cannot be traced (an unresolved callee is itself a
+            // legality finding) is still judged on its own body.
+            let reachable = match crate::reachable_items(db, entry_root, item) {
+                Ok(Some(reachable)) => reachable.to_vec(),
+                Ok(None) | Err(_) => vec![item],
+            };
+            for key in reachable {
+                if !items.contains(&key) {
+                    items.push(key);
+                }
+            }
+        }
+    }
+    if let Err(legality) = crate::check_items(db, &items) {
+        let units = syntax
+            .units
+            .iter()
+            .enumerate()
+            .map(|(index, unit)| (crate::SourceUnitId::new(db, unit.path.clone()), index))
+            .collect::<std::collections::HashMap<_, _>>();
+        for finding in legality {
+            let unit = *units
+                .get(&finding.site.unit)
+                .ok_or_else(|| anyhow::anyhow!("legality finding site is outside the prepared assembly"))?;
+            let span = crate::node_span(db, finding.site)
+                .ok()
+                .flatten()
+                .ok_or_else(|| anyhow::anyhow!("legality finding requires its exact source span"))?;
+            findings.push(SemanticFactFinding { kind: finding.kind, unit, span });
+        }
+    }
+    Ok(findings)
 }
 
 pub fn typed_entry_bundle(

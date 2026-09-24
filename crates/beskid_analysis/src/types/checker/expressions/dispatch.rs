@@ -130,7 +130,7 @@ impl<'a> TypeChecker<'a> {
     /// widening the outer `Expression::Try` span to include the `?` token; see
     /// `parse_postfix_expression` in `crates/beskid_analysis/src/syntax/expressions/expression.rs`).
     /// This is deliberately the same span the query-authority path resolves from the indexed
-    /// `TryExpression` node (`crates/beskid_queries/src/entry.rs::invalid_try_spans`) and that
+    /// `TryExpression` node (`crates/beskid_queries/src/entry.rs::semantic_fact_findings`) and that
     /// the precheck walker now reports (`collect_invalid_try_targets_in_expression`,
     /// `collect_try_targets_in_expression`) — all three sites must agree byte-for-byte on the
     /// same span for the same operator, or `dedupe_diagnostics` (item 2) cannot recognize a
