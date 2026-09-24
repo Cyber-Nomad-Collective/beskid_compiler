@@ -239,6 +239,30 @@ fn trusted_intrinsics_are_typed_and_owned_only_by_the_canonical_package() {
 }
 
 #[test]
+fn network_operation_registry_mismatch_is_rejected_before_execution() {
+    for target in supported_targets() {
+        let canonical = AbiManifestV5::canonical_runtime(target);
+        let operation = canonical
+            .trusted_runtime_intrinsics
+            .iter()
+            .find(|intrinsic| intrinsic.name == "network_submit")
+            .expect("canonical network submit operation")
+            .clone();
+
+        let mut missing = canonical.clone();
+        missing.trusted_runtime_intrinsics.retain(|intrinsic| intrinsic.name != operation.name);
+        assert!(matches!(missing.validate(), Err(ManifestValidationError::InvalidRuntimeIntrinsicSet { .. })));
+
+        let mut unregistered = canonical;
+        let mut extra = operation;
+        extra.name = "network_unregistered".into();
+        extra.symbol = "beskid_rt_v5_intrinsic_network_unregistered".into();
+        unregistered.trusted_runtime_intrinsics.push(extra);
+        assert!(matches!(unregistered.validate(), Err(ManifestValidationError::InvalidRuntimeIntrinsicSet { .. })));
+    }
+}
+
+#[test]
 fn runtime_provenance_allows_intrinsics_without_making_them_loader_requirements() {
     let manifest = AbiManifestV5::canonical_runtime(supported_targets()[0].clone());
     let audit = RuntimeAuditMetadata::for_manifest(
