@@ -72,6 +72,7 @@ pub const CORELIB_TYPECHECK_ENTRIES: &[&str] = &[
     "network/ShutdownLeakTests.bd",
     "network/DisposableTests.bd",
     "http/CodecTests.bd",
+    "http/ValidationTests.bd",
     "http/SerializationTests.bd",
     "http/ExchangeTests.bd",
     "text/TextCursorTests.bd",

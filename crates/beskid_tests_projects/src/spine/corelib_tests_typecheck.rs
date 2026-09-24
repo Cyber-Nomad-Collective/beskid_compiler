@@ -151,6 +151,7 @@ corelib_typecheck_test!(network_scope_tests_front_end_typechecks, "network/Scope
 corelib_typecheck_test!(network_shutdown_leak_tests_front_end_typechecks, "network/ShutdownLeakTests.bd");
 corelib_typecheck_test!(network_disposable_tests_front_end_typechecks, "network/DisposableTests.bd");
 corelib_typecheck_test!(http_codec_tests_front_end_typechecks, "http/CodecTests.bd");
+corelib_typecheck_test!(http_validation_tests_front_end_typechecks, "http/ValidationTests.bd");
 corelib_typecheck_test!(http_serialization_tests_front_end_typechecks, "http/SerializationTests.bd");
 corelib_typecheck_test!(http_exchange_tests_front_end_typechecks, "http/ExchangeTests.bd");
 corelib_typecheck_test!(text_cursor_tests_front_end_typechecks, "text/TextCursorTests.bd");
