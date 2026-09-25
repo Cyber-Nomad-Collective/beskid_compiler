@@ -373,12 +373,27 @@ pub fn duration_ms(duration: Duration) -> u64 {
 
 pub fn revision_snapshot(manifest_path: &Path) -> RevisionSnapshot {
     let compiler = Path::new(env!("CARGO_MANIFEST_DIR")).ancestors().nth(2).map(Path::to_path_buf);
-    let root = compiler.as_deref().and_then(Path::parent).map(Path::to_path_buf);
+    let root = compiler.as_deref().and_then(git_superproject_root);
     RevisionSnapshot {
         root: root.as_deref().and_then(git_revision),
         compiler: compiler.as_deref().and_then(git_revision),
         corelib: manifest_path.parent().and_then(git_revision),
     }
+}
+
+fn git_superproject_root(compiler: &Path) -> Option<PathBuf> {
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(compiler)
+        .args(["rev-parse", "--show-superproject-working-tree"])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let path = String::from_utf8_lossy(&output.stdout);
+    let path = path.trim();
+    (!path.is_empty()).then(|| PathBuf::from(path))
 }
 
 fn git_revision(path: &Path) -> Option<RepositorySnapshot> {

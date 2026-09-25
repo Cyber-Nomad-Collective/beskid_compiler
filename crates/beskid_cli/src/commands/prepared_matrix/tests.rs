@@ -1,6 +1,9 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::process::Command;
 
-use super::{MatrixReport, RepositorySnapshot, RevisionSnapshot, TargetReport, TargetResult, WorkerExitCause};
+use super::{
+    MatrixReport, RepositorySnapshot, RevisionSnapshot, TargetReport, TargetResult, WorkerExitCause, revision_snapshot,
+};
 use crate::commands::test::TestSummary;
 
 fn repository(name: &str, clean: bool) -> RepositorySnapshot {
@@ -12,6 +15,26 @@ fn revisions() -> RevisionSnapshot {
         root: Some(repository("root", true)),
         compiler: Some(repository("compiler", true)),
         corelib: Some(repository("corelib", true)),
+    }
+}
+
+#[test]
+fn compiler_worktree_does_not_snapshot_an_unrelated_parent_repository() {
+    let compiler = Path::new(env!("CARGO_MANIFEST_DIR")).ancestors().nth(2).unwrap();
+    let head = Command::new("git").arg("-C").arg(compiler).args(["rev-parse", "HEAD"]).output().unwrap();
+    if !head.status.success() {
+        return;
+    }
+    let superproject = Command::new("git")
+        .arg("-C")
+        .arg(compiler)
+        .args(["rev-parse", "--show-superproject-working-tree"])
+        .output()
+        .unwrap();
+    assert!(superproject.status.success());
+    if String::from_utf8_lossy(&superproject.stdout).trim().is_empty() {
+        let manifest = compiler.join("runtime/beskid/tests/runtime_semantics/runtime_semantics.bproj");
+        assert!(revision_snapshot(&manifest).root.is_none());
     }
 }
 
