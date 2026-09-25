@@ -10,9 +10,10 @@ mod prelude;
 mod service_import_facts;
 
 pub(super) use common::{
-    TEST_CURRENT_TLS, canonical_runtime_test_assembly, function_signature, item_fixture, item_fixture_with_root,
-    test_system_allocate, test_tls_get, test_trap,
+    canonical_runtime_test_assembly, function_signature, item_fixture, item_fixture_with_root,
 };
+#[cfg(any(all(target_os = "linux", target_arch = "x86_64"), all(target_os = "macos", target_arch = "aarch64"),))]
+pub(super) use common::{TEST_CURRENT_TLS, test_system_allocate, test_tls_get, test_trap};
 pub(super) use corelib::{
     assert_args_module_cannot_emit_imports, canonical_corelib_syscall_fixture, canonical_foundation_assert_fixture,
     canonical_foundation_error_fixture, canonical_foundation_output_fixture, core_args_fixture,
@@ -24,12 +25,12 @@ pub(super) use lookup::{
 };
 pub(super) use prelude::{
     AbiManifestV5, Arc, AssemblyDiscovery, AstNodeId, AstNodeKey, BeskidDatabase,
-    CANONICAL_BOOTSTRAP_NATIVE_SOURCE_PATH, CANONICAL_BOOTSTRAP_OBJECTS_SOURCE_PATH,
+    CANONICAL_BOOTSTRAP_NATIVE_SOURCE_PATH,
     CANONICAL_BOOTSTRAP_ROOTS_SOURCE_PATH, CANONICAL_CORELIB_ARGS_SOURCE_PATH, CANONICAL_DYNAMIC_SOURCE_PATH,
     CANONICAL_FOUNDATION_ARRAY_SOURCE_PATH,
     CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH, CANONICAL_FOUNDATION_STRING_CORE_SOURCE_PATH, CastIntent, CodegenInput,
     DirectCallee, EffectiveCompilationRoots, FunctionEmitter, HashMap, ItemModuleImporter, JITBuilder, JITModule,
-    Linkage, Module, ModuleIndex, NodeFacts, NodeKind, Ordering, ProgramAssembly, ProjectSession, RootEntry,
+    Linkage, Module, ModuleIndex, NodeFacts, NodeKind, ProgramAssembly, ProjectSession, RootEntry,
     SourceUnit, SourceUnitId, SyntaxGenerationId, SyntaxIndex, SyntaxModuleItem, TargetMetadata, UserFuncName,
     aggregate_field_access, build_canonical_runtime_typed_program, build_typed_program,
     build_typed_program_with_corelib_services, call_abi_signature, call_lowering, canonical_corelib_service_capability,
@@ -40,4 +41,8 @@ pub(super) use prelude::{
     mutable_local_assignment, node_kind, node_type, parse_program_with_source_name, settings, spawn_target,
     test_statement_nodes, typed_array_allocation, types,
 };
+#[cfg(any(all(target_os = "linux", target_arch = "x86_64"), all(target_os = "macos", target_arch = "aarch64"),))]
+pub(super) use prelude::Ordering;
+#[cfg(any(all(target_os = "linux", target_arch = "x86_64"), all(target_os = "macos", target_arch = "aarch64"),))]
+pub(super) use prelude::CANONICAL_BOOTSTRAP_OBJECTS_SOURCE_PATH;
 pub(super) use service_import_facts::CorelibServiceImportFacts;

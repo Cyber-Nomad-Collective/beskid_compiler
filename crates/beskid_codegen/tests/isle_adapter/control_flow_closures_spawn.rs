@@ -1,13 +1,19 @@
 use super::support::{
     AbiManifestV5, Arc, AstNodeId, AstNodeKey, BeskidDatabase, CANONICAL_BOOTSTRAP_NATIVE_SOURCE_PATH,
-    CANONICAL_BOOTSTRAP_OBJECTS_SOURCE_PATH, CANONICAL_BOOTSTRAP_ROOTS_SOURCE_PATH, CodegenInput, DirectCallee,
-    JITBuilder, JITModule, Linkage, NodeFacts, Ordering, ProjectSession, SourceUnitId, SyntaxGenerationId,
-    SyntaxModuleItem, TEST_CURRENT_TLS, TargetMetadata, build_canonical_runtime_typed_program,
+    CANONICAL_BOOTSTRAP_ROOTS_SOURCE_PATH, CodegenInput,
+    JITBuilder, JITModule, Linkage, NodeFacts, ProjectSession, SourceUnitId, SyntaxGenerationId,
+    SyntaxModuleItem, TargetMetadata, build_canonical_runtime_typed_program,
     canonical_runtime_intrinsic_capability, canonical_runtime_test_assembly, default_libcall_names,
     emit_closure_static_data, emit_isle_item, emit_syntax_program, find_definition_of_kind, find_function_definition,
     find_function_definitions, find_node, find_nodes_of_kind, isa, item_fixture, item_fixture_with_root, item_name,
-    lower_syntax_program, settings, test_system_allocate, test_tls_get, test_trap,
+    lower_syntax_program, settings,
 };
+#[cfg(any(all(target_os = "linux", target_arch = "x86_64"), all(target_os = "macos", target_arch = "aarch64"),))]
+use super::support::{
+    CANONICAL_BOOTSTRAP_OBJECTS_SOURCE_PATH, DirectCallee, Ordering, TEST_CURRENT_TLS, test_system_allocate,
+    test_tls_get, test_trap,
+};
+#[cfg(any(all(target_os = "linux", target_arch = "x86_64"), all(target_os = "macos", target_arch = "aarch64"),))]
 use beskid_abi::runtime_source::{CANONICAL_GC_ALLOCATION_SOURCE_PATH, canonical_runtime_sources};
 
 #[cfg(any(all(target_os = "linux", target_arch = "x86_64"), all(target_os = "macos", target_arch = "aarch64"),))]

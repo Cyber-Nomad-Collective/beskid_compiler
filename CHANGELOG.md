@@ -88,6 +88,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Gate Unix-only codegen JIT test helpers and imports consistently so the
+  `isle_adapter` test target compiles and runs on Windows without warnings.
+
 - Report canonical opaque `Core.Time.Deadline` literal misuse as a coded
   member diagnostic before layout lowering: E1211 for a supplied private field
   and E1212 when the required private field is omitted. Lookalike types retain

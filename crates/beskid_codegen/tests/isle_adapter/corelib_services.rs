@@ -1,13 +1,15 @@
 use super::support::{
     AbiManifestV5, Arc, AssemblyDiscovery, AstNodeId, AstNodeKey, BeskidDatabase,
     CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH, CANONICAL_FOUNDATION_STRING_CORE_SOURCE_PATH, CodegenInput,
-    EffectiveCompilationRoots, ModuleIndex, NodeKind, ProgramAssembly, ProjectSession, RootEntry, SourceUnit,
-    SourceUnitId, SyntaxGenerationId, SyntaxIndex, SyntaxModuleItem, TargetMetadata,
+    EffectiveCompilationRoots, ModuleIndex, ProgramAssembly, ProjectSession, RootEntry, SourceUnit, SourceUnitId,
+    SyntaxGenerationId, SyntaxModuleItem, TargetMetadata,
     build_typed_program_with_corelib_services, call_abi_signature, call_lowering, canonical_corelib_service_capability,
     canonical_corelib_service_source_path, canonical_foundation_assert_fixture, enum_layout, find_call_expression,
     find_corelib_service_call, find_definition_of_kind, find_function_definitions, include_imported_corelib_modules,
     isa, item_fixture_with_root, item_name, lower_syntax_program, parse_program_with_source_name, settings,
 };
+#[cfg(unix)]
+use super::support::{NodeKind, SyntaxIndex};
 
 fn network_internal_panic_fixture(
     copied: bool,

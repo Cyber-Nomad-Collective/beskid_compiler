@@ -1,10 +1,12 @@
 use super::lookup::find_function_definition;
 use super::prelude::{
-    AbiManifestV5, Arc, AssemblyDiscovery, AstNodeId, AstNodeKey, AtomicUsize, BeskidDatabase,
-    CANONICAL_BOOTSTRAP_SOURCE_PATH, CodegenInput, EffectiveCompilationRoots, ModuleIndex, Ordering, ProgramAssembly,
+    AbiManifestV5, Arc, AssemblyDiscovery, AstNodeId, AstNodeKey, BeskidDatabase, CANONICAL_BOOTSTRAP_SOURCE_PATH,
+    CodegenInput, EffectiveCompilationRoots, ModuleIndex, ProgramAssembly,
     ProjectSession, RootEntry, SourceUnit, SourceUnitId, SyntaxGenerationId, TargetMetadata, build_typed_program,
     canonical_runtime_sources, isa, parse_program_with_source_name, settings,
 };
+#[cfg(any(all(target_os = "linux", target_arch = "x86_64"), all(target_os = "macos", target_arch = "aarch64"),))]
+use super::prelude::{AtomicUsize, Ordering};
 
 #[cfg(any(all(target_os = "linux", target_arch = "x86_64"), all(target_os = "macos", target_arch = "aarch64"),))]
 pub(in super::super) unsafe extern "C" fn test_system_allocate(size: usize, alignment: usize) -> *mut u8 {

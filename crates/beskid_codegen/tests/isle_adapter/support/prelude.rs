@@ -5,7 +5,7 @@ pub(in super::super) use std::sync::atomic::{AtomicUsize, Ordering};
 
 pub(in super::super) use beskid_abi::abi_v5::{AbiManifestV5, TargetMetadata};
 pub(in super::super) use beskid_abi::runtime_source::{
-    CANONICAL_BOOTSTRAP_NATIVE_SOURCE_PATH, CANONICAL_BOOTSTRAP_OBJECTS_SOURCE_PATH,
+    CANONICAL_BOOTSTRAP_NATIVE_SOURCE_PATH,
     CANONICAL_BOOTSTRAP_ROOTS_SOURCE_PATH, CANONICAL_BOOTSTRAP_SOURCE_PATH, CANONICAL_CORELIB_ARGS_SOURCE_PATH,
     CANONICAL_DYNAMIC_SOURCE_PATH,
     CANONICAL_CORELIB_SYSCALL_SOURCE_PATH, CANONICAL_FOUNDATION_ARRAY_SOURCE_PATH,
@@ -13,6 +13,8 @@ pub(in super::super) use beskid_abi::runtime_source::{
     canonical_corelib_service_capability, canonical_corelib_service_source_path, canonical_corelib_service_sources,
     canonical_corelib_syscall_sources, canonical_runtime_intrinsic_capability, canonical_runtime_sources,
 };
+#[cfg(any(all(target_os = "linux", target_arch = "x86_64"), all(target_os = "macos", target_arch = "aarch64"),))]
+pub(in super::super) use beskid_abi::runtime_source::CANONICAL_BOOTSTRAP_OBJECTS_SOURCE_PATH;
 pub(in super::super) use beskid_analysis::projects::{
     AssemblyDiscovery, EffectiveCompilationRoots, ModuleIndex, ProgramAssembly, RootEntry, SourceUnit,
 };
