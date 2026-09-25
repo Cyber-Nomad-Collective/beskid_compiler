@@ -375,6 +375,7 @@ size_t beskid_rt_v5_external_wait_park(size_t token);
 uint8_t beskid_rt_v5_external_wait_post(size_t owner, size_t token, size_t source);
 size_t beskid_rt_v5_external_wait_register(size_t fiber_handle, size_t operation, int64_t deadline);
 uint8_t beskid_rt_v5_external_wait_release(size_t token);
+uint8_t beskid_rt_v5_external_wait_set_deadline(size_t token, int64_t deadline);
 void beskid_rt_v5_fiber_yield(void);
 uint8_t beskid_rt_v5_heap_set_cap(size_t bytes);
 void * beskid_rt_v5_managed_object_allocate(void * request);

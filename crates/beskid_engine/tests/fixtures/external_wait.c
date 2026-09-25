@@ -455,6 +455,83 @@ static void timer_heap(void) {
     assert(timer_finished == 12 && memcmp(timer_order, expected, sizeof(expected)) == 0);
 }
 
+static void *deadline_rekey_entry(void *argument) {
+    uintptr_t handle = fiber_current_id();
+    int64_t base = clock_monotonic_nanos() + 10000000000;
+    uintptr_t current = beskid_rt_v5_external_wait_register(handle, 9, -1);
+    assert(current && beskid_rt_v5_external_active_count() == 1);
+    assert(beskid_rt_v5_external_wait_set_deadline(current, base + 10));
+    assert(beskid_rt_v5_external_wait_set_deadline(current, base));
+    assert(!beskid_rt_v5_external_wait_set_deadline(current, -2));
+    beskid_rt_v5_external_pump(base - 1);
+    assert(beskid_rt_v5_external_active_count() == 1);
+    assert(beskid_rt_v5_external_wait_set_deadline(current, -1));
+    beskid_rt_v5_external_pump(base + 10);
+    assert(beskid_rt_v5_external_active_count() == 1);
+    assert(beskid_rt_v5_external_wait_post(owner, current, 1));
+    beskid_rt_v5_external_pump(-1);
+    assert(beskid_rt_v5_external_wait_park(current) == 1);
+    assert(!beskid_rt_v5_external_wait_set_deadline(current, 0));
+    assert(beskid_rt_v5_external_wait_release(current));
+
+    uintptr_t invalid = beskid_rt_v5_external_wait_register(handle, 9, base);
+    assert(invalid && beskid_rt_v5_external_active_count() == 1);
+    assert(!beskid_rt_v5_external_wait_set_deadline(invalid, -2));
+    beskid_rt_v5_external_pump(base);
+    assert(beskid_rt_v5_external_wait_park(invalid) == 4);
+    assert(beskid_rt_v5_external_active_count() == 0);
+    assert(beskid_rt_v5_external_wait_release(invalid));
+
+    uintptr_t stale = current;
+    current = beskid_rt_v5_external_wait_register(handle, 9, -1);
+    assert(current && current != stale && beskid_rt_v5_external_active_count() == 1);
+    assert(!beskid_rt_v5_external_wait_set_deadline(stale, 0));
+    assert(beskid_rt_v5_external_active_count() == 1);
+    assert(beskid_rt_v5_external_wait_set_deadline(current, 0));
+    assert(beskid_rt_v5_external_wait_park(current) == 4);
+    assert(beskid_rt_v5_external_active_count() == 0);
+    assert(beskid_rt_v5_external_wait_release(current));
+    return argument;
+}
+
+static uintptr_t rekey_tokens[3];
+static size_t rekey_started, rekey_finished, rekey_order[3];
+static int64_t rekey_base;
+static void *rekey_waiter_entry(void *argument) {
+    size_t index = rekey_started++;
+    const int offsets[] = {30, 10, 20};
+    uintptr_t current = beskid_rt_v5_external_wait_register(fiber_current_id(), 9, rekey_base + offsets[index]);
+    assert(current);
+    rekey_tokens[index] = current;
+    assert(beskid_rt_v5_external_wait_park(current) == 4);
+    rekey_order[rekey_finished++] = index;
+    assert(beskid_rt_v5_external_wait_release(current));
+    return argument;
+}
+static void *rekey_controller_entry(void *argument) {
+    assert(rekey_started == 3 && beskid_rt_v5_external_active_count() == 3);
+    assert(beskid_rt_v5_external_wait_set_deadline(rekey_tokens[0], rekey_base + 5));
+    beskid_rt_v5_external_pump(rekey_base + 5);
+    assert(beskid_rt_v5_external_active_count() == 2);
+    beskid_rt_v5_external_pump(rekey_base + 10);
+    assert(beskid_rt_v5_external_active_count() == 1);
+    beskid_rt_v5_external_pump(rekey_base + 20);
+    assert(beskid_rt_v5_external_active_count() == 0);
+    return argument;
+}
+static void deadline_rekey(void) {
+    join_success(fiber_spawn((void *)deadline_rekey_entry, value));
+    rekey_started = rekey_finished = 0;
+    rekey_base = clock_monotonic_nanos() + 10000000000;
+    int64_t waiters[3];
+    for (size_t i = 0; i < 3; ++i) waiters[i] = fiber_spawn((void *)rekey_waiter_entry, value);
+    int64_t controller = fiber_spawn((void *)rekey_controller_entry, value);
+    for (size_t i = 0; i < 3; ++i) join_success(waiters[i]);
+    join_success(controller);
+    const size_t expected[] = {0, 1, 2};
+    assert(rekey_finished == 3 && memcmp(rekey_order, expected, sizeof(expected)) == 0);
+}
+
 static int64_t timer_winner_handle;
 static uintptr_t timer_winner_token, timer_winner_source;
 static int64_t timer_winner_deadline;
@@ -621,6 +698,7 @@ EXTERNAL_WAIT_EXPORT int RunExternalWaitFixture(TryComplete complete, int deadlo
     join_success(fiber_spawn((void *)timer_reuse_entry, value));
     join_success(fiber_spawn((void *)timer_entry, value));
     timer_heap();
+    deadline_rekey();
     fixture_pipe_open(descriptors);
     publish = 0;
     FixtureThread writer;
