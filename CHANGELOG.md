@@ -88,6 +88,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Reject a symlinked materialized Corelib service file at its lexical origin,
+  even when the semantic unit key resolves to a regular target. Keep exact
+  service authority for loader-proven paths under macOS `/var` parent aliases.
+
 - Preserve exact specialized enum-pattern payload identity for generic Result
   matches, including imported nominal errors and nested error matches, so
   generated ISLE retains both payload ABI and managed ownership without HIR.

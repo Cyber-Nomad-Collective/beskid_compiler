@@ -94,13 +94,12 @@ pub(in super::super) fn materialized_corelib_syscall_fixture()
                 source_root: directory.join("obj/beskid/deps/src/foundation"),
             }],
         },
-        units: Arc::new(vec![SourceUnit {
-            logical_name: source_path.display().to_string(),
-            origin_path: source_path.clone(),
-            path: source_path.clone(),
-            source: source.source,
-            program: program.clone(),
-        }]),
+        units: Arc::new(vec![SourceUnit::bind_request(
+            source_path.clone(),
+            source_path.display().to_string(),
+            source.source,
+            program.clone(),
+        )]),
         syntax_indexes: Arc::new(vec![SyntaxIndex::from_program(&program, generation)]),
         generation,
         entry_index: 0,
@@ -156,13 +155,12 @@ pub(in super::super) fn core_args_fixture(
     let generation = SyntaxGenerationId(98);
     let mut roots =
         EffectiveCompilationRoots { host: RootEntry { dependency_name: None, source_root }, dependencies: Vec::new() };
-    let mut units = vec![SourceUnit {
-        logical_name: CANONICAL_CORELIB_ARGS_SOURCE_PATH.into(),
-        origin_path: source_path.clone(),
-        path: source_path,
+    let mut units = vec![SourceUnit::bind_request(
+        source_path,
+        CANONICAL_CORELIB_ARGS_SOURCE_PATH.into(),
         source,
         program,
-    }];
+    )];
     include_imported_corelib_modules(&mut units, &mut roots);
     let syntax_indexes = units.iter().map(|unit| SyntaxIndex::from_program(&unit.program, generation)).collect();
     let assembly = ProgramAssembly {

@@ -314,7 +314,9 @@ fn exact_compiler_owned_corelib_unit<'a>(
                     .any(|trusted| corelib_source_locations_match(&unit.origin_path, trusted)
                         && trusted.canonicalize().is_ok_and(|path| path == unit.path));
             authorized_path
-                && std::fs::symlink_metadata(&unit.path)
+                // `unit.path` is the resolved semantic key. Inspect the request origin so a
+                // symlinked materialized file cannot inherit the target's service authority.
+                && std::fs::symlink_metadata(&unit.origin_path)
                     .is_ok_and(|metadata| metadata.file_type().is_file() && !metadata.file_type().is_symlink())
         })
         .collect::<Vec<_>>();

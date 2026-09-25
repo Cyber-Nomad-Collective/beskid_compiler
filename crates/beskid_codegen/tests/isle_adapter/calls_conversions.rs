@@ -348,6 +348,35 @@ fn trusted_materialized_foundation_args_module_emits_authorized_args_imports() {
 
 #[cfg(unix)]
 #[test]
+fn materialized_foundation_args_through_parent_alias_retains_authorized_imports() {
+    let source = canonical_corelib_service_sources()
+        .into_iter()
+        .find(|source| source.logical_path == CANONICAL_CORELIB_ARGS_SOURCE_PATH)
+        .expect("embedded Core.Args source");
+    let directory = tempfile::tempdir().expect("materialized Core.Args project");
+    let physical_root = directory.path().join("physical");
+    let alias_root = directory.path().join("alias");
+    let physical_source = physical_root.join("obj/beskid/deps/src/foundation/Core/Args/Args.bd");
+    std::fs::create_dir_all(physical_source.parent().expect("Core.Args parent"))
+        .expect("create Core.Args parent");
+    std::fs::write(&physical_source, &source.source).expect("write copied Core.Args source");
+    std::os::unix::fs::symlink(&physical_root, &alias_root).expect("alias materialized parent");
+    let lexical_source = alias_root.join("obj/beskid/deps/src/foundation/Core/Args/Args.bd");
+    let (input, isa, root) =
+        core_args_fixture(lexical_source.clone(), source.source, Arc::from([lexical_source]));
+
+    let artifact = lower_syntax_program(
+        &input,
+        isa.as_ref(),
+        &[SyntaxModuleItem { key: named_function(&input, root, "ProgramName"), symbol: "ProgramName".into() }],
+    )
+    .expect("loader-proven Core.Args must retain its imports across a parent path alias");
+    assert!(artifact.extern_imports.iter().any(|import| import.symbol == "beskid_rt_v5_args_count"));
+    assert!(artifact.extern_imports.iter().any(|import| import.symbol == "beskid_rt_v5_args_get"));
+}
+
+#[cfg(unix)]
+#[test]
 fn symlinked_expected_materialized_foundation_args_module_cannot_emit_args_imports() {
     let source = canonical_corelib_service_sources()
         .into_iter()
