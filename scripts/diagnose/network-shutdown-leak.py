@@ -44,9 +44,9 @@ def main() -> int:
 
     output = result.stdout + result.stderr
     diagnostics = list(DIAGNOSTIC.finditer(output))
-    if result.returncode == 0 or len(diagnostics) != 1:
+    if result.returncode != 101 or len(diagnostics) != 1:
         print(
-            f"expected one pending-accept shutdown diagnostic and a nonzero process exit; "
+            f"expected one pending-accept shutdown diagnostic and exit 101; "
             f"got exit {result.returncode} and {len(diagnostics)} matching lines",
             file=sys.stderr,
         )
