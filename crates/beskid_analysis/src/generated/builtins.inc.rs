@@ -778,7 +778,7 @@ define_builtins! {
     },
     &["network_report_leak"] => {
         symbol: "beskid_rt_v5_intrinsic_network_report_leak",
-        params: [Usize, Usize, Usize, Usize],
+        params: [Usize, Usize, Usize, Usize, Usize, Usize, Usize],
         returns: Unit,
         injected: true,
     },
