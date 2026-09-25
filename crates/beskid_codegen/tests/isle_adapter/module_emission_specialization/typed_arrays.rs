@@ -33,7 +33,7 @@ fn canonical_generic_array_operations_preserve_concrete_types_through_nested_cal
         .into_iter()
         .find(|source| source.logical_path == CANONICAL_FOUNDATION_ARRAY_SOURCE_PATH)
         .expect("embedded Array source");
-    assert_eq!(embedded.source.as_ref(), array_source);
+    assert_eq!(embedded.source.as_str(), array_source.as_str());
     assert_eq!(
         canonical_corelib_service_source_path(CANONICAL_FOUNDATION_ARRAY_SOURCE_PATH).as_deref(),
         Some(array_path.as_path())
