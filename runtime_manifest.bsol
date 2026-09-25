@@ -323,6 +323,7 @@ layout "BeskidNetworkRequest" { size = 88 alignment = 8 project_to_runtime = con
 export "beskid_rt_v5_external_owner_id" { params = [] returns = usize }
 export "beskid_rt_v5_external_active_count" { params = [] returns = usize }
 export "beskid_rt_v5_external_wait_register" { params = [{ name = fiber_handle, type = usize }, { name = operation, type = usize }, { name = deadline, type = i64 }] returns = usize }
+export "beskid_rt_v5_external_wait_set_deadline" { params = [{ name = token, type = usize }, { name = deadline, type = i64 }] returns = u8 }
 export "beskid_rt_v5_external_try_complete" { params = [{ name = wait_id, type = usize }, { name = generation, type = usize }, { name = source, type = usize }] returns = u8 }
 export "beskid_rt_v5_external_wait_post" { params = [{ name = owner, type = usize }, { name = token, type = usize }, { name = source, type = usize }] returns = u8 }
 export "beskid_rt_v5_external_wait_park" { params = [{ name = token, type = usize }] returns = usize }

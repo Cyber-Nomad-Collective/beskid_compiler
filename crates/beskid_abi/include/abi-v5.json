@@ -350,6 +350,20 @@
       "result": "u8"
     },
     {
+      "symbol": "beskid_rt_v5_external_wait_set_deadline",
+      "params": [
+        {
+          "name": "token",
+          "type": "usize"
+        },
+        {
+          "name": "deadline",
+          "type": "i64"
+        }
+      ],
+      "result": "u8"
+    },
+    {
       "symbol": "beskid_rt_v5_fiber_yield",
       "params": [],
       "result": "void"

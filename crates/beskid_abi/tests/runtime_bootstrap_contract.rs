@@ -167,6 +167,7 @@ fn canonical_contract_has_the_exact_lifecycle_closure_and_trap_exports() {
                 AbiType::USize
             ),
             ("beskid_rt_v5_external_wait_release", &[AbiType::USize][..], AbiType::U8),
+            ("beskid_rt_v5_external_wait_set_deadline", &[AbiType::USize, AbiType::I64][..], AbiType::U8),
             ("beskid_rt_v5_fiber_yield", &[][..], AbiType::Void,),
             ("beskid_rt_v5_heap_set_cap", &[AbiType::USize][..], AbiType::U8,),
             ("beskid_rt_v5_managed_object_allocate", &[AbiType::Pointer][..], AbiType::Pointer,),
