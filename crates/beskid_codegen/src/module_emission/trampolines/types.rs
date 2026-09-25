@@ -27,6 +27,7 @@ pub(in crate::module_emission) struct LambdaTrampoline {
     pub(in crate::module_emission) lambda: AstNodeKey,
     pub(in crate::module_emission) lambda_body: AstNodeKey,
     pub(in crate::module_emission) target_signature: Signature,
+    pub(in crate::module_emission) parameters: Vec<beskid_isle::ParameterSlot>,
     pub(in crate::module_emission) closure_captures: Option<Vec<beskid_isle::InlineCaptureField>>,
     pub(in crate::module_emission) symbol: String,
 }

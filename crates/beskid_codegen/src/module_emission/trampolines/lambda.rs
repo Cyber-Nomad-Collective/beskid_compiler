@@ -1,7 +1,10 @@
 use std::collections::{HashMap, HashSet};
 
-use beskid_isle::{AstNodeKey, DirectCallee};
-use beskid_queries::{child_nodes, closure_environment, closure_signature, node_kind};
+use beskid_isle::{AstNodeKey, DirectCallee, LocalSlotId, ManagedReferenceFact, ParameterSlot};
+use beskid_queries::{
+    ManagedReferenceKind, child_nodes, closure_environment, closure_signature, local_slot, managed_reference_kind,
+    node_kind,
+};
 use cranelift_codegen::ir::AbiParam;
 use cranelift_codegen::isa::TargetIsa;
 
@@ -34,16 +37,38 @@ pub(in crate::module_emission) fn resolve_lambda_trampolines(
         else {
             continue;
         };
-        let Some(mut signature) = signature_for_item(isa, lambda_sig.callable) else {
+        let Some(mut signature) = signature_for_item(isa, lambda_sig.callable.clone()) else {
             continue;
         };
+        let Some(environment) =
+            closure_environment(db, lambda).map_err(|error| emission_verification(error.to_string()))?
+        else {
+            continue;
+        };
+        if environment.parameters.len() != lambda_sig.callable.parameters.len() {
+            return Err(emission_verification("lambda parameter facts do not match its callable signature"));
+        }
+        let parameters = environment
+            .parameters
+            .iter()
+            .copied()
+            .zip(lambda_sig.callable.parameters.iter().copied())
+            .map(|(parameter, semantic)| {
+                let slot = local_slot(db, parameter).ok().flatten()?;
+                let managed_reference = match managed_reference_kind(db, parameter).ok().flatten()? {
+                    ManagedReferenceKind::GcManaged => ManagedReferenceFact::GcManaged,
+                    ManagedReferenceKind::NativeOrScalar => ManagedReferenceFact::NativeOrScalar,
+                };
+                Some(ParameterSlot {
+                    slot: LocalSlotId { owner_node: slot.owner.node.0, index: slot.index },
+                    value_type: map_signature_type(isa, semantic)?,
+                    managed_reference,
+                })
+            })
+            .collect::<Option<Vec<_>>>()
+            .ok_or_else(|| emission_verification("lambda parameter slot or type is unavailable"))?;
         // Collect closure captures if present.
         let closure_captures = {
-            let Some(environment) =
-                closure_environment(db, lambda).map_err(|error| emission_verification(error.to_string()))?
-            else {
-                continue;
-            };
             if environment.captures.is_empty() {
                 None
             } else {
@@ -80,6 +105,7 @@ pub(in crate::module_emission) fn resolve_lambda_trampolines(
             lambda,
             lambda_body: lambda_sig.body,
             target_signature: signature,
+            parameters,
             closure_captures,
             symbol,
         });

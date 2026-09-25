@@ -8,7 +8,7 @@ use crate::context::{
     materialize_parameters,
 };
 use crate::errors::FunctionEmissionError;
-use crate::facts::{AstNodeKey, InlineCaptureField, ManagedReferenceFact, NodeFacts};
+use crate::facts::{AstNodeKey, InlineCaptureField, ManagedReferenceFact, NodeFacts, ParameterSlot};
 
 /// Parsed item inputs for statement-oriented ISLE emission.
 pub struct ItemStatementEmission<'a> {
@@ -96,19 +96,27 @@ impl<'isa> FunctionEmitter<'isa> {
         self.emit_expression_inner(name, signature, facts, body, None, Some(call_importer))
     }
 
-    /// Emit a capturing lambda entry `(environment) -> result` that materializes capture locals
-    /// from the ABI-v5 environment before lowering the body through generated ISLE.
+    /// Emit a lambda entry, binding source parameters and any captured locals before lowering its
+    /// body through generated ISLE.
     pub fn emit_closure_lambda_entry_with_call_importer(
         &self,
         name: UserFuncName,
         result: Option<Type>,
         facts: &dyn NodeFacts,
         body: AstNodeKey,
-        captures: &[InlineCaptureField],
+        parameters: &[ParameterSlot],
+        captures: Option<&[InlineCaptureField]>,
         call_importer: &mut dyn CallImporter,
     ) -> Result<Function, FunctionEmissionError> {
         let pointer = self.isa.pointer_type();
-        let signature = self.signature([pointer], result);
+        let signature = self.signature(
+            captures
+                .as_ref()
+                .map(|_| pointer)
+                .into_iter()
+                .chain(parameters.iter().map(|parameter| parameter.value_type)),
+            result,
+        );
         let mut function = Function::with_name_signature(name, signature);
         let mut builder_context = FunctionBuilderContext::new();
         {
@@ -117,21 +125,33 @@ impl<'isa> FunctionEmitter<'isa> {
             builder.append_block_params_for_function_params(entry);
             builder.switch_to_block(entry);
             builder.seal_block(entry);
-            let environment = builder.block_params(entry)[0];
+            let incoming = builder.block_params(entry).to_vec();
             let value = {
                 let mut context =
                     IsleContext::new_with_call_importer(&mut builder, facts, call_importer, self.isa.frontend_config());
-                for capture in captures {
-                    let address = context.builder.ins().iadd_imm_s(environment, i64::from(capture.field_offset));
-                    let value = context.builder.ins().load(capture.value_type, MemFlagsData::new(), address, 0);
-                    let managed_reference = if capture.pointer_map_index.is_some() {
-                        ManagedReferenceFact::GcManaged
-                    } else {
-                        ManagedReferenceFact::NativeOrScalar
-                    };
+                if let Some(captures) = captures {
+                    let environment = incoming[0];
+                    for capture in captures {
+                        let address = context.builder.ins().iadd_imm_s(environment, i64::from(capture.field_offset));
+                        let value = context.builder.ins().load(capture.value_type, MemFlagsData::new(), address, 0);
+                        let managed_reference = if capture.pointer_map_index.is_some() {
+                            ManagedReferenceFact::GcManaged
+                        } else {
+                            ManagedReferenceFact::NativeOrScalar
+                        };
+                        context
+                            .bind_local(capture.local_slot, value, capture.value_type, managed_reference)
+                            .ok_or_else(|| {
+                                FunctionEmissionError::verification(body, "closure capture root is invalid")
+                            })?;
+                    }
+                }
+                for (parameter, value) in parameters.iter().zip(incoming.iter().skip(usize::from(captures.is_some()))) {
                     context
-                        .bind_local(capture.local_slot, value, capture.value_type, managed_reference)
-                        .ok_or_else(|| FunctionEmissionError::verification(body, "closure capture root is invalid"))?;
+                        .bind_local(parameter.slot, *value, parameter.value_type, parameter.managed_reference)
+                        .ok_or_else(|| {
+                            FunctionEmissionError::verification(body, "lambda parameter slot or type is invalid")
+                        })?;
                 }
                 let value = if result.is_some() {
                     Some(lower_expression(&mut context, body).map_err(FunctionEmissionError::Lowering)?)

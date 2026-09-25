@@ -45,5 +45,6 @@ pub use emit::{
     emit_isle_item_with_call_importer, emit_isle_item_with_services, emit_isle_item_with_services_specialization,
     syntax_item_signature,
 };
+pub(crate) use emit::emit_isle_lambda_entry;
 pub use importer::ItemModuleImporter;
 use mappings::*;

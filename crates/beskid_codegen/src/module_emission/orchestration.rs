@@ -31,6 +31,7 @@ use crate::{
     CodegenArtifact, CodegenContext, CodegenInput, ExternImport, emit_isle_closure_lambda_entry,
     emit_isle_expression_with_call_importer, emit_isle_item_with_services, emit_isle_item_with_services_specialization,
 };
+use crate::isle_adapter::emit_isle_lambda_entry;
 
 const ABI_V5_SCHEDULER_STACK_CHECK: &str = "beskid_rt_v5_scheduler_stack_check";
 const ABI_V5_SCHEDULER_STACK_OVERFLOW_OBSERVED: &str = "beskid_rt_v5_scheduler_stack_overflow_observed";
@@ -266,13 +267,16 @@ fn lower_resolved_syntax_program(
         };
         let function = {
             let mut importer = ArtifactCallImporter { symbols: &symbols };
-            if let Some(captures) = &trampoline.closure_captures {
-                emit_isle_closure_lambda_entry(input, isa, trampoline.lambda_body, result, captures, &mut importer)
-                    .map_err(|error| emission_error(input, error))?
-            } else {
-                emit_isle_expression_with_call_importer(input, isa, trampoline.lambda_body, result, &mut importer)
-                    .map_err(|error| emission_error(input, error))?
-            }
+            emit_isle_lambda_entry(
+                input,
+                isa,
+                trampoline.lambda_body,
+                result,
+                &trampoline.parameters,
+                trampoline.closure_captures.as_deref(),
+                &mut importer,
+            )
+            .map_err(|error| emission_error(input, error))?
         };
         functions.push(crate::LoweredFunction { name: trampoline.symbol.clone(), function });
     }

@@ -162,6 +162,34 @@ fn parsed_project_nested_direct_calls_reach_verified_clif() {
 }
 
 #[test]
+fn parsed_project_stored_two_parameter_lambda_reaches_verified_clif() {
+    let project = tempfile::tempdir().expect("project directory");
+    let source = "i32 Main() { let add = (i32 x, i32 y) => x + y; return add(6, 7); }";
+    let assembly = parse_production_units(project.path(), &[("Main.bd", "Main", source)]);
+    let (target, isa) = x86_64_target_and_isa();
+
+    let lowered = lower_verified_entrypoint(assembly, target, isa.as_ref());
+    let main = lowered
+        .artifact
+        .functions
+        .iter()
+        .find(|function| function.name.starts_with("Main#syntax_"))
+        .expect("Main artifact function");
+    let clif = main.function.display().to_string();
+    assert!(clif.contains("iconst.i32 6"), "{clif}");
+    assert!(clif.contains("iconst.i32 7"), "{clif}");
+    assert!(clif.contains("iadd"), "{clif}");
+    let lambda = lowered
+        .artifact
+        .functions
+        .iter()
+        .find(|function| function.name.starts_with("__beskid_lambda_entry_syntax_"))
+        .expect("freestanding lambda entry");
+    assert_eq!(lambda.function.signature.params.len(), 2, "both source parameters enter the lambda entry");
+    assert!(lambda.function.display().to_string().contains("iadd"), "lambda body must add its bound parameters");
+}
+
+#[test]
 fn unsupported_lambda_fails_closed_without_legacy_fallback() {
     let project = tempfile::tempdir().expect("project directory");
     let source = "
