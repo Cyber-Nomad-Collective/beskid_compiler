@@ -28,10 +28,10 @@ def contract_facts(path: Path) -> tuple[str, int]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--repo", type=Path, default=Path(__file__).resolve().parents[2])
+    parser.add_argument("--repo", type=Path)
     parser.add_argument("--target-dir", type=Path)
     args = parser.parse_args()
-    repo = args.repo.resolve()
+    repo = (args.repo or Path(__file__).resolve().parent.parent.parent).resolve()
     target_dir = (args.target_dir or repo / "target").resolve()
     canonical = repo / CONTRACT
     canonical_hash, canonical_count = contract_facts(canonical)

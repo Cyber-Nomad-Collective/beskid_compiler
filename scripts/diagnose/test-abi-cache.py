@@ -2,6 +2,7 @@
 """Contract-variant detection without a real Cargo target directory."""
 
 import json
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -27,8 +28,10 @@ class AbiCacheTests(unittest.TestCase):
             cached = root / "target/debug/build/beskid_abi-old/out/abi_v5_contract.rs"
             cached.parent.mkdir(parents=True)
             cached.write_text(contract(4))
+            copied_script = root / "abi-cache.py"
+            shutil.copyfile(SCRIPT, copied_script)
             result = subprocess.run(
-                [sys.executable, str(SCRIPT), "--repo", str(root), "--target-dir", str(root / "target")],
+                [sys.executable, str(copied_script), "--repo", str(root), "--target-dir", str(root / "target")],
                 capture_output=True,
                 text=True,
                 check=True,
