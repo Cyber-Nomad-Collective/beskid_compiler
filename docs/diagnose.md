@@ -50,6 +50,7 @@ The Python tools (`symbolize.py`, `whyfact.py`, `authority.py`, `visibility.py`)
 | `matrix-log.py` | Summarize final matrix counts, the last target started, and distinct error headlines | no (accepts a local file or stdin) |
 | `cargo-log.py` | Summarize completed Cargo test binaries, failed tests, and the active binary | no (accepts a local file or stdin) |
 | `network-shutdown-leak.py` | Verify a leaked pending TCP accept produces an accurate diagnostic and fail-closed process exit | yes |
+| `abi-cache.py` | List ABI-v5 Cargo build-script contract variants and their network diagnostic arity | no |
 
 For a large `beskid_cli test --all-targets` log, pipe it through `scripts/diagnose/matrix-log.py`
 or pass a local log path. It reports the final `matrix:` count and separate `release eligible:`
@@ -74,6 +75,15 @@ answer for the given AST node. The diagnostic carries a `path#gN:nM Construct@sp
 3. Usual fix: the ISLE rule set is missing a rule for this AST node shape, or the `NodeFacts`
    implementation doesn't derive the fact this construct needs. Check
    `docs/isle-lowering-coverage.md` for whether the construct is a known gap.
+
+When a call has the expected argument facts but an older ABI signature, run
+`python3 scripts/diagnose/abi-cache.py --target-dir <cargo-target-dir>` against the checkout used
+for the test. It lists the tracked ABI contract and every cached `beskid_abi` build-script output,
+including each `network_report_leak` parameter count. A differing cache entry is a lead, not proof
+of which variant the test binary linked. After Cargo has exited, a targeted
+`cargo clean -p beskid_abi --target-dir <cargo-target-dir>` regenerates that package's outputs;
+then rebuild and rerun the failing test. Do not delete a shared target directory while another
+build is using it.
 
 ### `semantic query \`X\` is unavailable`
 
