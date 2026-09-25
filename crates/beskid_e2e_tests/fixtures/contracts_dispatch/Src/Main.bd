@@ -1,15 +1,15 @@
-contract Service { i32 run(i32 x); }
+contract Service { i32 Run(i32 x); }
 
 type Worker : Service { i32 base }
 
 impl Worker {
-    i32 run(i32 x) {
+    pub i32 Run(i32 x) {
         return this.base + x;
     }
 }
 
 i32 apply(Service s) {
-    return s.run(1);
+    return s.Run(1);
 }
 
 i32 Main() {

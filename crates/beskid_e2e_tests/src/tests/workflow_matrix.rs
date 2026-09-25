@@ -11,8 +11,8 @@ use crate::harness::workspace::E2eWorkspace;
 #[test]
 fn lock_then_build_locked_succeeds_for_workspace_member() {
     let workspace = E2eWorkspace::from_fixture("deps_workspace");
-    let workspace_manifest = workspace.join("Workspace.proj");
-    let app_manifest = workspace.join("app/Project.proj");
+    let workspace_manifest = workspace.join("DepsWorkspace.bws");
+    let app_manifest = workspace.join("app/App.bproj");
     let output_binary = workspace.join("out/workflow_locked_app");
     let cli = BeskidCliInvoker::new();
 
@@ -47,7 +47,7 @@ fn lock_then_build_locked_succeeds_for_workspace_member() {
 #[test]
 fn fetch_locked_fails_when_lockfile_is_removed() {
     let workspace = E2eWorkspace::from_fixture("deps_workspace");
-    let workspace_manifest = workspace.join("Workspace.proj");
+    let workspace_manifest = workspace.join("DepsWorkspace.bws");
     let lock_path = workspace.join("app/Project.lock");
     let cli = BeskidCliInvoker::new();
 

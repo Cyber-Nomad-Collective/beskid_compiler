@@ -8,7 +8,7 @@ use crate::harness::workspace::E2eWorkspace;
 #[test]
 fn aot_binary_links_runtime_symbols_and_executes_runtime_path() {
     let workspace = E2eWorkspace::from_fixture("smoke_project");
-    let manifest = workspace.join("Project.proj");
+    let manifest = workspace.join("SmokeProject.bproj");
     let output_binary = workspace.join("out/runtime_linkage");
     let object_output = workspace.join("out/runtime_linkage.o");
     let cli = BeskidCliInvoker::new();

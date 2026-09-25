@@ -6,7 +6,7 @@ use std::sync::{Mutex, OnceLock};
 
 static CORELIB_ROOT_COUNTER: AtomicU64 = AtomicU64::new(0);
 static BUILT_DEBUG_CLI: OnceLock<()> = OnceLock::new();
-static STAGED_DEBUG_KIT: OnceLock<Mutex<()>> = OnceLock::new();
+static STAGED_RUNTIME_KIT: OnceLock<Mutex<()>> = OnceLock::new();
 
 pub struct BeskidCliInvoker {
     binary: PathBuf,
@@ -17,7 +17,7 @@ pub struct BeskidCliInvoker {
 impl BeskidCliInvoker {
     pub fn new() -> Self {
         let binary = resolve_cli_binary();
-        let runtime_prefix = ensure_exact_debug_runtime_kit(&binary);
+        let runtime_prefix = ensure_exact_runtime_kit(&binary, "debug");
         let corelib_root = unique_corelib_root();
         fs::create_dir_all(&corelib_root)
             .unwrap_or_else(|error| panic!("create e2e corelib root {}: {error}", corelib_root.display()));
@@ -34,8 +34,14 @@ impl BeskidCliInvoker {
             .current_dir(working_dir)
             .env("BESKID_CORELIB_ROOT", &self.corelib_root)
             .env("BESKID_RUNTIME_PREFIX", &self.runtime_prefix);
+        let mut release = false;
         for argument in args {
-            command.arg(argument.as_ref());
+            let argument = argument.as_ref();
+            release |= argument == "--release";
+            command.arg(argument);
+        }
+        if release {
+            ensure_exact_runtime_kit(&self.binary, "release");
         }
         command
     }
@@ -66,18 +72,18 @@ impl BeskidCliInvoker {
     }
 }
 
-/// Stage the exact host debug kit into the CLI install prefix when missing.
+/// Stage the exact host kit for the requested build profile when missing.
 ///
 /// Missing kits remain fail-closed for consumers that do not go through this harness.
 /// This only publishes through `runtime-kit build-native-host` — no prebuilt/search fallback.
-fn ensure_exact_debug_runtime_kit(cli_binary: &Path) -> PathBuf {
+fn ensure_exact_runtime_kit(cli_binary: &Path, profile: &str) -> PathBuf {
     let prefix = install_prefix_for_cli(cli_binary);
-    let lock = STAGED_DEBUG_KIT.get_or_init(|| Mutex::new(()));
+    let lock = STAGED_RUNTIME_KIT.get_or_init(|| Mutex::new(()));
     let _guard = lock.lock().expect("runtime-kit staging lock");
 
     let triple = host_abi_v5_triple()
         .unwrap_or_else(|host| panic!("e2e CLI harness requires a supported ABI-v5 host; got {host}"));
-    let metadata = prefix.join("lib/beskid-runtime/abi-5").join(triple).join("debug").join("abi.json");
+    let metadata = prefix.join("lib/beskid-runtime/abi-5").join(triple).join(profile).join("abi.json");
     if metadata.is_file() {
         return prefix;
     }
@@ -89,23 +95,23 @@ fn ensure_exact_debug_runtime_kit(cli_binary: &Path) -> PathBuf {
             "--prefix",
             prefix.to_str().expect("install prefix is UTF-8"),
             "--profile",
-            "debug",
+            profile,
         ])
         .output()
         .unwrap_or_else(|error| {
             panic!(
-                "invoke `{} runtime-kit build-native-host` to stage the exact debug kit: {error}",
+                "invoke `{} runtime-kit build-native-host` to stage the exact {profile} kit: {error}",
                 cli_binary.display()
             )
         });
     assert!(
         output.status.success(),
-        "staging exact debug ABI-v5 runtime kit failed for prefix `{}`\nstdout:\n{}\nstderr:\n{}",
+        "staging exact {profile} ABI-v5 runtime kit failed for prefix `{}`\nstdout:\n{}\nstderr:\n{}",
         prefix.display(),
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
-    assert!(metadata.is_file(), "exact debug kit metadata missing after staging: {}", metadata.display());
+    assert!(metadata.is_file(), "exact {profile} kit metadata missing after staging: {}", metadata.display());
     prefix
 }
 

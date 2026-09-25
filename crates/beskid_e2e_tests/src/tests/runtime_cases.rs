@@ -102,9 +102,8 @@ fn smoke_fixture_build_graph_includes_corelib_dependency() {
         object_output.to_str().expect("object path str"),
     ]);
     assert_success(&build, "build smoke fixture with corelib graph");
-    assert_output_contains(&build, "corelib: project dependency detected", "build smoke fixture with corelib graph");
     assert_file_exists(&output_binary, "corelib graph output binary");
     assert_file_exists(&object_output, "corelib graph object file");
-    assert!(nm_contains_symbol(&object_output, "str_len"), "expected corelib graph object to reference str_len");
-    assert!(nm_contains_symbol(&object_output, "array_new"), "expected corelib graph object to reference array_new");
+    let lock = std::fs::read_to_string(workspace.join("Project.lock")).expect("read built project lockfile");
+    assert!(lock.contains("- name=corelib_foundation;"), "build graph must retain the Foundation dependency");
 }

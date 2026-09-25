@@ -1,24 +1,25 @@
 use std::time::Duration;
 
-use crate::harness::assertions::{assert_exit_code, assert_file_exists, assert_output_contains, assert_success};
+use crate::harness::assertions::{assert_exit_code, assert_file_exists, assert_success};
 use crate::harness::cli::BeskidCliInvoker;
 use crate::harness::process::{nm_contains_symbol, run_binary};
 use crate::harness::workspace::E2eWorkspace;
 
 struct SemanticCase {
     fixture: &'static str,
+    manifest: &'static str,
     expected: i32,
     native_exec_expected: bool,
     expected_symbols: &'static [&'static str],
 }
 
 const CASES: &[SemanticCase] = &[
-    SemanticCase { fixture: "contracts_dispatch", expected: 42, native_exec_expected: false, expected_symbols: &[] },
-    SemanticCase { fixture: "enums_match", expected: 7, native_exec_expected: false, expected_symbols: &[] },
-    SemanticCase { fixture: "method_dispatch", expected: 42, native_exec_expected: false, expected_symbols: &[] },
-    SemanticCase { fixture: "closure_capture", expected: 42, native_exec_expected: true, expected_symbols: &[] },
-    SemanticCase { fixture: "try_expression", expected: 1, native_exec_expected: false, expected_symbols: &[] },
-    SemanticCase { fixture: "composition_app", expected: 0, native_exec_expected: false, expected_symbols: &[] },
+    SemanticCase { fixture: "contracts_dispatch", manifest: "ContractsDispatch.bproj", expected: 42, native_exec_expected: false, expected_symbols: &[] },
+    SemanticCase { fixture: "enums_match", manifest: "EnumsMatch.bproj", expected: 7, native_exec_expected: false, expected_symbols: &[] },
+    SemanticCase { fixture: "method_dispatch", manifest: "MethodDispatch.bproj", expected: 42, native_exec_expected: false, expected_symbols: &[] },
+    SemanticCase { fixture: "closure_capture", manifest: "ClosureCapture.bproj", expected: 42, native_exec_expected: true, expected_symbols: &[] },
+    SemanticCase { fixture: "try_expression", manifest: "TryExpression.bproj", expected: 1, native_exec_expected: false, expected_symbols: &[] },
+    SemanticCase { fixture: "composition_app", manifest: "CompositionApp.bproj", expected: 0, native_exec_expected: false, expected_symbols: &[] },
 ];
 
 #[test]
@@ -31,17 +32,12 @@ fn semantic_matrix_jit_and_aot_are_consistent() {
 
 fn run_case(cli: &BeskidCliInvoker, case: &SemanticCase) {
     let workspace = E2eWorkspace::from_fixture(case.fixture);
-    let manifest = workspace.join("Project.proj");
+    let manifest = workspace.join(case.manifest);
     let output_binary = workspace.join(format!("out/{}", case.fixture));
     let object_output = workspace.join(format!("out/{}.o", case.fixture));
 
     let jit_run = cli.run(["run", "--project", manifest.to_str().expect("manifest path str"), "--target", "App"]);
-    assert_success(&jit_run, &format!("run semantic case {} through JIT", case.fixture));
-    assert_output_contains(
-        &jit_run,
-        &case.expected.to_string(),
-        &format!("run semantic case {} through JIT", case.fixture),
-    );
+    assert_exit_code(&jit_run, case.expected, &format!("run semantic case {} through JIT", case.fixture));
 
     let build = cli.run([
         "build",
