@@ -2,6 +2,7 @@
 
 pub mod abi_types;
 pub mod abi_v5;
+pub mod corelib_bundle;
 pub mod generated;
 pub mod interop;
 pub mod mod_contract;

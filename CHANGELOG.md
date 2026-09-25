@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Preserve compiler-owned corelib service provenance for exact, fingerprint-verified
+  installed bundles while rejecting copied, symlinked, or modified service sources.
+
 ### Added
 
 - Prove scoped acquisition through a validated `?` only when the exact Result

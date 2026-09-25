@@ -11,10 +11,9 @@ use beskid_abi::runtime_kit::installed_corelib_root;
 use include_dir::{Dir, include_dir};
 use semver::Version;
 
-#[path = "../corelib_fingerprint.rs"]
-mod corelib_fingerprint;
-
-use corelib_fingerprint::{BUNDLE_FINGERPRINT_FILE, fingerprint_dir};
+use beskid_abi::corelib_bundle::{
+    CORELIB_BUNDLE_FINGERPRINT_FILE as BUNDLE_FINGERPRINT_FILE, fingerprint_corelib_bundle_dir,
+};
 
 // Populated by build.rs from ../../corelib (workspace: *.bws + packages + beskid_corelib).
 static EMBEDDED_CORELIB: Dir<'_> = include_dir!("$OUT_DIR/embedded_corelib");
@@ -107,8 +106,7 @@ fn is_unmanaged_nonempty_root(root: &Path) -> Result<bool> {
     if !root.is_dir() {
         return Ok(false);
     }
-    let mut entries =
-        fs::read_dir(root).with_context(|| format!("read corelib root directory {}", root.display()))?;
+    let mut entries = fs::read_dir(root).with_context(|| format!("read corelib root directory {}", root.display()))?;
     if entries.next().is_none() {
         return Ok(false);
     }
@@ -176,7 +174,9 @@ fn installed_fingerprint(root: &Path) -> Result<Option<String>> {
     if !root.is_dir() {
         return Ok(None);
     }
-    fingerprint_dir(root).map(Some).with_context(|| format!("fingerprint installed corelib at {}", root.display()))
+    fingerprint_corelib_bundle_dir(root)
+        .map(Some)
+        .with_context(|| format!("fingerprint installed corelib at {}", root.display()))
 }
 
 fn remove_dir_all_retry(path: &Path) -> Result<()> {

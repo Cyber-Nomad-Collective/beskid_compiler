@@ -1,3 +1,4 @@
+use sha2::{Digest, Sha256};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -6,8 +7,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use super::trusted_paths::trusted_corelib_service_paths;
 use crate::projects::{
-    AssemblyDiscovery, AssemblyError, AssemblyOptions, CompilePlan, ResolvedDependencyProject, Target, TargetKind,
-    assemble_program, assembly_options_for_plan, assembly_options_for_prepare, plan_entry_path,
+    AssemblyDiscovery, AssemblyError, AssemblyOptions, CompilePlan, EffectiveCompilationRoots,
+    ResolvedDependencyProject, RootEntry, Target, TargetKind, assemble_program, assembly_options_for_plan,
+    assembly_options_for_prepare, plan_entry_path,
 };
 use crate::projects::{MaterializedDependencyProject, PreparedProjectWorkspace, SourceUnit};
 use crate::services::parse_program_with_source_name;
@@ -196,6 +198,132 @@ fn resolved_foundation_source_root_still_trusts_materialized_assert() {
         "resolved Foundation source_root must retain Assert panic provenance"
     );
     let _ = fs::remove_dir_all(workspace_root);
+}
+
+#[test]
+fn verified_installed_corelib_bundle_preserves_slice_service_provenance() {
+    let source = beskid_abi::runtime_source::canonical_corelib_service_sources()
+        .into_iter()
+        .find(|source| source.logical_path == "Core/Bytes/Slice.bd")
+        .expect("embedded Foundation Slice source");
+    let identity = beskid_abi::runtime_source::corelib_service_source_identity(&source.logical_path)
+        .expect("compiler-owned Slice path");
+    let canonical_source_root = identity.canonical_path.ancestors().nth(3).expect("Foundation source root");
+    let relative = identity.canonical_path.strip_prefix(canonical_source_root).expect("Slice below source root");
+    let project_root = temp_project_root("installed_corelib_bundle");
+    let bundle_root = project_root.join("installed/beskid_corelib");
+    let foundation_root = bundle_root.join("packages/foundation");
+    let source_root = foundation_root.join("src");
+    let installed_source = source_root.join(relative);
+    write_bd(&source_root, relative.to_str().unwrap(), &source.source);
+    write_bd(&foundation_root, "foundation.bproj", "name = \"corelib_foundation\"\n");
+
+    let fingerprint = test_bundle_fingerprint(&bundle_root);
+    fs::write(bundle_root.join(".beskid-bundle.sha256"), format!("{fingerprint}\n"))
+        .expect("write complete bundle fingerprint");
+
+    let materialized_source_root = project_root.join("obj/beskid/deps/src/corelib_foundation/src");
+    let materialized_source = materialized_source_root.join(relative);
+    write_bd(&materialized_source_root, relative.to_str().unwrap(), &source.source);
+    let unit = SourceUnit {
+        logical_name: source.logical_path,
+        origin_path: materialized_source.clone(),
+        path: materialized_source.clone(),
+        source: source.source.clone(),
+        program: parse_program_with_source_name("installed Slice", &source.source).expect("parse Slice source"),
+    };
+    let plan = CompilePlan {
+        project_root: project_root.clone(),
+        manifest_path: project_root.join("App.bproj"),
+        project_name: "App".into(),
+        source_root: project_root.join("src"),
+        target: Target { name: "App".into(), kind: TargetKind::App, entry: Some("Main.bd".into()) },
+        dependency_projects: vec![ResolvedDependencyProject {
+            dependency_name: "corelib_foundation".into(),
+            manifest_path: foundation_root.join("foundation.bproj"),
+            project_root: foundation_root,
+            project_name: "corelib_foundation".into(),
+            source_root,
+        }],
+        unresolved_dependencies: Vec::new(),
+        has_std_dependency: true,
+    };
+    let roots = EffectiveCompilationRoots {
+        host: RootEntry { dependency_name: None, source_root: project_root.join("obj/beskid/root/src") },
+        dependencies: vec![RootEntry {
+            dependency_name: Some("corelib_foundation".into()),
+            source_root: materialized_source_root.clone(),
+        }],
+    };
+
+    assert_eq!(
+        trusted_corelib_service_paths(&plan, &roots, std::slice::from_ref(&unit)),
+        Arc::from([materialized_source.clone()]),
+        "the verified installed bundle must preserve compiler-owned Slice authority after materialization"
+    );
+
+    let copied_project = project_root.join("user-copy/packages/foundation");
+    let copied_source_root = copied_project.join("src");
+    write_bd(&copied_source_root, relative.to_str().unwrap(), &source.source);
+    write_bd(&copied_project, "foundation.bproj", "name = \"corelib_foundation\"\n");
+    let mut copied_plan = plan.clone();
+    copied_plan.dependency_projects[0].project_root = copied_project.clone();
+    copied_plan.dependency_projects[0].manifest_path = copied_project.join("foundation.bproj");
+    copied_plan.dependency_projects[0].source_root = copied_source_root;
+    assert!(
+        trusted_corelib_service_paths(&copied_plan, &roots, std::slice::from_ref(&unit)).is_empty(),
+        "a user copy of Slice without the verified installed bundle cannot gain service provenance"
+    );
+
+    fs::remove_file(&materialized_source).expect("remove materialized Slice before symlinking");
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(&installed_source, &materialized_source)
+        .expect("replace materialized Slice with symlink");
+    #[cfg(windows)]
+    std::os::windows::fs::symlink_file(&installed_source, &materialized_source)
+        .expect("replace materialized Slice with symlink");
+    let symlink_unit =
+        SourceUnit { path: materialized_source.canonicalize().expect("resolve symlink target"), ..unit.clone() };
+    assert!(
+        trusted_corelib_service_paths(&plan, &roots, std::slice::from_ref(&symlink_unit)).is_empty(),
+        "a symlinked materialized Slice cannot inherit compiler service provenance"
+    );
+    fs::remove_file(&materialized_source).expect("remove materialized Slice symlink");
+    write_bd(&materialized_source_root, relative.to_str().unwrap(), &source.source);
+
+    write_bd(&bundle_root, "README.md", "bundle content changed after marker creation\n");
+    assert!(
+        trusted_corelib_service_paths(&plan, &roots, std::slice::from_ref(&unit)).is_empty(),
+        "a stale bundle fingerprint cannot authorize compiler service calls"
+    );
+    assert!(installed_source.is_file());
+    let _ = fs::remove_dir_all(project_root);
+}
+
+fn test_bundle_fingerprint(root: &Path) -> String {
+    fn collect(root: &Path, current: &Path, files: &mut Vec<PathBuf>) {
+        for entry in fs::read_dir(current).expect("read bundle directory") {
+            let entry = entry.expect("read bundle entry");
+            let path = entry.path();
+            if path.is_dir() {
+                collect(root, &path, files);
+            } else if entry.file_name() != ".beskid-bundle.sha256" {
+                files.push(path.strip_prefix(root).unwrap().to_path_buf());
+            }
+        }
+    }
+
+    let mut files = Vec::new();
+    collect(root, root, &mut files);
+    files.sort();
+    let mut digest = Sha256::new();
+    for relative in files {
+        let path = relative.to_string_lossy();
+        digest.update((path.len() as u64).to_le_bytes());
+        digest.update(path.as_bytes());
+        digest.update(fs::read(root.join(relative)).expect("read bundle file"));
+    }
+    digest.finalize().iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
 fn lock_replayed_foundation_syscall_fixture(label: &str) -> (CompilePlan, PathBuf, SourceUnit) {
