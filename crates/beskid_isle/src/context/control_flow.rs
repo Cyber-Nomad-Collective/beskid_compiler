@@ -240,9 +240,11 @@ macro_rules! generated_control_flow_methods {
                 return None;
             }
             let initializer = self.facts.let_initializer(key)?;
-            if self.facts.node_kind(initializer) == Some(NodeKind::LambdaExpression)
-                && self.facts.lambda_entry(initializer)?.closure_environment.is_none()
-            {
+            if self.facts.node_kind(initializer) == Some(NodeKind::LambdaExpression) {
+                // Lambda locals are syntax-level bindings. Calls through them are resolved to
+                // their source lambda and lowered at the call site, where captured environments
+                // can be rooted for the duration of the call; closures are not scalar locals.
+                self.facts.lambda_entry(initializer)?;
                 return Some(());
             }
             let value = self.lower_nested_expression(initializer)?;

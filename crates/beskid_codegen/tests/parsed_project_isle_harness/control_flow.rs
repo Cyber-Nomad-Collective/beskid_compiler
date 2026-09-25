@@ -190,11 +190,37 @@ fn parsed_project_stored_two_parameter_lambda_reaches_verified_clif() {
 }
 
 #[test]
-fn unsupported_lambda_fails_closed_without_legacy_fallback() {
+fn parsed_project_stored_capturing_lambda_reaches_verified_clif() {
+    let project = tempfile::tempdir().expect("project directory");
+    let source = "i32 Main() { i32 base = 41; let inc = (i32 x) => x + base; return inc(1); }";
+    let assembly = parse_production_units(project.path(), &[("Main.bd", "Main", source)]);
+    let (target, isa) = x86_64_target_and_isa();
+
+    let lowered = lower_verified_entrypoint(assembly, target, isa.as_ref());
+    let main = lowered
+        .artifact
+        .functions
+        .iter()
+        .find(|function| function.name.starts_with("Main#syntax_"))
+        .expect("Main artifact function");
+    let main_clif = main.function.display().to_string();
+    assert!(main_clif.contains("beskid_rt_v5_closure_environment_allocate"), "{main_clif}");
+    let lambda = lowered
+        .artifact
+        .functions
+        .iter()
+        .find(|function| function.name.starts_with("__beskid_lambda_entry_syntax_"))
+        .expect("capturing lambda entry");
+    assert_eq!(lambda.function.signature.params.len(), 2, "environment and source parameter enter the lambda");
+    assert!(lambda.function.display().to_string().contains("iadd"), "captured base and parameter are added");
+}
+
+#[test]
+fn mutable_capture_fails_closed_without_legacy_fallback() {
     let project = tempfile::tempdir().expect("project directory");
     let source = "
         i32 Main() {
-            i32 outer = 1;
+            mut i32 outer = 1;
             let add = (i32 inner) => outer + inner;
             return outer;
         }
@@ -232,12 +258,12 @@ fn parsed_project_inline_method_reaches_verified_clif_through_production_entrypo
 }
 
 #[test]
-fn parsed_project_capturing_lambda_keeps_generation_safe_capture_facts_and_fails_closed() {
+fn parsed_project_mutable_capture_keeps_generation_safe_facts_and_fails_closed() {
     let project = tempfile::tempdir().expect("project directory");
     let source_path = project.path().join("Capture.bd");
     let source = "
         i32 Main() {
-            i32 outer = 1;
+            mut i32 outer = 1;
             let apply = (i32 inner) => outer + inner;
             return outer;
         }
@@ -280,7 +306,12 @@ fn parsed_project_capturing_lambda_keeps_generation_safe_capture_facts_and_fails
         let lambda = lambda.expect("capturing lambda source node");
         let environment =
             closure_environment(db, lambda).expect("capture fact query").expect("generation-safe capture environment");
-        assert_eq!(environment.captures.len(), 1, "outer parameter is captured");
+        assert_eq!(environment.captures.len(), 1, "outer local is captured");
+        assert_eq!(
+            environment.captures[0].class,
+            beskid_queries::CaptureStorageClass::StackReference,
+            "mutable captures must not be copied into transferable closure environments"
+        );
         assert_eq!(environment.parameters.len(), 1, "inner lambda parameter");
     });
 

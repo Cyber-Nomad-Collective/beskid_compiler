@@ -88,6 +88,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Lower stored lambda bindings as syntax-level locals so immutable captured calls
+  can build closure environments at the call site, while mutable stack-reference
+  captures remain fail-closed.
+
 - Gate Unix-only codegen JIT test helpers and imports consistently so the
   `isle_adapter` test target compiles and runs on Windows without warnings.
 
