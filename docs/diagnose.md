@@ -213,11 +213,11 @@ owner, `resource_kind=1`, `operation=accept`, `winner=cancelled`, and `leak_coun
 come from the live handle and pending wait record; the diagnostic must not expose a native
 descriptor.
 
-Follow-up: an in-process test that calls `NetworkShutdown` directly while an owned accept fiber is
-parked reports the expected `accept/pending/count1` record, but traps with
-`runtime_internal_corruption` before the fiber can be joined. The process-teardown fixture above
-does not cover that explicit-close/wait-unwind ordering; keep it as a separate scheduler/network
-follow-up rather than treating the diagnostic contract check as evidence that this path passes.
+An exploratory in-process fixture called `NetworkShutdown` while an owned accept fiber was still
+parked. It reported `accept/pending/count1`, then trapped before the fiber could join. That call
+violates this internal hook's documented post-drain precondition; it does not establish a public
+close/readiness bug. Test the separate close-versus-readiness race through `NetworkClose` and its
+owned wait, not through mid-work `NetworkShutdown`. The process fixture covers supported teardown.
 
 Build a native runtime kit first, then run with isolated corelib and kit roots:
 
@@ -226,7 +226,7 @@ BESKID_RUNTIME_PREFIX=/workspace/verify/network-shutdown-kit \
 BESKID_CORELIB_ROOT=/workspace/.corelib-network-shutdown \
 python3 scripts/diagnose/network-shutdown-leak.py \
   --cli /target/v05-network-shutdown/debug/beskid_cli \
-  --project runtime/beskid/tests/network_shutdown_leak_fixture
+  --project runtime/beskid/tests/network_shutdown_leak_fixture/project.bproj
 ```
 
 ## Builder etiquette
