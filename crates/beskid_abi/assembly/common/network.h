@@ -195,7 +195,28 @@ static size_t BeskidNetworkDiagnosticWord(char *output, uintptr_t value) {
   for (size_t i = 0; i < count; ++i) output[i] = digits[count - i - 1];
   return count;
 }
-void beskid_rt_v5_intrinsic_network_report_leak(uintptr_t slot, uintptr_t generation, uintptr_t owner, uintptr_t kind) {
+static size_t BeskidNetworkDiagnosticOperation(char *output, uintptr_t operation) {
+  switch (operation) {
+    case 1: memcpy(output, "connect", 7); return 7;
+    case 2: memcpy(output, "accept", 6); return 6;
+    case 3: memcpy(output, "read", 4); return 4;
+    case 4: memcpy(output, "write", 5); return 5;
+    case 5: memcpy(output, "receive", 7); return 7;
+    case 6: memcpy(output, "send", 4); return 4;
+    default: memcpy(output, "none", 4); return 4;
+  }
+}
+static size_t BeskidNetworkDiagnosticWinner(char *output, uintptr_t winner) {
+  switch (winner) {
+    case 0: memcpy(output, "pending", 7); return 7;
+    case 1: memcpy(output, "ready", 5); return 5;
+    case 2: memcpy(output, "closed", 6); return 6;
+    case 3: memcpy(output, "cancelled", 9); return 9;
+    case 4: memcpy(output, "timeout", 7); return 7;
+    default: memcpy(output, "unknown", 7); return 7;
+  }
+}
+void beskid_rt_v5_intrinsic_network_report_leak(uintptr_t slot, uintptr_t generation, uintptr_t owner, uintptr_t kind, uintptr_t operation, uintptr_t winner, uintptr_t leak_count) {
 #ifdef _WIN32
   const char prefix[] = "beskid network leak backend=iocp slot=";
 #elif defined(__APPLE__)
@@ -212,8 +233,13 @@ void beskid_rt_v5_intrinsic_network_report_leak(uintptr_t slot, uintptr_t genera
   count += BeskidNetworkDiagnosticWord(text + count, owner);
   memcpy(text + count, " resource_kind=", 15); count += 15;
   count += BeskidNetworkDiagnosticWord(text + count, kind);
-  const char suffix[] = " operation=shutdown winner=live leak_count=1\n";
-  memcpy(text + count, suffix, sizeof(suffix) - 1); count += sizeof(suffix) - 1;
+  memcpy(text + count, " operation=", 11); count += 11;
+  count += BeskidNetworkDiagnosticOperation(text + count, operation);
+  memcpy(text + count, " winner=", 8); count += 8;
+  count += BeskidNetworkDiagnosticWinner(text + count, winner);
+  memcpy(text + count, " leak_count=", 12); count += 12;
+  count += BeskidNetworkDiagnosticWord(text + count, leak_count);
+  text[count++] = '\n';
 #ifdef _WIN32
   DWORD written; WriteFile(GetStdHandle(STD_ERROR_HANDLE), text, (DWORD)count, &written, NULL);
 #else

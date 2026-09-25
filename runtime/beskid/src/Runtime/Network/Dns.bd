@@ -174,9 +174,39 @@ pub word NetworkShutdown(word owner) {
     while index < NETWORK_SLOT_COUNT {
         pointer slot = NetworkSlot(table, index);
         if raw_word_load(pointer_add(slot, NETWORK_SLOT_NATIVE)) != 0 && raw_word_load(pointer_add(slot, NETWORK_SLOT_CREATOR)) == owner {
-            word handle = raw_word_load(slot) << 32 | (index + 1);
-            network_report_leak(index + 1, raw_word_load(slot), owner, raw_word_load(pointer_add(slot, NETWORK_SLOT_KIND)));
             leaks = leaks + 1;
+        }
+        index = index + 1;
+    }
+    index = 0;
+    while index < NETWORK_SLOT_COUNT {
+        pointer slot = NetworkSlot(table, index);
+        if raw_word_load(pointer_add(slot, NETWORK_SLOT_NATIVE)) != 0 && raw_word_load(pointer_add(slot, NETWORK_SLOT_CREATOR)) == owner {
+            word handle = raw_word_load(slot) << 32 | (index + 1);
+            mut word reported = 0;
+            mut word direction = 0;
+            while direction < 2 {
+                pointer request = NativePointer(raw_word_load(NetworkSlotRequest(slot, direction)));
+                if request != NativePointer(0) {
+                    pointer wait = ExternalWaitRecord(raw_word_load(request));
+                    mut word winner = 0;
+                    if wait != NativePointer(0) { winner = raw_word_load(pointer_add(wait, 32)); }
+                    network_report_leak(
+                        index + 1,
+                        raw_word_load(slot),
+                        owner,
+                        raw_word_load(pointer_add(slot, NETWORK_SLOT_KIND)),
+                        raw_word_load(pointer_add(request, BESKID_NETWORK_REQUEST_OPERATION_OFFSET)),
+                        winner,
+                        leaks
+                    );
+                    reported = 1;
+                }
+                direction = direction + 1;
+            }
+            if reported == 0 {
+                network_report_leak(index + 1, raw_word_load(slot), owner, raw_word_load(pointer_add(slot, NETWORK_SLOT_KIND)), 0, 0, leaks);
+            }
             NetworkCloseLocked(table, handle);
         }
         index = index + 1;

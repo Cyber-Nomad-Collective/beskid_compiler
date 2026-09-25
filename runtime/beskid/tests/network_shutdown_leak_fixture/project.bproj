@@ -1,0 +1,15 @@
+NetworkShutdownLeakFixture {
+  name = "NetworkShutdownLeakFixture"
+  version = "0.1.0"
+  root = "src"
+}
+
+dependency "corelib" {
+  source = "path"
+  path = "../../../../corelib/beskid_corelib"
+}
+
+target "leak" {
+  kind = App
+  entry = "Main.bd"
+}

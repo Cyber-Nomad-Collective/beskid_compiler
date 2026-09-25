@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Report actual pending network operation, wait winner, and owner leak count in
+  shutdown diagnostics; cover a deliberately leaked pending TCP accept.
+
 - Preserve compiler-owned corelib service provenance for exact, fingerprint-verified
   installed bundles while rejecting copied, symlinked, or modified service sources.
 

@@ -292,7 +292,7 @@ intrinsic "network_reactor_poll" { symbol = "beskid_rt_v5_intrinsic_network_reac
 intrinsic "network_report_leak" {
   symbol = "beskid_rt_v5_intrinsic_network_report_leak"
   capability = "runtime.adapter.network_report_leak"
-  params = [{ name = slot, type = usize }, { name = generation, type = usize }, { name = owner, type = usize }, { name = kind, type = usize }]
+  params = [{ name = slot, type = usize }, { name = generation, type = usize }, { name = owner, type = usize }, { name = kind, type = usize }, { name = operation, type = usize }, { name = winner, type = usize }, { name = leak_count, type = usize }]
   returns = void
   # Apple SDK fortified copies and compiler-protected stack buffers depend on
   # these exact libSystem C identities. The guard is data, not a callable import.

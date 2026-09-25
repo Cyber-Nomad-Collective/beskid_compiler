@@ -290,6 +290,25 @@ fn network_operation_registry_mismatch_is_rejected_before_execution() {
 }
 
 #[test]
+fn network_leak_diagnostic_contract_carries_the_observed_operation_winner_and_count() {
+    let target = supported_targets().into_iter().next().unwrap();
+    let manifest = AbiManifestV5::canonical_runtime(target);
+    let diagnostic = manifest
+        .intrinsic_metadata("network_report_leak")
+        .expect("network leak diagnostic intrinsic");
+
+    assert_eq!(
+        diagnostic.param_names,
+        ["slot", "generation", "owner", "kind", "operation", "winner", "leak_count"]
+    );
+    assert_eq!(diagnostic.params, vec![AbiType::USize; 7]);
+
+    let source = include_str!("../assembly/common/network.h").replace("\r\n", "\n");
+    assert!(source.contains("uintptr_t kind, uintptr_t operation, uintptr_t winner, uintptr_t leak_count"));
+    assert!(!source.contains("operation=shutdown winner=live leak_count=1"));
+}
+
+#[test]
 fn runtime_provenance_allows_intrinsics_without_making_them_loader_requirements() {
     let manifest = AbiManifestV5::canonical_runtime(supported_targets()[0].clone());
     let audit = RuntimeAuditMetadata::for_manifest(

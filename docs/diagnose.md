@@ -49,6 +49,7 @@ The Python tools (`symbolize.py`, `whyfact.py`, `authority.py`, `visibility.py`)
 | `stalled.sh` | Flag a log that looks in-progress but has no writer left | yes |
 | `matrix-log.py` | Summarize final matrix counts, the last target started, and distinct error headlines | no (accepts a local file or stdin) |
 | `cargo-log.py` | Summarize completed Cargo test binaries, failed tests, and the active binary | no (accepts a local file or stdin) |
+| `network-shutdown-leak.py` | Verify a leaked pending TCP accept produces an accurate diagnostic and fail-closed process exit | yes |
 
 For a large `beskid_cli test --all-targets` log, pipe it through `scripts/diagnose/matrix-log.py`
 or pass a local log path. It reports the final `matrix:` count and separate `release eligible:`
@@ -202,6 +203,31 @@ after normalizing away cosmetic renumbering (`v<N>`, `block<N>`, `sig<N>`, `fn<N
 `#syntax_<file>_<node>` label suffix) so only a real structural difference is left. Use this to
 confirm whether a suspected regression actually changed the generated IR, or is just numbering
 noise between two independently compiled dumps.
+
+### Leaked pending network operations at shutdown
+
+`network-shutdown-leak.py` runs a fixture process that parks a TCP accept, then lets runtime
+shutdown cancel the pending operation. The check passes only when the process exits with status
+101 and emits exactly one backend-neutral diagnostic containing the handle slot, generation,
+owner, `resource_kind=1`, `operation=accept`, `winner=cancelled`, and `leak_count=1`. Those values
+come from the live handle and pending wait record; the diagnostic must not expose a native
+descriptor.
+
+Follow-up: an in-process test that calls `NetworkShutdown` directly while an owned accept fiber is
+parked reports the expected `accept/pending/count1` record, but traps with
+`runtime_internal_corruption` before the fiber can be joined. The process-teardown fixture above
+does not cover that explicit-close/wait-unwind ordering; keep it as a separate scheduler/network
+follow-up rather than treating the diagnostic contract check as evidence that this path passes.
+
+Build a native runtime kit first, then run with isolated corelib and kit roots:
+
+```
+BESKID_RUNTIME_PREFIX=/workspace/verify/network-shutdown-kit \
+BESKID_CORELIB_ROOT=/workspace/.corelib-network-shutdown \
+python3 scripts/diagnose/network-shutdown-leak.py \
+  --cli /target/v05-network-shutdown/debug/beskid_cli \
+  --project runtime/beskid/tests/network_shutdown_leak_fixture
+```
 
 ## Builder etiquette
 

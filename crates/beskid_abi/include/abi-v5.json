@@ -1407,6 +1407,18 @@
         {
           "name": "kind",
           "type": "usize"
+        },
+        {
+          "name": "operation",
+          "type": "usize"
+        },
+        {
+          "name": "winner",
+          "type": "usize"
+        },
+        {
+          "name": "leak_count",
+          "type": "usize"
         }
       ],
       "result": "void",
