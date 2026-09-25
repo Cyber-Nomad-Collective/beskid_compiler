@@ -113,8 +113,9 @@ fn materialized_compiler_foundation_path_retains_service_provenance_but_a_copy_d
             materialized_source_root: materialized_source_root.clone(),
         }],
     };
+    let roots = crate::projects::effective_roots_for_plan(&plan, Some(&workspace));
     assert_eq!(
-        trusted_corelib_service_paths(&plan, Some(&workspace), std::slice::from_ref(&unit)),
+        trusted_corelib_service_paths(&plan, &roots, std::slice::from_ref(&unit)),
         Arc::from([materialized_path.clone()]),
         "the materialized path keeps the compiler-owned Foundation origin"
     );
@@ -122,7 +123,7 @@ fn materialized_compiler_foundation_path_retains_service_provenance_but_a_copy_d
     let mut copied_plan = plan.clone();
     copied_plan.dependency_projects[0].source_root = workspace_root.join("copied/src");
     assert!(
-        trusted_corelib_service_paths(&copied_plan, Some(&workspace), std::slice::from_ref(&unit),).is_empty(),
+        trusted_corelib_service_paths(&copied_plan, &roots, std::slice::from_ref(&unit)).is_empty(),
         "a copied source root cannot inherit Corelib service provenance"
     );
     let _ = fs::remove_dir_all(workspace_root);
@@ -188,12 +189,166 @@ fn resolved_foundation_source_root_still_trusts_materialized_assert() {
             materialized_source_root: materialized_source_root.clone(),
         }],
     };
+    let roots = crate::projects::effective_roots_for_plan(&plan, Some(&workspace));
     assert_eq!(
-        trusted_corelib_service_paths(&plan, Some(&workspace), std::slice::from_ref(&unit)),
+        trusted_corelib_service_paths(&plan, &roots, std::slice::from_ref(&unit)),
         Arc::from([materialized_path]),
         "resolved Foundation source_root must retain Assert panic provenance"
     );
     let _ = fs::remove_dir_all(workspace_root);
+}
+
+fn lock_replayed_foundation_syscall_fixture(label: &str) -> (CompilePlan, PathBuf, SourceUnit) {
+    let source = beskid_abi::runtime_source::canonical_corelib_service_sources()
+        .into_iter()
+        .find(|source| source.logical_path == beskid_abi::runtime_source::CANONICAL_CORELIB_SYSCALL_SOURCE_PATH)
+        .expect("embedded Foundation syscall source");
+    let canonical_path = beskid_abi::runtime_source::canonical_corelib_service_source_path(&source.logical_path)
+        .expect("compiler-owned syscall path");
+    let canonical_source_root = canonical_path.ancestors().nth(3).expect("Foundation source root").to_path_buf();
+    let canonical_project_root = canonical_source_root.parent().expect("Foundation project root").to_path_buf();
+    let project_root = temp_project_root(label);
+    fs::create_dir_all(&project_root).expect("create replay project");
+    let project_root = project_root.canonicalize().expect("physical replay project root");
+    let materialized_source_root = project_root.join("obj/beskid/deps/src/corelib_foundation/src");
+    let destination = materialized_source_root.join("Core/Syscall/Syscall.bd");
+    write_bd(&materialized_source_root, "Core/Syscall/Syscall.bd", &source.source);
+    let manifest_path = project_root.join("App.bproj");
+    let plan = CompilePlan {
+        project_root: project_root.clone(),
+        manifest_path: manifest_path.clone(),
+        project_name: "App".into(),
+        source_root: project_root.join("src"),
+        target: Target { name: "App".into(), kind: TargetKind::App, entry: Some("Main.bd".into()) },
+        dependency_projects: vec![ResolvedDependencyProject {
+            dependency_name: "corelib_foundation".into(),
+            manifest_path: canonical_project_root.join("corelib_foundation.bproj"),
+            project_root: canonical_project_root.clone(),
+            project_name: "corelib_foundation".into(),
+            source_root: canonical_source_root.clone(),
+        }],
+        unresolved_dependencies: Vec::new(),
+        has_std_dependency: false,
+    };
+    let lockfile = format!(
+        "# Project.lock v1\nroot_manifest={}\nproject_name=App\ndependencies:\n- name=corelib_foundation;manifest={};project={};source_root={};materialized_root=obj/beskid/deps/src/corelib_foundation\n",
+        manifest_path.display(),
+        plan.dependency_projects[0].manifest_path.display(),
+        canonical_project_root.display(),
+        canonical_source_root.display(),
+    );
+    fs::write(project_root.join("Project.lock"), lockfile).expect("write replay lockfile");
+    let unit = SourceUnit::bind_request(
+        destination.clone(),
+        source.logical_path,
+        source.source.clone(),
+        parse_program_with_source_name("materialized syscall", &source.source).expect("parse syscall source"),
+    );
+    (plan, destination, unit)
+}
+
+#[test]
+fn valid_lock_replay_trusts_exact_materialized_foundation_source() {
+    let (plan, destination, unit) = lock_replayed_foundation_syscall_fixture("valid_service_replay");
+    let roots = crate::projects::effective_roots_for_plan(&plan, None);
+    assert_eq!(roots.dependencies[0].source_root, destination.parent().unwrap().parent().unwrap().parent().unwrap());
+    assert_eq!(
+        trusted_corelib_service_paths(&plan, &roots, std::slice::from_ref(&unit)),
+        Arc::from([destination]),
+        "validated lock replay must preserve the loader-issued Foundation destination"
+    );
+    let _ = fs::remove_dir_all(plan.project_root);
+}
+
+#[test]
+fn lock_replay_outside_materialized_dependencies_cannot_grant_service_authority() {
+    let (plan, destination, unit) = lock_replayed_foundation_syscall_fixture("rejected_service_replay");
+    fs::create_dir_all(plan.project_root.join("outside")).expect("create outside replay root");
+    let lock_path = plan.project_root.join("Project.lock");
+    let lockfile = fs::read_to_string(&lock_path)
+        .expect("read replay lockfile")
+        .replace("materialized_root=obj/beskid/deps/src/corelib_foundation", "materialized_root=outside");
+    fs::write(&lock_path, lockfile).expect("write tampered replay lockfile");
+    let roots = crate::projects::effective_roots_for_plan(&plan, None);
+    assert_eq!(roots.dependencies[0].source_root, plan.dependency_projects[0].source_root);
+    assert!(
+        trusted_corelib_service_paths(&plan, &roots, std::slice::from_ref(&unit)).is_empty(),
+        "a lockfile path outside materialized dependencies cannot grant Foundation service authority"
+    );
+    assert!(destination.is_file());
+    let _ = fs::remove_dir_all(plan.project_root);
+}
+
+#[test]
+fn lock_replay_with_forged_dependency_identity_cannot_grant_service_authority() {
+    for forged_field in ["manifest", "project_and_source_root"] {
+        let (plan, destination, unit) = lock_replayed_foundation_syscall_fixture(forged_field);
+        let lock_path = plan.project_root.join("Project.lock");
+        let lockfile = fs::read_to_string(&lock_path).expect("read replay lockfile");
+        let dependency = &plan.dependency_projects[0];
+        let forged = match forged_field {
+            "manifest" => {
+                let copied_manifest = plan.project_root.join("Copied.bproj");
+                fs::copy(&dependency.manifest_path, &copied_manifest).expect("copy forged manifest");
+                lockfile.replace(
+                    &format!("manifest={};", dependency.manifest_path.display()),
+                    &format!("manifest={};", copied_manifest.display()),
+                )
+            }
+            "project_and_source_root" => {
+                let copied_project = plan.project_root.join("copied");
+                fs::create_dir_all(copied_project.join("src")).expect("create forged source root");
+                lockfile
+                    .replace(
+                        &format!("project={};", dependency.project_root.display()),
+                        &format!("project={};", copied_project.display()),
+                    )
+                    .replace(
+                        &format!("source_root={};", dependency.source_root.display()),
+                        &format!("source_root={};", copied_project.join("src").display()),
+                    )
+            }
+            _ => unreachable!(),
+        };
+        assert_ne!(forged, lockfile, "fixture must change the lockfile identity");
+        fs::write(&lock_path, forged).expect("write forged replay lockfile");
+
+        let roots = crate::projects::effective_roots_for_plan(&plan, None);
+        assert_eq!(roots.dependencies[0].source_root, dependency.source_root, "{forged_field}");
+        assert!(
+            trusted_corelib_service_paths(&plan, &roots, std::slice::from_ref(&unit)).is_empty(),
+            "a forged {forged_field} must not grant service authority"
+        );
+        assert!(destination.is_file());
+        let _ = fs::remove_dir_all(plan.project_root);
+    }
+}
+
+#[test]
+fn lock_replay_with_foreign_project_identity_cannot_grant_service_authority() {
+    for forged_field in ["root_manifest", "project_name"] {
+        let (plan, _, unit) = lock_replayed_foundation_syscall_fixture(forged_field);
+        let lock_path = plan.project_root.join("Project.lock");
+        let lockfile = fs::read_to_string(&lock_path).expect("read replay lockfile");
+        let forged = match forged_field {
+            "root_manifest" => lockfile.replace(
+                &format!("root_manifest={}", plan.manifest_path.display()),
+                &format!("root_manifest={}", plan.project_root.join("Other.bproj").display()),
+            ),
+            "project_name" => lockfile.replace("project_name=App", "project_name=Other"),
+            _ => unreachable!(),
+        };
+        assert_ne!(forged, lockfile, "fixture must change the root identity");
+        fs::write(&lock_path, forged).expect("write foreign lockfile");
+
+        let roots = crate::projects::effective_roots_for_plan(&plan, None);
+        assert_eq!(roots.dependencies[0].source_root, plan.dependency_projects[0].source_root, "{forged_field}");
+        assert!(
+            trusted_corelib_service_paths(&plan, &roots, std::slice::from_ref(&unit)).is_empty(),
+            "a foreign {forged_field} must not grant service authority"
+        );
+        let _ = fs::remove_dir_all(plan.project_root);
+    }
 }
 
 fn no_entry_plan_with_source(source: &str) -> (CompilePlan, PathBuf) {

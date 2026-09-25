@@ -4,6 +4,7 @@ mod lockfile;
 mod prepare;
 mod registry;
 
+pub(crate) use lockfile::load_project_lock_dependencies_for_plan;
 pub use lockfile::{
     PROJECT_LOCK_FILE_NAME, ProjectLockDependencyEntry, WorkspacePrepareOptions, load_project_lock_dependencies,
     load_project_lock_dependencies_from_path,

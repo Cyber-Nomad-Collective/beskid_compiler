@@ -88,6 +88,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Replay materialized dependency roots only when `Project.lock` identifies the
+  current project and exact resolved dependency paths. Preserve compiler-owned
+  Foundation service authority for valid lock replay while rejecting copied or
+  stale lock metadata.
+
 - Reject a symlinked materialized Corelib service file at its lexical origin,
   even when the semantic unit key resolves to a regular target. Keep exact
   service authority for loader-proven paths under macOS `/var` parent aliases.

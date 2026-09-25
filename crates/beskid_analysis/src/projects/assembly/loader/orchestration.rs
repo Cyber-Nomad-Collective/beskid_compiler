@@ -297,7 +297,7 @@ pub fn assemble_program_with_materializer(
 
     let module_index = Arc::new(ModuleIndex::build(&units, &syntax_indexes, &roots, plan));
 
-    let trusted_corelib_service_paths = trusted_corelib_service_paths(plan, workspace, &units);
+    let trusted_corelib_service_paths = trusted_corelib_service_paths(plan, &roots, &units);
 
     super::super::runtime_fixture::attach_runtime_fixture(
         ProgramAssembly {

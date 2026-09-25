@@ -2,8 +2,8 @@ use beskid_abi::runtime_source::{corelib_service_source_identity, corelib_source
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use super::super::SourceUnit;
-use crate::projects::{CompilePlan, PreparedProjectWorkspace};
+use super::super::{EffectiveCompilationRoots, SourceUnit};
+use crate::projects::CompilePlan;
 
 /// Preserve the lexical origin of compiler-owned Foundation service units when a workspace
 /// materializes them under `obj/beskid/deps`. A matching dependency name or source text is never
@@ -11,7 +11,7 @@ use crate::projects::{CompilePlan, PreparedProjectWorkspace};
 /// source path before its copied physical path is admitted.
 pub(super) fn trusted_corelib_service_paths(
     plan: &CompilePlan,
-    workspace: Option<&PreparedProjectWorkspace>,
+    roots: &EffectiveCompilationRoots,
     units: &[SourceUnit],
 ) -> Arc<[PathBuf]> {
     let mut trusted = Vec::new();
@@ -36,10 +36,18 @@ pub(super) fn trusted_corelib_service_paths(
         }) else {
             continue;
         };
-        let effective_path = workspace
-            .and_then(|workspace| workspace.materialized_dependencies.get(index))
-            .map(|dependency| dependency.materialized_source_root.join(relative))
-            .unwrap_or(identity.canonical_path);
+        // Assembly already validated and selected these roots, including Project.lock replay.
+        // Use that exact destination so provenance cannot diverge from source discovery.
+        let mut matching_roots = roots.dependencies.iter().filter(|root| {
+            root.dependency_name.as_deref() == Some(plan.dependency_projects[index].dependency_name.as_str())
+        });
+        let Some(root) = matching_roots.next() else {
+            continue;
+        };
+        if matching_roots.next().is_some() {
+            continue;
+        }
+        let effective_path = root.source_root.join(relative);
         if units.iter().any(|unit| corelib_source_locations_match(&unit.origin_path, &effective_path)) {
             // Retain the issuer's destination, not a canonicalized requesting unit's path.
             trusted.push(effective_path);

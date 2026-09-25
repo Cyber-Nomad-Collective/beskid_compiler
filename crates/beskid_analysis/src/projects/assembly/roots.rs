@@ -3,10 +3,8 @@
 use std::collections::HashSet;
 use std::path::{Component, Path, PathBuf};
 
-use crate::projects::{
-    CompilePlan, PROJECT_LOCK_FILE_NAME, PreparedProjectWorkspace, ProjectLockDependencyEntry,
-    load_project_lock_dependencies_from_path,
-};
+use crate::projects::workflow::load_project_lock_dependencies_for_plan;
+use crate::projects::{CompilePlan, PROJECT_LOCK_FILE_NAME, PreparedProjectWorkspace, ProjectLockDependencyEntry};
 
 /// One searchable source root (host or named dependency).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -60,7 +58,7 @@ pub fn effective_roots_from_plan_and_workspace(
 /// Replay materialized roots from an on-disk `Project.lock` when no prepared workspace is available (LSP).
 pub fn effective_roots_from_lockfile(plan: &CompilePlan, lockfile_path: &Path) -> EffectiveCompilationRoots {
     let base = effective_roots_from_plan_and_workspace(plan, None);
-    let Ok(entries) = load_project_lock_dependencies_from_path(lockfile_path) else {
+    let Ok(entries) = load_project_lock_dependencies_for_plan(lockfile_path, plan) else {
         return base;
     };
     let Some(trusted_dependencies_root) = plan.project_root.join("obj/beskid/deps/src").canonicalize().ok() else {
@@ -112,11 +110,21 @@ fn replayed_dependency_roots(
         }
 
         let project = resolve_lock_path(lock_root, Path::new(entry.project()));
+        let manifest = resolve_lock_path(lock_root, Path::new(entry.manifest()));
         let source_root = if Path::new(entry.source_root()).is_absolute() {
             PathBuf::from(entry.source_root())
         } else {
             project.join(entry.source_root())
         };
+        // A lockfile is only a replay hint. Its identity fields must still describe the
+        // dependency selected by the current graph; a copied or stale lock cannot confer
+        // compiler-owned service authority on another source tree.
+        if manifest.canonicalize().ok()? != dependency.manifest_path.canonicalize().ok()?
+            || project.canonicalize().ok()? != dependency.project_root.canonicalize().ok()?
+            || source_root.canonicalize().ok()? != dependency.source_root.canonicalize().ok()?
+        {
+            return None;
+        }
         let relative = source_root.strip_prefix(&project).ok()?;
         if relative
             .components()

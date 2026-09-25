@@ -267,6 +267,30 @@ pub fn load_project_lock_dependencies_from_path(
     Ok(ProjectLockfileV1::parse_v1(&content)?.dependencies)
 }
 
+/// Replay only a lockfile issued for this exact project. Other callers may inspect
+/// dependency entries, but compilation must not trust a copied lock's root identity.
+pub(crate) fn load_project_lock_dependencies_for_plan(
+    lock_path: &Path,
+    plan: &CompilePlan,
+) -> Result<Vec<ProjectLockDependencyEntry>, ProjectError> {
+    let content = fs::read_to_string(lock_path)
+        .map_err(|e| ProjectError::Validation(format!("failed to read {}: {e}", lock_path.display())))?;
+    let parsed = ProjectLockfileV1::parse_v1(&content)?;
+    let lock_root = lock_path.parent().ok_or_else(|| ProjectError::Validation("lockfile has no parent".into()))?;
+    let root_manifest = Path::new(&parsed.root_manifest);
+    let root_manifest =
+        if root_manifest.is_absolute() { root_manifest.to_path_buf() } else { lock_root.join(root_manifest) };
+    let same_manifest = match (root_manifest.canonicalize(), plan.manifest_path.canonicalize()) {
+        (Ok(actual), Ok(expected)) => actual == expected,
+        (Err(_), Err(_)) => root_manifest == plan.manifest_path,
+        _ => false,
+    };
+    if !same_manifest || parsed.project_name != plan.project_name {
+        return Err(ProjectError::Validation("lockfile belongs to a different project".into()));
+    }
+    Ok(parsed.dependencies)
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct WorkspacePrepareOptions {
     pub frozen: bool,
