@@ -2,9 +2,9 @@ use super::support::{
     AbiManifestV5, Arc, AssemblyDiscovery, AstNodeId, AstNodeKey, BeskidDatabase,
     CANONICAL_BOOTSTRAP_NATIVE_SOURCE_PATH, CANONICAL_BOOTSTRAP_SOURCE_PATH, CANONICAL_EVENTS_SOURCE_PATH,
     CANONICAL_FIBER_SOURCE_PATH, CANONICAL_SCHEDULER_CONTEXT_SOURCE_PATH, CANONICAL_SCHEDULER_CORE_SOURCE_PATH,
-    CANONICAL_SCHEDULER_POLL_SOURCE_PATH, CallKind, CodegenInput, EffectiveCompilationRoots, IndexedNodeKind,
-    ModuleIndex, NodeFacts, PathBuf, ProgramAssembly, ProjectSession, RootEntry, SemanticTypeId, SourceUnit,
-    SourceUnitId, SyntaxGenerationId, SyntaxNodeFacts, TypedProgram, build_canonical_runtime_typed_program,
+    CANONICAL_SCHEDULER_POLL_SOURCE_PATH, CallKind, CodegenInput, CodegenInputError, EffectiveCompilationRoots,
+    IndexedNodeKind, ModuleIndex, NodeFacts, PathBuf, ProgramAssembly, ProjectSession, RootEntry, SemanticTypeId,
+    SourceUnit, SourceUnitId, SyntaxGenerationId, SyntaxNodeFacts, TypedProgram, build_canonical_runtime_typed_program,
     build_typed_program, call_lowering, canonical_runtime_intrinsic_capability, canonical_runtime_sources, find_node,
     find_node_matching, input_fixture, item_name, linux_target, parse_program_with_source_name,
     primitive_numeric_conversion,
@@ -126,6 +126,28 @@ fn ordinary_syntax_programs_cannot_import_runtime_intrinsics() {
     assert!(input.runtime_intrinsic_capability().is_none());
     let call = find_node(&db, root, IndexedNodeKind::CallExpression).expect("ordinary source call");
     assert!(input.runtime_intrinsic_for(call, "native_word_from_pointer").is_none());
+}
+
+#[test]
+fn codegen_boundary_rejects_an_unregistered_network_operation_before_lowering() {
+    // Both the engine JIT and AOT prepared-syntax wrappers delegate here; CodegenInput is their
+    // shared manifest gate, before this module reaches ISLE emission.
+    let (db, typed, root, target) = input_fixture();
+    let mut manifest = AbiManifestV5::canonical_runtime(target.clone());
+    let mut unregistered = manifest
+        .trusted_runtime_intrinsics
+        .iter()
+        .find(|intrinsic| intrinsic.name == "network_submit")
+        .expect("canonical network submit operation")
+        .clone();
+    unregistered.name = "network_unregistered".into();
+    unregistered.symbol = "beskid_rt_v5_intrinsic_network_unregistered".into();
+    manifest.trusted_runtime_intrinsics.push(unregistered);
+
+    assert!(matches!(
+        CodegenInput::new(&db, typed, Arc::from([root]), target, manifest),
+        Err(CodegenInputError::ManifestDrift)
+    ));
 }
 
 #[test]
