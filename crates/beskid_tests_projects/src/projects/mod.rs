@@ -22,6 +22,8 @@ mod compile_plan;
 #[cfg(test)]
 mod composition;
 #[cfg(test)]
+mod cargo_workspace;
+#[cfg(test)]
 mod corelib;
 #[cfg(test)]
 mod discovery;
