@@ -8,7 +8,7 @@ use std::fs;
 use std::path::PathBuf;
 
 use beskid_analysis::projects::{
-    effective_roots_from_lockfile, CompilePlan, ResolvedDependencyProject, Target, TargetKind,
+    CompilePlan, ResolvedDependencyProject, Target, TargetKind, effective_roots_from_lockfile,
 };
 
 use beskid_tests_support::temp_case_dir;
@@ -23,10 +23,8 @@ fn sample_mod_materialized_foundation_replays_no_lossy_utf8_append_route() {
     let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("fixtures/mods/sample_mod");
     let lock = fs::read_to_string(fixture.join("Project.lock")).expect("read fixture lockfile");
     let lock_entries: Vec<_> = lock.lines().filter(|line| line.starts_with("- name=")).collect();
-    let lock_entry = lock
-        .lines()
-        .find(|line| line.starts_with("- name=corelib_foundation;"))
-        .expect("foundation lock entry");
+    let lock_entry =
+        lock.lines().find(|line| line.starts_with("- name=corelib_foundation;")).expect("foundation lock entry");
     let materialized_root = PathBuf::from(lock_entry_field(lock_entry, "materialized_root="));
     let expected_materialized_root = fixture.join(&materialized_root);
     let expected_dependencies_root = fixture.join("obj/beskid/deps/src");
@@ -50,12 +48,15 @@ fn sample_mod_materialized_foundation_replays_no_lossy_utf8_append_route() {
         target: Target { name: "main".to_string(), kind: TargetKind::App, entry: Some("Mod.bd".to_string()) },
         dependency_projects: lock_entries
             .iter()
-            .map(|entry| ResolvedDependencyProject {
-                dependency_name: lock_entry_field(entry, "name=").to_string(),
-                manifest_path: PathBuf::from(lock_entry_field(entry, "manifest=")),
-                project_root: PathBuf::from(lock_entry_field(entry, "project=")),
-                project_name: lock_entry_field(entry, "name=").to_string(),
-                source_root: PathBuf::from(lock_entry_field(entry, "source_root=")),
+            .map(|entry| {
+                let project_root = fixture.join(lock_entry_field(entry, "project="));
+                ResolvedDependencyProject {
+                    dependency_name: lock_entry_field(entry, "name=").to_string(),
+                    manifest_path: fixture.join(lock_entry_field(entry, "manifest=")),
+                    project_root: project_root.clone(),
+                    project_name: lock_entry_field(entry, "name=").to_string(),
+                    source_root: project_root.join(lock_entry_field(entry, "source_root=")),
+                }
             })
             .collect(),
         unresolved_dependencies: Vec::new(),
@@ -73,12 +74,8 @@ fn sample_mod_materialized_foundation_replays_no_lossy_utf8_append_route() {
     );
 
     for source in ["String.bd", "Utf8.bd"] {
-        let source = fs::read_to_string(
-            expected_materialized_root
-                .join("src/Core/String")
-                .join(source),
-        )
-        .expect("read materialized Core.String source");
+        let source = fs::read_to_string(expected_materialized_root.join("src/Core/String").join(source))
+            .expect("read materialized Core.String source");
         assert!(
             !source.contains("AppendUtf8Rune"),
             "materialized corelib must not reintroduce the removed lossy UTF-8 append route"
@@ -129,7 +126,10 @@ fn lockfile_replay_accepts_contained_absolute_materialized_root() {
         .expect("write absolute lockfile");
 
     let replayed = effective_roots_from_lockfile(&case.plan, &case.lockfile);
-    assert_eq!(replayed.dependencies[0].source_root, case.materialized.join("src").canonicalize().expect("canonical source"));
+    assert_eq!(
+        replayed.dependencies[0].source_root,
+        case.materialized.join("src").canonicalize().expect("canonical source")
+    );
 }
 
 struct ReplayLockCase {
@@ -149,6 +149,8 @@ impl ReplayLockCase {
         fs::create_dir_all(project.join("Src")).expect("project source root");
         fs::create_dir_all(dependency.join("src")).expect("dependency source root");
         fs::create_dir_all(materialized.join("src")).expect("materialized source root");
+        fs::write(project.join("App.bproj"), "fixture root manifest\n").expect("project manifest");
+        fs::write(dependency.join("Foundation.bproj"), "fixture dependency manifest\n").expect("dependency manifest");
         let plan = CompilePlan {
             project_root: project.clone(),
             manifest_path: project.join("App.bproj"),
@@ -176,12 +178,17 @@ impl ReplayLockCase {
         let dependency = &self.plan.dependency_projects[0];
         format!(
             "- name=foundation;manifest={};project={};source_root={};materialized_root={materialized_root}\n",
-            dependency.manifest_path.display(), dependency.project_root.display(), dependency.source_root.display()
+            dependency.manifest_path.display(),
+            dependency.project_root.display(),
+            dependency.source_root.display()
         )
     }
 
     fn lock_with(&self, entry: &str) -> String {
-        format!("# Project.lock v1\nroot_manifest={}\nproject_name=App\ndependencies:\n{entry}", self.plan.manifest_path.display())
+        format!(
+            "# Project.lock v1\nroot_manifest={}\nproject_name=App\ndependencies:\n{entry}",
+            self.plan.manifest_path.display()
+        )
     }
 }
 
