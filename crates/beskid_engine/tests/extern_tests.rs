@@ -3,6 +3,9 @@
 use anyhow::Result;
 use beskid_engine::Engine;
 use beskid_engine::services::prepare_jit_entrypoint;
+use std::sync::Mutex;
+
+static ENGINE_TEST_LOCK: Mutex<()> = Mutex::new(());
 
 #[cfg(feature = "extern_dlopen")]
 const LIBC: &str = "libc.so.6";
@@ -10,6 +13,7 @@ const LIBC: &str = "libc.so.6";
 #[test]
 #[cfg(feature = "extern_dlopen")]
 fn extern_resolution_only_compiles_with_feature() -> Result<()> {
+    let _guard = ENGINE_TEST_LOCK.lock().expect("exclusive runtime state");
     let src = r#"
 [Extern(Abi:"C", Library:"libc.so.6")]
 pub contract C {
@@ -29,6 +33,7 @@ pub i64 Main() { return 0; }
 #[test]
 #[cfg(not(feature = "extern_dlopen"))]
 fn extern_resolution_via_process_symbols_without_feature() -> Result<()> {
+    let _guard = ENGINE_TEST_LOCK.lock().expect("exclusive runtime state");
     let src = r#"
 [Extern(Abi:"C", Library:"libc.so.6")]
 pub contract C {
@@ -49,6 +54,7 @@ pub i64 Main() { return C.getpid(); }
 #[test]
 #[cfg(not(feature = "extern_dlopen"))]
 fn extern_missing_symbol_errors_without_feature() -> Result<()> {
+    let _guard = ENGINE_TEST_LOCK.lock().expect("exclusive runtime state");
     let src = r#"
 [Extern(Abi:"C", Library:"libc.so.6")]
 pub contract C {
@@ -68,6 +74,7 @@ pub i64 Main() { return C.no_such_symbol(); }
 #[test]
 #[cfg(feature = "extern_dlopen")]
 fn extern_real_call_getpid() -> Result<()> {
+    let _guard = ENGINE_TEST_LOCK.lock().expect("exclusive runtime state");
     let src = r#"
 [Extern(Abi:"C", Library:"libc.so.6")]
 pub contract C {
@@ -89,6 +96,7 @@ pub i64 Main() { return C.getpid(); }
 #[test]
 #[cfg(feature = "extern_dlopen")]
 fn extern_missing_symbol_errors() -> Result<()> {
+    let _guard = ENGINE_TEST_LOCK.lock().expect("exclusive runtime state");
     let src = r#"
 [Extern(Abi:"C", Library:"libc.so.6")]
 pub contract C {
@@ -108,6 +116,7 @@ pub i64 Main() { return C.no_such_symbol(); }
 #[test]
 #[cfg(feature = "extern_dlopen")]
 fn extern_missing_library_errors() -> Result<()> {
+    let _guard = ENGINE_TEST_LOCK.lock().expect("exclusive runtime state");
     let src = r#"
 [Extern(Abi:"C", Library:"libnope.so")]
 pub contract C {

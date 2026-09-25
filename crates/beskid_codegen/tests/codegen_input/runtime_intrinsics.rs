@@ -220,6 +220,35 @@ fn canonical_runtime_source_can_import_manifest_owned_intrinsics() {
 }
 
 #[test]
+fn canonical_network_leak_report_call_has_runtime_intrinsic_authority_on_host() {
+    let mut db = BeskidDatabase::default();
+    let corpus = CanonicalRuntimeCorpus::materialize();
+    let target = beskid_abi::runtime_kit::host_runtime_target().expect("supported native host");
+    let manifest = AbiManifestV5::canonical_runtime(target.clone());
+    let typed = canonical_typed_program(&mut db, &corpus, SyntaxGenerationId(93), &manifest);
+    let generation = typed.generation;
+    let roots = canonical_unit_roots(&db, &typed);
+    let input = CodegenInput::new(&db, typed, Arc::from(roots), target, manifest).expect("canonical codegen input");
+    let network = AstNodeKey {
+        unit: SourceUnitId::new(&db, corpus.unit_path("src/Runtime/Network/Dns.bd")),
+        generation,
+        node: AstNodeId(0),
+    };
+    let call = find_node_matching(&db, network, IndexedNodeKind::CallExpression, |call| {
+        matches!(
+            beskid_queries::runtime_intrinsic_name(&db, call).ok().flatten(),
+            Some(name) if name.0.as_ref() == "network_report_leak"
+        )
+    })
+    .expect("canonical NetworkShutdown leak report call");
+    let (_, intrinsic) = input
+        .runtime_intrinsic_for(call, "network_report_leak")
+        .expect("host target must authorize canonical leak reporting");
+    assert_eq!(intrinsic.params.len(), 7, "the live ABI contract must match all leak-report fields");
+    assert_eq!(SyntaxNodeFacts::new(&input).call_kind(call), Some(CallKind::RuntimeIntrinsic));
+}
+
+#[test]
 fn canonical_trap_intrinsic_uses_the_source_owned_bridge_and_rejects_user_packages() {
     use beskid_abi::abi_v5::AbiType;
     use beskid_queries::{item_signature, runtime_intrinsic_name};
