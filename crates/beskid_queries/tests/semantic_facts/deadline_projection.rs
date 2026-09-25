@@ -2,14 +2,16 @@ use beskid_abi::abi_v5::{AbiManifestV5, TargetMetadata};
 use beskid_abi::runtime_source::{
     CANONICAL_NETWORK_INTERNAL_SOURCE_PATH, canonical_corelib_service_capability, canonical_corelib_service_source_path,
 };
+use beskid_analysis::analysis::SemanticIssueKind;
 use beskid_analysis::projects::{
     AssemblyDiscovery, EffectiveCompilationRoots, ModuleIndex, ProgramAssembly, RootEntry, SourceUnit,
 };
 use beskid_analysis::services::parse_program;
 use beskid_analysis::syntax_query::{NodeKind, SyntaxIndex};
 use beskid_queries::{
-    AstNodeKey, BeskidDatabase, ProjectSession, SourceUnitId, SyntaxGenerationId, aggregate_field_access,
-    aggregate_literal_declaration, aggregate_literal_layout, build_typed_program_with_corelib_services,
+    AstNodeKey, BeskidDatabase, MemberReferenceKind, ProjectSession, SourceUnitId, SyntaxGenerationId,
+    aggregate_field_access, aggregate_literal_declaration, aggregate_literal_layout,
+    build_typed_program_with_corelib_services, check_items, member_reference_legality,
 };
 use std::{path::PathBuf, sync::Arc};
 
@@ -204,6 +206,52 @@ fn deadline_literal_rejects_raw_construction_in_ordinary_source() {
         )
         .is_err(),
         "ordinary source cannot resolve a private-field Deadline constructor"
+    );
+}
+
+#[test]
+fn deadline_literal_private_field_is_a_coded_member_error() {
+    let temp = tempfile::tempdir().expect("application root");
+    let owner_path = temp.path().join("Main.bd");
+    let owner_source = "use Core.Time.Deadline; Deadline Forge() { return Deadline { monotonicNanos: 1_i64 }; }";
+    let (deadline_path, deadline_source) = canonical_deadline();
+    let finding = fact_result(
+        owner_path,
+        owner_source.into(),
+        deadline_path,
+        deadline_source,
+        "Deadline Forge",
+        NodeKind::FunctionDefinition,
+        |db, key| member_reference_legality(db, key),
+    )
+    .expect("member legality query")
+    .expect("private Deadline field must have a legality finding");
+    assert_eq!(finding.kind, MemberReferenceKind::UnknownStructField { name: "monotonicNanos".into() });
+}
+
+#[test]
+fn deadline_literal_without_private_field_is_a_coded_missing_field_error() {
+    let temp = tempfile::tempdir().expect("application root");
+    let owner_path = temp.path().join("Main.bd");
+    let owner_source = "use Core.Time.Deadline; Deadline Forge() { return Deadline { }; }";
+    let (deadline_path, deadline_source) = canonical_deadline();
+    let findings = fact_result(
+        owner_path,
+        owner_source.into(),
+        deadline_path,
+        deadline_source,
+        "Deadline Forge",
+        NodeKind::FunctionDefinition,
+        |db, key| Ok::<_, beskid_queries::SemanticError>(check_items(db, &[key]).err()),
+    )
+    .expect("member legality query")
+    .expect("missing private Deadline field must have a legality finding");
+    assert!(
+        findings.iter().any(|finding| matches!(
+            &finding.kind,
+            SemanticIssueKind::TypeMissingStructField { name } if name == "monotonicNanos"
+        )),
+        "expected E1212 for the omitted private field, got {findings:?}"
     );
 }
 

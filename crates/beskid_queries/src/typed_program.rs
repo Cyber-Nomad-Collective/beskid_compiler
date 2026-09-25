@@ -107,20 +107,31 @@ pub fn build_typed_program(
         )?;
     }
 
-    let module_units = assembly
-        .units
-        .iter()
-        .filter_map(|unit| {
+    let mut module_units = std::collections::HashMap::<Vec<String>, Vec<SourceUnitId>>::new();
+    for unit in assembly.units.iter() {
+        let Some(module_path) =
             beskid_analysis::projects::infer_logical_module_path(unit, &assembly.roots, assembly.has_std_dependency)
-                .map(|module_path| (module_path, SourceUnitId::new(db, unit.path.clone())))
-        })
-        .fold(std::collections::HashMap::<Vec<String>, Vec<SourceUnitId>>::new(), |mut modules, (path, unit)| {
-            let units = modules.entry(path).or_default();
-            if !units.contains(&unit) {
-                units.push(unit);
+        else {
+            continue;
+        };
+        let unit_id = SourceUnitId::new(db, unit.path.clone());
+        let corelib_shard = assembly.has_std_dependency
+            && assembly.roots.dependencies.iter().any(|root| {
+                root.dependency_name.as_deref().is_some_and(|name| name.starts_with("corelib_"))
+                    && unit.origin_path.starts_with(&root.source_root)
+            });
+        if corelib_shard && module_path.first().is_some_and(|segment| segment == "Std") && module_path.len() > 1 {
+            let local_path = module_path[1..].to_vec();
+            let units = module_units.entry(local_path).or_default();
+            if !units.contains(&unit_id) {
+                units.push(unit_id);
             }
-            modules
-        });
+        }
+        let units = module_units.entry(module_path).or_default();
+        if !units.contains(&unit_id) {
+            units.push(unit_id);
+        }
+    }
     let mut registry = db.syntax_dependency_registry().lock().expect("syntax dependency registry");
     for (path, units) in &module_units {
         registry.modules.insert((generation, path.clone()), units.clone());

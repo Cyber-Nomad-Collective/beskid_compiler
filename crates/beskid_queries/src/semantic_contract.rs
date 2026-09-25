@@ -98,7 +98,8 @@ use layouts::{
     enum_constructor_template_tracked, enum_constructor_tracked, enum_field_layout, enum_layout_from_definition,
     enum_layout_substitutions, enum_layout_tracked, enum_match_scrutinee_layout, enum_match_tracked,
     enum_pattern_targets_declaration, instantiated_aggregate_layout_for_path, instantiated_enum_layout_for_path,
-    nominal_aggregate_abi_type, nominal_local_receiver_declaration, resolve_nominal_layout_declaration,
+    nominal_aggregate_abi_type, nominal_local_receiver_declaration, private_deadline_literal_field,
+    resolve_nominal_layout_declaration,
     resolve_type_declaration, semantic_type_from_syntax, unique_exported_type_in_unit, unique_public_type_in_unit,
     unique_type_in_unit,
 };

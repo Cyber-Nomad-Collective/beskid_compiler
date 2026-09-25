@@ -233,6 +233,9 @@ pub fn check_items(db: &dyn Db, items: &[AstNodeKey]) -> Result<(), Vec<Semantic
                 MemberReferenceKind::UnknownStructField { name } => {
                     SemanticIssueKind::TypeUnknownStructField { name: name.to_string() }
                 }
+                MemberReferenceKind::MissingStructField { name } => {
+                    SemanticIssueKind::TypeMissingStructField { name: name.to_string() }
+                }
                 MemberReferenceKind::UnknownEnumVariant { enum_name, variant } => SemanticIssueKind::UnknownEnumPath {
                     enum_name: enum_name.to_string(),
                     variant_name: variant.to_string(),

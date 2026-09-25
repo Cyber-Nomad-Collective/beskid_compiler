@@ -189,8 +189,21 @@ fn validate_aggregate_literal_visibility(
     key: AstNodeKey,
     declaration: AstNodeKey,
 ) -> Result<(), SemanticError> {
+    if private_deadline_literal_field(db, key, declaration)?.is_some() {
+        return Err(SemanticError::unavailable("aggregate_literal.visibility"));
+    }
+    Ok(())
+}
+
+/// The exact compiler-owned Deadline field hidden from literals in other units.
+/// Legality uses this same authority to issue a coded user diagnostic first.
+pub(in crate::semantic_contract) fn private_deadline_literal_field(
+    db: &dyn Db,
+    key: AstNodeKey,
+    declaration: AstNodeKey,
+) -> Result<Option<&'static str>, SemanticError> {
     if key.unit == declaration.unit {
-        return Ok(());
+        return Ok(None);
     }
     let syntax = db
         .syntax_unit(declaration.unit)
@@ -215,9 +228,9 @@ fn validate_aggregate_literal_visibility(
             .get(&(declaration.unit, declaration.generation))
             .is_some_and(|path| path == CANONICAL_FOUNDATION_DEADLINE_SOURCE_PATH)
     {
-        return Err(SemanticError::unavailable("aggregate_literal.visibility"));
+        return Ok(Some("monotonicNanos"));
     }
-    Ok(())
+    Ok(None)
 }
 
 /// Derive the element ABI of an empty array literal only from a direct declared `T[]` storage

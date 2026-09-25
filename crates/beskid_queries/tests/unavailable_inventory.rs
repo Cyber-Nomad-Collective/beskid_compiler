@@ -21,6 +21,7 @@ use std::path::{Path, PathBuf};
 const LEGALITY_MAPPED: &[(&str, &str)] = &[
     ("abi_type", "unresolved_type_reference (E1201)"),
     ("aggregate_field_access", "member_reference_legality (E1211)"),
+    ("aggregate_literal", "member_reference_legality (E1211, E1212)"),
     ("aggregate_layout", "unresolved_type_reference (E1201)"),
     ("call_abi_signature", "call_arity_mismatch (E1204), generic_parameter_conflict (E1229)"),
     ("call_lowering", "unresolved_call_target (E1101, E1108)"),

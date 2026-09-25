@@ -9,7 +9,7 @@ pub(in crate::semantic_contract) use aggregate::{
     aggregate_layout_from_definition, aggregate_layout_tracked, aggregate_literal_declaration_tracked,
     aggregate_literal_layout_tracked, applied_aggregate_shape, array_index_element_abi_type_tracked,
     array_index_element_template_tracked, empty_array_literal_element_abi_type_tracked,
-    instantiated_aggregate_layout_for_path,
+    instantiated_aggregate_layout_for_path, private_deadline_literal_field,
 };
 pub use aggregate::{
     aggregate_literal_specialization, array_index_element_specialization, empty_array_literal_element_specialization,
@@ -17,8 +17,8 @@ pub use aggregate::{
 
 pub(in crate::semantic_contract) use common::{
     abi_local_declaration_type, abi_type_for_direct_aggregate_field_projection, abi_type_for_local_path,
-    explicit_local_declaration_type,
-    aggregate_field_layout, nominal_aggregate_abi_type, resolve_nominal_layout_declaration, resolve_type_declaration,
+    aggregate_field_layout, explicit_local_declaration_type, nominal_aggregate_abi_type,
+    resolve_nominal_layout_declaration, resolve_type_declaration,
     semantic_type_from_syntax, unique_assembled_type_in_module, unique_exported_type_in_unit,
     unique_public_type_in_unit, unique_type_in_unit,
 };

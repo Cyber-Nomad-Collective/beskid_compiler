@@ -88,6 +88,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Report canonical opaque `Core.Time.Deadline` literal misuse as a coded
+  member diagnostic before layout lowering: E1211 for a supplied private field
+  and E1212 when the required private field is omitted. Lookalike types retain
+  ordinary aggregate behavior.
+
+- Register Corelib shard modules under both their App-facing `Std.Core.*`
+  names and their own `Core.*` import scope, so reachability-scoped legality
+  does not reject canonical Foundation imports in an implicit-Std App.
+
 - Replay materialized dependency roots only when `Project.lock` identifies the
   current project and exact resolved dependency paths. Preserve compiler-owned
   Foundation service authority for valid lock replay while rejecting copied or
