@@ -5,6 +5,24 @@ mod fiber_ownership;
 mod intrinsics;
 mod spawn;
 
+use super::{AstNodeKey, Db, layouts, unique_type_in_unit};
+
+/// Find the Fiber declaration through the requesting unit's module namespace.
+/// Corelib shards use `Concurrency.Fiber`; implicit-Std Apps use `Std.Concurrency.Fiber`.
+fn fiber_declaration_in_scope(db: &dyn Db, key: AstNodeKey) -> Option<AstNodeKey> {
+    layouts::unique_assembled_type_in_module(db, key, &["Concurrency".into(), "Fiber".into()], "Fiber", 1)
+        .or_else(|| {
+            layouts::unique_assembled_type_in_module(
+                db,
+                key,
+                &["Std".into(), "Concurrency".into(), "Fiber".into()],
+                "Fiber",
+                1,
+            )
+        })
+        .or_else(|| unique_type_in_unit(db, key.unit, key.generation, "Fiber", 1))
+}
+
 pub(in crate::semantic_contract) use closures::{
     callable_signature_for_node, callable_signature_for_path, callable_signature_tracked, capture_storage_class,
     capture_storage_for_node, capture_storage_tracked, closure_call_target_tracked, closure_captures,

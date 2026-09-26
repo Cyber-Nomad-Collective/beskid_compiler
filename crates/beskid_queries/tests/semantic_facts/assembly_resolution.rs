@@ -895,3 +895,105 @@ i32 ShardContract(Core.Results.Reader reader) { return 0; }
     assert!(unresolved_type(results_unit, &results_index, 0).is_none(), "shard-local type must resolve");
     assert!(unresolved_type(results_unit, &results_index, 1).is_none(), "shard-local contract must resolve");
 }
+
+#[test]
+fn std_app_spawn_fiber_handle_and_parameter_ownership_use_canonical_module_path() {
+    let mut db = BeskidDatabase::default();
+    let host_root = PathBuf::from("/tmp/std-fiber-scope/app/src");
+    let shard_root = PathBuf::from("/tmp/std-fiber-scope/corelib/Src");
+    let main_path = host_root.join("Main.bd");
+    let fiber_path = shard_root.join("Concurrency/Fiber.bd");
+    let main_source = r#"
+i64 Compute() { return 42_i64; }
+unit Main(Std.Concurrency.Fiber<i64> parameter) {
+    let child = spawn Compute();
+    parameter.Join();
+    parameter.Join();
+    return;
+}
+"#;
+    let fiber_source = r#"
+pub type Fiber<T> { i64 handle, pub unit Join() { return; } }
+unit ShardUse(Concurrency.Fiber<i64> parameter) {
+    parameter.Join();
+    parameter.Join();
+    return;
+}
+"#;
+    let main_program =
+        expand_program(parse_program(main_source).expect("main parse"), DEFAULT_MAX_MACRO_EXPANSION_DEPTH);
+    let fiber_program =
+        expand_program(parse_program(fiber_source).expect("fiber parse"), DEFAULT_MAX_MACRO_EXPANSION_DEPTH);
+    let generation = SyntaxGenerationId(21);
+    let assembly = Arc::new(ProgramAssembly::new(
+        EffectiveCompilationRoots {
+            host: RootEntry { dependency_name: None, source_root: host_root.clone() },
+            dependencies: vec![RootEntry {
+                dependency_name: Some("corelib_concurrency".into()),
+                source_root: shard_root,
+            }],
+        },
+        Arc::new(vec![
+            SourceUnit {
+                logical_name: main_path.display().to_string(),
+                origin_path: main_path.clone(),
+                path: main_path.clone(),
+                source: main_source.to_string(),
+                program: main_program.clone(),
+            },
+            SourceUnit {
+                logical_name: fiber_path.display().to_string(),
+                origin_path: fiber_path.clone(),
+                path: fiber_path.clone(),
+                source: fiber_source.to_string(),
+                program: fiber_program.clone(),
+            },
+        ]),
+        0,
+        AssemblyDiscovery::ImportClosure,
+        Arc::new(ModuleIndex::empty()),
+        true,
+        generation,
+    ));
+    let main_unit = SourceUnitId::new(&db, main_path);
+    let fiber_unit = SourceUnitId::new(&db, fiber_path);
+    let project = ProjectSession::new(
+        &db,
+        host_root.parent().expect("project root").to_path_buf(),
+        main_unit.path(&db).clone(),
+        "App".to_string(),
+        "lock".to_string(),
+    );
+    build_typed_program(&mut db, project, generation, assembly).expect("typed syntax program");
+    let main_index = SyntaxIndex::from_program(&main_program, generation);
+    let fiber_index = SyntaxIndex::from_program(&fiber_program, generation);
+    let spawn = key(main_unit, generation, &main_index, NodeKind::SpawnExpression, 0);
+    let main = key(main_unit, generation, &main_index, NodeKind::FunctionDefinition, 1);
+    let fiber = key(fiber_unit, generation, &fiber_index, NodeKind::TypeDefinition, 0);
+    let shard_use = key(fiber_unit, generation, &fiber_index, NodeKind::FunctionDefinition, 0);
+
+    let handle = beskid_queries::spawn_handle_type(&db, spawn);
+    let ownership = beskid_queries::callable_fiber_ownership(&db, main);
+    assert!(
+        handle.as_ref().ok().and_then(Option::as_ref).is_some()
+            && ownership.as_ref().ok().and_then(Option::as_ref).is_some_and(|fact| {
+                fact.diagnostics
+                    .iter()
+                    .any(|diagnostic| diagnostic.kind == beskid_queries::SpawnDiagnosticKind::UseAfterMove)
+            }),
+        "handle={handle:?} ownership={ownership:?}"
+    );
+    let handle = handle.expect("spawn handle query").expect("spawn handle");
+    assert_eq!(handle.declaration, fiber);
+    assert_eq!(handle.payload.argument, beskid_queries::SemanticTypeId::I64);
+    let shard_ownership = beskid_queries::callable_fiber_ownership(&db, shard_use)
+        .expect("shard ownership query")
+        .expect("shard ownership");
+    assert!(
+        shard_ownership
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.kind == beskid_queries::SpawnDiagnosticKind::UseAfterMove),
+        "shard ownership={shard_ownership:?}"
+    );
+}

@@ -97,9 +97,7 @@ pub(in crate::semantic_contract) fn spawn_handle_type_tracked(
         return Ok(None);
     };
     let declaration =
-        layouts::unique_assembled_type_in_module(db, key, &["Concurrency".into(), "Fiber".into()], "Fiber", 1)
-            .or_else(|| unique_type_in_unit(db, key.unit, key.generation, "Fiber", 1))
-            .ok_or_else(|| SemanticError::unavailable("spawn_handle_type"))?;
+        fiber_declaration_in_scope(db, key).ok_or_else(|| SemanticError::unavailable("spawn_handle_type"))?;
     let target = target.callee;
     let identity = if let Some(lambda) = closure_signature(db, target)? {
         generic_source_expression_identity(db, lambda.body)?
@@ -153,9 +151,7 @@ pub(in crate::semantic_contract) fn inferred_spawn_handle(
     let GenericSourceTypeIdentity::Nominal { qualified_name, arguments } = identity else {
         return None;
     };
-    let declaration =
-        layouts::unique_assembled_type_in_module(db, receiver, &["Concurrency".into(), "Fiber".into()], "Fiber", 1)
-            .or_else(|| unique_type_in_unit(db, receiver.unit, receiver.generation, "Fiber", 1))?;
+    let declaration = fiber_declaration_in_scope(db, receiver)?;
     if stable_declaration_identity(db, declaration)? != qualified_name || arguments.len() != 1 {
         return None;
     }

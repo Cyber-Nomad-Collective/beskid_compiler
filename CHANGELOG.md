@@ -115,6 +115,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   App, so E1105 still rejects those paths in App sources.
 - Scope direct qualified type, contract, and call-module lookups to the
   requesting unit so App sources cannot bypass that import rule.
+- Resolve internal spawn and Fiber ownership facts through the canonical
+  `Std.Concurrency.Fiber` path in Apps while retaining shard-local lookup.
 
 - Replay materialized dependency roots only when `Project.lock` identifies the
   current project and exact resolved dependency paths. Preserve compiler-owned
