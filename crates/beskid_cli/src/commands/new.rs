@@ -79,7 +79,7 @@ pub struct InstantiateFlags {
     #[arg(long = "package")]
     pub package: Option<String>,
 
-    /// Host `Project.proj` for item templates.
+    /// Host `.bproj` manifest for item templates.
     #[arg(long = "project")]
     pub project: Option<PathBuf>,
 
@@ -91,7 +91,7 @@ pub struct InstantiateFlags {
     #[arg(long = "strict-post-actions")]
     pub strict_post_actions: bool,
 
-    /// Item template may emit `Project.proj`.
+    /// Item template may emit a `.bproj` manifest.
     #[arg(long = "allow-project-manifest")]
     pub allow_project_manifest: bool,
 

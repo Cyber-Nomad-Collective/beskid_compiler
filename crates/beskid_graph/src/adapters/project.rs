@@ -129,10 +129,8 @@ mod tests {
     #[test]
     fn project_graph_renders_mermaid() {
         let manifest = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../beskid_tests_projects/fixtures/projects/simple_app/Project.proj");
-        if !manifest.is_file() {
-            return;
-        }
+            .join("../beskid_e2e_tests/fixtures/enums_match/EnumsMatch.bproj");
+        assert!(manifest.is_file(), "fixture manifest missing: {manifest:?}");
         let graph = beskid_analysis::projects::build_project_graph(&manifest).expect("graph");
         let doc = from_project_graph(&graph).expect("render");
         assert!(doc.mermaid.contains("flowchart"));

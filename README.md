@@ -50,6 +50,14 @@ CI publishes two rolling GitHub release streams from `main` (same semver source 
 
 Each push also creates an immutable `cli-v*` / `lsp-v*` release for pinning. Install the managed LSP with `beskid lsp install` (writes `~/.beskid/bin/beskid_lsp`); `beskid lsp` prefers that binary when present.
 
+### Development setup
+
+Install Rust through [rustup](https://rustup.rs). The `rust-toolchain.toml` in this directory (channel
+`stable`) is only honored through rustup's shims, so keep `~/.cargo/bin` ahead of other Rust installs.
+A Homebrew `rustc` first on `PATH` fails with "linker `rust-lld` not found", because
+`.cargo/config.toml` selects `rust-lld` on `aarch64-apple-darwin`. The workspace needs Rust 1.96 or newer.
+Initialize the corelib submodule with `git submodule update --init corelib` before building.
+
 ### Building
 
 The **core library sources** are pinned as a Git submodule at `corelib/` (repository: [beskid_standard](https://github.com/Cyber-Nomad-Collective/beskid_standard)), under `corelib/beskid_corelib/` (or `compiler/corelib/beskid_corelib/` from the aggregate superrepo root). The CLI embeds that tree at build time (`crates/beskid_tools/build.rs`).
