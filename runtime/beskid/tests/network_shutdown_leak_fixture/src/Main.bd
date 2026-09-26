@@ -1,13 +1,15 @@
 use Concurrency;
 use Concurrency.Fiber;
 use Core.Results;
+use Core.Optional.Option;
+use Core.Time.Deadline;
 use Network.Errors;
 use Network.Types;
 use Network.Tcp.TcpListener;
 use Network.Tcp.TcpStream;
 
 unit PendingNetworkAccept(TcpListener listener) {
-    Result<TcpStream, NetworkError> accepted = listener.Accept();
+    Result<TcpStream, NetworkError> accepted = listener.Accept(Option.Empty<Deadline>());
     return;
 }
 
