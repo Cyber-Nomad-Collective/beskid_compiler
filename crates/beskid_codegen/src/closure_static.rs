@@ -6,7 +6,10 @@
 
 use std::sync::Arc;
 
-use beskid_queries::{AstNodeKey, CaptureStorageClass, ClosureCapture, SemanticTypeId, closure_signature, node_kind};
+use beskid_queries::{
+    AstNodeKey, CaptureStorageClass, ClosureCapture, ClosureEnvironmentField, SemanticTypeId, abi_type,
+    closure_environment, closure_signature, event_handler_lambda_for_local, node_kind,
+};
 use cranelift_module::{DataDescription, DataId, Linkage, Module, ModuleError, ModuleResult};
 
 use crate::CodegenInput;
@@ -137,6 +140,40 @@ impl CodegenInput<'_> {
     /// Ordinary syntax cannot name TLS or manufacture a root-frame pointer through this API.
     pub fn closure_lowering_authority(&self, site: AstNodeKey, lambda: AstNodeKey) -> Option<ClosureLoweringAuthority> {
         let plan = self.closure_static_plan(lambda)?;
+        self.closure_authority_for_plan(site, plan)
+    }
+
+    /// Event-only authority takes the already-checked event handler identity and signature path,
+    /// while reusing the canonical closure capture layout and allocation ABI.
+    pub fn event_handler_closure_lowering_authority(
+        &self,
+        site: AstNodeKey,
+        lambda: AstNodeKey,
+    ) -> Option<ClosureLoweringAuthority> {
+        event_handler_lambda_for_local(self.database(), lambda)
+            .ok()
+            .flatten()
+            .filter(|handler| handler.lambda == lambda)?;
+        let environment = closure_environment(self.database(), lambda).ok().flatten()?;
+        let fields = environment
+            .captures
+            .iter()
+            .map(|capture| {
+                Some(ClosureEnvironmentField {
+                    capture: *capture,
+                    abi_type: abi_type(self.database(), capture.declaration).ok().flatten()?,
+                })
+            })
+            .collect::<Option<Vec<_>>>()?;
+        let plan = self.closure_static_plan_from_fields(lambda, &fields)?;
+        self.closure_authority_for_plan(site, plan)
+    }
+
+    fn closure_authority_for_plan(
+        &self,
+        site: AstNodeKey,
+        plan: ClosureStaticPlan,
+    ) -> Option<ClosureLoweringAuthority> {
         if !self.manifest_exports_symbol(ABI_V5_CLOSURE_ENVIRONMENT_ALLOCATE)
             || !self.manifest_exports_symbol(ABI_V5_CLOSURE_CAPTURE_STORE)
         {
@@ -165,16 +202,20 @@ impl CodegenInput<'_> {
                 return None;
             }
         };
-        if signature.lambda != lambda
-            || signature
-                .environment
-                .fields
-                .iter()
-                .any(|field| field.capture.class != CaptureStorageClass::TransferableValue)
-        {
+        if signature.lambda != lambda {
             return None;
         }
+        self.closure_static_plan_from_fields(lambda, &signature.environment.fields)
+    }
 
+    fn closure_static_plan_from_fields(
+        &self,
+        lambda: AstNodeKey,
+        fields: &[ClosureEnvironmentField],
+    ) -> Option<ClosureStaticPlan> {
+        if fields.iter().any(|field| field.capture.class != CaptureStorageClass::TransferableValue) {
+            return None;
+        }
         let header = self.abi_manifest().layouts.iter().find(|layout| layout.name == "BeskidObjectHeader");
         let descriptor = self.abi_manifest().layouts.iter().find(|layout| layout.name == "BeskidTypeDescriptor");
         let request = self.abi_manifest().layouts.iter().find(|layout| layout.name == "BeskidAllocationRequest");
@@ -194,8 +235,8 @@ impl CodegenInput<'_> {
         let mut size = header.size;
         let mut alignment = header.alignment;
         let mut pointer_map_offsets = Vec::new();
-        let mut captures = Vec::with_capacity(signature.environment.fields.len());
-        for field in signature.environment.fields.iter() {
+        let mut captures = Vec::with_capacity(fields.len());
+        for field in fields {
             let Some((field_size, field_alignment, is_pointer)) =
                 scalar_layout(self.target().pointer_width, field.abi_type)
             else {

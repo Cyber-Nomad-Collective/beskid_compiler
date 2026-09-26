@@ -65,6 +65,71 @@ pub(in crate::semantic_contract) fn event_operation_tracked(
     .transpose()
 }
 
+#[salsa::tracked(persist)]
+pub(in crate::semantic_contract) fn event_handler_lambda_for_local_tracked(
+    db: &dyn Db,
+    syntax: SyntaxUnitInput,
+    key: AstNodeKey,
+) -> SemanticQueryResult<EventHandlerLocalFact> {
+    with_node(db, syntax, key, |program, index, node| {
+        let binding_node = if node.of::<beskid_analysis::syntax::LetStatement>().is_some() {
+            key.node
+        } else if node.of::<beskid_analysis::syntax::Identifier>().is_some() {
+            parent_node(index, key.node)?
+        } else if node.of::<beskid_analysis::syntax::LambdaExpression>().is_some() {
+            nearest_ancestor(index, key.node, |kind| kind == beskid_analysis::syntax_query::NodeKind::LetStatement)?
+        } else {
+            return None;
+        };
+        let binding = index.node_at(program, binding_node)?.of::<beskid_analysis::syntax::LetStatement>()?;
+        let binding_name = index.direct_child_id(program, binding_node, DynNodeRef::from(&binding.name))?;
+        if node.of::<beskid_analysis::syntax::Identifier>().is_some() && binding_name != key.node {
+            return None;
+        }
+        let lambda_node = index.direct_child_id(program, binding_node, DynNodeRef::from(&binding.value))?;
+        let lambda_node = normalized_expression_node(index, lambda_node);
+        if node.of::<beskid_analysis::syntax::LambdaExpression>().is_some() && lambda_node != key.node {
+            return None;
+        }
+        for operation in index.ids_of_kind(beskid_analysis::syntax_query::NodeKind::AssignExpression) {
+            let operation_key = AstNodeKey { node: operation, ..key };
+            let Ok(Some(fact)) = event_operation_tracked(db, syntax, operation_key) else {
+                continue;
+            };
+            let (Some(handler), Some(lambda), Some(signature)) =
+                (fact.handler, fact.handler_lambda, fact.delegate_signature)
+            else {
+                continue;
+            };
+            let Some(path) = index
+                .node_at(program, handler.node)
+                .and_then(|node| node.of::<beskid_analysis::syntax::PathExpression>())
+            else {
+                continue;
+            };
+            let [segment] = path.path.node.segments.as_slice() else {
+                continue;
+            };
+            if segment.node.type_args.is_empty()
+                && resolve_lexical_declaration(program, index, handler.node, segment.node.name.node.name.as_str())
+                    == Some(binding_name)
+            {
+                let lambda_expression =
+                    index.node_at(program, lambda.node)?.of::<beskid_analysis::syntax::LambdaExpression>()?;
+                let body =
+                    index.direct_child_id(program, lambda.node, DynNodeRef::from(lambda_expression.body.as_ref()))?;
+                return Some(Ok(EventHandlerLocalFact {
+                    lambda,
+                    body: AstNodeKey { node: normalized_expression_node(index, body), ..lambda },
+                    signature,
+                }));
+            }
+        }
+        None
+    })?
+    .transpose()
+}
+
 fn event_fact_for_target(
     db: &dyn Db,
     program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
@@ -142,7 +207,30 @@ fn event_fact_for_target(
         slot_offset: layout.slot_offset,
         capacity: layout.capacity,
         handler,
+        handler_lambda: handler.and_then(|handler| event_handler_lambda(program, index, operation_node, handler)),
         arguments,
         delegate_signature: Some(signature),
     }))
+}
+
+fn event_handler_lambda(
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    operation_node: AstNodeKey,
+    handler: AstNodeKey,
+) -> Option<AstNodeKey> {
+    let path = index.node_at(program, handler.node)?.of::<beskid_analysis::syntax::PathExpression>()?;
+    let [segment] = path.path.node.segments.as_slice() else {
+        return None;
+    };
+    if !segment.node.type_args.is_empty() {
+        return None;
+    }
+    let declaration = resolve_lexical_declaration(program, index, handler.node, segment.node.name.node.name.as_str())?;
+    let binding_node = parent_node(index, declaration)?;
+    let binding = index.node_at(program, binding_node)?.of::<beskid_analysis::syntax::LetStatement>()?;
+    let lambda_node = index.direct_child_id(program, binding_node, DynNodeRef::from(&binding.value))?;
+    let lambda_node = normalized_expression_node(index, lambda_node);
+    index.node_at(program, lambda_node)?.of::<beskid_analysis::syntax::LambdaExpression>()?;
+    Some(AstNodeKey { node: lambda_node, ..operation_node })
 }

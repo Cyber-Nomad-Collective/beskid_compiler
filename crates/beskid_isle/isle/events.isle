@@ -4,8 +4,8 @@
 (decl partial emit_event_unsubscribe_first (AstNodeKey) Value)
 (extern constructor emit_event_unsubscribe_first emit_event_unsubscribe_first)
 
-(decl partial emit_event_raise (AstNodeKey) Value)
-(extern constructor emit_event_raise emit_event_raise)
+(decl partial emit_event_raise_statement (AstNodeKey) Unit)
+(extern constructor emit_event_raise_statement emit_event_raise_statement)
 
 (rule (lower_expression key @ (and
         (node_kind (NodeKind.AssignExpression))
@@ -17,7 +17,7 @@
         (assignment_kind (AssignmentKind.EventUnsubscribeFirst))))
       (emit_event_unsubscribe_first key))
 
-(rule (lower_expression key @ (and
+(rule (lower_statement key @ (and
         (node_kind (NodeKind.CallExpression))
         (call_kind (CallKind.EventRaise))))
-      (emit_event_raise key))
+      (emit_event_raise_statement key))

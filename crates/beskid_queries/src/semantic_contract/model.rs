@@ -21,7 +21,7 @@ pub use closures::{
     SpawnEntryValidation, SpawnHandleType, SpawnLegality, SpawnTarget,
 };
 pub use errors::{GenericBindingConflict, SemanticError, SemanticFinding, SemanticQueryResult};
-pub use events::{EventOperationFact, EventOperationKind};
+pub use events::{EventHandlerLocalFact, EventOperationFact, EventOperationKind};
 pub use facts::{
     BulkParameterFact, CastIntent, ControlFlow, ForIteratorFact, ItemSignature, PrimitiveNumericConversion,
     RangeForFact, TryExpressionFact,

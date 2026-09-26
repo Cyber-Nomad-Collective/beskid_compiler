@@ -31,6 +31,12 @@ pub trait NodeFacts {
     fn event_operation(&self, _key: AstNodeKey) -> Option<EventOperationPlan> {
         None
     }
+    fn event_handler_lambda_for_local(&self, _key: AstNodeKey) -> Option<AstNodeKey> {
+        None
+    }
+    fn event_handler_local(&self, _key: AstNodeKey) -> Option<EventHandlerLocalPlan> {
+        None
+    }
     fn primitive_numeric_conversion(
         &self,
         _key: AstNodeKey,

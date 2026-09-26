@@ -76,6 +76,17 @@ fn event_unsubscribe_fixture_aot_runs_and_object_contains_event_symbols() {
         nm_contains_symbol(&object_output, "event_unsubscribe_first"),
         "expected event-unsubscribe object to reference event_unsubscribe_first"
     );
+    for symbol in [
+        "event_len",
+        "event_get_handler",
+        "beskid_rt_v5_closure_environment_allocate",
+        "beskid_rt_v5_closure_capture_store",
+        "beskid_rt_v5_managed_object_allocate",
+        "gc_register_root",
+        "gc_unregister_root",
+    ] {
+        assert!(nm_contains_symbol(&object_output, symbol), "expected event-unsubscribe object to reference {symbol}");
+    }
 }
 
 #[test]

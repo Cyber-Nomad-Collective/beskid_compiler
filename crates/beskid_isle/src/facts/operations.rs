@@ -14,14 +14,26 @@ pub struct EventOperationPlan {
     pub operation: EventOperation,
     pub operation_node: AstNodeKey,
     pub receiver: AstNodeKey,
+    pub receiver_slot: Option<LocalSlotId>,
     pub declaration: AstNodeKey,
     pub field: AstNodeKey,
     pub slot_offset: u32,
     pub capacity: u32,
     pub handler: Option<AstNodeKey>,
+    pub handler_lambda: Option<AstNodeKey>,
     pub arguments: Arc<[AstNodeKey]>,
     pub delegate_parameters: Arc<[beskid_queries::SemanticTypeId]>,
     pub delegate_result: beskid_queries::SemanticTypeId,
+}
+
+/// Event-only materialization plan for a lambda-valued local declaration.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EventHandlerLocalPlan {
+    pub lambda: AstNodeKey,
+    pub trampoline: DirectCallee,
+    pub closure_environment: Option<InlineClosureEnvironment>,
+    pub parameters: Arc<[Type]>,
+    pub result: Option<Type>,
 }
 
 /// Scalar facts consumed by leaf ISLE rules.

@@ -41,11 +41,11 @@ mod importer;
 pub(crate) mod mappings;
 
 pub use context::SyntaxNodeFacts;
+pub(crate) use emit::emit_isle_lambda_entry;
 pub use emit::{
     emit_isle_closure_lambda_entry, emit_isle_expression, emit_isle_expression_with_call_importer, emit_isle_item,
     emit_isle_item_with_call_importer, emit_isle_item_with_services, emit_isle_item_with_services_specialization,
     syntax_item_signature,
 };
-pub(crate) use emit::emit_isle_lambda_entry;
 pub use importer::ItemModuleImporter;
 use mappings::*;

@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use beskid_analysis::types::TypeId;
 use beskid_isle::AstNodeKey;
-use beskid_queries::{child_nodes, closure_call_target, spawn_entry_validation};
+use beskid_queries::{child_nodes, closure_call_target, event_handler_lambda_for_local, spawn_entry_validation};
 use cranelift_codegen::ir::Endianness;
 use cranelift_module::{DataDescription, DataId, Linkage, Module, ModuleResult};
 
@@ -123,10 +123,16 @@ pub(super) fn collect_closure_static_plans(
         }
     }
     for trampoline in lambda_trampolines {
-        if trampoline.closure_captures.is_some()
-            && let Some(authority) = input.closure_lowering_authority(trampoline.lambda, trampoline.lambda)
-        {
-            push_plan(authority.plan);
+        if trampoline.closure_captures.is_some() {
+            let event_handler = event_handler_lambda_for_local(db, trampoline.lambda).ok().flatten().is_some();
+            let authority = if event_handler {
+                input.event_handler_closure_lowering_authority(trampoline.lambda, trampoline.lambda)
+            } else {
+                input.closure_lowering_authority(trampoline.lambda, trampoline.lambda)
+            };
+            if let Some(authority) = authority {
+                push_plan(authority.plan);
+            }
         }
     }
     let mut visited = HashSet::new();
@@ -142,6 +148,20 @@ pub(super) fn collect_closure_static_plans(
         }
     }
     plans
+}
+
+pub(super) fn event_handler_wrapper_required(input: &CodegenInput<'_>, items: &[ResolvedSyntaxModuleItem]) -> bool {
+    let mut visited = HashSet::new();
+    let mut nodes = Vec::new();
+    for item in items {
+        collect_ast_nodes(input.database(), item.key, &mut visited, &mut nodes);
+    }
+    nodes.into_iter().any(|key| {
+        matches!(
+            beskid_queries::event_operation(input.database(), key),
+            Ok(Some(fact)) if fact.handler_lambda.is_some()
+        )
+    })
 }
 
 fn collect_ast_nodes(
@@ -163,6 +183,9 @@ fn collect_ast_nodes(
 
 /// Emit artifact-owned closure descriptor/pointer-map/allocation-request data.
 pub fn emit_closure_static_plans<M: Module>(module: &mut M, artifact: &CodegenArtifact) -> ModuleResult<()> {
+    if artifact.event_handler_wrapper_required {
+        crate::emit_event_handler_static_data(module)?;
+    }
     for plan in &artifact.closure_static_plans {
         emit_closure_static_data(module, plan)?;
     }

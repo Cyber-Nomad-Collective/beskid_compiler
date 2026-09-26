@@ -15,9 +15,10 @@ use cranelift_frontend::{FunctionBuilder, Variable};
 use crate::dispatch;
 use crate::errors::{FunctionEmissionError, LoweringError, LoweringErrorKind, StringMaterializationError};
 use crate::facts::{
-        AstNodeKey, AssignmentKind, CallImportError, CallKind, CollectionMutationOwner, CollectionOperation,
-        DirectCallee, EventOperation, ForIterableKind, IndexTarget, InlineClosureEnvironment, LiteralKind, LocalSlotId, ManagedReferenceFact,
-    MatchArmBindingFact, MatchPayloadPatternFact, NodeFacts, NodeKind, OperatorFact, RuntimeIntrinsicKind, Unit,
+    AssignmentKind, AstNodeKey, CallImportError, CallKind, CollectionMutationOwner, CollectionOperation, DirectCallee,
+    EventHandlerLocalPlan, EventOperation, ForIterableKind, IndexTarget, InlineClosureEnvironment, LiteralKind,
+    LocalSlotId, ManagedReferenceFact, MatchArmBindingFact, MatchPayloadPatternFact, NodeFacts, NodeKind, OperatorFact,
+    RuntimeIntrinsicKind, Unit,
 };
 use crate::layout::{EnumLayout, FieldLayout};
 
@@ -101,7 +102,7 @@ pub(crate) struct ManagedLocalBinding {
 )]
 mod generated {
     use super::{
-        AstNodeKey, AssignmentKind, CallKind, CursorKind, EventOperation, LiteralKind, NodeKind, OperatorFact,
+        AssignmentKind, AstNodeKey, CallKind, CursorKind, EventOperation, LiteralKind, NodeKind, OperatorFact,
         StatementCursor, Unit, Value,
     };
 

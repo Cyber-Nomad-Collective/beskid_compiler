@@ -7,7 +7,10 @@ use cranelift_codegen::isa::TargetIsa;
 use cranelift_module::{FuncId, Linkage, Module, ModuleError};
 
 use super::contracts::{SyntaxModuleEmissionError, emission_error, emission_verification, legality_error};
-use super::data::{collect_aggregate_static_plans, collect_array_static_plans, collect_closure_static_plans};
+use super::data::{
+    collect_aggregate_static_plans, collect_array_static_plans, collect_closure_static_plans,
+    event_handler_wrapper_required,
+};
 use super::imports::{
     ArtifactCallImporter, ArtifactStringInterner, corelib_service_symbols, extern_contract_imports,
     extern_contract_symbols, runtime_intrinsic_symbols,
@@ -27,11 +30,11 @@ use crate::array_static::{
 use crate::closure_static::{
     ABI_V5_CLOSURE_CAPTURE_STORE, ABI_V5_CLOSURE_ENVIRONMENT_ALLOCATE, emit_closure_static_data,
 };
+use crate::isle_adapter::emit_isle_lambda_entry;
 use crate::{
     CodegenArtifact, CodegenContext, CodegenInput, ExternImport, emit_isle_closure_lambda_entry,
     emit_isle_expression_with_call_importer, emit_isle_item_with_services, emit_isle_item_with_services_specialization,
 };
-use crate::isle_adapter::emit_isle_lambda_entry;
 
 const ABI_V5_SCHEDULER_STACK_CHECK: &str = "beskid_rt_v5_scheduler_stack_check";
 const ABI_V5_SCHEDULER_STACK_OVERFLOW_OBSERVED: &str = "beskid_rt_v5_scheduler_stack_overflow_observed";
@@ -87,7 +90,8 @@ pub fn lower_syntax_program(
     // witnesses, the `pending` worklist in `resolve_module_items`). Judge exactly the keys newly
     // added by that discovery; keys already checked above are Salsa-memoized, so this costs
     // nothing for them.
-    let discovered_keys = items.iter().map(|item| item.key).filter(|key| !requested_keys.contains(key)).collect::<Vec<_>>();
+    let discovered_keys =
+        items.iter().map(|item| item.key).filter(|key| !requested_keys.contains(key)).collect::<Vec<_>>();
     if !discovered_keys.is_empty()
         && let Err(findings) = beskid_queries::check_items(db, &discovered_keys)
     {
@@ -373,6 +377,7 @@ fn lower_resolved_syntax_program(
     }
 
     let closure_static_plans = collect_closure_static_plans(input, items, &trampolines, &lambda_trampolines);
+    let event_handler_wrapper_required = event_handler_wrapper_required(input, items);
     if !closure_static_plans.is_empty() {
         for symbol in [
             ABI_V5_CLOSURE_ENVIRONMENT_ALLOCATE,
@@ -380,6 +385,13 @@ fn lower_resolved_syntax_program(
             "gc_register_root",
             "gc_unregister_root",
         ] {
+            if !extern_imports.iter().any(|existing| existing.symbol == symbol) {
+                extern_imports.push(ExternImport { symbol: symbol.to_owned(), abi: Some("C".into()), library: None });
+            }
+        }
+    }
+    if event_handler_wrapper_required {
+        for symbol in [ABI_V5_MANAGED_OBJECT_ALLOCATE, "gc_register_root", "gc_unregister_root"] {
             if !extern_imports.iter().any(|existing| existing.symbol == symbol) {
                 extern_imports.push(ExternImport { symbol: symbol.to_owned(), abi: Some("C".into()), library: None });
             }
@@ -417,9 +429,10 @@ fn lower_resolved_syntax_program(
         );
     }
     // Argument environments are rooted by the spawning function until the runtime owns them.
-    if trampolines.iter().any(|trampoline| {
-        !trampoline.result_plan.pointer_map_offsets.is_empty() || trampoline.argument_plan.is_some()
-    }) {
+    if trampolines
+        .iter()
+        .any(|trampoline| !trampoline.result_plan.pointer_map_offsets.is_empty() || trampoline.argument_plan.is_some())
+    {
         for symbol in ["gc_register_root", "gc_unregister_root"] {
             if !extern_imports.iter().any(|existing| existing.symbol == symbol) {
                 extern_imports.push(ExternImport { symbol: symbol.to_owned(), abi: Some("C".into()), library: None });
@@ -455,6 +468,7 @@ fn lower_resolved_syntax_program(
         extern_imports,
         trusted_extern_imports,
         closure_static_plans,
+        event_handler_wrapper_required,
         aggregate_static_plans,
         array_static_plans,
         ..CodegenArtifact::default()
@@ -475,6 +489,9 @@ pub fn emit_syntax_program<M: Module>(
     let artifact = lower_resolved_syntax_program(input, isa, &items)?;
     for plan in &artifact.closure_static_plans {
         emit_closure_static_data(module, plan)?;
+    }
+    if artifact.event_handler_wrapper_required {
+        crate::emit_event_handler_static_data(module)?;
     }
     for plan in &artifact.aggregate_static_plans {
         emit_aggregate_static_data(module, plan)?;

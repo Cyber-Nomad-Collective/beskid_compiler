@@ -23,6 +23,18 @@ pub struct EventOperationFact {
     pub slot_offset: u32,
     pub capacity: u32,
     pub handler: Option<AstNodeKey>,
+    /// The exact lambda initializer for a handler local, when this operation names one.
+    /// This lets event lowering materialize stable per-binding closure state without changing
+    /// the representation of ordinary lambda values.
+    pub handler_lambda: Option<AstNodeKey>,
     pub arguments: Arc<[AstNodeKey]>,
     pub delegate_signature: Option<ItemSignature>,
+}
+
+/// Event-specific callable contract for a local handler binding.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub struct EventHandlerLocalFact {
+    pub lambda: AstNodeKey,
+    pub body: AstNodeKey,
+    pub signature: ItemSignature,
 }

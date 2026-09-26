@@ -11,8 +11,7 @@
 
 use super::*;
 use beskid_analysis::syntax::{
-    EnumConstructorExpression, EnumDefinition, MatchExpression, Pattern, StructLiteralExpression,
-    TypeDefinition,
+    EnumConstructorExpression, EnumDefinition, MatchExpression, Pattern, StructLiteralExpression, TypeDefinition,
 };
 
 /// Why one member reference contradicts its resolved declaration.
@@ -179,11 +178,8 @@ struct DeclaredMembers {
 
 fn declared_member_names(db: &dyn Db, declaration: AstNodeKey) -> Option<DeclaredMembers> {
     let syntax = db.syntax_unit(declaration.unit).filter(|syntax| syntax.accepts_key(db, declaration))?;
-    let definition = syntax
-        .syntax_index(db)
-        .node_at(syntax.expanded_program(db), declaration.node)?
-        .of::<TypeDefinition>()?
-        .clone();
+    let definition =
+        syntax.syntax_index(db).node_at(syntax.expanded_program(db), declaration.node)?.of::<TypeDefinition>()?.clone();
     Some(DeclaredMembers {
         fields: definition.fields.iter().map(|field| field.node.name.node.name.clone()).collect(),
         methods: definition.methods.iter().map(|method| method.node.name.node.name.clone()).collect(),
@@ -349,10 +345,7 @@ fn non_exhaustive_match(
     if unguarded.iter().any(|arm| !matches!(arm.node.pattern.node, Pattern::Enum(_))) {
         return None;
     }
-    let missing = definition
-        .variants
-        .iter()
-        .find(|variant| !covered.contains(variant.node.name.node.name.as_str()))?;
+    let missing = definition.variants.iter().find(|variant| !covered.contains(variant.node.name.node.name.as_str()))?;
     Some(NonExhaustiveMatch {
         site,
         enum_name: Arc::from(definition.name.node.name.as_str()),

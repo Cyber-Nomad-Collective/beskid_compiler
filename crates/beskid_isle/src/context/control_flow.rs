@@ -242,6 +242,10 @@ macro_rules! generated_control_flow_methods {
             }
             let initializer = self.facts.let_initializer(key)?;
             if self.facts.node_kind(initializer) == Some(NodeKind::LambdaExpression) {
+                if let Some(plan) = self.facts.event_handler_local(key) {
+                    self.emit_event_handler_local(key, plan)?;
+                    return Some(());
+                }
                 // Lambda locals are syntax-level bindings. Calls through them are resolved to
                 // their source lambda and lowered at the call site, where captured environments
                 // can be rooted for the duration of the call; closures are not scalar locals.

@@ -163,6 +163,9 @@ impl SyntaxNodeFacts<'_> {
                 })
                 .and_then(|identifier| self.query(local_slot(self.db, identifier)))
                 .map(|slot| LocalSlotId { owner_node: slot.owner.node.0, index: slot.index }),
+            beskid_queries::IndexedNodeKind::Identifier => self
+                .query(local_slot(self.db, key))
+                .map(|slot| LocalSlotId { owner_node: slot.owner.node.0, index: slot.index }),
             beskid_queries::IndexedNodeKind::ForStatement => self
                 .query(for_iterator_fact(self.db, key))
                 .and_then(|fact| self.query(local_slot(self.db, fact.declaration)))

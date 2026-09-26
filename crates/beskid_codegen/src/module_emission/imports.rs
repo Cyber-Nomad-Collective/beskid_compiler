@@ -170,6 +170,24 @@ pub(super) fn corelib_service_symbols(
             symbols.insert(DirectCallee::corelib_service(symbol), (*symbol).to_owned());
         }
     }
+    // Event operations are compiler-owned source forms. Their only lowering path is the
+    // generated event rule, and CodegenInput has already validated this target's canonical
+    // ABI-v5 manifest. Admit only the exact canonical event service shapes here; ordinary
+    // source calls still require source-scoped Corelib service capability below.
+    use beskid_abi::runtime_source::CorelibServiceAbiType::{Pointer, Usize};
+    for (symbol, parameters) in [
+        ("event_subscribe", &[Pointer, Pointer, Usize][..]),
+        ("event_unsubscribe_first", &[Pointer, Pointer][..]),
+        ("event_len", &[Pointer][..]),
+        ("event_get_handler", &[Pointer, beskid_abi::runtime_source::CorelibServiceAbiType::U32][..]),
+    ] {
+        let abi = beskid_abi::runtime_source::canonical_corelib_service_abi_for_adapter(symbol)
+            .ok_or_else(|| format!("canonical event service `{symbol}` is unavailable in ABI-v5"))?;
+        if abi.parameters != parameters || abi.result != if symbol == "event_get_handler" { Pointer } else { Usize } {
+            return Err(format!("canonical event service `{symbol}` has an unexpected ABI-v5 signature"));
+        }
+        symbols.insert(DirectCallee::corelib_service(symbol), symbol.to_owned());
+    }
     for symbol in manifest_builtins {
         if !ALWAYS_AVAILABLE_STRING_SERVICES.contains(&symbol) {
             symbols.insert(DirectCallee::corelib_service(symbol), symbol.to_owned());

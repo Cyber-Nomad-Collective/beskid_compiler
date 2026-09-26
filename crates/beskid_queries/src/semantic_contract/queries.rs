@@ -337,6 +337,14 @@ pub fn event_operation(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<Even
     with_registered_syntax(db, key, event_operation_tracked)
 }
 
+/// Resolve the lambda initializer for a local that is used as an event subscription handler.
+///
+/// This fact is only present for event-used local lambda bindings, allowing generated code to
+/// preserve the closure environment at declaration time without changing ordinary lambda values.
+pub fn event_handler_lambda_for_local(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<EventHandlerLocalFact> {
+    with_registered_syntax(db, key, event_handler_lambda_for_local_tracked)
+}
+
 /// Return the exact applied aggregate layout constructed by a struct literal.
 pub fn aggregate_literal_layout(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<AggregateLayoutFact> {
     with_registered_syntax(db, key, aggregate_literal_layout_tracked)

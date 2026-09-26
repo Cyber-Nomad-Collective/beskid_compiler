@@ -81,6 +81,14 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
         self.event_operation_impl(key)
     }
 
+    fn event_handler_lambda_for_local(&self, key: AstNodeKey) -> Option<AstNodeKey> {
+        self.query(beskid_queries::event_handler_lambda_for_local(self.db, key)).map(|fact| fact.lambda)
+    }
+
+    fn event_handler_local(&self, key: AstNodeKey) -> Option<beskid_isle::EventHandlerLocalPlan> {
+        self.event_handler_local_impl(key)
+    }
+
     fn primitive_numeric_conversion(&self, key: AstNodeKey) -> Option<(SemanticTypeId, SemanticTypeId)> {
         self.primitive_numeric_conversion_impl(key)
     }

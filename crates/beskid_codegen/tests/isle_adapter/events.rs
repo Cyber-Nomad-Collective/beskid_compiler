@@ -118,13 +118,71 @@ fn event_assignments_have_generation_bound_subscribe_and_first_unsubscribe_facts
         facts.event_operation(raise.operation_node).expect("raise plan").operation,
         beskid_isle::EventOperation::Raise
     );
-    assert_eq!(
-        facts.assignment_kind(operations[0].operation_node),
-        Some(beskid_isle::AssignmentKind::EventSubscribe)
-    );
+    assert_eq!(facts.assignment_kind(operations[0].operation_node), Some(beskid_isle::AssignmentKind::EventSubscribe));
     assert_eq!(
         facts.assignment_kind(operations[1].operation_node),
         Some(beskid_isle::AssignmentKind::EventUnsubscribeFirst)
+    );
+}
+
+#[test]
+fn event_handler_bindings_and_event_assignments_have_managed_pointer_abi_facts() {
+    let source = r#"type User { event{4} created(string payload) }
+impl User { unit Fire() { this.created("payload"); } }
+unit Main() {
+    User u = User { };
+    unit(string) ordinary = (string payload) => { };
+    unit(string) handler = (string payload) => { };
+    u.created += handler;
+    u.created -= handler;
+    u.Fire();
+    return;
+}
+"#;
+    let (input, _isa, root) = item_fixture_with_root(source);
+    let db = input.database();
+    let assignments = find_nodes_of_kind(db, root, beskid_queries::IndexedNodeKind::AssignExpression);
+    let event_operations = assignments
+        .into_iter()
+        .filter_map(|key| beskid_queries::event_operation(db, key).expect("event operation query"))
+        .collect::<Vec<_>>();
+    assert_eq!(event_operations.len(), 2);
+
+    let event_lambdas = find_nodes_of_kind(db, root, beskid_queries::IndexedNodeKind::LambdaExpression)
+        .into_iter()
+        .filter_map(|lambda| {
+            beskid_queries::event_handler_lambda_for_local(db, lambda)
+                .expect("event lambda query")
+                .map(|fact| fact.lambda)
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(event_lambdas.len(), 1, "only the exact event-used lambda receives the event signature path");
+
+    let binding = event_operations[0].handler.expect("handler path");
+    let declaration = beskid_queries::resolved_local(db, binding)
+        .expect("handler resolution query")
+        .expect("handler resolves to local")
+        .declaration;
+    assert_eq!(
+        beskid_queries::value_abi_type(db, declaration).expect("handler local ABI query"),
+        Some(beskid_queries::SemanticTypeId::POINTER),
+        "event-used lambda locals store the managed handler wrapper pointer"
+    );
+    for operation in event_operations {
+        assert_eq!(
+            beskid_queries::value_abi_type(db, operation.operation_node).expect("event assignment ABI query"),
+            Some(beskid_queries::SemanticTypeId::POINTER),
+            "event compound assignments carry the stable managed handler identity, not a runtime count"
+        );
+    }
+    let raise = find_nodes_of_kind(db, root, beskid_queries::IndexedNodeKind::CallExpression)
+        .into_iter()
+        .find(|key| beskid_queries::event_operation(db, *key).expect("event raise query").is_some())
+        .expect("event raise call");
+    assert_eq!(
+        beskid_queries::value_abi_type(db, raise).expect("event raise ABI query"),
+        Some(beskid_queries::SemanticTypeId::UNIT),
+        "event raise is a unit statement, not an ordinary dynamic-call result"
     );
 }
 
@@ -167,21 +225,19 @@ fn event_selector_rejects_stale_keys_and_does_not_lower_unbounded_declarations_a
         .find(|key| format_ast_node_site(db, *key).contains("AssignExpression@5:"))
         .expect("subscribe source node");
     let facts = beskid_codegen::isle_adapter::SyntaxNodeFacts::new(&input);
-    let stale = beskid_queries::AstNodeKey { generation: beskid_analysis::syntax::SyntaxGenerationId(u64::MAX), ..operation };
+    let stale =
+        beskid_queries::AstNodeKey { generation: beskid_analysis::syntax::SyntaxGenerationId(u64::MAX), ..operation };
     assert!(facts.event_operation(stale).is_none(), "stale generations do not select the event rule");
 
     let (unbounded_input, _isa, unbounded_root) = item_fixture_with_root(
         "type User { event Changed() } unit Main(User u) { unit() handler = () => { return; }; u.Changed += handler; return; }",
     );
     let unbounded_db = unbounded_input.database();
-    let unbounded_operation = find_nodes_of_kind(
-        unbounded_db,
-        unbounded_root,
-        beskid_queries::IndexedNodeKind::AssignExpression,
-    )
-    .into_iter()
-    .next()
-    .expect("unbounded subscription syntax");
+    let unbounded_operation =
+        find_nodes_of_kind(unbounded_db, unbounded_root, beskid_queries::IndexedNodeKind::AssignExpression)
+            .into_iter()
+            .next()
+            .expect("unbounded subscription syntax");
     let fact = beskid_queries::event_operation(unbounded_db, unbounded_operation)
         .expect("event query")
         .expect("declaration and handler are semantically resolved");
@@ -193,10 +249,68 @@ fn event_selector_rejects_stale_keys_and_does_not_lower_unbounded_declarations_a
     );
 }
 
-const EVENT_SOURCE: &str = r#"type User { event{4} Created(string payload) }
+#[test]
+fn event_subscribe_and_unsubscribe_import_manifest_services_and_use_the_declared_capacity() {
+    let source = r#"type User { event{4} Created(string payload) }
 unit Main() {
     User u = User { };
     unit(string) boom = (string payload) => { return; };
+    u.Created += boom;
+    u.Created -= boom;
+    return;
+}
+
+"#;
+    let (input, isa, root) = item_fixture_with_root(source);
+    let db = input.database();
+    let facts = beskid_codegen::isle_adapter::SyntaxNodeFacts::new_with_isa(&input, isa.as_ref());
+    let handler_binding = find_nodes_of_kind(db, root, beskid_queries::IndexedNodeKind::LetStatement)
+        .into_iter()
+        .find(|binding| {
+            beskid_queries::event_handler_lambda_for_local(db, *binding).expect("event handler binding query").is_some()
+        })
+        .expect("event handler let binding fact");
+    let initializer = facts.let_initializer(handler_binding).expect("handler lambda initializer");
+    assert_eq!(
+        beskid_queries::node_kind(db, initializer).expect("handler initializer kind query"),
+        Some(beskid_queries::IndexedNodeKind::LambdaExpression),
+        "event wrapper branch selection requires the lambda initializer node"
+    );
+    assert!(
+        facts.event_handler_local(handler_binding).is_some(),
+        "event handler local plan must have an exact trampoline and capture allocation authority"
+    );
+    let main = find_function_definitions(db, root)
+        .into_iter()
+        .find(|key| beskid_queries::item_name(db, *key).ok().flatten().as_deref() == Some("Main"))
+        .expect("Main function");
+    let artifact = lower_syntax_program(&input, isa.as_ref(), &[SyntaxModuleItem { key: main, symbol: "Main".into() }])
+        .expect("capture-free event subscription lowering");
+    let imports = artifact
+        .extern_imports
+        .iter()
+        .chain(&artifact.trusted_extern_imports)
+        .map(|import| import.symbol.as_str())
+        .collect::<Vec<_>>();
+    assert!(
+        imports.contains(&"event_subscribe"),
+        "event subscribe must use the manifest-authorized service: {imports:?}"
+    );
+    assert!(
+        imports.contains(&"event_unsubscribe_first"),
+        "event removal must use the manifest-authorized first-match service: {imports:?}"
+    );
+    let main = artifact.functions.iter().find(|function| function.name == "Main").expect("lowered Main");
+    let clif = main.function.display().to_string();
+    assert!(clif.contains("iconst.i64 4"), "capacity is sourced from event{{4}}:\n{clif}");
+    assert!(clif.contains("event_subscribe"), "subscribe call appears in verified CLIF:\n{clif}");
+    assert!(clif.contains("event_unsubscribe_first"), "unsubscribe call appears in verified CLIF:\n{clif}");
+}
+
+const EVENT_SOURCE: &str = r#"type User { event{4} Created(string payload) }
+unit Main(i64 captured) {
+    User u = User { };
+    unit(string) boom = (string payload) => { captured; return; };
     u.Created += boom;
     u.Created -= boom;
     u.Created("payload");
@@ -243,7 +357,175 @@ fn parsed_event_subscribe_unsubscribe_and_raise_import_the_canonical_abi_at_thei
         .map(|import| import.symbol.as_str())
         .collect::<Vec<_>>();
 
-    for symbol in ["event_subscribe", "event_unsubscribe_first", "event_len", "event_get_handler"] {
+    for symbol in [
+        "event_subscribe",
+        "event_unsubscribe_first",
+        "event_len",
+        "event_get_handler",
+        "beskid_rt_v5_closure_environment_allocate",
+        "beskid_rt_v5_closure_capture_store",
+        "beskid_rt_v5_managed_object_allocate",
+        "gc_register_root",
+        "gc_unregister_root",
+    ] {
         assert!(imports.contains(&symbol), "expected canonical event import {symbol}; imports: {imports:?}");
+    }
+    let main = artifact.functions.iter().find(|function| function.name == "Main").expect("lowered Main");
+    let clif = main.function.display().to_string();
+    assert!(clif.contains("call_indirect"), "raise dynamically invokes the wrapper's trampoline:\n{clif}");
+    assert!(clif.contains("iconst.i64 4"), "event capacity comes from its declaration:\n{clif}");
+}
+
+#[test]
+fn captured_local_event_handler_materializes_at_declaration_and_lowers_in_aot_entry() {
+    let source = r#"type User { event{4} created(string payload) }
+impl User { unit Emit(string payload) { this.created(payload); } }
+i32 Main() {
+    User u = User { };
+    string marker = "retained";
+    unit(string) boom = (string payload) => { marker; };
+    u.created += boom;
+    u.Emit("before unsubscribe");
+    u.created -= boom;
+    u.Emit("after unsubscribe");
+    return 0;
+}
+"#;
+    let (input, isa, root) = item_fixture_with_root(source);
+    let db = input.database();
+    let facts = beskid_codegen::isle_adapter::SyntaxNodeFacts::new_with_isa(&input, isa.as_ref());
+    let handler_binding = find_nodes_of_kind(db, root, beskid_queries::IndexedNodeKind::LetStatement)
+        .into_iter()
+        .find(|binding| {
+            beskid_queries::event_handler_lambda_for_local(db, *binding).expect("event handler binding query").is_some()
+        })
+        .expect("event handler let binding fact");
+    let initializer = facts.let_initializer(handler_binding).expect("handler lambda initializer");
+    assert_eq!(
+        beskid_queries::node_kind(db, initializer).expect("handler initializer kind query"),
+        Some(beskid_queries::IndexedNodeKind::LambdaExpression),
+        "event wrapper branch selection requires the lambda initializer node"
+    );
+    assert!(
+        facts.event_handler_local(handler_binding).is_some(),
+        "event handler local plan must have an exact trampoline and capture allocation authority"
+    );
+    let raise = find_nodes_of_kind(db, root, beskid_queries::IndexedNodeKind::CallExpression)
+        .into_iter()
+        .find(|call| beskid_queries::event_operation(db, *call).expect("event raise query").is_some())
+        .expect("event raise with a parameter-backed payload");
+    let raise_fact = beskid_queries::event_operation(db, raise)
+        .expect("event raise operation query")
+        .expect("event raise operation fact");
+    assert_eq!(
+        beskid_queries::value_abi_type(db, raise_fact.arguments[0]).expect("raise argument ABI query"),
+        Some(beskid_queries::SemanticTypeId::STRING),
+        "a captured event's dynamic raise payload retains the declared string ABI"
+    );
+    assert_eq!(
+        facts.call_kind(raise),
+        Some(beskid_isle::CallKind::EventRaise),
+        "event raise fact must outrank ordinary dynamic-call selection"
+    );
+    assert_eq!(
+        facts.event_operation(raise).map(|plan| plan.operation),
+        Some(beskid_isle::EventOperation::Raise),
+        "NodeFacts must preserve the checked event raise fact"
+    );
+    let main = find_function_definitions(db, root)
+        .into_iter()
+        .find(|key| beskid_queries::item_name(db, *key).ok().flatten().as_deref() == Some("Main"))
+        .expect("Main function");
+    let emit = find_nodes_of_kind(db, root, beskid_queries::IndexedNodeKind::MethodDefinition)
+        .into_iter()
+        .find(|key| beskid_queries::item_name(db, *key).ok().flatten().as_deref() == Some("Emit"))
+        .expect("User.Emit method");
+    let artifact = lower_syntax_program(
+        &input,
+        isa.as_ref(),
+        &[
+            SyntaxModuleItem { key: emit, symbol: "User_Emit".into() },
+            SyntaxModuleItem { key: main, symbol: "Main".into() },
+        ],
+    )
+    .expect("capturing event handler should lower with a stable wrapper");
+    assert!(artifact.event_handler_wrapper_required);
+    let imports = artifact
+        .extern_imports
+        .iter()
+        .chain(&artifact.trusted_extern_imports)
+        .map(|import| import.symbol.as_str())
+        .collect::<Vec<_>>();
+    for symbol in [
+        "event_subscribe",
+        "event_unsubscribe_first",
+        "event_len",
+        "event_get_handler",
+        "beskid_rt_v5_closure_environment_allocate",
+        "beskid_rt_v5_managed_object_allocate",
+        "gc_register_root",
+        "gc_unregister_root",
+    ] {
+        assert!(imports.contains(&symbol), "missing event wrapper import `{symbol}` in {imports:?}");
+    }
+}
+
+#[test]
+fn event_operation_resolves_each_local_lambda_initializer_for_stable_handler_materialization() {
+    let source = r#"type User { event{4} Created(string payload) }
+unit Main(i64 captured) {
+    User u = User { };
+    unit(string) first = (string payload) => { captured; return; };
+    unit(string) second = (string payload) => { captured; return; };
+    u.Created += first;
+    u.Created += second;
+    u.Created -= first;
+    return;
+}
+"#;
+    let (input, isa, root) = item_fixture_with_root(source);
+    let db = input.database();
+    let operations = find_nodes_of_kind(db, root, beskid_queries::IndexedNodeKind::AssignExpression)
+        .into_iter()
+        .filter_map(|key| beskid_queries::event_operation(db, key).expect("event query").map(|fact| (key, fact)))
+        .collect::<Vec<_>>();
+    assert_eq!(operations.len(), 3);
+    let first = operations[0].1.handler_lambda.expect("first local lambda initializer");
+    let second = operations[1].1.handler_lambda.expect("second local lambda initializer");
+    let removed = operations[2].1.handler_lambda.expect("unsubscribe resolves the same local initializer");
+    assert_ne!(first, second, "distinct local closures with identical signatures need distinct identities");
+    assert_eq!(first, removed, "subscribe and unsubscribe use the same binding identity");
+    assert_eq!(
+        beskid_queries::closure_environment(db, first)
+            .expect("first closure environment")
+            .expect("capturing handler")
+            .captures
+            .len(),
+        1,
+        "the stored wrapper must retain the lambda's capture environment"
+    );
+    assert_eq!(
+        beskid_queries::closure_environment(db, second)
+            .expect("second closure environment")
+            .expect("capturing handler")
+            .captures
+            .len(),
+        1
+    );
+    let event_handler_lambdas = find_nodes_of_kind(db, root, beskid_queries::IndexedNodeKind::LetStatement)
+        .into_iter()
+        .filter_map(|binding| {
+            beskid_queries::event_handler_lambda_for_local(db, binding)
+                .expect("event handler binding query")
+                .map(|handler| (binding, handler.lambda))
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(event_handler_lambdas.len(), 2, "only local bindings used by event operations are selected");
+    assert!(event_handler_lambdas.iter().any(|(_, lambda)| *lambda == first));
+    assert!(event_handler_lambdas.iter().any(|(_, lambda)| *lambda == second));
+    let facts = beskid_codegen::isle_adapter::SyntaxNodeFacts::new_with_isa(&input, isa.as_ref());
+    assert!(facts.lambda_entry(first).is_some(), "captured lambda must have a closure trampoline plan");
+    for (binding, _) in event_handler_lambdas {
+        assert!(facts.event_handler_local(binding).is_some(), "resolved event handler local must have a lowering plan");
     }
 }

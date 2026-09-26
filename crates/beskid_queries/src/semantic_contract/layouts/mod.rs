@@ -6,9 +6,9 @@ mod enum_layout;
 mod field_access;
 
 pub(in crate::semantic_contract) use aggregate::{
-    aggregate_layout_from_definition, aggregate_layout_tracked, event_field_layout_tracked, aggregate_literal_declaration_tracked,
+    aggregate_layout_from_definition, aggregate_layout_tracked, aggregate_literal_declaration_tracked,
     aggregate_literal_layout_tracked, applied_aggregate_shape, array_index_element_abi_type_tracked,
-    array_index_element_template_tracked, empty_array_literal_element_abi_type_tracked,
+    array_index_element_template_tracked, empty_array_literal_element_abi_type_tracked, event_field_layout_tracked,
     instantiated_aggregate_layout_for_path, private_deadline_literal_field,
 };
 pub use aggregate::{
@@ -18,9 +18,8 @@ pub use aggregate::{
 pub(in crate::semantic_contract) use common::{
     abi_local_declaration_type, abi_type_for_direct_aggregate_field_projection, abi_type_for_local_path,
     aggregate_field_layout, explicit_local_declaration_type, nominal_aggregate_abi_type,
-    resolve_nominal_layout_declaration, resolve_type_declaration,
-    semantic_type_from_syntax, unique_assembled_type_in_module, unique_exported_type_in_unit,
-    unique_public_type_in_unit, unique_type_in_unit,
+    resolve_nominal_layout_declaration, resolve_type_declaration, semantic_type_from_syntax,
+    unique_assembled_type_in_module, unique_exported_type_in_unit, unique_public_type_in_unit, unique_type_in_unit,
 };
 
 pub(in crate::semantic_contract) use enum_layout::{
@@ -33,6 +32,6 @@ pub use enum_layout::{enum_constructor_specialization, enum_match_specialization
 
 pub use field_access::aggregate_field_access_specialization;
 pub(in crate::semantic_contract) use field_access::{
-    FieldAccessReceiver, aggregate_field_access_tracked, field_access_receiver, nominal_field_projection, nominal_local_receiver_declaration,
-    path_projection_segment,
+    FieldAccessReceiver, aggregate_field_access_tracked, field_access_receiver, nominal_field_projection,
+    nominal_local_receiver_declaration, path_projection_segment,
 };
