@@ -3,18 +3,18 @@
 use clap::Args;
 use std::path::PathBuf;
 
-/// Flags shared by subcommands that resolve `Project.proj` / workspace / target selection.
+/// Flags shared by subcommands that resolve `<name>.bproj` / workspace / target selection.
 #[derive(Args, Debug, Clone)]
 pub struct ProjectResolveArgs {
-    /// Path to a project directory or Project.proj file
+    /// Path to a project directory or `.bproj` manifest file
     #[arg(long)]
     pub project: Option<PathBuf>,
 
-    /// Target name from Project.proj
+    /// Target name from the project manifest
     #[arg(long)]
     pub target: Option<String>,
 
-    /// Workspace member name when resolving from Workspace.proj
+    /// Workspace member name when resolving from a `.bws` workspace
     #[arg(long = "workspace-member")]
     pub workspace_member: Option<String>,
 }
