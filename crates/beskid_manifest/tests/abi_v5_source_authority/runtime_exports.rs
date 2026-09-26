@@ -95,11 +95,12 @@ fn canonical_runtime_source_exports_exactly_match_manifest_provenance() {
         for binding in &service.target_bindings {
             assert_eq!(binding.implementation, service.adapter, "target-specific service implementation drift");
         }
-        assert!(
-            declared.insert(service.adapter.clone(), signature).is_none(),
-            "duplicate manifest-owned runtime symbol {}",
-            service.adapter
-        );
+        if let Some(export_signature) = declared.get(&service.adapter) {
+            assert_eq!(service.name, "__network_set_deadlines", "unexpected duplicate manifest-owned runtime symbol");
+            assert_eq!(export_signature, &signature, "network deadline service must exactly reuse its exported ABI");
+        } else {
+            declared.insert(service.adapter.clone(), signature);
+        }
     }
 
     assert_eq!(
@@ -153,6 +154,31 @@ fn descriptor_syscalls_preserve_source_and_manifest_abi_on_every_target() {
             let binding = service.target_bindings.iter().find(|binding| binding.target == target).unwrap();
             assert_eq!(binding.implementation, symbol, "{target}: canonical descriptor entry");
             assert!(binding.os_imports.is_empty(), "OS descriptor adaptation belongs to the native worker");
+        }
+    }
+}
+
+#[test]
+fn network_lifecycle_services_carry_absolute_deadlines_on_every_target() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let manifest = load_v5_manifest_source(&fs::read_to_string(root.join("runtime_manifest.bsol")).unwrap()).unwrap();
+    let source = source_exports(&root);
+    for (service_name, symbol, parameters) in [
+        ("__network_open", "beskid_rt_v5_network_open", vec!["i64", "pointer", "i64", "i64", "i64", "pointer"]),
+        ("__network_accept", "beskid_rt_v5_network_accept", vec!["usize", "i64", "pointer"]),
+    ] {
+        let expected = (parameters.iter().map(|ty| (*ty).to_owned()).collect::<Vec<_>>(), "i32".to_owned());
+        let service = manifest.corelib_services.iter().find(|service| service.name == service_name).unwrap();
+        assert_eq!(service.adapter, symbol);
+        assert_eq!(
+            (service.params.iter().map(|parameter| parameter.ty.clone()).collect::<Vec<_>>(), service.result.clone()),
+            expected,
+            "{service_name}: lifecycle ABI must carry the absolute monotonic deadline"
+        );
+        assert_eq!(source.get(symbol), Some(&expected), "{symbol}: canonical source disagrees with the lifecycle ABI");
+        for target in ["x86_64-unknown-linux-gnu", "aarch64-apple-darwin", "x86_64-pc-windows-msvc"] {
+            let binding = service.target_bindings.iter().find(|binding| binding.target == target).unwrap();
+            assert_eq!(binding.implementation, symbol, "{target}: canonical lifecycle entry");
         }
     }
 }

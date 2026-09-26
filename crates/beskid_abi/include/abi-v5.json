@@ -9707,6 +9707,10 @@
           "type": "usize"
         },
         {
+          "name": "deadline",
+          "type": "i64"
+        },
+        {
           "name": "output",
           "type": "pointer"
         }
@@ -9944,6 +9948,10 @@
         },
         {
           "name": "backlog",
+          "type": "i64"
+        },
+        {
+          "name": "deadline",
           "type": "i64"
         },
         {

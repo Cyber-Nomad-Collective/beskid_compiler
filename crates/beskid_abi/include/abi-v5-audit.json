@@ -2490,6 +2490,10 @@
           "type": "usize"
         },
         {
+          "name": "deadline",
+          "type": "i64"
+        },
+        {
           "name": "output",
           "type": "pointer"
         }
@@ -2730,6 +2734,10 @@
           "type": "i64"
         },
         {
+          "name": "deadline",
+          "type": "i64"
+        },
+        {
           "name": "output",
           "type": "pointer"
         }
@@ -2901,6 +2909,42 @@
         {
           "target": "x86_64-unknown-linux-gnu",
           "implementation": "beskid_rt_v5_network_send",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__network_set_deadlines",
+      "adapter": "beskid_rt_v5_network_set_deadlines",
+      "params": [
+        {
+          "name": "handle",
+          "type": "usize"
+        },
+        {
+          "name": "read_deadline",
+          "type": "i64"
+        },
+        {
+          "name": "write_deadline",
+          "type": "i64"
+        }
+      ],
+      "result": "i32",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "beskid_rt_v5_network_set_deadlines",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "beskid_rt_v5_network_set_deadlines",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "beskid_rt_v5_network_set_deadlines",
           "osImports": []
         }
       ]

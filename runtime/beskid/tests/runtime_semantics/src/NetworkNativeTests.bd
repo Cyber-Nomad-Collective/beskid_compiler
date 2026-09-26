@@ -35,7 +35,7 @@ test native_network_bind_address_close_and_generation_are_portable {
     pointer output = NetworkTestArray(1, 8);
     pointer observed = NetworkTestArray(19, 1);
 
-    Assert.Equal(Sockets.NetworkOpen(1, address, 0, 8, output), 0, "TCP listener binds an ephemeral loopback endpoint");
+    Assert.Equal(Sockets.NetworkOpen(1, address, 0, 8, -1, output), 0, "TCP listener binds an ephemeral loopback endpoint");
     word previous = raw_word_load(pointer_add(output, 16));
     Assert.True(previous != 0, "listener owns an opaque generation handle");
     Assert.Equal(Sockets.NetworkAddress(previous, false, observed), 0, "listener exposes portable local address");
@@ -46,7 +46,7 @@ test native_network_bind_address_close_and_generation_are_portable {
     Assert.Equal(Table.NetworkClose(previous), 0, "listener closes once");
     Assert.Equal(Table.NetworkClose(previous), 0, "duplicate close is idempotent");
 
-    Assert.Equal(Sockets.NetworkOpen(3, address, 0, 0, output), 0, "UDP socket uses the same portable ownership table");
+    Assert.Equal(Sockets.NetworkOpen(3, address, 0, 0, -1, output), 0, "UDP socket uses the same portable ownership table");
     word replacement = raw_word_load(pointer_add(output, 16));
     Assert.True(replacement != previous, "slot reuse changes handle generation");
     Assert.Equal(replacement & 0xFFFFFFFF, previous & 0xFFFFFFFF, "fixture exercises actual slot reuse");
@@ -76,7 +76,7 @@ test native_network_shutdown_reports_and_closes_live_socket_idempotently {
     raw_byte_store(pointer_add(wire, 6), 1);
     pointer output = NetworkTestArray(1, 8);
 
-    Assert.Equal(Sockets.NetworkOpen(3, address, 0, 0, output), 0, "UDP socket opens for shutdown leak check");
+    Assert.Equal(Sockets.NetworkOpen(3, address, 0, 0, -1, output), 0, "UDP socket opens for shutdown leak check");
     word handle = raw_word_load(pointer_add(output, 16));
     Assert.True(handle != 0, "shutdown fixture owns a live socket handle");
     Assert.Equal(Dns.NetworkShutdown(External.ExternalOwnerId()), 1, "shutdown reports one live socket leak");
@@ -109,7 +109,7 @@ test native_network_socket_exhaustion_reports_resource_exhausted {
     mut word count = 0;
     mut i32 status = 0;
     while count < 257 {
-        status = Sockets.NetworkOpen(3, address, 0, 0, output);
+        status = Sockets.NetworkOpen(3, address, 0, 0, -1, output);
         if status != 0 { break; }
         raw_word_store(pointer_add(handles, count * 8), raw_word_load(pointer_add(output, 16)));
         count = count + 1;
@@ -118,7 +118,7 @@ test native_network_socket_exhaustion_reports_resource_exhausted {
     Assert.True(count > 0 && count <= 256, "exhaustion occurs at or before the slot count");
     word last = raw_word_load(pointer_add(handles, (count - 1) * 8));
     Assert.Equal(Table.NetworkClose(last), 0, "one live socket closes");
-    Assert.Equal(Sockets.NetworkOpen(3, address, 0, 0, output), 0, "the freed slot admits the next bind");
+    Assert.Equal(Sockets.NetworkOpen(3, address, 0, 0, -1, output), 0, "the freed slot admits the next bind");
     raw_word_store(pointer_add(handles, (count - 1) * 8), raw_word_load(pointer_add(output, 16)));
     mut word index = 0;
     while index < count {
@@ -147,12 +147,12 @@ unit ExpiredReadKeepsTcpStreamOpen() {
     pointer boundAddress = NetworkTestArray(19, 1);
     pointer bytes = NetworkTestArray(1, 1);
 
-    Assert.Equal(Sockets.NetworkOpen(1, address, 0, 8, listenerOut), 0, "listener binds loopback");
+    Assert.Equal(Sockets.NetworkOpen(1, address, 0, 8, -1, listenerOut), 0, "listener binds loopback");
     word listener = raw_word_load(pointer_add(listenerOut, 16));
     Assert.Equal(Sockets.NetworkAddress(listener, false, boundAddress), 0, "listener reports selected port");
-    Assert.Equal(Sockets.NetworkOpen(2, boundAddress, 0, 0, clientOut), 0, "client connects");
+    Assert.Equal(Sockets.NetworkOpen(2, boundAddress, 0, 0, -1, clientOut), 0, "client connects");
     word client = raw_word_load(pointer_add(clientOut, 16));
-    Assert.Equal(Sockets.NetworkAccept(listener, acceptedOut), 0, "server accepts");
+    Assert.Equal(Sockets.NetworkAccept(listener, -1, acceptedOut), 0, "server accepts");
     word accepted = raw_word_load(pointer_add(acceptedOut, 16));
 
     Assert.Equal(Operations.NetworkSetDeadlines(client, 0, -1), 0, "stream accepts an expired read policy without changing its write policy");
@@ -185,6 +185,134 @@ test native_network_expired_tcp_read_has_one_timeout_and_keeps_stream_open {
     };
 }
 
+unit ExpiredAcceptKeepsListenerOpen() {
+    pointer address = NetworkTestArray(19, 1);
+    pointer wire = pointer_add(address, 16);
+    raw_byte_store(wire, 4);
+    raw_byte_store(pointer_add(wire, 3), 127);
+    raw_byte_store(pointer_add(wire, 6), 1);
+    pointer listenerOut = NetworkTestArray(1, 8);
+    pointer clientOut = NetworkTestArray(1, 8);
+    pointer acceptedOut = NetworkTestArray(1, 8);
+    pointer boundAddress = NetworkTestArray(19, 1);
+
+    Assert.Equal(Sockets.NetworkOpen(1, address, 0, 8, -1, listenerOut), 0, "listener binds without a deadline");
+    word listener = raw_word_load(pointer_add(listenerOut, 16));
+    Assert.Equal(Sockets.NetworkAddress(listener, false, boundAddress), 0, "listener exposes its bound address");
+    Assert.Equal(Sockets.NetworkAccept(listener, -2, acceptedOut), 17, "invalid accept deadline is rejected before registration");
+    Assert.Equal(Sockets.NetworkOpen(2, boundAddress, 0, 0, -2, clientOut), 17, "invalid connect deadline is rejected before socket ownership");
+    Assert.Equal(External.ExternalActiveCount(), 0, "invalid lifecycle deadlines leave no waits");
+    Assert.Equal(Sockets.NetworkAccept(listener, 0, acceptedOut), 12, "expired accept reports TimedOut");
+    Assert.Equal(raw_word_load(pointer_add(acceptedOut, 16)), 0, "expired accept does not create a socket");
+    Assert.Equal(External.ExternalActiveCount(), 0, "expired accept releases its wait");
+    Assert.Equal(Sockets.NetworkOpen(2, boundAddress, 0, 0, -1, clientOut), 0, "client can still connect");
+    word client = raw_word_load(pointer_add(clientOut, 16));
+    Assert.Equal(Sockets.NetworkAccept(listener, -1, acceptedOut), 0, "listener accepts after timeout");
+    word accepted = raw_word_load(pointer_add(acceptedOut, 16));
+    Assert.Equal(Table.NetworkClose(accepted), 0, "accepted socket closes");
+    Assert.Equal(Table.NetworkClose(client), 0, "client closes");
+    Assert.Equal(Table.NetworkClose(listener), 0, "listener closes");
+    Assert.Equal(External.ExternalActiveCount(), 0, "accept lifecycle leaves no waits");
+
+    Native.SystemFree(boundAddress, 35);
+    Native.SystemFree(acceptedOut, 24);
+    Native.SystemFree(clientOut, 24);
+    Native.SystemFree(listenerOut, 24);
+    Native.SystemFree(address, 35);
+    return;
+}
+
+test native_network_expired_accept_has_one_timeout_and_keeps_listener_open {
+    Fiber<unit> scenario = spawn ExpiredAcceptKeepsListenerOpen();
+    match scenario.Join() {
+        Result::Ok(_) => (),
+        Result::Error(_) => Assert.Fail("expired-accept scenario completes"),
+    };
+}
+
+i32 PendingAcceptOne(word listener, i64 deadline) {
+    pointer acceptedOut = NetworkTestArray(1, 8);
+    i32 status = Sockets.NetworkAccept(listener, deadline, acceptedOut);
+    word accepted = raw_word_load(pointer_add(acceptedOut, 16));
+    if status == 0 {
+        Assert.True(accepted != 0, "ready accept owns exactly one socket");
+        Assert.Equal(Table.NetworkClose(accepted), 0, "ready accept closes its owned socket");
+    } else {
+        Assert.Equal(accepted, 0, "non-ready accept does not expose a socket");
+    }
+    Native.SystemFree(acceptedOut, 24);
+    return status;
+}
+
+// A peer contends with close and deadline after the accept wait is registered.
+i32 ConnectRacePeer(word addressValue) {
+    pointer boundAddress = Native.NativePointer(addressValue);
+    pointer clientOut = NetworkTestArray(1, 8);
+    i32 status = Sockets.NetworkOpen(2, boundAddress, 0, 0, clock_monotonic_nanos() + 1000000000, clientOut);
+    word client = raw_word_load(pointer_add(clientOut, 16));
+    if status == 0 {
+        Assert.True(client != 0, "ready connect owns exactly one socket");
+        Assert.Equal(Table.NetworkClose(client), 0, "ready connect closes its owned socket");
+    } else {
+        Assert.Equal(client, 0, "failed connect does not expose a socket");
+    }
+    Native.SystemFree(clientOut, 24);
+    return status;
+}
+
+unit CloseRacesPendingAccept() {
+    pointer address = NetworkTestArray(19, 1);
+    pointer wire = pointer_add(address, 16);
+    raw_byte_store(wire, 4);
+    raw_byte_store(pointer_add(wire, 3), 127);
+    raw_byte_store(pointer_add(wire, 6), 1);
+    pointer listenerOut = NetworkTestArray(1, 8);
+    pointer boundAddress = NetworkTestArray(19, 1);
+    Assert.Equal(Sockets.NetworkOpen(1, address, 0, 8, -1, listenerOut), 0, "race listener binds");
+    word listener = raw_word_load(pointer_add(listenerOut, 16));
+    Assert.Equal(Sockets.NetworkAddress(listener, false, boundAddress), 0, "race listener exposes selected port");
+    Fiber<i32> pendingAccept = spawn (() => PendingAcceptOne(listener, clock_monotonic_nanos() + 1000000000));
+    mut word pending = 0;
+    mut word attempts = 0;
+    while pending == 0 && attempts < 1000 {
+        network_table_lock();
+        pointer table = Native.NativePointer(raw_word_load(network_table_root()));
+        pointer slot = Table.NetworkFindLocked(table, listener);
+        if slot != Native.NativePointer(0) { pending = raw_word_load(Table.NetworkSlotToken(slot, 0)); }
+        network_table_unlock();
+        if pending == 0 { Concurrency.Yield(); }
+        attempts = attempts + 1;
+    }
+    Assert.True(pending != 0, "accept is pending before close");
+    word addressValue = Native.NativeWord(boundAddress);
+    Fiber<i32> connector = spawn (() => ConnectRacePeer(addressValue));
+    Concurrency.Yield();
+    Assert.Equal(Table.NetworkClose(listener), 0, "close claims pending listener");
+    match pendingAccept.Join() {
+        Result::Ok(status) => Assert.True(status == 0 || status == 14 || status == 12, "readiness, close, or deadline wins exactly once"),
+        Result::Error(_) => Assert.Fail("pending accept fiber joins"),
+    };
+    match connector.Join() {
+        Result::Ok(_) => (),
+        Result::Error(_) => Assert.Fail("contending connector fiber joins"),
+    };
+    Assert.Equal(External.ExternalActiveCount(), 0, "readiness/close/deadline race leaves no wait");
+    Assert.Equal(Table.NetworkClose(listener), 0, "duplicate close is harmless");
+    Assert.Equal(Dns.NetworkShutdown(External.ExternalOwnerId()), 0, "race leaves no live socket");
+    Native.SystemFree(boundAddress, 35);
+    Native.SystemFree(listenerOut, 24);
+    Native.SystemFree(address, 35);
+    return;
+}
+
+test native_network_close_vs_accept_deadline_has_one_winner {
+    Fiber<unit> scenario = spawn CloseRacesPendingAccept();
+    match scenario.Join() {
+        Result::Ok(_) => (),
+        Result::Error(_) => Assert.Fail("close/accept race scenario completes"),
+    };
+}
+
 i64 PendingReadOne(word client) {
     pointer received = NetworkTestArray(1, 1);
     mut i64 completed = Operations.NetworkRead(client, received, 0, 1, -1);
@@ -205,12 +333,12 @@ unit PendingReadPolicyRekeysItsOwner() {
     pointer boundAddress = NetworkTestArray(19, 1);
     pointer sent = NetworkTestArray(1, 1);
 
-    Assert.Equal(Sockets.NetworkOpen(1, address, 0, 8, listenerOut), 0, "pending-policy listener binds loopback");
+    Assert.Equal(Sockets.NetworkOpen(1, address, 0, 8, -1, listenerOut), 0, "pending-policy listener binds loopback");
     word listener = raw_word_load(pointer_add(listenerOut, 16));
     Assert.Equal(Sockets.NetworkAddress(listener, false, boundAddress), 0, "pending-policy listener reports its address");
-    Assert.Equal(Sockets.NetworkOpen(2, boundAddress, 0, 0, clientOut), 0, "pending-policy client connects");
+    Assert.Equal(Sockets.NetworkOpen(2, boundAddress, 0, 0, -1, clientOut), 0, "pending-policy client connects");
     word client = raw_word_load(pointer_add(clientOut, 16));
-    Assert.Equal(Sockets.NetworkAccept(listener, acceptedOut), 0, "pending-policy server accepts");
+    Assert.Equal(Sockets.NetworkAccept(listener, -1, acceptedOut), 0, "pending-policy server accepts");
     word accepted = raw_word_load(pointer_add(acceptedOut, 16));
 
     Fiber<i64> timedRead = spawn (() => PendingReadOne(client));

@@ -17,6 +17,30 @@ fn supported_targets() -> Vec<TargetMetadata> {
 }
 
 #[test]
+fn network_lifecycle_services_carry_absolute_deadlines_on_every_target() {
+    use beskid_abi::generated::abi_v5_contract::ABI_V5_CORELIB_SERVICE_BINDINGS;
+
+    for target in ["x86_64-unknown-linux-gnu", "aarch64-apple-darwin", "x86_64-pc-windows-msvc"] {
+        for (service, symbol, params) in [
+            (
+                "__network_open",
+                "beskid_rt_v5_network_open",
+                &["i64", "pointer", "i64", "i64", "i64", "pointer"][..],
+            ),
+            ("__network_accept", "beskid_rt_v5_network_accept", &["usize", "i64", "pointer"][..]),
+        ] {
+            let binding = ABI_V5_CORELIB_SERVICE_BINDINGS
+                .iter()
+                .find(|binding| binding.service == service && binding.target == target)
+                .unwrap();
+            assert_eq!(binding.adapter, symbol, "{service} on {target}");
+            assert_eq!(binding.params, params, "{service} on {target}");
+            assert_eq!(binding.result, "i32", "{service} on {target}");
+        }
+    }
+}
+
+#[test]
 fn windows_static_kit_archive_names_every_manifest_platform_import_library() {
     // The static kit archive is linked directly by C hosts and test drivers, not only by the AOT
     // linker that appends manifest libraries. Each manifest import library must therefore be a
