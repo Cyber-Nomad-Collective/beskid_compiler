@@ -139,6 +139,7 @@ pub i32 NetworkFinish(word handle, pointer request) {
 }
 
 pub i64 NetworkTransfer(word handle, pointer array, i64 offset, i64 count, word operation, pointer address, i64 deadline) {
+    if deadline < -1 { return -i64(NETWORK_UNSUPPORTED); }
     if offset < 0 || count < 0 || word(offset) > NetworkArrayLength(array) || word(count) > NetworkArrayLength(array) - word(offset) { return -i64(NETWORK_MESSAGE_TOO_LARGE); }
     word length = word(count);
     word direction = NetworkDirection(operation);

@@ -163,11 +163,14 @@ fn network_lifecycle_services_carry_absolute_deadlines_on_every_target() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let manifest = load_v5_manifest_source(&fs::read_to_string(root.join("runtime_manifest.bsol")).unwrap()).unwrap();
     let source = source_exports(&root);
-    for (service_name, symbol, parameters) in [
-        ("__network_open", "beskid_rt_v5_network_open", vec!["i64", "pointer", "i64", "i64", "i64", "pointer"]),
-        ("__network_accept", "beskid_rt_v5_network_accept", vec!["usize", "i64", "pointer"]),
+    for (service_name, symbol, parameters, result) in [
+        ("__network_open", "beskid_rt_v5_network_open", vec!["i64", "pointer", "i64", "i64", "i64", "pointer"], "i32"),
+        ("__network_accept", "beskid_rt_v5_network_accept", vec!["usize", "i64", "pointer"], "i32"),
+        ("__network_receive", "beskid_rt_v5_network_receive", vec!["usize", "pointer", "pointer", "u8", "i64"], "i64"),
+        ("__network_send", "beskid_rt_v5_network_send", vec!["usize", "pointer", "pointer", "u8", "i64"], "i64"),
+        ("__network_dns_resolve", "beskid_rt_v5_network_dns_resolve", vec!["pointer", "i64", "i64", "i64", "pointer"], "i32"),
     ] {
-        let expected = (parameters.iter().map(|ty| (*ty).to_owned()).collect::<Vec<_>>(), "i32".to_owned());
+        let expected = (parameters.iter().map(|ty| (*ty).to_owned()).collect::<Vec<_>>(), result.to_owned());
         let service = manifest.corelib_services.iter().find(|service| service.name == service_name).unwrap();
         assert_eq!(service.adapter, symbol);
         assert_eq!(

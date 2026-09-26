@@ -9907,6 +9907,10 @@
           "type": "i64"
         },
         {
+          "name": "deadline",
+          "type": "i64"
+        },
+        {
           "name": "output",
           "type": "pointer"
         }
@@ -10069,6 +10073,10 @@
         {
           "name": "connected",
           "type": "u8"
+        },
+        {
+          "name": "deadline",
+          "type": "i64"
         }
       ],
       "result": "i64",
@@ -10109,6 +10117,10 @@
         {
           "name": "connected",
           "type": "u8"
+        },
+        {
+          "name": "deadline",
+          "type": "i64"
         }
       ],
       "result": "i64",

@@ -185,6 +185,53 @@ test native_network_expired_tcp_read_has_one_timeout_and_keeps_stream_open {
     };
 }
 
+unit ExpiredUdpReceiveKeepsSocketOpen() {
+    pointer bindAddress = NetworkTestArray(19, 1);
+    pointer wire = pointer_add(bindAddress, 16);
+    raw_byte_store(wire, 4);
+    raw_byte_store(pointer_add(wire, 3), 127);
+    raw_byte_store(pointer_add(wire, 6), 1);
+    pointer receiverOut = NetworkTestArray(1, 8);
+    pointer senderOut = NetworkTestArray(1, 8);
+    pointer peer = NetworkTestArray(19, 1);
+    pointer payload = NetworkTestArray(1, 1);
+    pointer metadata = NetworkTestArray(20, 1);
+
+    Assert.Equal(Sockets.NetworkOpen(3, bindAddress, 0, 0, -1, receiverOut), 0, "receiver binds loopback");
+    word receiver = raw_word_load(pointer_add(receiverOut, 16));
+    Assert.Equal(Sockets.NetworkAddress(receiver, false, peer), 0, "receiver has an ephemeral endpoint");
+    Assert.Equal(Sockets.NetworkOpen(3, bindAddress, 0, 0, -1, senderOut), 0, "sender binds loopback");
+    word sender = raw_word_load(pointer_add(senderOut, 16));
+
+    Assert.Equal(Sockets.NetworkReceive(receiver, payload, metadata, false, -2), -17, "invalid raw ABI deadline is rejected before registration");
+    Assert.Equal(Sockets.NetworkReceive(receiver, payload, metadata, false, 0), -12, "empty UDP receive expires through Foundation's timer");
+    Assert.Equal(External.ExternalActiveCount(), 0, "timed-out UDP receive releases its sole wait");
+    raw_byte_store(pointer_add(payload, 16), 73);
+    Assert.Equal(Sockets.NetworkSend(sender, payload, peer, false, -1), 1, "send remains usable after a receive timeout");
+    raw_byte_store(pointer_add(payload, 16), 0);
+    Assert.Equal(Sockets.NetworkReceive(receiver, payload, metadata, false, -1), 1, "receiver remains usable after its timeout");
+    Assert.Equal(raw_byte_load(pointer_add(payload, 16)), 73, "later datagram payload arrives intact");
+    Assert.Equal(External.ExternalActiveCount(), 0, "UDP operations leave no active waits");
+    Assert.Equal(Table.NetworkClose(sender), 0, "sender closes normally");
+    Assert.Equal(Table.NetworkClose(receiver), 0, "receiver closes normally");
+
+    Native.SystemFree(metadata, 36);
+    Native.SystemFree(payload, 17);
+    Native.SystemFree(peer, 35);
+    Native.SystemFree(senderOut, 24);
+    Native.SystemFree(receiverOut, 24);
+    Native.SystemFree(bindAddress, 35);
+    return;
+}
+
+test native_network_expired_udp_receive_has_one_timeout_and_keeps_socket_open {
+    Fiber<unit> scenario = spawn ExpiredUdpReceiveKeepsSocketOpen();
+    match scenario.Join() {
+        Result::Ok(_) => (),
+        Result::Error(_) => Assert.Fail("expired-UDP-receive scenario completes"),
+    };
+}
+
 unit ExpiredAcceptKeepsListenerOpen() {
     pointer address = NetworkTestArray(19, 1);
     pointer wire = pointer_add(address, 16);

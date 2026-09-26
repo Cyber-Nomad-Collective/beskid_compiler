@@ -41,6 +41,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Add a Beskid native lifecycle fixture for ephemeral binding, opaque generation
   reuse, stale close rejection, and leak accounting; target execution is pending.
 
+- Extend public DNS resolution and UDP send/receive operations with typed absolute
+  deadlines. Route each through Foundation's single wait winner, retaining resolver
+  work until the host lookup actually exits; reject raw scalar deadlines at compile time.
+
 - Bind `Core.Time.Sleep` to the existing external timer export through one
   manifest-owned source builtin. Generate source-call authority for export-backed
   soft bindings only after exact ABI validation, and authorize Time's existing
