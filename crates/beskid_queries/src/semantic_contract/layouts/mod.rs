@@ -6,7 +6,7 @@ mod enum_layout;
 mod field_access;
 
 pub(in crate::semantic_contract) use aggregate::{
-    aggregate_layout_from_definition, aggregate_layout_tracked, aggregate_literal_declaration_tracked,
+    aggregate_layout_from_definition, aggregate_layout_tracked, event_field_layout_tracked, aggregate_literal_declaration_tracked,
     aggregate_literal_layout_tracked, applied_aggregate_shape, array_index_element_abi_type_tracked,
     array_index_element_template_tracked, empty_array_literal_element_abi_type_tracked,
     instantiated_aggregate_layout_for_path, private_deadline_literal_field,

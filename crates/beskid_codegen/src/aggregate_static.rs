@@ -4,9 +4,9 @@ use std::sync::Arc;
 
 use beskid_queries::{
     AggregateFieldAccess, AggregateFieldShape, AggregateLayoutFact, AstNodeKey, GenericSpecializationInstance,
-    SemanticTypeId, aggregate_layout, aggregate_literal_declaration, aggregate_literal_layout,
-    aggregate_literal_specialization, enum_constructor_specialization, enum_layout, enum_match,
-    generic_specialization_identity,
+    IndexedNodeKind, SemanticTypeId, aggregate_layout, aggregate_literal_declaration, aggregate_literal_layout,
+    aggregate_literal_specialization, child_nodes, enum_constructor_specialization, enum_layout, enum_match,
+    event_field_layout, generic_specialization_identity, node_kind,
 };
 use cranelift_module::{DataDescription, DataId, Linkage, Module, ModuleError, ModuleResult};
 
@@ -210,7 +210,7 @@ impl CodegenInput<'_> {
         aggregate: &AggregateLayoutFact,
     ) -> Option<AggregateObjectLayout> {
         let header = self.abi_manifest().layouts.iter().find(|layout| layout.name == "BeskidObjectHeader")?;
-        if header.size < 16 || !valid_alignment(header.alignment) {
+        if header.size != 16 || !valid_alignment(header.alignment) {
             return None;
         }
         let mut size = header.size;
@@ -231,6 +231,23 @@ impl CodegenInput<'_> {
                 pointer_map_offsets.push(field_offset);
             }
             fields.push(AggregateStaticField { abi_type, field_offset });
+        }
+        // Event fields have dedicated physical slots but remain absent from the logical
+        // value-field projection layout. Their slots are appended after all value fields,
+        // and the managed allocator's object-zeroing makes each initially null.
+        for member in child_nodes(self.database(), declaration).ok().flatten()?.iter().copied() {
+            if node_kind(self.database(), member).ok().flatten() != Some(IndexedNodeKind::Field) {
+                continue;
+            }
+            if let Some(event) = event_field_layout(self.database(), member).ok()? {
+                if event.owner_type != declaration || self.target().pointer_width != 64 {
+                    return None;
+                }
+                let offset = u64::from(event.slot_offset);
+                size = size.max(offset.checked_add(8)?);
+                alignment = alignment.max(8);
+                pointer_map_offsets.push(offset);
+            }
         }
         let object_size = align_to(size, alignment)?;
         Some(AggregateObjectLayout {

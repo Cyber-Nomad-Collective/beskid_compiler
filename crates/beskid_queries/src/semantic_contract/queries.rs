@@ -327,6 +327,11 @@ pub fn aggregate_layout(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<Agg
     with_registered_syntax(db, key, aggregate_layout_tracked)
 }
 
+/// Return the physical managed-object slot reserved for an event field.
+pub fn event_field_layout(db: &dyn Db, member: AstNodeKey) -> SemanticQueryResult<EventFieldLayoutFact> {
+    with_registered_syntax(db, member, event_field_layout_tracked)
+}
+
 /// Return the exact applied aggregate layout constructed by a struct literal.
 pub fn aggregate_literal_layout(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<AggregateLayoutFact> {
     with_registered_syntax(db, key, aggregate_literal_layout_tracked)

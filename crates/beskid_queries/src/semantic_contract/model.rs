@@ -39,7 +39,7 @@ pub use layouts::{
     EnumConstructorSpecialization, EnumConstructorTemplate, EnumLayoutFact, EnumLayoutTemplateArgument,
     EnumMatchArmFact, EnumMatchBindingFact, EnumMatchFact, EnumMatchPatternFact, EnumMatchScalarLiteralFact,
     EnumMatchVariantPatternFact, EnumScalarPayloadObjectLayout, EnumScalarPayloadVariantLayout, EnumVariantLayoutFact,
-    ScalarAbiLayout,
+    EventFieldLayoutFact, ScalarAbiLayout,
 };
 pub use resolution::{LocalSlot, MutableLocalAssignment, ResolvedItem, ResolvedLocal};
 pub use syntax::{

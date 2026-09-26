@@ -94,6 +94,7 @@ use contracts::{
 use layouts::{
     FieldAccessReceiver, abi_local_declaration_type, field_access_receiver, nominal_field_projection, abi_type_for_direct_aggregate_field_projection, abi_type_for_local_path,
     aggregate_field_access_tracked, aggregate_field_layout, aggregate_layout_from_definition, aggregate_layout_tracked,
+    event_field_layout_tracked,
     aggregate_literal_declaration_tracked, aggregate_literal_layout_tracked, aggregate_shape_from_applied_type,
     applied_aggregate_shape, array_index_element_abi_type_tracked, array_index_element_template_tracked,
     contextual_enum_constructor_type_path, empty_array_literal_element_abi_type_tracked,
@@ -160,6 +161,7 @@ pub use model::{
     EnumConstructorSpecialization, EnumConstructorTemplate, EnumLayoutFact, EnumLayoutTemplateArgument,
     EnumMatchArmFact, EnumMatchBindingFact, EnumMatchFact, EnumMatchPatternFact, EnumMatchScalarLiteralFact,
     EnumMatchVariantPatternFact, EnumScalarPayloadObjectLayout, EnumScalarPayloadVariantLayout, EnumVariantLayoutFact,
+    EventFieldLayoutFact,
     ExportSymbol, FiberOwnership, ForIteratorFact, GenericCallInstantiation, GenericCallSpecialization,
     GenericCallTemplate, GenericNominalMethodReceiver, GenericSpecializationInstance, GenericSubstitution,
     IndexedNodeKind, ItemSignature, LiteralFact, LocalSlot, ManagedReferenceKind, ManifestBuiltin,
@@ -172,7 +174,7 @@ pub use model::{
     generic_specialization_identity,
 };
 pub use queries::{
-    abi_type, aggregate_field_access, aggregate_layout, aggregate_literal_declaration, aggregate_literal_field_values,
+    abi_type, aggregate_field_access, aggregate_layout, event_field_layout, aggregate_literal_declaration, aggregate_literal_field_values,
     aggregate_literal_layout, array_index_element_abi_type, binary_operand_abi_type, block_statement_nodes,
     bulk_parameter, call_abi_signature, call_argument_abi_type, call_arguments, call_lowering,
     callable_fiber_ownership, callable_signature, capture_storage, cast_intents, child_nodes, clif_block_body,
