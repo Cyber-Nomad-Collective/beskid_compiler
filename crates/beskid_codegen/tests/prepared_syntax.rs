@@ -57,6 +57,38 @@ fn prepared_syntax_entrypoint_lowers_without_hir_host_authority() {
 }
 
 #[test]
+fn prepared_syntax_entrypoint_rejects_foreign_composition_snapshot_before_lowering() {
+    let directory = std::env::temp_dir().join(format!("beskid_codegen_foreign_composition_{}", std::process::id()));
+    std::fs::create_dir_all(&directory).expect("create project");
+    let path = directory.join("Main.bd");
+    let source = "i32 Main() { return 7; }";
+    std::fs::write(&path, source).expect("write source");
+    let plan = synthetic_compile_plan_for_source(&path);
+    let resolved = resolved_input_from_plan(path, source.into(), plan, None, None);
+    let mut front = compile_front_end_from_resolved_input(
+        &resolved,
+        FrontEndOptions { with_semantic_diagnostics: false, ..Default::default() },
+        None,
+    )
+    .expect("prepare frontend");
+    front.composition_snapshot.source_unit_path = Some(directory.join("Foreign.bd"));
+    let target = TargetMetadata::supported()
+        .into_iter()
+        .find(|target| target.triple.as_str().starts_with("x86_64-"))
+        .expect("x86_64 ABI target");
+    let isa = isa::lookup_by_name("x86_64")
+        .expect("x86 ISA")
+        .finish(settings::Flags::new(settings::builder()))
+        .expect("finish ISA");
+
+    let error = with_db(|db| lower_prepared_syntax_entrypoint(db, &front, "Main", target, isa.as_ref()))
+        .err()
+        .expect("foreign composition source must be rejected before function lowering");
+    assert!(format!("{error:#}").contains("foreign source unit"), "{error:#}");
+    std::fs::remove_dir_all(directory).expect("remove project");
+}
+
+#[test]
 fn compiler_trace_reports_syntax_facts_without_source_literal_payloads() {
     let output = Command::new(std::env::current_exe().expect("current test executable"))
         .args(["--ignored", "--exact", "compiler_trace_child_lowers_a_syntax_entrypoint", "--nocapture"])

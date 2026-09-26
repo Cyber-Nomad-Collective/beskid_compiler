@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Bind the frozen composition plan and snapshot to one source generation before
+  codegen, reject foreign hosts, registrations, slots, and hook keys, and retain
+  singular/plural injection fields and declared lifecycle hooks without lookup.
+
 - Report actual pending network operation, wait winner, and owner leak count in
   shutdown diagnostics; cover a deliberately leaked pending TCP accept.
 

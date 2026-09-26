@@ -165,9 +165,10 @@ pub(super) fn run_prepare_spine(
         });
     }
 
-    let composition_result = observe_phase_result(pipeline, COMPOSITION_RESOLVE, || {
+    let mut composition_result = observe_phase_result(pipeline, COMPOSITION_RESOLVE, || {
         Ok::<_, anyhow::Error>(resolve_program_composition(&program, Some(plan)))
     })?;
+    composition_result.snapshot.source_unit_path = Some(entry_unit.path.clone());
 
     if options.front_end.with_semantic_diagnostics || collect_diagnostics {
         if use_session_cache {

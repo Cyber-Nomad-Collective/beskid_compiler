@@ -208,6 +208,7 @@ mod tests {
         let snapshot = crate::composition::CompositionSnapshot {
             version: 1,
             launched_host: "AppHost".to_string(),
+            source_unit_path: None,
             launch_span: None,
             registrations: Vec::new(),
             scope_names: std::collections::HashMap::new(),
