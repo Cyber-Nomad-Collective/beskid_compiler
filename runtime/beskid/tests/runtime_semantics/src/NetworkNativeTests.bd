@@ -403,18 +403,25 @@ unit CheckDnsDeadlineWhileHostJobIsBlocked() {
     return;
 }
 
+unit CheckDnsDeadlineWithoutShim() {
+    Result<SocketAddress[], NetworkError> ordinary = NetworkDns.Resolve(
+        "127.0.0.1",
+        Network.Types.PortBytes(0_u8, 53_u8),
+        Option::Some(AddressFamily::V4),
+        Option.Empty<Deadline>()
+    );
+    Assert.True(match ordinary { Result::Ok(addresses) => Array.Len<SocketAddress>(addresses) > 0_i64, _ => false, }, "ordinary numeric DNS resolution succeeds from a scheduler fiber");
+    return;
+}
+
 test native_network_dns_deadline_race_retains_and_drains_host_job {
+    meta { tags = "dns-deadline"; }
     if Environment.Has("BESKID_DNS_DEADLINE_SHIM") {
         Fiber<unit> scenario = spawn CheckDnsDeadlineWhileHostJobIsBlocked();
         Assert.True(match scenario.Join() { Result::Ok(_) => true, _ => false, }, "deterministic DNS deadline scenario completes");
     } else {
-        Result<SocketAddress[], NetworkError> ordinary = NetworkDns.Resolve(
-            "127.0.0.1",
-            Network.Types.PortBytes(0_u8, 53_u8),
-            Option::Some(AddressFamily::V4),
-            Option.Empty<Deadline>()
-        );
-        Assert.True(match ordinary { Result::Ok(addresses) => Array.Len<SocketAddress>(addresses) > 0_i64, _ => false, }, "ordinary cross-platform resolver remains exercised without the Linux shim");
+        Fiber<unit> scenario = spawn CheckDnsDeadlineWithoutShim();
+        Assert.True(match scenario.Join() { Result::Ok(_) => true, _ => false, }, "ordinary DNS check runs on a scheduler fiber without the Linux shim");
     }
 }
 
