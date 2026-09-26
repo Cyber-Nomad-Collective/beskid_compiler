@@ -157,7 +157,15 @@ macro_rules! generated_composition_methods {
                 })
             })?;
             let pointer = dispatch::pointer_type(self.frontend_config);
-            self.composition_call(site, "composition_scope_enter", &[container], &[pointer], None)?;
+            let scope_id = self.builder.ins().iconst(pointer, i64::from(plan.scope_id));
+            let parent_scope_id = self.builder.ins().iconst(pointer, i64::from(plan.parent_scope_id));
+            self.composition_call(
+                site,
+                "composition_scope_enter",
+                &[container, scope_id, parent_scope_id],
+                &[pointer, pointer, pointer],
+                None,
+            )?;
             self.begin_local_root_scope();
             self.local_root_scopes.last_mut()?.composition_cleanups.push(CompositionCleanup::ScopeLeave { site });
             self.lower_nested_statement(plan.body)?;

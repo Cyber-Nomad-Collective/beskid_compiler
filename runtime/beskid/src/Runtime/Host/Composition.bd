@@ -2,7 +2,7 @@
 // slot count and emits direct slot writes; the runtime owns storage, rooting, activation,
 // scopes, and reverse-order shutdown. Runtime service lookup is intentionally absent.
 const COMPOSITION_CONTAINER_SIZE = 48;
-const COMPOSITION_SCOPE_SIZE = 32;
+const COMPOSITION_SCOPE_SIZE = 48;
 const COMPOSITION_PLAN_ENTRY_MAX = 256;
 const COMPOSITION_CONFIGURING = 1;
 const COMPOSITION_ACTIVATING = 2;
@@ -16,24 +16,19 @@ const COMPOSITION_ACTIVATED_COUNT_OFFSET = 32;
 const COMPOSITION_OPEN_SCOPE_COUNT_OFFSET = 40;
 const TLS_COMPOSITION_SCOPE_OFFSET = 32;
 const TLS_COMPOSITION_DEPTH_OFFSET = 40;
-const FIBER_COMPOSITION_SCOPE_OFFSET = 64;
-const FIBER_COMPOSITION_DEPTH_OFFSET = 72;
 
 pub pointer CompositionScopeOwner() {
-    word fiber = SchedulerCurrentFiber();
-    if fiber != FIBER_NONE && FiberExists(fiber) { return FiberRecord(fiber); }
+    // The scheduler projects each running fiber's scope and depth into TLS and
+    // saves them back to its record on yield. Writing the record directly here
+    // would be overwritten by SaveFiberLocalState at the next context switch.
     return CurrentThreadState();
 }
 
 pub word CompositionScopeOffset() {
-    word fiber = SchedulerCurrentFiber();
-    if fiber != FIBER_NONE && FiberExists(fiber) { return FIBER_COMPOSITION_SCOPE_OFFSET; }
     return TLS_COMPOSITION_SCOPE_OFFSET;
 }
 
 pub word CompositionDepthOffset() {
-    word fiber = SchedulerCurrentFiber();
-    if fiber != FIBER_NONE && FiberExists(fiber) { return FIBER_COMPOSITION_DEPTH_OFFSET; }
     return TLS_COMPOSITION_DEPTH_OFFSET;
 }
 
@@ -123,16 +118,27 @@ pub bool CompositionLaunch(pointer container) {
     return true;
 }
 
-[Export(Abi:"C", Symbol:"composition_scope_enter")]
-pub unit CompositionScopeEnter(pointer container) {
+// The two IDs are emitted from one validated scope tree. The active fiber's top frame
+// must be the frozen parent; repeated entry of the same named scope owns a new frame.
+pub bool CompositionScopeTryEnter(pointer container, word scopeId, word parentScopeId) {
     if CompositionContainerValid(container) == 0 ||
-       raw_word_load(pointer_add(container, COMPOSITION_STATUS_OFFSET)) != COMPOSITION_ACTIVE {
-        Trap(10, NativePointer(0), 0);
-    }
+       raw_word_load(pointer_add(container, COMPOSITION_STATUS_OFFSET)) != COMPOSITION_ACTIVE ||
+       scopeId == 0 || scopeId == parentScopeId { return false; }
     pointer owner = CompositionScopeOwner();
-    if owner == NativePointer(0) { Trap(10, NativePointer(0), 0); }
+    if owner == NativePointer(0) { return false; }
     word scopeOffset = CompositionScopeOffset();
     word depthOffset = CompositionDepthOffset();
+    pointer previous = NativePointer(raw_word_load(pointer_add(owner, scopeOffset)));
+    if previous == NativePointer(0) {
+        if parentScopeId != 0 { return false; }
+    } else {
+        if NativePointer(raw_word_load(previous)) != container { return false; }
+        word activeId = raw_word_load(pointer_add(previous, 32));
+        word activeParentId = raw_word_load(pointer_add(previous, 40));
+        if activeId != parentScopeId && !(activeId == scopeId && activeParentId == parentScopeId) {
+            return false;
+        }
+    }
     pointer scopePtr = SystemAllocate(COMPOSITION_SCOPE_SIZE, 8);
     if scopePtr == NativePointer(0) { Trap(5, NativePointer(0), 0); }
     pointer ownedValues = SystemAllocate(COMPOSITION_PLAN_ENTRY_MAX * 8, 8);
@@ -143,11 +149,21 @@ pub unit CompositionScopeEnter(pointer container) {
     memory_set(scopePtr, 0, COMPOSITION_SCOPE_SIZE);
     memory_set(ownedValues, 0, COMPOSITION_PLAN_ENTRY_MAX * 8);
     raw_word_store(scopePtr, NativeWord(container));
-    raw_word_store(pointer_add(scopePtr, 8), raw_word_load(pointer_add(owner, scopeOffset)));
+    raw_word_store(pointer_add(scopePtr, 8), NativeWord(previous));
     raw_word_store(pointer_add(scopePtr, 24), NativeWord(ownedValues));
+    raw_word_store(pointer_add(scopePtr, 32), scopeId);
+    raw_word_store(pointer_add(scopePtr, 40), parentScopeId);
     raw_word_store(pointer_add(owner, scopeOffset), NativeWord(scopePtr));
     raw_word_store(pointer_add(owner, depthOffset), raw_word_load(pointer_add(owner, depthOffset)) + 1);
     raw_word_store(pointer_add(container, COMPOSITION_OPEN_SCOPE_COUNT_OFFSET), raw_word_load(pointer_add(container, COMPOSITION_OPEN_SCOPE_COUNT_OFFSET)) + 1);
+    return true;
+}
+
+[Export(Abi:"C", Symbol:"composition_scope_enter")]
+pub unit CompositionScopeEnter(pointer container, word scopeId, word parentScopeId) {
+    if !CompositionScopeTryEnter(container, scopeId, parentScopeId) {
+        Trap(10, NativePointer(0), 0);
+    }
     return;
 }
 

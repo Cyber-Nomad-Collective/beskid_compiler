@@ -3,6 +3,27 @@ use Runtime.Bootstrap.Native;
 use Runtime.Host.Composition;
 use Testing.Assert;
 use HostRuntimeSupport;
+use Concurrency.Fiber;
+use Runtime.Fiber.Scheduler.Core;
+use Runtime.Fiber.Scheduler.Loop;
+
+pub unit CompositionFiberScopeEntry(pointer state) {
+    pointer container = NativePointer(raw_word_load(state));
+    bool entered = CompositionScopeTryEnter(container, 1, 0);
+    if entered { raw_word_store(pointer_add(state, 32), 1); }
+    if !entered { return; }
+    raw_word_store(pointer_add(state, 8), word(CompositionScopeDepth()));
+    FiberYield();
+    raw_word_store(pointer_add(state, 16), word(CompositionScopeDepth()));
+    CompositionScopeLeave();
+    raw_word_store(pointer_add(state, 24), word(CompositionScopeDepth()));
+    return;
+}
+
+pub i64 SpawnCompositionFiberScopeEntry(pointer state) {
+    Fiber<unit> child = spawn CompositionFiberScopeEntry(state);
+    return child.handle;
+}
 
 test composition_activates_scopes_and_disposes_compiler_materialized_slots {
     pointer hostRuntime = SuspendHostRuntime();
@@ -19,8 +40,8 @@ test composition_activates_scopes_and_disposes_compiler_materialized_slots {
     Assert.True(CompositionSlotStore(container, 1, second), "compiler-selected slot one is rooted");
     Assert.True(CompositionLaunch(container), "fully materialized plan activates");
 
-    CompositionScopeEnter(container);
-    CompositionScopeEnter(container);
+    CompositionScopeEnter(container, 1, 0);
+    CompositionScopeEnter(container, 2, 1);
     Assert.Equal(CompositionScopeDepth(), 2, "nested scopes are tracked by the current execution owner");
     CompositionScopeLeave();
     CompositionScopeLeave();
@@ -91,13 +112,80 @@ test composition_containers_keep_slots_and_activation_independent {
 
     CompositionShutdown(first);
     CompositionContainerDrop(first);
-    CompositionScopeEnter(second);
+    CompositionScopeEnter(second, 1, 0);
     Assert.Equal(CompositionScopeDepth(), 1, "second container remains active after first drops");
     CompositionScopeLeave();
     CompositionShutdown(second);
     CompositionContainerDrop(second);
     SystemFree(firstService, 8);
     SystemFree(secondService, 8);
+    ProcessShutdown(runtime);
+    SystemFree(runtime, 64);
+    ResumeHostRuntime(hostRuntime);
+}
+
+test composition_scope_rejects_wrong_frozen_parent_without_publishing_a_frame {
+    pointer hostRuntime = SuspendHostRuntime();
+    pointer runtime = SystemAllocate(64, 8);
+    memory_set(runtime, 0, 64);
+    ProcessInit(runtime);
+    pointer container = CompositionContainerCreate(0);
+    Assert.True(CompositionLaunch(container), "empty compiler plan activates");
+
+    Assert.True(!CompositionScopeTryEnter(container, 2, 1), "child cannot enter without its frozen parent");
+    Assert.Equal(CompositionScopeDepth(), 0, "failed root entry leaves frame stack untouched");
+    CompositionScopeEnter(container, 1, 0);
+    Assert.True(!CompositionScopeTryEnter(container, 2, 0), "child cannot claim global parent while nested");
+    Assert.Equal(CompositionScopeDepth(), 1, "failed nested entry does not publish a frame");
+    CompositionScopeEnter(container, 2, 1);
+    Assert.Equal(CompositionScopeDepth(), 2, "validated parent enters beneath its own frame");
+    CompositionScopeEnter(container, 2, 1);
+    Assert.Equal(CompositionScopeDepth(), 3, "same named scope reentry owns a separate frame");
+    CompositionScopeLeave();
+    CompositionScopeLeave();
+    CompositionScopeLeave();
+    CompositionShutdown(container);
+    CompositionContainerDrop(container);
+    ProcessShutdown(runtime);
+    SystemFree(runtime, 64);
+    ResumeHostRuntime(hostRuntime);
+}
+
+test composition_scope_identity_is_fiber_local {
+    meta { tags = "composition-scope"; }
+    pointer hostRuntime = SuspendHostRuntime();
+    pointer runtime = SystemAllocate(64, 8);
+    memory_set(runtime, 0, 64);
+    ProcessInit(runtime);
+    pointer container = CompositionContainerCreate(0);
+    Assert.True(CompositionLaunch(container), "empty plan activates");
+    pointer firstState = SystemAllocate(40, 8);
+    pointer secondState = SystemAllocate(40, 8);
+    memory_set(firstState, 0, 40);
+    memory_set(secondState, 0, 40);
+    raw_word_store(firstState, NativeWord(container));
+    raw_word_store(secondState, NativeWord(container));
+    i64 first = SpawnCompositionFiberScopeEntry(firstState);
+    i64 second = SpawnCompositionFiberScopeEntry(secondState);
+    Assert.True(first >= 0 && second >= 0, "two fibers scheduled");
+    Assert.True(SchedStep(), "first fiber enters and yields");
+    Assert.True(SchedStep(), "second fiber enters and yields");
+    Assert.Equal(raw_word_load(pointer_add(firstState, 32)), 1, "first fiber accepted its frozen root identity");
+    Assert.Equal(raw_word_load(pointer_add(secondState, 32)), 1, "second fiber accepted its frozen root identity");
+    Assert.Equal(CompositionScopeDepth(), 0, "main execution has no borrowed fiber frame");
+    Assert.True(SchedStep(), "first fiber resumes and leaves");
+    Assert.True(SchedStep(), "second fiber resumes and leaves");
+    Assert.Equal(raw_word_load(pointer_add(firstState, 8)), 1, "first fiber entered one frame");
+    Assert.Equal(raw_word_load(pointer_add(secondState, 8)), 1, "second fiber entered one independent frame");
+    Assert.Equal(raw_word_load(pointer_add(firstState, 16)), 1, "first fiber retained its own frame after yield");
+    Assert.Equal(raw_word_load(pointer_add(secondState, 16)), 1, "second fiber retained its own frame after yield");
+    Assert.Equal(raw_word_load(pointer_add(firstState, 24)), 0, "first fiber left its frame");
+    Assert.Equal(raw_word_load(pointer_add(secondState, 24)), 0, "second fiber left its frame");
+    CompositionShutdown(container);
+    CompositionContainerDrop(container);
+    SystemFree(firstState, 40);
+    SystemFree(secondState, 40);
+    Assert.True(SchedShutdown(), "scheduler is idle after both scoped fibers");
     ProcessShutdown(runtime);
     SystemFree(runtime, 64);
     ResumeHostRuntime(hostRuntime);

@@ -95,6 +95,7 @@ pub struct CompositionInjectionPlan {
 pub struct CompositionScopePlan {
     pub site: AstNodeKey,
     pub scope_id: u32,
+    pub parent_scope_id: u32,
     pub body: AstNodeKey,
 }
 

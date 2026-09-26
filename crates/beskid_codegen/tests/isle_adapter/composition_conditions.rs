@@ -300,8 +300,40 @@ i32 Main() { launch AppHost(); with Request() { return 0; } }
     let scope_plan = facts.composition_scope(scope).expect("source-keyed scope plan");
     assert_eq!(scope_plan.site, scope);
     assert_ne!(scope_plan.scope_id, 0);
+    assert_eq!(scope_plan.parent_scope_id, 0, "root scope must retain the frozen global parent");
     assert!(facts.composition_launch(scope).is_none());
     assert!(facts.composition_scope(launch).is_none());
+}
+
+#[test]
+fn nested_composition_scope_facts_keep_the_frozen_parent_identity() {
+    use std::sync::Arc;
+    use beskid_analysis::composition::{CompositionInput, resolve_composition};
+    use beskid_isle::NodeFacts;
+
+    let source = r#"
+host AppHost() { scope Outer() { scope Inner() {} } }
+i32 Main() { launch AppHost(); with Outer() { with Inner() {} } return 0; }
+"#;
+    let (input, _, root) = item_fixture_with_root(source);
+    let result = resolve_composition(CompositionInput {
+        program: &input.typed_program().assembly.entry_unit().program,
+        is_mod_project: false,
+    });
+    assert!(result.issues.is_empty(), "composition must validate: {:?}", result.issues);
+    let mut snapshot = result.snapshot;
+    snapshot.source_unit_path = Some(root.unit.path(input.database()).to_path_buf());
+    let generation = input.typed_program().generation;
+    let input = input.with_composition_authority(generation, Arc::new(result.plan), Arc::new(snapshot))
+        .expect("attach exact authority");
+    let scopes = super::support::find_nodes_of_kind(input.database(), root, beskid_queries::IndexedNodeKind::WithStatement);
+    assert_eq!(scopes.len(), 2);
+    let facts = beskid_codegen::SyntaxNodeFacts::new(&input);
+    let outer = facts.composition_scope(scopes[0]).expect("outer scope");
+    let inner = facts.composition_scope(scopes[1]).expect("inner scope");
+    assert_eq!(outer.parent_scope_id, 0);
+    assert_eq!(inner.parent_scope_id, outer.scope_id);
+    assert_ne!(inner.scope_id, outer.scope_id);
 }
 
 #[test]

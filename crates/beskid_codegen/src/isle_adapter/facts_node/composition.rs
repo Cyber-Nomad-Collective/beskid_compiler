@@ -119,6 +119,7 @@ impl SyntaxNodeFacts<'_> {
         {
             return None;
         }
-        Some(CompositionScopePlan { site: key, scope_id: scope_id.0, body: fact.body })
+        let parent_scope_id = plan.scope_parents.get(scope_id)?.map_or(0, |parent| parent.0);
+        Some(CompositionScopePlan { site: key, scope_id: scope_id.0, parent_scope_id, body: fact.body })
     }
 }

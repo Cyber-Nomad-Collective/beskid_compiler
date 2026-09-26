@@ -24,7 +24,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Lower frozen composition registrations into managed service objects and
   compiler-selected slots, wire singular/plural injected fields with rooted
   pointer arrays, and read injected fields through source-keyed physical slots.
-  Constructor, scope-ID, and failure-teardown gates remain separate release work.
+  Constructor and failure-teardown gates remain separate release work.
+
+- Pass compiler-frozen composition scope and parent identities through the
+  ABI-v5 contract, enforce the parent tree before publishing scope frames, and
+  preserve each fiber's scope state across scheduler yields.
 
 - Prove scoped acquisition through a validated `?` only when the exact Result
   success payload is recursively source-proven fresh. Keep borrowed values,

@@ -104,6 +104,39 @@ fn checked_in_v5_artifacts_are_fresh() {
     );
 }
 
+#[test]
+fn composition_scope_enter_carries_frozen_identity_on_every_target() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let source = fs::read_to_string(root.join("runtime_manifest.bsol")).unwrap();
+    let manifest = load_v5_manifest_source(&source).expect("workspace v5 source");
+    let enter = manifest
+        .corelib_services
+        .iter()
+        .find(|service| service.name == "__composition_scope_enter")
+        .expect("canonical scope entry service");
+    assert_eq!(
+        enter.params.iter().map(|param| (param.name.as_str(), param.ty.as_str())).collect::<Vec<_>>(),
+        [("container", "pointer"), ("scope_id", "usize"), ("parent_scope_id", "usize")]
+    );
+    assert_eq!(enter.result, "void");
+    let mut targets = enter
+        .target_bindings
+        .iter()
+        .map(|binding| {
+            assert_eq!(binding.implementation, "composition_scope_enter");
+            assert!(binding.os_imports.is_empty());
+            binding.target.as_str()
+        })
+        .collect::<Vec<_>>();
+    targets.sort_unstable();
+    assert_eq!(targets, ["aarch64-apple-darwin", "x86_64-pc-windows-msvc", "x86_64-unknown-linux-gnu"]);
+
+    let artifacts = generate_v5_artifacts(&manifest).expect("ABI artifacts");
+    assert!(artifacts
+        .c_header
+        .contains("void composition_scope_enter(void * container, size_t scope_id, size_t parent_scope_id);"));
+}
+
 /// `runtime/beskid/src/Runtime/Mem/AbiValue.bd` is read from disk by every compilation path --
 /// CLI-embedded, fixture-substituted for the three named runtime-test targets, and an ordinary
 /// path dependency for every other runtime-test target -- so the generated ABI-v5 layout prelude

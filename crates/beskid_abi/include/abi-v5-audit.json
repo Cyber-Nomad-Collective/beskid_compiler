@@ -778,6 +778,14 @@
         {
           "name": "container",
           "type": "pointer"
+        },
+        {
+          "name": "scope_id",
+          "type": "usize"
+        },
+        {
+          "name": "parent_scope_id",
+          "type": "usize"
         }
       ],
       "result": "void",

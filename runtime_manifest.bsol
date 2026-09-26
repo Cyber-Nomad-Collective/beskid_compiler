@@ -977,7 +977,7 @@ corelib_service "__composition_launch" {
 
 corelib_service "__composition_scope_enter" {
   adapter = "composition_scope_enter"
-  params = [{ name = container, type = pointer }]
+  params = [{ name = container, type = pointer }, { name = scope_id, type = usize }, { name = parent_scope_id, type = usize }]
   returns = void
   target_bindings = [
     { target = "x86_64-unknown-linux-gnu", implementation = "composition_scope_enter", os_imports = [] },

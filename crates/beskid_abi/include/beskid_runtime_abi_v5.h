@@ -425,7 +425,7 @@ void * composition_container_create(size_t slot_count);
 void composition_container_drop(void * container);
 uint8_t composition_launch(void * container);
 int32_t composition_scope_depth(void);
-void composition_scope_enter(void * container);
+void composition_scope_enter(void * container, size_t scope_id, size_t parent_scope_id);
 void composition_scope_leave(void);
 void composition_shutdown(void * container);
 uint8_t composition_slot_store(void * container, size_t slot, void * service);
