@@ -59,8 +59,9 @@ pub unit NetworkPump() {
 }
 
 [Export(Abi:"C", Symbol:"beskid_rt_v5_network_dns_resolve")]
-pub i32 NetworkDnsResolve(pointer hostName, i64 port, i64 family, pointer resultArray) {
+pub i32 NetworkDnsResolve(pointer hostName, i64 port, i64 family, i64 deadline, pointer resultArray) {
     SchedInit();
+    if deadline < -1 { return NETWORK_UNSUPPORTED; }
     if port <= 0 || port > 65535 || (family != 0 && family != 4 && family != 6) || NetworkArrayData(resultArray, 1) == NativePointer(0) { return NETWORK_INVALID_ADDRESS; }
     word current = SchedulerCurrentFiber();
     if current == FIBER_NONE { return NETWORK_UNSUPPORTED; }
@@ -68,7 +69,7 @@ pub i32 NetworkDnsResolve(pointer hostName, i64 port, i64 family, pointer result
     pointer record = SystemAllocate(NETWORK_DNS_RECORD_SIZE, 8);
     if record == NativePointer(0) { return NETWORK_RESOURCE_EXHAUSTED; }
     memory_set(record, 0, NETWORK_DNS_RECORD_SIZE);
-    word token = ExternalWaitRegister(FiberHandle(current), 23, -1);
+    word token = ExternalWaitRegister(FiberHandle(current), 23, deadline);
     if token == 0 { SystemFree(record, NETWORK_DNS_RECORD_SIZE); return NETWORK_BUSY; }
     ExternalWorkRetain();
     pointer request = network_dns_start(hostName, word(port), i32(family), ExternalOwnerId(), token);

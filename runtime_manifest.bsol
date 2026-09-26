@@ -465,7 +465,7 @@ corelib_service "__network_udp_connect" {
 }
 corelib_service "__network_receive" {
   adapter = "beskid_rt_v5_network_receive"
-  params = [{ name = handle, type = usize }, { name = payload, type = pointer }, { name = metadata, type = pointer }, { name = connected, type = u8 }]
+  params = [{ name = handle, type = usize }, { name = payload, type = pointer }, { name = metadata, type = pointer }, { name = connected, type = u8 }, { name = deadline, type = i64 }]
   returns = i64
   target_bindings = [
     { target = "x86_64-unknown-linux-gnu", implementation = "beskid_rt_v5_network_receive", os_imports = [] },
@@ -475,7 +475,7 @@ corelib_service "__network_receive" {
 }
 corelib_service "__network_send" {
   adapter = "beskid_rt_v5_network_send"
-  params = [{ name = handle, type = usize }, { name = payload, type = pointer }, { name = address, type = pointer }, { name = connected, type = u8 }]
+  params = [{ name = handle, type = usize }, { name = payload, type = pointer }, { name = address, type = pointer }, { name = connected, type = u8 }, { name = deadline, type = i64 }]
   returns = i64
   target_bindings = [
     { target = "x86_64-unknown-linux-gnu", implementation = "beskid_rt_v5_network_send", os_imports = [] },
@@ -485,7 +485,7 @@ corelib_service "__network_send" {
 }
 corelib_service "__network_dns_resolve" {
   adapter = "beskid_rt_v5_network_dns_resolve"
-  params = [{ name = host, type = pointer }, { name = port, type = i64 }, { name = family, type = i64 }, { name = output, type = pointer }]
+  params = [{ name = host, type = pointer }, { name = port, type = i64 }, { name = family, type = i64 }, { name = deadline, type = i64 }, { name = output, type = pointer }]
   returns = i32
   target_bindings = [
     { target = "x86_64-unknown-linux-gnu", implementation = "beskid_rt_v5_network_dns_resolve", os_imports = [] },

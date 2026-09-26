@@ -169,7 +169,7 @@ pub i32 NetworkConnected(word handle) {
 }
 
 [Export(Abi:"C", Symbol:"beskid_rt_v5_network_receive")]
-pub i64 NetworkReceive(word handle, pointer destination, pointer metadataArray, bool connected) {
+pub i64 NetworkReceive(word handle, pointer destination, pointer metadataArray, bool connected, i64 deadline) {
     if NetworkArrayData(metadataArray, 20) == NativePointer(0) { return -i64(NETWORK_INVALID_ADDRESS); }
     if connected {
         i32 status = NetworkConnected(handle);
@@ -177,12 +177,12 @@ pub i64 NetworkReceive(word handle, pointer destination, pointer metadataArray, 
     }
     pointer metadata = NetworkArrayData(metadataArray, 20);
     memory_set(metadata, 0, 20);
-    i64 result = NetworkTransfer(handle, destination, 0, i64(NetworkArrayLength(destination)), NETWORK_RECEIVE, metadata, -1);
+    i64 result = NetworkTransfer(handle, destination, 0, i64(NetworkArrayLength(destination)), NETWORK_RECEIVE, metadata, deadline);
     return result;
 }
 
 [Export(Abi:"C", Symbol:"beskid_rt_v5_network_send")]
-pub i64 NetworkSend(word handle, pointer source, pointer addressArray, bool connected) {
+pub i64 NetworkSend(word handle, pointer source, pointer addressArray, bool connected, i64 deadline) {
     mut pointer address = NativePointer(0);
     if connected {
         i32 status = NetworkConnected(handle);
@@ -192,6 +192,6 @@ pub i64 NetworkSend(word handle, pointer source, pointer addressArray, bool conn
         if !NetworkWireValid(input) { return -i64(NETWORK_INVALID_ADDRESS); }
         address = input;
     }
-    i64 result = NetworkTransfer(handle, source, 0, i64(NetworkArrayLength(source)), NETWORK_SEND, address, -1);
+    i64 result = NetworkTransfer(handle, source, 0, i64(NetworkArrayLength(source)), NETWORK_SEND, address, deadline);
     return result;
 }
