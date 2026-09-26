@@ -1,5 +1,5 @@
 use super::support::{
-    SyntaxModuleItem, find_function_definitions, item_fixture_with_root, item_name, lower_syntax_program,
+    SyntaxModuleItem, find_function_definitions, find_node, item_fixture_with_root, item_name, lower_syntax_program,
 };
 
 #[test]
@@ -166,6 +166,122 @@ i32 Main() { launch AppHost(); return 0; }
         .expect("validated composition authority");
     let facts = beskid_codegen::SyntaxNodeFacts::new(&attached);
     assert_eq!(facts.composition_plural_slots(owner), None, "owner-only lookup is ambiguous across fields");
+}
+
+#[test]
+fn composition_queries_bind_launch_and_nested_scope_to_exact_source_keys() {
+    let source = r#"
+host AppHost() {
+    scope Request() {}
+}
+i32 Main() {
+    launch AppHost();
+    with Request() { return 0; }
+}
+"#;
+    let (input, _, root) = item_fixture_with_root(source);
+    let launch = find_node(input.database(), root, beskid_queries::IndexedNodeKind::LaunchStatement)
+        .expect("launch statement");
+    let with_statement = find_node(input.database(), root, beskid_queries::IndexedNodeKind::WithStatement)
+        .expect("with statement");
+    let launch_fact = beskid_queries::composition_launch(input.database(), launch)
+        .expect("generation-bound launch query")
+        .expect("validated launch fact");
+    assert_eq!(launch_fact.host.as_ref(), "AppHost");
+    assert_eq!(launch_fact.site, launch);
+    let scope_fact = beskid_queries::composition_scope(input.database(), with_statement)
+        .expect("generation-bound scope query")
+        .expect("validated scope fact");
+    assert_eq!(scope_fact.scope_name.as_ref(), "Request");
+    assert_eq!(scope_fact.site, with_statement);
+    assert_eq!(
+        beskid_queries::node_kind(input.database(), scope_fact.body).expect("body kind"),
+        Some(beskid_queries::IndexedNodeKind::Block)
+    );
+
+    let stale = beskid_queries::AstNodeKey {
+        generation: beskid_queries::SyntaxGenerationId(launch.generation.0 + 1),
+        ..launch
+    };
+    assert!(beskid_queries::composition_launch(input.database(), stale).expect("stale query").is_none());
+    assert!(beskid_queries::composition_scope(input.database(), launch).expect("wrong kind").is_none());
+
+    let (foreign_input, _, foreign_root) = item_fixture_with_root("i32 Main() { return 0; }");
+    let foreign = beskid_queries::AstNodeKey { unit: foreign_root.unit, ..launch };
+    assert!(beskid_queries::composition_launch(foreign_input.database(), foreign).expect("foreign query").is_none());
+
+    let (unresolved_input, _, unresolved_root) = item_fixture_with_root("i32 Main() { launch MissingHost(); return 0; }");
+    let unresolved = find_node(
+        unresolved_input.database(),
+        unresolved_root,
+        beskid_queries::IndexedNodeKind::LaunchStatement,
+    )
+    .expect("unresolved launch statement");
+    assert_eq!(
+        beskid_queries::composition_launch(unresolved_input.database(), unresolved)
+            .expect("source-shape query")
+            .expect("syntax fact; validation belongs to frozen authority")
+            .host
+            .as_ref(),
+        "MissingHost"
+    );
+}
+
+#[test]
+fn composition_node_facts_require_exact_attached_authority() {
+    use std::sync::Arc;
+
+    use beskid_analysis::composition::{CompositionInput, resolve_composition};
+    use beskid_isle::NodeFacts;
+
+    let source = r#"
+host AppHost() { scope Request() {} }
+i32 Main() { launch AppHost(); with Request() { return 0; } }
+"#;
+    let (input, _, root) = item_fixture_with_root(source);
+    let launch = find_node(input.database(), root, beskid_queries::IndexedNodeKind::LaunchStatement)
+        .expect("launch statement");
+    let scope = find_node(input.database(), root, beskid_queries::IndexedNodeKind::WithStatement)
+        .expect("scope statement");
+    let unbound = beskid_codegen::SyntaxNodeFacts::new(&input);
+    assert!(unbound.composition_launch(launch).is_none());
+    assert!(unbound.composition_scope(scope).is_none());
+
+    let result = resolve_composition(CompositionInput {
+        program: &input.typed_program().assembly.entry_unit().program,
+        is_mod_project: false,
+    });
+    assert!(result.issues.is_empty(), "composition must validate: {:?}", result.issues);
+    let mut snapshot = result.snapshot;
+    snapshot.source_unit_path = Some(root.unit.path(input.database()).to_path_buf());
+    let generation = input.typed_program().generation;
+    let attached = input
+        .with_composition_authority(generation, Arc::new(result.plan), Arc::new(snapshot))
+        .expect("attach exact authority");
+    let facts = beskid_codegen::SyntaxNodeFacts::new(&attached);
+    let launch_plan = facts.composition_launch(launch).expect("source-keyed launch plan");
+    assert_eq!(launch_plan.site, launch);
+    assert_eq!(launch_plan.slot_count, 0);
+    let scope_plan = facts.composition_scope(scope).expect("source-keyed scope plan");
+    assert_eq!(scope_plan.site, scope);
+    assert_ne!(scope_plan.scope_id, 0);
+    assert!(facts.composition_launch(scope).is_none());
+    assert!(facts.composition_scope(launch).is_none());
+}
+
+#[test]
+fn composition_launch_query_keeps_source_shape_when_base_host_lives_in_another_unit() {
+    use beskid_isle::NodeFacts;
+
+    let source = "host AppHost() : ImportedBase {} i32 Main() { launch AppHost(); return 0; }";
+    let (input, _, root) = item_fixture_with_root(source);
+    let launch = find_node(input.database(), root, beskid_queries::IndexedNodeKind::LaunchStatement)
+        .expect("launch statement");
+    let fact = beskid_queries::composition_launch(input.database(), launch)
+        .expect("generation-bound source fact")
+        .expect("source shape must not independently re-resolve the imported graph");
+    assert_eq!(fact.host.as_ref(), "AppHost");
+    assert!(beskid_codegen::SyntaxNodeFacts::new(&input).composition_launch(launch).is_none());
 }
 
 #[test]

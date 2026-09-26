@@ -47,6 +47,21 @@ pub struct ScopedCleanupPlan {
     pub converted_error_managed: bool,
 }
 
+/// One source-keyed, validated launch site with its compiler-frozen container shape.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CompositionLaunchPlan {
+    pub site: AstNodeKey,
+    pub slot_count: u32,
+}
+
+/// One source-keyed scope bracket with an exact frozen scope ID and body.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CompositionScopePlan {
+    pub site: AstNodeKey,
+    pub scope_id: u32,
+    pub body: AstNodeKey,
+}
+
 /// Generation-safe local slot and scalar type for one emitted function parameter.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct LocalSlotId {

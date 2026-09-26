@@ -19,6 +19,7 @@ mod call_abi;
 mod calls;
 mod cleanup;
 mod closures_spawn;
+mod composition;
 mod growth;
 mod completion;
 mod contracts;
@@ -69,6 +70,7 @@ use calls::{
     unique_nominal_method_declaration, unqualified_enclosing_method_call,
 };
 pub use cleanup::{ScopedAcquisition, ScopedCleanup, ScopedCleanupDiagnostic, scoped_cleanup};
+pub use composition::{CompositionLaunchFact, CompositionScopeFact, composition_launch, composition_scope};
 pub use growth::{DeadCollectionGrowth, dead_collection_growth, is_growth_call_candidate};
 pub use local_type_resolution::{UnresolvedTypeReference, unresolved_type_reference};
 pub use legality::{

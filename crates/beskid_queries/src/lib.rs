@@ -71,6 +71,7 @@ pub use persistence::{
     persist_session_snapshot, save_db_snapshot,
 };
 pub use semantic_contract::{DeadCollectionGrowth, dead_collection_growth, is_growth_call_candidate};
+pub use semantic_contract::{CompositionLaunchFact, CompositionScopeFact, composition_launch, composition_scope};
 pub use semantic_contract::{UnresolvedTypeReference, unresolved_type_reference};
 pub use semantic_contract::{
     CallArityMismatch, GenericBindingConflict, GenericParameterConflict, ImmutableLocalAssignment, MemberReferenceFinding,

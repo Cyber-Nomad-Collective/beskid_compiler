@@ -3,6 +3,7 @@
 use super::*;
 
 mod calls;
+mod composition;
 mod collections;
 mod enums;
 mod literals;
@@ -11,6 +12,14 @@ mod structs;
 mod types;
 
 impl NodeFacts for SyntaxNodeFacts<'_> {
+    fn composition_launch(&self, key: AstNodeKey) -> Option<CompositionLaunchPlan> {
+        self.composition_launch_impl(key)
+    }
+
+    fn composition_scope(&self, key: AstNodeKey) -> Option<CompositionScopePlan> {
+        self.composition_scope_impl(key)
+    }
+
     fn scoped_cleanup(&self, key: AstNodeKey) -> Option<beskid_isle::ScopedCleanupPlan> {
         self.scoped_cleanup_impl(key)
     }

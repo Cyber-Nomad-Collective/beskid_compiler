@@ -6,6 +6,12 @@ use cranelift_codegen::ir::{Signature, Type};
 use std::sync::Arc;
 
 pub trait NodeFacts {
+    fn composition_launch(&self, _key: AstNodeKey) -> Option<CompositionLaunchPlan> {
+        None
+    }
+    fn composition_scope(&self, _key: AstNodeKey) -> Option<CompositionScopePlan> {
+        None
+    }
     fn scoped_cleanup(&self, _key: AstNodeKey) -> Option<ScopedCleanupPlan> {
         None
     }

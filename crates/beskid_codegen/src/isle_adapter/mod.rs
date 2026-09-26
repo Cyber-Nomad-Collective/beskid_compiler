@@ -4,7 +4,8 @@ use std::collections::HashMap;
 
 use beskid_analysis::syntax::try_decode_string_literal_token;
 use beskid_isle::{
-    AstNodeKey, CallImporter, CallKind, CollectionMutationOwner, CollectionOperation, DirectCallee, EmissionServices,
+    AstNodeKey, CallImporter, CallKind, CollectionMutationOwner, CollectionOperation, CompositionLaunchPlan,
+    CompositionScopePlan, DirectCallee, EmissionServices,
     EnumLayout, EnumVariantLayout, FieldLayout, FunctionEmissionError, FunctionEmitter, InlineCaptureField,
     InlineClosureEnvironment, InlineLambdaCall, ItemStatementEmission, LiteralKind, LocalSlotId, ManagedReferenceFact,
     ManagedStructAllocation, MatchArmBindingFact, MatchArmFact, MatchPayloadPatternFact, NodeFacts, NodeKind,
