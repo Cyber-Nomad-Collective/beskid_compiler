@@ -2,6 +2,7 @@
 
 pub mod abi_types;
 pub mod abi_v5;
+pub mod assembly_sources;
 pub mod generated;
 pub mod interop;
 pub mod mod_contract;
