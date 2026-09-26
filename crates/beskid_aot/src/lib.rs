@@ -16,6 +16,7 @@ pub mod prepared_syntax;
 pub mod run;
 pub mod runtime;
 pub mod target;
+mod windows_toolchain;
 
 pub use api::{
     AotBuildRequest, AotBuildResult, BuildOutputKind, BuildProfile, CanonicalHostEmitAuthority, ExportPolicy, LinkMode,

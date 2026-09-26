@@ -6,6 +6,7 @@ use beskid_abi::generated::abi_v5_contract::GeneratedCoreArgsEntryAdapter;
 use cargo_cross::config::{Arch, Os, get_target_config};
 
 use crate::error::{AotError, AotResult};
+use crate::windows_toolchain::configure_windows_native_command;
 
 fn tool_unavailable(tool: impl AsRef<std::ffi::OsStr>, error: std::io::Error) -> AotError {
     let tool = tool.as_ref().to_string_lossy().into_owned();
@@ -13,7 +14,7 @@ fn tool_unavailable(tool: impl AsRef<std::ffi::OsStr>, error: std::io::Error) ->
     if tool == "cl" {
         message.push_str(
             "; install the Visual Studio Build Tools `Desktop development with C++` workload (MSVC x64 and a \
-             Windows SDK) and run from an x64 Native Tools or Developer command prompt",
+             Windows SDK); Beskid also requires a complete VS 2022 installation discoverable by vswhere.exe",
         );
     }
     AotError::NativeToolUnavailable { tool, message }
@@ -86,6 +87,9 @@ pub(super) fn compile_context_assembly(
             message: "no canonical context assembly invocation for target".to_owned(),
         });
     }
+    if target.triple.as_str().contains("windows") {
+        configure_windows_native_command(&mut command)?;
+    }
     let output = command.output().map_err(|error| tool_unavailable(command.get_program(), error))?;
     if !output.status.success() {
         return Err(AotError::LinkFailed {
@@ -117,6 +121,9 @@ pub(super) fn compile_platform_objects(
     } else {
         assembly.arg(&source).arg("-o").arg(&object);
     }
+    if target.triple.as_str().contains("windows") {
+        configure_windows_native_command(&mut assembly)?;
+    }
     let output = assembly.output().map_err(|error| tool_unavailable(plan.assembly_program, error))?;
     if !output.status.success() {
         return Err(AotError::LinkFailed {
@@ -131,13 +138,12 @@ pub(super) fn compile_platform_objects(
             detail: String::from_utf8_lossy(&output.stderr).into_owned(),
         });
     }
-    let output = Command::new(plan.tls_program)
-        .args(&plan.tls_args)
-        .arg(&tls_source)
-        .arg("-o")
-        .arg(&tls_object)
-        .output()
-        .map_err(|error| tool_unavailable(plan.tls_program, error))?;
+    let mut tls_command = Command::new(plan.tls_program);
+    tls_command.args(&plan.tls_args).arg(&tls_source).arg("-o").arg(&tls_object);
+    if target.triple.as_str().contains("windows") {
+        configure_windows_native_command(&mut tls_command)?;
+    }
+    let output = tls_command.output().map_err(|error| tool_unavailable(plan.tls_program, error))?;
     if !output.status.success() {
         return Err(AotError::LinkFailed {
             status: output.status.code().unwrap_or(-1),
@@ -151,13 +157,12 @@ pub(super) fn compile_platform_objects(
             detail: String::from_utf8_lossy(&output.stderr).into_owned(),
         });
     }
-    let output = Command::new(plan.tls_program)
-        .args(&plan.tls_args)
-        .arg(&adapter_source)
-        .arg("-o")
-        .arg(&adapter_object)
-        .output()
-        .map_err(|error| tool_unavailable(plan.tls_program, error))?;
+    let mut adapter_command = Command::new(plan.tls_program);
+    adapter_command.args(&plan.tls_args).arg(&adapter_source).arg("-o").arg(&adapter_object);
+    if target.triple.as_str().contains("windows") {
+        configure_windows_native_command(&mut adapter_command)?;
+    }
+    let output = adapter_command.output().map_err(|error| tool_unavailable(plan.tls_program, error))?;
     if !output.status.success() {
         return Err(AotError::LinkFailed {
             status: output.status.code().unwrap_or(-1),
@@ -190,6 +195,9 @@ pub(super) fn compile_executable_bootstrap(
     }
     let (mut command, object) =
         executable_bootstrap_command(target, core_args, &assembly_root, output_dir, name, program_returns_void)?;
+    if target.contains("windows") {
+        configure_windows_native_command(&mut command)?;
+    }
     let output = command.output().map_err(|error| tool_unavailable(command.get_program(), error))?;
     if !output.status.success() {
         return Err(AotError::LinkFailed {

@@ -4,6 +4,7 @@ use std::process::Command;
 
 use crate::api::BuildOutputKind;
 use crate::error::{AotError, AotResult};
+use crate::windows_toolchain::configure_windows_native_command;
 
 use super::common::format_link_detail;
 use super::policy::{append_export_policy_flags, append_external_libraries, append_library_search_paths};
@@ -66,6 +67,7 @@ fn run_command_with_fallback(commands: Vec<Command>) -> AotResult<(String, std::
     let mut last_failure: Option<(String, std::process::Output)> = None;
 
     for mut command in commands {
+        configure_windows_native_command(&mut command)?;
         let command_line = format!("{:?}", command);
         match command.output() {
             Ok(output) if output.status.success() => return Ok((command_line, output)),
