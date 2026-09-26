@@ -144,7 +144,6 @@ pub fn build_typed_program(
     registry.corelib_shard_units.extend(corelib_shard_units.iter().copied().map(|unit| (unit, generation)));
     for unit in assembly.units.iter() {
         let unit_id = SourceUnitId::new(db, unit.path.clone());
-        let is_corelib_shard = corelib_shard_units.contains(&unit_id);
         let imports = unit
             .program
             .node
@@ -196,12 +195,9 @@ pub fn build_typed_program(
                 _ => None,
             })
             .filter_map(|(path, binding, has_explicit_alias, public)| {
-                if !is_corelib_shard && corelib_local_modules.contains(&path) {
-                    return None;
-                }
-                module_units
-                    .get(&path)
-                    .and_then(|targets| match targets.as_slice() {
+                registry
+                    .visible_module_units(unit_id, generation, &path)
+                    .and_then(|targets| match targets {
                         [target] => Some(*target),
                         _ => None,
                     })

@@ -73,19 +73,13 @@ fn unresolved_imports_tracked(
 fn import_resolves(db: &dyn Db, key: AstNodeKey, path: &[String]) -> bool {
     let (module, parent_units) = {
         let registry = db.syntax_dependency_registry().lock().expect("syntax dependency registry");
-        let generation = key.generation;
-        let local_visible = registry.corelib_shard_units.contains(&(key.unit, generation));
         let parent_units = path
             .split_last()
             .and_then(|(_, parent)| {
-                let parent = parent.to_vec();
-                (local_visible || !registry.corelib_local_modules.contains(&(generation, parent.clone())))
-                    .then(|| registry.modules.get(&(generation, parent)).cloned())
-                    .flatten()
+                registry.visible_module_units(key.unit, key.generation, parent).map(|units| units.to_vec())
             })
             .unwrap_or_default();
-        let module = (local_visible || !registry.corelib_local_modules.contains(&(generation, path.to_vec())))
-            && registry.modules.contains_key(&(generation, path.to_vec()));
+        let module = registry.visible_module_units(key.unit, key.generation, path).is_some();
         (module, parent_units)
     };
     if module {

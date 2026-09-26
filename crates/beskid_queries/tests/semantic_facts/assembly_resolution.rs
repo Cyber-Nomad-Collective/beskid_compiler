@@ -791,11 +791,28 @@ fn std_app_rejects_bare_core_import_while_corelib_shard_accepts_it() {
     let host_root = PathBuf::from("/tmp/std-import-scope/app/src");
     let shard_root = PathBuf::from("/tmp/std-import-scope/corelib/Src");
     let main_path = host_root.join("Main.bd");
+    let qualified_path = host_root.join("Qualified.bd");
     let results_path = shard_root.join("Core/Results.bd");
     let main_source = "use Std.Core.Results;\nuse Core.Results;\nuse Core.Results.Result;\ni32 Main() { return 0; }";
-    let results_source = "use Core.Results;\nuse Core.Results.Result;\npub enum Result { Ok() }";
+    let qualified_source = r#"
+i32 BareType(Core.Results.Widget value) { return 0; }
+i32 BareContract(Core.Results.Reader reader) { return 0; }
+i32 StdType(Std.Core.Results.Widget value) { return 0; }
+i32 StdContract(Std.Core.Results.Reader reader) { return 0; }
+"#;
+    let results_source = r#"
+use Core.Results;
+use Core.Results.Result;
+pub enum Result { Ok() }
+pub type Widget {}
+pub contract Reader { i32 Read(); }
+i32 ShardType(Core.Results.Widget value) { return 0; }
+i32 ShardContract(Core.Results.Reader reader) { return 0; }
+"#;
     let main_program =
         expand_program(parse_program(main_source).expect("main parse"), DEFAULT_MAX_MACRO_EXPANSION_DEPTH);
+    let qualified_program =
+        expand_program(parse_program(qualified_source).expect("qualified parse"), DEFAULT_MAX_MACRO_EXPANSION_DEPTH);
     let results_program =
         expand_program(parse_program(results_source).expect("results parse"), DEFAULT_MAX_MACRO_EXPANSION_DEPTH);
     let generation = SyntaxGenerationId(20);
@@ -822,6 +839,13 @@ fn std_app_rejects_bare_core_import_while_corelib_shard_accepts_it() {
                 source: results_source.to_string(),
                 program: results_program.clone(),
             },
+            SourceUnit {
+                logical_name: qualified_path.display().to_string(),
+                origin_path: qualified_path.clone(),
+                path: qualified_path.clone(),
+                source: qualified_source.to_string(),
+                program: qualified_program.clone(),
+            },
         ]),
         0,
         AssemblyDiscovery::ImportClosure,
@@ -831,6 +855,7 @@ fn std_app_rejects_bare_core_import_while_corelib_shard_accepts_it() {
     ));
     let main_unit = SourceUnitId::new(&db, main_path);
     let results_unit = SourceUnitId::new(&db, results_path);
+    let qualified_unit = SourceUnitId::new(&db, qualified_path);
     let project = ProjectSession::new(
         &db,
         host_root.parent().expect("project root").to_path_buf(),
@@ -841,6 +866,7 @@ fn std_app_rejects_bare_core_import_while_corelib_shard_accepts_it() {
     build_typed_program(&mut db, project, generation, assembly).expect("typed syntax program");
     let main_index = SyntaxIndex::from_program(&main_program, generation);
     let results_index = SyntaxIndex::from_program(&results_program, generation);
+    let qualified_index = SyntaxIndex::from_program(&qualified_program, generation);
     let main_root = key(main_unit, generation, &main_index, NodeKind::Program, 0);
     let main = key(main_unit, generation, &main_index, NodeKind::FunctionDefinition, 0);
     let results_root = key(results_unit, generation, &results_index, NodeKind::Program, 0);
@@ -855,4 +881,17 @@ fn std_app_rejects_bare_core_import_while_corelib_shard_accepts_it() {
     let shard_imports =
         beskid_queries::unresolved_imports(&db, results_root).expect("shard query").expect("shard root");
     assert!(shard_imports.is_empty(), "corelib shard must resolve its own bare Core import");
+
+    let unresolved_type = |unit, index: &SyntaxIndex, ordinal| {
+        let function = key(unit, generation, index, NodeKind::FunctionDefinition, ordinal);
+        beskid_queries::unresolved_type_reference(&db, function).expect("nominal type query")
+    };
+    let bare_type = unresolved_type(qualified_unit, &qualified_index, 0).map(|reference| reference.name.to_string());
+    let bare_contract =
+        unresolved_type(qualified_unit, &qualified_index, 1).map(|reference| reference.name.to_string());
+    assert_eq!((bare_type, bare_contract), (Some("Widget".into()), Some("Reader".into())));
+    assert!(unresolved_type(qualified_unit, &qualified_index, 2).is_none(), "Std-qualified type must resolve");
+    assert!(unresolved_type(qualified_unit, &qualified_index, 3).is_none(), "Std-qualified contract must resolve");
+    assert!(unresolved_type(results_unit, &results_index, 0).is_none(), "shard-local type must resolve");
+    assert!(unresolved_type(results_unit, &results_index, 1).is_none(), "shard-local contract must resolve");
 }

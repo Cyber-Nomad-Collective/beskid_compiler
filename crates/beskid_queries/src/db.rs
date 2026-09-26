@@ -28,7 +28,7 @@ pub struct SyntaxDependencyRegistry {
     pub(crate) imports: HashMap<(SourceUnitId, SyntaxGenerationId), Vec<SyntaxImport>>,
     /// Exact logical module paths assembled for one syntax generation.
     pub(crate) modules: HashMap<(SyntaxGenerationId, Vec<String>), Vec<SourceUnitId>>,
-    /// Bare Corelib shard paths are visible only while resolving imports owned by a shard.
+    /// Bare Corelib shard aliases in `modules`, restricted by `visible_module_units`.
     pub(crate) corelib_local_modules: HashSet<(SyntaxGenerationId, Vec<String>)>,
     pub(crate) corelib_shard_units: HashSet<(SourceUnitId, SyntaxGenerationId)>,
     /// Compiler-minted Corelib service names available to one exact source unit generation.
@@ -36,6 +36,23 @@ pub struct SyntaxDependencyRegistry {
     pub(crate) corelib_services: HashMap<(SourceUnitId, SyntaxGenerationId), Vec<CorelibService>>,
     /// Canonical logical path proven by embedded bytes and trusted physical origin.
     pub(crate) corelib_source_paths: HashMap<(SourceUnitId, SyntaxGenerationId), String>,
+}
+
+impl SyntaxDependencyRegistry {
+    /// Resolve an assembled module path in the namespace of the requesting source unit.
+    /// App units can use the canonical `Std.Core.*` path; only Corelib shards see bare `Core.*` aliases.
+    pub(crate) fn visible_module_units(
+        &self,
+        owner: SourceUnitId,
+        generation: SyntaxGenerationId,
+        path: &[String],
+    ) -> Option<&[SourceUnitId]> {
+        let module = (generation, path.to_vec());
+        if self.corelib_local_modules.contains(&module) && !self.corelib_shard_units.contains(&(owner, generation)) {
+            return None;
+        }
+        self.modules.get(&module).map(Vec::as_slice)
+    }
 }
 
 /// One explicit module import resolved to an assembled syntax unit.

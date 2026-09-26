@@ -113,6 +113,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   does not reject canonical Foundation imports in an implicit-Std App.
 - Keep bare `Core.*` shard imports scoped to Corelib units in an implicit-Std
   App, so E1105 still rejects those paths in App sources.
+- Scope direct qualified type, contract, and call-module lookups to the
+  requesting unit so App sources cannot bypass that import rule.
 
 - Replay materialized dependency roots only when `Project.lock` identifies the
   current project and exact resolved dependency paths. Preserve compiler-owned

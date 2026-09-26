@@ -45,7 +45,7 @@ pub(in crate::semantic_contract) fn resolve_nominal_layout_declaration(
     module_path.push(name.node.name.node.name.clone());
     let target = {
         let registry = db.syntax_dependency_registry().lock().expect("syntax dependency registry");
-        let [target] = registry.modules.get(&(key.generation, module_path))?.as_slice() else {
+        let [target] = registry.visible_module_units(key.unit, key.generation, &module_path)? else {
             return None;
         };
         *target
@@ -343,7 +343,7 @@ pub(in crate::semantic_contract) fn resolve_type_declaration(
     type_module.push(name.to_owned());
     let target = {
         let registry = db.syntax_dependency_registry().lock().expect("syntax dependency registry");
-        let [target] = registry.modules.get(&(key.generation, type_module))?.as_slice() else {
+        let [target] = registry.visible_module_units(key.unit, key.generation, &type_module)? else {
             return None;
         };
         *target
@@ -365,7 +365,7 @@ pub(in crate::semantic_contract) fn unique_assembled_type_in_module(
 ) -> Option<AstNodeKey> {
     let target = {
         let registry = db.syntax_dependency_registry().lock().expect("syntax dependency registry");
-        let [target] = registry.modules.get(&(key.generation, module_path.to_vec()))?.as_slice() else {
+        let [target] = registry.visible_module_units(key.unit, key.generation, module_path)? else {
             return None;
         };
         *target
