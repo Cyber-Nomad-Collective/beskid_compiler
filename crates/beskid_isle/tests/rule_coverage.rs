@@ -269,17 +269,39 @@ fn generated_isle_routes_local_declarations_and_assignments() {
     );
 
     for (target, constructor) in [
-        ("PathExpression", "emit_local_assign"),
-        ("FieldExpression", "emit_field_assign"),
-        ("IndexExpression", "emit_index_assign"),
+        ("Local", "emit_local_assign"),
+        ("Field", "emit_field_assign"),
+        ("Index", "emit_index_assign"),
     ] {
         assert!(
             memory.contains(&format!(
-                "(node_kind (NodeKind.AssignExpression))\n        (assignment_target_kind (NodeKind.{target}))))\n      ({constructor} key)"
+                "(node_kind (NodeKind.AssignExpression))\n        (assignment_kind (AssignmentKind.{target}))))\n      ({constructor} key)"
             )),
             "AssignExpression targeting {target} must dispatch through generated ISLE"
         );
     }
+}
+
+#[test]
+fn generated_isle_routes_event_assignments_and_raises_through_dedicated_facts() {
+    let isle = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("isle");
+    let events = fs::read_to_string(isle.join("events.isle")).expect("read event ISLE rules");
+    for (selector, constructor) in [
+        ("AssignmentKind.EventSubscribe", "emit_event_subscribe"),
+        ("AssignmentKind.EventUnsubscribeFirst", "emit_event_unsubscribe_first"),
+        ("CallKind.EventRaise", "emit_event_raise"),
+    ] {
+        assert!(events.contains(selector), "missing {selector} operation selector");
+        assert!(events.contains(&format!("({constructor} key)")), "missing {selector} event emitter route");
+    }
+    assert!(
+        events.contains("(node_kind (NodeKind.AssignExpression))"),
+        "event compound writes are distinct from ordinary aggregate assignments"
+    );
+    assert!(
+        events.contains("(node_kind (NodeKind.CallExpression))"),
+        "event raises are distinct from generic direct and dynamic calls"
+    );
 }
 
 #[test]

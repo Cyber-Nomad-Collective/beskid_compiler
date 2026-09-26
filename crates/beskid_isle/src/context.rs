@@ -15,9 +15,9 @@ use cranelift_frontend::{FunctionBuilder, Variable};
 use crate::dispatch;
 use crate::errors::{FunctionEmissionError, LoweringError, LoweringErrorKind, StringMaterializationError};
 use crate::facts::{
-    AstNodeKey, CallImportError, CallKind, CollectionMutationOwner, CollectionOperation, DirectCallee, ForIterableKind,
-    IndexTarget, InlineClosureEnvironment, LiteralKind, LocalSlotId, ManagedReferenceFact, MatchArmBindingFact,
-    MatchPayloadPatternFact, NodeFacts, NodeKind, OperatorFact, RuntimeIntrinsicKind, Unit,
+        AstNodeKey, AssignmentKind, CallImportError, CallKind, CollectionMutationOwner, CollectionOperation,
+        DirectCallee, EventOperation, ForIterableKind, IndexTarget, InlineClosureEnvironment, LiteralKind, LocalSlotId, ManagedReferenceFact,
+    MatchArmBindingFact, MatchPayloadPatternFact, NodeFacts, NodeKind, OperatorFact, RuntimeIntrinsicKind, Unit,
 };
 use crate::layout::{EnumLayout, FieldLayout};
 
@@ -27,6 +27,7 @@ mod cleanup;
 mod composition;
 mod control_flow;
 mod enums;
+mod events;
 mod intrinsics;
 mod operators;
 mod roots;
@@ -99,7 +100,10 @@ pub(crate) struct ManagedLocalBinding {
     clippy::match_ref_pats
 )]
 mod generated {
-    use super::{AstNodeKey, CallKind, CursorKind, LiteralKind, NodeKind, OperatorFact, StatementCursor, Unit, Value};
+    use super::{
+        AstNodeKey, AssignmentKind, CallKind, CursorKind, EventOperation, LiteralKind, NodeKind, OperatorFact,
+        StatementCursor, Unit, Value,
+    };
 
     include!(concat!(env!("OUT_DIR"), "/beskid_lower.rs"));
 }
@@ -293,8 +297,12 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
         self.facts.call_kind(key)
     }
 
-    fn assignment_target_kind(&mut self, key: AstNodeKey) -> Option<NodeKind> {
-        self.facts.child(key, 0).and_then(|target| self.facts.node_kind(target))
+    fn event_operation(&mut self, key: AstNodeKey) -> Option<EventOperation> {
+        self.facts.event_operation(key).map(|plan| plan.operation)
+    }
+
+    fn assignment_kind(&mut self, key: AstNodeKey) -> Option<crate::AssignmentKind> {
+        self.facts.assignment_kind(key)
     }
 
     fn for_iterable_kind(&mut self, key: AstNodeKey) -> Option<NodeKind> {
@@ -346,6 +354,7 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
     composition::generated_composition_methods!();
     aggregate::generated_aggregate_methods!();
     enums::generated_enum_methods!();
+    events::generated_event_methods!();
 }
 
 pub fn lower_expression(context: &mut IsleContext<'_, '_, '_, '_>, key: AstNodeKey) -> Result<Value, LoweringError> {

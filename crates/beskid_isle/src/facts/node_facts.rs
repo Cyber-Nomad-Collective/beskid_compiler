@@ -25,6 +25,12 @@ pub trait NodeFacts {
     fn call_kind(&self, _key: AstNodeKey) -> Option<CallKind> {
         None
     }
+    fn assignment_kind(&self, _key: AstNodeKey) -> Option<AssignmentKind> {
+        None
+    }
+    fn event_operation(&self, _key: AstNodeKey) -> Option<EventOperationPlan> {
+        None
+    }
     fn primitive_numeric_conversion(
         &self,
         _key: AstNodeKey,

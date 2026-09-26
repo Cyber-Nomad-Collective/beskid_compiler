@@ -6,6 +6,7 @@ mod calls;
 mod composition;
 mod collections;
 mod enums;
+mod events;
 mod literals;
 mod shape;
 mod structs;
@@ -70,6 +71,14 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
 
     fn call_kind(&self, key: AstNodeKey) -> Option<CallKind> {
         self.call_kind_impl(key)
+    }
+
+    fn assignment_kind(&self, key: AstNodeKey) -> Option<beskid_isle::AssignmentKind> {
+        self.assignment_kind_impl(key)
+    }
+
+    fn event_operation(&self, key: AstNodeKey) -> Option<beskid_isle::EventOperationPlan> {
+        self.event_operation_impl(key)
     }
 
     fn primitive_numeric_conversion(&self, key: AstNodeKey) -> Option<(SemanticTypeId, SemanticTypeId)> {

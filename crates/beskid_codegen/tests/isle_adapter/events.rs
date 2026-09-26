@@ -1,6 +1,6 @@
 use super::support::{
-    SyntaxModuleItem, find_function_definitions, find_nodes_of_kind, format_ast_node_site, item_fixture_with_root,
-    lower_syntax_program,
+    NodeFacts, SyntaxModuleItem, find_function_definitions, find_nodes_of_kind, format_ast_node_site,
+    item_fixture_with_root, lower_syntax_program,
 };
 
 #[test]
@@ -59,6 +59,138 @@ unit Main() {
     assert_eq!(plans[0].object_size, plans[1].object_size);
     assert_ne!(plans[0].allocation_request_symbol, plans[1].allocation_request_symbol);
     assert_eq!(plans[0].pointer_map_offsets.as_ref(), &[16, 24]);
+}
+
+#[test]
+fn event_assignments_have_generation_bound_subscribe_and_first_unsubscribe_facts() {
+    let (input, _isa, root) = item_fixture_with_root(EVENT_SOURCE);
+    let db = input.database();
+    let operations = find_nodes_of_kind(db, root, beskid_queries::IndexedNodeKind::AssignExpression)
+        .into_iter()
+        .filter_map(|key| {
+            let site = format_ast_node_site(db, key);
+            (site.contains("AssignExpression@5:") || site.contains("AssignExpression@6:"))
+                .then(|| beskid_queries::event_operation(db, key).expect("event operation query").expect("event fact"))
+        })
+        .collect::<Vec<_>>();
+
+    assert_eq!(operations.len(), 2);
+    assert_eq!(operations[0].operation, beskid_queries::EventOperationKind::Subscribe);
+    assert_eq!(operations[1].operation, beskid_queries::EventOperationKind::UnsubscribeFirst);
+    assert_eq!(operations[0].capacity, 4);
+    assert_eq!(operations[0].slot_offset, 16);
+    assert_eq!(operations[0].declaration, operations[1].declaration);
+    assert_eq!(operations[0].field, operations[1].field);
+    assert_eq!(operations[0].receiver, operations[1].receiver);
+    assert!(operations[0].handler.is_some());
+    assert!(operations[1].handler.is_some());
+    assert_eq!(operations[0].delegate_signature, operations[1].delegate_signature);
+    let subscribe_handler = beskid_queries::resolved_local(db, operations[0].handler.expect("handler"))
+        .expect("handler resolution query")
+        .expect("subscribe handler resolves to local");
+    let unsubscribe_handler = beskid_queries::resolved_local(db, operations[1].handler.expect("handler"))
+        .expect("handler resolution query")
+        .expect("unsubscribe handler resolves to local");
+    assert_eq!(subscribe_handler.declaration, unsubscribe_handler.declaration);
+
+    let raise = find_nodes_of_kind(db, root, beskid_queries::IndexedNodeKind::CallExpression)
+        .into_iter()
+        .find(|key| format_ast_node_site(db, *key).contains("CallExpression@7:"))
+        .expect("event raise call");
+    let raise = beskid_queries::event_operation(db, raise).expect("raise query").expect("raise fact");
+    assert_eq!(raise.operation, beskid_queries::EventOperationKind::Raise);
+    assert_eq!(raise.arguments.len(), 1);
+    assert_eq!(
+        raise.delegate_signature.as_ref().expect("delegate signature").parameters.as_ref(),
+        &[beskid_queries::SemanticTypeId::STRING]
+    );
+
+    let facts = beskid_codegen::isle_adapter::SyntaxNodeFacts::new(&input);
+    assert_eq!(
+        facts.event_operation(operations[0].operation_node).expect("subscribe plan").operation,
+        beskid_isle::EventOperation::Subscribe
+    );
+    assert_eq!(
+        facts.event_operation(operations[1].operation_node).expect("unsubscribe plan").operation,
+        beskid_isle::EventOperation::UnsubscribeFirst
+    );
+    assert_eq!(
+        facts.event_operation(raise.operation_node).expect("raise plan").operation,
+        beskid_isle::EventOperation::Raise
+    );
+    assert_eq!(
+        facts.assignment_kind(operations[0].operation_node),
+        Some(beskid_isle::AssignmentKind::EventSubscribe)
+    );
+    assert_eq!(
+        facts.assignment_kind(operations[1].operation_node),
+        Some(beskid_isle::AssignmentKind::EventUnsubscribeFirst)
+    );
+}
+
+#[test]
+fn event_operation_selector_does_not_claim_value_field_assignments_or_event_reads() {
+    let source = r#"type User { event{4} Created(string payload), i32 Count }
+unit Main() {
+    User u = User { Count: 1 };
+    u.Count += 1;
+    return;
+}
+
+"#;
+    let (input, _isa, root) = item_fixture_with_root(source);
+    let db = input.database();
+    let facts = beskid_codegen::isle_adapter::SyntaxNodeFacts::new(&input);
+    let assignments = find_nodes_of_kind(db, root, beskid_queries::IndexedNodeKind::AssignExpression);
+    assert_eq!(assignments.len(), 1);
+    assert_eq!(facts.assignment_kind(assignments[0]), Some(beskid_isle::AssignmentKind::Field));
+    assert!(
+        facts.event_operation(assignments[0]).is_none(),
+        "value-field compound assignments are not event operations"
+    );
+
+    let (event_input, _isa, event_root) = item_fixture_with_root(
+        "type User { event{4} Created(string payload) } unit Main(User u) { u.Created(\"x\"); return; }",
+    );
+    let event_db = event_input.database();
+    let event_facts = beskid_codegen::isle_adapter::SyntaxNodeFacts::new(&event_input);
+    let member_paths = find_nodes_of_kind(event_db, event_root, beskid_queries::IndexedNodeKind::PathExpression);
+    assert!(member_paths.iter().all(|key| event_facts.event_operation(*key).is_none()));
+}
+
+#[test]
+fn event_selector_rejects_stale_keys_and_does_not_lower_unbounded_declarations_as_capacity_zero() {
+    let (input, _isa, root) = item_fixture_with_root(EVENT_SOURCE);
+    let db = input.database();
+    let operation = find_nodes_of_kind(db, root, beskid_queries::IndexedNodeKind::AssignExpression)
+        .into_iter()
+        .find(|key| format_ast_node_site(db, *key).contains("AssignExpression@5:"))
+        .expect("subscribe source node");
+    let facts = beskid_codegen::isle_adapter::SyntaxNodeFacts::new(&input);
+    let stale = beskid_queries::AstNodeKey { generation: beskid_analysis::syntax::SyntaxGenerationId(u64::MAX), ..operation };
+    assert!(facts.event_operation(stale).is_none(), "stale generations do not select the event rule");
+
+    let (unbounded_input, _isa, unbounded_root) = item_fixture_with_root(
+        "type User { event Changed() } unit Main(User u) { unit() handler = () => { return; }; u.Changed += handler; return; }",
+    );
+    let unbounded_db = unbounded_input.database();
+    let unbounded_operation = find_nodes_of_kind(
+        unbounded_db,
+        unbounded_root,
+        beskid_queries::IndexedNodeKind::AssignExpression,
+    )
+    .into_iter()
+    .next()
+    .expect("unbounded subscription syntax");
+    let fact = beskid_queries::event_operation(unbounded_db, unbounded_operation)
+        .expect("event query")
+        .expect("declaration and handler are semantically resolved");
+    assert_eq!(fact.capacity, 0, "zero is only the query's absent-capacity sentinel");
+    let unbounded_facts = beskid_codegen::isle_adapter::SyntaxNodeFacts::new(&unbounded_input);
+    assert!(
+        unbounded_facts.event_operation(unbounded_operation).is_none(),
+        "the unresolved v0.5 default must not be encoded as an invalid capacity-zero ABI call"
+    );
 }
 
 const EVENT_SOURCE: &str = r#"type User { event{4} Created(string payload) }

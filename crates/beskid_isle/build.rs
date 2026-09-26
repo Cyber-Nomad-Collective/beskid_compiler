@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 const INPUTS: &[&str] = &[
     "types.isle",
     "ast.isle",
+    "events.isle",
     "expressions.isle",
     "literals.isle",
     "binary.isle",

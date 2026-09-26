@@ -4,6 +4,12 @@ use super::super::*;
 
 impl SyntaxNodeFacts<'_> {
     pub(super) fn call_kind_impl(&self, key: AstNodeKey) -> Option<CallKind> {
+        if self
+            .event_operation_impl(key)
+            .is_some_and(|plan| plan.operation == beskid_isle::EventOperation::Raise)
+        {
+            return Some(CallKind::EventRaise);
+        }
         if self.query(beskid_queries::primitive_numeric_conversion(self.db, key)).is_some() {
             return Some(CallKind::PrimitiveNumericConversion);
         }

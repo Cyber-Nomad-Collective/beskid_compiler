@@ -332,6 +332,11 @@ pub fn event_field_layout(db: &dyn Db, member: AstNodeKey) -> SemanticQueryResul
     with_registered_syntax(db, member, event_field_layout_tracked)
 }
 
+/// Return the checked operation selected for one event assignment or raise call.
+pub fn event_operation(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<EventOperationFact> {
+    with_registered_syntax(db, key, event_operation_tracked)
+}
+
 /// Return the exact applied aggregate layout constructed by a struct literal.
 pub fn aggregate_literal_layout(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<AggregateLayoutFact> {
     with_registered_syntax(db, key, aggregate_literal_layout_tracked)

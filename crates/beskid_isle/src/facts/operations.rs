@@ -3,6 +3,24 @@
 use super::*;
 use crate::layout::ManagedStructAllocation;
 use cranelift_codegen::ir::{Signature, Type};
+use std::sync::Arc;
+
+/// Exact query authority consumed by the event emitters. No receiver/field identity is
+/// reconstructed by generated ISLE or by the backend.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EventOperationPlan {
+    pub operation: EventOperation,
+    pub operation_node: AstNodeKey,
+    pub receiver: AstNodeKey,
+    pub declaration: AstNodeKey,
+    pub field: AstNodeKey,
+    pub slot_offset: u32,
+    pub capacity: u32,
+    pub handler: Option<AstNodeKey>,
+    pub arguments: Arc<[AstNodeKey]>,
+    pub delegate_parameters: Arc<[beskid_queries::SemanticTypeId]>,
+    pub delegate_result: beskid_queries::SemanticTypeId,
+}
 
 /// Scalar facts consumed by leaf ISLE rules.
 ///
