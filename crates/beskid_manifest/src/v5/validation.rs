@@ -126,6 +126,7 @@ pub(super) fn validate(manifest: &RuntimeManifestV5) -> Result<(), String> {
         "__network_address",
         "__network_options",
         "__network_set_options",
+        "__network_set_deadlines",
         "__network_shutdown_write",
         "__network_udp_connect",
         "__network_receive",

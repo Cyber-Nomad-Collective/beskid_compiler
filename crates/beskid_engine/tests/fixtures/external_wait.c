@@ -460,12 +460,14 @@ static void *deadline_rekey_entry(void *argument) {
     int64_t base = clock_monotonic_nanos() + 10000000000;
     uintptr_t current = beskid_rt_v5_external_wait_register(handle, 9, -1);
     assert(current && beskid_rt_v5_external_active_count() == 1);
-    assert(beskid_rt_v5_external_wait_set_deadline(current, base + 10));
+    assert(beskid_rt_v5_external_wait_post_deadline(owner, current, base + 10));
+    beskid_rt_v5_external_pump(-1);
     assert(beskid_rt_v5_external_wait_set_deadline(current, base));
     assert(!beskid_rt_v5_external_wait_set_deadline(current, -2));
     beskid_rt_v5_external_pump(base - 1);
     assert(beskid_rt_v5_external_active_count() == 1);
-    assert(beskid_rt_v5_external_wait_set_deadline(current, -1));
+    assert(beskid_rt_v5_external_wait_post_deadline(owner, current, -1));
+    beskid_rt_v5_external_pump(-1);
     beskid_rt_v5_external_pump(base + 10);
     assert(beskid_rt_v5_external_active_count() == 1);
     assert(beskid_rt_v5_external_wait_post(owner, current, 1));

@@ -161,6 +161,7 @@ fn canonical_contract_has_the_exact_lifecycle_closure_and_trap_exports() {
             ("beskid_rt_v5_external_try_complete", &[AbiType::USize, AbiType::USize, AbiType::USize][..], AbiType::U8),
             ("beskid_rt_v5_external_wait_park", &[AbiType::USize][..], AbiType::USize),
             ("beskid_rt_v5_external_wait_post", &[AbiType::USize, AbiType::USize, AbiType::USize][..], AbiType::U8),
+            ("beskid_rt_v5_external_wait_post_deadline", &[AbiType::USize, AbiType::USize, AbiType::I64][..], AbiType::U8),
             (
                 "beskid_rt_v5_external_wait_register",
                 &[AbiType::USize, AbiType::USize, AbiType::I64][..],
@@ -171,6 +172,7 @@ fn canonical_contract_has_the_exact_lifecycle_closure_and_trap_exports() {
             ("beskid_rt_v5_fiber_yield", &[][..], AbiType::Void,),
             ("beskid_rt_v5_heap_set_cap", &[AbiType::USize][..], AbiType::U8,),
             ("beskid_rt_v5_managed_object_allocate", &[AbiType::Pointer][..], AbiType::Pointer,),
+            ("beskid_rt_v5_network_set_deadlines", &[AbiType::USize, AbiType::I64, AbiType::I64][..], AbiType::I32),
             ("beskid_rt_v5_poll_executor_run_once", &[][..], AbiType::I32,),
             (
                 "beskid_rt_v5_poll_executor_spawn",
@@ -208,7 +210,7 @@ fn trusted_intrinsics_are_typed_and_owned_only_by_the_canonical_package() {
     assert_eq!(package.name(), CANONICAL_RUNTIME_PACKAGE_NAME);
     assert_eq!(package.abi_version(), ABI_V5);
     let names = manifest.trusted_runtime_intrinsics.iter().map(|intrinsic| intrinsic.name.as_str()).collect::<Vec<_>>();
-    assert_eq!(names.len(), 69);
+    assert_eq!(names.len(), 70);
     assert!(names.contains(&"pointer_add"));
     assert!(names.contains(&"raw_word_load"));
     assert!(names.contains(&"system_allocate"));
@@ -226,7 +228,7 @@ fn trusted_intrinsics_are_typed_and_owned_only_by_the_canonical_package() {
     assert!(names.contains(&"tty_winsize"));
     assert!(names.contains(&"worker_submit"));
     for name in
-        ["worker_release", "owner_create", "owner_destroy", "owner_post", "owner_pop", "owner_wait", "wait_claim"]
+        ["worker_release", "owner_create", "owner_destroy", "owner_post", "owner_post_deadline", "owner_pop", "owner_wait", "wait_claim"]
     {
         assert!(names.contains(&name));
     }

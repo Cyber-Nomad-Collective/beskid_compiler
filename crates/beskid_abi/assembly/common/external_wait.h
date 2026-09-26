@@ -64,7 +64,7 @@ static void BeskidConditionWait(BeskidCondition *c, int64_t deadline) {
 }
 #endif
 
-struct BeskidCommand { uint64_t wait, source; };
+struct BeskidCommand { uint64_t wait, source; int64_t deadline; };
 struct BeskidOwner {
   struct BeskidOwner *next;
   uint64_t id;
@@ -106,17 +106,27 @@ void beskid_rt_v5_intrinsic_owner_destroy(uint64_t id) {
     beskid_rt_v5_intrinsic_system_free(owner, sizeof(*owner));
   }
 }
-static int32_t BeskidOwnerPostLocked(uint64_t id, uint64_t wait, uint64_t source) {
+static int32_t BeskidOwnerPostCommandLocked(uint64_t id, uint64_t wait, uint64_t source, int64_t deadline) {
   struct BeskidOwner *owner = BeskidOwnerFind(id);
-  if (!owner || !wait || source < 1 || source > 4) return 0;
+  if (!owner || !wait || source < 1 || source > 5 || (source == 5 && deadline < -1)) return 0;
   if (owner->count == 256) beskid_rt_v5_trap(10, NULL, 0);
-  owner->commands[(owner->head + owner->count++) % 256] = (struct BeskidCommand){wait, source};
+  owner->commands[(owner->head + owner->count++) % 256] = (struct BeskidCommand){wait, source, deadline};
   BeskidConditionSignal(&owner->wake);
   return 1;
+}
+static int32_t BeskidOwnerPostLocked(uint64_t id, uint64_t wait, uint64_t source) {
+  if (source < 1 || source > 4) return 0;
+  return BeskidOwnerPostCommandLocked(id, wait, source, 0);
 }
 int32_t beskid_rt_v5_intrinsic_owner_post(uint64_t id, uint64_t wait, uint64_t source) {
   BeskidLock();
   int32_t result = BeskidOwnerPostLocked(id, wait, source);
+  BeskidUnlock();
+  return result;
+}
+int32_t beskid_rt_v5_intrinsic_owner_post_deadline(uint64_t id, uint64_t wait, int64_t deadline) {
+  BeskidLock();
+  int32_t result = BeskidOwnerPostCommandLocked(id, wait, 5, deadline);
   BeskidUnlock();
   return result;
 }

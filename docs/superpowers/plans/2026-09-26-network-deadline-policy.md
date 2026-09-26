@@ -17,7 +17,7 @@ The parent is `codex/v05-deadline-foundation` (`88d2c9b8`). Its owner-only `Exte
 ## Task 1: deadline-bearing owner command
 
 1. Extend the native owner mailbox command in `crates/beskid_abi/assembly/common/external_wait.h` to carry a signed absolute deadline and a distinct rekey command kind. Keep completion commands unchanged. Use the existing mailbox lock and FIFO. Update its native transport fixture first and observe a red test before implementing.
-2. Add an intrinsic for publishing a rekey command. Regenerate the ABI-v5 artifacts from `runtime_manifest.bsol` on the Linux builder. Adjust the Beskid scheduler's command buffer and `ExternalPump` to call `ExternalWaitSetDeadline` for rekey commands, while completion commands still call `ExternalTryComplete`.
+2. Add an intrinsic for publishing a rekey command and one Foundation export, `beskid_rt_v5_external_wait_post_deadline(owner, token, deadline)`, that hides the host transport from Network and native tests. Regenerate the ABI-v5 artifacts from `runtime_manifest.bsol` on the Linux builder. Adjust the Beskid scheduler's command buffer and `ExternalPump` to call `ExternalWaitSetDeadline` for rekey commands, while completion commands still call `ExternalTryComplete`.
 3. Test stale-generation, already-won, clear, immediate expiry, and queue-order cases at the owner transport and `external_wait_native` seams. Never let a foreign thread edit owner scheduler state directly.
 
 ## Task 2: runtime stream policy

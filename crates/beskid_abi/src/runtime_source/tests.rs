@@ -567,6 +567,7 @@ fn networking_imports_are_source_scoped_and_target_shape_exact() {
         ("__network_address", "beskid_rt_v5_network_address"),
         ("__network_options", "beskid_rt_v5_network_options"),
         ("__network_set_options", "beskid_rt_v5_network_set_options"),
+        ("__network_set_deadlines", "beskid_rt_v5_network_set_deadlines"),
         ("__network_shutdown_write", "beskid_rt_v5_network_shutdown_write"),
         ("__network_udp_connect", "beskid_rt_v5_network_udp_connect"),
         ("__network_receive", "beskid_rt_v5_network_receive"),
