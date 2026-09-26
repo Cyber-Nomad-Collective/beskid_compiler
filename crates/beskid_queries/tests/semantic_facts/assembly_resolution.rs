@@ -784,3 +784,75 @@ fn unresolved_imports_are_judged_only_for_units_of_judged_items() {
     assert_eq!(codes(&[main, main]).len(), 2, "a unit is judged once");
     assert_eq!(codes(&[main, helper]).len(), 3, "each owning unit is judged");
 }
+
+#[test]
+fn std_app_rejects_bare_core_import_while_corelib_shard_accepts_it() {
+    let mut db = BeskidDatabase::default();
+    let host_root = PathBuf::from("/tmp/std-import-scope/app/src");
+    let shard_root = PathBuf::from("/tmp/std-import-scope/corelib/Src");
+    let main_path = host_root.join("Main.bd");
+    let results_path = shard_root.join("Core/Results.bd");
+    let main_source = "use Std.Core.Results;\nuse Core.Results;\nuse Core.Results.Result;\ni32 Main() { return 0; }";
+    let results_source = "use Core.Results;\nuse Core.Results.Result;\npub enum Result { Ok() }";
+    let main_program =
+        expand_program(parse_program(main_source).expect("main parse"), DEFAULT_MAX_MACRO_EXPANSION_DEPTH);
+    let results_program =
+        expand_program(parse_program(results_source).expect("results parse"), DEFAULT_MAX_MACRO_EXPANSION_DEPTH);
+    let generation = SyntaxGenerationId(20);
+    let assembly = Arc::new(ProgramAssembly::new(
+        EffectiveCompilationRoots {
+            host: RootEntry { dependency_name: None, source_root: host_root.clone() },
+            dependencies: vec![RootEntry {
+                dependency_name: Some("corelib_results".into()),
+                source_root: shard_root.clone(),
+            }],
+        },
+        Arc::new(vec![
+            SourceUnit {
+                logical_name: main_path.display().to_string(),
+                origin_path: main_path.clone(),
+                path: main_path.clone(),
+                source: main_source.to_string(),
+                program: main_program.clone(),
+            },
+            SourceUnit {
+                logical_name: results_path.display().to_string(),
+                origin_path: results_path.clone(),
+                path: results_path.clone(),
+                source: results_source.to_string(),
+                program: results_program.clone(),
+            },
+        ]),
+        0,
+        AssemblyDiscovery::ImportClosure,
+        Arc::new(ModuleIndex::empty()),
+        true,
+        generation,
+    ));
+    let main_unit = SourceUnitId::new(&db, main_path);
+    let results_unit = SourceUnitId::new(&db, results_path);
+    let project = ProjectSession::new(
+        &db,
+        host_root.parent().expect("project root").to_path_buf(),
+        main_unit.path(&db).clone(),
+        "App".to_string(),
+        "lock".to_string(),
+    );
+    build_typed_program(&mut db, project, generation, assembly).expect("typed syntax program");
+    let main_index = SyntaxIndex::from_program(&main_program, generation);
+    let results_index = SyntaxIndex::from_program(&results_program, generation);
+    let main_root = key(main_unit, generation, &main_index, NodeKind::Program, 0);
+    let main = key(main_unit, generation, &main_index, NodeKind::FunctionDefinition, 0);
+    let results_root = key(results_unit, generation, &results_index, NodeKind::Program, 0);
+
+    let main_imports = beskid_queries::unresolved_imports(&db, main_root).expect("main query").expect("main root");
+    assert_eq!(
+        main_imports.iter().map(|import| import.path.as_ref()).collect::<Vec<_>>(),
+        vec!["Core.Results", "Core.Results.Result"]
+    );
+    let findings = beskid_queries::check_items(&db, &[main]).expect_err("App bare Core imports must fail E1105");
+    assert_eq!(findings.iter().map(|finding| finding.kind.code()).collect::<Vec<_>>(), vec!["E1105", "E1105"]);
+    let shard_imports =
+        beskid_queries::unresolved_imports(&db, results_root).expect("shard query").expect("shard root");
+    assert!(shard_imports.is_empty(), "corelib shard must resolve its own bare Core import");
+}

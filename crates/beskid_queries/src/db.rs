@@ -6,7 +6,7 @@ mod lifecycle;
 mod sessions;
 mod syntax;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, Mutex};
@@ -28,6 +28,9 @@ pub struct SyntaxDependencyRegistry {
     pub(crate) imports: HashMap<(SourceUnitId, SyntaxGenerationId), Vec<SyntaxImport>>,
     /// Exact logical module paths assembled for one syntax generation.
     pub(crate) modules: HashMap<(SyntaxGenerationId, Vec<String>), Vec<SourceUnitId>>,
+    /// Bare Corelib shard paths are visible only while resolving imports owned by a shard.
+    pub(crate) corelib_local_modules: HashSet<(SyntaxGenerationId, Vec<String>)>,
+    pub(crate) corelib_shard_units: HashSet<(SourceUnitId, SyntaxGenerationId)>,
     /// Compiler-minted Corelib service names available to one exact source unit generation.
     /// Ordinary program syntax never populates this registry entry.
     pub(crate) corelib_services: HashMap<(SourceUnitId, SyntaxGenerationId), Vec<CorelibService>>,

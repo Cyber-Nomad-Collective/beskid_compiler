@@ -108,6 +108,8 @@ pub fn build_typed_program(
     }
 
     let mut module_units = std::collections::HashMap::<Vec<String>, Vec<SourceUnitId>>::new();
+    let mut corelib_local_modules = std::collections::HashSet::<Vec<String>>::new();
+    let mut corelib_shard_units = std::collections::HashSet::<SourceUnitId>::new();
     for unit in assembly.units.iter() {
         let Some(module_path) =
             beskid_analysis::projects::infer_logical_module_path(unit, &assembly.roots, assembly.has_std_dependency)
@@ -121,7 +123,9 @@ pub fn build_typed_program(
                     && unit.origin_path.starts_with(&root.source_root)
             });
         if corelib_shard && module_path.first().is_some_and(|segment| segment == "Std") && module_path.len() > 1 {
+            corelib_shard_units.insert(unit_id);
             let local_path = module_path[1..].to_vec();
+            corelib_local_modules.insert(local_path.clone());
             let units = module_units.entry(local_path).or_default();
             if !units.contains(&unit_id) {
                 units.push(unit_id);
@@ -136,8 +140,11 @@ pub fn build_typed_program(
     for (path, units) in &module_units {
         registry.modules.insert((generation, path.clone()), units.clone());
     }
+    registry.corelib_local_modules.extend(corelib_local_modules.iter().cloned().map(|path| (generation, path)));
+    registry.corelib_shard_units.extend(corelib_shard_units.iter().copied().map(|unit| (unit, generation)));
     for unit in assembly.units.iter() {
         let unit_id = SourceUnitId::new(db, unit.path.clone());
+        let is_corelib_shard = corelib_shard_units.contains(&unit_id);
         let imports = unit
             .program
             .node
@@ -189,6 +196,9 @@ pub fn build_typed_program(
                 _ => None,
             })
             .filter_map(|(path, binding, has_explicit_alias, public)| {
+                if !is_corelib_shard && corelib_local_modules.contains(&path) {
+                    return None;
+                }
                 module_units
                     .get(&path)
                     .and_then(|targets| match targets.as_slice() {

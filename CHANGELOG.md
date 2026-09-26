@@ -111,6 +111,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Register Corelib shard modules under both their App-facing `Std.Core.*`
   names and their own `Core.*` import scope, so reachability-scoped legality
   does not reject canonical Foundation imports in an implicit-Std App.
+- Keep bare `Core.*` shard imports scoped to Corelib units in an implicit-Std
+  App, so E1105 still rejects those paths in App sources.
 
 - Replay materialized dependency roots only when `Project.lock` identifies the
   current project and exact resolved dependency paths. Preserve compiler-owned
