@@ -228,6 +228,7 @@ macro_rules! generated_control_flow_methods {
                 let value = self.adapt_scalar_boundary(value_key, value, expected)?;
                 self.return_with_cleanup(value)?;
             } else {
+                self.emit_composition_cleanup_from(0)?;
                 self.release_managed_local_roots()?;
                 self.builder.ins().return_(&[]);
             }

@@ -75,6 +75,7 @@ impl IsleContext<'_, '_, '_, '_> {
     }
 
     pub(super) fn return_with_cleanup(&mut self, value: Value) -> Option<()> {
+        self.emit_composition_cleanup_from(0)?;
         if self.local_root_scopes.iter().all(|scope| scope.cleanups.is_empty()) {
             self.release_managed_local_roots()?;
             self.builder.ins().return_(&[value]);
@@ -98,6 +99,7 @@ impl IsleContext<'_, '_, '_, '_> {
     /// Successful structured exits only clean their leaving scopes. A cleanup failure changes
     /// the exit into an error return, draining the remaining outer regions with the same slot.
     pub(super) fn cleanup_scope_exit(&mut self, depth: usize, abandoned_root: Option<StackSlot>) -> Option<()> {
+        self.emit_composition_cleanup_from(depth)?;
         if self.local_root_scopes.get(depth..)?.iter().all(|scope| scope.cleanups.is_empty()) {
             return Some(());
         }

@@ -245,6 +245,9 @@ impl<'isa> FunctionEmitter<'isa> {
             let terminated = block_is_terminated(context.builder, final_block);
             if !terminated {
                 if context.builder.func.signature.returns.is_empty() {
+                    context.emit_composition_cleanup_from(0).ok_or_else(|| {
+                        FunctionEmissionError::verification(verification_site, "composition cleanup is invalid")
+                    })?;
                     context.release_managed_local_roots().ok_or_else(|| {
                         FunctionEmissionError::verification(verification_site, "managed local root cleanup is invalid")
                     })?;

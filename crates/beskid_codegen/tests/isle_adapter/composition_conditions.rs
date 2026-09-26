@@ -45,7 +45,11 @@ i32 Main() { launch AppHost(); return 0; }
 
     let (stale_input, _, _) = item_fixture_with_root(source);
     assert!(matches!(
-        stale_input.with_composition_authority(SyntaxGenerationId(generation.0 + 1), Arc::new(Default::default()), snapshot),
+        stale_input.with_composition_authority(
+            SyntaxGenerationId(generation.0 + 1),
+            Arc::new(Default::default()),
+            snapshot
+        ),
         Err(CodegenInputError::StaleCompositionPlan)
     ));
 }
@@ -76,8 +80,11 @@ i32 Main() { launch AppHost(); return 0; }
     let mut foreign_registration = result.plan.clone();
     foreign_registration.activation[0].registration_id = 999;
     assert!(matches!(
-        input.with_artifact_namespace(Arc::from("foreign-registration"))
-            .with_composition_authority(generation, Arc::new(foreign_registration), Arc::clone(&snapshot)),
+        input.with_artifact_namespace(Arc::from("foreign-registration")).with_composition_authority(
+            generation,
+            Arc::new(foreign_registration),
+            Arc::clone(&snapshot)
+        ),
         Err(CodegenInputError::InvalidCompositionPlan)
     ));
 
@@ -85,8 +92,11 @@ i32 Main() { launch AppHost(); return 0; }
     let mut wrong_host = duplicate_slot.clone();
     wrong_host.launched_host = "OtherHost".into();
     assert!(matches!(
-        input.with_artifact_namespace(Arc::from("wrong-host"))
-            .with_composition_authority(generation, Arc::new(wrong_host), Arc::clone(&snapshot)),
+        input.with_artifact_namespace(Arc::from("wrong-host")).with_composition_authority(
+            generation,
+            Arc::new(wrong_host),
+            Arc::clone(&snapshot)
+        ),
         Err(CodegenInputError::InvalidCompositionPlan)
     ));
     duplicate_slot.activation[1].slot = duplicate_slot.activation[0].slot;
@@ -125,8 +135,11 @@ i32 Main() { launch AppHost(); return 0; }
     let mut wrong_target = result.plan.clone();
     wrong_target.singulars[0].target_slot = ServiceSlot(99);
     assert!(matches!(
-        input.with_artifact_namespace(Arc::from("wrong-target"))
-            .with_composition_authority(generation, Arc::new(wrong_target), Arc::clone(&snapshot)),
+        input.with_artifact_namespace(Arc::from("wrong-target")).with_composition_authority(
+            generation,
+            Arc::new(wrong_target),
+            Arc::clone(&snapshot)
+        ),
         Err(CodegenInputError::InvalidCompositionPlan)
     ));
 
@@ -180,10 +193,10 @@ i32 Main() {
 }
 "#;
     let (input, _, root) = item_fixture_with_root(source);
-    let launch = find_node(input.database(), root, beskid_queries::IndexedNodeKind::LaunchStatement)
-        .expect("launch statement");
-    let with_statement = find_node(input.database(), root, beskid_queries::IndexedNodeKind::WithStatement)
-        .expect("with statement");
+    let launch =
+        find_node(input.database(), root, beskid_queries::IndexedNodeKind::LaunchStatement).expect("launch statement");
+    let with_statement =
+        find_node(input.database(), root, beskid_queries::IndexedNodeKind::WithStatement).expect("with statement");
     let launch_fact = beskid_queries::composition_launch(input.database(), launch)
         .expect("generation-bound launch query")
         .expect("validated launch fact");
@@ -210,13 +223,11 @@ i32 Main() {
     let foreign = beskid_queries::AstNodeKey { unit: foreign_root.unit, ..launch };
     assert!(beskid_queries::composition_launch(foreign_input.database(), foreign).expect("foreign query").is_none());
 
-    let (unresolved_input, _, unresolved_root) = item_fixture_with_root("i32 Main() { launch MissingHost(); return 0; }");
-    let unresolved = find_node(
-        unresolved_input.database(),
-        unresolved_root,
-        beskid_queries::IndexedNodeKind::LaunchStatement,
-    )
-    .expect("unresolved launch statement");
+    let (unresolved_input, _, unresolved_root) =
+        item_fixture_with_root("i32 Main() { launch MissingHost(); return 0; }");
+    let unresolved =
+        find_node(unresolved_input.database(), unresolved_root, beskid_queries::IndexedNodeKind::LaunchStatement)
+            .expect("unresolved launch statement");
     assert_eq!(
         beskid_queries::composition_launch(unresolved_input.database(), unresolved)
             .expect("source-shape query")
@@ -239,10 +250,10 @@ host AppHost() { scope Request() {} }
 i32 Main() { launch AppHost(); with Request() { return 0; } }
 "#;
     let (input, _, root) = item_fixture_with_root(source);
-    let launch = find_node(input.database(), root, beskid_queries::IndexedNodeKind::LaunchStatement)
-        .expect("launch statement");
-    let scope = find_node(input.database(), root, beskid_queries::IndexedNodeKind::WithStatement)
-        .expect("scope statement");
+    let launch =
+        find_node(input.database(), root, beskid_queries::IndexedNodeKind::LaunchStatement).expect("launch statement");
+    let scope =
+        find_node(input.database(), root, beskid_queries::IndexedNodeKind::WithStatement).expect("scope statement");
     let unbound = beskid_codegen::SyntaxNodeFacts::new(&input);
     assert!(unbound.composition_launch(launch).is_none());
     assert!(unbound.composition_scope(scope).is_none());
@@ -275,13 +286,73 @@ fn composition_launch_query_keeps_source_shape_when_base_host_lives_in_another_u
 
     let source = "host AppHost() : ImportedBase {} i32 Main() { launch AppHost(); return 0; }";
     let (input, _, root) = item_fixture_with_root(source);
-    let launch = find_node(input.database(), root, beskid_queries::IndexedNodeKind::LaunchStatement)
-        .expect("launch statement");
+    let launch =
+        find_node(input.database(), root, beskid_queries::IndexedNodeKind::LaunchStatement).expect("launch statement");
     let fact = beskid_queries::composition_launch(input.database(), launch)
         .expect("generation-bound source fact")
         .expect("source shape must not independently re-resolve the imported graph");
     assert_eq!(fact.host.as_ref(), "AppHost");
     assert!(beskid_codegen::SyntaxNodeFacts::new(&input).composition_launch(launch).is_none());
+}
+
+#[test]
+fn parsed_launch_and_scope_lower_through_generated_isle_with_canonical_calls() {
+    use std::sync::Arc;
+
+    use beskid_analysis::composition::{CompositionInput, resolve_composition};
+
+    let source = r#"
+host AppHost() { scope Request() {} }
+i32 Main() {
+    launch AppHost();
+    with Request() { }
+    return 0;
+}
+"#;
+    let (input, isa, root) = item_fixture_with_root(source);
+    let result = resolve_composition(CompositionInput {
+        program: &input.typed_program().assembly.entry_unit().program,
+        is_mod_project: false,
+    });
+    assert!(result.issues.is_empty(), "composition must validate: {:?}", result.issues);
+    let mut snapshot = result.snapshot;
+    snapshot.source_unit_path = Some(root.unit.path(input.database()).to_path_buf());
+    let generation = input.typed_program().generation;
+    let input = input
+        .with_composition_authority(generation, Arc::new(result.plan), Arc::new(snapshot))
+        .expect("attach frozen authority");
+    let main = find_function_definitions(input.database(), root)
+        .into_iter()
+        .find(|key| item_name(input.database(), *key).ok().flatten().as_deref() == Some("Main"))
+        .expect("Main function");
+    let artifact = lower_syntax_program(&input, isa.as_ref(), &[SyntaxModuleItem { key: main, symbol: "Main".into() }])
+        .expect("validated launch and with must lower through generated ISLE");
+    let main = artifact.functions.iter().find(|function| function.name == "Main").expect("lowered Main");
+    let clif = main.function.display().to_string();
+    for symbol in [
+        "composition_container_create",
+        "composition_launch",
+        "composition_scope_enter",
+        "composition_scope_leave",
+        "composition_shutdown",
+        "composition_container_drop",
+    ] {
+        assert!(clif.contains(symbol), "missing canonical composition call `{symbol}`:\n{clif}");
+    }
+}
+
+#[test]
+fn executable_composition_without_frozen_authority_fails_at_launch_site() {
+    let source = "host AppHost() {} i32 Main() { launch AppHost(); return 0; }";
+    let (input, isa, root) = item_fixture_with_root(source);
+    let main = find_function_definitions(input.database(), root)
+        .into_iter()
+        .find(|key| item_name(input.database(), *key).ok().flatten().as_deref() == Some("Main"))
+        .expect("Main function");
+    let error = lower_syntax_program(&input, isa.as_ref(), &[SyntaxModuleItem { key: main, symbol: "Main".into() }])
+        .expect_err("a source-shaped launch is not composition authority");
+    let displayed = error.to_string();
+    assert!(displayed.contains("LaunchStatement") || displayed.contains("MissingRuleOrFact"), "{displayed}");
 }
 
 #[test]

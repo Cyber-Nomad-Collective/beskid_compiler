@@ -122,6 +122,19 @@ pub(super) fn extern_contract_imports(
 /// Corelib syscall capability because they are fundamental operations, not facade services.
 const ALWAYS_AVAILABLE_STRING_SERVICES: &[&str] = &["str_new", "str_from_i64", "str_eq", "str_concat"];
 
+/// Compiler-planned composition calls are not source-callable Corelib services. Their
+/// authority comes from the attached, generation-validated composition graph, and the
+/// exact target binding must still be present in the canonical ABI-v5 manifest.
+const COMPOSITION_SERVICES: &[&str] = &[
+    "composition_container_create",
+    "composition_container_drop",
+    "composition_launch",
+    "composition_scope_enter",
+    "composition_scope_leave",
+    "composition_shutdown",
+    "composition_slot_store",
+];
+
 /// ABI symbols admitted by either the distinct Corelib syscall capability or a generated
 /// manifest-backed builtin fact. Both use the same exact-symbol import table; neither path may
 /// guess a native symbol from source spelling.
@@ -141,6 +154,21 @@ pub(super) fn corelib_service_symbols(
     let mut symbols = HashMap::new();
     for symbol in ALWAYS_AVAILABLE_STRING_SERVICES {
         symbols.insert(DirectCallee::corelib_service(symbol), (*symbol).to_owned());
+    }
+    if input.composition_authority().is_some() {
+        if input.abi_manifest() != &beskid_abi::abi_v5::AbiManifestV5::canonical_runtime(input.target().clone()) {
+            return Err("composition requires the exact canonical ABI-v5 manifest".to_owned());
+        }
+        for symbol in COMPOSITION_SERVICES {
+            let bindings = beskid_abi::generated::abi_v5_contract::ABI_V5_CORELIB_SERVICE_BINDINGS
+                .iter()
+                .filter(|binding| binding.adapter == *symbol && binding.target == input.target().triple.as_str())
+                .collect::<Vec<_>>();
+            if bindings.len() != 1 || bindings[0].implementation != *symbol {
+                return Err(format!("composition service `{symbol}` has no unique exact target binding"));
+            }
+            symbols.insert(DirectCallee::corelib_service(symbol), (*symbol).to_owned());
+        }
     }
     for symbol in manifest_builtins {
         if !ALWAYS_AVAILABLE_STRING_SERVICES.contains(&symbol) {

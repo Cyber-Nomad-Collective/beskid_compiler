@@ -196,8 +196,6 @@ i32 Main() {
         (HOST_COMPOSITION_SOURCE, beskid_queries::IndexedNodeKind::RegistryEntry, "RegistryEntry@"),
         (HOST_COMPOSITION_SOURCE, beskid_queries::IndexedNodeKind::ScopeDefinition, "ScopeDefinition@"),
         (HOST_COMPOSITION_SOURCE, beskid_queries::IndexedNodeKind::ScopeHook, "ScopeHook@"),
-        (HOST_COMPOSITION_SOURCE, beskid_queries::IndexedNodeKind::WithStatement, "WithStatement@"),
-        (HOST_COMPOSITION_SOURCE, beskid_queries::IndexedNodeKind::LaunchStatement, "LaunchStatement@"),
     ] {
         assert_eq!(
             beskid_isle::syntax_types::classify_syntax_node_kind(kind),

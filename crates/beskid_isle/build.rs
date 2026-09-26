@@ -10,6 +10,7 @@ const INPUTS: &[&str] = &[
     "calls.isle",
     "dispatch.isle",
     "statements.isle",
+    "composition.isle",
     "control_flow.isle",
     "memory.isle",
     "runtime_intrinsics.isle",

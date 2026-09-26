@@ -24,6 +24,7 @@ use crate::layout::{EnumLayout, FieldLayout};
 mod aggregate;
 mod calls;
 mod cleanup;
+mod composition;
 mod control_flow;
 mod enums;
 mod intrinsics;
@@ -61,7 +62,14 @@ struct LoopTargets {
 struct LocalRootScope {
     bindings: Vec<(LocalSlotId, Option<StackSlot>)>,
     cleanups: Vec<crate::ScopedCleanupPlan>,
+    composition_cleanups: Vec<CompositionCleanup>,
     temporaries: Vec<ScopedTemporaryRoot>,
+}
+
+#[derive(Clone, Copy)]
+enum CompositionCleanup {
+    ScopeLeave { site: AstNodeKey },
+    Container { site: AstNodeKey, value: Value },
 }
 
 /// Roots owned by an expression until its value has been published or consumed. They
@@ -335,6 +343,7 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
     calls::generated_call_methods!();
     intrinsics::generated_intrinsic_methods!();
     control_flow::generated_control_flow_methods!();
+    composition::generated_composition_methods!();
     aggregate::generated_aggregate_methods!();
     enums::generated_enum_methods!();
 }
