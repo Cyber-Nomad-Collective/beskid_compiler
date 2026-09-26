@@ -6,6 +6,7 @@ use Runtime.Network.Table;
 use Runtime.Network.Sockets;
 use Runtime.Network.Dns;
 use Concurrency.Fiber;
+use Concurrency;
 use Core.Results;
 use Testing.Assert;
 use HostRuntimeSupport;
@@ -154,8 +155,10 @@ unit ExpiredReadKeepsTcpStreamOpen() {
     Assert.Equal(Sockets.NetworkAccept(listener, acceptedOut), 0, "server accepts");
     word accepted = raw_word_load(pointer_add(acceptedOut, 16));
 
-    Assert.Equal(Operations.NetworkRead(client, bytes, 0, 1, 0), -12, "expired read reports TimedOut exactly once");
+    Assert.Equal(Operations.NetworkSetDeadlines(client, 0, -1), 0, "stream accepts an expired read policy without changing its write policy");
+    Assert.Equal(Operations.NetworkRead(client, bytes, 0, 1, -1), -12, "expired read policy reports TimedOut exactly once");
     Assert.Equal(External.ExternalActiveCount(), 0, "timed-out read releases its one wait");
+    Assert.Equal(Operations.NetworkSetDeadlines(client, -1, -1), 0, "clearing a read policy restores unbounded reads");
     raw_byte_store(pointer_add(bytes, 16), 7);
     Assert.Equal(Operations.NetworkWrite(accepted, bytes, 0, 1), 1, "server writes after client timeout");
     raw_byte_store(pointer_add(bytes, 16), 0);
@@ -179,5 +182,96 @@ test native_network_expired_tcp_read_has_one_timeout_and_keeps_stream_open {
     match scenario.Join() {
         Result::Ok(_) => (),
         Result::Error(_) => Assert.Fail("expired-read scenario completes"),
+    };
+}
+
+i64 PendingReadOne(word client) {
+    pointer received = NetworkTestArray(1, 1);
+    mut i64 completed = Operations.NetworkRead(client, received, 0, 1, -1);
+    if completed == 1 { completed = 1000 + i64(raw_byte_load(pointer_add(received, 16))); }
+    Native.SystemFree(received, 17);
+    return completed;
+}
+
+unit PendingReadPolicyRekeysItsOwner() {
+    pointer address = NetworkTestArray(19, 1);
+    pointer wire = pointer_add(address, 16);
+    raw_byte_store(wire, 4);
+    raw_byte_store(pointer_add(wire, 3), 127);
+    raw_byte_store(pointer_add(wire, 6), 1);
+    pointer listenerOut = NetworkTestArray(1, 8);
+    pointer clientOut = NetworkTestArray(1, 8);
+    pointer acceptedOut = NetworkTestArray(1, 8);
+    pointer boundAddress = NetworkTestArray(19, 1);
+    pointer sent = NetworkTestArray(1, 1);
+
+    Assert.Equal(Sockets.NetworkOpen(1, address, 0, 8, listenerOut), 0, "pending-policy listener binds loopback");
+    word listener = raw_word_load(pointer_add(listenerOut, 16));
+    Assert.Equal(Sockets.NetworkAddress(listener, false, boundAddress), 0, "pending-policy listener reports its address");
+    Assert.Equal(Sockets.NetworkOpen(2, boundAddress, 0, 0, clientOut), 0, "pending-policy client connects");
+    word client = raw_word_load(pointer_add(clientOut, 16));
+    Assert.Equal(Sockets.NetworkAccept(listener, acceptedOut), 0, "pending-policy server accepts");
+    word accepted = raw_word_load(pointer_add(acceptedOut, 16));
+
+    Fiber<i64> timedRead = spawn (() => PendingReadOne(client));
+    mut word pending = 0;
+    mut word attempts = 0;
+    while pending == 0 && attempts < 1000 {
+        network_table_lock();
+        pointer table = Native.NativePointer(raw_word_load(network_table_root()));
+        pointer slot = Table.NetworkFindLocked(table, client);
+        if slot != Native.NativePointer(0) { pending = raw_word_load(Table.NetworkSlotToken(slot, 0)); }
+        network_table_unlock();
+        if pending == 0 { Concurrency.Yield(); }
+        attempts = attempts + 1;
+    }
+    Assert.True(pending != 0, "first read is pending before deadline replacement");
+    Assert.Equal(Operations.NetworkSetDeadlines(client, 0, -1), 0, "expired replacement reaches an already pending read");
+    match timedRead.Join() {
+        Result::Ok(status) => Assert.Equal(status, -12_i64, "pending read times out once"),
+        Result::Error(_) => Assert.Fail("timed-out read fiber joins"),
+    };
+    Assert.Equal(External.ExternalActiveCount(), 0, "timed-out pending read releases its wait");
+
+    Assert.Equal(Operations.NetworkSetDeadlines(client, clock_monotonic_nanos() + 1000000000, -1), 0, "next read inherits a future deadline");
+    Fiber<i64> clearedRead = spawn (() => PendingReadOne(client));
+    pending = 0;
+    attempts = 0;
+    while pending == 0 && attempts < 1000 {
+        network_table_lock();
+        pointer table = Native.NativePointer(raw_word_load(network_table_root()));
+        pointer slot = Table.NetworkFindLocked(table, client);
+        if slot != Native.NativePointer(0) { pending = raw_word_load(Table.NetworkSlotToken(slot, 0)); }
+        network_table_unlock();
+        if pending == 0 { Concurrency.Yield(); }
+        attempts = attempts + 1;
+    }
+    Assert.True(pending != 0, "second read is pending before its timer is cleared");
+    Assert.Equal(Operations.NetworkSetDeadlines(client, -1, -1), 0, "clear removes the pending read timer");
+    raw_byte_store(pointer_add(sent, 16), 29);
+    Assert.Equal(Operations.NetworkWrite(accepted, sent, 0, 1), 1, "peer readiness completes the cleared read");
+    match clearedRead.Join() {
+        Result::Ok(completed) => Assert.Equal(completed, 1029_i64, "cleared pending read receives one peer byte"),
+        Result::Error(_) => Assert.Fail("cleared read fiber joins"),
+    };
+    Assert.Equal(External.ExternalActiveCount(), 0, "cleared read releases its wait");
+
+    Assert.Equal(Table.NetworkClose(client), 0, "client closes after pending-policy checks");
+    Assert.Equal(Table.NetworkClose(accepted), 0, "accepted stream closes after pending-policy checks");
+    Assert.Equal(Table.NetworkClose(listener), 0, "listener closes after pending-policy checks");
+    Native.SystemFree(sent, 17);
+    Native.SystemFree(boundAddress, 35);
+    Native.SystemFree(acceptedOut, 24);
+    Native.SystemFree(clientOut, 24);
+    Native.SystemFree(listenerOut, 24);
+    Native.SystemFree(address, 35);
+    return;
+}
+
+test native_network_pending_read_policy_rekeys_and_clears_without_resurrection {
+    Fiber<unit> scenario = spawn PendingReadPolicyRekeysItsOwner();
+    match scenario.Join() {
+        Result::Ok(_) => (),
+        Result::Error(_) => Assert.Fail("pending-policy scenario completes"),
     };
 }

@@ -1,8 +1,8 @@
 // Process-wide socket ownership is language-owned. The host supplies only a
 // root word and a lock; it never interprets this table or manufactures handles.
 const NETWORK_SLOT_COUNT = 256;
-const NETWORK_SLOT_SIZE = 96;
-const NETWORK_TABLE_SIZE = 24600;
+const NETWORK_SLOT_SIZE = 112;
+const NETWORK_TABLE_SIZE = 28696;
 const NETWORK_LISTENER = 1;
 const NETWORK_STREAM = 2;
 const NETWORK_UDP = 3;
@@ -29,6 +29,8 @@ const NETWORK_SLOT_KIND = 16;
 const NETWORK_SLOT_OPTIONS = 56;
 const NETWORK_SLOT_WRITE_SHUTDOWN = 64;
 const NETWORK_SLOT_CREATOR = 72;
+const NETWORK_SLOT_READ_DEADLINE = 96;
+const NETWORK_SLOT_WRITE_DEADLINE = 104;
 
 // Direction 0 is read/accept/receive; 1 is write/connect/send.
 pub pointer NetworkSlotToken(pointer slot, word direction) { return pointer_add(slot, 24 + direction * 16); }
@@ -37,7 +39,8 @@ pub pointer NetworkSlotRequest(pointer slot, word direction) { return pointer_ad
 
 // Header: reactor@0, DNS list@8, active request list@16. Slot: generation@0, native@8,
 // kind@16, read token/owner@24/32, write token/owner@40/48, options@56,
-// write shutdown@64, creator owner@72, read/write requests@80/88.
+// write shutdown@64, creator owner@72, read/write requests@80/88,
+// read/write deadline policy@96/104. -1 means no deadline.
 // Callers hold network_table_lock throughout table access and native submission.
 pub pointer NetworkTableLocked() {
     pointer root = network_table_root();
@@ -87,6 +90,8 @@ pub word NetworkAdoptLocked(pointer table, pointer native, word kind, word optio
             raw_word_store(pointer_add(slot, NETWORK_SLOT_KIND), kind);
             raw_word_store(pointer_add(slot, NETWORK_SLOT_OPTIONS), options);
             raw_word_store(pointer_add(slot, NETWORK_SLOT_CREATOR), ExternalOwnerId());
+            raw_word_store(pointer_add(slot, NETWORK_SLOT_READ_DEADLINE), 0xFFFFFFFFFFFFFFFF);
+            raw_word_store(pointer_add(slot, NETWORK_SLOT_WRITE_DEADLINE), 0xFFFFFFFFFFFFFFFF);
             return generation << 32 | (index + 1);
         }
         index = index + 1;
