@@ -51,6 +51,23 @@ The Python tools (`symbolize.py`, `whyfact.py`, `authority.py`, `visibility.py`)
 | `cargo-log.py` | Summarize completed Cargo test binaries, failed tests, and the active binary | no (accepts a local file or stdin) |
 | `network-shutdown-leak.py` | Verify a leaked pending TCP accept produces an accurate diagnostic and fail-closed process exit | yes |
 | `abi-cache.py` | List ABI-v5 Cargo build-script contract variants and their network diagnostic arity | no |
+| `test-dns-deadline-linux.sh` | Run the deterministic DNS deadline/late-result race using a test-only `LD_PRELOAD` resolver gate | yes (Linux only) |
+
+`test-dns-deadline-linux.sh` is a focused integration fixture, not a general environment
+diagnostic. It requires `BESKID_CLI` (built from the checkout), `BESKID_RUNTIME_PREFIX`
+(the matching native kit), and `BESKID_CORELIB_ROOT` (the corelib source root). It sets
+`BESKID_DNS_DEADLINE_SHIM=1` and applies the preload only to that one CLI test process.
+The ordinary runtime matrix leaves the opt-in variable unset and still performs a real numeric
+loopback resolution. The shim's three sentinel hostnames are intercepted by
+`dns-deadline-resolver-shim.c`: the first resolver blocks, an observer waits until the block
+is entered, and a release lookup unblocks it and waits for completion. All condition waits
+have a five-second bound, so a failed assertion or missing signal cannot strand process
+shutdown indefinitely. The fixture proves a typed DNS timeout while its resolver host-work
+lease remains live, then verifies late completion is drained. It is Linux/glibc-specific and
+does not replace the normal cross-platform DNS tests. No UDP send-timeout fixture is
+included: UDP sends have no deterministic blocking condition with the current API, and
+there is no send-buffer/backpressure control to force one. Expired UDP receive behavior
+remains covered by the ordinary cross-platform network tests.
 
 For a large `beskid_cli test --all-targets` log, pipe it through `scripts/diagnose/matrix-log.py`
 or pass a local log path. It reports the final `matrix:` count and separate `release eligible:`
