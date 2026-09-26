@@ -243,6 +243,9 @@ fn spawn_worker(args: &TestArgs) -> Result<Child> {
     if let Some(target_timeout) = args.target_timeout {
         command.arg("--target-timeout").arg(target_timeout.to_string());
     }
+    if let Some(matrix_timeout) = args.matrix_timeout {
+        command.arg("--matrix-timeout").arg(matrix_timeout.to_string());
+    }
     command.arg("--all-targets").arg("--plain");
     command
         .env(MATRIX_WORKER_ENV, "1")
@@ -661,5 +664,12 @@ mod tests {
             source.contains("command.arg(\"--target-timeout\").arg(target_timeout.to_string())"),
             "spawn_worker must pass the resolved timeout as `--target-timeout <secs>`"
         );
+    }
+
+    #[test]
+    fn spawn_worker_forwards_matrix_timeout_to_the_child() {
+        let source = include_str!("matrix_test.rs");
+        assert!(source.contains("if let Some(matrix_timeout) = args.matrix_timeout"));
+        assert!(source.contains("command.arg(\"--matrix-timeout\").arg(matrix_timeout.to_string())"));
     }
 }

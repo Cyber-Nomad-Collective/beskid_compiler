@@ -349,7 +349,10 @@ impl PreparedWorkspace {
         }
         if self.started.elapsed() >= self.budgets.matrix {
             self.cancellation.cancel();
-            return Err(anyhow!("30-minute matrix budget expired while target `{target}` was in phase `{phase}`"));
+            return Err(anyhow!(
+                "{}-second matrix budget expired while target `{target}` was in phase `{phase}`",
+                self.budgets.matrix.as_secs()
+            ));
         }
         if target_started.is_some_and(|started| started.elapsed() >= self.budgets.target) {
             self.cancellation.cancel();
