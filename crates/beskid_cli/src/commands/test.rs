@@ -58,16 +58,22 @@ pub struct TestArgs {
     /// (also `BESKID_TARGET_TIMEOUT_SECS`; the flag wins if both are set)
     #[arg(long, env = "BESKID_TARGET_TIMEOUT_SECS")]
     pub target_timeout: Option<u64>,
+
+    /// Whole-matrix execution budget in seconds for `--all-targets` (default: 1800)
+    /// (also `BESKID_MATRIX_TIMEOUT_SECS`; the flag wins if both are set)
+    #[arg(long, env = "BESKID_MATRIX_TIMEOUT_SECS")]
+    pub matrix_timeout: Option<u64>,
 }
 
 impl TestArgs {
-    /// Resolves the configured execution budgets, applying [`TestArgs::target_timeout`]
-    /// (CLI flag or `BESKID_TARGET_TIMEOUT_SECS` env var, flag wins) over the default
-    /// target budget. The matrix budget is not currently overridable.
+    /// Resolves CLI and environment overrides over the default execution budgets.
     pub(crate) fn execution_budgets(&self) -> ExecutionBudgets {
         let mut budgets = ExecutionBudgets::default();
         if let Some(seconds) = self.target_timeout {
             budgets.target = Duration::from_secs(seconds);
+        }
+        if let Some(seconds) = self.matrix_timeout {
+            budgets.matrix = Duration::from_secs(seconds);
         }
         budgets
     }
@@ -576,6 +582,7 @@ mod tests {
             plain: true,
             all_targets: false,
             target_timeout: None,
+            matrix_timeout: None,
         };
         assert_eq!(args.execution_budgets().target, Duration::from_secs(120));
     }
@@ -593,6 +600,7 @@ mod tests {
             plain: true,
             all_targets: false,
             target_timeout: Some(5),
+            matrix_timeout: None,
         };
         assert_eq!(args.execution_budgets().target, Duration::from_secs(5));
     }

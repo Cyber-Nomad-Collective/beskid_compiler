@@ -57,6 +57,10 @@ or pass a local log path. It reports the final `matrix:` count and separate `rel
 status; raw PASS/FAIL markers are deliberately not attributed to target names because targets
 may run concurrently. An unfinished log has no final count.
 
+`beskid_cli test --all-targets` has a 30-minute whole-matrix deadline by default. For a slower
+matrix, set `--matrix-timeout <seconds>` or `BESKID_MATRIX_TIMEOUT_SECS` (the flag wins). This is
+separate from the per-target `--target-timeout <seconds>` / `BESKID_TARGET_TIMEOUT_SECS` budget.
+
 For a long `cargo test --no-fail-fast` run, pipe its log through
 `scripts/diagnose/cargo-log.py`. It counts only test binaries with a completed
 `test result:` line, names the active binary separately, and lists failed test
