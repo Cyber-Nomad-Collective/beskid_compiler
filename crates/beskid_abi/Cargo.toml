@@ -15,3 +15,4 @@ beskid_manifest = { path = "../beskid_manifest" }
 
 [dev-dependencies]
 beskid_tests_support = { path = "../beskid_tests_support" }
+tempfile = "3"

@@ -12,8 +12,9 @@ pub(super) fn compile_context_assembly(
     output_dir: &std::path::Path,
     name: &str,
 ) -> AotResult<PathBuf> {
-    let assembly_root =
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../beskid_abi/assembly").join(target.triple.as_str());
+    let assembly_root = beskid_abi::assembly_sources::stage_into(output_dir)
+        .map_err(|err| AotError::Io { path: output_dir.to_path_buf(), message: err.to_string() })?
+        .join(target.triple.as_str());
     let source =
         assembly_root.join(if target.triple.as_str().contains("windows") { "context.asm" } else { "context.S" });
     let include = output_dir.join(format!("beskid_runtime_abi_v5_{}.inc", target.triple.as_str().replace('-', "_")));
@@ -58,8 +59,9 @@ pub(super) fn compile_platform_objects(
     name: &str,
 ) -> AotResult<Vec<PathBuf>> {
     let plan = platform_object_plan(target.triple.as_str())?;
-    let assembly_root =
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../beskid_abi/assembly").join(target.triple.as_str());
+    let assembly_root = beskid_abi::assembly_sources::stage_into(output_dir)
+        .map_err(|err| AotError::Io { path: output_dir.to_path_buf(), message: err.to_string() })?
+        .join(target.triple.as_str());
     let source = assembly_root.join(plan.assembly_source);
     let tls_source = assembly_root.join(plan.tls_source);
     let adapter_source = assembly_root.join(plan.adapter_source);
@@ -158,7 +160,8 @@ fn executable_bootstrap_command(
     program_returns_void: bool,
 ) -> AotResult<(Command, PathBuf)> {
     let plan = platform_object_plan(target)?;
-    let assembly_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../beskid_abi/assembly");
+    let assembly_root = beskid_abi::assembly_sources::stage_into(output_dir)
+        .map_err(|err| AotError::Io { path: output_dir.to_path_buf(), message: err.to_string() })?;
     let source = executable_bootstrap_source(&assembly_root, core_args);
     let object = output_dir.join(format!("{name}.executable_bootstrap.{}", plan.object_extension));
     let windows = target.contains("windows");
@@ -297,8 +300,11 @@ mod platform_object_tests {
 
     #[test]
     fn windows_executable_bootstrap_selects_the_dynamic_crt_at_compilation() {
+        // The command builder stages the embedded native sources into its output directory,
+        // so give it a scratch directory rather than a path relative to the test's cwd.
+        let scratch = tempfile::tempdir().expect("scratch dir");
         let (command, _) =
-            executable_bootstrap_command("x86_64-pc-windows-msvc", None, Path::new("build"), "app", false)
+            executable_bootstrap_command("x86_64-pc-windows-msvc", None, scratch.path(), "app", false)
                 .expect("Windows bootstrap command");
         assert_eq!(command.get_program(), "cl");
         let args = command.get_args().collect::<Vec<_>>();
