@@ -355,7 +355,7 @@ soft_builtin "__str_len" { symbol = "str_len" adapter_service = "__str_len" para
 # corelib/runtime contracts and contribute to runtime-kit provenance on every target.
 corelib_service "__network_open" {
   adapter = "beskid_rt_v5_network_open"
-  params = [{ name = kind, type = i64 }, { name = address, type = pointer }, { name = options, type = i64 }, { name = backlog, type = i64 }, { name = output, type = pointer }]
+  params = [{ name = kind, type = i64 }, { name = address, type = pointer }, { name = options, type = i64 }, { name = backlog, type = i64 }, { name = deadline, type = i64 }, { name = output, type = pointer }]
   returns = i32
   target_bindings = [
     { target = "x86_64-unknown-linux-gnu", implementation = "beskid_rt_v5_network_open", os_imports = [] },
@@ -365,7 +365,7 @@ corelib_service "__network_open" {
 }
 corelib_service "__network_accept" {
   adapter = "beskid_rt_v5_network_accept"
-  params = [{ name = handle, type = usize }, { name = output, type = pointer }]
+  params = [{ name = handle, type = usize }, { name = deadline, type = i64 }, { name = output, type = pointer }]
   returns = i32
   target_bindings = [
     { target = "x86_64-unknown-linux-gnu", implementation = "beskid_rt_v5_network_accept", os_imports = [] },
