@@ -71,7 +71,11 @@ use calls::{
     unique_nominal_method_declaration, unqualified_enclosing_method_call,
 };
 pub use cleanup::{ScopedAcquisition, ScopedCleanup, ScopedCleanupDiagnostic, scoped_cleanup};
-pub use composition::{CompositionLaunchFact, CompositionScopeFact, composition_launch, composition_scope};
+pub use composition::{
+    CompositionInjectedAccessFact, CompositionInjectionFieldFact, CompositionLaunchFact, CompositionRegistrationFact,
+    CompositionScopeFact, composition_injected_field_access, composition_injection_field, composition_launch,
+    composition_registration, composition_scope,
+};
 pub use growth::{DeadCollectionGrowth, dead_collection_growth, is_growth_call_candidate};
 pub use local_type_resolution::{UnresolvedTypeReference, unresolved_type_reference};
 pub use legality::{

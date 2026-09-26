@@ -1,18 +1,20 @@
 use std::collections::HashMap;
 
-use crate::syntax::{Program, SpanInfo, Spanned};
-
-use super::collect::{collect, dependency_requests};
-use super::container::ServiceContainer;
-use super::diagnostics::CompositionIssue;
-use super::graph::{build_graph, topo_registration_order};
-use super::host_chain::{build_host_chain, merge_host_registries, resolve_host_key};
-use super::model::{
-    ActivationPlanEntry, BindingPlan, CompositionHookPlan, PluralPlan, ScopeId, ServiceSlot, SingularPlan,
+use super::{
+    collect::{collect, dependency_requests},
+    container::ServiceContainer,
+    diagnostics::CompositionIssue,
+    graph::{build_graph, topo_registration_order},
+    host_chain::{build_host_chain, merge_host_registries, resolve_host_key},
+    model::{ActivationPlanEntry, BindingPlan, CompositionHookPlan, PluralPlan, ScopeId, ServiceSlot, SingularPlan},
+    resolve_inject::resolve_dependency_targets,
+    scope_tree::{merge_host_scopes, scope_parent_map, validate_scope_tree},
+    snapshot::CompositionSnapshot,
 };
-use super::resolve_inject::resolve_dependency_targets;
-use super::scope_tree::{merge_host_scopes, scope_parent_map, validate_scope_tree};
-use super::snapshot::CompositionSnapshot;
+use crate::{
+    syntax::{AstNodeId, Program, SpanInfo, Spanned},
+    syntax_query::{NodeKind, SyntaxSnapshot},
+};
 
 #[derive(Clone)]
 pub struct CompositionInput<'a> {
@@ -79,9 +81,16 @@ pub fn resolve_composition(input: CompositionInput<'_>) -> CompositionResult {
         }
     }
 
-    let (merged_registrations, merge_issues) =
+    let (mut merged_registrations, merge_issues) =
         merge_host_registries(&host_chain, &collected.host_registries, &collected.host_scopes, &merged_scopes);
     issues.extend(merge_issues);
+    // Parser `Spanned.id` is deliberately unset. Freeze identities from the same deterministic
+    // expanded-tree pre-order that the generation-bound query index uses; a non-unique source
+    // span remains invalid and is rejected at the codegen boundary.
+    let source_index = SyntaxSnapshot::from_program(input.program, 0);
+    for registration in &mut merged_registrations {
+        registration.source_node_id = unique_source_node(&source_index, NodeKind::RegistryEntry, registration.span);
+    }
 
     let scope_parents = scope_parent_map(&merged_scopes);
     let container = ServiceContainer::from_registrations(&merged_registrations);
@@ -108,10 +117,16 @@ pub fn resolve_composition(input: CompositionInput<'_>) -> CompositionResult {
                     plural_registration_ids.push((
                         request.owner_registration_id,
                         request.span,
+                        request.field_node_id,
                         targets.iter().map(|target| target.id).collect::<Vec<_>>(),
                     ));
                 } else if let [target] = targets.as_slice() {
-                    singular_registration_ids.push((request.owner_registration_id, request.span, target.id));
+                    singular_registration_ids.push((
+                        request.owner_registration_id,
+                        request.span,
+                        request.field_node_id,
+                        target.id,
+                    ));
                 }
             }
             Err(issue) => issues.push(issue),
@@ -142,22 +157,30 @@ pub fn resolve_composition(input: CompositionInput<'_>) -> CompositionResult {
     let slots = activation.iter().map(|entry| (entry.registration_id, entry.slot)).collect::<HashMap<_, _>>();
     let mut singulars = singular_registration_ids
         .into_iter()
-        .map(|(owner_registration_id, field_span, target_id)| SingularPlan {
+        .map(|(owner_registration_id, field_span, field_node_id, target_id)| SingularPlan {
             owner_registration_id,
             field_span,
+            field_node_id,
             target_slot: slots[&target_id],
         })
         .collect::<Vec<_>>();
     singulars.sort_by_key(|singular| (singular.owner_registration_id, singular.field_span.start));
+    for singular in &mut singulars {
+        singular.field_node_id = unique_source_node(&source_index, NodeKind::Field, singular.field_span);
+    }
     let mut plurals = plural_registration_ids
         .into_iter()
-        .map(|(owner_registration_id, field_span, targets)| PluralPlan {
+        .map(|(owner_registration_id, field_span, field_node_id, targets)| PluralPlan {
             owner_registration_id,
             field_span,
+            field_node_id,
             target_slots: targets.into_iter().map(|target| slots[&target]).collect(),
         })
         .collect::<Vec<_>>();
     plurals.sort_by_key(|plural| (plural.owner_registration_id, plural.field_span.start));
+    for plural in &mut plurals {
+        plural.field_node_id = unique_source_node(&source_index, NodeKind::Field, plural.field_span);
+    }
 
     let mut hooks = Vec::new();
     for host in &host_chain {
@@ -183,26 +206,17 @@ pub fn resolve_composition(input: CompositionInput<'_>) -> CompositionResult {
                 hooks.push(CompositionHookPlan {
                     scope_id,
                     kind: hook.kind,
-                    source_node_id: hook.source_node_id,
+                    source_node_id: unique_source_node(&source_index, NodeKind::ScopeHook, hook.span),
                     span: hook.span,
                 });
             }
         }
     }
-    let init_hooks = hooks
-        .iter()
-        .filter(|hook| hook.kind == crate::syntax::ScopeHookKind::Init)
-        .cloned()
-        .collect();
-    let startup_hooks = hooks
-        .iter()
-        .filter(|hook| hook.kind == crate::syntax::ScopeHookKind::Startup)
-        .cloned()
-        .collect();
-    let mut disposal_hooks = hooks
-        .into_iter()
-        .filter(|hook| hook.kind == crate::syntax::ScopeHookKind::Dispose)
-        .collect::<Vec<_>>();
+    let init_hooks = hooks.iter().filter(|hook| hook.kind == crate::syntax::ScopeHookKind::Init).cloned().collect();
+    let startup_hooks =
+        hooks.iter().filter(|hook| hook.kind == crate::syntax::ScopeHookKind::Startup).cloned().collect();
+    let mut disposal_hooks =
+        hooks.into_iter().filter(|hook| hook.kind == crate::syntax::ScopeHookKind::Dispose).collect::<Vec<_>>();
     disposal_hooks.reverse();
 
     let scope_names = merged_scopes.iter().map(|scope| (scope.id, scope.name.clone())).collect();
@@ -226,6 +240,16 @@ pub fn resolve_composition(input: CompositionInput<'_>) -> CompositionResult {
     };
 
     CompositionResult { plan, snapshot, issues, dependency_edges: edges }
+}
+
+fn unique_source_node(index: &SyntaxSnapshot<'_>, kind: NodeKind, span: SpanInfo) -> AstNodeId {
+    let mut matches = (0..index.len())
+        .filter(|id| index.kind_of(*id as u32) == Some(kind) && index.span_of(*id as u32) == Some(span))
+        .filter_map(|id| u32::try_from(id).ok());
+    match (matches.next(), matches.next()) {
+        (Some(id), None) => AstNodeId(id),
+        _ => AstNodeId::INVALID,
+    }
 }
 
 #[cfg(test)]

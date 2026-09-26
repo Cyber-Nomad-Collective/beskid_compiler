@@ -4,6 +4,9 @@ use super::super::*;
 
 impl SyntaxNodeFacts<'_> {
     pub(in crate::isle_adapter) fn scalar_semantic_type(&self, key: AstNodeKey) -> Option<SemanticTypeId> {
+        if self.composition_injected_access(key).is_some() {
+            return Some(SemanticTypeId::POINTER);
+        }
         if self.query(implicit_method_receiver(self.db, key)).is_some() {
             return Some(SemanticTypeId::POINTER);
         }

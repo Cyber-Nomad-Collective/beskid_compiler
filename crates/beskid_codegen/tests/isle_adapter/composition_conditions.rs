@@ -24,6 +24,7 @@ i32 Main() { launch AppHost(); return 0; }
     snapshot.source_unit_path = Some(root.unit.path(input.database()).to_path_buf());
     let plan = Arc::new(result.plan);
     let snapshot = Arc::new(snapshot);
+
     let generation = input.typed_program().generation;
 
     let current = input
@@ -76,6 +77,17 @@ i32 Main() { launch AppHost(); return 0; }
     let mut snapshot = result.snapshot;
     snapshot.source_unit_path = Some(root.unit.path(input.database()).to_path_buf());
     let snapshot = Arc::new(snapshot);
+
+    let mut wrong_source = (*snapshot).clone();
+    wrong_source.registrations[0].source_node_id = beskid_queries::AstNodeId::INVALID;
+    assert!(matches!(
+        input.with_artifact_namespace(Arc::from("wrong-registration-source")).with_composition_authority(
+            generation,
+            Arc::new(result.plan.clone()),
+            Arc::new(wrong_source)
+        ),
+        Err(CodegenInputError::InvalidCompositionPlan)
+    ));
 
     let mut foreign_registration = result.plan.clone();
     foreign_registration.activation[0].registration_id = 999;
@@ -131,6 +143,17 @@ i32 Main() { launch AppHost(); return 0; }
     let mut snapshot = result.snapshot;
     snapshot.source_unit_path = Some(root.unit.path(input.database()).to_path_buf());
     let snapshot = Arc::new(snapshot);
+
+    let mut wrong_field = result.plan.clone();
+    wrong_field.singulars[0].field_node_id = beskid_queries::AstNodeId::INVALID;
+    assert!(matches!(
+        input.with_artifact_namespace(Arc::from("wrong-injection-field")).with_composition_authority(
+            generation,
+            Arc::new(wrong_field),
+            Arc::clone(&snapshot)
+        ),
+        Err(CodegenInputError::InvalidCompositionPlan)
+    ));
 
     let mut wrong_target = result.plan.clone();
     wrong_target.singulars[0].target_slot = ServiceSlot(99);
@@ -273,6 +296,7 @@ i32 Main() { launch AppHost(); with Request() { return 0; } }
     let launch_plan = facts.composition_launch(launch).expect("source-keyed launch plan");
     assert_eq!(launch_plan.site, launch);
     assert_eq!(launch_plan.slot_count, 0);
+    assert!(launch_plan.registrations.is_empty());
     let scope_plan = facts.composition_scope(scope).expect("source-keyed scope plan");
     assert_eq!(scope_plan.site, scope);
     assert_ne!(scope_plan.scope_id, 0);
@@ -356,9 +380,121 @@ fn executable_composition_without_frozen_authority_fails_at_launch_site() {
 }
 
 #[test]
+fn launch_materializes_registration_slots_and_static_injections_before_activation() {
+    use std::sync::Arc;
+
+    use beskid_analysis::composition::{CompositionInput, resolve_composition};
+
+    let source = r#"
+type Logger {}
+type Worker { inject Logger primary, inject Logger[] allLoggers }
+host AppHost() { registry { single Logger; single Worker; } }
+i32 Main() { launch AppHost(); return 0; }
+"#;
+    let (input, isa, root) = item_fixture_with_root(source);
+    let result = resolve_composition(CompositionInput {
+        program: &input.typed_program().assembly.entry_unit().program,
+        is_mod_project: false,
+    });
+    assert!(result.issues.is_empty(), "composition must validate: {:?}", result.issues);
+    assert_eq!(result.plan.activation.len(), 2);
+    assert_eq!(result.plan.singulars.len(), 1);
+    assert_eq!(result.plan.plurals.len(), 1);
+    for registration in &result.snapshot.registrations {
+        let site = beskid_queries::AstNodeKey {
+            unit: root.unit,
+            generation: input.typed_program().generation,
+            node: registration.source_node_id,
+        };
+        assert_eq!(
+            beskid_queries::node_kind(input.database(), site).expect("registration node kind"),
+            Some(beskid_queries::IndexedNodeKind::RegistryEntry),
+            "snapshot registration must name its syntax entry"
+        );
+        let fact = beskid_queries::composition_registration(input.database(), site)
+            .expect("registration query")
+            .expect("exact implementation declaration");
+        assert_eq!(fact.implementation.as_ref(), registration.implementation);
+        assert_eq!(fact.site, site);
+    }
+    for field in result
+        .plan
+        .singulars
+        .iter()
+        .map(|entry| entry.field_node_id)
+        .chain(result.plan.plurals.iter().map(|entry| entry.field_node_id))
+    {
+        let key =
+            beskid_queries::AstNodeKey { unit: root.unit, generation: input.typed_program().generation, node: field };
+        assert!(
+            beskid_queries::composition_injection_field(input.database(), key).expect("injection query").is_some(),
+            "validated injection field must have an exact source key"
+        );
+    }
+    let mut snapshot = result.snapshot;
+    snapshot.source_unit_path = Some(root.unit.path(input.database()).to_path_buf());
+    let generation = input.typed_program().generation;
+    let input = input
+        .with_composition_authority(generation, Arc::new(result.plan), Arc::new(snapshot))
+        .expect("attach frozen authority");
+    let main = find_function_definitions(input.database(), root)
+        .into_iter()
+        .find(|key| item_name(input.database(), *key).ok().flatten().as_deref() == Some("Main"))
+        .expect("Main function");
+    let artifact = lower_syntax_program(&input, isa.as_ref(), &[SyntaxModuleItem { key: main, symbol: "Main".into() }])
+        .expect("registered host lowers through generated ISLE");
+    let main = artifact.functions.iter().find(|function| function.name == "Main").expect("lowered Main");
+    let clif = main.function.display().to_string();
+    assert_eq!(clif.matches("composition_slot_store").count(), 2, "each registration must install one slot:\n{clif}");
+    assert!(
+        clif.contains("beskid_rt_v5_managed_object_allocate"),
+        "registered services need exact managed allocation:\n{clif}"
+    );
+}
+
+#[test]
+fn parsed_injected_field_read_uses_frozen_physical_slot() {
+    use std::sync::Arc;
+
+    use beskid_analysis::composition::{CompositionInput, resolve_composition};
+
+    let source = r#"
+type Logger {}
+type Worker { inject Logger primary }
+host AppHost() { registry { single Logger; single Worker; } }
+Logger Read(Worker worker) { return worker.primary; }
+i32 Main() { launch AppHost(); return 0; }
+"#;
+    let (input, isa, root) = item_fixture_with_root(source);
+    let result = resolve_composition(CompositionInput {
+        program: &input.typed_program().assembly.entry_unit().program,
+        is_mod_project: false,
+    });
+    assert!(result.issues.is_empty(), "composition must validate: {:?}", result.issues);
+    let mut snapshot = result.snapshot;
+    snapshot.source_unit_path = Some(root.unit.path(input.database()).to_path_buf());
+    let generation = input.typed_program().generation;
+    let input = input
+        .with_composition_authority(generation, Arc::new(result.plan), Arc::new(snapshot))
+        .expect("attach frozen composition authority");
+    let items = find_function_definitions(input.database(), root)
+        .into_iter()
+        .map(|key| SyntaxModuleItem {
+            symbol: item_name(input.database(), key).expect("item query").expect("item name").to_string(),
+            key,
+        })
+        .collect::<Vec<_>>();
+    let artifact = lower_syntax_program(&input, isa.as_ref(), &items)
+        .expect("an injected field read must use the frozen source field identity");
+    let read = artifact.functions.iter().find(|function| function.name == "Read").expect("Read lowered");
+    assert!(read.function.display().to_string().contains("load.i64"), "injected pointer slot must be read");
+}
+
+#[test]
 fn compound_integer_argument_retains_its_resolved_word_type_at_a_call_boundary() {
     let (input, isa, root) = item_fixture_with_root(
-        "const ENTRY_MAX = 256; word Allocate(word size, word alignment) { return size; } word Main() { return Allocate(ENTRY_MAX * 8, 8); }",
+        "const ENTRY_MAX = 256; word Allocate(word size, word alignment) { return size; } word Main() { return \
+         Allocate(ENTRY_MAX * 8, 8); }",
     );
     let items = find_function_definitions(input.database(), root)
         .into_iter()

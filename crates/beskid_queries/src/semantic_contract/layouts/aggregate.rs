@@ -1,8 +1,8 @@
 //! Canonical semantic layout implementation.
 
-use super::super::*;
-use super::explicit_local_declaration_type;
 use beskid_abi::runtime_source::CANONICAL_FOUNDATION_DEADLINE_SOURCE_PATH;
+
+use super::{super::*, explicit_local_declaration_type};
 
 #[salsa::tracked(persist)]
 pub(in crate::semantic_contract) fn aggregate_layout_tracked(
@@ -58,6 +58,12 @@ pub(in crate::semantic_contract) fn event_field_layout_tracked(
             alignment = alignment.max(layout.alignment);
         }
         size = align_layout(size, alignment)?;
+        let injected_count = definition
+            .fields
+            .iter()
+            .filter(|field| field.node.kind == beskid_analysis::syntax::FieldKind::Injected)
+            .count();
+        size = size.checked_add(u64::try_from(injected_count).ok()?.checked_mul(8)?)?;
         let event_index = field_ids
             .iter()
             .copied()
@@ -552,8 +558,11 @@ pub(in crate::semantic_contract) fn array_index_element_template_tracked(
             };
             // A single-segment element type is a template parameter only when the enclosing item
             // declares it; `Chunk[]` names a concrete nominal element, not an erased `T[]`.
-            if type_syntax_is_enclosing_generic_parameter_reference(db, AstNodeKey { node: index_node, ..key }, &element.node)
-                && let Some(parameter) = generic_parameter_reference_name(&element.node)
+            if type_syntax_is_enclosing_generic_parameter_reference(
+                db,
+                AstNodeKey { node: index_node, ..key },
+                &element.node,
+            ) && let Some(parameter) = generic_parameter_reference_name(&element.node)
             {
                 return Ok(ArrayIndexElementTemplate::EnclosingParameter(Arc::from(parameter)));
             }

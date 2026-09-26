@@ -1,9 +1,11 @@
 //! Collection operations, managed references, cleanup plans, and local slots.
 
+use std::sync::Arc;
+
+use cranelift_codegen::ir::{Signature, Type};
+
 use super::*;
 use crate::layout::ManagedStructAllocation;
-use cranelift_codegen::ir::{Signature, Type};
-use std::sync::Arc;
 
 /// Exact query authority consumed by the event emitters. No receiver/field identity is
 /// reconstructed by generated ISLE or by the backend.
@@ -70,6 +72,22 @@ pub struct ScopedCleanupPlan {
 pub struct CompositionLaunchPlan {
     pub site: AstNodeKey,
     pub slot_count: u32,
+    pub registrations: Vec<CompositionRegistrationPlan>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CompositionRegistrationPlan {
+    pub slot: u32,
+    pub allocation_request_symbol: std::sync::Arc<str>,
+    pub injections: Vec<CompositionInjectionPlan>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CompositionInjectionPlan {
+    pub field: AstNodeKey,
+    pub field_offset: u32,
+    pub target_slots: Vec<u32>,
+    pub plural_allocation_request_symbol: Option<std::sync::Arc<str>>,
 }
 
 /// One source-keyed scope bracket with an exact frozen scope ID and body.

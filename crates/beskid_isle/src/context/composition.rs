@@ -58,12 +58,85 @@ macro_rules! generated_composition_methods {
     () => {
         fn emit_composition_launch(&mut self, site: AstNodeKey) -> Option<()> {
             let plan = self.facts.composition_launch(site)?;
-            (plan.site == site).then_some(())?;
+            (plan.site == site && usize::try_from(plan.slot_count).ok()? == plan.registrations.len()).then_some(())?;
             let pointer = dispatch::pointer_type(self.frontend_config);
             let slots = self.builder.ins().iconst(pointer, i64::from(plan.slot_count));
             let container =
                 self.composition_call(site, "composition_container_create", &[slots], &[pointer], Some(pointer))??;
             self.builder.ins().trapz(container, TrapCode::unwrap_user(5));
+            let mut installed = Vec::with_capacity(plan.registrations.len());
+            for registration in &plan.registrations {
+                (usize::try_from(registration.slot).ok()? == installed.len()).then_some(())?;
+                let mut field_values = Vec::with_capacity(registration.injections.len());
+                let mut array_roots = Vec::new();
+                for injection in &registration.injections {
+                    let value = if let Some(symbol) = &injection.plural_allocation_request_symbol {
+                        let request = self.symbol_global(symbol.as_ref(), pointer)?;
+                        let root_slot = self.builder.create_sized_stack_slot(StackSlotData::new(
+                            StackSlotKind::ExplicitSlot,
+                            pointer.bytes(),
+                            pointer.bytes().ilog2() as u8,
+                        ));
+                        let root_address = self.builder.ins().stack_addr(pointer, root_slot, 0);
+                        let allocate = self.import_runtime_helper(
+                            "beskid_rt_v5_array_allocate_rooted",
+                            &[pointer, pointer],
+                            Some(pointer),
+                        )?;
+                        let call = self.builder.ins().call(allocate, &[request, root_address]);
+                        let array = self.builder.inst_results(call).first().copied()?;
+                        self.builder.ins().trapz(array, TrapCode::unwrap_user(5));
+                        let root = ScopedTemporaryRoot::ArrayConstruction(root_slot);
+                        self.track_expression_root(root)?;
+                        array_roots.push(root);
+                        let data = self.builder.ins().load(pointer, MemFlagsData::new(), array, 0);
+                        for (index, slot) in injection.target_slots.iter().enumerate() {
+                            let target = *installed.get(usize::try_from(*slot).ok()?)?;
+                            let byte_offset = i64::try_from(index.checked_mul(pointer.bytes() as usize)?).ok()?;
+                            let address = self.builder.ins().iadd_imm_s(data, byte_offset);
+                            self.builder.ins().store(MemFlagsData::new(), target, address, 0);
+                            let barrier = self.import_runtime_helper(
+                                "beskid_rt_v5_array_write_barrier",
+                                &[pointer, pointer],
+                                Some(types::I8),
+                            )?;
+                            let call = self.builder.ins().call(barrier, &[array, target]);
+                            let published = self.builder.inst_results(call).first().copied()?;
+                            self.builder.ins().trapz(published, TrapCode::unwrap_user(8));
+                        }
+                        array
+                    } else {
+                        let [slot] = injection.target_slots.as_slice() else {
+                            return None;
+                        };
+                        *installed.get(usize::try_from(*slot).ok()?)?
+                    };
+                    field_values.push((injection.field_offset, value));
+                }
+                let request = self.symbol_global(registration.allocation_request_symbol.as_ref(), pointer)?;
+                let allocate =
+                    self.import_runtime_helper("beskid_rt_v5_managed_object_allocate", &[pointer], Some(pointer))?;
+                let call = self.builder.ins().call(allocate, &[request]);
+                let object = self.builder.inst_results(call).first().copied()?;
+                self.builder.ins().trapz(object, TrapCode::unwrap_user(5));
+                for (offset, value) in field_values {
+                    let address = self.builder.ins().iadd_imm_s(object, i64::from(offset));
+                    self.builder.ins().store(MemFlagsData::new(), value, address, 0);
+                }
+                let slot = self.builder.ins().iconst(pointer, i64::from(registration.slot));
+                let stored = self.composition_call(
+                    site,
+                    "composition_slot_store",
+                    &[container, slot, object],
+                    &[pointer, pointer, pointer],
+                    Some(types::I8),
+                )??;
+                self.builder.ins().trapz(stored, TrapCode::unwrap_user(9));
+                installed.push(object);
+                for root in array_roots.into_iter().rev() {
+                    self.release_expression_root(Some(root))?;
+                }
+            }
             let launched =
                 self.composition_call(site, "composition_launch", &[container], &[pointer], Some(types::I8))??;
             self.builder.ins().trapz(launched, TrapCode::unwrap_user(9));

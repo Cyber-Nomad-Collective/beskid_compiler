@@ -25,6 +25,8 @@ pub enum RegistrationLifetime {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Registration {
     pub id: u32,
+    /// Exact registry-entry syntax identity; the backend never rediscovers it by name.
+    pub source_node_id: AstNodeId,
     pub scope_id: ScopeId,
     pub key: RegistrationKey,
     pub implementation: String,
@@ -35,6 +37,7 @@ pub struct Registration {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InjectDependency {
     pub span: SpanInfo,
+    pub field_node_id: AstNodeId,
     pub owner_registration_id: u32,
     pub requested_type: String,
     pub is_plural: bool,
@@ -69,6 +72,7 @@ pub struct ActivationPlanEntry {
 pub struct PluralPlan {
     pub owner_registration_id: u32,
     pub field_span: SpanInfo,
+    pub field_node_id: AstNodeId,
     pub target_slots: Vec<ServiceSlot>,
 }
 
@@ -76,6 +80,7 @@ pub struct PluralPlan {
 pub struct SingularPlan {
     pub owner_registration_id: u32,
     pub field_span: SpanInfo,
+    pub field_node_id: AstNodeId,
     pub target_slot: ServiceSlot,
 }
 

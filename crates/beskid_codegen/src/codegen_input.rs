@@ -3,7 +3,7 @@
 use std::{collections::HashSet, sync::Arc};
 
 use beskid_abi::abi_v5::{AbiManifestV5, TargetMetadata};
-use beskid_queries::{AstNodeKey, Db, IndexedNodeKind, TypedProgram, node_kind};
+use beskid_queries::{AstNodeKey, Db, IndexedNodeKind, TypedProgram, node_kind, node_span};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SchedulerCompilerOperation {
@@ -150,6 +150,13 @@ impl<'db> CodegenInput<'db> {
             return Err(CodegenInputError::ForeignCompositionUnit);
         }
         let registrations = snapshot.registrations.iter().map(|registration| registration.id).collect::<HashSet<_>>();
+        let source_key = |node| AstNodeKey { unit: self.typed_program.entry, generation, node };
+        let valid_registration_sources = snapshot.registrations.iter().all(|registration| {
+            let key = source_key(registration.source_node_id);
+            registration.source_node_id.is_valid()
+                && matches!(node_kind(self.db, key), Ok(Some(IndexedNodeKind::RegistryEntry)))
+                && matches!(node_span(self.db, key), Ok(Some(span)) if span == registration.span)
+        });
         let mut assigned_registrations = HashSet::new();
         let mut assigned_slots = HashSet::new();
         let valid_activation = plan.activation.len() == snapshot.registrations.len()
@@ -163,34 +170,33 @@ impl<'db> CodegenInput<'db> {
         let valid_plurals = plan.plurals.iter().all(|plural| {
             registrations.contains(&plural.owner_registration_id)
                 && plural.target_slots.iter().all(|slot| assigned_slots.contains(&slot.0))
+                && plural.field_node_id.is_valid()
+                && matches!(node_kind(self.db, source_key(plural.field_node_id)), Ok(Some(IndexedNodeKind::Field)))
+                && matches!(node_span(self.db, source_key(plural.field_node_id)), Ok(Some(span)) if span == plural.field_span)
         });
         let valid_singulars = plan.singulars.iter().all(|singular| {
-            registrations.contains(&singular.owner_registration_id) && assigned_slots.contains(&singular.target_slot.0)
+            registrations.contains(&singular.owner_registration_id)
+                && assigned_slots.contains(&singular.target_slot.0)
+                && singular.field_node_id.is_valid()
+                && matches!(node_kind(self.db, source_key(singular.field_node_id)), Ok(Some(IndexedNodeKind::Field)))
+                && matches!(node_span(self.db, source_key(singular.field_node_id)), Ok(Some(span)) if span == singular.field_span)
         });
         let valid_scopes = snapshot.scope_names.keys().all(|scope_id| plan.scope_parents.contains_key(scope_id));
-        let valid_hooks = plan
-            .init_hooks
-            .iter()
-            .chain(&plan.startup_hooks)
-            .chain(&plan.disposal_hooks)
-            .all(|hook| {
-                (hook.scope_id == beskid_analysis::composition::ScopeId::GLOBAL
-                    || plan.scope_parents.contains_key(&hook.scope_id))
-                    && hook.source_node_id.is_valid()
-                    && matches!(
-                        node_kind(
-                            self.db,
-                            AstNodeKey {
-                                unit: self.typed_program.entry,
-                                generation,
-                                node: hook.source_node_id,
-                            }
-                        ),
-                        Ok(Some(IndexedNodeKind::ScopeHook))
-                    )
-            });
+        let valid_hooks = plan.init_hooks.iter().chain(&plan.startup_hooks).chain(&plan.disposal_hooks).all(|hook| {
+            (hook.scope_id == beskid_analysis::composition::ScopeId::GLOBAL
+                || plan.scope_parents.contains_key(&hook.scope_id))
+                && hook.source_node_id.is_valid()
+                && matches!(
+                    node_kind(
+                        self.db,
+                        AstNodeKey { unit: self.typed_program.entry, generation, node: hook.source_node_id }
+                    ),
+                    Ok(Some(IndexedNodeKind::ScopeHook))
+                )
+        });
         if plan.launched_host != snapshot.launched_host
             || !valid_activation
+            || !valid_registration_sources
             || !valid_singulars
             || !valid_plurals
             || !valid_scopes

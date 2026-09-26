@@ -44,6 +44,9 @@ impl SyntaxNodeFacts<'_> {
     }
 
     pub(super) fn managed_reference_impl(&self, key: AstNodeKey) -> Option<ManagedReferenceFact> {
+        if self.composition_injected_access(key).is_some() {
+            return Some(ManagedReferenceFact::GcManaged);
+        }
         self.managed_reference_in_context(key)
     }
 
@@ -56,6 +59,9 @@ impl SyntaxNodeFacts<'_> {
     }
 
     pub(super) fn scalar_type_impl(&self, key: AstNodeKey) -> Option<Type> {
+        if self.composition_injected_access(key).is_some() {
+            return self.isa.map(|isa| isa.pointer_type());
+        }
         if self.node_kind(key) == Some(NodeKind::StructLiteralExpression)
             && self.query(aggregate_literal_declaration(self.db, key)).is_some()
         {

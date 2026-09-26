@@ -30,7 +30,7 @@ impl SyntaxNodeFacts<'_> {
     }
 
     pub(super) fn node_kind_impl(&self, key: AstNodeKey) -> Option<NodeKind> {
-        if self.aggregate_field_access_in_context(key).is_some() {
+        if self.aggregate_field_access_in_context(key).is_some() || self.composition_injected_access(key).is_some() {
             return Some(NodeKind::FieldExpression);
         }
         if self.query(range_for_fact(self.db, key)).is_some() {
@@ -52,6 +52,11 @@ impl SyntaxNodeFacts<'_> {
     pub(super) fn child_impl(&self, key: AstNodeKey, index: u8) -> Option<AstNodeKey> {
         if index == 0
             && let Some(access) = self.aggregate_field_access_in_context(key)
+        {
+            return Some(access.receiver);
+        }
+        if index == 0
+            && let Some((access, _, _, _)) = self.composition_injected_access(key)
         {
             return Some(access.receiver);
         }

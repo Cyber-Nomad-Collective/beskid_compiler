@@ -1,13 +1,12 @@
 use std::collections::HashMap;
 
-use crate::syntax::{
-    FieldKind, HostBodyItem, HostDefinition, InjectQualifier, Node, Program, RegistrationLifetime, RegistryBlock,
-    RegistryEntry, ScopeDefinition, ScopeHookKind, Spanned, Type,
-};
-
 use super::model::{
     CompositionHost, CompositionScope, InjectDependency, Registration, RegistrationKey,
     RegistrationLifetime as Lifetime, ScopeId,
+};
+use crate::syntax::{
+    FieldKind, HostBodyItem, HostDefinition, InjectQualifier, Node, Program, RegistrationLifetime, RegistryBlock,
+    RegistryEntry, ScopeDefinition, ScopeHookKind, Spanned, Type,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -16,6 +15,7 @@ pub struct TypeInjectField {
     pub qualifier: Option<InjectQualifier>,
     pub is_plural: bool,
     pub span: crate::syntax::SpanInfo,
+    pub field_node_id: crate::syntax::AstNodeId,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -75,6 +75,7 @@ pub fn collect(program: &Spanned<Program>) -> CollectedComposition {
                         qualifier: field.node.inject_qualifier,
                         is_plural: type_is_plural(&field.node.ty),
                         span: field.span,
+                        field_node_id: field.id,
                     })
                     .collect::<Vec<_>>();
                 if !injects.is_empty() {
@@ -260,12 +261,9 @@ fn collect_scope(
             HostBodyItem::Scope(child_scope) => {
                 collect_scope(child_scope, scope_id, scopes, regs, hooks, next_registration_id, next_scope_id);
             }
-            HostBodyItem::Hook(hook) => hooks.push(CollectedHook {
-                scope_id,
-                kind: hook.node.kind,
-                source_node_id: hook.id,
-                span: hook.span,
-            }),
+            HostBodyItem::Hook(hook) => {
+                hooks.push(CollectedHook { scope_id, kind: hook.node.kind, source_node_id: hook.id, span: hook.span })
+            }
         }
     }
 }
@@ -293,7 +291,7 @@ fn registration_from_entry(
         (false, Some(RegistrationLifetime::Transient)) => Lifetime::Transient,
         (false, None) => Lifetime::Scoped,
     };
-    Registration { id, scope_id, key, implementation, lifetime, span: entry.span }
+    Registration { id, source_node_id: entry.id, scope_id, key, implementation, lifetime, span: entry.span }
 }
 
 fn registrations_from_block(
@@ -314,6 +312,7 @@ pub fn dependency_requests(
             for field in fields {
                 requests.push(InjectDependency {
                     span: field.span,
+                    field_node_id: field.field_node_id,
                     owner_registration_id: registration.id,
                     requested_type: field.requested_type.clone(),
                     is_plural: field.is_plural,
