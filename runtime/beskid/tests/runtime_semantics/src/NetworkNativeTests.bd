@@ -8,6 +8,14 @@ use Runtime.Network.Dns;
 use Concurrency.Fiber;
 use Concurrency;
 use Core.Results;
+use Core.Collections.Array;
+use Core.Environment;
+use Core.Optional.Option;
+use Core.Time;
+use Core.Time.Deadline;
+use Network.Dns as NetworkDns;
+use Network.Errors;
+use Network.Types;
 use Testing.Assert;
 use HostRuntimeSupport;
 
@@ -358,6 +366,56 @@ test native_network_close_vs_accept_deadline_has_one_winner {
         Result::Ok(_) => (),
         Result::Error(_) => Assert.Fail("close/accept race scenario completes"),
     };
+}
+
+unit CheckDnsDeadlineWhileHostJobIsBlocked() {
+    word activeBefore = External.ExternalActiveCount();
+    match Deadline.After(Time.FromMilliseconds(0_i64)) {
+        Result::Error(_) => Assert.Fail("zero duration creates a typed deadline"),
+        Result::Ok(deadline) => {
+            Result<SocketAddress[], NetworkError> timed = NetworkDns.Resolve(
+                "beskid-deadline-block.invalid",
+                Network.Types.PortBytes(0_u8, 53_u8),
+                Option::Some(AddressFamily::V4),
+                Option.FromValue<Deadline>(deadline)
+            );
+            Assert.True(match timed { Result::Error(NetworkError::TimedOut) => true, _ => false, }, "deadline wins exactly once");
+        },
+    };
+
+    Result<SocketAddress[], NetworkError> observed = NetworkDns.Resolve(
+        "beskid-deadline-observe.invalid",
+        Network.Types.PortBytes(0_u8, 53_u8),
+        Option::Some(AddressFamily::V4),
+        Option.Empty<Deadline>()
+    );
+    Assert.True(match observed { Result::Ok(addresses) => Array.Len<SocketAddress>(addresses) > 0_i64, _ => false, }, "observer confirms blocked resolver entered getaddrinfo");
+    Assert.Equal(External.ExternalActiveCount(), activeBefore + 1, "timed-out DNS operation retains its host-work lease while getaddrinfo is blocked");
+
+    Result<SocketAddress[], NetworkError> released = NetworkDns.Resolve(
+        "beskid-deadline-release.invalid",
+        Network.Types.PortBytes(0_u8, 53_u8),
+        Option::Some(AddressFamily::V4),
+        Option.Empty<Deadline>()
+    );
+    Assert.True(match released { Result::Ok(addresses) => Array.Len<SocketAddress>(addresses) > 0_i64, _ => false, }, "release waits for positive completion of the abandoned resolver");
+    Assert.Equal(External.ExternalActiveCount(), activeBefore, "late DNS result is discarded and host-work accounting drains");
+    return;
+}
+
+test native_network_dns_deadline_race_retains_and_drains_host_job {
+    if Environment.Has("BESKID_DNS_DEADLINE_SHIM") {
+        Fiber<unit> scenario = spawn CheckDnsDeadlineWhileHostJobIsBlocked();
+        Assert.True(match scenario.Join() { Result::Ok(_) => true, _ => false, }, "deterministic DNS deadline scenario completes");
+    } else {
+        Result<SocketAddress[], NetworkError> ordinary = NetworkDns.Resolve(
+            "127.0.0.1",
+            Network.Types.PortBytes(0_u8, 53_u8),
+            Option::Some(AddressFamily::V4),
+            Option.Empty<Deadline>()
+        );
+        Assert.True(match ordinary { Result::Ok(addresses) => Array.Len<SocketAddress>(addresses) > 0_i64, _ => false, }, "ordinary cross-platform resolver remains exercised without the Linux shim");
+    }
 }
 
 i64 PendingReadOne(word client) {
