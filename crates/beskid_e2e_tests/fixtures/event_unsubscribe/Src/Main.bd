@@ -1,3 +1,5 @@
+use Testing.Assert;
+
 type User { event{4} created(string payload) }
 
 impl User {
@@ -10,9 +12,10 @@ i32 Main() {
     mut User u = User { };
     string marker = "retained";
     unit(string) boom = (string payload) => {
-        marker;
+        Assert.Equal(marker, "retained", "event capture survives collection");
     };
     u.created += boom;
+    Assert.CollectGarbage();
     u.Emit("before unsubscribe");
     u.created -= boom;
     u.Emit("after unsubscribe");

@@ -35,7 +35,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   preserve each fiber's scope state across scheduler yields.
 - Lower field-event subscribe, first-match unsubscribe, and raise through
   generation-bound syntax facts and canonical ABI-v5 services; materialize
-  captured handlers with event-scoped wrappers and rooted environments.
+  captured handlers with event-scoped wrappers and rooted environments. Verify
+  captured-value retention across explicit collection in installed-kit AOT.
 
 - Prove scoped acquisition through a validated `?` only when the exact Result
   success payload is recursively source-proven fresh. Keep borrowed values,
