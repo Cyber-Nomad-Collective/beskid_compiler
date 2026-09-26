@@ -114,6 +114,12 @@ fn require_one_of(environment: &BTreeMap<String, OsString>, names: &[&str]) -> A
 #[cfg(any(windows, test))]
 fn configure_from_dev_output(command: &mut Command, output: &str, llvm_bin: Option<&Path>) -> AotResult<()> {
     let mut environment = parse_dev_output(output);
+    // `set` includes the entire inherited environment, potentially including credentials.
+    // Command's Debug output is used in linker diagnostics, so only carry the values the
+    // native toolchain needs into explicit child overrides.
+    environment.retain(|name, _| {
+        matches!(name.as_str(), "PATH" | "INCLUDE" | "LIB" | "LIBPATH" | "WINDOWSSDKDIR" | "WINDOWSSDKVERSION")
+    });
     for name in ["PATH", "INCLUDE", "LIB", "WINDOWSSDKDIR", "WINDOWSSDKVERSION"] {
         if environment.get(name).is_none_or(|value| value.is_empty()) {
             return Err(unavailable(
@@ -203,6 +209,17 @@ fn installed_llvm_bin() -> Option<PathBuf> {
         .find(|directory| directory.join("lld-link.exe").is_file())
 }
 
+#[cfg(any(windows, test))]
+fn decode_cmd_unicode(output: &[u8]) -> AotResult<String> {
+    let chunks = output.chunks_exact(2);
+    if !chunks.remainder().is_empty() {
+        return Err(unavailable("VsDevCmd.bat", "cmd /u produced an odd-length Unicode environment"));
+    }
+    let units = chunks.map(|bytes| u16::from_le_bytes([bytes[0], bytes[1]])).collect::<Vec<_>>();
+    String::from_utf16(&units)
+        .map_err(|_| unavailable("VsDevCmd.bat", "cmd /u produced an invalid Unicode environment"))
+}
+
 #[cfg(windows)]
 fn run_developer_command(instance: &Path) -> AotResult<String> {
     let developer_command = instance.join("Common7").join("Tools").join("VsDevCmd.bat");
@@ -211,14 +228,14 @@ fn run_developer_command(instance: &Path) -> AotResult<String> {
     }
     let invocation = format!("call \"{}\" -arch=x64 -host_arch=x64 >nul && set", developer_command.display());
     let output = Command::new("cmd.exe")
-        .args(["/d", "/c"])
+        .args(["/d", "/u", "/c"])
         .raw_arg(invocation)
         .output()
         .map_err(|error| unavailable("VsDevCmd.bat", error.to_string()))?;
     if !output.status.success() {
         return Err(unavailable("VsDevCmd.bat", String::from_utf8_lossy(&output.stderr).into_owned()));
     }
-    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+    decode_cmd_unicode(&output.stdout)
 }
 
 #[cfg(windows)]
@@ -266,8 +283,8 @@ mod tests {
     use std::process::Command;
 
     use super::{
-        Instance, complete_explicit_environment, configure_from_dev_output, configure_from_instances, parse_instances,
-        select_instance,
+        Instance, complete_explicit_environment, configure_from_dev_output, configure_from_instances,
+        decode_cmd_unicode, parse_instances, select_instance,
     };
 
     #[test]
@@ -305,7 +322,7 @@ mod tests {
             std::fs::write(sdk.join(name), "").unwrap();
         }
         let output = format!(
-            "PATH={}\r\nINCLUDE={}\r\nLIB={}\r\nWindowsSdkDir={}\r\nWindowsSDKVersion=10.0.26100.0\\\r\n",
+            "PATH={}\r\nINCLUDE={}\r\nLIB={}\r\nWindowsSdkDir={}\r\nWindowsSDKVersion=10.0.26100.0\\\r\nSECRET_TOKEN=do-not-log-me\r\n",
             tools.display(),
             tools.display(),
             sdk.display(),
@@ -320,6 +337,16 @@ mod tests {
             .collect::<std::collections::BTreeMap<_, _>>();
         assert_eq!(env["PATH"], tools.to_string_lossy());
         assert_eq!(env["LIB"], sdk.to_string_lossy());
+        assert!(!env.contains_key("SECRET_TOKEN"));
+        assert!(!format!("{command:?}").contains("do-not-log-me"));
+    }
+
+    #[test]
+    fn developer_output_decodes_non_ascii_windows_paths() {
+        let output = "PATH=C:\\Użytkownik\\Łódź\\bin\r\nLIB=C:\\Użytkownik\\Łódź\\lib\r\n";
+        let encoded = output.encode_utf16().flat_map(u16::to_le_bytes).collect::<Vec<_>>();
+        assert_eq!(decode_cmd_unicode(&encoded).unwrap(), output);
+        assert!(decode_cmd_unicode(&encoded[..encoded.len() - 1]).is_err());
     }
 
     #[test]
