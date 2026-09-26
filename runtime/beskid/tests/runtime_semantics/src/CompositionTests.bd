@@ -70,3 +70,35 @@ test composition_rejects_plan_sizes_outside_the_compiler_runtime_contract {
     SystemFree(runtime, 64);
     ResumeHostRuntime(hostRuntime);
 }
+
+test composition_containers_keep_slots_and_activation_independent {
+    pointer hostRuntime = SuspendHostRuntime();
+    pointer runtime = SystemAllocate(64, 8);
+    memory_set(runtime, 0, 64);
+    Assert.True(ProcessInit(runtime) == runtime, "runtime initialized");
+
+    pointer first = CompositionContainerCreate(1);
+    pointer second = CompositionContainerCreate(1);
+    pointer firstService = SystemAllocate(8, 8);
+    pointer secondService = SystemAllocate(8, 8);
+    Assert.True(first != NativePointer(0) && second != NativePointer(0), "separate containers allocated");
+    Assert.True(first != second, "each container owns its own state");
+    Assert.True(CompositionSlotStore(first, 0, firstService), "first service installed");
+    Assert.True(CompositionLaunch(first), "first container activates");
+    Assert.True(!CompositionLaunch(second), "second cannot borrow the first container's slot");
+    Assert.True(CompositionSlotStore(second, 0, secondService), "second service installed");
+    Assert.True(CompositionLaunch(second), "second container activates independently");
+
+    CompositionShutdown(first);
+    CompositionContainerDrop(first);
+    CompositionScopeEnter(second);
+    Assert.Equal(CompositionScopeDepth(), 1, "second container remains active after first drops");
+    CompositionScopeLeave();
+    CompositionShutdown(second);
+    CompositionContainerDrop(second);
+    SystemFree(firstService, 8);
+    SystemFree(secondService, 8);
+    ProcessShutdown(runtime);
+    SystemFree(runtime, 64);
+    ResumeHostRuntime(hostRuntime);
+}
