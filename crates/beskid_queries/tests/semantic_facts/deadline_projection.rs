@@ -2,7 +2,6 @@ use beskid_abi::abi_v5::{AbiManifestV5, TargetMetadata};
 use beskid_abi::runtime_source::{
     CANONICAL_NETWORK_INTERNAL_SOURCE_PATH, canonical_corelib_service_capability, canonical_corelib_service_source_path,
 };
-use beskid_analysis::analysis::SemanticIssueKind;
 use beskid_analysis::projects::{
     AssemblyDiscovery, EffectiveCompilationRoots, ModuleIndex, ProgramAssembly, RootEntry, SourceUnit,
 };
@@ -226,11 +225,11 @@ fn deadline_literal_private_field_is_a_coded_member_error() {
     )
     .expect("member legality query")
     .expect("private Deadline field must have a legality finding");
-    assert_eq!(finding.kind, MemberReferenceKind::UnknownStructField { name: "monotonicNanos".into() });
+    assert_eq!(finding.kind, MemberReferenceKind::InaccessibleStructField { name: "monotonicNanos".into() });
 }
 
 #[test]
-fn deadline_literal_without_private_field_is_a_coded_missing_field_error() {
+fn deadline_literal_without_private_field_is_a_coded_inaccessible_field_error() {
     let temp = tempfile::tempdir().expect("application root");
     let owner_path = temp.path().join("Main.bd");
     let owner_source = "use Core.Time.Deadline; Deadline Forge() { return Deadline { }; }";
@@ -247,12 +246,56 @@ fn deadline_literal_without_private_field_is_a_coded_missing_field_error() {
     .expect("member legality query")
     .expect("missing private Deadline field must have a legality finding");
     assert!(
-        findings.iter().any(|finding| matches!(
-            &finding.kind,
-            SemanticIssueKind::TypeMissingStructField { name } if name == "monotonicNanos"
-        )),
-        "expected E1212 for the omitted private field, got {findings:?}"
+        findings
+            .iter()
+            .any(|finding| { finding.kind.code() == "E1211" && finding.kind.message().contains("inaccessible") }),
+        "expected E1211 for the inaccessible omitted field, got {findings:?}"
     );
+}
+
+#[test]
+fn deadline_literal_with_private_field_reports_inaccessibility_not_unknown_name() {
+    let temp = tempfile::tempdir().expect("application root");
+    let owner_path = temp.path().join("Main.bd");
+    let owner_source = "use Core.Time.Deadline; Deadline Forge() { return Deadline { monotonicNanos: 1_i64 }; }";
+    let (deadline_path, deadline_source) = canonical_deadline();
+    let findings = fact_result(
+        owner_path,
+        owner_source.into(),
+        deadline_path,
+        deadline_source,
+        "Deadline Forge",
+        NodeKind::FunctionDefinition,
+        |db, key| Ok::<_, beskid_queries::SemanticError>(check_items(db, &[key]).err()),
+    )
+    .expect("member legality query")
+    .expect("private Deadline field must have a legality finding");
+    assert!(
+        findings
+            .iter()
+            .any(|finding| { finding.kind.code() == "E1211" && finding.kind.message().contains("inaccessible") }),
+        "expected E1211 for the inaccessible supplied field, got {findings:?}"
+    );
+}
+
+#[test]
+fn ordinary_literal_missing_accessible_field_remains_e1212() {
+    let source = "pub type Pair { pub i64 left, pub i64 right } i64 Main() { Pair pair = Pair { left: 1_i64 }; return pair.left; }";
+    let program = parse_program(source).expect("parse ordinary struct literal");
+    let errors = match beskid_analysis::services::resolve_and_type_program(&program) {
+        Err(beskid_analysis::services::SemanticFactsError::Type { errors, .. }) => errors,
+        other => panic!("expected type-check rejection for missing field, got {other:?}"),
+    };
+    assert!(
+        errors.iter().any(|error| matches!(
+            error,
+            beskid_analysis::types::TypeError::MissingStructField { name, .. } if name == "right"
+        )),
+        "expected missing accessible `right`, got {errors:?}"
+    );
+    let diagnostic = beskid_analysis::analysis::SemanticIssueKind::TypeMissingStructField { name: "right".into() };
+    assert_eq!(diagnostic.code(), "E1212");
+    assert_eq!(diagnostic.message(), "missing struct field `right`");
 }
 
 #[test]

@@ -213,6 +213,9 @@ pub enum SemanticIssueKind {
     TypeUnknownStructField {
         name: String,
     },
+    TypeInaccessibleStructField {
+        name: String,
+    },
     TypeUnknownEnumVariant {
         name: String,
     },

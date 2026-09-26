@@ -65,6 +65,7 @@ impl SemanticIssueKind {
             Self::TypeInvalidMemberTarget => "invalid member access target".to_string(),
             Self::TypeUnknownEnumType => "unknown enum type".to_string(),
             Self::TypeUnknownStructField { .. } => "unknown struct field".to_string(),
+            Self::TypeInaccessibleStructField { .. } => "inaccessible struct field".to_string(),
             Self::TypeUnknownEnumVariant { .. } => "unknown enum variant".to_string(),
             Self::TypeMissingStructField { .. } => "missing struct field".to_string(),
             Self::TypeMissingTypeAnnotation { .. } => "missing type annotation".to_string(),

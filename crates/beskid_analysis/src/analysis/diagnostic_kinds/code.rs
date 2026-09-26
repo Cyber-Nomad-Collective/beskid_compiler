@@ -70,6 +70,7 @@ impl SemanticIssueKind {
             Self::TypeInvalidMemberTarget => "E1213",
             Self::TypeUnknownEnumType => "E1201",
             Self::TypeUnknownStructField { .. } => "E1211",
+            Self::TypeInaccessibleStructField { .. } => "E1211",
             Self::TypeUnknownEnumVariant { .. } => "E1301",
             Self::TypeMissingStructField { .. } => "E1212",
             Self::TypeMissingTypeAnnotation { .. } => "E1202",

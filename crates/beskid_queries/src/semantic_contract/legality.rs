@@ -233,6 +233,9 @@ pub fn check_items(db: &dyn Db, items: &[AstNodeKey]) -> Result<(), Vec<Semantic
                 MemberReferenceKind::UnknownStructField { name } => {
                     SemanticIssueKind::TypeUnknownStructField { name: name.to_string() }
                 }
+                MemberReferenceKind::InaccessibleStructField { name } => {
+                    SemanticIssueKind::TypeInaccessibleStructField { name: name.to_string() }
+                }
                 MemberReferenceKind::MissingStructField { name } => {
                     SemanticIssueKind::TypeMissingStructField { name: name.to_string() }
                 }

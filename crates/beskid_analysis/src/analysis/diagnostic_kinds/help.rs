@@ -186,6 +186,9 @@ impl SemanticIssueKind {
             Self::TypeUnknownStructField { name } => {
                 Some(format!("check that the struct has a field named `{name}`"))
             }
+            Self::TypeInaccessibleStructField { .. } => {
+                Some("construct this value through its public API".to_string())
+            }
             Self::TypeUnknownEnumVariant { name } => {
                 Some(format!("check that the enum has a variant named `{name}`"))
             }

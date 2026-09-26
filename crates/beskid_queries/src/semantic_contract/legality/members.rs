@@ -20,7 +20,9 @@ use beskid_analysis::syntax::{
 pub enum MemberReferenceKind {
     /// A struct literal field or a field read that the resolved type does not declare (E1211).
     UnknownStructField { name: Arc<str> },
-    /// A struct literal omits a required field that cannot be supplied by this source (E1212).
+    /// A struct literal attempts to construct a type whose required field is private (E1211).
+    InaccessibleStructField { name: Arc<str> },
+    /// A struct literal omits a required, accessible field (E1212).
     MissingStructField { name: Arc<str> },
     /// An enum constructor or a match pattern that names a variant the enum does not declare
     /// (E1301).
@@ -92,12 +94,10 @@ fn unknown_struct_literal_field(
                 index.direct_child_id(program, literal_key.node, beskid_analysis::syntax_query::DynNodeRef::from(field))
             })
             .map_or(literal_key, |node| AstNodeKey { node, ..literal_key });
-        let kind = if supplied.is_some() {
-            MemberReferenceKind::UnknownStructField { name: Arc::from(private_field) }
-        } else {
-            MemberReferenceKind::MissingStructField { name: Arc::from(private_field) }
-        };
-        return Some(MemberReferenceFinding { site, kind });
+        return Some(MemberReferenceFinding {
+            site,
+            kind: MemberReferenceKind::InaccessibleStructField { name: Arc::from(private_field) },
+        });
     }
     let declared = declared_member_names(db, declaration)?;
     let field = literal.fields.iter().find(|field| !declared.fields.contains(field.node.name.node.name.as_str()))?;

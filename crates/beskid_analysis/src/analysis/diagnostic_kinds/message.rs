@@ -160,6 +160,9 @@ impl SemanticIssueKind {
             Self::TypeUnknownStructField { name } => {
                 format!("unknown struct field `{name}`")
             }
+            Self::TypeInaccessibleStructField { name } => {
+                format!("inaccessible struct field `{name}`")
+            }
             Self::TypeUnknownEnumVariant { name } => {
                 format!("unknown enum variant `{name}`")
             }
