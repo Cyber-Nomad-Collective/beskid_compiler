@@ -200,23 +200,32 @@ pub i32 CompositionScopeDepth() {
     return i32(raw_word_load(pointer_add(owner, CompositionDepthOffset())));
 }
 
-[Export(Abi:"C", Symbol:"composition_shutdown")]
-pub unit CompositionShutdown(pointer container) {
-    if CompositionContainerValid(container) == 0 ||
-       raw_word_load(pointer_add(container, COMPOSITION_STATUS_OFFSET)) != COMPOSITION_ACTIVE ||
+pub bool CompositionTryShutdown(pointer container) {
+    if CompositionContainerValid(container) == 0 { return false; }
+    word status = raw_word_load(pointer_add(container, COMPOSITION_STATUS_OFFSET));
+    if (status != COMPOSITION_CONFIGURING && status != COMPOSITION_ACTIVE) ||
        raw_word_load(pointer_add(container, COMPOSITION_OPEN_SCOPE_COUNT_OFFSET)) != 0 {
-        Trap(10, NativePointer(0), 0);
+        return false;
     }
     raw_word_store(pointer_add(container, COMPOSITION_STATUS_OFFSET), COMPOSITION_SHUTTING_DOWN);
     pointer slots = NativePointer(raw_word_load(pointer_add(container, COMPOSITION_SLOTS_OFFSET)));
-    mut word activated = raw_word_load(pointer_add(container, COMPOSITION_ACTIVATED_COUNT_OFFSET));
-    while activated > 0 {
-        activated = activated - 1;
-        GcUnregisterRoot(pointer_add(slots, activated * 8));
-        raw_word_store(pointer_add(slots, activated * 8), 0);
+    mut word slot = raw_word_load(pointer_add(container, COMPOSITION_SLOT_COUNT_OFFSET));
+    while slot > 0 {
+        slot = slot - 1;
+        pointer location = pointer_add(slots, slot * 8);
+        if raw_word_load(location) != 0 {
+            GcUnregisterRoot(location);
+            raw_word_store(location, 0);
+        }
     }
     raw_word_store(pointer_add(container, COMPOSITION_ACTIVATED_COUNT_OFFSET), 0);
     raw_word_store(pointer_add(container, COMPOSITION_SLOT_COUNT_OFFSET), 0);
     raw_word_store(pointer_add(container, COMPOSITION_STATUS_OFFSET), COMPOSITION_SHUT_DOWN);
+    return true;
+}
+
+[Export(Abi:"C", Symbol:"composition_shutdown")]
+pub unit CompositionShutdown(pointer container) {
+    if !CompositionTryShutdown(container) { Trap(10, NativePointer(0), 0); }
     return;
 }

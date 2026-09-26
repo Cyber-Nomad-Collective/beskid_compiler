@@ -52,6 +52,29 @@ impl IsleContext<'_, '_, '_, '_> {
         }
         Some(())
     }
+
+    pub(super) fn composition_failure_guard(
+        &mut self,
+        site: AstNodeKey,
+        container: Value,
+        status: Value,
+        code: u8,
+    ) -> Option<()> {
+        let active = self.builder.create_block();
+        let failed = self.builder.create_block();
+        self.builder.ins().brif(status, active, &[], failed, &[]);
+        self.builder.switch_to_block(failed);
+        self.builder.seal_block(failed);
+        self.release_local_roots_from(0)?;
+        let pointer = dispatch::pointer_type(self.frontend_config);
+        self.composition_call(site, "composition_shutdown", &[container], &[pointer], None)?;
+        self.composition_call(site, "composition_container_drop", &[container], &[pointer], None)?;
+        self.emit_composition_cleanup_from(0)?;
+        self.builder.ins().trap(TrapCode::unwrap_user(code));
+        self.builder.switch_to_block(active);
+        self.builder.seal_block(active);
+        Some(())
+    }
 }
 
 macro_rules! generated_composition_methods {
@@ -85,7 +108,7 @@ macro_rules! generated_composition_methods {
                         )?;
                         let call = self.builder.ins().call(allocate, &[request, root_address]);
                         let array = self.builder.inst_results(call).first().copied()?;
-                        self.builder.ins().trapz(array, TrapCode::unwrap_user(5));
+                        self.composition_failure_guard(site, container, array, 5)?;
                         let root = ScopedTemporaryRoot::ArrayConstruction(root_slot);
                         self.track_expression_root(root)?;
                         array_roots.push(root);
@@ -102,7 +125,7 @@ macro_rules! generated_composition_methods {
                             )?;
                             let call = self.builder.ins().call(barrier, &[array, target]);
                             let published = self.builder.inst_results(call).first().copied()?;
-                            self.builder.ins().trapz(published, TrapCode::unwrap_user(8));
+                            self.composition_failure_guard(site, container, published, 8)?;
                         }
                         array
                     } else {
@@ -118,7 +141,7 @@ macro_rules! generated_composition_methods {
                     self.import_runtime_helper("beskid_rt_v5_managed_object_allocate", &[pointer], Some(pointer))?;
                 let call = self.builder.ins().call(allocate, &[request]);
                 let object = self.builder.inst_results(call).first().copied()?;
-                self.builder.ins().trapz(object, TrapCode::unwrap_user(5));
+                self.composition_failure_guard(site, container, object, 5)?;
                 for (offset, value) in field_values {
                     let address = self.builder.ins().iadd_imm_s(object, i64::from(offset));
                     self.builder.ins().store(MemFlagsData::new(), value, address, 0);
@@ -131,7 +154,7 @@ macro_rules! generated_composition_methods {
                     &[pointer, pointer, pointer],
                     Some(types::I8),
                 )??;
-                self.builder.ins().trapz(stored, TrapCode::unwrap_user(9));
+                self.composition_failure_guard(site, container, stored, 9)?;
                 installed.push(object);
                 for root in array_roots.into_iter().rev() {
                     self.release_expression_root(Some(root))?;
@@ -139,7 +162,7 @@ macro_rules! generated_composition_methods {
             }
             let launched =
                 self.composition_call(site, "composition_launch", &[container], &[pointer], Some(types::I8))??;
-            self.builder.ins().trapz(launched, TrapCode::unwrap_user(9));
+            self.composition_failure_guard(site, container, launched, 9)?;
             self.local_root_scopes
                 .last_mut()?
                 .composition_cleanups

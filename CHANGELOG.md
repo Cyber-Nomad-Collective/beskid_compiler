@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Tear down partially materialized composition containers after failed launch,
+  release each published service root once, and emit shutdown/drop before
+  trapping on compiler-generated allocation, publication, or activation failure.
+
 - Bind the frozen composition plan and snapshot to one source generation before
   codegen, reject foreign hosts, registrations, slots, and hook keys, and retain
   singular/plural injection fields and declared lifecycle hooks without lookup.
@@ -24,7 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Lower frozen composition registrations into managed service objects and
   compiler-selected slots, wire singular/plural injected fields with rooted
   pointer arrays, and read injected fields through source-keyed physical slots.
-  Constructor and failure-teardown gates remain separate release work.
+  Constructor and installed-kit behavior gates remain separate release work.
 
 - Pass compiler-frozen composition scope and parent identities through the
   ABI-v5 contract, enforce the parent tree before publishing scope frames, and

@@ -398,6 +398,119 @@ i32 Main() {
 }
 
 #[test]
+fn failed_launch_branches_through_teardown_before_trapping() {
+    use std::sync::Arc;
+    use beskid_analysis::composition::{CompositionInput, resolve_composition};
+
+    let source = "host AppHost() {} i32 Main() { launch AppHost(); return 0; }";
+    let (input, isa, root) = item_fixture_with_root(source);
+    let result = resolve_composition(CompositionInput {
+        program: &input.typed_program().assembly.entry_unit().program,
+        is_mod_project: false,
+    });
+    assert!(result.issues.is_empty(), "composition must validate: {:?}", result.issues);
+    let mut snapshot = result.snapshot;
+    snapshot.source_unit_path = Some(root.unit.path(input.database()).to_path_buf());
+    let generation = input.typed_program().generation;
+    let input = input.with_composition_authority(generation, Arc::new(result.plan), Arc::new(snapshot))
+        .expect("attach exact authority");
+    let main = find_function_definitions(input.database(), root)
+        .into_iter()
+        .find(|key| item_name(input.database(), *key).ok().flatten().as_deref() == Some("Main"))
+        .expect("Main function");
+    let artifact = lower_syntax_program(&input, isa.as_ref(), &[SyntaxModuleItem { key: main, symbol: "Main".into() }])
+        .expect("validated launch lowers");
+    let clif = artifact.functions.iter().find(|function| function.name == "Main")
+        .expect("lowered Main").function.display().to_string();
+    let (failed, active) = clif.split_once("trap user9").expect("failure path must trap after teardown");
+    for symbol in ["composition_shutdown", "composition_container_drop"] {
+        let callees = clif.lines().filter(|line| line.contains(&format!("%{symbol}")))
+            .filter_map(|line| line.trim().split_whitespace().next())
+            .map(|callee| format!("call {callee}("))
+            .collect::<Vec<_>>();
+        assert!(!callees.is_empty(), "missing canonical import {symbol}:\n{clif}");
+        assert!(callees.iter().any(|call| failed.contains(call)), "failure must call {symbol} before trap:\n{clif}");
+        assert!(callees.iter().any(|call| active.contains(call)), "normal return must call {symbol}:\n{clif}");
+    }
+}
+
+#[test]
+fn failed_slot_publication_and_object_allocation_branch_through_teardown() {
+    use std::sync::Arc;
+    use beskid_analysis::composition::{CompositionInput, resolve_composition};
+
+    let source = "type Logger {} host AppHost() { registry { single Logger; } } i32 Main() { launch AppHost(); return 0; }";
+    let (input, isa, root) = item_fixture_with_root(source);
+    let result = resolve_composition(CompositionInput {
+        program: &input.typed_program().assembly.entry_unit().program,
+        is_mod_project: false,
+    });
+    assert!(result.issues.is_empty(), "composition must validate: {:?}", result.issues);
+    let mut snapshot = result.snapshot;
+    snapshot.source_unit_path = Some(root.unit.path(input.database()).to_path_buf());
+    let generation = input.typed_program().generation;
+    let input = input.with_composition_authority(generation, Arc::new(result.plan), Arc::new(snapshot))
+        .expect("attach exact authority");
+    let main = find_function_definitions(input.database(), root)
+        .into_iter()
+        .find(|key| item_name(input.database(), *key).ok().flatten().as_deref() == Some("Main"))
+        .expect("Main function");
+    let artifact = lower_syntax_program(&input, isa.as_ref(), &[SyntaxModuleItem { key: main, symbol: "Main".into() }])
+        .expect("validated launch lowers");
+    let clif = artifact.functions.iter().find(|function| function.name == "Main")
+        .expect("lowered Main").function.display().to_string();
+    assert!(clif.contains("%composition_slot_store"), "registration must publish its slot:\n{clif}");
+    for symbol in ["composition_shutdown", "composition_container_drop"] {
+        let callees = clif.lines().filter(|line| line.contains(&format!("%{symbol}")))
+            .filter_map(|line| line.trim().split_whitespace().next())
+            .map(|callee| format!("call {callee}("))
+            .collect::<Vec<_>>();
+        let calls = callees.iter().map(|call| clif.matches(call).count()).sum::<usize>();
+        assert!(calls >= 4, "allocation failure, slot-store failure, launch failure, and normal exit each need {symbol}:\n{clif}");
+    }
+}
+
+#[test]
+fn structured_scope_exits_balance_return_break_and_continue() {
+    use std::sync::Arc;
+    use beskid_analysis::composition::{CompositionInput, resolve_composition};
+
+    for (label, source, expected) in [
+        ("nested return", "host AppHost() { scope Outer() { scope Inner() {} } } i32 Main() { launch AppHost(); with Outer() { with Inner() { return 0; } } }", 2),
+        ("loop break", "host AppHost() { scope Outer() {} } i32 Main() { launch AppHost(); while true { with Outer() { break; } } return 0; }", 1),
+        ("loop continue", "host AppHost() { scope Outer() {} } i32 Main() { launch AppHost(); while true { with Outer() { continue; } } return 0; }", 1),
+    ] {
+        let (input, isa, root) = item_fixture_with_root(source);
+        let result = resolve_composition(CompositionInput {
+            program: &input.typed_program().assembly.entry_unit().program,
+            is_mod_project: false,
+        });
+        assert!(result.issues.is_empty(), "{label}: composition must validate: {:?}", result.issues);
+        let mut snapshot = result.snapshot;
+        snapshot.source_unit_path = Some(root.unit.path(input.database()).to_path_buf());
+        let generation = input.typed_program().generation;
+        let input = input.with_composition_authority(generation, Arc::new(result.plan), Arc::new(snapshot))
+            .expect("attach exact authority");
+        let main = find_function_definitions(input.database(), root)
+            .into_iter()
+            .find(|key| item_name(input.database(), *key).ok().flatten().as_deref() == Some("Main"))
+            .expect("Main function");
+        let artifact = lower_syntax_program(&input, isa.as_ref(), &[SyntaxModuleItem { key: main, symbol: "Main".into() }])
+            .expect("structured composition exit lowers to verified CLIF");
+        let clif = artifact.functions.iter().find(|function| function.name == "Main")
+            .expect("lowered Main").function.display().to_string();
+        for symbol in ["composition_scope_enter", "composition_scope_leave"] {
+            let callees = clif.lines().filter(|line| line.contains(&format!("%{symbol}")))
+                .filter_map(|line| line.trim().split_whitespace().next())
+                .map(|callee| format!("call {callee}("))
+                .collect::<Vec<_>>();
+            let calls = callees.iter().map(|call| clif.matches(call).count()).sum::<usize>();
+            assert_eq!(calls, expected, "{label}: each entered scope needs one {symbol}:\n{clif}");
+        }
+    }
+}
+
+#[test]
 fn executable_composition_without_frozen_authority_fails_at_launch_site() {
     let source = "host AppHost() {} i32 Main() { launch AppHost(); return 0; }";
     let (input, isa, root) = item_fixture_with_root(source);
@@ -482,6 +595,15 @@ i32 Main() { launch AppHost(); return 0; }
         clif.contains("beskid_rt_v5_managed_object_allocate"),
         "registered services need exact managed allocation:\n{clif}"
     );
+    for symbol in ["composition_shutdown", "composition_container_drop"] {
+        let callees = clif.lines().filter(|line| line.contains(&format!("%{symbol}")))
+            .filter_map(|line| line.trim().split_whitespace().next())
+            .map(|callee| format!("call {callee}("))
+            .collect::<Vec<_>>();
+        let calls = callees.iter().map(|call| clif.matches(call).count()).sum::<usize>();
+        assert!(calls >= 8,
+            "both object and slot failures, plural allocation and barrier failures, launch failure, and normal exit need {symbol}:\n{clif}");
+    }
 }
 
 #[test]
