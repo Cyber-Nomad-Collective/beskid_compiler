@@ -48,9 +48,7 @@ pub fn handle_hover(uri: &Uri, doc: &Document, offset: usize) -> Option<Hover> {
 
 #[cfg(test)]
 mod tests {
-    use std::str::FromStr;
-
-    use tower_lsp_server::ls_types::{HoverContents, Uri};
+    use tower_lsp_server::ls_types::HoverContents;
 
     use super::handle_hover;
     use crate::session::store::Document;
@@ -73,8 +71,8 @@ mod tests {
         };
         let offset = source.find("schemaless").expect("marker");
 
-        let hover = handle_hover(&Uri::from_str("file:///standalone/schema.bsol").expect("uri"), &doc, offset)
-            .expect("standalone BSOL marker hover");
+        let uri = crate::workspace_scan::path_to_uri(&std::env::temp_dir().join("schema.bsol")).expect("uri");
+        let hover = handle_hover(&uri, &doc, offset).expect("standalone BSOL marker hover");
 
         let HoverContents::Markup(contents) = hover.contents else {
             panic!("expected markdown hover");

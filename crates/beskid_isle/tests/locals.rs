@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use beskid_isle::syntax_types::LiteralKind;
-use beskid_isle::{AstNodeKey, FunctionEmitter, LocalSlotId, NodeFacts, NodeKind};
+use beskid_isle::{AssignmentKind, AstNodeKey, FunctionEmitter, LocalSlotId, NodeFacts, NodeKind};
 use beskid_queries::{AstNodeId, BeskidDatabase, SourceUnitId, SyntaxGenerationId};
 use cranelift_codegen::ir::{UserFuncName, types};
 use cranelift_codegen::settings;
@@ -14,6 +14,10 @@ struct LocalFacts {
 }
 
 impl NodeFacts for LocalFacts {
+    fn assignment_kind(&self, key: AstNodeKey) -> Option<AssignmentKind> {
+        (key == self.nodes[4]).then_some(AssignmentKind::Local)
+    }
+
     fn node_kind(&self, key: AstNodeKey) -> Option<NodeKind> {
         let kind = if key == self.nodes[0] {
             NodeKind::BlockExpression

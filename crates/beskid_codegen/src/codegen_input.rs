@@ -146,7 +146,11 @@ impl<'db> CodegenInput<'db> {
         if generation != self.typed_program.generation {
             return Err(CodegenInputError::StaleCompositionPlan);
         }
-        if snapshot.source_unit_path.as_ref() != Some(&self.typed_program.assembly.entry_unit().path) {
+        if !snapshot
+            .source_unit_path
+            .as_deref()
+            .is_some_and(|path| paths_match(path, &self.typed_program.assembly.entry_unit().path))
+        {
             return Err(CodegenInputError::ForeignCompositionUnit);
         }
         let registrations = snapshot.registrations.iter().map(|registration| registration.id).collect::<HashSet<_>>();

@@ -24,10 +24,13 @@ pub(super) use beskid_queries::{
 };
 
 pub(super) fn input_fixture() -> (BeskidDatabase, TypedProgram, AstNodeKey, TargetMetadata) {
+    input_fixture_with_source("i32 Main() { native_word_from_pointer(0); return 7; }")
+}
+
+pub(super) fn input_fixture_with_source(source: &str) -> (BeskidDatabase, TypedProgram, AstNodeKey, TargetMetadata) {
     let mut db = BeskidDatabase::default();
     let directory = tempfile::tempdir().expect("project").keep();
     let source_path = directory.join("Main.bd");
-    let source = "i32 Main() { native_word_from_pointer(0); return 7; }";
     std::fs::write(&source_path, source).expect("source");
     let program = parse_program_with_source_name(source_path.to_str().unwrap(), source).expect("parse source");
     let entry = SourceUnitId::new(&db, source_path.clone());

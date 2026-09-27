@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Pass ordinary Windows drive paths to MSVC when compiling the executable
+  bootstrap, because `cl.exe` cannot open Rust's canonical `\\?\` spelling.
+- Omit generated, checkout-specific `Project.lock` files from the embedded
+  Corelib workspace and its integrity inventory so release bundles do not
+  carry another build machine's absolute paths.
+- Admit canonical Corelib service files at their actual logical-path depth,
+  and match installed-bundle paths consistently on Windows and macOS.
+- Give ordinary captured lambdas their own lowering authority and import only
+  the event operations used by a module, avoiding unrelated native imports.
+- Keep parallel project tests isolated from temporary Corelib-root overrides
+  and host-specific path spelling.
+
 - Tear down partially materialized composition containers after failed launch,
   release each published service root once, and emit shutdown/drop before
   trapping on compiler-generated allocation, publication, or activation failure.

@@ -246,11 +246,29 @@ fn executable_bootstrap_command(
         }
     }
     if windows {
-        command.arg(format!("/Fo{}", object.display())).arg(&source);
+        command.arg(format!("/Fo{}", msvc_compatible_path(&object))).arg(msvc_compatible_path(&source));
     } else {
         command.arg(&source).arg("-o").arg(&object);
     }
     Ok((command, object))
+}
+
+/// MSVC `cl.exe` does not accept Windows verbatim (`\\?\`) paths on its
+/// command line, even though Rust's canonicalized project paths use them.
+/// Preserve the original PathBuf for filesystem operations and normalize only
+/// the argument passed to this native tool.
+fn msvc_compatible_path(path: &std::path::Path) -> String {
+    let raw = path.to_string_lossy();
+    if let Some(rest) = raw.strip_prefix(r"\\?\") {
+        let bytes = rest.as_bytes();
+        if bytes.len() >= 3 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':' && bytes[2] == b'\\' {
+            return rest.to_owned();
+        }
+        if let Some(unc) = rest.strip_prefix(r"UNC\") {
+            return format!(r"\\{unc}");
+        }
+    }
+    raw.into_owned()
 }
 
 /// Resolve the bootstrap source from the generated Core.Args provenance when it is active.
@@ -369,6 +387,22 @@ mod platform_object_tests {
         let args = command.get_args().collect::<Vec<_>>();
         assert!(args.iter().any(|arg| *arg == "/MD"), "bootstrap must select dynamic CRT defaults: {command:?}");
         assert!(!args.iter().any(|arg| *arg == "/MT" || *arg == "/MDd"));
+    }
+
+    #[test]
+    fn windows_executable_bootstrap_does_not_pass_verbatim_drive_paths_to_msvc() {
+        let (command, _) = executable_bootstrap_command(
+            "x86_64-pc-windows-msvc",
+            None,
+            Path::new(r"\\?\C:\project\obj\beskid-bootstrap\assembly"),
+            Path::new(r"\\?\C:\project\obj"),
+            "app",
+            false,
+        )
+        .expect("Windows bootstrap command");
+        let args = command.get_args().map(|arg| arg.to_string_lossy().into_owned()).collect::<Vec<_>>();
+        assert!(args.iter().any(|arg| arg.contains(r"C:\project\obj\beskid-bootstrap\assembly")));
+        assert!(!args.iter().any(|arg| arg.contains(r"\\?\")), "MSVC cannot open verbatim paths: {command:?}");
     }
 
     #[test]

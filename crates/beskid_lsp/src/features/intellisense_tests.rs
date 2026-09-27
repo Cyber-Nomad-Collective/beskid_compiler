@@ -236,8 +236,8 @@ mod tests {
 
     #[test]
     fn references_use_syntax_facts_without_legacy_analysis() {
-        let uri = Uri::from_str("file:///tmp/syntax-references.bd").expect("uri");
-        let declaration_path = PathBuf::from("/tmp/syntax-references.bd");
+        let declaration_path = std::env::temp_dir().join("syntax-references.bd");
+        let uri = path_to_uri(&declaration_path).expect("uri");
         let doc = Document {
             version: 1,
             text: "i32 helper() { return helper(); }".to_string(),

@@ -136,6 +136,10 @@ struct RangeForFacts {
 }
 
 impl NodeFacts for RangeForFacts {
+    fn assignment_kind(&self, key: AstNodeKey) -> Option<beskid_isle::AssignmentKind> {
+        (key == self.nodes[9]).then_some(beskid_isle::AssignmentKind::Local)
+    }
+
     fn node_kind(&self, key: AstNodeKey) -> Option<NodeKind> {
         let kind = if key == self.nodes[0] || key == self.nodes[7] {
             NodeKind::BlockExpression

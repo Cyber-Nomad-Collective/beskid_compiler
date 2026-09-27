@@ -121,10 +121,23 @@ pub(crate) fn should_skip_component(name: &OsStr) -> bool {
     matches!(
         name,
         n if n == ".git"
+            || n == "Project.lock"
             || n == "obj"
             || n == ".beskid"
             || n == "target"
             || n == ".venv-ci"
             || n == ".nox"
     )
+}
+
+#[cfg(test)]
+mod bundle_inventory_tests {
+    use std::ffi::OsStr;
+
+    use super::should_skip_component;
+
+    #[test]
+    fn generated_project_lockfiles_are_not_embedded_in_release_corelib() {
+        assert!(should_skip_component(OsStr::new("Project.lock")));
+    }
 }

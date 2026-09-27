@@ -28,13 +28,21 @@ pub(super) fn trusted_corelib_service_paths(
         };
         // The graph already resolves dependency identity. Preserve that policy, accepting
         // ordinary/verbatim Windows drive spelling without resolving a new user alias here.
-        let canonical_source_root = identity.canonical_path.ancestors().nth(3);
+        // Canonical service paths are not all equally deep: for example,
+        // `Testing/Assert.bd` has two components while `Core/Bytes/Slice.bd`
+        // has three. Derive the package source root from the trusted logical
+        // path instead of assuming every service is three levels below it.
+        let logical_relative = Path::new(&source.logical_path);
+        let canonical_source_root = identity.canonical_path.ancestors().nth(logical_relative.components().count());
         let Some(canonical_source_root) = canonical_source_root else {
             continue;
         };
         let Some(canonical_relative) = identity.canonical_path.strip_prefix(canonical_source_root).ok() else {
             continue;
         };
+        if canonical_relative != logical_relative {
+            continue;
+        }
         let Some((index, relative, bundled)) =
             plan.dependency_projects.iter().enumerate().find_map(|(index, dependency)| {
                 let source_root = normalize_lexically(&dependency.source_root);

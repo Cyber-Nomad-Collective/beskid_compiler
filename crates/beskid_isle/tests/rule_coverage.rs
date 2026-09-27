@@ -268,11 +268,9 @@ fn generated_isle_routes_local_declarations_and_assignments() {
         "LetStatement must dispatch through generated ISLE"
     );
 
-    for (target, constructor) in [
-        ("Local", "emit_local_assign"),
-        ("Field", "emit_field_assign"),
-        ("Index", "emit_index_assign"),
-    ] {
+    for (target, constructor) in
+        [("Local", "emit_local_assign"), ("Field", "emit_field_assign"), ("Index", "emit_index_assign")]
+    {
         assert!(
             memory.contains(&format!(
                 "(node_kind (NodeKind.AssignExpression))\n        (assignment_kind (AssignmentKind.{target}))))\n      ({constructor} key)"
@@ -289,7 +287,7 @@ fn generated_isle_routes_event_assignments_and_raises_through_dedicated_facts() 
     for (selector, constructor) in [
         ("AssignmentKind.EventSubscribe", "emit_event_subscribe"),
         ("AssignmentKind.EventUnsubscribeFirst", "emit_event_unsubscribe_first"),
-        ("CallKind.EventRaise", "emit_event_raise"),
+        ("CallKind.EventRaise", "emit_event_raise_statement"),
     ] {
         assert!(events.contains(selector), "missing {selector} operation selector");
         assert!(events.contains(&format!("({constructor} key)")), "missing {selector} event emitter route");

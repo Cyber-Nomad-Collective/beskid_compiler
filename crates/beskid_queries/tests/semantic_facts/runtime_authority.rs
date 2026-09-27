@@ -324,12 +324,13 @@ fn materialized_slice_bundle_path_authorizes_its_canonical_panic_call() {
     let path = root.path().join("deps/foundation/src/Core/Bytes/Slice.bd");
     std::fs::create_dir_all(path.parent().unwrap()).expect("create materialized Slice directory");
     std::fs::write(&path, &source.source).expect("write materialized Slice source");
+    let physical_path = path.canonicalize().expect("physical materialized Slice path");
     let program = parse_program(&source.source).expect("parse Slice source");
     let generation = SyntaxGenerationId(118);
     let unit = SourceUnit {
         logical_name: source.logical_path,
         origin_path: path.clone(),
-        path: path.clone(),
+        path: physical_path.clone(),
         source: source.source,
         program,
     };
@@ -362,7 +363,7 @@ fn materialized_slice_bundle_path_authorizes_its_canonical_panic_call() {
                 })
         })
         .expect("Slice.Copy calls __panic");
-    let call = AstNodeKey { unit: SourceUnitId::new(&db, path.clone()), generation, node: panic_call };
+    let call = AstNodeKey { unit: SourceUnitId::new(&db, physical_path.clone()), generation, node: panic_call };
     let target = TargetMetadata::supported()
         .into_iter()
         .find(|target| target.triple.as_str() == "x86_64-unknown-linux-gnu")
@@ -371,7 +372,7 @@ fn materialized_slice_bundle_path_authorizes_its_canonical_panic_call() {
     let project = ProjectSession::new(
         &db,
         root.path().to_path_buf(),
-        path,
+        physical_path,
         "corelib_foundation".into(),
         "installed-bundle-slice".into(),
     );

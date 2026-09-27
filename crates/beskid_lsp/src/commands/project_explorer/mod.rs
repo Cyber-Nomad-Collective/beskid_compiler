@@ -422,7 +422,7 @@ dependency "missing" {
     #[test]
     fn focused_project_from_configuration_paths() {
         let path = std::env::temp_dir().join("focus-test/demo.bproj");
-        let uri = format!("file://{}", path.display());
+        let uri = crate::workspace_scan::path_to_uri(&path).expect("uri").to_string();
         let settings = serde_json::json!({ "beskid": { "focusedProjectUri": uri } });
         let focused = focused_project_from_configuration(&settings).expect("some");
         assert!(focused.is_some());

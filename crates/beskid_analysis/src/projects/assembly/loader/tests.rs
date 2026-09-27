@@ -228,7 +228,7 @@ fn verified_installed_corelib_bundle_preserves_slice_service_provenance() {
     let unit = SourceUnit {
         logical_name: source.logical_path,
         origin_path: materialized_source.clone(),
-        path: materialized_source.clone(),
+        path: materialized_source.canonicalize().expect("physical materialized Slice path"),
         source: source.source.clone(),
         program: parse_program_with_source_name("installed Slice", &source.source).expect("parse Slice source"),
     };
@@ -297,6 +297,70 @@ fn verified_installed_corelib_bundle_preserves_slice_service_provenance() {
         "a stale bundle fingerprint cannot authorize compiler service calls"
     );
     assert!(installed_source.is_file());
+    let _ = fs::remove_dir_all(project_root);
+}
+
+#[test]
+fn verified_installed_corelib_bundle_preserves_assert_service_provenance() {
+    let source = beskid_abi::runtime_source::canonical_corelib_service_sources()
+        .into_iter()
+        .find(|source| source.logical_path == "Testing/Assert.bd")
+        .expect("embedded Foundation Assert source");
+    let identity = beskid_abi::runtime_source::corelib_service_source_identity(&source.logical_path)
+        .expect("compiler-owned Assert path");
+    let canonical_source_root = identity.canonical_path.parent().and_then(Path::parent).expect("Foundation src root");
+    assert!(canonical_source_root.ends_with("foundation/src"));
+
+    let project_root = temp_project_root("installed_assert_bundle");
+    let bundle_root = project_root.join("installed/beskid_corelib");
+    let foundation_root = bundle_root.join("packages/foundation");
+    let source_root = foundation_root.join("src");
+    let relative = Path::new("Testing/Assert.bd");
+    write_bd(&source_root, "Testing/Assert.bd", &source.source);
+    write_bd(&foundation_root, "foundation.bproj", "name = \"corelib_foundation\"\n");
+    let fingerprint = test_bundle_fingerprint(&bundle_root);
+    fs::write(bundle_root.join(".beskid-bundle.sha256"), format!("{fingerprint}\n"))
+        .expect("write complete bundle fingerprint");
+
+    let materialized_source_root = project_root.join("obj/beskid/deps/src/corelib_foundation/src");
+    let materialized_source = materialized_source_root.join(relative);
+    write_bd(&materialized_source_root, "Testing/Assert.bd", &source.source);
+    let unit = SourceUnit {
+        logical_name: source.logical_path,
+        origin_path: materialized_source.clone(),
+        path: materialized_source.canonicalize().expect("physical materialized Assert path"),
+        source: source.source.clone(),
+        program: parse_program_with_source_name("installed Assert", &source.source).expect("parse Assert source"),
+    };
+    let plan = CompilePlan {
+        project_root: project_root.clone(),
+        manifest_path: project_root.join("App.bproj"),
+        project_name: "App".into(),
+        source_root: project_root.join("src"),
+        target: Target { name: "App".into(), kind: TargetKind::App, entry: Some("Main.bd".into()) },
+        dependency_projects: vec![ResolvedDependencyProject {
+            dependency_name: "corelib_foundation".into(),
+            manifest_path: foundation_root.join("foundation.bproj"),
+            project_root: foundation_root,
+            project_name: "corelib_foundation".into(),
+            source_root,
+        }],
+        unresolved_dependencies: Vec::new(),
+        has_std_dependency: true,
+    };
+    let roots = EffectiveCompilationRoots {
+        host: RootEntry { dependency_name: None, source_root: project_root.join("obj/beskid/root/src") },
+        dependencies: vec![RootEntry {
+            dependency_name: Some("corelib_foundation".into()),
+            source_root: materialized_source_root,
+        }],
+    };
+
+    assert_eq!(
+        trusted_corelib_service_paths(&plan, &roots, std::slice::from_ref(&unit)),
+        Arc::from([materialized_source]),
+        "the verified installed bundle must preserve compiler-owned Assert authority after materialization"
+    );
     let _ = fs::remove_dir_all(project_root);
 }
 

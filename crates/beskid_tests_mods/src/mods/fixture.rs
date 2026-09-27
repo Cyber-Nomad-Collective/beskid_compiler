@@ -63,6 +63,7 @@ fn sample_mod_materialized_foundation_replays_no_lossy_utf8_append_route() {
         has_std_dependency: false,
     };
     let replayed = effective_roots_from_lockfile(&plan, &fixture.join("Project.lock"));
+    let expected_source_root = expected_source_root.canonicalize().expect("canonical materialized source root");
     assert_eq!(
         replayed
             .dependencies

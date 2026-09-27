@@ -263,7 +263,7 @@ mod tests {
         };
         let response = handle_completion(
             &BeskidDatabase::default(),
-            &Uri::from_str("file:///standalone/schema.bsol").expect("uri"),
+            &crate::workspace_scan::path_to_uri(&std::env::temp_dir().join("schema.bsol")).expect("uri"),
             &doc,
             source.len(),
         );

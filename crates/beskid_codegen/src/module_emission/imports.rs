@@ -1,7 +1,10 @@
 use std::collections::{HashMap, HashSet};
 
 use beskid_isle::{AstNodeKey, DirectCallee, StringInterner};
-use beskid_queries::{CallLowering, call_lowering, child_nodes, extern_contract_import_for_declaration};
+use beskid_queries::{
+    CallLowering, EventOperationKind, call_lowering, child_nodes, event_operation,
+    extern_contract_import_for_declaration,
+};
 use cranelift_codegen::ir::{ExtFuncData, ExternalName, FuncRef, GlobalValueData, InstBuilder, Signature, Type, Value};
 use cranelift_frontend::FunctionBuilder;
 
@@ -148,8 +151,10 @@ pub(super) fn corelib_service_symbols(
 ) -> Result<HashMap<DirectCallee, String>, String> {
     let mut manifest_builtins = HashSet::new();
     let mut corelib_services = HashSet::new();
+    let mut event_services = HashSet::new();
     for item in items {
         collect_manifest_service_callees(input.database(), item.key, &mut manifest_builtins, &mut corelib_services);
+        collect_event_service_callees(input.database(), item.key, &mut event_services);
     }
     let mut symbols = HashMap::new();
     for symbol in ALWAYS_AVAILABLE_STRING_SERVICES {
@@ -180,7 +185,10 @@ pub(super) fn corelib_service_symbols(
         ("event_unsubscribe_first", &[Pointer, Pointer][..]),
         ("event_len", &[Pointer][..]),
         ("event_get_handler", &[Pointer, beskid_abi::runtime_source::CorelibServiceAbiType::U32][..]),
-    ] {
+    ]
+    .into_iter()
+    .filter(|(symbol, _)| event_services.contains(symbol))
+    {
         let abi = beskid_abi::runtime_source::canonical_corelib_service_abi_for_adapter(symbol)
             .ok_or_else(|| format!("canonical event service `{symbol}` is unavailable in ABI-v5"))?;
         if abi.parameters != parameters || abi.result != if symbol == "event_get_handler" { Pointer } else { Usize } {
@@ -208,6 +216,31 @@ pub(super) fn corelib_service_symbols(
         }
     }
     Ok(symbols)
+}
+
+fn collect_event_service_callees(db: &dyn beskid_queries::Db, key: AstNodeKey, services: &mut HashSet<&'static str>) {
+    if let Ok(Some(fact)) = event_operation(db, key)
+        && fact.capacity > 0
+        && fact.delegate_signature.is_some()
+    {
+        match fact.operation {
+            EventOperationKind::Subscribe => {
+                services.insert("event_subscribe");
+            }
+            EventOperationKind::UnsubscribeFirst => {
+                services.insert("event_unsubscribe_first");
+            }
+            EventOperationKind::Raise => {
+                services.insert("event_len");
+                services.insert("event_get_handler");
+            }
+        }
+    }
+    if let Ok(Some(children)) = child_nodes(db, key) {
+        for child in children.iter().copied() {
+            collect_event_service_callees(db, child, services);
+        }
+    }
 }
 
 fn collect_manifest_service_callees(

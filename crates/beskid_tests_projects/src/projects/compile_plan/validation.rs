@@ -140,7 +140,6 @@ dependency "Std" {
 
 #[test]
 fn compile_plan_injects_std_dependency_when_not_declared() {
-    let _guard = super::super::std_dependency_env_lock();
     let root = temp_case_dir("implicit_std_dependency");
     let app_dir = root.join("App");
     let std_dir = root.join("StdBundled");
@@ -178,13 +177,15 @@ target "App" {
 "#,
     );
 
+    let previous_corelib_root = std::env::var_os("BESKID_CORELIB_ROOT");
+    let _std_root = super::super::scoped_std_dependency_root(&std_dir);
     with_cwd_at_workspace_root(&root, || {
-        unsafe { std::env::set_var("BESKID_CORELIB_ROOT", &std_dir) };
         let plan = build_compile_plan(&app_manifest_path, None).expect("plan should build");
         assert!(plan.has_std_dependency);
         assert!(plan.dependency_projects.iter().any(|dependency| dependency.dependency_name == "Std"));
-        unsafe { std::env::remove_var("BESKID_CORELIB_ROOT") };
     });
+    drop(_std_root);
+    assert_eq!(std::env::var_os("BESKID_CORELIB_ROOT"), previous_corelib_root);
     let _ = fs::remove_dir_all(root);
 }
 

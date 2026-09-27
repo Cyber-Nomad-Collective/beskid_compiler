@@ -333,7 +333,7 @@ mod tests {
 
     #[test]
     fn standalone_bsol_document_uses_the_bsol_parser_for_diagnostics() {
-        let uri = Uri::from_str("file:///standalone/schema.bsol").expect("uri");
+        let uri = crate::workspace_scan::path_to_uri(&std::env::temp_dir().join("schema.bsol")).expect("uri");
         let source = "schema \"config\" {\n  enabled = true\n}\n";
 
         let (diagnostics, fixes) = collect_syntax_diagnostics(None, &uri, source, None);

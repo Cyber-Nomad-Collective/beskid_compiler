@@ -17,7 +17,7 @@ fn uri() -> Uri {
 }
 
 fn standalone_bsol_uri() -> Uri {
-    Uri::from_str("file:///cache_test.bsol").expect("valid uri")
+    crate::workspace_scan::path_to_uri(&std::env::temp_dir().join("cache_test.bsol")).expect("valid uri")
 }
 
 #[tokio::test]
