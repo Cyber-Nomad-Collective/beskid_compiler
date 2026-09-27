@@ -22,8 +22,10 @@ done
 
 temp_dir="$(mktemp -d "${TMPDIR:-/tmp}/beskid-dns-deadline.XXXXXX")"
 shim="${temp_dir}/libbeskid_dns_deadline.so"
+test_log="${temp_dir}/dns-deadline-test.log"
 cleanup() {
   rm -f "${shim}"
+  rm -f "${test_log}"
   rmdir "${temp_dir}"
 }
 trap cleanup EXIT
@@ -34,4 +36,14 @@ cc -std=c11 -O2 -Wall -Wextra -Werror -fPIC -shared \
 cd "${repo_root}"
 BESKID_DNS_DEADLINE_SHIM=1 \
 LD_PRELOAD="${shim}${LD_PRELOAD:+:${LD_PRELOAD}}" \
-  "${cli}" test --plain --project "${project_root}" --target NetworkNativeTests --target-timeout 900
+  "${cli}" test --plain --project "${project_root}" --target NetworkNativeTests \
+  --include-tag dns-deadline --target-timeout 900 2>&1 | tee "${test_log}"
+
+if ! grep -Fq '__beskid_spawn_entry_syntax_CheckDnsDeadlineWhileHostJobIsBlocked' "${test_log}"; then
+  echo "DNS deadline shim scenario was not compiled; a passing ordinary DNS check is insufficient" >&2
+  exit 1
+fi
+if grep -Fq '__beskid_spawn_entry_syntax_CheckDnsDeadlineWithoutShim' "${test_log}"; then
+  echo "ordinary DNS check ran instead of the required blocked-resolver scenario" >&2
+  exit 1
+fi
