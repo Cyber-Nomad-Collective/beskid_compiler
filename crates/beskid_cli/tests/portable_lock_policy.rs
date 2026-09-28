@@ -108,7 +108,7 @@ fn assert_invalid_lock_rejected_without_mutation(case: &ProjectCase, command: &s
     let diagnostic = output_text(&output).to_ascii_lowercase();
     assert!(!output.status.success(), "{command} accepted an invalid lock: {diagnostic}");
     assert!(diagnostic.contains("lock"), "{command} failed without lockfile context: {diagnostic}");
-    assert_eq!(fs::read(&case.lock).expect("invalid lock retained"), original, "{command} rewrote the invalid lock");
+    assert!(fs::read(&case.lock).expect("invalid lock retained") == original, "{command} rewrote the invalid lock");
     case.assert_no_obj();
 }
 
@@ -184,24 +184,48 @@ fn lock_and_update_explicitly_migrate_v1_from_current_manifest() {
     }
 }
 
-#[test]
-fn unknown_lock_header_fails_for_build_lock_and_update_without_preparation_writes() {
-    for command in ["build", "lock", "update"] {
-        let case = ProjectCase::new();
-        let unknown = b"# Project.lock v999\nroot_manifest=App.bproj\nproject_name=App\ndependencies:\n";
-        fs::write(&case.lock, unknown).expect("write unknown-version lock");
-        assert_invalid_lock_rejected_without_mutation(&case, command, unknown);
-    }
+fn unknown_header_case(command: &str) {
+    let case = ProjectCase::new();
+    let unknown = b"# Project.lock v999\nroot_manifest=App.bproj\nproject_name=App\ndependencies:\n";
+    fs::write(&case.lock, unknown).expect("write unknown-version lock");
+    assert_invalid_lock_rejected_without_mutation(&case, command, unknown);
 }
 
 #[test]
-fn malformed_v2_lock_fails_for_build_lock_and_update_without_preparation_writes() {
-    for command in ["build", "lock", "update"] {
-        let case = ProjectCase::new();
-        let malformed = b"# Project.lock v2\nroot_manifest=App.bproj\nproject_name=App\ndependencies:\n- name=Core;source=path;project=../Core;manifest=Core.bproj;source_root=Src;materialized_root=obj/beskid/deps/src/Core-old;unexpected=1\n";
-        fs::write(&case.lock, malformed).expect("write malformed v2 lock");
-        assert_invalid_lock_rejected_without_mutation(&case, command, malformed);
-    }
+fn unknown_lock_header_fails_for_build_without_preparation_writes() {
+    unknown_header_case("build");
+}
+
+#[test]
+fn unknown_lock_header_fails_for_lock_without_preparation_writes() {
+    unknown_header_case("lock");
+}
+
+#[test]
+fn unknown_lock_header_fails_for_update_without_preparation_writes() {
+    unknown_header_case("update");
+}
+
+fn malformed_v2_case(command: &str) {
+    let case = ProjectCase::new();
+    let malformed = b"# Project.lock v2\nroot_manifest=App.bproj\nproject_name=App\ndependencies:\n- name=Core;source=path;project=../Core;manifest=Core.bproj;source_root=Src;materialized_root=obj/beskid/deps/src/Core-old;unexpected=1\n";
+    fs::write(&case.lock, malformed).expect("write malformed v2 lock");
+    assert_invalid_lock_rejected_without_mutation(&case, command, malformed);
+}
+
+#[test]
+fn malformed_v2_lock_fails_for_build_without_preparation_writes() {
+    malformed_v2_case("build");
+}
+
+#[test]
+fn malformed_v2_lock_fails_for_lock_without_preparation_writes() {
+    malformed_v2_case("lock");
+}
+
+#[test]
+fn malformed_v2_lock_fails_for_update_without_preparation_writes() {
+    malformed_v2_case("update");
 }
 
 #[test]
