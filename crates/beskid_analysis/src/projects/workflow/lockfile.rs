@@ -5,12 +5,44 @@ use std::path::Path;
 use crate::projects::error::ProjectError;
 use crate::projects::model::CompilePlan;
 
+mod portable_path;
+
+pub use portable_path::{PortableLockPath, PortableLockPathBaseKind};
+
 pub const PROJECT_LOCK_FILE_NAME: &str = "Project.lock";
 const PROJECT_LOCK_HEADER_V1: &str = "# Project.lock v1";
+const PROJECT_LOCK_HEADER_V2: &str = "# Project.lock v2";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProjectLockSource {
+    Path,
+    Corelib,
+    Registry,
+}
+
+impl ProjectLockSource {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Path => "path",
+            Self::Corelib => "corelib",
+            Self::Registry => "registry",
+        }
+    }
+
+    fn parse(value: &str) -> Result<Self, ProjectError> {
+        match value {
+            "path" => Ok(Self::Path),
+            "corelib" => Ok(Self::Corelib),
+            "registry" => Ok(Self::Registry),
+            _ => Err(ProjectError::Validation("unknown lockfile source".into())),
+        }
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProjectLockDependencyEntry {
     pub(super) name: String,
+    pub(super) source: ProjectLockSource,
     pub(super) manifest: String,
     pub(super) project: String,
     pub(super) source_root: String,
@@ -23,6 +55,10 @@ pub struct ProjectLockDependencyEntry {
 impl ProjectLockDependencyEntry {
     pub fn name(&self) -> &str {
         &self.name
+    }
+
+    pub fn source(&self) -> ProjectLockSource {
+        self.source
     }
 
     pub fn project(&self) -> &str {
@@ -125,6 +161,11 @@ impl ProjectLockDependencyEntry {
         Ok(Self {
             name: name
                 .ok_or_else(|| ProjectError::Validation("lockfile dependency entry missing `name`".to_string()))?,
+            source: if registry.is_some() || resolved_version.is_some() {
+                ProjectLockSource::Registry
+            } else {
+                ProjectLockSource::Path
+            },
             manifest: manifest
                 .ok_or_else(|| ProjectError::Validation("lockfile dependency entry missing `manifest`".to_string()))?,
             project: project
@@ -140,6 +181,243 @@ impl ProjectLockDependencyEntry {
             registry,
         })
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProjectLockfileV2 {
+    root_manifest: String,
+    project_name: String,
+    dependencies: Vec<ProjectLockDependencyEntry>,
+}
+
+impl ProjectLockfileV2 {
+    pub fn parse_v2(content: &str) -> Result<Self, ProjectError> {
+        let body = content
+            .strip_suffix('\n')
+            .ok_or_else(|| ProjectError::Validation("v2 lockfile must end with LF".into()))?;
+        let lines: Vec<&str> = body.split('\n').collect();
+        if lines.len() < 4 || lines[0] != PROJECT_LOCK_HEADER_V2 {
+            return Err(ProjectError::Validation("lockfile header must be exactly `# Project.lock v2`".into()));
+        }
+        let root_manifest = parse_v2_top_level(lines[1], "root_manifest")?;
+        let root_manifest =
+            PortableLockPath::parse("root_manifest", &root_manifest, PortableLockPathBaseKind::LockDirectory)?
+                .as_str()
+                .to_string();
+        let project_name = parse_v2_top_level(lines[2], "project_name")?;
+        if lines[3] != "dependencies:" {
+            return Err(ProjectError::Validation("v2 lockfile missing `dependencies:`".into()));
+        }
+
+        let mut dependencies = Vec::new();
+        let mut names = HashSet::new();
+        let mut destinations = HashSet::new();
+        for line in &lines[4..] {
+            let entry = parse_v2_entry(line)?;
+            if !names.insert(entry.name.clone()) {
+                return Err(ProjectError::Validation("lockfile duplicates a dependency name".into()));
+            }
+            if !destinations.insert(entry.materialized_root.clone()) {
+                return Err(ProjectError::Validation("lockfile duplicates a materialized destination".into()));
+            }
+            dependencies.push(entry);
+        }
+        dependencies.sort_by(|left, right| left.name.cmp(&right.name));
+        Ok(Self { root_manifest, project_name, dependencies })
+    }
+
+    pub fn to_v2_content(&self) -> String {
+        let mut content = format!(
+            "{PROJECT_LOCK_HEADER_V2}\nroot_manifest={}\nproject_name={}\ndependencies:\n",
+            encode_v2_value(&self.root_manifest),
+            encode_v2_value(&self.project_name)
+        );
+        let mut dependencies = self.dependencies.iter().collect::<Vec<_>>();
+        dependencies.sort_by(|left, right| left.name.cmp(&right.name));
+        for entry in dependencies {
+            content.push_str("- name=");
+            content.push_str(&encode_v2_value(&entry.name));
+            content.push_str(";source=");
+            content.push_str(entry.source.as_str());
+            for (key, value) in [
+                ("project", &entry.project),
+                ("manifest", &entry.manifest),
+                ("source_root", &entry.source_root),
+                ("materialized_root", &entry.materialized_root),
+            ] {
+                content.push(';');
+                content.push_str(key);
+                content.push('=');
+                content.push_str(&encode_v2_value(value));
+            }
+            if entry.source == ProjectLockSource::Registry {
+                for (key, value) in [
+                    ("registry", entry.registry.as_ref().expect("validated registry alias")),
+                    ("resolved_version", entry.resolved_version.as_ref().expect("validated registry version")),
+                    ("artifact_digest", entry.artifact_digest.as_ref().expect("validated registry digest")),
+                ] {
+                    content.push(';');
+                    content.push_str(key);
+                    content.push('=');
+                    content.push_str(&encode_v2_value(value));
+                }
+            }
+            content.push('\n');
+        }
+        content
+    }
+}
+
+fn parse_v2_top_level(line: &str, expected_key: &str) -> Result<String, ProjectError> {
+    let (key, value) = line
+        .split_once('=')
+        .ok_or_else(|| ProjectError::Validation(format!("v2 lockfile missing `{expected_key}`")))?;
+    if key != expected_key {
+        return Err(ProjectError::Validation(format!("v2 lockfile expected `{expected_key}`")));
+    }
+    decode_v2_value(value)
+}
+
+fn parse_v2_entry(line: &str) -> Result<ProjectLockDependencyEntry, ProjectError> {
+    let body = line
+        .strip_prefix("- ")
+        .ok_or_else(|| ProjectError::Validation("invalid v2 lockfile dependency line".into()))?;
+    let fields: Vec<&str> = body.split(';').collect();
+    if fields.len() < 2 {
+        return Err(ProjectError::Validation("v2 lockfile dependency lacks a source".into()));
+    }
+    let (source_key, source_value) = fields[1]
+        .split_once('=')
+        .ok_or_else(|| ProjectError::Validation("v2 lockfile dependency source is malformed".into()))?;
+    if source_key != "source" {
+        return Err(ProjectError::Validation("v2 lockfile dependency fields are out of order".into()));
+    }
+    let source = ProjectLockSource::parse(&decode_v2_value(source_value)?)?;
+    const COMMON: [&str; 6] = ["name", "source", "project", "manifest", "source_root", "materialized_root"];
+    const REGISTRY: [&str; 9] = [
+        "name",
+        "source",
+        "project",
+        "manifest",
+        "source_root",
+        "materialized_root",
+        "registry",
+        "resolved_version",
+        "artifact_digest",
+    ];
+    let expected: &[&str] = if source == ProjectLockSource::Registry { &REGISTRY } else { &COMMON };
+    if fields.len() != expected.len() {
+        return Err(ProjectError::Validation("v2 lockfile dependency has missing or extra fields".into()));
+    }
+    let mut values = Vec::with_capacity(fields.len());
+    for (field, expected_key) in fields.into_iter().zip(expected) {
+        let (key, value) = field
+            .split_once('=')
+            .ok_or_else(|| ProjectError::Validation(format!("v2 lockfile `{expected_key}` is malformed")))?;
+        if key != *expected_key {
+            return Err(ProjectError::Validation(format!("v2 lockfile dependency expected `{expected_key}`")));
+        }
+        values.push(decode_v2_value(value)?);
+    }
+    let path_base = match source {
+        ProjectLockSource::Path => PortableLockPathBaseKind::ExternalProject,
+        ProjectLockSource::Corelib => PortableLockPathBaseKind::CorelibWorkspace,
+        ProjectLockSource::Registry => PortableLockPathBaseKind::LockDirectory,
+    };
+    let project = PortableLockPath::parse("project", &values[2], path_base)?.as_str().to_string();
+    let manifest = PortableLockPath::parse("manifest", &values[3], PortableLockPathBaseKind::ProjectDirectory)?
+        .as_str()
+        .to_string();
+    let source_root = PortableLockPath::parse("source_root", &values[4], PortableLockPathBaseKind::ProjectDirectory)?
+        .as_str()
+        .to_string();
+    let materialized_root =
+        PortableLockPath::parse("materialized_root", &values[5], PortableLockPathBaseKind::MaterializedRoot)?
+            .as_str()
+            .to_string();
+    if values[0].is_empty() {
+        return Err(ProjectError::Validation("v2 lockfile dependency name is empty".into()));
+    }
+    let (registry, resolved_version, artifact_digest) = if source == ProjectLockSource::Registry {
+        if values[6].is_empty() || values[7].is_empty() || !valid_v2_digest(&values[8]) {
+            return Err(ProjectError::Validation("v2 registry lock entry has an invalid pin".into()));
+        }
+        (Some(values[6].clone()), Some(values[7].clone()), Some(values[8].clone()))
+    } else {
+        (None, None, None)
+    };
+    Ok(ProjectLockDependencyEntry {
+        name: values[0].clone(),
+        source,
+        project,
+        manifest,
+        source_root,
+        materialized_root,
+        registry,
+        resolved_version,
+        artifact_digest,
+    })
+}
+
+fn valid_v2_digest(value: &str) -> bool {
+    let Some(hex) = value.strip_prefix("sha256:") else { return false };
+    hex.len() == 64 && hex.bytes().all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+}
+
+fn decode_v2_value(value: &str) -> Result<String, ProjectError> {
+    if value.is_empty() {
+        return Err(ProjectError::Validation("v2 lockfile value is empty".into()));
+    }
+    let mut decoded = Vec::with_capacity(value.len());
+    let bytes = value.as_bytes();
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] == b'%' {
+            if index + 2 >= bytes.len() {
+                return Err(ProjectError::Validation("v2 lockfile has an incomplete percent escape".into()));
+            }
+            let high = uppercase_hex_digit(bytes[index + 1])?;
+            let low = uppercase_hex_digit(bytes[index + 2])?;
+            let byte = high * 16 + low;
+            if safe_v2_byte(byte) {
+                return Err(ProjectError::Validation("v2 lockfile unnecessarily escapes a literal-safe byte".into()));
+            }
+            decoded.push(byte);
+            index += 3;
+        } else if safe_v2_byte(bytes[index]) {
+            decoded.push(bytes[index]);
+            index += 1;
+        } else {
+            return Err(ProjectError::Validation("v2 lockfile contains a raw noncanonical byte".into()));
+        }
+    }
+    String::from_utf8(decoded).map_err(|_| ProjectError::Validation("v2 lockfile has malformed UTF-8".into()))
+}
+
+fn uppercase_hex_digit(byte: u8) -> Result<u8, ProjectError> {
+    match byte {
+        b'0'..=b'9' => Ok(byte - b'0'),
+        b'A'..=b'F' => Ok(byte - b'A' + 10),
+        _ => Err(ProjectError::Validation("v2 lockfile requires uppercase hex escapes".into())),
+    }
+}
+
+fn safe_v2_byte(byte: u8) -> bool {
+    byte.is_ascii_alphanumeric() || b"._/:-@+".contains(&byte)
+}
+
+fn encode_v2_value(value: &str) -> String {
+    let mut encoded = String::with_capacity(value.len());
+    for byte in value.bytes() {
+        if safe_v2_byte(byte) {
+            encoded.push(byte as char);
+        } else {
+            encoded.push('%');
+            encoded.push(char::from(b"0123456789ABCDEF"[(byte >> 4) as usize]));
+            encoded.push(char::from(b"0123456789ABCDEF"[(byte & 0x0F) as usize]));
+        }
+    }
+    encoded
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

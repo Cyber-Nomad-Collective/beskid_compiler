@@ -1,4 +1,8 @@
-use beskid_analysis::projects::{ProjectError, ProjectLockDependencyEntry, ProjectLockfileV2};
+use std::fs;
+
+use beskid_analysis::projects::{
+    PortableLockPath, PortableLockPathBaseKind, ProjectError, ProjectLockDependencyEntry, ProjectLockfileV2,
+};
 
 const V2_PATH_LOCK: &str = "# Project.lock v2\nroot_manifest=Project.proj\nproject_name=App\ndependencies:\n- name=Shared;source=path;project=../shared;manifest=Project.proj;source_root=Src;materialized_root=obj/beskid/deps/src/shared\n";
 
@@ -155,4 +159,82 @@ fn v2_rejects_absolute_drive_unc_and_unsafe_relative_paths() {
         assert_ne!(malformed, V2_PATH_LOCK, "fixture must replace {field}");
         parse_v2_rejects(&malformed);
     }
+}
+
+#[test]
+fn portable_external_project_path_resolves_existing_sibling() {
+    let temp = tempfile::tempdir().expect("temporary checkout");
+    let checkout = temp.path().join("checkout");
+    let sibling = temp.path().join("shared");
+    fs::create_dir(&checkout).expect("checkout directory");
+    fs::create_dir(&sibling).expect("declared sibling directory");
+
+    let path = PortableLockPath::parse("project", "../shared", PortableLockPathBaseKind::ExternalProject)
+        .expect("normalized external path");
+    assert_eq!(path.as_str(), "../shared");
+    assert_eq!(path.resolve(&checkout).expect("resolve declared sibling"), sibling.canonicalize().unwrap());
+
+    let missing = PortableLockPath::parse("project", "../missing", PortableLockPathBaseKind::ExternalProject)
+        .expect("well-formed external path");
+    assert!(missing.resolve(&checkout).is_err());
+}
+
+#[cfg(unix)]
+#[test]
+fn portable_materialized_path_rejects_symlink_escape() {
+    use std::os::unix::fs::symlink;
+
+    let temp = tempfile::tempdir().expect("temporary checkout");
+    let checkout = temp.path().join("checkout");
+    let outside = temp.path().join("outside");
+    let deps = checkout.join("obj/beskid/deps/src");
+    fs::create_dir_all(&deps).expect("materialization directory");
+    fs::create_dir(&outside).expect("outside directory");
+    symlink(&outside, deps.join("escape")).expect("link outside the compiler-owned directory");
+
+    let path = PortableLockPath::parse(
+        "materialized_root",
+        "obj/beskid/deps/src/escape",
+        PortableLockPathBaseKind::MaterializedRoot,
+    )
+    .expect("lexically valid materialized path");
+    assert!(path.resolve(&checkout).is_err());
+}
+
+#[cfg(unix)]
+#[test]
+fn portable_lock_directory_path_rejects_symlink_escape() {
+    use std::os::unix::fs::symlink;
+
+    let temp = tempfile::tempdir().expect("temporary checkout");
+    let checkout = temp.path().join("checkout");
+    let outside = temp.path().join("outside.bproj");
+    fs::create_dir(&checkout).expect("checkout directory");
+    fs::write(&outside, "").expect("outside manifest");
+    symlink(&outside, checkout.join("Project.bproj")).expect("link outside the lock directory");
+
+    let path = PortableLockPath::parse("root_manifest", "Project.bproj", PortableLockPathBaseKind::LockDirectory)
+        .expect("lexically valid manifest path");
+    assert!(path.resolve(&checkout).is_err());
+}
+
+#[cfg(unix)]
+#[test]
+fn portable_materialized_path_rejects_dangling_symlink() {
+    use std::os::unix::fs::symlink;
+
+    let temp = tempfile::tempdir().expect("temporary checkout");
+    let checkout = temp.path().join("checkout");
+    let deps = checkout.join("obj/beskid/deps/src");
+    fs::create_dir_all(&deps).expect("materialization directory");
+    symlink(temp.path().join("outside-not-yet-created"), deps.join("escape"))
+        .expect("dangling link outside the compiler-owned directory");
+
+    let path = PortableLockPath::parse(
+        "materialized_root",
+        "obj/beskid/deps/src/escape",
+        PortableLockPathBaseKind::MaterializedRoot,
+    )
+    .expect("lexically valid materialized path");
+    assert!(path.resolve(&checkout).is_err());
 }

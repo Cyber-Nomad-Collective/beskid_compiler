@@ -11,7 +11,7 @@ use beskid_pipeline::{
 };
 
 use super::filesystem::{copy_directory_when_newer, materialized_dependency_id};
-use super::lockfile::{ProjectLockDependencyEntry, WorkspacePrepareOptions, sync_project_lockfile};
+use super::lockfile::{ProjectLockDependencyEntry, ProjectLockSource, WorkspacePrepareOptions, sync_project_lockfile};
 use super::registry::materialize_registry_dependency;
 use crate::projects::error::ProjectError;
 use crate::projects::graph::builder::discover_workspace_resolution_rules;
@@ -65,6 +65,7 @@ pub fn prepare_project_workspace_with_options(
 
             lock_entries.push(ProjectLockDependencyEntry {
                 name: dependency.dependency_name.clone(),
+                source: ProjectLockSource::Path,
                 manifest: dependency.manifest_path.display().to_string(),
                 project: dependency.project_root.display().to_string(),
                 source_root: dependency.source_root.display().to_string(),

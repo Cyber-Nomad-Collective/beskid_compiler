@@ -7,7 +7,7 @@ use serde_json::Value;
 
 use super::archive::extract_zip_to_dir;
 use super::filesystem::sanitize_segment;
-use super::lockfile::ProjectLockDependencyEntry;
+use super::lockfile::{ProjectLockDependencyEntry, ProjectLockSource};
 use crate::projects::error::ProjectError;
 use crate::projects::graph::WorkspaceResolutionRules;
 use crate::projects::model::{MaterializedDependencyProject, UnresolvedDependencyNote};
@@ -84,6 +84,7 @@ pub(super) fn materialize_registry_dependency(
 
     let lock_entry = ProjectLockDependencyEntry {
         name: unresolved.dependency_name.clone(),
+        source: ProjectLockSource::Registry,
         manifest: manifest_path.display().to_string(),
         project: materialized_root.display().to_string(),
         source_root: materialized_source_root.display().to_string(),
