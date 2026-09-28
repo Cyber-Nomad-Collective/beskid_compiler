@@ -35,7 +35,7 @@ impl ProjectCase {
             let name = project.file_name().expect("project name").to_string_lossy();
             fs::write(
                 project.join(format!("{name}.bproj")),
-                format!("{name} {{\n  version = \"0.1.0\"\n}}\n\ntarget \"{name}Lib\" {{\n  kind = \"Lib\"\n  entry = \"{name}.bd\"\n}}\n"),
+                format!("{name} {{\n  name = \"{name}\"\n  version = \"0.1.0\"\n}}\n\ntarget \"{name}Lib\" {{\n  kind = \"Lib\"\n  entry = \"{name}.bd\"\n}}\n"),
             )
             .expect("dependency manifest");
             fs::write(project.join("Src").join(format!("{name}.bd")), "Fn Main() { }\n").expect("dependency source");
@@ -50,7 +50,7 @@ impl ProjectCase {
         fs::write(
             self.app.join("App.bproj"),
             format!(
-                "App {{\n  version = \"0.1.0\"\n}}\n\ntarget \"App\" {{\n  kind = \"App\"\n  entry = \"Main.bd\"\n}}\n\ndependency \"{dependency}\" {{\n  source = \"path\"\n  path = \"../{dependency}\"\n}}\n"
+                "App {{\n  name = \"App\"\n  version = \"0.1.0\"\n}}\n\ntarget \"App\" {{\n  kind = \"App\"\n  entry = \"Main.bd\"\n}}\n\ndependency \"{dependency}\" {{\n  source = \"path\"\n  path = \"../{dependency}\"\n}}\n"
             ),
         )
         .expect("app manifest");
@@ -72,7 +72,13 @@ impl ProjectCase {
         if let Some(flag) = policy {
             process.arg(flag);
         }
-        process.current_dir(&self.root).output().expect("run beskid command")
+        // The CLI may provision bundled Corelib before it resolves a project. Keep that
+        // materialization inside this disposable fixture, including across repeated calls.
+        process
+            .env("BESKID_CORELIB_ROOT", self.root.join("installed-corelib"))
+            .current_dir(&self.root)
+            .output()
+            .expect("run beskid command")
     }
 
     fn assert_no_obj(&self) {
@@ -101,6 +107,32 @@ fn assert_v2_lock(lock: &Path) -> String {
     let text = fs::read_to_string(lock).expect("v2 lock exists");
     assert!(text.starts_with("# Project.lock v2\n"), "wrong lock header: {text}");
     text
+}
+
+fn tree_snapshot(root: &Path) -> Vec<(PathBuf, Option<Vec<u8>>)> {
+    fn visit(root: &Path, current: &Path, entries: &mut Vec<(PathBuf, Option<Vec<u8>>)>) {
+        if !current.exists() {
+            return;
+        }
+        let relative = current.strip_prefix(root).expect("snapshot path under root").to_path_buf();
+        if current.is_dir() {
+            entries.push((relative, None));
+            let mut children = fs::read_dir(current)
+                .expect("read snapshot directory")
+                .map(|entry| entry.expect("snapshot entry").path())
+                .collect::<Vec<_>>();
+            children.sort();
+            for child in children {
+                visit(root, &child, entries);
+            }
+        } else {
+            entries.push((relative, Some(fs::read(current).expect("read snapshot file"))));
+        }
+    }
+
+    let mut entries = Vec::new();
+    visit(root, root, &mut entries);
+    entries
 }
 
 #[test]
@@ -170,10 +202,20 @@ fn stale_v2_lock_is_rejected_without_rewrite() {
     assert!(lock_output.status.success(), "lock failed: {}", output_text(&lock_output));
     let original = fs::read(&case.lock).expect("read v2 lock");
     case.write_app_manifest("Other");
+    let obj = case.app.join("obj");
+    let original_obj = tree_snapshot(&obj);
 
     for policy in [None, Some("--locked"), Some("--frozen")] {
         let output = case.invoke("build", policy);
-        assert_failed_with(&output, "lock");
+        let diagnostic = output_text(&output).to_ascii_lowercase();
+        assert!(!output.status.success(), "stale graph unexpectedly accepted: {diagnostic}");
+        assert!(diagnostic.contains("lock"), "missing lock context: {diagnostic}");
+        assert!(
+            diagnostic.contains("stale") || diagnostic.contains("out of date"),
+            "missing stale-lock diagnosis: {diagnostic}"
+        );
+        assert!(diagnostic.contains("graph"), "missing graph-mismatch diagnosis: {diagnostic}");
         assert_eq!(fs::read(&case.lock).expect("v2 lock retained"), original);
+        assert_eq!(tree_snapshot(&obj), original_obj, "stale lock mutated obj/");
     }
 }
