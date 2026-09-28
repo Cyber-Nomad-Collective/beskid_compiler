@@ -4,6 +4,7 @@
 #include <pthread.h>
 #include <time.h>
 #include <string.h>
+#include <unistd.h>
 
 typedef int (*getaddrinfo_fn)(const char *, const char *, const struct addrinfo *, struct addrinfo **);
 
@@ -40,6 +41,8 @@ int getaddrinfo(const char *node, const char *service, const struct addrinfo *hi
     if (strcmp(node, "beskid-deadline-block.invalid") == 0) {
         pthread_mutex_lock(&gate_mutex);
         resolver_entered = 1;
+        static const char entered[] = "BESKID_DNS_DEADLINE_SHIM:blocked-entered\n";
+        (void)write(STDERR_FILENO, entered, sizeof entered - 1);
         pthread_cond_broadcast(&gate_cond);
         int released = wait_until(&resolver_released);
         pthread_mutex_unlock(&gate_mutex);
@@ -55,6 +58,10 @@ int getaddrinfo(const char *node, const char *service, const struct addrinfo *hi
         pthread_mutex_lock(&gate_mutex);
         int entered = wait_until(&resolver_entered);
         pthread_mutex_unlock(&gate_mutex);
+        if (entered == 0) {
+            static const char observed[] = "BESKID_DNS_DEADLINE_SHIM:observer-saw-blocked\n";
+            (void)write(STDERR_FILENO, observed, sizeof observed - 1);
+        }
         return entered == 0 ? resolve_loopback(service, hints, result) : EAI_AGAIN;
     }
 
@@ -67,6 +74,10 @@ int getaddrinfo(const char *node, const char *service, const struct addrinfo *hi
             entered = wait_until(&resolver_completed);
         }
         pthread_mutex_unlock(&gate_mutex);
+        if (entered == 0) {
+            static const char released[] = "BESKID_DNS_DEADLINE_SHIM:release-saw-completion\n";
+            (void)write(STDERR_FILENO, released, sizeof released - 1);
+        }
         return entered == 0 ? resolve_loopback(service, hints, result) : EAI_AGAIN;
     }
 

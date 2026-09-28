@@ -68,6 +68,8 @@ does not replace the normal cross-platform DNS tests. No UDP send-timeout fixtur
 included: UDP sends have no deterministic blocking condition with the current API, and
 there is no send-buffer/backpressure control to force one. Expired UDP receive behavior
 remains covered by the ordinary cross-platform network tests.
+The script requires resolver-emitted markers for the blocked, observer, and release calls;
+JIT progress output samples function names and cannot prove which branch executed.
 
 For a large `beskid_cli test --all-targets` log, pipe it through `scripts/diagnose/matrix-log.py`
 or pass a local log path. It reports the final `matrix:` count and separate `release eligible:`

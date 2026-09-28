@@ -39,11 +39,9 @@ LD_PRELOAD="${shim}${LD_PRELOAD:+:${LD_PRELOAD}}" \
   "${cli}" test --plain --project "${project_root}" --target NetworkNativeTests \
   --include-tag dns-deadline --target-timeout 900 2>&1 | tee "${test_log}"
 
-if ! grep -Fq '__beskid_spawn_entry_syntax_CheckDnsDeadlineWhileHostJobIsBlocked' "${test_log}"; then
-  echo "DNS deadline shim scenario was not compiled; a passing ordinary DNS check is insufficient" >&2
-  exit 1
-fi
-if grep -Fq '__beskid_spawn_entry_syntax_CheckDnsDeadlineWithoutShim' "${test_log}"; then
-  echo "ordinary DNS check ran instead of the required blocked-resolver scenario" >&2
-  exit 1
-fi
+for event in blocked-entered observer-saw-blocked release-saw-completion; do
+  if ! grep -Fq "BESKID_DNS_DEADLINE_SHIM:${event}" "${test_log}"; then
+    echo "DNS deadline shim did not observe ${event}; a passing ordinary DNS check is insufficient" >&2
+    exit 1
+  fi
+done

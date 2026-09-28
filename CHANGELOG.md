@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Verify the Linux DNS deadline race from resolver events instead of sampled
+  JIT progress names, so the diagnostic gate reflects the scenario that ran.
 - Pass ordinary Windows drive paths to MSVC when compiling the executable
   bootstrap, because `cl.exe` cannot open Rust's canonical `\\?\` spelling.
 - Omit generated, checkout-specific `Project.lock` files from the embedded
