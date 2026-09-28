@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Run the Corelib MVP import check with its fixture environment and classify
+  proven primitive conversions before the syntax call-lowering gate, so the
+  complete Corelib spine tests legitimate HTTP byte conversions.
 - Verify the Linux DNS deadline race from resolver events instead of sampled
   JIT progress names, so the diagnostic gate reflects the scenario that ran.
 - Pass ordinary Windows drive paths to MSVC when compiling the executable

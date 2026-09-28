@@ -8,10 +8,11 @@ use std::time::Instant;
 
 use beskid_analysis::projects::ProgramAssembly;
 use beskid_analysis::services::{ResolvedInput, resolve_input};
+use beskid_analysis::syntax::CallExpression;
 use beskid_analysis::syntax_query::{NodeKind, SyntaxIndex};
 use beskid_queries::{
-    AstNodeKey, SourceUnitId, build_typed_program, call_lowering, configure_db_for_project, program_assembly,
-    project_session_for_syntax_assembly, with_db,
+    AstNodeKey, SourceUnitId, build_typed_program, call_lowering, configure_db_for_project,
+    primitive_numeric_conversion, program_assembly, project_session_for_syntax_assembly, with_db,
 };
 
 use super::std_env_lock::std_dependency_env_lock;
@@ -156,6 +157,10 @@ pub fn typecheck_corelib_tests_entry(entry_relative: &str) {
         let unit = SourceUnitId::new(db, entry.path.clone());
         for node in index.ids_of_kind(NodeKind::CallExpression) {
             let key = AstNodeKey { unit, generation, node };
+            // Codegen consumes a proven primitive conversion before ordinary call lowering.
+            if matches!(primitive_numeric_conversion(db, key), Ok(Some(_))) {
+                continue;
+            }
             call_lowering(db, key)
                 .and_then(|fact| {
                     fact.ok_or_else(|| {
@@ -163,7 +168,15 @@ pub fn typecheck_corelib_tests_entry(entry_relative: &str) {
                     })
                 })
                 .unwrap_or_else(|error| {
-                    panic!("corelib syntax call gate for {entry_relative} failed at node {:?}: {error}", node)
+                    let callee = index
+                        .node_at(&entry.program, node)
+                        .and_then(|syntax| syntax.of::<CallExpression>())
+                        .map(|call| format!("{:?} at {:?}", call.callee.node, call.callee.span))
+                        .unwrap_or_else(|| "<call syntax unavailable>".to_string());
+                    panic!(
+                        "corelib syntax call gate for {entry_relative} failed at node {:?}, callee {callee}: {error}",
+                        node
+                    )
                 });
         }
     });
