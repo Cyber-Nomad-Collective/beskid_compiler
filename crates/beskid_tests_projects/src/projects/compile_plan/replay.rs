@@ -58,18 +58,17 @@ impl ReplayFixture {
     }
 
     fn assert_valid_replay(&self) {
-        assert_eq!(
-            self.replayed_source(),
-            self.materialized_source,
-            "a genuine v2 lock must replay the current graph's materialized source"
-        );
+        let actual = self.replayed_source().canonicalize().expect("resolve replayed materialized source");
+        let expected = self.materialized_source.canonicalize().expect("resolve expected materialized source");
+        assert_eq!(actual, expected, "a genuine v2 lock must replay the current graph's materialized source");
     }
 
     fn assert_fallback(&self) {
         let original = self.plan.dependency_projects.iter().find(|entry| entry.dependency_name == "Shared").unwrap();
+        let actual = self.replayed_source().canonicalize().expect("resolve fallback source");
+        let expected = original.source_root.canonicalize().expect("resolve declared source");
         assert_eq!(
-            self.replayed_source(),
-            original.source_root,
+            actual, expected,
             "an invalid lock must fall back to the graph's declared source, never a lock token"
         );
     }
