@@ -279,6 +279,43 @@ fn changed_pinned_zip_bytes_fail_before_extraction() {
     assert!(!tree_contains(&extracted, b"tampered release"));
 }
 
+#[cfg(unix)]
+#[test]
+fn preexisting_nested_symlink_cannot_redirect_registry_extraction() {
+    use std::os::unix::fs::symlink;
+
+    let fixture = RegistryFixture::new();
+    fixture.publish(OLD_VERSION, "trusted release");
+    let first = fixture.prepare(false).expect("initial package materialization");
+    let materialized_source = marker_path(&first).to_path_buf();
+    let materialized_root = materialized_source.parent().expect("materialized package root");
+    let original_source = materialized_root.join("Src-before-symlink");
+    fs::rename(&materialized_source, &original_source).expect("preserve materialized source");
+
+    let outside = fixture.root.path().join("Outside");
+    fs::create_dir(&outside).expect("create outside sentinel directory");
+    let outside_marker = outside.join("Marker.bd");
+    fs::write(&outside_marker, b"outside sentinel").expect("write outside sentinel");
+    symlink(&outside, &materialized_source).expect("redirect nested archive entry outside materialization");
+
+    let original_lock = fixture.lock();
+    let original_manifest = b"materialized manifest sentinel";
+    fs::write(materialized_root.join("PkgCore.bproj"), original_manifest).expect("guard first archive entry");
+    let original_marker = fs::read(original_source.join("Marker.bd")).expect("read preserved source");
+    let result = fixture.prepare(false);
+
+    assert_eq!(fs::read(&outside_marker).expect("read outside sentinel"), b"outside sentinel");
+    assert_eq!(fixture.lock(), original_lock, "rejected extraction must not rewrite the lock");
+    assert_eq!(fs::read(materialized_root.join("PkgCore.bproj")).unwrap(), original_manifest);
+    assert_eq!(fs::read(original_source.join("Marker.bd")).unwrap(), original_marker);
+    assert!(
+        fs::symlink_metadata(&materialized_source).expect("read nested link").file_type().is_symlink(),
+        "rejected extraction must not replace the pre-existing symlink"
+    );
+    let error = result.expect_err("nested symlink must be rejected before any archive entry is extracted");
+    assert!(error.to_string().contains("symlink"), "unexpected error: {error}");
+}
+
 #[test]
 fn missing_pinned_version_fails_without_selecting_newer_release() {
     let fixture = RegistryFixture::new();
