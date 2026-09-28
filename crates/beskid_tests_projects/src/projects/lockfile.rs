@@ -53,6 +53,23 @@ fn v2_accepts_corelib_source_with_relative_installed_workspace_identity() {
 }
 
 #[test]
+fn v2_uses_dot_only_when_source_root_is_the_project_directory() {
+    let aggregate = V2_PATH_LOCK.replace(";source_root=Src", ";source_root=.");
+    assert_eq!(ProjectLockfileV2::parse_v2(&aggregate).expect("project-root source").to_v2_content(), aggregate);
+    parse_v2_rejects(&V2_PATH_LOCK.replace(";manifest=Project.proj", ";manifest=."));
+    parse_v2_rejects(&V2_PATH_LOCK.replace(";project=../shared", ";project=."));
+    parse_v2_rejects(&V2_PATH_LOCK.replace("root_manifest=Project.proj", "root_manifest=."));
+}
+
+#[test]
+fn v2_accepts_declared_external_project_at_parent_only_path() {
+    let parent = V2_PATH_LOCK.replace(";project=../shared", ";project=../..");
+    assert_eq!(ProjectLockfileV2::parse_v2(&parent).expect("parent-only external project").to_v2_content(), parent);
+    parse_v2_rejects(&parent.replace("source=path", "source=corelib"));
+    parse_v2_rejects(&parent.replace(";project=../..", ";project=../../inside/.."));
+}
+
+#[test]
 fn v2_requires_exact_header_and_required_top_level_fields() {
     for content in [
         V2_PATH_LOCK.replacen("# Project.lock v2", " # Project.lock v2", 1),

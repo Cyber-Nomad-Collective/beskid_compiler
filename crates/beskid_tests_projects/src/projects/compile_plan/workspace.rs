@@ -1,6 +1,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use beskid_abi::corelib_bundle::{CORELIB_BUNDLE_FINGERPRINT_FILE, fingerprint_corelib_bundle_dir};
 use beskid_analysis::projects::{
     PROJECT_LOCK_FILE_NAME, ProjectError, WorkspacePrepareOptions, build_compile_plan, is_project_manifest_path,
     prepare_project_workspace, prepare_project_workspace_with_options,
@@ -103,7 +104,15 @@ fn relocated_path_with_missing_declared_sibling_fails_closed() {
         build_compile_plan(&moved_tree.join("App").join(manifest_name), None)
             .expect_err("missing declared path must fail")
     });
-    assert!(matches!(error, ProjectError::DependencyManifestNotFound { .. }), "unexpected error: {error}");
+    assert!(
+        matches!(
+            &error,
+            ProjectError::ReadManifest { path, source }
+                if path.file_name().is_some_and(|name| name == "Sibling")
+                    && source.kind() == std::io::ErrorKind::NotFound
+        ) || matches!(&error, ProjectError::DependencyManifestNotFound { dependency, .. } if dependency == "Sibling"),
+        "unexpected error: {error}"
+    );
 
     let _ = fs::remove_dir_all(original_parent);
     let _ = fs::remove_dir_all(moved_parent);
@@ -118,6 +127,9 @@ fn distinct_installed_corelib_roots_keep_lock_bytes_and_materialized_names() {
     let second_corelib = fixture.join("second-install");
     for install in [&first_corelib, &second_corelib] {
         write_portable_test_project(&install.join("beskid_corelib"), "Std", None);
+        let fingerprint = fingerprint_corelib_bundle_dir(install).expect("fingerprint installed Corelib fixture");
+        fs::write(install.join(CORELIB_BUNDLE_FINGERPRINT_FILE), format!("{fingerprint}\n"))
+            .expect("mark verified Corelib fixture");
     }
 
     let (first_lock, first_names) = {
@@ -319,7 +331,7 @@ dependency "Core" {
         assert!(workspace.materialized_dependencies.iter().any(|dependency| dependency.dependency_name == "Core"));
         assert!(workspace.materialized_dependencies[0].materialized_source_root.is_dir());
         let lock_content = fs::read_to_string(&lockfile_path).expect("read lockfile");
-        assert!(lock_content.contains("# Project.lock v1"));
+        assert!(lock_content.starts_with("# Project.lock v2\n"));
         assert!(lock_content.contains("project_name=App"));
         assert!(lock_content.contains("name=Core"));
 

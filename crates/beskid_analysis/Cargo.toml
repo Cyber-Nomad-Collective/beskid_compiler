@@ -19,6 +19,7 @@ tracing = { workspace = true }
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+sha2 = "0.10"
 postcard = { workspace = true }
 beskid_abi = { path = "../beskid_abi" }
 beskid_artifacts = { path = "../beskid_artifacts" }
@@ -29,6 +30,3 @@ libloading = "0.8"
 
 [build-dependencies]
 beskid_manifest = { path = "../beskid_manifest" }
-
-[dev-dependencies]
-sha2 = "0.10"

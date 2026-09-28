@@ -9,6 +9,7 @@ default = []
 slow = []
 
 [dependencies]
+beskid_abi = { path = "../beskid_abi" }
 beskid_analysis = { path = "../beskid_analysis" }
 beskid_codegen = { path = "../beskid_codegen" }
 beskid_engine = { path = "../beskid_engine" }

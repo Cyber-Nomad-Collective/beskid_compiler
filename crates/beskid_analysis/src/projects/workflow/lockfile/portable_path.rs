@@ -22,6 +22,9 @@ pub struct PortableLockPath {
 
 impl PortableLockPath {
     pub fn parse(field: &str, value: &str, base_kind: PortableLockPathBaseKind) -> Result<Self, ProjectError> {
+        if value == "." && field == "source_root" && base_kind == PortableLockPathBaseKind::ProjectDirectory {
+            return Ok(Self { value: value.to_string(), base_kind });
+        }
         if value.is_empty() || value.starts_with('/') || value.contains('\\') {
             return Err(invalid_path(field));
         }
@@ -45,7 +48,7 @@ impl PortableLockPath {
                 saw_normal_segment = true;
             }
         }
-        if !saw_normal_segment {
+        if !saw_normal_segment && base_kind != PortableLockPathBaseKind::ExternalProject {
             return Err(invalid_path(field));
         }
 

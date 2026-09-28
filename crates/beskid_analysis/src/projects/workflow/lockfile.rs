@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 use std::fs;
-use std::path::Path;
+use std::path::{Component, Path};
 
 use crate::projects::error::ProjectError;
 use crate::projects::model::CompilePlan;
@@ -21,7 +21,7 @@ pub enum ProjectLockSource {
 }
 
 impl ProjectLockSource {
-    fn as_str(self) -> &'static str {
+    pub(super) fn as_str(self) -> &'static str {
         match self {
             Self::Path => "path",
             Self::Corelib => "corelib",
@@ -191,6 +191,36 @@ pub struct ProjectLockfileV2 {
 }
 
 impl ProjectLockfileV2 {
+    fn from_plan(plan: &CompilePlan, entries: &[ProjectLockDependencyEntry]) -> Result<Self, ProjectError> {
+        let root_manifest = plan.manifest_path.strip_prefix(&plan.project_root).map_err(|_| {
+            ProjectError::Validation("root manifest escapes the lock directory".into())
+        })?;
+        let root_manifest = root_manifest
+            .components()
+            .map(|part| match part {
+                Component::Normal(name) => name
+                    .to_str()
+                    .map(str::to_string)
+                    .ok_or_else(|| ProjectError::Validation("root manifest path is not UTF-8".into())),
+                _ => Err(ProjectError::Validation("root manifest path has an invalid component".into())),
+            })
+            .collect::<Result<Vec<_>, _>>()?
+            .join("/");
+        PortableLockPath::parse("root_manifest", &root_manifest, PortableLockPathBaseKind::LockDirectory)?;
+        if entries.iter().any(|entry| {
+            entry.source == ProjectLockSource::Registry
+                && (entry.registry.is_none() || entry.resolved_version.is_none() || entry.artifact_digest.is_none())
+        }) {
+            return Err(ProjectError::Validation("registry dependency lacks a complete v2 pin".into()));
+        }
+        let candidate = Self {
+            root_manifest,
+            project_name: plan.project_name.clone(),
+            dependencies: entries.to_vec(),
+        };
+        Self::parse_v2(&candidate.to_v2_content())
+    }
+
     pub fn parse_v2(content: &str) -> Result<Self, ProjectError> {
         let body = content
             .strip_suffix('\n')
@@ -428,16 +458,6 @@ struct ProjectLockfileV1 {
 }
 
 impl ProjectLockfileV1 {
-    fn from_plan(plan: &CompilePlan, entries: &[ProjectLockDependencyEntry]) -> Self {
-        let mut dependencies = entries.to_vec();
-        dependencies.sort_by_key(ProjectLockDependencyEntry::to_v1_line);
-        Self {
-            root_manifest: plan.manifest_path.display().to_string(),
-            project_name: plan.project_name.clone(),
-            dependencies,
-        }
-    }
-
     fn parse_v1(content: &str) -> Result<Self, ProjectError> {
         let mut lines = content.lines();
         let header = lines.next().unwrap_or_default();
@@ -503,25 +523,6 @@ impl ProjectLockfileV1 {
         parsed.dependencies.sort_by_key(ProjectLockDependencyEntry::to_v1_line);
         Ok(parsed)
     }
-
-    fn to_v1_content(&self) -> String {
-        let mut content = String::new();
-        content.push_str(PROJECT_LOCK_HEADER_V1);
-        content.push('\n');
-        content.push_str(&format!("root_manifest={}\n", self.root_manifest));
-        content.push_str(&format!("project_name={}\n", self.project_name));
-        content.push_str("dependencies:\n");
-
-        let mut dependencies = self.dependencies.clone();
-        dependencies.sort_by_key(ProjectLockDependencyEntry::to_v1_line);
-        for entry in dependencies {
-            content.push_str("- ");
-            content.push_str(&entry.to_v1_line());
-            content.push('\n');
-        }
-
-        content
-    }
 }
 
 /// Load dependency lines from `project_root/Project.lock` when the file exists.
@@ -581,8 +582,8 @@ pub(super) fn sync_project_lockfile(
     options: WorkspacePrepareOptions,
 ) -> Result<std::path::PathBuf, ProjectError> {
     let lock_path = plan.project_root.join(PROJECT_LOCK_FILE_NAME);
-    let expected_lockfile = ProjectLockfileV1::from_plan(plan, lock_entries);
-    let expected_content = expected_lockfile.to_v1_content();
+    let expected_lockfile = ProjectLockfileV2::from_plan(plan, lock_entries)?;
+    let expected_content = expected_lockfile.to_v2_content();
 
     if options.locked && !lock_path.is_file() {
         return Err(ProjectError::LockfileRequired { path: lock_path });
@@ -594,7 +595,7 @@ pub(super) fn sync_project_lockfile(
         let existing_matches = if existing == expected_content {
             true
         } else {
-            ProjectLockfileV1::parse_v1(&existing).map(|parsed| parsed == expected_lockfile).unwrap_or(false)
+            ProjectLockfileV2::parse_v2(&existing).map(|parsed| parsed == expected_lockfile).unwrap_or(false)
         };
 
         if existing_matches {

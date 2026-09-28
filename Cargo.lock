@@ -959,6 +959,7 @@ dependencies = [
 name = "beskid_tests_projects"
 version = "0.1.0"
 dependencies = [
+ "beskid_abi",
  "beskid_analysis",
  "beskid_codegen",
  "beskid_engine",
