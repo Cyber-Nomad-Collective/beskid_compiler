@@ -7,7 +7,7 @@ use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::sync::{
     Arc, Mutex,
-    atomic::{AtomicBool, Ordering},
+    atomic::{AtomicBool, AtomicU8, Ordering},
 };
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
@@ -22,12 +22,14 @@ use super::with_cwd_at_workspace_root;
 
 const OLD_VERSION: &str = "1.0.0";
 const NEW_VERSION: &str = "2.0.0";
+const OVER_LIMIT_BYTES: usize = 64 * 1024 * 1024 + 1;
 
 struct RegistryFixture {
     root: TempDir,
     app_manifest: PathBuf,
     packages: Arc<Mutex<BTreeMap<String, Vec<u8>>>>,
     requests: Arc<Mutex<Vec<String>>>,
+    oversized_download: Arc<AtomicU8>,
     stop: Arc<AtomicBool>,
     server: Option<JoinHandle<()>>,
 }
@@ -44,14 +46,16 @@ impl RegistryFixture {
         let url = format!("http://{}", listener.local_addr().expect("registry address"));
         let packages = Arc::new(Mutex::new(BTreeMap::new()));
         let requests = Arc::new(Mutex::new(Vec::new()));
+        let oversized_download = Arc::new(AtomicU8::new(0));
         let stop = Arc::new(AtomicBool::new(false));
         let packages_for_server = Arc::clone(&packages);
         let requests_for_server = Arc::clone(&requests);
+        let oversized_for_server = Arc::clone(&oversized_download);
         let stop_for_server = Arc::clone(&stop);
         let server = thread::spawn(move || {
             while !stop_for_server.load(Ordering::Relaxed) {
                 match listener.accept() {
-                    Ok((stream, _)) => serve_request(stream, &packages_for_server, &requests_for_server),
+                    Ok((stream, _)) => serve_request(stream, &packages_for_server, &requests_for_server, &oversized_for_server),
                     Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
                         thread::sleep(Duration::from_millis(5));
                     }
@@ -77,7 +81,7 @@ impl RegistryFixture {
         )
         .expect("write app manifest");
 
-        Self { root, app_manifest, packages, requests, stop, server: Some(server) }
+        Self { root, app_manifest, packages, requests, oversized_download, stop, server: Some(server) }
     }
 
     fn publish(&self, version: &str, marker: &str) {
@@ -125,7 +129,12 @@ impl Drop for RegistryFixture {
     }
 }
 
-fn serve_request(mut stream: TcpStream, packages: &Mutex<BTreeMap<String, Vec<u8>>>, requests: &Mutex<Vec<String>>) {
+fn serve_request(
+    mut stream: TcpStream,
+    packages: &Mutex<BTreeMap<String, Vec<u8>>>,
+    requests: &Mutex<Vec<String>>,
+    oversized_download: &AtomicU8,
+) {
     stream.set_read_timeout(Some(Duration::from_secs(2))).expect("set request timeout");
     stream.set_write_timeout(Some(Duration::from_secs(2))).expect("set response timeout");
     let mut request = [0_u8; 4096];
@@ -134,6 +143,25 @@ fn serve_request(mut stream: TcpStream, packages: &Mutex<BTreeMap<String, Vec<u8
     let path = first_line.split_whitespace().nth(1).unwrap_or("");
     requests.lock().expect("request paths").push(path.to_owned());
     let package_path = "/api/packages/PkgCore/versions";
+    if path.ends_with("/download") {
+        match oversized_download.load(Ordering::Relaxed) {
+            1 => {
+                write!(stream, "HTTP/1.1 200 OK\r\nContent-Length: {OVER_LIMIT_BYTES}\r\nConnection: close\r\n\r\n")
+                    .expect("write oversized response headers");
+                return;
+            }
+            2 => {
+                stream.write_all(b"HTTP/1.1 200 OK\r\nConnection: close\r\n\r\n")
+                    .expect("write streamed response headers");
+                let chunk = [0_u8; 16 * 1024];
+                for _ in 0..=((64 * 1024 * 1024) / chunk.len()) {
+                    if stream.write_all(&chunk).is_err() { break; }
+                }
+                return;
+            }
+            _ => {}
+        }
+    }
     let (status, content_type, body) = if path == package_path {
         let versions: Vec<_> = packages.lock().expect("package map").keys().rev().cloned().collect();
         let json = serde_json::to_vec(
@@ -264,6 +292,38 @@ fn unavailable_unpinned_registry_remains_warning_only() {
     let prepared = fixture.prepare(false).expect("unavailable unpinned registry remains unresolved");
     assert!(prepared.materialized_dependencies.iter().all(|dependency| dependency.dependency_name != "PkgCore"));
     assert!(!fixture.lock().contains("name=PkgCore"));
+}
+
+fn assert_no_registry_mutation(fixture: &RegistryFixture) {
+    let project = fixture.app_manifest.parent().expect("project root");
+    assert!(!project.join("obj").exists(), "oversized artifact must not create obj");
+    assert!(!fixture.lock_path().exists(), "oversized artifact must not write a lock");
+    assert!(
+        fs::read_dir(project).expect("read project root").flatten().all(|entry| {
+            !entry.file_name().to_string_lossy().starts_with(".beskid-registry-artifact-")
+        }),
+        "registry scratch file must be removed"
+    );
+}
+
+#[test]
+fn declared_oversized_registry_artifact_rejects_before_any_materialization() {
+    let fixture = RegistryFixture::new();
+    fixture.publish(OLD_VERSION, "small valid release");
+    fixture.oversized_download.store(1, Ordering::Relaxed);
+    let error = fixture.prepare(false).expect_err("oversized registry artifact must fail closed");
+    assert!(error.to_string().contains("64 MiB"), "unexpected error: {error}");
+    assert_no_registry_mutation(&fixture);
+}
+
+#[test]
+fn streamed_oversized_registry_artifact_rejects_and_cleans_scratch() {
+    let fixture = RegistryFixture::new();
+    fixture.publish(OLD_VERSION, "small valid release");
+    fixture.oversized_download.store(2, Ordering::Relaxed);
+    let error = fixture.prepare(false).expect_err("streamed oversized artifact must fail closed");
+    assert!(error.to_string().contains("64 MiB"), "unexpected error: {error}");
+    assert_no_registry_mutation(&fixture);
 }
 
 #[test]

@@ -1,10 +1,11 @@
 use std::env;
 use std::fs;
-use std::io::Read;
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
 use serde_json::Value;
 use sha2::{Digest, Sha256};
+use tempfile::{Builder, NamedTempFile};
 
 use super::archive::extract_zip_to_dir;
 use super::filesystem::materialized_dependency_id;
@@ -19,10 +20,26 @@ pub(super) struct ResolvedRegistryDependency {
     pub(super) dependency_name: String,
     pub(super) materialized_relative: String,
     materialized_root: PathBuf,
-    artifact: Vec<u8>,
+    artifact: NamedTempFile,
     selected_version: String,
     artifact_digest: String,
     registry_identity: String,
+}
+
+const MAX_REGISTRY_ARTIFACT_BYTES: u64 = 64 * 1024 * 1024;
+const REGISTRY_SCRATCH_PREFIX: &str = ".beskid-registry-artifact-";
+
+enum RegistryArtifactDownloadError {
+    Unavailable(ProjectError),
+    Hard(ProjectError),
+}
+
+impl RegistryArtifactDownloadError {
+    fn into_project_error(self) -> ProjectError {
+        match self {
+            Self::Unavailable(error) | Self::Hard(error) => error,
+        }
+    }
 }
 
 pub(super) fn resolve_registry_dependency(
@@ -69,12 +86,11 @@ pub(super) fn resolve_registry_dependency(
     };
 
     let download_url = registry_url(&base_url, &["api", "packages", &unresolved.dependency_name, "versions", &selected_version, "download"])?;
-    let artifact = match http_get_bytes(&download_url) {
+    let (artifact, artifact_digest) = match http_get_artifact(&download_url, project_root) {
         Ok(artifact) => artifact,
-        Err(_) if pinned.is_none() && !refresh => return Ok(None),
-        Err(error) => return Err(error),
+        Err(RegistryArtifactDownloadError::Unavailable(_)) if pinned.is_none() && !refresh => return Ok(None),
+        Err(error) => return Err(error.into_project_error()),
     };
-    let artifact_digest = format!("sha256:{:x}", Sha256::digest(&artifact));
     if let Some(pin) = pinned
         && !refresh
         && pin.artifact_digest.as_deref() != Some(artifact_digest.as_str())
@@ -122,9 +138,11 @@ pub(super) fn materialize_registry_dependency(
         dependency_name, materialized_relative, materialized_root, artifact,
         selected_version, artifact_digest, registry_identity,
     } = resolved;
+    let artifact_reader = artifact.reopen()
+        .map_err(|_| ProjectError::Validation("failed to reopen registry scratch artifact".into()))?;
     fs::create_dir_all(&materialized_root)
         .map_err(|source| ProjectError::MaterializationCreateDir { path: materialized_root.clone(), source })?;
-    extract_zip_to_dir(&artifact, &materialized_root)?;
+    extract_zip_to_dir(artifact_reader, &materialized_root)?;
 
     let manifest_path =
         crate::projects::discovery::discover_project_manifest_in_dir(&materialized_root)?.ok_or_else(|| {
@@ -261,22 +279,61 @@ fn http_get_text(url: &str) -> Result<String, ProjectError> {
         .map_err(|_| ProjectError::Validation("failed to read registry response".into()))
 }
 
-fn http_get_bytes(url: &str) -> Result<Vec<u8>, ProjectError> {
+fn artifact_limit_error() -> RegistryArtifactDownloadError {
+    RegistryArtifactDownloadError::Hard(ProjectError::Validation(
+        "registry artifact exceeds the 64 MiB compressed size limit".into(),
+    ))
+}
+
+fn http_get_artifact(url: &str, scratch_root: &Path) -> Result<(NamedTempFile, String), RegistryArtifactDownloadError> {
     let client = reqwest::blocking::Client::builder()
         .timeout(std::time::Duration::from_secs(20))
         .build()
-        .map_err(|err| ProjectError::Validation(format!("failed to build registry client: {err}")))?;
+        .map_err(|_| RegistryArtifactDownloadError::Unavailable(ProjectError::Validation("failed to build registry client".into())))?;
     let mut response = client
         .get(url)
         .send()
-        .map_err(|_| ProjectError::Validation("registry request failed".into()))?;
+        .map_err(|_| RegistryArtifactDownloadError::Unavailable(ProjectError::Validation("registry request failed".into())))?;
     let status = response.status();
     if !status.is_success() {
-        return Err(ProjectError::Validation(format!("registry request failed with status {status}")));
+        return Err(RegistryArtifactDownloadError::Unavailable(ProjectError::Validation(format!(
+            "registry request failed with status {status}"
+        ))));
     }
-    let mut buffer = Vec::new();
-    response
-        .read_to_end(&mut buffer)
-        .map_err(|_| ProjectError::Validation("failed to read registry response bytes".into()))?;
-    Ok(buffer)
+    if response.content_length().is_some_and(|length| length > MAX_REGISTRY_ARTIFACT_BYTES) {
+        return Err(artifact_limit_error());
+    }
+    let mut artifact = Builder::new()
+        .prefix(REGISTRY_SCRATCH_PREFIX)
+        .tempfile_in(scratch_root)
+        .map_err(|_| RegistryArtifactDownloadError::Hard(ProjectError::Validation(
+            "failed to create registry scratch artifact".into(),
+        )))?;
+    let mut digest = Sha256::new();
+    let mut total = 0_u64;
+    let mut buffer = [0_u8; 16 * 1024];
+    loop {
+        let count = response.read(&mut buffer).map_err(|_| {
+            RegistryArtifactDownloadError::Unavailable(ProjectError::Validation(
+                "failed to read registry response bytes".into(),
+            ))
+        })?;
+        if count == 0 { break; }
+        total += count as u64;
+        if total > MAX_REGISTRY_ARTIFACT_BYTES {
+            return Err(artifact_limit_error());
+        }
+        artifact.as_file_mut().write_all(&buffer[..count]).map_err(|_| {
+            RegistryArtifactDownloadError::Hard(ProjectError::Validation(
+                "failed to write registry scratch artifact".into(),
+            ))
+        })?;
+        digest.update(&buffer[..count]);
+    }
+    artifact.as_file_mut().flush().map_err(|_| {
+        RegistryArtifactDownloadError::Hard(ProjectError::Validation(
+            "failed to flush registry scratch artifact".into(),
+        ))
+    })?;
+    Ok((artifact, format!("sha256:{:x}", digest.finalize())))
 }

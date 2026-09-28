@@ -1,14 +1,13 @@
 use std::fs;
-use std::io::Cursor;
+use std::fs::File;
 use std::path::Path;
 
 use zip::ZipArchive;
 
 use crate::projects::error::ProjectError;
 
-pub(super) fn extract_zip_to_dir(bytes: &[u8], output_dir: &Path) -> Result<(), ProjectError> {
-    let reader = Cursor::new(bytes);
-    let mut archive = ZipArchive::new(reader)
+pub(super) fn extract_zip_to_dir(file: File, output_dir: &Path) -> Result<(), ProjectError> {
+    let mut archive = ZipArchive::new(file)
         .map_err(|err| ProjectError::Validation(format!("invalid registry artifact ZIP: {err}")))?;
     for index in 0..archive.len() {
         let mut entry = archive
