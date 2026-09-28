@@ -46,7 +46,7 @@ impl WorkspaceResolutionRules {
         self.overrides_by_dependency.get(&dependency_name.to_ascii_lowercase()).map(String::as_str)
     }
 
-    fn has_registry_alias(&self, alias: &str) -> bool {
+    pub(crate) fn has_registry_alias(&self, alias: &str) -> bool {
         self.registry_aliases.contains(&alias.to_ascii_lowercase())
     }
 

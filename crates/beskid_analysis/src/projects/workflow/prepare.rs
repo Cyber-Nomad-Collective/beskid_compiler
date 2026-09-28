@@ -17,9 +17,9 @@ use beskid_pipeline::{
 use super::filesystem::{copy_directory_when_newer, materialized_dependency_id};
 use super::lockfile::{
     PortableLockPath, PortableLockPathBaseKind, ProjectLockDependencyEntry, ProjectLockSource,
-    WorkspacePrepareOptions, sync_project_lockfile,
+    WorkspacePrepareOptions, existing_registry_pins_for_plan, sync_project_lockfile,
 };
-use super::registry::materialize_registry_dependency;
+use super::registry::{materialize_registry_dependency, resolve_registry_dependency};
 use crate::projects::error::ProjectError;
 use crate::projects::graph::builder::discover_workspace_resolution_rules;
 use crate::projects::model::{
@@ -118,6 +118,8 @@ pub fn prepare_project_workspace_with_options(
     let deps_root = plan.project_root.join("obj").join("beskid").join("deps").join("src");
     let root_materialized_project = plan.project_root.join("obj").join("beskid").join("root");
     let verified_corelib_root = verified_installed_corelib_root();
+    // Refresh reconstructs registry identity from the current manifest graph.
+    let existing_registry_pins = if options.refresh_lock { None } else { existing_registry_pins_for_plan(plan)? };
     let mut lock_entries = Vec::with_capacity(plan.dependency_projects.len());
     let mut destinations = HashSet::new();
     for dependency in &plan.dependency_projects {
@@ -128,10 +130,33 @@ pub fn prepare_project_workspace_with_options(
         lock_entries.push(entry);
     }
 
+    let workspace_rules = discover_workspace_resolution_rules(&plan.manifest_path)?;
+    let registry_deps: Vec<_> =
+        plan.unresolved_dependencies.iter().filter(|x| x.source == DependencySource::Registry).collect();
+    let mut resolved_registry = Vec::with_capacity(registry_deps.len());
+    for unresolved in &registry_deps {
+        let pinned = existing_registry_pins.as_ref().and_then(|entries| {
+            entries.iter().find(|entry| entry.name == unresolved.dependency_name)
+        });
+        if existing_registry_pins.is_some() && pinned.is_none() && !options.refresh_lock {
+            return Err(ProjectError::Validation(format!(
+                "registry dependency `{}` is missing from the existing v2 lock; run `beskid update`",
+                unresolved.dependency_name
+            )));
+        }
+        let Some(resolved) = resolve_registry_dependency(
+            unresolved, workspace_rules.as_ref(), pinned, options.refresh_lock, &plan.project_root,
+        )? else {
+            continue;
+        };
+        if !destinations.insert(resolved.materialized_relative.clone()) {
+            return Err(ProjectError::Validation("lockfile duplicates a materialized destination".into()));
+        }
+        resolved_registry.push(resolved);
+    }
+
     fs::create_dir_all(&deps_root)
         .map_err(|source| ProjectError::MaterializationCreateDir { path: deps_root.clone(), source })?;
-
-    let workspace_rules = discover_workspace_resolution_rules(&plan.manifest_path)?;
 
     let source_segment = plan
         .source_root
@@ -176,24 +201,20 @@ pub fn prepare_project_workspace_with_options(
         Ok::<(), ProjectError>(())
     })?;
 
-    let registry_deps: Vec<_> =
-        plan.unresolved_dependencies.iter().filter(|x| x.source == DependencySource::Registry).collect();
-    let registry_deps_total = registry_deps.len() as u64;
+    let registry_deps_total = resolved_registry.len() as u64;
     observe_phase_result(pipeline, WORKSPACE_MATERIALIZE_REGISTRY, || {
-        for (index, unresolved) in registry_deps.iter().enumerate() {
-            if let Some((lock_entry, materialized_dependency)) =
-                materialize_registry_dependency(unresolved, &deps_root, workspace_rules.as_ref())?
-            {
-                lock_entries.push(lock_entry);
-                materialized_dependencies.push(materialized_dependency);
-                report_progress(
-                    pipeline,
-                    WORKSPACE_MATERIALIZE_REGISTRY,
-                    index as u64 + 1,
-                    registry_deps_total.max(1),
-                    unresolved.dependency_name.clone(),
-                );
-            }
+        for (index, resolved) in resolved_registry.into_iter().enumerate() {
+            let dependency_name = resolved.dependency_name.clone();
+            let (lock_entry, materialized_dependency) = materialize_registry_dependency(resolved)?;
+            lock_entries.push(lock_entry);
+            materialized_dependencies.push(materialized_dependency);
+            report_progress(
+                pipeline,
+                WORKSPACE_MATERIALIZE_REGISTRY,
+                index as u64 + 1,
+                registry_deps_total.max(1),
+                dependency_name,
+            );
         }
         Ok::<(), ProjectError>(())
     })?;

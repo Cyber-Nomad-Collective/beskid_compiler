@@ -101,7 +101,7 @@ pub fn resolve_project_with_policy(
 
             let workspace = observe_phase_result(pipeline, WORKSPACE_MATERIALIZE, || {
                 let manifest_src = fs::read_to_string(&plan.manifest_path).unwrap_or_default();
-                prepare_project_workspace_with_options(&plan, WorkspacePrepareOptions { frozen, locked }, pipeline)
+                prepare_project_workspace_with_options(&plan, WorkspacePrepareOptions { frozen, locked, refresh_lock: false }, pipeline)
                     .map_err(|err| {
                         anyhow::Error::new(MietteReportError::new(project_error_diagnostic(
                             &plan.manifest_path.display().to_string(),

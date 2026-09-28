@@ -27,6 +27,7 @@ struct RegistryFixture {
     root: TempDir,
     app_manifest: PathBuf,
     packages: Arc<Mutex<BTreeMap<String, Vec<u8>>>>,
+    requests: Arc<Mutex<Vec<String>>>,
     stop: Arc<AtomicBool>,
     server: Option<JoinHandle<()>>,
 }
@@ -42,13 +43,15 @@ impl RegistryFixture {
         listener.set_nonblocking(true).expect("set local listener nonblocking");
         let url = format!("http://{}", listener.local_addr().expect("registry address"));
         let packages = Arc::new(Mutex::new(BTreeMap::new()));
+        let requests = Arc::new(Mutex::new(Vec::new()));
         let stop = Arc::new(AtomicBool::new(false));
         let packages_for_server = Arc::clone(&packages);
+        let requests_for_server = Arc::clone(&requests);
         let stop_for_server = Arc::clone(&stop);
         let server = thread::spawn(move || {
             while !stop_for_server.load(Ordering::Relaxed) {
                 match listener.accept() {
-                    Ok((stream, _)) => serve_request(stream, &packages_for_server),
+                    Ok((stream, _)) => serve_request(stream, &packages_for_server, &requests_for_server),
                     Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
                         thread::sleep(Duration::from_millis(5));
                     }
@@ -70,11 +73,11 @@ impl RegistryFixture {
         let app_manifest = app.join("App.bproj");
         fs::write(
             &app_manifest,
-            "project {\n  name = \"App\"\n  version = \"0.1.0\"\n}\n\ntarget \"App\" {\n  kind = \"App\"\n  entry = \"Main.bd\"\n}\n\ndependency \"PkgCore\" {\n  source = \"registry\"\n  version = \"*\"\n  registry = \"default\"\n}\n",
+            "App {\n  name = \"App\"\n  version = \"0.1.0\"\n}\n\ntarget \"App\" {\n  kind = \"App\"\n  entry = \"Main.bd\"\n}\n\ndependency \"PkgCore\" {\n  source = \"registry\"\n  version = \"*\"\n  registry = \"default\"\n}\n",
         )
         .expect("write app manifest");
 
-        Self { root, app_manifest, packages, stop, server: Some(server) }
+        Self { root, app_manifest, packages, requests, stop, server: Some(server) }
     }
 
     fn publish(&self, version: &str, marker: &str) {
@@ -83,6 +86,14 @@ impl RegistryFixture {
 
     fn withdraw(&self, version: &str) {
         self.packages.lock().expect("package map").remove(version);
+    }
+
+    fn rename_registry_alias(&self, old: &str, new: &str) {
+        for path in [self.root.path().join("Root.bws"), self.app_manifest.clone()] {
+            let content = fs::read_to_string(&path).expect("read fixture manifest");
+            fs::write(&path, content.replace(&format!("\"{old}\""), &format!("\"{new}\"")))
+                .expect("rewrite fixture registry alias");
+        }
     }
 
     fn lock_path(&self) -> PathBuf {
@@ -114,13 +125,14 @@ impl Drop for RegistryFixture {
     }
 }
 
-fn serve_request(mut stream: TcpStream, packages: &Mutex<BTreeMap<String, Vec<u8>>>) {
+fn serve_request(mut stream: TcpStream, packages: &Mutex<BTreeMap<String, Vec<u8>>>, requests: &Mutex<Vec<String>>) {
     stream.set_read_timeout(Some(Duration::from_secs(2))).expect("set request timeout");
     stream.set_write_timeout(Some(Duration::from_secs(2))).expect("set response timeout");
     let mut request = [0_u8; 4096];
     let read = stream.read(&mut request).expect("read registry request");
     let first_line = String::from_utf8_lossy(&request[..read]);
     let path = first_line.split_whitespace().nth(1).unwrap_or("");
+    requests.lock().expect("request paths").push(path.to_owned());
     let package_path = "/api/packages/PkgCore/versions";
     let (status, content_type, body) = if path == package_path {
         let versions: Vec<_> = packages.lock().expect("package map").keys().rev().cloned().collect();
@@ -153,7 +165,7 @@ fn serve_request(mut stream: TcpStream, packages: &Mutex<BTreeMap<String, Vec<u8
 
 // Two stored ZIP entries keep the HTTP artifact real without adding a test dependency.
 fn package_zip(marker: &str) -> Vec<u8> {
-    let manifest = b"project {\n  name = \"PkgCore\"\n  version = \"0.1.0\"\n}\n\ntarget \"PkgCore\" {\n  kind = \"Lib\"\n  entry = \"Marker.bd\"\n}\n";
+    let manifest = b"PkgCore {\n  name = \"PkgCore\"\n  version = \"0.1.0\"\n}\n\ntarget \"PkgCore\" {\n  kind = \"Lib\"\n  entry = \"Marker.bd\"\n}\n";
     let files: [(&[u8], &[u8]); 2] = [(b"PkgCore.bproj", manifest), (b"Src/Marker.bd", marker.as_bytes())];
     let mut zip = Vec::new();
     let mut central = Vec::new();
@@ -218,7 +230,12 @@ fn crc32(bytes: &[u8]) -> u32 {
 }
 
 fn marker_path(workspace: &beskid_analysis::projects::PreparedProjectWorkspace) -> &Path {
-    &workspace.materialized_dependencies[0].materialized_source_root
+    &workspace
+        .materialized_dependencies
+        .iter()
+        .find(|dependency| dependency.dependency_name == "PkgCore")
+        .expect("registry package materialized")
+        .materialized_source_root
 }
 
 #[test]
@@ -236,8 +253,17 @@ fn pinned_older_version_survives_newer_registry_release() {
     assert!(original_lock.contains("resolved_version=1.0.0"));
     assert!(
         original_lock
-            .contains("artifact_digest=sha256:72e03aade1f8c490d74f061c8d4451d5525a08b98a3162dfd4ebe0f3976de653")
+            .contains("artifact_digest=sha256:95922158451951391cb09f7d264c61d705e6aa71ddb7feb42fba8115d8e5e191"),
+        "lock: {original_lock}"
     );
+}
+
+#[test]
+fn unavailable_unpinned_registry_remains_warning_only() {
+    let fixture = RegistryFixture::new();
+    let prepared = fixture.prepare(false).expect("unavailable unpinned registry remains unresolved");
+    assert!(prepared.materialized_dependencies.iter().all(|dependency| dependency.dependency_name != "PkgCore"));
+    assert!(!fixture.lock().contains("name=PkgCore"));
 }
 
 #[test]
@@ -280,7 +306,80 @@ fn explicit_update_selects_new_version_and_writes_its_digest() {
     let lock = fixture.lock();
     assert!(lock.starts_with("# Project.lock v2\n"));
     assert!(lock.contains("resolved_version=2.0.0"));
-    assert!(lock.contains("artifact_digest=sha256:44444510a5e1f81deec8851de20e8846c340bbaa40d0cbb6812e58888a1e1b15"));
+    assert!(lock.contains("artifact_digest=sha256:456bc2d28e9bae140f2462f0e3c6e3fb4721e9b326f893b02c8c846f82033baf"), "lock: {lock}");
+}
+
+#[test]
+fn refresh_rebuilds_pin_after_declared_registry_alias_changes() {
+    let fixture = RegistryFixture::new();
+    fixture.publish(OLD_VERSION, "old release");
+    fixture.prepare(false).expect("initial package lock");
+    let original_lock = fixture.lock();
+    fixture.rename_registry_alias("default", "other");
+
+    let error = fixture.prepare(false).expect_err("ordinary replay must reject a stale alias");
+    assert!(error.to_string().contains("pin"), "unexpected error: {error}");
+    assert_eq!(fixture.lock(), original_lock);
+
+    fixture.prepare(true).expect("refresh must use the current registry declaration");
+    let updated_lock = fixture.lock();
+    assert!(updated_lock.contains("registry=other"));
+    assert_ne!(updated_lock, original_lock);
+}
+
+#[test]
+fn refresh_rebuilds_pins_without_trusting_stale_lock_project_identity() {
+    let fixture = RegistryFixture::new();
+    fixture.publish(OLD_VERSION, "old release");
+    fixture.prepare(false).expect("initial package lock");
+    let stale = fixture.lock().replace("project_name=App", "project_name=Other");
+    fs::write(fixture.lock_path(), stale).expect("write stale lock identity");
+
+    let error = fixture.prepare(false).expect_err("normal replay must reject stale lock identity");
+    assert!(error.to_string().contains("different project"), "unexpected error: {error}");
+    fixture.prepare(true).expect("refresh must rebuild current lock identity");
+    assert!(fixture.lock().contains("project_name=App"));
+}
+
+#[test]
+fn duplicate_registry_destination_fails_before_any_materialization() {
+    let fixture = RegistryFixture::new();
+    fixture.publish(OLD_VERSION, "old release");
+    let error = with_cwd_at_workspace_root(fixture.root.path(), || {
+        let mut plan = build_compile_plan_with_policy(
+            &fixture.app_manifest,
+            None,
+            UnresolvedDependencyPolicy::Warn,
+        )?;
+        let duplicate = plan
+            .unresolved_dependencies
+            .iter()
+            .find(|dependency| dependency.dependency_name == "PkgCore")
+            .expect("registry dependency in plan")
+            .clone();
+        plan.unresolved_dependencies.push(duplicate);
+        prepare_project_workspace_with_options(&plan, WorkspacePrepareOptions::default(), None)
+    })
+    .expect_err("duplicate registry destination must fail");
+
+    assert!(error.to_string().contains("materialized destination"), "unexpected error: {error}");
+    assert!(!fixture.app_manifest.parent().unwrap().join("obj").exists());
+}
+
+#[test]
+fn pinned_version_is_one_encoded_url_path_segment() {
+    let fixture = RegistryFixture::new();
+    fixture.publish(OLD_VERSION, "old release");
+    fixture.prepare(false).expect("initial package lock");
+    let lock = fixture.lock().replace("resolved_version=1.0.0", "resolved_version=1.0.0/other");
+    fs::write(fixture.lock_path(), lock).expect("write malformed version pin");
+
+    fixture.prepare(false).expect_err("malformed pinned version must not fetch a different route");
+    let requests = fixture.requests.lock().expect("request paths");
+    assert!(
+        requests.iter().any(|path| path == "/api/packages/PkgCore/versions/1.0.0%2Fother/download"),
+        "request paths: {requests:?}"
+    );
 }
 
 fn tree_contains(root: &Path, needle: &[u8]) -> bool {

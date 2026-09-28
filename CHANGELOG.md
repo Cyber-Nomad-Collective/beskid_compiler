@@ -44,6 +44,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Pin registry dependencies in portable `Project.lock` entries by version and
+  artifact SHA-256, verify bytes before extraction, and refresh from the current
+  registry declaration only when explicitly requested.
+
 - Lower frozen composition registrations into managed service objects and
   compiler-selected slots, wire singular/plural injected fields with rooted
   pointer arrays, and read injected fields through source-keyed physical slots.

@@ -574,6 +574,31 @@ pub(crate) fn load_project_lock_dependencies_for_plan(
 pub struct WorkspacePrepareOptions {
     pub frozen: bool,
     pub locked: bool,
+    pub refresh_lock: bool,
+}
+
+pub(super) fn existing_registry_pins_for_plan(
+    plan: &CompilePlan,
+) -> Result<Option<Vec<ProjectLockDependencyEntry>>, ProjectError> {
+    let lock_path = plan.project_root.join(PROJECT_LOCK_FILE_NAME);
+    if !lock_path.is_file() {
+        return Ok(None);
+    }
+    let content = fs::read_to_string(&lock_path)
+        .map_err(|source| ProjectError::LockfileRead { path: lock_path, source })?;
+    if content.starts_with(PROJECT_LOCK_HEADER_V1) {
+        // Explicit v1 migration and normal-consumer rejection belong to the
+        // command policy. A v1 lock cannot supply registry pins.
+        return Ok(None);
+    }
+    let existing = ProjectLockfileV2::parse_v2(&content)?;
+    let current = ProjectLockfileV2::from_plan(plan, &[])?;
+    if existing.root_manifest != current.root_manifest || existing.project_name != current.project_name {
+        return Err(ProjectError::Validation("registry lock belongs to a different project".into()));
+    }
+    Ok(Some(
+        existing.dependencies.into_iter().filter(|entry| entry.source == ProjectLockSource::Registry).collect(),
+    ))
 }
 
 pub(super) fn sync_project_lockfile(

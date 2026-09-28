@@ -25,7 +25,7 @@ fn sample_mod_rebuild_writes_descriptor_registrations_and_host_dispatches() {
 
     let plan = build_compile_plan(&manifest_path, None).expect("compile plan");
     let prepared =
-        prepare_project_workspace_with_options(&plan, WorkspacePrepareOptions { frozen: false, locked: false }, None)
+        prepare_project_workspace_with_options(&plan, WorkspacePrepareOptions { frozen: false, locked: false, refresh_lock: false }, None)
             .expect("prepare mod workspace");
 
     let source_path = workspace.mod_dir.join("Src").join("Mod.bd");

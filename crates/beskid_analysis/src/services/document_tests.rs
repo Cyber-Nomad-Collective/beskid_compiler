@@ -46,7 +46,7 @@ mod tests {
         let plan = resolved.compile_plan.expect("compile plan");
         let prepared = resolved.prepared_workspace.clone().or_else(|| {
             let lockfile = plan.manifest_path.with_file_name("Project.lock");
-            let options = WorkspacePrepareOptions { frozen: false, locked: lockfile.is_file() };
+            let options = WorkspacePrepareOptions { frozen: false, locked: lockfile.is_file(), refresh_lock: false };
             prepare_project_workspace_with_options(&plan, options, None).ok()
         });
         assemble_program(
