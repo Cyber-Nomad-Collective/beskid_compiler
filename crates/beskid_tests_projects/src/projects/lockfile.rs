@@ -238,3 +238,57 @@ fn portable_materialized_path_rejects_dangling_symlink() {
     .expect("lexically valid materialized path");
     assert!(path.resolve(&checkout).is_err());
 }
+
+#[cfg(unix)]
+#[test]
+fn portable_materialized_path_rejects_in_project_owned_root_symlink() {
+    use std::os::unix::fs::symlink;
+
+    let temp = tempfile::tempdir().expect("temporary checkout");
+    let checkout = temp.path().join("checkout");
+    let deps = checkout.join("obj/beskid/deps");
+    let unrelated = checkout.join("unrelated");
+    fs::create_dir_all(&deps).expect("dependency parent");
+    fs::create_dir(&unrelated).expect("unrelated in-project directory");
+    symlink(&unrelated, deps.join("src")).expect("redirect compiler-owned source root");
+
+    let path = PortableLockPath::parse(
+        "materialized_root",
+        "obj/beskid/deps/src/pkg",
+        PortableLockPathBaseKind::MaterializedRoot,
+    )
+    .expect("lexically valid materialized path");
+    assert!(path.resolve(&checkout).is_err());
+}
+
+#[test]
+fn portable_path_error_does_not_emit_decoded_control_characters() {
+    let temp = tempfile::tempdir().expect("temporary checkout");
+    for decoded in ["missing\nINJECT", "missing\u{1b}[31m"] {
+        let path = PortableLockPath::parse("manifest", decoded, PortableLockPathBaseKind::ProjectDirectory)
+            .expect("encoded control byte is a valid path value");
+        let diagnostic = path.resolve(temp.path()).expect_err("missing path").to_string();
+        assert!(!diagnostic.contains('\n'), "newline must not enter diagnostic");
+        assert!(!diagnostic.contains('\u{1b}'), "escape byte must not enter diagnostic");
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn portable_materialized_ancestor_error_does_not_emit_decoded_escape() {
+    use std::os::unix::fs::symlink;
+
+    let temp = tempfile::tempdir().expect("temporary checkout");
+    let deps = temp.path().join("obj/beskid/deps/src");
+    fs::create_dir_all(&deps).expect("materialization directory");
+    symlink(temp.path().join("missing"), deps.join("escape\u{1b}[31m")).expect("dangling untrusted link");
+
+    let path = PortableLockPath::parse(
+        "materialized_root",
+        "obj/beskid/deps/src/escape\u{1b}[31m",
+        PortableLockPathBaseKind::MaterializedRoot,
+    )
+    .expect("encoded escape byte is a valid path value");
+    let diagnostic = path.resolve(temp.path()).expect_err("dangling path").to_string();
+    assert!(!diagnostic.contains('\u{1b}'), "escape byte must not enter diagnostic");
+}

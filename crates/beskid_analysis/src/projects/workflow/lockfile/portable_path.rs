@@ -66,18 +66,15 @@ impl PortableLockPath {
     /// A materialized destination is checked against symlinks in every existing
     /// ancestor before it can be used or created.
     pub fn resolve(&self, base: &Path) -> Result<PathBuf, ProjectError> {
-        let base = base.canonicalize().map_err(|error| {
-            ProjectError::Validation(format!("lockfile path base {} cannot be resolved: {error}", base.display()))
-        })?;
+        let base = base
+            .canonicalize()
+            .map_err(|_| ProjectError::Validation("lockfile path base cannot be resolved".into()))?;
         let candidate = base.join(&self.value);
 
         if self.base_kind != PortableLockPathBaseKind::MaterializedRoot {
-            let resolved = candidate.canonicalize().map_err(|error| {
-                ProjectError::Validation(format!(
-                    "declared lockfile path {} is unavailable: {error}",
-                    candidate.display()
-                ))
-            })?;
+            let resolved = candidate
+                .canonicalize()
+                .map_err(|_| ProjectError::Validation("declared lockfile path is unavailable".into()))?;
             if self.base_kind != PortableLockPathBaseKind::ExternalProject && !resolved.starts_with(&base) {
                 return Err(ProjectError::Validation("lockfile path escapes its declared base".into()));
             }
@@ -85,6 +82,7 @@ impl PortableLockPath {
         }
 
         let owned_root = base.join("obj/beskid/deps/src");
+        reject_symlinked_owned_prefix(&base)?;
         let resolved_owned_root = resolve_existing_ancestor(&owned_root)?;
         if !resolved_owned_root.starts_with(&base) {
             return Err(ProjectError::Validation("lockfile materialization root escapes the project".into()));
@@ -95,6 +93,25 @@ impl PortableLockPath {
         }
         Ok(resolved_candidate)
     }
+}
+
+fn reject_symlinked_owned_prefix(base: &Path) -> Result<(), ProjectError> {
+    let mut prefix = base.to_path_buf();
+    for segment in ["obj", "beskid", "deps", "src"] {
+        prefix.push(segment);
+        match prefix.symlink_metadata() {
+            Ok(metadata) if metadata.file_type().is_symlink() => {
+                return Err(ProjectError::Validation("lockfile materialization root contains a symlink".into()));
+            }
+            Ok(metadata) if !metadata.is_dir() => {
+                return Err(ProjectError::Validation("lockfile materialization root is not a directory".into()));
+            }
+            Ok(_) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => break,
+            Err(_) => return Err(ProjectError::Validation("lockfile materialization root cannot be inspected".into())),
+        }
+    }
+    Ok(())
 }
 
 fn resolve_existing_ancestor(path: &Path) -> Result<PathBuf, ProjectError> {
@@ -114,9 +131,8 @@ fn resolve_existing_ancestor(path: &Path) -> Result<PathBuf, ProjectError> {
             Err(_) => return Err(ProjectError::Validation("lockfile path cannot be inspected".into())),
         }
     }
-    let mut resolved = ancestor.canonicalize().map_err(|error| {
-        ProjectError::Validation(format!("lockfile path {} cannot be resolved: {error}", ancestor.display()))
-    })?;
+    let mut resolved =
+        ancestor.canonicalize().map_err(|_| ProjectError::Validation("lockfile path cannot be resolved".into()))?;
     if !missing.is_empty() && !resolved.is_dir() {
         return Err(ProjectError::Validation("lockfile path has a non-directory ancestor".into()));
     }
