@@ -41,6 +41,8 @@ mod mod_manifest;
 #[cfg(test)]
 mod resolution;
 #[cfg(test)]
+mod registry_lock;
+#[cfg(test)]
 mod templates;
 #[cfg(test)]
 mod try_expression;
