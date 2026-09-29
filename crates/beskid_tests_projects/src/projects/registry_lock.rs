@@ -894,8 +894,10 @@ fn sharp_s_and_ss_zip_aliases_are_rejected_before_publication() {
 fn zip_entry_count_above_ten_thousand_is_rejected_before_publication() {
     let fixture = RegistryFixture::new();
     let mut entries = vec![(b"PkgCore.bproj".as_slice(), PACKAGE_MANIFEST), (b"Src/Marker.bd".as_slice(), b"marker".as_slice())];
-    entries.extend(std::iter::repeat_n((b"Repeated/".as_slice(), b"".as_slice()), 9_999));
+    let names = (0..9_999).map(|index| format!("D{index:05}/").into_bytes()).collect::<Vec<_>>();
+    entries.extend(names.iter().map(|name| (name.as_slice(), b"".as_slice())));
     let artifact = stored_zip(&entries);
+    assert_eq!(zip::ZipArchive::new(Cursor::new(&artifact)).unwrap().len(), 10_001);
     fixture.packages.lock().unwrap().insert(OLD_VERSION.to_owned(), artifact);
 
     let error = fixture.prepare(false).expect_err("entry count above ten thousand must be rejected");
