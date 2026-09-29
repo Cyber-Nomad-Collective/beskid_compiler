@@ -651,7 +651,12 @@ pub(super) fn validate_existing_lock_graph(
         .map(|entry| entry.name.as_str())
         .collect::<HashSet<_>>();
     let current_registry_names = registry_names.iter().copied().collect::<HashSet<_>>();
-    if existing_registry_names != current_registry_names || registry_names.len() != existing_registry_names.len() {
+    // A warning-only registry lookup can leave a declared dependency without a
+    // pin. Keep that absence replayable while it is still unavailable; the
+    // prepare step rejects a newly resolved package before materialization.
+    if !existing_registry_names.is_subset(&current_registry_names)
+        || registry_names.len() != current_registry_names.len()
+    {
         return Err(ProjectError::Validation(
             "Project.lock is stale: registry dependency graph changed; run `beskid update`".into(),
         ));

@@ -337,6 +337,50 @@ fn unavailable_unpinned_registry_remains_warning_only() {
     assert!(!fixture.lock().contains("name=PkgCore"));
 }
 
+#[test]
+fn unavailable_unpinned_registry_can_retry_without_rewriting_v2_lock() {
+    let fixture = RegistryFixture::new();
+    fixture.prepare(false).expect("initial unavailable registry warning");
+    let original_lock = fixture.lock();
+    let obj = fixture.app_manifest.parent().unwrap().join("obj");
+    let original_obj = snapshot_tree(&obj);
+
+    let retry = fixture.prepare(false).expect("unavailable registry must remain warning-only on retry");
+    assert!(retry.materialized_dependencies.iter().all(|dependency| dependency.dependency_name != "PkgCore"));
+    assert_eq!(fixture.lock(), original_lock);
+    assert_eq!(snapshot_tree(&obj), original_obj);
+
+    fixture.publish(OLD_VERSION, "newly available release");
+    let error = fixture.prepare(false).expect_err("ordinary prepare must not silently add a new registry pin");
+    assert!(error.to_string().contains("beskid update"), "unexpected error: {error}");
+    assert_eq!(fixture.lock(), original_lock);
+    assert_eq!(snapshot_tree(&obj), original_obj);
+}
+
+#[test]
+fn strict_preparation_rejects_unpinned_registry_without_mutation() {
+    let fixture = RegistryFixture::new();
+    fixture.prepare(false).expect("initial unavailable registry warning");
+    let original_lock = fixture.lock();
+    let obj = fixture.app_manifest.parent().unwrap().join("obj");
+    let original_obj = snapshot_tree(&obj);
+
+    for (locked, frozen) in [(true, false), (false, true)] {
+        let error = with_cwd_at_workspace_root(fixture.root.path(), || {
+            let plan = build_compile_plan_with_policy(&fixture.app_manifest, None, UnresolvedDependencyPolicy::Warn)?;
+            prepare_project_workspace_with_options(
+                &plan,
+                WorkspacePrepareOptions { locked, frozen, refresh_lock: false },
+                None,
+            )
+        })
+        .expect_err("strict mode must require every declared registry pin");
+        assert!(error.to_string().contains("pin"), "unexpected error: {error}");
+        assert_eq!(fixture.lock(), original_lock);
+        assert_eq!(snapshot_tree(&obj), original_obj);
+    }
+}
+
 fn assert_no_registry_mutation(fixture: &RegistryFixture) {
     let project = fixture.app_manifest.parent().expect("project root");
     assert!(!project.join("obj").exists(), "oversized artifact must not create obj");

@@ -149,9 +149,10 @@ pub fn prepare_project_workspace_with_options(
         let pinned = existing_registry_pins
             .as_ref()
             .and_then(|entries| entries.iter().find(|entry| entry.name == unresolved.dependency_name));
-        if existing_registry_pins.is_some() && pinned.is_none() && !options.refresh_lock {
+        let missing_existing_pin = existing_registry_pins.is_some() && pinned.is_none() && !options.refresh_lock;
+        if missing_existing_pin && (options.locked || options.frozen) {
             return Err(ProjectError::Validation(format!(
-                "registry dependency `{}` is missing from the existing v2 lock; run `beskid update`",
+                "registry dependency `{}` is missing a pin in the existing v2 lock; run `beskid update`",
                 unresolved.dependency_name
             )));
         }
@@ -165,6 +166,12 @@ pub fn prepare_project_workspace_with_options(
         else {
             continue;
         };
+        if missing_existing_pin {
+            return Err(ProjectError::Validation(format!(
+                "registry dependency `{}` became available but is missing a pin in the existing v2 lock; run `beskid update`",
+                unresolved.dependency_name
+            )));
+        }
         if !destinations.insert(resolved.materialized_relative.clone()) {
             return Err(ProjectError::Validation("lockfile duplicates a materialized destination".into()));
         }
