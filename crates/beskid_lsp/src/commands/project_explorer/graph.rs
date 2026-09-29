@@ -95,6 +95,7 @@ pub(crate) fn get_project_dependencies(project_uri: &str) -> Result<Value> {
         })
         .collect();
 
+    let declared_names: HashSet<&str> = manifest.dependencies.iter().map(|dep| dep.name.as_str()).collect();
     let lock_entries = build_compile_plan(&manifest_path, None)
         .ok()
         .map(|plan| {
@@ -102,13 +103,14 @@ pub(crate) fn get_project_dependencies(project_uri: &str) -> Result<Value> {
             load_project_lock_dependencies_for_plan(&lock_path, &plan)
                 .unwrap_or_default()
                 .into_iter()
-                .filter_map(|entry| serialize_lock_entry(&entry, &plan))
+                .filter_map(|entry| {
+                    declared_names.contains(entry.name()).then(|| serialize_lock_entry(&entry, &plan)).flatten()
+                })
                 .collect::<Vec<_>>()
         })
         .unwrap_or_default();
     let locked = lock_entries.iter().map(|(_, value)| value.clone()).collect::<Vec<_>>();
 
-    let declared_names: HashSet<&str> = manifest.dependencies.iter().map(|dep| dep.name.as_str()).collect();
     let locked_names: HashSet<&str> = lock_entries.iter().map(|(name, _)| name.as_str()).collect();
     let mut unresolved: Vec<Value> = declared_names.difference(&locked_names).map(|name| json!(name)).collect();
     unresolved.sort_by(|left, right| left.as_str().unwrap_or_default().cmp(right.as_str().unwrap_or_default()));

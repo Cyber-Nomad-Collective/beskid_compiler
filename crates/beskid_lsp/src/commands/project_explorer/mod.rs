@@ -301,7 +301,12 @@ target "Ext" {
         write(&root.join("apps/demo/Src/Main.bd"), "Fn Main() { }\n");
         write(&root.join("apps/lib/Src/Lib.bd"), "Fn Main() { }\n");
         let plan = beskid_analysis::projects::build_compile_plan(&project, None).expect("resolve current graph");
-        beskid_analysis::projects::prepare_project_workspace(&plan).expect("write genuine v2 lock");
+        beskid_analysis::projects::prepare_project_workspace_with_options(
+            &plan,
+            beskid_analysis::projects::WorkspacePrepareOptions { refresh_lock: true, ..Default::default() },
+            None,
+        )
+        .expect("write genuine v2 lock");
         let uri = path_to_uri_string(&project);
         let value = graph::get_project_dependencies(&uri).expect("deps");
         let declared = value["declared"].as_array().expect("declared");
