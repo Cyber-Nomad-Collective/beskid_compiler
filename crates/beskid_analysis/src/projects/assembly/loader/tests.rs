@@ -399,7 +399,10 @@ fn lock_replayed_foundation_syscall_fixture(label: &str) -> (CompilePlan, PathBu
         .expect("compiler-owned syscall path");
     let canonical_source_root = canonical_path.ancestors().nth(3).expect("Foundation source root").to_path_buf();
     let canonical_project_root = canonical_source_root.parent().expect("Foundation project root").to_path_buf();
-    let project_root = temp_project_root(label);
+    // Keep the fixture beside this checkout so a Windows TEMP directory on
+    // another drive cannot make the declared local path dependency unrelativizable.
+    let fixture_name = temp_project_root(label).file_name().expect("temporary fixture name").to_owned();
+    let project_root = canonical_project_root.ancestors().nth(3).expect("compiler checkout root").join(fixture_name);
     fs::create_dir_all(&project_root).expect("create replay project");
     let project_root = project_root.canonicalize().expect("physical replay project root");
     let manifest_path = project_root.join("App.bproj");
