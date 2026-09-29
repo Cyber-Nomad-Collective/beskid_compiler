@@ -1027,6 +1027,84 @@ fn zip64_entry_count_sentinel_is_rejected_before_materialization() {
 }
 
 #[test]
+fn zip64_central_extra_field_is_rejected_before_materialization() {
+    let fixture = RegistryFixture::new();
+    let mut artifact = package_zip("marker");
+    let eocd = artifact.windows(4).rposition(|bytes| bytes == 0x0605_4b50_u32.to_le_bytes()).unwrap();
+    let central = u32::from_le_bytes(artifact[eocd + 16..eocd + 20].try_into().unwrap()) as usize;
+    let name_bytes = u16::from_le_bytes(artifact[central + 28..central + 30].try_into().unwrap()) as usize;
+    artifact[central + 30..central + 32].copy_from_slice(&4_u16.to_le_bytes());
+    artifact.splice(central + 46 + name_bytes..central + 46 + name_bytes, [1, 0, 0, 0]);
+    let shifted_eocd = eocd + 4;
+    let central_bytes = u32::from_le_bytes(artifact[shifted_eocd + 12..shifted_eocd + 16].try_into().unwrap());
+    artifact[shifted_eocd + 12..shifted_eocd + 16].copy_from_slice(&(central_bytes + 4).to_le_bytes());
+    fixture.packages.lock().unwrap().insert(OLD_VERSION.to_owned(), artifact);
+
+    let error = fixture.prepare(false).expect_err("ZIP64 central extra field must fail closed");
+
+    assert!(error.to_string().contains("ZIP64 format is unsupported"), "unexpected error: {error}");
+    assert!(registry_destination_paths(&fixture).is_empty(), "ZIP64 artifact must not publish a package");
+    assert_no_registry_staging_dirs(&fixture);
+}
+
+#[test]
+fn zip64_central_size_sentinel_is_rejected_before_materialization() {
+    let fixture = RegistryFixture::new();
+    let mut artifact = package_zip("marker");
+    let eocd = artifact.windows(4).rposition(|bytes| bytes == 0x0605_4b50_u32.to_le_bytes()).unwrap();
+    let central = u32::from_le_bytes(artifact[eocd + 16..eocd + 20].try_into().unwrap()) as usize;
+    artifact[central + 20..central + 24].copy_from_slice(&u32::MAX.to_le_bytes());
+    fixture.packages.lock().unwrap().insert(OLD_VERSION.to_owned(), artifact);
+
+    let error = fixture.prepare(false).expect_err("ZIP64 central size sentinel must fail closed");
+
+    assert!(error.to_string().contains("ZIP64 format is unsupported"), "unexpected error: {error}");
+    assert!(registry_destination_paths(&fixture).is_empty(), "ZIP64 artifact must not publish a package");
+    assert_no_registry_staging_dirs(&fixture);
+}
+
+#[test]
+fn zip64_local_extra_field_is_rejected_before_materialization() {
+    let fixture = RegistryFixture::new();
+    let mut artifact = package_zip("marker");
+    let eocd = artifact.windows(4).rposition(|bytes| bytes == 0x0605_4b50_u32.to_le_bytes()).unwrap();
+    let central = u32::from_le_bytes(artifact[eocd + 16..eocd + 20].try_into().unwrap()) as usize;
+    let first_name_bytes = u16::from_le_bytes(artifact[central + 28..central + 30].try_into().unwrap()) as usize;
+    let second_central = central + 46 + first_name_bytes;
+    let second_local =
+        u32::from_le_bytes(artifact[second_central + 42..second_central + 46].try_into().unwrap()) as usize;
+    let local_name_bytes =
+        u16::from_le_bytes(artifact[second_local + 26..second_local + 28].try_into().unwrap()) as usize;
+    artifact[second_local + 28..second_local + 30].copy_from_slice(&4_u16.to_le_bytes());
+    artifact.splice(second_local + 30 + local_name_bytes..second_local + 30 + local_name_bytes, [1, 0, 0, 0]);
+    let shifted_eocd = eocd + 4;
+    artifact[shifted_eocd + 16..shifted_eocd + 20].copy_from_slice(&((central + 4) as u32).to_le_bytes());
+    fixture.packages.lock().unwrap().insert(OLD_VERSION.to_owned(), artifact);
+
+    let error = fixture.prepare(false).expect_err("ZIP64 local extra field must fail closed");
+
+    assert!(error.to_string().contains("ZIP64 format is unsupported"), "unexpected error: {error}");
+    assert!(registry_destination_paths(&fixture).is_empty(), "ZIP64 artifact must not publish a package");
+    assert_no_registry_staging_dirs(&fixture);
+}
+
+#[test]
+fn central_directory_entry_on_another_disk_is_rejected_before_materialization() {
+    let fixture = RegistryFixture::new();
+    let mut artifact = package_zip("marker");
+    let eocd = artifact.windows(4).rposition(|bytes| bytes == 0x0605_4b50_u32.to_le_bytes()).unwrap();
+    let central = u32::from_le_bytes(artifact[eocd + 16..eocd + 20].try_into().unwrap()) as usize;
+    artifact[central + 34..central + 36].copy_from_slice(&1_u16.to_le_bytes());
+    fixture.packages.lock().unwrap().insert(OLD_VERSION.to_owned(), artifact);
+
+    let error = fixture.prepare(false).expect_err("per-entry disk start must agree with one-disk EOCD");
+
+    assert!(error.to_string().contains("multi-disk ZIP is unsupported"), "unexpected error: {error}");
+    assert!(registry_destination_paths(&fixture).is_empty(), "multi-disk ZIP must not publish a package");
+    assert_no_registry_staging_dirs(&fixture);
+}
+
+#[test]
 fn zip64_locator_without_sentinel_is_rejected_before_materialization() {
     let fixture = RegistryFixture::new();
     let mut artifact = package_zip("marker");
