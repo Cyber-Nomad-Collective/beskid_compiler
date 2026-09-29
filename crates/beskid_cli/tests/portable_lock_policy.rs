@@ -248,6 +248,40 @@ fn ordinary_build_creates_missing_v2_lock() {
     assert_v2_lock(&case.lock);
 }
 
+#[cfg(unix)]
+#[test]
+fn lock_rejects_symlink_to_external_file_without_reading_or_rewriting_it() {
+    use std::os::unix::fs::symlink;
+
+    let case = ProjectCase::new();
+    let external = case.root.join("external.lock");
+    let original = case.write_legacy_lock();
+    fs::rename(&case.lock, &external).expect("move legacy lock outside project");
+    symlink(&external, &case.lock).expect("symlink lockfile");
+
+    let output = case.invoke("lock", None);
+    assert_failed_with(&output, "Project.lock");
+    assert_eq!(fs::read(&external).expect("external file retained"), original);
+    assert!(fs::symlink_metadata(&case.lock).expect("lock link retained").file_type().is_symlink());
+    case.assert_no_obj();
+}
+
+#[cfg(unix)]
+#[test]
+fn lock_rejects_dangling_symlink_without_creating_external_file() {
+    use std::os::unix::fs::symlink;
+
+    let case = ProjectCase::new();
+    let external = case.root.join("missing-external.lock");
+    symlink(&external, &case.lock).expect("dangling lockfile link");
+
+    let output = case.invoke("lock", None);
+    assert_failed_with(&output, "Project.lock");
+    assert!(!external.exists(), "lock wrote through dangling symlink");
+    assert!(fs::symlink_metadata(&case.lock).expect("lock link retained").file_type().is_symlink());
+    case.assert_no_obj();
+}
+
 #[test]
 fn stale_v2_lock_is_rejected_without_rewrite() {
     let case = ProjectCase::new();

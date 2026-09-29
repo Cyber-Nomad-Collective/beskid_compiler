@@ -1,6 +1,9 @@
 use std::collections::HashSet;
 use std::fs;
+use std::io::{ErrorKind, Write};
 use std::path::{Component, Path};
+
+use tempfile::NamedTempFile;
 
 use crate::projects::error::ProjectError;
 use crate::projects::model::CompilePlan;
@@ -12,6 +15,17 @@ pub use portable_path::{PortableLockPath, PortableLockPathBaseKind};
 pub const PROJECT_LOCK_FILE_NAME: &str = "Project.lock";
 const PROJECT_LOCK_HEADER_V1: &str = "# Project.lock v1";
 const PROJECT_LOCK_HEADER_V2: &str = "# Project.lock v2";
+
+fn regular_lockfile_exists(lock_path: &Path) -> Result<bool, ProjectError> {
+    match fs::symlink_metadata(lock_path) {
+        Ok(metadata) if metadata.file_type().is_file() => Ok(true),
+        Ok(_) => {
+            Err(ProjectError::Validation(format!("Project.lock must be a regular file at {}", lock_path.display())))
+        }
+        Err(source) if source.kind() == ErrorKind::NotFound => Ok(false),
+        Err(source) => Err(ProjectError::LockfileRead { path: lock_path.to_path_buf(), source }),
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ProjectLockSource {
@@ -535,7 +549,7 @@ pub fn load_project_lock_dependencies(project_root: &Path) -> Result<Vec<Project
 pub fn load_project_lock_dependencies_from_path(
     lock_path: &Path,
 ) -> Result<Vec<ProjectLockDependencyEntry>, ProjectError> {
-    if !lock_path.is_file() {
+    if !regular_lockfile_exists(lock_path)? {
         return Ok(Vec::new());
     }
     let content = fs::read_to_string(&lock_path)
@@ -549,6 +563,7 @@ pub fn load_project_lock_dependencies_for_plan(
     lock_path: &Path,
     plan: &CompilePlan,
 ) -> Result<Vec<ProjectLockDependencyEntry>, ProjectError> {
+    regular_lockfile_exists(lock_path)?;
     let content = fs::read_to_string(lock_path)
         .map_err(|e| ProjectError::Validation(format!("failed to read {}: {e}", lock_path.display())))?;
     let parsed = ProjectLockfileV2::parse_v2(&content)?;
@@ -592,7 +607,7 @@ pub(super) fn preflight_existing_lock_for_plan(
     options: WorkspacePrepareOptions,
 ) -> Result<Option<ProjectLockfileV2>, ProjectError> {
     let lock_path = plan.project_root.join(PROJECT_LOCK_FILE_NAME);
-    if !lock_path.is_file() {
+    if !regular_lockfile_exists(&lock_path)? {
         if options.locked {
             return Err(ProjectError::LockfileRequired { path: lock_path });
         }
@@ -672,12 +687,13 @@ pub(super) fn sync_project_lockfile(
     let lock_path = plan.project_root.join(PROJECT_LOCK_FILE_NAME);
     let expected_lockfile = ProjectLockfileV2::from_plan(plan, lock_entries)?;
     let expected_content = expected_lockfile.to_v2_content();
+    let lock_exists = regular_lockfile_exists(&lock_path)?;
 
-    if options.locked && !lock_path.is_file() {
+    if options.locked && !lock_exists {
         return Err(ProjectError::LockfileRequired { path: lock_path });
     }
 
-    if lock_path.is_file() {
+    if lock_exists {
         let existing = fs::read_to_string(&lock_path)
             .map_err(|source| ProjectError::LockfileRead { path: lock_path.clone(), source })?;
         let existing_matches = if existing == expected_content {
@@ -706,8 +722,14 @@ pub(super) fn sync_project_lockfile(
         return Err(ProjectError::LockfileFrozenMode);
     }
 
-    fs::write(&lock_path, expected_content)
+    let mut staged = NamedTempFile::new_in(&plan.project_root)
         .map_err(|source| ProjectError::LockfileWrite { path: lock_path.clone(), source })?;
+    staged
+        .write_all(expected_content.as_bytes())
+        .map_err(|source| ProjectError::LockfileWrite { path: lock_path.clone(), source })?;
+    staged
+        .persist(&lock_path)
+        .map_err(|error| ProjectError::LockfileWrite { path: lock_path.clone(), source: error.error })?;
 
     Ok(lock_path)
 }
