@@ -4,7 +4,10 @@ use std::collections::HashSet;
 use std::path::{Component, Path, PathBuf};
 
 use crate::projects::workflow::load_project_lock_dependencies_for_plan;
-use crate::projects::{CompilePlan, PROJECT_LOCK_FILE_NAME, PreparedProjectWorkspace, ProjectLockDependencyEntry};
+use crate::projects::workflow::verified_installed_corelib_root;
+use crate::projects::{
+    CompilePlan, PROJECT_LOCK_FILE_NAME, PreparedProjectWorkspace, ProjectLockDependencyEntry, ProjectLockSource,
+};
 
 /// One searchable source root (host or named dependency).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -99,6 +102,7 @@ fn replayed_dependency_roots(
     }
 
     let lock_root = lockfile_path.parent()?;
+    let verified_corelib_root = verified_installed_corelib_root();
     let mut replayed = Vec::with_capacity(entries.len());
     for entry in entries {
         let dependency =
@@ -109,13 +113,13 @@ fn replayed_dependency_roots(
             return None;
         }
 
-        let project = resolve_lock_path(lock_root, Path::new(entry.project()));
-        let manifest = resolve_lock_path(lock_root, Path::new(entry.manifest()));
-        let source_root = if Path::new(entry.source_root()).is_absolute() {
-            PathBuf::from(entry.source_root())
-        } else {
-            project.join(entry.source_root())
+        let project_base = match entry.source() {
+            ProjectLockSource::Path | ProjectLockSource::Registry => lock_root,
+            ProjectLockSource::Corelib => verified_corelib_root.as_deref()?,
         };
+        let project = project_base.join(entry.project());
+        let manifest = project.join(entry.manifest());
+        let source_root = project.join(entry.source_root());
         // A lockfile is only a replay hint. Its identity fields must still describe the
         // dependency selected by the current graph; a copied or stale lock cannot confer
         // compiler-owned service authority on another source tree.

@@ -187,14 +187,15 @@ impl ProjectLockDependencyEntry {
 pub struct ProjectLockfileV2 {
     root_manifest: String,
     project_name: String,
-    dependencies: Vec<ProjectLockDependencyEntry>,
+    pub(super) dependencies: Vec<ProjectLockDependencyEntry>,
 }
 
 impl ProjectLockfileV2 {
     fn from_plan(plan: &CompilePlan, entries: &[ProjectLockDependencyEntry]) -> Result<Self, ProjectError> {
-        let root_manifest = plan.manifest_path.strip_prefix(&plan.project_root).map_err(|_| {
-            ProjectError::Validation("root manifest escapes the lock directory".into())
-        })?;
+        let root_manifest = plan
+            .manifest_path
+            .strip_prefix(&plan.project_root)
+            .map_err(|_| ProjectError::Validation("root manifest escapes the lock directory".into()))?;
         let root_manifest = root_manifest
             .components()
             .map(|part| match part {
@@ -213,11 +214,7 @@ impl ProjectLockfileV2 {
         }) {
             return Err(ProjectError::Validation("registry dependency lacks a complete v2 pin".into()));
         }
-        let candidate = Self {
-            root_manifest,
-            project_name: plan.project_name.clone(),
-            dependencies: entries.to_vec(),
-        };
+        let candidate = Self { root_manifest, project_name: plan.project_name.clone(), dependencies: entries.to_vec() };
         Self::parse_v2(&candidate.to_v2_content())
     }
 
@@ -530,7 +527,7 @@ pub fn load_project_lock_dependencies(project_root: &Path) -> Result<Vec<Project
     load_project_lock_dependencies_from_path(&project_root.join(PROJECT_LOCK_FILE_NAME))
 }
 
-/// Strictly load the v1 dependency entries from one explicit lockfile path.
+/// Strictly load the v2 dependency entries from one explicit lockfile path.
 ///
 /// Callers that replay lockfile paths must use this parser rather than scanning
 /// individual lines: malformed or duplicate entries invalidate the entire
@@ -543,22 +540,20 @@ pub fn load_project_lock_dependencies_from_path(
     }
     let content = fs::read_to_string(&lock_path)
         .map_err(|e| ProjectError::Validation(format!("failed to read {}: {e}", lock_path.display())))?;
-    Ok(ProjectLockfileV1::parse_v1(&content)?.dependencies)
+    Ok(ProjectLockfileV2::parse_v2(&content)?.dependencies)
 }
 
 /// Replay only a lockfile issued for this exact project. Other callers may inspect
 /// dependency entries, but compilation must not trust a copied lock's root identity.
-pub(crate) fn load_project_lock_dependencies_for_plan(
+pub fn load_project_lock_dependencies_for_plan(
     lock_path: &Path,
     plan: &CompilePlan,
 ) -> Result<Vec<ProjectLockDependencyEntry>, ProjectError> {
     let content = fs::read_to_string(lock_path)
         .map_err(|e| ProjectError::Validation(format!("failed to read {}: {e}", lock_path.display())))?;
-    let parsed = ProjectLockfileV1::parse_v1(&content)?;
+    let parsed = ProjectLockfileV2::parse_v2(&content)?;
     let lock_root = lock_path.parent().ok_or_else(|| ProjectError::Validation("lockfile has no parent".into()))?;
-    let root_manifest = Path::new(&parsed.root_manifest);
-    let root_manifest =
-        if root_manifest.is_absolute() { root_manifest.to_path_buf() } else { lock_root.join(root_manifest) };
+    let root_manifest = lock_root.join(&parsed.root_manifest);
     let same_manifest = match (root_manifest.canonicalize(), plan.manifest_path.canonicalize()) {
         (Ok(actual), Ok(expected)) => actual == expected,
         (Err(_), Err(_)) => root_manifest == plan.manifest_path,
@@ -567,6 +562,21 @@ pub(crate) fn load_project_lock_dependencies_for_plan(
     if !same_manifest || parsed.project_name != plan.project_name {
         return Err(ProjectError::Validation("lockfile belongs to a different project".into()));
     }
+    let verified_corelib_root = super::prepare::verified_installed_corelib_root();
+    let path_entries = plan
+        .dependency_projects
+        .iter()
+        .map(|dependency| {
+            super::prepare::portable_entry_for_dependency(plan, dependency, verified_corelib_root.as_deref())
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let registry_names = plan
+        .unresolved_dependencies
+        .iter()
+        .filter(|dependency| dependency.source == crate::projects::model::DependencySource::Registry)
+        .map(|dependency| dependency.dependency_name.as_str())
+        .collect::<Vec<_>>();
+    validate_existing_lock_graph(Some(&parsed), &path_entries, &registry_names, false)?;
     Ok(parsed.dependencies)
 }
 
@@ -577,28 +587,76 @@ pub struct WorkspacePrepareOptions {
     pub refresh_lock: bool,
 }
 
-pub(super) fn existing_registry_pins_for_plan(
+pub(super) fn preflight_existing_lock_for_plan(
     plan: &CompilePlan,
-) -> Result<Option<Vec<ProjectLockDependencyEntry>>, ProjectError> {
+    options: WorkspacePrepareOptions,
+) -> Result<Option<ProjectLockfileV2>, ProjectError> {
     let lock_path = plan.project_root.join(PROJECT_LOCK_FILE_NAME);
     if !lock_path.is_file() {
+        if options.locked {
+            return Err(ProjectError::LockfileRequired { path: lock_path });
+        }
+        if options.frozen {
+            return Err(ProjectError::LockfileFrozenMode);
+        }
         return Ok(None);
     }
-    let content = fs::read_to_string(&lock_path)
-        .map_err(|source| ProjectError::LockfileRead { path: lock_path, source })?;
-    if content.starts_with(PROJECT_LOCK_HEADER_V1) {
-        // Explicit v1 migration and normal-consumer rejection belong to the
-        // command policy. A v1 lock cannot supply registry pins.
-        return Ok(None);
+    let content =
+        fs::read_to_string(&lock_path).map_err(|source| ProjectError::LockfileRead { path: lock_path, source })?;
+    match content.lines().next() {
+        Some(PROJECT_LOCK_HEADER_V1) => {
+            if !options.refresh_lock {
+                return Err(ProjectError::Validation(
+                    "Project.lock v1 requires explicit migration with `beskid lock` or `beskid update`".into(),
+                ));
+            }
+            ProjectLockfileV1::parse_v1(&content)?;
+            Ok(None)
+        }
+        Some(PROJECT_LOCK_HEADER_V2) => {
+            let existing = ProjectLockfileV2::parse_v2(&content)?;
+            let current = ProjectLockfileV2::from_plan(plan, &[])?;
+            if existing.root_manifest != current.root_manifest || existing.project_name != current.project_name {
+                return Err(ProjectError::Validation("lockfile belongs to a different project".into()));
+            }
+            Ok(Some(existing))
+        }
+        _ => Err(ProjectError::Validation("unknown Project.lock format".into())),
     }
-    let existing = ProjectLockfileV2::parse_v2(&content)?;
-    let current = ProjectLockfileV2::from_plan(plan, &[])?;
-    if existing.root_manifest != current.root_manifest || existing.project_name != current.project_name {
-        return Err(ProjectError::Validation("registry lock belongs to a different project".into()));
+}
+
+pub(super) fn validate_existing_lock_graph(
+    existing: Option<&ProjectLockfileV2>,
+    path_entries: &[ProjectLockDependencyEntry],
+    registry_names: &[&str],
+    refresh_lock: bool,
+) -> Result<(), ProjectError> {
+    let Some(existing) = existing else { return Ok(()) };
+    if refresh_lock {
+        return Ok(());
     }
-    Ok(Some(
-        existing.dependencies.into_iter().filter(|entry| entry.source == ProjectLockSource::Registry).collect(),
-    ))
+    let existing_paths =
+        existing.dependencies.iter().filter(|entry| entry.source != ProjectLockSource::Registry).collect::<Vec<_>>();
+    if existing_paths.len() != path_entries.len()
+        || path_entries.iter().any(|entry| !existing_paths.iter().any(|locked| *locked == entry))
+    {
+        return Err(ProjectError::Validation(
+            "Project.lock is stale: dependency graph changed; run `beskid update`".into(),
+        ));
+    }
+    let existing_registry_names = existing
+        .dependencies
+        .iter()
+        .filter(|entry| entry.source == ProjectLockSource::Registry)
+        .map(|entry| entry.name.as_str())
+        .collect::<HashSet<_>>();
+    let current_registry_names = registry_names.iter().copied().collect::<HashSet<_>>();
+    if existing_registry_names != current_registry_names || registry_names.len() != existing_registry_names.len() {
+        return Err(ProjectError::Validation(
+            "Project.lock is stale: registry dependency graph changed; run `beskid update`".into(),
+        ));
+    }
+    Ok(())
 }
 
 pub(super) fn sync_project_lockfile(
@@ -633,6 +691,11 @@ pub(super) fn sync_project_lockfile(
 
         if options.locked {
             return Err(ProjectError::LockfileOutOfDate { project: plan.project_name.clone() });
+        }
+        if !options.refresh_lock && existing.starts_with(PROJECT_LOCK_HEADER_V2) {
+            return Err(ProjectError::Validation(
+                "Project.lock is stale: dependency graph changed; run `beskid update`".into(),
+            ));
         }
     } else if options.frozen {
         return Err(ProjectError::LockfileFrozenMode);

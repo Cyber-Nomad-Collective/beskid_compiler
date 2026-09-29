@@ -20,15 +20,18 @@ pub struct LockArgs {
 /// Resolve the project and refresh the lockfile (non-frozen, non-locked policy).
 pub fn execute(args: LockArgs) -> Result<()> {
     let (pipeline_ui, _resolved) = resolve_project_with_cli_pipeline(CliProjectPipelineOptions {
-        resolve: CliResolveOptions::new(
-            None,
-            args.project.project.as_ref(),
-            args.project.target.as_deref(),
-            args.project.workspace_member.as_deref(),
-            false,
-            false,
-            args.progress.plain,
-        ),
+        resolve: CliResolveOptions {
+            refresh_lock: true,
+            ..CliResolveOptions::new(
+                None,
+                args.project.project.as_ref(),
+                args.project.target.as_deref(),
+                args.project.workspace_member.as_deref(),
+                false,
+                false,
+                args.progress.plain,
+            )
+        },
         unresolved_dependency_policy: UnresolvedDependencyPolicy::Warn,
     })?;
     pipeline_ui.finish_session_with_summary(

@@ -70,6 +70,7 @@ impl CommandSession {
                 workspace_member: args.workspace_member,
                 frozen: args.frozen,
                 locked: args.locked,
+                refresh_lock: false,
                 plain: false,
             },
             Some(self.pipeline.as_ref()),

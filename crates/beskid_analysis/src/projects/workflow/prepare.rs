@@ -16,15 +16,14 @@ use beskid_pipeline::{
 
 use super::filesystem::{copy_directory_when_newer, materialized_dependency_id};
 use super::lockfile::{
-    PortableLockPath, PortableLockPathBaseKind, ProjectLockDependencyEntry, ProjectLockSource,
-    WorkspacePrepareOptions, existing_registry_pins_for_plan, sync_project_lockfile,
+    PortableLockPath, PortableLockPathBaseKind, ProjectLockDependencyEntry, ProjectLockSource, WorkspacePrepareOptions,
+    preflight_existing_lock_for_plan, sync_project_lockfile, validate_existing_lock_graph,
 };
 use super::registry::{materialize_registry_dependency, resolve_registry_dependency};
 use crate::projects::error::ProjectError;
 use crate::projects::graph::builder::discover_workspace_resolution_rules;
 use crate::projects::model::{
-    CompilePlan, DependencySource, MaterializedDependencyProject, PreparedProjectWorkspace,
-    ResolvedDependencyProject,
+    CompilePlan, DependencySource, MaterializedDependencyProject, PreparedProjectWorkspace, ResolvedDependencyProject,
 };
 
 pub(super) fn portable_entry_for_dependency(
@@ -77,15 +76,13 @@ fn relative_lock_path(base: &Path, target: &Path, field: &str, external_project:
         let Component::Normal(name) = part else {
             return Err(ProjectError::Validation(format!("lockfile `{field}` has an invalid path component")));
         };
-        segments.push(name.to_str().ok_or_else(|| {
-            ProjectError::Validation(format!("lockfile `{field}` is not UTF-8"))
-        })?.to_string());
+        segments.push(
+            name.to_str()
+                .ok_or_else(|| ProjectError::Validation(format!("lockfile `{field}` is not UTF-8")))?
+                .to_string(),
+        );
     }
-    let value = if segments.is_empty() && field == "source_root" {
-        ".".to_string()
-    } else {
-        segments.join("/")
-    };
+    let value = if segments.is_empty() && field == "source_root" { ".".to_string() } else { segments.join("/") };
     let kind = if external_project {
         PortableLockPathBaseKind::ExternalProject
     } else {
@@ -95,13 +92,10 @@ fn relative_lock_path(base: &Path, target: &Path, field: &str, external_project:
     Ok(value)
 }
 
-fn verified_installed_corelib_root() -> Option<PathBuf> {
+pub(crate) fn verified_installed_corelib_root() -> Option<PathBuf> {
     let installed = installed_corelib_root().ok()?.canonicalize().ok()?;
-    let aggregate = if installed.join("beskid_corelib").is_dir() {
-        installed.join("beskid_corelib")
-    } else {
-        installed.clone()
-    };
+    let aggregate =
+        if installed.join("beskid_corelib").is_dir() { installed.join("beskid_corelib") } else { installed.clone() };
     let verified = verified_corelib_bundle_root(&aggregate)?;
     (verified.starts_with(&installed) || installed.starts_with(&verified)).then_some(verified)
 }
@@ -118,8 +112,19 @@ pub fn prepare_project_workspace_with_options(
     let deps_root = plan.project_root.join("obj").join("beskid").join("deps").join("src");
     let root_materialized_project = plan.project_root.join("obj").join("beskid").join("root");
     let verified_corelib_root = verified_installed_corelib_root();
+    let existing_lock = preflight_existing_lock_for_plan(plan, options)?;
     // Refresh reconstructs registry identity from the current manifest graph.
-    let existing_registry_pins = if options.refresh_lock { None } else { existing_registry_pins_for_plan(plan)? };
+    let existing_registry_pins = if options.refresh_lock {
+        None
+    } else {
+        existing_lock.as_ref().map(|lock| {
+            lock.dependencies
+                .iter()
+                .filter(|entry| entry.source == ProjectLockSource::Registry)
+                .cloned()
+                .collect::<Vec<_>>()
+        })
+    };
     let mut lock_entries = Vec::with_capacity(plan.dependency_projects.len());
     let mut destinations = HashSet::new();
     for dependency in &plan.dependency_projects {
@@ -133,11 +138,17 @@ pub fn prepare_project_workspace_with_options(
     let workspace_rules = discover_workspace_resolution_rules(&plan.manifest_path)?;
     let registry_deps: Vec<_> =
         plan.unresolved_dependencies.iter().filter(|x| x.source == DependencySource::Registry).collect();
+    validate_existing_lock_graph(
+        existing_lock.as_ref(),
+        &lock_entries,
+        &registry_deps.iter().map(|entry| entry.dependency_name.as_str()).collect::<Vec<_>>(),
+        options.refresh_lock,
+    )?;
     let mut resolved_registry = Vec::with_capacity(registry_deps.len());
     for unresolved in &registry_deps {
-        let pinned = existing_registry_pins.as_ref().and_then(|entries| {
-            entries.iter().find(|entry| entry.name == unresolved.dependency_name)
-        });
+        let pinned = existing_registry_pins
+            .as_ref()
+            .and_then(|entries| entries.iter().find(|entry| entry.name == unresolved.dependency_name));
         if existing_registry_pins.is_some() && pinned.is_none() && !options.refresh_lock {
             return Err(ProjectError::Validation(format!(
                 "registry dependency `{}` is missing from the existing v2 lock; run `beskid update`",
@@ -145,8 +156,13 @@ pub fn prepare_project_workspace_with_options(
             )));
         }
         let Some(resolved) = resolve_registry_dependency(
-            unresolved, workspace_rules.as_ref(), pinned, options.refresh_lock, &plan.project_root,
-        )? else {
+            unresolved,
+            workspace_rules.as_ref(),
+            pinned,
+            options.refresh_lock,
+            &plan.project_root,
+        )?
+        else {
             continue;
         };
         if !destinations.insert(resolved.materialized_relative.clone()) {

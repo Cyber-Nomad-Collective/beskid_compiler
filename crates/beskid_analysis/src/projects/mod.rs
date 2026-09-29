@@ -60,5 +60,6 @@ pub use validator::{MOD_CAPABILITY_NAMES, validate_manifest, validate_workspace_
 pub use workflow::{
     PROJECT_LOCK_FILE_NAME, PortableLockPath, PortableLockPathBaseKind, ProjectLockDependencyEntry, ProjectLockSource,
     ProjectLockfileV2, WorkspacePrepareOptions, load_project_lock_dependencies,
-    load_project_lock_dependencies_from_path, prepare_project_workspace, prepare_project_workspace_with_options,
+    load_project_lock_dependencies_for_plan, load_project_lock_dependencies_from_path, prepare_project_workspace,
+    prepare_project_workspace_with_options,
 };

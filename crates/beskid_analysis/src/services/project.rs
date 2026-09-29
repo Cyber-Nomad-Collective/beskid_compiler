@@ -54,6 +54,30 @@ pub fn resolve_project_with_policy(
     unresolved_dependency_policy: UnresolvedDependencyPolicy,
     pipeline: Option<&dyn PipelineObserver>,
 ) -> Result<ResolvedProject> {
+    resolve_project_with_policy_and_lock_refresh(
+        input,
+        project,
+        target,
+        workspace_member,
+        frozen,
+        locked,
+        false,
+        unresolved_dependency_policy,
+        pipeline,
+    )
+}
+
+pub fn resolve_project_with_policy_and_lock_refresh(
+    input: Option<&PathBuf>,
+    project: Option<&PathBuf>,
+    target: Option<&str>,
+    workspace_member: Option<&str>,
+    frozen: bool,
+    locked: bool,
+    refresh_lock: bool,
+    unresolved_dependency_policy: UnresolvedDependencyPolicy,
+    pipeline: Option<&dyn PipelineObserver>,
+) -> Result<ResolvedProject> {
     let mut workspace_summary: Option<WorkspaceResolutionSummary> = None;
 
     let manifest_path =
@@ -101,14 +125,18 @@ pub fn resolve_project_with_policy(
 
             let workspace = observe_phase_result(pipeline, WORKSPACE_MATERIALIZE, || {
                 let manifest_src = fs::read_to_string(&plan.manifest_path).unwrap_or_default();
-                prepare_project_workspace_with_options(&plan, WorkspacePrepareOptions { frozen, locked, refresh_lock: false }, pipeline)
-                    .map_err(|err| {
-                        anyhow::Error::new(MietteReportError::new(project_error_diagnostic(
-                            &plan.manifest_path.display().to_string(),
-                            &manifest_src,
-                            &err,
-                        )))
-                    })
+                prepare_project_workspace_with_options(
+                    &plan,
+                    WorkspacePrepareOptions { frozen, locked, refresh_lock },
+                    pipeline,
+                )
+                .map_err(|err| {
+                    anyhow::Error::new(MietteReportError::new(project_error_diagnostic(
+                        &plan.manifest_path.display().to_string(),
+                        &manifest_src,
+                        &err,
+                    )))
+                })
             })?;
 
             (Some(plan), Some(workspace))

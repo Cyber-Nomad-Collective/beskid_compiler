@@ -298,6 +298,10 @@ target "Ext" {
     fn get_project_dependencies_merges_declared_and_lock() {
         let (_temp, root) = workspace_fixture();
         let project = root.join("apps/demo/demo.bproj");
+        write(&root.join("apps/demo/Src/Main.bd"), "Fn Main() { }\n");
+        write(&root.join("apps/lib/Src/Lib.bd"), "Fn Main() { }\n");
+        let plan = beskid_analysis::projects::build_compile_plan(&project, None).expect("resolve current graph");
+        beskid_analysis::projects::prepare_project_workspace(&plan).expect("write genuine v2 lock");
         let uri = path_to_uri_string(&project);
         let value = graph::get_project_dependencies(&uri).expect("deps");
         let declared = value["declared"].as_array().expect("declared");
@@ -305,7 +309,9 @@ target "Ext" {
         assert_eq!(declared[0]["name"], "lib");
         let locked = value["locked"].as_array().expect("locked");
         assert_eq!(locked.len(), 1);
-        assert_eq!(locked[0]["resolvedVersion"], "1.0.0");
+        assert_eq!(locked[0]["name"], "lib");
+        assert_eq!(locked[0]["project"], root.join("apps/lib").display().to_string());
+        assert!(locked[0]["materializedRoot"].as_str().unwrap().starts_with(root.to_str().unwrap()));
         let unresolved = value["unresolved"].as_array().expect("unresolved");
         assert!(unresolved.is_empty());
     }
@@ -346,7 +352,7 @@ dependency "missing" {
             .iter()
             .map(|entry| entry.as_str().expect("name").to_string())
             .collect::<Vec<_>>();
-        assert_eq!(unresolved, vec!["missing".to_string()]);
+        assert_eq!(unresolved, vec!["lib".to_string(), "missing".to_string()]);
     }
 
     /// Locate the VS Code extension's command snapshot.

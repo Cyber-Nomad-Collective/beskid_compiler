@@ -43,13 +43,14 @@ pub fn resolve_input_with_pipeline(
 /// Resolve to a [`ResolvedProject`] with optional pipeline reporting and unresolved-deps policy.
 pub fn resolve_project_with_pipeline(options: FrontendProjectPipelineOptions<'_>) -> Result<ResolvedProject> {
     let FrontendProjectPipelineOptions { resolve, unresolved_dependency_policy, pipeline } = options;
-    services::resolve_project_with_policy(
+    services::resolve_project_with_policy_and_lock_refresh(
         resolve.input,
         resolve.project,
         resolve.target,
         resolve.workspace_member,
         resolve.frozen,
         resolve.locked,
+        resolve.refresh_lock,
         unresolved_dependency_policy,
         pipeline,
     )

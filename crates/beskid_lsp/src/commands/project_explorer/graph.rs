@@ -5,7 +5,8 @@ use std::path::{Path, PathBuf};
 
 use beskid_analysis::CompilationContext;
 use beskid_analysis::projects::{
-    DependencySource, ProjectLockDependencyEntry, is_workspace_manifest_path, load_project_lock_dependencies,
+    CompilePlan, DependencySource, PortableLockPath, PortableLockPathBaseKind, ProjectLockDependencyEntry,
+    ProjectLockSource, build_compile_plan, is_workspace_manifest_path, load_project_lock_dependencies_for_plan,
     parse_manifest, plan_entry_path,
 };
 use beskid_graph::{GraphKind, graph_tooling_payload};
@@ -94,12 +95,21 @@ pub(crate) fn get_project_dependencies(project_uri: &str) -> Result<Value> {
         })
         .collect();
 
-    let project_root = manifest_path.parent().ok_or_else(missing_args)?;
-    let lock_entries = load_project_lock_dependencies(project_root).unwrap_or_default();
-    let locked = lock_entries.iter().map(serialize_lock_entry).collect::<Vec<_>>();
+    let lock_entries = build_compile_plan(&manifest_path, None)
+        .ok()
+        .map(|plan| {
+            let lock_path = plan.project_root.join("Project.lock");
+            load_project_lock_dependencies_for_plan(&lock_path, &plan)
+                .unwrap_or_default()
+                .into_iter()
+                .filter_map(|entry| serialize_lock_entry(&entry, &plan))
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let locked = lock_entries.iter().map(|(_, value)| value.clone()).collect::<Vec<_>>();
 
     let declared_names: HashSet<&str> = manifest.dependencies.iter().map(|dep| dep.name.as_str()).collect();
-    let locked_names: HashSet<&str> = lock_entries.iter().map(|entry| entry.name()).collect();
+    let locked_names: HashSet<&str> = lock_entries.iter().map(|(name, _)| name.as_str()).collect();
     let mut unresolved: Vec<Value> = declared_names.difference(&locked_names).map(|name| json!(name)).collect();
     unresolved.sort_by(|left, right| left.as_str().unwrap_or_default().cmp(right.as_str().unwrap_or_default()));
 
@@ -111,16 +121,40 @@ pub(crate) fn get_project_dependencies(project_uri: &str) -> Result<Value> {
     }))
 }
 
-fn serialize_lock_entry(entry: &ProjectLockDependencyEntry) -> Value {
-    json!({
-        "name": entry.name(),
-        "manifest": entry.manifest(),
-        "project": entry.project(),
-        "sourceRoot": entry.source_root(),
-        "materializedRoot": entry.materialized_root(),
-        "resolvedVersion": entry.resolved_version(),
-        "registry": entry.registry(),
-    })
+fn serialize_lock_entry(entry: &ProjectLockDependencyEntry, plan: &CompilePlan) -> Option<(String, Value)> {
+    let declared = plan.dependency_projects.iter().find(|dependency| dependency.dependency_name == entry.name());
+    let materialized = PortableLockPath::parse(
+        "materialized_root",
+        entry.materialized_root(),
+        PortableLockPathBaseKind::MaterializedRoot,
+    )
+    .ok()?
+    .resolve(&plan.project_root)
+    .ok()?;
+    let (project, manifest, source_root) = match entry.source() {
+        ProjectLockSource::Path | ProjectLockSource::Corelib => declared
+            .map(|dependency| {
+                (
+                    Some(dependency.project_root.display().to_string()),
+                    Some(dependency.manifest_path.display().to_string()),
+                    Some(dependency.source_root.display().to_string()),
+                )
+            })
+            .unwrap_or((None, None, None)),
+        ProjectLockSource::Registry => (None, None, None),
+    };
+    Some((
+        entry.name().to_string(),
+        json!({
+            "name": entry.name(),
+            "manifest": manifest,
+            "project": project,
+            "sourceRoot": source_root,
+            "materializedRoot": materialized.display().to_string(),
+            "resolvedVersion": entry.resolved_version(),
+            "registry": entry.registry(),
+        }),
+    ))
 }
 
 fn dependency_source_str(source: DependencySource) -> &'static str {
