@@ -6,6 +6,9 @@ use Runtime.Network.Table;
 use Runtime.Network.Sockets;
 use Runtime.Network.Dns;
 use Concurrency.Fiber;
+use Concurrency.WaitGroup;
+use Concurrency.Channel;
+use Concurrency.TryResult;
 use Concurrency;
 use Core.Results;
 use Core.Collections.Array;
@@ -514,4 +517,113 @@ test native_network_pending_read_policy_rekeys_and_clears_without_resurrection {
         Result::Ok(_) => (),
         Result::Error(_) => Assert.Fail("pending-policy scenario completes"),
     };
+}
+
+i64 PhysicalReadRaceWrite(word peer, WaitGroup prepared, WaitGroup start) {
+    pointer sent = NetworkTestArray(1, 1);
+    raw_byte_store(pointer_add(sent, 16), 31);
+    WaitGroup.Done(prepared);
+    WaitGroup.Wait(start);
+    i64 status = Operations.NetworkWrite(peer, sent, 0, 1);
+    Native.SystemFree(sent, 17);
+    return status;
+}
+
+i32 PhysicalReadRaceClose(word client, WaitGroup prepared, WaitGroup start) {
+    WaitGroup.Done(prepared);
+    WaitGroup.Wait(start);
+    return Table.NetworkClose(client);
+}
+
+unit PhysicalReadRaceWatchdog(WaitGroup start, Channel<i64> released) {
+    Assert.True(match Time.Sleep(Time.FromMilliseconds(200_i64)) { Result::Ok(_) => true, _ => false, }, "native physical race watchdog sleep completes");
+    Assert.True(match Channel<i64>.Send(released, 1_i64) { Result::Ok(_) => true, _ => false, }, "native physical race watchdog records release first");
+    WaitGroup.Done(start);
+}
+
+unit PhysicalReadRaceLeavesNoNativeLease(bool releaseAfterDeadline) {
+    pointer address = NetworkTestArray(19, 1);
+    pointer wire = pointer_add(address, 16);
+    raw_byte_store(wire, 4);
+    raw_byte_store(pointer_add(wire, 3), 127);
+    raw_byte_store(pointer_add(wire, 6), 1);
+    pointer listenerOut = NetworkTestArray(1, 8);
+    pointer clientOut = NetworkTestArray(1, 8);
+    pointer acceptedOut = NetworkTestArray(1, 8);
+    pointer boundAddress = NetworkTestArray(19, 1);
+    Assert.Equal(Sockets.NetworkOpen(1, address, 0, 8, -1, listenerOut), 0, "physical race binds a loopback listener");
+    word listener = raw_word_load(pointer_add(listenerOut, 16));
+    Assert.Equal(Sockets.NetworkAddress(listener, false, boundAddress), 0, "physical race selects a real port");
+    Assert.Equal(Sockets.NetworkOpen(2, boundAddress, 0, 0, -1, clientOut), 0, "physical race connects a native client");
+    word client = raw_word_load(pointer_add(clientOut, 16));
+    Assert.Equal(Sockets.NetworkAccept(listener, -1, acceptedOut), 0, "physical race accepts a native peer");
+    word peer = raw_word_load(pointer_add(acceptedOut, 16));
+    Fiber<i64> pending = spawn (() => PendingReadOne(client));
+    mut word token = 0;
+    mut word attempts = 0;
+    while token == 0 && attempts < 1000 {
+        network_table_lock();
+        pointer table = Native.NativePointer(raw_word_load(network_table_root()));
+        pointer slot = Table.NetworkFindLocked(table, client);
+        if slot != Native.NativePointer(0) { token = raw_word_load(Table.NetworkSlotToken(slot, 0)); }
+        network_table_unlock();
+        if token == 0 { Concurrency.Yield(); }
+        attempts = attempts + 1;
+    }
+    Assert.True(token != 0, "physical race read is registered before producers start");
+    WaitGroup start = WaitGroup.Create();
+    WaitGroup.Add(start, 1);
+    WaitGroup prepared = WaitGroup.Create();
+    WaitGroup.Add(prepared, 2);
+    Fiber<i64> writer = spawn (() => PhysicalReadRaceWrite(peer, prepared, start));
+    Fiber<i32> closer = spawn (() => PhysicalReadRaceClose(client, prepared, start));
+    WaitGroup.Wait(prepared);
+    Assert.Equal(Operations.NetworkSetDeadlines(client, clock_monotonic_nanos() + 30000000, -1), 0, "physical race arms a real pending-read timer");
+    mut i64 delay = 10;
+    if releaseAfterDeadline { delay = 40; }
+    Assert.True(match Time.Sleep(Time.FromMilliseconds(delay)) { Result::Ok(_) => true, _ => false, }, "physical race reaches native release point");
+    if releaseAfterDeadline {
+        Channel<i64> released = Channel<i64>.Create();
+        Fiber<unit> watchdog = spawn (() => PhysicalReadRaceWatchdog(start, released));
+        match pending.Join() {
+            Result::Ok(status) => Assert.Equal(status, -12_i64, "real timer wins while both native producers remain gated"),
+            Result::Error(_) => Assert.Fail("physical race reader joins"),
+        };
+        Assert.True(match Channel<i64>.TryReceive(released) { TryResult::WouldBlock => true, _ => false, }, "native read completes before watchdog releases the producers");
+        Assert.True(match watchdog.Join() { Result::Ok(_) => true, _ => false, }, "native physical race watchdog releases the producers");
+        Assert.True(match Channel<i64>.TryReceive(released) { TryResult::Ok(value) => value == 1_i64, _ => false, }, "native physical race watchdog marker is consumed once");
+        Channel<i64>.Close(released);
+    } else {
+        WaitGroup.Done(start);
+        match pending.Join() {
+            Result::Ok(status) => Assert.True(status == 1031_i64 || status == -12_i64 || status == -14_i64, "one native readiness, timeout, or close outcome wins"),
+            Result::Error(_) => Assert.Fail("physical race reader joins"),
+        };
+    }
+    Assert.True(match writer.Join() { Result::Ok(status) => status == 1_i64 || status < 0_i64, Result::Error(_) => false, }, "native writer returns one byte or a portable close-race error");
+    Assert.True(match closer.Join() { Result::Ok(status) => status == 0, Result::Error(_) => false, }, "native closer joins after release");
+    Assert.Equal(Table.NetworkClose(client), 0, "physical race client close is idempotent");
+    Assert.Equal(Table.NetworkClose(peer), 0, "physical race peer closes");
+    Assert.Equal(Table.NetworkClose(listener), 0, "physical race listener closes");
+    Assert.Equal(External.ExternalActiveCount(), 0, "physical race leaves no active waits");
+    Assert.Equal(Dns.NetworkShutdown(External.ExternalOwnerId()), 0, "physical race leaves no native socket leases");
+    Native.SystemFree(boundAddress, 35);
+    Native.SystemFree(acceptedOut, 24);
+    Native.SystemFree(clientOut, 24);
+    Native.SystemFree(listenerOut, 24);
+    Native.SystemFree(address, 35);
+}
+
+unit PhysicalReadRaceAllNativeRounds() {
+    mut i64 round = 0;
+    while round < 7 {
+        PhysicalReadRaceLeavesNoNativeLease(round == 6);
+        round = round + 1;
+    }
+}
+
+test native_network_physical_readiness_close_deadline_has_no_leaks {
+    meta { tags = "physical-read-race"; }
+    Fiber<unit> scenario = spawn PhysicalReadRaceAllNativeRounds();
+    Assert.True(match scenario.Join() { Result::Ok(_) => true, _ => false, }, "bounded native physical read race joins");
 }
