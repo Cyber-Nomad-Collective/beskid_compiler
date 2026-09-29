@@ -763,7 +763,10 @@ fn zip_symlink_entry_is_rejected_before_any_archive_file_is_written() {
     let error = fixture.prepare(false).expect_err("ZIP symlink entry must be rejected");
 
     assert!(error.to_string().contains("symlink"), "unexpected error: {error}");
-    assert!(registry_destination_paths(&fixture).is_empty(), "a later ZIP symlink must block publication of the whole package");
+    assert!(
+        registry_destination_paths(&fixture).is_empty(),
+        "a later ZIP symlink must block publication of the whole package"
+    );
 }
 
 #[test]
@@ -893,7 +896,8 @@ fn sharp_s_and_ss_zip_aliases_are_rejected_before_publication() {
 #[test]
 fn zip_entry_count_above_ten_thousand_is_rejected_before_publication() {
     let fixture = RegistryFixture::new();
-    let mut entries = vec![(b"PkgCore.bproj".as_slice(), PACKAGE_MANIFEST), (b"Src/Marker.bd".as_slice(), b"marker".as_slice())];
+    let mut entries =
+        vec![(b"PkgCore.bproj".as_slice(), PACKAGE_MANIFEST), (b"Src/Marker.bd".as_slice(), b"marker".as_slice())];
     let names = (0..9_999).map(|index| format!("D{index:05}/").into_bytes()).collect::<Vec<_>>();
     entries.extend(names.iter().map(|name| (name.as_slice(), b"".as_slice())));
     let artifact = stored_zip(&entries);
@@ -905,6 +909,84 @@ fn zip_entry_count_above_ten_thousand_is_rejected_before_publication() {
     assert!(error.to_string().contains("10,000"), "unexpected error: {error}");
     assert!(registry_destination_paths(&fixture).is_empty(), "over-budget ZIP must not publish a package");
     assert_no_registry_staging_dirs(&fixture);
+}
+
+#[test]
+fn duplicate_zip_central_entries_count_toward_the_ten_thousand_limit() {
+    let fixture = RegistryFixture::new();
+    let mut entries =
+        vec![(b"PkgCore.bproj".as_slice(), PACKAGE_MANIFEST), (b"Src/Marker.bd".as_slice(), b"marker".as_slice())];
+    entries.extend(std::iter::repeat_n((b"Repeated/".as_slice(), b"".as_slice()), 9_999));
+    let artifact = stored_zip(&entries);
+    assert!(zip::ZipArchive::new(Cursor::new(&artifact)).unwrap().len() < 10_000, "ZIP library deduplicates names");
+    fixture.packages.lock().unwrap().insert(OLD_VERSION.to_owned(), artifact);
+
+    let error = fixture.prepare(false).expect_err("raw central-directory count must be bounded");
+
+    assert!(error.to_string().contains("10,000"), "unexpected error: {error}");
+    assert!(registry_destination_paths(&fixture).is_empty(), "over-budget ZIP must not publish a package");
+    assert_no_registry_staging_dirs(&fixture);
+}
+
+#[test]
+fn zip64_entry_count_sentinel_is_rejected_before_materialization() {
+    let fixture = RegistryFixture::new();
+    let mut artifact = package_zip("marker");
+    let eocd = artifact.windows(4).rposition(|bytes| bytes == 0x0605_4b50_u32.to_le_bytes()).unwrap();
+    artifact[eocd + 8..eocd + 12].copy_from_slice(&[0xff; 4]);
+    fixture.packages.lock().unwrap().insert(OLD_VERSION.to_owned(), artifact);
+
+    let error = fixture.prepare(false).expect_err("ZIP64 sentinel must fail closed");
+
+    assert!(error.to_string().contains("ZIP64 format is unsupported"), "unexpected error: {error}");
+    assert!(registry_destination_paths(&fixture).is_empty(), "ZIP64 artifact must not publish a package");
+    assert_no_registry_staging_dirs(&fixture);
+}
+
+#[test]
+fn zip64_locator_without_sentinel_is_rejected_before_materialization() {
+    let fixture = RegistryFixture::new();
+    let mut artifact = package_zip("marker");
+    let eocd = artifact.windows(4).rposition(|bytes| bytes == 0x0605_4b50_u32.to_le_bytes()).unwrap();
+    let mut locator = [0_u8; 20];
+    locator[..4].copy_from_slice(&0x0706_4b50_u32.to_le_bytes());
+    artifact.splice(eocd..eocd, locator);
+    fixture.packages.lock().unwrap().insert(OLD_VERSION.to_owned(), artifact);
+
+    let error = fixture.prepare(false).expect_err("ZIP64 locator must fail closed");
+
+    assert!(error.to_string().contains("ZIP64 format is unsupported"), "unexpected error: {error}");
+    assert!(registry_destination_paths(&fixture).is_empty(), "ZIP64 artifact must not publish a package");
+    assert_no_registry_staging_dirs(&fixture);
+}
+
+#[test]
+fn trailing_bytes_after_zip_eocd_are_rejected() {
+    let fixture = RegistryFixture::new();
+    let mut artifact = package_zip("marker");
+    artifact.extend_from_slice(b"trailing junk");
+    fixture.packages.lock().unwrap().insert(OLD_VERSION.to_owned(), artifact);
+
+    let error = fixture.prepare(false).expect_err("EOCD must end at EOF after its declared comment");
+
+    assert!(error.to_string().contains("ZIP EOCD"), "unexpected error: {error}");
+    assert!(registry_destination_paths(&fixture).is_empty(), "malformed ZIP must not publish a package");
+    assert_no_registry_staging_dirs(&fixture);
+}
+
+#[test]
+fn valid_zip_eocd_comment_is_accepted() {
+    let fixture = RegistryFixture::new();
+    let mut artifact = package_zip("commented release");
+    let eocd = artifact.windows(4).rposition(|bytes| bytes == 0x0605_4b50_u32.to_le_bytes()).unwrap();
+    let comment = b"valid ZIP comment";
+    artifact[eocd + 20..eocd + 22].copy_from_slice(&(comment.len() as u16).to_le_bytes());
+    artifact.extend_from_slice(comment);
+    fixture.packages.lock().unwrap().insert(OLD_VERSION.to_owned(), artifact);
+
+    let prepared = fixture.prepare(false).expect("declared EOCD comment should remain valid");
+
+    assert_eq!(fs::read(marker_path(&prepared).join("Marker.bd")).unwrap(), b"commented release");
 }
 
 #[test]
@@ -1003,11 +1085,8 @@ fn zip_directory_with_payload_is_rejected_before_publication() {
 #[test]
 fn zip_directory_with_bad_crc_is_rejected_before_publication() {
     let fixture = RegistryFixture::new();
-    let mut artifact = stored_zip(&[
-        (b"PkgCore.bproj", PACKAGE_MANIFEST),
-        (b"Src/Marker.bd", b"marker"),
-        (b"Src/", b""),
-    ]);
+    let mut artifact =
+        stored_zip(&[(b"PkgCore.bproj", PACKAGE_MANIFEST), (b"Src/Marker.bd", b"marker"), (b"Src/", b"")]);
     let directory_central = artifact
         .windows(4)
         .enumerate()
