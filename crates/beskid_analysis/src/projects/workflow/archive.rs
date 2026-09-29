@@ -237,6 +237,7 @@ fn validate_central_directory_records(
         let name_bytes = u16::from_le_bytes([header[28], header[29]]) as u64;
         let extra_bytes = u16::from_le_bytes([header[30], header[31]]) as u64;
         let comment_bytes = u16::from_le_bytes([header[32], header[33]]) as u64;
+        let flags = u16::from_le_bytes([header[8], header[9]]);
         let disk_start = u16::from_le_bytes([header[34], header[35]]);
         let compressed_bytes = u32::from_le_bytes(header[20..24].try_into().expect("fixed central field"));
         let uncompressed_bytes = u32::from_le_bytes(header[24..28].try_into().expect("fixed central field"));
@@ -270,13 +271,19 @@ fn validate_central_directory_records(
         file.read_exact(&mut raw_name).map_err(|error| {
             ProjectError::Validation(format!("cannot read registry artifact ZIP central-directory name: {error}"))
         })?;
-        if !raw_names.insert(raw_name) {
+        if (flags & 0x0800) == 0 && !raw_name.is_ascii() {
+            return Err(ProjectError::Validation(
+                "registry artifact non-ASCII ZIP entry name requires UTF-8 flag".into(),
+            ));
+        }
+        if std::str::from_utf8(&raw_name).is_err() {
+            return Err(ProjectError::Validation("registry artifact has an invalid UTF-8 ZIP entry name".into()));
+        }
+        if !raw_names.insert(raw_name.clone()) {
             return Err(ProjectError::Validation("registry artifact contains a duplicate ZIP entry name".into()));
         }
-        if has_zip64_extra(file, position + 46 + name_bytes, extra_bytes, &mut extra_buffer)? {
-            return Err(ProjectError::Validation("registry artifact ZIP64 format is unsupported".into()));
-        }
-        validate_local_header(file, local_offset as u64, offset, &mut extra_buffer)?;
+        validate_portable_extra_fields(file, position + 46 + name_bytes, extra_bytes, &mut extra_buffer)?;
+        validate_local_header(file, local_offset as u64, offset, &raw_name, flags, &mut extra_buffer)?;
         position = next;
         actual_count += 1;
         if actual_count > MAX_ZIP_ENTRIES {
@@ -295,6 +302,8 @@ fn validate_local_header(
     file: &mut File,
     offset: u64,
     central_start: u64,
+    central_name: &[u8],
+    central_flags: u16,
     extra_buffer: &mut [u8],
 ) -> Result<(), ProjectError> {
     if offset + 30 > central_start {
@@ -310,6 +319,12 @@ fn validate_local_header(
     if &header[..4] != b"PK\x03\x04" {
         return Err(ProjectError::Validation("registry artifact ZIP local header has an invalid signature".into()));
     }
+    let local_flags = u16::from_le_bytes([header[6], header[7]]);
+    if (local_flags & 0x0800) != (central_flags & 0x0800) {
+        return Err(ProjectError::Validation(
+            "registry artifact local ZIP UTF-8 flag disagrees with central-directory flag".into(),
+        ));
+    }
     let compressed_bytes = u32::from_le_bytes(header[18..22].try_into().expect("fixed local field"));
     let uncompressed_bytes = u32::from_le_bytes(header[22..26].try_into().expect("fixed local field"));
     if compressed_bytes == u32::MAX || uncompressed_bytes == u32::MAX {
@@ -321,17 +336,35 @@ fn validate_local_header(
     if extra_start + extra_bytes > central_start {
         return Err(ProjectError::Validation("registry artifact ZIP local extra fields leave file data".into()));
     }
-    if has_zip64_extra(file, extra_start, extra_bytes, extra_buffer)? {
-        return Err(ProjectError::Validation("registry artifact ZIP64 format is unsupported".into()));
+    if name_bytes as usize != central_name.len() {
+        return Err(ProjectError::Validation(
+            "registry artifact local ZIP name disagrees with central-directory name".into(),
+        ));
     }
+    file.seek(SeekFrom::Start(offset + 30))
+        .map_err(|error| ProjectError::Validation(format!("cannot seek registry artifact local ZIP name: {error}")))?;
+    let mut local_name = vec![0_u8; name_bytes as usize];
+    file.read_exact(&mut local_name)
+        .map_err(|error| ProjectError::Validation(format!("cannot read registry artifact local ZIP name: {error}")))?;
+    if local_name != central_name {
+        return Err(ProjectError::Validation(
+            "registry artifact local ZIP name disagrees with central-directory name".into(),
+        ));
+    }
+    validate_portable_extra_fields(file, extra_start, extra_bytes, extra_buffer)?;
     Ok(())
 }
 
-fn has_zip64_extra(file: &mut File, offset: u64, length: u64, buffer: &mut [u8]) -> Result<bool, ProjectError> {
+fn validate_portable_extra_fields(
+    file: &mut File,
+    offset: u64,
+    length: u64,
+    buffer: &mut [u8],
+) -> Result<(), ProjectError> {
     let length = length as usize;
     let bytes = &mut buffer[..length];
     if bytes.is_empty() {
-        return Ok(false);
+        return Ok(());
     }
     file.seek(SeekFrom::Start(offset))
         .map_err(|error| ProjectError::Validation(format!("cannot seek registry artifact ZIP extra field: {error}")))?;
@@ -349,10 +382,13 @@ fn has_zip64_extra(file: &mut File, offset: u64, length: u64, buffer: &mut [u8])
             return Err(ProjectError::Validation("registry artifact ZIP extra field is truncated".into()));
         }
         if field_id == 0x0001 {
-            return Ok(true);
+            return Err(ProjectError::Validation("registry artifact ZIP64 format is unsupported".into()));
+        }
+        if field_id == 0x7075 {
+            return Err(ProjectError::Validation("registry artifact Unicode Path override is unsupported".into()));
         }
     }
-    Ok(false)
+    Ok(())
 }
 
 fn plan_archive_path(
