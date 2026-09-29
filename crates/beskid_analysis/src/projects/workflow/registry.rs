@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use tempfile::{Builder, NamedTempFile};
+use zip::ZipArchive;
 
 use super::archive::extract_zip_to_dir;
 use super::filesystem::materialized_dependency_id;
@@ -13,6 +14,7 @@ use super::lockfile::{
     PortableLockPath, PortableLockPathBaseKind, ProjectLockDependencyEntry, ProjectLockSource,
 };
 use crate::projects::error::ProjectError;
+use crate::projects::discovery::is_project_manifest_path;
 use crate::projects::graph::WorkspaceResolutionRules;
 use crate::projects::model::{MaterializedDependencyProject, UnresolvedDependencyNote};
 
@@ -24,6 +26,79 @@ pub(super) struct ResolvedRegistryDependency {
     selected_version: String,
     artifact_digest: String,
     registry_identity: String,
+}
+
+struct RegistryArtifactLayout {
+    manifest: String,
+    source_root: &'static str,
+}
+
+impl ResolvedRegistryDependency {
+    /// Check every portable path in an existing pin before preparation creates
+    /// `obj`. The artifact digest has already been verified by resolution.
+    pub(super) fn validate_existing_lock_entry(
+        &self,
+        pinned: Option<&ProjectLockDependencyEntry>,
+    ) -> Result<(), ProjectError> {
+        let Some(pinned) = pinned else { return Ok(()) };
+        if pinned.project != self.materialized_relative || pinned.materialized_root != self.materialized_relative {
+            return Err(stale_registry_pin(&self.dependency_name));
+        }
+
+        let layout = registry_artifact_layout(&self.artifact)?;
+        if pinned.manifest != layout.manifest || pinned.source_root != layout.source_root {
+            return Err(stale_registry_pin(&self.dependency_name));
+        }
+        Ok(())
+    }
+}
+
+fn registry_artifact_layout(artifact: &NamedTempFile) -> Result<RegistryArtifactLayout, ProjectError> {
+    let artifact = artifact.reopen().map_err(|_| {
+        ProjectError::Validation("failed to reopen registry scratch artifact".into())
+    })?;
+    let mut archive = ZipArchive::new(artifact)
+        .map_err(|error| ProjectError::Validation(format!("invalid registry artifact ZIP: {error}")))?;
+    let mut manifest = None;
+    let mut has_lowercase_src = false;
+    let mut has_uppercase_src = false;
+    for index in 0..archive.len() {
+        let entry = archive.by_index(index).map_err(|error| {
+            ProjectError::Validation(format!("failed to read registry artifact entry: {error}"))
+        })?;
+        let path = entry.enclosed_name().ok_or_else(|| {
+            ProjectError::Validation("registry artifact ZIP has an unsafe entry path".into())
+        })?;
+        let mut components = path.components();
+        let first = components.next();
+        let nested = components.next().is_some();
+        if !nested && !entry.is_dir() && is_project_manifest_path(&path) {
+            let name = path.to_str().ok_or_else(|| {
+                ProjectError::Validation("registry artifact manifest name is not UTF-8".into())
+            })?;
+            if manifest.replace(name.to_string()).is_some() {
+                return Err(ProjectError::Validation("registry artifact has multiple project manifests".into()));
+            }
+        }
+        if nested || entry.is_dir() {
+            if first == Some(std::path::Component::Normal(std::ffi::OsStr::new("src"))) {
+                has_lowercase_src = true;
+            } else if first == Some(std::path::Component::Normal(std::ffi::OsStr::new("Src"))) {
+                has_uppercase_src = true;
+            }
+        }
+    }
+    let manifest = manifest.ok_or_else(|| {
+        ProjectError::Validation("registry artifact has no project manifest".into())
+    })?;
+    let source_root = if has_lowercase_src { "src" } else if has_uppercase_src { "Src" } else { "." };
+    Ok(RegistryArtifactLayout { manifest, source_root })
+}
+
+fn stale_registry_pin(dependency_name: &str) -> ProjectError {
+    ProjectError::Validation(format!(
+        "registry pin for `{dependency_name}` is stale: artifact paths differ from Project.lock; run `beskid update`"
+    ))
 }
 
 const MAX_REGISTRY_ARTIFACT_BYTES: u64 = 64 * 1024 * 1024;
@@ -148,6 +223,7 @@ pub(super) fn materialize_registry_dependency(
         dependency_name, materialized_relative, materialized_root, artifact,
         selected_version, artifact_digest, registry_identity,
     } = resolved;
+    let layout = registry_artifact_layout(&artifact)?;
     let artifact_reader = artifact.reopen()
         .map_err(|_| ProjectError::Validation("failed to reopen registry scratch artifact".into()))?;
     fs::create_dir_all(&materialized_root)
@@ -161,13 +237,13 @@ pub(super) fn materialize_registry_dependency(
                 dependency_name, selected_version
             ))
         })?;
-
-    let materialized_source_root = if materialized_root.join("src").is_dir() {
-        materialized_root.join("src")
-    } else if materialized_root.join("Src").is_dir() {
-        materialized_root.join("Src")
-    } else {
+    if portable_child_path(&materialized_root, &manifest_path)? != layout.manifest {
+        return Err(ProjectError::Validation("registry artifact manifest differs from its ZIP layout".into()));
+    }
+    let materialized_source_root = if layout.source_root == "." {
         materialized_root.clone()
+    } else {
+        materialized_root.join(layout.source_root)
     };
 
     let lock_entry = ProjectLockDependencyEntry {

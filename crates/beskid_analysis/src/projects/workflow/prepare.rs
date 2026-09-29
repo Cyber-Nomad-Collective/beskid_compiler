@@ -172,6 +172,7 @@ pub fn prepare_project_workspace_with_options(
                 unresolved.dependency_name
             )));
         }
+        resolved.validate_existing_lock_entry(pinned)?;
         if !destinations.insert(resolved.materialized_relative.clone()) {
             return Err(ProjectError::Validation("lockfile duplicates a materialized destination".into()));
         }

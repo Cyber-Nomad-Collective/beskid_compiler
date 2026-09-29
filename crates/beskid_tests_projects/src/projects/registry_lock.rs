@@ -90,6 +90,13 @@ impl RegistryFixture {
         self.packages.lock().expect("package map").insert(version.to_owned(), package_zip(marker));
     }
 
+    fn publish_with_source_dir(&self, version: &str, marker: &str, source_dir: &str) {
+        self.packages
+            .lock()
+            .expect("package map")
+            .insert(version.to_owned(), package_zip_with_source_dir(marker, source_dir));
+    }
+
     fn withdraw(&self, version: &str) {
         self.packages.lock().expect("package map").remove(version);
     }
@@ -198,8 +205,13 @@ fn serve_request(
 
 // Two stored ZIP entries keep the HTTP artifact real without adding a test dependency.
 fn package_zip(marker: &str) -> Vec<u8> {
+    package_zip_with_source_dir(marker, "Src")
+}
+
+fn package_zip_with_source_dir(marker: &str, source_dir: &str) -> Vec<u8> {
     let manifest = b"PkgCore {\n  name = \"PkgCore\"\n  version = \"0.1.0\"\n}\n\ntarget \"PkgCore\" {\n  kind = \"Lib\"\n  entry = \"Marker.bd\"\n}\n";
-    let files: [(&[u8], &[u8]); 2] = [(b"PkgCore.bproj", manifest), (b"Src/Marker.bd", marker.as_bytes())];
+    let source_path = format!("{source_dir}/Marker.bd");
+    let files: [(&[u8], &[u8]); 2] = [(b"PkgCore.bproj", manifest), (source_path.as_bytes(), marker.as_bytes())];
     let mut zip = Vec::new();
     let mut central = Vec::new();
     for (name, bytes) in files {
@@ -378,6 +390,92 @@ fn strict_preparation_rejects_unpinned_registry_without_mutation() {
         assert!(error.to_string().contains("pin"), "unexpected error: {error}");
         assert_eq!(fixture.lock(), original_lock);
         assert_eq!(snapshot_tree(&obj), original_obj);
+    }
+}
+
+#[test]
+fn strict_preparation_rejects_forged_registry_paths_before_creating_output() {
+    for (field, forged) in [
+        ("project", "obj/beskid/deps/src/Forged"),
+        ("manifest", "Forged.bproj"),
+        ("source_root", "Forged"),
+        ("materialized_root", "obj/beskid/deps/src/Forged"),
+    ] {
+        for (locked, frozen) in [(true, false), (false, true)] {
+            let fixture = RegistryFixture::new();
+            fixture.publish(OLD_VERSION, "trusted release");
+            fixture.prepare(false).expect("create a valid digest-pinned v2 lock");
+            let original_lock = fixture.lock();
+            let original_line = original_lock
+                .lines()
+                .find(|line| line.starts_with("- name=PkgCore;"))
+                .expect("registry lock entry");
+            let field_prefix = format!(";{field}=");
+            let original_value = original_line
+                .split_once(&field_prefix)
+                .expect("registry field")
+                .1
+                .split(';')
+                .next()
+                .expect("registry field value");
+            assert_ne!(original_value, forged, "test must change the {field} field");
+            let forged_line = original_line.replace(
+                &format!("{field_prefix}{original_value}"),
+                &format!("{field_prefix}{forged}"),
+            );
+            let forged_lock = original_lock.replace(original_line, &forged_line);
+            fs::write(fixture.lock_path(), &forged_lock).expect("write forged, parseable v2 lock");
+
+            let output = fixture.app_manifest.parent().unwrap().join("obj");
+            fs::remove_dir_all(&output).expect("remove disposable fixture output");
+            let error = with_cwd_at_workspace_root(fixture.root.path(), || {
+                let plan = build_compile_plan_with_policy(
+                    &fixture.app_manifest,
+                    None,
+                    UnresolvedDependencyPolicy::Warn,
+                )?;
+                prepare_project_workspace_with_options(
+                    &plan,
+                    WorkspacePrepareOptions { locked, frozen, refresh_lock: false },
+                    None,
+                )
+            })
+            .expect_err("forged registry identity must be rejected");
+
+            assert!(!output.exists(), "forged {field} must fail before any obj output");
+            assert!(
+                error.to_string().contains("stale") || error.to_string().contains("pin"),
+                "unexpected {field} strict-mode error: {error}"
+            );
+            assert_eq!(fixture.lock(), forged_lock, "rejected {field} lock must remain untouched");
+            assert_no_registry_scratch(&fixture);
+        }
+    }
+}
+
+#[test]
+fn registry_source_root_tracks_literal_archive_directory_case() {
+    for (source_dir, expected_root) in [("src", "src"), ("Src", "Src"), ("SRC", ".")] {
+        let fixture = RegistryFixture::new();
+        fixture.publish_with_source_dir(OLD_VERSION, "literal source", source_dir);
+        let prepared = fixture.prepare(false).expect("prepare registry package");
+        let materialized = prepared
+            .materialized_dependencies
+            .iter()
+            .find(|dependency| dependency.dependency_name == "PkgCore")
+            .expect("materialized registry package");
+        let expected_path = if expected_root == "." {
+            materialized.materialized_project_root.clone()
+        } else {
+            materialized.materialized_project_root.join(expected_root)
+        };
+        assert_eq!(materialized.materialized_source_root, expected_path, "archive dir {source_dir}");
+        assert!(
+            fixture.lock().contains(&format!(";source_root={expected_root};")),
+            "archive dir {source_dir} produced unexpected lock: {}",
+            fixture.lock()
+        );
+        fixture.prepare(false).expect("replay literal source-root pin");
     }
 }
 

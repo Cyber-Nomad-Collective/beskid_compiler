@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Reject forged registry lock paths before preparing output, derive registry
+  source roots from literal ZIP names across hosts, and let explicit lock
+  refresh replace a valid but stale project identity.
 - Restore packed template manifests to `.beskid/template.json` when installing
   registry templates, and reject archive paths that escape extraction.
 - Run the Corelib MVP import check with its fixture environment and classify

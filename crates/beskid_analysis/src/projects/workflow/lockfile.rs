@@ -631,7 +631,9 @@ pub(super) fn preflight_existing_lock_for_plan(
         Some(PROJECT_LOCK_HEADER_V2) => {
             let existing = ProjectLockfileV2::parse_v2(&content)?;
             let current = ProjectLockfileV2::from_plan(plan, &[])?;
-            if existing.root_manifest != current.root_manifest || existing.project_name != current.project_name {
+            if !options.refresh_lock
+                && (existing.root_manifest != current.root_manifest || existing.project_name != current.project_name)
+            {
                 return Err(ProjectError::Validation("lockfile belongs to a different project".into()));
             }
             Ok(Some(existing))
