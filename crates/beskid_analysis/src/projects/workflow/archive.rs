@@ -382,7 +382,10 @@ fn create_checked_directories(output_dir: &Path, relative: &Path) -> Result<(), 
 
 #[cfg(test)]
 mod tests {
-    use super::{MAX_ENTRY_UNCOMPRESSED_BYTES, check_output_limits};
+    use std::collections::BTreeMap;
+    use std::path::PathBuf;
+
+    use super::{MAX_ENTRY_UNCOMPRESSED_BYTES, check_output_limits, plan_archive_path};
 
     #[test]
     fn declared_archive_total_must_not_exceed_one_gib_even_when_entries_fit() {
@@ -393,5 +396,25 @@ mod tests {
         let error = check_output_limits(1, &mut total).expect_err("the third entry must exceed the total budget");
 
         assert!(error.to_string().contains("1 GiB"), "unexpected error: {error}");
+    }
+
+    #[test]
+    fn retained_prefix_keys_must_not_exceed_sixty_four_mib() {
+        let mut paths = BTreeMap::new();
+        let mut folded_paths = BTreeMap::new();
+        let tail = std::iter::repeat_n("abcdefghijklmnop", 199).collect::<Vec<_>>().join("/");
+        let mut rejected = false;
+        for index in 0..220 {
+            let path = PathBuf::from(format!("D{index:03}/{tail}"));
+            match plan_archive_path(&mut paths, &mut folded_paths, &path, false) {
+                Ok(()) => {}
+                Err(error) => {
+                    assert!(error.to_string().contains("64 MiB"), "unexpected error: {error}");
+                    rejected = true;
+                    break;
+                }
+            }
+        }
+        assert!(rejected, "planned prefix keys exceeded 64 MiB without rejection");
     }
 }

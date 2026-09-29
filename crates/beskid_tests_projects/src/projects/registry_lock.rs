@@ -849,6 +849,100 @@ fn unicode_normalization_zip_aliases_are_rejected_before_publication() {
     assert!(!fixture.lock_path().exists(), "rejected ZIP must not write Project.lock");
 }
 
+fn unicode_alias_zip(first: &str, second: &str) -> Vec<u8> {
+    let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    let stored = zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+    for (name, bytes) in [
+        ("PkgCore.bproj".to_owned(), PACKAGE_MANIFEST),
+        ("Src/Marker.bd".to_owned(), b"marker".as_slice()),
+        (format!("Src/{first}"), b"first".as_slice()),
+        (format!("Src/{second}"), b"second".as_slice()),
+    ] {
+        writer.start_file(name, stored).expect("start UTF-8 ZIP entry");
+        writer.write_all(bytes).expect("write UTF-8 ZIP entry");
+    }
+    writer.finish().expect("finish UTF-8 ZIP").into_inner()
+}
+
+#[test]
+fn sigma_and_final_sigma_zip_aliases_are_rejected_before_publication() {
+    let fixture = RegistryFixture::new();
+    let artifact = unicode_alias_zip("\u{3a3}.bd", "\u{3c2}.bd");
+    fixture.packages.lock().unwrap().insert(OLD_VERSION.to_owned(), artifact);
+
+    let error = fixture.prepare(false).expect_err("full Unicode case folding must reject sigma aliases");
+
+    assert!(error.to_string().contains("alias"), "unexpected error: {error}");
+    assert!(registry_destination_paths(&fixture).is_empty(), "Unicode aliases must not publish a package");
+    assert_no_registry_staging_dirs(&fixture);
+}
+
+#[test]
+fn sharp_s_and_ss_zip_aliases_are_rejected_before_publication() {
+    let fixture = RegistryFixture::new();
+    let artifact = unicode_alias_zip("Stra\u{df}e.bd", "STRASSE.bd");
+    fixture.packages.lock().unwrap().insert(OLD_VERSION.to_owned(), artifact);
+
+    let error = fixture.prepare(false).expect_err("full Unicode case folding must reject sharp-s aliases");
+
+    assert!(error.to_string().contains("alias"), "unexpected error: {error}");
+    assert!(registry_destination_paths(&fixture).is_empty(), "Unicode aliases must not publish a package");
+    assert_no_registry_staging_dirs(&fixture);
+}
+
+#[test]
+fn zip_entry_count_above_ten_thousand_is_rejected_before_publication() {
+    let fixture = RegistryFixture::new();
+    let mut entries = vec![(b"PkgCore.bproj".as_slice(), PACKAGE_MANIFEST), (b"Src/Marker.bd".as_slice(), b"marker".as_slice())];
+    entries.extend(std::iter::repeat_n((b"Repeated/".as_slice(), b"".as_slice()), 9_999));
+    let artifact = stored_zip(&entries);
+    fixture.packages.lock().unwrap().insert(OLD_VERSION.to_owned(), artifact);
+
+    let error = fixture.prepare(false).expect_err("entry count above ten thousand must be rejected");
+
+    assert!(error.to_string().contains("10,000"), "unexpected error: {error}");
+    assert!(registry_destination_paths(&fixture).is_empty(), "over-budget ZIP must not publish a package");
+    assert_no_registry_staging_dirs(&fixture);
+}
+
+#[test]
+fn zip_name_above_four_thousand_ninety_six_utf8_bytes_is_rejected_in_preflight() {
+    let fixture = RegistryFixture::new();
+    let long_name = format!("Src/{}/Leaf.bd", std::iter::repeat_n("a".repeat(31), 130).collect::<Vec<_>>().join("/"));
+    assert!(long_name.len() > 4_096);
+    let artifact = stored_zip(&[
+        (b"PkgCore.bproj", PACKAGE_MANIFEST),
+        (b"Src/Marker.bd", b"marker"),
+        (long_name.as_bytes(), b"payload"),
+    ]);
+    fixture.packages.lock().unwrap().insert(OLD_VERSION.to_owned(), artifact);
+
+    let error = fixture.prepare(false).expect_err("overlong ZIP name must be rejected in preflight");
+
+    assert!(error.to_string().contains("4,096"), "unexpected error: {error}");
+    assert!(registry_destination_paths(&fixture).is_empty(), "over-budget ZIP must not publish a package");
+    assert_no_registry_staging_dirs(&fixture);
+}
+
+#[test]
+fn zip_name_above_two_hundred_fifty_six_components_is_rejected_in_preflight() {
+    let fixture = RegistryFixture::new();
+    let deep_name = format!("Src/{}/Leaf.bd", std::iter::repeat_n("d", 256).collect::<Vec<_>>().join("/"));
+    assert!(deep_name.split('/').count() > 256);
+    let artifact = stored_zip(&[
+        (b"PkgCore.bproj", PACKAGE_MANIFEST),
+        (b"Src/Marker.bd", b"marker"),
+        (deep_name.as_bytes(), b"payload"),
+    ]);
+    fixture.packages.lock().unwrap().insert(OLD_VERSION.to_owned(), artifact);
+
+    let error = fixture.prepare(false).expect_err("overdeep ZIP name must be rejected in preflight");
+
+    assert!(error.to_string().contains("256"), "unexpected error: {error}");
+    assert!(registry_destination_paths(&fixture).is_empty(), "over-budget ZIP must not publish a package");
+    assert_no_registry_staging_dirs(&fixture);
+}
+
 #[test]
 fn win32_trailing_dot_zip_alias_is_rejected_before_publication() {
     let fixture = RegistryFixture::new();
