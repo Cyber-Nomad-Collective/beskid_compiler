@@ -55,7 +55,9 @@ impl RegistryFixture {
         let server = thread::spawn(move || {
             while !stop_for_server.load(Ordering::Relaxed) {
                 match listener.accept() {
-                    Ok((stream, _)) => serve_request(stream, &packages_for_server, &requests_for_server, &oversized_for_server),
+                    Ok((stream, _)) => {
+                        serve_request(stream, &packages_for_server, &requests_for_server, &oversized_for_server)
+                    }
                     Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
                         thread::sleep(Duration::from_millis(5));
                     }
@@ -151,11 +153,14 @@ fn serve_request(
                 return;
             }
             2 => {
-                stream.write_all(b"HTTP/1.1 200 OK\r\nConnection: close\r\n\r\n")
+                stream
+                    .write_all(b"HTTP/1.1 200 OK\r\nConnection: close\r\n\r\n")
                     .expect("write streamed response headers");
                 let chunk = [0_u8; 16 * 1024];
                 for _ in 0..=((64 * 1024 * 1024) / chunk.len()) {
-                    if stream.write_all(&chunk).is_err() { break; }
+                    if stream.write_all(&chunk).is_err() {
+                        break;
+                    }
                 }
                 return;
             }
@@ -336,12 +341,40 @@ fn assert_no_registry_mutation(fixture: &RegistryFixture) {
     let project = fixture.app_manifest.parent().expect("project root");
     assert!(!project.join("obj").exists(), "oversized artifact must not create obj");
     assert!(!fixture.lock_path().exists(), "oversized artifact must not write a lock");
+    assert_no_registry_scratch(fixture);
+}
+
+fn assert_no_registry_scratch(fixture: &RegistryFixture) {
+    let project = fixture.app_manifest.parent().expect("project root");
     assert!(
-        fs::read_dir(project).expect("read project root").flatten().all(|entry| {
-            !entry.file_name().to_string_lossy().starts_with(".beskid-registry-artifact-")
-        }),
+        fs::read_dir(project)
+            .expect("read project root")
+            .flatten()
+            .all(|entry| { !entry.file_name().to_string_lossy().starts_with(".beskid-registry-artifact-") }),
         "registry scratch file must be removed"
     );
+}
+
+fn snapshot_tree(root: &Path) -> BTreeMap<PathBuf, Option<Vec<u8>>> {
+    fn visit(root: &Path, current: &Path, snapshot: &mut BTreeMap<PathBuf, Option<Vec<u8>>>) {
+        for entry in fs::read_dir(current).expect("read prepared output") {
+            let entry = entry.expect("read prepared output entry");
+            let path = entry.path();
+            let relative = path.strip_prefix(root).expect("snapshot path is under output root").to_path_buf();
+            let kind = entry.file_type().expect("read prepared output type");
+            if kind.is_dir() {
+                snapshot.insert(relative, None);
+                visit(root, &path, snapshot);
+            } else {
+                assert!(kind.is_file(), "prepared output must not contain a symlink");
+                snapshot.insert(relative, Some(fs::read(path).expect("read prepared output file")));
+            }
+        }
+    }
+
+    let mut snapshot = BTreeMap::new();
+    visit(root, root, &mut snapshot);
+    snapshot
 }
 
 #[test]
@@ -362,6 +395,59 @@ fn streamed_oversized_registry_artifact_rejects_and_cleans_scratch() {
     let error = fixture.prepare(false).expect_err("streamed oversized artifact must fail closed");
     assert!(error.to_string().contains("64 MiB"), "unexpected error: {error}");
     assert_no_registry_mutation(&fixture);
+}
+
+#[test]
+fn pinned_streamed_oversize_preserves_existing_lock_and_prepared_output() {
+    let fixture = RegistryFixture::new();
+    fixture.publish(OLD_VERSION, "trusted release");
+    fixture.prepare(false).expect("initial package lock");
+    let original_lock = fixture.lock();
+    let obj = fixture.app_manifest.parent().unwrap().join("obj");
+    let original_obj = snapshot_tree(&obj);
+    fixture.publish(NEW_VERSION, "new release");
+    fixture.requests.lock().expect("request paths").clear();
+    fixture.oversized_download.store(2, Ordering::Relaxed);
+
+    let error = fixture.prepare(false).expect_err("oversized pinned artifact must fail closed");
+    assert!(error.to_string().contains("64 MiB"), "unexpected error: {error}");
+    let requests = fixture.requests.lock().expect("request paths");
+    assert!(
+        requests.iter().any(|path| path.ends_with("/versions/1.0.0/download")),
+        "ordinary prepare must request the pinned version: {requests:?}"
+    );
+    assert!(!requests.iter().any(|path| path.ends_with("/versions/2.0.0/download")));
+    assert_eq!(fixture.lock(), original_lock, "failed pinned preflight must preserve the lock");
+    assert_eq!(snapshot_tree(&obj), original_obj, "failed pinned preflight must preserve obj");
+    assert_no_registry_scratch(&fixture);
+}
+
+#[test]
+fn refresh_streamed_oversize_preserves_existing_lock_and_prepared_output() {
+    let fixture = RegistryFixture::new();
+    fixture.publish(OLD_VERSION, "trusted release");
+    fixture.prepare(false).expect("initial package lock");
+    let original_lock = fixture.lock();
+    let obj = fixture.app_manifest.parent().unwrap().join("obj");
+    let original_obj = snapshot_tree(&obj);
+    fixture.publish(NEW_VERSION, "new release");
+    fixture.requests.lock().expect("request paths").clear();
+    fixture.oversized_download.store(2, Ordering::Relaxed);
+
+    let error = fixture.prepare(true).expect_err("oversized refresh artifact must fail closed");
+    assert!(error.to_string().contains("64 MiB"), "unexpected error: {error}");
+    let requests = fixture.requests.lock().expect("request paths");
+    assert!(
+        requests.iter().any(|path| path == "/api/packages/PkgCore/versions"),
+        "refresh must query versions: {requests:?}"
+    );
+    assert!(
+        requests.iter().any(|path| path.ends_with("/versions/2.0.0/download")),
+        "refresh must request the newer version: {requests:?}"
+    );
+    assert_eq!(fixture.lock(), original_lock, "failed refresh must preserve the lock");
+    assert_eq!(snapshot_tree(&obj), original_obj, "failed refresh must preserve obj");
+    assert_no_registry_scratch(&fixture);
 }
 
 #[test]
@@ -441,7 +527,10 @@ fn explicit_update_selects_new_version_and_writes_its_digest() {
     let lock = fixture.lock();
     assert!(lock.starts_with("# Project.lock v2\n"));
     assert!(lock.contains("resolved_version=2.0.0"));
-    assert!(lock.contains("artifact_digest=sha256:456bc2d28e9bae140f2462f0e3c6e3fb4721e9b326f893b02c8c846f82033baf"), "lock: {lock}");
+    assert!(
+        lock.contains("artifact_digest=sha256:456bc2d28e9bae140f2462f0e3c6e3fb4721e9b326f893b02c8c846f82033baf"),
+        "lock: {lock}"
+    );
 }
 
 #[test]
@@ -481,11 +570,7 @@ fn duplicate_registry_destination_fails_before_any_materialization() {
     let fixture = RegistryFixture::new();
     fixture.publish(OLD_VERSION, "old release");
     let error = with_cwd_at_workspace_root(fixture.root.path(), || {
-        let mut plan = build_compile_plan_with_policy(
-            &fixture.app_manifest,
-            None,
-            UnresolvedDependencyPolicy::Warn,
-        )?;
+        let mut plan = build_compile_plan_with_policy(&fixture.app_manifest, None, UnresolvedDependencyPolicy::Warn)?;
         let duplicate = plan
             .unresolved_dependencies
             .iter()
