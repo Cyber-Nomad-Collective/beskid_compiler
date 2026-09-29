@@ -807,6 +807,66 @@ fn conflicting_zip_entries_leave_no_materialized_package() {
 }
 
 #[test]
+fn case_insensitive_zip_aliases_are_rejected_before_publication() {
+    let fixture = RegistryFixture::new();
+    let artifact = stored_zip(&[
+        (b"PkgCore.bproj", PACKAGE_MANIFEST),
+        (b"Src/Marker.bd", b"first"),
+        (b"src/marker.bd", b"second"),
+    ]);
+    fixture.packages.lock().unwrap().insert(OLD_VERSION.to_owned(), artifact);
+
+    let error = fixture.prepare(false).expect_err("case-insensitive aliases must not materialize");
+
+    assert!(error.to_string().contains("alias"), "unexpected error: {error}");
+    assert!(registry_destination_paths(&fixture).is_empty(), "ambiguous ZIP must not publish a package");
+    assert_no_registry_staging_dirs(&fixture);
+    assert!(!fixture.lock_path().exists(), "rejected ZIP must not write Project.lock");
+}
+
+#[test]
+fn zip_directory_with_payload_is_rejected_before_publication() {
+    let fixture = RegistryFixture::new();
+    let artifact = stored_zip(&[
+        (b"PkgCore.bproj", PACKAGE_MANIFEST),
+        (b"Src/Marker.bd", b"marker"),
+        (b"Src/", b"unread directory payload"),
+    ]);
+    fixture.packages.lock().unwrap().insert(OLD_VERSION.to_owned(), artifact);
+
+    let error = fixture.prepare(false).expect_err("directory payload must not go unread");
+
+    assert!(error.to_string().contains("directory"), "unexpected error: {error}");
+    assert!(registry_destination_paths(&fixture).is_empty(), "invalid directory entry must not publish a package");
+    assert_no_registry_staging_dirs(&fixture);
+    assert!(!fixture.lock_path().exists(), "rejected ZIP must not write Project.lock");
+}
+
+#[test]
+fn zip_directory_with_bad_crc_is_rejected_before_publication() {
+    let fixture = RegistryFixture::new();
+    let mut artifact = stored_zip(&[
+        (b"PkgCore.bproj", PACKAGE_MANIFEST),
+        (b"Src/Marker.bd", b"marker"),
+        (b"Src/", b""),
+    ]);
+    let directory_central = artifact
+        .windows(4)
+        .enumerate()
+        .filter_map(|(offset, bytes)| (bytes == 0x0201_4b50_u32.to_le_bytes()).then_some(offset))
+        .last()
+        .expect("directory central entry");
+    artifact[directory_central + 16..directory_central + 20].copy_from_slice(&1_u32.to_le_bytes());
+    fixture.packages.lock().unwrap().insert(OLD_VERSION.to_owned(), artifact);
+
+    fixture.prepare(false).expect_err("directory CRC must be verified");
+
+    assert!(registry_destination_paths(&fixture).is_empty(), "invalid directory CRC must not publish a package");
+    assert_no_registry_staging_dirs(&fixture);
+    assert!(!fixture.lock_path().exists(), "rejected ZIP must not write Project.lock");
+}
+
+#[test]
 fn late_zip_crc_failure_leaves_no_materialized_package() {
     let fixture = RegistryFixture::new();
     let mut artifact = package_zip("late payload");
