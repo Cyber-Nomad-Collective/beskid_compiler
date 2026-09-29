@@ -3,7 +3,7 @@
 //! These fixtures intentionally use only local path dependencies. A rejected lock must fail
 //! during project preparation, before build, run, or test can reach code generation.
 
-use std::fs;
+use std::fs::{self, File, FileTimes};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -304,5 +304,55 @@ fn stale_v2_lock_is_rejected_without_rewrite() {
         assert!(diagnostic.contains("graph"), "missing graph-mismatch diagnosis: {diagnostic}");
         assert_eq!(fs::read(&case.lock).expect("v2 lock retained"), original);
         assert_eq!(tree_snapshot(&obj), original_obj, "stale lock mutated obj/");
+    }
+}
+
+#[test]
+fn copied_source_project_has_identical_lock_and_locked_commands_preserve_it() {
+    let original = ProjectCase::new();
+    let relocated = ProjectCase::new();
+    fs::write(original.app.join("Src/Main.bd"), "unit Main() {}\n").expect("app source");
+    fs::write(original.root.join("Core/Src/Core.bd"), "unit Core() {}\n").expect("dependency source");
+    fs::write(original.app.join("Src/Tests.bd"), "test Smoke {}\n").expect("test source");
+    let mut manifest = fs::read_to_string(original.app.join("App.bproj")).expect("app manifest");
+    manifest.push_str("\ntarget \"AppTests\" {\n  kind = \"Test\"\n  entry = \"Tests.bd\"\n}\n");
+    fs::write(original.app.join("App.bproj"), manifest).expect("test target manifest");
+    for relative in ["App/App.bproj", "App/Src/Main.bd", "App/Src/Tests.bd", "Core/Core.bproj", "Core/Src/Core.bd"] {
+        fs::copy(original.root.join(relative), relocated.root.join(relative)).expect("copy source-bearing fixture");
+    }
+
+    let first_lock_output = original.invoke("lock", None);
+    assert!(first_lock_output.status.success(), "first lock failed: {}", output_text(&first_lock_output));
+    let second_lock_output = relocated.invoke("lock", None);
+    assert!(second_lock_output.status.success(), "relocated lock failed: {}", output_text(&second_lock_output));
+    let expected = fs::read(&original.lock).expect("first generated lock");
+    assert!(expected.starts_with(b"# Project.lock v2\n"), "expected portable v2 lock");
+    assert!(String::from_utf8_lossy(&expected).contains("source=path"), "fixture must exercise its path dependency");
+    assert_eq!(fs::read(&relocated.lock).expect("relocated generated lock"), expected);
+
+    // A fixed timestamp makes a lock rewrite observable even on coarse-grained filesystems.
+    let original_mtime = UNIX_EPOCH + std::time::Duration::from_secs(1_600_000_000);
+    File::open(&relocated.lock)
+        .expect("open relocated lock")
+        .set_times(FileTimes::new().set_modified(original_mtime))
+        .expect("set lock timestamp sentinel");
+    let expected_mtime = fs::metadata(&relocated.lock).expect("lock metadata").modified().expect("lock mtime");
+
+    for command in ["build", "run", "test"] {
+        let obj = relocated.app.join("obj");
+        fs::remove_dir_all(&obj).expect("remove only disposable prepared workspace");
+        let output = relocated.invoke(command, Some("--locked"));
+        let diagnostic = output_text(&output);
+        assert!(obj.exists(), "{command} did not prepare the copied project: {diagnostic}");
+        assert!(
+            !diagnostic.contains("Project.lock"),
+            "{command} rejected a lock generated from the copied sources: {diagnostic}"
+        );
+        assert_eq!(fs::read(&relocated.lock).expect("lock retained"), expected, "{command} changed lock bytes");
+        assert_eq!(
+            fs::metadata(&relocated.lock).expect("lock metadata").modified().expect("lock mtime"),
+            expected_mtime,
+            "{command} rewrote Project.lock"
+        );
     }
 }
