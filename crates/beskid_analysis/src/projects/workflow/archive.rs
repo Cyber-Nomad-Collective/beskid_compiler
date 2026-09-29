@@ -5,6 +5,7 @@ use std::io::{self, Read, Write};
 use std::path::{Component, Path, PathBuf};
 
 use tempfile::NamedTempFile;
+use unicode_normalization::UnicodeNormalization;
 use zip::ZipArchive;
 
 use crate::projects::error::ProjectError;
@@ -25,15 +26,21 @@ pub(super) fn extract_zip_to_dir(file: File, output_dir: &Path) -> Result<(), Pr
     // Inspect all names and declared sizes before writing any entry. The copy
     // loop also counts actual output because ZIP metadata is untrusted.
     let mut planned_paths = BTreeMap::new();
+    let mut case_folded_paths = BTreeMap::new();
     let mut declared_total = 0_u64;
     for index in 0..archive.len() {
         let entry = archive
             .by_index(index)
             .map_err(|err| ProjectError::Validation(format!("failed to read registry artifact entry: {err}")))?;
         let path = checked_entry_name(&entry)?;
-        plan_archive_path(&mut planned_paths, &path, entry.is_dir())?;
+        plan_archive_path(&mut planned_paths, &mut case_folded_paths, &path, entry.is_dir())?;
         if !entry.is_dir() {
             check_output_limits(entry.size(), &mut declared_total)?;
+        } else if entry.size() != 0 || entry.crc32() != 0 {
+            return Err(ProjectError::Validation(format!(
+                "registry artifact directory entry must have no payload and a zero CRC: {}",
+                path.display()
+            )));
         }
         validate_destination(output_dir, &path, entry.is_dir())?;
     }
@@ -46,6 +53,16 @@ pub(super) fn extract_zip_to_dir(file: File, output_dir: &Path) -> Result<(), Pr
         let path = checked_entry_name(&entry)?;
         let target = validate_destination(output_dir, &path, entry.is_dir())?;
         if entry.is_dir() {
+            let mut probe = [0_u8; 1];
+            if entry.read(&mut probe).map_err(|error| {
+                ProjectError::Validation(format!("registry artifact directory entry failed validation: {error}"))
+            })? != 0
+            {
+                return Err(ProjectError::Validation(format!(
+                    "registry artifact directory entry has an unexpected payload: {}",
+                    path.display()
+                )));
+            }
             create_checked_directories(output_dir, &path)?;
             continue;
         }
@@ -74,16 +91,37 @@ pub(super) fn extract_zip_to_dir(file: File, output_dir: &Path) -> Result<(), Pr
 
 fn plan_archive_path(
     paths: &mut BTreeMap<PathBuf, ArchivePathKind>,
+    case_folded_paths: &mut BTreeMap<String, PathBuf>,
     path: &Path,
     is_dir: bool,
 ) -> Result<(), ProjectError> {
     let mut prefix = PathBuf::new();
+    let mut folded_prefix = String::new();
     let components = path.components().collect::<Vec<_>>();
     for (index, component) in components.iter().enumerate() {
         let Component::Normal(segment) = component else {
             return Err(ProjectError::Validation("registry artifact contains an unsafe ZIP entry path".into()));
         };
         prefix.push(segment);
+        let folded_segment = segment.to_string_lossy().nfkc().flat_map(char::to_lowercase).collect::<String>();
+        validate_portable_zip_segment(&folded_segment)?;
+        if !folded_prefix.is_empty() {
+            folded_prefix.push('/');
+        }
+        folded_prefix.push_str(&folded_segment);
+        match case_folded_paths.get(&folded_prefix) {
+            Some(existing) if existing != &prefix => {
+                return Err(ProjectError::Validation(format!(
+                    "registry artifact ZIP entries have a case-insensitive path alias: {} and {}",
+                    existing.display(),
+                    prefix.display()
+                )));
+            }
+            Some(_) => {}
+            None => {
+                case_folded_paths.insert(folded_prefix.clone(), prefix.clone());
+            }
+        }
         let kind =
             if is_dir || index + 1 < components.len() { ArchivePathKind::Directory } else { ArchivePathKind::File };
         match paths.get(&prefix) {
@@ -98,6 +136,23 @@ fn plan_archive_path(
                 paths.insert(prefix.clone(), kind);
             }
         }
+    }
+    Ok(())
+}
+
+fn validate_portable_zip_segment(segment: &str) -> Result<(), ProjectError> {
+    let invalid_win32_character = segment
+        .chars()
+        .any(|character| character < ' ' || matches!(character, '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*'));
+    let stem = segment.split('.').next().unwrap_or_default().trim_end_matches(' ');
+    let reserved_device = matches!(stem, "con" | "prn" | "aux" | "nul")
+        || stem.len() == 4
+            && (stem.starts_with("com") || stem.starts_with("lpt"))
+            && matches!(stem.as_bytes()[3], b'1'..=b'9');
+    if segment.ends_with(['.', ' ']) || invalid_win32_character || reserved_device {
+        return Err(ProjectError::Validation(format!(
+            "registry artifact contains a non-portable ZIP path component: {segment}"
+        )));
     }
     Ok(())
 }
