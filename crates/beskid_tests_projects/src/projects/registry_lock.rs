@@ -287,6 +287,44 @@ fn pinned_older_version_survives_newer_registry_release() {
 }
 
 #[test]
+fn changed_manifest_requested_version_rejects_stale_registry_pin_before_materialization() {
+    let fixture = RegistryFixture::new();
+    fixture.publish(OLD_VERSION, "old release");
+    let first = fixture.prepare(false).expect("initial version pin");
+    let original_lock = fixture.lock();
+    let materialized_root = marker_path(&first).parent().expect("materialized package root");
+    let manifest_sentinel = b"materialized manifest sentinel";
+    fs::write(materialized_root.join("PkgCore.bproj"), manifest_sentinel).expect("guard materialized package");
+    let deps_root = fixture.app_manifest.parent().unwrap().join("obj/beskid/deps/src");
+    let mut original_destinations = fs::read_dir(&deps_root)
+        .expect("read materialized destinations")
+        .map(|entry| entry.expect("read materialized entry").file_name())
+        .collect::<Vec<_>>();
+    original_destinations.sort();
+
+    fixture.publish(NEW_VERSION, "new release");
+    let manifest = fs::read_to_string(&fixture.app_manifest).expect("read app manifest");
+    assert!(manifest.contains("version = \"*\""), "fixture dependency must start unconstrained");
+    fs::write(&fixture.app_manifest, manifest.replace("version = \"*\"", "version = \"2.0.0\""))
+        .expect("request a different exact version");
+    let result = fixture.prepare(false);
+
+    assert_eq!(fixture.lock(), original_lock, "stale pin rejection must not rewrite the lock");
+    assert_eq!(fs::read(materialized_root.join("PkgCore.bproj")).unwrap(), manifest_sentinel);
+    let mut final_destinations = fs::read_dir(&deps_root)
+        .expect("read materialized destinations")
+        .map(|entry| entry.expect("read materialized entry").file_name())
+        .collect::<Vec<_>>();
+    final_destinations.sort();
+    assert_eq!(final_destinations, original_destinations, "stale pin must not materialize another package");
+    let error = result.expect_err("a v2 pin must not override the manifest's exact requested version");
+    assert!(
+        error.to_string().contains("version") || error.to_string().contains("pin"),
+        "unexpected error: {error}"
+    );
+}
+
+#[test]
 fn unavailable_unpinned_registry_remains_warning_only() {
     let fixture = RegistryFixture::new();
     let prepared = fixture.prepare(false).expect("unavailable unpinned registry remains unresolved");
