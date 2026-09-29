@@ -9,9 +9,10 @@ use std::{
 use beskid_analysis::{
     CompilationContext,
     projects::{
-        CompilePlan, DependencySource, PortableLockPath, PortableLockPathBaseKind, ProjectLockDependencyEntry,
-        ProjectLockSource, build_compile_plan, effective_roots_from_lockfile_checked, is_workspace_manifest_path,
-        load_project_lock_dependencies_for_plan, parse_manifest, plan_entry_path,
+        CompilePlan, DependencySource, PROJECT_LOCK_FILE_NAME, PortableLockPath, PortableLockPathBaseKind, ProjectKind,
+        ProjectLockDependencyEntry, ProjectLockSource, build_compile_plan, effective_roots_from_lockfile_checked,
+        is_workspace_manifest_path, load_project_lock_dependencies_for_plan, load_project_lock_dependencies_from_path,
+        parse_manifest, plan_entry_path,
     },
 };
 use beskid_graph::{GraphKind, graph_tooling_payload};
@@ -103,18 +104,30 @@ pub(crate) fn get_project_dependencies(project_uri: &str) -> Result<Value> {
         .collect();
 
     let declared_names: HashSet<&str> = manifest.dependencies.iter().map(|dep| dep.name.as_str()).collect();
-    let plan = build_compile_plan(&manifest_path, None).map_err(|error| Error::invalid_params(error.to_string()))?;
-    let lock_path = plan.project_root.join("Project.lock");
+    let plan = if matches!(manifest.project.kind, ProjectKind::Template | ProjectKind::Bsol) {
+        None
+    } else {
+        Some(build_compile_plan(&manifest_path, None).map_err(|error| Error::invalid_params(error.to_string()))?)
+    };
+    let lock_path = manifest_path.with_file_name(PROJECT_LOCK_FILE_NAME);
     let entries = match std::fs::symlink_metadata(&lock_path) {
         Err(source) if source.kind() == ErrorKind::NotFound => Vec::new(),
         Err(source) => return Err(Error::invalid_params(format!("failed to read {}: {source}", lock_path.display()))),
-        Ok(_) => load_project_lock_dependencies_for_plan(&lock_path, &plan)
-            .map_err(|error| Error::invalid_params(error.to_string()))?,
+        Ok(_) => match plan.as_ref() {
+            Some(plan) => load_project_lock_dependencies_for_plan(&lock_path, plan)
+                .map_err(|error| Error::invalid_params(error.to_string()))?,
+            None => {
+                load_project_lock_dependencies_from_path(&lock_path)
+                    .map_err(|error| Error::invalid_params(error.to_string()))?;
+                Vec::new()
+            }
+        },
     };
     let lock_entries = entries
         .into_iter()
         .filter_map(|entry| {
-            declared_names.contains(entry.name()).then(|| serialize_lock_entry(&entry, &plan)).flatten()
+            let plan = plan.as_ref()?;
+            declared_names.contains(entry.name()).then(|| serialize_lock_entry(&entry, plan)).flatten()
         })
         .collect::<Vec<_>>();
     let locked = lock_entries.iter().map(|(_, value)| value.clone()).collect::<Vec<_>>();

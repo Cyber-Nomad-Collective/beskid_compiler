@@ -394,6 +394,53 @@ dependency "missing" {
         assert!(error.message.contains("different project"), "{error:?}");
     }
 
+    #[test]
+    fn get_project_dependencies_keeps_template_and_bsol_roots_declared_only() {
+        let temp = TempDir::new().expect("workspace");
+        let template = temp.path().join("Template/Template.bproj");
+        write(
+            &template,
+            r#"Template {
+  name = "Template"
+  version = "0.1.0"
+  type = Template
+}
+"#,
+        );
+        let bsol = temp.path().join("Schemas/Schemas.bproj");
+        write(
+            &bsol,
+            r#"Schemas {
+  name = "Schemas"
+  version = "0.1.0"
+  type = Bsol
+  schemas {
+    export "Main" {
+      profile = "Main"
+      path = "Schema.bsol"
+    }
+  }
+}
+"#,
+        );
+        for path in [&template, &bsol] {
+            let manifest = beskid_analysis::projects::load_manifest_from_path(path).expect("non-compile manifest");
+            assert!(matches!(
+                manifest.project.kind,
+                beskid_analysis::projects::ProjectKind::Template | beskid_analysis::projects::ProjectKind::Bsol
+            ));
+            let value = graph::get_project_dependencies(&path_to_uri_string(path)).expect("declared-only explorer");
+            assert!(value["declared"].as_array().expect("declared").is_empty());
+            assert!(value["locked"].as_array().expect("locked").is_empty());
+            assert!(value["unresolved"].as_array().expect("unresolved").is_empty());
+        }
+
+        write(&template.with_file_name("Project.lock"), "# Project.lock v1\n");
+        let error = graph::get_project_dependencies(&path_to_uri_string(&template))
+            .expect_err("present v1 lock must not be hidden on Template roots");
+        assert!(error.message.contains("v1"), "{error:?}");
+    }
+
     /// Locate the VS Code extension's command snapshot.
     ///
     /// `beskid_vscode` is a sibling submodule of `compiler` in the root repository, so the

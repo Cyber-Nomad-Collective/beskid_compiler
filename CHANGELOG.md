@@ -14,7 +14,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   refresh replace a valid but stale project identity.
 - Report present v1, malformed, or stale `Project.lock` files through LSP
   diagnostics and project-explorer commands instead of silently dropping locked
-  dependencies; keep rejected materialization hints on declared source roots.
+  dependencies; republish open-buffer diagnostics when a lock changes or the
+  workspace refreshes, retain declared-only explorer results for Template/Bsol
+  projects, and keep rejected materialization hints on declared source roots.
 - Restore packed template manifests to `.beskid/template.json` when installing
   registry templates, and reject archive paths that escape extraction.
 - Run the Corelib MVP import check with its fixture environment and classify
