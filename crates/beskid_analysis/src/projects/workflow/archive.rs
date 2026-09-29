@@ -132,6 +132,21 @@ fn validate_zip_eocd(file: &mut File) -> Result<(), ProjectError> {
     file.read_exact(&mut tail)
         .map_err(|error| ProjectError::Validation(format!("cannot read registry artifact ZIP EOCD: {error}")))?;
 
+    // The ZIP reader may reject a forged EOCD in a real EOCD's comment and
+    // backtrack to the real one. Never validate one header while it parses
+    // another: more than one EOF-anchored EOCD candidate is ambiguous.
+    let candidates = (0..=tail_bytes - ZIP_EOCD_BYTES)
+        .filter(|&start| {
+            &tail[start..start + 4] == b"PK\x05\x06"
+                && start + ZIP_EOCD_BYTES + u16::from_le_bytes([tail[start + 20], tail[start + 21]]) as usize
+                    == tail_bytes
+        })
+        .take(2)
+        .count();
+    if candidates > 1 {
+        return Err(ProjectError::Validation("registry artifact ZIP EOCD is ambiguous".into()));
+    }
+
     for start in (0..=tail_bytes - ZIP_EOCD_BYTES).rev() {
         if &tail[start..start + 4] != b"PK\x05\x06" {
             continue;
@@ -177,9 +192,66 @@ fn validate_zip_eocd(file: &mut File) -> Result<(), ProjectError> {
         if entries_total as usize > MAX_ZIP_ENTRIES {
             return Err(ProjectError::Validation("registry artifact ZIP exceeds the 10,000 entry limit".into()));
         }
+        // Registry artifacts use a single contiguous central directory.
+        // Reject prefixes and post-directory records so all readers agree on
+        // the exact range whose entries are being counted.
+        if central_offset as u64 + central_bytes as u64 != eocd_offset {
+            return Err(ProjectError::Validation(
+                "registry artifact ZIP EOCD has an invalid central-directory range".into(),
+            ));
+        }
+        validate_central_directory_records(file, central_offset as u64, central_bytes as u64, entries_total as usize)?;
         return Ok(());
     }
     Err(ProjectError::Validation("registry artifact ZIP EOCD is missing or misplaced".into()))
+}
+
+fn validate_central_directory_records(
+    file: &mut File,
+    offset: u64,
+    length: u64,
+    declared_count: usize,
+) -> Result<(), ProjectError> {
+    let end = offset + length;
+    let mut position = offset;
+    let mut actual_count = 0_usize;
+    while position < end {
+        if end - position < 46 {
+            return Err(ProjectError::Validation("registry artifact ZIP central-directory record is truncated".into()));
+        }
+        file.seek(SeekFrom::Start(position)).map_err(|error| {
+            ProjectError::Validation(format!("cannot seek registry artifact ZIP central-directory record: {error}"))
+        })?;
+        let mut header = [0_u8; 46];
+        file.read_exact(&mut header).map_err(|error| {
+            ProjectError::Validation(format!("cannot read registry artifact ZIP central-directory record: {error}"))
+        })?;
+        if &header[..4] != b"PK\x01\x02" {
+            return Err(ProjectError::Validation(
+                "registry artifact ZIP central-directory contains an unsupported record".into(),
+            ));
+        }
+        let name_bytes = u16::from_le_bytes([header[28], header[29]]) as u64;
+        let extra_bytes = u16::from_le_bytes([header[30], header[31]]) as u64;
+        let comment_bytes = u16::from_le_bytes([header[32], header[33]]) as u64;
+        let record_bytes = 46 + name_bytes + extra_bytes + comment_bytes;
+        position = position.checked_add(record_bytes).ok_or_else(|| {
+            ProjectError::Validation("registry artifact ZIP central-directory record length overflows".into())
+        })?;
+        if position > end {
+            return Err(ProjectError::Validation("registry artifact ZIP central-directory record is truncated".into()));
+        }
+        actual_count += 1;
+        if actual_count > MAX_ZIP_ENTRIES {
+            return Err(ProjectError::Validation("registry artifact ZIP exceeds the 10,000 entry limit".into()));
+        }
+    }
+    if actual_count != declared_count {
+        return Err(ProjectError::Validation(
+            "registry artifact ZIP central-directory count disagrees with EOCD".into(),
+        ));
+    }
+    Ok(())
 }
 
 fn plan_archive_path(
