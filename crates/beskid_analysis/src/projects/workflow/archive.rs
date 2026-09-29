@@ -114,7 +114,7 @@ pub(super) fn extract_zip_to_dir(mut file: File, output_dir: &Path) -> Result<()
     Ok(())
 }
 
-fn validate_zip_eocd(file: &mut File) -> Result<(), ProjectError> {
+pub(super) fn validate_zip_eocd(file: &mut File) -> Result<(), ProjectError> {
     // ZipArchive stores entries by name, so its len() can be smaller than the
     // number of central-directory records. Bound the raw declared count before
     // ZipArchive parses or allocates for those records.
@@ -192,15 +192,16 @@ fn validate_zip_eocd(file: &mut File) -> Result<(), ProjectError> {
         if entries_total as usize > MAX_ZIP_ENTRIES {
             return Err(ProjectError::Validation("registry artifact ZIP exceeds the 10,000 entry limit".into()));
         }
-        // Registry artifacts use a single contiguous central directory.
-        // Reject prefixes and post-directory records so all readers agree on
-        // the exact range whose entries are being counted.
+        // Registry artifacts use a single contiguous central directory
+        // immediately before EOCD, so all readers agree on its extent.
         if central_offset as u64 + central_bytes as u64 != eocd_offset {
             return Err(ProjectError::Validation(
                 "registry artifact ZIP EOCD has an invalid central-directory range".into(),
             ));
         }
         validate_central_directory_records(file, central_offset as u64, central_bytes as u64, entries_total as usize)?;
+        file.seek(SeekFrom::Start(0))
+            .map_err(|error| ProjectError::Validation(format!("cannot reset registry artifact ZIP: {error}")))?;
         return Ok(());
     }
     Err(ProjectError::Validation("registry artifact ZIP EOCD is missing or misplaced".into()))
@@ -215,6 +216,7 @@ fn validate_central_directory_records(
     let end = offset + length;
     let mut position = offset;
     let mut actual_count = 0_usize;
+    let mut extra_buffer = vec![0_u8; u16::MAX as usize];
     while position < end {
         if end - position < 46 {
             return Err(ProjectError::Validation("registry artifact ZIP central-directory record is truncated".into()));
@@ -234,13 +236,32 @@ fn validate_central_directory_records(
         let name_bytes = u16::from_le_bytes([header[28], header[29]]) as u64;
         let extra_bytes = u16::from_le_bytes([header[30], header[31]]) as u64;
         let comment_bytes = u16::from_le_bytes([header[32], header[33]]) as u64;
+        let disk_start = u16::from_le_bytes([header[34], header[35]]);
+        let compressed_bytes = u32::from_le_bytes(header[20..24].try_into().expect("fixed central field"));
+        let uncompressed_bytes = u32::from_le_bytes(header[24..28].try_into().expect("fixed central field"));
+        let local_offset = u32::from_le_bytes(header[42..46].try_into().expect("fixed central field"));
+        if disk_start == u16::MAX
+            || compressed_bytes == u32::MAX
+            || uncompressed_bytes == u32::MAX
+            || local_offset == u32::MAX
+        {
+            return Err(ProjectError::Validation("registry artifact ZIP64 format is unsupported".into()));
+        }
+        if disk_start != 0 {
+            return Err(ProjectError::Validation("registry artifact multi-disk ZIP is unsupported".into()));
+        }
         let record_bytes = 46 + name_bytes + extra_bytes + comment_bytes;
-        position = position.checked_add(record_bytes).ok_or_else(|| {
+        let next = position.checked_add(record_bytes).ok_or_else(|| {
             ProjectError::Validation("registry artifact ZIP central-directory record length overflows".into())
         })?;
-        if position > end {
+        if next > end {
             return Err(ProjectError::Validation("registry artifact ZIP central-directory record is truncated".into()));
         }
+        if has_zip64_extra(file, position + 46 + name_bytes, extra_bytes, &mut extra_buffer)? {
+            return Err(ProjectError::Validation("registry artifact ZIP64 format is unsupported".into()));
+        }
+        validate_local_header(file, local_offset as u64, offset, &mut extra_buffer)?;
+        position = next;
         actual_count += 1;
         if actual_count > MAX_ZIP_ENTRIES {
             return Err(ProjectError::Validation("registry artifact ZIP exceeds the 10,000 entry limit".into()));
@@ -252,6 +273,70 @@ fn validate_central_directory_records(
         ));
     }
     Ok(())
+}
+
+fn validate_local_header(
+    file: &mut File,
+    offset: u64,
+    central_start: u64,
+    extra_buffer: &mut [u8],
+) -> Result<(), ProjectError> {
+    if offset + 30 > central_start {
+        return Err(ProjectError::Validation("registry artifact ZIP local header is outside file data".into()));
+    }
+    file.seek(SeekFrom::Start(offset)).map_err(|error| {
+        ProjectError::Validation(format!("cannot seek registry artifact ZIP local header: {error}"))
+    })?;
+    let mut header = [0_u8; 30];
+    file.read_exact(&mut header).map_err(|error| {
+        ProjectError::Validation(format!("cannot read registry artifact ZIP local header: {error}"))
+    })?;
+    if &header[..4] != b"PK\x03\x04" {
+        return Err(ProjectError::Validation("registry artifact ZIP local header has an invalid signature".into()));
+    }
+    let compressed_bytes = u32::from_le_bytes(header[18..22].try_into().expect("fixed local field"));
+    let uncompressed_bytes = u32::from_le_bytes(header[22..26].try_into().expect("fixed local field"));
+    if compressed_bytes == u32::MAX || uncompressed_bytes == u32::MAX {
+        return Err(ProjectError::Validation("registry artifact ZIP64 format is unsupported".into()));
+    }
+    let name_bytes = u16::from_le_bytes([header[26], header[27]]) as u64;
+    let extra_bytes = u16::from_le_bytes([header[28], header[29]]) as u64;
+    let extra_start = offset + 30 + name_bytes;
+    if extra_start + extra_bytes > central_start {
+        return Err(ProjectError::Validation("registry artifact ZIP local extra fields leave file data".into()));
+    }
+    if has_zip64_extra(file, extra_start, extra_bytes, extra_buffer)? {
+        return Err(ProjectError::Validation("registry artifact ZIP64 format is unsupported".into()));
+    }
+    Ok(())
+}
+
+fn has_zip64_extra(file: &mut File, offset: u64, length: u64, buffer: &mut [u8]) -> Result<bool, ProjectError> {
+    let length = length as usize;
+    let bytes = &mut buffer[..length];
+    if bytes.is_empty() {
+        return Ok(false);
+    }
+    file.seek(SeekFrom::Start(offset))
+        .map_err(|error| ProjectError::Validation(format!("cannot seek registry artifact ZIP extra field: {error}")))?;
+    file.read_exact(bytes)
+        .map_err(|error| ProjectError::Validation(format!("cannot read registry artifact ZIP extra field: {error}")))?;
+    let mut position = 0_usize;
+    while position < length {
+        if length - position < 4 {
+            return Err(ProjectError::Validation("registry artifact ZIP extra field is truncated".into()));
+        }
+        let field_id = u16::from_le_bytes([bytes[position], bytes[position + 1]]);
+        let field_bytes = u16::from_le_bytes([bytes[position + 2], bytes[position + 3]]) as usize;
+        position += 4 + field_bytes;
+        if position > length {
+            return Err(ProjectError::Validation("registry artifact ZIP extra field is truncated".into()));
+        }
+        if field_id == 0x0001 {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 fn plan_archive_path(
