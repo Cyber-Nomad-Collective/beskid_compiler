@@ -929,6 +929,33 @@ fn duplicate_zip_central_entries_count_toward_the_ten_thousand_limit() {
 }
 
 #[test]
+fn fake_eocd_in_real_comment_cannot_hide_over_budget_central_directory() {
+    let fixture = RegistryFixture::new();
+    let mut entries =
+        vec![(b"PkgCore.bproj".as_slice(), PACKAGE_MANIFEST), (b"Src/Marker.bd".as_slice(), b"marker".as_slice())];
+    entries.extend(std::iter::repeat_n((b"Repeated/".as_slice(), b"".as_slice()), 9_999));
+    let mut artifact = stored_zip(&entries);
+    let real_eocd = artifact.windows(4).rposition(|bytes| bytes == 0x0605_4b50_u32.to_le_bytes()).unwrap();
+    artifact[real_eocd + 20..real_eocd + 22].copy_from_slice(&22_u16.to_le_bytes());
+    let mut fake_eocd = [0_u8; 22];
+    fake_eocd[..4].copy_from_slice(&0x0605_4b50_u32.to_le_bytes());
+    fake_eocd[8..12].copy_from_slice(&[1, 0, 1, 0]);
+    fake_eocd[16..20].copy_from_slice(&0xffff_fffe_u32.to_le_bytes());
+    artifact.extend_from_slice(&fake_eocd);
+    assert!(
+        zip::ZipArchive::new(Cursor::new(&artifact)).unwrap().len() < 10_000,
+        "ZIP parser falls back to real EOCD and deduplicates names"
+    );
+    fixture.packages.lock().unwrap().insert(OLD_VERSION.to_owned(), artifact);
+
+    let error = fixture.prepare(false).expect_err("comment-borne fake EOCD must not bypass the raw-entry cap");
+
+    assert!(error.to_string().contains("ZIP EOCD"), "unexpected error: {error}");
+    assert!(registry_destination_paths(&fixture).is_empty(), "ambiguous ZIP must not publish a package");
+    assert_no_registry_staging_dirs(&fixture);
+}
+
+#[test]
 fn zip64_entry_count_sentinel_is_rejected_before_materialization() {
     let fixture = RegistryFixture::new();
     let mut artifact = package_zip("marker");
