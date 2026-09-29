@@ -947,6 +947,100 @@ fn duplicate_raw_zip_names_are_rejected_before_parser_coalescing() {
 }
 
 #[test]
+fn lossy_utf8_zip_names_cannot_coalesce_before_validation() {
+    let fixture = RegistryFixture::new();
+    let mut artifact =
+        stored_zip(&[(b"PkgCore.bproj", PACKAGE_MANIFEST), (b"Src/\x80.bd", b"first"), (b"Src/\x81.bd", b"second")]);
+    let eocd = artifact.windows(4).rposition(|bytes| bytes == 0x0605_4b50_u32.to_le_bytes()).unwrap();
+    let mut central = u32::from_le_bytes(artifact[eocd + 16..eocd + 20].try_into().unwrap()) as usize;
+    for index in 0..3 {
+        let name_bytes = u16::from_le_bytes(artifact[central + 28..central + 30].try_into().unwrap()) as usize;
+        if index > 0 {
+            let local = u32::from_le_bytes(artifact[central + 42..central + 46].try_into().unwrap()) as usize;
+            artifact[central + 8..central + 10].copy_from_slice(&0x0800_u16.to_le_bytes());
+            artifact[local + 6..local + 8].copy_from_slice(&0x0800_u16.to_le_bytes());
+        }
+        central += 46 + name_bytes;
+    }
+    assert_eq!(zip::ZipArchive::new(Cursor::new(&artifact)).unwrap().len(), 2, "lossy UTF-8 names coalesce");
+    fixture.packages.lock().unwrap().insert(OLD_VERSION.to_owned(), artifact);
+
+    let error = fixture.prepare(false).expect_err("invalid UTF-8 ZIP names must fail before lossy decoding");
+
+    assert!(error.to_string().contains("invalid UTF-8 ZIP entry name"), "unexpected error: {error}");
+    assert!(registry_destination_paths(&fixture).is_empty(), "lossy alias ZIP must not publish a package");
+    assert_no_registry_staging_dirs(&fixture);
+}
+
+#[test]
+fn unicode_path_override_cannot_coalesce_distinct_raw_names() {
+    let fixture = RegistryFixture::new();
+    let mut artifact =
+        stored_zip(&[(b"PkgCore.bproj", PACKAGE_MANIFEST), (b"Src/one.bd", b"first"), (b"Src/two.bd", b"second")]);
+    let eocd = artifact.windows(4).rposition(|bytes| bytes == 0x0605_4b50_u32.to_le_bytes()).unwrap();
+    let central_start = u32::from_le_bytes(artifact[eocd + 16..eocd + 20].try_into().unwrap()) as usize;
+    let mut central = central_start;
+    for _ in 0..2 {
+        let name_bytes = u16::from_le_bytes(artifact[central + 28..central + 30].try_into().unwrap()) as usize;
+        central += 46 + name_bytes;
+    }
+    let name_bytes = u16::from_le_bytes(artifact[central + 28..central + 30].try_into().unwrap()) as usize;
+    let override_name = b"Src/one.bd";
+    let mut unicode_path = vec![0x75, 0x70];
+    unicode_path.extend_from_slice(&(5_u16 + override_name.len() as u16).to_le_bytes());
+    unicode_path.push(1);
+    unicode_path.extend_from_slice(&crc32(b"Src/two.bd").to_le_bytes());
+    unicode_path.extend_from_slice(override_name);
+    artifact[central + 30..central + 32].copy_from_slice(&(unicode_path.len() as u16).to_le_bytes());
+    artifact.splice(central + 46 + name_bytes..central + 46 + name_bytes, unicode_path.iter().copied());
+    let shifted_eocd = eocd + unicode_path.len();
+    let central_bytes = u32::from_le_bytes(artifact[shifted_eocd + 12..shifted_eocd + 16].try_into().unwrap());
+    artifact[shifted_eocd + 12..shifted_eocd + 16]
+        .copy_from_slice(&(central_bytes + unicode_path.len() as u32).to_le_bytes());
+    assert_eq!(zip::ZipArchive::new(Cursor::new(&artifact)).unwrap().len(), 2, "Unicode Path extra overrides the key");
+    fixture.packages.lock().unwrap().insert(OLD_VERSION.to_owned(), artifact);
+
+    let error = fixture.prepare(false).expect_err("Unicode Path override must fail before decoded-name coalescing");
+
+    assert!(error.to_string().contains("Unicode Path override is unsupported"), "unexpected error: {error}");
+    assert!(registry_destination_paths(&fixture).is_empty(), "Unicode Path alias ZIP must not publish a package");
+    assert_no_registry_staging_dirs(&fixture);
+}
+
+#[test]
+fn non_ascii_zip_name_without_utf8_flag_is_rejected() {
+    let fixture = RegistryFixture::new();
+    let artifact =
+        stored_zip(&[(b"PkgCore.bproj", PACKAGE_MANIFEST), (b"Src/Marker.bd", b"marker"), (b"Src/\x82.bd", b"cp437")]);
+    fixture.packages.lock().unwrap().insert(OLD_VERSION.to_owned(), artifact);
+
+    let error = fixture.prepare(false).expect_err("unflagged non-ASCII ZIP name must fail before CP437 decoding");
+
+    assert!(error.to_string().contains("non-ASCII ZIP entry name requires UTF-8 flag"), "unexpected error: {error}");
+    assert!(registry_destination_paths(&fixture).is_empty(), "CP437 artifact must not publish a package");
+    assert_no_registry_staging_dirs(&fixture);
+}
+
+#[test]
+fn local_name_must_match_central_name_before_extraction() {
+    let fixture = RegistryFixture::new();
+    let mut artifact = package_zip("marker");
+    let eocd = artifact.windows(4).rposition(|bytes| bytes == 0x0605_4b50_u32.to_le_bytes()).unwrap();
+    let central = u32::from_le_bytes(artifact[eocd + 16..eocd + 20].try_into().unwrap()) as usize;
+    let first_name_bytes = u16::from_le_bytes(artifact[central + 28..central + 30].try_into().unwrap()) as usize;
+    let second_central = central + 46 + first_name_bytes;
+    let local = u32::from_le_bytes(artifact[second_central + 42..second_central + 46].try_into().unwrap()) as usize;
+    artifact[local + 30] = b'T';
+    fixture.packages.lock().unwrap().insert(OLD_VERSION.to_owned(), artifact);
+
+    let error = fixture.prepare(false).expect_err("local name must match central-directory name");
+
+    assert!(error.to_string().contains("local ZIP name disagrees"), "unexpected error: {error}");
+    assert!(registry_destination_paths(&fixture).is_empty(), "inconsistent ZIP must not publish a package");
+    assert_no_registry_staging_dirs(&fixture);
+}
+
+#[test]
 fn fake_eocd_in_real_comment_cannot_hide_over_budget_central_directory() {
     let fixture = RegistryFixture::new();
     let mut entries =
