@@ -978,7 +978,8 @@ fn underreported_eocd_count_cannot_hide_central_directory_records() {
     let fixture = RegistryFixture::new();
     let mut entries =
         vec![(b"PkgCore.bproj".as_slice(), PACKAGE_MANIFEST), (b"Src/Marker.bd".as_slice(), b"marker".as_slice())];
-    entries.extend(std::iter::repeat_n((b"Repeated/".as_slice(), b"".as_slice()), 9_999));
+    let names = (0..9_999).map(|index| format!("D{index:05}/").into_bytes()).collect::<Vec<_>>();
+    entries.extend(names.iter().map(|name| (name.as_slice(), b"".as_slice())));
     let mut artifact = stored_zip(&entries);
     let eocd = artifact.windows(4).rposition(|bytes| bytes == 0x0605_4b50_u32.to_le_bytes()).unwrap();
     artifact[eocd + 8..eocd + 12].copy_from_slice(&[1, 0, 1, 0]);
