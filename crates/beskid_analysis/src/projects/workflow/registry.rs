@@ -70,6 +70,16 @@ pub(super) fn resolve_registry_dependency(
             unresolved.dependency_name
         )));
     }
+    if let Some(pin) = pinned
+        && !refresh
+        && let Some(requested) = requested_version.as_deref().filter(|version| *version != "*")
+        && pin.resolved_version.as_deref() != Some(requested)
+    {
+        return Err(ProjectError::Validation(format!(
+            "registry pin for `{}` is stale: manifest requests version `{requested}`; run `beskid update`",
+            unresolved.dependency_name
+        )));
+    }
     let base_url = resolve_registry_base_url(workspace_rules, registry_alias.as_deref());
     let selected_version = if !refresh {
         pinned.and_then(|entry| entry.resolved_version.clone())
