@@ -118,6 +118,10 @@ fn owner_routed_waits_and_deadlines_have_one_winner() {
             String::from_utf8_lossy(&output.stderr).contains("descriptor-close-rebind=preserved"),
             "{mode} fixture did not prove that an admitted worker duplicate survives caller close/rebind: {output:?}",
         );
+        assert!(
+            String::from_utf8_lossy(&output.stderr).contains("readiness-close-timeout triples=24 winner-once=preserved"),
+            "{mode} fixture did not run the ordered triple matrix: {output:?}",
+        );
         let deadlock = run_bounded(&format!("{mode} deadlock"), command.arg("deadlock"), ROUTE_LIMIT);
         assert_eq!(deadlock.status.code(), Some(101), "{mode}: {deadlock:?}");
         assert!(String::from_utf8_lossy(&deadlock.stderr).contains("beskid runtime trap v5"), "{mode}: {deadlock:?}");
@@ -136,6 +140,10 @@ fn owner_routed_waits_and_deadlines_have_one_winner() {
     assert!(
         String::from_utf8_lossy(&output.stderr).contains("descriptor-close-rebind=preserved"),
         "jit callback fixture did not prove that an admitted worker duplicate survives caller close/rebind: {output:?}",
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("readiness-close-timeout triples=24 winner-once=preserved"),
+        "jit callback fixture did not run the ordered triple matrix: {output:?}",
     );
     eprintln!("jit callback: {}", String::from_utf8_lossy(&output.stderr));
 }

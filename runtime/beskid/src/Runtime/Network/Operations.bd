@@ -78,6 +78,12 @@ pub i32 NetworkStartLocked(pointer table, pointer slot, pointer request, i64 dea
     raw_word_store(pointer_add(request, BESKID_NETWORK_REQUEST_SIZE), raw_word_load(pointer_add(table, NETWORK_TABLE_REQUESTS)));
     raw_word_store(pointer_add(request, BESKID_NETWORK_REQUEST_SIZE + 8), ExternalOwnerId());
     raw_word_store(pointer_add(table, NETWORK_TABLE_REQUESTS), NativeWord(request));
+    // An already elapsed deadline wins before native submission can consume a
+    // datagram or publish a successful transfer. Foundation owns the winner.
+    if effectiveDeadline >= 0 && effectiveDeadline <= clock_monotonic_nanos() {
+        ExternalTryComplete(token & 0xFFFFFFFF, token >> 32, EXTERNAL_TIMEOUT);
+        return 0;
+    }
     i32 status = network_submit(NativePointer(raw_word_load(table)), NativePointer(raw_word_load(pointer_add(slot, NETWORK_SLOT_NATIVE))), request);
     if status != i32(NETWORK_PENDING) {
         raw_word_store(pointer_add(request, BESKID_NETWORK_REQUEST_STATUS_OFFSET), word(status));

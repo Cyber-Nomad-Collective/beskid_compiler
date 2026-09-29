@@ -71,6 +71,12 @@ pub i32 NetworkDnsResolve(pointer hostName, i64 port, i64 family, i64 deadline, 
     memory_set(record, 0, NETWORK_DNS_RECORD_SIZE);
     word token = ExternalWaitRegister(FiberHandle(current), 23, deadline);
     if token == 0 { SystemFree(record, NETWORK_DNS_RECORD_SIZE); return NETWORK_BUSY; }
+    if deadline >= 0 && deadline <= clock_monotonic_nanos() {
+        ExternalTryComplete(token & 0xFFFFFFFF, token >> 32, EXTERNAL_TIMEOUT);
+        ExternalRelease(token);
+        SystemFree(record, NETWORK_DNS_RECORD_SIZE);
+        return NETWORK_TIMED_OUT;
+    }
     ExternalWorkRetain();
     pointer request = network_dns_start(hostName, word(port), i32(family), ExternalOwnerId(), token);
     if request == NativePointer(0) {

@@ -207,6 +207,55 @@ static void race_matrix(void) {
             (unsigned long long)first_source, (unsigned long long)beskid_rt_v5_external_active_count());
 }
 
+static uintptr_t triple_token, triple_sources[3], triple_winner;
+static int triple_registered, triple_completions;
+
+static void *triple_wait_entry(void *argument) {
+    triple_token = beskid_rt_v5_external_wait_register(fiber_current_id(), 9, -1);
+    assert(triple_token);
+    triple_registered = 1;
+    triple_winner = beskid_rt_v5_external_wait_park(triple_token);
+    assert(triple_winner == triple_sources[0]);
+    ++triple_completions;
+    assert(beskid_rt_v5_external_active_count() == 0);
+    assert(beskid_rt_v5_external_wait_release(triple_token));
+    return argument;
+}
+
+static void *triple_post_entry(void *argument) {
+    while (!triple_registered) beskid_rt_v5_fiber_yield();
+    for (size_t index = 0; index < 3; ++index)
+        assert(beskid_rt_v5_external_wait_post(owner, triple_token, triple_sources[index]));
+    return argument;
+}
+
+static void readiness_close_timeout_triples(void) {
+    /* Every ordered triple claims its first source and discards both losers. */
+    const uintptr_t permutations[][3] = {
+        {1, 2, 4}, {1, 4, 2}, {2, 1, 4},
+        {2, 4, 1}, {4, 1, 2}, {4, 2, 1},
+    };
+    triple_completions = 0;
+    for (int repeat = 0; repeat < 4; ++repeat) {
+        for (size_t case_index = 0; case_index < sizeof(permutations) / sizeof(permutations[0]); ++case_index) {
+            triple_registered = 0;
+            triple_winner = triple_token = 0;
+            memcpy(triple_sources, permutations[case_index], sizeof(triple_sources));
+            int64_t waiter = fiber_spawn((void *)triple_wait_entry, value);
+            int64_t producer = fiber_spawn((void *)triple_post_entry, value);
+            join_success(waiter);
+            join_success(producer);
+            beskid_rt_v5_external_pump(clock_monotonic_nanos());
+            assert(triple_winner == triple_sources[0]);
+            assert(!complete_wait(triple_token & UINT32_MAX, triple_token >> 32, triple_sources[1]));
+            assert(!complete_wait(triple_token & UINT32_MAX, triple_token >> 32, triple_sources[2]));
+            assert(beskid_rt_v5_external_active_count() == 0);
+        }
+    }
+    assert(triple_completions == 24);
+    fprintf(stderr, "readiness-close-timeout triples=24 winner-once=preserved\n");
+}
+
 enum {
     BESKID_TEST_SCHEDULER_FIBER_CAPACITY =
         (BESKID_SCHEDULER_STATE_SIZE - BESKID_SCHEDULER_STATE_FIBERS_OFFSET) /
@@ -695,6 +744,7 @@ EXTERNAL_WAIT_EXPORT int RunExternalWaitFixture(TryComplete complete, int deadlo
     }
     full_legal_capacity();
     race_matrix();
+    readiness_close_timeout_triples();
     timer_winner_before_resume();
     pump_order_cases();
     join_success(fiber_spawn((void *)timer_reuse_entry, value));

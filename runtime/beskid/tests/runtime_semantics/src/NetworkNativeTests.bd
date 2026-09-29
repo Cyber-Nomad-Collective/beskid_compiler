@@ -370,8 +370,8 @@ test native_network_close_vs_accept_deadline_has_one_winner {
 
 unit CheckDnsDeadlineWhileHostJobIsBlocked() {
     word activeBefore = External.ExternalActiveCount();
-    match Deadline.After(Time.FromMilliseconds(0_i64)) {
-        Result::Error(_) => Assert.Fail("zero duration creates a typed deadline"),
+    match Deadline.After(Time.FromMilliseconds(1000_i64)) {
+        Result::Error(_) => Assert.Fail("one second creates a typed deadline for blocked resolver work"),
         Result::Ok(deadline) => {
             Result<SocketAddress[], NetworkError> timed = NetworkDns.Resolve(
                 "beskid-deadline-block.invalid",
