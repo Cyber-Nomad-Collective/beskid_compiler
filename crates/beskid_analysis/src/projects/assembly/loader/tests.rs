@@ -402,10 +402,9 @@ fn lock_replayed_foundation_syscall_fixture(label: &str) -> (CompilePlan, PathBu
     let project_root = temp_project_root(label);
     fs::create_dir_all(&project_root).expect("create replay project");
     let project_root = project_root.canonicalize().expect("physical replay project root");
-    let materialized_source_root = project_root.join("obj/beskid/deps/src/corelib_foundation/src");
-    let destination = materialized_source_root.join("Core/Syscall/Syscall.bd");
-    write_bd(&materialized_source_root, "Core/Syscall/Syscall.bd", &source.source);
     let manifest_path = project_root.join("App.bproj");
+    write_bd(&project_root, "App.bproj", "name = \"App\"\n");
+    write_bd(&project_root, "src/Main.bd", "i32 Main() { return 0; }\n");
     let plan = CompilePlan {
         project_root: project_root.clone(),
         manifest_path: manifest_path.clone(),
@@ -422,14 +421,16 @@ fn lock_replayed_foundation_syscall_fixture(label: &str) -> (CompilePlan, PathBu
         unresolved_dependencies: Vec::new(),
         has_std_dependency: false,
     };
-    let lockfile = format!(
-        "# Project.lock v1\nroot_manifest={}\nproject_name=App\ndependencies:\n- name=corelib_foundation;manifest={};project={};source_root={};materialized_root=obj/beskid/deps/src/corelib_foundation\n",
-        manifest_path.display(),
-        plan.dependency_projects[0].manifest_path.display(),
-        canonical_project_root.display(),
-        canonical_source_root.display(),
-    );
-    fs::write(project_root.join("Project.lock"), lockfile).expect("write replay lockfile");
+    // Use the production workspace writer so this is a real, graph-derived v2
+    // lock, including its portable source identity and stable destination ID.
+    let workspace = crate::projects::prepare_project_workspace(&plan).expect("prepare replay workspace");
+    let lockfile = fs::read_to_string(&workspace.lockfile_path).expect("read generated replay lockfile");
+    crate::projects::ProjectLockfileV2::parse_v2(&lockfile).expect("parse generated v2 lockfile");
+    assert!(lockfile.starts_with("# Project.lock v2\n"));
+    assert_eq!(lockfile.lines().filter(|line| line.starts_with("- name=")).count(), 1);
+    let materialized_source_root = &workspace.materialized_dependencies[0].materialized_source_root;
+    let destination = materialized_source_root.join("Core/Syscall/Syscall.bd");
+    assert!(destination.is_file(), "the writer must materialize the canonical Foundation source");
     let unit = SourceUnit::bind_request(
         destination.clone(),
         source.logical_path,
@@ -437,6 +438,15 @@ fn lock_replayed_foundation_syscall_fixture(label: &str) -> (CompilePlan, PathBu
         parse_program_with_source_name("materialized syscall", &source.source).expect("parse syscall source"),
     );
     (plan, destination, unit)
+}
+
+fn lock_replay_field<'a>(lockfile: &'a str, field: &str) -> &'a str {
+    let line = lockfile.lines().find(|line| line.starts_with("- name=")).expect("one dependency line");
+    line.strip_prefix("- ")
+        .expect("dependency prefix")
+        .split(';')
+        .find_map(|part| part.split_once('=').filter(|(key, _)| *key == field).map(|(_, value)| value))
+        .expect("requested dependency field")
 }
 
 #[test]
@@ -455,11 +465,19 @@ fn valid_lock_replay_trusts_exact_materialized_foundation_source() {
 #[test]
 fn lock_replay_outside_materialized_dependencies_cannot_grant_service_authority() {
     let (plan, destination, unit) = lock_replayed_foundation_syscall_fixture("rejected_service_replay");
+    let untampered_roots = crate::projects::effective_roots_for_plan(&plan, None);
+    assert_eq!(
+        trusted_corelib_service_paths(&plan, &untampered_roots, std::slice::from_ref(&unit)),
+        Arc::from([destination.clone()]),
+        "the untampered v2 lock must grant exactly its canonical replay destination"
+    );
     fs::create_dir_all(plan.project_root.join("outside")).expect("create outside replay root");
     let lock_path = plan.project_root.join("Project.lock");
-    let lockfile = fs::read_to_string(&lock_path)
-        .expect("read replay lockfile")
-        .replace("materialized_root=obj/beskid/deps/src/corelib_foundation", "materialized_root=outside");
+    let lockfile = fs::read_to_string(&lock_path).expect("read replay lockfile");
+    let lockfile = lockfile.replace(
+        &format!("materialized_root={}", lock_replay_field(&lockfile, "materialized_root")),
+        "materialized_root=outside",
+    );
     fs::write(&lock_path, lockfile).expect("write tampered replay lockfile");
     let roots = crate::projects::effective_roots_for_plan(&plan, None);
     assert_eq!(roots.dependencies[0].source_root, plan.dependency_projects[0].source_root);
@@ -475,34 +493,31 @@ fn lock_replay_outside_materialized_dependencies_cannot_grant_service_authority(
 fn lock_replay_with_forged_dependency_identity_cannot_grant_service_authority() {
     for forged_field in ["manifest", "project_and_source_root"] {
         let (plan, destination, unit) = lock_replayed_foundation_syscall_fixture(forged_field);
+        let untampered_roots = crate::projects::effective_roots_for_plan(&plan, None);
+        assert_eq!(
+            trusted_corelib_service_paths(&plan, &untampered_roots, std::slice::from_ref(&unit)),
+            Arc::from([destination.clone()]),
+            "the untampered v2 lock must grant exactly its canonical replay destination"
+        );
         let lock_path = plan.project_root.join("Project.lock");
         let lockfile = fs::read_to_string(&lock_path).expect("read replay lockfile");
         let dependency = &plan.dependency_projects[0];
         let forged = match forged_field {
-            "manifest" => {
-                let copied_manifest = plan.project_root.join("Copied.bproj");
-                fs::copy(&dependency.manifest_path, &copied_manifest).expect("copy forged manifest");
-                lockfile.replace(
-                    &format!("manifest={};", dependency.manifest_path.display()),
-                    &format!("manifest={};", copied_manifest.display()),
-                )
-            }
+            "manifest" => lockfile.replace(
+                &format!(";manifest={};", lock_replay_field(&lockfile, "manifest")),
+                ";manifest=src/Core/Syscall/Syscall.bd;",
+            ),
             "project_and_source_root" => {
                 let copied_project = plan.project_root.join("copied");
                 fs::create_dir_all(copied_project.join("src")).expect("create forged source root");
-                lockfile
-                    .replace(
-                        &format!("project={};", dependency.project_root.display()),
-                        &format!("project={};", copied_project.display()),
-                    )
-                    .replace(
-                        &format!("source_root={};", dependency.source_root.display()),
-                        &format!("source_root={};", copied_project.join("src").display()),
-                    )
+                write_bd(&copied_project, "foundation.bproj", "name = \"corelib_foundation\"\n");
+                write_bd(&copied_project, "src/Core/Syscall/Syscall.bd", &unit.source);
+                lockfile.replace(&format!(";project={};", lock_replay_field(&lockfile, "project")), ";project=copied;")
             }
             _ => unreachable!(),
         };
         assert_ne!(forged, lockfile, "fixture must change the lockfile identity");
+        crate::projects::ProjectLockfileV2::parse_v2(&forged).expect("forged identity keeps valid v2 syntax");
         fs::write(&lock_path, forged).expect("write forged replay lockfile");
 
         let roots = crate::projects::effective_roots_for_plan(&plan, None);
@@ -519,18 +534,25 @@ fn lock_replay_with_forged_dependency_identity_cannot_grant_service_authority() 
 #[test]
 fn lock_replay_with_foreign_project_identity_cannot_grant_service_authority() {
     for forged_field in ["root_manifest", "project_name"] {
-        let (plan, _, unit) = lock_replayed_foundation_syscall_fixture(forged_field);
+        let (plan, destination, unit) = lock_replayed_foundation_syscall_fixture(forged_field);
+        let untampered_roots = crate::projects::effective_roots_for_plan(&plan, None);
+        assert_eq!(
+            trusted_corelib_service_paths(&plan, &untampered_roots, std::slice::from_ref(&unit)),
+            Arc::from([destination]),
+            "the untampered v2 lock must grant exactly its canonical replay destination"
+        );
         let lock_path = plan.project_root.join("Project.lock");
         let lockfile = fs::read_to_string(&lock_path).expect("read replay lockfile");
         let forged = match forged_field {
-            "root_manifest" => lockfile.replace(
-                &format!("root_manifest={}", plan.manifest_path.display()),
-                &format!("root_manifest={}", plan.project_root.join("Other.bproj").display()),
-            ),
+            "root_manifest" => {
+                write_bd(&plan.project_root, "Other.bproj", "name = \"Other\"\n");
+                lockfile.replace("root_manifest=App.bproj", "root_manifest=Other.bproj")
+            }
             "project_name" => lockfile.replace("project_name=App", "project_name=Other"),
             _ => unreachable!(),
         };
         assert_ne!(forged, lockfile, "fixture must change the root identity");
+        crate::projects::ProjectLockfileV2::parse_v2(&forged).expect("foreign identity keeps valid v2 syntax");
         fs::write(&lock_path, forged).expect("write foreign lockfile");
 
         let roots = crate::projects::effective_roots_for_plan(&plan, None);
