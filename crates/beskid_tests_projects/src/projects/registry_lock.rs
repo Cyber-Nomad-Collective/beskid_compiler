@@ -6,7 +6,7 @@ use std::io::{Cursor, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::sync::{
-    Arc, Mutex,
+    Arc, Mutex, mpsc,
     atomic::{AtomicBool, AtomicU8, Ordering},
 };
 use std::thread::{self, JoinHandle};
@@ -145,6 +145,9 @@ fn serve_request(
     requests: &Mutex<Vec<String>>,
     oversized_download: &AtomicU8,
 ) {
+    // On Windows an accepted stream can inherit a nonblocking listener's mode.
+    // The fixture waits for one complete request per connection.
+    stream.set_nonblocking(false).expect("set registry stream blocking");
     stream.set_read_timeout(Some(Duration::from_secs(2))).expect("set request timeout");
     stream.set_write_timeout(Some(Duration::from_secs(2))).expect("set response timeout");
     let mut request = [0_u8; 4096];
@@ -202,6 +205,40 @@ fn serve_request(
     )
     .expect("write registry response headers");
     stream.write_all(&body).expect("write registry response body");
+}
+
+#[test]
+fn local_registry_server_waits_for_a_delayed_request_on_a_nonblocking_listener() {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind local registry");
+    listener.set_nonblocking(true).expect("set listener nonblocking");
+    let address = listener.local_addr().expect("registry address");
+    let (accepted, ready) = mpsc::channel();
+    let server = thread::spawn(move || {
+        let stream = loop {
+            match listener.accept() {
+                Ok((stream, _)) => break stream,
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                    thread::sleep(Duration::from_millis(1));
+                }
+                Err(error) => panic!("local registry accept failed: {error}"),
+            }
+        };
+        accepted.send(()).expect("signal accepted connection");
+        serve_request(stream, &Mutex::new(BTreeMap::new()), &Mutex::new(Vec::new()), &AtomicU8::new(0));
+    });
+
+    let mut client = TcpStream::connect(address).expect("connect to local registry");
+    client.set_read_timeout(Some(Duration::from_secs(2))).expect("set response timeout");
+    ready.recv_timeout(Duration::from_secs(2)).expect("wait for accepted connection");
+    thread::sleep(Duration::from_millis(50));
+    let sent = client.write_all(b"GET /missing HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n");
+    let mut response = Vec::new();
+    if sent.is_ok() {
+        let _ = client.read_to_end(&mut response);
+    }
+    server.join().expect("delayed registry request must not kill the server");
+    assert!(sent.is_ok(), "server must stay open until the request arrives");
+    assert!(response.starts_with(b"HTTP/1.1 404 Not Found"), "server must answer the delayed request");
 }
 
 // Two stored ZIP entries keep the HTTP artifact real without adding a test dependency.

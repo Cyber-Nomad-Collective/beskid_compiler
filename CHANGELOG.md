@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Keep the loopback registry fixture's accepted sockets blocking on Windows,
+  so delayed requests cannot crash portable-lock ZIP validation tests.
 - Reject forged registry lock paths before preparing output, derive registry
   source roots from literal ZIP names across hosts, and let explicit lock
   refresh replace a valid but stale project identity.
