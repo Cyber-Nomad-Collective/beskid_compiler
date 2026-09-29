@@ -1,6 +1,16 @@
-# Project.lock v1
-root_manifest=/Users/mikserek/Projects/beskid/compiler/crates/beskid_e2e_tests/fixtures/deps_workspace/app/App.bproj
+# Project.lock v2
+root_manifest=App.bproj
 project_name=App
 dependencies:
-- name=Core;manifest=/Users/mikserek/Projects/beskid/compiler/crates/beskid_e2e_tests/fixtures/deps_workspace/core/Core.bproj;project=/Users/mikserek/Projects/beskid/compiler/crates/beskid_e2e_tests/fixtures/deps_workspace/core;source_root=/Users/mikserek/Projects/beskid/compiler/crates/beskid_e2e_tests/fixtures/deps_workspace/core/Src;materialized_root=/Users/mikserek/Projects/beskid/compiler/crates/beskid_e2e_tests/fixtures/deps_workspace/app/obj/beskid/deps/src/Core-8376cd950db97538
-- name=Util;manifest=/Users/mikserek/Projects/beskid/compiler/crates/beskid_e2e_tests/fixtures/deps_workspace/util/Util.bproj;project=/Users/mikserek/Projects/beskid/compiler/crates/beskid_e2e_tests/fixtures/deps_workspace/util;source_root=/Users/mikserek/Projects/beskid/compiler/crates/beskid_e2e_tests/fixtures/deps_workspace/util/Src;materialized_root=/Users/mikserek/Projects/beskid/compiler/crates/beskid_e2e_tests/fixtures/deps_workspace/app/obj/beskid/deps/src/Util-78710c615c81709e
+- name=Core;source=path;project=../core;manifest=Core.bproj;source_root=Src;materialized_root=obj/beskid/deps/src/Core-760558533f9284aa4e2928116074d751
+- name=Std;source=corelib;project=beskid_corelib;manifest=corelib.bproj;source_root=.;materialized_root=obj/beskid/deps/src/Std-e6e10cf2b8f67ee0335fb01f75514ab2
+- name=Util;source=path;project=../util;manifest=Util.bproj;source_root=Src;materialized_root=obj/beskid/deps/src/Util-33bd661c392259d6c1043780b251663e
+- name=corelib_compiler_sdk;source=corelib;project=packages/compiler-sdk;manifest=corelib_compiler_sdk.bproj;source_root=src;materialized_root=obj/beskid/deps/src/corelib_compiler_sdk-b78cd396278b5ebc83f553772a9bac27
+- name=corelib_concurrency;source=corelib;project=packages/concurrency;manifest=corelib_concurrency.bproj;source_root=src;materialized_root=obj/beskid/deps/src/corelib_concurrency-13ab48f862ba0ae5e9bf5c20798a87d0
+- name=corelib_console;source=corelib;project=packages/console;manifest=corelib_console.bproj;source_root=src;materialized_root=obj/beskid/deps/src/corelib_console-e4ed4362d985e0eb51c1cd4b56ce2200
+- name=corelib_foundation;source=corelib;project=packages/foundation;manifest=corelib_foundation.bproj;source_root=src;materialized_root=obj/beskid/deps/src/corelib_foundation-36af321ae161ad408c6868835985321c
+- name=corelib_glue;source=corelib;project=packages/glue;manifest=corelib_glue.bproj;source_root=src;materialized_root=obj/beskid/deps/src/corelib_glue-24d3acd0cbb1a75b5c6ee3883859cc97
+- name=corelib_http;source=corelib;project=packages/http;manifest=corelib_http.bproj;source_root=src;materialized_root=obj/beskid/deps/src/corelib_http-ec541acbd6cac8470a2e816c0351995d
+- name=corelib_interop;source=corelib;project=packages/interop;manifest=corelib_interop.bproj;source_root=src;materialized_root=obj/beskid/deps/src/corelib_interop-2f14f0d2e61774a9ab1673f72cd00901
+- name=corelib_network;source=corelib;project=packages/network;manifest=corelib_network.bproj;source_root=src;materialized_root=obj/beskid/deps/src/corelib_network-c99e2572bcc59d0344e495c09bcb3491
+- name=corelib_runtime;source=corelib;project=packages/runtime;manifest=corelib_runtime.bproj;source_root=src;materialized_root=obj/beskid/deps/src/corelib_runtime-dcc850f22061e60d06f6853b23dcfd17
