@@ -298,6 +298,17 @@ fn registry_destination_paths(fixture: &RegistryFixture) -> Vec<PathBuf> {
         .collect()
 }
 
+fn assert_no_registry_staging_dirs(fixture: &RegistryFixture) {
+    let deps = fixture.app_manifest.parent().unwrap().join("obj/beskid/deps/src");
+    let Ok(entries) = fs::read_dir(deps) else { return };
+    let staging = entries
+        .map(|entry| entry.expect("read materialized dependency"))
+        .filter(|entry| entry.file_name().to_string_lossy().starts_with(".beskid-registry-stage-"))
+        .map(|entry| entry.path())
+        .collect::<Vec<_>>();
+    assert!(staging.is_empty(), "registry staging directories must be cleaned up: {staging:?}");
+}
+
 #[test]
 fn pinned_older_version_survives_newer_registry_release() {
     let fixture = RegistryFixture::new();
@@ -752,17 +763,29 @@ fn zip_symlink_entry_is_rejected_before_any_archive_file_is_written() {
     let error = fixture.prepare(false).expect_err("ZIP symlink entry must be rejected");
 
     assert!(error.to_string().contains("symlink"), "unexpected error: {error}");
-    let deps = fixture.app_manifest.parent().unwrap().join("obj/beskid/deps/src");
-    let package_roots = fs::read_dir(deps)
-        .expect("read materialized dependencies")
-        .map(|entry| entry.expect("read materialized dependency"))
-        .filter(|entry| entry.file_name().to_string_lossy().starts_with("PkgCore-"))
+    assert!(registry_destination_paths(&fixture).is_empty(), "a later ZIP symlink must block publication of the whole package");
+}
+
+#[test]
+fn zip_directory_mode_on_file_entry_is_rejected_before_publication() {
+    let fixture = RegistryFixture::new();
+    let mut archive = package_zip("mismatched ZIP mode");
+    let central_entries = archive
+        .windows(4)
+        .enumerate()
+        .filter_map(|(offset, bytes)| (bytes == 0x0201_4b50_u32.to_le_bytes()).then_some(offset))
         .collect::<Vec<_>>();
-    assert_eq!(package_roots.len(), 1, "one registry package destination expected");
-    assert!(
-        !package_roots[0].path().join("PkgCore.bproj").exists(),
-        "a later ZIP symlink entry must block extraction of the first file"
-    );
+    assert_eq!(central_entries.len(), 2, "fixture ZIP must have two central entries");
+    let marker_entry = central_entries[1];
+    archive[marker_entry + 4..marker_entry + 6].copy_from_slice(&0x0314_u16.to_le_bytes());
+    archive[marker_entry + 38..marker_entry + 42].copy_from_slice(&(0o040755_u32 << 16).to_le_bytes());
+    fixture.packages.lock().unwrap().insert(OLD_VERSION.to_owned(), archive);
+
+    let error = fixture.prepare(false).expect_err("ZIP directory mode on a file must be rejected");
+
+    assert!(error.to_string().contains("special ZIP entry"), "unexpected error: {error}");
+    assert!(registry_destination_paths(&fixture).is_empty(), "mismatched ZIP type must not publish a package");
+    assert_no_registry_staging_dirs(&fixture);
 }
 
 #[test]
@@ -779,6 +802,7 @@ fn conflicting_zip_entries_leave_no_materialized_package() {
 
     assert!(error.to_string().contains("conflict"), "unexpected error: {error}");
     assert!(registry_destination_paths(&fixture).is_empty(), "conflicting ZIP must not publish a partial package");
+    assert_no_registry_staging_dirs(&fixture);
     assert!(!fixture.lock_path().exists(), "rejected ZIP must not write Project.lock");
 }
 
@@ -794,6 +818,7 @@ fn late_zip_crc_failure_leaves_no_materialized_package() {
     fixture.prepare(false).expect_err("late ZIP checksum failure must fail");
 
     assert!(registry_destination_paths(&fixture).is_empty(), "corrupt ZIP must not publish a partial package");
+    assert_no_registry_staging_dirs(&fixture);
     assert!(!fixture.lock_path().exists(), "rejected ZIP must not write Project.lock");
 }
 
@@ -819,6 +844,7 @@ fn compressed_zip_bomb_exceeding_entry_budget_leaves_no_materialized_package() {
 
     assert!(error.to_string().contains("512 MiB"), "unexpected error: {error}");
     assert!(registry_destination_paths(&fixture).is_empty(), "oversized output must not publish a partial package");
+    assert_no_registry_staging_dirs(&fixture);
     assert!(!fixture.lock_path().exists(), "rejected ZIP must not write Project.lock");
 }
 

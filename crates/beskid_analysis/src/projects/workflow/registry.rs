@@ -8,7 +8,7 @@ use sha2::{Digest, Sha256};
 use tempfile::{Builder, NamedTempFile};
 use zip::ZipArchive;
 
-use super::archive::extract_zip_to_dir;
+use super::archive::{extract_zip_to_dir, verify_materialized_tree};
 use super::filesystem::materialized_dependency_id;
 use super::lockfile::{
     PortableLockPath, PortableLockPathBaseKind, ProjectLockDependencyEntry, ProjectLockSource,
@@ -226,25 +226,48 @@ pub(super) fn materialize_registry_dependency(
     let layout = registry_artifact_layout(&artifact)?;
     let artifact_reader = artifact.reopen()
         .map_err(|_| ProjectError::Validation("failed to reopen registry scratch artifact".into()))?;
-    fs::create_dir_all(&materialized_root)
-        .map_err(|source| ProjectError::MaterializationCreateDir { path: materialized_root.clone(), source })?;
-    extract_zip_to_dir(artifact_reader, &materialized_root)?;
+    let deps_root = materialized_root.parent().ok_or_else(|| {
+        ProjectError::Validation("registry materialization has no dependency directory".into())
+    })?;
+    let staging = Builder::new()
+        .prefix(".beskid-registry-stage-")
+        .tempdir_in(deps_root)
+        .map_err(|source| ProjectError::MaterializationCreateDir { path: deps_root.to_path_buf(), source })?;
+    extract_zip_to_dir(artifact_reader, staging.path())?;
 
-    let manifest_path =
-        crate::projects::discovery::discover_project_manifest_in_dir(&materialized_root)?.ok_or_else(|| {
+    let staged_manifest =
+        crate::projects::discovery::discover_project_manifest_in_dir(staging.path())?.ok_or_else(|| {
             ProjectError::Validation(format!(
                 "registry artifact for {}:{} missing a `.bproj` manifest",
                 dependency_name, selected_version
             ))
         })?;
-    if portable_child_path(&materialized_root, &manifest_path)? != layout.manifest {
+    let manifest_relative = staged_manifest.strip_prefix(staging.path()).map_err(|_| {
+        ProjectError::Validation("registry artifact manifest escapes its staged project".into())
+    })?.to_path_buf();
+    if portable_child_path(staging.path(), &staged_manifest)? != layout.manifest {
         return Err(ProjectError::Validation("registry artifact manifest differs from its ZIP layout".into()));
     }
-    let materialized_source_root = if layout.source_root == "." {
-        materialized_root.clone()
+    let source_relative = if layout.source_root == "." {
+        PathBuf::new()
     } else {
-        materialized_root.join(layout.source_root)
+        PathBuf::from(layout.source_root)
     };
+
+    match fs::symlink_metadata(&materialized_root) {
+        Ok(_) => verify_materialized_tree(staging.path(), &materialized_root)?,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            fs::rename(staging.path(), &materialized_root)
+                .map_err(|source| ProjectError::MaterializationCreateDir { path: materialized_root.clone(), source })?;
+        }
+        Err(error) => return Err(ProjectError::Validation(format!(
+            "registry materialization cannot be inspected at {}: {error}",
+            materialized_root.display()
+        ))),
+    }
+
+    let manifest_path = materialized_root.join(manifest_relative);
+    let materialized_source_root = materialized_root.join(source_relative);
 
     let lock_entry = ProjectLockDependencyEntry {
         name: dependency_name.clone(),
