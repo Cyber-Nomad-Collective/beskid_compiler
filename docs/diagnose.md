@@ -52,6 +52,13 @@ The Python tools (`symbolize.py`, `whyfact.py`, `authority.py`, `visibility.py`)
 | `network-shutdown-leak.py` | Verify a leaked pending TCP accept produces an accurate diagnostic and fail-closed process exit | yes |
 | `abi-cache.py` | List ABI-v5 Cargo build-script contract variants and their network diagnostic arity | no |
 | `test-dns-deadline-linux.sh` | Run the deterministic DNS deadline/late-result race using a test-only `LD_PRELOAD` resolver gate | yes (Linux only) |
+| `lockfile-audit.py` | Classify tracked `Project.lock` files as source, generated, or orphan; report v1/v2 counts before fixture migration | no |
+
+For portable-lock fixture migration, run `python3 scripts/diagnose/lockfile-audit.py`
+from the compiler checkout, and pass `--repo corelib` to inventory the Corelib
+checkout separately. `--json` provides a stable report for comparison across
+worktrees; `--require-v2` exits nonzero while any tracked v1 or malformed lock
+remains. The tool reads tracked files only and never rewrites a lock or cache.
 
 `test-dns-deadline-linux.sh` is a focused integration fixture, not a general environment
 diagnostic. It requires `BESKID_CLI` (built from the checkout), `BESKID_RUNTIME_PREFIX`
