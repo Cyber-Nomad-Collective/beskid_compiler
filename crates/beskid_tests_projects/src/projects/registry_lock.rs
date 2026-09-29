@@ -739,8 +739,7 @@ fn preexisting_nested_symlink_cannot_redirect_registry_extraction() {
     symlink(&outside, &materialized_source).expect("redirect nested archive entry outside materialization");
 
     let original_lock = fixture.lock();
-    let original_manifest = b"materialized manifest sentinel";
-    fs::write(materialized_root.join("PkgCore.bproj"), original_manifest).expect("guard first archive entry");
+    let original_manifest = fs::read(materialized_root.join("PkgCore.bproj")).expect("read original manifest");
     let original_marker = fs::read(original_source.join("Marker.bd")).expect("read preserved source");
     let result = fixture.prepare(false);
 
