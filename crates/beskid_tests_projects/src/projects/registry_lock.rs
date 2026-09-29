@@ -950,8 +950,49 @@ fn fake_eocd_in_real_comment_cannot_hide_over_budget_central_directory() {
 
     let error = fixture.prepare(false).expect_err("comment-borne fake EOCD must not bypass the raw-entry cap");
 
-    assert!(error.to_string().contains("ZIP EOCD"), "unexpected error: {error}");
+    assert!(error.to_string().contains("ZIP EOCD is ambiguous"), "unexpected error: {error}");
     assert!(registry_destination_paths(&fixture).is_empty(), "ambiguous ZIP must not publish a package");
+    assert_no_registry_staging_dirs(&fixture);
+}
+
+#[test]
+fn underreported_eocd_count_cannot_hide_central_directory_records() {
+    let fixture = RegistryFixture::new();
+    let mut entries =
+        vec![(b"PkgCore.bproj".as_slice(), PACKAGE_MANIFEST), (b"Src/Marker.bd".as_slice(), b"marker".as_slice())];
+    entries.extend(std::iter::repeat_n((b"Repeated/".as_slice(), b"".as_slice()), 9_999));
+    let mut artifact = stored_zip(&entries);
+    let eocd = artifact.windows(4).rposition(|bytes| bytes == 0x0605_4b50_u32.to_le_bytes()).unwrap();
+    artifact[eocd + 8..eocd + 12].copy_from_slice(&[1, 0, 1, 0]);
+    fixture.packages.lock().unwrap().insert(OLD_VERSION.to_owned(), artifact);
+
+    let error = fixture.prepare(false).expect_err("actual central-directory records must match EOCD count");
+
+    assert!(error.to_string().contains("central-directory"), "unexpected error: {error}");
+    assert!(registry_destination_paths(&fixture).is_empty(), "underreported ZIP must not publish a package");
+    assert_no_registry_staging_dirs(&fixture);
+}
+
+#[test]
+fn underreported_central_directory_extent_cannot_hide_extra_records() {
+    let fixture = RegistryFixture::new();
+    let mut artifact = package_zip("marker");
+    let eocd = artifact.windows(4).rposition(|bytes| bytes == 0x0605_4b50_u32.to_le_bytes()).unwrap();
+    let central_offset = u32::from_le_bytes(artifact[eocd + 16..eocd + 20].try_into().unwrap()) as usize;
+    let first_entry = &artifact[central_offset..];
+    assert_eq!(&first_entry[..4], b"PK\x01\x02");
+    let name_bytes = u16::from_le_bytes(first_entry[28..30].try_into().unwrap()) as usize;
+    let extra_bytes = u16::from_le_bytes(first_entry[30..32].try_into().unwrap()) as usize;
+    let comment_bytes = u16::from_le_bytes(first_entry[32..34].try_into().unwrap()) as usize;
+    let first_record_bytes = 46 + name_bytes + extra_bytes + comment_bytes;
+    artifact[eocd + 8..eocd + 12].copy_from_slice(&[1, 0, 1, 0]);
+    artifact[eocd + 12..eocd + 16].copy_from_slice(&(first_record_bytes as u32).to_le_bytes());
+    fixture.packages.lock().unwrap().insert(OLD_VERSION.to_owned(), artifact);
+
+    let error = fixture.prepare(false).expect_err("central-directory extent must reach the EOCD");
+
+    assert!(error.to_string().contains("central-directory"), "unexpected error: {error}");
+    assert!(registry_destination_paths(&fixture).is_empty(), "truncated central directory must not publish a package");
     assert_no_registry_staging_dirs(&fixture);
 }
 
