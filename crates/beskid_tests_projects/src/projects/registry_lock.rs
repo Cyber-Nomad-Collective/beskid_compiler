@@ -929,6 +929,24 @@ fn duplicate_zip_central_entries_count_toward_the_ten_thousand_limit() {
 }
 
 #[test]
+fn duplicate_raw_zip_names_are_rejected_before_parser_coalescing() {
+    let fixture = RegistryFixture::new();
+    let artifact = stored_zip(&[
+        (b"PkgCore.bproj", PACKAGE_MANIFEST),
+        (b"Src/Marker.bd", b"first"),
+        (b"Src/Marker.bd", b"second"),
+    ]);
+    assert_eq!(zip::ZipArchive::new(Cursor::new(&artifact)).unwrap().len(), 2, "ZIP parser coalesces raw names");
+    fixture.packages.lock().unwrap().insert(OLD_VERSION.to_owned(), artifact);
+
+    let error = fixture.prepare(false).expect_err("duplicate raw ZIP name must fail before parser coalescing");
+
+    assert!(error.to_string().contains("duplicate ZIP entry"), "unexpected error: {error}");
+    assert!(registry_destination_paths(&fixture).is_empty(), "duplicate ZIP must not publish a package");
+    assert_no_registry_staging_dirs(&fixture);
+}
+
+#[test]
 fn fake_eocd_in_real_comment_cannot_hide_over_budget_central_directory() {
     let fixture = RegistryFixture::new();
     let mut entries =
