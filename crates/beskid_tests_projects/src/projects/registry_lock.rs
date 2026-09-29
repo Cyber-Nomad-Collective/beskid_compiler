@@ -825,6 +825,68 @@ fn case_insensitive_zip_aliases_are_rejected_before_publication() {
 }
 
 #[test]
+fn unicode_normalization_zip_aliases_are_rejected_before_publication() {
+    let fixture = RegistryFixture::new();
+    let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    let stored = zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+    for (name, bytes) in [
+        ("PkgCore.bproj", PACKAGE_MANIFEST),
+        ("Src/Marker.bd", b"marker".as_slice()),
+        ("Src/Caf\u{e9}.bd", b"composed".as_slice()),
+        ("Src/Cafe\u{301}.bd", b"decomposed".as_slice()),
+    ] {
+        writer.start_file(name, stored).expect("start UTF-8 ZIP entry");
+        writer.write_all(bytes).expect("write UTF-8 ZIP entry");
+    }
+    let artifact = writer.finish().expect("finish UTF-8 ZIP").into_inner();
+    fixture.packages.lock().unwrap().insert(OLD_VERSION.to_owned(), artifact);
+
+    let error = fixture.prepare(false).expect_err("canonically equivalent paths must not materialize");
+
+    assert!(error.to_string().contains("alias"), "unexpected error: {error}");
+    assert!(registry_destination_paths(&fixture).is_empty(), "Unicode aliases must not publish a package");
+    assert_no_registry_staging_dirs(&fixture);
+    assert!(!fixture.lock_path().exists(), "rejected ZIP must not write Project.lock");
+}
+
+#[test]
+fn win32_trailing_dot_zip_alias_is_rejected_before_publication() {
+    let fixture = RegistryFixture::new();
+    let artifact = stored_zip(&[
+        (b"PkgCore.bproj", PACKAGE_MANIFEST),
+        (b"Src/Marker.bd", b"marker"),
+        (b"Src/Readme.bd", b"first"),
+        (b"Src/Readme.bd.", b"second"),
+    ]);
+    fixture.packages.lock().unwrap().insert(OLD_VERSION.to_owned(), artifact);
+
+    let error = fixture.prepare(false).expect_err("Win32-trimmed path must not materialize");
+
+    assert!(error.to_string().contains("non-portable"), "unexpected error: {error}");
+    assert!(registry_destination_paths(&fixture).is_empty(), "trailing-dot alias must not publish a package");
+    assert_no_registry_staging_dirs(&fixture);
+    assert!(!fixture.lock_path().exists(), "rejected ZIP must not write Project.lock");
+}
+
+#[test]
+fn win32_reserved_device_zip_name_is_rejected_before_publication() {
+    let fixture = RegistryFixture::new();
+    let artifact = stored_zip(&[
+        (b"PkgCore.bproj", PACKAGE_MANIFEST),
+        (b"Src/Marker.bd", b"marker"),
+        (b"Src/CON.bd", b"device alias"),
+    ]);
+    fixture.packages.lock().unwrap().insert(OLD_VERSION.to_owned(), artifact);
+
+    let error = fixture.prepare(false).expect_err("Win32 device path must not materialize");
+
+    assert!(error.to_string().contains("non-portable"), "unexpected error: {error}");
+    assert!(registry_destination_paths(&fixture).is_empty(), "device alias must not publish a package");
+    assert_no_registry_staging_dirs(&fixture);
+    assert!(!fixture.lock_path().exists(), "rejected ZIP must not write Project.lock");
+}
+
+#[test]
 fn zip_directory_with_payload_is_rejected_before_publication() {
     let fixture = RegistryFixture::new();
     let artifact = stored_zip(&[
