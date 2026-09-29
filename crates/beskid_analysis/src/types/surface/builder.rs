@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use crate::paths;
 use crate::resolve::collect::use_imported_name;
 use crate::resolve::resolver::path_segments;
+use crate::resolve::symbol::SymbolShape;
 use crate::resolve::{ItemId, ItemKind, Resolution, ResolvedType};
 use crate::syntax::{
     ContractNode, FieldKind, FunctionDefinition, MethodDefinition, Node, Path, PrimitiveType, Program, Type,
@@ -13,7 +14,7 @@ use crate::syntax::{SpanInfo, Spanned};
 use crate::types::result::FunctionSignature;
 use crate::types::{TypeId, TypeInfo, TypeTable};
 
-use super::model::UnitTypeSurface;
+use super::model::{FunctionBound, UnitTypeSurface};
 
 /// A contract's resolved method signatures, in declaration order, and the names of methods
 /// whose signature does not resolve in this surface.
@@ -129,6 +130,19 @@ impl<'a> TypeSurfaceBuilder<'a> {
         match &item.node {
             Node::Function(def) => {
                 self.seed_generic_item(item.span, &def.node.generics);
+                if let Some(item_id) = self.item_id_for_span(item.span) {
+                    let bounds = def.node.where_bounds.iter().map(|bound| {
+                        let segments = path_segments(&bound.contract);
+                        let contract_name = segments.join(".");
+                        let contract = if segments.len() == 1 {
+                            self.visible_contract_in_owner_scope(item_id, &segments[0])
+                        } else {
+                            self.item_id_for_type_path(&bound.contract)
+                        }.filter(|item| self.contract_visible_to_owner(item_id, *item));
+                        FunctionBound { parameter: bound.parameter.node.name.clone(), contract_name, contract }
+                    }).collect::<Vec<_>>();
+                    self.surface.function_bounds.insert(item_id, bounds);
+                }
                 self.register_foreign_function(item.span, &def.node);
             }
             Node::TypeDefinition(def) => {
@@ -154,6 +168,13 @@ impl<'a> TypeSurfaceBuilder<'a> {
             }
             Node::ContractDefinition(def) => {
                 self.seed_generic_item(item.span, &def.node.generics);
+                if let Some(item_id) = self.item_id_for_span(item.span) {
+                    let embedded = def.node.items.iter().filter_map(|node| {
+                        let ContractNode::Embedding(embedding) = &node.node else { return None; };
+                        self.visible_contract_in_owner_scope(item_id, &embedding.node.name.node.name)
+                    }).collect::<Vec<_>>();
+                    self.surface.contract_embeddings.insert(item_id, embedded);
+                }
             }
             Node::ImplBlock(def) => {
                 for method in &def.node.methods {
@@ -726,7 +747,10 @@ impl<'a> TypeSurfaceBuilder<'a> {
         }
         if segments.len() == 1 {
             let name = &segments[0];
-            return self.item_id_for_name(name, ItemKind::Enum).or_else(|| self.item_id_for_name(name, ItemKind::Type));
+            return self
+                .item_id_for_name(name, ItemKind::Enum)
+                .or_else(|| self.item_id_for_name(name, ItemKind::Type))
+                .or_else(|| self.item_id_for_name(name, ItemKind::Contract));
         }
         None
     }
@@ -782,6 +806,52 @@ impl<'a> TypeSurfaceBuilder<'a> {
             [single] => Some(single.id),
             _ => None,
         }
+    }
+
+    fn visible_contract_in_owner_scope(&self, owner: ItemId, name: &str) -> Option<ItemId> {
+        let mut current = self.declaring_module_id(owner);
+        while let Some(module_id) = current {
+            let module = self.resolution.module_graph.module(module_id)?;
+            if let Some(&item) = module.scope.get(name) {
+                return self.resolution.items.get(item.0).filter(|info| info.kind == ItemKind::Contract).map(|_| item);
+            }
+            current = module.parent;
+        }
+        None
+    }
+
+    fn declaring_module_id(&self, item: ItemId) -> Option<crate::resolve::ModuleId> {
+        // Imported public items also appear in the importing module's item list. The
+        // declaration symbol, unlike module membership, retains the lexical owner.
+        let symbol = self.resolution.items.get(item.0)?.symbol?;
+        let qualifier = self.resolution.symbols.resolve(symbol)?;
+        let SymbolShape::ModuleItem { module_path, .. } = &qualifier.shape else {
+            return None;
+        };
+        self.resolution.module_graph.module_id(module_path)
+    }
+
+    fn contract_visible_to_owner(&self, owner: ItemId, contract: ItemId) -> bool {
+        let Some(info) = self.resolution.items.get(contract.0) else {
+            return false;
+        };
+        if info.kind != ItemKind::Contract {
+            return false;
+        }
+        if info.visibility == crate::syntax::Visibility::Public {
+            return true;
+        }
+        let Some(contract_module) = self.declaring_module_id(contract) else {
+            return false;
+        };
+        let mut current = self.declaring_module_id(owner);
+        while let Some(module_id) = current {
+            if module_id == contract_module {
+                return true;
+            }
+            current = self.resolution.module_graph.module(module_id).and_then(|module| module.parent);
+        }
+        false
     }
 
     fn item_id_for_name(&self, name: &str, kind: ItemKind) -> Option<ItemId> {

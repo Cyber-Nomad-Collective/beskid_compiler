@@ -94,6 +94,9 @@ impl SemanticIssueKind {
             }
             Self::ThisUsedOutsideContractOrImpl => "`This` used outside a contract or impl-block scope".to_string(),
             Self::UnresolvedAssociatedType { name } => format!("unresolved associated type `{name}`"),
+            Self::GenericBoundNotSatisfied { type_name, contract_name } => {
+                format!("generic bound not satisfied: `{type_name}` does not conform to `{contract_name}`")
+            }
             Self::ImmutableAssignment { name } => {
                 format!("cannot assign to immutable binding `{name}`")
             }

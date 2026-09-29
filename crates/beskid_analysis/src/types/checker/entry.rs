@@ -111,6 +111,8 @@ impl TypeChecker<'_> {
         let authoritative_enum_variants = checker.enum_variants.clone();
         let authoritative_enum_variants_ordered = checker.enum_variants_ordered.clone();
         let authoritative_generic_items = checker.generic_items.clone();
+        let authoritative_function_bounds = checker.function_bounds.clone();
+        let authoritative_contract_embeddings = checker.contract_embeddings.clone();
         let authoritative_methods_by_receiver = checker.methods_by_receiver.clone();
         let authoritative_contract_signatures = checker.contract_signatures.clone();
 
@@ -141,6 +143,8 @@ impl TypeChecker<'_> {
             checker.enum_variants = authoritative_enum_variants;
             checker.enum_variants_ordered = authoritative_enum_variants_ordered;
             checker.generic_items = authoritative_generic_items;
+            checker.function_bounds = authoritative_function_bounds;
+            checker.contract_embeddings = authoritative_contract_embeddings;
             checker.methods_by_receiver = authoritative_methods_by_receiver;
             checker.contract_signatures = authoritative_contract_signatures;
         }

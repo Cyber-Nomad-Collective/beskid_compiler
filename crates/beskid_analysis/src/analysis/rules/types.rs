@@ -38,6 +38,9 @@ pub(crate) fn emit_type_error(ctx: &mut RuleContext, error: TypeError, result: O
         TypeError::GenericArgumentMismatch { span, expected, actual } => {
             ctx.emit_issue(span, SemanticIssueKind::TypeGenericArgumentMismatch { expected, actual });
         }
+        TypeError::GenericBoundNotSatisfied { span, type_name, contract_name } => {
+            ctx.emit_issue(span, SemanticIssueKind::GenericBoundNotSatisfied { type_name, contract_name });
+        }
         TypeError::TypeMismatch { span, expected, actual } => {
             let expected_name = render_type(result, expected);
             let actual_name = render_type(result, actual);

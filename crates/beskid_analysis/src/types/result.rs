@@ -45,6 +45,7 @@ pub enum TypeError {
     ReturnTypeMismatch { span: SpanInfo, expected: TypeId, actual: Option<TypeId> },
     MissingTypeArguments { span: SpanInfo },
     GenericArgumentMismatch { span: SpanInfo, expected: usize, actual: usize },
+    GenericBoundNotSatisfied { span: SpanInfo, type_name: String, contract_name: String },
     NonIterableForTarget { span: SpanInfo },
     IterableNextArityMismatch { span: SpanInfo, expected: usize, actual: usize },
     IterableNextReturnNotOption { span: SpanInfo },
@@ -187,6 +188,9 @@ impl fmt::Display for TypeError {
             }
             TypeError::GenericArgumentMismatch { span, expected, actual } => {
                 write!(f, "generic argument count mismatch at {}: expected {expected}, got {actual}", at(*span))
+            }
+            TypeError::GenericBoundNotSatisfied { span, type_name, contract_name } => {
+                write!(f, "type `{type_name}` does not satisfy contract bound `{contract_name}` at {}", at(*span))
             }
             TypeError::NonIterableForTarget { span } => {
                 write!(f, "non-iterable for-loop target at {}", at(*span))

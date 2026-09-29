@@ -6,7 +6,7 @@ use crate::types::{TypeId, TypeInfo};
 
 use super::TypeChecker;
 use crate::types::result::TypeError;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 impl<'a> TypeChecker<'a> {
     pub(super) fn seed_types(&mut self) {
@@ -211,6 +211,87 @@ impl<'a> TypeChecker<'a> {
             Some(TypeInfo::Named(item_id)) => Some(*item_id),
             Some(TypeInfo::Applied { base, .. }) => Some(*base),
             _ => None,
+        }
+    }
+
+    fn contract_includes(&self, candidate: ItemId, required: ItemId, active: &mut HashSet<ItemId>) -> bool {
+        if candidate == required {
+            return true;
+        }
+        if !active.insert(candidate) {
+            return false;
+        }
+        self.contract_embeddings.get(&candidate).is_some_and(|embedded| {
+            embedded.iter().any(|next| self.contract_includes(*next, required, active))
+        })
+    }
+
+    pub(super) fn check_generic_function_bounds(&mut self, function: ItemId, arguments: &[TypeId], span: SpanInfo) {
+        let Some(bounds) = self.function_bounds.get(&function).cloned() else {
+            return;
+        };
+        let Some(parameters) = self.generic_items.get(&function).cloned() else {
+            return;
+        };
+        for bound in bounds {
+            let Some(contract) = bound.contract else {
+                self.errors.push(TypeError::UnknownType { span, name: bound.contract_name });
+                continue;
+            };
+            let Some(index) = parameters.iter().position(|name| name == &bound.parameter) else {
+                self.errors.push(TypeError::UnknownType { span, name: bound.parameter });
+                continue;
+            };
+            let Some(&actual) = arguments.get(index) else {
+                continue;
+            };
+            if let Some(TypeInfo::GenericParam(actual_parameter)) = self.type_table.get(actual) {
+                let proven_by_caller = self
+                    .current_function_item
+                    .and_then(|caller| self.function_bounds.get(&caller))
+                    .is_some_and(|caller_bounds| {
+                        caller_bounds.iter().any(|candidate| {
+                            candidate.parameter == *actual_parameter && candidate.contract.is_some_and(|source| {
+                                self.contract_includes(source, contract, &mut HashSet::new())
+                            })
+                        })
+                    });
+                if proven_by_caller {
+                    continue;
+                }
+            }
+            let actual_item = self.named_item_id(actual);
+            let conforms = actual_item.is_some_and(|item| {
+                self.resolution
+                    .tables
+                    .type_conformances
+                    .get(&item)
+                    .is_some_and(|entries| entries.iter().any(|(implemented, _)| {
+                        self.contract_includes(*implemented, contract, &mut HashSet::new())
+                    }))
+            });
+            if conforms {
+                continue;
+            }
+            let type_name = actual_item
+                .and_then(|item| self.resolution.items.iter().find(|info| info.id == item))
+                .map(|info| info.name.clone())
+                .unwrap_or_else(|| match self.type_table.get(actual) {
+                    Some(TypeInfo::Primitive(primitive)) => format!("{primitive:?}").to_lowercase(),
+                    Some(TypeInfo::GenericParam(name)) => name.clone(),
+                    _ => bound.parameter.clone(),
+                });
+            let contract_name = self
+                .resolution
+                .items
+                .iter()
+                .find(|info| info.id == contract)
+                .map(|info| info.name.clone())
+                .unwrap_or_else(|| format!("contract#{}", contract.0));
+            let issue = TypeError::GenericBoundNotSatisfied { span, type_name, contract_name };
+            if !self.errors.contains(&issue) {
+                self.errors.push(issue);
+            }
         }
     }
 
