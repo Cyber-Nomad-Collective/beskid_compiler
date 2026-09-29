@@ -968,8 +968,23 @@ fn underreported_eocd_count_cannot_hide_central_directory_records() {
 
     let error = fixture.prepare(false).expect_err("actual central-directory records must match EOCD count");
 
-    assert!(error.to_string().contains("central-directory"), "unexpected error: {error}");
+    assert!(error.to_string().contains("10,000"), "unexpected error: {error}");
     assert!(registry_destination_paths(&fixture).is_empty(), "underreported ZIP must not publish a package");
+    assert_no_registry_staging_dirs(&fixture);
+}
+
+#[test]
+fn eocd_count_must_match_structurally_valid_central_directory() {
+    let fixture = RegistryFixture::new();
+    let mut artifact = package_zip("marker");
+    let eocd = artifact.windows(4).rposition(|bytes| bytes == 0x0605_4b50_u32.to_le_bytes()).unwrap();
+    artifact[eocd + 8..eocd + 12].copy_from_slice(&[1, 0, 1, 0]);
+    fixture.packages.lock().unwrap().insert(OLD_VERSION.to_owned(), artifact);
+
+    let error = fixture.prepare(false).expect_err("EOCD count must equal the walked record count");
+
+    assert!(error.to_string().contains("central-directory count disagrees"), "unexpected error: {error}");
+    assert!(registry_destination_paths(&fixture).is_empty(), "inconsistent ZIP must not publish a package");
     assert_no_registry_staging_dirs(&fixture);
 }
 
