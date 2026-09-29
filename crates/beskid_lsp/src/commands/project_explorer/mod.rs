@@ -318,8 +318,10 @@ target "Ext" {
         let locked = value["locked"].as_array().expect("locked");
         assert_eq!(locked.len(), 1);
         assert_eq!(locked[0]["name"], "lib");
-        assert_eq!(locked[0]["project"], root.join("apps/lib").display().to_string());
-        assert!(locked[0]["materializedRoot"].as_str().unwrap().starts_with(root.to_str().unwrap()));
+        let project_path = PathBuf::from(locked[0]["project"].as_str().expect("resolved project path"));
+        assert_eq!(project_path, root.join("apps/lib").canonicalize().expect("canonical dependency"));
+        let materialized_path = PathBuf::from(locked[0]["materializedRoot"].as_str().expect("materialized path"));
+        assert!(materialized_path.starts_with(root.canonicalize().expect("canonical workspace")));
         let unresolved = value["unresolved"].as_array().expect("unresolved");
         assert!(unresolved.is_empty());
     }
