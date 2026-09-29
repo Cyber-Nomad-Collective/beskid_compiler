@@ -217,6 +217,7 @@ fn validate_central_directory_records(
     let mut position = offset;
     let mut actual_count = 0_usize;
     let mut extra_buffer = vec![0_u8; u16::MAX as usize];
+    let mut raw_names = BTreeSet::new();
     while position < end {
         if end - position < 46 {
             return Err(ProjectError::Validation("registry artifact ZIP central-directory record is truncated".into()));
@@ -256,6 +257,21 @@ fn validate_central_directory_records(
         })?;
         if next > end {
             return Err(ProjectError::Validation("registry artifact ZIP central-directory record is truncated".into()));
+        }
+        if name_bytes as usize > MAX_ZIP_NAME_BYTES {
+            return Err(ProjectError::Validation(
+                "registry artifact ZIP entry exceeds the 4,096 UTF-8 name-byte limit".into(),
+            ));
+        }
+        file.seek(SeekFrom::Start(position + 46)).map_err(|error| {
+            ProjectError::Validation(format!("cannot seek registry artifact ZIP central-directory name: {error}"))
+        })?;
+        let mut raw_name = vec![0_u8; name_bytes as usize];
+        file.read_exact(&mut raw_name).map_err(|error| {
+            ProjectError::Validation(format!("cannot read registry artifact ZIP central-directory name: {error}"))
+        })?;
+        if !raw_names.insert(raw_name) {
+            return Err(ProjectError::Validation("registry artifact contains a duplicate ZIP entry name".into()));
         }
         if has_zip64_extra(file, position + 46 + name_bytes, extra_bytes, &mut extra_buffer)? {
             return Err(ProjectError::Validation("registry artifact ZIP64 format is unsupported".into()));
