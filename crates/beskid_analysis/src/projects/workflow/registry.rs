@@ -8,7 +8,7 @@ use sha2::{Digest, Sha256};
 use tempfile::{Builder, NamedTempFile};
 use zip::ZipArchive;
 
-use super::archive::{extract_zip_to_dir, verify_materialized_tree};
+use super::archive::{extract_zip_to_dir, validate_zip_eocd, verify_materialized_tree};
 use super::filesystem::materialized_dependency_id;
 use super::lockfile::{
     PortableLockPath, PortableLockPathBaseKind, ProjectLockDependencyEntry, ProjectLockSource,
@@ -54,9 +54,10 @@ impl ResolvedRegistryDependency {
 }
 
 fn registry_artifact_layout(artifact: &NamedTempFile) -> Result<RegistryArtifactLayout, ProjectError> {
-    let artifact = artifact.reopen().map_err(|_| {
+    let mut artifact = artifact.reopen().map_err(|_| {
         ProjectError::Validation("failed to reopen registry scratch artifact".into())
     })?;
+    validate_zip_eocd(&mut artifact)?;
     let mut archive = ZipArchive::new(artifact)
         .map_err(|error| ProjectError::Validation(format!("invalid registry artifact ZIP: {error}")))?;
     let mut manifest = None;
