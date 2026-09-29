@@ -2,8 +2,7 @@ use std::path::PathBuf;
 
 use tokio::sync::RwLock;
 
-use super::db_access::with_compilation_db_mut_state;
-use super::store::State;
+use super::{db_access::with_compilation_db_mut_state, store::State};
 
 fn project_graph_options_from_env() -> beskid_analysis::ProjectGraphBuildOptions {
     beskid_analysis::ProjectGraphBuildOptions {
@@ -75,6 +74,7 @@ pub async fn invalidate_compilation_cache(state: &RwLock<State>) {
         for root in &focused_roots {
             beskid_queries::invalidate_entry_sessions(root);
         }
+        write.diagnostic_generation = write.diagnostic_generation.wrapping_add(1);
         write.compilation_context_cache.clear();
         if !cold_start {
             write.reset_compilation_db_with_db(db);

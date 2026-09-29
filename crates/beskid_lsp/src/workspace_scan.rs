@@ -291,16 +291,12 @@ pub async fn clear_closed_workspace_under_root(client: &Client, state: &RwLock<S
 
 /// Re-read changed paths on disk when buffers are closed; may invalidate compilation cache on manifest edits.
 pub async fn refresh_after_disk_change(client: &Client, state: &RwLock<State>, changed_paths: &[PathBuf]) {
-    if changed_paths
+    let project_authority_changed = changed_paths
         .iter()
-        .any(|p| p.extension().and_then(|e| e.to_str()).is_some_and(is_manifest_extension) || is_lockfile_path(p))
-    {
+        .any(|p| p.extension().and_then(|e| e.to_str()).is_some_and(is_manifest_extension) || is_lockfile_path(p));
+    if project_authority_changed {
         invalidate_compilation_cache(state).await;
         rebuild_open_document_syntax_facts(state).await;
-        let open_uris = { state.read().await.docs.keys().cloned().collect::<Vec<_>>() };
-        for uri in open_uris {
-            publish_diagnostics_for_uri(client, state, &uri).await;
-        }
     }
     for path in changed_paths {
         if !path.extension().and_then(|ext| ext.to_str()).is_some_and(is_scannable_extension) {
@@ -324,6 +320,15 @@ pub async fn refresh_after_disk_change(client: &Client, state: &RwLock<State>, c
         let diagnostics = lsp_diagnostics_from_syntax(&doc.text, &doc.syntax_diagnostics);
         set_disk_snapshot(state, uri.clone(), doc).await;
         client.publish_diagnostics(uri, diagnostics, Some(0)).await;
+    }
+    if project_authority_changed {
+        let affected_uris = {
+            let read = state.read().await;
+            read.docs.keys().chain(read.workspace_index.keys()).cloned().collect::<Vec<_>>()
+        };
+        for uri in affected_uris {
+            publish_diagnostics_for_uri(client, state, &uri).await;
+        }
     }
 }
 
@@ -455,6 +460,28 @@ target "App" {
     async fn watched_lock_change_republishes_open_source_diagnostics_both_directions() {
         let (client, mut notifications) = initialized_client().await;
         let (_temp, state, uri, lock, _source) = open_lock_fixture().await;
+        let valid = fs::read_to_string(&lock).expect("valid lock");
+
+        fs::write(&lock, "# Project.lock v1\n").expect("replace lock with v1");
+        refresh_after_disk_change(&client, &state, &[lock.clone()]).await;
+        let invalid = next_for_uri(&mut notifications, &uri).await;
+        assert!(invalid.diagnostics.iter().any(|d| d.message.contains("v1") && d.message.contains("beskid lock")));
+
+        fs::write(&lock, valid).expect("restore v2");
+        refresh_after_disk_change(&client, &state, &[lock]).await;
+        let valid = next_for_uri(&mut notifications, &uri).await;
+        assert!(!valid.diagnostics.iter().any(|d| d.message.contains("Project.lock")));
+    }
+
+    #[tokio::test]
+    async fn watched_lock_change_republishes_closed_source_diagnostics_both_directions() {
+        let (client, mut notifications) = initialized_client().await;
+        let (temp, state, uri, lock, _source) = open_lock_fixture().await;
+        state.write().await.docs.remove(&uri);
+        scan_workspace(&client, &state, temp.path(), None).await;
+        let initial = next_for_uri(&mut notifications, &uri).await;
+        assert!(!initial.diagnostics.iter().any(|d| d.message.contains("Project.lock")));
+        assert!(state.read().await.workspace_index.contains_key(&uri));
         let valid = fs::read_to_string(&lock).expect("valid lock");
 
         fs::write(&lock, "# Project.lock v1\n").expect("replace lock with v1");

@@ -1,25 +1,27 @@
-use std::collections::HashMap;
-use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::{
+    collections::HashMap,
+    path::PathBuf,
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
+    time::Duration,
+};
 
 use beskid_analysis::CompilationContext;
-use beskid_queries::{
-    AstNodeKey, BeskidDatabase, configure_compilation_database_for_project, reset_compilation_database,
-};
-use tokio::sync::{Mutex as AsyncMutex, Notify};
-use tower_lsp_server::ls_types::Uri;
-
-use super::db_access;
-use super::documentation_facts::SyntaxDocumentationFact;
-
 // Re-export the single host-side `SyntaxFix` / `SyntaxTextEdit` implementation so LSP
 // code can name them as `crate::session::store::SyntaxFix` / `SyntaxTextEdit` (DRY — no
 // duplicate LSP-side types). Defined in `beskid_analysis::mod_host::diagnostics` and
 // returned by the prepare spine. `SyntaxTextEditKind` is consumed only by tests, which
 // import it directly from `beskid_analysis`.
 pub use beskid_analysis::{SyntaxFix, SyntaxTextEdit};
+use beskid_queries::{
+    AstNodeKey, BeskidDatabase, configure_compilation_database_for_project, reset_compilation_database,
+};
+use tokio::sync::{Mutex as AsyncMutex, Notify};
+use tower_lsp_server::ls_types::Uri;
+
+use super::{db_access, documentation_facts::SyntaxDocumentationFact};
 
 /// One editor buffer or disk snapshot with generation-bound syntax facts.
 #[derive(Debug, Clone)]
@@ -155,6 +157,9 @@ pub struct State {
     pub docs: HashMap<Uri, Document>,
     /// Closed files on disk that still receive diagnostics (not managed by the editor buffer).
     pub workspace_index: HashMap<Uri, Document>,
+    /// Advances whenever project/lock authority is invalidated, even when an editor
+    /// buffer's text and LSP version do not change.
+    pub(crate) diagnostic_generation: u64,
     /// Key: canonical `.bproj` path plus `workspace_member_for_meta_default` (from graph
     /// build options / env), so `attachTo: default` disambiguation cannot reuse a stale slice.
     pub compilation_context_cache: HashMap<(PathBuf, Option<String>), CompilationContext>,
@@ -194,6 +199,7 @@ impl Default for State {
             focused_project: None,
             docs: HashMap::new(),
             workspace_index: HashMap::new(),
+            diagnostic_generation: 0,
             compilation_context_cache: HashMap::new(),
             compilation_db: Arc::new(Mutex::new(BeskidDatabase::default())),
             configured_project_root: None,
