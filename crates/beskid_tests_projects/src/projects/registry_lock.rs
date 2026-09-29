@@ -642,6 +642,63 @@ fn preexisting_nested_symlink_cannot_redirect_registry_extraction() {
     assert!(error.to_string().contains("symlink"), "unexpected error: {error}");
 }
 
+#[cfg(unix)]
+#[test]
+fn preexisting_file_symlink_cannot_redirect_registry_extraction() {
+    use std::os::unix::fs::symlink;
+
+    let fixture = RegistryFixture::new();
+    fixture.publish(OLD_VERSION, "trusted release");
+    let first = fixture.prepare(false).expect("initial package materialization");
+    let materialized_root = marker_path(&first).parent().expect("materialized package root");
+    let manifest = materialized_root.join("PkgCore.bproj");
+    let original_manifest = materialized_root.join("PkgCore-before-symlink.bproj");
+    fs::rename(&manifest, &original_manifest).expect("preserve materialized manifest");
+    let outside_manifest = fixture.root.path().join("outside-manifest.bproj");
+    fs::write(&outside_manifest, b"outside manifest sentinel").expect("write outside sentinel");
+    symlink(&outside_manifest, &manifest).expect("redirect archive file outside materialization");
+    let original_lock = fixture.lock();
+
+    let result = fixture.prepare(false);
+
+    assert_eq!(fs::read(&outside_manifest).unwrap(), b"outside manifest sentinel");
+    assert_eq!(fixture.lock(), original_lock);
+    assert!(fs::symlink_metadata(&manifest).unwrap().file_type().is_symlink());
+    let error = result.expect_err("file symlink must be rejected before extraction");
+    assert!(error.to_string().contains("symlink"), "unexpected error: {error}");
+}
+
+#[test]
+fn zip_symlink_entry_is_rejected_before_any_archive_file_is_written() {
+    let fixture = RegistryFixture::new();
+    let mut archive = package_zip("symlink entry payload");
+    let central_entries = archive
+        .windows(4)
+        .enumerate()
+        .filter_map(|(offset, bytes)| (bytes == 0x0201_4b50_u32.to_le_bytes()).then_some(offset))
+        .collect::<Vec<_>>();
+    assert_eq!(central_entries.len(), 2, "fixture ZIP must have two central entries");
+    let marker_entry = central_entries[1];
+    archive[marker_entry + 4..marker_entry + 6].copy_from_slice(&0x0314_u16.to_le_bytes());
+    archive[marker_entry + 38..marker_entry + 42].copy_from_slice(&(0o120777_u32 << 16).to_le_bytes());
+    fixture.packages.lock().unwrap().insert(OLD_VERSION.to_owned(), archive);
+
+    let error = fixture.prepare(false).expect_err("ZIP symlink entry must be rejected");
+
+    assert!(error.to_string().contains("symlink"), "unexpected error: {error}");
+    let deps = fixture.app_manifest.parent().unwrap().join("obj/beskid/deps/src");
+    let package_roots = fs::read_dir(deps)
+        .expect("read materialized dependencies")
+        .map(|entry| entry.expect("read materialized dependency"))
+        .filter(|entry| entry.file_name().to_string_lossy().starts_with("PkgCore-"))
+        .collect::<Vec<_>>();
+    assert_eq!(package_roots.len(), 1, "one registry package destination expected");
+    assert!(
+        !package_roots[0].path().join("PkgCore.bproj").exists(),
+        "a later ZIP symlink entry must block extraction of the first file"
+    );
+}
+
 #[test]
 fn missing_pinned_version_fails_without_selecting_newer_release() {
     let fixture = RegistryFixture::new();
