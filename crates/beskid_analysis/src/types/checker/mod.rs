@@ -21,7 +21,7 @@ use crate::syntax::Spanned;
 use crate::syntax::{AstNodeId, Block, PrimitiveType, Program};
 use crate::types::inference::{ConstraintSet, InferenceResult, TypeEnv, solve_constraints};
 use crate::types::result::{CallLoweringKind, FunctionSignature, TypeError};
-use crate::types::surface::{MergedTypeEnv, UnitTypeSurface};
+use crate::types::surface::{FunctionBound, MergedTypeEnv, UnitTypeSurface};
 use crate::types::{TypeId, TypeTable};
 
 pub struct TypeChecker<'a> {
@@ -41,6 +41,8 @@ pub struct TypeChecker<'a> {
     pub(super) function_signatures: HashMap<ItemId, FunctionSignature>,
     pub(super) method_function_signatures: HashMap<ItemId, FunctionSignature>,
     pub(super) generic_items: HashMap<ItemId, Vec<String>>,
+    pub(super) function_bounds: HashMap<ItemId, Vec<FunctionBound>>,
+    pub(super) contract_embeddings: HashMap<ItemId, Vec<ItemId>>,
     pub(super) methods_by_receiver: HashMap<(ItemId, String), ItemId>,
     pub(super) contract_signatures: HashMap<(ItemId, String), FunctionSignature>,
     /// Declared associated types per contract with their defaults, seeded from dependency unit
@@ -57,6 +59,7 @@ pub struct TypeChecker<'a> {
     pub(super) call_kinds: HashMap<AstNodeId, CallLoweringKind>,
     pub(super) contextual_expected_type: Option<TypeId>,
     pub(super) current_return_type: Option<TypeId>,
+    pub(super) current_function_item: Option<ItemId>,
     pub(super) generic_params: HashMap<String, TypeId>,
     pub(super) current_receiver_item_id: Option<ItemId>,
     pub(super) current_source_path: Option<PathBuf>,
@@ -104,6 +107,8 @@ impl<'a> TypeChecker<'a> {
             function_signatures: surface.function_signatures.clone(),
             method_function_signatures: surface.method_function_signatures.clone(),
             generic_items: surface.generic_items.clone(),
+            function_bounds: surface.function_bounds.clone(),
+            contract_embeddings: surface.contract_embeddings.clone(),
             methods_by_receiver: surface.methods_by_receiver.clone(),
             contract_signatures: surface.contract_signatures.clone(),
             contract_associated_types: surface.contract_associated_types.clone(),
@@ -112,6 +117,7 @@ impl<'a> TypeChecker<'a> {
             call_kinds: HashMap::new(),
             contextual_expected_type: None,
             current_return_type: None,
+            current_function_item: None,
             generic_params: HashMap::new(),
             current_receiver_item_id: None,
             current_source_path: None,
@@ -136,6 +142,8 @@ impl<'a> TypeChecker<'a> {
             struct_fields_ordered: merged.struct_fields_ordered.clone(),
             enum_variants_ordered: merged.enum_variants_ordered.clone(),
             generic_items: merged.generic_items.clone(),
+            function_bounds: merged.function_bounds.clone(),
+            contract_embeddings: merged.contract_embeddings.clone(),
             struct_event_fields: merged.struct_event_fields.clone(),
             contract_signatures: merged.contract_signatures.clone(),
             contract_method_order: merged.contract_method_order.clone(),

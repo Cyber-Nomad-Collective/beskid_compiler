@@ -280,8 +280,9 @@ fn where_bound_rejects_a_non_conforming_inferred_type_argument() {
     // rejected as a generic bound failure, not silently accepted.
     let bad_call = key(unit, generation, &index, NodeKind::CallExpression, 1);
     let bad_instance = generic_call_specialization(&db, bad_call);
+    let error = bad_instance.expect_err("a non-conforming type argument must be rejected by the bound");
     assert!(
-        bad_instance.is_err() || bad_instance.as_ref().unwrap().is_none(),
-        "a non-conforming type argument must be rejected by the `where T: Reader` bound; got: {bad_instance:?}"
+        error.diagnostics().iter().any(|diagnostic| diagnostic.contains("E1610")),
+        "bound failures must carry the GenericBoundNotSatisfied diagnostic code; got: {error:?}"
     );
 }

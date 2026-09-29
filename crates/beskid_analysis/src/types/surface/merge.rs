@@ -72,6 +72,8 @@ fn merge_surface_into_remapped(target: &mut MergedTypeEnv, surface: &UnitTypeSur
         );
     }
     target.generic_items.extend(surface.generic_items.clone());
+    target.function_bounds.extend(surface.function_bounds.clone());
+    target.contract_embeddings.extend(surface.contract_embeddings.clone());
     target.struct_event_fields.extend(surface.struct_event_fields.clone());
     for (key, signature) in &surface.contract_signatures {
         target.contract_signatures.insert(key.clone(), remap_signature(remap, signature));

@@ -36,6 +36,7 @@ impl SemanticIssueKind {
             Self::ContractAssociatedTypeMissingBinding { .. } => "E1607",
             Self::ThisUsedOutsideContractOrImpl => "E1608",
             Self::UnresolvedAssociatedType { .. } => "E1609",
+            Self::GenericBoundNotSatisfied { .. } => "E1610",
 
             Self::ImmutableAssignment { .. } => "E1214",
 

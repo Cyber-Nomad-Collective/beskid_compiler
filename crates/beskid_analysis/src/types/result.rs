@@ -50,6 +50,7 @@ pub enum TypeError {
     /// primitive types (e.g. `word` and `i64`). `first`/`second` are the conflicting types in
     /// argument-position order; `parameter` is the generic parameter name.
     GenericParameterConflict { span: SpanInfo, parameter: String, first: TypeId, second: TypeId },
+    GenericBoundNotSatisfied { span: SpanInfo, type_name: String, contract_name: String },
     NonIterableForTarget { span: SpanInfo },
     IterableNextArityMismatch { span: SpanInfo, expected: usize, actual: usize },
     IterableNextReturnNotOption { span: SpanInfo },
@@ -203,6 +204,9 @@ impl fmt::Display for TypeError {
                 type_id_label(*first),
                 type_id_label(*second)
             ),
+            TypeError::GenericBoundNotSatisfied { span, type_name, contract_name } => {
+                write!(f, "type `{type_name}` does not satisfy contract bound `{contract_name}` at {}", at(*span))
+            }
             TypeError::NonIterableForTarget { span } => {
                 write!(f, "non-iterable for-loop target at {}", at(*span))
             }

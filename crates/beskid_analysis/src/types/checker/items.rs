@@ -181,6 +181,24 @@ impl<'a> TypeChecker<'a> {
                     self.generic_params.insert(name.clone(), type_id);
                     inserted.push(name);
                 }
+                let bound_facts = self.item_id_for_span(item.span)
+                    .and_then(|function| self.function_bounds.get(&function))
+                    .cloned()
+                    .unwrap_or_default();
+                for (index, bound) in def.node.where_bounds.iter().enumerate() {
+                    if !def.node.generics.iter().any(|generic| generic.node.name == bound.parameter.node.name) {
+                        self.errors.push(TypeError::UnknownType {
+                            span: bound.parameter.span,
+                            name: bound.parameter.node.name.clone(),
+                        });
+                    }
+                    if !bound_facts.get(index).is_some_and(|fact| fact.contract.is_some()) {
+                        self.errors.push(TypeError::UnknownType {
+                            span: bound.contract.span,
+                            name: super::types::path_display_name(&bound.contract),
+                        });
+                    }
+                }
                 let return_type = def
                     .node
                     .return_type
@@ -196,7 +214,12 @@ impl<'a> TypeChecker<'a> {
                     }
                 }
                 self.record_signature(item.span, params, return_type);
+                let previous_function = self.current_function_item;
+                self.current_function_item = self
+                    .item_id_for_span(item.span)
+                    .or_else(|| self.item_id_for_name(&def.node.name.node.name, crate::resolve::ItemKind::Function));
                 self.type_block(&def.node.body);
+                self.current_function_item = previous_function;
                 for name in inserted {
                     self.generic_params.remove(&name);
                 }

@@ -94,6 +94,9 @@ impl SemanticIssueKind {
             Self::UnresolvedAssociatedType { .. } => {
                 Some("check the contract name and that the referenced type conforms to it".to_string())
             }
+            Self::GenericBoundNotSatisfied { type_name, contract_name } => {
+                Some(format!("make `{type_name}` conform to `{contract_name}` or pass a conforming type"))
+            }
             Self::ImmutableAssignment { .. } => {
                 Some("declare it as `let mut` to allow assignment".to_string())
             }
