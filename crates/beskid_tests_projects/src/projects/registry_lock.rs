@@ -990,6 +990,40 @@ fn valid_zip_eocd_comment_is_accepted() {
 }
 
 #[test]
+fn zip64_locator_before_maximum_length_zip_comment_is_rejected() {
+    let fixture = RegistryFixture::new();
+    let mut artifact = package_zip("marker");
+    let eocd = artifact.windows(4).rposition(|bytes| bytes == 0x0605_4b50_u32.to_le_bytes()).unwrap();
+    let mut locator = [0_u8; 20];
+    locator[..4].copy_from_slice(&0x0706_4b50_u32.to_le_bytes());
+    artifact.splice(eocd..eocd, locator);
+    let eocd = eocd + 20;
+    artifact[eocd + 20..eocd + 22].copy_from_slice(&u16::MAX.to_le_bytes());
+    artifact.extend(std::iter::repeat_n(b'x', u16::MAX as usize));
+    fixture.packages.lock().unwrap().insert(OLD_VERSION.to_owned(), artifact);
+
+    let error = fixture.prepare(false).expect_err("ZIP64 locator before maximum comment must fail closed");
+
+    assert!(error.to_string().contains("ZIP64 format is unsupported"), "unexpected error: {error}");
+    assert!(registry_destination_paths(&fixture).is_empty(), "ZIP64 artifact must not publish a package");
+    assert_no_registry_staging_dirs(&fixture);
+}
+
+#[test]
+fn maximum_length_zip_eocd_comment_without_locator_is_accepted() {
+    let fixture = RegistryFixture::new();
+    let mut artifact = package_zip("maximum comment");
+    let eocd = artifact.windows(4).rposition(|bytes| bytes == 0x0605_4b50_u32.to_le_bytes()).unwrap();
+    artifact[eocd + 20..eocd + 22].copy_from_slice(&u16::MAX.to_le_bytes());
+    artifact.extend(std::iter::repeat_n(b'x', u16::MAX as usize));
+    fixture.packages.lock().unwrap().insert(OLD_VERSION.to_owned(), artifact);
+
+    let prepared = fixture.prepare(false).expect("maximum-length EOCD comment remains valid without ZIP64");
+
+    assert_eq!(fs::read(marker_path(&prepared).join("Marker.bd")).unwrap(), b"maximum comment");
+}
+
+#[test]
 fn zip_name_above_four_thousand_ninety_six_utf8_bytes_is_rejected_in_preflight() {
     let fixture = RegistryFixture::new();
     let long_name = format!("Src/{}/Leaf.bd", std::iter::repeat_n("a".repeat(31), 130).collect::<Vec<_>>().join("/"));
