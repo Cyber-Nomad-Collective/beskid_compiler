@@ -180,6 +180,11 @@ compiler now embeds.
    persists, the kit was built from a different worktree/commit, or `beskid_cli` itself embeds a
    different corpus -- rebuild `beskid_cli` first, then the kit.
 
+The e2e CLI harness stages both debug and release kits under the Cargo target directory at
+`beskid-e2e-runtime-kits/<embedded-source-hash>/`. It validates a cached kit's metadata and
+artifact hashes before reuse. An older unkeyed kit in a shared `CARGO_TARGET_DIR` is not evidence
+for the current compiler; keep it intact while another build may still be using it.
+
 ### `UnprovenCollectionOwner`
 
 Not yet covered by a dedicated tool. In practice this has traced back to the same two classes as

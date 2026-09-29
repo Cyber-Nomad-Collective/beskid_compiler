@@ -4,6 +4,10 @@ use std::process::{Command, Output};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, OnceLock};
 
+use beskid_abi::abi_v5::TargetMetadata;
+use beskid_abi::runtime_kit::BuildProfile;
+use beskid_abi::runtime_source::{canonical_runtime_source_hash, resolve_canonical_runtime_kit};
+
 static CORELIB_ROOT_COUNTER: AtomicU64 = AtomicU64::new(0);
 static BUILT_DEBUG_CLI: OnceLock<()> = OnceLock::new();
 static STAGED_RUNTIME_KIT: OnceLock<Mutex<()>> = OnceLock::new();
@@ -77,14 +81,20 @@ impl BeskidCliInvoker {
 /// Missing kits remain fail-closed for consumers that do not go through this harness.
 /// This only publishes through `runtime-kit build-native-host` — no prebuilt/search fallback.
 fn ensure_exact_runtime_kit(cli_binary: &Path, profile: &str) -> PathBuf {
-    let prefix = install_prefix_for_cli(cli_binary);
     let lock = STAGED_RUNTIME_KIT.get_or_init(|| Mutex::new(()));
     let _guard = lock.lock().expect("runtime-kit staging lock");
 
     let triple = host_abi_v5_triple()
         .unwrap_or_else(|host| panic!("e2e CLI harness requires a supported ABI-v5 host; got {host}"));
+    let target = TargetMetadata::for_triple(triple).expect("host ABI-v5 target is supported");
+    let build_profile = BuildProfile::parse(profile).expect("harness profile is debug or release");
+    // A shared Cargo target directory may retain kits from an older compiler source state.
+    // Never use its unkeyed runtime-kit root as evidence for this compiler's embedded corpus.
+    let prefix = install_prefix_for_cli(cli_binary);
     let metadata = prefix.join("lib/beskid-runtime/abi-5").join(triple).join(profile).join("abi.json");
     if metadata.is_file() {
+        resolve_canonical_runtime_kit(&prefix, &target, build_profile)
+            .unwrap_or_else(|error| panic!("existing e2e runtime kit `{}` is not exact: {error:?}", prefix.display()));
         return prefix;
     }
 
@@ -111,16 +121,16 @@ fn ensure_exact_runtime_kit(cli_binary: &Path, profile: &str) -> PathBuf {
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
-    assert!(metadata.is_file(), "exact {profile} kit metadata missing after staging: {}", metadata.display());
+    resolve_canonical_runtime_kit(&prefix, &target, build_profile)
+        .unwrap_or_else(|error| panic!("staged e2e runtime kit `{}` is not exact: {error:?}", prefix.display()));
     prefix
 }
 
 fn install_prefix_for_cli(cli_binary: &Path) -> PathBuf {
     let bin =
         cli_binary.parent().unwrap_or_else(|| panic!("CLI binary has no parent directory: {}", cli_binary.display()));
-    bin.parent()
-        .map(Path::to_path_buf)
-        .unwrap_or_else(|| panic!("CLI binary has no install prefix: {}", cli_binary.display()))
+    let target = bin.parent().unwrap_or_else(|| panic!("CLI binary has no install prefix: {}", cli_binary.display()));
+    target.join("beskid-e2e-runtime-kits").join(canonical_runtime_source_hash())
 }
 
 fn host_abi_v5_triple() -> Result<&'static str, String> {
@@ -209,6 +219,17 @@ fn unique_corelib_root() -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn self_staged_runtime_prefix_is_keyed_to_embedded_sources() {
+        let root = tempfile::tempdir().expect("temporary target directory");
+        let cli = root.path().join("debug").join(binary_name());
+        assert_eq!(
+            install_prefix_for_cli(&cli),
+            root.path().join("beskid-e2e-runtime-kits").join(canonical_runtime_source_hash()),
+            "a shared target's unkeyed runtime kit may contain stale abi.json"
+        );
+    }
 
     #[test]
     fn default_cli_build_command_targets_the_workspace_cli_package() {

@@ -602,6 +602,7 @@ dependencies = [
 name = "beskid_e2e_tests"
 version = "0.1.0"
 dependencies = [
+ "beskid_abi",
  "tempfile",
 ]
 
