@@ -44,3 +44,7 @@ pnpm-debug.log*
 # e2e generated artifacts
 crates/beskid_e2e_tests/fixtures/**/obj/
 crates/beskid_e2e_tests/fixtures/smoke_project/Project.lock
+crates/beskid_e2e_tests/fixtures/manual_println/Project.lock
+# Generated dependency locks are build output; keep their source snapshots tracked.
+crates/beskid_tests_mods/fixtures/**/obj/beskid/deps/src/**/Project.lock
+crates/beskid_tests_projects/fixtures/**/obj/beskid/deps/src/**/Project.lock
