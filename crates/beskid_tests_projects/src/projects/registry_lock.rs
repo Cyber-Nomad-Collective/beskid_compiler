@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 use std::fs;
-use std::io::{Read, Write};
+use std::io::{Cursor, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::sync::{
@@ -23,6 +23,7 @@ use super::with_cwd_at_workspace_root;
 const OLD_VERSION: &str = "1.0.0";
 const NEW_VERSION: &str = "2.0.0";
 const OVER_LIMIT_BYTES: usize = 64 * 1024 * 1024 + 1;
+const PACKAGE_MANIFEST: &[u8] = b"PkgCore {\n  name = \"PkgCore\"\n  version = \"0.1.0\"\n}\n\ntarget \"PkgCore\" {\n  kind = \"Lib\"\n  entry = \"Marker.bd\"\n}\n";
 
 struct RegistryFixture {
     root: TempDir,
@@ -209,12 +210,15 @@ fn package_zip(marker: &str) -> Vec<u8> {
 }
 
 fn package_zip_with_source_dir(marker: &str, source_dir: &str) -> Vec<u8> {
-    let manifest = b"PkgCore {\n  name = \"PkgCore\"\n  version = \"0.1.0\"\n}\n\ntarget \"PkgCore\" {\n  kind = \"Lib\"\n  entry = \"Marker.bd\"\n}\n";
     let source_path = format!("{source_dir}/Marker.bd");
-    let files: [(&[u8], &[u8]); 2] = [(b"PkgCore.bproj", manifest), (source_path.as_bytes(), marker.as_bytes())];
+    let files: [(&[u8], &[u8]); 2] = [(b"PkgCore.bproj", PACKAGE_MANIFEST), (source_path.as_bytes(), marker.as_bytes())];
+    stored_zip(&files)
+}
+
+fn stored_zip(files: &[(&[u8], &[u8])]) -> Vec<u8> {
     let mut zip = Vec::new();
     let mut central = Vec::new();
-    for (name, bytes) in files {
+    for &(name, bytes) in files {
         let offset = zip.len() as u32;
         let crc = crc32(bytes);
         zip.extend_from_slice(&0x0403_4b50_u32.to_le_bytes());
@@ -255,8 +259,9 @@ fn package_zip_with_source_dir(marker: &str, source_dir: &str) -> Vec<u8> {
     zip.extend_from_slice(&0x0605_4b50_u32.to_le_bytes());
     zip.extend_from_slice(&0_u16.to_le_bytes());
     zip.extend_from_slice(&0_u16.to_le_bytes());
-    zip.extend_from_slice(&2_u16.to_le_bytes());
-    zip.extend_from_slice(&2_u16.to_le_bytes());
+    let file_count = u16::try_from(files.len()).expect("fixture ZIP entry count fits u16");
+    zip.extend_from_slice(&file_count.to_le_bytes());
+    zip.extend_from_slice(&file_count.to_le_bytes());
     zip.extend_from_slice(&(central.len() as u32).to_le_bytes());
     zip.extend_from_slice(&central_offset.to_le_bytes());
     zip.extend_from_slice(&0_u16.to_le_bytes());
@@ -281,6 +286,16 @@ fn marker_path(workspace: &beskid_analysis::projects::PreparedProjectWorkspace) 
         .find(|dependency| dependency.dependency_name == "PkgCore")
         .expect("registry package materialized")
         .materialized_source_root
+}
+
+fn registry_destination_paths(fixture: &RegistryFixture) -> Vec<PathBuf> {
+    let deps = fixture.app_manifest.parent().unwrap().join("obj/beskid/deps/src");
+    let Ok(entries) = fs::read_dir(deps) else { return Vec::new() };
+    entries
+        .map(|entry| entry.expect("read materialized dependency"))
+        .filter(|entry| entry.file_name().to_string_lossy().starts_with("PkgCore-"))
+        .map(|entry| entry.path())
+        .collect()
 }
 
 #[test]
@@ -339,6 +354,57 @@ fn changed_manifest_requested_version_rejects_stale_registry_pin_before_material
         error.to_string().contains("version") || error.to_string().contains("pin"),
         "unexpected error: {error}"
     );
+}
+
+#[test]
+fn repeated_pinned_prepare_reuses_identical_materialization_without_rewriting_it() {
+    let fixture = RegistryFixture::new();
+    fixture.publish(OLD_VERSION, "trusted release");
+    let first = fixture.prepare(false).expect("initial materialization");
+    let marker = marker_path(&first).join("Marker.bd");
+    let original_bytes = fs::read(&marker).expect("read materialized marker");
+    let original_modified = fs::metadata(&marker).unwrap().modified().unwrap();
+    let original_lock = fixture.lock();
+    thread::sleep(Duration::from_millis(1200));
+
+    fixture.prepare(false).expect("reuse identical pinned package");
+
+    assert_eq!(fs::read(&marker).unwrap(), original_bytes);
+    assert_eq!(fs::metadata(&marker).unwrap().modified().unwrap(), original_modified);
+    assert_eq!(fixture.lock(), original_lock);
+}
+
+#[test]
+fn tampered_materialization_fails_without_repairing_or_removing_it() {
+    let fixture = RegistryFixture::new();
+    fixture.publish(OLD_VERSION, "trusted release");
+    let first = fixture.prepare(false).expect("initial materialization");
+    let marker = marker_path(&first).join("Marker.bd");
+    fs::write(&marker, b"local tamper sentinel").expect("tamper with generated package");
+    let original_lock = fixture.lock();
+
+    let error = fixture.prepare(false).expect_err("tampered materialization must fail closed");
+
+    assert!(error.to_string().contains("tampered"), "unexpected error: {error}");
+    assert_eq!(fs::read(&marker).unwrap(), b"local tamper sentinel");
+    assert_eq!(fixture.lock(), original_lock);
+}
+
+#[test]
+fn extra_materialization_file_fails_without_removing_it() {
+    let fixture = RegistryFixture::new();
+    fixture.publish(OLD_VERSION, "trusted release");
+    let first = fixture.prepare(false).expect("initial materialization");
+    let root = marker_path(&first).parent().expect("materialized package root");
+    let extra = root.join("extra-local-file.txt");
+    fs::write(&extra, b"preserve me").expect("add extra local file");
+    let original_lock = fixture.lock();
+
+    let error = fixture.prepare(false).expect_err("extra materialized path must fail closed");
+
+    assert!(error.to_string().contains("tampered"), "unexpected error: {error}");
+    assert_eq!(fs::read(&extra).unwrap(), b"preserve me");
+    assert_eq!(fixture.lock(), original_lock);
 }
 
 #[test]
@@ -697,6 +763,63 @@ fn zip_symlink_entry_is_rejected_before_any_archive_file_is_written() {
         !package_roots[0].path().join("PkgCore.bproj").exists(),
         "a later ZIP symlink entry must block extraction of the first file"
     );
+}
+
+#[test]
+fn conflicting_zip_entries_leave_no_materialized_package() {
+    let fixture = RegistryFixture::new();
+    let artifact = stored_zip(&[
+        (b"PkgCore.bproj", PACKAGE_MANIFEST),
+        (b"Collision", b"ordinary file"),
+        (b"Collision/child.bd", b"nested file"),
+    ]);
+    fixture.packages.lock().unwrap().insert(OLD_VERSION.to_owned(), artifact);
+
+    let error = fixture.prepare(false).expect_err("ZIP file/directory conflict must fail");
+
+    assert!(error.to_string().contains("conflict"), "unexpected error: {error}");
+    assert!(registry_destination_paths(&fixture).is_empty(), "conflicting ZIP must not publish a partial package");
+    assert!(!fixture.lock_path().exists(), "rejected ZIP must not write Project.lock");
+}
+
+#[test]
+fn late_zip_crc_failure_leaves_no_materialized_package() {
+    let fixture = RegistryFixture::new();
+    let mut artifact = package_zip("late payload");
+    let payload = b"late payload";
+    let offset = artifact.windows(payload.len()).position(|window| window == payload).expect("find stored ZIP payload");
+    artifact[offset] ^= 1;
+    fixture.packages.lock().unwrap().insert(OLD_VERSION.to_owned(), artifact);
+
+    fixture.prepare(false).expect_err("late ZIP checksum failure must fail");
+
+    assert!(registry_destination_paths(&fixture).is_empty(), "corrupt ZIP must not publish a partial package");
+    assert!(!fixture.lock_path().exists(), "rejected ZIP must not write Project.lock");
+}
+
+#[test]
+fn compressed_zip_bomb_exceeding_entry_budget_leaves_no_materialized_package() {
+    let fixture = RegistryFixture::new();
+    let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    let stored = zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+    writer.start_file("PkgCore.bproj", stored).expect("start package manifest");
+    writer.write_all(PACKAGE_MANIFEST).expect("write package manifest");
+    let deflated = zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+    writer.start_file("Src/Big.bin", deflated).expect("start compressed test entry");
+    let zero_chunk = [0_u8; 64 * 1024];
+    for _ in 0..(512 * 1024 * 1024 / zero_chunk.len()) {
+        writer.write_all(&zero_chunk).expect("stream compressible test chunk");
+    }
+    writer.write_all(&[0_u8]).expect("exceed entry budget by one byte");
+    let artifact = writer.finish().expect("finish ZIP bomb fixture").into_inner();
+    assert!(artifact.len() < 64 * 1024 * 1024, "compressed fixture must pass the compressed cap");
+    fixture.packages.lock().unwrap().insert(OLD_VERSION.to_owned(), artifact);
+
+    let error = fixture.prepare(false).expect_err("decompressed entry must be bounded");
+
+    assert!(error.to_string().contains("512 MiB"), "unexpected error: {error}");
+    assert!(registry_destination_paths(&fixture).is_empty(), "oversized output must not publish a partial package");
+    assert!(!fixture.lock_path().exists(), "rejected ZIP must not write Project.lock");
 }
 
 #[test]
