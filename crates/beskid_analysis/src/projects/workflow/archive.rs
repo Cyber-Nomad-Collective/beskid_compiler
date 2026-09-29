@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::fs::File;
-use std::io::{self, Read, Write};
+use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::path::{Component, Path, PathBuf};
 
 use tempfile::NamedTempFile;
@@ -12,6 +12,12 @@ use crate::projects::error::ProjectError;
 
 const MAX_ENTRY_UNCOMPRESSED_BYTES: u64 = 512 * 1024 * 1024;
 const MAX_TOTAL_UNCOMPRESSED_BYTES: u64 = 1024 * 1024 * 1024;
+const MAX_ZIP_ENTRIES: usize = 10_000;
+const MAX_ZIP_NAME_BYTES: usize = 4_096;
+const MAX_ZIP_NAME_COMPONENTS: usize = 256;
+const MAX_RETAINED_PREFIX_KEY_BYTES: usize = 64 * 1024 * 1024;
+const ZIP_EOCD_BYTES: usize = 22;
+const MAX_ZIP_COMMENT_BYTES: usize = u16::MAX as usize;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum ArchivePathKind {
@@ -19,21 +25,40 @@ enum ArchivePathKind {
     File,
 }
 
-pub(super) fn extract_zip_to_dir(file: File, output_dir: &Path) -> Result<(), ProjectError> {
+pub(super) fn extract_zip_to_dir(mut file: File, output_dir: &Path) -> Result<(), ProjectError> {
+    validate_zip_eocd(&mut file)?;
     let mut archive = ZipArchive::new(file)
         .map_err(|err| ProjectError::Validation(format!("invalid registry artifact ZIP: {err}")))?;
+    if archive.len() > MAX_ZIP_ENTRIES {
+        return Err(ProjectError::Validation("registry artifact ZIP exceeds the 10,000 entry limit".into()));
+    }
 
     // Inspect all names and declared sizes before writing any entry. The copy
     // loop also counts actual output because ZIP metadata is untrusted.
     let mut planned_paths = BTreeMap::new();
     let mut case_folded_paths = BTreeMap::new();
+    let mut retained_prefix_key_bytes = 0_usize;
     let mut declared_total = 0_u64;
     for index in 0..archive.len() {
         let entry = archive
             .by_index(index)
             .map_err(|err| ProjectError::Validation(format!("failed to read registry artifact entry: {err}")))?;
+        if entry.name().len() > MAX_ZIP_NAME_BYTES {
+            return Err(ProjectError::Validation(
+                "registry artifact ZIP entry exceeds the 4,096 UTF-8 name-byte limit".into(),
+            ));
+        }
         let path = checked_entry_name(&entry)?;
-        plan_archive_path(&mut planned_paths, &mut case_folded_paths, &path, entry.is_dir())?;
+        if path.components().count() > MAX_ZIP_NAME_COMPONENTS {
+            return Err(ProjectError::Validation("registry artifact ZIP entry exceeds the 256 component limit".into()));
+        }
+        plan_archive_path(
+            &mut planned_paths,
+            &mut case_folded_paths,
+            &mut retained_prefix_key_bytes,
+            &path,
+            entry.is_dir(),
+        )?;
         if !entry.is_dir() {
             check_output_limits(entry.size(), &mut declared_total)?;
         } else if entry.size() != 0 || entry.crc32() != 0 {
@@ -89,9 +114,78 @@ pub(super) fn extract_zip_to_dir(file: File, output_dir: &Path) -> Result<(), Pr
     Ok(())
 }
 
+fn validate_zip_eocd(file: &mut File) -> Result<(), ProjectError> {
+    // ZipArchive stores entries by name, so its len() can be smaller than the
+    // number of central-directory records. Bound the raw declared count before
+    // ZipArchive parses or allocates for those records.
+    let archive_bytes = file
+        .metadata()
+        .map_err(|error| ProjectError::Validation(format!("cannot inspect registry artifact ZIP: {error}")))?
+        .len();
+    let tail_bytes = archive_bytes.min((ZIP_EOCD_BYTES + MAX_ZIP_COMMENT_BYTES) as u64) as usize;
+    if tail_bytes < ZIP_EOCD_BYTES {
+        return Err(ProjectError::Validation("registry artifact ZIP EOCD is missing or misplaced".into()));
+    }
+    file.seek(SeekFrom::End(-(tail_bytes as i64)))
+        .map_err(|error| ProjectError::Validation(format!("cannot seek registry artifact ZIP EOCD: {error}")))?;
+    let mut tail = vec![0_u8; tail_bytes];
+    file.read_exact(&mut tail)
+        .map_err(|error| ProjectError::Validation(format!("cannot read registry artifact ZIP EOCD: {error}")))?;
+
+    for start in (0..=tail_bytes - ZIP_EOCD_BYTES).rev() {
+        if &tail[start..start + 4] != b"PK\x05\x06" {
+            continue;
+        }
+        let comment_bytes = u16::from_le_bytes([tail[start + 20], tail[start + 21]]) as usize;
+        if start + ZIP_EOCD_BYTES + comment_bytes != tail_bytes {
+            continue;
+        }
+        let disk_number = u16::from_le_bytes([tail[start + 4], tail[start + 5]]);
+        let central_disk = u16::from_le_bytes([tail[start + 6], tail[start + 7]]);
+        let entries_on_disk = u16::from_le_bytes([tail[start + 8], tail[start + 9]]);
+        let entries_total = u16::from_le_bytes([tail[start + 10], tail[start + 11]]);
+        let central_bytes = u32::from_le_bytes(tail[start + 12..start + 16].try_into().expect("fixed EOCD field"));
+        let central_offset = u32::from_le_bytes(tail[start + 16..start + 20].try_into().expect("fixed EOCD field"));
+        let eocd_offset = archive_bytes - tail_bytes as u64 + start as u64;
+        let has_zip64_locator = if start >= 20 {
+            &tail[start - 20..start - 16] == b"PK\x06\x07"
+        } else if eocd_offset >= 20 {
+            // With a maximum-length comment the locator falls before the
+            // bounded EOCD tail. Read only its fixed 20-byte slot.
+            file.seek(SeekFrom::Start(eocd_offset - 20)).map_err(|error| {
+                ProjectError::Validation(format!("cannot seek registry artifact ZIP64 locator: {error}"))
+            })?;
+            let mut locator = [0_u8; 20];
+            file.read_exact(&mut locator).map_err(|error| {
+                ProjectError::Validation(format!("cannot read registry artifact ZIP64 locator: {error}"))
+            })?;
+            &locator[..4] == b"PK\x06\x07"
+        } else {
+            false
+        };
+        if entries_on_disk == u16::MAX
+            || entries_total == u16::MAX
+            || central_bytes == u32::MAX
+            || central_offset == u32::MAX
+            || has_zip64_locator
+        {
+            return Err(ProjectError::Validation("registry artifact ZIP64 format is unsupported".into()));
+        }
+        if disk_number != 0 || central_disk != 0 || entries_on_disk != entries_total {
+            return Err(ProjectError::Validation("registry artifact multi-disk ZIP is unsupported".into()));
+        }
+        if entries_total as usize > MAX_ZIP_ENTRIES {
+            return Err(ProjectError::Validation("registry artifact ZIP exceeds the 10,000 entry limit".into()));
+        }
+        return Ok(());
+    }
+    Err(ProjectError::Validation("registry artifact ZIP EOCD is missing or misplaced".into()))
+}
+
 fn plan_archive_path(
     paths: &mut BTreeMap<PathBuf, ArchivePathKind>,
     case_folded_paths: &mut BTreeMap<String, PathBuf>,
+    retained_prefix_key_bytes: &mut usize,
     path: &Path,
     is_dir: bool,
 ) -> Result<(), ProjectError> {
@@ -103,24 +197,22 @@ fn plan_archive_path(
             return Err(ProjectError::Validation("registry artifact contains an unsafe ZIP entry path".into()));
         };
         prefix.push(segment);
-        let folded_segment = segment.to_string_lossy().nfkc().flat_map(char::to_lowercase).collect::<String>();
+        let normalized_segment = segment.to_string_lossy().nfkc().collect::<String>();
+        let folded_segment =
+            unicase::UniCase::unicode(normalized_segment.as_str()).to_folded_case().nfkc().collect::<String>();
         validate_portable_zip_segment(&folded_segment)?;
         if !folded_prefix.is_empty() {
             folded_prefix.push('/');
         }
         folded_prefix.push_str(&folded_segment);
-        match case_folded_paths.get(&folded_prefix) {
-            Some(existing) if existing != &prefix => {
-                return Err(ProjectError::Validation(format!(
-                    "registry artifact ZIP entries have a case-insensitive path alias: {} and {}",
-                    existing.display(),
-                    prefix.display()
-                )));
-            }
-            Some(_) => {}
-            None => {
-                case_folded_paths.insert(folded_prefix.clone(), prefix.clone());
-            }
+        if let Some(existing) = case_folded_paths.get(&folded_prefix)
+            && existing != &prefix
+        {
+            return Err(ProjectError::Validation(format!(
+                "registry artifact ZIP entries have a case-insensitive path alias: {} and {}",
+                existing.display(),
+                prefix.display()
+            )));
         }
         let kind =
             if is_dir || index + 1 < components.len() { ArchivePathKind::Directory } else { ArchivePathKind::File };
@@ -133,6 +225,20 @@ fn plan_archive_path(
             }
             Some(_) => {}
             None => {
+                let retained_bytes =
+                    prefix.to_string_lossy().len().checked_add(folded_prefix.len()).ok_or_else(|| {
+                        ProjectError::Validation("registry artifact planned prefix-key budget overflows".into())
+                    })?;
+                *retained_prefix_key_bytes =
+                    (*retained_prefix_key_bytes).checked_add(retained_bytes).ok_or_else(|| {
+                        ProjectError::Validation("registry artifact planned prefix-key budget overflows".into())
+                    })?;
+                if *retained_prefix_key_bytes > MAX_RETAINED_PREFIX_KEY_BYTES {
+                    return Err(ProjectError::Validation(
+                        "registry artifact exceeds the 64 MiB cumulative planned prefix-key limit".into(),
+                    ));
+                }
+                case_folded_paths.insert(folded_prefix.clone(), prefix.clone());
                 paths.insert(prefix.clone(), kind);
             }
         }
@@ -402,11 +508,12 @@ mod tests {
     fn retained_prefix_keys_must_not_exceed_sixty_four_mib() {
         let mut paths = BTreeMap::new();
         let mut folded_paths = BTreeMap::new();
+        let mut retained_bytes = 0;
         let tail = std::iter::repeat_n("abcdefghijklmnop", 199).collect::<Vec<_>>().join("/");
         let mut rejected = false;
         for index in 0..220 {
             let path = PathBuf::from(format!("D{index:03}/{tail}"));
-            match plan_archive_path(&mut paths, &mut folded_paths, &path, false) {
+            match plan_archive_path(&mut paths, &mut folded_paths, &mut retained_bytes, &path, false) {
                 Ok(()) => {}
                 Err(error) => {
                     assert!(error.to_string().contains("64 MiB"), "unexpected error: {error}");

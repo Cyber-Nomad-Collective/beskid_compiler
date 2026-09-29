@@ -28,6 +28,7 @@ bsol = { workspace = true }
 rayon = "1.10"
 zip = "2"
 unicode-normalization = "0.1"
+unicase = "2.9"
 libloading = "0.8"
 
 [build-dependencies]
