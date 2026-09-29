@@ -17,8 +17,8 @@ pub use assembly::{
     AssemblyError, AssemblyModule, EffectiveCompilationRoots, ModuleGraph, ModuleIndex, ProgramAssembly, RootEntry,
     SourceUnit, UnitMaterializer, assemble_program_with_materializer, assembly_options_for_plan,
     assembly_options_for_prepare, effective_roots_for_plan, effective_roots_from_lockfile,
-    effective_roots_from_plan_and_workspace, infer_logical_module_path, module_path_exists_on_disk,
-    module_path_to_relative_path, module_roots_from_effective, resolve_module_file,
+    effective_roots_from_lockfile_checked, effective_roots_from_plan_and_workspace, infer_logical_module_path,
+    module_path_exists_on_disk, module_path_to_relative_path, module_roots_from_effective, resolve_module_file,
 };
 pub use bsol::{BsolBlock, BsolDocument, BsolError, BsolItem, BsolSpan, BsolValue, parse_bsol_document};
 pub use compile_plan::{

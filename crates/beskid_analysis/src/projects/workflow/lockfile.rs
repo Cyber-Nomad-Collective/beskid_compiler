@@ -1,12 +1,13 @@
-use std::collections::HashSet;
-use std::fs;
-use std::io::{ErrorKind, Write};
-use std::path::{Component, Path};
+use std::{
+    collections::HashSet,
+    fs,
+    io::{ErrorKind, Write},
+    path::{Component, Path},
+};
 
 use tempfile::NamedTempFile;
 
-use crate::projects::error::ProjectError;
-use crate::projects::model::CompilePlan;
+use crate::projects::{error::ProjectError, model::CompilePlan};
 
 mod portable_path;
 
@@ -554,7 +555,17 @@ pub fn load_project_lock_dependencies_from_path(
     }
     let content = fs::read_to_string(&lock_path)
         .map_err(|e| ProjectError::Validation(format!("failed to read {}: {e}", lock_path.display())))?;
+    reject_v1_lock_for_replay(&content)?;
     Ok(ProjectLockfileV2::parse_v2(&content)?.dependencies)
+}
+
+fn reject_v1_lock_for_replay(content: &str) -> Result<(), ProjectError> {
+    if content.lines().next() == Some(PROJECT_LOCK_HEADER_V1) {
+        return Err(ProjectError::Validation(
+            "Project.lock v1 requires explicit migration with `beskid lock` or `beskid update`".into(),
+        ));
+    }
+    Ok(())
 }
 
 /// Replay only a lockfile issued for this exact project. Other callers may inspect
@@ -566,6 +577,7 @@ pub fn load_project_lock_dependencies_for_plan(
     regular_lockfile_exists(lock_path)?;
     let content = fs::read_to_string(lock_path)
         .map_err(|e| ProjectError::Validation(format!("failed to read {}: {e}", lock_path.display())))?;
+    reject_v1_lock_for_replay(&content)?;
     let parsed = ProjectLockfileV2::parse_v2(&content)?;
     let lock_root = lock_path.parent().ok_or_else(|| ProjectError::Validation("lockfile has no parent".into()))?;
     let root_manifest = lock_root.join(&parsed.root_manifest);

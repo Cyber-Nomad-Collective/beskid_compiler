@@ -159,6 +159,20 @@ fn v2_replay_rejects_materialized_symlink_escape() {
     fixture.assert_fallback();
 }
 
+#[cfg(unix)]
+#[test]
+fn v2_replay_rejects_symlinked_trusted_dependencies_prefix() {
+    use std::os::unix::fs::symlink;
+
+    let fixture = ReplayFixture::new("v2_replay_symlink_prefix", "Sibling");
+    fixture.assert_valid_replay();
+    let dependencies_root = fixture.plan.project_root.join("obj/beskid/deps/src");
+    let outside = fixture.root.join("outside-deps");
+    fs::rename(&dependencies_root, &outside).expect("move disposable materialization outside the project");
+    symlink(&outside, &dependencies_root).expect("replace trusted prefix with escaping symlink");
+    fixture.assert_fallback();
+}
+
 #[test]
 fn v2_replay_rejects_forged_corelib_source() {
     let fixture = ReplayFixture::new("v2_replay_forged_corelib", "Sibling");

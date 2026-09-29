@@ -6,13 +6,16 @@ mod workspaces;
 use std::path::PathBuf;
 
 use serde_json::Value;
-use tower_lsp_server::jsonrpc::Result;
-use tower_lsp_server::ls_types::LSPAny;
+use tower_lsp_server::{jsonrpc::Result, ls_types::LSPAny};
 
-use crate::commands::pckg_registry::{CMD_GET_CONNECTION_STATUS, CMD_SET_REGISTRY, CMD_VALIDATE_CONNECTION};
-use crate::commands::symbol_documentation::CMD_GET_DOCUMENTATION_URI;
-use crate::manifest_uri::manifest_path_from_uri_str;
-use crate::protocol::execute_args::{missing_args, required_uri_arg};
+use crate::{
+    commands::{
+        pckg_registry::{CMD_GET_CONNECTION_STATUS, CMD_SET_REGISTRY, CMD_VALIDATE_CONNECTION},
+        symbol_documentation::CMD_GET_DOCUMENTATION_URI,
+    },
+    manifest_uri::manifest_path_from_uri_str,
+    protocol::execute_args::{missing_args, required_uri_arg},
+};
 
 const CMD_LIST_WORKSPACES: &str = "beskid.listWorkspaces";
 const CMD_GET_WORKSPACE_SUMMARY: &str = "beskid.getWorkspaceSummary";
@@ -88,11 +91,11 @@ pub(crate) fn manifest_path_from_uri(uri: &str) -> Result<PathBuf> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use std::fs;
-    use std::path::Path;
+    use std::{fs, path::Path};
+
     use tempfile::TempDir;
 
+    use super::*;
     use crate::workspace_scan::path_to_uri_string;
 
     fn write(path: &Path, content: &str) {
@@ -325,6 +328,7 @@ target "Ext" {
     fn get_project_dependencies_reports_unresolved_when_lock_missing_entry() {
         let (_temp, root) = workspace_fixture();
         let project = root.join("apps/demo/demo.bproj");
+        fs::remove_file(root.join("apps/demo/Project.lock")).expect("fixture has no lock");
         write(
             &project,
             r#"
@@ -360,6 +364,36 @@ dependency "missing" {
         assert_eq!(unresolved, vec!["lib".to_string(), "missing".to_string()]);
     }
 
+    #[test]
+    fn get_project_dependencies_rejects_present_v1_malformed_and_stale_locks() {
+        let (_temp, root) = workspace_fixture();
+        let project = root.join("apps/demo/demo.bproj");
+        write(&root.join("apps/demo/Src/Main.bd"), "Fn Main() { }\n");
+        write(&root.join("apps/lib/Src/Lib.bd"), "Fn Main() { }\n");
+        let lock_path = root.join("apps/demo/Project.lock");
+        let uri = path_to_uri_string(&project);
+
+        let error = graph::get_project_dependencies(&uri).expect_err("v1 lock must not disappear from tooling");
+        assert!(error.message.contains("v1") && error.message.contains("beskid lock"), "{error:?}");
+
+        write(&lock_path, "# Project.lock v2\nnot-a-lock\n");
+        let error = graph::get_project_dependencies(&uri).expect_err("malformed v2 must not disappear");
+        assert!(error.message.contains("lockfile"), "{error:?}");
+
+        fs::remove_file(&lock_path).expect("remove malformed fixture lock before generating valid v2");
+        let plan = beskid_analysis::projects::build_compile_plan(&project, None).expect("resolve graph");
+        beskid_analysis::projects::prepare_project_workspace_with_options(
+            &plan,
+            beskid_analysis::projects::WorkspacePrepareOptions { refresh_lock: true, ..Default::default() },
+            None,
+        )
+        .expect("generate v2");
+        let valid = fs::read_to_string(&lock_path).expect("read v2");
+        write(&lock_path, &valid.replace("project_name=demo", "project_name=stale"));
+        let error = graph::get_project_dependencies(&uri).expect_err("stale v2 must not disappear");
+        assert!(error.message.contains("different project"), "{error:?}");
+    }
+
     /// Locate the VS Code extension's command snapshot.
     ///
     /// `beskid_vscode` is a sibling submodule of `compiler` in the root repository, so the
@@ -379,8 +413,8 @@ dependency "missing" {
             .collect::<Vec<_>>();
         candidates.iter().find(|candidate| candidate.is_file()).cloned().unwrap_or_else(|| {
             panic!(
-                "beskid_vscode command snapshot not found; set BESKID_VSCODE_ROOT or check out the \
-                 beskid_vscode submodule beside compiler. Tried: {candidates:#?}"
+                "beskid_vscode command snapshot not found; set BESKID_VSCODE_ROOT or check out the beskid_vscode \
+                 submodule beside compiler. Tried: {candidates:#?}"
             )
         })
     }
