@@ -14,6 +14,6 @@ fn export_backed_source_binding_rejects_signature_drift() {
     let mut manifest = manifest();
     let builtin = manifest.soft_builtins.iter_mut().find(|builtin| builtin.name == "__timer_sleep_until").unwrap();
     builtin.result = "i32".into();
-    let error = beskid_manifest::generate_v5_artifacts(&manifest).err().expect("reject signature drift");
+    let error = beskid_manifest::generate_v5_artifacts(&manifest).expect_err("reject signature drift");
     assert!(error.contains("does not match runtime export"), "{error}");
 }
