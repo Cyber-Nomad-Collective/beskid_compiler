@@ -25,9 +25,11 @@ install_prefix="${prefix_parent}/${prefix_name}"
   exit 1
 }
 
+binary_extension=""
+[[ ! -f "${bundle_source}/bin/beskid.exe" ]] || binary_extension=".exe"
 for binary in beskid beskid_lsp beskid-up; do
-  [[ -f "${bundle_source}/bin/${binary}" ]] || {
-    echo "Local bundle omitted bin/${binary}" >&2
+  [[ -f "${bundle_source}/bin/${binary}${binary_extension}" ]] || {
+    echo "Local bundle omitted bin/${binary}${binary_extension}" >&2
     exit 1
   }
 done
@@ -35,11 +37,18 @@ done
   echo 'Local bundle omitted its ABI-v5 runtime kit.' >&2
   exit 1
 }
-[[ -f "${bundle_source}/beskid_corelib/corelib.bproj" ]] || {
-  echo 'Local bundle omitted corelib.' >&2
+[[ -f "${bundle_source}/beskid_corelib/CoreLib.bws" ]] || {
+  echo 'Local bundle omitted its Corelib workspace manifest.' >&2
   exit 1
 }
-[[ -d "${bundle_source}/packages" ]] || { echo 'Local bundle omitted bundled packages.' >&2; exit 1; }
+[[ -f "${bundle_source}/beskid_corelib/beskid_corelib/corelib.bproj" ]] || {
+  echo 'Local bundle omitted its Corelib aggregate project.' >&2
+  exit 1
+}
+[[ -d "${bundle_source}/beskid_corelib/packages" ]] || {
+  echo 'Local bundle omitted bundled packages.' >&2
+  exit 1
+}
 [[ -f "${bundle_source}/release-version.txt" ]] || { echo 'Local bundle omitted release-version.txt.' >&2; exit 1; }
 printf '%s\n' "${release_version}" | cmp -s - "${bundle_source}/release-version.txt" || {
   echo 'Local bundle release-version.txt does not match the requested version exactly.' >&2
@@ -61,7 +70,9 @@ cleanup() {
 trap cleanup EXIT
 
 cp -a "${bundle_source}/." "${incoming}/"
-chmod 0755 "${incoming}/bin/beskid" "${incoming}/bin/beskid_lsp" "${incoming}/bin/beskid-up"
+chmod 0755 "${incoming}/bin/beskid${binary_extension}" \
+  "${incoming}/bin/beskid_lsp${binary_extension}" \
+  "${incoming}/bin/beskid-up${binary_extension}"
 
 # The prefix also stores user-owned shell data and configuration. Carry those entries into the
 # staged tree, while the bundle remains the sole authority for every release-owned entry.
@@ -78,15 +89,15 @@ if [[ -d "${install_prefix}" ]]; then
   shopt -u dotglob nullglob
 fi
 
-[[ "$("${incoming}/bin/beskid" --version 2>&1)" == "beskid ${release_version}" ]] || {
+[[ "$("${incoming}/bin/beskid${binary_extension}" --version 2>&1)" == "beskid ${release_version}" ]] || {
   echo 'CLI version does not match the local bundle version.' >&2
   exit 1
 }
-[[ "$("${incoming}/bin/beskid_lsp" --version 2>&1)" == "beskid_lsp ${release_version}" ]] || {
+[[ "$("${incoming}/bin/beskid_lsp${binary_extension}" --version 2>&1)" == "beskid_lsp ${release_version}" ]] || {
   echo 'LSP version does not match the local bundle version.' >&2
   exit 1
 }
-[[ "$("${incoming}/bin/beskid-up" --version 2>&1)" == "beskid-up ${release_version}" ]] || {
+[[ "$("${incoming}/bin/beskid-up${binary_extension}" --version 2>&1)" == "beskid-up ${release_version}" ]] || {
   echo 'Updater version does not match the local bundle version.' >&2
   exit 1
 }
