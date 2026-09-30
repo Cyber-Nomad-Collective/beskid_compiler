@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Provision the embedded Corelib before direct Corelib MVP resolver tests so
+  isolated Rust test runs with an empty install root retain the fixture graph.
 - Honor a valid external `BESKID_CORELIB_SOURCE` in ABI builds while failing
   closed when neither that workspace nor the in-tree Corelib is valid; share
   workspace selection with the tools build.

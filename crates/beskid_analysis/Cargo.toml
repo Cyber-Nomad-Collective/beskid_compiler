@@ -33,3 +33,6 @@ libloading = "0.8"
 
 [build-dependencies]
 beskid_manifest = { path = "../beskid_manifest" }
+
+[dev-dependencies]
+beskid_tools = { path = "../beskid_tools" }

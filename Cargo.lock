@@ -466,6 +466,7 @@ dependencies = [
  "beskid_ast_derive",
  "beskid_manifest",
  "beskid_pipeline",
+ "beskid_tools",
  "bsol",
  "daggy",
  "libloading",

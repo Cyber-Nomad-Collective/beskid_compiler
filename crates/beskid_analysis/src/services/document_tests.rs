@@ -85,6 +85,10 @@ mod tests {
 
     fn snapshot_with_entry_resolution()
     -> (crate::services::DocumentAnalysisSnapshot, CorelibMvpFixture, ProgramAssembly) {
+        static CORELIB_READY: std::sync::OnceLock<()> = std::sync::OnceLock::new();
+        CORELIB_READY.get_or_init(|| {
+            beskid_tools::ensure_bundled_corelib().expect("provision corelib_mvp fixture Corelib");
+        });
         let root = compiler_workspace_root();
         with_cwd_at_workspace_root(&root, || {
             let fixture = corelib_mvp_paths();

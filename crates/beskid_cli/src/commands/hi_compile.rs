@@ -126,6 +126,7 @@ mod tests {
 
     #[test]
     fn hi_compile_corelib_mvp_resolve_uses_entry_file() {
+        beskid_tools::ensure_bundled_corelib().expect("provision corelib_mvp fixture Corelib");
         let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         let manifest = manifest_dir.join("../beskid_e2e_tests/fixtures/corelib_mvp/CorelibMvp.bproj");
         assert!(manifest.is_file(), "fixture manifest missing: {manifest:?}");
