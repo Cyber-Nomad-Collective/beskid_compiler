@@ -1,6 +1,7 @@
 //! End-to-end AOT tests: codegen artifact → object / link, entrypoints, runtime strategies.
 
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use beskid_abi::abi_v5::TargetMetadata;
@@ -16,10 +17,44 @@ mod object_build;
 
 /// Isolated temp directory for AOT outputs (distinct prefix from `test_harness::temp_case_dir`).
 fn temp_case_dir(name: &str) -> PathBuf {
+    static NEXT_CASE_ID: AtomicU64 = AtomicU64::new(0);
     let nanos = SystemTime::now().duration_since(UNIX_EPOCH).expect("time ok").as_nanos();
-    let dir = std::env::temp_dir().join(format!("beskid_aot_tests_{name}_{}_{}", std::process::id(), nanos));
-    std::fs::create_dir_all(&dir).expect("create temp dir");
+    let case_id = NEXT_CASE_ID.fetch_add(1, Ordering::Relaxed);
+    let dir =
+        std::env::temp_dir().join(format!("beskid_aot_tests_{name}_{}_{}_{}", std::process::id(), nanos, case_id));
+    std::fs::create_dir(&dir).expect("create unique temp dir");
     dir
+}
+
+#[test]
+fn simultaneous_temp_cases_keep_distinct_source_paths() {
+    use std::collections::HashSet;
+    use std::sync::{Arc, Barrier};
+
+    const THREADS: usize = 16;
+    const ROUNDS: usize = 100;
+    let barrier = Arc::new(Barrier::new(THREADS));
+    let paths = std::thread::scope(|scope| {
+        let workers: Vec<_> = (0..THREADS)
+            .map(|_| {
+                let barrier = Arc::clone(&barrier);
+                scope.spawn(move || {
+                    let mut paths = Vec::with_capacity(ROUNDS);
+                    for _ in 0..ROUNDS {
+                        barrier.wait();
+                        paths.push(temp_case_dir("simultaneous_source"));
+                    }
+                    paths
+                })
+            })
+            .collect();
+        workers.into_iter().flat_map(|worker| worker.join().expect("temp case worker")).collect::<Vec<_>>()
+    });
+    let unique: HashSet<_> = paths.iter().collect();
+    for path in unique.iter() {
+        std::fs::remove_dir_all(path).expect("remove temp case");
+    }
+    assert_eq!(unique.len(), THREADS * ROUNDS, "simultaneous tests must never share a source path");
 }
 
 /// Minimal valid program source for default AOT samples.

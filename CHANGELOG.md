@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Give concurrent AOT test source directories unique process-local identities,
+  preventing one test from replacing another test's entry session on macOS.
 - Install the current release bundle's marker-bearing Corelib workspace and
   nested packages through `just replace`, including Windows `.exe` binaries.
 - Ignore the Engine's generated `obj/` tree so native release checks retain a
