@@ -112,7 +112,7 @@ fn every_legality_compile_fail_target_is_rejected_with_its_code_in_the_dependenc
     let mut failures = Vec::new();
     with_project_test_env(root, || {
         for (target, entry, code) in &targets {
-            let resolved = resolve_fixture(&root, entry, target);
+            let resolved = resolve_fixture(root, entry, target);
             let result = beskid_queries::prepare_compilation_diagnostics(
                 &resolved,
                 PrepareOptions {
