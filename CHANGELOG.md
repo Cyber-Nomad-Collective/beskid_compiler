@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Keep ABI-v5 soft-builtin export validation warning-free under the release
+  gate's strict Clippy check without changing its signature rules.
 - Pin the Corelib regression that rejects duplicate HTTP `Host` fields before
   a client supplies its declared request body.
 - Give concurrent AOT test source directories unique process-local identities,

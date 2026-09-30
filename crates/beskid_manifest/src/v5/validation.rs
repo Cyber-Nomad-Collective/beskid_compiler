@@ -381,12 +381,11 @@ pub(super) fn validate(manifest: &RuntimeManifestV5) -> Result<(), String> {
             return Err(format!("soft builtin `{}` has an invalid declaration", entry.name));
         }
         unique(entry.params.iter().map(|param| param.name.as_str()), "soft builtin parameter")?;
-        if let Some(export) = manifest.exports.iter().find(|export| export.symbol == entry.symbol) {
-            if entry.result != export.result
-                || !entry.params.iter().map(|param| &param.ty).eq(export.params.iter().map(|param| &param.ty))
-            {
-                return Err(format!("soft builtin `{}` does not match runtime export `{}`", entry.name, entry.symbol));
-            }
+        if let Some(export) = manifest.exports.iter().find(|export| export.symbol == entry.symbol)
+            && (entry.result != export.result
+                || !entry.params.iter().map(|param| &param.ty).eq(export.params.iter().map(|param| &param.ty)))
+        {
+            return Err(format!("soft builtin `{}` does not match runtime export `{}`", entry.name, entry.symbol));
         }
         if let Some(service_name) = &entry.adapter_service {
             let service =
