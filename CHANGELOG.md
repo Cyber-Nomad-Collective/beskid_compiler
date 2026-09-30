@@ -7,7 +7,71 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Keep the loopback registry fixture's accepted sockets blocking on Windows,
+  so delayed requests cannot crash portable-lock ZIP validation tests.
+- Reject forged registry lock paths before preparing output, derive registry
+  source roots from literal ZIP names across hosts, and let explicit lock
+  refresh replace a valid but stale project identity.
+- Report present v1, malformed, or stale `Project.lock` files through LSP
+  diagnostics and project-explorer commands instead of silently dropping locked
+  dependencies; republish open and indexed closed-file diagnostics when a lock
+  changes or the workspace refreshes, reject late diagnostics from an older
+  compilation generation, retain declared-only explorer results for Template/Bsol
+  projects, and keep rejected materialization hints on declared source roots.
+- Restore packed template manifests to `.beskid/template.json` when installing
+  registry templates, and reject archive paths that escape extraction.
+- Run the Corelib MVP import check with its fixture environment and classify
+  proven primitive conversions before the syntax call-lowering gate, so the
+  complete Corelib spine tests legitimate HTTP byte conversions.
+- Verify the Linux DNS deadline race from resolver events instead of sampled
+  JIT progress names, so the diagnostic gate reflects the scenario that ran.
+- Pass ordinary Windows drive paths to MSVC when compiling the executable
+  bootstrap, because `cl.exe` cannot open Rust's canonical `\\?\` spelling.
+- Omit generated, checkout-specific `Project.lock` files from the embedded
+  Corelib workspace and its integrity inventory so release bundles do not
+  carry another build machine's absolute paths.
+- Admit canonical Corelib service files at their actual logical-path depth,
+  and match installed-bundle paths consistently on Windows and macOS.
+- Give ordinary captured lambdas their own lowering authority and import only
+  the event operations used by a module, avoiding unrelated native imports.
+- Keep parallel project tests isolated from temporary Corelib-root overrides
+  and host-specific path spelling.
+
+- Tear down partially materialized composition containers after failed launch,
+  release each published service root once, and emit shutdown/drop before
+  trapping on compiler-generated allocation, publication, or activation failure.
+
+- Bind the frozen composition plan and snapshot to one source generation before
+  codegen, reject foreign hosts, registrations, slots, and hook keys, and retain
+  singular/plural injection fields and declared lifecycle hooks without lookup.
+
+- Report actual pending network operation, wait winner, and owner leak count in
+  shutdown diagnostics; cover a deliberately leaked pending TCP accept.
+
+- Preserve compiler-owned corelib service provenance for exact, fingerprint-verified
+  installed bundles while rejecting copied, symlinked, or modified service sources.
+
 ### Added
+
+- Pin registry dependencies in portable `Project.lock` entries by version and
+  artifact SHA-256, verify bytes before extraction, cap compressed downloads at
+  64 MiB with auto-cleaned scratch files, and refresh from the current registry
+  declaration only when explicitly requested.
+
+- Lower frozen composition registrations into managed service objects and
+  compiler-selected slots, wire singular/plural injected fields with rooted
+  pointer arrays, and read injected fields through source-keyed physical slots.
+  Constructor and installed-kit behavior gates remain separate release work.
+
+- Pass compiler-frozen composition scope and parent identities through the
+  ABI-v5 contract, enforce the parent tree before publishing scope frames, and
+  preserve each fiber's scope state across scheduler yields.
+- Lower field-event subscribe, first-match unsubscribe, and raise through
+  generation-bound syntax facts and canonical ABI-v5 services; materialize
+  captured handlers with event-scoped wrappers and rooted environments. Verify
+  captured-value retention across explicit collection in installed-kit AOT.
 
 - Prove scoped acquisition through a validated `?` only when the exact Result
   success payload is recursively source-proven fresh. Keep borrowed values,
@@ -32,6 +96,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   cancellation storage, and DNS jobs in the existing Foundation worker pool.
   Add a Beskid native lifecycle fixture for ephemeral binding, opaque generation
   reuse, stale close rejection, and leak accounting; target execution is pending.
+
+- Extend public DNS resolution and UDP send/receive operations with typed absolute
+  deadlines. Route each through Foundation's single wait winner, retaining resolver
+  work until the host lookup actually exits; reject raw scalar deadlines at compile time.
 
 - Bind `Core.Time.Sleep` to the existing external timer export through one
   manifest-owned source builtin. Generate source-call authority for export-backed
@@ -88,6 +156,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Lower stored lambda bindings as syntax-level locals so immutable captured calls
+  can build closure environments at the call site, while mutable stack-reference
+  captures remain fail-closed.
+
 - Gate Unix-only codegen JIT test helpers and imports consistently so the
   `isle_adapter` test target compiles and runs on Windows without warnings.
 
@@ -99,6 +171,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Register Corelib shard modules under both their App-facing `Std.Core.*`
   names and their own `Core.*` import scope, so reachability-scoped legality
   does not reject canonical Foundation imports in an implicit-Std App.
+- Keep bare `Core.*` shard imports scoped to Corelib units in an implicit-Std
+  App, so E1105 still rejects those paths in App sources.
+- Scope direct qualified type, contract, and call-module lookups to the
+  requesting unit so App sources cannot bypass that import rule.
+- Resolve internal spawn and Fiber ownership facts through the canonical
+  `Std.Concurrency.Fiber` path in Apps while retaining shard-local lookup.
 
 - Replay materialized dependency roots only when `Project.lock` identifies the
   current project and exact resolved dependency paths. Preserve compiler-owned

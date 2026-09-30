@@ -2,9 +2,9 @@ use super::support::{
     AbiManifestV5, Arc, AssemblyDiscovery, AstNodeId, AstNodeKey, BeskidDatabase,
     CANONICAL_BOOTSTRAP_NATIVE_SOURCE_PATH, CANONICAL_BOOTSTRAP_SOURCE_PATH, CANONICAL_EVENTS_SOURCE_PATH,
     CANONICAL_FIBER_SOURCE_PATH, CANONICAL_SCHEDULER_CONTEXT_SOURCE_PATH, CANONICAL_SCHEDULER_CORE_SOURCE_PATH,
-    CANONICAL_SCHEDULER_POLL_SOURCE_PATH, CallKind, CodegenInput, EffectiveCompilationRoots, IndexedNodeKind,
-    ModuleIndex, NodeFacts, PathBuf, ProgramAssembly, ProjectSession, RootEntry, SemanticTypeId, SourceUnit,
-    SourceUnitId, SyntaxGenerationId, SyntaxNodeFacts, TypedProgram, build_canonical_runtime_typed_program,
+    CANONICAL_SCHEDULER_POLL_SOURCE_PATH, CallKind, CodegenInput, CodegenInputError, EffectiveCompilationRoots,
+    IndexedNodeKind, ModuleIndex, NodeFacts, PathBuf, ProgramAssembly, ProjectSession, RootEntry, SemanticTypeId,
+    SourceUnit, SourceUnitId, SyntaxGenerationId, SyntaxNodeFacts, TypedProgram, build_canonical_runtime_typed_program,
     build_typed_program, call_lowering, canonical_runtime_intrinsic_capability, canonical_runtime_sources, find_node,
     find_node_matching, input_fixture, item_name, linux_target, parse_program_with_source_name,
     primitive_numeric_conversion,
@@ -129,6 +129,28 @@ fn ordinary_syntax_programs_cannot_import_runtime_intrinsics() {
 }
 
 #[test]
+fn codegen_boundary_rejects_an_unregistered_network_operation_before_lowering() {
+    // Both the engine JIT and AOT prepared-syntax wrappers delegate here; CodegenInput is their
+    // shared manifest gate, before this module reaches ISLE emission.
+    let (db, typed, root, target) = input_fixture();
+    let mut manifest = AbiManifestV5::canonical_runtime(target.clone());
+    let mut unregistered = manifest
+        .trusted_runtime_intrinsics
+        .iter()
+        .find(|intrinsic| intrinsic.name == "network_submit")
+        .expect("canonical network submit operation")
+        .clone();
+    unregistered.name = "network_unregistered".into();
+    unregistered.symbol = "beskid_rt_v5_intrinsic_network_unregistered".into();
+    manifest.trusted_runtime_intrinsics.push(unregistered);
+
+    assert!(matches!(
+        CodegenInput::new(&db, typed, Arc::from([root]), target, manifest),
+        Err(CodegenInputError::ManifestDrift)
+    ));
+}
+
+#[test]
 fn exact_canonical_assembly_carries_intrinsic_authority_to_codegen() {
     let mut db = BeskidDatabase::default();
     let corpus = CanonicalRuntimeCorpus::materialize();
@@ -195,6 +217,35 @@ fn canonical_runtime_source_can_import_manifest_owned_intrinsics() {
     let (_, intrinsic) =
         input.runtime_intrinsic_for(call, "native_word_from_pointer").expect("canonical runtime call is authorized");
     assert_eq!(intrinsic.name, "native_word_from_pointer");
+}
+
+#[test]
+fn canonical_network_leak_report_call_has_runtime_intrinsic_authority_on_host() {
+    let mut db = BeskidDatabase::default();
+    let corpus = CanonicalRuntimeCorpus::materialize();
+    let target = beskid_abi::runtime_kit::host_runtime_target().expect("supported native host");
+    let manifest = AbiManifestV5::canonical_runtime(target.clone());
+    let typed = canonical_typed_program(&mut db, &corpus, SyntaxGenerationId(93), &manifest);
+    let generation = typed.generation;
+    let roots = canonical_unit_roots(&db, &typed);
+    let input = CodegenInput::new(&db, typed, Arc::from(roots), target, manifest).expect("canonical codegen input");
+    let network = AstNodeKey {
+        unit: SourceUnitId::new(&db, corpus.unit_path("src/Runtime/Network/Dns.bd")),
+        generation,
+        node: AstNodeId(0),
+    };
+    let call = find_node_matching(&db, network, IndexedNodeKind::CallExpression, |call| {
+        matches!(
+            beskid_queries::runtime_intrinsic_name(&db, call).ok().flatten(),
+            Some(name) if name.0.as_ref() == "network_report_leak"
+        )
+    })
+    .expect("canonical NetworkShutdown leak report call");
+    let (_, intrinsic) = input
+        .runtime_intrinsic_for(call, "network_report_leak")
+        .expect("host target must authorize canonical leak reporting");
+    assert_eq!(intrinsic.params.len(), 7, "the live ABI contract must match all leak-report fields");
+    assert_eq!(SyntaxNodeFacts::new(&input).call_kind(call), Some(CallKind::RuntimeIntrinsic));
 }
 
 #[test]

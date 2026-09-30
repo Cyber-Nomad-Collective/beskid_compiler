@@ -64,7 +64,8 @@ fn unresolved_type_reference_tracked(
         collect_type_positions(program, index, key.node, &mut positions);
         positions.into_iter().find_map(|(node, ty)| {
             let site = AstNodeKey { node, ..key };
-            first_unresolved_nominal_reference(db, site, &ty).map(|name| Ok(UnresolvedTypeReference { site, name: Arc::from(name.as_str()) }))
+            first_unresolved_nominal_reference(db, site, &ty)
+                .map(|name| Ok(UnresolvedTypeReference { site, name: Arc::from(name.as_str()) }))
         })
     })?
     .transpose()
@@ -81,8 +82,10 @@ fn collect_type_positions(
 ) {
     match index.kind(id) {
         Some(NodeKind::LetStatement) => {
-            if let Some(annotation) =
-                index.node_at(program, id).and_then(|node| node.of::<LetStatement>()).and_then(|statement| statement.type_annotation.clone())
+            if let Some(annotation) = index
+                .node_at(program, id)
+                .and_then(|node| node.of::<LetStatement>())
+                .and_then(|statement| statement.type_annotation.clone())
             {
                 positions.push((id, annotation.node));
             }
@@ -93,8 +96,10 @@ fn collect_type_positions(
             }
         }
         Some(NodeKind::LambdaParameter) => {
-            if let Some(ty) =
-                index.node_at(program, id).and_then(|node| node.of::<LambdaParameter>()).and_then(|parameter| parameter.ty.clone())
+            if let Some(ty) = index
+                .node_at(program, id)
+                .and_then(|node| node.of::<LambdaParameter>())
+                .and_then(|parameter| parameter.ty.clone())
             {
                 positions.push((id, ty.node));
             }
@@ -105,15 +110,19 @@ fn collect_type_positions(
             }
         }
         Some(NodeKind::FunctionDefinition) => {
-            if let Some(return_type) =
-                index.node_at(program, id).and_then(|node| node.of::<FunctionDefinition>()).and_then(|function| function.return_type.clone())
+            if let Some(return_type) = index
+                .node_at(program, id)
+                .and_then(|node| node.of::<FunctionDefinition>())
+                .and_then(|function| function.return_type.clone())
             {
                 positions.push((id, return_type.node));
             }
         }
         Some(NodeKind::MethodDefinition) => {
-            if let Some(return_type) =
-                index.node_at(program, id).and_then(|node| node.of::<MethodDefinition>()).and_then(|method| method.return_type.clone())
+            if let Some(return_type) = index
+                .node_at(program, id)
+                .and_then(|node| node.of::<MethodDefinition>())
+                .and_then(|method| method.return_type.clone())
             {
                 positions.push((id, return_type.node));
             }
@@ -156,7 +165,9 @@ fn first_unresolved_nominal_reference(db: &dyn Db, key: AstNodeKey, ty: &Type) -
         Type::Primitive(_) | Type::Associated { .. } | Type::This => None,
         Type::Array(inner) => first_unresolved_nominal_reference(db, key, &inner.node),
         Type::Function { return_type, parameters } => first_unresolved_nominal_reference(db, key, &return_type.node)
-            .or_else(|| parameters.iter().find_map(|parameter| first_unresolved_nominal_reference(db, key, &parameter.node))),
+            .or_else(|| {
+                parameters.iter().find_map(|parameter| first_unresolved_nominal_reference(db, key, &parameter.node))
+            }),
         Type::Complex(path) => {
             if !type_syntax_is_enclosing_generic_parameter_reference(db, key, ty)
                 && !is_enclosing_container_generic_parameter(db, key, ty)
@@ -166,7 +177,11 @@ fn first_unresolved_nominal_reference(db: &dyn Db, key: AstNodeKey, ty: &Type) -
                 return path.node.segments.last().map(|segment| segment.node.name.node.name.clone());
             }
             path.node.segments.iter().find_map(|segment| {
-                segment.node.type_args.iter().find_map(|argument| first_unresolved_nominal_reference(db, key, &argument.node))
+                segment
+                    .node
+                    .type_args
+                    .iter()
+                    .find_map(|argument| first_unresolved_nominal_reference(db, key, &argument.node))
             })
         }
     }

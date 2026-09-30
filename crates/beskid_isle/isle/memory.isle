@@ -25,15 +25,15 @@
       (emit_local_read key))
 (rule (lower_expression key @ (and
         (node_kind (NodeKind.AssignExpression))
-        (assignment_target_kind (NodeKind.PathExpression))))
+        (assignment_kind (AssignmentKind.Local))))
       (emit_local_assign key))
 (rule (lower_expression key @ (and
         (node_kind (NodeKind.AssignExpression))
-        (assignment_target_kind (NodeKind.FieldExpression))))
+        (assignment_kind (AssignmentKind.Field))))
       (emit_field_assign key))
 (rule (lower_expression key @ (and
         (node_kind (NodeKind.AssignExpression))
-        (assignment_target_kind (NodeKind.IndexExpression))))
+        (assignment_kind (AssignmentKind.Index))))
       (emit_index_assign key))
 (rule (lower_expression key @ (node_kind (NodeKind.ArrayLiteralExpression)))
       (emit_array_literal key))

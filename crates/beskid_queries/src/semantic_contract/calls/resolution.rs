@@ -458,7 +458,13 @@ pub(in crate::semantic_contract) fn unique_nominal_method_declaration(
     }
     // `impl X : Contract { the conforming method here }` -- same conformance fact as
     // `type X : Contract { }`, so the method may live in either place (Gap 2 #(task 2.5)).
-    unique_impl_block_method_declaration(db, declaration.unit, declaration.generation, &type_definition.name.node.name, method_name)
+    unique_impl_block_method_declaration(
+        db,
+        declaration.unit,
+        declaration.generation,
+        &type_definition.name.node.name,
+        method_name,
+    )
 }
 
 /// `impl` blocks in `unit` whose receiver names `type_name`, searched for a uniquely-named

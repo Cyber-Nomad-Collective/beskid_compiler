@@ -70,15 +70,10 @@ pub use persistence::{
     SalsaPersistenceManifest, cache_root_for_project, ensure_salsa_dir, load_db_snapshot, load_manifest,
     persist_session_snapshot, save_db_snapshot,
 };
-pub use semantic_contract::{DeadCollectionGrowth, dead_collection_growth, is_growth_call_candidate};
-pub use semantic_contract::{UnresolvedTypeReference, unresolved_type_reference};
 pub use semantic_contract::{
-    CallArityMismatch, GenericBindingConflict, GenericParameterConflict, ImmutableLocalAssignment, MemberReferenceFinding,
-    MemberReferenceKind, NonExhaustiveMatch,
-    SemanticFinding, UnresolvedCallKind, UnresolvedCallTarget, UnresolvedImport, call_arity_mismatch,
-    check_items, generic_parameter_conflict,
-    immutable_local_assignment, match_exhaustiveness, member_reference_legality, unresolved_call_target,
-    unresolved_imports,
+    CompositionInjectedAccessFact, CompositionInjectionFieldFact, CompositionLaunchFact, CompositionRegistrationFact,
+    CompositionScopeFact, composition_injected_field_access, composition_injection_field, composition_launch,
+    composition_registration, composition_scope,
 };
 pub use semantic_contract::{
     AggregateFieldAccess, AggregateFieldShape, AggregateLayoutFact, AggregateLiteralFieldValues,
@@ -88,11 +83,11 @@ pub use semantic_contract::{
     CompletionCandidate, CompletionContext, CompletionKind, CompletionMemberSurface, ControlFlow, CorelibService,
     EnumConstructorFact, EnumConstructorSpecialization, EnumConstructorTemplate, EnumLayoutFact,
     EnumLayoutTemplateArgument, EnumMatchArmFact, EnumMatchBindingFact, EnumMatchFact, EnumMatchPatternFact,
-    EnumMatchScalarLiteralFact,
-    EnumMatchVariantPatternFact, EnumScalarPayloadObjectLayout, EnumScalarPayloadVariantLayout, EnumVariantLayoutFact,
-    ExportSymbol, FiberOwnership, ForIteratorFact, GenericCallInstantiation, GenericCallSpecialization,
-    GenericCallTemplate, GenericNominalMethodReceiver, GenericSpecializationInstance, GenericSubstitution,
-    IndexedNodeKind, ItemSignature, LiteralFact, LocalSlot, ManagedReferenceKind, ManifestBuiltin,
+    EnumMatchScalarLiteralFact, EnumMatchVariantPatternFact, EnumScalarPayloadObjectLayout,
+    EnumScalarPayloadVariantLayout, EnumVariantLayoutFact, EventFieldLayoutFact, EventHandlerLocalFact, EventOperationFact,
+    EventOperationKind, ExportSymbol, FiberOwnership, ForIteratorFact, GenericCallInstantiation,
+    GenericCallSpecialization, GenericCallTemplate, GenericNominalMethodReceiver, GenericSpecializationInstance,
+    GenericSubstitution, IndexedNodeKind, ItemSignature, LiteralFact, LocalSlot, ManagedReferenceKind, ManifestBuiltin,
     MutableLocalAssignment, OperatorFact, PrimitiveNumericConversion, RangeForFact, ResolvedItem, ResolvedLocal,
     RuntimeIntrinsic, RuntimeIntrinsicName, ScalarAbiLayout, ScopedAcquisition, ScopedCleanup, ScopedCleanupDiagnostic,
     SemanticError, SemanticQueryResult, SemanticTypeId, SourceSpan, SourceUnitId, SpawnDiagnosticKind,
@@ -107,19 +102,28 @@ pub use semantic_contract::{
     completion_dependency_surface_for_program, constant_integer, contextual_integer_literal_abi_type, control_flow,
     direct_callees, empty_array_literal_element_abi_type, empty_array_literal_element_specialization, enum_constructor,
     enum_constructor_specialization, enum_constructor_template, enum_layout, enum_match, enum_match_specialization,
-    extern_contract_import_for_declaration, for_iterator_fact, format_ast_node_key, format_ast_node_site,
-    format_ast_node_trace, format_source_span_range, generic_call_instantiation, generic_call_specialization,
-    generic_call_specialization_in_environment, generic_call_specialization_instance, generic_call_template,
-    generic_nominal_method_receiver, generic_specialization_identity, generic_specialization_instance,
-    implicit_method_receiver, item_abi_signature, item_body, item_export_symbol, item_name, item_signature,
-    literal_fact, local_slot, managed_reference_kind, mutable_local_assignment, node_kind, node_span, node_type,
-    nominal_member_receiver, operator_fact, parameter_generic_reference, pattern_binding_specialization,
-    primitive_numeric_conversion, range_for_fact,
+    event_field_layout, event_handler_lambda_for_local, event_operation, extern_contract_import_for_declaration,
+    for_iterator_fact, format_ast_node_key, format_ast_node_site, format_ast_node_trace, format_source_span_range,
+    generic_call_instantiation, generic_call_specialization, generic_call_specialization_in_environment,
+    generic_call_specialization_instance, generic_call_template, generic_nominal_method_receiver,
+    generic_specialization_identity, generic_specialization_instance, implicit_method_receiver, item_abi_signature,
+    item_body, item_export_symbol, item_name, item_signature, literal_fact, local_slot, managed_reference_kind,
+    mutable_local_assignment, node_kind, node_span, node_type, nominal_member_receiver, operator_fact,
+    parameter_generic_reference, pattern_binding_specialization, primitive_numeric_conversion, range_for_fact,
     reachable_items, resolved_item, resolved_local, runtime_intrinsic, runtime_intrinsic_name, scoped_cleanup,
     spawn_entry_validation, spawn_handle_type, spawn_legality, spawn_target,
     specialized_call_result_managed_reference_kind, specialized_corelib_value_service_result, test_item,
     test_statement_nodes, try_expression_fact, typed_array_allocation, value_abi_type,
 };
+pub use semantic_contract::{
+    CallArityMismatch, GenericBindingConflict, GenericParameterConflict, ImmutableLocalAssignment,
+    MemberReferenceFinding, MemberReferenceKind, NonExhaustiveMatch, SemanticFinding, UnresolvedCallKind,
+    UnresolvedCallTarget, UnresolvedImport, call_arity_mismatch, check_items, generic_parameter_conflict,
+    immutable_local_assignment, match_exhaustiveness, member_reference_legality, unresolved_call_target,
+    unresolved_imports,
+};
+pub use semantic_contract::{DeadCollectionGrowth, dead_collection_growth, is_growth_call_candidate};
+pub use semantic_contract::{UnresolvedTypeReference, unresolved_type_reference};
 pub use session::{
     compile_front_end_from_resolved_input, configure_db_for_project, prepare_compilation,
     prepare_compilation_diagnostics, reset_process_compilation_database, with_db,
@@ -135,8 +139,8 @@ pub use typed_program::build_runtime_fixture_typed_program;
 pub use typed_program::build_typed_program;
 pub use typed_program::build_typed_program_with_corelib_services;
 pub use typed_program::build_typed_program_with_corelib_syscall_services;
-pub use typed_program::project_session_for_syntax_assembly;
 pub use typed_program::project_session_for_planned_syntax_assembly;
+pub use typed_program::project_session_for_syntax_assembly;
 pub use unit::{
     parse_and_expand_unit, parse_and_expand_unit_tracked, parse_and_expand_unit_with_source, seed_file_from_disk,
     unit_content_fingerprint, unit_imports,

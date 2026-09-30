@@ -338,7 +338,20 @@ pub(in crate::semantic_contract) fn value_abi_type_tracked(
     key: AstNodeKey,
 ) -> SemanticQueryResult<SemanticTypeId> {
     with_node(db, syntax, key, |program, index, node| {
-        if let Some(statement) = statement_abi_type_for_node(db, program, index, key, node) {
+        if node.of::<beskid_analysis::syntax::CallExpression>().is_some()
+            && event_operation_tracked(db, syntax, key)
+                .ok()
+                .flatten()
+                .is_some_and(|fact| fact.operation == EventOperationKind::Raise)
+        {
+            return Some(Ok(SemanticTypeId::UNIT));
+        }
+        if node.of::<beskid_analysis::syntax::Identifier>().is_some()
+            && event_handler_lambda_for_local_tracked(db, syntax, key).ok().flatten().is_some()
+        {
+            return Some(Ok(SemanticTypeId::POINTER));
+        }
+        if let Some(statement) = statement_abi_type_for_node(db, syntax, program, index, key, node) {
             return Some(statement);
         }
         Some((|| {

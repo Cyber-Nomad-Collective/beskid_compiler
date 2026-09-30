@@ -56,11 +56,15 @@ fn cycle_initial(_db: &dyn salsa::Database, _id: salsa::Id, _thing: Thing) -> St
     String::new()
 }
 
+fn normalize_backtrace(trace: String) -> String {
+    trace.replace('\\', "/").replace("vendor/salsa-patched/tests/backtrace.rs", "tests/backtrace.rs")
+}
+
 #[test]
 fn backtrace_works() {
     let db = DatabaseImpl::default();
 
-    let backtrace = query_a(&db, Thing::new(&db, false)).replace("\\", "/");
+    let backtrace = normalize_backtrace(query_a(&db, Thing::new(&db, false)));
     expect![[r#"
         query stacktrace:
            0: query_e(Id(0))
@@ -76,7 +80,7 @@ fn backtrace_works() {
     "#]]
     .assert_eq(&backtrace);
 
-    let backtrace = query_a(&db, Thing::new(&db, true)).replace("\\", "/");
+    let backtrace = normalize_backtrace(query_a(&db, Thing::new(&db, true)));
     expect![[r#"
         query stacktrace:
            0: query_e(Id(1)) -> (R1, Durability::LOW)
@@ -92,7 +96,7 @@ fn backtrace_works() {
     "#]]
     .assert_eq(&backtrace);
 
-    let backtrace = query_f(&db, Thing::new(&db, false)).replace("\\", "/");
+    let backtrace = normalize_backtrace(query_f(&db, Thing::new(&db, false)));
     expect![[r#"
         query stacktrace:
            0: query_e(Id(2))
@@ -105,7 +109,7 @@ fn backtrace_works() {
     "#]]
     .assert_eq(&backtrace);
 
-    let backtrace = query_f(&db, Thing::new(&db, true)).replace("\\", "/");
+    let backtrace = normalize_backtrace(query_f(&db, Thing::new(&db, true)));
     expect![[r#"
         query stacktrace:
            0: query_e(Id(3)) -> (R1, Durability::LOW)

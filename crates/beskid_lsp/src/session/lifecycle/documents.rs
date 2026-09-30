@@ -1,6 +1,9 @@
 use std::sync::Arc;
 
-use beskid_analysis::services::{DependencyTypingPolicy, FrontEndOptions, PrepareOptions};
+use beskid_analysis::{
+    projects::{CompilePlan, effective_roots_from_lockfile_checked},
+    services::{DependencyTypingPolicy, FrontEndOptions, PrepareOptions},
+};
 use tokio::sync::RwLock;
 use tower_lsp_server::ls_types::Uri;
 
@@ -15,7 +18,7 @@ use crate::{
         documentation_facts::syntax_documentation_facts_for_source,
         imports::RecoverableCompletionSyntax,
         startup::wait_for_initial_scan,
-        store::{Document, State, SyntaxCompletion},
+        store::{Document, State, SyntaxCompletion, SyntaxDiagnostic, SyntaxDiagnosticSeverity},
     },
     workspace_scan::uri_to_path,
 };
@@ -24,6 +27,19 @@ use crate::{
 enum StartupFallback {
     WaitForScan,
     StructuralOnly,
+}
+
+fn lockfile_replay_diagnostic(plan: &CompilePlan) -> Option<SyntaxDiagnostic> {
+    effective_roots_from_lockfile_checked(plan, &plan.project_root.join("Project.lock")).err().map(|error| {
+        SyntaxDiagnostic {
+            start: 0,
+            end: 0,
+            severity: SyntaxDiagnosticSeverity::Error,
+            code: Some("lockfile".into()),
+            message: error.to_string(),
+            source: "beskid".into(),
+        }
+    })
 }
 
 async fn fallback_diagnostics(
@@ -63,6 +79,9 @@ pub(super) async fn build_full_diagnostic_facts(
     let Some(plan) = session.compile_plan.as_ref() else {
         return collect_syntax_diagnostics_for_state(state, uri, text, None).await;
     };
+    if let Some(diagnostic) = lockfile_replay_diagnostic(plan) {
+        return (vec![diagnostic], Vec::new());
+    }
     let buffered_sources = {
         let read = state.read().await;
         read.workspace_index
@@ -179,6 +198,14 @@ async fn build_syntax_facts_with_policy_after_startup(
         let (diagnostics, fixes) = fallback_diagnostics(state, uri, text, Some(&session), fallback).await;
         return SyntaxFacts { documentation, symbols: current_symbols, diagnostics, fixes, ..SyntaxFacts::default() };
     };
+    if let Some(diagnostic) = lockfile_replay_diagnostic(plan) {
+        return SyntaxFacts {
+            documentation,
+            symbols: current_symbols,
+            diagnostics: vec![diagnostic],
+            ..SyntaxFacts::default()
+        };
+    }
     let buffered_sources = {
         let read = state.read().await;
         read.workspace_index
@@ -405,5 +432,71 @@ pub async fn rebuild_open_document_syntax_facts(state: &RwLock<State>) {
         {
             apply_syntax_facts(doc, syntax_facts);
         }
+    }
+}
+
+#[cfg(test)]
+mod portable_lock_diagnostic_tests {
+    use std::{fs, str::FromStr};
+
+    use tempfile::TempDir;
+
+    use super::*;
+
+    #[tokio::test]
+    async fn lsp_document_reports_present_v1_malformed_and_stale_locks() {
+        let temp = TempDir::new().expect("temp project");
+        let root = temp.path();
+        fs::create_dir_all(root.join("Src")).expect("source directory");
+        let manifest_path = root.join("App.bproj");
+        fs::write(
+            &manifest_path,
+            r#"App {
+  name = "App"
+  version = "0.1.0"
+}
+
+target "App" {
+  kind = App
+  entry = "Main.bd"
+}
+"#,
+        )
+        .expect("manifest");
+        let source = "i32 Main() { return 0; }\n";
+        let source_path = root.join("Src/Main.bd");
+        fs::write(&source_path, source).expect("entry");
+        let lock_path = root.join("Project.lock");
+        let uri = Uri::from_str(&crate::workspace_scan::path_to_uri_string(&source_path)).expect("URI");
+        let state = RwLock::new(State::default());
+
+        fs::write(&lock_path, "# Project.lock v1\nroot_manifest=App.bproj\nproject_name=App\ndependencies:\n")
+            .expect("v1 lock");
+        let doc = build_initial_workspace_document(&state, &uri, 1, source.to_string()).await;
+        assert!(
+            doc.syntax_diagnostics.iter().any(|d| d.message.contains("v1") && d.message.contains("beskid lock")),
+            "diagnostics: {:?}",
+            doc.syntax_diagnostics
+        );
+        state.read().await.mark_initial_scan_complete();
+        let (full_diagnostics, _) = build_full_diagnostic_facts(&state, &uri, source).await;
+        assert!(full_diagnostics.iter().any(|d| d.message.contains("v1") && d.message.contains("beskid lock")));
+
+        fs::write(&lock_path, "# Project.lock v2\nnot-a-lock\n").expect("malformed lock");
+        let doc = build_initial_workspace_document(&state, &uri, 2, source.to_string()).await;
+        assert!(doc.syntax_diagnostics.iter().any(|d| d.message.contains("lockfile")));
+
+        fs::remove_file(&lock_path).expect("remove malformed fixture lock before generating valid v2");
+        let plan = beskid_analysis::projects::build_compile_plan(&manifest_path, None).expect("plan");
+        beskid_analysis::projects::prepare_project_workspace_with_options(
+            &plan,
+            beskid_analysis::projects::WorkspacePrepareOptions { refresh_lock: true, ..Default::default() },
+            None,
+        )
+        .expect("generate v2");
+        let valid = fs::read_to_string(&lock_path).expect("v2 lock");
+        fs::write(&lock_path, valid.replace("project_name=App", "project_name=Other")).expect("stale lock");
+        let doc = build_initial_workspace_document(&state, &uri, 3, source.to_string()).await;
+        assert!(doc.syntax_diagnostics.iter().any(|d| d.message.contains("different project")));
     }
 }

@@ -4,9 +4,10 @@ use std::sync::Arc;
 
 use beskid_queries::{
     AggregateFieldAccess, AggregateFieldShape, AggregateLayoutFact, AstNodeKey, GenericSpecializationInstance,
-    SemanticTypeId, aggregate_layout, aggregate_literal_declaration, aggregate_literal_layout,
-    aggregate_literal_specialization, enum_constructor_specialization, enum_layout, enum_match,
-    generic_specialization_identity,
+    IndexedNodeKind, SemanticTypeId, aggregate_layout, aggregate_literal_declaration, aggregate_literal_layout,
+    aggregate_literal_specialization, child_nodes, composition_injection_field, composition_registration,
+    enum_constructor_specialization, enum_layout, enum_match, event_field_layout, generic_specialization_identity,
+    node_kind,
 };
 use cranelift_module::{DataDescription, DataId, Linkage, Module, ModuleError, ModuleResult};
 
@@ -34,6 +35,8 @@ pub struct AggregateObjectLayout {
     pub object_alignment: u64,
     pub pointer_map_offsets: Arc<[u64]>,
     pub fields: Arc<[AggregateStaticField]>,
+    /// Physical managed pointer slots for compiler-resolved injected fields.
+    pub injected_fields: Arc<[(AstNodeKey, u64)]>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -103,6 +106,43 @@ fn write_word(bytes: &mut [u8], offset: usize, value: u64) -> Result<(), ModuleE
 }
 
 impl CodegenInput<'_> {
+    /// Descriptor-backed default construction for one exact frozen registry entry.
+    /// A registration with value fields needs a source constructor and is not fabricated here.
+    pub fn composition_registration_static_plan(&self, registration_id: u32) -> Option<AggregateStaticPlan> {
+        let (_, snapshot) = self.composition_authority()?;
+        let registration = snapshot.registrations.iter().find(|registration| registration.id == registration_id)?;
+        let site = AstNodeKey {
+            unit: self.typed_program().entry,
+            generation: self.typed_program().generation,
+            node: registration.source_node_id,
+        };
+        let fact = composition_registration(self.database(), site).ok().flatten()?;
+        (fact.site == site && fact.implementation.as_ref() == registration.implementation).then_some(())?;
+        let layout = self.aggregate_object_layout(fact.declaration)?;
+        layout.fields.is_empty().then_some(())?;
+        let descriptor = self.abi_manifest().layouts.iter().find(|layout| layout.name == "BeskidTypeDescriptor")?;
+        let request = self.abi_manifest().layouts.iter().find(|layout| layout.name == "BeskidAllocationRequest")?;
+        (descriptor.size == 40 && descriptor.alignment == 8 && request.size == 24 && request.alignment == 8)
+            .then_some(())?;
+        let unit = self
+            .typed_program()
+            .assembly
+            .units
+            .iter()
+            .position(|unit| paths_match(&unit.path, site.unit.path(self.database())))?;
+        let identity = format!("{}_u{unit}_g{}_r{registration_id}", artifact_namespace(self), site.generation.0);
+        Some(AggregateStaticPlan {
+            literal: site,
+            descriptor_symbol: format!("__beskid_composition_descriptor_{identity}"),
+            pointer_map_symbol: format!("__beskid_composition_pointer_map_{identity}"),
+            allocation_request_symbol: format!("__beskid_composition_request_{identity}"),
+            object_size: layout.object_size,
+            object_alignment: layout.object_alignment,
+            pointer_map_offsets: layout.pointer_map_offsets,
+            fields: layout.fields,
+        })
+    }
+
     /// Allocate the ordinary source-defined Fiber<T> shape; no parallel handle layout.
     pub fn spawn_handle_static_plan(&self, spawn: AstNodeKey) -> Option<AggregateStaticPlan> {
         let handle = beskid_queries::spawn_handle_type(self.database(), spawn).ok().flatten()?;
@@ -210,13 +250,14 @@ impl CodegenInput<'_> {
         aggregate: &AggregateLayoutFact,
     ) -> Option<AggregateObjectLayout> {
         let header = self.abi_manifest().layouts.iter().find(|layout| layout.name == "BeskidObjectHeader")?;
-        if header.size < 16 || !valid_alignment(header.alignment) {
+        if header.size != 16 || !valid_alignment(header.alignment) {
             return None;
         }
         let mut size = header.size;
         let mut alignment = header.alignment;
         let mut pointer_map_offsets = Vec::new();
         let mut fields = Vec::with_capacity(aggregate.fields.len());
+        let mut injected_fields = Vec::new();
         for (_, shape) in aggregate.fields.iter() {
             let abi_type = match shape {
                 AggregateFieldShape::Scalar(semantic) => *semantic,
@@ -232,6 +273,38 @@ impl CodegenInput<'_> {
             }
             fields.push(AggregateStaticField { abi_type, field_offset });
         }
+        size = align_to(size, alignment.max(8))?;
+        for member in child_nodes(self.database(), declaration).ok().flatten()?.iter().copied() {
+            if node_kind(self.database(), member).ok().flatten() != Some(IndexedNodeKind::Field) {
+                continue;
+            }
+            if let Some(injection) = composition_injection_field(self.database(), member).ok()? {
+                if injection.owner_type != declaration || self.target().pointer_width != 64 {
+                    return None;
+                }
+                let offset = size.checked_add(u64::from(injection.ordinal).checked_mul(8)?)?;
+                pointer_map_offsets.push(offset);
+                injected_fields.push((member, offset));
+            }
+        }
+        size = size.checked_add(u64::try_from(injected_fields.len()).ok()?.checked_mul(8)?)?;
+        // Event fields have dedicated physical slots but remain absent from the logical
+        // value-field projection layout. Their slots are appended after all value fields,
+        // and the managed allocator's object-zeroing makes each initially null.
+        for member in child_nodes(self.database(), declaration).ok().flatten()?.iter().copied() {
+            if node_kind(self.database(), member).ok().flatten() != Some(IndexedNodeKind::Field) {
+                continue;
+            }
+            if let Some(event) = event_field_layout(self.database(), member).ok()? {
+                if event.owner_type != declaration || self.target().pointer_width != 64 {
+                    return None;
+                }
+                let offset = u64::from(event.slot_offset);
+                size = size.max(offset.checked_add(8)?);
+                alignment = alignment.max(8);
+                pointer_map_offsets.push(offset);
+            }
+        }
         let object_size = align_to(size, alignment)?;
         Some(AggregateObjectLayout {
             declaration,
@@ -239,6 +312,7 @@ impl CodegenInput<'_> {
             object_alignment: alignment,
             pointer_map_offsets: pointer_map_offsets.into(),
             fields: fields.into(),
+            injected_fields: injected_fields.into(),
         })
     }
 

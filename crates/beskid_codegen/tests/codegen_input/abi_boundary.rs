@@ -1,5 +1,6 @@
 use super::support::{
     AbiManifestV5, Arc, AstNodeKey, CodegenInput, CodegenInputError, SyntaxGenerationId, TargetMetadata, input_fixture,
+    input_fixture_with_source,
 };
 
 #[test]
@@ -35,30 +36,35 @@ fn sole_codegen_boundary_rejects_stale_roots_and_manifest_drift() {
 
 #[test]
 fn composition_plan_is_generation_bound_and_has_no_dynamic_fallback() {
-    let (db, typed, root, target) = input_fixture();
+    use beskid_analysis::composition::{CompositionInput, resolve_composition};
+
+    let source = r#"
+type Logger {}
+type Worker { inject Logger[] loggers }
+host AppHost() { registry { single Logger; single Worker; } }
+i32 Main() { launch AppHost(); return 0; }
+"#;
+    let (db, typed, root, target) = input_fixture_with_source(source);
     let generation = typed.generation;
+    let resolved =
+        resolve_composition(CompositionInput { program: &typed.assembly.entry_unit().program, is_mod_project: false });
+    assert!(resolved.issues.is_empty(), "composition must validate: {:?}", resolved.issues);
+    let mut snapshot = resolved.snapshot;
+    snapshot.source_unit_path = Some(root.unit.path(&db).to_path_buf());
+    let plan = Arc::new(resolved.plan);
+    let snapshot = Arc::new(snapshot);
+    let owner = plan.plurals[0].owner_registration_id;
     let input =
         CodegenInput::new(&db, typed, Arc::from([root]), target.clone(), AbiManifestV5::canonical_runtime(target))
             .expect("valid codegen input");
-    assert!(input.composition_plan().is_none(), "ordinary codegen receives no lookup fallback");
-
-    let plan = Arc::new(beskid_analysis::composition::BindingPlan {
-        activation: vec![beskid_analysis::composition::ActivationPlanEntry {
-            registration_id: 41,
-            slot: beskid_analysis::composition::ServiceSlot(0),
-        }],
-        plurals: vec![beskid_analysis::composition::PluralPlan {
-            owner_registration_id: 42,
-            target_slots: vec![beskid_analysis::composition::ServiceSlot(0)],
-        }],
-        scope_parents: Default::default(),
-    });
-    let input =
-        input.with_composition_plan(generation, Arc::clone(&plan)).expect("current-generation composition plan");
-    assert_eq!(input.composition_plan(), Some(plan.as_ref()));
+    assert!(input.composition_authority().is_none(), "ordinary codegen receives no lookup fallback");
+    let input = input
+        .with_composition_authority(generation, Arc::clone(&plan), Arc::clone(&snapshot))
+        .expect("current-generation composition authority");
+    assert_eq!(input.composition_authority(), Some((plan.as_ref(), snapshot.as_ref())));
     let facts = beskid_codegen::SyntaxNodeFacts::new(&input);
-    assert_eq!(facts.composition_service_slot(41), Some(0));
-    assert_eq!(facts.composition_plural_slots(42), Some(vec![0]));
+    assert_eq!(facts.composition_service_slot(owner), Some(1));
+    assert_eq!(facts.composition_plural_slots(owner), Some(vec![0]));
     assert_eq!(facts.composition_service_slot(99), None, "unknown registrations fail closed");
 }
 
@@ -70,9 +76,10 @@ fn composition_plan_rejects_a_foreign_generation() {
             .expect("valid codegen input");
 
     assert!(matches!(
-        input.with_composition_plan(
+        input.with_composition_authority(
             SyntaxGenerationId(999),
             Arc::new(beskid_analysis::composition::BindingPlan::default()),
+            Arc::new(beskid_analysis::composition::CompositionSnapshot::default()),
         ),
         Err(CodegenInputError::StaleCompositionPlan)
     ));

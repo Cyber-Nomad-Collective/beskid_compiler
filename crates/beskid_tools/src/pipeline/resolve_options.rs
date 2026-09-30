@@ -15,6 +15,7 @@ pub struct CliResolveOptions<'a> {
     pub workspace_member: Option<&'a str>,
     pub frozen: bool,
     pub locked: bool,
+    pub refresh_lock: bool,
     pub plain: bool,
 }
 
@@ -28,7 +29,7 @@ impl<'a> CliResolveOptions<'a> {
         locked: bool,
         plain: bool,
     ) -> Self {
-        Self { input, project, target, workspace_member, frozen, locked, plain }
+        Self { input, project, target, workspace_member, frozen, locked, refresh_lock: false, plain }
     }
 }
 

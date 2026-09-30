@@ -22,6 +22,8 @@ node_kinds!(
     ReturnStatement,
     LetStatement,
     ScopedUseStatement,
+    LaunchStatement,
+    WithStatement,
     IfStatement,
     WhileStatement,
     BreakStatement,
@@ -72,6 +74,8 @@ pub const fn classify_syntax_node_kind(kind: beskid_queries::IndexedNodeKind) ->
         Syntax::ReturnStatement => IsleLowered(NodeKind::ReturnStatement),
         Syntax::LetStatement => IsleLowered(NodeKind::LetStatement),
         Syntax::ScopedUseStatement => IsleLowered(NodeKind::ScopedUseStatement),
+        Syntax::LaunchStatement => IsleLowered(NodeKind::LaunchStatement),
+        Syntax::WithStatement => IsleLowered(NodeKind::WithStatement),
         Syntax::IfStatement => IsleLowered(NodeKind::IfStatement),
         Syntax::WhileStatement => IsleLowered(NodeKind::WhileStatement),
         Syntax::BreakStatement => IsleLowered(NodeKind::BreakStatement),
@@ -102,8 +106,6 @@ pub const fn classify_syntax_node_kind(kind: beskid_queries::IndexedNodeKind) ->
         | Syntax::RegistryEntry
         | Syntax::ScopeDefinition
         | Syntax::ScopeHook
-        | Syntax::WithStatement
-        | Syntax::LaunchStatement
         | Syntax::CodeStringLiteral => UnsupportedTypedOperation,
 
         Syntax::Node
@@ -183,8 +185,6 @@ pub const UNSUPPORTED_TYPED_OPERATION_KINDS: &[beskid_queries::IndexedNodeKind] 
     beskid_queries::IndexedNodeKind::RegistryEntry,
     beskid_queries::IndexedNodeKind::ScopeDefinition,
     beskid_queries::IndexedNodeKind::ScopeHook,
-    beskid_queries::IndexedNodeKind::WithStatement,
-    beskid_queries::IndexedNodeKind::LaunchStatement,
     beskid_queries::IndexedNodeKind::CodeStringLiteral,
 ];
 

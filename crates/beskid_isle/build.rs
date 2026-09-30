@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 const INPUTS: &[&str] = &[
     "types.isle",
     "ast.isle",
+    "events.isle",
     "expressions.isle",
     "literals.isle",
     "binary.isle",
@@ -10,6 +11,7 @@ const INPUTS: &[&str] = &[
     "calls.isle",
     "dispatch.isle",
     "statements.isle",
+    "composition.isle",
     "control_flow.isle",
     "memory.isle",
     "runtime_intrinsics.isle",

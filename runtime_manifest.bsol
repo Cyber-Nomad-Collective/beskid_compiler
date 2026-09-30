@@ -273,6 +273,7 @@ intrinsic "worker_release" { symbol = "beskid_rt_v5_intrinsic_worker_release" ca
 intrinsic "owner_create" { symbol = "beskid_rt_v5_intrinsic_owner_create" capability = "runtime.scheduler.owner_create" params = [] returns = usize }
 intrinsic "owner_destroy" { symbol = "beskid_rt_v5_intrinsic_owner_destroy" capability = "runtime.scheduler.owner_destroy" params = [{ name = owner, type = usize }] returns = void }
 intrinsic "owner_post" { symbol = "beskid_rt_v5_intrinsic_owner_post" capability = "runtime.scheduler.owner_post" params = [{ name = owner, type = usize }, { name = token, type = usize }, { name = source, type = usize }] returns = i32 }
+intrinsic "owner_post_deadline" { symbol = "beskid_rt_v5_intrinsic_owner_post_deadline" capability = "runtime.scheduler.owner_post_deadline" params = [{ name = owner, type = usize }, { name = token, type = usize }, { name = deadline, type = i64 }] returns = i32 }
 intrinsic "owner_pop" { symbol = "beskid_rt_v5_intrinsic_owner_pop" capability = "runtime.scheduler.owner_pop" params = [{ name = owner, type = usize }, { name = command, type = pointer }] returns = i32 }
 intrinsic "owner_wait" { symbol = "beskid_rt_v5_intrinsic_owner_wait" capability = "runtime.scheduler.owner_wait" params = [{ name = owner, type = usize }, { name = deadline, type = i64 }] returns = void }
 intrinsic "wait_claim" { symbol = "beskid_rt_v5_intrinsic_wait_claim" capability = "runtime.scheduler.wait_claim" params = [{ name = state, type = pointer }, { name = source, type = usize }] returns = i32 }
@@ -292,7 +293,7 @@ intrinsic "network_reactor_poll" { symbol = "beskid_rt_v5_intrinsic_network_reac
 intrinsic "network_report_leak" {
   symbol = "beskid_rt_v5_intrinsic_network_report_leak"
   capability = "runtime.adapter.network_report_leak"
-  params = [{ name = slot, type = usize }, { name = generation, type = usize }, { name = owner, type = usize }, { name = kind, type = usize }]
+  params = [{ name = slot, type = usize }, { name = generation, type = usize }, { name = owner, type = usize }, { name = kind, type = usize }, { name = operation, type = usize }, { name = winner, type = usize }, { name = leak_count, type = usize }]
   returns = void
   # Apple SDK fortified copies and compiler-protected stack buffers depend on
   # these exact libSystem C identities. The guard is data, not a callable import.
@@ -323,11 +324,14 @@ layout "BeskidNetworkRequest" { size = 88 alignment = 8 project_to_runtime = con
 export "beskid_rt_v5_external_owner_id" { params = [] returns = usize }
 export "beskid_rt_v5_external_active_count" { params = [] returns = usize }
 export "beskid_rt_v5_external_wait_register" { params = [{ name = fiber_handle, type = usize }, { name = operation, type = usize }, { name = deadline, type = i64 }] returns = usize }
+export "beskid_rt_v5_external_wait_set_deadline" { params = [{ name = token, type = usize }, { name = deadline, type = i64 }] returns = u8 }
 export "beskid_rt_v5_external_try_complete" { params = [{ name = wait_id, type = usize }, { name = generation, type = usize }, { name = source, type = usize }] returns = u8 }
 export "beskid_rt_v5_external_wait_post" { params = [{ name = owner, type = usize }, { name = token, type = usize }, { name = source, type = usize }] returns = u8 }
+export "beskid_rt_v5_external_wait_post_deadline" { params = [{ name = owner, type = usize }, { name = token, type = usize }, { name = deadline, type = i64 }] returns = u8 }
 export "beskid_rt_v5_external_wait_park" { params = [{ name = token, type = usize }] returns = usize }
 export "beskid_rt_v5_external_wait_release" { params = [{ name = token, type = usize }] returns = u8 }
 export "beskid_rt_v5_external_pump" { params = [{ name = now, type = i64 }] returns = void }
+export "beskid_rt_v5_network_set_deadlines" { params = [{ name = handle, type = usize }, { name = read_deadline, type = i64 }, { name = write_deadline, type = i64 }] returns = i32 }
 export "beskid_rt_v5_external_sleep_until" { params = [{ name = deadline, type = i64 }] returns = usize }
 
 status "BeskidFsStatus" { repr = i32 values = [{ name = Ok, value = 0 }, { name = NotFound, value = 1 }, { name = PermissionDenied, value = 2 }, { name = IOError, value = 3 }, { name = InvalidInput, value = 4 }, { name = AlreadyExists, value = 5 }] }
@@ -351,7 +355,7 @@ soft_builtin "__str_len" { symbol = "str_len" adapter_service = "__str_len" para
 # corelib/runtime contracts and contribute to runtime-kit provenance on every target.
 corelib_service "__network_open" {
   adapter = "beskid_rt_v5_network_open"
-  params = [{ name = kind, type = i64 }, { name = address, type = pointer }, { name = options, type = i64 }, { name = backlog, type = i64 }, { name = output, type = pointer }]
+  params = [{ name = kind, type = i64 }, { name = address, type = pointer }, { name = options, type = i64 }, { name = backlog, type = i64 }, { name = deadline, type = i64 }, { name = output, type = pointer }]
   returns = i32
   target_bindings = [
     { target = "x86_64-unknown-linux-gnu", implementation = "beskid_rt_v5_network_open", os_imports = [] },
@@ -361,7 +365,7 @@ corelib_service "__network_open" {
 }
 corelib_service "__network_accept" {
   adapter = "beskid_rt_v5_network_accept"
-  params = [{ name = handle, type = usize }, { name = output, type = pointer }]
+  params = [{ name = handle, type = usize }, { name = deadline, type = i64 }, { name = output, type = pointer }]
   returns = i32
   target_bindings = [
     { target = "x86_64-unknown-linux-gnu", implementation = "beskid_rt_v5_network_accept", os_imports = [] },
@@ -429,6 +433,16 @@ corelib_service "__network_set_options" {
     { target = "x86_64-pc-windows-msvc", implementation = "beskid_rt_v5_network_set_options", os_imports = [] }
   ]
 }
+corelib_service "__network_set_deadlines" {
+  adapter = "beskid_rt_v5_network_set_deadlines"
+  params = [{ name = handle, type = usize }, { name = read_deadline, type = i64 }, { name = write_deadline, type = i64 }]
+  returns = i32
+  target_bindings = [
+    { target = "x86_64-unknown-linux-gnu", implementation = "beskid_rt_v5_network_set_deadlines", os_imports = [] },
+    { target = "aarch64-apple-darwin", implementation = "beskid_rt_v5_network_set_deadlines", os_imports = [] },
+    { target = "x86_64-pc-windows-msvc", implementation = "beskid_rt_v5_network_set_deadlines", os_imports = [] }
+  ]
+}
 corelib_service "__network_shutdown_write" {
   adapter = "beskid_rt_v5_network_shutdown_write"
   params = [{ name = handle, type = usize }]
@@ -451,7 +465,7 @@ corelib_service "__network_udp_connect" {
 }
 corelib_service "__network_receive" {
   adapter = "beskid_rt_v5_network_receive"
-  params = [{ name = handle, type = usize }, { name = payload, type = pointer }, { name = metadata, type = pointer }, { name = connected, type = u8 }]
+  params = [{ name = handle, type = usize }, { name = payload, type = pointer }, { name = metadata, type = pointer }, { name = connected, type = u8 }, { name = deadline, type = i64 }]
   returns = i64
   target_bindings = [
     { target = "x86_64-unknown-linux-gnu", implementation = "beskid_rt_v5_network_receive", os_imports = [] },
@@ -461,7 +475,7 @@ corelib_service "__network_receive" {
 }
 corelib_service "__network_send" {
   adapter = "beskid_rt_v5_network_send"
-  params = [{ name = handle, type = usize }, { name = payload, type = pointer }, { name = address, type = pointer }, { name = connected, type = u8 }]
+  params = [{ name = handle, type = usize }, { name = payload, type = pointer }, { name = address, type = pointer }, { name = connected, type = u8 }, { name = deadline, type = i64 }]
   returns = i64
   target_bindings = [
     { target = "x86_64-unknown-linux-gnu", implementation = "beskid_rt_v5_network_send", os_imports = [] },
@@ -471,7 +485,7 @@ corelib_service "__network_send" {
 }
 corelib_service "__network_dns_resolve" {
   adapter = "beskid_rt_v5_network_dns_resolve"
-  params = [{ name = host, type = pointer }, { name = port, type = i64 }, { name = family, type = i64 }, { name = output, type = pointer }]
+  params = [{ name = host, type = pointer }, { name = port, type = i64 }, { name = family, type = i64 }, { name = deadline, type = i64 }, { name = output, type = pointer }]
   returns = i32
   target_bindings = [
     { target = "x86_64-unknown-linux-gnu", implementation = "beskid_rt_v5_network_dns_resolve", os_imports = [] },
@@ -963,7 +977,7 @@ corelib_service "__composition_launch" {
 
 corelib_service "__composition_scope_enter" {
   adapter = "composition_scope_enter"
-  params = [{ name = container, type = pointer }]
+  params = [{ name = container, type = pointer }, { name = scope_id, type = usize }, { name = parent_scope_id, type = usize }]
   returns = void
   target_bindings = [
     { target = "x86_64-unknown-linux-gnu", implementation = "composition_scope_enter", os_imports = [] },

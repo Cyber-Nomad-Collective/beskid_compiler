@@ -147,6 +147,7 @@ dependency "Feature" {
 "#,
     );
 
+    let _std_root = super::scoped_std_dependency_root(&compiler_workspace_root().join("corelib"));
     with_cwd_at_workspace_root(&compiler_workspace_root(), || {
         let graph = build_project_graph(&app_manifest_path).expect("graph should build");
         let deps = collect_dependency_projects(&graph);

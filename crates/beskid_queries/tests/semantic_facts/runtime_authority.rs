@@ -314,6 +314,84 @@ fn syscall_origin_materialized_loader_accepts_destination_but_denies_user_alias(
     assert_syscall_origin_authority(non_file, false);
 }
 
+#[test]
+fn materialized_slice_bundle_path_authorizes_its_canonical_panic_call() {
+    let source = canonical_corelib_service_sources()
+        .into_iter()
+        .find(|source| source.logical_path == "Core/Bytes/Slice.bd")
+        .expect("embedded Foundation Slice source");
+    let root = tempfile::tempdir().expect("materialized bundle source root");
+    let path = root.path().join("deps/foundation/src/Core/Bytes/Slice.bd");
+    std::fs::create_dir_all(path.parent().unwrap()).expect("create materialized Slice directory");
+    std::fs::write(&path, &source.source).expect("write materialized Slice source");
+    let physical_path = path.canonicalize().expect("physical materialized Slice path");
+    let program = parse_program(&source.source).expect("parse Slice source");
+    let generation = SyntaxGenerationId(118);
+    let unit = SourceUnit {
+        logical_name: source.logical_path,
+        origin_path: path.clone(),
+        path: physical_path.clone(),
+        source: source.source,
+        program,
+    };
+    let assembly = ProgramAssembly::new(
+        EffectiveCompilationRoots {
+            host: RootEntry { dependency_name: None, source_root: root.path().to_path_buf() },
+            dependencies: Vec::new(),
+        },
+        Arc::new(vec![unit]),
+        0,
+        AssemblyDiscovery::ImportClosure,
+        Arc::new(ModuleIndex::empty()),
+        false,
+        generation,
+    )
+    .with_trusted_corelib_service_paths(Arc::from([path.clone()]));
+
+    let mut db = BeskidDatabase::default();
+    let syntax_index = assembly.entry_syntax_index();
+    let panic_call = syntax_index
+        .ids_of_kind(NodeKind::CallExpression)
+        .find(|node| {
+            syntax_index.node_at(&assembly.entry_unit().program, *node).and_then(|node| node.of::<CallExpression>())
+                .is_some_and(|call| {
+                    matches!(
+                        &call.callee.node,
+                        Expression::Path(path)
+                            if path.node.path.node.segments.last().is_some_and(|segment| segment.node.name.node.name == "__panic")
+                    )
+                })
+        })
+        .expect("Slice.Copy calls __panic");
+    let call = AstNodeKey { unit: SourceUnitId::new(&db, physical_path.clone()), generation, node: panic_call };
+    let target = TargetMetadata::supported()
+        .into_iter()
+        .find(|target| target.triple.as_str() == "x86_64-unknown-linux-gnu")
+        .expect("Linux target");
+    let manifest = AbiManifestV5::canonical_runtime(target);
+    let project = ProjectSession::new(
+        &db,
+        root.path().to_path_buf(),
+        physical_path,
+        "corelib_foundation".into(),
+        "installed-bundle-slice".into(),
+    );
+    build_typed_program_with_corelib_services(
+        &mut db,
+        project,
+        generation,
+        Arc::new(assembly),
+        canonical_corelib_service_capability(&manifest).expect("Corelib service capability"),
+    )
+    .expect("build materialized Slice typed program");
+
+    assert!(matches!(
+        call_lowering(&db, call),
+        Ok(Some(beskid_queries::CallLowering::CorelibService(service)))
+            if service.name == "__panic" && service.symbol == "beskid_trap_code"
+    ));
+}
+
 #[cfg(target_os = "windows")]
 #[test]
 fn canonicalized_windows_syscall_source_keeps_exact_service_authority() {

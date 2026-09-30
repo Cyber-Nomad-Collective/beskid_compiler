@@ -89,8 +89,6 @@ fn unsupported_kinds_are_intentionally_release_rejected_for_0_4() {
         (Syntax::RegistryEntry, "composition declaration; not an executable ISLE item"),
         (Syntax::ScopeDefinition, "composition declaration; not an executable ISLE item"),
         (Syntax::ScopeHook, "composition declaration; not an executable ISLE item"),
-        (Syntax::WithStatement, "composition scope bracket waits on container facts (W5/composition)"),
-        (Syntax::LaunchStatement, "composition launch bracket waits on container facts (W5/composition)"),
         (Syntax::CodeStringLiteral, "fenced code strings are not supported by generated ISLE"),
     ];
 
@@ -141,6 +139,8 @@ fn every_isle_lowered_kind_has_verified_clif_evidence() {
         // scoped_cleanup_preserves_constructor_and_argument_roots compile source
         // through ISLE and verifier-enabled AOT, then execute JIT and native kits.
         (NodeKind::ScopedUseStatement, engine_tests.join("scoped_cleanup_native.rs")),
+        (NodeKind::LaunchStatement, codegen_tests.join("isle_adapter/composition_conditions.rs")),
+        (NodeKind::WithStatement, codegen_tests.join("isle_adapter/composition_conditions.rs")),
         (NodeKind::IfStatement, isle_tests.join("if_else.rs")),
         (NodeKind::WhileStatement, isle_tests.join("while_transfer.rs")),
         (NodeKind::BreakStatement, isle_tests.join("while_transfer.rs")),
@@ -195,8 +195,6 @@ fn every_unsupported_kind_has_rejection_evidence_or_codex_blocker() {
         (Syntax::RegistryEntry, Present("isle_adapter.rs")),
         (Syntax::ScopeDefinition, Present("isle_adapter.rs")),
         (Syntax::ScopeHook, Present("isle_adapter.rs")),
-        (Syntax::WithStatement, Present("isle_adapter.rs")),
-        (Syntax::LaunchStatement, Present("isle_adapter.rs")),
         (Syntax::CodeStringLiteral, Present("isle_adapter.rs")),
     ];
 
@@ -270,18 +268,38 @@ fn generated_isle_routes_local_declarations_and_assignments() {
         "LetStatement must dispatch through generated ISLE"
     );
 
-    for (target, constructor) in [
-        ("PathExpression", "emit_local_assign"),
-        ("FieldExpression", "emit_field_assign"),
-        ("IndexExpression", "emit_index_assign"),
-    ] {
+    for (target, constructor) in
+        [("Local", "emit_local_assign"), ("Field", "emit_field_assign"), ("Index", "emit_index_assign")]
+    {
         assert!(
             memory.contains(&format!(
-                "(node_kind (NodeKind.AssignExpression))\n        (assignment_target_kind (NodeKind.{target}))))\n      ({constructor} key)"
+                "(node_kind (NodeKind.AssignExpression))\n        (assignment_kind (AssignmentKind.{target}))))\n      ({constructor} key)"
             )),
             "AssignExpression targeting {target} must dispatch through generated ISLE"
         );
     }
+}
+
+#[test]
+fn generated_isle_routes_event_assignments_and_raises_through_dedicated_facts() {
+    let isle = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("isle");
+    let events = fs::read_to_string(isle.join("events.isle")).expect("read event ISLE rules");
+    for (selector, constructor) in [
+        ("AssignmentKind.EventSubscribe", "emit_event_subscribe"),
+        ("AssignmentKind.EventUnsubscribeFirst", "emit_event_unsubscribe_first"),
+        ("CallKind.EventRaise", "emit_event_raise_statement"),
+    ] {
+        assert!(events.contains(selector), "missing {selector} operation selector");
+        assert!(events.contains(&format!("({constructor} key)")), "missing {selector} event emitter route");
+    }
+    assert!(
+        events.contains("(node_kind (NodeKind.AssignExpression))"),
+        "event compound writes are distinct from ordinary aggregate assignments"
+    );
+    assert!(
+        events.contains("(node_kind (NodeKind.CallExpression))"),
+        "event raises are distinct from generic direct and dynamic calls"
+    );
 }
 
 #[test]

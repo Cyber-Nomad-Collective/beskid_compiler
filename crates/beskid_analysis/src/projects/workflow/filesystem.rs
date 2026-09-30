@@ -1,8 +1,9 @@
-use std::collections::hash_map::DefaultHasher;
 use std::fs;
-use std::hash::{Hash, Hasher};
 use std::path::Path;
 
+use sha2::{Digest, Sha256};
+
+use super::lockfile::ProjectLockSource;
 use crate::projects::error::ProjectError;
 
 fn should_skip_materialized_subdir(name: Option<&str>) -> bool {
@@ -76,11 +77,34 @@ fn file_contents_equal(source: &Path, destination: &Path) -> Result<bool, Projec
     Ok(source_bytes == destination_bytes)
 }
 
-pub(super) fn materialized_dependency_id(project_name: &str, manifest_path: &Path) -> String {
-    let mut hasher = DefaultHasher::new();
-    manifest_path.to_string_lossy().hash(&mut hasher);
-    let hash = hasher.finish();
-    format!("{}-{hash:016x}", sanitize_segment(project_name))
+pub(super) fn materialized_dependency_id(
+    name: &str,
+    source: ProjectLockSource,
+    portable_identity: &str,
+) -> Result<String, ProjectError> {
+    let mut digest = Sha256::new();
+    for field in [name, source.as_str(), portable_identity] {
+        let length = u32::try_from(field.len())
+            .map_err(|_| ProjectError::Validation("lockfile dependency identity exceeds u32 length".into()))?;
+        digest.update(length.to_be_bytes());
+        digest.update(field.as_bytes());
+    }
+    let hash = digest.finalize();
+    let suffix = hash[..16].iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    Ok(format!("{}-{suffix}", sanitize_segment(name)))
+}
+
+#[cfg(test)]
+mod stable_id_tests {
+    use super::*;
+
+    #[test]
+    fn normative_portable_path_hash_vector() {
+        assert_eq!(
+            materialized_dependency_id("alpha", ProjectLockSource::Path, "libs/alpha").unwrap(),
+            "alpha-60e1eb5f56a307ee659d04846b6f78bf"
+        );
+    }
 }
 
 pub(super) fn sanitize_segment(value: &str) -> String {

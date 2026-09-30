@@ -1,10 +1,17 @@
 //! Effective (materialized-first) source roots for assembly and module-path checks.
 
-use std::collections::HashSet;
-use std::path::{Component, Path, PathBuf};
+use std::{
+    collections::HashSet,
+    fs,
+    io::ErrorKind,
+    path::{Component, Path, PathBuf},
+};
 
-use crate::projects::workflow::load_project_lock_dependencies_for_plan;
-use crate::projects::{CompilePlan, PROJECT_LOCK_FILE_NAME, PreparedProjectWorkspace, ProjectLockDependencyEntry};
+use crate::projects::{
+    CompilePlan, PROJECT_LOCK_FILE_NAME, PreparedProjectWorkspace, ProjectError, ProjectLockDependencyEntry,
+    ProjectLockSource,
+    workflow::{load_project_lock_dependencies_for_plan, verified_installed_corelib_root},
+};
 
 /// One searchable source root (host or named dependency).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -55,19 +62,33 @@ pub fn effective_roots_from_plan_and_workspace(
     EffectiveCompilationRoots { host: RootEntry { dependency_name: None, source_root: host_root }, dependencies: deps }
 }
 
-/// Replay materialized roots from an on-disk `Project.lock` when no prepared workspace is available (LSP).
+/// Replay materialized roots from an on-disk `Project.lock` for legacy fallback callers.
+/// LSP consumers use [`effective_roots_from_lockfile_checked`] to report invalid locks.
 pub fn effective_roots_from_lockfile(plan: &CompilePlan, lockfile_path: &Path) -> EffectiveCompilationRoots {
+    effective_roots_from_lockfile_checked(plan, lockfile_path)
+        .unwrap_or_else(|_| effective_roots_from_plan_and_workspace(plan, None))
+}
+
+/// Checked replay for non-update tooling: a present invalid lock is an error, not an empty graph.
+/// Missing materialization or an untrusted replay hint still falls back to declared source roots.
+pub fn effective_roots_from_lockfile_checked(
+    plan: &CompilePlan,
+    lockfile_path: &Path,
+) -> Result<EffectiveCompilationRoots, ProjectError> {
     let base = effective_roots_from_plan_and_workspace(plan, None);
-    let Ok(entries) = load_project_lock_dependencies_for_plan(lockfile_path, plan) else {
-        return base;
-    };
+    match fs::symlink_metadata(lockfile_path) {
+        Err(source) if source.kind() == ErrorKind::NotFound => return Ok(base),
+        Err(source) => return Err(ProjectError::LockfileRead { path: lockfile_path.to_path_buf(), source }),
+        Ok(_) => {}
+    }
+    let entries = load_project_lock_dependencies_for_plan(lockfile_path, plan)?;
     let Some(trusted_dependencies_root) = plan.project_root.join("obj/beskid/deps/src").canonicalize().ok() else {
-        return base;
+        return Ok(base);
     };
     let Some(replayed_dependencies) =
         replayed_dependency_roots(plan, lockfile_path, &entries, &trusted_dependencies_root)
     else {
-        return base;
+        return Ok(base);
     };
     let mut roots = base;
     roots.dependencies = replayed_dependencies;
@@ -82,7 +103,7 @@ pub fn effective_roots_from_lockfile(plan: &CompilePlan, lockfile_path: &Path) -
         }
     }
 
-    roots
+    Ok(roots)
 }
 
 fn replayed_dependency_roots(
@@ -99,6 +120,7 @@ fn replayed_dependency_roots(
     }
 
     let lock_root = lockfile_path.parent()?;
+    let verified_corelib_root = verified_installed_corelib_root();
     let mut replayed = Vec::with_capacity(entries.len());
     for entry in entries {
         let dependency =
@@ -109,13 +131,13 @@ fn replayed_dependency_roots(
             return None;
         }
 
-        let project = resolve_lock_path(lock_root, Path::new(entry.project()));
-        let manifest = resolve_lock_path(lock_root, Path::new(entry.manifest()));
-        let source_root = if Path::new(entry.source_root()).is_absolute() {
-            PathBuf::from(entry.source_root())
-        } else {
-            project.join(entry.source_root())
+        let project_base = match entry.source() {
+            ProjectLockSource::Path | ProjectLockSource::Registry => lock_root,
+            ProjectLockSource::Corelib => verified_corelib_root.as_deref()?,
         };
+        let project = project_base.join(entry.project());
+        let manifest = project.join(entry.manifest());
+        let source_root = project.join(entry.source_root());
         // A lockfile is only a replay hint. Its identity fields must still describe the
         // dependency selected by the current graph; a copied or stale lock cannot confer
         // compiler-owned service authority on another source tree.

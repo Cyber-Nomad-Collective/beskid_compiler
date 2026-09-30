@@ -9,8 +9,8 @@ use crate::harness::workspace::E2eWorkspace;
 #[test]
 fn fetch_lock_update_then_build_and_run_project_with_path_dependency() {
     let workspace = E2eWorkspace::from_fixture("deps_workspace");
-    let workspace_manifest = workspace.join("Workspace.proj");
-    let app_manifest = workspace.join("app/Project.proj");
+    let workspace_manifest = workspace.join("DepsWorkspace.bws");
+    let app_manifest = workspace.join("app/App.bproj");
     let output_binary = workspace.join("out/deps_app");
 
     let cli = BeskidCliInvoker::new();
@@ -87,7 +87,7 @@ fn count_project_manifests(root: &Path) -> usize {
             count += count_project_manifests(&path);
             continue;
         }
-        if path.file_name().and_then(|name| name.to_str()).is_some_and(|name| name == "Project.proj") {
+        if path.extension().and_then(|extension| extension.to_str()).is_some_and(|extension| extension == "bproj") {
             count += 1;
         }
     }

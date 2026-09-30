@@ -116,12 +116,16 @@ fn canonical_network_receive_owns_its_length_invariant_and_lowers() {
     find_corelib_service_call(input.database(), receive, "__panic_str")
         .expect("the private receive bridge must validate its native completion length");
     find_corelib_service_call(input.database(), receive, "__network_receive").expect("same source owns receive ABI");
+    let deadline = super::support::named_function(&input, root, "DeadlineNanos");
+    let optional_deadline = super::support::named_function(&input, root, "OptionalDeadlineNanos");
     let length = super::support::named_function(&input, input.roots()[2], "Len");
     lower_syntax_program(
         &input,
         isa.as_ref(),
         &[
             SyntaxModuleItem { key: receive, symbol: "Receive".into() },
+            SyntaxModuleItem { key: deadline, symbol: "DeadlineNanos".into() },
+            SyntaxModuleItem { key: optional_deadline, symbol: "OptionalDeadlineNanos".into() },
             SyntaxModuleItem { key: length, symbol: "Len".into() },
         ],
     )

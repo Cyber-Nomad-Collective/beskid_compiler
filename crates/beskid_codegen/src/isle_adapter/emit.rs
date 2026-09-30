@@ -16,6 +16,31 @@ pub fn emit_isle_closure_lambda_entry<'db>(
         result,
         &facts,
         body,
+        &[],
+        Some(captures),
+        importer,
+    )
+}
+
+/// Emit a freestanding lambda entry with its source parameter bindings and optional capture
+/// environment.
+pub fn emit_isle_lambda_entry<'db>(
+    input: &'db CodegenInput<'db>,
+    isa: &dyn TargetIsa,
+    body: AstNodeKey,
+    result: Option<Type>,
+    parameters: &[ParameterSlot],
+    captures: Option<&[InlineCaptureField]>,
+    importer: &mut dyn CallImporter,
+) -> Result<cranelift_codegen::ir::Function, FunctionEmissionError> {
+    let emitter = FunctionEmitter::new(isa);
+    let facts = SyntaxNodeFacts::new_with_isa(input, isa);
+    emitter.emit_closure_lambda_entry_with_call_importer(
+        UserFuncName::user(0, 0),
+        result,
+        &facts,
+        body,
+        parameters,
         captures,
         importer,
     )

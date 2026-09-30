@@ -1,8 +1,8 @@
 //! Canonical semantic layout implementation.
 
-use super::super::*;
-use super::explicit_local_declaration_type;
 use beskid_abi::runtime_source::CANONICAL_FOUNDATION_DEADLINE_SOURCE_PATH;
+
+use super::{super::*, explicit_local_declaration_type};
 
 #[salsa::tracked(persist)]
 pub(in crate::semantic_contract) fn aggregate_layout_tracked(
@@ -15,6 +15,92 @@ pub(in crate::semantic_contract) fn aggregate_layout_tracked(
         Some(aggregate_layout_from_definition(db, program, index, key, definition, None))
     })?
     .transpose()
+}
+
+#[salsa::tracked(persist)]
+pub(in crate::semantic_contract) fn event_field_layout_tracked(
+    db: &dyn Db,
+    syntax: SyntaxUnitInput,
+    key: AstNodeKey,
+) -> SemanticQueryResult<EventFieldLayoutFact> {
+    with_node(db, syntax, key, |program, index, node| {
+        let field = node.of::<beskid_analysis::syntax::Field>()?;
+        if field.kind != beskid_analysis::syntax::FieldKind::Event {
+            return None;
+        }
+        let owner = find_event_owner(index, key.node)?;
+        let owner_key = AstNodeKey { node: owner, ..key };
+        let definition = index.node_at(program, owner)?.of::<beskid_analysis::syntax::TypeDefinition>()?;
+        let field_ids = index.children(owner)?;
+        let matching_field = field_ids.iter().copied().find(|id| {
+            index
+                .node_at(program, *id)
+                .and_then(|node| node.of::<beskid_analysis::syntax::Field>())
+                .is_some_and(|candidate| candidate.name.node.name == field.name.node.name)
+        })?;
+
+        // ABI-v5's supported targets all use 64-bit pointers and the managed-object
+        // header is two words. Keep value-field offsets identical to aggregate_layout,
+        // then append pointer-sized event slots in declaration order.
+        let mut size = 16_u64;
+        let mut alignment = 8_u64;
+        for source_field in
+            definition.fields.iter().filter(|field| field.node.kind == beskid_analysis::syntax::FieldKind::Value)
+        {
+            let (_, shape) = aggregate_field_layout(db, program, index, owner_key, source_field).ok()?;
+            let abi_type = match shape {
+                AggregateFieldShape::Scalar(abi_type) => abi_type,
+                AggregateFieldShape::Nominal(_) => SemanticTypeId::POINTER,
+            };
+            let layout = abi_type.scalar_abi_layout(64)?;
+            size = align_layout(size, layout.alignment)?;
+            size = size.checked_add(layout.size)?;
+            alignment = alignment.max(layout.alignment);
+        }
+        size = align_layout(size, alignment)?;
+        let injected_count = definition
+            .fields
+            .iter()
+            .filter(|field| field.node.kind == beskid_analysis::syntax::FieldKind::Injected)
+            .count();
+        size = size.checked_add(u64::try_from(injected_count).ok()?.checked_mul(8)?)?;
+        let event_index = field_ids
+            .iter()
+            .copied()
+            .take_while(|id| *id != matching_field)
+            .filter(|id| {
+                index
+                    .node_at(program, *id)
+                    .and_then(|node| node.of::<beskid_analysis::syntax::Field>())
+                    .is_some_and(|candidate| candidate.kind == beskid_analysis::syntax::FieldKind::Event)
+            })
+            .count();
+        let slot_offset = size.checked_add(u64::try_from(event_index).ok()?.checked_mul(8)?)?;
+        Some(Ok(EventFieldLayoutFact {
+            owner_type: owner_key,
+            field: AstNodeKey { node: matching_field, ..key },
+            slot_offset: u32::try_from(slot_offset).ok()?,
+            capacity: u32::try_from(field.event_capacity.unwrap_or_default()).ok()?,
+        }))
+    })?
+    .transpose()
+}
+
+fn find_event_owner(
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    mut node: beskid_analysis::syntax::AstNodeId,
+) -> Option<beskid_analysis::syntax::AstNodeId> {
+    while let Some(parent) = parent_node(index, node) {
+        if index.kind(parent)? == beskid_analysis::syntax_query::NodeKind::TypeDefinition {
+            return Some(parent);
+        }
+        node = parent;
+    }
+    None
+}
+
+fn align_layout(value: u64, alignment: u64) -> Option<u64> {
+    value.checked_add(alignment.checked_sub(1)?).map(|value| value & !(alignment - 1))
 }
 
 pub(in crate::semantic_contract) fn aggregate_layout_from_definition(
@@ -472,8 +558,11 @@ pub(in crate::semantic_contract) fn array_index_element_template_tracked(
             };
             // A single-segment element type is a template parameter only when the enclosing item
             // declares it; `Chunk[]` names a concrete nominal element, not an erased `T[]`.
-            if type_syntax_is_enclosing_generic_parameter_reference(db, AstNodeKey { node: index_node, ..key }, &element.node)
-                && let Some(parameter) = generic_parameter_reference_name(&element.node)
+            if type_syntax_is_enclosing_generic_parameter_reference(
+                db,
+                AstNodeKey { node: index_node, ..key },
+                &element.node,
+            ) && let Some(parameter) = generic_parameter_reference_name(&element.node)
             {
                 return Ok(ArrayIndexElementTemplate::EnclosingParameter(Arc::from(parameter)));
             }

@@ -30,8 +30,8 @@ pub enum AotError {
 
     #[error(
         "[E4020] Linker tool not available: no host linker could be started (on Windows, install the Visual \
-         Studio Build Tools `Desktop development with C++` workload and run from an x64 Native Tools or \
-         Developer command prompt so `link.exe` and the MSVC/Windows SDK import libraries are found)"
+         Studio Build Tools `Desktop development with C++` workload including MSVC x64 tools and \
+         the Windows SDK so `link.exe` and import libraries are available)"
     )]
     LinkerUnavailable,
 

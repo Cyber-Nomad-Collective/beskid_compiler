@@ -43,6 +43,8 @@ pub struct CodegenArtifact {
     pub type_descriptors: HashMap<TypeId, TypeDescriptorData>,
     pub string_literals: HashMap<String, Vec<u8>>,
     pub closure_static_plans: Vec<crate::closure_static::ClosureStaticPlan>,
+    /// Whether this artifact requires the fixed managed wrapper layout used by event handlers.
+    pub event_handler_wrapper_required: bool,
     pub aggregate_static_plans: Vec<crate::aggregate_static::AggregateStaticPlan>,
     pub array_static_plans: Vec<crate::array_static::ArrayStaticPlan>,
     pub extern_imports: Vec<ExternImport>,

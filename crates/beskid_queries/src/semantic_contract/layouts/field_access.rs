@@ -1,9 +1,7 @@
 //! Canonical semantic layout implementation.
 
 use super::super::*;
-use beskid_abi::runtime_source::{
-    CANONICAL_FOUNDATION_DEADLINE_SOURCE_PATH, CANONICAL_NETWORK_INTERNAL_SOURCE_PATH,
-};
+use beskid_abi::runtime_source::{CANONICAL_FOUNDATION_DEADLINE_SOURCE_PATH, CANONICAL_NETWORK_INTERNAL_SOURCE_PATH};
 use beskid_analysis::syntax_query::DynNodeRef;
 
 #[salsa::tracked(persist)]
@@ -115,7 +113,12 @@ pub(in crate::semantic_contract) fn field_access_receiver<'a>(
         let receiver = AstNodeKey { node: normalized_expression_node(index, receiver), ..key };
         let resolved = applied_call_result_layout(db, receiver, &member.target.node, ambient, enclosing);
         let field_name = member.member.node.name.as_str();
-        return Some(resolved.map(|(declaration, layout)| FieldAccessReceiver { declaration, receiver, layout, field_name }));
+        return Some(resolved.map(|(declaration, layout)| FieldAccessReceiver {
+            declaration,
+            receiver,
+            layout,
+            field_name,
+        }));
     }
     let path = node.of::<beskid_analysis::syntax::PathExpression>()?;
     let resolved = match path.path.node.segments.as_slice() {
@@ -126,8 +129,9 @@ pub(in crate::semantic_contract) fn field_access_receiver<'a>(
                 && field.node.type_args.is_empty()
                 && is_implicit_receiver_name(program, index, key, receiver.node.name.node.name.as_str()) =>
         {
-            applied_method_receiver_layout(db, program, index, key, ambient)
-                .map(|(declaration, receiver, layout)| (declaration, receiver, layout, field.node.name.node.name.as_str()))
+            applied_method_receiver_layout(db, program, index, key, ambient).map(|(declaration, receiver, layout)| {
+                (declaration, receiver, layout, field.node.name.node.name.as_str())
+            })
         }
         [receiver, field] if receiver.node.type_args.is_empty() && field.node.type_args.is_empty() => {
             applied_local_receiver_layout(db, program, index, key, receiver.node.name.node.name.as_str(), ambient).map(
@@ -255,7 +259,8 @@ pub(in crate::semantic_contract) fn nominal_field_projection(
     if is_implicit_receiver_name(program, index, path_key, &path.segments[0].node.name.node.name) {
         // `this.a.b`: project `a` from the implicit receiver, then each later field from the
         // previous segment, exactly like a lexical root's chain.
-        let first = implicit_receiver_field_projection(db, program, index, path_key, &path.segments[1].node.name.node.name)?;
+        let first =
+            implicit_receiver_field_projection(db, program, index, path_key, &path.segments[1].node.name.node.name)?;
         return Some((|| {
             let (mut result, mut identity) = first?;
             let mut receiver = path_projection_segment(db, path_key, 1)
@@ -274,7 +279,8 @@ pub(in crate::semantic_contract) fn nominal_field_projection(
     let Some(root) = resolve_lexical_declaration(program, index, path_key.node, &path.segments[0].node.name.node.name)
     else {
         // `field.a...` inside a method: the root names a field of the implicit receiver.
-        let first = implicit_receiver_field_projection(db, program, index, path_key, &path.segments[0].node.name.node.name)?;
+        let first =
+            implicit_receiver_field_projection(db, program, index, path_key, &path.segments[0].node.name.node.name)?;
         return Some((|| {
             let (mut result, mut identity) = first?;
             let mut receiver = path_projection_segment(db, path_key, 0)
@@ -371,10 +377,8 @@ pub(in crate::semantic_contract) fn implicit_receiver_field_projection(
     let field_index = u32::try_from(*field_index).ok()?;
     let field_type = field.node.ty.node.clone();
     Some((|| {
-        let layout =
-            aggregate_layout_from_definition(db, program, index, declaration, definition, None)?;
-        let identity =
-            generic_source_type_identity_with_substitutions(db, declaration, &field_type, &HashMap::new())?;
+        let layout = aggregate_layout_from_definition(db, program, index, declaration, definition, None)?;
+        let identity = generic_source_type_identity_with_substitutions(db, declaration, &field_type, &HashMap::new())?;
         let access = AggregateFieldAccess {
             declaration,
             receiver: AstNodeKey { node: method, ..reference },
@@ -613,8 +617,8 @@ fn applied_method_receiver_layout(
     let method =
         nearest_ancestor(index, key.node, |kind| kind == beskid_analysis::syntax_query::NodeKind::MethodDefinition)
             .ok_or_else(|| SemanticError::unavailable("aggregate_field_access"))?;
-    let declaration =
-        method_owner_node(program, index, method).ok_or_else(|| SemanticError::unavailable("aggregate_field_access"))?;
+    let declaration = method_owner_node(program, index, method)
+        .ok_or_else(|| SemanticError::unavailable("aggregate_field_access"))?;
     let definition = index
         .node_at(program, declaration)
         .and_then(|node| node.of::<beskid_analysis::syntax::TypeDefinition>())

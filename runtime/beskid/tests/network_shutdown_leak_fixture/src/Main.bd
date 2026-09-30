@@ -1,0 +1,38 @@
+use Concurrency;
+use Concurrency.Fiber;
+use Core.Results;
+use Core.Optional.Option;
+use Core.Time.Deadline;
+use Network.Errors;
+use Network.Types;
+use Network.Tcp.TcpListener;
+use Network.Tcp.TcpStream;
+
+unit PendingNetworkAccept(TcpListener listener) {
+    Result<TcpStream, NetworkError> accepted = listener.Accept(Option.Empty<Deadline>());
+    return;
+}
+
+unit StartPendingNetworkAccept(TcpListener listener) {
+    Fiber<unit> pending = spawn PendingNetworkAccept(listener);
+    pending.Detach();
+    Concurrency.Yield();
+    return;
+}
+
+pub i32 Main() {
+    SocketAddress address = SocketAddress { address: IpAddress::V4(127_u8, 0_u8, 0_u8, 1_u8), port: PortBytes(0_u8, 0_u8) };
+    Result<TcpListener, NetworkError> opened = TcpListener.Bind(address, 8_i64);
+    mut i32 status = 91;
+    match opened {
+        Result::Ok(listener) => {
+            Fiber<unit> setup = spawn StartPendingNetworkAccept(listener);
+            match setup.Join() {
+                Result::Ok(_) => status = 0,
+                Result::Error(_) => status = 92,
+            };
+        },
+        Result::Error(_) => (),
+    };
+    return status;
+}

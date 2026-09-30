@@ -1,7 +1,7 @@
 //! Extract template trees from registry `.bpk` artifacts and validate `packageKind`.
 
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 use serde::Deserialize;
 use zip::ZipArchive;
@@ -30,7 +30,16 @@ pub fn extract_bpk_to_dir(bytes: &[u8], dest: &Path) -> TemplateResult<PathBuf> 
         if name.ends_with('/') {
             continue;
         }
-        let out_path = dest.join(&name);
+        let safe_name =
+            file.enclosed_name().ok_or_else(|| TemplateError::Internal(format!("unsafe .bpk entry: {name}")))?;
+        if name.contains('\\')
+            || !Path::new(&name).components().all(|component| matches!(component, Component::Normal(_)))
+        {
+            return Err(TemplateError::Internal(format!("unsafe .bpk entry: {name}")));
+        }
+        // Registry packing moves the authoring manifest to the artifact root;
+        // restore the authoring layout before validating or installing it.
+        let out_path = if name == "template.json" { dest.join(TEMPLATE_MANIFEST_REL) } else { dest.join(safe_name) };
         if let Some(parent) = out_path.parent() {
             fs::create_dir_all(parent)?;
         }
@@ -56,4 +65,55 @@ pub fn verify_template_package(root: &Path) -> TemplateResult<()> {
         return Err(TemplateError::InvalidManifest(format!("missing {}", TEMPLATE_MANIFEST_REL)));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io::{Cursor, Write};
+
+    use zip::{ZipWriter, write::SimpleFileOptions};
+
+    use super::*;
+
+    #[test]
+    fn packed_template_manifest_is_restored_to_authoring_path() {
+        let mut archive = ZipWriter::new(Cursor::new(Vec::new()));
+        archive.start_file("package.json", SimpleFileOptions::default()).unwrap();
+        archive.write_all(br#"{"packageKind":"template"}"#).unwrap();
+        archive.start_file("template.json", SimpleFileOptions::default()).unwrap();
+        archive
+            .write_all(br#"{"schema":"beskid.template.v1","identity":"beskid.templates.lib","name":"Library","shortName":"lib"}"#)
+            .unwrap();
+        let bytes = archive.finish().unwrap().into_inner();
+        let dest = std::env::temp_dir().join(format!("beskid-template-extract-{}", uuid::Uuid::new_v4()));
+
+        let extracted = extract_bpk_to_dir(&bytes, &dest);
+        assert!(extracted.is_ok(), "packed manifest should install: {extracted:?}");
+        assert!(dest.join(TEMPLATE_MANIFEST_REL).is_file());
+        assert_eq!(load_manifest_from_template_root(&dest).unwrap().short_name, "lib");
+        fs::remove_dir_all(dest).unwrap();
+    }
+
+    #[test]
+    fn packed_template_rejects_parent_path_without_writing_outside_destination() {
+        let mut archive = ZipWriter::new(Cursor::new(Vec::new()));
+        archive.start_file("package.json", SimpleFileOptions::default()).unwrap();
+        archive.write_all(br#"{"packageKind":"template"}"#).unwrap();
+        archive.start_file("template.json", SimpleFileOptions::default()).unwrap();
+        archive
+            .write_all(br#"{"schema":"beskid.template.v1","identity":"beskid.templates.lib","name":"Library","shortName":"lib"}"#)
+            .unwrap();
+        archive.start_file("../outside.txt", SimpleFileOptions::default()).unwrap();
+        archive.write_all(b"must stay inside archive").unwrap();
+        let bytes = archive.finish().unwrap().into_inner();
+        let root = std::env::temp_dir().join(format!("beskid-template-path-{}", uuid::Uuid::new_v4()));
+        let dest = root.join("extracted");
+        let outside = root.join("outside.txt");
+
+        let result = extract_bpk_to_dir(&bytes, &dest);
+        let escaped = outside.exists();
+        fs::remove_dir_all(root).unwrap();
+        assert!(result.is_err(), "parent path in a registry package must be rejected");
+        assert!(!escaped, "registry package wrote outside its destination");
+    }
 }

@@ -1,12 +1,14 @@
-# Project.lock v1
+# Project.lock v2
 root_manifest=SampleMod.bproj
 project_name=SampleMod
 dependencies:
-- name=Std;manifest=../../../../../corelib/beskid_corelib/corelib.bproj;project=../../../../../corelib/beskid_corelib;source_root=.;materialized_root=obj/beskid/deps/src/corelib-8b6a919adeb3987a
-- name=corelib_compiler_sdk;manifest=../../../../../corelib/packages/compiler-sdk/corelib_compiler_sdk.bproj;project=../../../../../corelib/packages/compiler-sdk;source_root=src;materialized_root=obj/beskid/deps/src/corelib_compiler_sdk-91d4fd95409025d3
-- name=corelib_concurrency;manifest=../../../../../corelib/packages/concurrency/corelib_concurrency.bproj;project=../../../../../corelib/packages/concurrency;source_root=src;materialized_root=obj/beskid/deps/src/corelib_concurrency-e328e7d28d172bd5
-- name=corelib_console;manifest=../../../../../corelib/packages/console/corelib_console.bproj;project=../../../../../corelib/packages/console;source_root=src;materialized_root=obj/beskid/deps/src/corelib_console-21f2701c50993831
-- name=corelib_foundation;manifest=../../../../../corelib/packages/foundation/corelib_foundation.bproj;project=../../../../../corelib/packages/foundation;source_root=src;materialized_root=obj/beskid/deps/src/corelib_foundation-e68bc9ee987e348a
-- name=corelib_glue;manifest=../../../../../corelib/packages/glue/corelib_glue.bproj;project=../../../../../corelib/packages/glue;source_root=src;materialized_root=obj/beskid/deps/src/corelib_glue-f4a2b24c383b5329
-- name=corelib_interop;manifest=../../../../../corelib/packages/interop/corelib_interop.bproj;project=../../../../../corelib/packages/interop;source_root=src;materialized_root=obj/beskid/deps/src/corelib_interop-05c06516097dae75
-- name=corelib_runtime;manifest=../../../../../corelib/packages/runtime/corelib_runtime.bproj;project=../../../../../corelib/packages/runtime;source_root=src;materialized_root=obj/beskid/deps/src/corelib_runtime-a112576f820bf7e6
+- name=Std;source=corelib;project=beskid_corelib;manifest=corelib.bproj;source_root=.;materialized_root=obj/beskid/deps/src/Std-e6e10cf2b8f67ee0335fb01f75514ab2
+- name=corelib_compiler_sdk;source=corelib;project=packages/compiler-sdk;manifest=corelib_compiler_sdk.bproj;source_root=src;materialized_root=obj/beskid/deps/src/corelib_compiler_sdk-b78cd396278b5ebc83f553772a9bac27
+- name=corelib_concurrency;source=corelib;project=packages/concurrency;manifest=corelib_concurrency.bproj;source_root=src;materialized_root=obj/beskid/deps/src/corelib_concurrency-13ab48f862ba0ae5e9bf5c20798a87d0
+- name=corelib_console;source=corelib;project=packages/console;manifest=corelib_console.bproj;source_root=src;materialized_root=obj/beskid/deps/src/corelib_console-e4ed4362d985e0eb51c1cd4b56ce2200
+- name=corelib_foundation;source=corelib;project=packages/foundation;manifest=corelib_foundation.bproj;source_root=src;materialized_root=obj/beskid/deps/src/corelib_foundation-36af321ae161ad408c6868835985321c
+- name=corelib_glue;source=corelib;project=packages/glue;manifest=corelib_glue.bproj;source_root=src;materialized_root=obj/beskid/deps/src/corelib_glue-24d3acd0cbb1a75b5c6ee3883859cc97
+- name=corelib_http;source=corelib;project=packages/http;manifest=corelib_http.bproj;source_root=src;materialized_root=obj/beskid/deps/src/corelib_http-ec541acbd6cac8470a2e816c0351995d
+- name=corelib_interop;source=corelib;project=packages/interop;manifest=corelib_interop.bproj;source_root=src;materialized_root=obj/beskid/deps/src/corelib_interop-2f14f0d2e61774a9ab1673f72cd00901
+- name=corelib_network;source=corelib;project=packages/network;manifest=corelib_network.bproj;source_root=src;materialized_root=obj/beskid/deps/src/corelib_network-c99e2572bcc59d0344e495c09bcb3491
+- name=corelib_runtime;source=corelib;project=packages/runtime;manifest=corelib_runtime.bproj;source_root=src;materialized_root=obj/beskid/deps/src/corelib_runtime-dcc850f22061e60d06f6853b23dcfd17

@@ -51,17 +51,22 @@ impl<'db> SyntaxNodeFacts<'db> {
     /// Exact compiler-selected slot for an injection target. Absence denies composition lowering;
     /// ISLE must not synthesize a runtime name/key lookup.
     pub fn composition_service_slot(&self, registration_id: u32) -> Option<u32> {
-        self.input.composition_plan()?.slot_for_registration(registration_id).map(|slot| slot.0)
+        self.input.composition_authority()?.0.slot_for_registration(registration_id).map(|slot| slot.0)
     }
 
     /// Compiler-materialized plural target slots in injection order.
     pub fn composition_plural_slots(&self, owner_registration_id: u32) -> Option<Vec<u32>> {
-        self.input
-            .composition_plan()?
+        let mut fields = self
+            .input
+            .composition_authority()?.0
             .plurals
             .iter()
-            .find(|plural| plural.owner_registration_id == owner_registration_id)
-            .map(|plural| plural.target_slots.iter().map(|slot| slot.0).collect())
+            .filter(|plural| plural.owner_registration_id == owner_registration_id);
+        let field = fields.next()?;
+        if fields.next().is_some() {
+            return None;
+        }
+        Some(field.target_slots.iter().map(|slot| slot.0).collect())
     }
 
     pub(super) fn inline_closure_environment(

@@ -1,13 +1,12 @@
 use std::collections::HashMap;
 
-use crate::syntax::{
-    FieldKind, HostBodyItem, HostDefinition, InjectQualifier, Node, Program, RegistrationLifetime, RegistryBlock,
-    RegistryEntry, ScopeDefinition, ScopeHookKind, Spanned, Type,
-};
-
 use super::model::{
     CompositionHost, CompositionScope, InjectDependency, Registration, RegistrationKey,
     RegistrationLifetime as Lifetime, ScopeId,
+};
+use crate::syntax::{
+    FieldKind, HostBodyItem, HostDefinition, InjectQualifier, Node, Program, RegistrationLifetime, RegistryBlock,
+    RegistryEntry, ScopeDefinition, ScopeHookKind, Spanned, Type,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -16,6 +15,7 @@ pub struct TypeInjectField {
     pub qualifier: Option<InjectQualifier>,
     pub is_plural: bool,
     pub span: crate::syntax::SpanInfo,
+    pub field_node_id: crate::syntax::AstNodeId,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -23,9 +23,18 @@ pub struct CollectedComposition {
     pub hosts: HashMap<String, CompositionHost>,
     pub host_registries: HashMap<String, Vec<Registration>>,
     pub host_scopes: HashMap<String, Vec<CompositionScope>>,
+    pub host_hooks: HashMap<String, Vec<CollectedHook>>,
     pub launches: Vec<LaunchSite>,
     pub with_sites: Vec<WithSite>,
     pub type_inject_fields: HashMap<String, Vec<TypeInjectField>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CollectedHook {
+    pub scope_id: ScopeId,
+    pub kind: ScopeHookKind,
+    pub source_node_id: crate::syntax::AstNodeId,
+    pub span: crate::syntax::SpanInfo,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -66,6 +75,7 @@ pub fn collect(program: &Spanned<Program>) -> CollectedComposition {
                         qualifier: field.node.inject_qualifier,
                         is_plural: type_is_plural(&field.node.ty),
                         span: field.span,
+                        field_node_id: field.id,
                     })
                     .collect::<Vec<_>>();
                 if !injects.is_empty() {
@@ -186,6 +196,7 @@ fn collect_host(
 
     let mut host_regs = Vec::new();
     let mut host_scopes = Vec::new();
+    let mut host_hooks = Vec::new();
     for item in &host.node.body {
         match &item.node {
             HostBodyItem::Registry(registry) => {
@@ -197,14 +208,18 @@ fn collect_host(
                     ScopeId::GLOBAL,
                     &mut host_scopes,
                     &mut host_regs,
+                    &mut host_hooks,
                     next_registration_id,
                     next_scope_id,
                 );
             }
             HostBodyItem::Hook(hook) => {
-                if hook.node.kind == ScopeHookKind::Startup {
-                    let _ = hook;
-                }
+                host_hooks.push(CollectedHook {
+                    scope_id: ScopeId::GLOBAL,
+                    kind: hook.node.kind,
+                    source_node_id: hook.id,
+                    span: hook.span,
+                });
             }
             HostBodyItem::Registration(entry) => {
                 host_regs.push(registration_from_entry(ScopeId::GLOBAL, entry, next_registration_id));
@@ -213,7 +228,8 @@ fn collect_host(
     }
 
     collected.host_registries.insert(host_name.clone(), host_regs);
-    collected.host_scopes.insert(host_name, host_scopes);
+    collected.host_scopes.insert(host_name.clone(), host_scopes);
+    collected.host_hooks.insert(host_name, host_hooks);
 }
 
 fn collect_scope(
@@ -221,6 +237,7 @@ fn collect_scope(
     parent_scope_id: ScopeId,
     scopes: &mut Vec<CompositionScope>,
     regs: &mut Vec<Registration>,
+    hooks: &mut Vec<CollectedHook>,
     next_registration_id: &mut u32,
     next_scope_id: &mut u32,
 ) {
@@ -242,9 +259,11 @@ fn collect_scope(
                 regs.push(registration_from_entry(scope_id, entry, next_registration_id));
             }
             HostBodyItem::Scope(child_scope) => {
-                collect_scope(child_scope, scope_id, scopes, regs, next_registration_id, next_scope_id);
+                collect_scope(child_scope, scope_id, scopes, regs, hooks, next_registration_id, next_scope_id);
             }
-            HostBodyItem::Hook(_) => {}
+            HostBodyItem::Hook(hook) => {
+                hooks.push(CollectedHook { scope_id, kind: hook.node.kind, source_node_id: hook.id, span: hook.span })
+            }
         }
     }
 }
@@ -272,7 +291,7 @@ fn registration_from_entry(
         (false, Some(RegistrationLifetime::Transient)) => Lifetime::Transient,
         (false, None) => Lifetime::Scoped,
     };
-    Registration { id, scope_id, key, implementation, lifetime, span: entry.span }
+    Registration { id, source_node_id: entry.id, scope_id, key, implementation, lifetime, span: entry.span }
 }
 
 fn registrations_from_block(
@@ -293,6 +312,7 @@ pub fn dependency_requests(
             for field in fields {
                 requests.push(InjectDependency {
                     span: field.span,
+                    field_node_id: field.field_node_id,
                     owner_registration_id: registration.id,
                     requested_type: field.requested_type.clone(),
                     is_plural: field.is_plural,

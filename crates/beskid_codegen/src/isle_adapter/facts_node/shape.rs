@@ -30,7 +30,7 @@ impl SyntaxNodeFacts<'_> {
     }
 
     pub(super) fn node_kind_impl(&self, key: AstNodeKey) -> Option<NodeKind> {
-        if self.aggregate_field_access_in_context(key).is_some() {
+        if self.aggregate_field_access_in_context(key).is_some() || self.composition_injected_access(key).is_some() {
             return Some(NodeKind::FieldExpression);
         }
         if self.query(range_for_fact(self.db, key)).is_some() {
@@ -52,6 +52,11 @@ impl SyntaxNodeFacts<'_> {
     pub(super) fn child_impl(&self, key: AstNodeKey, index: u8) -> Option<AstNodeKey> {
         if index == 0
             && let Some(access) = self.aggregate_field_access_in_context(key)
+        {
+            return Some(access.receiver);
+        }
+        if index == 0
+            && let Some((access, _, _, _)) = self.composition_injected_access(key)
         {
             return Some(access.receiver);
         }
@@ -157,6 +162,9 @@ impl SyntaxNodeFacts<'_> {
                     self.query(node_kind(self.db, *child)) == Some(beskid_queries::IndexedNodeKind::Identifier)
                 })
                 .and_then(|identifier| self.query(local_slot(self.db, identifier)))
+                .map(|slot| LocalSlotId { owner_node: slot.owner.node.0, index: slot.index }),
+            beskid_queries::IndexedNodeKind::Identifier => self
+                .query(local_slot(self.db, key))
                 .map(|slot| LocalSlotId { owner_node: slot.owner.node.0, index: slot.index }),
             beskid_queries::IndexedNodeKind::ForStatement => self
                 .query(for_iterator_fact(self.db, key))

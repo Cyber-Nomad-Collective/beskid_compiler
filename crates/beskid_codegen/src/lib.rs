@@ -16,6 +16,7 @@ pub mod backend;
 pub mod closure_static;
 pub mod codegen_input;
 pub mod cranelift_host;
+pub mod event_handler_static;
 pub mod isle_adapter;
 mod isle_trace;
 pub mod module_emission;
@@ -30,16 +31,22 @@ pub use array_static::{
     ABI_V5_ARRAY_ALLOCATE_ROOTED, ABI_V5_ARRAY_CONSTRUCTION_FINISH, ArrayStaticPlan, emit_array_static_data,
 };
 pub use artifact::{
-    CodegenArtifact, CodegenContext, ExportEntry, ExternImport, LoweredFunction, TypeDescriptorData, internal_link_symbol,
-    object_link_symbol,
+    CodegenArtifact, CodegenContext, ExportEntry, ExternImport, LoweredFunction, TypeDescriptorData,
+    internal_link_symbol, object_link_symbol,
 };
-pub use artifact_validation::{MissingSymbol, referenced_extern_imports, referenced_trusted_extern_imports, validate_artifact};
+pub use artifact_validation::{
+    MissingSymbol, referenced_extern_imports, referenced_trusted_extern_imports, validate_artifact,
+};
 pub use closure_static::{
     ABI_V5_CLOSURE_CAPTURE_STORE, ABI_V5_CLOSURE_ENVIRONMENT_ALLOCATE, ClosureCaptureStaticField,
     ClosureLoweringAuthority, ClosureStaticDataHandles, ClosureStaticPlan, RuntimeRootContext,
     emit_closure_static_data,
 };
 pub use codegen_input::{CodegenInput, CodegenInputError, SchedulerCompilerOperation};
+pub use event_handler_static::{
+    EVENT_HANDLER_ALLOCATION_REQUEST_SYMBOL, EVENT_HANDLER_CODE_OFFSET, EVENT_HANDLER_DESCRIPTOR_SYMBOL,
+    EVENT_HANDLER_ENVIRONMENT_OFFSET, EVENT_HANDLER_POINTER_MAP_SYMBOL, emit_event_handler_static_data,
+};
 pub use isle_adapter::{
     ItemModuleImporter, SyntaxNodeFacts, emit_isle_closure_lambda_entry, emit_isle_expression,
     emit_isle_expression_with_call_importer, emit_isle_item, emit_isle_item_with_call_importer,

@@ -6,6 +6,7 @@ use beskid_abi::generated::abi_v5_contract::GeneratedCoreArgsEntryAdapter;
 use cargo_cross::config::{Arch, Os, get_target_config};
 
 use crate::error::{AotError, AotResult};
+use crate::windows_toolchain::configure_windows_native_command;
 
 fn tool_unavailable(tool: impl AsRef<std::ffi::OsStr>, error: std::io::Error) -> AotError {
     let tool = tool.as_ref().to_string_lossy().into_owned();
@@ -13,7 +14,7 @@ fn tool_unavailable(tool: impl AsRef<std::ffi::OsStr>, error: std::io::Error) ->
     if tool == "cl" {
         message.push_str(
             "; install the Visual Studio Build Tools `Desktop development with C++` workload (MSVC x64 and a \
-             Windows SDK) and run from an x64 Native Tools or Developer command prompt",
+             Windows SDK); Beskid also requires a complete VS 2022 installation discoverable by vswhere.exe",
         );
     }
     AotError::NativeToolUnavailable { tool, message }
@@ -86,6 +87,9 @@ pub(super) fn compile_context_assembly(
             message: "no canonical context assembly invocation for target".to_owned(),
         });
     }
+    if target.triple.as_str().contains("windows") {
+        configure_windows_native_command(&mut command)?;
+    }
     let output = command.output().map_err(|error| tool_unavailable(command.get_program(), error))?;
     if !output.status.success() {
         return Err(AotError::LinkFailed {
@@ -117,6 +121,9 @@ pub(super) fn compile_platform_objects(
     } else {
         assembly.arg(&source).arg("-o").arg(&object);
     }
+    if target.triple.as_str().contains("windows") {
+        configure_windows_native_command(&mut assembly)?;
+    }
     let output = assembly.output().map_err(|error| tool_unavailable(plan.assembly_program, error))?;
     if !output.status.success() {
         return Err(AotError::LinkFailed {
@@ -131,13 +138,12 @@ pub(super) fn compile_platform_objects(
             detail: String::from_utf8_lossy(&output.stderr).into_owned(),
         });
     }
-    let output = Command::new(plan.tls_program)
-        .args(&plan.tls_args)
-        .arg(&tls_source)
-        .arg("-o")
-        .arg(&tls_object)
-        .output()
-        .map_err(|error| tool_unavailable(plan.tls_program, error))?;
+    let mut tls_command = Command::new(plan.tls_program);
+    tls_command.args(&plan.tls_args).arg(&tls_source).arg("-o").arg(&tls_object);
+    if target.triple.as_str().contains("windows") {
+        configure_windows_native_command(&mut tls_command)?;
+    }
+    let output = tls_command.output().map_err(|error| tool_unavailable(plan.tls_program, error))?;
     if !output.status.success() {
         return Err(AotError::LinkFailed {
             status: output.status.code().unwrap_or(-1),
@@ -151,13 +157,12 @@ pub(super) fn compile_platform_objects(
             detail: String::from_utf8_lossy(&output.stderr).into_owned(),
         });
     }
-    let output = Command::new(plan.tls_program)
-        .args(&plan.tls_args)
-        .arg(&adapter_source)
-        .arg("-o")
-        .arg(&adapter_object)
-        .output()
-        .map_err(|error| tool_unavailable(plan.tls_program, error))?;
+    let mut adapter_command = Command::new(plan.tls_program);
+    adapter_command.args(&plan.tls_args).arg(&adapter_source).arg("-o").arg(&adapter_object);
+    if target.triple.as_str().contains("windows") {
+        configure_windows_native_command(&mut adapter_command)?;
+    }
+    let output = adapter_command.output().map_err(|error| tool_unavailable(plan.tls_program, error))?;
     if !output.status.success() {
         return Err(AotError::LinkFailed {
             status: output.status.code().unwrap_or(-1),
@@ -190,6 +195,9 @@ pub(super) fn compile_executable_bootstrap(
     }
     let (mut command, object) =
         executable_bootstrap_command(target, core_args, &assembly_root, output_dir, name, program_returns_void)?;
+    if target.contains("windows") {
+        configure_windows_native_command(&mut command)?;
+    }
     let output = command.output().map_err(|error| tool_unavailable(command.get_program(), error))?;
     if !output.status.success() {
         return Err(AotError::LinkFailed {
@@ -238,11 +246,29 @@ fn executable_bootstrap_command(
         }
     }
     if windows {
-        command.arg(format!("/Fo{}", object.display())).arg(&source);
+        command.arg(format!("/Fo{}", msvc_compatible_path(&object))).arg(msvc_compatible_path(&source));
     } else {
         command.arg(&source).arg("-o").arg(&object);
     }
     Ok((command, object))
+}
+
+/// MSVC `cl.exe` does not accept Windows verbatim (`\\?\`) paths on its
+/// command line, even though Rust's canonicalized project paths use them.
+/// Preserve the original PathBuf for filesystem operations and normalize only
+/// the argument passed to this native tool.
+fn msvc_compatible_path(path: &std::path::Path) -> String {
+    let raw = path.to_string_lossy();
+    if let Some(rest) = raw.strip_prefix(r"\\?\") {
+        let bytes = rest.as_bytes();
+        if bytes.len() >= 3 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':' && bytes[2] == b'\\' {
+            return rest.to_owned();
+        }
+        if let Some(unc) = rest.strip_prefix(r"UNC\") {
+            return format!(r"\\{unc}");
+        }
+    }
+    raw.into_owned()
 }
 
 /// Resolve the bootstrap source from the generated Core.Args provenance when it is active.
@@ -361,6 +387,22 @@ mod platform_object_tests {
         let args = command.get_args().collect::<Vec<_>>();
         assert!(args.iter().any(|arg| *arg == "/MD"), "bootstrap must select dynamic CRT defaults: {command:?}");
         assert!(!args.iter().any(|arg| *arg == "/MT" || *arg == "/MDd"));
+    }
+
+    #[test]
+    fn windows_executable_bootstrap_does_not_pass_verbatim_drive_paths_to_msvc() {
+        let (command, _) = executable_bootstrap_command(
+            "x86_64-pc-windows-msvc",
+            None,
+            Path::new(r"\\?\C:\project\obj\beskid-bootstrap\assembly"),
+            Path::new(r"\\?\C:\project\obj"),
+            "app",
+            false,
+        )
+        .expect("Windows bootstrap command");
+        let args = command.get_args().map(|arg| arg.to_string_lossy().into_owned()).collect::<Vec<_>>();
+        assert!(args.iter().any(|arg| arg.contains(r"C:\project\obj\beskid-bootstrap\assembly")));
+        assert!(!args.iter().any(|arg| arg.contains(r"\\?\")), "MSVC cannot open verbatim paths: {command:?}");
     }
 
     #[test]

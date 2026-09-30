@@ -120,7 +120,8 @@ impl<'a> TypeSurfaceBuilder<'a> {
         if segments.len() == 1 {
             let name = &segments[0];
             return self.item_id_for_name(name, crate::resolve::ItemKind::Enum)
-                .or_else(|| self.item_id_for_name(name, crate::resolve::ItemKind::Type));
+                .or_else(|| self.item_id_for_name(name, crate::resolve::ItemKind::Type))
+                .or_else(|| self.item_id_for_name(name, crate::resolve::ItemKind::Contract));
         }
         None
     }

@@ -8,14 +8,21 @@ mod runtime_fixture;
 mod unit_builder;
 mod unit_cache;
 
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+};
+
 pub use discovery::{module_path_exists_on_disk, module_path_to_relative_path, resolve_module_file};
 pub(crate) use loader::assemble_program;
-pub use loader::assemble_program_with_materializer;
-pub use loader::{AssemblyError, UnitMaterializer, assembly_options_for_plan, assembly_options_for_prepare};
+pub use loader::{
+    AssemblyError, UnitMaterializer, assemble_program_with_materializer, assembly_options_for_plan,
+    assembly_options_for_prepare,
+};
 pub use module_index::{AssemblyModule, ModuleGraph, ModuleIndex, infer_logical_module_path};
 pub use roots::{
     EffectiveCompilationRoots, RootEntry, effective_roots_for_plan, effective_roots_from_lockfile,
-    effective_roots_from_plan_and_workspace, module_roots_from_effective,
+    effective_roots_from_lockfile_checked, effective_roots_from_plan_and_workspace, module_roots_from_effective,
 };
 pub use unit_builder::UnitBuilder;
 pub use unit_cache::{
@@ -23,12 +30,11 @@ pub use unit_cache::{
     unit_fingerprint,
 };
 
-use std::path::{Path, PathBuf};
-use std::sync::Arc;
-
-use crate::projects::AssemblyDiscovery;
-use crate::syntax::{Program, Spanned, SyntaxGenerationId};
-use crate::syntax_query::SyntaxIndex;
+use crate::{
+    projects::AssemblyDiscovery,
+    syntax::{Program, Spanned, SyntaxGenerationId},
+    syntax_query::SyntaxIndex,
+};
 
 /// One parsed and macro-expanded compilation unit.
 #[derive(Debug, Clone)]

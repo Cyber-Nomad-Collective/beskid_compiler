@@ -500,6 +500,92 @@ unit Main() {
 }
 
 #[test]
+fn ambiguous_embedded_contract_name_does_not_invent_an_inclusion_edge() {
+    let root = PathBuf::from("/tmp/surface-ambiguous-embedding");
+    let left_path = root.join("Left.bd");
+    let right_path = root.join("Right.bd");
+    let facade_path = root.join("Facade.bd");
+    let left = parse_program("pub contract Reader { i64 Read(); }").expect("left contract");
+    let right = parse_program("pub contract Reader { i64 Read(); }").expect("right contract");
+    let facade = parse_program("pub contract Advanced { Reader; }").expect("embedding contract");
+    let empty = parse_program("").expect("empty entry");
+
+    let mut resolver = Resolver::new();
+    resolver.collect_program_in_module(&left, &["Left".to_owned()], Some(&left_path));
+    resolver.collect_program_in_module(&right, &["Right".to_owned()], Some(&right_path));
+    resolver.collect_program_in_module(&facade, &["Facade".to_owned()], Some(&facade_path));
+    let resolution = resolver.resolve_collected_program_for_api_documentation(&empty, None);
+    let surface = build_unit_type_surface(&facade, &resolution, &facade_path);
+    let advanced = resolution.items.iter().find(|item| item.name == "Advanced" && item.kind == ItemKind::Contract)
+        .expect("Advanced contract");
+    assert_eq!(surface.contract_embeddings.get(&advanced.id), Some(&Vec::new()));
+}
+
+#[test]
+fn embedded_contract_edge_requires_a_local_or_imported_contract() {
+    let root = PathBuf::from("/tmp/surface-imported-embedding");
+    let reader_path = root.join("Api.bd");
+    let facade_path = root.join("Facade.bd");
+    let reader = parse_program("pub contract Reader { i64 Read(); }").expect("reader contract");
+    let facade = parse_program("use Api; pub contract Advanced { Reader; }").expect("imported embedding");
+    let empty = parse_program("").expect("empty entry");
+    let mut resolver = Resolver::new();
+    resolver.collect_program_in_module(&reader, &["Api".to_owned()], Some(&reader_path));
+    resolver.collect_program_in_module(&facade, &["Facade".to_owned()], Some(&facade_path));
+    let resolution = resolver.resolve_collected_program_for_api_documentation(&empty, None);
+    let reader_id = resolution.items.iter().find(|item| item.name == "Reader" && item.kind == ItemKind::Contract)
+        .expect("Reader contract").id;
+    let advanced_id = resolution.items.iter().find(|item| item.name == "Advanced" && item.kind == ItemKind::Contract)
+        .expect("Advanced contract").id;
+    let surface = build_unit_type_surface(&facade, &resolution, &facade_path);
+    assert_eq!(surface.contract_embeddings.get(&advanced_id), Some(&vec![reader_id]));
+
+    let unimported = parse_program("pub contract Advanced { Reader; }").expect("unimported embedding");
+    let mut unimported_resolver = Resolver::new();
+    unimported_resolver.collect_program_in_module(&reader, &["Api".to_owned()], Some(&reader_path));
+    unimported_resolver.collect_program_in_module(&unimported, &["Facade".to_owned()], Some(&facade_path));
+    let unimported_resolution = unimported_resolver.resolve_collected_program_for_api_documentation(&empty, None);
+    let unimported_advanced = unimported_resolution.items.iter()
+        .find(|item| item.name == "Advanced" && item.kind == ItemKind::Contract)
+        .expect("unimported Advanced contract").id;
+    let surface = build_unit_type_surface(&unimported, &unimported_resolution, &facade_path);
+    assert_eq!(surface.contract_embeddings.get(&unimported_advanced), Some(&Vec::new()));
+}
+
+#[test]
+fn where_bound_target_requires_unambiguous_import_provenance() {
+    let root = PathBuf::from("/tmp/surface-bound-target-provenance");
+    let left_path = root.join("Left.bd");
+    let right_path = root.join("Right.bd");
+    let facade_path = root.join("Facade.bd");
+    let left = parse_program("pub contract Reader { i64 Read(); }").expect("left contract");
+    let right = parse_program("pub contract Reader { i64 Read(); }").expect("right contract");
+    let empty = parse_program("").expect("empty entry");
+
+    for (source, expected_import) in [
+        ("i64 Consume<T>(T value) where T: Reader { return 0_i64; }", None),
+        ("use Left; i64 Consume<T>(T value) where T: Reader { return 0_i64; }", Some("Left")),
+    ] {
+        let facade = parse_program(source).expect("bound declaration");
+        let mut resolver = Resolver::new();
+        resolver.collect_program_in_module(&left, &["Left".to_owned()], Some(&left_path));
+        resolver.collect_program_in_module(&right, &["Right".to_owned()], Some(&right_path));
+        resolver.collect_program_in_module(&facade, &["Facade".to_owned()], Some(&facade_path));
+        let resolution = resolver.resolve_collected_program_for_api_documentation(&empty, None);
+        let function = resolution.items.iter().find(|item| item.name == "Consume" && item.kind == ItemKind::Function)
+            .expect("Consume function");
+        let left_reader = resolution.items.iter().find(|item| {
+            item.name == "Reader" && item.kind == ItemKind::Contract
+                && item.source_path.as_ref() == Some(&left_path)
+        }).expect("left Reader").id;
+        let surface = build_unit_type_surface(&facade, &resolution, &facade_path);
+        let bounds = surface.function_bounds.get(&function.id).expect("retained bound");
+        assert_eq!(bounds.len(), 1);
+        assert_eq!(bounds[0].contract, expected_import.map(|_| left_reader));
+    }
+}
+
+#[test]
 fn dependency_surface_keeps_import_aliases_lexically_scoped() {
     let root = PathBuf::from("/tmp/dependency-surface-lexical-import-alias");
     let outer_cursor_path = root.join("Outer/Cursor.bd");

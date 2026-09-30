@@ -1,12 +1,10 @@
-host AppHost() : ConsoleHost {
+host AppHost() {
     registry {
         single Logger;
     }
 }
 
-type Logger {
-    i32 value
-}
+type Logger {}
 
 i32 Main() {
     launch AppHost();

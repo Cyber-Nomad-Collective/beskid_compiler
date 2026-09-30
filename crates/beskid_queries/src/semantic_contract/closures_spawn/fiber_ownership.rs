@@ -119,8 +119,7 @@ fn fiber_type_declaration(db: &dyn Db, key: AstNodeKey, ty: &beskid_analysis::sy
         return None;
     };
     let actual = resolve_type_declaration(db, key, &path.node)?;
-    let fiber = layouts::unique_assembled_type_in_module(db, key, &["Concurrency".into(), "Fiber".into()], "Fiber", 1)
-        .or_else(|| unique_type_in_unit(db, key.unit, key.generation, "Fiber", 1))?;
+    let fiber = fiber_declaration_in_scope(db, key)?;
     (actual == fiber).then_some(actual)
 }
 
@@ -157,9 +156,7 @@ fn fiber_owner_seed(
         else {
             return None;
         };
-        let fiber =
-            layouts::unique_assembled_type_in_module(db, key, &["Concurrency".into(), "Fiber".into()], "Fiber", 1)
-                .or_else(|| unique_type_in_unit(db, key.unit, key.generation, "Fiber", 1))?;
+        let fiber = fiber_declaration_in_scope(db, key)?;
         stable_declaration_identity(db, fiber)? == qualified_name && arguments.len() == 1
     } else {
         false

@@ -1,7 +1,10 @@
 use std::collections::{HashMap, HashSet};
 
 use beskid_isle::{AstNodeKey, DirectCallee, StringInterner};
-use beskid_queries::{CallLowering, call_lowering, child_nodes, extern_contract_import_for_declaration};
+use beskid_queries::{
+    CallLowering, EventOperationKind, call_lowering, child_nodes, event_operation,
+    extern_contract_import_for_declaration,
+};
 use cranelift_codegen::ir::{ExtFuncData, ExternalName, FuncRef, GlobalValueData, InstBuilder, Signature, Type, Value};
 use cranelift_frontend::FunctionBuilder;
 
@@ -122,6 +125,19 @@ pub(super) fn extern_contract_imports(
 /// Corelib syscall capability because they are fundamental operations, not facade services.
 const ALWAYS_AVAILABLE_STRING_SERVICES: &[&str] = &["str_new", "str_from_i64", "str_eq", "str_concat"];
 
+/// Compiler-planned composition calls are not source-callable Corelib services. Their
+/// authority comes from the attached, generation-validated composition graph, and the
+/// exact target binding must still be present in the canonical ABI-v5 manifest.
+const COMPOSITION_SERVICES: &[&str] = &[
+    "composition_container_create",
+    "composition_container_drop",
+    "composition_launch",
+    "composition_scope_enter",
+    "composition_scope_leave",
+    "composition_shutdown",
+    "composition_slot_store",
+];
+
 /// ABI symbols admitted by either the distinct Corelib syscall capability or a generated
 /// manifest-backed builtin fact. Both use the same exact-symbol import table; neither path may
 /// guess a native symbol from source spelling.
@@ -135,12 +151,50 @@ pub(super) fn corelib_service_symbols(
 ) -> Result<HashMap<DirectCallee, String>, String> {
     let mut manifest_builtins = HashSet::new();
     let mut corelib_services = HashSet::new();
+    let mut event_services = HashSet::new();
     for item in items {
         collect_manifest_service_callees(input.database(), item.key, &mut manifest_builtins, &mut corelib_services);
+        collect_event_service_callees(input.database(), item.key, &mut event_services);
     }
     let mut symbols = HashMap::new();
     for symbol in ALWAYS_AVAILABLE_STRING_SERVICES {
         symbols.insert(DirectCallee::corelib_service(symbol), (*symbol).to_owned());
+    }
+    if input.composition_authority().is_some() {
+        if input.abi_manifest() != &beskid_abi::abi_v5::AbiManifestV5::canonical_runtime(input.target().clone()) {
+            return Err("composition requires the exact canonical ABI-v5 manifest".to_owned());
+        }
+        for symbol in COMPOSITION_SERVICES {
+            let bindings = beskid_abi::generated::abi_v5_contract::ABI_V5_CORELIB_SERVICE_BINDINGS
+                .iter()
+                .filter(|binding| binding.adapter == *symbol && binding.target == input.target().triple.as_str())
+                .collect::<Vec<_>>();
+            if bindings.len() != 1 || bindings[0].implementation != *symbol {
+                return Err(format!("composition service `{symbol}` has no unique exact target binding"));
+            }
+            symbols.insert(DirectCallee::corelib_service(symbol), (*symbol).to_owned());
+        }
+    }
+    // Event operations are compiler-owned source forms. Their only lowering path is the
+    // generated event rule, and CodegenInput has already validated this target's canonical
+    // ABI-v5 manifest. Admit only the exact canonical event service shapes here; ordinary
+    // source calls still require source-scoped Corelib service capability below.
+    use beskid_abi::runtime_source::CorelibServiceAbiType::{Pointer, Usize};
+    for (symbol, parameters) in [
+        ("event_subscribe", &[Pointer, Pointer, Usize][..]),
+        ("event_unsubscribe_first", &[Pointer, Pointer][..]),
+        ("event_len", &[Pointer][..]),
+        ("event_get_handler", &[Pointer, beskid_abi::runtime_source::CorelibServiceAbiType::U32][..]),
+    ]
+    .into_iter()
+    .filter(|(symbol, _)| event_services.contains(symbol))
+    {
+        let abi = beskid_abi::runtime_source::canonical_corelib_service_abi_for_adapter(symbol)
+            .ok_or_else(|| format!("canonical event service `{symbol}` is unavailable in ABI-v5"))?;
+        if abi.parameters != parameters || abi.result != if symbol == "event_get_handler" { Pointer } else { Usize } {
+            return Err(format!("canonical event service `{symbol}` has an unexpected ABI-v5 signature"));
+        }
+        symbols.insert(DirectCallee::corelib_service(symbol), symbol.to_owned());
     }
     for symbol in manifest_builtins {
         if !ALWAYS_AVAILABLE_STRING_SERVICES.contains(&symbol) {
@@ -162,6 +216,31 @@ pub(super) fn corelib_service_symbols(
         }
     }
     Ok(symbols)
+}
+
+fn collect_event_service_callees(db: &dyn beskid_queries::Db, key: AstNodeKey, services: &mut HashSet<&'static str>) {
+    if let Ok(Some(fact)) = event_operation(db, key)
+        && fact.capacity > 0
+        && fact.delegate_signature.is_some()
+    {
+        match fact.operation {
+            EventOperationKind::Subscribe => {
+                services.insert("event_subscribe");
+            }
+            EventOperationKind::UnsubscribeFirst => {
+                services.insert("event_unsubscribe_first");
+            }
+            EventOperationKind::Raise => {
+                services.insert("event_len");
+                services.insert("event_get_handler");
+            }
+        }
+    }
+    if let Ok(Some(children)) = child_nodes(db, key) {
+        for child in children.iter().copied() {
+            collect_event_service_callees(db, child, services);
+        }
+    }
 }
 
 fn collect_manifest_service_callees(

@@ -228,6 +228,7 @@ macro_rules! generated_control_flow_methods {
                 let value = self.adapt_scalar_boundary(value_key, value, expected)?;
                 self.return_with_cleanup(value)?;
             } else {
+                self.emit_composition_cleanup_from(0)?;
                 self.release_managed_local_roots()?;
                 self.builder.ins().return_(&[]);
             }
@@ -240,9 +241,15 @@ macro_rules! generated_control_flow_methods {
                 return None;
             }
             let initializer = self.facts.let_initializer(key)?;
-            if self.facts.node_kind(initializer) == Some(NodeKind::LambdaExpression)
-                && self.facts.lambda_entry(initializer)?.closure_environment.is_none()
-            {
+            if self.facts.node_kind(initializer) == Some(NodeKind::LambdaExpression) {
+                if let Some(plan) = self.facts.event_handler_local(key) {
+                    self.emit_event_handler_local(key, plan)?;
+                    return Some(());
+                }
+                // Lambda locals are syntax-level bindings. Calls through them are resolved to
+                // their source lambda and lowered at the call site, where captured environments
+                // can be rooted for the duration of the call; closures are not scalar locals.
+                self.facts.lambda_entry(initializer)?;
                 return Some(());
             }
             let value = self.lower_nested_expression(initializer)?;

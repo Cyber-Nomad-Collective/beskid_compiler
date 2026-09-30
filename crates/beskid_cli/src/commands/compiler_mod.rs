@@ -84,7 +84,7 @@ fn rebuild(args: ModRebuildArgs) -> Result<()> {
     let prepared = observe_phase_result(pipeline, WORKSPACE_MATERIALIZE, || {
         prepare_project_workspace_with_options(
             &resolved.plan,
-            WorkspacePrepareOptions { frozen: args.lockfile.frozen, locked: args.lockfile.locked },
+            WorkspacePrepareOptions { frozen: args.lockfile.frozen, locked: args.lockfile.locked, refresh_lock: false },
             pipeline,
         )
         .map_err(anyhow::Error::from)

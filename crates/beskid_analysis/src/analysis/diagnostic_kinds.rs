@@ -117,6 +117,10 @@ pub enum SemanticIssueKind {
         contract_name: String,
         assoc_name: String,
     },
+    GenericBoundNotSatisfied {
+        type_name: String,
+        contract_name: String,
+    },
 
     ImmutableAssignment {
         name: String,
@@ -211,6 +215,9 @@ pub enum SemanticIssueKind {
     TypeInvalidMemberTarget,
     TypeUnknownEnumType,
     TypeUnknownStructField {
+        name: String,
+    },
+    TypeInaccessibleStructField {
         name: String,
     },
     TypeUnknownEnumVariant {

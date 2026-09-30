@@ -79,7 +79,11 @@ fn call_arity_mismatch_tracked(
     Ok(None)
 }
 
-fn collect_call_sites(index: &SyntaxIndex, id: beskid_analysis::syntax::AstNodeId, calls: &mut Vec<beskid_analysis::syntax::AstNodeId>) {
+fn collect_call_sites(
+    index: &SyntaxIndex,
+    id: beskid_analysis::syntax::AstNodeId,
+    calls: &mut Vec<beskid_analysis::syntax::AstNodeId>,
+) {
     if index.kind(id) == Some(NodeKind::CallExpression) {
         calls.push(id);
     }
@@ -173,7 +177,8 @@ fn immutable_assignment_target(
         NodeKind::ForStatement => true,
         _ => false,
     };
-    immutable.then(|| ImmutableLocalAssignment { assignment: AstNodeKey { node: assignment, ..key }, name: Arc::from(name) })
+    immutable
+        .then(|| ImmutableLocalAssignment { assignment: AstNodeKey { node: assignment, ..key }, name: Arc::from(name) })
 }
 
 fn collect_nodes_of_kind(
@@ -220,7 +225,9 @@ pub fn check_items(db: &dyn Db, items: &[AstNodeKey]) -> Result<(), Vec<Semantic
         }
         if let Ok(Some(finding)) = unresolved_call_target(db, item) {
             let kind = match finding.kind {
-                UnresolvedCallKind::UnknownValue { name } => SemanticIssueKind::ResolveUnknownValue { name: name.to_string() },
+                UnresolvedCallKind::UnknownValue { name } => {
+                    SemanticIssueKind::ResolveUnknownValue { name: name.to_string() }
+                }
                 UnresolvedCallKind::UnknownModulePath { path } => {
                     SemanticIssueKind::ResolveUnknownModulePath { path: path.to_string() }
                 }
@@ -232,6 +239,9 @@ pub fn check_items(db: &dyn Db, items: &[AstNodeKey]) -> Result<(), Vec<Semantic
             let kind = match finding.kind {
                 MemberReferenceKind::UnknownStructField { name } => {
                     SemanticIssueKind::TypeUnknownStructField { name: name.to_string() }
+                }
+                MemberReferenceKind::InaccessibleStructField { name } => {
+                    SemanticIssueKind::TypeInaccessibleStructField { name: name.to_string() }
                 }
                 MemberReferenceKind::MissingStructField { name } => {
                     SemanticIssueKind::TypeMissingStructField { name: name.to_string() }
@@ -332,11 +342,15 @@ mod tests {
         let directory = tempfile::tempdir().expect("project").keep();
         let source_path = directory.join("Main.bd");
         std::fs::write(&source_path, source).expect("source");
-        let program = parse_program_with_source_name(source_path.to_str().expect("path"), source).expect("parse source");
+        let program =
+            parse_program_with_source_name(source_path.to_str().expect("path"), source).expect("parse source");
         let entry = SourceUnitId::new(&db, source_path.clone());
         let project = ProjectSession::new(&db, directory.clone(), source_path.clone(), "App".into(), "lock".into());
         let assembly = Arc::new(ProgramAssembly::new(
-            EffectiveCompilationRoots { host: RootEntry { dependency_name: None, source_root: directory }, dependencies: Vec::new() },
+            EffectiveCompilationRoots {
+                host: RootEntry { dependency_name: None, source_root: directory },
+                dependencies: Vec::new(),
+            },
             Arc::new(vec![SourceUnit {
                 logical_name: "Main".into(),
                 origin_path: source_path.clone(),
@@ -444,7 +458,10 @@ mod tests {
     #[test]
     fn unknown_members_and_arities_are_reported_against_the_resolved_declaration() {
         let cases = [
-            ("i64 Main() { Pair p = Pair { b: 1 }; return 0; }", MemberReferenceKind::UnknownStructField { name: "b".into() }),
+            (
+                "i64 Main() { Pair p = Pair { b: 1 }; return 0; }",
+                MemberReferenceKind::UnknownStructField { name: "b".into() },
+            ),
             ("i64 Main(Pair p) { return p.b; }", MemberReferenceKind::UnknownStructField { name: "b".into() }),
             (
                 "i64 Main() { Shape s = Shape::Square; return 0; }",

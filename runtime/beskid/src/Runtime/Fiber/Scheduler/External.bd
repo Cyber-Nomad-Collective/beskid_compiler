@@ -144,6 +144,20 @@ pub word ExternalWaitRegister(word fiberHandle, word operation, i64 deadline) {
     return token;
 }
 
+[Export(Abi:"C", Symbol:"beskid_rt_v5_external_wait_set_deadline")]
+pub bool ExternalWaitSetDeadline(word token, i64 deadline) {
+    if deadline < -1 { return false; }
+    pointer record = ExternalWaitRecord(token);
+    if record == NativePointer(0) || raw_word_load(pointer_add(record, 32)) != 0 { return false; }
+    ExternalTimerRemove(token);
+    if deadline == -1 { return true; }
+    if deadline <= clock_monotonic_nanos() {
+        return ExternalTryComplete(token & 0xFFFFFFFF, token >> 32, EXTERNAL_TIMEOUT);
+    }
+    ExternalTimerPush(token, word(deadline));
+    return true;
+}
+
 [Export(Abi:"C", Symbol:"beskid_rt_v5_external_try_complete")]
 pub bool ExternalTryComplete(word waitId, word generation, word source) {
     if waitId == 0 || waitId > EXTERNAL_WAIT_COUNT || generation == 0 || generation > 0xFFFFFFFF || source < EXTERNAL_READY || source > EXTERNAL_TIMEOUT { return false; }
@@ -169,6 +183,11 @@ pub bool ExternalTryComplete(word waitId, word generation, word source) {
 
 [Export(Abi:"C", Symbol:"beskid_rt_v5_external_wait_post")]
 pub bool ExternalWaitPost(word owner, word token, word source) { return owner_post(owner, token, source) != 0; }
+[Export(Abi:"C", Symbol:"beskid_rt_v5_external_wait_post_deadline")]
+pub bool ExternalWaitPostDeadline(word owner, word token, i64 deadline) {
+    if deadline < -1 { return false; }
+    return owner_post_deadline(owner, token, deadline) != 0;
+}
 
 [Export(Abi:"C", Symbol:"beskid_rt_v5_external_pump")]
 pub unit ExternalPump(i64 now) {
@@ -178,7 +197,12 @@ pub unit ExternalPump(i64 now) {
     pointer command = pointer_add(ExternalState(), 32);
     while owner_pop(ExternalOwnerId(), command) != 0 {
         word token = raw_word_load(command);
-        ExternalTryComplete(token & 0xFFFFFFFF, token >> 32, raw_word_load(pointer_add(command, 8)));
+        word source = raw_word_load(pointer_add(command, 8));
+        if source == 5 {
+            ExternalWaitSetDeadline(token, i64(raw_word_load(pointer_add(command, 16))));
+        } else {
+            ExternalTryComplete(token & 0xFFFFFFFF, token >> 32, source);
+        }
     }
     while raw_word_load(pointer_add(ExternalState(), 24)) != 0 {
         pointer timer = ExternalTimerRecord(0);

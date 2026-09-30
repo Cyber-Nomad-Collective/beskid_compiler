@@ -2,9 +2,10 @@ use std::collections::{HashMap, HashSet};
 
 use crate::resolve::collect::use_imported_name;
 use crate::resolve::resolver::path_segments;
-use crate::syntax::{Node, Spanned};
+use crate::syntax::{ContractNode, Node, Spanned};
 use crate::types::TypeInfo;
 
+use super::super::model::FunctionBound;
 use super::state::{ModuleImport, TypeSurfaceBuilder};
 
 impl<'a> TypeSurfaceBuilder<'a> {
@@ -79,6 +80,19 @@ impl<'a> TypeSurfaceBuilder<'a> {
         match &item.node {
             Node::Function(def) => {
                 self.seed_generic_item(item.span, &def.node.generics);
+                if let Some(item_id) = self.item_id_for_span(item.span) {
+                    let bounds = def.node.where_bounds.iter().map(|bound| {
+                        let segments = path_segments(&bound.contract);
+                        let contract_name = segments.join(".");
+                        let contract = if segments.len() == 1 {
+                            self.visible_contract_in_owner_scope(item_id, &segments[0])
+                        } else {
+                            self.item_id_for_type_path(&bound.contract)
+                        }.filter(|item| self.contract_visible_to_owner(item_id, *item));
+                        FunctionBound { parameter: bound.parameter.node.name.clone(), contract_name, contract }
+                    }).collect::<Vec<_>>();
+                    self.surface.function_bounds.insert(item_id, bounds);
+                }
                 self.register_foreign_function(item.span, &def.node);
             }
             Node::TypeDefinition(def) => {
@@ -104,6 +118,13 @@ impl<'a> TypeSurfaceBuilder<'a> {
             }
             Node::ContractDefinition(def) => {
                 self.seed_generic_item(item.span, &def.node.generics);
+                if let Some(item_id) = self.item_id_for_span(item.span) {
+                    let embedded = def.node.items.iter().filter_map(|node| {
+                        let ContractNode::Embedding(embedding) = &node.node else { return None; };
+                        self.visible_contract_in_owner_scope(item_id, &embedding.node.name.node.name)
+                    }).collect::<Vec<_>>();
+                    self.surface.contract_embeddings.insert(item_id, embedded);
+                }
             }
             Node::ImplBlock(def) => {
                 for method in &def.node.methods {

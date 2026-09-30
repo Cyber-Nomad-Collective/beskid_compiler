@@ -63,28 +63,31 @@ fn unresolved_imports_tracked(
     declarations.sort_unstable_by_key(|(node, _)| *node);
     let unresolved = declarations
         .into_iter()
-        .filter(|(_, path)| !import_resolves(db, key.generation, path))
+        .filter(|(_, path)| !import_resolves(db, key, path))
         .map(|(node, path)| UnresolvedImport { site: AstNodeKey { node, ..key }, path: Arc::from(path.join(".")) })
         .collect::<Vec<_>>();
     Ok(Some(unresolved.into()))
 }
 
 /// Whether `path` names an assembled module, or one top-level item of an assembled module.
-fn import_resolves(db: &dyn Db, generation: SyntaxGenerationId, path: &[String]) -> bool {
+fn import_resolves(db: &dyn Db, key: AstNodeKey, path: &[String]) -> bool {
     let (module, parent_units) = {
         let registry = db.syntax_dependency_registry().lock().expect("syntax dependency registry");
         let parent_units = path
             .split_last()
-            .and_then(|(_, parent)| registry.modules.get(&(generation, parent.to_vec())).cloned())
+            .and_then(|(_, parent)| {
+                registry.visible_module_units(key.unit, key.generation, parent).map(|units| units.to_vec())
+            })
             .unwrap_or_default();
-        (registry.modules.contains_key(&(generation, path.to_vec())), parent_units)
+        let module = registry.visible_module_units(key.unit, key.generation, path).is_some();
+        (module, parent_units)
     };
     if module {
         return true;
     }
     let Some(name) = path.last() else { return false };
     parent_units.into_iter().any(|unit| {
-        let root = AstNodeKey { unit, generation, node: beskid_analysis::syntax::AstNodeId(0) };
+        let root = AstNodeKey { unit, generation: key.generation, node: beskid_analysis::syntax::AstNodeId(0) };
         matches!(
             with_registered_syntax(db, root, top_level_item_names_tracked),
             Ok(Some(names)) if names.iter().any(|declared| declared.as_ref() == name)

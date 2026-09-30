@@ -182,7 +182,7 @@ pub fn lower_prepared_syntax_entrypoint(
     isa: &dyn TargetIsa,
 ) -> Result<PreparedSyntaxEntrypoint> {
     let assembly = Arc::new(front.syntax_assembly());
-    lower_syntax_assembly_entrypoint(db, assembly, entrypoint, target, isa)
+    lower_syntax_assembly_entrypoint_with_composition(db, assembly, entrypoint, target, isa, Some(front))
 }
 
 /// Lower one entrypoint from an assembled syntax program through ISLE.
@@ -196,6 +196,17 @@ pub fn lower_syntax_assembly_entrypoint(
     entrypoint: &str,
     target: TargetMetadata,
     isa: &dyn TargetIsa,
+) -> Result<PreparedSyntaxEntrypoint> {
+    lower_syntax_assembly_entrypoint_with_composition(db, assembly, entrypoint, target, isa, None)
+}
+
+fn lower_syntax_assembly_entrypoint_with_composition(
+    db: &mut BeskidDatabase,
+    assembly: Arc<ProgramAssembly>,
+    entrypoint: &str,
+    target: TargetMetadata,
+    isa: &dyn TargetIsa,
+    front: Option<&FrontEndTypedResult>,
 ) -> Result<PreparedSyntaxEntrypoint> {
     let entry_path = assembly.entry_unit().path.clone();
     let generation = assembly.generation;
@@ -221,6 +232,17 @@ pub fn lower_syntax_assembly_entrypoint(
         .collect::<Vec<_>>();
     let input = CodegenInput::new(db, typed, Arc::from(roots), target.clone(), manifest)
         .map_err(|error| anyhow::anyhow!("invalid syntax codegen input: {error}"))?;
+    let input = if let Some(front) = front {
+        input
+            .with_composition_authority(
+                generation,
+                Arc::new(front.binding_plan.clone()),
+                Arc::new(front.composition_snapshot.clone()),
+            )
+            .map_err(|error| anyhow::anyhow!("invalid composition codegen input: {error}"))?
+    } else {
+        input
+    };
     let entry_root =
         AstNodeKey { unit: SourceUnitId::new(db, entry_path), generation, node: beskid_queries::AstNodeId(0) };
     let entry =
@@ -295,7 +317,11 @@ pub fn lower_prepared_syntax_module(
         .collect::<Vec<_>>();
     let input = CodegenInput::new(db, typed, Arc::from(roots), target.clone(), manifest)
         .map_err(|error| anyhow::anyhow!("invalid syntax codegen input: {error}"))?
-        .with_composition_plan(generation, Arc::new(front.binding_plan.clone()))
+        .with_composition_authority(
+            generation,
+            Arc::new(front.binding_plan.clone()),
+            Arc::new(front.composition_snapshot.clone()),
+        )
         .map_err(|error| anyhow::anyhow!("invalid composition codegen input: {error}"))?;
     let items = input
         .roots()

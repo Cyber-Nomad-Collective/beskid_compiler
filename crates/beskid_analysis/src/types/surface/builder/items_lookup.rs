@@ -1,10 +1,57 @@
 use crate::paths;
 use crate::resolve::{ItemId, ItemKind};
+use crate::resolve::symbol::SymbolShape;
 use crate::syntax::SpanInfo;
 
 use super::state::TypeSurfaceBuilder;
 
 impl<'a> TypeSurfaceBuilder<'a> {
+    pub(super) fn visible_contract_in_owner_scope(&self, owner: ItemId, name: &str) -> Option<ItemId> {
+        let mut current = self.declaring_module_id(owner);
+        while let Some(module_id) = current {
+            let module = self.resolution.module_graph.module(module_id)?;
+            if let Some(&item) = module.scope.get(name) {
+                return self.resolution.items.get(item.0).filter(|info| info.kind == ItemKind::Contract).map(|_| item);
+            }
+            current = module.parent;
+        }
+        None
+    }
+
+    fn declaring_module_id(&self, item: ItemId) -> Option<crate::resolve::ModuleId> {
+        // Imported public items also appear in the importing module's item list. The
+        // declaration symbol, unlike module membership, retains the lexical owner.
+        let symbol = self.resolution.items.get(item.0)?.symbol?;
+        let qualifier = self.resolution.symbols.resolve(symbol)?;
+        let SymbolShape::ModuleItem { module_path, .. } = &qualifier.shape else {
+            return None;
+        };
+        self.resolution.module_graph.module_id(module_path)
+    }
+
+    pub(super) fn contract_visible_to_owner(&self, owner: ItemId, contract: ItemId) -> bool {
+        let Some(info) = self.resolution.items.get(contract.0) else {
+            return false;
+        };
+        if info.kind != ItemKind::Contract {
+            return false;
+        }
+        if info.visibility == crate::syntax::Visibility::Public {
+            return true;
+        }
+        let Some(contract_module) = self.declaring_module_id(contract) else {
+            return false;
+        };
+        let mut current = self.declaring_module_id(owner);
+        while let Some(module_id) = current {
+            if module_id == contract_module {
+                return true;
+            }
+            current = self.resolution.module_graph.module(module_id).and_then(|module| module.parent);
+        }
+        false
+    }
+
     pub(super) fn item_id_for_span(&self, span: SpanInfo) -> Option<ItemId> {
         if let Some(info) = self.resolution.items.iter().find(|info| {
             info.span == span

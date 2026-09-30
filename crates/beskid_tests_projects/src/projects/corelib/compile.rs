@@ -163,9 +163,8 @@ i32 Main() {
 
 #[test]
 fn corelib_mvp_fixture_entry_does_not_emit_module_resolution_false_positives() {
-    with_cwd_at_workspace_root(&compiler_workspace_root(), || {
-        let fixture_main = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../beskid_e2e_tests/fixtures/corelib_mvp/Src/Main.bd");
+    with_project_test_env(&corelib_mvp_fixture(), || {
+        let fixture_main = corelib_mvp_fixture().join("Src/Main.bd");
         let diagnostics = analyze_file_in_project(&fixture_main).expect("analyze corelib_mvp fixture");
 
         assert!(

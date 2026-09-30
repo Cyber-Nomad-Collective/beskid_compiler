@@ -4,6 +4,13 @@ use crate::resolve::ItemId;
 use crate::types::result::FunctionSignature;
 use crate::types::{TypeId, TypeTable};
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FunctionBound {
+    pub parameter: String,
+    pub contract_name: String,
+    pub contract: Option<ItemId>,
+}
+
 /// Exported type metadata for one compilation unit (keyed by [`ItemId`]).
 #[derive(Debug, Default, Clone)]
 pub struct UnitTypeSurface {
@@ -13,6 +20,9 @@ pub struct UnitTypeSurface {
     pub struct_fields_ordered: HashMap<ItemId, Vec<(String, TypeId)>>,
     pub enum_variants_ordered: HashMap<ItemId, Vec<(String, Vec<TypeId>)>>,
     pub generic_items: HashMap<ItemId, Vec<String>>,
+    /// Function generic parameter and resolved contract bounds.
+    pub function_bounds: HashMap<ItemId, Vec<FunctionBound>>,
+    pub contract_embeddings: HashMap<ItemId, Vec<ItemId>>,
     pub struct_event_fields: HashMap<ItemId, HashMap<String, Option<usize>>>,
     pub contract_signatures: HashMap<(ItemId, String), FunctionSignature>,
     pub contract_method_order: HashMap<ItemId, Vec<String>>,
@@ -36,6 +46,8 @@ pub struct MergedTypeEnv {
     pub struct_fields_ordered: HashMap<ItemId, Vec<(String, TypeId)>>,
     pub enum_variants_ordered: HashMap<ItemId, Vec<(String, Vec<TypeId>)>>,
     pub generic_items: HashMap<ItemId, Vec<String>>,
+    pub function_bounds: HashMap<ItemId, Vec<FunctionBound>>,
+    pub contract_embeddings: HashMap<ItemId, Vec<ItemId>>,
     pub struct_event_fields: HashMap<ItemId, HashMap<String, Option<usize>>>,
     pub contract_signatures: HashMap<(ItemId, String), FunctionSignature>,
     pub contract_method_order: HashMap<ItemId, Vec<String>>,
@@ -61,6 +73,8 @@ impl MergedTypeEnv {
             struct_fields_ordered: self.struct_fields_ordered.clone(),
             enum_variants_ordered: self.enum_variants_ordered.clone(),
             generic_items: self.generic_items.clone(),
+            function_bounds: self.function_bounds.clone(),
+            contract_embeddings: self.contract_embeddings.clone(),
             struct_event_fields: self.struct_event_fields.clone(),
             contract_signatures: self.contract_signatures.clone(),
             contract_method_order: self.contract_method_order.clone(),

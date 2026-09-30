@@ -1,8 +1,40 @@
 //! Collection operations, managed references, cleanup plans, and local slots.
 
+use std::sync::Arc;
+
+use cranelift_codegen::ir::{Signature, Type};
+
 use super::*;
 use crate::layout::ManagedStructAllocation;
-use cranelift_codegen::ir::{Signature, Type};
+
+/// Exact query authority consumed by the event emitters. No receiver/field identity is
+/// reconstructed by generated ISLE or by the backend.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EventOperationPlan {
+    pub operation: EventOperation,
+    pub operation_node: AstNodeKey,
+    pub receiver: AstNodeKey,
+    pub receiver_slot: Option<LocalSlotId>,
+    pub declaration: AstNodeKey,
+    pub field: AstNodeKey,
+    pub slot_offset: u32,
+    pub capacity: u32,
+    pub handler: Option<AstNodeKey>,
+    pub handler_lambda: Option<AstNodeKey>,
+    pub arguments: Arc<[AstNodeKey]>,
+    pub delegate_parameters: Arc<[beskid_queries::SemanticTypeId]>,
+    pub delegate_result: beskid_queries::SemanticTypeId,
+}
+
+/// Event-only materialization plan for a lambda-valued local declaration.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EventHandlerLocalPlan {
+    pub lambda: AstNodeKey,
+    pub trampoline: DirectCallee,
+    pub closure_environment: Option<InlineClosureEnvironment>,
+    pub parameters: Arc<[Type]>,
+    pub result: Option<Type>,
+}
 
 /// Scalar facts consumed by leaf ISLE rules.
 ///
@@ -45,6 +77,38 @@ pub struct ScopedCleanupPlan {
     pub enclosing_layout: crate::EnumLayout,
     pub allocation: ManagedStructAllocation,
     pub converted_error_managed: bool,
+}
+
+/// One source-keyed, validated launch site with its compiler-frozen container shape.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CompositionLaunchPlan {
+    pub site: AstNodeKey,
+    pub slot_count: u32,
+    pub registrations: Vec<CompositionRegistrationPlan>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CompositionRegistrationPlan {
+    pub slot: u32,
+    pub allocation_request_symbol: std::sync::Arc<str>,
+    pub injections: Vec<CompositionInjectionPlan>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CompositionInjectionPlan {
+    pub field: AstNodeKey,
+    pub field_offset: u32,
+    pub target_slots: Vec<u32>,
+    pub plural_allocation_request_symbol: Option<std::sync::Arc<str>>,
+}
+
+/// One source-keyed scope bracket with an exact frozen scope ID and body.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CompositionScopePlan {
+    pub site: AstNodeKey,
+    pub scope_id: u32,
+    pub parent_scope_id: u32,
+    pub body: AstNodeKey,
 }
 
 /// Generation-safe local slot and scalar type for one emitted function parameter.

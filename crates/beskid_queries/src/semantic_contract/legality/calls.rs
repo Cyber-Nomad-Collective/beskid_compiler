@@ -159,7 +159,8 @@ fn import_binds_name(db: &dyn Db, key: AstNodeKey, name: &str) -> bool {
 
 fn assembly_declares_module(db: &dyn Db, key: AstNodeKey, module_path: &[String]) -> bool {
     let registry = db.syntax_dependency_registry().lock().expect("syntax dependency registry");
-    (1..=module_path.len()).any(|length| registry.modules.contains_key(&(key.generation, module_path[..length].to_vec())))
+    (1..=module_path.len())
+        .any(|length| registry.visible_module_units(key.unit, key.generation, &module_path[..length]).is_some())
 }
 
 /// Whether the current unit declares a type, enum, contract, or inline module named `name`, at
@@ -173,7 +174,9 @@ fn unit_declares_namespace_name(
         index.node_at(program, metadata.id).is_some_and(|node| {
             node.of::<beskid_analysis::syntax::TypeDefinition>().is_some_and(|item| item.name.node.name == name)
                 || node.of::<beskid_analysis::syntax::EnumDefinition>().is_some_and(|item| item.name.node.name == name)
-                || node.of::<beskid_analysis::syntax::ContractDefinition>().is_some_and(|item| item.name.node.name == name)
+                || node
+                    .of::<beskid_analysis::syntax::ContractDefinition>()
+                    .is_some_and(|item| item.name.node.name == name)
                 || node.of::<beskid_analysis::syntax::InlineModule>().is_some_and(|item| item.name.node.name == name)
         })
     })

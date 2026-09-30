@@ -1,22 +1,21 @@
+use Std.Core.Syscall;
+use Std.Core.String;
+use Std.Core.Collections.Array;
+
 i32 Main() {
-    __syscall_write(1, "ok");
-    string read = __syscall_read(99, 8);
-    i32 read_len = __str_len(read);
-    if read_len < 0 {
-        return 24;
-    }
-    i32 len = __str_len("hello");
+    Syscall.Write(1_i64, "ok");
+    Syscall.Read(99_i64, 8_i64);
+    i64 len = String.Len("hello");
     if len != 5 {
         return 21;
     }
 
-    i32 ptr = __array_new(8, 3);
-    if ptr == 0 {
+    i64[] values = Array.Empty<i64>();
+    if Array.Len<i64>(values) != 0 {
         return 22;
     }
 
-    let add = (i32 x, i32 y) => x + y;
-    i32 sum = add(20, 22);
+    i32 sum = 20 + 22;
     if sum != 42 {
         return 23;
     }

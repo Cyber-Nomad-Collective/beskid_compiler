@@ -1,26 +1,31 @@
 //! Walk workspace roots to index `.bd` / `.bproj` / `.bws` / `.bsol` files and publish disk-backed diagnostics.
 
-use std::collections::HashSet;
-use std::path::{Path, PathBuf};
-use std::str::FromStr;
+use std::{
+    collections::HashSet,
+    path::{Path, PathBuf},
+    str::FromStr,
+    time::{Duration, Instant},
+};
 
-use beskid_analysis::projects::is_workspace_manifest_path;
-use std::time::{Duration, Instant};
-
+use beskid_analysis::projects::{PROJECT_LOCK_FILE_NAME, is_workspace_manifest_path};
 use tokio::sync::{RwLock, Semaphore};
-use tower_lsp_server::Client;
-use tower_lsp_server::ls_types::Uri;
+use tower_lsp_server::{Client, ls_types::Uri};
 use url::Url;
 use walkdir::WalkDir;
 
-use crate::diagnostics::{collect_syntax_diagnostics, lsp_diagnostics_from_syntax};
-use crate::protocol::status::{idle_status, send_beskid_status, workspace_scan_status};
-use crate::session::lifecycle::{
-    build_document, build_initial_workspace_document, rebuild_open_document_syntax_facts, set_disk_snapshot,
+use crate::{
+    diagnostics::{collect_syntax_diagnostics, lsp_diagnostics_from_syntax},
+    protocol::status::{idle_status, send_beskid_status, workspace_scan_status},
+    session::{
+        lifecycle::{
+            build_document, build_initial_workspace_document, publish_diagnostics_for_uri,
+            rebuild_open_document_syntax_facts, set_disk_snapshot,
+        },
+        project_context::invalidate_compilation_cache,
+        startup::signal_initial_scan_complete,
+        store::{Document, State},
+    },
 };
-use crate::session::project_context::invalidate_compilation_cache;
-use crate::session::startup::signal_initial_scan_complete;
-use crate::session::store::{Document, State};
 
 const MAX_CONCURRENT_READS: usize = 24;
 const STATUS_EMIT_INTERVAL: Duration = Duration::from_millis(200);
@@ -40,6 +45,10 @@ fn is_scannable_extension(ext: &str) -> bool {
 
 fn is_manifest_extension(ext: &str) -> bool {
     matches!(ext, "bproj" | "bws")
+}
+
+fn is_lockfile_path(path: &Path) -> bool {
+    path.file_name().and_then(|name| name.to_str()) == Some(PROJECT_LOCK_FILE_NAME)
 }
 
 async fn maybe_emit_scan_progress(
@@ -167,6 +176,18 @@ pub async fn scan_workspace(client: &Client, state: &RwLock<State>, root: &Path,
 
     rebuild_open_document_syntax_facts(state).await;
 
+    let open_uris = {
+        let s = state.read().await;
+        s.docs
+            .keys()
+            .filter(|uri| uri_to_path(uri).is_some_and(|path| path.starts_with(root)))
+            .cloned()
+            .collect::<Vec<_>>()
+    };
+    for uri in open_uris {
+        publish_diagnostics_for_uri(client, state, &uri).await;
+    }
+
     let mut stale: Vec<Uri> = Vec::new();
     {
         let s = state.read().await;
@@ -270,11 +291,17 @@ pub async fn clear_closed_workspace_under_root(client: &Client, state: &RwLock<S
 
 /// Re-read changed paths on disk when buffers are closed; may invalidate compilation cache on manifest edits.
 pub async fn refresh_after_disk_change(client: &Client, state: &RwLock<State>, changed_paths: &[PathBuf]) {
-    if changed_paths.iter().any(|p| p.extension().and_then(|e| e.to_str()).is_some_and(is_manifest_extension)) {
+    let project_authority_changed = changed_paths
+        .iter()
+        .any(|p| p.extension().and_then(|e| e.to_str()).is_some_and(is_manifest_extension) || is_lockfile_path(p));
+    if project_authority_changed {
         invalidate_compilation_cache(state).await;
         rebuild_open_document_syntax_facts(state).await;
     }
     for path in changed_paths {
+        if !path.extension().and_then(|ext| ext.to_str()).is_some_and(is_scannable_extension) {
+            continue;
+        }
         let Some(uri) = uri_from_path(path) else {
             continue;
         };
@@ -293,6 +320,15 @@ pub async fn refresh_after_disk_change(client: &Client, state: &RwLock<State>, c
         let diagnostics = lsp_diagnostics_from_syntax(&doc.text, &doc.syntax_diagnostics);
         set_disk_snapshot(state, uri.clone(), doc).await;
         client.publish_diagnostics(uri, diagnostics, Some(0)).await;
+    }
+    if project_authority_changed {
+        let affected_uris = {
+            let read = state.read().await;
+            read.docs.keys().chain(read.workspace_index.keys()).cloned().collect::<Vec<_>>()
+        };
+        for uri in affected_uris {
+            publish_diagnostics_for_uri(client, state, &uri).await;
+        }
     }
 }
 
@@ -318,7 +354,19 @@ pub async fn hydrate_disk_after_close(client: &Client, state: &RwLock<State>, ur
 
 #[cfg(test)]
 mod tests {
-    use super::is_scannable_extension;
+    use std::{
+        fs,
+        sync::{Arc, Mutex},
+    };
+
+    use futures_util::StreamExt;
+    use tempfile::TempDir;
+    use tokio::sync::mpsc;
+    use tower_lsp_server::{Client, LspService, jsonrpc::Request, ls_types::PublishDiagnosticsParams};
+    use tower_service::Service;
+
+    use super::*;
+    use crate::{server::backend::Backend, session::lifecycle::set_document};
 
     #[test]
     fn workspace_scan_includes_generic_bsol_without_regressing_existing_extensions() {
@@ -326,5 +374,141 @@ mod tests {
             assert!(is_scannable_extension(extension), "{extension} must be scanned");
         }
         assert!(!is_scannable_extension("toml"));
+    }
+
+    async fn initialized_client() -> (Client, mpsc::UnboundedReceiver<PublishDiagnosticsParams>) {
+        let captured = Arc::new(Mutex::new(None));
+        let slot = Arc::clone(&captured);
+        let (mut service, mut socket) = LspService::new(move |client| {
+            *slot.lock().expect("client slot") = Some(client.clone());
+            Backend::new(client)
+        });
+        let client = captured.lock().expect("client slot").take().expect("captured client");
+        let (tx, rx) = mpsc::unbounded_channel();
+        tokio::spawn(async move {
+            while let Some(request) = socket.next().await {
+                if request.method() == "textDocument/publishDiagnostics"
+                    && let Some(params) = request.params()
+                    && let Ok(published) = serde_json::from_value::<PublishDiagnosticsParams>(params.clone())
+                {
+                    let _ = tx.send(published);
+                }
+            }
+        });
+        let init = Request::build("initialize")
+            .params(serde_json::json!({"processId": null, "capabilities": {}}))
+            .id(1)
+            .finish();
+        let response = service.call(init).await.expect("initialize service").expect("initialize response");
+        assert!(response.error().is_none(), "{response:?}");
+        service
+            .call(Request::build("initialized").params(serde_json::json!({})).finish())
+            .await
+            .expect("initialized service");
+        // The client owns the initialized connection after the request has completed.
+        (client, rx)
+    }
+
+    async fn open_lock_fixture() -> (TempDir, RwLock<State>, Uri, PathBuf, String) {
+        let temp = TempDir::new().expect("project");
+        fs::create_dir_all(temp.path().join("Src")).expect("source directory");
+        let manifest = temp.path().join("App.bproj");
+        fs::write(
+            &manifest,
+            r#"App {
+  name = "App"
+  version = "0.1.0"
+}
+
+target "App" {
+  kind = App
+  entry = "Main.bd"
+}
+"#,
+        )
+        .expect("manifest");
+        let source = "i32 Main() { return 0; }\n".to_string();
+        let source_path = temp.path().join("Src/Main.bd");
+        fs::write(&source_path, &source).expect("source");
+        let plan = beskid_analysis::projects::build_compile_plan(&manifest, None).expect("plan");
+        beskid_analysis::projects::prepare_project_workspace(&plan).expect("initial valid v2 lock");
+        let lock = temp.path().join("Project.lock");
+        let uri = path_to_uri(&source_path).expect("source URI");
+        let state = RwLock::new(State::default());
+        state.read().await.mark_initial_scan_complete();
+        set_document(&state, uri.clone(), 1, source.clone()).await;
+        (temp, state, uri, lock, source)
+    }
+
+    async fn next_for_uri(
+        receiver: &mut mpsc::UnboundedReceiver<PublishDiagnosticsParams>,
+        uri: &Uri,
+    ) -> PublishDiagnosticsParams {
+        tokio::time::timeout(Duration::from_secs(2), async {
+            loop {
+                let published = receiver.recv().await.expect("client notification stream");
+                if &published.uri == uri {
+                    return published;
+                }
+            }
+        })
+        .await
+        .expect("open source must receive publishDiagnostics without an edit")
+    }
+
+    #[tokio::test]
+    async fn watched_lock_change_republishes_open_source_diagnostics_both_directions() {
+        let (client, mut notifications) = initialized_client().await;
+        let (_temp, state, uri, lock, _source) = open_lock_fixture().await;
+        let valid = fs::read_to_string(&lock).expect("valid lock");
+
+        fs::write(&lock, "# Project.lock v1\n").expect("replace lock with v1");
+        refresh_after_disk_change(&client, &state, &[lock.clone()]).await;
+        let invalid = next_for_uri(&mut notifications, &uri).await;
+        assert!(invalid.diagnostics.iter().any(|d| d.message.contains("v1") && d.message.contains("beskid lock")));
+
+        fs::write(&lock, valid).expect("restore v2");
+        refresh_after_disk_change(&client, &state, &[lock]).await;
+        let valid = next_for_uri(&mut notifications, &uri).await;
+        assert!(!valid.diagnostics.iter().any(|d| d.message.contains("Project.lock")));
+    }
+
+    #[tokio::test]
+    async fn watched_lock_change_republishes_closed_source_diagnostics_both_directions() {
+        let (client, mut notifications) = initialized_client().await;
+        let (temp, state, uri, lock, _source) = open_lock_fixture().await;
+        state.write().await.docs.remove(&uri);
+        scan_workspace(&client, &state, temp.path(), None).await;
+        let initial = next_for_uri(&mut notifications, &uri).await;
+        assert!(!initial.diagnostics.iter().any(|d| d.message.contains("Project.lock")));
+        assert!(state.read().await.workspace_index.contains_key(&uri));
+        let valid = fs::read_to_string(&lock).expect("valid lock");
+
+        fs::write(&lock, "# Project.lock v1\n").expect("replace lock with v1");
+        refresh_after_disk_change(&client, &state, &[lock.clone()]).await;
+        let invalid = next_for_uri(&mut notifications, &uri).await;
+        assert!(invalid.diagnostics.iter().any(|d| d.message.contains("v1") && d.message.contains("beskid lock")));
+
+        fs::write(&lock, valid).expect("restore v2");
+        refresh_after_disk_change(&client, &state, &[lock]).await;
+        let valid = next_for_uri(&mut notifications, &uri).await;
+        assert!(!valid.diagnostics.iter().any(|d| d.message.contains("Project.lock")));
+    }
+
+    #[tokio::test]
+    async fn full_refresh_republishes_open_source_diagnostics_both_directions() {
+        let (client, mut notifications) = initialized_client().await;
+        let (temp, state, uri, lock, _source) = open_lock_fixture().await;
+        let valid = fs::read_to_string(&lock).expect("valid lock");
+
+        fs::write(&lock, "# Project.lock v1\n").expect("replace lock with v1");
+        scan_workspace(&client, &state, temp.path(), None).await;
+        let invalid = next_for_uri(&mut notifications, &uri).await;
+        assert!(invalid.diagnostics.iter().any(|d| d.message.contains("v1") && d.message.contains("beskid lock")));
+
+        fs::write(&lock, valid).expect("restore v2");
+        scan_workspace(&client, &state, temp.path(), None).await;
+        let valid = next_for_uri(&mut notifications, &uri).await;
+        assert!(!valid.diagnostics.iter().any(|d| d.message.contains("Project.lock")));
     }
 }

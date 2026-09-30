@@ -59,8 +59,9 @@ pub unit NetworkPump() {
 }
 
 [Export(Abi:"C", Symbol:"beskid_rt_v5_network_dns_resolve")]
-pub i32 NetworkDnsResolve(pointer hostName, i64 port, i64 family, pointer resultArray) {
+pub i32 NetworkDnsResolve(pointer hostName, i64 port, i64 family, i64 deadline, pointer resultArray) {
     SchedInit();
+    if deadline < -1 { return NETWORK_UNSUPPORTED; }
     if port <= 0 || port > 65535 || (family != 0 && family != 4 && family != 6) || NetworkArrayData(resultArray, 1) == NativePointer(0) { return NETWORK_INVALID_ADDRESS; }
     word current = SchedulerCurrentFiber();
     if current == FIBER_NONE { return NETWORK_UNSUPPORTED; }
@@ -68,8 +69,14 @@ pub i32 NetworkDnsResolve(pointer hostName, i64 port, i64 family, pointer result
     pointer record = SystemAllocate(NETWORK_DNS_RECORD_SIZE, 8);
     if record == NativePointer(0) { return NETWORK_RESOURCE_EXHAUSTED; }
     memory_set(record, 0, NETWORK_DNS_RECORD_SIZE);
-    word token = ExternalWaitRegister(FiberHandle(current), 23, -1);
+    word token = ExternalWaitRegister(FiberHandle(current), 23, deadline);
     if token == 0 { SystemFree(record, NETWORK_DNS_RECORD_SIZE); return NETWORK_BUSY; }
+    if deadline >= 0 && deadline <= clock_monotonic_nanos() {
+        ExternalTryComplete(token & 0xFFFFFFFF, token >> 32, EXTERNAL_TIMEOUT);
+        ExternalRelease(token);
+        SystemFree(record, NETWORK_DNS_RECORD_SIZE);
+        return NETWORK_TIMED_OUT;
+    }
     ExternalWorkRetain();
     pointer request = network_dns_start(hostName, word(port), i32(family), ExternalOwnerId(), token);
     if request == NativePointer(0) {
@@ -174,9 +181,39 @@ pub word NetworkShutdown(word owner) {
     while index < NETWORK_SLOT_COUNT {
         pointer slot = NetworkSlot(table, index);
         if raw_word_load(pointer_add(slot, NETWORK_SLOT_NATIVE)) != 0 && raw_word_load(pointer_add(slot, NETWORK_SLOT_CREATOR)) == owner {
-            word handle = raw_word_load(slot) << 32 | (index + 1);
-            network_report_leak(index + 1, raw_word_load(slot), owner, raw_word_load(pointer_add(slot, NETWORK_SLOT_KIND)));
             leaks = leaks + 1;
+        }
+        index = index + 1;
+    }
+    index = 0;
+    while index < NETWORK_SLOT_COUNT {
+        pointer slot = NetworkSlot(table, index);
+        if raw_word_load(pointer_add(slot, NETWORK_SLOT_NATIVE)) != 0 && raw_word_load(pointer_add(slot, NETWORK_SLOT_CREATOR)) == owner {
+            word handle = raw_word_load(slot) << 32 | (index + 1);
+            mut word reported = 0;
+            mut word direction = 0;
+            while direction < 2 {
+                pointer request = NativePointer(raw_word_load(NetworkSlotRequest(slot, direction)));
+                if request != NativePointer(0) {
+                    pointer wait = ExternalWaitRecord(raw_word_load(request));
+                    mut word winner = 0;
+                    if wait != NativePointer(0) { winner = raw_word_load(pointer_add(wait, 32)); }
+                    network_report_leak(
+                        index + 1,
+                        raw_word_load(slot),
+                        owner,
+                        raw_word_load(pointer_add(slot, NETWORK_SLOT_KIND)),
+                        raw_word_load(pointer_add(request, BESKID_NETWORK_REQUEST_OPERATION_OFFSET)),
+                        winner,
+                        leaks
+                    );
+                    reported = 1;
+                }
+                direction = direction + 1;
+            }
+            if reported == 0 {
+                network_report_leak(index + 1, raw_word_load(slot), owner, raw_word_load(pointer_add(slot, NETWORK_SLOT_KIND)), 0, 0, leaks);
+            }
             NetworkCloseLocked(table, handle);
         }
         index = index + 1;

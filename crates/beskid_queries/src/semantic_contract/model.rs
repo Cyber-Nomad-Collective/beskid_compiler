@@ -4,6 +4,7 @@ pub use beskid_abi::runtime_source::CorelibService;
 
 mod closures;
 mod errors;
+mod events;
 mod facts;
 mod generics;
 mod ids;
@@ -20,6 +21,7 @@ pub use closures::{
     SpawnEntryValidation, SpawnHandleType, SpawnLegality, SpawnTarget,
 };
 pub use errors::{GenericBindingConflict, SemanticError, SemanticFinding, SemanticQueryResult};
+pub use events::{EventHandlerLocalFact, EventOperationFact, EventOperationKind};
 pub use facts::{
     BulkParameterFact, CastIntent, ControlFlow, ForIteratorFact, ItemSignature, PrimitiveNumericConversion,
     RangeForFact, TryExpressionFact,
@@ -39,7 +41,7 @@ pub use layouts::{
     EnumConstructorSpecialization, EnumConstructorTemplate, EnumLayoutFact, EnumLayoutTemplateArgument,
     EnumMatchArmFact, EnumMatchBindingFact, EnumMatchFact, EnumMatchPatternFact, EnumMatchScalarLiteralFact,
     EnumMatchVariantPatternFact, EnumScalarPayloadObjectLayout, EnumScalarPayloadVariantLayout, EnumVariantLayoutFact,
-    ScalarAbiLayout,
+    EventFieldLayoutFact, ScalarAbiLayout,
 };
 pub use resolution::{LocalSlot, MutableLocalAssignment, ResolvedItem, ResolvedLocal};
 pub use syntax::{

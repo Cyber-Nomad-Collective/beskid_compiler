@@ -16,7 +16,7 @@ fn fetch_fails_when_manifest_is_missing() {
 #[test]
 fn build_fails_for_unknown_target() {
     let workspace = E2eWorkspace::from_fixture("smoke_project");
-    let manifest = workspace.join("Project.proj");
+    let manifest = workspace.join("SmokeProject.bproj");
     let output_binary = workspace.join("out/unknown_target");
     let cli = BeskidCliInvoker::new();
 
@@ -36,7 +36,7 @@ fn build_fails_for_unknown_target() {
 #[test]
 fn build_locked_mode_fails_without_lockfile() {
     let workspace = E2eWorkspace::from_fixture("smoke_project");
-    let manifest = workspace.join("Project.proj");
+    let manifest = workspace.join("SmokeProject.bproj");
     let output_binary = workspace.join("out/locked_build");
     let cli = BeskidCliInvoker::new();
 
@@ -57,7 +57,7 @@ fn build_locked_mode_fails_without_lockfile() {
 #[test]
 fn build_reports_linker_unavailable_with_invalid_cc() {
     let workspace = E2eWorkspace::from_fixture("smoke_project");
-    let manifest = workspace.join("Project.proj");
+    let manifest = workspace.join("SmokeProject.bproj");
     let output_binary = workspace.join("out/link_fail");
     let cli = BeskidCliInvoker::new();
 

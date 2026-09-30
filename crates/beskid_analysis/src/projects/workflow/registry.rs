@@ -1,107 +1,345 @@
 use std::env;
 use std::fs;
-use std::io::Read;
-use std::path::Path;
+use std::io::{Read, Write};
+use std::path::{Path, PathBuf};
 
 use serde_json::Value;
+use sha2::{Digest, Sha256};
+use tempfile::{Builder, NamedTempFile};
+use zip::ZipArchive;
 
-use super::archive::extract_zip_to_dir;
-use super::filesystem::sanitize_segment;
-use super::lockfile::ProjectLockDependencyEntry;
+use super::archive::{extract_zip_to_dir, validate_zip_eocd, verify_materialized_tree};
+use super::filesystem::materialized_dependency_id;
+use super::lockfile::{
+    PortableLockPath, PortableLockPathBaseKind, ProjectLockDependencyEntry, ProjectLockSource,
+};
 use crate::projects::error::ProjectError;
+use crate::projects::discovery::is_project_manifest_path;
 use crate::projects::graph::WorkspaceResolutionRules;
 use crate::projects::model::{MaterializedDependencyProject, UnresolvedDependencyNote};
 
-pub(super) fn materialize_registry_dependency(
+pub(super) struct ResolvedRegistryDependency {
+    pub(super) dependency_name: String,
+    pub(super) materialized_relative: String,
+    materialized_root: PathBuf,
+    artifact: NamedTempFile,
+    selected_version: String,
+    artifact_digest: String,
+    registry_identity: String,
+}
+
+struct RegistryArtifactLayout {
+    manifest: String,
+    source_root: &'static str,
+}
+
+impl ResolvedRegistryDependency {
+    /// Check every portable path in an existing pin before preparation creates
+    /// `obj`. The artifact digest has already been verified by resolution.
+    pub(super) fn validate_existing_lock_entry(
+        &self,
+        pinned: Option<&ProjectLockDependencyEntry>,
+    ) -> Result<(), ProjectError> {
+        let Some(pinned) = pinned else { return Ok(()) };
+        if pinned.project != self.materialized_relative || pinned.materialized_root != self.materialized_relative {
+            return Err(stale_registry_pin(&self.dependency_name));
+        }
+
+        let layout = registry_artifact_layout(&self.artifact)?;
+        if pinned.manifest != layout.manifest || pinned.source_root != layout.source_root {
+            return Err(stale_registry_pin(&self.dependency_name));
+        }
+        Ok(())
+    }
+}
+
+fn registry_artifact_layout(artifact: &NamedTempFile) -> Result<RegistryArtifactLayout, ProjectError> {
+    let mut artifact = artifact.reopen().map_err(|_| {
+        ProjectError::Validation("failed to reopen registry scratch artifact".into())
+    })?;
+    validate_zip_eocd(&mut artifact)?;
+    let mut archive = ZipArchive::new(artifact)
+        .map_err(|error| ProjectError::Validation(format!("invalid registry artifact ZIP: {error}")))?;
+    let mut manifest = None;
+    let mut has_lowercase_src = false;
+    let mut has_uppercase_src = false;
+    for index in 0..archive.len() {
+        let entry = archive.by_index(index).map_err(|error| {
+            ProjectError::Validation(format!("failed to read registry artifact entry: {error}"))
+        })?;
+        let path = entry.enclosed_name().ok_or_else(|| {
+            ProjectError::Validation("registry artifact ZIP has an unsafe entry path".into())
+        })?;
+        let mut components = path.components();
+        let first = components.next();
+        let nested = components.next().is_some();
+        if !nested && !entry.is_dir() && is_project_manifest_path(&path) {
+            let name = path.to_str().ok_or_else(|| {
+                ProjectError::Validation("registry artifact manifest name is not UTF-8".into())
+            })?;
+            if manifest.replace(name.to_string()).is_some() {
+                return Err(ProjectError::Validation("registry artifact has multiple project manifests".into()));
+            }
+        }
+        if nested || entry.is_dir() {
+            if first == Some(std::path::Component::Normal(std::ffi::OsStr::new("src"))) {
+                has_lowercase_src = true;
+            } else if first == Some(std::path::Component::Normal(std::ffi::OsStr::new("Src"))) {
+                has_uppercase_src = true;
+            }
+        }
+    }
+    let manifest = manifest.ok_or_else(|| {
+        ProjectError::Validation("registry artifact has no project manifest".into())
+    })?;
+    let source_root = if has_lowercase_src { "src" } else if has_uppercase_src { "Src" } else { "." };
+    Ok(RegistryArtifactLayout { manifest, source_root })
+}
+
+fn stale_registry_pin(dependency_name: &str) -> ProjectError {
+    ProjectError::Validation(format!(
+        "registry pin for `{dependency_name}` is stale: artifact paths differ from Project.lock; run `beskid update`"
+    ))
+}
+
+const MAX_REGISTRY_ARTIFACT_BYTES: u64 = 64 * 1024 * 1024;
+const REGISTRY_SCRATCH_PREFIX: &str = ".beskid-registry-artifact-";
+
+enum RegistryArtifactDownloadError {
+    Unavailable(ProjectError),
+    Hard(ProjectError),
+}
+
+impl RegistryArtifactDownloadError {
+    fn into_project_error(self) -> ProjectError {
+        match self {
+            Self::Unavailable(error) | Self::Hard(error) => error,
+        }
+    }
+}
+
+pub(super) fn resolve_registry_dependency(
     unresolved: &UnresolvedDependencyNote,
-    deps_root: &Path,
     workspace_rules: Option<&WorkspaceResolutionRules>,
-) -> Result<Option<(ProjectLockDependencyEntry, MaterializedDependencyProject)>, ProjectError> {
+    pinned: Option<&ProjectLockDependencyEntry>,
+    refresh: bool,
+    project_root: &Path,
+) -> Result<Option<ResolvedRegistryDependency>, ProjectError> {
     let (registry_alias, requested_version) = parse_registry_descriptor(&unresolved.descriptor);
+    if let Some(alias) = registry_alias.as_deref()
+        && !workspace_rules.is_some_and(|rules| rules.has_registry_alias(alias))
+    {
+        return Err(ProjectError::Validation(format!(
+            "registry dependency `{}` references an unknown workspace registry alias",
+            unresolved.dependency_name
+        )));
+    }
+    let registry_identity = registry_alias.as_deref().unwrap_or("default").to_ascii_lowercase();
+    if let Some(pin) = pinned
+        && !refresh
+        && (pin.source != ProjectLockSource::Registry
+            || pin.name != unresolved.dependency_name
+            || pin.registry.as_deref() != Some(registry_identity.as_str()))
+    {
+        return Err(ProjectError::Validation(format!(
+            "registry pin for `{}` does not match the current dependency; run `beskid update`",
+            unresolved.dependency_name
+        )));
+    }
+    if let Some(pin) = pinned
+        && !refresh
+        && let Some(requested) = requested_version.as_deref().filter(|version| *version != "*")
+        && pin.resolved_version.as_deref() != Some(requested)
+    {
+        return Err(ProjectError::Validation(format!(
+            "registry pin for `{}` is stale: manifest requests version `{requested}`; run `beskid update`",
+            unresolved.dependency_name
+        )));
+    }
     let base_url = resolve_registry_base_url(workspace_rules, registry_alias.as_deref());
-    let versions_url = format!("{}/api/packages/{}/versions", base_url, unresolved.dependency_name);
-    let versions_json = match http_get_text(&versions_url) {
-        Ok(value) => value,
-        Err(_) => return Ok(None),
+    let selected_version = if !refresh {
+        pinned.and_then(|entry| entry.resolved_version.clone())
+    } else {
+        None
     };
-    let versions: Vec<Value> = match serde_json::from_str(&versions_json) {
-        Ok(value) => value,
-        Err(_) => return Ok(None),
+    let selected_version = match selected_version {
+        Some(version) => version,
+        None => match select_registry_version(&base_url, &unresolved.dependency_name, requested_version.as_deref()) {
+            Ok(version) => version,
+            Err(_) if pinned.is_none() && !refresh => return Ok(None),
+            Err(error) => return Err(error),
+        },
     };
-    if versions.is_empty() {
-        return Ok(None);
+
+    let download_url = registry_url(&base_url, &["api", "packages", &unresolved.dependency_name, "versions", &selected_version, "download"])?;
+    let (artifact, artifact_digest) = match http_get_artifact(&download_url, project_root) {
+        Ok(artifact) => artifact,
+        Err(RegistryArtifactDownloadError::Unavailable(_)) if pinned.is_none() && !refresh => return Ok(None),
+        Err(error) => return Err(error.into_project_error()),
+    };
+    if let Some(pin) = pinned
+        && !refresh
+        && pin.artifact_digest.as_deref() != Some(artifact_digest.as_str())
+    {
+        return Err(ProjectError::Validation(format!(
+            "registry artifact digest mismatch for `{}` at pinned version `{selected_version}`",
+            unresolved.dependency_name
+        )));
     }
 
-    let selected = versions
-        .iter()
-        .find(|item| {
-            !item.get("isYanked").and_then(Value::as_bool).unwrap_or(false)
-                && requested_version
-                    .as_deref()
-                    .is_none_or(|req| item.get("version").and_then(Value::as_str) == Some(req))
-        })
-        .or_else(|| versions.iter().find(|item| !item.get("isYanked").and_then(Value::as_bool).unwrap_or(false)))
-        .ok_or_else(|| {
-            ProjectError::Validation(format!("registry package {} has no active versions", unresolved.dependency_name))
-        })?;
+    let identity = registry_materialization_identity(
+        &registry_identity,
+        &unresolved.dependency_name,
+        &selected_version,
+        &artifact_digest,
+    );
+    let materialized_name = materialized_dependency_id(
+        &unresolved.dependency_name,
+        ProjectLockSource::Registry,
+        &identity,
+    )?;
+    let materialized_relative = format!("obj/beskid/deps/src/{materialized_name}");
+    let materialized_root = PortableLockPath::parse(
+        "materialized_root",
+        &materialized_relative,
+        PortableLockPathBaseKind::MaterializedRoot,
+    )?
+    .resolve(project_root)?;
+    let owned_root = project_root.canonicalize().map_err(|_| {
+        ProjectError::Validation("project root cannot be resolved".into())
+    })?.join("obj/beskid/deps/src");
+    if materialized_root.parent() != Some(owned_root.as_path()) {
+        return Err(ProjectError::Validation("registry destination escapes its materialization root".into()));
+    }
+    Ok(Some(ResolvedRegistryDependency {
+        dependency_name: unresolved.dependency_name.clone(), materialized_relative,
+        materialized_root, artifact, selected_version, artifact_digest, registry_identity,
+    }))
+}
 
-    let selected_version = selected.get("version").and_then(Value::as_str).map(ToOwned::to_owned);
-    let Some(selected_version) = selected_version else {
-        return Ok(None);
-    };
+pub(super) fn materialize_registry_dependency(
+    resolved: ResolvedRegistryDependency,
+) -> Result<(ProjectLockDependencyEntry, MaterializedDependencyProject), ProjectError> {
+    let ResolvedRegistryDependency {
+        dependency_name, materialized_relative, materialized_root, artifact,
+        selected_version, artifact_digest, registry_identity,
+    } = resolved;
+    let layout = registry_artifact_layout(&artifact)?;
+    let artifact_reader = artifact.reopen()
+        .map_err(|_| ProjectError::Validation("failed to reopen registry scratch artifact".into()))?;
+    let deps_root = materialized_root.parent().ok_or_else(|| {
+        ProjectError::Validation("registry materialization has no dependency directory".into())
+    })?;
+    let staging = Builder::new()
+        .prefix(".beskid-registry-stage-")
+        .tempdir_in(deps_root)
+        .map_err(|source| ProjectError::MaterializationCreateDir { path: deps_root.to_path_buf(), source })?;
+    extract_zip_to_dir(artifact_reader, staging.path())?;
 
-    let download_url =
-        format!("{}/api/packages/{}/versions/{}/download", base_url, unresolved.dependency_name, selected_version);
-    let artifact = match http_get_bytes(&download_url) {
-        Ok(value) => value,
-        Err(_) => return Ok(None),
-    };
-
-    let materialized_root = deps_root.join(format!(
-        "{}-registry-{}",
-        sanitize_segment(&unresolved.dependency_name),
-        sanitize_segment(&selected_version)
-    ));
-    fs::create_dir_all(&materialized_root)
-        .map_err(|source| ProjectError::MaterializationCreateDir { path: materialized_root.clone(), source })?;
-    extract_zip_to_dir(&artifact, &materialized_root)?;
-
-    let manifest_path =
-        crate::projects::discovery::discover_project_manifest_in_dir(&materialized_root)?.ok_or_else(|| {
+    let staged_manifest =
+        crate::projects::discovery::discover_project_manifest_in_dir(staging.path())?.ok_or_else(|| {
             ProjectError::Validation(format!(
                 "registry artifact for {}:{} missing a `.bproj` manifest",
-                unresolved.dependency_name, selected_version
+                dependency_name, selected_version
             ))
         })?;
-
-    let materialized_source_root = if materialized_root.join("src").is_dir() {
-        materialized_root.join("src")
-    } else if materialized_root.join("Src").is_dir() {
-        materialized_root.join("Src")
+    let manifest_relative = staged_manifest.strip_prefix(staging.path()).map_err(|_| {
+        ProjectError::Validation("registry artifact manifest escapes its staged project".into())
+    })?.to_path_buf();
+    if portable_child_path(staging.path(), &staged_manifest)? != layout.manifest {
+        return Err(ProjectError::Validation("registry artifact manifest differs from its ZIP layout".into()));
+    }
+    let source_relative = if layout.source_root == "." {
+        PathBuf::new()
     } else {
-        materialized_root.clone()
+        PathBuf::from(layout.source_root)
     };
 
+    match fs::symlink_metadata(&materialized_root) {
+        Ok(_) => verify_materialized_tree(staging.path(), &materialized_root)?,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            fs::rename(staging.path(), &materialized_root)
+                .map_err(|source| ProjectError::MaterializationCreateDir { path: materialized_root.clone(), source })?;
+        }
+        Err(error) => return Err(ProjectError::Validation(format!(
+            "registry materialization cannot be inspected at {}: {error}",
+            materialized_root.display()
+        ))),
+    }
+
+    let manifest_path = materialized_root.join(manifest_relative);
+    let materialized_source_root = materialized_root.join(source_relative);
+
     let lock_entry = ProjectLockDependencyEntry {
-        name: unresolved.dependency_name.clone(),
-        manifest: manifest_path.display().to_string(),
-        project: materialized_root.display().to_string(),
-        source_root: materialized_source_root.display().to_string(),
-        materialized_root: materialized_root.display().to_string(),
+        name: dependency_name.clone(),
+        source: ProjectLockSource::Registry,
+        manifest: portable_child_path(&materialized_root, &manifest_path)?,
+        project: materialized_relative.clone(),
+        source_root: portable_child_path(&materialized_root, &materialized_source_root)?,
+        materialized_root: materialized_relative,
         resolved_version: Some(selected_version.clone()),
-        artifact_digest: None,
-        registry: registry_alias,
+        artifact_digest: Some(artifact_digest),
+        registry: Some(registry_identity),
     };
 
     let materialized_dependency = MaterializedDependencyProject {
-        dependency_name: unresolved.dependency_name.clone(),
+        dependency_name: dependency_name.clone(),
         manifest_path,
-        project_name: unresolved.dependency_name.clone(),
+        project_name: dependency_name,
         materialized_project_root: materialized_root,
         materialized_source_root,
     };
 
-    Ok(Some((lock_entry, materialized_dependency)))
+    Ok((lock_entry, materialized_dependency))
+}
+
+fn select_registry_version(base_url: &str, package: &str, requested_version: Option<&str>) -> Result<String, ProjectError> {
+    let versions_url = registry_url(base_url, &["api", "packages", package, "versions"])?;
+    let versions_json = http_get_text(&versions_url)?;
+    let versions: Vec<Value> = serde_json::from_str(&versions_json)
+        .map_err(|error| ProjectError::Validation(format!("registry version response is malformed: {error}")))?;
+    let requested = requested_version.filter(|version| *version != "*");
+    versions
+        .iter()
+        .find(|item| {
+            !item.get("isYanked").and_then(Value::as_bool).unwrap_or(false)
+                && requested.is_none_or(|version| item.get("version").and_then(Value::as_str) == Some(version))
+        })
+        .and_then(|item| item.get("version").and_then(Value::as_str))
+        .map(str::to_owned)
+        .ok_or_else(|| ProjectError::Validation(format!("registry package `{package}` has no available requested version")))
+}
+
+fn registry_url(base_url: &str, segments: &[&str]) -> Result<String, ProjectError> {
+    let mut url = reqwest::Url::parse(base_url)
+        .map_err(|_| ProjectError::Validation("registry base URL is invalid".into()))?;
+    url.path_segments_mut()
+        .map_err(|_| ProjectError::Validation("registry base URL cannot have path segments".into()))?
+        .pop_if_empty()
+        .extend(segments);
+    Ok(url.to_string())
+}
+
+fn registry_materialization_identity(alias: &str, package: &str, version: &str, digest: &str) -> String {
+    let mut identity = String::new();
+    for field in [alias, package, version, digest] {
+        identity.push_str(&format!("{}:", field.len()));
+        identity.push_str(field);
+    }
+    identity
+}
+
+fn portable_child_path(root: &Path, child: &Path) -> Result<String, ProjectError> {
+    let relative = child.strip_prefix(root).map_err(|_| {
+        ProjectError::Validation("registry artifact path escapes its materialized project".into())
+    })?;
+    let parts = relative
+        .components()
+        .map(|part| part.as_os_str().to_str().map(str::to_owned).ok_or_else(|| {
+            ProjectError::Validation("registry artifact path is not UTF-8".into())
+        }))
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(if parts.is_empty() { ".".to_string() } else { parts.join("/") })
 }
 
 fn resolve_registry_base_url(
@@ -141,32 +379,71 @@ fn http_get_text(url: &str) -> Result<String, ProjectError> {
     let response = client
         .get(url)
         .send()
-        .map_err(|err| ProjectError::Validation(format!("registry request failed for {url}: {err}")))?;
+        .map_err(|_| ProjectError::Validation("registry request failed".into()))?;
     let status = response.status();
     if !status.is_success() {
-        return Err(ProjectError::Validation(format!("registry request failed for {url} with status {status}")));
+        return Err(ProjectError::Validation(format!("registry request failed with status {status}")));
     }
     response
         .text()
-        .map_err(|err| ProjectError::Validation(format!("failed to read registry response from {url}: {err}")))
+        .map_err(|_| ProjectError::Validation("failed to read registry response".into()))
 }
 
-fn http_get_bytes(url: &str) -> Result<Vec<u8>, ProjectError> {
+fn artifact_limit_error() -> RegistryArtifactDownloadError {
+    RegistryArtifactDownloadError::Hard(ProjectError::Validation(
+        "registry artifact exceeds the 64 MiB compressed size limit".into(),
+    ))
+}
+
+fn http_get_artifact(url: &str, scratch_root: &Path) -> Result<(NamedTempFile, String), RegistryArtifactDownloadError> {
     let client = reqwest::blocking::Client::builder()
         .timeout(std::time::Duration::from_secs(20))
         .build()
-        .map_err(|err| ProjectError::Validation(format!("failed to build registry client: {err}")))?;
+        .map_err(|_| RegistryArtifactDownloadError::Unavailable(ProjectError::Validation("failed to build registry client".into())))?;
     let mut response = client
         .get(url)
         .send()
-        .map_err(|err| ProjectError::Validation(format!("registry request failed for {url}: {err}")))?;
+        .map_err(|_| RegistryArtifactDownloadError::Unavailable(ProjectError::Validation("registry request failed".into())))?;
     let status = response.status();
     if !status.is_success() {
-        return Err(ProjectError::Validation(format!("registry request failed for {url} with status {status}")));
+        return Err(RegistryArtifactDownloadError::Unavailable(ProjectError::Validation(format!(
+            "registry request failed with status {status}"
+        ))));
     }
-    let mut buffer = Vec::new();
-    response
-        .read_to_end(&mut buffer)
-        .map_err(|err| ProjectError::Validation(format!("failed to read bytes from {url}: {err}")))?;
-    Ok(buffer)
+    if response.content_length().is_some_and(|length| length > MAX_REGISTRY_ARTIFACT_BYTES) {
+        return Err(artifact_limit_error());
+    }
+    let mut artifact = Builder::new()
+        .prefix(REGISTRY_SCRATCH_PREFIX)
+        .tempfile_in(scratch_root)
+        .map_err(|_| RegistryArtifactDownloadError::Hard(ProjectError::Validation(
+            "failed to create registry scratch artifact".into(),
+        )))?;
+    let mut digest = Sha256::new();
+    let mut total = 0_u64;
+    let mut buffer = [0_u8; 16 * 1024];
+    loop {
+        let count = response.read(&mut buffer).map_err(|_| {
+            RegistryArtifactDownloadError::Unavailable(ProjectError::Validation(
+                "failed to read registry response bytes".into(),
+            ))
+        })?;
+        if count == 0 { break; }
+        total += count as u64;
+        if total > MAX_REGISTRY_ARTIFACT_BYTES {
+            return Err(artifact_limit_error());
+        }
+        artifact.as_file_mut().write_all(&buffer[..count]).map_err(|_| {
+            RegistryArtifactDownloadError::Hard(ProjectError::Validation(
+                "failed to write registry scratch artifact".into(),
+            ))
+        })?;
+        digest.update(&buffer[..count]);
+    }
+    artifact.as_file_mut().flush().map_err(|_| {
+        RegistryArtifactDownloadError::Hard(ProjectError::Validation(
+            "failed to flush registry scratch artifact".into(),
+        ))
+    })?;
+    Ok((artifact, format!("sha256:{:x}", digest.finalize())))
 }

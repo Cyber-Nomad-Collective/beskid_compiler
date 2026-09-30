@@ -91,5 +91,25 @@ pub enum CallKind {
     /// specialization. This reuses the descriptor-backed array-literal allocation sequence and
     /// never imports the legacy element-size `array_new` ABI.
     TypedArrayAllocation,
+    /// A syntax-proven event raise; emitted through field-owned event state rather than call lookup.
+    EventRaise,
     Dynamic,
+}
+
+/// Mutating assignment classification. Event operations must not fall through to ordinary fields.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AssignmentKind {
+    Local,
+    Field,
+    Index,
+    EventSubscribe,
+    EventUnsubscribeFirst,
+}
+
+/// Source-proven event operation selected before ordinary call or assignment lowering.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EventOperation {
+    Subscribe,
+    UnsubscribeFirst,
+    Raise,
 }

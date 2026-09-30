@@ -47,6 +47,10 @@ impl SyntaxNodeFacts<'_> {
     }
 
     pub(super) fn struct_layout_impl(&self, key: AstNodeKey) -> Option<StructLayout> {
+        if let Some((_, offset, object_size, align_shift)) = self.composition_injected_access(key) {
+            let pointer = self.isa?.pointer_type();
+            return Some(StructLayout::new(object_size, align_shift, vec![FieldLayout::new(pointer, offset)]));
+        }
         self.struct_layout_for_literal(key).or_else(|| {
             self.aggregate_field_access_in_context(key).and_then(|access| self.struct_layout_for_access(&access))
         })
@@ -64,10 +68,19 @@ impl SyntaxNodeFacts<'_> {
     }
 
     pub(super) fn field_index_impl(&self, key: AstNodeKey) -> Option<u32> {
-        self.aggregate_field_access_in_context(key).map(|access| access.index)
+        self.composition_injected_access(key)
+            .map(|_| 0)
+            .or_else(|| self.aggregate_field_access_in_context(key).map(|access| access.index))
     }
 
     pub(super) fn field_receiver_slot_impl(&self, key: AstNodeKey) -> Option<LocalSlotId> {
+        if let Some((access, _, _, _)) = self.composition_injected_access(key) {
+            if self.query(node_kind(self.db, access.receiver)) == Some(beskid_queries::IndexedNodeKind::MethodDefinition) {
+                return Some(super::super::context::IMPLICIT_METHOD_RECEIVER_SLOT);
+            }
+            return self.query(local_slot(self.db, access.receiver))
+                .map(|slot| LocalSlotId { owner_node: slot.owner.node.0, index: slot.index });
+        }
         let access = self.aggregate_field_access_in_context(key)?;
         if self.query(node_kind(self.db, access.receiver)) == Some(beskid_queries::IndexedNodeKind::MethodDefinition) {
             return Some(super::super::context::IMPLICIT_METHOD_RECEIVER_SLOT);

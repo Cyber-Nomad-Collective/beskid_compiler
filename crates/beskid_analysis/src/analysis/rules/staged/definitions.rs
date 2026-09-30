@@ -452,29 +452,28 @@ impl SemanticPipelineRule {
     }
 
     fn check_duplicate_definition_names(&self, ctx: &mut RuleContext, program: &Spanned<Program>) {
-        let mut seen: HashMap<String, SpanInfo> = HashMap::new();
+        self.check_duplicate_definition_names_in_scope(ctx, &program.node.items);
+    }
 
-        self.check_duplicate_query_entries::<crate::syntax::TypeDefinition>(
-            ctx,
-            program,
-            &mut seen,
-            DuplicateKind::DefinitionName,
-            |definition| (definition.name.node.name.clone(), definition.name.span),
-        );
-        self.check_duplicate_query_entries::<crate::syntax::EnumDefinition>(
-            ctx,
-            program,
-            &mut seen,
-            DuplicateKind::DefinitionName,
-            |definition| (definition.name.node.name.clone(), definition.name.span),
-        );
-        self.check_duplicate_query_entries::<crate::syntax::ContractDefinition>(
-            ctx,
-            program,
-            &mut seen,
-            DuplicateKind::DefinitionName,
-            |definition| (definition.name.node.name.clone(), definition.name.span),
-        );
+    fn check_duplicate_definition_names_in_scope(&self, ctx: &mut RuleContext, items: &[Spanned<Node>]) {
+        let mut seen: HashMap<String, SpanInfo> = HashMap::new();
+        for item in items {
+            let name = match &item.node {
+                Node::TypeDefinition(definition) => Some(&definition.node.name),
+                Node::EnumDefinition(definition) => Some(&definition.node.name),
+                Node::ContractDefinition(definition) => Some(&definition.node.name),
+                Node::InlineModule(module) => {
+                    self.check_duplicate_definition_names_in_scope(ctx, &module.node.items);
+                    None
+                }
+                _ => None,
+            };
+            if let Some(name) = name {
+                self.emit_duplicate_if_any(
+                    ctx, &mut seen, name.node.name.clone(), name.span, DuplicateKind::DefinitionName,
+                );
+            }
+        }
     }
 
     fn check_duplicate_enum_variants(&self, ctx: &mut RuleContext, definition: &crate::syntax::EnumDefinition) {

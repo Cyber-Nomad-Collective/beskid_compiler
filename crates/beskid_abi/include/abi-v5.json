@@ -322,6 +322,24 @@
       "result": "u8"
     },
     {
+      "symbol": "beskid_rt_v5_external_wait_post_deadline",
+      "params": [
+        {
+          "name": "owner",
+          "type": "usize"
+        },
+        {
+          "name": "token",
+          "type": "usize"
+        },
+        {
+          "name": "deadline",
+          "type": "i64"
+        }
+      ],
+      "result": "u8"
+    },
+    {
       "symbol": "beskid_rt_v5_external_wait_register",
       "params": [
         {
@@ -350,6 +368,20 @@
       "result": "u8"
     },
     {
+      "symbol": "beskid_rt_v5_external_wait_set_deadline",
+      "params": [
+        {
+          "name": "token",
+          "type": "usize"
+        },
+        {
+          "name": "deadline",
+          "type": "i64"
+        }
+      ],
+      "result": "u8"
+    },
+    {
       "symbol": "beskid_rt_v5_fiber_yield",
       "params": [],
       "result": "void"
@@ -373,6 +405,24 @@
         }
       ],
       "result": "pointer"
+    },
+    {
+      "symbol": "beskid_rt_v5_network_set_deadlines",
+      "params": [
+        {
+          "name": "handle",
+          "type": "usize"
+        },
+        {
+          "name": "read_deadline",
+          "type": "i64"
+        },
+        {
+          "name": "write_deadline",
+          "type": "i64"
+        }
+      ],
+      "result": "i32"
     },
     {
       "symbol": "beskid_rt_v5_poll_executor_run_once",
@@ -1407,6 +1457,18 @@
         {
           "name": "kind",
           "type": "usize"
+        },
+        {
+          "name": "operation",
+          "type": "usize"
+        },
+        {
+          "name": "winner",
+          "type": "usize"
+        },
+        {
+          "name": "leak_count",
+          "type": "usize"
         }
       ],
       "result": "void",
@@ -1543,6 +1605,28 @@
         {
           "name": "source",
           "type": "usize"
+        }
+      ],
+      "result": "i32",
+      "resultStatus": null,
+      "targetBindings": []
+    },
+    {
+      "name": "owner_post_deadline",
+      "symbol": "beskid_rt_v5_intrinsic_owner_post_deadline",
+      "capability": "runtime.scheduler.owner_post_deadline",
+      "params": [
+        {
+          "name": "owner",
+          "type": "usize"
+        },
+        {
+          "name": "token",
+          "type": "usize"
+        },
+        {
+          "name": "deadline",
+          "type": "i64"
         }
       ],
       "result": "i32",
@@ -7911,6 +7995,14 @@
         {
           "name": "container",
           "type": "pointer"
+        },
+        {
+          "name": "scope_id",
+          "type": "usize"
+        },
+        {
+          "name": "parent_scope_id",
+          "type": "usize"
         }
       ],
       "result": "void",
@@ -9623,6 +9715,10 @@
           "type": "usize"
         },
         {
+          "name": "deadline",
+          "type": "i64"
+        },
+        {
           "name": "output",
           "type": "pointer"
         }
@@ -9819,6 +9915,10 @@
           "type": "i64"
         },
         {
+          "name": "deadline",
+          "type": "i64"
+        },
+        {
           "name": "output",
           "type": "pointer"
         }
@@ -9860,6 +9960,10 @@
         },
         {
           "name": "backlog",
+          "type": "i64"
+        },
+        {
+          "name": "deadline",
           "type": "i64"
         },
         {
@@ -9977,6 +10081,10 @@
         {
           "name": "connected",
           "type": "u8"
+        },
+        {
+          "name": "deadline",
+          "type": "i64"
         }
       ],
       "result": "i64",
@@ -10017,6 +10125,10 @@
         {
           "name": "connected",
           "type": "u8"
+        },
+        {
+          "name": "deadline",
+          "type": "i64"
         }
       ],
       "result": "i64",
@@ -10034,6 +10146,42 @@
         {
           "target": "x86_64-unknown-linux-gnu",
           "implementation": "beskid_rt_v5_network_send",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__network_set_deadlines",
+      "adapter": "beskid_rt_v5_network_set_deadlines",
+      "params": [
+        {
+          "name": "handle",
+          "type": "usize"
+        },
+        {
+          "name": "read_deadline",
+          "type": "i64"
+        },
+        {
+          "name": "write_deadline",
+          "type": "i64"
+        }
+      ],
+      "result": "i32",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "beskid_rt_v5_network_set_deadlines",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "beskid_rt_v5_network_set_deadlines",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "beskid_rt_v5_network_set_deadlines",
           "osImports": []
         }
       ]

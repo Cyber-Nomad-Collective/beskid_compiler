@@ -119,6 +119,11 @@ pub(super) const CORELIB_SERVICES: &[CorelibService] = &[
         source_path: CANONICAL_NETWORK_INTERNAL_SOURCE_PATH,
     },
     CorelibService {
+        name: "__network_set_deadlines",
+        symbol: "beskid_rt_v5_network_set_deadlines",
+        source_path: CANONICAL_NETWORK_INTERNAL_SOURCE_PATH,
+    },
+    CorelibService {
         name: "__network_shutdown_write",
         symbol: "beskid_rt_v5_network_shutdown_write",
         source_path: CANONICAL_NETWORK_INTERNAL_SOURCE_PATH,

@@ -10,11 +10,14 @@
 (decl call_kind (CallKind) AstNodeKey)
 (extern extractor call_kind call_kind)
 
+(decl event_operation (EventOperation) AstNodeKey)
+(extern extractor event_operation event_operation)
+
 (decl partial child_at (AstNodeKey u8) AstNodeKey)
 (extern constructor child_at child_at)
 
-(decl partial assignment_target_kind (NodeKind) AstNodeKey)
-(extern extractor assignment_target_kind assignment_target_kind)
+(decl assignment_kind (AssignmentKind) AstNodeKey)
+(extern extractor assignment_kind assignment_kind)
 
 (decl partial for_iterable_kind (NodeKind) AstNodeKey)
 (extern extractor for_iterable_kind for_iterable_kind)

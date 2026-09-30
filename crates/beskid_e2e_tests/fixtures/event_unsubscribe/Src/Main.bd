@@ -1,15 +1,23 @@
-type User { event{4} Created(string payload) }
+use Std.Testing.Assert;
+
+type User { event{4} created(string payload) }
 
 impl User {
     unit Emit(string payload) {
-        this.Created(payload);
+        this.created(payload);
     }
 }
 
 i32 Main() {
-    User mut u = User { };
-    unit(string) boom = (string payload) => { __panic_str("boom"); };
-    u.Created += boom;
-    u.Created -= boom;
+    mut User u = User { };
+    string marker = "retained";
+    unit(string) boom = (string payload) => {
+        Assert.Equal(marker, "retained", "event capture survives collection");
+    };
+    u.created += boom;
+    Assert.CollectGarbage();
+    u.Emit("before unsubscribe");
+    u.created -= boom;
+    u.Emit("after unsubscribe");
     return 0;
 }

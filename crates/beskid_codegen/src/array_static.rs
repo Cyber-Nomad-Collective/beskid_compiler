@@ -10,9 +10,8 @@ use std::sync::Arc;
 use beskid_queries::{
     AstNodeKey, CallLowering, GenericSpecializationInstance, IndexedNodeKind, SemanticTypeId,
     aggregate_literal_declaration, bulk_parameter, call_arguments, call_lowering, child_nodes,
-    empty_array_literal_element_abi_type,
-    empty_array_literal_element_specialization, generic_specialization_identity, node_kind, node_type,
-    typed_array_allocation,
+    empty_array_literal_element_abi_type, empty_array_literal_element_specialization, generic_specialization_identity,
+    node_kind, node_type, typed_array_allocation,
 };
 use cranelift_module::{DataDescription, DataId, Linkage, Module, ModuleError, ModuleResult};
 
@@ -106,7 +105,7 @@ impl CodegenInput<'_> {
     /// `key` is the syntax node the plan is keyed on (an `ArrayLiteralExpression` for literals, a
     /// `CallExpression` for bulk calls); it identifies the plan's source unit and node for symbol
     /// minting. `element_type` is the declared element ABI; `length` is the element count.
-    fn build_array_static_plan(
+    pub(crate) fn build_array_static_plan(
         &self,
         key: AstNodeKey,
         element_type: SemanticTypeId,
@@ -150,6 +149,13 @@ impl CodegenInput<'_> {
             pointer_map_offsets: pointer.then_some(0_u64).into_iter().collect::<Vec<_>>().into(),
             length,
         })
+    }
+
+    pub fn composition_plural_static_plan(&self, field: AstNodeKey, target_count: usize) -> Option<ArrayStaticPlan> {
+        self.composition_authority()?;
+        let fact = beskid_queries::composition_injection_field(self.database(), field).ok().flatten()?;
+        fact.is_plural.then_some(())?;
+        self.build_array_static_plan(field, SemanticTypeId::POINTER, u64::try_from(target_count).ok()?, None)
     }
 
     /// The nominal `type` declaration constructed by one element expression, looking through the

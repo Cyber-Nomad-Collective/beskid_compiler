@@ -17,6 +17,34 @@ fn supported_targets() -> Vec<TargetMetadata> {
 }
 
 #[test]
+fn network_lifecycle_services_carry_absolute_deadlines_on_every_target() {
+    use beskid_abi::generated::abi_v5_contract::ABI_V5_CORELIB_SERVICE_BINDINGS;
+
+    for target in ["x86_64-unknown-linux-gnu", "aarch64-apple-darwin", "x86_64-pc-windows-msvc"] {
+        for (service, symbol, params, result) in [
+            (
+                "__network_open",
+                "beskid_rt_v5_network_open",
+                &["i64", "pointer", "i64", "i64", "i64", "pointer"][..],
+                "i32",
+            ),
+            ("__network_accept", "beskid_rt_v5_network_accept", &["usize", "i64", "pointer"][..], "i32"),
+            ("__network_receive", "beskid_rt_v5_network_receive", &["usize", "pointer", "pointer", "u8", "i64"][..], "i64"),
+            ("__network_send", "beskid_rt_v5_network_send", &["usize", "pointer", "pointer", "u8", "i64"][..], "i64"),
+            ("__network_dns_resolve", "beskid_rt_v5_network_dns_resolve", &["pointer", "i64", "i64", "i64", "pointer"][..], "i32"),
+        ] {
+            let binding = ABI_V5_CORELIB_SERVICE_BINDINGS
+                .iter()
+                .find(|binding| binding.service == service && binding.target == target)
+                .unwrap();
+            assert_eq!(binding.adapter, symbol, "{service} on {target}");
+            assert_eq!(binding.params, params, "{service} on {target}");
+            assert_eq!(binding.result, result, "{service} on {target}");
+        }
+    }
+}
+
+#[test]
 fn windows_static_kit_archive_names_every_manifest_platform_import_library() {
     // The static kit archive is linked directly by C hosts and test drivers, not only by the AOT
     // linker that appends manifest libraries. Each manifest import library must therefore be a
@@ -161,15 +189,18 @@ fn canonical_contract_has_the_exact_lifecycle_closure_and_trap_exports() {
             ("beskid_rt_v5_external_try_complete", &[AbiType::USize, AbiType::USize, AbiType::USize][..], AbiType::U8),
             ("beskid_rt_v5_external_wait_park", &[AbiType::USize][..], AbiType::USize),
             ("beskid_rt_v5_external_wait_post", &[AbiType::USize, AbiType::USize, AbiType::USize][..], AbiType::U8),
+            ("beskid_rt_v5_external_wait_post_deadline", &[AbiType::USize, AbiType::USize, AbiType::I64][..], AbiType::U8),
             (
                 "beskid_rt_v5_external_wait_register",
                 &[AbiType::USize, AbiType::USize, AbiType::I64][..],
                 AbiType::USize
             ),
             ("beskid_rt_v5_external_wait_release", &[AbiType::USize][..], AbiType::U8),
+            ("beskid_rt_v5_external_wait_set_deadline", &[AbiType::USize, AbiType::I64][..], AbiType::U8),
             ("beskid_rt_v5_fiber_yield", &[][..], AbiType::Void,),
             ("beskid_rt_v5_heap_set_cap", &[AbiType::USize][..], AbiType::U8,),
             ("beskid_rt_v5_managed_object_allocate", &[AbiType::Pointer][..], AbiType::Pointer,),
+            ("beskid_rt_v5_network_set_deadlines", &[AbiType::USize, AbiType::I64, AbiType::I64][..], AbiType::I32),
             ("beskid_rt_v5_poll_executor_run_once", &[][..], AbiType::I32,),
             (
                 "beskid_rt_v5_poll_executor_spawn",
@@ -207,7 +238,7 @@ fn trusted_intrinsics_are_typed_and_owned_only_by_the_canonical_package() {
     assert_eq!(package.name(), CANONICAL_RUNTIME_PACKAGE_NAME);
     assert_eq!(package.abi_version(), ABI_V5);
     let names = manifest.trusted_runtime_intrinsics.iter().map(|intrinsic| intrinsic.name.as_str()).collect::<Vec<_>>();
-    assert_eq!(names.len(), 69);
+    assert_eq!(names.len(), 70);
     assert!(names.contains(&"pointer_add"));
     assert!(names.contains(&"raw_word_load"));
     assert!(names.contains(&"system_allocate"));
@@ -225,7 +256,7 @@ fn trusted_intrinsics_are_typed_and_owned_only_by_the_canonical_package() {
     assert!(names.contains(&"tty_winsize"));
     assert!(names.contains(&"worker_submit"));
     for name in
-        ["worker_release", "owner_create", "owner_destroy", "owner_post", "owner_pop", "owner_wait", "wait_claim"]
+        ["worker_release", "owner_create", "owner_destroy", "owner_post", "owner_post_deadline", "owner_pop", "owner_wait", "wait_claim"]
     {
         assert!(names.contains(&name));
     }
@@ -287,6 +318,25 @@ fn network_operation_registry_mismatch_is_rejected_before_execution() {
         unregistered.trusted_runtime_intrinsics.push(extra);
         assert!(matches!(unregistered.validate(), Err(ManifestValidationError::InvalidRuntimeIntrinsicSet { .. })));
     }
+}
+
+#[test]
+fn network_leak_diagnostic_contract_carries_the_observed_operation_winner_and_count() {
+    let target = supported_targets().into_iter().next().unwrap();
+    let manifest = AbiManifestV5::canonical_runtime(target);
+    let diagnostic = manifest
+        .intrinsic_metadata("network_report_leak")
+        .expect("network leak diagnostic intrinsic");
+
+    assert_eq!(
+        diagnostic.param_names,
+        ["slot", "generation", "owner", "kind", "operation", "winner", "leak_count"]
+    );
+    assert_eq!(diagnostic.params, vec![AbiType::USize; 7]);
+
+    let source = include_str!("../assembly/common/network.h").replace("\r\n", "\n");
+    assert!(source.contains("uintptr_t kind, uintptr_t operation, uintptr_t winner, uintptr_t leak_count"));
+    assert!(!source.contains("operation=shutdown winner=live leak_count=1"));
 }
 
 #[test]

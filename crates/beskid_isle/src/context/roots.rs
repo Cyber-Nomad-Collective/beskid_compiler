@@ -30,7 +30,7 @@ impl IsleContext<'_, '_, '_, '_> {
         Some(())
     }
 
-    fn unregister_root_slot(&mut self, slot: StackSlot) -> Option<()> {
+    pub(super) fn unregister_root_slot(&mut self, slot: StackSlot) -> Option<()> {
         let pointer = dispatch::pointer_type(self.frontend_config);
         let address = self.builder.ins().stack_addr(pointer, slot, 0);
         let unregister = self.import_runtime_helper("gc_unregister_root", &[pointer], None)?;

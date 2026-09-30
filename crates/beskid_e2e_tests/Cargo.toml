@@ -5,4 +5,5 @@ edition = "2024"
 license.workspace = true
 
 [dependencies]
+beskid_abi = { path = "../beskid_abi" }
 tempfile = "3.22"

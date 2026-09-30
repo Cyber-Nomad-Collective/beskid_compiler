@@ -293,12 +293,17 @@ pub(super) fn specialization_for_call_in_environment(
                 .map(|binding| binding.source_identity().clone())
                 .unwrap_or(GenericSourceTypeIdentity::Abi(argument_type_id));
             let Some(concrete) = contracts::concrete_declaration(db, declaration, &source_identity) else {
-                return Err(SemanticError::new(format!(
-                    "generic bound not satisfied: `{}` has no concrete conforming type for `where {}: {}`",
-                    bound.parameter.node.name,
-                    bound.parameter.node.name,
-                    bound.contract.node.segments.last().map(|s| s.node.name.node.name.as_str()).unwrap_or("?")
-                )));
+                let issue = beskid_analysis::analysis::SemanticIssueKind::GenericBoundNotSatisfied {
+                    type_name: bound.parameter.node.name.clone(),
+                    contract_name: bound
+                        .contract
+                        .node
+                        .segments
+                        .last()
+                        .map(|s| s.node.name.node.name.clone())
+                        .unwrap_or_default(),
+                };
+                return Err(SemanticError::new(format!("{}: {}", issue.code(), issue.message())));
             };
             let concrete_syntax = db
                 .syntax_unit(concrete.unit)
@@ -309,11 +314,17 @@ pub(super) fn specialization_for_call_in_environment(
                 .and_then(|node| node.of::<beskid_analysis::syntax::TypeDefinition>())
                 .ok_or_else(|| SemanticError::unavailable_at("call_abi_signature", key))?;
             if !contracts::type_declaration_conforms_to_contract(db, concrete, concrete_definition, contract) {
-                return Err(SemanticError::new(format!(
-                    "generic bound not satisfied: `{}` does not conform to `{}`",
-                    concrete_definition.name.node.name,
-                    bound.contract.node.segments.last().map(|s| s.node.name.node.name.as_str()).unwrap_or("?")
-                )));
+                let issue = beskid_analysis::analysis::SemanticIssueKind::GenericBoundNotSatisfied {
+                    type_name: concrete_definition.name.node.name.clone(),
+                    contract_name: bound
+                        .contract
+                        .node
+                        .segments
+                        .last()
+                        .map(|s| s.node.name.node.name.clone())
+                        .unwrap_or_default(),
+                };
+                return Err(SemanticError::new(format!("{}: {}", issue.code(), issue.message())));
             }
         }
     }

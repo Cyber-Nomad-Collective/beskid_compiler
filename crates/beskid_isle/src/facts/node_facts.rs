@@ -6,6 +6,12 @@ use cranelift_codegen::ir::{Signature, Type};
 use std::sync::Arc;
 
 pub trait NodeFacts {
+    fn composition_launch(&self, _key: AstNodeKey) -> Option<CompositionLaunchPlan> {
+        None
+    }
+    fn composition_scope(&self, _key: AstNodeKey) -> Option<CompositionScopePlan> {
+        None
+    }
     fn scoped_cleanup(&self, _key: AstNodeKey) -> Option<ScopedCleanupPlan> {
         None
     }
@@ -17,6 +23,18 @@ pub trait NodeFacts {
         None
     }
     fn call_kind(&self, _key: AstNodeKey) -> Option<CallKind> {
+        None
+    }
+    fn assignment_kind(&self, _key: AstNodeKey) -> Option<AssignmentKind> {
+        None
+    }
+    fn event_operation(&self, _key: AstNodeKey) -> Option<EventOperationPlan> {
+        None
+    }
+    fn event_handler_lambda_for_local(&self, _key: AstNodeKey) -> Option<AstNodeKey> {
+        None
+    }
+    fn event_handler_local(&self, _key: AstNodeKey) -> Option<EventHandlerLocalPlan> {
         None
     }
     fn primitive_numeric_conversion(

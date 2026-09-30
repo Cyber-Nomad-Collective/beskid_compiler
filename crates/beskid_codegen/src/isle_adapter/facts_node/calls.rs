@@ -4,6 +4,9 @@ use super::super::*;
 
 impl SyntaxNodeFacts<'_> {
     pub(super) fn call_kind_impl(&self, key: AstNodeKey) -> Option<CallKind> {
+        if self.event_operation_impl(key).is_some_and(|plan| plan.operation == beskid_isle::EventOperation::Raise) {
+            return Some(CallKind::EventRaise);
+        }
         if self.query(beskid_queries::primitive_numeric_conversion(self.db, key)).is_some() {
             return Some(CallKind::PrimitiveNumericConversion);
         }
@@ -248,11 +251,30 @@ impl SyntaxNodeFacts<'_> {
     pub(super) fn lambda_entry_impl(&self, key: AstNodeKey) -> Option<beskid_isle::LambdaEntry> {
         let environment = self.query(closure_environment(self.db, key))?;
         let _lambda = self.query(closure_signature(self.db, key))?;
+        self.lambda_entry_from_environment(key, environment, false)
+    }
+
+    pub(super) fn event_lambda_entry_impl(&self, key: AstNodeKey) -> Option<beskid_isle::LambdaEntry> {
+        let environment = self.query(closure_environment(self.db, key))?;
+        self.lambda_entry_from_environment(key, environment, true)
+    }
+
+    fn lambda_entry_from_environment(
+        &self,
+        key: AstNodeKey,
+        environment: beskid_queries::ClosureEnvironment,
+        event_handler: bool,
+    ) -> Option<beskid_isle::LambdaEntry> {
         // Only support capture-free or fully-resolved capture environments.
         let closure_environment = if environment.captures.is_empty() {
             None
         } else {
-            let Some(authority) = self.input.closure_lowering_authority(key, key) else {
+            let authority = if event_handler {
+                self.input.event_handler_closure_lowering_authority(key, key)
+            } else {
+                self.input.closure_lowering_authority(key, key)
+            };
+            let Some(authority) = authority else {
                 return None;
             };
             let captures = authority

@@ -73,7 +73,9 @@ pub use prepare::{
     prepare_compilation_diagnostics, prepare_compilation_diagnostics_isolated, prepare_compilation_with_fact_authority,
     resolved_input_from_plan,
 };
-pub use project::{ResolvedProject, resolve_project, resolve_project_with_policy};
+pub use project::{
+    ResolvedProject, resolve_project, resolve_project_with_policy, resolve_project_with_policy_and_lock_refresh,
+};
 pub use render::render_program_tree;
 pub use semantic::{
     SemanticDiagnosticsError, require_no_semantic_errors, semantic_rule_diagnostics_for_program,

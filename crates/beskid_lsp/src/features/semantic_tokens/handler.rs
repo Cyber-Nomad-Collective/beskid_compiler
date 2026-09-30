@@ -79,7 +79,7 @@ mod tests {
             syntax_fixes: Vec::new(),
         };
 
-        let uri = "file:///config.bsol".parse().expect("valid URI");
+        let uri = crate::workspace_scan::path_to_uri(&std::env::temp_dir().join("config.bsol")).expect("valid URI");
         let tokens = match handle_semantic_tokens(&uri, &doc) {
             tower_lsp_server::ls_types::SemanticTokensResult::Tokens(tokens) => tokens,
             tower_lsp_server::ls_types::SemanticTokensResult::Partial(_) => panic!("expected full token response"),

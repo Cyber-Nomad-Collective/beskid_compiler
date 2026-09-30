@@ -59,9 +59,16 @@ pub i32 NetworkStartLocked(pointer table, pointer slot, pointer request, i64 dea
     if current == FIBER_NONE { return NETWORK_UNSUPPORTED; }
     if raw_word_load(NetworkSlotToken(slot, direction)) != 0 { return NETWORK_BUSY; }
     if direction == 1 && raw_word_load(pointer_add(slot, NETWORK_SLOT_WRITE_SHUTDOWN)) != 0 { return NETWORK_NOT_CONNECTED; }
-    // The caller passes an absolute monotonic deadline, or -1 for an unbounded wait.
+    // The internal read entrypoint may supply an explicit deadline. Otherwise
+    // stream transfers inherit the pair installed atomically on this slot.
+    mut i64 effectiveDeadline = deadline;
+    if deadline == -1 && (operation == NETWORK_READ || operation == NETWORK_WRITE) {
+        mut pointer policy = pointer_add(slot, NETWORK_SLOT_READ_DEADLINE);
+        if operation == NETWORK_WRITE { policy = pointer_add(slot, NETWORK_SLOT_WRITE_DEADLINE); }
+        effectiveDeadline = i64(raw_word_load(policy));
+    }
     // Foundation remains the sole timer and one-winner authority.
-    word token = ExternalWaitRegister(FiberHandle(current), 16 + operation, deadline);
+    word token = ExternalWaitRegister(FiberHandle(current), 16 + operation, effectiveDeadline);
     if token == 0 { return NETWORK_BUSY; }
     raw_word_store(request, token);
     raw_word_store(pointer_add(request, BESKID_NETWORK_REQUEST_OWNER_OFFSET), ExternalOwnerId());
@@ -71,11 +78,42 @@ pub i32 NetworkStartLocked(pointer table, pointer slot, pointer request, i64 dea
     raw_word_store(pointer_add(request, BESKID_NETWORK_REQUEST_SIZE), raw_word_load(pointer_add(table, NETWORK_TABLE_REQUESTS)));
     raw_word_store(pointer_add(request, BESKID_NETWORK_REQUEST_SIZE + 8), ExternalOwnerId());
     raw_word_store(pointer_add(table, NETWORK_TABLE_REQUESTS), NativeWord(request));
+    // An already elapsed deadline wins before native submission can consume a
+    // datagram or publish a successful transfer. Foundation owns the winner.
+    if effectiveDeadline >= 0 && effectiveDeadline <= clock_monotonic_nanos() {
+        ExternalTryComplete(token & 0xFFFFFFFF, token >> 32, EXTERNAL_TIMEOUT);
+        return 0;
+    }
     i32 status = network_submit(NativePointer(raw_word_load(table)), NativePointer(raw_word_load(pointer_add(slot, NETWORK_SLOT_NATIVE))), request);
     if status != i32(NETWORK_PENDING) {
         raw_word_store(pointer_add(request, BESKID_NETWORK_REQUEST_STATUS_OFFSET), word(status));
         ExternalTryComplete(token & 0xFFFFFFFF, token >> 32, EXTERNAL_READY);
     }
+    return 0;
+}
+
+[Export(Abi:"C", Symbol:"beskid_rt_v5_network_set_deadlines")]
+pub i32 NetworkSetDeadlines(word handle, i64 readDeadline, i64 writeDeadline) {
+    if readDeadline < -1 || writeDeadline < -1 { return NETWORK_UNSUPPORTED; }
+    network_table_lock();
+    pointer table = NativePointer(raw_word_load(network_table_root()));
+    pointer slot = NetworkFindLocked(table, handle);
+    if slot == NativePointer(0) { network_table_unlock(); return NETWORK_CLOSED; }
+    if raw_word_load(pointer_add(slot, NETWORK_SLOT_KIND)) != NETWORK_STREAM { network_table_unlock(); return NETWORK_UNSUPPORTED; }
+    raw_word_store(pointer_add(slot, NETWORK_SLOT_READ_DEADLINE), word(readDeadline));
+    raw_word_store(pointer_add(slot, NETWORK_SLOT_WRITE_DEADLINE), word(writeDeadline));
+    mut word direction = 0;
+    while direction < 2 {
+        word token = raw_word_load(NetworkSlotToken(slot, direction));
+        if token != 0 {
+            word owner = raw_word_load(NetworkSlotTokenOwner(slot, direction));
+            mut i64 deadline = readDeadline;
+            if direction == 1 { deadline = writeDeadline; }
+            if owner == 0 || !ExternalWaitPostDeadline(owner, token, deadline) { Trap(10, NativePointer(0), 0); }
+        }
+        direction = direction + 1;
+    }
+    network_table_unlock();
     return 0;
 }
 
@@ -107,6 +145,7 @@ pub i32 NetworkFinish(word handle, pointer request) {
 }
 
 pub i64 NetworkTransfer(word handle, pointer array, i64 offset, i64 count, word operation, pointer address, i64 deadline) {
+    if deadline < -1 { return -i64(NETWORK_UNSUPPORTED); }
     if offset < 0 || count < 0 || word(offset) > NetworkArrayLength(array) || word(count) > NetworkArrayLength(array) - word(offset) { return -i64(NETWORK_MESSAGE_TOO_LARGE); }
     word length = word(count);
     word direction = NetworkDirection(operation);

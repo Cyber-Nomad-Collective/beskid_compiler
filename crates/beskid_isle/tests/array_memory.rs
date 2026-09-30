@@ -2,8 +2,8 @@ use std::path::PathBuf;
 
 use beskid_isle::syntax_types::LiteralKind;
 use beskid_isle::{
-    ArrayLayout, AstNodeKey, FunctionEmissionError, FunctionEmitter, LoweringErrorKind, ManagedArrayAllocation,
-    NodeFacts, NodeKind,
+    ArrayLayout, AssignmentKind, AstNodeKey, FunctionEmissionError, FunctionEmitter, LoweringErrorKind,
+    ManagedArrayAllocation, NodeFacts, NodeKind,
 };
 use beskid_queries::{AstNodeId, BeskidDatabase, SourceUnitId, SyntaxGenerationId};
 use cranelift_codegen::ir::{ExternalName, Function, GlobalValueData, UserFuncName, types};
@@ -124,6 +124,10 @@ enum Root {
 }
 
 impl NodeFacts for ArrayFacts {
+    fn assignment_kind(&self, key: AstNodeKey) -> Option<AssignmentKind> {
+        (matches!(self.root, Root::IndexAssign) && key == self.nodes[0]).then_some(AssignmentKind::Index)
+    }
+
     fn node_kind(&self, key: AstNodeKey) -> Option<NodeKind> {
         if key == self.nodes[0] {
             match self.root {

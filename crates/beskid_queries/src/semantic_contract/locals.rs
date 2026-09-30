@@ -360,9 +360,8 @@ pub(super) fn parent_node(
 pub(super) fn method_this_type(db: &dyn Db, key: AstNodeKey) -> Option<beskid_analysis::syntax::Type> {
     let syntax = db.syntax_unit(key.unit).filter(|syntax| syntax.accepts_key(db, key))?;
     let index = syntax.syntax_index(db);
-    let method = nearest_ancestor(index, key.node, |kind| {
-        kind == beskid_analysis::syntax_query::NodeKind::MethodDefinition
-    })?;
+    let method =
+        nearest_ancestor(index, key.node, |kind| kind == beskid_analysis::syntax_query::NodeKind::MethodDefinition)?;
     let definition =
         index.node_at(syntax.expanded_program(db), method)?.of::<beskid_analysis::syntax::MethodDefinition>()?;
     (!matches!(definition.receiver_type.node, beskid_analysis::syntax::Type::This))

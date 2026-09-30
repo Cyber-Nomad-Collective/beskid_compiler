@@ -319,3 +319,68 @@ fn test_target_timeout_flag_wins_over_env_var() {
     };
     assert_eq!(args.target_timeout, Some(7));
 }
+
+#[test]
+fn test_matrix_timeout_defaults_to_thirty_minutes() {
+    let _guard = MATRIX_TIMEOUT_ENV_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let inherited = std::env::var_os("BESKID_MATRIX_TIMEOUT_SECS");
+    // SAFETY: serialized by MATRIX_TIMEOUT_ENV_LOCK; no other test mutates this key.
+    unsafe { std::env::remove_var("BESKID_MATRIX_TIMEOUT_SECS") };
+    let parsed = Cli::try_parse_from(["beskid", "test", "--all-targets", "Main.bd"]);
+    if let Some(value) = inherited {
+        unsafe { std::env::set_var("BESKID_MATRIX_TIMEOUT_SECS", value) };
+    }
+    let cli = parsed.expect("parse cli");
+    let Commands::Test(args) = cli.command else {
+        panic!("expected test command");
+    };
+    assert_eq!(args.execution_budgets().matrix, std::time::Duration::from_secs(1800));
+}
+
+#[test]
+fn test_matrix_timeout_flag_sets_whole_matrix_budget() {
+    let cli = Cli::try_parse_from([
+        "beskid", "test", "--all-targets", "--matrix-timeout", "3600", "Main.bd",
+    ])
+    .expect("parse cli");
+    let Commands::Test(args) = cli.command else {
+        panic!("expected test command");
+    };
+    assert_eq!(args.execution_budgets().matrix, std::time::Duration::from_secs(3600));
+}
+
+#[test]
+fn test_help_documents_matrix_timeout_default_and_env() {
+    let mut test = Cli::command().find_subcommand_mut("test").expect("test command").clone();
+    let help = test.render_long_help().to_string();
+    assert!(help.contains("--matrix-timeout"));
+    assert!(help.contains("default: 1800"));
+    assert!(help.contains("BESKID_MATRIX_TIMEOUT_SECS"));
+}
+
+static MATRIX_TIMEOUT_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+#[test]
+fn test_matrix_timeout_env_var_sets_budget_and_flag_wins() {
+    let _guard = MATRIX_TIMEOUT_ENV_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let inherited = std::env::var_os("BESKID_MATRIX_TIMEOUT_SECS");
+    // SAFETY: serialized by MATRIX_TIMEOUT_ENV_LOCK; no other test mutates this key.
+    unsafe { std::env::set_var("BESKID_MATRIX_TIMEOUT_SECS", "2400") };
+    let from_env = Cli::try_parse_from(["beskid", "test", "--all-targets", "Main.bd"]);
+    let from_flag = Cli::try_parse_from([
+        "beskid", "test", "--all-targets", "--matrix-timeout", "3600", "Main.bd",
+    ]);
+    if let Some(value) = inherited {
+        unsafe { std::env::set_var("BESKID_MATRIX_TIMEOUT_SECS", value) };
+    } else {
+        unsafe { std::env::remove_var("BESKID_MATRIX_TIMEOUT_SECS") };
+    }
+    let Commands::Test(env_args) = from_env.expect("parse env timeout").command else {
+        panic!("expected test command");
+    };
+    let Commands::Test(flag_args) = from_flag.expect("parse flag timeout").command else {
+        panic!("expected test command");
+    };
+    assert_eq!(env_args.execution_budgets().matrix, std::time::Duration::from_secs(2400));
+    assert_eq!(flag_args.execution_budgets().matrix, std::time::Duration::from_secs(3600));
+}

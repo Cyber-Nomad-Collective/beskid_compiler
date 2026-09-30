@@ -8,7 +8,7 @@ use crate::harness::workspace::E2eWorkspace;
 #[test]
 fn aot_build_and_execute_smoke_fixture() {
     let workspace = E2eWorkspace::from_fixture("smoke_project");
-    let manifest = workspace.join("Project.proj");
+    let manifest = workspace.join("SmokeProject.bproj");
     let output_binary = workspace.join("out/smoke_app");
     let object_output = workspace.join("out/smoke_app.o");
 

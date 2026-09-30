@@ -1,7 +1,10 @@
 use std::collections::{HashMap, HashSet};
 
-use beskid_isle::{AstNodeKey, DirectCallee};
-use beskid_queries::{child_nodes, closure_environment, closure_signature, node_kind};
+use beskid_isle::{AstNodeKey, DirectCallee, LocalSlotId, ManagedReferenceFact, ParameterSlot};
+use beskid_queries::{
+    ManagedReferenceKind, child_nodes, closure_environment, closure_signature, event_handler_lambda_for_local,
+    local_slot, managed_reference_kind, node_kind,
+};
 use cranelift_codegen::ir::AbiParam;
 use cranelift_codegen::isa::TargetIsa;
 
@@ -29,25 +32,60 @@ pub(in crate::module_emission) fn resolve_lambda_trampolines(
     }
     let mut trampolines = Vec::new();
     for lambda in lambdas {
-        let Some(lambda_sig) =
-            closure_signature(db, lambda).map_err(|error| emission_verification(error.to_string()))?
-        else {
-            continue;
-        };
-        let Some(mut signature) = signature_for_item(isa, lambda_sig.callable) else {
-            continue;
-        };
-        // Collect closure captures if present.
-        let closure_captures = {
-            let Some(environment) =
-                closure_environment(db, lambda).map_err(|error| emission_verification(error.to_string()))?
+        let event_handler =
+            event_handler_lambda_for_local(db, lambda).map_err(|error| emission_verification(error.to_string()))?;
+        let is_event_handler = event_handler.is_some();
+        let (lambda_body, callable) = if let Some(handler) = event_handler {
+            (handler.body, handler.signature)
+        } else {
+            let Some(lambda_sig) =
+                closure_signature(db, lambda).map_err(|error| emission_verification(error.to_string()))?
             else {
                 continue;
             };
+            (lambda_sig.body, lambda_sig.callable)
+        };
+        let Some(mut signature) = signature_for_item(isa, callable.clone()) else {
+            continue;
+        };
+        let Some(environment) =
+            closure_environment(db, lambda).map_err(|error| emission_verification(error.to_string()))?
+        else {
+            continue;
+        };
+        if environment.parameters.len() != callable.parameters.len() {
+            return Err(emission_verification("lambda parameter facts do not match its callable signature"));
+        }
+        let parameters = environment
+            .parameters
+            .iter()
+            .copied()
+            .zip(callable.parameters.iter().copied())
+            .map(|(parameter, semantic)| {
+                let slot = local_slot(db, parameter).ok().flatten()?;
+                let managed_reference = match managed_reference_kind(db, parameter).ok().flatten()? {
+                    ManagedReferenceKind::GcManaged => ManagedReferenceFact::GcManaged,
+                    ManagedReferenceKind::NativeOrScalar => ManagedReferenceFact::NativeOrScalar,
+                };
+                Some(ParameterSlot {
+                    slot: LocalSlotId { owner_node: slot.owner.node.0, index: slot.index },
+                    value_type: map_signature_type(isa, semantic)?,
+                    managed_reference,
+                })
+            })
+            .collect::<Option<Vec<_>>>()
+            .ok_or_else(|| emission_verification("lambda parameter slot or type is unavailable"))?;
+        // Collect closure captures if present.
+        let closure_captures = {
             if environment.captures.is_empty() {
                 None
             } else {
-                let Some(authority) = input.closure_lowering_authority(lambda, lambda) else {
+                let authority = if is_event_handler {
+                    input.event_handler_closure_lowering_authority(lambda, lambda)
+                } else {
+                    input.closure_lowering_authority(lambda, lambda)
+                };
+                let Some(authority) = authority else {
                     continue;
                 };
                 let Some(captures) = authority
@@ -78,8 +116,9 @@ pub(in crate::module_emission) fn resolve_lambda_trampolines(
         let symbol = format!("__beskid_lambda_entry_syntax_g{}_n{}", lambda.generation.0, lambda.node.0);
         trampolines.push(LambdaTrampoline {
             lambda,
-            lambda_body: lambda_sig.body,
+            lambda_body,
             target_signature: signature,
+            parameters,
             closure_captures,
             symbol,
         });

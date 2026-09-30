@@ -2,17 +2,20 @@ use std::collections::{HashMap, HashSet};
 
 use beskid_analysis::types::TypeId;
 use beskid_isle::AstNodeKey;
-use beskid_queries::{child_nodes, closure_call_target, spawn_entry_validation};
+use beskid_queries::{child_nodes, closure_call_target, event_handler_lambda_for_local, spawn_entry_validation};
 use cranelift_codegen::ir::Endianness;
 use cranelift_module::{DataDescription, DataId, Linkage, Module, ModuleResult};
 
-use super::items::ResolvedSyntaxModuleItem;
-use super::trampolines::{LambdaTrampoline, SpawnTrampoline};
-use crate::CodegenInput;
-use crate::aggregate_static::{AggregateStaticPlan, emit_aggregate_static_data};
-use crate::array_static::{ArrayStaticPlan, emit_array_static_data};
-use crate::closure_static::{ClosureStaticPlan, emit_closure_static_data};
-use crate::{CodegenArtifact, TypeDescriptorData};
+use super::{
+    items::ResolvedSyntaxModuleItem,
+    trampolines::{LambdaTrampoline, SpawnTrampoline},
+};
+use crate::{
+    CodegenArtifact, CodegenInput, TypeDescriptorData,
+    aggregate_static::{AggregateStaticPlan, emit_aggregate_static_data},
+    array_static::{ArrayStaticPlan, emit_array_static_data},
+    closure_static::{ClosureStaticPlan, emit_closure_static_data},
+};
 
 /// Cranelift [`DataId`] pair for a type: main descriptor blob and companion pointer-offset table.
 #[derive(Debug, Clone)]
@@ -43,6 +46,20 @@ pub(super) fn collect_array_static_plans(
             }
         }
     }
+    if let Some((composition, _)) = input.composition_authority() {
+        for plural in &composition.plurals {
+            let field = AstNodeKey {
+                unit: input.typed_program().entry,
+                generation: input.typed_program().generation,
+                node: plural.field_node_id,
+            };
+            if let Some(plan) = input.composition_plural_static_plan(field, plural.target_slots.len())
+                && symbols.insert(plan.allocation_request_symbol.clone())
+            {
+                plans.push(plan);
+            }
+        }
+    }
     plans
 }
 
@@ -61,6 +78,15 @@ pub(super) fn collect_aggregate_static_plans(
                 .aggregate_static_plan_for_specialization(key, item.specialization.as_ref())
                 .or_else(|| input.enum_static_plan_for_specialization(key, item.specialization.as_ref()));
             if let Some(plan) = plan
+                && symbols.insert(plan.allocation_request_symbol.clone())
+            {
+                plans.push(plan);
+            }
+        }
+    }
+    if let Some((composition, _)) = input.composition_authority() {
+        for activation in &composition.activation {
+            if let Some(plan) = input.composition_registration_static_plan(activation.registration_id)
                 && symbols.insert(plan.allocation_request_symbol.clone())
             {
                 plans.push(plan);
@@ -97,10 +123,16 @@ pub(super) fn collect_closure_static_plans(
         }
     }
     for trampoline in lambda_trampolines {
-        if trampoline.closure_captures.is_some()
-            && let Some(authority) = input.closure_lowering_authority(trampoline.lambda, trampoline.lambda)
-        {
-            push_plan(authority.plan);
+        if trampoline.closure_captures.is_some() {
+            let event_handler = event_handler_lambda_for_local(db, trampoline.lambda).ok().flatten().is_some();
+            let authority = if event_handler {
+                input.event_handler_closure_lowering_authority(trampoline.lambda, trampoline.lambda)
+            } else {
+                input.closure_lowering_authority(trampoline.lambda, trampoline.lambda)
+            };
+            if let Some(authority) = authority {
+                push_plan(authority.plan);
+            }
         }
     }
     let mut visited = HashSet::new();
@@ -116,6 +148,20 @@ pub(super) fn collect_closure_static_plans(
         }
     }
     plans
+}
+
+pub(super) fn event_handler_wrapper_required(input: &CodegenInput<'_>, items: &[ResolvedSyntaxModuleItem]) -> bool {
+    let mut visited = HashSet::new();
+    let mut nodes = Vec::new();
+    for item in items {
+        collect_ast_nodes(input.database(), item.key, &mut visited, &mut nodes);
+    }
+    nodes.into_iter().any(|key| {
+        matches!(
+            beskid_queries::event_operation(input.database(), key),
+            Ok(Some(fact)) if fact.handler_lambda.is_some()
+        )
+    })
 }
 
 fn collect_ast_nodes(
@@ -137,6 +183,9 @@ fn collect_ast_nodes(
 
 /// Emit artifact-owned closure descriptor/pointer-map/allocation-request data.
 pub fn emit_closure_static_plans<M: Module>(module: &mut M, artifact: &CodegenArtifact) -> ModuleResult<()> {
+    if artifact.event_handler_wrapper_required {
+        crate::emit_event_handler_static_data(module)?;
+    }
     for plan in &artifact.closure_static_plans {
         emit_closure_static_data(module, plan)?;
     }

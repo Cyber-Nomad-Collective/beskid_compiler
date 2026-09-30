@@ -14,8 +14,8 @@ pub mod snapshot;
 
 pub use diagnostics::{CompositionIssue, composition_issue_code};
 pub use model::{
-    ActivationPlanEntry, BindingPlan, CompositionHost, CompositionScope, PluralPlan, Registration, RegistrationKey,
-    RegistrationLifetime, ScopeId, ServiceSlot,
+    ActivationPlanEntry, BindingPlan, CompositionHookPlan, CompositionHost, CompositionScope, PluralPlan, Registration,
+    RegistrationKey, RegistrationLifetime, ScopeId, ServiceSlot, SingularPlan,
 };
 pub use pass::{CompositionInput, CompositionResult, resolve_composition};
 pub use snapshot::CompositionSnapshot;

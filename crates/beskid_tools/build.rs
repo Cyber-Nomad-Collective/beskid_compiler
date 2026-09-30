@@ -1,9 +1,10 @@
 use std::path::{Path, PathBuf};
 
-#[path = "corelib_fingerprint.rs"]
+#[allow(dead_code)] // The build script uses the shared fingerprint implementation and embed filters.
+#[path = "../beskid_abi/src/corelib_bundle.rs"]
 mod corelib_fingerprint;
 
-use corelib_fingerprint::{BUNDLE_FINGERPRINT_FILE, fingerprint_dir, should_skip_component};
+use corelib_fingerprint::{CORELIB_BUNDLE_FINGERPRINT_FILE, fingerprint_corelib_bundle_dir, should_skip_component};
 
 const ENV_CORELIB_SOURCE: &str = "BESKID_CORELIB_SOURCE";
 
@@ -33,8 +34,8 @@ fn main() {
         std::fs::remove_dir_all(&dest).expect("remove stale embedded_corelib");
     }
     copy_corelib_workspace_for_embed(&corelib_workspace_dir, &dest).expect("copy corelib slice");
-    let fingerprint = fingerprint_dir(&dest).expect("fingerprint embedded corelib");
-    std::fs::write(dest.join(BUNDLE_FINGERPRINT_FILE), format!("{fingerprint}\n"))
+    let fingerprint = fingerprint_corelib_bundle_dir(&dest).expect("fingerprint embedded corelib");
+    std::fs::write(dest.join(CORELIB_BUNDLE_FINGERPRINT_FILE), format!("{fingerprint}\n"))
         .expect("write embedded corelib fingerprint");
 
     register_rerun_if_changed(&corelib_workspace_dir);

@@ -686,6 +686,12 @@ define_builtins! {
         returns: U64,
         injected: true,
     },
+    &["owner_post_deadline"] => {
+        symbol: "beskid_rt_v5_intrinsic_owner_post_deadline",
+        params: [Usize, Usize, U64],
+        returns: U64,
+        injected: true,
+    },
     &["owner_pop"] => {
         symbol: "beskid_rt_v5_intrinsic_owner_pop",
         params: [Usize, Ptr],
@@ -778,7 +784,7 @@ define_builtins! {
     },
     &["network_report_leak"] => {
         symbol: "beskid_rt_v5_intrinsic_network_report_leak",
-        params: [Usize, Usize, Usize, Usize],
+        params: [Usize, Usize, Usize, Usize, Usize, Usize, Usize],
         returns: Unit,
         injected: true,
     },

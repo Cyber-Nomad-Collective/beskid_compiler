@@ -8,7 +8,7 @@ use crate::harness::workspace::E2eWorkspace;
 #[test]
 fn perf_smoke_aot_build_and_run_stay_within_time_budget() {
     let workspace = E2eWorkspace::from_fixture("perf_loop");
-    let manifest = workspace.join("Project.proj");
+    let manifest = workspace.join("PerfLoop.bproj");
     let output_binary = workspace.join("out/perf_loop");
     let cli = BeskidCliInvoker::new();
 
@@ -59,7 +59,14 @@ fn perf_batch_release_builds_stay_within_total_budget() {
     let batch_start = Instant::now();
     for fixture in fixtures {
         let workspace = E2eWorkspace::from_fixture(fixture);
-        let manifest = workspace.join("Project.proj");
+        let manifest_name = match fixture {
+            "smoke_project" => "SmokeProject.bproj",
+            "contracts_dispatch" => "ContractsDispatch.bproj",
+            "method_dispatch" => "MethodDispatch.bproj",
+            "closure_capture" => "ClosureCapture.bproj",
+            _ => unreachable!("batch fixture has a declared manifest"),
+        };
+        let manifest = workspace.join(manifest_name);
         let output_binary = workspace.join(format!("out/{fixture}_release"));
 
         let build = cli.run([

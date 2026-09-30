@@ -3,14 +3,24 @@
 use super::*;
 
 mod calls;
+mod composition;
 mod collections;
 mod enums;
+mod events;
 mod literals;
 mod shape;
 mod structs;
 mod types;
 
 impl NodeFacts for SyntaxNodeFacts<'_> {
+    fn composition_launch(&self, key: AstNodeKey) -> Option<CompositionLaunchPlan> {
+        self.composition_launch_impl(key)
+    }
+
+    fn composition_scope(&self, key: AstNodeKey) -> Option<CompositionScopePlan> {
+        self.composition_scope_impl(key)
+    }
+
     fn scoped_cleanup(&self, key: AstNodeKey) -> Option<beskid_isle::ScopedCleanupPlan> {
         self.scoped_cleanup_impl(key)
     }
@@ -61,6 +71,22 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
 
     fn call_kind(&self, key: AstNodeKey) -> Option<CallKind> {
         self.call_kind_impl(key)
+    }
+
+    fn assignment_kind(&self, key: AstNodeKey) -> Option<beskid_isle::AssignmentKind> {
+        self.assignment_kind_impl(key)
+    }
+
+    fn event_operation(&self, key: AstNodeKey) -> Option<beskid_isle::EventOperationPlan> {
+        self.event_operation_impl(key)
+    }
+
+    fn event_handler_lambda_for_local(&self, key: AstNodeKey) -> Option<AstNodeKey> {
+        self.query(beskid_queries::event_handler_lambda_for_local(self.db, key)).map(|fact| fact.lambda)
+    }
+
+    fn event_handler_local(&self, key: AstNodeKey) -> Option<beskid_isle::EventHandlerLocalPlan> {
+        self.event_handler_local_impl(key)
     }
 
     fn primitive_numeric_conversion(&self, key: AstNodeKey) -> Option<(SemanticTypeId, SemanticTypeId)> {

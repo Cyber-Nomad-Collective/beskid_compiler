@@ -523,6 +523,10 @@ impl<'a> TypeChecker<'a> {
 
         let substitution = generic_args.clone().unwrap_or_default();
 
+        if let Some(item_id) = callee_item_id {
+            self.check_generic_function_bounds(item_id, &substitution, call.span);
+        }
+
         let mapping =
             callee_item_id.map(|item_id| self.generic_substitution_mapping(item_id, &substitution)).unwrap_or_default();
 

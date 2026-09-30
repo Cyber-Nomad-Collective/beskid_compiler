@@ -18,6 +18,8 @@ mod corelib_services;
 mod diagnostics_fail_closed;
 #[path = "isle_adapter/enum_match_result.rs"]
 mod enum_match_result;
+#[path = "isle_adapter/events.rs"]
+mod events;
 #[path = "isle_adapter/importer_relocations.rs"]
 mod importer_relocations;
 #[path = "isle_adapter/literal_operators.rs"]

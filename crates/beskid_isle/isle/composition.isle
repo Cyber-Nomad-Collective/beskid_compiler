@@ -1,0 +1,11 @@
+;; A statement rule is selected only after the generation-bound syntax adapter
+;; proves that the frozen composition graph owns this exact source key.
+(decl partial emit_composition_launch (AstNodeKey) Unit)
+(extern constructor emit_composition_launch emit_composition_launch)
+(decl partial emit_composition_scope (AstNodeKey) Unit)
+(extern constructor emit_composition_scope emit_composition_scope)
+
+(rule (lower_statement key @ (node_kind (NodeKind.LaunchStatement)))
+      (emit_composition_launch key))
+(rule (lower_statement key @ (node_kind (NodeKind.WithStatement)))
+      (emit_composition_scope key))

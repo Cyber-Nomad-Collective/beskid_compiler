@@ -784,3 +784,216 @@ fn unresolved_imports_are_judged_only_for_units_of_judged_items() {
     assert_eq!(codes(&[main, main]).len(), 2, "a unit is judged once");
     assert_eq!(codes(&[main, helper]).len(), 3, "each owning unit is judged");
 }
+
+#[test]
+fn std_app_rejects_bare_core_import_while_corelib_shard_accepts_it() {
+    let mut db = BeskidDatabase::default();
+    let host_root = PathBuf::from("/tmp/std-import-scope/app/src");
+    let shard_root = PathBuf::from("/tmp/std-import-scope/corelib/Src");
+    let main_path = host_root.join("Main.bd");
+    let qualified_path = host_root.join("Qualified.bd");
+    let results_path = shard_root.join("Core/Results.bd");
+    let main_source = "use Std.Core.Results;\nuse Core.Results;\nuse Core.Results.Result;\ni32 Main() { return 0; }";
+    let qualified_source = r#"
+i32 BareType(Core.Results.Widget value) { return 0; }
+i32 BareContract(Core.Results.Reader reader) { return 0; }
+i32 StdType(Std.Core.Results.Widget value) { return 0; }
+i32 StdContract(Std.Core.Results.Reader reader) { return 0; }
+"#;
+    let results_source = r#"
+use Core.Results;
+use Core.Results.Result;
+pub enum Result { Ok() }
+pub type Widget {}
+pub contract Reader { i32 Read(); }
+i32 ShardType(Core.Results.Widget value) { return 0; }
+i32 ShardContract(Core.Results.Reader reader) { return 0; }
+"#;
+    let main_program =
+        expand_program(parse_program(main_source).expect("main parse"), DEFAULT_MAX_MACRO_EXPANSION_DEPTH);
+    let qualified_program =
+        expand_program(parse_program(qualified_source).expect("qualified parse"), DEFAULT_MAX_MACRO_EXPANSION_DEPTH);
+    let results_program =
+        expand_program(parse_program(results_source).expect("results parse"), DEFAULT_MAX_MACRO_EXPANSION_DEPTH);
+    let generation = SyntaxGenerationId(20);
+    let assembly = Arc::new(ProgramAssembly::new(
+        EffectiveCompilationRoots {
+            host: RootEntry { dependency_name: None, source_root: host_root.clone() },
+            dependencies: vec![RootEntry {
+                dependency_name: Some("corelib_results".into()),
+                source_root: shard_root.clone(),
+            }],
+        },
+        Arc::new(vec![
+            SourceUnit {
+                logical_name: main_path.display().to_string(),
+                origin_path: main_path.clone(),
+                path: main_path.clone(),
+                source: main_source.to_string(),
+                program: main_program.clone(),
+            },
+            SourceUnit {
+                logical_name: results_path.display().to_string(),
+                origin_path: results_path.clone(),
+                path: results_path.clone(),
+                source: results_source.to_string(),
+                program: results_program.clone(),
+            },
+            SourceUnit {
+                logical_name: qualified_path.display().to_string(),
+                origin_path: qualified_path.clone(),
+                path: qualified_path.clone(),
+                source: qualified_source.to_string(),
+                program: qualified_program.clone(),
+            },
+        ]),
+        0,
+        AssemblyDiscovery::ImportClosure,
+        Arc::new(ModuleIndex::empty()),
+        true,
+        generation,
+    ));
+    let main_unit = SourceUnitId::new(&db, main_path);
+    let results_unit = SourceUnitId::new(&db, results_path);
+    let qualified_unit = SourceUnitId::new(&db, qualified_path);
+    let project = ProjectSession::new(
+        &db,
+        host_root.parent().expect("project root").to_path_buf(),
+        main_unit.path(&db).clone(),
+        "App".to_string(),
+        "lock".to_string(),
+    );
+    build_typed_program(&mut db, project, generation, assembly).expect("typed syntax program");
+    let main_index = SyntaxIndex::from_program(&main_program, generation);
+    let results_index = SyntaxIndex::from_program(&results_program, generation);
+    let qualified_index = SyntaxIndex::from_program(&qualified_program, generation);
+    let main_root = key(main_unit, generation, &main_index, NodeKind::Program, 0);
+    let main = key(main_unit, generation, &main_index, NodeKind::FunctionDefinition, 0);
+    let results_root = key(results_unit, generation, &results_index, NodeKind::Program, 0);
+
+    let main_imports = beskid_queries::unresolved_imports(&db, main_root).expect("main query").expect("main root");
+    assert_eq!(
+        main_imports.iter().map(|import| import.path.as_ref()).collect::<Vec<_>>(),
+        vec!["Core.Results", "Core.Results.Result"]
+    );
+    let findings = beskid_queries::check_items(&db, &[main]).expect_err("App bare Core imports must fail E1105");
+    assert_eq!(findings.iter().map(|finding| finding.kind.code()).collect::<Vec<_>>(), vec!["E1105", "E1105"]);
+    let shard_imports =
+        beskid_queries::unresolved_imports(&db, results_root).expect("shard query").expect("shard root");
+    assert!(shard_imports.is_empty(), "corelib shard must resolve its own bare Core import");
+
+    let unresolved_type = |unit, index: &SyntaxIndex, ordinal| {
+        let function = key(unit, generation, index, NodeKind::FunctionDefinition, ordinal);
+        beskid_queries::unresolved_type_reference(&db, function).expect("nominal type query")
+    };
+    let bare_type = unresolved_type(qualified_unit, &qualified_index, 0).map(|reference| reference.name.to_string());
+    let bare_contract =
+        unresolved_type(qualified_unit, &qualified_index, 1).map(|reference| reference.name.to_string());
+    assert_eq!((bare_type, bare_contract), (Some("Widget".into()), Some("Reader".into())));
+    assert!(unresolved_type(qualified_unit, &qualified_index, 2).is_none(), "Std-qualified type must resolve");
+    assert!(unresolved_type(qualified_unit, &qualified_index, 3).is_none(), "Std-qualified contract must resolve");
+    assert!(unresolved_type(results_unit, &results_index, 0).is_none(), "shard-local type must resolve");
+    assert!(unresolved_type(results_unit, &results_index, 1).is_none(), "shard-local contract must resolve");
+}
+
+#[test]
+fn std_app_spawn_fiber_handle_and_parameter_ownership_use_canonical_module_path() {
+    let mut db = BeskidDatabase::default();
+    let host_root = PathBuf::from("/tmp/std-fiber-scope/app/src");
+    let shard_root = PathBuf::from("/tmp/std-fiber-scope/corelib/Src");
+    let main_path = host_root.join("Main.bd");
+    let fiber_path = shard_root.join("Concurrency/Fiber.bd");
+    let main_source = r#"
+i64 Compute() { return 42_i64; }
+unit Main(Std.Concurrency.Fiber<i64> parameter) {
+    let child = spawn Compute();
+    parameter.Join();
+    parameter.Join();
+    return;
+}
+"#;
+    let fiber_source = r#"
+pub type Fiber<T> { i64 handle, pub unit Join() { return; } }
+unit ShardUse(Concurrency.Fiber<i64> parameter) {
+    parameter.Join();
+    parameter.Join();
+    return;
+}
+"#;
+    let main_program =
+        expand_program(parse_program(main_source).expect("main parse"), DEFAULT_MAX_MACRO_EXPANSION_DEPTH);
+    let fiber_program =
+        expand_program(parse_program(fiber_source).expect("fiber parse"), DEFAULT_MAX_MACRO_EXPANSION_DEPTH);
+    let generation = SyntaxGenerationId(21);
+    let assembly = Arc::new(ProgramAssembly::new(
+        EffectiveCompilationRoots {
+            host: RootEntry { dependency_name: None, source_root: host_root.clone() },
+            dependencies: vec![RootEntry {
+                dependency_name: Some("corelib_concurrency".into()),
+                source_root: shard_root,
+            }],
+        },
+        Arc::new(vec![
+            SourceUnit {
+                logical_name: main_path.display().to_string(),
+                origin_path: main_path.clone(),
+                path: main_path.clone(),
+                source: main_source.to_string(),
+                program: main_program.clone(),
+            },
+            SourceUnit {
+                logical_name: fiber_path.display().to_string(),
+                origin_path: fiber_path.clone(),
+                path: fiber_path.clone(),
+                source: fiber_source.to_string(),
+                program: fiber_program.clone(),
+            },
+        ]),
+        0,
+        AssemblyDiscovery::ImportClosure,
+        Arc::new(ModuleIndex::empty()),
+        true,
+        generation,
+    ));
+    let main_unit = SourceUnitId::new(&db, main_path);
+    let fiber_unit = SourceUnitId::new(&db, fiber_path);
+    let project = ProjectSession::new(
+        &db,
+        host_root.parent().expect("project root").to_path_buf(),
+        main_unit.path(&db).clone(),
+        "App".to_string(),
+        "lock".to_string(),
+    );
+    build_typed_program(&mut db, project, generation, assembly).expect("typed syntax program");
+    let main_index = SyntaxIndex::from_program(&main_program, generation);
+    let fiber_index = SyntaxIndex::from_program(&fiber_program, generation);
+    let spawn = key(main_unit, generation, &main_index, NodeKind::SpawnExpression, 0);
+    let main = key(main_unit, generation, &main_index, NodeKind::FunctionDefinition, 1);
+    let fiber = key(fiber_unit, generation, &fiber_index, NodeKind::TypeDefinition, 0);
+    let shard_use = key(fiber_unit, generation, &fiber_index, NodeKind::FunctionDefinition, 0);
+
+    let handle = beskid_queries::spawn_handle_type(&db, spawn);
+    let ownership = beskid_queries::callable_fiber_ownership(&db, main);
+    assert!(
+        handle.as_ref().ok().and_then(Option::as_ref).is_some()
+            && ownership.as_ref().ok().and_then(Option::as_ref).is_some_and(|fact| {
+                fact.diagnostics
+                    .iter()
+                    .any(|diagnostic| diagnostic.kind == beskid_queries::SpawnDiagnosticKind::UseAfterMove)
+            }),
+        "handle={handle:?} ownership={ownership:?}"
+    );
+    let handle = handle.expect("spawn handle query").expect("spawn handle");
+    assert_eq!(handle.declaration, fiber);
+    assert_eq!(handle.payload.argument, beskid_queries::SemanticTypeId::I64);
+    let shard_ownership = beskid_queries::callable_fiber_ownership(&db, shard_use)
+        .expect("shard ownership query")
+        .expect("shard ownership");
+    assert!(
+        shard_ownership
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.kind == beskid_queries::SpawnDiagnosticKind::UseAfterMove),
+        "shard ownership={shard_ownership:?}"
+    );
+}

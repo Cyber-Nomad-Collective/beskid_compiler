@@ -6,13 +6,16 @@ mod workspaces;
 use std::path::PathBuf;
 
 use serde_json::Value;
-use tower_lsp_server::jsonrpc::Result;
-use tower_lsp_server::ls_types::LSPAny;
+use tower_lsp_server::{jsonrpc::Result, ls_types::LSPAny};
 
-use crate::commands::pckg_registry::{CMD_GET_CONNECTION_STATUS, CMD_SET_REGISTRY, CMD_VALIDATE_CONNECTION};
-use crate::commands::symbol_documentation::CMD_GET_DOCUMENTATION_URI;
-use crate::manifest_uri::manifest_path_from_uri_str;
-use crate::protocol::execute_args::{missing_args, required_uri_arg};
+use crate::{
+    commands::{
+        pckg_registry::{CMD_GET_CONNECTION_STATUS, CMD_SET_REGISTRY, CMD_VALIDATE_CONNECTION},
+        symbol_documentation::CMD_GET_DOCUMENTATION_URI,
+    },
+    manifest_uri::manifest_path_from_uri_str,
+    protocol::execute_args::{missing_args, required_uri_arg},
+};
 
 const CMD_LIST_WORKSPACES: &str = "beskid.listWorkspaces";
 const CMD_GET_WORKSPACE_SUMMARY: &str = "beskid.getWorkspaceSummary";
@@ -88,11 +91,11 @@ pub(crate) fn manifest_path_from_uri(uri: &str) -> Result<PathBuf> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use std::fs;
-    use std::path::Path;
+    use std::{fs, path::Path};
+
     use tempfile::TempDir;
 
+    use super::*;
     use crate::workspace_scan::path_to_uri_string;
 
     fn write(path: &Path, content: &str) {
@@ -298,6 +301,15 @@ target "Ext" {
     fn get_project_dependencies_merges_declared_and_lock() {
         let (_temp, root) = workspace_fixture();
         let project = root.join("apps/demo/demo.bproj");
+        write(&root.join("apps/demo/Src/Main.bd"), "Fn Main() { }\n");
+        write(&root.join("apps/lib/Src/Lib.bd"), "Fn Main() { }\n");
+        let plan = beskid_analysis::projects::build_compile_plan(&project, None).expect("resolve current graph");
+        beskid_analysis::projects::prepare_project_workspace_with_options(
+            &plan,
+            beskid_analysis::projects::WorkspacePrepareOptions { refresh_lock: true, ..Default::default() },
+            None,
+        )
+        .expect("write genuine v2 lock");
         let uri = path_to_uri_string(&project);
         let value = graph::get_project_dependencies(&uri).expect("deps");
         let declared = value["declared"].as_array().expect("declared");
@@ -305,7 +317,11 @@ target "Ext" {
         assert_eq!(declared[0]["name"], "lib");
         let locked = value["locked"].as_array().expect("locked");
         assert_eq!(locked.len(), 1);
-        assert_eq!(locked[0]["resolvedVersion"], "1.0.0");
+        assert_eq!(locked[0]["name"], "lib");
+        let project_path = PathBuf::from(locked[0]["project"].as_str().expect("resolved project path"));
+        assert_eq!(project_path, root.join("apps/lib").canonicalize().expect("canonical dependency"));
+        let materialized_path = PathBuf::from(locked[0]["materializedRoot"].as_str().expect("materialized path"));
+        assert!(materialized_path.starts_with(root.canonicalize().expect("canonical workspace")));
         let unresolved = value["unresolved"].as_array().expect("unresolved");
         assert!(unresolved.is_empty());
     }
@@ -314,6 +330,7 @@ target "Ext" {
     fn get_project_dependencies_reports_unresolved_when_lock_missing_entry() {
         let (_temp, root) = workspace_fixture();
         let project = root.join("apps/demo/demo.bproj");
+        fs::remove_file(root.join("apps/demo/Project.lock")).expect("fixture has no lock");
         write(
             &project,
             r#"
@@ -346,7 +363,84 @@ dependency "missing" {
             .iter()
             .map(|entry| entry.as_str().expect("name").to_string())
             .collect::<Vec<_>>();
-        assert_eq!(unresolved, vec!["missing".to_string()]);
+        assert_eq!(unresolved, vec!["lib".to_string(), "missing".to_string()]);
+    }
+
+    #[test]
+    fn get_project_dependencies_rejects_present_v1_malformed_and_stale_locks() {
+        let (_temp, root) = workspace_fixture();
+        let project = root.join("apps/demo/demo.bproj");
+        write(&root.join("apps/demo/Src/Main.bd"), "Fn Main() { }\n");
+        write(&root.join("apps/lib/Src/Lib.bd"), "Fn Main() { }\n");
+        let lock_path = root.join("apps/demo/Project.lock");
+        let uri = path_to_uri_string(&project);
+
+        let error = graph::get_project_dependencies(&uri).expect_err("v1 lock must not disappear from tooling");
+        assert!(error.message.contains("v1") && error.message.contains("beskid lock"), "{error:?}");
+
+        write(&lock_path, "# Project.lock v2\nnot-a-lock\n");
+        let error = graph::get_project_dependencies(&uri).expect_err("malformed v2 must not disappear");
+        assert!(error.message.contains("lockfile"), "{error:?}");
+
+        fs::remove_file(&lock_path).expect("remove malformed fixture lock before generating valid v2");
+        let plan = beskid_analysis::projects::build_compile_plan(&project, None).expect("resolve graph");
+        beskid_analysis::projects::prepare_project_workspace_with_options(
+            &plan,
+            beskid_analysis::projects::WorkspacePrepareOptions { refresh_lock: true, ..Default::default() },
+            None,
+        )
+        .expect("generate v2");
+        let valid = fs::read_to_string(&lock_path).expect("read v2");
+        write(&lock_path, &valid.replace("project_name=demo", "project_name=stale"));
+        let error = graph::get_project_dependencies(&uri).expect_err("stale v2 must not disappear");
+        assert!(error.message.contains("different project"), "{error:?}");
+    }
+
+    #[test]
+    fn get_project_dependencies_keeps_template_and_bsol_roots_declared_only() {
+        let temp = TempDir::new().expect("workspace");
+        let template = temp.path().join("Template/Template.bproj");
+        write(
+            &template,
+            r#"Template {
+  name = "Template"
+  version = "0.1.0"
+  type = Template
+}
+"#,
+        );
+        let bsol = temp.path().join("Schemas/Schemas.bproj");
+        write(
+            &bsol,
+            r#"Schemas {
+  name = "Schemas"
+  version = "0.1.0"
+  type = Bsol
+  schemas {
+    export "Main" {
+      profile = "Main"
+      path = "Schema.bsol"
+    }
+  }
+}
+"#,
+        );
+        for path in [&template, &bsol] {
+            let manifest = beskid_analysis::projects::load_manifest_from_path(path).expect("non-compile manifest");
+            assert!(matches!(
+                manifest.project.kind,
+                beskid_analysis::projects::ProjectKind::Template | beskid_analysis::projects::ProjectKind::Bsol
+            ));
+            let value = graph::get_project_dependencies(&path_to_uri_string(path)).expect("declared-only explorer");
+            assert!(value["declared"].as_array().expect("declared").is_empty());
+            assert!(value["locked"].as_array().expect("locked").is_empty());
+            assert!(value["unresolved"].as_array().expect("unresolved").is_empty());
+        }
+
+        write(&template.with_file_name("Project.lock"), "# Project.lock v1\n");
+        let error = graph::get_project_dependencies(&path_to_uri_string(&template))
+            .expect_err("present v1 lock must not be hidden on Template roots");
+        assert!(error.message.contains("v1"), "{error:?}");
     }
 
     /// Locate the VS Code extension's command snapshot.
@@ -368,8 +462,8 @@ dependency "missing" {
             .collect::<Vec<_>>();
         candidates.iter().find(|candidate| candidate.is_file()).cloned().unwrap_or_else(|| {
             panic!(
-                "beskid_vscode command snapshot not found; set BESKID_VSCODE_ROOT or check out the \
-                 beskid_vscode submodule beside compiler. Tried: {candidates:#?}"
+                "beskid_vscode command snapshot not found; set BESKID_VSCODE_ROOT or check out the beskid_vscode \
+                 submodule beside compiler. Tried: {candidates:#?}"
             )
         })
     }
@@ -422,7 +516,7 @@ dependency "missing" {
     #[test]
     fn focused_project_from_configuration_paths() {
         let path = std::env::temp_dir().join("focus-test/demo.bproj");
-        let uri = format!("file://{}", path.display());
+        let uri = crate::workspace_scan::path_to_uri(&path).expect("uri").to_string();
         let settings = serde_json::json!({ "beskid": { "focusedProjectUri": uri } });
         let focused = focused_project_from_configuration(&settings).expect("some");
         assert!(focused.is_some());

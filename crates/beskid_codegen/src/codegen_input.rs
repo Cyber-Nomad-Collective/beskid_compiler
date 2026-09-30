@@ -1,9 +1,9 @@
 //! Sole generation-safe analysis-to-codegen boundary.
 
-use std::sync::Arc;
+use std::{collections::HashSet, sync::Arc};
 
 use beskid_abi::abi_v5::{AbiManifestV5, TargetMetadata};
-use beskid_queries::{AstNodeKey, Db, TypedProgram, node_kind};
+use beskid_queries::{AstNodeKey, Db, IndexedNodeKind, TypedProgram, node_kind, node_span};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SchedulerCompilerOperation {
@@ -28,6 +28,10 @@ pub enum CodegenInputError {
     InvalidRoot(AstNodeKey),
     #[error("composition plan belongs to a different syntax generation")]
     StaleCompositionPlan,
+    #[error("composition snapshot belongs to a foreign source unit")]
+    ForeignCompositionUnit,
+    #[error("composition plan disagrees with the validated snapshot")]
+    InvalidCompositionPlan,
 }
 
 /// Complete typed input required before generated ISLE selection may begin.
@@ -39,6 +43,7 @@ pub struct CodegenInput<'db> {
     abi_manifest: AbiManifestV5,
     artifact_namespace: Arc<str>,
     composition_plan: Option<Arc<beskid_analysis::composition::BindingPlan>>,
+    composition_snapshot: Option<Arc<beskid_analysis::composition::CompositionSnapshot>>,
 }
 
 impl<'db> CodegenInput<'db> {
@@ -84,6 +89,7 @@ impl<'db> CodegenInput<'db> {
             abi_manifest,
             artifact_namespace: Arc::from("module"),
             composition_plan: None,
+            composition_snapshot: None,
         })
     }
 
@@ -119,6 +125,7 @@ impl<'db> CodegenInput<'db> {
             abi_manifest: self.abi_manifest.clone(),
             artifact_namespace,
             composition_plan: self.composition_plan.clone(),
+            composition_snapshot: self.composition_snapshot.clone(),
         }
     }
 
@@ -130,20 +137,86 @@ impl<'db> CodegenInput<'db> {
     ///
     /// Ordinary dynamic lookup has no fallback: composition lowering is authorized only when
     /// this generation-bound plan is present.
-    pub fn with_composition_plan(
+    pub fn with_composition_authority(
         mut self,
         generation: beskid_queries::SyntaxGenerationId,
         plan: Arc<beskid_analysis::composition::BindingPlan>,
+        snapshot: Arc<beskid_analysis::composition::CompositionSnapshot>,
     ) -> Result<Self, CodegenInputError> {
         if generation != self.typed_program.generation {
             return Err(CodegenInputError::StaleCompositionPlan);
         }
+        if !snapshot
+            .source_unit_path
+            .as_deref()
+            .is_some_and(|path| paths_match(path, &self.typed_program.assembly.entry_unit().path))
+        {
+            return Err(CodegenInputError::ForeignCompositionUnit);
+        }
+        let registrations = snapshot.registrations.iter().map(|registration| registration.id).collect::<HashSet<_>>();
+        let source_key = |node| AstNodeKey { unit: self.typed_program.entry, generation, node };
+        let valid_registration_sources = snapshot.registrations.iter().all(|registration| {
+            let key = source_key(registration.source_node_id);
+            registration.source_node_id.is_valid()
+                && matches!(node_kind(self.db, key), Ok(Some(IndexedNodeKind::RegistryEntry)))
+                && matches!(node_span(self.db, key), Ok(Some(span)) if span == registration.span)
+        });
+        let mut assigned_registrations = HashSet::new();
+        let mut assigned_slots = HashSet::new();
+        let valid_activation = plan.activation.len() == snapshot.registrations.len()
+            && registrations.len() == snapshot.registrations.len()
+            && plan.activation.iter().all(|entry| {
+                registrations.contains(&entry.registration_id)
+                    && assigned_registrations.insert(entry.registration_id)
+                    && usize::try_from(entry.slot.0).is_ok_and(|slot| slot < plan.activation.len())
+                    && assigned_slots.insert(entry.slot.0)
+            });
+        let valid_plurals = plan.plurals.iter().all(|plural| {
+            registrations.contains(&plural.owner_registration_id)
+                && plural.target_slots.iter().all(|slot| assigned_slots.contains(&slot.0))
+                && plural.field_node_id.is_valid()
+                && matches!(node_kind(self.db, source_key(plural.field_node_id)), Ok(Some(IndexedNodeKind::Field)))
+                && matches!(node_span(self.db, source_key(plural.field_node_id)), Ok(Some(span)) if span == plural.field_span)
+        });
+        let valid_singulars = plan.singulars.iter().all(|singular| {
+            registrations.contains(&singular.owner_registration_id)
+                && assigned_slots.contains(&singular.target_slot.0)
+                && singular.field_node_id.is_valid()
+                && matches!(node_kind(self.db, source_key(singular.field_node_id)), Ok(Some(IndexedNodeKind::Field)))
+                && matches!(node_span(self.db, source_key(singular.field_node_id)), Ok(Some(span)) if span == singular.field_span)
+        });
+        let valid_scopes = snapshot.scope_names.keys().all(|scope_id| plan.scope_parents.contains_key(scope_id));
+        let valid_hooks = plan.init_hooks.iter().chain(&plan.startup_hooks).chain(&plan.disposal_hooks).all(|hook| {
+            (hook.scope_id == beskid_analysis::composition::ScopeId::GLOBAL
+                || plan.scope_parents.contains_key(&hook.scope_id))
+                && hook.source_node_id.is_valid()
+                && matches!(
+                    node_kind(
+                        self.db,
+                        AstNodeKey { unit: self.typed_program.entry, generation, node: hook.source_node_id }
+                    ),
+                    Ok(Some(IndexedNodeKind::ScopeHook))
+                )
+        });
+        if plan.launched_host != snapshot.launched_host
+            || !valid_activation
+            || !valid_registration_sources
+            || !valid_singulars
+            || !valid_plurals
+            || !valid_scopes
+            || !valid_hooks
+        {
+            return Err(CodegenInputError::InvalidCompositionPlan);
+        }
         self.composition_plan = Some(plan);
+        self.composition_snapshot = Some(snapshot);
         Ok(self)
     }
 
-    pub fn composition_plan(&self) -> Option<&beskid_analysis::composition::BindingPlan> {
-        self.composition_plan.as_deref()
+    pub fn composition_authority(
+        &self,
+    ) -> Option<(&beskid_analysis::composition::BindingPlan, &beskid_analysis::composition::CompositionSnapshot)> {
+        Some((self.composition_plan.as_deref()?, self.composition_snapshot.as_deref()?))
     }
 
     /// The one context layout selected by the ABI-v5 target contract.

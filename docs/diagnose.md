@@ -49,11 +49,43 @@ The Python tools (`symbolize.py`, `whyfact.py`, `authority.py`, `visibility.py`)
 | `stalled.sh` | Flag a log that looks in-progress but has no writer left | yes |
 | `matrix-log.py` | Summarize final matrix counts, the last target started, and distinct error headlines | no (accepts a local file or stdin) |
 | `cargo-log.py` | Summarize completed Cargo test binaries, failed tests, and the active binary | no (accepts a local file or stdin) |
+| `network-shutdown-leak.py` | Verify a leaked pending TCP accept produces an accurate diagnostic and fail-closed process exit | yes |
+| `abi-cache.py` | List ABI-v5 Cargo build-script contract variants and their network diagnostic arity | no |
+| `test-dns-deadline-linux.sh` | Run the deterministic DNS deadline/late-result race using a test-only `LD_PRELOAD` resolver gate | yes (Linux only) |
+| `lockfile-audit.py` | Classify tracked `Project.lock` files as source, generated, or orphan; report v1/v2 counts before fixture migration | no |
+
+For portable-lock fixture migration, run `python3 scripts/diagnose/lockfile-audit.py`
+from the compiler checkout, and pass `--repo corelib` to inventory the Corelib
+checkout separately. `--json` provides a stable report for comparison across
+worktrees; `--require-v2` exits nonzero while any tracked v1 or malformed lock
+remains. The tool reads tracked files only and never rewrites a lock or cache.
+
+`test-dns-deadline-linux.sh` is a focused integration fixture, not a general environment
+diagnostic. It requires `BESKID_CLI` (built from the checkout), `BESKID_RUNTIME_PREFIX`
+(the matching native kit), and `BESKID_CORELIB_ROOT` (the corelib source root). It sets
+`BESKID_DNS_DEADLINE_SHIM=1` and applies the preload only to that one CLI test process.
+The ordinary runtime matrix leaves the opt-in variable unset and still performs a real numeric
+loopback resolution. The shim's three sentinel hostnames are intercepted by
+`dns-deadline-resolver-shim.c`: the first resolver blocks, an observer waits until the block
+is entered, and a release lookup unblocks it and waits for completion. All condition waits
+have a five-second bound, so a failed assertion or missing signal cannot strand process
+shutdown indefinitely. The fixture proves a typed DNS timeout while its resolver host-work
+lease remains live, then verifies late completion is drained. It is Linux/glibc-specific and
+does not replace the normal cross-platform DNS tests. No UDP send-timeout fixture is
+included: UDP sends have no deterministic blocking condition with the current API, and
+there is no send-buffer/backpressure control to force one. Expired UDP receive behavior
+remains covered by the ordinary cross-platform network tests.
+The script requires resolver-emitted markers for the blocked, observer, and release calls;
+JIT progress output samples function names and cannot prove which branch executed.
 
 For a large `beskid_cli test --all-targets` log, pipe it through `scripts/diagnose/matrix-log.py`
 or pass a local log path. It reports the final `matrix:` count and separate `release eligible:`
 status; raw PASS/FAIL markers are deliberately not attributed to target names because targets
 may run concurrently. An unfinished log has no final count.
+
+`beskid_cli test --all-targets` has a 30-minute whole-matrix deadline by default. For a slower
+matrix, set `--matrix-timeout <seconds>` or `BESKID_MATRIX_TIMEOUT_SECS` (the flag wins). This is
+separate from the per-target `--target-timeout <seconds>` / `BESKID_TARGET_TIMEOUT_SECS` budget.
 
 For a long `cargo test --no-fail-fast` run, pipe its log through
 `scripts/diagnose/cargo-log.py`. It counts only test binaries with a completed
@@ -73,6 +105,15 @@ answer for the given AST node. The diagnostic carries a `path#gN:nM Construct@sp
 3. Usual fix: the ISLE rule set is missing a rule for this AST node shape, or the `NodeFacts`
    implementation doesn't derive the fact this construct needs. Check
    `docs/isle-lowering-coverage.md` for whether the construct is a known gap.
+
+When a call has the expected argument facts but an older ABI signature, run
+`python3 scripts/diagnose/abi-cache.py --target-dir <cargo-target-dir>` against the checkout used
+for the test. It lists the tracked ABI contract and every cached `beskid_abi` build-script output,
+including each `network_report_leak` parameter count. A differing cache entry is a lead, not proof
+of which variant the test binary linked. After Cargo has exited, a targeted
+`cargo clean -p beskid_abi --target-dir <cargo-target-dir>` regenerates that package's outputs;
+then rebuild and rerun the failing test. Do not delete a shared target directory while another
+build is using it.
 
 ### `semantic query \`X\` is unavailable`
 
@@ -139,6 +180,11 @@ compiler now embeds.
    persists, the kit was built from a different worktree/commit, or `beskid_cli` itself embeds a
    different corpus -- rebuild `beskid_cli` first, then the kit.
 
+The e2e CLI harness stages both debug and release kits under the Cargo target directory at
+`beskid-e2e-runtime-kits/<embedded-source-hash>/`. It validates a cached kit's metadata and
+artifact hashes before reuse. An older unkeyed kit in a shared `CARGO_TARGET_DIR` is not evidence
+for the current compiler; keep it intact while another build may still be using it.
+
 ### `UnprovenCollectionOwner`
 
 Not yet covered by a dedicated tool. In practice this has traced back to the same two classes as
@@ -202,6 +248,31 @@ after normalizing away cosmetic renumbering (`v<N>`, `block<N>`, `sig<N>`, `fn<N
 `#syntax_<file>_<node>` label suffix) so only a real structural difference is left. Use this to
 confirm whether a suspected regression actually changed the generated IR, or is just numbering
 noise between two independently compiled dumps.
+
+### Leaked pending network operations at shutdown
+
+`network-shutdown-leak.py` runs a fixture process that parks a TCP accept, then lets runtime
+shutdown cancel the pending operation. The check passes only when the process exits with status
+101 and emits exactly one backend-neutral diagnostic containing the handle slot, generation,
+owner, `resource_kind=1`, `operation=accept`, `winner=cancelled`, and `leak_count=1`. Those values
+come from the live handle and pending wait record; the diagnostic must not expose a native
+descriptor.
+
+An exploratory in-process fixture called `NetworkShutdown` while an owned accept fiber was still
+parked. It reported `accept/pending/count1`, then trapped before the fiber could join. That call
+violates this internal hook's documented post-drain precondition; it does not establish a public
+close/readiness bug. Test the separate close-versus-readiness race through `NetworkClose` and its
+owned wait, not through mid-work `NetworkShutdown`. The process fixture covers supported teardown.
+
+Build a native runtime kit first, then run with isolated corelib and kit roots:
+
+```
+BESKID_RUNTIME_PREFIX=/workspace/verify/network-shutdown-kit \
+BESKID_CORELIB_ROOT=/workspace/.corelib-network-shutdown \
+python3 scripts/diagnose/network-shutdown-leak.py \
+  --cli /target/v05-network-shutdown/debug/beskid_cli \
+  --project runtime/beskid/tests/network_shutdown_leak_fixture/project.bproj
+```
 
 ## Builder etiquette
 

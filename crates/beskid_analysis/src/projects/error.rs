@@ -37,7 +37,7 @@ pub enum ProjectError {
     UnsupportedDependencySourceV1 { dependency_source: String },
     #[error("lockfile is out of date for project '{project}'")]
     LockfileOutOfDate { project: String },
-    #[error("lockfile update forbidden in frozen mode")]
+    #[error("Project.lock update forbidden in frozen mode")]
     LockfileFrozenMode,
     #[error("lockfile required in locked mode at {path}")]
     LockfileRequired { path: PathBuf },

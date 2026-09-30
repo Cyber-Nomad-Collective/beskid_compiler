@@ -94,6 +94,9 @@ impl SemanticIssueKind {
             }
             Self::ThisUsedOutsideContractOrImpl => "`This` used outside a contract or impl-block scope".to_string(),
             Self::UnresolvedAssociatedType { name } => format!("unresolved associated type `{name}`"),
+            Self::GenericBoundNotSatisfied { type_name, contract_name } => {
+                format!("generic bound not satisfied: `{type_name}` does not conform to `{contract_name}`")
+            }
             Self::ImmutableAssignment { name } => {
                 format!("cannot assign to immutable binding `{name}`")
             }
@@ -159,6 +162,9 @@ impl SemanticIssueKind {
             Self::TypeUnknownEnumType => "unknown enum type".to_string(),
             Self::TypeUnknownStructField { name } => {
                 format!("unknown struct field `{name}`")
+            }
+            Self::TypeInaccessibleStructField { name } => {
+                format!("inaccessible struct field `{name}`")
             }
             Self::TypeUnknownEnumVariant { name } => {
                 format!("unknown enum variant `{name}`")

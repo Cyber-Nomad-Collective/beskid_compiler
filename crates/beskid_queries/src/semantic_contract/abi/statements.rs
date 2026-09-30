@@ -4,12 +4,16 @@ use super::super::*;
 
 pub(in crate::semantic_contract) fn statement_abi_type_for_node(
     db: &dyn Db,
+    syntax: SyntaxUnitInput,
     program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
     index: &beskid_analysis::syntax_query::SyntaxIndex,
     key: AstNodeKey,
     node: beskid_analysis::syntax_query::DynNodeRef<'_>,
 ) -> Option<Result<SemanticTypeId, SemanticError>> {
     if let Some(binding) = node.of::<beskid_analysis::syntax::LetStatement>() {
+        if event_handler_lambda_for_local_tracked(db, syntax, key).ok().flatten().is_some() {
+            return Some(Ok(SemanticTypeId::POINTER));
+        }
         let declared = binding.type_annotation.as_ref().map_or_else(
             || inferred_local_storage_type(db, program, index, key),
             |ty| abi_type_from_syntax(db, key, &ty.node),
@@ -32,6 +36,13 @@ pub(in crate::semantic_contract) fn statement_abi_type_for_node(
     }
 
     if let Some(assignment) = node.of::<beskid_analysis::syntax::AssignExpression>() {
+        if event_operation_tracked(db, syntax, key)
+            .ok()
+            .flatten()
+            .is_some_and(|fact| matches!(fact.operation, EventOperationKind::Subscribe | EventOperationKind::UnsubscribeFirst))
+        {
+            return Some(Ok(SemanticTypeId::POINTER));
+        }
         return Some(assignment_abi_type(db, program, index, key, assignment));
     }
 

@@ -232,6 +232,17 @@ int main(void) {
     assert(!beskid_rt_v5_intrinsic_owner_pop(owner, &command));
     assert(beskid_rt_v5_intrinsic_owner_pop(other, &command));
     assert(command.wait == 456 && command.source == 2);
+    assert(beskid_rt_v5_intrinsic_owner_post_deadline(owner, 123, 4567));
+    assert(beskid_rt_v5_intrinsic_owner_post(owner, 124, 1));
+    assert(beskid_rt_v5_intrinsic_owner_post_deadline(owner, 125, -1));
+    assert(beskid_rt_v5_intrinsic_owner_pop(owner, &command));
+    assert(command.wait == 123 && command.source == 5 && command.deadline == 4567);
+    assert(beskid_rt_v5_intrinsic_owner_pop(owner, &command));
+    assert(command.wait == 124 && command.source == 1 && command.deadline == 0);
+    assert(beskid_rt_v5_intrinsic_owner_pop(owner, &command));
+    assert(command.wait == 125 && command.source == 5 && command.deadline == -1);
+    assert(!beskid_rt_v5_intrinsic_owner_post_deadline(owner, 126, -2));
+    assert(!beskid_rt_v5_intrinsic_owner_pop(owner, &command));
     for (size_t repeat = 0; repeat < 64; ++repeat) {
         /* Before: queued signal is durable even if nobody was sleeping. */
         assert(beskid_rt_v5_intrinsic_owner_post(owner, 123, 1));
@@ -280,6 +291,7 @@ int main(void) {
     uint64_t replacement = beskid_rt_v5_intrinsic_owner_create();
     assert(replacement != owner && replacement != other);
     assert(!beskid_rt_v5_intrinsic_owner_post(owner, 123, 1));
+    assert(!beskid_rt_v5_intrinsic_owner_post_deadline(owner, 123, 0));
     assert(!beskid_rt_v5_intrinsic_owner_pop(replacement, &command));
     fixture_pipe_write(descriptors[1], "x", 1);
     for (;;) {

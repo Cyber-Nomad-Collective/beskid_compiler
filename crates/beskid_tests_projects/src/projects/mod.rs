@@ -10,7 +10,7 @@ pub(crate) use test_cwd::{compiler_workspace_root, with_cwd, with_cwd_at_workspa
 mod std_env_lock;
 
 #[cfg(test)]
-pub(crate) use std_env_lock::std_dependency_env_lock;
+pub(crate) use std_env_lock::{scoped_std_dependency_root, std_dependency_env_lock};
 
 #[cfg(test)]
 pub(crate) mod fixture_harness;
@@ -21,6 +21,8 @@ mod assembly;
 mod compile_plan;
 #[cfg(test)]
 mod composition;
+#[cfg(test)]
+mod cargo_workspace;
 #[cfg(test)]
 mod corelib;
 #[cfg(test)]
@@ -38,6 +40,8 @@ mod manifest;
 mod mod_manifest;
 #[cfg(test)]
 mod resolution;
+#[cfg(test)]
+mod registry_lock;
 #[cfg(test)]
 mod templates;
 #[cfg(test)]

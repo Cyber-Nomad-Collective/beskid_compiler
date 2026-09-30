@@ -47,10 +47,10 @@ pub(in crate::semantic_contract) fn resolve_contract(db: &dyn Db, key: AstNodeKe
         let modules = prefix.iter().map(|segment| segment.node.name.node.name.clone()).collect::<Vec<_>>();
         units.extend(resolve_qualified_module_unit(db, key, &modules));
         let registry = db.syntax_dependency_registry().lock().expect("syntax dependency registry");
-        units.extend(registry.modules.get(&(key.generation, modules.clone())).into_iter().flatten().copied());
+        units.extend(registry.visible_module_units(key.unit, key.generation, &modules).into_iter().flatten().copied());
         let mut full = modules;
         full.push(name.to_owned());
-        units.extend(registry.modules.get(&(key.generation, full)).into_iter().flatten().copied());
+        units.extend(registry.visible_module_units(key.unit, key.generation, &full).into_iter().flatten().copied());
     }
     let mut visited = HashSet::new();
     let mut candidates = Vec::new();

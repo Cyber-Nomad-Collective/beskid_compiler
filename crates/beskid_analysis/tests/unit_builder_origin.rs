@@ -2,6 +2,7 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use beskid_analysis::projects::assembly::UnitBuilder;
@@ -9,14 +10,16 @@ use beskid_analysis::syntax::SyntaxGenerationId;
 use beskid_artifacts::{ArtifactStore, content_fingerprint};
 
 const SOURCE: &str = "i32 Main() { return 0; }";
+static NEXT_PROJECT: AtomicU64 = AtomicU64::new(0);
 
 struct ProjectRoot(PathBuf);
 
 impl ProjectRoot {
     fn new() -> Self {
         let nanos = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
-        let path = std::env::temp_dir().join(format!("beskid_origin_{}_{nanos}", std::process::id()));
-        fs::create_dir_all(&path).expect("create temporary project");
+        let sequence = NEXT_PROJECT.fetch_add(1, Ordering::Relaxed);
+        let path = std::env::temp_dir().join(format!("beskid_origin_{}_{nanos}_{sequence}", std::process::id()));
+        fs::create_dir(&path).expect("create unique temporary project");
         Self(path)
     }
 }

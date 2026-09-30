@@ -12,6 +12,7 @@ fn isle_inputs_are_in_one_stable_order() {
         &[
             "types.isle",
             "ast.isle",
+            "events.isle",
             "expressions.isle",
             "literals.isle",
             "binary.isle",
@@ -19,6 +20,7 @@ fn isle_inputs_are_in_one_stable_order() {
             "calls.isle",
             "dispatch.isle",
             "statements.isle",
+            "composition.isle",
             "control_flow.isle",
             "memory.isle",
             "runtime_intrinsics.isle",
