@@ -15,6 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   changing lockfile replay, contract checking, or type-inference behavior.
 - Keep event facts, contract witnesses, enum arity checks, and ISLE emission
   warning-free under Rust 1.98's strict Clippy gate without changing their APIs.
+- Keep ABI workspace discovery, native owner tests, AOT bootstrap and Windows
+  toolchain tests warning-free under the release gate's strict Rust 1.98 Clippy check.
 - Keep ABI-v5 soft-builtin export validation warning-free under the release
   gate's strict Clippy check without changing its signature rules.
 - Pin the Corelib regression that rejects duplicate HTTP `Host` fields before

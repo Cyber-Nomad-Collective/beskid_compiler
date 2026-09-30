@@ -280,7 +280,7 @@ fn executable_bootstrap_source(
     core_args: Option<&GeneratedCoreArgsEntryAdapter>,
 ) -> PathBuf {
     core_args
-        .map(|adapter| assembly_root.join(&adapter.target).join(&adapter.entry_source))
+        .map(|adapter| assembly_root.join(adapter.target).join(adapter.entry_source))
         .unwrap_or_else(|| assembly_root.join("common/executable_bootstrap.c"))
 }
 

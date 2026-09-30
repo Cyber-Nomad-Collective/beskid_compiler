@@ -15,14 +15,14 @@ use beskid_tests_support::native_harness::{executable_name, native_c_compiler, r
 struct FixtureDirectory(PathBuf);
 
 impl FixtureDirectory {
-    fn Create() -> Self {
+    fn create() -> Self {
         let nonce = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
         let path = std::env::temp_dir().join(format!("beskid-owner-transport-{}-{nonce}", std::process::id()));
         std::fs::create_dir_all(&path).unwrap();
         Self(path)
     }
 
-    fn Path(&self) -> &Path {
+    fn path(&self) -> &Path {
         &self.0
     }
 }
@@ -39,8 +39,8 @@ fn native_owner_wake_closes_each_park_window_and_routes_only_to_its_owner() {
     assert!(supported_native_host(), "unsupported native fixture host");
 
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let outputDir = FixtureDirectory::Create();
-    let executable = outputDir.Path().join(executable_name("owner_transport"));
+    let output_dir = FixtureDirectory::create();
+    let executable = output_dir.path().join(executable_name("owner_transport"));
     let mut compile = native_c_compiler();
     compile
         .args(["-Wall", "-Wextra", "-Werror"])

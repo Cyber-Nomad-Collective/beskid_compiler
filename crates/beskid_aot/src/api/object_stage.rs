@@ -22,6 +22,107 @@ pub(super) struct ObjectStageResult {
     pub(super) executable_program_entry: Option<String>,
 }
 
+pub(super) fn emit_object_stage(req: &AotBuildRequest) -> AotResult<ObjectStageResult> {
+    let target = detect_target(req.target_triple.as_deref())?;
+    let object_path = req.object_path.clone().unwrap_or_else(|| req.output_path.with_extension(target.object_ext));
+
+    let entry_adapter = core_args_entry_adapter(&req.artifact, &target.triple)?;
+    let exports = req.artifact.exports.clone();
+    let executable_entry = if req.output_kind == BuildOutputKind::Exe {
+        if req
+            .artifact
+            .functions
+            .iter()
+            .any(|function| function.name.split('#').next() == Some(req.entrypoint.as_str()))
+        {
+            Some(ExecutableEntrySymbol { logical: &req.entrypoint, symbol: EXECUTABLE_PROGRAM_ENTRY })
+        } else {
+            return Err(crate::error::AotError::MissingEntrypoint { symbol: req.entrypoint.clone() });
+        }
+    } else {
+        None
+    };
+    if let Some(entry) = executable_entry {
+        if let Some(export) = exports.iter().find(|export| {
+            matches!(export.exported_symbol.as_str(), "main" | "wmain")
+                || (export.exported_symbol == entry.symbol
+                    && export.beskid_name.split('#').next() != Some(entry.logical))
+        }) {
+            return Err(crate::error::AotError::InvalidRequest {
+                message: format!("explicit export `{}` collides with the executable bootstrap", export.exported_symbol),
+            });
+        }
+        if let Some(export) = exports.iter().find(|export| {
+            export.beskid_name.split('#').next() == Some(entry.logical) && export.exported_symbol != entry.symbol
+        }) {
+            return Err(crate::error::AotError::InvalidRequest {
+                message: format!(
+                    "selected executable entry `{}` cannot export alias `{}`; its host boundary is `{}`",
+                    entry.logical, export.exported_symbol, entry.symbol,
+                ),
+            });
+        }
+    }
+    let all_symbols = req
+        .artifact
+        .functions
+        .iter()
+        .map(|function| emitted_object_symbol(&function.name, &exports, executable_entry))
+        .collect::<Vec<_>>();
+    let export_table = ExportTable::from_artifact(&req.artifact);
+    let export_policy = export_table.resolve_export_policy(&req.export_policy);
+    let mut exported_symbols = apply_export_policy(all_symbols, &export_policy);
+    if let Some(entry) = executable_entry {
+        // The bootstrap needs external object linkage, which is independent of
+        // the artifact's public API. Only an explicit symbol request exports it.
+        if !matches!(&export_policy, ExportPolicy::Explicit(symbols) if symbols.iter().any(|symbol| symbol == entry.symbol))
+        {
+            exported_symbols.retain(|symbol| symbol != entry.symbol);
+        }
+    }
+    let mut linkage_symbol_set = exported_symbols.iter().cloned().collect::<HashSet<_>>();
+    if let Some(entry) = executable_entry {
+        linkage_symbol_set.insert(entry.symbol.to_owned());
+    }
+
+    let mut object_module = BeskidObjectModule::new(req.target_triple.as_deref(), req.profile)?;
+    let obs = req.pipeline.as_deref();
+    observe_phase_result(obs, AOT_EMIT_OBJECT, || {
+        object_module.compile_artifact_with_exports_and_executable_entry(
+            &req.artifact,
+            &linkage_symbol_set,
+            executable_entry,
+            obs,
+        )
+    })?;
+
+    object_module.finalize_to_path(&object_path)?;
+
+    let additional_object_paths = if executable_entry.is_some() {
+        let returns_void = req
+            .artifact
+            .functions
+            .iter()
+            .find(|function| function.name.split('#').next() == Some(req.entrypoint.as_str()))
+            .is_some_and(|function| function.function.signature.returns.is_empty());
+        vec![compile_executable_bootstrap(
+            &target.triple,
+            entry_adapter,
+            object_path.parent().unwrap_or_else(|| std::path::Path::new(".")),
+            "beskid",
+            returns_void,
+        )?]
+    } else {
+        Vec::new()
+    };
+    Ok(ObjectStageResult {
+        object_path,
+        exported_symbols,
+        additional_object_paths,
+        executable_program_entry: executable_entry.map(|entry| entry.symbol.to_owned()),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -150,104 +251,4 @@ mod tests {
             }
         }
     }
-}
-pub(super) fn emit_object_stage(req: &AotBuildRequest) -> AotResult<ObjectStageResult> {
-    let target = detect_target(req.target_triple.as_deref())?;
-    let object_path = req.object_path.clone().unwrap_or_else(|| req.output_path.with_extension(target.object_ext));
-
-    let entry_adapter = core_args_entry_adapter(&req.artifact, &target.triple)?;
-    let exports = req.artifact.exports.clone();
-    let executable_entry = if req.output_kind == BuildOutputKind::Exe {
-        if req
-            .artifact
-            .functions
-            .iter()
-            .any(|function| function.name.split('#').next() == Some(req.entrypoint.as_str()))
-        {
-            Some(ExecutableEntrySymbol { logical: &req.entrypoint, symbol: EXECUTABLE_PROGRAM_ENTRY })
-        } else {
-            return Err(crate::error::AotError::MissingEntrypoint { symbol: req.entrypoint.clone() });
-        }
-    } else {
-        None
-    };
-    if let Some(entry) = executable_entry {
-        if let Some(export) = exports.iter().find(|export| {
-            matches!(export.exported_symbol.as_str(), "main" | "wmain")
-                || (export.exported_symbol == entry.symbol
-                    && export.beskid_name.split('#').next() != Some(entry.logical))
-        }) {
-            return Err(crate::error::AotError::InvalidRequest {
-                message: format!("explicit export `{}` collides with the executable bootstrap", export.exported_symbol),
-            });
-        }
-        if let Some(export) = exports.iter().find(|export| {
-            export.beskid_name.split('#').next() == Some(entry.logical) && export.exported_symbol != entry.symbol
-        }) {
-            return Err(crate::error::AotError::InvalidRequest {
-                message: format!(
-                    "selected executable entry `{}` cannot export alias `{}`; its host boundary is `{}`",
-                    entry.logical, export.exported_symbol, entry.symbol,
-                ),
-            });
-        }
-    }
-    let all_symbols = req
-        .artifact
-        .functions
-        .iter()
-        .map(|function| emitted_object_symbol(&function.name, &exports, executable_entry))
-        .collect::<Vec<_>>();
-    let export_table = ExportTable::from_artifact(&req.artifact);
-    let export_policy = export_table.resolve_export_policy(&req.export_policy);
-    let mut exported_symbols = apply_export_policy(all_symbols, &export_policy);
-    if let Some(entry) = executable_entry {
-        // The bootstrap needs external object linkage, which is independent of
-        // the artifact's public API. Only an explicit symbol request exports it.
-        if !matches!(&export_policy, ExportPolicy::Explicit(symbols) if symbols.iter().any(|symbol| symbol == entry.symbol))
-        {
-            exported_symbols.retain(|symbol| symbol != entry.symbol);
-        }
-    }
-    let mut linkage_symbol_set = exported_symbols.iter().cloned().collect::<HashSet<_>>();
-    if let Some(entry) = executable_entry {
-        linkage_symbol_set.insert(entry.symbol.to_owned());
-    }
-
-    let mut object_module = BeskidObjectModule::new(req.target_triple.as_deref(), req.profile)?;
-    let obs = req.pipeline.as_deref();
-    observe_phase_result(obs, AOT_EMIT_OBJECT, || {
-        object_module.compile_artifact_with_exports_and_executable_entry(
-            &req.artifact,
-            &linkage_symbol_set,
-            executable_entry,
-            obs,
-        )
-    })?;
-
-    object_module.finalize_to_path(&object_path)?;
-
-    let additional_object_paths = if executable_entry.is_some() {
-        let returns_void = req
-            .artifact
-            .functions
-            .iter()
-            .find(|function| function.name.split('#').next() == Some(req.entrypoint.as_str()))
-            .is_some_and(|function| function.function.signature.returns.is_empty());
-        vec![compile_executable_bootstrap(
-            &target.triple,
-            entry_adapter,
-            object_path.parent().unwrap_or_else(|| std::path::Path::new(".")),
-            "beskid",
-            returns_void,
-        )?]
-    } else {
-        Vec::new()
-    };
-    Ok(ObjectStageResult {
-        object_path,
-        exported_symbols,
-        additional_object_paths,
-        executable_program_entry: executable_entry.map(|entry| entry.symbol.to_owned()),
-    })
 }

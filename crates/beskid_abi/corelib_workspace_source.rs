@@ -7,11 +7,11 @@ pub fn resolve_corelib_workspace(manifest_dir: &Path, override_path: Option<&OsS
         if is_workspace(&path) {
             return Some(path);
         }
-        if path.file_name().is_some_and(|name| name == "beskid_corelib") && has_manifest_with_extension(&path, "bproj")
+        if path.file_name().is_some_and(|name| name == "beskid_corelib")
+            && has_manifest_with_extension(&path, "bproj")
+            && let Some(parent) = path.parent().filter(|parent| is_workspace(parent))
         {
-            if let Some(parent) = path.parent().filter(|parent| is_workspace(parent)) {
-                return Some(parent.to_path_buf());
-            }
+            return Some(parent.to_path_buf());
         }
     }
     let in_tree = manifest_dir.join("../../corelib");

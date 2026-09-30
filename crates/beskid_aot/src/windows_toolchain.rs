@@ -211,11 +211,11 @@ fn installed_llvm_bin() -> Option<PathBuf> {
 
 #[cfg(any(windows, test))]
 fn decode_cmd_unicode(output: &[u8]) -> AotResult<String> {
-    let chunks = output.chunks_exact(2);
-    if !chunks.remainder().is_empty() {
+    let (chunks, remainder) = output.as_chunks::<2>();
+    if !remainder.is_empty() {
         return Err(unavailable("VsDevCmd.bat", "cmd /u produced an odd-length Unicode environment"));
     }
-    let units = chunks.map(|bytes| u16::from_le_bytes([bytes[0], bytes[1]])).collect::<Vec<_>>();
+    let units = chunks.iter().copied().map(u16::from_le_bytes).collect::<Vec<_>>();
     String::from_utf16(&units)
         .map_err(|_| unavailable("VsDevCmd.bat", "cmd /u produced an invalid Unicode environment"))
 }
