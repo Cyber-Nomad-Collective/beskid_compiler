@@ -230,12 +230,10 @@ impl<'a> TypeChecker<'a> {
                 let binding_syntax = self.associated_type_binding_syntax(program, &type_name, &assoc_name);
                 let resolved = if let Some(ty_syntax) = binding_syntax {
                     self.type_id_for_type_in_generic_scope(&ty_syntax)
-                } else if let Some(default) = default {
+                } else {
                     // The default was resolved in the contract's own scope (`type Item = T;`
                     // interns `GenericParam("T")`); substitute this conformance site's arguments.
-                    Some(self.substitute_type_id(default, &subst))
-                } else {
-                    None
+                    default.map(|default| self.substitute_type_id(default, &subst))
                 };
 
                 match resolved {
@@ -1207,4 +1205,3 @@ mod conformance_tests {
         );
     }
 }
-

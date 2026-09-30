@@ -553,7 +553,7 @@ pub fn load_project_lock_dependencies_from_path(
     if !regular_lockfile_exists(lock_path)? {
         return Ok(Vec::new());
     }
-    let content = fs::read_to_string(&lock_path)
+    let content = fs::read_to_string(lock_path)
         .map_err(|e| ProjectError::Validation(format!("failed to read {}: {e}", lock_path.display())))?;
     reject_v1_lock_for_replay(&content)?;
     Ok(ProjectLockfileV2::parse_v2(&content)?.dependencies)
@@ -666,9 +666,7 @@ pub(super) fn validate_existing_lock_graph(
     }
     let existing_paths =
         existing.dependencies.iter().filter(|entry| entry.source != ProjectLockSource::Registry).collect::<Vec<_>>();
-    if existing_paths.len() != path_entries.len()
-        || path_entries.iter().any(|entry| !existing_paths.iter().any(|locked| *locked == entry))
-    {
+    if existing_paths.len() != path_entries.len() || path_entries.iter().any(|entry| !existing_paths.contains(&entry)) {
         return Err(ProjectError::Validation(
             "Project.lock is stale: dependency graph changed; run `beskid update`".into(),
         ));

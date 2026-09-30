@@ -114,7 +114,7 @@ fn bundled_corelib_source_root(
     let expected_project_relative = canonical_package_root.strip_prefix(canonical_workspace_root).ok()?;
 
     let physical_project_root = dependency.project_root.canonicalize().ok()?;
-    if physical_project_root.strip_prefix(&bundle_root).ok()? != expected_project_relative {
+    if physical_project_root.strip_prefix(bundle_root).ok()? != expected_project_relative {
         return None;
     }
     let physical_source_root = dependency.source_root.canonicalize().ok()?;

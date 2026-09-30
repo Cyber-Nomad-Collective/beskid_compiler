@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Keep CLI test accounting, registry/LSP/Engine fixtures, and ISLE adapter
   assertions warning-free under the v0.5 strict Rust Clippy gate.
+- Keep analysis and its tests warning-free under Rust 1.98 strict Clippy without
+  changing lockfile replay, contract checking, or type-inference behavior.
 - Keep ABI-v5 soft-builtin export validation warning-free under the release
   gate's strict Clippy check without changing its signature rules.
 - Pin the Corelib regression that rejects duplicate HTTP `Host` fields before

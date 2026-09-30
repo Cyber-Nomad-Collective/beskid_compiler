@@ -388,6 +388,12 @@ fn is_std_manifest_path(manifest_path: &Path) -> bool {
     normalized_manifest == corelib_manifest
 }
 
+fn format_cycle_from_visiting(visiting: &[PathBuf], cycle_start: usize, repeated_path: &Path) -> String {
+    let mut cycle_chain = visiting[cycle_start..].iter().map(|path| path.display().to_string()).collect::<Vec<_>>();
+    cycle_chain.push(repeated_path.display().to_string());
+    cycle_chain.join(" -> ")
+}
+
 #[cfg(test)]
 mod tests {
     use super::bundled_corelib_dependency_path;
@@ -398,10 +404,4 @@ mod tests {
         // A random project directory must not inherit Corelib from a compiler checkout.
         assert_eq!(bundled_corelib_dependency_path(Path::new("/definitely-not-an-installed-beskid-corelib")), None);
     }
-}
-
-fn format_cycle_from_visiting(visiting: &[PathBuf], cycle_start: usize, repeated_path: &Path) -> String {
-    let mut cycle_chain = visiting[cycle_start..].iter().map(|path| path.display().to_string()).collect::<Vec<_>>();
-    cycle_chain.push(repeated_path.display().to_string());
-    cycle_chain.join(" -> ")
 }

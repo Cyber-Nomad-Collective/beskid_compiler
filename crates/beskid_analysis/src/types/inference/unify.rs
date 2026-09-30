@@ -19,6 +19,8 @@ pub fn is_numeric(table: &TypeTable, type_id: TypeId) -> bool {
     )
 }
 
+// TypeError is shared across analysis; boxing it here would change this API and its callers.
+#[allow(clippy::result_large_err)]
 pub fn unify_types(table: &TypeTable, left: TypeId, right: TypeId, span: SpanInfo) -> Result<TypeId, TypeError> {
     if left == right {
         return Ok(left);

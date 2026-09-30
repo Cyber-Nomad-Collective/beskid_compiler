@@ -94,6 +94,18 @@ pub(super) fn materialized_dependency_id(
     Ok(format!("{}-{suffix}", sanitize_segment(name)))
 }
 
+pub(super) fn sanitize_segment(value: &str) -> String {
+    let mut result = String::new();
+    for ch in value.chars() {
+        if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' {
+            result.push(ch);
+        } else {
+            result.push('_');
+        }
+    }
+    if result.is_empty() { "dependency".to_string() } else { result }
+}
+
 #[cfg(test)]
 mod stable_id_tests {
     use super::*;
@@ -105,16 +117,4 @@ mod stable_id_tests {
             "alpha-60e1eb5f56a307ee659d04846b6f78bf"
         );
     }
-}
-
-pub(super) fn sanitize_segment(value: &str) -> String {
-    let mut result = String::new();
-    for ch in value.chars() {
-        if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' {
-            result.push(ch);
-        } else {
-            result.push('_');
-        }
-    }
-    if result.is_empty() { "dependency".to_string() } else { result }
 }
