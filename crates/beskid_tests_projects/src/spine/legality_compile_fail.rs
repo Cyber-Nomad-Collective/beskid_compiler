@@ -48,6 +48,7 @@ fn corpus_targets() -> Vec<(String, String, String)> {
     targets
 }
 
+/// Copy only checked-in project inputs, excluding lockfiles and generated `obj/` content.
 fn copy_fixture_tree(source: &std::path::Path, destination: &std::path::Path) {
     std::fs::create_dir_all(destination).expect("create temporary fixture directory");
     for entry in std::fs::read_dir(source).expect("read fixture directory") {
@@ -77,13 +78,37 @@ fn every_legality_compile_fail_target_is_rejected_with_its_code_in_the_dependenc
         assert!(codes.contains(expected), "the compile-fail corpus has no target for {expected}");
     }
     let source_root = corpus_root();
-    let parent = source_root.parent().expect("fixture corpus parent");
+    let compiler_root =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..").canonicalize().expect("compiler workspace root");
+    let temporary_parent = compiler_root.join("target");
+    match std::fs::symlink_metadata(&temporary_parent) {
+        Ok(_) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            std::fs::create_dir_all(&temporary_parent).expect("create Cargo target directory");
+        }
+        Err(error) => panic!("inspect Cargo target directory: {error}"),
+    }
+    let target_metadata = std::fs::symlink_metadata(&temporary_parent).expect("Cargo target directory");
+    assert!(
+        target_metadata.is_dir() && !target_metadata.file_type().is_symlink(),
+        "Cargo target directory must be a real directory outside source inventory: {}",
+        temporary_parent.display()
+    );
     let temporary_root = tempfile::Builder::new()
         .prefix("legality-compile-fail-")
-        .tempdir_in(parent)
+        .tempdir_in(&temporary_parent)
         .expect("temporary legality fixture directory");
     let root = temporary_root.path();
     copy_fixture_tree(&source_root, root);
+    let copied_manifest = root.join("legality.bproj");
+    let manifest_text = std::fs::read_to_string(&copied_manifest).expect("read copied fixture manifest");
+    let original_corelib_path = "path = \"../../../../..\"";
+    assert_eq!(manifest_text.matches(original_corelib_path).count(), 1, "fixture Corelib path changed unexpectedly");
+    std::fs::write(
+        &copied_manifest,
+        manifest_text.replacen(original_corelib_path, "path = \"../../corelib/beskid_corelib\"", 1),
+    )
+    .expect("rewrite copied fixture Corelib path");
     let mut failures = Vec::new();
     with_project_test_env(root, || {
         for (target, entry, code) in &targets {
