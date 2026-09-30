@@ -42,6 +42,7 @@ pnpm-debug.log*
 .DS_Store
 
 # e2e generated artifacts
+crates/beskid_engine/obj/
 crates/beskid_e2e_tests/fixtures/**/obj/
 crates/beskid_e2e_tests/fixtures/smoke_project/Project.lock
 crates/beskid_e2e_tests/fixtures/manual_println/Project.lock
