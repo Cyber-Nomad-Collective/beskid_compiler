@@ -70,6 +70,16 @@ type CauseReader: Reader {
         return Result::Error(IoError::ReadFailed(TransferFailure::PeerReset()));
     }
 }
+type OrderlyEofReader: Reader {
+    pub Result<i64, IoError> Read(u8[] destination, i64 offset, i64 count) {
+        return Result::Ok(0_i64);
+    }
+}
+type CauseWriter: Writer {
+    pub Result<i64, IoError> Write(u8[] source, i64 offset, i64 count) {
+        return Result::Error(IoError::WriteFailed(TransferFailure::PeerReset()));
+    }
+}
 bool IsUnspecifiedTransfer(Result<i64, IoError> result) {
     return match result {
         Result::Error(IoError::ReadFailed(cause)) => match cause { TransferFailure::Unspecified() => true, _ => false, },
@@ -80,6 +90,27 @@ bool IsUnspecifiedTransfer(Result<i64, IoError> result) {
 bool IsPeerResetRead(Result<unit, IoError> result) {
     return match result {
         Result::Error(IoError::ReadFailed(cause)) => match cause { TransferFailure::PeerReset() => true, _ => false, },
+        _ => false,
+    };
+}
+bool IsPeerResetBaseRead(Result<i64, IoError> result) {
+    return match result {
+        Result::Error(IoError::ReadFailed(cause)) => match cause { TransferFailure::PeerReset() => true, _ => false, },
+        _ => false,
+    };
+}
+bool IsOrderlyEofBaseRead(Result<i64, IoError> result) {
+    return match result { Result::Ok(0_i64) => true, _ => false, };
+}
+bool IsOrderlyEofExactRead(Result<unit, IoError> result) {
+    return match result {
+        Result::Error(IoError::UnexpectedEof(completed)) => completed == 0_i64,
+        _ => false,
+    };
+}
+bool IsPeerResetWriteAll(Result<unit, IoError> result) {
+    return match result {
+        Result::Error(IoError::WriteFailed(cause)) => match cause { TransferFailure::PeerReset() => true, _ => false, },
         _ => false,
     };
 }
@@ -260,6 +291,12 @@ i64 DirectTransferBoundaryProof() {
     if !IsUnspecifiedTransfer(IO.Write(oversizeWriter, source, 0_i64, 1_i64)) { return 25_i64; }
     CauseReader causeReader = CauseReader {};
     if !IsPeerResetRead(IO.ReadExact(causeReader, destination, 0_i64, 1_i64)) { return 26_i64; }
+    if !IsPeerResetBaseRead(IO.Read(causeReader, destination, 0_i64, 1_i64)) { return 27_i64; }
+    OrderlyEofReader orderlyEof = OrderlyEofReader {};
+    if !IsOrderlyEofBaseRead(IO.Read(orderlyEof, destination, 0_i64, 1_i64)) { return 28_i64; }
+    if !IsOrderlyEofExactRead(IO.ReadExact(orderlyEof, destination, 0_i64, 1_i64)) { return 29_i64; }
+    CauseWriter causeWriter = CauseWriter {};
+    if !IsPeerResetWriteAll(IO.WriteAll(causeWriter, source, 0_i64, 1_i64)) { return 30_i64; }
     return 0_i64;
 }
 [Export(Abi:"C", Symbol:"RunFoundationFixture")]
