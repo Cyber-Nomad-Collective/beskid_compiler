@@ -11,6 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Reject cross-unit reads of private network resource handles during member
   legality, before AOT lowering, with an inaccessible-field diagnostic.
+- Keep the Windows Rust workspace gate portable across MSVC memory imports,
+  lockfile timestamps, LSP document URIs, and path assertions; reject rooted
+  target entries and serialize registry fixtures with Corelib-root overrides.
 - Keep the loopback registry fixture's accepted sockets blocking on Windows,
   so delayed requests cannot crash portable-lock ZIP validation tests.
 - Reject forged registry lock paths before preparing output, derive registry

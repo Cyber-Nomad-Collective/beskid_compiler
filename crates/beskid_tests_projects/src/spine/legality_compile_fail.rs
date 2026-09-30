@@ -86,7 +86,9 @@ fn every_legality_compile_fail_target_is_rejected_with_its_code_in_the_dependenc
                 })
                 .collect::<Vec<_>>();
             let helper = format!("Helpers/{target}.bd");
-            let reported = errors.iter().any(|(found, source, _)| found == code && source.ends_with(&helper));
+            let reported = errors
+                .iter()
+                .any(|(found, source, _)| found == code && std::path::Path::new(source).ends_with(&helper));
             let internal = errors.iter().any(|(found, _, _)| found.starts_with("E21"));
             if !reported || internal {
                 failures.push(format!("{target}: expected {code} in {helper}, got {errors:?}"));

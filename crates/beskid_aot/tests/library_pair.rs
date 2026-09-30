@@ -222,7 +222,7 @@ fn windows_host_platform_pair_emits_a_coff_import_library_for_the_shared_runtime
             String::from_utf8_lossy(&output.stderr)
         );
         assert_windows_memory_provider(&consumer);
-        eprintln!("Windows {label}: static/shared/import artifacts and VCRUNTIME140.dll!memset verified");
+        eprintln!("Windows {label}: static/shared/import artifacts and VCRUNTIME140.dll memory imports verified");
     }
 }
 
@@ -376,8 +376,11 @@ fn assert_windows_memory_provider(image: &std::path::Path) {
             }
         }
     }
-    assert_eq!(memory_imports, [("VCRUNTIME140.dll", "memset")], "{} imports: {imports}", image.display());
-    assert_eq!(vcruntime_imports, [("VCRUNTIME140.dll", "memset")], "{} imports: {imports}", image.display());
+    memory_imports.sort_unstable();
+    vcruntime_imports.sort_unstable();
+    let expected = [("VCRUNTIME140.dll", "memcpy"), ("VCRUNTIME140.dll", "memset")];
+    assert_eq!(memory_imports, expected, "{} imports: {imports}", image.display());
+    assert_eq!(vcruntime_imports, expected, "{} imports: {imports}", image.display());
 }
 
 #[test]

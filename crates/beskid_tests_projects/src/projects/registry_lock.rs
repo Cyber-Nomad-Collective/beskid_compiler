@@ -26,6 +26,7 @@ const OVER_LIMIT_BYTES: usize = 64 * 1024 * 1024 + 1;
 const PACKAGE_MANIFEST: &[u8] = b"PkgCore {\n  name = \"PkgCore\"\n  version = \"0.1.0\"\n}\n\ntarget \"PkgCore\" {\n  kind = \"Lib\"\n  entry = \"Marker.bd\"\n}\n";
 
 struct RegistryFixture {
+    _env_guard: std::sync::MutexGuard<'static, ()>,
     root: TempDir,
     app_manifest: PathBuf,
     packages: Arc<Mutex<BTreeMap<String, Vec<u8>>>>,
@@ -37,6 +38,7 @@ struct RegistryFixture {
 
 impl RegistryFixture {
     fn new() -> Self {
+        let env_guard = super::std_dependency_env_lock();
         assert!(
             std::env::var_os("BESKID_PCKG_URL").is_none(),
             "unset BESKID_PCKG_URL so registry fixture requests stay on loopback"
@@ -84,7 +86,16 @@ impl RegistryFixture {
         )
         .expect("write app manifest");
 
-        Self { root, app_manifest, packages, requests, oversized_download, stop, server: Some(server) }
+        Self {
+            _env_guard: env_guard,
+            root,
+            app_manifest,
+            packages,
+            requests,
+            oversized_download,
+            stop,
+            server: Some(server),
+        }
     }
 
     fn publish(&self, version: &str, marker: &str) {
