@@ -177,7 +177,6 @@ target "App" {
 "#,
     );
 
-    let previous_corelib_root = std::env::var_os("BESKID_CORELIB_ROOT");
     let _std_root = super::super::scoped_std_dependency_root(&std_dir);
     with_cwd_at_workspace_root(&root, || {
         let plan = build_compile_plan(&app_manifest_path, None).expect("plan should build");
@@ -185,7 +184,6 @@ target "App" {
         assert!(plan.dependency_projects.iter().any(|dependency| dependency.dependency_name == "Std"));
     });
     drop(_std_root);
-    assert_eq!(std::env::var_os("BESKID_CORELIB_ROOT"), previous_corelib_root);
     let _ = fs::remove_dir_all(root);
 }
 

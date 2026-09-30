@@ -43,6 +43,9 @@ fn materialized_dependency_names(workspace: &beskid_analysis::projects::Prepared
 
 #[test]
 fn relocated_sibling_path_keeps_lock_bytes_and_materialized_names() {
+    // Keep the implicit Std root stable across both plans while other project tests
+    // exercise temporary Corelib installations; acquire this before the cwd lock.
+    let _env = super::super::std_dependency_env_lock();
     let original_parent = temp_case_dir("portable_sibling_original");
     let moved_parent = temp_case_dir("portable_sibling_moved");
     let original_tree = original_parent.join("tree");

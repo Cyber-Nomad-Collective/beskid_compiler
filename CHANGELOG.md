@@ -14,6 +14,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Keep the Windows Rust workspace gate portable across MSVC memory imports,
   lockfile timestamps, LSP document URIs, and path assertions; reject rooted
   target entries and serialize registry fixtures with Corelib-root overrides.
+  Validate blank AOT entrypoints without requiring an installed runtime kit,
+  and hold the Corelib-root lock across relocated-project tests so parallel
+  overrides cannot change the lockfile's dependency graph.
 - Keep the loopback registry fixture's accepted sockets blocking on Windows,
   so delayed requests cannot crash portable-lock ZIP validation tests.
 - Reject forged registry lock paths before preparing output, derive registry

@@ -6,8 +6,11 @@ fn executable_build_rejects_empty_entrypoint() {
     let dir = temp_case_dir("entrypoint_required_exe");
     let output = dir.join("sample");
 
-    let err = build(AotBuildRequest::with_defaults(artifact, BuildOutputKind::Exe, output, "   "))
-        .expect_err("blank entrypoint for executable should fail");
+    // Construct without discovering an installed runtime kit: request validation must
+    // reject the blank executable entrypoint before it needs a kit.
+    let mut request = AotBuildRequest::with_defaults(artifact, BuildOutputKind::ObjectOnly, output, "   ");
+    request.output_kind = BuildOutputKind::Exe;
+    let err = build(request).expect_err("blank entrypoint for executable should fail");
 
     assert!(matches!(err, AotError::InvalidRequest { .. }));
     assert!(err.to_string().contains("entrypoint must not be empty"));
