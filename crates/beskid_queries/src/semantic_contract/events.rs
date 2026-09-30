@@ -130,6 +130,10 @@ pub(in crate::semantic_contract) fn event_handler_lambda_for_local_tracked(
     .transpose()
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "preserve the two syntax-specific event call sites during release hardening"
+)]
 fn event_fact_for_target(
     db: &dyn Db,
     program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,

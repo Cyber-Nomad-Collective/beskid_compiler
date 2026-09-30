@@ -474,7 +474,7 @@ pub(super) fn contract_witnesses_for_call(
                 .node_at(syntax.expanded_program(db), concrete.node)
                 .and_then(|node| node.of::<TypeDefinition>())
                 .ok_or_else(|| SemanticError::unavailable("contract_conformance"))?;
-            if !type_declaration_conforms_to_contract(db, concrete, &definition, contract) {
+            if !type_declaration_conforms_to_contract(db, concrete, definition, contract) {
                 return Err(SemanticError::new(format!(
                     "missing contract conformance for {}",
                     definition.name.node.name

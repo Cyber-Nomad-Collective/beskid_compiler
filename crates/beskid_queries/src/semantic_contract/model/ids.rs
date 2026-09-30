@@ -73,17 +73,6 @@ pub fn format_ast_node_trace(db: &dyn Db, key: AstNodeKey, source_label: &str) -
     format!("{source_label}:{position} ({construct})")
 }
 
-#[cfg(test)]
-mod ast_node_site_format_tests {
-    use super::{SourceSpan, format_source_span_range};
-
-    #[test]
-    fn formats_line_column_range() {
-        let span = SourceSpan { start: 100, end: 140, line_col_start: (52, 5), line_col_end: (55, 6) };
-        assert_eq!(format_source_span_range(span), "52:5-55:6");
-    }
-}
-
 fn normalized_source_path(path: &Path) -> PathBuf {
     let absolute = if path.is_absolute() {
         path.to_path_buf()
@@ -112,3 +101,14 @@ fn normalized_source_path(path: &Path) -> PathBuf {
 
 /// Generation-safe key for a syntax node in an interned source unit.
 pub type AstNodeKey = beskid_analysis::syntax::AstNodeKey<SourceUnitId>;
+
+#[cfg(test)]
+mod ast_node_site_format_tests {
+    use super::{SourceSpan, format_source_span_range};
+
+    #[test]
+    fn formats_line_column_range() {
+        let span = SourceSpan { start: 100, end: 140, line_col_start: (52, 5), line_col_end: (55, 6) };
+        assert_eq!(format_source_span_range(span), "52:5-55:6");
+    }
+}

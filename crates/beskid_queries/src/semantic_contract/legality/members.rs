@@ -223,7 +223,7 @@ fn enum_constructor_legality(
             },
         });
     };
-    (variant.node.fields.len() != constructor.args.len()).then(|| MemberReferenceFinding {
+    (variant.node.fields.len() != constructor.args.len()).then_some(MemberReferenceFinding {
         site,
         kind: MemberReferenceKind::EnumConstructorArity {
             expected: variant.node.fields.len(),
@@ -260,7 +260,7 @@ fn match_pattern_legality(
                 },
             });
         };
-        (variant.node.fields.len() != pattern.node.items.len()).then(|| MemberReferenceFinding {
+        (variant.node.fields.len() != pattern.node.items.len()).then_some(MemberReferenceFinding {
             site: pattern_site,
             kind: MemberReferenceKind::PatternArity {
                 expected: variant.node.fields.len(),

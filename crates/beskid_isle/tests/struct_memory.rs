@@ -134,10 +134,9 @@ fn emit(root: Root, field_index: u32, function_index: u32) -> cranelift_codegen:
     let facts = facts(isa.pointer_type(), root, field_index, valid_layout());
     let emitter = FunctionEmitter::new(isa.as_ref());
     let signature = emitter.signature([], [types::I32]);
-    let function = emitter
+    emitter
         .emit_expression(UserFuncName::user(0, function_index), signature.clone(), &facts, facts.nodes[0])
-        .expect("verified struct field lowering");
-    function
+        .expect("verified struct field lowering")
 }
 
 #[test]

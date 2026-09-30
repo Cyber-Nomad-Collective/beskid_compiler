@@ -171,9 +171,7 @@ impl IsleContext<'_, '_, '_, '_> {
     }
 
     pub(super) fn emit_event_mutation(&mut self, key: AstNodeKey, expected: EventOperation) -> Option<Value> {
-        let Some(plan) = self.facts.event_operation(key) else {
-            return None;
-        };
+        let plan = self.facts.event_operation(key)?;
         (plan.operation == expected && plan.capacity > 0 && plan.handler.is_some()).then_some(())?;
         let pointer = dispatch::pointer_type(self.frontend_config);
         let receiver = if let Some(slot) = self.facts.local_slot(plan.receiver) {

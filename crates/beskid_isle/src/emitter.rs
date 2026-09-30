@@ -98,6 +98,7 @@ impl<'isa> FunctionEmitter<'isa> {
 
     /// Emit a lambda entry, binding source parameters and any captured locals before lowering its
     /// body through generated ISLE.
+    #[expect(clippy::too_many_arguments, reason = "keep the codegen closure-entry ABI stable for release validation")]
     pub fn emit_closure_lambda_entry_with_call_importer(
         &self,
         name: UserFuncName,
