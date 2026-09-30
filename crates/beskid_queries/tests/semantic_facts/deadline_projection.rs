@@ -133,6 +133,65 @@ fn deadline_projection_rejects_a_lookalike_nominal_type() {
 }
 
 #[test]
+fn direct_projection_rejects_a_private_network_handle_across_source_units() {
+    let temp = tempfile::tempdir().expect("application root");
+    let owner_path = temp.path().join("Main.bd");
+    let declaration_path = temp.path().join("Network/Tcp/TcpStream.bd");
+    let owner_source = "use Network.Tcp.TcpStream; i64 Reveal(TcpStream value) { return value.handle; }";
+    let declaration_source = "pub type TcpStream { i64 handle, pub i64 visible }";
+    let result = fact_result(
+        owner_path,
+        owner_source.into(),
+        declaration_path,
+        declaration_source.into(),
+        "value.handle",
+        NodeKind::PathExpression,
+        |db, key| aggregate_field_access(db, key),
+    );
+    assert!(result.is_err(), "a foreign source unit must not expose a private field: {result:?}");
+}
+
+#[test]
+fn direct_projection_keeps_public_network_fields_accessible() {
+    let temp = tempfile::tempdir().expect("application root");
+    let owner_path = temp.path().join("Main.bd");
+    let declaration_path = temp.path().join("Network/Tcp/TcpStream.bd");
+    let owner_source = "use Network.Tcp.TcpStream; i64 Reveal(TcpStream value) { return value.visible; }";
+    let declaration_source = "pub type TcpStream { i64 handle, pub i64 visible }";
+    let result = fact_result(
+        owner_path,
+        owner_source.into(),
+        declaration_path,
+        declaration_source.into(),
+        "value.visible",
+        NodeKind::PathExpression,
+        |db, key| aggregate_field_access(db, key),
+    );
+    assert!(result.expect("public field query").is_some(), "public field access must remain available");
+}
+
+#[test]
+fn private_field_read_is_a_coded_member_error_before_lowering() {
+    let temp = tempfile::tempdir().expect("application root");
+    let owner_path = temp.path().join("Main.bd");
+    let declaration_path = temp.path().join("Network/Tcp/TcpStream.bd");
+    let owner_source = "use Network.Tcp.TcpStream; i64 Reveal(TcpStream value) { return value.handle; }";
+    let declaration_source = "pub type TcpStream { i64 handle, pub i64 visible }";
+    let finding = fact_result(
+        owner_path,
+        owner_source.into(),
+        declaration_path,
+        declaration_source.into(),
+        "i64 Reveal",
+        NodeKind::FunctionDefinition,
+        |db, key| member_reference_legality(db, key),
+    )
+    .expect("member legality query")
+    .expect("private field read must be rejected before lowering");
+    assert_eq!(finding.kind, MemberReferenceKind::InaccessibleStructField { name: "handle".into() });
+}
+
+#[test]
 fn deadline_projection_admits_only_canonical_network_internal() {
     let owner_path = canonical_corelib_service_source_path(CANONICAL_NETWORK_INTERNAL_SOURCE_PATH)
         .expect("canonical Network/Internal source");

@@ -19,7 +19,7 @@ use beskid_analysis::syntax::{
 pub enum MemberReferenceKind {
     /// A struct literal field or a field read that the resolved type does not declare (E1211).
     UnknownStructField { name: Arc<str> },
-    /// A struct literal attempts to construct a type whose required field is private (E1211).
+    /// A struct literal or field read reaches a private field of another source unit (E1211).
     InaccessibleStructField { name: Arc<str> },
     /// A struct literal omits a required, accessible field (E1212).
     MissingStructField { name: Arc<str> },
@@ -131,7 +131,16 @@ fn unknown_field_read(
     let FieldAccessReceiver { declaration, layout, field_name, .. } =
         field_access_receiver(db, program, index, site, reference, None, None)?.ok()?;
     if layout.fields.iter().any(|(name, _)| name.as_ref() == field_name) {
-        return None;
+        let inaccessible = aggregate_field_access(db, site).err().is_some_and(|error| {
+            matches!(
+                error.unavailable_query(),
+                Some("aggregate_field_access.visibility" | "nominal_field_projection.visibility")
+            )
+        });
+        return inaccessible.then(|| MemberReferenceFinding {
+            site,
+            kind: MemberReferenceKind::InaccessibleStructField { name: Arc::from(field_name) },
+        });
     }
     let declared = declared_member_names(db, declaration)?;
     if declared.fields.contains(field_name)

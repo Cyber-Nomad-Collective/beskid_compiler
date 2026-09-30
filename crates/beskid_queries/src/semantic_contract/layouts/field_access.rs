@@ -68,8 +68,10 @@ fn aggregate_field_access_for_environment(
                 .filter(|field| field.node.kind == beskid_analysis::syntax::FieldKind::Value)
                 .nth(field_index as usize)
                 .ok_or_else(|| SemanticError::unavailable("aggregate_field_access"))?;
-            if definition.name.node.name == "Deadline"
-                && field_name == "monotonicNanos"
+            let protected_field = (definition.name.node.name == "Deadline" && field_name == "monotonicNanos")
+                || (field_name == "handle"
+                    && matches!(definition.name.node.name.as_str(), "TcpStream" | "TcpListener" | "UdpSocket"));
+            if protected_field
                 && declaration.unit != key.unit
                 && field.node.visibility.node != beskid_analysis::syntax::Visibility::Public
                 && !canonical_network_deadline_projection(db, key, declaration, &definition.name.node.name, field_name)
