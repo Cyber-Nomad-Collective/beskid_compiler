@@ -203,7 +203,7 @@ pub(crate) fn execute_prepared_target(
     let mut first_failure = None;
     let mut last_started_test = None;
     let mut planned = planned.into_iter();
-    while let Some((test, row_index, initial)) = planned.next() {
+    for (test, row_index, initial) in planned.by_ref() {
         if let Err(error) = workspace.check_budget(&target.name, "execute_tests", Some(target_started)) {
             timeout_error = Some(error);
             budget_expired = true;
@@ -330,9 +330,7 @@ pub(crate) fn execute_prepared_target(
 
     let result = if timeout_error.is_some() {
         TargetResult::TimedOut
-    } else if summary.failed > 0 {
-        TargetResult::Failed
-    } else if compile_fail_target_without_tests {
+    } else if summary.failed > 0 || compile_fail_target_without_tests {
         TargetResult::Failed
     } else {
         TargetResult::Passed

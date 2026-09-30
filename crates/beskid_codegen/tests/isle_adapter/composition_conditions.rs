@@ -425,7 +425,7 @@ fn failed_launch_branches_through_teardown_before_trapping() {
     let (failed, active) = clif.split_once("trap user9").expect("failure path must trap after teardown");
     for symbol in ["composition_shutdown", "composition_container_drop"] {
         let callees = clif.lines().filter(|line| line.contains(&format!("%{symbol}")))
-            .filter_map(|line| line.trim().split_whitespace().next())
+            .filter_map(|line| line.split_whitespace().next())
             .map(|callee| format!("call {callee}("))
             .collect::<Vec<_>>();
         assert!(!callees.is_empty(), "missing canonical import {symbol}:\n{clif}");
@@ -462,7 +462,7 @@ fn failed_slot_publication_and_object_allocation_branch_through_teardown() {
     assert!(clif.contains("%composition_slot_store"), "registration must publish its slot:\n{clif}");
     for symbol in ["composition_shutdown", "composition_container_drop"] {
         let callees = clif.lines().filter(|line| line.contains(&format!("%{symbol}")))
-            .filter_map(|line| line.trim().split_whitespace().next())
+            .filter_map(|line| line.split_whitespace().next())
             .map(|callee| format!("call {callee}("))
             .collect::<Vec<_>>();
         let calls = callees.iter().map(|call| clif.matches(call).count()).sum::<usize>();
@@ -501,7 +501,7 @@ fn structured_scope_exits_balance_return_break_and_continue() {
             .expect("lowered Main").function.display().to_string();
         for symbol in ["composition_scope_enter", "composition_scope_leave"] {
             let callees = clif.lines().filter(|line| line.contains(&format!("%{symbol}")))
-                .filter_map(|line| line.trim().split_whitespace().next())
+                .filter_map(|line| line.split_whitespace().next())
                 .map(|callee| format!("call {callee}("))
                 .collect::<Vec<_>>();
             let calls = callees.iter().map(|call| clif.matches(call).count()).sum::<usize>();
@@ -597,7 +597,7 @@ i32 Main() { launch AppHost(); return 0; }
     );
     for symbol in ["composition_shutdown", "composition_container_drop"] {
         let callees = clif.lines().filter(|line| line.contains(&format!("%{symbol}")))
-            .filter_map(|line| line.trim().split_whitespace().next())
+            .filter_map(|line| line.split_whitespace().next())
             .map(|callee| format!("call {callee}("))
             .collect::<Vec<_>>();
         let calls = callees.iter().map(|call| clif.matches(call).count()).sum::<usize>();

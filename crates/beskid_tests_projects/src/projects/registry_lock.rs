@@ -1446,7 +1446,7 @@ fn zip_directory_with_bad_crc_is_rejected_before_publication() {
         .windows(4)
         .enumerate()
         .filter_map(|(offset, bytes)| (bytes == 0x0201_4b50_u32.to_le_bytes()).then_some(offset))
-        .last()
+        .next_back()
         .expect("directory central entry");
     artifact[directory_central + 16..directory_central + 20].copy_from_slice(&1_u32.to_le_bytes());
     fixture.packages.lock().unwrap().insert(OLD_VERSION.to_owned(), artifact);

@@ -463,7 +463,7 @@ target "App" {
         let valid = fs::read_to_string(&lock).expect("valid lock");
 
         fs::write(&lock, "# Project.lock v1\n").expect("replace lock with v1");
-        refresh_after_disk_change(&client, &state, &[lock.clone()]).await;
+        refresh_after_disk_change(&client, &state, std::slice::from_ref(&lock)).await;
         let invalid = next_for_uri(&mut notifications, &uri).await;
         assert!(invalid.diagnostics.iter().any(|d| d.message.contains("v1") && d.message.contains("beskid lock")));
 
@@ -485,7 +485,7 @@ target "App" {
         let valid = fs::read_to_string(&lock).expect("valid lock");
 
         fs::write(&lock, "# Project.lock v1\n").expect("replace lock with v1");
-        refresh_after_disk_change(&client, &state, &[lock.clone()]).await;
+        refresh_after_disk_change(&client, &state, std::slice::from_ref(&lock)).await;
         let invalid = next_for_uri(&mut notifications, &uri).await;
         assert!(invalid.diagnostics.iter().any(|d| d.message.contains("v1") && d.message.contains("beskid lock")));
 

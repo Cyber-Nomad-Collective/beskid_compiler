@@ -20,8 +20,8 @@ impl ReplayFixture {
         let root = temp_case_dir(label);
         let app = root.join("App");
         let dependency = root.join(dependency_dir);
-        let dependency_manifest = format!(
-            "project {{\n  name = \"Shared\"\n  version = \"0.1.0\"\n}}\n\ntarget \"Shared\" {{\n  kind = \"Lib\"\n  entry = \"Main.bd\"\n}}\n"
+        let dependency_manifest = String::from(
+            "project {\n  name = \"Shared\"\n  version = \"0.1.0\"\n}\n\ntarget \"Shared\" {\n  kind = \"Lib\"\n  entry = \"Main.bd\"\n}\n",
         );
         write_project(&dependency, &dependency_manifest);
         let app_manifest = format!(

@@ -46,7 +46,7 @@ fn run_cleanup_fixture(fixture: &str) {
             origin_path: path.clone(),
             path,
             logical_name: "scoped_cleanup.bd".into(),
-            source: source.into(),
+            source,
             program,
         }]),
         0,

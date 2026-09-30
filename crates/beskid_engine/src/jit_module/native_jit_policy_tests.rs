@@ -27,6 +27,7 @@ enum Placement {
 }
 
 #[derive(Clone, Copy)]
+#[expect(clippy::enum_variant_names, reason = "memory protection modes explicitly name their read capability")]
 enum FinalProtection {
     ReadExecute,
     ReadOnly,

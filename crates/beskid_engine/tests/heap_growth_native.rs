@@ -57,8 +57,8 @@ fn heap_growth_assembly_with_fixture_source(fixture_source: Option<&str>) -> Arc
     let units = paths
         .into_iter()
         .map(|(path, logical_name)| {
-            let source = if logical_name == fixture_name && fixture_source.is_some() {
-                fixture_source.expect("checked Some above").to_owned()
+            let source = if let Some(fixture_source) = fixture_source.filter(|_| logical_name == fixture_name) {
+                fixture_source.to_owned()
             } else {
                 std::fs::read_to_string(&path).unwrap_or_else(|error| panic!("read {path:?}: {error}"))
             };
@@ -178,7 +178,7 @@ fn large_object_alone_allocates_and_reads_back_correctly() {
 
 fn size_class_sweep_expected() -> i64 {
     let sizes: [i64; 10] = [8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096];
-    sizes.iter().map(|size| ((size % 251) as i64) + (size - 1)).sum()
+    sizes.iter().map(|size| (size % 251) + (size - 1)).sum()
 }
 
 #[test]
