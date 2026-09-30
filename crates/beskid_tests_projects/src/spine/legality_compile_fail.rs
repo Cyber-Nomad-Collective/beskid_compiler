@@ -48,6 +48,24 @@ fn corpus_targets() -> Vec<(String, String, String)> {
     targets
 }
 
+fn copy_fixture_tree(source: &std::path::Path, destination: &std::path::Path) {
+    std::fs::create_dir_all(destination).expect("create temporary fixture directory");
+    for entry in std::fs::read_dir(source).expect("read fixture directory") {
+        let source_path = entry.expect("fixture entry").path();
+        let destination_path = destination.join(source_path.file_name().expect("fixture entry name"));
+        let file_type = std::fs::symlink_metadata(&source_path).expect("fixture metadata").file_type();
+        if file_type.is_dir() {
+            if source_path.file_name().is_some_and(|name| name == "Helpers") {
+                copy_fixture_tree(&source_path, &destination_path);
+            }
+        } else if file_type.is_file()
+            && source_path.extension().is_some_and(|extension| extension == "bd" || extension == "bproj")
+        {
+            std::fs::copy(&source_path, &destination_path).expect("copy fixture file");
+        }
+    }
+}
+
 #[test]
 fn every_legality_compile_fail_target_is_rejected_with_its_code_in_the_dependency_unit() {
     let targets = corpus_targets();
@@ -58,9 +76,16 @@ fn every_legality_compile_fail_target_is_rejected_with_its_code_in_the_dependenc
     ] {
         assert!(codes.contains(expected), "the compile-fail corpus has no target for {expected}");
     }
-    let root = corpus_root();
+    let source_root = corpus_root();
+    let parent = source_root.parent().expect("fixture corpus parent");
+    let temporary_root = tempfile::Builder::new()
+        .prefix("legality-compile-fail-")
+        .tempdir_in(parent)
+        .expect("temporary legality fixture directory");
+    let root = temporary_root.path();
+    copy_fixture_tree(&source_root, root);
     let mut failures = Vec::new();
-    with_project_test_env(&root, || {
+    with_project_test_env(root, || {
         for (target, entry, code) in &targets {
             let resolved = resolve_fixture(&root, entry, target);
             let result = beskid_queries::prepare_compilation_diagnostics(
@@ -95,5 +120,9 @@ fn every_legality_compile_fail_target_is_rejected_with_its_code_in_the_dependenc
             }
         }
     });
+    assert!(
+        !source_root.join("Project.lock").exists(),
+        "legality compile-fail test must not write a lockfile into the checked-in fixture"
+    );
     assert!(failures.is_empty(), "compile-fail corpus regressions:\n{}", failures.join("\n"));
 }
