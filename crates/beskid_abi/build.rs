@@ -1,3 +1,6 @@
+#[path = "corelib_workspace_source.rs"]
+mod corelib_workspace_source;
+
 fn main() {
     let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let manifest_path = beskid_manifest::default_manifest_path(manifest_dir);
@@ -5,13 +8,19 @@ fn main() {
 
     println!("cargo:rerun-if-changed={}", manifest_path.display());
     println!("cargo:rerun-if-changed=build.rs");
+    println!("cargo:rerun-if-changed=corelib_workspace_source.rs");
 
-    let corelib_marker = manifest_dir.join("../../corelib/CoreLib.bws");
-    println!("cargo:rerun-if-changed={}", corelib_marker.display());
-    assert!(
-        corelib_marker.is_file(),
-        "compiler/corelib is missing; run `git submodule update --init corelib` from the compiler directory"
+    println!("cargo:rerun-if-env-changed=BESKID_CORELIB_SOURCE");
+    println!("cargo:rerun-if-changed={}", manifest_dir.join("../../corelib").display());
+    let corelib_workspace = corelib_workspace_source::resolve_corelib_workspace(
+        manifest_dir,
+        std::env::var_os("BESKID_CORELIB_SOURCE").as_deref(),
+    )
+    .expect(
+        "compiler/corelib workspace is missing or invalid; initialize the `corelib` submodule or set \
+             BESKID_CORELIB_SOURCE to a valid workspace with a .bws manifest and beskid_corelib/",
     );
+    println!("cargo:rerun-if-changed={}", corelib_workspace.display());
 
     let source = std::fs::read_to_string(&manifest_path)
         .unwrap_or_else(|err| panic!("beskid_abi build: read runtime manifest: {err}"));

@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Honor a valid external `BESKID_CORELIB_SOURCE` in ABI builds while failing
+  closed when neither that workspace nor the in-tree Corelib is valid; share
+  workspace selection with the tools build.
 - Reject cross-unit reads of private network resource handles during member
   legality, before AOT lowering, with an inaccessible-field diagnostic.
 - Keep the Windows Rust workspace gate portable across MSVC memory imports,

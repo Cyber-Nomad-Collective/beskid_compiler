@@ -3,6 +3,8 @@ use std::path::{Path, PathBuf};
 #[allow(dead_code)] // The build script uses the shared fingerprint implementation and embed filters.
 #[path = "../beskid_abi/src/corelib_bundle.rs"]
 mod corelib_fingerprint;
+#[path = "../beskid_abi/corelib_workspace_source.rs"]
+mod corelib_workspace_source;
 
 use corelib_fingerprint::{CORELIB_BUNDLE_FINGERPRINT_FILE, fingerprint_corelib_bundle_dir, should_skip_component};
 
@@ -10,24 +12,24 @@ const ENV_CORELIB_SOURCE: &str = "BESKID_CORELIB_SOURCE";
 
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
+    println!("cargo:rerun-if-changed=../beskid_abi/corelib_workspace_source.rs");
 
     let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
     let out_dir = PathBuf::from(std::env::var("OUT_DIR").expect("OUT_DIR set by Cargo"));
-    let candidates: Vec<PathBuf> = corelib_workspace_candidates(manifest_dir);
-
-    let corelib_workspace_dir = candidates
-        .into_iter()
-        .find(|p| has_corelib_workspace_manifest(p) && p.join("beskid_corelib").is_dir())
-        .unwrap_or_else(|| {
-            panic!(
-                "beskid_tools: corelib workspace not found. Expected `../../corelib` with a \
+    let corelib_workspace_dir = corelib_workspace_source::resolve_corelib_workspace(
+        manifest_dir,
+        std::env::var_os(ENV_CORELIB_SOURCE).as_deref(),
+    )
+    .unwrap_or_else(|| {
+        panic!(
+            "beskid_tools: corelib workspace not found. Expected `../../corelib` with a \
                  `.bws` workspace manifest plus `beskid_corelib/` (init the `compiler/corelib` \
                  submodule). Set {} to an absolute path to the **workspace** directory (parent of \
                  `beskid_corelib/`) to override. Hint: `git submodule update --init --recursive` \
                  from the compiler repo root.",
-                ENV_CORELIB_SOURCE
-            )
-        });
+            ENV_CORELIB_SOURCE
+        )
+    });
 
     let dest = out_dir.join("embedded_corelib");
     if dest.exists() {
@@ -40,52 +42,6 @@ fn main() {
 
     register_rerun_if_changed(&corelib_workspace_dir);
     println!("cargo:rerun-if-env-changed={ENV_CORELIB_SOURCE}");
-}
-
-fn corelib_workspace_candidates(manifest_dir: &Path) -> Vec<PathBuf> {
-    let mut candidates: Vec<PathBuf> = Vec::new();
-    if let Ok(override_path) = std::env::var(ENV_CORELIB_SOURCE)
-        && !override_path.trim().is_empty()
-    {
-        let p = PathBuf::from(&override_path);
-        // Allow override to point at either workspace root or legacy beskid_corelib only.
-        if has_corelib_workspace_manifest(&p) {
-            candidates.push(p);
-        } else if p.file_name().is_some_and(|n| n == "beskid_corelib") && discover_project_manifest_in_embed_dir(&p) {
-            if let Some(parent) = p.parent() {
-                candidates.push(parent.to_path_buf());
-            }
-            candidates.push(p);
-        } else {
-            candidates.push(p);
-        }
-    }
-    candidates.push(manifest_dir.join("../../corelib"));
-    candidates
-}
-
-fn has_corelib_workspace_manifest(dir: &Path) -> bool {
-    discover_workspace_manifest_in_embed_dir(dir)
-}
-
-fn discover_workspace_manifest_in_embed_dir(dir: &Path) -> bool {
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return false;
-    };
-    entries.filter_map(Result::ok).any(|entry| {
-        let path = entry.path();
-        path.is_file() && path.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("bws"))
-    })
-}
-
-fn discover_project_manifest_in_embed_dir(dir: &Path) -> bool {
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return false;
-    };
-    entries.filter_map(Result::ok).any(|entry| {
-        let path = entry.path();
-        path.is_file() && path.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("bproj"))
-    })
 }
 
 fn copy_corelib_workspace_for_embed(src_workspace: &Path, dst: &Path) -> std::io::Result<()> {
