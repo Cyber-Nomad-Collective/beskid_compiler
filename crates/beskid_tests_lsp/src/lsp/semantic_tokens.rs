@@ -67,6 +67,9 @@ async fn bsol_configuration_documents_emit_ast_backed_structural_tokens_for_ever
     for extension in ["bproj", "bws", "bsol"] {
         let (service, _socket) = LspService::new(Backend::new);
         let server = service.inner();
+        #[cfg(windows)]
+        let doc_uri = uri(&format!("file:///C:/semantic_tokens.{extension}"));
+        #[cfg(not(windows))]
         let doc_uri = uri(&format!("file:///semantic_tokens.{extension}"));
         open_document(server, doc_uri.clone(), "bsol", SOURCE.into()).await;
 

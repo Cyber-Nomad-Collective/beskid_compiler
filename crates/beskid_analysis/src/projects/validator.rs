@@ -307,7 +307,7 @@ pub fn validate_workspace_manifest(manifest: &WorkspaceManifest) -> Result<(), P
 
 fn validate_relative_entry_path(entry: &str) -> Result<(), ProjectError> {
     let path = Path::new(entry);
-    if path.is_absolute() {
+    if path.has_root() {
         return Err(ProjectError::Validation(format!("target entry path must be relative: `{entry}`")));
     }
 

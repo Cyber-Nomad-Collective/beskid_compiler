@@ -31,7 +31,7 @@ fn effective_roots_prefers_materialized_corelib_mvp_fixture() {
         let module_roots = module_roots_from_effective(&roots);
 
         assert!(
-            module_roots.iter().any(|root| root.display().to_string().contains("obj/beskid/deps")),
+            module_roots.iter().any(|root| root.ancestors().any(|ancestor| ancestor.ends_with("obj/beskid/deps"))),
             "expected materialized dependency root in {module_roots:?}"
         );
     });
@@ -138,7 +138,7 @@ fn corelib_syscall_tests_prefetch_includes_testing_assert_true() {
 
         let loaded: Vec<String> = assembly.units.iter().map(|unit| unit.path.display().to_string()).collect();
         assert!(
-            loaded.iter().any(|p| p.contains("Testing/Assert.bd")),
+            loaded.iter().any(|p| std::path::Path::new(p).ends_with("Testing/Assert.bd")),
             "expected Testing.Assert in import closure, got: {loaded:?}"
         );
         assert!(

@@ -332,7 +332,9 @@ fn copied_source_project_has_identical_lock_and_locked_commands_preserve_it() {
 
     // A fixed timestamp makes a lock rewrite observable even on coarse-grained filesystems.
     let original_mtime = UNIX_EPOCH + std::time::Duration::from_secs(1_600_000_000);
-    File::open(&relocated.lock)
+    File::options()
+        .write(true)
+        .open(&relocated.lock)
         .expect("open relocated lock")
         .set_times(FileTimes::new().set_modified(original_mtime))
         .expect("set lock timestamp sentinel");
