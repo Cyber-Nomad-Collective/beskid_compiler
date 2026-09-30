@@ -27,7 +27,7 @@ pub struct ImportArgs {
 
 #[derive(Subcommand, Debug)]
 pub enum ImportCommand {
-    /// Import a foreign library into `Project.proj` link metadata
+    /// Import a foreign library into the project `.bproj` link metadata
     Lib(LibArgs),
 }
 
@@ -40,11 +40,11 @@ pub struct LibArgs {
     #[arg(long, default_value = "c-posix")]
     pub provider: String,
 
-    /// Resolve and print only; do not modify `Project.proj`.
+    /// Resolve and print only; do not modify the `.bproj` manifest.
     #[arg(long)]
     pub dry_run: bool,
 
-    /// Path to `Project.proj` (default: discovered from cwd).
+    /// Path to the `.bproj` manifest (default: discovered from cwd).
     #[arg(long)]
     pub project: Option<PathBuf>,
 }
@@ -57,7 +57,7 @@ pub fn execute(args: ImportArgs) -> Result<()> {
 }
 
 /// Resolves the logical library against the closed registry and merges the result into the link
-/// block of `Project.proj`. Idempotent: re-running the same import is a no-op on disk.
+/// block of the `.bproj` manifest. Idempotent: re-running the same import is a no-op on disk.
 pub fn execute_lib(args: LibArgs) -> Result<()> {
     let registry = default_registry();
     let resolution =
@@ -75,7 +75,7 @@ pub fn execute_lib(args: LibArgs) -> Result<()> {
     }
 
     if args.dry_run {
-        println!("import: --dry-run set; Project.proj unchanged");
+        println!("import: --dry-run set; .bproj manifest unchanged");
         return Ok(());
     }
 

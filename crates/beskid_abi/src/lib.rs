@@ -2,6 +2,7 @@
 
 pub mod abi_types;
 pub mod abi_v5;
+pub mod assembly_sources;
 pub mod corelib_bundle;
 pub mod generated;
 pub mod interop;

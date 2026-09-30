@@ -92,7 +92,7 @@ pub enum Commands {
     /// Manage compiler Mod AOT artifacts
     Mod(ModArgs),
 
-    /// Import foreign libraries (currently `lib <name>`) into Project.proj `link` metadata
+    /// Import foreign libraries (currently `lib <name>`) into the project `.bproj` `link` metadata
     Import(ImportArgs),
 
     /// Resolve and materialize project dependencies

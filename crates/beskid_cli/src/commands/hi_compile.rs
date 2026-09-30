@@ -128,10 +128,7 @@ mod tests {
     fn hi_compile_corelib_mvp_resolve_uses_entry_file() {
         let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         let manifest = manifest_dir.join("../beskid_e2e_tests/fixtures/corelib_mvp/CorelibMvp.bproj");
-        if !manifest.is_file() {
-            eprintln!("skip hi_compile_corelib_mvp_resolve_uses_entry_file: {manifest:?} missing");
-            return;
-        }
+        assert!(manifest.is_file(), "fixture manifest missing: {manifest:?}");
         let root = manifest.parent().expect("fixture root").to_path_buf();
         let scope = ShellScope::Project { root: root.clone(), manifest: manifest.clone() };
         let args = parse_build_args("", &scope).expect("parse build args");

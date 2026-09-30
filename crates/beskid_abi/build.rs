@@ -6,6 +6,13 @@ fn main() {
     println!("cargo:rerun-if-changed={}", manifest_path.display());
     println!("cargo:rerun-if-changed=build.rs");
 
+    let corelib_marker = manifest_dir.join("../../corelib/CoreLib.bws");
+    println!("cargo:rerun-if-changed={}", corelib_marker.display());
+    assert!(
+        corelib_marker.is_file(),
+        "compiler/corelib is missing; run `git submodule update --init corelib` from the compiler directory"
+    );
+
     let source = std::fs::read_to_string(&manifest_path)
         .unwrap_or_else(|err| panic!("beskid_abi build: read runtime manifest: {err}"));
     let manifest = beskid_manifest::load_v5_manifest_source(&source)
