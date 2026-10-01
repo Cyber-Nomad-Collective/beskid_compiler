@@ -38,7 +38,10 @@ impl ArtifactBrowser {
                 continue;
             }
             let path = normalize_zip_path(entry.name())?;
-            if !is_browseable_archive_entry(&path) {
+            if !is_documentation_path(&path) && !is_source_path(&path) {
+                continue;
+            }
+            if !is_public_browse_entry(&path) {
                 return Err(ArtifactError::UnsafeBrowseEntry(path));
             }
             entries.insert(path.clone(), BrowseEntry { path: path.clone(), size_bytes: entry.size() });
@@ -112,21 +115,14 @@ fn is_documentation_path(path: &str) -> bool {
 }
 
 fn is_source_path(path: &str) -> bool {
-    path.starts_with("src/") || path.starts_with("content/") || path.starts_with("workspace/") || path.starts_with("item/")
+    path.starts_with("src/")
+        || path.starts_with("content/")
+        || path.starts_with("workspace/")
+        || path.starts_with("item/")
 }
 
-fn is_browseable_archive_entry(path: &str) -> bool {
-    if matches!(path, "package.json" | "template.json" | "checksums.sha256")
-        || (!path.contains('/') && path.ends_with(".bproj"))
-    {
-        return true;
-    }
-    if is_documentation_path(path) || is_source_path(path) {
-        return !path
-            .split('/')
-            .any(|segment| segment.starts_with('.') && !(segment == ".beskid" && path.starts_with(".beskid/")));
-    }
-    false
+fn is_public_browse_entry(path: &str) -> bool {
+    !path.split('/').any(|segment| segment.starts_with('.') && !(segment == ".beskid" && path.starts_with(".beskid/")))
 }
 
 fn documentation_sort_rank(path: &str) -> u8 {

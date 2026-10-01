@@ -300,6 +300,33 @@ fn browser_lists_and_reads_documentation_source_and_metadata() {
 }
 
 #[test]
+fn browser_indexes_docs_without_rejecting_safe_unrelated_artifact_entries() {
+    let artifact = archive_with_files(
+        "acme.math",
+        "1.2.3",
+        &[
+            ("README.md", "# Acme Math\n"),
+            ("docs/guide.md", "Use it.\n"),
+            ("Project.lock", "lock data"),
+            ("package-icon.svg", "<svg></svg>"),
+            ("tests/smoke.bd", "fn test() {}"),
+            ("grammars/highlight.json", "{}"),
+        ],
+    );
+    let validated = validate_package_artifact(&artifact, "acme.math", "1.2.3").unwrap();
+
+    let browser = ArtifactBrowser::from_validated_bytes(&artifact, &validated).unwrap();
+
+    assert_eq!(
+        browser.list_docs().unwrap().iter().map(|entry| entry.path.as_str()).collect::<Vec<_>>(),
+        vec!["README.md", "docs/guide.md"]
+    );
+    assert_eq!(browser.read_doc("docs/guide.md").unwrap(), "Use it.\n");
+    assert!(matches!(browser.read_doc("Project.lock"), Err(ArtifactError::ForbiddenBrowsePath)));
+    assert!(matches!(browser.read_source("tests/smoke.bd"), Err(ArtifactError::ForbiddenBrowsePath)));
+}
+
+#[test]
 fn browser_rejects_hidden_and_traversal_reads() {
     let artifact =
         archive_with_files("acme.math", "1.2.3", &[("docs/.draft.md", "not public"), ("src/.secret.bd", "not public")]);

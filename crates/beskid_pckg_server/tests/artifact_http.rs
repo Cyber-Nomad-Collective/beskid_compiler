@@ -29,6 +29,9 @@ fn artifact_with_browsable_content(name: &str, version: &str) -> Vec<u8> {
         ("docs/guide.md", b"Use `public.demo`.\n".to_vec()),
         (".beskid/docs/metadata.json", br#"{"title":"Public Demo"}"#.to_vec()),
         ("src/main.bd", b"module Main\n".to_vec()),
+        ("Project.lock", b"lock data".to_vec()),
+        ("package-icon.svg", b"<svg></svg>".to_vec()),
+        ("tests/smoke.bd", b"fn test() {}".to_vec()),
     ];
     let checksums =
         entries.iter().map(|(path, bytes)| format!("{}  {path}", hex_sha256(bytes))).collect::<Vec<_>>().join("\n");
