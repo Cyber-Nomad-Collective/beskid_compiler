@@ -21,6 +21,11 @@ fn semantic_error_fails_but_clean_source_succeeds() {
     let failed_text = format!("{}{}", String::from_utf8_lossy(&failed.stdout), String::from_utf8_lossy(&failed.stderr));
     assert!(failed_text.contains("error"), "expected semantic error: {failed_text}");
     assert!(!failed.status.success(), "semantic errors must fail: {failed_text}");
+    assert_eq!(
+        failed_text.matches("unknown value `UnknownValue`").count(),
+        1,
+        "semantic diagnostic should be rendered once: {failed_text}"
+    );
 
     let valid = root.join("Valid.bd");
     fs::write(&valid, "pub i32 Main() { return 0; }\n").expect("write valid source");
