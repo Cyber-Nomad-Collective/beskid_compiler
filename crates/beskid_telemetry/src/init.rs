@@ -1,6 +1,7 @@
 //! Global [`tracing`] subscriber wiring for Beskid binaries.
 
 use std::io::{self, Write};
+use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use tracing_subscriber::EnvFilter;
@@ -14,6 +15,32 @@ use crate::otel::{OtelGuard, install_otel_guard, otel_enabled, otel_tracer};
 const CRANELIFT_QUIET: &str = "cranelift_jit=warn,cranelift_codegen=warn,cranelift_frontend=warn,cranelift_module=warn,cranelift_native=warn,cranelift_object=warn";
 
 static STDERR_GATED: AtomicBool = AtomicBool::new(false);
+static STDERR_PROGRESS: Mutex<bool> = Mutex::new(false);
+
+fn clear_progress(out: &mut impl Write, visible: &mut bool) -> io::Result<()> {
+    if *visible {
+        write!(out, "\r\x1b[2K")?;
+        *visible = false;
+    }
+    Ok(())
+}
+
+/// Render one bounded progress line without allowing tracing to append to it.
+pub fn render_stderr_progress(line: &str) -> io::Result<()> {
+    let mut visible = STDERR_PROGRESS.lock().expect("stderr progress mutex poisoned");
+    let mut out = io::stderr().lock();
+    write!(out, "\r\x1b[2K{line}")?;
+    *visible = true;
+    out.flush()
+}
+
+/// Clear an active progress line before ordinary command or diagnostic output.
+pub fn clear_stderr_progress() -> io::Result<()> {
+    let mut visible = STDERR_PROGRESS.lock().expect("stderr progress mutex poisoned");
+    let mut out = io::stderr().lock();
+    clear_progress(&mut out, &mut visible)?;
+    out.flush()
+}
 
 struct GatedStderr;
 
@@ -24,7 +51,10 @@ impl Write for GatedStderrWriter {
         if STDERR_GATED.load(Ordering::Relaxed) {
             return Ok(buf.len());
         }
-        io::stderr().write(buf)
+        let mut visible = STDERR_PROGRESS.lock().expect("stderr progress mutex poisoned");
+        let mut out = io::stderr().lock();
+        clear_progress(&mut out, &mut visible)?;
+        out.write(buf)
     }
 
     fn flush(&mut self) -> io::Result<()> {
@@ -79,6 +109,7 @@ fn default_filter(log_cranelift: bool) -> String {
 macro_rules! stderr_fmt_layer {
     () => {
         tracing_subscriber::fmt::layer()
+            .with_ansi(false)
             .with_writer(GatedStderr)
             .with_target(true)
             .with_thread_ids(true)

@@ -11,7 +11,7 @@ use crate::tui::shell::interrupt::InterruptFlag;
 use crate::tui::shell::runtime::{RuntimeOp, ShellRuntime};
 use crate::tui::shell::state::NavTarget;
 
-pub use crate::pipeline::tui::PipelineViewState;
+pub use crate::pipeline::tui::PipelineProgress as PipelineViewState;
 
 /// Reset SGR/ANSI attributes on stderr so test output cannot bleed into the next TUI frame.
 pub fn reset_stderr_ansi() -> io::Result<()> {

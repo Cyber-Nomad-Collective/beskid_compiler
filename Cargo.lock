@@ -994,6 +994,7 @@ dependencies = [
  "beskid_pckg",
  "beskid_pipeline",
  "beskid_queries",
+ "beskid_telemetry",
  "bsol",
  "crossterm",
  "dirs",

@@ -16,7 +16,7 @@ use tracing::{error, warn};
 /// progress UI was active moments earlier.
 pub fn format_diagnostic(diagnostic: &(dyn Diagnostic + '_)) -> String {
     let mut out = String::new();
-    let handler = GraphicalReportHandler::new();
+    let handler = GraphicalReportHandler::new_themed(miette::GraphicalTheme::unicode_nocolor());
     if handler.render_report(&mut out, diagnostic).is_err() {
         return diagnostic.to_string();
     }

@@ -157,7 +157,7 @@ pub(crate) fn execute_prepared_target(
     let source_name = target.resolved.source_path.display().to_string();
     let include_tags = normalized_tags(&args.include_tags);
     let exclude_tags = normalized_tags(&args.exclude_tags);
-    let mut test_ui = TestRunUi::new(args.plain, None);
+    let mut test_ui = TestRunUi::new();
     let mut planned = Vec::new();
     for (row_index, test) in tests.iter().enumerate() {
         let initial = if is_filtered_out(test, &include_tags, &exclude_tags, args.group.as_deref()) {
@@ -178,9 +178,6 @@ pub(crate) fn execute_prepared_target(
         );
         planned.push((test, row_index, initial));
     }
-    if emit && !args.json {
-        test_ui.draw_initial()?;
-    }
 
     let execute_started = Instant::now();
     let execute_unix_ms = unix_ms();
@@ -196,11 +193,6 @@ pub(crate) fn execute_prepared_target(
             timeout_error = Some(error);
             budget_expired = true;
             record_timed_out_test(&mut test_ui, &mut executions, &mut summary, emit, args.json, row_index, test)?;
-            break;
-        }
-        if !args.plain && workspace.session().pipeline().interrupted() {
-            workspace.cancellation().cancel();
-            timeout_error = Some(anyhow!("interrupted while target `{}` was in phase `execute_tests`", target.name));
             break;
         }
         if initial == TestRowState::FilteredOut {
@@ -234,7 +226,7 @@ pub(crate) fn execute_prepared_target(
         if emit && !args.json {
             test_ui.start_running(row_index)?;
             if !args.plain {
-                workspace.session().pipeline().reset_after_test()?;
+                workspace.session().pipeline().halt_progress_bars_for_output();
             }
         }
         let started = Instant::now();
@@ -244,7 +236,7 @@ pub(crate) fn execute_prepared_target(
                 if emit && !args.json {
                     test_ui.finish_row(row_index, TestRowState::Passed, duration, None)?;
                     if !args.plain {
-                        workspace.session().pipeline().reset_after_test()?;
+                        workspace.session().pipeline().halt_progress_bars_for_output();
                     }
                 }
                 executions.push(TestExecution {
@@ -279,11 +271,8 @@ pub(crate) fn execute_prepared_target(
                 if emit {
                     let detail =
                         format!("\n  FAIL {name}: {reason}", name = test.qualified_name, reason = reason.trim());
-                    if test_ui.is_plain() {
-                        eprintln!("{detail}");
-                    } else {
-                        log::error!(target: "beskid.tools.test", "{detail}");
-                    }
+                    workspace.session().pipeline().halt_progress_bars_for_output();
+                    eprintln!("{detail}");
                     test_ui.finish_row(row_index, TestRowState::Failed, duration, Some(&reason))?;
                 }
                 executions.push(TestExecution {
@@ -314,7 +303,8 @@ pub(crate) fn execute_prepared_target(
     // a test assertion (e.g. `Assert.Fail` on the "unreachable if correctly rejected" path)
     // rather than through a lowering error, so an empty-test vacuous pass is the only case that
     // must fail closed here.
-    let compile_fail_target_without_tests = tests.is_empty() && is_compile_fail_source_path(&target.resolved.source_path);
+    let compile_fail_target_without_tests =
+        tests.is_empty() && is_compile_fail_source_path(&target.resolved.source_path);
 
     let result = if timeout_error.is_some() {
         TargetResult::TimedOut
@@ -350,9 +340,6 @@ pub(crate) fn execute_prepared_target(
                 summary.filtered_out,
                 summary.timed_out,
             )?;
-            if !args.plain {
-                workspace.session().pipeline().wait_for_dismiss()?;
-            }
         }
     }
 
@@ -400,7 +387,7 @@ pub(crate) fn execute_prepared_target(
 /// Distinct from a `skip.condition`-driven skip: this test would otherwise have executed,
 /// so folding it into "skipped" would silently understate lost coverage.
 fn record_timed_out_test(
-    test_ui: &mut TestRunUi<'_>,
+    test_ui: &mut TestRunUi,
     executions: &mut Vec<TestExecution>,
     summary: &mut TestSummary,
     emit: bool,
@@ -409,7 +396,12 @@ fn record_timed_out_test(
     test: &SyntaxTestItem,
 ) -> Result<()> {
     if emit && !json {
-        test_ui.finish_row(row_index, TestRowState::TimedOut, Duration::ZERO, Some("target execution budget expired"))?;
+        test_ui.finish_row(
+            row_index,
+            TestRowState::TimedOut,
+            Duration::ZERO,
+            Some("target execution budget expired"),
+        )?;
     }
     executions.push(TestExecution {
         name: test.name.to_string(),
@@ -450,9 +442,7 @@ mod compile_fail_vacuous_pass_tests {
 
     #[test]
     fn recognizes_the_established_compile_fail_directory_convention() {
-        assert!(is_compile_fail_source_path(Path::new(
-            "corelib/packages/network/tests/compile-fail/RawHandle.bd"
-        )));
+        assert!(is_compile_fail_source_path(Path::new("corelib/packages/network/tests/compile-fail/RawHandle.bd")));
         assert!(is_compile_fail_source_path(Path::new(
             "corelib/beskid_corelib/tests/corelib_tests/fixtures/compile-fail/LegacyCollectionsNamespace.bd"
         )));
@@ -540,7 +530,7 @@ mod tests {
 
     #[test]
     fn record_timed_out_test_reports_timeout_not_skip() {
-        let mut test_ui = TestRunUi::new(true, None);
+        let mut test_ui = TestRunUi::new();
         let mut executions = Vec::new();
         let mut summary = TestSummary::default();
         let test = sample_test("UnexecutedTest");

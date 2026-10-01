@@ -2,52 +2,6 @@
 
 use beskid_pipeline::phases;
 
-/// Semantic rule pipeline sub-phases under [`phases::SEMANTIC`].
-pub const SEMANTIC_SUB_PHASE_ORDER: &[&str] = &[
-    phases::SEMANTIC_DEFINITIONS,
-    phases::SEMANTIC_CONTROL_FLOW,
-    phases::SEMANTIC_NAME_RESOLUTION,
-    phases::SEMANTIC_VISIBILITY,
-    phases::SEMANTIC_CONTRACTS,
-    phases::SEMANTIC_ERROR_HANDLING,
-    phases::SEMANTIC_TYPE_CHECK,
-    phases::SEMANTIC_NAMING_STYLE,
-];
-
-/// Lower spine inside [`phases::LOWER`] (AST lower through type check).
-pub const LOWER_FULL_SUB_PHASE_ORDER: &[&str] = &[
-    phases::LOWER_AST,
-    phases::LOWER_RESOLVE_PASS1,
-    phases::LOWER_NORMALIZE,
-    phases::LOWER_RESOLVE,
-    phases::LOWER_TYPE_CHECK,
-];
-
-/// Workspace materialization sub-phases under [`phases::WORKSPACE_MATERIALIZE`].
-pub const MATERIALIZE_SUB_PHASE_ORDER: &[&str] = &[
-    phases::WORKSPACE_MATERIALIZE_LOCAL,
-    phases::WORKSPACE_MATERIALIZE_PATH_DEPS,
-    phases::WORKSPACE_MATERIALIZE_REGISTRY,
-    phases::WORKSPACE_MATERIALIZE_LOCKFILE,
-];
-
-/// Ordered sub-phases for a parent phase id (stage progress bar denominator).
-pub fn sub_phases_for_parent(parent_id: &str) -> Option<&'static [&'static str]> {
-    match parent_id {
-        phases::SEMANTIC => Some(SEMANTIC_SUB_PHASE_ORDER),
-        phases::LOWER => Some(LOWER_FULL_SUB_PHASE_ORDER),
-        phases::WORKSPACE_MATERIALIZE => Some(MATERIALIZE_SUB_PHASE_ORDER),
-        _ => None,
-    }
-}
-
-/// Index of `child_id` within a parent's ordered sub-phases, if known.
-pub fn sub_phase_index(parent_id: &str, child_id: &str) -> Option<(usize, usize)> {
-    let order = sub_phases_for_parent(parent_id)?;
-    let index = order.iter().position(|id| *id == child_id)?;
-    Some((index, order.len()))
-}
-
 /// Short title for a pipeline phase id shown in the CLI progress UI.
 pub fn phase_label(id: &str) -> &str {
     match id {
@@ -94,25 +48,5 @@ pub fn phase_label(id: &str) -> &str {
         phases::AOT_RUNTIME => "Load runtime library",
         phases::AOT_LINK => "Link native artifact",
         _ => id,
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use beskid_pipeline::phases;
-
-    #[test]
-    fn semantic_naming_style_is_last_semantic_sub_phase() {
-        let (index, total) = sub_phase_index(phases::SEMANTIC, phases::SEMANTIC_NAMING_STYLE).expect("indexed");
-        assert_eq!(index, 7);
-        assert_eq!(total, 8);
-    }
-
-    #[test]
-    fn lower_type_check_indexes_under_lower_parent() {
-        let (index, total) = sub_phase_index(phases::LOWER, phases::LOWER_TYPE_CHECK).expect("indexed");
-        assert_eq!(index, 4);
-        assert_eq!(total, 5);
     }
 }

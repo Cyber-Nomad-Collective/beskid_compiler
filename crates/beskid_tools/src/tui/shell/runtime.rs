@@ -329,7 +329,7 @@ fn event_loop(
         }
 
         if dirty && !quitting && !suspended {
-            crate::pipeline::tui::reset_stderr_ansi()?;
+            crate::tui::session::reset_stderr_ansi()?;
             terminal
                 .draw(|frame| {
                     application.view(&PipelineShellId::Root, frame, frame.area());

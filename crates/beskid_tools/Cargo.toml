@@ -12,6 +12,7 @@ beskid_analysis = { path = "../beskid_analysis" }
 bsol = { workspace = true }
 beskid_pipeline = { path = "../beskid_pipeline" }
 beskid_queries = { path = "../beskid_queries" }
+beskid_telemetry = { path = "../beskid_telemetry" }
 beskid_pckg = { path = "../beskid_pckg" }
 anyhow = "1.0"
 include_dir = "0.7.4"
