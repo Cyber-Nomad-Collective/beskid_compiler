@@ -38,6 +38,7 @@ Options:
         self.assertEqual(gate.classify(("graph",)), "smoke")
         self.assertEqual(gate.classify(("lock",)), "smoke")
         self.assertEqual(gate.classify(("up", "list")), "smoke")
+        self.assertEqual(gate.classify(("up", "check")), "smoke")
         self.assertEqual(gate.classify(("pckg", "upload")), "setup_skip")
         self.assertEqual(gate.classify(("dev", "package", "registry", "upload")), "setup_skip")
         self.assertEqual(gate.classify(("validate-bsol",)), "smoke")
@@ -60,6 +61,15 @@ Options:
         self.assertIsNone(provenance["commit"])
         self.assertTrue(provenance["external_receipt_required"])
 
+    def test_alias_artifacts_have_distinct_paths(self):
+        gate = self.load_gate()
+        root = Path("/tmp/cli-gate-fixture")
+        common = (root / "Src/Smoke.bd", root / "Smoke.bproj", root / "Test.bproj",
+                  root / "Migration.bproj", root, "http://127.0.0.1:1")
+        direct, _, _ = gate.smoke_args(("build",), *common)
+        alias, _, _ = gate.smoke_args(("dev", "build", "compile"), *common)
+        self.assertNotEqual(direct[-2], alias[-2])
+
     def test_output_evidence_preserves_cr_and_exact_bytes(self):
         gate = self.load_gate()
         evidence = gate.output_evidence(b"one\r\ntwo\n", b"warning\n")
@@ -69,8 +79,9 @@ Options:
 
     def test_graph_tui_accepts_terminal_box_render_without_alt_screen(self):
         gate = self.load_gate()
-        self.assertTrue(gate.graph_tui_rendered("┌──Smoke──┐\r\n│         │".encode()))
+        self.assertTrue(gate.graph_tui_rendered("┌─────┐\r\n│Smoke│".encode()))
         self.assertFalse(gate.graph_tui_rendered(b"flowchart TD\nSmoke"))
+        self.assertFalse(gate.graph_tui_rendered(b"Smoke\x1b[?1049h"))
 
     def test_ordinary_pty_rejects_terminal_controls(self):
         gate = self.load_gate()

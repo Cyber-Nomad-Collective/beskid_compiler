@@ -27,7 +27,7 @@ ROOT_COMMANDS = {
 }
 SMOKE = {
     ("parse",), ("tree",), ("analyze",), ("format",), ("graph",),
-    ("new", "list"), ("up", "host-target"), ("up", "list"), ("import", "lib"), ("repl",),
+    ("new", "list"), ("up", "host-target"), ("up", "list"), ("up", "check"), ("import", "lib"), ("repl",),
     ("fetch",), ("lock",), ("update",), ("validate-bsol",),
     ("dev", "syntax", "parse"), ("dev", "syntax", "tree"),
     ("dev", "syntax", "analyze"), ("dev", "syntax", "format"),
@@ -49,7 +49,6 @@ SETUP_SKIPS = {
     ("new", "install"): "mutates template cache; package fixture required",
     ("new", "uninstall"): "removes cached template; populated isolated cache fixture required",
     ("lsp", "install"): "downloads and replaces managed language server",
-    ("up", "check"): "requires pinned release manifest service fixture",
     ("up", "use"): "changes active direct-install version; populated isolated store required",
     ("up", "remove"): "removes installed direct-download version; populated isolated store required",
     ("pckg", "upload"): "publishes artifact; authenticated local registry fixture required",
@@ -170,8 +169,8 @@ def run_pty(binary, args, env, cwd):
 
 
 def graph_tui_rendered(transcript):
-    return (b"Smoke" in transcript and b"flowchart" not in transcript
-            and ("┌".encode() in transcript or b"\x1b[?1049h" in transcript))
+    return ("┌".encode() in transcript and "│Smoke│".encode() in transcript
+            and b"flowchart" not in transcript)
 
 
 def ordinary_pty_clean(transcript):
@@ -248,8 +247,9 @@ def discover(binary, env, cwd):
     return rows
 
 
-def smoke_args(path, source, project, test_project, migration_project, root):
+def smoke_args(path, source, project, test_project, migration_project, root, registry_url):
     tail = path[-1]
+    case_root = root / "cases" / "-".join(path)
     if tail in {"parse", "tree", "format"}:
         return [str(source)], None, "Main"
     if tail == "analyze":
@@ -262,6 +262,8 @@ def smoke_args(path, source, project, test_project, migration_project, root):
         return [], None, ""
     if path == ("up", "list"):
         return [], None, "no direct-install version is active"
+    if path == ("up", "check"):
+        return [], None, f"release manifest: {registry_url}/release.json"
     if tail in {"fetch", "lock", "update"}:
         marker = {"fetch": "Dependencies resolved", "lock": "Project.lock synchronized",
                   "update": "Workspace updated"}[tail]
@@ -269,22 +271,22 @@ def smoke_args(path, source, project, test_project, migration_project, root):
     if path == ("validate-bsol",):
         return [str(project)], None, "ok: validated against profile"
     if tail == "doc":
-        return ["--project", str(project), "--out", str(root / "api-doc")], None, ""
+        return ["--project", str(project), "--out", str(case_root / "api-doc")], None, ""
     if tail == "clif":
         return ["--project", str(project), "--plain"], None, "CLIF ready"
     if tail in {"build", "compile"}:
-        return ["--project", str(project), "--kind", "object", "--output", str(root / "Smoke.o"), "--plain"], None, "Build complete"
+        return ["--project", str(project), "--kind", "object", "--output", str(case_root / "Smoke.o"), "--plain"], None, "Build complete"
     if tail == "run":
         return ["--project", str(project), "--plain"], None, "Run complete"
     if tail == "test":
         return ["--project", str(test_project), "--plain"], None, "Result: passed=1, failed=0"
     if tail == "corelib":
-        return ["--output", str(root / "corelib-copy")], None, "Generated Beskid corelib project"
+        return ["--output", str(case_root / "corelib-copy")], None, "Generated Beskid corelib project"
     if path == ("migrate-bsol",):
         return ["--to", "project.v2", str(migration_project)], None, "Migration"
     if tail == "pack":
         return ["--package", "beskid.tools.cli-gate", "--source",
-                str(root / "package-source"), "--output", str(root / "package.bpk"),
+                str(root / "package-source"), "--output", str(case_root / "package.bpk"),
                 "--package-kind", "tool", "--skip-docs"], None, "Packed artifact"
     if tail == "list":
         return [], None, "No packages found."
@@ -295,7 +297,7 @@ def smoke_args(path, source, project, test_project, migration_project, root):
     if tail == "versions":
         return ["beskid.tools.cli-gate"], None, "No versions found"
     if tail == "download":
-        return ["beskid.tools.cli-gate", "--version", "0.1.0", "--output", str(root / "download.bpk")], None, "Downloaded"
+        return ["beskid.tools.cli-gate", "--version", "0.1.0", "--output", str(case_root / "download.bpk")], None, "Downloaded"
     if tail == "whoami":
         return [], None, "authenticated=false"
     if path == ("import", "lib"):
@@ -338,6 +340,7 @@ def main(argv=None):
         env.update(HOME=str(root), BESKID_HOME=str(root / "beskid-home"),
                    BESKID_CORELIB_ROOT=str(root / "corelib"), OTEL_SDK_DISABLED="true")
         registry_server, registry_url = start_registry_mock()
+        env["BESKID_RELEASE_MANIFEST_URL"] = f"{registry_url}/release.json"
         rows = discover(binary, env, root)
         failures = []
         for row in rows:
@@ -353,7 +356,9 @@ def main(argv=None):
             if row["status"] == "uncovered":
                 row["reason"] = "advertised leaf outside bounded safe smoke set"
                 continue
-            suffix, stdin, marker = smoke_args(path, source, project, test_project, migration_project, root)
+            case_root = root / "cases" / "-".join(path)
+            case_root.mkdir(parents=True)
+            suffix, stdin, marker = smoke_args(path, source, project, test_project, migration_project, root, registry_url)
             invocation = [*path, *suffix]
             if path[0] == "pckg" and path[1] != "pack":
                 invocation = ["pckg", "--base-url", registry_url, *path[1:], *suffix]
@@ -368,18 +373,20 @@ def main(argv=None):
             row["marker_seen"] = marker.encode() in output
             if path == ("up", "host-target"):
                 row["marker_seen"] = bool(re.fullmatch(rb"[A-Za-z0-9_]+(?:-[A-Za-z0-9_]+){2,}\n?", result.stdout))
+            if path == ("up", "check"):
+                row["marker_seen"] = result.stdout.decode("utf-8", errors="replace").strip() == marker
             if tail := path[-1]:
                 if tail in {"build", "compile"}:
-                    row["marker_seen"] = row["marker_seen"] and (root / "Smoke.o").is_file()
+                    row["marker_seen"] = row["marker_seen"] and (case_root / "Smoke.o").is_file()
                 elif tail == "doc":
-                    row["marker_seen"] = row["marker_seen"] and (root / "api-doc" / "api.json").is_file()
+                    row["marker_seen"] = row["marker_seen"] and (case_root / "api-doc" / "api.json").is_file()
                 elif tail == "corelib":
-                    row["marker_seen"] = row["marker_seen"] and any((root / "corelib-copy").glob("*.bws"))
+                    row["marker_seen"] = row["marker_seen"] and any((case_root / "corelib-copy").glob("*.bws"))
                 elif tail == "pack":
-                    row["marker_seen"] = row["marker_seen"] and (root / "package.bpk").is_file()
+                    row["marker_seen"] = row["marker_seen"] and (case_root / "package.bpk").is_file()
                 elif tail == "download":
-                    row["marker_seen"] = (row["marker_seen"] and (root / "download.bpk").is_file()
-                                          and (root / "download.bpk").read_bytes() == b"fixture-package")
+                    row["marker_seen"] = (row["marker_seen"] and (case_root / "download.bpk").is_file()
+                                          and (case_root / "download.bpk").read_bytes() == b"fixture-package")
             row["status"] = "pass" if result.returncode == 0 and not row["control_bytes"] and row["marker_seen"] else "fail"
         template = root / "local-template"
         (template / ".beskid").mkdir(parents=True)
