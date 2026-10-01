@@ -1,4 +1,8 @@
 import importlib.util
+import base64
+import os
+import sys
+import tempfile
 from pathlib import Path
 import unittest
 
@@ -37,7 +41,52 @@ Options:
         self.assertEqual(gate.classify(("pckg", "upload")), "setup_skip")
         self.assertEqual(gate.classify(("dev", "package", "registry", "upload")), "setup_skip")
         self.assertEqual(gate.classify(("validate-bsol",)), "smoke")
+        self.assertEqual(gate.classify(("build",)), "smoke")
+        self.assertEqual(gate.classify(("dev", "build", "test")), "smoke")
+        self.assertEqual(gate.classify(("pckg", "pack")), "smoke")
+        self.assertEqual(gate.classify(("pckg", "list")), "smoke")
+        self.assertEqual(gate.classify(("dev", "package", "registry", "search")), "smoke")
         self.assertEqual(gate.classify(("future-command",)), "uncovered")
+
+    def test_uncovered_leaf_is_release_failure(self):
+        gate = self.load_gate()
+        self.assertEqual(gate.release_failures([{"path": "future-command", "status": "uncovered"}]),
+                         ["future-command:uncovered"])
+
+    def test_source_provenance_is_explicitly_unverified(self):
+        gate = self.load_gate()
+        provenance = gate.source_provenance()
+        self.assertEqual(provenance["status"], "unverified")
+        self.assertIsNone(provenance["commit"])
+        self.assertTrue(provenance["external_receipt_required"])
+
+    def test_output_evidence_preserves_cr_and_exact_bytes(self):
+        gate = self.load_gate()
+        evidence = gate.output_evidence(b"one\r\ntwo\n", b"warning\n")
+        self.assertEqual(evidence["control_bytes"], [13])
+        self.assertEqual(base64.b64decode(evidence["stdout_base64"]), b"one\r\ntwo\n")
+        self.assertEqual(base64.b64decode(evidence["stderr_base64"]), b"warning\n")
+
+    def test_graph_tui_accepts_terminal_box_render_without_alt_screen(self):
+        gate = self.load_gate()
+        self.assertTrue(gate.graph_tui_rendered("┌──Smoke──┐\r\n│         │".encode()))
+        self.assertFalse(gate.graph_tui_rendered(b"flowchart TD\nSmoke"))
+
+    def test_ordinary_pty_rejects_terminal_controls(self):
+        gate = self.load_gate()
+        self.assertTrue(gate.ordinary_pty_clean(b"Analyze complete\r\n"))
+        self.assertFalse(gate.ordinary_pty_clean(b"\x1b[?1049hAnalyze complete"))
+        self.assertFalse(gate.ordinary_pty_clean(b"Analyze complete\x07"))
+
+    @unittest.skipUnless(os.name == "posix", "PTY is POSIX-only")
+    def test_pty_transcript_records_render_and_quit(self):
+        gate = self.load_gate()
+        with tempfile.TemporaryDirectory() as root:
+            transcript = gate.run_pty(sys.executable, ["-c", "import sys; print('\\x1b[?1049hSmoke', flush=True); sys.stdin.read(1); print('\\x1b[?1049l', flush=True)"],
+                                      dict(os.environ, TERM="xterm-256color"), root)
+        self.assertEqual(transcript["exit"], 0)
+        self.assertFalse(transcript["timed_out"])
+        self.assertIn(b"\x1b[?1049hSmoke", base64.b64decode(transcript["transcript_base64"]))
 
 
 if __name__ == "__main__":

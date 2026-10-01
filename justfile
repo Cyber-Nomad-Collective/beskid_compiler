@@ -3,6 +3,7 @@
 #   just corelib    Run corelib_tests via release beskid_cli
 #   just compiler   Run cargo test for the workspace
 #   just tests      Run compiler and corelib tests
+#   just cli-surface-gate  Inventory and smoke an installed CLI artifact
 #   just replace    Atomically install one exact local CLI/LSP/runtime/corelib/package bundle
 #   just vscode     Build and reinstall the VS Code/Cursor extension from `beskid_vscode`
 
@@ -31,6 +32,12 @@ compiler:
 
 # Run compiler and corelib tests.
 tests: compiler corelib
+
+# Exercise the advertised CLI against isolated fixtures and write exact JSON evidence.
+# The caller must supply a checksum recorded independently when the artifact was built.
+cli-surface-gate binary expected_sha256 evidence:
+    python3 -m unittest discover -s scripts/ci -p 'test_cli_surface_gate.py'
+    python3 scripts/ci/cli_surface_gate.py "{{binary}}" --expected-sha256 "{{expected_sha256}}" --json "{{evidence}}"
 
 # Build one exact-version release bundle and replace the installed toolchain.
 replace:
