@@ -12,8 +12,8 @@ use tracing::{error, warn};
 
 /// Render a diagnostic into a string without touching stderr.
 ///
-/// Buffering avoids interleaving with the Ratatui TUI and reduces TTY re-entrancy issues when the
-/// progress UI was active moments earlier.
+/// Buffering keeps report rendering separate from stderr emission and line-oriented progress
+/// output.
 pub fn format_diagnostic(diagnostic: &(dyn Diagnostic + '_)) -> String {
     let mut out = String::new();
     let handler = GraphicalReportHandler::new_themed(miette::GraphicalTheme::unicode_nocolor());
