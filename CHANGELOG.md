@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Refresh a managed per-user Corelib bundle when its fingerprint differs from
+  the current toolchain, even if a legacy bundle has a higher project version.
 - Build library and object outputs from the complete prepared module without
   requiring `Main`, including libraries that contain only type declarations.
 - Lock, update, and replay Template authoring projects with the verified Corelib

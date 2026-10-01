@@ -52,7 +52,7 @@ impl fmt::Display for UnrecognizedCorelibRootError {
 
 impl std::error::Error for UnrecognizedCorelibRootError {}
 
-/// Ensure the embedded corelib template is materialized when newer than any existing install.
+/// Ensure the embedded corelib snapshot is materialized for this exact toolchain.
 ///
 /// The install root is treated as one of three kinds, and only the first two may ever be replaced:
 /// - missing or empty: materialize the embedded bundle into it.
@@ -151,12 +151,9 @@ fn should_install_corelib(
     bundled_fingerprint: &str,
     installed_fingerprint: Option<&str>,
 ) -> bool {
-    match installed_version {
-        None => true,
-        Some(version) if bundled_version > version => true,
-        Some(version) if bundled_version < version => false,
-        Some(_) => installed_fingerprint != Some(bundled_fingerprint),
-    }
+    // A managed bundle from an older toolchain can have a numerically higher project version.
+    // ABI compatibility is determined by the embedded snapshot, not SemVer ordering here.
+    installed_version != Some(bundled_version) || installed_fingerprint != Some(bundled_fingerprint)
 }
 
 fn embedded_fingerprint() -> Result<String> {
@@ -302,6 +299,14 @@ mod tests {
         assert!(super::should_install_corelib(&version, Some(&version), "current-bundle", Some("stale-bundle"),));
         assert!(super::should_install_corelib(&version, Some(&version), "current-bundle", None));
         assert!(!super::should_install_corelib(&version, Some(&version), "current-bundle", Some("current-bundle"),));
+    }
+
+    #[test]
+    fn legacy_managed_bundle_with_higher_version_requires_refresh() {
+        let embedded = Version::new(0, 1, 0);
+        let legacy = Version::new(0, 4, 598);
+
+        assert!(super::should_install_corelib(&embedded, Some(&legacy), "current-bundle", Some("legacy-bundle")));
     }
 
     #[test]
