@@ -53,6 +53,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   projects, and keep rejected materialization hints on declared source roots.
 - Restore packed template manifests to `.beskid/template.json` when installing
   registry templates, and reject archive paths that escape extraction.
+- Substitute template filename tokens and reject colliding or unsafe output
+  paths before writing generated files.
 - Run the Corelib MVP import check with its fixture environment and classify
   proven primitive conversions before the syntax call-lowering gate, so the
   complete Corelib spine tests legitimate HTTP byte conversions.
