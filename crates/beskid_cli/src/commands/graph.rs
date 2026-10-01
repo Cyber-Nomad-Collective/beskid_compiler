@@ -9,11 +9,9 @@ use beskid_graph::GraphKind;
 use beskid_queries::{GraphFetchRequest, get_graph_document, get_graph_document_simple, with_db};
 use clap::Args;
 use graphs_tui::{RenderOptions, render_mermaid_to_tui};
-use std::sync::mpsc::Sender;
 
 use crate::project_args::{LockfilePolicyArgs, ProjectResolveArgs};
 use beskid_tools::pipeline::{CliResolveOptions, frontend::resolve_input_with_pipeline};
-use beskid_tools::tui::shell::runtime::RuntimeOp;
 
 #[derive(Args, Debug)]
 pub struct GraphArgs {
@@ -48,11 +46,6 @@ pub struct GraphArgs {
 }
 
 pub fn execute(args: GraphArgs) -> Result<()> {
-    run_graph(args)
-}
-
-/// Same as [`execute`] but forwards pipeline progress into a running `beskid hi` shell.
-pub fn execute_for_hi(_msg_tx: Sender<RuntimeOp>, args: GraphArgs) -> Result<()> {
     run_graph(args)
 }
 

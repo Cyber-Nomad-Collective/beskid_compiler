@@ -4,7 +4,6 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::Sender;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use anyhow::{Result, anyhow};
@@ -16,7 +15,6 @@ use beskid_engine::Engine;
 use beskid_engine::services::run_entrypoint_from_front_end_with_engine;
 use beskid_tools::PipelineProgressKind;
 use beskid_tools::session::{CommandSession, ResolveInputArgs};
-use beskid_tools::tui::shell::runtime::RuntimeOp;
 use serde::{Deserialize, Serialize};
 
 use super::test::TestArgs;
@@ -168,12 +166,7 @@ pub struct PreparedTarget {
 }
 
 impl PreparedWorkspace {
-    pub fn prepare(
-        args: &TestArgs,
-        hi_tx: Option<Sender<RuntimeOp>>,
-        budgets: ExecutionBudgets,
-        cancellation: Cancellation,
-    ) -> Result<Self> {
+    pub fn prepare(args: &TestArgs, budgets: ExecutionBudgets, cancellation: Cancellation) -> Result<Self> {
         let resolve_args = ResolveInputArgs {
             input: args.input.as_ref(),
             project: args.project.project.as_ref(),
@@ -182,14 +175,8 @@ impl PreparedWorkspace {
             frozen: args.lockfile.frozen,
             locked: args.lockfile.locked,
         };
-        let (session, base) = match hi_tx {
-            None => CommandSession::open_and_resolve(args.plain, PipelineProgressKind::PrepareAndRun, &resolve_args)?,
-            Some(tx) => {
-                let session = CommandSession::with_attached_pipeline(tx, PipelineProgressKind::PrepareAndRun);
-                let resolved = session.resolve_input(&resolve_args)?;
-                (session, resolved)
-            }
-        };
+        let (session, base) =
+            CommandSession::open_and_resolve(args.plain, PipelineProgressKind::PrepareAndRun, &resolve_args)?;
         let (manifest_path, manifest) = if let Some(plan) = base.compile_plan.as_ref() {
             let manifest_path = plan.manifest_path.clone();
             let manifest = load_manifest_from_path(&manifest_path)

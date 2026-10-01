@@ -553,7 +553,6 @@ dependencies = [
  "beskid_codegen",
  "beskid_engine",
  "beskid_graph",
- "beskid_hi",
  "beskid_lsp",
  "beskid_pckg",
  "beskid_pipeline",
@@ -642,15 +641,6 @@ dependencies = [
  "insta",
  "serde_json",
  "thiserror 2.0.18",
-]
-
-[[package]]
-name = "beskid_hi"
-version = "0.1.0"
-dependencies = [
- "beskid_tools",
- "ratatui",
- "ratkit",
 ]
 
 [[package]]

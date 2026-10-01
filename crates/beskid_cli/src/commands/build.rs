@@ -2,7 +2,6 @@
 
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::sync::mpsc::Sender;
 
 use crate::commands::syntax_codegen::lower_prepared_entrypoint;
 use crate::project_args::{LockfilePolicyArgs, ProjectResolveArgs};
@@ -17,7 +16,6 @@ use beskid_pipeline::PipelineObserver;
 use beskid_tools::PipelineProgressKind;
 use beskid_tools::pipeline::tui::CommandSummary;
 use beskid_tools::session::{CommandSession, ResolveInputArgs, SemanticGateOptions};
-use beskid_tools::tui::shell::runtime::RuntimeOp;
 use clap::{Args, ValueEnum};
 
 /// CLI-selected output artifact shape for [`BuildArgs::kind`].
@@ -93,15 +91,10 @@ pub struct BuildArgs {
 
 /// Resolve, lower, emit CLIF, and run the AOT/link pipeline according to `args`.
 pub fn execute(args: BuildArgs) -> Result<()> {
-    run_build(args, None)
+    run_build(args)
 }
 
-/// Same as [`execute`] but forwards pipeline progress into a running `beskid hi` shell.
-pub fn execute_for_hi(msg_tx: Sender<RuntimeOp>, args: BuildArgs) -> Result<()> {
-    run_build(args, Some(msg_tx))
-}
-
-fn run_build(args: BuildArgs, hi_tx: Option<Sender<RuntimeOp>>) -> Result<()> {
+fn run_build(args: BuildArgs) -> Result<()> {
     if let Some(raw) = args.backend.as_deref() {
         let kind = beskid_codegen::backend::BackendKind::parse(raw).map_err(|err| anyhow::anyhow!("{err}"))?;
         match kind {
@@ -122,15 +115,8 @@ fn run_build(args: BuildArgs, hi_tx: Option<Sender<RuntimeOp>>) -> Result<()> {
         frozen: args.lockfile.frozen,
         locked: args.lockfile.locked,
     };
-    let (session, resolved) = match hi_tx {
-        None => CommandSession::open_and_resolve(args.plain, PipelineProgressKind::FullBuild, &resolve_args)?,
-        Some(tx) => {
-            let session = CommandSession::with_attached_pipeline(tx, PipelineProgressKind::FullBuild);
-            let resolved = session.resolve_input(&resolve_args)?;
-            (session, resolved)
-        }
-    };
-    let hi_attached = session.pipeline().is_hi_attached();
+    let (session, resolved) =
+        CommandSession::open_and_resolve(args.plain, PipelineProgressKind::FullBuild, &resolve_args)?;
     let prepared = session.executable_gate_prepared(
         &resolved,
         SemanticGateOptions { finish_prepare_ui: false, prepare_message: "Analysis complete" },
@@ -207,7 +193,6 @@ fn run_build(args: BuildArgs, hi_tx: Option<Sender<RuntimeOp>>) -> Result<()> {
     );
 
     if args.plain
-        && !hi_attached
         && let Some(plan) = resolved.compile_plan.as_ref()
     {
         println!("deps: {} materialized dependency project(s)", plan.dependency_projects.len());
@@ -217,22 +202,15 @@ fn run_build(args: BuildArgs, hi_tx: Option<Sender<RuntimeOp>>) -> Result<()> {
         );
     }
 
-    if hi_attached {
-        session.pipeline().println_session(format!("object   {}", result.object_path.display()));
-        if let Some(final_path) = result.final_path.as_ref() {
-            session.pipeline().println_session(format!("output   {}", final_path.display()));
-        }
-    } else {
-        println!();
-        println!("  object   {}", result.object_path.display());
-        if let Some(final_path) = result.final_path {
-            println!("  output   {}", final_path.display());
-        }
-        if args.verbose_link
-            && let Some(cmd) = result.linker_invocation
-        {
-            println!("  link     {cmd}");
-        }
+    println!();
+    println!("  object   {}", result.object_path.display());
+    if let Some(final_path) = result.final_path {
+        println!("  output   {}", final_path.display());
+    }
+    if args.verbose_link
+        && let Some(cmd) = result.linker_invocation
+    {
+        println!("  link     {cmd}");
     }
 
     Ok(())

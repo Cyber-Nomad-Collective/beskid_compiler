@@ -4,13 +4,11 @@ use anyhow::Result;
 use beskid_analysis::services::{self, FrontEndOptions, PrepareOptions};
 use clap::Args;
 use std::path::PathBuf;
-use std::sync::mpsc::Sender;
 
 use crate::project_args::{LockfilePolicyArgs, ProjectResolveArgs};
 use beskid_tools::pipeline::{
     CliResolveOptions, resolve_input_with_cli_pipeline, tui::format_severity_summary, tui::severity_command_summary,
 };
-use beskid_tools::tui::shell::runtime::RuntimeOp;
 
 #[derive(Args, Debug)]
 pub struct AnalyzeArgs {
@@ -30,11 +28,6 @@ pub struct AnalyzeArgs {
 
 /// Resolve the project, analyze the entry source, and print diagnostics (or "No diagnostics.").
 pub fn execute(args: AnalyzeArgs) -> Result<()> {
-    run_analyze(args)
-}
-
-/// Same as [`execute`] but forwards pipeline progress into a running `beskid hi` shell.
-pub fn execute_for_hi(_msg_tx: Sender<RuntimeOp>, args: AnalyzeArgs) -> Result<()> {
     run_analyze(args)
 }
 

@@ -9,8 +9,6 @@ pub mod doc;
 pub mod fetch;
 pub mod format;
 pub mod graph;
-pub mod hi;
-pub mod hi_compile;
 pub mod import;
 pub mod lock;
 pub mod lsp;

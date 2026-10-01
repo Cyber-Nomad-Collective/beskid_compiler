@@ -7,7 +7,6 @@ use crate::commands::doc::DocArgs;
 use crate::commands::fetch::FetchArgs;
 use crate::commands::format::FormatArgs;
 use crate::commands::graph::GraphArgs;
-use crate::commands::hi::HiArgs;
 use crate::commands::import::ImportArgs;
 use crate::commands::lock::LockArgs;
 use crate::commands::lsp::LspArgs;
@@ -22,7 +21,7 @@ use crate::commands::tree::TreeArgs;
 use crate::commands::update::UpdateArgs;
 use crate::commands::validate_bsol::ValidateBsolArgs;
 use crate::commands::{
-    analyze, build, clif, compiler_mod, corelib, doc, fetch, format, graph, hi, import, lock, lsp, migrate_bsol, new,
+    analyze, build, clif, compiler_mod, corelib, doc, fetch, format, graph, import, lock, lsp, migrate_bsol, new,
     parse, repl, run, runtime_kit, test, tree, update, validate_bsol,
 };
 use beskid_pckg::PckgArgs;
@@ -119,9 +118,6 @@ pub enum Commands {
     /// Visualize project/workspace graphs (Mermaid) in the terminal or as raw output
     Graph(GraphArgs),
 
-    /// Open the pluggable Beskid dashboard shell (workspace/project/user scoped)
-    Hi(HiArgs),
-
     /// Run the Beskid language server on stdio, or install a release binary (`beskid lsp install`)
     Lsp(LspArgs),
 
@@ -173,7 +169,6 @@ pub fn run() -> miette::Result<()> {
         Commands::ValidateBsol(args) => validate_bsol::execute(args),
         Commands::MigrateBsol(args) => migrate_bsol::execute(args),
         Commands::Graph(args) => graph::execute(args),
-        Commands::Hi(args) => hi::execute(args, &[beskid_hi::register_widgets], &[beskid_hi::register_nav], &[]),
     };
 
     result.map_err(anyhow_to_miette)

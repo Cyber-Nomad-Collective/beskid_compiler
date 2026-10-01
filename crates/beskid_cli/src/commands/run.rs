@@ -16,9 +16,7 @@ use beskid_pipeline::PipelineObserver;
 use beskid_tools::PipelineProgressKind;
 use beskid_tools::pipeline::tui::CommandSummary;
 use beskid_tools::session::{CommandSession, ResolveInputArgs, SemanticGateOptions};
-use beskid_tools::tui::shell::runtime::RuntimeOp;
 use clap::Args;
-use std::sync::mpsc::Sender;
 
 #[derive(Args, Debug, Clone)]
 pub struct RunArgs {
@@ -42,15 +40,10 @@ pub struct RunArgs {
 
 /// Resolve, AOT-link, and run `args.entrypoint` in a subprocess with pipeline progress on stderr when enabled.
 pub fn execute(args: RunArgs) -> Result<()> {
-    run_build_and_execute(args, None)
+    run_build_and_execute(args)
 }
 
-/// Same as [`execute`] but forwards pipeline progress into a running `beskid hi` shell.
-pub fn execute_for_hi(msg_tx: Sender<RuntimeOp>, args: RunArgs) -> Result<()> {
-    run_build_and_execute(args, Some(msg_tx))
-}
-
-fn run_build_and_execute(args: RunArgs, hi_tx: Option<Sender<RuntimeOp>>) -> Result<()> {
+fn run_build_and_execute(args: RunArgs) -> Result<()> {
     let resolve_args = ResolveInputArgs {
         input: args.input.as_ref(),
         project: args.project.project.as_ref(),
@@ -59,14 +52,8 @@ fn run_build_and_execute(args: RunArgs, hi_tx: Option<Sender<RuntimeOp>>) -> Res
         frozen: args.lockfile.frozen,
         locked: args.lockfile.locked,
     };
-    let (session, resolved) = match hi_tx {
-        None => CommandSession::open_and_resolve(args.plain, PipelineProgressKind::PrepareAndRun, &resolve_args)?,
-        Some(tx) => {
-            let session = CommandSession::with_attached_pipeline(tx, PipelineProgressKind::PrepareAndRun);
-            let resolved = session.resolve_input(&resolve_args)?;
-            (session, resolved)
-        }
-    };
+    let (session, resolved) =
+        CommandSession::open_and_resolve(args.plain, PipelineProgressKind::PrepareAndRun, &resolve_args)?;
     let prepared = session.executable_gate_prepared(&resolved, SemanticGateOptions::default())?;
     let front = prepared.into_executable()?;
     let artifact = lower_prepared_entrypoint(&front, &args.entrypoint, None, Some(session.observer()))?;

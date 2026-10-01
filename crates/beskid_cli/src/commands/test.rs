@@ -5,14 +5,11 @@ use beskid_engine::services::SyntaxTestItem;
 use clap::Args;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use std::sync::mpsc::Sender;
 use std::time::{Duration, Instant};
 
 use crate::project_args::{LockfilePolicyArgs, ProjectResolveArgs};
 use beskid_tools::diagnostics;
 use beskid_tools::pipeline::{tui::FileLineLink, tui::TestRowState, tui::TestRunUi};
-
-use beskid_tools::tui::shell::runtime::RuntimeOp;
 
 use super::prepared_matrix::{
     Cancellation, ExecutionBudgets, PhaseRecord, PreparedTarget, PreparedWorkspace, TargetReport, TargetResult,
@@ -120,20 +117,12 @@ pub fn execute(args: TestArgs) -> Result<()> {
     if args.all_targets {
         return super::matrix_test::execute_all_targets(args);
     }
-    execute_single_target(args, None)
+    execute_single_target(args)
 }
 
-/// Same as [`execute`] but forwards pipeline progress into a running `beskid hi` shell.
-pub fn execute_for_hi(msg_tx: Sender<RuntimeOp>, args: TestArgs) -> Result<()> {
-    if args.all_targets {
-        anyhow::bail!("`test --all-targets` is not supported from beskid hi yet");
-    }
-    execute_single_target(args, Some(msg_tx))
-}
-
-fn execute_single_target(args: TestArgs, hi_tx: Option<Sender<RuntimeOp>>) -> Result<()> {
+fn execute_single_target(args: TestArgs) -> Result<()> {
     let budgets = args.execution_budgets();
-    let mut workspace = PreparedWorkspace::prepare(&args, hi_tx, budgets, Cancellation::default())?;
+    let mut workspace = PreparedWorkspace::prepare(&args, budgets, Cancellation::default())?;
     let target_name = workspace
         .test_targets()
         .into_iter()
@@ -168,7 +157,6 @@ pub(crate) fn execute_prepared_target(
     let source_name = target.resolved.source_path.display().to_string();
     let include_tags = normalized_tags(&args.include_tags);
     let exclude_tags = normalized_tags(&args.exclude_tags);
-    let hi_attached = workspace.session().pipeline().is_hi_attached();
     let mut test_ui = TestRunUi::new(args.plain, None);
     let mut planned = Vec::new();
     for (row_index, test) in tests.iter().enumerate() {
@@ -362,7 +350,7 @@ pub(crate) fn execute_prepared_target(
                 summary.filtered_out,
                 summary.timed_out,
             )?;
-            if !args.plain && !hi_attached {
+            if !args.plain {
                 workspace.session().pipeline().wait_for_dismiss()?;
             }
         }

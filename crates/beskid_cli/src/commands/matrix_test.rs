@@ -65,7 +65,7 @@ pub fn execute_all_targets(args: TestArgs) -> Result<()> {
 fn execute_worker(args: TestArgs) -> Result<()> {
     let budgets = args.execution_budgets();
     let cancellation = Cancellation::default();
-    let mut workspace = match PreparedWorkspace::prepare(&args, None, budgets, cancellation) {
+    let mut workspace = match PreparedWorkspace::prepare(&args, budgets, cancellation) {
         Ok(workspace) => workspace,
         Err(error) => return emit_fatal("resolve_materialize_salsa_engine", error),
     };
