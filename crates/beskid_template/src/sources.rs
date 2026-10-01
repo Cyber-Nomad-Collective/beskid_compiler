@@ -67,7 +67,7 @@ pub fn plan_source_writes(
                 target_rel.join(substitute_relative_output_path(&rel_str, values)?)
             };
             let rel_for_plan = normalize_relative_output_path(&out_rel)?;
-            validate_output_destination(output_root, &rel_for_plan)?;
+            resolve_output_destination(output_root, &rel_for_plan)?;
 
             let bytes = fs::read(path)?;
             let process_text = !copy_only.is_match(&rel_str) && is_probably_text(&bytes);
@@ -97,15 +97,16 @@ pub fn plan_source_writes(
 
 pub fn apply_write_plans(output_root: &Path, plans: &[SourceWritePlan], force: bool) -> TemplateResult<()> {
     let mut destinations = BTreeSet::new();
+    let mut resolved_destinations = BTreeSet::new();
     for plan in plans {
         let relative_output = normalize_relative_output_path(&plan.relative_output)?;
-        if !destinations.insert(relative_output.clone()) {
-            return Err(TemplateError::InvalidManifest(format!(
-                "multiple template sources produce output path `{}`",
-                relative_output.display()
-            )));
-        }
-        validate_output_destination(output_root, &relative_output)?;
+        ensure_no_path_collisions(&destinations, &relative_output)?;
+        destinations.insert(relative_output.clone());
+
+        let resolved_destination = resolve_output_destination(output_root, &relative_output)?;
+        ensure_no_path_collisions(&resolved_destinations, &resolved_destination)?;
+        resolved_destinations.insert(resolved_destination);
+
         let dest = output_root.join(relative_output);
         if dest.exists() && !force {
             return Err(TemplateError::OutputConflict { path: dest });
@@ -174,7 +175,20 @@ fn normalize_relative_output_path(path: &Path) -> TemplateResult<PathBuf> {
     Ok(normalized)
 }
 
-fn validate_output_destination(output_root: &Path, relative_output: &Path) -> TemplateResult<()> {
+fn ensure_no_path_collisions(destinations: &BTreeSet<PathBuf>, candidate: &Path) -> TemplateResult<()> {
+    if let Some(existing) =
+        destinations.iter().find(|existing| existing.starts_with(candidate) || candidate.starts_with(existing))
+    {
+        return Err(TemplateError::InvalidManifest(format!(
+            "conflicting template output paths `{}` and `{}`",
+            existing.display(),
+            candidate.display()
+        )));
+    }
+    Ok(())
+}
+
+fn resolve_output_destination(output_root: &Path, relative_output: &Path) -> TemplateResult<PathBuf> {
     let output_root = fs::canonicalize(output_root)?;
     let relative_output = normalize_relative_output_path(relative_output)?;
     let components = relative_output.components().collect::<Vec<_>>();
@@ -196,12 +210,18 @@ fn validate_output_destination(output_root: &Path, relative_output: &Path) -> Te
                         current.display()
                     )));
                 }
+                current = resolved;
             }
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => break,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                for remaining in &components[index + 1..] {
+                    current.push(remaining.as_os_str());
+                }
+                break;
+            }
             Err(error) => return Err(error.into()),
         }
     }
-    Ok(())
+    Ok(current)
 }
 
 fn build_glob_set(patterns: &[String]) -> TemplateResult<GlobSet> {
@@ -328,8 +348,8 @@ mod tests {
 
         let result = plan(&fixture, "./", &[]).and_then(|plans| apply_write_plans(&fixture.output_root, &plans, false));
 
-        assert!(matches!(result, Err(TemplateError::InvalidManifest(_))));
         assert_eq!(fs::read_dir(&fixture.output_root).unwrap().count(), 0);
+        assert!(matches!(result, Err(TemplateError::InvalidManifest(_))));
     }
 
     #[test]
@@ -343,6 +363,37 @@ mod tests {
 
         assert!(matches!(result, Err(TemplateError::InvalidManifest(_))));
         assert_eq!(fs::read_dir(&fixture.output_root).unwrap().count(), 0);
+    }
+
+    #[test]
+    fn file_and_descendant_output_paths_fail_before_any_write() {
+        let fixture = Fixture::new();
+        let plans = vec![
+            SourceWritePlan { relative_output: PathBuf::from("a"), bytes: b"file".to_vec() },
+            SourceWritePlan { relative_output: PathBuf::from("a/b"), bytes: b"descendant".to_vec() },
+        ];
+
+        let result = apply_write_plans(&fixture.output_root, &plans, false);
+
+        assert_eq!(fs::read_dir(&fixture.output_root).unwrap().count(), 0);
+        assert!(matches!(result, Err(TemplateError::InvalidManifest(_))));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlink_alias_output_paths_fail_before_any_write() {
+        let fixture = Fixture::new();
+        fs::create_dir(fixture.output_root.join("real")).unwrap();
+        std::os::unix::fs::symlink("real", fixture.output_root.join("alias")).unwrap();
+        let plans = vec![
+            SourceWritePlan { relative_output: PathBuf::from("alias/x.bd"), bytes: b"alias".to_vec() },
+            SourceWritePlan { relative_output: PathBuf::from("real/x.bd"), bytes: b"real".to_vec() },
+        ];
+
+        let result = apply_write_plans(&fixture.output_root, &plans, false);
+
+        assert!(!fixture.output_root.join("real/x.bd").exists());
+        assert!(matches!(result, Err(TemplateError::InvalidManifest(_))));
     }
 
     #[test]
