@@ -23,8 +23,9 @@ invocation. The Corelib root must be the marked `beskid_corelib` directory in
 the installed release archive, with its fingerprint independently checked
 against the pinned source. The root release receipt must bind the same
 fingerprint to the exact archive and source commits. The gate recomputes it,
-checks the marker, copies the bundle into a private fixture, and verifies both
-copies remain unchanged after smoke. It never allows the CLI to silently
+checks the marker, copies the bundle into a private fixture, and verifies the
+fingerprint-covered files in both copies remain unchanged after smoke. Generated
+cache and lockfile paths are excluded by the canonical fingerprint. It never allows the CLI to silently
 provision an empty Corelib root. The subgate fails when the binary checksum differs, an advertised
 safe leaf is uncovered, a smoke exit/output contract fails, ordinary pipe or
 plain output contains control bytes, or the PTY graph/ordinary command
