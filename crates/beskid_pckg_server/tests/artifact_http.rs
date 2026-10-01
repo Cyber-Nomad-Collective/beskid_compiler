@@ -16,13 +16,13 @@ fn config(root: &std::path::Path) -> PckgServerConfig {
     PckgServerConfig::default().with_authelia_auth().with_artifact_root(root)
 }
 
-fn artifact_with_browsable_content(name: &str, version: &str) -> Vec<u8> {
+fn artifact_with_browsable_content(name: &str, version: &str, include_nested_hidden_doc: bool) -> Vec<u8> {
     let manifest =
         format!(r#"{{"schema":"beskid.package.v1","id":"{name}","version":"{version}","packageKind":"library"}}"#,);
     let project_name = name.replace('.', "_").to_ascii_lowercase();
     let project_manifest = format!("{project_name}.bproj");
     let project = format!("{project_name} {{\n  name = \"{project_name}\"\n}}\n");
-    let entries = vec![
+    let mut entries = vec![
         ("package.json", manifest.into_bytes()),
         (project_manifest.as_str(), project.into_bytes()),
         ("README.md", b"# Public Demo\n".to_vec()),
@@ -33,6 +33,9 @@ fn artifact_with_browsable_content(name: &str, version: &str) -> Vec<u8> {
         ("package-icon.svg", b"<svg></svg>".to_vec()),
         ("tests/smoke.bd", b"fn test() {}".to_vec()),
     ];
+    if include_nested_hidden_doc {
+        entries.push((".beskid/docs/private/.beskid/secret.md", b"not public".to_vec()));
+    }
     let checksums =
         entries.iter().map(|(path, bytes)| format!("{}  {path}", hex_sha256(bytes))).collect::<Vec<_>>().join("\n");
     let mut output = std::io::Cursor::new(Vec::new());
@@ -278,7 +281,7 @@ async fn private_and_yanked_artifacts_are_hidden_from_non_owners_and_downloads()
 async fn public_package_artifact_browse_routes_expose_only_verified_docs_and_source() {
     let root = std::env::temp_dir().join(format!("pckg-artifact-browse-{}", std::process::id()));
     let app = router(config(&root));
-    let artifact = artifact_with_browsable_content("Public.Demo", "1.0.0");
+    let artifact = artifact_with_browsable_content("Public.Demo", "1.0.0", false);
 
     for request in [
         Request::post("/api/packages")
@@ -356,5 +359,43 @@ async fn public_package_artifact_browse_routes_expose_only_verified_docs_and_sou
         .await
         .unwrap();
     assert_eq!(traversal.status(), StatusCode::NOT_FOUND);
+    std::fs::remove_dir_all(root).expect("artifact root is removed");
+}
+
+#[tokio::test]
+async fn nested_hidden_document_is_not_served_by_public_browse_routes() {
+    let root = std::env::temp_dir().join(format!("pckg-artifact-hidden-browse-{}", std::process::id()));
+    let app = router(config(&root));
+    let artifact = artifact_with_browsable_content("Public.Hidden", "1.0.0", true);
+
+    for request in [
+        Request::post("/api/packages")
+            .header("content-type", "application/json")
+            .header("remote-user", "owner")
+            .body(Body::from(r#"{"name":"Public.Hidden","isPublic":true,"submitForReview":false}"#))
+            .unwrap(),
+        multipart_publish_request("Public.Hidden", "1.0.0", "owner", artifact),
+    ] {
+        assert!(app.clone().oneshot(request).await.unwrap().status().is_success());
+    }
+
+    let hidden_doc = app
+        .clone()
+        .oneshot(
+            Request::get(
+                "/api/packages/Public.Hidden/versions/1.0.0/docs/file?path=.beskid%2Fdocs%2Fprivate%2F.beskid%2Fsecret.md",
+            )
+            .body(Body::empty())
+            .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(hidden_doc.status(), StatusCode::NOT_FOUND);
+
+    let docs = app
+        .oneshot(Request::get("/api/packages/Public.Hidden/versions/1.0.0/docs").body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(docs.status(), StatusCode::NOT_FOUND);
     std::fs::remove_dir_all(root).expect("artifact root is removed");
 }

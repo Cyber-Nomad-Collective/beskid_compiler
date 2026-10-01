@@ -122,7 +122,10 @@ fn is_source_path(path: &str) -> bool {
 }
 
 fn is_public_browse_entry(path: &str) -> bool {
-    !path.split('/').any(|segment| segment.starts_with('.') && !(segment == ".beskid" && path.starts_with(".beskid/")))
+    !path
+        .split('/')
+        .enumerate()
+        .any(|(index, segment)| segment.starts_with('.') && !(index == 0 && segment == ".beskid"))
 }
 
 fn documentation_sort_rank(path: &str) -> u8 {

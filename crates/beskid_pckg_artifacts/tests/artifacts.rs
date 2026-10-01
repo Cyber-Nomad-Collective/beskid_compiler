@@ -352,6 +352,24 @@ fn browser_rejects_hidden_and_traversal_reads() {
 }
 
 #[test]
+fn browser_rejects_nested_hidden_segment_inside_beskid_documentation() {
+    let artifact = archive_with_files(
+        "acme.math",
+        "1.2.3",
+        &[
+            (".beskid/docs/metadata.json", r#"{"title":"Acme Math"}"#),
+            (".beskid/docs/private/.beskid/secret.md", "not public"),
+        ],
+    );
+    let validated = validate_package_artifact(&artifact, "acme.math", "1.2.3").unwrap();
+
+    assert!(matches!(
+        ArtifactBrowser::from_validated_bytes(&artifact, &validated),
+        Err(ArtifactError::UnsafeBrowseEntry(path)) if path == ".beskid/docs/private/.beskid/secret.md"
+    ));
+}
+
+#[test]
 fn browser_rejects_oversized_text_reads() {
     let oversized = "x".repeat(1024 * 1024 + 1);
     let artifact = archive_with_files("acme.math", "1.2.3", &[("docs/large.md", &oversized)]);
