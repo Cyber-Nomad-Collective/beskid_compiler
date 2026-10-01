@@ -3,7 +3,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use crate::commands::syntax_codegen::lower_prepared_entrypoint;
+use crate::commands::syntax_codegen::{lower_prepared_entrypoint, lower_prepared_module};
 use crate::project_args::{LockfilePolicyArgs, ProjectResolveArgs};
 use anyhow::Result;
 use beskid_analysis::projects::TargetKind;
@@ -127,11 +127,13 @@ fn run_build(args: BuildArgs) -> Result<()> {
     let project_target_kind = resolved.compile_plan.as_ref().map(|plan| plan.target.kind);
     let default_output_stem = resolved.compile_plan.as_ref().map(|plan| plan.target.name.clone());
 
-    let entrypoint = resolve_entrypoint(args.entrypoint.clone())?;
-    let artifact =
-        lower_prepared_entrypoint(&front, &entrypoint, args.target_triple.as_deref(), Some(session.observer()))?;
-
     let output_kind = resolve_output_kind(args.kind, project_target_kind);
+    let entrypoint = resolve_entrypoint(args.entrypoint.clone())?;
+    let artifact = if output_kind == BuildOutputKind::Exe {
+        lower_prepared_entrypoint(&front, &entrypoint, args.target_triple.as_deref(), Some(session.observer()))?
+    } else {
+        lower_prepared_module(&front, args.target_triple.as_deref(), Some(session.observer()))?
+    };
 
     let target = beskid_aot::target::detect_target(args.target_triple.as_deref())?;
     let output = if let Some(path) = args.output {

@@ -332,9 +332,8 @@ pub fn lower_prepared_syntax_module(
         .map(|key| syntax_item_symbol(input.database(), &input, key).map(|symbol| SyntaxModuleItem { key, symbol }))
         .collect::<Option<Vec<_>>>()
         .ok_or_else(|| anyhow::anyhow!("prepared syntax module contains an unnamed item"))?;
-    if items.is_empty() {
-        anyhow::bail!("prepared syntax module contains no executable functions or methods");
-    }
+    // Type-only libraries have no executable items, but still pass through the
+    // validated module boundary and object emission without an application entrypoint.
     let mut artifact = lower_syntax_program(&input, isa, &items)
         .map_err(|error| error.into_report(&input, "syntax ISLE module lowering failed"))?;
     artifact.exports = syntax_export_entries(input.database(), &items)?;
