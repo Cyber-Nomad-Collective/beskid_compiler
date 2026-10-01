@@ -113,6 +113,15 @@ Options:
                 gate.verify_corelib_bundle(fixture, expected)
             self.assertEqual(gate.verify_corelib_bundle(external, expected), expected)
 
+    def test_corelib_report_exposes_receipt_fingerprint_at_top_level(self):
+        gate = self.load_gate()
+        root = Path("/tmp/release/beskid_corelib")
+        staged = Path("/tmp/fixture/corelib")
+        report = gate.corelib_report(root, staged, "a" * 64, True)
+        self.assertEqual(report["corelib_fingerprint"], "a" * 64)
+        self.assertEqual(report["corelib"]["source_root"], str(root))
+        self.assertTrue(report["corelib"]["post_run_verified"])
+
     def test_alias_artifacts_have_distinct_paths(self):
         gate = self.load_gate()
         root = Path("/tmp/cli-gate-fixture")

@@ -118,6 +118,12 @@ def stage_corelib_bundle(external, expected, fixture):
     return fixture
 
 
+def corelib_report(external, staged, fingerprint, post_run_verified):
+    return {"corelib_fingerprint": fingerprint,
+            "corelib": {"source_root": str(external), "fingerprint": fingerprint,
+                        "staged_root": str(staged), "post_run_verified": post_run_verified}}
+
+
 def command_names(help_text):
     names = []
     in_commands = False
@@ -556,9 +562,8 @@ def main(argv=None):
                   for status in ("pass", "fail", "setup_skip", "uncovered", "inventory_only")}
         evidence = {"schema": "beskid.cli-surface.v1", "binary": str(binary),
                     "binary_sha256": binary_sha256,
-                    "corelib": {"source_root": str(corelib_root), "fingerprint": verified_corelib,
-                                "staged_root": str(staged_corelib), "post_run_verified": not any(
-                                    failure.startswith("Corelib bundle changed") for failure in failures)},
+                    **corelib_report(corelib_root, staged_corelib, verified_corelib,
+                                     not any(failure.startswith("Corelib bundle changed") for failure in failures)),
                     "source_provenance": source_provenance(), "release_qualified": False,
                     "counts": counts,
                     "contracts": contracts, "rows": rows}
