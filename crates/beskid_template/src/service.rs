@@ -200,14 +200,15 @@ where
         bindings.insert(id.clone(), value.clone());
     }
 
-    let symbol_options = SymbolCollectOptions {
+    let mut symbol_options = SymbolCollectOptions {
         interactive: stdin_is_interactive(),
         no_interactive: request.no_interactive,
         primary_name: request.name.clone(),
         bindings,
     };
 
-    let _values = collect_symbol_values(&manifest, &symbol_options).map_err(|e| anyhow!("{e}"))?;
+    // Instantiation validates these bindings again, but must not repeat interactive prompts.
+    symbol_options.bindings = collect_symbol_values(&manifest, &symbol_options).map_err(|e| anyhow!("{e}"))?;
 
     let options = InstantiateOptions {
         template_root: template_root.clone(),

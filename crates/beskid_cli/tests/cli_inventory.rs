@@ -1,6 +1,25 @@
 use std::process::Command;
 use std::{fs, path::Path};
 
+#[test]
+fn new_rejects_removed_tui_picker_and_graph_keeps_its_tui_flag() {
+    let binary = env!("CARGO_BIN_EXE_beskid_cli");
+    let help = Command::new(binary).args(["new", "--help"]).output().expect("new help");
+    assert!(help.status.success());
+    let help = String::from_utf8_lossy(&help.stdout);
+    assert!(!help.contains("--tui"), "removed picker advertised: {help}");
+
+    let rejected = Command::new(binary).args(["new", "--tui"]).output().expect("removed picker");
+    assert!(!rejected.status.success());
+    let diagnostic = String::from_utf8_lossy(&rejected.stderr);
+    assert!(diagnostic.contains("unexpected argument '--tui'"), "{diagnostic}");
+    assert!(!rejected.stdout.contains(&27) && !rejected.stderr.contains(&27));
+
+    let graph = Command::new(binary).args(["graph", "--help"]).output().expect("graph help");
+    assert!(graph.status.success());
+    assert!(String::from_utf8_lossy(&graph.stdout).contains("--tui"));
+}
+
 fn command_names(help: &str) -> impl Iterator<Item = &str> {
     help.lines().filter_map(|line| {
         let name = line.split_whitespace().next()?;

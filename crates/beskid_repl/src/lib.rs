@@ -15,7 +15,6 @@ pub mod readline;
 pub mod session;
 #[cfg(test)]
 mod test_support;
-pub mod tui;
 
 pub use session::ReplSession;
 
@@ -25,9 +24,4 @@ pub const REPL_SOURCE_PATH: &str = "<repl>";
 /// Run the REPL loop on `input` until `:quit` or EOF.
 pub fn run(session: &mut ReplSession, input: &mut dyn readline::ReplInput) -> anyhow::Result<()> {
     readline::run_loop(session, input).map_err(anyhow::Error::from)
-}
-
-/// Run the Ratatui REPL with a [`tui_term`] output pane (TTY only).
-pub fn run_tui(session: &mut ReplSession) -> anyhow::Result<()> {
-    tui::run_tui(session).map_err(anyhow::Error::from)
 }

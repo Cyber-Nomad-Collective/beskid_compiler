@@ -684,6 +684,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   as package publication.
 ### Changed
 
+- Read REPL terminal input as ordinary lines and exit on `:quit` or EOF.
+- Use line prompts for template values and choices; ask for each answer once.
+
 - Prove full legal external-wait admission from the generated scheduler layout,
   reject duplicate registration without disturbing its deadline, and verify
   release/reuse leaves stale controller handles and generations harmless.
@@ -1028,6 +1031,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   can select an ABI import.
 
 ### Removed
+
+- Remove `new --tui`, the unused template shell, and the full-screen REPL.
+  Preserve graph's explicit TUI, Mermaid, and file output.
 
 - Remove the pckg server's workspace-bundle publication route and its private
   batch-persistence contract. Release publishers now use the single canonical

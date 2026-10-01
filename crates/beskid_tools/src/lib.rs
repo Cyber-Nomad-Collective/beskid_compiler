@@ -10,14 +10,11 @@
 pub mod corelib;
 pub mod diagnostics;
 pub mod entrypoint;
-pub mod logging;
 pub mod pipeline;
 pub mod prompt;
 pub mod registry;
 pub mod session;
-pub mod shell;
 pub mod toolchain;
-pub mod tui;
 
 pub use beskid_pipeline::{COMPILER_STACK_SIZE, compiler_stack_size};
 pub use corelib::{CorelibProvisioning, ensure_bundled_corelib};
@@ -26,7 +23,6 @@ pub use diagnostics::{
     print_semantic_diagnostics, report_from_anyhow,
 };
 pub use entrypoint::run_on_compiler_stack;
-pub use logging::init as init_logging;
 pub use pipeline::{
     CliInputPipelineOptions, CliPipeline, CliProjectPipelineOptions, CliResolveOptions, PipelineProgressKind,
     resolve_input_with_cli_pipeline, resolve_input_with_cli_pipeline_kind, resolve_project_with_cli_pipeline,
@@ -37,7 +33,3 @@ pub use registry::{
     pckg_to_anyhow, pick_version, tokio_runtime,
 };
 pub use session::{CommandSession, ResolveInputArgs, SemanticGateOptions};
-pub use shell::{
-    BeskidWidget, BoardLayout, BoardV2Doc, CommandItem, HiLayoutState, ShellAction, ShellScope, WidgetDescriptor,
-    WidgetMeta, WidgetRegistry,
-};

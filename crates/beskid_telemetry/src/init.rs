@@ -2,7 +2,6 @@
 
 use std::io::{self, Write};
 use std::sync::Mutex;
-use std::sync::atomic::{AtomicBool, Ordering};
 
 use tracing_subscriber::EnvFilter;
 use tracing_subscriber::fmt::writer::MakeWriter;
@@ -14,7 +13,6 @@ use crate::otel::{OtelGuard, install_otel_guard, otel_enabled, otel_tracer};
 
 const CRANELIFT_QUIET: &str = "cranelift_jit=warn,cranelift_codegen=warn,cranelift_frontend=warn,cranelift_module=warn,cranelift_native=warn,cranelift_object=warn";
 
-static STDERR_GATED: AtomicBool = AtomicBool::new(false);
 static STDERR_PROGRESS: Mutex<bool> = Mutex::new(false);
 
 fn clear_progress(out: &mut impl Write, visible: &mut bool) -> io::Result<()> {
@@ -42,15 +40,12 @@ pub fn clear_stderr_progress() -> io::Result<()> {
     out.flush()
 }
 
-struct GatedStderr;
+struct ProgressStderr;
 
-struct GatedStderrWriter;
+struct ProgressStderrWriter;
 
-impl Write for GatedStderrWriter {
+impl Write for ProgressStderrWriter {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        if STDERR_GATED.load(Ordering::Relaxed) {
-            return Ok(buf.len());
-        }
         let mut visible = STDERR_PROGRESS.lock().expect("stderr progress mutex poisoned");
         let mut out = io::stderr().lock();
         clear_progress(&mut out, &mut visible)?;
@@ -58,18 +53,15 @@ impl Write for GatedStderrWriter {
     }
 
     fn flush(&mut self) -> io::Result<()> {
-        if STDERR_GATED.load(Ordering::Relaxed) {
-            return Ok(());
-        }
         io::stderr().flush()
     }
 }
 
-impl<'a> MakeWriter<'a> for GatedStderr {
-    type Writer = GatedStderrWriter;
+impl<'a> MakeWriter<'a> for ProgressStderr {
+    type Writer = ProgressStderrWriter;
 
     fn make_writer(&'a self) -> Self::Writer {
-        GatedStderrWriter
+        ProgressStderrWriter
     }
 }
 
@@ -77,16 +69,15 @@ impl<'a> MakeWriter<'a> for GatedStderr {
 pub struct InitOptions {
     pub log_cranelift: bool,
     pub service_name: &'static str,
-    pub include_tui_logger: bool,
 }
 
 impl InitOptions {
     pub fn cli(log_cranelift: bool) -> Self {
-        Self { log_cranelift, service_name: "beskid", include_tui_logger: true }
+        Self { log_cranelift, service_name: "beskid" }
     }
 
     pub fn lsp() -> Self {
-        Self { log_cranelift: false, service_name: "beskid-lsp", include_tui_logger: false }
+        Self { log_cranelift: false, service_name: "beskid-lsp" }
     }
 }
 
@@ -110,7 +101,7 @@ macro_rules! stderr_fmt_layer {
     () => {
         tracing_subscriber::fmt::layer()
             .with_ansi(false)
-            .with_writer(GatedStderr)
+            .with_writer(ProgressStderr)
             .with_target(true)
             .with_thread_ids(true)
             .with_level(true)
@@ -121,56 +112,18 @@ fn install_local(filter: EnvFilter, buffer_layer: BufferLayer) {
     tracing_subscriber::registry().with(filter).with(buffer_layer).with(stderr_fmt_layer!()).init();
 }
 
-#[cfg(feature = "tui")]
-fn install_local_with_tui(filter: EnvFilter, buffer_layer: BufferLayer) {
-    tracing_subscriber::registry()
-        .with(filter)
-        .with(buffer_layer)
-        .with(tui_logger::TuiTracingSubscriberLayer)
-        .with(stderr_fmt_layer!())
-        .init();
-}
-
 fn install_otel(filter: EnvFilter, buffer_layer: BufferLayer, guard: &OtelGuard) {
     let otel_layer = tracing_opentelemetry::layer().with_tracer(otel_tracer(guard));
     tracing_subscriber::registry().with(filter).with(buffer_layer).with(stderr_fmt_layer!()).with(otel_layer).init();
 }
 
-#[cfg(feature = "tui")]
-fn install_otel_with_tui(filter: EnvFilter, buffer_layer: BufferLayer, guard: &OtelGuard) {
-    let otel_layer = tracing_opentelemetry::layer().with_tracer(otel_tracer(guard));
-    tracing_subscriber::registry()
-        .with(filter)
-        .with(buffer_layer)
-        .with(tui_logger::TuiTracingSubscriberLayer)
-        .with(stderr_fmt_layer!())
-        .with(otel_layer)
-        .init();
-}
-
-fn install_for_scope(
-    filter: EnvFilter,
-    buffer_layer: BufferLayer,
-    _include_tui_logger: bool,
-    otel_guard: Option<OtelGuard>,
-) {
+fn install_for_scope(filter: EnvFilter, buffer_layer: BufferLayer, otel_guard: Option<OtelGuard>) {
     match otel_guard {
         Some(guard) => {
-            #[cfg(feature = "tui")]
-            if _include_tui_logger {
-                install_otel_with_tui(filter, buffer_layer, &guard);
-                let _leaked = Box::leak(Box::new(guard));
-                return;
-            }
             install_otel(filter, buffer_layer, &guard);
             let _leaked = Box::leak(Box::new(guard));
         }
         None => {
-            #[cfg(feature = "tui")]
-            if _include_tui_logger {
-                install_local_with_tui(filter, buffer_layer);
-                return;
-            }
             install_local(filter, buffer_layer);
         }
     }
@@ -194,7 +147,7 @@ pub fn init(options: InitOptions) {
         None
     };
 
-    install_for_scope(filter, buffer_layer, options.include_tui_logger, otel_guard);
+    install_for_scope(filter, buffer_layer, otel_guard);
     post_init(&options);
 }
 
@@ -211,11 +164,6 @@ fn post_init(options: &InitOptions) {
 /// LSP entry: same subscriber, `beskid-lsp` service name.
 pub fn init_lsp() {
     init(InitOptions::lsp());
-}
-
-/// Gate stderr fmt layer while interactive TUI owns the terminal.
-pub fn gate_stderr_logging(gated: bool) {
-    STDERR_GATED.store(gated, Ordering::Relaxed);
 }
 
 pub fn shutdown_otel() {}
