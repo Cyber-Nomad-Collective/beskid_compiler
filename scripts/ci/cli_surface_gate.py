@@ -2,7 +2,8 @@
 """Discover the release CLI surface and smoke safe paths in an isolated fixture.
 
 Usage: python3 scripts/ci/cli_surface_gate.py /path/to/beskid_cli \
-  --expected-sha256 SHA256 --json evidence.json
+  --expected-sha256 SHA256 --corelib-root /path/to/beskid_corelib \
+  --expected-corelib-fingerprint SHA256 --json evidence.json
 Unexercised leaves are reported as such, never counted as passing tests.
 """
 
@@ -14,6 +15,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -57,6 +59,63 @@ SETUP_SKIPS = {
     ("pckg", "unyank"): "changes registry publication state; authenticated local registry fixture required",
 }
 CONTROL_BYTES = set(range(32)) - {10}
+CORELIB_MARKER = ".beskid-bundle.sha256"
+CORELIB_EXCLUDED = {".git", "Project.lock", "obj", ".beskid", "target", ".venv-ci", ".nox"}
+
+
+def fingerprint_corelib_bundle(root):
+    """Mirror beskid_abi::corelib_bundle's stable path-and-content digest."""
+    files = []
+
+    def visit(directory):
+        for entry in directory.iterdir():
+            if entry.is_symlink():
+                raise ValueError(f"Corelib bundle contains a symlink: {entry}")
+            if entry.name in CORELIB_EXCLUDED or entry.name == CORELIB_MARKER:
+                continue
+            if entry.is_dir():
+                visit(entry)
+            elif entry.is_file():
+                files.append(entry.relative_to(root))
+            else:
+                raise ValueError(f"Corelib bundle contains an unsupported entry: {entry}")
+
+    visit(root)
+    digest = hashlib.sha256()
+    for relative in sorted(files):
+        path_bytes = str(relative).encode("utf-8")
+        digest.update(len(path_bytes).to_bytes(8, "little"))
+        digest.update(path_bytes)
+        with (root / relative).open("rb") as stream:
+            for chunk in iter(lambda: stream.read(16 * 1024), b""):
+                digest.update(chunk)
+    return digest.hexdigest()
+
+
+def verify_corelib_bundle(root, expected):
+    if not root.is_dir() or root.is_symlink():
+        raise ValueError(f"Corelib root is missing or is not a directory: {root}")
+    if not re.fullmatch(r"[0-9a-f]{64}", expected):
+        raise ValueError("expected Corelib fingerprint must be 64 lowercase hex digits")
+    marker = root / CORELIB_MARKER
+    if not marker.is_file() or marker.is_symlink():
+        raise ValueError(f"Corelib marker is missing or invalid: {marker}")
+    if not (root / "CoreLib.bws").is_file() or not (root / "beskid_corelib" / "corelib.bproj").is_file():
+        raise ValueError(f"Corelib bundle is missing its workspace or project: {root}")
+    actual = fingerprint_corelib_bundle(root)
+    marked = marker.read_text().strip()
+    if marked != actual:
+        raise ValueError(f"Corelib marker mismatch: marker={marked}, computed={actual}")
+    if actual != expected:
+        raise ValueError(f"expected Corelib fingerprint mismatch: expected={expected}, computed={actual}")
+    return actual
+
+
+def stage_corelib_bundle(external, expected, fixture):
+    verify_corelib_bundle(external, expected)
+    shutil.copytree(external, fixture, ignore=lambda _directory, names: CORELIB_EXCLUDED.intersection(names))
+    verify_corelib_bundle(fixture, expected)
+    return fixture
 
 
 def command_names(help_text):
@@ -312,13 +371,20 @@ def main(argv=None):
     parser.add_argument("binary", type=Path)
     parser.add_argument("--json", type=Path, required=True)
     parser.add_argument("--expected-sha256", required=True, help="checksum independently recorded when binary was built")
+    parser.add_argument("--corelib-root", required=True, type=Path,
+                        help="verified installed Corelib bundle root from the same release artifact")
+    parser.add_argument("--expected-corelib-fingerprint", required=True,
+                        help="independently verified Corelib bundle fingerprint")
     args = parser.parse_args(argv)
     binary = args.binary.resolve(strict=True)
     binary_sha256 = hashlib.sha256(binary.read_bytes()).hexdigest()
     if binary_sha256 != args.expected_sha256.lower():
         raise RuntimeError(f"binary checksum mismatch: expected {args.expected_sha256}, got {binary_sha256}")
+    verified_corelib = verify_corelib_bundle(args.corelib_root, args.expected_corelib_fingerprint)
+    corelib_root = args.corelib_root.resolve(strict=True)
     with tempfile.TemporaryDirectory(prefix="beskid-cli-surface-") as scratch:
         root = Path(scratch)
+        staged_corelib = stage_corelib_bundle(corelib_root, verified_corelib, root / "corelib")
         source = root / "Src" / "Smoke.bd"
         source.parent.mkdir()
         source.write_text("pub i64 Main() { return 0; }\ntest Smoke { }\n")
@@ -338,7 +404,7 @@ def main(argv=None):
         env = {key: os.environ[key] for key in ("PATH", "TERM", "LANG", "BESKID_RUNTIME_PREFIX")
                if key in os.environ}
         env.update(HOME=str(root), BESKID_HOME=str(root / "beskid-home"),
-                   BESKID_CORELIB_ROOT=str(root / "corelib"), OTEL_SDK_DISABLED="true")
+                   BESKID_CORELIB_ROOT=str(staged_corelib), OTEL_SDK_DISABLED="true")
         registry_server, registry_url = start_registry_mock()
         env["BESKID_RELEASE_MANIFEST_URL"] = f"{registry_url}/release.json"
         rows = discover(binary, env, root)
@@ -481,10 +547,18 @@ def main(argv=None):
                        and contracts["graph_tui_advertised"])
         if not contract_ok:
             failures.append("hi/new/graph command contract")
+        try:
+            verify_corelib_bundle(staged_corelib, verified_corelib)
+            verify_corelib_bundle(corelib_root, verified_corelib)
+        except ValueError as error:
+            failures.append(f"Corelib bundle changed during smoke: {error}")
         counts = {status: sum(row["status"] == status for row in rows)
                   for status in ("pass", "fail", "setup_skip", "uncovered", "inventory_only")}
         evidence = {"schema": "beskid.cli-surface.v1", "binary": str(binary),
                     "binary_sha256": binary_sha256,
+                    "corelib": {"source_root": str(corelib_root), "fingerprint": verified_corelib,
+                                "staged_root": str(staged_corelib), "post_run_verified": not any(
+                                    failure.startswith("Corelib bundle changed") for failure in failures)},
                     "source_provenance": source_provenance(), "release_qualified": False,
                     "counts": counts,
                     "contracts": contracts, "rows": rows}

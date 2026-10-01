@@ -35,9 +35,9 @@ tests: compiler corelib
 
 # Exercise the advertised CLI against isolated fixtures and write exact JSON evidence.
 # The caller must supply a checksum recorded independently when the artifact was built.
-cli-surface-gate binary expected_sha256 evidence:
+cli-surface-gate binary expected_sha256 corelib_root expected_corelib_fingerprint evidence:
     python3 -m unittest discover -s scripts/ci -p 'test_cli_surface_gate.py'
-    python3 scripts/ci/cli_surface_gate.py "{{binary}}" --expected-sha256 "{{expected_sha256}}" --json "{{evidence}}"
+    python3 scripts/ci/cli_surface_gate.py "{{binary}}" --expected-sha256 "{{expected_sha256}}" --corelib-root "{{corelib_root}}" --expected-corelib-fingerprint "{{expected_corelib_fingerprint}}" --json "{{evidence}}"
 
 # Build one exact-version release bundle and replace the installed toolchain.
 replace:

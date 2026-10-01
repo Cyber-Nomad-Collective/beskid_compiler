@@ -1,5 +1,6 @@
 import importlib.util
 import base64
+import hashlib
 import os
 import sys
 import tempfile
@@ -60,6 +61,57 @@ Options:
         self.assertEqual(provenance["status"], "unverified")
         self.assertIsNone(provenance["commit"])
         self.assertTrue(provenance["external_receipt_required"])
+
+    def test_corelib_bundle_requires_independent_fingerprint_and_marker(self):
+        gate = self.load_gate()
+        with tempfile.TemporaryDirectory() as root:
+            bundle = Path(root) / "beskid_corelib"
+            (bundle / "beskid_corelib").mkdir(parents=True)
+            (bundle / "CoreLib.bws").write_text("workspace\n")
+            (bundle / "beskid_corelib" / "corelib.bproj").write_text("project\n")
+            expected = gate.fingerprint_corelib_bundle(bundle)
+            (bundle / ".beskid-bundle.sha256").write_text(expected + "\n")
+            self.assertEqual(gate.verify_corelib_bundle(bundle, expected), expected)
+            with self.assertRaisesRegex(ValueError, "expected Corelib fingerprint mismatch"):
+                gate.verify_corelib_bundle(bundle, "0" * 64)
+            (bundle / "beskid_corelib" / "corelib.bproj").write_text("tampered\n")
+            with self.assertRaisesRegex(ValueError, "Corelib marker mismatch"):
+                gate.verify_corelib_bundle(bundle, expected)
+
+    def test_corelib_bundle_missing_or_symlink_fails_closed(self):
+        gate = self.load_gate()
+        with tempfile.TemporaryDirectory() as root:
+            bundle = Path(root) / "beskid_corelib"
+            with self.assertRaisesRegex(ValueError, "Corelib root is missing"):
+                gate.verify_corelib_bundle(bundle, "0" * 64)
+            bundle.mkdir()
+            alias = Path(root) / "corelib-alias"
+            alias.symlink_to(bundle, target_is_directory=True)
+            with self.assertRaisesRegex(ValueError, "Corelib root is missing or is not a directory"):
+                gate.verify_corelib_bundle(alias, "0" * 64)
+            (bundle / "CoreLib.bws").write_text("workspace\n")
+            (bundle / "beskid_corelib").mkdir()
+            (bundle / "beskid_corelib" / "corelib.bproj").symlink_to(bundle / "CoreLib.bws")
+            with self.assertRaisesRegex(ValueError, "symlink"):
+                gate.fingerprint_corelib_bundle(bundle)
+
+    def test_corelib_staging_is_private_and_revalidated(self):
+        gate = self.load_gate()
+        with tempfile.TemporaryDirectory() as root:
+            external = Path(root) / "external"
+            external.mkdir()
+            (external / "CoreLib.bws").write_text("workspace\n")
+            (external / "beskid_corelib").mkdir()
+            (external / "beskid_corelib" / "corelib.bproj").write_text("project\n")
+            expected = gate.fingerprint_corelib_bundle(external)
+            (external / ".beskid-bundle.sha256").write_text(expected + "\n")
+            fixture = gate.stage_corelib_bundle(external, expected, Path(root) / "fixture")
+            self.assertNotEqual(fixture, external)
+            self.assertEqual(gate.verify_corelib_bundle(fixture, expected), expected)
+            (fixture / "CoreLib.bws").write_text("changed\n")
+            with self.assertRaisesRegex(ValueError, "Corelib marker mismatch"):
+                gate.verify_corelib_bundle(fixture, expected)
+            self.assertEqual(gate.verify_corelib_bundle(external, expected), expected)
 
     def test_alias_artifacts_have_distinct_paths(self):
         gate = self.load_gate()
