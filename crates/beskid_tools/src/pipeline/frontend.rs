@@ -3,13 +3,17 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::Result;
-use beskid_analysis::projects::UnresolvedDependencyPolicy;
-use beskid_analysis::services::{self, ResolvedProject};
-use beskid_analysis::syntax::{Program, Spanned};
+use beskid_analysis::{
+    projects::UnresolvedDependencyPolicy,
+    services::{self, ResolvedProject},
+    syntax::{Program, Spanned},
+};
 use beskid_pipeline::{PipelineObserver, observe_phase_result, phases::SEMANTIC};
 
-use super::CliPipeline;
-use super::resolve_options::{CliResolveOptions, FrontendProjectPipelineOptions};
+use super::{
+    CliPipeline,
+    resolve_options::{CliResolveOptions, FrontendProjectPipelineOptions},
+};
 
 /// Resolve `input` / `project` / lockfile flags the same way as most CLI subcommands.
 pub fn resolve_input(
@@ -40,10 +44,10 @@ pub fn resolve_input_with_pipeline(
     )
 }
 
-/// Resolve to a [`ResolvedProject`] with optional pipeline reporting and unresolved-deps policy.
+/// Resolve dependency operations, including target-free Template authoring roots.
 pub fn resolve_project_with_pipeline(options: FrontendProjectPipelineOptions<'_>) -> Result<ResolvedProject> {
     let FrontendProjectPipelineOptions { resolve, unresolved_dependency_policy, pipeline } = options;
-    services::resolve_project_with_policy_and_lock_refresh(
+    services::resolve_project_dependencies_with_policy_and_lock_refresh(
         resolve.input,
         resolve.project,
         resolve.target,

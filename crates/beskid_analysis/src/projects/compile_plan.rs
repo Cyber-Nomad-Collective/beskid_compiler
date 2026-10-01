@@ -11,19 +11,18 @@
 //! - [`build_compile_plan_with_policy_and_graph`]: full control — supplies both unresolved-dependency
 //!   handling and [`ProjectGraphBuildOptions`] passed into the project graph builder.
 
-use std::fs;
-use std::path::{Path, PathBuf};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
-use crate::projects::error::ProjectError;
-use crate::projects::graph::{
-    ProjectGraphBuildOptions, UnresolvedDependencyKind, build_project_graph_with_options, collect_dependency_projects,
-    collect_unresolved_dependencies,
+use crate::projects::{
+    error::ProjectError,
+    graph::{ProjectGraph, ProjectGraphBuildOptions, build_project_graph_with_options},
+    model::{CompilePlan, ProjectKind, ProjectManifest, Target, TargetKind, UnresolvedDependencyPolicy},
+    parser::parse_manifest,
+    workspace_plan::workspace_plan_from_graph,
 };
-use crate::projects::model::{
-    CompilePlan, DependencySource, ProjectKind, ProjectManifest, Target, TargetKind, UnresolvedDependencyNote,
-    UnresolvedDependencyPolicy,
-};
-use crate::projects::parser::parse_manifest;
 
 pub fn load_manifest_from_path(path: &Path) -> Result<ProjectManifest, ProjectError> {
     crate::projects::discovery::reject_legacy_manifest_path(path)?;
@@ -59,35 +58,15 @@ pub fn build_compile_plan_with_policy_and_graph(
     graph_options: ProjectGraphBuildOptions,
 ) -> Result<CompilePlan, ProjectError> {
     let graph = build_project_graph_with_options(manifest_path, graph_options)?;
-    let dependency_projects = collect_dependency_projects(&graph);
-    let unresolved_dependencies = collect_unresolved_dependencies(&graph)
-        .into_iter()
-        .map(|dependency| UnresolvedDependencyNote {
-            dependency_name: dependency.dependency_name,
-            source: match dependency.kind {
-                UnresolvedDependencyKind::Git => DependencySource::Git,
-                UnresolvedDependencyKind::Registry => DependencySource::Registry,
-            },
-            descriptor: dependency.descriptor,
-        })
-        .collect::<Vec<_>>();
+    compile_plan_from_graph(graph, target_name, unresolved_dependency_policy)
+}
 
-    let unresolved_that_must_error = unresolved_dependencies
-        .iter()
-        .filter(|dependency| dependency.source != DependencySource::Registry)
-        .cloned()
-        .collect::<Vec<_>>();
-
-    if unresolved_dependency_policy == UnresolvedDependencyPolicy::Error && !unresolved_that_must_error.is_empty() {
-        let details = unresolved_that_must_error
-            .iter()
-            .map(|dependency| {
-                format!("{}({:?}={})", dependency.dependency_name, dependency.source, dependency.descriptor)
-            })
-            .collect::<Vec<_>>()
-            .join(", ");
-        return Err(ProjectError::UnresolvedExternalDependencies(details));
-    }
+pub(crate) fn compile_plan_from_graph(
+    graph: ProjectGraph,
+    target_name: Option<&str>,
+    unresolved_dependency_policy: UnresolvedDependencyPolicy,
+) -> Result<CompilePlan, ProjectError> {
+    let workspace_plan = workspace_plan_from_graph(&graph, unresolved_dependency_policy)?;
 
     let has_std_dependency = graph.has_std_dependency;
     let manifest = graph.root_manifest;
@@ -97,12 +76,14 @@ pub fn build_compile_plan_with_policy_and_graph(
     let target = if manifest.project.kind == ProjectKind::Template {
         return Err(ProjectError::meta_contract(
             "E1877",
-            "`Template` projects are template-authoring roots and cannot be built with `beskid build`; instantiate with `beskid new` first",
+            "`Template` projects are template-authoring roots and cannot be built with `beskid build`; instantiate \
+             with `beskid new` first",
         ));
     } else if manifest.project.kind == ProjectKind::Bsol {
         return Err(ProjectError::meta_contract(
             "E1888",
-            "`Bsol` projects are schema-only packages and cannot be built with `beskid build`; use `beskid validate-bsol` instead",
+            "`Bsol` projects are schema-only packages and cannot be built with `beskid build`; use `beskid \
+             validate-bsol` instead",
         ));
     } else if manifest.project.kind == ProjectKind::Mod {
         if target_name.is_some() {
@@ -140,8 +121,8 @@ pub fn build_compile_plan_with_policy_and_graph(
         manifest_path: normalized_manifest_path,
         project_name: manifest.project.name,
         target,
-        dependency_projects,
-        unresolved_dependencies,
+        dependency_projects: workspace_plan.dependency_projects,
+        unresolved_dependencies: workspace_plan.unresolved_dependencies,
         has_std_dependency,
     })
 }

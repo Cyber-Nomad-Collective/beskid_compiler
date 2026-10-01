@@ -1,10 +1,10 @@
-use std::collections::HashSet;
-use std::fs;
-use std::path::{Component, Path, PathBuf};
+use std::{
+    collections::HashSet,
+    fs,
+    path::{Component, Path, PathBuf},
+};
 
-use beskid_abi::corelib_bundle::verified_corelib_bundle_root;
-use beskid_abi::runtime_kit::installed_corelib_root;
-
+use beskid_abi::{corelib_bundle::verified_corelib_bundle_root, runtime_kit::installed_corelib_root};
 use beskid_pipeline::{
     PipelineObserver, observe_phase_result,
     phases::{
@@ -14,20 +14,25 @@ use beskid_pipeline::{
     report_progress,
 };
 
-use super::filesystem::{copy_directory_when_newer, materialized_dependency_id};
-use super::lockfile::{
-    PortableLockPath, PortableLockPathBaseKind, ProjectLockDependencyEntry, ProjectLockSource, WorkspacePrepareOptions,
-    preflight_existing_lock_for_plan, sync_project_lockfile, validate_existing_lock_graph,
+use super::{
+    filesystem::{copy_directory_when_newer, materialized_dependency_id},
+    lockfile::{
+        PortableLockPath, PortableLockPathBaseKind, ProjectLockDependencyEntry, ProjectLockSource,
+        WorkspacePrepareOptions, preflight_existing_lock_for_plan, sync_project_lockfile, validate_existing_lock_graph,
+    },
+    registry::{materialize_registry_dependency, resolve_registry_dependency},
 };
-use super::registry::{materialize_registry_dependency, resolve_registry_dependency};
-use crate::projects::error::ProjectError;
-use crate::projects::graph::builder::discover_workspace_resolution_rules;
-use crate::projects::model::{
-    CompilePlan, DependencySource, MaterializedDependencyProject, PreparedProjectWorkspace, ResolvedDependencyProject,
+use crate::projects::{
+    error::ProjectError,
+    graph::builder::discover_workspace_resolution_rules,
+    model::{
+        CompilePlan, DependencySource, MaterializedDependencyProject, PreparedProjectWorkspace, ProjectWorkspacePlan,
+        ResolvedDependencyProject,
+    },
 };
 
 pub(super) fn portable_entry_for_dependency(
-    plan: &CompilePlan,
+    plan: &ProjectWorkspacePlan,
     dependency: &ResolvedDependencyProject,
     verified_corelib_root: Option<&Path>,
 ) -> Result<ProjectLockDependencyEntry, ProjectError> {
@@ -109,6 +114,15 @@ pub fn prepare_project_workspace_with_options(
     options: WorkspacePrepareOptions,
     pipeline: Option<&dyn PipelineObserver>,
 ) -> Result<PreparedProjectWorkspace, ProjectError> {
+    prepare_project_workspace_plan_with_options(&ProjectWorkspacePlan::from(plan), options, pipeline)
+}
+
+/// Materialize dependencies and enforce the ordinary lock policy without selecting a target.
+pub fn prepare_project_workspace_plan_with_options(
+    plan: &ProjectWorkspacePlan,
+    options: WorkspacePrepareOptions,
+    pipeline: Option<&dyn PipelineObserver>,
+) -> Result<PreparedProjectWorkspace, ProjectError> {
     let deps_root = plan.project_root.join("obj").join("beskid").join("deps").join("src");
     let root_materialized_project = plan.project_root.join("obj").join("beskid").join("root");
     let verified_corelib_root = verified_installed_corelib_root();
@@ -168,7 +182,8 @@ pub fn prepare_project_workspace_with_options(
         };
         if missing_existing_pin {
             return Err(ProjectError::Validation(format!(
-                "registry dependency `{}` became available but is missing a pin in the existing v2 lock; run `beskid update`",
+                "registry dependency `{}` became available but is missing a pin in the existing v2 lock; run `beskid \
+                 update`",
                 unresolved.dependency_name
             )));
         }
@@ -184,15 +199,18 @@ pub fn prepare_project_workspace_with_options(
 
     let source_segment = plan
         .source_root
-        .file_name()
+        .as_ref()
+        .and_then(|root| root.file_name())
         .map(|segment| segment.to_string_lossy().to_string())
         .unwrap_or_else(|| "Src".to_string());
     let materialized_source_root = root_materialized_project.join(&source_segment);
-    observe_phase_result(pipeline, WORKSPACE_MATERIALIZE_LOCAL, || {
-        copy_directory_when_newer(&plan.source_root, &materialized_source_root)?;
-        report_progress(pipeline, WORKSPACE_MATERIALIZE_LOCAL, 1, 1, source_segment.clone());
-        Ok(())
-    })?;
+    if let Some(source_root) = &plan.source_root {
+        observe_phase_result(pipeline, WORKSPACE_MATERIALIZE_LOCAL, || {
+            copy_directory_when_newer(source_root, &materialized_source_root)?;
+            report_progress(pipeline, WORKSPACE_MATERIALIZE_LOCAL, 1, 1, source_segment.clone());
+            Ok(())
+        })?;
+    }
 
     let mut materialized_dependencies = Vec::with_capacity(plan.dependency_projects.len());
 

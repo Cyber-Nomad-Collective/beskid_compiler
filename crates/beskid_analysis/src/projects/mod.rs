@@ -11,6 +11,7 @@ pub mod parser;
 mod readme;
 pub mod validator;
 pub mod workflow;
+mod workspace_plan;
 
 pub(crate) use assembly::assemble_program;
 pub use assembly::{
@@ -47,9 +48,9 @@ pub use model::{
     AssemblyDiscovery, AssemblyOptions, CompilePlan, Dependency, DependencySource, GrammarOutputEntry,
     MaterializedDependencyProject, ModGeneratedOutput, PreparedProjectWorkspace, ProjectGrammarSection, ProjectKind,
     ProjectLinkSection, ProjectManifest, ProjectModSection, ProjectSection, ProjectTemplateSection,
-    ResolvedDependencyProject, Target, TargetKind, UnresolvedDependencyNote, UnresolvedDependencyPolicy,
-    WorkspaceManifest, WorkspaceMember, WorkspaceOverride, WorkspaceRegistry, WorkspaceResolutionSummary,
-    WorkspaceSection,
+    ProjectWorkspacePlan, ResolvedDependencyProject, Target, TargetKind, UnresolvedDependencyNote,
+    UnresolvedDependencyPolicy, WorkspaceManifest, WorkspaceMember, WorkspaceOverride, WorkspaceRegistry,
+    WorkspaceResolutionSummary, WorkspaceSection,
 };
 pub use parser::{parse_manifest, parse_workspace_manifest};
 pub use readme::{
@@ -61,5 +62,6 @@ pub use workflow::{
     PROJECT_LOCK_FILE_NAME, PortableLockPath, PortableLockPathBaseKind, ProjectLockDependencyEntry, ProjectLockSource,
     ProjectLockfileV2, WorkspacePrepareOptions, load_project_lock_dependencies,
     load_project_lock_dependencies_for_plan, load_project_lock_dependencies_from_path, prepare_project_workspace,
-    prepare_project_workspace_with_options,
+    prepare_project_workspace_plan_with_options, prepare_project_workspace_with_options,
 };
+pub(crate) use workspace_plan::workspace_plan_from_graph;

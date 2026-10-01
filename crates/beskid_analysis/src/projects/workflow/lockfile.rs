@@ -7,7 +7,10 @@ use std::{
 
 use tempfile::NamedTempFile;
 
-use crate::projects::{error::ProjectError, model::CompilePlan};
+use crate::projects::{
+    error::ProjectError,
+    model::{CompilePlan, ProjectWorkspacePlan},
+};
 
 mod portable_path;
 
@@ -206,7 +209,7 @@ pub struct ProjectLockfileV2 {
 }
 
 impl ProjectLockfileV2 {
-    fn from_plan(plan: &CompilePlan, entries: &[ProjectLockDependencyEntry]) -> Result<Self, ProjectError> {
+    fn from_plan(plan: &ProjectWorkspacePlan, entries: &[ProjectLockDependencyEntry]) -> Result<Self, ProjectError> {
         let root_manifest = plan
             .manifest_path
             .strip_prefix(&plan.project_root)
@@ -574,6 +577,8 @@ pub fn load_project_lock_dependencies_for_plan(
     lock_path: &Path,
     plan: &CompilePlan,
 ) -> Result<Vec<ProjectLockDependencyEntry>, ProjectError> {
+    let workspace_plan = ProjectWorkspacePlan::from(plan);
+    let plan = &workspace_plan;
     regular_lockfile_exists(lock_path)?;
     let content = fs::read_to_string(lock_path)
         .map_err(|e| ProjectError::Validation(format!("failed to read {}: {e}", lock_path.display())))?;
@@ -615,7 +620,7 @@ pub struct WorkspacePrepareOptions {
 }
 
 pub(super) fn preflight_existing_lock_for_plan(
-    plan: &CompilePlan,
+    plan: &ProjectWorkspacePlan,
     options: WorkspacePrepareOptions,
 ) -> Result<Option<ProjectLockfileV2>, ProjectError> {
     let lock_path = plan.project_root.join(PROJECT_LOCK_FILE_NAME);
@@ -692,7 +697,7 @@ pub(super) fn validate_existing_lock_graph(
 }
 
 pub(super) fn sync_project_lockfile(
-    plan: &CompilePlan,
+    plan: &ProjectWorkspacePlan,
     lock_entries: &[ProjectLockDependencyEntry],
     options: WorkspacePrepareOptions,
 ) -> Result<std::path::PathBuf, ProjectError> {

@@ -240,6 +240,31 @@ pub struct CompilePlan {
     pub has_std_dependency: bool,
 }
 
+/// Lock ownership and dependency materialization, independent of a compile target.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProjectWorkspacePlan {
+    pub project_root: PathBuf,
+    pub manifest_path: PathBuf,
+    pub project_name: String,
+    /// Authoring packages carry template payloads, not a compilation source tree.
+    pub source_root: Option<PathBuf>,
+    pub dependency_projects: Vec<ResolvedDependencyProject>,
+    pub unresolved_dependencies: Vec<UnresolvedDependencyNote>,
+}
+
+impl From<&CompilePlan> for ProjectWorkspacePlan {
+    fn from(plan: &CompilePlan) -> Self {
+        Self {
+            project_root: plan.project_root.clone(),
+            manifest_path: plan.manifest_path.clone(),
+            project_name: plan.project_name.clone(),
+            source_root: Some(plan.source_root.clone()),
+            dependency_projects: plan.dependency_projects.clone(),
+            unresolved_dependencies: plan.unresolved_dependencies.clone(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ResolvedDependencyProject {
     pub dependency_name: String,

@@ -191,7 +191,10 @@ pub fn resolve_dependencies(
 
     if !has_explicit_std_dependency
         && !is_std_project
-        && consumer_manifest.project.kind != ProjectKind::Template
+        // Authoring roots lock their Corelib closure; nested template packages remain
+        // excluded from the consuming project's compilation dependency projection.
+        && (consumer_manifest.project.kind != ProjectKind::Template
+            || matches!(dag.graph().node_weight(consumer_index), Some(ProjectGraphNode::RootProject { .. })))
         && consumer_manifest.project.kind != ProjectKind::Bsol
         && !is_corelib_workspace_member_manifest(consumer_manifest_path)
         && !depends_on_corelib_aggregate(consumer_manifest, &consumer_project_root)
