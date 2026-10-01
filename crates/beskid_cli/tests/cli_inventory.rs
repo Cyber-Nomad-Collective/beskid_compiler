@@ -1,4 +1,5 @@
 use std::process::Command;
+use std::{fs, path::Path};
 
 fn command_names(help: &str) -> impl Iterator<Item = &str> {
     help.lines().filter_map(|line| {
@@ -29,4 +30,29 @@ fn hi_is_not_discoverable_or_dispatched_and_graph_remains_available() {
         !diagnostic.contains("\u{1b}[?1049h") && !diagnostic.contains("\u{1b}[?1049l"),
         "unknown hi invocation entered the alternate screen: {diagnostic:?}"
     );
+}
+
+#[test]
+fn hi_shell_launcher_and_app_are_absent_from_production_tools() {
+    fn rust_sources(root: &Path, sources: &mut Vec<(String, String)>) {
+        for entry in fs::read_dir(root).expect("read tools source directory") {
+            let path = entry.expect("read tools source entry").path();
+            if path.is_dir() {
+                rust_sources(&path, sources);
+            } else if path.extension().is_some_and(|extension| extension == "rs") {
+                let source = fs::read_to_string(&path).expect("read Rust source");
+                sources.push((path.display().to_string(), source));
+            }
+        }
+    }
+
+    let tools_src = Path::new(env!("CARGO_MANIFEST_DIR")).join("../beskid_tools/src");
+    let mut sources = Vec::new();
+    rust_sources(&tools_src, &mut sources);
+
+    for (path, source) in sources {
+        assert!(!source.contains("run_hi_blocking"), "Hi blocking launcher remains in {path}");
+        assert!(!source.contains("HiShellApp"), "Hi shell app remains in {path}");
+        assert!(!source.contains("pub fn run_hi("), "Hi realm runner remains in {path}");
+    }
 }

@@ -1,4 +1,4 @@
-//! Pluggable Beskid shell API (stable extension surface for `beskid hi` and tooling crates).
+//! Shared Beskid shell primitives used by pipeline UI and tooling crates.
 
 pub mod board;
 pub mod catalog;
@@ -7,7 +7,6 @@ pub mod context;
 pub mod control_mode;
 pub mod descriptor;
 pub mod hi_compile;
-pub mod host;
 pub mod hotkeys;
 pub mod input;
 pub mod key_bindings;
@@ -36,8 +35,6 @@ pub use context::WidgetContext;
 pub use control_mode::HiControlMode;
 pub use descriptor::WidgetDescriptor;
 pub use hi_compile::{HiCompileRegistrar, HiCompileRequest, is_in_process_command};
-pub use host::ShellHost;
-pub use host::WidgetRegistrar;
 pub use hotkeys::ShellHotkeys;
 pub use input::ShellInput;
 pub use key_bindings::{
@@ -46,15 +43,15 @@ pub use key_bindings::{
 };
 pub use layers::ShellLayer;
 pub use layout::{BoardV2Doc, HiLayoutState, LayoutEditCommand, PagesDoc, switch_page};
-pub use nav::{BUILTIN_NAV, NavAction, NavItemDescriptor, NavRegistrar, NavRegistry};
+pub use nav::{BUILTIN_NAV, NavAction, NavItemDescriptor, NavRegistry};
 pub use palette::CommandPaletteState;
 pub use phase::transition_label;
 pub use registry::WidgetRegistry;
 pub use scope::{ShellScope, user_board_path, user_data_dir, user_pages_path};
 pub use settings::{
-    BUILTIN_SETTINGS, SettingKind, ToolSettingDescriptor, ToolSettingsPage, ToolSettingsRegistrar,
-    ToolSettingsRegistry, ToolsConfig, emit_config, get_value, load_config, parse_config, save_config,
-    save_path_for_scope, scope_config_path, set_value, user_config_path,
+    BUILTIN_SETTINGS, SettingKind, ToolSettingDescriptor, ToolSettingsPage, ToolSettingsRegistry, ToolsConfig,
+    emit_config, get_value, load_config, parse_config, save_config, save_path_for_scope, scope_config_path, set_value,
+    user_config_path,
 };
 pub use shortcut_clicks::{ShortcutClickAction, ShortcutClickTargets};
 pub use widget::{BeskidWidget, ShellAction, WidgetMeta};

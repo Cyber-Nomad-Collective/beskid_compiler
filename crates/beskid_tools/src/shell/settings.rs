@@ -92,8 +92,6 @@ pub const BUILTIN_SETTINGS: &[ToolSettingsPage] = &[
     ToolSettingsPage { tool_id: "shortcuts", title: "Shortcuts", settings: SHORTCUTS_SETTINGS },
 ];
 
-pub type ToolSettingsRegistrar = fn(&mut ToolSettingsRegistry);
-
 #[derive(Debug, Clone, Default)]
 pub struct ToolSettingsRegistry {
     pages: Vec<ToolSettingsPage>,

@@ -38,6 +38,6 @@ pub use registry::{
 };
 pub use session::{CommandSession, ResolveInputArgs, SemanticGateOptions};
 pub use shell::{
-    BeskidWidget, BoardLayout, BoardV2Doc, CommandItem, HiLayoutState, ShellAction, ShellHost, ShellScope,
-    WidgetDescriptor, WidgetMeta, WidgetRegistrar, WidgetRegistry,
+    BeskidWidget, BoardLayout, BoardV2Doc, CommandItem, HiLayoutState, ShellAction, ShellScope, WidgetDescriptor,
+    WidgetMeta, WidgetRegistry,
 };

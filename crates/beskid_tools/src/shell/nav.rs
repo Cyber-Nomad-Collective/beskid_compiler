@@ -156,8 +156,6 @@ pub const BUILTIN_NAV: &[BuiltinNavItem] = &[
     },
 ];
 
-pub type NavRegistrar = fn(&mut NavRegistry);
-
 pub struct NavRegistry {
     items: HashMap<String, NavItemDescriptor>,
     order: Vec<String>,
