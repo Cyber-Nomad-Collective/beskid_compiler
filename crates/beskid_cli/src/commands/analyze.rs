@@ -65,5 +65,6 @@ fn run_analyze(args: AnalyzeArgs) -> Result<()> {
     let severity_line = format_severity_summary(counts);
     let summary = severity_command_summary("Analyze", format!("Analyze complete ({severity_line})"), counts);
     pipeline_ui.finish_session_with_summary(format!("Analyze complete ({severity_line})"), Some(summary));
+    services::require_no_semantic_errors(&diagnostics)?;
     Ok(())
 }
