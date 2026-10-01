@@ -36,14 +36,11 @@ pub fn instantiate(manifest: &TemplateManifest, options: &InstantiateOptions) ->
     let substitution = build_substitution_map(manifest, &values)?;
     let output_kind = manifest.output_kind();
 
-    let output_root = resolve_output_root(output_kind, options, manifest)?;
+    let output_root = resolve_output_root(output_kind, &options.output)?;
 
-    if output_root.exists() {
-        let non_empty = fs::read_dir(&output_root).ok().map(|mut rd| rd.next().is_some()).unwrap_or(false);
-        if non_empty && !options.force {
-            return Err(TemplateError::OutputConflict { path: output_root.clone() });
-        }
-    } else {
+    if output_root_has_conflicts(&output_root) && !options.force {
+        return Err(TemplateError::OutputConflict { path: output_root.clone() });
+    } else if !output_root.exists() {
         fs::create_dir_all(&output_root)?;
     }
 
@@ -88,12 +85,8 @@ pub fn instantiate(manifest: &TemplateManifest, options: &InstantiateOptions) ->
     })
 }
 
-fn resolve_output_root(
-    kind: TemplateOutputKind,
-    options: &InstantiateOptions,
-    _manifest: &TemplateManifest,
-) -> TemplateResult<PathBuf> {
-    let path = normalize_output_path(&options.output)?;
+pub(crate) fn resolve_output_root(kind: TemplateOutputKind, output: &Path) -> TemplateResult<PathBuf> {
+    let path = normalize_output_path(output)?;
     match kind {
         TemplateOutputKind::Item => {
             if path.is_file() || path.extension().is_some() {
@@ -104,6 +97,10 @@ fn resolve_output_root(
         }
         _ => Ok(path),
     }
+}
+
+pub(crate) fn output_root_has_conflicts(output_root: &Path) -> bool {
+    output_root.exists() && fs::read_dir(output_root).ok().is_some_and(|mut rd| rd.next().is_some())
 }
 
 fn validate_item_template(
