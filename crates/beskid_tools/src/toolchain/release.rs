@@ -7,6 +7,11 @@ use std::path::PathBuf;
 
 pub const GITHUB_REPO: &str = "Cyber-Nomad-Collective/beskid_compiler";
 
+// Native server assets exceed ureq's default 10 MiB response limit. Keep
+// downloads bounded independently from the much smaller version metadata.
+const MAX_LSP_ASSET_BYTES: u64 = 256 * 1024 * 1024;
+const MAX_VERSION_BYTES: u64 = 4096;
+
 #[derive(Debug, Clone, Copy)]
 pub struct PlatformAsset {
     pub release_asset: &'static str,
@@ -45,15 +50,19 @@ fn release_download_url(tag: &str, asset: &str) -> String {
 }
 
 fn download_bytes(url: &str) -> Result<Vec<u8>> {
+    download_bytes_with_limit(url, MAX_LSP_ASSET_BYTES)
+}
+
+fn download_bytes_with_limit(url: &str, limit: u64) -> Result<Vec<u8>> {
     let mut response = ureq::get(url).call().with_context(|| format!("GET {url}"))?;
     if !response.status().is_success() {
         bail!("GET {url} failed with HTTP {}", response.status());
     }
-    response.body_mut().read_to_vec().with_context(|| format!("read body from {url}"))
+    response.body_mut().with_config().limit(limit).read_to_vec().with_context(|| format!("read body from {url}"))
 }
 
 fn fetch_text(url: &str) -> Result<String> {
-    let bytes = download_bytes(url)?;
+    let bytes = download_bytes_with_limit(url, MAX_VERSION_BYTES)?;
     String::from_utf8(bytes).with_context(|| format!("decode UTF-8 from {url}"))
 }
 
@@ -113,6 +122,63 @@ pub fn managed_lsp_exists() -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+
+    fn http_body_fixture(body_length: usize) -> (String, std::thread::JoinHandle<()>) {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind download fixture");
+        listener.set_nonblocking(true).expect("nonblocking fixture listener");
+        let url = format!("http://{}/asset", listener.local_addr().expect("fixture address"));
+        let server = std::thread::spawn(move || {
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+            let mut stream = loop {
+                match listener.accept() {
+                    Ok((stream, _)) => break stream,
+                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                        assert!(std::time::Instant::now() < deadline, "download fixture connection timed out");
+                        std::thread::sleep(std::time::Duration::from_millis(10));
+                    }
+                    Err(error) => panic!("accept download fixture: {error}"),
+                }
+            };
+            stream.set_nonblocking(false).expect("blocking fixture connection");
+            stream.set_read_timeout(Some(std::time::Duration::from_secs(10))).expect("fixture read timeout");
+            stream.set_write_timeout(Some(std::time::Duration::from_secs(10))).expect("fixture timeout");
+            let mut request = [0_u8; 4096];
+            let _ = stream.read(&mut request);
+            let header = format!("HTTP/1.1 200 OK\r\nContent-Length: {body_length}\r\nConnection: close\r\n\r\n");
+            stream.write_all(header.as_bytes()).expect("fixture response header");
+            let _ = stream.write_all(&vec![0x7f_u8; body_length]);
+        });
+        (url, server)
+    }
+
+    #[test]
+    fn downloads_published_sized_lsp_asset_above_the_default_body_limit() {
+        let expected_length = 11 * 1024 * 1024;
+        let (url, server) = http_body_fixture(expected_length);
+        let downloaded = download_bytes(&url);
+        server.join().expect("download fixture thread");
+        let downloaded = downloaded.expect("published LSP assets exceed the HTTP client's default 10 MiB limit");
+        assert_eq!(downloaded.len(), expected_length);
+        assert!(downloaded.iter().all(|byte| *byte == 0x7f));
+    }
+
+    #[test]
+    fn rejects_downloads_above_the_explicit_limit() {
+        let (url, server) = http_body_fixture(1025);
+        let downloaded = download_bytes_with_limit(&url, 1024);
+        server.join().expect("download fixture thread");
+        assert!(downloaded.is_err(), "oversized downloads must stay bounded");
+    }
+
+    #[test]
+    fn rejects_oversized_version_metadata() {
+        let (url, server) = http_body_fixture(MAX_VERSION_BYTES as usize + 1);
+        let downloaded = fetch_text(&url);
+        server.join().expect("download fixture thread");
+        assert!(downloaded.is_err(), "version metadata must not use the asset limit");
+    }
 
     #[test]
     fn lsp_release_download_url_uses_github_release_layout() {

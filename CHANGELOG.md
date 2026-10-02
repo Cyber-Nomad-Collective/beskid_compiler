@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Download published LSP binaries larger than 10 MiB while retaining a bounded
+  256 MiB asset limit and a separate 4 KiB version-metadata limit.
 - Refresh a managed per-user Corelib bundle when its fingerprint differs from
   the current toolchain, even if a legacy bundle has a higher project version.
 - Build library and object outputs from the complete prepared module without
