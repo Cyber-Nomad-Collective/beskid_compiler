@@ -6,15 +6,152 @@ use super::super::sources::{
     CANONICAL_CORELIB_FS_SOURCE_PATH, CANONICAL_CORELIB_HUB_SOURCE_PATH, CANONICAL_CORELIB_MUTEX_SOURCE_PATH,
     CANONICAL_CORELIB_SYSCALL_SOURCE_PATH, CANONICAL_CORELIB_WAIT_GROUP_SOURCE_PATH,
     CANONICAL_FOUNDATION_ARRAY_SOURCE_PATH, CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH,
-    CANONICAL_FOUNDATION_BYTES_SLICE_SOURCE_PATH, CANONICAL_FOUNDATION_ENVIRONMENT_SOURCE_PATH,
-    CANONICAL_FOUNDATION_ERROR_SOURCE_PATH, CANONICAL_FOUNDATION_OUTPUT_SOURCE_PATH,
-    CANONICAL_FOUNDATION_PATH_SOURCE_PATH, CANONICAL_FOUNDATION_PROCESS_SOURCE_PATH,
-    CANONICAL_FOUNDATION_RANDOM_SOURCE_PATH, CANONICAL_FOUNDATION_STRING_CORE_SOURCE_PATH,
-    CANONICAL_FOUNDATION_STRING_UTF8_SOURCE_PATH, CANONICAL_FOUNDATION_TEXT_CURSOR_SOURCE_PATH,
-    CANONICAL_FOUNDATION_DEADLINE_SOURCE_PATH, CANONICAL_FOUNDATION_THREAD_SOURCE_PATH,
-    CANONICAL_FOUNDATION_TIME_SOURCE_PATH,
-    CANONICAL_NETWORK_INTERNAL_SOURCE_PATH,
+    CANONICAL_FOUNDATION_BYTES_SLICE_SOURCE_PATH, CANONICAL_FOUNDATION_DEADLINE_SOURCE_PATH,
+    CANONICAL_FOUNDATION_ENVIRONMENT_SOURCE_PATH, CANONICAL_FOUNDATION_ERROR_SOURCE_PATH,
+    CANONICAL_FOUNDATION_OUTPUT_SOURCE_PATH, CANONICAL_FOUNDATION_PATH_SOURCE_PATH,
+    CANONICAL_FOUNDATION_PROCESS_SOURCE_PATH, CANONICAL_FOUNDATION_RANDOM_SOURCE_PATH,
+    CANONICAL_FOUNDATION_STRING_CORE_SOURCE_PATH, CANONICAL_FOUNDATION_STRING_UTF8_SOURCE_PATH,
+    CANONICAL_FOUNDATION_TEXT_CURSOR_SOURCE_PATH, CANONICAL_FOUNDATION_THREAD_SOURCE_PATH,
+    CANONICAL_FOUNDATION_TIME_SOURCE_PATH, CANONICAL_NETWORK_INTERNAL_SOURCE_PATH, canonical_corelib_deadline_source,
+    canonical_corelib_service_sources,
 };
+use super::service_table::{CORELIB_SERVICES, CorelibService};
+
+/// Filesystem-independent authority descriptor for one compiler-owned Corelib service unit.
+///
+/// Installed-bundle admission uses this logical identity. The compiler build checkout is only
+/// optional physical evidence for source/development mode and is resolved separately by
+/// [`corelib_service_source_identity`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CorelibServiceSourceDescriptor {
+    logical_path: &'static str,
+    package: &'static str,
+    relative_path: &'static str,
+    canonical_source: String,
+    services: Vec<CorelibService>,
+}
+
+impl CorelibServiceSourceDescriptor {
+    pub fn logical_path(&self) -> &'static str {
+        self.logical_path
+    }
+
+    pub fn package(&self) -> &'static str {
+        self.package
+    }
+
+    pub fn relative_path(&self) -> &'static std::path::Path {
+        std::path::Path::new(self.relative_path)
+    }
+
+    pub fn canonical_source(&self) -> &str {
+        &self.canonical_source
+    }
+
+    pub fn services(&self) -> &[CorelibService] {
+        &self.services
+    }
+}
+
+/// Return the immutable logical service identity without consulting the filesystem.
+pub fn corelib_service_source_descriptor(logical_path: &str) -> Option<CorelibServiceSourceDescriptor> {
+    let (logical_path, package, relative_path) = match logical_path {
+        CANONICAL_CORELIB_SYSCALL_SOURCE_PATH => {
+            (CANONICAL_CORELIB_SYSCALL_SOURCE_PATH, "foundation", "Core/Syscall/Syscall.bd")
+        }
+        CANONICAL_CORELIB_ARGS_SOURCE_PATH => (CANONICAL_CORELIB_ARGS_SOURCE_PATH, "foundation", "Core/Args/Args.bd"),
+        CANONICAL_CORELIB_CONCURRENCY_SOURCE_PATH => {
+            (CANONICAL_CORELIB_CONCURRENCY_SOURCE_PATH, "concurrency", "Concurrency.bd")
+        }
+        CANONICAL_CORELIB_FIBER_SOURCE_PATH => {
+            (CANONICAL_CORELIB_FIBER_SOURCE_PATH, "concurrency", "Concurrency/Fiber.bd")
+        }
+        CANONICAL_CORELIB_CONSOLE_LINUX_SOURCE_PATH => {
+            (CANONICAL_CORELIB_CONSOLE_LINUX_SOURCE_PATH, "console", "Platform/Linux.bd")
+        }
+        CANONICAL_CORELIB_CONSOLE_MACOS_SOURCE_PATH => {
+            (CANONICAL_CORELIB_CONSOLE_MACOS_SOURCE_PATH, "console", "Platform/MacOS.bd")
+        }
+        CANONICAL_CORELIB_CONSOLE_WINDOWS_SOURCE_PATH => {
+            (CANONICAL_CORELIB_CONSOLE_WINDOWS_SOURCE_PATH, "console", "Platform/Windows.bd")
+        }
+        CANONICAL_CORELIB_CONSOLE_TERMINAL_SOURCE_PATH => {
+            (CANONICAL_CORELIB_CONSOLE_TERMINAL_SOURCE_PATH, "console", "Platform/Terminal.bd")
+        }
+        CANONICAL_CORELIB_FS_SOURCE_PATH => (CANONICAL_CORELIB_FS_SOURCE_PATH, "foundation", "Core/FS/FS.bd"),
+        CANONICAL_CORELIB_CHANNEL_SOURCE_PATH => {
+            (CANONICAL_CORELIB_CHANNEL_SOURCE_PATH, "concurrency", "Concurrency/Channel.bd")
+        }
+        CANONICAL_CORELIB_MUTEX_SOURCE_PATH => {
+            (CANONICAL_CORELIB_MUTEX_SOURCE_PATH, "concurrency", "Concurrency/Mutex.bd")
+        }
+        CANONICAL_CORELIB_HUB_SOURCE_PATH => (CANONICAL_CORELIB_HUB_SOURCE_PATH, "concurrency", "Concurrency/Hub.bd"),
+        CANONICAL_CORELIB_WAIT_GROUP_SOURCE_PATH => {
+            (CANONICAL_CORELIB_WAIT_GROUP_SOURCE_PATH, "concurrency", "Concurrency/WaitGroup.bd")
+        }
+        CANONICAL_FOUNDATION_ARRAY_SOURCE_PATH => {
+            (CANONICAL_FOUNDATION_ARRAY_SOURCE_PATH, "foundation", "Core/Collections/Array.bd")
+        }
+        CANONICAL_FOUNDATION_BYTES_SLICE_SOURCE_PATH => {
+            (CANONICAL_FOUNDATION_BYTES_SLICE_SOURCE_PATH, "foundation", "Core/Bytes/Slice.bd")
+        }
+        CANONICAL_FOUNDATION_THREAD_SOURCE_PATH => {
+            (CANONICAL_FOUNDATION_THREAD_SOURCE_PATH, "foundation", "Core/Threading/Thread.bd")
+        }
+        CANONICAL_FOUNDATION_ENVIRONMENT_SOURCE_PATH => {
+            (CANONICAL_FOUNDATION_ENVIRONMENT_SOURCE_PATH, "foundation", "Core/Environment/Environment.bd")
+        }
+        CANONICAL_FOUNDATION_PATH_SOURCE_PATH => {
+            (CANONICAL_FOUNDATION_PATH_SOURCE_PATH, "foundation", "Core/Path/Path.bd")
+        }
+        CANONICAL_FOUNDATION_PROCESS_SOURCE_PATH => {
+            (CANONICAL_FOUNDATION_PROCESS_SOURCE_PATH, "foundation", "Core/Process/Process.bd")
+        }
+        CANONICAL_FOUNDATION_RANDOM_SOURCE_PATH => {
+            (CANONICAL_FOUNDATION_RANDOM_SOURCE_PATH, "foundation", "Core/Random/Random.bd")
+        }
+        CANONICAL_FOUNDATION_STRING_CORE_SOURCE_PATH => {
+            (CANONICAL_FOUNDATION_STRING_CORE_SOURCE_PATH, "foundation", "Core/String/Core.bd")
+        }
+        CANONICAL_FOUNDATION_STRING_UTF8_SOURCE_PATH => {
+            (CANONICAL_FOUNDATION_STRING_UTF8_SOURCE_PATH, "foundation", "Core/String/Utf8.bd")
+        }
+        CANONICAL_FOUNDATION_TEXT_CURSOR_SOURCE_PATH => {
+            (CANONICAL_FOUNDATION_TEXT_CURSOR_SOURCE_PATH, "foundation", "Core/Text/Cursor.bd")
+        }
+        CANONICAL_FOUNDATION_TIME_SOURCE_PATH => {
+            (CANONICAL_FOUNDATION_TIME_SOURCE_PATH, "foundation", "Core/Time/Time.bd")
+        }
+        CANONICAL_FOUNDATION_DEADLINE_SOURCE_PATH => {
+            (CANONICAL_FOUNDATION_DEADLINE_SOURCE_PATH, "foundation", "Core/Time/Deadline.bd")
+        }
+        CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH => {
+            (CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH, "foundation", "Testing/Assert.bd")
+        }
+        CANONICAL_FOUNDATION_OUTPUT_SOURCE_PATH => {
+            (CANONICAL_FOUNDATION_OUTPUT_SOURCE_PATH, "foundation", "Core/Output/Output.bd")
+        }
+        CANONICAL_FOUNDATION_ERROR_SOURCE_PATH => {
+            (CANONICAL_FOUNDATION_ERROR_SOURCE_PATH, "foundation", "Core/Error/Error.bd")
+        }
+        CANONICAL_NETWORK_INTERNAL_SOURCE_PATH => {
+            (CANONICAL_NETWORK_INTERNAL_SOURCE_PATH, "network", "Network/Internal.bd")
+        }
+        _ => return None,
+    };
+    let source = canonical_corelib_service_sources()
+        .into_iter()
+        .chain(std::iter::once(canonical_corelib_deadline_source()))
+        .find(|source| source.logical_path == logical_path)?;
+    let services = CORELIB_SERVICES.iter().copied().filter(|service| service.source_path == logical_path).collect();
+    Some(CorelibServiceSourceDescriptor {
+        logical_path,
+        package,
+        relative_path,
+        canonical_source: source.source,
+        services,
+    })
+}
 
 /// The canonical compiler-owned source file for one Foundation service unit.
 ///
@@ -36,45 +173,14 @@ pub struct CorelibServiceSourceIdentity {
 
 /// Resolve both source identities without resolving a caller-supplied origin.
 pub fn corelib_service_source_identity(logical_path: &str) -> Option<CorelibServiceSourceIdentity> {
-    let (package, relative) = match logical_path {
-        CANONICAL_CORELIB_SYSCALL_SOURCE_PATH => ("foundation", "Core/Syscall/Syscall.bd"),
-        CANONICAL_CORELIB_ARGS_SOURCE_PATH => ("foundation", "Core/Args/Args.bd"),
-        CANONICAL_CORELIB_CONCURRENCY_SOURCE_PATH => ("concurrency", "Concurrency.bd"),
-        CANONICAL_CORELIB_FIBER_SOURCE_PATH => ("concurrency", "Concurrency/Fiber.bd"),
-        CANONICAL_CORELIB_CONSOLE_LINUX_SOURCE_PATH => ("console", "Platform/Linux.bd"),
-        CANONICAL_CORELIB_CONSOLE_MACOS_SOURCE_PATH => ("console", "Platform/MacOS.bd"),
-        CANONICAL_CORELIB_CONSOLE_WINDOWS_SOURCE_PATH => ("console", "Platform/Windows.bd"),
-        CANONICAL_CORELIB_CONSOLE_TERMINAL_SOURCE_PATH => ("console", "Platform/Terminal.bd"),
-        CANONICAL_CORELIB_FS_SOURCE_PATH => ("foundation", "Core/FS/FS.bd"),
-        CANONICAL_CORELIB_CHANNEL_SOURCE_PATH => ("concurrency", "Concurrency/Channel.bd"),
-        CANONICAL_CORELIB_MUTEX_SOURCE_PATH => ("concurrency", "Concurrency/Mutex.bd"),
-        CANONICAL_CORELIB_HUB_SOURCE_PATH => ("concurrency", "Concurrency/Hub.bd"),
-        CANONICAL_CORELIB_WAIT_GROUP_SOURCE_PATH => ("concurrency", "Concurrency/WaitGroup.bd"),
-        CANONICAL_FOUNDATION_ARRAY_SOURCE_PATH => ("foundation", "Core/Collections/Array.bd"),
-        CANONICAL_FOUNDATION_BYTES_SLICE_SOURCE_PATH => ("foundation", "Core/Bytes/Slice.bd"),
-        CANONICAL_FOUNDATION_THREAD_SOURCE_PATH => ("foundation", "Core/Threading/Thread.bd"),
-        CANONICAL_FOUNDATION_ENVIRONMENT_SOURCE_PATH => ("foundation", "Core/Environment/Environment.bd"),
-        CANONICAL_FOUNDATION_PATH_SOURCE_PATH => ("foundation", "Core/Path/Path.bd"),
-        CANONICAL_FOUNDATION_PROCESS_SOURCE_PATH => ("foundation", "Core/Process/Process.bd"),
-        CANONICAL_FOUNDATION_RANDOM_SOURCE_PATH => ("foundation", "Core/Random/Random.bd"),
-        CANONICAL_FOUNDATION_STRING_CORE_SOURCE_PATH => ("foundation", "Core/String/Core.bd"),
-        CANONICAL_FOUNDATION_STRING_UTF8_SOURCE_PATH => ("foundation", "Core/String/Utf8.bd"),
-        CANONICAL_FOUNDATION_TEXT_CURSOR_SOURCE_PATH => ("foundation", "Core/Text/Cursor.bd"),
-        CANONICAL_FOUNDATION_TIME_SOURCE_PATH => ("foundation", "Core/Time/Time.bd"),
-        CANONICAL_FOUNDATION_DEADLINE_SOURCE_PATH => ("foundation", "Core/Time/Deadline.bd"),
-        CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH => ("foundation", "Testing/Assert.bd"),
-        CANONICAL_FOUNDATION_OUTPUT_SOURCE_PATH => ("foundation", "Core/Output/Output.bd"),
-        CANONICAL_FOUNDATION_ERROR_SOURCE_PATH => ("foundation", "Core/Error/Error.bd"),
-        CANONICAL_NETWORK_INTERNAL_SOURCE_PATH => ("network", "Network/Internal.bd"),
-        _ => return None,
-    };
+    let descriptor = corelib_service_source_descriptor(logical_path)?;
     let declared_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()?
         .parent()?
         .join("corelib/packages")
-        .join(package)
+        .join(descriptor.package())
         .join("src")
-        .join(relative);
+        .join(descriptor.relative_path());
     let canonical_path = std::fs::canonicalize(&declared_path).ok()?;
     Some(CorelibServiceSourceIdentity { declared_path, canonical_path })
 }

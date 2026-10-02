@@ -43,7 +43,10 @@ class RepoFixture:
         abi_dir = base / "crates" / "beskid_abi" / "src" / "runtime_source"
         abi_dir.mkdir(parents=True)
         (abi_dir / "sources.rs").write_text(SOURCES_RS)
-        (abi_dir / "corelib_services.rs").write_text(CORELIB_SERVICES_RS)
+        (abi_dir / "corelib_services.rs").write_text("mod service_table;\n")
+        services_dir = abi_dir / "corelib_services"
+        services_dir.mkdir()
+        (services_dir / "service_table.rs").write_text(CORELIB_SERVICES_RS)
         codegen_dir = base / "crates" / "beskid_codegen" / "src"
         codegen_dir.mkdir(parents=True)
         (codegen_dir / "module_emission.rs").write_text(MODULE_EMISSION_RS)
@@ -80,7 +83,7 @@ class FindCorelibServiceEntriesTests(unittest.TestCase):
         self.assertEqual(len(entries), 1)
         self.assertEqual(entries[0]["symbol"], "__timer_sleep_until")
         self.assertEqual(entries[0]["source_path_const"], "CANONICAL_TIMER_SOURCE_PATH")
-        self.assertTrue(services_rs.endswith("corelib_services.rs"))
+        self.assertTrue(services_rs.endswith("corelib_services/service_table.rs"))
 
     def test_no_entry_for_unknown_service_name(self):
         entries, _ = authority.find_corelib_service_entries(str(self.repo), "does_not_exist")

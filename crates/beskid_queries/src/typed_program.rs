@@ -308,7 +308,7 @@ fn exact_compiler_owned_corelib_unit<'a>(
     assembly: &'a ProgramAssembly,
     expected: &beskid_abi::abi_v5::SourceUnit,
 ) -> Option<&'a beskid_analysis::projects::SourceUnit> {
-    let identity = corelib_service_source_identity(&expected.logical_path)?;
+    let identity = corelib_service_source_identity(&expected.logical_path);
     let candidates = assembly
         .units
         .iter()
@@ -319,9 +319,11 @@ fn exact_compiler_owned_corelib_unit<'a>(
 
             // Origin is request evidence, distinct from the canonical semantic key.
             // Never resolve a user origin to decide whether it is compiler-owned.
-            let direct = corelib_source_locations_match(&unit.path, &identity.canonical_path)
-                && (corelib_source_locations_match(&unit.origin_path, &identity.declared_path)
-                    || corelib_source_locations_match(&unit.origin_path, &identity.canonical_path));
+            let direct = identity.as_ref().is_some_and(|identity| {
+                corelib_source_locations_match(&unit.path, &identity.canonical_path)
+                    && (corelib_source_locations_match(&unit.origin_path, &identity.declared_path)
+                        || corelib_source_locations_match(&unit.origin_path, &identity.canonical_path))
+            });
             let authorized_path = direct
                 // Resolve only the destination issued by the loader, never the user's
                 // origin. Both the selected location and physical identity must match.

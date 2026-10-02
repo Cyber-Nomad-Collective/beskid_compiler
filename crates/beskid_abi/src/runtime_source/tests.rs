@@ -402,6 +402,23 @@ fn embedded_service_sources_and_service_descriptors_have_one_exact_path_inventor
 
     assert_eq!(embedded, described, "source bytes and service descriptors must not maintain divergent path lists");
     for logical_path in embedded {
+        let descriptor = corelib_service_source_descriptor(&logical_path).expect("complete logical source descriptor");
+        let expected_source = canonical_corelib_service_sources()
+            .into_iter()
+            .find(|source| source.logical_path == logical_path)
+            .expect("embedded service source");
+        assert_eq!(descriptor.logical_path(), logical_path);
+        assert_eq!(descriptor.relative_path(), std::path::Path::new(&logical_path));
+        assert_eq!(descriptor.canonical_source(), expected_source.source);
+        assert_eq!(
+            descriptor.services(),
+            capability
+                .services()
+                .iter()
+                .copied()
+                .filter(|service| service.source_path == logical_path)
+                .collect::<Vec<_>>()
+        );
         let identity = corelib_service_source_identity(&logical_path).expect("complete source identity");
         let physical = canonical_corelib_service_source_path(&logical_path)
             .unwrap_or_else(|| panic!("{logical_path} has no canonical physical path descriptor"));

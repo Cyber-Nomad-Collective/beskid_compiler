@@ -16,8 +16,8 @@ pub use capability::{
 };
 pub use errors::CorelibServiceImportPreflightError;
 pub use identity::{
-    CorelibServiceSourceIdentity, canonical_corelib_service_source_path, corelib_service_source_identity,
-    corelib_source_locations_match,
+    CorelibServiceSourceDescriptor, CorelibServiceSourceIdentity, canonical_corelib_service_source_path,
+    corelib_service_source_descriptor, corelib_service_source_identity, corelib_source_locations_match,
 };
 pub use preflight::{preflight_corelib_service_declaration, preflight_corelib_service_import};
 pub use service_table::{CorelibService, CorelibServiceValueDispatch, canonical_corelib_service_value_dispatch};

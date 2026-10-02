@@ -364,6 +364,190 @@ fn verified_installed_corelib_bundle_preserves_assert_service_provenance() {
     let _ = fs::remove_dir_all(project_root);
 }
 
+struct InstalledFiberAuthorityFixture {
+    project_root: PathBuf,
+    bundle_root: PathBuf,
+    installed_source: PathBuf,
+    materialized_source: PathBuf,
+    source: beskid_abi::abi_v5::SourceUnit,
+    plan: CompilePlan,
+    roots: EffectiveCompilationRoots,
+}
+
+impl InstalledFiberAuthorityFixture {
+    fn new(label: &str, package_relative: &str) -> Self {
+        let source = beskid_abi::runtime_source::canonical_corelib_service_sources()
+            .into_iter()
+            .find(|source| source.logical_path == beskid_abi::runtime_source::CANONICAL_CORELIB_FIBER_SOURCE_PATH)
+            .expect("embedded canonical Fiber source");
+        let project_root = temp_project_root(label);
+        let bundle_root = project_root.join("installed/beskid_corelib");
+        let pristine_corelib = std::env::var_os("BESKID_RELOCATION_TEST_CORELIB_ROOT")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corelib"));
+        copy_directory_contents(&pristine_corelib, &bundle_root);
+        let concurrency_root = bundle_root.join(package_relative);
+        if package_relative != "packages/concurrency" {
+            copy_directory_contents(&bundle_root.join("packages/concurrency"), &concurrency_root);
+        }
+        let source_root = concurrency_root.join("src");
+        let relative = Path::new("Concurrency/Fiber.bd");
+        let installed_source = source_root.join(relative);
+        assert_eq!(
+            fs::read_to_string(&installed_source).expect("read installed Fiber"),
+            source.source,
+            "the installed fixture must use the compiler-embedded canonical Fiber bytes"
+        );
+        let fingerprint = beskid_abi::corelib_bundle::fingerprint_corelib_bundle_dir(&bundle_root)
+            .expect("fingerprint complete installed Corelib fixture");
+        fs::write(bundle_root.join(".beskid-bundle.sha256"), format!("{fingerprint}\n"))
+            .expect("write complete bundle fingerprint");
+
+        let materialized_source_root = project_root.join("obj/beskid/deps/src/corelib_concurrency/src");
+        let materialized_source = materialized_source_root.join(relative);
+        write_bd(&materialized_source_root, "Concurrency/Fiber.bd", &source.source);
+        let plan = CompilePlan {
+            project_root: project_root.clone(),
+            manifest_path: project_root.join("App.bproj"),
+            project_name: "App".into(),
+            source_root: project_root.join("src"),
+            target: Target { name: "App".into(), kind: TargetKind::App, entry: Some("Main.bd".into()) },
+            dependency_projects: vec![ResolvedDependencyProject {
+                dependency_name: "corelib_concurrency".into(),
+                manifest_path: concurrency_root.join("corelib_concurrency.bproj"),
+                project_root: concurrency_root,
+                project_name: "corelib_concurrency".into(),
+                source_root,
+            }],
+            unresolved_dependencies: Vec::new(),
+            has_std_dependency: true,
+        };
+        let roots = EffectiveCompilationRoots {
+            host: RootEntry { dependency_name: None, source_root: project_root.join("obj/beskid/root/src") },
+            dependencies: vec![RootEntry {
+                dependency_name: Some("corelib_concurrency".into()),
+                source_root: materialized_source_root.clone(),
+            }],
+        };
+        Self { project_root, bundle_root, installed_source, materialized_source, source, plan, roots }
+    }
+
+    fn unit(&self) -> SourceUnit {
+        SourceUnit {
+            logical_name: self.source.logical_path.clone(),
+            origin_path: self.materialized_source.clone(),
+            path: self.materialized_source.canonicalize().expect("physical materialized Fiber path"),
+            source: self.source.source.clone(),
+            program: parse_program_with_source_name("installed Fiber", &self.source.source)
+                .expect("parse canonical Fiber source"),
+        }
+    }
+
+    fn trusted_paths(&self, unit: &SourceUnit) -> Arc<[PathBuf]> {
+        trusted_corelib_service_paths(&self.plan, &self.roots, std::slice::from_ref(unit))
+    }
+}
+
+fn copy_directory_contents(source: &Path, destination: &Path) {
+    fs::create_dir_all(destination).expect("create copied directory");
+    for entry in fs::read_dir(source).expect("read copied directory") {
+        let entry = entry.expect("read copied directory entry");
+        if entry.file_name() == ".git" {
+            continue;
+        }
+        let source_path = entry.path();
+        let destination_path = destination.join(entry.file_name());
+        let file_type = entry.file_type().expect("read copied entry type");
+        if file_type.is_dir() {
+            copy_directory_contents(&source_path, &destination_path);
+        } else if file_type.is_file() {
+            fs::copy(&source_path, &destination_path).expect("copy installed Corelib fixture file");
+        } else {
+            panic!("installed Corelib fixture contains unsupported entry: {}", source_path.display());
+        }
+    }
+}
+
+impl Drop for InstalledFiberAuthorityFixture {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.project_root);
+    }
+}
+
+#[test]
+fn verified_installed_corelib_bundle_preserves_fiber_service_provenance_after_compiler_relocation() {
+    let fixture = InstalledFiberAuthorityFixture::new("relocated_installed_fiber", "packages/concurrency");
+    let unit = fixture.unit();
+
+    assert_eq!(
+        fixture.trusted_paths(&unit),
+        Arc::from([fixture.materialized_source.clone()]),
+        "a verified installed Fiber must retain __fiber_join_value authority without the compiler build checkout"
+    );
+}
+
+#[test]
+fn unverified_installed_fiber_cannot_gain_service_provenance() {
+    let fixture = InstalledFiberAuthorityFixture::new("unverified_installed_fiber", "packages/concurrency");
+    fs::remove_file(fixture.bundle_root.join(".beskid-bundle.sha256")).expect("remove bundle fingerprint");
+
+    assert!(fixture.trusted_paths(&fixture.unit()).is_empty());
+}
+
+#[test]
+fn tampered_installed_corelib_bundle_cannot_gain_fiber_service_provenance() {
+    let fixture = InstalledFiberAuthorityFixture::new("tampered_installed_fiber", "packages/concurrency");
+    fs::write(fixture.bundle_root.join("README.md"), "bundle changed after fingerprinting\n")
+        .expect("tamper complete installed bundle");
+
+    assert!(fixture.trusted_paths(&fixture.unit()).is_empty());
+}
+
+#[test]
+fn tampered_materialized_fiber_cannot_gain_service_provenance() {
+    let fixture = InstalledFiberAuthorityFixture::new("tampered_materialized_fiber", "packages/concurrency");
+    let tampered = format!("{}\n// tampered materialized source\n", fixture.source.source);
+    fs::write(&fixture.materialized_source, &tampered).expect("tamper materialized Fiber");
+    let mut unit = fixture.unit();
+    unit.source = tampered.clone();
+    unit.program = parse_program_with_source_name("tampered Fiber", &tampered).expect("parse tampered Fiber");
+
+    assert!(fixture.trusted_paths(&unit).is_empty());
+}
+
+#[test]
+fn path_shifted_installed_fiber_cannot_gain_service_provenance() {
+    let fixture = InstalledFiberAuthorityFixture::new("path_shifted_installed_fiber", "shifted/concurrency");
+
+    assert!(fixture.trusted_paths(&fixture.unit()).is_empty());
+}
+
+#[test]
+fn duplicate_materialized_fiber_dependency_binding_cannot_gain_service_provenance() {
+    let mut fixture = InstalledFiberAuthorityFixture::new("duplicate_materialized_fiber", "packages/concurrency");
+    fixture.roots.dependencies.push(RootEntry {
+        dependency_name: Some("corelib_concurrency".into()),
+        source_root: fixture.project_root.join("obj/beskid/deps/src/duplicate_corelib_concurrency/src"),
+    });
+
+    assert!(fixture.trusted_paths(&fixture.unit()).is_empty());
+}
+
+#[cfg(any(unix, windows))]
+#[test]
+fn symlinked_materialized_fiber_cannot_gain_service_provenance() {
+    let fixture = InstalledFiberAuthorityFixture::new("symlinked_materialized_fiber", "packages/concurrency");
+    fs::remove_file(&fixture.materialized_source).expect("remove materialized Fiber before symlinking");
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(&fixture.installed_source, &fixture.materialized_source)
+        .expect("replace materialized Fiber with symlink");
+    #[cfg(windows)]
+    std::os::windows::fs::symlink_file(&fixture.installed_source, &fixture.materialized_source)
+        .expect("replace materialized Fiber with symlink");
+
+    assert!(fixture.trusted_paths(&fixture.unit()).is_empty());
+}
+
 fn test_bundle_fingerprint(root: &Path) -> String {
     fn collect(root: &Path, current: &Path, files: &mut Vec<PathBuf>) {
         for entry in fs::read_dir(current).expect("read bundle directory") {

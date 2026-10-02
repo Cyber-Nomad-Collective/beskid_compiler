@@ -147,7 +147,8 @@ Two distinct mechanisms produce this exact message shape; `authority.py X` check
 reports which applies:
 
 - **Mechanism A -- raw-builtin corelib-service authority**
-  (`crates/beskid_abi/src/runtime_source/corelib_services.rs`, `CORELIB_SERVICES` table): a raw
+  (`crates/beskid_abi/src/runtime_source/corelib_services/service_table.rs`, `CORELIB_SERVICES`
+  table): a raw
   call like `__timer_sleep_until` is authorized only from the specific source file(s) listed for
   it. Usual fix: either call it from an authorized file, or add the calling file's
   `CANONICAL_..._SOURCE_PATH` constant to the table entry.

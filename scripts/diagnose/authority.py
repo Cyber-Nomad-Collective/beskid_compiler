@@ -5,7 +5,8 @@ Explains "canonical X unavailable" / corelib-service authority errors. There are
 authority mechanisms in this compiler that both produce a message shaped like "canonical X ...
 unavailable", and this tool checks both:
 
-  A. Raw-builtin corelib-service authority (crates/beskid_abi/src/runtime_source/corelib_services.rs,
+  A. Raw-builtin corelib-service authority
+     (crates/beskid_abi/src/runtime_source/corelib_services/service_table.rs,
      `CORELIB_SERVICES` table): a raw call like `__timer_sleep_until` is authorized ONLY when made
      from one of its listed `source_path` files. A call to the same raw builtin from any other file
      fails closed with an "unavailable" error -- this is what broke `__timer_sleep_until` when it
@@ -57,7 +58,8 @@ def canonical_path_map(repo: str):
     """Reuse the same parsing approach as kitcheck.sh's manifest builder: map
     CANONICAL_..._SOURCE_PATH constants to their real corelib/runtime file."""
     sources_rs = os.path.join(repo, "crates", "beskid_abi", "src", "runtime_source", "sources.rs")
-    text = open(sources_rs, encoding="utf-8", errors="replace").read()
+    with open(sources_rs, encoding="utf-8", errors="replace") as source_file:
+        text = source_file.read()
     path_consts = dict(re.findall(r'pub const (CANONICAL_\w+_SOURCE_PATH): &str = "([^"]+)";', text))
     source_real = {}
     for m in re.finditer(
@@ -75,8 +77,11 @@ def canonical_path_map(repo: str):
 
 
 def find_corelib_service_entries(repo: str, name: str):
-    services_rs = os.path.join(repo, "crates", "beskid_abi", "src", "runtime_source", "corelib_services.rs")
-    text = open(services_rs, encoding="utf-8", errors="replace").read()
+    services_rs = os.path.join(
+        repo, "crates", "beskid_abi", "src", "runtime_source", "corelib_services", "service_table.rs"
+    )
+    with open(services_rs, encoding="utf-8", errors="replace") as service_file:
+        text = service_file.read()
     entries = []
     for m in re.finditer(
         r'CorelibService\s*\{\s*name:\s*"([^"]+)"\s*,\s*symbol:\s*"([^"]+)"\s*,\s*source_path:\s*(CANONICAL_\w+_SOURCE_PATH)\s*,?\s*\}',
@@ -88,7 +93,8 @@ def find_corelib_service_entries(repo: str, name: str):
 
 def find_scheduler_entry_helper(repo: str, name: str):
     module_emission = os.path.join(repo, "crates", "beskid_codegen", "src", "module_emission.rs")
-    text = open(module_emission, encoding="utf-8", errors="replace").read()
+    with open(module_emission, encoding="utf-8", errors="replace") as module_file:
+        text = module_file.read()
     m = re.search(r'SCHEDULER_ENTRY_HELPERS:.*?=\s*&\[(.*?)\];', text, re.S)
     if not m:
         return False, []

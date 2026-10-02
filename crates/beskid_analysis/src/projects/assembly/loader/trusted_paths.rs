@@ -1,5 +1,8 @@
 use beskid_abi::corelib_bundle::verified_corelib_bundle_roots;
-use beskid_abi::runtime_source::{corelib_service_source_identity, corelib_source_locations_match};
+use beskid_abi::runtime_source::{
+    CorelibServiceSourceDescriptor, corelib_service_source_descriptor, corelib_service_source_identity,
+    corelib_source_locations_match,
+};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -23,44 +26,31 @@ pub(super) fn trusted_corelib_service_paths(
         .into_iter()
         .chain(std::iter::once(beskid_abi::runtime_source::canonical_corelib_deadline_source()))
     {
-        let Some(identity) = corelib_service_source_identity(&source.logical_path) else {
+        let Some(descriptor) = corelib_service_source_descriptor(&source.logical_path) else {
             continue;
         };
-        // The graph already resolves dependency identity. Preserve that policy, accepting
-        // ordinary/verbatim Windows drive spelling without resolving a new user alias here.
-        // Canonical service paths are not all equally deep: for example,
-        // `Testing/Assert.bd` has two components while `Core/Bytes/Slice.bd`
-        // has three. Derive the package source root from the trusted logical
-        // path instead of assuming every service is three levels below it.
-        let logical_relative = Path::new(&source.logical_path);
-        let canonical_source_root = identity.canonical_path.ancestors().nth(logical_relative.components().count());
-        let Some(canonical_source_root) = canonical_source_root else {
-            continue;
-        };
-        let Some(canonical_relative) = identity.canonical_path.strip_prefix(canonical_source_root).ok() else {
-            continue;
-        };
-        if canonical_relative != logical_relative {
+        let logical_relative = Path::new(descriptor.logical_path());
+        if descriptor.relative_path() != logical_relative || descriptor.canonical_source() != source.source {
             continue;
         }
+        // Physical build-checkout identity is optional. It remains the authority for direct
+        // source/development dependencies, but verified installed bundles use only the immutable
+        // logical descriptor above and therefore survive compiler relocation.
+        let checkout_identity = corelib_service_source_identity(&source.logical_path);
         let Some((index, relative, bundled)) =
             plan.dependency_projects.iter().enumerate().find_map(|(index, dependency)| {
                 let source_root = normalize_lexically(&dependency.source_root);
-                let checkout_relative =
+                let checkout_relative = checkout_identity.as_ref().and_then(|identity| {
                     [&identity.declared_path, &identity.canonical_path].into_iter().find_map(|path| {
                         path.ancestors()
                             .find(|ancestor| corelib_source_locations_match(ancestor, &source_root))
                             .and_then(|ancestor| path.strip_prefix(ancestor).ok())
                             .map(|relative| (index, relative.to_path_buf()))
-                    });
+                    })
+                });
                 checkout_relative.map(|(index, relative)| (index, relative, false)).or_else(|| {
-                    bundled_corelib_source_root(
-                        dependency,
-                        verified_bundle_roots[index].as_deref(),
-                        &identity.canonical_path,
-                        canonical_source_root,
-                    )
-                    .map(|_| (index, canonical_relative.to_path_buf(), true))
+                    bundled_corelib_source_root(dependency, verified_bundle_roots[index].as_deref(), &descriptor)
+                        .map(|_| (index, descriptor.relative_path().to_path_buf(), true))
                 })
             })
         else {
@@ -101,17 +91,10 @@ pub(super) fn trusted_corelib_service_paths(
 fn bundled_corelib_source_root(
     dependency: &crate::projects::ResolvedDependencyProject,
     bundle_root: Option<&Path>,
-    canonical_service_path: &Path,
-    canonical_source_root: &Path,
+    descriptor: &CorelibServiceSourceDescriptor,
 ) -> Option<PathBuf> {
     let bundle_root = bundle_root?;
-    let canonical_package_root = canonical_source_root.parent()?;
-    let canonical_packages_root = canonical_package_root.parent()?;
-    if canonical_packages_root.file_name().is_none_or(|name| name != "packages") {
-        return None;
-    }
-    let canonical_workspace_root = canonical_packages_root.parent()?;
-    let expected_project_relative = canonical_package_root.strip_prefix(canonical_workspace_root).ok()?;
+    let expected_project_relative = Path::new("packages").join(descriptor.package());
 
     let physical_project_root = dependency.project_root.canonicalize().ok()?;
     if physical_project_root.strip_prefix(bundle_root).ok()? != expected_project_relative {
@@ -121,10 +104,9 @@ fn bundled_corelib_source_root(
     if physical_source_root.strip_prefix(&physical_project_root).ok()? != Path::new("src") {
         return None;
     }
-    let relative = canonical_service_path.strip_prefix(canonical_source_root).ok()?;
-    let installed_source = physical_source_root.join(relative);
+    let installed_source = physical_source_root.join(descriptor.relative_path());
     if !is_regular_non_symlink_file(&installed_source)
-        || std::fs::read_to_string(&installed_source).ok()? != std::fs::read_to_string(canonical_service_path).ok()?
+        || std::fs::read_to_string(&installed_source).ok()? != descriptor.canonical_source()
     {
         return None;
     }
