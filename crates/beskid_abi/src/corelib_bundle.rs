@@ -1,6 +1,5 @@
 //! Integrity checks for the Corelib snapshot shipped with the compiler.
 
-use std::collections::HashMap;
 use std::ffi::OsStr;
 use std::fmt::Write as _;
 use std::fs::File;
@@ -11,26 +10,15 @@ use sha2::{Digest, Sha256};
 
 pub const CORELIB_BUNDLE_FINGERPRINT_FILE: &str = ".beskid-bundle.sha256";
 
-/// Return the managed Corelib bundle containing `path` only when its marker matches the current
-/// contents of the complete bundle. This is an integrity check: a complete byte-identical bundle
-/// with a correctly recomputed marker is intentionally indistinguishable from a managed install.
-/// Standalone copied source files have no verified bundle root, and modifying a marked bundle
-/// invalidates its marker.
-pub fn verified_corelib_bundle_root(path: &Path) -> Option<PathBuf> {
-    verified_corelib_bundle_roots(&[path.to_path_buf()]).into_iter().next().flatten()
-}
-
-/// Verify several paths while hashing each containing bundle at most once.
-pub fn verified_corelib_bundle_roots(paths: &[PathBuf]) -> Vec<Option<PathBuf>> {
-    let mut verified = HashMap::new();
-    paths
-        .iter()
-        .map(|path| {
-            let root = bundle_root_with_marker(path)?;
-            let valid = *verified.entry(root.clone()).or_insert_with(|| is_verified_bundle_root(&root));
-            valid.then_some(root)
-        })
-        .collect()
+/// Return the nearest managed Corelib bundle root containing `path`: the closest physical
+/// ancestor that holds a regular `.beskid-bundle.sha256` marker file.
+///
+/// This locates the bundle layout only; it does not verify the marker. Bundle integrity is an
+/// install concern (`beskid_tools` re-materializes a bundle whose fingerprint differs) and never
+/// grants Corelib service authority, which is decided per service file against the
+/// compiler-embedded canonical sources.
+pub fn corelib_bundle_marker_root(path: &Path) -> Option<PathBuf> {
+    bundle_root_with_marker(path)
 }
 
 fn bundle_root_with_marker(path: &Path) -> Option<PathBuf> {
@@ -50,17 +38,6 @@ fn bundle_root_with_marker(path: &Path) -> Option<PathBuf> {
         return Some(physical_root);
     }
     None
-}
-
-fn is_verified_bundle_root(root: &Path) -> bool {
-    let marker = root.join(CORELIB_BUNDLE_FINGERPRINT_FILE);
-    let Ok(expected) = std::fs::read_to_string(&marker) else {
-        return false;
-    };
-    let expected = expected.trim();
-    expected.len() == 64
-        && expected.bytes().all(|byte| byte.is_ascii_hexdigit())
-        && fingerprint_corelib_bundle_dir(root).ok().as_deref() == Some(expected)
 }
 
 /// Hash a Corelib bundle using the same stable file inventory as the embedded bundle builder.

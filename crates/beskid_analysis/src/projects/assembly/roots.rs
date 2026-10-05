@@ -10,7 +10,7 @@ use std::{
 use crate::projects::{
     CompilePlan, PROJECT_LOCK_FILE_NAME, PreparedProjectWorkspace, ProjectError, ProjectLockDependencyEntry,
     ProjectLockSource,
-    workflow::{load_project_lock_dependencies_for_plan, verified_installed_corelib_root},
+    workflow::{installed_corelib_lock_root, load_project_lock_dependencies_for_plan},
 };
 
 /// One searchable source root (host or named dependency).
@@ -120,7 +120,7 @@ fn replayed_dependency_roots(
     }
 
     let lock_root = lockfile_path.parent()?;
-    let verified_corelib_root = verified_installed_corelib_root();
+    let corelib_lock_root = installed_corelib_lock_root();
     let mut replayed = Vec::with_capacity(entries.len());
     for entry in entries {
         let dependency =
@@ -133,7 +133,7 @@ fn replayed_dependency_roots(
 
         let project_base = match entry.source() {
             ProjectLockSource::Path | ProjectLockSource::Registry => lock_root,
-            ProjectLockSource::Corelib => verified_corelib_root.as_deref()?,
+            ProjectLockSource::Corelib => corelib_lock_root.as_deref()?,
         };
         let project = project_base.join(entry.project());
         let manifest = project.join(entry.manifest());

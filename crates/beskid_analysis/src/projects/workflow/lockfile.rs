@@ -594,12 +594,12 @@ pub fn load_project_lock_dependencies_for_plan(
     if !same_manifest || parsed.project_name != plan.project_name {
         return Err(ProjectError::Validation("lockfile belongs to a different project".into()));
     }
-    let verified_corelib_root = super::prepare::verified_installed_corelib_root();
+    let corelib_lock_root = super::prepare::installed_corelib_lock_root();
     let path_entries = plan
         .dependency_projects
         .iter()
         .map(|dependency| {
-            super::prepare::portable_entry_for_dependency(plan, dependency, verified_corelib_root.as_deref())
+            super::prepare::portable_entry_for_dependency(plan, dependency, corelib_lock_root.as_deref())
         })
         .collect::<Result<Vec<_>, _>>()?;
     let registry_names = plan
