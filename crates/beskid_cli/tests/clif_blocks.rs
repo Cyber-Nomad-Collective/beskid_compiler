@@ -54,6 +54,8 @@ impl ClifProject {
             .arg("--project")
             .arg(&self.root)
             .env_remove("RUST_LOG")
+            // A per-project managed Corelib keeps parallel cases from provisioning one shared root.
+            .env("BESKID_CORELIB_ROOT", self.root.join("installed-corelib"))
             .current_dir(&self.root)
             .output()
             .expect("run beskid")
