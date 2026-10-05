@@ -37,6 +37,9 @@ pub enum TypeError {
     UnsupportedExpression { span: SpanInfo },
     InvalidTryTarget { span: SpanInfo },
     InvalidPrimitiveConversionArgument { span: SpanInfo },
+    /// A `clif { ... }` block without a typed context, with an invalid surface, or naming a
+    /// parameter it may not use.
+    InvalidClifBlock { span: SpanInfo, detail: String },
     InvalidEventInvocationScope { span: SpanInfo },
     InvalidEventCapacity { span: SpanInfo },
     InvalidEventSubscriptionTarget { span: SpanInfo },
@@ -157,6 +160,9 @@ impl fmt::Display for TypeError {
             }
             TypeError::InvalidPrimitiveConversionArgument { span } => {
                 write!(f, "invalid primitive conversion argument at {}", at(*span))
+            }
+            TypeError::InvalidClifBlock { span, detail } => {
+                write!(f, "invalid clif block at {}: {detail}", at(*span))
             }
             TypeError::InvalidEventInvocationScope { span } => {
                 write!(f, "invalid event invocation scope at {}", at(*span))

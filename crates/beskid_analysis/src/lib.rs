@@ -15,6 +15,7 @@
 pub mod analysis;
 pub mod artifacts;
 pub mod builtins;
+pub mod clif_surface;
 pub mod compilation_context;
 #[doc(hidden)]
 pub mod compiler_sdk_reflect;

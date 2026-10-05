@@ -84,6 +84,17 @@ pub struct CompletionMemberSurface {
 pub type IndexedNodeKind = beskid_analysis::syntax_query::NodeKind;
 pub type SourceSpan = beskid_analysis::syntax::SpanInfo;
 
+/// How a `clif { ... }` block may use one ABI parameter (`%N`) of its enclosing callable.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub enum ClifParameterShape {
+    /// A declared scalar primitive usable as an ordinary CLIF value.
+    Scalar,
+    /// A `u8[]`, `u32[]`, or `i64[]` parameter addressable only through `payload`/`length`.
+    PayloadArray { element_bytes: u8 },
+    /// A receiver, managed reference, or other non-scalar value the block may not name.
+    Opaque,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum LiteralFact {
     Integer(Arc<str>),

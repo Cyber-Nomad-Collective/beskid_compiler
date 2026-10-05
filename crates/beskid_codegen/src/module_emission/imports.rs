@@ -120,6 +120,51 @@ pub(super) fn extern_contract_imports(
     callees.into_values().collect()
 }
 
+/// Authorize `clif { call @symbol(...) }` callees by declaration: a symbol that no lowered
+/// function defines and no other import supplies is admitted when some unit declares it as a
+/// method of a C-ABI `[Extern(Abi: "C", Library: "...")]` contract. A source call through the
+/// contract is not required. Runtime- and host-owned names are never admitted this way.
+pub(super) fn clif_declared_extern_imports(
+    input: &CodegenInput<'_>,
+    functions: &[crate::LoweredFunction],
+    known: &[ExternImport],
+) -> Vec<ExternImport> {
+    let defined = functions.iter().map(|function| function.name.as_str()).collect::<HashSet<_>>();
+    let mut unresolved = std::collections::BTreeSet::new();
+    for function in functions {
+        for (_, external) in function.function.dfg.ext_funcs.iter() {
+            let ExternalName::TestCase(name) = &external.name else {
+                continue;
+            };
+            let symbol = String::from_utf8_lossy(name.raw()).into_owned();
+            if !defined.contains(symbol.as_str()) && !known.iter().any(|import| import.symbol == symbol) {
+                unresolved.insert(symbol);
+            }
+        }
+    }
+    if unresolved.is_empty() {
+        return Vec::new();
+    }
+    let db = input.database();
+    let mut declarations = HashMap::new();
+    for unit in input.typed_program().assembly.units.iter() {
+        let unit = beskid_queries::SourceUnitId::new(db, unit.path.clone());
+        for (symbol, abi, library) in beskid_queries::extern_contract_declarations_in_unit(db, unit) {
+            declarations.entry(symbol).or_insert((abi, library));
+        }
+    }
+    unresolved
+        .into_iter()
+        .filter_map(|symbol| {
+            let (abi, library) = declarations.get(&symbol)?;
+            let authorized = abi.as_deref() == Some("C")
+                && library.as_deref().is_some_and(|library| !library.is_empty())
+                && !beskid_abi::is_runtime_owned_ffi_symbol(&symbol);
+            authorized.then(|| ExternImport { symbol, abi: abi.clone(), library: library.clone() })
+        })
+        .collect()
+}
+
 /// String runtime helpers that ISLE lowering emits directly (string literals, coercion,
 /// comparison, concatenation). These are always required — they are not gated by the
 /// Corelib syscall capability because they are fundamental operations, not facade services.

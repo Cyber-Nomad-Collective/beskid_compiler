@@ -161,6 +161,12 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
         self.clif_block_body_impl(key)
     }
 
+    fn clif_block_parameters(&self, key: AstNodeKey) -> Option<Vec<beskid_queries::ClifParameterShape>> {
+        // An unavailable fact (for example a block inside a lambda) exposes no parameters rather
+        // than the permissive fixture default.
+        Some(self.query(beskid_queries::clif_block_parameters(self.db, key)).map(|shapes| shapes.to_vec()).unwrap_or_default())
+    }
+
     fn integer_literal(&self, key: AstNodeKey) -> Option<i64> {
         self.integer_literal_impl(key)
     }

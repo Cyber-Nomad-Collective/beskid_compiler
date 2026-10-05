@@ -58,3 +58,34 @@ pub use mod_contract::{
 };
 pub use types::{BeskidArray, BeskidStr};
 pub use version::BESKID_RUNTIME_ABI_VERSION;
+
+/// Whether `symbol` is owned by the runtime or host and therefore may never be supplied through
+/// user FFI: a Corelib service adapter from the ABI-v5 manifest, a current runtime export, or a
+/// retired runtime/language namespace. Both an `[Extern]` contract and a `clif { call @symbol }`
+/// block are rejected for such names; the exact runtime kit is their only provider.
+pub fn is_runtime_owned_ffi_symbol(symbol: &str) -> bool {
+    generated::abi_v5_contract::ABI_V5_CORELIB_SERVICE_BINDINGS.iter().any(|binding| binding.adapter == symbol)
+        || symbol.starts_with("beskid_rt_")
+        || symbol.starts_with("beskid_runtime_")
+        || symbol.starts_with("beskid_language_")
+        || RUNTIME_EXPORT_SYMBOLS.contains(&symbol)
+}
+
+#[cfg(test)]
+mod runtime_owned_ffi_symbol_tests {
+    use super::is_runtime_owned_ffi_symbol;
+
+    #[test]
+    fn runtime_and_retired_names_are_owned_but_libc_names_are_not() {
+        assert!(is_runtime_owned_ffi_symbol("beskid_rt_v5_array_write_barrier"));
+        assert!(is_runtime_owned_ffi_symbol("beskid_runtime_anything"));
+        assert!(is_runtime_owned_ffi_symbol("beskid_language_anything"));
+        assert!(
+            generated::abi_v5_contract::ABI_V5_CORELIB_SERVICE_BINDINGS
+                .iter()
+                .all(|binding| is_runtime_owned_ffi_symbol(binding.adapter))
+        );
+        assert!(!is_runtime_owned_ffi_symbol("labs"));
+        assert!(!is_runtime_owned_ffi_symbol("memcpy"));
+    }
+}

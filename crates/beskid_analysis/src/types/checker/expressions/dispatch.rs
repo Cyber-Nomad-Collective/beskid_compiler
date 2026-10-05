@@ -82,7 +82,7 @@ impl<'a> TypeChecker<'a> {
             Expression::Index(index_expr) => self.type_index_expression(index_expr),
             Expression::ArrayLiteral(lit) => self.type_array_literal_expression(lit),
             Expression::CodeString(_) => self.primitive_type_id(PrimitiveType::String),
-            Expression::ClifBlock(_) => self.primitive_type_id(PrimitiveType::Unit),
+            Expression::ClifBlock(clif) => self.type_clif_block(clif),
         };
 
         if let Some(type_id) = type_id {

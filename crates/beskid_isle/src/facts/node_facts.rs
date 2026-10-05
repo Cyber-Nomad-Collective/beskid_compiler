@@ -197,4 +197,9 @@ pub trait NodeFacts {
     fn clif_block_body(&self, _key: AstNodeKey) -> Option<String> {
         None
     }
+    /// ABI parameter shapes (`%N`) visible to a clif block. Production codegen always answers;
+    /// `None` (unit-test fixtures) leaves parameters usable as scalars and payload access closed.
+    fn clif_block_parameters(&self, _key: AstNodeKey) -> Option<Vec<beskid_queries::ClifParameterShape>> {
+        None
+    }
 }

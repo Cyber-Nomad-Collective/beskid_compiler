@@ -127,7 +127,7 @@ use resolution::{
     unique_function_in_unit, unique_imported_function, unique_inline_module_in_scope, unique_public_function_in_unit,
 };
 use syntax_facts::{
-    binary_operator, block_statement_nodes_tracked, child_nodes_tracked, clif_block_body_tracked,
+    binary_operator, block_statement_nodes_tracked, child_nodes_tracked, clif_block_body_tracked, clif_block_parameters_tracked,
     direct_callees_for_item, direct_callees_tracked, item_body_tracked, item_export_symbol_tracked, item_name_tracked,
     literal_fact_tracked, node_kind_tracked, node_span_tracked, operator_fact_for_binary, operator_fact_tracked,
     reachable_items_tracked, test_bool_literal, test_item_tracked, test_statement_nodes_tracked, test_string_literal,
@@ -145,7 +145,7 @@ pub use abi::{
     generic_call_specialization_in_environment, generic_call_specialization_instance, generic_specialization_instance,
     specialized_corelib_value_service_result,
 };
-pub use calls::extern_contract_import_for_declaration;
+pub use calls::{extern_contract_declarations_in_unit, extern_contract_import_for_declaration};
 pub use completion::{
     completion_candidates, completion_dependency_surface, completion_dependency_surface_for_assembly,
     completion_dependency_surface_for_program,
@@ -159,7 +159,7 @@ pub use model::{
     ArrayIndexElementTemplate, AstNodeKey, BulkParameterFact, CallLowering, CaptureStorage, CaptureStorageClass,
     CastIntent, ClosureAllocationStatus, ClosureCallTarget, ClosureCapture, ClosureEnvironment,
     ClosureEnvironmentAbiShape, ClosureEnvironmentField, ClosureLoweringStatus, ClosurePointerMapRequirement,
-    ClosureSignature, CollectionMutationOwner, CollectionOperation, CompletionCandidate, CompletionContext,
+    ClosureSignature, ClifParameterShape, CollectionMutationOwner, CollectionOperation, CompletionCandidate, CompletionContext,
     CompletionKind, CompletionMemberSurface, ControlFlow, CorelibService, EnumConstructorFact,
     EnumConstructorSpecialization, EnumConstructorTemplate, EnumLayoutFact, EnumLayoutTemplateArgument,
     EnumMatchArmFact, EnumMatchBindingFact, EnumMatchFact, EnumMatchPatternFact, EnumMatchScalarLiteralFact,
@@ -180,7 +180,7 @@ pub use queries::{
     aggregate_literal_layout, array_index_element_abi_type, binary_operand_abi_type, block_statement_nodes,
     bulk_parameter, call_abi_signature, call_argument_abi_type, call_arguments, call_lowering,
     callable_fiber_ownership, callable_signature, capture_storage, cast_intents, child_nodes, clif_block_body,
-    closure_call_target, closure_environment, closure_signature, collection_operation, constant_integer,
+    clif_block_parameters, closure_call_target, closure_environment, closure_signature, collection_operation, constant_integer,
     contextual_integer_literal_abi_type, control_flow, direct_callees, empty_array_literal_element_abi_type,
     enum_constructor, enum_constructor_template, enum_layout, enum_match, event_field_layout,
     event_handler_lambda_for_local, event_operation, for_iterator_fact, generic_call_instantiation,

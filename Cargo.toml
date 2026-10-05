@@ -70,6 +70,7 @@ cranelift-jit = "0.136.0"
 cranelift-module = "0.136.0"
 cranelift-native = "0.136.0"
 cranelift-object = "0.136.0"
+cranelift-reader = "0.136.0"
 cargo-cross = { path = "vendor/cargo-cross-patched" }
 
 [patch.crates-io]

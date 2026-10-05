@@ -91,6 +91,16 @@ pub(crate) fn emit_type_error(ctx: &mut RuleContext, error: TypeError, result: O
         TypeError::InvalidPrimitiveConversionArgument { span } => {
             ctx.emit_issue(span, SemanticIssueKind::TypeInvalidPrimitiveConversionArgument);
         }
+        TypeError::InvalidClifBlock { span, detail } => {
+            ctx.emit_simple(
+                span,
+                "E1232",
+                "invalid clif block",
+                "clif block",
+                Some(detail),
+                Severity::Error,
+            );
+        }
         TypeError::InvalidEventInvocationScope { span } => {
             ctx.emit_issue(span, SemanticIssueKind::TypeInvalidEventInvocationScope);
         }

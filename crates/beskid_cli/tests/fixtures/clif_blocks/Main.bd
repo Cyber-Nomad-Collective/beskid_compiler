@@ -1,0 +1,156 @@
+/// CLIF block acceptance fixture: a non-Corelib project using `clif { ... }` for bitwise,
+/// wide-multiply, rotate, array-payload, SIMD, and declared-extern operations.
+use Testing.Assert;
+
+/// Declared only: no Beskid code calls through this contract, yet `clif { call @labs }` may.
+[Extern(Abi:"C", Library:"libc.so.6")]
+pub contract ClifLibc {
+    i64 labs(i64 value);
+}
+
+pub i64 Xor(i64 left, i64 right) {
+    return clif {
+        %x = bxor %0, %1
+        return %x
+    };
+}
+
+/// High 64 bits of the unsigned 128-bit product of two 64-bit words.
+pub i64 MulHigh(i64 left, i64 right) {
+    return clif {
+        %h = umulhi %0, %1
+        return %h
+    };
+}
+
+pub u32 RotateLeft(u32 value, u32 amount) {
+    return clif {
+        %r = rotl %0, %1
+        return %r
+    };
+}
+
+/// XOR `mask` into `words[index]` and return the new word.
+/// Precondition: `0 <= index < length(words)`; the block does not check bounds.
+pub u32 XorWordAt(u32[] words, i64 index, u32 mask) {
+    return clif {
+        %p = payload %0
+        %stride = iconst.i64 4
+        %offset = imul %1, %stride
+        %address = iadd %p, %offset
+        %word = load.i32 %address
+        %mixed = bxor %word, %2
+        store %mixed, %address
+        return %mixed
+    };
+}
+
+/// Lane arithmetic on an i32x4 vector: (a + b) + (a + a).
+pub i32 SimdLaneSum(i32 a, i32 b) {
+    return clif {
+        %va = splat.i32x4 %0
+        %vb = splat.i32x4 %1
+        %vc = insertlane %vb, %0, 3
+        %sum = iadd %va, %vc
+        %lane0 = extractlane %sum, 0
+        %lane3 = extractlane %sum, 3
+        %total = iadd %lane0, %lane3
+        return %total
+    };
+}
+
+pub i64 Magnitude(i64 value) {
+    return clif {
+        %r = call @labs(%0) -> i64
+        return %r
+    };
+}
+
+pub i64 Count(i64[] values) {
+    return clif {
+        %n = length %0
+        return %n
+    };
+}
+
+pub i64 Twice(i64 value) {
+    i64 doubled = clif {
+        %d = iadd %0, %0
+        return %d
+    };
+    return doubled;
+}
+
+test block_xor {
+    Assert.Equal(Xor(12, 10), 6, "bxor");
+}
+
+test block_mul_high {
+    Assert.Equal(MulHigh(-1, 3), 2, "umulhi of (2^64 - 1) * 3");
+}
+
+test block_rotate_left_u32 {
+    Assert.Equal(RotateLeft(2147483649_u32, 4_u32), 24_u32, "rotl on u32");
+}
+
+test block_payload_xor_store {
+    mut u32[] words = [1_u32, 4042260480_u32, 3_u32];
+    u32 mixed = XorWordAt(words, 1, 65295_u32);
+    Assert.Equal(mixed, 4042325775_u32, "returned word");
+    Assert.Equal(words[1], 4042325775_u32, "stored word");
+    Assert.Equal(words[0], 1_u32, "lower neighbour untouched");
+    Assert.Equal(words[2], 3_u32, "upper neighbour untouched");
+}
+
+test block_simd_i32x4 {
+    i32 a = 5;
+    i32 b = 7;
+    i32 expected = 22;
+    Assert.Equal(SimdLaneSum(a, b), expected, "i32x4 lane sum");
+}
+
+test block_declared_extern_call {
+    Assert.Equal(Magnitude(-42), 42, "labs through a declaration-only extern contract");
+}
+
+test block_length_and_let_context {
+    i64[] values = [1_i64, 2_i64, 3_i64, 4_i64];
+    Assert.Equal(Count(values), 4, "length pseudo-instruction");
+    Assert.Equal(Twice(21), 42, "typed let context");
+}
+
+pub i64 Main() {
+    if Xor(12, 10) != 6 {
+        return 1;
+    }
+    if MulHigh(-1, 3) != 2 {
+        return 2;
+    }
+    if RotateLeft(2147483649_u32, 4_u32) != 24_u32 {
+        return 3;
+    }
+    mut u32[] words = [1_u32, 4042260480_u32, 3_u32];
+    if XorWordAt(words, 1, 65295_u32) != 4042325775_u32 {
+        return 4;
+    }
+    if words[1] != 4042325775_u32 {
+        return 5;
+    }
+    i32 a = 5;
+    i32 b = 7;
+    i32 expected = 22;
+    if SimdLaneSum(a, b) != expected {
+        return 6;
+    }
+    if Magnitude(-42) != 42 {
+        return 7;
+    }
+    i64[] values = [1_i64, 2_i64, 3_i64, 4_i64];
+    if Count(values) != 4 {
+        return 8;
+    }
+    if Twice(21) != 42 {
+        return 9;
+    }
+    return 0;
+}

@@ -259,7 +259,14 @@ pub fn extern_contract_import_for_declaration(
         }
         parent = index.metadata_for(declaration.generation, parent_id).and_then(|node| node.parent);
     }
-    let contract = contract?;
+    let (abi, library) = extern_contract_attributes(contract?)?;
+    Some((method.name.node.name.clone(), abi, library))
+}
+
+/// `Abi` and `Library` arguments of a contract's `[Extern(...)]` attribute, when it has one.
+fn extern_contract_attributes(
+    contract: &beskid_analysis::syntax::ContractDefinition,
+) -> Option<(Option<String>, Option<String>)> {
     let extern_attr = contract.attributes.iter().find(|attribute| attribute.node.name.node.name == "Extern")?;
     let mut abi = None;
     let mut library = None;
@@ -279,7 +286,46 @@ pub fn extern_contract_import_for_declaration(
             _ => {}
         }
     }
-    Some((method.name.node.name.clone(), abi, library))
+    Some((abi, library))
+}
+
+/// Every method declared by an `[Extern(...)]` contract in `unit`, including contracts nested in
+/// inline modules, as `(symbol, abi, library)`.
+///
+/// Declarations confer FFI authority without a source call: a `clif { call @symbol(...) }`
+/// block may name any symbol declared here once the C ABI and library are validated.
+pub fn extern_contract_declarations_in_unit(
+    db: &dyn Db,
+    unit: SourceUnitId,
+) -> Vec<(String, Option<String>, Option<String>)> {
+    fn collect(
+        items: &[beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Node>],
+        out: &mut Vec<(String, Option<String>, Option<String>)>,
+    ) {
+        for item in items {
+            match &item.node {
+                beskid_analysis::syntax::Node::ContractDefinition(contract) => {
+                    let Some((abi, library)) = extern_contract_attributes(&contract.node) else {
+                        continue;
+                    };
+                    for member in &contract.node.items {
+                        if let beskid_analysis::syntax::ContractNode::MethodSignature(method) = &member.node {
+                            out.push((method.node.name.node.name.clone(), abi.clone(), library.clone()));
+                        }
+                    }
+                }
+                beskid_analysis::syntax::Node::InlineModule(module) => collect(&module.node.items, out),
+                _ => {}
+            }
+        }
+    }
+    let Some(syntax) = db.syntax_unit(unit) else {
+        return Vec::new();
+    };
+    let program = syntax.expanded_program(db);
+    let mut out = Vec::new();
+    collect(&program.node.items, &mut out);
+    out
 }
 
 /// Resolve one source-proven nominal receiver and its uniquely declared method. Literal, local,

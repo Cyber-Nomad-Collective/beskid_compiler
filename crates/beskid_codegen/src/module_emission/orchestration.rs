@@ -12,7 +12,8 @@ use super::data::{
     event_handler_wrapper_required,
 };
 use super::imports::{
-    ArtifactCallImporter, ArtifactStringInterner, corelib_service_symbols, extern_contract_imports,
+    ArtifactCallImporter, ArtifactStringInterner, clif_declared_extern_imports, corelib_service_symbols,
+    extern_contract_imports,
     extern_contract_symbols, runtime_intrinsic_symbols,
 };
 use super::items::{ResolvedSyntaxModuleItem, SyntaxModuleItem};
@@ -374,6 +375,9 @@ fn lower_resolved_syntax_program(
         if !extern_imports.iter().any(|existing| existing.symbol == import.symbol) {
             extern_imports.push(import);
         }
+    }
+    for import in clif_declared_extern_imports(input, &functions, &extern_imports) {
+        extern_imports.push(import);
     }
 
     let closure_static_plans = collect_closure_static_plans(input, items, &trampolines, &lambda_trampolines);

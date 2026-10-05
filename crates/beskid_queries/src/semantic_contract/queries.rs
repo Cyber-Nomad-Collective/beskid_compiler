@@ -565,6 +565,13 @@ pub fn clif_block_body(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<Arc<
     with_registered_syntax(db, key, clif_block_body_tracked)
 }
 
+/// ABI parameter shapes (`%N`) visible to one `clif { ... }` block: the enclosing function's,
+/// method's (receiver first), or test's parameters, unit parameters omitted. Unavailable inside
+/// lambdas, whose parameters do not share the enclosing function's ABI.
+pub fn clif_block_parameters(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<Arc<[ClifParameterShape]>> {
+    with_registered_syntax(db, key, clif_block_parameters_tracked)
+}
+
 pub fn node_span(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<SourceSpan> {
     with_registered_syntax(db, key, node_span_tracked)
 }
