@@ -7,6 +7,59 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.3] - 2026-10-05
+
+### Added
+
+- `clif { ... }` blocks accept real Cranelift instructions. The body is one
+  straight-line block over `%N` parameters and `%name` locals, for example
+  `%h = umulhi %0, %1` followed by `return %h`. The compiler parses each run
+  of instructions with `cranelift-reader`, verifies it, and copies it into the
+  enclosing function. Admitted opcodes are integer and float arithmetic,
+  carry and overflow arithmetic, bitwise operations, shifts and rotates, bit
+  counts, compare and select, conversions, SIMD lane operations
+  (`splat`, `insertlane`, `extractlane`, `shuffle`, vector arithmetic), and
+  `trapz`/`trapnz`. Branches, raw calls, stack slots, globals, and atomics
+  are rejected with a diagnostic. Integer division traps on a zero divisor;
+  callers must exclude it.
+- `payload %N` and `length %N` give a CLIF block the element base address and
+  element count of a `u8[]`, `u32[]`, or `i64[]` parameter. Loads and stores
+  are accepted only at a payload address plus an integer offset, a payload
+  address cannot leave the block, and a block that reads a payload cannot
+  call. Keeping every access in bounds is a precondition of the enclosing
+  function.
+- `%r = call @symbol(%a, ...) -> <type>` gives a CLIF call a typed result
+  that later instructions can use.
+- E1232 reports an invalid CLIF block: no typed context, a parameter it may
+  not name, a non-array `payload`/`length` operand, or a rejected opcode.
+
+### Changed
+
+- A CLIF block takes its type from its context (a return value, a typed
+  `let`, or a call argument) in every project, not only in Corelib. A block
+  with no typed context is an error instead of a `unit` value.
+- Corelib service authority is decided per service file. A service source is
+  trusted when it sits at its canonical `packages/<package>/src` location as a
+  regular file and is byte-identical to the compiler-embedded source. The
+  whole-tree bundle hash no longer gates authority, so a Corelib with extra
+  packages or files keeps every service. The bundle marker still anchors
+  portable `source=corelib` lock entries, and its hash remains the install
+  integrity check that refreshes a managed Corelib.
+- `call @symbol` inside a CLIF block is authorized, for JIT and AOT, when the
+  symbol is declared by a C-ABI `[Extern]` contract with a library anywhere
+  in the program. A call through the contract is no longer required.
+  Runtime- and host-owned names stay rejected.
+- The CLI, LSP, and updater report version 0.5.3.
+
+### Fixed
+
+- AOT builds link an `[Extern]` library named by a versioned ELF soname such
+  as `libc.so.6` as `-lc` instead of failing on `-lc.so.6`.
+
+## [0.5.2] - 2026-10-02
+
+Entries below accumulated through the 0.5.x releases up to and including 0.5.2.
+
 ### Fixed
 
 - Download published LSP binaries larger than 10 MiB while retaining a bounded
