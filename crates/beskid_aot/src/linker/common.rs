@@ -11,11 +11,33 @@ pub fn canonical_link_library_name(logical: &str) -> String {
         return logical.to_owned();
     }
     let name = logical.strip_prefix("lib").unwrap_or(logical);
+    // A versioned ELF soname (`libc.so.6`, `libssl.so.3.0`) links as its base name: `-lc`.
+    if let Some((base, version)) = name.split_once(".so.")
+        && !version.is_empty()
+        && version.split('.').all(|part| !part.is_empty() && part.bytes().all(|byte| byte.is_ascii_digit()))
+    {
+        return base.to_owned();
+    }
     name.strip_suffix(".so")
         .or_else(|| name.strip_suffix(".dylib"))
         .or_else(|| name.strip_suffix(".a"))
         .unwrap_or(name)
         .to_owned()
+}
+
+#[cfg(test)]
+mod canonical_link_library_name_tests {
+    use super::canonical_link_library_name;
+
+    #[test]
+    fn versioned_sonames_link_by_base_name() {
+        assert_eq!(canonical_link_library_name("libc.so.6"), "c");
+        assert_eq!(canonical_link_library_name("libssl.so.3.0"), "ssl");
+        assert_eq!(canonical_link_library_name("libm.so"), "m");
+        assert_eq!(canonical_link_library_name("libc"), "c");
+        assert_eq!(canonical_link_library_name("libfoo.so.x"), "foo.so.x");
+        assert_eq!(canonical_link_library_name("-lpthread"), "-lpthread");
+    }
 }
 
 pub(super) fn detect_c_compiler() -> String {
