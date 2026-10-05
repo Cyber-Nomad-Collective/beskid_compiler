@@ -81,7 +81,7 @@ mod runtime_owned_ffi_symbol_tests {
         assert!(is_runtime_owned_ffi_symbol("beskid_runtime_anything"));
         assert!(is_runtime_owned_ffi_symbol("beskid_language_anything"));
         assert!(
-            generated::abi_v5_contract::ABI_V5_CORELIB_SERVICE_BINDINGS
+            crate::generated::abi_v5_contract::ABI_V5_CORELIB_SERVICE_BINDINGS
                 .iter()
                 .all(|binding| is_runtime_owned_ffi_symbol(binding.adapter))
         );
