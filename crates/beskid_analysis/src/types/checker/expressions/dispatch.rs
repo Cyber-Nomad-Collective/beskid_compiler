@@ -15,7 +15,16 @@ impl<'a> TypeChecker<'a> {
             Expression::EnumConstructor(constructor) => self.type_enum_constructor_expression(constructor),
             Expression::Assign(assign) => {
                 let target = self.type_expression(&assign.node.target);
-                let value = self.type_expression(&assign.node.value);
+                // A CLIF block has no intrinsic type; an assignment gives it the target's type.
+                let value = match (&assign.node.value.node, target) {
+                    (Expression::ClifBlock(_), Some(target)) => {
+                        let previous = self.contextual_expected_type.replace(target);
+                        let value = self.type_expression(&assign.node.value);
+                        self.contextual_expected_type = previous;
+                        value
+                    }
+                    _ => self.type_expression(&assign.node.value),
+                };
                 if let (Some(target), Some(value)) = (target, value) {
                     let target_is_event_member = match &assign.node.target.node {
                         Expression::Member(member) => self.is_event_member_expression(member),

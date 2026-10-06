@@ -167,6 +167,22 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
         Some(self.query(beskid_queries::clif_block_parameters(self.db, key)).map(|shapes| shapes.to_vec()).unwrap_or_default())
     }
 
+    fn clif_foreign_symbol(&self, symbol: &str) -> bool {
+        if beskid_abi::is_runtime_owned_ffi_symbol(symbol) {
+            return false;
+        }
+        self.input.typed_program().assembly.units.iter().any(|unit| {
+            let unit = beskid_queries::SourceUnitId::new(self.db, unit.path.clone());
+            beskid_queries::extern_contract_declarations_in_unit(self.db, unit).into_iter().any(
+                |(declared, abi, library)| {
+                    declared == symbol
+                        && abi.as_deref() == Some("C")
+                        && library.as_deref().is_some_and(|library| !library.is_empty())
+                },
+            )
+        })
+    }
+
     fn integer_literal(&self, key: AstNodeKey) -> Option<i64> {
         self.integer_literal_impl(key)
     }

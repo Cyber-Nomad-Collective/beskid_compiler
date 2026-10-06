@@ -248,7 +248,8 @@ pub fn host_runtime_target() -> Result<TargetMetadata, JitError> {
 
 /// Resolve extern symbols from libraries already mapped into this process (libc, pthread, …).
 ///
-/// Used for JIT runs on Unix hosts where the dynamic linker has already loaded standard libraries.
+/// Used for JIT runs on Unix hosts where the dynamic linker has already loaded standard libraries;
+/// a symbol the process lacks is looked up in the import's declared library.
 #[cfg(all(not(feature = "extern_dlopen"), unix))]
 fn resolve_process_extern_symbols(imports: &[ExternImport]) -> Result<Vec<(String, *const u8)>, String> {
     use std::ffi::{CStr, CString};
@@ -260,10 +261,7 @@ fn resolve_process_extern_symbols(imports: &[ExternImport]) -> Result<Vec<(Strin
         // libc also supplies the platform-correct RTLD_DEFAULT value: null on
         // glibc, but -2 on Darwin.
         unsafe { libc::dlerror() };
-        #[cfg(target_os = "macos")]
         let mut addr = unsafe { libc::dlsym(libc::RTLD_DEFAULT, c_sym.as_ptr()) };
-        #[cfg(not(target_os = "macos"))]
-        let addr = unsafe { libc::dlsym(libc::RTLD_DEFAULT, c_sym.as_ptr()) };
         // Cranelift's Mach-O import spelling carries the object-file leading
         // underscore, whereas dlsym expects the C source name.
         #[cfg(target_os = "macos")]
@@ -273,6 +271,27 @@ fn resolve_process_extern_symbols(imports: &[ExternImport]) -> Result<Vec<(Strin
             let c_symbol = CString::new(symbol).map_err(|_| format!("bad symbol: {symbol}"))?;
             unsafe { libc::dlerror() };
             addr = unsafe { libc::dlsym(libc::RTLD_DEFAULT, c_symbol.as_ptr()) };
+        }
+        // A symbol the process has not loaded comes from the `[Extern]` contract's library, as
+        // an AOT link of the same program would arrange. The handle stays open for the life of
+        // the process because finalized JIT code keeps the address.
+        if addr.is_null()
+            && let Some(library) = imp.library.as_deref().filter(|library| !library.is_empty())
+        {
+            let c_library = CString::new(library).map_err(|_| format!("bad library: {library}"))?;
+            unsafe { libc::dlerror() };
+            let handle = unsafe { libc::dlopen(c_library.as_ptr(), libc::RTLD_NOW | libc::RTLD_LOCAL) };
+            if handle.is_null() {
+                let error = unsafe { libc::dlerror() };
+                let detail = if error.is_null() {
+                    "library could not be loaded".into()
+                } else {
+                    unsafe { CStr::from_ptr(error) }.to_string_lossy().into_owned()
+                };
+                return Err(format!("dlopen({library}) for {}: {detail}", imp.symbol));
+            }
+            unsafe { libc::dlerror() };
+            addr = unsafe { libc::dlsym(handle, c_sym.as_ptr()) };
         }
         if addr.is_null() {
             let error = unsafe { libc::dlerror() };

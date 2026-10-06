@@ -1,4 +1,4 @@
-use crate::clif_surface::{CLIF_PAYLOAD_ELEMENT_TYPES, parse_clif_surface};
+use crate::clif_surface::{ClifBlockMode, ClifBlockSurface, CLIF_PAYLOAD_ELEMENT_TYPES, parse_clif_surface_in};
 use crate::syntax::{ClifBlockExpression, PrimitiveType, Spanned};
 use crate::types::result::TypeError;
 use crate::types::{TypeId, TypeInfo};
@@ -28,13 +28,29 @@ impl<'a> TypeChecker<'a> {
             });
             return Some(expected);
         }
-        let surface = match parse_clif_surface(&clif.node.body) {
+        self.check_clif_block_body(clif, ClifBlockMode::Value);
+        Some(expected)
+    }
+
+    /// A CLIF block used as an expression statement yields no value; it may end with any
+    /// statement (for example a `store` or a call with no result).
+    pub(in crate::types::checker) fn type_clif_block_statement(&mut self, clif: &Spanned<ClifBlockExpression>) {
+        self.check_clif_block_body(clif, ClifBlockMode::Statement);
+    }
+
+    fn check_clif_block_body(&mut self, clif: &Spanned<ClifBlockExpression>, mode: ClifBlockMode) {
+        let span = clif.span;
+        let surface = match parse_clif_surface_in(&clif.node.body, mode) {
             Ok(surface) => surface,
             Err(error) => {
                 self.errors.push(TypeError::InvalidClifBlock { span, detail: error.to_string() });
-                return Some(expected);
+                return;
             }
         };
+        self.check_clif_parameters(span, &surface);
+    }
+
+    fn check_clif_parameters(&mut self, span: crate::syntax::SpanInfo, surface: &ClifBlockSurface) {
         let Some(parameters) = self.current_clif_parameters.clone() else {
             if !surface.referenced_parameters().is_empty() {
                 self.errors.push(TypeError::InvalidClifBlock {
@@ -42,7 +58,7 @@ impl<'a> TypeChecker<'a> {
                     detail: "clif blocks inside lambdas cannot name parameters with `%N`".to_owned(),
                 });
             }
-            return Some(expected);
+            return;
         };
         for index in surface.referenced_parameters() {
             if index >= parameters.len() {
@@ -94,7 +110,6 @@ impl<'a> TypeChecker<'a> {
                 });
             }
         }
-        Some(expected)
     }
 
     fn is_clif_scalar(&self, type_id: TypeId) -> bool {
@@ -180,11 +195,50 @@ pub i64 Use(i64 value) {
 
     #[test]
     fn clif_block_without_typed_context_is_rejected() {
-        let diagnostics = clif_diagnostics("pub i64 Main() {\n    clif { return %0 };\n    return 0;\n}\n");
+        let diagnostics = clif_diagnostics("pub i64 Main() {\n    let x = clif { return %0 };\n    return 0;\n}\n");
         assert!(
             diagnostics.iter().any(|diagnostic| diagnostic.contains("needs a typed context")),
             "{diagnostics:?}"
         );
+    }
+
+    #[test]
+    fn clif_block_statements_assignments_and_loop_lets_type_check() {
+        let source = r#"
+pub unit Fill(u8[] bytes, i64 value) {
+    clif {
+        %p = payload %0
+        %v = ireduce.i8 %1
+        istore8 %v, %p
+    };
+    return;
+}
+
+pub unit Advance(i64[] cursor) {
+    mut i64 last = 0;
+    while cursor[0] < cursor[1] {
+        i64 next = clif {
+            %p = payload %0
+            %v = load.i64 %p
+            %one = iconst.i64 1
+            %r = iadd %v, %one
+            return %r
+        };
+        cursor[0] = next;
+        last = clif {
+            %k = iconst.i64 2
+            return %k
+        };
+    }
+    cursor[0] = clif {
+        %p = payload %0
+        %v = load.i64 %p
+        return %v
+    };
+    return;
+}
+"#;
+        assert_eq!(clif_diagnostics(source), Vec::<String>::new());
     }
 
     #[test]

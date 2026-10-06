@@ -83,6 +83,10 @@ impl IsleContext<'_, '_, '_, '_> {
             return Some(());
         }
 
+        if kind == NodeKind::ClifBlock {
+            return clif_block::lower_clif_block_for_effect(self, key);
+        }
+
         if generated::constructor_lower_statement(self, key).is_some() {
             return Some(());
         }

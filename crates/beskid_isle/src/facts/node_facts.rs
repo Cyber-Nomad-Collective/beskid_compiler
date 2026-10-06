@@ -202,4 +202,10 @@ pub trait NodeFacts {
     fn clif_block_parameters(&self, _key: AstNodeKey) -> Option<Vec<beskid_queries::ClifParameterShape>> {
         None
     }
+    /// Whether `symbol` named by `clif { call @symbol(...) }` is foreign C code: a method of a
+    /// C-ABI `[Extern]` contract with a library, and not a runtime- or host-owned name. Only such
+    /// a callee may receive a payload address or be called from a block that reads a payload.
+    fn clif_foreign_symbol(&self, _symbol: &str) -> bool {
+        false
+    }
 }

@@ -19,15 +19,20 @@
 //! - `%p = payload %N` yields the element base address of array parameter `N`
 //!   (`u8[]`, `u32[]`, or `i64[]`); `%n = length %N` yields its element count.
 //! - `%r = call @symbol(%a, ...) -> <type>` calls a native symbol; the symbol must be a kit
-//!   platform import or a C-ABI `[Extern]` contract method with a library. A result-less
-//!   `call @symbol(...)` is allowed only as the final statement and returns the block's type.
+//!   platform import or a C-ABI `[Extern]` contract method with a library. In a value block a
+//!   result-less `call @symbol(...)` is allowed only as the final statement and returns the
+//!   block's type.
 //! - `return %x` ends the block and yields `%x` as the block value. A result-less
 //!   `call @symbol(...)` as the final statement also yields the call result.
 //!
+//! A block used as an expression statement ([`ClifBlockMode::Statement`]) yields no value: it
+//! may end with any statement, and a result-less `call @symbol(...)` anywhere calls a symbol
+//! with no result.
+//!
 //! Memory access is restricted to addresses derived from a `payload` value by `iadd`/`isub`
 //! with an integer offset; the caller is responsible for keeping every access in bounds. A
-//! block that reads a payload must not call, so no garbage-collection safepoint can occur
-//! while the derived address is live.
+//! payload address may be passed only to a C-ABI `[Extern]` symbol, and a block that reads a
+//! payload may call only such symbols (checked during lowering, where symbols are known).
 
 use std::collections::HashSet;
 use std::fmt;
@@ -125,7 +130,6 @@ pub const CLIF_ALLOWED_OPCODES: &[&str] = &[
     "vhigh_bits",
     "snarrow",
     "unarrow",
-    "uunarrow",
     "swiden_low",
     "swiden_high",
     "uwiden_low",
@@ -302,8 +306,22 @@ fn error(line: usize, message: impl Into<String>) -> ClifSurfaceError {
     ClifSurfaceError { line, message: message.into() }
 }
 
-/// Parse and validate the surface form of a CLIF block body.
+/// Where a CLIF block appears.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ClifBlockMode {
+    /// The block yields a value of its context's type.
+    Value,
+    /// The block is an expression statement and yields no value.
+    Statement,
+}
+
+/// Parse and validate the surface form of a value CLIF block body.
 pub fn parse_clif_surface(body: &str) -> Result<ClifBlockSurface, ClifSurfaceError> {
+    parse_clif_surface_in(body, ClifBlockMode::Value)
+}
+
+/// Parse and validate the surface form of a CLIF block body in `mode`.
+pub fn parse_clif_surface_in(body: &str, mode: ClifBlockMode) -> Result<ClifBlockSurface, ClifSurfaceError> {
     let mut statements = Vec::new();
     for (index, raw) in body.lines().enumerate() {
         let line_number = index + 1;
@@ -319,6 +337,7 @@ pub fn parse_clif_surface(body: &str) -> Result<ClifBlockSurface, ClifSurfaceErr
     let last_line = last.line();
     match last {
         ClifStatement::Return { .. } | ClifStatement::Call { result: None, .. } => {}
+        _ if mode == ClifBlockMode::Statement => {}
         _ => {
             return Err(error(
                 last_line,
@@ -336,7 +355,7 @@ pub fn parse_clif_surface(body: &str) -> Result<ClifBlockSurface, ClifSurfaceErr
                 (Vec::new(), vec![result])
             }
             ClifStatement::Call { result, arguments, .. } => {
-                if result.is_none() && position != final_index {
+                if result.is_none() && position != final_index && mode == ClifBlockMode::Value {
                     return Err(error(line, "a result-less call is only allowed as the final statement"));
                 }
                 (arguments.iter().collect(), result.iter().collect())
@@ -361,16 +380,7 @@ pub fn parse_clif_surface(body: &str) -> Result<ClifBlockSurface, ClifSurfaceErr
             }
         }
     }
-    let surface = ClifBlockSurface { statements };
-    if surface.uses_payload()
-        && let Some(call) = surface.statements.iter().find(|statement| matches!(statement, ClifStatement::Call { .. }))
-    {
-        return Err(error(
-            call.line(),
-            "a clif block that reads an array payload must not call: calls are garbage-collection safepoints",
-        ));
-    }
-    Ok(surface)
+    Ok(ClifBlockSurface { statements })
 }
 
 fn strip_comment(line: &str) -> &str {
@@ -650,13 +660,29 @@ mod tests {
                 .contains("more than once")
         );
         assert!(parse_clif_surface("return %0\nreturn %0").unwrap_err().message.contains("final statement"));
+        assert!(parse_clif_surface("%p = payload %x\nreturn %p").is_err());
+    }
+
+    #[test]
+    fn statement_blocks_end_with_any_statement() {
+        let store = parse_clif_surface_in("%p = payload %0\nstore %1, %p", ClifBlockMode::Statement)
+            .expect("statement block ending in a store");
+        assert_eq!(store.statements.len(), 2);
+        parse_clif_surface_in("call @memset(%0, %1, %2)\ncall @free(%0)", ClifBlockMode::Statement)
+            .expect("result-less calls anywhere in a statement block");
+        assert!(parse_clif_surface("%p = payload %0\nstore %1, %p").unwrap_err().message.contains("must end with"));
         assert!(
-            parse_clif_surface("%p = payload %0\n%r = call @labs(%1) -> i64\nreturn %r")
+            parse_clif_surface("call @memset(%0, %1, %2)\ncall @free(%0)")
                 .unwrap_err()
                 .message
-                .contains("safepoint")
+                .contains("final statement")
         );
-        assert!(parse_clif_surface("%p = payload %x\nreturn %p").is_err());
+    }
+
+    #[test]
+    fn payload_blocks_may_name_calls() {
+        // Whether the callee may receive or outlive a payload address is a lowering decision.
+        parse_clif_surface("%p = payload %0\n%r = call @labs(%1) -> i64\nreturn %r").expect("payload block with a call");
     }
 
     #[test]

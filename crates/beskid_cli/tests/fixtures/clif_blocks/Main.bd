@@ -81,6 +81,59 @@ pub i64 Twice(i64 value) {
     return doubled;
 }
 
+/// C53-1: a clif block as a loop-body `let`, as an assignment value, and as a call argument in a
+/// `unit` function takes its type from that context.
+pub unit Advance(i64[] cursor) {
+    while cursor[0] < cursor[1] {
+        i64 next = clif {
+            %p = payload %0
+            %v = load.i64 %p
+            %one = iconst.i64 1
+            %r = iadd %v, %one
+            return %r
+        };
+        cursor[0] = next;
+    }
+    cursor[1] = clif {
+        %p = payload %0
+        %v = load.i64 %p
+        %two = iconst.i64 2
+        %r = imul %v, %two
+        return %r
+    };
+    Record(cursor, clif {
+        %k = iconst.i64 7
+        return %k
+    });
+    return;
+}
+
+pub unit Record(i64[] cursor, i64 value) {
+    cursor[2] = value;
+    return;
+}
+
+/// An expression-statement block yields no value and may end with a store.
+pub unit Bump(u32[] words) {
+    clif {
+        %p = payload %0
+        %w = load.i32 %p
+        %one = iconst.i32 1
+        %n = iadd %w, %one
+        store %n, %p
+    };
+    return;
+}
+
+/// `uadd_overflow_cin` has no native x86-64 lowering; import emulates it.
+pub i64 AddWithCarry(i64 left, i64 right) {
+    return clif {
+        %carry = iconst.i8 1
+        %s, %c = uadd_overflow_cin %0, %1, %carry
+        return %s
+    };
+}
+
 test block_xor {
     Assert.Equal(Xor(12, 10), 6, "bxor");
 }
@@ -119,6 +172,25 @@ test block_length_and_let_context {
     Assert.Equal(Twice(21), 42, "typed let context");
 }
 
+test block_loop_assignment_and_argument_contexts {
+    mut i64[] cursor = [0_i64, 5_i64, 0_i64];
+    Advance(cursor);
+    Assert.Equal(cursor[0], 5, "loop-body let");
+    Assert.Equal(cursor[1], 10, "assignment value");
+    Assert.Equal(cursor[2], 7, "call argument in a unit function");
+}
+
+test block_statement_store {
+    mut u32[] words = [41_u32];
+    Bump(words);
+    Assert.Equal(words[0], 42_u32, "statement block");
+}
+
+test block_carry_in {
+    Assert.Equal(AddWithCarry(-1, 0), 0, "carry in wraps");
+    Assert.Equal(AddWithCarry(40, 1), 42, "carry in adds one");
+}
+
 pub i64 Main() {
     if Xor(12, 10) != 6 {
         return 1;
@@ -151,6 +223,19 @@ pub i64 Main() {
     }
     if Twice(21) != 42 {
         return 9;
+    }
+    mut i64[] cursor = [0_i64, 5_i64, 0_i64];
+    Advance(cursor);
+    if cursor[0] != 5 || cursor[1] != 10 || cursor[2] != 7 {
+        return 10;
+    }
+    mut u32[] counter = [41_u32];
+    Bump(counter);
+    if counter[0] != 42_u32 {
+        return 11;
+    }
+    if AddWithCarry(40, 1) != 42 {
+        return 12;
     }
     return 0;
 }

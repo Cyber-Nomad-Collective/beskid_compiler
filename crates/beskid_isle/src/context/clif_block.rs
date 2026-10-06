@@ -10,16 +10,19 @@
 //! Memory safety contract: loads and stores are only accepted at addresses derived from a
 //! `payload %N` value by `iadd`/`isub` with a non-address offset. Bounds are the caller's
 //! responsibility (a precondition of the enclosing Beskid function). A block that reads a payload
-//! cannot call, so no safepoint can run while a derived address is live; Beskid's collector is
-//! non-moving, so the payload of an array parameter is stable for the block's duration.
+//! may call only foreign C symbols (C-ABI `[Extern]` contract methods), which are also the only
+//! callees that may receive a payload address. Foreign code reaches no Beskid safepoint except
+//! through a callback; the array is a parameter of the enclosing function, which roots it for the
+//! whole call; and Beskid's collector is non-moving, so the payload stays valid throughout.
 
 use std::collections::{HashMap, HashSet};
 
 use beskid_analysis::clif_surface::{
-    CLIF_ALLOWED_OPCODES, CLIF_LOAD_OPCODES, CLIF_STORE_OPCODES, ClifBlockSurface, ClifOperand, ClifStatement,
-    parse_clif_surface,
+    CLIF_ALLOWED_OPCODES, CLIF_LOAD_OPCODES, CLIF_STORE_OPCODES, ClifBlockMode, ClifBlockSurface, ClifOperand,
+    ClifStatement, parse_clif_surface_in,
 };
 use beskid_queries::ClifParameterShape;
+use cranelift_codegen::ir::condcodes::IntCC;
 use cranelift_codegen::ir::{
     AbiParam, ExtFuncData, ExternalName, Function, InstBuilder, InstBuilderBase, InstructionData, MemFlagsData, Opcode,
     Signature,
@@ -31,25 +34,47 @@ use super::IsleContext;
 use crate::errors::{LoweringError, LoweringErrorKind};
 use crate::facts::AstNodeKey;
 
-/// Lower one CLIF block, recording an [`LoweringErrorKind::InvalidClifBlock`] on failure.
+/// Lower one value CLIF block, recording an [`LoweringErrorKind::InvalidClifBlock`] on failure.
 pub(super) fn lower_clif_block(context: &mut IsleContext<'_, '_, '_, '_>, key: AstNodeKey) -> Option<Value> {
+    let result_type = context
+        .facts
+        .scalar_type(key)
+        .or_else(|| context.builder.func.signature.returns.first().map(|parameter| parameter.value_type));
+    let Some(result_type) = result_type else {
+        context.pending_error = Some(LoweringError {
+            key,
+            kind: LoweringErrorKind::InvalidClifBlock("clif block has no typed context".to_owned()),
+        });
+        return None;
+    };
+    lower_in(context, key, ClifBlockMode::Value, Some(result_type)).map(|value| value.expect("value blocks yield"))
+}
+
+/// Lower one CLIF block used as an expression statement; it yields no value.
+pub(super) fn lower_clif_block_for_effect(context: &mut IsleContext<'_, '_, '_, '_>, key: AstNodeKey) -> Option<()> {
+    lower_in(context, key, ClifBlockMode::Statement, None).map(|_| ())
+}
+
+fn lower_in(
+    context: &mut IsleContext<'_, '_, '_, '_>,
+    key: AstNodeKey,
+    mode: ClifBlockMode,
+    result_type: Option<Type>,
+) -> Option<Option<Value>> {
     let result = (|| {
         let body = context.facts.clif_block_body(key).ok_or_else(|| "clif block body is unavailable".to_owned())?;
-        let surface = parse_clif_surface(&body).map_err(|error| error.to_string())?;
-        let result_type = context.facts.scalar_type(key).or_else(|| {
-            context.builder.func.signature.returns.first().map(|parameter| parameter.value_type)
-        });
-        let result_type = result_type.ok_or_else(|| "clif block has no typed context".to_owned())?;
+        let surface = parse_clif_surface_in(&body, mode).map_err(|error| error.to_string())?;
         let shapes = context.facts.clif_block_parameters(key);
         ClifLowering {
             context: &mut *context,
             shapes,
             result_type,
+            reads_payload: surface.uses_payload(),
             locals: HashMap::new(),
             addresses: HashSet::new(),
             remapped: HashMap::new(),
         }
-            .lower(&surface)
+        .lower(&surface)
     })();
     match result {
         Ok(value) => Some(value),
@@ -65,7 +90,10 @@ struct ClifLowering<'c, 'b, 'f, 'facts, 'i> {
     /// `None` only for fact providers without parameter shapes (unit-test fixtures); production
     /// codegen always supplies shapes, so payload access then fails closed.
     shapes: Option<Vec<ClifParameterShape>>,
-    result_type: Type,
+    /// The block's value type; `None` for a statement block.
+    result_type: Option<Type>,
+    /// The block reads an array payload, so it may call only foreign C symbols.
+    reads_payload: bool,
     locals: HashMap<String, Value>,
     /// Values derived from a `payload` base address.
     addresses: HashSet<Value>,
@@ -74,7 +102,7 @@ struct ClifLowering<'c, 'b, 'f, 'facts, 'i> {
 }
 
 impl ClifLowering<'_, '_, '_, '_, '_> {
-    fn lower(mut self, surface: &ClifBlockSurface) -> Result<Value, String> {
+    fn lower(mut self, surface: &ClifBlockSurface) -> Result<Option<Value>, String> {
         let mut pending: Vec<&ClifStatement> = Vec::new();
         for statement in &surface.statements {
             if let ClifStatement::Instruction { .. } = statement {
@@ -98,21 +126,45 @@ impl ClifLowering<'_, '_, '_, '_, '_> {
                     self.locals.insert(result.clone(), value);
                 }
                 ClifStatement::Call { line, result, symbol, arguments, result_type } => {
-                    let value = self.emit_call(*line, symbol, arguments, result_type.as_deref())?;
-                    match result {
-                        Some(name) => {
+                    let returns = match (result_type.as_deref(), result) {
+                        (Some(name), _) => Some(
+                            scalar_type_named(name)
+                                .ok_or_else(|| format!("clif block line {line}: unsupported call result type `{name}`"))?,
+                        ),
+                        // A result-less call ending a value block yields the block's value.
+                        (None, None) => self.result_type,
+                        (None, Some(_)) => unreachable!("the surface requires a typed call result"),
+                    };
+                    let value = self.emit_call(*line, symbol, arguments, returns)?;
+                    match (result, value) {
+                        (Some(name), Some(value)) => {
                             self.locals.insert(name.clone(), value);
                         }
-                        None => return self.block_value(*line, value),
+                        (None, Some(value)) if self.result_type.is_some() => {
+                            return self.block_value(*line, value).map(Some);
+                        }
+                        (None, _) => {}
+                        (Some(_), None) => {
+                            return Err(format!("clif block line {line}: call to `@{symbol}` produced no value"));
+                        }
                     }
                 }
                 ClifStatement::Return { line, value } => {
                     let value = self.value_operand(*line, value)?;
-                    return self.block_value(*line, value);
+                    return match self.result_type {
+                        Some(_) => self.block_value(*line, value).map(Some),
+                        None => Ok(None),
+                    };
                 }
             }
         }
-        Err("a clif block must end with `return %value`".to_owned())
+        if !pending.is_empty() {
+            self.emit_instructions(&pending)?;
+        }
+        match self.result_type {
+            None => Ok(None),
+            Some(_) => Err("a clif block must end with `return %value`".to_owned()),
+        }
     }
 
     fn pointer_type(&self) -> Type {
@@ -121,13 +173,12 @@ impl ClifLowering<'_, '_, '_, '_, '_> {
 
     fn block_value(&self, line: usize, value: Value) -> Result<Value, String> {
         let actual = self.context.builder.func.dfg.value_type(value);
-        if actual != self.result_type {
-            return Err(format!(
-                "clif block line {line}: the block yields `{actual}` but its context expects `{}`",
-                self.result_type
-            ));
+        match self.result_type {
+            Some(expected) if actual != expected => Err(format!(
+                "clif block line {line}: the block yields `{actual}` but its context expects `{expected}`"
+            )),
+            _ => Ok(value),
         }
-        Ok(value)
     }
 
     fn parameter(&self, line: usize, index: usize) -> Result<Value, String> {
@@ -165,8 +216,8 @@ impl ClifLowering<'_, '_, '_, '_, '_> {
         }
     }
 
-    /// Like [`Self::operand`], but the value leaves the block's address discipline: payload
-    /// addresses may not be returned or passed to calls.
+    /// Like [`Self::operand`], but the value leaves the block: payload addresses may not be
+    /// returned.
     fn value_operand(&self, line: usize, operand: &ClifOperand) -> Result<Value, String> {
         let value = self.operand(line, operand)?;
         if self.addresses.contains(&value) {
@@ -195,26 +246,42 @@ impl ClifLowering<'_, '_, '_, '_, '_> {
         Ok(builder.ins().load(pointer_type, MemFlagsData::trusted(), array, offset))
     }
 
+    /// Emit `call @symbol(...)`. A payload address may only be passed to foreign C code, and a
+    /// block that reads a payload may only call foreign C code: such a callee cannot reach a
+    /// Beskid safepoint except through a callback, the array parameter stays rooted by the
+    /// enclosing function for the whole call, and the collector never moves objects, so the
+    /// address stays valid during and after the call.
     fn emit_call(
         &mut self,
         line: usize,
         symbol: &str,
         arguments: &[ClifOperand],
-        annotation: Option<&str>,
-    ) -> Result<Value, String> {
-        let arguments =
-            arguments.iter().map(|argument| self.value_operand(line, argument)).collect::<Result<Vec<_>, _>>()?;
-        let return_type = match annotation {
-            Some(name) => scalar_type_named(name)
-                .ok_or_else(|| format!("clif block line {line}: unsupported call result type `{name}`"))?,
-            None => self.result_type,
-        };
+        returns: Option<Type>,
+    ) -> Result<Option<Value>, String> {
+        let foreign = self.context.facts.clif_foreign_symbol(symbol);
+        let mut values = Vec::with_capacity(arguments.len());
+        for argument in arguments {
+            let value = self.operand(line, argument)?;
+            if self.addresses.contains(&value) && !foreign {
+                return Err(format!(
+                    "clif block line {line}: payload address `{argument}` may only be passed to a symbol of a C-ABI \
+                     `[Extern]` contract, and `@{symbol}` is not one"
+                ));
+            }
+            values.push(value);
+        }
+        if self.reads_payload && !foreign {
+            return Err(format!(
+                "clif block line {line}: a clif block that reads an array payload may only call symbols of a C-ABI \
+                 `[Extern]` contract, and `@{symbol}` is not one"
+            ));
+        }
         let builder = &mut self.context.builder;
         let mut signature = Signature::new(builder.func.signature.call_conv);
-        for argument in &arguments {
-            signature.params.push(AbiParam::new(builder.func.dfg.value_type(*argument)));
+        for value in &values {
+            signature.params.push(AbiParam::new(builder.func.dfg.value_type(*value)));
         }
-        signature.returns.push(AbiParam::new(return_type));
+        signature.returns.extend(returns.map(AbiParam::new));
         let signature = builder.func.import_signature(signature);
         let callee = builder.func.import_function(ExtFuncData {
             name: ExternalName::testcase(symbol),
@@ -222,12 +289,8 @@ impl ClifLowering<'_, '_, '_, '_, '_> {
             colocated: false,
             patchable: false,
         });
-        let call = builder.ins().call(callee, &arguments);
-        builder
-            .inst_results(call)
-            .first()
-            .copied()
-            .ok_or_else(|| format!("clif block line {line}: call to `@{symbol}` produced no value"))
+        let call = builder.ins().call(callee, &values);
+        Ok(builder.inst_results(call).first().copied())
     }
 
     fn emit_instructions(&mut self, statements: &[&ClifStatement]) -> Result<(), String> {
@@ -373,6 +436,14 @@ impl ClifLowering<'_, '_, '_, '_, '_> {
                 })
                 .collect::<Result<Vec<_>, _>>()?;
             let result_is_address = self.check_address_discipline(line, &opcode_name, &arguments)?;
+            if let Some(results) = self.emulate_carry_chain(opcode, &arguments) {
+                let source_results = source.dfg.inst_results(instruction).to_vec();
+                if source_results.len() != results.len() {
+                    return Err(format!("clif block line {line}: `{opcode_name}` result count changed while copying"));
+                }
+                self.remapped.extend(source_results.into_iter().zip(results));
+                continue;
+            }
 
             let mut data: InstructionData = source.dfg.insts[instruction];
             for (slot, argument) in data.arguments_mut(&mut source.dfg.value_lists).iter_mut().zip(&arguments) {
@@ -401,6 +472,47 @@ impl ClifLowering<'_, '_, '_, '_, '_> {
             }
         }
         Ok(())
+    }
+
+    /// Carry-in and borrow-in arithmetic verifies but has no instruction selection on x86-64 or
+    /// aarch64 in Cranelift 0.136. Emit it as two flag-producing operations instead: the carry
+    /// (borrow) out of an unsigned chain is the `bor` of both steps (they cannot both be set),
+    /// and the signed overflow of `x + y + c` (`x - y - b`) is the `bxor` of both steps (a second
+    /// wrap undoes the first).
+    fn emulate_carry_chain(&mut self, opcode: Opcode, arguments: &[Value]) -> Option<[Value; 2]> {
+        if !matches!(
+            opcode,
+            Opcode::UaddOverflowCin | Opcode::SaddOverflowCin | Opcode::UsubOverflowBin | Opcode::SsubOverflowBin
+        ) {
+            return None;
+        }
+        let [x, y, flag] = *arguments else { return None };
+        let builder = &mut self.context.builder;
+        let ty = builder.func.dfg.value_type(x);
+        let bit = builder.ins().icmp_imm_u(IntCC::NotEqual, flag, 0);
+        let carry = if ty == types::I8 { bit } else { builder.ins().uextend(ty, bit) };
+        Some(match opcode {
+            Opcode::UaddOverflowCin => {
+                let (sum, first) = builder.ins().uadd_overflow(x, y);
+                let (sum, second) = builder.ins().uadd_overflow(sum, carry);
+                [sum, builder.ins().bor(first, second)]
+            }
+            Opcode::SaddOverflowCin => {
+                let (sum, first) = builder.ins().sadd_overflow(x, y);
+                let (sum, second) = builder.ins().sadd_overflow(sum, carry);
+                [sum, builder.ins().bxor(first, second)]
+            }
+            Opcode::UsubOverflowBin => {
+                let (difference, first) = builder.ins().usub_overflow(x, y);
+                let (difference, second) = builder.ins().usub_overflow(difference, carry);
+                [difference, builder.ins().bor(first, second)]
+            }
+            _ => {
+                let (difference, first) = builder.ins().ssub_overflow(x, y);
+                let (difference, second) = builder.ins().ssub_overflow(difference, carry);
+                [difference, builder.ins().bxor(first, second)]
+            }
+        })
     }
 
     /// Enforce payload address provenance for one instruction. Returns whether its result is

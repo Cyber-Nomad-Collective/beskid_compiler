@@ -32,12 +32,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   that later instructions can use.
 - E1232 reports an invalid CLIF block: no typed context, a parameter it may
   not name, a non-array `payload`/`length` operand, or a rejected opcode.
+- A `clif { ... }` block can be an expression statement. It yields no value
+  and can end with any statement, for example a `store` or a call whose
+  result is not used. A result-less `call @symbol(...)` in such a block calls
+  a symbol with no result.
+- A CLIF block can pass a `payload` address to a symbol of a C-ABI `[Extern]`
+  contract, for example `call @memcpy(%dst, %src, %n)` or OpenSSL
+  `call @SHA256(%p, %n, %out)`. Foreign C code reaches no Beskid safepoint
+  except through a callback, the array is a parameter that the enclosing
+  function keeps rooted for the whole call, and the collector does not move
+  objects, so the address stays valid during and after the call. A block that
+  reads a payload can call only such symbols; a payload address passed to any
+  other symbol, including runtime- and host-owned names, is an E1232 error.
 
 ### Changed
 
 - A CLIF block takes its type from its context (a return value, a typed
-  `let`, or a call argument) in every project, not only in Corelib. A block
-  with no typed context is an error instead of a `unit` value.
+  `let`, an assignment target, or a call argument) in every project, not only
+  in Corelib. A block with no typed context, such as an inferred `let`, is an
+  error instead of a `unit` value.
+- The JIT compiles with Cranelift `opt_level=speed` (it used `none`). AOT
+  release builds already used `speed`; AOT debug builds keep `none`.
+- A store into an array of `bool`, `u8`, `i32`, `u32`, `i64`, `f64`, or `char`
+  no longer calls the array write barrier. Such elements are never traced;
+  the old check compared CLIF types, and `i64` has the pointer type on 64-bit
+  targets.
+- A function whose only calls are GC root registrations no longer registers
+  roots. Collection runs only inside a call on the thread that owns the heap,
+  so such a function cannot reach a safepoint while its roots would be live.
+  A direct call no longer takes a snapshot root for an argument that is a
+  rooted local when every later argument is a local read or a scalar literal:
+  the local's own root covers the call. Array kernels no longer pay two
+  runtime calls per array argument.
+- `uadd_overflow_cin`, `sadd_overflow_cin`, `usub_overflow_bin`, and
+  `ssub_overflow_bin` are emulated during CLIF import with two flag-producing
+  instructions, because Cranelift 0.136 has no x86-64 or aarch64 lowering for
+  them. `uunarrow` is no longer admitted (x86-64 lowers only one special
+  pattern). A test compiles every admitted opcode for x86-64 and aarch64.
+- On Unix the JIT loads an `[Extern]` contract's library when the process does
+  not already provide the symbol, as an AOT link of the same program does.
 - Corelib service authority is decided per service file. A service source is
   trusted when it sits at its canonical `packages/<package>/src` location as a
   regular file and is byte-identical to the compiler-embedded source. The
@@ -55,6 +88,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - AOT builds link an `[Extern]` library named by a versioned ELF soname such
   as `libc.so.6` as `-lc` instead of failing on `-lc.so.6`.
+- A CLIF block inside a loop body, as an assignment value, or as a call
+  argument in a `unit` function no longer fails with "no typed context". The
+  block's type now comes from its own context; before, lowering fell back to
+  the enclosing function's return type.
 
 ## [0.5.2] - 2026-10-02
 
