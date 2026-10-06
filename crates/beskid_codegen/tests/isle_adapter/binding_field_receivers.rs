@@ -320,3 +320,58 @@ bool Main(Result<Request, HttpError> head) {
          lower through the AggregateField owner proof",
     );
 }
+
+/// C53-2: storing into a scalar array never publishes through the write barrier (an `i64`
+/// element has the pointer's CLIF type but is not traced), a kernel that makes no other call
+/// registers no GC roots, and a caller passing a rooted local array takes no snapshot root.
+#[test]
+fn scalar_array_kernel_has_no_barrier_or_root_calls() {
+    let (input, isa, root) = item_fixture_with_root(
+        r#"
+unit Step(i64[] state, i64 index) {
+    state[index] = state[index] + 1_i64;
+    return;
+}
+unit Drive(i64[] state) {
+    Step(state, 0_i64);
+    return;
+}
+"#,
+    );
+    let functions = find_function_definitions(input.database(), root);
+    let artifact = lower_syntax_program(
+        &input,
+        isa.as_ref(),
+        &[
+            SyntaxModuleItem { key: functions[0], symbol: "Step".into() },
+            SyntaxModuleItem { key: functions[1], symbol: "Drive".into() },
+        ],
+    )
+    .expect("scalar array kernel lowers");
+    let clif_of = |prefix: &str| {
+        artifact
+            .functions
+            .iter()
+            .find(|function| function.name.starts_with(prefix))
+            .unwrap_or_else(|| panic!("lowered {prefix}"))
+            .function
+            .display()
+            .to_string()
+    };
+    // Count executed calls of `symbol` (an unused import declaration may remain in the preamble).
+    let calls_to = |clif: &str, symbol: &str| {
+        let references = clif
+            .lines()
+            .filter(|line| line.contains(&format!("= %{symbol} ")))
+            .filter_map(|line| line.split('=').next().map(|name| name.trim().to_owned()))
+            .collect::<Vec<_>>();
+        clif.lines().filter(|line| references.iter().any(|name| line.contains(&format!("call {name}(")))).count()
+    };
+    let step = clif_of("Step");
+    assert_eq!(calls_to(&step, "beskid_rt_v5_array_write_barrier"), 0, "{step}");
+    assert_eq!(calls_to(&step, "gc_register_root") + calls_to(&step, "gc_unregister_root"), 0, "{step}");
+    // Drive calls Step, so it keeps its own parameter root, but takes no snapshot root for the
+    // rooted local it passes.
+    let drive = clif_of("Drive");
+    assert_eq!(calls_to(&drive, "gc_register_root"), 1, "Drive registers its parameter root only:\n{drive}");
+}

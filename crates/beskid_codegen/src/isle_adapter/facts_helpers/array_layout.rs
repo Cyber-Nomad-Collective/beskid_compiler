@@ -27,7 +27,7 @@ impl SyntaxNodeFacts<'_> {
         let element = map_signature_type(self.isa?, plan.element_type)?;
         let stride = u32::try_from(plan.stride).ok()?;
         let length = u32::try_from(plan.length).ok()?;
-        Some(beskid_isle::ArrayLayout::new(element, stride, length, plan.alignment.ilog2() as u8))
+        Some(scalar_aware_array_layout(plan.element_type, element, stride, length, plan.alignment.ilog2() as u8))
     }
 
     /// Layout for a `bulk`-parameter call's packed array, keyed on the `CallExpression` node.
@@ -41,7 +41,7 @@ impl SyntaxNodeFacts<'_> {
         let element = map_signature_type(self.isa?, plan.element_type)?;
         let stride = u32::try_from(plan.stride).ok()?;
         let length = u32::try_from(plan.length).ok()?;
-        Some(beskid_isle::ArrayLayout::new(element, stride, length, plan.alignment.ilog2() as u8))
+        Some(scalar_aware_array_layout(plan.element_type, element, stride, length, plan.alignment.ilog2() as u8))
     }
 
     pub(in crate::isle_adapter) fn typed_array_plan(&self, key: AstNodeKey) -> Option<crate::ArrayStaticPlan> {
@@ -56,7 +56,7 @@ impl SyntaxNodeFacts<'_> {
         let element = map_signature_type(self.isa?, plan.element_type)?;
         let stride = u32::try_from(plan.stride).ok()?;
         let length = u32::try_from(plan.length).ok()?;
-        Some(beskid_isle::ArrayLayout::new(element, stride, length, plan.alignment.ilog2() as u8))
+        Some(scalar_aware_array_layout(plan.element_type, element, stride, length, plan.alignment.ilog2() as u8))
     }
 
     /// The bulk calling-convention fact for the callee of one `CallExpression`.

@@ -379,6 +379,10 @@ fn lower_resolved_syntax_program(
     for import in clif_declared_extern_imports(input, &functions, &extern_imports) {
         extern_imports.push(import);
     }
+    // A function whose only calls are root registrations cannot reach a collection; drop them.
+    for function in &mut functions {
+        beskid_isle::elide_leaf_function_roots(&mut function.function);
+    }
 
     let closure_static_plans = collect_closure_static_plans(input, items, &trampolines, &lambda_trampolines);
     let event_handler_wrapper_required = event_handler_wrapper_required(input, items);

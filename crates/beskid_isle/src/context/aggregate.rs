@@ -68,7 +68,7 @@ macro_rules! generated_aggregate_methods {
                     .and_then(|offset| i32::try_from(offset).ok())?;
                 let address = self.builder.ins().iadd_imm_s(data, i64::from(offset));
                 self.builder.ins().store(MemFlagsData::new(), value, address, 0);
-                if layout.element_type == pointer {
+                if layout.needs_write_barrier(pointer) {
                     let barrier = self.import_runtime_helper(
                         "beskid_rt_v5_array_write_barrier",
                         &[pointer, pointer],
@@ -172,7 +172,7 @@ macro_rules! generated_aggregate_methods {
             let data = self.builder.ins().load(pointer_type, MemFlagsData::new(), base, 0);
             let address = self.builder.ins().iadd(data, offset);
             self.builder.ins().store(MemFlagsData::new(), value, address, 0);
-            if layout.element_type == pointer_type {
+            if layout.needs_write_barrier(pointer_type) {
                 let barrier = self.import_runtime_helper(
                     "beskid_rt_v5_array_write_barrier",
                     &[pointer_type, pointer_type],

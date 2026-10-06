@@ -20,6 +20,7 @@ mod emitter;
 mod errors;
 mod facts;
 mod layout;
+mod root_elision;
 
 pub use clif_primitives::ClifPrimitives;
 pub use context::{CallImporter, IsleContext, StringInterner, lower_expression, lower_statement};
@@ -28,6 +29,7 @@ pub use emitter::{EmissionServices, FunctionEmitter, ItemStatementEmission};
 pub use errors::{FunctionEmissionError, LoweringError, LoweringErrorKind, StringMaterializationError};
 pub use facts::*;
 pub use layout::*;
+pub use root_elision::elide_leaf_function_roots;
 
 include!(concat!(env!("OUT_DIR"), "/beskid_isle_metadata.rs"));
 

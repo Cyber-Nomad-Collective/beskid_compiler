@@ -46,7 +46,7 @@ impl IsleContext<'_, '_, '_, '_> {
                 u32::try_from(index).ok()?.checked_mul(layout.stride).and_then(|offset| i32::try_from(offset).ok())?;
             let address = self.builder.ins().iadd_imm_s(data, i64::from(offset));
             self.builder.ins().store(MemFlagsData::new(), value, address, 0);
-            if layout.element_type == pointer {
+            if layout.needs_write_barrier(pointer) {
                 let barrier = self.import_runtime_helper(
                     "beskid_rt_v5_array_write_barrier",
                     &[pointer, pointer],
