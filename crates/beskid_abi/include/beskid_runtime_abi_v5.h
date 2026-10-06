@@ -17,6 +17,7 @@ struct BeskidStr;
 #define BESKID_TRAP_NAME_8 "abi_or_layout_mismatch"
 #define BESKID_TRAP_NAME_9 "unreachable_or_isle_invariant"
 #define BESKID_TRAP_NAME_10 "runtime_internal_corruption"
+#define BESKID_TRAP_NAME_11 "extern_unavailable"
 #if defined(__GNUC__) || defined(__clang__)
 __attribute__((unused))
 #endif
@@ -32,6 +33,7 @@ static inline const char *BESKID_TRAP_NAME(unsigned char code) {
         case 8: return BESKID_TRAP_NAME_8;
         case 9: return BESKID_TRAP_NAME_9;
         case 10: return BESKID_TRAP_NAME_10;
+        case 11: return BESKID_TRAP_NAME_11;
         default: return "unknown";
     }
 }

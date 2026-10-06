@@ -11307,6 +11307,10 @@
     {
       "name": "runtime_internal_corruption",
       "code": 10
+    },
+    {
+      "name": "extern_unavailable",
+      "code": 11
     }
   ],
   "statuses": [

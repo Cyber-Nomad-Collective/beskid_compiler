@@ -1979,6 +1979,7 @@ trap "scheduler_deadlock" { code = 7 }
 trap "abi_or_layout_mismatch" { code = 8 }
 trap "unreachable_or_isle_invariant" { code = 9 }
 trap "runtime_internal_corruption" { code = 10 }
+trap "extern_unavailable" { code = 11 }
 
 audit {
   forbidden_symbol_families = [rust, _rust, __rust, "core::panicking", "std::panicking", "alloc::alloc", panic, _Unwind, __Unwind, eh_personality, gcc_personality, abfall, corosensei]

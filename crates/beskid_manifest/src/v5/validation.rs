@@ -102,8 +102,8 @@ pub(super) fn validate(manifest: &RuntimeManifestV5) -> Result<(), String> {
         return Err("beskid_rt_v5_trap must be noreturn".into());
     }
     let trap_codes = manifest.traps.iter().map(|trap| trap.code).collect::<BTreeSet<_>>();
-    if trap_codes != (1..=10).collect() {
-        return Err("trap codes must be exactly 1 through 10".into());
+    if trap_codes != (1..=11).collect() {
+        return Err("trap codes must be exactly 1 through 11".into());
     }
     unique(manifest.traps.iter().map(|trap| trap.name.as_str()), "trap")?;
     if manifest.traps.iter().any(|trap| trap.name.is_empty()) {

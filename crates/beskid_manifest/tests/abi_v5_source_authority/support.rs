@@ -72,6 +72,7 @@ trap "deadlock" { code = 7 }
 trap "abi" { code = 8 }
 trap "unreachable" { code = 9 }
 trap "corruption" { code = 10 }
+trap "extern_unavailable" { code = 11 }
 assembly "beskid_arch_v5_context_switch" {
   params = [{ name = from, type = pointer }, { name = to, type = pointer }]
   returns = void
