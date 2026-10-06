@@ -16,6 +16,9 @@ case "${1:-}" in
     rsync -az --delete --chmod=Dugo+rwx,Fugo+rw -e "ssh -o BatchMode=yes -J $JUMP" \
       --exclude target --exclude '.git' --exclude 'obj/' --exclude 'Project.lock.tmp' \
       "$ROOT/" "$HOST:$HOST_DIR/"
+    # The container has no CAP_DAC_OVERRIDE, and --chmod does not reach unchanged directories;
+    # tests that write beside the checkout need it world-writable.
+    "${SSH[@]}" "chmod -R a+rwX $HOST_DIR"
     echo "synced $ROOT -> $HOST:$HOST_DIR"
     ;;
   run)
