@@ -343,7 +343,12 @@ pub fn declare_validated_extern_imports<M: Module>(
         if func_ids.contains_key(symbol) {
             continue;
         }
-        let id = module.declare_function(symbol, Linkage::Import, sig).map_err(ExternDeclarationError::Module)?;
+        // An optional `[Extern]` symbol may be absent: declare it preemptible, which a JIT
+        // resolves to null when no address is supplied and an object file records as a weak
+        // undefined reference. Generated code reaches it only through a null-checking thunk.
+        let optional = artifact.extern_imports.iter().any(|import| import.optional && &import.symbol == symbol);
+        let linkage = if optional { Linkage::Preemptible } else { Linkage::Import };
+        let id = module.declare_function(symbol, linkage, sig).map_err(ExternDeclarationError::Module)?;
         func_ids.insert(symbol.clone(), id);
     }
     Ok(())

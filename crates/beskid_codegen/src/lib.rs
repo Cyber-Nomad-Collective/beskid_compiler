@@ -54,7 +54,7 @@ pub use isle_adapter::{
 };
 
 pub use module_emission::{
-    DescriptorHandles, ModuleEmissionSession, SyntaxModuleItem, emit_closure_static_plans, emit_string_literals,
+    DescriptorHandles, ModuleEmissionSession, OPTIONAL_EXTERN_ABSENT_SYMBOL, SyntaxModuleItem, emit_closure_static_plans, emit_string_literals,
     emit_syntax_program_in_session, emit_type_descriptors, lower_syntax_program,
 };
 pub use prepared_syntax::{

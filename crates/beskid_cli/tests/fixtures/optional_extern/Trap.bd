@@ -1,0 +1,17 @@
+/// Calling a symbol of an optional `[Extern]` contract whose library is absent raises the
+/// ABI-v5 `extern_unavailable` trap (code 11) instead of jumping to a null address.
+use Testing.Assert;
+
+[Extern(Abi:"C", Library:"libbeskid-not-installed.so.1", Optional:true)]
+pub contract MissingNative {
+    bool Available();
+    i64 beskid_missing_symbol(i64 value);
+}
+
+test calling_an_absent_symbol_traps {
+    Assert.Equal<i64>(MissingNative.beskid_missing_symbol(1), 0, "unreachable: the call traps");
+}
+
+pub i64 Main() {
+    return MissingNative.beskid_missing_symbol(1);
+}

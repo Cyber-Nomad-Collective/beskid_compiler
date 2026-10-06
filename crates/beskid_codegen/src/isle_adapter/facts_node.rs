@@ -173,13 +173,11 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
         }
         self.input.typed_program().assembly.units.iter().any(|unit| {
             let unit = beskid_queries::SourceUnitId::new(self.db, unit.path.clone());
-            beskid_queries::extern_contract_declarations_in_unit(self.db, unit).into_iter().any(
-                |(declared, abi, library)| {
-                    declared == symbol
-                        && abi.as_deref() == Some("C")
-                        && library.as_deref().is_some_and(|library| !library.is_empty())
-                },
-            )
+            beskid_queries::extern_contract_declarations_in_unit(self.db, unit).into_iter().any(|declared| {
+                declared.symbol == symbol
+                    && declared.abi.as_deref() == Some("C")
+                    && declared.library.as_deref().is_some_and(|library| !library.is_empty())
+            })
         })
     }
 

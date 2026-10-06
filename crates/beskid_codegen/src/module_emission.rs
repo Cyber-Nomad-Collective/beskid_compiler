@@ -2,6 +2,7 @@ mod contracts;
 mod data;
 mod imports;
 mod items;
+mod optional_externs;
 mod orchestration;
 mod specialization;
 mod trace;
@@ -25,6 +26,7 @@ pub(crate) const SCHEDULER_STACK_HELPERS: &[&str] = &["SchedulerStackCheck", "Sc
 pub use contracts::SyntaxModuleEmissionError;
 pub use data::{DescriptorHandles, emit_closure_static_plans, emit_string_literals, emit_type_descriptors};
 pub use items::SyntaxModuleItem;
+pub use optional_externs::OPTIONAL_EXTERN_ABSENT_SYMBOL;
 pub use orchestration::{
     ModuleEmissionSession, emit_syntax_program, emit_syntax_program_in_session, lower_syntax_program,
 };

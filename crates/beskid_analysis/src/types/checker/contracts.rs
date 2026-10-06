@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use beskid_abi::abi_v5::AbiType;
-use beskid_abi::interop::c_profile::{CAbiProfile, CProfileError};
+use beskid_abi::interop::c_profile::{CAbiProfile, CProfileError, OPTIONAL_EXTERN_AVAILABILITY_METHOD};
 use beskid_abi::interop::mapping::{SurfacePrimitive, surface_primitive_to_type_shape};
 use beskid_abi::interop::{
     CallShapeClass, InteropParameter, InteropReturn, InteropSignature, OwnershipClass, ScalarShape, TypeShape,
@@ -513,6 +513,16 @@ impl<'a> TypeChecker<'a> {
 
         let contract_span = definition.span;
         let (abi, library) = extract_extern_attr_args(extern_attr);
+        let optional = match extract_extern_optional_arg(extern_attr) {
+            Ok(optional) => optional,
+            Err(span) => {
+                self.errors.push(TypeError::ExternInvalidOptional {
+                    span,
+                    detail: "Optional takes a boolean literal: Optional:true or Optional:false".to_owned(),
+                });
+                return;
+            }
+        };
 
         match abi.as_deref() {
             Some("C") => {}
@@ -530,8 +540,27 @@ impl<'a> TypeChecker<'a> {
         let profile = CAbiProfile;
         for node in &definition.node.items {
             if let ContractNode::MethodSignature(signature) = &node.node {
+                if optional && signature.node.name.node.name == OPTIONAL_EXTERN_AVAILABILITY_METHOD {
+                    self.validate_extern_availability_method(signature);
+                    continue;
+                }
                 self.validate_extern_method(&profile, signature);
             }
+        }
+    }
+
+    /// In an `Optional:true` contract, `Available` is the compiler-supplied availability query,
+    /// not a C symbol. It must be declared exactly as `bool Available();`.
+    fn validate_extern_availability_method(&mut self, signature: &Spanned<crate::syntax::ContractMethodSignature>) {
+        let returns_bool = signature.node.return_type.as_ref().is_some_and(
+            |ty| matches!(&ty.node, Type::Primitive(primitive) if primitive.node == PrimitiveType::Bool),
+        );
+        if !signature.node.parameters.is_empty() || !returns_bool {
+            self.errors.push(TypeError::ExternInvalidOptional {
+                span: signature.span,
+                detail: "the availability query of an optional contract must be declared as `bool Available();`"
+                    .to_owned(),
+            });
         }
     }
 
@@ -664,6 +693,21 @@ fn extract_extern_attr_args(attr: &Spanned<crate::syntax::Attribute>) -> (Option
         }
     }
     (abi, library)
+}
+
+/// `Optional` boolean argument of an `[Extern(...)]` attribute: `Ok(false)` when absent, the
+/// argument's span when it is not a boolean literal.
+fn extract_extern_optional_arg(attr: &Spanned<crate::syntax::Attribute>) -> Result<bool, SpanInfo> {
+    let Some(argument) = attr.node.arguments.iter().find(|argument| argument.node.name.node.name == "Optional") else {
+        return Ok(false);
+    };
+    match &argument.node.value.node {
+        Expression::Literal(literal) => match &literal.node.literal.node {
+            Literal::Bool(value) => Ok(*value),
+            _ => Err(argument.span),
+        },
+        _ => Err(argument.span),
+    }
 }
 
 /// Map a surface [`Type`] to its FFI [`TypeShape`]. Returns `None` for types

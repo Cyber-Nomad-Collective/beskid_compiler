@@ -13,9 +13,9 @@ use super::data::{
 };
 use super::imports::{
     ArtifactCallImporter, ArtifactStringInterner, clif_declared_extern_imports, corelib_service_symbols,
-    extern_contract_imports,
-    extern_contract_symbols, runtime_intrinsic_symbols,
+    extern_contract_callees, runtime_intrinsic_symbols,
 };
+use super::optional_externs::emit_optional_extern_support;
 use super::items::{ResolvedSyntaxModuleItem, SyntaxModuleItem};
 use super::specialization::resolve_module_items;
 use super::trace::{trace_item_facts, trace_key};
@@ -139,8 +139,8 @@ fn lower_resolved_syntax_program(
     let corelib_services = corelib_service_symbols(input, items)
         .map_err(|error| emission_verification(format!("Corelib import preflight: {error}")))?;
     symbols.extend(corelib_services.iter().map(|(callee, symbol)| (callee.clone(), symbol.clone())));
-    let extern_contracts = extern_contract_symbols(input, items);
-    symbols.extend(extern_contracts.iter().map(|(callee, symbol)| (callee.clone(), symbol.clone())));
+    let extern_contracts = extern_contract_callees(input, items);
+    symbols.extend(extern_contracts.symbols.iter().map(|(callee, symbol)| (callee.clone(), symbol.clone())));
 
     let trampolines = resolve_spawn_trampolines(input, isa, items, &symbols)?;
     symbols.extend(
@@ -361,7 +361,7 @@ fn lower_resolved_syntax_program(
     // `beskid_engine::runtime_kit::JitRuntimeKit::resolve_trusted_symbol`).
     let trusted_extern_imports = runtime_intrinsics
         .values()
-        .map(|symbol| ExternImport { symbol: symbol.clone(), abi: Some("C".into()), library: None })
+        .map(|symbol| ExternImport { symbol: symbol.clone(), abi: Some("C".into()), library: None, optional: false })
         .collect::<Vec<_>>();
     let mut extern_imports = runtime_intrinsics
         .into_values()
@@ -369,9 +369,9 @@ fn lower_resolved_syntax_program(
         .chain((!trampolines.is_empty()).then_some("fiber_spawn".to_owned()))
         .chain(imports_scheduler_stack.then_some(ABI_V5_SCHEDULER_STACK_CHECK.to_owned()))
         .chain(imports_scheduler_stack.then_some(ABI_V5_SCHEDULER_STACK_OVERFLOW_OBSERVED.to_owned()))
-        .map(|symbol| ExternImport { symbol, abi: Some("C".into()), library: None })
+        .map(|symbol| ExternImport { symbol, abi: Some("C".into()), library: None, optional: false })
         .collect::<Vec<_>>();
-    for import in extern_contract_imports(input, items) {
+    for import in extern_contracts.imports {
         if !extern_imports.iter().any(|existing| existing.symbol == import.symbol) {
             extern_imports.push(import);
         }
@@ -379,6 +379,14 @@ fn lower_resolved_syntax_program(
     for import in clif_declared_extern_imports(input, &functions, &extern_imports) {
         extern_imports.push(import);
     }
+    emit_optional_extern_support(
+        input,
+        isa,
+        &mut functions,
+        &mut extern_imports,
+        &extern_contracts.availability,
+        &mut context,
+    )?;
     // A function whose only calls are root registrations cannot reach a collection; drop them.
     for function in &mut functions {
         beskid_isle::elide_leaf_function_roots(&mut function.function);
@@ -394,14 +402,14 @@ fn lower_resolved_syntax_program(
             "gc_unregister_root",
         ] {
             if !extern_imports.iter().any(|existing| existing.symbol == symbol) {
-                extern_imports.push(ExternImport { symbol: symbol.to_owned(), abi: Some("C".into()), library: None });
+                extern_imports.push(ExternImport { symbol: symbol.to_owned(), abi: Some("C".into()), library: None, optional: false });
             }
         }
     }
     if event_handler_wrapper_required {
         for symbol in [ABI_V5_MANAGED_OBJECT_ALLOCATE, "gc_register_root", "gc_unregister_root"] {
             if !extern_imports.iter().any(|existing| existing.symbol == symbol) {
-                extern_imports.push(ExternImport { symbol: symbol.to_owned(), abi: Some("C".into()), library: None });
+                extern_imports.push(ExternImport { symbol: symbol.to_owned(), abi: Some("C".into()), library: None, optional: false });
             }
         }
     }
@@ -420,11 +428,13 @@ fn lower_resolved_syntax_program(
             symbol: "beskid_rt_v5_abi_value_clear".to_owned(),
             abi: Some("C".into()),
             library: None,
+            optional: false,
         });
         extern_imports.push(ExternImport {
             symbol: "beskid_rt_v5_abi_value_initialize".to_owned(),
             abi: Some("C".into()),
             library: None,
+            optional: false,
         });
     }
     aggregate_static_plans.extend(trampolines.iter().map(|trampoline| trampoline.result_plan.clone()));
@@ -443,7 +453,7 @@ fn lower_resolved_syntax_program(
     {
         for symbol in ["gc_register_root", "gc_unregister_root"] {
             if !extern_imports.iter().any(|existing| existing.symbol == symbol) {
-                extern_imports.push(ExternImport { symbol: symbol.to_owned(), abi: Some("C".into()), library: None });
+                extern_imports.push(ExternImport { symbol: symbol.to_owned(), abi: Some("C".into()), library: None, optional: false });
             }
         }
     }
@@ -454,6 +464,7 @@ fn lower_resolved_syntax_program(
             symbol: ABI_V5_MANAGED_OBJECT_ALLOCATE.to_owned(),
             abi: Some("C".into()),
             library: None,
+            optional: false,
         });
     }
     let array_static_plans = collect_array_static_plans(input, items);
@@ -465,7 +476,7 @@ fn lower_resolved_syntax_program(
             "beskid_rt_v5_array_write_barrier",
         ] {
             if !extern_imports.iter().any(|existing| existing.symbol == symbol) {
-                extern_imports.push(ExternImport { symbol: symbol.to_owned(), abi: Some("C".into()), library: None });
+                extern_imports.push(ExternImport { symbol: symbol.to_owned(), abi: Some("C".into()), library: None, optional: false });
             }
         }
     }

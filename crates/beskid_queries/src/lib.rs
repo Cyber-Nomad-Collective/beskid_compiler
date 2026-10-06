@@ -102,7 +102,7 @@ pub use semantic_contract::{
     completion_dependency_surface_for_program, constant_integer, contextual_integer_literal_abi_type, control_flow,
     direct_callees, empty_array_literal_element_abi_type, empty_array_literal_element_specialization, enum_constructor,
     enum_constructor_specialization, enum_constructor_template, enum_layout, enum_match, enum_match_specialization,
-    event_field_layout, event_handler_lambda_for_local, event_operation, extern_contract_declarations_in_unit, extern_contract_import_for_declaration,
+    event_field_layout, event_handler_lambda_for_local, event_operation, ExternContractImport, extern_contract_declarations_in_unit, extern_contract_import_for_declaration, optional_extern_contract_members,
     for_iterator_fact, format_ast_node_key, format_ast_node_site, format_ast_node_trace, format_source_span_range,
     generic_call_instantiation, generic_call_specialization, generic_call_specialization_in_environment,
     generic_call_specialization_instance, generic_call_template, generic_nominal_method_receiver,

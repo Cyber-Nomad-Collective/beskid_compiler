@@ -145,7 +145,10 @@ pub use abi::{
     generic_call_specialization_in_environment, generic_call_specialization_instance, generic_specialization_instance,
     specialized_corelib_value_service_result,
 };
-pub use calls::{extern_contract_declarations_in_unit, extern_contract_import_for_declaration};
+pub use calls::{
+    ExternContractImport, extern_contract_declarations_in_unit, extern_contract_import_for_declaration,
+    optional_extern_contract_members,
+};
 pub use completion::{
     completion_candidates, completion_dependency_surface, completion_dependency_surface_for_assembly,
     completion_dependency_surface_for_program,

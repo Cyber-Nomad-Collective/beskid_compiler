@@ -271,7 +271,7 @@ fn corelib_syscall_write_links_from_the_process_builtin_registry() {
 
     let artifact = CodegenArtifact {
         functions: vec![LoweredFunction { name: "Main".into(), function }],
-        extern_imports: vec![ExternImport { symbol: "syscall_write".into(), abi: Some("C".into()), library: None }],
+        extern_imports: vec![ExternImport { symbol: "syscall_write".into(), abi: Some("C".into()), library: None, optional: false }],
         ..Default::default()
     };
     let mut jit = BeskidJitModule::new_with_runtime_kit(temp.path(), &target, BuildProfile::Debug, &[], &[])

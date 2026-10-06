@@ -44,9 +44,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   objects, so the address stays valid during and after the call. A block that
   reads a payload can call only such symbols; a payload address passed to any
   other symbol, including runtime- and host-owned names, is an E1232 error.
+- `[Extern(Abi:"C", Library:"...", Optional:true)]` declares an optional
+  contract. A program that uses it loads when the library or a symbol is
+  absent. The contract can declare `bool Available();`: the compiler supplies
+  its body, and it returns true only when every other symbol of the contract
+  resolved. Library code selects a path with
+  `if LibCrypto.Available() { ... } else { ... }`. Every call to an optional
+  symbol, including `call @symbol` in a CLIF block, goes through a generated
+  thunk that checks the resolved address. A call to an absent symbol stops
+  the program with the new ABI-v5 trap `extern_unavailable` (code 11, exit
+  status 101); it never jumps to a null address. The JIT resolves each
+  optional symbol separately and binds a missing one to null. AOT declares
+  optional symbols as weak undefined references and links the library only
+  when the linker finds it: on ELF a library found at build time becomes a
+  load-time dependency (ELF has no weak `DT_NEEDED`), and a library not found
+  is not linked, so `Available()` is false. Mach-O links a found library with
+  `-weak-l`. Windows AOT targets reject optional contracts. Non-optional
+  contracts keep failing at load when their library is absent.
+- T0905 reports a non-boolean `Optional` argument or an `Available` method of
+  an optional contract that is not `bool Available();`.
 
 ### Changed
 
+- The ABI-v5 trap table has eleven codes; code 11 is `extern_unavailable`.
+  Runtime kits built for 0.5.2 do not match this manifest and must be rebuilt.
 - A CLIF block takes its type from its context (a return value, a typed
   `let`, an assignment target, or a call argument) in every project, not only
   in Corelib. A block with no typed context, such as an inferred `let`, is an

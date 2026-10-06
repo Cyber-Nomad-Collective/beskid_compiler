@@ -176,6 +176,16 @@ pub(crate) fn emit_type_error(ctx: &mut RuleContext, error: TypeError, result: O
                 Severity::Error,
             );
         }
+        TypeError::ExternInvalidOptional { span, detail } => {
+            ctx.emit_simple(
+                span,
+                "T0905",
+                "invalid optional extern contract",
+                "extern attribute",
+                Some(detail),
+                Severity::Error,
+            );
+        }
         TypeError::ContractMethodMissingImplementation { span, contract_name, method_name, expected } => {
             ctx.emit_issue(
                 span,

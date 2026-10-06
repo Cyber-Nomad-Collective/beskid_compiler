@@ -172,6 +172,7 @@ fn emit_library_pair_with_objects(
             link_mode: LinkMode::Auto,
             verbose: false,
             external_libraries: runtime_libraries.clone(),
+            optional_libraries: Vec::new(),
             library_search_paths: Vec::new(),
         })?;
     }
@@ -290,6 +291,7 @@ mod link_tests {
                 link_mode: LinkMode::Auto,
                 verbose: false,
                 external_libraries: libraries,
+                optional_libraries: Vec::new(),
                 library_search_paths: Vec::new(),
             },
             target,

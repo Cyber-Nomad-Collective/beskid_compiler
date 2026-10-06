@@ -209,6 +209,7 @@ mod tests {
             symbol: "beskid_rt_v5_args_count".into(),
             abi: Some("C".into()),
             library: None,
+            optional: false,
         });
         let mut helper = request.artifact.functions[0].clone();
         helper.name = "Main#1".into();
@@ -234,6 +235,7 @@ mod tests {
                     symbol: "beskid_rt_v5_args_count".into(),
                     abi: Some("C".into()),
                     library: None,
+                    optional: false,
                 });
                 let mut helper = request.artifact.functions[0].clone();
                 helper.name = "Helper#1".into();
