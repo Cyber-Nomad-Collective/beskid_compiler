@@ -279,9 +279,8 @@ fn emit_availability_query(
         let mut available = builder.ins().iconst(types::I8, 1);
         let mut imported = HashMap::new();
         for (symbol, member_signature) in members {
-            let target = *imported
-                .entry(*symbol)
-                .or_insert_with(|| import(&mut builder, symbol, member_signature.clone()));
+            let target =
+                *imported.entry(*symbol).or_insert_with(|| import(&mut builder, symbol, member_signature.clone()));
             let address = builder.ins().func_addr(pointer, target);
             let member_resolved = resolved(&mut builder, isa, absent, address);
             available = builder.ins().band(available, member_resolved);

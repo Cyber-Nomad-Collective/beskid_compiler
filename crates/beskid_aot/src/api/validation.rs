@@ -130,7 +130,8 @@ pub(super) fn optional_link_libraries(
         if required.contains(&canonical_logical_name(library)) {
             continue;
         }
-        match libraries.iter_mut().find(|entry| canonical_logical_name(&entry.library) == canonical_logical_name(library)) {
+        let canon = canonical_logical_name(library);
+        match libraries.iter_mut().find(|entry| canonical_logical_name(&entry.library) == canon) {
             Some(entry) => entry.symbols.push(import.symbol.clone()),
             None => libraries.push(crate::linker::OptionalLinkLibrary {
                 library: library.to_owned(),

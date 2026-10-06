@@ -115,7 +115,12 @@ fn optional_extern_loads_and_selects_path_after_aot_build() {
     let (output, executable) = project.build("optional_app");
     assert!(output.status.success(), "beskid build failed:\n{}", text(&output));
     let run = Command::new(&executable).output().expect("run AOT executable");
-    assert_eq!(run.status.code(), Some(0), "AOT optional extern checks failed (exit code names the check):\n{}", text(&run));
+    assert_eq!(
+        run.status.code(),
+        Some(0),
+        "AOT optional extern checks failed (exit code names the check):\n{}",
+        text(&run)
+    );
 }
 
 #[cfg(target_os = "linux")]

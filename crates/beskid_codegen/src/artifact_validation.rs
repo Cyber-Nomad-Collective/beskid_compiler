@@ -124,7 +124,12 @@ mod tests {
         let artifact = CodegenArtifact {
             functions: vec![LoweredFunction { name: "main".into(), function: callee }],
             extern_imports: vec![
-                ExternImport { symbol: "isatty".into(), abi: Some("C".into()), library: Some("libc".into()), optional: false },
+                ExternImport {
+                    symbol: "isatty".into(),
+                    abi: Some("C".into()),
+                    library: Some("libc".into()),
+                    optional: false,
+                },
                 ExternImport {
                     symbol: "GetConsoleScreenBufferInfo".into(),
                     abi: Some("C".into()),

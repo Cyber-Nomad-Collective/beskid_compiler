@@ -173,7 +173,8 @@ impl Engine {
             let resolved = resolve_process_extern_symbols(std::slice::from_ref(import)).ok();
             #[cfg(all(not(feature = "extern_dlopen"), not(unix)))]
             let resolved: Option<Vec<(String, *const u8)>> = None;
-            let address = resolved.and_then(|resolved| resolved.into_iter().next()).map_or(absent, |(_, address)| address);
+            let address =
+                resolved.and_then(|resolved| resolved.into_iter().next()).map_or(absent, |(_, address)| address);
             authorized_user_ffi.push((import.symbol.clone(), address));
         }
 

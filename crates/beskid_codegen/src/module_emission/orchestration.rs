@@ -402,14 +402,24 @@ fn lower_resolved_syntax_program(
             "gc_unregister_root",
         ] {
             if !extern_imports.iter().any(|existing| existing.symbol == symbol) {
-                extern_imports.push(ExternImport { symbol: symbol.to_owned(), abi: Some("C".into()), library: None, optional: false });
+                extern_imports.push(ExternImport {
+                    symbol: symbol.to_owned(),
+                    abi: Some("C".into()),
+                    library: None,
+                    optional: false,
+                });
             }
         }
     }
     if event_handler_wrapper_required {
         for symbol in [ABI_V5_MANAGED_OBJECT_ALLOCATE, "gc_register_root", "gc_unregister_root"] {
             if !extern_imports.iter().any(|existing| existing.symbol == symbol) {
-                extern_imports.push(ExternImport { symbol: symbol.to_owned(), abi: Some("C".into()), library: None, optional: false });
+                extern_imports.push(ExternImport {
+                    symbol: symbol.to_owned(),
+                    abi: Some("C".into()),
+                    library: None,
+                    optional: false,
+                });
             }
         }
     }
@@ -453,7 +463,12 @@ fn lower_resolved_syntax_program(
     {
         for symbol in ["gc_register_root", "gc_unregister_root"] {
             if !extern_imports.iter().any(|existing| existing.symbol == symbol) {
-                extern_imports.push(ExternImport { symbol: symbol.to_owned(), abi: Some("C".into()), library: None, optional: false });
+                extern_imports.push(ExternImport {
+                    symbol: symbol.to_owned(),
+                    abi: Some("C".into()),
+                    library: None,
+                    optional: false,
+                });
             }
         }
     }
@@ -476,7 +491,12 @@ fn lower_resolved_syntax_program(
             "beskid_rt_v5_array_write_barrier",
         ] {
             if !extern_imports.iter().any(|existing| existing.symbol == symbol) {
-                extern_imports.push(ExternImport { symbol: symbol.to_owned(), abi: Some("C".into()), library: None, optional: false });
+                extern_imports.push(ExternImport {
+                    symbol: symbol.to_owned(),
+                    abi: Some("C".into()),
+                    library: None,
+                    optional: false,
+                });
             }
         }
     }
