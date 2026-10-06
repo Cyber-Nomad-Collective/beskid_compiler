@@ -453,6 +453,7 @@ pub fn leading_doc_from_doc_run(pair: &pest::iterators::Pair<crate::parser::Rule
     }
     if !saw_explicit_lines {
         for raw in pair.as_str().lines() {
+            let raw = raw.trim_start_matches([' ', '\t']);
             if !raw.starts_with("///") {
                 continue;
             }

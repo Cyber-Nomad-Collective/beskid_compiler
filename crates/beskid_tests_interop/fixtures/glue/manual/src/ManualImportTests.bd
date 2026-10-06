@@ -1,0 +1,90 @@
+use Std.Testing.Assert;
+use ManualImport;
+use ManualImport.Foreign;
+
+test manual_import_i8 {
+    Assert.Equal(0_i8, ManualImport.ImportI8(0_i8), "zero through foreign call");
+    Assert.Equal(1_i8, ManualImport.ImportI8(1_i8), "one through foreign call");
+    Assert.Equal(-128_i8, ManualImport.ImportI8(-128_i8), "lower or high-bit foreign value");
+    Assert.Equal(127_i8, ManualImport.ImportI8(127_i8), "maximum foreign value");
+}
+
+test manual_import_i16 {
+    Assert.Equal(0_i16, ManualImport.ImportI16(0_i16), "zero through foreign call");
+    Assert.Equal(1_i16, ManualImport.ImportI16(1_i16), "one through foreign call");
+    Assert.Equal(-32768_i16, ManualImport.ImportI16(-32768_i16), "lower or high-bit foreign value");
+    Assert.Equal(32767_i16, ManualImport.ImportI16(32767_i16), "maximum foreign value");
+}
+
+test manual_import_i32 {
+    Assert.Equal(0_i32, ManualImport.ImportI32(0_i32), "zero through foreign call");
+    Assert.Equal(1_i32, ManualImport.ImportI32(1_i32), "one through foreign call");
+    Assert.Equal(-2147483648_i32, ManualImport.ImportI32(-2147483648_i32), "lower or high-bit foreign value");
+    Assert.Equal(2147483647_i32, ManualImport.ImportI32(2147483647_i32), "maximum foreign value");
+}
+
+test manual_import_i64 {
+    Assert.Equal(0_i64, ManualImport.ImportI64(0_i64), "zero through foreign call");
+    Assert.Equal(1_i64, ManualImport.ImportI64(1_i64), "one through foreign call");
+    Assert.Equal(-9223372036854775808_i64, ManualImport.ImportI64(-9223372036854775808_i64), "lower or high-bit foreign value");
+    Assert.Equal(9223372036854775807_i64, ManualImport.ImportI64(9223372036854775807_i64), "maximum foreign value");
+}
+
+test manual_import_u8 {
+    Assert.Equal(0_u8, ManualImport.ImportU8(0_u8), "zero through foreign call");
+    Assert.Equal(1_u8, ManualImport.ImportU8(1_u8), "one through foreign call");
+    Assert.Equal(128_u8, ManualImport.ImportU8(128_u8), "lower or high-bit foreign value");
+    Assert.Equal(255_u8, ManualImport.ImportU8(255_u8), "maximum foreign value");
+}
+
+test manual_import_u16 {
+    Assert.Equal(0_u16, ManualImport.ImportU16(0_u16), "zero through foreign call");
+    Assert.Equal(1_u16, ManualImport.ImportU16(1_u16), "one through foreign call");
+    Assert.Equal(32768_u16, ManualImport.ImportU16(32768_u16), "lower or high-bit foreign value");
+    Assert.Equal(65535_u16, ManualImport.ImportU16(65535_u16), "maximum foreign value");
+}
+
+test manual_import_u32 {
+    Assert.Equal(0_u32, ManualImport.ImportU32(0_u32), "zero through foreign call");
+    Assert.Equal(1_u32, ManualImport.ImportU32(1_u32), "one through foreign call");
+    Assert.Equal(2147483648_u32, ManualImport.ImportU32(2147483648_u32), "lower or high-bit foreign value");
+    Assert.Equal(4294967295_u32, ManualImport.ImportU32(4294967295_u32), "maximum foreign value");
+}
+
+test manual_import_u64 {
+    Assert.Equal(0_u64, ManualImport.ImportU64(0_u64), "zero through foreign call");
+    Assert.Equal(1_u64, ManualImport.ImportU64(1_u64), "one through foreign call");
+    Assert.Equal(9223372036854775808_u64, ManualImport.ImportU64(9223372036854775808_u64), "lower or high-bit foreign value");
+    Assert.Equal(18446744073709551615_u64, ManualImport.ImportU64(18446744073709551615_u64), "maximum foreign value");
+}
+
+test manual_import_f32 {
+    Assert.Equal(0_u32, Foreign.glue_f32_bits(ManualImport.ImportF32(Foreign.glue_f32_from_bits(0_u32))), "zero or infinity exact bits");
+    Assert.Equal(2139095040_u32, Foreign.glue_f32_bits(ManualImport.ImportF32(Foreign.glue_f32_from_bits(2139095040_u32))), "zero or infinity exact bits");
+    Assert.Equal(4286578688_u32, Foreign.glue_f32_bits(ManualImport.ImportF32(Foreign.glue_f32_from_bits(4286578688_u32))), "zero or infinity exact bits");
+    Assert.Equal(2147483648_u32, Foreign.glue_f32_bits(ManualImport.ImportF32(Foreign.glue_f32_from_bits(2147483648_u32))), "exact IEEE bits through foreign call");
+    Assert.Equal(1_u32, Foreign.glue_f32_bits(ManualImport.ImportF32(Foreign.glue_f32_from_bits(1_u32))), "exact IEEE bits through foreign call");
+    Assert.Equal(2139095039_u32, Foreign.glue_f32_bits(ManualImport.ImportF32(Foreign.glue_f32_from_bits(2139095039_u32))), "exact IEEE bits through foreign call");
+    Assert.Equal(2143289345_u32, Foreign.glue_f32_bits(ManualImport.ImportF32(Foreign.glue_f32_from_bits(2143289345_u32))), "exact IEEE bits through foreign call");
+}
+
+test manual_import_f64 {
+    Assert.Equal(0_u64, Foreign.glue_f64_bits(ManualImport.ImportF64(Foreign.glue_f64_from_bits(0_u64))), "zero or infinity exact bits");
+    Assert.Equal(9218868437227405312_u64, Foreign.glue_f64_bits(ManualImport.ImportF64(Foreign.glue_f64_from_bits(9218868437227405312_u64))), "zero or infinity exact bits");
+    Assert.Equal(18442240474082181120_u64, Foreign.glue_f64_bits(ManualImport.ImportF64(Foreign.glue_f64_from_bits(18442240474082181120_u64))), "zero or infinity exact bits");
+    Assert.Equal(9223372036854775808_u64, Foreign.glue_f64_bits(ManualImport.ImportF64(Foreign.glue_f64_from_bits(9223372036854775808_u64))), "exact IEEE bits through foreign call");
+    Assert.Equal(1_u64, Foreign.glue_f64_bits(ManualImport.ImportF64(Foreign.glue_f64_from_bits(1_u64))), "exact IEEE bits through foreign call");
+    Assert.Equal(9218868437227405311_u64, Foreign.glue_f64_bits(ManualImport.ImportF64(Foreign.glue_f64_from_bits(9218868437227405311_u64))), "exact IEEE bits through foreign call");
+    Assert.Equal(9221120237041090561_u64, Foreign.glue_f64_bits(ManualImport.ImportF64(Foreign.glue_f64_from_bits(9221120237041090561_u64))), "exact IEEE bits through foreign call");
+}
+
+test manual_import_bool { Assert.Equal(0_i32, ManualImport.ImportBool(1_u8), "true boundary"); Assert.Equal(0_i32, ManualImport.ImportBool(0_u8), "false boundary"); }
+test manual_import_char { Assert.Equal(0_i32, ManualImport.ImportChar(128512_u32), "Unicode scalar"); }
+test manual_import_utf8 { Assert.CollectGarbage(); Assert.Equal(0_i32, ManualImport.ImportUtf8("A\0😀"), "managed UTF8 borrow"); Assert.Equal(0_i32, Foreign.glue_utf8_exact("A\0😀"), "exact copied UTF8 payload"); Assert.CollectGarbage(); }
+test manual_import_bytes { u8[] value = [0_u8, 128_u8, 255_u8, 65_u8]; Assert.CollectGarbage(); Assert.Equal(0_i32, ManualImport.ImportBytes(value), "managed byte borrow"); Assert.Equal(0_i32, Foreign.glue_bytes_exact(value), "exact high-byte payload"); Assert.CollectGarbage(); }
+test manual_import_unit { ManualImport.ImportUnit(); Assert.True(true, "foreign unit call completed"); }
+test manual_import_handle { u64 token = Foreign.glue_allocate(4_word); Assert.True(token != 0_u64, "foreign owner allocation"); Assert.Equal(0_i32, ManualImport.ImportHandle(token, 7_u64, 11_u64), "live checked foreign handle"); Assert.Equal(0_i32, Foreign.glue_release(token), "owning foreign library releases"); }
+test manual_import_native_width { Assert.Equal(0_i32, ManualImport.ImportNativeWidth(18446744073709551615_word, 64_u32), "target-sized maximum"); }
+test manual_invalid_bool_char_width { Assert.Equal(1_i32, ManualImport.ImportBool(255_u8), "invalid bool rejected"); Assert.Equal(1_i32, ManualImport.ImportChar(55296_u32), "surrogate rejected"); Assert.Equal(1_i32, ManualImport.ImportChar(1114112_u32), "outside Unicode rejected"); Assert.Equal(1_i32, ManualImport.ImportNativeWidth(1_word, 32_u32), "width drift rejected"); }
+test manual_foreign_owner_lifecycle { u64 token = Foreign.glue_allocate(4_word); Assert.True(token != 0_u64, "owner allocation"); Assert.Equal(1_i32, ManualImport.ImportHandle(token, 8_u64, 11_u64), "wrong session"); Assert.Equal(1_i32, ManualImport.ImportHandle(token, 7_u64, 12_u64), "wrong shape"); Assert.Equal(0_i32, Foreign.glue_release(token), "one release"); Assert.Equal(1_i32, Foreign.glue_release(token), "repeat release"); Assert.Equal(1_i32, ManualImport.ImportHandle(token, 7_u64, 11_u64), "stale token"); }
+test manual_checked_foreign_failure { Assert.Equal(0_i32, Foreign.glue_failure(0_u32), "success"); Assert.Equal(2_i32, Foreign.glue_failure(1_u32), "declared error"); Assert.Equal(3_i32, Foreign.glue_failure(2_u32), "panic caught before C boundary"); }

@@ -22,6 +22,17 @@ use crate::runtime_source::canonical_runtime_source_hash;
 const LINUX_ELF_SHARED_TOOLCHAIN_IMPORTS: &[&str] =
     &["_ITM_deregisterTMCloneTable", "_ITM_registerTMCloneTable", "__cxa_finalize", "__gmon_start__"];
 const LINUX_ELF_DYNAMIC_TLS_IMPORTS: &[&str] = &["__tls_get_addr"];
+/// glibc's canonical environment data symbol and the weak aliases GNU ld adds beside it.
+///
+/// The runtime references only `__environ` (the manifest's x86_64-unknown-linux-gnu data import),
+/// and the static archive imports exactly that. When the shared runtime is linked against
+/// `libc.so.6`, the linker resolves the strong `__environ@GLIBC_2.2.5` definition and also emits
+/// its same-address weak aliases `_environ@GLIBC_2.2.5` and `environ@GLIBC_2.2.5` as weak
+/// undefined dynamic symbols. They are the same object, not additional runtime dependencies, so
+/// the shared audit accepts exactly these two aliases and only while the manifest declares
+/// `__environ`.
+const LINUX_GLIBC_ENVIRON_SYMBOL: &str = "__environ";
+const LINUX_GLIBC_SHARED_ENVIRON_ALIAS_IMPORTS: &[&str] = &["_environ", "environ"];
 const DARWIN_MACHO_SHARED_TOOLCHAIN_IMPORTS: &[&str] = &["dyld_stub_binder"];
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -98,6 +109,9 @@ impl RuntimeProvenanceAudit {
         let mut additional_imports = shared_toolchain_imports(&self.target).to_vec();
         if self.target == "x86_64-unknown-linux-gnu" {
             additional_imports.extend_from_slice(LINUX_ELF_DYNAMIC_TLS_IMPORTS);
+            if self.allowed_imports.iter().any(|symbol| symbol == LINUX_GLIBC_ENVIRON_SYMBOL) {
+                additional_imports.extend_from_slice(LINUX_GLIBC_SHARED_ENVIRON_ALIAS_IMPORTS);
+            }
         }
         self.verify_with_additional_imports(symbols, &additional_imports)
     }

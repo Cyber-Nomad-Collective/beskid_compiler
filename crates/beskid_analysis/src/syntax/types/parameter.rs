@@ -4,7 +4,7 @@ use beskid_ast_derive::AstNode;
 
 /// Function or method parameter: optional `bulk` calling-convention modifier,
 /// optional `mut`, type, and name. `bulk` is the outermost modifier (a bulk parameter
-/// may also be mutable); both flags are parser-derived and not mirrored into the SDK.
+/// may also be mutable); both flags are parser-derived and retained in the SDK constructor schema.
 #[derive(AstNode, Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Parameter {
     #[ast(skip)]

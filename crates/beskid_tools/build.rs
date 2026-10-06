@@ -6,13 +6,16 @@ mod corelib_fingerprint;
 #[path = "../beskid_abi/corelib_workspace_source.rs"]
 mod corelib_workspace_source;
 
-use corelib_fingerprint::{CORELIB_BUNDLE_FINGERPRINT_FILE, fingerprint_corelib_bundle_dir, should_skip_component};
+use corelib_fingerprint::{
+    CORELIB_BUNDLE_FINGERPRINT_FILE, copy_corelib_bundle, fingerprint_corelib_bundle_dir,
+};
 
 const ENV_CORELIB_SOURCE: &str = "BESKID_CORELIB_SOURCE";
 
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-changed=../beskid_abi/corelib_workspace_source.rs");
+    println!("cargo:rerun-if-changed=../beskid_abi/src/corelib_bundle.rs");
 
     let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
     let out_dir = PathBuf::from(std::env::var("OUT_DIR").expect("OUT_DIR set by Cargo"));
@@ -35,68 +38,30 @@ fn main() {
     if dest.exists() {
         std::fs::remove_dir_all(&dest).expect("remove stale embedded_corelib");
     }
-    copy_corelib_workspace_for_embed(&corelib_workspace_dir, &dest).expect("copy corelib slice");
+    // The bundle is exactly the CoreLib.bws member inventory: the workspace manifest, root legal
+    // files, and each member's package files under the package boundary rule. A missing or
+    // malformed member fails the build instead of shipping a bundle that cannot resolve itself.
+    let inventory = copy_corelib_bundle(&corelib_workspace_dir, &dest).unwrap_or_else(|error| {
+        panic!(
+            "beskid_tools: cannot derive the embedded Corelib bundle from {}: {error}",
+            corelib_workspace_dir.display()
+        )
+    });
     let fingerprint = fingerprint_corelib_bundle_dir(&dest).expect("fingerprint embedded corelib");
-    std::fs::write(dest.join(CORELIB_BUNDLE_FINGERPRINT_FILE), format!("{fingerprint}\n"))
-        .expect("write embedded corelib fingerprint");
+    std::fs::write(
+        dest.join(CORELIB_BUNDLE_FINGERPRINT_FILE),
+        format!("{fingerprint}\n"),
+    )
+    .expect("write embedded corelib fingerprint");
 
-    register_rerun_if_changed(&corelib_workspace_dir);
+    // Watch the workspace root (manifest and legal files, new members), every walked member
+    // directory (added or removed sources), and every embedded file.
+    println!("cargo:rerun-if-changed={}", corelib_workspace_dir.display());
+    for relative in inventory.directories.iter().chain(&inventory.files) {
+        println!(
+            "cargo:rerun-if-changed={}",
+            corelib_workspace_dir.join(relative).display()
+        );
+    }
     println!("cargo:rerun-if-env-changed={ENV_CORELIB_SOURCE}");
-}
-
-fn copy_corelib_workspace_for_embed(src_workspace: &Path, dst: &Path) -> std::io::Result<()> {
-    std::fs::create_dir_all(dst)?;
-    if let Ok(entries) = std::fs::read_dir(src_workspace) {
-        for entry in entries.filter_map(Result::ok) {
-            let path = entry.path();
-            let is_workspace_manifest = path.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("bws"));
-            let is_legal_file = matches!(entry.file_name().to_str(), Some("LICENSE" | "NOTICE" | "LICENSING.md"));
-            if path.is_file() && (is_workspace_manifest || is_legal_file) {
-                std::fs::copy(&path, dst.join(entry.file_name()))?;
-            }
-        }
-    }
-    copy_dir_for_embed(&src_workspace.join("packages"), &dst.join("packages"))?;
-    copy_dir_for_embed(&src_workspace.join("beskid_corelib"), &dst.join("beskid_corelib"))?;
-    Ok(())
-}
-
-fn copy_dir_for_embed(src: &Path, dst: &Path) -> std::io::Result<()> {
-    std::fs::create_dir_all(dst)?;
-    for entry in std::fs::read_dir(src)? {
-        let entry = entry?;
-        let name = entry.file_name();
-        if should_skip_component(&name) {
-            continue;
-        }
-        let ty = entry.file_type()?;
-        let from = entry.path();
-        let to = dst.join(&name);
-        if ty.is_dir() {
-            copy_dir_for_embed(&from, &to)?;
-        } else {
-            std::fs::copy(&from, &to)?;
-        }
-    }
-    Ok(())
-}
-
-fn register_rerun_if_changed(dir: &Path) {
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return;
-    };
-    for entry in entries.filter_map(Result::ok) {
-        let path = entry.path();
-        let name = entry.file_name();
-        if name == ".git" || name == ".venv-ci" || name == ".nox" {
-            continue;
-        }
-        if path.is_dir() {
-            if name == "beskid_corelib" || name == "packages" {
-                register_rerun_if_changed(&path);
-            }
-        } else if path.is_file() {
-            println!("cargo:rerun-if-changed={}", path.display());
-        }
-    }
 }

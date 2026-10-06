@@ -1,7 +1,7 @@
 use crate::builtins::{BuiltinType, builtin_specs};
 use crate::resolve::ResolvedValue;
 use crate::syntax::Spanned;
-use crate::syntax::{CallExpression, Expression, LambdaExpression, Literal, PrimitiveType, integer_literal_magnitude};
+use crate::syntax::{CallExpression, Expression, LambdaExpression, PrimitiveType};
 use crate::types::path_value::{method_name_from_path_callee, receiver_type_for_path_callee};
 use crate::types::result::{CallLoweringKind, MethodReceiverSource, TypeError};
 use crate::types::{TypeId, TypeInfo};
@@ -147,10 +147,18 @@ impl<'a> TypeChecker<'a> {
             // limits conversions to exactly one primitive numeric argument. Judge that here,
             // typed, rather than letting a non-numeric argument (e.g. `i32(flag)` on a `bool`)
             // reach ISLE lowering and surface only as an opaque `MissingRuleOrFact`.
-            if let Some(arg_type) = self.type_expression(&call.node.args[0])
-                && !self.is_numeric(arg_type)
-            {
-                self.errors.push(TypeError::InvalidPrimitiveConversionArgument { span: call.node.args[0].span });
+            if let Some(arg_type) = self.type_expression(&call.node.args[0]) {
+                let from_char = self.primitive_type_id(PrimitiveType::Char) == Some(arg_type);
+                let allowed = if to == PrimitiveType::Char {
+                    self.primitive_type_id(PrimitiveType::U32) == Some(arg_type)
+                } else if from_char {
+                    to == PrimitiveType::U32
+                } else {
+                    self.is_numeric(arg_type)
+                };
+                if !allowed {
+                    self.errors.push(TypeError::InvalidPrimitiveConversionArgument { span: call.node.args[0].span });
+                }
             }
             return self.primitive_type_id(to);
         }
@@ -465,6 +473,17 @@ impl<'a> TypeChecker<'a> {
                     if expected != 0 {
                         let arg_types =
                             call.node.args.iter().filter_map(|arg| self.type_expression(arg)).collect::<Vec<_>>();
+                        // A bare integer literal inherits the binding of the other argument.
+                        let arg_types = match callee_item_id {
+                            Some(item_id) => crate::types::inference::adapt_bare_literal_arguments(
+                                &self.type_table,
+                                &self.function_signatures,
+                                item_id,
+                                &arg_types,
+                                &call.node.args,
+                            ),
+                            None => arg_types,
+                        };
                         if let Some(item_id) = callee_item_id {
                             self.record_generic_call_constraints(item_id, &arg_types, expected, call.span);
                         }
@@ -483,11 +502,7 @@ impl<'a> TypeChecker<'a> {
                                 &call.node.args,
                             )
                         {
-                            let span = call
-                                .node
-                                .args
-                                .get(conflict.second_arg_index)
-                                .map_or(call.span, |arg| arg.span);
+                            let span = call.node.args.get(conflict.second_arg_index).map_or(call.span, |arg| arg.span);
                             self.errors.push(TypeError::GenericParameterConflict {
                                 span,
                                 parameter: conflict.parameter,
@@ -578,30 +593,8 @@ impl<'a> TypeChecker<'a> {
             }
         }
 
-        let mut return_type = substituted_return;
-        if let Some(item_id) = callee_item_id
-            && let Some(index) = self.resolution.builtin_items.get(&item_id)
-            && let Some(spec) = crate::builtins::builtin_specs().get(*index)
-            && spec.beskid_path == ["__array_new"]
-            && let Some(elem_size) = call.node.args.first().and_then(|arg| integer_literal_value(&arg.node))
-            && elem_size == 1
-            && let Some(u8_arr) = self.u8_array_type_id()
-        {
-            return_type = u8_arr;
-        }
-
-        Some(return_type)
+        Some(substituted_return)
     }
-}
-
-fn integer_literal_value(expression: &Expression) -> Option<i64> {
-    let Expression::Literal(literal) = expression else {
-        return None;
-    };
-    let Literal::Integer(text) = &literal.node.literal.node else {
-        return None;
-    };
-    integer_literal_magnitude(text).parse().ok()
 }
 
 /// Maps a single-segment call callee name to its primitive numeric conversion target, or `None`
@@ -614,12 +607,18 @@ fn integer_literal_value(expression: &Expression) -> Option<i64> {
 /// `resolve::resolver::PRIMITIVE_NUMERIC_CONVERSION_NAMES`.
 fn primitive_numeric_conversion_target_type(name: &str) -> Option<PrimitiveType> {
     Some(match name {
+        "i8" => PrimitiveType::I8,
+        "i16" => PrimitiveType::I16,
+        "u16" => PrimitiveType::U16,
+        "u64" => PrimitiveType::U64,
+        "f32" => PrimitiveType::F32,
         "i32" => PrimitiveType::I32,
         "i64" => PrimitiveType::I64,
         "u32" => PrimitiveType::U32,
         "u8" | "byte" => PrimitiveType::U8,
         "word" => PrimitiveType::Word,
         "f64" => PrimitiveType::F64,
+        "char" => PrimitiveType::Char,
         _ => return None,
     })
 }

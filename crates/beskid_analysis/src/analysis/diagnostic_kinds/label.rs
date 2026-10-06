@@ -57,6 +57,7 @@ impl SemanticIssueKind {
             Self::ResolveUnknownTypeInModule { .. } => "unknown type in module".to_string(),
             Self::ResolveInvalidConformanceTarget { .. } => "invalid conformance target".to_string(),
             Self::ResolvePrivateItemInModule { .. } => "private item access".to_string(),
+            Self::ResolvePrivateRuntimeBuiltin { .. } => "private runtime builtin".to_string(),
             Self::ResolveShadowedLocal { .. } => "shadowed local".to_string(),
             Self::MissingImport { .. } => "missing import".to_string(),
             Self::MissingImportAmbiguous { .. } => "ambiguous import candidate".to_string(),
@@ -156,6 +157,11 @@ impl SemanticIssueKind {
             Self::NamingNotCamelCaseBinding { .. } => "binding not lowerCamelCase".to_string(),
             Self::NamingNotSnakeCaseTest { .. } => "test name not snake_case".to_string(),
             Self::NamingNotCamelCaseMacro { .. } => "macro name not lowerCamelCase".to_string(),
+            Self::NumericLiteralOutOfRange { .. } => "numeric literal".to_string(),
+            Self::ExternInvalidAbi { .. } | Self::ExternMissingLibrary => "extern attribute".to_string(),
+            Self::ExternDisallowedParamType { .. } => "parameter type".to_string(),
+            Self::ExternDisallowedReturnType { .. } => "return type".to_string(),
+            Self::GlueBindingRejected { .. } => "extern method".to_string(),
         }
     }
 }

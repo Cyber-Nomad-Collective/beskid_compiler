@@ -97,21 +97,60 @@ pub fn emit_host_platform_library_pair(
     // The linked native boundary is the authority for its export surface. Derive the complete
     // platform set from the emitted objects so newly generated adapters (including Core.Args)
     // cannot drift from a second handwritten export list.
-    for object in &platform_objects {
+    for object in &platform_objects.paths {
         required_symbols.extend(extract_symbol_inventory(object, &target.symbol_prefix)?.defined);
     }
     required_symbols.sort();
     required_symbols.dedup();
-    emit_library_pair_with_objects(
+    let compiler_receipt = platform_objects.issuer_compiler_receipt.clone();
+    let mut pair = emit_library_pair_with_objects(
         artifact,
-        output_dir,
+        output_dir.clone(),
         name,
         profile,
         Some(target_triple),
         required_symbols,
-        std::iter::once(context_object).chain(platform_objects).collect(),
-        ProvenancePolicy::CanonicalRuntime(target),
-    )
+        std::iter::once(context_object).chain(platform_objects.paths).collect(),
+        ProvenancePolicy::CanonicalRuntime(target.clone()),
+    )?;
+    let linker_receipt = pair.shared_link_tool_receipt.as_ref().ok_or_else(|| AotError::InvalidRequest {
+        message: "canonical shared provider lacks actual linker receipt".into(),
+    })?;
+    pair.glue_provider_build_tools = Some(vec![
+        super::provider_evidence::version_evidence("native_provider_compiler", &compiler_receipt, &output_dir, false)?,
+        super::provider_evidence::version_evidence(
+            "shared_provider_linker",
+            linker_receipt,
+            &output_dir,
+            target.triple.as_str().contains("windows"),
+        )?,
+    ]);
+    Ok(pair)
+}
+
+/// Only the private canonical build path may satisfy a declared runtime library
+/// from its own actual native object closure. Export policy labels are not evidence.
+fn validate_host_extern_bindings(
+    artifact: &CodegenArtifact,
+    policy: &ProvenancePolicy,
+    native_definitions: &std::collections::HashSet<String>,
+) -> AotResult<()> {
+    let ProvenancePolicy::CanonicalRuntime(target) = policy else {
+        return validate_extern_libraries(artifact, &[]);
+    };
+    let manifest = AbiManifestV5::canonical_runtime(target.clone());
+    for import in &artifact.extern_imports {
+        let Some(library) = import.library.as_deref() else { continue; };
+        if library != "beskid_runtime" || import.abi.as_deref() != Some("C")
+            || !native_definitions.contains(&import.symbol)
+            || !manifest.exports.iter().any(|export| export.symbol == import.symbol)
+        {
+            return Err(AotError::UnresolvedExternLibrary {
+                library: library.to_owned(), symbol: import.symbol.clone(),
+            });
+        }
+    }
+    Ok(())
 }
 
 // 8 params: artifact + output metadata + build knobs; grouping would obscure the
@@ -148,7 +187,11 @@ fn emit_library_pair_with_objects(
         library_search_paths: Vec::new(),
         pipeline: None,
     };
-    validate_extern_libraries(&request.artifact, &request.external_libraries)?;
+    let native_definitions = additional_object_paths.iter()
+        .map(|path| extract_symbol_inventory(path, provenance_policy.symbol_prefix()))
+        .collect::<AotResult<Vec<_>>>()?.into_iter()
+        .flat_map(|inventory| inventory.defined).collect::<std::collections::HashSet<_>>();
+    validate_host_extern_bindings(&request.artifact, &provenance_policy, &native_definitions)?;
     let object = emit_object_stage(&request)?;
     let mut linked_exports = object.exported_symbols.clone();
     linked_exports.extend(exported_symbols.iter().cloned());
@@ -156,15 +199,16 @@ fn emit_library_pair_with_objects(
     linked_exports.dedup();
     let static_library = output_dir.join(crate::target::output_filename(name, BuildOutputKind::StaticLib, &target));
     let shared_library = output_dir.join(crate::target::output_filename(name, BuildOutputKind::SharedLib, &target));
+    let mut shared_link_tool_receipt = None;
     for (output_kind, output_path) in
         [(BuildOutputKind::StaticLib, &static_library), (BuildOutputKind::SharedLib, &shared_library)]
     {
-        link(&LinkRequest {
+        let linked = link(&LinkRequest {
             target_triple: target_triple.clone(),
             output_kind,
             output_path: output_path.clone(),
             object_path: object.object_path.clone(),
-            runtime_staticlib: None,
+            runtime: None,
             host_staticlib: None,
             additional_object_paths: additional_object_paths.clone(),
             entrypoint_symbol: String::new(),
@@ -174,6 +218,9 @@ fn emit_library_pair_with_objects(
             external_libraries: runtime_libraries.clone(),
             library_search_paths: Vec::new(),
         })?;
+        if output_kind == BuildOutputKind::SharedLib {
+            shared_link_tool_receipt = linked.tool_receipt;
+        }
     }
     let symbol_prefix = provenance_policy.symbol_prefix();
     let canonical_object_inventory = extract_symbol_inventory(&object.object_path, symbol_prefix)?;
@@ -186,6 +233,8 @@ fn emit_library_pair_with_objects(
     provenance_policy.verify(&exported_symbols, &static_archive_inventory, false)?;
     provenance_policy.verify(&exported_symbols, &shared_image_inventory, true)?;
     Ok(NativeLibraryPair {
+        shared_link_tool_receipt,
+        glue_provider_build_tools: None,
         static_library,
         shared_import_library: target.triple.contains("windows").then(|| output_dir.join(format!("{name}_import.lib"))),
         shared_library,
@@ -283,7 +332,7 @@ mod link_tests {
                 output_path: "runtime.dylib".into(),
                 object_path: "runtime.o".into(),
                 additional_object_paths: Vec::new(),
-                runtime_staticlib: None,
+                runtime: None,
                 host_staticlib: None,
                 entrypoint_symbol: String::new(),
                 exported_symbols: Vec::new(),
@@ -323,4 +372,29 @@ mod link_tests {
             assert_eq!(libraries, [std::ffi::OsStr::new(expected)], "{logical}");
         }
     }
+    #[test]
+    fn canonical_native_extern_requires_actual_definition_and_manifest_export() {
+        let target = TargetMetadata::for_triple("aarch64-apple-darwin").unwrap();
+        let mut artifact = CodegenArtifact::default();
+        artifact.extern_imports.push(beskid_codegen::ExternImport {
+            symbol: "beskid_dynamic_v1_map_owned".into(), abi: Some("C".into()),
+            library: Some("beskid_runtime".into()),
+        });
+        let mut actual = std::collections::HashSet::new();
+        let canonical = ProvenancePolicy::CanonicalRuntime(target.clone());
+        assert!(validate_host_extern_bindings(&artifact, &canonical, &actual).is_err());
+        actual.insert("beskid_dynamic_v1_map_owned".into());
+        assert!(validate_host_extern_bindings(&artifact, &canonical, &actual).is_ok());
+        assert!(validate_host_extern_bindings(&artifact, &ProvenancePolicy::Exact(target), &actual).is_err());
+        artifact.extern_imports[0].abi = Some("Rust".into());
+        assert!(validate_host_extern_bindings(&artifact, &canonical, &actual).is_err());
+        artifact.extern_imports[0].abi = Some("C".into());
+        artifact.extern_imports[0].library = Some("foreign".into());
+        assert!(validate_host_extern_bindings(&artifact, &canonical, &actual).is_err());
+        artifact.extern_imports[0].library = Some("beskid_runtime".into());
+        artifact.extern_imports[0].symbol = "uncontracted_export".into();
+        actual.insert("uncontracted_export".into());
+        assert!(validate_host_extern_bindings(&artifact, &canonical, &actual).is_err());
+    }
+
 }

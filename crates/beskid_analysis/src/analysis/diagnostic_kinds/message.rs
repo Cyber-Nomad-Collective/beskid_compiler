@@ -143,6 +143,9 @@ impl SemanticIssueKind {
             Self::ResolveInvalidConformanceTarget { name } => {
                 format!("type conformances must target contracts, but `{name}` is not a contract")
             }
+            Self::ResolvePrivateRuntimeBuiltin { name } => {
+                format!("`{name}` is a private runtime builtin and cannot be called from this source unit")
+            }
             Self::ResolvePrivateItemInModule { module_path, name } => {
                 format!("private item `{name}` cannot be accessed from module `{module_path}`")
             }
@@ -422,6 +425,20 @@ impl SemanticIssueKind {
             }
             Self::NamingNotCamelCaseMacro { name } => {
                 format!("macro `{name}` should use lowerCamelCase")
+            }
+            Self::NumericLiteralOutOfRange { primitive } => {
+                format!("numeric literal outside {primitive} range")
+            }
+            Self::ExternInvalidAbi { .. } => "invalid extern ABI; only Abi:\"C\" is supported".to_string(),
+            Self::ExternMissingLibrary => "extern contract missing Library".to_string(),
+            Self::ExternDisallowedParamType { method, .. } => {
+                format!("extern param type not allowed in `{method}`")
+            }
+            Self::ExternDisallowedReturnType { method, .. } => {
+                format!("extern return type not allowed in `{method}`")
+            }
+            Self::GlueBindingRejected { method, .. } => {
+                format!("Glue binding rejected for extern method `{method}`")
             }
         }
     }

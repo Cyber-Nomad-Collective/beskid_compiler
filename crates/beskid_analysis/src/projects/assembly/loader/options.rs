@@ -24,6 +24,20 @@ pub enum AssemblyError {
     Parse { path: PathBuf, message: String },
     #[error("entry file not found under effective roots: {path}")]
     EntryNotFound { path: PathBuf },
+    #[error(
+        "target declares no entry and the project source root {source_root} contains no source units; an entry-less \
+         target type-checks every unit of its own source root and has nothing to check"
+    )]
+    NoRootUnits { source_root: PathBuf },
+    #[error(
+        "aggregate project {manifest_path} has no source units in its path members; an `Aggregate` checks the own \
+         units of every direct path member and has nothing to check"
+    )]
+    NoAggregateMemberUnits { manifest_path: PathBuf },
+    #[error("cannot determine the members of aggregate project {manifest_path}: {message}")]
+    AggregateMembers { manifest_path: PathBuf, message: String },
+    #[error("cannot read the glue owner blocks of project {manifest_path}: {message}")]
+    GlueOwners { manifest_path: PathBuf, message: String },
     #[error("assembly exceeded max_units ({max})")]
     MaxUnits { max: usize },
 }

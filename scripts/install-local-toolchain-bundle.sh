@@ -2,6 +2,8 @@
 # Replace one local Beskid prefix from an already verified release bundle.
 set -euo pipefail
 
+script_dir="$(cd "$(dirname "$0")" && pwd)"
+
 bundle_source="${1:?bundle directory}"
 release_version="${2:?release version}"
 requested_prefix="${3:?install prefix}"
@@ -55,6 +57,20 @@ printf '%s\n' "${release_version}" | cmp -s - "${bundle_source}/release-version.
   exit 1
 }
 
+if [[ -e "${install_prefix}/toolchain" ]]; then
+  [[ -f "${install_prefix}/toolchain/.beskid-owner.json" ]] || {
+    echo 'Existing toolchain entry has no installation owner; choose a different prefix without removing user data.' >&2; exit 1;
+  }
+  existing_extension=""
+  [[ ! -f "${install_prefix}/toolchain/bin/beskid.exe" ]] || existing_extension=".exe"
+  existing_status="$("${install_prefix}/toolchain/bin/beskid${existing_extension}" toolchain status 2>&1)" || {
+    echo "Existing toolchain ownership is invalid: ${existing_status}" >&2; exit 1;
+  }
+  [[ "${existing_status}" == *'Installation owner: manual'* ]] || {
+    echo 'Existing private prefix has a conflicting installation owner.' >&2; exit 1;
+  }
+fi
+
 incoming="$(mktemp -d "${prefix_parent}/.${prefix_name}.install.XXXXXX")"
 backup=""
 cleanup() {
@@ -69,10 +85,33 @@ cleanup() {
 }
 trap cleanup EXIT
 
-cp -a "${bundle_source}/." "${incoming}/"
-chmod 0755 "${incoming}/bin/beskid${binary_extension}" \
-  "${incoming}/bin/beskid_lsp${binary_extension}" \
-  "${incoming}/bin/beskid-up${binary_extension}"
+payload="${incoming}/toolchain"
+mkdir -p "${payload}" "${incoming}/bin"
+cp -a "${bundle_source}/." "${payload}/"
+chmod 0755 "${payload}/bin/beskid${binary_extension}" \
+  "${payload}/bin/beskid_lsp${binary_extension}" \
+  "${payload}/bin/beskid-up${binary_extension}"
+shopt -s nullglob
+runtime_targets=("${payload}/lib/beskid-runtime/abi-5/"*)
+shopt -u nullglob
+[[ "${#runtime_targets[@]}" == 1 && -d "${runtime_targets[0]}" ]] || {
+  echo 'Local bundle must contain exactly one runtime target.' >&2; exit 1;
+}
+target="$(basename "${runtime_targets[0]}")"
+"${payload}/bin/beskid${binary_extension}" dev toolchain-owner --owner manual --version "${release_version}" --target "${target}"
+for binary in beskid beskid_lsp beskid-up; do
+  if [[ -n "${binary_extension}" ]]; then
+    printf '@echo off\r\n"%%~dp0..\\toolchain\\bin\\%s.exe" %%*\r\n' "${binary}" >"${incoming}/bin/${binary}.cmd"
+  else
+    cat >"${incoming}/bin/${binary}" <<EOF
+#!/bin/sh
+set -eu
+here="\$(CDPATH= cd -- "\$(dirname -- "\$0")" && pwd)"
+exec "\${here}/../toolchain/bin/${binary}" "\$@"
+EOF
+    chmod 0755 "${incoming}/bin/${binary}"
+  fi
+done
 
 # The prefix also stores user-owned shell data and configuration. Carry those entries into the
 # staged tree, while the bundle remains the sole authority for every release-owned entry.
@@ -81,7 +120,7 @@ if [[ -d "${install_prefix}" ]]; then
   for existing_entry in "${install_prefix}"/*; do
     entry_name="$(basename "${existing_entry}")"
     case "${entry_name}" in
-      bin|lib|beskid_corelib|packages|release-version.txt) continue ;;
+      bin|lib|beskid_corelib|packages|release-version.txt|toolchain|.beskid-owner.json|.beskid-install.json) continue ;;
     esac
     [[ -e "${incoming}/${entry_name}" || -L "${incoming}/${entry_name}" ]] || \
       cp -a "${existing_entry}" "${incoming}/${entry_name}"
@@ -89,17 +128,24 @@ if [[ -d "${install_prefix}" ]]; then
   shopt -u dotglob nullglob
 fi
 
-[[ "$("${incoming}/bin/beskid${binary_extension}" --version 2>&1)" == "beskid ${release_version}" ]] || {
+[[ "$("${payload}/bin/beskid${binary_extension}" --version 2>&1)" == "beskid ${release_version}" ]] || {
   echo 'CLI version does not match the local bundle version.' >&2
   exit 1
 }
-[[ "$("${incoming}/bin/beskid_lsp${binary_extension}" --version 2>&1)" == "beskid_lsp ${release_version}" ]] || {
+[[ "$("${payload}/bin/beskid_lsp${binary_extension}" --version 2>&1)" == "beskid_lsp ${release_version}" ]] || {
   echo 'LSP version does not match the local bundle version.' >&2
   exit 1
 }
-[[ "$("${incoming}/bin/beskid-up${binary_extension}" --version 2>&1)" == "beskid-up ${release_version}" ]] || {
+[[ "$("${payload}/bin/beskid-up${binary_extension}" --version 2>&1)" == "beskid-up ${release_version}" ]] || {
   echo 'Updater version does not match the local bundle version.' >&2
   exit 1
+}
+
+owner_status="$("${payload}/bin/beskid${binary_extension}" toolchain status 2>&1)" || {
+  echo "Staged toolchain owner verification failed: ${owner_status}" >&2; exit 1;
+}
+[[ "${owner_status}" == *'Installation owner: manual'* ]] || {
+  echo 'Staged toolchain did not verify its manual installation owner.' >&2; exit 1;
 }
 
 if [[ -e "${install_prefix}" ]]; then

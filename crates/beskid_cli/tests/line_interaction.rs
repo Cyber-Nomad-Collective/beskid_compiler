@@ -20,7 +20,7 @@ import errno, fcntl, json, os, pty, re, select, signal, subprocess, sys, tempfil
 binary, command, mode = sys.argv[1:]
 with tempfile.TemporaryDirectory(prefix='beskid-line-interaction-') as root:
     terminal = mode.startswith('pty')
-    args = [binary, command]
+    args = [binary] + {'repl': ['dev', 'repl'], 'graph': ['dev', 'project', 'graph']}.get(command, [command])
     if command == 'repl':
         payload = b':help\n2 + 3\n' + (b':quit\n' if mode.endswith('quit') else b'')
     elif command == 'new':
@@ -38,8 +38,8 @@ with tempfile.TemporaryDirectory(prefix='beskid-line-interaction-') as root:
         os.mkdir(os.path.join(template, 'Src'))
         with open(os.path.join(template, 'Src', 'Smoke.bd'), 'w') as out:
             out.write('pub i64 Main() { return 0; }\n')
-        args += ['--path', template, '-o', os.path.join(root, 'output')]
-        payload = b'2\nLineExample\n'
+        args += ['LineExample', '--path', template, '-o', os.path.join(root, 'output')]
+        payload = b'2\n'
     else:
         os.mkdir(os.path.join(root, 'Src'))
         with open(os.path.join(root, 'Src', 'Smoke.bd'), 'w') as out:
@@ -77,7 +77,7 @@ with tempfile.TemporaryDirectory(prefix='beskid-line-interaction-') as root:
             if terminal:
                 flags = termios.tcgetattr(slave)[3]
                 raw_seen |= not bool(flags & termios.ICANON) or not bool(flags & termios.ECHO)
-                ready = (data.count(b'beskid> ') > sent_lines) if command == 'repl' else ((b'> ' in data) if sent_lines == 0 else (b'name [name]:' in data))
+                ready = (data.count(b'beskid> ') > sent_lines) if command == 'repl' else (b'> ' in data)
                 if ready and sent_lines < len(input_lines):
                     os.write(master, input_lines[sent_lines])
                     sent_lines += 1
@@ -120,8 +120,8 @@ with tempfile.TemporaryDirectory(prefix='beskid-line-interaction-') as root:
             if terminal:
                 assert b'beskid> ' in data
         elif command == 'new':
-            assert '1. small' in text and '2. large' in text and 'name [name]:' in text, 'required prompts missing: ' + text
-            assert text.count('flavor [flavor]') == 1 and text.count('name [name]:') == 1, 'required values prompted more than once: ' + text
+            assert '1. small' in text and '2. large' in text, 'required prompts missing: ' + text
+            assert text.count('flavor [flavor]') == 1 and 'name [name]' not in text, 'positional name must be bound without a prompt: ' + text
             with open(os.path.join(root, 'output', 'LineExample.txt')) as out:
                 assert out.read() == 'LineExample:large\n'
         elif mode == 'file':

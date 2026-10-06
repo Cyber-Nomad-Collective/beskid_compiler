@@ -5,8 +5,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use anyhow::{Result, anyhow, bail};
 use beskid_abi::runtime_kit::ResolvedRuntimeKit;
 
-use super::build::build;
-use super::model::{RuntimeKitBuildOptions, RuntimeKitProfile};
+use super::model::RuntimeKitProfile;
 
 // `build_native_host` can be called concurrently by integration tests in one process. Pair the
 // clock nonce with a monotonic sequence so every invocation owns its staging directory even when
@@ -52,14 +51,20 @@ pub fn build_native_host(prefix: PathBuf, profile: RuntimeKitProfile) -> Result<
     } else if shared_import_library.is_some() {
         bail!("non-COFF ABI-v5 target `{}` must not publish a shared import library", target.triple.as_str());
     }
-    let result = build(RuntimeKitBuildOptions {
+    let tools = pair
+        .glue_provider_build_tools
+        .ok_or_else(|| anyhow!("canonical provider lacks actual compiler/linker tool evidence"))?;
+    let request = beskid_abi::runtime_kit::RuntimeKitBuildRequest {
         prefix,
-        target: target.triple.as_str().to_owned(),
-        profile,
+        target,
+        profile: profile.into(),
+        runtime_source_hash: beskid_abi::runtime_source::canonical_runtime_source_hash(),
         static_library: pair.static_library,
         shared_library: pair.shared_library,
         shared_import_library,
-    });
+    };
+    let result = beskid_abi::runtime_kit::build_runtime_kit_with_glue_provider(&request, tools)
+        .map_err(|error| anyhow!("failed to atomically publish canonical Glue provider: {error:?}"));
     let _ = std::fs::remove_dir_all(staging);
     result
 }

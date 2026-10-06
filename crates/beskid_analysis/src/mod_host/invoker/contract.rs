@@ -1,4 +1,4 @@
-use beskid_abi::{ModCollectRequest, ModGenerationRequest};
+use super::super::context::{ModCollectRequest, ModGenerationRequest};
 
 use super::super::types::ContractRegistration;
 use super::outcomes::{AnalyzerOutcome, CollectorOutcome, GeneratorOutcome, RewriterOutcome};
@@ -10,12 +10,14 @@ pub trait ContractInvoker: Send + Sync {
         &self,
         registration: &ContractRegistration,
         request: &ModCollectRequest,
+        _authority: Option<&dyn crate::mod_host::ModSemanticAuthority>,
     ) -> Result<CollectorOutcome, ContractInvocationError>;
 
     fn invoke_generator(
         &self,
         registration: &ContractRegistration,
         request: &ModGenerationRequest,
+        _authority: Option<&dyn crate::mod_host::ModSemanticAuthority>,
     ) -> Result<GeneratorOutcome, ContractInvocationError>;
 
     fn invoke_analyzer(
@@ -23,12 +25,14 @@ pub trait ContractInvoker: Send + Sync {
         registration: &ContractRegistration,
         request: &ModCollectRequest,
         snapshot: Option<&crate::services::SemanticSnapshot>,
+        _authority: Option<&dyn crate::mod_host::ModSemanticAuthority>,
     ) -> Result<AnalyzerOutcome, ContractInvocationError>;
 
     fn invoke_rewriter(
         &self,
         registration: &ContractRegistration,
         request: &ModCollectRequest,
+        _authority: Option<&dyn crate::mod_host::ModSemanticAuthority>,
     ) -> Result<RewriterOutcome, ContractInvocationError>;
 }
 

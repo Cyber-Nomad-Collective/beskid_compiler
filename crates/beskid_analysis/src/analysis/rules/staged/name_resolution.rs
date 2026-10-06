@@ -1,17 +1,20 @@
 use super::SemanticPipelineRule;
 use crate::analysis::diagnostic_kinds::SemanticIssueKind;
 use crate::analysis::rules::{RuleContext, resolve};
-use crate::resolve::{Resolution, Resolver};
+use crate::resolve::{Resolution, ResolveError, Resolver};
 use crate::syntax::{Block, Expression, ForStatement, LetStatement, Node, Path, Program, Statement, UseDeclaration};
 use crate::syntax::{SpanInfo, Spanned};
 use crate::syntax_query::{AstWalker, NodeKind, NodeRef, Visit};
 use std::collections::{HashMap, HashSet};
 
 impl SemanticPipelineRule {
+    /// Resolves the program. On failure, the spans of unresolved single values are added to
+    /// `unresolved_value_spans` so later checks can tell an unbound callee from a bound one.
     pub(super) fn stage1_name_resolution(
         &self,
         ctx: &mut RuleContext,
         program: &Spanned<Program>,
+        unresolved_value_spans: &mut HashSet<SpanInfo>,
     ) -> Option<Resolution> {
         self.check_ambiguous_imports(ctx, program);
         self.check_unknown_import_paths(ctx, program);
@@ -26,6 +29,9 @@ impl SemanticPipelineRule {
                 Ok(resolution) => resolution,
                 Err(errors) => {
                     for error in errors {
+                        if let ResolveError::UnknownValue { span, .. } = &error {
+                            unresolved_value_spans.insert(*span);
+                        }
                         resolve::emit_resolve_error(ctx, error);
                     }
                     return None;
@@ -37,6 +43,9 @@ impl SemanticPipelineRule {
                 Ok(resolution) => resolution,
                 Err(errors) => {
                     for error in errors {
+                        if let ResolveError::UnknownValue { span, .. } = &error {
+                            unresolved_value_spans.insert(*span);
+                        }
                         resolve::emit_resolve_error(ctx, error);
                     }
                     return None;

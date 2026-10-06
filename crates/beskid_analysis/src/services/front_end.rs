@@ -39,7 +39,7 @@ impl FrontEndTypedResult {
         let assembly = &self.assembly;
         let mut units = assembly.units.as_ref().clone();
         units[assembly.entry_index].program = self.program.clone();
-        crate::projects::ProgramAssembly::new(
+        let mut syntax = crate::projects::ProgramAssembly::new(
             assembly.roots.clone(),
             std::sync::Arc::new(units),
             assembly.entry_index,
@@ -48,8 +48,14 @@ impl FrontEndTypedResult {
             assembly.has_std_dependency,
             assembly.generation,
         )
+        .with_recovery_policy(assembly.recovery_policy)
         .with_trusted_corelib_service_paths(std::sync::Arc::clone(&assembly.trusted_corelib_service_paths))
+        .with_glue_libraries(std::sync::Arc::clone(&assembly.glue_libraries))
         .with_runtime_fixture(assembly.runtime_fixture.clone())
+        .with_root_set(assembly.root_set.clone());
+        syntax.verified_package_identities = assembly.verified_package_identities.clone();
+        syntax.compiled_mod_metadata = assembly.compiled_mod_metadata.clone();
+        syntax
     }
 }
 
@@ -58,6 +64,7 @@ impl FrontEndTypedResult {
 pub struct FrontEndOptions {
     pub with_semantic_diagnostics: bool,
     pub assembly_discovery: crate::projects::AssemblyDiscovery,
+    pub assembly_recovery: crate::projects::AssemblyRecoveryPolicy,
     pub module_level_meta_items_allowed: Option<bool>,
 }
 
@@ -66,6 +73,7 @@ impl Default for FrontEndOptions {
         Self {
             with_semantic_diagnostics: true,
             assembly_discovery: crate::projects::AssemblyDiscovery::ImportClosure,
+            assembly_recovery: crate::projects::AssemblyRecoveryPolicy::Strict,
             module_level_meta_items_allowed: None,
         }
     }
@@ -92,7 +100,7 @@ pub fn compile_front_end_with_pipeline(
     );
 
     let prepared =
-        prepare_compilation(&resolved, PrepareOptions { front_end: options, ..Default::default() }, pipeline)?;
+        prepare_compilation(&resolved, PrepareOptions { mod_invoker: None, front_end: options, ..Default::default() }, pipeline)?;
 
     prepared.into_executable()
 }

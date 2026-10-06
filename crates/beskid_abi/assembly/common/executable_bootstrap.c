@@ -82,11 +82,21 @@ extern void beskid_program_main(void);
 extern int64_t beskid_program_main(void);
 #endif
 
+#if defined(BESKID_DYNAMIC_INITIALIZER)
+extern int32_t BESKID_DYNAMIC_INITIALIZER(uint64_t generation);
+#endif
+
 static int beskid_execute_program(void) {
   _Alignas(BESKID_RUNTIME_STATE_ALIGNMENT)
       unsigned char runtime[BESKID_RUNTIME_STATE_SIZE] = {0};
   if (beskid_rt_v5_process_init(runtime) == NULL)
     return BESKID_TRAP_EXIT_STATUS;
+#if defined(BESKID_DYNAMIC_INITIALIZER)
+  if (BESKID_DYNAMIC_INITIALIZER(BESKID_DYNAMIC_GENERATION) != 0) {
+    beskid_rt_v5_process_shutdown(runtime);
+    return BESKID_TRAP_EXIT_STATUS;
+  }
+#endif
 
 #if defined(BESKID_EXECUTABLE_PROGRAM_RETURNS_VOID)
   beskid_program_main();

@@ -187,6 +187,9 @@ pub enum SemanticIssueKind {
     ResolveInvalidConformanceTarget {
         name: String,
     },
+    ResolvePrivateRuntimeBuiltin {
+        name: String,
+    },
     ResolvePrivateItemInModule {
         module_path: String,
         name: String,
@@ -462,5 +465,34 @@ pub enum SemanticIssueKind {
     },
     CompositionInvalidScopeQualifier {
         qualifier: String,
+    },
+
+    // ── Query-gate numeric literal, extern profile, and Glue obligations ──
+    /// T0905: a suffixed integer literal, or a float literal, outside its declared fixed-width
+    /// primitive's range.
+    NumericLiteralOutOfRange {
+        primitive: String,
+    },
+    /// T0901: an `[Extern]` contract whose `Abi` is not `"C"`.
+    ExternInvalidAbi {
+        abi: Option<String>,
+    },
+    /// T0902: an `[Extern]` contract without a `Library`.
+    ExternMissingLibrary,
+    /// T0903: an extern method parameter the C profile (or the Glue profile) rejects.
+    ExternDisallowedParamType {
+        method: String,
+        detail: String,
+    },
+    /// T0904: an extern method return type the C profile rejects.
+    ExternDisallowedReturnType {
+        method: String,
+        detail: String,
+    },
+    /// T0903: an `[Extern]` method of a manifest Glue library whose signature or `RustOwner`
+    /// mapping the Glue binding authority rejects.
+    GlueBindingRejected {
+        method: String,
+        detail: String,
     },
 }

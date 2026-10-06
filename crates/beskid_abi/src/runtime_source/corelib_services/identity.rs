@@ -8,12 +8,18 @@ use super::super::sources::{
     CANONICAL_FOUNDATION_ARRAY_SOURCE_PATH, CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH,
     CANONICAL_FOUNDATION_BYTES_SLICE_SOURCE_PATH, CANONICAL_FOUNDATION_DEADLINE_SOURCE_PATH,
     CANONICAL_FOUNDATION_ENVIRONMENT_SOURCE_PATH, CANONICAL_FOUNDATION_ERROR_SOURCE_PATH,
+    CANONICAL_FOUNDATION_FLOAT_BITS_SOURCE_PATH, CANONICAL_FOUNDATION_LIST_SOURCE_PATH,
+    CANONICAL_FOUNDATION_MANAGED_SOURCE_PATH, CANONICAL_FOUNDATION_MAP_ENTRY_SOURCE_PATH,
+    CANONICAL_FOUNDATION_MAP_SOURCE_PATH, CANONICAL_FOUNDATION_OPTION_SOURCE_PATH,
     CANONICAL_FOUNDATION_OUTPUT_SOURCE_PATH, CANONICAL_FOUNDATION_PATH_SOURCE_PATH,
     CANONICAL_FOUNDATION_PROCESS_SOURCE_PATH, CANONICAL_FOUNDATION_RANDOM_SOURCE_PATH,
-    CANONICAL_FOUNDATION_STRING_CORE_SOURCE_PATH, CANONICAL_FOUNDATION_STRING_UTF8_SOURCE_PATH,
-    CANONICAL_FOUNDATION_TEXT_CURSOR_SOURCE_PATH, CANONICAL_FOUNDATION_THREAD_SOURCE_PATH,
-    CANONICAL_FOUNDATION_TIME_SOURCE_PATH, CANONICAL_NETWORK_INTERNAL_SOURCE_PATH, canonical_corelib_deadline_source,
-    canonical_corelib_service_sources,
+    CANONICAL_FOUNDATION_RESULTS_SOURCE_PATH, CANONICAL_FOUNDATION_STRING_CORE_SOURCE_PATH,
+    CANONICAL_FOUNDATION_STRING_UTF8_SOURCE_PATH, CANONICAL_FOUNDATION_TEXT_CURSOR_SOURCE_PATH,
+    CANONICAL_FOUNDATION_THREAD_SOURCE_PATH, CANONICAL_FOUNDATION_TIME_SOURCE_PATH,
+    CANONICAL_NETWORK_INTERNAL_SOURCE_PATH, CANONICAL_SERIALIZATION_COMPILED_SOURCE_PATH,
+    CANONICAL_SERIALIZATION_CONTRACTS_SOURCE_PATH, CANONICAL_SERIALIZATION_DESCRIPTORS_SOURCE_PATH,
+    CANONICAL_SERIALIZATION_ERRORS_SOURCE_PATH, CANONICAL_SERIALIZATION_LIMITS_SOURCE_PATH,
+    CANONICAL_SERIALIZATION_READER_SOURCE_PATH, canonical_corelib_deadline_source, canonical_corelib_service_sources,
 };
 use super::service_table::{CORELIB_SERVICES, CorelibService};
 
@@ -56,6 +62,39 @@ impl CorelibServiceSourceDescriptor {
 /// Return the immutable logical service identity without consulting the filesystem.
 pub fn corelib_service_source_descriptor(logical_path: &str) -> Option<CorelibServiceSourceDescriptor> {
     let (logical_path, package, relative_path) = match logical_path {
+        CANONICAL_FOUNDATION_RESULTS_SOURCE_PATH => {
+            (CANONICAL_FOUNDATION_RESULTS_SOURCE_PATH, "foundation", "Core/Results/Results.bd")
+        }
+        CANONICAL_FOUNDATION_LIST_SOURCE_PATH => {
+            (CANONICAL_FOUNDATION_LIST_SOURCE_PATH, "foundation", "Core/Collections/List.bd")
+        }
+        CANONICAL_FOUNDATION_MAP_SOURCE_PATH => {
+            (CANONICAL_FOUNDATION_MAP_SOURCE_PATH, "foundation", "Core/Collections/Map.bd")
+        }
+        CANONICAL_FOUNDATION_OPTION_SOURCE_PATH => {
+            (CANONICAL_FOUNDATION_OPTION_SOURCE_PATH, "foundation", "Core/Optional/Option.bd")
+        }
+        CANONICAL_FOUNDATION_MAP_ENTRY_SOURCE_PATH => {
+            (CANONICAL_FOUNDATION_MAP_ENTRY_SOURCE_PATH, "foundation", "Core/Collections/Map/MapEntry.bd")
+        }
+        CANONICAL_SERIALIZATION_COMPILED_SOURCE_PATH => {
+            (CANONICAL_SERIALIZATION_COMPILED_SOURCE_PATH, "serialization", "Core/Serialization/Compiled.bd")
+        }
+        CANONICAL_SERIALIZATION_DESCRIPTORS_SOURCE_PATH => {
+            (CANONICAL_SERIALIZATION_DESCRIPTORS_SOURCE_PATH, "serialization", "Core/Serialization/Descriptors.bd")
+        }
+        CANONICAL_SERIALIZATION_CONTRACTS_SOURCE_PATH => {
+            (CANONICAL_SERIALIZATION_CONTRACTS_SOURCE_PATH, "serialization", "Core/Serialization/Contracts.bd")
+        }
+        CANONICAL_SERIALIZATION_READER_SOURCE_PATH => {
+            (CANONICAL_SERIALIZATION_READER_SOURCE_PATH, "serialization", "Core/Serialization/Reader.bd")
+        }
+        CANONICAL_SERIALIZATION_LIMITS_SOURCE_PATH => {
+            (CANONICAL_SERIALIZATION_LIMITS_SOURCE_PATH, "serialization", "Core/Serialization/Limits.bd")
+        }
+        CANONICAL_SERIALIZATION_ERRORS_SOURCE_PATH => {
+            (CANONICAL_SERIALIZATION_ERRORS_SOURCE_PATH, "serialization", "Core/Serialization/Errors.bd")
+        }
         CANONICAL_CORELIB_SYSCALL_SOURCE_PATH => {
             (CANONICAL_CORELIB_SYSCALL_SOURCE_PATH, "foundation", "Core/Syscall/Syscall.bd")
         }
@@ -109,6 +148,12 @@ pub fn corelib_service_source_descriptor(logical_path: &str) -> Option<CorelibSe
         }
         CANONICAL_FOUNDATION_RANDOM_SOURCE_PATH => {
             (CANONICAL_FOUNDATION_RANDOM_SOURCE_PATH, "foundation", "Core/Random/Random.bd")
+        }
+        CANONICAL_FOUNDATION_MANAGED_SOURCE_PATH => {
+            (CANONICAL_FOUNDATION_MANAGED_SOURCE_PATH, "foundation", "Core/Memory/Managed.bd")
+        }
+        CANONICAL_FOUNDATION_FLOAT_BITS_SOURCE_PATH => {
+            (CANONICAL_FOUNDATION_FLOAT_BITS_SOURCE_PATH, "foundation", "Core/Numeric/FloatBits.bd")
         }
         CANONICAL_FOUNDATION_STRING_CORE_SOURCE_PATH => {
             (CANONICAL_FOUNDATION_STRING_CORE_SOURCE_PATH, "foundation", "Core/String/Core.bd")
@@ -183,6 +228,23 @@ pub fn corelib_service_source_identity(logical_path: &str) -> Option<CorelibServ
         .join(descriptor.relative_path());
     let canonical_path = std::fs::canonicalize(&declared_path).ok()?;
     Some(CorelibServiceSourceIdentity { declared_path, canonical_path })
+}
+
+/// Physical source root of one compiler-checkout Corelib package (`corelib/packages/<package>/src`).
+///
+/// This is the same build-checkout identity [`corelib_service_source_identity`] resolves for a
+/// service unit; it fails closed when the checkout path does not resolve.
+pub fn compiler_corelib_package_source_root(package: &str) -> Option<std::path::PathBuf> {
+    if package.is_empty() || package.contains(['/', '\\']) || package == "." || package == ".." {
+        return None;
+    }
+    let declared = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()?
+        .parent()?
+        .join("corelib/packages")
+        .join(package)
+        .join("src");
+    std::fs::canonicalize(declared).ok()
 }
 
 /// Compare source locations without filesystem resolution or parent traversal folding.

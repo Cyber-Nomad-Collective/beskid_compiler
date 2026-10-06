@@ -6,14 +6,14 @@ use beskid_analysis::types::TypeId;
 use cranelift_codegen::ir::Function;
 
 /// One generated function at the Cranelift artifact boundary.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct LoweredFunction {
     pub name: String,
     pub function: Function,
 }
 
 /// External function import authorized by syntax and semantic facts.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExternImport {
     pub symbol: String,
     pub abi: Option<String>,
@@ -29,7 +29,7 @@ pub struct ExportEntry {
 }
 
 /// Serialized type descriptor payload emitted into object or JIT data.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TypeDescriptorData {
     pub size: usize,
     pub align: usize,
@@ -40,6 +40,7 @@ pub struct TypeDescriptorData {
 #[derive(Debug, Clone, Default)]
 pub struct CodegenArtifact {
     pub functions: Vec<LoweredFunction>,
+    pub dynamic_initialization: Option<crate::dynamic_initialization::DynamicInitializationPlan>,
     pub type_descriptors: HashMap<TypeId, TypeDescriptorData>,
     pub string_literals: HashMap<String, Vec<u8>>,
     pub closure_static_plans: Vec<crate::closure_static::ClosureStaticPlan>,
@@ -188,7 +189,10 @@ mod tests {
     #[test]
     fn rejects_names_carrying_an_internal_trace_fragment() {
         assert!(!is_valid_link_name("Widget#gen1:nod2"), "a bare `#gN:nM` trace id is not a link name");
-        assert!(!is_valid_link_name("Widget#generic_1_2"), "an unresolved `#generic_` bookkeeping key is not a link name");
+        assert!(
+            !is_valid_link_name("Widget#generic_1_2"),
+            "an unresolved `#generic_` bookkeeping key is not a link name"
+        );
         assert!(!is_valid_link_name(""), "an empty name is never a valid link name");
         assert!(!is_valid_link_name("0widget"), "a leading digit is not a valid C identifier");
         assert!(!is_valid_link_name("widget name"), "whitespace is not valid in a C identifier");

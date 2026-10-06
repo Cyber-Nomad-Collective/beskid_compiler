@@ -11,8 +11,10 @@ use super::super::front_end::{FrontEndOptions, FrontEndTypedResult};
 use super::super::semantic_facts::DependencyTypingPolicy;
 
 /// Options for [`prepare_compilation`].
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct PrepareOptions {
+    /// Producer-owned native service; borrowed semantic authority remains invocation-scoped.
+    pub mod_invoker: Option<Arc<dyn crate::mod_host::ContractInvoker>>,
     pub front_end: FrontEndOptions,
     /// Whether dependency unit bodies are fully type-checked or only signatures prefetched.
     pub dependency_typing: DependencyTypingPolicy,
@@ -20,7 +22,11 @@ pub struct PrepareOptions {
 
 impl Default for PrepareOptions {
     fn default() -> Self {
-        Self { front_end: FrontEndOptions::default(), dependency_typing: DependencyTypingPolicy::FullClosure }
+        Self {
+            mod_invoker: None,
+            front_end: FrontEndOptions::default(),
+            dependency_typing: DependencyTypingPolicy::FullClosure,
+        }
     }
 }
 
@@ -69,7 +75,7 @@ impl PreparedCompilation {
         }
         let mut units = self.assembly.units.as_ref().clone();
         units[self.assembly.entry_index].program = self.program.clone();
-        crate::projects::ProgramAssembly::new(
+        let mut syntax = crate::projects::ProgramAssembly::new(
             self.assembly.roots.clone(),
             Arc::new(units),
             self.assembly.entry_index,
@@ -78,7 +84,22 @@ impl PreparedCompilation {
             self.assembly.has_std_dependency,
             self.assembly.generation,
         )
+        .with_recovery_policy(self.assembly.recovery_policy)
         .with_trusted_corelib_service_paths(Arc::clone(&self.assembly.trusted_corelib_service_paths))
+        .with_glue_libraries(Arc::clone(&self.assembly.glue_libraries))
         .with_runtime_fixture(self.assembly.runtime_fixture.clone())
+        .with_root_set(self.assembly.root_set.clone());
+        syntax.verified_package_identities = self.assembly.verified_package_identities.clone();
+        syntax
+    }
+}
+
+impl std::fmt::Debug for PrepareOptions {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PrepareOptions")
+            .field("front_end", &self.front_end)
+            .field("dependency_typing", &self.dependency_typing)
+            .field("mod_invoker", &self.mod_invoker.is_some())
+            .finish()
     }
 }

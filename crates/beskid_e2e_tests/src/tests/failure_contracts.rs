@@ -8,7 +8,7 @@ fn fetch_fails_when_manifest_is_missing() {
     let project_path = empty.path().join("Project.proj");
     let cli = BeskidCliInvoker::new();
 
-    let result = cli.run(["fetch", "--project", project_path.to_str().expect("project path str")]);
+    let result = cli.run(["dev", "project", "fetch", "--project", project_path.to_str().expect("project path str")]);
     assert_failure(&result, "fetch missing manifest");
     assert_output_contains(&result, "Project.proj", "fetch missing manifest");
 }

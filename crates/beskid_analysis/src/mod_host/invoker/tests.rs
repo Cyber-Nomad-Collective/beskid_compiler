@@ -14,14 +14,16 @@ fn empty_collect_request() -> ModInvocationContext {
 fn stub_records_each_invocation_kind() {
     let invoker = StubContractInvoker::new();
     let mut context = empty_collect_request();
-    invoker.invoke_collector(&r("Beskid.Compiler.Collect.Collector", "T1", "c"), &context.collect_request).unwrap();
     invoker
-        .invoke_generator(&r("Beskid.Compiler.Collect.Generator", "T2", "g"), &context.generation_request(&[]))
+        .invoke_collector(&r("Beskid.Compiler.Collect.Collector", "T1", "c"), &context.collect_request, None)
         .unwrap();
     invoker
-        .invoke_analyzer(&r("Beskid.Compiler.Collect.Analyzer", "T3", "a"), &context.collect_request, None)
+        .invoke_generator(&r("Beskid.Compiler.Collect.Generator", "T2", "g"), &context.generation_request(&[]), None)
         .unwrap();
-    invoker.invoke_rewriter(&r("Beskid.Compiler.Collect.Rewriter", "T4", "r"), &context.collect_request).unwrap();
+    invoker
+        .invoke_analyzer(&r("Beskid.Compiler.Collect.Analyzer", "T3", "a"), &context.collect_request, None, None)
+        .unwrap();
+    invoker.invoke_rewriter(&r("Beskid.Compiler.Collect.Rewriter", "T4", "r"), &context.collect_request, None).unwrap();
     let log = invoker.invocations();
     assert_eq!(log.len(), 4);
     assert!(matches!(log[0], InvocationKind::Collector { .. }));
@@ -36,7 +38,7 @@ fn scripted_overlays_generator_contributions() {
         .with_generator_contribution("T2", vec!["pub fn synthetic_generated() { return; }".into()]);
     let mut context = empty_collect_request();
     let outcome = invoker
-        .invoke_generator(&r("Beskid.Compiler.Collect.Generator", "T2", "g"), &context.generation_request(&[]))
+        .invoke_generator(&r("Beskid.Compiler.Collect.Generator", "T2", "g"), &context.generation_request(&[]), None)
         .unwrap();
     assert_eq!(outcome.typed_items.len(), 1);
 }
@@ -54,7 +56,7 @@ fn scripted_overlays_analyzer_diagnostics() {
     );
     let context = empty_collect_request();
     let outcome = invoker
-        .invoke_analyzer(&r("Beskid.Compiler.Collect.Analyzer", "TA", "a"), &context.collect_request, None)
+        .invoke_analyzer(&r("Beskid.Compiler.Collect.Analyzer", "TA", "a"), &context.collect_request, None, None)
         .unwrap();
     assert_eq!(outcome.diagnostics.len(), 1);
     assert_eq!(outcome.diagnostics[0].code, "ModA0001");
@@ -77,17 +79,14 @@ fn scripted_overlays_analyzer_fixes_and_maps_to_syntax_fix() {
     let fix = AnalyzerFix {
         diagnostic_index: 0,
         title: "Remove import".into(),
-        edits: vec![
-            RewriteEdit::Delete { start: 0, end: 4 },
-            RewriteEdit::Insert { offset: 0, text: "// ".into() },
-        ],
+        edits: vec![RewriteEdit::Delete { start: 0, end: 4 }, RewriteEdit::Insert { offset: 0, text: "// ".into() }],
     };
     let invoker = ScriptedContractInvoker::new()
         .with_analyzer_diagnostic("TA", vec![diagnostic.clone()])
         .with_analyzer_fix("TA", vec![fix.clone()]);
     let context = empty_collect_request();
     let outcome = invoker
-        .invoke_analyzer(&r("Beskid.Compiler.Collect.Analyzer", "TA", "a"), &context.collect_request, None)
+        .invoke_analyzer(&r("Beskid.Compiler.Collect.Analyzer", "TA", "a"), &context.collect_request, None, None)
         .unwrap();
 
     // Round-trip through AnalyzerFix: the scripted overlay populates outcome.fixes.
@@ -99,8 +98,7 @@ fn scripted_overlays_analyzer_fixes_and_maps_to_syntax_fix() {
 
     // Map to SyntaxFix: the fix resolves the linked diagnostic and tags the source.
     let source = format!("beskid:mod:{}", outcome.type_id);
-    let syntax_fix =
-        analyzer_fix_to_syntax_fix(&outcome.fixes[0], &outcome, &source).expect("fix maps to SyntaxFix");
+    let syntax_fix = analyzer_fix_to_syntax_fix(&outcome.fixes[0], &outcome, &source).expect("fix maps to SyntaxFix");
     assert_eq!(syntax_fix.source, "beskid:mod:TA");
     assert_eq!(syntax_fix.diagnostic_code, "ModA0001");
     assert_eq!(syntax_fix.title, "Remove import");
@@ -145,7 +143,7 @@ fn scripted_overlays_rewriter_edits() {
     );
     let context = empty_collect_request();
     let outcome = invoker
-        .invoke_rewriter(&r("Beskid.Compiler.Collect.Rewriter", "TR", "r"), &context.collect_request)
+        .invoke_rewriter(&r("Beskid.Compiler.Collect.Rewriter", "TR", "r"), &context.collect_request, None)
         .unwrap();
     assert_eq!(outcome.edits.len(), 2);
     assert!(matches!(outcome.edits[0], RewriteEdit::Replace { .. }));

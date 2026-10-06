@@ -112,17 +112,17 @@ fn run_heap_fixture(label: &str, entry: &str, expected: i64) {
     };
     {
         let mut engine = beskid_engine::Engine::with_runtime_kit(prefix.path(), target, BuildProfile::Debug).unwrap();
-        engine.compile_artifact(&lowered.artifact).expect("JIT heap-growth artifact");
-        let entrypoint = unsafe { engine.entrypoint_ptr(&lowered.symbol) }.unwrap();
+        engine.compile_artifact(&lowered.artifact()).expect("JIT heap-growth artifact");
+        let entrypoint = unsafe { engine.entrypoint_ptr(&lowered.symbol()) }.unwrap();
         let run: extern "C" fn() -> i64 = unsafe { std::mem::transmute(entrypoint) };
         let observed = run();
         assert_eq!(observed, expected, "{label}: JIT result mismatch");
         eprintln!("{label} JIT execution complete result={observed}");
     }
     let object_path = prefix.path().join(if cfg!(windows) { "heap_growth.obj" } else { "heap_growth.o" });
-    let native_symbol = beskid_codegen::object_link_symbol(&lowered.symbol, &lowered.artifact.exports);
+    let native_symbol = beskid_codegen::object_link_symbol(&lowered.symbol(), &lowered.artifact().exports);
     let mut object = beskid_aot::object_module::BeskidObjectModule::new(None, beskid_aot::BuildProfile::Debug).unwrap();
-    object.compile_artifact_with_exports(&lowered.artifact, &HashSet::from([native_symbol.clone()]), None).unwrap();
+    object.compile_artifact_with_exports(&lowered.artifact(), &HashSet::from([native_symbol.clone()]), None).unwrap();
     object.finalize_to_path(&object_path).unwrap();
     for (mode, library) in [("aot", &kit.static_library), ("native-kit", shared_link_library)] {
         let directory = prefix.path().join(mode);
@@ -285,9 +285,9 @@ fn build_heap_executable(label: &str, entry: &str) -> (tempfile::TempDir, std::p
     let prefix = tempfile::tempdir().unwrap();
     let kit = build_native_host(prefix.path().to_path_buf(), RuntimeKitProfile::Debug).unwrap();
     let object_path = prefix.path().join(if cfg!(windows) { "fixture.obj" } else { "fixture.o" });
-    let native_symbol = beskid_codegen::object_link_symbol(&lowered.symbol, &lowered.artifact.exports);
+    let native_symbol = beskid_codegen::object_link_symbol(&lowered.symbol(), &lowered.artifact().exports);
     let mut object = beskid_aot::object_module::BeskidObjectModule::new(None, beskid_aot::BuildProfile::Debug).unwrap();
-    object.compile_artifact_with_exports(&lowered.artifact, &HashSet::from([native_symbol.clone()]), None).unwrap();
+    object.compile_artifact_with_exports(&lowered.artifact(), &HashSet::from([native_symbol.clone()]), None).unwrap();
     object.finalize_to_path(&object_path).unwrap();
     let executable = prefix.path().join(executable_name(&format!("heap-{label}")));
     let mut cc = native_c_compiler();

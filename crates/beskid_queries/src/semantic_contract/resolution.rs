@@ -373,6 +373,10 @@ pub(super) fn unique_function_in_unit(
 /// Resolve an unqualified imported function only when its assembled import targets provide one
 /// exact declaration. Arbitrary unresolved bare names deliberately remain unavailable.
 pub(super) fn unique_imported_function(db: &dyn Db, key: AstNodeKey, name: &str) -> Option<AstNodeKey> {
+    let owner_is_runtime = db
+        .syntax_unit(key.unit)
+        .filter(|syntax| syntax.accepts_key(db, key))
+        .is_some_and(|syntax| syntax.revision(db).runtime_source_authority.is_some());
     let targets = db
         .syntax_dependency_registry()
         .lock()
@@ -380,16 +384,29 @@ pub(super) fn unique_imported_function(db: &dyn Db, key: AstNodeKey, name: &str)
         .imports
         .get(&(key.unit, key.generation))?
         .iter()
-        .map(|import| import.target)
-        .fold(Vec::new(), |mut targets, target| {
-            if !targets.contains(&target) {
-                targets.push(target);
-            }
-            targets
-        });
+        .map(|import| {
+            (
+                import.target,
+                owner_is_runtime
+                    && import.binding == crate::typed_program::CANONICAL_RUNTIME_CORPUS_BINDING
+                    && import.has_explicit_alias,
+            )
+        })
+        .collect::<Vec<_>>();
     let candidates = targets
         .into_iter()
-        .filter_map(|target| unique_exported_function_in_unit(db, target, key.generation, name))
+        .filter_map(|(target, private_scope)| {
+            let target_is_runtime = private_scope
+                && db
+                    .syntax_unit(target)
+                    .filter(|syntax| syntax.accepts_key(db, AstNodeKey { unit: target, ..key }))
+                    .is_some_and(|syntax| syntax.revision(db).runtime_source_authority.is_some());
+            if target_is_runtime {
+                unique_function_in_unit(db, target, key.generation, name)
+            } else {
+                unique_exported_function_in_unit(db, target, key.generation, name)
+            }
+        })
         .collect::<Vec<_>>();
     // Two distinct import targets can legitimately route to the exact same declaration: a hub
     // unit that `pub mod`-re-exports another unit's function is reachable both directly and

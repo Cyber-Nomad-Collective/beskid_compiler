@@ -34,9 +34,14 @@ const FILES: &[EmbeddedFile] = &[
         contents: include_str!("../assembly/common/args_utf16.h"),
     },
     EmbeddedFile {
-        relative_path: "assembly/common/network.h",
-        contents: include_str!("../assembly/common/network.h"),
+        relative_path: "assembly/common/process_transport.h",
+        contents: include_str!("../assembly/common/process_transport.h"),
     },
+    EmbeddedFile {
+        relative_path: "assembly/common/environment_lock.h",
+        contents: include_str!("../assembly/common/environment_lock.h"),
+    },
+    EmbeddedFile { relative_path: "assembly/common/network.h", contents: include_str!("../assembly/common/network.h") },
     EmbeddedFile {
         relative_path: "assembly/common/network_posix.h",
         contents: include_str!("../assembly/common/network_posix.h"),
@@ -125,6 +130,20 @@ pub fn stage_into(dest_root: &Path) -> io::Result<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn v06_staged_process_transport_preserves_closed_header_inventory() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let assembly = stage_into(temp.path()).expect("stage native sources");
+        for name in ["process_transport.h", "environment_lock.h"] {
+            let header = assembly.join("common").join(name);
+            assert!(header.is_file(), "required installed process include is missing: {}", header.display());
+        }
+        for target in ["aarch64-apple-darwin", "x86_64-unknown-linux-gnu", "x86_64-pc-windows-msvc"] {
+            let host = std::fs::read_to_string(assembly.join(target).join("platform_host.c")).unwrap();
+            assert!(host.contains("../common/process_transport.h"));
+        }
+    }
 
     #[test]
     fn stages_every_embedded_file_and_preserves_relative_includes() {

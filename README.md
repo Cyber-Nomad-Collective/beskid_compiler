@@ -48,7 +48,7 @@ CI publishes two rolling GitHub release streams from `main` (same semver source 
 | CLI | `cli-latest` | `cli-version.txt` | `beskid-linux-amd64`, `beskid-darwin-arm64`, `beskid-windows-amd64.exe` |
 | LSP | `lsp-latest` | `lsp-version.txt` | `beskid_lsp-linux-amd64`, `beskid_lsp-darwin-arm64`, `beskid_lsp-windows-amd64.exe` |
 
-Each push also creates an immutable `cli-v*` / `lsp-v*` release for pinning. Install the managed LSP with `beskid lsp install` (writes `~/.beskid/bin/beskid_lsp`); `beskid lsp` prefers that binary when present.
+Each push also creates an immutable `cli-v*` / `lsp-v*` release for pinning. Install the managed LSP with `beskid dev lsp install` (writes `~/.beskid/bin/beskid_lsp`); `beskid dev lsp` prefers that binary when present.
 
 ### Development setup
 

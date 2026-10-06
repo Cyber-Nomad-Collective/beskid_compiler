@@ -10,8 +10,13 @@ mod capabilities;
 mod code_string;
 mod collect;
 mod context;
+mod descriptor;
 pub mod diagnostics;
 mod discovery;
+pub use descriptor::{
+    NativeModCallableIdentity, NativeModRuntimeBinding, mod_artifact_inventory, native_mod_file_sha256,
+    native_mod_inventory_identity, native_mod_runtime_binding, read_mod_artifact_descriptor,
+};
 mod emit_bridge;
 mod generate;
 mod generate_output;
@@ -24,8 +29,12 @@ mod query_bridge;
 mod registrations;
 mod reparse;
 mod rewrite;
+mod semantic;
+mod semantic_scope;
+mod structural;
 mod types;
 mod validate;
+pub use semantic::*;
 
 pub use api::{
     collect_mod_target_fingerprint, extract_mod_host_diagnostics, native_invoker_for_plan, run_analyze_rewrite,
@@ -33,7 +42,7 @@ pub use api::{
     run_through_generate_without_materializing_outputs,
 };
 pub use collect::{capture_target_fingerprint, targets_changed};
-pub use context::ModInvocationContext;
+pub use context::{ModCollectRequest, ModGenerationRequest, ModInvocationContext};
 pub use diagnostics::{
     ModHostDiagnostics, ModHostIssue, SyntaxFix, SyntaxTextEdit, SyntaxTextEditKind, analyzer_diagnostic_to_semantic,
     analyzer_fix_to_syntax_fix,
@@ -63,4 +72,34 @@ pub use registrations::{
 pub use types::{
     ContractRegistration, ModArtifactDescriptor, ModHostAnalyzeResult, ModHostGenerateResult, ModHostInput,
     ModHostSession, ProgramItem,
+};
+
+pub use structural::{
+    StructuralContributionArena, StructuralContributionBounds, StructuralContributionError, StructuralContributionItem,
+    StructuralContributionTag, StructuralMaterializedItem, StructuralNodeHandle, StructuralProvenance,
+};
+
+pub use semantic_scope::ModSemanticScope;
+
+mod callback_transport;
+
+mod native_wire;
+mod native_worker;
+#[doc(hidden)]
+pub use native_worker::run_native_mod_worker;
+mod native_bridge;
+mod native_channel;
+mod native_correspondence;
+mod native_semantic_values;
+mod native_services;
+#[doc(hidden)]
+pub use native_bridge::{NativeInvocationOutput, invoke_qualified_native_rewriter, invoke_qualified_native_transport};
+
+mod syntax_authority;
+pub use syntax_authority::*;
+
+mod native_results;
+#[doc(hidden)]
+pub use native_results::{
+    native_analyzer_result, native_attribute_result, native_collector_result, native_generator_result,
 };

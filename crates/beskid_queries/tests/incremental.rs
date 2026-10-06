@@ -3,11 +3,45 @@
 use std::path::PathBuf;
 
 use beskid_analysis::services::{SemanticSnapshot, SessionFingerprint, cached_semantic_snapshot};
-use beskid_analysis::services::{get_or_insert_assembly, invalidate_entry_sessions, update_semantic_snapshot};
+use beskid_analysis::services::{get_or_insert_assembly, invalidate_entry_sessions_for_project, update_semantic_snapshot};
 use beskid_queries::{
     BeskidDatabase, Db, ProjectSession, fingerprint_key, parse_and_expand_unit, record_query_hit, reset,
     semantic_snapshot, snapshot, unit_content_fingerprint, unit_imports,
 };
+
+/// Install the Corelib under test into a process-private toolchain home and point every
+/// Corelib-resolving test at it, so these tests never read the developer's `~/.beskid` (or a
+/// shared install that an older toolchain left behind).
+///
+/// The bundle is the compiler checkout's `corelib/` tree, copied with the same CoreLib.bws member
+/// inventory the embedded bundle uses and sealed with a recomputed `.beskid-bundle.sha256` marker. That is
+/// what makes it a verified installed Corelib (lock replay and service-source admission both
+/// require one) whose bytes match the sources this compiler embeds. Runs once per process.
+fn isolated_corelib_toolchain() -> &'static std::path::Path {
+    use beskid_abi::corelib_bundle::{
+        CORELIB_BUNDLE_FINGERPRINT_FILE, copy_corelib_bundle, fingerprint_corelib_bundle_dir,
+    };
+
+    static HOME: std::sync::OnceLock<tempfile::TempDir> = std::sync::OnceLock::new();
+    HOME.get_or_init(|| {
+        let home = tempfile::tempdir().expect("create isolated BESKID_HOME");
+        let checkout = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../corelib");
+        let corelib = home.path().join("corelib");
+        copy_corelib_bundle(&checkout, &corelib).expect("copy the CoreLib.bws member inventory");
+        let fingerprint = fingerprint_corelib_bundle_dir(&corelib).expect("fingerprint isolated Corelib bundle");
+        std::fs::write(corelib.join(CORELIB_BUNDLE_FINGERPRINT_FILE), format!("{fingerprint}\n"))
+            .expect("seal isolated Corelib bundle");
+        // SAFETY: runs exactly once, before any test in this binary resolves a Corelib project, so
+        // no test observes the environment mid-update.
+        unsafe {
+            std::env::set_var("BESKID_HOME", home.path().join("home"));
+            std::env::set_var("BESKID_CONFIG_DIR", home.path().join("config"));
+            std::env::set_var("BESKID_CORELIB_ROOT", &corelib);
+        }
+        home
+    })
+    .path()
+}
 
 fn fixture_source() -> String {
     "use std.io;\ni32 Main() { return 0; }".to_string()
@@ -19,7 +53,7 @@ fn fixture_path() -> PathBuf {
 
 #[test]
 fn semantic_snapshot_query_hits_registry() {
-    invalidate_entry_sessions();
+    invalidate_entry_sessions_for_project(std::path::Path::new("/tmp/project"));
     let fp = SessionFingerprint {
         project_root: PathBuf::from("/tmp/project"),
         entry_canonical: PathBuf::from("/tmp/project/Main.bd"),
@@ -28,6 +62,8 @@ fn semantic_snapshot_query_hits_registry() {
     get_or_insert_assembly(
         fp.clone(),
         beskid_analysis::projects::ProgramAssembly {
+            compiled_mod_metadata: Vec::new(),
+            verified_package_identities: Default::default(),
             runtime_fixture: None,
             roots: beskid_analysis::projects::EffectiveCompilationRoots {
                 host: beskid_analysis::projects::RootEntry {
@@ -40,10 +76,13 @@ fn semantic_snapshot_query_hits_registry() {
             syntax_indexes: std::sync::Arc::new(Vec::new()),
             generation: beskid_analysis::syntax::SyntaxGenerationId(1),
             entry_index: 0,
+            root_set: beskid_analysis::projects::AssemblyRootSet::Entry,
             discovery: beskid_analysis::projects::AssemblyDiscovery::ImportClosure,
+            recovery_policy: beskid_analysis::projects::AssemblyRecoveryPolicy::Strict,
             module_index: std::sync::Arc::new(beskid_analysis::projects::ModuleIndex::empty()),
             has_std_dependency: false,
             trusted_corelib_service_paths: std::sync::Arc::from([]),
+            glue_libraries: std::sync::Arc::from([]),
         },
     )
     .unwrap();
@@ -141,6 +180,7 @@ fn warm_second_parse_reuses_unit_cache() {
 
 #[test]
 fn entry_resolution_with_db_populates_symbol_registry() {
+    isolated_corelib_toolchain();
     use std::path::PathBuf;
 
     use beskid_analysis::projects::AssemblyDiscovery;
@@ -160,8 +200,14 @@ fn entry_resolution_with_db_populates_symbol_registry() {
     std::env::set_current_dir(&compiler_root).expect("chdir");
     let result = {
         configure_db_for_project(&project_root);
-        let resolved = resolve_input(Some(&main_path), Some(&project_root), Some("App"), None, false, false)
-            .expect("resolve fixture");
+        let resolved = resolve_input(
+            Some(&main_path),
+            Some(&project_root),
+            Some("App"),
+            None,
+            beskid_analysis::projects::WorkspacePrepareOptions::default(),
+        )
+        .expect("resolve fixture");
         let mut db = BeskidDatabase::with_persistence(&project_root);
         let mut options = PrepareOptions::default();
         options.front_end.assembly_discovery = AssemblyDiscovery::ImportClosure;
@@ -180,6 +226,7 @@ fn entry_resolution_with_db_populates_symbol_registry() {
 
 #[test]
 fn typed_entry_state_uses_fast_resolution_when_stale() {
+    isolated_corelib_toolchain();
     use beskid_analysis::projects::AssemblyDiscovery;
     use beskid_analysis::services::{PrepareOptions, resolve_input};
     use beskid_queries::{
@@ -199,8 +246,14 @@ fn typed_entry_state_uses_fast_resolution_when_stale() {
     std::env::set_current_dir(&compiler_root).expect("chdir");
     let result = {
         configure_db_for_project(&project_root);
-        let resolved = resolve_input(Some(&main_path), Some(&project_root), Some("App"), None, false, false)
-            .expect("resolve fixture");
+        let resolved = resolve_input(
+            Some(&main_path),
+            Some(&project_root),
+            Some("App"),
+            None,
+            beskid_analysis::projects::WorkspacePrepareOptions::default(),
+        )
+        .expect("resolve fixture");
         let mut db = BeskidDatabase::with_persistence(&project_root);
         let mut options = PrepareOptions::default();
         options.front_end.assembly_discovery = AssemblyDiscovery::ImportClosure;
@@ -268,6 +321,7 @@ fn manifest_digest_changes_when_manifest_or_lock_changes() {
 /// process-global entry-session state.
 #[test]
 fn diagnostics_prepare_and_facts_share_one_session_for_noncanonical_root() {
+    isolated_corelib_toolchain();
     use std::sync::Arc;
 
     use beskid_analysis::projects::AssemblyDiscovery;
@@ -299,11 +353,17 @@ fn diagnostics_prepare_and_facts_share_one_session_for_noncanonical_root() {
     assert_ne!(project_root, canonical_root, "project root must be spelled non-canonically");
 
     configure_db_for_project(&project_root);
-    let resolved = resolve_input(Some(&main_path), Some(&project_root), Some("App"), None, false, false)
-        .expect("resolve project");
+    let resolved = resolve_input(
+        Some(&main_path),
+        Some(&project_root),
+        Some("App"),
+        None,
+        beskid_analysis::projects::WorkspacePrepareOptions::default(),
+    )
+    .expect("resolve project");
     let plan = resolved.compile_plan.clone().expect("compile plan");
     let mut db = BeskidDatabase::default();
-    let options = PrepareOptions {
+    let options = PrepareOptions { mod_invoker: None,
         front_end: FrontEndOptions { assembly_discovery: AssemblyDiscovery::ImportClosure, ..Default::default() },
         ..Default::default()
     };

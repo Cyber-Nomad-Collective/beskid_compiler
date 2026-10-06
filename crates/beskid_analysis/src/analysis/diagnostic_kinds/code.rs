@@ -61,6 +61,7 @@ impl SemanticIssueKind {
             Self::ResolveUnknownTypeInModule { .. } => "E1201",
             Self::ResolveInvalidConformanceTarget { .. } => "E1607",
             Self::ResolvePrivateItemInModule { .. } => "E1107",
+            Self::ResolvePrivateRuntimeBuiltin { .. } => "E1107",
             Self::ResolveShadowedLocal { .. } => "W1103",
             Self::MissingImport { .. } => "E1109",
             Self::MissingImportAmbiguous { .. } => "W1110",
@@ -161,6 +162,12 @@ impl SemanticIssueKind {
             Self::NamingNotCamelCaseBinding { .. } => "W1636",
             Self::NamingNotSnakeCaseTest { .. } => "W1637",
             Self::NamingNotCamelCaseMacro { .. } => "W1638",
+            Self::NumericLiteralOutOfRange { .. } => "T0905",
+            Self::ExternInvalidAbi { .. } => "T0901",
+            Self::ExternMissingLibrary => "T0902",
+            Self::ExternDisallowedParamType { .. } => "T0903",
+            Self::ExternDisallowedReturnType { .. } => "T0904",
+            Self::GlueBindingRejected { .. } => "T0903",
         }
     }
 }

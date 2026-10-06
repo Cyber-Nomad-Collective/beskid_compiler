@@ -2,6 +2,8 @@ use Runtime.Bootstrap.Lifecycle;
 use Runtime.Bootstrap.Native;
 use Runtime.Bootstrap.Objects;
 use Runtime.Mem.Gc.Allocation;
+use Runtime.Mem.Gc.Identity;
+use Runtime.Mem.Gc.CheckedScope;
 use Runtime.Mem.Gc.Collection;
 use Runtime.Mem.Gc.RootsHandles;
 use Runtime.Data.Collections;
@@ -380,4 +382,164 @@ test gc_handle_stack_grows_across_block_boundaries {
     SystemFree(descriptor, 40);
     DropTestHeap(runtime, thread, heap, region, 256);
     ResumeHostRuntime(hostRuntime);
+}
+
+// Checked operations leave no half-published allocation or root on failure.
+test gc_checked_identity_and_allocation_failure_preserve_heap {
+    pointer descriptor = TestDescriptor(24, 8);
+    pointer first = Alloc(24, descriptor);
+    pointer second = Alloc(24, descriptor);
+    word firstHandle = GcRootHandle(first);
+    word secondHandle = GcRootHandle(second);
+    Assert.Equal(GcSameIdentity(first, first), 1, "same live allocation");
+    Assert.Equal(GcSameIdentity(first, second), 0, "equal layout is distinct identity");
+    Assert.Equal(GcSameIdentity(first, NativePointer(0)), 2, "invalid reference is not an identity");
+    GcCollect();
+    Assert.Equal(GcSameIdentity(GcResolveHandle(firstHandle), first), 1, "rooted identity survives collection");
+    word before = GcObjectCount();
+    Assert.True(GcTryAlloc(2147483648, 8) == NativePointer(0), "request beyond heap cap returns checked failure");
+    Assert.Equal(GcAllocationFailureReason(), 3, "actual cap failure recorded without allocating error object");
+    Assert.Equal(GcObjectCount(), before, "failed allocation publishes no object");
+    Assert.True(GcResolveHandle(firstHandle) == first, "failure preserves existing roots");
+    pointer recovered = GcTryAlloc(24, 8);
+    Assert.True(recovered != NativePointer(0), "smaller request succeeds after failure");
+    Assert.Equal(GcAllocationFailureReason(), 0, "successful request clears old failure");
+    memory_set(recovered, 0, 24);
+    raw_word_store(recovered, NativeWord(descriptor));
+    GcUnrootHandle(firstHandle);
+    GcUnrootHandle(secondHandle);
+    GcCollect();
+    SystemFree(descriptor, 40);
+}
+
+test gc_checked_handle_growth_failure_is_recoverable {
+    pointer descriptor = TestDescriptor(24, 8);
+    pointer value = Alloc(24, descriptor);
+    word keeper = GcRootHandle(value);
+    pointer handles = SystemAllocate(1024, 8);
+    mut word count = 0;
+    mut bool rejected = false;
+    GcHeapForceRootStackFailure(1);
+    while count < 128 && !rejected {
+        word handle = GcTryRootHandle(value);
+        if handle == 0 { rejected = true; }
+        else { raw_word_store(pointer_add(handles, count * 8), handle); count = count + 1; }
+    }
+    word reason = GcAllocationFailureReason();
+    bool alive = GcResolveHandle(keeper) == value;
+    GcHeapForceRootStackFailure(0);
+    Assert.True(rejected, "actual next handle block allocation fault returns checked failure");
+    Assert.Equal(reason, 4, "handle admission preserves typed raw failure reason");
+    Assert.True(alive, "failed admission leaves existing handle valid");
+    word recovered = GcTryRootHandle(value);
+    Assert.True(recovered != 0, "handle growth succeeds when allocation fault removed");
+    GcUnrootHandle(recovered);
+    while count > 0 { count = count - 1; GcUnrootHandle(raw_word_load(pointer_add(handles, count * 8))); }
+    GcUnrootHandle(keeper);
+    SystemFree(handles, 1024);
+    GcCollect();
+    SystemFree(descriptor, 40);
+}
+
+test gc_checked_root_growth_failure_is_recoverable {
+    pointer slots = SystemAllocate(1024, 8);
+    memory_set(slots, 0, 1024);
+    mut word count = 0;
+    mut bool rejected = false;
+    GcHeapForceRootStackFailure(1);
+    while count < 128 && !rejected {
+        bool registered = GcTryRegisterRoot(pointer_add(slots, count * 8));
+        if !registered { rejected = true; } else { count = count + 1; }
+    }
+    word reason = GcAllocationFailureReason();
+    bool unpublished = !GcIsRegisteredRoot(pointer_add(slots, count * 8));
+    GcHeapForceRootStackFailure(0);
+    Assert.True(rejected, "actual next root block allocation fault returns checked failure");
+    Assert.Equal(reason, 4, "root admission preserves raw failure reason");
+    Assert.True(unpublished, "failed slot is never published");
+    Assert.True(GcTryRegisterRoot(pointer_add(slots, count * 8)), "root block grows after fault removed");
+    GcUnregisterRoot(pointer_add(slots, count * 8));
+    while count > 0 { count = count - 1; GcUnregisterRoot(pointer_add(slots, count * 8)); }
+    SystemFree(slots, 1024);
+}
+
+test gc_checked_array_growth_preserves_source_on_real_exhaustion {
+    pointer element = SystemAllocate(32, 8);
+    memory_set(element, 0, 32);
+    raw_word_store(element, 8);
+    raw_word_store(pointer_add(element, 8), 8);
+    pointer descriptor = TestDescriptor(48, 8);
+    raw_word_store(pointer_add(descriptor, 32), TypeDescriptorArrayFlag());
+    pointer request = SystemAllocate(32, 8);
+    memory_set(request, 0, 32);
+    raw_word_store(request, NativeWord(element));
+    raw_word_store(pointer_add(request, 8), 1);
+    raw_word_store(pointer_add(request, 16), NativeWord(descriptor));
+    pointer rootOut = SystemAllocate(8, 8);
+    pointer source = TryAllocateArrayRooted(request, rootOut);
+    word keeper = raw_word_load(rootOut);
+    Assert.True(source != NativePointer(0) && keeper != 0, "checked initial array construction roots source");
+    raw_word_store(NativePointer(raw_word_load(source)), 91);
+    pointer originalData = NativePointer(raw_word_load(source));
+    word originalLength = raw_word_load(pointer_add(source, 8));
+    word originalCapacity = raw_word_load(pointer_add(source, 16));
+    Assert.Equal(GcSameIdentity(source, NativePointer(NativeWord(source) - 24)), 1, "array ABI view and allocation header share canonical identity");
+    pointer rejected = TryGrowArrayRooted(source, 268435456, rootOut);
+    word reason = GcAllocationFailureReason();
+    word failedRoot = raw_word_load(rootOut);
+    Assert.True(rejected == NativePointer(0), "actual request beyond heap cap rejects");
+    Assert.Equal(reason, 3, "checked growth reports allocation cap failure");
+    Assert.Equal(failedRoot, 0, "no construction ownership escapes failure");
+    Assert.True(NativePointer(raw_word_load(source)) == originalData, "failed growth preserves source backing");
+    Assert.Equal(raw_word_load(pointer_add(source, 8)), originalLength, "failed growth preserves logical length");
+    Assert.Equal(raw_word_load(pointer_add(source, 16)), originalCapacity, "failed growth preserves capacity");
+    Assert.Equal(raw_word_load(originalData), 91, "failed growth preserves every original element");
+    Assert.True(GcResolveHandle(keeper) == NativePointer(NativeWord(source) - 24), "source keeper survives failure cleanup");
+    pointer grown = TryGrowArrayRooted(source, 2, rootOut);
+    Assert.True(grown != NativePointer(0), "subsequent checked growth succeeds");
+    Assert.Equal(raw_word_load(NativePointer(raw_word_load(grown))), 91, "successful growth preserves typed contents");
+    Assert.Equal(ArrayConstructionFinish(NativePointer(raw_word_load(rootOut))), 1, "exactly one successful construction root released");
+    GcUnrootHandle(keeper);
+    GcCollect();
+    SystemFree(rootOut, 8);
+    SystemFree(request, 32);
+    SystemFree(descriptor, 40);
+    SystemFree(element, 32);
+}
+
+
+test gc_checked_scope_keeps_first_failure_and_restores_nested_links {
+    pointer descriptor = TestDescriptor(24, 8);
+    pointer failure = Alloc(24, descriptor);
+    word failureHandle = GcRootHandle(failure);
+    pointer outer = SystemAllocate(64, 8);
+    pointer inner = SystemAllocate(64, 8);
+    memory_set(outer, 0, 64);
+    memory_set(inner, 0, 64);
+    bool outerEntered = CheckedScopeEnter(outer, failureHandle);
+    bool innerEntered = CheckedScopeEnter(inner, failureHandle);
+    pointer rejected = GcAlloc(2147483648, 8);
+    word firstReason = CheckedScopeFailureReason();
+    pointer skipped = GcAlloc(24, 8);
+    GcClearAllocationFailure();
+    word retainedReason = CheckedScopeFailureReason();
+    pointer retainedFailure = CheckedScopeFailureResult();
+    CheckedScopeLeave(inner);
+    word outerReason = CheckedScopeFailureReason();
+    pointer restored = CheckedScopeCurrent();
+    CheckedScopeLeave(outer);
+    pointer released = CheckedScopeCurrent();
+    Assert.True(outerEntered && innerEntered, "two admitted invocation contexts");
+    Assert.True(rejected == NativePointer(0) && skipped == NativePointer(0), "sticky failure prevents another allocation");
+    Assert.Equal(firstReason, 3, "actual cap failure");
+    Assert.Equal(retainedReason, 3, "heap scratch reset cannot erase invocation failure");
+    Assert.True(retainedFailure == failure, "reserved rooted cell retained without allocation");
+    Assert.Equal(outerReason, 0, "child context does not corrupt prior invocation");
+    Assert.True(restored == outer && released == NativePointer(0), "every exit restores prior link");
+    Assert.True(!CheckedScopeEnter(outer, 0), "missing admission handle rejects scope");
+    GcUnrootHandle(failureHandle);
+    GcCollect();
+    SystemFree(outer, 64);
+    SystemFree(inner, 64);
+    SystemFree(descriptor, 40);
 }

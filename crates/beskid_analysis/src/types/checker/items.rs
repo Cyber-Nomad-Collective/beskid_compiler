@@ -181,7 +181,8 @@ impl<'a> TypeChecker<'a> {
                     self.generic_params.insert(name.clone(), type_id);
                     inserted.push(name);
                 }
-                let bound_facts = self.item_id_for_span(item.span)
+                let bound_facts = self
+                    .item_id_for_span(item.span)
                     .and_then(|function| self.function_bounds.get(&function))
                     .cloned()
                     .unwrap_or_default();
@@ -228,6 +229,27 @@ impl<'a> TypeChecker<'a> {
                 self.type_method_definition(item.span, def);
             }
             Node::ImplBlock(def) => {
+                let previous_generics = self.generic_params.clone();
+                for generic in &def.node.generics {
+                    let name = generic.node.name.clone();
+                    if self.generic_params.contains_key(&name) {
+                        self.errors.push(TypeError::UnknownType {
+                            span: generic.span,
+                            name: format!("duplicate impl generic {name}"),
+                        });
+                    }
+                    let id = self.type_table.intern(crate::types::TypeInfo::GenericParam(name.clone()));
+                    self.generic_params.insert(name, id);
+                }
+                for bound in &def.node.where_bounds {
+                    if !def.node.generics.iter().any(|g| g.node.name == bound.parameter.node.name) {
+                        self.errors.push(TypeError::UnknownType {
+                            span: bound.parameter.span,
+                            name: bound.parameter.node.name.clone(),
+                        });
+                    }
+                    self.type_id_for_path_with_args(&bound.contract);
+                }
                 self.type_id_for_type(&def.node.receiver_type);
                 for conformance in &def.node.conformances {
                     self.type_id_for_path_with_args(conformance);
@@ -235,6 +257,7 @@ impl<'a> TypeChecker<'a> {
                 for method in &def.node.methods {
                     self.type_method_definition(method.span, method);
                 }
+                self.generic_params = previous_generics;
             }
             Node::ExtendTypeDefinition(def) => {
                 self.type_id_for_type(&def.node.target_type);
@@ -447,12 +470,14 @@ impl<'a> TypeChecker<'a> {
             }
         }
         self.record_signature(item_span, params.clone(), return_type);
-        let method_item_id =
-            self.canonical_item_id_for_span(item_span).or_else(|| self.item_id_for_span(item_span));
+        let method_item_id = self.canonical_item_id_for_span(item_span).or_else(|| self.item_id_for_span(item_span));
         if let (Some(method_item_id), Some(return_type)) = (method_item_id, return_type) {
             self.method_function_signatures.insert(method_item_id, FunctionSignature { params, return_type });
         }
+        let previous_function = self.current_function_item;
+        self.current_function_item = method_item_id;
         self.type_block(&def.node.body);
+        self.current_function_item = previous_function;
         self.current_receiver_item_id = previous_receiver;
         match previous_this {
             Some(Some(previous)) => {

@@ -21,8 +21,18 @@ pub struct CAbiProfile;
 
 /// The scalar `AbiType`s the C profile permits at the user FFI boundary in
 /// the current delivery band.
-pub const C_PROFILE_PERMITTED_SCALARS: &[AbiType] =
-    &[AbiType::I8, AbiType::U8, AbiType::I32, AbiType::I64, AbiType::F64];
+pub const C_PROFILE_PERMITTED_SCALARS: &[AbiType] = &[
+    AbiType::I8,
+    AbiType::I16,
+    AbiType::U16,
+    AbiType::U32,
+    AbiType::U64,
+    AbiType::F32,
+    AbiType::U8,
+    AbiType::I32,
+    AbiType::I64,
+    AbiType::F64,
+];
 
 /// A C profile binding decision for a single type-shape: whether it is
 /// permitted, and if so how it is passed.

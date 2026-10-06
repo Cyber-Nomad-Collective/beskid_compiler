@@ -78,7 +78,7 @@ fn analyze_program_with_options_and_plan(
     let plan = compile_plan.expect("checked above");
     let resolved = resolved_input_from_plan(path.to_path_buf(), source.to_string(), plan.clone(), None, None);
 
-    let prepare_options = PrepareOptions {
+    let prepare_options = PrepareOptions { mod_invoker: None,
         front_end: FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
         ..Default::default()
     };
@@ -116,7 +116,7 @@ pub fn analyze_source_with_compilation_context(
 
     let resolved = resolved_input_from_plan(path.to_path_buf(), source.to_string(), plan.clone(), None, None);
 
-    let prepare_options = PrepareOptions {
+    let prepare_options = PrepareOptions { mod_invoker: None,
         front_end: FrontEndOptions {
             with_semantic_diagnostics: true,
             module_level_meta_items_allowed: Some(ctx.module_level_meta_items_allowed()),

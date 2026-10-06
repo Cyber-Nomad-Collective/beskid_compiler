@@ -119,7 +119,10 @@ enum MatchPatternExpectation {
 impl MatchPatternExpectation {
     fn binding_shape(&self) -> AggregateFieldShape {
         match self {
-            Self::Scalar { semantic_type, .. } => AggregateFieldShape::Scalar(*semantic_type),
+            Self::Scalar { semantic_type, managed_reference } => match managed_reference {
+                ManagedReferenceKind::GcManaged => AggregateFieldShape::ManagedReference(*semantic_type),
+                ManagedReferenceKind::NativeOrScalar => AggregateFieldShape::Scalar(*semantic_type),
+            },
             Self::Nominal(declaration) | Self::NominalEnum { declaration, .. } => {
                 AggregateFieldShape::Nominal(*declaration)
             }
@@ -290,17 +293,19 @@ fn materialize_enum_pattern(
                 )
                 .ok_or_else(|| SemanticError::unavailable("enum_match"))?;
             let expected = match shape {
-                AggregateFieldShape::Scalar(semantic_type) => MatchPatternExpectation::Scalar {
-                    semantic_type: *semantic_type,
-                    managed_reference: enum_variant_field_managed_reference(
-                        context.db,
-                        declaration,
-                        variant_index,
-                        field_index,
-                        *shape,
-                        context.environment,
-                    )?,
-                },
+                AggregateFieldShape::Scalar(semantic_type) | AggregateFieldShape::ManagedReference(semantic_type) => {
+                    MatchPatternExpectation::Scalar {
+                        semantic_type: *semantic_type,
+                        managed_reference: enum_variant_field_managed_reference(
+                            context.db,
+                            declaration,
+                            variant_index,
+                            field_index,
+                            *shape,
+                            context.environment,
+                        )?,
+                    }
+                }
                 AggregateFieldShape::Nominal(declaration) => MatchPatternExpectation::Nominal(*declaration),
             };
             let syntax =
@@ -362,9 +367,9 @@ fn enum_variant_field_managed_reference(
             return Ok(managed_reference.managed_reference_kind());
         }
         return match applied_shape {
-            AggregateFieldShape::Nominal(_) | AggregateFieldShape::Scalar(SemanticTypeId::STRING) => {
-                Ok(ManagedReferenceKind::GcManaged)
-            }
+            AggregateFieldShape::Nominal(_)
+            | AggregateFieldShape::ManagedReference(_)
+            | AggregateFieldShape::Scalar(SemanticTypeId::STRING) => Ok(ManagedReferenceKind::GcManaged),
             AggregateFieldShape::Scalar(SemanticTypeId::POINTER) => Err(SemanticError::unavailable("enum_match")),
             AggregateFieldShape::Scalar(_) => Ok(ManagedReferenceKind::NativeOrScalar),
         };

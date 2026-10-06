@@ -14,7 +14,8 @@ const RUNTIME_ACTIVE = 2;
 const RUNTIME_SHUTTING_DOWN = 3;
 const RUNTIME_SHUT_DOWN = 4;
 
-const TLS_STATE_SIZE = 48;
+const TLS_STATE_SIZE = 56;
+const TLS_CHECKED_ALLOCATION_SCOPE_OFFSET = 48;
 const TLS_RUNTIME_OFFSET = 0;
 const TLS_ROOT_FRAME_OFFSET = 8;
 const TLS_RESERVED_OFFSET = 16;
@@ -36,7 +37,7 @@ const PAGE_SIZE = 8192;
 const HEAP_DEFAULT_CAP = 1073741824;
 const HEAP_FIRST_REGION = 0;
 const REGION_SIZE_FIELD = 8;
-const CALLBACK_REGISTRY_SIZE = 1056;
+const CALLBACK_REGISTRY_SIZE = 1072;
 const CALLBACK_COMPOSITION_OFFSET = 24;
 
 [Export(Abi:"C", Symbol:"beskid_rt_v5_abi_version")]
@@ -176,8 +177,12 @@ pub unit ProcessShutdown(pointer runtime) {
         raw_word_store(pointer_add(callbacks, CALLBACK_COMPOSITION_OFFSET), 0);
     }
     if SchedShutdown() == false { WorkerPoolShutdown(); Trap(10, NativePointer(0), 0); }
+    if ChildShutdown() != 0 { WorkerPoolShutdown(); Trap(10, NativePointer(0), 0); }
     WorkerPoolShutdown();
     pointer heap = NativePointer(raw_word_load(pointer_add(runtime, RUNTIME_HEAP_OFFSET)));
+    if dynamic_registry_shutdown_v1() == 0 { Trap(10, NativePointer(0), 0); }
+    if glue_owner_shutdown() == 0 { Trap(10, NativePointer(0), 0); }
+    CallbackRegistryRootsDrop();
     if GcExternalRootCount() != 0 || GcHandlesClear() == false { Trap(10, NativePointer(0), 0); }
     if heap != NativePointer(0) { FreeRootAndHandleStacks(heap); }
     mut pointer region = NativePointer(raw_word_load(pointer_add(heap, HEAP_FIRST_REGION)));
@@ -188,7 +193,8 @@ pub unit ProcessShutdown(pointer runtime) {
            raw_word_load(pointer_add(thread, TLS_RESERVED_OFFSET)) != 0 ||
            raw_word_load(pointer_add(thread, TLS_ATTACH_DEPTH_OFFSET)) != 1 ||
            raw_word_load(pointer_add(thread, TLS_COMPOSITION_SCOPE_OFFSET)) != 0 ||
-           raw_word_load(pointer_add(thread, TLS_COMPOSITION_DEPTH_OFFSET)) != 0 {
+           raw_word_load(pointer_add(thread, TLS_COMPOSITION_DEPTH_OFFSET)) != 0 ||
+           raw_word_load(pointer_add(thread, TLS_CHECKED_ALLOCATION_SCOPE_OFFSET)) != 0 {
             Trap(10, NativePointer(0), 0);
         }
         ThreadDetach(thread);
@@ -261,7 +267,8 @@ pub unit ThreadDetach(pointer thread) {
        raw_word_load(pointer_add(thread, TLS_RESERVED_OFFSET)) != 0 ||
        raw_word_load(pointer_add(thread, TLS_ATTACH_DEPTH_OFFSET)) != 1 ||
        raw_word_load(pointer_add(thread, TLS_COMPOSITION_SCOPE_OFFSET)) != 0 ||
-       raw_word_load(pointer_add(thread, TLS_COMPOSITION_DEPTH_OFFSET)) != 0 {
+       raw_word_load(pointer_add(thread, TLS_COMPOSITION_DEPTH_OFFSET)) != 0 ||
+           raw_word_load(pointer_add(thread, TLS_CHECKED_ALLOCATION_SCOPE_OFFSET)) != 0 {
         Trap(10, NativePointer(0), 0);
     }
     SetCurrentThreadState(NativePointer(0));
@@ -271,4 +278,17 @@ pub unit ThreadDetach(pointer thread) {
     memory_set(thread, 0, TLS_STATE_SIZE);
     SystemFree(thread, TLS_STATE_SIZE);
     return;
+}
+
+// Private canonical-provider link; no source-facing pointer/token operation.
+pub pointer CheckedAllocationScopeLink() {
+    pointer thread = CurrentThreadState();
+    if thread == NativePointer(0) { return NativePointer(0); }
+    return NativePointer(raw_word_load(pointer_add(thread, TLS_CHECKED_ALLOCATION_SCOPE_OFFSET)));
+}
+pub bool SetCheckedAllocationScopeLink(pointer checkedContext) {
+    pointer thread = CurrentThreadState();
+    if thread == NativePointer(0) { return false; }
+    raw_word_store(pointer_add(thread, TLS_CHECKED_ALLOCATION_SCOPE_OFFSET), NativeWord(checkedContext));
+    return true;
 }

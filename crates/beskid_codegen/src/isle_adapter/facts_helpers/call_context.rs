@@ -3,7 +3,7 @@
 use super::super::*;
 
 impl SyntaxNodeFacts<'_> {
-    pub(in crate::isle_adapter) fn generic_call_specialization_in_context(
+    pub(crate) fn generic_call_specialization_in_context(
         &self,
         key: AstNodeKey,
     ) -> Option<beskid_queries::GenericSpecializationInstance> {

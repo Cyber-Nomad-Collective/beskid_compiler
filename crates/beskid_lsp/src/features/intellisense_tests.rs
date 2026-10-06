@@ -339,9 +339,14 @@ mod tests {
         let root = compiler_workspace_root();
         with_cwd_at_workspace_root(&root, || {
             let fixture = corelib_mvp_paths();
-            let resolved =
-                resolve_input(Some(&fixture.main_path), Some(&fixture.project_root), None, None, false, false)
-                    .expect("resolve");
+            let resolved = resolve_input(
+                Some(&fixture.main_path),
+                Some(&fixture.project_root),
+                None,
+                None,
+                beskid_analysis::projects::WorkspacePrepareOptions::default(),
+            )
+            .expect("resolve");
             let project_root = fixture.project_root.canonicalize().unwrap_or_else(|_| fixture.project_root.clone());
             configure_db_for_project(&project_root);
             let mut db = BeskidDatabase::with_persistence(&project_root);

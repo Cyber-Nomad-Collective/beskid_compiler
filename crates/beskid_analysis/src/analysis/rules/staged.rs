@@ -1,6 +1,7 @@
 use crate::analysis::rules::{Rule, RuleContext};
 use crate::syntax::{Program, SpanInfo, Spanned};
 use beskid_pipeline::{PipelineObserver, observe_phase, phases};
+use std::collections::HashSet;
 
 mod control_flow;
 mod definitions;
@@ -36,13 +37,17 @@ impl SemanticPipelineRule {
         observe_stage(pipeline, phases::SEMANTIC_DEFINITIONS, || {
             self.stage0_collect_definitions(ctx, &program);
         });
+        let mut unqualified_variant_calls = Vec::new();
         observe_stage(pipeline, phases::SEMANTIC_CONTROL_FLOW, || {
-            self.stage3_control_flow_and_patterns(ctx, &program);
+            unqualified_variant_calls = self.stage3_control_flow_and_patterns(ctx, &program);
         });
 
-        let Some(resolution) = observe_stage_optional(pipeline, phases::SEMANTIC_NAME_RESOLUTION, || {
-            self.stage1_name_resolution(ctx, &program)
-        }) else {
+        let mut unresolved_value_spans = HashSet::new();
+        let resolution = observe_stage_optional(pipeline, phases::SEMANTIC_NAME_RESOLUTION, || {
+            self.stage1_name_resolution(ctx, &program, &mut unresolved_value_spans)
+        });
+        self.emit_unqualified_enum_constructors(ctx, unqualified_variant_calls, &unresolved_value_spans);
+        let Some(resolution) = resolution else {
             return;
         };
 

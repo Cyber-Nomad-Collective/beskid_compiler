@@ -7,15 +7,24 @@ use crate::syntax_query::{AstWalker, NodeRef, Query, Visit};
 use std::collections::{HashMap, HashSet};
 
 impl SemanticPipelineRule {
-    pub(super) fn stage3_control_flow_and_patterns(&self, ctx: &mut RuleContext, program: &Spanned<Program>) {
+    /// Control-flow and pattern checks. Returns the single-segment calls whose name matches an
+    /// enum variant; they are judged by [`Self::emit_unqualified_enum_constructors`] once name
+    /// resolution has run, because a local or module function of that name takes precedence.
+    pub(super) fn stage3_control_flow_and_patterns(
+        &self,
+        ctx: &mut RuleContext,
+        program: &Spanned<Program>,
+    ) -> Vec<UnqualifiedVariantCall> {
         let enum_variants = self.collect_enum_variants(ctx, program);
         let variant_to_enum = self.collect_variant_to_enum(ctx, program);
+        let unqualified_calls = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
 
         let mut walker = AstWalker::new().with_visitor(Box::new(ControlFlowVisitor::new(
             self,
             ctx,
             &enum_variants,
             &variant_to_enum,
+            unqualified_calls.clone(),
         )));
 
         for item in &program.node.items {
@@ -28,6 +37,27 @@ impl SemanticPipelineRule {
                 }
                 _ => {}
             }
+        }
+        drop(walker);
+        unqualified_calls.take()
+    }
+
+    /// Reports an unqualified enum constructor only where name resolution found no binding for
+    /// the callee. A call that resolves (to a local, a parameter, or a function declared in or
+    /// imported into the module) is an ordinary call and never this diagnostic.
+    pub(super) fn emit_unqualified_enum_constructors(
+        &self,
+        ctx: &mut RuleContext,
+        calls: Vec<UnqualifiedVariantCall>,
+        unresolved_value_spans: &HashSet<SpanInfo>,
+    ) {
+        for call in calls {
+            if !unresolved_value_spans.contains(&call.span) {
+                continue;
+            }
+            let issue =
+                SemanticIssueKind::UnqualifiedEnumConstructor { variant_name: call.variant_name, enum_name: call.enum_name };
+            ctx.emit_issue(call.span, issue);
         }
     }
 
@@ -281,12 +311,20 @@ impl SemanticPipelineRule {
     }
 }
 
+/// A single-segment call whose callee name matches a variant of a known enum.
+pub(super) struct UnqualifiedVariantCall {
+    span: SpanInfo,
+    variant_name: String,
+    enum_name: String,
+}
+
 struct ControlFlowVisitor<'a> {
     rule: &'a SemanticPipelineRule,
     ctx: &'a mut RuleContext,
     loop_depth: usize,
     enum_variants: &'a HashMap<String, HashMap<String, usize>>,
     variant_to_enum: &'a HashMap<String, String>,
+    unqualified_calls: std::rc::Rc<std::cell::RefCell<Vec<UnqualifiedVariantCall>>>,
 }
 
 impl<'a> ControlFlowVisitor<'a> {
@@ -295,8 +333,9 @@ impl<'a> ControlFlowVisitor<'a> {
         ctx: &'a mut RuleContext,
         enum_variants: &'a HashMap<String, HashMap<String, usize>>,
         variant_to_enum: &'a HashMap<String, String>,
+        unqualified_calls: std::rc::Rc<std::cell::RefCell<Vec<UnqualifiedVariantCall>>>,
     ) -> Self {
-        Self { rule, ctx, loop_depth: 0, enum_variants, variant_to_enum }
+        Self { rule, ctx, loop_depth: 0, enum_variants, variant_to_enum, unqualified_calls }
     }
 
     fn scan_unreachable_in_block(&mut self, block: &Block) {
@@ -351,13 +390,11 @@ impl<'a> ControlFlowVisitor<'a> {
         {
             let name_value = &name.node.name.node.name;
             if let Some(enum_name) = self.variant_to_enum.get(name_value) {
-                self.ctx.emit_issue(
-                    path_expression.node.path.span,
-                    SemanticIssueKind::UnqualifiedEnumConstructor {
-                        variant_name: name_value.clone(),
-                        enum_name: enum_name.clone(),
-                    },
-                );
+                self.unqualified_calls.borrow_mut().push(UnqualifiedVariantCall {
+                    span: path_expression.node.path.span,
+                    variant_name: name_value.clone(),
+                    enum_name: enum_name.clone(),
+                });
             }
         }
     }
@@ -480,5 +517,52 @@ impl Visit for ControlFlowVisitor<'_> {
                 _ => {}
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::analysis::{AnalysisOptions, builtin_rules, run_rules};
+    use crate::parser::{BeskidParser, Rule};
+    use crate::parsing::parsable::Parsable;
+    use crate::syntax::Program;
+    use pest::Parser;
+
+    fn unqualified_constructor_count(source: &str) -> usize {
+        let pair =
+            BeskidParser::parse(Rule::Program, source).expect("source should parse").next().expect("program pair");
+        let program = Program::parse(pair).expect("source should build AST");
+        let result = run_rules(&program.node, "test.bd", source, &builtin_rules(), AnalysisOptions::default());
+        result.diagnostics.iter().filter(|diag| diag.code.as_deref() == Some("E1303")).count()
+    }
+
+    #[test]
+    fn unbound_variant_name_call_is_an_unqualified_enum_constructor() {
+        let source = r#"
+            pub enum Outcome { Ok(i64 value), Failed(i64 code) }
+            Outcome Make() { return Failed(1); }
+        "#;
+        assert_eq!(unqualified_constructor_count(source), 1);
+    }
+
+    #[test]
+    fn module_function_named_like_a_variant_takes_precedence() {
+        let source = r#"
+            pub enum Outcome { Ok(i64 value), Failed(i64 code) }
+            Outcome Failed(i64 code) { return Outcome::Failed(code); }
+            Outcome Make() { return Failed(1); }
+        "#;
+        assert_eq!(unqualified_constructor_count(source), 0);
+    }
+
+    #[test]
+    fn only_unbound_variant_calls_are_reported() {
+        let source = r#"
+            pub enum Outcome { Ok(i64 value), Any(i64 code) }
+            Outcome Any(i64 code) { return Outcome::Any(code); }
+            Outcome Make() { return Any(2); }
+            Outcome Other() { return Ok(3); }
+        "#;
+        assert_eq!(unqualified_constructor_count(source), 1, "only the unbound `Ok` call is reported");
     }
 }

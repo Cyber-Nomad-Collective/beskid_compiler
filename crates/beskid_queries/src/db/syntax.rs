@@ -133,6 +133,8 @@ impl BeskidDatabase {
                 tree_fingerprint_history.push(Arc::clone(&tree_fingerprint));
             }
             input.set_revision(self).to(Arc::new(SyntaxUnitRevision {
+                runtime_source_authority: None,
+                sdk_source_authority: None,
                 generation,
                 expanded_program,
                 syntax_index,
@@ -151,6 +153,8 @@ impl BeskidDatabase {
             project,
             unit,
             Arc::new(SyntaxUnitRevision {
+                runtime_source_authority: None,
+                sdk_source_authority: None,
                 generation,
                 expanded_program,
                 syntax_index,

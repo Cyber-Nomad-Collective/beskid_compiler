@@ -36,18 +36,16 @@ Options:
 
     def test_unclassified_advertised_leaf_fails_closed(self):
         gate = self.load_gate()
-        self.assertEqual(gate.classify(("graph",)), "smoke")
-        self.assertEqual(gate.classify(("lock",)), "smoke")
-        self.assertEqual(gate.classify(("up", "list")), "smoke")
-        self.assertEqual(gate.classify(("up", "check")), "smoke")
-        self.assertEqual(gate.classify(("pckg", "upload")), "setup_skip")
-        self.assertEqual(gate.classify(("dev", "package", "registry", "upload")), "setup_skip")
-        self.assertEqual(gate.classify(("validate-bsol",)), "smoke")
-        self.assertEqual(gate.classify(("build",)), "smoke")
-        self.assertEqual(gate.classify(("dev", "build", "test")), "smoke")
-        self.assertEqual(gate.classify(("pckg", "pack")), "smoke")
-        self.assertEqual(gate.classify(("pckg", "list")), "smoke")
-        self.assertEqual(gate.classify(("dev", "package", "registry", "search")), "smoke")
+        for path in [("dev", "project", "graph"), ("dev", "project", "lock"),
+                     ("toolchain", "status"), ("dev", "bsol", "validate"),
+                     ("build",), ("dev", "build"), ("package", "pack"),
+                     ("package", "search"), ("new",), ("fmt",)]:
+            self.assertEqual(gate.classify(path), "smoke", path)
+        for path in [("package", "publish"), ("toolchain", "update"), ("add",)]:
+            self.assertEqual(gate.classify(path), "setup_skip", path)
+        for retired in [("graph",), ("lock",), ("up", "check"), ("pckg", "pack"),
+                        ("dev", "package", "registry", "search"), ("dev", "build", "test")]:
+            self.assertEqual(gate.classify(retired), "uncovered", retired)
         self.assertEqual(gate.classify(("future-command",)), "uncovered")
 
     def test_uncovered_leaf_is_release_failure(self):

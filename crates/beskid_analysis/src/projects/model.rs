@@ -7,6 +7,41 @@ pub struct ProjectManifest {
     pub targets: Vec<Target>,
     pub dependencies: Vec<Dependency>,
     pub link: Option<ProjectLinkSection>,
+    /// Top-level `glue "<library>" { backend = rust path = "<dir>" }` owner declarations, in
+    /// manifest order. Empty when the manifest declares no Glue owner.
+    pub glue: Vec<ProjectGlueOwner>,
+}
+
+/// Backend selected by a manifest `glue` owner block.
+///
+/// The manifest schema admits `rust` and `dotnet`; [`super::validator::validate_manifest`] rejects
+/// [`ProjectGlueBackend::Dotnet`] because the .NET backend is unavailable in 0.6.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProjectGlueBackend {
+    Rust,
+    Dotnet,
+}
+
+impl ProjectGlueBackend {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Rust => "rust",
+            Self::Dotnet => "dotnet",
+        }
+    }
+}
+
+/// One top-level `glue "<library>" { ... }` owner declaration.
+///
+/// `library` is the canonical owner native library identity; it equals the `Library` string of the
+/// `Extern` contracts and `GlueHandle` types the owner implements. `path` is the project-relative
+/// owner source directory exactly as written; use
+/// [`super::glue_owner::collect_glue_owner_sources`] to canonicalize, confine and inventory it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProjectGlueOwner {
+    pub library: String,
+    pub backend: ProjectGlueBackend,
+    pub path: String,
 }
 
 /// Top-level `link { ... }` block populating foreign linker inputs (v0.3).
@@ -292,10 +327,19 @@ pub enum AssemblyDiscovery {
     WorkspaceScan,
 }
 
+/// Recovery is an explicit tooling policy; repaired nodes never authorize dependency discovery.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum AssemblyRecoveryPolicy {
+    #[default]
+    Strict,
+    EditorRetainRecovered,
+}
+
 /// Options for [`super::assembly::assemble_program`].
 #[derive(Debug, Clone)]
 pub struct AssemblyOptions {
     pub discovery: AssemblyDiscovery,
+    pub recovery_policy: AssemblyRecoveryPolicy,
     pub max_units: usize,
     /// When true, skip units that fail to parse instead of failing the whole assembly (`beskid doc`).
     pub skip_parse_errors: bool,
@@ -303,14 +347,26 @@ pub struct AssemblyOptions {
 
 impl Default for AssemblyOptions {
     fn default() -> Self {
-        Self { discovery: AssemblyDiscovery::ImportClosure, max_units: 4096, skip_parse_errors: false }
+        Self {
+            discovery: AssemblyDiscovery::ImportClosure,
+            recovery_policy: AssemblyRecoveryPolicy::Strict,
+            max_units: 4096,
+            skip_parse_errors: false,
+        }
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PreparedProjectWorkspace {
+    pub verified_package_identities: super::VerifiedPackageIdentities,
     pub lockfile_path: PathBuf,
     pub materialized_project_root: PathBuf,
     pub materialized_source_root: PathBuf,
     pub materialized_dependencies: Vec<MaterializedDependencyProject>,
+}
+
+impl PreparedProjectWorkspace {
+    pub fn package_identities(&self) -> &super::VerifiedPackageIdentities {
+        &self.verified_package_identities
+    }
 }

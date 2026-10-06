@@ -115,7 +115,7 @@ fn every_legality_compile_fail_target_is_rejected_with_its_code_in_the_dependenc
             let resolved = resolve_fixture(root, entry, target);
             let result = beskid_queries::prepare_compilation_diagnostics(
                 &resolved,
-                PrepareOptions {
+                PrepareOptions { mod_invoker: None,
                     front_end: FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
                     dependency_typing: DependencyTypingPolicy::FullClosure,
                 },

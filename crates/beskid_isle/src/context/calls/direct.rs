@@ -23,6 +23,7 @@ impl IsleContext<'_, '_, '_, '_> {
             }
         };
         let call = self.builder.ins().call(function, arguments);
+        self.guard_checked_allocation()?;
         return_type.and_then(|_| self.builder.inst_results(call).first().copied())
     }
 
@@ -33,6 +34,18 @@ impl IsleContext<'_, '_, '_, '_> {
         let callee = self.facts.direct_callee(key)?;
         let source_signature = self.facts.call_signature(key)?;
         let argument_keys = self.facts.call_arguments(key)?;
+        // ABI pointer width alone never admits identity on native/scalar values.
+        // The callee carries exact registered Foundation-source authority; every
+        // argument additionally needs its specialization's traced source witness.
+        if matches!(&callee, DirectCallee::CorelibService(symbol) if *symbol == "beskid_rt_v5_gc_same_identity")
+            && (argument_keys.len() != 2
+                || argument_keys
+                    .iter()
+                    .any(|argument| self.facts.managed_reference(*argument) != Some(ManagedReferenceFact::GcManaged)))
+        {
+            return None;
+        }
+
         let mut arguments = Vec::with_capacity(argument_keys.len());
         let mut roots = Vec::with_capacity(argument_keys.len());
         let mut parameters = source_signature.params.iter();
@@ -65,6 +78,7 @@ impl IsleContext<'_, '_, '_, '_> {
             }
         };
         let call = self.builder.ins().call(function, &arguments);
+        self.guard_checked_allocation()?;
         for root in roots.into_iter().rev() {
             self.release_expression_root(root)?;
         }
@@ -171,10 +185,11 @@ fn corelib_service_native_signature(
     let pointer = dispatch::pointer_type(frontend_config);
     let abi_type = |ty| match ty {
         CorelibServiceAbiType::Pointer | CorelibServiceAbiType::String | CorelibServiceAbiType::Usize => Some(pointer),
-        CorelibServiceAbiType::I64 => Some(types::I64),
+        CorelibServiceAbiType::I64 | CorelibServiceAbiType::U64 => Some(types::I64),
         CorelibServiceAbiType::I32 | CorelibServiceAbiType::U32 => Some(types::I32),
         CorelibServiceAbiType::U8 => Some(types::I8),
         CorelibServiceAbiType::F64 => Some(types::F64),
+        CorelibServiceAbiType::F32 => Some(types::F32),
         CorelibServiceAbiType::Void | CorelibServiceAbiType::Never => None,
     };
     let mut signature = Signature::new(call_conv);

@@ -52,6 +52,13 @@ pub struct ContractParameterWitness {
     pub contract: AstNodeKey,
     pub concrete: AstNodeKey,
     pub(in crate::semantic_contract) source_identity: GenericSourceTypeIdentity,
+    /// Exact applied contract arguments (`Serializable<Wire>` retains `Wire`). Empty for a
+    /// non-generic contract. A bound is never admitted against its unapplied declaration.
+    pub(in crate::semantic_contract) applied_arguments: Arc<[GenericSourceTypeIdentity]>,
+    /// Generic environment of the selected implementation (receiver and `impl<...>`
+    /// parameters), in declaration order. Implementation methods specialize in exactly this
+    /// environment instead of rebuilding it from the receiver's own generic list.
+    pub(in crate::semantic_contract) environment: Arc<[GenericSubstitution]>,
     pub(in crate::semantic_contract) methods: Arc<[(AstNodeKey, AstNodeKey)]>,
 }
 
@@ -78,7 +85,7 @@ pub struct GenericSubstitution {
 /// [`SemanticTypeId`] through [`GenericSubstitution::argument`], while specialization identity
 /// remains impossible to reconstruct from pointer-shaped ABI facts.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
-pub(in crate::semantic_contract) enum GenericSourceTypeIdentity {
+pub(crate) enum GenericSourceTypeIdentity {
     Abi(SemanticTypeId),
     Nominal { qualified_name: Arc<str>, arguments: Arc<[GenericSourceTypeIdentity]> },
     Array(Box<GenericSourceTypeIdentity>),
@@ -86,6 +93,18 @@ pub(in crate::semantic_contract) enum GenericSourceTypeIdentity {
 }
 
 impl GenericSubstitution {
+    /// Preserve the distinction between a managed byte array and native pointer.
+    pub fn is_byte_array(&self) -> bool {
+        matches!(&self.source_identity, GenericSourceTypeIdentity::Array(element)
+            if matches!(element.as_ref(), GenericSourceTypeIdentity::Abi(ty) if *ty == SemanticTypeId::U8))
+    }
+    pub fn exact_scalar_source(&self) -> Option<SemanticTypeId> {
+        match &self.source_identity {
+            GenericSourceTypeIdentity::Abi(ty) => Some(*ty),
+            _ => None,
+        }
+    }
+
     /// Construct an ABI-inferred substitution when no more specific source identity exists.
     pub fn inferred(parameter: impl Into<Arc<str>>, argument: SemanticTypeId) -> Self {
         Self { parameter: parameter.into(), argument, source_identity: GenericSourceTypeIdentity::Abi(argument) }

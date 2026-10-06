@@ -3,6 +3,7 @@ root_manifest=ContractsDispatch.bproj
 project_name=ContractsDispatch
 dependencies:
 - name=Std;source=corelib;project=beskid_corelib;manifest=corelib.bproj;source_root=.;materialized_root=obj/beskid/deps/src/Std-e6e10cf2b8f67ee0335fb01f75514ab2
+- name=corelib_bsol;source=corelib;project=packages/bsol;manifest=corelib_bsol.bproj;source_root=src;materialized_root=obj/beskid/deps/src/corelib_bsol-74b221473ad428661b653f55f992c9de
 - name=corelib_compiler_sdk;source=corelib;project=packages/compiler-sdk;manifest=corelib_compiler_sdk.bproj;source_root=src;materialized_root=obj/beskid/deps/src/corelib_compiler_sdk-b78cd396278b5ebc83f553772a9bac27
 - name=corelib_concurrency;source=corelib;project=packages/concurrency;manifest=corelib_concurrency.bproj;source_root=src;materialized_root=obj/beskid/deps/src/corelib_concurrency-13ab48f862ba0ae5e9bf5c20798a87d0
 - name=corelib_console;source=corelib;project=packages/console;manifest=corelib_console.bproj;source_root=src;materialized_root=obj/beskid/deps/src/corelib_console-e4ed4362d985e0eb51c1cd4b56ce2200
@@ -12,3 +13,4 @@ dependencies:
 - name=corelib_interop;source=corelib;project=packages/interop;manifest=corelib_interop.bproj;source_root=src;materialized_root=obj/beskid/deps/src/corelib_interop-2f14f0d2e61774a9ab1673f72cd00901
 - name=corelib_network;source=corelib;project=packages/network;manifest=corelib_network.bproj;source_root=src;materialized_root=obj/beskid/deps/src/corelib_network-c99e2572bcc59d0344e495c09bcb3491
 - name=corelib_runtime;source=corelib;project=packages/runtime;manifest=corelib_runtime.bproj;source_root=src;materialized_root=obj/beskid/deps/src/corelib_runtime-dcc850f22061e60d06f6853b23dcfd17
+- name=corelib_serialization;source=corelib;project=packages/serialization;manifest=corelib_serialization.bproj;source_root=src;materialized_root=obj/beskid/deps/src/corelib_serialization-530502b7128d0828562f59bb54e6b98f

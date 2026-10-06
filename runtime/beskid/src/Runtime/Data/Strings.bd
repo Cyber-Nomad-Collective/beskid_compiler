@@ -13,30 +13,7 @@ pub pointer StrNew(pointer data, word length) {
     if data == NativePointer(0) && length != 0 {
         return NativePointer(0);
     }
-    // Allocate the BeskidStr header (16 bytes: ptr + len).
-    pointer strObj = SystemAllocate(16, 8);
-    if strObj == NativePointer(0) {
-        return NativePointer(0);
-    }
-    // Allocate and copy the data buffer. Empty strings keep a storage-only sentinel.
-    mut word allocation = length;
-    if allocation == 0 {
-        allocation = 1;
-    }
-    pointer buffer = SystemAllocate(allocation, 1);
-    if buffer == NativePointer(0) {
-        SystemFree(strObj, 16);
-        return NativePointer(0);
-    }
-    if length != 0 {
-        memory_copy(buffer, data, length);
-    } else {
-        raw_byte_store(buffer, 0);
-    }
-    // Store { ptr, len } in the header.
-    raw_word_store(strObj, NativeWord(buffer));
-    raw_word_store(pointer_add(strObj, 8), length);
-    return strObj;
+    return utf8_view_new(data, length);
 }
 
 // Returns the byte length of a string, or 0 for a null handle.
@@ -91,9 +68,16 @@ pub pointer StrConcat(pointer left, pointer right) {
     if totalLen < leftLen {
         return NativePointer(0);
     }
-    pointer buffer = SystemAllocate(totalLen, 1);
+    mut word allocation = totalLen;
+    if allocation == 0 {
+        allocation = 1;
+    }
+    pointer buffer = SystemAllocateScratch(allocation, 1);
     if buffer == NativePointer(0) {
         return NativePointer(0);
+    }
+    if totalLen == 0 {
+        raw_byte_store(buffer, 0);
     }
     if leftLen > 0 && leftPtr != NativePointer(0) {
         memory_copy(buffer, leftPtr, leftLen);
@@ -101,33 +85,23 @@ pub pointer StrConcat(pointer left, pointer right) {
     if rightLen > 0 && rightPtr != NativePointer(0) {
         memory_copy(pointer_add(buffer, leftLen), rightPtr, rightLen);
     }
-    pointer strObj = SystemAllocate(16, 8);
-    if strObj == NativePointer(0) {
-        SystemFree(buffer, totalLen);
-        return NativePointer(0);
-    }
-    raw_word_store(strObj, NativeWord(buffer));
-    raw_word_store(pointer_add(strObj, 8), totalLen);
-    return strObj;
+    pointer result = StrNew(buffer, totalLen);
+    SystemFree(buffer, allocation);
+    return result;
 }
 
 // Formats a signed integer as a decimal string.
 [Export(Abi:"C", Symbol:"str_from_i64")]
 pub pointer StrFromI64(i64 value) {
     if value == 0 {
-        pointer buf = SystemAllocate(1, 1);
+        pointer buf = SystemAllocateScratch(1, 1);
         if buf == NativePointer(0) {
             return NativePointer(0);
         }
         raw_byte_store(buf, 48);
-        pointer strObj = SystemAllocate(16, 8);
-        if strObj == NativePointer(0) {
-            SystemFree(buf, 1);
-            return NativePointer(0);
-        }
-        raw_word_store(strObj, NativeWord(buf));
-        raw_word_store(pointer_add(strObj, 8), 1);
-        return strObj;
+        pointer result = StrNew(buf, 1);
+        SystemFree(buf, 1);
+        return result;
     }
     mut bool negative = value < 0;
     mut i64 remaining = value;
@@ -144,7 +118,7 @@ pub pointer StrFromI64(i64 value) {
     if negative {
         count = count + 1;
     }
-    pointer buf = SystemAllocate(count, 1);
+    pointer buf = SystemAllocateScratch(count, 1);
     if buf == NativePointer(0) {
         return NativePointer(0);
     }
@@ -164,14 +138,9 @@ pub pointer StrFromI64(i64 value) {
             }
         }
     }
-    pointer strObj = SystemAllocate(16, 8);
-    if strObj == NativePointer(0) {
-        SystemFree(buf, count);
-        return NativePointer(0);
-    }
-    raw_word_store(strObj, NativeWord(buf));
-    raw_word_store(pointer_add(strObj, 8), count);
-    return strObj;
+    pointer result = StrNew(buf, count);
+    SystemFree(buf, count);
+    return result;
 }
 
 // Extracts a substring by byte range.
@@ -202,7 +171,11 @@ pub pointer StrSlice(pointer value, word start, mut word count) {
     if data == NativePointer(0) {
         return NativePointer(0);
     }
-    return StrNew(pointer_add(data, start), sliceLen);
+    word retained = GcRootHandle(value);
+    if retained == 0 { return NativePointer(0); }
+    pointer result = StrNew(pointer_add(data, start), sliceLen);
+    GcUnrootHandle(retained);
+    return result;
 }
 
 // Converts a byte buffer to a string, validating UTF-8.

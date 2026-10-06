@@ -20,45 +20,51 @@ pub(super) fn specialization_for_call_in_environment(
         .ok_or_else(|| SemanticError::unavailable_at("call_abi_signature", key))?;
     let declaration_identity = stable_declaration_identity(db, declaration)
         .ok_or_else(|| SemanticError::unavailable_at("generic_specialization_identity", key))?;
-    let (parameters, return_type, generic_names, is_method, method_owner) =
-        if let Some(function) = declaration_node.of::<beskid_analysis::syntax::FunctionDefinition>() {
-            (
-                function.parameters.iter().collect::<Vec<_>>(),
-                function.return_type.as_ref(),
-                function.generics.iter().map(|generic| generic.node.name.as_str()).collect::<Vec<_>>(),
-                false,
-                None,
-            )
-        } else if let Some(method) = declaration_node.of::<beskid_analysis::syntax::MethodDefinition>() {
-            let owner_node = method_owner_node(
-                declaration_syntax.expanded_program(db),
-                declaration_syntax.syntax_index(db),
-                declaration.node,
-            )
+    let (parameters, return_type, generic_names, is_method, method_owner) = if let Some(function) =
+        declaration_node.of::<beskid_analysis::syntax::FunctionDefinition>()
+    {
+        (
+            function.parameters.iter().collect::<Vec<_>>(),
+            function.return_type.as_ref(),
+            function.generics.iter().map(|generic| generic.node.name.as_str()).collect::<Vec<_>>(),
+            false,
+            None,
+        )
+    } else if let Some(method) = declaration_node.of::<beskid_analysis::syntax::ContractMethodSignature>() {
+        let generic_names = generic_callable_parameters(db, declaration).map(|(names, _)| names).unwrap_or_default();
+        (method.parameters.iter().collect::<Vec<_>>(), method.return_type.as_ref(), generic_names, false, None)
+    } else if let Some(method) = declaration_node.of::<beskid_analysis::syntax::MethodDefinition>() {
+        let owner_node = method_owner_node(
+            declaration_syntax.expanded_program(db),
+            declaration_syntax.syntax_index(db),
+            declaration.node,
+        )
+        .ok_or_else(|| SemanticError::unavailable_at("call_abi_signature", key))?;
+        let parent = declaration_syntax
+            .syntax_index(db)
+            .node_at(declaration_syntax.expanded_program(db), owner_node)
+            .and_then(|node| node.of::<beskid_analysis::syntax::TypeDefinition>())
             .ok_or_else(|| SemanticError::unavailable_at("call_abi_signature", key))?;
-            let parent = declaration_syntax
-                .syntax_index(db)
-                .node_at(declaration_syntax.expanded_program(db), owner_node)
-                .and_then(|node| node.of::<beskid_analysis::syntax::TypeDefinition>())
-                .ok_or_else(|| SemanticError::unavailable_at("call_abi_signature", key))?;
-            (
-                method.parameters.iter().collect::<Vec<_>>(),
-                method.return_type.as_ref(),
-                parent.generics.iter().map(|generic| generic.node.name.as_str()).collect::<Vec<_>>(),
-                true,
-                Some(AstNodeKey { node: owner_node, ..declaration }),
-            )
-        } else {
-            let signature = item_abi_signature(db, declaration)?
-                .ok_or_else(|| SemanticError::unavailable_at("call_abi_signature", key))?;
-            return Ok(GenericSpecializationInstance {
-                declaration,
-                declaration_identity,
-                signature,
-                substitutions: Arc::from([]),
-                contract_witnesses: Arc::from([]),
-            });
-        };
+        (
+            method.parameters.iter().collect::<Vec<_>>(),
+            method.return_type.as_ref(),
+            generic_callable_parameters(db, declaration)
+                .map(|(names, _)| names)
+                .unwrap_or_else(|| parent.generics.iter().map(|generic| generic.node.name.as_str()).collect()),
+            true,
+            Some(AstNodeKey { node: owner_node, ..declaration }),
+        )
+    } else {
+        let signature = item_abi_signature(db, declaration)?
+            .ok_or_else(|| SemanticError::unavailable_at("call_abi_signature", key))?;
+        return Ok(GenericSpecializationInstance {
+            declaration,
+            declaration_identity,
+            signature,
+            substitutions: Arc::from([]),
+            contract_witnesses: Arc::from([]),
+        });
+    };
     if generic_names.is_empty() && contract_parameter_declarations(db, declaration).is_empty() {
         let signature = item_abi_signature(db, declaration)?
             .ok_or_else(|| SemanticError::unavailable_at("call_abi_signature", key))?;
@@ -75,7 +81,13 @@ pub(super) fn specialization_for_call_in_environment(
     if arguments.len() != parameters.len() + usize::from(is_method) {
         return Err(SemanticError::unavailable_at("call_abi_signature", key));
     }
-    let contract_witnesses = contract_witnesses_for_call(db, declaration, &arguments, is_method, enclosing)?;
+    // Contract-typed parameters take their identity from the argument, not from inference.
+    // Their witnesses (and every where-bound witness) are issued only after the substitution
+    // environment is complete, so applied bounds see the exact substituted contract.
+    let contract_positions = contract_parameter_declarations(db, declaration)
+        .into_iter()
+        .map(|(_, position, _)| position)
+        .collect::<Vec<_>>();
     let mut source_substitutions = HashMap::<String, GenericSubstitution>::new();
     let mut substitutions = if let Some(owner) = method_owner.filter(|_| !generic_names.is_empty()) {
         // An unqualified sibling call uses the same implicit receiver, not an independently
@@ -170,7 +182,7 @@ pub(super) fn specialization_for_call_in_environment(
     for (position, (parameter, argument)) in
         parameters.iter().zip(arguments.iter().copied().skip(usize::from(is_method))).enumerate()
     {
-        if contract_witnesses.iter().any(|witness| witness.position as usize == position) {
+        if contract_positions.iter().any(|candidate| *candidate as usize == position) {
             continue;
         }
         let generic = generic_type_name(&parameter.node.ty.node, &generic_names);
@@ -273,61 +285,27 @@ pub(super) fn specialization_for_call_in_environment(
     }) {
         return Err(SemanticError::unavailable_at("call_abi_signature", key));
     }
-    // `where T: Contract` (Gap 3, task 2.3/2.7): reject the call before monomorphization if an
-    // inferred/explicit generic argument does not conform to its bound. ISLE never sees a call
-    // that fails this check, since `DirectCallee::SpecializedItem` is only minted from a
-    // successful `Ok(GenericSpecializationInstance)`.
-    if let Some(function) = declaration_node.of::<beskid_analysis::syntax::FunctionDefinition>() {
-        for bound in &function.where_bounds {
-            let Some(contract) = contracts::resolve_contract(db, declaration, &bound.contract.node) else {
-                return Err(SemanticError::new(format!(
-                    "unknown contract `{}` in where clause",
-                    bound.contract.node.segments.last().map(|s| s.node.name.node.name.as_str()).unwrap_or("?")
-                )));
-            };
-            let Some(argument_type_id) = substitutions.get(bound.parameter.node.name.as_str()).copied() else {
-                continue;
-            };
-            let source_identity = source_substitutions
-                .get(bound.parameter.node.name.as_str())
-                .map(|binding| binding.source_identity().clone())
-                .unwrap_or(GenericSourceTypeIdentity::Abi(argument_type_id));
-            let Some(concrete) = contracts::concrete_declaration(db, declaration, &source_identity) else {
-                let issue = beskid_analysis::analysis::SemanticIssueKind::GenericBoundNotSatisfied {
-                    type_name: bound.parameter.node.name.clone(),
-                    contract_name: bound
-                        .contract
-                        .node
-                        .segments
-                        .last()
-                        .map(|s| s.node.name.node.name.clone())
-                        .unwrap_or_default(),
-                };
-                return Err(SemanticError::new(format!("{}: {}", issue.code(), issue.message())));
-            };
-            let concrete_syntax = db
-                .syntax_unit(concrete.unit)
-                .ok_or_else(|| SemanticError::unavailable_at("call_abi_signature", key))?;
-            let concrete_definition = concrete_syntax
-                .syntax_index(db)
-                .node_at(concrete_syntax.expanded_program(db), concrete.node)
-                .and_then(|node| node.of::<beskid_analysis::syntax::TypeDefinition>())
-                .ok_or_else(|| SemanticError::unavailable_at("call_abi_signature", key))?;
-            if !contracts::type_declaration_conforms_to_contract(db, concrete, concrete_definition, contract) {
-                let issue = beskid_analysis::analysis::SemanticIssueKind::GenericBoundNotSatisfied {
-                    type_name: concrete_definition.name.node.name.clone(),
-                    contract_name: bound
-                        .contract
-                        .node
-                        .segments
-                        .last()
-                        .map(|s| s.node.name.node.name.clone())
-                        .unwrap_or_default(),
-                };
-                return Err(SemanticError::new(format!("{}: {}", issue.code(), issue.message())));
-            }
-        }
-    }
+    let substitutions = generic_names
+        .iter()
+        .filter_map(|parameter| {
+            source_substitutions.get(*parameter).map(|binding| binding.rebind(*parameter)).or_else(|| {
+                substitutions
+                    .get(*parameter)
+                    .copied()
+                    .map(|argument| GenericSubstitution::inferred(*parameter, argument))
+            })
+        })
+        .collect::<Vec<_>>();
+    // `where T: Contract<...>` (Gap 3, task 2.3/2.7): every bound is checked against its exact
+    // applied contract in the complete substitution environment before monomorphization. ISLE
+    // never sees a call that fails this check, since `DirectCallee::SpecializedItem` is only
+    // minted from a successful `Ok(GenericSpecializationInstance)`.
+    let contract_witnesses =
+        contract_witnesses_for_call(db, declaration, &arguments, is_method, enclosing, &substitutions)?;
+    let abi_substitutions = substitutions
+        .iter()
+        .map(|binding| (binding.parameter.to_string(), binding.argument))
+        .collect::<HashMap<_, _>>();
     let mut signature_parameters = parameters
         .iter()
         .enumerate()
@@ -335,7 +313,7 @@ pub(super) fn specialization_for_call_in_environment(
             if let Some(witness) = contract_witnesses.iter().find(|witness| witness.position as usize == position) {
                 Ok(witness.source_identity.abi_type())
             } else {
-                generic_abi_type(db, declaration, &parameter.node.ty.node, &substitutions)
+                generic_abi_type(db, declaration, &parameter.node.ty.node, &abi_substitutions)
             }
         })
         .collect::<Result<Vec<_>, _>>()?;
@@ -343,17 +321,9 @@ pub(super) fn specialization_for_call_in_environment(
         signature_parameters.insert(0, SemanticTypeId::POINTER);
     }
     let result = return_type.map_or(Ok(SemanticTypeId::UNIT), |return_type| {
-        generic_abi_type(db, declaration, &return_type.node, &substitutions)
+        generic_abi_type(db, declaration, &return_type.node, &abi_substitutions)
     })?;
     let signature = ItemSignature { parameters: signature_parameters.into(), result };
-    let substitutions = generic_names
-        .into_iter()
-        .filter_map(|parameter| {
-            source_substitutions.get(parameter).map(|binding| binding.rebind(parameter)).or_else(|| {
-                substitutions.get(parameter).copied().map(|argument| GenericSubstitution::inferred(parameter, argument))
-            })
-        })
-        .collect::<Vec<_>>();
     Ok(GenericSpecializationInstance {
         declaration,
         declaration_identity,

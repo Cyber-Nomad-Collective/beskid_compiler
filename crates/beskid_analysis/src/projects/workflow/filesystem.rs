@@ -6,14 +6,15 @@ use sha2::{Digest, Sha256};
 use super::lockfile::ProjectLockSource;
 use crate::projects::error::ProjectError;
 
-fn should_skip_materialized_subdir(name: Option<&str>) -> bool {
-    matches!(name, Some("obj") | Some("tests"))
-}
-
+/// Mirrors the package file set of `source` into `destination`: entries outside the package (the
+/// shared package-identity rule) are not copied, and destination entries the source no longer has
+/// are removed, so a materialized copy never keeps deleted or renamed sources. Build and VCS
+/// directories in the destination are private tool output and are left alone.
 pub(super) fn copy_directory_when_newer(source: &Path, destination: &Path) -> Result<(), ProjectError> {
     fs::create_dir_all(destination)
         .map_err(|source| ProjectError::MaterializationCreateDir { path: destination.to_path_buf(), source })?;
 
+    let mut mirrored = std::collections::BTreeSet::new();
     for entry in fs::read_dir(source)
         .map_err(|err| ProjectError::MaterializationReadDir { path: source.to_path_buf(), source: err })?
     {
@@ -26,16 +27,37 @@ pub(super) fn copy_directory_when_newer(source: &Path, destination: &Path) -> Re
             .map_err(|source| ProjectError::MaterializationMetadata { path: entry_path.clone(), source })?;
 
         if file_type.is_dir() {
-            if should_skip_materialized_subdir(entry.file_name().to_str()) {
+            if crate::projects::package_identity::is_outside_package(&entry_path)
+                .map_err(|source| ProjectError::MaterializationReadDir { path: entry_path.clone(), source })?
+            {
                 continue;
             }
             copy_directory_when_newer(&entry_path, &destination_path)?;
+            mirrored.insert(entry.file_name());
             continue;
         }
 
         if file_type.is_file() {
             copy_file_when_newer(&entry_path, &destination_path)?;
+            mirrored.insert(entry.file_name());
         }
+    }
+
+    for entry in fs::read_dir(destination)
+        .map_err(|err| ProjectError::MaterializationReadDir { path: destination.to_path_buf(), source: err })?
+    {
+        let entry = entry
+            .map_err(|err| ProjectError::MaterializationReadDir { path: destination.to_path_buf(), source: err })?;
+        let name = entry.file_name();
+        if mirrored.contains(&name) || crate::projects::package_identity::is_build_or_vcs_directory(name.to_str()) {
+            continue;
+        }
+        let stale = entry.path();
+        let file_type = entry
+            .file_type()
+            .map_err(|source| ProjectError::MaterializationMetadata { path: stale.clone(), source })?;
+        let removed = if file_type.is_dir() { fs::remove_dir_all(&stale) } else { fs::remove_file(&stale) };
+        removed.map_err(|source| ProjectError::MaterializationPrune { path: stale, source })?;
     }
 
     Ok(())

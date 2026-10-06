@@ -23,6 +23,7 @@ pub struct ResolveInputArgs<'a> {
     pub workspace_member: Option<&'a str>,
     pub frozen: bool,
     pub locked: bool,
+    pub offline: bool,
 }
 
 /// Options for [`CommandSession::executable_gate_prepared`].
@@ -41,6 +42,7 @@ impl Default for SemanticGateOptions {
 
 /// Shared CLI session: pipeline observer plus resolve and executable prepare gate helpers.
 pub struct CommandSession {
+    mod_invoker: Option<Arc<dyn beskid_analysis::mod_host::ContractInvoker>>,
     pipeline: Arc<CliPipeline>,
 }
 
@@ -50,7 +52,12 @@ impl CommandSession {
     /// Use [`PipelineProgressKind::PrepareAndRun`] for run / test / clif paths that call
     /// [`executable_gate_prepared`] once, then lower or JIT-run.
     pub fn with_progress(plain: bool, kind: PipelineProgressKind) -> Self {
-        Self { pipeline: Arc::new(CliPipeline::new_with_kind(use_cli_spinner(plain), kind)) }
+        Self { mod_invoker: None, pipeline: Arc::new(CliPipeline::new_with_kind(use_cli_spinner(plain), kind)) }
+    }
+
+    /// Attach the private producer's executable service to this preparation session.
+    pub fn set_mod_invoker(&mut self, invoker: Option<Arc<dyn beskid_analysis::mod_host::ContractInvoker>>) {
+        self.mod_invoker = invoker;
     }
 
     /// Resolve project input while forwarding pipeline events to this session.
@@ -63,6 +70,7 @@ impl CommandSession {
                 workspace_member: args.workspace_member,
                 frozen: args.frozen,
                 locked: args.locked,
+                offline: args.offline,
                 refresh_lock: false,
                 plain: false,
             },
@@ -95,7 +103,7 @@ impl CommandSession {
 
     /// Single prepare through typed executable HIR with semantic diagnostics gate.
     ///
-    /// Primary API for `beskid run`, `beskid build`, `beskid test`, and `beskid clif`. Pass the
+    /// Primary API for `beskid run`, `beskid build`, `beskid test`, and `beskid dev syntax clif`. Pass the
     /// returned [`PreparedCompilation`] to [`PreparedCompilation::into_executable`] and the
     /// syntax-owned lowering boundary — do not run a second prepare.
     pub fn executable_gate_prepared(
@@ -108,6 +116,7 @@ impl CommandSession {
             services::PrepareOptions {
                 front_end: services::FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
                 dependency_typing: services::DependencyTypingPolicy::FullClosure,
+                mod_invoker: self.mod_invoker.clone(),
             },
             Some(self.pipeline.as_ref()),
         )?;

@@ -1,0 +1,3 @@
+[GlueHandle(Library:"glue_manual", Nullable:false)]
+[RustOwner(Path:"implementation::ManualOwned")]
+pub type ManualOpaque<T> { u64 token, }

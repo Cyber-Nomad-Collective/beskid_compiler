@@ -28,7 +28,7 @@ pub(in crate::semantic_contract) fn node_type_tracked(
                 Err(error) => return Some(Err(error)),
             }
             match call_lowering(db, key) {
-                Ok(Some(CallLowering::Direct(_) | CallLowering::Runtime(_))) => (),
+                Ok(Some(CallLowering::Direct(_) | CallLowering::Runtime(_) | CallLowering::NativeModCallback(_))) => (),
                 Ok(Some(_) | None) => return Some(Err(SemanticError::unavailable("node_type"))),
                 Err(error) => return Some(Err(error)),
             };

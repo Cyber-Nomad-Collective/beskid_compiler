@@ -58,6 +58,7 @@ pub fn get_or_insert_assembly(
                 assembly.roots == session.assembly.roots
                     && assembly.entry_index == session.assembly.entry_index
                     && assembly.discovery == session.assembly.discovery
+                    && assembly.recovery_policy == session.assembly.recovery_policy
                     && assembly.has_std_dependency == session.assembly.has_std_dependency
                     && assembly.trusted_corelib_service_paths == session.assembly.trusted_corelib_service_paths
                     && assembly.module_index.module_graph() == session.assembly.module_index.module_graph()

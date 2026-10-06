@@ -4,8 +4,8 @@
 use super::support::{
     AbiManifestV5, Arc, AssemblyDiscovery, AstNodeId, AstNodeKey, BeskidDatabase, CodegenInput,
     EffectiveCompilationRoots, ModuleIndex, ProgramAssembly, ProjectSession, RootEntry, SourceUnit, SourceUnitId,
-    SyntaxGenerationId, SyntaxModuleItem, TargetMetadata, build_typed_program, find_function_definition,
-    find_function_definitions, find_node, isa, item_fixture_with_root, lower_syntax_program,
+    SyntaxGenerationId, SyntaxModuleItem, TargetMetadata, build_typed_program, canonical_corelib_project_fixture,
+    find_function_definition, find_function_definitions, find_node, isa, item_fixture_with_root, lower_syntax_program,
     parse_program_with_source_name, settings,
 };
 
@@ -253,8 +253,8 @@ unit Main() { Build(); return; }
 /// the reproducer proves whether the compiler's local-binding root-slot bookkeeping
 /// (`install_match_bindings` / `bind_local` in `crates/beskid_isle/src/context/roots.rs`)
 /// recognizes a match-bound struct as a rooted owner for a subsequent field mutation.
-const ARRAY_APPEND_SOURCE: &str = "pub T[] Append<T>(mut T[] values, T value) { return values; }";
-
+/// `Core.Collections.Array` is the compiler-owned Foundation source: only that exact unit owns
+/// the Append collection operation.
 #[test]
 fn array_append_on_a_field_of_a_match_bound_struct_lowers() {
     let entry_source = r#"
@@ -277,15 +277,14 @@ bool Main(Result<Request, HttpError> head) {
     };
 }
 "#;
-    let (input, isa, root) = imported_fixture(
-        "Http/Server.bd",
-        entry_source,
+    let (input, isa, root) = canonical_corelib_project_fixture(
         &[
+            ("Http/Server.bd", entry_source),
             ("Core/Results/Results.bd", RESULT_SOURCE),
             ("Http/Errors/Errors.bd", "pub enum HttpError { InvalidFraming(), Closed() }"),
             ("Http/Requests/Requests.bd", "pub type Request { string method, u8[] body, }"),
-            ("Core/Collections/Array.bd", ARRAY_APPEND_SOURCE),
         ],
+        SyntaxGenerationId(191),
     );
     let functions = find_function_definitions(input.database(), root);
     let framing = functions[0];

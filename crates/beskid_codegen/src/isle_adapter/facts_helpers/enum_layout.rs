@@ -50,7 +50,9 @@ impl SyntaxNodeFacts<'_> {
             beskid_queries::EnumMatchPatternFact::Binding(binding) => {
                 let slot = self.query(local_slot(self.db, binding.declaration))?;
                 let value_type = match binding.payload {
-                    AggregateFieldShape::Scalar(semantic) => map_signature_type(self.isa?, semantic)?,
+                    AggregateFieldShape::Scalar(semantic) | AggregateFieldShape::ManagedReference(semantic) => {
+                        map_signature_type(self.isa?, semantic)?
+                    }
                     AggregateFieldShape::Nominal(_) => self.isa?.pointer_type(),
                 };
                 let managed_reference = match binding.managed_reference {

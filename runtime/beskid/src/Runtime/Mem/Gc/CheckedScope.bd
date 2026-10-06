@@ -1,0 +1,67 @@
+// Invocation-owned native stack context. Compiler effect authority is separate:
+// these private ABI operations never issue a source-level recovery witness.
+const CHECKED_SCOPE_MAGIC = 0x434845434b563501;
+const CHECKED_SCOPE_SIZE = 64;
+const CHECKED_SCOPE_PREVIOUS = 8;
+const CHECKED_SCOPE_FAILURE_HANDLE = 16;
+const CHECKED_SCOPE_FAILURE_REASON = 24;
+const CHECKED_SCOPE_HEAP = 32;
+const CHECKED_SCOPE_THREAD = 40;
+
+[Export(Abi:"C", Symbol:"beskid_rt_v5_checked_scope_current")]
+pub pointer CheckedScopeCurrent() {
+    pointer checkedContext = CheckedAllocationScopeLink();
+    if checkedContext == NativePointer(0) { return checkedContext; }
+    if raw_word_load(checkedContext) != CHECKED_SCOPE_MAGIC ||
+       NativePointer(raw_word_load(pointer_add(checkedContext, CHECKED_SCOPE_HEAP))) != Heap() ||
+       NativePointer(raw_word_load(pointer_add(checkedContext, CHECKED_SCOPE_THREAD))) != CurrentThreadState() {
+        Trap(10, NativePointer(0), 0);
+    }
+    return checkedContext;
+}
+
+[Export(Abi:"C", Symbol:"beskid_rt_v5_checked_scope_enter")]
+pub bool CheckedScopeEnter(pointer checkedContext, word failureHandle) {
+    if checkedContext == NativePointer(0) || CurrentThreadState() == NativePointer(0) || Heap() == NativePointer(0) ||
+       GcResolveHandle(failureHandle) == NativePointer(0) { return false; }
+    pointer previous = CheckedScopeCurrent();
+    if checkedContext == previous || raw_word_load(checkedContext) != 0 ||
+       (previous != NativePointer(0) && raw_word_load(pointer_add(previous, CHECKED_SCOPE_FAILURE_REASON)) != 0) { return false; }
+    memory_set(checkedContext, 0, CHECKED_SCOPE_SIZE);
+    raw_word_store(pointer_add(checkedContext, CHECKED_SCOPE_PREVIOUS), NativeWord(previous));
+    raw_word_store(pointer_add(checkedContext, CHECKED_SCOPE_FAILURE_HANDLE), failureHandle);
+    raw_word_store(pointer_add(checkedContext, CHECKED_SCOPE_HEAP), NativeWord(Heap()));
+    raw_word_store(pointer_add(checkedContext, CHECKED_SCOPE_THREAD), NativeWord(CurrentThreadState()));
+    raw_word_store(checkedContext, CHECKED_SCOPE_MAGIC);
+    if !SetCheckedAllocationScopeLink(checkedContext) { memory_set(checkedContext, 0, CHECKED_SCOPE_SIZE); return false; }
+    return true;
+}
+
+pub unit CheckedScopeRecordFailure(word reason) {
+    pointer checkedContext = CheckedScopeCurrent();
+    if checkedContext != NativePointer(0) && reason != 0 && raw_word_load(pointer_add(checkedContext, CHECKED_SCOPE_FAILURE_REASON)) == 0 {
+        raw_word_store(pointer_add(checkedContext, CHECKED_SCOPE_FAILURE_REASON), reason);
+    }
+}
+
+[Export(Abi:"C", Symbol:"beskid_rt_v5_checked_scope_failure_reason")]
+pub word CheckedScopeFailureReason() {
+    pointer checkedContext = CheckedScopeCurrent();
+    if checkedContext == NativePointer(0) { return 0; }
+    return raw_word_load(pointer_add(checkedContext, CHECKED_SCOPE_FAILURE_REASON));
+}
+
+[Export(Abi:"C", Symbol:"beskid_rt_v5_checked_scope_failure_result")]
+pub pointer CheckedScopeFailureResult() {
+    pointer checkedContext = CheckedScopeCurrent();
+    if checkedContext == NativePointer(0) { return NativePointer(0); }
+    return GcResolveHandle(raw_word_load(pointer_add(checkedContext, CHECKED_SCOPE_FAILURE_HANDLE)));
+}
+
+[Export(Abi:"C", Symbol:"beskid_rt_v5_checked_scope_leave")]
+pub unit CheckedScopeLeave(pointer checkedContext) {
+    if checkedContext == NativePointer(0) || CheckedScopeCurrent() != checkedContext { Trap(10, NativePointer(0), 0); }
+    pointer previous = NativePointer(raw_word_load(pointer_add(checkedContext, CHECKED_SCOPE_PREVIOUS)));
+    if !SetCheckedAllocationScopeLink(previous) { Trap(10, NativePointer(0), 0); }
+    memory_set(checkedContext, 0, CHECKED_SCOPE_SIZE);
+}

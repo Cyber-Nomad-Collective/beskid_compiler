@@ -7,7 +7,111 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Lower explicitly selected current-generation callables through their reachable source union while retaining ordinary import and callback admission.
+
+### Added
+
+- Add a Rust Glue peer service using the shared bounded codec and frame pump,
+  with exact handshake/binding admission, replay rejection and typed replies.
+
+- Admit applied enum contracts through exact registered implementation receivers
+  and retain nominal enum identity when validating contract arguments.
+
+- Support owned typed syntax replacements, including declaration-kind changes in
+  program item slots, through current-generation native Mod query authority.
+
+- Add explicit schema import root and lock options to BSOL validation, replacing unchecked environment-selected cache imports.
+
+- Add checked Unicode scalar conversions between char and u32, rejecting
+  surrogate code points and values outside the Unicode scalar range.
+
+- Add source-authorized IEEE float bit services with exact f32/u32 and f64/u64
+  ABI handling and native ISLE bitcasts, preserving signed zero and NaN payloads.
+
+- Issue prepared module callable identities from exact registered declaration keys,
+  concrete signatures and emitted functions for native bridge preparation; keep
+  source and linker symbols together without guessing from method leaf names.
+- Discover type conformances through registered contract declaration keys and exact
+  nominal impl receivers for native adapter preparation.
+- Expose validated contract implementation pairs for native adapters, sharing source
+  signature and visibility checks with generic contract-call witnesses.
+
 ### Fixed
+
+- Declare canonical POSIX process and memory imports per target and preserve data-import identity separately from callable signatures in ABI manifests.
+
+- Report dependency actions and actual path/Git/registry coordinates without treating unversioned dependencies as absent; preserve both coordinates when source intent changes.
+
+- Resolve canonical runtime C imports from the current native object closure only when the actual definition and ABI manifest export agree; preserve ordinary external-library admission.
+
+- Size the executable closure test TLS fixture from the current ABI manifest, including checked-allocation scope storage, preventing out-of-bounds runtime reads.
+
+- Identify managed allocation metadata sources by registered source-unit identity, including embedded virtual Corelib sources.
+
+- Resolve private helpers across verified canonical runtime units while preserving ordinary imported-function visibility and ambiguous-name rejection.
+
+- Resolve canonical Dynamic descriptor getter names from registered type declarations instead of the callable-only name query.
+
+- Preserve unit-valued aggregate fields as logical positions without payload storage or GC pointer slots; evaluate unit initializers and assignments for effects, including canonical Dynamic generic boxes.
+
+- Resolve canonical runtime imports from the actual runtime source root and
+  embed its exact ordinary Corelib dependency closure in the runtime kit hash.
+  Keep bootstrap intrinsic authority separate from support-unit services and
+  reject duplicate sources or altered syntax during canonical admission.
+
+- Resolve qualified nominal declarations through same-named public module barrels,
+  retaining dependency fields such as compiler SDK Compilation.entryRoot.
+
+- Emit native Mod codecs by transport direction, requiring source constructors
+  only for decoded requests and callback results, including nested type closures.
+
+- Discover complete qualified nominal leaf modules without requiring a separate
+  import, so dependency record fields retain their declared nominal types.
+- Keep prepared executable artifacts and selected entry metadata immutable to
+  callers, preventing body substitution through public prepared-packet fields.
+
+- Grow canonical managed arrays geometrically rather than copying every prefix
+  during successive Append calls, retaining overflow checks and construction roots.
+
+- Reject discovered compiler Mods without validated executable descriptors and
+  dispatch through native artifacts when no explicit invoker is provided, rather
+  than reporting successful empty phases through a recording stub.
+- Derive empty enum payload arrays from their exact declared variant fields,
+  including imported and applied generic enums. Trace named and recursive enum
+  array elements through canonical value ABI and managed-reference facts, while
+  leaving native pointer elements untraced.
+- Set relocatable macOS shared-runtime install names and Linux SONAMEs at link
+  time so published runtime kits do not retain staging-directory load paths.
+
+- Resolve a unit's local nominal type before same-name imported types in the
+  generation-bound semantic queries, preserving qualified module identity and
+  rejecting conflicting imports when no local declaration exists.
+
+- Restore valid deep Salsa snapshots with bounded input preflight and a protected
+  deserialization/cleanup stack, retaining compiler identity, digest, allocation
+  order and candidate publication checks. Reject oversized snapshots without
+  changing live queries or replacing the previous on-disk snapshot.
+- Diagnose undeclared bare call arguments in reachable imported bodies at the
+  actual argument source span, preserving valid locals, parameters, constants
+  and receiver fields through the canonical semantic gate.
+- Use one preflight template inventory for installation and checksumming, reject
+  symlink payloads, frame versioned cache digests, preserve existing installs on
+  invalid replacements, and verify cached offline creation.
+
+- Discover imports from canonical parsed declarations across same-line, multiline,
+  alias and inline-module syntax, reusing owned unit programs for artifact metadata.
+  Discover qualified expression/type paths from that same program, excluding dotted
+  comments and strings and avoiding invented suffix fragments.
+- Separate strict assembly from explicit editor recovery; repaired units grant no
+  dependency-discovery authority and malformed non-entry skip policy applies during
+  discovery. Source and integration qualification remain pending.
+
+- Preserve a valid empty string when concatenating two empty operands by
+  reserving a backing sentinel instead of requesting zero native allocation.
+  Native qualification with a rebuilt compiler remains pending.
+- Treat removal of an absent dependency as a read-only no-op and reject
+  refreshing a lock owned by a different project; all five dependency-change
+  integration regressions pass.
 
 - Download published LSP binaries larger than 10 MiB while retaining a bounded
   256 MiB asset limit and a separate 4 KiB version-metadata limit.

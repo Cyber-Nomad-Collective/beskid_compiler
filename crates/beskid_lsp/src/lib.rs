@@ -143,7 +143,7 @@ where
     }
 }
 
-/// Run the language server on stdio (used by `beskid_lsp` and `beskid lsp`).
+/// Run the language server on stdio (used by `beskid_lsp` and `beskid dev lsp`).
 pub async fn run_stdio_server() -> anyhow::Result<()> {
     // The LSP may be the first Beskid executable a user runs. Provision the
     // Corelib embedded in this binary before workspace resolution begins, so

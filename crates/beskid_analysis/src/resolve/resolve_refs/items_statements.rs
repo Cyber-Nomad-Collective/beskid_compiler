@@ -97,6 +97,13 @@ impl Resolver {
             // `type T : Contract { }` does above, so `stage6_contracts_and_methods` needs no
             // new pass to validate impl-block conformance.
             Node::ImplBlock(def) => {
+                self.push_generic_scope();
+                for generic in &def.node.generics {
+                    self.insert_generic(&generic.node.name);
+                }
+                for bound in &def.node.where_bounds {
+                    self.resolve_type_path(&bound.contract);
+                }
                 self.resolve_type(&def.node.receiver_type);
                 let receiver_item_id = self.receiver_item_id_for_type(&def.node.receiver_type);
                 for conformance in &def.node.conformances {
@@ -145,6 +152,7 @@ impl Resolver {
                 for binding in &def.node.associated_type_bindings {
                     self.resolve_type(&binding.node.ty);
                 }
+                self.pop_generic_scope();
             }
             Node::TestDefinition(def) => {
                 if !include_bodies {

@@ -19,10 +19,11 @@ impl SyntaxNodeFacts<'_> {
         let LiteralFact::Integer(text) = self.literal(key)? else {
             return None;
         };
-        let value = text.split_once('_').map_or(text.as_ref(), |(value, _)| value);
+        let clean = beskid_analysis::syntax::integer_literal_magnitude(&text).replace('_', "");
+        let value = clean.as_str();
         match value.strip_prefix("0x") {
             Some(hexadecimal) => u64::from_str_radix(hexadecimal, 16).ok().map(|number| number as i64),
-            None => value.parse().ok(),
+            None => value.parse::<i64>().ok().or_else(|| value.parse::<u64>().ok().map(|bits| bits as i64)),
         }
     }
 
@@ -37,7 +38,12 @@ impl SyntaxNodeFacts<'_> {
         let LiteralFact::Float(text) = self.literal(key)? else {
             return None;
         };
-        text.parse().ok()
+        let magnitude = beskid_analysis::syntax::float_literal_magnitude(&text);
+        if text.ends_with("_f32") || self.scalar_semantic_type(key) == Some(SemanticTypeId::F32) {
+            magnitude.parse::<f32>().ok().map(f64::from)
+        } else {
+            magnitude.parse().ok()
+        }
     }
 
     pub(super) fn char_literal_impl(&self, key: AstNodeKey) -> Option<char> {

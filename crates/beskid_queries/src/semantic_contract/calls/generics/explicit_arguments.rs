@@ -210,19 +210,15 @@ pub(in crate::semantic_contract) fn generic_call_uses_parameter_type_arguments(
     if !syntax.accepts_key(db, declaration) {
         return false;
     }
-    let Some(function) = syntax
-        .syntax_index(db)
-        .node_at(syntax.expanded_program(db), declaration.node)
-        .and_then(|node| node.of::<beskid_analysis::syntax::FunctionDefinition>())
-    else {
+    let Some((generic_names, _)) = generic_callable_parameters(db, declaration) else {
         return false;
     };
-    if function.generics.len() != type_arguments.len() {
+    if generic_names.len() != type_arguments.len() {
         return false;
     }
-    type_arguments.iter().zip(function.generics.iter()).all(|(argument, generic)| {
+    type_arguments.iter().zip(generic_names.iter()).all(|(argument, generic)| {
         abi_type_from_syntax(db, key, &argument.node).is_ok()
-            || type_syntax_is_generic_parameter_reference(&argument.node, generic.node.name.as_str())
+            || type_syntax_is_generic_parameter_reference(&argument.node, generic)
             || type_syntax_is_enclosing_generic_parameter_reference(db, key, &argument.node)
     })
 }

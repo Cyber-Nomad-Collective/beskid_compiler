@@ -30,8 +30,25 @@ fn v5_manifest_is_the_only_input_to_every_generated_artifact() {
     assert!(first.masm["x86_64-pc-windows-msvc"].contains("BESKID_CONTEXT_SWITCH_FROM_REGISTER TEXTEQU <rcx>"));
     assert!(first.abi_json.contains("\"trapExitStatus\": 101"));
     assert!(first.audit_json.contains("\"forbiddenSymbolFamilies\""));
-    assert!(first.rust.contains("GeneratedSourceBuiltin { name: \"__str_len\", symbol: \"str_len\""));
+    assert!(!first.rust.contains("GeneratedSourceBuiltin { name: \"__str_len\", symbol: \"str_len\""));
     assert!(first.rust.contains("symbol: \"math_sqrt\", params: &[crate::AbiParamKind::F64]"));
+}
+
+#[test]
+fn v06_private_adapters_do_not_grant_global_source_builtin_authority() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let source = fs::read_to_string(root.join("runtime_manifest.bsol")).unwrap();
+    let manifest = load_v5_manifest_source(&source).unwrap();
+    let artifacts = generate_v5_artifacts(&manifest).unwrap();
+    for builtin in &manifest.soft_builtins {
+        let row = format!("GeneratedSourceBuiltin {{ name: {:?},", builtin.name);
+        let globally_callable =
+            builtin.adapter_service.is_none() && manifest.exports.iter().any(|export| export.symbol == builtin.symbol);
+        assert_eq!(artifacts.rust.contains(&row), globally_callable, "{}", builtin.name);
+    }
+    assert!(artifacts.rust.contains("GeneratedSourceBuiltin { name: \"__fiber_yield\""));
+    assert!(artifacts.rust.contains("GeneratedSourceBuiltin { name: \"__timer_sleep_until\""));
+    assert!(artifacts.rust.contains("GeneratedCorelibServiceBinding { service: \"__args_count\""));
 }
 
 #[test]
@@ -64,11 +81,8 @@ fn tcp_read_service_carries_one_absolute_monotonic_deadline() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let source = fs::read_to_string(root.join("runtime_manifest.bsol")).unwrap();
     let manifest = load_v5_manifest_source(&source).expect("workspace v5 source");
-    let read = manifest
-        .corelib_services
-        .iter()
-        .find(|service| service.name == "__network_read")
-        .expect("TCP read service");
+    let read =
+        manifest.corelib_services.iter().find(|service| service.name == "__network_read").expect("TCP read service");
     assert_eq!(read.params.len(), 5);
     assert_eq!(read.params[4].name, "deadline");
     assert_eq!(read.params[4].ty, "i64");
@@ -132,9 +146,11 @@ fn composition_scope_enter_carries_frozen_identity_on_every_target() {
     assert_eq!(targets, ["aarch64-apple-darwin", "x86_64-pc-windows-msvc", "x86_64-unknown-linux-gnu"]);
 
     let artifacts = generate_v5_artifacts(&manifest).expect("ABI artifacts");
-    assert!(artifacts
-        .c_header
-        .contains("void composition_scope_enter(void * container, size_t scope_id, size_t parent_scope_id);"));
+    assert!(
+        artifacts
+            .c_header
+            .contains("void composition_scope_enter(void * container, size_t scope_id, size_t parent_scope_id);")
+    );
 }
 
 /// `runtime/beskid/src/Runtime/Mem/AbiValue.bd` is read from disk by every compilation path --

@@ -45,7 +45,7 @@ pub(crate) fn run_generators(
                     continue;
                 }
                 let outcome = invoker
-                    .invoke_generator(registration, &generation_request)
+                    .invoke_generator(registration, &generation_request, input.semantic_authority)
                     .map_err(|err| anyhow::anyhow!(err.to_string()))?;
                 typed_items.extend(outcome.typed_items.iter().cloned());
                 outcomes.push(outcome);
@@ -66,5 +66,7 @@ pub(crate) fn run_generators(
 }
 
 pub(crate) fn is_generate_registration(registration: &ContractRegistration) -> bool {
-    registration.contract_id.ends_with(".Generator") || registration.contract_id.ends_with(".AttributeGenerator")
+    registration.contract_id.ends_with(".Generator")
+        || registration.contract_id.ends_with(".GrammarGenerator")
+        || registration.contract_id.ends_with(".AttributeGenerator")
 }

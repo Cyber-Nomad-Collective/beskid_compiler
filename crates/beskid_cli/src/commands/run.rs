@@ -51,9 +51,15 @@ fn run_build_and_execute(args: RunArgs) -> Result<()> {
         workspace_member: args.project.workspace_member.as_deref(),
         frozen: args.lockfile.frozen,
         locked: args.lockfile.locked,
+        offline: args.lockfile.offline,
     };
-    let (session, resolved) =
+    let (mut session, resolved) =
         CommandSession::open_and_resolve(args.plain, PipelineProgressKind::PrepareAndRun, &resolve_args)?;
+    session.set_mod_invoker(super::compiler_mod::prepare_native_mod_executor(
+        &resolved,
+        args.lockfile.WorkspaceOptions(),
+        Some(session.observer()),
+    )?);
     let prepared = session.executable_gate_prepared(&resolved, SemanticGateOptions::default())?;
     let front = prepared.into_executable()?;
     let artifact = lower_prepared_entrypoint(&front, &args.entrypoint, None, Some(session.observer()))?;
@@ -78,7 +84,9 @@ fn run_build_and_execute(args: RunArgs) -> Result<()> {
             beskid_abi::runtime_kit::BuildProfile::Release => BuildProfile::Release,
         },
         Err(std::env::VarError::NotPresent) => BuildProfile::Debug,
-        Err(error) => return Err(anyhow::anyhow!("invalid BESKID_RUNTIME_KIT_PROFILE: {error}")),
+        Err(error) => {
+            return Err(anyhow::anyhow!("invalid BESKID_RUNTIME_KIT_PROFILE: {error}"));
+        }
     };
     let runtime = default_runtime_strategy(runtime_profile, None)?;
 
@@ -92,7 +100,7 @@ fn run_build_and_execute(args: RunArgs) -> Result<()> {
         target_triple: None,
         profile: runtime_profile,
         entrypoint: args.entrypoint.clone(),
-        export_policy: ExportPolicy::PublicOnly,
+        export_policy: ExportPolicy::Explicit(Vec::new()),
         link_mode: LinkMode::Auto,
         runtime: Some(runtime),
         verbose_link: false,

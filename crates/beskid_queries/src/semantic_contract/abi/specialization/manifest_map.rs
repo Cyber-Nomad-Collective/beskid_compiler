@@ -27,10 +27,20 @@ fn manifest_type_to_semantic(ty: &str) -> Option<SemanticTypeId> {
     Some(match ty {
         "string" => SemanticTypeId::STRING,
         "pointer" => SemanticTypeId::POINTER,
-        "usize" | "isize" => SemanticTypeId::WORD,
-        "i8" | "u8" => SemanticTypeId::U8,
-        "i16" | "u16" | "i32" | "u32" => SemanticTypeId::I32,
-        "i64" | "u64" => SemanticTypeId::I64,
+        "usize" => SemanticTypeId::WORD,
+        // ABI-v5's three supported targets are 64-bit. Signed native-width values
+        // retain signed comparison/conversion behavior, unlike unsigned `word`.
+        "isize" => SemanticTypeId::I64,
+        "i8" => SemanticTypeId::I8,
+        "i16" => SemanticTypeId::I16,
+        "i32" => SemanticTypeId::I32,
+        "i64" => SemanticTypeId::I64,
+        "u8" => SemanticTypeId::U8,
+        "u16" => SemanticTypeId::U16,
+        "u32" => SemanticTypeId::U32,
+        "u64" => SemanticTypeId::U64,
+        "f32" => SemanticTypeId::F32,
+
         "f64" => SemanticTypeId::F64,
         "void" => SemanticTypeId::UNIT,
         "never" => SemanticTypeId::NEVER,
@@ -43,15 +53,29 @@ pub(in crate::semantic_contract) fn builtin_type_to_semantic(
 ) -> Option<SemanticTypeId> {
     use beskid_analysis::builtins::BuiltinType;
     Some(match ty {
+        BuiltinType::I8 => SemanticTypeId::I8,
+        BuiltinType::I16 => SemanticTypeId::I16,
+        BuiltinType::I64 => SemanticTypeId::I64,
+        BuiltinType::U8 => SemanticTypeId::U8,
+        BuiltinType::U16 => SemanticTypeId::U16,
+        BuiltinType::F32 => SemanticTypeId::F32,
+        BuiltinType::Isize => SemanticTypeId::I64,
+        BuiltinType::Bool => SemanticTypeId::BOOL,
+        BuiltinType::Char => SemanticTypeId::CHAR,
         BuiltinType::String => SemanticTypeId::STRING,
         BuiltinType::Ptr => SemanticTypeId::POINTER,
         BuiltinType::Usize => SemanticTypeId::WORD,
-        BuiltinType::U64 => SemanticTypeId::I64,
+        BuiltinType::U64 => SemanticTypeId::U64,
         BuiltinType::U32 => SemanticTypeId::U32,
         BuiltinType::I32 => SemanticTypeId::I32,
         BuiltinType::F64 => SemanticTypeId::F64,
         BuiltinType::Unit => SemanticTypeId::UNIT,
         BuiltinType::Never => SemanticTypeId::NEVER,
+        // A source type parameter has no fixed ABI type. Typed value services lower through
+        // their exact Corelib service transport, never through a runtime-intrinsic signature.
+        BuiltinType::TypeParameter => return None,
+        // Managed arrays cross the call boundary as their header pointer.
+        BuiltinType::TypeParameterArray | BuiltinType::Bytes => SemanticTypeId::POINTER,
     })
 }
 /// ABI facts for compiler-embedded Corelib service facades. These are deliberately available
@@ -83,8 +107,10 @@ fn corelib_service_abi_type(ty: beskid_abi::runtime_source::CorelibServiceAbiTyp
         CorelibServiceAbiType::I64 => SemanticTypeId::I64,
         CorelibServiceAbiType::I32 => SemanticTypeId::I32,
         CorelibServiceAbiType::U32 => SemanticTypeId::U32,
+        CorelibServiceAbiType::U64 => SemanticTypeId::U64,
         CorelibServiceAbiType::U8 => SemanticTypeId::U8,
         CorelibServiceAbiType::F64 => SemanticTypeId::F64,
+        CorelibServiceAbiType::F32 => SemanticTypeId::F32,
         CorelibServiceAbiType::Void => SemanticTypeId::UNIT,
         CorelibServiceAbiType::Never => SemanticTypeId::NEVER,
     })

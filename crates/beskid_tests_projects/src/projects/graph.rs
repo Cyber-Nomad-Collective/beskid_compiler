@@ -155,8 +155,10 @@ dependency "Feature" {
         assert_eq!(
             names,
             [
-                "corelib_compiler_sdk",
                 "corelib_foundation",
+                "corelib_serialization",
+                "corelib_bsol",
+                "corelib_compiler_sdk",
                 "corelib_concurrency",
                 "corelib_runtime",
                 "corelib_console",

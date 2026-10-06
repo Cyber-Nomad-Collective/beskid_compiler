@@ -12,6 +12,8 @@ impl IsleContext<'_, '_, '_, '_> {
         let pointer_type = self.builder.func.dfg.value_type(value);
         let coerced = match semantic {
             SemanticTypeId::I64 => value,
+            SemanticTypeId::I8 | SemanticTypeId::I16 => self.builder.ins().sextend(types::I64, value),
+            SemanticTypeId::U16 => self.builder.ins().uextend(types::I64, value),
             SemanticTypeId::I32 => self.builder.ins().sextend(types::I64, value),
             SemanticTypeId::U32 => self.builder.ins().uextend(types::I64, value),
             SemanticTypeId::U8 => self.builder.ins().uextend(types::I64, value),
@@ -52,7 +54,10 @@ macro_rules! generated_string_methods {
         fn emit_string(&mut self, key: AstNodeKey) -> Option<Value> {
             let text = self.facts.string_literal(key)?;
             match self.string_interner.as_deref_mut()?.intern(self.builder, key, &text) {
-                Ok(value) => Some(value),
+                Ok(value) => {
+                    self.guard_checked_allocation()?;
+                    Some(value)
+                }
                 Err(error) => {
                     self.pending_error =
                         Some(LoweringError { key, kind: LoweringErrorKind::StringMaterialization(error) });

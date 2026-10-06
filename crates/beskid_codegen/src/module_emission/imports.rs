@@ -12,9 +12,9 @@ use super::items::ResolvedSyntaxModuleItem;
 use crate::{CodegenContext, CodegenInput, ExternImport};
 
 /// Syntax-ISLE adapter over the existing artifact-owned literal pool.
-pub(super) struct ArtifactStringInterner<'a> {
-    pub(super) context: &'a mut CodegenContext,
-    pub(super) pointer_type: Type,
+pub(crate) struct ArtifactStringInterner<'a> {
+    pub(crate) context: &'a mut CodegenContext,
+    pub(crate) pointer_type: Type,
 }
 
 impl StringInterner for ArtifactStringInterner<'_> {
@@ -106,7 +106,13 @@ pub(super) fn extern_contract_symbols(
     for item in items {
         collect_extern_contract_callees(input.database(), item.key, &mut callees);
     }
-    callees.into_iter().map(|(callee, import)| (callee, import.symbol)).collect()
+    callees
+        .into_iter()
+        .map(|(callee, import)| {
+            let symbol = input.glue_import_callee_symbol(&callee);
+            (callee, symbol.unwrap_or(&import.symbol).to_owned())
+        })
+        .collect()
 }
 
 pub(super) fn extern_contract_imports(
@@ -117,7 +123,16 @@ pub(super) fn extern_contract_imports(
     for item in items {
         collect_extern_contract_callees(input.database(), item.key, &mut callees);
     }
-    callees.into_values().collect()
+    callees
+        .into_iter()
+        .map(|(callee, mut import)| {
+            if let Some(symbol) = input.glue_import_callee_symbol(&callee) {
+                import.symbol = symbol.to_owned();
+                import.library = None;
+            }
+            import
+        })
+        .collect()
 }
 
 /// String runtime helpers that ISLE lowering emits directly (string literals, coercion,
@@ -157,6 +172,30 @@ pub(super) fn corelib_service_symbols(
         collect_event_service_callees(input.database(), item.key, &mut event_services);
     }
     let mut symbols = HashMap::new();
+    let mut callback_nodes = HashSet::new();
+    let mut pending = items.iter().map(|item| (item.key, 0usize)).collect::<Vec<_>>();
+    while let Some((key, depth)) = pending.pop() {
+        if depth > 1024 {
+            return Err("native callback import traversal exceeds depth budget".into());
+        }
+        if !callback_nodes.insert(key) {
+            continue;
+        }
+        if callback_nodes.len() > 1_000_000 {
+            return Err("native callback import traversal exceeds node budget".into());
+        }
+        if let Ok(Some(CallLowering::NativeModCallback(callback))) = call_lowering(input.database(), key) {
+            if !input.permits_native_mod_callback(callback) {
+                return Err("SDK host callback requires a prepared native Mod invocation capability".into());
+            }
+            let symbol = beskid_queries::native_mod_callback_symbol(input.database(), callback)
+                .map_err(|error| error.to_string())?;
+            symbols.insert(DirectCallee::NativeModCallback(callback.wrapper()), symbol);
+        }
+        if let Ok(Some(children)) = child_nodes(input.database(), key) {
+            pending.extend(children.iter().copied().map(|child| (child, depth + 1)));
+        }
+    }
     for symbol in ALWAYS_AVAILABLE_STRING_SERVICES {
         symbols.insert(DirectCallee::corelib_service(symbol), (*symbol).to_owned());
     }
@@ -257,7 +296,10 @@ fn collect_manifest_service_callees(
             CallLowering::CorelibService(service) => {
                 corelib_services.insert(service);
             }
-            CallLowering::Direct(_) | CallLowering::Dynamic | CallLowering::Runtime(_) => {}
+            CallLowering::NativeModCallback(_)
+            | CallLowering::Direct(_)
+            | CallLowering::Dynamic
+            | CallLowering::Runtime(_) => {}
         }
     }
     if let Ok(Some(children)) = child_nodes(db, key) {

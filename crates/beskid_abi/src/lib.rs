@@ -4,12 +4,13 @@ pub mod abi_types;
 pub mod abi_v5;
 pub mod assembly_sources;
 pub mod corelib_bundle;
+pub mod compiler_driver;
 pub mod generated;
 pub mod interop;
-pub mod mod_contract;
 pub mod runtime_kit;
 pub mod runtime_provenance;
 pub mod runtime_source;
+pub mod sdk_source;
 pub mod serde_support;
 pub mod toolchain;
 pub mod types;
@@ -48,13 +49,6 @@ pub use generated::symbols::{
     SYM_SYSCALL_READ_BYTES, SYM_SYSCALL_WRITE, SYM_SYSCALL_WRITE_BYTES, SYM_TEST_BYTES_LEN, SYM_TEST_BYTES_PTR,
     SYM_TTY_WINSIZE, SYM_WAIT_GROUP_ADD, SYM_WAIT_GROUP_CREATE, SYM_WAIT_GROUP_DONE, SYM_WAIT_GROUP_WAIT,
 };
-pub use mod_contract::{
-    ModAnalysisRequest, ModAnalysisResult, ModCatalog, ModCollectRequest, ModCollectTargetSet, ModCompilation,
-    ModContractRegistration, ModContractRegistrationSlice, ModDiagnostic, ModDiagnosticSlice, ModEdit, ModEditSlice,
-    ModGeneratedSyntaxContribution, ModGenerationRequest, ModGeneratorEntryFn, ModPackage, ModPackageSlice,
-    ModQuickFix, ModQuickFixSlice, ModSemanticHandle, ModStrSlice, ModSyntaxContributionItem,
-    ModSyntaxContributionSlice, ModSyntaxContributionTag, ModSyntaxNodeHandle, ModWorkspace, ModWorkspaceMember,
-    ModWorkspaceMemberSlice,
-};
+
 pub use types::{BeskidArray, BeskidStr};
 pub use version::BESKID_RUNTIME_ABI_VERSION;

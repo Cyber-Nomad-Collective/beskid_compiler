@@ -10,7 +10,7 @@ use beskid_analysis::syntax::SyntaxGenerationId;
 
 use crate::{BeskidDatabase, Db, ProjectSession, SemanticError, SourceUnitId, TypedProgram};
 
-const CANONICAL_RUNTIME_CORPUS_BINDING: &str = "__beskid_canonical_runtime";
+pub(crate) const CANONICAL_RUNTIME_CORPUS_BINDING: &str = "__beskid_canonical_runtime";
 
 /// Return the existing owner of a prepared syntax assembly when it has already
 /// been registered in this database, otherwise mint the first owner for it.
@@ -90,6 +90,13 @@ pub fn build_typed_program(
     if generation != assembly.generation {
         return Err(SemanticError::new("typed-program generation does not match ProgramAssembly generation"));
     }
+    assembly.package_identities().validate().map_err(|error| SemanticError::new(error.to_string()))?;
+    for unit in assembly.units.iter() {
+        assembly
+            .package_identities()
+            .validate_source(&unit.path, &unit.source)
+            .map_err(|error| SemanticError::new(error.to_string()))?;
+    }
     let generation = assembly.generation;
     let entry_unit = assembly
         .units
@@ -105,6 +112,63 @@ pub fn build_typed_program(
             unit.source.clone(),
             Arc::new(unit.program.clone()),
         )?;
+        let public_dynamic = assembly.is_canonical_public_dynamic_unit(unit);
+        if public_dynamic {
+            let parsed = beskid_analysis::services::parse_program_with_source_name_and_diagnostics(
+                &unit.logical_name,
+                &unit.source,
+            )
+            .map_err(|error| SemanticError::new(format!("canonical Dynamic source parse: {error}")))?;
+            if parsed.recovered || !parsed.diagnostics.is_empty() || parsed.program != unit.program {
+                return Err(SemanticError::new(
+                    "Dynamic source bytes do not authorize a modified/recovered syntax tree",
+                ));
+            }
+            let input =
+                db.syntax_unit(identity).ok_or_else(|| SemanticError::new("Dynamic source is not registered"))?;
+            let mut revision = input.revision(db).as_ref().clone();
+            revision.runtime_source_authority =
+                Some(Arc::from(beskid_abi::runtime_source::CANONICAL_PUBLIC_DYNAMIC_SOURCE_PATH));
+            use salsa::Setter;
+            input.set_revision(db).to(Arc::new(revision));
+        }
+        // Correspondence is not execution authority. The native adapter separately validates
+        // the complete SDK closure and issues the host-callback capability.
+        let canonical = beskid_abi::sdk_source::canonical_sdk_sources().iter().find(|expected| {
+            expected.path().ends_with(".bd")
+                && expected.bytes() == unit.source.as_bytes()
+                && unit
+                    .path
+                    .ends_with(std::path::Path::new(expected.path().strip_prefix("src/").unwrap_or(expected.path())))
+        });
+        if let Some(expected) = canonical {
+            let parsed = beskid_analysis::services::parse_program_with_source_name_and_diagnostics(
+                &unit.logical_name,
+                &unit.source,
+            )
+            .map_err(|error| SemanticError::new(format!("canonical SDK source parse: {error}")))?;
+            if parsed.recovered || !parsed.diagnostics.is_empty() || parsed.program != unit.program {
+                return Err(SemanticError::new("SDK source bytes do not authorize a modified/recovered syntax tree"));
+            }
+            let input = db.syntax_unit(identity).ok_or_else(|| SemanticError::new("SDK source is not registered"))?;
+            let mut revision = input.revision(db).as_ref().clone();
+            revision.sdk_source_authority = Some(Arc::from(expected.path()));
+            use salsa::Setter;
+            input.set_revision(db).to(Arc::new(revision));
+        }
+    }
+
+    {
+        let mut registry = db.syntax_dependency_registry().lock().expect("syntax dependency registry");
+        let proof = assembly.package_identities();
+        let key = (project, generation);
+        if let Some(existing) = registry.package_identities.get(&key) {
+            if existing != proof {
+                return Err(SemanticError::new("package proof differs from registered project generation"));
+            }
+        } else {
+            registry.package_identities.insert(key, proof.clone());
+        }
     }
 
     let mut module_units = std::collections::HashMap::<Vec<String>, Vec<SourceUnitId>>::new();
@@ -365,14 +429,52 @@ pub fn build_canonical_runtime_typed_program(
         })
         .collect::<Vec<_>>();
     let exact_corpus = actual.len() == expected.len()
-        && actual.iter().all(|source| {
-            capability.authorizes_source(&source.logical_path) && expected.iter().any(|expected| expected == source)
-        });
+        && beskid_abi::abi_v5::canonical_source_hash(&actual).is_ok_and(|hash| hash == capability.source_hash())
+        && actual.iter().all(|source| expected.iter().any(|expected| expected == source));
     if !exact_corpus {
         return Err(SemanticError::new("syntax assembly is not the compiler-embedded canonical runtime corpus"));
     }
+    // Matching source text cannot authorize an independently altered AST. This
+    // constructor admits only the parse of those exact bytes in each supplied unit.
+    for unit in assembly.units.iter() {
+        let parsed = beskid_analysis::services::parse_program_with_source_name(
+            unit.path.to_str().unwrap_or_default(),
+            &unit.source,
+        )
+        .map_err(|_| SemanticError::new("canonical runtime source does not parse"))?;
+        if parsed != unit.program {
+            return Err(SemanticError::new("canonical runtime syntax differs from embedded source"));
+        }
+    }
 
+    let services = capability.corelib_service_capability();
+    let service_sources = canonical_corelib_service_sources();
     let mut typed = build_typed_program(db, project, generation, assembly)?;
+    for unit in typed.assembly.units.clone().iter() {
+        let source = SourceUnitId::new(db, unit.path.clone());
+        let input =
+            db.syntax_unit(source).ok_or_else(|| SemanticError::new("canonical runtime unit is unregistered"))?;
+        if capability.authorizes_source(&unit.logical_name) {
+            let mut revision = input.revision(db).as_ref().clone();
+            revision.runtime_source_authority = Some(Arc::from(unit.logical_name.as_str()));
+            use salsa::Setter;
+            input.set_revision(db).to(Arc::new(revision));
+        } else if service_sources
+            .iter()
+            .any(|expected| expected.logical_path == unit.logical_name && expected.source == unit.source)
+        {
+            // The whole embedded closure was verified above. Ordinary support
+            // units receive only their exact service table, never raw intrinsics.
+            let owned = services
+                .services()
+                .iter()
+                .copied()
+                .filter(|service| service.source_path == unit.logical_name)
+                .collect();
+            attach_corelib_services(db, &mut typed, source, unit.logical_name.clone(), owned);
+        }
+    }
+    typed.corelib_service_capability = Some(services);
     attach_canonical_runtime_cross_unit_scope(db, &typed);
     typed.runtime_intrinsic_capability = Some(Arc::new(capability));
     Ok(typed)
@@ -386,7 +488,16 @@ pub fn build_canonical_runtime_typed_program(
 /// assemblies keep their explicit-import-only resolution contract, and duplicate
 /// public names remain unresolved through `unique_imported_function`.
 fn attach_canonical_runtime_cross_unit_scope(db: &BeskidDatabase, typed: &TypedProgram) {
-    let units = typed.assembly.units.iter().map(|unit| SourceUnitId::new(db, unit.path.clone())).collect::<Vec<_>>();
+    let units = typed
+        .assembly
+        .units
+        .iter()
+        .filter(|unit| {
+            db.syntax_unit(SourceUnitId::new(db, unit.path.clone()))
+                .is_some_and(|input| input.revision(db).runtime_source_authority.is_some())
+        })
+        .map(|unit| SourceUnitId::new(db, unit.path.clone()))
+        .collect::<Vec<_>>();
     attach_private_runtime_scope(db, typed.generation, &units);
 }
 
@@ -431,8 +542,24 @@ pub fn build_runtime_fixture_typed_program(
     {
         return Err(SemanticError::new("runtime fixture source differs from its proof"));
     }
-    let runtime_units =
-        assembly.units.iter().filter(|unit| unit.logical_name.starts_with("src/Runtime/")).cloned().collect::<Vec<_>>();
+    let expected_runtime = beskid_abi::runtime_source::canonical_runtime_sources();
+    let canonical_runtime_unit =
+        |logical_name: &str| expected_runtime.iter().any(|expected| expected.logical_path == logical_name);
+    // Private runtime scope is granted by logical path below. An extra source under the runtime
+    // namespace must never reach that grant merely because the exact corpus check ignores it.
+    if assembly
+        .units
+        .iter()
+        .any(|unit| unit.logical_name.starts_with("src/Runtime/") && !canonical_runtime_unit(&unit.logical_name))
+    {
+        return Err(SemanticError::new("runtime fixture assembly carries a non-canonical runtime source"));
+    }
+    let runtime_units = assembly
+        .units
+        .iter()
+        .filter(|unit| expected_runtime.iter().any(|expected| expected.logical_path == unit.logical_name))
+        .cloned()
+        .collect::<Vec<_>>();
     let runtime = Arc::new(ProgramAssembly::new(
         assembly.roots.clone(),
         Arc::new(runtime_units),
@@ -462,7 +589,7 @@ pub fn build_runtime_fixture_typed_program(
     let scope = assembly
         .units
         .iter()
-        .filter(|unit| unit.logical_name.starts_with("src/Runtime/") || unit.logical_name == fixture.logical_path)
+        .filter(|unit| canonical_runtime_unit(&unit.logical_name) || unit.logical_name == fixture.logical_path)
         .map(|unit| SourceUnitId::new(db, unit.path.clone()))
         .collect::<Vec<_>>();
     attach_private_runtime_scope(db, generation, &scope);

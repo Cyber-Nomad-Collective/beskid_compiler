@@ -2,7 +2,7 @@
 
 use std::path::PathBuf;
 
-use beskid_analysis::projects::UnresolvedDependencyPolicy;
+use beskid_analysis::projects::{UnresolvedDependencyPolicy, WorkspacePrepareOptions};
 use beskid_pipeline::PipelineObserver;
 
 use super::PipelineProgressKind;
@@ -15,6 +15,7 @@ pub struct CliResolveOptions<'a> {
     pub workspace_member: Option<&'a str>,
     pub frozen: bool,
     pub locked: bool,
+    pub offline: bool,
     pub refresh_lock: bool,
     pub plain: bool,
 }
@@ -25,11 +26,30 @@ impl<'a> CliResolveOptions<'a> {
         project: Option<&'a PathBuf>,
         target: Option<&'a str>,
         workspace_member: Option<&'a str>,
-        frozen: bool,
-        locked: bool,
+        policy: WorkspacePrepareOptions,
         plain: bool,
     ) -> Self {
-        Self { input, project, target, workspace_member, frozen, locked, refresh_lock: false, plain }
+        Self {
+            input,
+            project,
+            target,
+            workspace_member,
+            frozen: policy.frozen,
+            locked: policy.locked,
+            offline: policy.offline,
+            refresh_lock: policy.refresh_lock,
+            plain,
+        }
+    }
+
+    #[allow(non_snake_case)]
+    pub fn WorkspaceOptions(&self) -> WorkspacePrepareOptions {
+        WorkspacePrepareOptions {
+            frozen: self.frozen,
+            locked: self.locked,
+            offline: self.offline,
+            refresh_lock: self.refresh_lock,
+        }
     }
 }
 

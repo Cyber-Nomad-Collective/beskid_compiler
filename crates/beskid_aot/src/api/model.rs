@@ -45,9 +45,11 @@ pub struct RuntimeKitRequest {
 }
 
 /// Which symbols from the object file participate in export lists / entrypoint checks.
+///
+/// User exports are exactly the `[Export]` items of the artifact; `Explicit(vec![])` exports no
+/// user symbols. There is no implicit export-every-public-symbol policy.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ExportPolicy {
-    PublicOnly,
     Explicit(Vec<String>),
     AllDefined,
 }
@@ -96,7 +98,7 @@ impl std::fmt::Debug for AotBuildRequest {
 impl AotBuildRequest {
     /// Build request with defaults shared by integration tests and ad hoc tooling runs.
     ///
-    /// Sets [`BuildProfile::Debug`], [`ExportPolicy::PublicOnly`], [`LinkMode::Auto`],
+    /// Sets [`BuildProfile::Debug`], an empty [`ExportPolicy::Explicit`], [`LinkMode::Auto`],
     /// exact installed ABI-v5 kit for linked outputs, no pipeline observer, and no explicit
     /// target triple or secondary object path. Object-only output has no runtime dependency.
     pub fn with_defaults(
@@ -118,7 +120,7 @@ impl AotBuildRequest {
             target_triple: None,
             profile,
             entrypoint: entrypoint.into(),
-            export_policy: ExportPolicy::PublicOnly,
+            export_policy: ExportPolicy::Explicit(Vec::new()),
             link_mode: LinkMode::Auto,
             runtime,
             verbose_link: false,
@@ -149,6 +151,9 @@ pub struct NativeSymbolInventory {
 /// Native static/shared library inputs suitable for higher-level runtime-kit publication.
 #[derive(Debug, Clone)]
 pub struct NativeLibraryPair {
+    pub shared_link_tool_receipt: Option<crate::linker::LinkToolReceipt>,
+    /// Present only for the canonical platform runtime provider publication path.
+    pub glue_provider_build_tools: Option<Vec<beskid_abi::runtime_kit::GlueProviderToolV1>>,
     pub static_library: PathBuf,
     pub shared_library: PathBuf,
     /// COFF import library emitted beside a Windows shared runtime DLL.

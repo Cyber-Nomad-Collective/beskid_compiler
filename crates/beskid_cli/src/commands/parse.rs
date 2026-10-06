@@ -1,4 +1,4 @@
-//! `beskid parse` — parse a `.bd` file and dump the AST (debug format).
+//! `beskid dev syntax parse` — parse a `.bd` file and dump the AST (debug format).
 
 use anyhow::{Context, Result};
 use beskid_analysis::services;

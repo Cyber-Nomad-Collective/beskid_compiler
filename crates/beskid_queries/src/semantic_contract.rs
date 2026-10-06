@@ -19,18 +19,55 @@ mod call_abi;
 mod calls;
 mod cleanup;
 mod closures_spawn;
-mod composition;
 mod completion;
+mod composition;
 mod contracts;
+pub use contracts::{AppliedContractIdentity, applied_contract_argument_is_type};
 mod events;
+mod portable_nominal;
+pub(crate) use portable_nominal::serialization_impl_receiver;
+pub use portable_nominal::{PortableNominalIdentity, portable_nominal_identity};
+mod dynamic_pack;
+pub(crate) use dynamic_pack::project_serialization_shape;
+pub use dynamic_pack::{
+    CanonicalContainerKind, DynamicPackingBridge, DynamicPackingField, DynamicPackingNode, DynamicPackingShape,
+    DynamicPackingVariant, DynamicShapeBinding, DynamicUnpackingBridge, canonical_container_kind,
+    dynamic_packing_bridge, dynamic_packing_shape, dynamic_shape_binding, dynamic_unpacking_bridge,
+};
+mod glue;
 mod growth;
+pub use glue::{
+    GlueBindingFact, GlueDirection, GlueHandleBrand, GlueLogicalType, GlueOwnerBindingDigest, GlueParameterFact,
+    GlueRustOwnerCallable, RustOwnerCallableRow, RustOwnerDeclaration, RustOwnerPlacement, RustOwnerTables,
+    RustOwnerTypeRow, glue_binding, glue_handle_shape, rust_owner_declarations, rust_owner_tables,
+    validate_rust_owner_path,
+};
 mod layouts;
 mod legality;
 mod local_type_resolution;
 mod locals;
+pub(crate) mod mod_shapes;
 mod model;
+mod native_mod_callbacks;
+mod native_mod_transport;
+pub use native_mod_callbacks::{
+    NativeModCallback, NativeModCallbackOperation, NativeModContractDeclaration, NativeModContractFamily,
+    NativeModRequestConstructor, NativeModRequestFactory, NativeModSyntaxConstructor, native_mod_callback_symbol,
+    native_mod_contract_declaration, native_mod_request_constructor, native_mod_syntax_constructor,
+};
+pub use native_mod_transport::{
+    NativeModTransportBody, NativeModTransportField, NativeModTransportNominal, NativeModTransportSignature,
+    NativeModTransportType, NativeModTransportVariant, native_mod_transport_nominal, native_mod_transport_signature,
+};
+mod checked_provider;
 mod queries;
 mod resolution;
+pub use checked_provider::{CheckedProviderCall, checked_provider_call};
+mod reserved_failure;
+pub use reserved_failure::{
+    CheckedFailureDestination, ReservedFailureConstructor, canonical_serialization_encode, checked_failure_destination,
+    reserved_failure_constructor, serialization_publication_methods,
+};
 mod syntax_facts;
 mod typed_arrays;
 mod typing;
@@ -70,11 +107,6 @@ use calls::{
     type_syntax_is_generic_parameter_reference, unique_nominal_method_declaration, unqualified_enclosing_method_call,
 };
 pub use cleanup::{ScopedAcquisition, ScopedCleanup, ScopedCleanupDiagnostic, scoped_cleanup};
-pub use composition::{
-    CompositionInjectedAccessFact, CompositionInjectionFieldFact, CompositionLaunchFact, CompositionRegistrationFact,
-    CompositionScopeFact, composition_injected_field_access, composition_injection_field, composition_launch,
-    composition_registration, composition_scope,
-};
 use closures_spawn::{
     callable_fiber_ownership_tracked, callable_signature_for_node, callable_signature_for_path,
     callable_signature_tracked, capture_storage_class, capture_storage_for_node, capture_storage_tracked,
@@ -83,9 +115,15 @@ use closures_spawn::{
     runtime_intrinsic_name_tracked, runtime_intrinsic_tracked, spawn_entry_operand, spawn_entry_validation_tracked,
     spawn_handle_type_tracked, spawn_legality_tracked, spawn_stack_capture, spawn_target_tracked,
 };
+pub use composition::{
+    CompositionInjectedAccessFact, CompositionInjectionFieldFact, CompositionLaunchFact, CompositionRegistrationFact,
+    CompositionScopeFact, composition_injected_field_access, composition_injection_field, composition_launch,
+    composition_registration, composition_scope,
+};
 use contracts::{
-    contract_member_receiver, contract_method_specialization, contract_parameter_declarations,
-    contract_witnesses_for_call, resolve_contract, specialized_source_expression_identity,
+    ContractConformanceFailure, contract_conformance_failure, contract_member_receiver, contract_method_specialization,
+    contract_parameter_declarations, contract_witnesses_for_call, render_signature_syntax, render_type_syntax,
+    resolve_contract, specialized_source_expression_identity,
 };
 use events::{event_handler_lambda_for_local_tracked, event_operation_tracked};
 pub use growth::{DeadCollectionGrowth, dead_collection_growth, is_growth_call_candidate};
@@ -104,10 +142,14 @@ use layouts::{
     semantic_type_from_syntax, unique_exported_type_in_unit, unique_public_type_in_unit, unique_type_in_unit,
 };
 pub use legality::{
-    CallArityMismatch, GenericParameterConflict, ImmutableLocalAssignment, MemberReferenceFinding, MemberReferenceKind,
-    NonExhaustiveMatch, UnresolvedCallKind, UnresolvedCallTarget, UnresolvedImport, call_arity_mismatch, check_items,
-    generic_parameter_conflict, immutable_local_assignment, match_exhaustiveness, member_reference_legality,
-    unresolved_call_target, unresolved_imports,
+    CallArityMismatch, GateObligation, GateObligationKind, GenericParameterConflict, ImmutableLocalAssignment,
+    MemberReferenceFinding, MemberReferenceKind, NonExhaustiveMatch, TypingObligation, TypingObligationKind,
+    UnitObligation, UnitObligationKind, UnresolvedCallKind, UnresolvedCallTarget, UnresolvedImport,
+    UnresolvedValueArgument, ValueObligation, call_arity_mismatch, check_gate_obligations, check_items,
+    check_typing_obligations,
+    check_unit_obligations, extern_profile_findings, gate_obligations, generic_parameter_conflict,
+    immutable_local_assignment, match_exhaustiveness, member_reference_legality, typing_obligations,
+    unit_obligations, unresolved_call_target, unresolved_imports, unresolved_value_argument, value_obligations,
 };
 pub use local_type_resolution::{UnresolvedTypeReference, unresolved_type_reference};
 use locals::{
@@ -164,8 +206,9 @@ pub use model::{
     EnumConstructorSpecialization, EnumConstructorTemplate, EnumLayoutFact, EnumLayoutTemplateArgument,
     EnumMatchArmFact, EnumMatchBindingFact, EnumMatchFact, EnumMatchPatternFact, EnumMatchScalarLiteralFact,
     EnumMatchVariantPatternFact, EnumScalarPayloadObjectLayout, EnumScalarPayloadVariantLayout, EnumVariantLayoutFact,
-    EventFieldLayoutFact, EventHandlerLocalFact, EventOperationFact, EventOperationKind, ExportSymbol, FiberOwnership, ForIteratorFact,
-    GenericBindingConflict, GenericCallInstantiation, GenericCallSpecialization, GenericCallTemplate,
+    EventFieldLayoutFact, EventHandlerLocalFact, EventOperationFact, EventOperationKind, ExportSymbol, FiberOwnership,
+    ForIteratorFact, GenericBindingConflict, GenericBoundViolation, GenericCallInstantiation, GenericCallSpecialization,
+    GenericCallTemplate,
     GenericNominalMethodReceiver, GenericSpecializationInstance, GenericSubstitution, IndexedNodeKind, ItemSignature,
     LiteralFact, LocalSlot, ManagedReferenceKind, ManifestBuiltin, MutableLocalAssignment, OperatorFact,
     PrimitiveNumericConversion, RangeForFact, ResolvedItem, ResolvedLocal, RuntimeIntrinsic, RuntimeIntrinsicName,
@@ -190,5 +233,21 @@ pub use queries::{
     operator_fact, parameter_generic_reference, primitive_numeric_conversion, range_for_fact, reachable_items,
     resolved_item, resolved_local, runtime_intrinsic, runtime_intrinsic_name, spawn_entry_validation,
     spawn_handle_type, spawn_legality, spawn_target, test_item, test_statement_nodes, try_expression_fact,
-    typed_array_allocation, value_abi_type,
+    type_applied_contract_implementation, type_contract_applications, type_contract_declarations,
+    type_contract_implementation, typed_array_allocation, value_abi_type,
 };
+
+pub use native_mod_transport::native_mod_single_array_element;
+
+pub(crate) use contracts::{
+    serialization_target_contract_methods, serialization_target_contract_methods_in_environment,
+};
+
+pub use checked_provider::{CheckedDynamicResultBridge, checked_dynamic_result_bridge};
+
+pub(crate) use contracts::serialization_encoder_methods;
+
+pub(crate) use contracts::{serialization_contribution_receiver_arguments, serialization_contribution_receiver_arguments_in_environment};
+
+mod serialization_shape;
+pub use serialization_shape::{SerializationShapeBinding, serialization_shape_binding};

@@ -11,8 +11,6 @@ use beskid_analysis::projects::{
     CompilePlan, ProjectManifest, Target, TargetKind, load_manifest_from_path, plan_entry_path,
 };
 use beskid_analysis::services::ResolvedInput;
-use beskid_engine::Engine;
-use beskid_engine::services::run_entrypoint_from_front_end_with_engine;
 use beskid_tools::PipelineProgressKind;
 use beskid_tools::session::{CommandSession, ResolveInputArgs};
 use serde::{Deserialize, Serialize};
@@ -151,7 +149,6 @@ pub struct PreparedWorkspace {
     base: ResolvedInput,
     manifest: Option<ProjectManifest>,
     manifest_path: PathBuf,
-    engine: Engine,
     budgets: ExecutionBudgets,
     cancellation: Cancellation,
     started: Instant,
@@ -174,34 +171,26 @@ impl PreparedWorkspace {
             workspace_member: args.project.workspace_member.as_deref(),
             frozen: args.lockfile.frozen,
             locked: args.lockfile.locked,
+            offline: args.lockfile.offline,
         };
-        let (session, base) =
+        let (mut session, base) =
             CommandSession::open_and_resolve(args.plain, PipelineProgressKind::PrepareAndRun, &resolve_args)?;
-        let (manifest_path, manifest) = if let Some(plan) = base.compile_plan.as_ref() {
-            let manifest_path = plan.manifest_path.clone();
-            let manifest = load_manifest_from_path(&manifest_path)
-                .map_err(|error| anyhow!("failed to load {}: {error}", manifest_path.display()))?;
-            (manifest_path, Some(manifest))
-        } else {
-            (base.source_path.clone(), None)
-        };
+        session.set_mod_invoker(super::compiler_mod::prepare_native_mod_executor(
+            &base,
+            args.lockfile.WorkspaceOptions(),
+            Some(session.observer()),
+        )?);
+        let (manifest_path, manifest) =
+            if let Some(plan) = base.compile_plan.as_ref().filter(|_| base.prepared_workspace.is_some()) {
+                let manifest_path = plan.manifest_path.clone();
+                let manifest = load_manifest_from_path(&manifest_path)
+                    .map_err(|error| anyhow!("failed to load {}: {error}", manifest_path.display()))?;
+                (manifest_path, Some(manifest))
+            } else {
+                (base.source_path.clone(), None)
+            };
         let revisions = revision_snapshot(&manifest_path);
-        let mut engine = Engine::try_new()
-            .map_err(|error| anyhow!("failed to initialize exact ABI-v5 runtime kit: {error}"))?;
-        engine
-            .initialize_arguments(&[manifest_path.display().to_string()])
-            .map_err(|error| anyhow!("failed to initialize explicit JIT arguments: {error}"))?;
-        Ok(Self {
-            session,
-            base,
-            manifest,
-            manifest_path,
-            engine,
-            budgets,
-            cancellation,
-            started: Instant::now(),
-            revisions,
-        })
+        Ok(Self { session, base, manifest, manifest_path, budgets, cancellation, started: Instant::now(), revisions })
     }
 
     pub fn test_targets(&self) -> Vec<String> {
@@ -296,25 +285,77 @@ impl PreparedWorkspace {
     pub fn session(&self) -> &CommandSession {
         &self.session
     }
-    pub fn run_entrypoint(
-        &mut self,
+    pub fn prepare_native_tests(
+        &self,
         front: &beskid_analysis::services::FrontEndTypedResult,
-        source_name: &str,
-        source: &str,
-        qualified_name: &str,
-    ) -> Result<String> {
-        run_entrypoint_from_front_end_with_engine(
-            &mut self.engine,
-            front,
-            source_name,
-            source,
-            qualified_name,
+        resolved: &ResolvedInput,
+        names: &[String],
+        target_started: Instant,
+    ) -> Result<NativeTests> {
+        let directory = tempfile::tempdir()?;
+        let target = beskid_engine::host_runtime_target().map_err(|error| anyhow!("{error}"))?;
+        let cancellation = self.cancellation.clone();
+        let control = beskid_aot::api::NativeExecutionControl::new(
+            (target_started + self.budgets.target).min(self.started + self.budgets.matrix),
+            Arc::new(move || cancellation.is_cancelled()),
+        );
+        control.check("lower_selected_tests")?;
+        let prepared = beskid_pipeline::observe_phase_result(
             Some(self.session.observer()),
-        )
+            beskid_pipeline::phases::CODEGEN_CLIF,
+            || beskid_aot::prepared_syntax::lower_prepared_syntax_entrypoints(front, names, target),
+        )?;
+        control.check("lower_selected_tests")?;
+        let libraries = beskid_engine::link_libraries::link_libraries_for_artifact(
+            prepared.artifact(),
+            resolved.compile_plan.as_ref(),
+        );
+        let profile = match std::env::var("BESKID_RUNTIME_KIT_PROFILE") {
+            Ok(value) => match beskid_abi::runtime_kit::BuildProfile::parse(&value)? {
+                beskid_abi::runtime_kit::BuildProfile::Debug => beskid_aot::BuildProfile::Debug,
+                beskid_abi::runtime_kit::BuildProfile::Release => beskid_aot::BuildProfile::Release,
+            },
+            Err(std::env::VarError::NotPresent) => beskid_aot::BuildProfile::Debug,
+            Err(error) => return Err(error.into()),
+        };
+        let kit = beskid_aot::default_runtime_strategy(profile, None)?;
+        let object = beskid_aot::api::emit_native_test_object(
+            prepared,
+            directory.path(),
+            profile,
+            kit,
+            libraries.external_libraries,
+            libraries.library_search_paths,
+            Some(self.session.observer()),
+            control,
+        )?;
+        Ok(NativeTests { directory, object })
     }
 
-    pub fn begin_target_execution(&mut self) {
-        beskid_queries::reset_process_compilation_database();
+    pub fn run_native_test(
+        &self,
+        native: &NativeTests,
+        name: &str,
+        index: usize,
+        target: &str,
+        started: Instant,
+    ) -> Result<String> {
+        let directory = native.directory.path().join(format!("entry-{index}"));
+        self.check_budget(target, "link_test", Some(started))?;
+        let executable = beskid_pipeline::observe_phase_result(
+            Some(self.session.observer()),
+            beskid_pipeline::phases::AOT_LINK,
+            || native.object.link_entry(name, &directory),
+        )?;
+        self.check_budget(target, "execute_test", Some(started))?;
+        let output = native.object.execute_linked_entry(&executable, &directory)?;
+        self.check_budget(target, "execute_test", Some(started))?;
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        if !output.status.success() {
+            return Err(anyhow!("native test `{name}` exited {}: {stdout}{stderr}", output.status));
+        }
+        Ok(format!("{stdout}{stderr}"))
     }
 
     pub fn target_timeout(&self) -> Duration {
@@ -343,7 +384,10 @@ impl PreparedWorkspace {
         }
         if target_started.is_some_and(|started| started.elapsed() >= self.budgets.target) {
             self.cancellation.cancel();
-            return Err(anyhow!("120-second target budget expired for `{target}` in phase `{phase}`"));
+            return Err(anyhow!(
+                "{}-second target budget expired for `{target}` in phase `{phase}`",
+                self.budgets.target.as_secs()
+            ));
         }
         Ok(())
     }
@@ -429,3 +473,8 @@ fn git_revision(path: &Path) -> Option<RepositorySnapshot> {
 
 #[cfg(test)]
 mod tests;
+
+pub struct NativeTests {
+    directory: tempfile::TempDir,
+    object: beskid_aot::api::NativeTestObject,
+}

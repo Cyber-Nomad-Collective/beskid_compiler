@@ -13,6 +13,7 @@ use crate::symbols::{SymbolCollectOptions, collect_symbol_values};
 
 #[derive(Debug, Clone)]
 pub struct InstantiateOptions {
+    pub offline: bool,
     pub template_root: PathBuf,
     pub output: PathBuf,
     pub host_project: Option<PathBuf>,
@@ -32,6 +33,16 @@ pub struct InstantiateResult {
 }
 
 pub fn instantiate(manifest: &TemplateManifest, options: &InstantiateOptions) -> TemplateResult<InstantiateResult> {
+    if options.offline {
+        for action in &manifest.post_actions {
+            if !matches!(action.action_id.as_str(), "beskidLock" | "beskidFetch" | "openReadme") {
+                return Err(TemplateError::Internal(format!(
+                    "offline template cannot execute post-action `{}`",
+                    action.action_id
+                )));
+            }
+        }
+    }
     let values = collect_symbol_values(manifest, &options.symbol_options)?;
     let substitution = build_substitution_map(manifest, &values)?;
     let output_kind = manifest.output_kind();
@@ -67,6 +78,7 @@ pub fn instantiate(manifest: &TemplateManifest, options: &InstantiateOptions) ->
 
     let lock_root = workspace_lock_root(output_kind, &output_root)?;
     let ctx = PostActionContext {
+        offline: options.offline,
         output_root: output_root.clone(),
         lock_root,
         beskid_exe: options.beskid_exe.clone(),

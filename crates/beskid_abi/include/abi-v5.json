@@ -41,6 +41,1443 @@
   ],
   "exports": [
     {
+      "symbol": "beskid_dynamic_v1_cast",
+      "params": [
+        {
+          "name": "cell",
+          "type": "pointer"
+        },
+        {
+          "name": "tag",
+          "type": "u64"
+        },
+        {
+          "name": "output",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "symbol": "beskid_dynamic_v1_cast_owned",
+      "params": [
+        {
+          "name": "value",
+          "type": "pointer"
+        },
+        {
+          "name": "token",
+          "type": "u64"
+        },
+        {
+          "name": "status",
+          "type": "pointer"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_dynamic_v1_cast_result",
+      "params": [
+        {
+          "name": "value",
+          "type": "pointer"
+        },
+        {
+          "name": "shape",
+          "type": "u64"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_dynamic_v1_checked_cast_result_dispatch",
+      "params": [
+        {
+          "name": "value",
+          "type": "pointer"
+        },
+        {
+          "name": "tag",
+          "type": "u64"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_dynamic_v1_checked_cast_result_factory",
+      "params": [
+        {
+          "name": "value",
+          "type": "pointer"
+        },
+        {
+          "name": "tag",
+          "type": "u64"
+        },
+        {
+          "name": "status",
+          "type": "pointer"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_dynamic_v1_checked_create_result_dispatch",
+      "params": [
+        {
+          "name": "payload",
+          "type": "pointer"
+        },
+        {
+          "name": "tag",
+          "type": "u64"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_dynamic_v1_checked_create_result_factory",
+      "params": [
+        {
+          "name": "payload",
+          "type": "pointer"
+        },
+        {
+          "name": "tag",
+          "type": "u64"
+        },
+        {
+          "name": "status",
+          "type": "pointer"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_dynamic_v1_checked_erased_construct",
+      "params": [
+        {
+          "name": "payload",
+          "type": "pointer"
+        },
+        {
+          "name": "shape",
+          "type": "pointer"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_dynamic_v1_checked_erased_read",
+      "params": [
+        {
+          "name": "cell",
+          "type": "pointer"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_dynamic_v1_checked_map_result_dispatch",
+      "params": [
+        {
+          "name": "value",
+          "type": "pointer"
+        },
+        {
+          "name": "mapping",
+          "type": "u64"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_dynamic_v1_checked_map_result_factory",
+      "params": [
+        {
+          "name": "value",
+          "type": "pointer"
+        },
+        {
+          "name": "mapping",
+          "type": "u64"
+        },
+        {
+          "name": "status",
+          "type": "pointer"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_dynamic_v1_create",
+      "params": [
+        {
+          "name": "payload",
+          "type": "pointer"
+        },
+        {
+          "name": "tag",
+          "type": "u64"
+        },
+        {
+          "name": "output",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "symbol": "beskid_dynamic_v1_create_owned",
+      "params": [
+        {
+          "name": "value",
+          "type": "pointer"
+        },
+        {
+          "name": "token",
+          "type": "u64"
+        },
+        {
+          "name": "status",
+          "type": "pointer"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_dynamic_v1_create_result",
+      "params": [
+        {
+          "name": "payload",
+          "type": "pointer"
+        },
+        {
+          "name": "shape",
+          "type": "u64"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_dynamic_v1_descriptor_valid",
+      "params": [
+        {
+          "name": "descriptor",
+          "type": "pointer"
+        },
+        {
+          "name": "cell",
+          "type": "u8"
+        }
+      ],
+      "result": "u8"
+    },
+    {
+      "symbol": "beskid_dynamic_v1_erased_cell_descriptor",
+      "params": [],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_dynamic_v1_erased_construct",
+      "params": [
+        {
+          "name": "payload",
+          "type": "pointer"
+        },
+        {
+          "name": "shape",
+          "type": "pointer"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_dynamic_v1_erased_read",
+      "params": [
+        {
+          "name": "cell",
+          "type": "pointer"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_dynamic_v1_map",
+      "params": [
+        {
+          "name": "arg0",
+          "type": "pointer"
+        },
+        {
+          "name": "arg1",
+          "type": "u64"
+        },
+        {
+          "name": "arg2",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "symbol": "beskid_dynamic_v1_map_owned",
+      "params": [
+        {
+          "name": "value",
+          "type": "pointer"
+        },
+        {
+          "name": "token",
+          "type": "u64"
+        },
+        {
+          "name": "status",
+          "type": "pointer"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_dynamic_v1_map_result",
+      "params": [
+        {
+          "name": "value",
+          "type": "pointer"
+        },
+        {
+          "name": "mapping",
+          "type": "u64"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_dynamic_v1_mapping_construct",
+      "params": [
+        {
+          "name": "arg0",
+          "type": "pointer"
+        },
+        {
+          "name": "arg1",
+          "type": "pointer"
+        },
+        {
+          "name": "arg2",
+          "type": "pointer"
+        },
+        {
+          "name": "arg3",
+          "type": "pointer"
+        },
+        {
+          "name": "generation",
+          "type": "u64"
+        },
+        {
+          "name": "library",
+          "type": "u64"
+        },
+        {
+          "name": "token",
+          "type": "u64"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_dynamic_v1_mapping_destination",
+      "params": [
+        {
+          "name": "arg0",
+          "type": "pointer"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_dynamic_v1_mapping_signature",
+      "params": [
+        {
+          "name": "arg0",
+          "type": "pointer"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_dynamic_v1_mapping_source",
+      "params": [
+        {
+          "name": "arg0",
+          "type": "pointer"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_dynamic_v1_mapping_tag",
+      "params": [
+        {
+          "name": "arg0",
+          "type": "pointer"
+        },
+        {
+          "name": "arg1",
+          "type": "usize"
+        }
+      ],
+      "result": "u64"
+    },
+    {
+      "symbol": "beskid_dynamic_v1_mapping_transform",
+      "params": [
+        {
+          "name": "arg0",
+          "type": "pointer"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_dynamic_v1_register_mapping",
+      "params": [
+        {
+          "name": "arg0",
+          "type": "pointer"
+        },
+        {
+          "name": "arg1",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "symbol": "beskid_dynamic_v1_register_shape",
+      "params": [
+        {
+          "name": "registration",
+          "type": "pointer"
+        },
+        {
+          "name": "tag",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "symbol": "beskid_dynamic_v1_registry_append_mapping",
+      "params": [
+        {
+          "name": "arg0",
+          "type": "pointer"
+        },
+        {
+          "name": "arg1",
+          "type": "pointer"
+        }
+      ],
+      "result": "void"
+    },
+    {
+      "symbol": "beskid_dynamic_v1_registry_append_shape",
+      "params": [
+        {
+          "name": "arg0",
+          "type": "pointer"
+        },
+        {
+          "name": "arg1",
+          "type": "pointer"
+        }
+      ],
+      "result": "void"
+    },
+    {
+      "symbol": "beskid_dynamic_v1_registry_close",
+      "params": [
+        {
+          "name": "arg0",
+          "type": "pointer"
+        }
+      ],
+      "result": "void"
+    },
+    {
+      "symbol": "beskid_dynamic_v1_registry_construct",
+      "params": [
+        {
+          "name": "arg0",
+          "type": "u64"
+        },
+        {
+          "name": "arg1",
+          "type": "u64"
+        },
+        {
+          "name": "arg2",
+          "type": "u64"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_dynamic_v1_registry_mapping_at",
+      "params": [
+        {
+          "name": "arg0",
+          "type": "pointer"
+        },
+        {
+          "name": "arg1",
+          "type": "usize"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_dynamic_v1_registry_mapping_count",
+      "params": [
+        {
+          "name": "arg0",
+          "type": "pointer"
+        }
+      ],
+      "result": "usize"
+    },
+    {
+      "symbol": "beskid_dynamic_v1_registry_shape_at",
+      "params": [
+        {
+          "name": "arg0",
+          "type": "pointer"
+        },
+        {
+          "name": "arg1",
+          "type": "usize"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_dynamic_v1_registry_shape_count",
+      "params": [
+        {
+          "name": "arg0",
+          "type": "pointer"
+        }
+      ],
+      "result": "usize"
+    },
+    {
+      "symbol": "beskid_dynamic_v1_registry_tag",
+      "params": [
+        {
+          "name": "arg0",
+          "type": "pointer"
+        },
+        {
+          "name": "arg1",
+          "type": "usize"
+        }
+      ],
+      "result": "u64"
+    },
+    {
+      "symbol": "beskid_dynamic_v1_root_clear",
+      "params": [],
+      "result": "void"
+    },
+    {
+      "symbol": "beskid_dynamic_v1_root_load",
+      "params": [],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_dynamic_v1_root_publish",
+      "params": [
+        {
+          "name": "arg0",
+          "type": "pointer"
+        }
+      ],
+      "result": "u8"
+    },
+    {
+      "symbol": "beskid_dynamic_v1_shape_construct",
+      "params": [
+        {
+          "name": "arg0",
+          "type": "pointer"
+        },
+        {
+          "name": "arg1",
+          "type": "pointer"
+        },
+        {
+          "name": "arg2",
+          "type": "pointer"
+        },
+        {
+          "name": "arg3",
+          "type": "pointer"
+        },
+        {
+          "name": "arg4",
+          "type": "pointer"
+        },
+        {
+          "name": "arg5",
+          "type": "pointer"
+        },
+        {
+          "name": "arg6",
+          "type": "pointer"
+        },
+        {
+          "name": "arg7",
+          "type": "pointer"
+        },
+        {
+          "name": "generation",
+          "type": "u64"
+        },
+        {
+          "name": "library",
+          "type": "u64"
+        },
+        {
+          "name": "tag",
+          "type": "u64"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_dynamic_v1_shape_digest",
+      "params": [
+        {
+          "name": "arg0",
+          "type": "pointer"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_dynamic_v1_shape_owner",
+      "params": [
+        {
+          "name": "arg0",
+          "type": "pointer"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_dynamic_v1_shape_pointer",
+      "params": [
+        {
+          "name": "arg0",
+          "type": "pointer"
+        },
+        {
+          "name": "arg1",
+          "type": "usize"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_dynamic_v1_shape_signature",
+      "params": [
+        {
+          "name": "arg0",
+          "type": "pointer"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_dynamic_v1_shape_source",
+      "params": [
+        {
+          "name": "arg0",
+          "type": "pointer"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_dynamic_v1_shape_tag",
+      "params": [
+        {
+          "name": "arg0",
+          "type": "pointer"
+        },
+        {
+          "name": "arg1",
+          "type": "usize"
+        }
+      ],
+      "result": "u64"
+    },
+    {
+      "symbol": "beskid_dynamic_v1_shutdown",
+      "params": [],
+      "result": "u8"
+    },
+    {
+      "symbol": "beskid_dynamic_v1_signature_digest",
+      "params": [
+        {
+          "name": "signature",
+          "type": "pointer"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_glue_v1_checked_record_leaf",
+      "params": [
+        {
+          "name": "buffer",
+          "type": "pointer"
+        },
+        {
+          "name": "length",
+          "type": "usize"
+        },
+        {
+          "name": "allocation",
+          "type": "usize"
+        },
+        {
+          "name": "issuer",
+          "type": "u64"
+        },
+        {
+          "name": "session",
+          "type": "u64"
+        },
+        {
+          "name": "library",
+          "type": "u64"
+        },
+        {
+          "name": "generation",
+          "type": "u64"
+        },
+        {
+          "name": "kind",
+          "type": "u64"
+        },
+        {
+          "name": "shape",
+          "type": "u64"
+        },
+        {
+          "name": "token",
+          "type": "u64"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_glue_v1_checked_record_link",
+      "params": [
+        {
+          "name": "previous",
+          "type": "pointer"
+        },
+        {
+          "name": "buffer",
+          "type": "pointer"
+        },
+        {
+          "name": "length",
+          "type": "usize"
+        },
+        {
+          "name": "allocation",
+          "type": "usize"
+        },
+        {
+          "name": "issuer",
+          "type": "u64"
+        },
+        {
+          "name": "session",
+          "type": "u64"
+        },
+        {
+          "name": "library",
+          "type": "u64"
+        },
+        {
+          "name": "generation",
+          "type": "u64"
+        },
+        {
+          "name": "kind",
+          "type": "u64"
+        },
+        {
+          "name": "shape",
+          "type": "u64"
+        },
+        {
+          "name": "token",
+          "type": "u64"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_glue_v1_host_close",
+      "params": [
+        {
+          "name": "runtime",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "symbol": "beskid_glue_v1_host_open",
+      "params": [
+        {
+          "name": "runtime_out",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "symbol": "beskid_glue_v1_input_bytes",
+      "params": [
+        {
+          "name": "bytes",
+          "type": "pointer"
+        },
+        {
+          "name": "length",
+          "type": "usize"
+        },
+        {
+          "name": "value",
+          "type": "pointer"
+        },
+        {
+          "name": "root",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "symbol": "beskid_glue_v1_input_utf8",
+      "params": [
+        {
+          "name": "bytes",
+          "type": "pointer"
+        },
+        {
+          "name": "length",
+          "type": "usize"
+        },
+        {
+          "name": "value",
+          "type": "pointer"
+        },
+        {
+          "name": "root",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "symbol": "beskid_glue_v1_next_identity",
+      "params": [],
+      "result": "u64"
+    },
+    {
+      "symbol": "beskid_glue_v1_owner_bind_image_closure",
+      "params": [
+        {
+          "name": "library",
+          "type": "u64"
+        },
+        {
+          "name": "generation",
+          "type": "u64"
+        },
+        {
+          "name": "rows",
+          "type": "pointer"
+        },
+        {
+          "name": "count",
+          "type": "usize"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "symbol": "beskid_glue_v1_owner_bind_opaque_domains",
+      "params": [
+        {
+          "name": "arg0",
+          "type": "u64"
+        },
+        {
+          "name": "arg1",
+          "type": "u64"
+        },
+        {
+          "name": "arg2",
+          "type": "pointer"
+        },
+        {
+          "name": "arg3",
+          "type": "usize"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "symbol": "beskid_glue_v1_owner_bind_shapes",
+      "params": [
+        {
+          "name": "library",
+          "type": "u64"
+        },
+        {
+          "name": "generation",
+          "type": "u64"
+        },
+        {
+          "name": "shapes",
+          "type": "pointer"
+        },
+        {
+          "name": "count",
+          "type": "usize"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "symbol": "beskid_glue_v1_owner_close_library",
+      "params": [
+        {
+          "name": "library",
+          "type": "u64"
+        },
+        {
+          "name": "generation",
+          "type": "u64"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "symbol": "beskid_glue_v1_owner_copy",
+      "params": [
+        {
+          "name": "library",
+          "type": "u64"
+        },
+        {
+          "name": "shape",
+          "type": "u64"
+        },
+        {
+          "name": "generation",
+          "type": "u64"
+        },
+        {
+          "name": "kind",
+          "type": "u64"
+        },
+        {
+          "name": "bytes",
+          "type": "pointer"
+        },
+        {
+          "name": "length",
+          "type": "usize"
+        },
+        {
+          "name": "out",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "symbol": "beskid_glue_v1_owner_opaque_borrow_begin",
+      "params": [
+        {
+          "name": "arg0",
+          "type": "u64"
+        },
+        {
+          "name": "arg1",
+          "type": "pointer"
+        },
+        {
+          "name": "arg2",
+          "type": "u64"
+        },
+        {
+          "name": "arg3",
+          "type": "pointer"
+        },
+        {
+          "name": "arg4",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "symbol": "beskid_glue_v1_owner_opaque_borrow_end",
+      "params": [
+        {
+          "name": "arg0",
+          "type": "u64"
+        },
+        {
+          "name": "arg1",
+          "type": "pointer"
+        },
+        {
+          "name": "arg2",
+          "type": "u64"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "symbol": "beskid_glue_v1_owner_opaque_create",
+      "params": [
+        {
+          "name": "arg0",
+          "type": "u64"
+        },
+        {
+          "name": "arg1",
+          "type": "pointer"
+        },
+        {
+          "name": "arg2",
+          "type": "pointer"
+        },
+        {
+          "name": "arg3",
+          "type": "pointer"
+        },
+        {
+          "name": "arg4",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "symbol": "beskid_glue_v1_owner_opaque_release",
+      "params": [
+        {
+          "name": "arg0",
+          "type": "u64"
+        },
+        {
+          "name": "arg1",
+          "type": "pointer"
+        },
+        {
+          "name": "arg2",
+          "type": "u64"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "symbol": "beskid_glue_v1_owner_open_library",
+      "params": [
+        {
+          "name": "generation",
+          "type": "u64"
+        },
+        {
+          "name": "library_out",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "symbol": "beskid_glue_v1_owner_release",
+      "params": [
+        {
+          "name": "library",
+          "type": "u64"
+        },
+        {
+          "name": "shape",
+          "type": "u64"
+        },
+        {
+          "name": "generation",
+          "type": "u64"
+        },
+        {
+          "name": "kind",
+          "type": "u64"
+        },
+        {
+          "name": "token",
+          "type": "u64"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "symbol": "beskid_glue_v1_owner_release_consumer_opaque",
+      "params": [
+        {
+          "name": "arg0",
+          "type": "u64"
+        },
+        {
+          "name": "arg1",
+          "type": "pointer"
+        },
+        {
+          "name": "arg2",
+          "type": "u64"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "symbol": "beskid_glue_v1_owner_release_token",
+      "params": [
+        {
+          "name": "library",
+          "type": "u64"
+        },
+        {
+          "name": "token",
+          "type": "u64"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "symbol": "beskid_glue_v1_owner_shutdown",
+      "params": [],
+      "result": "u8"
+    },
+    {
+      "symbol": "beskid_glue_v1_owner_validate_binding",
+      "params": [
+        {
+          "name": "library",
+          "type": "u64"
+        },
+        {
+          "name": "shape",
+          "type": "u64"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "symbol": "beskid_glue_v1_owner_validate_opaque",
+      "params": [
+        {
+          "name": "arg0",
+          "type": "u64"
+        },
+        {
+          "name": "arg1",
+          "type": "pointer"
+        },
+        {
+          "name": "arg2",
+          "type": "u64"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "symbol": "beskid_glue_v1_record_begin_close",
+      "params": [
+        {
+          "name": "arg0",
+          "type": "pointer"
+        }
+      ],
+      "result": "usize"
+    },
+    {
+      "symbol": "beskid_glue_v1_record_bind_shapes",
+      "params": [
+        {
+          "name": "record",
+          "type": "pointer"
+        },
+        {
+          "name": "shapes",
+          "type": "pointer"
+        }
+      ],
+      "result": "usize"
+    },
+    {
+      "symbol": "beskid_glue_v1_record_has_shape",
+      "params": [
+        {
+          "name": "record",
+          "type": "pointer"
+        },
+        {
+          "name": "shape",
+          "type": "u64"
+        }
+      ],
+      "result": "usize"
+    },
+    {
+      "symbol": "beskid_glue_v1_record_leaf",
+      "params": [
+        {
+          "name": "buffer",
+          "type": "pointer"
+        },
+        {
+          "name": "length",
+          "type": "usize"
+        },
+        {
+          "name": "allocation",
+          "type": "usize"
+        },
+        {
+          "name": "issuer",
+          "type": "u64"
+        },
+        {
+          "name": "session",
+          "type": "u64"
+        },
+        {
+          "name": "library",
+          "type": "u64"
+        },
+        {
+          "name": "generation",
+          "type": "u64"
+        },
+        {
+          "name": "kind",
+          "type": "u64"
+        },
+        {
+          "name": "shape",
+          "type": "u64"
+        },
+        {
+          "name": "token",
+          "type": "u64"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_glue_v1_record_link",
+      "params": [
+        {
+          "name": "previous",
+          "type": "pointer"
+        },
+        {
+          "name": "buffer",
+          "type": "pointer"
+        },
+        {
+          "name": "length",
+          "type": "usize"
+        },
+        {
+          "name": "allocation",
+          "type": "usize"
+        },
+        {
+          "name": "issuer",
+          "type": "u64"
+        },
+        {
+          "name": "session",
+          "type": "u64"
+        },
+        {
+          "name": "library",
+          "type": "u64"
+        },
+        {
+          "name": "generation",
+          "type": "u64"
+        },
+        {
+          "name": "kind",
+          "type": "u64"
+        },
+        {
+          "name": "shape",
+          "type": "u64"
+        },
+        {
+          "name": "token",
+          "type": "u64"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_glue_v1_record_next_count",
+      "params": [
+        {
+          "name": "record",
+          "type": "pointer"
+        }
+      ],
+      "result": "usize"
+    },
+    {
+      "symbol": "beskid_glue_v1_record_payload",
+      "params": [
+        {
+          "name": "record",
+          "type": "pointer"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_glue_v1_record_previous",
+      "params": [
+        {
+          "name": "record",
+          "type": "pointer"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_glue_v1_record_release",
+      "params": [
+        {
+          "name": "record",
+          "type": "pointer"
+        },
+        {
+          "name": "empty",
+          "type": "pointer"
+        }
+      ],
+      "result": "usize"
+    },
+    {
+      "symbol": "beskid_glue_v1_record_tag",
+      "params": [
+        {
+          "name": "record",
+          "type": "pointer"
+        },
+        {
+          "name": "selector",
+          "type": "usize"
+        }
+      ],
+      "result": "u64"
+    },
+    {
+      "symbol": "beskid_glue_v1_result_bytes",
+      "params": [
+        {
+          "name": "library",
+          "type": "u64"
+        },
+        {
+          "name": "shape",
+          "type": "u64"
+        },
+        {
+          "name": "value",
+          "type": "pointer"
+        },
+        {
+          "name": "output",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "symbol": "beskid_glue_v1_result_utf8",
+      "params": [
+        {
+          "name": "library",
+          "type": "u64"
+        },
+        {
+          "name": "shape",
+          "type": "u64"
+        },
+        {
+          "name": "value",
+          "type": "pointer"
+        },
+        {
+          "name": "output",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "symbol": "beskid_glue_v1_root_clear",
+      "params": [],
+      "result": "void"
+    },
+    {
+      "symbol": "beskid_glue_v1_root_load",
+      "params": [],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_glue_v1_root_publish",
+      "params": [
+        {
+          "name": "record",
+          "type": "pointer"
+        }
+      ],
+      "result": "u8"
+    },
+    {
+      "symbol": "beskid_glue_v1_runtime_generation",
+      "params": [],
+      "result": "u64"
+    },
+    {
       "symbol": "beskid_library_attach_v5",
       "params": [
         {
@@ -168,6 +1605,38 @@
       "result": "pointer"
     },
     {
+      "symbol": "beskid_rt_v5_array_try_allocate_rooted",
+      "params": [
+        {
+          "name": "request",
+          "type": "pointer"
+        },
+        {
+          "name": "root_handle_out",
+          "type": "pointer"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_rt_v5_array_try_grow_rooted",
+      "params": [
+        {
+          "name": "array",
+          "type": "pointer"
+        },
+        {
+          "name": "minimum_capacity",
+          "type": "usize"
+        },
+        {
+          "name": "root_handle_out",
+          "type": "pointer"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
       "symbol": "beskid_rt_v5_array_write_barrier",
       "params": [
         {
@@ -180,6 +1649,309 @@
         }
       ],
       "result": "u8"
+    },
+    {
+      "symbol": "beskid_rt_v5_checked_scope_current",
+      "params": [],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_rt_v5_checked_scope_enter",
+      "params": [
+        {
+          "name": "scope",
+          "type": "pointer"
+        },
+        {
+          "name": "failure_handle",
+          "type": "usize"
+        }
+      ],
+      "result": "u8"
+    },
+    {
+      "symbol": "beskid_rt_v5_checked_scope_failure_reason",
+      "params": [],
+      "result": "usize"
+    },
+    {
+      "symbol": "beskid_rt_v5_checked_scope_failure_result",
+      "params": [],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_rt_v5_checked_scope_leave",
+      "params": [
+        {
+          "name": "scope",
+          "type": "pointer"
+        }
+      ],
+      "result": "void"
+    },
+    {
+      "symbol": "beskid_rt_v5_checked_utf8_record_construct",
+      "params": [
+        {
+          "name": "source",
+          "type": "pointer"
+        },
+        {
+          "name": "length",
+          "type": "usize"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_rt_v5_child_argument",
+      "params": [
+        {
+          "name": "token",
+          "type": "u64"
+        },
+        {
+          "name": "value",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "symbol": "beskid_rt_v5_child_begin",
+      "params": [
+        {
+          "name": "executable",
+          "type": "pointer"
+        },
+        {
+          "name": "cwd",
+          "type": "pointer"
+        },
+        {
+          "name": "inherit",
+          "type": "i32"
+        }
+      ],
+      "result": "u64"
+    },
+    {
+      "symbol": "beskid_rt_v5_child_close",
+      "params": [
+        {
+          "name": "token",
+          "type": "u64"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "symbol": "beskid_rt_v5_child_close_pipe",
+      "params": [
+        {
+          "name": "token",
+          "type": "u64"
+        },
+        {
+          "name": "stream",
+          "type": "i32"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "symbol": "beskid_rt_v5_child_close_until",
+      "params": [
+        {
+          "name": "token",
+          "type": "u64"
+        },
+        {
+          "name": "deadline",
+          "type": "i64"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "symbol": "beskid_rt_v5_child_environment",
+      "params": [
+        {
+          "name": "token",
+          "type": "u64"
+        },
+        {
+          "name": "key",
+          "type": "pointer"
+        },
+        {
+          "name": "value",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "symbol": "beskid_rt_v5_child_pause",
+      "params": [
+        {
+          "name": "deadline",
+          "type": "i64"
+        }
+      ],
+      "result": "i64"
+    },
+    {
+      "symbol": "beskid_rt_v5_child_poll",
+      "params": [
+        {
+          "name": "token",
+          "type": "u64"
+        }
+      ],
+      "result": "i64"
+    },
+    {
+      "symbol": "beskid_rt_v5_child_read",
+      "params": [
+        {
+          "name": "token",
+          "type": "u64"
+        },
+        {
+          "name": "stream",
+          "type": "i32"
+        },
+        {
+          "name": "buffer",
+          "type": "pointer"
+        },
+        {
+          "name": "offset",
+          "type": "i64"
+        },
+        {
+          "name": "count",
+          "type": "i64"
+        },
+        {
+          "name": "deadline",
+          "type": "i64"
+        }
+      ],
+      "result": "i64"
+    },
+    {
+      "symbol": "beskid_rt_v5_child_spawn",
+      "params": [
+        {
+          "name": "token",
+          "type": "u64"
+        },
+        {
+          "name": "deadline",
+          "type": "i64"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "symbol": "beskid_rt_v5_child_terminate",
+      "params": [
+        {
+          "name": "token",
+          "type": "u64"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "symbol": "beskid_rt_v5_child_try_read",
+      "params": [
+        {
+          "name": "token",
+          "type": "u64"
+        },
+        {
+          "name": "stream",
+          "type": "i32"
+        },
+        {
+          "name": "buffer",
+          "type": "pointer"
+        },
+        {
+          "name": "offset",
+          "type": "i64"
+        },
+        {
+          "name": "count",
+          "type": "i64"
+        }
+      ],
+      "result": "i64"
+    },
+    {
+      "symbol": "beskid_rt_v5_child_try_write",
+      "params": [
+        {
+          "name": "token",
+          "type": "u64"
+        },
+        {
+          "name": "buffer",
+          "type": "pointer"
+        },
+        {
+          "name": "offset",
+          "type": "i64"
+        },
+        {
+          "name": "count",
+          "type": "i64"
+        }
+      ],
+      "result": "i64"
+    },
+    {
+      "symbol": "beskid_rt_v5_child_wait",
+      "params": [
+        {
+          "name": "token",
+          "type": "u64"
+        },
+        {
+          "name": "deadline",
+          "type": "i64"
+        }
+      ],
+      "result": "i64"
+    },
+    {
+      "symbol": "beskid_rt_v5_child_write",
+      "params": [
+        {
+          "name": "token",
+          "type": "u64"
+        },
+        {
+          "name": "buffer",
+          "type": "pointer"
+        },
+        {
+          "name": "offset",
+          "type": "i64"
+        },
+        {
+          "name": "count",
+          "type": "i64"
+        },
+        {
+          "name": "deadline",
+          "type": "i64"
+        }
+      ],
+      "result": "i64"
     },
     {
       "symbol": "beskid_rt_v5_closure_capture_store",
@@ -244,6 +2016,705 @@
         }
       ],
       "result": "u8"
+    },
+    {
+      "symbol": "beskid_rt_v5_dynamic_bool_box",
+      "params": [
+        {
+          "name": "arg0",
+          "type": "u8"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_rt_v5_dynamic_bool_box_descriptor",
+      "params": [],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_rt_v5_dynamic_bool_cell_descriptor",
+      "params": [],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_rt_v5_dynamic_bool_construct",
+      "params": [
+        {
+          "name": "arg0",
+          "type": "pointer"
+        },
+        {
+          "name": "arg1",
+          "type": "pointer"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_rt_v5_dynamic_bool_read",
+      "params": [
+        {
+          "name": "arg0",
+          "type": "pointer"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_rt_v5_dynamic_bytes_box",
+      "params": [
+        {
+          "name": "arg0",
+          "type": "pointer"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_rt_v5_dynamic_bytes_box_descriptor",
+      "params": [],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_rt_v5_dynamic_bytes_cell_descriptor",
+      "params": [],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_rt_v5_dynamic_bytes_construct",
+      "params": [
+        {
+          "name": "arg0",
+          "type": "pointer"
+        },
+        {
+          "name": "arg1",
+          "type": "pointer"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_rt_v5_dynamic_bytes_read",
+      "params": [
+        {
+          "name": "arg0",
+          "type": "pointer"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_rt_v5_dynamic_char_box",
+      "params": [
+        {
+          "name": "arg0",
+          "type": "u32"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_rt_v5_dynamic_char_box_descriptor",
+      "params": [],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_rt_v5_dynamic_char_cell_descriptor",
+      "params": [],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_rt_v5_dynamic_char_construct",
+      "params": [
+        {
+          "name": "arg0",
+          "type": "pointer"
+        },
+        {
+          "name": "arg1",
+          "type": "pointer"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_rt_v5_dynamic_char_read",
+      "params": [
+        {
+          "name": "arg0",
+          "type": "pointer"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_rt_v5_dynamic_f32_box",
+      "params": [
+        {
+          "name": "arg0",
+          "type": "f32"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_rt_v5_dynamic_f32_box_descriptor",
+      "params": [],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_rt_v5_dynamic_f32_cell_descriptor",
+      "params": [],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_rt_v5_dynamic_f32_construct",
+      "params": [
+        {
+          "name": "arg0",
+          "type": "pointer"
+        },
+        {
+          "name": "arg1",
+          "type": "pointer"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_rt_v5_dynamic_f32_read",
+      "params": [
+        {
+          "name": "arg0",
+          "type": "pointer"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_rt_v5_dynamic_f64_box",
+      "params": [
+        {
+          "name": "arg0",
+          "type": "f64"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_rt_v5_dynamic_f64_box_descriptor",
+      "params": [],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_rt_v5_dynamic_f64_cell_descriptor",
+      "params": [],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_rt_v5_dynamic_f64_construct",
+      "params": [
+        {
+          "name": "arg0",
+          "type": "pointer"
+        },
+        {
+          "name": "arg1",
+          "type": "pointer"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_rt_v5_dynamic_f64_read",
+      "params": [
+        {
+          "name": "arg0",
+          "type": "pointer"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_rt_v5_dynamic_i16_box",
+      "params": [
+        {
+          "name": "arg0",
+          "type": "i16"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_rt_v5_dynamic_i16_box_descriptor",
+      "params": [],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_rt_v5_dynamic_i16_cell_descriptor",
+      "params": [],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_rt_v5_dynamic_i16_construct",
+      "params": [
+        {
+          "name": "arg0",
+          "type": "pointer"
+        },
+        {
+          "name": "arg1",
+          "type": "pointer"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_rt_v5_dynamic_i16_read",
+      "params": [
+        {
+          "name": "arg0",
+          "type": "pointer"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_rt_v5_dynamic_i32_box",
+      "params": [
+        {
+          "name": "arg0",
+          "type": "i32"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_rt_v5_dynamic_i32_box_descriptor",
+      "params": [],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_rt_v5_dynamic_i32_cell_descriptor",
+      "params": [],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_rt_v5_dynamic_i32_construct",
+      "params": [
+        {
+          "name": "arg0",
+          "type": "pointer"
+        },
+        {
+          "name": "arg1",
+          "type": "pointer"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_rt_v5_dynamic_i32_read",
+      "params": [
+        {
+          "name": "arg0",
+          "type": "pointer"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_rt_v5_dynamic_i64_box",
+      "params": [
+        {
+          "name": "arg0",
+          "type": "i64"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_rt_v5_dynamic_i64_box_descriptor",
+      "params": [],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_rt_v5_dynamic_i64_cell_descriptor",
+      "params": [],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_rt_v5_dynamic_i64_construct",
+      "params": [
+        {
+          "name": "arg0",
+          "type": "pointer"
+        },
+        {
+          "name": "arg1",
+          "type": "pointer"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_rt_v5_dynamic_i64_read",
+      "params": [
+        {
+          "name": "arg0",
+          "type": "pointer"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_rt_v5_dynamic_i8_box",
+      "params": [
+        {
+          "name": "arg0",
+          "type": "i8"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_rt_v5_dynamic_i8_box_descriptor",
+      "params": [],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_rt_v5_dynamic_i8_cell_descriptor",
+      "params": [],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_rt_v5_dynamic_i8_construct",
+      "params": [
+        {
+          "name": "arg0",
+          "type": "pointer"
+        },
+        {
+          "name": "arg1",
+          "type": "pointer"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_rt_v5_dynamic_i8_read",
+      "params": [
+        {
+          "name": "arg0",
+          "type": "pointer"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_rt_v5_dynamic_string_box",
+      "params": [
+        {
+          "name": "arg0",
+          "type": "pointer"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_rt_v5_dynamic_string_box_descriptor",
+      "params": [],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_rt_v5_dynamic_string_cell_descriptor",
+      "params": [],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_rt_v5_dynamic_string_construct",
+      "params": [
+        {
+          "name": "arg0",
+          "type": "pointer"
+        },
+        {
+          "name": "arg1",
+          "type": "pointer"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_rt_v5_dynamic_string_read",
+      "params": [
+        {
+          "name": "arg0",
+          "type": "pointer"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_rt_v5_dynamic_u16_box",
+      "params": [
+        {
+          "name": "arg0",
+          "type": "u16"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_rt_v5_dynamic_u16_box_descriptor",
+      "params": [],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_rt_v5_dynamic_u16_cell_descriptor",
+      "params": [],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_rt_v5_dynamic_u16_construct",
+      "params": [
+        {
+          "name": "arg0",
+          "type": "pointer"
+        },
+        {
+          "name": "arg1",
+          "type": "pointer"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_rt_v5_dynamic_u16_read",
+      "params": [
+        {
+          "name": "arg0",
+          "type": "pointer"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_rt_v5_dynamic_u32_box",
+      "params": [
+        {
+          "name": "arg0",
+          "type": "u32"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_rt_v5_dynamic_u32_box_descriptor",
+      "params": [],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_rt_v5_dynamic_u32_cell_descriptor",
+      "params": [],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_rt_v5_dynamic_u32_construct",
+      "params": [
+        {
+          "name": "arg0",
+          "type": "pointer"
+        },
+        {
+          "name": "arg1",
+          "type": "pointer"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_rt_v5_dynamic_u32_read",
+      "params": [
+        {
+          "name": "arg0",
+          "type": "pointer"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_rt_v5_dynamic_u64_box",
+      "params": [
+        {
+          "name": "arg0",
+          "type": "u64"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_rt_v5_dynamic_u64_box_descriptor",
+      "params": [],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_rt_v5_dynamic_u64_cell_descriptor",
+      "params": [],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_rt_v5_dynamic_u64_construct",
+      "params": [
+        {
+          "name": "arg0",
+          "type": "pointer"
+        },
+        {
+          "name": "arg1",
+          "type": "pointer"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_rt_v5_dynamic_u64_read",
+      "params": [
+        {
+          "name": "arg0",
+          "type": "pointer"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_rt_v5_dynamic_u8_box",
+      "params": [
+        {
+          "name": "arg0",
+          "type": "u8"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_rt_v5_dynamic_u8_box_descriptor",
+      "params": [],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_rt_v5_dynamic_u8_cell_descriptor",
+      "params": [],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_rt_v5_dynamic_u8_construct",
+      "params": [
+        {
+          "name": "arg0",
+          "type": "pointer"
+        },
+        {
+          "name": "arg1",
+          "type": "pointer"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_rt_v5_dynamic_u8_read",
+      "params": [
+        {
+          "name": "arg0",
+          "type": "pointer"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_rt_v5_dynamic_unit_box",
+      "params": [],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_rt_v5_dynamic_unit_box_descriptor",
+      "params": [],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_rt_v5_dynamic_unit_cell_descriptor",
+      "params": [],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_rt_v5_dynamic_unit_construct",
+      "params": [
+        {
+          "name": "payload",
+          "type": "pointer"
+        },
+        {
+          "name": "shape",
+          "type": "pointer"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_rt_v5_dynamic_unit_read",
+      "params": [
+        {
+          "name": "cell",
+          "type": "pointer"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_rt_v5_dynamic_word_box",
+      "params": [
+        {
+          "name": "arg0",
+          "type": "usize"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_rt_v5_dynamic_word_box_descriptor",
+      "params": [],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_rt_v5_dynamic_word_cell_descriptor",
+      "params": [],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_rt_v5_dynamic_word_construct",
+      "params": [
+        {
+          "name": "arg0",
+          "type": "pointer"
+        },
+        {
+          "name": "arg1",
+          "type": "pointer"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_rt_v5_dynamic_word_read",
+      "params": [
+        {
+          "name": "arg0",
+          "type": "pointer"
+        }
+      ],
+      "result": "pointer"
     },
     {
       "symbol": "beskid_rt_v5_external_active_count",
@@ -387,6 +2858,119 @@
       "result": "void"
     },
     {
+      "symbol": "beskid_rt_v5_float_from_bits32",
+      "params": [
+        {
+          "name": "value",
+          "type": "u32"
+        }
+      ],
+      "result": "f32"
+    },
+    {
+      "symbol": "beskid_rt_v5_float_from_bits64",
+      "params": [
+        {
+          "name": "value",
+          "type": "u64"
+        }
+      ],
+      "result": "f64"
+    },
+    {
+      "symbol": "beskid_rt_v5_float_to_bits32",
+      "params": [
+        {
+          "name": "value",
+          "type": "f32"
+        }
+      ],
+      "result": "u32"
+    },
+    {
+      "symbol": "beskid_rt_v5_float_to_bits64",
+      "params": [
+        {
+          "name": "value",
+          "type": "f64"
+        }
+      ],
+      "result": "u64"
+    },
+    {
+      "symbol": "beskid_rt_v5_gc_allocation_failure_reason",
+      "params": [],
+      "result": "usize"
+    },
+    {
+      "symbol": "beskid_rt_v5_gc_resolve_handle",
+      "params": [
+        {
+          "name": "handle",
+          "type": "usize"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_rt_v5_gc_root_slot_is_registered",
+      "params": [
+        {
+          "name": "ptrAddr",
+          "type": "pointer"
+        }
+      ],
+      "result": "u8"
+    },
+    {
+      "symbol": "beskid_rt_v5_gc_same_identity",
+      "params": [
+        {
+          "name": "left",
+          "type": "pointer"
+        },
+        {
+          "name": "right",
+          "type": "pointer"
+        }
+      ],
+      "result": "usize"
+    },
+    {
+      "symbol": "beskid_rt_v5_gc_try_alloc",
+      "params": [
+        {
+          "name": "size",
+          "type": "usize"
+        },
+        {
+          "name": "alignment",
+          "type": "usize"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_rt_v5_gc_try_register_root",
+      "params": [
+        {
+          "name": "ptrAddr",
+          "type": "pointer"
+        }
+      ],
+      "result": "u8"
+    },
+    {
+      "symbol": "beskid_rt_v5_gc_try_root_handle",
+      "params": [
+        {
+          "name": "valuePtr",
+          "type": "pointer"
+        }
+      ],
+      "result": "usize"
+    },
+    {
       "symbol": "beskid_rt_v5_heap_set_cap",
       "params": [
         {
@@ -405,6 +2989,26 @@
         }
       ],
       "result": "pointer"
+    },
+    {
+      "symbol": "beskid_rt_v5_managed_object_try_allocate",
+      "params": [
+        {
+          "name": "request",
+          "type": "pointer"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_rt_v5_managed_view_kind",
+      "params": [
+        {
+          "name": "value",
+          "type": "pointer"
+        }
+      ],
+      "result": "u64"
     },
     {
       "symbol": "beskid_rt_v5_network_set_deadlines",
@@ -611,6 +3215,44 @@
         }
       ],
       "result": "never"
+    },
+    {
+      "symbol": "beskid_rt_v5_utf8_record_construct",
+      "params": [
+        {
+          "name": "source",
+          "type": "pointer"
+        },
+        {
+          "name": "length",
+          "type": "usize"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_rt_v5_utf8_record_payload",
+      "params": [
+        {
+          "name": "record",
+          "type": "pointer"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_rt_v5_utf8_record_set_data",
+      "params": [
+        {
+          "name": "record",
+          "type": "pointer"
+        },
+        {
+          "name": "data",
+          "type": "pointer"
+        }
+      ],
+      "result": "void"
     }
   ],
   "intrinsics": [
@@ -629,6 +3271,219 @@
       "capability": "runtime.bootstrap.arch_context_size",
       "params": [],
       "result": "usize",
+      "resultStatus": null,
+      "targetBindings": []
+    },
+    {
+      "name": "child_argument",
+      "symbol": "beskid_rt_v5_intrinsic_child_argument",
+      "capability": "runtime.adapter.child_argument",
+      "params": [
+        {
+          "name": "token",
+          "type": "u64"
+        },
+        {
+          "name": "value",
+          "type": "pointer"
+        },
+        {
+          "name": "length",
+          "type": "usize"
+        }
+      ],
+      "result": "i32",
+      "resultStatus": null,
+      "targetBindings": []
+    },
+    {
+      "name": "child_begin",
+      "symbol": "beskid_rt_v5_intrinsic_child_begin",
+      "capability": "runtime.adapter.child_begin",
+      "params": [
+        {
+          "name": "executable",
+          "type": "pointer"
+        },
+        {
+          "name": "executableLength",
+          "type": "usize"
+        },
+        {
+          "name": "cwd",
+          "type": "pointer"
+        },
+        {
+          "name": "cwdLength",
+          "type": "usize"
+        },
+        {
+          "name": "inherit",
+          "type": "i32"
+        }
+      ],
+      "result": "u64",
+      "resultStatus": null,
+      "targetBindings": []
+    },
+    {
+      "name": "child_close",
+      "symbol": "beskid_rt_v5_intrinsic_child_close",
+      "capability": "runtime.adapter.child_close",
+      "params": [
+        {
+          "name": "token",
+          "type": "u64"
+        }
+      ],
+      "result": "i32",
+      "resultStatus": null,
+      "targetBindings": []
+    },
+    {
+      "name": "child_close_pipe",
+      "symbol": "beskid_rt_v5_intrinsic_child_close_pipe",
+      "capability": "runtime.adapter.child_close_pipe",
+      "params": [
+        {
+          "name": "token",
+          "type": "u64"
+        },
+        {
+          "name": "stream",
+          "type": "i32"
+        }
+      ],
+      "result": "i32",
+      "resultStatus": null,
+      "targetBindings": []
+    },
+    {
+      "name": "child_environment",
+      "symbol": "beskid_rt_v5_intrinsic_child_environment",
+      "capability": "runtime.adapter.child_environment",
+      "params": [
+        {
+          "name": "token",
+          "type": "u64"
+        },
+        {
+          "name": "key",
+          "type": "pointer"
+        },
+        {
+          "name": "keyLength",
+          "type": "usize"
+        },
+        {
+          "name": "value",
+          "type": "pointer"
+        },
+        {
+          "name": "valueLength",
+          "type": "usize"
+        }
+      ],
+      "result": "i32",
+      "resultStatus": null,
+      "targetBindings": []
+    },
+    {
+      "name": "child_poll",
+      "symbol": "beskid_rt_v5_intrinsic_child_poll",
+      "capability": "runtime.adapter.child_poll",
+      "params": [
+        {
+          "name": "token",
+          "type": "u64"
+        }
+      ],
+      "result": "i64",
+      "resultStatus": null,
+      "targetBindings": []
+    },
+    {
+      "name": "child_read",
+      "symbol": "beskid_rt_v5_intrinsic_child_read",
+      "capability": "runtime.adapter.child_read",
+      "params": [
+        {
+          "name": "token",
+          "type": "u64"
+        },
+        {
+          "name": "stream",
+          "type": "i32"
+        },
+        {
+          "name": "buffer",
+          "type": "pointer"
+        },
+        {
+          "name": "length",
+          "type": "usize"
+        }
+      ],
+      "result": "i64",
+      "resultStatus": null,
+      "targetBindings": []
+    },
+    {
+      "name": "child_shutdown",
+      "symbol": "beskid_rt_v5_intrinsic_child_shutdown",
+      "capability": "runtime.adapter.child_shutdown",
+      "params": [],
+      "result": "i32",
+      "resultStatus": null,
+      "targetBindings": []
+    },
+    {
+      "name": "child_spawn",
+      "symbol": "beskid_rt_v5_intrinsic_child_spawn",
+      "capability": "runtime.adapter.child_spawn",
+      "params": [
+        {
+          "name": "token",
+          "type": "u64"
+        }
+      ],
+      "result": "i32",
+      "resultStatus": null,
+      "targetBindings": []
+    },
+    {
+      "name": "child_terminate",
+      "symbol": "beskid_rt_v5_intrinsic_child_terminate",
+      "capability": "runtime.adapter.child_terminate",
+      "params": [
+        {
+          "name": "token",
+          "type": "u64"
+        }
+      ],
+      "result": "i32",
+      "resultStatus": null,
+      "targetBindings": []
+    },
+    {
+      "name": "child_write",
+      "symbol": "beskid_rt_v5_intrinsic_child_write",
+      "capability": "runtime.adapter.child_write",
+      "params": [
+        {
+          "name": "token",
+          "type": "u64"
+        },
+        {
+          "name": "buffer",
+          "type": "pointer"
+        },
+        {
+          "name": "length",
+          "type": "usize"
+        }
+      ],
+      "result": "i64",
       "resultStatus": null,
       "targetBindings": []
     },
@@ -699,6 +3554,15 @@
       "targetBindings": []
     },
     {
+      "name": "dynamic_registry_shutdown_v1",
+      "symbol": "beskid_rt_v5_intrinsic_dynamic_registry_shutdown_v1",
+      "capability": "runtime.bootstrap.dynamic_registry_shutdown_v1",
+      "params": [],
+      "result": "u8",
+      "resultStatus": null,
+      "targetBindings": []
+    },
+    {
       "name": "env_get",
       "symbol": "beskid_rt_v5_intrinsic_env_get",
       "capability": "runtime.adapter.env_get",
@@ -745,6 +3609,62 @@
       "capability": "runtime.bootstrap.fiber_yield",
       "params": [],
       "result": "void",
+      "resultStatus": null,
+      "targetBindings": []
+    },
+    {
+      "name": "float_from_bits32",
+      "symbol": "beskid_rt_v5_intrinsic_float_from_bits32",
+      "capability": "runtime.bootstrap.float_from_bits32",
+      "params": [
+        {
+          "name": "value",
+          "type": "u32"
+        }
+      ],
+      "result": "f32",
+      "resultStatus": null,
+      "targetBindings": []
+    },
+    {
+      "name": "float_from_bits64",
+      "symbol": "beskid_rt_v5_intrinsic_float_from_bits64",
+      "capability": "runtime.bootstrap.float_from_bits64",
+      "params": [
+        {
+          "name": "value",
+          "type": "u64"
+        }
+      ],
+      "result": "f64",
+      "resultStatus": null,
+      "targetBindings": []
+    },
+    {
+      "name": "float_to_bits32",
+      "symbol": "beskid_rt_v5_intrinsic_float_to_bits32",
+      "capability": "runtime.bootstrap.float_to_bits32",
+      "params": [
+        {
+          "name": "value",
+          "type": "f32"
+        }
+      ],
+      "result": "u32",
+      "resultStatus": null,
+      "targetBindings": []
+    },
+    {
+      "name": "float_to_bits64",
+      "symbol": "beskid_rt_v5_intrinsic_float_to_bits64",
+      "capability": "runtime.bootstrap.float_to_bits64",
+      "params": [
+        {
+          "name": "value",
+          "type": "f64"
+        }
+      ],
+      "result": "u64",
       "resultStatus": null,
       "targetBindings": []
     },
@@ -1034,6 +3954,15 @@
           ]
         }
       ]
+    },
+    {
+      "name": "glue_owner_shutdown",
+      "symbol": "beskid_rt_v5_intrinsic_glue_owner_shutdown",
+      "capability": "runtime.bootstrap.glue_owner_shutdown",
+      "params": [],
+      "result": "u8",
+      "resultStatus": null,
+      "targetBindings": []
     },
     {
       "name": "guarded_stack_allocate",
@@ -1897,6 +4826,24 @@
       "targetBindings": []
     },
     {
+      "name": "utf8_view_new",
+      "symbol": "beskid_rt_v5_intrinsic_utf8_view_new",
+      "capability": "runtime.adapter.utf8_view_new",
+      "params": [
+        {
+          "name": "source",
+          "type": "pointer"
+        },
+        {
+          "name": "length",
+          "type": "usize"
+        }
+      ],
+      "result": "pointer",
+      "resultStatus": null,
+      "targetBindings": []
+    },
+    {
       "name": "wait_claim",
       "symbol": "beskid_rt_v5_intrinsic_wait_claim",
       "capability": "runtime.scheduler.wait_claim",
@@ -1983,13 +4930,13 @@
   "softBuiltins": [
     {
       "name": "__args_count",
-      "symbol": "args_count",
+      "symbol": "beskid_rt_v5_args_count",
       "params": [],
       "result": "i64"
     },
     {
       "name": "__args_get",
-      "symbol": "args_get",
+      "symbol": "beskid_rt_v5_args_get",
       "params": [
         {
           "name": "index",
@@ -2216,7 +5163,7 @@
     {
       "name": "BeskidCallbackRegistry",
       "target": null,
-      "size": 1056,
+      "size": 1072,
       "alignment": 8,
       "fields": [
         {
@@ -2248,6 +5195,64 @@
           "name": "handlers",
           "offset": 544,
           "type": "BeskidCallbackEntry[32]"
+        },
+        {
+          "name": "dynamic_root_handle_v2",
+          "offset": 1056,
+          "type": "usize"
+        },
+        {
+          "name": "glue_owner_root_handle_v3",
+          "offset": 1064,
+          "type": "usize"
+        }
+      ]
+    },
+    {
+      "name": "BeskidCheckedAllocationScope",
+      "target": null,
+      "size": 64,
+      "alignment": 8,
+      "fields": [
+        {
+          "name": "magic",
+          "offset": 0,
+          "type": "usize"
+        },
+        {
+          "name": "previous",
+          "offset": 8,
+          "type": "pointer"
+        },
+        {
+          "name": "failure_handle",
+          "offset": 16,
+          "type": "usize"
+        },
+        {
+          "name": "failure_reason",
+          "offset": 24,
+          "type": "usize"
+        },
+        {
+          "name": "heap",
+          "offset": 32,
+          "type": "pointer"
+        },
+        {
+          "name": "thread",
+          "offset": 40,
+          "type": "pointer"
+        },
+        {
+          "name": "reserved_0",
+          "offset": 48,
+          "type": "usize"
+        },
+        {
+          "name": "reserved_1",
+          "offset": 56,
+          "type": "usize"
         }
       ]
     },
@@ -3186,7 +6191,7 @@
     {
       "name": "BeskidTlsState",
       "target": null,
-      "size": 48,
+      "size": 56,
       "alignment": 8,
       "fields": [
         {
@@ -3218,6 +6223,11 @@
           "name": "composition_depth",
           "offset": 40,
           "type": "usize"
+        },
+        {
+          "name": "checked_allocation_scope",
+          "offset": 48,
+          "type": "pointer"
         }
       ]
     },
@@ -3256,6 +6266,39 @@
           "name": "reserved",
           "offset": 36,
           "type": "u32"
+        }
+      ]
+    },
+    {
+      "name": "BeskidUtf8ViewRecord",
+      "target": null,
+      "size": 40,
+      "alignment": 8,
+      "fields": [
+        {
+          "name": "descriptor",
+          "offset": 0,
+          "type": "pointer"
+        },
+        {
+          "name": "gc_word",
+          "offset": 8,
+          "type": "usize"
+        },
+        {
+          "name": "payload",
+          "offset": 16,
+          "type": "pointer"
+        },
+        {
+          "name": "data",
+          "offset": 24,
+          "type": "pointer"
+        },
+        {
+          "name": "length",
+          "offset": 32,
+          "type": "usize"
         }
       ]
     },
@@ -3599,6 +6642,7 @@
   ],
   "platformImports": [
     {
+      "kind": "function",
       "symbol": "_exit",
       "target": "aarch64-apple-darwin",
       "library": "libSystem",
@@ -3611,6 +6655,7 @@
       "result": "never"
     },
     {
+      "kind": "function",
       "symbol": "accept",
       "target": "aarch64-apple-darwin",
       "library": "libSystem",
@@ -3631,6 +6676,7 @@
       "result": "i32"
     },
     {
+      "kind": "function",
       "symbol": "atan2",
       "target": "aarch64-apple-darwin",
       "library": "libSystem",
@@ -3647,6 +6693,7 @@
       "result": "f64"
     },
     {
+      "kind": "function",
       "symbol": "bind",
       "target": "aarch64-apple-darwin",
       "library": "libSystem",
@@ -3667,6 +6714,7 @@
       "result": "i32"
     },
     {
+      "kind": "function",
       "symbol": "bzero",
       "target": "aarch64-apple-darwin",
       "library": "libSystem",
@@ -3683,6 +6731,7 @@
       "result": "void"
     },
     {
+      "kind": "function",
       "symbol": "ceil",
       "target": "aarch64-apple-darwin",
       "library": "libSystem",
@@ -3695,6 +6744,20 @@
       "result": "f64"
     },
     {
+      "kind": "function",
+      "symbol": "chdir",
+      "target": "aarch64-apple-darwin",
+      "library": "libSystem",
+      "params": [
+        {
+          "name": "arg0",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "kind": "function",
       "symbol": "clock_gettime",
       "target": "aarch64-apple-darwin",
       "library": "libSystem",
@@ -3711,6 +6774,7 @@
       "result": "i32"
     },
     {
+      "kind": "function",
       "symbol": "close",
       "target": "aarch64-apple-darwin",
       "library": "libSystem",
@@ -3723,6 +6787,7 @@
       "result": "i32"
     },
     {
+      "kind": "function",
       "symbol": "connect",
       "target": "aarch64-apple-darwin",
       "library": "libSystem",
@@ -3743,6 +6808,7 @@
       "result": "i32"
     },
     {
+      "kind": "function",
       "symbol": "cos",
       "target": "aarch64-apple-darwin",
       "library": "libSystem",
@@ -3755,6 +6821,53 @@
       "result": "f64"
     },
     {
+      "kind": "function",
+      "symbol": "dup2",
+      "target": "aarch64-apple-darwin",
+      "library": "libSystem",
+      "params": [
+        {
+          "name": "arg0",
+          "type": "i32"
+        },
+        {
+          "name": "arg1",
+          "type": "i32"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "kind": "data",
+      "symbol": "environ",
+      "target": "aarch64-apple-darwin",
+      "library": "libSystem",
+      "params": [],
+      "result": "pointer"
+    },
+    {
+      "kind": "function",
+      "symbol": "execve",
+      "target": "aarch64-apple-darwin",
+      "library": "libSystem",
+      "params": [
+        {
+          "name": "arg0",
+          "type": "pointer"
+        },
+        {
+          "name": "arg1",
+          "type": "pointer"
+        },
+        {
+          "name": "arg2",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "kind": "function",
       "symbol": "fabs",
       "target": "aarch64-apple-darwin",
       "library": "libSystem",
@@ -3767,6 +6880,7 @@
       "result": "f64"
     },
     {
+      "kind": "function",
       "symbol": "fcntl",
       "target": "aarch64-apple-darwin",
       "library": "libSystem",
@@ -3787,6 +6901,7 @@
       "result": "i32"
     },
     {
+      "kind": "function",
       "symbol": "floor",
       "target": "aarch64-apple-darwin",
       "library": "libSystem",
@@ -3799,6 +6914,15 @@
       "result": "f64"
     },
     {
+      "kind": "function",
+      "symbol": "fork",
+      "target": "aarch64-apple-darwin",
+      "library": "libSystem",
+      "params": [],
+      "result": "i32"
+    },
+    {
+      "kind": "function",
       "symbol": "freeaddrinfo",
       "target": "aarch64-apple-darwin",
       "library": "libSystem",
@@ -3811,6 +6935,7 @@
       "result": "void"
     },
     {
+      "kind": "function",
       "symbol": "fstat",
       "target": "aarch64-apple-darwin",
       "library": "libSystem",
@@ -3827,6 +6952,7 @@
       "result": "i32"
     },
     {
+      "kind": "function",
       "symbol": "getaddrinfo",
       "target": "aarch64-apple-darwin",
       "library": "libSystem",
@@ -3851,6 +6977,7 @@
       "result": "i32"
     },
     {
+      "kind": "function",
       "symbol": "getcwd",
       "target": "aarch64-apple-darwin",
       "library": "libSystem",
@@ -3867,6 +6994,7 @@
       "result": "pointer"
     },
     {
+      "kind": "function",
       "symbol": "getenv",
       "target": "aarch64-apple-darwin",
       "library": "libSystem",
@@ -3879,6 +7007,7 @@
       "result": "pointer"
     },
     {
+      "kind": "function",
       "symbol": "getpeername",
       "target": "aarch64-apple-darwin",
       "library": "libSystem",
@@ -3899,6 +7028,7 @@
       "result": "i32"
     },
     {
+      "kind": "function",
       "symbol": "getpid",
       "target": "aarch64-apple-darwin",
       "library": "libSystem",
@@ -3906,6 +7036,24 @@
       "result": "i32"
     },
     {
+      "kind": "function",
+      "symbol": "getrlimit",
+      "target": "aarch64-apple-darwin",
+      "library": "libSystem",
+      "params": [
+        {
+          "name": "arg0",
+          "type": "i32"
+        },
+        {
+          "name": "arg1",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "kind": "function",
       "symbol": "getsockname",
       "target": "aarch64-apple-darwin",
       "library": "libSystem",
@@ -3926,6 +7074,7 @@
       "result": "i32"
     },
     {
+      "kind": "function",
       "symbol": "getsockopt",
       "target": "aarch64-apple-darwin",
       "library": "libSystem",
@@ -3954,6 +7103,7 @@
       "result": "i32"
     },
     {
+      "kind": "function",
       "symbol": "ioctl",
       "target": "aarch64-apple-darwin",
       "library": "libSystem",
@@ -3974,6 +7124,7 @@
       "result": "i32"
     },
     {
+      "kind": "function",
       "symbol": "kevent",
       "target": "aarch64-apple-darwin",
       "library": "libSystem",
@@ -4006,6 +7157,24 @@
       "result": "i32"
     },
     {
+      "kind": "function",
+      "symbol": "kill",
+      "target": "aarch64-apple-darwin",
+      "library": "libSystem",
+      "params": [
+        {
+          "name": "arg0",
+          "type": "i32"
+        },
+        {
+          "name": "arg1",
+          "type": "i32"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "kind": "function",
       "symbol": "kqueue",
       "target": "aarch64-apple-darwin",
       "library": "libSystem",
@@ -4013,6 +7182,7 @@
       "result": "i32"
     },
     {
+      "kind": "function",
       "symbol": "listen",
       "target": "aarch64-apple-darwin",
       "library": "libSystem",
@@ -4029,6 +7199,7 @@
       "result": "i32"
     },
     {
+      "kind": "function",
       "symbol": "log",
       "target": "aarch64-apple-darwin",
       "library": "libSystem",
@@ -4041,6 +7212,7 @@
       "result": "f64"
     },
     {
+      "kind": "function",
       "symbol": "log10",
       "target": "aarch64-apple-darwin",
       "library": "libSystem",
@@ -4053,6 +7225,7 @@
       "result": "f64"
     },
     {
+      "kind": "function",
       "symbol": "log2",
       "target": "aarch64-apple-darwin",
       "library": "libSystem",
@@ -4065,6 +7238,49 @@
       "result": "f64"
     },
     {
+      "kind": "function",
+      "symbol": "memchr",
+      "target": "aarch64-apple-darwin",
+      "library": "libSystem",
+      "params": [
+        {
+          "name": "arg0",
+          "type": "pointer"
+        },
+        {
+          "name": "arg1",
+          "type": "i32"
+        },
+        {
+          "name": "arg2",
+          "type": "usize"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
+      "kind": "function",
+      "symbol": "memcmp",
+      "target": "aarch64-apple-darwin",
+      "library": "libSystem",
+      "params": [
+        {
+          "name": "arg0",
+          "type": "pointer"
+        },
+        {
+          "name": "arg1",
+          "type": "pointer"
+        },
+        {
+          "name": "arg2",
+          "type": "usize"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "kind": "function",
       "symbol": "memcpy",
       "target": "aarch64-apple-darwin",
       "library": "libSystem",
@@ -4085,6 +7301,7 @@
       "result": "pointer"
     },
     {
+      "kind": "function",
       "symbol": "memset",
       "target": "aarch64-apple-darwin",
       "library": "libSystem",
@@ -4105,6 +7322,7 @@
       "result": "pointer"
     },
     {
+      "kind": "function",
       "symbol": "mkdir",
       "target": "aarch64-apple-darwin",
       "library": "libSystem",
@@ -4121,6 +7339,7 @@
       "result": "i32"
     },
     {
+      "kind": "function",
       "symbol": "mmap",
       "target": "aarch64-apple-darwin",
       "library": "libSystem",
@@ -4153,6 +7372,7 @@
       "result": "pointer"
     },
     {
+      "kind": "function",
       "symbol": "mprotect",
       "target": "aarch64-apple-darwin",
       "library": "libSystem",
@@ -4173,6 +7393,7 @@
       "result": "i32"
     },
     {
+      "kind": "function",
       "symbol": "munmap",
       "target": "aarch64-apple-darwin",
       "library": "libSystem",
@@ -4189,6 +7410,7 @@
       "result": "i32"
     },
     {
+      "kind": "function",
       "symbol": "open",
       "target": "aarch64-apple-darwin",
       "library": "libSystem",
@@ -4209,6 +7431,7 @@
       "result": "i32"
     },
     {
+      "kind": "function",
       "symbol": "pipe",
       "target": "aarch64-apple-darwin",
       "library": "libSystem",
@@ -4221,6 +7444,7 @@
       "result": "i32"
     },
     {
+      "kind": "function",
       "symbol": "pow",
       "target": "aarch64-apple-darwin",
       "library": "libSystem",
@@ -4237,6 +7461,7 @@
       "result": "f64"
     },
     {
+      "kind": "function",
       "symbol": "pthread_cond_broadcast",
       "target": "aarch64-apple-darwin",
       "library": "libSystem",
@@ -4249,6 +7474,7 @@
       "result": "i32"
     },
     {
+      "kind": "function",
       "symbol": "pthread_cond_destroy",
       "target": "aarch64-apple-darwin",
       "library": "libSystem",
@@ -4261,6 +7487,7 @@
       "result": "i32"
     },
     {
+      "kind": "function",
       "symbol": "pthread_cond_init",
       "target": "aarch64-apple-darwin",
       "library": "libSystem",
@@ -4277,6 +7504,7 @@
       "result": "i32"
     },
     {
+      "kind": "function",
       "symbol": "pthread_cond_timedwait_relative_np",
       "target": "aarch64-apple-darwin",
       "library": "libSystem",
@@ -4297,6 +7525,7 @@
       "result": "i32"
     },
     {
+      "kind": "function",
       "symbol": "pthread_cond_wait",
       "target": "aarch64-apple-darwin",
       "library": "libSystem",
@@ -4313,6 +7542,7 @@
       "result": "i32"
     },
     {
+      "kind": "function",
       "symbol": "pthread_create",
       "target": "aarch64-apple-darwin",
       "library": "libSystem",
@@ -4337,6 +7567,7 @@
       "result": "i32"
     },
     {
+      "kind": "function",
       "symbol": "pthread_join",
       "target": "aarch64-apple-darwin",
       "library": "libSystem",
@@ -4353,6 +7584,7 @@
       "result": "i32"
     },
     {
+      "kind": "function",
       "symbol": "pthread_mutex_lock",
       "target": "aarch64-apple-darwin",
       "library": "libSystem",
@@ -4365,6 +7597,7 @@
       "result": "i32"
     },
     {
+      "kind": "function",
       "symbol": "pthread_mutex_unlock",
       "target": "aarch64-apple-darwin",
       "library": "libSystem",
@@ -4377,6 +7610,28 @@
       "result": "i32"
     },
     {
+      "kind": "function",
+      "symbol": "pthread_sigmask",
+      "target": "aarch64-apple-darwin",
+      "library": "libSystem",
+      "params": [
+        {
+          "name": "arg0",
+          "type": "i32"
+        },
+        {
+          "name": "arg1",
+          "type": "pointer"
+        },
+        {
+          "name": "arg2",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "kind": "function",
       "symbol": "read",
       "target": "aarch64-apple-darwin",
       "library": "libSystem",
@@ -4397,6 +7652,7 @@
       "result": "isize"
     },
     {
+      "kind": "function",
       "symbol": "recv",
       "target": "aarch64-apple-darwin",
       "library": "libSystem",
@@ -4421,6 +7677,7 @@
       "result": "isize"
     },
     {
+      "kind": "function",
       "symbol": "recvmsg",
       "target": "aarch64-apple-darwin",
       "library": "libSystem",
@@ -4441,6 +7698,7 @@
       "result": "isize"
     },
     {
+      "kind": "function",
       "symbol": "sched_yield",
       "target": "aarch64-apple-darwin",
       "library": "libSystem",
@@ -4448,6 +7706,7 @@
       "result": "i32"
     },
     {
+      "kind": "function",
       "symbol": "send",
       "target": "aarch64-apple-darwin",
       "library": "libSystem",
@@ -4472,6 +7731,7 @@
       "result": "isize"
     },
     {
+      "kind": "function",
       "symbol": "sendto",
       "target": "aarch64-apple-darwin",
       "library": "libSystem",
@@ -4504,6 +7764,7 @@
       "result": "isize"
     },
     {
+      "kind": "function",
       "symbol": "setenv",
       "target": "aarch64-apple-darwin",
       "library": "libSystem",
@@ -4524,6 +7785,24 @@
       "result": "i32"
     },
     {
+      "kind": "function",
+      "symbol": "setpgid",
+      "target": "aarch64-apple-darwin",
+      "library": "libSystem",
+      "params": [
+        {
+          "name": "arg0",
+          "type": "i32"
+        },
+        {
+          "name": "arg1",
+          "type": "i32"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "kind": "function",
       "symbol": "setsockopt",
       "target": "aarch64-apple-darwin",
       "library": "libSystem",
@@ -4552,6 +7831,7 @@
       "result": "i32"
     },
     {
+      "kind": "function",
       "symbol": "shutdown",
       "target": "aarch64-apple-darwin",
       "library": "libSystem",
@@ -4568,6 +7848,37 @@
       "result": "i32"
     },
     {
+      "kind": "function",
+      "symbol": "sigpending",
+      "target": "aarch64-apple-darwin",
+      "library": "libSystem",
+      "params": [
+        {
+          "name": "arg0",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "kind": "function",
+      "symbol": "sigwait",
+      "target": "aarch64-apple-darwin",
+      "library": "libSystem",
+      "params": [
+        {
+          "name": "arg0",
+          "type": "pointer"
+        },
+        {
+          "name": "arg1",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "kind": "function",
       "symbol": "sin",
       "target": "aarch64-apple-darwin",
       "library": "libSystem",
@@ -4580,6 +7891,7 @@
       "result": "f64"
     },
     {
+      "kind": "function",
       "symbol": "socket",
       "target": "aarch64-apple-darwin",
       "library": "libSystem",
@@ -4600,6 +7912,7 @@
       "result": "i32"
     },
     {
+      "kind": "function",
       "symbol": "sqrt",
       "target": "aarch64-apple-darwin",
       "library": "libSystem",
@@ -4612,6 +7925,7 @@
       "result": "f64"
     },
     {
+      "kind": "function",
       "symbol": "stat",
       "target": "aarch64-apple-darwin",
       "library": "libSystem",
@@ -4628,6 +7942,24 @@
       "result": "i32"
     },
     {
+      "kind": "function",
+      "symbol": "strchr",
+      "target": "aarch64-apple-darwin",
+      "library": "libSystem",
+      "params": [
+        {
+          "name": "arg0",
+          "type": "pointer"
+        },
+        {
+          "name": "arg1",
+          "type": "i32"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
+      "kind": "function",
       "symbol": "strlen",
       "target": "aarch64-apple-darwin",
       "library": "libSystem",
@@ -4640,6 +7972,24 @@
       "result": "usize"
     },
     {
+      "kind": "function",
+      "symbol": "strnlen",
+      "target": "aarch64-apple-darwin",
+      "library": "libSystem",
+      "params": [
+        {
+          "name": "arg0",
+          "type": "pointer"
+        },
+        {
+          "name": "arg1",
+          "type": "usize"
+        }
+      ],
+      "result": "usize"
+    },
+    {
+      "kind": "function",
       "symbol": "tan",
       "target": "aarch64-apple-darwin",
       "library": "libSystem",
@@ -4652,6 +8002,7 @@
       "result": "f64"
     },
     {
+      "kind": "function",
       "symbol": "unlink",
       "target": "aarch64-apple-darwin",
       "library": "libSystem",
@@ -4664,6 +8015,28 @@
       "result": "i32"
     },
     {
+      "kind": "function",
+      "symbol": "waitpid",
+      "target": "aarch64-apple-darwin",
+      "library": "libSystem",
+      "params": [
+        {
+          "name": "arg0",
+          "type": "i32"
+        },
+        {
+          "name": "arg1",
+          "type": "pointer"
+        },
+        {
+          "name": "arg2",
+          "type": "i32"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "kind": "function",
       "symbol": "write",
       "target": "aarch64-apple-darwin",
       "library": "libSystem",
@@ -4684,6 +8057,7 @@
       "result": "isize"
     },
     {
+      "kind": "function",
       "symbol": "AcquireSRWLockExclusive",
       "target": "x86_64-pc-windows-msvc",
       "library": "kernel32",
@@ -4696,6 +8070,7 @@
       "result": "void"
     },
     {
+      "kind": "function",
       "symbol": "CancelIoEx",
       "target": "x86_64-pc-windows-msvc",
       "library": "kernel32",
@@ -4712,6 +8087,7 @@
       "result": "i32"
     },
     {
+      "kind": "function",
       "symbol": "CloseHandle",
       "target": "x86_64-pc-windows-msvc",
       "library": "kernel32",
@@ -4724,6 +8100,7 @@
       "result": "i32"
     },
     {
+      "kind": "function",
       "symbol": "CreateDirectoryW",
       "target": "x86_64-pc-windows-msvc",
       "library": "kernel32",
@@ -4740,6 +8117,7 @@
       "result": "i32"
     },
     {
+      "kind": "function",
       "symbol": "CreateFileW",
       "target": "x86_64-pc-windows-msvc",
       "library": "kernel32",
@@ -4776,6 +8154,7 @@
       "result": "pointer"
     },
     {
+      "kind": "function",
       "symbol": "CreateIoCompletionPort",
       "target": "x86_64-pc-windows-msvc",
       "library": "kernel32",
@@ -4800,6 +8179,7 @@
       "result": "pointer"
     },
     {
+      "kind": "function",
       "symbol": "CreateThread",
       "target": "x86_64-pc-windows-msvc",
       "library": "kernel32",
@@ -4832,6 +8212,7 @@
       "result": "pointer"
     },
     {
+      "kind": "function",
       "symbol": "DeleteFileW",
       "target": "x86_64-pc-windows-msvc",
       "library": "kernel32",
@@ -4844,6 +8225,7 @@
       "result": "i32"
     },
     {
+      "kind": "function",
       "symbol": "ExitProcess",
       "target": "x86_64-pc-windows-msvc",
       "library": "kernel32",
@@ -4856,6 +8238,7 @@
       "result": "never"
     },
     {
+      "kind": "function",
       "symbol": "GetConsoleScreenBufferInfo",
       "target": "x86_64-pc-windows-msvc",
       "library": "kernel32",
@@ -4872,6 +8255,7 @@
       "result": "i32"
     },
     {
+      "kind": "function",
       "symbol": "GetCurrentDirectoryW",
       "target": "x86_64-pc-windows-msvc",
       "library": "kernel32",
@@ -4888,6 +8272,7 @@
       "result": "u32"
     },
     {
+      "kind": "function",
       "symbol": "GetCurrentProcessId",
       "target": "x86_64-pc-windows-msvc",
       "library": "kernel32",
@@ -4895,6 +8280,7 @@
       "result": "u32"
     },
     {
+      "kind": "function",
       "symbol": "GetEnvironmentVariableW",
       "target": "x86_64-pc-windows-msvc",
       "library": "kernel32",
@@ -4915,6 +8301,7 @@
       "result": "u32"
     },
     {
+      "kind": "function",
       "symbol": "GetFileAttributesW",
       "target": "x86_64-pc-windows-msvc",
       "library": "kernel32",
@@ -4927,6 +8314,7 @@
       "result": "u32"
     },
     {
+      "kind": "function",
       "symbol": "GetFileSizeEx",
       "target": "x86_64-pc-windows-msvc",
       "library": "kernel32",
@@ -4943,6 +8331,7 @@
       "result": "i32"
     },
     {
+      "kind": "function",
       "symbol": "GetLastError",
       "target": "x86_64-pc-windows-msvc",
       "library": "kernel32",
@@ -4950,6 +8339,7 @@
       "result": "u32"
     },
     {
+      "kind": "function",
       "symbol": "GetQueuedCompletionStatus",
       "target": "x86_64-pc-windows-msvc",
       "library": "kernel32",
@@ -4978,6 +8368,7 @@
       "result": "i32"
     },
     {
+      "kind": "function",
       "symbol": "GetStdHandle",
       "target": "x86_64-pc-windows-msvc",
       "library": "kernel32",
@@ -4990,6 +8381,7 @@
       "result": "pointer"
     },
     {
+      "kind": "function",
       "symbol": "GetSystemTimeAsFileTime",
       "target": "x86_64-pc-windows-msvc",
       "library": "kernel32",
@@ -5002,6 +8394,7 @@
       "result": "void"
     },
     {
+      "kind": "function",
       "symbol": "GetTickCount64",
       "target": "x86_64-pc-windows-msvc",
       "library": "kernel32",
@@ -5009,6 +8402,7 @@
       "result": "u64"
     },
     {
+      "kind": "function",
       "symbol": "InitOnceExecuteOnce",
       "target": "x86_64-pc-windows-msvc",
       "library": "kernel32",
@@ -5033,6 +8427,7 @@
       "result": "i32"
     },
     {
+      "kind": "function",
       "symbol": "InitializeConditionVariable",
       "target": "x86_64-pc-windows-msvc",
       "library": "kernel32",
@@ -5045,6 +8440,7 @@
       "result": "void"
     },
     {
+      "kind": "function",
       "symbol": "MultiByteToWideChar",
       "target": "x86_64-pc-windows-msvc",
       "library": "kernel32",
@@ -5077,6 +8473,7 @@
       "result": "i32"
     },
     {
+      "kind": "function",
       "symbol": "PostQueuedCompletionStatus",
       "target": "x86_64-pc-windows-msvc",
       "library": "kernel32",
@@ -5101,6 +8498,7 @@
       "result": "i32"
     },
     {
+      "kind": "function",
       "symbol": "ReadFile",
       "target": "x86_64-pc-windows-msvc",
       "library": "kernel32",
@@ -5129,6 +8527,7 @@
       "result": "i32"
     },
     {
+      "kind": "function",
       "symbol": "ReleaseSRWLockExclusive",
       "target": "x86_64-pc-windows-msvc",
       "library": "kernel32",
@@ -5141,6 +8540,7 @@
       "result": "void"
     },
     {
+      "kind": "function",
       "symbol": "SetEnvironmentVariableW",
       "target": "x86_64-pc-windows-msvc",
       "library": "kernel32",
@@ -5157,6 +8557,7 @@
       "result": "i32"
     },
     {
+      "kind": "function",
       "symbol": "SetLastError",
       "target": "x86_64-pc-windows-msvc",
       "library": "kernel32",
@@ -5169,6 +8570,7 @@
       "result": "void"
     },
     {
+      "kind": "function",
       "symbol": "SleepConditionVariableSRW",
       "target": "x86_64-pc-windows-msvc",
       "library": "kernel32",
@@ -5193,6 +8595,7 @@
       "result": "i32"
     },
     {
+      "kind": "function",
       "symbol": "SwitchToThread",
       "target": "x86_64-pc-windows-msvc",
       "library": "kernel32",
@@ -5200,6 +8603,7 @@
       "result": "i32"
     },
     {
+      "kind": "function",
       "symbol": "TlsAlloc",
       "target": "x86_64-pc-windows-msvc",
       "library": "kernel32",
@@ -5207,6 +8611,7 @@
       "result": "u32"
     },
     {
+      "kind": "function",
       "symbol": "TlsGetValue",
       "target": "x86_64-pc-windows-msvc",
       "library": "kernel32",
@@ -5219,6 +8624,7 @@
       "result": "pointer"
     },
     {
+      "kind": "function",
       "symbol": "TlsSetValue",
       "target": "x86_64-pc-windows-msvc",
       "library": "kernel32",
@@ -5235,6 +8641,7 @@
       "result": "i32"
     },
     {
+      "kind": "function",
       "symbol": "VirtualAlloc",
       "target": "x86_64-pc-windows-msvc",
       "library": "kernel32",
@@ -5259,6 +8666,7 @@
       "result": "pointer"
     },
     {
+      "kind": "function",
       "symbol": "VirtualFree",
       "target": "x86_64-pc-windows-msvc",
       "library": "kernel32",
@@ -5279,6 +8687,7 @@
       "result": "i32"
     },
     {
+      "kind": "function",
       "symbol": "WSAGetLastError",
       "target": "x86_64-pc-windows-msvc",
       "library": "ws2_32",
@@ -5286,6 +8695,7 @@
       "result": "i32"
     },
     {
+      "kind": "function",
       "symbol": "WSAIoctl",
       "target": "x86_64-pc-windows-msvc",
       "library": "ws2_32",
@@ -5330,6 +8740,7 @@
       "result": "i32"
     },
     {
+      "kind": "function",
       "symbol": "WSARecv",
       "target": "x86_64-pc-windows-msvc",
       "library": "ws2_32",
@@ -5366,6 +8777,7 @@
       "result": "i32"
     },
     {
+      "kind": "function",
       "symbol": "WSARecvFrom",
       "target": "x86_64-pc-windows-msvc",
       "library": "ws2_32",
@@ -5410,6 +8822,7 @@
       "result": "i32"
     },
     {
+      "kind": "function",
       "symbol": "WSASend",
       "target": "x86_64-pc-windows-msvc",
       "library": "ws2_32",
@@ -5446,6 +8859,7 @@
       "result": "i32"
     },
     {
+      "kind": "function",
       "symbol": "WSASendTo",
       "target": "x86_64-pc-windows-msvc",
       "library": "ws2_32",
@@ -5490,6 +8904,7 @@
       "result": "i32"
     },
     {
+      "kind": "function",
       "symbol": "WSASocketW",
       "target": "x86_64-pc-windows-msvc",
       "library": "ws2_32",
@@ -5522,6 +8937,7 @@
       "result": "usize"
     },
     {
+      "kind": "function",
       "symbol": "WSAStartup",
       "target": "x86_64-pc-windows-msvc",
       "library": "ws2_32",
@@ -5538,6 +8954,7 @@
       "result": "i32"
     },
     {
+      "kind": "function",
       "symbol": "WaitForSingleObject",
       "target": "x86_64-pc-windows-msvc",
       "library": "kernel32",
@@ -5554,6 +8971,7 @@
       "result": "u32"
     },
     {
+      "kind": "function",
       "symbol": "WakeAllConditionVariable",
       "target": "x86_64-pc-windows-msvc",
       "library": "kernel32",
@@ -5566,6 +8984,7 @@
       "result": "void"
     },
     {
+      "kind": "function",
       "symbol": "WriteFile",
       "target": "x86_64-pc-windows-msvc",
       "library": "kernel32",
@@ -5594,6 +9013,7 @@
       "result": "i32"
     },
     {
+      "kind": "function",
       "symbol": "_close",
       "target": "x86_64-pc-windows-msvc",
       "library": "ucrt",
@@ -5606,6 +9026,7 @@
       "result": "i32"
     },
     {
+      "kind": "function",
       "symbol": "_dup",
       "target": "x86_64-pc-windows-msvc",
       "library": "ucrt",
@@ -5618,6 +9039,7 @@
       "result": "i32"
     },
     {
+      "kind": "function",
       "symbol": "_errno",
       "target": "x86_64-pc-windows-msvc",
       "library": "ucrt",
@@ -5625,6 +9047,7 @@
       "result": "pointer"
     },
     {
+      "kind": "function",
       "symbol": "_read",
       "target": "x86_64-pc-windows-msvc",
       "library": "ucrt",
@@ -5645,6 +9068,7 @@
       "result": "i32"
     },
     {
+      "kind": "function",
       "symbol": "_set_thread_local_invalid_parameter_handler",
       "target": "x86_64-pc-windows-msvc",
       "library": "ucrt",
@@ -5657,6 +9081,7 @@
       "result": "pointer"
     },
     {
+      "kind": "function",
       "symbol": "_setmode",
       "target": "x86_64-pc-windows-msvc",
       "library": "ucrt",
@@ -5673,6 +9098,7 @@
       "result": "i32"
     },
     {
+      "kind": "function",
       "symbol": "_write",
       "target": "x86_64-pc-windows-msvc",
       "library": "ucrt",
@@ -5693,6 +9119,7 @@
       "result": "i32"
     },
     {
+      "kind": "function",
       "symbol": "atan2",
       "target": "x86_64-pc-windows-msvc",
       "library": "ucrt",
@@ -5709,6 +9136,7 @@
       "result": "f64"
     },
     {
+      "kind": "function",
       "symbol": "bind",
       "target": "x86_64-pc-windows-msvc",
       "library": "ws2_32",
@@ -5729,6 +9157,7 @@
       "result": "i32"
     },
     {
+      "kind": "function",
       "symbol": "ceil",
       "target": "x86_64-pc-windows-msvc",
       "library": "ucrt",
@@ -5741,6 +9170,7 @@
       "result": "f64"
     },
     {
+      "kind": "function",
       "symbol": "closesocket",
       "target": "x86_64-pc-windows-msvc",
       "library": "ws2_32",
@@ -5753,6 +9183,7 @@
       "result": "i32"
     },
     {
+      "kind": "function",
       "symbol": "connect",
       "target": "x86_64-pc-windows-msvc",
       "library": "ws2_32",
@@ -5773,6 +9204,7 @@
       "result": "i32"
     },
     {
+      "kind": "function",
       "symbol": "cos",
       "target": "x86_64-pc-windows-msvc",
       "library": "ucrt",
@@ -5785,6 +9217,7 @@
       "result": "f64"
     },
     {
+      "kind": "function",
       "symbol": "fabs",
       "target": "x86_64-pc-windows-msvc",
       "library": "ucrt",
@@ -5797,6 +9230,7 @@
       "result": "f64"
     },
     {
+      "kind": "function",
       "symbol": "floor",
       "target": "x86_64-pc-windows-msvc",
       "library": "ucrt",
@@ -5809,6 +9243,7 @@
       "result": "f64"
     },
     {
+      "kind": "function",
       "symbol": "freeaddrinfo",
       "target": "x86_64-pc-windows-msvc",
       "library": "ws2_32",
@@ -5821,6 +9256,7 @@
       "result": "void"
     },
     {
+      "kind": "function",
       "symbol": "getaddrinfo",
       "target": "x86_64-pc-windows-msvc",
       "library": "ws2_32",
@@ -5845,6 +9281,7 @@
       "result": "i32"
     },
     {
+      "kind": "function",
       "symbol": "getpeername",
       "target": "x86_64-pc-windows-msvc",
       "library": "ws2_32",
@@ -5865,6 +9302,7 @@
       "result": "i32"
     },
     {
+      "kind": "function",
       "symbol": "getsockname",
       "target": "x86_64-pc-windows-msvc",
       "library": "ws2_32",
@@ -5885,6 +9323,7 @@
       "result": "i32"
     },
     {
+      "kind": "function",
       "symbol": "getsockopt",
       "target": "x86_64-pc-windows-msvc",
       "library": "ws2_32",
@@ -5913,6 +9352,7 @@
       "result": "i32"
     },
     {
+      "kind": "function",
       "symbol": "listen",
       "target": "x86_64-pc-windows-msvc",
       "library": "ws2_32",
@@ -5929,6 +9369,7 @@
       "result": "i32"
     },
     {
+      "kind": "function",
       "symbol": "log",
       "target": "x86_64-pc-windows-msvc",
       "library": "ucrt",
@@ -5941,6 +9382,7 @@
       "result": "f64"
     },
     {
+      "kind": "function",
       "symbol": "log10",
       "target": "x86_64-pc-windows-msvc",
       "library": "ucrt",
@@ -5953,6 +9395,7 @@
       "result": "f64"
     },
     {
+      "kind": "function",
       "symbol": "log2",
       "target": "x86_64-pc-windows-msvc",
       "library": "ucrt",
@@ -5965,6 +9408,7 @@
       "result": "f64"
     },
     {
+      "kind": "function",
       "symbol": "memcpy",
       "target": "x86_64-pc-windows-msvc",
       "library": "vcruntime",
@@ -5985,6 +9429,7 @@
       "result": "pointer"
     },
     {
+      "kind": "function",
       "symbol": "memset",
       "target": "x86_64-pc-windows-msvc",
       "library": "vcruntime",
@@ -6005,6 +9450,7 @@
       "result": "pointer"
     },
     {
+      "kind": "function",
       "symbol": "pow",
       "target": "x86_64-pc-windows-msvc",
       "library": "ucrt",
@@ -6021,6 +9467,7 @@
       "result": "f64"
     },
     {
+      "kind": "function",
       "symbol": "setsockopt",
       "target": "x86_64-pc-windows-msvc",
       "library": "ws2_32",
@@ -6049,6 +9496,7 @@
       "result": "i32"
     },
     {
+      "kind": "function",
       "symbol": "shutdown",
       "target": "x86_64-pc-windows-msvc",
       "library": "ws2_32",
@@ -6065,6 +9513,7 @@
       "result": "i32"
     },
     {
+      "kind": "function",
       "symbol": "sin",
       "target": "x86_64-pc-windows-msvc",
       "library": "ucrt",
@@ -6077,6 +9526,7 @@
       "result": "f64"
     },
     {
+      "kind": "function",
       "symbol": "sqrt",
       "target": "x86_64-pc-windows-msvc",
       "library": "ucrt",
@@ -6089,6 +9539,7 @@
       "result": "f64"
     },
     {
+      "kind": "function",
       "symbol": "tan",
       "target": "x86_64-pc-windows-msvc",
       "library": "ucrt",
@@ -6101,6 +9552,15 @@
       "result": "f64"
     },
     {
+      "kind": "data",
+      "symbol": "__environ",
+      "target": "x86_64-unknown-linux-gnu",
+      "library": "libc",
+      "params": [],
+      "result": "pointer"
+    },
+    {
+      "kind": "function",
       "symbol": "_exit",
       "target": "x86_64-unknown-linux-gnu",
       "library": "libc",
@@ -6113,6 +9573,7 @@
       "result": "never"
     },
     {
+      "kind": "function",
       "symbol": "accept",
       "target": "x86_64-unknown-linux-gnu",
       "library": "libc",
@@ -6133,6 +9594,7 @@
       "result": "i32"
     },
     {
+      "kind": "function",
       "symbol": "atan2",
       "target": "x86_64-unknown-linux-gnu",
       "library": "libm",
@@ -6149,6 +9611,7 @@
       "result": "f64"
     },
     {
+      "kind": "function",
       "symbol": "bind",
       "target": "x86_64-unknown-linux-gnu",
       "library": "libc",
@@ -6169,6 +9632,7 @@
       "result": "i32"
     },
     {
+      "kind": "function",
       "symbol": "ceil",
       "target": "x86_64-unknown-linux-gnu",
       "library": "libm",
@@ -6181,6 +9645,20 @@
       "result": "f64"
     },
     {
+      "kind": "function",
+      "symbol": "chdir",
+      "target": "x86_64-unknown-linux-gnu",
+      "library": "libc",
+      "params": [
+        {
+          "name": "arg0",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "kind": "function",
       "symbol": "clock_gettime",
       "target": "x86_64-unknown-linux-gnu",
       "library": "libc",
@@ -6197,6 +9675,7 @@
       "result": "i32"
     },
     {
+      "kind": "function",
       "symbol": "close",
       "target": "x86_64-unknown-linux-gnu",
       "library": "libc",
@@ -6209,6 +9688,7 @@
       "result": "i32"
     },
     {
+      "kind": "function",
       "symbol": "connect",
       "target": "x86_64-unknown-linux-gnu",
       "library": "libc",
@@ -6229,6 +9709,7 @@
       "result": "i32"
     },
     {
+      "kind": "function",
       "symbol": "cos",
       "target": "x86_64-unknown-linux-gnu",
       "library": "libm",
@@ -6241,6 +9722,24 @@
       "result": "f64"
     },
     {
+      "kind": "function",
+      "symbol": "dup2",
+      "target": "x86_64-unknown-linux-gnu",
+      "library": "libc",
+      "params": [
+        {
+          "name": "arg0",
+          "type": "i32"
+        },
+        {
+          "name": "arg1",
+          "type": "i32"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "kind": "function",
       "symbol": "epoll_create1",
       "target": "x86_64-unknown-linux-gnu",
       "library": "libc",
@@ -6253,6 +9752,7 @@
       "result": "i32"
     },
     {
+      "kind": "function",
       "symbol": "epoll_ctl",
       "target": "x86_64-unknown-linux-gnu",
       "library": "libc",
@@ -6277,6 +9777,7 @@
       "result": "i32"
     },
     {
+      "kind": "function",
       "symbol": "epoll_wait",
       "target": "x86_64-unknown-linux-gnu",
       "library": "libc",
@@ -6301,6 +9802,28 @@
       "result": "i32"
     },
     {
+      "kind": "function",
+      "symbol": "execve",
+      "target": "x86_64-unknown-linux-gnu",
+      "library": "libc",
+      "params": [
+        {
+          "name": "arg0",
+          "type": "pointer"
+        },
+        {
+          "name": "arg1",
+          "type": "pointer"
+        },
+        {
+          "name": "arg2",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "kind": "function",
       "symbol": "fabs",
       "target": "x86_64-unknown-linux-gnu",
       "library": "libm",
@@ -6313,6 +9836,7 @@
       "result": "f64"
     },
     {
+      "kind": "function",
       "symbol": "fcntl",
       "target": "x86_64-unknown-linux-gnu",
       "library": "libc",
@@ -6333,6 +9857,7 @@
       "result": "i32"
     },
     {
+      "kind": "function",
       "symbol": "floor",
       "target": "x86_64-unknown-linux-gnu",
       "library": "libm",
@@ -6345,6 +9870,15 @@
       "result": "f64"
     },
     {
+      "kind": "function",
+      "symbol": "fork",
+      "target": "x86_64-unknown-linux-gnu",
+      "library": "libc",
+      "params": [],
+      "result": "i32"
+    },
+    {
+      "kind": "function",
       "symbol": "freeaddrinfo",
       "target": "x86_64-unknown-linux-gnu",
       "library": "libc",
@@ -6357,6 +9891,7 @@
       "result": "void"
     },
     {
+      "kind": "function",
       "symbol": "fstat",
       "target": "x86_64-unknown-linux-gnu",
       "library": "libc",
@@ -6373,6 +9908,7 @@
       "result": "i32"
     },
     {
+      "kind": "function",
       "symbol": "getaddrinfo",
       "target": "x86_64-unknown-linux-gnu",
       "library": "libc",
@@ -6397,6 +9933,7 @@
       "result": "i32"
     },
     {
+      "kind": "function",
       "symbol": "getcwd",
       "target": "x86_64-unknown-linux-gnu",
       "library": "libc",
@@ -6413,6 +9950,7 @@
       "result": "pointer"
     },
     {
+      "kind": "function",
       "symbol": "getenv",
       "target": "x86_64-unknown-linux-gnu",
       "library": "libc",
@@ -6425,6 +9963,7 @@
       "result": "pointer"
     },
     {
+      "kind": "function",
       "symbol": "getpeername",
       "target": "x86_64-unknown-linux-gnu",
       "library": "libc",
@@ -6445,6 +9984,7 @@
       "result": "i32"
     },
     {
+      "kind": "function",
       "symbol": "getpid",
       "target": "x86_64-unknown-linux-gnu",
       "library": "libc",
@@ -6452,6 +9992,24 @@
       "result": "i32"
     },
     {
+      "kind": "function",
+      "symbol": "getrlimit",
+      "target": "x86_64-unknown-linux-gnu",
+      "library": "libc",
+      "params": [
+        {
+          "name": "arg0",
+          "type": "i32"
+        },
+        {
+          "name": "arg1",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "kind": "function",
       "symbol": "getsockname",
       "target": "x86_64-unknown-linux-gnu",
       "library": "libc",
@@ -6472,6 +10030,7 @@
       "result": "i32"
     },
     {
+      "kind": "function",
       "symbol": "getsockopt",
       "target": "x86_64-unknown-linux-gnu",
       "library": "libc",
@@ -6500,6 +10059,7 @@
       "result": "i32"
     },
     {
+      "kind": "function",
       "symbol": "ioctl",
       "target": "x86_64-unknown-linux-gnu",
       "library": "libc",
@@ -6520,6 +10080,24 @@
       "result": "i32"
     },
     {
+      "kind": "function",
+      "symbol": "kill",
+      "target": "x86_64-unknown-linux-gnu",
+      "library": "libc",
+      "params": [
+        {
+          "name": "arg0",
+          "type": "i32"
+        },
+        {
+          "name": "arg1",
+          "type": "i32"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "kind": "function",
       "symbol": "listen",
       "target": "x86_64-unknown-linux-gnu",
       "library": "libc",
@@ -6536,6 +10114,7 @@
       "result": "i32"
     },
     {
+      "kind": "function",
       "symbol": "log",
       "target": "x86_64-unknown-linux-gnu",
       "library": "libm",
@@ -6548,6 +10127,7 @@
       "result": "f64"
     },
     {
+      "kind": "function",
       "symbol": "log10",
       "target": "x86_64-unknown-linux-gnu",
       "library": "libm",
@@ -6560,6 +10140,7 @@
       "result": "f64"
     },
     {
+      "kind": "function",
       "symbol": "log2",
       "target": "x86_64-unknown-linux-gnu",
       "library": "libm",
@@ -6572,6 +10153,49 @@
       "result": "f64"
     },
     {
+      "kind": "function",
+      "symbol": "memchr",
+      "target": "x86_64-unknown-linux-gnu",
+      "library": "libc",
+      "params": [
+        {
+          "name": "arg0",
+          "type": "pointer"
+        },
+        {
+          "name": "arg1",
+          "type": "i32"
+        },
+        {
+          "name": "arg2",
+          "type": "usize"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
+      "kind": "function",
+      "symbol": "memcmp",
+      "target": "x86_64-unknown-linux-gnu",
+      "library": "libc",
+      "params": [
+        {
+          "name": "arg0",
+          "type": "pointer"
+        },
+        {
+          "name": "arg1",
+          "type": "pointer"
+        },
+        {
+          "name": "arg2",
+          "type": "usize"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "kind": "function",
       "symbol": "memcpy",
       "target": "x86_64-unknown-linux-gnu",
       "library": "libc",
@@ -6592,6 +10216,7 @@
       "result": "pointer"
     },
     {
+      "kind": "function",
       "symbol": "memset",
       "target": "x86_64-unknown-linux-gnu",
       "library": "libc",
@@ -6612,6 +10237,7 @@
       "result": "pointer"
     },
     {
+      "kind": "function",
       "symbol": "mkdir",
       "target": "x86_64-unknown-linux-gnu",
       "library": "libc",
@@ -6628,6 +10254,7 @@
       "result": "i32"
     },
     {
+      "kind": "function",
       "symbol": "mmap",
       "target": "x86_64-unknown-linux-gnu",
       "library": "libc",
@@ -6660,6 +10287,7 @@
       "result": "pointer"
     },
     {
+      "kind": "function",
       "symbol": "mprotect",
       "target": "x86_64-unknown-linux-gnu",
       "library": "libc",
@@ -6680,6 +10308,7 @@
       "result": "i32"
     },
     {
+      "kind": "function",
       "symbol": "munmap",
       "target": "x86_64-unknown-linux-gnu",
       "library": "libc",
@@ -6696,6 +10325,7 @@
       "result": "i32"
     },
     {
+      "kind": "function",
       "symbol": "open",
       "target": "x86_64-unknown-linux-gnu",
       "library": "libc",
@@ -6716,6 +10346,7 @@
       "result": "i32"
     },
     {
+      "kind": "function",
       "symbol": "pipe",
       "target": "x86_64-unknown-linux-gnu",
       "library": "libc",
@@ -6728,6 +10359,7 @@
       "result": "i32"
     },
     {
+      "kind": "function",
       "symbol": "pow",
       "target": "x86_64-unknown-linux-gnu",
       "library": "libm",
@@ -6744,6 +10376,7 @@
       "result": "f64"
     },
     {
+      "kind": "function",
       "symbol": "pthread_cond_broadcast",
       "target": "x86_64-unknown-linux-gnu",
       "library": "libc",
@@ -6756,6 +10389,7 @@
       "result": "i32"
     },
     {
+      "kind": "function",
       "symbol": "pthread_cond_destroy",
       "target": "x86_64-unknown-linux-gnu",
       "library": "libc",
@@ -6768,6 +10402,7 @@
       "result": "i32"
     },
     {
+      "kind": "function",
       "symbol": "pthread_cond_init",
       "target": "x86_64-unknown-linux-gnu",
       "library": "libc",
@@ -6784,6 +10419,7 @@
       "result": "i32"
     },
     {
+      "kind": "function",
       "symbol": "pthread_cond_timedwait",
       "target": "x86_64-unknown-linux-gnu",
       "library": "libc",
@@ -6804,6 +10440,7 @@
       "result": "i32"
     },
     {
+      "kind": "function",
       "symbol": "pthread_cond_wait",
       "target": "x86_64-unknown-linux-gnu",
       "library": "libc",
@@ -6820,6 +10457,7 @@
       "result": "i32"
     },
     {
+      "kind": "function",
       "symbol": "pthread_condattr_destroy",
       "target": "x86_64-unknown-linux-gnu",
       "library": "libc",
@@ -6832,6 +10470,7 @@
       "result": "i32"
     },
     {
+      "kind": "function",
       "symbol": "pthread_condattr_init",
       "target": "x86_64-unknown-linux-gnu",
       "library": "libc",
@@ -6844,6 +10483,7 @@
       "result": "i32"
     },
     {
+      "kind": "function",
       "symbol": "pthread_condattr_setclock",
       "target": "x86_64-unknown-linux-gnu",
       "library": "libc",
@@ -6860,6 +10500,7 @@
       "result": "i32"
     },
     {
+      "kind": "function",
       "symbol": "pthread_create",
       "target": "x86_64-unknown-linux-gnu",
       "library": "libc",
@@ -6884,6 +10525,7 @@
       "result": "i32"
     },
     {
+      "kind": "function",
       "symbol": "pthread_join",
       "target": "x86_64-unknown-linux-gnu",
       "library": "libc",
@@ -6900,6 +10542,7 @@
       "result": "i32"
     },
     {
+      "kind": "function",
       "symbol": "pthread_mutex_lock",
       "target": "x86_64-unknown-linux-gnu",
       "library": "libc",
@@ -6912,6 +10555,7 @@
       "result": "i32"
     },
     {
+      "kind": "function",
       "symbol": "pthread_mutex_unlock",
       "target": "x86_64-unknown-linux-gnu",
       "library": "libc",
@@ -6924,6 +10568,28 @@
       "result": "i32"
     },
     {
+      "kind": "function",
+      "symbol": "pthread_sigmask",
+      "target": "x86_64-unknown-linux-gnu",
+      "library": "libc",
+      "params": [
+        {
+          "name": "arg0",
+          "type": "i32"
+        },
+        {
+          "name": "arg1",
+          "type": "pointer"
+        },
+        {
+          "name": "arg2",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "kind": "function",
       "symbol": "read",
       "target": "x86_64-unknown-linux-gnu",
       "library": "libc",
@@ -6944,6 +10610,7 @@
       "result": "isize"
     },
     {
+      "kind": "function",
       "symbol": "recv",
       "target": "x86_64-unknown-linux-gnu",
       "library": "libc",
@@ -6968,6 +10635,7 @@
       "result": "isize"
     },
     {
+      "kind": "function",
       "symbol": "recvmsg",
       "target": "x86_64-unknown-linux-gnu",
       "library": "libc",
@@ -6988,6 +10656,7 @@
       "result": "isize"
     },
     {
+      "kind": "function",
       "symbol": "sched_yield",
       "target": "x86_64-unknown-linux-gnu",
       "library": "libc",
@@ -6995,6 +10664,7 @@
       "result": "i32"
     },
     {
+      "kind": "function",
       "symbol": "send",
       "target": "x86_64-unknown-linux-gnu",
       "library": "libc",
@@ -7019,6 +10689,7 @@
       "result": "isize"
     },
     {
+      "kind": "function",
       "symbol": "sendto",
       "target": "x86_64-unknown-linux-gnu",
       "library": "libc",
@@ -7051,6 +10722,7 @@
       "result": "isize"
     },
     {
+      "kind": "function",
       "symbol": "setenv",
       "target": "x86_64-unknown-linux-gnu",
       "library": "libc",
@@ -7071,6 +10743,24 @@
       "result": "i32"
     },
     {
+      "kind": "function",
+      "symbol": "setpgid",
+      "target": "x86_64-unknown-linux-gnu",
+      "library": "libc",
+      "params": [
+        {
+          "name": "arg0",
+          "type": "i32"
+        },
+        {
+          "name": "arg1",
+          "type": "i32"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "kind": "function",
       "symbol": "setsockopt",
       "target": "x86_64-unknown-linux-gnu",
       "library": "libc",
@@ -7099,6 +10789,7 @@
       "result": "i32"
     },
     {
+      "kind": "function",
       "symbol": "shutdown",
       "target": "x86_64-unknown-linux-gnu",
       "library": "libc",
@@ -7115,6 +10806,84 @@
       "result": "i32"
     },
     {
+      "kind": "function",
+      "symbol": "sigaddset",
+      "target": "x86_64-unknown-linux-gnu",
+      "library": "libc",
+      "params": [
+        {
+          "name": "arg0",
+          "type": "pointer"
+        },
+        {
+          "name": "arg1",
+          "type": "i32"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "kind": "function",
+      "symbol": "sigemptyset",
+      "target": "x86_64-unknown-linux-gnu",
+      "library": "libc",
+      "params": [
+        {
+          "name": "arg0",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "kind": "function",
+      "symbol": "sigismember",
+      "target": "x86_64-unknown-linux-gnu",
+      "library": "libc",
+      "params": [
+        {
+          "name": "arg0",
+          "type": "pointer"
+        },
+        {
+          "name": "arg1",
+          "type": "i32"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "kind": "function",
+      "symbol": "sigpending",
+      "target": "x86_64-unknown-linux-gnu",
+      "library": "libc",
+      "params": [
+        {
+          "name": "arg0",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "kind": "function",
+      "symbol": "sigwait",
+      "target": "x86_64-unknown-linux-gnu",
+      "library": "libc",
+      "params": [
+        {
+          "name": "arg0",
+          "type": "pointer"
+        },
+        {
+          "name": "arg1",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "kind": "function",
       "symbol": "sin",
       "target": "x86_64-unknown-linux-gnu",
       "library": "libm",
@@ -7127,6 +10896,7 @@
       "result": "f64"
     },
     {
+      "kind": "function",
       "symbol": "socket",
       "target": "x86_64-unknown-linux-gnu",
       "library": "libc",
@@ -7147,6 +10917,7 @@
       "result": "i32"
     },
     {
+      "kind": "function",
       "symbol": "sqrt",
       "target": "x86_64-unknown-linux-gnu",
       "library": "libm",
@@ -7159,6 +10930,7 @@
       "result": "f64"
     },
     {
+      "kind": "function",
       "symbol": "stat",
       "target": "x86_64-unknown-linux-gnu",
       "library": "libc",
@@ -7175,6 +10947,24 @@
       "result": "i32"
     },
     {
+      "kind": "function",
+      "symbol": "strchr",
+      "target": "x86_64-unknown-linux-gnu",
+      "library": "libc",
+      "params": [
+        {
+          "name": "arg0",
+          "type": "pointer"
+        },
+        {
+          "name": "arg1",
+          "type": "i32"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
+      "kind": "function",
       "symbol": "strlen",
       "target": "x86_64-unknown-linux-gnu",
       "library": "libc",
@@ -7187,6 +10977,24 @@
       "result": "usize"
     },
     {
+      "kind": "function",
+      "symbol": "strnlen",
+      "target": "x86_64-unknown-linux-gnu",
+      "library": "libc",
+      "params": [
+        {
+          "name": "arg0",
+          "type": "pointer"
+        },
+        {
+          "name": "arg1",
+          "type": "usize"
+        }
+      ],
+      "result": "usize"
+    },
+    {
+      "kind": "function",
       "symbol": "tan",
       "target": "x86_64-unknown-linux-gnu",
       "library": "libm",
@@ -7199,6 +11007,7 @@
       "result": "f64"
     },
     {
+      "kind": "function",
       "symbol": "unlink",
       "target": "x86_64-unknown-linux-gnu",
       "library": "libc",
@@ -7211,6 +11020,28 @@
       "result": "i32"
     },
     {
+      "kind": "function",
+      "symbol": "waitpid",
+      "target": "x86_64-unknown-linux-gnu",
+      "library": "libc",
+      "params": [
+        {
+          "name": "arg0",
+          "type": "i32"
+        },
+        {
+          "name": "arg1",
+          "type": "pointer"
+        },
+        {
+          "name": "arg2",
+          "type": "i32"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "kind": "function",
       "symbol": "write",
       "target": "x86_64-unknown-linux-gnu",
       "library": "libc",
@@ -7836,6 +11667,526 @@
       ]
     },
     {
+      "name": "__child_argument",
+      "adapter": "beskid_rt_v5_child_argument",
+      "params": [
+        {
+          "name": "token",
+          "type": "u64"
+        },
+        {
+          "name": "value",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "beskid_rt_v5_child_argument",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "beskid_rt_v5_child_argument",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "beskid_rt_v5_child_argument",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__child_begin",
+      "adapter": "beskid_rt_v5_child_begin",
+      "params": [
+        {
+          "name": "executable",
+          "type": "pointer"
+        },
+        {
+          "name": "cwd",
+          "type": "pointer"
+        },
+        {
+          "name": "inherit",
+          "type": "i32"
+        }
+      ],
+      "result": "u64",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "beskid_rt_v5_child_begin",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "beskid_rt_v5_child_begin",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "beskid_rt_v5_child_begin",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__child_close",
+      "adapter": "beskid_rt_v5_child_close",
+      "params": [
+        {
+          "name": "token",
+          "type": "u64"
+        }
+      ],
+      "result": "i32",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "beskid_rt_v5_child_close",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "beskid_rt_v5_child_close",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "beskid_rt_v5_child_close",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__child_close_pipe",
+      "adapter": "beskid_rt_v5_child_close_pipe",
+      "params": [
+        {
+          "name": "token",
+          "type": "u64"
+        },
+        {
+          "name": "stream",
+          "type": "i32"
+        }
+      ],
+      "result": "i32",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "beskid_rt_v5_child_close_pipe",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "beskid_rt_v5_child_close_pipe",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "beskid_rt_v5_child_close_pipe",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__child_close_until",
+      "adapter": "beskid_rt_v5_child_close_until",
+      "params": [
+        {
+          "name": "token",
+          "type": "u64"
+        },
+        {
+          "name": "deadline",
+          "type": "i64"
+        }
+      ],
+      "result": "i32",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "beskid_rt_v5_child_close_until",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "beskid_rt_v5_child_close_until",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "beskid_rt_v5_child_close_until",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__child_environment",
+      "adapter": "beskid_rt_v5_child_environment",
+      "params": [
+        {
+          "name": "token",
+          "type": "u64"
+        },
+        {
+          "name": "key",
+          "type": "pointer"
+        },
+        {
+          "name": "value",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "beskid_rt_v5_child_environment",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "beskid_rt_v5_child_environment",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "beskid_rt_v5_child_environment",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__child_pause",
+      "adapter": "beskid_rt_v5_child_pause",
+      "params": [
+        {
+          "name": "deadline",
+          "type": "i64"
+        }
+      ],
+      "result": "i64",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "beskid_rt_v5_child_pause",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "beskid_rt_v5_child_pause",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "beskid_rt_v5_child_pause",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__child_poll",
+      "adapter": "beskid_rt_v5_child_poll",
+      "params": [
+        {
+          "name": "token",
+          "type": "u64"
+        }
+      ],
+      "result": "i64",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "beskid_rt_v5_child_poll",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "beskid_rt_v5_child_poll",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "beskid_rt_v5_child_poll",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__child_read",
+      "adapter": "beskid_rt_v5_child_read",
+      "params": [
+        {
+          "name": "token",
+          "type": "u64"
+        },
+        {
+          "name": "stream",
+          "type": "i32"
+        },
+        {
+          "name": "buffer",
+          "type": "pointer"
+        },
+        {
+          "name": "offset",
+          "type": "i64"
+        },
+        {
+          "name": "count",
+          "type": "i64"
+        },
+        {
+          "name": "deadline",
+          "type": "i64"
+        }
+      ],
+      "result": "i64",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "beskid_rt_v5_child_read",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "beskid_rt_v5_child_read",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "beskid_rt_v5_child_read",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__child_spawn",
+      "adapter": "beskid_rt_v5_child_spawn",
+      "params": [
+        {
+          "name": "token",
+          "type": "u64"
+        },
+        {
+          "name": "deadline",
+          "type": "i64"
+        }
+      ],
+      "result": "i32",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "beskid_rt_v5_child_spawn",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "beskid_rt_v5_child_spawn",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "beskid_rt_v5_child_spawn",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__child_terminate",
+      "adapter": "beskid_rt_v5_child_terminate",
+      "params": [
+        {
+          "name": "token",
+          "type": "u64"
+        }
+      ],
+      "result": "i32",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "beskid_rt_v5_child_terminate",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "beskid_rt_v5_child_terminate",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "beskid_rt_v5_child_terminate",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__child_try_read",
+      "adapter": "beskid_rt_v5_child_try_read",
+      "params": [
+        {
+          "name": "token",
+          "type": "u64"
+        },
+        {
+          "name": "stream",
+          "type": "i32"
+        },
+        {
+          "name": "buffer",
+          "type": "pointer"
+        },
+        {
+          "name": "offset",
+          "type": "i64"
+        },
+        {
+          "name": "count",
+          "type": "i64"
+        }
+      ],
+      "result": "i64",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "beskid_rt_v5_child_try_read",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "beskid_rt_v5_child_try_read",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "beskid_rt_v5_child_try_read",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__child_try_write",
+      "adapter": "beskid_rt_v5_child_try_write",
+      "params": [
+        {
+          "name": "token",
+          "type": "u64"
+        },
+        {
+          "name": "buffer",
+          "type": "pointer"
+        },
+        {
+          "name": "offset",
+          "type": "i64"
+        },
+        {
+          "name": "count",
+          "type": "i64"
+        }
+      ],
+      "result": "i64",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "beskid_rt_v5_child_try_write",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "beskid_rt_v5_child_try_write",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "beskid_rt_v5_child_try_write",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__child_wait",
+      "adapter": "beskid_rt_v5_child_wait",
+      "params": [
+        {
+          "name": "token",
+          "type": "u64"
+        },
+        {
+          "name": "deadline",
+          "type": "i64"
+        }
+      ],
+      "result": "i64",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "beskid_rt_v5_child_wait",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "beskid_rt_v5_child_wait",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "beskid_rt_v5_child_wait",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__child_write",
+      "adapter": "beskid_rt_v5_child_write",
+      "params": [
+        {
+          "name": "token",
+          "type": "u64"
+        },
+        {
+          "name": "buffer",
+          "type": "pointer"
+        },
+        {
+          "name": "offset",
+          "type": "i64"
+        },
+        {
+          "name": "count",
+          "type": "i64"
+        },
+        {
+          "name": "deadline",
+          "type": "i64"
+        }
+      ],
+      "result": "i64",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "beskid_rt_v5_child_write",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "beskid_rt_v5_child_write",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "beskid_rt_v5_child_write",
+          "osImports": []
+        }
+      ]
+    },
+    {
       "name": "__clock_monotonic_nanos",
       "adapter": "clock_monotonic_nanos",
       "params": [],
@@ -8107,194 +12458,6 @@
         {
           "target": "x86_64-unknown-linux-gnu",
           "implementation": "composition_slot_store",
-          "osImports": []
-        }
-      ]
-    },
-    {
-      "name": "__dynamic_cast_checked",
-      "adapter": "dynamic_cast_checked",
-      "params": [
-        {
-          "name": "cell",
-          "type": "pointer"
-        },
-        {
-          "name": "expectedShapeId",
-          "type": "i32"
-        }
-      ],
-      "result": "i32",
-      "targetBindings": [
-        {
-          "target": "aarch64-apple-darwin",
-          "implementation": "dynamic_cast_checked",
-          "osImports": []
-        },
-        {
-          "target": "x86_64-pc-windows-msvc",
-          "implementation": "dynamic_cast_checked",
-          "osImports": []
-        },
-        {
-          "target": "x86_64-unknown-linux-gnu",
-          "implementation": "dynamic_cast_checked",
-          "osImports": []
-        }
-      ]
-    },
-    {
-      "name": "__dynamic_cell_create",
-      "adapter": "dynamic_cell_create",
-      "params": [
-        {
-          "name": "value",
-          "type": "pointer"
-        },
-        {
-          "name": "descriptor",
-          "type": "pointer"
-        }
-      ],
-      "result": "pointer",
-      "targetBindings": [
-        {
-          "target": "aarch64-apple-darwin",
-          "implementation": "dynamic_cell_create",
-          "osImports": []
-        },
-        {
-          "target": "x86_64-pc-windows-msvc",
-          "implementation": "dynamic_cell_create",
-          "osImports": []
-        },
-        {
-          "target": "x86_64-unknown-linux-gnu",
-          "implementation": "dynamic_cell_create",
-          "osImports": []
-        }
-      ]
-    },
-    {
-      "name": "__dynamic_cell_wrap",
-      "adapter": "dynamic_cell_wrap",
-      "params": [
-        {
-          "name": "value",
-          "type": "pointer"
-        },
-        {
-          "name": "descriptor",
-          "type": "pointer"
-        }
-      ],
-      "result": "pointer",
-      "targetBindings": [
-        {
-          "target": "aarch64-apple-darwin",
-          "implementation": "dynamic_cell_wrap",
-          "osImports": []
-        },
-        {
-          "target": "x86_64-pc-windows-msvc",
-          "implementation": "dynamic_cell_wrap",
-          "osImports": []
-        },
-        {
-          "target": "x86_64-unknown-linux-gnu",
-          "implementation": "dynamic_cell_wrap",
-          "osImports": []
-        }
-      ]
-    },
-    {
-      "name": "__dynamic_map_aot",
-      "adapter": "dynamic_map_aot",
-      "params": [
-        {
-          "name": "cell",
-          "type": "pointer"
-        },
-        {
-          "name": "mapping",
-          "type": "pointer"
-        }
-      ],
-      "result": "pointer",
-      "targetBindings": [
-        {
-          "target": "aarch64-apple-darwin",
-          "implementation": "dynamic_map_aot",
-          "osImports": []
-        },
-        {
-          "target": "x86_64-pc-windows-msvc",
-          "implementation": "dynamic_map_aot",
-          "osImports": []
-        },
-        {
-          "target": "x86_64-unknown-linux-gnu",
-          "implementation": "dynamic_map_aot",
-          "osImports": []
-        }
-      ]
-    },
-    {
-      "name": "__dynamic_map_fallback",
-      "adapter": "dynamic_map_fallback",
-      "params": [
-        {
-          "name": "cell",
-          "type": "pointer"
-        },
-        {
-          "name": "mapping",
-          "type": "pointer"
-        }
-      ],
-      "result": "pointer",
-      "targetBindings": [
-        {
-          "target": "aarch64-apple-darwin",
-          "implementation": "dynamic_map_fallback",
-          "osImports": []
-        },
-        {
-          "target": "x86_64-pc-windows-msvc",
-          "implementation": "dynamic_map_fallback",
-          "osImports": []
-        },
-        {
-          "target": "x86_64-unknown-linux-gnu",
-          "implementation": "dynamic_map_fallback",
-          "osImports": []
-        }
-      ]
-    },
-    {
-      "name": "__dynamic_object_alloc",
-      "adapter": "dynamic_object_alloc",
-      "params": [
-        {
-          "name": "descriptor",
-          "type": "pointer"
-        }
-      ],
-      "result": "pointer",
-      "targetBindings": [
-        {
-          "target": "aarch64-apple-darwin",
-          "implementation": "dynamic_object_alloc",
-          "osImports": []
-        },
-        {
-          "target": "x86_64-pc-windows-msvc",
-          "implementation": "dynamic_object_alloc",
-          "osImports": []
-        },
-        {
-          "target": "x86_64-unknown-linux-gnu",
-          "implementation": "dynamic_object_alloc",
           "osImports": []
         }
       ]
@@ -8820,6 +12983,118 @@
       ]
     },
     {
+      "name": "__float_from_bits32",
+      "adapter": "beskid_rt_v5_float_from_bits32",
+      "params": [
+        {
+          "name": "value",
+          "type": "u32"
+        }
+      ],
+      "result": "f32",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "beskid_rt_v5_float_from_bits32",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "beskid_rt_v5_float_from_bits32",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "beskid_rt_v5_float_from_bits32",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__float_from_bits64",
+      "adapter": "beskid_rt_v5_float_from_bits64",
+      "params": [
+        {
+          "name": "value",
+          "type": "u64"
+        }
+      ],
+      "result": "f64",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "beskid_rt_v5_float_from_bits64",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "beskid_rt_v5_float_from_bits64",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "beskid_rt_v5_float_from_bits64",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__float_to_bits32",
+      "adapter": "beskid_rt_v5_float_to_bits32",
+      "params": [
+        {
+          "name": "value",
+          "type": "f32"
+        }
+      ],
+      "result": "u32",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "beskid_rt_v5_float_to_bits32",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "beskid_rt_v5_float_to_bits32",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "beskid_rt_v5_float_to_bits32",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__float_to_bits64",
+      "adapter": "beskid_rt_v5_float_to_bits64",
+      "params": [
+        {
+          "name": "value",
+          "type": "f64"
+        }
+      ],
+      "result": "u64",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "beskid_rt_v5_float_to_bits64",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "beskid_rt_v5_float_to_bits64",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "beskid_rt_v5_float_to_bits64",
+          "osImports": []
+        }
+      ]
+    },
+    {
       "name": "__fs_delete",
       "adapter": "beskid_rt_v5_fs_delete",
       "params": [
@@ -8963,6 +13238,29 @@
         {
           "target": "x86_64-unknown-linux-gnu",
           "implementation": "beskid_rt_v5_fs_write_text",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__gc_allocation_failure_reason",
+      "adapter": "beskid_rt_v5_gc_allocation_failure_reason",
+      "params": [],
+      "result": "usize",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "beskid_rt_v5_gc_allocation_failure_reason",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "beskid_rt_v5_gc_allocation_failure_reason",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "beskid_rt_v5_gc_allocation_failure_reason",
           "osImports": []
         }
       ]
@@ -9328,6 +13626,126 @@
         {
           "target": "x86_64-unknown-linux-gnu",
           "implementation": "gc_root_handle",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__gc_same_identity",
+      "adapter": "beskid_rt_v5_gc_same_identity",
+      "params": [
+        {
+          "name": "left",
+          "type": "pointer"
+        },
+        {
+          "name": "right",
+          "type": "pointer"
+        }
+      ],
+      "result": "usize",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "beskid_rt_v5_gc_same_identity",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "beskid_rt_v5_gc_same_identity",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "beskid_rt_v5_gc_same_identity",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__gc_try_alloc",
+      "adapter": "beskid_rt_v5_gc_try_alloc",
+      "params": [
+        {
+          "name": "size",
+          "type": "usize"
+        },
+        {
+          "name": "alignment",
+          "type": "usize"
+        }
+      ],
+      "result": "pointer",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "beskid_rt_v5_gc_try_alloc",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "beskid_rt_v5_gc_try_alloc",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "beskid_rt_v5_gc_try_alloc",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__gc_try_register_root",
+      "adapter": "beskid_rt_v5_gc_try_register_root",
+      "params": [
+        {
+          "name": "ptrAddr",
+          "type": "pointer"
+        }
+      ],
+      "result": "u8",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "beskid_rt_v5_gc_try_register_root",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "beskid_rt_v5_gc_try_register_root",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "beskid_rt_v5_gc_try_register_root",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__gc_try_root_handle",
+      "adapter": "beskid_rt_v5_gc_try_root_handle",
+      "params": [
+        {
+          "name": "valuePtr",
+          "type": "pointer"
+        }
+      ],
+      "result": "usize",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "beskid_rt_v5_gc_try_root_handle",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "beskid_rt_v5_gc_try_root_handle",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "beskid_rt_v5_gc_try_root_handle",
           "osImports": []
         }
       ]

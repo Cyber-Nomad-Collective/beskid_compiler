@@ -2,6 +2,7 @@
 
 mod closures;
 mod collections;
+mod checked_collections;
 mod direct;
 mod helpers;
 mod traced;

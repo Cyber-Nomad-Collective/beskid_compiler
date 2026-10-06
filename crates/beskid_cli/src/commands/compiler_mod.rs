@@ -1,15 +1,14 @@
-//! `beskid mod` - rebuild and clean compiler-mod AOT artifacts.
+//! `beskid dev mod` - rebuild and clean compiler-mod AOT artifacts.
 
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use anyhow::{Context, Result, anyhow};
-use beskid_analysis::mod_host::extract_mod_contract_registrations_from_syntax;
 use beskid_analysis::projects::{
-    ProjectKind, WorkspacePrepareOptions, build_compile_plan, discover_project_manifest_from_input_or_cwd,
-    discover_project_manifest_in_dir, discover_workspace_manifest_in_dir, load_manifest_from_path,
-    prepare_project_workspace_with_options, resolve_workspace_candidate_path,
+    ProjectKind, build_compile_plan, discover_project_manifest_from_input_or_cwd, discover_project_manifest_in_dir,
+    discover_workspace_manifest_in_dir, load_manifest_from_path, prepare_project_workspace_with_options,
+    resolve_workspace_candidate_path,
 };
 use beskid_analysis::services::{FrontEndOptions, resolved_input_from_plan};
 use beskid_aot::{ModArtifactBuildRequest, build_mod_artifact};
@@ -82,12 +81,8 @@ fn rebuild(args: ModRebuildArgs) -> Result<()> {
 
     observe_phase(pipeline, WORKSPACE_GRAPH_CHANGED, || {});
     let prepared = observe_phase_result(pipeline, WORKSPACE_MATERIALIZE, || {
-        prepare_project_workspace_with_options(
-            &resolved.plan,
-            WorkspacePrepareOptions { frozen: args.lockfile.frozen, locked: args.lockfile.locked, refresh_lock: false },
-            pipeline,
-        )
-        .map_err(anyhow::Error::from)
+        prepare_project_workspace_with_options(&resolved.plan, args.lockfile.WorkspaceOptions(), pipeline)
+            .map_err(anyhow::Error::from)
     })?;
 
     let artifact_policy = resolved
@@ -102,29 +97,24 @@ fn rebuild(args: ModRebuildArgs) -> Result<()> {
         remove_mod_cache_dir(&resolved.plan.project_root, &resolved.manifest.project.name)?;
     }
 
-    if artifact_policy == "reuse"
-        && mod_artifact_descriptor_exists(&resolved.plan.project_root, &resolved.manifest.project.name)
-    {
-        pipeline_ui.finish_session_with_summary(
-            "Mod rebuild complete",
-            Some(CommandSummary::plain("Mod rebuild", "Reused cached mod artifact")),
-        );
-        println!("mod artifact cache hit for {} (artifactPolicy = reuse)", resolved.manifest.project.name);
-        return Ok(());
-    };
-
-    let descriptor = build_mod_artifact_for_resolved(&resolved, &prepared, args.target_triple, pipeline)?;
+    let descriptor = build_mod_artifact_for_resolved(
+        &resolved,
+        &prepared,
+        args.target_triple,
+        args.lockfile.WorkspaceOptions(),
+        pipeline,
+    )?;
 
     pipeline_ui.finish_session_with_summary(
         "Mod rebuild complete",
         Some(
             CommandSummary::plain("Mod rebuild", "Mod rebuild complete")
-                .with_stat("artifact", descriptor.artifact_dir.display().to_string()),
+                .with_stat("artifact", descriptor.descriptor().artifact_dir.display().to_string()),
         ),
     );
-    println!("mod artifact: {}", descriptor.artifact_dir.display());
-    println!("  object     {}", descriptor.object_path().display());
-    println!("  descriptor {}", descriptor.sidecar_path().display());
+    println!("mod artifact: {}", descriptor.descriptor().artifact_dir.display());
+    println!("  executable {}", descriptor.descriptor().executable_path().display());
+    println!("  descriptor {}", descriptor.descriptor().sidecar_path().display());
     Ok(())
 }
 
@@ -159,8 +149,9 @@ fn build_mod_artifact_for_resolved(
     resolved: &ResolvedModProject,
     prepared: &beskid_analysis::projects::PreparedProjectWorkspace,
     target_triple: Option<String>,
+    policy: beskid_analysis::projects::WorkspacePrepareOptions,
     pipeline: Option<&dyn PipelineObserver>,
-) -> Result<beskid_aot::ModArtifactDescriptor> {
+) -> Result<beskid_aot::QualifiedNativeMod> {
     let source_path = discover_mod_entry_source(&resolved.plan.source_root)?;
     let source = fs::read_to_string(&source_path)
         .with_context(|| format!("failed to read mod source {}", source_path.display()))?;
@@ -171,24 +162,38 @@ fn build_mod_artifact_for_resolved(
         Some(prepared.clone()),
         None,
     );
-    let front = beskid_queries::compile_front_end_from_resolved_input(
+    let mod_invoker = prepare_native_mod_executor(&resolved_input, policy, pipeline)?;
+    let front = beskid_queries::prepare_compilation(
         &resolved_input,
-        FrontEndOptions { with_semantic_diagnostics: false, ..Default::default() },
+        beskid_analysis::services::PrepareOptions {
+            mod_invoker,
+            front_end: FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
+            ..Default::default()
+        },
         pipeline,
-    )?;
-    let artifact = super::syntax_codegen::lower_prepared_module(&front, target_triple.as_deref(), pipeline)?;
-    let registrations = extract_mod_contract_registrations_from_syntax(&resolved.manifest.project.name, &front.program)
-        .into_iter()
-        .map(|registration| beskid_aot::mod_artifact::ContractRegistration {
-            contract_id: registration.contract_id,
-            type_id: registration.type_id,
-            entry_symbol: registration.entry_symbol,
-        })
-        .collect();
+    )?
+    .into_executable()?;
     let target = beskid_aot::target::detect_target(target_triple.as_deref())?;
+    let abi_target = beskid_abi::abi_v5::TargetMetadata::for_triple(&target.triple)
+        .map_err(|_| anyhow!("unsupported native Mod ABI target"))?;
+    let prepared_mod = observe_phase_result(pipeline, beskid_pipeline::phases::CODEGEN_CLIF, || {
+        beskid_aot::lower_prepared_native_mod(&front, abi_target.clone()).map_err(anyhow::Error::from)
+    })?;
+    let prefix = beskid_abi::runtime_kit::installed_runtime_prefix()?;
+    let profile = std::env::var("BESKID_RUNTIME_KIT_PROFILE")
+        .ok()
+        .map(|value| beskid_abi::runtime_kit::BuildProfile::parse(&value))
+        .transpose()?
+        .unwrap_or(beskid_abi::runtime_kit::BuildProfile::Debug);
+    let control = beskid_aot::api::NativeExecutionControl::new(
+        std::time::Instant::now() + std::time::Duration::from_secs(300),
+        Arc::new(|| false),
+    );
     observe_phase_result(pipeline, AOT_LINK, || {
         build_mod_artifact(ModArtifactBuildRequest {
-            artifact,
+            prepared: prepared_mod,
+            runtime: beskid_aot::api::RuntimeKitRequest { prefix, target: abi_target, profile },
+            control,
             workspace_root: resolved.plan.project_root.clone(),
             project_root: resolved.plan.project_root.clone(),
             manifest_path: resolved.plan.manifest_path.clone(),
@@ -196,9 +201,7 @@ fn build_mod_artifact_for_resolved(
             lockfile_path: Some(prepared.lockfile_path.clone()),
             package_id: resolved.manifest.project.name.clone(),
             package_version: Some(resolved.manifest.project.version.clone()),
-            target_triple: target.triple.clone(),
             compiler_version: env!("CARGO_PKG_VERSION").to_owned(),
-            registrations,
         })
         .map_err(anyhow::Error::from)
     })
@@ -211,7 +214,7 @@ fn resolve_mod_project(
     let manifest_path = observe_phase_result(pipeline, RESOLVE_MANIFEST, || resolve_manifest_path(project))?;
     let manifest = load_manifest_from_path(&manifest_path).map_err(anyhow::Error::from)?;
     if manifest.project.kind != ProjectKind::Mod {
-        return Err(anyhow!("`beskid mod rebuild` requires a `type = Mod` project, got `{}`", manifest.project.name));
+        return Err(anyhow!("`beskid dev mod rebuild` requires a `type = Mod` project, got `{}`", manifest.project.name));
     }
 
     let plan = observe_phase_result(pipeline, RESOLVE_GRAPH, || {
@@ -352,35 +355,51 @@ DemoMod {
   version = "0.1.0"
   type = Mod
   mod {
-    capabilities = [read_project_sources]
+    capabilities = [read_project_sources, emit_syntax, query_semantic_snapshot]
   }
 }
 "#,
         )
         .expect("manifest");
+        // Production native Mods qualify only against the actual compiler-SDK contracts; the
+        // self-declared SDK-shaped contracts of `sample_mod` carry no exact canonical witness.
         fs::write(
             source_root.join("Mod.bd"),
-            include_str!("../../../beskid_tests_mods/fixtures/mods/sample_mod/Src/Mod.bd"),
+            include_str!("../../../beskid_tests_mods/fixtures/mods/native_sdk/Src/Mod.bd"),
         )
         .expect("mod source");
 
         let manifest = load_manifest_from_path(&manifest_path).expect("load manifest");
         let plan = build_compile_plan(&manifest_path, None).expect("compile plan");
-        let prepared = prepare_project_workspace_with_options(&plan, WorkspacePrepareOptions::default(), None)
-            .expect("prepare workspace");
+        let prepared = prepare_project_workspace_with_options(
+            &plan,
+            beskid_analysis::projects::WorkspacePrepareOptions::default(),
+            None,
+        )
+        .expect("prepare workspace");
         let descriptor = build_mod_artifact_for_resolved(
             &ResolvedModProject { manifest, plan },
             &prepared,
             Some(host_abi_target().to_owned()),
+            beskid_analysis::projects::WorkspacePrepareOptions::default(),
             None,
         )
         .expect("syntax-only mod rebuild");
 
-        let sidecar = fs::read_to_string(descriptor.sidecar_path()).expect("descriptor");
-        assert!(sidecar.contains("Beskid.Compiler.Collect.Collector"));
-        assert!(sidecar.contains("Beskid.Compiler.Collect.Generator"));
-        assert!(sidecar.contains("demomod_collect"));
-        assert!(sidecar.contains("demomod_generate"));
+        let sidecar = fs::read_to_string(descriptor.descriptor().sidecar_path()).expect("descriptor");
+        let descriptor: serde_json::Value = serde_json::from_str(&sidecar).expect("descriptor json");
+        let registrations = descriptor["registrations"].as_array().expect("native registrations");
+        assert_eq!(registrations.len(), 2, "actual Collector and Generator must both be registered");
+        for contract in ["Beskid.Compiler.Collect.Collector", "Beskid.Compiler.Collect.Generator"] {
+            let registration = registrations
+                .iter()
+                .find(|registration| registration["contractId"] == contract)
+                .unwrap_or_else(|| panic!("missing registration for {contract}"));
+            assert!(
+                registration["entrySymbol"].as_str().is_some_and(|symbol| !symbol.is_empty()),
+                "{contract} must name its exported entry symbol"
+            );
+        }
         let _ = fs::remove_dir_all(root);
     }
 
@@ -398,4 +417,44 @@ DemoMod {
         let id = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).expect("time").as_nanos();
         std::env::temp_dir().join(format!("{prefix}_{id}"))
     }
+}
+
+/// Construct native authority from actual current Mod projects, never descriptor-only cache lookup.
+pub(crate) fn prepare_native_mod_executor(
+    resolved: &beskid_analysis::services::ResolvedInput,
+    policy: beskid_analysis::projects::WorkspacePrepareOptions,
+    pipeline: Option<&dyn PipelineObserver>,
+) -> Result<Option<Arc<dyn beskid_analysis::mod_host::ContractInvoker>>> {
+    let Some(plan) = resolved.compile_plan.as_ref() else { return Ok(None) };
+    let mut artifacts = Vec::new();
+    let mut manifests = std::collections::BTreeSet::new();
+    for dependency in &plan.dependency_projects {
+        let manifest_path = dependency.manifest_path.canonicalize()?;
+        if !manifests.insert(manifest_path.clone()) {
+            continue;
+        }
+        let manifest = load_manifest_from_path(&manifest_path).map_err(anyhow::Error::from)?;
+        if manifest.project.kind != ProjectKind::Mod {
+            continue;
+        }
+        let mod_plan = build_compile_plan(&manifest_path, None).map_err(anyhow::Error::from)?;
+        ensure_resolved_dependencies(&mod_plan)?;
+        let workspace =
+            prepare_project_workspace_with_options(&mod_plan, policy.clone(), pipeline).map_err(anyhow::Error::from)?;
+        artifacts.push(build_mod_artifact_for_resolved(
+            &ResolvedModProject { manifest, plan: mod_plan },
+            &workspace,
+            None,
+            policy.clone(),
+            pipeline,
+        )?);
+    }
+    if artifacts.is_empty() {
+        return Ok(None);
+    }
+    let control = beskid_aot::api::NativeExecutionControl::new(
+        std::time::Instant::now() + std::time::Duration::from_secs(300),
+        Arc::new(|| false),
+    );
+    Ok(Some(Arc::new(beskid_aot::QualifiedModInvoker::new(artifacts, std::env::current_exe()?, control)?)))
 }

@@ -174,6 +174,7 @@ fn managed_reference_kind_for_aggregate_field(
     if generic_parameter_reference_name(&field.node.ty.node).is_some() {
         return match access.layout.fields.get(usize::try_from(access.index).unwrap_or(usize::MAX)) {
             Some((_, AggregateFieldShape::Nominal(_)))
+            | Some((_, AggregateFieldShape::ManagedReference(_)))
             | Some((_, AggregateFieldShape::Scalar(SemanticTypeId::STRING))) => Ok(ManagedReferenceKind::GcManaged),
             Some((_, AggregateFieldShape::Scalar(SemanticTypeId::POINTER))) => {
                 Err(SemanticError::unavailable("managed_reference_kind"))

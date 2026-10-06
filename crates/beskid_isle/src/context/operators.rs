@@ -69,10 +69,15 @@ impl IsleContext<'_, '_, '_, '_> {
         let left = self.facts.child(key, 0)?;
         let right = self.facts.child(key, 1)?;
         let is_unsigned_integer = |semantic_type| match semantic_type {
-            beskid_queries::SemanticTypeId::U8
+            beskid_queries::SemanticTypeId::U16
+            | beskid_queries::SemanticTypeId::U64
+            | beskid_queries::SemanticTypeId::U8
             | beskid_queries::SemanticTypeId::U32
             | beskid_queries::SemanticTypeId::WORD => Some(true),
-            beskid_queries::SemanticTypeId::I32 | beskid_queries::SemanticTypeId::I64 => Some(false),
+            beskid_queries::SemanticTypeId::I8
+            | beskid_queries::SemanticTypeId::I16
+            | beskid_queries::SemanticTypeId::I32
+            | beskid_queries::SemanticTypeId::I64 => Some(false),
             _ => None,
         };
         let left_unsigned = is_unsigned_integer(self.facts.semantic_type(left)?)?;
@@ -383,17 +388,43 @@ macro_rules! generated_operator_methods {
                 });
                 return None;
             }
+            if to == beskid_queries::SemanticTypeId::CHAR {
+                if from != beskid_queries::SemanticTypeId::U32 || actual != types::I32 || target != types::I32 {
+                    return None;
+                }
+                let out_of_range = self.builder.ins().icmp_imm_s(IntCC::UnsignedGreaterThan, value, 0x10ffff);
+                let surrogate_start = self.builder.ins().icmp_imm_s(IntCC::UnsignedGreaterThanOrEqual, value, 0xd800);
+                let surrogate_end = self.builder.ins().icmp_imm_s(IntCC::UnsignedLessThanOrEqual, value, 0xdfff);
+                let surrogate = self.builder.ins().band(surrogate_start, surrogate_end);
+                let invalid = self.builder.ins().bor(out_of_range, surrogate);
+                self.builder.ins().trapnz(invalid, TrapCode::BAD_CONVERSION_TO_INTEGER);
+                return Some(value);
+            }
             if actual == target {
                 return Some(value);
             }
-            if actual.is_int() && target == cranelift_codegen::ir::types::F64 {
+            if actual.is_int() && target.is_float() {
                 return Some(
-                    if matches!(from, beskid_queries::SemanticTypeId::U8 | beskid_queries::SemanticTypeId::U32) {
+                    if matches!(
+                        from,
+                        beskid_queries::SemanticTypeId::U8
+                            | beskid_queries::SemanticTypeId::U16
+                            | beskid_queries::SemanticTypeId::U32
+                            | beskid_queries::SemanticTypeId::U64
+                            | beskid_queries::SemanticTypeId::WORD
+                    ) {
                         self.builder.ins().fcvt_from_uint(target, value)
                     } else {
                         self.builder.ins().fcvt_from_sint(target, value)
                     },
                 );
+            }
+            if actual.is_float() && target.is_float() {
+                return Some(if actual.bits() < target.bits() {
+                    self.builder.ins().fpromote(target, value)
+                } else {
+                    self.builder.ins().fdemote(target, value)
+                });
             }
             if !actual.is_int() || !target.is_int() {
                 self.pending_error = Some(LoweringError {
@@ -405,7 +436,14 @@ macro_rules! generated_operator_methods {
                 return None;
             }
             if actual.bits() < target.bits() {
-                if matches!(from, beskid_queries::SemanticTypeId::U8 | beskid_queries::SemanticTypeId::U32) {
+                if matches!(
+                    from,
+                    beskid_queries::SemanticTypeId::U8
+                        | beskid_queries::SemanticTypeId::U16
+                        | beskid_queries::SemanticTypeId::U32
+                        | beskid_queries::SemanticTypeId::U64
+                        | beskid_queries::SemanticTypeId::WORD
+                ) {
                     Some(self.builder.ins().uextend(target, value))
                 } else {
                     Some(self.builder.ins().sextend(target, value))

@@ -5,18 +5,11 @@
 //! `(contractId, typeId, entrySymbol)` tuple discovered by `mod.load`. Implementations
 //! decide how to reach the Beskid-side contract instance — current implementations are:
 //!
-//! * [`StubContractInvoker`] — default for tests and pre-AOT bring-up. Records
-//!   invocations and returns empty results so `mod.collect`-`mod.rewrite` complete
-//!   deterministically.
-//! * [`ScriptedContractInvoker`] — test helper that scripts per-`typeId` outcomes for
-//!   assertions in beskid_engine and beskid_tests.
-//! * [`NativeContractInvoker`](super::native::NativeContractInvoker) — records artifact
-//!   object paths and delegates to a stub until shared-library dlopen dispatch lands.
+//! * [`StubContractInvoker`] and [`ScriptedContractInvoker`] are explicit test helpers.
+//! * [`NativeContractInvoker`](super::native::NativeContractInvoker) owns native libraries.
 //!
-//! Future implementations will dlopen the AOT object and
-//! call `entry_symbol` with the Beskid → C ABI defined in `beskid_abi`. The trait
-//! shape stays stable so production code can switch implementations without touching
-//! `mod_host` orchestration.
+//! Semantic authority is borrowed separately for each synchronous invocation. It is never
+//! stored in the library owner or transferred across threads.
 
 mod contract;
 mod outcomes;

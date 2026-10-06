@@ -10,3 +10,7 @@ pub use fingerprint::{content_fingerprint, grammar_revision};
 pub use manifest::{ARTIFACT_SCHEMA_VERSION, ArtifactManifest, UnitArtifactMeta};
 pub use persistence::{ArtifactStore, UnitArtifactPaths};
 pub use snapshot::{AstUnitSnapshot, UnitArtifactRecord, decode_ast, encode_ast};
+
+pub mod native_image;
+
+pub mod native_host;

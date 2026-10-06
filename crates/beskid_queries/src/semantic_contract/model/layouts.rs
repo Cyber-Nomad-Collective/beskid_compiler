@@ -17,6 +17,8 @@ use super::*;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum AggregateFieldShape {
     Scalar(SemanticTypeId),
+    /// Pointer storage whose canonical source identity is GC managed (arrays/functions).
+    ManagedReference(SemanticTypeId),
     Nominal(AstNodeKey),
 }
 

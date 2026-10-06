@@ -30,7 +30,7 @@ fn prepare_spine_syntax_assembly_uses_rewritten_entry_without_document_snapshot(
     let resolved = resolved_input_from_plan(entry_path.clone(), source.to_string(), plan, None, None);
     let prepared = prepare_compilation(
         &resolved,
-        PrepareOptions {
+        PrepareOptions { mod_invoker: None,
             front_end: FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
             ..Default::default()
         },
@@ -77,7 +77,7 @@ fn prepare_diagnostics_collect_without_legacy_document_snapshot() {
     let resolved = resolved_input_from_plan(entry_path.clone(), source.to_string(), plan, None, None);
     let (prepared, diags, _fixes) = prepare_compilation_diagnostics(
         &resolved,
-        PrepareOptions {
+        PrepareOptions { mod_invoker: None,
             front_end: FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
             ..Default::default()
         },
@@ -96,9 +96,10 @@ fn prepare_diagnostics_collect_without_legacy_document_snapshot() {
 
 #[test]
 fn isolated_diagnostics_do_not_read_or_replace_entry_session_assembly() {
-    crate::services::invalidate_entry_sessions();
     let test_id = TEST_ID.fetch_add(1, Ordering::Relaxed);
     let root = std::env::temp_dir().join(format!("beskid_prepare_isolated_diags_{test_id}"));
+    // Scope invalidation to this fixture: the registry is process-wide and tests run in parallel.
+    crate::services::entry_session::invalidate_project(&root);
     std::fs::create_dir_all(&root).expect("test source root");
     let entry_path = root.join("Main.bd");
     let first_source = "i32 Main() { return 1; }";
@@ -122,7 +123,7 @@ fn isolated_diagnostics_do_not_read_or_replace_entry_session_assembly() {
     );
     let (prepared, diagnostics, _) = prepare_compilation_diagnostics_isolated(
         &second,
-        PrepareOptions {
+        PrepareOptions { mod_invoker: None,
             front_end: FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
             ..Default::default()
         },
@@ -137,7 +138,7 @@ fn isolated_diagnostics_do_not_read_or_replace_entry_session_assembly() {
         .expect("seeded entry session remains cached");
     assert_eq!(cached.assembly.entry_unit().source, first_source);
 
-    crate::services::invalidate_entry_sessions();
+    crate::services::entry_session::invalidate_project(&root);
     let _ = std::fs::remove_dir_all(root);
 }
 
@@ -155,8 +156,9 @@ fn mod_rewrite_with_scripted_analyzer(
         entry_symbol: "moda_check".to_owned(),
     };
     let context = ModInvocationContext::empty();
-    let outcome =
-        invoker.invoke_analyzer(&registration, &context.collect_request, None).expect("scripted analyzer invocation");
+    let outcome = invoker
+        .invoke_analyzer(&registration, &context.collect_request, None, None)
+        .expect("scripted analyzer invocation");
     assert_eq!(outcome.diagnostics.len(), 1, "scripted analyzer diagnostic must overlay");
 
     let program = parse_program_with_source_name("Main.bd", entry_source).expect("parse entry");
@@ -238,7 +240,7 @@ fn prepare_diagnostics_reports_nonconforming_inferred_generic_bound_with_code() 
     let resolved = resolved_input_from_plan(entry_path.clone(), source.to_string(), plan, None, None);
     let (_, diagnostics, _) = prepare_compilation_diagnostics(
         &resolved,
-        PrepareOptions {
+        PrepareOptions { mod_invoker: None,
             front_end: FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
             ..Default::default()
         },
@@ -272,7 +274,7 @@ fn prepare_diagnostics_reports_nonconforming_explicit_generic_bound_with_code() 
     let resolved = resolved_input_from_plan(entry_path.clone(), source.to_string(), plan, None, None);
     let (_, diagnostics, _) = prepare_compilation_diagnostics(
         &resolved,
-        PrepareOptions {
+        PrepareOptions { mod_invoker: None,
             front_end: FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
             ..Default::default()
         },
@@ -305,7 +307,7 @@ fn prepare_diagnostics_rejects_unconstrained_generic_forwarding_with_code() {
     let resolved = resolved_input_from_plan(entry_path.clone(), source.to_string(), plan, None, None);
     let (_, diagnostics, _) = prepare_compilation_diagnostics(
         &resolved,
-        PrepareOptions {
+        PrepareOptions { mod_invoker: None,
             front_end: FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
             ..Default::default()
         },
@@ -338,14 +340,15 @@ fn prepare_diagnostics_reports_nested_generic_bound_failure_once() {
     let resolved = resolved_input_from_plan(entry_path.clone(), source.to_string(), plan, None, None);
     let (_, diagnostics, _) = prepare_compilation_diagnostics(
         &resolved,
-        PrepareOptions {
+        PrepareOptions { mod_invoker: None,
             front_end: FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
             ..Default::default()
         },
         None,
     )
     .expect("prepare diagnostics");
-    let bound_failures = diagnostics.iter().filter(|diagnostic| diagnostic.code.as_deref() == Some("E1610")).collect::<Vec<_>>();
+    let bound_failures =
+        diagnostics.iter().filter(|diagnostic| diagnostic.code.as_deref() == Some("E1610")).collect::<Vec<_>>();
     assert_eq!(bound_failures.len(), 1, "nested failing call should produce one structured E1610: {diagnostics:?}");
     assert!(bound_failures[0].message.contains("NotSource"));
 
@@ -366,7 +369,7 @@ fn prepare_diagnostics_enforces_qualified_contract_from_imported_module() {
     let resolved = resolved_input_from_plan(entry_path.clone(), source.to_string(), plan, None, None);
     let (_, diagnostics, _) = prepare_compilation_diagnostics(
         &resolved,
-        PrepareOptions {
+        PrepareOptions { mod_invoker: None,
             front_end: FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
             ..Default::default()
         },
@@ -400,7 +403,7 @@ fn prepare_diagnostics_accepts_conforming_qualified_contract_from_imported_modul
     let resolved = resolved_input_from_plan(entry_path.clone(), source.to_string(), plan, None, None);
     let (_, diagnostics, _) = prepare_compilation_diagnostics(
         &resolved,
-        PrepareOptions {
+        PrepareOptions { mod_invoker: None,
             front_end: FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
             ..Default::default()
         },
@@ -429,7 +432,7 @@ fn prepare_diagnostics_rejects_direct_contract_item_import_alias() {
     let resolved = resolved_input_from_plan(entry_path.clone(), source.to_string(), plan, None, None);
     let (_, diagnostics, _) = prepare_compilation_diagnostics(
         &resolved,
-        PrepareOptions {
+        PrepareOptions { mod_invoker: None,
             front_end: FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
             ..Default::default()
         },
@@ -437,7 +440,9 @@ fn prepare_diagnostics_rejects_direct_contract_item_import_alias() {
     )
     .expect("prepare diagnostics");
     assert!(
-        diagnostics.iter().any(|diagnostic| diagnostic.code.as_deref() == Some("E1105") && diagnostic.severity == Severity::Error),
+        diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code.as_deref() == Some("E1105") && diagnostic.severity == Severity::Error),
         "direct contract-item imports are not valid module imports: {diagnostics:?}"
     );
 
@@ -457,7 +462,7 @@ fn prepare_diagnostics_rejects_unresolved_bound_on_unused_function() {
     let resolved = resolved_input_from_plan(entry_path.clone(), source.to_string(), plan, None, None);
     let (_, diagnostics, _) = prepare_compilation_diagnostics(
         &resolved,
-        PrepareOptions {
+        PrepareOptions { mod_invoker: None,
             front_end: FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
             ..Default::default()
         },
@@ -465,9 +470,9 @@ fn prepare_diagnostics_rejects_unresolved_bound_on_unused_function() {
     )
     .expect("prepare diagnostics");
     assert!(
-        diagnostics.iter().any(|diagnostic| {
-            diagnostic.severity == Severity::Error && diagnostic.message.contains("Missing")
-        }),
+        diagnostics
+            .iter()
+            .any(|diagnostic| { diagnostic.severity == Severity::Error && diagnostic.message.contains("Missing") }),
         "unresolved bound must fail before any call: {diagnostics:?}"
     );
 
@@ -487,7 +492,7 @@ fn prepare_diagnostics_rejects_invalid_bound_parameter_and_noncontract_target() 
     let resolved = resolved_input_from_plan(entry_path.clone(), source.to_string(), plan, None, None);
     let (_, diagnostics, _) = prepare_compilation_diagnostics(
         &resolved,
-        PrepareOptions {
+        PrepareOptions { mod_invoker: None,
             front_end: FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
             ..Default::default()
         },
@@ -496,7 +501,9 @@ fn prepare_diagnostics_rejects_invalid_bound_parameter_and_noncontract_target() 
     .expect("prepare diagnostics");
     for name in ["U", "NotContract"] {
         assert!(
-            diagnostics.iter().any(|diagnostic| diagnostic.severity == Severity::Error && diagnostic.message.contains(name)),
+            diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.severity == Severity::Error && diagnostic.message.contains(name)),
             "invalid bound declaration `{name}` must fail before any call: {diagnostics:?}"
         );
     }
@@ -517,7 +524,7 @@ fn prepare_diagnostics_resolves_same_named_bounds_within_sibling_inline_modules(
     let resolved = resolved_input_from_plan(entry_path.clone(), source.to_string(), plan, None, None);
     let (_, diagnostics, _) = prepare_compilation_diagnostics(
         &resolved,
-        PrepareOptions {
+        PrepareOptions { mod_invoker: None,
             front_end: FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
             ..Default::default()
         },
@@ -545,7 +552,7 @@ fn prepare_diagnostics_rejects_bound_visible_only_in_unrelated_inline_module() {
     let resolved = resolved_input_from_plan(entry_path.clone(), source.to_string(), plan, None, None);
     let (_, diagnostics, _) = prepare_compilation_diagnostics(
         &resolved,
-        PrepareOptions {
+        PrepareOptions { mod_invoker: None,
             front_end: FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
             ..Default::default()
         },
@@ -553,9 +560,9 @@ fn prepare_diagnostics_rejects_bound_visible_only_in_unrelated_inline_module() {
     )
     .expect("prepare diagnostics");
     assert!(
-        diagnostics.iter().any(|diagnostic| {
-            diagnostic.severity == Severity::Error && diagnostic.message.contains("Reader")
-        }),
+        diagnostics
+            .iter()
+            .any(|diagnostic| { diagnostic.severity == Severity::Error && diagnostic.message.contains("Reader") }),
         "unrelated inline contract must not satisfy an unqualified bound: {diagnostics:?}"
     );
 
@@ -575,7 +582,7 @@ fn prepare_diagnostics_keeps_duplicate_contract_error_within_one_inline_module()
     let resolved = resolved_input_from_plan(entry_path.clone(), source.to_string(), plan, None, None);
     let (_, diagnostics, _) = prepare_compilation_diagnostics(
         &resolved,
-        PrepareOptions {
+        PrepareOptions { mod_invoker: None,
             front_end: FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
             ..Default::default()
         },
@@ -603,7 +610,7 @@ fn prepare_diagnostics_resolves_bound_from_enclosing_inline_module_scope() {
     let resolved = resolved_input_from_plan(entry_path.clone(), source.to_string(), plan, None, None);
     let (_, diagnostics, _) = prepare_compilation_diagnostics(
         &resolved,
-        PrepareOptions {
+        PrepareOptions { mod_invoker: None,
             front_end: FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
             ..Default::default()
         },
@@ -631,7 +638,7 @@ fn prepare_diagnostics_does_not_skip_noncontract_shadow_in_child_module() {
     let resolved = resolved_input_from_plan(entry_path.clone(), source.to_string(), plan, None, None);
     let (_, diagnostics, _) = prepare_compilation_diagnostics(
         &resolved,
-        PrepareOptions {
+        PrepareOptions { mod_invoker: None,
             front_end: FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
             ..Default::default()
         },
@@ -639,9 +646,9 @@ fn prepare_diagnostics_does_not_skip_noncontract_shadow_in_child_module() {
     )
     .expect("prepare diagnostics");
     assert!(
-        diagnostics.iter().any(|diagnostic| {
-            diagnostic.severity == Severity::Error && diagnostic.message.contains("Reader")
-        }),
+        diagnostics
+            .iter()
+            .any(|diagnostic| { diagnostic.severity == Severity::Error && diagnostic.message.contains("Reader") }),
         "child non-contract must shadow the parent bound target: {diagnostics:?}"
     );
 
@@ -666,7 +673,7 @@ fn prepare_diagnostics_preserves_imported_export_bound_owner() {
     let resolved = resolved_input_from_plan(entry_path.clone(), source.to_string(), plan, None, None);
     let (_, diagnostics, _) = prepare_compilation_diagnostics(
         &resolved,
-        PrepareOptions {
+        PrepareOptions { mod_invoker: None,
             front_end: FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
             ..Default::default()
         },
@@ -703,7 +710,7 @@ fn prepare_diagnostics_preserves_imported_embedded_contract_owner() {
     let resolved = resolved_input_from_plan(entry_path.clone(), source.to_string(), plan, None, None);
     let (_, diagnostics, _) = prepare_compilation_diagnostics(
         &resolved,
-        PrepareOptions {
+        PrepareOptions { mod_invoker: None,
             front_end: FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
             ..Default::default()
         },
@@ -724,8 +731,7 @@ fn prepare_diagnostics_rejects_private_qualified_contract_bound_from_other_modul
     let root = std::env::temp_dir().join(format!("beskid_prepare_private_qualified_bound_{test_id}"));
     std::fs::create_dir_all(&root).expect("test source root");
     let entry_path = root.join("Main.bd");
-    std::fs::write(root.join("Contracts.bd"), "contract PrivateReader { i64 Read(); }")
-        .expect("contract source");
+    std::fs::write(root.join("Contracts.bd"), "contract PrivateReader { i64 Read(); }").expect("contract source");
     let source = "use Contracts as Alias; i64 Consume<T>(T value) where T: Alias.PrivateReader { return 0_i64; } unit Main() { return; }";
     std::fs::write(&entry_path, source).expect("entry source");
 
@@ -733,7 +739,7 @@ fn prepare_diagnostics_rejects_private_qualified_contract_bound_from_other_modul
     let resolved = resolved_input_from_plan(entry_path.clone(), source.to_string(), plan, None, None);
     let (_, diagnostics, _) = prepare_compilation_diagnostics(
         &resolved,
-        PrepareOptions {
+        PrepareOptions { mod_invoker: None,
             front_end: FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
             ..Default::default()
         },
@@ -742,8 +748,7 @@ fn prepare_diagnostics_rejects_private_qualified_contract_bound_from_other_modul
     .expect("prepare diagnostics");
     assert!(
         diagnostics.iter().any(|diagnostic| {
-            diagnostic.code.as_deref() == Some("E1201")
-                && diagnostic.message.contains("PrivateReader")
+            diagnostic.code.as_deref() == Some("E1201") && diagnostic.message.contains("PrivateReader")
         }),
         "private external contract must not satisfy an unused declaration's bound: {diagnostics:?}"
     );
@@ -764,7 +769,7 @@ fn prepare_diagnostics_accepts_private_qualified_contract_in_declaring_module() 
     let resolved = resolved_input_from_plan(entry_path.clone(), source.to_string(), plan, None, None);
     let (_, diagnostics, _) = prepare_compilation_diagnostics(
         &resolved,
-        PrepareOptions {
+        PrepareOptions { mod_invoker: None,
             front_end: FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
             ..Default::default()
         },
@@ -792,7 +797,7 @@ fn prepare_diagnostics_accepts_bound_via_embedded_contract() {
     let resolved = resolved_input_from_plan(entry_path.clone(), source.to_string(), plan, None, None);
     let (_, diagnostics, _) = prepare_compilation_diagnostics(
         &resolved,
-        PrepareOptions {
+        PrepareOptions { mod_invoker: None,
             front_end: FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
             ..Default::default()
         },
@@ -805,4 +810,298 @@ fn prepare_diagnostics_accepts_bound_via_embedded_contract() {
     );
 
     let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn cached_editor_assembly_cannot_enter_strict_prepare_and_projections_preserve_policy() {
+    use crate::projects::AssemblyRecoveryPolicy;
+    let directory = tempfile::tempdir().expect("isolated policy project");
+    let entry_path = directory.path().join("Main.bd");
+    let source = "i32 Main() { return 0; }";
+    std::fs::write(&entry_path, source).unwrap();
+    let plan = synthetic_compile_plan_for_source(&entry_path);
+    let mut assembly_options =
+        crate::projects::assembly_options_for_prepare(&plan, FrontEndOptions::default().assembly_discovery);
+    assembly_options.recovery_policy = AssemblyRecoveryPolicy::EditorRetainRecovered;
+    let cached = crate::projects::assemble_program(&plan, None, &entry_path, Some(source), &assembly_options, None)
+        .expect("actual editor-policy assembly");
+    let resolved = resolved_input_from_plan(entry_path.clone(), source.to_owned(), plan, None, Some(cached));
+    let error = match prepare_compilation(&resolved, PrepareOptions::default(), None) {
+        Ok(_) => panic!("strict preparation must not consume cached editor authority"),
+        Err(error) => error,
+    };
+    assert!(error.to_string().contains("recovery policy"), "must diagnose authority mismatch: {error}");
+
+    let mut prepared = prepare_compilation(
+        &resolved,
+        PrepareOptions { mod_invoker: None,
+            front_end: FrontEndOptions {
+                assembly_recovery: AssemblyRecoveryPolicy::EditorRetainRecovered,
+                ..Default::default()
+            },
+            ..Default::default()
+        },
+        None,
+    )
+    .expect("matching editor-policy prepare");
+    assert_eq!(prepared.assembly.recovery_policy, AssemblyRecoveryPolicy::EditorRetainRecovered);
+    assert_eq!(prepared.syntax_assembly().recovery_policy, AssemblyRecoveryPolicy::EditorRetainRecovered);
+    assert_eq!(
+        prepared.typed.as_ref().expect("typed result").syntax_assembly().recovery_policy,
+        AssemblyRecoveryPolicy::EditorRetainRecovered
+    );
+    prepared.typed = None;
+    assert_eq!(
+        prepared.syntax_assembly().recovery_policy,
+        AssemblyRecoveryPolicy::EditorRetainRecovered,
+        "untyped projection retains recovery authority too"
+    );
+    crate::services::entry_session::invalidate_project(directory.path());
+}
+
+/// One temporary project: host sources under `src/`, optional dependency sources under `dep/src/`.
+struct RootUnitFixture {
+    root: std::path::PathBuf,
+    plan: crate::projects::CompilePlan,
+}
+
+impl RootUnitFixture {
+    fn new(
+        label: &str,
+        kind: crate::projects::TargetKind,
+        entry: Option<&str>,
+        host: &[(&str, &str)],
+        dependency: &[(&str, &str)],
+    ) -> Self {
+        let test_id = TEST_ID.fetch_add(1, Ordering::Relaxed);
+        let process = std::process::id();
+        let root = std::env::temp_dir().join(format!("beskid_prepare_root_units_{label}_{process}_{test_id}"));
+        let _ = std::fs::remove_dir_all(&root);
+        let source_root = root.join("src");
+        let dependency_root = root.join("dep");
+        std::fs::create_dir_all(&source_root).expect("host source root");
+        for (name, source) in host {
+            let path = source_root.join(name);
+            std::fs::create_dir_all(path.parent().expect("host source parent")).expect("host source directory");
+            std::fs::write(path, source).expect("host source");
+        }
+        let mut dependency_projects = Vec::new();
+        if !dependency.is_empty() {
+            std::fs::create_dir_all(dependency_root.join("src")).expect("dependency source root");
+            std::fs::write(
+                dependency_root.join("dep.bproj"),
+                "dep {\n  name = \"dep\"\n  version = \"0.1.0\"\n  root = \"src\"\n}\n\ntarget \"DepLib\" {\n  kind = Lib\n}\n",
+            )
+            .expect("dependency manifest");
+            for (name, source) in dependency {
+                std::fs::write(dependency_root.join("src").join(name), source).expect("dependency source");
+            }
+            dependency_projects.push(crate::projects::ResolvedDependencyProject {
+                dependency_name: "dep".to_string(),
+                manifest_path: dependency_root.join("dep.bproj"),
+                project_root: dependency_root.clone(),
+                project_name: "dep".to_string(),
+                source_root: dependency_root.join("src"),
+            });
+        }
+        let plan = crate::projects::CompilePlan {
+            source_root,
+            project_root: root.clone(),
+            manifest_path: root.join("fixture.bproj"),
+            project_name: "fixture".to_string(),
+            target: crate::projects::Target { name: "Fixture".to_string(), kind, entry: entry.map(str::to_string) },
+            dependency_projects,
+            unresolved_dependencies: Vec::new(),
+            has_std_dependency: false,
+        };
+        Self { root, plan }
+    }
+
+    fn resolved(&self) -> crate::services::ResolvedInput {
+        let entry_path = crate::projects::plan_entry_path(&self.plan, &self.plan.source_root);
+        let source = std::fs::read_to_string(&entry_path).unwrap_or_default();
+        resolved_input_from_plan(entry_path, source, self.plan.clone(), None, None)
+    }
+}
+
+impl Drop for RootUnitFixture {
+    fn drop(&mut self) {
+        crate::services::entry_session::invalidate_project(&self.root);
+        let _ = std::fs::remove_dir_all(&self.root);
+    }
+}
+
+fn error_diagnostics_in(
+    diagnostics: &[crate::analysis::SemanticDiagnostic],
+    file_name: &str,
+) -> Vec<crate::analysis::SemanticDiagnostic> {
+    diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.severity == Severity::Error && diagnostic.src.name().ends_with(file_name))
+        .cloned()
+        .collect()
+}
+
+const HEALTHY_UNIT: &str = "pub i64 Alpha() { return 1_i64; }";
+const BROKEN_UNIT: &str = "pub i64 Broken() { return true; }";
+
+#[test]
+fn entry_less_lib_reports_type_error_in_second_own_unit() {
+    let fixture = RootUnitFixture::new(
+        "lib_second_unit",
+        crate::projects::TargetKind::Lib,
+        None,
+        &[("Alpha.bd", HEALTHY_UNIT), ("Beta.bd", BROKEN_UNIT)],
+        &[],
+    );
+    let (prepared, diagnostics, _) =
+        prepare_compilation_diagnostics(&fixture.resolved(), PrepareOptions::default(), None)
+            .expect("prepare diagnostics");
+    assert!(
+        matches!(prepared.assembly.root_set, crate::projects::AssemblyRootSet::OwnUnits(ref paths) if paths.len() == 2),
+        "entry-less library must judge both own units as roots: {:?}",
+        prepared.assembly.root_set
+    );
+    assert!(prepared.assembly.entry_unit().path.ends_with("Alpha.bd"));
+    assert!(
+        !error_diagnostics_in(&diagnostics, "Beta.bd").is_empty(),
+        "type error in the second own unit must be reported in that unit: {diagnostics:?}"
+    );
+    assert!(error_diagnostics_in(&diagnostics, "Alpha.bd").is_empty(), "healthy unit stays clean: {diagnostics:?}");
+
+    let error = match prepare_compilation(&fixture.resolved(), PrepareOptions::default(), None) {
+        Ok(_) => panic!("executable prepare of an entry-less library with a broken own unit must fail closed"),
+        Err(error) => error,
+    };
+    assert!(!error.to_string().is_empty());
+}
+
+#[test]
+fn entry_less_lib_does_not_report_dependency_unit_errors() {
+    let fixture = RootUnitFixture::new(
+        "lib_dependency_errors",
+        crate::projects::TargetKind::Lib,
+        None,
+        &[("Alpha.bd", HEALTHY_UNIT), ("Gamma.bd", "pub i64 Gamma() { return 3_i64; }")],
+        &[("DepBroken.bd", BROKEN_UNIT)],
+    );
+    let (prepared, diagnostics, _) =
+        prepare_compilation_diagnostics(&fixture.resolved(), PrepareOptions::default(), None)
+            .expect("prepare diagnostics");
+    assert!(
+        prepared.assembly.units.iter().any(|unit| unit.path.ends_with("DepBroken.bd")),
+        "workspace scan must assemble the dependency unit"
+    );
+    let Some(roots) = prepared.assembly.root_unit_indices() else { panic!("root set names assembled units") };
+    assert!(
+        roots.iter().all(|index| !prepared.assembly.units[*index].path.ends_with("DepBroken.bd")),
+        "a dependency unit is never a root"
+    );
+    assert!(
+        error_diagnostics_in(&diagnostics, "DepBroken.bd").is_empty(),
+        "dependency-unit errors must not be reported against the consumer: {diagnostics:?}"
+    );
+    assert!(
+        !diagnostics.iter().any(|diagnostic| diagnostic.severity == Severity::Error),
+        "healthy own units report no errors: {diagnostics:?}"
+    );
+}
+
+#[test]
+fn single_entry_app_judges_only_its_entry() {
+    let fixture = RootUnitFixture::new(
+        "app_single_entry",
+        crate::projects::TargetKind::App,
+        Some("Main.bd"),
+        &[("Main.bd", "i32 Main() { return 0; }"), ("Sibling.bd", BROKEN_UNIT)],
+        &[],
+    );
+    use crate::projects::AssemblyDiscovery;
+    for discovery in [AssemblyDiscovery::ImportClosure, AssemblyDiscovery::WorkspaceScan] {
+        let options = PrepareOptions {
+            front_end: FrontEndOptions { assembly_discovery: discovery, ..Default::default() },
+            ..Default::default()
+        };
+        let (prepared, diagnostics, _) =
+            prepare_compilation_diagnostics(&fixture.resolved(), options, None).expect("prepare diagnostics");
+        assert_eq!(prepared.assembly.root_set, crate::projects::AssemblyRootSet::Entry, "{discovery:?}");
+        assert!(prepared.assembly.entry_unit().path.ends_with("Main.bd"), "{discovery:?}");
+        assert_eq!(prepared.assembly.additional_root_indices(), Some(Vec::new()), "{discovery:?}");
+        assert!(
+            !diagnostics.iter().any(|diagnostic| diagnostic.severity == Severity::Error),
+            "an unreferenced sibling of a single-entry App is not judged ({discovery:?}): {diagnostics:?}"
+        );
+        crate::services::entry_session::invalidate_project(&fixture.root);
+    }
+}
+
+fn diagnostics_with_code<'a>(
+    diagnostics: &'a [crate::analysis::SemanticDiagnostic],
+    code: &str,
+) -> Vec<&'a crate::analysis::SemanticDiagnostic> {
+    diagnostics.iter().filter(|diagnostic| diagnostic.code.as_deref() == Some(code)).collect()
+}
+
+#[test]
+fn entry_less_lib_resolves_nested_hub_module_declarations_from_the_source_root() {
+    let fixture = RootUnitFixture::new(
+        "lib_nested_hubs",
+        crate::projects::TargetKind::Lib,
+        None,
+        &[
+            ("Network/Network.bd", "pub mod Network.Internal;\npub i64 Version() { return 1_i64; }"),
+            ("Network/Internal.bd", "pub mod Network.Internal.Resources;\npub i64 Depth() { return 2_i64; }"),
+            ("Network/Internal/Resources.bd", "pub i64 Count() { return 3_i64; }"),
+        ],
+        &[],
+    );
+    let (_, diagnostics, _) = prepare_compilation_diagnostics(&fixture.resolved(), PrepareOptions::default(), None)
+        .expect("prepare diagnostics");
+    assert!(
+        diagnostics_with_code(&diagnostics, "E1502").is_empty(),
+        "hub `pub mod A.B;` names a logical path from the source root, not from the hub's directory: {diagnostics:?}"
+    );
+}
+
+#[test]
+fn entry_less_lib_reports_hub_module_declaration_without_a_unit() {
+    let fixture = RootUnitFixture::new(
+        "lib_missing_hub_child",
+        crate::projects::TargetKind::Lib,
+        None,
+        &[
+            ("Network/Network.bd", "pub mod Network.Missing;\npub i64 Version() { return 1_i64; }"),
+            ("Network/Other.bd", "pub i64 Other() { return 2_i64; }"),
+        ],
+        &[],
+    );
+    let (_, diagnostics, _) = prepare_compilation_diagnostics(&fixture.resolved(), PrepareOptions::default(), None)
+        .expect("prepare diagnostics");
+    let missing = diagnostics_with_code(&diagnostics, "E1502");
+    assert_eq!(missing.len(), 1, "exactly the undeclared child is missing: {diagnostics:?}");
+    assert!(missing[0].message.contains("Network.Missing"), "{:?}", missing[0]);
+}
+
+#[test]
+fn import_of_the_declaring_module_is_used_even_when_another_import_passes_the_item_through() {
+    let fixture = RootUnitFixture::new(
+        "lib_passthrough_import",
+        crate::projects::TargetKind::Lib,
+        None,
+        &[
+            ("Io/IoError.bd", "pub enum IoError { Closed, Failed(i64 code) }"),
+            ("Io/Reader.bd", "use Io.IoError;\npub i64 Code(IoError error) { return 1_i64; }"),
+            (
+                "Io/Io.bd",
+                "use Io.Reader;\nuse Io.IoError;\npub i64 Check() { IoError error = IoError::Closed; return Reader.Code(error); }",
+            ),
+        ],
+        &[],
+    );
+    let (_, diagnostics, _) = prepare_compilation_diagnostics(&fixture.resolved(), PrepareOptions::default(), None)
+        .expect("prepare diagnostics");
+    assert!(
+        diagnostics_with_code(&diagnostics, "W1503").is_empty(),
+        "both imports are used; the declaring module's import owns `IoError`: {diagnostics:?}"
+    );
 }

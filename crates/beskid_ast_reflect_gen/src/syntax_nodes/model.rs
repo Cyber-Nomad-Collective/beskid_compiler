@@ -42,6 +42,8 @@ pub struct FieldMirror {
 #[derive(Debug, Clone)]
 pub struct EnumVariantMirror {
     pub name: String,
+    /// Original Rust variant name before lexical escaping.
+    pub rust_name: String,
     /// Rust `///` lines on the variant. Its `@variant(…)` shape summary is emitted on the enclosing enum.
     pub rust_doc_lines: Vec<String>,
     pub shape: VariantShape,

@@ -55,12 +55,15 @@ fn sample_mod_dispatches_all_four_contract_kinds_through_invoker() {
     let generated = run_through_generate(
         program,
         &ModHostInput {
+            semantic_scope: None,
+            semantic_authority: None,
             compile_plan: Some(&plan),
             source_name: "Main.bd",
             source,
             pipeline: Some(&pipeline),
             invoker: Some(&invoker),
             cached_target_fingerprint: None,
+            syntax_generation_id: None,
         },
     )
     .expect("mod host generate");
@@ -142,12 +145,15 @@ fn scripted_invoker_surfaces_analyzer_diagnostics_to_outcomes() {
     let generated = run_through_generate(
         program,
         &ModHostInput {
+            semantic_scope: None,
+            semantic_authority: None,
             compile_plan: Some(&plan),
             source_name: "Main.bd",
             source,
             pipeline: Some(&pipeline),
             invoker: Some(&invoker),
             cached_target_fingerprint: None,
+            syntax_generation_id: None,
         },
     )
     .expect("mod host generate");

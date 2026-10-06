@@ -78,6 +78,12 @@ pub enum ProjectError {
         #[source]
         source: std::io::Error,
     },
+    #[error("failed to remove stale materialized entry at {path}: {source}")]
+    MaterializationPrune {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
 }
 
 impl ProjectError {
@@ -135,6 +141,7 @@ impl ProjectError {
             Self::MaterializationReadDir { .. } => "E3030",
             Self::MaterializationMetadata { .. } => "E3030",
             Self::MaterializationCopy { .. } => "E3031",
+            Self::MaterializationPrune { .. } => "E3031",
         }
     }
 }

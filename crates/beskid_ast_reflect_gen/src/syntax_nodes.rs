@@ -18,9 +18,7 @@ use syn::{
 };
 
 use crate::emit_idents::rust_snake_to_beskid_field_camel;
-use crate::syntax_helpers::{
-    self, HelperPaths, list_element_rust_name, option_payload_rust_name, peel_type, vec_element_type,
-};
+use crate::syntax_helpers::{self, HelperPaths, list_element_rust_name, option_payload_rust_name};
 
 pub use crate::syntax_helpers::{
     SYNTAX_NODES_MODULE_PREFIX, SYNTAX_SCAN_SKIP_FILES, SYNTAX_SCAN_SUBDIRS, reflect_stub_path,
@@ -28,9 +26,11 @@ pub use crate::syntax_helpers::{
 
 mod docs_naming;
 mod emit;
+mod factories;
 mod inventory;
 mod model;
 mod reflect;
+mod schema;
 mod type_mapping;
 
 #[cfg(test)]

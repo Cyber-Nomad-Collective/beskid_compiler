@@ -112,6 +112,7 @@ impl Resolver {
     ) {
         self.module_imports.clear();
         self.imported_scope_origins.clear();
+        self.declaring_scope_origins.clear();
         self.module_import_origins.clear();
         self.current_source_path = source_path.map(|path| crate::paths::unit_path_key(path));
         if resolver::file_scoped_module_index(program).is_some() {
@@ -125,6 +126,7 @@ impl Resolver {
     pub fn collect_program(&mut self, program: &Spanned<crate::syntax::Program>) {
         self.module_imports.clear();
         self.imported_scope_origins.clear();
+        self.declaring_scope_origins.clear();
         self.module_import_origins.clear();
         let file_scoped_module_index = resolver::file_scoped_module_index(program);
         self.current_module = resolver::file_scoped_module_path(program)
@@ -141,6 +143,7 @@ impl Resolver {
     ) {
         self.module_imports.clear();
         self.imported_scope_origins.clear();
+        self.declaring_scope_origins.clear();
         self.module_import_origins.clear();
         let file_scoped_module_index = resolver::file_scoped_module_index(program);
         self.current_module = logical_module_path
@@ -438,6 +441,11 @@ impl Resolver {
     }
 
     /// Bring public items from a used module into the current module scope (types, enums, functions).
+    ///
+    /// A module's scope also holds what that module itself imported, so one `use` can make an
+    /// item visible that another module declares. When a later `use` names the declaring module
+    /// of the same item, that `use` becomes the item's origin: usage must credit the import that
+    /// declares the item, not one that only passes it through.
     fn import_public_items_from_module(&mut self, module_path: &[String], origin_span: syntax::SpanInfo) {
         let Some(target_module_id) = self.module_graph.module_id(module_path) else {
             return;
@@ -445,7 +453,7 @@ impl Resolver {
         let Some(target_module) = self.module_graph.module(target_module_id) else {
             return;
         };
-        let imports: Vec<(String, ItemId)> = target_module
+        let imports: Vec<(String, ItemId, bool)> = target_module
             .scope
             .iter()
             .filter_map(|(name, item_id)| {
@@ -455,16 +463,36 @@ impl Resolver {
                 }
                 match info.kind {
                     ItemKind::Function | ItemKind::Enum | ItemKind::Type | ItemKind::Contract => {
-                        Some((name.clone(), *item_id))
+                        let declared = !self.imported_scope_entries.contains(&(target_module_id, name.clone()));
+                        Some((name.clone(), *item_id, declared))
                     }
                     _ => None,
                 }
             })
             .collect();
-        for (name, item_id) in imports {
-            if let Some(_prev) = self.module_graph.insert_item(self.current_module, name.clone(), item_id) {
-                // Import collides with an existing local declaration — silently skip
+        for (name, item_id, declared) in imports {
+            if let Some(previous) = self.module_graph.insert_item(self.current_module, name.clone(), item_id) {
+                // A local declaration (or a different item) shadows the import and keeps no origin.
+                let same_import = previous == item_id
+                    && self.imported_scope_entries.contains(&(self.current_module, name.clone()));
+                if !same_import {
+                    continue;
+                }
+                let replace = match self.imported_scope_origins.contains_key(&name) {
+                    false => true,
+                    true => declared && !self.declaring_scope_origins.contains(&name),
+                };
+                if replace {
+                    if declared {
+                        self.declaring_scope_origins.insert(name.clone());
+                    }
+                    self.imported_scope_origins.insert(name, origin_span);
+                }
                 continue;
+            }
+            self.imported_scope_entries.insert((self.current_module, name.clone()));
+            if declared {
+                self.declaring_scope_origins.insert(name.clone());
             }
             self.imported_scope_origins.insert(name, origin_span);
         }

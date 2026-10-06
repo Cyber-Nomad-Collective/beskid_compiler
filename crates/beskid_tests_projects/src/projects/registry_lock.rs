@@ -6,8 +6,9 @@ use std::io::{Cursor, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::sync::{
-    Arc, Mutex, mpsc,
+    Arc, Mutex,
     atomic::{AtomicBool, AtomicU8, Ordering},
+    mpsc,
 };
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
@@ -23,7 +24,7 @@ use super::with_cwd_at_workspace_root;
 const OLD_VERSION: &str = "1.0.0";
 const NEW_VERSION: &str = "2.0.0";
 const OVER_LIMIT_BYTES: usize = 64 * 1024 * 1024 + 1;
-const PACKAGE_MANIFEST: &[u8] = b"PkgCore {\n  name = \"PkgCore\"\n  version = \"0.1.0\"\n}\n\ntarget \"PkgCore\" {\n  kind = \"Lib\"\n  entry = \"Marker.bd\"\n}\n";
+const PACKAGE_MANIFEST: &[u8] = b"PkgCore {\n  name = \"PkgCore\"\n  version = \"1.0.0\"\n}\n\ntarget \"PkgCore\" {\n  kind = \"Lib\"\n  entry = \"Marker.bd\"\n}\n";
 
 struct RegistryFixture {
     _env_guard: std::sync::MutexGuard<'static, ()>,
@@ -99,14 +100,14 @@ impl RegistryFixture {
     }
 
     fn publish(&self, version: &str, marker: &str) {
-        self.packages.lock().expect("package map").insert(version.to_owned(), package_zip(marker));
+        self.packages.lock().expect("package map").insert(version.to_owned(), package_zip(version, marker));
     }
 
     fn publish_with_source_dir(&self, version: &str, marker: &str, source_dir: &str) {
         self.packages
             .lock()
             .expect("package map")
-            .insert(version.to_owned(), package_zip_with_source_dir(marker, source_dir));
+            .insert(version.to_owned(), package_zip_with_source_dir(version, marker, source_dir));
     }
 
     fn withdraw(&self, version: &str) {
@@ -130,7 +131,7 @@ impl RegistryFixture {
             let plan = build_compile_plan_with_policy(&self.app_manifest, None, UnresolvedDependencyPolicy::Warn)?;
             prepare_project_workspace_with_options(
                 &plan,
-                WorkspacePrepareOptions { frozen: false, locked: false, refresh_lock },
+                WorkspacePrepareOptions { offline: false, frozen: false, locked: false, refresh_lock },
                 None,
             )
         })
@@ -138,6 +139,14 @@ impl RegistryFixture {
 
     fn lock(&self) -> String {
         fs::read_to_string(self.lock_path()).expect("read Project.lock")
+    }
+
+    /// Pinned replay is cache-first: a digest-keyed artifact already verified into the package cache
+    /// is reused without contacting the registry. Tests that must observe the network path or
+    /// digest verification of remote bytes drop the cache first.
+    fn clear_package_cache(&self) {
+        let cache = self.app_manifest.parent().expect("app directory").join(".beskid/package-cache");
+        fs::remove_dir_all(&cache).expect("remove package cache");
     }
 }
 
@@ -253,13 +262,22 @@ fn local_registry_server_waits_for_a_delayed_request_on_a_nonblocking_listener()
 }
 
 // Two stored ZIP entries keep the HTTP artifact real without adding a test dependency.
-fn package_zip(marker: &str) -> Vec<u8> {
-    package_zip_with_source_dir(marker, "Src")
+// The materialized manifest version must equal the locked registry version, so each release carries its own.
+fn package_manifest(version: &str) -> Vec<u8> {
+    format!(
+        "PkgCore {{\n  name = \"PkgCore\"\n  version = \"{version}\"\n}}\n\ntarget \"PkgCore\" {{\n  kind = \"Lib\"\n  entry = \"Marker.bd\"\n}}\n"
+    )
+    .into_bytes()
 }
 
-fn package_zip_with_source_dir(marker: &str, source_dir: &str) -> Vec<u8> {
+fn package_zip(version: &str, marker: &str) -> Vec<u8> {
+    package_zip_with_source_dir(version, marker, "Src")
+}
+
+fn package_zip_with_source_dir(version: &str, marker: &str, source_dir: &str) -> Vec<u8> {
     let source_path = format!("{source_dir}/Marker.bd");
-    let files: [(&[u8], &[u8]); 2] = [(b"PkgCore.bproj", PACKAGE_MANIFEST), (source_path.as_bytes(), marker.as_bytes())];
+    let manifest = package_manifest(version);
+    let files: [(&[u8], &[u8]); 2] = [(b"PkgCore.bproj", &manifest), (source_path.as_bytes(), marker.as_bytes())];
     stored_zip(&files)
 }
 
@@ -372,7 +390,7 @@ fn pinned_older_version_survives_newer_registry_release() {
     assert!(original_lock.contains("resolved_version=1.0.0"));
     assert!(
         original_lock
-            .contains("artifact_digest=sha256:95922158451951391cb09f7d264c61d705e6aa71ddb7feb42fba8115d8e5e191"),
+            .contains("artifact_digest=sha256:8a25a518a03bfd330811d32de0e7b2701a3c1a162ba6b0ce2429f02b92806f35"),
         "lock: {original_lock}"
     );
 }
@@ -409,10 +427,7 @@ fn changed_manifest_requested_version_rejects_stale_registry_pin_before_material
     final_destinations.sort();
     assert_eq!(final_destinations, original_destinations, "stale pin must not materialize another package");
     let error = result.expect_err("a v2 pin must not override the manifest's exact requested version");
-    assert!(
-        error.to_string().contains("version") || error.to_string().contains("pin"),
-        "unexpected error: {error}"
-    );
+    assert!(error.to_string().contains("version") || error.to_string().contains("pin"), "unexpected error: {error}");
 }
 
 #[test]
@@ -507,7 +522,7 @@ fn strict_preparation_rejects_unpinned_registry_without_mutation() {
             let plan = build_compile_plan_with_policy(&fixture.app_manifest, None, UnresolvedDependencyPolicy::Warn)?;
             prepare_project_workspace_with_options(
                 &plan,
-                WorkspacePrepareOptions { locked, frozen, refresh_lock: false },
+                WorkspacePrepareOptions { offline: false, locked, frozen, refresh_lock: false },
                 None,
             )
         })
@@ -531,10 +546,8 @@ fn strict_preparation_rejects_forged_registry_paths_before_creating_output() {
             fixture.publish(OLD_VERSION, "trusted release");
             fixture.prepare(false).expect("create a valid digest-pinned v2 lock");
             let original_lock = fixture.lock();
-            let original_line = original_lock
-                .lines()
-                .find(|line| line.starts_with("- name=PkgCore;"))
-                .expect("registry lock entry");
+            let original_line =
+                original_lock.lines().find(|line| line.starts_with("- name=PkgCore;")).expect("registry lock entry");
             let field_prefix = format!(";{field}=");
             let original_value = original_line
                 .split_once(&field_prefix)
@@ -544,24 +557,19 @@ fn strict_preparation_rejects_forged_registry_paths_before_creating_output() {
                 .next()
                 .expect("registry field value");
             assert_ne!(original_value, forged, "test must change the {field} field");
-            let forged_line = original_line.replace(
-                &format!("{field_prefix}{original_value}"),
-                &format!("{field_prefix}{forged}"),
-            );
+            let forged_line =
+                original_line.replace(&format!("{field_prefix}{original_value}"), &format!("{field_prefix}{forged}"));
             let forged_lock = original_lock.replace(original_line, &forged_line);
             fs::write(fixture.lock_path(), &forged_lock).expect("write forged, parseable v2 lock");
 
             let output = fixture.app_manifest.parent().unwrap().join("obj");
             fs::remove_dir_all(&output).expect("remove disposable fixture output");
             let error = with_cwd_at_workspace_root(fixture.root.path(), || {
-                let plan = build_compile_plan_with_policy(
-                    &fixture.app_manifest,
-                    None,
-                    UnresolvedDependencyPolicy::Warn,
-                )?;
+                let plan =
+                    build_compile_plan_with_policy(&fixture.app_manifest, None, UnresolvedDependencyPolicy::Warn)?;
                 prepare_project_workspace_with_options(
                     &plan,
-                    WorkspacePrepareOptions { locked, frozen, refresh_lock: false },
+                    WorkspacePrepareOptions { offline: false, locked, frozen, refresh_lock: false },
                     None,
                 )
             })
@@ -675,6 +683,7 @@ fn pinned_streamed_oversize_preserves_existing_lock_and_prepared_output() {
     fixture.publish(NEW_VERSION, "new release");
     fixture.requests.lock().expect("request paths").clear();
     fixture.oversized_download.store(2, Ordering::Relaxed);
+    fixture.clear_package_cache();
 
     let error = fixture.prepare(false).expect_err("oversized pinned artifact must fail closed");
     assert!(error.to_string().contains("64 MiB"), "unexpected error: {error}");
@@ -723,6 +732,7 @@ fn changed_pinned_zip_bytes_fail_before_extraction() {
     fixture.publish(OLD_VERSION, "trusted release");
     fixture.prepare(false).expect("initial package lock");
     fixture.publish(OLD_VERSION, "tampered release");
+    fixture.clear_package_cache();
     let error = fixture.prepare(false).expect_err("changed artifact must fail digest check");
 
     assert!(error.to_string().contains("digest"), "unexpected error: {error}");
@@ -795,7 +805,7 @@ fn preexisting_file_symlink_cannot_redirect_registry_extraction() {
 #[test]
 fn zip_symlink_entry_is_rejected_before_any_archive_file_is_written() {
     let fixture = RegistryFixture::new();
-    let mut archive = package_zip("symlink entry payload");
+    let mut archive = package_zip(OLD_VERSION, "symlink entry payload");
     let central_entries = archive
         .windows(4)
         .enumerate()
@@ -819,7 +829,7 @@ fn zip_symlink_entry_is_rejected_before_any_archive_file_is_written() {
 #[test]
 fn zip_directory_mode_on_file_entry_is_rejected_before_publication() {
     let fixture = RegistryFixture::new();
-    let mut archive = package_zip("mismatched ZIP mode");
+    let mut archive = package_zip(OLD_VERSION, "mismatched ZIP mode");
     let central_entries = archive
         .windows(4)
         .enumerate()
@@ -1071,7 +1081,7 @@ fn non_ascii_zip_name_without_utf8_flag_is_rejected() {
 #[test]
 fn local_name_must_match_central_name_before_extraction() {
     let fixture = RegistryFixture::new();
-    let mut artifact = package_zip("marker");
+    let mut artifact = package_zip(OLD_VERSION, "marker");
     let eocd = artifact.windows(4).rposition(|bytes| bytes == 0x0605_4b50_u32.to_le_bytes()).unwrap();
     let central = u32::from_le_bytes(artifact[eocd + 16..eocd + 20].try_into().unwrap()) as usize;
     let first_name_bytes = u16::from_le_bytes(artifact[central + 28..central + 30].try_into().unwrap()) as usize;
@@ -1136,7 +1146,7 @@ fn underreported_eocd_count_cannot_hide_central_directory_records() {
 #[test]
 fn eocd_count_must_match_structurally_valid_central_directory() {
     let fixture = RegistryFixture::new();
-    let mut artifact = package_zip("marker");
+    let mut artifact = package_zip(OLD_VERSION, "marker");
     let eocd = artifact.windows(4).rposition(|bytes| bytes == 0x0605_4b50_u32.to_le_bytes()).unwrap();
     artifact[eocd + 8..eocd + 12].copy_from_slice(&[1, 0, 1, 0]);
     fixture.packages.lock().unwrap().insert(OLD_VERSION.to_owned(), artifact);
@@ -1151,7 +1161,7 @@ fn eocd_count_must_match_structurally_valid_central_directory() {
 #[test]
 fn underreported_central_directory_extent_cannot_hide_extra_records() {
     let fixture = RegistryFixture::new();
-    let mut artifact = package_zip("marker");
+    let mut artifact = package_zip(OLD_VERSION, "marker");
     let eocd = artifact.windows(4).rposition(|bytes| bytes == 0x0605_4b50_u32.to_le_bytes()).unwrap();
     let central_offset = u32::from_le_bytes(artifact[eocd + 16..eocd + 20].try_into().unwrap()) as usize;
     let first_entry = &artifact[central_offset..];
@@ -1174,7 +1184,7 @@ fn underreported_central_directory_extent_cannot_hide_extra_records() {
 #[test]
 fn zip64_entry_count_sentinel_is_rejected_before_materialization() {
     let fixture = RegistryFixture::new();
-    let mut artifact = package_zip("marker");
+    let mut artifact = package_zip(OLD_VERSION, "marker");
     let eocd = artifact.windows(4).rposition(|bytes| bytes == 0x0605_4b50_u32.to_le_bytes()).unwrap();
     artifact[eocd + 8..eocd + 12].copy_from_slice(&[0xff; 4]);
     fixture.packages.lock().unwrap().insert(OLD_VERSION.to_owned(), artifact);
@@ -1189,7 +1199,7 @@ fn zip64_entry_count_sentinel_is_rejected_before_materialization() {
 #[test]
 fn zip64_central_extra_field_is_rejected_before_materialization() {
     let fixture = RegistryFixture::new();
-    let mut artifact = package_zip("marker");
+    let mut artifact = package_zip(OLD_VERSION, "marker");
     let eocd = artifact.windows(4).rposition(|bytes| bytes == 0x0605_4b50_u32.to_le_bytes()).unwrap();
     let central = u32::from_le_bytes(artifact[eocd + 16..eocd + 20].try_into().unwrap()) as usize;
     let name_bytes = u16::from_le_bytes(artifact[central + 28..central + 30].try_into().unwrap()) as usize;
@@ -1210,7 +1220,7 @@ fn zip64_central_extra_field_is_rejected_before_materialization() {
 #[test]
 fn zip64_central_size_sentinel_is_rejected_before_materialization() {
     let fixture = RegistryFixture::new();
-    let mut artifact = package_zip("marker");
+    let mut artifact = package_zip(OLD_VERSION, "marker");
     let eocd = artifact.windows(4).rposition(|bytes| bytes == 0x0605_4b50_u32.to_le_bytes()).unwrap();
     let central = u32::from_le_bytes(artifact[eocd + 16..eocd + 20].try_into().unwrap()) as usize;
     artifact[central + 20..central + 24].copy_from_slice(&u32::MAX.to_le_bytes());
@@ -1226,7 +1236,7 @@ fn zip64_central_size_sentinel_is_rejected_before_materialization() {
 #[test]
 fn zip64_local_extra_field_is_rejected_before_materialization() {
     let fixture = RegistryFixture::new();
-    let mut artifact = package_zip("marker");
+    let mut artifact = package_zip(OLD_VERSION, "marker");
     let eocd = artifact.windows(4).rposition(|bytes| bytes == 0x0605_4b50_u32.to_le_bytes()).unwrap();
     let central = u32::from_le_bytes(artifact[eocd + 16..eocd + 20].try_into().unwrap()) as usize;
     let first_name_bytes = u16::from_le_bytes(artifact[central + 28..central + 30].try_into().unwrap()) as usize;
@@ -1251,7 +1261,7 @@ fn zip64_local_extra_field_is_rejected_before_materialization() {
 #[test]
 fn central_directory_entry_on_another_disk_is_rejected_before_materialization() {
     let fixture = RegistryFixture::new();
-    let mut artifact = package_zip("marker");
+    let mut artifact = package_zip(OLD_VERSION, "marker");
     let eocd = artifact.windows(4).rposition(|bytes| bytes == 0x0605_4b50_u32.to_le_bytes()).unwrap();
     let central = u32::from_le_bytes(artifact[eocd + 16..eocd + 20].try_into().unwrap()) as usize;
     artifact[central + 34..central + 36].copy_from_slice(&1_u16.to_le_bytes());
@@ -1267,7 +1277,7 @@ fn central_directory_entry_on_another_disk_is_rejected_before_materialization() 
 #[test]
 fn zip64_locator_without_sentinel_is_rejected_before_materialization() {
     let fixture = RegistryFixture::new();
-    let mut artifact = package_zip("marker");
+    let mut artifact = package_zip(OLD_VERSION, "marker");
     let eocd = artifact.windows(4).rposition(|bytes| bytes == 0x0605_4b50_u32.to_le_bytes()).unwrap();
     let mut locator = [0_u8; 20];
     locator[..4].copy_from_slice(&0x0706_4b50_u32.to_le_bytes());
@@ -1284,7 +1294,7 @@ fn zip64_locator_without_sentinel_is_rejected_before_materialization() {
 #[test]
 fn trailing_bytes_after_zip_eocd_are_rejected() {
     let fixture = RegistryFixture::new();
-    let mut artifact = package_zip("marker");
+    let mut artifact = package_zip(OLD_VERSION, "marker");
     artifact.extend_from_slice(b"trailing junk");
     fixture.packages.lock().unwrap().insert(OLD_VERSION.to_owned(), artifact);
 
@@ -1298,7 +1308,7 @@ fn trailing_bytes_after_zip_eocd_are_rejected() {
 #[test]
 fn valid_zip_eocd_comment_is_accepted() {
     let fixture = RegistryFixture::new();
-    let mut artifact = package_zip("commented release");
+    let mut artifact = package_zip(OLD_VERSION, "commented release");
     let eocd = artifact.windows(4).rposition(|bytes| bytes == 0x0605_4b50_u32.to_le_bytes()).unwrap();
     let comment = b"valid ZIP comment";
     artifact[eocd + 20..eocd + 22].copy_from_slice(&(comment.len() as u16).to_le_bytes());
@@ -1313,7 +1323,7 @@ fn valid_zip_eocd_comment_is_accepted() {
 #[test]
 fn zip64_locator_before_maximum_length_zip_comment_is_rejected() {
     let fixture = RegistryFixture::new();
-    let mut artifact = package_zip("marker");
+    let mut artifact = package_zip(OLD_VERSION, "marker");
     let eocd = artifact.windows(4).rposition(|bytes| bytes == 0x0605_4b50_u32.to_le_bytes()).unwrap();
     let mut locator = [0_u8; 20];
     locator[..4].copy_from_slice(&0x0706_4b50_u32.to_le_bytes());
@@ -1333,7 +1343,7 @@ fn zip64_locator_before_maximum_length_zip_comment_is_rejected() {
 #[test]
 fn maximum_length_zip_eocd_comment_without_locator_is_accepted() {
     let fixture = RegistryFixture::new();
-    let mut artifact = package_zip("maximum comment");
+    let mut artifact = package_zip(OLD_VERSION, "maximum comment");
     let eocd = artifact.windows(4).rposition(|bytes| bytes == 0x0605_4b50_u32.to_le_bytes()).unwrap();
     artifact[eocd + 20..eocd + 22].copy_from_slice(&u16::MAX.to_le_bytes());
     artifact.extend(std::iter::repeat_n(b'x', u16::MAX as usize));
@@ -1461,7 +1471,7 @@ fn zip_directory_with_bad_crc_is_rejected_before_publication() {
 #[test]
 fn late_zip_crc_failure_leaves_no_materialized_package() {
     let fixture = RegistryFixture::new();
-    let mut artifact = package_zip("late payload");
+    let mut artifact = package_zip(OLD_VERSION, "late payload");
     let payload = b"late payload";
     let offset = artifact.windows(payload.len()).position(|window| window == payload).expect("find stored ZIP payload");
     artifact[offset] ^= 1;
@@ -1508,6 +1518,7 @@ fn missing_pinned_version_fails_without_selecting_newer_release() {
     let original_lock = fixture.lock();
     fixture.withdraw(OLD_VERSION);
     fixture.publish(NEW_VERSION, "new release");
+    fixture.clear_package_cache();
 
     fixture.prepare(false).expect_err("missing pinned version must fail");
     assert_eq!(fixture.lock(), original_lock);
@@ -1528,7 +1539,7 @@ fn explicit_update_selects_new_version_and_writes_its_digest() {
     assert!(lock.starts_with("# Project.lock v2\n"));
     assert!(lock.contains("resolved_version=2.0.0"));
     assert!(
-        lock.contains("artifact_digest=sha256:456bc2d28e9bae140f2462f0e3c6e3fb4721e9b326f893b02c8c846f82033baf"),
+        lock.contains("artifact_digest=sha256:d9c00fdc9c24bdc34dce710d7dcfe8d98f783415ee4c4d14bace8eb4d3316681"),
         "lock: {lock}"
     );
 }
@@ -1552,17 +1563,20 @@ fn refresh_rebuilds_pin_after_declared_registry_alias_changes() {
 }
 
 #[test]
-fn refresh_rebuilds_pins_without_trusting_stale_lock_project_identity() {
+fn refresh_rejects_a_stale_lock_project_identity_without_rewriting_it() {
     let fixture = RegistryFixture::new();
     fixture.publish(OLD_VERSION, "old release");
     fixture.prepare(false).expect("initial package lock");
     let stale = fixture.lock().replace("project_name=App", "project_name=Other");
-    fs::write(fixture.lock_path(), stale).expect("write stale lock identity");
+    fs::write(fixture.lock_path(), &stale).expect("write stale lock identity");
+    let stale_lock = stale;
 
     let error = fixture.prepare(false).expect_err("normal replay must reject stale lock identity");
     assert!(error.to_string().contains("different project"), "unexpected error: {error}");
-    fixture.prepare(true).expect("refresh must rebuild current lock identity");
-    assert!(fixture.lock().contains("project_name=App"));
+    // v0.6: a lock owned by another project is never rewritten, not even by an explicit refresh.
+    let error = fixture.prepare(true).expect_err("refresh must also reject a lock owned by another project");
+    assert!(error.to_string().contains("different project"), "unexpected error: {error}");
+    assert_eq!(fixture.lock(), stale_lock, "rejected refresh must not rewrite the foreign lock");
 }
 
 #[test]
@@ -1593,6 +1607,8 @@ fn pinned_version_is_one_encoded_url_path_segment() {
     fixture.prepare(false).expect("initial package lock");
     let lock = fixture.lock().replace("resolved_version=1.0.0", "resolved_version=1.0.0/other");
     fs::write(fixture.lock_path(), lock).expect("write malformed version pin");
+    fixture.clear_package_cache();
+    fixture.requests.lock().expect("request paths").clear();
 
     fixture.prepare(false).expect_err("malformed pinned version must not fetch a different route");
     let requests = fixture.requests.lock().expect("request paths");

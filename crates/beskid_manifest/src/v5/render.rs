@@ -56,7 +56,10 @@ pub(super) fn render_rust(
         .soft_builtins
         .iter()
         .filter(|builtin| {
-            builtin.adapter_service.is_some() || manifest.exports.iter().any(|export| export.symbol == builtin.symbol)
+            // Private Corelib adapters acquire call authority only from the
+            // exact admitted source unit; exporting their symbol is not a
+            // globally source-callable builtin grant.
+            builtin.adapter_service.is_none() && manifest.exports.iter().any(|export| export.symbol == builtin.symbol)
         })
         .map(|builtin| {
             let params =
@@ -240,6 +243,9 @@ pub(super) fn render_c_header(manifest: &RuntimeManifestV5) -> String {
             writeln!(out, "#define BESKID_{name}_{}_OFFSET {}", macro_name(&field.name), field.offset).unwrap();
         }
     }
+    // Typed provider transports consume the same generated layout constants,
+    // while their internal C DTO declarations refine the generic pointer ABI.
+    out.push_str("#ifndef BESKID_RUNTIME_ABI_LAYOUTS_ONLY\n");
     for function in &manifest.exports {
         let noreturn = if function.result == "never" { "_Noreturn " } else { "" };
         let params = if function.params.is_empty() {
@@ -282,7 +288,7 @@ pub(super) fn render_c_header(manifest: &RuntimeManifestV5) -> String {
         };
         writeln!(out, "{} {}({});", corelib_service_c_type(&service.result), service.adapter, params).unwrap();
     }
-    out.push_str("#endif\n");
+    out.push_str("#endif /* BESKID_RUNTIME_ABI_LAYOUTS_ONLY */\n#endif\n");
     out
 }
 
@@ -356,6 +362,8 @@ fn c_type(ty: &str) -> &'static str {
         "u32" => "uint32_t",
         "i64" => "int64_t",
         "u64" => "uint64_t",
+        "f32" => "float",
+        "f64" => "double",
         _ => "uintptr_t",
     }
 }

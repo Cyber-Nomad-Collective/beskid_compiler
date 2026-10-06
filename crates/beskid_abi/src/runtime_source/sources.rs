@@ -13,6 +13,9 @@ pub const CANONICAL_GC_MARKING_SOURCE_PATH: &str = "src/Runtime/Mem/Gc/Marking.b
 pub const CANONICAL_GC_ROOTS_HANDLES_SOURCE_PATH: &str = "src/Runtime/Mem/Gc/RootsHandles.bd";
 pub const CANONICAL_GC_SWEEP_SOURCE_PATH: &str = "src/Runtime/Mem/Gc/Sweep.bd";
 pub const CANONICAL_GC_COLLECTION_SOURCE_PATH: &str = "src/Runtime/Mem/Gc/Collection.bd";
+pub const CANONICAL_GC_CHECKED_SCOPE_SOURCE_PATH: &str = "src/Runtime/Mem/Gc/CheckedScope.bd";
+pub const CANONICAL_BOOTSTRAP_CHECKED_OBJECTS_SOURCE_PATH: &str = "src/Runtime/Bootstrap/CheckedObjects.bd";
+pub const CANONICAL_GC_IDENTITY_SOURCE_PATH: &str = "src/Runtime/Mem/Gc/Identity.bd";
 pub const CANONICAL_GC_ALLOCATION_SOURCE_PATH: &str = "src/Runtime/Mem/Gc/Allocation.bd";
 pub const CANONICAL_STRINGS_SOURCE_PATH: &str = "src/Runtime/Data/Strings.bd";
 pub const CANONICAL_COLLECTIONS_SOURCE_PATH: &str = "src/Runtime/Data/Collections.bd";
@@ -31,7 +34,13 @@ pub const CANONICAL_MUTEX_SOURCE_PATH: &str = "src/Runtime/Sync/Mutex.bd";
 pub const CANONICAL_WAITGROUP_SOURCE_PATH: &str = "src/Runtime/Sync/WaitGroup.bd";
 pub const CANONICAL_HUB_SOURCE_PATH: &str = "src/Runtime/PubSub/Hub.bd";
 pub const CANONICAL_EVENTS_SOURCE_PATH: &str = "src/Runtime/PubSub/Events.bd";
+pub const CANONICAL_UTF8_RECORD_SOURCE_PATH: &str = "src/Runtime/Data/Utf8ViewRecord.bd";
+pub const CANONICAL_GLUE_OWNER_SOURCE_PATH: &str = "src/Runtime/Glue/OwnerRecord.bd";
+pub const CANONICAL_DYNAMIC_RECORDS_SOURCE_PATH: &str = "src/Runtime/Dynamic/Records.bd";
 pub const CANONICAL_DYNAMIC_SOURCE_PATH: &str = "src/Runtime/Dynamic/Dynamic.bd";
+pub const CANONICAL_PUBLIC_DYNAMIC_SOURCE_PATH: &str = "Core/Dynamic/Dynamic.bd";
+pub const CANONICAL_PUBLIC_DYNAMIC_SOURCE: &str =
+    include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../corelib/packages/foundation/src/Core/Dynamic/Dynamic.bd"));
 pub const CANONICAL_CLOCKS_SOURCE_PATH: &str = "src/Runtime/Host/Clocks.bd";
 pub const CANONICAL_PROCESS_SOURCE_PATH: &str = "src/Runtime/Host/Process.bd";
 pub const CANONICAL_FS_SOURCE_PATH: &str = "src/Runtime/Host/FS.bd";
@@ -79,6 +88,19 @@ pub const CANONICAL_FOUNDATION_PROCESS_SOURCE_PATH: &str = "Core/Process/Process
 /// Canonical Foundation random facade eligible for the monotonic-clock runtime service.
 pub const CANONICAL_FOUNDATION_RANDOM_SOURCE_PATH: &str = "Core/Random/Random.bd";
 /// Canonical Foundation core string facade eligible for string runtime services.
+pub const CANONICAL_FOUNDATION_RESULTS_SOURCE_PATH: &str = "Core/Results/Results.bd";
+pub const CANONICAL_FOUNDATION_LIST_SOURCE_PATH: &str = "Core/Collections/List.bd";
+pub const CANONICAL_FOUNDATION_MAP_SOURCE_PATH: &str = "Core/Collections/Map.bd";
+pub const CANONICAL_FOUNDATION_OPTION_SOURCE_PATH: &str = "Core/Optional/Option.bd";
+pub const CANONICAL_FOUNDATION_MAP_ENTRY_SOURCE_PATH: &str = "Core/Collections/Map/MapEntry.bd";
+pub const CANONICAL_SERIALIZATION_COMPILED_SOURCE_PATH: &str = "Core/Serialization/Compiled.bd";
+pub const CANONICAL_SERIALIZATION_DESCRIPTORS_SOURCE_PATH: &str = "Core/Serialization/Descriptors.bd";
+pub const CANONICAL_SERIALIZATION_CONTRACTS_SOURCE_PATH: &str = "Core/Serialization/Contracts.bd";
+pub const CANONICAL_SERIALIZATION_READER_SOURCE_PATH: &str = "Core/Serialization/Reader.bd";
+pub const CANONICAL_SERIALIZATION_LIMITS_SOURCE_PATH: &str = "Core/Serialization/Limits.bd";
+pub const CANONICAL_SERIALIZATION_ERRORS_SOURCE_PATH: &str = "Core/Serialization/Errors.bd";
+pub const CANONICAL_FOUNDATION_MANAGED_SOURCE_PATH: &str = "Core/Memory/Managed.bd";
+pub const CANONICAL_FOUNDATION_FLOAT_BITS_SOURCE_PATH: &str = "Core/Numeric/FloatBits.bd";
 pub const CANONICAL_FOUNDATION_STRING_CORE_SOURCE_PATH: &str = "Core/String/Core.bd";
 /// Canonical Foundation UTF-8 facade eligible for byte-array and string runtime services.
 pub const CANONICAL_FOUNDATION_STRING_UTF8_SOURCE_PATH: &str = "Core/String/Utf8.bd";
@@ -123,6 +145,12 @@ const CANONICAL_GC_SWEEP_SOURCE: &str =
     include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../runtime/beskid/src/Runtime/Mem/Gc/Sweep.bd"));
 const CANONICAL_GC_COLLECTION_SOURCE: &str =
     include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../runtime/beskid/src/Runtime/Mem/Gc/Collection.bd"));
+const CANONICAL_GC_CHECKED_SCOPE_SOURCE: &str =
+    include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../runtime/beskid/src/Runtime/Mem/Gc/CheckedScope.bd"));
+const CANONICAL_BOOTSTRAP_CHECKED_OBJECTS_SOURCE: &str =
+    include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../runtime/beskid/src/Runtime/Bootstrap/CheckedObjects.bd"));
+const CANONICAL_GC_IDENTITY_SOURCE: &str =
+    include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../runtime/beskid/src/Runtime/Mem/Gc/Identity.bd"));
 const CANONICAL_GC_ALLOCATION_SOURCE: &str =
     include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../runtime/beskid/src/Runtime/Mem/Gc/Allocation.bd"));
 const CANONICAL_STRINGS_SOURCE: &str =
@@ -159,6 +187,12 @@ const CANONICAL_HUB_SOURCE: &str =
     include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../runtime/beskid/src/Runtime/PubSub/Hub.bd"));
 const CANONICAL_EVENTS_SOURCE: &str =
     include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../runtime/beskid/src/Runtime/PubSub/Events.bd"));
+const CANONICAL_UTF8_RECORD_SOURCE: &str =
+    include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../runtime/beskid/src/Runtime/Data/Utf8ViewRecord.bd"));
+const CANONICAL_GLUE_OWNER_SOURCE: &str =
+    include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../runtime/beskid/src/Runtime/Glue/OwnerRecord.bd"));
+const CANONICAL_DYNAMIC_RECORDS_SOURCE: &str =
+    include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../runtime/beskid/src/Runtime/Dynamic/Records.bd"));
 const CANONICAL_DYNAMIC_SOURCE: &str =
     include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../runtime/beskid/src/Runtime/Dynamic/Dynamic.bd"));
 const CANONICAL_CLOCKS_SOURCE: &str =
@@ -222,6 +256,50 @@ const CANONICAL_FOUNDATION_PROCESS_SOURCE: &str =
     include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../corelib/packages/foundation/src/Core/Process/Process.bd"));
 const CANONICAL_FOUNDATION_RANDOM_SOURCE: &str =
     include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../corelib/packages/foundation/src/Core/Random/Random.bd"));
+const CANONICAL_FOUNDATION_RESULTS_SOURCE: &str =
+    include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../corelib/packages/foundation/src/Core/Results/Results.bd"));
+const CANONICAL_FOUNDATION_LIST_SOURCE: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../corelib/packages/foundation/src/Core/Collections/List.bd"
+));
+const CANONICAL_FOUNDATION_MAP_SOURCE: &str =
+    include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../corelib/packages/foundation/src/Core/Collections/Map.bd"));
+const CANONICAL_FOUNDATION_OPTION_SOURCE: &str =
+    include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../corelib/packages/foundation/src/Core/Optional/Option.bd"));
+const CANONICAL_FOUNDATION_MAP_ENTRY_SOURCE: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../corelib/packages/foundation/src/Core/Collections/Map/MapEntry.bd"
+));
+const CANONICAL_SERIALIZATION_COMPILED_SOURCE: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../corelib/packages/serialization/src/Core/Serialization/Compiled.bd"
+));
+const CANONICAL_SERIALIZATION_DESCRIPTORS_SOURCE: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../corelib/packages/serialization/src/Core/Serialization/Descriptors.bd"
+));
+const CANONICAL_SERIALIZATION_CONTRACTS_SOURCE: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../corelib/packages/serialization/src/Core/Serialization/Contracts.bd"
+));
+const CANONICAL_SERIALIZATION_READER_SOURCE: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../corelib/packages/serialization/src/Core/Serialization/Reader.bd"
+));
+const CANONICAL_SERIALIZATION_LIMITS_SOURCE: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../corelib/packages/serialization/src/Core/Serialization/Limits.bd"
+));
+const CANONICAL_SERIALIZATION_ERRORS_SOURCE: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../corelib/packages/serialization/src/Core/Serialization/Errors.bd"
+));
+const CANONICAL_FOUNDATION_MANAGED_SOURCE: &str =
+    include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../corelib/packages/foundation/src/Core/Memory/Managed.bd"));
+const CANONICAL_FOUNDATION_FLOAT_BITS_SOURCE: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../corelib/packages/foundation/src/Core/Numeric/FloatBits.bd"
+));
 const CANONICAL_FOUNDATION_STRING_CORE_SOURCE: &str =
     include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../corelib/packages/foundation/src/Core/String/Core.bd"));
 const CANONICAL_FOUNDATION_STRING_UTF8_SOURCE: &str =
@@ -243,7 +321,15 @@ const CANONICAL_NETWORK_INTERNAL_SOURCE: &str =
 
 /// The runtime source corpus built into this compiler version.
 pub fn canonical_runtime_sources() -> Vec<SourceUnit> {
-    vec![
+    let mut sources = vec![
+        SourceUnit {
+            logical_path: CANONICAL_GC_CHECKED_SCOPE_SOURCE_PATH.into(),
+            source: CANONICAL_GC_CHECKED_SCOPE_SOURCE.into(),
+        },
+        SourceUnit {
+            logical_path: CANONICAL_BOOTSTRAP_CHECKED_OBJECTS_SOURCE_PATH.into(),
+            source: CANONICAL_BOOTSTRAP_CHECKED_OBJECTS_SOURCE.into(),
+        },
         SourceUnit {
             logical_path: "src/Runtime/Network/Table.bd".into(),
             source: include_str!("../../../../runtime/beskid/src/Runtime/Network/Table.bd").into(),
@@ -309,6 +395,10 @@ pub fn canonical_runtime_sources() -> Vec<SourceUnit> {
             source: CANONICAL_GC_COLLECTION_SOURCE.into(),
         },
         SourceUnit {
+            logical_path: CANONICAL_GC_IDENTITY_SOURCE_PATH.into(),
+            source: CANONICAL_GC_IDENTITY_SOURCE.into(),
+        },
+        SourceUnit {
             logical_path: CANONICAL_GC_ALLOCATION_SOURCE_PATH.into(),
             source: CANONICAL_GC_ALLOCATION_SOURCE.into(),
         },
@@ -356,7 +446,23 @@ pub fn canonical_runtime_sources() -> Vec<SourceUnit> {
         SourceUnit { logical_path: CANONICAL_WAITGROUP_SOURCE_PATH.into(), source: CANONICAL_WAITGROUP_SOURCE.into() },
         SourceUnit { logical_path: CANONICAL_HUB_SOURCE_PATH.into(), source: CANONICAL_HUB_SOURCE.into() },
         SourceUnit { logical_path: CANONICAL_EVENTS_SOURCE_PATH.into(), source: CANONICAL_EVENTS_SOURCE.into() },
+        SourceUnit {
+            logical_path: CANONICAL_GLUE_OWNER_SOURCE_PATH.into(),
+            source: CANONICAL_GLUE_OWNER_SOURCE.into(),
+        },
+        SourceUnit {
+            logical_path: CANONICAL_UTF8_RECORD_SOURCE_PATH.into(),
+            source: CANONICAL_UTF8_RECORD_SOURCE.into(),
+        },
+        SourceUnit {
+            logical_path: CANONICAL_DYNAMIC_RECORDS_SOURCE_PATH.into(),
+            source: CANONICAL_DYNAMIC_RECORDS_SOURCE.into(),
+        },
         SourceUnit { logical_path: CANONICAL_DYNAMIC_SOURCE_PATH.into(), source: CANONICAL_DYNAMIC_SOURCE.into() },
+        SourceUnit {
+            logical_path: CANONICAL_PUBLIC_DYNAMIC_SOURCE_PATH.into(),
+            source: CANONICAL_PUBLIC_DYNAMIC_SOURCE.into(),
+        },
         SourceUnit { logical_path: CANONICAL_CLOCKS_SOURCE_PATH.into(), source: CANONICAL_CLOCKS_SOURCE.into() },
         SourceUnit { logical_path: CANONICAL_PROCESS_SOURCE_PATH.into(), source: CANONICAL_PROCESS_SOURCE.into() },
         SourceUnit { logical_path: CANONICAL_FS_SOURCE_PATH.into(), source: CANONICAL_FS_SOURCE.into() },
@@ -366,6 +472,52 @@ pub fn canonical_runtime_sources() -> Vec<SourceUnit> {
         },
         SourceUnit { logical_path: CANONICAL_CALLBACKS_SOURCE_PATH.into(), source: CANONICAL_CALLBACKS_SOURCE.into() },
         SourceUnit { logical_path: CANONICAL_SYSCALLS_SOURCE_PATH.into(), source: CANONICAL_SYSCALLS_SOURCE.into() },
+    ];
+    sources.extend(canonical_runtime_support_sources());
+    sources
+}
+
+/// Exact ordinary Corelib dependency closure used when compiling the native runtime.
+/// These bytes participate in the kit source hash, but do not acquire bootstrap intrinsics.
+pub fn canonical_runtime_support_sources() -> Vec<SourceUnit> {
+    vec![
+        SourceUnit {
+            logical_path: CANONICAL_FOUNDATION_ARRAY_SOURCE_PATH.into(),
+            source: CANONICAL_FOUNDATION_ARRAY_SOURCE.into(),
+        },
+        SourceUnit {
+            logical_path: CANONICAL_FOUNDATION_RESULTS_SOURCE_PATH.into(),
+            source: CANONICAL_FOUNDATION_RESULTS_SOURCE.into(),
+        },
+        SourceUnit {
+            logical_path: CANONICAL_FOUNDATION_BYTES_SLICE_SOURCE_PATH.into(),
+            source: CANONICAL_FOUNDATION_BYTES_SLICE_SOURCE.into(),
+        },
+        SourceUnit {
+            logical_path: CANONICAL_FOUNDATION_STRING_CORE_SOURCE_PATH.into(),
+            source: CANONICAL_FOUNDATION_STRING_CORE_SOURCE.into(),
+        },
+        SourceUnit {
+            logical_path: CANONICAL_FOUNDATION_STRING_UTF8_SOURCE_PATH.into(),
+            source: CANONICAL_FOUNDATION_STRING_UTF8_SOURCE.into(),
+        },
+        SourceUnit {
+            logical_path: "Core/Collections/Array/ArrayIter.bd".into(),
+            source: include_str!("../../../../corelib/packages/foundation/src/Core/Collections/Array/ArrayIter.bd")
+                .into(),
+        },
+        SourceUnit {
+            logical_path: "Core/Hash/Sha256.bd".into(),
+            source: include_str!("../../../../corelib/packages/foundation/src/Core/Hash/Sha256.bd").into(),
+        },
+        SourceUnit {
+            logical_path: "Core/String/String.bd".into(),
+            source: include_str!("../../../../corelib/packages/foundation/src/Core/String/String.bd").into(),
+        },
+        SourceUnit {
+            logical_path: "Core/String/Chars.bd".into(),
+            source: include_str!("../../../../corelib/packages/foundation/src/Core/String/Chars.bd").into(),
+        },
     ]
 }
 
@@ -378,9 +530,55 @@ pub fn canonical_corelib_syscall_sources() -> Vec<SourceUnit> {
     }]
 }
 
-/// Compiler-embedded Foundation units eligible for distinct ABI service authority.
+/// The single inventory of compiler-embedded Corelib units with exact source identity.
+/// A unit acquires ABI service authority only through its own exact `CORELIB_SERVICES` rows;
+/// identity-only units (collections, Results, serialization metadata) own none.
 pub fn canonical_corelib_service_sources() -> Vec<SourceUnit> {
     let mut sources = canonical_corelib_syscall_sources();
+    sources.push(SourceUnit {
+        logical_path: CANONICAL_SERIALIZATION_COMPILED_SOURCE_PATH.into(),
+        source: CANONICAL_SERIALIZATION_COMPILED_SOURCE.into(),
+    });
+    sources.push(SourceUnit {
+        logical_path: CANONICAL_FOUNDATION_MAP_ENTRY_SOURCE_PATH.into(),
+        source: CANONICAL_FOUNDATION_MAP_ENTRY_SOURCE.into(),
+    });
+    sources.push(SourceUnit {
+        logical_path: CANONICAL_FOUNDATION_OPTION_SOURCE_PATH.into(),
+        source: CANONICAL_FOUNDATION_OPTION_SOURCE.into(),
+    });
+    sources.push(SourceUnit {
+        logical_path: CANONICAL_FOUNDATION_MAP_SOURCE_PATH.into(),
+        source: CANONICAL_FOUNDATION_MAP_SOURCE.into(),
+    });
+    sources.push(SourceUnit {
+        logical_path: CANONICAL_FOUNDATION_LIST_SOURCE_PATH.into(),
+        source: CANONICAL_FOUNDATION_LIST_SOURCE.into(),
+    });
+    sources.push(SourceUnit {
+        logical_path: CANONICAL_SERIALIZATION_DESCRIPTORS_SOURCE_PATH.into(),
+        source: CANONICAL_SERIALIZATION_DESCRIPTORS_SOURCE.into(),
+    });
+    sources.push(SourceUnit {
+        logical_path: CANONICAL_SERIALIZATION_CONTRACTS_SOURCE_PATH.into(),
+        source: CANONICAL_SERIALIZATION_CONTRACTS_SOURCE.into(),
+    });
+    sources.push(SourceUnit {
+        logical_path: CANONICAL_FOUNDATION_RESULTS_SOURCE_PATH.into(),
+        source: CANONICAL_FOUNDATION_RESULTS_SOURCE.into(),
+    });
+    sources.push(SourceUnit {
+        logical_path: CANONICAL_SERIALIZATION_READER_SOURCE_PATH.into(),
+        source: CANONICAL_SERIALIZATION_READER_SOURCE.into(),
+    });
+    sources.push(SourceUnit {
+        logical_path: CANONICAL_SERIALIZATION_LIMITS_SOURCE_PATH.into(),
+        source: CANONICAL_SERIALIZATION_LIMITS_SOURCE.into(),
+    });
+    sources.push(SourceUnit {
+        logical_path: CANONICAL_SERIALIZATION_ERRORS_SOURCE_PATH.into(),
+        source: CANONICAL_SERIALIZATION_ERRORS_SOURCE.into(),
+    });
     sources.push(SourceUnit {
         logical_path: CANONICAL_CORELIB_ARGS_SOURCE_PATH.into(),
         source: CANONICAL_CORELIB_ARGS_SOURCE.into(),
@@ -456,6 +654,14 @@ pub fn canonical_corelib_service_sources() -> Vec<SourceUnit> {
     sources.push(SourceUnit {
         logical_path: CANONICAL_FOUNDATION_RANDOM_SOURCE_PATH.into(),
         source: CANONICAL_FOUNDATION_RANDOM_SOURCE.into(),
+    });
+    sources.push(SourceUnit {
+        logical_path: CANONICAL_FOUNDATION_MANAGED_SOURCE_PATH.into(),
+        source: CANONICAL_FOUNDATION_MANAGED_SOURCE.into(),
+    });
+    sources.push(SourceUnit {
+        logical_path: CANONICAL_FOUNDATION_FLOAT_BITS_SOURCE_PATH.into(),
+        source: CANONICAL_FOUNDATION_FLOAT_BITS_SOURCE.into(),
     });
     sources.push(SourceUnit {
         logical_path: CANONICAL_FOUNDATION_STRING_CORE_SOURCE_PATH.into(),

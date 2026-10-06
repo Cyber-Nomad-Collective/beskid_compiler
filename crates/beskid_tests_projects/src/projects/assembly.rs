@@ -23,8 +23,14 @@ fn full_build_phase_order_includes_program_assemble() {
 fn effective_roots_prefers_materialized_corelib_mvp_fixture() {
     with_cwd_at_workspace_root(&compiler_workspace_root(), || {
         let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../beskid_e2e_tests/fixtures/corelib_mvp");
-        let resolved = resolve_input(Some(&fixture.join("Src/Main.bd")), Some(&fixture), None, None, false, false)
-            .expect("resolve corelib_mvp");
+        let resolved = resolve_input(
+            Some(&fixture.join("Src/Main.bd")),
+            Some(&fixture),
+            None,
+            None,
+            beskid_analysis::projects::WorkspacePrepareOptions::default(),
+        )
+        .expect("resolve corelib_mvp");
 
         let plan = resolved.compile_plan.expect("compile plan");
         let roots = effective_roots_for_plan(&plan, resolved.prepared_workspace.as_ref());
@@ -54,8 +60,14 @@ fn assembly_closure_loads_std_units_for_corelib_mvp() {
 fn workspace_scan_respects_max_units() {
     with_cwd_at_workspace_root(&compiler_workspace_root(), || {
         let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../beskid_e2e_tests/fixtures/corelib_mvp");
-        let resolved = resolve_input(Some(&fixture.join("Src/Main.bd")), Some(&fixture), None, None, false, false)
-            .expect("resolve");
+        let resolved = resolve_input(
+            Some(&fixture.join("Src/Main.bd")),
+            Some(&fixture),
+            None,
+            None,
+            beskid_analysis::projects::WorkspacePrepareOptions::default(),
+        )
+        .expect("resolve");
         let plan = resolved.compile_plan.expect("plan");
         let options =
             AssemblyOptions { discovery: AssemblyDiscovery::WorkspaceScan, max_units: 2, ..Default::default() };
@@ -118,8 +130,14 @@ fn corelib_syscall_tests_prefetch_includes_testing_assert_true() {
     with_cwd_at_workspace_root(&compiler_workspace_root(), || {
         let project = corelib_root().join("tests/corelib_tests");
         let entry = project.join("src/console/AnsiEscapeTests.bd");
-        let resolved = resolve_input(Some(&entry), Some(&project), Some("ConsoleAnsiEscapeTests"), None, false, false)
-            .expect("resolve corelib_tests console target");
+        let resolved = resolve_input(
+            Some(&entry),
+            Some(&project),
+            Some("ConsoleAnsiEscapeTests"),
+            None,
+            beskid_analysis::projects::WorkspacePrepareOptions::default(),
+        )
+        .expect("resolve corelib_tests console target");
 
         let plan = resolved.compile_plan.expect("compile plan");
         let options = AssemblyOptions { discovery: AssemblyDiscovery::ImportClosure, ..Default::default() };
@@ -155,8 +173,14 @@ fn parallel_unit_build_matches_serial_assembly_order() {
     let _guard = std_dependency_env_lock();
     with_cwd_at_workspace_root(&compiler_workspace_root(), || {
         let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../beskid_e2e_tests/fixtures/corelib_mvp");
-        let resolved = resolve_input(Some(&fixture.join("Src/Main.bd")), Some(&fixture), None, None, false, false)
-            .expect("resolve corelib_mvp");
+        let resolved = resolve_input(
+            Some(&fixture.join("Src/Main.bd")),
+            Some(&fixture),
+            None,
+            None,
+            beskid_analysis::projects::WorkspacePrepareOptions::default(),
+        )
+        .expect("resolve corelib_mvp");
         let plan = resolved.compile_plan.expect("compile plan");
         let options = AssemblyOptions { discovery: AssemblyDiscovery::ImportClosure, ..Default::default() };
 

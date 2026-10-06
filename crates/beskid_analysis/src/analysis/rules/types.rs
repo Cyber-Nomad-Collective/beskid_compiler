@@ -88,6 +88,16 @@ pub(crate) fn emit_type_error(ctx: &mut RuleContext, error: TypeError, result: O
         TypeError::InvalidTryTarget { span } => {
             ctx.emit_issue(span, SemanticIssueKind::TypeInvalidTryTarget);
         }
+        TypeError::NumericLiteralOutOfRange { span, primitive } => {
+            ctx.emit_simple(
+                span,
+                "T0905",
+                format!("numeric literal outside {} range", format!("{primitive:?}").to_lowercase()),
+                "numeric literal",
+                Some("use an in-range literal of the declared fixed-width type".into()),
+                Severity::Error,
+            );
+        }
         TypeError::InvalidPrimitiveConversionArgument { span } => {
             ctx.emit_issue(span, SemanticIssueKind::TypeInvalidPrimitiveConversionArgument);
         }
@@ -205,8 +215,10 @@ fn render_type(result: Option<&TypeResult>, type_id: crate::types::TypeId) -> St
     format_type_id(result, None, type_id)
 }
 
-fn render_function_signature(result: Option<&TypeResult>, signature: &crate::types::result::FunctionSignature) -> String {
-    let params =
-        signature.params.iter().map(|type_id| render_type(result, *type_id)).collect::<Vec<_>>().join(", ");
+fn render_function_signature(
+    result: Option<&TypeResult>,
+    signature: &crate::types::result::FunctionSignature,
+) -> String {
+    let params = signature.params.iter().map(|type_id| render_type(result, *type_id)).collect::<Vec<_>>().join(", ");
     format!("({params}) -> {}", render_type(result, signature.return_type))
 }

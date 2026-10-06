@@ -70,6 +70,80 @@ pub(super) fn resolve_module_items(
         );
         pending.extend(specializations.keys().filter(|key| !present.contains(key)).copied());
     }
+    // Canonical Pack's hidden method has no source statement body. Its exact
+    // call-derived instance is emitted by the checked representation bridge;
+    // ordinary user extern methods never enter this synthetic-body authority.
+    let mut dynamic_bridges = Vec::new();
+    let mut shape_bridges = Vec::new();
+    let mut unpack_bridges=Vec::new();
+    let mut serialization_bridges=Vec::new();
+    for instance in specializations.values().flatten() {
+        if let Some(binding)=beskid_queries::serialization_shape_binding(db,instance)
+            .map_err(|error|emission_verification(error.to_string()))? {serialization_bridges.push(binding);}
+        if let Some(bridge)=beskid_queries::dynamic_unpacking_bridge(db,instance)
+            .map_err(|error|emission_verification(error.to_string()))? {unpack_bridges.push(bridge);}
+        if let Some(binding)=beskid_queries::dynamic_shape_binding(db,instance)
+            .map_err(|error|emission_verification(error.to_string()))? {shape_bridges.push(binding);}
+        if let Some(bridge) = beskid_queries::dynamic_packing_bridge(db, instance)
+            .map_err(|error| emission_verification(error.to_string()))?
+        {
+            dynamic_bridges.push(bridge);
+        }
+    }
+    for bridge in &dynamic_bridges {
+        for key in [bridge.instance().declaration, bridge.result_factory(), bridge.invalid_factory()] {
+            if present.insert(key) {
+                source_items.push(SyntaxModuleItem {
+                    key,
+                    symbol: syntax_item_symbol(input, key)
+                        .ok_or_else(|| emission_verification("canonical Pack helper symbol unavailable"))?,
+                });
+            }
+        }
+    }
+    for binding in &shape_bridges {
+        let key=binding.instance().declaration;
+        if present.insert(key) { source_items.push(SyntaxModuleItem {
+            key,symbol:syntax_item_symbol(input,key).ok_or_else(||emission_verification("canonical Shape helper symbol unavailable"))?,
+        }); }
+    }
+    for bridge in &unpack_bridges {
+        for instance in [bridge.instance(),bridge.result_factory(),bridge.invalid_factory()] {
+            let key=instance.declaration;
+            let entries=specializations.entry(key).or_default();
+            if !entries.contains(instance){entries.push(instance.clone());}
+            if present.insert(key){source_items.push(SyntaxModuleItem{
+                key,symbol:syntax_item_symbol(input,key).ok_or_else(||emission_verification("canonical Unpack helper symbol unavailable"))?,
+            });}
+        }
+        for factory in [bridge.result_factory(),bridge.invalid_factory()] {
+            collect_generic_call_specializations_in_environment(db,factory.declaration,Some(factory),&mut specializations)?;
+        }
+    }
+    for key in specializations.keys().copied().collect::<Vec<_>>() {
+        if present.insert(key){source_items.push(SyntaxModuleItem{key,
+            symbol:syntax_item_symbol(input,key).ok_or_else(||emission_verification("Unpack constructor dependency symbol unavailable"))?,
+        });}
+    }
+    // The descriptor factory is ordinary registered source. Bring its complete
+    // concrete helper closure into this same worklist/descriptor emission pass.
+    let mut pending=Vec::new();
+    for binding in &serialization_bridges {
+        pending.extend([binding.instance().declaration,binding.factory(),binding.root_factory(),binding.extras_factory()]);
+        let entries=specializations.entry(binding.instance().declaration).or_default();
+        if !entries.contains(binding.instance()){entries.push(binding.instance().clone());}
+    }
+    while let Some(key)=pending.pop() {
+        if !present.insert(key){continue}
+        source_items.push(SyntaxModuleItem{key,symbol:syntax_item_symbol(input,key)
+            .ok_or_else(||emission_verification("compiled descriptor helper symbol unavailable"))?});
+        if is_concrete_executable_item(db,key)? {
+            collect_generic_call_specializations(db,key,&mut specializations)?;
+            pending.extend(beskid_queries::direct_callees(db,key).map_err(|error|emission_verification(error.to_string()))?
+                .into_iter().flat_map(|keys|keys.iter().copied().collect::<Vec<_>>()));
+        }
+        pending.extend(specializations.keys().filter(|key|!present.contains(key)).copied());
+    }
     let mut resolved = Vec::with_capacity(source_items.len());
     for item in &source_items {
         if item_abi_signature(db, item.key).ok().flatten().is_some() {
@@ -81,12 +155,19 @@ pub(super) fn resolve_module_items(
             });
         }
         let kind = node_kind(db, item.key).map_err(|error| emission_verification(error.to_string()))?;
-        if !matches!(
-            kind,
-            Some(
-                beskid_queries::IndexedNodeKind::FunctionDefinition | beskid_queries::IndexedNodeKind::MethodDefinition
+        let dynamic_bridge = dynamic_bridges.iter().any(|bridge| bridge.instance().declaration == item.key)
+            || shape_bridges.iter().any(|binding|binding.instance().declaration==item.key)
+            || unpack_bridges.iter().any(|bridge|bridge.instance().declaration==item.key)
+            || serialization_bridges.iter().any(|binding|binding.instance().declaration==item.key);
+        if !dynamic_bridge
+            && !matches!(
+                kind,
+                Some(
+                    beskid_queries::IndexedNodeKind::FunctionDefinition
+                        | beskid_queries::IndexedNodeKind::MethodDefinition
+                )
             )
-        ) {
+        {
             // Type and enum declarations carry source layout facts but have no executable
             // syntax body. They deliberately do not require a call-derived function ABI.
             continue;

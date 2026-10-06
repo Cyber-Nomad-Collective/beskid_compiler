@@ -27,7 +27,7 @@ pub i64 Main() { return 0; }
     let err = prepare_syntax_front_end(std::path::Path::new("<memory>"), src)
         .expect_err("type checking should fail for missing library");
     let msg = format!("{err:#}");
-    assert!(msg.contains("extern declaration missing library"), "unexpected message: {msg}");
+    assert!(msg.contains("extern contract missing Library"), "unexpected message: {msg}");
     Ok(())
 }
 
@@ -42,7 +42,7 @@ pub i64 Main() { return 0; }
     let err = prepare_syntax_front_end(std::path::Path::new("<memory>"), src)
         .expect_err("type checking should fail for disallowed param type");
     let msg = format!("{err:#}");
-    assert!(msg.contains("disallowed parameter type") && msg.contains("nope"), "unexpected message: {msg}");
+    assert!(msg.contains("extern param type not allowed in `nope`"), "unexpected message: {msg}");
     Ok(())
 }
 
@@ -57,6 +57,9 @@ pub i64 Main() { return 0; }
     let err = prepare_syntax_front_end(std::path::Path::new("<memory>"), src)
         .expect_err("should fail for ref parameter modifier");
     let msg = format!("{err:#}");
-    assert!(msg.contains("unknown type `ref`"), "unexpected message: {msg}");
+    // `ref` is not parameter syntax: strict assembly rejects the source at parse time, so the
+    // modifier never reaches type checking or codegen. The recovery hint is only a suggestion.
+    assert!(msg.contains("failed to parse"), "unexpected message: {msg}");
+    assert!(!msg.contains("extern param type not allowed"), "must fail before extern type checking: {msg}");
     Ok(())
 }

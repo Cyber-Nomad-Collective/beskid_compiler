@@ -225,11 +225,15 @@ fn event_delegate_type(
     semantic: beskid_queries::SemanticTypeId,
 ) -> Option<Type> {
     Some(match semantic {
-        beskid_queries::SemanticTypeId::BOOL | beskid_queries::SemanticTypeId::U8 => types::I8,
+        beskid_queries::SemanticTypeId::BOOL
+        | beskid_queries::SemanticTypeId::I8
+        | beskid_queries::SemanticTypeId::U8 => types::I8,
         beskid_queries::SemanticTypeId::I32
         | beskid_queries::SemanticTypeId::U32
         | beskid_queries::SemanticTypeId::CHAR => types::I32,
-        beskid_queries::SemanticTypeId::I64 => types::I64,
+        beskid_queries::SemanticTypeId::I64 | beskid_queries::SemanticTypeId::U64 => types::I64,
+        beskid_queries::SemanticTypeId::I16 | beskid_queries::SemanticTypeId::U16 => types::I16,
+        beskid_queries::SemanticTypeId::F32 => types::F32,
         beskid_queries::SemanticTypeId::F64 => types::F64,
         beskid_queries::SemanticTypeId::WORD
         | beskid_queries::SemanticTypeId::POINTER

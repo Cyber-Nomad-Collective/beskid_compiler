@@ -8,14 +8,14 @@
 use std::sync::Arc;
 
 use beskid_queries::{
-    AstNodeKey, CallLowering, GenericSpecializationInstance, IndexedNodeKind, SemanticTypeId,
+    AstNodeKey, CallLowering, GenericSpecializationInstance, IndexedNodeKind, ManagedReferenceKind, SemanticTypeId,
     aggregate_literal_declaration, bulk_parameter, call_arguments, call_lowering, child_nodes,
     empty_array_literal_element_abi_type, empty_array_literal_element_specialization, generic_specialization_identity,
-    node_kind, node_type, typed_array_allocation,
+    managed_reference_kind, node_kind, node_type, typed_array_allocation, value_abi_type,
 };
 use cranelift_module::{DataDescription, DataId, Linkage, Module, ModuleError, ModuleResult};
 
-use crate::{CodegenInput, aggregate_static::paths_match};
+use crate::CodegenInput;
 
 pub const ABI_V5_ARRAY_ALLOCATE_ROOTED: &str = "beskid_rt_v5_array_allocate_rooted";
 pub const ABI_V5_ARRAY_GROW_ROOTED: &str = "beskid_rt_v5_array_grow_rooted";
@@ -125,7 +125,7 @@ impl CodegenInput<'_> {
             .assembly
             .units
             .iter()
-            .position(|unit| paths_match(&unit.path, key.unit.path(self.database())))?;
+            .position(|unit| beskid_queries::SourceUnitId::new(self.database(), unit.path.clone()) == key.unit)?;
         let namespace = self
             .artifact_namespace()
             .chars()
@@ -194,18 +194,47 @@ impl CodegenInput<'_> {
                 // reference. Every element must construct the same declaration so the
                 // element pointer map stays exact.
                 None => {
-                    let declaration = self.nominal_literal_declaration(first)?;
-                    elements
-                        .iter()
-                        .copied()
-                        .all(|element| self.nominal_literal_declaration(element) == Some(declaration))
-                        .then_some(SemanticTypeId::POINTER)?
+                    if let Some(declaration) = self.nominal_literal_declaration(first) {
+                        elements
+                            .iter()
+                            .copied()
+                            .all(|element| self.nominal_literal_declaration(element) == Some(declaration))
+                            .then_some(SemanticTypeId::POINTER)?
+                    } else {
+                        // Named and constructed enum values have no scalar node_type.
+                        // Their current-generation ABI and managed classification jointly
+                        // authorize a traced element representation; width alone cannot.
+                        elements
+                            .iter()
+                            .copied()
+                            .all(|element| {
+                                value_abi_type(self.database(), element).ok().flatten() == Some(SemanticTypeId::POINTER)
+                                    && managed_reference_kind(self.database(), element).ok().flatten()
+                                        == Some(ManagedReferenceKind::GcManaged)
+                            })
+                            .then_some(SemanticTypeId::POINTER)?
+                    }
                 }
             },
             None => empty_array_literal_element_abi_type(self.database(), literal).ok().flatten()?,
         };
         let length = u64::try_from(elements.len()).ok()?;
-        self.build_array_static_plan(literal, element_type, length, None)
+        let mut plan = self.build_array_static_plan(literal, element_type, length, None)?;
+        if element_type == SemanticTypeId::POINTER
+            && let Some(first) = elements.first().copied()
+        {
+            let kind = managed_reference_kind(self.database(), first).ok().flatten()?;
+            elements
+                .iter()
+                .copied()
+                .all(|element| managed_reference_kind(self.database(), element).ok().flatten() == Some(kind))
+                .then_some(())?;
+            if kind == ManagedReferenceKind::NativeOrScalar {
+                // A native pointer array owns its backing allocation, not the pointed-to data.
+                plan.pointer_map_offsets = Arc::from([]);
+            }
+        }
+        Some(plan)
     }
 
     /// Create array metadata using the exact specialization of the item that owns the literal.
@@ -285,9 +314,10 @@ impl CodegenInput<'_> {
 fn scalar_layout(pointer_width: u8, ty: SemanticTypeId) -> Option<(u64, u64, bool)> {
     let pointer = u64::from(pointer_width.checked_div(8)?);
     match ty {
-        SemanticTypeId::BOOL | SemanticTypeId::U8 => Some((1, 1, false)),
-        SemanticTypeId::I32 | SemanticTypeId::U32 | SemanticTypeId::CHAR => Some((4, 4, false)),
-        SemanticTypeId::I64 | SemanticTypeId::F64 => Some((8, 8, false)),
+        SemanticTypeId::BOOL | SemanticTypeId::I8 | SemanticTypeId::U8 => Some((1, 1, false)),
+        SemanticTypeId::I16 | SemanticTypeId::U16 => Some((2, 2, false)),
+        SemanticTypeId::I32 | SemanticTypeId::U32 | SemanticTypeId::F32 | SemanticTypeId::CHAR => Some((4, 4, false)),
+        SemanticTypeId::I64 | SemanticTypeId::U64 | SemanticTypeId::F64 => Some((8, 8, false)),
         SemanticTypeId::WORD => Some((pointer, pointer, false)),
         SemanticTypeId::POINTER | SemanticTypeId::STRING => Some((pointer, pointer, true)),
         _ => None,

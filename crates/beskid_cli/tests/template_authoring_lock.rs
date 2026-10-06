@@ -29,11 +29,19 @@ impl TemplateCase {
     }
 
     fn invoke(&self, operation: &str, flags: &[&str]) -> Output {
-        self.cli()
-            .arg(operation)
-            .arg("--project")
-            .arg(&self.project)
-            .arg("--plain")
+        let mut command = self.cli();
+        // Fetch and lock live under `dev project` in the v0.6 surface.
+        match operation {
+            "fetch" | "lock" => command.args(["dev", "project", operation]),
+            // `update` takes an explicit scope and no progress flag.
+            "update" => command.args(["update", "--all"]),
+            other => command.arg(other),
+        };
+        command.arg("--project").arg(&self.project);
+        if operation != "update" {
+            command.arg("--plain");
+        }
+        command
             .args(flags)
             .output()
             .expect("invoke CLI")
@@ -67,7 +75,7 @@ impl TemplateCase {
         .expect("authoring manifest");
         fs::write(template.join("content/content/README.md"), "Template payload\n").expect("payload");
         self.cli()
-            .args(["new", "--path"])
+            .args(["new", "AuthorPackage", "--path"])
             .arg(template)
             .args(["--name", "AuthorPackage", "--symbol", "shortName=author-package", "--no-interactive", "-o"])
             .arg(&self.project)
@@ -111,6 +119,7 @@ fn new_template_authoring_project_locks_corelib_and_replays_after_relocation() {
         names,
         [
             "Std",
+            "corelib_bsol",
             "corelib_compiler_sdk",
             "corelib_concurrency",
             "corelib_console",
@@ -120,6 +129,7 @@ fn new_template_authoring_project_locks_corelib_and_replays_after_relocation() {
             "corelib_interop",
             "corelib_network",
             "corelib_runtime",
+            "corelib_serialization",
         ],
         "authoring lock must contain the complete installed Corelib closure"
     );

@@ -101,7 +101,20 @@ fn unit_constant_integer(
         };
         (constant.node.name.node.name == name).then(|| match &constant.node.value.node {
             beskid_analysis::syntax::Literal::Integer(value) => {
-                integer_literal_u64(value).and_then(|value| i64::try_from(value).ok())
+                let primitive = beskid_analysis::syntax::integer_literal_primitive_type(value);
+                let magnitude = beskid_analysis::syntax::integer_literal_magnitude(value);
+                if matches!(
+                    primitive,
+                    beskid_analysis::syntax::PrimitiveType::U64 | beskid_analysis::syntax::PrimitiveType::Word
+                ) {
+                    integer_literal_u64(magnitude).map(|bits| bits as i64)
+                } else {
+                    magnitude
+                        .replace('_', "")
+                        .parse::<i64>()
+                        .ok()
+                        .or_else(|| integer_literal_u64(magnitude).and_then(|value| i64::try_from(value).ok()))
+                }
             }
             _ => None,
         })?

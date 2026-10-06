@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use beskid_artifacts::{ArtifactStore, content_fingerprint};
 
 use crate::artifacts::{source_unit_from_ast_snapshot, source_unit_snapshot};
-use crate::projects::assembly::loader::import_paths_from_source_full;
+use crate::projects::assembly::loader::import_paths_from_program;
 
 use super::SourceUnit;
 use super::loader::AssemblyError;
@@ -67,12 +67,12 @@ impl<'a> UnitBuilder<'a> {
             .map_err(|err| AssemblyError::Parse { path: path.to_path_buf(), message: err.to_string() })?;
         let unit = SourceUnit::bind_request(path.to_path_buf(), logical_name, source.to_string(), program);
         let syntax_index = SyntaxIndex::from_program(&unit.program, generation);
-        self.write_artifacts(&unit, source)?;
+        self.write_artifacts(&unit)?;
         Ok((unit, syntax_index))
     }
 
-    fn write_artifacts(&self, unit: &SourceUnit, source: &str) -> Result<(), AssemblyError> {
-        let imports = import_paths_from_source_full(source);
+    fn write_artifacts(&self, unit: &SourceUnit) -> Result<(), AssemblyError> {
+        let imports = import_paths_from_program(&unit.program.node);
         let ast = source_unit_snapshot(unit, &imports)
             .map_err(|err| AssemblyError::Parse { path: unit.path.clone(), message: err.to_string() })?;
         if let Err(err) = self.store.write_unit(&ast) {

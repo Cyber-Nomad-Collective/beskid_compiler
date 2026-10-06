@@ -10,8 +10,7 @@ pub const SYNTAX_SCAN_SUBDIRS: &[&str] =
     &["syntax/items", "syntax/types", "syntax/expressions", "syntax/statements", "syntax/common"];
 
 /// Files excluded from scanning (no `pub struct` / `pub enum` surface definitions).
-pub const SYNTAX_SCAN_SKIP_FILES: &[&str] =
-    &["mod.rs", "parse_helpers.rs", "doc_attached_items.rs", "span.rs", "impl_block.rs"];
+pub const SYNTAX_SCAN_SKIP_FILES: &[&str] = &["mod.rs", "parse_helpers.rs", "doc_attached_items.rs", "span.rs"];
 
 /// Module prefix for emitted node modules (under compiler-sdk `src/`).
 pub const SYNTAX_NODES_MODULE_PREFIX: &str = "Beskid.Syntax.Nodes";
@@ -65,21 +64,33 @@ pub(crate) fn spanned_inner_type(ty: &Type) -> Option<&Type> {
     }
 }
 
-/// Rust type name used for `{Name}List` / `Optional{Name}` helper keys (`Spanned<T>` → `T`).
+/// Stable concrete schema key retaining every source wrapper and container.
 pub(crate) fn list_element_rust_name(ty: &Type) -> Option<String> {
     let t = peel_type(ty);
     if let Some(inner) = spanned_inner_type(t) {
-        return path_last_ident(inner);
+        return Some(format!("Spanned{}", list_element_rust_name(inner)?));
+    }
+    if let Some(inner) = vec_element_type(t) {
+        return Some(format!("{}List", list_element_rust_name(inner)?));
+    }
+    if let Some(inner) = option_inner_type(t) {
+        return Some(format!("Optional{}", list_element_rust_name(inner)?));
     }
     path_last_ident(t)
 }
-
 pub(crate) fn option_payload_rust_name(ty: &Type) -> Option<String> {
-    let t = peel_type(ty);
-    if let Some(inner) = spanned_inner_type(t) {
-        return path_last_ident(inner);
+    list_element_rust_name(ty)
+}
+
+pub(crate) fn payload_path(name: &str) -> String {
+    match name {
+        "bool" | "i8" | "i16" | "i32" | "i64" | "u8" | "u16" | "u32" | "u64" | "f32" | "f64" => name.into(),
+        "usize" => "u64".into(),
+        "isize" => "i64".into(),
+        "String" | "char" => "string".into(),
+        "Node" => nodes_path("NodeRef"),
+        _ => nodes_path(name),
     }
-    path_last_ident(t)
 }
 
 pub(crate) fn vec_element_type(ty: &Type) -> Option<&Type> {
@@ -118,13 +129,6 @@ pub(crate) fn option_inner_type(ty: &Type) -> Option<&Type> {
     }
 }
 
-fn is_vec_u8(ty: &Type) -> bool {
-    matches!(
-        vec_element_type(ty),
-        Some(inner) if matches!(peel_type(inner), Type::Path(p) if p.path.is_ident("u8"))
-    )
-}
-
 /// Maps `Vec<…>` / `Option<…>` Rust shapes to concrete `Beskid.Syntax.Nodes.*` paths.
 #[derive(Debug, Clone, Default)]
 pub struct HelperPaths {
@@ -136,6 +140,8 @@ pub struct HelperPaths {
     pub list_helpers: BTreeMap<String, String>,
     /// Helper basename (e.g. `OptionalTypeReference`) → full Beskid path of `Some` payload type.
     pub opt_helpers: BTreeMap<String, String>,
+    /// Concrete Spanned<T> wrapper name -> exact typed node payload.
+    pub spanned_helpers: BTreeMap<String, String>,
     /// Helpers only, deterministic emit order (`*List` before `Optional*` when names sort that way).
     pub helper_emit_order: Vec<String>,
 }
@@ -160,13 +166,18 @@ pub fn optional_helper_name(inner_type_name: &str, decl_names: &BTreeSet<String>
 enum RawNeed {
     /// `Vec<El>` where `El` is the Rust type name of the element.
     List(String),
+    Spanned(String),
     /// `Option` wrapping a Rust node type name **or** a `{El}List` helper name.
     Opt(String),
 }
 
 fn accumulate_from_type(ty: &Type, decl_names: &BTreeSet<String>, needs: &mut BTreeSet<RawNeed>) {
     let t = peel_type(ty);
-    if is_vec_u8(t) {
+    if let Some(inner) = spanned_inner_type(t) {
+        if let Some(name) = list_element_rust_name(inner) {
+            needs.insert(RawNeed::Spanned(name));
+        }
+        accumulate_from_type(inner, decl_names, needs);
         return;
     }
     if let Some(inner) = vec_element_type(t) {
@@ -178,9 +189,6 @@ fn accumulate_from_type(ty: &Type, decl_names: &BTreeSet<String>, needs: &mut BT
     }
     if let Some(inner) = option_inner_type(t) {
         if let Some(inner_vec) = vec_element_type(inner) {
-            if is_vec_u8(inner) {
-                return;
-            }
             if let Some(el) = list_element_rust_name(inner_vec) {
                 needs.insert(RawNeed::List(el.clone()));
                 let list_h = list_helper_name(&el, decl_names);
@@ -283,6 +291,12 @@ pub fn load_syntax_files(analysis_src: &std::path::Path) -> Result<Vec<(String, 
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, format!("{}: {e}", path.display())))?;
         out.push((rel_path, file));
     }
+    let doc_path = analysis_src.join("doc/mod.rs");
+    let doc_source = std::fs::read_to_string(&doc_path)?;
+    let mut doc_file =
+        syn::parse_file(&doc_source).map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+    doc_file.items.retain(|item| matches!(item, syn::Item::Struct(s) if s.ident == "LeadingDocComment"));
+    out.push(("doc/mod.rs".into(), doc_file));
     Ok(out)
 }
 
@@ -320,7 +334,7 @@ fn resolve_optional_payload_path(inner_key: &str, list_by_element: &BTreeMap<Str
             return fullp.clone();
         }
     }
-    nodes_path(inner_key)
+    payload_path(inner_key)
 }
 
 fn helper_emit_order(helper_names: &BTreeSet<String>) -> Vec<String> {
@@ -363,7 +377,7 @@ pub fn build_helper_paths(files: &[(String, syn::File)]) -> HelperPaths {
     for (el, list_path) in &list_by_element {
         let h = list_path.rsplit('.').next().unwrap().to_string();
         helper_names.insert(h.clone());
-        list_helpers.insert(h, nodes_path(el));
+        list_helpers.insert(h, payload_path(el));
     }
 
     let mut opt_helpers: BTreeMap<String, String> = BTreeMap::new();
@@ -374,31 +388,31 @@ pub fn build_helper_paths(files: &[(String, syn::File)]) -> HelperPaths {
         opt_helpers.insert(h, payload);
     }
 
+    let mut spanned_helpers = BTreeMap::new();
+    for need in &raw {
+        if let RawNeed::Spanned(inner) = need {
+            let name = format!("Spanned{inner}");
+            helper_names.insert(name.clone());
+            spanned_helpers.insert(name, payload_path(inner));
+        }
+    }
     HelperPaths {
         list_by_element,
         optional_by_inner,
         list_helpers,
         opt_helpers,
+        spanned_helpers,
         helper_emit_order: helper_emit_order(&helper_names),
     }
 }
 
-pub fn emit_list_enum(helper_name: &str, element_path: &str) -> String {
-    let elem = element_path.rsplit('.').next().unwrap_or("T");
-    let tail_ty = format!("{SYNTAX_NODES_MODULE_PREFIX}.{helper_name}");
+pub fn emit_list_record(helper_name: &str, element_path: &str) -> String {
     format!(
         r#"// Generated by beskid_ast_reflect_gen (syntax helpers). Do not hand-edit.
 
-/// Cons-list encoding for Rust `Vec<{elem}>` (`beskid_doc.pest` `@variant`; field prose is plain text).
-///
-/// @variant(Empty) Empty list (length 0).
-/// @variant(Cons) Non-empty list: `head` is first (`{element_path}`), `tail` is the recursive remainder (`{tail_ty}`).
-pub enum {helper_name} {{
-    Empty,
-    Cons(
-        {element_path} head,
-        {tail_ty} tail,
-    ),
+/// Ordered managed-array mirror of a Rust syntax vector.
+pub type {helper_name} {{
+    {element_path}[] items,
 }}
 "#
     )
@@ -429,4 +443,11 @@ mod tests {
         assert_eq!(SYNTAX_NODES_MODULE_PREFIX, "Beskid.Syntax.Nodes");
         assert_eq!(reflect_stub_path(), "Beskid.Syntax.ReflectStub");
     }
+}
+
+/// Concrete specialization of Rust Spanned<T>; IDs remain data, not host authority.
+pub fn emit_spanned_record(name: &str, payload: &str) -> String {
+    format!(
+        "// Generated by beskid_ast_reflect_gen. Do not hand-edit.\n\npub type {name} {{\n    {payload} node,\n    {SYNTAX_NODES_MODULE_PREFIX}.NodeSpan span,\n    u32 id,\n}}\n"
+    )
 }

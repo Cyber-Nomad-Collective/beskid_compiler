@@ -292,7 +292,7 @@ pub(super) fn item_export_symbol_tracked(
             let beskid_analysis::syntax::Literal::String(value) = &literal.node.literal.node else {
                 return None;
             };
-            value.strip_prefix('"')?.strip_suffix('"')
+            beskid_analysis::syntax::decode_string_literal_token(value).ok()
         })?;
         Some(Ok(ExportSymbol(Arc::from(raw))))
     })

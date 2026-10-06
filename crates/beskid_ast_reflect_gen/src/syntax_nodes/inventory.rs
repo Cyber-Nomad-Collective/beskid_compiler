@@ -3,9 +3,7 @@ use super::docs_naming::{
 };
 use super::model::{EnumVariantMirror, FieldMirror, ParsedType, TypeKind, VariantShape};
 use super::type_mapping::map_rust_type;
-use super::{
-    Attribute, BTreeMap, BTreeSet, Fields, HelperPaths, Item, Meta, Path, Visibility, reflect_stub_path, syntax_helpers,
-};
+use super::{BTreeMap, BTreeSet, Fields, HelperPaths, Item, Path, Visibility, reflect_stub_path, syntax_helpers};
 
 /// Discover all `pub struct` / `pub enum` names under the syntax scan dirs.
 pub fn inventory_syntax_type_names(analysis_src: &Path) -> Result<Vec<String>, std::io::Error> {
@@ -82,7 +80,7 @@ fn parse_enum_variant(
     let shape = match &v.fields {
         Fields::Unit => VariantShape::Unit,
         Fields::Unnamed(uf) => {
-            let fields: Vec<_> = uf.unnamed.iter().filter(|f| !field_has_ast_skip(&f.attrs)).collect();
+            let fields: Vec<_> = uf.unnamed.iter().collect();
             let count = fields.len();
             let names = tuple_variant_field_names(count);
             let mut used = BTreeSet::new();
@@ -106,9 +104,6 @@ fn parse_enum_variant(
             let mut used = BTreeSet::new();
             let mut out = Vec::new();
             for f in &nf.named {
-                if field_has_ast_skip(&f.attrs) {
-                    continue;
-                }
                 let base = f.ident.as_ref().map(|i| i.to_string()).unwrap_or_else(|| "field".into());
                 let tm = map_rust_type(&f.ty, stub, helpers, type_params);
                 let beskid_name = unique_field_name(&base, &mut used);
@@ -125,7 +120,7 @@ fn parse_enum_variant(
             VariantShape::Struct(out)
         }
     };
-    EnumVariantMirror { name, rust_doc_lines: doc_lines_from_attrs(&v.attrs), shape }
+    EnumVariantMirror { name, rust_name: v.ident.to_string(), rust_doc_lines: doc_lines_from_attrs(&v.attrs), shape }
 }
 
 fn struct_fields(
@@ -140,7 +135,6 @@ fn struct_fields(
             named
                 .named
                 .iter()
-                .filter(|f| !field_has_ast_skip(&f.attrs))
                 .map(|f| {
                     let base = f.ident.as_ref().expect("named field").to_string();
                     let tm = map_rust_type(&f.ty, stub, helpers, type_params);
@@ -157,7 +151,7 @@ fn struct_fields(
                 .collect()
         }
         Fields::Unnamed(unnamed) => {
-            let fields: Vec<_> = unnamed.unnamed.iter().filter(|f| !field_has_ast_skip(&f.attrs)).collect();
+            let fields: Vec<_> = unnamed.unnamed.iter().collect();
             let mut used = BTreeSet::new();
             fields
                 .into_iter()
@@ -180,16 +174,4 @@ fn struct_fields(
         }
         Fields::Unit => Vec::new(),
     }
-}
-
-fn field_has_ast_skip(attrs: &[Attribute]) -> bool {
-    attrs.iter().any(|a| {
-        if !a.path().is_ident("ast") {
-            return false;
-        }
-        match &a.meta {
-            Meta::List(list) => list.tokens.to_string().contains("skip"),
-            _ => false,
-        }
-    })
 }

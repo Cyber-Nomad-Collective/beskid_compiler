@@ -123,14 +123,12 @@ Tpl {
         assert_eq!(dependencies.len(), 1);
         assert_eq!(dependencies[0].dependency_name, "Std");
 
-        let resolved = beskid_analysis::services::resolve_project_dependencies_with_policy_and_lock_refresh(
+        let resolved = beskid_analysis::services::resolve_project_dependencies_with_policy(
             None,
             Some(&manifest_path),
             None,
             None,
-            false,
-            false,
-            true,
+            beskid_analysis::projects::WorkspacePrepareOptions { refresh_lock: true, ..Default::default() },
             beskid_analysis::projects::UnresolvedDependencyPolicy::Warn,
             None,
         )
@@ -271,6 +269,7 @@ target "app" {
     let manifest = load_manifest_from_template_root(&template_root).expect("load template manifest");
     let output = temp.path().join("scaffolded");
     let options = InstantiateOptions {
+        offline: false,
         template_root,
         output: output.clone(),
         host_project: None,
@@ -294,12 +293,18 @@ target "app" {
     let manifest_path = discover_project_manifest_in_dir(&output)
         .expect("discover scaffold manifest")
         .expect("scaffold manifest present");
-    let resolved = services::resolve_input(Some(&entry), Some(&manifest_path), None, None, false, false)
-        .expect("resolve instantiated project");
+    let resolved = services::resolve_input(
+        Some(&entry),
+        Some(&manifest_path),
+        None,
+        None,
+        beskid_analysis::projects::WorkspacePrepareOptions::default(),
+    )
+    .expect("resolve instantiated project");
 
     let (_, diagnostics, _fixes) = beskid_queries::prepare_compilation_diagnostics(
         &resolved,
-        PrepareOptions {
+        PrepareOptions { mod_invoker: None,
             front_end: FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
             ..Default::default()
         },

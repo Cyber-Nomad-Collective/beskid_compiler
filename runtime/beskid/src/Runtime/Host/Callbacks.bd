@@ -7,7 +7,9 @@
 
 const CallbackTableMax = 32;
 const CALLBACK_REGISTRY_STATE_OFFSET = 24;
-const CALLBACK_REGISTRY_SIZE = 1056;
+const CALLBACK_REGISTRY_SIZE = 1072;
+const CALLBACK_DYNAMIC_ROOT_OFFSET = 1056;
+const CALLBACK_GLUE_ROOT_OFFSET = 1064;
 const CALLBACK_REGISTRY_OWNER_OFFSET = 0;
 const CALLBACK_REGISTRY_CALLBACK_COUNT_OFFSET = 8;
 const CALLBACK_REGISTRY_HANDLER_COUNT_OFFSET = 16;
@@ -155,7 +157,11 @@ pub pointer CallbackRegistryReplacement(pointer entries, word count, word kind) 
     if replacement == NativePointer(0) { return NativePointer(0); }
     memory_set(replacement, 0, CALLBACK_REGISTRY_SIZE);
     raw_word_store(pointer_add(replacement, CALLBACK_REGISTRY_OWNER_OFFSET), NativeWord(state));
-    if previous != NativePointer(0) { raw_word_store(pointer_add(replacement, 24), raw_word_load(pointer_add(previous, 24))); }
+    if previous != NativePointer(0) {
+        raw_word_store(pointer_add(replacement, 24), raw_word_load(pointer_add(previous, 24)));
+        raw_word_store(pointer_add(replacement, CALLBACK_DYNAMIC_ROOT_OFFSET), raw_word_load(pointer_add(previous, CALLBACK_DYNAMIC_ROOT_OFFSET)));
+        raw_word_store(pointer_add(replacement, CALLBACK_GLUE_ROOT_OFFSET), raw_word_load(pointer_add(previous, CALLBACK_GLUE_ROOT_OFFSET)));
+    }
     CallbackCopyEntries(replacement, previous, 0);
     CallbackCopyEntries(replacement, previous, 1);
     CallbackInstallEntries(replacement, entries, count, kind);
@@ -235,4 +241,92 @@ pub unit BeskidRegisterHandlers(pointer entries, word count) {
     raw_word_store(slot, NativeWord(replacement));
     if previous != NativePointer(0) { memory_set(previous, 0, CALLBACK_REGISTRY_SIZE); SystemFree(previous, CALLBACK_REGISTRY_SIZE); }
     return;
+}
+
+// V3 transports resolve only canonical live handles owned by the active registry.
+[Export(Abi:"C", Symbol:"beskid_glue_v1_root_load")]
+pub pointer GlueOwnerRootLoad() {
+    pointer ownerRegistry = CallbackRegistry();
+    if ownerRegistry == NativePointer(0) { return NativePointer(0); }
+    if raw_word_load(ownerRegistry) != NativeWord(RuntimeState()) { return NativePointer(0); }
+    word handle = raw_word_load(pointer_add(ownerRegistry, CALLBACK_GLUE_ROOT_OFFSET));
+    if handle == 0 { return NativePointer(0); }
+    return GcResolveHandle(handle);
+}
+
+[Export(Abi:"C", Symbol:"beskid_glue_v1_root_publish")]
+pub bool GlueOwnerRootPublish(pointer record) {
+    pointer ownerRegistry = CallbackRegistry();
+    if ownerRegistry == NativePointer(0) || raw_word_load(ownerRegistry) != NativeWord(RuntimeState()) { return false; }
+    word handle = GcRootHandle(record);
+    if handle == 0 { return false; }
+    pointer slot = pointer_add(ownerRegistry, CALLBACK_GLUE_ROOT_OFFSET);
+    word previous = raw_word_load(slot);
+    raw_word_store(slot, handle);
+    if previous != 0 { GcUnrootHandle(previous); }
+    return true;
+}
+
+[Export(Abi:"C", Symbol:"beskid_glue_v1_root_clear")]
+pub unit GlueOwnerRootClear() {
+    pointer ownerRegistry = CallbackRegistry();
+    if ownerRegistry == NativePointer(0) || raw_word_load(ownerRegistry) != NativeWord(RuntimeState()) { return; }
+    pointer slot = pointer_add(ownerRegistry, CALLBACK_GLUE_ROOT_OFFSET);
+    word handle = raw_word_load(slot);
+    raw_word_store(slot, 0);
+    if handle != 0 { GcUnrootHandle(handle); }
+    return;
+}
+
+[Export(Abi:"C", Symbol:"beskid_glue_v1_runtime_generation")]
+pub u64 GlueOwnerRuntimeGeneration() {
+    pointer state = RuntimeState();
+    pointer ownerRegistry = CallbackRegistry();
+    if state == NativePointer(0) || ownerRegistry == NativePointer(0) || raw_word_load(ownerRegistry) != NativeWord(state) { return 0; }
+    word lifecycle = raw_word_load(pointer_add(state, 56));
+    if (lifecycle & 0xFFFFFFFF) != 2 { return 0; }
+    return u64(lifecycle >> 32);
+}
+
+pub unit CallbackRegistryRootsDrop() {
+    pointer ownerRegistry = CallbackRegistry();
+    if ownerRegistry == NativePointer(0) { return; }
+    pointer slot = pointer_add(ownerRegistry, CALLBACK_DYNAMIC_ROOT_OFFSET);
+    word handle = raw_word_load(slot);
+    raw_word_store(slot, 0);
+    if handle != 0 { GcUnrootHandle(handle); }
+    GlueOwnerRootClear();
+    return;
+}
+
+[Export(Abi:"C", Symbol:"beskid_dynamic_v1_root_load")]
+pub pointer DynamicRegistryRootLoadV1() {
+    pointer ownerRegistry = CallbackRegistry();
+    if ownerRegistry == NativePointer(0) || raw_word_load(ownerRegistry) != NativeWord(RuntimeState()) { return NativePointer(0); }
+    word handle = raw_word_load(pointer_add(ownerRegistry, CALLBACK_DYNAMIC_ROOT_OFFSET));
+    if handle == 0 { return NativePointer(0); }
+    return GcResolveHandle(handle);
+}
+
+[Export(Abi:"C", Symbol:"beskid_dynamic_v1_root_publish")]
+pub bool DynamicRegistryRootPublishV1(pointer record) {
+    pointer ownerRegistry = CallbackRegistry();
+    if ownerRegistry == NativePointer(0) || raw_word_load(ownerRegistry) != NativeWord(RuntimeState()) { return false; }
+    word handle = GcRootHandle(record);
+    if handle == 0 { return false; }
+    pointer slot = pointer_add(ownerRegistry, CALLBACK_DYNAMIC_ROOT_OFFSET);
+    word previous = raw_word_load(slot);
+    raw_word_store(slot, handle);
+    if previous != 0 { GcUnrootHandle(previous); }
+    return true;
+}
+
+[Export(Abi:"C", Symbol:"beskid_dynamic_v1_root_clear")]
+pub unit DynamicRegistryRootClearV1() {
+    pointer ownerRegistry = CallbackRegistry();
+    if ownerRegistry == NativePointer(0) || raw_word_load(ownerRegistry) != NativeWord(RuntimeState()) { return; }
+    pointer slot = pointer_add(ownerRegistry, CALLBACK_DYNAMIC_ROOT_OFFSET);
+    word handle = raw_word_load(slot);
+    raw_word_store(slot, 0);
+    if handle != 0 { GcUnrootHandle(handle); }
 }

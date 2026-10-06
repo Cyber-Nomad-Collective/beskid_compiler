@@ -35,3 +35,29 @@ pub fn same_file_opt(left: Option<&PathBuf>, right: Option<&PathBuf>) -> bool {
         (Some(a), Some(b)) => same_file(a, b),
     }
 }
+
+/// One lookup's current path identity. Never retained in a table or global cache.
+pub(crate) struct ScopedPathIdentity<'a> {
+    path: &'a Path,
+    canonical: Option<PathBuf>,
+    suffix: Option<PathBuf>,
+}
+impl<'a> ScopedPathIdentity<'a> {
+    pub(crate) fn new(path: &'a Path) -> Self {
+        Self { path, canonical: path.canonicalize().ok(), suffix: logical_source_suffix(path) }
+    }
+    pub(crate) fn canonical(&self) -> Option<&PathBuf> {
+        self.canonical.as_ref()
+    }
+    pub(crate) fn matches(&self, candidate: &Path) -> bool {
+        if candidate == self.path || self.canonical.as_deref() == Some(candidate) {
+            return true;
+        }
+        if let Some(suffix) = &self.suffix {
+            if logical_source_suffix(candidate).as_ref() == Some(suffix) {
+                return true;
+            }
+        }
+        self.canonical.as_ref().is_some_and(|expected| candidate.canonicalize().is_ok_and(|actual| actual == *expected))
+    }
+}

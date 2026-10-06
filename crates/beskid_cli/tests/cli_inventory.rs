@@ -15,7 +15,7 @@ fn new_rejects_removed_tui_picker_and_graph_keeps_its_tui_flag() {
     assert!(diagnostic.contains("unexpected argument '--tui'"), "{diagnostic}");
     assert!(!rejected.stdout.contains(&27) && !rejected.stderr.contains(&27));
 
-    let graph = Command::new(binary).args(["graph", "--help"]).output().expect("graph help");
+    let graph = Command::new(binary).args(["dev", "project", "graph", "--help"]).output().expect("graph help");
     assert!(graph.status.success());
     assert!(String::from_utf8_lossy(&graph.stdout).contains("--tui"));
 }
@@ -34,7 +34,9 @@ fn hi_is_not_discoverable_or_dispatched_and_graph_remains_available() {
     let help_text = String::from_utf8_lossy(&help.stdout);
     let names: Vec<_> = command_names(&help_text).collect();
     assert!(!names.contains(&"hi"), "removed hi command remains in top-level help:\n{help_text}");
-    assert!(names.contains(&"graph"), "graph command disappeared from top-level help:\n{help_text}");
+    assert!(names.contains(&"dev"), "dev command disappeared from top-level help:\n{help_text}");
+    let dev = Command::new(env!("CARGO_BIN_EXE_beskid_cli")).args(["dev", "project", "--help"]).output().expect("dev project help");
+    assert!(String::from_utf8_lossy(&dev.stdout).contains("graph"), "dev project graph disappeared");
 
     let invocation =
         Command::new(env!("CARGO_BIN_EXE_beskid_cli")).arg("hi").output().expect("invoke removed hi command");

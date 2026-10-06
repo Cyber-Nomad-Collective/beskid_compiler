@@ -44,9 +44,29 @@ pub pointer ManagedObjectForReference(pointer heap, pointer value) {
         return NativePointer(0);
     }
     pointer descriptor = NativePointer(raw_word_load(object));
-    if ValidateTypeDescriptor(descriptor) == false || TypeDescriptorFlags(descriptor) != TYPE_DESCRIPTOR_ARRAY {
-        return NativePointer(0);
+    if ValidateTypeDescriptor(descriptor) == false { return NativePointer(0); }
+    if TypeDescriptorFlags(descriptor) == TypeDescriptorUtf8ViewFlag() {
+        pointer payload = NativePointer(raw_word_load(pointer_add(object, 16)));
+        if payload == NativePointer(0) || NativeWord(payload) < 24 { return NativePointer(0); }
+        pointer backing = NativePointer(NativeWord(payload) - 24);
+        if IsAllocatedObject(heap, backing) == false { return NativePointer(0); }
+        pointer backingDescriptor = NativePointer(raw_word_load(backing));
+        if ValidateTypeDescriptor(backingDescriptor) == false ||
+            TypeDescriptorFlags(backingDescriptor) != TypeDescriptorArrayFlag() {
+            return NativePointer(0);
+        }
+        pointer element = NativePointer(raw_word_load(pointer_add(backing, 16)));
+        if ValidateArrayElementDescriptor(element) == false || raw_word_load(element) != 1 ||
+            raw_word_load(pointer_add(element, 24)) != 0 { return NativePointer(0); }
+        if NativePointer(raw_word_load(payload)) != pointer_add(backing, 48) ||
+            raw_word_load(pointer_add(payload, 8)) > raw_word_load(pointer_add(payload, 16)) ||
+            NativePointer(raw_word_load(value)) != NativePointer(raw_word_load(payload)) ||
+            raw_word_load(pointer_add(value, 8)) != raw_word_load(pointer_add(payload, 8)) {
+            return NativePointer(0);
+        }
+        return object;
     }
+    if TypeDescriptorFlags(descriptor) != TypeDescriptorArrayFlag() { return NativePointer(0); }
     if pointer_add(object, 24) != value || NativePointer(raw_word_load(value)) != pointer_add(object, 48) {
         return NativePointer(0);
     }

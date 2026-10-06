@@ -1,0 +1,160 @@
+// Source-owned managed record. Its descriptor and pointer map are emitted by
+// canonical aggregate lowering; native transports never manufacture this shape.
+use Core.Collections.Array;
+
+pub type GlueOwnerRecord {
+    pub GlueOwnerRecord[] next,
+    pub u8[] payload,
+    pub pointer foreignBuffer,
+    pub word length,
+    pub word allocationSize,
+    pub u64 processIssuer,
+    pub u64 session,
+    pub u64 library,
+    pub u64 generation,
+    pub u64 kind,
+    pub u64 shape,
+    pub u64 token,
+    pub u64 released,
+}
+
+u8[] GlueCopyManagedPayload(pointer source, word length) {
+    mut u8[] result = Array.Empty<u8>();
+    mut word index = 0;
+    while index < length {
+        Array.Append<u8>(result, u8(raw_byte_load(pointer_add(source, index))));
+        index = index + 1;
+    }
+    return result;
+}
+
+GlueOwnerRecord GlueRecord(GlueOwnerRecord[] next, pointer buffer, word length,
+    word allocation, u64 issuer, u64 session, u64 library, u64 generation,
+    u64 kind, u64 shape, u64 token) {
+    u8[] payload = GlueCopyManagedPayload(buffer, length);
+    // The private image closure borrows its admission rows only while copying.
+    // Their bytes become managed payload; no caller buffer is owned or freed.
+    mut pointer ownedBuffer = buffer;
+    if kind == 6_u64 || kind == 7_u64 || kind == 8_u64 || kind == 9_u64 { ownedBuffer = NativePointer(0); }
+    return GlueOwnerRecord { next: next, payload: payload, foreignBuffer: ownedBuffer,
+        length: length, allocationSize: allocation, processIssuer: issuer,
+        session: session, library: library, generation: generation, kind: kind,
+        shape: shape, token: token, released: 0 };
+}
+
+// Hidden normalized compiler transports. Native callers must obtain `previous`
+// through the canonical registry root, not supply a foreign pointer as a value.
+[Export(Abi:"C", Symbol:"beskid_glue_v1_record_leaf")]
+pub GlueOwnerRecord GlueRecordLeaf(pointer buffer, word length, word allocation,
+    u64 issuer, u64 session, u64 library, u64 generation, u64 kind, u64 shape, u64 token) {
+    GlueOwnerRecord[] next = Array.Empty<GlueOwnerRecord>();
+    return GlueRecord(next, buffer, length, allocation, issuer, session, library,
+        generation, kind, shape, token);
+}
+
+[Export(Abi:"C", Symbol:"beskid_glue_v1_record_link")]
+pub GlueOwnerRecord GlueRecordLink(GlueOwnerRecord previous, pointer buffer,
+    word length, word allocation, u64 issuer, u64 session, u64 library,
+    u64 generation, u64 kind, u64 shape, u64 token) {
+    GlueOwnerRecord[] next = [previous];
+    return GlueRecord(next, buffer, length, allocation, issuer, session, library,
+        generation, kind, shape, token);
+}
+
+[Export(Abi:"C", Symbol:"beskid_glue_v1_record_next_count")]
+pub word GlueRecordNextCount(GlueOwnerRecord record) { return word(Array.Len<GlueOwnerRecord>(record.next)); }
+
+[Export(Abi:"C", Symbol:"beskid_glue_v1_record_previous")]
+pub GlueOwnerRecord GlueRecordPrevious(GlueOwnerRecord record) { return record.next[0]; }
+
+[Export(Abi:"C", Symbol:"beskid_glue_v1_record_tag")]
+pub u64 GlueRecordTag(GlueOwnerRecord record, word selector) {
+    if selector == 0 { return record.processIssuer; }
+    if selector == 1 { return record.session; }
+    if selector == 2 { return record.library; }
+    if selector == 3 { return record.generation; }
+    if selector == 4 { return record.kind; }
+    if selector == 5 { return record.shape; }
+    if selector == 6 { return record.token; }
+    if selector == 7 { return record.released; }
+    if selector == 8 { return u64(record.allocationSize); }
+    return 0;
+}
+
+// Library domains use the existing traced payload, not a second native registry.
+// Each identity is encoded as exactly eight little-endian bytes, preserving u64.
+u64 GlueShapeIdentity(u8[] bytes, word index) {
+    mut u64 value = 0_u64;
+    mut word byte = 8;
+    while byte > 0 {
+        byte = byte - 1;
+        value = value * 256_u64 + u64(bytes[index * 8 + byte]);
+    }
+    return value;
+}
+
+[Export(Abi:"C", Symbol:"beskid_glue_v1_record_bind_shapes")]
+pub word GlueRecordBindShapes(GlueOwnerRecord record, u8[] bytes) {
+    if record.kind != 2_u64 || record.released != 0_u64 { return 0; }
+    if Array.Len<u8>(record.payload) != 0 { return 0; }
+    word length = word(Array.Len<u8>(bytes));
+    if length == 0 || length > 524288 || length % 8 != 0 { return 0; }
+    mut word index = 0;
+    mut u64 previous = 0_u64;
+    while index < length / 8 {
+        u64 identity = GlueShapeIdentity(bytes, index);
+        if identity == 0_u64 || identity <= previous { return 0; }
+        previous = identity;
+        index = index + 1;
+    }
+    // Both source parameters are managed roots; canonical assignment emits the
+    // descriptor-aware publication barrier before the library is usable.
+    record.payload = bytes;
+    return 1;
+}
+
+[Export(Abi:"C", Symbol:"beskid_glue_v1_record_has_shape")]
+pub word GlueRecordHasShape(GlueOwnerRecord record, u64 shape) {
+    if record.kind != 2_u64 || record.released != 0_u64 || shape == 0_u64 { return 0; }
+    word length = word(Array.Len<u8>(record.payload));
+    if length == 0 || length > 524288 || length % 8 != 0 { return 0; }
+    mut word lower = 0;
+    mut word upper = length / 8;
+    while lower < upper {
+        word middle = lower + (upper - lower) / 2;
+        u64 identity = GlueShapeIdentity(record.payload, middle);
+        if identity == shape { return 1; }
+        if identity < shape { lower = middle + 1; }
+        else { upper = middle; }
+    }
+    return 0;
+}
+
+[Export(Abi:"C", Symbol:"beskid_glue_v1_record_release")]
+pub word GlueRecordRelease(GlueOwnerRecord record, u8[] empty) {
+    if Array.Len<u8>(empty) != 0 { return 0; }
+    if record.released == 1 { return 1; }
+    // The process session owns this preadmitted empty array. Release allocates
+    // no replacement; both parameters are typed roots through the barrier.
+    pointer buffer = record.foreignBuffer;
+    word allocation = record.allocationSize;
+    record.payload = empty;
+    record.released = 1;
+    record.foreignBuffer = NativePointer(0);
+    record.length = 0;
+    record.allocationSize = 0;
+    if buffer != NativePointer(0) { SystemFree(buffer, allocation); }
+    return 1;
+}
+
+[Export(Abi:"C", Symbol:"beskid_glue_v1_record_begin_close")]
+pub word GlueRecordBeginClose(GlueOwnerRecord record) {
+    if record.kind != 2_u64 || record.released != 0_u64 { return 0; }
+    // Closing revokes admission without dropping image/shape payloads needed
+    // to destroy existing opaque owners. Final release clears this state.
+    record.released = 2_u64;
+    return 1;
+}
+
+[Export(Abi:"C", Symbol:"beskid_glue_v1_record_payload")]
+pub u8[] GlueRecordPayload(GlueOwnerRecord record) { return record.payload; }

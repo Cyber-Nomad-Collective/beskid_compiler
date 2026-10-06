@@ -39,7 +39,12 @@ impl SyntaxNodeFacts<'_> {
         }
         matches!(
             self.query(call_lowering(self.db, key)),
-            Some(CallLowering::Direct(_) | CallLowering::ManifestBuiltin(_) | CallLowering::CorelibService(_))
+            Some(
+                CallLowering::Direct(_)
+                    | CallLowering::ManifestBuiltin(_)
+                    | CallLowering::CorelibService(_)
+                    | CallLowering::NativeModCallback(_)
+            )
         )
         .then_some(CallKind::Direct)
     }
@@ -74,6 +79,9 @@ impl SyntaxNodeFacts<'_> {
             return Some(DirectCallee::runtime_intrinsic(index));
         }
         let lowering = self.query(call_lowering(self.db, key))?;
+        if let CallLowering::NativeModCallback(callback) = lowering {
+            return Some(DirectCallee::NativeModCallback(callback.wrapper()));
+        }
         if let CallLowering::ManifestBuiltin(builtin) = lowering {
             return Some(DirectCallee::corelib_service(builtin.symbol));
         }

@@ -8,6 +8,7 @@ use super::types::GeneratedSyntax;
 pub(crate) fn merge_generated_syntax(
     program: Spanned<Program>,
     generated: &GeneratedSyntax,
+    generation: Option<crate::syntax::SyntaxGenerationId>,
 ) -> Result<Spanned<Program>> {
     if !generated.has_typed_merge() {
         return Ok(program);
@@ -20,12 +21,15 @@ pub(crate) fn merge_generated_syntax(
     }
 
     if !generated.pipeline_ops.is_empty() {
-        const GENERATION_ID: u64 = 1;
+        let generation_id = generation
+            .filter(|generation| generation.0 != 0)
+            .ok_or_else(|| anyhow::anyhow!("mod pipeline operations require actual syntax generation authority"))?
+            .0;
         let ops = {
-            let snapshot = materialize_snapshot(&merged, GENERATION_ID);
+            let snapshot = materialize_snapshot(&merged, generation_id);
             let pipeline = SdkSyntaxPipeline::from_ops(
                 &snapshot,
-                SdkNodeRef { syntax_generation_id: GENERATION_ID, node_id: snapshot.root_id() },
+                SdkNodeRef { syntax_generation_id: generation_id, node_id: snapshot.root_id() },
                 QueryBounds { max_nodes: 0, max_depth: 0 },
                 generated.pipeline_ops.clone(),
             );
@@ -33,7 +37,7 @@ pub(crate) fn merge_generated_syntax(
             pipeline.ordered_ops()
         };
         for op in ops {
-            super::query_bridge::apply_program_item_op(&mut merged, GENERATION_ID, op)
+            super::query_bridge::apply_program_item_op(&mut merged, generation_id, op)
                 .map_err(|err| anyhow::anyhow!("failed to apply mod pipeline ops: {err:?}"))?;
         }
     }

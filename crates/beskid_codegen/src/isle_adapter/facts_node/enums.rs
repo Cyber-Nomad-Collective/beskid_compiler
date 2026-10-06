@@ -30,7 +30,12 @@ impl SyntaxNodeFacts<'_> {
         if left_type != right_type
             || matches!(
                 left_type,
-                SemanticTypeId::I32
+                SemanticTypeId::I8
+                    | SemanticTypeId::I16
+                    | SemanticTypeId::U16
+                    | SemanticTypeId::U64
+                    | SemanticTypeId::F32
+                    | SemanticTypeId::I32
                     | SemanticTypeId::I64
                     | SemanticTypeId::U32
                     | SemanticTypeId::U8

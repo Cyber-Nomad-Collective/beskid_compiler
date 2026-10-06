@@ -1,4 +1,4 @@
-//! `beskid analyze` — run builtin semantic rules and print diagnostics.
+//! `beskid check` — run builtin semantic rules and print diagnostics.
 
 use anyhow::Result;
 use beskid_analysis::services::{self, FrontEndOptions, PrepareOptions};
@@ -37,11 +37,15 @@ fn run_analyze(args: AnalyzeArgs) -> Result<()> {
         args.project.project.as_ref(),
         args.project.target.as_deref(),
         args.project.workspace_member.as_deref(),
-        args.lockfile.frozen,
-        args.lockfile.locked,
+        args.lockfile.WorkspaceOptions(),
         args.plain,
     ))?;
     let prepare_options = PrepareOptions {
+        mod_invoker: super::compiler_mod::prepare_native_mod_executor(
+            &resolved,
+            args.lockfile.WorkspaceOptions(),
+            Some(pipeline_ui.as_ref()),
+        )?,
         front_end: FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
         ..Default::default()
     };

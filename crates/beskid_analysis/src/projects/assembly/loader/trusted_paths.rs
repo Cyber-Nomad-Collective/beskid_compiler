@@ -9,19 +9,53 @@ use std::sync::Arc;
 use super::super::{EffectiveCompilationRoots, SourceUnit};
 use crate::projects::CompilePlan;
 
+/// One package whose original source root may be the compiler-owned Corelib package, paired with
+/// the effective (possibly materialized) source root that assembly selected for it.
+struct CorelibPackageCandidate<'a> {
+    project_root: &'a Path,
+    source_root: &'a Path,
+    effective_source_root: PathBuf,
+}
+
 /// Preserve the lexical origin of compiler-owned Foundation service units when a workspace
-/// materializes them under `obj/beskid/deps`. A matching dependency name or source text is never
-/// enough: the resolved dependency's original source root must contain the compiler-embedded
-/// source path before its copied physical path is admitted.
+/// materializes them under `obj/beskid`. A matching package name or source text is never enough:
+/// the package's original source root must be the compiler-owned Corelib package (build checkout
+/// or verified installed bundle) before its copied physical path is admitted. The candidates are
+/// every resolved dependency and the host package itself, so checking a Corelib package directly
+/// admits its own exact service units while a copy of that package elsewhere stays ordinary.
 pub(super) fn trusted_corelib_service_paths(
     plan: &CompilePlan,
     roots: &EffectiveCompilationRoots,
     units: &[SourceUnit],
 ) -> Arc<[PathBuf]> {
-    let mut trusted = Vec::new();
+    let mut candidates = Vec::new();
+    for dependency in &plan.dependency_projects {
+        // Assembly already validated and selected these roots, including Project.lock replay.
+        // Use that exact destination so provenance cannot diverge from source discovery.
+        let mut matching_roots = roots
+            .dependencies
+            .iter()
+            .filter(|root| root.dependency_name.as_deref() == Some(dependency.dependency_name.as_str()));
+        let effective = match (matching_roots.next(), matching_roots.next()) {
+            (Some(root), None) => root.source_root.clone(),
+            _ => continue,
+        };
+        candidates.push(CorelibPackageCandidate {
+            project_root: &dependency.project_root,
+            source_root: &dependency.source_root,
+            effective_source_root: effective,
+        });
+    }
+    candidates.push(CorelibPackageCandidate {
+        project_root: &plan.project_root,
+        source_root: &plan.source_root,
+        effective_source_root: roots.host.source_root.clone(),
+    });
     let bundle_candidates =
-        plan.dependency_projects.iter().map(|dependency| dependency.project_root.clone()).collect::<Vec<_>>();
+        candidates.iter().map(|candidate| candidate.project_root.to_path_buf()).collect::<Vec<_>>();
     let verified_bundle_roots = verified_corelib_bundle_roots(&bundle_candidates);
+
+    let mut trusted = Vec::new();
     for source in beskid_abi::runtime_source::canonical_corelib_service_sources()
         .into_iter()
         .chain(std::iter::once(beskid_abi::runtime_source::canonical_corelib_deadline_source()))
@@ -34,40 +68,33 @@ pub(super) fn trusted_corelib_service_paths(
             continue;
         }
         // Physical build-checkout identity is optional. It remains the authority for direct
-        // source/development dependencies, but verified installed bundles use only the immutable
+        // source/development packages, but verified installed bundles use only the immutable
         // logical descriptor above and therefore survive compiler relocation.
         let checkout_identity = corelib_service_source_identity(&source.logical_path);
-        let Some((index, relative, bundled)) =
-            plan.dependency_projects.iter().enumerate().find_map(|(index, dependency)| {
-                let source_root = normalize_lexically(&dependency.source_root);
-                let checkout_relative = checkout_identity.as_ref().and_then(|identity| {
-                    [&identity.declared_path, &identity.canonical_path].into_iter().find_map(|path| {
-                        path.ancestors()
-                            .find(|ancestor| corelib_source_locations_match(ancestor, &source_root))
-                            .and_then(|ancestor| path.strip_prefix(ancestor).ok())
-                            .map(|relative| (index, relative.to_path_buf()))
-                    })
-                });
-                checkout_relative.map(|(index, relative)| (index, relative, false)).or_else(|| {
-                    bundled_corelib_source_root(dependency, verified_bundle_roots[index].as_deref(), &descriptor)
-                        .map(|_| (index, descriptor.relative_path().to_path_buf(), true))
+        let mut matches = candidates.iter().enumerate().filter_map(|(index, candidate)| {
+            let source_root = normalize_lexically(candidate.source_root);
+            let checkout_relative = checkout_identity.as_ref().and_then(|identity| {
+                [&identity.declared_path, &identity.canonical_path].into_iter().find_map(|path| {
+                    path.ancestors()
+                        .find(|ancestor| corelib_source_locations_match(ancestor, &source_root))
+                        .and_then(|ancestor| path.strip_prefix(ancestor).ok())
+                        .map(Path::to_path_buf)
                 })
+            });
+            checkout_relative.map(|relative| (index, relative, false)).or_else(|| {
+                bundled_corelib_source_root(
+                    candidate.project_root,
+                    candidate.source_root,
+                    verified_bundle_roots[index].as_deref(),
+                    &descriptor,
+                )
+                .map(|_| (index, descriptor.relative_path().to_path_buf(), true))
             })
-        else {
-            continue;
-        };
-        // Assembly already validated and selected these roots, including Project.lock replay.
-        // Use that exact destination so provenance cannot diverge from source discovery.
-        let mut matching_roots = roots.dependencies.iter().filter(|root| {
-            root.dependency_name.as_deref() == Some(plan.dependency_projects[index].dependency_name.as_str())
         });
-        let Some(root) = matching_roots.next() else {
+        let Some((index, relative, bundled)) = matches.next() else {
             continue;
         };
-        if matching_roots.next().is_some() {
-            continue;
-        }
-        let effective_path = root.source_root.join(relative);
+        let effective_path = candidates[index].effective_source_root.join(relative);
         if units.iter().any(|unit| {
             corelib_source_locations_match(&unit.origin_path, &effective_path)
                 && (!bundled
@@ -89,18 +116,19 @@ pub(super) fn trusted_corelib_service_paths(
 }
 
 fn bundled_corelib_source_root(
-    dependency: &crate::projects::ResolvedDependencyProject,
+    project_root: &Path,
+    source_root: &Path,
     bundle_root: Option<&Path>,
     descriptor: &CorelibServiceSourceDescriptor,
 ) -> Option<PathBuf> {
     let bundle_root = bundle_root?;
     let expected_project_relative = Path::new("packages").join(descriptor.package());
 
-    let physical_project_root = dependency.project_root.canonicalize().ok()?;
+    let physical_project_root = project_root.canonicalize().ok()?;
     if physical_project_root.strip_prefix(bundle_root).ok()? != expected_project_relative {
         return None;
     }
-    let physical_source_root = dependency.source_root.canonicalize().ok()?;
+    let physical_source_root = source_root.canonicalize().ok()?;
     if physical_source_root.strip_prefix(&physical_project_root).ok()? != Path::new("src") {
         return None;
     }

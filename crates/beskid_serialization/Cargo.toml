@@ -1,0 +1,9 @@
+[package]
+name = "beskid_serialization"
+version = "0.1.0"
+edition = "2024"
+license.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true

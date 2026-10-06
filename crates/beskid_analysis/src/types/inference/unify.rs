@@ -9,11 +9,16 @@ pub fn is_numeric(table: &TypeTable, type_id: TypeId) -> bool {
     matches!(
         table.get(type_id),
         Some(TypeInfo::Primitive(
-            PrimitiveType::I32
+            PrimitiveType::I8
+                | PrimitiveType::I16
+                | PrimitiveType::U16
+                | PrimitiveType::U64
+                | PrimitiveType::I32
                 | PrimitiveType::I64
                 | PrimitiveType::U32
                 | PrimitiveType::U8
                 | PrimitiveType::Word
+                | PrimitiveType::F32
                 | PrimitiveType::F64
         ))
     )
@@ -56,7 +61,7 @@ pub fn unify_numeric_types(table: &TypeTable, left: TypeId, right: TypeId) -> Op
         (PrimitiveType::U32, PrimitiveType::U8) => Some(left),
         (PrimitiveType::U8, PrimitiveType::U32) => table.find_primitive(PrimitiveType::U32),
         (PrimitiveType::I32, PrimitiveType::U32) | (PrimitiveType::U32, PrimitiveType::I32) => None,
-        _ => Some(left),
+        _ => None,
     }
 }
 

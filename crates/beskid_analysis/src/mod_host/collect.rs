@@ -43,7 +43,7 @@ pub(crate) fn collect_contracts(
                     continue;
                 }
                 let outcome = invoker
-                    .invoke_collector(registration, &context.collect_request)
+                    .invoke_collector(registration, &context.collect_request, input.semantic_authority)
                     .map_err(|err| anyhow::anyhow!(err.to_string()))?;
                 registrations.push(registration.clone());
                 outcomes.push(outcome);

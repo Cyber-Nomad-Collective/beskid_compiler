@@ -1,5 +1,5 @@
 //! `ExternalLibrary` provider trait and closed registry for the
-//! [`beskid import lib`](https://beskid-lang.org/platform-spec/tooling/foreign-library-import/cli-import-lib-command/)
+//! [`beskid dev import lib`](https://beskid-lang.org/platform-spec/tooling/foreign-library-import/cli-import-lib-command/)
 //! v0.3 platform-spec feature.
 //!
 //! See `site/website/src/content/docs/platform-spec/tooling/foreign-library-import/` for the

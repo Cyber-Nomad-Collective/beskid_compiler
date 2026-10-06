@@ -21,12 +21,14 @@ pub struct GenericParameterConflict {
 
 /// Whether `expression` is an integer literal with no explicit type suffix (`2`, not `2_i64`).
 /// A bare literal's default type (`i32`) is provisional: it adapts to whatever concrete type its
-/// generic parameter resolves to from another, explicitly-typed argument, so it must never be
-/// treated as one of the two "independently declared" sides of a real conflict.
-fn is_bare_integer_literal(expression: &Expression) -> bool {
-    // A leading `-` (e.g. `-1`) still names a bare literal magnitude; only its sign changes.
+/// generic parameter resolves to from another, explicitly-typed argument, or to the primitive
+/// integer type of its sibling binary operand, so it must never be treated as one of the two
+/// "independently declared" sides of a real conflict.
+pub(crate) fn is_bare_integer_literal(expression: &Expression) -> bool {
+    // Grouping and a leading `-` (e.g. `-1`, `(1)`) still name a bare literal magnitude.
     let expression = match expression {
         Expression::Unary(unary) if unary.node.op.node == UnaryOp::Neg => &unary.node.expr.node,
+        Expression::Grouped(grouped) => return is_bare_integer_literal(&grouped.node.expr.node),
         other => other,
     };
     let Expression::Literal(literal) = expression else {
@@ -35,7 +37,65 @@ fn is_bare_integer_literal(expression: &Expression) -> bool {
     let Literal::Integer(text) = &literal.node.literal.node else {
         return false;
     };
-    !(text.ends_with("_u8") || text.ends_with("_i64") || text.ends_with("_i32") || text.ends_with("_u32"))
+    crate::syntax::integer_literal_magnitude(text) == text
+}
+
+/// Whether `type_id` is a primitive integer type a bare literal may be represented as.
+pub(crate) fn is_integer_primitive(types: &TypeTable, type_id: TypeId) -> bool {
+    use crate::syntax::PrimitiveType;
+    matches!(
+        types.get(type_id),
+        Some(TypeInfo::Primitive(
+            PrimitiveType::I8
+                | PrimitiveType::I16
+                | PrimitiveType::I32
+                | PrimitiveType::I64
+                | PrimitiveType::U8
+                | PrimitiveType::U16
+                | PrimitiveType::U32
+                | PrimitiveType::U64
+                | PrimitiveType::Word
+        ))
+    )
+}
+
+/// Argument types for generic inference in which every bare integer literal bound directly to a
+/// generic parameter adopts the primitive integer type that a non-literal argument already binds
+/// to that same parameter. This is representation selection, not widening: the literal is later
+/// re-typed against the substituted parameter, which rejects a magnitude that does not fit.
+/// Misaligned inputs (an argument that failed to type) are returned unchanged.
+pub fn adapt_bare_literal_arguments(
+    types: &TypeTable,
+    function_signatures: &HashMap<ItemId, FunctionSignature>,
+    item_id: ItemId,
+    arg_types: &[TypeId],
+    args: &[Spanned<Expression>],
+) -> Vec<TypeId> {
+    let mut adapted = arg_types.to_vec();
+    if args.len() != arg_types.len() {
+        return adapted;
+    }
+    let Some(signature) = function_signatures.get(&item_id) else {
+        return adapted;
+    };
+    let mut concrete: HashMap<&str, TypeId> = HashMap::new();
+    for ((arg_type, param_type), arg) in arg_types.iter().zip(signature.params.iter()).zip(args) {
+        if let Some(TypeInfo::GenericParam(name)) = types.get(*param_type)
+            && !is_bare_integer_literal(&arg.node)
+        {
+            concrete.entry(name.as_str()).or_insert(*arg_type);
+        }
+    }
+    for (index, (param_type, arg)) in signature.params.iter().zip(args).enumerate() {
+        if let Some(TypeInfo::GenericParam(name)) = types.get(*param_type)
+            && is_bare_integer_literal(&arg.node)
+            && let Some(bound) = concrete.get(name.as_str())
+            && is_integer_primitive(types, *bound)
+        {
+            adapted[index] = *bound;
+        }
+    }
+    adapted
 }
 
 /// Detect a generic parameter bound to two declared-distinct primitive types across a call's

@@ -14,6 +14,7 @@ pub struct CollectorOutcome {
 /// spliced directly into the host program by `merge::merge_generated_syntax`.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct GeneratorOutcome {
+    pub compiled_metadata: Vec<super::super::ModCompiledMetadata>,
     pub type_id: String,
     pub typed_items: Vec<Spanned<ProgramItem>>,
     pub code_outputs: Vec<super::super::generate_output::CodeGenerateOutput>,

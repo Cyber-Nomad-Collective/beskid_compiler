@@ -197,3 +197,35 @@ pub fn emit_isle_item_with_services_specialization<'db>(
         EmissionServices { string_interner: Some(string_interner), call_importer: Some(importer) },
     )
 }
+
+/// Emit only an exact member of a compiler-issued no-yield closure. The supplied importer
+/// must be the closure's dedicated clone table; the module helper builds it before emission.
+pub(crate) fn emit_isle_checked_effect_item<'db>(
+    input: &'db CodegenInput<'db>,
+    isa: &'db dyn TargetIsa,
+    member: &crate::checked_effect::CheckedEffectItem,
+    string_interner: &mut dyn StringInterner,
+    importer: &mut dyn CallImporter,
+    nonallocating: bool,
+) -> Result<cranelift_codegen::ir::Function, FunctionEmissionError> {
+    let item = member.key();
+    let body = item_body(input.database(), item)
+        .ok()
+        .flatten()
+        .ok_or_else(|| FunctionEmissionError::verification(item, "checked item has no syntax body"))?;
+    let (signature, mut facts) = match member.specialization() {
+        Some(instance) => (
+            signature_for_item(isa, instance.signature.clone()).ok_or_else(|| {
+                FunctionEmissionError::verification(item, "checked specialization signature unavailable")
+            })?,
+            SyntaxNodeFacts::new_with_item_specialization(input, isa, item, instance.clone()),
+        ),
+        None => (syntax_item_signature(input, isa, item)?, SyntaxNodeFacts::new_with_isa(input, isa)),
+    };
+    facts.checked_effect = !nonallocating;
+    facts.nonallocating_publication = nonallocating;
+    FunctionEmitter::new(isa).emit_item_statement_with_services(
+        ItemStatementEmission { name: UserFuncName::user(0, 0), signature, facts: &facts, item, body },
+        EmissionServices { string_interner: Some(string_interner), call_importer: Some(importer) },
+    )
+}

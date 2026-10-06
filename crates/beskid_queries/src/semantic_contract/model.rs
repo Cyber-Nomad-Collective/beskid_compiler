@@ -20,13 +20,13 @@ pub use closures::{
     ClosurePointerMapRequirement, ClosureSignature, FiberOwnership, SpawnDiagnostic, SpawnDiagnosticKind,
     SpawnEntryValidation, SpawnHandleType, SpawnLegality, SpawnTarget,
 };
-pub use errors::{GenericBindingConflict, SemanticError, SemanticFinding, SemanticQueryResult};
+pub use errors::{GenericBindingConflict, GenericBoundViolation, SemanticError, SemanticFinding, SemanticQueryResult};
 pub use events::{EventHandlerLocalFact, EventOperationFact, EventOperationKind};
 pub use facts::{
     BulkParameterFact, CastIntent, ControlFlow, ForIteratorFact, ItemSignature, PrimitiveNumericConversion,
     RangeForFact, TryExpressionFact,
 };
-pub(in crate::semantic_contract) use generics::GenericSourceTypeIdentity;
+pub(crate) use generics::GenericSourceTypeIdentity;
 pub use generics::{
     ArrayIndexElementTemplate, ContractParameterWitness, GenericCallInstantiation, GenericCallSpecialization,
     GenericCallTemplate, GenericNominalMethodReceiver, GenericSpecializationInstance, GenericSubstitution,

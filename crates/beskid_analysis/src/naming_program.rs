@@ -151,14 +151,24 @@ fn walk_enum_variant_mut(variant: &mut EnumVariant, visit: &mut impl FnMut(Namin
     }
 }
 
+/// An `[Extern]` contract's method identifiers are logical foreign symbols (the method name is
+/// the link-time symbol unless `Symbol` overrides it), so Beskid naming conventions never apply
+/// to them and normalization must never rename them.
+fn is_extern_contract(def: &ContractDefinition) -> bool {
+    def.attributes.iter().any(|attribute| attribute.node.name.node.name == "Extern")
+}
+
 fn walk_contract_definition(def: &ContractDefinition, visit: &mut impl FnMut(NamingRole, &Spanned<Identifier>)) {
     visit(NamingRole::TypeDeclaration, &def.name);
     for generic in &def.generics {
         visit(NamingRole::GenericParameter, generic);
     }
+    let foreign_symbols = is_extern_contract(def);
     for item in &def.items {
         if let ContractNode::MethodSignature(sig) = &item.node {
-            visit(NamingRole::Callable, &sig.node.name);
+            if !foreign_symbols {
+                visit(NamingRole::Callable, &sig.node.name);
+            }
             for param in &sig.node.parameters {
                 walk_parameter(&param.node, visit);
             }
@@ -171,9 +181,12 @@ fn walk_contract_definition_mut(def: &mut ContractDefinition, visit: &mut impl F
     for generic in &mut def.generics {
         visit(NamingRole::GenericParameter, &mut generic.node);
     }
+    let foreign_symbols = is_extern_contract(def);
     for item in &mut def.items {
         if let ContractNode::MethodSignature(sig) = &mut item.node {
-            visit(NamingRole::Callable, &mut sig.node.name.node);
+            if !foreign_symbols {
+                visit(NamingRole::Callable, &mut sig.node.name.node);
+            }
             for param in &mut sig.node.parameters {
                 walk_parameter_mut(&mut param.node, visit);
             }

@@ -35,9 +35,18 @@ pub(in crate::semantic_contract) fn primitive_numeric_conversion_tracked(
             Err(error) => return Some(Err(error)),
         };
         Some(
-            primitive_integer(from)
-                .then_some(PrimitiveNumericConversion { from, to })
-                .ok_or_else(|| SemanticError::unavailable("primitive_numeric_conversion")),
+            (if from == SemanticTypeId::CHAR || to == SemanticTypeId::CHAR {
+                matches!(
+                    (from, to),
+                    (SemanticTypeId::U32, SemanticTypeId::CHAR) | (SemanticTypeId::CHAR, SemanticTypeId::U32)
+                )
+            } else {
+                primitive_integer(from)
+                    || (matches!(from, SemanticTypeId::F32 | SemanticTypeId::F64)
+                        && matches!(to, SemanticTypeId::F32 | SemanticTypeId::F64))
+            })
+            .then_some(PrimitiveNumericConversion { from, to })
+            .ok_or_else(|| SemanticError::unavailable("primitive_numeric_conversion")),
         )
     })?
     .transpose()
@@ -53,12 +62,18 @@ pub(in crate::semantic_contract) fn primitive_numeric_conversion_target(
         return None;
     };
     Some(match segment.node.name.node.name.as_str() {
+        "i8" => SemanticTypeId::I8,
+        "i16" => SemanticTypeId::I16,
+        "u16" => SemanticTypeId::U16,
+        "u64" => SemanticTypeId::U64,
+        "f32" => SemanticTypeId::F32,
         "i32" => SemanticTypeId::I32,
         "i64" => SemanticTypeId::I64,
         "u32" => SemanticTypeId::U32,
         "u8" | "byte" => SemanticTypeId::U8,
         "word" => SemanticTypeId::WORD,
         "f64" => SemanticTypeId::F64,
+        "char" => SemanticTypeId::CHAR,
         _ => return None,
     })
 }

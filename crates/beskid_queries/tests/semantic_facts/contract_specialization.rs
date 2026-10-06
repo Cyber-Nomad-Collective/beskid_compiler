@@ -256,11 +256,7 @@ fn impl_block_conformance_mints_the_same_contract_witness_as_type_conformance() 
         let instance = generic_call_specialization(&db, call)
             .unwrap_or_else(|error| panic!("source {source:?} must specialize cleanly; got error {error:?}"))
             .unwrap_or_else(|| panic!("source {source:?} call should specialize"));
-        assert_eq!(
-            instance.contract_witnesses.len(),
-            1,
-            "source {source:?} must mint exactly one contract witness"
-        );
+        assert_eq!(instance.contract_witnesses.len(), 1, "source {source:?} must mint exactly one contract witness");
     }
 }
 
@@ -284,5 +280,57 @@ fn where_bound_rejects_a_non_conforming_inferred_type_argument() {
     assert!(
         error.diagnostics().iter().any(|diagnostic| diagnostic.contains("E1610")),
         "bound failures must carry the GenericBoundNotSatisfied diagnostic code; got: {error:?}"
+    );
+}
+
+#[test]
+fn applied_where_bound_retains_exact_encoder_and_dispatches_original_receiver() {
+    let source = r#"
+contract Encoder { unit Finish(); }
+contract Serializable<E> { unit WriteTyped(E encoder); }
+type Wire : Encoder { pub unit Finish() { return; } }
+type Item {}
+impl Item : Serializable<Wire> { pub unit WriteTyped(Wire encoder) { return; } }
+unit Encode<T,E>(T value, E encoder) where T: Serializable<E>, E: Encoder { value.WriteTyped(encoder); }
+unit Main() { Encode<Item,Wire>(Item {}, Wire {}); }
+"#;
+    let (db, _, unit, generation, index) = setup(source);
+    let outer = generic_call_specialization(&db, key(unit, generation, &index, NodeKind::CallExpression, 1))
+        .expect("exact applied Serializable<Wire> bound must resolve")
+        .expect("Encode specializes");
+    assert_eq!(outer.contract_witnesses.len(), 2, "both value and encoder bounds retain private current witnesses");
+    let outer = generic_call_specialization_instance(&db, outer)
+        .expect("specialized declaration identity is available")
+        .expect("Encode instance materializes");
+    let nested = generic_call_specialization_in_environment(
+        &db,
+        key(unit, generation, &index, NodeKind::CallExpression, 0),
+        &outer,
+    )
+    .expect("bound member resolves only in concrete source environment")
+    .expect("original receiver method specializes");
+    assert_eq!(nested.declaration, key(unit, generation, &index, NodeKind::MethodDefinition, 1));
+    assert_eq!(
+        nested.signature.parameters.as_ref(),
+        &[beskid_queries::SemanticTypeId::POINTER, beskid_queries::SemanticTypeId::POINTER]
+    );
+}
+
+#[test]
+fn applied_where_bound_rejects_a_different_encoder_application() {
+    let source = r#"
+contract Encoder { unit Finish(); }
+contract Serializable<E> { unit WriteTyped(E encoder); }
+type Wire : Encoder { pub unit Finish() { return; } }
+type OtherWire : Encoder { pub unit Finish() { return; } }
+type Item {}
+impl Item : Serializable<Wire> { pub unit WriteTyped(Wire encoder) { return; } }
+unit Encode<T,E>(T value, E encoder) where T: Serializable<E>, E: Encoder { value.WriteTyped(encoder); }
+unit Main() { Encode<Item,OtherWire>(Item {}, OtherWire {}); }
+"#;
+    let (db, _, unit, generation, index) = setup(source);
+    assert!(
+        generic_call_specialization(&db, key(unit, generation, &index, NodeKind::CallExpression, 1)).is_err(),
+        "pointer ABI cannot equate distinct encoder applications"
     );
 }

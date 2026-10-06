@@ -49,6 +49,8 @@ pub struct AggregateStaticPlan {
     pub object_alignment: u64,
     pub pointer_map_offsets: Arc<[u64]>,
     pub fields: Arc<[AggregateStaticField]>,
+    pub descriptor_flags: u64,
+    pub descriptor_getter: Option<String>,
 }
 
 pub fn emit_aggregate_static_data<M: Module>(
@@ -80,7 +82,7 @@ pub fn emit_aggregate_static_data<M: Module>(
     )?;
     // Flag bit 0 is reserved for the variable-sized array object descriptor. Ordinary
     // aggregates (including enum payload objects) use the unflagged descriptor shape.
-    write_word(&mut descriptor_bytes, 32, 0)?;
+    write_word(&mut descriptor_bytes, 32, plan.descriptor_flags)?;
     let mut descriptor_data = DataDescription::new();
     descriptor_data.define(descriptor_bytes.into_boxed_slice());
     let pointer_map_address = module.declare_data_in_data(pointer_map, &mut descriptor_data);
@@ -94,6 +96,27 @@ pub fn emit_aggregate_static_data<M: Module>(
     let descriptor_address = module.declare_data_in_data(descriptor, &mut request_data);
     request_data.write_data_addr(16, descriptor_address, 0);
     module.define_data(request, &request_data)?;
+    if let Some(symbol) = &plan.descriptor_getter {
+        use cranelift_codegen::ir::{AbiParam, InstBuilder};
+        use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
+        let pointer_type = module.target_config().pointer_type();
+        let mut context = module.make_context();
+        context.func.signature.returns.push(AbiParam::new(pointer_type));
+        let function = module.declare_function(symbol, Linkage::Export, &context.func.signature)?;
+        let data = module.declare_data_in_func(descriptor, &mut context.func);
+        let mut frontend = FunctionBuilderContext::new();
+        {
+            let mut builder = FunctionBuilder::new(&mut context.func, &mut frontend);
+            let entry = builder.create_block();
+            builder.switch_to_block(entry);
+            builder.seal_block(entry);
+            let address = builder.ins().symbol_value(pointer_type, data);
+            builder.ins().return_(&[address]);
+            builder.finalize(module.target_config());
+        }
+        module.define_function(function, &mut context)?;
+    }
+
     Ok((pointer_map, descriptor, request))
 }
 
@@ -129,13 +152,46 @@ impl CodegenInput<'_> {
             .assembly
             .units
             .iter()
-            .position(|unit| paths_match(&unit.path, site.unit.path(self.database())))?;
+            .position(|unit| beskid_queries::SourceUnitId::new(self.database(), unit.path.clone()) == site.unit)?;
         let identity = format!("{}_u{unit}_g{}_r{registration_id}", artifact_namespace(self), site.generation.0);
         Some(AggregateStaticPlan {
+            descriptor_flags: 0,
+            descriptor_getter: None,
             literal: site,
             descriptor_symbol: format!("__beskid_composition_descriptor_{identity}"),
             pointer_map_symbol: format!("__beskid_composition_pointer_map_{identity}"),
             allocation_request_symbol: format!("__beskid_composition_request_{identity}"),
+            object_size: layout.object_size,
+            object_alignment: layout.object_alignment,
+            pointer_map_offsets: layout.pointer_map_offsets,
+            fields: layout.fields,
+        })
+    }
+
+    /// Invocation bootstrap for an exact field-free source factory declaration.
+    /// Stateful receivers must use their source factory, never zero-filled fields.
+    pub(crate) fn native_empty_factory_plan(&self, declaration: AstNodeKey) -> Option<AggregateStaticPlan> {
+        let layout = self.aggregate_object_layout(declaration)?;
+        if !layout.fields.is_empty() || !layout.injected_fields.is_empty() {
+            return None;
+        }
+        let descriptor = self.abi_manifest().layouts.iter().find(|layout| layout.name == "BeskidTypeDescriptor")?;
+        let request = self.abi_manifest().layouts.iter().find(|layout| layout.name == "BeskidAllocationRequest")?;
+        if descriptor.size != 40 || request.size != 24 {
+            return None;
+        }
+        let unit = self.typed_program().assembly.units.iter().position(|unit| {
+            beskid_queries::SourceUnitId::new(self.database(), unit.path.clone()) == declaration.unit
+        })?;
+        let identity =
+            format!("{}_u{unit}_g{}_n{}", artifact_namespace(self), declaration.generation.0, declaration.node.0);
+        Some(AggregateStaticPlan {
+            descriptor_flags: 0,
+            descriptor_getter: None,
+            literal: declaration,
+            descriptor_symbol: format!("__beskid_mod_factory_descriptor_{identity}"),
+            pointer_map_symbol: format!("__beskid_mod_factory_pointer_map_{identity}"),
+            allocation_request_symbol: format!("__beskid_mod_factory_request_{identity}"),
             object_size: layout.object_size,
             object_alignment: layout.object_alignment,
             pointer_map_offsets: layout.pointer_map_offsets,
@@ -155,9 +211,11 @@ impl CodegenInput<'_> {
             .assembly
             .units
             .iter()
-            .position(|unit| paths_match(&unit.path, spawn.unit.path(self.database())))?;
+            .position(|unit| beskid_queries::SourceUnitId::new(self.database(), unit.path.clone()) == spawn.unit)?;
         let identity = format!("{}_u{unit}_g{}_n{}", artifact_namespace(self), spawn.generation.0, spawn.node.0);
         Some(AggregateStaticPlan {
+            descriptor_flags: 0,
+            descriptor_getter: None,
             literal: spawn,
             descriptor_symbol: format!("__beskid_fiber_descriptor_{identity}"),
             pointer_map_symbol: format!("__beskid_fiber_pointer_map_{identity}"),
@@ -217,9 +275,11 @@ impl CodegenInput<'_> {
             .assembly
             .units
             .iter()
-            .position(|unit| paths_match(&unit.path, spawn.unit.path(self.database())))?;
+            .position(|unit| beskid_queries::SourceUnitId::new(self.database(), unit.path.clone()) == spawn.unit)?;
         let identity = format!("{}_u{unit}_g{}_n{}", artifact_namespace(self), spawn.generation.0, spawn.node.0);
         Some(AggregateStaticPlan {
+            descriptor_flags: 0,
+            descriptor_getter: None,
             literal: spawn,
             descriptor_symbol: format!("__beskid_spawn_arguments_descriptor_{identity}"),
             pointer_map_symbol: format!("__beskid_spawn_arguments_pointer_map_{identity}"),
@@ -236,6 +296,9 @@ impl CodegenInput<'_> {
     /// Field access lowering consumes this directly so that reads and writes address the same bytes
     /// the allocation plan reserved.
     pub fn aggregate_object_layout(&self, declaration: AstNodeKey) -> Option<AggregateObjectLayout> {
+        if beskid_queries::runtime_managed_opaque_kind(self.database(), declaration).is_some() {
+            return None;
+        }
         let aggregate = aggregate_layout(self.database(), declaration).ok().flatten()?;
         self.aggregate_object_layout_from_fact(declaration, &aggregate)
     }
@@ -244,7 +307,7 @@ impl CodegenInput<'_> {
         self.aggregate_object_layout_from_fact(access.declaration, &access.layout)
     }
 
-    fn aggregate_object_layout_from_fact(
+    pub(crate) fn aggregate_object_layout_from_fact(
         &self,
         declaration: AstNodeKey,
         aggregate: &AggregateLayoutFact,
@@ -260,15 +323,24 @@ impl CodegenInput<'_> {
         let mut injected_fields = Vec::new();
         for (_, shape) in aggregate.fields.iter() {
             let abi_type = match shape {
-                AggregateFieldShape::Scalar(semantic) => *semantic,
+                AggregateFieldShape::Scalar(semantic) | AggregateFieldShape::ManagedReference(semantic) => *semantic,
                 AggregateFieldShape::Nominal(_) => SemanticTypeId::POINTER,
             };
+            if abi_type == SemanticTypeId::UNIT {
+                fields.push(AggregateStaticField { abi_type, field_offset: size });
+                continue;
+            }
             let scalar = abi_type.scalar_abi_layout(self.target().pointer_width)?;
             size = align_to(size, scalar.alignment)?;
             let field_offset = size;
             size = size.checked_add(scalar.size)?;
             alignment = alignment.max(scalar.alignment);
-            if scalar.is_pointer {
+            if matches!(
+                shape,
+                AggregateFieldShape::Nominal(_)
+                    | AggregateFieldShape::ManagedReference(_)
+                    | AggregateFieldShape::Scalar(SemanticTypeId::STRING)
+            ) {
                 pointer_map_offsets.push(field_offset);
             }
             fields.push(AggregateStaticField { abi_type, field_offset });
@@ -320,6 +392,81 @@ impl CodegenInput<'_> {
         self.aggregate_static_plan_for_specialization(literal, None)
     }
 
+    fn dynamic_descriptor_getter(
+        &self,
+        literal: AstNodeKey,
+        declaration: AstNodeKey,
+        specialization: Option<&GenericSpecializationInstance>,
+    ) -> Option<String> {
+        let unit =
+            self.typed_program().assembly.units.iter().find(|unit| {
+                beskid_queries::SourceUnitId::new(self.database(), unit.path.clone()) == declaration.unit
+            })?;
+        // Pack<T>'s concrete ordinary source constructor owns this descriptor.
+        // Its getter is image-local, fully signature-qualified, and never aliases
+        // a primitive provider box merely because the physical fields happen to match.
+        if let Some(instance) = specialization {
+            if beskid_queries::registered_declaration_name(self.database(), declaration)?.as_str() == "DynamicPackBoxV1"
+                && literal.unit == instance.declaration.unit
+                && declaration.unit == instance.declaration.unit
+                && literal.generation == self.typed_program().generation
+            {
+                if let Some(shape) = self.compiled_dynamic_packing_shape(instance).ok().flatten() {
+                    let digest = shape.sha256().iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+                    return Some(format!("beskid_dynamic_pack_v1_{digest}_descriptor"));
+                }
+            }
+        }
+        if unit.logical_name != "src/Runtime/Dynamic/Records.bd"
+            || literal.generation != self.typed_program().generation
+            || !self.runtime_intrinsic_capability()?.authorizes_source(&unit.logical_name)
+        {
+            return None;
+        }
+        let declaration_name = beskid_queries::registered_declaration_name(self.database(), declaration)?;
+        if declaration_name.as_str() == "DynamicErasedCellV1" {
+            let layout = self.aggregate_object_layout(declaration)?;
+            if layout.object_size != 40
+                || layout.object_alignment != 8
+                || layout.pointer_map_offsets.as_ref() != [16, 24]
+                || layout.fields.iter().map(|field| field.field_offset).collect::<Vec<_>>() != [16, 24, 32]
+                || layout.fields[2].abi_type != SemanticTypeId::U64
+            {
+                return None;
+            }
+            return Some("beskid_dynamic_v1_erased_cell_descriptor".into());
+        }
+        let role = match declaration_name.as_str() {
+            "DynamicBoxV1" => "box",
+            "DynamicCellV1" => "cell",
+            _ => return None,
+        };
+        let substitution = specialization?.substitutions.iter().find(|binding| binding.parameter.as_ref() == "T")?;
+        let label = if substitution.is_byte_array() {
+            "bytes"
+        } else {
+            match substitution.exact_scalar_source()? {
+                SemanticTypeId::I8 => "i8",
+                SemanticTypeId::I16 => "i16",
+                SemanticTypeId::I32 => "i32",
+                SemanticTypeId::I64 => "i64",
+                SemanticTypeId::U8 => "u8",
+                SemanticTypeId::U16 => "u16",
+                SemanticTypeId::U32 => "u32",
+                SemanticTypeId::U64 => "u64",
+                SemanticTypeId::F32 => "f32",
+                SemanticTypeId::F64 => "f64",
+                SemanticTypeId::BOOL => "bool",
+                SemanticTypeId::CHAR => "char",
+                SemanticTypeId::WORD => "word",
+                SemanticTypeId::STRING => "string",
+                SemanticTypeId::UNIT => "unit",
+                _ => return None,
+            }
+        };
+        Some(format!("beskid_rt_v5_dynamic_{label}_{role}_descriptor"))
+    }
+
     pub fn aggregate_static_plan_for_specialization(
         &self,
         literal: AstNodeKey,
@@ -339,12 +486,10 @@ impl CodegenInput<'_> {
         let aggregate =
             specialized.clone().or_else(|| aggregate_literal_layout(self.database(), literal).ok().flatten())?;
         let layout = self.aggregate_object_layout_from_fact(declaration, &aggregate)?;
-        let unit = self
-            .typed_program()
-            .assembly
-            .units
-            .iter()
-            .position(|unit| paths_match(&unit.path, literal.unit.path(self.database())))?;
+        let unit =
+            self.typed_program().assembly.units.iter().position(|unit| {
+                beskid_queries::SourceUnitId::new(self.database(), unit.path.clone()) == literal.unit
+            })?;
         let specialization_identity = specialization
             .filter(|_| specialized.is_some())
             .map(generic_specialization_identity)
@@ -356,7 +501,35 @@ impl CodegenInput<'_> {
             literal.node.0,
             specialization_identity.as_deref().map(|identity| format!("_s{identity}")).unwrap_or_default()
         );
+        let source = &self.typed_program().assembly.units[unit].logical_name;
+        let utf8_record = source == "src/Runtime/Data/Utf8ViewRecord.bd"
+            && self.runtime_intrinsic_capability()?.authorizes_source(source);
+        let descriptor_flags = if utf8_record {
+            let projection = self.abi_manifest().layouts.iter().find(|layout| layout.name == "BeskidUtf8ViewRecord")?;
+            if projection.size != 40
+                || projection.alignment != 8
+                || projection.fields.iter().map(|field| field.offset).collect::<Vec<_>>() != [0, 8, 16, 24, 32]
+            {
+                return None;
+            }
+            if literal.generation != self.typed_program().generation
+                || layout.object_size != 40
+                || layout.object_alignment != 8
+                || layout.pointer_map_offsets.as_ref() != [16]
+                || layout.fields.len() != 3
+                || layout.fields.iter().map(|field| field.field_offset).collect::<Vec<_>>() != [16, 24, 32]
+                || layout.fields[1].abi_type != SemanticTypeId::POINTER
+                || layout.fields[2].abi_type != SemanticTypeId::WORD
+            {
+                return None;
+            }
+            2
+        } else {
+            0
+        };
         Some(AggregateStaticPlan {
+            descriptor_flags,
+            descriptor_getter: self.dynamic_descriptor_getter(literal, declaration, specialization),
             literal,
             descriptor_symbol: format!("__beskid_aggregate_descriptor_{identity}"),
             pointer_map_symbol: format!("__beskid_aggregate_pointer_map_{identity}"),
@@ -400,12 +573,10 @@ impl CodegenInput<'_> {
                     field_offset: *field_offset,
                 }))
                 .collect::<Vec<_>>();
-        let unit = self
-            .typed_program()
-            .assembly
-            .units
-            .iter()
-            .position(|unit| paths_match(&unit.path, literal.unit.path(self.database())))?;
+        let unit =
+            self.typed_program().assembly.units.iter().position(|unit| {
+                beskid_queries::SourceUnitId::new(self.database(), unit.path.clone()) == literal.unit
+            })?;
         let specialization_identity = specialization
             .filter(|_| specialized.is_some())
             .map(generic_specialization_identity)
@@ -418,6 +589,8 @@ impl CodegenInput<'_> {
             specialization_identity.as_deref().map(|identity| format!("_s{identity}")).unwrap_or_default()
         );
         Some(AggregateStaticPlan {
+            descriptor_flags: 0,
+            descriptor_getter: None,
             literal,
             descriptor_symbol: format!("__beskid_aggregate_descriptor_{identity}"),
             pointer_map_symbol: format!("__beskid_aggregate_pointer_map_{identity}"),
@@ -444,8 +617,4 @@ fn valid_alignment(value: u64) -> bool {
 fn align_to(value: u64, alignment: u64) -> Option<u64> {
     valid_alignment(alignment).then_some(())?;
     value.checked_add(alignment - 1).map(|value| value & !(alignment - 1))
-}
-pub(crate) fn paths_match(left: &std::path::Path, right: &std::path::Path) -> bool {
-    left.canonicalize().unwrap_or_else(|_| left.to_path_buf())
-        == right.canonicalize().unwrap_or_else(|_| right.to_path_buf())
 }

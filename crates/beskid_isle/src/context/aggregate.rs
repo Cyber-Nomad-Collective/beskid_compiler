@@ -50,6 +50,7 @@ macro_rules! generated_aggregate_methods {
                 self.import_runtime_helper("beskid_rt_v5_array_allocate_rooted", &[pointer, pointer], Some(pointer))?;
             let allocation_call = self.builder.ins().call(allocate, &[request, root_slot_address]);
             let array = self.builder.inst_results(allocation_call).first().copied()?;
+            self.guard_checked_allocation()?;
             self.builder.ins().trapz(array, TrapCode::unwrap_user(5));
             let root = ScopedTemporaryRoot::ArrayConstruction(root_slot);
             self.track_expression_root(root)?;
@@ -195,6 +196,14 @@ macro_rules! generated_aggregate_methods {
             let allocation = self.facts.managed_struct_allocation(key)?;
             let mut values = Vec::with_capacity(fields.len());
             for (field_key, field_layout) in fields.into_iter().zip(&layout.fields) {
+                let Some(field_layout) = field_layout else {
+                    if self.facts.semantic_type(field_key) != Some(beskid_queries::SemanticTypeId::UNIT) {
+                        self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidStructLayout });
+                        return None;
+                    }
+                    self.lower_expression_for_effect(field_key)?;
+                    continue;
+                };
                 let value = generated::constructor_lower_expression(self, field_key)?;
                 if self.builder.func.dfg.value_type(value) != field_layout.value_type {
                     self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidStructLayout });
@@ -216,6 +225,7 @@ macro_rules! generated_aggregate_methods {
             )?;
             let allocation_call = self.builder.ins().call(allocate, &[request]);
             let object = self.builder.inst_results(allocation_call).first().copied()?;
+            self.guard_checked_allocation()?;
             self.builder.ins().trapz(object, TrapCode::unwrap_user(5));
             for (value, field_layout, _) in &values {
                 let address = self.builder.ins().iadd_imm_s(object, i64::from(field_layout.offset));
@@ -240,6 +250,7 @@ macro_rules! generated_aggregate_methods {
                     Some(LoweringError { key, kind: LoweringErrorKind::InvalidStructField(field_index) });
                 return None;
             };
+            let field = field?;
             if self.facts.scalar_type(key)? != field.value_type {
                 self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidStructLayout });
                 return None;
@@ -268,6 +279,7 @@ macro_rules! generated_aggregate_methods {
                     Some(LoweringError { key, kind: LoweringErrorKind::InvalidStructField(field_index) });
                 return None;
             };
+            let field = field?;
             let base = self.field_base_pointer(target)?;
             let value = generated::constructor_lower_expression(self, value_key)?;
             if self.builder.func.dfg.value_type(value) != field.value_type

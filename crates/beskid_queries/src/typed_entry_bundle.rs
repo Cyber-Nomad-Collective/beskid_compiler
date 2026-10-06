@@ -128,8 +128,11 @@ pub fn is_typed_bundle_stale(db: &dyn Db, entry_key: &str) -> bool {
 
 fn prepare_options_fingerprint(options: &PrepareOptions) -> String {
     format!(
-        "discovery={:?}:semantic={}:typing={:?}",
-        options.front_end.assembly_discovery, options.front_end.with_semantic_diagnostics, options.dependency_typing,
+        "discovery={:?}:recovery={:?}:semantic={}:typing={:?}",
+        options.front_end.assembly_discovery,
+        options.front_end.assembly_recovery,
+        options.front_end.with_semantic_diagnostics,
+        options.dependency_typing,
     )
 }
 
@@ -162,6 +165,7 @@ fn materialize_typed_bundle(
         db,
         resolved,
         PrepareOptions {
+            mod_invoker: None,
             front_end: FrontEndOptions { with_semantic_diagnostics: false, ..Default::default() },
             dependency_typing,
         },

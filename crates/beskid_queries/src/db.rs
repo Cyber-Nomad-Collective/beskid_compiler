@@ -25,6 +25,8 @@ type SyntaxUnitRegistry = HashMap<SourceUnitId, SyntaxUnitInput>;
 /// Assembly-scoped import/module authority for generation-safe cross-unit syntax facts.
 #[derive(Default)]
 pub struct SyntaxDependencyRegistry {
+    pub(crate) package_identities:
+        HashMap<(ProjectSession, SyntaxGenerationId), beskid_analysis::projects::VerifiedPackageIdentities>,
     pub(crate) imports: HashMap<(SourceUnitId, SyntaxGenerationId), Vec<SyntaxImport>>,
     /// Exact logical module paths assembled for one syntax generation.
     pub(crate) modules: HashMap<(SyntaxGenerationId, Vec<String>), Vec<SourceUnitId>>,

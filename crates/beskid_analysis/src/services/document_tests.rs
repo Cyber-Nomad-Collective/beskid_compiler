@@ -14,9 +14,29 @@ mod tests {
     };
 
     struct CorelibMvpFixture {
+        _directory: tempfile::TempDir,
         main_path: PathBuf,
         project_root: PathBuf,
         source: String,
+    }
+
+    /// Provision the bundled corelib into a process-private toolchain home so these tests never read
+    /// or write the developer's installed `~/.beskid`. Runs once; the directory lives for the process.
+    fn isolated_toolchain_home() -> &'static Path {
+        static HOME: std::sync::OnceLock<tempfile::TempDir> = std::sync::OnceLock::new();
+        HOME.get_or_init(|| {
+            let home = tempfile::tempdir().expect("create isolated BESKID_HOME");
+            // SAFETY: runs exactly once, before any document test resolves a project, so no test
+            // observes the environment mid-update.
+            unsafe {
+                std::env::set_var("BESKID_HOME", home.path().join("home"));
+                std::env::set_var("BESKID_CONFIG_DIR", home.path().join("config"));
+                std::env::set_var("BESKID_CORELIB_ROOT", home.path().join("corelib"));
+            }
+            beskid_tools::ensure_bundled_corelib().expect("provision corelib_mvp fixture Corelib");
+            home
+        })
+        .path()
     }
 
     fn compiler_workspace_root() -> PathBuf {
@@ -28,11 +48,35 @@ mod tests {
     }
 
     fn corelib_mvp_paths() -> CorelibMvpFixture {
-        let main_path =
-            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../beskid_e2e_tests/fixtures/corelib_mvp/Src/Main.bd");
+        isolated_toolchain_home();
+        let original = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../beskid_e2e_tests/fixtures/corelib_mvp");
+        let directory = tempfile::tempdir().expect("create private document project");
+        let project_root = directory.path().to_path_buf();
+        std::fs::create_dir(project_root.join("Src")).expect("create document source directory");
+        // This is a document-service fixture, not a frozen dependency replay. Resolve the
+        // current bundled Corelib without copying checkout-local locks or materialized state.
+        for relative in ["CorelibMvp.bproj", "Src/Main.bd"] {
+            std::fs::copy(original.join(relative), project_root.join(relative)).expect("copy document fixture input");
+        }
+        let main_path = project_root.join("Src/Main.bd");
         let source = std::fs::read_to_string(&main_path).expect("read Main.bd");
-        let project_root = main_path.parent().and_then(|p| p.parent()).expect("fixture root").to_path_buf();
-        CorelibMvpFixture { main_path, project_root, source }
+        CorelibMvpFixture { _directory: directory, main_path, project_root, source }
+    }
+
+    #[test]
+    fn corelib_mvp_document_fixture_has_private_resolution_state() {
+        let first = corelib_mvp_paths();
+        let second = corelib_mvp_paths();
+        assert_ne!(first.project_root, second.project_root);
+        for fixture in [&first, &second] {
+            assert!(fixture.main_path.is_file());
+            assert!(fixture.project_root.join("CorelibMvp.bproj").is_file());
+            for state in ["Project.lock", "obj", ".beskid"] {
+                assert!(!fixture.project_root.join(state).exists(), "fixture reused {state}");
+            }
+        }
+        std::fs::write(first.project_root.join("Project.lock"), "unrelated private state").unwrap();
+        assert!(!second.project_root.join("Project.lock").exists());
     }
 
     fn with_cwd_at_workspace_root<R>(root: &Path, f: impl FnOnce() -> R) -> R {
@@ -40,13 +84,23 @@ mod tests {
     }
 
     fn assemble_corelib_mvp(path: &Path, source: &str, project_root: &Path) -> ProgramAssembly {
-        let resolved =
-            resolve_input(Some(&path.to_path_buf()), Some(&project_root.to_path_buf()), None, None, false, false)
-                .expect("resolve corelib_mvp");
+        let resolved = resolve_input(
+            Some(&path.to_path_buf()),
+            Some(&project_root.to_path_buf()),
+            None,
+            None,
+            crate::projects::WorkspacePrepareOptions::default(),
+        )
+        .expect("resolve corelib_mvp");
         let plan = resolved.compile_plan.expect("compile plan");
         let prepared = resolved.prepared_workspace.clone().or_else(|| {
             let lockfile = plan.manifest_path.with_file_name("Project.lock");
-            let options = WorkspacePrepareOptions { frozen: false, locked: lockfile.is_file(), refresh_lock: false };
+            let options = WorkspacePrepareOptions {
+                offline: false,
+                frozen: false,
+                locked: lockfile.is_file(),
+                refresh_lock: false,
+            };
             prepare_project_workspace_with_options(&plan, options, None).ok()
         });
         assemble_program(
@@ -85,10 +139,6 @@ mod tests {
 
     fn snapshot_with_entry_resolution()
     -> (crate::services::DocumentAnalysisSnapshot, CorelibMvpFixture, ProgramAssembly) {
-        static CORELIB_READY: std::sync::OnceLock<()> = std::sync::OnceLock::new();
-        CORELIB_READY.get_or_init(|| {
-            beskid_tools::ensure_bundled_corelib().expect("provision corelib_mvp fixture Corelib");
-        });
         let root = compiler_workspace_root();
         with_cwd_at_workspace_root(&root, || {
             let fixture = corelib_mvp_paths();

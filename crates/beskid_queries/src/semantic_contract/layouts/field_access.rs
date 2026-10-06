@@ -1,7 +1,10 @@
 //! Canonical semantic layout implementation.
 
 use super::super::*;
-use beskid_abi::runtime_source::{CANONICAL_FOUNDATION_DEADLINE_SOURCE_PATH, CANONICAL_NETWORK_INTERNAL_SOURCE_PATH};
+use beskid_abi::runtime_source::{
+    CANONICAL_FOUNDATION_DEADLINE_SOURCE_PATH, CANONICAL_FOUNDATION_PROCESS_SOURCE_PATH,
+    CANONICAL_NETWORK_INTERNAL_SOURCE_PATH,
+};
 use beskid_analysis::syntax_query::DynNodeRef;
 
 #[salsa::tracked(persist)]
@@ -28,8 +31,11 @@ pub fn aggregate_field_access_specialization(
     let ambient = enclosing
         .substitutions
         .iter()
-        .map(|binding| (binding.parameter.to_string(), AggregateFieldShape::Scalar(binding.argument)))
-        .collect::<HashMap<_, _>>();
+        .map(|binding| {
+            crate::semantic_contract::layouts::aggregate_shape_for_binding(db, key, binding)
+                .map(|shape| (binding.parameter.to_string(), shape))
+        })
+        .collect::<Result<HashMap<_, _>, SemanticError>>()?;
     with_node(db, syntax, key, |program, index, node| {
         aggregate_field_access_for_environment(db, program, index, key, node, Some(&ambient), Some(enclosing))
     })?
@@ -68,7 +74,10 @@ fn aggregate_field_access_for_environment(
                 .filter(|field| field.node.kind == beskid_analysis::syntax::FieldKind::Value)
                 .nth(field_index as usize)
                 .ok_or_else(|| SemanticError::unavailable("aggregate_field_access"))?;
-            let protected_field = (definition.name.node.name == "Deadline" && field_name == "monotonicNanos")
+            let process_private =
+                crate::process_source_authority::canonical_process_resource_kind(db, declaration).is_some();
+            let protected_field = process_private
+                || (definition.name.node.name == "Deadline" && field_name == "monotonicNanos")
                 || (field_name == "handle"
                     && matches!(definition.name.node.name.as_str(), "TcpStream" | "TcpListener" | "UdpSocket"));
             if protected_field
@@ -456,14 +465,12 @@ fn canonical_network_deadline_projection(
         return false;
     }
     let registry = db.syntax_dependency_registry().lock().expect("syntax dependency registry");
-    registry
+    registry.corelib_source_paths.get(&(key.unit, key.generation)).is_some_and(|path| {
+        path == CANONICAL_NETWORK_INTERNAL_SOURCE_PATH || path == CANONICAL_FOUNDATION_PROCESS_SOURCE_PATH
+    }) && registry
         .corelib_source_paths
-        .get(&(key.unit, key.generation))
-        .is_some_and(|path| path == CANONICAL_NETWORK_INTERNAL_SOURCE_PATH)
-        && registry
-            .corelib_source_paths
-            .get(&(declaration.unit, declaration.generation))
-            .is_some_and(|path| path == CANONICAL_FOUNDATION_DEADLINE_SOURCE_PATH)
+        .get(&(declaration.unit, declaration.generation))
+        .is_some_and(|path| path == CANONICAL_FOUNDATION_DEADLINE_SOURCE_PATH)
 }
 
 /// Instantiate the aggregate layout denoted by an exact source-proven nominal identity. Each
@@ -497,11 +504,15 @@ fn nominal_identity_layout(
         .map(|(generic, argument)| {
             let shape = if matches!(argument, GenericSourceTypeIdentity::Nominal { .. }) {
                 AggregateFieldShape::Nominal(
-                    super::super::contracts::concrete_declaration(db, key, argument)
+                    super::super::contracts::concrete_type_or_enum_declaration(db, key, argument)
                         .ok_or_else(|| SemanticError::unavailable("nominal_field_projection"))?,
                 )
             } else {
-                AggregateFieldShape::Scalar(argument.abi_type())
+                if argument.managed_reference_kind() == ManagedReferenceKind::GcManaged {
+                    AggregateFieldShape::ManagedReference(argument.abi_type())
+                } else {
+                    AggregateFieldShape::Scalar(argument.abi_type())
+                }
             };
             Ok((generic.node.name.clone(), shape))
         })

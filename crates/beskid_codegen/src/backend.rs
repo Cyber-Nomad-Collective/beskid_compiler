@@ -1,16 +1,12 @@
 //! Backend abstraction at the `CodegenInput` boundary.
 //!
-//! The compiler lowers typed syntax through one backend. The existing
-//! Cranelift CLIF path is the `CraneliftClif` backend; `Beskid.Glue`
-//! introduces `RustSource` and `DotNetProject` backends that emit native
-//! source projects instead of CLIF. Backends are selected by a manifest
-//! flag, not by a new mod contract kind.
+//! The compiler lowers typed syntax through one backend. The Cranelift CLIF
+//! path is the `CraneliftClif` backend. `RustSource` emits the generated Rust
+//! Glue packet that `beskid build --backend glue-rust` links. `DotNetProject`
+//! is a reserved selection that is unavailable in 0.6 and always fails closed.
+//! Backends are selected by the `beskid build --backend` flag, not by a mod
+//! contract kind.
 //!
-//! 0.4 delivery: the `Backend` trait, `BackendKind` enum, `BackendArtifact`
-//! enum, and `CraneliftClif` wired to the existing `lower_syntax_program`.
-//! `RustSource` and `DotNetProject` are declared and fail closed with
-//! `BackendError::NotImplementedFor0_4`. Language-specific emission lands
-//! in 0.5.
 
 use cranelift_codegen::isa::TargetIsa;
 
@@ -18,16 +14,17 @@ use crate::CodegenArtifact;
 use crate::codegen_input::CodegenInput;
 use crate::module_emission::{SyntaxModuleEmissionError, SyntaxModuleItem, lower_syntax_program};
 
-/// The backend selection kind. Selected via a manifest flag or CLI flag;
-/// the default is `CraneliftClif`.
+/// The backend selection kind, selected by `beskid build --backend`; the
+/// default is `CraneliftClif`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum BackendKind {
     /// The existing Cranelift CLIF path. Produces a `CodegenArtifact` bag
     /// of verified `cranelift_codegen::ir::Function`s.
     CraneliftClif,
-    /// Emit a Rust source crate. 0.4: declared, fails closed.
+    /// Rust Glue (`glue-rust`): the generated Rust Glue packet for a shared
+    /// consumer and its Rust owners.
     RustSource,
-    /// Emit a .NET project. 0.4: declared, fails closed.
+    /// .NET Glue (`glue-dotnet`): unavailable in 0.6; every use fails closed.
     DotNetProject,
 }
 
@@ -74,16 +71,12 @@ impl std::fmt::Display for BackendKindParseError {
 
 impl std::error::Error for BackendKindParseError {}
 
-/// The artifact a backend produces. The CLIF backend produces the existing
-/// `CodegenArtifact`; source backends produce text (a crate or project
-/// manifest). 0.4 ships only the CLIF variant populated.
+/// The artifact a backend produces: the CLIF `CodegenArtifact` or the
+/// generated Rust Glue packet.
 #[derive(Debug)]
 pub enum BackendArtifact {
     Clif(Box<CodegenArtifact>),
-    /// 0.4: never produced. 0.5: a generated Rust crate source string.
-    RustSource(String),
-    /// 0.4: never produced. 0.5: a generated .NET project source string.
-    DotNetProject(String),
+    RustSource(crate::glue::GlueArtifact),
 }
 
 /// A backend error. Wraps the existing `SyntaxModuleEmissionError` for the
@@ -92,8 +85,26 @@ pub enum BackendArtifact {
 pub enum BackendError {
     #[error("CLIF backend lowering failed: {0}")]
     Clif(#[from] SyntaxModuleEmissionError),
-    #[error("backend `{kind}` is declared for 0.4 but not implemented; language-specific generation lands in 0.5")]
-    NotImplementedFor0_4 { kind: BackendKind },
+    #[error("backend `{kind}` is unavailable in 0.6")]
+    Unavailable { kind: BackendKind },
+    #[error("unsupported Rust Glue logical type: {0}")]
+    UnsupportedRustGlueType(String),
+    #[error("invalid Rust Glue native library: {0}")]
+    InvalidRustGlueLibrary(String),
+    #[error("stale Rust Glue item {key:?} ({symbol})")]
+    StaleRustGlueItem { key: beskid_queries::AstNodeKey, symbol: String },
+    #[error("Rust Glue fact unavailable for {key:?}: {message}")]
+    RustGlueFact { key: beskid_queries::AstNodeKey, message: String },
+    #[error("missing declared Rust Glue binding for {0:?}")]
+    MissingRustGlueBinding(beskid_queries::AstNodeKey),
+    #[error("invalid Rust Glue symbol: {0}")]
+    InvalidRustGlueSymbol(String),
+    #[error("duplicate Rust Glue symbol: {0}")]
+    DuplicateRustGlueSymbol(String),
+    #[error(transparent)]
+    GlueArtifact(#[from] crate::glue::GlueArtifactError),
+    #[error("expected CLIF artifact, received {kind}")]
+    WrongArtifactKind { kind: BackendKind },
 }
 
 /// A codegen backend. Implementations lower typed syntax through one
@@ -120,21 +131,23 @@ impl<'a> Backend for CraneliftClifBackend<'a> {
     }
 }
 
-/// The Rust source backend. Declared for 0.4; fails closed.
-#[derive(Debug, Clone, Copy)]
-pub struct RustSourceBackend;
+/// Emits a closed Rust project for an explicitly named native library.
+#[derive(Debug, Clone)]
+pub struct RustSourceBackend {
+    pub native_library: String,
+}
 
 impl Backend for RustSourceBackend {
     fn kind(&self) -> BackendKind {
         BackendKind::RustSource
     }
 
-    fn lower(&self, _input: &CodegenInput<'_>, _items: &[SyntaxModuleItem]) -> Result<BackendArtifact, BackendError> {
-        Err(BackendError::NotImplementedFor0_4 { kind: BackendKind::RustSource })
+    fn lower(&self, input: &CodegenInput<'_>, items: &[SyntaxModuleItem]) -> Result<BackendArtifact, BackendError> {
+        Ok(BackendArtifact::RustSource(crate::glue::emit(input, items, &self.native_library)?))
     }
 }
 
-/// The .NET project backend. Declared for 0.4; fails closed.
+/// The .NET Glue backend. Unavailable in 0.6; it always fails closed.
 #[derive(Debug, Clone, Copy)]
 pub struct DotNetProjectBackend;
 
@@ -144,7 +157,7 @@ impl Backend for DotNetProjectBackend {
     }
 
     fn lower(&self, _input: &CodegenInput<'_>, _items: &[SyntaxModuleItem]) -> Result<BackendArtifact, BackendError> {
-        Err(BackendError::NotImplementedFor0_4 { kind: BackendKind::DotNetProject })
+        Err(BackendError::Unavailable { kind: BackendKind::DotNetProject })
     }
 }
 
@@ -164,10 +177,7 @@ pub fn lower_with_backend(
 pub fn expect_clif(artifact: BackendArtifact) -> Result<CodegenArtifact, BackendError> {
     match artifact {
         BackendArtifact::Clif(artifact) => Ok(*artifact),
-        BackendArtifact::RustSource(_) => Err(BackendError::NotImplementedFor0_4 { kind: BackendKind::RustSource }),
-        BackendArtifact::DotNetProject(_) => {
-            Err(BackendError::NotImplementedFor0_4 { kind: BackendKind::DotNetProject })
-        }
+        BackendArtifact::RustSource(_) => Err(BackendError::WrongArtifactKind { kind: BackendKind::RustSource }),
     }
 }
 
@@ -188,25 +198,13 @@ mod tests {
     }
 
     #[test]
-    fn rust_source_backend_fails_closed() {
-        let backend = RustSourceBackend;
-        let kind = backend.kind();
-        // We cannot construct a CodegenInput in a unit test without a full
-        // frontend; assert the kind and the error variant structurally.
-        assert_eq!(kind, BackendKind::RustSource);
-        assert!(matches!(
-            BackendError::NotImplementedFor0_4 { kind: BackendKind::RustSource },
-            BackendError::NotImplementedFor0_4 { .. }
-        ));
+    fn dotnet_backend_is_unavailable() {
+        assert_eq!(BackendError::Unavailable { kind: BackendKind::DotNetProject }.to_string(), "backend `glue-dotnet` is unavailable in 0.6");
     }
 
     #[test]
-    fn expect_clif_reports_actual_backend_kind_for_non_clif_artifacts() {
-        let rust_err = expect_clif(BackendArtifact::RustSource(String::new())).expect_err("rust source is not clif");
-        assert!(matches!(rust_err, BackendError::NotImplementedFor0_4 { kind: BackendKind::RustSource }));
-
-        let dotnet_err =
-            expect_clif(BackendArtifact::DotNetProject(String::new())).expect_err("dotnet project is not clif");
-        assert!(matches!(dotnet_err, BackendError::NotImplementedFor0_4 { kind: BackendKind::DotNetProject }));
+    fn rust_backend_requires_explicit_native_library() {
+        let backend = RustSourceBackend { native_library: "manual".into() };
+        assert_eq!(backend.kind(), BackendKind::RustSource);
     }
 }

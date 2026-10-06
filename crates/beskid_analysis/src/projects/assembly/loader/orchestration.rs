@@ -12,15 +12,19 @@ use super::super::module_index::ModuleIndex;
 use super::super::roots::effective_roots_for_plan;
 use super::super::unit_builder::UnitBuilder;
 use super::super::unit_cache::{disk_cache_stats, ensure_manifest};
-use super::super::{ProgramAssembly, SourceUnit};
+use super::super::roots::EffectiveCompilationRoots;
+use super::super::{AssemblyRootSet, ProgramAssembly, SourceUnit, own_unit_paths_under};
 use super::discovery::{collect_bd_files, unit_progress_label};
 use super::options::{AssemblyError, UnitMaterializer};
 use super::scanner::{
-    import_paths_from_source_full, module_declaration_paths_from_source, module_paths_from_qualified_references,
-    parent_module_import_path,
+    import_paths_from_program, module_declaration_paths_from_program, module_paths_from_qualified_references,
+    parent_module_import_path, parse_program_for_discovery,
 };
 use super::trusted_paths::trusted_corelib_service_paths;
-use crate::projects::model::{AssemblyDiscovery, AssemblyOptions};
+use crate::projects::graph::pathing::{dependency_manifest_path, normalize_existing_path};
+use crate::projects::model::{
+    AssemblyDiscovery, AssemblyOptions, AssemblyRecoveryPolicy, DependencySource, ProjectKind,
+};
 use crate::projects::{CompilePlan, PreparedProjectWorkspace};
 use crate::syntax::SyntaxGenerationId;
 use crate::syntax_query::SyntaxIndex;
@@ -96,13 +100,32 @@ pub fn assemble_program_with_materializer(
                             .map_err(|source| AssemblyError::Read { path: path.clone(), source })?
                     }
                 } else {
-                    fs::read_to_string(&path).map_err(|source| AssemblyError::Read { path: path.clone(), source })?
+                    match fs::read_to_string(&path) {
+                        Ok(source) => source,
+                        Err(error) if options.skip_parse_errors => {
+                            tracing::warn!(file = %path.display(), error = %error, "skipping unreadable dependency during discovery");
+                            continue;
+                        }
+                        Err(source) => return Err(AssemblyError::Read { path: path.clone(), source }),
+                    }
                 };
 
+                let discovery_program = match parse_program_for_discovery(&path, &source) {
+                    Ok(program) => Some(program),
+                    Err(error) if options.skip_parse_errors && !is_entry => {
+                        tracing::warn!(file = %path.display(), error = %error, "skipping malformed dependency during discovery");
+                        continue;
+                    }
+                    Err(_) if options.recovery_policy == AssemblyRecoveryPolicy::EditorRetainRecovered => None,
+                    Err(error) => return Err(error),
+                };
                 discovered.push(path.clone());
                 discovered_sources.push((path.clone(), source.clone()));
-
-                for import_path in import_paths_from_source_full(&source) {
+                // Editor materialization may retain repaired syntax, but it cannot add dependency authority.
+                let Some(discovery_program) = discovery_program else {
+                    continue;
+                };
+                for import_path in import_paths_from_program(&discovery_program.node) {
                     if let Some(dep_file) = resolve_module_file(&import_path, &roots) {
                         queue.push_back(dep_file);
                     }
@@ -112,14 +135,14 @@ pub fn assemble_program_with_materializer(
                         queue.push_back(parent_file);
                     }
                 }
-                let mut qualified_paths = module_paths_from_qualified_references(&source);
+                let mut qualified_paths = module_paths_from_qualified_references(&discovery_program.node);
                 qualified_paths.sort();
                 for module_path in qualified_paths {
                     if let Some(dep_file) = resolve_module_file(&module_path, &roots) {
                         queue.push_back(dep_file);
                     }
                 }
-                for module_path in module_declaration_paths_from_source(&path, &source) {
+                for module_path in module_declaration_paths_from_program(&discovery_program.node) {
                     if let Some(dep_file) = resolve_module_file(&module_path, &roots) {
                         queue.push_back(dep_file);
                     }
@@ -273,18 +296,49 @@ pub fn assemble_program_with_materializer(
     built_units.sort_by_key(|(index, _, _, _)| *index);
     let mut units = Vec::with_capacity(built_units.len());
     let mut syntax_indexes = Vec::with_capacity(built_units.len());
-    let mut entry_index = 0usize;
+    let mut entry_position = None;
     for (_, is_entry, unit, syntax_index) in built_units {
         if is_entry {
-            entry_index = units.len();
+            entry_position = Some(units.len());
         }
         units.push(unit);
         syntax_indexes.push(syntax_index);
     }
 
-    if units.is_empty() {
-        return Err(AssemblyError::EntryNotFound { path: entry_path.to_path_buf() });
-    }
+    // An explicit entry is the single root. An entry-less workspace scan has no main entry: every
+    // unit of the host project's own source root is a root, judged as the project's own code.
+    // An `Aggregate` project has no own source; its roots are the own units of its direct path
+    // members (the Cargo virtual-workspace rule: checking the virtual manifest checks every member).
+    // Never fall back to an arbitrary unit (that silently checked one unit and reported nothing
+    // for the rest).
+    let (entry_index, root_set) = match entry_position {
+        Some(index) => (index, AssemblyRootSet::Entry),
+        None if scan_without_entry => {
+            let (own_paths, empty_error) = match aggregate_member_source_roots(plan, &roots)? {
+                Some(member_roots) => {
+                    let mut paths: Vec<PathBuf> = Vec::new();
+                    for member_root in &member_roots {
+                        for path in own_unit_paths_under(&units, member_root, &roots) {
+                            if !paths.contains(&path) {
+                                paths.push(path);
+                            }
+                        }
+                    }
+                    (paths, AssemblyError::NoAggregateMemberUnits { manifest_path: plan.manifest_path.clone() })
+                }
+                None => (
+                    own_unit_paths_under(&units, &roots.host.source_root, &roots),
+                    AssemblyError::NoRootUnits { source_root: roots.host.source_root.clone() },
+                ),
+            };
+            let first = own_paths
+                .first()
+                .and_then(|first| units.iter().position(|unit| unit.path == *first))
+                .ok_or(empty_error)?;
+            (first, AssemblyRootSet::OwnUnits(Arc::from(own_paths)))
+        }
+        None => return Err(AssemblyError::EntryNotFound { path: entry_path.to_path_buf() }),
+    };
 
     let disk_stats = disk_cache_stats();
     tracing::debug!(
@@ -298,20 +352,113 @@ pub fn assemble_program_with_materializer(
     let module_index = Arc::new(ModuleIndex::build(&units, &syntax_indexes, &roots, plan));
 
     let trusted_corelib_service_paths = trusted_corelib_service_paths(plan, &roots, &units);
+    let glue_libraries = manifest_glue_libraries(plan)?;
 
     super::super::runtime_fixture::attach_runtime_fixture(
-        ProgramAssembly {
+        ProgramAssembly { compiled_mod_metadata: Vec::new(),
+            verified_package_identities: workspace
+                .map(|workspace| workspace.package_identities().clone())
+                .unwrap_or_default(),
             runtime_fixture: None,
             roots,
             units: Arc::new(units),
             syntax_indexes: Arc::new(syntax_indexes),
             generation,
             entry_index,
+            root_set,
             discovery: options.discovery,
+            recovery_policy: options.recovery_policy,
             module_index,
             has_std_dependency: plan.has_std_dependency,
             trusted_corelib_service_paths,
+            glue_libraries,
         },
         plan,
     )
+}
+
+/// Owner library labels of the plan manifest's `glue` blocks, in declaration order. A plan
+/// without a manifest file on disk (synthetic fixture plans) declares none. Fails closed when the
+/// manifest cannot be read.
+fn manifest_glue_libraries(plan: &CompilePlan) -> Result<Arc<[String]>, AssemblyError> {
+    if !plan.manifest_path.is_file() {
+        return Ok(Arc::from([]));
+    }
+    let manifest = crate::projects::load_manifest_from_path(&plan.manifest_path).map_err(|error| {
+        AssemblyError::GlueOwners { manifest_path: plan.manifest_path.clone(), message: error.to_string() }
+    })?;
+    Ok(manifest.glue.into_iter().map(|owner| owner.library).collect())
+}
+
+/// Effective source roots of the direct path members of an `Aggregate` root project, in manifest
+/// declaration order, or `None` when the plan's manifest is not an `Aggregate`.
+///
+/// Members are the aggregate's `source = path` dependencies; registry and git dependencies are
+/// never members. A path member that the compile plan does not carry as a source dependency is a
+/// `Template` or `Bsol` package with no Beskid source, so it contributes no roots. A plan without
+/// a manifest file on disk (synthetic fixture plans) is not an aggregate. Fails closed when the
+/// manifest cannot be read or a member root cannot be identified unambiguously.
+fn aggregate_member_source_roots(
+    plan: &CompilePlan,
+    roots: &EffectiveCompilationRoots,
+) -> Result<Option<Vec<PathBuf>>, AssemblyError> {
+    if !plan.manifest_path.is_file() {
+        return Ok(None);
+    }
+    let manifest_error =
+        |message: String| AssemblyError::AggregateMembers { manifest_path: plan.manifest_path.clone(), message };
+    let manifest = crate::projects::load_manifest_from_path(&plan.manifest_path)
+        .map_err(|error| manifest_error(error.to_string()))?;
+    if manifest.project.kind != ProjectKind::Aggregate {
+        return Ok(None);
+    }
+    let mut member_roots = Vec::new();
+    for dependency in manifest.dependencies.iter().filter(|dependency| dependency.source == DependencySource::Path) {
+        let relative = dependency.path.as_deref().ok_or_else(|| {
+            manifest_error(format!("member `{}` declares source = path without `path`", dependency.name))
+        })?;
+        let member_manifest = normalize_existing_path(
+            &dependency_manifest_path(&plan.project_root, relative).map_err(|error| manifest_error(error.to_string()))?,
+        );
+        let Some(resolved) = plan
+            .dependency_projects
+            .iter()
+            .find(|project| normalize_existing_path(&project.manifest_path) == member_manifest)
+        else {
+            continue;
+        };
+        let resolved_root = crate::paths::unit_path_key(&resolved.source_root);
+        let effective = match roots
+            .dependencies
+            .iter()
+            .find(|entry| crate::paths::unit_path_key(&entry.source_root) == resolved_root)
+        {
+            Some(entry) => entry,
+            None => {
+                let mut named = roots
+                    .dependencies
+                    .iter()
+                    .filter(|entry| entry.dependency_name.as_deref() == Some(resolved.dependency_name.as_str()));
+                match (named.next(), named.next()) {
+                    (Some(entry), None) => entry,
+                    (None, _) => {
+                        return Err(manifest_error(format!(
+                            "member `{}` has no effective source root in the prepared workspace",
+                            dependency.name
+                        )));
+                    }
+                    (Some(_), Some(_)) => {
+                        return Err(manifest_error(format!(
+                            "member `{}` names more than one effective source root",
+                            dependency.name
+                        )));
+                    }
+                }
+            }
+        };
+        if !member_roots.contains(&effective.source_root) {
+            member_roots.push(effective.source_root.clone());
+        }
+    }
+    Ok(Some(member_roots))
 }

@@ -62,10 +62,15 @@ fn empty_assembly(plan: &CompilePlan) -> ProgramAssembly {
         syntax_indexes: std::sync::Arc::new(Vec::new()),
         generation: SyntaxGenerationId(0),
         entry_index: 0,
+        root_set: crate::projects::AssemblyRootSet::Entry,
         discovery: AssemblyDiscovery::ImportClosure,
+        recovery_policy: crate::projects::AssemblyRecoveryPolicy::Strict,
         module_index: std::sync::Arc::new(ModuleIndex::empty()),
         has_std_dependency: false,
         trusted_corelib_service_paths: std::sync::Arc::from([]),
+        glue_libraries: std::sync::Arc::from([]),
+        verified_package_identities: Default::default(),
+        compiled_mod_metadata: Vec::new(),
     }
 }
 
@@ -121,6 +126,17 @@ fn newer_assembly_replaces_session_and_rejects_late_semantic_snapshot() {
     assert!(cached_semantic_snapshot(&fp).is_none(), "late work must not publish over newer authority");
     assert!(get_or_insert_assembly(fp.clone(), original).is_err(), "stale jobs cannot replace current authority");
     assert!(std::sync::Arc::ptr_eq(&session, &get_or_insert_assembly(fp.clone(), edited.clone()).unwrap()));
+    let mut policy_changed = edited.clone();
+    policy_changed.recovery_policy = crate::projects::AssemblyRecoveryPolicy::EditorRetainRecovered;
+    assert!(
+        get_or_insert_assembly(fp.clone(), policy_changed).is_err(),
+        "same-generation recovery authority conflicts must fail closed"
+    );
+    assert_eq!(
+        cached_compilation_session(&fp).unwrap().assembly.recovery_policy,
+        crate::projects::AssemblyRecoveryPolicy::Strict,
+        "rejected editor policy must not replace current strict session"
+    );
     edited.roots.host.source_root = root.join("different-source-root");
     assert!(get_or_insert_assembly(fp.clone(), edited).is_err(), "same-generation source conflicts must fail closed");
     invalidate_project(&root);

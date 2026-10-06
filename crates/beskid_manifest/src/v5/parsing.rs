@@ -19,6 +19,7 @@ pub fn load_v5_manifest_source(source: &str) -> Result<RuntimeManifestV5, String
         "soft_builtin",
         "layout",
         "platform_import",
+        "platform_data_import",
         "corelib_service",
         "entry_adapter",
         "assembly",
@@ -124,10 +125,11 @@ pub fn load_v5_manifest_source(source: &str) -> Result<RuntimeManifestV5, String
             })
         })
         .collect::<Result<Vec<_>, String>>()?;
-    let platform_imports = blocks(&document.blocks, "platform_import")
+    let mut platform_imports = blocks(&document.blocks, "platform_import")
         .map(|block| {
             ensure_fields(block, &["target", "library", "params", "returns"])?;
             Ok(PlatformImportV5 {
+                kind: "function".into(),
                 symbol: label(block)?,
                 target: string_field(block, "target")?,
                 library: string_field(block, "library")?,
@@ -136,6 +138,21 @@ pub fn load_v5_manifest_source(source: &str) -> Result<RuntimeManifestV5, String
             })
         })
         .collect::<Result<Vec<_>, String>>()?;
+    platform_imports.extend(
+        blocks(&document.blocks, "platform_data_import")
+            .map(|block| {
+                ensure_fields(block, &["target", "library", "type"])?;
+                Ok(PlatformImportV5 {
+                    kind: "data".into(),
+                    symbol: label(block)?,
+                    target: string_field(block, "target")?,
+                    library: string_field(block, "library")?,
+                    params: Vec::new(),
+                    result: string_field(block, "type")?,
+                })
+            })
+            .collect::<Result<Vec<_>, String>>()?,
+    );
     let corelib_services = blocks(&document.blocks, "corelib_service")
         .map(|block| {
             ensure_fields(block, &["adapter", "params", "returns", "target_bindings"])?;
@@ -270,6 +287,9 @@ fn string_value(value: &BsolValue) -> Result<String, String> {
     match value {
         BsolValue::Ident(value) => Ok(value.clone()),
         BsolValue::QuotedString(value) => Ok(value.value.clone()),
+        // ABI integer/layout readers parse this exact spelling themselves. BSOL
+        // numeric nodes must not be rounded through a floating-point value.
+        BsolValue::Number(value) => Ok(value.raw.clone()),
         _ => Err("expected identifier or quoted string".into()),
     }
 }

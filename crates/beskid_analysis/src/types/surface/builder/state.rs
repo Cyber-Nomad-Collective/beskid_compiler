@@ -50,6 +50,11 @@ impl<'a> TypeSurfaceBuilder<'a> {
     fn seed_primitives(&mut self) {
         for primitive in [
             PrimitiveType::Bool,
+            PrimitiveType::I8,
+            PrimitiveType::I16,
+            PrimitiveType::U16,
+            PrimitiveType::U64,
+            PrimitiveType::F32,
             PrimitiveType::I32,
             PrimitiveType::I64,
             PrimitiveType::U32,

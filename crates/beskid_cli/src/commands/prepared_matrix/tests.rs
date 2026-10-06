@@ -134,12 +134,13 @@ fn matrix_uses_one_worker_and_never_spawns_per_target_children() {
 }
 
 #[test]
-fn matrix_worker_stdin_is_closed_so_input_tests_observe_deterministic_eof() {
+fn matrix_worker_cancellation_uses_a_dedicated_lock_not_stdin() {
     let source = include_str!("../matrix_test.rs");
-    assert!(
-        source.contains(".stdin(Stdio::null())"),
-        "the isolated matrix worker must not inherit an open interactive stdin"
-    );
+    assert!(source.contains(".stdin(Stdio::null())"), "the tested program must see deterministic EOF on stdin");
+    assert!(!source.contains(".stdin(Stdio::piped())") && !source.contains(".stdin(Stdio::inherit())"));
+    assert!(source.contains("BESKID_PREPARED_MATRIX_CANCEL_LOCK"));
+    assert!(source.contains("cancel.release()"), "releasing the private lock is the cooperative stop request");
+    assert!(source.contains("worker_cancellation.cancel()"), "lock release cancels the worker");
 }
 
 #[test]

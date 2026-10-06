@@ -136,6 +136,10 @@ pub(super) fn validate(manifest: &RuntimeManifestV5) -> Result<(), String> {
         "__network_dns_address",
         "__network_dns_release",
         "__bytes_compare",
+        "__float_to_bits32",
+        "__float_from_bits32",
+        "__float_to_bits64",
+        "__float_from_bits64",
         "__bytes_copy",
         "__bytes_from_str",
         "__bytes_get",
@@ -147,12 +151,6 @@ pub(super) fn validate(manifest: &RuntimeManifestV5) -> Result<(), String> {
         "__str_from_i64",
         "__str_slice",
         "__str_from_bytes_utf8",
-        "__dynamic_cast_checked",
-        "__dynamic_cell_create",
-        "__dynamic_cell_wrap",
-        "__dynamic_map_aot",
-        "__dynamic_map_fallback",
-        "__dynamic_object_alloc",
         "__fiber_spawn",
         "__fiber_cancel",
         "__fiber_detach",
@@ -179,6 +177,21 @@ pub(super) fn validate(manifest: &RuntimeManifestV5) -> Result<(), String> {
         "__composition_shutdown",
         "__process_exit",
         "__process_getpid",
+        "__child_begin",
+        "__child_argument",
+        "__child_environment",
+        "__child_spawn",
+        "__child_poll",
+        "__child_terminate",
+        "__child_close",
+        "__child_close_until",
+        "__child_close_pipe",
+        "__child_pause",
+        "__child_wait",
+        "__child_read",
+        "__child_write",
+        "__child_try_read",
+        "__child_try_write",
         "__env_get",
         "__env_set",
         "__env_getcwd",
@@ -208,6 +221,11 @@ pub(super) fn validate(manifest: &RuntimeManifestV5) -> Result<(), String> {
         "__gc_heap_force_root_stack_failure",
         "__gc_root_handle",
         "__gc_unroot_handle",
+        "__gc_same_identity",
+        "__gc_try_alloc",
+        "__gc_allocation_failure_reason",
+        "__gc_try_register_root",
+        "__gc_try_root_handle",
         "__event_get_handler",
         "__event_len",
         "__event_subscribe",
@@ -254,9 +272,28 @@ pub(super) fn validate(manifest: &RuntimeManifestV5) -> Result<(), String> {
             .name
             .strip_prefix("__")
             .ok_or_else(|| format!("corelib service `{}` must use a compiler-owned name", service.name))?;
+        let versioned_gc = matches!(
+            service.name.as_str(),
+            "__gc_same_identity"
+                | "__gc_try_alloc"
+                | "__gc_allocation_failure_reason"
+                | "__gc_try_register_root"
+                | "__gc_try_root_handle"
+        );
+        if versioned_gc && service.adapter != format!("beskid_rt_v5_{expected_adapter}") {
+            return Err(format!(
+                "corelib service `{}` must use canonical versioned adapter `beskid_rt_v5_{expected_adapter}`",
+                service.name
+            ));
+        }
         if service.adapter != expected_adapter
-            && !(service.name.starts_with("__network_")
+            && !(versioned_gc && service.adapter == format!("beskid_rt_v5_{expected_adapter}"))
+            && !((service.name.starts_with("__network_") || service.name.starts_with("__child_"))
                 && service.adapter == format!("beskid_rt_v5_{expected_adapter}"))
+            && !(matches!(
+                service.name.as_str(),
+                "__float_to_bits32" | "__float_from_bits32" | "__float_to_bits64" | "__float_from_bits64"
+            ) && service.adapter == format!("beskid_rt_v5_{expected_adapter}"))
             && !matches!(
                 service.name.as_str(),
                 "__args_count"
@@ -314,6 +351,14 @@ pub(super) fn validate(manifest: &RuntimeManifestV5) -> Result<(), String> {
     }
     unique(manifest.layouts.iter().map(|entry| (entry.target.as_deref(), entry.name.as_str())), "layout")?;
     for entry in &manifest.exports {
+        // Glue's independently versioned owner service is an exact closed extension,
+        // not permission for arbitrary v1 names or caller-controlled seed APIs.
+        if let Some((params, result)) = super::independently_versioned_runtime_contract(&entry.symbol) {
+            if entry.params.iter().map(|p| p.ty.as_str()).collect::<Vec<_>>() != params || entry.result != result {
+                return Err(format!("Glue owner V1 exact signature mismatch: {}", entry.symbol));
+            }
+            continue;
+        }
         if entry.symbol.is_empty() || (!entry.symbol.contains("_v5_") && !entry.symbol.ends_with("_v5")) {
             return Err(format!("export {} is not ABI-v5 versioned", entry.symbol));
         }
@@ -336,6 +381,11 @@ pub(super) fn validate(manifest: &RuntimeManifestV5) -> Result<(), String> {
         "platform import",
     )?;
     for entry in &manifest.platform_imports {
+        if !matches!(entry.kind.as_str(), "function" | "data")
+            || (entry.kind == "data" && (!entry.params.is_empty() || matches!(entry.result.as_str(), "void" | "never")))
+        {
+            return Err("platform data imports require a value type and no callable parameters".into());
+        }
         if entry.symbol.is_empty() || entry.library.is_empty() {
             return Err("platform import symbol/library cannot be empty".into());
         }

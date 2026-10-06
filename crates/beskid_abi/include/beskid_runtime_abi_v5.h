@@ -64,7 +64,7 @@ static inline const char *BESKID_TRAP_NAME(unsigned char code) {
 #define BESKID_CALLBACK_ENTRY_ALIGNMENT 8
 #define BESKID_CALLBACK_ENTRY_IDENTITY_OFFSET 0
 #define BESKID_CALLBACK_ENTRY_TARGET_OFFSET 8
-#define BESKID_CALLBACK_REGISTRY_SIZE 1056
+#define BESKID_CALLBACK_REGISTRY_SIZE 1072
 #define BESKID_CALLBACK_REGISTRY_ALIGNMENT 8
 #define BESKID_CALLBACK_REGISTRY_OWNER_RUNTIME_OFFSET 0
 #define BESKID_CALLBACK_REGISTRY_CALLBACK_COUNT_OFFSET 8
@@ -72,6 +72,18 @@ static inline const char *BESKID_TRAP_NAME(unsigned char code) {
 #define BESKID_CALLBACK_REGISTRY_COMPOSITION_CONTAINER_OFFSET 24
 #define BESKID_CALLBACK_REGISTRY_CALLBACKS_OFFSET 32
 #define BESKID_CALLBACK_REGISTRY_HANDLERS_OFFSET 544
+#define BESKID_CALLBACK_REGISTRY_DYNAMIC_ROOT_HANDLE_V2_OFFSET 1056
+#define BESKID_CALLBACK_REGISTRY_GLUE_OWNER_ROOT_HANDLE_V3_OFFSET 1064
+#define BESKID_CHECKED_ALLOCATION_SCOPE_SIZE 64
+#define BESKID_CHECKED_ALLOCATION_SCOPE_ALIGNMENT 8
+#define BESKID_CHECKED_ALLOCATION_SCOPE_MAGIC_OFFSET 0
+#define BESKID_CHECKED_ALLOCATION_SCOPE_PREVIOUS_OFFSET 8
+#define BESKID_CHECKED_ALLOCATION_SCOPE_FAILURE_HANDLE_OFFSET 16
+#define BESKID_CHECKED_ALLOCATION_SCOPE_FAILURE_REASON_OFFSET 24
+#define BESKID_CHECKED_ALLOCATION_SCOPE_HEAP_OFFSET 32
+#define BESKID_CHECKED_ALLOCATION_SCOPE_THREAD_OFFSET 40
+#define BESKID_CHECKED_ALLOCATION_SCOPE_RESERVED_0_OFFSET 48
+#define BESKID_CHECKED_ALLOCATION_SCOPE_RESERVED_1_OFFSET 56
 #define BESKID_COMPOSITION_CONTAINER_SIZE 64
 #define BESKID_COMPOSITION_CONTAINER_ALIGNMENT 8
 #define BESKID_COMPOSITION_CONTAINER_OWNER_RUNTIME_OFFSET 0
@@ -266,7 +278,7 @@ static inline const char *BESKID_TRAP_NAME(unsigned char code) {
 #define BESKID_SCHEDULER_STATE_MUTATOR_TOKEN_OFFSET 4032
 #define BESKID_SCHEDULER_STATE_POLL_STATE_OFFSET 4040
 #define BESKID_SCHEDULER_STATE_FIBERS_OFFSET 4048
-#define BESKID_TLS_STATE_SIZE 48
+#define BESKID_TLS_STATE_SIZE 56
 #define BESKID_TLS_STATE_ALIGNMENT 8
 #define BESKID_TLS_STATE_RUNTIME_OFFSET 0
 #define BESKID_TLS_STATE_ROOT_FRAME_OFFSET 8
@@ -274,6 +286,7 @@ static inline const char *BESKID_TRAP_NAME(unsigned char code) {
 #define BESKID_TLS_STATE_ATTACH_DEPTH_OFFSET 24
 #define BESKID_TLS_STATE_COMPOSITION_SCOPE_OFFSET 32
 #define BESKID_TLS_STATE_COMPOSITION_DEPTH_OFFSET 40
+#define BESKID_TLS_STATE_CHECKED_ALLOCATION_SCOPE_OFFSET 48
 #define BESKID_TYPE_DESCRIPTOR_SIZE 40
 #define BESKID_TYPE_DESCRIPTOR_ALIGNMENT 8
 #define BESKID_TYPE_DESCRIPTOR_SIZE_OFFSET 0
@@ -282,6 +295,13 @@ static inline const char *BESKID_TRAP_NAME(unsigned char code) {
 #define BESKID_TYPE_DESCRIPTOR_POINTER_COUNT_OFFSET 24
 #define BESKID_TYPE_DESCRIPTOR_FLAGS_OFFSET 32
 #define BESKID_TYPE_DESCRIPTOR_RESERVED_OFFSET 36
+#define BESKID_UTF8_VIEW_RECORD_SIZE 40
+#define BESKID_UTF8_VIEW_RECORD_ALIGNMENT 8
+#define BESKID_UTF8_VIEW_RECORD_DESCRIPTOR_OFFSET 0
+#define BESKID_UTF8_VIEW_RECORD_GC_WORD_OFFSET 8
+#define BESKID_UTF8_VIEW_RECORD_PAYLOAD_OFFSET 16
+#define BESKID_UTF8_VIEW_RECORD_DATA_OFFSET 24
+#define BESKID_UTF8_VIEW_RECORD_LENGTH_OFFSET 32
 #define BESKID_WORKER_REQUEST_SIZE 72
 #define BESKID_WORKER_REQUEST_ALIGNMENT 8
 #define BESKID_WORKER_REQUEST_NEXT_OFFSET 0
@@ -351,6 +371,96 @@ static inline const char *BESKID_TRAP_NAME(unsigned char code) {
 #define BESKID_ARCH_CONTEXT_X86_64_SYS_V_R15_OFFSET 40
 #define BESKID_ARCH_CONTEXT_X86_64_SYS_V_RSP_OFFSET 48
 #define BESKID_ARCH_CONTEXT_X86_64_SYS_V_RIP_OFFSET 56
+#ifndef BESKID_RUNTIME_ABI_LAYOUTS_ONLY
+int32_t beskid_dynamic_v1_cast(void * cell, uint64_t tag, void * output);
+void * beskid_dynamic_v1_cast_owned(void * value, uint64_t token, void * status);
+void * beskid_dynamic_v1_cast_result(void * value, uint64_t shape);
+void * beskid_dynamic_v1_checked_cast_result_dispatch(void * value, uint64_t tag);
+void * beskid_dynamic_v1_checked_cast_result_factory(void * value, uint64_t tag, void * status);
+void * beskid_dynamic_v1_checked_create_result_dispatch(void * payload, uint64_t tag);
+void * beskid_dynamic_v1_checked_create_result_factory(void * payload, uint64_t tag, void * status);
+void * beskid_dynamic_v1_checked_erased_construct(void * payload, void * shape);
+void * beskid_dynamic_v1_checked_erased_read(void * cell);
+void * beskid_dynamic_v1_checked_map_result_dispatch(void * value, uint64_t mapping);
+void * beskid_dynamic_v1_checked_map_result_factory(void * value, uint64_t mapping, void * status);
+int32_t beskid_dynamic_v1_create(void * payload, uint64_t tag, void * output);
+void * beskid_dynamic_v1_create_owned(void * value, uint64_t token, void * status);
+void * beskid_dynamic_v1_create_result(void * payload, uint64_t shape);
+uint8_t beskid_dynamic_v1_descriptor_valid(void * descriptor, uint8_t cell);
+void * beskid_dynamic_v1_erased_cell_descriptor(void);
+void * beskid_dynamic_v1_erased_construct(void * payload, void * shape);
+void * beskid_dynamic_v1_erased_read(void * cell);
+int32_t beskid_dynamic_v1_map(void * arg0, uint64_t arg1, void * arg2);
+void * beskid_dynamic_v1_map_owned(void * value, uint64_t token, void * status);
+void * beskid_dynamic_v1_map_result(void * value, uint64_t mapping);
+void * beskid_dynamic_v1_mapping_construct(void * arg0, void * arg1, void * arg2, void * arg3, uint64_t generation, uint64_t library, uint64_t token);
+void * beskid_dynamic_v1_mapping_destination(void * arg0);
+void * beskid_dynamic_v1_mapping_signature(void * arg0);
+void * beskid_dynamic_v1_mapping_source(void * arg0);
+uint64_t beskid_dynamic_v1_mapping_tag(void * arg0, size_t arg1);
+void * beskid_dynamic_v1_mapping_transform(void * arg0);
+int32_t beskid_dynamic_v1_register_mapping(void * arg0, void * arg1);
+int32_t beskid_dynamic_v1_register_shape(void * registration, void * tag);
+void beskid_dynamic_v1_registry_append_mapping(void * arg0, void * arg1);
+void beskid_dynamic_v1_registry_append_shape(void * arg0, void * arg1);
+void beskid_dynamic_v1_registry_close(void * arg0);
+void * beskid_dynamic_v1_registry_construct(uint64_t arg0, uint64_t arg1, uint64_t arg2);
+void * beskid_dynamic_v1_registry_mapping_at(void * arg0, size_t arg1);
+size_t beskid_dynamic_v1_registry_mapping_count(void * arg0);
+void * beskid_dynamic_v1_registry_shape_at(void * arg0, size_t arg1);
+size_t beskid_dynamic_v1_registry_shape_count(void * arg0);
+uint64_t beskid_dynamic_v1_registry_tag(void * arg0, size_t arg1);
+void beskid_dynamic_v1_root_clear(void);
+void * beskid_dynamic_v1_root_load(void);
+uint8_t beskid_dynamic_v1_root_publish(void * arg0);
+void * beskid_dynamic_v1_shape_construct(void * arg0, void * arg1, void * arg2, void * arg3, void * arg4, void * arg5, void * arg6, void * arg7, uint64_t generation, uint64_t library, uint64_t tag);
+void * beskid_dynamic_v1_shape_digest(void * arg0);
+void * beskid_dynamic_v1_shape_owner(void * arg0);
+void * beskid_dynamic_v1_shape_pointer(void * arg0, size_t arg1);
+void * beskid_dynamic_v1_shape_signature(void * arg0);
+void * beskid_dynamic_v1_shape_source(void * arg0);
+uint64_t beskid_dynamic_v1_shape_tag(void * arg0, size_t arg1);
+uint8_t beskid_dynamic_v1_shutdown(void);
+void * beskid_dynamic_v1_signature_digest(void * signature);
+void * beskid_glue_v1_checked_record_leaf(void * buffer, size_t length, size_t allocation, uint64_t issuer, uint64_t session, uint64_t library, uint64_t generation, uint64_t kind, uint64_t shape, uint64_t token);
+void * beskid_glue_v1_checked_record_link(void * previous, void * buffer, size_t length, size_t allocation, uint64_t issuer, uint64_t session, uint64_t library, uint64_t generation, uint64_t kind, uint64_t shape, uint64_t token);
+int32_t beskid_glue_v1_host_close(void * runtime);
+int32_t beskid_glue_v1_host_open(void * runtime_out);
+int32_t beskid_glue_v1_input_bytes(void * bytes, size_t length, void * value, void * root);
+int32_t beskid_glue_v1_input_utf8(void * bytes, size_t length, void * value, void * root);
+uint64_t beskid_glue_v1_next_identity(void);
+int32_t beskid_glue_v1_owner_bind_image_closure(uint64_t library, uint64_t generation, void * rows, size_t count);
+int32_t beskid_glue_v1_owner_bind_opaque_domains(uint64_t arg0, uint64_t arg1, void * arg2, size_t arg3);
+int32_t beskid_glue_v1_owner_bind_shapes(uint64_t library, uint64_t generation, void * shapes, size_t count);
+int32_t beskid_glue_v1_owner_close_library(uint64_t library, uint64_t generation);
+int32_t beskid_glue_v1_owner_copy(uint64_t library, uint64_t shape, uint64_t generation, uint64_t kind, void * bytes, size_t length, void * out);
+int32_t beskid_glue_v1_owner_opaque_borrow_begin(uint64_t arg0, void * arg1, uint64_t arg2, void * arg3, void * arg4);
+int32_t beskid_glue_v1_owner_opaque_borrow_end(uint64_t arg0, void * arg1, uint64_t arg2);
+int32_t beskid_glue_v1_owner_opaque_create(uint64_t arg0, void * arg1, void * arg2, void * arg3, void * arg4);
+int32_t beskid_glue_v1_owner_opaque_release(uint64_t arg0, void * arg1, uint64_t arg2);
+int32_t beskid_glue_v1_owner_open_library(uint64_t generation, void * library_out);
+int32_t beskid_glue_v1_owner_release(uint64_t library, uint64_t shape, uint64_t generation, uint64_t kind, uint64_t token);
+int32_t beskid_glue_v1_owner_release_consumer_opaque(uint64_t arg0, void * arg1, uint64_t arg2);
+int32_t beskid_glue_v1_owner_release_token(uint64_t library, uint64_t token);
+uint8_t beskid_glue_v1_owner_shutdown(void);
+int32_t beskid_glue_v1_owner_validate_binding(uint64_t library, uint64_t shape);
+int32_t beskid_glue_v1_owner_validate_opaque(uint64_t arg0, void * arg1, uint64_t arg2);
+size_t beskid_glue_v1_record_begin_close(void * arg0);
+size_t beskid_glue_v1_record_bind_shapes(void * record, void * shapes);
+size_t beskid_glue_v1_record_has_shape(void * record, uint64_t shape);
+void * beskid_glue_v1_record_leaf(void * buffer, size_t length, size_t allocation, uint64_t issuer, uint64_t session, uint64_t library, uint64_t generation, uint64_t kind, uint64_t shape, uint64_t token);
+void * beskid_glue_v1_record_link(void * previous, void * buffer, size_t length, size_t allocation, uint64_t issuer, uint64_t session, uint64_t library, uint64_t generation, uint64_t kind, uint64_t shape, uint64_t token);
+size_t beskid_glue_v1_record_next_count(void * record);
+void * beskid_glue_v1_record_payload(void * record);
+void * beskid_glue_v1_record_previous(void * record);
+size_t beskid_glue_v1_record_release(void * record, void * empty);
+uint64_t beskid_glue_v1_record_tag(void * record, size_t selector);
+int32_t beskid_glue_v1_result_bytes(uint64_t library, uint64_t shape, void * value, void * output);
+int32_t beskid_glue_v1_result_utf8(uint64_t library, uint64_t shape, void * value, void * output);
+void beskid_glue_v1_root_clear(void);
+void * beskid_glue_v1_root_load(void);
+uint8_t beskid_glue_v1_root_publish(void * record);
+uint64_t beskid_glue_v1_runtime_generation(void);
 int32_t beskid_library_attach_v5(void * runtime);
 void beskid_library_detach_v5(void * runtime);
 uint8_t beskid_rt_v5_abi_value_clear(void * slot);
@@ -361,11 +471,114 @@ uint32_t beskid_rt_v5_abi_version(void);
 void * beskid_rt_v5_array_allocate_rooted(void * request, void * root_handle_out);
 uint8_t beskid_rt_v5_array_construction_finish(void * root_handle);
 void * beskid_rt_v5_array_grow_rooted(void * array, size_t minimum_capacity, void * root_handle_out);
+void * beskid_rt_v5_array_try_allocate_rooted(void * request, void * root_handle_out);
+void * beskid_rt_v5_array_try_grow_rooted(void * array, size_t minimum_capacity, void * root_handle_out);
 uint8_t beskid_rt_v5_array_write_barrier(void * array, void * value);
+void * beskid_rt_v5_checked_scope_current(void);
+uint8_t beskid_rt_v5_checked_scope_enter(void * scope, size_t failure_handle);
+size_t beskid_rt_v5_checked_scope_failure_reason(void);
+void * beskid_rt_v5_checked_scope_failure_result(void);
+void beskid_rt_v5_checked_scope_leave(void * scope);
+void * beskid_rt_v5_checked_utf8_record_construct(void * source, size_t length);
+int32_t beskid_rt_v5_child_argument(uint64_t token, void * value);
+uint64_t beskid_rt_v5_child_begin(void * executable, void * cwd, int32_t inherit);
+int32_t beskid_rt_v5_child_close(uint64_t token);
+int32_t beskid_rt_v5_child_close_pipe(uint64_t token, int32_t stream);
+int32_t beskid_rt_v5_child_close_until(uint64_t token, int64_t deadline);
+int32_t beskid_rt_v5_child_environment(uint64_t token, void * key, void * value);
+int64_t beskid_rt_v5_child_pause(int64_t deadline);
+int64_t beskid_rt_v5_child_poll(uint64_t token);
+int64_t beskid_rt_v5_child_read(uint64_t token, int32_t stream, void * buffer, int64_t offset, int64_t count, int64_t deadline);
+int32_t beskid_rt_v5_child_spawn(uint64_t token, int64_t deadline);
+int32_t beskid_rt_v5_child_terminate(uint64_t token);
+int64_t beskid_rt_v5_child_try_read(uint64_t token, int32_t stream, void * buffer, int64_t offset, int64_t count);
+int64_t beskid_rt_v5_child_try_write(uint64_t token, void * buffer, int64_t offset, int64_t count);
+int64_t beskid_rt_v5_child_wait(uint64_t token, int64_t deadline);
+int64_t beskid_rt_v5_child_write(uint64_t token, void * buffer, int64_t offset, int64_t count, int64_t deadline);
 uint8_t beskid_rt_v5_closure_capture_store(void * environment, void * descriptor, size_t map_index, void * value);
 void * beskid_rt_v5_closure_environment_allocate(void * request);
 uint8_t beskid_rt_v5_closure_environment_root(void * tls_state, size_t slot_index, void * environment);
 uint8_t beskid_rt_v5_closure_environment_root_current(size_t slot_index, void * environment);
+void * beskid_rt_v5_dynamic_bool_box(uint8_t arg0);
+void * beskid_rt_v5_dynamic_bool_box_descriptor(void);
+void * beskid_rt_v5_dynamic_bool_cell_descriptor(void);
+void * beskid_rt_v5_dynamic_bool_construct(void * arg0, void * arg1);
+void * beskid_rt_v5_dynamic_bool_read(void * arg0);
+void * beskid_rt_v5_dynamic_bytes_box(void * arg0);
+void * beskid_rt_v5_dynamic_bytes_box_descriptor(void);
+void * beskid_rt_v5_dynamic_bytes_cell_descriptor(void);
+void * beskid_rt_v5_dynamic_bytes_construct(void * arg0, void * arg1);
+void * beskid_rt_v5_dynamic_bytes_read(void * arg0);
+void * beskid_rt_v5_dynamic_char_box(uint32_t arg0);
+void * beskid_rt_v5_dynamic_char_box_descriptor(void);
+void * beskid_rt_v5_dynamic_char_cell_descriptor(void);
+void * beskid_rt_v5_dynamic_char_construct(void * arg0, void * arg1);
+void * beskid_rt_v5_dynamic_char_read(void * arg0);
+void * beskid_rt_v5_dynamic_f32_box(float arg0);
+void * beskid_rt_v5_dynamic_f32_box_descriptor(void);
+void * beskid_rt_v5_dynamic_f32_cell_descriptor(void);
+void * beskid_rt_v5_dynamic_f32_construct(void * arg0, void * arg1);
+void * beskid_rt_v5_dynamic_f32_read(void * arg0);
+void * beskid_rt_v5_dynamic_f64_box(double arg0);
+void * beskid_rt_v5_dynamic_f64_box_descriptor(void);
+void * beskid_rt_v5_dynamic_f64_cell_descriptor(void);
+void * beskid_rt_v5_dynamic_f64_construct(void * arg0, void * arg1);
+void * beskid_rt_v5_dynamic_f64_read(void * arg0);
+void * beskid_rt_v5_dynamic_i16_box(uintptr_t arg0);
+void * beskid_rt_v5_dynamic_i16_box_descriptor(void);
+void * beskid_rt_v5_dynamic_i16_cell_descriptor(void);
+void * beskid_rt_v5_dynamic_i16_construct(void * arg0, void * arg1);
+void * beskid_rt_v5_dynamic_i16_read(void * arg0);
+void * beskid_rt_v5_dynamic_i32_box(int32_t arg0);
+void * beskid_rt_v5_dynamic_i32_box_descriptor(void);
+void * beskid_rt_v5_dynamic_i32_cell_descriptor(void);
+void * beskid_rt_v5_dynamic_i32_construct(void * arg0, void * arg1);
+void * beskid_rt_v5_dynamic_i32_read(void * arg0);
+void * beskid_rt_v5_dynamic_i64_box(int64_t arg0);
+void * beskid_rt_v5_dynamic_i64_box_descriptor(void);
+void * beskid_rt_v5_dynamic_i64_cell_descriptor(void);
+void * beskid_rt_v5_dynamic_i64_construct(void * arg0, void * arg1);
+void * beskid_rt_v5_dynamic_i64_read(void * arg0);
+void * beskid_rt_v5_dynamic_i8_box(uintptr_t arg0);
+void * beskid_rt_v5_dynamic_i8_box_descriptor(void);
+void * beskid_rt_v5_dynamic_i8_cell_descriptor(void);
+void * beskid_rt_v5_dynamic_i8_construct(void * arg0, void * arg1);
+void * beskid_rt_v5_dynamic_i8_read(void * arg0);
+void * beskid_rt_v5_dynamic_string_box(void * arg0);
+void * beskid_rt_v5_dynamic_string_box_descriptor(void);
+void * beskid_rt_v5_dynamic_string_cell_descriptor(void);
+void * beskid_rt_v5_dynamic_string_construct(void * arg0, void * arg1);
+void * beskid_rt_v5_dynamic_string_read(void * arg0);
+void * beskid_rt_v5_dynamic_u16_box(uintptr_t arg0);
+void * beskid_rt_v5_dynamic_u16_box_descriptor(void);
+void * beskid_rt_v5_dynamic_u16_cell_descriptor(void);
+void * beskid_rt_v5_dynamic_u16_construct(void * arg0, void * arg1);
+void * beskid_rt_v5_dynamic_u16_read(void * arg0);
+void * beskid_rt_v5_dynamic_u32_box(uint32_t arg0);
+void * beskid_rt_v5_dynamic_u32_box_descriptor(void);
+void * beskid_rt_v5_dynamic_u32_cell_descriptor(void);
+void * beskid_rt_v5_dynamic_u32_construct(void * arg0, void * arg1);
+void * beskid_rt_v5_dynamic_u32_read(void * arg0);
+void * beskid_rt_v5_dynamic_u64_box(uint64_t arg0);
+void * beskid_rt_v5_dynamic_u64_box_descriptor(void);
+void * beskid_rt_v5_dynamic_u64_cell_descriptor(void);
+void * beskid_rt_v5_dynamic_u64_construct(void * arg0, void * arg1);
+void * beskid_rt_v5_dynamic_u64_read(void * arg0);
+void * beskid_rt_v5_dynamic_u8_box(uint8_t arg0);
+void * beskid_rt_v5_dynamic_u8_box_descriptor(void);
+void * beskid_rt_v5_dynamic_u8_cell_descriptor(void);
+void * beskid_rt_v5_dynamic_u8_construct(void * arg0, void * arg1);
+void * beskid_rt_v5_dynamic_u8_read(void * arg0);
+void * beskid_rt_v5_dynamic_unit_box(void);
+void * beskid_rt_v5_dynamic_unit_box_descriptor(void);
+void * beskid_rt_v5_dynamic_unit_cell_descriptor(void);
+void * beskid_rt_v5_dynamic_unit_construct(void * payload, void * shape);
+void * beskid_rt_v5_dynamic_unit_read(void * cell);
+void * beskid_rt_v5_dynamic_word_box(size_t arg0);
+void * beskid_rt_v5_dynamic_word_box_descriptor(void);
+void * beskid_rt_v5_dynamic_word_cell_descriptor(void);
+void * beskid_rt_v5_dynamic_word_construct(void * arg0, void * arg1);
+void * beskid_rt_v5_dynamic_word_read(void * arg0);
 size_t beskid_rt_v5_external_active_count(void);
 size_t beskid_rt_v5_external_owner_id(void);
 void beskid_rt_v5_external_pump(int64_t now);
@@ -378,8 +591,21 @@ size_t beskid_rt_v5_external_wait_register(size_t fiber_handle, size_t operation
 uint8_t beskid_rt_v5_external_wait_release(size_t token);
 uint8_t beskid_rt_v5_external_wait_set_deadline(size_t token, int64_t deadline);
 void beskid_rt_v5_fiber_yield(void);
+float beskid_rt_v5_float_from_bits32(uint32_t value);
+double beskid_rt_v5_float_from_bits64(uint64_t value);
+uint32_t beskid_rt_v5_float_to_bits32(float value);
+uint64_t beskid_rt_v5_float_to_bits64(double value);
+size_t beskid_rt_v5_gc_allocation_failure_reason(void);
+void * beskid_rt_v5_gc_resolve_handle(size_t handle);
+uint8_t beskid_rt_v5_gc_root_slot_is_registered(void * ptrAddr);
+size_t beskid_rt_v5_gc_same_identity(void * left, void * right);
+void * beskid_rt_v5_gc_try_alloc(size_t size, size_t alignment);
+uint8_t beskid_rt_v5_gc_try_register_root(void * ptrAddr);
+size_t beskid_rt_v5_gc_try_root_handle(void * valuePtr);
 uint8_t beskid_rt_v5_heap_set_cap(size_t bytes);
 void * beskid_rt_v5_managed_object_allocate(void * request);
+void * beskid_rt_v5_managed_object_try_allocate(void * request);
+uint64_t beskid_rt_v5_managed_view_kind(void * value);
 int32_t beskid_rt_v5_network_set_deadlines(size_t handle, int64_t read_deadline, int64_t write_deadline);
 int32_t beskid_rt_v5_poll_executor_run_once(void);
 int64_t beskid_rt_v5_poll_executor_spawn(void * poll_entry, void * task_state, void * result_slot, void * cancel_slot);
@@ -398,6 +624,9 @@ void beskid_rt_v5_scheduler_stack_overflow_observed(void);
 void * beskid_rt_v5_thread_attach(void * runtime);
 void beskid_rt_v5_thread_detach(void * thread);
 _Noreturn void beskid_rt_v5_trap(uint8_t code, void * message, size_t message_len);
+void * beskid_rt_v5_utf8_record_construct(void * source, size_t length);
+void * beskid_rt_v5_utf8_record_payload(void * record);
+void beskid_rt_v5_utf8_record_set_data(void * record, void * data);
 void beskid_arch_v5_context_init(void * context, void * stack_top, void * entry, void * argument, void * return_trampoline);
 void beskid_arch_v5_context_switch(void * from, void * to);
 void * alloc(size_t size, void * descriptorPtr);
@@ -419,6 +648,21 @@ uint8_t channel_receive_value(int64_t id, void * destination);
 int64_t channel_send(int64_t id, void * sender);
 int64_t channel_try_receive(int64_t id);
 int64_t channel_try_send(int64_t id, void * sender);
+int32_t beskid_rt_v5_child_argument(uint64_t token, void * value);
+uint64_t beskid_rt_v5_child_begin(void * executable, void * cwd, int32_t inherit);
+int32_t beskid_rt_v5_child_close(uint64_t token);
+int32_t beskid_rt_v5_child_close_pipe(uint64_t token, int32_t stream);
+int32_t beskid_rt_v5_child_close_until(uint64_t token, int64_t deadline);
+int32_t beskid_rt_v5_child_environment(uint64_t token, void * key, void * value);
+int64_t beskid_rt_v5_child_pause(int64_t deadline);
+int64_t beskid_rt_v5_child_poll(uint64_t token);
+int64_t beskid_rt_v5_child_read(uint64_t token, int32_t stream, void * buffer, int64_t offset, int64_t count, int64_t deadline);
+int32_t beskid_rt_v5_child_spawn(uint64_t token, int64_t deadline);
+int32_t beskid_rt_v5_child_terminate(uint64_t token);
+int64_t beskid_rt_v5_child_try_read(uint64_t token, int32_t stream, void * buffer, int64_t offset, int64_t count);
+int64_t beskid_rt_v5_child_try_write(uint64_t token, void * buffer, int64_t offset, int64_t count);
+int64_t beskid_rt_v5_child_wait(uint64_t token, int64_t deadline);
+int64_t beskid_rt_v5_child_write(uint64_t token, void * buffer, int64_t offset, int64_t count, int64_t deadline);
 int64_t clock_monotonic_nanos(void);
 int64_t clock_realtime_nanos(void);
 void * composition_container_create(size_t slot_count);
@@ -429,12 +673,6 @@ void composition_scope_enter(void * container, size_t scope_id, size_t parent_sc
 void composition_scope_leave(void);
 void composition_shutdown(void * container);
 uint8_t composition_slot_store(void * container, size_t slot, void * service);
-int32_t dynamic_cast_checked(void * cell, int32_t expectedShapeId);
-void * dynamic_cell_create(void * value, void * descriptor);
-void * dynamic_cell_wrap(void * value, void * descriptor);
-void * dynamic_map_aot(void * cell, void * mapping);
-void * dynamic_map_fallback(void * cell, void * mapping);
-void * dynamic_object_alloc(void * descriptor);
 void * env_get(void * key);
 void * env_getcwd(void);
 int32_t env_set(void * key, void * value);
@@ -453,11 +691,16 @@ uint8_t fiber_join_value(int64_t fiberId, void * destination);
 int64_t fiber_now_millis(void);
 size_t fiber_processor_count(void);
 int64_t fiber_spawn(void * entry, void * argument);
+float beskid_rt_v5_float_from_bits32(uint32_t value);
+double beskid_rt_v5_float_from_bits64(uint64_t value);
+uint32_t beskid_rt_v5_float_to_bits32(float value);
+uint64_t beskid_rt_v5_float_to_bits64(double value);
 int32_t beskid_rt_v5_fs_delete(void * path);
 int32_t beskid_rt_v5_fs_exists(void * path);
 int32_t beskid_rt_v5_fs_mkdir(void * path);
 int32_t beskid_rt_v5_fs_read_text(void * path, void * text_out);
 int32_t beskid_rt_v5_fs_write_text(void * path, void * text);
+size_t beskid_rt_v5_gc_allocation_failure_reason(void);
 size_t gc_bytes_allocated(void);
 size_t gc_collect(void);
 size_t gc_collect_if_needed(void);
@@ -473,6 +716,10 @@ size_t gc_object_count(void);
 size_t gc_phase(void);
 uint8_t gc_register_root(void * ptrAddr);
 size_t gc_root_handle(void * valuePtr);
+size_t beskid_rt_v5_gc_same_identity(void * left, void * right);
+void * beskid_rt_v5_gc_try_alloc(size_t size, size_t alignment);
+uint8_t beskid_rt_v5_gc_try_register_root(void * ptrAddr);
+size_t beskid_rt_v5_gc_try_root_handle(void * valuePtr);
 void gc_unregister_root(void * ptrAddr);
 void gc_unroot_handle(size_t handle);
 void gc_write_barrier(void * parent, void * child);
@@ -525,4 +772,5 @@ void wait_group_add(void * id, int64_t delta);
 void * wait_group_create(void);
 void wait_group_done(void * id);
 int32_t wait_group_wait(void * id);
+#endif /* BESKID_RUNTIME_ABI_LAYOUTS_ONLY */
 #endif

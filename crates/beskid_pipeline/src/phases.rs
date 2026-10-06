@@ -132,7 +132,7 @@ pub const FULL_BUILD_PHASE_ORDER: &[&str] = &[
     AOT_LINK,
 ];
 
-/// Phases observed for `beskid mod rebuild` / `beskid mod clean` prep (Mod package AOT only).
+/// Phases observed for `beskid dev mod rebuild` / `beskid dev mod clean` prep (Mod package AOT only).
 ///
 /// Resolve and materialize the workspace, compile the Mod project through object emission, then
 /// link the mod artifact. Does not include host mod orchestration (`mod.load` … `mod.rewrite`) or

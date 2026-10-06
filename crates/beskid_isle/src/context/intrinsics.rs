@@ -196,6 +196,25 @@ macro_rules! generated_intrinsic_methods {
                     };
                     (self.builder.func.dfg.value_type(*value) == result).then_some(*value)
                 }
+                RuntimeIntrinsicKind::FloatToBits32
+                | RuntimeIntrinsicKind::FloatFromBits32
+                | RuntimeIntrinsicKind::FloatToBits64
+                | RuntimeIntrinsicKind::FloatFromBits64 => {
+                    let [value] = arguments.as_slice() else {
+                        return None;
+                    };
+                    let (source, target) = match kind {
+                        RuntimeIntrinsicKind::FloatToBits32 => (types::F32, types::I32),
+                        RuntimeIntrinsicKind::FloatFromBits32 => (types::I32, types::F32),
+                        RuntimeIntrinsicKind::FloatToBits64 => (types::F64, types::I64),
+                        RuntimeIntrinsicKind::FloatFromBits64 => (types::I64, types::F64),
+                        _ => unreachable!(),
+                    };
+                    if self.builder.func.dfg.value_type(*value) != source || result != target {
+                        return None;
+                    }
+                    Some(self.builder.ins().bitcast(target, MemFlagsData::new(), *value))
+                }
                 RuntimeIntrinsicKind::PointerAdd => {
                     let [base, offset] = arguments.as_slice() else {
                         return None;

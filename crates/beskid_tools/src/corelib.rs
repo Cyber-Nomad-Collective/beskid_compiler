@@ -15,7 +15,8 @@ use beskid_abi::corelib_bundle::{
     CORELIB_BUNDLE_FINGERPRINT_FILE as BUNDLE_FINGERPRINT_FILE, fingerprint_corelib_bundle_dir,
 };
 
-// Populated by build.rs from ../../corelib (workspace: *.bws + packages + beskid_corelib).
+// Populated by build.rs from ../../corelib: the workspace manifest, root legal files, and every
+// CoreLib.bws member (`corelib_bundle_inventory`), sealed with its fingerprint marker.
 static EMBEDDED_CORELIB: Dir<'_> = include_dir!("$OUT_DIR/embedded_corelib");
 
 /// Outcome of [`ensure_bundled_corelib`]: install root, embedded version string, and whether files were refreshed.
@@ -85,18 +86,70 @@ pub fn ensure_bundled_corelib() -> Result<CorelibProvisioning> {
     );
 
     if should_install {
-        if target_root.exists() {
-            remove_dir_all_retry(&target_root)
-                .with_context(|| format!("remove old corelib at {}", target_root.display()))?;
-        }
-        fs::create_dir_all(&target_root).with_context(|| format!("create corelib root {}", target_root.display()))?;
-        write_embedded_dir(&EMBEDDED_CORELIB, &target_root)?;
-        write_bundle_marker(&target_root, &bundled_fingerprint)?;
+        replace_with_embedded_bundle(&target_root, &bundled_fingerprint)?;
     } else {
         fs::create_dir_all(&target_root).with_context(|| format!("create corelib root {}", target_root.display()))?;
     }
 
     Ok(CorelibProvisioning { root: target_root, version: bundled_version.to_string(), updated: should_install })
+}
+
+/// Replace the managed bundle at `target_root` with the embedded snapshot without ever exposing a
+/// partial tree at that path.
+///
+/// The complete bundle, marker included, is written into a sibling staging directory first. The
+/// outdated root (if any) is then moved aside and the staging directory renamed into place, so a
+/// concurrent reader or an interrupted install observes the old sealed bundle, a briefly missing
+/// root, or the new sealed bundle, never a partial tree. A partial markerless tree at the install
+/// root would otherwise be classified as a developer checkout and used without refresh.
+fn replace_with_embedded_bundle(target_root: &Path, fingerprint: &str) -> Result<()> {
+    let parent = target_root
+        .parent()
+        .ok_or_else(|| anyhow::anyhow!("corelib root {} has no parent directory", target_root.display()))?;
+    fs::create_dir_all(parent).with_context(|| format!("create corelib parent {}", parent.display()))?;
+    let name = target_root
+        .file_name()
+        .ok_or_else(|| anyhow::anyhow!("corelib root {} has no file name", target_root.display()))?
+        .to_string_lossy()
+        .into_owned();
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|elapsed| elapsed.as_nanos())
+        .unwrap_or(0);
+    let unique = format!("{}-{nanos}", std::process::id());
+    let staging = parent.join(format!(".{name}.staging-{unique}"));
+    let retired = parent.join(format!(".{name}.retired-{unique}"));
+
+    let staged = (|| -> Result<()> {
+        fs::create_dir_all(&staging).with_context(|| format!("create corelib staging {}", staging.display()))?;
+        write_embedded_dir(&EMBEDDED_CORELIB, &staging)?;
+        write_bundle_marker(&staging, fingerprint)
+    })();
+    if let Err(error) = staged {
+        let _ = remove_dir_all_retry(&staging);
+        return Err(error);
+    }
+
+    let had_previous = target_root.exists();
+    if had_previous {
+        if let Err(error) = fs::rename(target_root, &retired) {
+            let _ = remove_dir_all_retry(&staging);
+            return Err(error).with_context(|| format!("retire outdated corelib at {}", target_root.display()));
+        }
+    }
+    if let Err(error) = fs::rename(&staging, target_root) {
+        if had_previous {
+            // Put the sealed previous bundle back so the root is never left missing.
+            let _ = fs::rename(&retired, target_root);
+        }
+        let _ = remove_dir_all_retry(&staging);
+        return Err(error).with_context(|| format!("install corelib at {}", target_root.display()));
+    }
+    if had_previous {
+        remove_dir_all_retry(&retired)
+            .with_context(|| format!("remove retired corelib at {}", retired.display()))?;
+    }
+    Ok(())
 }
 
 /// True when `root` exists, has at least one entry, and carries no bundle marker — i.e. it is
@@ -276,7 +329,7 @@ fn write_embedded_dir(source: &Dir<'_>, destination: &Path) -> Result<()> {
 mod tests {
     use super::{
         BUNDLE_FINGERPRINT_FILE, EMBEDDED_CORELIB, UnrecognizedCorelibRootError, is_unmanaged_nonempty_root,
-        looks_like_corelib_checkout, write_bundle_marker,
+        looks_like_corelib_checkout, replace_with_embedded_bundle, write_bundle_marker,
     };
     use semver::Version;
     use std::fs;
@@ -290,6 +343,33 @@ mod tests {
 
         let notice = EMBEDDED_CORELIB.get_file("NOTICE").expect("embedded corelib notice");
         assert!(notice.contents_utf8().expect("UTF-8 corelib notice").contains("Beskid core library"));
+    }
+
+    #[test]
+    fn outdated_managed_bundle_is_replaced_by_a_sealed_embedded_bundle() {
+        let parent = tempfile::tempdir().expect("install parent");
+        let root = parent.path().join("beskid_corelib");
+        fs::create_dir_all(root.join("packages/foundation/src/Core/String")).expect("outdated bundle tree");
+        fs::write(root.join("packages/foundation/src/Core/String/Core.bd"), "// outdated").expect("outdated source");
+        fs::write(root.join("stale-only.txt"), "removed on refresh").expect("outdated-only file");
+        write_bundle_marker(&root, &"0".repeat(64)).expect("outdated marker");
+
+        let fingerprint = super::embedded_fingerprint().expect("embedded fingerprint");
+        replace_with_embedded_bundle(&root, &fingerprint).expect("replace outdated bundle");
+
+        assert_eq!(
+            fs::read_to_string(root.join(BUNDLE_FINGERPRINT_FILE)).expect("installed marker").trim(),
+            fingerprint
+        );
+        assert_eq!(super::installed_fingerprint(&root).expect("fingerprint installed tree").as_deref(), Some(&*fingerprint));
+        assert!(!root.join("stale-only.txt").exists(), "the outdated tree must be replaced, not merged");
+        let leftovers = fs::read_dir(parent.path())
+            .expect("read install parent")
+            .filter_map(Result::ok)
+            .map(|entry| entry.file_name().to_string_lossy().into_owned())
+            .filter(|name| name != "beskid_corelib")
+            .collect::<Vec<_>>();
+        assert!(leftovers.is_empty(), "staging and retired trees must be removed: {leftovers:?}");
     }
 
     #[test]
@@ -395,6 +475,73 @@ mod tests {
         let message = error.to_string();
         assert!(message.contains(&path.display().to_string()));
         assert!(message.contains(BUNDLE_FINGERPRINT_FILE));
+    }
+
+    fn materialized_embedded_bundle() -> (tempfile::TempDir, std::path::PathBuf) {
+        let parent = tempfile::tempdir().expect("install parent");
+        let root = parent.path().join("beskid_corelib");
+        let fingerprint = super::embedded_fingerprint().expect("embedded fingerprint");
+        replace_with_embedded_bundle(&root, &fingerprint).expect("materialize embedded bundle");
+        (parent, root)
+    }
+
+    fn bundle_files(root: &std::path::Path, at: &std::path::Path, files: &mut Vec<std::path::PathBuf>) {
+        for entry in fs::read_dir(at).expect("read bundle directory") {
+            let path = entry.expect("bundle entry").path();
+            if path.is_dir() {
+                bundle_files(root, &path, files);
+            } else if path.file_name().is_some_and(|name| name != BUNDLE_FINGERPRINT_FILE) {
+                files.push(path.strip_prefix(root).expect("file below bundle").to_path_buf());
+            }
+        }
+    }
+
+    #[test]
+    fn embedded_bundle_is_exactly_the_workspace_member_inventory() {
+        let (_parent, root) = materialized_embedded_bundle();
+        let mut files = Vec::new();
+        bundle_files(&root, &root, &mut files);
+        files.sort();
+        let inventory = beskid_abi::corelib_bundle::corelib_bundle_inventory(&root).expect("bundle member inventory");
+        assert_eq!(files, inventory.files, "the embedded bundle must hold exactly its CoreLib.bws member inventory");
+
+        let manifest = fs::read_to_string(root.join("CoreLib.bws")).expect("embedded CoreLib.bws");
+        let workspace = beskid_analysis::projects::parse_workspace_manifest(&manifest).expect("parse embedded CoreLib.bws");
+        let mut listed = workspace.members.iter().map(|member| member.path.clone()).collect::<Vec<_>>();
+        let mut extracted = beskid_abi::corelib_bundle::parse_corelib_workspace_member_paths(&manifest)
+            .expect("strict member extraction");
+        listed.sort();
+        extracted.sort();
+        assert_eq!(extracted, listed, "the build-script member reader must agree with the workspace parser");
+        for member in ["mods/serialization_mod", "mods/corelib_pest_gen", "packages/serialization"] {
+            assert!(listed.iter().any(|path| path == member), "CoreLib.bws must list {member}");
+            assert!(root.join(member).is_dir(), "embedded bundle omits member {member}");
+        }
+        assert!(!root.join("mods/serialization_mod/Tests").exists(), "a nested non-member project must not ship");
+        assert!(
+            beskid_abi::corelib_bundle::verified_corelib_bundle_root(&root.join("mods/serialization_mod")).is_some(),
+            "the materialized bundle must verify"
+        );
+    }
+
+    #[test]
+    fn installed_bundle_resolves_serialization_with_its_mod_dependency() {
+        let (_parent, root) = materialized_embedded_bundle();
+        let manifest = root.join("packages/serialization/corelib_serialization.bproj");
+        let graph = beskid_analysis::projects::build_project_graph(&manifest)
+            .expect("installed corelib_serialization must resolve its path dependencies");
+        let dependency = beskid_analysis::projects::collect_dependency_projects(&graph)
+            .into_iter()
+            .find(|dependency| dependency.dependency_name == "serialization_mod")
+            .expect("corelib_serialization depends on serialization_mod");
+        assert!(
+            dependency.project_root.canonicalize().expect("installed mod root")
+                == root.join("mods/serialization_mod").canonicalize().expect("bundle mod root"),
+            "the Mod dependency must resolve inside the installed bundle"
+        );
+        let source = fs::read_to_string(&dependency.manifest_path).expect("read installed mod manifest");
+        let mod_manifest = beskid_analysis::projects::parse_manifest(&source).expect("parse installed mod manifest");
+        assert_eq!(mod_manifest.project.kind, beskid_analysis::projects::ProjectKind::Mod);
     }
 
     #[test]

@@ -1,4 +1,4 @@
-//! End-to-end tests for `beskid import lib <name>`.
+//! End-to-end tests for `beskid dev import lib <name>`.
 //!
 //! These exercise the same resolution + manifest merge that the CLI binary runs, so the
 //! Project.proj mutation behavior is locked in even when the build infrastructure prevents

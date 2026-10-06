@@ -7,360 +7,85 @@ define_builtins! {
         returns: Unit,
         injected: false,
     },
-    &["__alloc"] => {
-        symbol: "alloc",
-        params: [Usize, Ptr],
-        returns: Ptr,
-        injected: true,
-    },
-    &["__beskid_register_handlers"] => {
-        symbol: "beskid_register_handlers",
-        params: [U64, Ptr, U64],
-        returns: U64,
-        injected: true,
-    },
-    &["__gc_register_root"] => {
-        symbol: "gc_register_root",
-        params: [Ptr],
-        returns: Unit,
-        injected: true,
-    },
-    &["__gc_root_handle"] => {
-        symbol: "gc_root_handle",
-        params: [Ptr],
-        returns: U64,
-        injected: true,
-    },
-    &["__gc_unregister_root"] => {
-        symbol: "gc_unregister_root",
-        params: [Ptr],
-        returns: Unit,
-        injected: true,
-    },
-    &["__gc_unroot_handle"] => {
-        symbol: "gc_unroot_handle",
-        params: [U64],
-        returns: Unit,
-        injected: true,
-    },
-    &["__gc_write_barrier"] => {
-        symbol: "gc_write_barrier",
-        params: [Ptr, Ptr],
-        returns: Unit,
-        injected: true,
-    },
-    &["__panic_str"] => {
-        symbol: "panic_str",
-        params: [String],
-        returns: Never,
-        injected: true,
-    },
-    &["__array_len"] => {
-        symbol: "array_len",
-        params: [Ptr],
-        returns: Usize,
-        injected: true,
-    },
-    &["__fs_write_text"] => {
-        symbol: "fs_write_text",
-        params: [String, String],
-        returns: Usize,
-        injected: true,
-    },
-    &["__syscall_write"] => {
-        symbol: "syscall_write",
-        params: [U64, String],
-        returns: Usize,
-        injected: true,
-    },
-    &["__syscall_write_bytes"] => {
-        symbol: "syscall_write_bytes",
-        params: [U64, Ptr],
-        returns: Usize,
-        injected: true,
-    },
-    &["__array_new"] => {
-        symbol: "array_new",
-        params: [Usize, Usize],
-        returns: Ptr,
-        injected: true,
-    },
-    &["__bytes_from_str"] => {
-        symbol: "bytes_from_str",
-        params: [String],
-        returns: Ptr,
-        injected: true,
-    },
-    &["__bytes_set"] => {
-        symbol: "bytes_set",
-        params: [Ptr, U64, U64],
-        returns: Ptr,
-        injected: true,
-    },
-    &["__env_get"] => {
-        symbol: "env_get",
-        params: [String],
-        returns: String,
-        injected: true,
-    },
-    &["__env_getcwd"] => {
-        symbol: "env_getcwd",
-        params: [],
-        returns: String,
-        injected: true,
-    },
-    &["__fs_read_text"] => {
-        symbol: "fs_read_text",
-        params: [String],
-        returns: String,
-        injected: true,
-    },
-    &["__str_from_bytes_utf8"] => {
-        symbol: "str_from_bytes_utf8",
-        params: [Ptr],
-        returns: String,
-        injected: true,
-    },
-    &["__str_new"] => {
-        symbol: "str_new",
-        params: [Ptr, Usize],
-        returns: Ptr,
-        injected: true,
-    },
-    &["__str_slice"] => {
-        symbol: "str_slice",
-        params: [String, U64, U64],
-        returns: String,
-        injected: true,
-    },
-    &["__syscall_read"] => {
-        symbol: "syscall_read",
-        params: [U64, Ptr, Usize],
-        returns: U64,
-        injected: true,
-    },
-    &["__syscall_read_bytes"] => {
-        symbol: "syscall_read_bytes",
-        params: [U64, Ptr, Usize],
-        returns: U64,
-        injected: true,
-    },
-    &["__bytes_copy"] => {
-        symbol: "bytes_copy",
-        params: [Ptr, U64, Ptr, U64, U64],
-        returns: Unit,
-        injected: true,
-    },
-    &["__channel_close"] => {
-        symbol: "channel_close",
-        params: [U64],
-        returns: Unit,
-        injected: true,
-    },
-    &["__fiber_cancel"] => {
-        symbol: "fiber_cancel",
-        params: [U64, U64],
-        returns: U64,
-        injected: true,
-    },
-    &["__fiber_detach"] => {
-        symbol: "fiber_detach",
-        params: [U64],
-        returns: Unit,
-        injected: true,
-    },
-    &["__mutex_unlock"] => {
-        symbol: "mutex_unlock",
-        params: [U64],
-        returns: Unit,
-        injected: true,
-    },
-    &["__wait_group_add"] => {
-        symbol: "wait_group_add",
-        params: [U64, U64],
-        returns: Unit,
-        injected: true,
-    },
-    &["__wait_group_done"] => {
-        symbol: "wait_group_done",
-        params: [U64],
-        returns: Unit,
-        injected: true,
-    },
-    &["__bytes_compare"] => {
-        symbol: "bytes_compare",
-        params: [Ptr, Ptr],
-        returns: U64,
-        injected: true,
-    },
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     &["Runtime", "Handlers", "Bytes", "Compare"] => {
         symbol: "bytes_compare",
         params: [Ptr, Ptr],
         returns: U64,
         injected: true,
     },
-    &["__bytes_get"] => {
-        symbol: "bytes_get",
-        params: [Ptr, U64],
-        returns: U64,
-        injected: true,
-    },
+
     &["Runtime", "Handlers", "Bytes", "Get"] => {
         symbol: "bytes_get",
         params: [Ptr, U64],
         returns: U64,
         injected: true,
     },
-    &["__channel_create"] => {
-        symbol: "channel_create",
-        params: [U64, U64],
-        returns: U64,
-        injected: true,
-    },
+
     &["__channel_receive"] => {
         symbol: "channel_receive_status",
         params: [U64],
         returns: U64,
         injected: true,
     },
-    &["__channel_try_receive"] => {
-        symbol: "channel_try_receive",
-        params: [U64],
-        returns: U64,
-        injected: true,
-    },
-    &["__clock_monotonic_nanos"] => {
-        symbol: "clock_monotonic_nanos",
-        params: [],
-        returns: U64,
-        injected: true,
-    },
-    &["__clock_realtime_nanos"] => {
-        symbol: "clock_realtime_nanos",
-        params: [],
-        returns: U64,
-        injected: true,
-    },
-    &["__env_set"] => {
-        symbol: "env_set",
-        params: [String, String],
-        returns: I32,
-        injected: true,
-    },
-    &["__fiber_current_id"] => {
-        symbol: "fiber_current_id",
-        params: [],
-        returns: U64,
-        injected: true,
-    },
-    &["__fiber_join_status"] => {
-        symbol: "fiber_join_status",
-        params: [U64],
-        returns: I32,
-        injected: true,
-    },
-    &["__fiber_now_millis"] => {
-        symbol: "fiber_now_millis",
-        params: [],
-        returns: U64,
-        injected: true,
-    },
-    &["__fiber_processor_count"] => {
-        symbol: "fiber_processor_count",
-        params: [],
-        returns: U64,
-        injected: true,
-    },
-    &["__fiber_spawn"] => {
-        symbol: "fiber_spawn",
-        params: [Ptr, Ptr],
-        returns: U64,
-        injected: true,
-    },
-    &["__fs_delete"] => {
-        symbol: "fs_delete",
-        params: [String],
-        returns: U64,
-        injected: true,
-    },
-    &["__fs_exists"] => {
-        symbol: "fs_exists",
-        params: [String],
-        returns: U64,
-        injected: true,
-    },
-    &["__fs_mkdir"] => {
-        symbol: "fs_mkdir",
-        params: [String],
-        returns: U64,
-        injected: true,
-    },
-    &["__hub_create"] => {
-        symbol: "hub_create",
-        params: [],
-        returns: U64,
-        injected: true,
-    },
-    &["__hub_register"] => {
-        symbol: "hub_register",
-        params: [U64, U64, U64],
-        returns: U64,
-        injected: true,
-    },
-    &["__hub_unregister"] => {
-        symbol: "hub_unregister",
-        params: [U64, U64],
-        returns: U64,
-        injected: true,
-    },
-    &["__hub_wait_receive_index"] => {
-        symbol: "hub_wait_receive_index",
-        params: [U64],
-        returns: U64,
-        injected: true,
-    },
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     &["__hub_wait_receive"] => {
         symbol: "hub_wait_receive_status",
         params: [U64],
         returns: U64,
         injected: true,
     },
-    &["__mutex_create"] => {
-        symbol: "mutex_create",
-        params: [],
-        returns: U64,
-        injected: true,
-    },
-    &["__mutex_lock"] => {
-        symbol: "mutex_lock",
-        params: [U64],
-        returns: U64,
-        injected: true,
-    },
-    &["__mutex_try_lock"] => {
-        symbol: "mutex_try_lock",
-        params: [U64],
-        returns: U64,
-        injected: true,
-    },
-    &["__process_exit"] => {
-        symbol: "process_exit",
-        params: [U64],
-        returns: Never,
-        injected: true,
-    },
-    &["__process_getpid"] => {
-        symbol: "process_getpid",
-        params: [],
-        returns: U64,
-        injected: true,
-    },
-    &["__str_eq"] => {
-        symbol: "str_eq",
-        params: [Ptr, Ptr],
-        returns: U64,
-        injected: true,
-    },
+
+
+
+
+
+
     &["Runtime", "Handlers", "String", "Eq"] => {
         symbol: "str_eq",
         params: [Ptr, Ptr],
@@ -391,25 +116,848 @@ define_builtins! {
         returns: U64,
         injected: true,
     },
+
+
+
+// ABI-v5 canonical runtime declarations
+    &["__network_open"] => {
+        symbol: "beskid_rt_v5_network_open",
+        params: [I64, Ptr, I64, I64, I64, Ptr],
+        returns: I32,
+        injected: true,
+    },
+    &["__network_accept"] => {
+        symbol: "beskid_rt_v5_network_accept",
+        params: [Usize, I64, Ptr],
+        returns: I32,
+        injected: true,
+    },
+    &["__network_close"] => {
+        symbol: "beskid_rt_v5_network_close",
+        params: [Usize],
+        returns: I32,
+        injected: true,
+    },
+    &["__network_read"] => {
+        symbol: "beskid_rt_v5_network_read",
+        params: [Usize, Ptr, I64, I64, I64],
+        returns: I64,
+        injected: true,
+    },
+    &["__network_write"] => {
+        symbol: "beskid_rt_v5_network_write",
+        params: [Usize, Ptr, I64, I64],
+        returns: I64,
+        injected: true,
+    },
+    &["__network_address"] => {
+        symbol: "beskid_rt_v5_network_address",
+        params: [Usize, U8, Ptr],
+        returns: I32,
+        injected: true,
+    },
+    &["__network_options"] => {
+        symbol: "beskid_rt_v5_network_options",
+        params: [Usize],
+        returns: I64,
+        injected: true,
+    },
+    &["__network_set_options"] => {
+        symbol: "beskid_rt_v5_network_set_options",
+        params: [Usize, I64],
+        returns: I32,
+        injected: true,
+    },
+    &["__network_set_deadlines"] => {
+        symbol: "beskid_rt_v5_network_set_deadlines",
+        params: [Usize, I64, I64],
+        returns: I32,
+        injected: true,
+    },
+    &["__network_shutdown_write"] => {
+        symbol: "beskid_rt_v5_network_shutdown_write",
+        params: [Usize],
+        returns: I32,
+        injected: true,
+    },
+    &["__network_udp_connect"] => {
+        symbol: "beskid_rt_v5_network_udp_connect",
+        params: [Usize, Ptr],
+        returns: I32,
+        injected: true,
+    },
+    &["__network_receive"] => {
+        symbol: "beskid_rt_v5_network_receive",
+        params: [Usize, Ptr, Ptr, U8, I64],
+        returns: I64,
+        injected: true,
+    },
+    &["__network_send"] => {
+        symbol: "beskid_rt_v5_network_send",
+        params: [Usize, Ptr, Ptr, U8, I64],
+        returns: I64,
+        injected: true,
+    },
+    &["__network_dns_resolve"] => {
+        symbol: "beskid_rt_v5_network_dns_resolve",
+        params: [Ptr, I64, I64, I64, Ptr],
+        returns: I32,
+        injected: true,
+    },
+    &["__network_dns_count"] => {
+        symbol: "beskid_rt_v5_network_dns_count",
+        params: [Usize],
+        returns: I64,
+        injected: true,
+    },
+    &["__network_dns_address"] => {
+        symbol: "beskid_rt_v5_network_dns_address",
+        params: [Usize, I64, Ptr],
+        returns: I32,
+        injected: true,
+    },
+    &["__network_dns_release"] => {
+        symbol: "beskid_rt_v5_network_dns_release",
+        params: [Usize],
+        returns: Unit,
+        injected: true,
+    },
+    &["__array_new"] => {
+        symbol: "array_new",
+        type_parameters: ["T"],
+        params: [Usize],
+        returns: TypeParameterArray,
+        injected: true,
+    },
+    &["__array_len"] => {
+        symbol: "array_len",
+        params: [Ptr],
+        returns: Usize,
+        injected: true,
+    },
+    &["__bytes_compare"] => {
+        symbol: "bytes_compare",
+        params: [Ptr, Usize, Ptr, Usize],
+        returns: I32,
+        injected: true,
+    },
+    &["__bytes_copy"] => {
+        symbol: "bytes_copy",
+        params: [Ptr, Ptr, Usize],
+        returns: Unit,
+        injected: true,
+    },
+    &["__bytes_from_str"] => {
+        symbol: "bytes_from_str",
+        params: [Ptr],
+        returns: Ptr,
+        injected: true,
+    },
+    &["__bytes_get"] => {
+        symbol: "bytes_get",
+        params: [Ptr, Usize],
+        returns: U8,
+        injected: true,
+    },
+    &["__bytes_set"] => {
+        symbol: "bytes_set",
+        params: [Ptr, Usize, U8],
+        returns: Unit,
+        injected: true,
+    },
+    &["__str_new"] => {
+        symbol: "str_new",
+        params: [Ptr, Usize],
+        returns: Ptr,
+        injected: true,
+    },
+    &["__str_eq"] => {
+        symbol: "str_eq",
+        params: [Ptr, Ptr],
+        returns: Usize,
+        injected: true,
+    },
+    &["__str_concat"] => {
+        symbol: "str_concat",
+        params: [Ptr, Ptr],
+        returns: Ptr,
+        injected: true,
+    },
+    &["__str_from_i64"] => {
+        symbol: "str_from_i64",
+        params: [I64],
+        returns: Ptr,
+        injected: true,
+    },
+    &["__str_slice"] => {
+        symbol: "str_slice",
+        params: [Ptr, Usize, Usize],
+        returns: Ptr,
+        injected: true,
+    },
+    &["__str_from_bytes_utf8"] => {
+        symbol: "str_from_bytes_utf8",
+        params: [Bytes],
+        returns: String,
+        injected: true,
+    },
+    &["__fiber_spawn"] => {
+        symbol: "fiber_spawn",
+        params: [Ptr, Ptr],
+        returns: I64,
+        injected: true,
+    },
+    &["__fiber_cancel"] => {
+        symbol: "fiber_cancel",
+        params: [I64, I64],
+        returns: U8,
+        injected: true,
+    },
+    &["__fiber_detach"] => {
+        symbol: "fiber_detach",
+        params: [I64],
+        returns: Unit,
+        injected: true,
+    },
+    &["__fiber_join_status"] => {
+        symbol: "fiber_join_status",
+        params: [I64],
+        returns: I32,
+        injected: true,
+    },
+    &["__fiber_join_value"] => {
+        symbol: "fiber_join_value",
+        type_parameters: ["T"],
+        params: [I64],
+        returns: TypeParameter,
+        injected: true,
+    },
+    &["__fiber_join_detail"] => {
+        symbol: "fiber_join_detail",
+        params: [I64, Usize],
+        returns: I64,
+        injected: true,
+    },
+    &["__fiber_join_message"] => {
+        symbol: "fiber_join_message",
+        params: [I64],
+        returns: Ptr,
+        injected: true,
+    },
+    &["__fiber_join_error_finish"] => {
+        symbol: "fiber_join_error_finish",
+        params: [I64],
+        returns: U8,
+        injected: true,
+    },
+    &["__fiber_now_millis"] => {
+        symbol: "fiber_now_millis",
+        params: [],
+        returns: I64,
+        injected: true,
+    },
+    &["__fiber_processor_count"] => {
+        symbol: "fiber_processor_count",
+        params: [],
+        returns: Usize,
+        injected: true,
+    },
+    &["__fiber_current_id"] => {
+        symbol: "fiber_current_id",
+        params: [],
+        returns: I64,
+        injected: true,
+    },
+    &["__runtime_preempt_check"] => {
+        symbol: "runtime_preempt_check",
+        params: [],
+        returns: Unit,
+        injected: true,
+    },
+    &["__beskid_register_callbacks"] => {
+        symbol: "beskid_register_callbacks",
+        params: [Ptr, Usize],
+        returns: Unit,
+        injected: true,
+    },
+    &["__beskid_register_handlers"] => {
+        symbol: "beskid_register_handlers",
+        params: [Ptr, Usize],
+        returns: Unit,
+        injected: true,
+    },
+    &["__clock_monotonic_nanos"] => {
+        symbol: "clock_monotonic_nanos",
+        params: [],
+        returns: I64,
+        injected: true,
+    },
+    &["__clock_realtime_nanos"] => {
+        symbol: "clock_realtime_nanos",
+        params: [],
+        returns: I64,
+        injected: true,
+    },
+    &["__composition_container_create"] => {
+        symbol: "composition_container_create",
+        params: [Usize],
+        returns: Ptr,
+        injected: true,
+    },
+    &["__composition_container_drop"] => {
+        symbol: "composition_container_drop",
+        params: [Ptr],
+        returns: Unit,
+        injected: true,
+    },
+    &["__composition_slot_store"] => {
+        symbol: "composition_slot_store",
+        params: [Ptr, Usize, Ptr],
+        returns: U8,
+        injected: true,
+    },
+    &["__composition_launch"] => {
+        symbol: "composition_launch",
+        params: [Ptr],
+        returns: U8,
+        injected: true,
+    },
+    &["__composition_scope_enter"] => {
+        symbol: "composition_scope_enter",
+        params: [Ptr, Usize, Usize],
+        returns: Unit,
+        injected: true,
+    },
+    &["__composition_scope_leave"] => {
+        symbol: "composition_scope_leave",
+        params: [],
+        returns: Unit,
+        injected: true,
+    },
+    &["__composition_scope_depth"] => {
+        symbol: "composition_scope_depth",
+        params: [],
+        returns: I32,
+        injected: true,
+    },
+    &["__composition_shutdown"] => {
+        symbol: "composition_shutdown",
+        params: [Ptr],
+        returns: Unit,
+        injected: true,
+    },
+    &["__process_exit"] => {
+        symbol: "process_exit",
+        params: [I32],
+        returns: Never,
+        injected: true,
+    },
+    &["__process_getpid"] => {
+        symbol: "process_getpid",
+        params: [],
+        returns: I32,
+        injected: true,
+    },
+    &["__env_get"] => {
+        symbol: "env_get",
+        params: [Ptr],
+        returns: Ptr,
+        injected: true,
+    },
+    &["__env_set"] => {
+        symbol: "env_set",
+        params: [Ptr, Ptr],
+        returns: I32,
+        injected: true,
+    },
+    &["__env_getcwd"] => {
+        symbol: "env_getcwd",
+        params: [],
+        returns: Ptr,
+        injected: true,
+    },
     &["__tty_winsize"] => {
         symbol: "tty_winsize",
-        params: [U64],
-        returns: U64,
+        params: [I64],
+        returns: I64,
+        injected: true,
+    },
+    &["__syscall_read"] => {
+        symbol: "syscall_read",
+        params: [I32, Ptr, Usize],
+        returns: I64,
+        injected: true,
+    },
+    &["__syscall_read_bytes"] => {
+        symbol: "syscall_read_bytes",
+        params: [I32, Ptr, Usize],
+        returns: I64,
+        injected: true,
+    },
+    &["__syscall_write"] => {
+        symbol: "syscall_write",
+        params: [I64, Ptr],
+        returns: I64,
+        injected: true,
+    },
+    &["__syscall_write_bytes"] => {
+        symbol: "syscall_write_bytes",
+        params: [I32, Bytes],
+        returns: I64,
+        injected: true,
+    },
+    &["__panic"] => {
+        symbol: "beskid_trap_code",
+        params: [I64],
+        returns: Never,
+        injected: true,
+    },
+    &["__panic_str"] => {
+        symbol: "beskid_trap_message",
+        params: [Ptr],
+        returns: Never,
+        injected: true,
+    },
+    &["__alloc"] => {
+        symbol: "alloc",
+        params: [Usize, Ptr],
+        returns: Ptr,
+        injected: true,
+    },
+    &["__gc_write_barrier"] => {
+        symbol: "gc_write_barrier",
+        params: [Ptr, Ptr],
+        returns: Unit,
+        injected: true,
+    },
+    &["__gc_bytes_allocated"] => {
+        symbol: "gc_bytes_allocated",
+        params: [],
+        returns: Usize,
+        injected: true,
+    },
+    &["__gc_object_count"] => {
+        symbol: "gc_object_count",
+        params: [],
+        returns: Usize,
+        injected: true,
+    },
+    &["__gc_phase"] => {
+        symbol: "gc_phase",
+        params: [],
+        returns: Usize,
+        injected: true,
+    },
+    &["__gc_collect"] => {
+        symbol: "gc_collect",
+        params: [],
+        returns: Usize,
+        injected: true,
+    },
+    &["__gc_collect_if_needed"] => {
+        symbol: "gc_collect_if_needed",
+        params: [],
+        returns: Usize,
+        injected: true,
+    },
+    &["__gc_heap_cap"] => {
+        symbol: "gc_heap_cap",
+        params: [],
+        returns: Usize,
+        injected: true,
+    },
+    &["__gc_heap_committed"] => {
+        symbol: "gc_heap_committed",
+        params: [],
+        returns: Usize,
+        injected: true,
+    },
+    &["__gc_heap_region_count"] => {
+        symbol: "gc_heap_region_count",
+        params: [],
+        returns: Usize,
+        injected: true,
+    },
+    &["__gc_heap_failure_reason"] => {
+        symbol: "gc_heap_failure_reason",
+        params: [],
+        returns: Usize,
+        injected: true,
+    },
+    &["__gc_heap_verify"] => {
+        symbol: "gc_heap_verify",
+        params: [],
+        returns: U8,
+        injected: true,
+    },
+    &["__gc_heap_set_stress_interval"] => {
+        symbol: "gc_heap_set_stress_interval",
+        params: [Usize],
+        returns: Unit,
+        injected: true,
+    },
+    &["__gc_heap_force_root_stack_failure"] => {
+        symbol: "gc_heap_force_root_stack_failure",
+        params: [Usize],
+        returns: Unit,
+        injected: true,
+    },
+    &["__gc_register_root"] => {
+        symbol: "gc_register_root",
+        params: [Ptr],
+        returns: U8,
+        injected: true,
+    },
+    &["__gc_unregister_root"] => {
+        symbol: "gc_unregister_root",
+        params: [Ptr],
+        returns: Unit,
+        injected: true,
+    },
+    &["__gc_external_root_count"] => {
+        symbol: "gc_external_root_count",
+        params: [],
+        returns: Usize,
+        injected: true,
+    },
+    &["__gc_root_handle"] => {
+        symbol: "gc_root_handle",
+        params: [Ptr],
+        returns: Usize,
+        injected: true,
+    },
+    &["__gc_unroot_handle"] => {
+        symbol: "gc_unroot_handle",
+        params: [Usize],
+        returns: Unit,
+        injected: true,
+    },
+    &["__event_get_handler"] => {
+        symbol: "event_get_handler",
+        params: [Ptr, U32],
+        returns: Ptr,
+        injected: true,
+    },
+    &["__event_len"] => {
+        symbol: "event_len",
+        params: [Ptr],
+        returns: Usize,
+        injected: true,
+    },
+    &["__event_subscribe"] => {
+        symbol: "event_subscribe",
+        params: [Ptr, Ptr, Usize],
+        returns: Usize,
+        injected: true,
+    },
+    &["__event_unsubscribe_first"] => {
+        symbol: "event_unsubscribe_first",
+        params: [Ptr, Ptr],
+        returns: Usize,
+        injected: true,
+    },
+    &["__hub_create"] => {
+        symbol: "hub_create",
+        params: [],
+        returns: I64,
+        injected: true,
+    },
+    &["__hub_register"] => {
+        symbol: "hub_register",
+        params: [I64, I64, I64],
+        returns: I64,
+        injected: true,
+    },
+    &["__hub_unregister"] => {
+        symbol: "hub_unregister",
+        params: [I64, I64],
+        returns: I64,
+        injected: true,
+    },
+    &["__hub_wait_receive_status"] => {
+        symbol: "hub_wait_receive_status",
+        params: [I64],
+        returns: I64,
+        injected: true,
+    },
+    &["__hub_wait_receive_value"] => {
+        symbol: "hub_wait_receive_value",
+        type_parameters: ["T"],
+        params: [I64],
+        returns: TypeParameter,
+        injected: true,
+    },
+    &["__hub_wait_receive_index"] => {
+        symbol: "hub_wait_receive_index",
+        params: [I64],
+        returns: I64,
+        injected: true,
+    },
+    &["__channel_create"] => {
+        symbol: "channel_create",
+        params: [I64, I64],
+        returns: I64,
+        injected: true,
+    },
+    &["__channel_send"] => {
+        symbol: "channel_send",
+        params: [I64, Ptr],
+        returns: I64,
+        injected: true,
+    },
+    &["__channel_try_send"] => {
+        symbol: "channel_try_send",
+        params: [I64, Ptr],
+        returns: I64,
+        injected: true,
+    },
+    &["__channel_receive_status"] => {
+        symbol: "channel_receive_status",
+        params: [I64],
+        returns: I64,
+        injected: true,
+    },
+    &["__channel_receive_value"] => {
+        symbol: "channel_receive_value",
+        type_parameters: ["T"],
+        params: [I64],
+        returns: TypeParameter,
+        injected: true,
+    },
+    &["__channel_try_receive"] => {
+        symbol: "channel_try_receive",
+        params: [I64],
+        returns: I64,
+        injected: true,
+    },
+    &["__channel_close"] => {
+        symbol: "channel_close",
+        params: [I64],
+        returns: Unit,
+        injected: true,
+    },
+    &["__mutex_create"] => {
+        symbol: "mutex_create",
+        params: [],
+        returns: Ptr,
+        injected: true,
+    },
+    &["__mutex_lock"] => {
+        symbol: "mutex_lock",
+        params: [Ptr],
+        returns: I32,
+        injected: true,
+    },
+    &["__mutex_try_lock"] => {
+        symbol: "mutex_try_lock",
+        params: [Ptr],
+        returns: I32,
+        injected: true,
+    },
+    &["__mutex_unlock"] => {
+        symbol: "mutex_unlock",
+        params: [Ptr],
+        returns: Unit,
         injected: true,
     },
     &["__wait_group_create"] => {
         symbol: "wait_group_create",
         params: [],
-        returns: U64,
+        returns: Ptr,
+        injected: true,
+    },
+    &["__wait_group_add"] => {
+        symbol: "wait_group_add",
+        params: [Ptr, I64],
+        returns: Unit,
+        injected: true,
+    },
+    &["__wait_group_done"] => {
+        symbol: "wait_group_done",
+        params: [Ptr],
+        returns: Unit,
         injected: true,
     },
     &["__wait_group_wait"] => {
         symbol: "wait_group_wait",
-        params: [U64],
+        params: [Ptr],
+        returns: I32,
+        injected: true,
+    },
+    &["__fs_read_text"] => {
+        symbol: "beskid_rt_v5_fs_read_text",
+        params: [Ptr, Ptr],
+        returns: I32,
+        injected: true,
+    },
+    &["__fs_write_text"] => {
+        symbol: "beskid_rt_v5_fs_write_text",
+        params: [Ptr, Ptr],
+        returns: I32,
+        injected: true,
+    },
+    &["__fs_exists"] => {
+        symbol: "beskid_rt_v5_fs_exists",
+        params: [Ptr],
+        returns: I32,
+        injected: true,
+    },
+    &["__fs_mkdir"] => {
+        symbol: "beskid_rt_v5_fs_mkdir",
+        params: [Ptr],
+        returns: I32,
+        injected: true,
+    },
+    &["__fs_delete"] => {
+        symbol: "beskid_rt_v5_fs_delete",
+        params: [Ptr],
+        returns: I32,
+        injected: true,
+    },
+    &["__float_to_bits32"] => {
+        symbol: "beskid_rt_v5_float_to_bits32",
+        params: [F32],
+        returns: U32,
+        injected: true,
+    },
+    &["__float_from_bits32"] => {
+        symbol: "beskid_rt_v5_float_from_bits32",
+        params: [U32],
+        returns: F32,
+        injected: true,
+    },
+    &["__float_to_bits64"] => {
+        symbol: "beskid_rt_v5_float_to_bits64",
+        params: [F64],
         returns: U64,
         injected: true,
     },
-// ABI-v5 canonical runtime declarations
+    &["__float_from_bits64"] => {
+        symbol: "beskid_rt_v5_float_from_bits64",
+        params: [U64],
+        returns: F64,
+        injected: true,
+    },
+    &["__gc_same_identity"] => {
+        symbol: "beskid_rt_v5_gc_same_identity",
+        params: [Ptr, Ptr],
+        returns: Usize,
+        injected: true,
+    },
+    &["__gc_try_alloc"] => {
+        symbol: "beskid_rt_v5_gc_try_alloc",
+        params: [Usize, Usize],
+        returns: Ptr,
+        injected: true,
+    },
+    &["__gc_allocation_failure_reason"] => {
+        symbol: "beskid_rt_v5_gc_allocation_failure_reason",
+        params: [],
+        returns: Usize,
+        injected: true,
+    },
+    &["__gc_try_register_root"] => {
+        symbol: "beskid_rt_v5_gc_try_register_root",
+        params: [Ptr],
+        returns: U8,
+        injected: true,
+    },
+    &["__gc_try_root_handle"] => {
+        symbol: "beskid_rt_v5_gc_try_root_handle",
+        params: [Ptr],
+        returns: Usize,
+        injected: true,
+    },
+    &["__child_begin"] => {
+        symbol: "beskid_rt_v5_child_begin",
+        params: [Ptr, Ptr, I32],
+        returns: U64,
+        injected: true,
+    },
+    &["__child_argument"] => {
+        symbol: "beskid_rt_v5_child_argument",
+        params: [U64, Ptr],
+        returns: I32,
+        injected: true,
+    },
+    &["__child_environment"] => {
+        symbol: "beskid_rt_v5_child_environment",
+        params: [U64, Ptr, Ptr],
+        returns: I32,
+        injected: true,
+    },
+    &["__child_spawn"] => {
+        symbol: "beskid_rt_v5_child_spawn",
+        params: [U64, I64],
+        returns: I32,
+        injected: true,
+    },
+    &["__child_poll"] => {
+        symbol: "beskid_rt_v5_child_poll",
+        params: [U64],
+        returns: I64,
+        injected: true,
+    },
+    &["__child_terminate"] => {
+        symbol: "beskid_rt_v5_child_terminate",
+        params: [U64],
+        returns: I32,
+        injected: true,
+    },
+    &["__child_close_until"] => {
+        symbol: "beskid_rt_v5_child_close_until",
+        params: [U64, I64],
+        returns: I32,
+        injected: true,
+    },
+    &["__child_close"] => {
+        symbol: "beskid_rt_v5_child_close",
+        params: [U64],
+        returns: I32,
+        injected: true,
+    },
+    &["__child_close_pipe"] => {
+        symbol: "beskid_rt_v5_child_close_pipe",
+        params: [U64, I32],
+        returns: I32,
+        injected: true,
+    },
+    &["__child_pause"] => {
+        symbol: "beskid_rt_v5_child_pause",
+        params: [I64],
+        returns: I64,
+        injected: true,
+    },
+    &["__child_wait"] => {
+        symbol: "beskid_rt_v5_child_wait",
+        params: [U64, I64],
+        returns: I64,
+        injected: true,
+    },
+    &["__child_read"] => {
+        symbol: "beskid_rt_v5_child_read",
+        params: [U64, I32, Ptr, I64, I64, I64],
+        returns: I64,
+        injected: true,
+    },
+    &["__child_write"] => {
+        symbol: "beskid_rt_v5_child_write",
+        params: [U64, Ptr, I64, I64, I64],
+        returns: I64,
+        injected: true,
+    },
+    &["__child_try_read"] => {
+        symbol: "beskid_rt_v5_child_try_read",
+        params: [U64, I32, Ptr, I64, I64],
+        returns: I64,
+        injected: true,
+    },
+    &["__child_try_write"] => {
+        symbol: "beskid_rt_v5_child_try_write",
+        params: [U64, Ptr, I64, I64],
+        returns: I64,
+        injected: true,
+    },
     &["native_word_from_pointer"] => {
         symbol: "beskid_rt_v5_intrinsic_native_word_from_pointer",
         params: [Ptr],
@@ -443,18 +991,18 @@ define_builtins! {
     &["raw_byte_load"] => {
         symbol: "beskid_rt_v5_intrinsic_raw_byte_load",
         params: [Ptr],
-        returns: U64,
+        returns: U8,
         injected: true,
     },
     &["raw_byte_store"] => {
         symbol: "beskid_rt_v5_intrinsic_raw_byte_store",
-        params: [Ptr, U64],
+        params: [Ptr, U8],
         returns: Unit,
         injected: true,
     },
     &["memory_set"] => {
         symbol: "beskid_rt_v5_intrinsic_memory_set",
-        params: [Ptr, U64, Usize],
+        params: [Ptr, U8, Usize],
         returns: Unit,
         injected: true,
     },
@@ -467,7 +1015,7 @@ define_builtins! {
     &["memory_compare"] => {
         symbol: "beskid_rt_v5_intrinsic_memory_compare",
         params: [Ptr, Ptr, Usize],
-        returns: U64,
+        returns: I32,
         injected: true,
     },
     &["system_allocate"] => {
@@ -491,7 +1039,7 @@ define_builtins! {
     &["guarded_stack_grow"] => {
         symbol: "beskid_rt_v5_intrinsic_guarded_stack_grow",
         params: [Ptr, Usize, Usize, Usize],
-        returns: U64,
+        returns: U8,
         injected: true,
     },
     &["guarded_stack_free"] => {
@@ -514,7 +1062,7 @@ define_builtins! {
     },
     &["trap"] => {
         symbol: "beskid_rt_v5_intrinsic_trap",
-        params: [U64, Ptr, Usize],
+        params: [U8, Ptr, Usize],
         returns: Never,
         injected: true,
     },
@@ -533,25 +1081,25 @@ define_builtins! {
     &["clock_monotonic_nanos"] => {
         symbol: "beskid_rt_v5_intrinsic_clock_monotonic_nanos",
         params: [],
-        returns: U64,
+        returns: I64,
         injected: true,
     },
     &["clock_realtime_nanos"] => {
         symbol: "beskid_rt_v5_intrinsic_clock_realtime_nanos",
         params: [],
-        returns: U64,
+        returns: I64,
         injected: true,
     },
     &["process_exit"] => {
         symbol: "beskid_rt_v5_intrinsic_process_exit",
-        params: [U64],
+        params: [I32],
         returns: Never,
         injected: true,
     },
     &["process_getpid"] => {
         symbol: "beskid_rt_v5_intrinsic_process_getpid",
         params: [],
-        returns: U64,
+        returns: I32,
         injected: true,
     },
     &["env_get"] => {
@@ -563,7 +1111,7 @@ define_builtins! {
     &["env_set"] => {
         symbol: "beskid_rt_v5_intrinsic_env_set",
         params: [Ptr, Ptr],
-        returns: U64,
+        returns: I32,
         injected: true,
     },
     &["env_getcwd"] => {
@@ -575,7 +1123,7 @@ define_builtins! {
     &["fs_read_text"] => {
         symbol: "beskid_rt_v5_intrinsic_fs_read_text",
         params: [Ptr, Ptr, Ptr],
-        returns: U64,
+        returns: I32,
         injected: true,
     },
     &["fs_read_text_release"] => {
@@ -587,31 +1135,31 @@ define_builtins! {
     &["fs_write_text"] => {
         symbol: "beskid_rt_v5_intrinsic_fs_write_text",
         params: [Ptr, Ptr],
-        returns: U64,
+        returns: I32,
         injected: true,
     },
     &["fs_exists"] => {
         symbol: "beskid_rt_v5_intrinsic_fs_exists",
         params: [Ptr],
-        returns: U64,
+        returns: I32,
         injected: true,
     },
     &["fs_mkdir"] => {
         symbol: "beskid_rt_v5_intrinsic_fs_mkdir",
         params: [Ptr],
-        returns: U64,
+        returns: I32,
         injected: true,
     },
     &["fs_delete"] => {
         symbol: "beskid_rt_v5_intrinsic_fs_delete",
         params: [Ptr],
-        returns: U64,
+        returns: I32,
         injected: true,
     },
     &["tty_winsize"] => {
         symbol: "beskid_rt_v5_intrinsic_tty_winsize",
-        params: [U64],
-        returns: U64,
+        params: [I64],
+        returns: I64,
         injected: true,
     },
     &["arch_context_size"] => {
@@ -641,7 +1189,7 @@ define_builtins! {
     &["worker_pool_init"] => {
         symbol: "beskid_rt_v5_intrinsic_worker_pool_init",
         params: [Usize],
-        returns: U64,
+        returns: I32,
         injected: true,
     },
     &["worker_pool_shutdown"] => {
@@ -653,13 +1201,13 @@ define_builtins! {
     &["worker_submit"] => {
         symbol: "beskid_rt_v5_intrinsic_worker_submit",
         params: [Ptr],
-        returns: U64,
+        returns: I32,
         injected: true,
     },
     &["worker_poll"] => {
         symbol: "beskid_rt_v5_intrinsic_worker_poll",
         params: [Ptr],
-        returns: U64,
+        returns: I32,
         injected: true,
     },
     &["worker_release"] => {
@@ -683,73 +1231,73 @@ define_builtins! {
     &["owner_post"] => {
         symbol: "beskid_rt_v5_intrinsic_owner_post",
         params: [Usize, Usize, Usize],
-        returns: U64,
+        returns: I32,
         injected: true,
     },
     &["owner_post_deadline"] => {
         symbol: "beskid_rt_v5_intrinsic_owner_post_deadline",
-        params: [Usize, Usize, U64],
-        returns: U64,
+        params: [Usize, Usize, I64],
+        returns: I32,
         injected: true,
     },
     &["owner_pop"] => {
         symbol: "beskid_rt_v5_intrinsic_owner_pop",
         params: [Usize, Ptr],
-        returns: U64,
+        returns: I32,
         injected: true,
     },
     &["owner_wait"] => {
         symbol: "beskid_rt_v5_intrinsic_owner_wait",
-        params: [Usize, U64],
+        params: [Usize, I64],
         returns: Unit,
         injected: true,
     },
     &["wait_claim"] => {
         symbol: "beskid_rt_v5_intrinsic_wait_claim",
         params: [Ptr, Usize],
-        returns: U64,
+        returns: I32,
         injected: true,
     },
     &["network_open"] => {
         symbol: "beskid_rt_v5_intrinsic_network_open",
-        params: [U64, U64, Ptr],
-        returns: U64,
+        params: [I32, I32, Ptr],
+        returns: I32,
         injected: true,
     },
     &["network_close"] => {
         symbol: "beskid_rt_v5_intrinsic_network_close",
         params: [Ptr],
-        returns: U64,
+        returns: I32,
         injected: true,
     },
     &["network_bind"] => {
         symbol: "beskid_rt_v5_intrinsic_network_bind",
-        params: [Ptr, Ptr, U64],
-        returns: U64,
+        params: [Ptr, Ptr, I32],
+        returns: I32,
         injected: true,
     },
     &["network_address"] => {
         symbol: "beskid_rt_v5_intrinsic_network_address",
-        params: [Ptr, U64, Ptr],
-        returns: U64,
+        params: [Ptr, U8, Ptr],
+        returns: I32,
         injected: true,
     },
     &["network_options"] => {
         symbol: "beskid_rt_v5_intrinsic_network_options",
         params: [Ptr, Usize],
-        returns: U64,
+        returns: I32,
         injected: true,
     },
     &["network_get_options"] => {
         symbol: "beskid_rt_v5_intrinsic_network_get_options",
         params: [Ptr],
-        returns: U64,
+        returns: I64,
         injected: true,
     },
     &["network_shutdown_write"] => {
         symbol: "beskid_rt_v5_intrinsic_network_shutdown_write",
         params: [Ptr],
-        returns: U64,
+        returns: I32,
         injected: true,
     },
     &["network_reactor_create"] => {
@@ -767,7 +1315,7 @@ define_builtins! {
     &["network_submit"] => {
         symbol: "beskid_rt_v5_intrinsic_network_submit",
         params: [Ptr, Ptr, Ptr],
-        returns: U64,
+        returns: I32,
         injected: true,
     },
     &["network_cancel"] => {
@@ -778,8 +1326,8 @@ define_builtins! {
     },
     &["network_reactor_poll"] => {
         symbol: "beskid_rt_v5_intrinsic_network_reactor_poll",
-        params: [Ptr, U64],
-        returns: U64,
+        params: [Ptr, I32],
+        returns: I32,
         injected: true,
     },
     &["network_report_leak"] => {
@@ -808,20 +1356,20 @@ define_builtins! {
     },
     &["network_dns_start"] => {
         symbol: "beskid_rt_v5_intrinsic_network_dns_start",
-        params: [Ptr, Usize, U64, Usize, Usize],
+        params: [Ptr, Usize, I32, Usize, Usize],
         returns: Ptr,
         injected: true,
     },
     &["network_dns_count"] => {
         symbol: "beskid_rt_v5_intrinsic_network_dns_count",
         params: [Ptr],
-        returns: U64,
+        returns: I64,
         injected: true,
     },
     &["network_dns_get"] => {
         symbol: "beskid_rt_v5_intrinsic_network_dns_get",
         params: [Ptr, Usize, Ptr],
-        returns: U64,
+        returns: I32,
         injected: true,
     },
     &["network_dns_release"] => {
@@ -830,15 +1378,123 @@ define_builtins! {
         returns: Unit,
         injected: true,
     },
-    &["__args_count"] => {
-        symbol: "args_count",
+    &["glue_owner_shutdown"] => {
+        symbol: "beskid_rt_v5_intrinsic_glue_owner_shutdown",
         params: [],
+        returns: U8,
+        injected: true,
+    },
+    &["float_to_bits32"] => {
+        symbol: "beskid_rt_v5_intrinsic_float_to_bits32",
+        params: [F32],
+        returns: U32,
+        injected: true,
+    },
+    &["float_from_bits32"] => {
+        symbol: "beskid_rt_v5_intrinsic_float_from_bits32",
+        params: [U32],
+        returns: F32,
+        injected: true,
+    },
+    &["float_to_bits64"] => {
+        symbol: "beskid_rt_v5_intrinsic_float_to_bits64",
+        params: [F64],
         returns: U64,
         injected: true,
     },
-    &["__args_get"] => {
-        symbol: "args_get",
+    &["float_from_bits64"] => {
+        symbol: "beskid_rt_v5_intrinsic_float_from_bits64",
         params: [U64],
+        returns: F64,
+        injected: true,
+    },
+    &["utf8_view_new"] => {
+        symbol: "beskid_rt_v5_intrinsic_utf8_view_new",
+        params: [Ptr, Usize],
+        returns: Ptr,
+        injected: true,
+    },
+    &["dynamic_registry_shutdown_v1"] => {
+        symbol: "beskid_rt_v5_intrinsic_dynamic_registry_shutdown_v1",
+        params: [],
+        returns: U8,
+        injected: true,
+    },
+    &["child_begin"] => {
+        symbol: "beskid_rt_v5_intrinsic_child_begin",
+        params: [Ptr, Usize, Ptr, Usize, I32],
+        returns: U64,
+        injected: true,
+    },
+    &["child_argument"] => {
+        symbol: "beskid_rt_v5_intrinsic_child_argument",
+        params: [U64, Ptr, Usize],
+        returns: I32,
+        injected: true,
+    },
+    &["child_environment"] => {
+        symbol: "beskid_rt_v5_intrinsic_child_environment",
+        params: [U64, Ptr, Usize, Ptr, Usize],
+        returns: I32,
+        injected: true,
+    },
+    &["child_spawn"] => {
+        symbol: "beskid_rt_v5_intrinsic_child_spawn",
+        params: [U64],
+        returns: I32,
+        injected: true,
+    },
+    &["child_poll"] => {
+        symbol: "beskid_rt_v5_intrinsic_child_poll",
+        params: [U64],
+        returns: I64,
+        injected: true,
+    },
+    &["child_read"] => {
+        symbol: "beskid_rt_v5_intrinsic_child_read",
+        params: [U64, I32, Ptr, Usize],
+        returns: I64,
+        injected: true,
+    },
+    &["child_write"] => {
+        symbol: "beskid_rt_v5_intrinsic_child_write",
+        params: [U64, Ptr, Usize],
+        returns: I64,
+        injected: true,
+    },
+    &["child_close_pipe"] => {
+        symbol: "beskid_rt_v5_intrinsic_child_close_pipe",
+        params: [U64, I32],
+        returns: I32,
+        injected: true,
+    },
+    &["child_terminate"] => {
+        symbol: "beskid_rt_v5_intrinsic_child_terminate",
+        params: [U64],
+        returns: I32,
+        injected: true,
+    },
+    &["child_close"] => {
+        symbol: "beskid_rt_v5_intrinsic_child_close",
+        params: [U64],
+        returns: I32,
+        injected: true,
+    },
+    &["child_shutdown"] => {
+        symbol: "beskid_rt_v5_intrinsic_child_shutdown",
+        params: [],
+        returns: I32,
+        injected: true,
+    },
+    &["__args_count"] => {
+        symbol: "beskid_rt_v5_args_count",
+        params: [],
+        returns: I64,
+        injected: true,
+    },
+    &["__args_get"] => {
+        symbol: "beskid_rt_v5_args_get",
+        params: [I64],
         returns: String,
         injected: true,
     },
@@ -856,7 +1512,7 @@ define_builtins! {
     },
     &["__timer_sleep_until"] => {
         symbol: "beskid_rt_v5_external_sleep_until",
-        params: [U64],
+        params: [I64],
         returns: Usize,
         injected: true,
     },

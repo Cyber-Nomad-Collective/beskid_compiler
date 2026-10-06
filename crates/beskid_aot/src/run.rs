@@ -52,7 +52,7 @@ pub fn build_and_run(request: AotRunRequest) -> AotResult<AotRunResult> {
         target_triple: None,
         profile: BuildProfile::Debug,
         entrypoint: request.entrypoint,
-        export_policy: ExportPolicy::PublicOnly,
+        export_policy: ExportPolicy::Explicit(Vec::new()),
         link_mode: LinkMode::Auto,
         runtime: Some(request.runtime),
         verbose_link: false,

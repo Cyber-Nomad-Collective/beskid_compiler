@@ -28,7 +28,12 @@ pub(crate) fn run_analyzers(
             }
             ensure_snapshot_for_analyzer(snapshot, registration)?;
             let outcome = invoker
-                .invoke_analyzer(registration, &context.collect_request, snapshot)
+                .invoke_analyzer(
+                    registration,
+                    &context.collect_request,
+                    snapshot,
+                    input.and_then(|input| input.semantic_authority),
+                )
                 .map_err(|err| anyhow::anyhow!(err.to_string()))?;
             outcomes.push(outcome);
         }

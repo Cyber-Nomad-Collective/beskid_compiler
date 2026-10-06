@@ -9,6 +9,60 @@ use crate::types::result::{FunctionSignature, TypeError};
 use crate::types::{TypeId, TypeInfo, UnitTypeSurface, build_unit_type_surface, merge_unit_surfaces};
 
 #[test]
+fn qualified_same_named_module_type_retains_dependency_record_field() {
+    let node_path = PathBuf::from("/tmp/qualified-field/Beskid/Syntax/Nodes/NodeRef.bd");
+    let compilation_path = PathBuf::from("/tmp/qualified-field/Beskid/Compiler/Compilation.bd");
+    let node = parse_program("pub type NodeRef { u64 generation, }").unwrap();
+    let compilation = parse_program("pub type Compilation { Beskid.Syntax.Nodes.NodeRef entryRoot, }").unwrap();
+    let mut entry = parse_program(
+        "use Beskid.Compiler.Compilation; \
+        pub Compilation Make(Beskid.Syntax.Nodes.NodeRef entryRoot) { \
+        return Compilation { entryRoot: entryRoot }; } unit Main() {}",
+    )
+    .unwrap();
+    let mut resolver = Resolver::new();
+    resolver.collect_program_in_module(
+        &node,
+        &["Beskid".into(), "Syntax".into(), "Nodes".into(), "NodeRef".into()],
+        Some(&node_path),
+    );
+    resolver.collect_program_in_module(
+        &compilation,
+        &["Beskid".into(), "Compiler".into(), "Compilation".into()],
+        Some(&compilation_path),
+    );
+    let nodes = parse_program("pub mod Beskid.Syntax.Nodes.NodeRef;").unwrap();
+    resolver.collect_program_in_module(
+        &nodes,
+        &["Beskid".into(), "Syntax".into(), "Nodes".into()],
+        Some(&PathBuf::from("/tmp/qualified-field/Beskid/Syntax/Nodes.bd")),
+    );
+    resolver.set_current_source_path(Some(PathBuf::from("/tmp/qualified-field/Main.bd")));
+    let resolution = resolver.resolve_program(&entry).unwrap();
+    let surface = build_unit_type_surface(&compilation, &resolution, &compilation_path);
+    let owner = resolution.items.iter().find(|item| item.kind == ItemKind::Type && item.name == "Compilation").unwrap();
+    let target = resolution.items.iter().find(|item| item.kind == ItemKind::Type && item.name == "NodeRef").unwrap();
+    let fields = surface.struct_fields_ordered.get(&owner.id).unwrap();
+    assert_eq!(fields.len(), 1, "qualified field must not disappear: {fields:?}");
+    assert_eq!(fields[0].0, "entryRoot");
+    assert!(matches!(surface.types.get(fields[0].1), Some(TypeInfo::Named(id)) if *id == target.id));
+    let dependency_paths = [node_path, compilation_path, PathBuf::from("/tmp/qualified-field/Beskid/Syntax/Nodes.bd")];
+    let (_, errors) = TypeChecker::check_entry(
+        &mut entry,
+        &resolution,
+        &[&node, &compilation, &nodes],
+        Some(&dependency_paths),
+        Some(PathBuf::from("/tmp/qualified-field/Main.bd")),
+        false,
+        None,
+        None,
+        None,
+        None,
+    );
+    assert!(errors.is_empty(), "qualified nominal parameter must retain its value type: {errors:?}");
+}
+
+#[test]
 fn merge_prefers_entry_surface_on_conflict() {
     let item = ItemId(1);
     let i32 = TypeId(0);
@@ -516,7 +570,10 @@ fn ambiguous_embedded_contract_name_does_not_invent_an_inclusion_edge() {
     resolver.collect_program_in_module(&facade, &["Facade".to_owned()], Some(&facade_path));
     let resolution = resolver.resolve_collected_program_for_api_documentation(&empty, None);
     let surface = build_unit_type_surface(&facade, &resolution, &facade_path);
-    let advanced = resolution.items.iter().find(|item| item.name == "Advanced" && item.kind == ItemKind::Contract)
+    let advanced = resolution
+        .items
+        .iter()
+        .find(|item| item.name == "Advanced" && item.kind == ItemKind::Contract)
         .expect("Advanced contract");
     assert_eq!(surface.contract_embeddings.get(&advanced.id), Some(&Vec::new()));
 }
@@ -533,10 +590,18 @@ fn embedded_contract_edge_requires_a_local_or_imported_contract() {
     resolver.collect_program_in_module(&reader, &["Api".to_owned()], Some(&reader_path));
     resolver.collect_program_in_module(&facade, &["Facade".to_owned()], Some(&facade_path));
     let resolution = resolver.resolve_collected_program_for_api_documentation(&empty, None);
-    let reader_id = resolution.items.iter().find(|item| item.name == "Reader" && item.kind == ItemKind::Contract)
-        .expect("Reader contract").id;
-    let advanced_id = resolution.items.iter().find(|item| item.name == "Advanced" && item.kind == ItemKind::Contract)
-        .expect("Advanced contract").id;
+    let reader_id = resolution
+        .items
+        .iter()
+        .find(|item| item.name == "Reader" && item.kind == ItemKind::Contract)
+        .expect("Reader contract")
+        .id;
+    let advanced_id = resolution
+        .items
+        .iter()
+        .find(|item| item.name == "Advanced" && item.kind == ItemKind::Contract)
+        .expect("Advanced contract")
+        .id;
     let surface = build_unit_type_surface(&facade, &resolution, &facade_path);
     assert_eq!(surface.contract_embeddings.get(&advanced_id), Some(&vec![reader_id]));
 
@@ -545,9 +610,12 @@ fn embedded_contract_edge_requires_a_local_or_imported_contract() {
     unimported_resolver.collect_program_in_module(&reader, &["Api".to_owned()], Some(&reader_path));
     unimported_resolver.collect_program_in_module(&unimported, &["Facade".to_owned()], Some(&facade_path));
     let unimported_resolution = unimported_resolver.resolve_collected_program_for_api_documentation(&empty, None);
-    let unimported_advanced = unimported_resolution.items.iter()
+    let unimported_advanced = unimported_resolution
+        .items
+        .iter()
         .find(|item| item.name == "Advanced" && item.kind == ItemKind::Contract)
-        .expect("unimported Advanced contract").id;
+        .expect("unimported Advanced contract")
+        .id;
     let surface = build_unit_type_surface(&unimported, &unimported_resolution, &facade_path);
     assert_eq!(surface.contract_embeddings.get(&unimported_advanced), Some(&Vec::new()));
 }
@@ -572,12 +640,21 @@ fn where_bound_target_requires_unambiguous_import_provenance() {
         resolver.collect_program_in_module(&right, &["Right".to_owned()], Some(&right_path));
         resolver.collect_program_in_module(&facade, &["Facade".to_owned()], Some(&facade_path));
         let resolution = resolver.resolve_collected_program_for_api_documentation(&empty, None);
-        let function = resolution.items.iter().find(|item| item.name == "Consume" && item.kind == ItemKind::Function)
+        let function = resolution
+            .items
+            .iter()
+            .find(|item| item.name == "Consume" && item.kind == ItemKind::Function)
             .expect("Consume function");
-        let left_reader = resolution.items.iter().find(|item| {
-            item.name == "Reader" && item.kind == ItemKind::Contract
-                && item.source_path.as_ref() == Some(&left_path)
-        }).expect("left Reader").id;
+        let left_reader = resolution
+            .items
+            .iter()
+            .find(|item| {
+                item.name == "Reader"
+                    && item.kind == ItemKind::Contract
+                    && item.source_path.as_ref() == Some(&left_path)
+            })
+            .expect("left Reader")
+            .id;
         let surface = build_unit_type_surface(&facade, &resolution, &facade_path);
         let bounds = surface.function_bounds.get(&function.id).expect("retained bound");
         assert_eq!(bounds.len(), 1);
@@ -855,18 +932,8 @@ unit Main() {
     let mut resolver = Resolver::new();
     resolver.set_current_source_path(Some(entry_path.clone()));
     let resolution = resolver.resolve_program(&entry).expect("resolve entry");
-    let (_, errors) = TypeChecker::check_entry(
-        &mut entry,
-        &resolution,
-        &[],
-        None,
-        Some(entry_path),
-        false,
-        None,
-        None,
-        None,
-        None,
-    );
+    let (_, errors) =
+        TypeChecker::check_entry(&mut entry, &resolution, &[], None, Some(entry_path), false, None, None, None, None);
 
     let conflict = errors
         .iter()
@@ -894,18 +961,8 @@ unit Main() {
     let mut resolver = Resolver::new();
     resolver.set_current_source_path(Some(entry_path.clone()));
     let resolution = resolver.resolve_program(&entry).expect("resolve entry");
-    let (_, errors) = TypeChecker::check_entry(
-        &mut entry,
-        &resolution,
-        &[],
-        None,
-        Some(entry_path),
-        false,
-        None,
-        None,
-        None,
-        None,
-    );
+    let (_, errors) =
+        TypeChecker::check_entry(&mut entry, &resolution, &[], None, Some(entry_path), false, None, None, None, None);
 
     assert!(
         !errors.iter().any(|error| matches!(error, crate::types::result::TypeError::GenericParameterConflict { .. })),
@@ -1125,5 +1182,56 @@ pub type Reader : Source {
     assert!(
         !errors.iter().any(|error| matches!(error, TypeError::ContractImplementationSignatureMismatch { .. })),
         "the unresolved return type must not read as unit: {errors:#?}"
+    );
+}
+
+#[test]
+fn v06_impl_method_surface_retains_declaration_generics_and_bound_provenance() {
+    let path = PathBuf::from("/tmp/impl-generics/Main.bd");
+    let source = crate::services::parse_program_with_source_name(
+        path.to_str().unwrap(),
+        "pub contract Encoder { unit Write(); } \
+        pub contract Serializable<E> { unit Encode(E encoder); } \
+        pub type Item<T> { T value, } \
+        impl<T, E> Item<T> : Serializable<E> where E: Encoder { pub unit Encode(E encoder) {} }",
+    )
+    .unwrap();
+    let mut resolver = Resolver::new();
+    resolver.collect_program_in_module(&source, &[], Some(&path));
+    let mut resolution = resolver.resolve_collected_program_for_api_documentation(&source, None);
+    let unit_tables = resolution.tables.clone();
+    resolution.tables.merge_from(&unit_tables, path.clone());
+    let bound_span = source
+        .node
+        .items
+        .iter()
+        .find_map(|item| {
+            if let crate::syntax::Node::ImplBlock(block) = &item.node {
+                block.node.where_bounds.first().map(|bound| bound.contract.span)
+            } else {
+                None
+            }
+        })
+        .expect("impl bound");
+    assert!(
+        resolution.tables.scoped_resolved_type_at(bound_span, &path).is_some(),
+        "the actual resolved unit must issue source-scoped bound provenance before surface construction"
+    );
+    let method =
+        resolution.items.iter().find(|item| item.kind == ItemKind::Method && item.name.ends_with("::Encode")).unwrap();
+    let encoder =
+        resolution.items.iter().find(|item| item.kind == ItemKind::Contract && item.name == "Encoder").unwrap();
+    let surface = build_unit_type_surface(&source, &resolution, &path);
+    assert_eq!(surface.generic_items[&method.id], ["T", "E"]);
+    let bounds = &surface.function_bounds[&method.id];
+    assert_eq!(bounds.len(), 1);
+    assert_eq!(bounds[0].parameter, "E");
+    assert_eq!(bounds[0].contract, Some(encoder.id));
+    let signature = &surface.method_function_signatures[&method.id];
+    assert!(
+        signature
+            .params
+            .iter()
+            .any(|id| matches!(surface.types.get(*id), Some(TypeInfo::GenericParam(name)) if name == "E"))
     );
 }

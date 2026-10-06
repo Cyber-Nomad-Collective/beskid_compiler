@@ -37,3 +37,7 @@ argfile = "0.2"
 semver = "1.0.27"
 walkdir = "2"
 cargo-cross = { workspace = true }
+
+tempfile = "3"
+
+[dev-dependencies]

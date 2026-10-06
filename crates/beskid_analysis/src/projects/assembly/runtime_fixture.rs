@@ -3,8 +3,19 @@
 use super::{AssemblyError, ModuleIndex, ProgramAssembly, RootEntry, SourceUnit};
 use crate::projects::CompilePlan;
 use crate::syntax_query::SyntaxIndex;
-use beskid_abi::runtime_source::{canonical_runtime_sources, prove_runtime_fixture, runtime_fixture_project_root};
-use std::{path::PathBuf, sync::Arc};
+use beskid_abi::abi_v5::SourceUnit as CanonicalSourceUnit;
+use beskid_abi::runtime_source::{
+    CANONICAL_PUBLIC_DYNAMIC_SOURCE_PATH, canonical_runtime_sources, canonical_runtime_support_sources,
+    prove_runtime_fixture, runtime_fixture_project_root,
+};
+use std::{
+    collections::BTreeSet,
+    path::{Path, PathBuf},
+    sync::Arc,
+};
+
+/// Logical prefix of every unit owned by the native runtime package root (`runtime/beskid`).
+const RUNTIME_ROOT_LOGICAL_PREFIX: &str = "src/";
 
 pub(super) fn attach_runtime_fixture(
     mut assembly: ProgramAssembly,
@@ -25,18 +36,15 @@ pub(super) fn attach_runtime_fixture(
         .join("../..")
         .canonicalize()
         .map_err(|_| failure("canonical runtime source root is unavailable"))?;
+    // The fixture manifest's `corelib` dependency resolves beside the runtime package; the
+    // Foundation source root is anchored to the same compiler-owned checkout, never to the plan.
+    let foundation_root = runtime_fixture_project_root()
+        .join("../../../../corelib/packages/foundation/src")
+        .canonicalize()
+        .map_err(|_| failure("canonical Foundation source root is unavailable"))?;
     let expected = canonical_runtime_sources();
-    let mut on_disk = Vec::new();
-    collect_sources(&runtime_root.join("src"), &mut on_disk)
-        .map_err(|_| failure("cannot enumerate canonical runtime sources"))?;
-    if on_disk.len() != expected.len()
-        || expected.iter().any(|source| {
-            std::fs::read_to_string(runtime_root.join(&source.logical_path)).ok().as_deref()
-                != Some(proof.source_file_text(source))
-        })
-    {
-        return Err(failure("canonical runtime source closure differs from the compiler-embedded corpus"));
-    }
+    verify_runtime_closure(&runtime_root, &foundation_root, &expected, &proof)
+        .map_err(|()| failure("canonical runtime source closure differs from the compiler-embedded corpus"))?;
 
     let entry_path = assembly.entry_unit().path.clone();
     let native_root = assembly
@@ -80,13 +88,70 @@ pub(super) fn attach_runtime_fixture(
     Ok(assembly)
 }
 
-fn collect_sources(root: &std::path::Path, paths: &mut Vec<PathBuf>) -> std::io::Result<()> {
+/// Verify the compiler-embedded runtime closure against its two exact on-disk owners.
+///
+/// Every expected unit belongs to exactly one partition. Runtime-root units (`src/...`) must equal
+/// the complete `.bd` set under `runtime/beskid/src`, byte for byte, with no missing or extra file.
+/// Foundation units (the declared runtime support closure plus the public `Core/Dynamic` facade)
+/// must each be a regular file under the Foundation package source root with identical bytes.
+/// Any unit outside both partitions, a duplicate logical path, or a symlink fails closed.
+fn verify_runtime_closure(
+    runtime_root: &Path,
+    foundation_root: &Path,
+    expected: &[CanonicalSourceUnit],
+    proof: &beskid_abi::runtime_source::RuntimeFixtureProof,
+) -> Result<(), ()> {
+    let foundation_paths = canonical_runtime_support_sources()
+        .into_iter()
+        .map(|source| source.logical_path)
+        .chain(std::iter::once(CANONICAL_PUBLIC_DYNAMIC_SOURCE_PATH.to_string()))
+        .collect::<BTreeSet<_>>();
+    let mut runtime_units = BTreeSet::new();
+    let mut foundation_units = BTreeSet::new();
+    for source in expected {
+        let fresh = if source.logical_path.starts_with(RUNTIME_ROOT_LOGICAL_PREFIX) {
+            !foundation_paths.contains(&source.logical_path)
+                && runtime_units.insert(runtime_root.join(&source.logical_path))
+        } else if foundation_paths.contains(&source.logical_path) {
+            foundation_units.insert(source.logical_path.clone())
+        } else {
+            false
+        };
+        if !fresh {
+            return Err(());
+        }
+        let root = if source.logical_path.starts_with(RUNTIME_ROOT_LOGICAL_PREFIX) { runtime_root } else { foundation_root };
+        let path = root.join(&source.logical_path);
+        let regular = std::fs::symlink_metadata(&path).is_ok_and(|metadata| metadata.file_type().is_file());
+        if !regular || std::fs::read_to_string(&path).ok().as_deref() != Some(proof.source_file_text(source)) {
+            return Err(());
+        }
+    }
+    if foundation_units != foundation_paths {
+        return Err(());
+    }
+    let mut on_disk = BTreeSet::new();
+    collect_sources(&runtime_root.join("src"), &mut on_disk).map_err(|_| ())?;
+    if on_disk != runtime_units {
+        return Err(());
+    }
+    Ok(())
+}
+
+/// Enumerate every `.bd` file under `root` without following links; a symlink anywhere in the
+/// runtime source tree is rejected rather than resolved.
+fn collect_sources(root: &Path, paths: &mut BTreeSet<PathBuf>) -> std::io::Result<()> {
     for entry in std::fs::read_dir(root)? {
-        let path = entry?.path();
-        if path.is_dir() {
+        let entry = entry?;
+        let file_type = entry.file_type()?;
+        let path = entry.path();
+        if file_type.is_symlink() {
+            return Err(std::io::Error::other(format!("runtime source tree contains a symlink: {}", path.display())));
+        }
+        if file_type.is_dir() {
             collect_sources(&path, paths)?;
         } else if path.extension().is_some_and(|extension| extension == "bd") {
-            paths.push(path);
+            paths.insert(path);
         }
     }
     Ok(())

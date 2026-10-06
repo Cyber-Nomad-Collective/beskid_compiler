@@ -12,6 +12,11 @@ impl<'a> TypeChecker<'a> {
     pub(super) fn seed_types(&mut self) {
         for primitive in [
             PrimitiveType::Bool,
+            PrimitiveType::I8,
+            PrimitiveType::I16,
+            PrimitiveType::U16,
+            PrimitiveType::U64,
+            PrimitiveType::F32,
             PrimitiveType::I32,
             PrimitiveType::I64,
             PrimitiveType::U32,
@@ -221,9 +226,9 @@ impl<'a> TypeChecker<'a> {
         if !active.insert(candidate) {
             return false;
         }
-        self.contract_embeddings.get(&candidate).is_some_and(|embedded| {
-            embedded.iter().any(|next| self.contract_includes(*next, required, active))
-        })
+        self.contract_embeddings
+            .get(&candidate)
+            .is_some_and(|embedded| embedded.iter().any(|next| self.contract_includes(*next, required, active)))
     }
 
     pub(super) fn check_generic_function_bounds(&mut self, function: ItemId, arguments: &[TypeId], span: SpanInfo) {
@@ -251,9 +256,10 @@ impl<'a> TypeChecker<'a> {
                     .and_then(|caller| self.function_bounds.get(&caller))
                     .is_some_and(|caller_bounds| {
                         caller_bounds.iter().any(|candidate| {
-                            candidate.parameter == *actual_parameter && candidate.contract.is_some_and(|source| {
-                                self.contract_includes(source, contract, &mut HashSet::new())
-                            })
+                            candidate.parameter == *actual_parameter
+                                && candidate
+                                    .contract
+                                    .is_some_and(|source| self.contract_includes(source, contract, &mut HashSet::new()))
                         })
                     });
                 if proven_by_caller {
@@ -262,13 +268,11 @@ impl<'a> TypeChecker<'a> {
             }
             let actual_item = self.named_item_id(actual);
             let conforms = actual_item.is_some_and(|item| {
-                self.resolution
-                    .tables
-                    .type_conformances
-                    .get(&item)
-                    .is_some_and(|entries| entries.iter().any(|(implemented, _)| {
-                        self.contract_includes(*implemented, contract, &mut HashSet::new())
-                    }))
+                self.resolution.tables.type_conformances.get(&item).is_some_and(|entries| {
+                    entries
+                        .iter()
+                        .any(|(implemented, _)| self.contract_includes(*implemented, contract, &mut HashSet::new()))
+                })
             });
             if conforms {
                 continue;

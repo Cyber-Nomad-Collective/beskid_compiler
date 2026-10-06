@@ -60,6 +60,106 @@ pub struct BeskidObjectModule {
 }
 
 impl BeskidObjectModule {
+    /// Reissues exact current nominal token layouts, then defines their private
+    /// normalized constructors/readers against this object's sole data pass.
+    pub(crate) fn emit_glue_handle_transports(
+        &mut self,input:&beskid_codegen::CodegenInput<'_>,bindings:&[beskid_queries::AstNodeKey],
+    )->AotResult<Vec<beskid_codegen::glue::EmittedHandleTransport>> {
+        let module=self.module.as_mut().ok_or_else(||AotError::InvalidRequest{message:"opaque transport after object finalization".into()})?;
+        let emitted=beskid_codegen::glue::emit_source_handle_transports(module,input,bindings)?;
+        for transport in &emitted {
+            for (name,id) in [transport.constructor(),transport.reader()].into_iter().zip(transport.functions().iter().copied()) {
+                self.func_ids.insert(name.to_owned(),id);
+                if !self.declared_symbols.iter().any(|symbol|symbol==name){self.declared_symbols.push(name.to_owned());}
+            }
+        }
+        Ok(emitted)
+    }
+    /// Emits the source-issued checked call graph and its caller-root wrapper
+    /// into this same object after its sole descriptor pass.
+    pub(crate) fn emit_glue_checked_entry<'db>(
+        &mut self,
+        input: &'db beskid_codegen::CodegenInput<'db>,
+        isa: &'db dyn TargetIsa,
+        entry: &beskid_codegen::module_emission::CheckedFailureEntry,
+        symbol: &str,
+    ) -> AotResult<usize> {
+        let module = self.module.as_mut().ok_or_else(|| AotError::InvalidRequest {
+            message: "checked Glue entry after object finalization".into(),
+        })?;
+        let mut literals = beskid_codegen::CodegenContext::new_with_artifact_namespace(symbol);
+        let emitted = beskid_codegen::reserved_failure::emit_admitted_checked_entry(
+            module,
+            input,
+            isa,
+            entry.key(),
+            entry.specialization(),
+            &mut literals,
+            &self.func_ids,
+            symbol,
+            symbol,
+        )?;
+        let literal_artifact = CodegenArtifact { string_literals: literals.string_literals, ..Default::default() };
+        self.data_ids.extend(emit_string_literals(module, &literal_artifact)?);
+        self.func_ids.insert(symbol.to_owned(), emitted.function());
+        self.declared_symbols.push(symbol.to_owned());
+        Ok(emitted.source_parameter_count())
+    }
+
+    /// Emit a source-issued guarded constructor/read/map counterpart into the
+    /// same object and retain its exact entry/specialization proof for private
+    /// image-role admission. This is not a callback-address registration API.
+    pub(crate) fn emit_glue_checked_callback<'db>(
+        &mut self,
+        input: &'db beskid_codegen::CodegenInput<'db>,
+        isa: &'db dyn TargetIsa,
+        entry: beskid_queries::AstNodeKey,
+        specialization: Option<&beskid_queries::GenericSpecializationInstance>,
+        symbol: &str,
+    ) -> AotResult<beskid_codegen::checked_callback::EmittedCheckedCallback> {
+        let module = self.module.as_mut().ok_or_else(|| AotError::InvalidRequest {
+            message: "checked callback after object finalization".into(),
+        })?;
+        let mut literals = beskid_codegen::CodegenContext::new_with_artifact_namespace(symbol);
+        let emitted = beskid_codegen::checked_callback::emit_checked_callback(
+            module, input, isa, entry, specialization, &mut literals,
+            &self.func_ids, symbol, symbol,
+        )?;
+        let literal_artifact = CodegenArtifact {
+            string_literals: literals.string_literals,
+            ..Default::default()
+        };
+        self.data_ids.extend(emit_string_literals(module, &literal_artifact)?);
+        self.func_ids.insert(symbol.to_owned(), emitted.function());
+        self.declared_symbols.push(symbol.to_owned());
+        Ok(emitted)
+    }
+
+    /// Source-issued Glue admission reuses the sole artifact descriptor pass.
+    /// It never accepts an independently reconstructed allocation request.
+    pub(crate) fn emit_glue_failure_admission(
+        &mut self,
+        plan: &beskid_codegen::reserved_failure::ReservedFailureStaticPlan,
+        symbol: &str,
+    ) -> AotResult<()> {
+        let module = self.module.as_mut().ok_or_else(|| AotError::InvalidRequest {
+            message: "Glue failure admission after object finalization".into(),
+        })?;
+        let request = |name: &str| match module.get_name(name) {
+            Some(cranelift_module::FuncOrDataId::Data(id)) => Ok(id),
+            _ => Err(AotError::InvalidRequest {
+                message: format!("Glue failure request was not issued by the artifact descriptor pass: {name}"),
+            }),
+        };
+        let result = request(&plan.result().allocation_request_symbol)?;
+        let failure = request(&plan.failure().allocation_request_symbol)?;
+        let id =
+            beskid_codegen::reserved_failure::emit_reserved_failure_admission(module, plan, result, failure, symbol)?;
+        self.func_ids.insert(symbol.to_owned(), id);
+        self.declared_symbols.push(symbol.to_owned());
+        Ok(())
+    }
+
     /// Construct a profiled module for `target_triple` or the host ISA when `None`.
     pub fn new(target_triple: Option<&str>, profile: BuildProfile) -> AotResult<Self> {
         let flags = ObjectCodegenFlags(profile)?;
@@ -109,17 +209,31 @@ impl BeskidObjectModule {
         exported_symbols: &HashSet<String>,
         pipeline: Option<&dyn PipelineObserver>,
     ) -> AotResult<()> {
-        self.compile_artifact_with_exports_and_executable_entry(artifact, exported_symbols, None, pipeline)
+        self.compile_artifact_with_exports_and_executable_entry(artifact, exported_symbols, None, pipeline, None)
     }
 
     /// Compile an artifact, optionally reserving one internal symbol for the executable host.
+    pub fn compile_artifact_with_control(
+        &mut self,
+        artifact: &CodegenArtifact,
+        exports: &HashSet<String>,
+        pipeline: Option<&dyn PipelineObserver>,
+        control: &crate::api::NativeExecutionControl,
+    ) -> AotResult<()> {
+        self.compile_artifact_with_exports_and_executable_entry(artifact, exports, None, pipeline, Some(control))
+    }
+
     pub(crate) fn compile_artifact_with_exports_and_executable_entry(
         &mut self,
         artifact: &CodegenArtifact,
         exported_symbols: &HashSet<String>,
         executable_entry: Option<ExecutableEntrySymbol<'_>>,
         pipeline: Option<&dyn PipelineObserver>,
+        control: Option<&crate::api::NativeExecutionControl>,
     ) -> AotResult<()> {
+        if let Some(plan) = &artifact.dynamic_initialization {
+            plan.validate_artifact(artifact).map_err(|message| AotError::InvalidRequest { message })?;
+        }
         let module = self
             .module
             .as_mut()
@@ -167,6 +281,9 @@ impl BeskidObjectModule {
         let mut ctx = module.make_context();
         let total = artifact.functions.len() as u64;
         for (index, function) in artifact.functions.iter().enumerate() {
+            if let Some(control) = control {
+                control.check("compile_function")?;
+            }
             let func_id = self
                 .func_ids
                 .get(&function.name)

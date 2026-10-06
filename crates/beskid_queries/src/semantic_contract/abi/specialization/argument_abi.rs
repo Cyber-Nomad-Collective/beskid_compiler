@@ -27,14 +27,24 @@ pub(in crate::semantic_contract) fn integer_literal_fits_abi(
     };
     if let Some(magnitude) = text.strip_prefix('-').and_then(integer_literal_u64) {
         return Ok(match expected {
+            SemanticTypeId::I8 => magnitude <= (i8::MAX as u64) + 1,
+            SemanticTypeId::I16 => magnitude <= (i16::MAX as u64) + 1,
             SemanticTypeId::I32 => magnitude <= (i32::MAX as u64) + 1,
             SemanticTypeId::I64 => magnitude <= (i64::MAX as u64) + 1,
-            SemanticTypeId::U32 | SemanticTypeId::U8 | SemanticTypeId::WORD => false,
+            SemanticTypeId::U16
+            | SemanticTypeId::U64
+            | SemanticTypeId::U32
+            | SemanticTypeId::U8
+            | SemanticTypeId::WORD => false,
             _ => false,
         });
     }
     let value = integer_literal_u64(&text);
     Ok(match expected {
+        SemanticTypeId::I8 => value.is_some_and(|v| i8::try_from(v).is_ok()),
+        SemanticTypeId::I16 => value.is_some_and(|v| i16::try_from(v).is_ok()),
+        SemanticTypeId::U16 => value.is_some_and(|v| u16::try_from(v).is_ok()),
+        SemanticTypeId::U64 => value.is_some(),
         SemanticTypeId::I32 => value.is_some_and(|value| i32::try_from(value).is_ok()),
         SemanticTypeId::I64 => value.is_some_and(|value| i64::try_from(value).is_ok()),
         SemanticTypeId::U32 => value.is_some_and(|value| u32::try_from(value).is_ok()),
@@ -56,6 +66,10 @@ fn contextual_integer_operand_fits_abi(
         return Ok(false);
     };
     Ok(match expected {
+        SemanticTypeId::I8 => i8::try_from(value).is_ok(),
+        SemanticTypeId::I16 => i16::try_from(value).is_ok(),
+        SemanticTypeId::U16 => u16::try_from(value).is_ok(),
+        SemanticTypeId::U64 => u64::try_from(value).is_ok(),
         SemanticTypeId::I32 => i32::try_from(value).is_ok(),
         SemanticTypeId::I64 => true,
         SemanticTypeId::U32 => u32::try_from(value).is_ok(),
@@ -109,7 +123,10 @@ pub(in crate::semantic_contract) fn contextual_constant_integer(
 }
 
 pub(in crate::semantic_contract) fn integer_has_explicit_abi_suffix(text: &str) -> bool {
-    matches!(text.rsplit_once('_').map(|(_, suffix)| suffix), Some("i32" | "i64" | "u32" | "u8"))
+    matches!(
+        text.rsplit_once('_').map(|(_, suffix)| suffix),
+        Some("i8" | "i16" | "i32" | "i64" | "u8" | "u16" | "u32" | "u64")
+    )
 }
 
 /// Parse a source integer's magnitude while preserving a hexadecimal word-sized bit pattern.

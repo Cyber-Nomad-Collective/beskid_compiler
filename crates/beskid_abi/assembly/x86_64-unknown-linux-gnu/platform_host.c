@@ -21,6 +21,7 @@
 #include <unistd.h>
 
 #define BESKID_NETWORK_TRANSPORT 1
+#include "../common/environment_lock.h"
 #include "../common/external_wait.h"
 #include "../common/network_posix.h"
 
@@ -229,10 +230,26 @@ void *beskid_rt_v5_intrinsic_env_get(const struct BeskidStr *key) {
   char *native_key = beskid_linux_c_string(key, &key_size);
   if (!native_key)
     return str_new(NULL, 0);
+  BESKID_ENVIRONMENT_LOCK();
   const char *value = getenv(native_key);
+  size_t length = value ? __builtin_strlen(value) : 0;
+  char *owned = NULL;
+  if (length) {
+    owned = mmap(NULL, length, PROT_READ | PROT_WRITE,
+                 MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if (owned != MAP_FAILED)
+      __builtin_memcpy(owned, value, length);
+    else
+      owned = NULL;
+  }
+  BESKID_ENVIRONMENT_UNLOCK();
   (void)munmap(native_key, key_size);
-  return value ? str_new((void *)value, __builtin_strlen(value))
-               : str_new(NULL, 0);
+  if (length && !owned)
+    return NULL;
+  void *result = str_new(owned, length);
+  if (owned)
+    (void)munmap(owned, length);
+  return result;
 }
 
 int32_t beskid_rt_v5_intrinsic_env_set(const struct BeskidStr *key,
@@ -247,7 +264,9 @@ int32_t beskid_rt_v5_intrinsic_env_set(const struct BeskidStr *key,
       (void)munmap(native_value, value_size);
     return -1;
   }
+  BESKID_ENVIRONMENT_LOCK();
   int result = setenv(native_key, native_value, 1);
+  BESKID_ENVIRONMENT_UNLOCK();
   (void)munmap(native_key, key_size);
   (void)munmap(native_value, value_size);
   return result;
@@ -262,8 +281,7 @@ void *beskid_rt_v5_intrinsic_env_getcwd(void) {
       return str_new(NULL, 0);
     errno = 0;
     if (getcwd(buffer, size)) {
-      void *result = str_new((void *)buffer,
-                             __builtin_strlen(buffer));
+      void *result = str_new((void *)buffer, __builtin_strlen(buffer));
       (void)munmap(buffer, size);
       return result;
     }
@@ -432,3 +450,5 @@ int32_t beskid_rt_v5_linux_fs_delete(const struct BeskidStr *path) {
   (void)munmap(p, n);
   return r == 0 ? BESKID_FS_OK : beskid_linux_fs_status(e);
 }
+
+#include "../common/process_transport.h"

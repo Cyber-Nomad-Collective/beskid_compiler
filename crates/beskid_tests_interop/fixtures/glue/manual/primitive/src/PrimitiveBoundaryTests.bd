@@ -1,0 +1,30 @@
+use Testing.Assert;
+
+test signed_narrow_boundaries {
+    i8 low = -128_i8;
+    i8 high = 127_i8;
+    i16 shortLow = -32768_i16;
+    i16 shortHigh = 32767_i16;
+    Assert.True(low < 0_i8, "i8 signed comparison");
+    Assert.True(high > 0_i8, "i8 maximum");
+    Assert.True(shortLow < shortHigh, "i16 signed comparison");
+    Assert.Equal(-64_i8, low / 2_i8, "signed narrow division");
+}
+
+test unsigned_high_bits_and_widths {
+    u16 shortHigh = 65535_u16;
+    u64 high = 18446744073709551615_u64;
+    u64 signBit = 9223372036854775808_u64;
+    Assert.True(shortHigh > 32767_u16, "u16 unsigned comparison");
+    Assert.True(high > signBit, "u64 unsigned comparison");
+    Assert.Equal(9223372036854775807_u64, high / 2_u64, "u64 unsigned division");
+    Assert.Equal(1_u64, high % 2_u64, "u64 unsigned remainder");
+}
+
+test float32_arithmetic_uses_its_own_width {
+    f32 value = 16777216.0_f32;
+    Assert.Equal(value, value + 1.0_f32, "f32 rounding distinct from f64");
+    f32 fraction = 1.5_f32;
+    Assert.Equal(3.0_f32, fraction * 2.0_f32, "f32 multiply");
+    Assert.True(-fraction < 0.0_f32, "f32 negation and ordering");
+}

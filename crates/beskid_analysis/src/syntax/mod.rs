@@ -17,21 +17,19 @@ pub use expressions::{
     GroupedExpression, IndexExpression, LambdaExpression, LambdaParameter, Literal, LiteralExpression, MacroInvocation,
     MacroMetavariable, MatchArm, MatchExpression, MemberExpression, PathExpression, Pattern, SpawnExpression,
     StringLiteralPart, StructLiteralExpression, StructLiteralField, TryExpression, UnaryExpression, UnaryOp,
-    decode_string_literal_token, integer_literal_magnitude, integer_literal_primitive_type, materialize_code_segments,
-    parse_plain_code_body, split_string_literal_parts, split_string_literal_token, try_decode_string_literal,
-    try_decode_string_literal_token,
+    decode_string_literal_token, float_literal_magnitude, float_literal_primitive_type, integer_literal_fits_primitive,
+    integer_literal_magnitude, integer_literal_primitive_type, materialize_code_segments, parse_plain_code_body,
+    split_string_literal_parts, split_string_literal_token, try_decode_string_literal, try_decode_string_literal_token,
 };
 pub use identity::{AstNodeId, AstNodeKey, SyntaxGenerationId};
 pub use items::{
     AssociatedTypeBinding, Attribute, AttributeArgument, AttributeDeclaration, AttributeParameter, AttributeTarget,
     ConstantDefinition, ContractAssociatedType, ContractDefinition, ContractEmbedding, ContractMethodSignature,
-    ContractNode, EnumDefinition, EnumVariant,
-    ExtendTypeDefinition, FunctionDefinition, HostBodyItem, HostDefinition, ImplBlock, InjectQualifier, InlineModule,
-    WhereBound,
-    LaunchStatement, MacroDefinition, MacroFragmentKind, MacroParameter, MethodDefinition, ModuleDeclaration, Node,
-    Program, RegistrationLifetime, RegistryBlock, RegistryEntry, ScopeDefinition, ScopeHook, ScopeHookKind,
-    TestDefinition, TestMetaSection, TestMetadataEntry, TestSkipEntry, TestSkipSection, TypeDefinition, UseDeclaration,
-    WithStatement,
+    ContractNode, EnumDefinition, EnumVariant, ExtendTypeDefinition, FunctionDefinition, HostBodyItem, HostDefinition,
+    ImplBlock, InjectQualifier, InlineModule, LaunchStatement, MacroDefinition, MacroFragmentKind, MacroParameter,
+    MethodDefinition, ModuleDeclaration, Node, Program, RegistrationLifetime, RegistryBlock, RegistryEntry,
+    ScopeDefinition, ScopeHook, ScopeHookKind, TestDefinition, TestMetaSection, TestMetadataEntry, TestSkipEntry,
+    TestSkipSection, TypeDefinition, UseDeclaration, WhereBound, WithStatement,
 };
 pub use statements::{
     Block, BreakStatement, ContinueStatement, ElseBranch, ExpressionStatement, ForStatement, IfStatement, LetStatement,

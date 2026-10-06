@@ -51,6 +51,11 @@ pub(super) fn map_node_kind(kind: beskid_queries::IndexedNodeKind) -> Option<Nod
 pub(super) fn runtime_intrinsic_kind_for_name(name: &str) -> Option<RuntimeIntrinsicKind> {
     Some(match name {
         "memory_copy" => RuntimeIntrinsicKind::MemoryCopy,
+        "float_to_bits32" => RuntimeIntrinsicKind::FloatToBits32,
+        "float_from_bits32" => RuntimeIntrinsicKind::FloatFromBits32,
+        "float_to_bits64" => RuntimeIntrinsicKind::FloatToBits64,
+        "float_from_bits64" => RuntimeIntrinsicKind::FloatFromBits64,
+
         "memory_set" => RuntimeIntrinsicKind::MemorySet,
         "native_word_from_pointer" => RuntimeIntrinsicKind::NativeWordFromPointer,
         "pointer_from_native_word" => RuntimeIntrinsicKind::PointerFromNativeWord,
@@ -96,10 +101,12 @@ pub(super) fn map_operator_fact(operator: beskid_queries::OperatorFact) -> Opera
 
 pub(super) fn map_scalar_type(semantic: SemanticTypeId) -> Option<Type> {
     Some(match semantic {
-        SemanticTypeId::BOOL | SemanticTypeId::U8 => types::I8,
+        SemanticTypeId::BOOL | SemanticTypeId::I8 | SemanticTypeId::U8 => types::I8,
         SemanticTypeId::I32 | SemanticTypeId::U32 => types::I32,
-        SemanticTypeId::I64 => types::I64,
+        SemanticTypeId::I64 | SemanticTypeId::U64 => types::I64,
         SemanticTypeId::WORD | SemanticTypeId::POINTER | SemanticTypeId::NEVER => return None,
+        SemanticTypeId::I16 | SemanticTypeId::U16 => types::I16,
+        SemanticTypeId::F32 => types::F32,
         SemanticTypeId::F64 => types::F64,
         SemanticTypeId::CHAR => types::I32,
         SemanticTypeId::UNIT | SemanticTypeId::STRING => return None,

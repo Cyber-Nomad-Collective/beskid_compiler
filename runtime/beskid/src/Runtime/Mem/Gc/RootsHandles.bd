@@ -79,8 +79,10 @@ pub bool GcIsRegisteredRoot(pointer ptrAddr) {
     return false;
 }
 
-[Export(Abi:"C", Symbol:"gc_register_root")]
-pub bool GcRegisterRoot(pointer ptrAddr) {
+[Export(Abi:"C", Symbol:"beskid_rt_v5_gc_try_register_root")]
+pub bool GcTryRegisterRoot(pointer ptrAddr) {
+    if CheckedScopeFailureReason() != 0 { return false; }
+    GcClearAllocationFailure();
     pointer heap = Heap();
     if heap == NativePointer(0) || ptrAddr == NativePointer(0) { return false; }
     mut pointer block = NativePointer(raw_word_load(pointer_add(heap, HEAP_ROOT_STACK_CURRENT)));
@@ -91,7 +93,8 @@ pub bool GcRegisterRoot(pointer ptrAddr) {
             next = SystemAllocate(ROOT_BLOCK_SIZE, 8);
         }
         if next == NativePointer(0) {
-            GcReportRootStackExhaustion(heap);
+            GcRecordRootStackFailure();
+            return false;
         }
         raw_word_store(pointer_add(next, ROOT_BLOCK_NEXT), 0);
         raw_word_store(pointer_add(next, ROOT_BLOCK_COUNT), 0);
@@ -103,6 +106,17 @@ pub bool GcRegisterRoot(pointer ptrAddr) {
     raw_word_store(pointer_add(block, ROOT_BLOCK_SLOTS + count * 8), NativeWord(ptrAddr));
     raw_word_store(pointer_add(block, ROOT_BLOCK_COUNT), count + 1);
     return true;
+}
+
+[Export(Abi:"C", Symbol:"gc_register_root")]
+pub bool GcRegisterRoot(pointer ptrAddr) {
+    if CheckedScopeFailureReason() != 0 { return false; }
+    bool registered = GcTryRegisterRoot(ptrAddr);
+    if !registered && GcAllocationFailureReason() == 4 {
+        if CheckedScopeCurrent() != NativePointer(0) { CheckedScopeRecordFailure(4); }
+        else { GcReportRootStackExhaustion(Heap()); }
+    }
+    return registered;
 }
 
 // Scope exit is almost always LIFO (the last root registered is the first released), so the
@@ -138,6 +152,27 @@ pub unit GcUnregisterRoot(pointer ptrAddr) {
     return;
 }
 
+// Provider-private publication gate. Only an existing current-heap stack registration
+// qualifies; this never dereferences the caller's address, allocates or issues a source token.
+[Export(Abi:"C", Symbol:"beskid_rt_v5_gc_root_slot_is_registered")]
+pub bool GcRootSlotIsRegistered(pointer ptrAddr) {
+    pointer heap = Heap();
+    if heap == NativePointer(0) || ptrAddr == NativePointer(0) { return false; }
+    mut pointer block = NativePointer(raw_word_load(pointer_add(heap, HEAP_ROOT_STACK_HEAD)));
+    while block != NativePointer(0) {
+        word count = raw_word_load(pointer_add(block, ROOT_BLOCK_COUNT));
+        mut word index = 0;
+        while index < count {
+            if raw_word_load(pointer_add(block, ROOT_BLOCK_SLOTS + index * 8)) == NativeWord(ptrAddr) {
+                return true;
+            }
+            index = index + 1;
+        }
+        block = NativePointer(raw_word_load(pointer_add(block, ROOT_BLOCK_NEXT)));
+    }
+    return false;
+}
+
 [Export(Abi:"C", Symbol:"gc_external_root_count")]
 pub word GcExternalRootCount() {
     pointer heap = Heap();
@@ -151,8 +186,10 @@ pub word GcExternalRootCount() {
     return total;
 }
 
-[Export(Abi:"C", Symbol:"gc_root_handle")]
-pub word GcRootHandle(pointer valuePtr) {
+[Export(Abi:"C", Symbol:"beskid_rt_v5_gc_try_root_handle")]
+pub word GcTryRootHandle(pointer valuePtr) {
+    if CheckedScopeFailureReason() != 0 { return 0; }
+    GcClearAllocationFailure();
     pointer heap = Heap();
     if heap == NativePointer(0) || valuePtr == NativePointer(0) { return 0; }
     // `valuePtr` is the ABI-visible managed reference, which for arrays is the `{ data, len, cap }`
@@ -188,9 +225,13 @@ pub word GcRootHandle(pointer valuePtr) {
     mut pointer current = NativePointer(raw_word_load(pointer_add(heap, HEAP_HANDLE_STACK_CURRENT)));
     mut word currentCount = raw_word_load(pointer_add(current, HANDLE_BLOCK_COUNT));
     if currentCount >= HANDLE_BLOCK_CAPACITY {
-        pointer next = SystemAllocate(HANDLE_BLOCK_SIZE, 8);
+        mut pointer next = NativePointer(0);
+        if raw_word_load(pointer_add(heap, HEAP_TEST_FORCE_ROOT_STACK_FAILURE)) == 0 {
+            next = SystemAllocate(HANDLE_BLOCK_SIZE, 8);
+        }
         if next == NativePointer(0) {
-            GcReportRootStackExhaustion(heap);
+            GcRecordRootStackFailure();
+            return 0;
         }
         raw_word_store(pointer_add(next, HANDLE_BLOCK_NEXT), 0);
         raw_word_store(pointer_add(next, HANDLE_BLOCK_COUNT), 0);
@@ -205,6 +246,17 @@ pub word GcRootHandle(pointer valuePtr) {
     raw_word_store(pointer_add(slot, 8), 1);
     raw_word_store(pointer_add(current, HANDLE_BLOCK_COUNT), currentCount + 1);
     return (word(1) << 32) | globalIndex;
+}
+
+[Export(Abi:"C", Symbol:"gc_root_handle")]
+pub word GcRootHandle(pointer valuePtr) {
+    if CheckedScopeFailureReason() != 0 { return 0; }
+    word handle = GcTryRootHandle(valuePtr);
+    if handle == 0 && GcAllocationFailureReason() == 4 {
+        if CheckedScopeCurrent() != NativePointer(0) { CheckedScopeRecordFailure(4); }
+        else { GcReportRootStackExhaustion(Heap()); }
+    }
+    return handle;
 }
 
 // Handles are addressed by `(generation << 32) | globalIndex` where `globalIndex` counts slots
@@ -256,6 +308,7 @@ pub bool GcHandlesClear() {
     return true;
 }
 
+[Export(Abi:"C", Symbol:"beskid_rt_v5_gc_resolve_handle")]
 pub pointer GcResolveHandle(word handle) {
     pointer heap = Heap();
     if heap == NativePointer(0) || handle == 0 { return NativePointer(0); }

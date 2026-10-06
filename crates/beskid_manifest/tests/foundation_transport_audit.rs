@@ -86,15 +86,22 @@ fn public_foundation_transport_has_no_scalar_or_pointer_side_channel() {
         }));
     assert_eq!(violations(entries), Vec::<String>::new(), "F2/F3 transport migration is incomplete");
     // Source-authorized typed adapters must never regain an injected scalar route
-    // through the retired ABI-v4 analysis baseline.
+    // through the analysis builtin table: value services are generic over the
+    // received value and take only the handle; sends carry the traced owner slot.
     let baseline = include_str!("../../beskid_analysis/src/generated/builtins.inc.rs");
-    for name in [
-        "__fiber_join_value",
-        "__channel_send",
-        "__channel_try_send",
-        "__channel_receive_value",
-        "__hub_wait_receive_value",
-    ] {
-        assert!(!baseline.contains(&format!("&[\"{name}\"]")), "retired scalar builtin {name}");
+    fn entry(baseline: &'static str, name: &str) -> &'static str {
+        let start = baseline.find(&format!("&[\"{name}\"] =>")).unwrap_or_else(|| panic!("{name} declared"));
+        let end = baseline[start..].find("    },").map(|end| start + end).expect("entry closes");
+        &baseline[start..end]
+    }
+    for name in ["__fiber_join_value", "__channel_receive_value", "__hub_wait_receive_value"] {
+        let declaration = entry(baseline, name);
+        assert!(declaration.contains("type_parameters: [\"T\"],"), "{name} must be generic: {declaration}");
+        assert!(declaration.contains("params: [I64],"), "{name} must take only the handle: {declaration}");
+        assert!(declaration.contains("returns: TypeParameter,"), "{name} must return the value: {declaration}");
+    }
+    for name in ["__channel_send", "__channel_try_send"] {
+        let declaration = entry(baseline, name);
+        assert!(declaration.contains("params: [I64, Ptr],"), "retired scalar builtin {name}: {declaration}");
     }
 }

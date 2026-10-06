@@ -10,7 +10,11 @@ use walkdir::WalkDir;
 pub(super) fn ensure_corelib_ready() -> anyhow::Result<()> {
     let provisioned = beskid_tools::ensure_bundled_corelib()?;
     if provisioned.updated {
-        println!("corelib: updated to {} at {}", provisioned.version, provisioned.root.display());
+        eprintln!(
+            "corelib: updated to {} at {}",
+            provisioned.version,
+            provisioned.root.display()
+        );
     }
     Ok(())
 }
@@ -31,7 +35,10 @@ pub(super) fn maybe_generate_docs_for_pack(args: &PckgArgs) -> anyhow::Result<()
     }
 
     let source_root = absolutize_source_root(&pack_args.source)?;
-    if matches!(beskid_pckg::detect_pack_profile(&source_root)?, beskid_pckg::PackProfile::Template(_)) {
+    if matches!(
+        beskid_pckg::detect_pack_profile(&source_root)?,
+        beskid_pckg::PackProfile::Template(_)
+    ) {
         return Ok(());
     }
     let (input, project) = resolve_doc_entrypoint(&source_root)?;
@@ -39,8 +46,16 @@ pub(super) fn maybe_generate_docs_for_pack(args: &PckgArgs) -> anyhow::Result<()
 
     let doc_args = DocArgs {
         input,
-        project: ProjectResolveArgs { project, target: None, workspace_member: None },
-        lockfile: LockfilePolicyArgs { frozen: false, locked: false },
+        project: ProjectResolveArgs {
+            project,
+            target: None,
+            workspace_member: None,
+        },
+        lockfile: LockfilePolicyArgs {
+            frozen: false,
+            locked: false,
+            offline: false,
+        },
         out,
     };
     doc::execute(doc_args)?;
@@ -54,14 +69,20 @@ fn absolutize_source_root(source: &Path) -> anyhow::Result<PathBuf> {
     Ok(env::current_dir()?.join(source))
 }
 
-fn resolve_doc_entrypoint(source_root: &Path) -> anyhow::Result<(Option<PathBuf>, Option<PathBuf>)> {
-    if let Ok(Some(project_manifest)) = beskid_analysis::projects::discover_project_manifest_in_dir(source_root) {
+fn resolve_doc_entrypoint(
+    source_root: &Path,
+) -> anyhow::Result<(Option<PathBuf>, Option<PathBuf>)> {
+    if let Ok(Some(project_manifest)) =
+        beskid_analysis::projects::discover_project_manifest_in_dir(source_root)
+    {
         return Ok((None, Some(project_manifest)));
     }
 
-    for candidate in
-        [source_root.join("main.bd"), source_root.join("src").join("main.bd"), source_root.join("index.bd")]
-    {
+    for candidate in [
+        source_root.join("main.bd"),
+        source_root.join("src").join("main.bd"),
+        source_root.join("index.bd"),
+    ] {
         if candidate.exists() {
             return Ok((Some(candidate), None));
         }

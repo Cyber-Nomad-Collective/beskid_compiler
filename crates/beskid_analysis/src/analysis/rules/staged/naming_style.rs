@@ -81,6 +81,21 @@ mod tests {
     }
 
     #[test]
+    fn extern_contract_methods_name_foreign_symbols_and_are_exempt() {
+        let src = r#"
+[Extern(Abi:"C", Library:"beskid_runtime")]
+contract RuntimeBridge {
+    u64 beskid_dynamic_v1_shape_tag();
+}
+contract Ordinary {
+    u64 bad_method();
+}
+"#;
+        let codes = warning_codes(src);
+        assert_eq!(codes.iter().filter(|c| *c == "W1633").count(), 1, "only the ordinary contract method: {codes:?}");
+    }
+
+    #[test]
     fn conforming_names_emit_nothing() {
         let src = r#"
 pub type Hub { bool isTty }

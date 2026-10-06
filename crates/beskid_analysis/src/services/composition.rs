@@ -21,12 +21,15 @@ pub fn prepare_program_for_composition(
     run_through_generate(
         program,
         &ModHostInput {
+            semantic_scope: None,
+            semantic_authority: None,
             compile_plan,
             source_name,
             source,
             pipeline: None,
             invoker: None,
             cached_target_fingerprint: None,
+            syntax_generation_id: None,
         },
     )
 }

@@ -3,8 +3,8 @@
 use super::*;
 
 mod calls;
-mod composition;
 mod collections;
+mod composition;
 mod enums;
 mod events;
 mod literals;
@@ -13,6 +13,13 @@ mod structs;
 mod types;
 
 impl NodeFacts for SyntaxNodeFacts<'_> {
+    fn nonallocating_publication_body(&self) -> bool {
+        self.nonallocating_publication
+    }
+    fn checked_allocation_body(&self) -> bool {
+        self.checked_effect
+    }
+
     fn composition_launch(&self, key: AstNodeKey) -> Option<CompositionLaunchPlan> {
         self.composition_launch_impl(key)
     }

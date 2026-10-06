@@ -68,7 +68,12 @@ impl ProjectCase {
 
     fn invoke(&self, command: &str, policy: Option<&str>) -> Output {
         let mut process = Command::new(env!("CARGO_BIN_EXE_beskid_cli"));
-        process.arg(command).arg("--project").arg(&self.app).arg("--plain");
+        match command {
+            // `beskid lock` moved under `dev project`; `update` has no progress flag and needs an explicit scope.
+            "lock" => process.args(["dev", "project", "lock"]).arg("--project").arg(&self.app).arg("--plain"),
+            "update" => process.args(["update", "--all"]).arg("--project").arg(&self.app),
+            other => process.arg(other).arg("--project").arg(&self.app).arg("--plain"),
+        };
         if let Some(flag) = policy {
             process.arg(flag);
         }
@@ -150,10 +155,27 @@ fn normal_build_run_and_test_reject_v1_with_migration_command() {
         let case = ProjectCase::new();
         let legacy = case.write_legacy_lock();
         let output = case.invoke(command, None);
-        assert_failed_with(&output, "beskid lock");
+        assert_failed_with(&output, "beskid dev project lock");
         assert_eq!(fs::read(&case.lock).expect("legacy lock retained"), legacy);
         case.assert_no_obj();
     }
+}
+
+#[test]
+fn removed_root_lock_command_names_its_dev_project_replacement() {
+    let case = ProjectCase::new();
+    let output = Command::new(env!("CARGO_BIN_EXE_beskid_cli"))
+        .args(["lock", "--project"])
+        .arg(&case.app)
+        .env("BESKID_CORELIB_ROOT", case.root.join("installed-corelib"))
+        .current_dir(&case.root)
+        .output()
+        .expect("run removed lock command");
+    assert_eq!(output.status.code(), Some(2), "usage status expected: {}", output_text(&output));
+    let text = output_text(&output);
+    assert!(text.contains("`beskid lock` was removed") && text.contains("beskid dev project lock"), "{text}");
+    assert!(!case.lock.exists(), "removed command wrote a lock");
+    case.assert_no_obj();
 }
 
 #[test]
@@ -163,7 +185,7 @@ fn locked_and_frozen_reject_v1_without_writing_or_creating_obj() {
             let case = ProjectCase::new();
             let legacy = case.write_legacy_lock();
             let output = case.invoke(command, Some(policy));
-            assert_failed_with(&output, "beskid lock");
+            assert_failed_with(&output, "beskid dev project lock");
             assert_eq!(fs::read(&case.lock).expect("legacy lock retained"), legacy);
             case.assert_no_obj();
         }

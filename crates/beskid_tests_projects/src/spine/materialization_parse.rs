@@ -19,8 +19,14 @@ fn concurrency_source_and_materialized_parse_equally() {
     let entry_source = std::fs::read_to_string(&entry).expect("read test entry");
 
     let resolved = with_cwd_at_workspace_root(&root, || {
-        resolve_input(Some(&entry), Some(&project_root), None, None, false, false)
-            .expect("resolve with materialization")
+        resolve_input(
+            Some(&entry),
+            Some(&project_root),
+            None,
+            None,
+            beskid_analysis::projects::WorkspacePrepareOptions::default(),
+        )
+        .expect("resolve with materialization")
     });
 
     let materialized = resolved

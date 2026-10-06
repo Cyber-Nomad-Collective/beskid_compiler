@@ -1,0 +1,1 @@
+pub f32 Main() { return 3.5e38_f32; }

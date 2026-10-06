@@ -7,8 +7,8 @@ use cargo_cross::env::sanitize_cargo_env;
 use crate::error::{AotError, AotResult};
 use crate::linker::{LinkRequest, link};
 use crate::object_module::EXECUTABLE_PROGRAM_ENTRY;
-use crate::runtime::{RuntimeBuildRequest, prepare_runtime};
 use crate::runtime::merged_link_libraries;
+use crate::runtime::{RuntimeBuildRequest, RuntimeLinkage, prepare_runtime};
 
 use super::model::{AotBuildRequest, AotBuildResult, BuildOutputKind};
 use super::object_stage::{ObjectStageResult, emit_object_stage};
@@ -30,7 +30,7 @@ pub fn build(req: AotBuildRequest) -> AotResult<AotBuildResult> {
     sanitize_cargo_env();
     validate_request(&req)?;
 
-    let object_stage = emit_object_stage(&req)?;
+    let mut object_stage = emit_object_stage(&req)?;
 
     if req.output_kind == BuildOutputKind::ObjectOnly {
         return Ok(AotBuildResult {
@@ -43,6 +43,28 @@ pub fn build(req: AotBuildRequest) -> AotResult<AotBuildResult> {
 
     if requires_entrypoint(req.output_kind) {
         ensure_entrypoint_emitted(&req, &object_stage)?;
+    }
+    let runtime_request = RuntimeBuildRequest {
+        kit: req.runtime.clone().expect("validated linked output runtime kit"),
+        linkage: if req.artifact.dynamic_initialization.is_some() {
+            RuntimeLinkage::GlueSharedProviderV1
+        } else {
+            RuntimeLinkage::CanonicalStatic
+        },
+    };
+    let control = super::NativeExecutionControl::new(
+        std::time::Instant::now() + std::time::Duration::from_secs(300),
+        std::sync::Arc::new(|| false),
+    );
+    let initialization = super::glue::compile_dynamic_initialization(
+        &req.artifact,
+        &runtime_request,
+        req.output_path.parent().unwrap_or_else(|| std::path::Path::new(".")),
+        &control,
+    )?;
+    if let Some(initialization) = &initialization {
+        initialization.verify_object()?;
+        object_stage.additional_object_paths.push(initialization.object_path().to_owned());
     }
     let runtime = prepare_runtime_stage(&req)?;
     let link_result = link_stage(&req, &object_stage, &runtime)?;
@@ -65,7 +87,14 @@ fn ensure_entrypoint_emitted(req: &AotBuildRequest, object_stage: &ObjectStageRe
 fn prepare_runtime_stage(req: &AotBuildRequest) -> AotResult<crate::runtime::RuntimeArtifact> {
     let obs = req.pipeline.as_deref();
     observe_phase_result(obs, AOT_RUNTIME, || {
-        prepare_runtime(&RuntimeBuildRequest { kit: req.runtime.clone().expect("validated linked output runtime kit") })
+        prepare_runtime(&RuntimeBuildRequest {
+            kit: req.runtime.clone().expect("validated linked output runtime kit"),
+            linkage: if req.artifact.dynamic_initialization.is_some() {
+                RuntimeLinkage::GlueSharedProviderV1
+            } else {
+                RuntimeLinkage::CanonicalStatic
+            },
+        })
     })
 }
 
@@ -82,7 +111,7 @@ fn link_stage(
             output_path: req.output_path.clone(),
             object_path: object_stage.object_path.clone(),
             additional_object_paths: object_stage.additional_object_paths.clone(),
-            runtime_staticlib: Some(runtime.staticlib_path.clone()),
+            runtime: Some(crate::linker::RuntimeLinkInput::try_from(runtime)?),
             host_staticlib: None,
             entrypoint_symbol: object_stage
                 .executable_program_entry

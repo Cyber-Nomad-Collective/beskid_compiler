@@ -1,0 +1,71 @@
+use Runtime.Bootstrap.Native;
+use Runtime.Mem.Gc.RootsHandles;
+use Runtime.Mem.Gc.Collection;
+use Testing.Assert;
+
+// Low-level negative probes deliberately provide foreign pointers; these are not
+// logical managed Dynamic values and cannot acquire the sealed representation.
+[Extern(Abi:"C", Library:"beskid_runtime")]
+contract DynamicTransportV1 {
+    i32 beskid_dynamic_v1_create(pointer value, u64 shape, pointer output);
+    i32 beskid_dynamic_v1_cast(pointer value, u64 shape, pointer output);
+    i32 beskid_dynamic_v1_map(pointer value, u64 mapping, pointer output);
+    pointer beskid_rt_v5_dynamic_i64_box(i64 value);
+}
+
+bool DynamicRejectedV1(pointer input, u64 token, word operation) {
+    pointer output = SystemAllocate(8, 8);
+    raw_word_store(output, 73);
+    mut i32 status = 1;
+    if operation == 0 { status = DynamicTransportV1.beskid_dynamic_v1_create(input, token, output); }
+    if operation == 1 { status = DynamicTransportV1.beskid_dynamic_v1_cast(input, token, output); }
+    if operation == 2 { status = DynamicTransportV1.beskid_dynamic_v1_map(input, token, output); }
+    bool rejected = status != 0 && raw_word_load(output) == 0;
+    SystemFree(output, 8);
+    return rejected;
+}
+
+test dynamic_zero_shape_is_rejected {
+    Assert.True(DynamicRejectedV1(NativePointer(0), 0_u64, 0), "zero shape rejects without publishing output");
+}
+test dynamic_unknown_source_shape_is_checked {
+    pointer foreign = SystemAllocate(40, 8);
+    memory_set(foreign, 0, 40);
+    Assert.True(DynamicRejectedV1(foreign, 37_u64, 1), "unregistered foreign cell rejects before dereference");
+    SystemFree(foreign, 40);
+}
+test dynamic_mapping_rejects_zero_token_without_source_alias {
+    pointer foreign = SystemAllocate(40, 8);
+    memory_set(foreign, 0, 40);
+    Assert.True(DynamicRejectedV1(foreign, 0_u64, 2), "zero mapping token has no passthrough path");
+    SystemFree(foreign, 40);
+}
+test dynamic_mapping_rejects_unknown_token_without_source_alias {
+    pointer foreign = SystemAllocate(40, 8);
+    memory_set(foreign, 0, 40);
+    Assert.True(DynamicRejectedV1(foreign, 83_u64, 2), "unknown mapping does not return source address");
+    SystemFree(foreign, 40);
+}
+test dynamic_cell_rejects_unregistered_payload {
+    pointer foreign = SystemAllocate(24, 8);
+    memory_set(foreign, 0, 24);
+    Assert.True(DynamicRejectedV1(foreign, 71_u64, 0), "native allocation is not registered typed payload");
+    SystemFree(foreign, 24);
+}
+test dynamic_box_preserves_canonical_descriptor_across_collection {
+    pointer payload = DynamicTransportV1.beskid_rt_v5_dynamic_i64_box(101_i64);
+    Assert.True(payload != NativePointer(0), "canonical typed factory allocates box");
+    word root = GcRootHandle(payload);
+    Assert.True(root != 0, "real box factory returns managed allocation");
+    word descriptor = raw_word_load(payload);
+    GcCollect();
+    Assert.True(GcResolveHandle(root) == payload, "rooted box survives collection");
+    Assert.True(raw_word_load(payload) == descriptor && descriptor != 0, "descriptor header remains intact");
+    Assert.Equal(raw_word_load(pointer_add(payload, 16)), 101_word, "canonical primitive box retains value");
+    GcUnrootHandle(root);
+}
+test dynamic_null_input_fails_closed {
+    Assert.True(DynamicRejectedV1(NativePointer(0), 37_u64, 0), "null create rejects");
+    Assert.True(DynamicRejectedV1(NativePointer(0), 37_u64, 1), "null cast rejects");
+    Assert.True(DynamicRejectedV1(NativePointer(0), 37_u64, 2), "null map rejects");
+}

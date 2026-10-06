@@ -29,9 +29,8 @@ pub(in crate::semantic_contract) fn enum_pattern_targets_declaration(
         .is_some_and(|definition| definition.name.node.name == terminal.node.name.node.name)
 }
 
-/// Resolve the intentionally narrow generic-match surface: an unqualified local path whose
-/// declaration is a parameter or a `let` with an explicit complex type annotation. Inferred,
-/// chained, and computed scrutinees remain unavailable rather than reviving HIR reconstruction.
+/// Resolve enum scrutinees through registered source identity or explicit lexical declarations.
+/// Computed projections require canonical nominal facts; unknown identity stays unavailable.
 pub(in crate::semantic_contract) fn enum_match_scrutinee_layout(
     db: &dyn Db,
     program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
@@ -47,14 +46,19 @@ pub(in crate::semantic_contract) fn enum_match_scrutinee_layout(
                 .map(|layout| (declaration, layout)),
         );
     }
-    if matches!(expression.scrutinee.node, beskid_analysis::syntax::Expression::Call(_)) {
+    if matches!(
+        expression.scrutinee.node,
+        beskid_analysis::syntax::Expression::Call(_)
+            | beskid_analysis::syntax::Expression::Member(_)
+            | beskid_analysis::syntax::Expression::Index(_)
+    ) {
         let scrutinee = index.direct_child_id(
             program,
             key.node,
             beskid_analysis::syntax_query::DynNodeRef::from(expression.scrutinee.as_ref()),
         )?;
         let call = AstNodeKey { node: normalized_expression_node(index, scrutinee), ..key };
-        return Some(enum_layout_for_direct_call_result(db, call));
+        return Some(enum_layout_for_expression_result(db, call));
     }
     let beskid_analysis::syntax::Expression::Path(path) = &expression.scrutinee.node else {
         return None;
@@ -174,7 +178,12 @@ pub(super) fn enum_match_source_environment(
     if definition.generics.is_empty() {
         return Ok(HashMap::new());
     }
-    if matches!(expression.scrutinee.node, beskid_analysis::syntax::Expression::Call(_)) {
+    if matches!(
+        expression.scrutinee.node,
+        beskid_analysis::syntax::Expression::Call(_)
+            | beskid_analysis::syntax::Expression::Member(_)
+            | beskid_analysis::syntax::Expression::Index(_)
+    ) {
         let scrutinee = index
             .direct_child_id(
                 program,

@@ -165,7 +165,9 @@ fn generic_source_field_shape_identity(
                 .ok_or_else(|| SemanticError::unavailable("source_expression_type"))?;
             Ok(GenericSourceTypeIdentity::Nominal { qualified_name, arguments: Arc::from([]) })
         }
-        AggregateFieldShape::Scalar(_) => Err(SemanticError::unavailable("source_expression_type")),
+        AggregateFieldShape::Scalar(_) | AggregateFieldShape::ManagedReference(_) => {
+            Err(SemanticError::unavailable("source_expression_type"))
+        }
     }
 }
 
@@ -183,11 +185,17 @@ fn generic_source_callable_result_identity(
         .node_at(syntax.expanded_program(db), declaration.node)
         .ok_or_else(|| SemanticError::unavailable("source_expression_type"))?;
     if let Some(signature) = node.of::<beskid_analysis::syntax::ContractMethodSignature>() {
+        let specialization = generic_specialization_instance_for_call(db, call)?;
+        let substitutions = specialization
+            .substitutions
+            .iter()
+            .map(|binding| (binding.parameter.as_ref(), binding.source_identity()))
+            .collect();
         return signature
             .return_type
             .as_ref()
             .map_or(Ok(GenericSourceTypeIdentity::Abi(SemanticTypeId::UNIT)), |result| {
-                generic_source_type_identity(db, declaration, &result.node)
+                generic_source_type_identity_with_substitutions(db, declaration, &result.node, &substitutions)
             });
     }
     let result = node

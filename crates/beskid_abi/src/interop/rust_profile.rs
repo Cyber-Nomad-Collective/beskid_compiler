@@ -21,6 +21,11 @@ pub struct RustAbiProfile;
 /// surface.
 pub const RUST_PROFILE_PERMITTED_SCALARS: &[AbiType] = &[
     AbiType::I8,
+    AbiType::I16,
+    AbiType::U16,
+    AbiType::U32,
+    AbiType::U64,
+    AbiType::F32,
     AbiType::U8,
     AbiType::I32,
     AbiType::I64,

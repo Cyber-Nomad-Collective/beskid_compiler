@@ -1,13 +1,15 @@
 use std::sync::Mutex;
 
-use beskid_abi::{ModCollectRequest, ModGenerationRequest};
+use super::super::context::{ModCollectRequest, ModGenerationRequest};
 
 use crate::syntax::Spanned;
 
 use super::super::emit_bridge;
 use super::super::types::{ContractRegistration, ProgramItem};
 use super::contract::{ContractInvocationError, ContractInvoker};
-use super::outcomes::{AnalyzerDiagnostic, AnalyzerFix, AnalyzerOutcome, CollectorOutcome, GeneratorOutcome, RewriteEdit, RewriterOutcome};
+use super::outcomes::{
+    AnalyzerDiagnostic, AnalyzerFix, AnalyzerOutcome, CollectorOutcome, GeneratorOutcome, RewriteEdit, RewriterOutcome,
+};
 use super::stub::StubContractInvoker;
 
 /// Test-only invoker that lets tests script outcomes per `(contract_id, type_id)`
@@ -112,8 +114,9 @@ impl ContractInvoker for ScriptedContractInvoker {
         &self,
         registration: &ContractRegistration,
         request: &ModCollectRequest,
+        _authority: Option<&dyn crate::mod_host::ModSemanticAuthority>,
     ) -> Result<CollectorOutcome, ContractInvocationError> {
-        let mut outcome = self.recorded.invoke_collector(registration, request)?;
+        let mut outcome = self.recorded.invoke_collector(registration, request, _authority)?;
         let scripted = self.collector_narrowed_targets.lock().expect("scripted collector targets");
         for (type_id, narrowed_targets) in scripted.iter() {
             if registration.type_id == *type_id {
@@ -127,8 +130,9 @@ impl ContractInvoker for ScriptedContractInvoker {
         &self,
         registration: &ContractRegistration,
         request: &ModGenerationRequest,
+        _authority: Option<&dyn crate::mod_host::ModSemanticAuthority>,
     ) -> Result<GeneratorOutcome, ContractInvocationError> {
-        let mut outcome = self.recorded.invoke_generator(registration, request)?;
+        let mut outcome = self.recorded.invoke_generator(registration, request, _authority)?;
         let scripted = self.generator_typed_items.lock().expect("scripted typed items");
         for (type_id, typed_items) in scripted.iter() {
             if registration.type_id == *type_id {
@@ -150,8 +154,9 @@ impl ContractInvoker for ScriptedContractInvoker {
         registration: &ContractRegistration,
         request: &ModCollectRequest,
         snapshot: Option<&crate::services::SemanticSnapshot>,
+        _authority: Option<&dyn crate::mod_host::ModSemanticAuthority>,
     ) -> Result<AnalyzerOutcome, ContractInvocationError> {
-        let mut outcome = self.recorded.invoke_analyzer(registration, request, snapshot)?;
+        let mut outcome = self.recorded.invoke_analyzer(registration, request, snapshot, _authority)?;
         let scripted = self.analyzer_diagnostics.lock().expect("scripted diagnostics");
         for (type_id, diagnostics) in scripted.iter() {
             if registration.type_id == *type_id {
@@ -172,8 +177,9 @@ impl ContractInvoker for ScriptedContractInvoker {
         &self,
         registration: &ContractRegistration,
         request: &ModCollectRequest,
+        _authority: Option<&dyn crate::mod_host::ModSemanticAuthority>,
     ) -> Result<RewriterOutcome, ContractInvocationError> {
-        let mut outcome = self.recorded.invoke_rewriter(registration, request)?;
+        let mut outcome = self.recorded.invoke_rewriter(registration, request, _authority)?;
         let scripted = self.rewriter_edits.lock().expect("scripted rewriter edits");
         for (type_id, edits) in scripted.iter() {
             if registration.type_id == *type_id {

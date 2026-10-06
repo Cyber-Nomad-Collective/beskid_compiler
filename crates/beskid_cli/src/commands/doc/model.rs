@@ -7,8 +7,7 @@ use crate::project_args::{LockfilePolicyArgs, ProjectResolveArgs};
 
 #[derive(Args, Debug)]
 pub struct DocArgs {
-    /// Beskid source file (same resolution as `analyze` when combined with `--project`).
-    /// Project-backed docs use the entry import closure (same scope as `beskid build`), not a full workspace scan.
+    /// Source file to document; omit to use the selected project's entry and imports.
     pub input: Option<PathBuf>,
 
     #[command(flatten)]

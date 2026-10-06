@@ -85,6 +85,7 @@ pub struct LayoutV5 {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct PlatformImportV5 {
+    pub kind: String,
     pub symbol: String,
     pub target: String,
     pub library: String,

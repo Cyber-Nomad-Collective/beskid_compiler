@@ -155,6 +155,9 @@ impl SemanticIssueKind {
             Self::ResolveInvalidConformanceTarget { .. } => Some(
                 "declare conformance against a `contract`, not a type/enum/function".to_string()
             ),
+            Self::ResolvePrivateRuntimeBuiltin { .. } => Some(
+                "call the public Corelib API instead; only compiler-admitted Corelib sources may call runtime builtins".to_string()
+            ),
             Self::ResolvePrivateItemInModule { .. } => {
                 Some("mark the item `pub` or avoid cross-module access".to_string())
             }
@@ -444,6 +447,16 @@ impl SemanticIssueKind {
                 "try `{}`",
                 crate::naming_case::normalize_to_profile(name, crate::naming_case::NamingProfile::SnakeCase)
             )),
+            Self::NumericLiteralOutOfRange { .. } => {
+                Some("use an in-range literal of the declared fixed-width type".to_string())
+            }
+            Self::ExternInvalidAbi { .. } => {
+                Some("Use [Extern(Abi:\"C\", Library:\"...\")] on the contract".to_string())
+            }
+            Self::ExternMissingLibrary => Some("Provide Library:\"<soname>\"; e.g., libc.so.6 on Linux".to_string()),
+            Self::ExternDisallowedParamType { detail, .. }
+            | Self::ExternDisallowedReturnType { detail, .. }
+            | Self::GlueBindingRejected { detail, .. } => Some(detail.clone()),
         }
     }
 }

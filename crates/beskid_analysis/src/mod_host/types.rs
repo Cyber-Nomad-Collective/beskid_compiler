@@ -30,36 +30,7 @@ pub struct ContractRegistration {
     pub entry_symbol: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ModArtifactDescriptor {
-    pub schema_version: u32,
-    pub package_id: String,
-    #[serde(default)]
-    pub package_version: Option<String>,
-    pub mod_source_hash: String,
-    pub lock_hash: String,
-    pub target_triple: String,
-    pub compiler_version: String,
-    pub object_file: String,
-    #[serde(default)]
-    pub registrations: Vec<ContractRegistration>,
-    #[serde(skip)]
-    pub artifact_dir: PathBuf,
-}
-
-impl ModArtifactDescriptor {
-    /// Absolute native object path relative to this descriptor's artifact directory.
-    pub fn object_path(&self) -> PathBuf {
-        self.artifact_dir.join(&self.object_file)
-    }
-
-    /// Absolute sidecar JSON path inside this descriptor's artifact directory. Mirrors the
-    /// path that `beskid_aot::mod_artifact` writes when packing a Mod project.
-    pub fn sidecar_path(&self) -> PathBuf {
-        self.artifact_dir.join("mod.descriptor.json")
-    }
-}
+pub use super::descriptor::ModArtifactDescriptor;
 
 #[derive(Debug, Clone)]
 pub(crate) struct LoadedModArtifact {
@@ -81,6 +52,10 @@ impl ModHostSession {
 
     pub fn is_empty(&self) -> bool {
         self.loaded.is_empty()
+    }
+
+    pub(crate) fn loaded_artifacts(&self) -> &[LoadedModArtifact] {
+        &self.loaded
     }
 
     pub fn registrations(&self) -> impl Iterator<Item = &ContractRegistration> {
@@ -106,14 +81,19 @@ impl ModHostSession {
 
 #[derive(Default)]
 pub struct ModHostInput<'a> {
+    /// Query-owned synchronous scope for the exact program of this invocation.
+    pub semantic_scope: Option<&'a dyn super::semantic_scope::ModSemanticScope>,
+    /// Borrowed from the current registered assembly for this synchronous invocation.
+    /// Never stored by an invoker or transferred to another thread.
+    pub semantic_authority: Option<&'a dyn super::semantic::ModSemanticAuthority>,
+    /// Actual assembly/Salsa generation; absent authority is represented explicitly.
+    pub syntax_generation_id: Option<crate::syntax::SyntaxGenerationId>,
     pub compile_plan: Option<&'a CompilePlan>,
     pub source_name: &'a str,
     pub source: &'a str,
     pub pipeline: Option<&'a dyn beskid_pipeline::PipelineObserver>,
-    /// Optional contract invoker. When `None`, the host installs a default
-    /// [`crate::mod_host::StubContractInvoker`] so all four contract phases still
-    /// dispatch deterministically. Tests can pass a recording invoker to assert
-    /// `(contractId, typeId, entrySymbol)` tuples were dispatched.
+    /// Optional explicit invoker. Otherwise dispatch uses every discovered Mod's
+    /// validated executable descriptor; unavailable artifacts are terminal errors.
     pub invoker: Option<&'a dyn super::invoker::ContractInvoker>,
     /// When set and equal to the freshly observed collector target fingerprint,
     /// `mod.generate` and disk materialization are skipped.

@@ -25,12 +25,15 @@ fn typed_generator_items_merge_into_host_program() {
     let generated = run_through_generate(
         program,
         &ModHostInput {
+            semantic_scope: None,
+            semantic_authority: None,
             compile_plan: Some(&plan),
             source_name: "Main.bd",
             source,
             pipeline: None,
             invoker: Some(&invoker),
             cached_target_fingerprint: None,
+            syntax_generation_id: None,
         },
     )
     .expect("typed merge generate");

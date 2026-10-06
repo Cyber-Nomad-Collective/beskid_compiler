@@ -1,4 +1,4 @@
-//! `beskid lsp` — run or install the Beskid language server.
+//! `beskid dev lsp` — run or install the Beskid language server.
 
 use anyhow::Result;
 use beskid_tools::toolchain::release::{InstallLspOptions, install_lsp, managed_lsp_exists, managed_lsp_path};

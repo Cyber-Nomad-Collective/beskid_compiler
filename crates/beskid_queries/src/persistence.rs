@@ -185,7 +185,7 @@ fn validate_payload_order(payload: &str) -> Result<(), String> {
         #[serde(borrow)]
         ingredients: OrderedObject<'a>,
     }
-    let payload: Payload<'_> = serde_json::from_str(payload).map_err(|error| error.to_string())?;
+    let payload: Payload<'_> = deserialize_snapshot(payload.as_bytes()).map_err(|error| error.to_string())?;
     let _ = payload.runtime;
     let mut ingredients = std::collections::HashSet::new();
     let mut allocated = std::collections::HashSet::new();
@@ -195,7 +195,8 @@ fn validate_payload_order(payload: &str) -> Result<(), String> {
         if ingredient > i32::MAX as u32 || !ingredients.insert(ingredient) {
             return Err("duplicate or invalid ingredient index".into());
         }
-        let entries: OrderedObject<'_> = serde_json::from_str(entries.get()).map_err(|error| error.to_string())?;
+        let entries: OrderedObject<'_> =
+            deserialize_snapshot(entries.get().as_bytes()).map_err(|error| error.to_string())?;
         let mut keys = std::collections::HashSet::new();
         let mut previous_slot = 0;
         for (key, _) in entries.0 {
@@ -231,6 +232,111 @@ fn snapshot_path(root: &Path) -> PathBuf {
     root.join("db.json")
 }
 
+/// Limits apply to the complete encoded envelope, before allocating Salsa state.
+/// The iterative scanner is a resource preflight, not a replacement JSON parser.
+#[cfg(feature = "persistence")]
+#[derive(Clone, Copy)]
+struct SnapshotLimits {
+    bytes: usize,
+    depth: usize,
+    containers: usize,
+    string_bytes: usize,
+}
+
+#[cfg(feature = "persistence")]
+impl Default for SnapshotLimits {
+    fn default() -> Self {
+        Self { bytes: 64 * 1024 * 1024, depth: 256, containers: 2_000_000, string_bytes: 4 * 1024 * 1024 }
+    }
+}
+
+#[cfg(feature = "persistence")]
+const SNAPSHOT_STACK_BYTES: usize = 16 * 1024 * 1024;
+
+#[cfg(feature = "persistence")]
+fn validate_snapshot_limits(bytes: &[u8], limits: SnapshotLimits) -> Result<(), String> {
+    if bytes.len() > limits.bytes {
+        return Err("snapshot byte limit exceeded".into());
+    }
+    let mut stack = Vec::new();
+    let mut containers = 0;
+    let mut quoted = false;
+    let mut escaped = false;
+    let mut string_bytes = 0;
+    for &byte in bytes {
+        if quoted {
+            if byte == b'"' && !escaped {
+                quoted = false;
+                continue;
+            }
+            string_bytes += 1;
+            if string_bytes > limits.string_bytes {
+                return Err("snapshot string byte limit exceeded".into());
+            }
+            if escaped {
+                escaped = false;
+            } else if byte == b'\\' {
+                escaped = true;
+            }
+            continue;
+        }
+        match byte {
+            b'"' => {
+                quoted = true;
+                string_bytes = 0;
+            }
+            b'{' | b'[' => {
+                if stack.len() >= limits.depth {
+                    return Err("snapshot container depth limit exceeded".into());
+                }
+                containers += 1;
+                if containers > limits.containers {
+                    return Err("snapshot container count limit exceeded".into());
+                }
+                stack.push(byte);
+            }
+            b'}' | b']' => {
+                let expected = if byte == b'}' { b'{' } else { b'[' };
+                if stack.pop() != Some(expected) {
+                    return Err("snapshot has mismatched JSON delimiters".into());
+                }
+            }
+            _ => {}
+        }
+    }
+    if quoted || !stack.is_empty() {
+        return Err("snapshot has incomplete JSON structure".into());
+    }
+    Ok(())
+}
+
+#[cfg(feature = "persistence")]
+fn read_bounded_snapshot(root: &Path) -> std::io::Result<Vec<u8>> {
+    use std::io::Read;
+    let file = fs::File::open(snapshot_path(root))?;
+    let metadata = file.metadata()?;
+    let limits = SnapshotLimits::default();
+    if !metadata.is_file() || metadata.len() > limits.bytes as u64 {
+        return Err(std::io::Error::other("snapshot is not a bounded regular file"));
+    }
+    let mut bytes = Vec::with_capacity(metadata.len() as usize);
+    // A concurrently growing file cannot bypass the byte limit after metadata.
+    file.take(limits.bytes as u64 + 1).read_to_end(&mut bytes)?;
+    validate_snapshot_limits(&bytes, limits).map_err(std::io::Error::other)?;
+    Ok(bytes)
+}
+
+/// Call only for preflighted input on the bounded snapshot stack. RawValue keeps
+/// borrowed strings and Salsa ingredient order intact; no owned Value tree.
+#[cfg(feature = "persistence")]
+fn deserialize_snapshot<'de, T: Deserialize<'de>>(bytes: &'de [u8]) -> Result<T, serde_json::Error> {
+    let mut deserializer = serde_json::Deserializer::from_slice(bytes);
+    deserializer.disable_recursion_limit();
+    let value = T::deserialize(&mut deserializer)?;
+    deserializer.end()?;
+    Ok(value)
+}
+
 /// Serialize the salsa DB snapshot to `root/db.json`.
 ///
 /// Only ingredients marked with `#[salsa::*(persist)]` are emitted; the rest are
@@ -238,6 +344,11 @@ fn snapshot_path(root: &Path) -> PathBuf {
 /// is disabled so callers need not feature-gate their call sites.
 #[cfg(feature = "persistence")]
 pub fn save_db_snapshot(db: &mut crate::db::BeskidDatabase, root: &Path) -> std::io::Result<()> {
+    stacker::grow(SNAPSHOT_STACK_BYTES, || save_db_snapshot_on_stack(db, root))
+}
+
+#[cfg(feature = "persistence")]
+fn save_db_snapshot_on_stack(db: &mut crate::db::BeskidDatabase, root: &Path) -> std::io::Result<()> {
     ensure_salsa_dir(root)?;
     // Salsa deliberately serializes structs before memos. Never pass through
     // Value: its map ordering and owned-string deserializer break that protocol.
@@ -251,6 +362,7 @@ pub fn save_db_snapshot(db: &mut crate::db::BeskidDatabase, root: &Path) -> std:
         db: &raw,
     };
     let bytes = serde_json::to_vec_pretty(&envelope).map_err(|err| std::io::Error::other(err.to_string()))?;
+    validate_snapshot_limits(&bytes, SnapshotLimits::default()).map_err(std::io::Error::other)?;
     let path = snapshot_path(root);
     let tmp = path.with_extension("json.tmp");
     fs::write(&tmp, &bytes)?;
@@ -267,8 +379,23 @@ pub fn save_db_snapshot(db: &mut crate::db::BeskidDatabase, root: &Path) -> std:
 /// deserialization mutates only a disposable candidate until fully successful.
 #[cfg(feature = "persistence")]
 pub fn load_db_snapshot(db: &mut crate::db::BeskidDatabase, root: &Path) -> bool {
-    let Ok(bytes) = fs::read(snapshot_path(root)) else { return false };
-    let envelope: SnapshotEnvelope = match serde_json::from_slice(&bytes) {
+    let bytes = match read_bounded_snapshot(root) {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            if error.kind() != std::io::ErrorKind::NotFound {
+                log::warn!("beskid salsa snapshot rejected: input preflight: {error}");
+            }
+            return false;
+        }
+    };
+    // The depth preflight bounds this stack's work. Keep partial candidate Drop,
+    // registry rehydration and replacement on it as well as deserialization.
+    stacker::grow(SNAPSHOT_STACK_BYTES, || load_db_snapshot_on_stack(db, &bytes))
+}
+
+#[cfg(feature = "persistence")]
+fn load_db_snapshot_on_stack(db: &mut crate::db::BeskidDatabase, bytes: &[u8]) -> bool {
+    let envelope: SnapshotEnvelope = match deserialize_snapshot(bytes) {
         Ok(value) => value,
         Err(err) => {
             log::warn!("beskid salsa snapshot rejected: parse error: {err}");
@@ -301,6 +428,7 @@ pub fn load_db_snapshot(db: &mut crate::db::BeskidDatabase, root: &Path) -> bool
     }
     let mut candidate = crate::db::BeskidDatabase::uninitialized(db.persistence_root().map(Path::to_path_buf));
     let mut deserializer = serde_json::Deserializer::from_str(envelope.db.get());
+    deserializer.disable_recursion_limit();
     if let Err(err) = <dyn salsa::Database>::deserialize(&mut candidate, &mut deserializer) {
         log::warn!("beskid salsa snapshot rejected: deserialize error: {err}");
         return false;
@@ -395,5 +523,35 @@ pub fn persist_session_snapshot(db: &mut crate::db::BeskidDatabase) {
     let Some(root) = db.persistence_root().map(std::path::Path::to_path_buf) else { return };
     if let Err(err) = save_db_snapshot(db, &root) {
         log::warn!("beskid salsa snapshot save failed: {err}");
+    }
+}
+
+#[cfg(all(test, feature = "persistence"))]
+mod snapshot_limit_tests {
+    use super::{SnapshotLimits, validate_snapshot_limits};
+
+    #[test]
+    fn exact_limits_accept_and_each_resource_overrun_rejects() {
+        let bytes = br#"{"nested":[{"label":"[{}]"}]}"#;
+        let limits = SnapshotLimits { bytes: bytes.len(), depth: 3, containers: 3, string_bytes: 6 };
+        assert!(validate_snapshot_limits(bytes, limits).is_ok());
+        for (policy, metric) in [
+            (SnapshotLimits { bytes: bytes.len() - 1, ..limits }, "byte limit"),
+            (SnapshotLimits { depth: 2, ..limits }, "depth limit"),
+            (SnapshotLimits { containers: 2, ..limits }, "count limit"),
+            (SnapshotLimits { string_bytes: 5, ..limits }, "string byte limit"),
+        ] {
+            assert!(validate_snapshot_limits(bytes, policy).unwrap_err().contains(metric));
+        }
+    }
+
+    #[test]
+    fn quoted_delimiters_and_escaped_quotes_do_not_change_depth() {
+        let bytes = br#"{"text":"\"[{}]\\\""}"#;
+        let limits = SnapshotLimits { bytes: 100, depth: 1, containers: 1, string_bytes: 100 };
+        assert!(validate_snapshot_limits(bytes, limits).is_ok());
+        for malformed in [b"{]".as_slice(), b"[", b"\"unterminated", b"[\"trailing\\"] {
+            assert!(validate_snapshot_limits(malformed, limits).is_err());
+        }
     }
 }

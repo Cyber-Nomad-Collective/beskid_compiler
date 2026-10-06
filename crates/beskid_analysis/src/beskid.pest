@@ -118,8 +118,8 @@ Keyword = {
 
 DecimalIntegerBody = { ASCII_DIGIT+ ~ ("_" ~ ASCII_DIGIT+)* }
 HexIntegerBody = { ASCII_HEX_DIGIT+ ~ ("_" ~ ASCII_HEX_DIGIT+)* }
-IntegerLiteral = @{ "-"? ~ (("0x" ~ HexIntegerBody) | DecimalIntegerBody) ~ ("_i32" | "_i64" | "_u32" | "_u8")? }
-FloatLiteral = @{ "-"? ~ ASCII_DIGIT+ ~ "." ~ ASCII_DIGIT+ }
+IntegerLiteral = @{ "-"? ~ (("0x" ~ HexIntegerBody) | DecimalIntegerBody) ~ ("_i8" | "_i16" | "_i32" | "_i64" | "_u8" | "_u16" | "_u32" | "_u64")? }
+FloatLiteral = @{ "-"? ~ ASCII_DIGIT+ ~ "." ~ ASCII_DIGIT+ ~ (("e" | "E") ~ ("+" | "-")? ~ ASCII_DIGIT+)? ~ ("_f32" | "_f64")? }
 StringLiteral = @{ "\"" ~ StringContent* ~ "\"" }
 StringLiteralValueBody = ${ (StringContent)* }
 StringLiteralValue = ${ SOI ~ StringLiteralValueBody ~ EOI }
@@ -156,7 +156,7 @@ ItemList = { ItemWithDocs* }
 Program = { SOI ~ ItemList ~ EOI }
 
 DocLineContent = { "///" ~ !("/") ~ (!(NEWLINE) ~ ANY)* ~ NEWLINE? }
-DocRun = @{ DocLineContent+ }
+DocRun = @{ DocLineContent ~ ((" " | "\t")* ~ DocLineContent)* }
 InnerItem = _{ HostDefinition | MacroDefinition | FunctionDefinition | ConstantDefinition | ImplBlock | ExtendTypeDefinition | TypeDefinition | EnumDefinition | ContractDefinition | TestDefinition | AttributeDeclaration | InlineModule | ModuleDeclaration | UseDeclaration }
 
 AttributeList = { Attribute+ }
@@ -183,7 +183,7 @@ EnumPath = { Path ~ "::" ~ Identifier }
 ////////////////////////////////////////////////////////////
 // 3) TYPES
 ////////////////////////////////////////////////////////////
-PrimitiveType = { "bool" | "i32" | "i64" | "u32" | "u8" | "pointer" | "word" | "f64" | "char" | "string" | "unit" | "never" }
+PrimitiveType = { "i8" | "i16" | "u16" | "u64" | "f32" | "bool" | "i32" | "i64" | "u32" | "u8" | "pointer" | "word" | "f64" | "char" | "string" | "unit" | "never" }
 
 GenericParameters = { "<" ~ Identifier ~ ("," ~ Identifier)* ~ ">" }
 GenericArguments = { "<" ~ BeskidType ~ ("," ~ BeskidType)* ~ ">" }
@@ -212,7 +212,7 @@ FunctionDefinition = { AttributeList? ~ Visibility? ~ BeskidType ~ Identifier ~ 
 ConstantDefinition = { "const" ~ Identifier ~ "=" ~ IntegerLiteral ~ ";" }
 ReceiverType = { PrimitiveType | Path }
 ImplConformanceList = { ":" ~ PathList }
-ImplBlock = { "impl" ~ ReceiverType ~ ImplConformanceList? ~ "{" ~ (AssociatedTypeBindingWithDocs | ImplMethodWithDocs)* ~ "}" }
+ImplBlock = { "impl" ~ GenericParameters? ~ ReceiverType ~ ImplConformanceList? ~ WhereClause? ~ "{" ~ (AssociatedTypeBindingWithDocs | ImplMethodWithDocs)* ~ "}" }
 ExtendTypeDefinition = { "extend" ~ "type" ~ ReceiverType ~ "{" ~ ImplMethodWithDocs* ~ "}" }
 
 MacroFragmentKind = { "block" | "expression" | "statement" | "type" | "identifier" | "literal" | "pattern" | "path" | "item" | "node" }
@@ -242,7 +242,7 @@ TypeFieldList = { FieldWithDocs ~ ("," ~ DocGap* ~ FieldWithDocs)* ~ ","? }
 TypeBody = { TypeFieldList? ~ (AssociatedTypeBindingWithDocs | ImplMethodWithDocs)* }
 TypeDefinition = { AttributeList? ~ Visibility? ~ "type" ~ Identifier ~ GenericParameters? ~ TypeConformanceList? ~ "{" ~ TypeBody? ~ "}" }
 
-EnumDefinition = { Visibility? ~ "enum" ~ Identifier ~ GenericParameters? ~ "{" ~ EnumVariantList? ~ "}" }
+EnumDefinition = { AttributeList? ~ Visibility? ~ "enum" ~ Identifier ~ GenericParameters? ~ "{" ~ EnumVariantList? ~ "}" }
 EnumVariantList = { EnumVariantWithDocs ~ ("," ~ DocGap* ~ EnumVariantWithDocs)* ~ ","? }
 EnumVariantWithDocs = { (DocRun ~ EnumVariant) | EnumVariant }
 EnumVariant = { Identifier ~ ("(" ~ FieldList? ~ ")")? }

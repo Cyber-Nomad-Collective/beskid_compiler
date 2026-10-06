@@ -1,0 +1,9 @@
+{{name}} {
+  name = "{{name}}"
+  version = "0.1.0"
+}
+
+target "App" {
+  kind = "App"
+  entry = "Main.bd"
+}

@@ -26,4 +26,4 @@ pub(in crate::semantic_contract) use match_materialize::enum_match_tracked;
 pub(in crate::semantic_contract) use scrutinee::{enum_match_scrutinee_layout, enum_pattern_targets_declaration};
 use scrutinee::{enum_match_scrutinee_layout_in_environment, enum_match_source_environment};
 pub(in crate::semantic_contract) use source_identity::enum_layout_for_source_identity;
-use source_identity::{enum_layout_for_direct_call_result, instantiated_enum_layout_for_path_in_environment};
+use source_identity::{enum_layout_for_expression_result, instantiated_enum_layout_for_path_in_environment};

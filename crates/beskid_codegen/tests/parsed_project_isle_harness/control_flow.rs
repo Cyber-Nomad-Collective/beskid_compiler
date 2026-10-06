@@ -17,7 +17,7 @@ fn multi_unit_parsed_project_lowers_through_codegen_input_isle_only() {
     let (target, isa) = x86_64_target_and_isa();
 
     let lowered = lower_verified_entrypoint(assembly, target, isa.as_ref());
-    assert!(lowered.artifact.functions.len() >= 2, "reachable closure must include Main and imported Util.Double");
+    assert!(lowered.artifact().functions.len() >= 2, "reachable closure must include Main and imported Util.Double");
 }
 
 #[test]
@@ -36,7 +36,7 @@ fn parsed_extern_contract_call_comparison_lowers_as_an_if_condition() {
 
     let lowered = lower_verified_entrypoint(assembly, target, isa.as_ref());
     let main = lowered
-        .artifact
+        .artifact()
         .functions
         .iter()
         .find(|function| function.name.starts_with("Main#syntax_"))
@@ -67,7 +67,7 @@ fn parsed_project_control_flow_while_break_continue_reaches_verified_clif() {
 
     let lowered = lower_verified_entrypoint(assembly, target, isa.as_ref());
     let main = lowered
-        .artifact
+        .artifact()
         .functions
         .iter()
         .find(|function| function.name.starts_with("Main#syntax_"))
@@ -95,7 +95,7 @@ fn parsed_project_if_else_reaches_verified_clif() {
 
     let lowered = lower_verified_entrypoint(assembly, target, isa.as_ref());
     let main = lowered
-        .artifact
+        .artifact()
         .functions
         .iter()
         .find(|function| function.name.starts_with("Main#syntax_"))
@@ -122,7 +122,7 @@ fn parsed_project_range_for_accumulator_reaches_verified_clif_without_hir_fallba
     let (target, isa) = x86_64_target_and_isa();
     let lowered = lower_verified_entrypoint(assembly, target, isa.as_ref());
     let main = lowered
-        .artifact
+        .artifact()
         .functions
         .iter()
         .find(|function| function.name.starts_with("Main#syntax_"))
@@ -144,15 +144,15 @@ fn parsed_project_nested_direct_calls_reach_verified_clif() {
     let (target, isa) = x86_64_target_and_isa();
 
     let lowered = lower_verified_entrypoint(assembly, target, isa.as_ref());
-    assert_eq!(lowered.artifact.functions.len(), 3, "reachable closure must include Main, Mid, and Inner");
+    assert_eq!(lowered.artifact().functions.len(), 3, "reachable closure must include Main, Mid, and Inner");
     let main = lowered
-        .artifact
+        .artifact()
         .functions
         .iter()
         .find(|function| function.name.starts_with("Main#syntax_"))
         .expect("Main artifact function");
     let mid = lowered
-        .artifact
+        .artifact()
         .functions
         .iter()
         .find(|function| function.name.starts_with("Mid#syntax_"))
@@ -170,7 +170,7 @@ fn parsed_project_stored_two_parameter_lambda_reaches_verified_clif() {
 
     let lowered = lower_verified_entrypoint(assembly, target, isa.as_ref());
     let main = lowered
-        .artifact
+        .artifact()
         .functions
         .iter()
         .find(|function| function.name.starts_with("Main#syntax_"))
@@ -180,7 +180,7 @@ fn parsed_project_stored_two_parameter_lambda_reaches_verified_clif() {
     assert!(clif.contains("iconst.i32 7"), "{clif}");
     assert!(clif.contains("iadd"), "{clif}");
     let lambda = lowered
-        .artifact
+        .artifact()
         .functions
         .iter()
         .find(|function| function.name.starts_with("__beskid_lambda_entry_syntax_"))
@@ -198,7 +198,7 @@ fn parsed_project_stored_capturing_lambda_reaches_verified_clif() {
 
     let lowered = lower_verified_entrypoint(assembly, target, isa.as_ref());
     let main = lowered
-        .artifact
+        .artifact()
         .functions
         .iter()
         .find(|function| function.name.starts_with("Main#syntax_"))
@@ -206,7 +206,7 @@ fn parsed_project_stored_capturing_lambda_reaches_verified_clif() {
     let main_clif = main.function.display().to_string();
     assert!(main_clif.contains("beskid_rt_v5_closure_environment_allocate"), "{main_clif}");
     let lambda = lowered
-        .artifact
+        .artifact()
         .functions
         .iter()
         .find(|function| function.name.starts_with("__beskid_lambda_entry_syntax_"))
@@ -242,11 +242,11 @@ fn parsed_project_inline_method_reaches_verified_clif_through_production_entrypo
 
     let lowered = lower_verified_entrypoint(assembly, target, isa.as_ref());
     assert!(
-        lowered.artifact.functions.len() >= 2,
+        lowered.artifact().functions.len() >= 2,
         "reachable closure must include Main and the inline Point.Ping method"
     );
     let main = lowered
-        .artifact
+        .artifact()
         .functions
         .iter()
         .find(|function| function.name.starts_with("Main#syntax_"))

@@ -80,19 +80,17 @@ pub(in crate::semantic_contract) fn generic_call_instantiation_for_node(
     let argument_syntax = explicit_generic_type_argument_syntax(path)?;
     let argument_count = u8::try_from(argument_syntax.len()).ok()?;
     (argument_count > 0).then_some(())?;
-    let declaration = resolve_item_declaration_candidate(db, program, index, key, path)?;
+    let declaration = resolve_local_extern_contract_method(program, index, key, path)
+        .or_else(|| resolve_item_declaration_candidate(db, program, index, key, path))?;
     let syntax = db.syntax_unit(declaration.unit)?;
     syntax.accepts_key(db, declaration).then_some(())?;
-    let function = syntax
-        .syntax_index(db)
-        .node_at(syntax.expanded_program(db), declaration.node)?
-        .of::<beskid_analysis::syntax::FunctionDefinition>()?;
-    (function.generics.len() == usize::from(argument_count)).then_some(())?;
+    let (generic_names, _) = generic_callable_parameters(db, declaration)?;
+    (generic_names.len() == usize::from(argument_count)).then_some(())?;
     let mut concrete_arguments = Vec::with_capacity(argument_syntax.len());
-    for (argument, generic) in argument_syntax.iter().zip(function.generics.iter()) {
+    for (argument, generic) in argument_syntax.iter().zip(generic_names.iter()) {
         match abi_type_from_syntax(db, key, &argument.node) {
             Ok(concrete) => concrete_arguments.push(concrete),
-            Err(_) if type_syntax_is_generic_parameter_reference(&argument.node, generic.node.name.as_str()) => {}
+            Err(_) if type_syntax_is_generic_parameter_reference(&argument.node, generic) => {}
             Err(_) => return None,
         }
     }
@@ -118,7 +116,27 @@ pub(in crate::semantic_contract) fn generic_callable_parameters(
         return (!function.generics.is_empty())
             .then(|| (function.generics.iter().map(|generic| generic.node.name.as_str()).collect(), false));
     }
+    if node.of::<beskid_analysis::syntax::ContractMethodSignature>().is_some() {
+        let owner_id = nearest_ancestor(syntax.syntax_index(db), declaration.node, |kind| {
+            kind == beskid_analysis::syntax_query::NodeKind::ContractDefinition
+        })?;
+        let owner = syntax
+            .syntax_index(db)
+            .node_at(syntax.expanded_program(db), owner_id)?
+            .of::<beskid_analysis::syntax::ContractDefinition>()?;
+        return (!owner.generics.is_empty())
+            .then(|| (owner.generics.iter().map(|generic| generic.node.name.as_str()).collect(), false));
+    }
     node.of::<beskid_analysis::syntax::MethodDefinition>()?;
+    if let Some(parent) = nearest_ancestor(syntax.syntax_index(db), declaration.node, |kind| {
+        kind == beskid_analysis::syntax_query::NodeKind::ImplBlock
+    })
+    .and_then(|parent| syntax.syntax_index(db).node_at(syntax.expanded_program(db), parent))
+    .and_then(|node| node.of::<beskid_analysis::syntax::ImplBlock>())
+        && !parent.generics.is_empty()
+    {
+        return Some((parent.generics.iter().map(|generic| generic.node.name.as_str()).collect(), true));
+    }
     let owner = method_owner_node(syntax.expanded_program(db), syntax.syntax_index(db), declaration.node)
         .and_then(|parent| syntax.syntax_index(db).node_at(syntax.expanded_program(db), parent))
         .and_then(|node| node.of::<beskid_analysis::syntax::TypeDefinition>())?;

@@ -15,7 +15,7 @@ pub(super) fn literal_type_id(types: &TypeTable, lit: &crate::syntax::Literal) -
     use crate::syntax::{Literal, integer_literal_primitive_type};
     match lit {
         Literal::Integer(v) => primitive_type_id(types, integer_literal_primitive_type(v)),
-        Literal::Float(_) => primitive_type_id(types, PrimitiveType::F64),
+        Literal::Float(text) => primitive_type_id(types, crate::syntax::float_literal_primitive_type(text)),
         Literal::Bool(_) => primitive_type_id(types, PrimitiveType::Bool),
         Literal::Char(_) => primitive_type_id(types, PrimitiveType::Char),
         Literal::String(_) => primitive_type_id(types, PrimitiveType::String),

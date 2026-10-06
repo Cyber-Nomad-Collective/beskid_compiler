@@ -37,8 +37,9 @@ pub(crate) fn prepare_project_syntax_facts(
     let (prepared, diagnostics, fixes) = beskid_queries::prepare_compilation_diagnostics_with_db(
         db,
         resolved,
-        PrepareOptions {
+        PrepareOptions { mod_invoker: None,
             front_end: FrontEndOptions {
+                assembly_recovery: beskid_analysis::projects::AssemblyRecoveryPolicy::EditorRetainRecovered,
                 with_semantic_diagnostics: dependency_typing == DependencyTypingPolicy::FullClosure,
                 ..Default::default()
             },
@@ -64,8 +65,9 @@ pub(crate) fn prepare_project_diagnostics_from_assembled(
 ) -> anyhow::Result<PreparedSyntaxFacts> {
     let (prepared, diagnostics, fixes) = beskid_queries::prepare_compilation_diagnostics_isolated(
         resolved,
-        PrepareOptions {
+        PrepareOptions { mod_invoker: None,
             front_end: FrontEndOptions {
+                assembly_recovery: beskid_analysis::projects::AssemblyRecoveryPolicy::EditorRetainRecovered,
                 with_semantic_diagnostics: dependency_typing == DependencyTypingPolicy::FullClosure,
                 ..Default::default()
             },
@@ -459,15 +461,19 @@ mod tests {
             compile_plan: Some(plan),
             prepared_workspace: None,
             workspace_summary: None,
-            assembly: Some(ProgramAssembly::new(
-                roots,
-                Arc::new(units),
-                entry,
-                AssemblyDiscovery::ImportClosure,
-                index,
-                false,
-                generation,
-            )),
+            assembly: Some(
+                ProgramAssembly::new(
+                    roots,
+                    Arc::new(units),
+                    entry,
+                    AssemblyDiscovery::ImportClosure,
+                    index,
+                    false,
+                    generation,
+                )
+                // The LSP prepares every assembled buffer under the editor recovery policy.
+                .with_recovery_policy(beskid_analysis::projects::AssemblyRecoveryPolicy::EditorRetainRecovered),
+            ),
         };
         (directory, resolved)
     }

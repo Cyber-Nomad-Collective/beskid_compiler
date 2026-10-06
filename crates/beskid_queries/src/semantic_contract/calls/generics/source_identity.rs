@@ -181,6 +181,11 @@ pub(in crate::semantic_contract) fn stable_declaration_identity(
             declaration_node
                 .of::<beskid_analysis::syntax::MethodDefinition>()
                 .map(|definition| definition.name.node.name.as_str())
+        })
+        .or_else(|| {
+            declaration_node
+                .of::<beskid_analysis::syntax::ContractMethodSignature>()
+                .map(|definition| definition.name.node.name.as_str())
         })?;
     let mut path = db
         .syntax_dependency_registry()
@@ -199,6 +204,8 @@ pub(in crate::semantic_contract) fn stable_declaration_identity(
             if let Some(module) = parent.of::<beskid_analysis::syntax::InlineModule>() {
                 inline.push(module.name.node.name.clone());
             } else if let Some(owner) = parent.of::<beskid_analysis::syntax::TypeDefinition>() {
+                inline.push(owner.name.node.name.clone());
+            } else if let Some(owner) = parent.of::<beskid_analysis::syntax::ContractDefinition>() {
                 inline.push(owner.name.node.name.clone());
             }
         }

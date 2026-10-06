@@ -54,6 +54,11 @@ impl Emit for Spanned<ModuleDeclaration> {
 
 impl Emit for TypeDefinition {
     fn emit<W: Write>(&self, w: &mut W, cx: &mut EmitCtx) -> Result<(), EmitError> {
+        if !self.attributes.is_empty() {
+            emit_attribute_lines(&self.attributes, w, cx)?;
+            cx.nl(w)?;
+            cx.write_indent(w)?;
+        }
         self.visibility.emit(w, cx)?;
         cx.token(w, "type")?;
         cx.space(w)?;
@@ -70,7 +75,7 @@ impl Emit for TypeDefinition {
                 c.emit(w, cx)?;
             }
         }
-        if self.fields.is_empty() {
+        if self.fields.is_empty() && self.methods.is_empty() && self.associated_type_bindings.is_empty() {
             cx.space(w)?;
             w.write_str("{ }")?;
             return Ok(());
@@ -82,9 +87,31 @@ impl Emit for TypeDefinition {
             if i > 0 {
                 cx.between_members(w)?;
             }
+            super::root_emit::emit_leading_doc_lines(self.field_docs.get(i).and_then(Option::as_ref), w, cx)?;
             cx.write_indent(w)?;
             f.emit(w, cx)?;
             cx.token(w, ",")?;
+            cx.nl(w)?;
+        }
+        for (i, binding) in self.associated_type_bindings.iter().enumerate() {
+            if i > 0 || !self.fields.is_empty() {
+                cx.between_members(w)?;
+            }
+            cx.write_indent(w)?;
+            cx.token(w, "type ")?;
+            binding.node.name.emit(w, cx)?;
+            cx.token(w, " = ")?;
+            binding.node.ty.emit(w, cx)?;
+            cx.token(w, ";")?;
+            cx.nl(w)?;
+        }
+        for (i, method) in self.methods.iter().enumerate() {
+            if i > 0 || !self.fields.is_empty() || !self.associated_type_bindings.is_empty() {
+                cx.between_members(w)?;
+            }
+            super::root_emit::emit_leading_doc_lines(self.method_docs.get(i).and_then(Option::as_ref), w, cx)?;
+            cx.write_indent(w)?;
+            method.emit(w, cx)?;
             cx.nl(w)?;
         }
         cx.close_brace(w)?;
@@ -124,6 +151,11 @@ impl Emit for Spanned<EnumVariant> {
 
 impl Emit for EnumDefinition {
     fn emit<W: Write>(&self, w: &mut W, cx: &mut EmitCtx) -> Result<(), EmitError> {
+        if !self.attributes.is_empty() {
+            emit_attribute_lines(&self.attributes, w, cx)?;
+            cx.nl(w)?;
+            cx.write_indent(w)?;
+        }
         self.visibility.emit(w, cx)?;
         cx.token(w, "enum")?;
         cx.space(w)?;
@@ -280,6 +312,7 @@ impl Emit for Spanned<ContractDefinition> {
 impl Emit for ImplBlock {
     fn emit<W: Write>(&self, w: &mut W, cx: &mut EmitCtx) -> Result<(), EmitError> {
         cx.token(w, "impl")?;
+        emit_generics_list(&self.generics, w, cx)?;
         cx.space(w)?;
         self.receiver_type.emit(w, cx)?;
         if !self.conformances.is_empty() {
@@ -291,6 +324,17 @@ impl Emit for ImplBlock {
                     cx.token(w, ", ")?;
                 }
                 c.emit(w, cx)?;
+            }
+        }
+        if !self.where_bounds.is_empty() {
+            cx.token(w, " where ")?;
+            for (i, bound) in self.where_bounds.iter().enumerate() {
+                if i > 0 {
+                    cx.token(w, ", ")?;
+                }
+                bound.parameter.emit(w, cx)?;
+                cx.token(w, ": ")?;
+                bound.contract.emit(w, cx)?;
             }
         }
         if self.methods.is_empty() {

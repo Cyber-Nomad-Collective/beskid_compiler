@@ -5,6 +5,7 @@ use crate::syntax_query::{DynNodeRef, NodeKind};
 
 pub trait AstNode: Any {
     fn as_any(&self) -> &dyn Any;
+    fn owned_projection(&self) -> Result<serde_json::Value, serde_json::Error>;
     fn children<'a>(&'a self, _push: &mut dyn FnMut(DynNodeRef<'a>)) {}
     fn node_kind(&self) -> NodeKind;
     fn span(&self) -> Option<SpanInfo> {
@@ -15,6 +16,9 @@ pub trait AstNode: Any {
 impl<T: AstNode + 'static> AstNode for Spanned<T> {
     fn as_any(&self) -> &dyn Any {
         self.node.as_any()
+    }
+    fn owned_projection(&self) -> Result<serde_json::Value, serde_json::Error> {
+        self.node.owned_projection()
     }
 
     fn children<'a>(&'a self, push: &mut dyn FnMut(DynNodeRef<'a>)) {

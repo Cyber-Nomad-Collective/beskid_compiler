@@ -32,6 +32,7 @@ pub(in crate::semantic_contract) fn cast_intents_for_node(
             LiteralFact::Integer(ref value) => {
                 semantic_type_for_literal(&beskid_analysis::syntax::Literal::Integer(value.to_string()))
             }
+            LiteralFact::Float(text) if text.ends_with("_f32") => SemanticTypeId::F32,
             LiteralFact::Float(_) => SemanticTypeId::F64,
             LiteralFact::Bool(_) => SemanticTypeId::BOOL,
             LiteralFact::Char(_) => SemanticTypeId::CHAR,
@@ -231,7 +232,12 @@ pub(in crate::semantic_contract) fn abi_semantic_type(ty: AbiType) -> Option<Sem
         AbiType::Void => return None,
         AbiType::Pointer => SemanticTypeId::POINTER,
         AbiType::USize => SemanticTypeId::WORD,
-        AbiType::I8 | AbiType::U8 => SemanticTypeId::U8,
+        AbiType::I8 => SemanticTypeId::I8,
+        AbiType::I16 => SemanticTypeId::I16,
+        AbiType::U16 => SemanticTypeId::U16,
+        AbiType::U64 => SemanticTypeId::U64,
+        AbiType::F32 => SemanticTypeId::F32,
+        AbiType::U8 => SemanticTypeId::U8,
         AbiType::I32 => SemanticTypeId::I32,
         AbiType::U32 => SemanticTypeId::U32,
         AbiType::I64 => SemanticTypeId::I64,
@@ -243,11 +249,16 @@ pub(in crate::semantic_contract) fn abi_semantic_type(ty: AbiType) -> Option<Sem
 pub(in crate::semantic_contract) fn primitive_numeric(semantic_type: SemanticTypeId) -> bool {
     matches!(
         semantic_type,
-        SemanticTypeId::I32
+        SemanticTypeId::I8
+            | SemanticTypeId::I16
+            | SemanticTypeId::U16
+            | SemanticTypeId::U64
+            | SemanticTypeId::I32
             | SemanticTypeId::I64
             | SemanticTypeId::U32
             | SemanticTypeId::U8
             | SemanticTypeId::WORD
+            | SemanticTypeId::F32
             | SemanticTypeId::F64
     )
 }
@@ -255,7 +266,15 @@ pub(in crate::semantic_contract) fn primitive_numeric(semantic_type: SemanticTyp
 pub(in crate::semantic_contract) fn primitive_integer(semantic_type: SemanticTypeId) -> bool {
     matches!(
         semantic_type,
-        SemanticTypeId::I32 | SemanticTypeId::I64 | SemanticTypeId::U32 | SemanticTypeId::U8 | SemanticTypeId::WORD
+        SemanticTypeId::I8
+            | SemanticTypeId::I16
+            | SemanticTypeId::U16
+            | SemanticTypeId::U64
+            | SemanticTypeId::I32
+            | SemanticTypeId::I64
+            | SemanticTypeId::U32
+            | SemanticTypeId::U8
+            | SemanticTypeId::WORD
     )
 }
 

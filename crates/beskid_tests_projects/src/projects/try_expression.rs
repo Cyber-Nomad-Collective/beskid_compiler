@@ -8,7 +8,7 @@ fn try_expression_fixture_types_via_semantic_facts() {
         let resolved = resolve_fixture_with_assembly(&try_expression_fixture(), "Src/Main.bd", "App");
         beskid_queries::prepare_compilation(
             &resolved,
-            PrepareOptions {
+            PrepareOptions { mod_invoker: None,
                 front_end: FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
                 ..Default::default()
             },

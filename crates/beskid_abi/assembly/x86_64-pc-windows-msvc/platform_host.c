@@ -461,3 +461,5 @@ int32_t beskid_rt_v5_windows_fs_delete(const struct BeskidStr *path) {
   VirtualFree(p, 0, MEM_RELEASE);
   return ok ? 0 : beskid_windows_fs_status(e);
 }
+
+#include "../common/process_transport.h"

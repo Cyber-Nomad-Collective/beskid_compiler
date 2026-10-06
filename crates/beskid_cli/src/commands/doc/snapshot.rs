@@ -52,7 +52,8 @@ pub(super) fn build_doc_snapshot(
         let shared = entry_resolution_with_db(&mut db, resolved, &options).context("entry resolution for api.json")?;
         let resolution = (*shared).clone();
 
-        let assembly_options = assembly_options_for_prepare(plan, options.front_end.assembly_discovery);
+        let mut assembly_options = assembly_options_for_prepare(plan, options.front_end.assembly_discovery);
+        assembly_options.recovery_policy = options.front_end.assembly_recovery;
         let assembly = beskid_queries::program_assembly(
             &mut db,
             plan,

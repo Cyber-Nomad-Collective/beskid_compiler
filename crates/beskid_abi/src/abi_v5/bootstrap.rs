@@ -9,7 +9,7 @@ mod source_contract;
 
 pub use audit::RuntimeAuditMetadata;
 pub use identity::{
-    CANONICAL_RUNTIME_PACKAGE_NAME, CANONICAL_RUNTIME_PACKAGE_PUBLISHER, RuntimePackageIdentity, TRAP_DIAGNOSTIC_PREFIX,
-    TRAP_EXIT_STATUS, canonical_runtime_package,
+    CANONICAL_RUNTIME_PACKAGE_NAME, CANONICAL_RUNTIME_PACKAGE_PUBLISHER, RuntimePackageIdentity,
+    TRAP_DIAGNOSTIC_PREFIX, TRAP_EXIT_STATUS, canonical_runtime_package,
 };
 pub use render::{render_runtime_asm_include, render_runtime_c_header};

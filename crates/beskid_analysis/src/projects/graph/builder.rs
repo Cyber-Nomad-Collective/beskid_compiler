@@ -68,9 +68,19 @@ pub fn build_project_graph_with_options(
     manifest_path: &Path,
     _options: ProjectGraphBuildOptions,
 ) -> Result<ProjectGraph, ProjectError> {
+    let root_manifest = load_manifest_from_path(manifest_path)?;
+    build_project_graph_from_manifest(manifest_path, root_manifest)
+}
+
+/// Resolve proposed root intent against its original physical directory without
+/// writing the manifest. Child manifests still use the ordinary loader/resolver.
+pub fn build_project_graph_from_manifest(
+    manifest_path: &Path,
+    root_manifest: crate::projects::model::ProjectManifest,
+) -> Result<ProjectGraph, ProjectError> {
+    crate::projects::validator::validate_manifest(&root_manifest)?;
     let root_manifest_path = normalize_existing_path(manifest_path);
     let root_project_root = project_root_from_manifest_path(&root_manifest_path)?;
-    let root_manifest = load_manifest_from_path(&root_manifest_path)?;
 
     let mut dag = daggy::Dag::new();
     let root = dag.add_node(ProjectGraphNode::RootProject {

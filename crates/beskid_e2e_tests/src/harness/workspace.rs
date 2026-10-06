@@ -39,7 +39,7 @@ fn copy_dir_recursive(source: &Path, destination: &Path) {
         let src_path = entry.path();
         let name = entry.file_name();
         let name = name.to_string_lossy();
-        if name == "obj" || name == "Project.lock" {
+        if name == "obj" || name == "Project.lock" || name == ".beskid" {
             continue;
         }
         let dest_path = destination.join(entry.file_name());
@@ -50,5 +50,33 @@ fn copy_dir_recursive(source: &Path, destination: &Path) {
                 panic!("copy fixture file {} -> {} failed: {error}", src_path.display(), dest_path.display());
             });
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn fixture_copy_excludes_private_dependency_state_and_generated_outputs() {
+        let source = tempfile::tempdir().unwrap();
+        let destination = tempfile::tempdir().unwrap();
+        let private = source.path().join("app/.beskid/dependency-transaction");
+        fs::create_dir_all(&private).unwrap();
+        fs::write(private.join("guard"), b"stale transaction state").unwrap();
+        fs::create_dir_all(source.path().join("app/obj")).unwrap();
+        fs::write(source.path().join("app/obj/generated.bd"), b"generated").unwrap();
+        fs::write(source.path().join("app/Project.lock"), b"stale lock").unwrap();
+        fs::create_dir_all(source.path().join("app/Src")).unwrap();
+        fs::write(source.path().join("app/App.bproj"), b"source manifest").unwrap();
+        fs::write(source.path().join("app/Src/Main.bd"), b"source program").unwrap();
+
+        copy_dir_recursive(source.path(), destination.path());
+        assert!(!destination.path().join("app/.beskid").exists());
+        assert!(!destination.path().join("app/obj").exists());
+        assert!(!destination.path().join("app/Project.lock").exists());
+        assert_eq!(fs::read(destination.path().join("app/App.bproj")).unwrap(), b"source manifest");
+        assert_eq!(fs::read(destination.path().join("app/Src/Main.bd")).unwrap(), b"source program");
+        assert!(private.join("guard").exists(), "copy must preserve source-side state");
     }
 }

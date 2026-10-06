@@ -168,6 +168,10 @@ pub(in crate::semantic_contract) fn call_abi_signature_for_call(
     key: AstNodeKey,
 ) -> Result<ItemSignature, SemanticError> {
     match call_lowering(db, key)? {
+        Some(CallLowering::NativeModCallback(callback)) => {
+            return item_abi_signature(db, callback.wrapper())?
+                .ok_or_else(|| SemanticError::unavailable("native_mod_callback_signature"));
+        }
         Some(CallLowering::CorelibService(service)) => {
             return corelib_service_abi_signature(service)
                 .ok_or_else(|| SemanticError::unavailable("call_abi_signature"));

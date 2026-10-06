@@ -1,10 +1,8 @@
-use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use crate::api::BuildOutputKind;
 use crate::error::{AotError, AotResult};
-use crate::windows_toolchain::configure_windows_native_command;
 
 use super::common::format_link_detail;
 use super::policy::{append_export_policy_flags, append_external_libraries, append_library_search_paths};
@@ -16,12 +14,18 @@ fn windows_import_library_path(shared_library: &Path) -> PathBuf {
 }
 
 pub(super) fn archive_static_windows(req: &LinkRequest) -> AotResult<LinkResult> {
-    let (command_line, output) = run_command_with_fallback(vec![
-        windows_lib_command(req, "lib"),
-        windows_lib_command(req, "lib.exe"),
-        windows_lib_command(req, "llvm-lib"),
-        windows_lib_command(req, "llvm-lib.exe"),
-    ])?;
+    if let Some(runtime) = &req.runtime {
+        runtime.static_archive()?;
+    }
+    let (command_line, output, tool_receipt) = run_command_with_fallback(
+        vec![
+            windows_lib_command(req, "lib"),
+            windows_lib_command(req, "lib.exe"),
+            windows_lib_command(req, "llvm-lib"),
+            windows_lib_command(req, "llvm-lib.exe"),
+        ],
+        None,
+    )?;
     if req.verbose {
         eprintln!("[aot] archive command: {:?}", command_line);
     }
@@ -33,19 +37,27 @@ pub(super) fn archive_static_windows(req: &LinkRequest) -> AotResult<LinkResult>
         });
     }
     Ok(LinkResult {
+        tool_receipt: Some(tool_receipt),
         output_path: req.output_path.clone(),
         command_line,
         exported_symbols: req.exported_symbols.clone(),
     })
 }
 
-pub(super) fn link_windows(req: &LinkRequest, target: &str) -> AotResult<LinkResult> {
-    let (command_line, output) = run_command_with_fallback(vec![
-        windows_link_command(req, target, "link")?,
-        windows_link_command(req, target, "link.exe")?,
-        windows_link_command(req, target, "lld-link")?,
-        windows_link_command(req, target, "lld-link.exe")?,
-    ])?;
+pub(super) fn link_windows(
+    req: &LinkRequest,
+    target: &str,
+    control: Option<&crate::api::NativeExecutionControl>,
+) -> AotResult<LinkResult> {
+    let (command_line, output, tool_receipt) = run_command_with_fallback(
+        vec![
+            windows_link_command(req, target, "link")?,
+            windows_link_command(req, target, "link.exe")?,
+            windows_link_command(req, target, "lld-link")?,
+            windows_link_command(req, target, "lld-link.exe")?,
+        ],
+        control,
+    )?;
     if req.verbose {
         eprintln!("[aot] link command: {:?}", command_line);
     }
@@ -57,25 +69,34 @@ pub(super) fn link_windows(req: &LinkRequest, target: &str) -> AotResult<LinkRes
         });
     }
     Ok(LinkResult {
+        tool_receipt: Some(tool_receipt),
         output_path: req.output_path.clone(),
         command_line,
         exported_symbols: req.exported_symbols.clone(),
     })
 }
 
-fn run_command_with_fallback(commands: Vec<Command>) -> AotResult<(String, std::process::Output)> {
+fn run_command_with_fallback(
+    commands: Vec<Command>,
+    control: Option<&crate::api::NativeExecutionControl>,
+) -> AotResult<(String, std::process::Output, super::LinkToolReceipt)> {
     let mut last_failure: Option<(String, std::process::Output)> = None;
 
     for mut command in commands {
-        configure_windows_native_command(&mut command)?;
+        crate::windows_toolchain::configure_windows_native_command_with_control(&mut command, control)?;
         let command_line = format!("{:?}", command);
-        match command.output() {
-            Ok(output) if output.status.success() => return Ok((command_line, output)),
-            Ok(output) => {
+        let output = super::run_link_tool(
+            &super::LinkToolInvocation::from_link_command(&command),
+            std::env::temp_dir().as_path(),
+            control,
+        );
+        match output {
+            Ok((output, receipt)) if output.status.success() => return Ok((command_line, output, receipt)),
+            Ok((output, _)) => {
                 last_failure = Some((command_line, output));
             }
-            Err(err) if err.kind() == ErrorKind::NotFound => continue,
-            Err(_) => return Err(AotError::LinkerUnavailable),
+            Err(AotError::LinkerUnavailable) => continue,
+            Err(error) => return Err(AotError::InvalidRequest { message: format!("native windows link: {error}") }),
         }
     }
 
@@ -96,8 +117,8 @@ fn windows_lib_command(req: &LinkRequest, librarian: &str) -> Command {
     cmd.arg(format!("/OUT:{}", req.output_path.display()));
     cmd.arg(&req.object_path);
     cmd.args(&req.additional_object_paths);
-    if let Some(runtime_staticlib) = &req.runtime_staticlib {
-        cmd.arg(runtime_staticlib);
+    if let Some(runtime) = &req.runtime {
+        cmd.arg(runtime.path());
     }
     if let Some(host_staticlib) = &req.host_staticlib {
         cmd.arg(host_staticlib);
@@ -122,8 +143,8 @@ fn windows_link_command(req: &LinkRequest, target: &str, linker: &str) -> AotRes
     }
     cmd.arg(&req.object_path);
     cmd.args(&req.additional_object_paths);
-    if let Some(runtime_staticlib) = &req.runtime_staticlib {
-        cmd.arg(runtime_staticlib);
+    if let Some(runtime) = &req.runtime {
+        cmd.arg(runtime.path());
     }
     if let Some(host_staticlib) = &req.host_staticlib {
         cmd.arg(host_staticlib);
@@ -163,7 +184,7 @@ mod tests {
                 output_path: output_path.clone(),
                 object_path: PathBuf::from("out/runtime.obj"),
                 additional_object_paths: vec![PathBuf::from("out/context.obj")],
-                runtime_staticlib: None,
+                runtime: None,
                 host_staticlib: None,
                 entrypoint_symbol: String::new(),
                 exported_symbols: vec!["beskid_rt_v5_abi_version".into()],
@@ -211,7 +232,9 @@ mod tests {
                 output_path: PathBuf::from("out/beskid_run.exe"),
                 object_path: PathBuf::from("out/main.obj"),
                 additional_object_paths: Vec::new(),
-                runtime_staticlib: Some(PathBuf::from("runtime/beskid_runtime.lib")),
+                runtime: Some(crate::linker::RuntimeLinkInput::CanonicalStatic {
+                    archive: PathBuf::from("runtime/beskid_runtime.lib"),
+                }),
                 host_staticlib: None,
                 entrypoint_symbol: "main".into(),
                 exported_symbols: vec!["main".into()],

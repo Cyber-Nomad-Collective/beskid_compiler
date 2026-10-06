@@ -81,16 +81,22 @@ impl<'a> TypeSurfaceBuilder<'a> {
             Node::Function(def) => {
                 self.seed_generic_item(item.span, &def.node.generics);
                 if let Some(item_id) = self.item_id_for_span(item.span) {
-                    let bounds = def.node.where_bounds.iter().map(|bound| {
-                        let segments = path_segments(&bound.contract);
-                        let contract_name = segments.join(".");
-                        let contract = if segments.len() == 1 {
-                            self.visible_contract_in_owner_scope(item_id, &segments[0])
-                        } else {
-                            self.item_id_for_type_path(&bound.contract)
-                        }.filter(|item| self.contract_visible_to_owner(item_id, *item));
-                        FunctionBound { parameter: bound.parameter.node.name.clone(), contract_name, contract }
-                    }).collect::<Vec<_>>();
+                    let bounds = def
+                        .node
+                        .where_bounds
+                        .iter()
+                        .map(|bound| {
+                            let segments = path_segments(&bound.contract);
+                            let contract_name = segments.join(".");
+                            let contract = if segments.len() == 1 {
+                                self.visible_contract_in_owner_scope(item_id, &segments[0])
+                            } else {
+                                self.item_id_for_type_path(&bound.contract)
+                            }
+                            .filter(|item| self.contract_visible_to_owner(item_id, *item));
+                            FunctionBound { parameter: bound.parameter.node.name.clone(), contract_name, contract }
+                        })
+                        .collect::<Vec<_>>();
                     self.surface.function_bounds.insert(item_id, bounds);
                 }
                 self.register_foreign_function(item.span, &def.node);
@@ -119,17 +125,59 @@ impl<'a> TypeSurfaceBuilder<'a> {
             Node::ContractDefinition(def) => {
                 self.seed_generic_item(item.span, &def.node.generics);
                 if let Some(item_id) = self.item_id_for_span(item.span) {
-                    let embedded = def.node.items.iter().filter_map(|node| {
-                        let ContractNode::Embedding(embedding) = &node.node else { return None; };
-                        self.visible_contract_in_owner_scope(item_id, &embedding.node.name.node.name)
-                    }).collect::<Vec<_>>();
+                    let embedded = def
+                        .node
+                        .items
+                        .iter()
+                        .filter_map(|node| {
+                            let ContractNode::Embedding(embedding) = &node.node else {
+                                return None;
+                            };
+                            self.visible_contract_in_owner_scope(item_id, &embedding.node.name.node.name)
+                        })
+                        .collect::<Vec<_>>();
                     self.surface.contract_embeddings.insert(item_id, embedded);
                 }
             }
             Node::ImplBlock(def) => {
+                let previous = self.generic_params.clone();
+                for generic in &def.node.generics {
+                    let name = generic.node.name.clone();
+                    let id = self.types.intern(TypeInfo::GenericParam(name.clone()));
+                    self.generic_params.insert(name, id);
+                }
                 for method in &def.node.methods {
+                    self.seed_generic_item(method.span, &def.node.generics);
+                    if let Some(item_id) = self.item_id_for_span(method.span) {
+                        let bounds = def
+                            .node
+                            .where_bounds
+                            .iter()
+                            .map(|bound| {
+                                let segments = path_segments(&bound.contract);
+                                let contract_name = segments.join(".");
+                                // Method symbols name a receiver, not a lexical module. Use
+                                // the source-scoped resolved bound reference rather than
+                                // guessing its module from that receiver name.
+                                let contract =
+                                    match self.resolved_type_at(bound.contract.span) {
+                                        Some(crate::resolve::tables::ResolvedType::Item(contract))
+                                            if self.resolution.items.get(contract.0).is_some_and(|info| {
+                                                info.kind == crate::resolve::ItemKind::Contract
+                                            }) =>
+                                        {
+                                            Some(contract)
+                                        }
+                                        _ => None,
+                                    };
+                                FunctionBound { parameter: bound.parameter.node.name.clone(), contract_name, contract }
+                            })
+                            .collect();
+                        self.surface.function_bounds.insert(item_id, bounds);
+                    }
                     self.register_foreign_method(method.span, method);
                 }
+                self.generic_params = previous;
             }
             Node::ExtendTypeDefinition(def) => {
                 for method in &def.node.methods {

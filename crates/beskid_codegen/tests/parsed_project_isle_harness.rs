@@ -66,7 +66,7 @@ fn production_path_accepts_only_syntax_program_assembly() {
     assert_eq!(std::any::type_name_of_val(assembly.as_ref()), "beskid_analysis::projects::assembly::ProgramAssembly");
     let (target, isa) = x86_64_target_and_isa();
     let lowered = lower_verified_entrypoint(Arc::clone(&assembly), target.clone(), isa.as_ref());
-    assert!(lowered.artifact.functions.len() >= 2, "direct-call closure through syntax ISLE");
+    assert!(lowered.artifact().functions.len() >= 2, "direct-call closure through syntax ISLE");
 
     let public_exports = include_str!("../src/lib.rs");
     assert!(

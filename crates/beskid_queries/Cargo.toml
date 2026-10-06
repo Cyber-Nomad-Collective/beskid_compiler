@@ -9,7 +9,7 @@ license.workspace = true
 # without the `persistence` feature to save build time. Enable on release/persistence
 # paths that need cross-run Salsa snapshot load/save.
 default = []
-persistence = ["salsa/persistence", "serde_json/raw_value", "dep:sha2"]
+persistence = ["salsa/persistence", "serde_json/raw_value", "serde_json/unbounded_depth", "dep:sha2", "dep:stacker"]
 
 [dependencies]
 beskid_analysis = { path = "../beskid_analysis" }
@@ -22,6 +22,7 @@ anyhow = "1"
 serde = { version = "1", features = ["derive", "rc"] }
 serde_json = "1"
 sha2 = { version = "0.10", optional = true }
+stacker = { version = "0.1.25", optional = true }
 log = "0.4"
 thiserror = "2.0"
 tracing = { workspace = true }

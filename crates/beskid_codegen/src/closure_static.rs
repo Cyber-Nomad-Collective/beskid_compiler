@@ -278,19 +278,18 @@ impl CodegenInput<'_> {
 }
 
 fn closure_identity(input: &CodegenInput<'_>, lambda: AstNodeKey) -> Option<String> {
-    let key_path = lambda.unit.path(input.database());
-    let unit_index = input.typed_program().assembly.units.iter().position(|unit| paths_match(&unit.path, key_path))?;
+    let unit_index = input
+        .typed_program()
+        .assembly
+        .units
+        .iter()
+        .position(|unit| beskid_queries::SourceUnitId::new(input.database(), unit.path.clone()) == lambda.unit)?;
     let namespace = input
         .artifact_namespace()
         .chars()
         .map(|character| if character.is_ascii_alphanumeric() { character } else { '_' })
         .collect::<String>();
     Some(format!("{namespace}_u{unit_index}_g{}_n{}", lambda.generation.0, lambda.node.0))
-}
-
-fn paths_match(left: &std::path::Path, right: &std::path::Path) -> bool {
-    left.canonicalize().unwrap_or_else(|_| left.to_path_buf())
-        == right.canonicalize().unwrap_or_else(|_| right.to_path_buf())
 }
 
 fn scalar_layout(pointer_width: u8, ty: SemanticTypeId) -> Option<(u64, u64, bool)> {
@@ -300,9 +299,10 @@ fn scalar_layout(pointer_width: u8, ty: SemanticTypeId) -> Option<(u64, u64, boo
     }
     match ty {
         SemanticTypeId::UNIT | SemanticTypeId::NEVER => Some((0, 1, false)),
-        SemanticTypeId::BOOL | SemanticTypeId::U8 => Some((1, 1, false)),
-        SemanticTypeId::I32 | SemanticTypeId::U32 | SemanticTypeId::CHAR => Some((4, 4, false)),
-        SemanticTypeId::I64 | SemanticTypeId::F64 => Some((8, 8, false)),
+        SemanticTypeId::BOOL | SemanticTypeId::I8 | SemanticTypeId::U8 => Some((1, 1, false)),
+        SemanticTypeId::I16 | SemanticTypeId::U16 => Some((2, 2, false)),
+        SemanticTypeId::I32 | SemanticTypeId::U32 | SemanticTypeId::F32 | SemanticTypeId::CHAR => Some((4, 4, false)),
+        SemanticTypeId::I64 | SemanticTypeId::U64 | SemanticTypeId::F64 => Some((8, 8, false)),
         SemanticTypeId::WORD => Some((pointer_bytes, pointer_bytes, false)),
         SemanticTypeId::POINTER | SemanticTypeId::STRING => Some((pointer_bytes, pointer_bytes, true)),
         _ => None,

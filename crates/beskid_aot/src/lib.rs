@@ -30,10 +30,12 @@ pub use bundled::{default_runtime_strategy, installed_runtime_strategy, resolve_
 pub use error::{AotError, AotResult};
 pub use export_table::{ExportTable, ExportTableEntry};
 pub use mod_artifact::{
-    ContractRegistration, ModArtifactBuildRequest, ModArtifactDescriptor, build_mod_artifact, compute_mod_artifact_key,
-    mod_artifact_dir,
+    ContractRegistration, ModArtifactBuildRequest, ModArtifactDescriptor, QualifiedNativeMod, QualifiedModInvoker, build_mod_artifact, mod_artifact_dir,
 };
 pub use prepared_syntax::{
-    lower_canonical_runtime_prepared_syntax, lower_prepared_syntax_entrypoint, lower_prepared_syntax_module,
+    lower_canonical_runtime_prepared_syntax, lower_prepared_syntax_entrypoint, lower_prepared_syntax_library,
+    lower_prepared_syntax_module,
 };
 pub use run::{AotRunRequest, AotRunResult, build_and_run, run_linked_executable};
+
+pub use prepared_syntax::{lower_prepared_native_mod, with_prepared_glue_input};

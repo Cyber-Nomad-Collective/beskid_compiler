@@ -1,0 +1,80 @@
+use Core.Dynamic.Dynamic;
+use Core.Memory.Managed;
+use Runtime.Mem.Gc.Collection;
+use Core.Results;
+use Testing.Assert;
+// Only the mapping contribution remains generator-owned. Shape, packing and
+// extraction below use the actual public managed APIs, never signature fixtures.
+use DynamicFixtureMetadata;
+
+pub type DynamicFixtureSource { pub i64 value, }
+pub type DynamicFixtureDestination { pub i64 copiedValue, pub i64 defaultValue, }
+
+Result<DynamicValueV1, DynamicErrorV1> CreateScopedSource(u64 shape, i64 value) {
+    DynamicPayloadV1 payload = match Pack<DynamicFixtureSource>(DynamicFixtureSource { value: value }) {
+        Result::Ok(value) => value,
+        Result::Error(error) => { return Result::Error(error); },
+    };
+    return Create(payload, shape);
+}
+
+test dynamic_v1_registered_cell_only_root_survives_collection {
+    u64 shape = Shape<DynamicFixtureSource>();
+    DynamicValueV1 cell = match CreateScopedSource(shape, 71_i64) {
+        Result::Ok(value) => value,
+        Result::Error(_) => { Assert.True(false, "registered V1 create succeeds"); return; },
+    };
+    GcCollect();
+    DynamicPayloadV1 recovered = match Cast(cell, shape) {
+        Result::Ok(value) => value,
+        Result::Error(_) => { Assert.True(false, "registered cast after collection succeeds"); return; },
+    };
+    DynamicFixtureSource unpacked = match Unpack<DynamicFixtureSource>(recovered) {
+        Result::Ok(value) => value,
+        Result::Error(_) => { Assert.True(false, "typed extraction after collection"); return; },
+    };
+    Assert.Equal(unpacked.value, 71_i64, "payload reachable only through cell retains contents");
+}
+
+test dynamic_v1_registered_mapping_is_fresh_and_preserves_source {
+    u64 sourceShape = Shape<DynamicFixtureSource>();
+    u64 destinationShape = Shape<DynamicFixtureDestination>();
+    u64 mapping = match RegisterSourceToDestinationV1(sourceShape, destinationShape) { Result::Ok(value) => value, Result::Error(_) => { Assert.True(false, "canonical typed mapping registration"); return; }, };
+    DynamicPayloadV1 payload = match Pack<DynamicFixtureSource>(DynamicFixtureSource { value: 83_i64 }) {
+        Result::Ok(value) => value, Result::Error(_) => { Assert.True(false, "source packing"); return; },
+    };
+    DynamicValueV1 source = match Create(payload, sourceShape) { Result::Ok(value) => value, Result::Error(_) => { Assert.True(false, "create"); return; }, };
+    DynamicValueV1 destination = match Map(source, mapping) { Result::Ok(value) => value, Result::Error(_) => { Assert.True(false, "mapping"); return; }, };
+    Assert.True(SameIdentity<DynamicValueV1>(destination, source) == false, "mapping creates fresh cell");
+    GcCollect();
+    DynamicPayloadV1 mapped = match Cast(destination, destinationShape) { Result::Ok(value) => value, Result::Error(_) => { Assert.True(false, "destination cast"); return; }, };
+    DynamicPayloadV1 original = match Cast(source, sourceShape) { Result::Ok(value) => value, Result::Error(_) => { Assert.True(false, "source cast"); return; }, };
+    Assert.True(SameIdentity<DynamicPayloadV1>(mapped, original) == false, "mapping creates fresh payload");
+    DynamicFixtureDestination destinationValue = match Unpack<DynamicFixtureDestination>(mapped) {
+        Result::Ok(value) => value, Result::Error(_) => { Assert.True(false, "destination extraction"); return; },
+    };
+    DynamicFixtureSource sourceValue = match Unpack<DynamicFixtureSource>(original) {
+        Result::Ok(value) => value, Result::Error(_) => { Assert.True(false, "source extraction"); return; },
+    };
+    Assert.Equal(destinationValue.copiedValue, 83_i64, "registered transformation preserves value");
+    Assert.Equal(destinationValue.defaultValue, 0_i64, "declared default is materialized");
+    Assert.Equal(sourceValue.value, 83_i64, "source remains unchanged");
+}
+
+test dynamic_v1_zero_tokens_and_unknown_mapping_fail_closed {
+    DynamicPayloadV1 payload = match Pack<DynamicFixtureSource>(DynamicFixtureSource { value: 101_i64 }) {
+        Result::Ok(value) => value, Result::Error(_) => { Assert.True(false, "packing"); return; },
+    };
+    bool createRejected = match Create(payload, 0_u64) { Result::Ok(_) => false, Result::Error(_) => true, };
+    Assert.True(createRejected, "zero is never shape authority");
+    u64 shape = Shape<DynamicFixtureSource>();
+    DynamicValueV1 cell = match Create(payload, shape) { Result::Ok(value) => value, Result::Error(_) => { Assert.True(false, "create"); return; }, };
+    bool castRejected = match Cast(cell, 0_u64) { Result::Ok(_) => false, Result::Error(_) => true, };
+    bool mapRejected = match Map(cell, 0_u64) { Result::Ok(_) => false, Result::Error(_) => true, };
+    Assert.True(castRejected, "zero cast target rejects");
+    Assert.True(mapRejected, "unregistered mapping rejects without source alias");
+    DynamicFixtureSource recovered = match Unpack<DynamicFixtureSource>(payload) {
+        Result::Ok(value) => value, Result::Error(_) => { Assert.True(false, "extract unchanged source"); return; },
+    };
+    Assert.Equal(recovered.value, 101_i64, "rejected mapping leaves source unchanged");
+}

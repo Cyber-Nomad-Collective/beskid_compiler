@@ -47,12 +47,15 @@ fn generator_contributions_surface_in_outcomes_and_analyzer_dispatches_afterward
     let generated = run_through_generate(
         program,
         &ModHostInput {
+            semantic_scope: None,
+            semantic_authority: None,
             compile_plan: Some(&plan),
             source_name: "Main.bd",
             source,
             pipeline: None,
             invoker: Some(&invoker),
             cached_target_fingerprint: None,
+            syntax_generation_id: None,
         },
     )
     .expect("generate with contributions");
@@ -145,12 +148,15 @@ fn multiple_generators_and_analyzers_dispatch_in_order() {
     let generated = run_through_generate(
         program,
         &ModHostInput {
+            semantic_scope: None,
+            semantic_authority: None,
             compile_plan: Some(&plan),
             source_name: "Main.bd",
             source,
             pipeline: None,
             invoker: Some(&invoker),
             cached_target_fingerprint: None,
+            syntax_generation_id: None,
         },
     )
     .expect("generate");

@@ -31,8 +31,10 @@ fn resolve_project_uses_workspace_member_for_input_path() {
     fs::write(compiler_src.join("Main.bd"), "fn Main() {}\n").expect("write entry source");
 
     let input = compiler_src.join("Main.bd");
-    let resolved = with_cwd_at_workspace_root(&root, || resolve_project(Some(&input), None, None, None, false, false))
-        .expect("resolve project");
+    let resolved = with_cwd_at_workspace_root(&root, || {
+        resolve_project(Some(&input), None, None, None, beskid_analysis::projects::WorkspacePrepareOptions::default())
+    })
+    .expect("resolve project");
 
     let compile_plan = resolved.compile_plan.expect("compile plan present");
     assert_eq!(compile_plan.project_name, "Compiler");
@@ -66,8 +68,7 @@ fn resolve_project_with_warn_policy_allows_unresolved_registry_dependencies() {
             Some(&workspace_manifest),
             None,
             Some("app"),
-            false,
-            false,
+            beskid_analysis::projects::WorkspacePrepareOptions::default(),
             UnresolvedDependencyPolicy::Warn,
             None,
         )
@@ -99,7 +100,13 @@ fn resolve_project_with_workspace_manifest_uses_first_member_when_no_input() {
 
     let workspace_manifest = root.join("Root.bws");
     let resolved = with_cwd_at_workspace_root(&root, || {
-        resolve_project(None, Some(&workspace_manifest), None, None, false, false)
+        resolve_project(
+            None,
+            Some(&workspace_manifest),
+            None,
+            None,
+            beskid_analysis::projects::WorkspacePrepareOptions::default(),
+        )
     })
     .expect("resolve project");
 
@@ -131,8 +138,10 @@ fn resolve_project_prefers_deepest_matching_workspace_member() {
     fs::write(cli_src.join("Main.bd"), "fn Main() {}\n").expect("write entry source");
 
     let input = cli_src.join("Main.bd");
-    let resolved = with_cwd_at_workspace_root(&root, || resolve_project(Some(&input), None, None, None, false, false))
-        .expect("resolve project");
+    let resolved = with_cwd_at_workspace_root(&root, || {
+        resolve_project(Some(&input), None, None, None, beskid_analysis::projects::WorkspacePrepareOptions::default())
+    })
+    .expect("resolve project");
 
     let compile_plan = resolved.compile_plan.expect("compile plan present");
     assert_eq!(compile_plan.project_name, "Cli");
@@ -162,7 +171,13 @@ fn resolve_project_uses_explicit_workspace_member() {
 
     let workspace_manifest = root.join("Root.bws");
     let resolved = with_cwd_at_workspace_root(&root, || {
-        resolve_project(None, Some(&workspace_manifest), None, Some("beta"), false, false)
+        resolve_project(
+            None,
+            Some(&workspace_manifest),
+            None,
+            Some("beta"),
+            beskid_analysis::projects::WorkspacePrepareOptions::default(),
+        )
     })
     .expect("resolve project");
 
@@ -190,7 +205,13 @@ fn resolve_project_errors_for_unknown_workspace_member() {
 
     let workspace_manifest = root.join("Root.bws");
     let result = with_cwd_at_workspace_root(&root, || {
-        resolve_project(None, Some(&workspace_manifest), None, Some("missing"), false, false)
+        resolve_project(
+            None,
+            Some(&workspace_manifest),
+            None,
+            Some("missing"),
+            beskid_analysis::projects::WorkspacePrepareOptions::default(),
+        )
     });
     assert!(result.is_err());
     let message = result.err().map(|err| err.to_string()).unwrap_or_default();

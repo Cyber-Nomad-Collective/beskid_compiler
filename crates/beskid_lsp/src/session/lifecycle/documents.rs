@@ -93,8 +93,12 @@ pub(super) async fn build_full_diagnostic_facts(
             .collect::<Vec<_>>()
     };
     let project_root = plan.project_root.clone();
-    let options = PrepareOptions {
-        front_end: FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
+    let options = PrepareOptions { mod_invoker: None,
+        front_end: FrontEndOptions {
+            assembly_recovery: beskid_analysis::projects::AssemblyRecoveryPolicy::EditorRetainRecovered,
+            with_semantic_diagnostics: true,
+            ..Default::default()
+        },
         dependency_typing: DependencyTypingPolicy::FullClosure,
     };
     let assembled = with_compilation_db_for_project(state, &project_root, |db| {
@@ -232,8 +236,12 @@ async fn build_syntax_facts_with_policy_after_startup(
 
         let prepared = if dependency_typing == DependencyTypingPolicy::EntryOnly {
             beskid_queries::bump_file_revision(db, &entry_key);
-            let options = PrepareOptions {
-                front_end: FrontEndOptions { with_semantic_diagnostics: false, ..Default::default() },
+            let options = PrepareOptions { mod_invoker: None,
+                front_end: FrontEndOptions {
+                    assembly_recovery: beskid_analysis::projects::AssemblyRecoveryPolicy::EditorRetainRecovered,
+                    with_semantic_diagnostics: false,
+                    ..Default::default()
+                },
                 dependency_typing,
             };
             let prepared = prepare_project_syntax_facts(db, &resolved_for_prepare, dependency_typing).ok()?;
@@ -474,13 +482,13 @@ target "App" {
             .expect("v1 lock");
         let doc = build_initial_workspace_document(&state, &uri, 1, source.to_string()).await;
         assert!(
-            doc.syntax_diagnostics.iter().any(|d| d.message.contains("v1") && d.message.contains("beskid lock")),
+            doc.syntax_diagnostics.iter().any(|d| d.message.contains("v1") && d.message.contains("beskid dev project lock")),
             "diagnostics: {:?}",
             doc.syntax_diagnostics
         );
         state.read().await.mark_initial_scan_complete();
         let (full_diagnostics, _) = build_full_diagnostic_facts(&state, &uri, source).await;
-        assert!(full_diagnostics.iter().any(|d| d.message.contains("v1") && d.message.contains("beskid lock")));
+        assert!(full_diagnostics.iter().any(|d| d.message.contains("v1") && d.message.contains("beskid dev project lock")));
 
         fs::write(&lock_path, "# Project.lock v2\nnot-a-lock\n").expect("malformed lock");
         let doc = build_initial_workspace_document(&state, &uri, 2, source.to_string()).await;

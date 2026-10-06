@@ -2,6 +2,7 @@
 
 use std::collections::HashSet;
 use std::env;
+use std::fs::File;
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Child, Command, Stdio};
 use std::sync::mpsc::{self, Receiver};
@@ -12,12 +13,13 @@ use anyhow::{Result, anyhow};
 use serde::{Deserialize, Serialize};
 
 use super::prepared_matrix::{
-    Cancellation, MatrixReport, PreparedWorkspace, RevisionSnapshot, TargetReport, TargetResult,
-    WorkerExitCause, duration_ms, unix_ms,
+    Cancellation, MatrixReport, PreparedWorkspace, RevisionSnapshot, TargetReport, TargetResult, WorkerExitCause,
+    duration_ms, unix_ms,
 };
 use super::test::{TestArgs, TestSummary, execute_prepared_target};
 
 const MATRIX_WORKER_ENV: &str = "BESKID_PREPARED_MATRIX_WORKER";
+const MATRIX_CANCEL_LOCK_ENV: &str = "BESKID_PREPARED_MATRIX_CANCEL_LOCK";
 const WORKER_EVENT_PREFIX: &str = "\u{1e}";
 const SUPERVISOR_POLL: Duration = Duration::from_millis(10);
 
@@ -62,9 +64,48 @@ pub fn execute_all_targets(args: TestArgs) -> Result<()> {
     supervise_worker(args)
 }
 
+/// Blocks until the supervisor releases the cancellation lock. Failing to
+/// open the lock (missing path, removed file) is treated as a stop request.
+fn wait_for_supervisor_release(path: Option<&std::path::Path>) {
+    let Some(path) = path else { return };
+    if let Ok(file) = File::open(path) {
+        let _ = file.lock_shared();
+    }
+}
+
+/// Supervisor side of the cancellation channel: an exclusive lock held on a
+/// private temporary file until stop or supervisor exit.
+struct CancelChannel {
+    file: Option<tempfile::NamedTempFile>,
+}
+impl CancelChannel {
+    fn create() -> Result<Self> {
+        let file = tempfile::Builder::new().prefix("beskid-matrix-cancel-").tempfile()?;
+        file.as_file().lock()?;
+        Ok(Self { file: Some(file) })
+    }
+    fn path(&self) -> Option<&std::path::Path> {
+        self.file.as_ref().map(|file| file.path())
+    }
+    fn release(&mut self) {
+        // Dropping the handle releases the lock; the file is then removed.
+        self.file.take();
+    }
+}
+
 fn execute_worker(args: TestArgs) -> Result<()> {
     let budgets = args.execution_budgets();
     let cancellation = Cancellation::default();
+    let worker_cancellation = cancellation.clone();
+    let cancel_lock_path = env::var_os(MATRIX_CANCEL_LOCK_ENV).map(std::path::PathBuf::from);
+    thread::spawn(move || {
+        // The supervisor holds an exclusive lock on a private file. The lock
+        // is released on an explicit stop and by the OS on parent death, which
+        // cancels existing native phase controls. Stdin is never used here:
+        // the tested program owns a null stdin with deterministic EOF.
+        wait_for_supervisor_release(cancel_lock_path.as_deref());
+        worker_cancellation.cancel();
+    });
     let mut workspace = match PreparedWorkspace::prepare(&args, budgets, cancellation) {
         Ok(workspace) => workspace,
         Err(error) => return emit_fatal("resolve_materialize_salsa_engine", error),
@@ -149,7 +190,7 @@ fn supervise_worker(args: TestArgs) -> Result<()> {
         let matrix_expired = matrix_started.elapsed() >= budgets.matrix;
         let target_expired = active.as_ref().is_some_and(|active| active.started.elapsed() >= budgets.target);
         if matrix_expired || target_expired {
-            let exit = kill_and_reap(&mut child);
+            let exit = kill_and_reap(&mut child.child, &mut child.cancel);
             let matrix = report.get_or_insert_with(|| empty_failed_report(&args));
             matrix.worker_exit_cause = exit.as_ref().map(worker_exit_cause);
             matrix.timed_out = true;
@@ -209,7 +250,7 @@ fn selected_run_passed(report: &MatrixReport) -> bool {
         && report.targets.iter().all(|target| target.result == TargetResult::Passed)
 }
 
-fn spawn_worker(args: &TestArgs) -> Result<Child> {
+fn spawn_worker(args: &TestArgs) -> Result<MatrixWorker> {
     let executable = env::current_exe()?;
     let mut command = Command::new(executable);
     command.arg("test");
@@ -231,6 +272,9 @@ fn spawn_worker(args: &TestArgs) -> Result<Child> {
     if args.lockfile.locked {
         command.arg("--locked");
     }
+    if args.lockfile.offline {
+        command.arg("--offline");
+    }
     for tag in &args.include_tags {
         command.arg("--include-tag").arg(tag);
     }
@@ -247,12 +291,16 @@ fn spawn_worker(args: &TestArgs) -> Result<Child> {
         command.arg("--matrix-timeout").arg(matrix_timeout.to_string());
     }
     command.arg("--all-targets").arg("--plain");
+    let cancel = CancelChannel::create()?;
+    let lock_path = cancel.path().map(std::path::Path::to_path_buf).ok_or_else(|| anyhow!("cancel channel missing"))?;
     command
         .env(MATRIX_WORKER_ENV, "1")
+        .env(MATRIX_CANCEL_LOCK_ENV, lock_path)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::inherit())
         .spawn()
+        .map(|child| MatrixWorker { child, cancel })
         .map_err(Into::into)
 }
 
@@ -277,7 +325,40 @@ fn emit_fatal(phase: &str, error: anyhow::Error) -> Result<()> {
     Err(error)
 }
 
-fn kill_and_reap(child: &mut Child) -> Option<std::process::ExitStatus> {
+struct MatrixWorker {
+    child: Child,
+    cancel: CancelChannel,
+}
+impl std::ops::Deref for MatrixWorker {
+    type Target = Child;
+    fn deref(&self) -> &Self::Target {
+        &self.child
+    }
+}
+impl std::ops::DerefMut for MatrixWorker {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.child
+    }
+}
+impl Drop for MatrixWorker {
+    fn drop(&mut self) {
+        let _ = kill_and_reap(&mut self.child, &mut self.cancel);
+    }
+}
+fn kill_and_reap(child: &mut Child, cancel: &mut CancelChannel) -> Option<std::process::ExitStatus> {
+    // Releasing the private lock requests cooperative cancellation even if
+    // a parent exception bypassed the normal timeout branch.
+    cancel.release();
+    let deadline = Instant::now() + Duration::from_secs(2);
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => return Some(status),
+            Ok(None) if Instant::now() < deadline => thread::sleep(SUPERVISOR_POLL),
+            _ => break,
+        }
+    }
+    // Synchronous CLIF cannot currently be preempted. Its worker is bounded
+    // after the grace period; no native tool should survive cooperative stop.
     let _ = child.kill();
     child.wait().ok()
 }
@@ -460,11 +541,13 @@ fn filter_targets_by_env(targets: Vec<String>) -> Result<(Vec<String>, bool)> {
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
-    use std::time::Instant;
+    use std::sync::mpsc;
+    use std::thread;
+    use std::time::{Duration, Instant};
 
     use super::{
-        ActiveTarget, WORKER_EVENT_PREFIX, WorkerEvent, append_interrupted_targets, decode_worker_line,
-        filter_targets_by_env, selected_run_passed,
+        ActiveTarget, CancelChannel, WORKER_EVENT_PREFIX, WorkerEvent, append_interrupted_targets, decode_worker_line,
+        filter_targets_by_env, selected_run_passed, wait_for_supervisor_release,
     };
     use crate::commands::prepared_matrix::{MatrixReport, RevisionSnapshot, TargetResult, WorkerExitCause};
 
@@ -671,5 +754,24 @@ mod tests {
         let source = include_str!("matrix_test.rs");
         assert!(source.contains("if let Some(matrix_timeout) = args.matrix_timeout"));
         assert!(source.contains("command.arg(\"--matrix-timeout\").arg(matrix_timeout.to_string())"));
+    }
+
+    #[test]
+    fn cancel_lock_blocks_worker_until_supervisor_releases() {
+        let mut channel = CancelChannel::create().expect("create channel");
+        let path = channel.path().expect("path").to_path_buf();
+        let (tx, rx) = mpsc::channel();
+        thread::spawn(move || {
+            wait_for_supervisor_release(Some(&path));
+            let _ = tx.send(());
+        });
+        assert!(rx.recv_timeout(Duration::from_millis(300)).is_err(), "worker must stay blocked while locked");
+        channel.release();
+        assert!(rx.recv_timeout(Duration::from_secs(5)).is_ok(), "release must cancel the worker");
+    }
+
+    #[test]
+    fn cancel_wait_fails_closed_when_lock_file_is_missing() {
+        wait_for_supervisor_release(Some(std::path::Path::new("/nonexistent/beskid-cancel-lock")));
     }
 }

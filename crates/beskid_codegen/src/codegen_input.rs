@@ -3,7 +3,7 @@
 use std::{collections::HashSet, sync::Arc};
 
 use beskid_abi::abi_v5::{AbiManifestV5, TargetMetadata};
-use beskid_queries::{AstNodeKey, Db, IndexedNodeKind, TypedProgram, node_kind, node_span};
+use beskid_queries::{AstNodeKey, Db, IndexedNodeKind, SourceUnitId, TypedProgram, node_kind, node_span};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SchedulerCompilerOperation {
@@ -44,6 +44,9 @@ pub struct CodegenInput<'db> {
     artifact_namespace: Arc<str>,
     composition_plan: Option<Arc<beskid_analysis::composition::BindingPlan>>,
     composition_snapshot: Option<Arc<beskid_analysis::composition::CompositionSnapshot>>,
+    native_mod_callbacks: Option<crate::native_mod::callbacks::NativeModCallbackCapability>,
+    glue_imports: Arc<std::collections::HashMap<AstNodeKey, String>>,
+    glue_handle_bindings: Arc<[AstNodeKey]>,
 }
 
 impl<'db> CodegenInput<'db> {
@@ -66,16 +69,18 @@ impl<'db> CodegenInput<'db> {
             return Err(CodegenInputError::ManifestDrift);
         }
 
-        let entry_path = typed_program.entry.path(db);
-        let entry_matches = typed_program.assembly.units.iter().any(|unit| paths_match(&unit.path, entry_path));
+        let entry_matches = typed_program
+            .assembly
+            .units
+            .iter()
+            .any(|unit| SourceUnitId::new(db, unit.path.clone()) == typed_program.entry);
         if !entry_matches {
             return Err(CodegenInputError::InvalidEntry);
         }
 
         for root in roots.iter().copied() {
-            let unit_path = root.unit.path(db);
             let belongs_to_assembly =
-                typed_program.assembly.units.iter().any(|unit| paths_match(&unit.path, unit_path));
+                typed_program.assembly.units.iter().any(|unit| SourceUnitId::new(db, unit.path.clone()) == root.unit);
             if !belongs_to_assembly || !matches!(node_kind(db, root), Ok(Some(_))) {
                 return Err(CodegenInputError::InvalidRoot(root));
             }
@@ -90,6 +95,9 @@ impl<'db> CodegenInput<'db> {
             artifact_namespace: Arc::from("module"),
             composition_plan: None,
             composition_snapshot: None,
+            native_mod_callbacks: None,
+            glue_imports: Arc::new(std::collections::HashMap::new()),
+            glue_handle_bindings: Arc::from([]),
         })
     }
 
@@ -126,7 +134,44 @@ impl<'db> CodegenInput<'db> {
             artifact_namespace,
             composition_plan: self.composition_plan.clone(),
             composition_snapshot: self.composition_snapshot.clone(),
+            native_mod_callbacks: self.native_mod_callbacks.clone(),
+            glue_imports: self.glue_imports.clone(),
+            glue_handle_bindings: self.glue_handle_bindings.clone(),
         }
+    }
+
+    pub(crate) fn with_native_mod_callbacks(
+        mut self,
+        capability: crate::native_mod::callbacks::NativeModCallbackCapability,
+    ) -> Self {
+        self.native_mod_callbacks = Some(capability);
+        self
+    }
+    /// Issued only by current Glue packet/native-body preparation. Ordinary
+    /// C ABI callers and runtime source never inherit normalized Rust transport.
+    pub(crate) fn with_glue_imports(&self, imports: std::collections::HashMap<AstNodeKey, String>) -> Self {
+        let mut input = self.with_artifact_namespace(self.artifact_namespace.clone());
+        input.glue_imports = Arc::new(imports);
+        input
+    }
+    pub(crate) fn with_glue_handle_bindings(&self, bindings: Arc<[AstNodeKey]>) -> Self {
+        let mut input = self.with_artifact_namespace(self.artifact_namespace.clone());
+        input.glue_handle_bindings = bindings;
+        input
+    }
+    pub(crate) fn glue_handle_bindings(&self) -> &[AstNodeKey] {
+        &self.glue_handle_bindings
+    }
+    pub(crate) fn glue_import_symbol(&self, declaration: AstNodeKey) -> Option<&str> {
+        self.glue_imports.get(&declaration).map(String::as_str)
+    }
+    pub(crate) fn glue_import_callee_symbol(&self, callee: &beskid_isle::DirectCallee) -> Option<&str> {
+        self.glue_imports
+            .iter()
+            .find_map(|(key, symbol)| (*callee == beskid_isle::DirectCallee::item(*key)).then_some(symbol.as_str()))
+    }
+    pub(crate) fn permits_native_mod_callback(&self, callback: beskid_queries::NativeModCallback) -> bool {
+        self.native_mod_callbacks.as_ref().is_some_and(|capability| capability.authorizes(callback))
     }
 
     pub fn artifact_namespace(&self) -> &str {
@@ -149,7 +194,7 @@ impl<'db> CodegenInput<'db> {
         if !snapshot
             .source_unit_path
             .as_deref()
-            .is_some_and(|path| paths_match(path, &self.typed_program.assembly.entry_unit().path))
+            .is_some_and(|path| SourceUnitId::new(self.db, path.to_path_buf()) == self.typed_program.entry)
         {
             return Err(CodegenInputError::ForeignCompositionUnit);
         }
@@ -264,13 +309,12 @@ impl<'db> CodegenInput<'db> {
         if !matches!(node_kind(self.db, key), Ok(Some(_))) || key.generation != self.typed_program.generation {
             return None;
         }
-        let unit_path = key.unit.path(self.db);
         let logical_path = self
             .typed_program
             .assembly
             .units
             .iter()
-            .find(|unit| paths_match(&unit.path, unit_path))?
+            .find(|unit| SourceUnitId::new(self.db, unit.path.clone()) == key.unit)?
             .logical_name
             .as_str();
         let capability = self.runtime_intrinsic_capability()?;
@@ -298,13 +342,12 @@ impl<'db> CodegenInput<'db> {
         if !matches!(node_kind(self.db, key), Ok(Some(_))) {
             return None;
         }
-        let unit_path = key.unit.path(self.db);
         let logical_path = self
             .typed_program
             .assembly
             .units
             .iter()
-            .find(|unit| paths_match(&unit.path, unit_path))?
+            .find(|unit| SourceUnitId::new(self.db, unit.path.clone()) == key.unit)?
             .logical_name
             .as_str();
         let capability = self.runtime_intrinsic_capability()?;
@@ -316,9 +359,4 @@ impl<'db> CodegenInput<'db> {
             .position(|candidate| candidate.name == intrinsic.name)?;
         Some((u32::try_from(index).ok()?, intrinsic))
     }
-}
-
-fn paths_match(left: &std::path::Path, right: &std::path::Path) -> bool {
-    left.canonicalize().unwrap_or_else(|_| left.to_path_buf())
-        == right.canonicalize().unwrap_or_else(|_| right.to_path_buf())
 }

@@ -39,6 +39,12 @@ pub struct SyntaxUnitInput {
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct SyntaxUnitRevision {
+    /// Reissued only after canonical corpus proof; persistence never restores authority.
+    #[serde(skip)]
+    pub(crate) runtime_source_authority: Option<Arc<str>>,
+    /// Exact SDK source correspondence is reissued from actual assembly bytes, never restored.
+    #[serde(skip)]
+    pub(crate) sdk_source_authority: Option<Arc<str>>,
     pub(crate) generation: SyntaxGenerationId,
     pub(crate) expanded_program: Arc<beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>>,
     pub(crate) syntax_index: Arc<beskid_analysis::syntax_query::SyntaxIndex>,

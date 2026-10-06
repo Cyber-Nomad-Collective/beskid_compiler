@@ -29,7 +29,7 @@ with tempfile.TemporaryDirectory(prefix='beskid-pipeline-output-') as root:
         kind = 'Test' if command == 'test' else 'App'
         out.write('Smoke { name = "Smoke" version = "0.1.0" }\n'
                   'target "Smoke" { kind = "' + kind + '" entry = "Smoke.bd" }\n')
-    args = [binary, command, '--project', root]
+    args = [binary, 'check' if command == 'analyze' else command, '--project', root]
     if command == 'build':
         args += ['--kind', 'object', '--output', os.path.join(root, 'Smoke.o')]
     if mode.endswith('plain'):

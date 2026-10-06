@@ -101,11 +101,16 @@ pub(super) fn compile_context_assembly(
     }
     Ok(object)
 }
+pub(super) struct PlatformObjects {
+    pub paths: Vec<PathBuf>,
+    pub issuer_compiler_receipt: crate::linker::LinkToolReceipt,
+}
+
 pub(super) fn compile_platform_objects(
     target: &TargetMetadata,
     output_dir: &std::path::Path,
     name: &str,
-) -> AotResult<Vec<PathBuf>> {
+) -> AotResult<PlatformObjects> {
     let plan = platform_object_plan(target.triple.as_str())?;
     let assembly_root = beskid_abi::assembly_sources::stage_into(output_dir)
         .map_err(|err| AotError::Io { path: output_dir.to_path_buf(), message: err.to_string() })?
@@ -178,7 +183,44 @@ pub(super) fn compile_platform_objects(
             detail: String::from_utf8_lossy(&output.stderr).into_owned(),
         });
     }
-    Ok(vec![object, tls_object, adapter_object])
+    // Compile exactly one process issuer object into the canonical runtime provider.
+    // User DLLs must link that shared provider; they never compile this source.
+    let issuer_source = output_dir.join("owner_identity_v1.c");
+    let issuer_header = output_dir.join("owner_identity_v1.h");
+    for (path, contents) in [
+        (&issuer_source, include_str!("../../../../runtime/Glue/owner_identity_v1.c")),
+        (&issuer_header, include_str!("../../../../runtime/Glue/owner_identity_v1.h")),
+    ] {
+        std::fs::write(path, contents).map_err(|err| AotError::Io { path: path.clone(), message: err.to_string() })?;
+    }
+    let issuer_object = output_dir.join(format!("{name}.glue_owner_issuer_v1.{}", plan.object_extension));
+    let mut issuer_command = Command::new(plan.tls_program);
+    issuer_command.args(&plan.tls_args).arg(&issuer_source).arg("-o").arg(&issuer_object);
+    if target.triple.as_str().contains("windows") {
+        configure_windows_native_command(&mut issuer_command)?;
+    }
+    let invocation = crate::linker::LinkToolInvocation {
+        program: issuer_command.get_program().to_os_string(),
+        args: issuer_command.get_args().map(|arg| arg.to_os_string()).collect(),
+        environment: issuer_command
+            .get_envs()
+            .map(|(key, value)| (key.to_os_string(), value.map(|v| v.to_os_string())))
+            .collect(),
+        current_dir: None,
+    };
+    let control = super::NativeExecutionControl::new(
+        std::time::Instant::now() + std::time::Duration::from_secs(300),
+        std::sync::Arc::new(|| false),
+    );
+    let (output, issuer_compiler_receipt) = crate::linker::run_link_tool(&invocation, output_dir, Some(&control))?;
+    if !output.status.success() {
+        return Err(AotError::LinkFailed {
+            status: output.status.code().unwrap_or(-1),
+            command: format!("{issuer_command:?}"),
+            detail: String::from_utf8_lossy(&output.stderr).into_owned(),
+        });
+    }
+    Ok(PlatformObjects { paths: vec![object, tls_object, adapter_object, issuer_object], issuer_compiler_receipt })
 }
 
 pub(super) fn compile_executable_bootstrap(
@@ -187,6 +229,7 @@ pub(super) fn compile_executable_bootstrap(
     output_dir: &std::path::Path,
     name: &str,
     program_returns_void: bool,
+    initialization: Option<(&str, u64)>,
 ) -> AotResult<PathBuf> {
     let assembly_root = materialize_bootstrap_sources(output_dir, target)?;
     let source = executable_bootstrap_source(&assembly_root, core_args);
@@ -197,6 +240,7 @@ pub(super) fn compile_executable_bootstrap(
     }
     let (mut command, object) =
         executable_bootstrap_command(target, core_args, &assembly_root, output_dir, name, program_returns_void)?;
+    configure_dynamic_initialization(&mut command, initialization)?;
     if target.contains("windows") {
         configure_windows_native_command(&mut command)?;
     }
@@ -412,7 +456,8 @@ mod platform_object_tests {
     fn unit_executable_host_initializes_zeroed_state_and_shuts_down_after_program_return() {
         let target = crate::target::detect_target(None).unwrap();
         let temp = tempfile::tempdir().unwrap();
-        let bootstrap = super::compile_executable_bootstrap(&target.triple, None, temp.path(), "unit", true).unwrap();
+        let bootstrap =
+            super::compile_executable_bootstrap(&target.triple, None, temp.path(), "unit", true, None).unwrap();
         let witness = temp.path().join("lifecycle.c");
         std::fs::write(
             &witness,
@@ -533,4 +578,88 @@ void beskid_rt_v5_process_shutdown(void *state) {
         );
         assert_eq!(executable_bootstrap_source(assembly, None), assembly.join("common/executable_bootstrap.c"));
     }
+}
+
+/// Compile the canonical activation bootstrap against one verified test object symbol.
+pub(super) fn compile_native_test_bootstrap(
+    target: &str,
+    core_args: Option<&GeneratedCoreArgsEntryAdapter>,
+    directory: &std::path::Path,
+    symbol: &str,
+    control: &super::NativeExecutionControl,
+    initialization: Option<(&str, u64)>,
+) -> AotResult<PathBuf> {
+    if !beskid_codegen::artifact::is_valid_link_name(symbol) {
+        return Err(AotError::InvalidRequest { message: "invalid native test bootstrap symbol".into() });
+    }
+    let assembly = materialize_bootstrap_sources(directory, target)?;
+    let (mut command, object) = executable_bootstrap_command(target, core_args, &assembly, directory, "test", true)?;
+    command.arg(format!("-Dbeskid_program_main={symbol}"));
+    configure_dynamic_initialization(&mut command, initialization)?;
+    if target.contains("windows") {
+        crate::windows_toolchain::configure_windows_native_command_with_control(&mut command, Some(control))?;
+    }
+    let output = control.run_command(&mut command, directory, "bootstrap")?;
+    if !output.status.success() {
+        return Err(AotError::LinkFailed {
+            status: output.status.code().unwrap_or(-1),
+            command: format!("{command:?}"),
+            detail: String::from_utf8_lossy(&output.stderr).into_owned(),
+        });
+    }
+    Ok(object)
+}
+
+/// Compile compiler-issued adapter source with the existing target C tool policy and
+/// the same absolute execution budget/provenance authority as native links.
+pub(crate) fn compile_generated_c_object(
+    target: &str,
+    source: &std::path::Path,
+    object: &std::path::Path,
+    includes: &[PathBuf],
+    control: &crate::api::NativeExecutionControl,
+) -> AotResult<crate::linker::LinkToolReceipt> {
+    control.check("native adapter compilation")?;
+    let plan = platform_object_plan(target)?;
+    let mut command = Command::new(plan.tls_program);
+    command.args(&plan.tls_args);
+    for include in includes {
+        command.arg("-I").arg(include);
+    }
+    command.arg(source).arg("-o").arg(object);
+    if target.contains("windows") {
+        crate::windows_toolchain::configure_windows_native_command_with_control(&mut command, Some(control))?;
+    }
+    let mut invocation = crate::linker::LinkToolInvocation::new(command.get_program());
+    invocation.args = command.get_args().map(std::ffi::OsStr::to_os_string).collect();
+    invocation.environment =
+        command.get_envs().map(|(key, value)| (key.to_os_string(), value.map(std::ffi::OsStr::to_os_string))).collect();
+    let cwd = object
+        .parent()
+        .ok_or_else(|| AotError::InvalidRequest { message: "native adapter object lacks parent directory".into() })?;
+    invocation.current_dir = Some(cwd.to_owned());
+    let limited = control.clone().with_output_limit(1024 * 1024)?;
+    let (output, receipt) = crate::linker::run_link_tool(&invocation, cwd, Some(&limited))?;
+    if !output.status.success() {
+        return Err(AotError::LinkFailed {
+            status: output.status.code().unwrap_or(-1),
+            command: format!("{} native adapter", receipt.executable.display()),
+            detail: String::from_utf8_lossy(&output.stderr).into_owned(),
+        });
+    }
+    if !object.is_file() {
+        return Err(AotError::InvalidRequest { message: "native adapter compiler produced no object".into() });
+    }
+    Ok(receipt)
+}
+
+fn configure_dynamic_initialization(command: &mut Command, initialization: Option<(&str, u64)>) -> AotResult<()> {
+    if let Some((symbol, generation)) = initialization {
+        if !beskid_codegen::artifact::is_valid_link_name(symbol) || generation == 0 {
+            return Err(AotError::InvalidRequest { message: "invalid issued Dynamic initializer".into() });
+        }
+        command.arg(format!("-DBESKID_DYNAMIC_INITIALIZER={symbol}"));
+        command.arg(format!("-DBESKID_DYNAMIC_GENERATION={generation}ULL"));
+    }
+    Ok(())
 }

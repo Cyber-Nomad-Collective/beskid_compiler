@@ -22,6 +22,8 @@ struct StructFacts {
     layout: StructLayout,
     root: Root,
     field_index: u32,
+    unit_middle: bool,
+    unit_effect: Option<cranelift_codegen::ir::Signature>,
 }
 
 impl NodeFacts for StructFacts {
@@ -30,7 +32,9 @@ impl NodeFacts for StructFacts {
     }
 
     fn node_kind(&self, key: AstNodeKey) -> Option<NodeKind> {
-        if key == self.nodes[0] {
+        if key.node == AstNodeId(99) {
+            Some(NodeKind::ExpressionStatement)
+        } else if key == self.nodes[0] {
             Some(match self.root {
                 Root::Read => NodeKind::FieldExpression,
                 Root::Write => NodeKind::AssignExpression,
@@ -39,6 +43,8 @@ impl NodeFacts for StructFacts {
             Some(NodeKind::FieldExpression)
         } else if key == self.nodes[2] {
             Some(NodeKind::StructLiteralExpression)
+        } else if key == self.nodes[4] && self.unit_effect.is_some() {
+            Some(NodeKind::CallExpression)
         } else if self.nodes[3..].contains(&key) {
             Some(NodeKind::LiteralExpression)
         } else {
@@ -51,6 +57,9 @@ impl NodeFacts for StructFacts {
     }
 
     fn child(&self, key: AstNodeKey, index: u8) -> Option<AstNodeKey> {
+        if key.node == AstNodeId(99) {
+            return (index == 0).then_some(self.nodes[0]);
+        }
         if key == self.nodes[0] {
             match self.root {
                 Root::Read => [self.nodes[2]].get(usize::from(index)).copied(),
@@ -75,6 +84,26 @@ impl NodeFacts for StructFacts {
         } else {
             None
         }
+    }
+
+    fn call_kind(&self, key: AstNodeKey) -> Option<beskid_isle::syntax_types::CallKind> {
+        (key == self.nodes[4] && self.unit_effect.is_some()).then_some(beskid_isle::syntax_types::CallKind::Direct)
+    }
+    fn direct_callee(&self, key: AstNodeKey) -> Option<beskid_isle::callee::DirectCallee> {
+        self.call_kind(key).map(|_| beskid_isle::callee::DirectCallee::item(self.nodes[4]))
+    }
+    fn call_signature(&self, key: AstNodeKey) -> Option<cranelift_codegen::ir::Signature> {
+        self.call_kind(key).and(self.unit_effect.clone())
+    }
+    fn call_arguments(&self, key: AstNodeKey) -> Option<Vec<AstNodeKey>> {
+        self.call_kind(key).map(|_| Vec::new())
+    }
+
+    fn semantic_type(&self, key: AstNodeKey) -> Option<beskid_queries::SemanticTypeId> {
+        (self.unit_middle && (key == self.nodes[4]
+            || (self.field_index == 1 && (key == self.nodes[0] || key == self.nodes[1]
+                || (matches!(self.root, Root::Write) && key == self.nodes[6])))))
+            .then_some(beskid_queries::SemanticTypeId::UNIT)
     }
 
     fn scalar_type(&self, key: AstNodeKey) -> Option<Type> {
@@ -115,6 +144,8 @@ fn facts(pointer_type: Type, root: Root, field_index: u32, layout: StructLayout)
         layout,
         root,
         field_index,
+        unit_middle: false,
+        unit_effect: None,
     }
 }
 
@@ -200,4 +231,126 @@ fn missing_struct_field_is_an_exact_keyed_error() {
     };
     assert_eq!(error.key(), facts.nodes[0]);
     assert_eq!(error.kind(), LoweringErrorKind::InvalidStructField(3));
+}
+
+#[test]
+fn unit_field_keeps_logical_indices_without_a_physical_store() {
+    let isa = cranelift_codegen::isa::lookup(Triple::host())
+        .unwrap()
+        .finish(settings::Flags::new(settings::builder()))
+        .unwrap();
+    let layout = StructLayout::from_logical_fields(
+        24,
+        3,
+        vec![Some(FieldLayout::new(types::I32, 16)), None, Some(FieldLayout::new(types::I32, 20))],
+    );
+    let mut facts = facts(isa.pointer_type(), Root::Read, 2, layout);
+    facts.unit_middle = true;
+    let emitter = FunctionEmitter::new(isa.as_ref());
+    let function = emitter
+        .emit_expression(UserFuncName::user(0, 26), emitter.signature([], [types::I32]), &facts, facts.nodes[0])
+        .unwrap();
+    let clif = function.display().to_string();
+    assert_eq!(clif.lines().filter(|line| line.trim_start().starts_with("store ")).count(), 2, "{clif}");
+    assert!(clif.contains("load.i32") && clif.contains("+20"), "{clif}");
+}
+
+#[test]
+fn no_storage_field_rejects_nonunit_initializer() {
+    let isa = cranelift_codegen::isa::lookup(Triple::host())
+        .unwrap()
+        .finish(settings::Flags::new(settings::builder()))
+        .unwrap();
+    let layout = StructLayout::from_logical_fields(
+        24,
+        3,
+        vec![Some(FieldLayout::new(types::I32, 16)), None, Some(FieldLayout::new(types::I32, 20))],
+    );
+    let facts = facts(isa.pointer_type(), Root::Read, 2, layout);
+    let emitter = FunctionEmitter::new(isa.as_ref());
+    let error = emitter
+        .emit_expression(UserFuncName::user(0, 27), emitter.signature([], [types::I32]), &facts, facts.nodes[0])
+        .unwrap_err();
+    let FunctionEmissionError::Lowering(error) = error else {
+        panic!("expected lowering denial");
+    };
+    assert_eq!(error.key(), facts.nodes[2]);
+    assert_eq!(error.kind(), LoweringErrorKind::InvalidStructLayout);
+}
+
+struct UnitEffectImporter {
+    module: cranelift_jit::JITModule,
+    imports: usize,
+}
+impl beskid_isle::CallImporter for UnitEffectImporter {
+    fn import(
+        &mut self,
+        builder: &mut cranelift_frontend::FunctionBuilder<'_>,
+        _callee: beskid_isle::callee::DirectCallee,
+        signature: &cranelift_codegen::ir::Signature,
+    ) -> Result<cranelift_codegen::ir::FuncRef, beskid_isle::CallImportError> {
+        use cranelift_module::Module;
+        self.imports += 1;
+        let id = self
+            .module
+            .declare_function("unit_initializer_effect", cranelift_module::Linkage::Import, signature)
+            .map_err(|_| beskid_isle::CallImportError::UnknownCallee)?;
+        Ok(self.module.declare_func_in_func(id, builder.func))
+    }
+}
+
+#[test]
+fn unit_initializer_call_is_emitted_once_before_allocation_without_storage() {
+    let isa = cranelift_codegen::isa::lookup(Triple::host())
+        .unwrap()
+        .finish(settings::Flags::new(settings::builder()))
+        .unwrap();
+    let layout = StructLayout::from_logical_fields(
+        24,
+        3,
+        vec![Some(FieldLayout::new(types::I32, 16)), None, Some(FieldLayout::new(types::I32, 20))],
+    );
+    let mut facts = facts(isa.pointer_type(), Root::Read, 2, layout);
+    facts.unit_middle = true;
+    facts.unit_effect = Some(cranelift_codegen::ir::Signature::new(isa.default_call_conv()));
+    let module = cranelift_jit::JITModule::new(cranelift_jit::JITBuilder::with_isa(
+        isa.clone(),
+        cranelift_module::default_libcall_names(),
+    ));
+    let mut importer = UnitEffectImporter { module, imports: 0 };
+    let emitter = FunctionEmitter::new(isa.as_ref());
+    let function = emitter
+        .emit_expression_with_call_importer(
+            UserFuncName::user(0, 28),
+            emitter.signature([], [types::I32]),
+            &facts,
+            facts.nodes[0],
+            &mut importer,
+        )
+        .unwrap();
+    let clif = function.display().to_string();
+    assert_eq!(importer.imports, 1, "unit initializer must lower exactly once: {clif}");
+    assert_eq!(clif.lines().filter(|line| line.trim_start().starts_with("store ")).count(), 2, "{clif}");
+    let calls = clif.lines().filter(|line| line.contains("call ")).collect::<Vec<_>>();
+    assert_eq!(calls.len(), 2, "one initializer call followed by one allocation: {clif}");
+}
+
+#[test]
+fn unit_field_read_and_assignment_evaluate_receiver_without_payload_access() {
+    let isa = cranelift_codegen::isa::lookup(Triple::host()).unwrap()
+        .finish(settings::Flags::new(settings::builder())).unwrap();
+    for (index, root) in [Root::Read, Root::Write].into_iter().enumerate() {
+        let layout = StructLayout::from_logical_fields(24, 3, vec![
+            Some(FieldLayout::new(types::I32, 16)), None, Some(FieldLayout::new(types::I32, 20)),
+        ]);
+        let mut facts = facts(isa.pointer_type(), root, 1, layout);
+        facts.unit_middle = true;
+        let emitter = FunctionEmitter::new(isa.as_ref());
+        let function = emitter.emit_statement(UserFuncName::user(0, 29 + index as u32),
+            emitter.signature([], []), &facts, AstNodeKey { node: AstNodeId(99), ..facts.nodes[0] }).unwrap();
+        let clif = function.display().to_string();
+        assert!(clif.contains("beskid_rt_v5_managed_object_allocate"), "receiver evaluated: {clif}");
+        assert_eq!(clif.lines().filter(|line| line.trim_start().starts_with("store ")).count(), 2, "{clif}");
+        assert!(!clif.contains("load.i32"), "unit has no payload load: {clif}");
+    }
 }

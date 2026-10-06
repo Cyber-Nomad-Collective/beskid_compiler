@@ -7,7 +7,7 @@ use crate::syntax::{
 };
 use std::fmt::Write;
 
-fn emit_leading_doc_lines<W: Write>(
+pub(super) fn emit_leading_doc_lines<W: Write>(
     doc: Option<&LeadingDocComment>,
     w: &mut W,
     cx: &mut EmitCtx,

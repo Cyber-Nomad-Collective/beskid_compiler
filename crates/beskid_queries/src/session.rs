@@ -99,7 +99,10 @@ pub fn compile_front_end_from_resolved_input(
     options: FrontEndOptions,
     pipeline: Option<&dyn PipelineObserver>,
 ) -> Result<FrontEndTypedResult> {
-    let prepared =
-        prepare_compilation(resolved, PrepareOptions { front_end: options, ..Default::default() }, pipeline)?;
+    let prepared = prepare_compilation(
+        resolved,
+        PrepareOptions { mod_invoker: None, front_end: options, ..Default::default() },
+        pipeline,
+    )?;
     prepared.into_executable()
 }

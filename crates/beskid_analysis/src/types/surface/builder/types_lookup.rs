@@ -82,7 +82,10 @@ impl<'a> TypeSurfaceBuilder<'a> {
     }
 
     pub(super) fn item_id_for_type_path(&self, path: &Spanned<Path>) -> Option<ItemId> {
-        if let Some(ResolvedType::Item(item_id)) = self.resolved_type_at(path.span) {
+        if let Some(ResolvedType::Item(item_id)) = self.resolved_type_at(path.span)
+            && self.resolution.items.iter().any(|item| item.id == item_id && matches!(item.kind,
+                crate::resolve::ItemKind::Type | crate::resolve::ItemKind::Enum | crate::resolve::ItemKind::Contract))
+        {
             return Some(item_id);
         }
         let mut segments: Vec<String> =
@@ -106,6 +109,7 @@ impl<'a> TypeSurfaceBuilder<'a> {
             if let Some(module_id) = self.resolution.module_graph.module_id(module_path)
                 && let Some(module) = self.resolution.module_graph.module(module_id)
                 && let Some(item_id) = module.scope.get(&tail[0])
+                && self.resolution.items.iter().any(|item| item.id == *item_id && matches!(item.kind, crate::resolve::ItemKind::Type | crate::resolve::ItemKind::Enum | crate::resolve::ItemKind::Contract))
             {
                 return Some(*item_id);
             }
@@ -113,6 +117,7 @@ impl<'a> TypeSurfaceBuilder<'a> {
                 && let Some(module_id) = self.resolution.module_graph.module_id(&segments)
                 && let Some(module) = self.resolution.module_graph.module(module_id)
                 && let Some(item_id) = module.scope.get(item_name)
+                && self.resolution.items.iter().any(|item| item.id == *item_id && matches!(item.kind, crate::resolve::ItemKind::Type | crate::resolve::ItemKind::Enum | crate::resolve::ItemKind::Contract))
             {
                 return Some(*item_id);
             }
@@ -148,19 +153,6 @@ impl<'a> TypeSurfaceBuilder<'a> {
         // dependency declaration such as `Stack<T>` into an unrelated entry type. Only an
         // explicitly source-scoped fact belongs to this surface; declaration-path lookup below
         // remains the authority when dependency bodies were not resolved.
-        let mut resolved = None;
-        for (source, types) in &self.resolution.tables.scoped_resolved_types {
-            if !crate::paths::same_file(source, &self.source_path) {
-                continue;
-            }
-            let Some(candidate) = types.get(&span).cloned() else {
-                continue;
-            };
-            if resolved.as_ref().is_some_and(|existing| existing != &candidate) {
-                return None;
-            }
-            resolved = Some(candidate);
-        }
-        resolved
+        self.resolution.tables.scoped_resolved_type_at(span, &self.source_path)
     }
 }

@@ -30,6 +30,7 @@ impl IsleContext<'_, '_, '_, '_> {
             self.import_runtime_helper("beskid_rt_v5_array_allocate_rooted", &[pointer, pointer], Some(pointer))?;
         let allocation_call = self.builder.ins().call(allocate, &[request, root_slot_address]);
         let array = self.builder.inst_results(allocation_call).first().copied()?;
+        self.guard_checked_allocation()?;
         self.builder.ins().trapz(array, TrapCode::unwrap_user(5));
         let root = ScopedTemporaryRoot::ArrayConstruction(root_slot);
         self.track_expression_root(root)?;
@@ -106,11 +107,14 @@ impl IsleContext<'_, '_, '_, '_> {
                     i32::try_from(pointer.bytes() * 2).ok()?,
                 ))
             }
+            CollectionOperation::TryAppend { owner } => self.emit_checked_array_append(key, owner, element_type),
             CollectionOperation::Append { owner: mutation_owner } => {
                 let [array_key, value_key] = arguments.as_slice() else { return None };
                 let owner = generated::constructor_lower_expression(self, *array_key)?;
                 (self.builder.func.dfg.value_type(owner) == pointer).then_some(())?;
                 self.builder.ins().trapz(owner, TrapCode::unwrap_user(1));
+                let owner_root = self.root_temporary(owner)?;
+                let mut aggregate_root = None;
                 let aggregate_base = match mutation_owner {
                     CollectionMutationOwner::Local(slot) => {
                         let binding = self.locals.get(&slot).copied()?;
@@ -125,8 +129,8 @@ impl IsleContext<'_, '_, '_, '_> {
                         }
                         None
                     }
-                    CollectionMutationOwner::AggregateField { receiver, .. } => {
-                        let binding = self.locals.get(&receiver).copied()?;
+                    CollectionMutationOwner::AggregateField { root, receiver, .. } => {
+                        let binding = self.locals.get(&root).copied()?;
                         if binding.value_type != pointer
                             || binding.managed_reference != ManagedReferenceFact::GcManaged
                             || binding.root_slot.is_none()
@@ -135,7 +139,18 @@ impl IsleContext<'_, '_, '_, '_> {
                                 Some(LoweringError { key, kind: LoweringErrorKind::UnprovenCollectionOwner });
                             return None;
                         }
-                        Some(self.builder.use_var(binding.variable))
+                        let base = if self.facts.local_slot(receiver) == Some(root) {
+                            self.builder.use_var(binding.variable)
+                        } else {
+                            generated::constructor_lower_expression(self, receiver)?
+                        };
+                        (self.builder.func.dfg.value_type(base) == pointer).then_some(())?;
+                        self.builder.ins().trapz(base, TrapCode::unwrap_user(1));
+                        // Snapshot the actual terminal receiver before evaluating the value.
+                        // A later call can change a containing field, so rooting the lexical
+                        // ancestor alone is insufficient to retain this publication target.
+                        aggregate_root = Some(self.root_temporary(base)?);
+                        Some(base)
                     }
                 };
                 let value = generated::constructor_lower_expression(self, *value_key)?;
@@ -159,6 +174,7 @@ impl IsleContext<'_, '_, '_, '_> {
                 )?;
                 let grow_call = self.builder.ins().call(grow, &[owner, next_length, root_out]);
                 let array = self.builder.inst_results(grow_call).first().copied()?;
+                self.guard_checked_allocation()?;
                 self.builder.ins().trapz(array, TrapCode::unwrap_user(5));
                 let data = self.builder.ins().load(pointer, MemFlagsData::new(), array, 0);
                 let offset =
@@ -180,17 +196,20 @@ impl IsleContext<'_, '_, '_, '_> {
                     CollectionMutationOwner::Local(slot) => {
                         self.publish_managed_local(slot, array)?;
                     }
-                    CollectionMutationOwner::AggregateField { receiver, field_index } => {
+                    CollectionMutationOwner::AggregateField { root, field_index, .. } => {
                         let layout = self.facts.struct_layout(*array_key)?;
-                        let Some(field) =
-                            usize::try_from(field_index).ok().and_then(|index| layout.fields.get(index)).copied()
+                        let Some(field) = usize::try_from(field_index)
+                            .ok()
+                            .and_then(|index| layout.fields.get(index))
+                            .copied()
+                            .flatten()
                         else {
                             self.pending_error =
                                 Some(LoweringError { key, kind: LoweringErrorKind::UnprovenCollectionOwner });
                             return None;
                         };
                         let base = aggregate_base?;
-                        if self.locals.get(&receiver)?.value_type != pointer || field.value_type != pointer {
+                        if self.locals.get(&root)?.value_type != pointer || field.value_type != pointer {
                             self.pending_error =
                                 Some(LoweringError { key, kind: LoweringErrorKind::UnprovenCollectionOwner });
                             return None;
@@ -209,6 +228,8 @@ impl IsleContext<'_, '_, '_, '_> {
                 let released = self.builder.inst_results(finish_call).first().copied()?;
                 self.builder.ins().trapz(released, TrapCode::unwrap_user(10));
                 self.release_temporary_root(value_root)?;
+                self.release_temporary_root(aggregate_root)?;
+                self.release_temporary_root(Some(owner_root))?;
                 Some(array)
             }
             CollectionOperation::Clear => {
@@ -226,7 +247,9 @@ impl IsleContext<'_, '_, '_, '_> {
                 let data = self.builder.ins().load(pointer, MemFlagsData::new(), array, 0);
                 let offset = if stride == 1 { index } else { self.builder.ins().imul_imm_s(index, i64::from(stride)) };
                 let address = self.builder.ins().iadd(data, offset);
-                let zero = if element_type == types::F64 {
+                let zero = if element_type == types::F32 {
+                    self.builder.ins().f32const(cranelift_codegen::ir::immediates::Ieee32::with_float(0.0))
+                } else if element_type == types::F64 {
                     self.builder.ins().f64const(Ieee64::with_float(0.0))
                 } else {
                     self.builder.ins().iconst(element_type, 0)
@@ -251,7 +274,9 @@ impl IsleContext<'_, '_, '_, '_> {
                     self.builder.ins().imul_imm_s(next_length, i64::from(stride))
                 };
                 let address = self.builder.ins().iadd(data, offset);
-                let zero = if element_type == types::F64 {
+                let zero = if element_type == types::F32 {
+                    self.builder.ins().f32const(cranelift_codegen::ir::immediates::Ieee32::with_float(0.0))
+                } else if element_type == types::F64 {
                     self.builder.ins().f64const(Ieee64::with_float(0.0))
                 } else {
                     self.builder.ins().iconst(element_type, 0)

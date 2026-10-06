@@ -253,9 +253,11 @@ impl<'a> TypeChecker<'a> {
 
             // A dependency contract method whose signature did not resolve in its declaring
             // unit's surface has no signature to compare against: fail closed with E1201.
-            let unresolved_methods = self.contract_unresolved_methods.get(&contract_item_id).cloned().unwrap_or_default();
+            let unresolved_methods =
+                self.contract_unresolved_methods.get(&contract_item_id).cloned().unwrap_or_default();
             for method_name in unresolved_methods {
-                self.errors.push(TypeError::UnknownType { span, name: format!("{contract_name}::{method_name} signature") });
+                self.errors
+                    .push(TypeError::UnknownType { span, name: format!("{contract_name}::{method_name} signature") });
             }
 
             let method_names: Vec<String> = self
@@ -334,7 +336,12 @@ impl<'a> TypeChecker<'a> {
 
     /// The concrete type arguments (already resolved to `TypeId`s) supplied at a
     /// `type X : Contract<Arg, ...>` or `impl X : Contract<Arg, ...>` conformance site.
-    fn conformance_type_arg_ids(&mut self, program: &Spanned<Program>, type_name: &str, contract_name: &str) -> Vec<TypeId> {
+    fn conformance_type_arg_ids(
+        &mut self,
+        program: &Spanned<Program>,
+        type_name: &str,
+        contract_name: &str,
+    ) -> Vec<TypeId> {
         let mut arg_type_syntax: Vec<Spanned<Type>> = Vec::new();
         for item in &program.node.items {
             let conformances: &[Spanned<Path>] = match &item.node {
@@ -527,6 +534,20 @@ impl<'a> TypeChecker<'a> {
             return;
         }
 
+        // Compiler-issued runtime bridges in the canonical Dynamic source use the runtime (Rust
+        // ABI) plane, not the user C ABI profile; the semantic Dynamic bridge authority admits
+        // each one exactly. Every other `[Extern]` contract is a user import under the C profile.
+        if self.runtime_plane_extern_unit {
+            return;
+        }
+        // A contract whose `Library` names a host manifest `glue` owner block is a Rust Glue
+        // import. Its signatures use the Glue logical representations (UTF-8, bytes, char, word,
+        // branded opaque handles, `RustOwner` fallible results). The canonical Glue binding fact
+        // (`beskid_queries::glue_binding`) is the single authority for those rules; the user C ABI
+        // profile below applies only to every other `[Extern]` contract.
+        if library.as_deref().is_some_and(|library| self.glue_libraries.iter().any(|glue| glue == library)) {
+            return;
+        }
         let profile = CAbiProfile;
         for node in &definition.node.items {
             if let ContractNode::MethodSignature(signature) = &node.node {
@@ -684,12 +705,17 @@ fn primitive_to_surface(primitive: PrimitiveType) -> SurfacePrimitive {
     match primitive {
         PrimitiveType::Bool => SurfacePrimitive::Bool,
         PrimitiveType::I32 => SurfacePrimitive::I32,
+        PrimitiveType::I8 => SurfacePrimitive::I8,
+        PrimitiveType::I16 => SurfacePrimitive::I16,
+        PrimitiveType::U16 => SurfacePrimitive::U16,
+        PrimitiveType::U64 => SurfacePrimitive::U64,
         PrimitiveType::I64 => SurfacePrimitive::I64,
         PrimitiveType::U32 => SurfacePrimitive::U32,
         PrimitiveType::U8 => SurfacePrimitive::U8,
         PrimitiveType::Pointer => SurfacePrimitive::Pointer,
         PrimitiveType::Word => SurfacePrimitive::Word,
         PrimitiveType::F64 => SurfacePrimitive::F64,
+        PrimitiveType::F32 => SurfacePrimitive::F32,
         PrimitiveType::Char => SurfacePrimitive::Char,
         PrimitiveType::String => SurfacePrimitive::String,
         PrimitiveType::Unit => SurfacePrimitive::Unit,
@@ -716,6 +742,122 @@ fn extern_disallowed_detail(ty: &Spanned<Type>, is_return: bool) -> String {
         Type::Associated { .. } => "associated types are not permitted at the FFI boundary".to_string(),
         Type::This => "This is not permitted at the FFI boundary".to_string(),
         Type::Function { .. } => "function types are not permitted at the FFI boundary".to_string(),
+    }
+}
+
+#[cfg(test)]
+mod extern_profile_tests {
+    use std::path::PathBuf;
+    use std::sync::Arc;
+
+    use crate::projects::assembly::{EffectiveCompilationRoots, ModuleIndex, ProgramAssembly, RootEntry, SourceUnit};
+    use crate::projects::model::AssemblyDiscovery;
+    use crate::resolve::Resolver;
+    use crate::services::parse_program;
+    use crate::syntax::SyntaxGenerationId;
+    use crate::types::checker::TypeChecker;
+    use crate::types::result::TypeError;
+
+    const GLUE_SOURCE: &str = r#"
+        [GlueHandle(Library:"glue_manual", Nullable:false)]
+        [RustOwner(Path:"implementation::ManualOwned")]
+        pub type ManualOpaque { u64 token, }
+
+        [Extern(Abi:"C", Library:"glue_manual")]
+        pub contract Foreign {
+            char glue_char(char value);
+            [RustOwner(Fallible:true)]
+            string glue_utf8(string value);
+            [RustOwner(Fallible:true)]
+            u8[] glue_bytes(u8[] value);
+            word glue_native_width(word value);
+            [RustOwner(Fallible:true)]
+            ManualOpaque make_manual_owned(word length);
+            [RustOwner(Fallible:true)]
+            word check_manual_owned(ManualOpaque value);
+        }
+    "#;
+
+    fn extern_errors(source: &str, glue_libraries: &[&str]) -> Vec<TypeError> {
+        let mut program = parse_program(source).expect("source should parse");
+        let resolution = Resolver::new().resolve_program(&program).expect("source should resolve");
+        let path = PathBuf::from("/extern_profile/src/Main.bd");
+        let unit = SourceUnit::bind_request(path.clone(), "Main".into(), source.into(), program.clone());
+        let assembly = ProgramAssembly::new(
+            EffectiveCompilationRoots {
+                host: RootEntry { dependency_name: None, source_root: PathBuf::from("/extern_profile/src") },
+                dependencies: Vec::new(),
+            },
+            Arc::new(vec![unit]),
+            0,
+            AssemblyDiscovery::ImportClosure,
+            Arc::new(ModuleIndex::empty()),
+            false,
+            SyntaxGenerationId(0),
+        )
+        .with_glue_libraries(glue_libraries.iter().map(|library| library.to_string()).collect());
+        let (_typed, errors) = TypeChecker::check_entry(
+            &mut program,
+            &resolution,
+            &[],
+            None,
+            Some(path),
+            false,
+            None,
+            Some(&assembly),
+            None,
+            None,
+        );
+        errors
+            .into_iter()
+            .filter(|error| {
+                matches!(
+                    error,
+                    TypeError::ExternDisallowedParamType { .. }
+                        | TypeError::ExternDisallowedReturnType { .. }
+                        | TypeError::ExternInvalidAbi { .. }
+                        | TypeError::ExternMissingLibrary { .. }
+                )
+            })
+            .collect()
+    }
+
+    #[test]
+    fn glue_extern_accepts_glue_logical_representations() {
+        let errors = extern_errors(GLUE_SOURCE, &["glue_manual"]);
+        assert!(errors.is_empty(), "a Glue import must not be judged by the C ABI profile; got: {errors:?}");
+    }
+
+    #[test]
+    fn extern_without_manifest_glue_block_stays_under_c_profile() {
+        let errors = extern_errors(GLUE_SOURCE, &["other_glue"]);
+        for method in ["glue_char", "glue_utf8", "glue_bytes", "glue_native_width", "check_manual_owned"] {
+            assert!(
+                errors.iter().any(|error| matches!(
+                    error,
+                    TypeError::ExternDisallowedParamType { method: name, .. } if name == method
+                )),
+                "expected ExternDisallowedParamType for `{method}`; got: {errors:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn c_extern_rejects_string_param_beside_glue_library() {
+        let source = r#"
+            [Extern(Abi:"C", Library:"c_native")]
+            pub contract Native {
+                i32 c_len(string value);
+            }
+        "#;
+        let errors = extern_errors(source, &["glue_manual"]);
+        assert!(
+            errors.iter().any(|error| matches!(
+                error,
+                TypeError::ExternDisallowedParamType { method, .. } if method == "c_len"
+            )),
+            "a C ABI import must keep the C profile string restriction; got: {errors:?}"
+        );
     }
 }
 
@@ -843,7 +985,10 @@ mod conformance_tests {
             }
         "#;
         let result = resolve_and_type(source);
-        assert!(result.is_ok(), "a correctly-implemented impl-block conformance must type-check cleanly; got: {result:?}");
+        assert!(
+            result.is_ok(),
+            "a correctly-implemented impl-block conformance must type-check cleanly; got: {result:?}"
+        );
     }
 
     #[test]
@@ -883,8 +1028,8 @@ mod conformance_tests {
                 }
             }
         "#;
-        let errors =
-            resolve_and_type(source).expect_err("a substituted-type mismatch after generic substitution must be rejected");
+        let errors = resolve_and_type(source)
+            .expect_err("a substituted-type mismatch after generic substitution must be rejected");
         assert!(
             errors.iter().any(|error| matches!(
                 error,
@@ -943,7 +1088,10 @@ mod conformance_tests {
             }
         "#;
         let result = resolve_and_type(source);
-        assert!(result.is_ok(), "`This` in an implementing method's signature must be its receiver type; got: {result:?}");
+        assert!(
+            result.is_ok(),
+            "`This` in an implementing method's signature must be its receiver type; got: {result:?}"
+        );
     }
 
     #[test]
@@ -1024,7 +1172,9 @@ mod conformance_tests {
         "#;
         let errors = resolve_and_type(source).expect_err("an unresolved associated-type reference must be rejected");
         assert!(
-            errors.iter().any(|error| matches!(error, TypeError::UnresolvedAssociatedType { name, .. } if name == "Item")),
+            errors
+                .iter()
+                .any(|error| matches!(error, TypeError::UnresolvedAssociatedType { name, .. } if name == "Item")),
             "expected UnresolvedAssociatedType; got: {errors:?}"
         );
     }
@@ -1095,7 +1245,10 @@ mod conformance_tests {
             }
         "#;
         let result = resolve_and_type(source);
-        assert!(result.is_ok(), "an omitted binding with a declared default must fall back to the default; got: {result:?}");
+        assert!(
+            result.is_ok(),
+            "an omitted binding with a declared default must fall back to the default; got: {result:?}"
+        );
     }
 
     #[test]

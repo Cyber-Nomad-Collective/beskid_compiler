@@ -14,7 +14,8 @@ use super::types::{ContractRegistration, LoadedModArtifact};
 /// other `contractId` value fail with **E1853** before scheduling. Suffix matching is
 /// preserved for backwards compatibility with the existing `*.Collector` /
 /// `*.Generator` filters used by collect / generate / analyze / rewrite phases.
-const KNOWN_CONTRACT_SUFFIXES: &[&str] = &["Collector", "Generator", "AttributeGenerator", "Analyzer", "Rewriter"];
+const KNOWN_CONTRACT_SUFFIXES: &[&str] =
+    &["Collector", "Generator", "GrammarGenerator", "AttributeGenerator", "Analyzer", "Rewriter"];
 
 pub(crate) fn validate_registrations(loaded: &[LoadedModArtifact]) -> Result<(), ModHostDiagnostics> {
     let mut issues = Vec::new();
@@ -194,16 +195,17 @@ mod tests {
                 }),
             },
             descriptor: Some(ModArtifactDescriptor {
-                schema_version: 1,
+                schema_version: 2,
                 package_id: "ModA".to_owned(),
                 package_version: None,
                 mod_source_hash: "h".to_owned(),
                 lock_hash: "l".to_owned(),
                 target_triple: "test".to_owned(),
                 compiler_version: "v".to_owned(),
-                object_file: "mod.o".to_owned(),
+                executable_file: "mod.dylib".to_owned(),
                 registrations: registrations.clone(),
                 artifact_dir: PathBuf::from("/cache"),
+                ..ModArtifactDescriptor::context_fixture()
             }),
             registrations,
         }

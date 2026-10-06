@@ -36,7 +36,7 @@ impl SyntaxNodeFacts<'_> {
         }
         if let Some(binding) = self.specialized_pattern_binding(key) {
             return Some(match binding.payload {
-                AggregateFieldShape::Scalar(semantic) => semantic,
+                AggregateFieldShape::Scalar(semantic) | AggregateFieldShape::ManagedReference(semantic) => semantic,
                 AggregateFieldShape::Nominal(_) => SemanticTypeId::POINTER,
             });
         }
@@ -72,7 +72,9 @@ impl SyntaxNodeFacts<'_> {
             .or_else(|| {
                 self.aggregate_field_access_in_context(key).and_then(|access| {
                     access.layout.fields.get(usize::try_from(access.index).ok()?).map(|(_, shape)| match shape {
-                        AggregateFieldShape::Scalar(semantic) => *semantic,
+                        AggregateFieldShape::Scalar(semantic) | AggregateFieldShape::ManagedReference(semantic) => {
+                            *semantic
+                        }
                         AggregateFieldShape::Nominal(_) => SemanticTypeId::POINTER,
                     })
                 })

@@ -196,8 +196,10 @@ pub fn emit_node_ref_bd() -> String {
         r#"{BANNER}
 /// Opaque stable handle for a syntax node within one `syntaxGenerationId` window.
 pub type NodeRef {{
-    i64 syntaxGenerationId,
-    i64 nodeId,
+    string sourceUnit,
+    u64 invocationIssuer,
+    u64 syntaxGenerationId,
+    u32 nodeId,
 }}
 "#
     )
@@ -208,12 +210,12 @@ pub fn emit_node_span_bd() -> String {
         r#"{BANNER}
 /// Source span for one syntax node in one generation.
 pub type NodeSpan {{
-    i64 start,
-    i64 end,
-    i64 lineStart,
-    i64 columnStart,
-    i64 lineEnd,
-    i64 columnEnd,
+    u64 start,
+    u64 end,
+    u64 lineStart,
+    u64 columnStart,
+    u64 lineEnd,
+    u64 columnEnd,
 }}
 "#
     )
@@ -227,11 +229,11 @@ pub contract Node {{
     {prefix}.NodeKind Kind();
     {prefix}.NodeRef Ref();
     {prefix}.NodeSpan Span();
-    void PushChildren({prefix}.NodeChildSink sink);
+    unit PushChildren({prefix}.NodeChildSink sink);
 }}
 
 pub contract NodeChildSink {{
-    void Push({prefix}.NodeRef child);
+    unit Push({prefix}.NodeRef child);
 }}
 "#,
         prefix = SYNTAX_NODES_MODULE_PREFIX
@@ -239,19 +241,11 @@ pub contract NodeChildSink {{
 }
 
 pub fn emit_node_list_bd() -> String {
-    let prefix = SYNTAX_NODES_MODULE_PREFIX;
     format!(
         r#"{BANNER}
-/// Cons-list of module items as `NodeRef` handles (replaces host-only `Vec<syntax::Node>` enum payloads).
-///
-/// @variant(Empty) Empty list (length 0).
-/// @variant(Cons) Non-empty list: `head` is first (`{prefix}.NodeRef`), `tail` is the remainder (`{prefix}.NodeList`).
-pub enum NodeList {{
-    Empty,
-    Cons(
-        {prefix}.NodeRef head,
-        {prefix}.NodeList tail,
-    ),
+/// Ordered managed array of issued module-item node references.
+pub type NodeList {{
+    {SYNTAX_NODES_MODULE_PREFIX}.NodeRef[] items,
 }}
 "#
     )
@@ -308,8 +302,8 @@ pub fn emit_visit_contract_bd() -> String {
         r#"{BANNER}
 /// Depth-first visitor contract (mirrors `beskid_analysis::syntax_query::Visit`).
 pub contract SyntaxVisitor {{
-    void Enter({prefix}.NodeRef node);
-    void Exit({prefix}.NodeRef node);
+    unit Enter({prefix}.NodeRef node);
+    unit Exit({prefix}.NodeRef node);
 }}
 "#,
         prefix = SYNTAX_NODES_MODULE_PREFIX
@@ -348,78 +342,155 @@ pub fn is_host_only_type(name: &str) -> bool {
 /// Kinds that exist in `NodeKind` but have no standalone mirrored shape type for `As*`.
 const SKIP_AS_PROJECTION: &[&str] = &["Node", "AssignOp", "FieldKind"];
 
+fn emit_query_callback(name: &str, result: &str, parameters: &[(&str, &str)]) -> String {
+    let signature = parameters.iter().map(|(ty, name)| format!("{ty} {name}")).collect::<Vec<_>>().join(", ");
+    let arguments = parameters.iter().map(|(_, name)| *name).collect::<Vec<_>>().join(", ");
+    if result == "unit" {
+        format!("pub unit {name}({signature}) {{\n    __mod_query_{name}({arguments});\n    return;\n}}\n")
+    } else {
+        format!("pub {result} {name}({signature}) {{\n    return __mod_query_{name}({arguments});\n}}\n")
+    }
+}
 pub fn emit_query_as_projections(inventory: &[String]) -> String {
-    let mut lines = Vec::new();
+    let mut source = String::new();
     for name in inventory {
         if is_host_only_type(name) || SKIP_AS_PROJECTION.contains(&name.as_str()) {
             continue;
         }
-        lines.push(format!("pub Option<{name}> As{name}(Beskid.Syntax.Nodes.NodeRef node);"));
+        source.push_str(&emit_query_callback(
+            &format!("As{name}"),
+            &format!("Option<Beskid.Syntax.Nodes.{name}>"),
+            &[("Beskid.Syntax.Nodes.NodeRef", "node")],
+        ));
     }
-    lines.join("\n") + "\n"
+    source
 }
-
 pub fn emit_query_facade_body(inventory: &[String]) -> String {
-    let as_projections = emit_query_as_projections(inventory);
-    format!(
+    let mut source = String::from(
         r#"
-pub type QueryBounds {{
+use Core.Optional;
+
+pub type QueryBounds {
     i64 maxNodes,
     i64 maxDepth,
-}}
-
-pub type SyntaxQuery {{
+}
+pub type SyntaxQuery {
     Beskid.Syntax.Nodes.NodeRef start,
     QueryBounds bounds,
-}}
-
-pub type SyntaxSelection {{
+}
+pub type SyntaxSelection {
     Beskid.Syntax.Nodes.NodeRef[] nodes,
     QueryBounds bounds,
-}}
-
-pub type SyntaxPipeline {{
+}
+pub type SyntaxPipeline {
     Beskid.Syntax.Nodes.NodeRef root,
     QueryBounds bounds,
-}}
-
-pub SyntaxQuery At(Beskid.Syntax.Nodes.NodeRef root);
-pub SyntaxQuery AtProgram(Beskid.Syntax.Nodes.Program program);
-
-pub Beskid.Syntax.Nodes.NodeRef[] Descendants(SyntaxQuery q);
-pub Beskid.Syntax.Nodes.NodeRef[] Children(Beskid.Syntax.Nodes.NodeRef node);
-pub Option<Beskid.Syntax.Nodes.NodeRef> Parent(Beskid.Syntax.Nodes.NodeRef node);
-pub Beskid.Syntax.Nodes.NodeRef[] Ancestors(Beskid.Syntax.Nodes.NodeRef node);
-pub Beskid.Syntax.Nodes.NodeSpan Span(Beskid.Syntax.Nodes.NodeRef node);
-pub Option<Beskid.Syntax.Nodes.NodeSpan> TrySpan(Beskid.Syntax.Nodes.NodeRef node);
-
-pub Beskid.Syntax.Nodes.NodeRef[] OfKind(SyntaxQuery q, Beskid.Syntax.Nodes.NodeKind kind);
-pub Option<Beskid.Syntax.Nodes.NodeRef> FindFirst(SyntaxQuery q, Beskid.Syntax.Nodes.NodeKind kind);
-pub SyntaxSelection Select(SyntaxQuery q);
-pub SyntaxSelection WhereKind(SyntaxSelection selection, Beskid.Syntax.Nodes.NodeKind kind);
-pub SyntaxPipeline Pipeline(Beskid.Syntax.Nodes.NodeRef root, QueryBounds bounds);
-pub SyntaxPipeline Replace(SyntaxPipeline pipeline, Beskid.Syntax.Nodes.NodeRef target, Beskid.Syntax.Nodes.NodeRef replacement);
-pub SyntaxPipeline Remove(SyntaxPipeline pipeline, Beskid.Syntax.Nodes.NodeRef target);
-pub SyntaxPipeline InsertBefore(SyntaxPipeline pipeline, Beskid.Syntax.Nodes.NodeRef anchor, Beskid.Syntax.Nodes.NodeRef node);
-pub SyntaxPipeline InsertAfter(SyntaxPipeline pipeline, Beskid.Syntax.Nodes.NodeRef anchor, Beskid.Syntax.Nodes.NodeRef node);
-pub Beskid.Syntax.Nodes.NodeRef Apply(SyntaxPipeline pipeline);
-
-{as_projections}
-pub contract SyntaxVisitor {{
-    void Enter(Beskid.Syntax.Nodes.NodeRef node);
-    void Exit(Beskid.Syntax.Nodes.NodeRef node);
-}}
-
-pub void Walk(Beskid.Syntax.Nodes.NodeRef root, SyntaxVisitor visitor);
-
-pub string QueryFacadeVersion() {{
-    return "0.4.0";
-}}
-"#
-    )
+}
+"#,
+    );
+    let node = "Beskid.Syntax.Nodes.NodeRef";
+    let nodes = "Beskid.Syntax.Nodes.NodeRef[]";
+    let kind = "Beskid.Syntax.Nodes.NodeKind";
+    for (name, result, params) in [
+        ("At", "SyntaxQuery", vec![(node, "root")]),
+        ("AtProgram", "SyntaxQuery", vec![("Beskid.Syntax.Nodes.Program", "program")]),
+        ("Descendants", nodes, vec![("SyntaxQuery", "q")]),
+        ("Children", nodes, vec![(node, "node")]),
+        ("Parent", "Option<Beskid.Syntax.Nodes.NodeRef>", vec![(node, "node")]),
+        ("Ancestors", nodes, vec![(node, "node")]),
+        ("Span", "Beskid.Syntax.Nodes.NodeSpan", vec![(node, "node")]),
+        ("TrySpan", "Option<Beskid.Syntax.Nodes.NodeSpan>", vec![(node, "node")]),
+        ("OfKind", nodes, vec![("SyntaxQuery", "q"), (kind, "kind")]),
+        ("FindFirst", "Option<Beskid.Syntax.Nodes.NodeRef>", vec![("SyntaxQuery", "q"), (kind, "kind")]),
+        ("Select", "SyntaxSelection", vec![("SyntaxQuery", "q")]),
+        ("WhereKind", "SyntaxSelection", vec![("SyntaxSelection", "selection"), (kind, "kind")]),
+        ("Pipeline", "SyntaxPipeline", vec![(node, "root"), ("QueryBounds", "bounds")]),
+        ("Replace", "SyntaxPipeline", vec![("SyntaxPipeline", "pipeline"), (node, "target"), (node, "replacement")]),
+        ("Remove", "SyntaxPipeline", vec![("SyntaxPipeline", "pipeline"), (node, "target")]),
+        ("InsertBefore", "SyntaxPipeline", vec![("SyntaxPipeline", "pipeline"), (node, "anchor"), (node, "node")]),
+        ("InsertAfter", "SyntaxPipeline", vec![("SyntaxPipeline", "pipeline"), (node, "anchor"), (node, "node")]),
+        ("Apply", node, vec![("SyntaxPipeline", "pipeline")]),
+    ] {
+        source.push_str(&emit_query_callback(name, result, &params));
+    }
+    source.push_str(
+        r#"
+pub QueryBounds QueryBoundsValue(i64 maxNodes, i64 maxDepth) {
+    return QueryBounds { maxNodes: maxNodes, maxDepth: maxDepth };
+}
+pub SyntaxQuery SyntaxQueryValue(Beskid.Syntax.Nodes.NodeRef start, QueryBounds bounds) {
+    return SyntaxQuery { start: start, bounds: bounds };
+}
+pub SyntaxSelection SyntaxSelectionValue(Beskid.Syntax.Nodes.NodeRef[] nodes, QueryBounds bounds) {
+    return SyntaxSelection { nodes: nodes, bounds: bounds };
+}
+pub SyntaxPipeline SyntaxPipelineValue(Beskid.Syntax.Nodes.NodeRef root, QueryBounds bounds) {
+    return SyntaxPipeline { root: root, bounds: bounds };
+}
+"#,
+    );
+    for name in inventory {
+        source.push_str(&format!(
+            "pub Option<Beskid.Syntax.Nodes.{name}> Query{name}NoneValue() {{ return Option::None; }}\n"
+        ));
+        source.push_str(&format!("pub Option<Beskid.Syntax.Nodes.{name}> Query{name}SomeValue(Beskid.Syntax.Nodes.{name} payload) {{ return Option::Some(payload); }}\n"));
+    }
+    source.push_str(&emit_query_as_projections(inventory));
+    source.push_str(
+        r#"
+pub contract SyntaxVisitor {
+    unit Enter(Beskid.Syntax.Nodes.NodeRef node);
+    unit Exit(Beskid.Syntax.Nodes.NodeRef node);
+}
+"#,
+    );
+    // Visitors execute in source. A source receiver/function pointer never crosses
+    // the compiler-owned callback transport.
+    source.push_str(
+        r#"
+pub unit Walk<V>(Beskid.Syntax.Nodes.NodeRef root, V visitor) where V: SyntaxVisitor {
+    visitor.Enter(root);
+    for child in Children(root) {
+        Walk<V>(child, visitor);
+    }
+    visitor.Exit(root);
+}
+"#,
+    );
+    source.push_str("pub string QueryFacadeVersion() {\n    return \"0.6.0\";\n}\n");
+    source
 }
 
 /// Append traversal note to generated shape docs.
 pub fn shape_traversal_doc_line() -> &'static str {
     "/// Implements `Node` via the host bridge; traverse with `Beskid.Compiler.Query` and `NodeRef`."
+}
+
+#[cfg(test)]
+mod native_callback_surface_tests {
+    use super::*;
+    #[test]
+    fn v06_native_query_facade_has_real_callback_bodies_and_canonical_unit() {
+        let source = emit_query_facade_body(&["FunctionDefinition".into(), "Node".into()]);
+        assert!(source.contains("return __mod_query_At(root);"));
+        assert!(source.contains("return __mod_query_AsFunctionDefinition(node);"));
+        assert!(source.contains("pub unit Walk<V>"));
+        assert!(source.contains("where V: SyntaxVisitor"));
+        assert!(source.contains("visitor.Enter(root);"));
+        assert!(source.contains("Walk<V>(child, visitor);"));
+        assert!(source.contains("visitor.Exit(root);"));
+        assert!(!source.contains("__mod_query_Walk"));
+        assert!(!source.contains("pub SyntaxQuery At(Beskid.Syntax.Nodes.NodeRef root);"));
+        assert!(!source.contains("void "));
+        assert!(!emit_node_contract_bd().contains("void "));
+        assert!(!emit_visit_contract_bd().contains("void "));
+    }
+    #[test]
+    fn v06_native_node_reference_retains_unit_and_invocation_issuer() {
+        let source = emit_node_ref_bd();
+        assert!(source.contains("string sourceUnit,"));
+        assert!(source.contains("u64 invocationIssuer,"));
+        assert!(source.contains("u64 syntaxGenerationId,"));
+        assert!(source.contains("u32 nodeId,"));
+    }
 }

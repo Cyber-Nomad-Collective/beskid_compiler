@@ -77,11 +77,9 @@ pub(super) fn lower_syntax_entrypoint_from_front_end(
     let lowered = beskid_pipeline::observe_phase_result(pipeline, beskid_pipeline::phases::CODEGEN_CLIF, || {
         beskid_codegen::lower_prepared_syntax_entrypoint(db, front, entrypoint, target, isa.as_ref())
     })?;
-    Ok(SyntaxEntrypointArtifact {
-        artifact: lowered.artifact,
-        symbol: lowered.symbol,
-        return_type: lowered.return_type,
-    })
+    let symbol = lowered.symbol().to_owned();
+    let return_type = lowered.return_type();
+    Ok(SyntaxEntrypointArtifact { artifact: lowered.into_artifact(), symbol, return_type })
 }
 
 #[cfg(test)]
@@ -177,7 +175,7 @@ pub fn lower_syntax_assembly_entrypoint(
     with_db(|db| {
         let isa = native_isa()?;
         beskid_codegen::lower_syntax_assembly_entrypoint(db, assembly, entrypoint, target, isa.as_ref())
-            .map(|entrypoint| entrypoint.artifact)
+            .map(|entrypoint| entrypoint.into_artifact())
     })
 }
 

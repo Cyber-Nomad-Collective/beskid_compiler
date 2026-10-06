@@ -72,10 +72,7 @@ impl<'a> TypeChecker<'a> {
             // now every `Type::Associated` reference fails closed with a diagnostic rather than
             // silently vanishing, mirroring Gap 3's documented bounded-generic `This` deferral.
             Type::Associated { name, .. } => {
-                self.errors.push(TypeError::UnresolvedAssociatedType {
-                    span: ty.span,
-                    name: name.node.name.clone(),
-                });
+                self.errors.push(TypeError::UnresolvedAssociatedType { span: ty.span, name: name.node.name.clone() });
                 None
             }
             // `This` is treated as a synthetic, always-in-scope generic parameter named
@@ -128,7 +125,10 @@ impl<'a> TypeChecker<'a> {
     }
 
     fn item_id_for_type_path(&self, path: &Spanned<Path>) -> Option<crate::resolve::ItemId> {
-        if let Some(ResolvedType::Item(item_id)) = self.resolved_type_at(path.span) {
+        if let Some(ResolvedType::Item(item_id)) = self.resolved_type_at(path.span)
+            && self.resolution.items.iter().any(|item| item.id == item_id && matches!(item.kind,
+                crate::resolve::ItemKind::Type | crate::resolve::ItemKind::Enum | crate::resolve::ItemKind::Contract))
+        {
             return Some(item_id);
         }
         let segments: Vec<String> =
@@ -138,6 +138,7 @@ impl<'a> TypeChecker<'a> {
             if let Some(module_id) = self.resolution.module_graph.module_id(module_path)
                 && let Some(module) = self.resolution.module_graph.module(module_id)
                 && let Some(item_id) = module.scope.get(&tail[0])
+                && self.resolution.items.iter().any(|item| item.id == *item_id && matches!(item.kind, crate::resolve::ItemKind::Type | crate::resolve::ItemKind::Enum | crate::resolve::ItemKind::Contract))
             {
                 return Some(*item_id);
             }
@@ -146,6 +147,7 @@ impl<'a> TypeChecker<'a> {
                 && let Some(module_id) = self.resolution.module_graph.module_id(&segments)
                 && let Some(module) = self.resolution.module_graph.module(module_id)
                 && let Some(item_id) = module.scope.get(item_name)
+                && self.resolution.items.iter().any(|item| item.id == *item_id && matches!(item.kind, crate::resolve::ItemKind::Type | crate::resolve::ItemKind::Enum | crate::resolve::ItemKind::Contract))
             {
                 return Some(*item_id);
             }
@@ -259,7 +261,7 @@ impl<'a> TypeChecker<'a> {
             return Some(*type_id);
         }
         match self.resolved_type_at(path.span) {
-            Some(ResolvedType::Item(item)) => {
+            Some(ResolvedType::Item(item)) if self.named_types.contains_key(&item) => {
                 if let Some(expected) = self.generic_items.get(&item)
                     && !expected.is_empty()
                 {
@@ -269,7 +271,7 @@ impl<'a> TypeChecker<'a> {
                 self.named_types.get(&item).copied()
             }
             Some(ResolvedType::Generic(name)) => self.generic_params.get(&name).copied(),
-            None => {
+            _ => {
                 if let Some(item_id) = self.item_id_for_type_path(path) {
                     if let Some(expected) = self.generic_items.get(&item_id)
                         && !expected.is_empty()

@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 /// Combined linker inputs returned after a successful `ExternalLibrary` resolution.
 ///
-/// Used by `beskid import lib` to write the matching `link` manifest entries and to print the
+/// Used by `beskid dev import lib` to write the matching `link` manifest entries and to print the
 /// resolved arguments.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LibraryResolution {

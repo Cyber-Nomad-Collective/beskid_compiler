@@ -23,32 +23,74 @@ pub enum Literal {
 
 /// Strip the type suffix from an integer literal text (e.g. "42_i32" → "42").
 pub fn integer_literal_magnitude(text: &str) -> &str {
-    match text.find('_') {
-        Some(pos) => &text[..pos],
-        None => text,
+    match text.rsplit_once('_') {
+        Some((value, suffix)) if matches!(suffix, "i8" | "i16" | "i32" | "i64" | "u8" | "u16" | "u32" | "u64") => value,
+        _ => text,
     }
 }
 
-/// Determine the primitive type of an integer literal from its suffix or magnitude.
-/// Literals with `_u8`, `_i32`, or `_i64` use that type; no suffix defaults to I32 when it fits.
 pub fn integer_literal_primitive_type(text: &str) -> PrimitiveType {
-    if text.ends_with("_u8") {
-        PrimitiveType::U8
-    } else if text.ends_with("_i64") {
-        PrimitiveType::I64
-    } else if text.ends_with("_i32") {
-        PrimitiveType::I32
-    } else if text.ends_with("_u32") {
-        PrimitiveType::U32
-    } else if text.ends_with("_u8") {
-        PrimitiveType::U8
-    } else {
-        let magnitude = integer_literal_magnitude(text);
-        match magnitude.parse::<i32>() {
-            Ok(_) => PrimitiveType::I32,
-            Err(_) => PrimitiveType::I64,
+    for (suffix, primitive) in [
+        ("_i8", PrimitiveType::I8),
+        ("_i16", PrimitiveType::I16),
+        ("_i32", PrimitiveType::I32),
+        ("_i64", PrimitiveType::I64),
+        ("_u8", PrimitiveType::U8),
+        ("_u16", PrimitiveType::U16),
+        ("_u32", PrimitiveType::U32),
+        ("_u64", PrimitiveType::U64),
+    ] {
+        if text.ends_with(suffix) {
+            return primitive;
         }
     }
+    if text.starts_with("0x")
+        && !integer_literal_fits_primitive(text, PrimitiveType::I64)
+        && integer_literal_fits_primitive(text, PrimitiveType::Word)
+    {
+        return PrimitiveType::Word;
+    }
+    if integer_literal_fits_primitive(text, PrimitiveType::I32) { PrimitiveType::I32 } else { PrimitiveType::I64 }
+}
+
+/// Exact magnitude validation occurs before CLIF represents unsigned values as signed bits.
+pub fn integer_literal_fits_primitive(text: &str, primitive: PrimitiveType) -> bool {
+    let clean = integer_literal_magnitude(text).replace('_', "");
+    let negative = clean.starts_with('-');
+    let digits = clean.strip_prefix('-').unwrap_or(&clean);
+    let magnitude = match digits.strip_prefix("0x") {
+        Some(hex) => u64::from_str_radix(hex, 16).ok(),
+        None => digits.parse::<u64>().ok(),
+    };
+    let Some(value) = magnitude else { return false };
+    let signed_limit = match primitive {
+        PrimitiveType::I8 => Some(i8::MAX as u64),
+        PrimitiveType::I16 => Some(i16::MAX as u64),
+        PrimitiveType::I32 => Some(i32::MAX as u64),
+        PrimitiveType::I64 => Some(i64::MAX as u64),
+        _ => None,
+    };
+    if let Some(max) = signed_limit {
+        return value <= max + u64::from(negative);
+    }
+    if negative {
+        return false;
+    }
+    match primitive {
+        PrimitiveType::U8 => value <= u8::MAX as u64,
+        PrimitiveType::U16 => value <= u16::MAX as u64,
+        PrimitiveType::U32 => value <= u32::MAX as u64,
+        PrimitiveType::U64 | PrimitiveType::Word => true,
+        _ => false,
+    }
+}
+
+pub fn float_literal_primitive_type(text: &str) -> PrimitiveType {
+    if text.ends_with("_f32") { PrimitiveType::F32 } else { PrimitiveType::F64 }
+}
+
+pub fn float_literal_magnitude(text: &str) -> &str {
+    text.strip_suffix("_f32").or_else(|| text.strip_suffix("_f64")).unwrap_or(text)
 }
 
 impl crate::parsing::parsable::Parsable for Literal {
@@ -103,5 +145,37 @@ mod tests {
         assert_eq!(integer_literal_primitive_type("0_u8"), PrimitiveType::U8);
         assert_eq!(integer_literal_primitive_type("0_i32"), PrimitiveType::I32);
         assert_eq!(integer_literal_primitive_type("0_i64"), PrimitiveType::I64);
+    }
+}
+
+#[cfg(test)]
+mod v06_primitive_tests {
+    use super::*;
+    #[test]
+    fn primitive_boundaries_reject_overflow_without_losing_u64_bits() {
+        for (source, ty) in [
+            ("-128_i8", PrimitiveType::I8),
+            ("127_i8", PrimitiveType::I8),
+            ("-32768_i16", PrimitiveType::I16),
+            ("65535_u16", PrimitiveType::U16),
+            ("18446744073709551615_u64", PrimitiveType::U64),
+            ("18_446_744_073_709_551_615_u64", PrimitiveType::U64),
+        ] {
+            assert_eq!(integer_literal_primitive_type(source), ty);
+            assert!(integer_literal_fits_primitive(source, ty));
+        }
+        for (source, ty) in [
+            ("128_i8", PrimitiveType::I8),
+            ("-129_i8", PrimitiveType::I8),
+            ("-32769_i16", PrimitiveType::I16),
+            ("65536_u16", PrimitiveType::U16),
+            ("18446744073709551616_u64", PrimitiveType::U64),
+            ("-1_u64", PrimitiveType::U64),
+        ] {
+            assert!(!integer_literal_fits_primitive(source, ty), "{source}");
+        }
+        assert_eq!(integer_literal_magnitude("18_446_u64"), "18_446");
+        assert_eq!(float_literal_primitive_type("1.5_f32"), PrimitiveType::F32);
+        assert_eq!(float_literal_magnitude("3.4028235e38_f32"), "3.4028235e38");
     }
 }

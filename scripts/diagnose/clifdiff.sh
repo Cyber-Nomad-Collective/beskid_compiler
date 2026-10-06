@@ -5,7 +5,7 @@
 #
 # Usage:
 #   clifdiff.sh <slice-a> <input-a.bd> <slice-b> <input-b.bd>
-#       Runs `beskid_cli clif --plain <input>` with each slice's own
+#       Runs `beskid_cli dev syntax clif --plain <input>` with each slice's own
 #       <target-dir>/<slice>/debug/beskid_cli against <workspace>/compiler-<slice>/<input>
 #       (input is relative to that slice's checkout), captures stdout (the CLIF; all
 #       progress/logging goes to stderr and is dropped), normalizes, diffs.
@@ -40,15 +40,15 @@ if [ "${1:-}" = "--files" ]; then
 elif [ $# -eq 4 ]; then
   SLICE_A="$1"; INPUT_A="$2"; SLICE_B="$3"; INPUT_B="$4"
   LABEL_A="$SLICE_A:$INPUT_A"; LABEL_B="$SLICE_B:$INPUT_B"
-  RAW_A=$($SSH "podman exec $CONTAINER bash -c 'cd $WORKSPACE/compiler-$SLICE_A && $TARGET_DIR/$SLICE_A/debug/beskid_cli clif --plain $INPUT_A 2>/dev/null'")
-  RAW_B=$($SSH "podman exec $CONTAINER bash -c 'cd $WORKSPACE/compiler-$SLICE_B && $TARGET_DIR/$SLICE_B/debug/beskid_cli clif --plain $INPUT_B 2>/dev/null'")
+  RAW_A=$($SSH "podman exec $CONTAINER bash -c 'cd $WORKSPACE/compiler-$SLICE_A && $TARGET_DIR/$SLICE_A/debug/beskid_cli dev syntax clif --plain $INPUT_A 2>/dev/null'")
+  RAW_B=$($SSH "podman exec $CONTAINER bash -c 'cd $WORKSPACE/compiler-$SLICE_B && $TARGET_DIR/$SLICE_B/debug/beskid_cli dev syntax clif --plain $INPUT_B 2>/dev/null'")
 else
   echo "usage: clifdiff.sh <slice-a> <input-a.bd> <slice-b> <input-b.bd>" >&2
   echo "       clifdiff.sh --files <fileA> <fileB>" >&2
   exit 2
 fi
 
-# Drop anything before the first CLIF function header -- `beskid_cli clif` occasionally prints a
+# Drop anything before the first CLIF function header -- `beskid_cli dev syntax clif` occasionally prints a
 # one-line corelib-sync notice ("corelib: updated to ...") on stdout ahead of the real IR.
 RAW_A=$(printf '%s\n' "$RAW_A" | sed -n '/^;; Function:/,$p')
 RAW_B=$(printf '%s\n' "$RAW_B" | sed -n '/^;; Function:/,$p')

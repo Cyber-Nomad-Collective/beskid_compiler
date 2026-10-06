@@ -120,8 +120,28 @@ pub struct SemanticFactFinding {
 /// rewritten entry and its actual assembly, not a second frontend tree, and returns every
 /// finding its facts produce for the entry's reachable items (invalid `?` targets and the
 /// reachability-scoped legality facts the lowering gate also evaluates).
-pub type SemanticFactAuthority<'a> =
-    dyn FnMut(&ProgramAssembly, &Spanned<crate::syntax::Program>) -> Result<Vec<SemanticFactFinding>> + 'a;
+pub trait SemanticFactAuthority {
+    fn fact_findings(
+        &mut self,
+        assembly: &ProgramAssembly,
+        program: &Spanned<crate::syntax::Program>,
+    ) -> Result<Vec<SemanticFactFinding>>;
+    fn mod_scope(&self) -> Option<&dyn crate::mod_host::ModSemanticScope> {
+        None
+    }
+}
+impl<F> SemanticFactAuthority for F
+where
+    F: FnMut(&ProgramAssembly, &Spanned<crate::syntax::Program>) -> Result<Vec<SemanticFactFinding>>,
+{
+    fn fact_findings(
+        &mut self,
+        assembly: &ProgramAssembly,
+        program: &Spanned<crate::syntax::Program>,
+    ) -> Result<Vec<SemanticFactFinding>> {
+        self(assembly, program)
+    }
+}
 
 pub fn prepare_compilation_with_fact_authority(
     resolved: &ResolvedInput,
@@ -129,7 +149,7 @@ pub fn prepare_compilation_with_fact_authority(
     pipeline: Option<&dyn PipelineObserver>,
     collect_diagnostics: bool,
     isolated: bool,
-    authority: &mut SemanticFactAuthority<'_>,
+    authority: &mut dyn SemanticFactAuthority,
 ) -> Result<(PreparedCompilation, Vec<SemanticDiagnostic>, Vec<SyntaxFix>)> {
     let plan = resolved
         .compile_plan

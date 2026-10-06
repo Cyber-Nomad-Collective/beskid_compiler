@@ -39,6 +39,59 @@ use crate::{
 const ABI_V5_SCHEDULER_STACK_CHECK: &str = "beskid_rt_v5_scheduler_stack_check";
 const ABI_V5_SCHEDULER_STACK_OVERFLOW_OBSERVED: &str = "beskid_rt_v5_scheduler_stack_overflow_observed";
 
+/// Reuse actual source reachability and call-derived specialization resolution
+/// when issuing immutable failure admissions for an emitted native image.
+pub fn checked_failure_plans(
+    input: &CodegenInput<'_>,
+    items: &[SyntaxModuleItem],
+) -> Result<Vec<crate::reserved_failure::ReservedFailureStaticPlan>, SyntaxModuleEmissionError> {
+    Ok(checked_failure_entries(input, items)?.into_iter().map(|entry| entry.plan).collect())
+}
+
+/// A reservation remains associated with its exact call-derived source entry.
+/// Physical Result layout equality does not authorize another callable.
+#[derive(Debug, Clone)]
+pub struct CheckedFailureEntry {
+    key: beskid_queries::AstNodeKey,
+    specialization: Option<beskid_queries::GenericSpecializationInstance>,
+    symbol: String,
+    plan: crate::reserved_failure::ReservedFailureStaticPlan,
+}
+
+impl CheckedFailureEntry {
+    pub fn key(&self) -> beskid_queries::AstNodeKey {
+        self.key
+    }
+    pub fn specialization(&self) -> Option<&beskid_queries::GenericSpecializationInstance> {
+        self.specialization.as_ref()
+    }
+    pub fn symbol(&self) -> &str {
+        &self.symbol
+    }
+    pub fn plan(&self) -> &crate::reserved_failure::ReservedFailureStaticPlan {
+        &self.plan
+    }
+}
+
+pub fn checked_failure_entries(
+    input: &CodegenInput<'_>,
+    items: &[SyntaxModuleItem],
+) -> Result<Vec<CheckedFailureEntry>, SyntaxModuleEmissionError> {
+    Ok(resolve_module_items(input, items)?
+        .iter()
+        .filter_map(|item| {
+            input.checked_failure_destination_plan(item.key, item.specialization.as_ref()).map(|plan| {
+                CheckedFailureEntry {
+                    key: item.key,
+                    specialization: item.specialization.clone(),
+                    symbol: item.symbol.clone(),
+                    plan,
+                }
+            })
+        })
+        .collect())
+}
+
 /// State owned by a long-lived Cranelift module while it receives source artifacts.
 ///
 /// A session supplies one namespace for source-owned metadata and remembers function handles by
@@ -285,6 +338,22 @@ fn lower_resolved_syntax_program(
         functions.push(crate::LoweredFunction { name: trampoline.symbol.clone(), function });
     }
     for item in items {
+        {
+            let mut strings=ArtifactStringInterner{context:&mut context,pointer_type:isa.pointer_type()};
+            if let Some(function)=super::serialization::emit_compiled_shape_bridge(input,isa,item,items,&symbols,&mut strings)? {
+                functions.push(crate::LoweredFunction{name:item.symbol.clone(),function});continue;
+            }
+        }
+        if let Some(function)=super::dynamic::emit_unpack_bridge(input,isa,item,items,&symbols)? {
+            functions.push(crate::LoweredFunction{name:item.symbol.clone(),function});continue;
+        }
+        if let Some(function)=super::dynamic::emit_shape_bridge(input,isa,item,items)? {
+            functions.push(crate::LoweredFunction{name:item.symbol.clone(),function});continue;
+        }
+        if let Some(function) = super::dynamic::emit_pack_bridge(input, isa, item, items, &symbols)? {
+            functions.push(crate::LoweredFunction { name: item.symbol.clone(), function });
+            continue;
+        }
         trace_item_facts(input, item.key, &symbols);
         let started = Instant::now();
         crate::isle_trace::event(|| {
@@ -375,6 +444,31 @@ fn lower_resolved_syntax_program(
             extern_imports.push(import);
         }
     }
+    if items.iter().any(|item| {
+        item.specialization.as_ref().is_some_and(|instance| {
+            beskid_queries::dynamic_packing_shape(input.database(), instance).ok().flatten().is_some()
+                || beskid_queries::dynamic_unpacking_bridge(input.database(),instance).ok().flatten().is_some()
+        })
+    }) {
+        for symbol in ["gc_root_handle", "gc_resolve_handle", "gc_unroot_handle"] {
+            if !extern_imports.iter().any(|import| import.symbol == symbol) {
+                extern_imports.push(ExternImport { symbol: symbol.into(), abi: Some("C".into()), library: None });
+            }
+        }
+    }
+
+    for instance in items.iter().filter_map(|item|item.specialization.as_ref()) {
+        if let Some(binding)=beskid_queries::dynamic_shape_binding(input.database(),instance)
+            .map_err(|error|emission_verification(error.to_string()))? {
+            let shape=input.compiled_dynamic_packing_shape(binding.packing())
+                .map_err(|error|emission_verification(error))?
+                .ok_or_else(||emission_verification("Shape getter has no compiled signature"))?;
+            let symbol=format!("beskid_dynamic_shape_tag_v1_{}",shape.sha256().iter().map(|byte|format!("{byte:02x}")).collect::<String>());
+            if !extern_imports.iter().any(|import|import.symbol==symbol) {
+                extern_imports.push(ExternImport{symbol,abi:Some("C".into()),library:None});
+            }
+        }
+    }
 
     let closure_static_plans = collect_closure_static_plans(input, items, &trampolines, &lambda_trampolines);
     let event_handler_wrapper_required = event_handler_wrapper_required(input, items);
@@ -398,6 +492,31 @@ fn lower_resolved_syntax_program(
         }
     }
     let mut aggregate_static_plans = collect_aggregate_static_plans(input, items);
+    for binding in input.glue_handle_bindings() {
+        for handle in crate::glue::handles::source_handle_box_plans(input,*binding)
+            .map_err(|error|emission_verification(error.to_string()))? {
+            if let Some(existing)=aggregate_static_plans.iter().find(|plan|
+                plan.allocation_request_symbol==handle.plan.allocation_request_symbol) {
+                if existing!=&handle.plan {return Err(emission_verification("opaque nominal allocation conflict"));}
+            } else {aggregate_static_plans.push(handle.plan);}
+        }
+    }
+
+    for instance in items.iter().filter_map(|item|item.specialization.as_ref()) {
+        let shape=beskid_queries::dynamic_shape_binding(input.database(),instance)
+            .map_err(|error|emission_verification(error.to_string()))?;
+        let unpack=beskid_queries::dynamic_unpacking_bridge(input.database(),instance)
+            .map_err(|error|emission_verification(error.to_string()))?;
+        if let Some(packing)=shape.as_ref().map(|binding|binding.packing()).or_else(||unpack.as_ref().map(|bridge|bridge.packing())) {
+            let bridge=beskid_queries::dynamic_packing_bridge(input.database(),packing)
+                .map_err(|error|emission_verification(error.to_string()))?
+                .ok_or_else(||emission_verification("Shape lacks canonical Pack box authority"))?;
+            let plan=input.aggregate_static_plan_for_specialization(bridge.box_literal(),Some(packing))
+                .ok_or_else(||emission_verification("Shape lacks concrete source descriptor"))?;
+            if !aggregate_static_plans.iter().any(|existing|existing==&plan){aggregate_static_plans.push(plan);}
+        }
+    }
+
     if extern_imports.iter().any(|import| {
         matches!(
             import.symbol.as_str(),
@@ -462,7 +581,11 @@ fn lower_resolved_syntax_program(
         }
     }
 
-    Ok(CodegenArtifact {
+    let checked_constructor_exports = super::runtime_checked::emit_checked_runtime_constructors(
+        input, isa, items, &symbols, &mut context, &mut functions,
+    )?;
+    let instances = items.iter().filter_map(|item| item.specialization.clone()).collect::<Vec<_>>();
+    let mut artifact = CodegenArtifact {
         functions,
         string_literals: context.string_literals,
         extern_imports,
@@ -472,7 +595,18 @@ fn lower_resolved_syntax_program(
         aggregate_static_plans,
         array_static_plans,
         ..CodegenArtifact::default()
-    })
+    };
+    for symbol in checked_constructor_exports {
+        artifact.exports.push(crate::ExportEntry {
+            beskid_name: symbol.clone(),
+            exported_symbol: symbol,
+            abi: "C".into(),
+        });
+    }
+    artifact.dynamic_initialization =
+        crate::dynamic_initialization::issue_dynamic_initialization(input, &instances, &artifact)
+            .map_err(emission_verification)?;
+    Ok(artifact)
 }
 
 /// Declare every syntax item before lowering any body, then import direct callees by exact

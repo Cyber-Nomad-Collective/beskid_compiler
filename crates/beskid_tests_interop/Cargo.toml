@@ -11,3 +11,13 @@ slow = []
 [dependencies]
 beskid_aot = { path = "../beskid_aot" }
 beskid_engine = { path = "../beskid_engine" }
+
+[dev-dependencies]
+anyhow = "1"
+beskid_abi = { path = "../beskid_abi" }
+beskid_analysis = { path = "../beskid_analysis" }
+beskid_codegen = { path = "../beskid_codegen" }
+beskid_pipeline = { path = "../beskid_pipeline" }
+beskid_queries = { path = "../beskid_queries" }
+sha2 = "0.10"
+tempfile = "3"

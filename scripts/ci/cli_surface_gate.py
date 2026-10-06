@@ -22,41 +22,34 @@ import tempfile
 import threading
 
 
-ROOT_COMMANDS = {
-    "dev", "parse", "tree", "analyze", "doc", "format", "clif", "run", "test",
-    "repl", "build", "mod", "import", "fetch", "lock", "update", "corelib",
-    "runtime-kit", "new", "pckg", "graph", "lsp", "up", "validate-bsol", "migrate-bsol",
-}
+ROOT_COMMANDS = {"new", "check", "build", "run", "test", "fmt", "doc", "add", "remove", "update", "package", "toolchain", "doctor", "dev"}
 SMOKE = {
-    ("parse",), ("tree",), ("analyze",), ("format",), ("graph",),
-    ("new", "list"), ("up", "host-target"), ("up", "list"), ("up", "check"), ("import", "lib"), ("repl",),
-    ("fetch",), ("lock",), ("update",), ("validate-bsol",),
-    ("dev", "syntax", "parse"), ("dev", "syntax", "tree"),
-    ("dev", "syntax", "analyze"), ("dev", "syntax", "format"),
-    ("dev", "project", "graph"), ("dev", "project", "fetch"),
-    ("dev", "project", "lock"), ("dev", "project", "update"),
-    ("doc",), ("clif",), ("run",), ("test",), ("build",), ("corelib",), ("migrate-bsol",),
-    ("dev", "syntax", "doc"), ("dev", "syntax", "clif"),
-    ("dev", "build", "compile"), ("dev", "build", "test"), ("dev", "build", "corelib"),
-    ("pckg", "pack"), ("dev", "package", "registry", "pack"),
-    *(("pckg", name) for name in ("list", "search", "details", "versions", "download", "whoami")),
-    *(("dev", "package", "registry", name) for name in ("list", "search", "details", "versions", "download", "whoami")),
+    ("new",), ("check",), ("build",), ("run",), ("test",), ("fmt",), ("doc",),
+    ("dev", "build"), ("dev", "corelib"), ("dev", "import", "lib"), ("dev", "repl"),
+    ("dev", "capabilities"), ("dev", "syntax", "parse"), ("dev", "syntax", "tree"),
+    ("dev", "syntax", "clif"), ("dev", "project", "fetch"), ("dev", "project", "lock"),
+    ("dev", "project", "graph"), ("dev", "bsol", "validate"), ("dev", "bsol", "migrate"),
+    ("package", "search"), ("package", "info"), ("package", "pack"),
+    ("package", "template", "list"), ("toolchain", "status"),
 }
 SETUP_SKIPS = {
-    ("mod", "rebuild"): "requires a compiler Mod project and matching runtime kit fixture",
-    ("mod", "clean"): "removes compiler Mod cache; isolated populated cache fixture required",
-    ("runtime-kit", "build"): "requires verified prebuilt runtime libraries and empty installation prefix",
-    ("runtime-kit", "build-native-host"): "native runtime build requires isolated build capacity",
-    ("runtime-kit", "build-matrix"): "requires verified debug/release runtime libraries",
-    ("new", "install"): "mutates template cache; package fixture required",
-    ("new", "uninstall"): "removes cached template; populated isolated cache fixture required",
-    ("lsp", "install"): "downloads and replaces managed language server",
-    ("up", "use"): "changes active direct-install version; populated isolated store required",
-    ("up", "remove"): "removes installed direct-download version; populated isolated store required",
-    ("pckg", "upload"): "publishes artifact; authenticated local registry fixture required",
-    ("pckg", "configure"): "persists API key; credential fixture excluded",
-    ("pckg", "yank"): "changes registry publication state; authenticated local registry fixture required",
-    ("pckg", "unyank"): "changes registry publication state; authenticated local registry fixture required",
+    ("add",): "requires isolated dependency transaction fixture",
+    ("remove",): "requires isolated populated dependency transaction fixture",
+    ("update",): "requires isolated verified registry/cache transaction fixture",
+    ("doctor",): "requires complete installed prefix with both runtime profiles and verified Corelib",
+    ("dev", "mod", "rebuild"): "requires a compiler Mod project and matching runtime kit fixture",
+    ("dev", "mod", "clean"): "requires isolated populated compiler Mod cache",
+    ("dev", "runtime-kit", "build"): "requires verified prebuilt runtime libraries and empty prefix",
+    ("dev", "runtime-kit", "build-native-host"): "requires isolated native build capacity",
+    ("dev", "runtime-kit", "build-matrix"): "requires verified debug/release runtime libraries",
+    ("dev", "lsp", "install"): "downloads and replaces managed language server",
+    ("dev", "lsp"): "long-running language server requires protocol fixture",
+    ("package", "template", "install"): "requires isolated package/template cache fixture",
+    ("package", "template", "uninstall"): "requires isolated populated template cache",
+    ("package", "publish"): "requires authenticated local registry fixture",
+    ("package", "login"): "credential persistence requires explicit isolated fixture",
+    ("package", "logout"): "requires isolated populated credential configuration",
+    ("toolchain", "update"): "requires verified release archive and isolated active-prefix store",
 }
 CONTROL_BYTES = set(range(32)) - {10}
 CORELIB_MARKER = ".beskid-bundle.sha256"
@@ -143,8 +136,7 @@ def command_names(help_text):
 def classify(path):
     if path in SMOKE:
         return "smoke"
-    if path in SETUP_SKIPS or (path[:3] == ("dev", "package", "registry")
-                               and ("pckg", *path[3:]) in SETUP_SKIPS):
+    if path in SETUP_SKIPS:
         return "setup_skip"
     return "uncovered"
 
@@ -315,25 +307,27 @@ def discover(binary, env, cwd):
 def smoke_args(path, source, project, test_project, migration_project, root, registry_url):
     tail = path[-1]
     case_root = root / "cases" / "-".join(path)
-    if tail in {"parse", "tree", "format"}:
+    if tail == "fmt":
+        return [str(source)], None, "formatted"
+    if tail in {"parse", "tree"}:
         return [str(source)], None, "Main"
-    if tail == "analyze":
+    if tail == "check":
         return ["--plain", str(source)], None, "Analyze complete"
     if tail == "graph":
         return ["--project", str(project), "--plain", "--mermaid"], None, "flowchart"
-    if path == ("new", "list"):
-        return [], None, ""
-    if path == ("up", "host-target"):
-        return [], None, ""
-    if path == ("up", "list"):
+    if path == ("new",):
+        return ["--list"], None, "app"
+    if path == ("package", "template", "list"):
+        return [], None, "app"
+    if path == ("toolchain", "status"):
         return [], None, "no direct-install version is active"
-    if path == ("up", "check"):
-        return [], None, f"release manifest: {registry_url}/release.json"
+    if path == ("dev", "capabilities"):
+        return ["--json"], None, '"schemaVersion"'
     if tail in {"fetch", "lock", "update"}:
         marker = {"fetch": "Dependencies resolved", "lock": "Project.lock synchronized",
                   "update": "Workspace updated"}[tail]
         return ["--project", str(project), "--plain"], None, marker
-    if path == ("validate-bsol",):
+    if path == ("dev", "bsol", "validate"):
         return [str(project)], None, "ok: validated against profile"
     if tail == "doc":
         return ["--project", str(project), "--out", str(case_root / "api-doc")], None, ""
@@ -347,7 +341,7 @@ def smoke_args(path, source, project, test_project, migration_project, root, reg
         return ["--project", str(test_project), "--plain"], None, "Result: passed=1, failed=0"
     if tail == "corelib":
         return ["--output", str(case_root / "corelib-copy")], None, "Generated Beskid corelib project"
-    if path == ("migrate-bsol",):
+    if path == ("dev", "bsol", "migrate"):
         return ["--to", "project.v2", str(migration_project)], None, "Migration"
     if tail == "pack":
         return ["--package", "beskid.tools.cli-gate", "--source",
@@ -357,7 +351,7 @@ def smoke_args(path, source, project, test_project, migration_project, root, reg
         return [], None, "No packages found."
     if tail == "search":
         return ["cli"], None, "No packages matched"
-    if tail == "details":
+    if tail == "info":
         return ["beskid.tools.cli-gate"], None, "downloads=0 dependents=0"
     if tail == "versions":
         return ["beskid.tools.cli-gate"], None, "No versions found"
@@ -365,9 +359,9 @@ def smoke_args(path, source, project, test_project, migration_project, root, reg
         return ["beskid.tools.cli-gate", "--version", "0.1.0", "--output", str(case_root / "download.bpk")], None, "Downloaded"
     if tail == "whoami":
         return [], None, "authenticated=false"
-    if path == ("import", "lib"):
+    if path == ("dev", "import", "lib"):
         return ["libc", "--dry-run"], None, "dry-run"
-    if path == ("repl",):
+    if path == ("dev", "repl"):
         return [], b":help\n:quit\n", "commands: :quit"
     raise ValueError(f"no smoke fixture for {path}")
 
@@ -422,7 +416,7 @@ def main(argv=None):
             path = tuple(row["path"].split())
             row["status"] = classify(path)
             if row["status"] == "setup_skip":
-                key = ("pckg", *path[3:]) if path[:3] == ("dev", "package", "registry") else path
+                key = path
                 row["reason"] = SETUP_SKIPS[key]
                 continue
             if row["status"] == "uncovered":
@@ -432,10 +426,8 @@ def main(argv=None):
             case_root.mkdir(parents=True)
             suffix, stdin, marker = smoke_args(path, source, project, test_project, migration_project, root, registry_url)
             invocation = [*path, *suffix]
-            if path[0] == "pckg" and path[1] != "pack":
-                invocation = ["pckg", "--base-url", registry_url, *path[1:], *suffix]
-            elif path[:3] == ("dev", "package", "registry") and path[3] != "pack":
-                invocation = ["dev", "package", "registry", "--base-url", registry_url, *path[3:], *suffix]
+            if path[:2] in {("package", "search"), ("package", "info")}:
+                invocation = ["package", "--base-url", registry_url, *path[1:], *suffix]
             result = run(binary, invocation, env, root, stdin)
             output = result.stdout + result.stderr
             row["exit"] = result.returncode
@@ -443,10 +435,6 @@ def main(argv=None):
             row.update(output_evidence(result.stdout, result.stderr))
             row["argv"] = invocation
             row["marker_seen"] = marker.encode() in output
-            if path == ("up", "host-target"):
-                row["marker_seen"] = bool(re.fullmatch(rb"[A-Za-z0-9_]+(?:-[A-Za-z0-9_]+){2,}\n?", result.stdout))
-            if path == ("up", "check"):
-                row["marker_seen"] = result.stdout.decode("utf-8", errors="replace").strip() == marker
             if tail := path[-1]:
                 if tail in {"build", "compile"}:
                     row["marker_seen"] = row["marker_seen"] and (case_root / "Smoke.o").is_file()
@@ -474,7 +462,7 @@ def main(argv=None):
         (template / "Src" / "Smoke.bd").write_text(source.read_text())
         (template / "{{name}}.txt").write_text("{{name}}\n")
         generated = root / "generated"
-        new_args = ["new", "--path", str(template), "--name", "MatrixSmoke", "--no-interactive", "-o", str(generated)]
+        new_args = ["new", "MatrixSmoke", "--path", str(template), "--no-interactive", "-o", str(generated)]
         new_result = run(binary, new_args, env, root)
         new_row = {"path": "new <local-template>", "kind": "scenario", "argv": new_args,
                    "expected_exit": 0, "exit": new_result.returncode}
@@ -487,9 +475,9 @@ def main(argv=None):
         rows.append(new_row)
 
         graph_file = root / "graph.mmd"
-        graph_file_args = ["graph", "--project", str(project), "--plain", "--out", str(graph_file)]
+        graph_file_args = ["dev", "project", "graph", "--project", str(project), "--plain", "--out", str(graph_file)]
         graph_file_result = run(binary, graph_file_args, env, root)
-        graph_file_row = {"path": "graph --out", "kind": "scenario", "argv": graph_file_args,
+        graph_file_row = {"path": "dev project graph --out", "kind": "scenario", "argv": graph_file_args,
                           "expected_exit": 0, "exit": graph_file_result.returncode}
         graph_file_row.update(output_evidence(graph_file_result.stdout, graph_file_result.stderr))
         graph_file_row["mermaid_file"] = graph_file.is_file() and "flowchart" in graph_file.read_text()
@@ -497,10 +485,10 @@ def main(argv=None):
                                                and graph_file_row["mermaid_file"]) else "fail"
         rows.append(graph_file_row)
 
-        graph_tui_args = ["graph", "--project", str(project), "--plain", "--tui"]
+        graph_tui_args = ["dev", "project", "graph", "--project", str(project), "--plain", "--tui"]
         graph_tui = run_pty(binary, graph_tui_args, dict(env, TERM="xterm-256color"), root)
         graph_tui_bytes = base64.b64decode(graph_tui["transcript_base64"])
-        graph_tui_row = {"path": "graph --tui", "kind": "scenario", "argv": graph_tui_args,
+        graph_tui_row = {"path": "dev project graph --tui", "kind": "scenario", "argv": graph_tui_args,
                          "expected_exit": 0, **graph_tui}
         graph_tui_row["entered_alternate_screen"] = b"\x1b[?1049h" in graph_tui_bytes
         graph_tui_row["rendered_project"] = graph_tui_rendered(graph_tui_bytes)
@@ -508,10 +496,10 @@ def main(argv=None):
                                               and graph_tui_row["rendered_project"]) else "fail"
         rows.append(graph_tui_row)
 
-        analyze_pty_args = ["analyze", "--plain", str(source)]
+        analyze_pty_args = ["check", "--plain", str(source)]
         analyze_pty = run_pty(binary, analyze_pty_args, dict(env, TERM="xterm-256color"), root)
         analyze_pty_bytes = base64.b64decode(analyze_pty["transcript_base64"])
-        analyze_pty_row = {"path": "analyze --plain PTY", "kind": "scenario", "argv": analyze_pty_args,
+        analyze_pty_row = {"path": "check --plain PTY", "kind": "scenario", "argv": analyze_pty_args,
                            "expected_exit": 0, **analyze_pty}
         analyze_pty_row["line_output"] = ordinary_pty_clean(analyze_pty_bytes)
         analyze_pty_row["summary_seen"] = b"Analyze complete" in analyze_pty_bytes
@@ -530,7 +518,7 @@ def main(argv=None):
 
         failures = release_failures(rows)
         new_help = run(binary, ["new", "--help"], env, root)
-        graph_help = run(binary, ["graph", "--help"], env, root)
+        graph_help = run(binary, ["dev", "project", "graph", "--help"], env, root)
         removed = run(binary, ["hi"], env, root)
         removed_picker = run(binary, ["new", "--tui"], env, root)
         contracts = {

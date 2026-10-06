@@ -97,3 +97,66 @@ fn console_terminal_detection_uses_the_canonical_runtime_adapter() {
         );
     }
 }
+
+#[test]
+fn platform_environment_data_import_is_distinct_from_callable_imports() {
+    let source = include_str!("../../../runtime_manifest.bsol");
+    let manifest = load_v5_manifest_source(source).unwrap();
+    // Darwin exports `environ`; glibc's canonical data symbol is `__environ` (`environ` is a weak
+    // alias that a linked shared runtime does not reference).
+    for (target, symbol) in [("aarch64-apple-darwin", "environ"), ("x86_64-unknown-linux-gnu", "__environ")] {
+        let data =
+            manifest.platform_imports.iter().find(|entry| entry.target == target && entry.symbol == symbol).unwrap();
+        assert_eq!(data.kind, "data");
+        assert_eq!(data.result, "pointer");
+        assert!(data.params.is_empty());
+        let row = format!(
+            "platform_data_import \"{symbol}\" {{ target = \"{target}\" library = {} type = pointer }}",
+            data.library
+        );
+        assert!(source.contains(&row));
+        for bad in [
+            row.replace("type = pointer", "type = void"),
+            row.replace("type = pointer", "params = [] type = pointer"),
+            row.replace("type = pointer", "returns = pointer"),
+        ] {
+            assert!(load_v5_manifest_source(&source.replace(&row, &bad)).is_err());
+        }
+    }
+    assert!(
+        !manifest
+            .platform_imports
+            .iter()
+            .any(|entry| entry.target == "x86_64-pc-windows-msvc" && entry.symbol.ends_with("environ"))
+    );
+    assert!(!manifest.platform_imports.iter().any(|entry| {
+        (entry.target == "x86_64-unknown-linux-gnu" && entry.symbol == "environ")
+            || (entry.target == "aarch64-apple-darwin" && entry.symbol == "__environ")
+    }));
+    // The runtime source must reference the same symbol the manifest declares per target.
+    let transport = include_str!("../../beskid_abi/assembly/common/process_transport.h");
+    assert!(transport.contains("#if defined(__GLIBC__)\n"));
+    assert!(transport.contains("extern char **__environ;\n#define BESKID_PROCESS_ENVIRON __environ\n#else\nextern char **environ;\n#define BESKID_PROCESS_ENVIRON environ\n#endif"));
+}
+
+#[test]
+fn linux_signal_set_imports_are_exact_glibc_functions_for_linux_only() {
+    let source = include_str!("../../../runtime_manifest.bsol");
+    let manifest = load_v5_manifest_source(source).unwrap();
+    let linux = "x86_64-unknown-linux-gnu";
+    for (symbol, params) in [
+        ("sigaddset", &["pointer", "i32"][..]),
+        ("sigemptyset", &["pointer"][..]),
+        ("sigismember", &["pointer", "i32"][..]),
+    ] {
+        let entries =
+            manifest.platform_imports.iter().filter(|entry| entry.symbol == symbol).collect::<Vec<_>>();
+        assert_eq!(entries.len(), 1, "{symbol} must be declared for exactly one target");
+        let entry = entries[0];
+        assert_eq!(entry.target, linux, "{symbol} is a header macro on Darwin and absent on Windows");
+        assert_eq!(entry.kind, "function");
+        assert_eq!(entry.library, "libc");
+        assert_eq!(entry.result, "i32");
+        assert_eq!(entry.params.iter().map(|param| param.ty.as_str()).collect::<Vec<_>>(), params);
+    }
+}

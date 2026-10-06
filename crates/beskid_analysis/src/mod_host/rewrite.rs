@@ -42,7 +42,11 @@ pub(crate) fn run_rewriters(
         let mut outcomes: Vec<RewriterOutcome> = Vec::with_capacity(registrations.len());
         for registration in &registrations {
             let outcome = invoker
-                .invoke_rewriter(registration, &context.collect_request)
+                .invoke_rewriter(
+                    registration,
+                    &context.collect_request,
+                    input.and_then(|input| input.semantic_authority),
+                )
                 .map_err(|err| anyhow::anyhow!(err.to_string()))?;
             outcomes.push(outcome);
         }

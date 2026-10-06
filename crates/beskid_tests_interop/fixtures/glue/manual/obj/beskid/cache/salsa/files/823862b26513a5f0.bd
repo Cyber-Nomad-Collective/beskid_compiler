@@ -1,0 +1,5 @@
+pub i8 IdentityI8(i8 value) { return value; }
+pub i16 IdentityI16(i16 value) { return value; }
+pub u16 IdentityU16(u16 value) { return value; }
+pub u64 IdentityU64(u64 value) { return value; }
+pub f32 IdentityF32(f32 value) { return value; }

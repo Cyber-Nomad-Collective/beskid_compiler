@@ -51,7 +51,7 @@ i32 Main() {
         let gate = analyze_source_in_project(&entry, source).expect("analyze");
         let (_, prepare, _fixes) = prepare_compilation_diagnostics(
             &resolved,
-            PrepareOptions {
+            PrepareOptions { mod_invoker: None,
                 front_end: FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
                 ..Default::default()
             },

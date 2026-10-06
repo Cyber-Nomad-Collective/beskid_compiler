@@ -47,8 +47,10 @@ fn managed_aggregate_allocator_uses_the_canonical_gc_heap() {
         .expect("managed object allocator body");
 
     assert!(
-        allocator.contains("pointer object = GcAlloc(size, alignment);"),
-        "managed aggregates must enter the traced heap"
+        allocator.contains("return AllocateObjectWithPolicy(request, false);")
+            && allocator.contains("if checked { object = GcTryAlloc(size, alignment); }")
+            && allocator.contains("else { object = GcAlloc(size, alignment); }"),
+        "ordinary and checked managed allocations must enter the traced heap"
     );
     assert!(
         !allocator.contains("SystemAllocate(size, alignment)"),

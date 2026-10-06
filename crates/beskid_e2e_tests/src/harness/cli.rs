@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
@@ -10,7 +11,7 @@ use beskid_abi::runtime_source::{canonical_runtime_source_hash, resolve_canonica
 
 static CORELIB_ROOT_COUNTER: AtomicU64 = AtomicU64::new(0);
 static BUILT_DEBUG_CLI: OnceLock<()> = OnceLock::new();
-static STAGED_RUNTIME_KIT: OnceLock<Mutex<()>> = OnceLock::new();
+static STAGED_RUNTIME_KIT: OnceLock<Mutex<HashMap<String, Result<PathBuf, String>>>> = OnceLock::new();
 
 pub struct BeskidCliInvoker {
     binary: PathBuf,
@@ -79,51 +80,61 @@ impl BeskidCliInvoker {
 /// Stage the exact host kit for the requested build profile when missing.
 ///
 /// Missing kits remain fail-closed for consumers that do not go through this harness.
-/// This only publishes through `runtime-kit build-native-host` — no prebuilt/search fallback.
+/// This only publishes through `dev runtime-kit build-native-host` — no prebuilt/search fallback.
+/// The first outcome per profile (success or failure) is recorded and replayed to every caller,
+/// so one staging failure is reported with its original error instead of poisoning later tests.
 fn ensure_exact_runtime_kit(cli_binary: &Path, profile: &str) -> PathBuf {
-    let lock = STAGED_RUNTIME_KIT.get_or_init(|| Mutex::new(()));
-    let _guard = lock.lock().expect("runtime-kit staging lock");
+    let staged = STAGED_RUNTIME_KIT.get_or_init(|| Mutex::new(HashMap::new()));
+    // The guard is never held across a panic; recover regardless so a stray poison cannot cascade.
+    let mut outcomes = staged.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let outcome = outcomes
+        .entry(profile.to_string())
+        .or_insert_with(|| stage_exact_runtime_kit(cli_binary, profile))
+        .clone();
+    drop(outcomes);
+    outcome.unwrap_or_else(|error| panic!("{error}"))
+}
 
+fn stage_exact_runtime_kit(cli_binary: &Path, profile: &str) -> Result<PathBuf, String> {
     let triple = host_abi_v5_triple()
-        .unwrap_or_else(|host| panic!("e2e CLI harness requires a supported ABI-v5 host; got {host}"));
-    let target = TargetMetadata::for_triple(triple).expect("host ABI-v5 target is supported");
-    let build_profile = BuildProfile::parse(profile).expect("harness profile is debug or release");
+        .map_err(|host| format!("e2e CLI harness requires a supported ABI-v5 host; got {host}"))?;
+    let target = TargetMetadata::for_triple(triple)
+        .map_err(|error| format!("host ABI-v5 target `{triple}` is unsupported: {error:?}"))?;
+    let build_profile =
+        BuildProfile::parse(profile)
+        .map_err(|error| format!("harness profile `{profile}` is not debug or release: {error:?}"))?;
     // A shared Cargo target directory may retain kits from an older compiler source state.
     // Never use its unkeyed runtime-kit root as evidence for this compiler's embedded corpus.
     let prefix = install_prefix_for_cli(cli_binary);
     let metadata = prefix.join("lib/beskid-runtime/abi-5").join(triple).join(profile).join("abi.json");
     if metadata.is_file() {
-        resolve_canonical_runtime_kit(&prefix, &target, build_profile)
-            .unwrap_or_else(|error| panic!("existing e2e runtime kit `{}` is not exact: {error:?}", prefix.display()));
-        return prefix;
+        resolve_canonical_runtime_kit(&prefix, &target, build_profile).map_err(|error| {
+            format!("existing e2e runtime kit `{}` is not exact: {error:?}", prefix.display())
+        })?;
+        return Ok(prefix);
     }
 
+    let prefix_text = prefix.to_str().ok_or_else(|| format!("install prefix `{}` is not UTF-8", prefix.display()))?;
     let output = Command::new(cli_binary)
-        .args([
-            "runtime-kit",
-            "build-native-host",
-            "--prefix",
-            prefix.to_str().expect("install prefix is UTF-8"),
-            "--profile",
-            profile,
-        ])
+        .args(["dev", "runtime-kit", "build-native-host", "--prefix", prefix_text, "--profile", profile])
         .output()
-        .unwrap_or_else(|error| {
-            panic!(
-                "invoke `{} runtime-kit build-native-host` to stage the exact {profile} kit: {error}",
+        .map_err(|error| {
+            format!(
+                "invoke `{} dev runtime-kit build-native-host` to stage the exact {profile} kit: {error}",
                 cli_binary.display()
             )
-        });
-    assert!(
-        output.status.success(),
-        "staging exact {profile} ABI-v5 runtime kit failed for prefix `{}`\nstdout:\n{}\nstderr:\n{}",
-        prefix.display(),
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
+        })?;
+    if !output.status.success() {
+        return Err(format!(
+            "staging exact {profile} ABI-v5 runtime kit failed for prefix `{}`\nstdout:\n{}\nstderr:\n{}",
+            prefix.display(),
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        ));
+    }
     resolve_canonical_runtime_kit(&prefix, &target, build_profile)
-        .unwrap_or_else(|error| panic!("staged e2e runtime kit `{}` is not exact: {error:?}", prefix.display()));
-    prefix
+        .map_err(|error| format!("staged e2e runtime kit `{}` is not exact: {error:?}", prefix.display()))?;
+    Ok(prefix)
 }
 
 fn install_prefix_for_cli(cli_binary: &Path) -> PathBuf {

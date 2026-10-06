@@ -18,3 +18,144 @@ pub pointer EnvGetcwd() { return env_getcwd(); }
 
 [Export(Abi:"C", Symbol:"tty_winsize")]
 pub i64 TtyWinsize(i64 fd) { return tty_winsize(fd); }
+
+// Child probes never retain managed references. A parked transfer roots the
+// canonical array owner until terminal settlement and resolves data after resume.
+[Export(Abi:"C", Symbol:"beskid_rt_v5_child_begin")]
+pub u64 ChildBegin(pointer executable, pointer cwd, i32 inherit) {
+    return child_begin(StringViewData(executable), StringViewLength(executable), StringViewData(cwd), StringViewLength(cwd), inherit);
+}
+[Export(Abi:"C", Symbol:"beskid_rt_v5_child_argument")]
+pub i32 ChildArgument(u64 token, pointer value) { return child_argument(token, StringViewData(value), StringViewLength(value)); }
+[Export(Abi:"C", Symbol:"beskid_rt_v5_child_environment")]
+pub i32 ChildEnvironment(u64 token, pointer key, pointer value) { return child_environment(token, StringViewData(key), StringViewLength(key), StringViewData(value), StringViewLength(value)); }
+[Export(Abi:"C", Symbol:"beskid_rt_v5_child_spawn")]
+pub i32 ChildSpawn(u64 token, i64 deadline) {
+    while true {
+        i64 pause = ChildPause(deadline);
+        if pause < 0 { return i32(pause); }
+        i32 result = child_spawn(token);
+        if result != -2 {
+            i64 settled = ChildPause(deadline);
+            if settled < 0 { return i32(settled); }
+            return result;
+        }
+    }
+}
+[Export(Abi:"C", Symbol:"beskid_rt_v5_child_poll")]
+pub i64 ChildPoll(u64 token) { return child_poll(token); }
+[Export(Abi:"C", Symbol:"beskid_rt_v5_child_terminate")]
+pub i32 ChildTerminate(u64 token) { return child_terminate(token); }
+
+// 1ms readiness granularity, one Foundation cancellation/deadline authority.
+[Export(Abi:"C", Symbol:"beskid_rt_v5_child_pause")]
+pub i64 ChildPause(i64 deadline) {
+    i64 now = clock_monotonic_nanos();
+    if now < 0 || now > 9223372036853775807 { return -5; }
+    if deadline >= 0 && now >= deadline { return -4; }
+    mut i64 next = now + 1000000;
+    if deadline >= 0 && deadline < next { next = deadline; }
+    if SchedulerCurrentFiber() == FIBER_NONE { thread_yield(); return 0; }
+    word winner = ExternalSleepUntil(next);
+    if winner == EXTERNAL_CANCELLED { return -3; }
+    if winner == 0 { return -5; }
+    if winner != EXTERNAL_TIMEOUT { Trap(10, NativePointer(0), 0); }
+    if deadline >= 0 && clock_monotonic_nanos() >= deadline { return -4; }
+    return 0;
+}
+[Export(Abi:"C", Symbol:"beskid_rt_v5_child_wait")]
+pub i64 ChildWait(u64 token, i64 deadline) {
+    while true {
+        i64 pause = ChildPause(deadline);
+        if pause < 0 { return pause; }
+        i64 result = child_poll(token);
+        if result != -2 { return result; }
+    }
+}
+
+pub i64 ChildTransferProbe(u64 token, i32 stream, pointer array, i64 offset, i64 count, bool writing) {
+    if offset < 0 || count < 0 || array == NativePointer(0) { return -1; }
+    word length = raw_word_load(pointer_add(array, 8));
+    if word(offset) > length || word(count) > length - word(offset) { return -1; }
+    if count == 0 { return 0; }
+    pointer data = NativePointer(raw_word_load(array));
+    if data == NativePointer(0) { return -1; }
+    if writing { return child_write(token, pointer_add(data, word(offset)), word(count)); }
+    return child_read(token, stream, pointer_add(data, word(offset)), word(count));
+}
+[Export(Abi:"C", Symbol:"beskid_rt_v5_child_try_read")]
+pub i64 ChildTryRead(u64 token, i32 stream, pointer array, i64 offset, i64 count) { return ChildTransferProbe(token, stream, array, offset, count, false); }
+
+pub i64 ChildTransfer(u64 token, i32 stream, pointer array, i64 offset, i64 count, i64 deadline, bool writing) {
+    if deadline < -1 { return -1; }
+    if count == 0 { return ChildTransferProbe(token, stream, array, offset, count, writing); }
+    word root = GcRootHandle(array);
+    if root == 0 { return -1; }
+    mut i64 result = -2;
+    while result == -2 {
+        i64 pause = ChildPause(deadline);
+        if pause < 0 { result = pause; }
+        else {
+            pointer resumed = GcResolveHandle(root);
+            if resumed == NativePointer(0) { result = -1; }
+            else { result = ChildTransferProbe(token, stream, resumed, offset, count, writing); }
+        }
+    }
+    if writing && (result == -3 || result == -4) { child_close_pipe(token, 0); }
+    GcUnrootHandle(root);
+    return result;
+}
+[Export(Abi:"C", Symbol:"beskid_rt_v5_child_read")]
+pub i64 ChildRead(u64 token, i32 stream, pointer array, i64 offset, i64 count, i64 deadline) { return ChildTransfer(token, stream, array, offset, count, deadline, false); }
+[Export(Abi:"C", Symbol:"beskid_rt_v5_child_write")]
+pub i64 ChildWrite(u64 token, pointer array, i64 offset, i64 count, i64 deadline) { return ChildTransfer(token, 0, array, offset, count, deadline, true); }
+
+// Cleanup retains one fixed budget even if cancellation is already sticky.
+[Export(Abi:"C", Symbol:"beskid_rt_v5_child_close_pipe")]
+pub i32 ChildClosePipe(u64 token, i32 stream) {
+    i64 start = clock_monotonic_nanos();
+    if start < 0 || start > 9223372031854775807 { return -1; }
+    i64 deadline = start + 5000000000;
+    while true {
+        i32 result = child_close_pipe(token, stream);
+        if result != -2 { return result; }
+        if clock_monotonic_nanos() >= deadline { return -1; }
+        ChildPause(deadline);
+    }
+}
+[Export(Abi:"C", Symbol:"beskid_rt_v5_child_close")]
+pub i32 ChildClose(u64 token) {
+    i64 start = clock_monotonic_nanos();
+    if start < 0 || start > 9223372031854775807 { return -1; }
+    return ChildCloseUntil(token, start + 5000000000);
+}
+
+[Export(Abi:"C", Symbol:"beskid_rt_v5_child_close_until")]
+pub i32 ChildCloseUntil(u64 token, i64 suppliedDeadline) {
+    i64 start = clock_monotonic_nanos();
+    if suppliedDeadline < 0 || start < 0 || start > 9223372031854775807 { return -1; }
+    mut i64 deadline = start + 5000000000;
+    if suppliedDeadline < deadline { deadline = suppliedDeadline; }
+    while true {
+        i32 result = child_close(token);
+        if result != -2 { return result; }
+        if clock_monotonic_nanos() >= deadline { return -1; }
+        ChildPause(deadline);
+    }
+}
+
+// All native child obligations finish before the canonical runtime destroys its heap.
+pub i32 ChildShutdown() {
+    i64 start = clock_monotonic_nanos();
+    if start < 0 || start > 9223372031854775807 { return -1; }
+    i64 deadline = start + 5000000000;
+    while true {
+        i32 result = child_shutdown();
+        if result != -2 { return result; }
+        if clock_monotonic_nanos() >= deadline { return -1; }
+        thread_yield();
+    }
+}
+
+[Export(Abi:"C", Symbol:"beskid_rt_v5_child_try_write")]
+pub i64 ChildTryWrite(u64 token, pointer array, i64 offset, i64 count) { return ChildTransferProbe(token, 0, array, offset, count, true); }

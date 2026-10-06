@@ -1,0 +1,44 @@
+// Canonical primitive String owner. Its descriptor is generated from this typed
+// declaration; the public data/length view starts at the data field.
+use Core.Collections.Array;
+
+pub type Utf8ViewRecord {
+    pub u8[] payload,
+    pub pointer data,
+    pub word length,
+}
+
+[Export(Abi:"C", Symbol:"beskid_rt_v5_utf8_record_construct")]
+pub Utf8ViewRecord Utf8RecordConstruct(pointer source, word length) {
+    mut u8[] payload = Array.Empty<u8>();
+    mut word index = 0;
+    while index < length {
+        Array.Append<u8>(payload, u8(raw_byte_load(pointer_add(source, index))));
+        index = index + 1;
+    }
+    return Utf8ViewRecord { payload: payload, data: NativePointer(0), length: length };
+}
+
+// A typed array crosses this private compiler transport using its canonical
+// representation. The native bridge roots the record before reading its fields.
+[Export(Abi:"C", Symbol:"beskid_rt_v5_utf8_record_payload")]
+pub u8[] Utf8RecordPayload(Utf8ViewRecord record) { return record.payload; }
+
+[Export(Abi:"C", Symbol:"beskid_rt_v5_utf8_record_set_data")]
+pub unit Utf8RecordSetData(mut Utf8ViewRecord record, pointer data) {
+    record.data = data;
+}
+
+[Export(Abi:"C", Symbol:"beskid_rt_v5_managed_view_kind")]
+pub u64 ManagedViewKind(pointer value) {
+    pointer object = ManagedObjectForReference(Heap(), value);
+    if object == NativePointer(0) { return 0; }
+    pointer descriptor = NativePointer(raw_word_load(object));
+    if TypeDescriptorFlags(descriptor) == TypeDescriptorUtf8ViewFlag() { return 1; }
+    if TypeDescriptorFlags(descriptor) == TypeDescriptorArrayFlag() {
+        pointer element = NativePointer(raw_word_load(pointer_add(object, 16)));
+        if ValidateArrayElementDescriptor(element) && raw_word_load(element) == 1
+            && raw_word_load(pointer_add(element, 24)) == 0 { return 2; }
+    }
+    return 0;
+}

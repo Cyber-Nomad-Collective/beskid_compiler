@@ -376,7 +376,7 @@ dependency "missing" {
         let uri = path_to_uri_string(&project);
 
         let error = graph::get_project_dependencies(&uri).expect_err("v1 lock must not disappear from tooling");
-        assert!(error.message.contains("v1") && error.message.contains("beskid lock"), "{error:?}");
+        assert!(error.message.contains("v1") && error.message.contains("beskid dev project lock"), "{error:?}");
 
         write(&lock_path, "# Project.lock v2\nnot-a-lock\n");
         let error = graph::get_project_dependencies(&uri).expect_err("malformed v2 must not disappear");

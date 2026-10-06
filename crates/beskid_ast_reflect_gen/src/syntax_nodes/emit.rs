@@ -12,18 +12,26 @@ pub fn emit_syntax_sdk(
     let helpers = syntax_helpers::build_helper_paths(&files);
     let (decls, skipped_generics) = collect_declarations(analysis_src, Some(&helpers))?;
 
+    let schema = super::schema::syntax_schema(&decls, &helpers)?;
     let syntax_dir = compiler_sdk_beskid_dir.join("Syntax");
     let nodes_dir = syntax_dir.join("Nodes");
     fs::create_dir_all(&nodes_dir)?;
+    fs::write(syntax_dir.join("NativeFactories.bd"), super::factories::native_syntax_factories(&decls, &helpers)?)?;
+    fs::write(
+        syntax_dir.join("syntax.schema.json"),
+        serde_json::to_vec_pretty(&schema).map_err(std::io::Error::other)?,
+    )?;
 
     for hname in &helpers.helper_emit_order {
         if hname == "NodeList" {
             continue;
         }
         let body = if let Some(el_path) = helpers.list_helpers.get(hname) {
-            syntax_helpers::emit_list_enum(hname, el_path)
+            syntax_helpers::emit_list_record(hname, el_path)
         } else if let Some(inner_path) = helpers.opt_helpers.get(hname) {
             syntax_helpers::emit_optional_enum(hname, inner_path)
+        } else if let Some(payload) = helpers.spanned_helpers.get(hname) {
+            syntax_helpers::emit_spanned_record(hname, payload)
         } else {
             continue;
         };

@@ -2,10 +2,12 @@ use std::fs;
 
 use anyhow::{Context, Result};
 use beskid_analysis::doc::{
-    API_JSON_NAVIGATION_MODEL_GRAPH_V1, API_JSON_SCHEMA_VERSION, API_JSON_SCHEMA_VERSION_BEFORE_GRAPH, ApiDocItem,
-    ApiDocRoot, ApiLocation, apply_signature_to_item, assign_declaring_packages, build_item_signature,
-    display_name_for_item, fill_member_ids_from_parents, link_api_doc_library_tree, qualified_names_for_items,
-    relativize_api_doc_paths, resolve_item_tiers, validate_prelude_standard_tiers,
+    API_JSON_NAVIGATION_MODEL_GRAPH_V1, API_JSON_SCHEMA_VERSION,
+    API_JSON_SCHEMA_VERSION_BEFORE_GRAPH, ApiDocItem, ApiDocRoot, ApiLocation,
+    apply_signature_to_item, assign_declaring_packages, build_item_signature,
+    display_name_for_item, fill_member_ids_from_parents, link_api_doc_library_tree,
+    qualified_names_for_items, relativize_api_doc_paths, resolve_item_tiers,
+    validate_prelude_standard_tiers,
 };
 use beskid_analysis::services;
 
@@ -21,12 +23,13 @@ pub fn execute(args: DocArgs) -> Result<()> {
         args.project.project.as_ref(),
         args.project.target.as_deref(),
         args.project.workspace_member.as_deref(),
-        args.lockfile.frozen,
-        args.lockfile.locked,
+        args.lockfile.WorkspaceOptions(),
     )?;
-    let program =
-        services::parse_program_with_source_name(&resolved.source_path.display().to_string(), &resolved.source)
-            .with_context(|| format!("parse {}", resolved.source_path.display()))?;
+    let program = services::parse_program_with_source_name(
+        &resolved.source_path.display().to_string(),
+        &resolved.source,
+    )
+    .with_context(|| format!("parse {}", resolved.source_path.display()))?;
     let docs_ref = docs_ref_link_context(&resolved);
     let (snap, assembly) = build_doc_snapshot(&resolved, &program, docs_ref.as_ref())?;
 
@@ -49,16 +52,19 @@ pub fn execute(args: DocArgs) -> Result<()> {
     if let Some(res) = snap.resolution.as_ref() {
         for item in &res.items {
             let slot = snap.item_docs.get(item.id.0).and_then(|x| x.as_ref());
-            let doc_markdown = slot.map(|d| d.markdown.clone()).filter(|s| !s.trim().is_empty());
+            let doc_markdown = slot
+                .map(|d| d.markdown.clone())
+                .filter(|s| !s.trim().is_empty());
             let doc = slot.and_then(|d| d.structured.clone());
-            let loc = location_for_item(item, assembly.as_ref(), &resolved.source, &source_path_str);
+            let loc =
+                location_for_item(item, assembly.as_ref(), &resolved.source, &source_path_str);
             let qualified_name = qualified_names
                 .as_ref()
                 .and_then(|names| names.get(&item.id.0).cloned())
                 .unwrap_or_else(|| item.name.clone());
             let display_name = display_name_for_item(item);
-            let symbol_key =
-                beskid_analysis::resolve::qualified_name(res, item.id).map(beskid_analysis::doc::ApiSymbolKey::new);
+            let symbol_key = beskid_analysis::resolve::qualified_name(res, item.id)
+                .map(beskid_analysis::doc::ApiSymbolKey::new);
             let mut api_item = ApiDocItem {
                 id: Some(item.id.0),
                 qualified_name: qualified_name.clone(),
@@ -88,7 +94,11 @@ pub fn execute(args: DocArgs) -> Result<()> {
                 controls: vec![],
                 tier: None,
             };
-            let item_program = item.source_path.as_ref().and_then(|path| syntax_by_path.get(path)).unwrap_or(&program);
+            let item_program = item
+                .source_path
+                .as_ref()
+                .and_then(|path| syntax_by_path.get(path))
+                .unwrap_or(&program);
             let sig = build_item_signature(item, Some(res), item_program);
             apply_signature_to_item(&mut api_item, sig);
             entries.push(DocEntry {
@@ -142,12 +152,21 @@ pub fn execute(args: DocArgs) -> Result<()> {
             });
         }
     }
-    entries.sort_by(|a, b| a.qualified_name.cmp(&b.qualified_name).then(a.kind.cmp(&b.kind)));
-    api_items.sort_by(|a, b| a.qualified_name.cmp(&b.qualified_name).then(a.kind.cmp(&b.kind)));
+    entries.sort_by(|a, b| {
+        a.qualified_name
+            .cmp(&b.qualified_name)
+            .then(a.kind.cmp(&b.kind))
+    });
+    api_items.sort_by(|a, b| {
+        a.qualified_name
+            .cmp(&b.qualified_name)
+            .then(a.kind.cmp(&b.kind))
+    });
 
     let had_resolution = snap.resolution.is_some();
     if had_resolution {
-        if let (Some(res), Some(ctx)) = (snap.resolution.as_ref(), api_doc_link_context(&resolved)) {
+        if let (Some(res), Some(ctx)) = (snap.resolution.as_ref(), api_doc_link_context(&resolved))
+        {
             link_api_doc_library_tree(&mut api_items, res);
             assign_declaring_packages(&mut api_items, &ctx);
         } else if let Some(res) = snap.resolution.as_ref() {
@@ -179,10 +198,14 @@ pub fn execute(args: DocArgs) -> Result<()> {
             items: api_items,
         }
     };
-    relativize_api_doc_paths(&mut api, link_ctx.as_ref())
-        .map_err(|message| anyhow::anyhow!("relativize api.json paths to artifact layout: {message}"))?;
-    fs::write(args.out.join("api.json"), serde_json::to_string_pretty(&api).context("serialize api.json")?)
-        .with_context(|| format!("write {}", args.out.join("api.json").display()))?;
+    relativize_api_doc_paths(&mut api, link_ctx.as_ref()).map_err(|message| {
+        anyhow::anyhow!("relativize api.json paths to artifact layout: {message}")
+    })?;
+    fs::write(
+        args.out.join("api.json"),
+        serde_json::to_string_pretty(&api).context("serialize api.json")?,
+    )
+    .with_context(|| format!("write {}", args.out.join("api.json").display()))?;
 
     let mut md = String::from("# API reference\n\n");
     if entries.is_empty() {
@@ -193,7 +216,10 @@ pub fn execute(args: DocArgs) -> Result<()> {
         md.push('\n');
         md.push_str("## Items\n\n");
         for entry in &entries {
-            md.push_str(&format!("### `{}` (`{}`)\n\n", entry.qualified_name, entry.kind));
+            md.push_str(&format!(
+                "### `{}` (`{}`)\n\n",
+                entry.qualified_name, entry.kind
+            ));
             let body = entry
                 .doc_markdown
                 .as_deref()
@@ -207,6 +233,10 @@ pub fn execute(args: DocArgs) -> Result<()> {
     fs::write(args.out.join("index.md"), md)
         .with_context(|| format!("write {}", args.out.join("index.md").display()))?;
 
-    println!("Wrote {} and {}", args.out.join("api.json").display(), args.out.join("index.md").display());
+    println!(
+        "Wrote {} and {}",
+        args.out.join("api.json").display(),
+        args.out.join("index.md").display()
+    );
     Ok(())
 }

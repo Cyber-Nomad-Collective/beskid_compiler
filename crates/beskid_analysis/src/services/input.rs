@@ -5,12 +5,12 @@ use anyhow::{Context, Result};
 use beskid_pipeline::PipelineObserver;
 
 use crate::projects::{
-    CompilePlan, PreparedProjectWorkspace, ProgramAssembly, UnresolvedDependencyPolicy, WorkspaceResolutionSummary,
-    plan_entry_path,
+    CompilePlan, PreparedProjectWorkspace, ProgramAssembly, UnresolvedDependencyPolicy, WorkspacePrepareOptions,
+    WorkspaceResolutionSummary, plan_entry_path,
 };
 
 use super::project::{infer_manifest_from_input, resolve_project_with_policy};
-use super::synthetic_plan::synthetic_compile_plan_for_source;
+use super::synthetic_plan::standalone_compile_plan_for_source;
 
 /// Source path and text plus optional workspace materialization outputs from [`resolve_input`].
 #[derive(Clone)]
@@ -53,16 +53,14 @@ pub fn resolve_input(
     project: Option<&PathBuf>,
     target: Option<&str>,
     workspace_member: Option<&str>,
-    frozen: bool,
-    locked: bool,
+    options: WorkspacePrepareOptions,
 ) -> Result<ResolvedInput> {
     resolve_input_with_policy(
         input,
         project,
         target,
         workspace_member,
-        frozen,
-        locked,
+        options,
         UnresolvedDependencyPolicy::Error,
         None,
     )
@@ -74,8 +72,7 @@ pub fn resolve_input_with_pipeline(
     project: Option<&PathBuf>,
     target: Option<&str>,
     workspace_member: Option<&str>,
-    frozen: bool,
-    locked: bool,
+    options: WorkspacePrepareOptions,
     pipeline: Option<&dyn PipelineObserver>,
 ) -> Result<ResolvedInput> {
     resolve_input_with_policy(
@@ -83,8 +80,7 @@ pub fn resolve_input_with_pipeline(
         project,
         target,
         workspace_member,
-        frozen,
-        locked,
+        options,
         UnresolvedDependencyPolicy::Error,
         pipeline,
     )
@@ -95,8 +91,7 @@ pub fn resolve_input_with_policy(
     project: Option<&PathBuf>,
     target: Option<&str>,
     workspace_member: Option<&str>,
-    frozen: bool,
-    locked: bool,
+    options: WorkspacePrepareOptions,
     unresolved_dependency_policy: UnresolvedDependencyPolicy,
     pipeline: Option<&dyn PipelineObserver>,
 ) -> Result<ResolvedInput> {
@@ -105,8 +100,7 @@ pub fn resolve_input_with_policy(
         project,
         target,
         workspace_member,
-        frozen,
-        locked,
+        options,
         unresolved_dependency_policy,
         pipeline,
     )?;
@@ -120,7 +114,7 @@ pub fn resolve_input_with_policy(
         && !input_is_manifest
         && input_path.is_file()
     {
-        compile_plan = Some(synthetic_compile_plan_for_source(input_path));
+        compile_plan = Some(standalone_compile_plan_for_source(input_path)?);
     }
 
     let source_path = if let Some(input_path) = input
@@ -178,6 +172,7 @@ mod tests {
     use std::path::PathBuf;
 
     use super::resolve_input;
+    use crate::projects::WorkspacePrepareOptions;
 
     fn compiler_workspace_root() -> PathBuf {
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -198,8 +193,8 @@ mod tests {
         }
         let previous = std::env::current_dir().expect("cwd");
         std::env::set_current_dir(&workspace_root).expect("chdir");
-        let resolved =
-            resolve_input(Some(&workspace_root), None, None, None, false, false).expect("resolve directory input");
+        let resolved = resolve_input(Some(&workspace_root), None, None, None, WorkspacePrepareOptions::default())
+            .expect("resolve directory input");
         std::env::set_current_dir(previous).expect("restore cwd");
         assert!(resolved.source_path.is_file(), "expected entry file, got {}", resolved.source_path.display());
         assert!(resolved.compile_plan.is_some());

@@ -39,6 +39,118 @@ fn ordered_snapshot_round_trips_real_syntax_query_memos() {
     assert_eq!(node_kind(&restored, AstNodeKey { unit, ..key }).unwrap(), Some(IndexedNodeKind::FunctionDefinition));
 }
 
+fn deep_snapshot_fixture() -> (tempfile::TempDir, std::path::PathBuf, std::path::PathBuf, AstNodeKey, String) {
+    // Deep parser fixture construction also needs stack space; production
+    // snapshot restoration must supply its own bounded stack protection.
+    std::thread::Builder::new()
+        .stack_size(16 * 1024 * 1024)
+        .spawn(|| {
+            let directory = tempfile::tempdir().unwrap();
+            let path = directory.path().join("Deep.bd");
+            let source = format!("i64 Main() {{ return {}42_i64{}; }}", "(".repeat(48), ")".repeat(48));
+            std::fs::write(&path, &source).unwrap();
+            let mut db = BeskidDatabase::default();
+            let unit = SourceUnitId::new(&db, path.clone());
+            let project = ProjectSession::new(&db, directory.path().into(), path.clone(), "Deep".into(), "lock".into());
+            let generation = SyntaxGenerationId(23);
+            db.ensure_file_text(path.clone(), source.clone());
+            db.ensure_syntax_unit(project, unit, generation).unwrap();
+            let program = beskid_analysis::services::parse_program(&source).unwrap();
+            let index = SyntaxIndex::from_program(&program, generation);
+            let node = index.ids_of_kind(NodeKind::FunctionDefinition).next().unwrap();
+            let key = AstNodeKey { unit, generation, node };
+            assert_eq!(node_kind(&db, key).unwrap(), Some(IndexedNodeKind::FunctionDefinition));
+            let cache = beskid_queries::cache_root_for_project(directory.path());
+            save_db_snapshot(&mut db, &cache).unwrap();
+            let bytes = std::fs::read(cache.join("db.json")).unwrap();
+            // Only scan delimiters outside JSON strings; do not materialize an owned
+            // serde_json::Value, which introduces its own recursive parse/drop path.
+            let mut quoted = false;
+            let mut escaped = false;
+            let mut depth = 0;
+            let mut maximum = 0;
+            for byte in bytes {
+                if quoted {
+                    if escaped {
+                        escaped = false;
+                    } else if byte == b'\\' {
+                        escaped = true;
+                    } else if byte == b'"' {
+                        quoted = false;
+                    }
+                } else if byte == b'"' {
+                    quoted = true;
+                } else if matches!(byte, b'{' | b'[') {
+                    depth += 1;
+                    maximum = maximum.max(depth);
+                } else if matches!(byte, b'}' | b']') {
+                    depth -= 1;
+                }
+            }
+            assert!(maximum > 128, "fixture must exercise the real deep snapshot: {maximum}");
+            assert!(maximum <= 256, "fixture must fit the bounded restore policy: {maximum}");
+            (directory, path, cache, key, source)
+        })
+        .unwrap()
+        .join()
+        .unwrap()
+}
+
+#[test]
+fn deep_real_syntax_snapshot_restores_beyond_json_default_recursion_limit() {
+    let (_directory, path, cache, key, source) = deep_snapshot_fixture();
+    // Unlike fixture construction, restoration runs on the test harness's
+    // ordinary small stack; the production boundary must provide protection.
+    let mut restored = BeskidDatabase::default();
+    assert!(beskid_queries::load_db_snapshot(&mut restored, &cache), "valid deep snapshot must restore");
+    assert_eq!(restored.file_text(&path).unwrap().text(&restored), &source);
+    let unit = SourceUnitId::new(&restored, path);
+    assert_eq!(node_kind(&restored, AstNodeKey { unit, ..key }).unwrap(), Some(IndexedNodeKind::FunctionDefinition));
+}
+
+#[test]
+fn rejected_deep_candidate_preserves_live_queries_and_cleans_up_safely() {
+    let (directory, path, _cache, _key, _source) = deep_snapshot_fixture();
+    rewrite_snapshot(directory.path(), |envelope| {
+        let original = envelope.db.get();
+        let corrupt = original.replace("\"Ok\":\"FunctionDefinition\"", "\"Ok\":\"InvalidNodeKind\"");
+        assert_ne!(corrupt, original);
+        replace_payload(envelope, corrupt);
+    });
+    assert_rejected_and_usable(directory.path(), &path);
+}
+
+#[test]
+fn over_limit_snapshot_input_preserves_the_live_database() {
+    for policy in ["bytes", "depth", "string"] {
+        let (directory, path, _) = snapshot_fixture();
+        let snapshot = beskid_queries::cache_root_for_project(directory.path()).join("db.json");
+        match policy {
+            "bytes" => std::fs::File::create(&snapshot).unwrap().set_len(64 * 1024 * 1024 + 1).unwrap(),
+            "depth" => std::fs::write(&snapshot, format!("{}null{}", "[".repeat(257), "]".repeat(257))).unwrap(),
+            "string" => std::fs::write(&snapshot, format!("\"{}\"", "x".repeat(4 * 1024 * 1024 + 1))).unwrap(),
+            _ => unreachable!(),
+        }
+        assert_rejected_and_usable(directory.path(), &path);
+    }
+}
+
+#[test]
+fn over_limit_serialization_retains_the_previous_snapshot() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("Main.bd");
+    let mut db = BeskidDatabase::default();
+    db.ensure_file_text(path.clone(), "i64 Main() { return 0_i64; }".into());
+    let cache = beskid_queries::cache_root_for_project(directory.path());
+    save_db_snapshot(&mut db, &cache).unwrap();
+    let previous = std::fs::read(cache.join("db.json")).unwrap();
+    db.set_file_text(path, "x".repeat(4 * 1024 * 1024 + 1));
+    let error = save_db_snapshot(&mut db, &cache).unwrap_err().to_string();
+    assert!(error.contains("string byte limit"), "{error}");
+    assert_eq!(std::fs::read(cache.join("db.json")).unwrap(), previous);
+    assert!(!cache.join("db.json.tmp").exists());
+}
+
 #[test]
 fn fresh_snapshot_revalidates_real_call_abi_before_call_lowering_is_requested() {
     use salsa::Database;

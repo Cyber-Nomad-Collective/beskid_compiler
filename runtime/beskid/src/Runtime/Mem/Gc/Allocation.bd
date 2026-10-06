@@ -229,6 +229,7 @@ pub never GcReportExhaustion(pointer heap, word reason, word requestBytes) {
 // exhaustion (reason 4 instead of 1-3) so the diagnostic names the starved subsystem.
 pub never GcReportRootStackExhaustion(pointer heap) {
     raw_word_store(pointer_add(heap, HEAP_FAILURE_REASON), HEAP_FAILURE_ROOT_STACK_FAILED_ALLOC);
+        CheckedScopeRecordFailure(HEAP_FAILURE_ROOT_STACK_FAILED_ALLOC);
     raw_word_store(pointer_add(heap, HEAP_FAILURE_REQUEST_BYTES), 0);
     pointer diagnostic = pointer_add(heap, HEAP_DIAGNOSTIC);
     memory_set(diagnostic, 0, HEAP_DIAGNOSTIC_SIZE);
@@ -271,11 +272,16 @@ pub word SlotBytesForRequest(word size, word alignment, word class) {
     return pages * PAGE_SIZE;
 }
 
-pub pointer GcAlloc(word size, word alignment) {
+// Checked construction entry: null is observable only to compiler-issued fallible paths.
+// Ordinary GcAlloc retains its exhaustion trap contract below.
+[Export(Abi:"C", Symbol:"beskid_rt_v5_gc_try_alloc")]
+pub pointer GcTryAlloc(word size, word alignment) {
+    if CheckedScopeFailureReason() != 0 { return NativePointer(0); }
     pointer heap = Heap();
-    if heap == NativePointer(0) || size < 16 || size % 8 != 0 || IsValidObjectAlignment(alignment) == false {
-        return NativePointer(0);
-    }
+    if heap == NativePointer(0) { return NativePointer(0); }
+    raw_word_store(pointer_add(heap, HEAP_FAILURE_REASON), HEAP_FAILURE_NONE);
+    raw_word_store(pointer_add(heap, HEAP_FAILURE_REQUEST_BYTES), 0);
+    if size < 16 || size % 8 != 0 || IsValidObjectAlignment(alignment) == false { return NativePointer(0); }
     // Stress mode (test-only, Verify.bd): collect BEFORE this allocation's object exists, not
     // after. At this point every live object is already reachable from the root stack, the
     // handle stack (construction temporaries hold a `gc_root_handle` slot before any nested
@@ -318,13 +324,56 @@ pub pointer GcAlloc(word size, word alignment) {
             if reason == HEAP_FAILURE_NONE {
                 reason = HEAP_FAILURE_CAP_REACHED;
             }
-            GcReportExhaustion(heap, reason, size);
+            raw_word_store(pointer_add(heap, HEAP_FAILURE_REASON), reason);
+            raw_word_store(pointer_add(heap, HEAP_FAILURE_REQUEST_BYTES), size);
+            CheckedScopeRecordFailure(reason);
+            return NativePointer(0);
         }
     }
     word slotBytes = SlotBytesForRequest(size, alignment, class);
     raw_word_store(pointer_add(heap, HEAP_LIVE_BYTES), raw_word_load(pointer_add(heap, HEAP_LIVE_BYTES)) + slotBytes);
     raw_word_store(pointer_add(heap, HEAP_LIVE_COUNT), raw_word_load(pointer_add(heap, HEAP_LIVE_COUNT)) + 1);
     return result;
+}
+
+pub unit GcClearAllocationFailure() {
+    pointer heap = Heap();
+    if heap != NativePointer(0) {
+        raw_word_store(pointer_add(heap, HEAP_FAILURE_REASON), HEAP_FAILURE_NONE);
+        raw_word_store(pointer_add(heap, HEAP_FAILURE_REQUEST_BYTES), 0);
+    }
+}
+
+pub unit GcRecordRootStackFailure() {
+    pointer heap = Heap();
+    if heap != NativePointer(0) {
+        raw_word_store(pointer_add(heap, HEAP_FAILURE_REASON), HEAP_FAILURE_ROOT_STACK_FAILED_ALLOC);
+        CheckedScopeRecordFailure(HEAP_FAILURE_ROOT_STACK_FAILED_ALLOC);
+        raw_word_store(pointer_add(heap, HEAP_FAILURE_REQUEST_BYTES), 0);
+    }
+}
+
+[Export(Abi:"C", Symbol:"beskid_rt_v5_gc_allocation_failure_reason")]
+pub word GcAllocationFailureReason() {
+    pointer heap = Heap();
+    if heap == NativePointer(0) { return 5; }
+    return raw_word_load(pointer_add(heap, HEAP_FAILURE_REASON));
+}
+
+pub pointer GcAlloc(word size, word alignment) {
+    if CheckedScopeFailureReason() != 0 { return NativePointer(0); }
+    pointer value = GcTryAlloc(size, alignment);
+    if value == NativePointer(0) {
+        pointer heap = Heap();
+        if heap != NativePointer(0) {
+            word reason = GcAllocationFailureReason();
+            if reason != HEAP_FAILURE_NONE {
+                if CheckedScopeCurrent() != NativePointer(0) { CheckedScopeRecordFailure(reason); }
+                else { GcReportExhaustion(heap, reason, size); }
+            }
+        }
+    }
+    return value;
 }
 
 [Export(Abi:"C", Symbol:"alloc")]

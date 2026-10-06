@@ -97,9 +97,9 @@ fn canonical_fiber_facade_exposes_one_exact_join_and_cancel_contract() {
         .into_iter()
         .find(|source| source.logical_path == FIBER_FACADE)
         .expect("compiler embeds canonical Fiber facade");
-    assert!(source.source.contains("__fiber_join_status(handle)"));
+    assert!(source.source.contains("__fiber_join_status(this.handle)"));
     assert!(!source.source.contains("__fiber_join(handle)"));
-    assert!(source.source.contains("__fiber_cancel(handle, 0_i64)"));
+    assert!(source.source.contains("__fiber_cancel(this.handle, 0_i64)"));
 
     let target = crate::abi_v5::TargetMetadata::supported()
         .into_iter()
@@ -400,7 +400,16 @@ fn embedded_service_sources_and_service_descriptors_have_one_exact_path_inventor
         .map(|service| service.source_path.to_owned())
         .collect::<std::collections::BTreeSet<_>>();
 
-    assert_eq!(embedded, described, "source bytes and service descriptors must not maintain divergent path lists");
+    // The embedded corpus is the single path inventory. Some units are embedded only for
+    // exact source identity (collections, Results, serialization metadata) and own no
+    // service; every service row must name an embedded unit, and raw-call coverage
+    // (`canonical_foundation_service_table_covers_every_implemented_raw_call_and_nothing_else`)
+    // proves identity-only units call no raw service.
+    assert!(
+        described.is_subset(&embedded),
+        "service descriptors name units outside the embedded source inventory: {:?}",
+        described.difference(&embedded).collect::<Vec<_>>()
+    );
     for logical_path in embedded {
         let descriptor = corelib_service_source_descriptor(&logical_path).expect("complete logical source descriptor");
         let expected_source = canonical_corelib_service_sources()
@@ -746,4 +755,37 @@ fn heap_source_constants_match_the_manifest_heap_layouts() {
              says {expected_value}"
         );
     }
+}
+
+#[test]
+fn runtime_support_is_source_bound_without_bootstrap_intrinsic_authority() {
+    let target = crate::abi_v5::TargetMetadata::supported().remove(0);
+    let manifest = AbiManifestV5::canonical_runtime(target);
+    let sources = canonical_runtime_sources();
+    let capability = canonical_runtime_intrinsic_capability(&manifest).unwrap();
+    let support = canonical_runtime_support_sources();
+    assert_eq!(support.len(), 9);
+    for unit in &support {
+        assert!(sources.contains(unit));
+        assert!(!capability.authorizes_source(&unit.logical_path));
+        for intrinsic in &manifest.trusted_runtime_intrinsics {
+            assert!(capability.intrinsic_for_source(&unit.logical_path, &intrinsic.name).is_none());
+        }
+    }
+    let mut altered = sources.clone();
+    altered.iter_mut().find(|unit| unit.logical_path == "Core/Hash/Sha256.bd").unwrap().source.push('\n');
+    assert!(matches!(
+        prove_canonical_runtime_corpus(&altered, &manifest),
+        Err(RuntimeCapabilityError::SourceSetMismatch)
+    ));
+    let mut duplicate = sources;
+    let index = duplicate.iter().position(|unit| unit.logical_path == "Core/Hash/Sha256.bd").unwrap();
+    duplicate[index] = support[0].clone();
+    assert!(matches!(
+        prove_canonical_runtime_corpus(&duplicate, &manifest),
+        Err(RuntimeCapabilityError::SourceSetMismatch)
+    ));
+    let services = capability.corelib_service_capability();
+    assert!(services.service_for_source(CANONICAL_FOUNDATION_ARRAY_SOURCE_PATH, "__array_len").is_some());
+    assert!(services.service_for_source("Core/Hash/Sha256.bd", "__array_len").is_none());
 }

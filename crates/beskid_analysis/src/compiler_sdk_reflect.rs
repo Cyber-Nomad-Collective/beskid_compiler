@@ -11,6 +11,7 @@ pub enum ReflectSdkNodeKind {
     FunctionDefinition,
     ConstantDefinition,
     MethodDefinition,
+    ImplBlock,
     TypeDefinition,
     EnumDefinition,
     EnumVariant,

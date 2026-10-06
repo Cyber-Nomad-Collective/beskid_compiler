@@ -66,6 +66,9 @@ fn trace_node_facts(
                     .unwrap_or_else(|| DirectCallee::item(declaration));
                 ("Direct", Some(callee))
             }
+            CallLowering::NativeModCallback(callback) => {
+                ("NativeModCallback", Some(DirectCallee::NativeModCallback(callback.wrapper())))
+            }
             CallLowering::Dynamic => ("Dynamic", None),
             CallLowering::ManifestBuiltin(builtin) => {
                 ("ManifestBuiltin", Some(DirectCallee::corelib_service(builtin.symbol)))
@@ -129,6 +132,9 @@ pub(super) fn format_declaration_for_trace(db: &dyn beskid_queries::Db, key: Ast
 
 fn format_callee_for_trace(db: &dyn beskid_queries::Db, callee: &DirectCallee) -> String {
     match callee {
+        DirectCallee::NativeModCallback(key) => {
+            format!("NativeModCallback({})", format_declaration_for_trace(db, *key))
+        }
         DirectCallee::Item(key) => format!("Item({})", format_declaration_for_trace(db, *key)),
         DirectCallee::SpecializedItem { declaration, abi_identity } => format!(
             "SpecializedItem({}, {})",

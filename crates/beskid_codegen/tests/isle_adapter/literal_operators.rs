@@ -1,14 +1,13 @@
 use super::support::{
     AbiManifestV5, Arc, AssemblyDiscovery, AstNodeId, AstNodeKey, BeskidDatabase,
     CANONICAL_BOOTSTRAP_NATIVE_SOURCE_PATH, CANONICAL_DYNAMIC_SOURCE_PATH, CodegenInput, EffectiveCompilationRoots,
-    HashMap, JITBuilder,
-    JITModule, Linkage, Module, ModuleIndex, NodeFacts, ProgramAssembly, ProjectSession, RootEntry, SourceUnit,
-    SourceUnitId, SyntaxGenerationId, SyntaxModuleItem, TargetMetadata, build_canonical_runtime_typed_program,
-    build_typed_program, canonical_runtime_intrinsic_capability, canonical_runtime_test_assembly,
-    default_libcall_names, emit_isle_item, find_function_definition, find_function_definitions, find_node,
-    find_nodes_of_kind, find_test_definition, isa, item_fixture, item_fixture_with_root, item_name,
-    lower_syntax_program, mutable_local_assignment, named_function, node_kind, parse_program_with_source_name,
-    settings, test_statement_nodes,
+    HashMap, JITBuilder, JITModule, Linkage, Module, ModuleIndex, NodeFacts, ProgramAssembly, ProjectSession,
+    RootEntry, SourceUnit, SourceUnitId, SyntaxGenerationId, SyntaxModuleItem, TargetMetadata,
+    build_canonical_runtime_typed_program, build_typed_program, canonical_runtime_intrinsic_capability,
+    canonical_runtime_test_assembly, default_libcall_names, emit_isle_item, find_function_definition,
+    find_function_definitions, find_node, find_nodes_of_kind, find_test_definition, isa, item_fixture,
+    item_fixture_with_root, item_name, lower_syntax_program, mutable_local_assignment, named_function, node_kind,
+    parse_program_with_source_name, settings, test_statement_nodes,
 };
 
 extern "C" fn test_str_new(bytes: *const u8, _byte_len: usize) -> *const u8 {
@@ -424,7 +423,7 @@ fn native_pointer_identity_comparison_lowers_against_a_pointer_parameter() {
     // `NativePointer` is a canonical Bootstrap helper visible by unqualified name only through
     // the compiler-minted cross-unit scope installed over the exact embedded runtime corpus (see
     // `attach_private_runtime_scope`); a standalone `item_fixture` snippet has no such scope, so
-    // this exercises the real corpus's own `DynamicCastChecked`, whose first statement is exactly
+    // this exercises the real corpus's own `DynamicStatusBufferValidV1`, whose first statement is exactly
     // `if cell == NativePointer(0) { return DYNAMIC_STATUS_ERR_NULL_PAYLOAD; }`
     // (`runtime/beskid/src/Runtime/Dynamic/Dynamic.bd`). It is one of the shortest canonical
     // functions using this pattern: everything else it calls is a manifest-builtin/runtime
@@ -474,10 +473,10 @@ fn native_pointer_identity_comparison_lowers_against_a_pointer_parameter() {
         .expect("host ISA")
         .finish(settings::Flags::new(settings::builder()))
         .expect("host flags");
-    let dynamic_cast_checked = find_function_definitions(input.database(), dynamic_root)
+    let status_buffer_valid = find_function_definitions(input.database(), dynamic_root)
         .into_iter()
-        .find(|key| item_name(input.database(), *key).ok().flatten().as_deref() == Some("DynamicCastChecked"))
-        .expect("Dynamic.bd declares DynamicCastChecked");
+        .find(|key| item_name(input.database(), *key).ok().flatten().as_deref() == Some("DynamicStatusBufferValidV1"))
+        .expect("Dynamic.bd declares DynamicStatusBufferValidV1");
     let native_pointer = find_function_definitions(input.database(), native_root)
         .into_iter()
         .find(|key| item_name(input.database(), *key).ok().flatten().as_deref() == Some("NativePointer"))
@@ -487,17 +486,17 @@ fn native_pointer_identity_comparison_lowers_against_a_pointer_parameter() {
         &input,
         isa.as_ref(),
         &[
-            SyntaxModuleItem { key: dynamic_cast_checked, symbol: "DynamicCastChecked".into() },
+            SyntaxModuleItem { key: status_buffer_valid, symbol: "DynamicStatusBufferValidV1".into() },
             SyntaxModuleItem { key: native_pointer, symbol: "NativePointer".into() },
         ],
     )
     .expect("a native pointer parameter compared to NativePointer(0) must lower");
-    let dynamic_cast_checked_function = artifact
+    let status_buffer_valid_function = artifact
         .functions
         .iter()
-        .find(|function| function.name == "DynamicCastChecked")
-        .expect("DynamicCastChecked is lowered");
-    let clif = dynamic_cast_checked_function.function.display().to_string();
+        .find(|function| function.name == "DynamicStatusBufferValidV1")
+        .expect("DynamicStatusBufferValidV1 is lowered");
+    let clif = status_buffer_valid_function.function.display().to_string();
     assert!(clif.contains("icmp"), "the null check must remain a direct comparison:\n{clif}");
 }
 

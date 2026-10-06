@@ -10,6 +10,11 @@ pub(in crate::semantic_contract) fn aggregate_layout_tracked(
     syntax: SyntaxUnitInput,
     key: AstNodeKey,
 ) -> SemanticQueryResult<AggregateLayoutFact> {
+    if crate::runtime_managed_opaque_kind(db, key)
+        .is_some_and(|kind| kind != crate::RuntimeManagedOpaqueKind::SerializationExtras)
+    {
+        return Err(SemanticError::unavailable("aggregate_layout.sealed_runtime_opaque"));
+    }
     with_node(db, syntax, key, |program, index, node| {
         let definition = node.of::<beskid_analysis::syntax::TypeDefinition>()?;
         Some(aggregate_layout_from_definition(db, program, index, key, definition, None))
@@ -49,7 +54,7 @@ pub(in crate::semantic_contract) fn event_field_layout_tracked(
         {
             let (_, shape) = aggregate_field_layout(db, program, index, owner_key, source_field).ok()?;
             let abi_type = match shape {
-                AggregateFieldShape::Scalar(abi_type) => abi_type,
+                AggregateFieldShape::Scalar(abi_type) | AggregateFieldShape::ManagedReference(abi_type) => abi_type,
                 AggregateFieldShape::Nominal(_) => SemanticTypeId::POINTER,
             };
             let layout = abi_type.scalar_abi_layout(64)?;
@@ -241,8 +246,15 @@ pub fn aggregate_literal_specialization(
         let literal = node.of::<beskid_analysis::syntax::StructLiteralExpression>()?;
         let ambient = enclosing
             .iter()
-            .map(|binding| (binding.parameter.to_string(), AggregateFieldShape::Scalar(binding.argument)))
-            .collect::<HashMap<_, _>>();
+            .map(|binding| {
+                crate::semantic_contract::layouts::aggregate_shape_for_binding(db, key, binding)
+                    .map(|shape| (binding.parameter.to_string(), shape))
+            })
+            .collect::<Result<HashMap<_, _>, SemanticError>>();
+        let ambient = match ambient {
+            Ok(ambient) => ambient,
+            Err(error) => return Some(Err(error)),
+        };
         Some(instantiated_aggregate_layout_for_path(db, key, &literal.path.node, Some(&ambient)).and_then(
             |(declaration, layout)| {
                 validate_aggregate_literal_visibility(db, key, declaration)?;
@@ -275,6 +287,13 @@ fn validate_aggregate_literal_visibility(
     key: AstNodeKey,
     declaration: AstNodeKey,
 ) -> Result<(), SemanticError> {
+    if let Some(kind) = crate::runtime_managed_opaque_kind(db, declaration) {
+        if kind != crate::RuntimeManagedOpaqueKind::SerializationExtras
+            || !sealed_extras_factory_site(db, key, declaration)
+        {
+            return Err(SemanticError::unavailable("aggregate_literal.sealed_runtime_opaque"));
+        }
+    }
     if private_deadline_literal_field(db, key, declaration)?.is_some() {
         return Err(SemanticError::unavailable("aggregate_literal.visibility"));
     }
@@ -300,6 +319,9 @@ pub(in crate::semantic_contract) fn private_deadline_literal_field(
         .node_at(syntax.expanded_program(db), declaration.node)
         .and_then(|node| node.of::<beskid_analysis::syntax::TypeDefinition>())
         .ok_or_else(|| SemanticError::unavailable("aggregate_literal.visibility"))?;
+    if crate::process_source_authority::canonical_process_resource_kind(db, declaration).is_some() {
+        return Ok(Some("token"));
+    }
     if definition.name.node.name == "Deadline"
         && definition.fields.iter().any(|field| {
             field.node.kind == beskid_analysis::syntax::FieldKind::Value
@@ -320,7 +342,7 @@ pub(in crate::semantic_contract) fn private_deadline_literal_field(
 }
 
 /// Derive the element ABI of an empty array literal only from a direct declared `T[]` storage
-/// context. An empty literal carries no element expression from which to infer a representation,
+/// context or exact enum variant argument. An empty literal carries no element expression from which to infer a representation,
 /// so standalone, local-inferred, nested, assignment, and mismatched-field uses remain
 /// unavailable. The enclosing aggregate declaration or direct explicit-local annotation is the
 /// sole authority.
@@ -367,6 +389,54 @@ pub(in crate::semantic_contract) fn empty_array_literal_element_abi_type_tracked
                 return Some(Err(SemanticError::unavailable("empty_array_literal_element_abi_type")));
             };
             return Some(abi_type_from_syntax(db, AstNodeKey { node: declaration, ..key }, &element.node));
+        }
+
+        // A direct enum payload has a declared element type just like a record field.
+        // Bind the argument by its exact AST child, then resolve the selected variant's
+        // declaration; neighboring payloads and arbitrary enclosing expressions are not authority.
+        if let Some(constructor) =
+            index.node_at(program, local_node)?.of::<beskid_analysis::syntax::EnumConstructorExpression>()
+        {
+            let constructor_key = AstNodeKey { node: local_node, ..key };
+            let argument_index = constructor.args.iter().position(|argument| {
+                index.direct_child_id(program, local_node, beskid_analysis::syntax_query::DynNodeRef::from(argument))
+                    == Some(expression)
+            })?;
+            let path = contextual_enum_constructor_type_path(db, program, index, constructor_key, constructor)
+                .unwrap_or_else(|| constructor.path.node.type_path.node.clone());
+            let declaration = resolve_type_declaration(db, constructor_key, &path)?;
+            let declaration_syntax =
+                db.syntax_unit(declaration.unit).filter(|unit| unit.generation(db) == declaration.generation)?;
+            let definition = declaration_syntax
+                .syntax_index(db)
+                .node_at(declaration_syntax.expanded_program(db), declaration.node)?
+                .of::<beskid_analysis::syntax::EnumDefinition>()?;
+            let variant = definition
+                .variants
+                .iter()
+                .find(|variant| variant.node.name.node.name == constructor.path.node.variant.node.name)?;
+            if variant.node.fields.len() != constructor.args.len() {
+                return None;
+            }
+            let beskid_analysis::syntax::Type::Array(element) = &variant.node.fields.get(argument_index)?.node.ty.node
+            else {
+                return None;
+            };
+            // A bare enum type parameter is owned by the caller's applied arguments.
+            // Concrete declared element names remain owned by the declaration unit.
+            if let beskid_analysis::syntax::Type::Complex(parameter_path) = &element.node
+                && let [segment] = parameter_path.node.segments.as_slice()
+                && segment.node.type_args.is_empty()
+                && let Some(parameter_index) =
+                    definition.generics.iter().position(|parameter| parameter.node.name == segment.node.name.node.name)
+            {
+                let arguments = &path.segments.last()?.node.type_args;
+                if arguments.len() != definition.generics.len() {
+                    return None;
+                }
+                return Some(abi_type_from_syntax(db, constructor_key, &arguments.get(parameter_index)?.node));
+            }
+            return Some(abi_type_from_syntax(db, declaration, &element.node));
         }
 
         // The AST preserves the direct `StructLiteralField -> Expression -> []` ownership chain.
@@ -591,4 +661,44 @@ pub fn array_index_element_specialization(
             .find(|binding| binding.parameter.as_ref() == parameter.as_ref())
             .map(|binding| binding.argument)),
     }
+}
+
+/// Physical layout remains source-derived, but only this exact immutable
+/// canonical private constructor may allocate the sealed ExtrasBinding.
+fn sealed_extras_factory_site(db: &dyn Db, key: AstNodeKey, declaration: AstNodeKey) -> bool {
+    if key.unit != declaration.unit
+        || key.generation != declaration.generation
+        || crate::canonical_corelib_source_path(db, key).as_deref()
+            != Some(beskid_abi::runtime_source::CANONICAL_SERIALIZATION_DESCRIPTORS_SOURCE_PATH)
+    {
+        return false;
+    }
+    let Some(syntax) = db.syntax_unit(key.unit).filter(|syntax| syntax.accepts_key(db, key)) else { return false };
+    let Some(expected) = beskid_abi::runtime_source::canonical_corelib_service_sources()
+        .into_iter()
+        .find(|unit| unit.logical_path == beskid_abi::runtime_source::CANONICAL_SERIALIZATION_DESCRIPTORS_SOURCE_PATH)
+    else {
+        return false;
+    };
+    let Ok(parsed) =
+        beskid_analysis::services::parse_program_with_source_name("canonical-descriptors", &expected.source)
+    else {
+        return false;
+    };
+    if &parsed != syntax.expanded_program(db).as_ref() {
+        return false;
+    }
+    let index = syntax.syntax_index(db);
+    let Some(owner) =
+        nearest_ancestor(index, key.node, |kind| kind == beskid_analysis::syntax_query::NodeKind::FunctionDefinition)
+    else {
+        return false;
+    };
+    index
+        .node_at(syntax.expanded_program(db), owner)
+        .and_then(|node| node.of::<beskid_analysis::syntax::FunctionDefinition>())
+        .is_some_and(|function| {
+            function.name.node.name == "AttachCompiledExtras"
+                && function.visibility.node == beskid_analysis::syntax::Visibility::Private
+        })
 }

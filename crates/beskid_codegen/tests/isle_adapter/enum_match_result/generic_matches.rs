@@ -101,10 +101,24 @@ fn direct_generic_call_match_supports_nested_nominal_payload_pattern() {
 
 #[test]
 fn direct_generic_call_match_distinguishes_scalar_array_and_native_pointer_ownership() {
+    // A managed array payload keeps its source ownership in the shape itself; a native pointer
+    // with the same pointer ABI stays a plain scalar.
     for (ty, expected_shape, ownership) in [
-        ("i64", beskid_queries::SemanticTypeId::I64, beskid_queries::ManagedReferenceKind::NativeOrScalar),
-        ("u8[]", beskid_queries::SemanticTypeId::POINTER, beskid_queries::ManagedReferenceKind::GcManaged),
-        ("pointer", beskid_queries::SemanticTypeId::POINTER, beskid_queries::ManagedReferenceKind::NativeOrScalar),
+        (
+            "i64",
+            beskid_queries::AggregateFieldShape::Scalar(beskid_queries::SemanticTypeId::I64),
+            beskid_queries::ManagedReferenceKind::NativeOrScalar,
+        ),
+        (
+            "u8[]",
+            beskid_queries::AggregateFieldShape::ManagedReference(beskid_queries::SemanticTypeId::POINTER),
+            beskid_queries::ManagedReferenceKind::GcManaged,
+        ),
+        (
+            "pointer",
+            beskid_queries::AggregateFieldShape::Scalar(beskid_queries::SemanticTypeId::POINTER),
+            beskid_queries::ManagedReferenceKind::NativeOrScalar,
+        ),
     ] {
         let (input, isa, root) = item_fixture_with_root(&format!(
             "enum Outcome<T> {{ Ok(T value), None }} Outcome<T> Wrap<T>(T value) {{ return Outcome::Ok(value); }} i64 Main({ty} value) {{ return match Wrap(value) {{ Outcome::Ok(payload) => 21_i64, _ => -1_i64, }}; }}"
@@ -117,7 +131,7 @@ fn direct_generic_call_match_distinguishes_scalar_array_and_native_pointer_owner
         let beskid_queries::EnumMatchPatternFact::Binding(binding) = &pattern.items[0] else {
             panic!("payload binding");
         };
-        assert_eq!(binding.payload, beskid_queries::AggregateFieldShape::Scalar(expected_shape), "{ty}");
+        assert_eq!(binding.payload, expected_shape, "{ty}");
         assert_eq!(binding.managed_reference, ownership, "{ty}");
         let items = find_function_definitions(input.database(), root)
             .into_iter()

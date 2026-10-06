@@ -151,6 +151,15 @@ impl TypeChecker<'_> {
 
         checker.errors.truncate(dependency_errors_before);
         checker.current_source_path = entry_source_path.as_ref().map(|path| crate::paths::unit_path_key(path));
+        checker.runtime_plane_extern_unit = assembly.zip(entry_source_path.as_ref()).is_some_and(|(assembly, path)| {
+            assembly
+                .units
+                .iter()
+                .find(|unit| crate::paths::same_file(&unit.path, path))
+                .is_some_and(|unit| assembly.is_canonical_public_dynamic_unit(unit))
+        });
+        checker.glue_libraries =
+            assembly.map(|assembly| Arc::clone(&assembly.glue_libraries)).unwrap_or_else(|| Arc::from([]));
         checker.seed_struct_definitions(program);
         checker.seed_generics_from_program(program);
         checker.seed_contract_signatures(program);

@@ -25,6 +25,7 @@ pub struct InstallSnapshot {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum InstallSource {
+    Bundled,
     Registry,
     Path,
     Git,
@@ -79,14 +80,36 @@ pub fn list_installed() -> TemplateResult<Vec<(InstallSnapshot, PathBuf)>> {
     Ok(out)
 }
 
-pub fn install_from_tree(template_root: &Path, snapshot: InstallSnapshot) -> TemplateResult<PathBuf> {
+pub fn install_from_tree(template_root: &Path, mut snapshot: InstallSnapshot) -> TemplateResult<PathBuf> {
     let manifest = load_manifest_from_template_root(template_root)?;
-    let dest = install_dir_for_identity(&manifest.identity);
-    if dest.exists() {
-        fs::remove_dir_all(&dest)?;
+    let inventory = TreeInventory::read(template_root)?;
+    if snapshot.identity != manifest.identity || snapshot.short_name != manifest.short_name {
+        return Err(TemplateError::InvalidManifest("installation snapshot identity differs from template".into()));
     }
-    copy_tree(template_root, &dest)?;
-    write_snapshot(&dest, &snapshot)?;
+    snapshot.checksum = Some(inventory.checksum(template_root)?);
+    let dest = install_dir_for_identity(&manifest.identity);
+    let parent = dest.parent().expect("installed directory parent");
+    fs::create_dir_all(parent)?;
+    let staging = tempfile::tempdir_in(parent)?;
+    inventory.copy(template_root, staging.path())?;
+    if checksum_dir(staging.path())? != snapshot.checksum.as_deref().expect("computed checksum") {
+        return Err(TemplateError::Internal("template changed during installation; retry from a stable source".into()));
+    }
+    write_snapshot(staging.path(), &snapshot)?;
+    let backup = parent.join(format!(".backup-{}", uuid::Uuid::new_v4()));
+    let had_previous = dest.exists();
+    if had_previous {
+        fs::rename(&dest, &backup)?;
+    }
+    if let Err(error) = fs::rename(staging.path(), &dest) {
+        if had_previous {
+            fs::rename(&backup, &dest)?;
+        }
+        return Err(error.into());
+    }
+    if had_previous {
+        fs::remove_dir_all(backup)?;
+    }
     Ok(dest)
 }
 
@@ -123,54 +146,98 @@ pub fn read_template_root_from_install(dir: &Path) -> TemplateResult<PathBuf> {
     )))
 }
 
+pub const TEMPLATE_CHECKSUM_PREFIX: &str = "sha256-template-tree-v1:";
+
 pub fn checksum_dir(root: &Path) -> TemplateResult<String> {
-    let mut hasher = Sha256::new();
-    let mut files: Vec<PathBuf> = Vec::new();
-    collect_files(root, &mut files)?;
-    files.sort();
-    for file in files {
-        if file.ends_with("manifest.snapshot.json") {
-            continue;
-        }
-        hasher.update(file.strip_prefix(root).unwrap_or(&file).to_string_lossy().as_bytes());
-        hasher.update(&fs::read(&file)?);
-    }
-    Ok(format!("{:x}", hasher.finalize()))
+    TreeInventory::read(root)?.checksum(root)
 }
 
-fn collect_files(dir: &Path, out: &mut Vec<PathBuf>) -> TemplateResult<()> {
-    for entry in fs::read_dir(dir)? {
-        let entry = entry?;
-        let path = entry.path();
-        if path.is_dir() {
-            collect_files(&path, out)?;
-        } else if path.is_file() {
-            out.push(path);
-        }
-    }
-    Ok(())
+struct TreeInventory {
+    directories: Vec<PathBuf>,
+    files: Vec<(String, PathBuf)>,
 }
 
-fn copy_tree(from: &Path, to: &Path) -> TemplateResult<()> {
-    fs::create_dir_all(to)?;
-    for entry in fs::read_dir(from)? {
-        let entry = entry?;
-        let name = entry.file_name();
-        if name == ".git" {
-            continue;
+impl TreeInventory {
+    fn read(root: &Path) -> TemplateResult<Self> {
+        let metadata = fs::symlink_metadata(root)?;
+        if metadata.file_type().is_symlink() || !metadata.is_dir() {
+            return Err(TemplateError::InvalidManifest("template root must be a directory, not a symlink".into()));
         }
-        let src = entry.path();
-        let dst = to.join(name);
-        if src.is_dir() {
-            copy_tree(&src, &dst)?;
-        } else {
-            if let Some(parent) = dst.parent() {
-                fs::create_dir_all(parent)?;
+        let mut inventory = Self { directories: Vec::new(), files: Vec::new() };
+        inventory.collect(root, Path::new(""))?;
+        inventory.files.sort_by(|left, right| left.0.cmp(&right.0));
+        inventory.directories.sort();
+        Ok(inventory)
+    }
+
+    fn collect(&mut self, root: &Path, relative: &Path) -> TemplateResult<()> {
+        for entry in fs::read_dir(root.join(relative))? {
+            let entry = entry?;
+            let path = relative.join(entry.file_name());
+            let metadata = fs::symlink_metadata(root.join(&path))?;
+            if metadata.file_type().is_symlink() {
+                return Err(TemplateError::InvalidManifest(format!(
+                    "symlink template payload is forbidden: {}",
+                    path.display()
+                )));
             }
-            fs::copy(&src, &dst)?;
+            if entry.file_name() == ".git" || path == Path::new("manifest.snapshot.json") {
+                continue;
+            }
+            if metadata.is_dir() {
+                self.directories.push(path.clone());
+                self.collect(root, &path)?;
+            } else if metadata.is_file() {
+                let normalized = path
+                    .components()
+                    .map(|part| {
+                        part.as_os_str()
+                            .to_str()
+                            .ok_or_else(|| TemplateError::InvalidManifest("template paths must be UTF-8".into()))
+                    })
+                    .collect::<TemplateResult<Vec<_>>>()?
+                    .join("/");
+                self.files.push((normalized, path));
+            } else {
+                return Err(TemplateError::InvalidManifest(format!(
+                    "non-regular template payload is forbidden: {}",
+                    path.display()
+                )));
+            }
         }
+        Ok(())
     }
-    Ok(())
+
+    fn checksum(&self, root: &Path) -> TemplateResult<String> {
+        let mut hasher = Sha256::new();
+        hasher.update(b"beskid-template-tree-v1\0");
+        for (normalized, path) in &self.files {
+            let metadata = fs::symlink_metadata(root.join(path))?;
+            if !metadata.is_file() || metadata.file_type().is_symlink() {
+                return Err(TemplateError::InvalidManifest("template changed to a symlink or special file".into()));
+            }
+            let bytes = fs::read(root.join(path))?;
+            hasher.update((normalized.len() as u64).to_le_bytes());
+            hasher.update(normalized.as_bytes());
+            hasher.update((bytes.len() as u64).to_le_bytes());
+            hasher.update(bytes);
+        }
+        Ok(format!("{TEMPLATE_CHECKSUM_PREFIX}{:x}", hasher.finalize()))
+    }
+
+    fn copy(&self, root: &Path, dest: &Path) -> TemplateResult<()> {
+        for directory in &self.directories {
+            fs::create_dir_all(dest.join(directory))?;
+        }
+        for (_, path) in &self.files {
+            let metadata = fs::symlink_metadata(root.join(path))?;
+            if !metadata.is_file() || metadata.file_type().is_symlink() {
+                return Err(TemplateError::InvalidManifest("template changed to a symlink or special file".into()));
+            }
+            fs::copy(root.join(path), dest.join(path))?;
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -199,4 +266,48 @@ pub fn save_registry_index(index: &RegistryIndex) -> TemplateResult<()> {
     }
     fs::write(registry_index_path(), serde_json::to_vec_pretty(index)?)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod v06_cache_tests {
+    use super::*;
+
+    #[test]
+    fn v06_cache_digest_frames_paths_and_payload_and_versions_authority() {
+        let first = tempfile::tempdir().unwrap();
+        let second = tempfile::tempdir().unwrap();
+        fs::write(first.path().join("a"), "bc").unwrap();
+        fs::write(second.path().join("ab"), "c").unwrap();
+        let a = checksum_dir(first.path()).unwrap();
+        let b = checksum_dir(second.path()).unwrap();
+        assert_ne!(a, b, "path/payload concatenation must not collide");
+        assert!(a.starts_with("sha256-template-tree-v1:"));
+    }
+
+    #[test]
+    fn v06_cache_nested_snapshot_is_payload_not_install_receipt() {
+        let root = tempfile::tempdir().unwrap();
+        fs::create_dir(root.path().join("nested")).unwrap();
+        fs::write(root.path().join("nested/manifest.snapshot.json"), "first").unwrap();
+        let before = checksum_dir(root.path()).unwrap();
+        fs::write(root.path().join("nested/manifest.snapshot.json"), "second").unwrap();
+        assert_ne!(before, checksum_dir(root.path()).unwrap());
+        fs::write(root.path().join("manifest.snapshot.json"), "receipt").unwrap();
+        let with_receipt = checksum_dir(root.path()).unwrap();
+        fs::write(root.path().join("manifest.snapshot.json"), "changed receipt").unwrap();
+        assert_eq!(with_receipt, checksum_dir(root.path()).unwrap());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn v06_cache_inventory_rejects_external_links_and_directory_cycles() {
+        for cycle in [false, true] {
+            let root = tempfile::tempdir().unwrap();
+            let outside = tempfile::NamedTempFile::new().unwrap();
+            std::os::unix::fs::symlink(if cycle { root.path() } else { outside.path() }, root.path().join("link"))
+                .unwrap();
+            let error = checksum_dir(root.path()).unwrap_err().to_string();
+            assert!(error.contains("symlink"), "{error}");
+        }
+    }
 }

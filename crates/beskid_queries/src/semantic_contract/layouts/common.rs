@@ -21,7 +21,7 @@ pub(in crate::semantic_contract) fn aggregate_field_layout(
                 .ok_or_else(|| SemanticError::unavailable("aggregate_layout"))?,
         ),
         // Arrays are heap-backed reference values in ABI v5, including empty literal payloads.
-        beskid_analysis::syntax::Type::Array(_) => AggregateFieldShape::Scalar(SemanticTypeId::POINTER),
+        beskid_analysis::syntax::Type::Array(_) => AggregateFieldShape::ManagedReference(SemanticTypeId::POINTER),
         _ => return Err(SemanticError::unavailable("aggregate_layout")),
     };
     Ok((Arc::from(field.node.name.node.name.as_str()), shape))
@@ -112,7 +112,9 @@ pub(in crate::semantic_contract) fn abi_type_for_local_path(
                 .fields
                 .get(usize::try_from(access.index).map_err(|_| SemanticError::unavailable("abi_type"))?)
             {
-                Some((_, AggregateFieldShape::Scalar(semantic))) => Ok(*semantic),
+                Some((_, AggregateFieldShape::Scalar(semantic) | AggregateFieldShape::ManagedReference(semantic))) => {
+                    Ok(*semantic)
+                }
                 Some((_, AggregateFieldShape::Nominal(_))) => Ok(SemanticTypeId::POINTER),
                 None => Err(SemanticError::unavailable("abi_type")),
             }
@@ -134,7 +136,9 @@ pub(in crate::semantic_contract) fn abi_type_for_local_path(
                 .fields
                 .get(usize::try_from(access.index).map_err(|_| SemanticError::unavailable("abi_type"))?)
             {
-                Some((_, AggregateFieldShape::Scalar(semantic))) => Ok(*semantic),
+                Some((_, AggregateFieldShape::Scalar(semantic) | AggregateFieldShape::ManagedReference(semantic))) => {
+                    Ok(*semantic)
+                }
                 Some((_, AggregateFieldShape::Nominal(_))) => Ok(SemanticTypeId::POINTER),
                 None => Err(SemanticError::unavailable("abi_type")),
             }
@@ -299,10 +303,19 @@ pub(in crate::semantic_contract) fn resolve_type_declaration(
     let generic_arity = name.node.type_args.len();
     let name = name.node.name.node.name.as_str();
     if module_path.is_empty() {
-        let mut candidates = Vec::new();
-        if let Some(local) = unique_type_in_unit(db, key.unit, key.generation, name, generic_arity) {
-            candidates.push(local);
+        // A declaration owned by this unit is the lexical authority for a bare type
+        // name. Imported exports participate only when no local declaration matches;
+        // qualified paths below still retain their explicitly selected module identity.
+        // Inline modules are lexical scopes: the nearest enclosing module that declares the
+        // name decides it, so a same-named declaration in a sibling `mod` never makes a local
+        // name ambiguous. An ambiguous nearest scope stays unresolved.
+        if let Some(lexical) = lexical_type_in_unit(db, key, name, generic_arity) {
+            return lexical;
         }
+        if let Some(local) = unique_type_in_unit(db, key.unit, key.generation, name, generic_arity) {
+            return Some(local);
+        }
+        let mut candidates = Vec::new();
         let import_targets = {
             let registry = db.syntax_dependency_registry().lock().expect("syntax dependency registry");
             registry
@@ -399,6 +412,47 @@ pub(in crate::semantic_contract) fn unique_exported_type_in_unit(
     Some(*candidate)
 }
 
+/// The type or enum named `name` declared in the nearest module scope (inline module or program)
+/// enclosing `key` that declares that name at all. `None` when no enclosing scope declares it;
+/// `Some(None)` when the nearest declaring scope is ambiguous.
+fn lexical_type_in_unit(
+    db: &dyn Db,
+    key: AstNodeKey,
+    name: &str,
+    generic_arity: usize,
+) -> Option<Option<AstNodeKey>> {
+    use crate::semantic_contract::resolution::{module_scope, outer_module_scope};
+    let syntax = db.syntax_unit(key.unit)?;
+    if syntax.generation(db) != key.generation {
+        return None;
+    }
+    let program = syntax.expanded_program(db);
+    let index = syntax.syntax_index(db);
+    let mut scope = module_scope(index, key.node);
+    while let Some(current) = scope {
+        let matches = index
+            .ids_of_kind(beskid_analysis::syntax_query::NodeKind::TypeDefinition)
+            .chain(index.ids_of_kind(beskid_analysis::syntax_query::NodeKind::EnumDefinition))
+            .filter(|candidate| {
+                module_scope(index, *candidate) == Some(current)
+                    && index.node_at(program, *candidate).is_some_and(|node| {
+                        node.of::<beskid_analysis::syntax::TypeDefinition>().is_some_and(|definition| {
+                            definition.name.node.name == name && definition.generics.len() == generic_arity
+                        }) || node.of::<beskid_analysis::syntax::EnumDefinition>().is_some_and(|definition| {
+                            definition.name.node.name == name && definition.generics.len() == generic_arity
+                        })
+                    })
+            })
+            .collect::<Vec<_>>();
+        match matches.as_slice() {
+            [] => scope = outer_module_scope(index, current),
+            [node] => return Some(Some(AstNodeKey { unit: key.unit, generation: key.generation, node: *node })),
+            _ => return Some(None),
+        }
+    }
+    None
+}
+
 pub(in crate::semantic_contract) fn unique_type_in_unit(
     db: &dyn Db,
     unit: SourceUnitId,
@@ -413,9 +467,8 @@ pub(in crate::semantic_contract) fn unique_type_in_unit(
     let program = syntax.expanded_program(db);
     let index = syntax.syntax_index(db);
     let matches = index
-        .metadata()
-        .iter()
-        .map(|metadata| metadata.id)
+        .ids_of_kind(beskid_analysis::syntax_query::NodeKind::TypeDefinition)
+        .chain(index.ids_of_kind(beskid_analysis::syntax_query::NodeKind::EnumDefinition))
         .filter(|candidate| {
             index.node_at(program, *candidate).is_some_and(|node| {
                 node.of::<beskid_analysis::syntax::TypeDefinition>().is_some_and(|definition| {
@@ -446,9 +499,8 @@ pub(in crate::semantic_contract) fn unique_public_type_in_unit(
     let program = syntax.expanded_program(db);
     let index = syntax.syntax_index(db);
     let matches = index
-        .metadata()
-        .iter()
-        .map(|metadata| metadata.id)
+        .ids_of_kind(beskid_analysis::syntax_query::NodeKind::TypeDefinition)
+        .chain(index.ids_of_kind(beskid_analysis::syntax_query::NodeKind::EnumDefinition))
         .filter(|candidate| {
             index.node_at(program, *candidate).is_some_and(|node| {
                 node.of::<beskid_analysis::syntax::TypeDefinition>().is_some_and(|definition| {
@@ -478,12 +530,17 @@ pub(in crate::semantic_contract) fn semantic_type_from_syntax(
         Type::Primitive(primitive) => Ok(match primitive.node {
             PrimitiveType::Bool => SemanticTypeId::BOOL,
             PrimitiveType::I32 => SemanticTypeId::I32,
+            PrimitiveType::I8 => SemanticTypeId::I8,
+            PrimitiveType::I16 => SemanticTypeId::I16,
+            PrimitiveType::U16 => SemanticTypeId::U16,
+            PrimitiveType::U64 => SemanticTypeId::U64,
             PrimitiveType::I64 => SemanticTypeId::I64,
             PrimitiveType::U32 => SemanticTypeId::U32,
             PrimitiveType::U8 => SemanticTypeId::U8,
             PrimitiveType::Pointer => SemanticTypeId::POINTER,
             PrimitiveType::Word => SemanticTypeId::WORD,
             PrimitiveType::F64 => SemanticTypeId::F64,
+            PrimitiveType::F32 => SemanticTypeId::F32,
             PrimitiveType::Char => SemanticTypeId::CHAR,
             PrimitiveType::String => SemanticTypeId::STRING,
             PrimitiveType::Unit => SemanticTypeId::UNIT,
@@ -495,5 +552,27 @@ pub(in crate::semantic_contract) fn semantic_type_from_syntax(
             Err(SemanticError::unavailable("item_signature"))
         }
         Type::Function { .. } => Err(SemanticError::unavailable("item_signature")),
+    }
+}
+
+/// Preserve source ownership through specialization; erased pointer ABI is not authority.
+pub(in crate::semantic_contract) fn aggregate_shape_for_binding(
+    db: &dyn Db,
+    key: AstNodeKey,
+    binding: &GenericSubstitution,
+) -> Result<AggregateFieldShape, SemanticError> {
+    match binding.source_identity() {
+        GenericSourceTypeIdentity::Abi(SemanticTypeId::POINTER) => {
+            Err(SemanticError::unavailable("aggregate_reference_classification"))
+        }
+        GenericSourceTypeIdentity::Abi(semantic) => Ok(AggregateFieldShape::Scalar(*semantic)),
+        GenericSourceTypeIdentity::Nominal { .. } => {
+            super::super::contracts::concrete_type_or_enum_declaration(db, key, binding.source_identity())
+                .map(AggregateFieldShape::Nominal)
+                .ok_or_else(|| SemanticError::unavailable("aggregate_reference_classification"))
+        }
+        GenericSourceTypeIdentity::Array(_) | GenericSourceTypeIdentity::Function { .. } => {
+            Ok(AggregateFieldShape::ManagedReference(SemanticTypeId::POINTER))
+        }
     }
 }

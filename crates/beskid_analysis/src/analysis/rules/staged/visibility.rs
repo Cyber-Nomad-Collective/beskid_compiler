@@ -6,7 +6,7 @@ use crate::syntax::Spanned;
 use crate::syntax::{Block, Expression, Node, Path, Program, Statement, Type, Visibility};
 use crate::syntax_query::Query;
 use std::collections::{HashMap, HashSet};
-use std::path::PathBuf;
+use crate::projects::{module_path_to_relative_path, resolve_module_file};
 
 impl SemanticPipelineRule {
     pub(super) fn stage5_modules_and_visibility(
@@ -22,31 +22,35 @@ impl SemanticPipelineRule {
         self.check_unused_private_items(ctx, program);
     }
 
+    /// `pub mod A.B;` names the full logical module path `A.B`, resolved against the effective
+    /// module roots exactly as program assembly resolves it ([`resolve_module_file`]). Without an
+    /// assembly there are no module roots to judge against, so the check does not run.
     fn check_module_not_found(&self, ctx: &mut RuleContext, program: &Spanned<Program>) {
         if self.file_scoped_module_index(program).is_some() {
             return;
         }
-
-        let source = PathBuf::from(ctx.source_name());
-        let Some(parent) = source.parent() else {
+        let Some(assembly) = ctx.options.program_assembly.as_ref() else {
             return;
         };
+        let roots = assembly.roots.clone();
 
         for item in &program.node.items {
             let Node::ModuleDeclaration(module) = &item.node else {
                 continue;
             };
-            let module_path = self.path_to_string_stage5(&module.node.path).replace('.', "/");
-            let file_candidate = parent.join(format!("{module_path}.bd"));
-            let mod_candidate = parent.join(module_path).join("mod.bd");
-            if file_candidate.exists() || mod_candidate.exists() {
+            let module_path = self.path_to_string_stage5(&module.node.path);
+            if resolve_module_file(&module_path, &roots).is_some() {
                 continue;
             }
+            let relative = module_path_to_relative_path(&module_path);
+            let source_root = &roots.host.source_root;
+            let file_candidate = source_root.join(relative.with_extension("bd"));
+            let mod_candidate = source_root.join(&relative).join("mod.bd");
 
             ctx.emit_issue(
                 module.node.path.span,
                 SemanticIssueKind::VisibilityModuleNotFound {
-                    module_path: self.path_to_string_stage5(&module.node.path),
+                    module_path,
                     file_candidate: file_candidate.display().to_string(),
                     mod_candidate: mod_candidate.display().to_string(),
                 },

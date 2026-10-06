@@ -1,0 +1,38 @@
+use Std.Testing.Assert;
+use Std.Core.Bytes.Slice;
+
+// Typed source profile: not a claim that current C lowering supports all forms.
+[Export(Abi:"C", Symbol:"beskid_i8")]
+pub i8 ExportI8(i8 value) { return value; }
+[Export(Abi:"C", Symbol:"beskid_i16")]
+pub i16 ExportI16(i16 value) { return value; }
+[Export(Abi:"C", Symbol:"beskid_i32")]
+pub i32 ExportI32(i32 value) { return value; }
+[Export(Abi:"C", Symbol:"beskid_i64")]
+pub i64 ExportI64(i64 value) { return value; }
+[Export(Abi:"C", Symbol:"beskid_u8")]
+pub u8 ExportU8(u8 value) { return value; }
+[Export(Abi:"C", Symbol:"beskid_u16")]
+pub u16 ExportU16(u16 value) { return value; }
+[Export(Abi:"C", Symbol:"beskid_u32")]
+pub u32 ExportU32(u32 value) { return value; }
+[Export(Abi:"C", Symbol:"beskid_u64")]
+pub u64 ExportU64(u64 value) { return value; }
+[Export(Abi:"C", Symbol:"beskid_f32")]
+pub f32 ExportF32(f32 value) { return value; }
+[Export(Abi:"C", Symbol:"beskid_f64")]
+pub f64 ExportF64(f64 value) { return value; }
+[Export(Abi:"C", Symbol:"beskid_bool")]
+pub bool ExportBOOL(bool value) { return value; }
+[Export(Abi:"C", Symbol:"beskid_char")]
+pub char ExportCHAR(char value) { return value; }
+[Export(Abi:"C", Symbol:"beskid_utf8")]
+pub string ExportUTF8(string value) { string copy = value + ""; Assert.CollectGarbage(); return copy; }
+[Export(Abi:"C", Symbol:"beskid_bytes")]
+pub u8[] ExportBYTES(u8[] value) { u8[] copy = Slice.SubSlice(value, 0_i64, Slice.Len(value)); Assert.CollectGarbage(); return copy; }
+[Export(Abi:"C", Symbol:"beskid_handle")]
+pub u64 ExportHANDLE(u64 value) { return value; }
+[Export(Abi:"C", Symbol:"beskid_native_width")]
+pub word ExportNATIVEWIDTH(word value) { return value; }
+[Export(Abi:"C", Symbol:"beskid_unit")]
+pub unit ExportUnit() { return; }

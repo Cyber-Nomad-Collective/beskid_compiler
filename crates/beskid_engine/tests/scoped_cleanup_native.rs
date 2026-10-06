@@ -70,11 +70,11 @@ fn run_cleanup_fixture(fixture: &str) {
     let prefix = tempfile::tempdir().unwrap();
     let kit = build_native_host(prefix.path().to_path_buf(), RuntimeKitProfile::Debug).unwrap();
     let object_path = prefix.path().join(if cfg!(windows) { "cleanup.obj" } else { "cleanup.o" });
-    let native_symbol = beskid_codegen::object_link_symbol(&lowered.symbol, &lowered.artifact.exports);
+    let native_symbol = beskid_codegen::object_link_symbol(&lowered.symbol(), &lowered.artifact().exports);
     let mut object = beskid_aot::object_module::BeskidObjectModule::new(None, beskid_aot::BuildProfile::Debug).unwrap();
     object
         .compile_artifact_with_exports(
-            &lowered.artifact,
+            &lowered.artifact(),
             &std::collections::HashSet::from([native_symbol.clone()]),
             None,
         )
@@ -127,8 +127,8 @@ fn run_cleanup_fixture(fixture: &str) {
     #[cfg(windows)]
     run_native_routes();
     let mut engine = beskid_engine::Engine::with_runtime_kit(prefix.path(), target, BuildProfile::Debug).unwrap();
-    engine.compile_artifact(&lowered.artifact).expect("compile scoped cleanup artifact");
-    let entry = unsafe { engine.entrypoint_ptr(&lowered.symbol) }.unwrap();
+    engine.compile_artifact(&lowered.artifact()).expect("compile scoped cleanup artifact");
+    let entry = unsafe { engine.entrypoint_ptr(&lowered.symbol()) }.unwrap();
     let run: extern "C" fn() -> i64 = unsafe { std::mem::transmute(entry) };
     assert_eq!(run(), 42, "fixture returns a distinct failure code for each cleanup obligation");
     #[cfg(unix)]

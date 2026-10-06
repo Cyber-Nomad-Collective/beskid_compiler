@@ -152,7 +152,7 @@ fn unknown_field_read(
     Some(MemberReferenceFinding { site, kind: MemberReferenceKind::UnknownStructField { name: Arc::from(field_name) } })
 }
 
-fn is_call_callee(
+pub(super) fn is_call_callee(
     program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
     index: &SyntaxIndex,
     node: beskid_analysis::syntax::AstNodeId,
@@ -180,12 +180,12 @@ fn is_call_callee(
     false
 }
 
-struct DeclaredMembers {
-    fields: HashSet<String>,
-    methods: HashSet<String>,
+pub(super) struct DeclaredMembers {
+    pub(super) fields: HashSet<String>,
+    pub(super) methods: HashSet<String>,
 }
 
-fn declared_member_names(db: &dyn Db, declaration: AstNodeKey) -> Option<DeclaredMembers> {
+pub(super) fn declared_member_names(db: &dyn Db, declaration: AstNodeKey) -> Option<DeclaredMembers> {
     let syntax = db.syntax_unit(declaration.unit).filter(|syntax| syntax.accepts_key(db, declaration))?;
     let definition =
         syntax.syntax_index(db).node_at(syntax.expanded_program(db), declaration.node)?.of::<TypeDefinition>()?.clone();
@@ -195,7 +195,7 @@ fn declared_member_names(db: &dyn Db, declaration: AstNodeKey) -> Option<Declare
     })
 }
 
-fn enum_definition(db: &dyn Db, declaration: AstNodeKey) -> Option<EnumDefinition> {
+pub(super) fn enum_definition(db: &dyn Db, declaration: AstNodeKey) -> Option<EnumDefinition> {
     let syntax = db.syntax_unit(declaration.unit).filter(|syntax| syntax.accepts_key(db, declaration))?;
     syntax.syntax_index(db).node_at(syntax.expanded_program(db), declaration.node)?.of::<EnumDefinition>().cloned()
 }

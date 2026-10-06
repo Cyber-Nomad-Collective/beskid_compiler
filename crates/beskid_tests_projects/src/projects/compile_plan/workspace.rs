@@ -70,7 +70,7 @@ fn relocated_sibling_path_keeps_lock_bytes_and_materialized_names() {
         let plan = build_compile_plan(&moved_app.join(manifest_name), None).expect("relocated plan");
         let workspace = prepare_project_workspace_with_options(
             &plan,
-            WorkspacePrepareOptions { frozen: false, locked: true, refresh_lock: false },
+            WorkspacePrepareOptions { offline: false, frozen: false, locked: true, refresh_lock: false },
             None,
         )
         .expect("preserved sibling layout must reuse the committed lock");
@@ -155,7 +155,7 @@ fn distinct_installed_corelib_roots_keep_lock_bytes_and_materialized_names() {
             assert!(plan.has_std_dependency, "fixture must resolve implicit Std");
             let workspace = prepare_project_workspace_with_options(
                 &plan,
-                WorkspacePrepareOptions { frozen: false, locked: true, refresh_lock: false },
+                WorkspacePrepareOptions { offline: false, frozen: false, locked: true, refresh_lock: false },
                 None,
             )
             .expect("the same lock must accept another installed Corelib root");
@@ -267,7 +267,7 @@ dependency "Util" {
 
         let locked_result = prepare_project_workspace_with_options(
             &plan,
-            WorkspacePrepareOptions { frozen: false, locked: true, refresh_lock: false },
+            WorkspacePrepareOptions { offline: false, frozen: false, locked: true, refresh_lock: false },
             None,
         );
         assert!(locked_result.is_ok());
@@ -431,9 +431,10 @@ dependency "Core" {
                 "materialized dependency should not copy obj/: {}",
                 dependency_root.display()
             );
+            // `tests/` is ordinary package content; only the nested build output inside it is private.
             assert!(
-                !dependency_root.join("tests").exists(),
-                "materialized dependency should not copy tests/: {}",
+                !dependency_root.join("tests").join("nested").join("obj").exists(),
+                "materialized dependency should not copy nested obj/: {}",
                 dependency_root.display()
             );
         }

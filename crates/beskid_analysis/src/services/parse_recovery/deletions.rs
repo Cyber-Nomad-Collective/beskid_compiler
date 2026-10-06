@@ -107,5 +107,13 @@ fn token_span_at_error(source: &str, error_pos: usize) -> Option<(usize, usize)>
         return None;
     }
     let len = scan::token_len_at_raw(source, pos)?;
-    Some((pos, (pos + len).min(source.len())))
+    Some((pos, len.min(source.len() - pos)))
+}
+
+#[cfg(test)]
+mod v06_tests {
+    #[test]
+    fn v06_deletion_span_uses_length_at_nonzero_offset() {
+        assert_eq!(super::token_span_at_error("  + next", 2), Some((2, 1)));
+    }
 }

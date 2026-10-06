@@ -6,6 +6,9 @@ license.workspace = true
 description = "On-disk unit artifact cache schema and persistence for Beskid incremental compilation"
 
 [dependencies]
+tempfile = "3"
+libloading = "0.8"
+sha2 = "0.10"
 beskid_pipeline = { path = "../beskid_pipeline" }
 postcard = { version = "1", features = ["alloc"] }
 serde = { version = "1", features = ["derive"] }
@@ -13,4 +16,7 @@ serde_json = "1"
 thiserror = "2"
 
 [dev-dependencies]
-tempfile = "3"
+beskid_execution = { path = "../beskid_execution" }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"

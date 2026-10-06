@@ -44,6 +44,11 @@ impl SemanticTypeId {
     pub const NEVER: Self = Self(10);
     /// Fixed-width unsigned 32-bit integer. Its CLIF storage is `i32`, but its semantics are unsigned.
     pub const U32: Self = Self(11);
+    pub const I8: Self = Self(12);
+    pub const I16: Self = Self(13);
+    pub const U16: Self = Self(14);
+    pub const U64: Self = Self(15);
+    pub const F32: Self = Self(16);
 
     /// Return this semantic scalar's target-specific ABI size, alignment, and pointer-map class.
     pub fn scalar_abi_layout(self, pointer_width: u8) -> Option<ScalarAbiLayout> {
@@ -53,9 +58,12 @@ impl SemanticTypeId {
             _ => return None,
         };
         match self {
-            Self::BOOL | Self::U8 => Some(ScalarAbiLayout { size: 1, alignment: 1, is_pointer: false }),
-            Self::I32 | Self::U32 | Self::CHAR => Some(ScalarAbiLayout { size: 4, alignment: 4, is_pointer: false }),
-            Self::I64 | Self::F64 => Some(ScalarAbiLayout { size: 8, alignment: 8, is_pointer: false }),
+            Self::BOOL | Self::I8 | Self::U8 => Some(ScalarAbiLayout { size: 1, alignment: 1, is_pointer: false }),
+            Self::I16 | Self::U16 => Some(ScalarAbiLayout { size: 2, alignment: 2, is_pointer: false }),
+            Self::I32 | Self::U32 | Self::F32 | Self::CHAR => {
+                Some(ScalarAbiLayout { size: 4, alignment: 4, is_pointer: false })
+            }
+            Self::I64 | Self::U64 | Self::F64 => Some(ScalarAbiLayout { size: 8, alignment: 8, is_pointer: false }),
             Self::WORD => Some(ScalarAbiLayout { size: pointer_size, alignment: pointer_size, is_pointer: false }),
             Self::POINTER | Self::STRING => {
                 Some(ScalarAbiLayout { size: pointer_size, alignment: pointer_size, is_pointer: true })
@@ -72,6 +80,11 @@ impl SemanticTypeId {
         match self {
             Self::UNIT => "unit",
             Self::BOOL => "bool",
+            Self::I8 => "i8",
+            Self::I16 => "i16",
+            Self::U16 => "u16",
+            Self::U64 => "u64",
+            Self::F32 => "f32",
             Self::I32 => "i32",
             Self::I64 => "i64",
             Self::U32 => "u32",
@@ -108,13 +121,14 @@ impl std::fmt::Display for SemanticTypeId {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum CollectionMutationOwner {
     Local(LocalSlot),
-    AggregateField { receiver: LocalSlot, declaration: AstNodeKey, index: u32 },
+    AggregateField { root: LocalSlot, receiver: AstNodeKey, declaration: AstNodeKey, index: u32 },
 }
 
 /// Compiler-owned operation selected only from the resolved canonical Core.Collections.Array declaration.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum CollectionOperation {
     Append { owner: CollectionMutationOwner },
+    TryAppend { owner: CollectionMutationOwner },
     Capacity,
     Clear,
     RemoveLast,
@@ -138,6 +152,7 @@ pub enum CallLowering {
     ManifestBuiltin(ManifestBuiltin),
     Runtime(RuntimeIntrinsic),
     CorelibService(CorelibService),
+    NativeModCallback(super::super::NativeModCallback),
 }
 
 /// Source-callable runtime operation declared explicitly by the ABI-v5 manifest.

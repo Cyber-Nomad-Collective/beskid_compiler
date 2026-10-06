@@ -1,5 +1,4 @@
 use std::{
-    collections::HashSet,
     fs,
     path::{Component, Path, PathBuf},
 };
@@ -18,15 +17,14 @@ use super::{
     filesystem::{copy_directory_when_newer, materialized_dependency_id},
     lockfile::{
         PortableLockPath, PortableLockPathBaseKind, ProjectLockDependencyEntry, ProjectLockSource,
-        WorkspacePrepareOptions, preflight_existing_lock_for_plan, sync_project_lockfile, validate_existing_lock_graph,
+        WorkspacePrepareOptions, sync_project_lockfile,
     },
-    registry::{materialize_registry_dependency, resolve_registry_dependency},
+    registry::materialize_registry_dependency,
 };
 use crate::projects::{
     error::ProjectError,
-    graph::builder::discover_workspace_resolution_rules,
     model::{
-        CompilePlan, DependencySource, MaterializedDependencyProject, PreparedProjectWorkspace, ProjectWorkspacePlan,
+        CompilePlan, MaterializedDependencyProject, PreparedProjectWorkspace, ProjectWorkspacePlan,
         ResolvedDependencyProject,
     },
 };
@@ -125,73 +123,21 @@ pub fn prepare_project_workspace_plan_with_options(
 ) -> Result<PreparedProjectWorkspace, ProjectError> {
     let deps_root = plan.project_root.join("obj").join("beskid").join("deps").join("src");
     let root_materialized_project = plan.project_root.join("obj").join("beskid").join("root");
-    let verified_corelib_root = verified_installed_corelib_root();
-    let existing_lock = preflight_existing_lock_for_plan(plan, options)?;
-    // Refresh reconstructs registry identity from the current manifest graph.
-    let existing_registry_pins = if options.refresh_lock {
-        None
-    } else {
-        existing_lock.as_ref().map(|lock| {
-            lock.dependencies
-                .iter()
-                .filter(|entry| entry.source == ProjectLockSource::Registry)
-                .cloned()
-                .collect::<Vec<_>>()
-        })
+    let policy = super::resolution::ResolutionPolicy {
+        locked: options.locked || options.frozen,
+        offline: options.offline || options.frozen,
+        refresh: if options.refresh_lock {
+            super::resolution::RefreshScope::All
+        } else {
+            super::resolution::RefreshScope::None
+        },
     };
-    let mut lock_entries = Vec::with_capacity(plan.dependency_projects.len());
-    let mut destinations = HashSet::new();
-    for dependency in &plan.dependency_projects {
-        let entry = portable_entry_for_dependency(plan, dependency, verified_corelib_root.as_deref())?;
-        if !destinations.insert(entry.materialized_root.clone()) {
-            return Err(ProjectError::Validation("lockfile duplicates a materialized destination".into()));
-        }
-        lock_entries.push(entry);
-    }
-
-    let workspace_rules = discover_workspace_resolution_rules(&plan.manifest_path)?;
-    let registry_deps: Vec<_> =
-        plan.unresolved_dependencies.iter().filter(|x| x.source == DependencySource::Registry).collect();
-    validate_existing_lock_graph(
-        existing_lock.as_ref(),
-        &lock_entries,
-        &registry_deps.iter().map(|entry| entry.dependency_name.as_str()).collect::<Vec<_>>(),
-        options.refresh_lock,
-    )?;
-    let mut resolved_registry = Vec::with_capacity(registry_deps.len());
-    for unresolved in &registry_deps {
-        let pinned = existing_registry_pins
-            .as_ref()
-            .and_then(|entries| entries.iter().find(|entry| entry.name == unresolved.dependency_name));
-        let missing_existing_pin = existing_registry_pins.is_some() && pinned.is_none() && !options.refresh_lock;
-        if missing_existing_pin && (options.locked || options.frozen) {
-            return Err(ProjectError::Validation(format!(
-                "registry dependency `{}` is missing a pin in the existing v2 lock; run `beskid update`",
-                unresolved.dependency_name
-            )));
-        }
-        let Some(resolved) = resolve_registry_dependency(
-            unresolved,
-            workspace_rules.as_ref(),
-            pinned,
-            options.refresh_lock,
-            &plan.project_root,
-        )?
-        else {
-            continue;
-        };
-        if missing_existing_pin {
-            return Err(ProjectError::Validation(format!(
-                "registry dependency `{}` became available but is missing a pin in the existing v2 lock; run `beskid \
-                 update`",
-                unresolved.dependency_name
-            )));
-        }
-        resolved.validate_existing_lock_entry(pinned)?;
-        if !destinations.insert(resolved.materialized_relative.clone()) {
-            return Err(ProjectError::Validation("lockfile duplicates a materialized destination".into()));
-        }
-        resolved_registry.push(resolved);
+    let resolved = super::resolution::ResolveWorkspaceDependencies(plan, &policy, options.refresh_lock)?;
+    let mut lock_entries = resolved.entries;
+    let resolved_registry = resolved.registry;
+    for registry in &resolved_registry {
+        registry.lock_entry()?;
+        registry.cache_artifact(&plan.project_root)?;
     }
 
     fs::create_dir_all(&deps_root)
@@ -207,6 +153,7 @@ pub fn prepare_project_workspace_plan_with_options(
     if let Some(source_root) = &plan.source_root {
         observe_phase_result(pipeline, WORKSPACE_MATERIALIZE_LOCAL, || {
             copy_directory_when_newer(source_root, &materialized_source_root)?;
+            materialize_generated_sources(source_root, &materialized_source_root)?;
             report_progress(pipeline, WORKSPACE_MATERIALIZE_LOCAL, 1, 1, source_segment.clone());
             Ok(())
         })?;
@@ -266,10 +213,75 @@ pub fn prepare_project_workspace_plan_with_options(
         sync_project_lockfile(plan, &lock_entries, options)
     })?;
 
+    let verified_package_identities = crate::projects::VerifiedPackageIdentities::prepare(
+        plan,
+        &materialized_source_root,
+        &materialized_dependencies,
+        &lock_entries,
+        &lockfile_path,
+    )?;
+
     Ok(PreparedProjectWorkspace {
+        verified_package_identities,
         lockfile_path,
         materialized_project_root: root_materialized_project,
         materialized_source_root,
         materialized_dependencies,
     })
+}
+
+/// Mirror the package's checked-in generated sources beside the materialized source root.
+///
+/// Generated units live in `.generated/` next to the source root (`<root>/../.generated`), the
+/// location assembly discovery and module resolution read for every effective root. Dependencies
+/// are materialized as whole project roots and so carry it already; the host copies only its
+/// source root, so its `.generated` sibling is mirrored here, and a stale mirror is removed when
+/// the package no longer has generated sources.
+fn materialize_generated_sources(source_root: &Path, materialized_source_root: &Path) -> Result<(), ProjectError> {
+    let (Some(source_parent), Some(materialized_parent)) = (source_root.parent(), materialized_source_root.parent())
+    else {
+        return Ok(());
+    };
+    let generated = source_parent.join(".generated");
+    let materialized_generated = materialized_parent.join(".generated");
+    if generated.is_dir() {
+        return copy_directory_when_newer(&generated, &materialized_generated);
+    }
+    if materialized_generated.exists() {
+        fs::remove_dir_all(&materialized_generated)
+            .map_err(|source| ProjectError::MaterializationPrune { path: materialized_generated.clone(), source })?;
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod generated_materialization_tests {
+    use super::materialize_generated_sources;
+    use std::fs;
+
+    #[test]
+    fn host_generated_sources_mirror_beside_the_materialized_source_root_and_prune_when_gone() {
+        let base = std::env::temp_dir().join(format!("beskid_generated_mirror_{}", std::process::id()));
+        let _ = fs::remove_dir_all(&base);
+        let project = base.join("package");
+        let source_root = project.join("src");
+        let generated_file = project.join(".generated/Core/Text/Regex/Generated.g.bd");
+        fs::create_dir_all(&source_root).expect("source root");
+        fs::create_dir_all(generated_file.parent().expect("generated parent")).expect("generated directory");
+        fs::write(&generated_file, "pub i64 ParseDigit() { return 1_i64; }").expect("generated source");
+        let materialized_source_root = project.join("obj/beskid/root/src");
+        fs::create_dir_all(&materialized_source_root).expect("materialized source root");
+
+        materialize_generated_sources(&source_root, &materialized_source_root).expect("mirror generated sources");
+        let mirrored = project.join("obj/beskid/root/.generated/Core/Text/Regex/Generated.g.bd");
+        assert_eq!(
+            fs::read_to_string(&mirrored).expect("mirrored generated source"),
+            "pub i64 ParseDigit() { return 1_i64; }"
+        );
+
+        fs::remove_dir_all(project.join(".generated")).expect("drop generated sources");
+        materialize_generated_sources(&source_root, &materialized_source_root).expect("prune generated mirror");
+        assert!(!project.join("obj/beskid/root/.generated").exists(), "a stale generated mirror is removed");
+        let _ = fs::remove_dir_all(&base);
+    }
 }

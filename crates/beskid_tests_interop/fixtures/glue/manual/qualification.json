@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "state": "awaiting_actual_candidate_red",
+  "manual_import_expected_pass_count": 20,
+  "manual_export_expected_representations": 17,
+  "managed_physical_profile": "export_boundary.h",
+  "runtime_host_authority": "generated beskid_runtime_abi_v5.h",
+  "owned_release_required_symbol": "beskid_glue_release_24b6992e581aa5005a6d6dbe54772382480884d151090eb990289bd7a5bcc439",
+  "required_unproven_obligations": [
+    "logical managed extern argument normalization and canonical GC roots",
+    "owned managed export copies with checked zeroed out parameter",
+    "canonical process-issued token, library/session/shape/generation provenance",
+    "two distinct libraries sharing one canonical runtime heap",
+    "cross-process or cross-heap token rejection without numeric-token collision",
+    "branded opaque handle declaration authority, not ordinary u64 identity",
+    "checked exported bool/char failure wrapper",
+    "allocation/collection during managed adapter body",
+    "partial allocation failure publishes no buffer",
+    "manual/generated production backend parity on three required targets",
+    "canonical stdio serialization/process/cancellation/close integration"
+  ],
+  "old_receipt_reused": false,
+  "native_release_qualified": false,
+  "owned_release_library_identity": "beskid_manual"
+}

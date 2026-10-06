@@ -49,10 +49,10 @@ fn prepared_syntax_entrypoint_lowers_without_hir_host_authority() {
     })
     .expect("syntax assembly lowering");
 
-    assert_eq!(lowered.artifact.functions.len(), 2);
-    assert!(lowered.symbol.starts_with("Main#syntax_"));
-    assert_eq!(lowered_again.symbol, lowered.symbol);
-    assert_eq!(lowered_from_assembly.symbol, lowered.symbol);
+    assert_eq!(lowered.artifact().functions.len(), 2);
+    assert!(lowered.symbol().starts_with("Main#syntax_"));
+    assert_eq!(lowered_again.symbol(), lowered.symbol());
+    assert_eq!(lowered_from_assembly.symbol(), lowered.symbol());
     std::fs::remove_dir_all(directory).expect("remove project");
 }
 
@@ -260,14 +260,14 @@ pub i64 Main() { return Helper() + 1; }
     .expect("syntax assembly entrypoint lowering");
 
     assert_eq!(
-        lowered.artifact.exports,
+        lowered.artifact().exports,
         vec![beskid_codegen::ExportEntry {
             beskid_name: "Main".into(),
             exported_symbol: "beskid_entry".into(),
             abi: "C".into(),
         }]
     );
-    assert_eq!(object_link_symbol(&lowered.symbol, &lowered.artifact.exports), "beskid_entry");
+    assert_eq!(object_link_symbol(&lowered.symbol(), &lowered.artifact().exports), "beskid_entry");
     std::fs::remove_dir_all(directory).expect("remove project");
 }
 
@@ -300,4 +300,52 @@ fn prepared_syntax_module_lowers_sample_mod_nominal_contract_methods() {
 
     assert_eq!(artifact.functions.len(), 5);
     std::fs::remove_dir_all(directory).expect("remove project");
+}
+
+#[test]
+fn selected_entrypoints_share_one_reachable_artifact() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("Main.bd");
+    let source = "i32 Shared() { return 9; } i32 First() { return Shared(); } i32 Second() { return Shared() + 1; } i32 Unselected() { return 77; } i32 WithArg(i32 value) { return value; }";
+    std::fs::write(&path, source).unwrap();
+    let plan = synthetic_compile_plan_for_source(&path);
+    let resolved = resolved_input_from_plan(path, source.into(), plan, None, None);
+    let front = compile_front_end_from_resolved_input(
+        &resolved,
+        FrontEndOptions { with_semantic_diagnostics: false, ..Default::default() },
+        None,
+    )
+    .unwrap();
+    let target = TargetMetadata::for_triple("x86_64-unknown-linux-gnu").unwrap();
+    let isa = isa::lookup_by_name("x86_64").unwrap().finish(settings::Flags::new(settings::builder())).unwrap();
+    let names = vec!["Second".to_owned(), "First".to_owned()];
+    let lowered = with_db(|db| {
+        beskid_codegen::lower_prepared_syntax_entrypoints(db, &front, &names, target.clone(), isa.as_ref())
+    })
+    .unwrap();
+    assert_eq!(lowered.entries().iter().map(|entry| entry.name()).collect::<Vec<_>>(), ["Second", "First"]);
+    assert_eq!(lowered.artifact().functions.len(), 3);
+    assert_eq!(
+        lowered.artifact().functions.iter().filter(|function| function.name.starts_with("Shared#syntax_")).count(),
+        1
+    );
+    assert!(!lowered.artifact().functions.iter().any(|function| function.name.starts_with("Unselected#syntax_")));
+    for entry in lowered.entries() {
+        assert!(lowered.artifact().functions.iter().any(|function| function.name == entry.symbol()));
+        assert_eq!(entry.return_type(), beskid_queries::SemanticTypeId::I32);
+    }
+    for invalid in
+        [vec![], vec!["First".to_owned(), "First".to_owned()], vec!["Missing".to_owned()], vec!["WithArg".to_owned()]]
+    {
+        assert!(
+            with_db(|db| beskid_codegen::lower_prepared_syntax_entrypoints(
+                db,
+                &front,
+                &invalid,
+                target.clone(),
+                isa.as_ref()
+            ))
+            .is_err()
+        );
+    }
 }

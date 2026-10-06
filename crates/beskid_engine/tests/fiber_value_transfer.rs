@@ -796,17 +796,17 @@ fn source_transfer_fixture(kind: &str, entry: &str, expected: i64) {
     };
     {
         let mut engine = beskid_engine::Engine::with_runtime_kit(prefix.path(), target, BuildProfile::Debug).unwrap();
-        engine.compile_artifact(&lowered.artifact).expect("JIT typed Fiber artifact");
-        let entry = unsafe { engine.entrypoint_ptr(&lowered.symbol) }.unwrap();
+        engine.compile_artifact(&lowered.artifact()).expect("JIT typed Fiber artifact");
+        let entry = unsafe { engine.entrypoint_ptr(&lowered.symbol()) }.unwrap();
         let run: extern "C" fn() -> i64 = unsafe { std::mem::transmute(entry) };
         eprintln!("Fiber JIT execution start");
         assert_eq!(run(), expected);
         eprintln!("{kind} engine execution complete result={expected}");
     }
     let object_path = prefix.path().join(if cfg!(windows) { "fiber.obj" } else { "fiber.o" });
-    let native_symbol = beskid_codegen::object_link_symbol(&lowered.symbol, &lowered.artifact.exports);
+    let native_symbol = beskid_codegen::object_link_symbol(&lowered.symbol(), &lowered.artifact().exports);
     let mut object = beskid_aot::object_module::BeskidObjectModule::new(None, beskid_aot::BuildProfile::Debug).unwrap();
-    object.compile_artifact_with_exports(&lowered.artifact, &HashSet::from([native_symbol.clone()]), None).unwrap();
+    object.compile_artifact_with_exports(&lowered.artifact(), &HashSet::from([native_symbol.clone()]), None).unwrap();
     object.finalize_to_path(&object_path).unwrap();
     for (mode, library) in [("aot", &kit.static_library), ("native-kit", shared_link_library)] {
         let directory = prefix.path().join(mode);

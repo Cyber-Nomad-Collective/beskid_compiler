@@ -21,7 +21,8 @@ pub(super) fn lower_prepared_entrypoint(
     })
 }
 
-/// Lower every executable item in a prepared frontend snapshot through the AOT target ISA.
+/// Lower the library output (shared, static, object) of a prepared frontend snapshot through the
+/// AOT target ISA: every item of the units the library owns plus the dependency items they reach.
 pub(super) fn lower_prepared_module(
     front: &beskid_analysis::services::FrontEndTypedResult,
     target_triple: Option<&str>,
@@ -29,7 +30,7 @@ pub(super) fn lower_prepared_module(
 ) -> Result<beskid_codegen::CodegenArtifact> {
     let target = resolve_abi_target(target_triple)?;
     observe_phase_result(pipeline, CODEGEN_CLIF, || {
-        beskid_aot::lower_prepared_syntax_module(front, target).map_err(anyhow::Error::from)
+        beskid_aot::lower_prepared_syntax_library(front, target).map_err(anyhow::Error::from)
     })
 }
 

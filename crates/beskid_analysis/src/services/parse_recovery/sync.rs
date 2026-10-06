@@ -144,7 +144,7 @@ fn token_span_at_error(source: &str, error_pos: usize) -> Option<(usize, usize)>
         return None;
     }
     let len = scan::token_len_at_raw(source, pos)?;
-    Some((pos, (pos + len).min(source.len())))
+    Some((pos, len.min(source.len() - pos)))
 }
 
 fn matches_existing_token(source: &str, insert_at: usize, token: &str) -> bool {
@@ -154,8 +154,7 @@ fn matches_existing_token(source: &str, insert_at: usize, token: &str) -> bool {
     if insert_at >= source.len() {
         return false;
     }
-    let end = insert_at.saturating_add(token.len());
-    end <= source.len() && source[insert_at..end] == *token
+    source.as_bytes()[insert_at..].starts_with(token.as_bytes())
 }
 
 fn sync_keywords_from_error(parse_error: &pest::error::Error<Rule>) -> Vec<&'static str> {
@@ -169,4 +168,25 @@ fn first_non_ws_after(source: &str, from: usize) -> Option<usize> {
 
 fn is_punct_like_recoverable(byte: u8) -> bool {
     scan::is_delimiter_byte(byte) || scan::is_operator_byte(byte)
+}
+
+#[cfg(test)]
+mod v06_tests {
+    use super::*;
+
+    #[test]
+    fn v06_token_match_handles_multibyte_mismatch_without_slicing_a_scalar() {
+        for source in ["😀", "ż", "x😀"] {
+            for token in [";", "if", "let", "false"] {
+                assert!(!matches_existing_token(source, 0, token));
+            }
+        }
+        assert!(matches_existing_token("let 😀", 0, "let"));
+    }
+
+    #[test]
+    fn v06_replacement_span_is_token_length_at_nonzero_offset() {
+        assert_eq!(token_span_at_error("  abc 😀", 2), Some((2, 3)));
+        assert_eq!(token_span_at_error("  \"😀\"", 2), Some((2, 6)));
+    }
 }

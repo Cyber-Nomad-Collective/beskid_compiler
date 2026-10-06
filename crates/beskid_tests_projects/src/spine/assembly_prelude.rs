@@ -18,7 +18,14 @@ fn ansi_escape_resolves_under_corelib_test_assembly() {
     let source = fs::read_to_string(&entry).expect("read AnsiEscapeTests.bd");
 
     let resolved = with_cwd_at_workspace_root(&root, || {
-        resolve_input(Some(&entry), Some(&project_root), None, None, false, false).expect("resolve")
+        resolve_input(
+            Some(&entry),
+            Some(&project_root),
+            None,
+            None,
+            beskid_analysis::projects::WorkspacePrepareOptions::default(),
+        )
+        .expect("resolve")
     });
 
     let plan = resolved.compile_plan.expect("compile plan");

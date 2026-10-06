@@ -226,6 +226,10 @@ pub(in crate::semantic_contract) fn semantic_type_for_literal(
     literal: &beskid_analysis::syntax::Literal,
 ) -> SemanticTypeId {
     match literal {
+        beskid_analysis::syntax::Literal::Integer(value) if value.ends_with("_i8") => SemanticTypeId::I8,
+        beskid_analysis::syntax::Literal::Integer(value) if value.ends_with("_i16") => SemanticTypeId::I16,
+        beskid_analysis::syntax::Literal::Integer(value) if value.ends_with("_u16") => SemanticTypeId::U16,
+        beskid_analysis::syntax::Literal::Integer(value) if value.ends_with("_u64") => SemanticTypeId::U64,
         beskid_analysis::syntax::Literal::Integer(value) if value.ends_with("_i32") => SemanticTypeId::I32,
         beskid_analysis::syntax::Literal::Integer(value) if value.ends_with("_i64") => SemanticTypeId::I64,
         beskid_analysis::syntax::Literal::Integer(value) if value.ends_with("_u32") => SemanticTypeId::U32,
@@ -236,6 +240,7 @@ pub(in crate::semantic_contract) fn semantic_type_for_literal(
             SemanticTypeId::WORD
         }
         beskid_analysis::syntax::Literal::Integer(_) => SemanticTypeId::I32,
+        beskid_analysis::syntax::Literal::Float(value) if value.ends_with("_f32") => SemanticTypeId::F32,
         beskid_analysis::syntax::Literal::Float(_) => SemanticTypeId::F64,
         beskid_analysis::syntax::Literal::String(_) => SemanticTypeId::STRING,
         beskid_analysis::syntax::Literal::Char(_) => SemanticTypeId::CHAR,

@@ -186,7 +186,9 @@ pub(in crate::semantic_contract) fn contextual_integer_literal_abi_type_tracked(
                         .iter()
                         .find(|(name, _)| name.as_ref() == field.name.node.name)
                         .and_then(|(_, shape)| match shape {
-                            AggregateFieldShape::Scalar(semantic) => Some(*semantic),
+                            AggregateFieldShape::Scalar(semantic) | AggregateFieldShape::ManagedReference(semantic) => {
+                                Some(*semantic)
+                            }
                             AggregateFieldShape::Nominal(_) => None,
                         })
                         .ok_or_else(|| SemanticError::unavailable("contextual_integer_literal_abi_type"))?;
@@ -307,6 +309,7 @@ pub(in crate::semantic_contract) fn abi_type_tracked(
                 CallLowering::Direct(_)
                     | CallLowering::Runtime(_)
                     | CallLowering::ManifestBuiltin(_)
+                    | CallLowering::NativeModCallback(_)
                     | CallLowering::CorelibService(_)
             ) {
                 return Some(Err(SemanticError::unavailable("abi_type")));
@@ -338,6 +341,14 @@ pub(in crate::semantic_contract) fn value_abi_type_tracked(
     key: AstNodeKey,
 ) -> SemanticQueryResult<SemanticTypeId> {
     with_node(db, syntax, key, |program, index, node| {
+        let normalized = normalized_expression_node(index, key.node);
+        if normalized != key.node {
+            return Some(
+                value_abi_type(db, AstNodeKey { node: normalized, ..key })
+                    .and_then(|value| value.ok_or_else(|| SemanticError::unavailable("value_abi_type"))),
+            );
+        }
+
         if node.of::<beskid_analysis::syntax::CallExpression>().is_some()
             && event_operation_tracked(db, syntax, key)
                 .ok()
@@ -355,6 +366,15 @@ pub(in crate::semantic_contract) fn value_abi_type_tracked(
             return Some(statement);
         }
         Some((|| {
+            // Floating literals use the exact contextual width; decoding into F64 first would
+            // introduce double rounding before an F32 boundary.
+            if matches!(literal_fact(db, key)?, Some(LiteralFact::Float(_)))
+                && let Some(intents) = optional_abi_fact(cast_intents(db, key))?
+                && let Some(intent) = intents.first()
+                && matches!(intent.to, SemanticTypeId::F32 | SemanticTypeId::F64)
+            {
+                return Ok(intent.to);
+            }
             let contextual = optional_abi_fact(contextual_integer_literal_abi_type(db, key))?;
             let binary_operand = optional_abi_fact(binary_operand_abi_type(db, key))?;
             let call_result = optional_abi_fact(call_abi_signature(db, key))?.map(|signature| signature.result);
@@ -403,9 +423,19 @@ pub(in crate::semantic_contract) fn abi_type_for_expression(
         // Field facts are keyed by the path expression itself, not by its expression wrapper
         // (the operand key a binary expression hands out): a bare receiver field inside a
         // method resolves only through the path node.
-        Expression::Path(path) => {
+        Expression::Path(_) => {
             let path_key = AstNodeKey { node: normalized_expression_node(index, key.node), ..key };
-            abi_type_for_local_path(db, program, index, path_key, &path.node.path.node)
+            if index.kind(path_key.node) != Some(beskid_analysis::syntax_query::NodeKind::PathExpression) {
+                return Err(SemanticError::unavailable("abi_type"));
+            }
+            abi_type(db, path_key)?.ok_or_else(|| SemanticError::unavailable("abi_type"))
+        }
+        Expression::Member(_) => {
+            let member_key = AstNodeKey { node: normalized_expression_node(index, key.node), ..key };
+            if index.kind(member_key.node) != Some(beskid_analysis::syntax_query::NodeKind::MemberExpression) {
+                return Err(SemanticError::unavailable("abi_type"));
+            }
+            abi_type(db, member_key)?.ok_or_else(|| SemanticError::unavailable("abi_type"))
         }
         Expression::Grouped(_) => {
             let inner = normalized_expression_node(index, key.node);

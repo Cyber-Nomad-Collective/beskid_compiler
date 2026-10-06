@@ -173,12 +173,11 @@ pub fn enum_constructor_specialization(
             let shape = match argument {
                 EnumLayoutTemplateArgument::Concrete(shape) => *shape,
                 EnumLayoutTemplateArgument::EnclosingParameter(name) => {
-                    let semantic = enclosing
+                    let binding = enclosing
                         .iter()
                         .find(|binding| binding.parameter == *name)
-                        .map(|binding| binding.argument)
                         .ok_or_else(|| SemanticError::unavailable("enum_constructor_specialization"))?;
-                    AggregateFieldShape::Scalar(semantic)
+                    crate::semantic_contract::layouts::aggregate_shape_for_binding(db, key, binding)?
                 }
             };
             Ok((parameter.to_string(), shape))

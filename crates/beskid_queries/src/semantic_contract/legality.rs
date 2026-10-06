@@ -15,6 +15,10 @@
 //! a judged item; `scoped_cleanup` for E1230 and `dead_collection_growth` for E1231, which
 //! `build_typed_program` no longer judges eagerly for every unit): it is never string
 //! classification of an opaque `SemanticError::unavailable`.
+//! The `beskid check` gate (`semantic_diagnostics_for_roots`) additionally evaluates
+//! `check_typing_obligations` (`typing_obligations` and `value_obligations`, E1206-E1208),
+//! `check_gate_obligations`, `check_unit_obligations`, and `extern_profile_findings`: the legacy
+//! `TypeChecker` and resolver classes that have no lowering fact of their own.
 //! `check_items` collects every finding of the pass rather than stopping at the first, so
 //! `beskid test` and `beskid build` report every violation the requested items carry in one run.
 
@@ -25,11 +29,25 @@ use beskid_analysis::syntax_query::{NodeKind, SyntaxIndex};
 
 mod calls;
 mod cleanup;
+mod externs;
+mod gate;
 mod generics;
 mod imports;
 mod members;
+mod typing;
+mod units;
+mod values;
 
-pub use calls::{UnresolvedCallKind, UnresolvedCallTarget, unresolved_call_target};
+pub use externs::extern_profile_findings;
+pub use gate::{GateObligation, GateObligationKind, check_gate_obligations, gate_obligations};
+pub use typing::{TypingObligation, TypingObligationKind, typing_obligations};
+pub use units::{UnitObligation, UnitObligationKind, check_unit_obligations, unit_obligations};
+pub use values::{ValueObligation, value_obligations};
+
+pub use calls::{
+    UnresolvedCallKind, UnresolvedCallTarget, UnresolvedValueArgument, unresolved_call_target,
+    unresolved_value_argument,
+};
 pub use generics::{GenericParameterConflict, generic_parameter_conflict};
 pub use imports::{UnresolvedImport, unresolved_imports};
 pub use members::{
@@ -209,6 +227,13 @@ fn collect_nodes_of_kind(
 pub fn check_items(db: &dyn Db, items: &[AstNodeKey]) -> Result<(), Vec<SemanticFinding>> {
     let mut findings = import_findings(db, items);
     for &item in items {
+        if let Ok(Some(finding)) = unresolved_value_argument(db, item) {
+            findings.push(SemanticFinding {
+                kind: SemanticIssueKind::ResolveUnknownValue { name: finding.name.to_string() },
+                site: finding.site,
+                related: Vec::new(),
+            });
+        }
         if let Ok(Some(finding)) = unresolved_type_reference(db, item) {
             findings.push(SemanticFinding {
                 kind: SemanticIssueKind::TypeUnknownType { name: finding.name.to_string() },
@@ -232,6 +257,21 @@ pub fn check_items(db: &dyn Db, items: &[AstNodeKey]) -> Result<(), Vec<Semantic
                     SemanticIssueKind::ResolveUnknownModulePath { path: path.to_string() }
                 }
                 UnresolvedCallKind::MissingTypeArguments => SemanticIssueKind::TypeMissingTypeArguments,
+                UnresolvedCallKind::PrivateBuiltin { name } => {
+                    SemanticIssueKind::ResolvePrivateRuntimeBuiltin { name: name.to_string() }
+                }
+                UnresolvedCallKind::UnknownValueInModule { module_path, name } => {
+                    SemanticIssueKind::ResolveUnknownValueInModule {
+                        module_path: module_path.to_string(),
+                        name: name.to_string(),
+                    }
+                }
+                UnresolvedCallKind::PrivateItemInModule { module_path, name } => {
+                    SemanticIssueKind::ResolvePrivateItemInModule {
+                        module_path: module_path.to_string(),
+                        name: name.to_string(),
+                    }
+                }
             };
             findings.push(SemanticFinding { kind, site: finding.call, related: Vec::new() });
         }
@@ -290,6 +330,45 @@ pub fn check_items(db: &dyn Db, items: &[AstNodeKey]) -> Result<(), Vec<Semantic
     if findings.is_empty() { Ok(()) } else { Err(findings) }
 }
 
+/// Evaluate the typing obligations (E1206, E1207, E1208) of every item in `items`, collecting
+/// every finding of the pass. This is the `beskid check` complement of [`check_items`]: the
+/// legality gate judges what lowering needs before it can run, the typing obligations judge the
+/// value positions the legacy `TypeChecker` judged: proven primitives (`typing_obligations`) and
+/// source type identities of nominal, array, and contextual positions (`value_obligations`).
+/// Items whose typing facts are unavailable are not findings here (the same fail-closed rule as
+/// the legality gate).
+pub fn check_typing_obligations(db: &dyn Db, items: &[AstNodeKey]) -> Vec<SemanticFinding> {
+    let mut findings = Vec::new();
+    for &item in items {
+        if let Ok(Some(obligations)) = value_obligations(db, item) {
+            findings.extend(obligations.iter().map(|obligation| SemanticFinding {
+                kind: SemanticIssueKind::TypeMismatch {
+                    expected_name: obligation.expected.to_string(),
+                    actual_name: obligation.actual.to_string(),
+                },
+                site: obligation.site,
+                related: Vec::new(),
+            }));
+        }
+        let Ok(Some(obligations)) = typing_obligations(db, item) else { continue };
+        for obligation in obligations.iter() {
+            let kind = match obligation.kind {
+                TypingObligationKind::Mismatch { expected, actual } => SemanticIssueKind::TypeMismatch {
+                    expected_name: expected.display_name(),
+                    actual_name: actual.display_name(),
+                },
+                TypingObligationKind::MissingReturnValue { expected } => SemanticIssueKind::TypeReturnMismatch {
+                    expected_name: expected.display_name(),
+                    actual_name: SemanticTypeId::UNIT.display_name(),
+                },
+                TypingObligationKind::NonBoolCondition { .. } => SemanticIssueKind::TypeNonBoolCondition,
+            };
+            findings.push(SemanticFinding { kind, site: obligation.site, related: Vec::new() });
+        }
+    }
+    findings
+}
+
 /// E1105: every top-level `use` that names no assembled module, in each unit that owns one of
 /// `items`, judged once per unit in first-owner order. A `use` inside a unit nothing requested is
 /// not judged, so an assembly may carry units whose imports reach outside it as long as nothing
@@ -324,7 +403,7 @@ mod tests {
     use beskid_analysis::services::parse_program_with_source_name;
     use std::sync::Arc;
 
-    fn function_definitions(db: &dyn Db, key: AstNodeKey) -> Vec<AstNodeKey> {
+    pub(super) fn function_definitions(db: &dyn Db, key: AstNodeKey) -> Vec<AstNodeKey> {
         let mut found = Vec::new();
         if node_kind(db, key).expect("node kind") == Some(IndexedNodeKind::FunctionDefinition) {
             found.push(key);
@@ -337,7 +416,7 @@ mod tests {
         found
     }
 
-    fn one_unit_assembly(source: &str, generation: SyntaxGenerationId) -> (BeskidDatabase, AstNodeKey) {
+    pub(super) fn one_unit_assembly(source: &str, generation: SyntaxGenerationId) -> (BeskidDatabase, AstNodeKey) {
         let mut db = BeskidDatabase::default();
         let directory = tempfile::tempdir().expect("project").keep();
         let source_path = directory.join("Main.bd");

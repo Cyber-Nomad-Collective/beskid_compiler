@@ -43,12 +43,13 @@ pub struct EventHandlerLocalPlan {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CollectionMutationOwner {
     Local(LocalSlotId),
-    AggregateField { receiver: LocalSlotId, field_index: u32 },
+    AggregateField { root: LocalSlotId, receiver: AstNodeKey, field_index: u32 },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CollectionOperation {
     Append { owner: CollectionMutationOwner },
+    TryAppend { owner: CollectionMutationOwner },
     UnprovenMutationOwner,
     Capacity,
     Clear,

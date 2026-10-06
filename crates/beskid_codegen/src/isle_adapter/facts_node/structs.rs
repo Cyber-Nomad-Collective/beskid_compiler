@@ -75,10 +75,13 @@ impl SyntaxNodeFacts<'_> {
 
     pub(super) fn field_receiver_slot_impl(&self, key: AstNodeKey) -> Option<LocalSlotId> {
         if let Some((access, _, _, _)) = self.composition_injected_access(key) {
-            if self.query(node_kind(self.db, access.receiver)) == Some(beskid_queries::IndexedNodeKind::MethodDefinition) {
+            if self.query(node_kind(self.db, access.receiver))
+                == Some(beskid_queries::IndexedNodeKind::MethodDefinition)
+            {
                 return Some(super::super::context::IMPLICIT_METHOD_RECEIVER_SLOT);
             }
-            return self.query(local_slot(self.db, access.receiver))
+            return self
+                .query(local_slot(self.db, access.receiver))
                 .map(|slot| LocalSlotId { owner_node: slot.owner.node.0, index: slot.index });
         }
         let access = self.aggregate_field_access_in_context(key)?;

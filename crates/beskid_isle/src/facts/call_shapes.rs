@@ -12,6 +12,8 @@ use cranelift_codegen::ir::Type;
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum DirectCallee {
     Item(AstNodeKey),
+    /// Host-only callback issued from an exact current SDK wrapper.
+    NativeModCallback(AstNodeKey),
     /// One generic source declaration paired with its exact call-derived ABI identity.
     ///
     /// The vector stores parameter ABI type identities followed by the result identity.  It is

@@ -211,6 +211,7 @@ impl IsleContext<'_, '_, '_, '_> {
         let allocate = self.import_runtime_helper("beskid_rt_v5_managed_object_allocate", &[pointer], Some(pointer))?;
         let call = self.builder.ins().call(allocate, &[request]);
         let object = self.builder.inst_results(call).first().copied()?;
+        self.guard_checked_allocation()?;
         self.builder.ins().trapz(object, TrapCode::unwrap_user(5));
         let tag = self.builder.ins().iconst(layout.tag.value_type, variant.discriminant as i64);
         self.builder.ins().store(MemFlagsData::new(), tag, object, i32::try_from(layout.tag.offset).ok()?);

@@ -92,7 +92,8 @@ fn run_syntax_jitted_entrypoint(
         return Err(anyhow::anyhow!("Entrypoint `{entrypoint}` returned null pointer"));
     }
 
-    let return_kind = EntryReturnKind::from_semantic_type(entrypoint_artifact.return_type);
+    let return_kind = EntryReturnKind::from_semantic_type(entrypoint_artifact.return_type)
+        .ok_or_else(|| anyhow::anyhow!("Entrypoint return ABI is unavailable"))?;
     let output = JitCallable::execute_as_i64(ptr, return_kind);
     Ok(JitCallable::format_i64_result(output, return_kind))
 }

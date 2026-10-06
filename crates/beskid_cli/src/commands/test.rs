@@ -150,7 +150,6 @@ pub(crate) fn execute_prepared_target(
     let target_started = Instant::now();
     let started_unix_ms = unix_ms();
     workspace.reject_mutation("execute_target")?;
-    workspace.begin_target_execution();
     let mut phases = Vec::new();
     let tests = target.tests;
     let front = target.front;
@@ -178,6 +177,25 @@ pub(crate) fn execute_prepared_target(
         );
         planned.push((test, row_index, initial));
     }
+
+    let selected = planned
+        .iter()
+        .filter(|(_, _, state)| *state == TestRowState::Pending)
+        .map(|(test, _, _)| test.qualified_name.clone())
+        .collect::<Vec<_>>();
+    let native = if selected.is_empty() {
+        None
+    } else {
+        match workspace.prepare_native_tests(&front, &target.resolved, &selected, target_started) {
+            Ok(native) => Some(native),
+            Err(_error)
+                if workspace.check_budget(&target.name, "prepare_native_tests", Some(target_started)).is_err() =>
+            {
+                None
+            }
+            Err(error) => return Err(error),
+        }
+    };
 
     let execute_started = Instant::now();
     let execute_unix_ms = unix_ms();
@@ -230,7 +248,13 @@ pub(crate) fn execute_prepared_target(
             }
         }
         let started = Instant::now();
-        match workspace.run_entrypoint(&front, &source_name, &target.resolved.source, &test.qualified_name) {
+        match workspace.run_native_test(
+            native.as_ref().expect("selected test native object"),
+            &test.qualified_name,
+            row_index,
+            &target.name,
+            target_started,
+        ) {
             Ok(output) => {
                 let duration = started.elapsed();
                 if emit && !args.json {
@@ -259,6 +283,20 @@ pub(crate) fn execute_prepared_target(
                 }
             }
             Err(error) => {
+                if let Err(budget_error) = workspace.check_budget(&target.name, "execute_tests", Some(target_started)) {
+                    timeout_error = Some(budget_error);
+                    budget_expired = true;
+                    record_timed_out_test(
+                        &mut test_ui,
+                        &mut executions,
+                        &mut summary,
+                        emit,
+                        args.json,
+                        row_index,
+                        test,
+                    )?;
+                    break;
+                }
                 let duration = started.elapsed();
                 let reason = if args.json {
                     error.to_string()
@@ -489,7 +527,7 @@ mod tests {
     }
 
     fn sample_lockfile_args() -> LockfilePolicyArgs {
-        LockfilePolicyArgs { frozen: false, locked: false }
+        LockfilePolicyArgs { frozen: false, locked: false, offline: false }
     }
 
     fn sample_test(name: &str) -> SyntaxTestItem {

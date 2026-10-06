@@ -25,12 +25,15 @@ fn duplicate_registration_in_one_artifact_emits_e1829() {
     let result = run_through_generate(
         program,
         &ModHostInput {
+            semantic_scope: None,
+            semantic_authority: None,
             compile_plan: Some(&plan),
             source_name: "Main.bd",
             source,
             pipeline: None,
             invoker: None,
             cached_target_fingerprint: None,
+            syntax_generation_id: None,
         },
     );
 
@@ -57,12 +60,15 @@ fn unknown_contract_id_emits_e1853() {
     let err = match run_through_generate(
         program,
         &ModHostInput {
+            semantic_scope: None,
+            semantic_authority: None,
             compile_plan: Some(&plan),
             source_name: "Main.bd",
             source,
             pipeline: None,
             invoker: None,
             cached_target_fingerprint: None,
+            syntax_generation_id: None,
         },
     ) {
         Ok(_) => panic!("unknown contractId must abort scheduling"),
@@ -87,12 +93,15 @@ fn rewriter_without_analyzer_emits_e1854() {
     let err = match run_through_generate(
         program,
         &ModHostInput {
+            semantic_scope: None,
+            semantic_authority: None,
             compile_plan: Some(&plan),
             source_name: "Main.bd",
             source,
             pipeline: None,
             invoker: None,
             cached_target_fingerprint: None,
+            syntax_generation_id: None,
         },
     ) {
         Ok(_) => panic!("rewriter without analyzer must abort scheduling"),
@@ -117,12 +126,15 @@ fn missing_entry_symbol_emits_e1828() {
     let err = match run_through_generate(
         program,
         &ModHostInput {
+            semantic_scope: None,
+            semantic_authority: None,
             compile_plan: Some(&plan),
             source_name: "Main.bd",
             source,
             pipeline: None,
             invoker: None,
             cached_target_fingerprint: None,
+            syntax_generation_id: None,
         },
     ) {
         Ok(_) => panic!("empty entrySymbol must abort scheduling"),

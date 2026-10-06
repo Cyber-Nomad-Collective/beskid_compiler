@@ -77,13 +77,18 @@ pub fn prepare_compilation_with_db(
 ) -> Result<PreparedCompilation> {
     trace_query("prepare_compilation_with_db", false);
     let resolved = assemble_resolved_input_with_db(db, resolved, &options)?;
+    let mut authority = crate::mod_semantic_scope::QueryModSemanticScope::new(
+        db,
+        Some(&resolved),
+        resolved.assembly.as_ref().ok_or_else(|| anyhow::anyhow!("prepared Mod authority requires assembly"))?.clone(),
+    );
     let (result, _, _) = beskid_analysis::services::prepare_compilation_with_fact_authority(
         &resolved,
         options,
         pipeline,
         false,
         false,
-        &mut |assembly, program| semantic_fact_findings(db, Some(&resolved), assembly, program),
+        &mut authority,
     )?;
     touch_from_prepare(&resolved);
     emit_salsa_stats(pipeline);
@@ -98,14 +103,20 @@ pub fn prepare_compilation_diagnostics_with_db(
 ) -> Result<(PreparedCompilation, Vec<SemanticDiagnostic>, Vec<beskid_analysis::SyntaxFix>)> {
     trace_query("prepare_compilation_diagnostics_with_db", false);
     let resolved = assemble_resolved_input_with_db(db, resolved, &options)?;
+    let mut authority = crate::mod_semantic_scope::QueryModSemanticScope::new(
+        db,
+        Some(&resolved),
+        resolved.assembly.as_ref().ok_or_else(|| anyhow::anyhow!("prepared Mod authority requires assembly"))?.clone(),
+    );
     let result = beskid_analysis::services::prepare_compilation_with_fact_authority(
         &resolved,
         options,
         pipeline,
         true,
         false,
-        &mut |assembly, program| semantic_fact_findings(db, Some(&resolved), assembly, program),
+        &mut authority,
     )?;
+    drop(authority);
     if let Some(fp) = session_fingerprint(&resolved) {
         let _ = semantic_snapshot(db, &fingerprint_key(&fp));
     }
@@ -124,22 +135,45 @@ pub fn prepare_compilation_diagnostics_isolated(
     pipeline: Option<&dyn PipelineObserver>,
 ) -> Result<(PreparedCompilation, Vec<SemanticDiagnostic>, Vec<beskid_analysis::SyntaxFix>)> {
     let mut db = BeskidDatabase::default();
+    let mut authority = crate::mod_semantic_scope::QueryModSemanticScope::new(
+        &mut db,
+        None,
+        resolved.assembly.as_ref().ok_or_else(|| anyhow::anyhow!("isolated Mod authority requires assembly"))?.clone(),
+    );
     beskid_analysis::services::prepare_compilation_with_fact_authority(
         resolved,
         options,
         pipeline,
         true,
         true,
-        &mut |assembly, program| semantic_fact_findings(&mut db, None, assembly, program),
+        &mut authority,
     )
 }
 
-/// Collect the generation-bound semantic-fact findings of the entry's reachable items: every
-/// try expression of the entry unit that has no try fact (E1222), and every finding of the
-/// reachability-scoped legality gate (`check_items`, the same facts `lower_syntax_program`
-/// evaluates) over the entry unit's function, method, and test items plus the direct-call closure
-/// of each. A dependency-unit finding carries its own unit, so `analyze` and the LSP report it in
-/// that unit's source. Items nothing in the entry reaches are not judged.
+/// The query-backed semantic diagnostics gate of `beskid check` over every root unit.
+///
+/// The roots are the entry unit, or every own unit of an entry-less library. One `TypedProgram`
+/// is built for the whole assembly with the same canonical Corelib service capability codegen
+/// installs (`canonical_corelib_syscall_service_capability`, or the runtime fixture authority),
+/// so a declaration the lowering gate accepts is never "unknown" here. Then every item of every
+/// root unit is judged -- each function, method (including those inside `type` and `impl`
+/// blocks), and test the unit's syntax index holds, whatever reaches it -- on three obligation
+/// sets:
+///
+/// * every try expression of a root unit that has no try fact (E1222);
+/// * the legality gate (`check_items`, the same facts `lower_syntax_program` evaluates) over the
+///   root items plus the direct-call closure of each, so a dependency-unit error an own item
+///   reaches is reported in that unit's source;
+/// * the typing obligations (`check_typing_obligations`: E1206, E1207, E1208) over the root
+///   items themselves. Dependency bodies are judged by their own project;
+/// * the remaining legacy `TypeChecker` classes (`check_gate_obligations`: operators, numeric
+///   literals, spawn, iterators, events, expression shapes, member and call targets, duplicate
+///   locals, generic bounds) over the root items, the unit-level obligations
+///   (`check_unit_obligations`: event capacity, contract conformance, `This` and associated
+///   types) once per root unit, and the extern profile (`extern_profile_findings`: T0901-T0904,
+///   Glue bindings for the manifest's `glue` libraries) once per root unit.
+///
+/// Root reachability is never applied: a library item nothing calls is still judged.
 ///
 /// `planned` is the resolved input of a planned project entry on the shared
 /// database. Its syntax is registered under the session that already owns the
@@ -147,15 +181,15 @@ pub fn prepare_compilation_diagnostics_isolated(
 /// LSP/IDE fact queries over the same units find that owner instead of
 /// colliding with a second, unregistered session. Only the isolated, job-local
 /// database passes `None` and lets the assembly mint its own owner.
-fn semantic_fact_findings(
+pub fn semantic_diagnostics_for_roots(
     db: &mut BeskidDatabase,
     planned: Option<&ResolvedInput>,
     assembly: &beskid_analysis::projects::ProgramAssembly,
     program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
 ) -> Result<Vec<beskid_analysis::services::SemanticFactFinding>> {
     use crate::{
-        AstNodeKey, IndexedNodeKind, build_runtime_fixture_typed_program, build_typed_program_with_corelib_services,
-        project_session_for_syntax_assembly, try_expression_fact,
+        AstNodeKey, IndexedNodeKind, build_runtime_fixture_typed_program,
+        build_typed_program_with_corelib_syscall_services, project_session_for_syntax_assembly, try_expression_fact,
     };
     use beskid_abi::abi_v5::AbiManifestV5;
     use beskid_analysis::analysis::SemanticIssueKind;
@@ -163,19 +197,22 @@ fn semantic_fact_findings(
     use std::sync::Arc;
     let mut units = assembly.units.as_ref().clone();
     units[assembly.entry_index].program = program.clone();
-    let syntax = Arc::new(
-        beskid_analysis::projects::ProgramAssembly::new(
-            assembly.roots.clone(),
-            Arc::new(units),
-            assembly.entry_index,
-            assembly.discovery,
-            Arc::clone(&assembly.module_index),
-            assembly.has_std_dependency,
-            assembly.generation,
-        )
-        .with_trusted_corelib_service_paths(Arc::clone(&assembly.trusted_corelib_service_paths))
-        .with_runtime_fixture(assembly.runtime_fixture.clone()),
-    );
+    let mut syntax = beskid_analysis::projects::ProgramAssembly::new(
+        assembly.roots.clone(),
+        Arc::new(units),
+        assembly.entry_index,
+        assembly.discovery,
+        Arc::clone(&assembly.module_index),
+        assembly.has_std_dependency,
+        assembly.generation,
+    )
+    .with_recovery_policy(assembly.recovery_policy)
+    .with_trusted_corelib_service_paths(Arc::clone(&assembly.trusted_corelib_service_paths))
+    .with_glue_libraries(Arc::clone(&assembly.glue_libraries))
+    .with_runtime_fixture(assembly.runtime_fixture.clone())
+    .with_root_set(assembly.root_set.clone());
+    syntax.verified_package_identities = assembly.package_identities().clone();
+    let syntax = Arc::new(syntax);
     let project = match planned.and_then(|resolved| Some((resolved.compile_plan.as_ref()?, resolved))) {
         Some((plan, resolved)) => crate::project_session_for_planned_syntax_assembly(
             db,
@@ -187,7 +224,9 @@ fn semantic_fact_findings(
         None => project_session_for_syntax_assembly(db, &syntax, "try-diagnostics", "source-authority")?,
     };
     // Preparation runs before the codegen target is selected. Source authority is independent of
-    // target metadata, but must be installed with the same validated constructors codegen uses;
+    // target metadata, but must be installed with the exact constructors
+    // `beskid_codegen::prepared_syntax` uses (`canonical_corelib_syscall_service_capability` and
+    // `build_typed_program_with_corelib_syscall_services`, or the runtime fixture authority);
     // otherwise the legality gate calls compiler-owned services and intrinsics "unknown".
     let authority_target = beskid_abi::runtime_kit::host_runtime_target()
         .map_err(|error| anyhow::anyhow!("host ABI-v5 target unavailable for source authority: {error}"))?;
@@ -195,66 +234,110 @@ fn semantic_fact_findings(
     let typed = if syntax.runtime_fixture.is_some() {
         build_runtime_fixture_typed_program(db, project, syntax.generation, Arc::clone(&syntax), &manifest)?
     } else {
-        let capability = beskid_abi::runtime_source::canonical_corelib_service_capability(&manifest)
+        let capability = beskid_abi::runtime_source::canonical_corelib_syscall_service_capability(&manifest)
             .map_err(|error| anyhow::anyhow!("canonical Corelib service authority unavailable: {error:?}"))?;
-        build_typed_program_with_corelib_services(db, project, syntax.generation, Arc::clone(&syntax), capability)?
+        build_typed_program_with_corelib_syscall_services(
+            db,
+            project,
+            syntax.generation,
+            Arc::clone(&syntax),
+            capability,
+        )?
     };
-    let index = syntax.entry_syntax_index();
+    // Every root unit is judged: the entry, plus each own unit of an entry-less library.
+    let root_indices = syntax
+        .root_unit_indices()
+        .ok_or_else(|| anyhow::anyhow!("assembly root set names a source unit outside the prepared assembly"))?;
     let mut findings = Vec::new();
-    for node in index.ids_of_kind(IndexedNodeKind::TryExpression) {
-        let key = AstNodeKey { unit: typed.entry, generation: syntax.generation, node };
-        if !matches!(try_expression_fact(db, key), Ok(Some(_))) {
-            let span = index
-                .node_at(program, node)
-                .and_then(|node| node.span())
-                .ok_or_else(|| anyhow::anyhow!("try diagnostic requires its exact source span"))?;
-            findings.push(SemanticFactFinding {
-                kind: SemanticIssueKind::TypeInvalidTryTarget,
-                unit: syntax.entry_index,
-                span,
-            });
-        }
-    }
-    let entry_root = AstNodeKey { unit: typed.entry, generation: syntax.generation, node: crate::AstNodeId(0) };
+    // Every item of every root unit, in root order: the typing-obligation subjects.
+    let mut root_items = Vec::new();
+    // The root unit keys (`AstNodeId(0)`), in root order: the unit-level obligation subjects.
+    let mut root_units = Vec::new();
+    // Extern profile findings, evaluated per root unit with the assembly facts the database does
+    // not hold (manifest Glue libraries, canonical Dynamic unit exemption).
+    let mut extern_findings = Vec::new();
+    // The root items plus the direct-call closure of each: the legality-gate subjects.
     let mut items = Vec::new();
-    for kind in
-        [IndexedNodeKind::FunctionDefinition, IndexedNodeKind::MethodDefinition, IndexedNodeKind::TestDefinition]
-    {
-        for node in index.ids_of_kind(kind) {
-            let item = AstNodeKey { node, ..entry_root };
-            // An item whose direct-call closure cannot be traced (an unresolved callee is itself a
-            // legality finding) is still judged on its own body.
-            let reachable = match crate::reachable_items(db, entry_root, item) {
-                Ok(Some(reachable)) => reachable.to_vec(),
-                Ok(None) | Err(_) => vec![item],
-            };
-            for key in reachable {
-                if !items.contains(&key) {
-                    items.push(key);
+    let mut seen_items = std::collections::HashSet::new();
+    for root_index in root_indices {
+        let root_unit = if root_index == syntax.entry_index {
+            typed.entry
+        } else {
+            crate::SourceUnitId::new(db, syntax.units[root_index].path.clone())
+        };
+        let root_program = &syntax.units[root_index].program;
+        let index = &syntax.syntax_indexes[root_index];
+        for node in index.ids_of_kind(IndexedNodeKind::TryExpression) {
+            let key = AstNodeKey { unit: root_unit, generation: syntax.generation, node };
+            if !matches!(try_expression_fact(db, key), Ok(Some(_))) {
+                let span = index
+                    .node_at(root_program, node)
+                    .and_then(|node| node.span())
+                    .ok_or_else(|| anyhow::anyhow!("try diagnostic requires its exact source span"))?;
+                findings.push(SemanticFactFinding {
+                    kind: SemanticIssueKind::TypeInvalidTryTarget,
+                    unit: root_index,
+                    span,
+                });
+            }
+        }
+        let root = AstNodeKey { unit: root_unit, generation: syntax.generation, node: crate::AstNodeId(0) };
+        root_units.push(root);
+        extern_findings.extend(crate::extern_profile_findings(
+            db,
+            root,
+            &syntax.glue_libraries,
+            syntax.is_canonical_public_dynamic_unit(&syntax.units[root_index]),
+        ));
+        for kind in
+            [IndexedNodeKind::FunctionDefinition, IndexedNodeKind::MethodDefinition, IndexedNodeKind::TestDefinition]
+        {
+            for node in index.ids_of_kind(kind) {
+                let item = AstNodeKey { node, ..root };
+                root_items.push(item);
+                // An item whose direct-call closure cannot be traced (an unresolved callee is
+                // itself a legality finding) is still judged on its own body.
+                let reachable = match crate::reachable_items(db, root, item) {
+                    Ok(Some(reachable)) => reachable.to_vec(),
+                    Ok(None) | Err(_) => vec![item],
+                };
+                for key in reachable {
+                    if seen_items.insert(key) {
+                        items.push(key);
+                    }
                 }
             }
         }
     }
-    if let Err(legality) = crate::check_items(db, &items) {
+    let mut semantic_findings = crate::check_items(db, &items).err().unwrap_or_default();
+    semantic_findings.extend(crate::check_typing_obligations(db, &root_items));
+    semantic_findings.extend(crate::check_gate_obligations(db, &root_items));
+    semantic_findings.extend(crate::check_unit_obligations(db, &root_units));
+    semantic_findings.extend(extern_findings);
+    if !semantic_findings.is_empty() {
         let units = syntax
             .units
             .iter()
             .enumerate()
             .map(|(index, unit)| (crate::SourceUnitId::new(db, unit.path.clone()), index))
             .collect::<std::collections::HashMap<_, _>>();
-        for finding in legality {
+        for finding in semantic_findings {
             let unit = *units
                 .get(&finding.site.unit)
-                .ok_or_else(|| anyhow::anyhow!("legality finding site is outside the prepared assembly"))?;
+                .ok_or_else(|| anyhow::anyhow!("semantic finding site is outside the prepared assembly"))?;
             let span = crate::node_span(db, finding.site)
                 .ok()
                 .flatten()
-                .ok_or_else(|| anyhow::anyhow!("legality finding requires its exact source span"))?;
+                .ok_or_else(|| anyhow::anyhow!("semantic finding requires its exact source span"))?;
             findings.push(SemanticFactFinding { kind: finding.kind, unit, span });
         }
     }
     Ok(findings)
 }
+
+#[cfg(test)]
+#[path = "entry/parity_tests.rs"]
+mod parity_tests;
 
 pub fn typed_entry_bundle(
     db: &mut BeskidDatabase,
@@ -262,6 +345,7 @@ pub fn typed_entry_bundle(
     pipeline: Option<&dyn PipelineObserver>,
 ) -> Result<SharedFrontEnd> {
     let options = PrepareOptions {
+        mod_invoker: None,
         front_end: FrontEndOptions { with_semantic_diagnostics: false, ..Default::default() },
         ..Default::default()
     };
@@ -299,8 +383,9 @@ pub fn assemble_resolved_input_with_db(
     let enriched = if resolved.assembly.is_some() {
         clone_resolved(resolved)
     } else if let Some(plan) = resolved.compile_plan.as_ref() {
-        let assembly_options =
+        let mut assembly_options =
             beskid_analysis::projects::assembly_options_for_prepare(plan, options.front_end.assembly_discovery);
+        assembly_options.recovery_policy = options.front_end.assembly_recovery;
         let assembly = program_assembly(
             db,
             plan,
@@ -383,7 +468,7 @@ mod tests {
             generation,
         );
         let mut db = BeskidDatabase::default();
-        let findings = semantic_fact_findings(&mut db, None, &assembly, &program)
+        let findings = semantic_diagnostics_for_roots(&mut db, None, &assembly, &program)
             .expect("canonical Corelib semantic fact findings");
         assert!(
             !findings.iter().any(|finding| {
@@ -419,8 +504,8 @@ mod tests {
         .expect("exact runtime fixture assembly");
         let program = assembly.entry_unit().program.clone();
         let mut db = BeskidDatabase::default();
-        let findings =
-            semantic_fact_findings(&mut db, None, &assembly, &program).expect("runtime fixture semantic fact findings");
+        let findings = semantic_diagnostics_for_roots(&mut db, None, &assembly, &program)
+            .expect("runtime fixture semantic fact findings");
         assert!(
             !findings.iter().any(|finding| {
                 matches!(&finding.kind, beskid_analysis::analysis::SemanticIssueKind::ResolveUnknownValue { name }
@@ -428,5 +513,52 @@ mod tests {
             }),
             "canonical runtime intrinsic rejected by legality gate: {findings:?}"
         );
+    }
+
+    /// The CLI `check` spine (Salsa-backed assembly plus the fact authority) judges every own unit
+    /// of an entry-less library, so a type error in its second unit by path is reported there.
+    #[test]
+    fn entry_less_lib_reports_type_error_in_second_own_unit_through_query_spine() {
+        use beskid_analysis::analysis::diagnostics::Severity;
+        use beskid_analysis::projects::{AssemblyRootSet, CompilePlan, Target, TargetKind, plan_entry_path};
+
+        let root = std::env::temp_dir().join(format!("beskid_query_entry_less_lib_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let source_root = root.join("src");
+        std::fs::create_dir_all(&source_root).expect("host source root");
+        std::fs::write(source_root.join("Alpha.bd"), "pub i64 Alpha() { return 1_i64; }").expect("Alpha");
+        std::fs::write(source_root.join("Beta.bd"), "pub i64 Broken() { return true; }").expect("Beta");
+        let plan = CompilePlan {
+            source_root: source_root.clone(),
+            project_root: root.clone(),
+            manifest_path: root.join("fixture.bproj"),
+            project_name: "fixture".to_string(),
+            target: Target { name: "Library".to_string(), kind: TargetKind::Lib, entry: None },
+            dependency_projects: Vec::new(),
+            unresolved_dependencies: Vec::new(),
+            has_std_dependency: false,
+        };
+        let entry_path = plan_entry_path(&plan, &source_root);
+        let resolved =
+            beskid_analysis::services::resolved_input_from_plan(entry_path, String::new(), plan, None, None);
+        let mut db = BeskidDatabase::default();
+        let (prepared, diagnostics, _) =
+            prepare_compilation_diagnostics_with_db(&mut db, &resolved, PrepareOptions::default(), None)
+                .expect("prepare diagnostics");
+        assert!(matches!(prepared.assembly.root_set, AssemblyRootSet::OwnUnits(ref paths) if paths.len() == 2));
+        assert!(
+            diagnostics.iter().any(|diagnostic| {
+                diagnostic.severity == Severity::Error && diagnostic.src.name().ends_with("Beta.bd")
+            }),
+            "type error in the second own unit must be reported: {diagnostics:?}"
+        );
+        assert!(
+            !diagnostics.iter().any(|diagnostic| {
+                diagnostic.severity == Severity::Error && diagnostic.src.name().ends_with("Alpha.bd")
+            }),
+            "healthy own unit stays clean: {diagnostics:?}"
+        );
+        beskid_analysis::services::invalidate_entry_sessions_for_project(&root);
+        let _ = std::fs::remove_dir_all(&root);
     }
 }

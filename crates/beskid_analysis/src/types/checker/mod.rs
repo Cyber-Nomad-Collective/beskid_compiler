@@ -63,6 +63,12 @@ pub struct TypeChecker<'a> {
     pub(super) generic_params: HashMap<String, TypeId>,
     pub(super) current_receiver_item_id: Option<ItemId>,
     pub(super) current_source_path: Option<PathBuf>,
+    /// The checked unit is the canonical public Dynamic source; its `[Extern]` contracts are
+    /// runtime-plane bridges (see [`crate::projects::ProgramAssembly::is_canonical_public_dynamic_unit`]).
+    pub(super) runtime_plane_extern_unit: bool,
+    /// Host manifest Glue owner libraries (see [`crate::projects::ProgramAssembly::glue_libraries`]).
+    /// An `[Extern]` contract naming one of them is a Rust Glue import, outside the C ABI profile.
+    pub(super) glue_libraries: std::sync::Arc<[String]>,
     pub(super) fiber_scope_stack: Vec<usize>,
     pub(super) fiber_scope_parent: HashMap<usize, usize>,
     pub(super) next_fiber_scope: usize,
@@ -121,6 +127,8 @@ impl<'a> TypeChecker<'a> {
             generic_params: HashMap::new(),
             current_receiver_item_id: None,
             current_source_path: None,
+            runtime_plane_extern_unit: false,
+            glue_libraries: std::sync::Arc::from([]),
             fiber_scope_stack: vec![0],
             fiber_scope_parent: HashMap::from([(0, 0)]),
             next_fiber_scope: 1,
@@ -259,6 +267,10 @@ impl<'a> TypeChecker<'a> {
             let Some(ret) = self.builtin_surface_type_id(spec, spec.returns, true) else {
                 continue;
             };
+            if !spec.type_parameters.is_empty() {
+                self.generic_items
+                    .insert(*item_id, spec.type_parameters.iter().map(|name| (*name).to_string()).collect());
+            }
             self.function_signatures.insert(*item_id, FunctionSignature { params, return_type: ret });
         }
     }
@@ -305,23 +317,50 @@ impl<'a> TypeChecker<'a> {
                     | &["__bytes_get"]
                     | &["__bytes_set"]
                     | &["__bytes_compare"]
-                    | &["__str_from_bytes_utf8"]
                     | &["__syscall_read"]
                     | &["__syscall_read_bytes"]
-                    | &["__syscall_write_bytes"]
             ) {
                 return self.u8_array_type_id();
             }
             return self.primitive_type_id(PrimitiveType::I64);
         }
         match b {
+            // Source-typed value services declare exactly one parameter; any other shape has
+            // no source type and fails closed instead of inventing a scalar.
+            BuiltinType::TypeParameter => match spec.type_parameters {
+                [name] => Some(self.type_table.intern(crate::types::TypeInfo::GenericParam((*name).to_string()))),
+                _ => None,
+            },
+            BuiltinType::TypeParameterArray => match spec.type_parameters {
+                [name] => {
+                    let element = self.type_table.intern(crate::types::TypeInfo::GenericParam((*name).to_string()));
+                    Some(
+                        self.type_table
+                            .find_array_of(element)
+                            .unwrap_or_else(|| self.type_table.intern(crate::types::TypeInfo::Array(element))),
+                    )
+                }
+                _ => None,
+            },
+            BuiltinType::Bytes => self.u8_array_type_id(),
+            BuiltinType::I8 => self.primitive_type_id(PrimitiveType::I8),
+            BuiltinType::I16 => self.primitive_type_id(PrimitiveType::I16),
+            BuiltinType::I64 => self.primitive_type_id(PrimitiveType::I64),
+            BuiltinType::U8 => self.primitive_type_id(PrimitiveType::U8),
+            BuiltinType::U16 => self.primitive_type_id(PrimitiveType::U16),
+            BuiltinType::F32 => self.primitive_type_id(PrimitiveType::F32),
+            BuiltinType::Isize => self.primitive_type_id(PrimitiveType::I64),
+            BuiltinType::Bool => self.primitive_type_id(PrimitiveType::Bool),
+            BuiltinType::Char => self.primitive_type_id(PrimitiveType::Char),
             BuiltinType::String => self.primitive_type_id(PrimitiveType::String),
             BuiltinType::Unit => self.primitive_type_id(PrimitiveType::Unit),
             BuiltinType::Never => self.primitive_type_id(PrimitiveType::Never),
             BuiltinType::F64 => self.primitive_type_id(PrimitiveType::F64),
             BuiltinType::I32 => self.primitive_type_id(PrimitiveType::I32),
             BuiltinType::Usize => self.primitive_type_id(PrimitiveType::Word),
-            _ => self.primitive_type_id(PrimitiveType::I64),
+            BuiltinType::U32 => self.primitive_type_id(PrimitiveType::U32),
+            BuiltinType::U64 => self.primitive_type_id(PrimitiveType::U64),
+            BuiltinType::Ptr => self.primitive_type_id(PrimitiveType::Pointer),
         }
     }
 }

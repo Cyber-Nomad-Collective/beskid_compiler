@@ -10,20 +10,36 @@ pub(super) const IMPLICIT_METHOD_RECEIVER_SLOT: LocalSlotId = LocalSlotId { owne
 pub struct SyntaxNodeFacts<'db> {
     pub(super) db: &'db dyn Db,
     pub(super) input: &'db CodegenInput<'db>,
+    pub(super) checked_effect: bool,
+    pub(super) nonallocating_publication: bool,
     pub(super) isa: Option<&'db dyn TargetIsa>,
     pub(super) item_specializations: HashMap<AstNodeKey, beskid_queries::GenericSpecializationInstance>,
 }
 
 impl<'db> SyntaxNodeFacts<'db> {
     pub fn new(input: &'db CodegenInput<'db>) -> Self {
-        Self { db: input.database(), input, isa: None, item_specializations: HashMap::new() }
+        Self {
+            db: input.database(),
+            input,
+            isa: None,
+            checked_effect: false,
+            nonallocating_publication: false,
+            item_specializations: HashMap::new(),
+        }
     }
 
     pub fn new_with_isa(input: &'db CodegenInput<'db>, isa: &'db dyn TargetIsa) -> Self {
-        Self { db: input.database(), input, isa: Some(isa), item_specializations: HashMap::new() }
+        Self {
+            db: input.database(),
+            input,
+            isa: Some(isa),
+            checked_effect: false,
+            nonallocating_publication: false,
+            item_specializations: HashMap::new(),
+        }
     }
 
-    pub(super) fn new_with_item_specialization(
+    pub(crate) fn new_with_item_specialization(
         input: &'db CodegenInput<'db>,
         isa: &'db dyn TargetIsa,
         item: AstNodeKey,
@@ -33,6 +49,8 @@ impl<'db> SyntaxNodeFacts<'db> {
             db: input.database(),
             input,
             isa: Some(isa),
+            checked_effect: false,
+            nonallocating_publication: false,
             item_specializations: HashMap::from([(item, specialization)]),
         }
     }
@@ -58,7 +76,8 @@ impl<'db> SyntaxNodeFacts<'db> {
     pub fn composition_plural_slots(&self, owner_registration_id: u32) -> Option<Vec<u32>> {
         let mut fields = self
             .input
-            .composition_authority()?.0
+            .composition_authority()?
+            .0
             .plurals
             .iter()
             .filter(|plural| plural.owner_registration_id == owner_registration_id);

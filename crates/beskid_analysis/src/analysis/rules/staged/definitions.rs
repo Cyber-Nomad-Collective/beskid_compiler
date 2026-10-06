@@ -216,8 +216,28 @@ impl SemanticPipelineRule {
             }
         }
 
+        // A method declares no generic parameters of its own: it sees those of the type or impl
+        // that owns it; an `extend type` or free method sees its receiver's parameters.
+        let mut owner_generics: HashMap<SpanInfo, HashSet<String>> = HashMap::new();
+        for definition in Query::from(&program.node).of::<crate::syntax::TypeDefinition>() {
+            let generic_names = self.collect_generic_names(&definition.generics);
+            for method in &definition.methods {
+                owner_generics.insert(method.node.name.span, generic_names.clone());
+            }
+        }
+        for block in Query::from(&program.node).of::<crate::syntax::ImplBlock>() {
+            let mut generic_names = self.collect_generic_names(&block.generics);
+            generic_names.extend(Self::receiver_generic_names(&block.receiver_type, &known_types));
+            for method in &block.methods {
+                owner_generics.insert(method.node.name.span, generic_names.clone());
+            }
+        }
+
         for definition in Query::from(&program.node).of::<crate::syntax::MethodDefinition>() {
-            let generic_names = HashSet::new();
+            let generic_names = owner_generics
+                .get(&definition.name.span)
+                .cloned()
+                .unwrap_or_else(|| Self::receiver_generic_names(&definition.receiver_type, &known_types));
             Self::validate_type_reference(ctx, &definition.receiver_type, &known_types, &generic_names);
             for parameter in &definition.parameters {
                 Self::validate_type_reference(ctx, &parameter.node.ty, &known_types, &generic_names);
@@ -337,12 +357,17 @@ impl SemanticPipelineRule {
             Type::Primitive(primitive) => match primitive.node {
                 PrimitiveType::Bool => "bool".to_string(),
                 PrimitiveType::I32 => "i32".to_string(),
+                PrimitiveType::I8 => "i8".to_string(),
+                PrimitiveType::I16 => "i16".to_string(),
+                PrimitiveType::U16 => "u16".to_string(),
+                PrimitiveType::U64 => "u64".to_string(),
                 PrimitiveType::I64 => "i64".to_string(),
                 PrimitiveType::U32 => "u32".to_string(),
                 PrimitiveType::U8 => "u8".to_string(),
                 PrimitiveType::Pointer => "pointer".to_string(),
                 PrimitiveType::Word => "word".to_string(),
                 PrimitiveType::F64 => "f64".to_string(),
+                PrimitiveType::F32 => "f32".to_string(),
                 PrimitiveType::Char => "char".to_string(),
                 PrimitiveType::String => "string".to_string(),
                 PrimitiveType::Unit => "unit".to_string(),
@@ -369,7 +394,10 @@ impl SemanticPipelineRule {
     fn collect_known_type_names(&self, ctx: &RuleContext, program: &Spanned<Program>) -> HashSet<String> {
         let mut known = HashSet::new();
 
-        for primitive in ["bool", "i32", "i64", "u8", "f64", "char", "string", "unit"] {
+        for primitive in [
+            "bool", "i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64", "f32", "f64", "char", "string", "unit",
+            "pointer", "word", "never",
+        ] {
             known.insert(primitive.to_string());
         }
 
@@ -400,6 +428,27 @@ impl SemanticPipelineRule {
 
     fn collect_generic_names(&self, generics: &[Spanned<crate::syntax::Identifier>]) -> HashSet<String> {
         generics.iter().map(|identifier| identifier.node.name.clone()).collect()
+    }
+
+    /// Type parameters a receiver such as `List<T>` introduces: its bare, argument-less type
+    /// arguments that name no known type.
+    fn receiver_generic_names(receiver: &Spanned<Type>, known_types: &HashSet<String>) -> HashSet<String> {
+        let Type::Complex(path) = &receiver.node else {
+            return HashSet::new();
+        };
+        path.node
+            .segments
+            .iter()
+            .flat_map(|segment| segment.node.type_args.iter())
+            .filter_map(|argument| match &argument.node {
+                Type::Complex(argument_path) => match argument_path.node.segments.as_slice() {
+                    [segment] if segment.node.type_args.is_empty() => Some(segment.node.name.node.name.clone()),
+                    _ => None,
+                },
+                _ => None,
+            })
+            .filter(|name| !known_types.contains(name))
+            .collect()
     }
 
     fn validate_type_reference(
@@ -470,7 +519,11 @@ impl SemanticPipelineRule {
             };
             if let Some(name) = name {
                 self.emit_duplicate_if_any(
-                    ctx, &mut seen, name.node.name.clone(), name.span, DuplicateKind::DefinitionName,
+                    ctx,
+                    &mut seen,
+                    name.node.name.clone(),
+                    name.span,
+                    DuplicateKind::DefinitionName,
                 );
             }
         }
@@ -559,4 +612,65 @@ enum DuplicateKind {
     EnumVariant,
     ContractMethod,
     ItemName,
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::analysis::{AnalysisOptions, builtin_rules, run_rules};
+    use crate::parser::{BeskidParser, Rule};
+    use crate::parsing::parsable::Parsable;
+    use crate::syntax::Program;
+    use pest::Parser;
+
+    fn unknown_definition_types(source: &str) -> Vec<String> {
+        let pair =
+            BeskidParser::parse(Rule::Program, source).expect("source should parse").next().expect("program pair");
+        let program = Program::parse(pair).expect("source should build AST");
+        let result = run_rules(&program.node, "test.bd", source, &builtin_rules(), AnalysisOptions::default());
+        result
+            .diagnostics
+            .iter()
+            .filter(|diag| diag.code.as_deref() == Some("E1005"))
+            .map(|diag| diag.message.clone())
+            .collect()
+    }
+
+    #[test]
+    fn inline_methods_see_their_generic_type_parameters() {
+        let source = r#"
+            pub type Pair<TKey, TValue> {
+                TKey key,
+                TValue value,
+
+                pub TKey Key() { return this.key; }
+                pub bool Matches(TKey other, TValue payload) { return true; }
+            }
+        "#;
+        assert!(unknown_definition_types(source).is_empty(), "{:?}", unknown_definition_types(source));
+    }
+
+    #[test]
+    fn impl_methods_see_their_impl_generic_parameters() {
+        let source = r#"
+            pub type Box<T> { T value }
+            impl<T> Box<T> {
+                pub T Get() { return this.value; }
+            }
+        "#;
+        assert!(unknown_definition_types(source).is_empty(), "{:?}", unknown_definition_types(source));
+    }
+
+    #[test]
+    fn inline_methods_still_reject_undeclared_types() {
+        let source = r#"
+            pub type Holder<T> {
+                T value,
+
+                pub Missing Get(T other) { return this.value; }
+            }
+        "#;
+        let unknown = unknown_definition_types(source);
+        assert_eq!(unknown.len(), 1, "{unknown:?}");
+        assert!(unknown[0].contains("Missing"), "{unknown:?}");
+    }
 }

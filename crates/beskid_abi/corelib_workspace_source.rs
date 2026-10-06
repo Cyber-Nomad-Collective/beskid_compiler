@@ -1,6 +1,33 @@
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 
+/// The ABI generator only validates workspace selection; it does not embed its source tree.
+/// Exact validation files keep generated lock/object changes outside that crate's inputs.
+#[allow(dead_code)] // Only the ABI build script needs validation inputs from this shared module.
+pub fn workspace_validation_files(workspace: &Path, override_path: Option<&OsStr>) -> std::io::Result<Vec<PathBuf>> {
+    let mut files = Vec::new();
+    for entry in std::fs::read_dir(workspace)? {
+        let path = entry?.path();
+        if path.is_file() && path.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("bws")) {
+            files.push(path);
+        }
+    }
+    if let Some(project) = override_path.map(Path::new)
+        && project.file_name().is_some_and(|name| name == "beskid_corelib")
+        && project.parent() == Some(workspace)
+    {
+        for entry in std::fs::read_dir(project)? {
+            let path = entry?.path();
+            if path.is_file() && path.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("bproj")) {
+                files.push(path);
+            }
+        }
+    }
+    files.sort();
+    files.dedup();
+    Ok(files)
+}
+
 pub fn resolve_corelib_workspace(manifest_dir: &Path, override_path: Option<&OsStr>) -> Option<PathBuf> {
     if let Some(override_path) = override_path.filter(|path| !path.is_empty()) {
         let path = PathBuf::from(override_path);

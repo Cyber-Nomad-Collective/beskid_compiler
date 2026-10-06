@@ -17,24 +17,37 @@ impl IsleContext<'_, '_, '_, '_> {
             Some(value)
         } else if actual.is_int() && expected.is_int() && actual.bits() < expected.bits() {
             match self.facts.semantic_type(semantic_source)? {
-                beskid_queries::SemanticTypeId::U32
+                beskid_queries::SemanticTypeId::U16
+                | beskid_queries::SemanticTypeId::U64
+                | beskid_queries::SemanticTypeId::U32
                 | beskid_queries::SemanticTypeId::U8
                 | beskid_queries::SemanticTypeId::BOOL => Some(self.builder.ins().uextend(expected, value)),
-                beskid_queries::SemanticTypeId::I32 | beskid_queries::SemanticTypeId::I64 => {
-                    Some(self.builder.ins().sextend(expected, value))
-                }
+                beskid_queries::SemanticTypeId::I8
+                | beskid_queries::SemanticTypeId::I16
+                | beskid_queries::SemanticTypeId::I32
+                | beskid_queries::SemanticTypeId::I64 => Some(self.builder.ins().sextend(expected, value)),
                 _ => None,
             }
         } else if actual.is_int() && expected.is_int() && actual.bits() > expected.bits() {
             matches!(
                 self.facts.semantic_type(semantic_source)?,
-                beskid_queries::SemanticTypeId::U8
+                beskid_queries::SemanticTypeId::I8
+                    | beskid_queries::SemanticTypeId::I16
+                    | beskid_queries::SemanticTypeId::U16
+                    | beskid_queries::SemanticTypeId::U64
+                    | beskid_queries::SemanticTypeId::U8
                     | beskid_queries::SemanticTypeId::U32
                     | beskid_queries::SemanticTypeId::BOOL
                     | beskid_queries::SemanticTypeId::I32
                     | beskid_queries::SemanticTypeId::I64
             )
             .then(|| self.builder.ins().ireduce(expected, value))
+        } else if actual.is_float() && expected.is_float() {
+            Some(if actual.bits() < expected.bits() {
+                self.builder.ins().fpromote(expected, value)
+            } else {
+                self.builder.ins().fdemote(expected, value)
+            })
         } else {
             None
         }
@@ -80,6 +93,27 @@ impl IsleContext<'_, '_, '_, '_> {
             let scope_end = self.end_local_root_scope_for_current_block();
             lowered?;
             scope_end?;
+            return Some(());
+        }
+
+        if self.facts.semantic_type(key) == Some(beskid_queries::SemanticTypeId::UNIT)
+            && matches!(kind, NodeKind::FieldExpression | NodeKind::AssignExpression)
+        {
+            let field = if kind == NodeKind::FieldExpression { key } else { self.facts.child(key, 0)? };
+            let layout = self.facts.struct_layout(field)?;
+            let index = usize::try_from(self.facts.field_index(field)?).ok()?;
+            if !layout.is_valid() || !matches!(layout.fields.get(index), Some(None)) {
+                return None;
+            }
+            // The receiver and RHS may have effects even though unit has no storage.
+            self.field_base_pointer(field)?;
+            if kind == NodeKind::AssignExpression {
+                let rhs = self.facts.child(key, 1)?;
+                if self.facts.semantic_type(rhs) != Some(beskid_queries::SemanticTypeId::UNIT) {
+                    return None;
+                }
+                self.lower_expression_for_effect(rhs)?;
+            }
             return Some(());
         }
 
@@ -252,10 +286,12 @@ macro_rules! generated_control_flow_methods {
                 self.facts.lambda_entry(initializer)?;
                 return Some(());
             }
-            let value = self.lower_nested_expression(initializer)?;
             let value_type = self.facts.scalar_type(key)?;
+            let managed_reference = self.local_managed_reference(key, value_type)?;
+            let admitted = self.prepare_checked_destination(value_type, managed_reference)?;
+            let value = self.lower_nested_expression(initializer)?;
             let value = self.adapt_scalar_boundary(initializer, value, value_type)?;
-            self.bind_local(slot, value, value_type, self.local_managed_reference(key, value_type)?)
+            self.bind_local_in_destination(slot, value, value_type, managed_reference, admitted)
         }
 
         fn emit_scoped_use(&mut self, key: AstNodeKey) -> Option<()> {

@@ -5,8 +5,8 @@ use super::{
     fields_errors::{parse_at, reject_corelib_opt_out_keys, split_known_fields},
     intermediate::{PROJECT_ROOT_FIELDS, ParsedBlocks, ParsedProjectBlock},
     sections_builders::{
-        lower_flat_block, lower_grammar_block, lower_link_block, lower_mod_block, lower_mod_generated_outputs,
-        lower_schemas_block, lower_template_block,
+        lower_flat_block, lower_glue_block, lower_grammar_block, lower_link_block, lower_mod_block,
+        lower_mod_generated_outputs, lower_schemas_block, lower_template_block,
     },
 };
 
@@ -34,6 +34,7 @@ pub(super) fn lower_project_document(validated: ValidatedDocument) -> Result<Par
                 }
                 parsed.link = Some(lower_link_block(block)?);
             }
+            "glue" => parsed.glue.push(lower_glue_block(block)),
             other => {
                 return Err(parse_at(block.span, format!("unexpected `{other}` block in project manifest")));
             }

@@ -40,6 +40,11 @@ pub enum SurfacePrimitive {
     String,
     Unit,
     Never,
+    I8,
+    I16,
+    U16,
+    U64,
+    F32,
 }
 
 impl SurfacePrimitive {
@@ -48,6 +53,11 @@ impl SurfacePrimitive {
     pub fn from_keyword(keyword: &str) -> Option<Self> {
         Some(match keyword {
             "bool" => Self::Bool,
+            "i8" => Self::I8,
+            "i16" => Self::I16,
+            "u16" => Self::U16,
+            "u64" => Self::U64,
+            "f32" => Self::F32,
             "i32" => Self::I32,
             "i64" => Self::I64,
             "u32" => Self::U32,
@@ -75,9 +85,14 @@ pub fn surface_primitive_to_type_shape(primitive: SurfacePrimitive) -> Option<Ty
         SurfacePrimitive::Bool => Some(TypeShape::Scalar(ScalarShape { abi_type: AbiType::I8 })),
         SurfacePrimitive::U8 => Some(TypeShape::Scalar(ScalarShape { abi_type: AbiType::U8 })),
         SurfacePrimitive::I32 => Some(TypeShape::Scalar(ScalarShape { abi_type: AbiType::I32 })),
+        SurfacePrimitive::I8 => Some(TypeShape::Scalar(ScalarShape { abi_type: AbiType::I8 })),
+        SurfacePrimitive::I16 => Some(TypeShape::Scalar(ScalarShape { abi_type: AbiType::I16 })),
+        SurfacePrimitive::U16 => Some(TypeShape::Scalar(ScalarShape { abi_type: AbiType::U16 })),
+        SurfacePrimitive::U64 => Some(TypeShape::Scalar(ScalarShape { abi_type: AbiType::U64 })),
         SurfacePrimitive::U32 => Some(TypeShape::Scalar(ScalarShape { abi_type: AbiType::U32 })),
         SurfacePrimitive::I64 => Some(TypeShape::Scalar(ScalarShape { abi_type: AbiType::I64 })),
         SurfacePrimitive::F64 => Some(TypeShape::Scalar(ScalarShape { abi_type: AbiType::F64 })),
+        SurfacePrimitive::F32 => Some(TypeShape::Scalar(ScalarShape { abi_type: AbiType::F32 })),
         SurfacePrimitive::Pointer => Some(TypeShape::OpaqueHandle),
         SurfacePrimitive::Word => Some(TypeShape::Scalar(ScalarShape { abi_type: AbiType::USize })),
         SurfacePrimitive::Never => Some(TypeShape::Never),
@@ -139,5 +154,26 @@ mod tests {
         assert_eq!(SurfacePrimitive::from_keyword("bool"), Some(SurfacePrimitive::Bool));
         assert_eq!(SurfacePrimitive::from_keyword("never"), Some(SurfacePrimitive::Never));
         assert_eq!(SurfacePrimitive::from_keyword("unknown"), None);
+    }
+}
+
+#[cfg(test)]
+mod v06_fixed_profile_tests {
+    use super::*;
+    #[test]
+    fn required_fixed_width_profile_preserves_exact_c_scalar_identity() {
+        for (keyword, surface, abi) in [
+            ("i8", SurfacePrimitive::I8, AbiType::I8),
+            ("i16", SurfacePrimitive::I16, AbiType::I16),
+            ("u16", SurfacePrimitive::U16, AbiType::U16),
+            ("u64", SurfacePrimitive::U64, AbiType::U64),
+            ("f32", SurfacePrimitive::F32, AbiType::F32),
+        ] {
+            assert_eq!(SurfacePrimitive::from_keyword(keyword), Some(surface));
+            let shape = surface_primitive_to_type_shape(surface).unwrap();
+            assert_eq!(shape, TypeShape::Scalar(ScalarShape { abi_type: abi }));
+            assert!(crate::interop::c_profile::CAbiProfile.bind(&shape).permitted);
+            assert!(crate::interop::rust_profile::RustAbiProfile.bind(&shape).permitted);
+        }
     }
 }

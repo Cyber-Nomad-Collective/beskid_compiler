@@ -40,22 +40,28 @@ impl EnumLayoutFact {
                             return Some(None);
                         }
                         let ty = match shape {
-                            AggregateFieldShape::Scalar(ty) => *ty,
+                            AggregateFieldShape::Scalar(ty) | AggregateFieldShape::ManagedReference(ty) => *ty,
                             AggregateFieldShape::Nominal(_) => SemanticTypeId::POINTER,
                         };
                         let layout = ty.scalar_abi_layout(pointer_width)?;
+                        let traced = matches!(
+                            shape,
+                            AggregateFieldShape::Nominal(_)
+                                | AggregateFieldShape::ManagedReference(_)
+                                | AggregateFieldShape::Scalar(SemanticTypeId::STRING)
+                        );
                         if storage_by_position.len() <= position {
                             storage_by_position.resize(position + 1, (None, None));
                         }
                         let (scalar_storage, pointer_storage) = &mut storage_by_position[position];
-                        let storage = if layout.is_pointer { pointer_storage } else { scalar_storage };
+                        let storage = if traced { pointer_storage } else { scalar_storage };
                         if storage.is_none_or(|current| {
                             layout.size > current.size
                                 || (layout.size == current.size && layout.alignment > current.alignment)
                         }) {
                             *storage = Some(StorageClass { ty, size: layout.size, alignment: layout.alignment });
                         }
-                        Some(Some((ty, layout.is_pointer)))
+                        Some(Some((ty, traced)))
                     })
                     .collect::<Option<Vec<_>>>()
             })

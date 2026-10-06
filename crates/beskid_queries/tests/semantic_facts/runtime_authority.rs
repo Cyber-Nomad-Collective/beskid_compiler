@@ -1,7 +1,8 @@
 use super::support::{key, setup};
 use beskid_abi::abi_v5::{AbiManifestV5, TargetMetadata};
 use beskid_abi::runtime_source::{
-    CANONICAL_CORELIB_CHANNEL_SOURCE_PATH, CANONICAL_CORELIB_SYSCALL_SOURCE_PATH, canonical_corelib_service_capability,
+    CANONICAL_CORELIB_CHANNEL_SOURCE_PATH, CANONICAL_CORELIB_SYSCALL_SOURCE_PATH,
+    CANONICAL_FOUNDATION_STRING_CORE_SOURCE_PATH, canonical_corelib_service_capability,
     canonical_corelib_service_source_path, canonical_corelib_service_sources,
     canonical_corelib_syscall_service_capability, canonical_corelib_syscall_sources,
 };
@@ -261,6 +262,7 @@ fn syscall_origin_materialized_loader_accepts_destination_but_denies_user_alias(
     std::fs::create_dir_all(destination.parent().unwrap()).unwrap();
     std::fs::copy(&real, &destination).unwrap();
     let workspace = PreparedProjectWorkspace {
+        verified_package_identities: Default::default(),
         lockfile_path: root_path.join("Project.lock"),
         materialized_project_root: root_path.clone(),
         materialized_source_root: root_path.clone(),
@@ -639,8 +641,66 @@ fn typed_value_service_preserves_source_result_and_rejects_native_pointer_payloa
     }
 }
 
+/// Assemble the exact compiler-owned Foundation `Core/String/Core.bd` unit at its canonical
+/// location and admit it through `build_typed_program_with_corelib_services`. `__str_len` is a
+/// private Corelib adapter (`adapter_service`), so this unit is its only call authority.
+fn admitted_string_core() -> (BeskidDatabase, SourceUnitId, SyntaxGenerationId, SyntaxIndex) {
+    let logical = CANONICAL_FOUNDATION_STRING_CORE_SOURCE_PATH;
+    let source = canonical_corelib_service_sources()
+        .into_iter()
+        .find(|source| source.logical_path == logical)
+        .expect("embedded Foundation String/Core source");
+    let path = canonical_corelib_service_source_path(logical).expect("canonical Foundation String/Core path");
+    let program = parse_program(&source.source).expect("parse Foundation String/Core source");
+    let generation = SyntaxGenerationId(77);
+    let index = SyntaxIndex::from_program(&program, generation);
+    let target = TargetMetadata::supported()
+        .into_iter()
+        .find(|target| target.triple.as_str() == "x86_64-unknown-linux-gnu")
+        .expect("linux target");
+    let manifest = AbiManifestV5::canonical_runtime(target);
+    let mut db = BeskidDatabase::default();
+    let source_root = path.ancestors().nth(3).expect("Foundation source root").to_path_buf();
+    let project = ProjectSession::new(&db, source_root.clone(), path.clone(), "corelib_foundation".into(), "test".into());
+    let assembly = Arc::new(ProgramAssembly::new(
+        EffectiveCompilationRoots { host: RootEntry { dependency_name: None, source_root }, dependencies: Vec::new() },
+        Arc::new(vec![SourceUnit {
+            logical_name: logical.into(),
+            origin_path: path.clone(),
+            path: path.clone(),
+            source: source.source,
+            program,
+        }]),
+        0,
+        AssemblyDiscovery::ImportClosure,
+        Arc::new(ModuleIndex::empty()),
+        false,
+        generation,
+    ));
+    build_typed_program_with_corelib_services(
+        &mut db,
+        project,
+        generation,
+        assembly,
+        canonical_corelib_service_capability(&manifest).expect("Corelib service capability"),
+    )
+    .expect("admitted Foundation String/Core typed program");
+    let unit = SourceUnitId::new(&db, path);
+    (db, unit, generation, index)
+}
+
+fn is_str_len_service(lowering: &Result<Option<beskid_queries::CallLowering>, beskid_queries::SemanticError>) -> bool {
+    matches!(
+        lowering,
+        Ok(Some(beskid_queries::CallLowering::CorelibService(service)))
+            if service.name == "__str_len" && service.symbol == "str_len"
+    )
+}
+
 #[test]
 fn runtime_intrinsic_uses_the_manifest_owned_builtin_index() {
+    // The manifest-owned builtin index still names `__str_len`, but a private Corelib adapter is
+    // never a global manifest builtin: ordinary user code gets no ABI call authority for it.
     let source = "i32 Main() { __str_len(\"value\"); return 0; }";
     let (db, _project, unit, generation, index) = setup(source);
     let call = key(unit, generation, &index, NodeKind::CallExpression, 0);
@@ -651,15 +711,42 @@ fn runtime_intrinsic_uses_the_manifest_owned_builtin_index() {
         runtime_intrinsic(&db, call).expect("runtime intrinsic"),
         Some(beskid_queries::RuntimeIntrinsic(expected as u32))
     );
-    assert_eq!(
-        call_lowering(&db, call).expect("manifest builtin call lowering"),
-        Some(beskid_queries::CallLowering::ManifestBuiltin(beskid_queries::ManifestBuiltin {
-            name: "__str_len",
-            symbol: "str_len",
-        }))
+    assert!(beskid_queries::ManifestBuiltin::for_name("__str_len").is_none(), "private adapter is not global");
+    let lowering = call_lowering(&db, call);
+    assert!(
+        !matches!(
+            lowering,
+            Ok(Some(
+                beskid_queries::CallLowering::ManifestBuiltin(_)
+                    | beskid_queries::CallLowering::CorelibService(_)
+                    | beskid_queries::CallLowering::Runtime(_)
+            ))
+        ),
+        "user code must not acquire __str_len call authority: {lowering:?}"
     );
+    assert_eq!(call_lowering(&db, call), Err(beskid_queries::SemanticError::unavailable("call_lowering")));
+    assert_eq!(call_abi_signature(&db, call), Err(beskid_queries::SemanticError::unavailable("call_lowering")));
+
+    // The legality gate reports the denial at the call, instead of codegen failing later.
+    let function = key(unit, generation, &index, NodeKind::FunctionDefinition, 0);
+    let findings = beskid_queries::check_items(&db, &[function]).expect_err("private adapter call must be denied");
+    assert_eq!(findings.len(), 1);
+    assert_eq!(findings[0].kind.code(), "E1107");
+    assert!(matches!(
+        &findings[0].kind,
+        beskid_analysis::analysis::SemanticIssueKind::ResolvePrivateRuntimeBuiltin { name } if name == "__str_len"
+    ));
+    assert_eq!(findings[0].site, call);
+
+    // The exact admitted Foundation unit receives the adapter as a Corelib service.
+    let (db, unit, generation, index) = admitted_string_core();
+    let call = index
+        .ids_of_kind(NodeKind::CallExpression)
+        .map(|node| AstNodeKey { unit, generation, node })
+        .find(|call| is_str_len_service(&call_lowering(&db, *call)))
+        .expect("admitted __str_len Corelib service call");
     assert_eq!(
-        call_abi_signature(&db, call).expect("dispatch builtin ABI signature").map(|signature| signature.result),
+        call_abi_signature(&db, call).expect("service ABI signature").map(|signature| signature.result),
         Some(SemanticTypeId::WORD)
     );
     assert_eq!(abi_type(&db, call), Ok(Some(SemanticTypeId::WORD)));
@@ -667,29 +754,30 @@ fn runtime_intrinsic_uses_the_manifest_owned_builtin_index() {
 
 #[test]
 fn dynamic_string_length_builtin_proves_explicit_i64_return_conversion() {
-    let source = "i64 Main(string text) { return i64(__str_len(text)); }";
-    let (db, _project, unit, generation, index) = setup(source);
+    // Foundation `Core.String.Len` is `return i64(__str_len(text));` in the admitted unit.
+    let (db, unit, generation, index) = admitted_string_core();
     let calls = index
         .ids_of_kind(NodeKind::CallExpression)
         .map(|node| AstNodeKey { unit, generation, node })
         .collect::<Vec<_>>();
-    let builtin = calls
+    let service = calls
         .iter()
         .copied()
-        .find(|call| matches!(call_lowering(&db, *call), Ok(Some(beskid_queries::CallLowering::ManifestBuiltin(_)))))
-        .expect("manifest __str_len call");
+        .find(|call| is_str_len_service(&call_lowering(&db, *call)))
+        .expect("admitted __str_len call");
+    // `Len` is the first item of the unit, so its conversion and return come first.
     let conversion = calls
         .iter()
         .copied()
         .find(|call| matches!(primitive_numeric_conversion(&db, *call), Ok(Some(_))))
-        .expect("word-to-i64 conversion");
+        .expect("word-to-i64 conversion of the __str_len result");
     let returned = key(unit, generation, &index, NodeKind::ReturnStatement, 0);
 
     assert_eq!(
-        call_abi_signature(&db, builtin).expect("builtin ABI signature").map(|signature| signature.result),
+        call_abi_signature(&db, service).expect("service ABI signature").map(|signature| signature.result),
         Some(SemanticTypeId::WORD)
     );
-    assert_eq!(value_abi_type(&db, builtin).expect("builtin value ABI"), Some(SemanticTypeId::WORD));
+    assert_eq!(value_abi_type(&db, service).expect("service value ABI"), Some(SemanticTypeId::WORD));
     assert_eq!(
         primitive_numeric_conversion(&db, conversion).expect("conversion ABI fact"),
         Some(beskid_queries::PrimitiveNumericConversion { from: SemanticTypeId::WORD, to: SemanticTypeId::I64 })
@@ -703,9 +791,9 @@ fn stale_legacy_builtin_shape_cannot_acquire_manifest_dispatch_authority() {
     let (db, _project, unit, generation, index) = setup(source);
     let call = key(unit, generation, &index, NodeKind::CallExpression, 0);
 
-    assert_eq!(call_lowering(&db, call).expect("legacy builtin lowering"), Some(beskid_queries::CallLowering::Dynamic));
-    assert_eq!(call_abi_signature(&db, call), Err(beskid_queries::SemanticError::unavailable("call_abi_signature")));
-    assert_eq!(abi_type(&db, call), Err(beskid_queries::SemanticError::unavailable("abi_type")));
+    assert_eq!(call_lowering(&db, call), Err(beskid_queries::SemanticError::unavailable("call_lowering")));
+    assert_eq!(call_abi_signature(&db, call), Err(beskid_queries::SemanticError::unavailable("call_lowering")));
+    assert!(abi_type(&db, call).is_err());
 }
 
 #[test]
@@ -778,8 +866,8 @@ fn canonical_concurrency_facade_gets_service_authority_but_copied_source_does_no
         setup("i64 Main() { return __channel_create(0, 0); }");
     let ordinary_call = key(ordinary_unit, ordinary_generation, &ordinary_index, NodeKind::CallExpression, 0);
     assert_eq!(
-        call_lowering(&ordinary_db, ordinary_call).expect("ordinary Channel spelling"),
-        Some(beskid_queries::CallLowering::Dynamic),
+        call_lowering(&ordinary_db, ordinary_call),
+        Err(beskid_queries::SemanticError::unavailable("call_lowering")),
         "application source must not acquire concurrency service authority"
     );
 }
@@ -867,8 +955,8 @@ fn corelib_syscall_source_gets_a_distinct_service_lowering_but_app_code_cannot_f
         setup("i64 Main() { return __syscall_write(1, \"not corelib\"); }");
     let ordinary_call = key(ordinary_unit, ordinary_generation, &ordinary_index, NodeKind::CallExpression, 0);
     assert_eq!(
-        call_lowering(&ordinary_db, ordinary_call).expect("ordinary syscall lowering"),
-        Some(beskid_queries::CallLowering::Dynamic),
+        call_lowering(&ordinary_db, ordinary_call),
+        Err(beskid_queries::SemanticError::unavailable("call_lowering")),
         "an application spelling must not gain the Corelib service capability"
     );
 
@@ -1011,9 +1099,8 @@ fn corelib_service_authority_is_registered_for_only_the_exact_syscall_unit_in_an
         call_lowering(
             &db,
             AstNodeKey { unit: SourceUnitId::new(&db, application_path.clone()), generation, node: application_call },
-        )
-        .expect("application lowering"),
-        Some(beskid_queries::CallLowering::Dynamic),
+        ),
+        Err(beskid_queries::SemanticError::unavailable("call_lowering")),
         "only the embedded Core.Syscall unit receives service authority"
     );
 
@@ -1061,9 +1148,8 @@ fn corelib_service_authority_is_registered_for_only_the_exact_syscall_unit_in_an
                 generation: SyntaxGenerationId(74),
                 node: forged_call,
             },
-        )
-        .expect("forged lowering"),
-        Some(beskid_queries::CallLowering::Dynamic),
+        ),
+        Err(beskid_queries::SemanticError::unavailable("call_lowering")),
         "altered Core.Syscall bytes cannot receive service authority"
     );
 }

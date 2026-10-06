@@ -16,10 +16,12 @@ pub enum UpError {
 struct RawManifest {
     schema: u32,
     version: String,
+    commit: String,
     bundles: Vec<Bundle>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Bundle {
     pub target: String,
     pub url: String,
@@ -29,6 +31,7 @@ pub struct Bundle {
 #[derive(Debug)]
 pub struct ReleaseManifest {
     pub version: Version,
+    pub commit: String,
     bundles: Vec<Bundle>,
 }
 
@@ -44,8 +47,20 @@ impl ReleaseManifest {
         if raw.bundles.is_empty() {
             return Err(UpError::InvalidManifest("bundles must not be empty".into()));
         }
+        if raw.commit.len() != 40
+            || !raw.commit.bytes().all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+        {
+            return Err(UpError::InvalidManifest("commit must be a 40-character lowercase source SHA".into()));
+        }
+        let mut targets = std::collections::HashSet::new();
         for bundle in &raw.bundles {
-            if !bundle.url.starts_with(RELEASE_ORIGIN) {
+            if !targets.insert(&bundle.target) {
+                return Err(UpError::InvalidManifest("duplicate bundle target".into()));
+            }
+            beskid_abi::abi_v5::TargetMetadata::for_triple(&bundle.target)
+                .map_err(|_| UpError::UnsupportedTarget(bundle.target.clone()))?;
+            let immutable_origin = format!("{RELEASE_ORIGIN}releases/download/cli-v{version}/");
+            if !bundle.url.starts_with(&immutable_origin) || bundle.url.contains('?') || bundle.url.contains('#') {
                 return Err(UpError::InvalidManifest(format!(
                     "bundle URL is outside the Beskid release origin: {}",
                     bundle.url
@@ -55,7 +70,7 @@ impl ReleaseManifest {
                 return Err(UpError::InvalidManifest(format!("bundle checksum is not SHA-256: {}", bundle.target)));
             }
         }
-        Ok(Self { version, bundles: raw.bundles })
+        Ok(Self { version, commit: raw.commit, bundles: raw.bundles })
     }
 
     pub fn select_bundle(&self, target: &str) -> Result<&Bundle, UpError> {

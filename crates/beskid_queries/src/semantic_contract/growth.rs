@@ -22,7 +22,7 @@ pub struct DeadCollectionGrowth {
 
 /// Canonical `Core.Collections.Array` function names whose lowering can reallocate their first
 /// argument and that return the grown handle.
-const GROWTH_OPERATIONS: &[&str] = &["Append"];
+const GROWTH_OPERATIONS: &[&str] = &["Append", "TryAppend"];
 
 /// Cheap syntactic pre-filter: does this call name a growth operation by its last path segment?
 /// Authority still comes from [`collection_operation`]; this only avoids querying every call.
@@ -92,8 +92,10 @@ fn dead_collection_growth_for_call(
         return None;
     }
     // An unproven (non-`mut`) owner is already rejected by lowering; it is not this fact.
-    let Ok(Some(CollectionOperation::Append { owner: CollectionMutationOwner::Local(_) })) =
-        collection_operation(db, key)
+    let Ok(Some(
+        CollectionOperation::Append { owner: CollectionMutationOwner::Local(_) }
+        | CollectionOperation::TryAppend { owner: CollectionMutationOwner::Local(_) },
+    )) = collection_operation(db, key)
     else {
         return None;
     };
@@ -128,10 +130,12 @@ fn dead_collection_growth_for_call(
         .node_at(program, declaration.node)
         .and_then(|node| node.of::<beskid_analysis::syntax::Identifier>())
         .map(|identifier| identifier.name.clone())?;
-    for path_node in
-        index.ids_of_kind(NodeKind::PathExpression).filter(|node| *node != callable && is_ancestor(index, callable, *node))
+    for path_node in index
+        .ids_of_kind(NodeKind::PathExpression)
+        .filter(|node| *node != callable && is_ancestor(index, callable, *node))
     {
-        let path = index.node_at(program, path_node).and_then(|node| node.of::<beskid_analysis::syntax::PathExpression>());
+        let path =
+            index.node_at(program, path_node).and_then(|node| node.of::<beskid_analysis::syntax::PathExpression>());
         let Some(path) = path else {
             continue;
         };
@@ -204,7 +208,8 @@ fn parameter_read_publishes(
             ) {
                 return Ok(true);
             }
-            let arguments = call_arguments(db, call)?.ok_or_else(|| SemanticError::unavailable("dead_collection_growth"))?;
+            let arguments =
+                call_arguments(db, call)?.ok_or_else(|| SemanticError::unavailable("dead_collection_growth"))?;
             let owner = arguments.first().map(|owner| normalized_expression_node(index, owner.node));
             Ok(owner != Some(normalized_expression_node(index, path_node)))
         }

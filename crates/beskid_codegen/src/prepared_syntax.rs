@@ -30,9 +30,135 @@ use crate::{CodegenArtifact, CodegenInput, ExportEntry, SyntaxModuleItem, lower_
 
 /// Result of lowering one prepared syntax entrypoint through the typed-codegen boundary.
 pub struct PreparedSyntaxEntrypoint {
-    pub artifact: CodegenArtifact,
-    pub symbol: String,
-    pub return_type: SemanticTypeId,
+    artifact: CodegenArtifact,
+    symbol: String,
+    return_type: SemanticTypeId,
+}
+impl PreparedSyntaxEntrypoint {
+    pub fn artifact(&self) -> &CodegenArtifact {
+        &self.artifact
+    }
+    pub fn symbol(&self) -> &str {
+        &self.symbol
+    }
+    pub fn return_type(&self) -> SemanticTypeId {
+        self.return_type
+    }
+    pub fn into_artifact(self) -> CodegenArtifact {
+        self.artifact
+    }
+}
+
+/// One checked no-argument entry selected from a prepared generation.
+pub struct PreparedSyntaxEntry {
+    name: String,
+    symbol: String,
+    return_type: SemanticTypeId,
+}
+impl PreparedSyntaxEntry {
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+    pub fn symbol(&self) -> &str {
+        &self.symbol
+    }
+    pub fn return_type(&self) -> SemanticTypeId {
+        self.return_type
+    }
+}
+
+/// A single emitted reachability union with entries in the caller's selection order.
+/// Its selected entries and emitted body are one compiler-issued packet.
+///
+/// ```compile_fail
+/// fn substitute(prepared: &mut beskid_codegen::PreparedSyntaxEntrypoints) {
+///     prepared.artifact = Default::default();
+/// }
+/// ```
+pub struct PreparedSyntaxEntrypoints {
+    artifact: CodegenArtifact,
+    entries: Vec<PreparedSyntaxEntry>,
+}
+impl PreparedSyntaxEntrypoints {
+    pub fn artifact(&self) -> &CodegenArtifact {
+        &self.artifact
+    }
+    pub fn entries(&self) -> &[PreparedSyntaxEntry] {
+        &self.entries
+    }
+    pub fn into_artifact(self) -> CodegenArtifact {
+        self.artifact
+    }
+}
+
+/// Callable metadata issued from the same registered items that produced an artifact.
+/// Physical pointer signatures do not authorize native SDK request marshaling.
+#[derive(Debug, Clone)]
+pub struct PreparedSyntaxCallable {
+    key: AstNodeKey,
+    internal_symbol: String,
+    link_symbol: String,
+    signature: beskid_queries::ItemSignature,
+}
+
+impl PreparedSyntaxCallable {
+    pub fn key(&self) -> AstNodeKey {
+        self.key
+    }
+    pub fn internal_symbol(&self) -> &str {
+        &self.internal_symbol
+    }
+    pub fn link_symbol(&self) -> &str {
+        &self.link_symbol
+    }
+    pub fn signature(&self) -> &beskid_queries::ItemSignature {
+        &self.signature
+    }
+}
+
+/// A prepared module and its exact executable source declarations.
+/// Generic specializations discovered while lowering remain artifact-owned; a bare generic
+/// declaration cannot acquire a callable without an exact instantiated signature.
+pub struct PreparedSyntaxModule {
+    artifact: CodegenArtifact,
+    target: TargetMetadata,
+    callables: Vec<PreparedSyntaxCallable>,
+}
+
+impl PreparedSyntaxModule {
+    pub fn artifact(&self) -> &CodegenArtifact {
+        &self.artifact
+    }
+    pub fn target(&self) -> &TargetMetadata {
+        &self.target
+    }
+    pub fn callables(&self) -> &[PreparedSyntaxCallable] {
+        &self.callables
+    }
+    pub fn callable(&self, key: AstNodeKey) -> Option<&PreparedSyntaxCallable> {
+        self.callables.iter().find(|callable| callable.key == key)
+    }
+    pub fn into_artifact(self) -> CodegenArtifact {
+        self.artifact
+    }
+}
+
+/// Lower selected entries once through their shared generation-bound authority.
+pub fn lower_prepared_syntax_entrypoints(
+    db: &mut BeskidDatabase,
+    front: &FrontEndTypedResult,
+    entrypoints: &[String],
+    target: TargetMetadata,
+    isa: &dyn TargetIsa,
+) -> Result<PreparedSyntaxEntrypoints> {
+    lower_syntax_assembly_entrypoints_with_composition(
+        db,
+        Arc::new(front.syntax_assembly()),
+        entrypoints,
+        target,
+        isa,
+        Some(front),
+    )
 }
 
 /// Lower the compiler-embedded canonical runtime corpus through prepared syntax and ISLE.
@@ -75,8 +201,8 @@ pub fn lower_canonical_runtime_prepared_syntax(
     let generation = SyntaxGenerationId(1);
     let assembly = Arc::new(ProgramAssembly::new(
         EffectiveCompilationRoots {
-            host: RootEntry { dependency_name: None, source_root: root_dir },
-            dependencies: Vec::new(),
+            host: RootEntry { dependency_name: None, source_root: root_dir.join("src") },
+            dependencies: vec![RootEntry { dependency_name: Some("canonical-corelib".into()), source_root: root_dir }],
         },
         Arc::new(units),
         bootstrap_index,
@@ -105,8 +231,22 @@ pub fn lower_canonical_runtime_prepared_syntax(
             node: beskid_queries::AstNodeId(0),
         })
         .collect::<Vec<_>>();
-    let input = CodegenInput::new(db, typed, Arc::from(roots), target.clone(), manifest)
-        .map_err(|error| anyhow::anyhow!("canonical runtime CodegenInput failed: {error}"))?;
+    let input = CodegenInput::new(db, typed, Arc::from(roots), target.clone(), manifest).map_err(|error| {
+        let context = match &error {
+            crate::codegen_input::CodegenInputError::InvalidRoot(root) => {
+                let path = root.unit.path(db);
+                let registered = db.syntax_unit(root.unit).map(|unit| unit.accepts_key(db, *root));
+                format!(
+                    " path={} exists={} registered_current={registered:?} kind={:?}",
+                    path.display(),
+                    path.exists(),
+                    node_kind(db, *root)
+                )
+            }
+            _ => String::new(),
+        };
+        anyhow::anyhow!("canonical runtime CodegenInput failed: {error}{context}")
+    })?;
     // The provenance audit is the single canonical registration surface for symbols that may be
     // defined by the native runtime image. Intersecting it with explicit source `[Export]`
     // declarations includes both public ABI entries and runtime-owned Corelib service adapters,
@@ -166,7 +306,24 @@ pub fn lower_canonical_runtime_prepared_syntax(
     }
     let mut artifact = lower_syntax_program(&input, isa, &items)
         .map_err(|error| error.into_report(&input, "canonical runtime ISLE lowering failed"))?;
+    let checked_exports = std::mem::take(&mut artifact.exports);
     artifact.exports = syntax_export_entries_matching(input.database(), &items, &runtime_source_exports)?;
+    for export in checked_exports {
+        if beskid_abi::runtime_source::checked_runtime_clone(&export.exported_symbol).is_none()
+            || !runtime_source_exports.contains(&export.exported_symbol)
+        {
+            anyhow::bail!("canonical runtime checked constructor export lacks manifest provenance");
+        }
+        if artifact.exports.iter().any(|existing| existing.exported_symbol == export.exported_symbol) {
+            anyhow::bail!("canonical runtime duplicate checked constructor export");
+        }
+        artifact.exports.push(export);
+    }
+    for symbol in beskid_abi::runtime_source::CHECKED_RUNTIME_CLONES.iter().map(|clone| clone.export) {
+        if !artifact.exports.iter().any(|export| export.exported_symbol == symbol) {
+            anyhow::bail!("canonical runtime checked constructor `{symbol}` was not emitted");
+        }
+    }
     Ok(artifact)
 }
 
@@ -208,6 +365,29 @@ fn lower_syntax_assembly_entrypoint_with_composition(
     isa: &dyn TargetIsa,
     front: Option<&FrontEndTypedResult>,
 ) -> Result<PreparedSyntaxEntrypoint> {
+    let lowered =
+        lower_syntax_assembly_entrypoints_with_composition(db, assembly, &[entrypoint.to_owned()], target, isa, front)?;
+    let entry = lowered.entries.into_iter().next().expect("one checked selection");
+    Ok(PreparedSyntaxEntrypoint { artifact: lowered.artifact, symbol: entry.symbol, return_type: entry.return_type })
+}
+
+fn lower_syntax_assembly_entrypoints_with_composition(
+    db: &mut BeskidDatabase,
+    assembly: Arc<ProgramAssembly>,
+    entrypoints: &[String],
+    target: TargetMetadata,
+    isa: &dyn TargetIsa,
+    front: Option<&FrontEndTypedResult>,
+) -> Result<PreparedSyntaxEntrypoints> {
+    if entrypoints.is_empty() {
+        anyhow::bail!("at least one entrypoint must be selected");
+    }
+    let mut names = HashSet::new();
+    for name in entrypoints {
+        if name.trim().is_empty() || !names.insert(name.as_str()) {
+            anyhow::bail!("entrypoint selections must be nonempty and unique: `{name}`");
+        }
+    }
     let entry_path = assembly.entry_unit().path.clone();
     let generation = assembly.generation;
     let project = project_session_for_syntax_assembly(db, &assembly, "syntax-codegen", "prepared-frontend")
@@ -245,40 +425,49 @@ fn lower_syntax_assembly_entrypoint_with_composition(
     };
     let entry_root =
         AstNodeKey { unit: SourceUnitId::new(db, entry_path), generation, node: beskid_queries::AstNodeId(0) };
-    let entry =
-        find_entrypoint(db, &input, entrypoint).ok_or_else(|| anyhow::anyhow!("Missing entrypoint `{entrypoint}`"))?;
-    let entry_label = assembly
-        .units
-        .iter()
-        .find(|unit| SourceUnitId::new(db, unit.path.clone()) == entry.unit)
-        .map(|unit| unit.logical_name.as_str())
-        .unwrap_or("<unknown>");
-    crate::isle_trace::event(|| {
-        format!("event=entry.selected entrypoint={entrypoint} site={}", format_ast_node_trace(db, entry, entry_label),)
-    });
-    let signature = item_abi_signature(db, entry)
-        .map_err(|error| anyhow::anyhow!("entrypoint signature query failed: {error}"))?
-        .ok_or_else(|| anyhow::anyhow!("Missing signature for `{entrypoint}`"))?;
-    if !signature.parameters.is_empty() {
-        anyhow::bail!("Entrypoint `{entrypoint}` must take no parameters");
+    let mut selected = HashSet::new();
+    let mut items = Vec::new();
+    let mut entries = Vec::with_capacity(entrypoints.len());
+    for entrypoint in entrypoints {
+        let entry = find_entrypoint(db, &input, entrypoint)
+            .ok_or_else(|| anyhow::anyhow!("Missing entrypoint `{entrypoint}`"))?;
+        let entry_label = assembly
+            .units
+            .iter()
+            .find(|unit| SourceUnitId::new(db, unit.path.clone()) == entry.unit)
+            .map(|unit| unit.logical_name.as_str())
+            .unwrap_or("<unknown>");
+        crate::isle_trace::event(|| {
+            format!(
+                "event=entry.selected entrypoint={entrypoint} site={}",
+                format_ast_node_trace(db, entry, entry_label),
+            )
+        });
+        let signature = item_abi_signature(db, entry)
+            .map_err(|error| anyhow::anyhow!("entrypoint signature query failed: {error}"))?
+            .ok_or_else(|| anyhow::anyhow!("Missing signature for `{entrypoint}`"))?;
+        if !signature.parameters.is_empty() {
+            anyhow::bail!("Entrypoint `{entrypoint}` must take no parameters");
+        }
+        let reachable = reachable_items(db, entry_root, entry)
+            .map_err(|error| anyhow::anyhow!("entrypoint reachability query failed: {error}"))?
+            .ok_or_else(|| anyhow::anyhow!("incomplete direct-call facts for `{entrypoint}`"))?;
+        for key in reachable.iter().copied() {
+            if selected.insert(key) {
+                let symbol = syntax_item_symbol(db, &input, key)
+                    .ok_or_else(|| anyhow::anyhow!("reachable item is not a syntax function or test"))?;
+                items.push(SyntaxModuleItem { key, symbol });
+            }
+        }
+        let symbol = syntax_item_symbol(db, &input, entry)
+            .ok_or_else(|| anyhow::anyhow!("entrypoint `{entrypoint}` is not a syntax function or test"))?;
+        entries.push(PreparedSyntaxEntry { name: entrypoint.clone(), symbol, return_type: signature.result });
     }
-    let reachable = reachable_items(db, entry_root, entry)
-        .map_err(|error| anyhow::anyhow!("entrypoint reachability query failed: {error}"))?
-        .ok_or_else(|| anyhow::anyhow!("incomplete direct-call facts for `{entrypoint}`"))?;
-    let mut selected = reachable.iter().copied().collect::<HashSet<_>>();
-    let mut items = reachable
-        .iter()
-        .copied()
-        .map(|key| syntax_item_symbol(db, &input, key).map(|symbol| SyntaxModuleItem { key, symbol }))
-        .collect::<Option<Vec<_>>>()
-        .ok_or_else(|| anyhow::anyhow!("reachable item is not a syntax function or test"))?;
-    close_scheduler_entry_reachability(db, &input, &mut selected, &mut items)?;
-    let symbol = syntax_item_symbol(db, &input, entry)
-        .ok_or_else(|| anyhow::anyhow!("entrypoint `{entrypoint}` is not a syntax function or test"))?;
+    close_scheduler_entry_reachability(input.database(), &input, &mut selected, &mut items)?;
     let mut artifact = lower_syntax_program(&input, isa, &items)
         .map_err(|error| error.into_report(&input, "syntax ISLE lowering failed"))?;
     artifact.exports = syntax_export_entries(db, &items)?;
-    Ok(PreparedSyntaxEntrypoint { artifact, symbol, return_type: signature.result })
+    Ok(PreparedSyntaxEntrypoints { artifact, entries })
 }
 
 /// Lower every executable function and method in a prepared frontend snapshot.
@@ -293,6 +482,150 @@ pub fn lower_prepared_syntax_module(
     target: TargetMetadata,
     isa: &dyn TargetIsa,
 ) -> Result<CodegenArtifact> {
+    Ok(lower_prepared_syntax_module_with_callables(db, front, target, isa)?.into_artifact())
+}
+
+/// Issue executable callable identities while lowering their registered source module.
+/// Consumers select by key, never by guessing a linker symbol from a method's leaf name.
+pub fn lower_prepared_syntax_module_with_callables(
+    db: &mut BeskidDatabase,
+    front: &FrontEndTypedResult,
+    target: TargetMetadata,
+    isa: &dyn TargetIsa,
+) -> Result<PreparedSyntaxModule> {
+    with_prepared_module_input(db, front, target, |input, items| lower_registered_module_callables(input, items, isa))
+}
+
+/// Lower the reachable union of explicitly selected current-generation source callables.
+/// Selection grants no callback or runtime capability; every import retains ordinary admission.
+pub fn lower_prepared_syntax_selected_callables(
+    db: &mut BeskidDatabase,
+    front: &FrontEndTypedResult,
+    entries: &[AstNodeKey],
+    target: TargetMetadata,
+    isa: &dyn TargetIsa,
+) -> Result<PreparedSyntaxModule> {
+    if entries.is_empty() {
+        anyhow::bail!("callable selection is empty");
+    }
+    let generation = front.syntax_assembly().generation;
+    if entries.iter().any(|key| key.generation != generation) {
+        anyhow::bail!("callable selection has a stale source generation");
+    }
+    with_prepared_module_input(db, front, target, |input, items| {
+        let mut selected = HashSet::new();
+        let mut unique = HashSet::new();
+        for key in entries {
+            if !unique.insert(*key) || !items.iter().any(|item| item.key == *key) {
+                anyhow::bail!("callable selection is duplicate or not a current registered declaration");
+            }
+            let root = input
+                .roots()
+                .iter()
+                .copied()
+                .find(|root| root.unit == key.unit)
+                .ok_or_else(|| anyhow::anyhow!("selected callable source root is absent"))?;
+            let reachable = beskid_queries::reachable_items(input.database(), root, *key)?
+                .ok_or_else(|| anyhow::anyhow!("selected callable reachability is unavailable"))?;
+            selected.extend(reachable.iter().copied());
+            selected.insert(*key);
+        }
+        let selected_items = items.iter().filter(|item| selected.contains(&item.key)).cloned().collect::<Vec<_>>();
+        lower_registered_module_callables(input, &selected_items, isa)
+    })
+}
+
+/// Lower the library output of a prepared frontend snapshot.
+///
+/// The library owns the units named by [`ProgramAssembly::library_unit_indices`]: every own root
+/// unit of an entry-less library or aggregate, or the entry plus its own-package units. Every
+/// executable item of those units is emitted, and dependency items only when an owned item
+/// reaches them, so a dependency shared by several owned units is emitted once. The export set is
+/// the `[Export]` declarations of the owned units; a dependency's own `[Export]` items are never
+/// re-exported by the consumer. Emission and export order follow assembly order.
+pub fn lower_prepared_syntax_library(
+    db: &mut BeskidDatabase,
+    front: &FrontEndTypedResult,
+    target: TargetMetadata,
+    isa: &dyn TargetIsa,
+) -> Result<CodegenArtifact> {
+    with_prepared_module_input(db, front, target, |input, items| {
+        let db = input.database();
+        let assembly = &input.typed_program().assembly;
+        let owned_units = assembly
+            .library_unit_indices()
+            .ok_or_else(|| anyhow::anyhow!("library root set names a source unit outside the prepared assembly"))?
+            .into_iter()
+            .map(|index| SourceUnitId::new(db, assembly.units[index].path.clone()))
+            .collect::<HashSet<_>>();
+        let mut selected = HashSet::new();
+        for item in items.iter().filter(|item| owned_units.contains(&item.key.unit)) {
+            let root = input
+                .roots()
+                .iter()
+                .copied()
+                .find(|root| root.unit == item.key.unit)
+                .ok_or_else(|| anyhow::anyhow!("library item `{}` has no source root", item.symbol))?;
+            let reachable = reachable_items(db, root, item.key)
+                .map_err(|error| anyhow::anyhow!("library reachability query failed for `{}`: {error}", item.symbol))?
+                .ok_or_else(|| anyhow::anyhow!("incomplete direct-call facts for library item `{}`", item.symbol))?;
+            selected.extend(reachable.iter().copied());
+            selected.insert(item.key);
+        }
+        let mut emitted = items.iter().filter(|item| selected.contains(&item.key)).cloned().collect::<Vec<_>>();
+        close_scheduler_entry_reachability(db, input, &mut selected, &mut emitted)?;
+        let mut artifact = lower_syntax_program(input, isa, &emitted)
+            .map_err(|error| error.into_report(input, "syntax ISLE library lowering failed"))?;
+        let owned = emitted.iter().filter(|item| owned_units.contains(&item.key.unit)).cloned().collect::<Vec<_>>();
+        artifact.exports = syntax_export_entries(db, &owned)?;
+        Ok(artifact)
+    })
+}
+
+fn lower_registered_module_callables(
+    input: &CodegenInput<'_>,
+    items: &[SyntaxModuleItem],
+    isa: &dyn TargetIsa,
+) -> Result<PreparedSyntaxModule> {
+    // Type-only libraries have no executable items, but still pass through the
+    // validated module boundary and object emission without an application entrypoint.
+    let mut artifact = lower_syntax_program(input, isa, items)
+        .map_err(|error| error.into_report(&input, "syntax ISLE module lowering failed"))?;
+    artifact.exports = syntax_export_entries(input.database(), items)?;
+    let mut callables = Vec::with_capacity(items.len());
+    let mut link_symbols = HashSet::new();
+    let emitted_symbols = artifact.functions.iter().map(|function| function.name.as_str()).collect::<HashSet<_>>();
+    for item in items {
+        // Only a declaration actually emitted with this symbol can enter the callable table.
+        // Generic declarations lacking an instantiated symbol fail closed at this boundary.
+        if !emitted_symbols.contains(item.symbol.as_str()) {
+            // A generic template may have only call-derived specializations in the artifact.
+            // Never issue its uninstantiated declaration as one of those concrete callables.
+            continue;
+        }
+        let signature = item_abi_signature(input.database(), item.key)?
+            .ok_or_else(|| anyhow::anyhow!("prepared callable signature unavailable"))?;
+        let link_symbol = crate::object_link_symbol(&item.symbol, &artifact.exports);
+        if !link_symbols.insert(link_symbol.clone()) {
+            anyhow::bail!("prepared callable has a duplicate linker identity: {link_symbol}");
+        }
+        callables.push(PreparedSyntaxCallable {
+            key: item.key,
+            internal_symbol: item.symbol.clone(),
+            link_symbol,
+            signature,
+        });
+    }
+    Ok(PreparedSyntaxModule { artifact, target: input.target().clone(), callables })
+}
+
+/// One registered prepared-generation authority shared by module and native adapter lowering.
+pub(crate) fn with_prepared_module_input<T>(
+    db: &mut BeskidDatabase,
+    front: &FrontEndTypedResult,
+    target: TargetMetadata,
+    execute: impl FnOnce(&CodegenInput<'_>, &[SyntaxModuleItem]) -> Result<T>,
+) -> Result<T> {
     let assembly = Arc::new(front.syntax_assembly());
     let generation = assembly.generation;
     let project = project_session_for_syntax_assembly(db, &assembly, "syntax-codegen", "prepared-frontend")
@@ -332,12 +665,24 @@ pub fn lower_prepared_syntax_module(
         .map(|key| syntax_item_symbol(input.database(), &input, key).map(|symbol| SyntaxModuleItem { key, symbol }))
         .collect::<Option<Vec<_>>>()
         .ok_or_else(|| anyhow::anyhow!("prepared syntax module contains an unnamed item"))?;
-    // Type-only libraries have no executable items, but still pass through the
-    // validated module boundary and object emission without an application entrypoint.
-    let mut artifact = lower_syntax_program(&input, isa, &items)
-        .map_err(|error| error.into_report(&input, "syntax ISLE module lowering failed"))?;
-    artifact.exports = syntax_export_entries(input.database(), &items)?;
-    Ok(artifact)
+    execute(&input, &items)
+}
+
+/// Expose the registered prepared-front codegen input to Glue producers.
+///
+/// This is the only public route from a prepared front end to the registered
+/// [`CodegenInput`] and its executable [`SyntaxModuleItem`] closure. It delegates to the same
+/// materializer used by module and native adapter lowering, so Glue packets, owner builds and
+/// native bodies observe exactly the registered input, its composition authority and its
+/// lowering-internal symbols. Every preparation and registration check fails closed; there is
+/// no second materializer and callers never reconstruct symbols themselves.
+pub fn with_prepared_glue_input<T>(
+    db: &mut BeskidDatabase,
+    front: &FrontEndTypedResult,
+    target: TargetMetadata,
+    execute: impl FnOnce(&CodegenInput<'_>, &[SyntaxModuleItem]) -> Result<T>,
+) -> Result<T> {
+    with_prepared_module_input(db, front, target, execute)
 }
 
 /// Preserve `[Export]` facts selected by syntax lowering for AOT/JIT publication.
@@ -392,7 +737,7 @@ fn syntax_export_entries_matching(
 /// [`SCHEDULER_STACK_HELPERS`](crate::module_emission::SCHEDULER_STACK_HELPERS) seams, so they are
 /// added as roots too.
 fn close_scheduler_entry_reachability(
-    db: &BeskidDatabase,
+    db: &dyn beskid_queries::Db,
     input: &CodegenInput<'_>,
     selected: &mut HashSet<AstNodeKey>,
     items: &mut Vec<SyntaxModuleItem>,
@@ -439,7 +784,7 @@ fn close_scheduler_entry_reachability(
     Ok(())
 }
 
-fn contains_spawn(db: &BeskidDatabase, key: AstNodeKey) -> bool {
+fn contains_spawn(db: &dyn beskid_queries::Db, key: AstNodeKey) -> bool {
     if beskid_queries::node_kind(db, key).ok().flatten() == Some(beskid_queries::IndexedNodeKind::SpawnExpression) {
         return true;
     }

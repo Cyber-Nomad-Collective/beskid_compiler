@@ -31,6 +31,18 @@ pub struct SemanticError {
     /// different types. Still an unavailable specialization for every existing consumer; the
     /// legality gate reads this positive description to report E1229 at the call.
     binding_conflict: Option<GenericBindingConflict>,
+    /// Present only for [`SemanticError::generic_bound_not_satisfied`]: a `where` bound of the
+    /// selected callable that the call's concrete type does not satisfy. Still a rejected
+    /// specialization for every existing consumer; the legality gate reads this positive
+    /// description to report E1610 at the call.
+    bound_violation: Option<GenericBoundViolation>,
+}
+
+/// One `where G: Contract` bound a call's concrete type does not satisfy.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub struct GenericBoundViolation {
+    pub type_name: Arc<str>,
+    pub contract_name: Arc<str>,
 }
 
 /// One generic parameter that a single call binds to two different types.
@@ -50,6 +62,7 @@ impl SemanticError {
             unavailable_query: None,
             unavailable_site: None,
             binding_conflict: None,
+            bound_violation: None,
         }
     }
 
@@ -62,6 +75,7 @@ impl SemanticError {
             unavailable_query: None,
             unavailable_site: None,
             binding_conflict: None,
+            bound_violation: None,
         }
     }
 
@@ -74,6 +88,7 @@ impl SemanticError {
             unavailable_query: Some(Arc::from(query)),
             unavailable_site: None,
             binding_conflict: None,
+            bound_violation: None,
         }
     }
 
@@ -90,6 +105,7 @@ impl SemanticError {
             unavailable_query: Some(Arc::from(query)),
             unavailable_site: Some(site),
             binding_conflict: None,
+            bound_violation: None,
         }
     }
 
@@ -113,7 +129,35 @@ impl SemanticError {
             unavailable_query: Some(Arc::from("call_abi_signature")),
             unavailable_site: None,
             binding_conflict: Some(conflict),
+            bound_violation: None,
         }
+    }
+
+    /// The contract-witness authority's own rejection of a call whose concrete type does not
+    /// satisfy a `where` bound of the selected callable. `message` is the rendered E1610 text the
+    /// specialization consumers already show; the legality gate reads the typed violation.
+    pub(crate) fn generic_bound_not_satisfied(
+        message: impl Into<Arc<str>>,
+        type_name: impl Into<Arc<str>>,
+        contract_name: impl Into<Arc<str>>,
+    ) -> Self {
+        let message = message.into();
+        Self {
+            diagnostics: Arc::from([Arc::clone(&message)]),
+            message,
+            unavailable_query: None,
+            unavailable_site: None,
+            binding_conflict: None,
+            bound_violation: Some(GenericBoundViolation {
+                type_name: type_name.into(),
+                contract_name: contract_name.into(),
+            }),
+        }
+    }
+
+    /// The bound violation given to [`SemanticError::generic_bound_not_satisfied`], if any.
+    pub fn bound_violation(&self) -> Option<&GenericBoundViolation> {
+        self.bound_violation.as_ref()
     }
 
     /// The generic binding conflict given to [`SemanticError::generic_binding_conflict`], if any.

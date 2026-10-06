@@ -2,6 +2,43 @@
 
 use super::*;
 
+/// Canonical applied contract identities issued by current source conformances.
+pub fn type_contract_applications(
+    db: &dyn Db,
+    key: AstNodeKey,
+) -> SemanticQueryResult<Arc<[contracts::AppliedContractIdentity]>> {
+    with_registered_syntax(db, key, contracts::type_contract_applications_registered)
+}
+
+/// Validate the exact owner, arguments and source method signatures of an issued application.
+pub fn type_applied_contract_implementation(
+    db: &dyn Db,
+    concrete: AstNodeKey,
+    application: &contracts::AppliedContractIdentity,
+) -> SemanticQueryResult<Arc<[(AstNodeKey, AstNodeKey)]>> {
+    with_registered_syntax(db, concrete, |db, syntax, key| {
+        contracts::type_applied_contract_implementation_registered(db, syntax, key, application)
+    })
+}
+
+/// Validate exact source signatures and return contract-method/implementation pairs.
+/// Equal physical ABI representations never substitute for nominal source identity.
+pub fn type_contract_implementation(
+    db: &dyn Db,
+    concrete: AstNodeKey,
+    contract: AstNodeKey,
+) -> SemanticQueryResult<Arc<[(AstNodeKey, AstNodeKey)]>> {
+    with_registered_syntax(db, concrete, |db, syntax, key| {
+        contracts::type_contract_implementation_tracked(db, syntax, key, contract)
+    })
+}
+
+/// Resolve a type's declared conformances to exact current contract declaration keys.
+/// Native adapters must separately validate canonical SDK provenance and method witnesses.
+pub fn type_contract_declarations(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<Arc<[AstNodeKey]>> {
+    with_registered_syntax(db, key, contracts::type_contract_declarations_tracked)
+}
+
 pub(super) fn with_registered_syntax<T>(
     db: &dyn Db,
     key: AstNodeKey,
@@ -166,9 +203,14 @@ pub fn collection_operation(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult
     let Some(CallLowering::Direct(declaration)) = call_lowering(db, key)? else {
         return Ok(None);
     };
-    let path = declaration.unit.path(db);
-    let components = path.iter().rev().take(3).map(|part| part.to_string_lossy()).collect::<Vec<_>>();
-    if components.as_slice() != ["Array.bd", "Collections", "Core"] {
+    let canonical_source = db
+        .syntax_dependency_registry()
+        .lock()
+        .expect("syntax dependency registry")
+        .corelib_source_paths
+        .get(&(declaration.unit, declaration.generation))
+        .is_some_and(|path| path == beskid_abi::runtime_source::CANONICAL_FOUNDATION_ARRAY_SOURCE_PATH);
+    if !canonical_source {
         return Ok(None);
     }
     let Some(syntax) = db.syntax_unit(declaration.unit) else {
@@ -185,7 +227,7 @@ pub fn collection_operation(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult
         return Ok(None);
     };
     Ok(Some(match function.name.node.name.as_str() {
-        "Append" => {
+        "Append" | "TryAppend" => {
             let arguments =
                 call_arguments(db, key)?.ok_or_else(|| SemanticError::unavailable("collection_operation"))?;
             let array = *arguments.first().ok_or_else(|| SemanticError::unavailable("collection_operation"))?;
@@ -215,20 +257,40 @@ pub fn collection_operation(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult
                     .ok_or_else(|| SemanticError::unavailable("collection_operation"))?;
                 // A dotted value path already names its declaration identifier; a member
                 // expression names the receiver expression, which must resolve lexically first.
-                let receiver = match local_slot(db, access.receiver)? {
-                    Some(slot) => slot,
-                    None => resolved_local(db, access.receiver)?
-                        .and_then(|resolved| local_slot(db, resolved.declaration).transpose())
-                        .transpose()?
-                        .ok_or_else(|| SemanticError::unavailable("collection_operation"))?,
-                };
+                // Keep the terminal receiver identity separate from the lexical root.
+                // Each intermediate projection is already proven by the canonical field query.
+                let mut current = access.receiver;
+                let mut root = None;
+                let mut seen = HashSet::new();
+                for _ in 0..128 {
+                    if current.generation != key.generation || !seen.insert(current) {
+                        return Err(SemanticError::unavailable("collection_operation.owner_cycle"));
+                    }
+                    if let Some(slot) = local_slot(db, current)? {
+                        root = Some(slot);
+                        break;
+                    }
+                    if let Some(resolved) = resolved_local(db, current)? {
+                        root = local_slot(db, resolved.declaration)?;
+                        break;
+                    }
+                    let projection = aggregate_field_access(db, current)?
+                        .ok_or_else(|| SemanticError::unavailable("collection_operation.owner_projection"))?;
+                    current = projection.receiver;
+                }
+                let root = root.ok_or_else(|| SemanticError::unavailable("collection_operation.owner_root"))?;
                 CollectionMutationOwner::AggregateField {
-                    receiver,
+                    root,
+                    receiver: access.receiver,
                     declaration: access.declaration,
                     index: access.index,
                 }
             };
-            CollectionOperation::Append { owner }
+            if function.name.node.name == "TryAppend" {
+                CollectionOperation::TryAppend { owner }
+            } else {
+                CollectionOperation::Append { owner }
+            }
         }
         "Capacity" => CollectionOperation::Capacity,
         "Clear" => CollectionOperation::Clear,

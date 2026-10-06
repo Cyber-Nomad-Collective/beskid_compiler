@@ -17,6 +17,8 @@ fn lock_then_build_locked_succeeds_for_workspace_member() {
     let cli = BeskidCliInvoker::new();
 
     let lock = cli.run([
+        "dev",
+        "project",
         "lock",
         "--project",
         workspace_manifest.to_str().expect("workspace path str"),
@@ -52,6 +54,8 @@ fn fetch_locked_fails_when_lockfile_is_removed() {
     let cli = BeskidCliInvoker::new();
 
     let lock = cli.run([
+        "dev",
+        "project",
         "lock",
         "--project",
         workspace_manifest.to_str().expect("workspace path str"),
@@ -63,6 +67,8 @@ fn fetch_locked_fails_when_lockfile_is_removed() {
     fs::remove_file(&lock_path).expect("delete lockfile");
 
     let fetch_locked = cli.run([
+        "dev",
+        "project",
         "fetch",
         "--project",
         workspace_manifest.to_str().expect("workspace path str"),

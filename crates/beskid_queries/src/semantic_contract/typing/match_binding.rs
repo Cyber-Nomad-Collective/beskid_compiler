@@ -47,7 +47,7 @@ pub(crate) fn pattern_binding_abi_type(
         Err(error) => return Some(Err(error)),
     };
     Some(Ok(match binding.payload {
-        AggregateFieldShape::Scalar(semantic) => semantic,
+        AggregateFieldShape::Scalar(semantic) | AggregateFieldShape::ManagedReference(semantic) => semantic,
         AggregateFieldShape::Nominal(_) => SemanticTypeId::POINTER,
     }))
 }

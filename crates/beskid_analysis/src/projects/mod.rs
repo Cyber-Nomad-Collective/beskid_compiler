@@ -2,12 +2,19 @@
 
 pub mod assembly;
 pub mod compile_plan;
+pub mod dependency_edit;
+pub mod dependency_transaction;
 pub mod discovery;
 pub mod error;
+pub mod glue_owner;
 pub mod graph;
 pub mod manifest_resolve;
 pub mod model;
+mod package_identity;
 pub mod parser;
+pub use package_identity::{
+    VerifiedPackageIdentities, VerifiedPackageIdentity, VerifiedPackageRoot, VerifiedPackageSource,
+};
 mod readme;
 pub mod validator;
 pub mod workflow;
@@ -15,9 +22,9 @@ mod workspace_plan;
 
 pub(crate) use assembly::assemble_program;
 pub use assembly::{
-    AssemblyError, AssemblyModule, EffectiveCompilationRoots, ModuleGraph, ModuleIndex, ProgramAssembly, RootEntry,
-    SourceUnit, UnitMaterializer, assemble_program_with_materializer, assembly_options_for_plan,
-    assembly_options_for_prepare, effective_roots_for_plan, effective_roots_from_lockfile,
+    AssemblyError, AssemblyModule, AssemblyRootSet, EffectiveCompilationRoots, ModuleGraph, ModuleIndex,
+    ProgramAssembly, RootEntry, SourceUnit, UnitMaterializer, assemble_program_with_materializer,
+    assembly_options_for_plan, assembly_options_for_prepare, effective_roots_for_plan, effective_roots_from_lockfile,
     effective_roots_from_lockfile_checked, effective_roots_from_plan_and_workspace, infer_logical_module_path,
     module_path_exists_on_disk, module_path_to_relative_path, module_roots_from_effective, resolve_module_file,
 };
@@ -34,6 +41,11 @@ pub use discovery::{
     project_manifest_for_member_dir, reject_legacy_manifest_path,
 };
 pub use error::ProjectError;
+pub use glue_owner::{
+    GLUE_OWNER_ENTRY_FILE, GLUE_OWNER_MAX_DIRECTORIES, GLUE_OWNER_MAX_FILE_BYTES, GLUE_OWNER_MAX_FILES,
+    GLUE_OWNER_MAX_TOTAL_BYTES, GlueOwnerSourceFile, GlueOwnerSources, collect_glue_owner_sources,
+    glue_owner_directory,
+};
 pub use graph::{
     DependencyEdge, ProjectGraph, ProjectGraphBuildOptions, ProjectGraphNode, UnresolvedDependency,
     UnresolvedDependencyKind, WorkspaceResolutionRules, build_project_graph, build_project_graph_with_options,
@@ -45,19 +57,19 @@ pub use manifest_resolve::{
     resolve_workspace_candidate_path, resolve_workspace_candidate_with_summary,
 };
 pub use model::{
-    AssemblyDiscovery, AssemblyOptions, CompilePlan, Dependency, DependencySource, GrammarOutputEntry,
-    MaterializedDependencyProject, ModGeneratedOutput, PreparedProjectWorkspace, ProjectGrammarSection, ProjectKind,
-    ProjectLinkSection, ProjectManifest, ProjectModSection, ProjectSection, ProjectTemplateSection,
-    ProjectWorkspacePlan, ResolvedDependencyProject, Target, TargetKind, UnresolvedDependencyNote,
-    UnresolvedDependencyPolicy, WorkspaceManifest, WorkspaceMember, WorkspaceOverride, WorkspaceRegistry,
-    WorkspaceResolutionSummary, WorkspaceSection,
+    AssemblyDiscovery, AssemblyOptions, AssemblyRecoveryPolicy, CompilePlan, Dependency, DependencySource,
+    GrammarOutputEntry, MaterializedDependencyProject, ModGeneratedOutput, PreparedProjectWorkspace,
+    ProjectGlueBackend, ProjectGlueOwner, ProjectGrammarSection, ProjectKind, ProjectLinkSection, ProjectManifest,
+    ProjectModSection, ProjectSection, ProjectTemplateSection, ProjectWorkspacePlan, ResolvedDependencyProject,
+    Target, TargetKind, UnresolvedDependencyNote, UnresolvedDependencyPolicy, WorkspaceManifest, WorkspaceMember,
+    WorkspaceOverride, WorkspaceRegistry, WorkspaceResolutionSummary, WorkspaceSection,
 };
 pub use parser::{parse_manifest, parse_workspace_manifest};
 pub use readme::{
     PACKAGE_README_ARTIFACT_NAME, discover_readme_for_package_root, is_package_root_readme_entry,
     resolve_readme_file_path,
 };
-pub use validator::{MOD_CAPABILITY_NAMES, validate_manifest, validate_workspace_manifest};
+pub use validator::{GLUE_LIBRARY_LABEL_MAX_LEN, MOD_CAPABILITY_NAMES, validate_manifest, validate_workspace_manifest};
 pub use workflow::{
     PROJECT_LOCK_FILE_NAME, PortableLockPath, PortableLockPathBaseKind, ProjectLockDependencyEntry, ProjectLockSource,
     ProjectLockfileV2, WorkspacePrepareOptions, load_project_lock_dependencies,

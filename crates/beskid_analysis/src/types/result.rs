@@ -16,59 +16,195 @@ use crate::types::{TypeId, TypeTable};
 /// Type mismatch, missing annotation, invalid operation, or extern-surface violation at a span.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TypeError {
-    UnknownType { span: SpanInfo, name: String },
-    UnknownValueType { span: SpanInfo },
-    UnknownStructType { span: SpanInfo },
-    InvalidMemberTarget { span: SpanInfo },
-    UnknownEnumType { span: SpanInfo },
-    UnknownStructField { span: SpanInfo, name: String },
-    UnknownEnumVariant { span: SpanInfo, name: String },
-    MissingStructField { span: SpanInfo, name: String },
-    MissingTypeAnnotation { span: SpanInfo, name: String },
-    TypeMismatch { span: SpanInfo, expected: TypeId, actual: TypeId },
-    MatchArmTypeMismatch { span: SpanInfo, expected: TypeId, actual: TypeId },
-    CallArityMismatch { span: SpanInfo, expected: usize, actual: usize },
-    CallArgumentMismatch { span: SpanInfo, expected: TypeId, actual: TypeId },
-    EnumConstructorMismatch { span: SpanInfo, expected: usize, actual: usize },
-    UnknownCallTarget { span: SpanInfo },
-    InvalidBinaryOp { span: SpanInfo },
-    InvalidUnaryOp { span: SpanInfo },
-    NonBoolCondition { span: SpanInfo },
-    UnsupportedExpression { span: SpanInfo },
-    InvalidTryTarget { span: SpanInfo },
-    InvalidPrimitiveConversionArgument { span: SpanInfo },
-    InvalidEventInvocationScope { span: SpanInfo },
-    InvalidEventCapacity { span: SpanInfo },
-    InvalidEventSubscriptionTarget { span: SpanInfo },
-    SpawnTargetNotFiberCompatible { span: SpanInfo },
-    JoinWouldDeadlock { span: SpanInfo },
-    StackReferenceEscapesSpawn { span: SpanInfo },
-    ReturnTypeMismatch { span: SpanInfo, expected: TypeId, actual: Option<TypeId> },
-    MissingTypeArguments { span: SpanInfo },
-    GenericArgumentMismatch { span: SpanInfo, expected: usize, actual: usize },
+    NumericLiteralOutOfRange {
+        span: SpanInfo,
+        primitive: crate::syntax::PrimitiveType,
+    },
+    UnknownType {
+        span: SpanInfo,
+        name: String,
+    },
+    UnknownValueType {
+        span: SpanInfo,
+    },
+    UnknownStructType {
+        span: SpanInfo,
+    },
+    InvalidMemberTarget {
+        span: SpanInfo,
+    },
+    UnknownEnumType {
+        span: SpanInfo,
+    },
+    UnknownStructField {
+        span: SpanInfo,
+        name: String,
+    },
+    UnknownEnumVariant {
+        span: SpanInfo,
+        name: String,
+    },
+    MissingStructField {
+        span: SpanInfo,
+        name: String,
+    },
+    MissingTypeAnnotation {
+        span: SpanInfo,
+        name: String,
+    },
+    TypeMismatch {
+        span: SpanInfo,
+        expected: TypeId,
+        actual: TypeId,
+    },
+    MatchArmTypeMismatch {
+        span: SpanInfo,
+        expected: TypeId,
+        actual: TypeId,
+    },
+    CallArityMismatch {
+        span: SpanInfo,
+        expected: usize,
+        actual: usize,
+    },
+    CallArgumentMismatch {
+        span: SpanInfo,
+        expected: TypeId,
+        actual: TypeId,
+    },
+    EnumConstructorMismatch {
+        span: SpanInfo,
+        expected: usize,
+        actual: usize,
+    },
+    UnknownCallTarget {
+        span: SpanInfo,
+    },
+    InvalidBinaryOp {
+        span: SpanInfo,
+    },
+    InvalidUnaryOp {
+        span: SpanInfo,
+    },
+    NonBoolCondition {
+        span: SpanInfo,
+    },
+    UnsupportedExpression {
+        span: SpanInfo,
+    },
+    InvalidTryTarget {
+        span: SpanInfo,
+    },
+    InvalidPrimitiveConversionArgument {
+        span: SpanInfo,
+    },
+    InvalidEventInvocationScope {
+        span: SpanInfo,
+    },
+    InvalidEventCapacity {
+        span: SpanInfo,
+    },
+    InvalidEventSubscriptionTarget {
+        span: SpanInfo,
+    },
+    SpawnTargetNotFiberCompatible {
+        span: SpanInfo,
+    },
+    JoinWouldDeadlock {
+        span: SpanInfo,
+    },
+    StackReferenceEscapesSpawn {
+        span: SpanInfo,
+    },
+    ReturnTypeMismatch {
+        span: SpanInfo,
+        expected: TypeId,
+        actual: Option<TypeId>,
+    },
+    MissingTypeArguments {
+        span: SpanInfo,
+    },
+    GenericArgumentMismatch {
+        span: SpanInfo,
+        expected: usize,
+        actual: usize,
+    },
     /// Two call arguments inferred to the same generic parameter carry different declared
     /// primitive types (e.g. `word` and `i64`). `first`/`second` are the conflicting types in
     /// argument-position order; `parameter` is the generic parameter name.
-    GenericParameterConflict { span: SpanInfo, parameter: String, first: TypeId, second: TypeId },
-    GenericBoundNotSatisfied { span: SpanInfo, type_name: String, contract_name: String },
-    NonIterableForTarget { span: SpanInfo },
-    IterableNextArityMismatch { span: SpanInfo, expected: usize, actual: usize },
-    IterableNextReturnNotOption { span: SpanInfo },
-    IterableOptionSomeArityMismatch { span: SpanInfo, expected: usize, actual: usize },
+    GenericParameterConflict {
+        span: SpanInfo,
+        parameter: String,
+        first: TypeId,
+        second: TypeId,
+    },
+    GenericBoundNotSatisfied {
+        span: SpanInfo,
+        type_name: String,
+        contract_name: String,
+    },
+    NonIterableForTarget {
+        span: SpanInfo,
+    },
+    IterableNextArityMismatch {
+        span: SpanInfo,
+        expected: usize,
+        actual: usize,
+    },
+    IterableNextReturnNotOption {
+        span: SpanInfo,
+    },
+    IterableOptionSomeArityMismatch {
+        span: SpanInfo,
+        expected: usize,
+        actual: usize,
+    },
     // Extern interface validation errors
-    ExternInvalidAbi { span: SpanInfo, abi: Option<String> },
-    ExternMissingLibrary { span: SpanInfo },
-    ExternDisallowedParamType { span: SpanInfo, method: String, detail: String },
-    ExternDisallowedReturnType { span: SpanInfo, method: String, detail: String },
+    ExternInvalidAbi {
+        span: SpanInfo,
+        abi: Option<String>,
+    },
+    ExternMissingLibrary {
+        span: SpanInfo,
+    },
+    ExternDisallowedParamType {
+        span: SpanInfo,
+        method: String,
+        detail: String,
+    },
+    ExternDisallowedReturnType {
+        span: SpanInfo,
+        method: String,
+        detail: String,
+    },
     // Contract conformance validation (TypeId-based `FunctionSignature` equality, run after
     // the whole unit's items are typed so both the contract's declared signature and the
     // implementor's actual signature are available).
-    ContractMethodMissingImplementation { span: SpanInfo, contract_name: String, method_name: String, expected: FunctionSignature },
-    ContractImplementationSignatureMismatch { span: SpanInfo, method_name: String, expected: FunctionSignature, actual: FunctionSignature },
+    ContractMethodMissingImplementation {
+        span: SpanInfo,
+        contract_name: String,
+        method_name: String,
+        expected: FunctionSignature,
+    },
+    ContractImplementationSignatureMismatch {
+        span: SpanInfo,
+        method_name: String,
+        expected: FunctionSignature,
+        actual: FunctionSignature,
+    },
     // Associated types (Gap 4 remainder).
-    ThisUsedOutsideContractOrImpl { span: SpanInfo },
-    UnresolvedAssociatedType { span: SpanInfo, name: String },
-    ContractAssociatedTypeMissingBinding { span: SpanInfo, contract_name: String, assoc_name: String },
+    ThisUsedOutsideContractOrImpl {
+        span: SpanInfo,
+    },
+    UnresolvedAssociatedType {
+        span: SpanInfo,
+        name: String,
+    },
+    ContractAssociatedTypeMissingBinding {
+        span: SpanInfo,
+        contract_name: String,
+        assoc_name: String,
+    },
 }
 
 fn type_error_span_loc(span: SpanInfo) -> String {
@@ -155,6 +291,9 @@ impl fmt::Display for TypeError {
             TypeError::InvalidTryTarget { span } => {
                 write!(f, "invalid try target at {}", at(*span))
             }
+            TypeError::NumericLiteralOutOfRange { span, primitive } => {
+                write!(f, "numeric literal outside {primitive:?} range at {}", at(*span))
+            }
             TypeError::InvalidPrimitiveConversionArgument { span } => {
                 write!(f, "invalid primitive conversion argument at {}", at(*span))
             }
@@ -219,18 +358,20 @@ impl fmt::Display for TypeError {
             TypeError::IterableOptionSomeArityMismatch { span, expected, actual } => {
                 write!(f, "option `Some` arity mismatch at {}: expected {expected} arguments, got {actual}", at(*span))
             }
+            // Extern messages are the diagnostic registry text (`SemanticIssueKind::Extern*`,
+            // T0901-T0904), which the query gate renders for the same codes.
             TypeError::ExternInvalidAbi { span, abi } => match abi {
-                Some(a) => write!(f, "invalid extern ABI `{a}` at {}", at(*span)),
-                None => write!(f, "invalid extern ABI at {}", at(*span)),
+                Some(a) => write!(f, "invalid extern ABI `{a}`; only Abi:\"C\" is supported at {}", at(*span)),
+                None => write!(f, "invalid extern ABI; only Abi:\"C\" is supported at {}", at(*span)),
             },
             TypeError::ExternMissingLibrary { span } => {
-                write!(f, "extern declaration missing library at {}", at(*span))
+                write!(f, "extern contract missing Library at {}", at(*span))
             }
             TypeError::ExternDisallowedParamType { span, method, detail } => {
-                write!(f, "extern method `{method}` has a disallowed parameter type ({detail}) at {}", at(*span))
+                write!(f, "extern param type not allowed in `{method}` ({detail}) at {}", at(*span))
             }
             TypeError::ExternDisallowedReturnType { span, method, detail } => {
-                write!(f, "extern method `{method}` has a disallowed return type ({detail}) at {}", at(*span))
+                write!(f, "extern return type not allowed in `{method}` ({detail}) at {}", at(*span))
             }
             TypeError::ContractMethodMissingImplementation { span, contract_name, method_name, .. } => {
                 write!(f, "missing implementation of `{contract_name}::{method_name}` at {}", at(*span))

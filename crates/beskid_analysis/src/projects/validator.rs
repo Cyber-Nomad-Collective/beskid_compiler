@@ -3,8 +3,8 @@ use std::path::{Component, Path};
 
 use crate::projects::error::ProjectError;
 use crate::projects::model::{
-    DependencySource, ProjectKind, ProjectLinkSection, ProjectManifest, TargetKind, WorkspaceManifest,
-    project_root_block_matches_package_name,
+    DependencySource, ProjectGlueBackend, ProjectGlueOwner, ProjectKind, ProjectLinkSection, ProjectManifest,
+    TargetKind, WorkspaceManifest, project_root_block_matches_package_name,
 };
 
 /// Closed capability names accepted in `project.mod.capabilities` (compiler-mod host bridge).
@@ -162,6 +162,8 @@ pub fn validate_manifest(manifest: &ProjectManifest) -> Result<(), ProjectError>
         validate_link_section(link)?;
     }
 
+    validate_glue_owners(&manifest.glue, manifest.link.as_ref())?;
+
     let mut dependency_names = HashSet::new();
     for dependency in &manifest.dependencies {
         if !dependency_names.insert(dependency.name.clone()) {
@@ -232,6 +234,93 @@ fn validate_link_section(link: &ProjectLinkSection) -> Result<(), ProjectError> 
     }
 
     Ok(())
+}
+
+/// Maximum length of a `glue` owner library label.
+pub const GLUE_LIBRARY_LABEL_MAX_LEN: usize = 256;
+
+/// Validates top-level `glue "<library>" { ... }` owner declarations.
+///
+/// Diagnostic codes (E1801-E1899 manifest band):
+/// - **E1860**: label is empty, longer than 256 bytes, or contains a byte outside `[A-Za-z0-9_-]`.
+/// - **E1861**: duplicate glue label.
+/// - **E1862**: backend unavailable (`dotnet` in 0.6).
+/// - **E1863**: `path` is empty, absolute, or escapes the project root.
+/// - **E1864**: glue label also listed in `link.libraries`.
+/// - **E1867** (raised while lowering): unknown `glue` key; tool paths are never manifest keys.
+///
+/// Directory content (E1865/E1866) is checked by
+/// [`super::glue_owner::collect_glue_owner_sources`], which needs the project root on disk.
+fn validate_glue_owners(owners: &[ProjectGlueOwner], link: Option<&ProjectLinkSection>) -> Result<(), ProjectError> {
+    let mut labels: HashSet<&str> = HashSet::new();
+    for owner in owners {
+        validate_glue_library_label(&owner.library)?;
+        if !labels.insert(owner.library.as_str()) {
+            return Err(ProjectError::meta_contract("E1861", format!("duplicate glue label `{}`", owner.library)));
+        }
+        if owner.backend == ProjectGlueBackend::Dotnet {
+            return Err(ProjectError::meta_contract(
+                "E1862",
+                format!(
+                    "glue `{}` selects backend `dotnet`, which is unavailable in this release (use `backend = rust`)",
+                    owner.library
+                ),
+            ));
+        }
+        validate_glue_owner_path(owner)?;
+        if let Some(link) = link
+            && link.libraries.iter().any(|library| library == &owner.library)
+        {
+            return Err(ProjectError::meta_contract(
+                "E1864",
+                format!(
+                    "glue `{}` is also listed in `link.libraries`; a Glue owner library is produced by the compiler and must not be linked as a foreign library",
+                    owner.library
+                ),
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn validate_glue_library_label(library: &str) -> Result<(), ProjectError> {
+    let valid = !library.is_empty()
+        && library.len() <= GLUE_LIBRARY_LABEL_MAX_LEN
+        && library.bytes().all(|byte| byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'-');
+    if valid {
+        Ok(())
+    } else {
+        Err(ProjectError::meta_contract(
+            "E1860",
+            format!(
+                "glue label `{library}` must contain 1 to {GLUE_LIBRARY_LABEL_MAX_LEN} ASCII letters, digits, `_` or `-`"
+            ),
+        ))
+    }
+}
+
+/// Lexical confinement of a glue owner `path`; canonical confinement happens at source collection.
+pub(crate) fn validate_glue_owner_path(owner: &ProjectGlueOwner) -> Result<(), ProjectError> {
+    let raw = owner.path.as_str();
+    let path = Path::new(raw);
+    let reason = if raw.trim().is_empty() {
+        Some("must not be empty")
+    } else if raw.contains('\\') {
+        Some("must use `/` separators")
+    } else if path.has_root() || path.is_absolute() || path.components().any(|c| matches!(c, Component::Prefix(_))) {
+        Some("must be relative to the project root")
+    } else if path.components().any(|component| matches!(component, Component::ParentDir)) {
+        Some("must not escape the project root")
+    } else {
+        None
+    };
+    match reason {
+        Some(reason) => Err(ProjectError::meta_contract(
+            "E1863",
+            format!("glue `{}` path `{raw}` {reason}", owner.library),
+        )),
+        None => Ok(()),
+    }
 }
 
 fn validate_relative_workspace_path(path_value: &str, field_name: &str) -> Result<(), ProjectError> {

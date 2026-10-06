@@ -62,7 +62,7 @@ fn aggregate_fields_overlap(left: FieldLayout, right: FieldLayout) -> bool {
 pub struct StructLayout {
     size: u32,
     align_shift: u8,
-    pub(crate) fields: Vec<FieldLayout>,
+    pub(crate) fields: Vec<Option<FieldLayout>>,
 }
 
 /// Source-authorized static request used to allocate one aggregate literal through ABI-v5.
@@ -82,6 +82,11 @@ pub struct ManagedArrayAllocation {
 
 impl StructLayout {
     pub fn new(size: u32, align_shift: u8, fields: Vec<FieldLayout>) -> Self {
+        Self::from_logical_fields(size, align_shift, fields.into_iter().map(Some).collect())
+    }
+
+    /// Preserve logical field positions; unit fields have no physical slot.
+    pub fn from_logical_fields(size: u32, align_shift: u8, fields: Vec<Option<FieldLayout>>) -> Self {
         Self { size, align_shift, fields }
     }
 
@@ -93,10 +98,13 @@ impl StructLayout {
             return false;
         }
         for (index, field) in self.fields.iter().enumerate() {
+            let Some(field) = field else {
+                continue;
+            };
             if !aggregate_field_is_valid(self.size, alignment, *field) {
                 return false;
             }
-            if self.fields[..index].iter().any(|other| aggregate_fields_overlap(*field, *other)) {
+            if self.fields[..index].iter().flatten().any(|other| aggregate_fields_overlap(*field, *other)) {
                 return false;
             }
         }

@@ -33,12 +33,15 @@ fn checked_in_corelib_template_builds_compile_plan() {
 fn checked_in_corelib_sources_parse_as_beskid_programs() {
     let root = corelib_workspace_root();
 
+    let mut failures = Vec::new();
     for relative in stratified_corelib_parse_samples() {
         let path = root.join(relative);
         let source = fs::read_to_string(&path).unwrap_or_else(|_| panic!("read corelib source {}", path.display()));
-        parse_program(&source)
-            .unwrap_or_else(|err| panic!("corelib source should parse {}\nparse error: {err:#}", path.display()));
+        if let Err(error) = parse_program(&source) {
+            failures.push(format!("{}\n{error:#}", path.display()));
+        }
     }
+    assert!(failures.is_empty(), "corelib sources must parse:\n{}", failures.join("\n\n"));
 }
 
 #[test]
@@ -96,7 +99,7 @@ fn corelib_mvp_fixture_lowers_via_program_assembly() {
             let resolved = resolve_fixture_with_assembly(&corelib_mvp_fixture(), "src/Main.bd", "App");
             beskid_queries::prepare_compilation(
                 &resolved,
-                PrepareOptions {
+                PrepareOptions { mod_invoker: None,
                     front_end: FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
                     ..Default::default()
                 },
@@ -112,24 +115,10 @@ fn corelib_assembly_typechecks_nested_qualified_result_arguments_and_predicates(
     with_large_test_stack(|| {
         let project = corelib_tests_project_root();
         with_project_test_env(&project, || {
-            let source = r#"
-use Core.Syscall;
-use Core.Results;
-
-i32 Main() {
-    Core.Results.Result<i64, Core.Syscall.SyscallError> result =
-        Core.Syscall.Write(-1_i64, "x");
-    if Results.IsOk(result) {
-        return 1;
-    }
-    if Results.IsError(result) {
-        return 0;
-    }
-    return 2;
-}
-"#;
+            // Verified package sources must match their proof snapshot byte for byte, so the checked-in
+            // regression module (nested qualified Result arguments, Results.IsOk/IsError) is assembled as is.
             let mut resolved = resolve_corelib_tests_entry("system/SyscallErgonomicsTests.bd");
-            resolved.source = source.into();
+            let source = resolved.source.clone();
             let plan = resolved.compile_plan.clone().expect("corelib tests compile plan");
             let options = beskid_analysis::projects::assembly_options_for_plan(&plan);
             let assembly = with_db(|db| {
@@ -138,7 +127,7 @@ i32 Main() {
                     &plan,
                     resolved.prepared_workspace.as_ref(),
                     &resolved.source_path,
-                    Some(source),
+                    Some(&source),
                     &options,
                 )
             })
@@ -147,7 +136,7 @@ i32 Main() {
             resolved.assembly = Some(assembly);
             beskid_queries::prepare_compilation(
                 &resolved,
-                PrepareOptions {
+                PrepareOptions { mod_invoker: None,
                     front_end: FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
                     ..Default::default()
                 },
@@ -178,8 +167,14 @@ fn corelib_mvp_fixture_entry_does_not_emit_module_resolution_false_positives() {
 fn checked_in_corelib_aggregate_entry_is_workspace_placeholder() {
     with_cwd_at_workspace_root(&compiler_workspace_root(), || {
         let project = corelib_root();
-        let resolved =
-            resolve_input(None, Some(&project), None, None, false, false).expect("resolve corelib aggregate project");
+        let resolved = resolve_input(
+            None,
+            Some(&project),
+            None,
+            None,
+            beskid_analysis::projects::WorkspacePrepareOptions::default(),
+        )
+        .expect("resolve corelib aggregate project");
         let plan = resolved.compile_plan.expect("compile plan");
         assert_eq!(plan.target.name, "__aggregate__");
         assert!(plan.target.entry.is_none());
@@ -212,7 +207,7 @@ fn checked_in_compiler_sdk_collect_parses_with_named_enum_payloads() {
     let collect = compiler_sdk_src().join("Beskid/Compiler/Collect.bd");
     let source = fs::read_to_string(&collect).expect("read Beskid.Compiler.Collect");
     assert!(
-        source.contains("ContractDefinition(ContractDefinition definition)"),
+        source.contains("ContractDefinition(SpannedContractDefinition definition)"),
         "Collect should declare named enum payloads for SyntaxContributionItem"
     );
     parse_program(&source).expect("Beskid.Compiler.Collect should parse");
@@ -327,8 +322,8 @@ fn checked_in_compiler_sdk_query_facade_contract_first_nodes() {
         .expect("read Beskid.Syntax.Nodes.NodeList");
 
     assert!(
-        query.contains(r#"return "0.4.0";"#),
-        "Query facade version should be 0.4.0 after span + pipeline expansion"
+        query.contains(r#"return "0.6.0";"#),
+        "Query facade version should be 0.6.0 after the v0.6 query surface expansion"
     );
     assert!(syntax.contains(r#"return "0.4.0";"#), "Syntax facade version should be 0.4.0");
     assert!(!query.contains("pub type ReflectStub"), "Query facade must not declare ReflectStub placeholders");
@@ -342,7 +337,7 @@ fn checked_in_compiler_sdk_query_facade_contract_first_nodes() {
         "mirrored item wrapper enum must not be emitted into the Mod SDK"
     );
     assert!(
-        node_list.contains("Beskid.Syntax.Nodes.NodeRef head"),
+        node_list.contains("Beskid.Syntax.Nodes.NodeRef[] items"),
         "NodeList must carry NodeRef handles for program items"
     );
     assert!(
@@ -360,7 +355,7 @@ fn checked_in_compiler_sdk_query_facade_contract_first_nodes() {
         "pub SyntaxPipeline Pipeline(",
         "pub SyntaxPipeline Replace(",
         "pub Beskid.Syntax.Nodes.NodeRef Apply(",
-        "pub Option<FunctionDefinition> AsFunctionDefinition(",
+        "pub Option<Beskid.Syntax.Nodes.FunctionDefinition> AsFunctionDefinition(",
     ] {
         assert!(query.contains(api), "Query facade missing API: {api}");
     }
@@ -370,6 +365,9 @@ fn checked_in_compiler_sdk_query_facade_contract_first_nodes() {
 fn checked_in_corelib_beskid_test_sources_parse() {
     let root = corelib_root();
     let test_files = [
+        root.join("tests/corelib_tests/src/glue/BinaryCodecTests.bd"),
+        root.join("tests/corelib_tests/src/glue/ControlEnvelopeTests.bd"),
+        root.join("tests/corelib_tests/src/bsol/BuiltinProfilesTests.bd"),
         root.join("tests/corelib_tests/src/system/SyscallWriteTests.bd"),
         root.join("tests/corelib_tests/src/system/SyscallApiTests.bd"),
         root.join("tests/corelib_tests/src/system/SyscallErgonomicsTests.bd"),

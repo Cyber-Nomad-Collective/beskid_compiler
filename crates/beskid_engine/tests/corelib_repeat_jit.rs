@@ -37,8 +37,14 @@ fn run_corelib_tests(entry: &str, target_name: &str, test_names: &[&str]) -> Vec
     let project_root = corelib_tests_root();
     let entry = project_root.join(entry);
     configure_db_for_project(&project_root);
-    let resolved = resolve_input(Some(&entry), Some(&project_root), Some(target_name), None, false, false)
-        .expect("resolve corelib test target");
+    let resolved = resolve_input(
+        Some(&entry),
+        Some(&project_root),
+        Some(target_name),
+        None,
+        beskid_analysis::projects::WorkspacePrepareOptions::default(),
+    )
+    .expect("resolve corelib test target");
     let prepared =
         with_db(|db| prepare_compilation_with_db(db, &resolved, PrepareOptions { ..Default::default() }, None))
             .expect("prepare executable");

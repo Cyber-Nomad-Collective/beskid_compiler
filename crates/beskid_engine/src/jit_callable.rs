@@ -6,6 +6,11 @@ pub(crate) enum EntryReturnKind {
     Never,
     PointerLike,
     I64,
+    I8,
+    I16,
+    U16,
+    U64,
+    F32,
     I32,
     U32,
     U8,
@@ -16,11 +21,16 @@ pub(crate) enum EntryReturnKind {
 
 impl EntryReturnKind {
     /// The sole return-ABI bridge used by the syntax → ISLE JIT path.
-    pub(crate) fn from_semantic_type(ty: SemanticTypeId) -> Self {
-        match ty {
+    pub(crate) fn from_semantic_type(ty: SemanticTypeId) -> Option<Self> {
+        Some(match ty {
             SemanticTypeId::UNIT => Self::Unit,
             SemanticTypeId::NEVER => Self::Never,
             SemanticTypeId::I64 => Self::I64,
+            SemanticTypeId::I8 => Self::I8,
+            SemanticTypeId::I16 => Self::I16,
+            SemanticTypeId::U16 => Self::U16,
+            SemanticTypeId::U64 => Self::U64,
+            SemanticTypeId::F32 => Self::F32,
             SemanticTypeId::I32 => Self::I32,
             SemanticTypeId::U32 => Self::U32,
             SemanticTypeId::U8 => Self::U8,
@@ -28,10 +38,8 @@ impl EntryReturnKind {
             SemanticTypeId::F64 => Self::F64,
             SemanticTypeId::CHAR => Self::Char,
             SemanticTypeId::STRING | SemanticTypeId::WORD | SemanticTypeId::POINTER => Self::PointerLike,
-            // The syntax contract leaves non-primitive signatures unavailable, so this is a
-            // defensive ABI choice rather than a fallback to HIR type information.
-            _ => Self::PointerLike,
-        }
+            _ => return None,
+        })
     }
 }
 
@@ -58,6 +66,11 @@ impl JitCallable {
                 // SAFETY: Signature is selected from typed return info.
                 unsafe { invoke0::<i64>(ptr) }
             }
+            EntryReturnKind::I8 => unsafe { invoke0::<i8>(ptr) as i64 },
+            EntryReturnKind::I16 => unsafe { invoke0::<i16>(ptr) as i64 },
+            EntryReturnKind::U16 => unsafe { invoke0::<u16>(ptr) as i64 },
+            EntryReturnKind::U64 => unsafe { invoke0::<u64>(ptr) as i64 },
+            EntryReturnKind::F32 => unsafe { invoke0::<f32>(ptr).to_bits() as i64 },
             EntryReturnKind::I32 => {
                 // SAFETY: Signature is selected from typed return info.
                 unsafe { invoke0::<i32>(ptr) as i64 }
@@ -92,6 +105,11 @@ impl JitCallable {
             EntryReturnKind::Never => unreachable!("never returns"),
             EntryReturnKind::PointerLike => format!("0x{value:016x}"),
             EntryReturnKind::I64 => value.to_string(),
+            EntryReturnKind::I8 => (value as i8).to_string(),
+            EntryReturnKind::I16 => (value as i16).to_string(),
+            EntryReturnKind::U16 => (value as u16).to_string(),
+            EntryReturnKind::U64 => (value as u64).to_string(),
+            EntryReturnKind::F32 => f32::from_bits(value as u32).to_string(),
             EntryReturnKind::I32 => (value as i32).to_string(),
             EntryReturnKind::U32 => (value as u32).to_string(),
             EntryReturnKind::U8 => (value as u8).to_string(),
@@ -113,7 +131,7 @@ mod tests {
 
     #[test]
     fn u32_result_formats_without_signed_i32_aliasing() {
-        assert!(matches!(EntryReturnKind::from_semantic_type(SemanticTypeId::U32), EntryReturnKind::U32));
+        assert!(matches!(EntryReturnKind::from_semantic_type(SemanticTypeId::U32), Some(EntryReturnKind::U32)));
         assert_eq!(JitCallable::format_i64_result(u32::MAX as i64, EntryReturnKind::U32), "4294967295");
     }
 }

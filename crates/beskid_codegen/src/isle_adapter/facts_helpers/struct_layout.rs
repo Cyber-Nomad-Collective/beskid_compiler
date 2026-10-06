@@ -69,12 +69,19 @@ impl SyntaxNodeFacts<'_> {
         let fields = fields
             .iter()
             .map(|field| {
-                Some(FieldLayout::new(
+                if field.abi_type == SemanticTypeId::UNIT {
+                    return Some(None);
+                }
+                Some(Some(FieldLayout::new(
                     map_signature_type(isa, field.abi_type)?,
                     u32::try_from(field.field_offset).ok()?,
-                ))
+                )))
             })
             .collect::<Option<Vec<_>>>()?;
-        Some(StructLayout::new(u32::try_from(object_size).ok()?, object_alignment.ilog2() as u8, fields))
+        Some(StructLayout::from_logical_fields(
+            u32::try_from(object_size).ok()?,
+            object_alignment.ilog2() as u8,
+            fields,
+        ))
     }
 }

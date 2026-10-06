@@ -32,6 +32,7 @@ mod events;
 mod intrinsics;
 mod operators;
 mod roots;
+mod checked_allocation;
 mod spawn_arguments;
 mod strings;
 
@@ -247,6 +248,7 @@ pub(crate) fn materialize_parameters(
             "item parameter facts do not match function signature".to_owned(),
         ));
     }
+    context.require_checked_scope().ok_or_else(|| FunctionEmissionError::verification(item, "checked scope entry is unavailable"))?;
     for (parameter, value) in parameters.into_iter().zip(incoming) {
         if context.locals.contains_key(&parameter.slot)
             || context.builder.func.dfg.value_type(value) != parameter.value_type

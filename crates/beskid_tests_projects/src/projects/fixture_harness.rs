@@ -53,7 +53,14 @@ pub fn with_project_test_env<F: FnOnce()>(project_root: &Path, f: F) {
 pub fn resolve_fixture(fixture_root: &Path, entry: &str, target: &str) -> ResolvedInput {
     let root = fixture_root.to_path_buf();
     let entry_path = root.join(entry);
-    resolve_input(Some(&entry_path), Some(&root), Some(target), None, false, false).expect("resolve fixture")
+    resolve_input(
+        Some(&entry_path),
+        Some(&root),
+        Some(target),
+        None,
+        beskid_analysis::projects::WorkspacePrepareOptions::default(),
+    )
+    .expect("resolve fixture")
 }
 
 /// Populate `ResolvedInput.assembly` once via Salsa `program_assembly`.
@@ -86,8 +93,14 @@ pub fn corelib_tests_project_root() -> PathBuf {
 pub fn resolve_corelib_tests_entry(entry_relative: &str) -> ResolvedInput {
     let root = corelib_tests_project_root();
     let entry_path = root.join("src").join(entry_relative);
-    resolve_input(Some(&entry_path), Some(&root), None, None, false, false)
-        .unwrap_or_else(|err| panic!("resolve corelib_tests entry {entry_relative}: {err}"))
+    resolve_input(
+        Some(&entry_path),
+        Some(&root),
+        None,
+        None,
+        beskid_analysis::projects::WorkspacePrepareOptions::default(),
+    )
+    .unwrap_or_else(|err| panic!("resolve corelib_tests entry {entry_relative}: {err}"))
 }
 
 /// Resolve and assemble a `corelib_tests` entry via Salsa [`program_assembly`].

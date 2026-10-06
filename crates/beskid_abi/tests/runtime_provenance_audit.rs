@@ -342,3 +342,34 @@ fn exact_linux_shared_artifact_allows_only_linker_generated_imports() {
     let error = audit.verify_toolchain_imports(&symbols, false).unwrap_err();
     assert!(error.to_string().contains("unexpected"), "static archives must not inherit ELF shared imports: {error}");
 }
+
+#[test]
+fn linux_glibc_environ_aliases_are_accepted_only_on_the_shared_runtime() {
+    // The runtime references glibc's canonical `__environ`; GNU ld adds the same-address weak
+    // aliases `_environ` and `environ` to the shared image's undefined dynamic symbols.
+    let audit = RuntimeProvenanceAudit::canonical(target("x86_64-unknown-linux-gnu")).unwrap();
+    assert!(audit.allowed_imports.iter().any(|symbol| symbol == "__environ"));
+    assert!(!audit.allowed_imports.iter().any(|symbol| symbol == "environ" || symbol == "_environ"));
+
+    let mut symbols = audit.fixture_symbol_list().unwrap();
+    symbols.undefined.push("__tls_get_addr".to_string());
+    audit.verify_static_archive(&symbols).unwrap();
+    for alias in ["_environ@GLIBC_2.2.5", "environ@GLIBC_2.2.5"] {
+        symbols.undefined.push(alias.to_string());
+    }
+    audit.verify_shared(&symbols).unwrap();
+    let static_error = audit.verify_static_archive(&symbols).unwrap_err();
+    assert!(static_error.to_string().contains("unexpected"), "unexpected static result: {static_error}");
+
+    let mut other_alias = symbols.clone();
+    other_alias.undefined.push("__libc_environ".to_string());
+    let error = audit.verify_shared(&other_alias).unwrap_err();
+    assert!(error.to_string().contains("unexpected"), "unexpected shared result: {error}");
+
+    // Darwin declares `environ` itself and never accepts the glibc spellings.
+    let darwin = RuntimeProvenanceAudit::canonical(target("aarch64-apple-darwin")).unwrap();
+    let mut darwin_symbols = darwin.fixture_symbol_list().unwrap();
+    darwin_symbols.undefined.push("__environ".to_string());
+    let error = darwin.verify_shared(&darwin_symbols).unwrap_err();
+    assert!(error.to_string().contains("unexpected"), "unexpected Darwin result: {error}");
+}

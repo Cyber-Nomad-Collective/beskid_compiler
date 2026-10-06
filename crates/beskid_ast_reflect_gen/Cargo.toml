@@ -16,3 +16,5 @@ path = "src/main.rs"
 
 [dependencies]
 syn = { workspace = true, features = ["full", "extra-traits"] }
+
+serde_json = "1"

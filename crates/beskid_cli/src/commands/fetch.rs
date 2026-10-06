@@ -1,10 +1,11 @@
-//! `beskid fetch` — resolve the project graph and materialize dependencies on disk.
+//! `beskid dev project fetch` — resolve the project graph and materialize dependencies on disk.
 
 use crate::project_args::{LockfilePolicyArgs, PlainProgressArgs, ProjectResolveArgs};
 use anyhow::Result;
 use beskid_analysis::projects::UnresolvedDependencyPolicy;
 use beskid_tools::pipeline::{
-    CliProjectPipelineOptions, CliResolveOptions, resolve_project_with_cli_pipeline, tui::CommandSummary,
+    CliProjectPipelineOptions, CliResolveOptions, resolve_project_with_cli_pipeline,
+    tui::CommandSummary,
 };
 use clap::Args;
 
@@ -28,15 +29,17 @@ pub fn execute(args: FetchArgs) -> Result<()> {
             args.project.project.as_ref(),
             args.project.target.as_deref(),
             args.project.workspace_member.as_deref(),
-            args.lockfile.frozen,
-            args.lockfile.locked,
+            args.lockfile.WorkspaceOptions(),
             args.progress.plain,
         ),
         unresolved_dependency_policy: UnresolvedDependencyPolicy::Warn,
     })?;
     pipeline_ui.finish_session_with_summary(
         "Dependencies resolved and materialized",
-        Some(CommandSummary::plain("Fetch", "Dependencies resolved and materialized")),
+        Some(CommandSummary::plain(
+            "Fetch",
+            "Dependencies resolved and materialized",
+        )),
     );
     println!("Dependencies resolved and materialized.");
     Ok(())

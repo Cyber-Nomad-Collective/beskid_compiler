@@ -86,6 +86,8 @@ pub(in super::super) fn materialized_corelib_syscall_fixture()
     );
     let generation = SyntaxGenerationId(97);
     let assembly = ProgramAssembly {
+        compiled_mod_metadata: Vec::new(),
+        verified_package_identities: Default::default(),
         runtime_fixture: None,
         roots: EffectiveCompilationRoots {
             host: RootEntry { dependency_name: None, source_root: directory.clone() },
@@ -103,10 +105,13 @@ pub(in super::super) fn materialized_corelib_syscall_fixture()
         syntax_indexes: Arc::new(vec![SyntaxIndex::from_program(&program, generation)]),
         generation,
         entry_index: 0,
+        root_set: beskid_analysis::projects::AssemblyRootSet::Entry,
         discovery: AssemblyDiscovery::ImportClosure,
+        recovery_policy: beskid_analysis::projects::AssemblyRecoveryPolicy::Strict,
         module_index: Arc::new(ModuleIndex::empty()),
         has_std_dependency: false,
         trusted_corelib_service_paths: Arc::from([source_path.clone()]),
+        glue_libraries: Arc::from([]),
     };
     let syntax = Arc::new(assembly);
     let target = TargetMetadata::supported()
@@ -155,25 +160,26 @@ pub(in super::super) fn core_args_fixture(
     let generation = SyntaxGenerationId(98);
     let mut roots =
         EffectiveCompilationRoots { host: RootEntry { dependency_name: None, source_root }, dependencies: Vec::new() };
-    let mut units = vec![SourceUnit::bind_request(
-        source_path,
-        CANONICAL_CORELIB_ARGS_SOURCE_PATH.into(),
-        source,
-        program,
-    )];
+    let mut units =
+        vec![SourceUnit::bind_request(source_path, CANONICAL_CORELIB_ARGS_SOURCE_PATH.into(), source, program)];
     include_imported_corelib_modules(&mut units, &mut roots);
     let syntax_indexes = units.iter().map(|unit| SyntaxIndex::from_program(&unit.program, generation)).collect();
     let assembly = ProgramAssembly {
+        compiled_mod_metadata: Vec::new(),
+        verified_package_identities: Default::default(),
         runtime_fixture: None,
         roots,
         units: Arc::new(units),
         syntax_indexes: Arc::new(syntax_indexes),
         generation,
         entry_index: 0,
+        root_set: beskid_analysis::projects::AssemblyRootSet::Entry,
         discovery: AssemblyDiscovery::ImportClosure,
+        recovery_policy: beskid_analysis::projects::AssemblyRecoveryPolicy::Strict,
         module_index: Arc::new(ModuleIndex::empty()),
         has_std_dependency: false,
         trusted_corelib_service_paths,
+        glue_libraries: Arc::from([]),
     };
     let syntax = Arc::new(assembly);
     let target = TargetMetadata::supported()
@@ -218,10 +224,12 @@ pub(in super::super) fn assert_args_module_cannot_emit_imports(
         &[SyntaxModuleItem { key: named_function(input, root, "ProgramName"), symbol: "ProgramName".into() }],
     )
     .expect_err("untrusted Core.Args source must fail module emission before any ABI import is emitted");
+    let rendered = error.to_string();
     assert!(
-        error.to_string().contains("MissingRuleOrFact"),
-        "untrusted Core.Args must fail closed through generated ISLE: {error}"
+        rendered.contains("E1107 `__args_count` is a private runtime builtin and cannot be called from this source unit"),
+        "untrusted Core.Args must be denied by the legality gate before any ISLE lowering: {error}"
     );
+    assert!(!rendered.contains("MissingRuleOrFact"), "the denial must precede lowering: {error}");
 }
 
 pub(in super::super) fn canonical_foundation_assert_fixture()
@@ -427,4 +435,80 @@ pub(in super::super) fn include_imported_corelib_modules(
         present.push(module);
         units.push(unit);
     }
+}
+
+/// Build a user project whose own sources live in a temporary root and whose Corelib imports
+/// (for example `Core.Collections.Array`) resolve to the compiler-owned canonical sources.
+///
+/// Corelib authority (collection operations, service calls) is granted only to the exact
+/// compiler-owned units, so a fixture that exercises such authority must assemble those units
+/// instead of look-alike stand-ins. Imports are followed to a fixpoint so canonical modules carry
+/// the modules they declare. The first source is the entry and the only codegen root.
+pub(in super::super) fn canonical_corelib_project_fixture(
+    sources: &[(&str, &str)],
+    generation: SyntaxGenerationId,
+) -> (CodegenInput<'static>, Arc<dyn cranelift_codegen::isa::TargetIsa>, AstNodeKey) {
+    let mut db = Box::new(BeskidDatabase::default());
+    let root = tempfile::tempdir().expect("project").keep();
+    let mut units = sources
+        .iter()
+        .map(|(relative, source)| {
+            let path = root.join(relative);
+            std::fs::create_dir_all(path.parent().expect("source parent")).expect("create source parent");
+            std::fs::write(&path, source).expect("write source");
+            let program =
+                parse_program_with_source_name(path.to_str().expect("UTF-8 path"), source).expect("parse source");
+            SourceUnit {
+                logical_name: path.display().to_string(),
+                origin_path: path.clone(),
+                path,
+                source: (*source).to_owned(),
+                program,
+            }
+        })
+        .collect::<Vec<_>>();
+    let entry_path = units[0].path.clone();
+    let mut roots = EffectiveCompilationRoots {
+        host: RootEntry { dependency_name: None, source_root: root.clone() },
+        dependencies: Vec::new(),
+    };
+    loop {
+        let before = units.len();
+        include_imported_corelib_modules(&mut units, &mut roots);
+        if units.len() == before {
+            break;
+        }
+    }
+    let project = ProjectSession::new(&*db, root, entry_path.clone(), "App".into(), "canonical-corelib".into());
+    let assembly = Arc::new(ProgramAssembly::new(
+        roots,
+        Arc::new(units),
+        0,
+        AssemblyDiscovery::ImportClosure,
+        Arc::new(ModuleIndex::empty()),
+        false,
+        generation,
+    ));
+    let target = TargetMetadata::supported()
+        .into_iter()
+        .find(|target| target.triple.as_str() == "x86_64-unknown-linux-gnu")
+        .expect("linux target");
+    let manifest = AbiManifestV5::canonical_runtime(target.clone());
+    let typed = build_typed_program_with_corelib_services(
+        &mut db,
+        project,
+        generation,
+        assembly,
+        canonical_corelib_service_capability(&manifest).expect("Corelib service authority"),
+    )
+    .expect("typed project with canonical Corelib units");
+    let root = AstNodeKey { unit: SourceUnitId::new(&*db, entry_path), generation, node: AstNodeId(0) };
+    let leaked: &'static BeskidDatabase = Box::leak(db);
+    let input = CodegenInput::new(leaked, typed, Arc::from([root]), target, manifest)
+        .expect("generation-safe canonical Corelib project input");
+    let isa = isa::lookup_by_name("x86_64")
+        .expect("host ISA")
+        .finish(settings::Flags::new(settings::builder()))
+        .expect("host flags");
+    (input, isa, root)
 }

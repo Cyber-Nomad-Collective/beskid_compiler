@@ -1,7 +1,9 @@
 use std::collections::{HashMap, HashSet};
 
 use beskid_isle::{AstNodeKey, DirectCallee};
-use beskid_queries::{closure_environment, closure_signature, item_abi_signature, node_kind, resolved_item, spawn_entry_validation};
+use beskid_queries::{
+    closure_environment, closure_signature, item_abi_signature, node_kind, resolved_item, spawn_entry_validation,
+};
 use cranelift_codegen::ir::AbiParam;
 use cranelift_codegen::isa::TargetIsa;
 
@@ -242,6 +244,8 @@ pub(in crate::module_emission) fn spawn_result_plan(
             Vec::new()
         };
     Ok(crate::aggregate_static::AggregateStaticPlan {
+        descriptor_flags: 0,
+        descriptor_getter: None,
         literal: spawn,
         descriptor_symbol: format!("{symbol}_result_descriptor"),
         pointer_map_symbol: format!("{symbol}_result_pointer_map"),

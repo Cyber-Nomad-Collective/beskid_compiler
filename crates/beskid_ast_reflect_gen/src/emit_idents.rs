@@ -1,83 +1,49 @@
 //! Valid Beskid `Identifier` tokens for generated `.bd` field names.
 
-/// Beskid `Identifier` / `Keyword` overlap (see `beskid.pest`).
-///
-/// A trailing `_` is **not** sufficient (`attribute_` still starts a `Keyword` match in the
-/// grammar). Reserved Rust names are prefixed with `_` so the Beskid lexer sees a normal
-/// identifier (`_attribute`, `_type`, …).
-pub const BESKID_RESERVED_IDENTIFIERS: &[&str] = &[
-    "type",
-    "enum",
-    "contract",
-    "attribute",
-    "impl",
-    "match",
-    "event",
-    "when",
-    "if",
-    "else",
-    "while",
-    "for",
-    "in",
-    "return",
-    "break",
-    "continue",
-    "let",
-    "mut",
-    "mod",
-    "use",
-    "pub",
-    "ref",
-    "out",
-    "test",
-    "meta",
-    "skip",
-    "spawn",
-    "async",
-    "await",
-    "host",
-    "registry",
-    "scope",
-    "startup",
-    "init",
-    "dispose",
-    "with",
-    "launch",
-    "inject",
-    "single",
-    "transient",
-    "global",
-    "parent",
-    "extend",
-    "when",
-];
-
-fn reserved_keyword_prefix_conflict(lower: &str) -> bool {
-    for kw in BESKID_RESERVED_IDENTIFIERS {
-        if lower == *kw {
-            return true;
+/// Derive reserved tokens from the canonical Keyword grammar rather than a second list.
+fn reserved_keywords() -> &'static Vec<&'static str> {
+    static WORDS: std::sync::OnceLock<Vec<&'static str>> = std::sync::OnceLock::new();
+    WORDS.get_or_init(|| {
+        let grammar = include_str!("../../beskid_analysis/src/beskid.pest");
+        let body = grammar
+            .split_once("\nKeyword = {")
+            .expect("canonical Keyword rule")
+            .1
+            .split_once('}')
+            .expect("Keyword end")
+            .0;
+        let mut words = Vec::new();
+        for rule in
+            body.split(|c: char| !c.is_ascii_alphanumeric() && c != '_').filter(|token| token.ends_with("Keyword"))
+        {
+            let declaration = grammar
+                .lines()
+                .find(|line| line.trim_start().starts_with(&format!("{rule} =")))
+                .expect("canonical keyword declaration");
+            let literal =
+                declaration.split_once('"').expect("keyword literal").1.split_once('"').expect("keyword literal end").0;
+            assert!(
+                !literal.is_empty() && literal.chars().all(|c| c.is_ascii_alphabetic()),
+                "unsupported canonical keyword literal"
+            );
+            words.push(literal);
         }
-        // `contract_name`, `type_name`, … still begin a `Keyword` match in `beskid.pest`.
-        if lower.starts_with(&format!("{kw}_")) {
-            return true;
-        }
-    }
-    false
+        assert!(!words.is_empty(), "canonical Keyword rule cannot be empty");
+        words
+    })
 }
 
 pub fn escape_beskid_ident(raw: &str) -> String {
-    let lower = raw.to_ascii_lowercase();
-    if reserved_keyword_prefix_conflict(&lower) { format!("_{raw}") } else { raw.to_string() }
+    if reserved_keywords().iter().any(|keyword| raw == *keyword || raw.starts_with(&format!("{keyword}_"))) {
+        format!("_{raw}")
+    } else {
+        raw.to_string()
+    }
 }
 
-/// Case-sensitive Beskid keywords that a PascalCase Rust enum variant can spell exactly
-/// (`Type::This` -> the `This` type keyword). Lowercase keywords cannot collide with a variant.
-pub const BESKID_RESERVED_VARIANT_NAMES: &[&str] = &["This"];
-
-/// A Rust enum variant name as a valid Beskid variant identifier: an exact keyword gets the same
-/// `_` prefix that [`escape_beskid_ident`] gives field names (`This` -> `_This`).
+/// Enum names use the same case-sensitive canonical lexical authority as fields.
 pub fn escape_beskid_variant_ident(raw: &str) -> String {
-    if BESKID_RESERVED_VARIANT_NAMES.contains(&raw) { format!("_{raw}") } else { raw.to_string() }
+    escape_beskid_ident(raw)
 }
 
 /// Rust `snake_case` (or synthetic `field_0` / `variant_field_0`) to **lowerCamelCase** for Mod SDK
@@ -166,5 +132,18 @@ mod tests {
     fn leaves_unrelated_identifiers_unchanged() {
         assert_eq!(escape_beskid_ident("method_name"), "method_name");
         assert_eq!(escape_beskid_ident("payload"), "payload");
+    }
+}
+
+#[cfg(test)]
+mod canonical_keyword_v06_tests {
+    #[test]
+    fn v06_all_canonical_keyword_fields_are_escaped() {
+        for keyword in super::reserved_keywords() {
+            assert_eq!(super::escape_beskid_ident(keyword), format!("_{keyword}"));
+        }
+        assert_eq!(super::escape_beskid_ident("bulk"), "_bulk");
+        assert_eq!(super::escape_beskid_ident("mutable"), "mutable");
+        assert_eq!(super::escape_beskid_ident("whereBounds"), "whereBounds");
     }
 }

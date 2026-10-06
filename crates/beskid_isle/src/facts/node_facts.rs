@@ -6,6 +6,16 @@ use cranelift_codegen::ir::{Signature, Type};
 use std::sync::Arc;
 
 pub trait NodeFacts {
+    /// Only the production adapter with a closed executable effect proof enables this mode.
+    /// It does not reserve an outer failure result or authorize invocation publication.
+    fn checked_allocation_body(&self) -> bool {
+        false
+    }
+    /// Issued only for a closed allocation-free body with caller-owned live roots.
+    fn nonallocating_publication_body(&self) -> bool {
+        false
+    }
+
     fn composition_launch(&self, _key: AstNodeKey) -> Option<CompositionLaunchPlan> {
         None
     }

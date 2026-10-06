@@ -99,6 +99,10 @@ impl ProjectLockDependencyEntry {
         self.resolved_version.as_deref()
     }
 
+    pub fn artifact_digest(&self) -> Option<&str> {
+        self.artifact_digest.as_deref()
+    }
+
     pub fn registry(&self) -> Option<&str> {
         self.registry.as_deref()
     }
@@ -209,7 +213,10 @@ pub struct ProjectLockfileV2 {
 }
 
 impl ProjectLockfileV2 {
-    fn from_plan(plan: &ProjectWorkspacePlan, entries: &[ProjectLockDependencyEntry]) -> Result<Self, ProjectError> {
+    pub(super) fn from_plan(
+        plan: &ProjectWorkspacePlan,
+        entries: &[ProjectLockDependencyEntry],
+    ) -> Result<Self, ProjectError> {
         let root_manifest = plan
             .manifest_path
             .strip_prefix(&plan.project_root)
@@ -565,7 +572,7 @@ pub fn load_project_lock_dependencies_from_path(
 fn reject_v1_lock_for_replay(content: &str) -> Result<(), ProjectError> {
     if content.lines().next() == Some(PROJECT_LOCK_HEADER_V1) {
         return Err(ProjectError::Validation(
-            "Project.lock v1 requires explicit migration with `beskid lock` or `beskid update`".into(),
+            "Project.lock v1 requires explicit migration with `beskid dev project lock` or `beskid update --all`".into(),
         ));
     }
     Ok(())
@@ -614,6 +621,7 @@ pub fn load_project_lock_dependencies_for_plan(
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct WorkspacePrepareOptions {
+    pub offline: bool,
     pub frozen: bool,
     pub locked: bool,
     pub refresh_lock: bool,
@@ -639,7 +647,7 @@ pub(super) fn preflight_existing_lock_for_plan(
         Some(PROJECT_LOCK_HEADER_V1) => {
             if !options.refresh_lock {
                 return Err(ProjectError::Validation(
-                    "Project.lock v1 requires explicit migration with `beskid lock` or `beskid update`".into(),
+                    "Project.lock v1 requires explicit migration with `beskid dev project lock` or `beskid update --all`".into(),
                 ));
             }
             ProjectLockfileV1::parse_v1(&content)?;
@@ -648,9 +656,7 @@ pub(super) fn preflight_existing_lock_for_plan(
         Some(PROJECT_LOCK_HEADER_V2) => {
             let existing = ProjectLockfileV2::parse_v2(&content)?;
             let current = ProjectLockfileV2::from_plan(plan, &[])?;
-            if !options.refresh_lock
-                && (existing.root_manifest != current.root_manifest || existing.project_name != current.project_name)
-            {
+            if existing.root_manifest != current.root_manifest || existing.project_name != current.project_name {
                 return Err(ProjectError::Validation("lockfile belongs to a different project".into()));
             }
             Ok(Some(existing))

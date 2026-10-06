@@ -221,17 +221,18 @@ fn decode_cmd_unicode(output: &[u8]) -> AotResult<String> {
 }
 
 #[cfg(windows)]
-fn run_developer_command(instance: &Path) -> AotResult<String> {
+fn run_developer_command(instance: &Path, control: Option<&crate::api::NativeExecutionControl>) -> AotResult<String> {
     let developer_command = instance.join("Common7").join("Tools").join("VsDevCmd.bat");
     if !developer_command.is_file() {
         return Err(unavailable("VsDevCmd.bat", format!("missing in {}", instance.display())));
     }
     let invocation = format!("call \"{}\" -arch=x64 -host_arch=x64 >nul && set", developer_command.display());
-    let output = Command::new("cmd.exe")
-        .args(["/d", "/u", "/c"])
-        .raw_arg(invocation)
-        .output()
-        .map_err(|error| unavailable("VsDevCmd.bat", error.to_string()))?;
+    let mut command = Command::new("cmd.exe");
+    command.args(["/d", "/u", "/c"]).raw_arg(invocation);
+    let output = match control {
+        Some(control) => control.run_command(&mut command, &std::env::temp_dir(), "windows_developer_environment")?,
+        None => command.output().map_err(|error| unavailable("VsDevCmd.bat", error.to_string()))?,
+    };
     if !output.status.success() {
         return Err(unavailable("VsDevCmd.bat", String::from_utf8_lossy(&output.stderr).into_owned()));
     }
@@ -240,6 +241,17 @@ fn run_developer_command(instance: &Path) -> AotResult<String> {
 
 #[cfg(windows)]
 pub(crate) fn configure_windows_native_command(command: &mut Command) -> AotResult<()> {
+    configure_windows_native_command_with_control(command, None)
+}
+
+#[cfg(windows)]
+pub(crate) fn configure_windows_native_command_with_control(
+    command: &mut Command,
+    control: Option<&crate::api::NativeExecutionControl>,
+) -> AotResult<()> {
+    if let Some(control) = control {
+        control.check("windows_toolchain_discovery")?;
+    }
     let explicit = std::env::vars_os()
         .map(|(name, value)| (name.to_string_lossy().to_ascii_uppercase(), value))
         .collect::<BTreeMap<_, _>>();
@@ -252,25 +264,31 @@ pub(crate) fn configure_windows_native_command(command: &mut Command) -> AotResu
         .join("Microsoft Visual Studio")
         .join("Installer")
         .join("vswhere.exe");
-    let output = Command::new(&installer)
-        .args([
-            "-all",
-            "-version",
-            "[17.0,18.0)",
-            "-products",
-            "*",
-            "-requires",
-            "Microsoft.VisualStudio.Component.VC.Tools.x86.x64",
-            "-format",
-            "json",
-        ])
-        .output()
-        .map_err(|error| unavailable("vswhere.exe", format!("{}: {error}", installer.display())))?;
+    let mut discovery = Command::new(&installer);
+    discovery.args([
+        "-all",
+        "-version",
+        "[17.0,18.0)",
+        "-products",
+        "*",
+        "-requires",
+        "Microsoft.VisualStudio.Component.VC.Tools.x86.x64",
+        "-format",
+        "json",
+    ]);
+    let output = match control {
+        Some(control) => control.run_command(&mut discovery, &std::env::temp_dir(), "windows_toolchain_discovery")?,
+        None => discovery
+            .output()
+            .map_err(|error| unavailable("vswhere.exe", format!("{}: {error}", installer.display())))?,
+    };
     if !output.status.success() {
         return Err(unavailable("vswhere.exe", String::from_utf8_lossy(&output.stderr).into_owned()));
     }
     let instances = parse_instances(&String::from_utf8_lossy(&output.stdout))?;
-    configure_from_instances(command, &instances, installed_llvm_bin().as_deref(), run_developer_command)
+    configure_from_instances(command, &instances, installed_llvm_bin().as_deref(), |instance| {
+        run_developer_command(instance, control)
+    })
 }
 
 #[cfg(not(windows))]
@@ -446,4 +464,15 @@ mod tests {
         .unwrap();
         assert_eq!(command.get_program(), tools.join("cl.exe"));
     }
+}
+
+#[cfg(not(windows))]
+pub(crate) fn configure_windows_native_command_with_control(
+    _command: &mut Command,
+    control: Option<&crate::api::NativeExecutionControl>,
+) -> AotResult<()> {
+    if let Some(control) = control {
+        control.check("windows_toolchain_discovery")?;
+    }
+    Ok(())
 }
