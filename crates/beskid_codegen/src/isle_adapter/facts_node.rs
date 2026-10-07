@@ -149,6 +149,11 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
         self.array_layout_impl(key)
     }
 
+    fn sized_array_length(&self, key: AstNodeKey) -> Option<AstNodeKey> {
+        self.typed_array_plan(key)?;
+        self.input.typed_array_sized_length(key)
+    }
+
     fn managed_array_allocation(&self, key: AstNodeKey) -> Option<beskid_isle::ManagedArrayAllocation> {
         self.managed_array_allocation_impl(key)
     }

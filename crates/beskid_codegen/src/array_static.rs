@@ -282,6 +282,23 @@ impl CodegenInput<'_> {
     }
 }
 
+impl CodegenInput<'_> {
+    /// The run-time length argument of a sized compiler-owned `__array_new<T>(length)` call
+    /// (canonical `Array.Zeroed`). The static request emitted for that call carries length zero;
+    /// lowering copies it to the stack and stores this argument's value as the element count.
+    pub fn typed_array_sized_length(&self, call: AstNodeKey) -> Option<AstNodeKey> {
+        let allocation = typed_array_allocation(self.database(), call).ok().flatten()?;
+        if !allocation.sized {
+            return None;
+        }
+        let arguments = call_arguments(self.database(), call).ok().flatten()?;
+        let [length] = arguments.as_slice() else {
+            return None;
+        };
+        Some(*length)
+    }
+}
+
 fn scalar_layout(pointer_width: u8, ty: SemanticTypeId) -> Option<(u64, u64, bool)> {
     let pointer = u64::from(pointer_width.checked_div(8)?);
     match ty {

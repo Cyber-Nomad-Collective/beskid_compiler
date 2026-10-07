@@ -31,6 +31,9 @@ macro_rules! generated_aggregate_methods {
             None
         }
         fn emit_array_literal(&mut self, key: AstNodeKey) -> Option<Value> {
+            if let Some(length) = self.facts.sized_array_length(key) {
+                return self.emit_sized_array_allocation(key, length);
+            }
             let elements = self.facts.array_elements(key)?;
             let layout = self.facts.array_layout(key)?;
             let allocation = self.facts.managed_array_allocation(key)?;

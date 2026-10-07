@@ -127,6 +127,11 @@ pub trait NodeFacts {
     fn managed_array_allocation(&self, _key: AstNodeKey) -> Option<ManagedArrayAllocation> {
         None
     }
+    /// The run-time element-count argument of a sized compiler-owned array allocation
+    /// (`Array.Zeroed`). `None` for literals and the static `Array.Empty` allocation.
+    fn sized_array_length(&self, _key: AstNodeKey) -> Option<AstNodeKey> {
+        None
+    }
     fn struct_fields(&self, _key: AstNodeKey) -> Option<Vec<AstNodeKey>> {
         None
     }

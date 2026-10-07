@@ -237,10 +237,10 @@ pub fn collection_operation(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult
     }))
 }
 
-/// Return the generic element and length encoded by the exact compiler-owned
-/// `Core.Collections.Array.Empty` allocation call.
+/// Return the generic element and length form encoded by a compiler-owned
+/// `__array_new<T>(length)` call (`Core.Collections.Array.Empty` and `Array.Zeroed`).
 ///
-/// Ordinary source, copied Foundation source, stale syntax, non-zero lengths, and raw
+/// Ordinary source, copied Foundation source, stale syntax, and raw
 /// `__array_new(element_size, length)` calls receive no fact.
 pub fn typed_array_allocation(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<TypedArrayAllocation> {
     with_registered_syntax(db, key, typed_array_allocation_tracked)
