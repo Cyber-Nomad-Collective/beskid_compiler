@@ -119,14 +119,25 @@ pub i32 NetworkSetDeadlines(word handle, i64 readDeadline, i64 writeDeadline) {
 
 // The caller owns request/buffer until this returns. Cancel detaches host state
 // before release, including IOCP completion state which retains its own native copy.
+//
+// A completed transfer wins over the deadline. The deadline can win the one-winner wait after
+// the reactor has already run recv/recvmsg/accept/connect for this request (or IOCP has
+// delivered its completion) but before this fiber resumes. Cancel takes the native network lock
+// that completion also holds, so after it returns the request status is final: status 0 (OK) means
+// bytes, a datagram, an accepted socket, or a connection were transferred, and they are
+// delivered instead of NETWORK_TIMED_OUT. Otherwise cancel marked the request cancelled before
+// any I/O and the timeout stands. Cancellation and close winners are unchanged.
 pub i32 NetworkFinish(word handle, pointer request) {
     word token = raw_word_load(request);
-    word winner = ExternalWaitPark(token);
+    mut word winner = ExternalWaitPark(token);
     network_table_lock();
     pointer table = NativePointer(raw_word_load(network_table_root()));
     pointer slot = NetworkFindLocked(table, handle);
     word direction = NetworkDirection(raw_word_load(pointer_add(request, BESKID_NETWORK_REQUEST_OPERATION_OFFSET)));
     if table != NativePointer(0) { network_cancel(NativePointer(raw_word_load(table)), request); }
+    if winner == EXTERNAL_TIMEOUT && (raw_word_load(pointer_add(request, BESKID_NETWORK_REQUEST_STATUS_OFFSET)) & 0xFFFFFFFF) == 0 {
+        winner = EXTERNAL_READY;
+    }
     if table != NativePointer(0) { NetworkRequestUnlinkLocked(table, request); }
     if slot != NativePointer(0) && raw_word_load(NetworkSlotRequest(slot, direction)) == NativeWord(request) {
         raw_word_store(NetworkSlotRequest(slot, direction), 0);
