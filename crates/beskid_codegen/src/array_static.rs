@@ -283,19 +283,11 @@ impl CodegenInput<'_> {
 }
 
 impl CodegenInput<'_> {
-    /// The run-time length argument of a sized compiler-owned `__array_new<T>(length)` call
-    /// (canonical `Array.Zeroed`). The static request emitted for that call carries length zero;
-    /// lowering copies it to the stack and stores this argument's value as the element count.
-    pub fn typed_array_sized_length(&self, call: AstNodeKey) -> Option<AstNodeKey> {
-        let allocation = typed_array_allocation(self.database(), call).ok().flatten()?;
-        if !allocation.sized {
-            return None;
-        }
-        let arguments = call_arguments(self.database(), call).ok().flatten()?;
-        let [length] = &arguments[..] else {
-            return None;
-        };
-        Some(*length)
+    /// True for a sized compiler-owned `__array_new<T>(length)` call (canonical `Array.Zeroed`).
+    /// The static request emitted for that call carries length zero; lowering copies it to the
+    /// stack and stores the call's single argument as the element count.
+    pub fn typed_array_is_sized(&self, call: AstNodeKey) -> bool {
+        typed_array_allocation(self.database(), call).ok().flatten().is_some_and(|allocation| allocation.sized)
     }
 }
 

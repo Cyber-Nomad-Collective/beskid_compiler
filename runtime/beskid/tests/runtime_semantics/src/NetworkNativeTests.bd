@@ -679,7 +679,8 @@ unit RaceDeadlineThenTransfer(word reader, word writer, pointer peer, bool datag
         attempts = attempts + 1;
     }
     Assert.Equal(RacePendingStatus(reader), i64(RACE_REQUEST_PENDING), "race receive is pending in the reactor");
-    while clock_monotonic_nanos() <= deadline { }
+    mut bool beforeDeadline = true;
+    while beforeDeadline { beforeDeadline = clock_monotonic_nanos() <= deadline; }
     // The timer wins the one-winner wait; the reading fiber becomes runnable but does not run.
     External.ExternalPump(clock_monotonic_nanos());
     pointer payload = NetworkTestArray(1, 1);
@@ -691,7 +692,8 @@ unit RaceDeadlineThenTransfer(word reader, word writer, pointer peer, bool datag
     }
     Native.SystemFree(payload, 17);
     i64 limit = clock_monotonic_nanos() + 5000000000;
-    while RacePendingStatus(reader) == i64(RACE_REQUEST_PENDING) && clock_monotonic_nanos() < limit { }
+    mut bool reactorPending = true;
+    while reactorPending { reactorPending = RacePendingStatus(reader) == i64(RACE_REQUEST_PENDING) && clock_monotonic_nanos() < limit; }
     Assert.Equal(RacePendingStatus(reader), 0, "reactor completed the timed-out request with data");
     match pending.Join() {
         Result::Ok(status) => Assert.Equal(status, 1000 + i64(value), "completed transfer wins over the expired deadline"),

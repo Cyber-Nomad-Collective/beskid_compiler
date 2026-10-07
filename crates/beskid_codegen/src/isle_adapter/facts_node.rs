@@ -151,7 +151,14 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
 
     fn sized_array_length(&self, key: AstNodeKey) -> Option<AstNodeKey> {
         self.typed_array_plan(key)?;
-        self.input.typed_array_sized_length(key)
+        if !self.input.typed_array_is_sized(key) {
+            return None;
+        }
+        let arguments = self.call_arguments_impl(key)?;
+        let [length] = arguments.as_slice() else {
+            return None;
+        };
+        Some(*length)
     }
 
     fn managed_array_allocation(&self, key: AstNodeKey) -> Option<beskid_isle::ManagedArrayAllocation> {
