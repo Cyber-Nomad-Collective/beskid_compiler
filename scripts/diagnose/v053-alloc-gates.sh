@@ -85,4 +85,13 @@ PY
     BESKID_CORELIB_ROOT=$L-root-r timeout 3600 $CLI test --plain --project runtime/beskid/tests/runtime_semantics --target NetworkNativeTests --include-tag deadline-race --target-timeout 3000 > $L-r-race.log 2>&1
     echo "restored race EXIT=$? $(grep '^Result' $L-r-race.log)" >> $out
     echo DONE >> $out ;;
+  long)
+    # Targets whose CLIF generation alone exceeds the default 1800 s matrix budget.
+    out=$L-x.log; : > $out
+    for p in websocket:WsLargeTests quic:QuicCreditLoss; do
+      t=${p##*:}; rm -rf $L-root-x-$t
+      BESKID_CORELIB_ROOT=$L-root-x-$t timeout 7000 $CLI test --plain --project corelib/packages/${p%%:*}/tests --target $t --target-timeout 6000 --matrix-timeout 6900 > $L-x-$t.log 2>&1
+      echo "$t EXIT=$? $(grep '^Result' $L-x-$t.log)" >> $out
+    done
+    echo DONE >> $out ;;
 esac
