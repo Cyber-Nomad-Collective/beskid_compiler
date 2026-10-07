@@ -671,14 +671,16 @@ i64 RacePendingStatus(word handle) {
 // One forced round: `reader` waits with a 20 ms deadline; the deadline wins; `writer` then sends
 // `value`; the reactor completes the request; the reader must return that byte.
 unit RaceDeadlineThenTransfer(word reader, word writer, pointer peer, bool datagram, u8 value) {
+    i64 expectedResult = 1000 + i64(value);
     i64 deadline = clock_monotonic_nanos() + 20000000;
     Fiber<i64> pending = spawn (() => RaceReceiveOne(reader, datagram, deadline));
     mut word attempts = 0;
-    while RacePendingStatus(reader) != i64(RACE_REQUEST_PENDING) && attempts < 1000 {
+    while RacePendingStatus(reader) != RACE_REQUEST_PENDING && attempts < 1000 {
         Concurrency.Yield();
         attempts = attempts + 1;
     }
-    Assert.Equal(RacePendingStatus(reader), i64(RACE_REQUEST_PENDING), "race receive is pending in the reactor");
+    i64 registered = RacePendingStatus(reader);
+    Assert.True(registered == RACE_REQUEST_PENDING, "race receive is pending in the reactor");
     mut bool beforeDeadline = true;
     while beforeDeadline { beforeDeadline = clock_monotonic_nanos() <= deadline; }
     // The timer wins the one-winner wait; the reading fiber becomes runnable but does not run.
@@ -693,10 +695,11 @@ unit RaceDeadlineThenTransfer(word reader, word writer, pointer peer, bool datag
     Native.SystemFree(payload, 17);
     i64 limit = clock_monotonic_nanos() + 5000000000;
     mut bool reactorPending = true;
-    while reactorPending { reactorPending = RacePendingStatus(reader) == i64(RACE_REQUEST_PENDING) && clock_monotonic_nanos() < limit; }
-    Assert.Equal(RacePendingStatus(reader), 0, "reactor completed the timed-out request with data");
+    while reactorPending { reactorPending = RacePendingStatus(reader) == RACE_REQUEST_PENDING && clock_monotonic_nanos() < limit; }
+    i64 completedStatus = RacePendingStatus(reader);
+    Assert.True(completedStatus == 0, "reactor completed the timed-out request with data");
     match pending.Join() {
-        Result::Ok(status) => Assert.Equal(status, 1000 + i64(value), "completed transfer wins over the expired deadline"),
+        Result::Ok(status) => Assert.True(status == expectedResult, "completed transfer wins over the expired deadline"),
         Result::Error(_) => Assert.Fail("race reader joins"),
     };
     Assert.Equal(External.ExternalActiveCount(), 0, "race round releases every wait");
@@ -719,7 +722,8 @@ unit DeadlineRaceDeliversDatagrams() {
     word sender = raw_word_load(pointer_add(senderOut, 16));
     mut word round = 0;
     while round < 20 {
-        RaceDeadlineThenTransfer(receiver, sender, peer, true, u8(round + 1));
+        u8 marker = u8(round + 1);
+        RaceDeadlineThenTransfer(receiver, sender, peer, true, marker);
         round = round + 1;
     }
     // Nothing is left queued: every datagram was delivered by its own receive.
@@ -734,6 +738,7 @@ unit DeadlineRaceDeliversDatagrams() {
 }
 
 test native_network_udp_receive_deadline_race_delivers_completed_datagram {
+    meta { tags = "deadline-race"; }
     Fiber<unit> scenario = spawn DeadlineRaceDeliversDatagrams();
     Assert.True(match scenario.Join() { Result::Ok(_) => true, _ => false, }, "UDP deadline race scenario completes");
 }
@@ -757,7 +762,8 @@ unit DeadlineRaceDeliversStreamBytes() {
     word accepted = raw_word_load(pointer_add(acceptedOut, 16));
     mut word round = 0;
     while round < 20 {
-        RaceDeadlineThenTransfer(client, accepted, boundAddress, false, u8(round + 1));
+        u8 marker = u8(round + 1);
+        RaceDeadlineThenTransfer(client, accepted, boundAddress, false, marker);
         round = round + 1;
     }
     Assert.Equal(RaceReceiveOne(client, false, clock_monotonic_nanos() + 20000000), -12_i64, "no stream byte remains after the race rounds");
@@ -773,6 +779,7 @@ unit DeadlineRaceDeliversStreamBytes() {
 }
 
 test native_network_tcp_read_deadline_race_delivers_completed_bytes {
+    meta { tags = "deadline-race"; }
     Fiber<unit> scenario = spawn DeadlineRaceDeliversStreamBytes();
     Assert.True(match scenario.Join() { Result::Ok(_) => true, _ => false, }, "TCP deadline race scenario completes");
 }
@@ -800,11 +807,13 @@ i64 ShortDeadlineDrain(word receiver, i64 expected) {
     return next;
 }
 
-i64 PacedSender(word sender, pointer peer, i64 count) {
+i64 PacedSender(word sender, word peerValue, i64 count) {
+    pointer peer = Native.NativePointer(peerValue);
     pointer payload = NetworkTestArray(1, 1);
     mut i64 sent = 0;
     while sent < count {
-        raw_byte_store(pointer_add(payload, 16), u8(sent + 1));
+        i64 sequence = sent + 1;
+        raw_byte_store(pointer_add(payload, 16), u8(sequence));
         if Sockets.NetworkSend(sender, payload, peer, false, -1) != 1 { break; }
         sent = sent + 1;
         Concurrency.Yield();
@@ -829,7 +838,8 @@ unit ShortDeadlineReceivesLoseNothing() {
     Assert.Equal(Sockets.NetworkOpen(3, bindAddress, 0, 0, -1, senderOut), 0, "drain sender binds loopback");
     word sender = raw_word_load(pointer_add(senderOut, 16));
     Fiber<i64> drain = spawn (() => ShortDeadlineDrain(receiver, 100));
-    Fiber<i64> producer = spawn (() => PacedSender(sender, peer, 100));
+    word peerValue = Native.NativeWord(peer);
+    Fiber<i64> producer = spawn (() => PacedSender(sender, peerValue, 100));
     match producer.Join() {
         Result::Ok(sent) => Assert.Equal(sent, 100_i64, "paced sender sends every datagram"),
         Result::Error(_) => Assert.Fail("paced sender joins"),
@@ -848,6 +858,7 @@ unit ShortDeadlineReceivesLoseNothing() {
 }
 
 test native_network_short_deadline_udp_receives_lose_no_datagram {
+    meta { tags = "deadline-race"; }
     Fiber<unit> scenario = spawn ShortDeadlineReceivesLoseNothing();
     Assert.True(match scenario.Join() { Result::Ok(_) => true, _ => false, }, "short-deadline UDP scenario completes");
 }
