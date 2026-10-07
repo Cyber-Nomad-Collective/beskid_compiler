@@ -63,6 +63,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   contracts keep failing at load when their library is absent.
 - T0905 reports a non-boolean `Optional` argument or an `Available` method of
   an optional contract that is not `bool Available();`.
+- `Array.Zeroed<T>(length)` allocates `length` zero-filled elements (null for
+  reference elements) in one rooted runtime allocation. Length and capacity
+  are both `length`; a negative length is a `bounds` trap. Inside Corelib
+  service sources, `__array_new<T>(length)` with a non-literal length is this
+  sized allocation. `Core.Bytes.Slice.New(n)` uses it: `Slice.New(16384)`
+  was 98-155 ms (one append per byte) and is now one allocation.
 
 ### Changed
 
@@ -104,6 +110,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   in the program. A call through the contract is no longer required.
   Runtime- and host-owned names stay rejected.
 - The CLI, LSP, and updater report version 0.5.3.
+- `Array.Append` grows geometrically. When the array is full, the
+  replacement has twice the capacity (at least 4 elements; when doubling
+  overflows, the exact requested capacity), and `Array.Capacity` reports it.
+  When capacity remains, the element is stored in place and every handle to
+  the same array sees the new length, as `RemoveLast` already did. n appends
+  copy O(n) elements in total instead of O(n^2).
 
 ### Fixed
 
@@ -113,6 +125,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   argument in a `unit` function no longer fails with "no typed context". The
   block's type now comes from its own context; before, lowering fell back to
   the enclosing function's return type.
+- The collector reuses freed heap pages for requests of any size. A freed
+  span could serve only a request of exactly its page count, and allocation
+  searched only the newest heap region, so a program that made many 16-20 KiB
+  temporary arrays reached the 1 GiB heap cap with almost no live data
+  (`out_of_memory` with `live=0`). Allocation now splits the smallest larger
+  free span, sweep merges adjacent free spans and returns a free run at the
+  end of a region to its unused pages, and every region is searched before
+  the heap grows.
+- A network receive, read, accept, or connect whose deadline expires after
+  the runtime reactor already completed the operation returns the result
+  instead of `TimedOut`. The received datagram or stream bytes were freed
+  with the request. `TimedOut` is returned only when no data was transferred
+  before the operation was cancelled. This applies to epoll, kqueue, and
+  IOCP; on Windows, a completion that IOCP has queued but the reactor has not
+  yet dequeued when the deadline wins is still cancelled.
 
 ## [0.5.2] - 2026-10-02
 
