@@ -292,7 +292,7 @@ impl CodegenInput<'_> {
             return None;
         }
         let arguments = call_arguments(self.database(), call).ok().flatten()?;
-        let [length] = arguments.as_slice() else {
+        let [length] = &arguments[..] else {
             return None;
         };
         Some(*length)
