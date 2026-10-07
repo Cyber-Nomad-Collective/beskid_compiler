@@ -1,8 +1,9 @@
 // Canonical per-span sweep. Walks every region's span directory once: a small span exchanges its
 // allocation bitmap for its mark bitmap (the classic bitmap swap) and rebuilds its free-slot list
 // from the newly free slots; a fully empty small span returns its page to the region's free-page
-// list. A large span with its object still marked survives; otherwise its page range is
-// abandoned (see Span.bd's `FreeSpanEntry` note — large-span page reclamation is deferred).
+// list. A large span with its object still marked survives; otherwise its pages return to the
+// free-page list. After each region is swept, adjacent free spans are merged
+// (`CoalesceRegionFreeSpans`, Span.bd) so later requests of any page count can reuse them.
 // Sweeping never reads or writes the byte contents of a live object.
 
 const HEAP_FIRST_REGION = 0;
@@ -102,6 +103,7 @@ pub bool Sweep(pointer heap) {
             }
             pageIndex = pageIndex + 1;
         }
+        CoalesceRegionFreeSpans(region);
         region = NativePointer(raw_word_load(pointer_add(region, REGION_NEXT)));
     }
     raw_word_store(pointer_add(heap, HEAP_LIVE_BYTES), liveBytes);

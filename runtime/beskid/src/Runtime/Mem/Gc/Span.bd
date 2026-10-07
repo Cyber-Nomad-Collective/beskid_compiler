@@ -33,6 +33,7 @@ const PAGE_SIZE = 8192;
 
 const REGION_BUMP = 16;
 const REGION_LIMIT = 24;
+const REGION_OBJECTS_START = 48;
 const REGION_FREE_SPAN_LIST = 56;
 const REGION_HEADER_SIZE = 64;
 
@@ -131,31 +132,48 @@ pub unit InitSpanHeader(pointer entry, word base, word pageCount, word sizeClass
     return;
 }
 
-// Carves a `pageCount`-page span for `sizeClass` from `region`: reuses a free span of the exact
-// same page count if one is on the region's free-page list (an address-unordered singly linked
-// list; an exact-size search, not first-fit, keeps this simple at the cost of not coalescing
-// adjacent free runs of different sizes — acceptable in this draft because small spans are
-// always 1 page and large-object page counts cluster around a program's own type sizes).
-// Otherwise advances the region's page cursor (`bump`). Returns null when the region has no
-// room; the caller (allocation's slow path) decides whether to collect, grow, or fail.
+// Carves a `pageCount`-page span for `sizeClass` from `region`. Reuse comes first: a free span of
+// exactly `pageCount` pages on the region's free-page list (an address-unordered singly linked
+// list), otherwise the smallest larger free span, split so that its first `pageCount` pages
+// become the new span and the remainder goes back on the free list as its own free span. Only
+// when no free span is large enough does the region's page cursor (`bump`) advance. Sweep
+// (`CoalesceRegionFreeSpans`) merges adjacent free spans, so freed small spans and freed large
+// arrays of different page counts serve each other's later requests. Splitting keeps the
+// directory invariant that only a span's first page has a populated entry: the remainder's first
+// page was an inner page of the free span, whose entry is all zero. Returns null when the region
+// has no room; the caller (allocation's slow path) tries other regions, collects, or grows.
 pub pointer CarveSpan(pointer region, word pageCount, word sizeClass) {
     mut pointer previousFree = NativePointer(0);
     mut pointer candidate = NativePointer(raw_word_load(pointer_add(region, REGION_FREE_SPAN_LIST)));
+    mut pointer best = NativePointer(0);
+    mut pointer bestPrevious = NativePointer(0);
+    mut word bestPages = 0;
     while candidate != NativePointer(0) {
         word candidatePages = raw_word_load(pointer_add(candidate, SPAN_PAGE_COUNT));
         pointer nextFree = NativePointer(raw_word_load(pointer_add(candidate, SPAN_NEXT)));
         if candidatePages == pageCount {
-            if previousFree == NativePointer(0) {
-                raw_word_store(pointer_add(region, REGION_FREE_SPAN_LIST), NativeWord(nextFree));
-            } else {
-                raw_word_store(pointer_add(previousFree, SPAN_NEXT), NativeWord(nextFree));
-            }
+            UnlinkFreeSpan(region, previousFree, nextFree);
             word base = raw_word_load(pointer_add(candidate, SPAN_BASE));
             InitSpanHeader(candidate, base, pageCount, sizeClass);
             return candidate;
         }
+        if candidatePages > pageCount && (best == NativePointer(0) || candidatePages < bestPages) {
+            best = candidate;
+            bestPrevious = previousFree;
+            bestPages = candidatePages;
+        }
         previousFree = candidate;
         candidate = nextFree;
+    }
+    if best != NativePointer(0) {
+        UnlinkFreeSpan(region, bestPrevious, NativePointer(raw_word_load(pointer_add(best, SPAN_NEXT))));
+        word bestBase = raw_word_load(pointer_add(best, SPAN_BASE));
+        word remainderBase = bestBase + pageCount * PAGE_SIZE;
+        pointer remainder = SpanEntryInRegion(region, remainderBase);
+        InitSpanHeader(remainder, remainderBase, bestPages - pageCount, 0);
+        PushFreeSpan(region, remainder);
+        InitSpanHeader(best, bestBase, pageCount, sizeClass);
+        return best;
     }
     word bump = raw_word_load(pointer_add(region, REGION_BUMP));
     word limit = raw_word_load(pointer_add(region, REGION_LIMIT));
@@ -168,6 +186,74 @@ pub pointer CarveSpan(pointer region, word pageCount, word sizeClass) {
     InitSpanHeader(entry, bump, pageCount, sizeClass);
     raw_word_store(pointer_add(region, REGION_BUMP), next);
     return entry;
+}
+
+// Removes the free-list node that follows `previousFree` (or the list head when `previousFree`
+// is null) by linking its predecessor to `nextFree`.
+pub unit UnlinkFreeSpan(pointer region, pointer previousFree, pointer nextFree) {
+    if previousFree == NativePointer(0) {
+        raw_word_store(pointer_add(region, REGION_FREE_SPAN_LIST), NativeWord(nextFree));
+    } else {
+        raw_word_store(pointer_add(previousFree, SPAN_NEXT), NativeWord(nextFree));
+    }
+    return;
+}
+
+pub unit PushFreeSpan(pointer region, pointer entry) {
+    raw_word_store(pointer_add(entry, SPAN_NEXT), raw_word_load(pointer_add(region, REGION_FREE_SPAN_LIST)));
+    raw_word_store(pointer_add(region, REGION_FREE_SPAN_LIST), NativeWord(entry));
+    return;
+}
+
+// Runs after a sweep. Walks `region`'s carved pages in address order, merges every run of
+// adjacent free spans into its first span (the absorbed entries are zeroed, so only a span's
+// first page keeps a populated entry), rebuilds the free-page list from the merged runs, and
+// returns a free run that ends at `bump` to the untouched-page cursor. Without this, a region
+// full of freed spans could serve only requests of exactly the freed page counts: a collection
+// that freed every object still left a 1-page request (a new small span) without room once the
+// region held only freed multi-page array spans, and the heap grew to its cap (HQ3, W5).
+pub unit CoalesceRegionFreeSpans(pointer region) {
+    word bump = raw_word_load(pointer_add(region, REGION_BUMP));
+    mut word address = raw_word_load(pointer_add(region, REGION_OBJECTS_START));
+    raw_word_store(pointer_add(region, REGION_FREE_SPAN_LIST), 0);
+    mut pointer run = NativePointer(0);
+    while address < bump {
+        pointer entry = SpanEntryInRegion(region, address);
+        word base = raw_word_load(pointer_add(entry, SPAN_BASE));
+        word pages = raw_word_load(pointer_add(entry, SPAN_PAGE_COUNT));
+        if base != address || pages == 0 {
+            // Unreachable for a consistent directory (every carved page run starts with its own
+            // populated entry). Treat the page as in use and keep it out of every free run.
+            run = NativePointer(0);
+            address = address + PAGE_SIZE;
+        } else {
+            if raw_word_load(pointer_add(entry, SPAN_SIZE_CLASS)) == 0 {
+                if run == NativePointer(0) {
+                    run = entry;
+                    PushFreeSpan(region, entry);
+                } else {
+                    word runPages = raw_word_load(pointer_add(run, SPAN_PAGE_COUNT));
+                    raw_word_store(pointer_add(run, SPAN_PAGE_COUNT), runPages + pages);
+                    memory_set(entry, 0, SPAN_HEADER_SIZE);
+                }
+            } else {
+                run = NativePointer(0);
+            }
+            address = address + pages * PAGE_SIZE;
+        }
+    }
+    if run != NativePointer(0) {
+        // The last run started is the free-list head. When it reaches `bump`, its pages become
+        // untouched pages again.
+        word runBase = raw_word_load(pointer_add(run, SPAN_BASE));
+        word runPages = raw_word_load(pointer_add(run, SPAN_PAGE_COUNT));
+        if runBase + runPages * PAGE_SIZE == bump {
+            raw_word_store(pointer_add(region, REGION_FREE_SPAN_LIST), raw_word_load(pointer_add(run, SPAN_NEXT)));
+            memory_set(run, 0, SPAN_HEADER_SIZE);
+            raw_word_store(pointer_add(region, REGION_BUMP), runBase);
+        }
+    }
+    return;
 }
 
 // Returns a fully swept, empty span (small or large) to its region's free-page list, keyed by
@@ -191,9 +277,7 @@ pub unit FreeSpanEntry(pointer heap, pointer region, pointer entry) {
     raw_word_store(pointer_add(entry, SPAN_SIZE_CLASS), 0);
     raw_word_store(pointer_add(entry, SPAN_FREE_SLOT), 0);
     raw_word_store(pointer_add(entry, SPAN_QUEUED), 0);
-    word head = raw_word_load(pointer_add(region, REGION_FREE_SPAN_LIST));
-    raw_word_store(pointer_add(entry, SPAN_NEXT), head);
-    raw_word_store(pointer_add(region, REGION_FREE_SPAN_LIST), NativeWord(entry));
+    PushFreeSpan(region, entry);
     return;
 }
 
