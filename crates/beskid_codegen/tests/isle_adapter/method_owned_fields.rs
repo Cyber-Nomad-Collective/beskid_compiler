@@ -436,3 +436,34 @@ unit Main(List<i64> list) { list.Get(0_i64); return; }
     )
     .expect("Array.Get<T> lowers with the enclosing List<i64> specialization");
 }
+
+#[test]
+fn specialized_generic_method_lowers_a_nested_projection_through_the_implicit_receiver() {
+    let outer_source = r#"
+pub type Inner<T> {
+    T[] items,
+    i64 count,
+}
+pub type Outer<T> {
+    Inner<T> inner,
+    pub i64 Count() {
+        return this.inner.count;
+    }
+}
+i64 Main(Outer<i64> outer) { return outer.Count(); }
+"#;
+    let (input, isa, root) = imported_list_fixture(outer_source, &[]);
+    let count =
+        find_node(input.database(), root, beskid_queries::IndexedNodeKind::MethodDefinition).expect("Outer.Count");
+    let main = find_function_definition(input.database(), root).expect("Main function");
+
+    lower_syntax_program(
+        &input,
+        isa.as_ref(),
+        &[
+            SyntaxModuleItem { key: count, symbol: "Outer_Count".into() },
+            SyntaxModuleItem { key: main, symbol: "Main".into() },
+        ],
+    )
+    .expect("this.inner.count lowers with the Outer<i64> specialization of the enclosing receiver");
+}

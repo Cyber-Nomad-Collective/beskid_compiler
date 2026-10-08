@@ -45,7 +45,7 @@ fn aggregate_field_access_for_environment(
     ambient: Option<&HashMap<String, AggregateFieldShape>>,
     enclosing: Option<&GenericSpecializationInstance>,
 ) -> Option<Result<AggregateFieldAccess, SemanticError>> {
-    if let Some(projection) = nominal_field_projection(db, key) {
+    if let Some(projection) = nominal_field_projection_in(db, key, enclosing) {
         return Some(projection.map(|(access, _)| access));
     }
     let resolved = field_access_receiver(db, program, index, key, node, ambient, enclosing)?;
@@ -68,14 +68,7 @@ fn aggregate_field_access_for_environment(
                 .filter(|field| field.node.kind == beskid_analysis::syntax::FieldKind::Value)
                 .nth(field_index as usize)
                 .ok_or_else(|| SemanticError::unavailable("aggregate_field_access"))?;
-            let protected_field = (definition.name.node.name == "Deadline" && field_name == "monotonicNanos")
-                || (field_name == "handle"
-                    && matches!(definition.name.node.name.as_str(), "TcpStream" | "TcpListener" | "UdpSocket"));
-            if protected_field
-                && declaration.unit != key.unit
-                && field.node.visibility.node != beskid_analysis::syntax::Visibility::Public
-                && !canonical_network_deadline_projection(db, key, declaration, &definition.name.node.name, field_name)
-            {
+            if field_hidden_across_units(db, key, declaration, definition, &field.node, field_name) {
                 return Err(SemanticError::unavailable("aggregate_field_access.visibility"));
             }
         }
@@ -186,6 +179,16 @@ pub(in crate::semantic_contract) fn nominal_field_projection(
     db: &dyn Db,
     key: AstNodeKey,
 ) -> Option<Result<(AggregateFieldAccess, GenericSourceTypeIdentity), SemanticError>> {
+    nominal_field_projection_in(db, key, None)
+}
+
+/// `nominal_field_projection` inside a specialized method body: a projection rooted at the
+/// implicit receiver of a generic type takes the receiver's arguments from `enclosing`.
+pub(in crate::semantic_contract) fn nominal_field_projection_in(
+    db: &dyn Db,
+    key: AstNodeKey,
+    enclosing: Option<&GenericSpecializationInstance>,
+) -> Option<Result<(AggregateFieldAccess, GenericSourceTypeIdentity), SemanticError>> {
     let syntax = db.syntax_unit(key.unit).filter(|syntax| syntax.accepts_key(db, key))?;
     let program = syntax.expanded_program(db);
     let index = syntax.syntax_index(db);
@@ -245,6 +248,7 @@ pub(in crate::semantic_contract) fn nominal_field_projection(
                         index,
                         expression,
                         field.node.name.node.name.as_str(),
+                        enclosing,
                     );
                 }
                 _ => {}
@@ -262,7 +266,7 @@ pub(in crate::semantic_contract) fn nominal_field_projection(
                 return None;
             }
             let field_name = segment.node.name.node.name.as_str();
-            return implicit_receiver_field_projection(db, program, index, expression, field_name);
+            return implicit_receiver_field_projection(db, program, index, expression, field_name, enclosing);
         }
         (expression, position)
     } else {
@@ -276,7 +280,7 @@ pub(in crate::semantic_contract) fn nominal_field_projection(
         // `this.a.b`: project `a` from the implicit receiver, then each later field from the
         // previous segment, exactly like a lexical root's chain.
         let first =
-            implicit_receiver_field_projection(db, program, index, path_key, &path.segments[1].node.name.node.name)?;
+            implicit_receiver_field_projection(db, program, index, path_key, &path.segments[1].node.name.node.name, enclosing)?;
         return Some((|| {
             let (mut result, mut identity) = first?;
             let mut receiver = path_projection_segment(db, path_key, 1)
@@ -296,7 +300,7 @@ pub(in crate::semantic_contract) fn nominal_field_projection(
     else {
         // `field.a...` inside a method: the root names a field of the implicit receiver.
         let first =
-            implicit_receiver_field_projection(db, program, index, path_key, &path.segments[0].node.name.node.name)?;
+            implicit_receiver_field_projection(db, program, index, path_key, &path.segments[0].node.name.node.name, enclosing)?;
         return Some((|| {
             let (mut result, mut identity) = first?;
             let mut receiver = path_projection_segment(db, path_key, 0)
@@ -368,17 +372,28 @@ pub(in crate::semantic_contract) fn implicit_receiver_field_projection(
     index: &beskid_analysis::syntax_query::SyntaxIndex,
     reference: AstNodeKey,
     field_name: &str,
+    enclosing: Option<&GenericSpecializationInstance>,
 ) -> Option<Result<(AggregateFieldAccess, GenericSourceTypeIdentity), SemanticError>> {
     let method = nearest_ancestor(index, reference.node, |kind| {
         kind == beskid_analysis::syntax_query::NodeKind::MethodDefinition
     })?;
     let declaration = method_owner_node(program, index, method)?;
     let definition = index.node_at(program, declaration)?.of::<beskid_analysis::syntax::TypeDefinition>()?;
-    // A generic enclosing receiver needs its applied arguments; only the non-generic
-    // spelling is proven by the definition alone.
-    if !definition.generics.is_empty() {
-        return None;
-    }
+    // A generic enclosing receiver needs its applied arguments: only the non-generic spelling is
+    // proven by the definition alone, and a generic one needs the specialization of the method
+    // body being lowered, which binds exactly the type's parameters.
+    let applied = if definition.generics.is_empty() {
+        None
+    } else {
+        let enclosing = enclosing?;
+        let binds_every_parameter = definition.generics.iter().all(|generic| {
+            enclosing.substitutions.iter().any(|binding| binding.parameter.as_ref() == generic.node.name.as_str())
+        });
+        if !binds_every_parameter || enclosing.substitutions.len() != definition.generics.len() {
+            return None;
+        }
+        Some(enclosing)
+    };
     let declaration = AstNodeKey { node: declaration, ..reference };
     let matches = definition
         .fields
@@ -393,8 +408,24 @@ pub(in crate::semantic_contract) fn implicit_receiver_field_projection(
     let field_index = u32::try_from(*field_index).ok()?;
     let field_type = field.node.ty.node.clone();
     Some((|| {
-        let layout = aggregate_layout_from_definition(db, program, index, declaration, definition, None)?;
-        let identity = generic_source_type_identity_with_substitutions(db, declaration, &field_type, &HashMap::new())?;
+        let shapes = applied.map(|enclosing| {
+            enclosing
+                .substitutions
+                .iter()
+                .map(|binding| (binding.parameter.to_string(), AggregateFieldShape::Scalar(binding.argument)))
+                .collect::<HashMap<_, _>>()
+        });
+        let identities = applied
+            .map(|enclosing| {
+                enclosing
+                    .substitutions
+                    .iter()
+                    .map(|binding| (binding.parameter.as_ref(), binding.source_identity()))
+                    .collect::<HashMap<_, _>>()
+            })
+            .unwrap_or_default();
+        let layout = aggregate_layout_from_definition(db, program, index, declaration, definition, shapes.as_ref())?;
+        let identity = generic_source_type_identity_with_substitutions(db, declaration, &field_type, &identities)?;
         let access = AggregateFieldAccess {
             declaration,
             receiver: AstNodeKey { node: method, ..reference },
@@ -403,6 +434,26 @@ pub(in crate::semantic_contract) fn implicit_receiver_field_projection(
         };
         Ok((access, identity))
     })())
+}
+
+/// The one cross-unit field visibility rule for single-step and chained projections: only the
+/// runtime-protected fields (`Deadline.monotonicNanos` and the socket `handle`s) are hidden from
+/// other units unless declared `pub`, which matches what analysis accepts.
+fn field_hidden_across_units(
+    db: &dyn Db,
+    key: AstNodeKey,
+    declaration: AstNodeKey,
+    definition: &beskid_analysis::syntax::TypeDefinition,
+    field: &beskid_analysis::syntax::Field,
+    field_name: &str,
+) -> bool {
+    let type_name = definition.name.node.name.as_str();
+    let protected_field = (type_name == "Deadline" && field_name == "monotonicNanos")
+        || (field_name == "handle" && matches!(type_name, "TcpStream" | "TcpListener" | "UdpSocket"));
+    protected_field
+        && declaration.unit != key.unit
+        && field.visibility.node != beskid_analysis::syntax::Visibility::Public
+        && !canonical_network_deadline_projection(db, key, declaration, type_name, field_name)
 }
 
 fn project_nominal_field(
@@ -439,10 +490,7 @@ fn project_nominal_field(
     let [(field_index, field)] = matches.as_slice() else {
         return Err(SemanticError::unavailable("nominal_field_projection"));
     };
-    if declaration.unit != key.unit
-        && field.node.visibility.node != beskid_analysis::syntax::Visibility::Public
-        && !canonical_network_deadline_projection(db, key, declaration, &definition.name.node.name, field_name)
-    {
+    if field_hidden_across_units(db, key, declaration, definition, &field.node, field_name) {
         return Err(SemanticError::unavailable("nominal_field_projection.visibility"));
     }
     let next_identity =
