@@ -13,6 +13,15 @@
 use crate::abi_v5::AbiType;
 use crate::interop::{CallShapeClass, InteropSignature, OwnershipClass, TypeShape};
 
+/// Method an `[Extern(..., Optional:true)]` contract reserves for its availability query. In an
+/// optional contract, `bool Available();` is supplied by the compiler and is not a C symbol: it
+/// returns true only when every other symbol of the contract resolved.
+pub const OPTIONAL_EXTERN_AVAILABILITY_METHOD: &str = "Available";
+
+/// ABI-v5 trap name raised when a program calls a symbol of an optional `[Extern]` contract that
+/// did not resolve (its library or the symbol is absent at load time).
+pub const OPTIONAL_EXTERN_UNAVAILABLE_TRAP: &str = "extern_unavailable";
+
 /// The C ABI profile binding. Profiles are constructed once and validated
 /// against the conformance envelope; the glue layer consults them when
 /// mapping Beskid surface types to foreign signatures.

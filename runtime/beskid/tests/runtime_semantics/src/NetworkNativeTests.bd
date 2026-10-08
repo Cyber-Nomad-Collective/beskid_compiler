@@ -627,3 +627,238 @@ test native_network_physical_readiness_close_deadline_has_no_leaks {
     Fiber<unit> scenario = spawn PhysicalReadRaceAllNativeRounds();
     Assert.True(match scenario.Join() { Result::Ok(_) => true, _ => false, }, "bounded native physical read race joins");
 }
+
+// Deadline-versus-completion race (WEB7). The scenario forces the losing order that a loaded
+// host produces by chance: the receive's deadline wins the one-winner wait first (an explicit
+// pump while the receiving fiber stays parked), then the peer transfers data and the reactor
+// performs recv/recvmsg for the still-registered request before the receiving fiber resumes.
+// The completed transfer must be delivered, not discarded as TimedOut.
+const RACE_REQUEST_STATUS_OFFSET = 56;
+const RACE_REQUEST_PENDING = 19;
+
+i64 RaceReceiveOne(word handle, bool datagram, i64 deadline) {
+    pointer received = NetworkTestArray(1, 1);
+    pointer metadata = NetworkTestArray(20, 1);
+    mut i64 completed = 0;
+    if datagram {
+        completed = Sockets.NetworkReceive(handle, received, metadata, false, deadline);
+    } else {
+        completed = Operations.NetworkRead(handle, received, 0, 1, deadline);
+    }
+    if completed == 1 { completed = 1000 + i64(raw_byte_load(pointer_add(received, 16))); }
+    Native.SystemFree(metadata, 36);
+    Native.SystemFree(received, 17);
+    return completed;
+}
+
+// Returns the native status of the pending read-direction request on `handle`, or -1 when no
+// request is registered.
+i64 RacePendingStatus(word handle) {
+    mut i64 status = -1;
+    network_table_lock();
+    pointer table = Native.NativePointer(raw_word_load(network_table_root()));
+    pointer slot = Table.NetworkFindLocked(table, handle);
+    if slot != Native.NativePointer(0) {
+        pointer request = Native.NativePointer(raw_word_load(Table.NetworkSlotRequest(slot, 0)));
+        if request != Native.NativePointer(0) {
+            status = i64(raw_word_load(pointer_add(request, RACE_REQUEST_STATUS_OFFSET)) & 0xFFFFFFFF);
+        }
+    }
+    network_table_unlock();
+    return status;
+}
+
+// One forced round: `reader` waits with a 20 ms deadline; the deadline wins; `writer` then sends
+// `value`; the reactor completes the request; the reader must return that byte.
+unit RaceDeadlineThenTransfer(word reader, word writer, pointer peer, bool datagram, u8 value) {
+    i64 expectedResult = 1000 + i64(value);
+    i64 deadline = clock_monotonic_nanos() + 20000000;
+    Fiber<i64> pending = spawn (() => RaceReceiveOne(reader, datagram, deadline));
+    mut word attempts = 0;
+    while RacePendingStatus(reader) != RACE_REQUEST_PENDING && attempts < 1000 {
+        Concurrency.Yield();
+        attempts = attempts + 1;
+    }
+    i64 registered = RacePendingStatus(reader);
+    Assert.True(registered == RACE_REQUEST_PENDING, "race receive is pending in the reactor");
+    mut bool beforeDeadline = true;
+    while beforeDeadline { beforeDeadline = clock_monotonic_nanos() <= deadline; }
+    // The timer wins the one-winner wait; the reading fiber becomes runnable but does not run.
+    External.ExternalPump(clock_monotonic_nanos());
+    pointer payload = NetworkTestArray(1, 1);
+    raw_byte_store(pointer_add(payload, 16), value);
+    if datagram {
+        Assert.Equal(Sockets.NetworkSend(writer, payload, peer, false, -1), 1, "race sender transfers one datagram");
+    } else {
+        Assert.Equal(Operations.NetworkWrite(writer, payload, 0, 1), 1, "race writer transfers one byte");
+    }
+    Native.SystemFree(payload, 17);
+    i64 limit = clock_monotonic_nanos() + 5000000000;
+    mut bool reactorPending = true;
+    while reactorPending { reactorPending = RacePendingStatus(reader) == RACE_REQUEST_PENDING && clock_monotonic_nanos() < limit; }
+    i64 completedStatus = RacePendingStatus(reader);
+    Assert.True(completedStatus == 0, "reactor completed the timed-out request with data");
+    match pending.Join() {
+        Result::Ok(status) => Assert.True(status == expectedResult, "completed transfer wins over the expired deadline"),
+        Result::Error(_) => Assert.Fail("race reader joins"),
+    };
+    Assert.Equal(External.ExternalActiveCount(), 0, "race round releases every wait");
+    return;
+}
+
+unit DeadlineRaceDeliversDatagrams() {
+    pointer bindAddress = NetworkTestArray(19, 1);
+    pointer wire = pointer_add(bindAddress, 16);
+    raw_byte_store(wire, 4);
+    raw_byte_store(pointer_add(wire, 3), 127);
+    raw_byte_store(pointer_add(wire, 6), 1);
+    pointer receiverOut = NetworkTestArray(1, 8);
+    pointer senderOut = NetworkTestArray(1, 8);
+    pointer peer = NetworkTestArray(19, 1);
+    Assert.Equal(Sockets.NetworkOpen(3, bindAddress, 0, 0, -1, receiverOut), 0, "race receiver binds loopback");
+    word receiver = raw_word_load(pointer_add(receiverOut, 16));
+    Assert.Equal(Sockets.NetworkAddress(receiver, false, peer), 0, "race receiver has an endpoint");
+    Assert.Equal(Sockets.NetworkOpen(3, bindAddress, 0, 0, -1, senderOut), 0, "race sender binds loopback");
+    word sender = raw_word_load(pointer_add(senderOut, 16));
+    mut word round = 0;
+    while round < 20 {
+        u8 marker = u8(round + 1);
+        RaceDeadlineThenTransfer(receiver, sender, peer, true, marker);
+        round = round + 1;
+    }
+    // Nothing is left queued: every datagram was delivered by its own receive.
+    Assert.Equal(RaceReceiveOne(receiver, true, clock_monotonic_nanos() + 20000000), -12_i64, "no datagram remains after the race rounds");
+    Assert.Equal(Table.NetworkClose(sender), 0, "race sender closes");
+    Assert.Equal(Table.NetworkClose(receiver), 0, "race receiver closes");
+    Native.SystemFree(peer, 35);
+    Native.SystemFree(senderOut, 24);
+    Native.SystemFree(receiverOut, 24);
+    Native.SystemFree(bindAddress, 35);
+    return;
+}
+
+test native_network_udp_receive_deadline_race_delivers_completed_datagram {
+    meta { tags = "deadline-race"; }
+    Fiber<unit> scenario = spawn DeadlineRaceDeliversDatagrams();
+    Assert.True(match scenario.Join() { Result::Ok(_) => true, _ => false, }, "UDP deadline race scenario completes");
+}
+
+unit DeadlineRaceDeliversStreamBytes() {
+    pointer address = NetworkTestArray(19, 1);
+    pointer wire = pointer_add(address, 16);
+    raw_byte_store(wire, 4);
+    raw_byte_store(pointer_add(wire, 3), 127);
+    raw_byte_store(pointer_add(wire, 6), 1);
+    pointer listenerOut = NetworkTestArray(1, 8);
+    pointer clientOut = NetworkTestArray(1, 8);
+    pointer acceptedOut = NetworkTestArray(1, 8);
+    pointer boundAddress = NetworkTestArray(19, 1);
+    Assert.Equal(Sockets.NetworkOpen(1, address, 0, 8, -1, listenerOut), 0, "race listener binds loopback");
+    word listener = raw_word_load(pointer_add(listenerOut, 16));
+    Assert.Equal(Sockets.NetworkAddress(listener, false, boundAddress), 0, "race listener reports its port");
+    Assert.Equal(Sockets.NetworkOpen(2, boundAddress, 0, 0, -1, clientOut), 0, "race client connects");
+    word client = raw_word_load(pointer_add(clientOut, 16));
+    Assert.Equal(Sockets.NetworkAccept(listener, -1, acceptedOut), 0, "race server accepts");
+    word accepted = raw_word_load(pointer_add(acceptedOut, 16));
+    mut word round = 0;
+    while round < 20 {
+        u8 marker = u8(round + 1);
+        RaceDeadlineThenTransfer(client, accepted, boundAddress, false, marker);
+        round = round + 1;
+    }
+    Assert.Equal(RaceReceiveOne(client, false, clock_monotonic_nanos() + 20000000), -12_i64, "no stream byte remains after the race rounds");
+    Assert.Equal(Table.NetworkClose(client), 0, "race client closes");
+    Assert.Equal(Table.NetworkClose(accepted), 0, "race peer closes");
+    Assert.Equal(Table.NetworkClose(listener), 0, "race listener closes");
+    Native.SystemFree(boundAddress, 35);
+    Native.SystemFree(acceptedOut, 24);
+    Native.SystemFree(clientOut, 24);
+    Native.SystemFree(listenerOut, 24);
+    Native.SystemFree(address, 35);
+    return;
+}
+
+test native_network_tcp_read_deadline_race_delivers_completed_bytes {
+    meta { tags = "deadline-race"; }
+    Fiber<unit> scenario = spawn DeadlineRaceDeliversStreamBytes();
+    Assert.True(match scenario.Join() { Result::Ok(_) => true, _ => false, }, "TCP deadline race scenario completes");
+}
+
+i64 ShortDeadlineDrain(word receiver, i64 expected) {
+    pointer received = NetworkTestArray(1, 1);
+    pointer metadata = NetworkTestArray(20, 1);
+    mut i64 next = 1;
+    mut i64 timeouts = 0;
+    i64 limit = clock_monotonic_nanos() + 10000000000;
+    while next <= expected && clock_monotonic_nanos() < limit {
+        i64 status = Sockets.NetworkReceive(receiver, received, metadata, false, clock_monotonic_nanos() + 200000);
+        if status == 1 {
+            if i64(raw_byte_load(pointer_add(received, 16))) != next { next = -next; break; }
+            next = next + 1;
+        } else if status == -12_i64 {
+            timeouts = timeouts + 1;
+        } else {
+            next = -1000 - status;
+            break;
+        }
+    }
+    Native.SystemFree(metadata, 36);
+    Native.SystemFree(received, 17);
+    return next;
+}
+
+i64 PacedSender(word sender, word peerValue, i64 count) {
+    pointer peer = Native.NativePointer(peerValue);
+    pointer payload = NetworkTestArray(1, 1);
+    mut i64 sent = 0;
+    while sent < count {
+        i64 sequence = sent + 1;
+        raw_byte_store(pointer_add(payload, 16), u8(sequence));
+        if Sockets.NetworkSend(sender, payload, peer, false, -1) != 1 { break; }
+        sent = sent + 1;
+        Concurrency.Yield();
+    }
+    Native.SystemFree(payload, 17);
+    return sent;
+}
+
+// Many receives with 0.2 ms deadlines race a paced sender; every datagram arrives in order.
+unit ShortDeadlineReceivesLoseNothing() {
+    pointer bindAddress = NetworkTestArray(19, 1);
+    pointer wire = pointer_add(bindAddress, 16);
+    raw_byte_store(wire, 4);
+    raw_byte_store(pointer_add(wire, 3), 127);
+    raw_byte_store(pointer_add(wire, 6), 1);
+    pointer receiverOut = NetworkTestArray(1, 8);
+    pointer senderOut = NetworkTestArray(1, 8);
+    pointer peer = NetworkTestArray(19, 1);
+    Assert.Equal(Sockets.NetworkOpen(3, bindAddress, 0, 0, -1, receiverOut), 0, "drain receiver binds loopback");
+    word receiver = raw_word_load(pointer_add(receiverOut, 16));
+    Assert.Equal(Sockets.NetworkAddress(receiver, false, peer), 0, "drain receiver has an endpoint");
+    Assert.Equal(Sockets.NetworkOpen(3, bindAddress, 0, 0, -1, senderOut), 0, "drain sender binds loopback");
+    word sender = raw_word_load(pointer_add(senderOut, 16));
+    Fiber<i64> drain = spawn (() => ShortDeadlineDrain(receiver, 100));
+    word peerValue = Native.NativeWord(peer);
+    Fiber<i64> producer = spawn (() => PacedSender(sender, peerValue, 100));
+    match producer.Join() {
+        Result::Ok(sent) => Assert.Equal(sent, 100_i64, "paced sender sends every datagram"),
+        Result::Error(_) => Assert.Fail("paced sender joins"),
+    };
+    match drain.Join() {
+        Result::Ok(next) => Assert.Equal(next, 101_i64, "short-deadline receives deliver every datagram in order"),
+        Result::Error(_) => Assert.Fail("short-deadline drain joins"),
+    };
+    Assert.Equal(Table.NetworkClose(sender), 0, "drain sender closes");
+    Assert.Equal(Table.NetworkClose(receiver), 0, "drain receiver closes");
+    Native.SystemFree(peer, 35);
+    Native.SystemFree(senderOut, 24);
+    Native.SystemFree(receiverOut, 24);
+    Native.SystemFree(bindAddress, 35);
+    return;
+}
+
+test native_network_short_deadline_udp_receives_lose_no_datagram {
+    meta { tags = "deadline-race"; }
+    Fiber<unit> scenario = spawn ShortDeadlineReceivesLoseNothing();
+    Assert.True(match scenario.Join() { Result::Ok(_) => true, _ => false, }, "short-deadline UDP scenario completes");
+}

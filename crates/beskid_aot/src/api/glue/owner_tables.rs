@@ -52,7 +52,7 @@ pub fn glue_declarations(
     ) -> AotResult<()> {
         let db = input.database();
         let glue_candidate = match beskid_queries::extern_contract_import_for_declaration(db, key) {
-            Some((_, _, library)) => {
+            Some(beskid_queries::ExternContractImport { library, .. }) => {
                 library.is_some_and(|library| glue_libraries.iter().any(|candidate| *candidate == library))
             }
             None => true,

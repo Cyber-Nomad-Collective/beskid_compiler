@@ -314,10 +314,10 @@ pub fn collection_operation(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult
     }))
 }
 
-/// Return the generic element and length encoded by the exact compiler-owned
-/// `Core.Collections.Array.Empty` allocation call.
+/// Return the generic element and length form encoded by a compiler-owned
+/// `__array_new<T>(length)` call (`Core.Collections.Array.Empty` and `Array.Zeroed`).
 ///
-/// Ordinary source, copied Foundation source, stale syntax, non-zero lengths, and raw
+/// Ordinary source, copied Foundation source, stale syntax, and raw
 /// `__array_new(element_size, length)` calls receive no fact.
 pub fn typed_array_allocation(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<TypedArrayAllocation> {
     with_registered_syntax(db, key, typed_array_allocation_tracked)
@@ -657,6 +657,13 @@ pub fn literal_fact(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<Literal
 
 pub fn clif_block_body(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<Arc<str>> {
     with_registered_syntax(db, key, clif_block_body_tracked)
+}
+
+/// ABI parameter shapes (`%N`) visible to one `clif { ... }` block: the enclosing function's,
+/// method's (receiver first), or test's parameters, unit parameters omitted. Unavailable inside
+/// lambdas, whose parameters do not share the enclosing function's ABI.
+pub fn clif_block_parameters(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<Arc<[ClifParameterShape]>> {
+    with_registered_syntax(db, key, clif_block_parameters_tracked)
 }
 
 pub fn node_span(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<SourceSpan> {

@@ -247,7 +247,7 @@ mod seal_tests {
         assert!(!seal.matches(&changed),"actual registered function ABI mutation must reject");
         let mut changed=artifact.clone();changed.string_literals.values_mut().next().unwrap()[0]^=1;
         assert!(!seal.matches(&changed),"actual source literal substitution must reject");
-        let mut changed=artifact.clone();changed.extern_imports.push(crate::ExternImport{symbol:"foreign".into(),abi:Some("C".into()),library:None});
+        let mut changed=artifact.clone();changed.extern_imports.push(crate::ExternImport{symbol:"foreign".into(),abi:Some("C".into()),library:None,optional:false});
         assert!(!seal.matches(&changed),"additional native import must reject");
         let mut changed=artifact.clone();changed.event_handler_wrapper_required=!changed.event_handler_wrapper_required;
         assert!(!seal.matches(&changed),"descriptor emission mode mutation must reject");

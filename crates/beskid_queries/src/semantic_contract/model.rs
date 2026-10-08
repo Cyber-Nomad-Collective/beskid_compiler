@@ -45,8 +45,8 @@ pub use layouts::{
 };
 pub use resolution::{LocalSlot, MutableLocalAssignment, ResolvedItem, ResolvedLocal};
 pub use syntax::{
-    CompletionCandidate, CompletionContext, CompletionKind, CompletionMemberSurface, ExportSymbol, IndexedNodeKind,
-    LiteralFact, OperatorFact, RuntimeIntrinsic, RuntimeIntrinsicName, SourceSpan, TestItem,
+    ClifParameterShape, CompletionCandidate, CompletionContext, CompletionKind, CompletionMemberSurface, ExportSymbol,
+    IndexedNodeKind, LiteralFact, OperatorFact, RuntimeIntrinsic, RuntimeIntrinsicName, SourceSpan, TestItem,
 };
 pub use typed_program::{SyntaxUnitInput, SyntaxUnitRevision, TypedProgram};
 pub use types::{

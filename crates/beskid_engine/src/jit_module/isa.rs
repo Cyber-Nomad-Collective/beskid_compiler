@@ -21,9 +21,10 @@ pub(super) fn new_builder(extras: &[(String, *const u8)]) -> Result<JITBuilder, 
 
 /// Construct the native ISA shared by JIT lowering and final emission.
 ///
-/// This is the sole owner of JIT-only relocation policy. The shared codegen settings retain
-/// frame pointers for the tail-call invariant; JIT then selects x86_64 PIC from the target ISA
-/// and disables colocated libcalls for every native target.
+/// This is the sole owner of JIT-only relocation and optimization policy. The shared codegen
+/// settings retain frame pointers for the tail-call invariant; JIT then selects x86_64 PIC from
+/// the target ISA, disables colocated libcalls for every native target, and always optimizes
+/// (`opt_level=speed`): the JIT emits no debug info that unoptimized code would preserve.
 pub(crate) fn native_jit_isa() -> Result<Arc<dyn TargetIsa>, JitError> {
     let builder = cranelift_native::builder().map_err(|error| JitError::Isa(error.to_string()))?;
     native_jit_isa_from_builder(builder)
@@ -39,6 +40,9 @@ pub(super) fn native_jit_isa_from_builder(builder: isa::Builder) -> Result<Arc<d
     settings
         .set("is_pic", if is_x86_64 { "true" } else { "false" })
         .map_err(|error| JitError::Isa(format!("native JIT PIC policy failed: {error}")))?;
+    settings
+        .set("opt_level", "speed")
+        .map_err(|error| JitError::Isa(format!("native JIT optimization policy failed: {error}")))?;
     builder.finish(settings::Flags::new(settings)).map_err(|error| JitError::Isa(error.to_string()))
 }
 
@@ -58,10 +62,12 @@ mod native_jit_settings_tests {
         assert!(x86_64.flags().is_pic(), "x86_64 native JIT must materialize symbols through PIC/GOT");
         assert!(!x86_64.flags().use_colocated_libcalls(), "native JIT must use range-independent libcalls");
         assert!(x86_64.flags().preserve_frame_pointers(), "native JIT preserves the shared frame-pointer invariant");
+        assert_eq!(x86_64.flags().opt_level(), settings::OptLevel::Speed, "native JIT optimizes generated code");
 
         let aarch64 = policy_isa("aarch64-unknown-linux-gnu");
         assert!(!aarch64.flags().is_pic(), "non-x86 native JIT must not inherit the x86_64 PIC exception");
         assert!(!aarch64.flags().use_colocated_libcalls(), "native JIT must use range-independent libcalls");
         assert!(aarch64.flags().preserve_frame_pointers(), "native JIT preserves the shared frame-pointer invariant");
+        assert_eq!(aarch64.flags().opt_level(), settings::OptLevel::Speed, "native JIT optimizes generated code");
     }
 }

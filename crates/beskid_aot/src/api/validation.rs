@@ -100,7 +100,7 @@ pub(super) fn validate_extern_libraries(artifact: &CodegenArtifact, external_lib
         return Ok(());
     }
     let available: HashSet<String> = external_libraries.iter().map(|name| canonical_logical_name(name)).collect();
-    for import in &artifact.extern_imports {
+    for import in artifact.extern_imports.iter().filter(|import| !import.optional) {
         let Some(library) = import.library.as_deref() else {
             continue;
         };
@@ -113,6 +113,33 @@ pub(super) fn validate_extern_libraries(artifact: &CodegenArtifact, external_lib
         }
     }
     Ok(())
+}
+
+/// Libraries of optional `[Extern]` contracts that no required import already links, each with
+/// the optional symbols the artifact imports from it.
+pub(super) fn optional_link_libraries(
+    artifact: &CodegenArtifact,
+    external_libraries: &[String],
+) -> Vec<crate::linker::OptionalLinkLibrary> {
+    let required: HashSet<String> = external_libraries.iter().map(|name| canonical_logical_name(name)).collect();
+    let mut libraries: Vec<crate::linker::OptionalLinkLibrary> = Vec::new();
+    for import in artifact.extern_imports.iter().filter(|import| import.optional) {
+        let Some(library) = import.library.as_deref() else {
+            continue;
+        };
+        if required.contains(&canonical_logical_name(library)) {
+            continue;
+        }
+        let canon = canonical_logical_name(library);
+        match libraries.iter_mut().find(|entry| canonical_logical_name(&entry.library) == canon) {
+            Some(entry) => entry.symbols.push(import.symbol.clone()),
+            None => libraries.push(crate::linker::OptionalLinkLibrary {
+                library: library.to_owned(),
+                symbols: vec![import.symbol.clone()],
+            }),
+        }
+    }
+    libraries
 }
 
 pub(super) fn apply_export_policy(symbols: Vec<String>, policy: &ExportPolicy) -> Vec<String> {
@@ -191,6 +218,7 @@ mod with_defaults_tests {
             symbol: "beskid_rt_v5_args_count".into(),
             abi: Some("C".into()),
             library: None,
+            optional: false,
         });
         for output_kind in [BuildOutputKind::StaticLib, BuildOutputKind::SharedLib, BuildOutputKind::ObjectOnly] {
             let req = AotBuildRequest {
@@ -223,6 +251,7 @@ mod with_defaults_tests {
             symbol: "beskid_rt_v5_args_count".into(),
             abi: Some("C".into()),
             library: None,
+            optional: false,
         });
         let adapter = core_args_entry_adapter(&artifact, "x86_64-pc-windows-msvc")
             .expect("generated adapter lookup")

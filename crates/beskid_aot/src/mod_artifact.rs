@@ -295,6 +295,7 @@ pub fn build_mod_artifact(req: ModArtifactBuildRequest) -> AotResult<QualifiedNa
             link_mode: LinkMode::Auto,
             verbose: false,
             external_libraries: runtime.platform_libraries.clone(),
+            optional_libraries: Vec::new(),
             library_search_paths: Vec::new(),
         },
         Some(&req.control),

@@ -522,7 +522,7 @@ dependencies = [
 
 [[package]]
 name = "beskid_cli"
-version = "0.1.77"
+version = "0.5.3"
 dependencies = [
  "anyhow",
  "argfile",
@@ -650,18 +650,21 @@ name = "beskid_isle"
 version = "0.1.0"
 dependencies = [
  "beskid_abi",
+ "beskid_analysis",
  "beskid_queries",
  "cranelift-codegen",
  "cranelift-frontend",
  "cranelift-isle",
  "cranelift-jit",
  "cranelift-module",
+ "cranelift-native",
+ "cranelift-reader",
  "target-lexicon",
 ]
 
 [[package]]
 name = "beskid_lsp"
-version = "0.1.0"
+version = "0.5.3"
 dependencies = [
  "anyhow",
  "beskid_analysis",
@@ -1022,7 +1025,7 @@ dependencies = [
 
 [[package]]
 name = "beskid_up"
-version = "0.1.0"
+version = "0.5.3"
 dependencies = [
  "beskid_abi",
  "cargo-cross",
@@ -1777,6 +1780,18 @@ dependencies = [
  "gimli 0.33.0",
  "log",
  "object 0.40.0",
+ "target-lexicon",
+]
+
+[[package]]
+name = "cranelift-reader"
+version = "0.136.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bfdf157eafb81869e33a706397fd3103bbde6576074da4bd03ec386c267212f8"
+dependencies = [
+ "anyhow",
+ "cranelift-codegen",
+ "smallvec",
  "target-lexicon",
 ]
 

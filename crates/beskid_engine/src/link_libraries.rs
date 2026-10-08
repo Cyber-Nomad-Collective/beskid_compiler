@@ -26,7 +26,9 @@ pub fn link_libraries_for_artifact(artifact: &CodegenArtifact, plan: Option<&Com
         search_paths.extend(link.search_paths.into_iter().map(std::path::PathBuf::from));
     }
 
-    for import in &artifact.extern_imports {
+    // Optional contracts' libraries are not required: the AOT linker links each one only when
+    // it can find it (see `beskid_aot::linker::OptionalLinkLibrary`).
+    for import in artifact.extern_imports.iter().filter(|import| !import.optional) {
         if let Some(library) = import.library.as_deref() {
             let canon = canonical_link_library_name(library);
             if !libraries.iter().any(|name| canonical_link_library_name(name) == canon) {
@@ -81,6 +83,7 @@ mod tests {
                     symbol: "getpid".into(),
                     abi: Some("C".into()),
                     library: Some(logical.into()),
+                    optional: false,
                 }],
                 ..Default::default()
             };
@@ -89,5 +92,19 @@ mod tests {
             let merged = merge_libraries(&inputs.external_libraries, &[logical.into()]);
             assert_eq!(merged, [expected]);
         }
+    }
+
+    #[test]
+    fn optional_extern_libraries_are_not_required() {
+        let artifact = CodegenArtifact {
+            extern_imports: vec![ExternImport {
+                symbol: "SHA256".into(),
+                abi: Some("C".into()),
+                library: Some("libcrypto.so.3".into()),
+                optional: true,
+            }],
+            ..Default::default()
+        };
+        assert!(link_libraries_for_artifact(&artifact, None).external_libraries.is_empty());
     }
 }

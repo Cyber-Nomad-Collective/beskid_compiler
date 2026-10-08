@@ -153,8 +153,8 @@ fn manifest_rejects_wrong_assembly_symbol_set_and_invalid_traps() {
     assert!(matches!(incomplete_traps.validate(), Err(ManifestValidationError::InvalidTrapSet { .. })));
 
     assert!(TrapCode::try_from(0).is_err());
-    assert!(TrapCode::try_from(11).is_err());
-    for code in 1..=10 {
+    assert!(TrapCode::try_from(12).is_err());
+    for code in 1..=11 {
         assert_eq!(u8::from(TrapCode::try_from(code).unwrap()), code);
     }
     assert_eq!(
@@ -170,6 +170,7 @@ fn manifest_rejects_wrong_assembly_symbol_set_and_invalid_traps() {
             ("abi_or_layout_mismatch", 8),
             ("unreachable_or_isle_invariant", 9),
             ("runtime_internal_corruption", 10),
+            ("extern_unavailable", 11),
         ]
     );
 }

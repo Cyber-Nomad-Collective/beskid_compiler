@@ -1,6 +1,7 @@
 use super::*;
 
-/// Recognize the single typed allocation form embedded in canonical Foundation `Array.Empty`.
+/// Recognize the typed allocation forms embedded in canonical Foundation `Array.Empty` (static,
+/// zero length) and `Array.Zeroed` (sized, run-time length).
 ///
 /// Source authority is installed by `build_typed_program_with_corelib_services` only after the
 /// assembly has matched both the compiler-owned Array bytes and its trusted physical origin. The
@@ -40,13 +41,16 @@ pub(in crate::semantic_contract) fn typed_array_allocation_tracked(
         let [length] = call.args.as_slice() else {
             return None;
         };
-        let beskid_analysis::syntax::Expression::Literal(literal) = &length.node else {
-            return None;
+        // `__array_new<T>(0)` is the static empty allocation of `Array.Empty`. Any other length
+        // expression is the sized form of `Array.Zeroed`: one rooted allocation of `length`
+        // zero-filled elements whose count is lowered at run time.
+        let is_zero_literal = match &length.node {
+            beskid_analysis::syntax::Expression::Literal(literal) => match &literal.node.literal.node {
+                beskid_analysis::syntax::Literal::Integer(text) => integer_literal_u64(text) == Some(0),
+                _ => return None,
+            },
+            _ => false,
         };
-        let beskid_analysis::syntax::Literal::Integer(text) = &literal.node.literal.node else {
-            return None;
-        };
-        let length = integer_literal_u64(text)?;
-        (length == 0).then(|| TypedArrayAllocation { element_parameter: element_parameter.into(), length })
+        Some(TypedArrayAllocation { element_parameter: element_parameter.into(), length: 0, sized: !is_zero_literal })
     })
 }

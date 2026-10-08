@@ -18,6 +18,10 @@ pub struct ExternImport {
     pub symbol: String,
     pub abi: Option<String>,
     pub library: Option<String>,
+    /// Declared by an `[Extern(..., Optional:true)]` contract: the symbol may be absent at load
+    /// time. Hosts bind an absent optional symbol to a null address instead of failing, and
+    /// every call reaches it through a generated null-checking thunk.
+    pub optional: bool,
 }
 
 /// One exported Beskid function and its linker-visible symbol.

@@ -45,6 +45,143 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   nominal impl receivers for native adapter preparation.
 - Expose validated contract implementation pairs for native adapters, sharing source
   signature and visibility checks with generic contract-call witnesses.
+## [0.5.3] - 2026-10-05
+
+### Added
+
+- `clif { ... }` blocks accept real Cranelift instructions. The body is one
+  straight-line block over `%N` parameters and `%name` locals, for example
+  `%h = umulhi %0, %1` followed by `return %h`. The compiler parses each run
+  of instructions with `cranelift-reader`, verifies it, and copies it into the
+  enclosing function. Admitted opcodes are integer and float arithmetic,
+  carry and overflow arithmetic, bitwise operations, shifts and rotates, bit
+  counts, compare and select, conversions, SIMD lane operations
+  (`splat`, `insertlane`, `extractlane`, `shuffle`, vector arithmetic), and
+  `trapz`/`trapnz`. Branches, raw calls, stack slots, globals, and atomics
+  are rejected with a diagnostic. Integer division traps on a zero divisor;
+  callers must exclude it.
+- `payload %N` and `length %N` give a CLIF block the element base address and
+  element count of a `u8[]`, `u32[]`, or `i64[]` parameter. Loads and stores
+  are accepted only at a payload address plus an integer offset, a payload
+  address cannot leave the block, and a block that reads a payload cannot
+  call. Keeping every access in bounds is a precondition of the enclosing
+  function.
+- `%r = call @symbol(%a, ...) -> <type>` gives a CLIF call a typed result
+  that later instructions can use.
+- E1232 reports an invalid CLIF block: no typed context, a parameter it may
+  not name, a non-array `payload`/`length` operand, or a rejected opcode.
+- A `clif { ... }` block can be an expression statement. It yields no value
+  and can end with any statement, for example a `store` or a call whose
+  result is not used. A result-less `call @symbol(...)` in such a block calls
+  a symbol with no result.
+- A CLIF block can pass a `payload` address to a symbol of a C-ABI `[Extern]`
+  contract, for example `call @memcpy(%dst, %src, %n)` or OpenSSL
+  `call @SHA256(%p, %n, %out)`. Foreign C code reaches no Beskid safepoint
+  except through a callback, the array is a parameter that the enclosing
+  function keeps rooted for the whole call, and the collector does not move
+  objects, so the address stays valid during and after the call. A block that
+  reads a payload can call only such symbols; a payload address passed to any
+  other symbol, including runtime- and host-owned names, is an E1232 error.
+- `[Extern(Abi:"C", Library:"...", Optional:true)]` declares an optional
+  contract. A program that uses it loads when the library or a symbol is
+  absent. The contract can declare `bool Available();`: the compiler supplies
+  its body, and it returns true only when every other symbol of the contract
+  resolved. Library code selects a path with
+  `if LibCrypto.Available() { ... } else { ... }`. Every call to an optional
+  symbol, including `call @symbol` in a CLIF block, goes through a generated
+  thunk that checks the resolved address. A call to an absent symbol stops
+  the program with the new ABI-v5 trap `extern_unavailable` (code 11, exit
+  status 101); it never jumps to a null address. The JIT resolves each
+  optional symbol separately and binds a missing one to null. AOT declares
+  optional symbols as weak undefined references and links the library only
+  when the linker finds it: on ELF a library found at build time becomes a
+  load-time dependency (ELF has no weak `DT_NEEDED`), and a library not found
+  is not linked, so `Available()` is false. Mach-O links a found library with
+  `-weak-l`. Windows AOT targets reject optional contracts. Non-optional
+  contracts keep failing at load when their library is absent.
+- T0905 reports a non-boolean `Optional` argument or an `Available` method of
+  an optional contract that is not `bool Available();`.
+- `Array.Zeroed<T>(length)` allocates `length` zero-filled elements (null for
+  reference elements) in one rooted runtime allocation. Length and capacity
+  are both `length`; a negative length is a `bounds` trap. Inside Corelib
+  service sources, `__array_new<T>(length)` with a non-literal length is this
+  sized allocation. `Core.Bytes.Slice.New(n)` uses it: `Slice.New(16384)`
+  was 98-155 ms (one append per byte) and is now one allocation.
+
+### Changed
+
+- The ABI-v5 trap table has eleven codes; code 11 is `extern_unavailable`.
+  Runtime kits built for 0.5.2 do not match this manifest and must be rebuilt.
+- A CLIF block takes its type from its context (a return value, a typed
+  `let`, an assignment target, or a call argument) in every project, not only
+  in Corelib. A block with no typed context, such as an inferred `let`, is an
+  error instead of a `unit` value.
+- The JIT compiles with Cranelift `opt_level=speed` (it used `none`). AOT
+  release builds already used `speed`; AOT debug builds keep `none`.
+- A store into an array of `bool`, `u8`, `i32`, `u32`, `i64`, `f64`, or `char`
+  no longer calls the array write barrier. Such elements are never traced;
+  the old check compared CLIF types, and `i64` has the pointer type on 64-bit
+  targets.
+- A function whose only calls are GC root registrations no longer registers
+  roots. Collection runs only inside a call on the thread that owns the heap,
+  so such a function cannot reach a safepoint while its roots would be live.
+  A direct call no longer takes a snapshot root for an argument that is a
+  rooted local when every later argument is a local read or a scalar literal:
+  the local's own root covers the call. Array kernels no longer pay two
+  runtime calls per array argument.
+- `uadd_overflow_cin`, `sadd_overflow_cin`, `usub_overflow_bin`, and
+  `ssub_overflow_bin` are emulated during CLIF import with two flag-producing
+  instructions, because Cranelift 0.136 has no x86-64 or aarch64 lowering for
+  them. `uunarrow` is no longer admitted (x86-64 lowers only one special
+  pattern). A test compiles every admitted opcode for x86-64 and aarch64.
+- On Unix the JIT loads an `[Extern]` contract's library when the process does
+  not already provide the symbol, as an AOT link of the same program does.
+- Corelib service authority is decided per service file. A service source is
+  trusted when it sits at its canonical `packages/<package>/src` location as a
+  regular file and is byte-identical to the compiler-embedded source. The
+  whole-tree bundle hash no longer gates authority, so a Corelib with extra
+  packages or files keeps every service. The bundle marker still anchors
+  portable `source=corelib` lock entries, and its hash remains the install
+  integrity check that refreshes a managed Corelib.
+- `call @symbol` inside a CLIF block is authorized, for JIT and AOT, when the
+  symbol is declared by a C-ABI `[Extern]` contract with a library anywhere
+  in the program. A call through the contract is no longer required.
+  Runtime- and host-owned names stay rejected.
+- The CLI, LSP, and updater report version 0.5.3.
+- `Array.Append` grows geometrically. When the array is full, the
+  replacement has twice the capacity (at least 4 elements; when doubling
+  overflows, the exact requested capacity), and `Array.Capacity` reports it.
+  When capacity remains, the element is stored in place and every handle to
+  the same array sees the new length, as `RemoveLast` already did. n appends
+  copy O(n) elements in total instead of O(n^2).
+
+### Fixed
+
+- AOT builds link an `[Extern]` library named by a versioned ELF soname such
+  as `libc.so.6` as `-lc` instead of failing on `-lc.so.6`.
+- A CLIF block inside a loop body, as an assignment value, or as a call
+  argument in a `unit` function no longer fails with "no typed context". The
+  block's type now comes from its own context; before, lowering fell back to
+  the enclosing function's return type.
+- The collector reuses freed heap pages for requests of any size. A freed
+  span could serve only a request of exactly its page count, and allocation
+  searched only the newest heap region, so a program that made many 16-20 KiB
+  temporary arrays reached the 1 GiB heap cap with almost no live data
+  (`out_of_memory` with `live=0`). Allocation now splits the smallest larger
+  free span, sweep merges adjacent free spans and returns a free run at the
+  end of a region to its unused pages, and every region is searched before
+  the heap grows.
+- A network receive, read, accept, or connect whose deadline expires after
+  the runtime reactor already completed the operation returns the result
+  instead of `TimedOut`. The received datagram or stream bytes were freed
+  with the request. `TimedOut` is returned only when no data was transferred
+  before the operation was cancelled. This applies to epoll, kqueue, and
+  IOCP; on Windows, a completion that IOCP has queued but the reactor has not
+  yet dequeued when the deadline wins is still cancelled.
+
+## [0.5.2] - 2026-10-02
+
+Entries below accumulated through the 0.5.x releases up to and including 0.5.2.
 
 ### Fixed
 

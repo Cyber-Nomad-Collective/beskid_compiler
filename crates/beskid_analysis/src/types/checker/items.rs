@@ -208,12 +208,18 @@ impl<'a> TypeChecker<'a> {
                     .or_else(|| self.primitive_type_id(PrimitiveType::Unit));
                 self.current_return_type = return_type;
                 let mut params = Vec::new();
+                let mut clif_parameters = Vec::new();
                 for param in &def.node.parameters {
-                    if let Some(type_id) = self.type_id_for_type_in_generic_scope(&param.node.ty) {
+                    let type_id = self.type_id_for_type_in_generic_scope(&param.node.ty);
+                    if let Some(type_id) = type_id {
                         params.push(type_id);
                         self.insert_local_type(param.node.name.span, type_id);
                     }
+                    if !self.is_unit_parameter_type(&param.node.ty) {
+                        clif_parameters.push(type_id);
+                    }
                 }
+                self.current_clif_parameters = Some(clif_parameters);
                 self.record_signature(item.span, params, return_type);
                 let previous_function = self.current_function_item;
                 self.current_function_item = self
@@ -280,6 +286,7 @@ impl<'a> TypeChecker<'a> {
                 }
                 let return_type = self.primitive_type_id(PrimitiveType::Unit);
                 self.current_return_type = return_type;
+                self.current_clif_parameters = Some(Vec::new());
                 self.record_signature(item.span, Vec::new(), return_type);
                 for statement in &def.node.statements {
                     self.type_statement(statement);
@@ -407,6 +414,12 @@ impl<'a> TypeChecker<'a> {
             Node::MacroDefinition(_) => {}
         }
         self.current_return_type = None;
+        self.current_clif_parameters = None;
+    }
+
+    /// Unit parameters have no ABI slot, so CLIF parameter numbering skips them.
+    fn is_unit_parameter_type(&self, ty: &Spanned<crate::syntax::Type>) -> bool {
+        matches!(&ty.node, crate::syntax::Type::Primitive(primitive) if primitive.node == PrimitiveType::Unit)
     }
 
     fn record_signature(
@@ -465,12 +478,19 @@ impl<'a> TypeChecker<'a> {
             self.insert_local_type(def.node.receiver_type.span, receiver_type);
         }
         let mut params = Vec::new();
+        // The receiver occupies ABI parameter 0 and is never a usable CLIF value.
+        let mut clif_parameters = vec![None];
         for param in &def.node.parameters {
-            if let Some(type_id) = self.type_id_for_type(&param.node.ty) {
+            let type_id = self.type_id_for_type(&param.node.ty);
+            if let Some(type_id) = type_id {
                 params.push(type_id);
                 self.insert_local_type(param.node.name.span, type_id);
             }
+            if !self.is_unit_parameter_type(&param.node.ty) {
+                clif_parameters.push(type_id);
+            }
         }
+        let previous_clif_parameters = self.current_clif_parameters.replace(clif_parameters);
         self.record_signature(item_span, params.clone(), return_type);
         let method_item_id = self.canonical_item_id_for_span(item_span).or_else(|| self.item_id_for_span(item_span));
         if let (Some(method_item_id), Some(return_type)) = (method_item_id, return_type) {
@@ -480,6 +500,7 @@ impl<'a> TypeChecker<'a> {
         self.current_function_item = method_item_id;
         self.type_block(&def.node.body);
         self.current_function_item = previous_function;
+        self.current_clif_parameters = previous_clif_parameters;
         self.current_receiver_item_id = previous_receiver;
         match previous_this {
             Some(Some(previous)) => {

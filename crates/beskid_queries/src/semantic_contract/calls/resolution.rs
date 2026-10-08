@@ -308,47 +308,167 @@ pub(in crate::semantic_contract) fn resolve_local_extern_contract_method(
     Some(AstNodeKey { unit: key.unit, generation: key.generation, node: *method_id })
 }
 
-/// Return Extern import metadata for a [`ContractMethodSignature`] declaration key.
-pub fn extern_contract_import_for_declaration(
-    db: &dyn Db,
+/// One method of an `[Extern(...)]` contract: the C symbol it names and the contract's
+/// `Abi`, `Library`, and `Optional` arguments.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExternContractImport {
+    pub symbol: String,
+    pub abi: Option<String>,
+    pub library: Option<String>,
+    /// The contract is `Optional:true`: its symbols may be absent at load time.
+    pub optional: bool,
+    /// This method is the compiler-supplied `bool Available()` query of an optional contract,
+    /// not a C symbol.
+    pub availability_query: bool,
+}
+
+/// `Abi`, `Library`, and `Optional` arguments of a contract's `[Extern(...)]` attribute.
+#[derive(Debug, Clone)]
+struct ExternContractAttributes {
+    abi: Option<String>,
+    library: Option<String>,
+    optional: bool,
+}
+
+impl ExternContractAttributes {
+    fn import_for(&self, method: &str) -> ExternContractImport {
+        ExternContractImport {
+            symbol: method.to_owned(),
+            abi: self.abi.clone(),
+            library: self.library.clone(),
+            optional: self.optional,
+            availability_query: self.optional
+                && method == beskid_abi::interop::c_profile::OPTIONAL_EXTERN_AVAILABILITY_METHOD,
+        }
+    }
+}
+
+/// Enclosing contract node of a [`ContractMethodSignature`] declaration.
+fn enclosing_contract_id(
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
     declaration: AstNodeKey,
-) -> Option<(String, Option<String>, Option<String>)> {
+) -> Option<beskid_analysis::AstNodeId> {
+    let mut parent = index.metadata_for(declaration.generation, declaration.node)?.parent;
+    while let Some(parent_id) = parent {
+        if index
+            .node_at(program, parent_id)
+            .and_then(|node| node.of::<beskid_analysis::syntax::ContractDefinition>())
+            .is_some()
+        {
+            return Some(parent_id);
+        }
+        parent = index.metadata_for(declaration.generation, parent_id).and_then(|node| node.parent);
+    }
+    None
+}
+
+/// Return Extern import metadata for a [`ContractMethodSignature`] declaration key.
+pub fn extern_contract_import_for_declaration(db: &dyn Db, declaration: AstNodeKey) -> Option<ExternContractImport> {
     let syntax = db.syntax_unit(declaration.unit)?;
     let program = syntax.expanded_program(db);
     let index = syntax.syntax_index(db);
     let method = index.node_at(program, declaration.node)?.of::<beskid_analysis::syntax::ContractMethodSignature>()?;
-    let mut parent = index.metadata_for(declaration.generation, declaration.node)?.parent;
-    let mut contract = None;
-    while let Some(parent_id) = parent {
-        if let Some(definition) =
-            index.node_at(program, parent_id).and_then(|node| node.of::<beskid_analysis::syntax::ContractDefinition>())
-        {
-            contract = Some(definition);
-            break;
-        }
-        parent = index.metadata_for(declaration.generation, parent_id).and_then(|node| node.parent);
+    let contract_id = enclosing_contract_id(program, index, declaration)?;
+    let contract = index.node_at(program, contract_id)?.of::<beskid_analysis::syntax::ContractDefinition>()?;
+    Some(extern_contract_attributes(contract)?.import_for(&method.name.node.name))
+}
+
+/// The C-symbol methods of the optional `[Extern]` contract that declares `availability`, the
+/// declaration of its `bool Available()` query, with each method's declaration key. `None` when
+/// `availability` is not such a query.
+pub fn optional_extern_contract_members(
+    db: &dyn Db,
+    availability: AstNodeKey,
+) -> Option<Vec<(AstNodeKey, ExternContractImport)>> {
+    if !extern_contract_import_for_declaration(db, availability)?.availability_query {
+        return None;
     }
-    let contract = contract?;
+    let syntax = db.syntax_unit(availability.unit)?;
+    let program = syntax.expanded_program(db);
+    let index = syntax.syntax_index(db);
+    let contract_id = enclosing_contract_id(program, index, availability)?;
+    let contract = index.node_at(program, contract_id)?.of::<beskid_analysis::syntax::ContractDefinition>()?;
+    let attributes = extern_contract_attributes(contract)?;
+    let members = index
+        .ids_of_kind(beskid_analysis::syntax_query::NodeKind::ContractMethodSignature)
+        .filter_map(|candidate| {
+            let key = AstNodeKey { unit: availability.unit, generation: availability.generation, node: candidate };
+            if enclosing_contract_id(program, index, key)? != contract_id {
+                return None;
+            }
+            let method =
+                index.node_at(program, candidate)?.of::<beskid_analysis::syntax::ContractMethodSignature>()?;
+            let import = attributes.import_for(&method.name.node.name);
+            (!import.availability_query).then_some((key, import))
+        })
+        .collect();
+    Some(members)
+}
+
+/// `Abi`, `Library`, and `Optional` arguments of a contract's `[Extern(...)]` attribute, when it
+/// has one. A non-boolean `Optional` is a type error (T0905) and reads as not optional here.
+fn extern_contract_attributes(
+    contract: &beskid_analysis::syntax::ContractDefinition,
+) -> Option<ExternContractAttributes> {
     let extern_attr = contract.attributes.iter().find(|attribute| attribute.node.name.node.name == "Extern")?;
-    let mut abi = None;
-    let mut library = None;
+    let mut attributes = ExternContractAttributes { abi: None, library: None, optional: false };
     for argument in &extern_attr.node.arguments {
-        let value = match &argument.node.value.node {
-            beskid_analysis::syntax::Expression::Literal(literal) => match &literal.node.literal.node {
-                beskid_analysis::syntax::Literal::String(raw) => {
-                    beskid_analysis::syntax::decode_string_literal_token(raw).ok()
-                }
-                _ => None,
-            },
-            _ => None,
+        let beskid_analysis::syntax::Expression::Literal(literal) = &argument.node.value.node else {
+            continue;
         };
-        match argument.node.name.node.name.as_str() {
-            "Abi" => abi = value,
-            "Library" => library = value,
+        match (argument.node.name.node.name.as_str(), &literal.node.literal.node) {
+            ("Abi", beskid_analysis::syntax::Literal::String(raw)) => {
+                attributes.abi = beskid_analysis::syntax::decode_string_literal_token(raw).ok();
+            }
+            ("Library", beskid_analysis::syntax::Literal::String(raw)) => {
+                attributes.library = beskid_analysis::syntax::decode_string_literal_token(raw).ok();
+            }
+            ("Optional", beskid_analysis::syntax::Literal::Bool(value)) => attributes.optional = *value,
             _ => {}
         }
     }
-    Some((method.name.node.name.clone(), abi, library))
+    Some(attributes)
+}
+
+/// Every C symbol declared by an `[Extern(...)]` contract in `unit`, including contracts nested
+/// in inline modules. The `Available` query of an optional contract is not a C symbol and is
+/// not listed.
+///
+/// Declarations confer FFI authority without a source call: a `clif { call @symbol(...) }`
+/// block may name any symbol declared here once the C ABI and library are validated.
+pub fn extern_contract_declarations_in_unit(db: &dyn Db, unit: SourceUnitId) -> Vec<ExternContractImport> {
+    fn collect(
+        items: &[beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Node>],
+        out: &mut Vec<ExternContractImport>,
+    ) {
+        for item in items {
+            match &item.node {
+                beskid_analysis::syntax::Node::ContractDefinition(contract) => {
+                    let Some(attributes) = extern_contract_attributes(&contract.node) else {
+                        continue;
+                    };
+                    for member in &contract.node.items {
+                        if let beskid_analysis::syntax::ContractNode::MethodSignature(method) = &member.node {
+                            let import = attributes.import_for(&method.node.name.node.name);
+                            if !import.availability_query {
+                                out.push(import);
+                            }
+                        }
+                    }
+                }
+                beskid_analysis::syntax::Node::InlineModule(module) => collect(&module.node.items, out),
+                _ => {}
+            }
+        }
+    }
+    let Some(syntax) = db.syntax_unit(unit) else {
+        return Vec::new();
+    };
+    let program = syntax.expanded_program(db);
+    let mut out = Vec::new();
+    collect(&program.node.items, &mut out);
+    out
 }
 
 /// Resolve one source-proven nominal receiver and its uniquely declared method. Literal, local,

@@ -1,0 +1,22 @@
+/// A non-optional `[Extern]` contract whose library is absent still fails to load.
+use Testing.Assert;
+
+[Extern(Abi:"C", Library:"libbeskid-not-installed.so.1")]
+pub contract MissingNative {
+    i64 beskid_missing_symbol(i64 value);
+}
+
+i64 MaybeCall(bool enabled) {
+    if enabled {
+        return MissingNative.beskid_missing_symbol(1);
+    }
+    return 0;
+}
+
+test required_library_fails_to_load {
+    Assert.Equal<i64>(MaybeCall(false), 0, "never reached: loading fails");
+}
+
+pub i64 Main() {
+    return MaybeCall(false);
+}

@@ -55,14 +55,37 @@ pub word AlignUp(word value, word alignment) {
     return aligned;
 }
 
+// ---- Span carving across regions ----
+
+// Carves a span from the current region first (its free list, then its untouched pages), then
+// from the free lists and untouched pages of every other region. Earlier regions are not
+// abandoned once the heap grows: spans that a collection freed there serve later requests.
+pub pointer CarveSpanInAnyRegion(pointer heap, word pageCount, word sizeClass) {
+    pointer current = NativePointer(raw_word_load(pointer_add(heap, HEAP_CURRENT_REGION)));
+    pointer entry = CarveSpan(current, pageCount, sizeClass);
+    if entry != NativePointer(0) {
+        return entry;
+    }
+    mut pointer region = NativePointer(raw_word_load(pointer_add(heap, HEAP_FIRST_REGION)));
+    while region != NativePointer(0) {
+        if region != current {
+            pointer other = CarveSpan(region, pageCount, sizeClass);
+            if other != NativePointer(0) {
+                return other;
+            }
+        }
+        region = NativePointer(raw_word_load(pointer_add(region, REGION_NEXT)));
+    }
+    return NativePointer(0);
+}
+
 // ---- Small-object path ----
 
-// Carves a fresh 1-page span for `class` from the heap's current region and threads its free
-// list. Returns null when the current region has no room (neither a free 1-page span nor an
-// untouched page); the caller decides whether to collect, grow, or fail.
+// Carves a fresh 1-page span for `class` (see `CarveSpanInAnyRegion`) and threads its free list.
+// Returns null when no region has room (neither a free span nor an untouched page); the caller
+// decides whether to collect, grow, or fail.
 pub pointer RefillSpanForClass(pointer heap, word class) {
-    pointer region = NativePointer(raw_word_load(pointer_add(heap, HEAP_CURRENT_REGION)));
-    pointer entry = CarveSpan(region, 1, class);
+    pointer entry = CarveSpanInAnyRegion(heap, 1, class);
     if entry == NativePointer(0) {
         return NativePointer(0);
     }
@@ -103,11 +126,10 @@ pub pointer GcAllocSmall(pointer heap, word class) {
 // ---- Large-object path (size class 0: a dedicated span, one object) ----
 
 pub pointer GcAllocLargeOnce(pointer heap, word size, word alignment) {
-    pointer region = NativePointer(raw_word_load(pointer_add(heap, HEAP_CURRENT_REGION)));
     word bytesNeeded = size + alignment;
     mut word pages = AlignUp(bytesNeeded, PAGE_SIZE) / PAGE_SIZE;
     if pages == 0 { pages = 1; }
-    pointer entry = CarveSpan(region, pages, SIZE_CLASS_LARGE);
+    pointer entry = CarveSpanInAnyRegion(heap, pages, SIZE_CLASS_LARGE);
     if entry == NativePointer(0) {
         return NativePointer(0);
     }

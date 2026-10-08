@@ -97,7 +97,12 @@ mod tests {
             panic!("primitive type rule not found in grammar");
         };
 
-        let rhs = raw.trim().trim_start_matches('{').trim_end_matches('}');
+        // `PrimitiveType = @{ ("bool" | ...) ~ !IdentTail }`: the alternatives sit inside the group.
+        let rhs = raw.trim().trim_start_matches('@').trim_start_matches('{').trim_end_matches('}');
+        let rhs = match (rhs.find('('), rhs.rfind(')')) {
+            (Some(open), Some(close)) if open < close => &rhs[open + 1..close],
+            _ => rhs,
+        };
         let mut grammar_types: Vec<&str> = rhs
             .split('|')
             .map(str::trim)

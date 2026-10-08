@@ -383,7 +383,8 @@ fn glue_binding_tracked(db: &dyn Db, syntax: SyntaxUnitInput, key: AstNodeKey) -
             })());
         }
         let method = node.of::<ContractMethodSignature>()?;
-        let (symbol, abi, library) = calls::extern_contract_import_for_declaration(db, key)?;
+        let import = calls::extern_contract_import_for_declaration(db, key)?;
+        let (symbol, abi, library) = (import.symbol, import.abi, import.library);
         Some((|| {
             let index = syntax.syntax_index(db);
             let mut parent = index.metadata_for(key.generation, key.node).and_then(|m| m.parent);
@@ -564,8 +565,12 @@ pub fn rust_owner_declarations(db: &dyn Db, unit: SourceUnitId) -> Result<Arc<[R
                 fallible: false,
             });
         } else if let Some(method) = node.of::<ContractMethodSignature>() {
-            let (symbol, _abi, library) = calls::extern_contract_import_for_declaration(db, declaration)
+            let import = calls::extern_contract_import_for_declaration(db, declaration)
                 .ok_or_else(|| misplaced("RustOwner is allowed only on a GlueHandle type or an Extern contract method"))?;
+            if import.availability_query {
+                return Err(misplaced("RustOwner is not allowed on the compiler-supplied Available query"));
+            }
+            let (symbol, library) = (import.symbol, import.library);
             let library = library
                 .filter(|library| !library.is_empty())
                 .ok_or_else(|| misplaced("RustOwner Extern contract requires Library metadata"))?;

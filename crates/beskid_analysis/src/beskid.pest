@@ -15,55 +15,55 @@ BlockComment = _{ "/*" ~ (!"*/" ~ ANY)* ~ "*/" }
 ASCII_ALPHA_UNDERSCORE = _{ ASCII_ALPHA | "_" }
 Identifier = @{ !Keyword ~ ASCII_ALPHA_UNDERSCORE ~ (ASCII_ALPHANUMERIC | "_")* }
 
-TypeDeclarationKeyword = { "type" }
-EnumDeclarationKeyword = { "enum" }
-ContractDeclarationKeyword = { "contract" }
-AttributeDeclarationKeyword = { "attribute" }
-ImplKeyword = { "impl" }
-ExtendKeyword = { "extend" }
-ThisKeyword = { "This" }
-WhereKeyword = { "where" }
-MatchKeyword = { "match" }
-EventKeyword = { "event" }
-WhenKeyword = { "when" }
-IfKeyword = { "if" }
-ElseKeyword = { "else" }
-WhileKeyword = { "while" }
-ForKeyword = { "for" }
-InKeyword = { "in" }
-ReturnKeyword = { "return" }
-BreakKeyword = { "break" }
-ContinueKeyword = { "continue" }
-LetKeyword = { "let" }
-ConstKeyword = { "const" }
-MutKeyword = @{ "mut" ~ !(ASCII_ALPHANUMERIC | "_") }
-BulkKeyword = @{ "bulk" ~ !(ASCII_ALPHANUMERIC | "_") }
-ModKeyword = { "mod" }
-UseKeyword = { "use" }
-UsingKeyword = { "using" }
-PubKeyword = { "pub" }
-TestKeyword = { "test" }
-SkipKeyword = { "skip" }
-SpawnKeyword = { "spawn" }
-ClifKeyword = { "clif" }
-AsyncKeyword = { "async" }
-AwaitKeyword = { "await" }
-CodeKeyword = { "code" }
-HostKeyword = { "host" }
-RegistryKeyword = { "registry" }
-ScopeKeyword = { "scope" }
-StartupKeyword = { "startup" }
-InitKeyword = { "init" }
-DisposeKeyword = { "dispose" }
-WithKeyword = { "with" }
-LaunchKeyword = { "launch" }
-InjectKeyword = { "inject" }
-SingleKeyword = { "single" }
-TransientKeyword = { "transient" }
-GlobalKeyword = { "global" }
-ParentKeyword = { "parent" }
-TryKeyword = { "try" }
-CatchKeyword = { "catch" }
+TypeDeclarationKeyword = @{ "type" ~ !IdentTail }
+EnumDeclarationKeyword = @{ "enum" ~ !IdentTail }
+ContractDeclarationKeyword = @{ "contract" ~ !IdentTail }
+AttributeDeclarationKeyword = @{ "attribute" ~ !IdentTail }
+ImplKeyword = @{ "impl" ~ !IdentTail }
+ExtendKeyword = @{ "extend" ~ !IdentTail }
+ThisKeyword = @{ "This" ~ !IdentTail }
+WhereKeyword = @{ "where" ~ !IdentTail }
+MatchKeyword = @{ "match" ~ !IdentTail }
+EventKeyword = @{ "event" ~ !IdentTail }
+WhenKeyword = @{ "when" ~ !IdentTail }
+IfKeyword = @{ "if" ~ !IdentTail }
+ElseKeyword = @{ "else" ~ !IdentTail }
+WhileKeyword = @{ "while" ~ !IdentTail }
+ForKeyword = @{ "for" ~ !IdentTail }
+InKeyword = @{ "in" ~ !IdentTail }
+ReturnKeyword = @{ "return" ~ !IdentTail }
+BreakKeyword = @{ "break" ~ !IdentTail }
+ContinueKeyword = @{ "continue" ~ !IdentTail }
+LetKeyword = @{ "let" ~ !IdentTail }
+ConstKeyword = @{ "const" ~ !IdentTail }
+MutKeyword = @{ "mut" ~ !IdentTail }
+BulkKeyword = @{ "bulk" ~ !IdentTail }
+ModKeyword = @{ "mod" ~ !IdentTail }
+UseKeyword = @{ "use" ~ !IdentTail }
+UsingKeyword = @{ "using" ~ !IdentTail }
+PubKeyword = @{ "pub" ~ !IdentTail }
+TestKeyword = @{ "test" ~ !IdentTail }
+SkipKeyword = @{ "skip" ~ !IdentTail }
+SpawnKeyword = @{ "spawn" ~ !IdentTail }
+ClifKeyword = @{ "clif" ~ !IdentTail }
+AsyncKeyword = @{ "async" ~ !IdentTail }
+AwaitKeyword = @{ "await" ~ !IdentTail }
+CodeKeyword = @{ "code" ~ !IdentTail }
+HostKeyword = @{ "host" ~ !IdentTail }
+RegistryKeyword = @{ "registry" ~ !IdentTail }
+ScopeKeyword = @{ "scope" ~ !IdentTail }
+StartupKeyword = @{ "startup" ~ !IdentTail }
+InitKeyword = @{ "init" ~ !IdentTail }
+DisposeKeyword = @{ "dispose" ~ !IdentTail }
+WithKeyword = @{ "with" ~ !IdentTail }
+LaunchKeyword = @{ "launch" ~ !IdentTail }
+InjectKeyword = @{ "inject" ~ !IdentTail }
+SingleKeyword = @{ "single" ~ !IdentTail }
+TransientKeyword = @{ "transient" ~ !IdentTail }
+GlobalKeyword = @{ "global" ~ !IdentTail }
+ParentKeyword = @{ "parent" ~ !IdentTail }
+TryKeyword = @{ "try" ~ !IdentTail }
+CatchKeyword = @{ "catch" ~ !IdentTail }
 
 Keyword = {
     (
@@ -113,8 +113,115 @@ Keyword = {
       | GlobalKeyword
       | TryKeyword
       | CatchKeyword
-    ) ~ !ASCII_ALPHANUMERIC
+    ) ~ !IdentTail
 }
+
+// Keyword literals used inside non-atomic rules. Each `Kw*` is silent (no parse-tree pair) and
+// matches the word only at a word boundary; the boundary is checked by an atomic `*Word` rule
+// inside a double negative lookahead, so implicit whitespace cannot move the check past the word.
+IdentTail = _{ ASCII_ALPHANUMERIC | "_" }
+KwTrueWord = @{ "true" ~ !IdentTail }
+KwTrue = _{ !(!KwTrueWord) ~ "true" }
+KwFalseWord = @{ "false" ~ !IdentTail }
+KwFalse = _{ !(!KwFalseWord) ~ "false" }
+KwAttributeWord = @{ "attribute" ~ !IdentTail }
+KwAttribute = _{ !(!KwAttributeWord) ~ "attribute" }
+KwPubWord = @{ "pub" ~ !IdentTail }
+KwPub = _{ !(!KwPubWord) ~ "pub" }
+KwModWord = @{ "mod" ~ !IdentTail }
+KwMod = _{ !(!KwModWord) ~ "mod" }
+KwUseWord = @{ "use" ~ !IdentTail }
+KwUse = _{ !(!KwUseWord) ~ "use" }
+KwAsWord = @{ "as" ~ !IdentTail }
+KwAs = _{ !(!KwAsWord) ~ "as" }
+KwWhereWord = @{ "where" ~ !IdentTail }
+KwWhere = _{ !(!KwWhereWord) ~ "where" }
+KwConstWord = @{ "const" ~ !IdentTail }
+KwConst = _{ !(!KwConstWord) ~ "const" }
+KwImplWord = @{ "impl" ~ !IdentTail }
+KwImpl = _{ !(!KwImplWord) ~ "impl" }
+KwExtendWord = @{ "extend" ~ !IdentTail }
+KwExtend = _{ !(!KwExtendWord) ~ "extend" }
+KwTypeWord = @{ "type" ~ !IdentTail }
+KwType = _{ !(!KwTypeWord) ~ "type" }
+KwBlockWord = @{ "block" ~ !IdentTail }
+KwBlock = _{ !(!KwBlockWord) ~ "block" }
+KwExpressionWord = @{ "expression" ~ !IdentTail }
+KwExpression = _{ !(!KwExpressionWord) ~ "expression" }
+KwStatementWord = @{ "statement" ~ !IdentTail }
+KwStatement = _{ !(!KwStatementWord) ~ "statement" }
+KwIdentifierWord = @{ "identifier" ~ !IdentTail }
+KwIdentifier = _{ !(!KwIdentifierWord) ~ "identifier" }
+KwLiteralWord = @{ "literal" ~ !IdentTail }
+KwLiteral = _{ !(!KwLiteralWord) ~ "literal" }
+KwPatternWord = @{ "pattern" ~ !IdentTail }
+KwPattern = _{ !(!KwPatternWord) ~ "pattern" }
+KwPathWord = @{ "path" ~ !IdentTail }
+KwPath = _{ !(!KwPathWord) ~ "path" }
+KwItemWord = @{ "item" ~ !IdentTail }
+KwItem = _{ !(!KwItemWord) ~ "item" }
+KwNodeWord = @{ "node" ~ !IdentTail }
+KwNode = _{ !(!KwNodeWord) ~ "node" }
+KwMacroWord = @{ "macro" ~ !IdentTail }
+KwMacro = _{ !(!KwMacroWord) ~ "macro" }
+KwEventWord = @{ "event" ~ !IdentTail }
+KwEvent = _{ !(!KwEventWord) ~ "event" }
+KwGlobalWord = @{ "global" ~ !IdentTail }
+KwGlobal = _{ !(!KwGlobalWord) ~ "global" }
+KwParentWord = @{ "parent" ~ !IdentTail }
+KwParent = _{ !(!KwParentWord) ~ "parent" }
+KwInjectWord = @{ "inject" ~ !IdentTail }
+KwInject = _{ !(!KwInjectWord) ~ "inject" }
+KwEnumWord = @{ "enum" ~ !IdentTail }
+KwEnum = _{ !(!KwEnumWord) ~ "enum" }
+KwContractWord = @{ "contract" ~ !IdentTail }
+KwContract = _{ !(!KwContractWord) ~ "contract" }
+KwSingleWord = @{ "single" ~ !IdentTail }
+KwSingle = _{ !(!KwSingleWord) ~ "single" }
+KwTransientWord = @{ "transient" ~ !IdentTail }
+KwTransient = _{ !(!KwTransientWord) ~ "transient" }
+KwForWord = @{ "for" ~ !IdentTail }
+KwFor = _{ !(!KwForWord) ~ "for" }
+KwRegistryWord = @{ "registry" ~ !IdentTail }
+KwRegistry = _{ !(!KwRegistryWord) ~ "registry" }
+KwInitWord = @{ "init" ~ !IdentTail }
+KwInit = _{ !(!KwInitWord) ~ "init" }
+KwDisposeWord = @{ "dispose" ~ !IdentTail }
+KwDispose = _{ !(!KwDisposeWord) ~ "dispose" }
+KwStartupWord = @{ "startup" ~ !IdentTail }
+KwStartup = _{ !(!KwStartupWord) ~ "startup" }
+KwScopeWord = @{ "scope" ~ !IdentTail }
+KwScope = _{ !(!KwScopeWord) ~ "scope" }
+KwHostWord = @{ "host" ~ !IdentTail }
+KwHost = _{ !(!KwHostWord) ~ "host" }
+KwTestWord = @{ "test" ~ !IdentTail }
+KwTest = _{ !(!KwTestWord) ~ "test" }
+KwMetaWord = @{ "meta" ~ !IdentTail }
+KwMeta = _{ !(!KwMetaWord) ~ "meta" }
+KwSkipWord = @{ "skip" ~ !IdentTail }
+KwSkip = _{ !(!KwSkipWord) ~ "skip" }
+KwWithWord = @{ "with" ~ !IdentTail }
+KwWith = _{ !(!KwWithWord) ~ "with" }
+KwLaunchWord = @{ "launch" ~ !IdentTail }
+KwLaunch = _{ !(!KwLaunchWord) ~ "launch" }
+KwReturnWord = @{ "return" ~ !IdentTail }
+KwReturn = _{ !(!KwReturnWord) ~ "return" }
+KwBreakWord = @{ "break" ~ !IdentTail }
+KwBreak = _{ !(!KwBreakWord) ~ "break" }
+KwContinueWord = @{ "continue" ~ !IdentTail }
+KwContinue = _{ !(!KwContinueWord) ~ "continue" }
+KwIfWord = @{ "if" ~ !IdentTail }
+KwIf = _{ !(!KwIfWord) ~ "if" }
+KwWhileWord = @{ "while" ~ !IdentTail }
+KwWhile = _{ !(!KwWhileWord) ~ "while" }
+KwInWord = @{ "in" ~ !IdentTail }
+KwIn = _{ !(!KwInWord) ~ "in" }
+KwRangeWord = @{ "range" ~ !IdentTail }
+KwRange = _{ !(!KwRangeWord) ~ "range" }
+KwMatchWord = @{ "match" ~ !IdentTail }
+KwMatch = _{ !(!KwMatchWord) ~ "match" }
+KwWhenWord = @{ "when" ~ !IdentTail }
+KwWhen = _{ !(!KwWhenWord) ~ "when" }
 
 DecimalIntegerBody = { ASCII_DIGIT+ ~ ("_" ~ ASCII_DIGIT+)* }
 HexIntegerBody = { ASCII_HEX_DIGIT+ ~ ("_" ~ ASCII_HEX_DIGIT+)* }
@@ -143,7 +250,7 @@ CodePlainText = { (!("@") ~ ANY)+ | ("@" ~ !("{") ~ ANY)+ }
 CodePlainBodyContents = ${ (CodeHole | CodePlainText)* }
 CodePlainBody = { SOI ~ CodePlainBodyContents ~ EOI }
 
-Literal = { FloatLiteral | IntegerLiteral | StringLiteral | CharLiteral | "true" | "false" | "()" }
+Literal = { FloatLiteral | IntegerLiteral | StringLiteral | CharLiteral | KwTrue | KwFalse | "()" }
 
 ////////////////////////////////////////////////////////////
 // 2) PROGRAM
@@ -163,18 +270,18 @@ AttributeList = { Attribute+ }
 Attribute = { "[" ~ Identifier ~ ("(" ~ AttributeArgumentList? ~ ")")? ~ "]" }
 AttributeArgumentList = { AttributeArgument ~ ("," ~ AttributeArgument)* }
 AttributeArgument = { Identifier ~ ":" ~ Expression }
-AttributeDeclaration = { Visibility? ~ "attribute" ~ Identifier ~ AttributeTargetList? ~ "{" ~ AttributeParameterList? ~ "}" }
+AttributeDeclaration = { Visibility? ~ KwAttribute ~ Identifier ~ AttributeTargetList? ~ "{" ~ AttributeParameterList? ~ "}" }
 AttributeTargetList = { "(" ~ AttributeTarget ~ ("," ~ AttributeTarget)* ~ ","? ~ ")" }
 AttributeTarget = { Identifier }
 AttributeParameterList = { AttributeParameter ~ ("," ~ AttributeParameter)* ~ ","? }
 AttributeParameter = { Identifier ~ ":" ~ BeskidType ~ ("=" ~ Expression)? }
 
-Visibility = { "pub" }
+Visibility = { KwPub }
 
-ModuleDeclaration = { AttributeList? ~ Visibility? ~ "mod" ~ Path ~ ";" }
+ModuleDeclaration = { AttributeList? ~ Visibility? ~ KwMod ~ Path ~ ";" }
 InlineModuleBody = { ItemWithDocs* }
-InlineModule = { AttributeList? ~ Visibility? ~ "mod" ~ Identifier ~ "{" ~ InlineModuleBody ~ "}" }
-UseDeclaration = { Visibility? ~ "use" ~ Path ~ ("as" ~ Identifier)? ~ ";" }
+InlineModule = { AttributeList? ~ Visibility? ~ KwMod ~ Identifier ~ "{" ~ InlineModuleBody ~ "}" }
+UseDeclaration = { Visibility? ~ KwUse ~ Path ~ (KwAs ~ Identifier)? ~ ";" }
 PathSegment = { Identifier ~ GenericArguments? }
 Path = { PathSegment ~ ("." ~ PathSegment)* }
 PathList = { Path ~ ("," ~ Path)* }
@@ -183,7 +290,7 @@ EnumPath = { Path ~ "::" ~ Identifier }
 ////////////////////////////////////////////////////////////
 // 3) TYPES
 ////////////////////////////////////////////////////////////
-PrimitiveType = { "i8" | "i16" | "u16" | "u64" | "f32" | "bool" | "i32" | "i64" | "u32" | "u8" | "pointer" | "word" | "f64" | "char" | "string" | "unit" | "never" }
+PrimitiveType = @{ ("i8" | "i16" | "u16" | "u64" | "f32" | "bool" | "i32" | "i64" | "u32" | "u8" | "pointer" | "word" | "f64" | "char" | "string" | "unit" | "never") ~ !IdentTail }
 
 GenericParameters = { "<" ~ Identifier ~ ("," ~ Identifier)* ~ ">" }
 GenericArguments = { "<" ~ BeskidType ~ ("," ~ BeskidType)* ~ ">" }
@@ -195,7 +302,7 @@ AssociatedTypeRef = { Path ~ "::" ~ Identifier }
 // token's first character (e.g. "This Make()"'s `M`) instead of the character immediately
 // after "This" -- silently rejecting `This` whenever anything followed it. Same reasoning as
 // `Identifier`'s own atomic `!Keyword ~ ...` boundary check.
-ThisType = @{ "This" ~ !ASCII_ALPHANUMERIC }
+ThisType = @{ "This" ~ !IdentTail }
 TypeAtom = { AssociatedTypeRef | ThisType | TypeName }
 ArrayType = { TypeAtom ~ "[" ~ "]" }
 FunctionType = { TypeAtom ~ "(" ~ BeskidTypeList? ~ ")" }
@@ -207,18 +314,18 @@ BeskidType = { ArrowFunctionType | FunctionType | ArrayType | TypeAtom }
 // 4) DEFINITIONS
 ////////////////////////////////////////////////////////////
 TypeBound = { Identifier ~ ":" ~ Path }
-WhereClause = { "where" ~ TypeBound ~ ("," ~ TypeBound)* }
+WhereClause = { KwWhere ~ TypeBound ~ ("," ~ TypeBound)* }
 FunctionDefinition = { AttributeList? ~ Visibility? ~ BeskidType ~ Identifier ~ GenericParameters? ~ "(" ~ ParameterList? ~ ")" ~ WhereClause? ~ Block }
-ConstantDefinition = { "const" ~ Identifier ~ "=" ~ IntegerLiteral ~ ";" }
+ConstantDefinition = { KwConst ~ Identifier ~ "=" ~ IntegerLiteral ~ ";" }
 ReceiverType = { PrimitiveType | Path }
 ImplConformanceList = { ":" ~ PathList }
-ImplBlock = { "impl" ~ GenericParameters? ~ ReceiverType ~ ImplConformanceList? ~ WhereClause? ~ "{" ~ (AssociatedTypeBindingWithDocs | ImplMethodWithDocs)* ~ "}" }
-ExtendTypeDefinition = { "extend" ~ "type" ~ ReceiverType ~ "{" ~ ImplMethodWithDocs* ~ "}" }
+ImplBlock = { KwImpl ~ GenericParameters? ~ ReceiverType ~ ImplConformanceList? ~ WhereClause? ~ "{" ~ (AssociatedTypeBindingWithDocs | ImplMethodWithDocs)* ~ "}" }
+ExtendTypeDefinition = { KwExtend ~ KwType ~ ReceiverType ~ "{" ~ ImplMethodWithDocs* ~ "}" }
 
-MacroFragmentKind = { "block" | "expression" | "statement" | "type" | "identifier" | "literal" | "pattern" | "path" | "item" | "node" }
+MacroFragmentKind = { KwBlock | KwExpression | KwStatement | KwType | KwIdentifier | KwLiteral | KwPattern | KwPath | KwItem | KwNode }
 MacroParameter = { MacroFragmentKind ~ Identifier }
 MacroParameterList = { MacroParameter ~ ("," ~ MacroParameter)* }
-MacroDefinition = { Visibility? ~ "macro" ~ Identifier ~ "(" ~ MacroParameterList? ~ ")" ~ Block }
+MacroDefinition = { Visibility? ~ KwMacro ~ Identifier ~ "(" ~ MacroParameterList? ~ ")" ~ Block }
 ImplMethodWithDocs = { ((DocRun ~ ImplMethodDefinition) | ImplMethodDefinition) ~ DocGap* }
 MethodBody = { Block | ExpressionBody }
 ExpressionBody = { "=>" ~ Expression }
@@ -231,53 +338,53 @@ FieldList = { FieldWithDocs ~ ("," ~ DocGap* ~ FieldWithDocs)* ~ ","? }
 FieldWithDocs = { (DocRun ~ Field) | Field }
 ValueField = { BeskidType ~ Identifier ~ !"(" }
 EventCapacity = { "{" ~ IntegerLiteral ~ "}" }
-EventField = { "event" ~ EventCapacity? ~ Identifier ~ "(" ~ ParameterList? ~ ")" }
-InjectQualifier = { ("global" | "parent") ~ "::" }
-InjectField = { "inject" ~ InjectQualifier? ~ BeskidType ~ Identifier }
+EventField = { KwEvent ~ EventCapacity? ~ Identifier ~ "(" ~ ParameterList? ~ ")" }
+InjectQualifier = { (KwGlobal | KwParent) ~ "::" }
+InjectField = { KwInject ~ InjectQualifier? ~ BeskidType ~ Identifier }
 Field = { AttributeList? ~ Visibility? ~ (InjectField | EventField | ValueField) }
 
 TypeConformanceList = { ":" ~ PathList }
 // Fields are comma-separated; inline methods follow (commas inside method types must not split members).
 TypeFieldList = { FieldWithDocs ~ ("," ~ DocGap* ~ FieldWithDocs)* ~ ","? }
 TypeBody = { TypeFieldList? ~ (AssociatedTypeBindingWithDocs | ImplMethodWithDocs)* }
-TypeDefinition = { AttributeList? ~ Visibility? ~ "type" ~ Identifier ~ GenericParameters? ~ TypeConformanceList? ~ "{" ~ TypeBody? ~ "}" }
+TypeDefinition = { AttributeList? ~ Visibility? ~ KwType ~ Identifier ~ GenericParameters? ~ TypeConformanceList? ~ "{" ~ TypeBody? ~ "}" }
 
-EnumDefinition = { AttributeList? ~ Visibility? ~ "enum" ~ Identifier ~ GenericParameters? ~ "{" ~ EnumVariantList? ~ "}" }
+EnumDefinition = { AttributeList? ~ Visibility? ~ KwEnum ~ Identifier ~ GenericParameters? ~ "{" ~ EnumVariantList? ~ "}" }
 EnumVariantList = { EnumVariantWithDocs ~ ("," ~ DocGap* ~ EnumVariantWithDocs)* ~ ","? }
 EnumVariantWithDocs = { (DocRun ~ EnumVariant) | EnumVariant }
 EnumVariant = { Identifier ~ ("(" ~ FieldList? ~ ")")? }
 
-ContractDefinition = { AttributeList? ~ Visibility? ~ "contract" ~ Identifier ~ GenericParameters? ~ "{" ~ ContractItemWithDocs* ~ "}" }
+ContractDefinition = { AttributeList? ~ Visibility? ~ KwContract ~ Identifier ~ GenericParameters? ~ "{" ~ ContractItemWithDocs* ~ "}" }
 ContractItemWithDocs = { ((DocRun ~ ContractItem) | ContractItem) ~ DocGap* }
 ContractItem = _{ ContractAssociatedType | ContractMethodSignature | ContractEmbedding }
 ContractMethodSignature = { AttributeList? ~ BeskidType ~ Identifier ~ "(" ~ ParameterList? ~ ")" ~ ";" }
 ContractEmbedding = { Identifier ~ GenericArguments? ~ ";"? }
-ContractAssociatedType = { "type" ~ Identifier ~ ("=" ~ BeskidType)? ~ ";" }
+ContractAssociatedType = { KwType ~ Identifier ~ ("=" ~ BeskidType)? ~ ";" }
 
 // An associated-type binding at an implementor site (`type Item = T;` inside a `type X : C { }`
 // or `impl X : C { }` body), parallel to `ImplMethodWithDocs`.
-AssociatedTypeBinding = { "type" ~ Identifier ~ "=" ~ BeskidType ~ ";" }
+AssociatedTypeBinding = { KwType ~ Identifier ~ "=" ~ BeskidType ~ ";" }
 AssociatedTypeBindingWithDocs = { ((DocRun ~ AssociatedTypeBinding) | AssociatedTypeBinding) ~ DocGap* }
 
-RegistrationLifetime = { "single" | "transient" }
-RegistrationTarget = { "for" ~ Path }
+RegistrationLifetime = { KwSingle | KwTransient }
+RegistrationTarget = { KwFor ~ Path }
 RegistryEntry = { RegistrationLifetime? ~ Path ~ RegistrationTarget? ~ ";" }
-RegistryBlock = { "registry" ~ "{" ~ RegistryEntry* ~ "}" }
+RegistryBlock = { KwRegistry ~ "{" ~ RegistryEntry* ~ "}" }
 
-ScopeHookName = { "init" | "dispose" | "startup" }
+ScopeHookName = { KwInit | KwDispose | KwStartup }
 ScopeHook = { ScopeHookName ~ "(" ~ ParameterList? ~ ")" ~ Block }
 ScopeBodyItem = _{ RegistryBlock | ScopeHook | ScopeDefinition | RegistryEntry }
-ScopeDefinition = { "scope" ~ Identifier ~ "(" ~ ParameterList? ~ ")" ~ "{" ~ ScopeBodyItem* ~ "}" }
+ScopeDefinition = { KwScope ~ Identifier ~ "(" ~ ParameterList? ~ ")" ~ "{" ~ ScopeBodyItem* ~ "}" }
 HostBodyItem = _{ RegistryBlock | ScopeHook | ScopeDefinition }
-HostDefinition = { "host" ~ Identifier ~ "(" ~ ParameterList? ~ ")" ~ (":" ~ Path)? ~ "{" ~ HostBodyItem* ~ "}" }
+HostDefinition = { KwHost ~ Identifier ~ "(" ~ ParameterList? ~ ")" ~ (":" ~ Path)? ~ "{" ~ HostBodyItem* ~ "}" }
 
-TestDefinition = { AttributeList? ~ Visibility? ~ "test" ~ Identifier ~ TestBody }
+TestDefinition = { AttributeList? ~ Visibility? ~ KwTest ~ Identifier ~ TestBody }
 TestBody = { "{" ~ TestBodyItemWithDocs* ~ "}" }
 TestBodyItemWithDocs = { ((DocRun ~ Statement) | TestMetaSection | TestSkipSection | Statement) ~ DocGap* }
 TestBodyItem = _{ TestMetaSection | TestSkipSection | Statement }
-TestMetaSection = { "meta" ~ "{" ~ TestMetadataEntry* ~ "}" }
+TestMetaSection = { KwMeta ~ "{" ~ TestMetadataEntry* ~ "}" }
 TestMetadataEntry = { Identifier ~ "=" ~ Expression ~ ";" }
-TestSkipSection = { "skip" ~ "{" ~ TestSkipEntry* ~ "}" }
+TestSkipSection = { KwSkip ~ "{" ~ TestSkipEntry* ~ "}" }
 TestSkipEntry = { Identifier ~ "=" ~ Expression ~ ";" }
 
 ////////////////////////////////////////////////////////////
@@ -285,11 +392,11 @@ TestSkipEntry = { Identifier ~ "=" ~ Expression ~ ";" }
 ////////////////////////////////////////////////////////////
 Block = { "{" ~ Statement* ~ "}" }
 
-WithStatement = { "with" ~ Identifier ~ "(" ~ ArgumentList? ~ ")" ~ Block }
-LaunchStatement = { "launch" ~ Path ~ "(" ~ ArgumentList? ~ ")" ~ ";" }
+WithStatement = { KwWith ~ Identifier ~ "(" ~ ArgumentList? ~ ")" ~ Block }
+LaunchStatement = { KwLaunch ~ Path ~ "(" ~ ArgumentList? ~ ")" ~ ";" }
 Statement = _{ ScopedUseStatement | LetStatement | ReturnStatement | BreakStatement | ContinueStatement | WhileStatement | ForStatement | IfStatement | WithStatement | LaunchStatement | ExpressionStatement }
 
-ScopedUseStatement = { "use" ~ ("(" ~ ScopedUseBinding ~ ")" ~ Block | ScopedUseBinding ~ ";") }
+ScopedUseStatement = { KwUse ~ ("(" ~ ScopedUseBinding ~ ")" ~ Block | ScopedUseBinding ~ ";") }
 ScopedUseBinding = { BeskidType ~ Identifier ~ "=" ~ Expression }
 
 LetStatement = { TypedLetStatement | InferredLetStatement }
@@ -297,15 +404,15 @@ TypedLetStatement = { MutKeyword? ~ BeskidType ~ Identifier ~ ("=" ~ Expression)
 InferredLetStatement = { LetKeyword ~ MutKeyword? ~ Identifier ~ "=" ~ Expression ~ ";" }
 TypeAnnotation = { ":" ~ BeskidType }
 
-ReturnStatement = { "return" ~ Expression? ~ ";" }
-BreakStatement = { "break" ~ ";" }
-ContinueStatement = { "continue" ~ ";" }
+ReturnStatement = { KwReturn ~ Expression? ~ ";" }
+BreakStatement = { KwBreak ~ ";" }
+ContinueStatement = { KwContinue ~ ";" }
 
-IfStatement = { "if" ~ Expression ~ Block ~ ElsePart? }
+IfStatement = { KwIf ~ Expression ~ Block ~ ElsePart? }
 ElsePart = { ElseKeyword ~ (IfStatement | Block) }
-WhileStatement = { "while" ~ Expression ~ Block }
-ForStatement = { "for" ~ Identifier ~ "in" ~ Expression ~ Block }
-RangeExpression = { "range" ~ "(" ~ Expression ~ "," ~ Expression ~ ")" }
+WhileStatement = { KwWhile ~ Expression ~ Block }
+ForStatement = { KwFor ~ Identifier ~ KwIn ~ Expression ~ Block }
+RangeExpression = { KwRange ~ "(" ~ Expression ~ "," ~ Expression ~ ")" }
 
 ExpressionStatement = { Expression ~ ";" }
 
@@ -368,9 +475,9 @@ CallExpression = { Identifier ~ "(" ~ ArgumentList? ~ ")" }
 ArgumentList = { Expression ~ ("," ~ Expression)* }
 ExpressionList = { Expression ~ ("," ~ Expression)* ~ ","? }
 
-MatchExpression = { "match" ~ Expression ~ "{" ~ (MatchArm ~ ("," ~ MatchArm?)*)? ~ "}" }
+MatchExpression = { KwMatch ~ Expression ~ "{" ~ (MatchArm ~ ("," ~ MatchArm?)*)? ~ "}" }
 MatchArm = { Pattern ~ MatchGuard? ~ "=>" ~ Expression }
-MatchGuard = { "when" ~ Expression }
+MatchGuard = { KwWhen ~ Expression }
 
 Pattern = { "_" | EnumPattern | Identifier | Literal }
 EnumPattern = { EnumPath ~ ("(" ~ PatternList? ~ ")")? }

@@ -1,0 +1,64 @@
+/// Optional `[Extern]` contracts: one names a library that is not installed, one names libc.
+/// The program loads in both cases; `Available()` selects the native or the pure path.
+use Testing.Assert;
+
+[Extern(Abi:"C", Library:"libbeskid-not-installed.so.1", Optional:true)]
+pub contract MissingNative {
+    bool Available();
+    i64 beskid_missing_symbol(i64 value);
+}
+
+[Extern(Abi:"C", Library:"libc.so.6", Optional:true)]
+pub contract PresentNative {
+    bool Available();
+    i64 labs(i64 value);
+}
+
+pub i64 MaybeMissing(i64 value) {
+    if MissingNative.Available() {
+        return MissingNative.beskid_missing_symbol(value);
+    }
+    return value + 1;
+}
+
+pub i64 Absolute(i64 value) {
+    if PresentNative.Available() {
+        return PresentNative.labs(value);
+    }
+    if value < 0 {
+        return 0 - value;
+    }
+    return value;
+}
+
+test missing_library_is_unavailable {
+    Assert.Equal<bool>(MissingNative.Available(), false, "the library is not installed");
+}
+
+test missing_library_takes_the_pure_path {
+    Assert.Equal<i64>(MaybeMissing(41), 42, "the pure fallback runs");
+}
+
+test present_library_is_available {
+    Assert.Equal<bool>(PresentNative.Available(), true, "libc provides labs");
+}
+
+test present_library_call_works {
+    Assert.Equal<i64>(Absolute(-5), 5, "labs runs natively");
+}
+
+pub i64 Main() {
+    if MissingNative.Available() {
+        return 1;
+    }
+    if MaybeMissing(41) != 42 {
+        return 2;
+    }
+    if PresentNative.Available() == false {
+        return 3;
+    }
+    if Absolute(-5) != 5 {
+        return 4;
+    }
+    return 0;
+}

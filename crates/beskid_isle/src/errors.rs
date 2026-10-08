@@ -30,6 +30,8 @@ pub enum LoweringErrorKind {
     NonExhaustiveMatch,
     InvalidBlockExpression,
     InvalidRangeFor,
+    /// A `clif { ... }` block failed surface, CLIF parsing, verification, or safety checks.
+    InvalidClifBlock(String),
 }
 
 #[derive(Clone, PartialEq, Eq)]
@@ -83,6 +85,7 @@ impl LoweringError {
             LoweringErrorKind::NonExhaustiveMatch => "NonExhaustiveMatch".to_owned(),
             LoweringErrorKind::InvalidBlockExpression => "InvalidBlockExpression".to_owned(),
             LoweringErrorKind::InvalidRangeFor => "InvalidRangeFor".to_owned(),
+            LoweringErrorKind::InvalidClifBlock(detail) => format!("InvalidClifBlock({detail})"),
         }
     }
 }

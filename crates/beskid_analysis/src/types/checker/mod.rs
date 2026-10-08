@@ -63,6 +63,10 @@ pub struct TypeChecker<'a> {
     pub(super) call_kinds: HashMap<AstNodeId, CallLoweringKind>,
     pub(super) contextual_expected_type: Option<TypeId>,
     pub(super) current_return_type: Option<TypeId>,
+    /// Parameters a `clif { ... }` block may name as `%N`, in lowered ABI order (a method's
+    /// receiver first, unit parameters omitted). `None` outside a function, method, or test body
+    /// and inside lambdas, where CLIF blocks are rejected.
+    pub(super) current_clif_parameters: Option<Vec<Option<TypeId>>>,
     pub(super) current_function_item: Option<ItemId>,
     pub(super) generic_params: HashMap<String, TypeId>,
     pub(super) current_receiver_item_id: Option<ItemId>,
@@ -132,6 +136,7 @@ impl<'a> TypeChecker<'a> {
             call_kinds: HashMap::new(),
             contextual_expected_type: None,
             current_return_type: None,
+            current_clif_parameters: None,
             current_function_item: None,
             generic_params: HashMap::new(),
             current_receiver_item_id: None,

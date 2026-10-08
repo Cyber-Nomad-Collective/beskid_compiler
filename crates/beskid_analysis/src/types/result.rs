@@ -103,6 +103,12 @@ pub enum TypeError {
     InvalidPrimitiveConversionArgument {
         span: SpanInfo,
     },
+    /// A `clif { ... }` block without a typed context, with an invalid surface, or naming a
+    /// parameter it may not use.
+    InvalidClifBlock {
+        span: SpanInfo,
+        detail: String,
+    },
     InvalidEventInvocationScope {
         span: SpanInfo,
     },
@@ -180,6 +186,10 @@ pub enum TypeError {
     ExternDisallowedReturnType {
         span: SpanInfo,
         method: String,
+        detail: String,
+    },
+    ExternInvalidOptional {
+        span: SpanInfo,
         detail: String,
     },
     // Contract conformance validation (TypeId-based `FunctionSignature` equality, run after
@@ -305,6 +315,9 @@ impl fmt::Display for TypeError {
             TypeError::InvalidPrimitiveConversionArgument { span } => {
                 write!(f, "invalid primitive conversion argument at {}", at(*span))
             }
+            TypeError::InvalidClifBlock { span, detail } => {
+                write!(f, "invalid clif block at {}: {detail}", at(*span))
+            }
             TypeError::InvalidEventInvocationScope { span } => {
                 write!(f, "invalid event invocation scope at {}", at(*span))
             }
@@ -380,6 +393,9 @@ impl fmt::Display for TypeError {
             }
             TypeError::ExternDisallowedReturnType { span, method, detail } => {
                 write!(f, "extern return type not allowed in `{method}` ({detail}) at {}", at(*span))
+            }
+            TypeError::ExternInvalidOptional { span, detail } => {
+                write!(f, "invalid optional extern contract ({detail}) at {}", at(*span))
             }
             TypeError::ContractMethodMissingImplementation { span, contract_name, method_name, .. } => {
                 write!(f, "missing implementation of `{contract_name}::{method_name}` at {}", at(*span))

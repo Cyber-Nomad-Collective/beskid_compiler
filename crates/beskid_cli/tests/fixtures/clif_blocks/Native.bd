@@ -1,0 +1,94 @@
+/// Native handoff fixture: CLIF blocks pass array payload pointers to foreign C code declared by
+/// C-ABI `[Extern]` contracts (libc and OpenSSL libcrypto).
+use Testing.Assert;
+
+[Extern(Abi:"C", Library:"libc.so.6")]
+pub contract NativeLibc {
+    i64 memcpy(i64 destination, i64 source, i64 count);
+    i64 memset(i64 destination, i32 value, i64 count);
+}
+
+[Extern(Abi:"C", Library:"libcrypto.so.3")]
+pub contract NativeCrypto {
+    i64 SHA256(i64 data, i64 count, i64 digest);
+}
+
+/// Copy `source` into `destination`. Precondition: `destination` is at least as long.
+pub unit Copy(u8[] destination, u8[] source) {
+    clif {
+        %d = payload %0
+        %s = payload %1
+        %n = length %1
+        %r = call @memcpy(%d, %s, %n) -> i64
+    };
+    return;
+}
+
+pub unit Fill(u8[] bytes, i32 value) {
+    clif {
+        %p = payload %0
+        %n = length %0
+        call @memset(%p, %1, %n)
+    };
+    return;
+}
+
+/// SHA-256 of `data` into `digest`. Precondition: `digest` holds 32 bytes.
+pub unit Sha256(u8[] data, u8[] digest) {
+    clif {
+        %p = payload %0
+        %n = length %0
+        %o = payload %1
+        call @SHA256(%p, %n, %o)
+    };
+    return;
+}
+
+test native_memcpy {
+    mut u8[] destination = [0_u8, 0_u8, 0_u8, 9_u8];
+    u8[] source = [1_u8, 2_u8, 3_u8];
+    Copy(destination, source);
+    Assert.Equal(destination[0], 1_u8, "first byte");
+    Assert.Equal(destination[2], 3_u8, "last copied byte");
+    Assert.Equal(destination[3], 9_u8, "byte past the copy");
+}
+
+test native_memset {
+    mut u8[] bytes = [0_u8, 0_u8, 0_u8];
+    Fill(bytes, 171);
+    Assert.Equal(bytes[0], 171_u8, "first byte");
+    Assert.Equal(bytes[2], 171_u8, "last byte");
+}
+
+test native_sha256 {
+    u8[] message = [97_u8, 98_u8, 99_u8];
+    mut u8[] digest = [0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8,
+        0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8];
+    Sha256(message, digest);
+    // SHA-256("abc") = ba7816bf ... f20015ad
+    Assert.Equal(digest[0], 186_u8, "first digest byte");
+    Assert.Equal(digest[1], 120_u8, "second digest byte");
+    Assert.Equal(digest[31], 173_u8, "last digest byte");
+}
+
+pub i64 Main() {
+    mut u8[] destination = [0_u8, 0_u8, 0_u8, 9_u8];
+    u8[] source = [1_u8, 2_u8, 3_u8];
+    Copy(destination, source);
+    if destination[2] != 3_u8 || destination[3] != 9_u8 {
+        return 1;
+    }
+    mut u8[] bytes = [0_u8, 0_u8];
+    Fill(bytes, 171);
+    if bytes[1] != 171_u8 {
+        return 2;
+    }
+    u8[] message = [97_u8, 98_u8, 99_u8];
+    mut u8[] digest = [0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8,
+        0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8];
+    Sha256(message, digest);
+    if digest[0] != 186_u8 || digest[31] != 173_u8 {
+        return 3;
+    }
+    return 0;
+}

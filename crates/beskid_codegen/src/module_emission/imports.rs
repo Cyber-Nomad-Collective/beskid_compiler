@@ -84,12 +84,12 @@ pub(super) fn runtime_intrinsic_symbols(input: &CodegenInput<'_>) -> HashMap<Dir
 fn collect_extern_contract_callees(
     db: &dyn beskid_queries::Db,
     key: AstNodeKey,
-    callees: &mut HashMap<DirectCallee, ExternImport>,
+    callees: &mut HashMap<DirectCallee, AstNodeKey>,
 ) {
     if let Ok(Some(CallLowering::Direct(declaration))) = call_lowering(db, key)
-        && let Some((symbol, abi, library)) = extern_contract_import_for_declaration(db, declaration)
+        && extern_contract_import_for_declaration(db, declaration).is_some()
     {
-        callees.entry(DirectCallee::item(declaration)).or_insert(ExternImport { symbol, abi, library });
+        callees.entry(DirectCallee::item(declaration)).or_insert(declaration);
     }
     if let Ok(Some(children)) = child_nodes(db, key) {
         for child in children.iter().copied() {
@@ -98,39 +98,109 @@ fn collect_extern_contract_callees(
     }
 }
 
-pub(super) fn extern_contract_symbols(
-    input: &CodegenInput<'_>,
-    items: &[ResolvedSyntaxModuleItem],
-) -> HashMap<DirectCallee, String> {
-    let mut callees = HashMap::new();
-    for item in items {
-        collect_extern_contract_callees(input.database(), item.key, &mut callees);
-    }
-    callees
-        .into_iter()
-        .map(|(callee, import)| {
-            let symbol = input.glue_import_callee_symbol(&callee);
-            (callee, symbol.unwrap_or(&import.symbol).to_owned())
-        })
-        .collect()
+/// The `bool Available()` query of one optional `[Extern]` contract that the program calls. The
+/// compiler defines `symbol` itself; it checks every C symbol in `members`.
+pub(super) struct AvailabilityQuery {
+    pub(super) symbol: String,
+    pub(super) members: Vec<(AstNodeKey, ExternImport)>,
 }
 
-pub(super) fn extern_contract_imports(
+/// `[Extern]` contract methods called by the lowered items: the symbol each call imports, the
+/// C imports they need, and the availability queries the compiler must define.
+pub(super) struct ExternContractCallees {
+    pub(super) symbols: HashMap<DirectCallee, String>,
+    pub(super) imports: Vec<ExternImport>,
+    pub(super) availability: Vec<AvailabilityQuery>,
+}
+
+pub(super) fn extern_contract_callees(
     input: &CodegenInput<'_>,
     items: &[ResolvedSyntaxModuleItem],
-) -> Vec<ExternImport> {
+) -> ExternContractCallees {
+    let db = input.database();
     let mut callees = HashMap::new();
     for item in items {
-        collect_extern_contract_callees(input.database(), item.key, &mut callees);
+        collect_extern_contract_callees(db, item.key, &mut callees);
     }
-    callees
-        .into_iter()
-        .map(|(callee, mut import)| {
-            if let Some(symbol) = input.glue_import_callee_symbol(&callee) {
-                import.symbol = symbol.to_owned();
-                import.library = None;
+    let mut ordered = callees.into_iter().collect::<Vec<_>>();
+    ordered.sort_by_cached_key(|(_, declaration)| beskid_queries::format_ast_node_key(db, *declaration));
+    let mut result =
+        ExternContractCallees { symbols: HashMap::new(), imports: Vec::new(), availability: Vec::new() };
+    for (callee, declaration) in ordered {
+        let Some(import) = extern_contract_import_for_declaration(db, declaration) else {
+            continue;
+        };
+        if import.availability_query {
+            let symbol = format!("__beskid_extern_available_{}", result.availability.len());
+            let members = beskid_queries::optional_extern_contract_members(db, declaration)
+                .unwrap_or_default()
+                .into_iter()
+                .map(|(key, member)| (key, extern_import(member)))
+                .collect();
+            result.symbols.insert(callee, symbol.clone());
+            result.availability.push(AvailabilityQuery { symbol, members });
+            continue;
+        }
+        let mut import = extern_import(import);
+        // An admitted Rust Glue import replaces the declared C symbol and is linked from the
+        // owner image, not from the contract's `Library`.
+        if let Some(symbol) = input.glue_import_callee_symbol(&callee) {
+            import.symbol = symbol.to_owned();
+            import.library = None;
+        }
+        result.symbols.insert(callee, import.symbol.clone());
+        if !result.imports.iter().any(|existing: &ExternImport| existing.symbol == import.symbol) {
+            result.imports.push(import);
+        }
+    }
+    result
+}
+
+fn extern_import(import: beskid_queries::ExternContractImport) -> ExternImport {
+    ExternImport { symbol: import.symbol, abi: import.abi, library: import.library, optional: import.optional }
+}
+
+/// Authorize `clif { call @symbol(...) }` callees by declaration: a symbol that no lowered
+/// function defines and no other import supplies is admitted when some unit declares it as a
+/// method of a C-ABI `[Extern(Abi: "C", Library: "...")]` contract. A source call through the
+/// contract is not required. Runtime- and host-owned names are never admitted this way.
+pub(super) fn clif_declared_extern_imports(
+    input: &CodegenInput<'_>,
+    functions: &[crate::LoweredFunction],
+    known: &[ExternImport],
+) -> Vec<ExternImport> {
+    let defined = functions.iter().map(|function| function.name.as_str()).collect::<HashSet<_>>();
+    let mut unresolved = std::collections::BTreeSet::new();
+    for function in functions {
+        for (_, external) in function.function.dfg.ext_funcs.iter() {
+            let ExternalName::TestCase(name) = &external.name else {
+                continue;
+            };
+            let symbol = String::from_utf8_lossy(name.raw()).into_owned();
+            if !defined.contains(symbol.as_str()) && !known.iter().any(|import| import.symbol == symbol) {
+                unresolved.insert(symbol);
             }
-            import
+        }
+    }
+    if unresolved.is_empty() {
+        return Vec::new();
+    }
+    let db = input.database();
+    let mut declarations = HashMap::new();
+    for unit in input.typed_program().assembly.units.iter() {
+        let unit = beskid_queries::SourceUnitId::new(db, unit.path.clone());
+        for import in beskid_queries::extern_contract_declarations_in_unit(db, unit) {
+            declarations.entry(import.symbol.clone()).or_insert(import);
+        }
+    }
+    unresolved
+        .into_iter()
+        .filter_map(|symbol| {
+            let import = declarations.remove(&symbol)?;
+            let authorized = import.abi.as_deref() == Some("C")
+                && import.library.as_deref().is_some_and(|library| !library.is_empty())
+                && !beskid_abi::is_runtime_owned_ffi_symbol(&symbol);
+            authorized.then(|| extern_import(import))
         })
         .collect()
 }

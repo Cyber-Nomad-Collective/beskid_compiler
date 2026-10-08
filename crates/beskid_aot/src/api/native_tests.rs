@@ -14,6 +14,7 @@ pub struct NativeTestObject {
     initialization: Option<super::glue::CompiledDynamicInitialization>,
     control: super::NativeExecutionControl,
     external_libraries: Vec<String>,
+    optional_libraries: Vec<crate::linker::OptionalLinkLibrary>,
     library_search_paths: Vec<PathBuf>,
 }
 
@@ -30,6 +31,7 @@ pub fn emit_native_test_object(
     control.check("emit_object")?;
     let target = kit.target.triple.as_str().to_owned();
     super::validation::validate_extern_libraries(prepared.artifact(), &external_libraries)?;
+    let optional_libraries = super::validation::optional_link_libraries(prepared.artifact(), &external_libraries);
     let core_args = super::validation::core_args_entry_adapter(prepared.artifact(), &target)?;
     let mut entries = HashMap::new();
     let mut linked = HashSet::new();
@@ -90,6 +92,7 @@ pub fn emit_native_test_object(
         initialization,
         control,
         external_libraries,
+        optional_libraries,
         library_search_paths,
     })
 }
@@ -133,6 +136,7 @@ impl NativeTestObject {
                 link_mode: LinkMode::Auto,
                 verbose: false,
                 external_libraries: merged_link_libraries(&self.external_libraries, &self.runtime.platform_libraries),
+                optional_libraries: self.optional_libraries.clone(),
                 library_search_paths: self.library_search_paths.clone(),
             },
             Some(&self.control),

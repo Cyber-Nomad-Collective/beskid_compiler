@@ -83,7 +83,18 @@ pub struct LinkRequest {
     pub link_mode: LinkMode,
     pub verbose: bool,
     pub external_libraries: Vec<String>,
+    /// Libraries of optional `[Extern]` contracts. Each is linked only when the linker can find
+    /// it; otherwise its symbols stay weak undefined references that resolve to null.
+    pub optional_libraries: Vec<OptionalLinkLibrary>,
     pub library_search_paths: Vec<PathBuf>,
+}
+
+/// A library named by an `[Extern(..., Optional:true)]` contract, with the symbols the object
+/// references from it as weak undefined symbols.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OptionalLinkLibrary {
+    pub library: String,
+    pub symbols: Vec<String>,
 }
 
 /// Successful link or archive merge: output path, echoed command line, and export list carried through.

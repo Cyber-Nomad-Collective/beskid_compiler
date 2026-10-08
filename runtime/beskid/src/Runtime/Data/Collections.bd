@@ -84,6 +84,9 @@ pub pointer AllocateArrayRooted(pointer request, pointer rootHandleOut) {
 pub pointer TryAllocateArrayRooted(pointer request, pointer rootHandleOut) {
     return AllocateArrayRootedWithPolicy(request, rootHandleOut, true);
 }
+// Smallest capacity a grown array receives, so appends to an empty array do not reallocate for
+// each of the first few elements.
+const ARRAY_MINIMUM_GROWN_CAPACITY = 4;
 
 // Grows a descriptor-backed array into a distinct rooted object. The ABI-visible array starts
 // after the GC header and hidden element descriptor; the construction handle roots the object.
@@ -135,23 +138,24 @@ pub pointer GrowArrayRootedWithPolicy(pointer array, word minimumCapacity, point
     if length != 0 && copyBytes / stride != length {
         return NativePointer(0);
     }
-    // Reserve geometrically so repeated Append copies a linear aggregate
-    // number of elements. The caller supplies a minimum, not an exact capacity.
-    mut word newCapacity = minimumCapacity;
-    mut word doubled = capacity * 2;
-    if capacity == 0 { doubled = 4; }
-    if doubled >= capacity && doubled > newCapacity { newCapacity = doubled; }
-    word preferredBytes = stride * newCapacity;
-    word preferredTotal = preferredBytes + 48;
-    word preferredAligned = AlignUp(preferredTotal, TypeDescriptorAlignment(descriptor));
-    if (newCapacity != 0 && preferredBytes / newCapacity != stride) ||
-       preferredTotal < preferredBytes || preferredAligned < preferredTotal {
-        // Near address-space limits, geometric headroom may overflow while the
-        // exact requested capacity remains representable.
-        newCapacity = minimumCapacity;
+    // Geometric growth: the replacement doubles the current capacity (at least
+    // ARRAY_MINIMUM_GROWN_CAPACITY elements), so repeated appends copy each element O(1) times
+    // amortized instead of once per append. When the doubled size overflows, fall back to the
+    // exact requested capacity, whose own overflow checks follow.
+    mut word targetCapacity = minimumCapacity;
+    word doubled = capacity * 2;
+    if doubled / 2 == capacity && doubled > targetCapacity {
+        targetCapacity = doubled;
     }
-    word backingSize = stride * newCapacity;
-    if newCapacity != 0 && backingSize / stride != newCapacity {
+    if targetCapacity < ARRAY_MINIMUM_GROWN_CAPACITY {
+        targetCapacity = ARRAY_MINIMUM_GROWN_CAPACITY;
+    }
+    word geometricBacking = stride * targetCapacity;
+    if geometricBacking / stride != targetCapacity || geometricBacking + 48 < geometricBacking {
+        targetCapacity = minimumCapacity;
+    }
+    word backingSize = stride * targetCapacity;
+    if targetCapacity != 0 && backingSize / stride != targetCapacity {
         return NativePointer(0);
     }
     word totalSize = backingSize + 48;
@@ -187,7 +191,7 @@ pub pointer GrowArrayRootedWithPolicy(pointer array, word minimumCapacity, point
     }
     raw_word_store(replacement, NativeWord(replacementData));
     raw_word_store(pointer_add(replacement, 8), length);
-    raw_word_store(pointer_add(replacement, 16), newCapacity);
+    raw_word_store(pointer_add(replacement, 16), targetCapacity);
 
     mut word handle = 0;
     if checked { handle = GcTryRootHandle(replacementObject); } else { handle = GcRootHandle(replacementObject); }

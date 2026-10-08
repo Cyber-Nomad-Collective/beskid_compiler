@@ -5,7 +5,10 @@ mod facts;
 mod generics;
 mod resolution;
 
-pub use resolution::extern_contract_import_for_declaration;
+pub use resolution::{
+    ExternContractImport, extern_contract_declarations_in_unit, extern_contract_import_for_declaration,
+    optional_extern_contract_members,
+};
 
 pub(in crate::semantic_contract) use casts::{
     abi_semantic_type, canonical_intrinsic_parameter_type, cast_intents_for_node, cast_intents_tracked,

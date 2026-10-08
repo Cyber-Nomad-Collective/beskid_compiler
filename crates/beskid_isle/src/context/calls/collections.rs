@@ -47,7 +47,7 @@ impl IsleContext<'_, '_, '_, '_> {
                 u32::try_from(index).ok()?.checked_mul(layout.stride).and_then(|offset| i32::try_from(offset).ok())?;
             let address = self.builder.ins().iadd_imm_s(data, i64::from(offset));
             self.builder.ins().store(MemFlagsData::new(), value, address, 0);
-            if layout.element_type == pointer {
+            if layout.needs_write_barrier(pointer) {
                 let barrier = self.import_runtime_helper(
                     "beskid_rt_v5_array_write_barrier",
                     &[pointer, pointer],
@@ -81,6 +81,74 @@ impl IsleContext<'_, '_, '_, '_> {
         let call = self.builder.ins().call(function, &[array]);
         self.release_expression_root(Some(root))?;
         self.builder.inst_results(call).first().copied()
+    }
+
+    /// Lower a sized compiler-owned allocation (`Array.Zeroed<T>(length)`): one rooted runtime
+    /// allocation of `length` zero-filled elements, with length and capacity both `length`.
+    ///
+    /// The static request emitted for the call carries the element descriptor and length zero.
+    /// It is copied to a stack slot whose length word receives the run-time count, so no element
+    /// is appended one at a time. A negative count is a bounds trap. Every element is zero (null
+    /// for pointer elements), so no element store or write barrier runs before the construction
+    /// root is released.
+    pub(in crate::context) fn emit_sized_array_allocation(
+        &mut self,
+        key: AstNodeKey,
+        length_key: AstNodeKey,
+    ) -> Option<Value> {
+        let layout = self.facts.array_layout(key)?;
+        let allocation = self.facts.managed_array_allocation(key)?;
+        if !layout.is_valid() || layout.length != 0 {
+            self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidArrayLayout });
+            return None;
+        }
+        let pointer = dispatch::pointer_type(self.frontend_config);
+        let word_bytes = i32::try_from(pointer.bytes()).ok()?;
+        let length = generated::constructor_lower_expression(self, length_key)?;
+        let length_type = self.builder.func.dfg.value_type(length);
+        if !length_type.is_int() || length_type.bits() > pointer.bits() {
+            self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidArrayLayout });
+            return None;
+        }
+        let length = if length_type.bits() < pointer.bits() {
+            self.builder.ins().sextend(pointer, length)
+        } else {
+            length
+        };
+        let negative = self.builder.ins().icmp_imm_s(IntCC::SignedLessThan, length, 0);
+        self.builder.ins().trapnz(negative, TrapCode::HEAP_OUT_OF_BOUNDS);
+        // BeskidArrayAllocationRequest: { element, length, descriptor, reserved } native words.
+        let static_request = self.symbol_global(allocation.allocation_request_symbol.as_ref(), pointer)?;
+        let request_slot = self.builder.create_sized_stack_slot(StackSlotData::new(
+            StackSlotKind::ExplicitSlot,
+            pointer.bytes() * 4,
+            pointer.bytes().ilog2() as u8,
+        ));
+        for word in [0, 2, 3] {
+            let offset = word * word_bytes;
+            let value = self.builder.ins().load(pointer, MemFlagsData::new(), static_request, offset);
+            self.builder.ins().stack_store(pointer, value, request_slot, offset);
+        }
+        self.builder.ins().stack_store(pointer, length, request_slot, word_bytes);
+        let request = self.builder.ins().stack_addr(pointer, request_slot, 0);
+        let root_slot = self.builder.create_sized_stack_slot(StackSlotData::new(
+            StackSlotKind::ExplicitSlot,
+            pointer.bytes(),
+            pointer.bytes().ilog2() as u8,
+        ));
+        let root_address = self.builder.ins().stack_addr(pointer, root_slot, 0);
+        let allocate =
+            self.import_runtime_helper("beskid_rt_v5_array_allocate_rooted", &[pointer, pointer], Some(pointer))?;
+        let call = self.builder.ins().call(allocate, &[request, root_address]);
+        let array = self.builder.inst_results(call).first().copied()?;
+        self.builder.ins().trapz(array, TrapCode::unwrap_user(5));
+        let root_handle = self.builder.ins().stack_load(pointer, pointer, root_slot, 0);
+        let finish =
+            self.import_runtime_helper("beskid_rt_v5_array_construction_finish", &[pointer], Some(types::I8))?;
+        let finish_call = self.builder.ins().call(finish, &[root_handle]);
+        let released = self.builder.inst_results(finish_call).first().copied()?;
+        self.builder.ins().trapz(released, TrapCode::unwrap_user(10));
+        Some(array)
     }
 
     pub(in crate::context) fn emit_collection_operation_value(&mut self, key: AstNodeKey) -> Option<Value> {

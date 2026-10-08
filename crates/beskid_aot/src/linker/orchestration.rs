@@ -4,7 +4,9 @@ use crate::api::{BuildOutputKind, LinkMode};
 use crate::error::{AotError, AotResult};
 
 use super::common::{append_static_archive, detect_c_compiler, format_link_command, format_link_detail};
-use super::policy::{append_export_policy_flags, append_external_libraries, append_library_search_paths};
+use super::policy::{
+    append_export_policy_flags, append_external_libraries, append_library_search_paths, append_optional_libraries,
+};
 use super::unix::archive_static;
 use super::windows::link_windows;
 use super::{LinkRequest, LinkResult};
@@ -128,6 +130,7 @@ pub(crate) fn unix_link_command(req: &LinkRequest, target: &str, compiler: &str)
     cmd.arg("-o").arg(&req.output_path);
     append_library_search_paths(req, target, &mut cmd)?;
     append_external_libraries(req, target, &mut cmd)?;
+    append_optional_libraries(req, target, compiler, &mut cmd)?;
 
     if matches!(req.output_kind, BuildOutputKind::SharedLib) {
         cmd.arg("-shared");
@@ -184,6 +187,7 @@ mod runtime_input_v06_tests {
             link_mode: LinkMode::PreferDynamic,
             verbose: false,
             external_libraries: Vec::new(),
+            optional_libraries: Vec::new(),
             library_search_paths: Vec::new(),
         };
         let command = unix_link_command(&req, "x86_64-apple-darwin", "cc").unwrap();

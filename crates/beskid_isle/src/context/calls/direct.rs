@@ -49,7 +49,8 @@ impl IsleContext<'_, '_, '_, '_> {
         let mut arguments = Vec::with_capacity(argument_keys.len());
         let mut roots = Vec::with_capacity(argument_keys.len());
         let mut parameters = source_signature.params.iter();
-        for argument in argument_keys {
+        let trivial = argument_keys.iter().map(|argument| self.is_trivial_call_argument(*argument)).collect::<Vec<_>>();
+        for (position, argument) in argument_keys.into_iter().enumerate() {
             if self.facts.semantic_type(argument) == Some(beskid_queries::SemanticTypeId::UNIT) {
                 self.lower_expression_for_effect(argument)?;
                 continue;
@@ -62,7 +63,17 @@ impl IsleContext<'_, '_, '_, '_> {
                 self.adapt_scalar_boundary(argument, value, parameter.value_type)
                     .or_else(|| self.materialize_canonical_runtime_direct_constant(argument, parameter.value_type))?
             };
-            roots.push(self.root_expression_value_if_needed(argument, value)?);
+            // A rooted local keeps its own root slot for the whole call unless it is reassigned
+            // first. Only later arguments run between this read and the call; when they are all
+            // trivial (no call, no assignment), the snapshot root is redundant. During the call the
+            // callee either roots its parameter on entry or is a leaf that cannot collect.
+            let later_arguments_trivial = trivial.get(position + 1..).is_some_and(|later| later.iter().all(|t| *t));
+            let root = if later_arguments_trivial && self.is_rooted_local_read(argument) {
+                None
+            } else {
+                self.root_expression_value_if_needed(argument, value)?
+            };
+            roots.push(root);
             arguments.push(value);
         }
         if parameters.next().is_some() {
@@ -83,6 +94,41 @@ impl IsleContext<'_, '_, '_, '_> {
             self.release_expression_root(root)?;
         }
         Some((call, source_signature))
+    }
+
+    /// A local read whose binding owns a registered GC root slot.
+    fn is_rooted_local_read(&self, key: AstNodeKey) -> bool {
+        self.facts.node_kind(key) == Some(NodeKind::PathExpression)
+            && self.facts.field_index(key).is_none()
+            && self.facts.block_result(key).is_none()
+            && self.facts.local_slot(key).and_then(|slot| self.locals.get(&slot)).is_some_and(|binding| {
+                binding.managed_reference == ManagedReferenceFact::GcManaged && binding.root_slot.is_some()
+            })
+    }
+
+    /// An argument whose lowering emits no call and assigns no local: a plain local read or a
+    /// scalar literal.
+    fn is_trivial_call_argument(&self, key: AstNodeKey) -> bool {
+        match self.facts.node_kind(key) {
+            Some(NodeKind::PathExpression) => {
+                self.facts.field_index(key).is_none()
+                    && self.facts.block_result(key).is_none()
+                    && self.facts.local_slot(key).is_some_and(|slot| self.locals.contains_key(&slot))
+            }
+            Some(NodeKind::LiteralExpression) => matches!(
+                self.facts.semantic_type(key),
+                Some(
+                    beskid_queries::SemanticTypeId::BOOL
+                        | beskid_queries::SemanticTypeId::U8
+                        | beskid_queries::SemanticTypeId::I32
+                        | beskid_queries::SemanticTypeId::U32
+                        | beskid_queries::SemanticTypeId::I64
+                        | beskid_queries::SemanticTypeId::F64
+                        | beskid_queries::SemanticTypeId::CHAR
+                )
+            ),
+            _ => false,
+        }
     }
 
     fn adapt_corelib_service_call(

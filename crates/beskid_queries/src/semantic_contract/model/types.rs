@@ -141,7 +141,12 @@ pub enum CollectionOperation {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct TypedArrayAllocation {
     pub element_parameter: Arc<str>,
+    /// Static element count of the allocation request (always zero for `Array.Empty`).
     pub length: u64,
+    /// True for the sized form `__array_new<T>(length)` used by canonical `Array.Zeroed`: the
+    /// call's single argument supplies the element count at run time, and the static request
+    /// (length zero) only carries the element descriptor.
+    pub sized: bool,
 }
 
 /// Backend-relevant call classification, detached from legacy HIR nodes.

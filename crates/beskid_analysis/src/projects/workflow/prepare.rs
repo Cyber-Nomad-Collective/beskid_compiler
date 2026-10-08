@@ -3,7 +3,7 @@ use std::{
     path::{Component, Path, PathBuf},
 };
 
-use beskid_abi::{corelib_bundle::verified_corelib_bundle_root, runtime_kit::installed_corelib_root};
+use beskid_abi::{corelib_bundle::corelib_bundle_marker_root, runtime_kit::installed_corelib_root};
 use beskid_pipeline::{
     PipelineObserver, observe_phase_result,
     phases::{
@@ -32,12 +32,12 @@ use crate::projects::{
 pub(super) fn portable_entry_for_dependency(
     plan: &ProjectWorkspacePlan,
     dependency: &ResolvedDependencyProject,
-    verified_corelib_root: Option<&Path>,
+    corelib_lock_root: Option<&Path>,
 ) -> Result<ProjectLockDependencyEntry, ProjectError> {
-    let verified_corelib_root = verified_corelib_root
+    let corelib_lock_root = corelib_lock_root
         .and_then(|root| root.canonicalize().ok())
         .filter(|root| dependency.project_root.canonicalize().is_ok_and(|project| project.starts_with(root)));
-    let (source, anchor) = match verified_corelib_root.as_deref() {
+    let (source, anchor) = match corelib_lock_root.as_deref() {
         Some(root) => (ProjectLockSource::Corelib, root),
         None => (ProjectLockSource::Path, plan.project_root.as_path()),
     };
@@ -95,12 +95,18 @@ fn relative_lock_path(base: &Path, target: &Path, field: &str, external_project:
     Ok(value)
 }
 
-pub(crate) fn verified_installed_corelib_root() -> Option<PathBuf> {
+/// The installed Corelib bundle root used to anchor portable `source=corelib` lock entries.
+///
+/// The marker locates the managed bundle layout; its whole-tree hash is not required here.
+/// Lock entries are replay hints whose identity is re-checked against the resolved graph, and
+/// Corelib service authority is decided per service file, so a bundle with additional files or
+/// packages keeps portable locks.
+pub(crate) fn installed_corelib_lock_root() -> Option<PathBuf> {
     let installed = installed_corelib_root().ok()?.canonicalize().ok()?;
     let aggregate =
         if installed.join("beskid_corelib").is_dir() { installed.join("beskid_corelib") } else { installed.clone() };
-    let verified = verified_corelib_bundle_root(&aggregate)?;
-    (verified.starts_with(&installed) || installed.starts_with(&verified)).then_some(verified)
+    let marked = corelib_bundle_marker_root(&aggregate)?;
+    (marked.starts_with(&installed) || installed.starts_with(&marked)).then_some(marked)
 }
 
 pub fn prepare_project_workspace(plan: &CompilePlan) -> Result<PreparedProjectWorkspace, ProjectError> {

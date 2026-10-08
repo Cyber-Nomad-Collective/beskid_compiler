@@ -58,7 +58,11 @@ impl<'a> TypeChecker<'a> {
             return None;
         }
 
-        let return_type = self.type_expression(&lambda.node.body)?;
+        // A lambda lowers to its own function; enclosing `%N` parameters are not in scope.
+        let previous_clif_parameters = self.current_clif_parameters.take();
+        let return_type = self.type_expression(&lambda.node.body);
+        self.current_clif_parameters = previous_clif_parameters;
+        let return_type = return_type?;
         if let Some((_, expected_return, _)) = expected_signature {
             self.require_same_type(lambda.node.body.span, expected_return, return_type);
         }

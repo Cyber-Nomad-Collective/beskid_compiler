@@ -5,7 +5,9 @@ use crate::api::BuildOutputKind;
 use crate::error::{AotError, AotResult};
 
 use super::common::format_link_detail;
-use super::policy::{append_export_policy_flags, append_external_libraries, append_library_search_paths};
+use super::policy::{
+    append_export_policy_flags, append_external_libraries, append_library_search_paths, append_optional_libraries,
+};
 use super::{LinkRequest, LinkResult};
 
 fn windows_import_library_path(shared_library: &Path) -> PathBuf {
@@ -151,6 +153,7 @@ fn windows_link_command(req: &LinkRequest, target: &str, linker: &str) -> AotRes
     }
     append_library_search_paths(req, target, &mut cmd)?;
     append_external_libraries(req, target, &mut cmd)?;
+    append_optional_libraries(req, target, linker, &mut cmd)?;
     if req.output_kind == BuildOutputKind::SharedLib {
         append_export_policy_flags(req, target, &mut cmd)?;
     }
@@ -159,6 +162,32 @@ fn windows_link_command(req: &LinkRequest, target: &str, linker: &str) -> AotRes
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn optional_extern_libraries_fail_closed_on_windows() {
+        let request = LinkRequest {
+            target_triple: Some("x86_64-pc-windows-msvc".into()),
+            output_kind: BuildOutputKind::Exe,
+            output_path: "app.exe".into(),
+            object_path: "app.obj".into(),
+            additional_object_paths: Vec::new(),
+            runtime: None,
+            host_staticlib: None,
+            entrypoint_symbol: "main".into(),
+            exported_symbols: Vec::new(),
+            link_mode: crate::api::LinkMode::Auto,
+            verbose: false,
+            external_libraries: Vec::new(),
+            optional_libraries: vec![crate::linker::OptionalLinkLibrary {
+                library: "libcrypto-3-x64.dll".into(),
+                symbols: vec!["SHA256".into()],
+            }],
+            library_search_paths: Vec::new(),
+        };
+        let error = windows_link_command(&request, "x86_64-pc-windows-msvc", "link.exe")
+            .expect_err("optional contracts are rejected for Windows");
+        assert!(error.to_string().contains("optional [Extern]"), "{error}");
+    }
+
     use std::path::{Path, PathBuf};
 
     use crate::api::{BuildOutputKind, LinkMode};
@@ -191,6 +220,7 @@ mod tests {
                 link_mode: LinkMode::Auto,
                 verbose: false,
                 external_libraries: vec!["kernel32".into()],
+                optional_libraries: Vec::new(),
                 library_search_paths: vec![PathBuf::from("sdk/lib")],
             },
             "x86_64-pc-windows-msvc",
@@ -241,6 +271,7 @@ mod tests {
                 link_mode: LinkMode::Auto,
                 verbose: false,
                 external_libraries: vec!["kernel32".into()],
+                optional_libraries: Vec::new(),
                 library_search_paths: Vec::new(),
             },
             "x86_64-pc-windows-msvc",

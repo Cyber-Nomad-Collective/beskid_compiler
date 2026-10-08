@@ -212,7 +212,7 @@ fn resolved_foundation_source_root_still_trusts_materialized_assert() {
 }
 
 #[test]
-fn verified_installed_corelib_bundle_preserves_slice_service_provenance() {
+fn installed_corelib_slice_keeps_service_provenance_per_file() {
     let source = beskid_abi::runtime_source::canonical_corelib_service_sources()
         .into_iter()
         .find(|source| source.logical_path == "Core/Bytes/Slice.bd")
@@ -282,9 +282,23 @@ fn verified_installed_corelib_bundle_preserves_slice_service_provenance() {
     copied_plan.dependency_projects[0].project_root = copied_project.clone();
     copied_plan.dependency_projects[0].manifest_path = copied_project.join("foundation.bproj");
     copied_plan.dependency_projects[0].source_root = copied_source_root;
+    assert_eq!(
+        trusted_corelib_service_paths(&copied_plan, &roots, std::slice::from_ref(&unit)),
+        Arc::from([materialized_source.clone()]),
+        "an unmarked Corelib copy keeps Slice authority because the service file is canonical"
+    );
+
+    let misplaced_project = project_root.join("user-copy/foundation");
+    let misplaced_source_root = misplaced_project.join("src");
+    write_bd(&misplaced_source_root, relative.to_str().unwrap(), &source.source);
+    write_bd(&misplaced_project, "foundation.bproj", "name = \"corelib_foundation\"\n");
+    let mut misplaced_plan = plan.clone();
+    misplaced_plan.dependency_projects[0].project_root = misplaced_project.clone();
+    misplaced_plan.dependency_projects[0].manifest_path = misplaced_project.join("foundation.bproj");
+    misplaced_plan.dependency_projects[0].source_root = misplaced_source_root;
     assert!(
-        trusted_corelib_service_paths(&copied_plan, &roots, std::slice::from_ref(&unit)).is_empty(),
-        "a user copy of Slice without the verified installed bundle cannot gain service provenance"
+        trusted_corelib_service_paths(&misplaced_plan, &roots, std::slice::from_ref(&unit)).is_empty(),
+        "a canonical Slice outside `packages/foundation` cannot gain service provenance"
     );
 
     fs::remove_file(&materialized_source).expect("remove materialized Slice before symlinking");
@@ -304,16 +318,22 @@ fn verified_installed_corelib_bundle_preserves_slice_service_provenance() {
     write_bd(&materialized_source_root, relative.to_str().unwrap(), &source.source);
 
     write_bd(&bundle_root, "README.md", "bundle content changed after marker creation\n");
+    assert_eq!(
+        trusted_corelib_service_paths(&plan, &roots, std::slice::from_ref(&unit)),
+        Arc::from([materialized_source.clone()]),
+        "a stale bundle fingerprint does not affect per-file service authority"
+    );
+    fs::write(&installed_source, format!("{}\n// modified\n", source.source)).expect("modify installed Slice");
     assert!(
         trusted_corelib_service_paths(&plan, &roots, std::slice::from_ref(&unit)).is_empty(),
-        "a stale bundle fingerprint cannot authorize compiler service calls"
+        "a modified installed Slice cannot authorize compiler service calls"
     );
     assert!(installed_source.is_file());
     let _ = fs::remove_dir_all(project_root);
 }
 
 #[test]
-fn verified_installed_corelib_bundle_preserves_assert_service_provenance() {
+fn installed_corelib_assert_keeps_service_provenance_per_file() {
     let source = beskid_abi::runtime_source::canonical_corelib_service_sources()
         .into_iter()
         .find(|source| source.logical_path == "Testing/Assert.bd")
@@ -488,7 +508,7 @@ impl Drop for InstalledFiberAuthorityFixture {
 }
 
 #[test]
-fn verified_installed_corelib_bundle_preserves_fiber_service_provenance_after_compiler_relocation() {
+fn installed_corelib_fiber_keeps_service_provenance_after_compiler_relocation() {
     let fixture = InstalledFiberAuthorityFixture::new("relocated_installed_fiber", "packages/concurrency");
     let unit = fixture.unit();
 
@@ -500,20 +520,54 @@ fn verified_installed_corelib_bundle_preserves_fiber_service_provenance_after_co
 }
 
 #[test]
-fn unverified_installed_fiber_cannot_gain_service_provenance() {
-    let fixture = InstalledFiberAuthorityFixture::new("unverified_installed_fiber", "packages/concurrency");
+fn unmarked_installed_fiber_keeps_service_provenance_by_canonical_content() {
+    let fixture = InstalledFiberAuthorityFixture::new("unmarked_installed_fiber", "packages/concurrency");
     fs::remove_file(fixture.bundle_root.join(".beskid-bundle.sha256")).expect("remove bundle fingerprint");
 
-    assert!(fixture.trusted_paths(&fixture.unit()).is_empty());
+    assert_eq!(fixture.trusted_paths(&fixture.unit()), Arc::from([fixture.materialized_source.clone()]));
 }
 
 #[test]
-fn tampered_installed_corelib_bundle_cannot_gain_fiber_service_provenance() {
-    let fixture = InstalledFiberAuthorityFixture::new("tampered_installed_fiber", "packages/concurrency");
+fn changed_non_service_bundle_file_keeps_fiber_service_provenance() {
+    let fixture = InstalledFiberAuthorityFixture::new("changed_bundle_readme_fiber", "packages/concurrency");
     fs::write(fixture.bundle_root.join("README.md"), "bundle changed after fingerprinting\n")
-        .expect("tamper complete installed bundle");
+        .expect("change a non-service bundle file");
 
-    assert!(fixture.trusted_paths(&fixture.unit()).is_empty());
+    assert_eq!(fixture.trusted_paths(&fixture.unit()), Arc::from([fixture.materialized_source.clone()]));
+}
+
+#[test]
+fn extra_corelib_package_keeps_fiber_service_provenance() {
+    let fixture = InstalledFiberAuthorityFixture::new("extra_package_fiber", "packages/concurrency");
+    write_bd(
+        &fixture.bundle_root,
+        "packages/extra/src/Extra/Dummy.bd",
+        "pub mod Extra.Dummy;\npub i64 Answer() { return 42; }\n",
+    );
+    write_bd(&fixture.bundle_root, "packages/extra/corelib_extra.bproj", "corelib_extra { name = \"corelib_extra\" }\n");
+    write_bd(&fixture.bundle_root, "packages/concurrency/src/Concurrency/Extra.bd", "pub i64 Extra() { return 1; }\n");
+
+    assert_eq!(
+        fixture.trusted_paths(&fixture.unit()),
+        Arc::from([fixture.materialized_source.clone()]),
+        "additional packages and files beside a canonical service must not revoke its authority"
+    );
+}
+
+#[test]
+fn modified_installed_fiber_loses_service_provenance() {
+    let fixture = InstalledFiberAuthorityFixture::new("modified_installed_fiber", "packages/concurrency");
+    fs::write(&fixture.installed_source, format!("{}\n// modified installed source\n", fixture.source.source))
+        .expect("modify installed Fiber");
+    let fingerprint = beskid_abi::corelib_bundle::fingerprint_corelib_bundle_dir(&fixture.bundle_root)
+        .expect("refingerprint modified bundle");
+    fs::write(fixture.bundle_root.join(".beskid-bundle.sha256"), format!("{fingerprint}\n"))
+        .expect("write matching fingerprint for the modified bundle");
+
+    assert!(
+        fixture.trusted_paths(&fixture.unit()).is_empty(),
+        "a modified service file loses authority even under a matching bundle fingerprint"
+    );
 }
 
 #[test]
@@ -1680,7 +1734,10 @@ fn checking_the_compiler_foundation_package_directly_trusts_its_materialized_ser
         "the compiler Foundation package checked directly keeps its own service provenance"
     );
 
-    let copied_project = workspace_root.join("copy/packages/foundation");
+    // Per-file authority admits any `packages/foundation/src` copy whose service file is
+    // byte-identical to the embedded canonical source, so the negative case is a copy that sits
+    // outside the canonical `packages/<package>` layout.
+    let copied_project = workspace_root.join("copy/user/foundation");
     let copied_source_root = copied_project.join("src");
     write_bd(&copied_source_root, relative.to_str().expect("utf-8 relative path"), &source.source);
     let mut copied_plan = plan.clone();
@@ -1689,7 +1746,7 @@ fn checking_the_compiler_foundation_package_directly_trusts_its_materialized_ser
     copied_plan.source_root = copied_source_root;
     assert!(
         trusted_corelib_service_paths(&copied_plan, &roots, std::slice::from_ref(&unit)).is_empty(),
-        "a byte-exact copy of the Foundation package elsewhere cannot inherit service provenance"
+        "a byte-exact copy of the Foundation package outside `packages/foundation` cannot inherit service provenance"
     );
     let _ = fs::remove_dir_all(workspace_root);
 }

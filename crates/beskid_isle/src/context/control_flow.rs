@@ -96,6 +96,9 @@ impl IsleContext<'_, '_, '_, '_> {
             return Some(());
         }
 
+        if kind == NodeKind::ClifBlock {
+            return clif_block::lower_clif_block_for_effect(self, key);
+        }
         if self.facts.semantic_type(key) == Some(beskid_queries::SemanticTypeId::UNIT)
             && matches!(kind, NodeKind::FieldExpression | NodeKind::AssignExpression)
         {
@@ -191,68 +194,7 @@ macro_rules! generated_control_flow_methods {
         }
 
         fn emit_clif_block(&mut self, key: AstNodeKey) -> Option<Value> {
-            let body = self.facts.clif_block_body(key)?;
-            let result_type = self.facts.scalar_type(key).unwrap_or_else(|| {
-                self.builder.func.signature.returns.first().map(|r| r.value_type).unwrap_or(types::I64)
-            });
-
-            let mut result: Option<Value> = None;
-
-            for line in body.lines() {
-                let line = line.trim();
-                if line.is_empty() {
-                    continue;
-                }
-
-                if let Some(rest) = line.strip_prefix("return") {
-                    let rest = rest.trim();
-                    if let Some(param_ref) = rest.strip_prefix('%')
-                        && let Ok(index) = param_ref.trim().parse::<usize>()
-                    {
-                        result = self.function_param_values.get(index).copied();
-                    }
-                } else if let Some(rest) = line.strip_prefix("call") {
-                    let rest = rest.trim();
-                    if let Some(symbol_part) = rest.strip_prefix('@') {
-                        let symbol_end =
-                            symbol_part.find(|c: char| c.is_whitespace() || c == '(').unwrap_or(symbol_part.len());
-                        let symbol = &symbol_part[..symbol_end];
-                        let args_str = symbol_part[symbol_end..].trim();
-                        let args_str = args_str.strip_prefix('(').unwrap_or(args_str);
-                        let args_str = args_str.strip_suffix(')').unwrap_or(args_str);
-
-                        let mut args = Vec::new();
-                        for arg in args_str.split(',') {
-                            let arg = arg.trim();
-                            if let Some(num) = arg.strip_prefix('%')
-                                && let Ok(index) = num.trim().parse::<usize>()
-                                && let Some(value) = self.function_param_values.get(index).copied()
-                            {
-                                args.push(value);
-                            }
-                        }
-
-                        let mut signature = Signature::new(self.builder.func.signature.call_conv);
-                        for arg in &args {
-                            signature.params.push(AbiParam::new(self.builder.func.dfg.value_type(*arg)));
-                        }
-                        signature.returns.push(AbiParam::new(result_type));
-
-                        let sig_ref = self.builder.func.import_signature(signature);
-                        let func_ref = self.builder.func.import_function(cranelift_codegen::ir::ExtFuncData {
-                            name: ExternalName::testcase(symbol),
-                            signature: sig_ref,
-                            colocated: false,
-                            patchable: false,
-                        });
-
-                        let call = self.builder.ins().call(func_ref, &args);
-                        result = self.builder.inst_results(call).first().copied();
-                    }
-                }
-            }
-
-            result
+            clif_block::lower_clif_block(self, key)
         }
 
         fn emit_return(&mut self, key: AstNodeKey) -> Option<()> {

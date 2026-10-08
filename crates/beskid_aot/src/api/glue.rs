@@ -355,6 +355,7 @@ pub fn build_glue_artifact(req: &GlueArtifactBuildRequest<'_>) -> AotResult<Prep
             link_mode: LinkMode::Auto,
             verbose: false,
             external_libraries: runtime.platform_libraries.clone(),
+            optional_libraries: Vec::new(),
             library_search_paths: vec![],
         },
         Some(req.control),

@@ -1,14 +1,18 @@
 use beskid_isle::{AstNodeKey, IsleContext, NodeFacts, NodeKind, lower_expression};
-use beskid_queries::{AstNodeId, BeskidDatabase, SourceUnitId, SyntaxGenerationId};
-use cranelift_codegen::ir::{AbiParam, Function, InstBuilder, Signature, types};
+use beskid_queries::{AstNodeId, BeskidDatabase, ClifParameterShape, SourceUnitId, SyntaxGenerationId};
+use cranelift_codegen::ir::{AbiParam, Function, InstBuilder, Signature, Type, types};
 use cranelift_codegen::settings;
 use cranelift_codegen::verify_function;
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
-use target_lexicon::Triple;
+use cranelift_jit::{JITBuilder, JITModule};
+use cranelift_module::{Linkage, Module};
 
 struct ClifBlockFacts {
     block_node: AstNodeKey,
-    body: &'static str,
+    body: String,
+    result_type: Type,
+    shapes: Option<Vec<ClifParameterShape>>,
+    foreign: &'static [&'static str],
 }
 
 impl NodeFacts for ClifBlockFacts {
@@ -16,129 +20,364 @@ impl NodeFacts for ClifBlockFacts {
         (n == self.block_node).then_some(NodeKind::ClifBlock)
     }
     fn clif_block_body(&self, n: AstNodeKey) -> Option<String> {
-        (n == self.block_node).then_some(self.body.to_string())
+        (n == self.block_node).then(|| self.body.clone())
     }
-    fn scalar_type(&self, n: AstNodeKey) -> Option<cranelift_codegen::ir::Type> {
-        (n == self.block_node).then_some(types::F64)
+    fn clif_block_parameters(&self, n: AstNodeKey) -> Option<Vec<ClifParameterShape>> {
+        (n == self.block_node).then(|| self.shapes.clone()).flatten()
     }
-    fn function_parameters(&self, _: AstNodeKey) -> Option<Vec<beskid_isle::ParameterSlot>> {
-        Some(vec![beskid_isle::ParameterSlot {
-            slot: beskid_isle::LocalSlotId { owner_node: 0, index: 0 },
-            value_type: types::F64,
-            managed_reference: beskid_isle::ManagedReferenceFact::NativeOrScalar,
-        }])
+    fn scalar_type(&self, n: AstNodeKey) -> Option<Type> {
+        (n == self.block_node).then_some(self.result_type)
     }
     fn integer_literal(&self, _: AstNodeKey) -> Option<i64> {
         None
     }
-}
-
-fn make_isa() -> std::sync::Arc<dyn cranelift_codegen::isa::TargetIsa> {
-    let f = settings::Flags::new(settings::builder());
-    cranelift_codegen::isa::lookup(Triple::host()).unwrap().finish(f).unwrap()
-}
-fn make_key(db: &BeskidDatabase, id: u32) -> AstNodeKey {
-    AstNodeKey {
-        unit: SourceUnitId::new(db, "/tmp/M.bd".into()),
-        generation: SyntaxGenerationId(1),
-        node: AstNodeId(id),
+    fn clif_foreign_symbol(&self, symbol: &str) -> bool {
+        self.foreign.contains(&symbol)
     }
 }
 
-#[test]
-fn clif_block_call_emits_verified_clif() {
+/// Host ISA with detected CPU features, so SIMD lane operations select native lowerings.
+fn make_isa() -> std::sync::Arc<dyn cranelift_codegen::isa::TargetIsa> {
+    let mut flags = settings::builder();
+    use cranelift_codegen::settings::Configurable;
+    flags.set("is_pic", "false").expect("is_pic flag");
+    cranelift_native::builder().expect("host ISA").finish(settings::Flags::new(flags)).unwrap()
+}
+
+fn make_key(db: &BeskidDatabase, id: u32) -> AstNodeKey {
+    AstNodeKey { unit: SourceUnitId::new(db, "/tmp/M.bd".into()), generation: SyntaxGenerationId(1), node: AstNodeId(id) }
+}
+
+/// Lower `body` as the whole body of `fn(params) -> result`, returning the verified function or
+/// the lowering error text.
+fn lower(
+    body: &str,
+    params: &[Type],
+    result: Type,
+    shapes: Option<Vec<ClifParameterShape>>,
+) -> Result<(Function, std::sync::Arc<dyn cranelift_codegen::isa::TargetIsa>), String> {
+    lower_with_foreign(body, params, result, shapes, &[])
+}
+
+/// Like [`lower`], with `foreign` answered as C-ABI `[Extern]` symbols.
+fn lower_with_foreign(
+    body: &str,
+    params: &[Type],
+    result: Type,
+    shapes: Option<Vec<ClifParameterShape>>,
+    foreign: &'static [&'static str],
+) -> Result<(Function, std::sync::Arc<dyn cranelift_codegen::isa::TargetIsa>), String> {
     let db = BeskidDatabase::default();
-    let kn = make_key(&db, 10);
-    let facts = ClifBlockFacts { block_node: kn, body: "call @sqrt(%0)" };
+    let block_node = make_key(&db, 10);
+    let facts = ClifBlockFacts { block_node, body: body.to_owned(), result_type: result, shapes, foreign };
     let isa = make_isa();
     let mut func = Function::with_name_signature(
         cranelift_codegen::ir::UserFuncName::user(0, 0),
         Signature {
-            params: vec![AbiParam::new(types::F64)],
-            returns: vec![AbiParam::new(types::F64)],
+            params: params.iter().map(|ty| AbiParam::new(*ty)).collect(),
+            returns: vec![AbiParam::new(result)],
             call_conv: isa.default_call_conv(),
         },
     );
     let mut ctx = FunctionBuilderContext::new();
     {
         let mut b = FunctionBuilder::new(&mut func, &mut ctx);
-        let e = b.create_block();
-        b.append_block_params_for_function_params(e);
-        b.switch_to_block(e);
-        b.seal_block(e);
-        let p = b.block_params(e)[0];
+        let entry = b.create_block();
+        b.append_block_params_for_function_params(entry);
+        b.switch_to_block(entry);
+        b.seal_block(entry);
+        let values = b.block_params(entry).to_vec();
         let mut c = IsleContext::new(&mut b, &facts, isa.frontend_config());
-        c.function_param_values.push(p);
-        let v = lower_expression(&mut c, kn).unwrap();
-        b.ins().return_(&[v]);
+        c.function_param_values.extend(values);
+        let value = lower_expression(&mut c, block_node).map_err(|error| error.to_string())?;
+        b.ins().return_(&[value]);
         b.finalize(isa.frontend_config());
     }
-    verify_function(&func, isa.flags()).unwrap();
+    verify_function(&func, isa.flags()).map_err(|error| format!("final function does not verify: {error}"))?;
+    Ok((func, isa))
+}
+
+/// JIT the lowered function and return its entry address with the owning module.
+fn jit(mut func: Function, isa: std::sync::Arc<dyn cranelift_codegen::isa::TargetIsa>) -> (JITModule, *const u8) {
+    let mut module = JITModule::new(JITBuilder::with_isa(isa, cranelift_module::default_libcall_names()));
+    // Lowering names native callees by symbol; resolve them through the process like production.
+    let imports = func
+        .dfg
+        .ext_funcs
+        .iter()
+        .filter_map(|(reference, data)| match &data.name {
+            cranelift_codegen::ir::ExternalName::TestCase(name) => {
+                Some((reference, String::from_utf8_lossy(name.raw()).into_owned(), data.signature))
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    for (reference, symbol, signature) in imports {
+        let signature = func.dfg.signatures[signature].clone();
+        let id = module.declare_function(&symbol, Linkage::Import, &signature).expect("declare import");
+        let user = func.declare_imported_user_function(cranelift_codegen::ir::UserExternalName::new(0, id.as_u32()));
+        func.dfg.ext_funcs[reference].name = cranelift_codegen::ir::ExternalName::User(user);
+    }
+    let id = module.declare_function("clif_block_test", Linkage::Export, &func.signature).expect("declare");
+    let mut context = module.make_context();
+    context.func = func;
+    module.define_function(id, &mut context).expect("define");
+    module.finalize_definitions().expect("finalize");
+    let entry = module.get_finalized_function(id);
+    (module, entry)
+}
+
+fn lower_ok(body: &str, params: &[Type], result: Type, shapes: Option<Vec<ClifParameterShape>>) -> Function {
+    lower(body, params, result, shapes).unwrap_or_else(|error| panic!("{body}: {error}")).0
+}
+
+fn lower_err(body: &str, params: &[Type], result: Type, shapes: Option<Vec<ClifParameterShape>>) -> String {
+    match lower(body, params, result, shapes) {
+        Ok((func, _)) => panic!("{body} unexpectedly lowered:\n{}", func.display()),
+        Err(error) => error,
+    }
+}
+
+const SCALAR: ClifParameterShape = ClifParameterShape::Scalar;
+
+#[test]
+fn clif_block_call_emits_verified_clif() {
+    let func = lower_ok("call @sqrt(%0)", &[types::F64], types::F64, None);
     assert!(func.display().to_string().contains("call"));
 }
 
 #[test]
 fn clif_block_return_param_emits_verified_clif() {
-    let db = BeskidDatabase::default();
-    let kn = make_key(&db, 10);
-    let facts = ClifBlockFacts { block_node: kn, body: "return %0" };
-    let isa = make_isa();
-    let mut func = Function::with_name_signature(
-        cranelift_codegen::ir::UserFuncName::user(0, 0),
-        Signature {
-            params: vec![AbiParam::new(types::F64)],
-            returns: vec![AbiParam::new(types::F64)],
-            call_conv: isa.default_call_conv(),
-        },
-    );
-    let mut ctx = FunctionBuilderContext::new();
-    {
-        let mut b = FunctionBuilder::new(&mut func, &mut ctx);
-        let e = b.create_block();
-        b.append_block_params_for_function_params(e);
-        b.switch_to_block(e);
-        b.seal_block(e);
-        let p = b.block_params(e)[0];
-        let mut c = IsleContext::new(&mut b, &facts, isa.frontend_config());
-        c.function_param_values.push(p);
-        let v = lower_expression(&mut c, kn).unwrap();
-        b.ins().return_(&[v]);
-        b.finalize(isa.frontend_config());
-    }
-    verify_function(&func, isa.flags()).unwrap();
+    let func = lower_ok("return %0", &[types::F64], types::F64, None);
     assert!(func.display().to_string().contains("return"));
 }
 
 #[test]
 fn clif_block_two_arg_call_emits_verified_clif() {
-    let db = BeskidDatabase::default();
-    let kn = make_key(&db, 10);
-    let facts = ClifBlockFacts { block_node: kn, body: "call @atan2(%0, %1)" };
-    let isa = make_isa();
-    let mut func = Function::with_name_signature(
-        cranelift_codegen::ir::UserFuncName::user(0, 0),
-        Signature {
-            params: vec![AbiParam::new(types::F64), AbiParam::new(types::F64)],
-            returns: vec![AbiParam::new(types::F64)],
-            call_conv: isa.default_call_conv(),
-        },
-    );
-    let mut ctx = FunctionBuilderContext::new();
-    {
-        let mut b = FunctionBuilder::new(&mut func, &mut ctx);
-        let e = b.create_block();
-        b.append_block_params_for_function_params(e);
-        b.switch_to_block(e);
-        b.seal_block(e);
-        let p0 = b.block_params(e)[0];
-        let p1 = b.block_params(e)[1];
-        let mut c = IsleContext::new(&mut b, &facts, isa.frontend_config());
-        c.function_param_values.push(p0);
-        c.function_param_values.push(p1);
-        let v = lower_expression(&mut c, kn).unwrap();
-        b.ins().return_(&[v]);
-        b.finalize(isa.frontend_config());
-    }
-    verify_function(&func, isa.flags()).unwrap();
+    let func = lower_ok("call @atan2(%0, %1)", &[types::F64, types::F64], types::F64, None);
     assert!(func.display().to_string().contains("call"));
+}
+
+#[test]
+fn clif_block_typed_call_result_feeds_instructions() {
+    let func = lower_ok(
+        "%r = call @labs(%0) -> i64\n%s = iadd %r, %0\nreturn %s",
+        &[types::I64],
+        types::I64,
+        Some(vec![SCALAR]),
+    );
+    let text = func.display().to_string();
+    assert!(text.contains("call") && text.contains("iadd"), "{text}");
+}
+
+#[test]
+fn clif_block_xor_runs() {
+    let (func, isa) = lower("%x = bxor %0, %1\nreturn %x", &[types::I64, types::I64], types::I64, Some(vec![SCALAR; 2]))
+        .expect("xor lowers");
+    let (_module, entry) = jit(func, isa);
+    let f: extern "C" fn(i64, i64) -> i64 = unsafe { std::mem::transmute(entry) };
+    assert_eq!(f(0b1100, 0b1010), 0b0110);
+}
+
+#[test]
+fn clif_block_umulhi_returns_high_product_word() {
+    let (func, isa) =
+        lower("%h = umulhi %0, %1 // high 64 bits\nreturn %h", &[types::I64, types::I64], types::I64, None)
+            .expect("umulhi lowers");
+    let (_module, entry) = jit(func, isa);
+    let f: extern "C" fn(i64, i64) -> i64 = unsafe { std::mem::transmute(entry) };
+    let (a, b) = (u64::MAX, 3_u64);
+    assert_eq!(f(a as i64, b as i64) as u64, ((u128::from(a) * u128::from(b)) >> 64) as u64);
+}
+
+#[test]
+fn clif_block_rotl_on_u32_runs() {
+    let (func, isa) = lower("%r = rotl %0, %1\nreturn %r", &[types::I32, types::I32], types::I32, None).expect("rotl");
+    let (_module, entry) = jit(func, isa);
+    let f: extern "C" fn(u32, u32) -> u32 = unsafe { std::mem::transmute(entry) };
+    assert_eq!(f(0x8000_0001, 4), 0x8000_0001_u32.rotate_left(4));
+}
+
+#[test]
+fn clif_block_i32x4_simd_add_runs() {
+    let body = "%a = splat.i32x4 %0\n%b = splat.i32x4 %1\n%c = insertlane %b, %0, 3\n%s = iadd %a, %c\n%l2 = \
+                extractlane %s, 2\n%l3 = extractlane %s, 3\n%r = isub %l3, %l2\nreturn %r";
+    let (func, isa) = lower(body, &[types::I32, types::I32], types::I32, None).expect("simd lowers");
+    let (_module, entry) = jit(func, isa);
+    let f: extern "C" fn(i32, i32) -> i32 = unsafe { std::mem::transmute(entry) };
+    // lane2 = a + b, lane3 = a + a; difference = a - b.
+    assert_eq!(f(40, 2), 38);
+}
+
+#[test]
+fn clif_block_shuffle_and_carry_ops_verify() {
+    lower_ok(
+        "%a = splat.i8x16 %0\n%b = splat.i8x16 %1\n%s = shuffle %a, %b, \
+         0x1f1e1d1c1b1a19181716151413121110\n%l = extractlane %s, 0\n%w = uextend.i32 %l\nreturn %w",
+        &[types::I8, types::I8],
+        types::I32,
+        None,
+    );
+    lower_ok(
+        "%lo, %c = uadd_overflow %0, %1\n%c64 = uextend.i64 %c\n%r = iadd %lo, %c64\nreturn %r",
+        &[types::I64, types::I64],
+        types::I64,
+        None,
+    );
+}
+
+/// The three-word ABI-v5 array header `{ ptr, len, cap }`.
+#[repr(C)]
+struct ArrayHeader {
+    ptr: *mut u8,
+    len: u64,
+    cap: u64,
+}
+
+#[test]
+fn clif_block_u32_payload_load_xor_store_runs() {
+    let body = "%p = payload %0\n%four = iconst.i64 4\n%a = iadd %p, %four\n%w = load.i32 %a\n%y = bxor %w, \
+                %1\nstore %y, %a\nistore8 %1, %p+12\nreturn %y";
+    let (func, isa) = lower(
+        body,
+        &[types::I64, types::I32],
+        types::I32,
+        Some(vec![ClifParameterShape::PayloadArray { element_bytes: 4 }, SCALAR]),
+    )
+    .expect("payload block lowers");
+    let (_module, entry) = jit(func, isa);
+    let f: extern "C" fn(*const ArrayHeader, u32) -> u32 = unsafe { std::mem::transmute(entry) };
+    let mut data = [1_u32, 0xF0F0_0000, 3, 0xFFFF_FFFF];
+    let header = ArrayHeader { ptr: data.as_mut_ptr().cast(), len: 4, cap: 4 };
+    assert_eq!(f(&header, 0x0000_FF0F), 0xF0F0_FF0F);
+    assert_eq!(data, [1, 0xF0F0_FF0F, 3, 0xFFFF_FF0F]);
+}
+
+#[test]
+fn clif_block_length_reads_array_header() {
+    let (func, isa) = lower(
+        "%n = length %0\nreturn %n",
+        &[types::I64],
+        types::I64,
+        Some(vec![ClifParameterShape::PayloadArray { element_bytes: 8 }]),
+    )
+    .expect("length lowers");
+    let (_module, entry) = jit(func, isa);
+    let f: extern "C" fn(*const ArrayHeader) -> i64 = unsafe { std::mem::transmute(entry) };
+    let mut data = [0_i64; 5];
+    let header = ArrayHeader { ptr: data.as_mut_ptr().cast(), len: 5, cap: 5 };
+    assert_eq!(f(&header), 5);
+}
+
+#[test]
+fn clif_block_rejects_unsafe_memory_access() {
+    let array = Some(vec![ClifParameterShape::PayloadArray { element_bytes: 1 }, SCALAR]);
+    let error = lower_err("%v = load.i64 %1\nreturn %v", &[types::I64, types::I64], types::I64, array.clone());
+    assert!(error.contains("must derive from `payload"), "{error}");
+    let error = lower_err("%p = payload %0\nreturn %p", &[types::I64, types::I64], types::I64, array.clone());
+    assert!(error.contains("cannot leave the block"), "{error}");
+    let error = lower_err("%p = payload %0\nstore %p, %p\nreturn %1", &[types::I64, types::I64], types::I64, array.clone());
+    assert!(error.contains("cannot be stored"), "{error}");
+    let error = lower_err(
+        "%p = payload %0\n%m = imul %p, %1\n%v = load.i64 %m\nreturn %v",
+        &[types::I64, types::I64],
+        types::I64,
+        array.clone(),
+    );
+    assert!(error.contains("may only be offset"), "{error}");
+    let error = lower_err("%x = iadd %0, %1\nreturn %x", &[types::I64, types::I64], types::I64, array.clone());
+    assert!(error.contains("is an array"), "{error}");
+    let error = lower_err("%p = payload %1\n%v = load.i64 %p\nreturn %v", &[types::I64, types::I64], types::I64, array);
+    assert!(error.contains("`u8[]`, `u32[]`, or `i64[]`"), "{error}");
+    let error = lower_err("%p = payload %0\n%v = load.i64 %p\nreturn %v", &[types::I64], types::I64, None);
+    assert!(error.contains("`u8[]`, `u32[]`, or `i64[]`"), "{error}");
+}
+
+#[test]
+fn clif_block_rejects_invalid_instructions() {
+    let error = lower_err("%x = iadd %0, %1\nreturn %x", &[types::I64, types::I32], types::I64, None);
+    assert!(error.contains("does not verify") && error.contains("%1"), "{error}");
+    let error = lower_err("%x = ireduce.i32 %0\nreturn %x", &[types::I64], types::I64, None);
+    assert!(error.contains("expects `i64`"), "{error}");
+    let error = lower_err("%x = call_indirect %0\nreturn %x", &[types::I64], types::I64, None);
+    assert!(error.contains("not allowed"), "{error}");
+    let error = lower_err("%x = iadd %0, %3\nreturn %x", &[types::I64], types::I64, None);
+    assert!(error.contains("does not name a parameter"), "{error}");
+    let error = lower_err("%x = bogus_op %0\nreturn %x", &[types::I64], types::I64, None);
+    assert!(error.contains("not allowed"), "{error}");
+    let error = lower_err("%x = iadd %0\nreturn %x", &[types::I64], types::I64, None);
+    assert!(error.contains("clif block line 1"), "{error}");
+}
+
+/// `{u,s}{add,sub}_overflow_{cin,bin}` have no x86-64 or aarch64 instruction selection in
+/// Cranelift 0.136; import emulates them with two flag-producing steps. Check the emulation
+/// against exact 128-bit arithmetic, including carry/borrow in at the wrap boundaries.
+#[test]
+fn clif_block_carry_and_borrow_chains_run() {
+    fn run(op: &str) -> extern "C" fn(i64, i64, i64) -> i64 {
+        // Pack both results into one word: `result ^ (flag << 63)`.
+        let body = format!(
+            "%c = ireduce.i8 %2\n%s, %o = {op} %0, %1, %c\n%o64 = uextend.i64 %o\n%k = iconst.i64 63\n%f = ishl %o64, \
+             %k\n%r = bxor %s, %f\nreturn %r"
+        );
+        let (func, isa) = lower(&body, &[types::I64, types::I64, types::I64], types::I64, None)
+            .unwrap_or_else(|error| panic!("{op}: {error}"));
+        let (module, entry) = jit(func, isa);
+        std::mem::forget(module);
+        unsafe { std::mem::transmute(entry) }
+    }
+    let samples = [0_i64, 1, -1, i64::MAX, i64::MIN, 0x1234_5678_9abc_def0, -2];
+    let uadd = run("uadd_overflow_cin");
+    let sadd = run("sadd_overflow_cin");
+    let usub = run("usub_overflow_bin");
+    let ssub = run("ssub_overflow_bin");
+    for &x in &samples {
+        for &y in &samples {
+            for c in [0_i64, 1, 0x100] {
+                // Only the low 8 bits reach the carry operand; nonzero means 1.
+                let bit = i128::from((c & 0xff) != 0);
+                let pack = |sum: i128, flag: bool| (sum as i64) ^ (i64::from(flag) << 63);
+                let (ux, uy) = (i128::from(x as u64), i128::from(y as u64));
+                let (sx, sy) = (i128::from(x), i128::from(y));
+                let usum = ux + uy + bit;
+                assert_eq!(uadd(x, y, c), pack(usum, usum > i128::from(u64::MAX)), "uadd {x} {y} {c}");
+                let ssum = sx + sy + bit;
+                assert_eq!(
+                    sadd(x, y, c),
+                    pack(ssum, ssum > i128::from(i64::MAX) || ssum < i128::from(i64::MIN)),
+                    "sadd {x} {y} {c}"
+                );
+                let udiff = ux - uy - bit;
+                assert_eq!(usub(x, y, c), pack(udiff, udiff < 0), "usub {x} {y} {c}");
+                let sdiff = sx - sy - bit;
+                assert_eq!(
+                    ssub(x, y, c),
+                    pack(sdiff, sdiff > i128::from(i64::MAX) || sdiff < i128::from(i64::MIN)),
+                    "ssub {x} {y} {c}"
+                );
+            }
+        }
+    }
+}
+
+/// A payload address may be handed to foreign C code (here libc `memset`), and only to it.
+#[test]
+fn clif_block_passes_payload_only_to_foreign_symbols() {
+    let body = "%p = payload %0\n%n = length %0\n%v = iconst.i32 171\n%r = call @memset(%p, %v, %n) -> i64\n%w = \
+                load.i64 %p\nreturn %w";
+    let bytes = Some(vec![ClifParameterShape::PayloadArray { element_bytes: 1 }]);
+    let (func, isa) =
+        lower_with_foreign(body, &[types::I64], types::I64, bytes.clone(), &["memset"]).expect("foreign payload call");
+    let (_module, entry) = jit(func, isa);
+    let f: extern "C" fn(*const ArrayHeader) -> i64 = unsafe { std::mem::transmute(entry) };
+    let mut data = [0_u8; 12];
+    let header = ArrayHeader { ptr: data.as_mut_ptr(), len: 12, cap: 12 };
+    assert_eq!(f(&header) as u64, 0xABAB_ABAB_ABAB_ABAB);
+    assert_eq!(data, [0xAB; 12]);
+
+    let error = lower_err(body, &[types::I64], types::I64, bytes.clone());
+    assert!(error.contains("may only be passed to a symbol of a C-ABI `[Extern]` contract"), "{error}");
+    let error = lower_err("%p = payload %0\n%r = call @labs(%1) -> i64\nreturn %r", &[types::I64, types::I64], types::I64,
+        Some(vec![ClifParameterShape::PayloadArray { element_bytes: 1 }, SCALAR]));
+    assert!(error.contains("may only call symbols of a C-ABI `[Extern]` contract"), "{error}");
 }

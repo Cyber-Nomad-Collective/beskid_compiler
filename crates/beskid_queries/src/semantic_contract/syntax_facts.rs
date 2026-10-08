@@ -54,6 +54,67 @@ pub(super) fn clif_block_body_tracked(
 }
 
 #[salsa::tracked(persist)]
+pub(super) fn clif_block_parameters_tracked(
+    db: &dyn Db,
+    syntax: SyntaxUnitInput,
+    key: AstNodeKey,
+) -> SemanticQueryResult<Arc<[ClifParameterShape]>> {
+    with_node(db, syntax, key, |program, index, node| {
+        node.of::<beskid_analysis::syntax::ClifBlockExpression>()?;
+        let mut parent = index.metadata_for(key.generation, key.node)?.parent;
+        while let Some(parent_id) = parent {
+            let candidate = index.node_at(program, parent_id)?;
+            if candidate.of::<beskid_analysis::syntax::LambdaExpression>().is_some() {
+                return None;
+            }
+            if let Some(function) = candidate.of::<beskid_analysis::syntax::FunctionDefinition>() {
+                return Some(clif_parameter_shapes(false, &function.parameters));
+            }
+            if let Some(method) = candidate.of::<beskid_analysis::syntax::MethodDefinition>() {
+                return Some(clif_parameter_shapes(true, &method.parameters));
+            }
+            if candidate.of::<beskid_analysis::syntax::TestDefinition>().is_some() {
+                return Some(Arc::from([]));
+            }
+            parent = index.metadata_for(key.generation, parent_id).and_then(|metadata| metadata.parent);
+        }
+        None
+    })
+}
+
+fn clif_parameter_shapes(
+    receiver: bool,
+    parameters: &[beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Parameter>],
+) -> Arc<[ClifParameterShape]> {
+    use beskid_analysis::syntax::{PrimitiveType, Type};
+    let mut shapes = Vec::with_capacity(parameters.len() + usize::from(receiver));
+    if receiver {
+        shapes.push(ClifParameterShape::Opaque);
+    }
+    for parameter in parameters {
+        let shape = match &parameter.node.ty.node {
+            Type::Primitive(primitive) => match primitive.node {
+                PrimitiveType::Unit => continue,
+                PrimitiveType::String | PrimitiveType::Never => ClifParameterShape::Opaque,
+                _ => ClifParameterShape::Scalar,
+            },
+            Type::Array(element) => match &element.node {
+                Type::Primitive(primitive) => match primitive.node {
+                    PrimitiveType::U8 => ClifParameterShape::PayloadArray { element_bytes: 1 },
+                    PrimitiveType::U32 => ClifParameterShape::PayloadArray { element_bytes: 4 },
+                    PrimitiveType::I64 => ClifParameterShape::PayloadArray { element_bytes: 8 },
+                    _ => ClifParameterShape::Opaque,
+                },
+                _ => ClifParameterShape::Opaque,
+            },
+            _ => ClifParameterShape::Opaque,
+        };
+        shapes.push(shape);
+    }
+    Arc::from(shapes)
+}
+
+#[salsa::tracked(persist)]
 pub(super) fn node_span_tracked(
     db: &dyn Db,
     syntax: SyntaxUnitInput,

@@ -104,7 +104,11 @@ impl<'a> TypeChecker<'a> {
                 self.type_if_statement(if_stmt);
             }
             Statement::Expression(expr_stmt) => {
-                self.type_expression(&expr_stmt.node.expression);
+                if let crate::syntax::Expression::ClifBlock(clif) = &expr_stmt.node.expression.node {
+                    self.type_clif_block_statement(clif);
+                } else {
+                    self.type_expression(&expr_stmt.node.expression);
+                }
             }
             Statement::Break(_) | Statement::Continue(_) => {}
             Statement::With(_) | Statement::Launch(_) => {}

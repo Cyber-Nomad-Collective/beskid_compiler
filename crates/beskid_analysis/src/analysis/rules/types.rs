@@ -104,6 +104,16 @@ pub(crate) fn emit_type_error(ctx: &mut RuleContext, error: TypeError, result: O
         TypeError::InvalidPrimitiveConversionArgument { span } => {
             ctx.emit_issue(span, SemanticIssueKind::TypeInvalidPrimitiveConversionArgument);
         }
+        TypeError::InvalidClifBlock { span, detail } => {
+            ctx.emit_simple(
+                span,
+                "E1232",
+                "invalid clif block",
+                "clif block",
+                Some(detail),
+                Severity::Error,
+            );
+        }
         TypeError::InvalidEventInvocationScope { span } => {
             ctx.emit_issue(span, SemanticIssueKind::TypeInvalidEventInvocationScope);
         }
@@ -175,6 +185,16 @@ pub(crate) fn emit_type_error(ctx: &mut RuleContext, error: TypeError, result: O
                 "T0904",
                 format!("extern return type not allowed in `{}`", method),
                 "return type",
+                Some(detail),
+                Severity::Error,
+            );
+        }
+        TypeError::ExternInvalidOptional { span, detail } => {
+            ctx.emit_simple(
+                span,
+                "T0905",
+                "invalid optional extern contract",
+                "extern attribute",
                 Some(detail),
                 Severity::Error,
             );

@@ -9,11 +9,27 @@ pub struct ArrayLayout {
     pub(crate) stride: u32,
     pub(crate) length: u32,
     align_shift: u8,
+    /// The element type is a proven non-reference scalar (`bool`, `u8`, `i32`, `u32`, `i64`,
+    /// `f64`, `char`). Such elements are never traced, so a store needs no write barrier even
+    /// when the element's CLIF type equals the pointer type (`i64` on 64-bit targets).
+    scalar_elements: bool,
 }
 
 impl ArrayLayout {
     pub const fn new(element_type: Type, stride: u32, length: u32, align_shift: u8) -> Self {
-        Self { element_type, stride, length, align_shift }
+        Self { element_type, stride, length, align_shift, scalar_elements: false }
+    }
+
+    /// Mark the elements as proven non-reference scalars (see [`Self::needs_write_barrier`]).
+    pub const fn with_scalar_elements(mut self) -> Self {
+        self.scalar_elements = true;
+        self
+    }
+
+    /// Whether a store of one element must publish the stored value through the array write
+    /// barrier: only pointer-sized elements not proven to be scalars may hold a reference.
+    pub(crate) fn needs_write_barrier(self, pointer_type: Type) -> bool {
+        self.element_type == pointer_type && !self.scalar_elements
     }
 
     pub(crate) fn byte_size(self) -> Option<u32> {

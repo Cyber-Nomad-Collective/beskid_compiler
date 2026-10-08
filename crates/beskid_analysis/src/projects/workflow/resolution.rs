@@ -2,7 +2,7 @@
 #![allow(non_snake_case)]
 
 use super::lockfile::{preflight_existing_lock_for_plan, validate_existing_lock_graph};
-use super::prepare::{portable_entry_for_dependency, verified_installed_corelib_root};
+use super::prepare::{installed_corelib_lock_root, portable_entry_for_dependency};
 use super::registry::{ResolvedRegistryDependency, resolve_registry_dependency};
 use super::{ProjectLockDependencyEntry, ProjectLockSource, WorkspacePrepareOptions};
 use crate::projects::{DependencySource, ProjectError, ProjectWorkspacePlan, discover_workspace_resolution_rules};
@@ -52,7 +52,7 @@ pub(super) fn ResolveWorkspaceDependencies(
         refresh_lock: allow_graph_change || policy.refresh == RefreshScope::All,
     };
     let existing = preflight_existing_lock_for_plan(plan, options)?;
-    let corelib = verified_installed_corelib_root();
+    let corelib = installed_corelib_lock_root();
     let mut entries = Vec::new();
     let mut destinations = HashSet::new();
     for dependency in &plan.dependency_projects {

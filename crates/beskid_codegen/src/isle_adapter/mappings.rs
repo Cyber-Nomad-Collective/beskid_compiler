@@ -114,6 +114,29 @@ pub(super) fn map_scalar_type(semantic: SemanticTypeId) -> Option<Type> {
     })
 }
 
+/// Build an array layout, marking proven non-reference scalar elements so element stores skip
+/// the array write barrier. `word`, `pointer`, `string`, and nominal elements stay barriered.
+pub(crate) fn scalar_aware_array_layout(
+    element_semantic: SemanticTypeId,
+    element: Type,
+    stride: u32,
+    length: u32,
+    align_shift: u8,
+) -> beskid_isle::ArrayLayout {
+    let layout = beskid_isle::ArrayLayout::new(element, stride, length, align_shift);
+    let scalar = matches!(
+        element_semantic,
+        SemanticTypeId::BOOL
+            | SemanticTypeId::U8
+            | SemanticTypeId::I32
+            | SemanticTypeId::U32
+            | SemanticTypeId::I64
+            | SemanticTypeId::F64
+            | SemanticTypeId::CHAR
+    );
+    if scalar { layout.with_scalar_elements() } else { layout }
+}
+
 /// Convert a source ABI type through the one codegen-owned semantic-to-CLIF mapping.
 pub(crate) fn map_signature_type(isa: &dyn TargetIsa, semantic: SemanticTypeId) -> Option<Type> {
     if matches!(semantic, SemanticTypeId::WORD | SemanticTypeId::POINTER | SemanticTypeId::STRING) {

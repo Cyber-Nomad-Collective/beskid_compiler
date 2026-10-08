@@ -1,4 +1,3 @@
-use beskid_abi::corelib_bundle::verified_corelib_bundle_roots;
 use beskid_abi::runtime_source::{
     CorelibServiceSourceDescriptor, corelib_service_source_descriptor, corelib_service_source_identity,
     corelib_source_locations_match,
@@ -19,10 +18,11 @@ struct CorelibPackageCandidate<'a> {
 
 /// Preserve the lexical origin of compiler-owned Foundation service units when a workspace
 /// materializes them under `obj/beskid`. A matching package name or source text is never enough:
-/// the package's original source root must be the compiler-owned Corelib package (build checkout
-/// or verified installed bundle) before its copied physical path is admitted. The candidates are
-/// every resolved dependency and the host package itself, so checking a Corelib package directly
-/// admits its own exact service units while a copy of that package elsewhere stays ordinary.
+/// the package's original source root must be the compiler-owned Corelib package (build checkout,
+/// or a per-file canonical Corelib service source) before its copied physical path is admitted.
+/// The candidates are every resolved dependency and the host package itself, so checking a
+/// Corelib package directly admits its own exact service units while a copy of that package
+/// elsewhere stays ordinary.
 pub(super) fn trusted_corelib_service_paths(
     plan: &CompilePlan,
     roots: &EffectiveCompilationRoots,
@@ -51,9 +51,6 @@ pub(super) fn trusted_corelib_service_paths(
         source_root: &plan.source_root,
         effective_source_root: roots.host.source_root.clone(),
     });
-    let bundle_candidates =
-        candidates.iter().map(|candidate| candidate.project_root.to_path_buf()).collect::<Vec<_>>();
-    let verified_bundle_roots = verified_corelib_bundle_roots(&bundle_candidates);
 
     let mut trusted = Vec::new();
     for source in beskid_abi::runtime_source::canonical_corelib_service_sources()
@@ -69,8 +66,10 @@ pub(super) fn trusted_corelib_service_paths(
             continue;
         }
         // Physical build-checkout identity is optional. It remains the authority for direct
-        // source/development packages, but verified installed bundles use only the immutable
-        // logical descriptor above and therefore survive compiler relocation.
+        // source/development packages. Any other Corelib copy (an installed bundle, a relocated
+        // toolchain, or a Corelib with additional packages) is authorized per file: the service
+        // source must sit at its canonical package location and be byte-identical to the
+        // compiler-embedded canonical source. Unrelated files never affect authority.
         let checkout_identity = corelib_service_source_identity(&source.logical_path);
         let mut matches = candidates.iter().enumerate().filter_map(|(index, candidate)| {
             let source_root = normalize_lexically(candidate.source_root);
@@ -83,13 +82,8 @@ pub(super) fn trusted_corelib_service_paths(
                 })
             });
             checkout_relative.map(|relative| (index, relative, false)).or_else(|| {
-                bundled_corelib_source_root(
-                    candidate.project_root,
-                    candidate.source_root,
-                    verified_bundle_roots[index].as_deref(),
-                    &descriptor,
-                )
-                .map(|_| (index, descriptor.relative_path().to_path_buf(), true))
+                canonical_corelib_source_root(candidate.project_root, candidate.source_root, &descriptor)
+                    .map(|_| (index, descriptor.relative_path().to_path_buf(), true))
             })
         });
         let Some((index, relative, bundled)) = matches.next() else {
@@ -116,17 +110,19 @@ pub(super) fn trusted_corelib_service_paths(
     Arc::from(trusted)
 }
 
-fn bundled_corelib_source_root(
+/// Admit one Corelib service source by its own identity: the candidate project must physically
+/// be `<corelib>/packages/<package>` with sources in `src`, and the service file must be a
+/// regular (non-symlink) file whose bytes equal the compiler-embedded canonical source. No
+/// whole-tree fingerprint is consulted, so extra packages or files beside it do not matter.
+fn canonical_corelib_source_root(
     project_root: &Path,
     source_root: &Path,
-    bundle_root: Option<&Path>,
     descriptor: &CorelibServiceSourceDescriptor,
 ) -> Option<PathBuf> {
-    let bundle_root = bundle_root?;
-    let expected_project_relative = Path::new("packages").join(descriptor.package());
-
     let physical_project_root = project_root.canonicalize().ok()?;
-    if physical_project_root.strip_prefix(bundle_root).ok()? != expected_project_relative {
+    let package = physical_project_root.file_name()?;
+    let packages = physical_project_root.parent()?.file_name()?;
+    if package != std::ffi::OsStr::new(descriptor.package()) || packages != std::ffi::OsStr::new("packages") {
         return None;
     }
     let physical_source_root = source_root.canonicalize().ok()?;

@@ -119,28 +119,37 @@ impl Engine {
         // by `loader_required_exports` (see `is_exact_runtime_symbol`).
         let trusted_names: std::collections::HashSet<&str> =
             artifact.trusted_extern_imports.iter().map(|import| import.symbol.as_str()).collect();
-        let user_ffi_imports = beskid_codegen::referenced_extern_imports(artifact)
+        let referenced = beskid_codegen::referenced_extern_imports(artifact);
+        let binds_absent_sentinel =
+            referenced.iter().any(|entry| entry.symbol == beskid_codegen::OPTIONAL_EXTERN_ABSENT_SYMBOL);
+        let user_ffi_imports = referenced
             .into_iter()
-            .filter(|entry| !self.jit.is_exact_runtime_symbol(&entry.symbol) && !trusted_names.contains(entry.symbol.as_str()))
+            .filter(|entry| {
+                !self.jit.is_exact_runtime_symbol(&entry.symbol)
+                    && !trusted_names.contains(entry.symbol.as_str())
+                    && entry.symbol != beskid_codegen::OPTIONAL_EXTERN_ABSENT_SYMBOL
+            })
             .collect::<Vec<_>>();
         validate_authorized_user_ffi(&user_ffi_imports)?;
+        let (optional_ffi_imports, required_ffi_imports): (Vec<_>, Vec<_>) =
+            user_ffi_imports.into_iter().partition(|import| import.optional);
 
         #[cfg(feature = "extern_dlopen")]
-        let authorized_user_ffi =
-            resolve_extern_symbols(&user_ffi_imports).map_err(|e| JitError::Isa(format!("extern resolve: {}", e)))?;
+        let mut authorized_user_ffi = resolve_extern_symbols(&required_ffi_imports)
+            .map_err(|e| JitError::Isa(format!("extern resolve: {}", e)))?;
 
         #[cfg(all(not(feature = "extern_dlopen"), unix))]
-        let authorized_user_ffi = if user_ffi_imports.is_empty() {
+        let mut authorized_user_ffi = if required_ffi_imports.is_empty() {
             Vec::new()
         } else {
-            resolve_process_extern_symbols(&user_ffi_imports)
+            resolve_process_extern_symbols(&required_ffi_imports)
                 .map_err(|e| JitError::Isa(format!("extern resolve: {}", e)))?
         };
 
         #[cfg(all(not(feature = "extern_dlopen"), not(unix)))]
-        let authorized_user_ffi: Vec<(String, *const u8)> = {
-            if !user_ffi_imports.is_empty() {
-                let list = user_ffi_imports.iter().map(|e| e.symbol.clone()).collect::<Vec<_>>().join(", ");
+        let mut authorized_user_ffi: Vec<(String, *const u8)> = {
+            if !required_ffi_imports.is_empty() {
+                let list = required_ffi_imports.iter().map(|e| e.symbol.clone()).collect::<Vec<_>>().join(", ");
                 return Err(JitError::Isa(format!(
                     "extern imports present but JIT extern resolution is unsupported on this host: {}",
                     list
@@ -148,6 +157,26 @@ impl Engine {
             }
             Vec::new()
         };
+
+        // An optional contract's symbol is resolved best-effort, one at a time: a missing library
+        // or symbol binds the name to the absent sentinel, which generated thunks and
+        // `Available()` check. (cranelift-jit cannot relocate a null target through the x86-64
+        // GOT, so null is not used.)
+        let absent = optional_extern_absent as *const u8;
+        if binds_absent_sentinel {
+            authorized_user_ffi.push((beskid_codegen::OPTIONAL_EXTERN_ABSENT_SYMBOL.to_owned(), absent));
+        }
+        for import in &optional_ffi_imports {
+            #[cfg(feature = "extern_dlopen")]
+            let resolved = resolve_extern_symbols(std::slice::from_ref(import)).ok();
+            #[cfg(all(not(feature = "extern_dlopen"), unix))]
+            let resolved = resolve_process_extern_symbols(std::slice::from_ref(import)).ok();
+            #[cfg(all(not(feature = "extern_dlopen"), not(unix)))]
+            let resolved: Option<Vec<(String, *const u8)>> = None;
+            let address =
+                resolved.and_then(|resolved| resolved.into_iter().next()).map_or(absent, |(_, address)| address);
+            authorized_user_ffi.push((import.symbol.clone(), address));
+        }
 
         // `trusted_extern_imports` carries only imports the compiler itself resolved through the
         // canonical runtime intrinsic capability (see `CodegenArtifact::trusted_extern_imports`),
@@ -205,14 +234,15 @@ impl Engine {
     }
 }
 
+/// Address bound to an optional `[Extern]` symbol that did not resolve. Generated code compares
+/// against it and never calls it; reaching it means a thunk was bypassed.
+extern "C" fn optional_extern_absent() {
+    std::process::abort();
+}
+
 fn validate_authorized_user_ffi(imports: &[ExternImport]) -> Result<(), JitError> {
     for import in imports {
-        let manifest_owned = ABI_V5_CORELIB_SERVICE_BINDINGS.iter().any(|binding| binding.adapter == import.symbol);
-        let retired_runtime_name = import.symbol.starts_with("beskid_rt_")
-            || import.symbol.starts_with("beskid_runtime_")
-            || import.symbol.starts_with("beskid_language_")
-            || beskid_abi::RUNTIME_EXPORT_SYMBOLS.contains(&import.symbol.as_str());
-        if manifest_owned || retired_runtime_name {
+        if beskid_abi::is_runtime_owned_ffi_symbol(&import.symbol) {
             return Err(JitError::RuntimeKit(format!(
                 "runtime/host symbol `{}` must be supplied by the selected exact ABI-v5 runtime kit, not user FFI",
                 import.symbol
@@ -253,7 +283,8 @@ pub fn host_runtime_target() -> Result<TargetMetadata, JitError> {
 
 /// Resolve extern symbols from libraries already mapped into this process (libc, pthread, …).
 ///
-/// Used for JIT runs on Unix hosts where the dynamic linker has already loaded standard libraries.
+/// Used for JIT runs on Unix hosts where the dynamic linker has already loaded standard libraries;
+/// a symbol the process lacks is looked up in the import's declared library.
 #[cfg(all(not(feature = "extern_dlopen"), unix))]
 fn resolve_process_extern_symbols(imports: &[ExternImport]) -> Result<Vec<(String, *const u8)>, String> {
     use std::ffi::{CStr, CString};
@@ -265,10 +296,7 @@ fn resolve_process_extern_symbols(imports: &[ExternImport]) -> Result<Vec<(Strin
         // libc also supplies the platform-correct RTLD_DEFAULT value: null on
         // glibc, but -2 on Darwin.
         unsafe { libc::dlerror() };
-        #[cfg(target_os = "macos")]
         let mut addr = unsafe { libc::dlsym(libc::RTLD_DEFAULT, c_sym.as_ptr()) };
-        #[cfg(not(target_os = "macos"))]
-        let addr = unsafe { libc::dlsym(libc::RTLD_DEFAULT, c_sym.as_ptr()) };
         // Cranelift's Mach-O import spelling carries the object-file leading
         // underscore, whereas dlsym expects the C source name.
         #[cfg(target_os = "macos")]
@@ -278,6 +306,27 @@ fn resolve_process_extern_symbols(imports: &[ExternImport]) -> Result<Vec<(Strin
             let c_symbol = CString::new(symbol).map_err(|_| format!("bad symbol: {symbol}"))?;
             unsafe { libc::dlerror() };
             addr = unsafe { libc::dlsym(libc::RTLD_DEFAULT, c_symbol.as_ptr()) };
+        }
+        // A symbol the process has not loaded comes from the `[Extern]` contract's library, as
+        // an AOT link of the same program would arrange. The handle stays open for the life of
+        // the process because finalized JIT code keeps the address.
+        if addr.is_null()
+            && let Some(library) = imp.library.as_deref().filter(|library| !library.is_empty())
+        {
+            let c_library = CString::new(library).map_err(|_| format!("bad library: {library}"))?;
+            unsafe { libc::dlerror() };
+            let handle = unsafe { libc::dlopen(c_library.as_ptr(), libc::RTLD_NOW | libc::RTLD_LOCAL) };
+            if handle.is_null() {
+                let error = unsafe { libc::dlerror() };
+                let detail = if error.is_null() {
+                    "library could not be loaded".into()
+                } else {
+                    unsafe { CStr::from_ptr(error) }.to_string_lossy().into_owned()
+                };
+                return Err(format!("dlopen({library}) for {}: {detail}", imp.symbol));
+            }
+            unsafe { libc::dlerror() };
+            addr = unsafe { libc::dlsym(handle, c_sym.as_ptr()) };
         }
         if addr.is_null() {
             let error = unsafe { libc::dlerror() };
@@ -446,6 +495,7 @@ pub fn resolve_for_tests(requests: &[(&str, &str)]) -> Result<Vec<*const u8>, St
             symbol: (*sym).to_string(),
             abi: Some("C".to_string()),
             library: Some((*lib).to_string()),
+            optional: false,
         })
         .collect();
     resolve_extern_symbols(&imports).map(|v| v.into_iter().map(|(_, p)| p).collect())
@@ -463,6 +513,7 @@ mod tests {
                 symbol: "beskid_rt_v5_args_count".into(),
                 abi: Some("C".into()),
                 library: None,
+                optional: false,
             }],
             ..Default::default()
         };

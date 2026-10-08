@@ -311,6 +311,15 @@ impl CodegenInput<'_> {
     }
 }
 
+impl CodegenInput<'_> {
+    /// True for a sized compiler-owned `__array_new<T>(length)` call (canonical `Array.Zeroed`).
+    /// The static request emitted for that call carries length zero; lowering copies it to the
+    /// stack and stores the call's single argument as the element count.
+    pub fn typed_array_is_sized(&self, call: AstNodeKey) -> bool {
+        typed_array_allocation(self.database(), call).ok().flatten().is_some_and(|allocation| allocation.sized)
+    }
+}
+
 fn scalar_layout(pointer_width: u8, ty: SemanticTypeId) -> Option<(u64, u64, bool)> {
     let pointer = u64::from(pointer_width.checked_div(8)?);
     match ty {

@@ -137,6 +137,11 @@ pub trait NodeFacts {
     fn managed_array_allocation(&self, _key: AstNodeKey) -> Option<ManagedArrayAllocation> {
         None
     }
+    /// The run-time element-count argument of a sized compiler-owned array allocation
+    /// (`Array.Zeroed`). `None` for literals and the static `Array.Empty` allocation.
+    fn sized_array_length(&self, _key: AstNodeKey) -> Option<AstNodeKey> {
+        None
+    }
     fn struct_fields(&self, _key: AstNodeKey) -> Option<Vec<AstNodeKey>> {
         None
     }
@@ -206,5 +211,16 @@ pub trait NodeFacts {
     /// Raw body text of a clif block expression.
     fn clif_block_body(&self, _key: AstNodeKey) -> Option<String> {
         None
+    }
+    /// ABI parameter shapes (`%N`) visible to a clif block. Production codegen always answers;
+    /// `None` (unit-test fixtures) leaves parameters usable as scalars and payload access closed.
+    fn clif_block_parameters(&self, _key: AstNodeKey) -> Option<Vec<beskid_queries::ClifParameterShape>> {
+        None
+    }
+    /// Whether `symbol` named by `clif { call @symbol(...) }` is foreign C code: a method of a
+    /// C-ABI `[Extern]` contract with a library, and not a runtime- or host-owned name. Only such
+    /// a callee may receive a payload address or be called from a block that reads a payload.
+    fn clif_foreign_symbol(&self, _symbol: &str) -> bool {
+        false
     }
 }

@@ -9,6 +9,8 @@ beskid_abi = { path = "../beskid_abi" }
 beskid_queries = { path = "../beskid_queries" }
 cranelift-codegen = { workspace = true, features = ["arm64", "x86"] }
 cranelift-frontend = { workspace = true }
+cranelift-reader = { workspace = true }
+beskid_analysis = { path = "../beskid_analysis" }
 
 [build-dependencies]
 cranelift-isle = { workspace = true }
@@ -20,4 +22,5 @@ isle_primitives = []
 [dev-dependencies]
 cranelift-jit = { workspace = true }
 cranelift-module = { workspace = true }
+cranelift-native = { workspace = true }
 target-lexicon = "0.13"

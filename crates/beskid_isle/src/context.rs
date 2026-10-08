@@ -25,6 +25,7 @@ use crate::layout::{EnumLayout, FieldLayout};
 mod aggregate;
 mod calls;
 mod cleanup;
+mod clif_block;
 mod composition;
 mod control_flow;
 mod enums;

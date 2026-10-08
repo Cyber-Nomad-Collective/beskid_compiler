@@ -12,7 +12,7 @@ use crate::runtime::{RuntimeBuildRequest, RuntimeLinkage, prepare_runtime};
 
 use super::model::{AotBuildRequest, AotBuildResult, BuildOutputKind};
 use super::object_stage::{ObjectStageResult, emit_object_stage};
-use super::validation::{native_link_entrypoint, requires_entrypoint, validate_request};
+use super::validation::{native_link_entrypoint, optional_link_libraries, requires_entrypoint, validate_request};
 /// Emit a single object file; fails unless `req.output_kind` is [`BuildOutputKind::ObjectOnly`].
 pub fn emit_object_only(req: AotBuildRequest) -> AotResult<AotBuildResult> {
     if req.output_kind != BuildOutputKind::ObjectOnly {
@@ -121,6 +121,7 @@ fn link_stage(
             link_mode: req.link_mode,
             verbose: req.verbose_link,
             external_libraries: merged_link_libraries(&req.external_libraries, &runtime.platform_libraries),
+            optional_libraries: optional_link_libraries(&req.artifact, &req.external_libraries),
             library_search_paths: req.library_search_paths.clone(),
         })
     })

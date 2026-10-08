@@ -156,6 +156,18 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
         self.array_layout_impl(key)
     }
 
+    fn sized_array_length(&self, key: AstNodeKey) -> Option<AstNodeKey> {
+        self.typed_array_plan(key)?;
+        if !self.input.typed_array_is_sized(key) {
+            return None;
+        }
+        let arguments = self.call_arguments_impl(key)?;
+        let [length] = arguments.as_slice() else {
+            return None;
+        };
+        Some(*length)
+    }
+
     fn managed_array_allocation(&self, key: AstNodeKey) -> Option<beskid_isle::ManagedArrayAllocation> {
         self.managed_array_allocation_impl(key)
     }
@@ -166,6 +178,26 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
 
     fn clif_block_body(&self, key: AstNodeKey) -> Option<String> {
         self.clif_block_body_impl(key)
+    }
+
+    fn clif_block_parameters(&self, key: AstNodeKey) -> Option<Vec<beskid_queries::ClifParameterShape>> {
+        // An unavailable fact (for example a block inside a lambda) exposes no parameters rather
+        // than the permissive fixture default.
+        Some(self.query(beskid_queries::clif_block_parameters(self.db, key)).map(|shapes| shapes.to_vec()).unwrap_or_default())
+    }
+
+    fn clif_foreign_symbol(&self, symbol: &str) -> bool {
+        if beskid_abi::is_runtime_owned_ffi_symbol(symbol) {
+            return false;
+        }
+        self.input.typed_program().assembly.units.iter().any(|unit| {
+            let unit = beskid_queries::SourceUnitId::new(self.db, unit.path.clone());
+            beskid_queries::extern_contract_declarations_in_unit(self.db, unit).into_iter().any(|declared| {
+                declared.symbol == symbol
+                    && declared.abi.as_deref() == Some("C")
+                    && declared.library.as_deref().is_some_and(|library| !library.is_empty())
+            })
+        })
     }
 
     fn integer_literal(&self, key: AstNodeKey) -> Option<i64> {

@@ -216,6 +216,7 @@ fn emit_library_pair_with_objects(
             link_mode: LinkMode::Auto,
             verbose: false,
             external_libraries: runtime_libraries.clone(),
+            optional_libraries: Vec::new(),
             library_search_paths: Vec::new(),
         })?;
         if output_kind == BuildOutputKind::SharedLib {
@@ -339,6 +340,7 @@ mod link_tests {
                 link_mode: LinkMode::Auto,
                 verbose: false,
                 external_libraries: libraries,
+                optional_libraries: Vec::new(),
                 library_search_paths: Vec::new(),
             },
             target,
@@ -378,7 +380,7 @@ mod link_tests {
         let mut artifact = CodegenArtifact::default();
         artifact.extern_imports.push(beskid_codegen::ExternImport {
             symbol: "beskid_dynamic_v1_map_owned".into(), abi: Some("C".into()),
-            library: Some("beskid_runtime".into()),
+            library: Some("beskid_runtime".into()), optional: false,
         });
         let mut actual = std::collections::HashSet::new();
         let canonical = ProvenancePolicy::CanonicalRuntime(target.clone());

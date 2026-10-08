@@ -11,11 +11,20 @@ use sha2::{Digest, Sha256};
 
 pub const CORELIB_BUNDLE_FINGERPRINT_FILE: &str = ".beskid-bundle.sha256";
 
+/// Return the nearest managed Corelib bundle root containing `path`: the closest physical
+/// ancestor that holds a regular `.beskid-bundle.sha256` marker file.
+///
+/// This locates the bundle layout only; it does not verify the marker. Bundle integrity is an
+/// install concern (`beskid_tools` re-materializes a bundle whose fingerprint differs) and never
+/// grants Corelib service authority, which is decided per service file against the
+/// compiler-embedded canonical sources.
+pub fn corelib_bundle_marker_root(path: &Path) -> Option<PathBuf> {
+    bundle_root_with_marker(path)
+}
+
 /// Return the managed Corelib bundle containing `path` only when its marker matches the current
-/// contents of the complete bundle. This is an integrity check: a complete byte-identical bundle
-/// with a correctly recomputed marker is intentionally indistinguishable from a managed install.
-/// Standalone copied source files have no verified bundle root, and modifying a marked bundle
-/// invalidates its marker.
+/// contents of the complete bundle. This is an install-integrity check (doctor, `beskid up`,
+/// shipped prebuilt Mods); it never grants Corelib service authority.
 pub fn verified_corelib_bundle_root(path: &Path) -> Option<PathBuf> {
     verified_corelib_bundle_roots(&[path.to_path_buf()]).into_iter().next().flatten()
 }
