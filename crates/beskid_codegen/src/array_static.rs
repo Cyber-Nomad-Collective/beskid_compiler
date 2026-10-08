@@ -10,8 +10,8 @@ use std::sync::Arc;
 use beskid_queries::{
     AstNodeKey, CallLowering, GenericSpecializationInstance, IndexedNodeKind, SemanticTypeId,
     aggregate_literal_declaration, bulk_parameter, call_arguments, call_lowering, child_nodes,
-    empty_array_literal_element_abi_type, empty_array_literal_element_specialization, generic_specialization_identity,
-    node_kind, node_type, typed_array_allocation,
+    ManagedReferenceKind, empty_array_literal_element_abi_type, empty_array_literal_element_specialization,
+    generic_specialization_identity, managed_reference_kind, node_kind, node_type, typed_array_allocation, value_abi_type,
 };
 use cranelift_module::{DataDescription, DataId, Linkage, Module, ModuleError, ModuleResult};
 
@@ -172,6 +172,34 @@ impl CodegenInput<'_> {
         }
     }
 
+    /// The ABI of one array-literal element. Literals, locals, and arithmetic keep their inferred
+    /// `node_type`; a nominal struct literal is one managed reference. Every other element (a call,
+    /// a concatenation of calls, a field, a parameter, an enum value) takes its contextual value
+    /// ABI from the expression inside its wrapper, and a pointer-shaped element must be a
+    /// GC-managed reference so the element pointer map stays exact.
+    fn literal_element_abi_type(&self, element: AstNodeKey) -> Option<SemanticTypeId> {
+        if let Some(element_type) = node_type(self.database(), element).ok().flatten() {
+            return Some(element_type);
+        }
+        if self.nominal_literal_declaration(element).is_some() {
+            return Some(SemanticTypeId::POINTER);
+        }
+        let mut value = element;
+        while matches!(
+            node_kind(self.database(), value).ok().flatten()?,
+            IndexedNodeKind::Expression | IndexedNodeKind::GroupedExpression
+        ) {
+            value = *child_nodes(self.database(), value).ok().flatten()?.first()?;
+        }
+        let element_type = value_abi_type(self.database(), value).ok().flatten()?;
+        if element_type == SemanticTypeId::POINTER
+            && managed_reference_kind(self.database(), value).ok().flatten() != Some(ManagedReferenceKind::GcManaged)
+        {
+            return None;
+        }
+        Some(element_type)
+    }
+
     /// Create source-authorized typed-array metadata.
     ///
     /// A non-empty literal proves its element ABI from every element. An empty literal is valid
@@ -183,25 +211,14 @@ impl CodegenInput<'_> {
             .then_some(())?;
         let elements = child_nodes(self.database(), literal).ok().flatten()?;
         let element_type = match elements.first().copied() {
-            Some(first) => match node_type(self.database(), first).ok().flatten() {
-                Some(element_type) => elements
+            Some(first) => {
+                let element_type = self.literal_element_abi_type(first)?;
+                elements
                     .iter()
                     .copied()
-                    .all(|element| node_type(self.database(), element).ok().flatten() == Some(element_type))
-                    .then_some(element_type)?,
-                // A nominal struct literal carries no scalar `node_type`; its constructed
-                // declaration is the only authority proving the element is one managed
-                // reference. Every element must construct the same declaration so the
-                // element pointer map stays exact.
-                None => {
-                    let declaration = self.nominal_literal_declaration(first)?;
-                    elements
-                        .iter()
-                        .copied()
-                        .all(|element| self.nominal_literal_declaration(element) == Some(declaration))
-                        .then_some(SemanticTypeId::POINTER)?
-                }
-            },
+                    .all(|element| self.literal_element_abi_type(element) == Some(element_type))
+                    .then_some(element_type)?
+            }
             None => empty_array_literal_element_abi_type(self.database(), literal).ok().flatten()?,
         };
         let length = u64::try_from(elements.len()).ok()?;
