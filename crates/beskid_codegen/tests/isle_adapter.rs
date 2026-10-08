@@ -16,6 +16,8 @@ mod control_flow_closures_spawn;
 mod control_flow_loop_termination;
 #[path = "isle_adapter/corelib_services.rs"]
 mod corelib_services;
+#[path = "isle_adapter/deep_projection_chain.rs"]
+mod deep_projection_chain;
 #[path = "isle_adapter/diagnostics_fail_closed.rs"]
 mod diagnostics_fail_closed;
 #[path = "isle_adapter/enum_match_result.rs"]

@@ -45,7 +45,15 @@ impl ModSemanticQueryAuthority<'_> {
     }
     pub(crate) fn syntax_key(&self, issuer: u64, node: &ModSyntaxNodeRef) -> Result<AstNodeKey, ModSemanticError> {
         if issuer == 0 || node.invocation_issuer != issuer || node.generation != self.assembly.generation {
-            return Err(Self::error("foreign or expired syntax invocation/generation"));
+            return Err(Self::error(&format!(
+                "foreign or expired syntax invocation/generation: node issued by invocation {} at generation {} \
+                 (unit `{}`, node {}), current invocation {issuer} at generation {}",
+                node.invocation_issuer,
+                node.generation.0,
+                node.source_unit.display(),
+                node.node.0,
+                self.assembly.generation.0
+            )));
         }
         let unit = self
             .registered_unit(&node.source_unit)

@@ -88,7 +88,6 @@ fn emit_runtime_support(plan: &NativeAdapterPlan, output: &mut String) -> Result
         &runtime.string_construct,
         &runtime.string_length,
         &runtime.root,
-        &runtime.resolve_root,
         &runtime.unroot,
         &runtime.array_allocate_rooted,
         &runtime.construction_finish,
@@ -102,7 +101,6 @@ fn emit_runtime_support(plan: &NativeAdapterPlan, output: &mut String) -> Result
     writeln!(output, "extern void *{}(const uint8_t*,size_t);", runtime.string_construct)?;
     writeln!(output, "extern size_t {}(void*);", runtime.string_length)?;
     writeln!(output, "extern size_t {}(void*);", runtime.root)?;
-    writeln!(output, "extern void *{}(size_t);", runtime.resolve_root)?;
     writeln!(output, "extern void {}(size_t);", runtime.unroot)?;
     writeln!(output, "extern void *{}(void*,void*);", runtime.array_allocate_rooted)?;
     writeln!(output, "extern uint8_t {}(void*);", runtime.construction_finish)?;
@@ -497,11 +495,16 @@ fn emit_aggregate_codec(
             count_offset,
         } => {
             let slot = type_slot(plan, *element)?;
+            // The rooted allocation returns the ABI-visible array view (`{ data, len, cap }`,
+            // 24 bytes into the managed object) and roots the object header behind it. The
+            // construction root keeps that object alive while children decode, exactly as the
+            // ISLE array literal lowering holds the returned view across allocating calls; the
+            // view is never re-derived from the root, whose resolution is the object header.
             if decode {
                 writeln!(
                     output,
-                    "static int mod_decode_{id}(ModScope*s,uint64_t h,unsigned d,ModValue*out){{uint32_t k=0;size_t n=0;memset(out,0,sizeof(*out));if(!mod_step(s,d)||s->header->callbacks->kind(s->header->context,h,&k)||k!=6||s->header->callbacks->count(s->header->context,h,&n)||n>1048576||n>SIZE_MAX/{stride}ULL||!mod_bytes(s,n*{stride}ULL)||s->root_count>=65536)return 0;_Alignas(max_align_t) uint8_t request[{request_bytes}];const void*prototype={request_getter}();if(!prototype)return 0;memcpy(request,prototype,sizeof(request));memcpy(request+{count_offset},&n,sizeof(n));size_t root=0;out->pointer={}(request,&root);if(!out->pointer||!root)return 0;s->roots[s->root_count++]=root;for(size_t i=0;i<n;i++){{uint64_t child=0;ModValue value={{0}};if(s->header->callbacks->child(s->header->context,h,i,&child)||!mod_decode_{element}(s,child,d+1,&value))return 0;out->pointer={}(root);if(!out->pointer)return 0;void*data=NULL;memcpy(&data,(uint8_t*)out->pointer+{data_offset},sizeof(data));if(!data)return 0;memcpy((uint8_t*)data+i*{stride}ULL,&value.{slot},sizeof(value.{slot}));",
-                    plan.runtime.array_allocate_rooted, plan.runtime.resolve_root
+                    "static int mod_decode_{id}(ModScope*s,uint64_t h,unsigned d,ModValue*out){{uint32_t k=0;size_t n=0;memset(out,0,sizeof(*out));if(!mod_step(s,d)||s->header->callbacks->kind(s->header->context,h,&k)||k!=6||s->header->callbacks->count(s->header->context,h,&n)||n>1048576||n>SIZE_MAX/{stride}ULL||!mod_bytes(s,n*{stride}ULL)||s->root_count>=65536)return 0;_Alignas(max_align_t) uint8_t request[{request_bytes}];const void*prototype={request_getter}();if(!prototype)return 0;memcpy(request,prototype,sizeof(request));memcpy(request+{count_offset},&n,sizeof(n));size_t root=0;out->pointer={}(request,&root);if(!out->pointer||!root)return 0;s->roots[s->root_count++]=root;void*data=NULL;memcpy(&data,(uint8_t*)out->pointer+{data_offset},sizeof(data));if(!data&&n)return 0;for(size_t i=0;i<n;i++){{uint64_t child=0;ModValue value={{0}};if(s->header->callbacks->child(s->header->context,h,i,&child)||!mod_decode_{element}(s,child,d+1,&value))return 0;memcpy((uint8_t*)data+i*{stride}ULL,&value.{slot},sizeof(value.{slot}));",
+                    plan.runtime.array_allocate_rooted
                 )?;
                 if slot == "pointer" {
                     writeln!(output, "if(!{}(out->pointer,value.pointer))return 0;", plan.runtime.array_write_barrier)?;
@@ -924,7 +927,6 @@ mod tests {
                 string_length: "str_len".into(),
                 string_data_offset: 0,
                 root: "gc_root_handle".into(),
-                resolve_root: "gc_resolve_handle".into(),
                 unroot: "gc_unroot_handle".into(),
                 array_allocate_rooted: "array_allocate_rooted".into(),
                 construction_finish: "array_finish".into(),
@@ -1151,6 +1153,68 @@ int main(void){
             .unwrap();
         assert!(result.status.success(), "{}", String::from_utf8_lossy(&result.stderr));
         assert!(std::process::Command::new(executable).status().unwrap().success());
+    }
+    /// The runtime roots the managed object header and returns the ABI array view 24 bytes
+    /// after it; resolving the root yields the header again. Re-deriving the view from the root
+    /// read the type-descriptor word as the data pointer and wrote elements through it
+    /// (`mod_decode_7` SIGSEGV in the Serialization Mod worker). Elements must land in the data
+    /// buffer the allocation's view names, and the header word must stay untouched.
+    #[test]
+    fn decoded_array_elements_land_in_the_allocation_view_not_the_rooted_object() {
+        let mut plan = fixture();
+        plan.types.truncate(3);
+        plan.constructors.clear();
+        plan.entries.clear();
+        plan.callbacks.clear();
+        let mut source = codec_fixture_source(&plan, &[2], &[]);
+        source.push_str(
+            r#"
+static uint8_t prototype[64];
+void*array_request(void){return prototype;}
+static int32_t elements[4];
+static int32_t header_sentinel[4]={-1,-1,-1,-1};
+/* [descriptor][gc word][element descriptor][view: data,len,cap][data...] like the runtime. */
+static uint64_t object[16];
+static void*view;
+void*array_allocate_rooted(void*request,void*root_out){
+ size_t n=0;memcpy(&n,(uint8_t*)request+16,sizeof(n));if(n!=4)return NULL;
+ object[0]=(uint64_t)(uintptr_t)header_sentinel;object[1]=0;object[2]=0;
+ object[3]=(uint64_t)(uintptr_t)elements;object[4]=n;object[5]=n;
+ view=&object[3];*(size_t*)root_out=1;return view;
+}
+uint8_t array_finish(void*root){return (size_t)(uintptr_t)root==1;}
+size_t gc_root_handle(void*p){return (size_t)p;}
+void gc_unroot_handle(size_t p){(void)p;}
+static int32_t kind_callback(void*c,uint64_t h,uint32_t*out){(void)c;*out=h==1?6:2;return 0;}
+static int32_t count_callback(void*c,uint64_t h,size_t*out){(void)c;if(h!=1)return 1;*out=4;return 0;}
+static int32_t child_callback(void*c,uint64_t h,size_t i,uint64_t*out){(void)c;if(h!=1)return 1;*out=100+i;return 0;}
+static int32_t scalar_callback(void*c,uint64_t h,uint64_t*out){(void)c;if(h<100)return 1;*out=10+(h-100);return 0;}
+int main(void){
+ ModCallbacks callbacks={0};callbacks.kind=kind_callback;callbacks.count=count_callback;callbacks.child=child_callback;callbacks.scalar=scalar_callback;
+ ModHeader header={0};header.callbacks=&callbacks;ModScope scope={0};scope.header=&header;
+ ModValue out={0};
+ if(!mod_decode_2(&scope,1,0,&out))return 1;
+ if(out.pointer!=view)return 2;
+ for(int i=0;i<4;i++)if(elements[i]!=10+i)return 3;
+ for(int i=0;i<4;i++)if(header_sentinel[i]!=-1)return 4;
+ return 0;
+}
+"#,
+        );
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("decode.c");
+        let executable = dir.path().join("decode");
+        std::fs::write(&path, source).unwrap();
+        let result = std::process::Command::new("clang")
+            .args(["-std=c11", "-O2"])
+            .arg(path)
+            .arg("-o")
+            .arg(&executable)
+            .output()
+            .unwrap();
+        assert!(result.status.success(), "{}", String::from_utf8_lossy(&result.stderr));
+        let status = std::process::Command::new(executable).status().unwrap();
+        assert!(status.success(), "decoded array must fill the view's data buffer: {status}");
     }
     #[test]
     fn raw_pointers_have_no_transport_scalar_abi() {

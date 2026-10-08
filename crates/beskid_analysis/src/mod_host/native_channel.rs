@@ -43,6 +43,9 @@ impl<'a> ParentChannel<'a> {
     pub fn address(&self) -> Result<std::net::SocketAddr> {
         Ok(self.listener.local_addr()?)
     }
+    pub fn has_completion(&self) -> bool {
+        self.completion.is_some()
+    }
     pub fn completion(&mut self) -> Result<super::native_bridge::NativeInvocationOutput> {
         Ok(super::native_bridge::NativeInvocationOutput {
             value: self.completion.take().context("native worker exited without completion frame")?,

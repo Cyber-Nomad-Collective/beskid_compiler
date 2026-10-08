@@ -464,7 +464,7 @@ fn lower_resolved_syntax_program(
                 || beskid_queries::dynamic_unpacking_bridge(input.database(),instance).ok().flatten().is_some()
         })
     }) {
-        for symbol in ["gc_root_handle", "gc_resolve_handle", "gc_unroot_handle"] {
+        for symbol in ["gc_root_handle", "beskid_rt_v5_gc_resolve_handle", "gc_unroot_handle"] {
             if !extern_imports.iter().any(|import| import.symbol == symbol) {
                 extern_imports.push(ExternImport { symbol: symbol.into(), abi: Some("C".into()), library: None, optional: false });
             }

@@ -31,7 +31,7 @@ pub use error::{AotError, AotResult};
 pub use export_table::{ExportTable, ExportTableEntry};
 pub use mod_artifact::{
     CachedModArtifactRequest, ContractRegistration, ModArtifactBuildRequest, ModArtifactDescriptor, QualifiedModInvoker,
-    QualifiedNativeMod, build_mod_artifact, mod_artifact_dir, qualify_cached_mod_artifact,
+    ModCacheLock, QualifiedNativeMod, build_mod_artifact, mod_artifact_dir, qualify_cached_mod_artifact,
 };
 pub use prepared_syntax::{
     lower_canonical_runtime_prepared_syntax, lower_prepared_syntax_entrypoint, lower_prepared_syntax_library,

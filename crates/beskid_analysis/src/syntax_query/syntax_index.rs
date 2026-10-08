@@ -28,7 +28,10 @@ impl SyntaxIndex {
         let mut metadata = Vec::new();
         let mut children = Vec::new();
         let mut paths = Vec::new();
-        index_node(DynNodeRef::from(&program.node), None, &[], &mut metadata, &mut children, &mut paths);
+        // The root is indexed as the spanned program so its metadata carries the unit span like
+        // every other node; the bare `Program` has no span and would leave `Query.Span(entryRoot)`
+        // unanswerable while every child answers.
+        index_node(DynNodeRef::from(program), None, &[], &mut metadata, &mut children, &mut paths);
         Self { generation, metadata, children, paths }
     }
 
@@ -64,7 +67,7 @@ impl SyntaxIndex {
     /// Resolve a node through its indexed child path without rebuilding a whole-tree snapshot.
     pub fn node_at<'a>(&self, program: &'a Spanned<Program>, id: AstNodeId) -> Option<DynNodeRef<'a>> {
         let path = self.paths.get(id.0 as usize)?;
-        let mut node = DynNodeRef::from(&program.node);
+        let mut node = DynNodeRef::from(program);
         for ordinal in path {
             node = direct_child(node, *ordinal)?;
         }

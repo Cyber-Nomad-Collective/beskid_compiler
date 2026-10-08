@@ -12,15 +12,15 @@ int main(void) {
     void *value=NULL;size_t root=0;
     assert(!beskid_glue_v1_input_bytes(bytes,sizeof bytes,&value,&root));
     assert(value && root);
-    assert(gc_resolve_handle(root)==value);
+    assert(beskid_rt_v5_gc_resolve_handle(root)==value);
     gc_collect();
-    assert(gc_resolve_handle(root));
+    assert(beskid_rt_v5_gc_resolve_handle(root));
     gc_unroot_handle(root);
-    assert(!gc_resolve_handle(root));
+    assert(!beskid_rt_v5_gc_resolve_handle(root));
     value=NULL;root=0;
     assert(!beskid_glue_v1_input_bytes(NULL,0,&value,&root));
-    assert(value && root && gc_resolve_handle(root)==value);
-    gc_collect();assert(gc_resolve_handle(root));gc_unroot_handle(root);
+    assert(value && root && beskid_rt_v5_gc_resolve_handle(root)==value);
+    gc_collect();assert(beskid_rt_v5_gc_resolve_handle(root));gc_unroot_handle(root);
     beskid_rt_v5_process_shutdown(runtime);
     return 0;
 }

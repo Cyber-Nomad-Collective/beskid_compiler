@@ -80,3 +80,13 @@ fn unknown_projected_field_keeps_the_match_unavailable() {
         fixture(&SOURCE.replace("match value.node.literal.node", "match value.node.missing.node"));
     assert!(!matches!(enum_match(&db, matches[1]), Ok(Some(_))), "an unproven projection never yields a match fact");
 }
+
+/// The entry root's span is a registered syntax fact, not only its children's.
+#[test]
+fn entry_root_node_has_a_span_fact() {
+    let (_temporary, db, assembly, _matches) = fixture(SOURCE);
+    let unit = SourceUnitId::new(&db, assembly.entry_unit().path.clone());
+    let root = AstNodeKey { unit, generation: assembly.generation, node: beskid_analysis::syntax::AstNodeId(0) };
+    let span = beskid_queries::node_span(&db, root).expect("node_span query").expect("root span");
+    assert!(span.end > span.start, "the unit span covers the source: {span:?}");
+}

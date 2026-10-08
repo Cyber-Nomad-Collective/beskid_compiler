@@ -60,7 +60,9 @@ impl WorkerServices<'_> {
     fn syntax(&mut self, request: Value) -> Result<Value> {
         let response = self.request(json!({"kind":"Syntax","request":request}))?;
         if let Some(error) = response.get("error") {
-            bail!("native syntax callback rejected: {error}");
+            let mut sent = request.to_string();
+            sent.truncate(512);
+            bail!("native syntax callback rejected: {error}; request was {sent}");
         }
         response.get("syntax").cloned().context("syntax response absent")
     }

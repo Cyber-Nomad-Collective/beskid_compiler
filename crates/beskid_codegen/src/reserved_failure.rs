@@ -212,7 +212,7 @@ pub fn emit_checked_invocation<M: cranelift_module::Module>(
             signature.returns.extend(result.map(AbiParam::new));
             module.declare_function(name, Linkage::Import, &signature)
         };
-    let resolve = import("gc_resolve_handle", &[pointer], Some(pointer))?;
+    let resolve = import("beskid_rt_v5_gc_resolve_handle", &[pointer], Some(pointer))?;
     let admitted = import("beskid_rt_v5_gc_root_slot_is_registered", &[pointer], Some(types::I8))?;
     let enter = import("beskid_rt_v5_checked_scope_enter", &[pointer, pointer], Some(types::I8))?;
     let status = import("beskid_rt_v5_checked_scope_failure_reason", &[], Some(pointer))?;

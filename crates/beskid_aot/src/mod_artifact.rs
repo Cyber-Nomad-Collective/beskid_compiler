@@ -154,10 +154,16 @@ fn cached_descriptor_paths(package_root: &Path, target_triple: &str) -> AotResul
     for entry in fs::read_dir(package_root).map_err(|error| io(package_root, error))? {
         let entry = entry.map_err(|error| io(package_root, error))?;
         let name = entry.file_name();
-        if name.to_str().is_none_or(|name| name.starts_with('.'))
-            || !entry.file_type().map_err(|error| io(&entry.path(), error))?.is_dir()
-        {
+        if name.to_str().is_none_or(|name| name.starts_with('.')) {
             continue;
+        }
+        // A cooperating publisher may prune this entry between `read_dir` and the stat: a
+        // vanished entry is simply not a candidate.
+        match entry.file_type() {
+            Ok(kind) if kind.is_dir() => {}
+            Ok(_) => continue,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(error) => return Err(io(&entry.path(), error)),
         }
         let target_dir = entry.path().join(target_triple);
         let sidecar = target_dir.join(NATIVE_MOD_DESCRIPTOR_FILE);
@@ -197,11 +203,18 @@ fn prune_superseded_mod_artifacts(
         if recorded_profile.is_some_and(|recorded| recorded != profile) {
             continue;
         }
-        fs::remove_dir_all(artifact_dir).map_err(|error| io(artifact_dir, error))?;
+        // Another publisher of the same package may already have pruned this entry.
+        match fs::remove_dir_all(artifact_dir) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(error) => return Err(io(artifact_dir, error)),
+        }
         if let Some(key_dir) = artifact_dir.parent()
             && fs::read_dir(key_dir).is_ok_and(|mut entries| entries.next().is_none())
+            && let Err(error) = fs::remove_dir(key_dir)
+            && error.kind() != std::io::ErrorKind::NotFound
         {
-            fs::remove_dir(key_dir).map_err(|error| io(key_dir, error))?;
+            return Err(io(key_dir, error));
         }
     }
     Ok(())
@@ -356,9 +369,9 @@ pub fn build_mod_artifact(req: ModArtifactBuildRequest) -> AotResult<QualifiedNa
     sync_tree(dir)?;
     fs::create_dir_all(final_dir.parent().expect("cache target parent")).map_err(|error| io(&final_dir, error))?;
     req.control.check("Mod atomic publication")?;
-    if final_dir.exists() {
-        let existing = read_mod_artifact_descriptor(&final_dir.join("mod.descriptor.json"), &req.runtime.prefix)
-            .map_err(invalid)?;
+    if final_dir.exists()
+        && let Some(existing) = read_published_descriptor(&final_dir, &req.runtime.prefix)?
+    {
         if serde_json::to_value(&existing).map_err(invalid)? != serde_json::to_value(&descriptor).map_err(invalid)? {
             return Err(invalid("conflicting immutable Mod artifact cache entry"));
         }
@@ -611,6 +624,161 @@ mod publication_v06_tests {
         sync_directory(root.path()).unwrap();
         assert!(!staged.exists());
         assert_eq!(fs::read(destination.join("nested/payload")).unwrap(), b"complete");
+    }
+}
+
+/// Read a published cache entry's descriptor, or `None` when a cooperating publisher pruned the
+/// entry between the existence check and the read.
+fn read_published_descriptor(final_dir: &Path, runtime_prefix: &Path) -> AotResult<Option<ModArtifactDescriptor>> {
+    let sidecar = final_dir.join(NATIVE_MOD_DESCRIPTOR_FILE);
+    if !sidecar.exists() && !final_dir.exists() {
+        return Ok(None);
+    }
+    read_mod_artifact_descriptor(&sidecar, runtime_prefix).map(Some).map_err(invalid)
+}
+
+/// Exclusive advisory lock over one package's Mod cache (`.beskid/obj/mods/<package>/`).
+///
+/// Concurrent compilations of programs that depend on the same Mod otherwise each qualify a
+/// stale cache, each rebuild, and each prune what the other is reading. The lock serializes
+/// `qualify -> build -> publish -> prune` per package, so the second builder finds the first
+/// publication current instead of racing it. It is a blocking OS file lock (`flock` /
+/// `LockFileEx`), released when the guard drops or the process ends.
+pub struct ModCacheLock {
+    file: fs::File,
+    path: PathBuf,
+}
+impl ModCacheLock {
+    pub fn acquire(workspace_root: &Path, package_id: &str) -> AotResult<Self> {
+        if package_id.is_empty() || package_id.contains(['/', '\\']) || matches!(package_id, "." | "..") {
+            return Err(invalid("invalid Mod package identity"));
+        }
+        let package_root = workspace_root.join(".beskid/obj/mods").join(package_id);
+        fs::create_dir_all(&package_root).map_err(|error| io(&package_root, error))?;
+        let path = package_root.join(".cache-lock");
+        let file = fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(&path)
+            .map_err(|error| io(&path, error))?;
+        lock_file_exclusive(&file, true).map_err(|error| io(&path, error))?;
+        Ok(Self { file, path })
+    }
+    /// Acquire without waiting; `None` when another process holds the lock.
+    pub fn try_acquire(workspace_root: &Path, package_id: &str) -> AotResult<Option<Self>> {
+        let package_root = workspace_root.join(".beskid/obj/mods").join(package_id);
+        fs::create_dir_all(&package_root).map_err(|error| io(&package_root, error))?;
+        let path = package_root.join(".cache-lock");
+        let file = fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(&path)
+            .map_err(|error| io(&path, error))?;
+        match lock_file_exclusive(&file, false) {
+            Ok(()) => Ok(Some(Self { file, path })),
+            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => Ok(None),
+            Err(error) => Err(io(&path, error)),
+        }
+    }
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+}
+impl Drop for ModCacheLock {
+    fn drop(&mut self) {
+        let _ = unlock_file(&self.file);
+    }
+}
+#[cfg(unix)]
+fn lock_file_exclusive(file: &fs::File, wait: bool) -> std::io::Result<()> {
+    use std::os::unix::io::AsRawFd;
+    let operation = libc::LOCK_EX | if wait { 0 } else { libc::LOCK_NB };
+    if unsafe { libc::flock(file.as_raw_fd(), operation) } != 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+    Ok(())
+}
+#[cfg(unix)]
+fn unlock_file(file: &fs::File) -> std::io::Result<()> {
+    use std::os::unix::io::AsRawFd;
+    if unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_UN) } != 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+    Ok(())
+}
+#[cfg(windows)]
+fn lock_file_exclusive(file: &fs::File, wait: bool) -> std::io::Result<()> {
+    use std::os::windows::io::AsRawHandle;
+    #[repr(C)]
+    struct Overlapped {
+        internal: usize,
+        internal_high: usize,
+        offset: u32,
+        offset_high: u32,
+        event: *mut std::ffi::c_void,
+    }
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        fn LockFileEx(
+            file: *mut std::ffi::c_void,
+            flags: u32,
+            reserved: u32,
+            bytes_low: u32,
+            bytes_high: u32,
+            overlapped: *mut Overlapped,
+        ) -> i32;
+        fn GetLastError() -> u32;
+    }
+    const LOCKFILE_EXCLUSIVE_LOCK: u32 = 2;
+    const LOCKFILE_FAIL_IMMEDIATELY: u32 = 1;
+    const ERROR_LOCK_VIOLATION: u32 = 33;
+    let mut overlapped = Overlapped { internal: 0, internal_high: 0, offset: 0, offset_high: 0, event: std::ptr::null_mut() };
+    let flags = LOCKFILE_EXCLUSIVE_LOCK | if wait { 0 } else { LOCKFILE_FAIL_IMMEDIATELY };
+    if unsafe { LockFileEx(file.as_raw_handle() as *mut _, flags, 0, 1, 0, &mut overlapped) } == 0 {
+        let code = unsafe { GetLastError() };
+        if code == ERROR_LOCK_VIOLATION {
+            return Err(std::io::Error::new(std::io::ErrorKind::WouldBlock, "Mod cache lock is held"));
+        }
+        return Err(std::io::Error::from_raw_os_error(code as i32));
+    }
+    Ok(())
+}
+#[cfg(windows)]
+fn unlock_file(file: &fs::File) -> std::io::Result<()> {
+    use std::os::windows::io::AsRawHandle;
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        fn UnlockFile(file: *mut std::ffi::c_void, offset_low: u32, offset_high: u32, bytes_low: u32, bytes_high: u32) -> i32;
+    }
+    if unsafe { UnlockFile(file.as_raw_handle() as *mut _, 0, 0, 1, 0) } == 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod cache_lock_v06_tests {
+    use super::*;
+    #[test]
+    fn v06_mod_cache_lock_excludes_a_second_holder_until_released() {
+        let root = tempfile::tempdir().unwrap();
+        let first = ModCacheLock::acquire(root.path(), "DemoMod").unwrap();
+        assert!(first.path().starts_with(root.path().join(".beskid/obj/mods/DemoMod")));
+        assert!(ModCacheLock::try_acquire(root.path(), "DemoMod").unwrap().is_none(), "held lock is exclusive");
+        assert!(ModCacheLock::try_acquire(root.path(), "OtherMod").unwrap().is_some(), "packages lock independently");
+        drop(first);
+        assert!(ModCacheLock::try_acquire(root.path(), "DemoMod").unwrap().is_some(), "released lock is free");
+    }
+    #[test]
+    fn v06_mod_cache_lock_file_is_never_a_cache_entry() {
+        let root = tempfile::tempdir().unwrap();
+        let _lock = ModCacheLock::acquire(root.path(), "DemoMod").unwrap();
+        let package_root = root.path().join(".beskid/obj/mods/DemoMod");
+        assert!(cached_descriptor_paths(&package_root, "x86_64-unknown-linux-gnu").unwrap().is_empty());
     }
 }
 

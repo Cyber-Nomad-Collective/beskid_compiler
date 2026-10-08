@@ -404,19 +404,7 @@ pub fn lower_prepared_native_mod(
             }
         }
         artifact.array_static_plans.extend(layouts.arrays);
-        let runtime = NativeRuntimeHooks {
-            string_construct: "str_new".into(),
-            string_length: "str_len".into(),
-            string_data_offset: 0,
-            root: "gc_root_handle".into(),
-            resolve_root: "gc_resolve_handle".into(),
-            unroot: "gc_unroot_handle".into(),
-            array_allocate_rooted: "beskid_rt_v5_array_allocate_rooted".into(),
-            construction_finish: "beskid_rt_v5_array_construction_finish".into(),
-            record_allocate: "beskid_rt_v5_managed_object_allocate".into(),
-            array_write_barrier: "beskid_rt_v5_array_write_barrier".into(),
-            write_barrier: "gc_write_barrier".into(),
-        };
+        let runtime = canonical_runtime_hooks();
         let plan = NativeAdapterPlan {
             syntax_types: layouts.syntax_types,
             pointer_bytes: input.target().pointer_width / 8,
@@ -523,4 +511,77 @@ fn bootstrap_factory(
 
 fn describe_sites(db: &dyn beskid_queries::Db, keys: &[beskid_queries::AstNodeKey]) -> String {
     keys.iter().map(|key| beskid_queries::format_ast_node_site(db, *key)).collect::<Vec<_>>().join(", ")
+}
+
+/// Runtime entry points the generated C adapter calls through the glue shared provider.
+///
+/// Every name must be a symbol the provider actually exports: a manifest export
+/// (`beskid_rt_v5_*`) or a Corelib service implementation (`gc_root_handle`, `str_new`, ...).
+/// A spelling outside that catalog links silently on ELF targets and only fails when the worker
+/// loads the Mod (`undefined symbol`), so the catalog test below guards every entry.
+pub(super) fn canonical_runtime_hooks() -> super::adapter_plan::NativeRuntimeHooks {
+    super::adapter_plan::NativeRuntimeHooks {
+        string_construct: "str_new".into(),
+        string_length: "str_len".into(),
+        string_data_offset: 0,
+        root: "gc_root_handle".into(),
+        unroot: "gc_unroot_handle".into(),
+        array_allocate_rooted: "beskid_rt_v5_array_allocate_rooted".into(),
+        construction_finish: "beskid_rt_v5_array_construction_finish".into(),
+        record_allocate: "beskid_rt_v5_managed_object_allocate".into(),
+        array_write_barrier: "beskid_rt_v5_array_write_barrier".into(),
+        write_barrier: "gc_write_barrier".into(),
+    }
+}
+
+#[cfg(test)]
+mod runtime_hook_catalog_tests {
+    use super::canonical_runtime_hooks;
+    use std::collections::BTreeSet;
+
+    /// Symbols the canonical runtime exports: manifest exports plus every Corelib service
+    /// implementation and soft builtin, read from the ABI-v5 source manifest.
+    fn exported_runtime_symbols() -> BTreeSet<String> {
+        let manifest: serde_json::Value =
+            serde_json::from_str(beskid_abi::generated::abi_v5_contract::ABI_V5_SOURCE_JSON).expect("ABI manifest");
+        let mut symbols = BTreeSet::new();
+        let strings = |value: Option<&serde_json::Value>| {
+            value.and_then(serde_json::Value::as_array).into_iter().flatten().cloned().collect::<Vec<_>>()
+        };
+        for export in strings(manifest.get("exports")) {
+            symbols.extend(export.get("symbol").and_then(serde_json::Value::as_str).map(str::to_owned));
+        }
+        for builtin in strings(manifest.get("softBuiltins")) {
+            symbols.extend(builtin.get("symbol").and_then(serde_json::Value::as_str).map(str::to_owned));
+        }
+        for service in strings(manifest.get("corelibServices")) {
+            for binding in strings(service.get("targetBindings")) {
+                symbols.extend(binding.get("implementation").and_then(serde_json::Value::as_str).map(str::to_owned));
+            }
+        }
+        for spec in beskid_abi::all_builtin_specs() {
+            symbols.insert(spec.symbol.to_owned());
+        }
+        symbols
+    }
+
+    #[test]
+    fn every_native_adapter_runtime_hook_names_an_exported_runtime_symbol() {
+        let exported = exported_runtime_symbols();
+        let hooks = canonical_runtime_hooks();
+        for (role, symbol) in [
+            ("string_construct", &hooks.string_construct),
+            ("string_length", &hooks.string_length),
+            ("root", &hooks.root),
+            ("unroot", &hooks.unroot),
+            ("array_allocate_rooted", &hooks.array_allocate_rooted),
+            ("construction_finish", &hooks.construction_finish),
+            ("record_allocate", &hooks.record_allocate),
+            ("array_write_barrier", &hooks.array_write_barrier),
+            ("write_barrier", &hooks.write_barrier),
+        ] {
+            assert!(exported.contains(symbol), "runtime hook `{role}` names `{symbol}`, which no runtime exports");
+        }
+        assert!(!exported.contains("gc_resolve_handle"), "the short resolve spelling never existed in the runtime");
+    }
 }

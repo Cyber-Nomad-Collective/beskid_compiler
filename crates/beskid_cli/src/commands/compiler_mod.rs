@@ -93,6 +93,9 @@ fn rebuild(args: ModRebuildArgs) -> Result<()> {
         .map(|section| section.resolved_artifact_policy())
         .unwrap_or("rebuild");
 
+    let cache = cached_mod_request(&resolved, args.target_triple.as_deref())?;
+    let _cache_lock =
+        beskid_aot::ModCacheLock::acquire(&cache.workspace_root, &cache.package_id).map_err(anyhow::Error::from)?;
     if args.clean || artifact_policy == "clean_rebuild" {
         remove_mod_cache_dir(&resolved.plan.project_root, &resolved.manifest.project.name)?;
     }
@@ -339,9 +342,23 @@ fn remove_mod_cache_dir(project_root: &Path, package_id: &str) -> Result<bool> {
     if !cache_dir.exists() {
         return Ok(false);
     }
-    fs::remove_dir_all(&cache_dir)
-        .with_context(|| format!("failed to remove mod artifact cache {}", cache_dir.display()))?;
-    Ok(true)
+    // The package cache lock file stays: removing it while a builder holds it would let a
+    // concurrent builder take a fresh lock on a new file and race the clean rebuild.
+    let mut removed = false;
+    for entry in fs::read_dir(&cache_dir)
+        .with_context(|| format!("failed to read mod artifact cache {}", cache_dir.display()))?
+    {
+        let entry = entry.with_context(|| format!("failed to read mod artifact cache {}", cache_dir.display()))?;
+        if entry.file_name() == ".cache-lock" {
+            continue;
+        }
+        let path = entry.path();
+        let kind = entry.file_type().with_context(|| format!("failed to stat {}", path.display()))?;
+        if kind.is_dir() { fs::remove_dir_all(&path) } else { fs::remove_file(&path) }
+            .with_context(|| format!("failed to remove mod artifact cache entry {}", path.display()))?;
+        removed = true;
+    }
+    Ok(removed)
 }
 
 #[cfg(test)]
@@ -636,9 +653,13 @@ fn current_or_built_mod_artifact(
     policy: beskid_analysis::projects::WorkspacePrepareOptions,
     pipeline: Option<&dyn PipelineObserver>,
 ) -> Result<beskid_aot::QualifiedNativeMod> {
-    if let Some(current) =
-        beskid_aot::qualify_cached_mod_artifact(&cached_mod_request(resolved_mod, None)?).map_err(anyhow::Error::from)?
-    {
+    let cache = cached_mod_request(resolved_mod, None)?;
+    // One builder per package cache at a time: a concurrent compilation that depends on the
+    // same Mod waits here and then qualifies the fresh publication instead of rebuilding and
+    // pruning underneath this one.
+    let _cache_lock =
+        beskid_aot::ModCacheLock::acquire(&cache.workspace_root, &cache.package_id).map_err(anyhow::Error::from)?;
+    if let Some(current) = beskid_aot::qualify_cached_mod_artifact(&cache).map_err(anyhow::Error::from)? {
         return Ok(current);
     }
     let mod_policy = bundled_mod_policy(&resolved_mod.plan.manifest_path, policy);

@@ -33,7 +33,7 @@ impl ReservedFailureDomain {
         lease.images().verify_integrity().map_err(|error| invalid(error.to_string()))?;
         let admit = *unsafe { lease.images().image_symbol::<Admit>(image, symbol) }
             .map_err(|error| invalid(error.to_string()))?;
-        let resolve = *unsafe { lease.images().provider_symbol::<Resolve>(c"gc_resolve_handle") }
+        let resolve = *unsafe { lease.images().provider_symbol::<Resolve>(c"beskid_rt_v5_gc_resolve_handle") }
             .map_err(|error| invalid(error.to_string()))?;
         let unroot = *unsafe { lease.images().provider_symbol::<Unroot>(c"gc_unroot_handle") }
             .map_err(|error| invalid(error.to_string()))?;

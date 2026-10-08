@@ -143,6 +143,167 @@ fn call_arity_mismatch_for_call(db: &dyn Db, call: AstNodeKey) -> SemanticQueryR
     Ok(Some(CallArityMismatch { call, expected, actual }))
 }
 
+/// A direct call argument whose proven source type can never satisfy the callee's declared
+/// parameter type.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub struct CallArgumentTypeMismatch {
+    /// The call expression.
+    pub call: AstNodeKey,
+    /// The argument expression (the diagnostic site).
+    pub argument: AstNodeKey,
+    /// The parameter's declared type, as the callee spells it.
+    pub expected: Arc<str>,
+    /// The argument's proven source type.
+    pub actual: Arc<str>,
+}
+
+/// Report the first direct call in `key` (an item) that passes an argument of a provably
+/// different nominal type than its parameter declares (E1205).
+///
+/// Only the shapes whose identities the semantic contract proves exactly are judged: a parameter
+/// declared as a concrete record or enum (no type arguments, not a callee type parameter, not a
+/// contract) against an argument whose source identity is a nominal or a proven scalar, and a
+/// primitive parameter against a nominal argument. Scalar-versus-scalar representation
+/// selection, generic and contract-bounded parameters, arrays, functions, and arguments without
+/// a proven identity are not judged here; they keep their own authorities. The legacy checker
+/// never sees this error for a non-entry unit: it discards dependency-body findings, which is
+/// how `Query.Span(Query.At(root))` reached a native worker as a `NodeRef`-typed `SyntaxQuery`.
+pub fn call_argument_type_mismatch(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<CallArgumentTypeMismatch> {
+    with_registered_syntax(db, key, call_argument_type_mismatch_tracked)
+}
+
+#[salsa::tracked(persist)]
+fn call_argument_type_mismatch_tracked(
+    db: &dyn Db,
+    syntax: SyntaxUnitInput,
+    key: AstNodeKey,
+) -> SemanticQueryResult<CallArgumentTypeMismatch> {
+    let calls = with_node(db, syntax, key, |_program, index, _node| {
+        let mut calls = Vec::new();
+        collect_call_sites(index, key.node, &mut calls);
+        Some(calls)
+    })?
+    .unwrap_or_default();
+    for call_node in calls {
+        let call_key = AstNodeKey { node: call_node, ..key };
+        let Some(mismatch) = call_argument_type_mismatch_for_call(db, call_key)? else { continue };
+        return Ok(Some(mismatch));
+    }
+    Ok(None)
+}
+
+enum ExpectedArgumentType {
+    Nominal(Arc<str>),
+    Scalar(SemanticTypeId),
+}
+
+fn call_argument_type_mismatch_for_call(
+    db: &dyn Db,
+    call: AstNodeKey,
+) -> SemanticQueryResult<CallArgumentTypeMismatch> {
+    use beskid_analysis::syntax::{EnumDefinition, Type, TypeDefinition};
+
+    let Some(CallLowering::Direct(declaration)) = call_lowering(db, call)? else { return Ok(None) };
+    let Some(declaration_syntax) = db.syntax_unit(declaration.unit) else { return Ok(None) };
+    if !declaration_syntax.accepts_key(db, declaration) {
+        return Ok(None);
+    }
+    let index = declaration_syntax.syntax_index(db);
+    let program = declaration_syntax.expanded_program(db);
+    let Some(declaration_node) = index.node_at(program, declaration.node) else { return Ok(None) };
+    let (parameters, receiver) = if let Some(function) = declaration_node.of::<FunctionDefinition>() {
+        (&function.parameters, 0)
+    } else if let Some(method) = declaration_node.of::<MethodDefinition>() {
+        (&method.parameters, 1)
+    } else {
+        return Ok(None);
+    };
+    if parameters.iter().any(|parameter| parameter.node.bulk) {
+        return Ok(None);
+    }
+    let generic_names = generic_callable_parameters(db, declaration)
+        .map(|(names, _)| names.iter().map(|name| (*name).to_owned()).collect::<Vec<_>>())
+        .unwrap_or_default();
+    let Some(arguments) = call_arguments(db, call)? else { return Ok(None) };
+    if arguments.len() != parameters.len() + receiver {
+        return Ok(None);
+    }
+    for (parameter, argument) in parameters.iter().zip(arguments.iter().skip(receiver)) {
+        let expected = match &parameter.node.ty.node {
+            Type::Complex(path) => {
+                if path.node.segments.iter().any(|segment| !segment.node.type_args.is_empty()) {
+                    continue;
+                }
+                if let [segment] = path.node.segments.as_slice()
+                    && generic_names.contains(&segment.node.name.node.name)
+                {
+                    continue;
+                }
+                let Some(target) = resolve_type_declaration(db, declaration, &path.node) else { continue };
+                let Some(target_syntax) = db.syntax_unit(target.unit).filter(|syntax| syntax.accepts_key(db, target))
+                else {
+                    continue;
+                };
+                let concrete_nominal = target_syntax
+                    .syntax_index(db)
+                    .node_at(target_syntax.expanded_program(db), target.node)
+                    .is_some_and(|node| {
+                        node.of::<TypeDefinition>().is_some_and(|definition| definition.generics.is_empty())
+                            || node.of::<EnumDefinition>().is_some_and(|definition| definition.generics.is_empty())
+                    });
+                if !concrete_nominal {
+                    continue;
+                }
+                let Some(identity) = stable_declaration_identity(db, target) else { continue };
+                ExpectedArgumentType::Nominal(identity)
+            }
+            Type::Primitive(_) => match semantic_type_from_syntax(&parameter.node.ty.node) {
+                Ok(scalar) => ExpectedArgumentType::Scalar(scalar),
+                Err(_) => continue,
+            },
+            _ => continue,
+        };
+        let Ok(actual) = generic_source_expression_identity(db, *argument) else { continue };
+        let mismatch = match (&expected, &actual) {
+            (ExpectedArgumentType::Nominal(expected), GenericSourceTypeIdentity::Nominal { qualified_name, .. }) => {
+                expected != qualified_name
+            }
+            (ExpectedArgumentType::Nominal(_), GenericSourceTypeIdentity::Abi(_))
+            | (ExpectedArgumentType::Scalar(_), GenericSourceTypeIdentity::Nominal { .. }) => true,
+            _ => false,
+        };
+        if !mismatch {
+            continue;
+        }
+        let spelled = |ty: &Type| match ty {
+            Type::Complex(path) => path
+                .node
+                .segments
+                .iter()
+                .map(|segment| segment.node.name.node.name.as_str())
+                .collect::<Vec<_>>()
+                .join("."),
+            other => format!("{other:?}"),
+        };
+        let expected_name: Arc<str> = match &expected {
+            ExpectedArgumentType::Nominal(_) => Arc::from(spelled(&parameter.node.ty.node)),
+            ExpectedArgumentType::Scalar(scalar) => Arc::from(scalar.to_string()),
+        };
+        let actual_name: Arc<str> = match &actual {
+            GenericSourceTypeIdentity::Nominal { qualified_name, .. } => qualified_name.clone(),
+            GenericSourceTypeIdentity::Abi(scalar) => Arc::from(scalar.to_string()),
+            other => Arc::from(format!("{other:?}")),
+        };
+        return Ok(Some(CallArgumentTypeMismatch {
+            call,
+            argument: *argument,
+            expected: expected_name,
+            actual: actual_name,
+        }));
+    }
+    Ok(None)
+}
+
 /// An assignment whose target is a single-segment path that resolves to an immutable local: a
 /// `let` without `mut`, a parameter without `mut`, or a `for` iterator.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
@@ -319,6 +480,16 @@ pub fn check_items(db: &dyn Db, items: &[AstNodeKey]) -> Result<(), Vec<Semantic
         }
         findings.extend(cleanup::scoped_cleanup_findings(db, item));
         findings.extend(cleanup::dead_growth_findings(db, item));
+        if let Ok(Some(finding)) = call_argument_type_mismatch(db, item) {
+            findings.push(SemanticFinding {
+                kind: SemanticIssueKind::TypeCallArgumentMismatch {
+                    expected_name: finding.expected.to_string(),
+                    actual_name: finding.actual.to_string(),
+                },
+                site: finding.argument,
+                related: vec![(finding.call, "in this call")],
+            });
+        }
         if let Ok(Some(finding)) = call_arity_mismatch(db, item) {
             findings.push(SemanticFinding {
                 kind: SemanticIssueKind::TypeCallArityMismatch { expected: finding.expected, actual: finding.actual },
@@ -446,6 +617,51 @@ mod tests {
         build_typed_program(&mut db, project, generation, assembly).expect("typed syntax program");
         let root = AstNodeKey { unit: entry, generation, node: beskid_analysis::syntax::AstNodeId(0) };
         (db, root)
+    }
+
+    const QUERY_SHAPE: &str = "type NodeRef { u64 issuer, u64 node } type NodeSpan { u64 start, u64 end } \
+        mod Query { pub type SyntaxQuery { NodeRef start, u64 bound } \
+        pub SyntaxQuery At(NodeRef root) { return SyntaxQuery { start: root, bound: 1_u64 }; } \
+        pub NodeSpan Span(NodeRef node) { return NodeSpan { start: node.node, end: node.node }; } } ";
+
+    /// `Query.Span(Query.At(root))`: a `SyntaxQuery` record where `Span` declares `NodeRef`.
+    #[test]
+    fn module_qualified_call_with_a_record_of_another_type_is_reported_at_the_argument() {
+        let source = format!(
+            "{QUERY_SHAPE}u64 Main(NodeRef root) {{ NodeSpan span = Query.Span(Query.At(root)); return span.start; }}"
+        );
+        let (db, root) = one_unit_assembly(&source, SyntaxGenerationId(61));
+        let main_item = *function_definitions(&db, root).last().expect("Main");
+        let mismatch = super::call_argument_type_mismatch(&db, main_item)
+            .expect("call_argument_type_mismatch query")
+            .expect("SyntaxQuery passed where NodeRef is declared");
+        assert_eq!(mismatch.expected.as_ref(), "NodeRef");
+        assert!(mismatch.actual.ends_with("SyntaxQuery"), "actual type names the record: {}", mismatch.actual);
+        assert_ne!(mismatch.argument, mismatch.call, "the argument, not the call, is the site");
+    }
+
+    #[test]
+    fn matching_nominal_generic_and_contract_parameters_are_not_reported() {
+        let source = format!(
+            "{QUERY_SHAPE}contract Sized {{ u64 Size(); }} type Box : Sized {{ u64 width, pub u64 Size() {{ return width; }} }} \
+             unit Take<T>(T value) {{ return; }} u64 Measure(Sized value) {{ return value.Size(); }} \
+             u64 Main(NodeRef root) {{ NodeSpan span = Query.Span(root); Take<NodeRef>(root); Take(span); \
+             u64 total = Measure(Box {{ width: 3_u64 }}) + Query.At(root).bound; return span.start + total; }}"
+        );
+        let (db, root) = one_unit_assembly(&source, SyntaxGenerationId(62));
+        let main_item = *function_definitions(&db, root).last().expect("Main");
+        assert_eq!(super::call_argument_type_mismatch(&db, main_item).expect("query"), None);
+    }
+
+    #[test]
+    fn scalar_parameter_rejects_a_record_and_record_parameter_rejects_a_scalar() {
+        let source = "type Point { i64 x } unit Len(string text) { return; } unit Show(Point point) { return; } \
+                      unit Main(Point point, string text) { Len(point); Show(text); return; }";
+        let (db, root) = one_unit_assembly(source, SyntaxGenerationId(63));
+        let main_item = *function_definitions(&db, root).last().expect("Main");
+        let mismatch = super::call_argument_type_mismatch(&db, main_item).expect("query").expect("Len(point)");
+        assert_eq!(mismatch.expected.as_ref(), "string");
+        assert!(mismatch.actual.ends_with("Point"), "{}", mismatch.actual);
     }
 
     #[test]

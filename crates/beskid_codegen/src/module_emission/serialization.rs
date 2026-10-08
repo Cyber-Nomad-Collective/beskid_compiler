@@ -54,7 +54,7 @@ pub(super) fn emit_compiled_shape_bridge(
             let root_callee = import(&mut builder, &root_factory, 1, true);
             let extras_callee = import(&mut builder, &extras_factory, 5, true);
             let root = import(&mut builder, "gc_root_handle", 1, true);
-            let resolve = import(&mut builder, "gc_resolve_handle", 1, true);
+            let resolve = import(&mut builder, "beskid_rt_v5_gc_resolve_handle", 1, true);
             let unroot = import(&mut builder, "gc_unroot_handle", 1, false);
             // No safepoint intervenes between materialization and the source
             // constructor's ordinary managed-argument prologue.

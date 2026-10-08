@@ -427,3 +427,29 @@ fn v06_type_positions_beside_a_same_named_imported_module_resolve_to_types() {
     );
     assert!(errors.is_empty(), "{errors:#?}");
 }
+
+/// `Query.Span(Query.At(root))` in the Serialization Mod passed a `SyntaxQuery` record where
+/// `Span` declares a `NodeRef` parameter, and the worker then read the record as a `NodeRef`
+/// (`foreign or expired syntax invocation` with pointer-sized identities). A module-qualified
+/// call must check its arguments exactly like an unqualified one.
+#[test]
+fn v06_module_qualified_call_argument_record_mismatch_is_rejected() {
+    let source = r#"
+pub type NodeRef { u64 issuer, u64 node }
+pub type NodeSpan { u64 start, u64 end }
+mod Query {
+    pub type SyntaxQuery { NodeRef start, u64 bound }
+    pub SyntaxQuery At(NodeRef root) { return SyntaxQuery { start: root, bound: 1_u64 }; }
+    pub NodeSpan Span(NodeRef node) { return NodeSpan { start: node.node, end: node.node }; }
+}
+pub u64 Main(NodeRef root) {
+    NodeSpan span = Query.Span(Query.At(root));
+    return span.start;
+}
+"#;
+    let errors = type_errors(source);
+    assert!(
+        errors.iter().any(|error| matches!(error, TypeError::TypeMismatch { .. } | TypeError::CallArgumentMismatch { .. })),
+        "a SyntaxQuery argument for a NodeRef parameter must be a type error: {errors:?}"
+    );
+}

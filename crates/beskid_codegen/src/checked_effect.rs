@@ -181,7 +181,7 @@ fn emit_effect_closure<'db, M: cranelift_module::Module>(
     }
     if current.members.values().any(|member| member.bridge.is_some()) {
         for symbol in
-            ["gc_root_handle", "gc_resolve_handle", "gc_unroot_handle", "beskid_rt_v5_checked_scope_failure_reason"]
+            ["gc_root_handle", "beskid_rt_v5_gc_resolve_handle", "gc_unroot_handle", "beskid_rt_v5_checked_scope_failure_reason"]
         {
             ensure_checked_runtime_import(module, input, &mut runtime_functions, symbol)?;
         }

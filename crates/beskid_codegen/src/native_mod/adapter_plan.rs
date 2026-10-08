@@ -109,7 +109,6 @@ pub(crate) struct NativeRuntimeHooks {
     pub string_length: String,
     pub string_data_offset: u64,
     pub root: String,
-    pub resolve_root: String,
     pub unroot: String,
     pub array_allocate_rooted: String,
     pub construction_finish: String,

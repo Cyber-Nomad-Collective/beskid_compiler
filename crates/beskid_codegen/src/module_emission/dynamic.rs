@@ -57,7 +57,7 @@ pub(crate) fn emit_checked_pack_bridge<M: cranelift_module::Module>(
             .ok_or_else(|| error("checked Pack canonical provider unavailable"))
     };
     let root = provider("gc_root_handle")?;
-    let resolve = provider("gc_resolve_handle")?;
+    let resolve = provider("beskid_rt_v5_gc_resolve_handle")?;
     let unroot = provider("gc_unroot_handle")?;
     let status = provider("beskid_rt_v5_checked_scope_failure_reason")?;
     let mut function = Function::new();
@@ -207,7 +207,7 @@ pub(super) fn emit_pack_bridge(
             builder.ins().brif(live, rooted, &[], failed, &[]);
             builder.switch_to_block(rooted);
             builder.seal_block(rooted);
-            let resolve = import(&mut builder, "gc_resolve_handle", 1);
+            let resolve = import(&mut builder, "beskid_rt_v5_gc_resolve_handle", 1);
             let call = builder.ins().call(resolve, &[keeper]);
             let boxed = builder.inst_results(call)[0];
             let resolved = builder.ins().icmp_imm_u(cranelift_codegen::ir::condcodes::IntCC::NotEqual, boxed, 0);
@@ -379,7 +379,7 @@ fn build_unpack_function(
             builder.func.import_function(ExtFuncData{name:ExternalName::testcase(symbol),signature,colocated:false,patchable:false})
         };
         let root=import(&mut builder,"gc_root_handle",&[pointer],Some(pointer));
-        let resolve=import(&mut builder,"gc_resolve_handle",&[pointer],Some(pointer));
+        let resolve=import(&mut builder,"beskid_rt_v5_gc_resolve_handle",&[pointer],Some(pointer));
         let unroot=import(&mut builder,"gc_unroot_handle",&[pointer],None);
         let status=if checked{Some(import(&mut builder,"beskid_rt_v5_checked_scope_failure_reason",&[],Some(pointer)))}else{None};
         let valid=import(&mut builder,valid_symbol,&value_type.into_iter().collect::<Vec<_>>(),Some(pointer));

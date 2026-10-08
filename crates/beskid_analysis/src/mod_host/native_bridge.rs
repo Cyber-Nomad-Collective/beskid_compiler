@@ -45,13 +45,35 @@ fn run_worker<'a>(
     drop(file);
     let mut command = Command::new(worker.canonicalize()?);
     command.args(["dev", "native-mod-worker", "--endpoint"]).arg(&endpoint);
+    // A channel failure (most often EOF because the worker exited before its completion frame)
+    // is recorded, not raised, so the worker's exit status and stderr are still collected: they
+    // name the actual worker-side error, which the bare channel symptom cannot.
+    let mut channel_error = None;
     let output = control.run_command_serviced(&mut command, directory.path(), "native Mod worker", || {
-        channel.poll().map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))
+        if channel_error.is_none()
+            && let Err(error) = channel.poll()
+        {
+            channel_error = Some(error);
+        }
+        Ok(())
     })?;
+    let stderr = String::from_utf8_lossy(&output.stderr);
     if !output.status.success() {
-        bail!("native Mod worker failed ({}) : {}", output.status, String::from_utf8_lossy(&output.stderr))
+        bail!("native Mod worker failed ({}) : {}", output.status, stderr.trim())
     }
-    channel.poll()?;
+    if let Some(error) = channel_error {
+        bail!("native Mod worker channel: {error}; worker exited {} with stderr: {}", output.status, stderr.trim())
+    }
+    // The worker has exited, so every remaining frame is already in the socket buffer: drain it
+    // up to the frame budget instead of reading one 8 KiB chunk and declaring the result absent.
+    let mut drains = 0usize;
+    while !channel.has_completion() {
+        channel.poll().with_context(|| format!("native Mod worker exited {} with stderr: {}", output.status, stderr.trim()))?;
+        drains += 1;
+        if drains > 8192 {
+            bail!("native Mod worker completion frame did not arrive after exit");
+        }
+    }
     let result = channel.completion()?;
     Ok((result, channel.into_session()))
 }

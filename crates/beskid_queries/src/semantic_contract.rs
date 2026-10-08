@@ -143,10 +143,11 @@ use layouts::{
     semantic_type_from_syntax, unique_exported_type_in_unit, unique_public_type_in_unit, unique_type_in_unit,
 };
 pub use legality::{
-    CallArityMismatch, GateObligation, GateObligationKind, GenericParameterConflict, ImmutableLocalAssignment,
+    CallArgumentTypeMismatch, CallArityMismatch, GateObligation, GateObligationKind, GenericParameterConflict,
+    ImmutableLocalAssignment,
     MemberReferenceFinding, MemberReferenceKind, NonExhaustiveMatch, TypingObligation, TypingObligationKind,
     UnitObligation, UnitObligationKind, UnresolvedCallKind, UnresolvedCallTarget, UnresolvedImport,
-    UnresolvedValueArgument, ValueObligation, call_arity_mismatch, check_gate_obligations, check_items,
+    UnresolvedValueArgument, ValueObligation, call_argument_type_mismatch, call_arity_mismatch, check_gate_obligations, check_items,
     check_typing_obligations,
     check_unit_obligations, extern_profile_findings, gate_obligations, generic_parameter_conflict,
     immutable_local_assignment, match_exhaustiveness, member_reference_legality, typing_obligations,

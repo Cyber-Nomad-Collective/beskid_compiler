@@ -150,6 +150,13 @@ pub(crate) fn unix_link_command(req: &LinkRequest, target: &str, compiler: &str)
             cmd.arg(format!("-Wl,-install_name,@rpath/{filename}"));
         } else if target.contains("linux") {
             cmd.arg(format!("-Wl,-soname,{filename}"));
+            // ELF shared libraries link with unresolved references by default and fail only
+            // when the worker loads them (`undefined symbol`). With the provider on the link
+            // line every runtime reference is resolvable now, so report any that is not, like
+            // Mach-O (`-undefined error`) and PE already do. Weak optional references stay legal.
+            if matches!(req.runtime, Some(super::RuntimeLinkInput::GlueSharedProviderV1 { .. })) {
+                cmd.arg("-Wl,-z,defs");
+            }
         }
 
         if let LinkMode::PreferStatic = req.link_mode {
@@ -195,5 +202,39 @@ mod runtime_input_v06_tests {
         assert!(args.contains(&"/validated/prefix/shared/libbeskid_runtime.dylib".into()));
         assert!(args.contains(&"-Wl,-rpath,/validated/prefix/shared".into()));
         assert!(!args.iter().any(|arg| arg.contains("force_load") || arg.contains("whole-archive")));
+    }
+
+    #[test]
+    fn v06_elf_shared_library_against_a_provider_rejects_undefined_references() {
+        let runtime = Some(RuntimeLinkInput::GlueSharedProviderV1 {
+            link_path: PathBuf::from("/validated/prefix/shared/libbeskid_runtime.so"),
+            shared_library_path: PathBuf::from("/validated/prefix/shared/libbeskid_runtime.so"),
+        });
+        let request = |runtime, output_kind| LinkRequest {
+            target_triple: Some("x86_64-unknown-linux-gnu".into()),
+            output_kind,
+            output_path: PathBuf::from("out/libmod.so"),
+            object_path: PathBuf::from("mod.o"),
+            additional_object_paths: Vec::new(),
+            runtime,
+            host_staticlib: None,
+            entrypoint_symbol: String::new(),
+            exported_symbols: Vec::new(),
+            link_mode: LinkMode::Auto,
+            verbose: false,
+            external_libraries: Vec::new(),
+            optional_libraries: Vec::new(),
+            library_search_paths: Vec::new(),
+        };
+        let args = |req: &LinkRequest| -> Vec<String> {
+            unix_link_command(req, "x86_64-unknown-linux-gnu", "cc")
+                .unwrap()
+                .get_args()
+                .map(|arg| arg.to_string_lossy().into_owned())
+                .collect()
+        };
+        assert!(args(&request(runtime.clone(), BuildOutputKind::SharedLib)).contains(&"-Wl,-z,defs".to_owned()));
+        assert!(!args(&request(None, BuildOutputKind::SharedLib)).contains(&"-Wl,-z,defs".to_owned()));
+        assert!(!args(&request(runtime, BuildOutputKind::Exe)).contains(&"-Wl,-z,defs".to_owned()));
     }
 }
