@@ -17,7 +17,7 @@ pub use descriptor::{
     NATIVE_MOD_BUILD_TOOL_ROLES, NATIVE_MOD_COMPILER_TOOL_ROLE, NATIVE_MOD_DESCRIPTOR_FILE, NativeModCallableIdentity,
     NativeModRuntimeBinding, mod_artifact_inventory, native_mod_artifact_key, native_mod_dependency_identity,
     native_mod_dependency_sources, native_mod_evidence_is_current, native_mod_file_sha256,
-    native_mod_inventory_identity, native_mod_runtime_binding, native_mod_runtime_profile,
+    native_mod_contract_id, native_mod_inventory_identity, native_mod_runtime_binding, native_mod_runtime_profile,
     read_mod_artifact_descriptor,
 };
 mod emit_bridge;

@@ -179,6 +179,7 @@ pub fn lower_prepared_native_mod(
                 );
             }
         }
+        let constructors = super::constructors::select_unique_constructors(constructors);
         // Emit one canonical reachable union for actual methods/factories and all
         // typed value constructors required by the C adapter. Unrelated SDK
         // query helpers must not enter lowering without callback admission.
@@ -309,7 +310,7 @@ pub fn lower_prepared_native_mod(
             };
             entries.push(PreparedNativeModEntry {
                 registration: ContractRegistration {
-                    contract_id: format!("Beskid.Compiler.Collect.{}", entry.witness.family.canonical_name()),
+                    contract_id: beskid_analysis::mod_host::native_mod_contract_id(entry.witness.family.canonical_name()),
                     type_id: beskid_queries::native_mod_transport_nominal(
                         input.database(),
                         entry.method,

@@ -465,9 +465,12 @@ pub(in crate::semantic_contract) fn empty_array_literal_element_abi_type_tracked
             return Some(abi_type_from_syntax(db, declaration, &element.node));
         }
 
-        // A direct argument of an exact non-generic call (`Named(builder, names, [])`) takes the
-        // declared element type of the matching callee parameter, exactly like a record field.
-        // Generic callees, bulk parameters and indirect calls stay unavailable.
+        // A direct argument of a direct call (`Named(builder, names, [])`,
+        // `Generation.Record(.., [])`, `Append<Item>([], item)`) takes its element type from the
+        // expected type of the matching callee parameter, exactly like a record field: the
+        // declared `T[]` syntax resolved in the callee's own unit, or, when `T` is one of the
+        // callee's generic parameters, the explicit terminal type argument of this call.
+        // Inferred generic calls, bulk parameters and indirect calls stay unavailable.
         if let Some(call) = index.node_at(program, local_node)?.of::<beskid_analysis::syntax::CallExpression>() {
             let call_key = AstNodeKey { node: local_node, ..key };
             let argument_index = call.args.iter().position(|argument| {
@@ -477,9 +480,6 @@ pub(in crate::semantic_contract) fn empty_array_literal_element_abi_type_tracked
             let Ok(Some(CallLowering::Direct(declaration))) = call_lowering(db, call_key) else {
                 return None;
             };
-            if !generic_callable_parameters(db, declaration).is_some_and(|(names, _)| names.is_empty()) {
-                return None;
-            }
             let callee_syntax = db.syntax_unit(declaration.unit).filter(|unit| unit.accepts_key(db, declaration))?;
             let callee = callee_syntax.syntax_index(db).node_at(callee_syntax.expanded_program(db), declaration.node)?;
             let parameters = callee
@@ -496,6 +496,27 @@ pub(in crate::semantic_contract) fn empty_array_literal_element_abi_type_tracked
             let beskid_analysis::syntax::Type::Array(element) = &parameter.node.ty.node else {
                 return Some(Err(SemanticError::unavailable("empty_array_literal_element_abi_type")));
             };
+            let Some((generic_names, _)) = generic_callable_parameters(db, declaration) else {
+                return Some(abi_type_from_syntax(db, declaration, &element.node));
+            };
+            // A bare callee type parameter is owned by this call's explicit type arguments; any
+            // other element spelling (including a qualified nominal) is owned by the declaration.
+            if let beskid_analysis::syntax::Type::Complex(parameter_path) = &element.node
+                && let [segment] = parameter_path.node.segments.as_slice()
+                && segment.node.type_args.is_empty()
+                && let Some(parameter_index) =
+                    generic_names.iter().position(|name| *name == segment.node.name.node.name)
+            {
+                return Some(match generic_call_instantiation(db, call_key) {
+                    Ok(Some(instantiation)) if instantiation.declaration == declaration => instantiation
+                        .arguments
+                        .get(parameter_index)
+                        .copied()
+                        .ok_or_else(|| SemanticError::unavailable("empty_array_literal_element_abi_type")),
+                    Ok(_) => Err(SemanticError::unavailable("empty_array_literal_element_abi_type")),
+                    Err(error) => Err(error),
+                });
+            }
             return Some(abi_type_from_syntax(db, declaration, &element.node));
         }
 
@@ -720,6 +741,31 @@ pub fn array_index_element_specialization(
             .iter()
             .find(|binding| binding.parameter.as_ref() == parameter.as_ref())
             .map(|binding| binding.argument)),
+    }
+}
+
+/// Classify an indexed element whose declared element type is one of the enclosing item's
+/// generic parameters, through the exact enclosing specialization's source binding.
+///
+/// `values[index]` in `Copy<T>` specialized with `T = Item` has a pointer-shaped element ABI
+/// that alone cannot distinguish a traced reference from a native pointer; the binding retains
+/// the source identity that does. A concrete declared element keeps its own authority and
+/// receives no fact here.
+pub fn array_index_element_managed_reference_specialization(
+    db: &dyn Db,
+    key: AstNodeKey,
+    enclosing: Arc<[GenericSubstitution]>,
+) -> SemanticQueryResult<ManagedReferenceKind> {
+    let Some(syntax) = db.syntax_unit(key.unit) else { return Ok(None) };
+    if !syntax.accepts_key(db, key) {
+        return Ok(None);
+    }
+    match array_index_element_template_tracked(db, syntax, key)? {
+        Some(ArrayIndexElementTemplate::EnclosingParameter(parameter)) => Ok(enclosing
+            .iter()
+            .find(|binding| binding.parameter.as_ref() == parameter.as_ref())
+            .map(|binding| binding.managed_reference_kind())),
+        Some(ArrayIndexElementTemplate::Concrete(_)) | None => Ok(None),
     }
 }
 

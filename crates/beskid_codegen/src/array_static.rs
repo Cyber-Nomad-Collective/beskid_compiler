@@ -183,39 +183,37 @@ impl CodegenInput<'_> {
             .then_some(())?;
         let elements = child_nodes(self.database(), literal).ok().flatten()?;
         let element_type = match elements.first().copied() {
-            Some(first) => match node_type(self.database(), first).ok().flatten() {
-                Some(element_type) => elements
+            // A nominal struct literal carries no scalar `node_type`; its constructed
+            // declaration is the only authority proving the element is one managed
+            // reference. Every element must construct the same declaration so the
+            // element pointer map stays exact.
+            Some(first) if self.nominal_literal_declaration(first).is_some() => {
+                let declaration = self.nominal_literal_declaration(first)?;
+                elements
                     .iter()
                     .copied()
-                    .all(|element| node_type(self.database(), element).ok().flatten() == Some(element_type))
-                    .then_some(element_type)?,
-                // A nominal struct literal carries no scalar `node_type`; its constructed
-                // declaration is the only authority proving the element is one managed
-                // reference. Every element must construct the same declaration so the
-                // element pointer map stays exact.
-                None => {
-                    if let Some(declaration) = self.nominal_literal_declaration(first) {
-                        elements
-                            .iter()
-                            .copied()
-                            .all(|element| self.nominal_literal_declaration(element) == Some(declaration))
-                            .then_some(SemanticTypeId::POINTER)?
-                    } else {
-                        // Named and constructed enum values have no scalar node_type.
-                        // Their current-generation ABI and managed classification jointly
-                        // authorize a traced element representation; width alone cannot.
-                        elements
-                            .iter()
-                            .copied()
-                            .all(|element| {
-                                value_abi_type(self.database(), element).ok().flatten() == Some(SemanticTypeId::POINTER)
-                                    && managed_reference_kind(self.database(), element).ok().flatten()
-                                        == Some(ManagedReferenceKind::GcManaged)
-                            })
-                            .then_some(SemanticTypeId::POINTER)?
-                    }
+                    .all(|element| self.nominal_literal_declaration(element) == Some(declaration))
+                    .then_some(SemanticTypeId::POINTER)?
+            }
+            // Every other element proves one exact ABI: a literal, conversion, call result or
+            // explicitly typed scalar local through `node_type`; a projected declared field
+            // (`parameters[index].node.name`), a nominal local, a named or constructed enum
+            // value through its current-generation value ABI. The elements may mix those
+            // shapes (`[Let(builder, name), begin]`) but must agree on the representation; a
+            // pointer-shaped element additionally needs its managed classification below.
+            Some(first) => {
+                let element_abi = |element: AstNodeKey| {
+                    node_type(self.database(), element)
+                        .ok()
+                        .flatten()
+                        .or_else(|| value_abi_type(self.database(), element).ok().flatten())
+                };
+                let element_type = element_abi(first)?;
+                if matches!(element_type, SemanticTypeId::UNIT | SemanticTypeId::NEVER) {
+                    return None;
                 }
-            },
+                elements.iter().copied().all(|element| element_abi(element) == Some(element_type)).then_some(element_type)?
+            }
             None => empty_array_literal_element_abi_type(self.database(), literal).ok().flatten()?,
         };
         let length = u64::try_from(elements.len()).ok()?;

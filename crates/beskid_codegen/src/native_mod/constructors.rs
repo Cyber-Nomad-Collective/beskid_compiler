@@ -94,6 +94,30 @@ pub(super) fn issue_constructor(
         bindings,
     })
 }
+/// Keep one constructor per transport `(result type, variant)` when several SDK items construct
+/// it through identical parameter and field bindings.
+///
+/// `NativeFactories.NodeSpanValue` and `Semantic.SpanValue` both build a `NodeSpan` from the same
+/// six fields in the same order; either decodes a transported value exactly, so the first issued
+/// (assembly order) is selected and the later duplicate remains an ordinary source callable.
+/// Constructors whose parameters or bindings differ are not interchangeable: both are kept and
+/// the codec gate rejects the plan as ambiguous.
+pub(super) fn select_unique_constructors(constructors: Vec<NativeConstructor>) -> Vec<NativeConstructor> {
+    let mut selected: Vec<NativeConstructor> = Vec::with_capacity(constructors.len());
+    for constructor in constructors {
+        let interchangeable = selected.iter().any(|existing| {
+            existing.result_type == constructor.result_type
+                && existing.variant == constructor.variant
+                && existing.parameters == constructor.parameters
+                && existing.bindings == constructor.bindings
+        });
+        if !interchangeable {
+            selected.push(constructor);
+        }
+    }
+    selected
+}
+
 fn bind_parameter(
     input: &CodegenInput<'_>,
     owner: AstNodeKey,
@@ -155,4 +179,40 @@ pub(super) fn is_callback_value_constructor(input:&CodegenInput<'_>,item:&Syntax
         if let Some(children)=child_nodes(input.database(),key)?{pending.extend(children.iter().copied());}
     }
     Ok(false)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn constructor(symbol: &str, result_type: u32, variant: Option<u32>, bindings: &[u32]) -> NativeConstructor {
+        NativeConstructor {
+            symbol: symbol.to_owned(),
+            result_type,
+            variant,
+            parameters: bindings.iter().map(|_| 0).collect(),
+            bindings: bindings.iter().map(|field| NativeConstructorArgument::Field(*field)).collect(),
+        }
+    }
+
+    #[test]
+    fn identical_record_constructors_select_the_first_issued() {
+        let selected = select_unique_constructors(vec![
+            constructor("NodeSpanValue", 7, None, &[0, 1, 2]),
+            constructor("SpanValue", 7, None, &[0, 1, 2]),
+            constructor("Other", 8, None, &[0]),
+        ]);
+        assert_eq!(selected.iter().map(|c| c.symbol.as_str()).collect::<Vec<_>>(), ["NodeSpanValue", "Other"]);
+    }
+
+    #[test]
+    fn differing_bindings_or_variants_are_all_kept_for_the_codec_gate() {
+        let selected = select_unique_constructors(vec![
+            constructor("A", 7, None, &[0, 1]),
+            constructor("B", 7, None, &[1, 0]),
+            constructor("C", 9, Some(0), &[0]),
+            constructor("D", 9, Some(1), &[0]),
+        ]);
+        assert_eq!(selected.len(), 4, "non-interchangeable constructors are never silently dropped");
+    }
 }

@@ -13,7 +13,7 @@ pub(in crate::semantic_contract) use aggregate::{
 };
 pub(crate) use aggregate::serialization_contribution_inaccessible_fields;
 pub use aggregate::{
-    aggregate_literal_specialization, array_index_element_specialization, empty_array_literal_element_specialization,
+    aggregate_literal_specialization, array_index_element_managed_reference_specialization, array_index_element_specialization, empty_array_literal_element_specialization,
 };
 
 pub(in crate::semantic_contract) use common::{
@@ -29,7 +29,7 @@ pub(in crate::semantic_contract) use enum_layout::{
     enum_layout_substitutions, enum_layout_tracked, enum_match_scrutinee_layout, enum_match_tracked,
     enum_pattern_targets_declaration, instantiated_enum_layout_for_path,
 };
-pub use enum_layout::{enum_constructor_specialization, enum_match_specialization};
+pub use enum_layout::{enum_constructor_specialization, enum_match_call_specialization, enum_match_specialization};
 
 pub use field_access::aggregate_field_access_specialization;
 pub(in crate::semantic_contract) use field_access::{

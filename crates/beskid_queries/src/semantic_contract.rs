@@ -197,8 +197,9 @@ pub use completion::{
     completion_dependency_surface_for_program,
 };
 pub use layouts::{
-    aggregate_field_access_specialization, aggregate_literal_specialization, array_index_element_specialization,
-    empty_array_literal_element_specialization, enum_constructor_specialization, enum_match_specialization,
+    aggregate_field_access_specialization, aggregate_literal_specialization, array_index_element_managed_reference_specialization,
+    array_index_element_specialization,
+    empty_array_literal_element_specialization, enum_constructor_specialization, enum_match_call_specialization, enum_match_specialization,
 };
 pub use model::{
     AggregateFieldAccess, AggregateFieldShape, AggregateLayoutFact, AggregateLiteralFieldValues,

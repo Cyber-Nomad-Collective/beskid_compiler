@@ -299,15 +299,22 @@ fn validate_plan(plan: &NativeAdapterPlan) -> Result<()> {
         }
     }
     let mut names = HashSet::new();
-    let mut constructor_results = HashSet::new();
+    let mut constructor_results = std::collections::HashMap::new();
     for constructor in &plan.constructors {
         symbol(&constructor.symbol)?;
         type_exists(constructor.result_type)?;
         if !names.insert(&constructor.symbol) {
             bail!("duplicate native constructor symbol");
         }
-        if !constructor_results.insert((constructor.result_type, constructor.variant)) {
-            bail!("ambiguous source constructor for native transport type");
+        if let Some(previous) =
+            constructor_results.insert((constructor.result_type, constructor.variant), &constructor.symbol)
+        {
+            bail!(
+                "ambiguous source constructor for native transport type {}{}: `{previous}` and `{}` both construct it",
+                plan.types[constructor.result_type as usize].name,
+                constructor.variant.map(|variant| format!(" variant {variant}")).unwrap_or_default(),
+                constructor.symbol
+            );
         }
         if constructor.parameters.len() != constructor.bindings.len() {
             bail!("constructor binding arity mismatch");

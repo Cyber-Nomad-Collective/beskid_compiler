@@ -15,6 +15,12 @@ use std::{
     path::{Component, Path, PathBuf},
 };
 
+/// The persisted registration id of a native Mod contract family. Callables record the family
+/// name and registrations the qualified id; both sides derive the id only here.
+pub fn native_mod_contract_id(family: &str) -> String {
+    format!("Beskid.Compiler.Collect.{family}")
+}
+
 pub const NATIVE_MOD_DESCRIPTOR_SCHEMA: u32 = 2;
 pub const NATIVE_MOD_HOST_ABI: u32 = 2;
 pub const NATIVE_MOD_DESCRIPTOR_FILE: &str = "mod.descriptor.json";
@@ -131,7 +137,7 @@ impl ModArtifactDescriptor {
             let callable =
                 self.callables.get(&registration.entry_symbol).context("missing canonical Mod callable identity")?;
             if callable.generation == 0
-                || callable.contract_family != registration.contract_id
+                || native_mod_contract_id(&callable.contract_family) != registration.contract_id
                 || !symbol(&callable.link_symbol)
                 || callable.internal_symbol.is_empty()
             {

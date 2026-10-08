@@ -67,6 +67,22 @@ impl SyntaxNodeFacts<'_> {
                 ManagedReferenceKind::NativeOrScalar => ManagedReferenceFact::NativeOrScalar,
             });
         }
+        // An indexed element typed by an enclosing generic parameter (`values[index]` in
+        // `Copy<T>`) is classified by the specialization's source binding, never by its
+        // pointer-shaped element ABI.
+        if self.query(node_kind(self.db, key)) == Some(beskid_queries::IndexedNodeKind::IndexExpression)
+            && let Some(enclosing) = self.current_item_specialization()
+            && let Some(kind) = self.query(array_index_element_managed_reference_specialization(
+                self.db,
+                key,
+                enclosing.substitutions.clone(),
+            ))
+        {
+            return Some(match kind {
+                ManagedReferenceKind::GcManaged => ManagedReferenceFact::GcManaged,
+                ManagedReferenceKind::NativeOrScalar => ManagedReferenceFact::NativeOrScalar,
+            });
+        }
         if let Some(kind) = self.query(managed_reference_kind(self.db, key)) {
             return Some(match kind {
                 ManagedReferenceKind::GcManaged => ManagedReferenceFact::GcManaged,

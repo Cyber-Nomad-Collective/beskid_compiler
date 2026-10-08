@@ -52,7 +52,7 @@ pub(crate) struct NativeAdapterVariant {
     pub tag: u64,
     pub fields: Vec<NativeAdapterField>,
 }
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, PartialEq, Eq)]
 pub(crate) struct NativeConstructor {
     pub symbol: String,
     pub result_type: u32,
@@ -60,7 +60,7 @@ pub(crate) struct NativeConstructor {
     pub parameters: Vec<u32>,
     pub bindings: Vec<NativeConstructorArgument>,
 }
-#[derive(Clone, serde::Serialize)]
+#[derive(Clone, serde::Serialize, PartialEq, Eq)]
 pub(crate) enum NativeConstructorArgument {
     Field(u32),
     /// Exact source factory accepts the sole element of an array-valued field.

@@ -63,29 +63,36 @@ pub(in crate::semantic_contract) fn enum_match_scrutinee_layout(
     let beskid_analysis::syntax::Expression::Path(path) = &expression.scrutinee.node else {
         return None;
     };
-    if path.node.path.node.segments.len() == 2 {
+    if path.node.path.node.segments.len() >= 2 {
         let scrutinee = index.direct_child_id(
             program,
             key.node,
             beskid_analysis::syntax_query::DynNodeRef::from(expression.scrutinee.as_ref()),
         )?;
         let scrutinee = AstNodeKey { node: normalized_expression_node(index, scrutinee), ..key };
-        let access = aggregate_field_access(db, scrutinee).ok().flatten()?;
-        let field = access.layout.fields.get(usize::try_from(access.index).ok()?)?;
-        let AggregateFieldShape::Nominal(declaration) = field.1 else {
-            return None;
-        };
-        // A generic enum field (`Option<PackageDeclaration> packageDeclaration`) has no layout
-        // until it is applied; the field's applied source identity is the only authority for
-        // its payload shapes.
-        if generic_enum_declaration(db, declaration) {
-            return Some(enum_layout_for_expression_result(db, scrutinee));
+        if path.node.path.node.segments.len() == 2
+            && let Some(access) = aggregate_field_access(db, scrutinee).ok().flatten()
+        {
+            let field = access.layout.fields.get(usize::try_from(access.index).ok()?)?;
+            let AggregateFieldShape::Nominal(declaration) = field.1 else {
+                return None;
+            };
+            // A generic enum field (`Option<PackageDeclaration> packageDeclaration`) has no layout
+            // until it is applied; the field's applied source identity is the only authority for
+            // its payload shapes.
+            if generic_enum_declaration(db, declaration) {
+                return Some(enum_layout_for_expression_result(db, scrutinee));
+            }
+            return Some(
+                enum_layout(db, declaration)
+                    .and_then(|layout| layout.ok_or_else(|| SemanticError::unavailable("enum_match")))
+                    .map(|layout| (declaration, layout)),
+            );
         }
-        return Some(
-            enum_layout(db, declaration)
-                .and_then(|layout| layout.ok_or_else(|| SemanticError::unavailable("enum_match")))
-                .map(|layout| (declaration, layout)),
-        );
+        // A longer projection chain (`value.node.literal.node`), or a two-segment chain rooted
+        // in an enum pattern binding, is proven field by field by the nominal projection; its
+        // applied source identity names the enum exactly like a call or member result.
+        return Some(enum_layout_for_expression_result(db, scrutinee));
     }
     let local = enum_match_scrutinee_local_declaration(program, index, key, expression)?;
     let parent = parent_node(index, local)?;
@@ -206,18 +213,7 @@ pub(super) fn enum_match_source_environment(
             )
             .ok_or_else(|| SemanticError::unavailable("enum_match"))?;
         let call = AstNodeKey { node: normalized_expression_node(index, scrutinee), ..key };
-        let GenericSourceTypeIdentity::Nominal { arguments, .. } = generic_source_expression_identity(db, call)? else {
-            return Err(SemanticError::unavailable("enum_match"));
-        };
-        if arguments.len() != definition.generics.len() {
-            return Err(SemanticError::unavailable("enum_match"));
-        }
-        return Ok(definition
-            .generics
-            .iter()
-            .zip(arguments.iter())
-            .map(|(parameter, argument)| (parameter.node.name.clone(), argument.clone()))
-            .collect());
+        return enum_match_environment_for_applied_identity(definition, &generic_source_expression_identity(db, call)?);
     }
     let Some(path) = enum_match_scrutinee_explicit_type_path(program, index, key, expression) else {
         // Other supported scrutinee shapes retain their existing conservative field inference.
@@ -273,6 +269,29 @@ pub(super) fn enum_match_scrutinee_layout_in_environment(
     let identity =
         binding.source_identity.as_ref().ok_or_else(|| SemanticError::unavailable("enum_match_specialization"))?;
     enum_layout_for_source_identity(db, key, identity).map(Some)
+}
+
+/// Bind a generic enum's parameters to the applied arguments of one proven source identity
+/// (a call result, projection, or substituted declared return type).
+pub(super) fn enum_match_environment_for_applied_identity(
+    definition: &beskid_analysis::syntax::EnumDefinition,
+    identity: &GenericSourceTypeIdentity,
+) -> Result<HashMap<String, GenericSourceTypeIdentity>, SemanticError> {
+    if definition.generics.is_empty() {
+        return Ok(HashMap::new());
+    }
+    let GenericSourceTypeIdentity::Nominal { arguments, .. } = identity else {
+        return Err(SemanticError::unavailable("enum_match"));
+    };
+    if arguments.len() != definition.generics.len() {
+        return Err(SemanticError::unavailable("enum_match"));
+    }
+    Ok(definition
+        .generics
+        .iter()
+        .zip(arguments.iter())
+        .map(|(parameter, argument)| (parameter.node.name.clone(), argument.clone()))
+        .collect())
 }
 
 /// Whether `declaration` is a current enum definition with type parameters.

@@ -1,5 +1,7 @@
 #[path = "isle_adapter/binding_field_receivers.rs"]
 mod binding_field_receivers;
+#[path = "isle_adapter/call_argument_array_literals.rs"]
+mod call_argument_array_literals;
 #[path = "isle_adapter/calls_conversions.rs"]
 mod calls_conversions;
 #[path = "isle_adapter/channel_conditions.rs"]
@@ -32,6 +34,8 @@ mod memory_aggregate_arrays;
 mod method_owned_fields;
 #[path = "isle_adapter/module_emission_specialization.rs"]
 mod module_emission_specialization;
+#[path = "isle_adapter/projected_path_match.rs"]
+mod projected_path_match;
 #[path = "isle_adapter/runtime_gc_aggregate.rs"]
 mod runtime_gc_aggregate;
 #[path = "isle_adapter/statement_result_storage.rs"]

@@ -71,7 +71,7 @@ pub fn invoke_qualified_native_transport(
     if !descriptor
         .registrations
         .iter()
-        .any(|r| r.entry_symbol == symbol && r.contract_id == format!("Beskid.Compiler.Collect.{family}"))
+        .any(|r| r.entry_symbol == symbol && r.contract_id == super::native_mod_contract_id(family))
     {
         bail!("native invocation not in qualified registration closure")
     }
