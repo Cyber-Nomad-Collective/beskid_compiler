@@ -140,8 +140,17 @@ pub(in crate::semantic_contract) fn field_access_receiver<'a>(
                 |(declaration, receiver, layout)| (declaration, receiver, layout, field.node.name.node.name.as_str()),
             )
         }
-        [field] if field.node.type_args.is_empty() => applied_method_receiver_layout(db, program, index, key, ambient)
-            .map(|(declaration, receiver, layout)| (declaration, receiver, layout, field.node.name.node.name.as_str())),
+        // A parameter or local named like a field shadows it: only an unbound bare name reads the
+        // implicit receiver's field.
+        [field]
+            if field.node.type_args.is_empty()
+                && resolve_lexical_declaration(program, index, key.node, field.node.name.node.name.as_str())
+                    .is_none() =>
+        {
+            applied_method_receiver_layout(db, program, index, key, ambient).map(|(declaration, receiver, layout)| {
+                (declaration, receiver, layout, field.node.name.node.name.as_str())
+            })
+        }
         _ => return None,
     };
     Some(resolved.map(|(declaration, receiver, layout, field_name)| FieldAccessReceiver {

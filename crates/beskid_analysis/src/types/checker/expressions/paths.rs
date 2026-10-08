@@ -20,7 +20,10 @@ impl<'a> TypeChecker<'a> {
         }
         if path.node.segments.len() == 1 {
             let field_name = path.node.segments[0].node.name.node.name.as_str();
+            // The resolver binds a bare field name to the `this` local; any other local with that
+            // name (a parameter or `let`) shadows the field and keeps its own type.
             if let Some(ResolvedValue::Local(local_id)) = self.resolved_value_at(span)
+                && self.resolution.tables.local_info(local_id).is_some_and(|info| info.name == "this")
                 && let Some(receiver_item) = self.current_receiver_item_id
                 && self.local_types.get(&local_id).and_then(|type_id| self.named_item_id(*type_id))
                     == Some(receiver_item)
