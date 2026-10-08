@@ -116,6 +116,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   When capacity remains, the element is stored in place and every handle to
   the same array sees the new length, as `RemoveLast` already did. n appends
   copy O(n) elements in total instead of O(n^2).
+- A process that publishes more than one runtime kit, for example the debug
+  and release kits of a release bundle, lowers the canonical runtime source
+  once for each target instead of once for each kit. Each lowering takes
+  about 40 s on the Linux build host.
 
 ### Fixed
 
