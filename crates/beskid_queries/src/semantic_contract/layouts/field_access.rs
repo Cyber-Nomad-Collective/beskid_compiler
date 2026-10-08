@@ -68,7 +68,14 @@ fn aggregate_field_access_for_environment(
                 .filter(|field| field.node.kind == beskid_analysis::syntax::FieldKind::Value)
                 .nth(field_index as usize)
                 .ok_or_else(|| SemanticError::unavailable("aggregate_field_access"))?;
-            if field_hidden_across_units(db, key, declaration, definition, &field.node, field_name) {
+            let protected_field = (definition.name.node.name == "Deadline" && field_name == "monotonicNanos")
+                || (field_name == "handle"
+                    && matches!(definition.name.node.name.as_str(), "TcpStream" | "TcpListener" | "UdpSocket"));
+            if protected_field
+                && declaration.unit != key.unit
+                && field.node.visibility.node != beskid_analysis::syntax::Visibility::Public
+                && !canonical_network_deadline_projection(db, key, declaration, &definition.name.node.name, field_name)
+            {
                 return Err(SemanticError::unavailable("aggregate_field_access.visibility"));
             }
         }
@@ -436,26 +443,6 @@ pub(in crate::semantic_contract) fn implicit_receiver_field_projection(
     })())
 }
 
-/// The one cross-unit field visibility rule for single-step and chained projections: only the
-/// runtime-protected fields (`Deadline.monotonicNanos` and the socket `handle`s) are hidden from
-/// other units unless declared `pub`, which matches what analysis accepts.
-fn field_hidden_across_units(
-    db: &dyn Db,
-    key: AstNodeKey,
-    declaration: AstNodeKey,
-    definition: &beskid_analysis::syntax::TypeDefinition,
-    field: &beskid_analysis::syntax::Field,
-    field_name: &str,
-) -> bool {
-    let type_name = definition.name.node.name.as_str();
-    let protected_field = (type_name == "Deadline" && field_name == "monotonicNanos")
-        || (field_name == "handle" && matches!(type_name, "TcpStream" | "TcpListener" | "UdpSocket"));
-    protected_field
-        && declaration.unit != key.unit
-        && field.visibility.node != beskid_analysis::syntax::Visibility::Public
-        && !canonical_network_deadline_projection(db, key, declaration, type_name, field_name)
-}
-
 fn project_nominal_field(
     db: &dyn Db,
     key: AstNodeKey,
@@ -490,7 +477,10 @@ fn project_nominal_field(
     let [(field_index, field)] = matches.as_slice() else {
         return Err(SemanticError::unavailable("nominal_field_projection"));
     };
-    if field_hidden_across_units(db, key, declaration, definition, &field.node, field_name) {
+    if declaration.unit != key.unit
+        && field.node.visibility.node != beskid_analysis::syntax::Visibility::Public
+        && !canonical_network_deadline_projection(db, key, declaration, &definition.name.node.name, field_name)
+    {
         return Err(SemanticError::unavailable("nominal_field_projection.visibility"));
     }
     let next_identity =
