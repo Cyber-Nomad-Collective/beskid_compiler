@@ -91,6 +91,10 @@ pub pointer StrConcat(pointer left, pointer right) {
     if totalLen < leftLen {
         return NativePointer(0);
     }
+    // Two empty operands produce the canonical empty string; the allocator rejects size 0.
+    if totalLen == 0 {
+        return StrNew(NativePointer(0), 0);
+    }
     pointer buffer = SystemAllocate(totalLen, 1);
     if buffer == NativePointer(0) {
         return NativePointer(0);
@@ -129,15 +133,12 @@ pub pointer StrFromI64(i64 value) {
         raw_word_store(pointer_add(strObj, 8), 1);
         return strObj;
     }
-    mut bool negative = value < 0;
-    mut i64 remaining = value;
-    if negative {
-        remaining = 0 - remaining;
-    }
-    // Count digits.
-    mut i64 digits = remaining;
+    // Digits are taken from the signed value without negating it, so the minimum i64 (whose
+    // negation overflows) formats like every other value.
+    bool negative = value < 0;
+    mut i64 digits = value;
     mut word count = 0;
-    while digits > 0 {
+    while digits != 0 {
         count = count + 1;
         digits = digits / 10;
     }
@@ -148,21 +149,20 @@ pub pointer StrFromI64(i64 value) {
     if buf == NativePointer(0) {
         return NativePointer(0);
     }
-    // Fill from the end.
+    // Fill from the end; `%` truncates toward zero, so a negative value yields negative digits.
     mut word pos = count;
-    mut i64 rem = remaining;
-    while pos > 0 {
+    mut i64 rem = value;
+    while rem != 0 {
         pos = pos - 1;
-        if rem > 0 {
-            i64 digit = rem % 10;
-            raw_byte_store(pointer_add(buf, pos), u8(48 + digit));
-            rem = rem / 10;
-        } else {
-            if negative {
-                raw_byte_store(pointer_add(buf, 0), 45);
-                negative = false;
-            }
+        mut i64 digit = rem % 10;
+        if digit < 0 {
+            digit = 0 - digit;
         }
+        raw_byte_store(pointer_add(buf, pos), u8(48 + digit));
+        rem = rem / 10;
+    }
+    if negative {
+        raw_byte_store(buf, 45);
     }
     pointer strObj = SystemAllocate(16, 8);
     if strObj == NativePointer(0) {

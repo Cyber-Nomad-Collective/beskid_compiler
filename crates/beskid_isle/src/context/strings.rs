@@ -9,13 +9,15 @@ impl IsleContext<'_, '_, '_, '_> {
         if semantic == SemanticTypeId::STRING {
             return Some(value);
         }
+        if semantic == SemanticTypeId::BOOL {
+            return self.bool_to_string(key, value);
+        }
         let pointer_type = self.builder.func.dfg.value_type(value);
         let coerced = match semantic {
             SemanticTypeId::I64 => value,
             SemanticTypeId::I32 => self.builder.ins().sextend(types::I64, value),
             SemanticTypeId::U32 => self.builder.ins().uextend(types::I64, value),
             SemanticTypeId::U8 => self.builder.ins().uextend(types::I64, value),
-            SemanticTypeId::BOOL => self.builder.ins().uextend(types::I64, value),
             _ => return None,
         };
         if pointer_type != types::I64 && semantic == SemanticTypeId::I64 {
@@ -28,6 +30,32 @@ impl IsleContext<'_, '_, '_, '_> {
             &[types::I64],
             Some(dispatch::pointer_type(self.frontend_config)),
         )
+    }
+
+    /// Interpolates a `bool` as `true` or `false`. Each branch materializes only its own literal.
+    fn bool_to_string(&mut self, key: AstNodeKey, flag: Value) -> Option<Value> {
+        let pointer = dispatch::pointer_type(self.frontend_config);
+        let true_block = self.builder.create_block();
+        let false_block = self.builder.create_block();
+        let merge_block = self.builder.create_block();
+        self.builder.append_block_param(merge_block, pointer);
+        self.builder.ins().brif(flag, true_block, &[], false_block, &[]);
+        for (block, text) in [(true_block, "true"), (false_block, "false")] {
+            self.builder.switch_to_block(block);
+            self.builder.seal_block(block);
+            let interned = match self.string_interner.as_deref_mut()?.intern(self.builder, key, text) {
+                Ok(value) => value,
+                Err(error) => {
+                    self.pending_error =
+                        Some(LoweringError { key, kind: LoweringErrorKind::StringMaterialization(error) });
+                    return None;
+                }
+            };
+            self.builder.ins().jump(merge_block, &[interned.into()]);
+        }
+        self.builder.switch_to_block(merge_block);
+        self.builder.seal_block(merge_block);
+        Some(self.builder.block_params(merge_block)[0])
     }
 
     pub(super) fn emit_string_compare(&mut self, key: AstNodeKey, invert: bool) -> Option<Value> {

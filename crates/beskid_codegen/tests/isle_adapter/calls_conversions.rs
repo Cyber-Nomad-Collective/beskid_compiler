@@ -121,6 +121,20 @@ fn parsed_string_interpolation_coerces_i64_operand() {
 }
 
 #[test]
+fn parsed_string_interpolation_spells_bool_operands() {
+    let (input, isa, root) = item_fixture_with_root(r#"string Main(bool flag) { return "flag=${flag}"; }"#);
+    let item = named_function(&input, root, "Main");
+
+    let artifact = lower_syntax_program(&input, isa.as_ref(), &[SyntaxModuleItem { key: item, symbol: "Main".into() }])
+        .expect("bool interpolation must lower through syntax ISLE string coercion");
+    let clif = artifact.functions[0].function.display().to_string();
+
+    assert!(!clif.contains("str_from_i64"), "bool must not format as an integer: {clif}");
+    assert!(clif.contains("brif"), "bool selects between its two spellings: {clif}");
+    assert!(clif.contains("str_new"), "the spellings materialize as string literals: {clif}");
+}
+
+#[test]
 fn parsed_pointer_signature_uses_the_target_pointer_type_without_hir() {
     let (input, isa, item) = item_fixture("pointer Echo(pointer value) { return value; }");
 
