@@ -542,6 +542,14 @@ pub fn canonical_runtime_support_sources() -> Vec<SourceUnit> {
             logical_path: "Core/String/Chars.bd".into(),
             source: include_str!("../../../../corelib/packages/foundation/src/Core/String/Chars.bd").into(),
         },
+        SourceUnit {
+            logical_path: "Core/String/Search.bd".into(),
+            source: include_str!("../../../../corelib/packages/foundation/src/Core/String/Search.bd").into(),
+        },
+        SourceUnit {
+            logical_path: "Core/String/Transform.bd".into(),
+            source: include_str!("../../../../corelib/packages/foundation/src/Core/String/Transform.bd").into(),
+        },
     ]
 }
 

@@ -338,13 +338,11 @@ fn resolve_optional_payload_path(inner_key: &str, list_by_element: &BTreeMap<Str
 }
 
 fn helper_emit_order(helper_names: &BTreeSet<String>) -> Vec<String> {
-    let mut lists: Vec<_> = helper_names.iter().filter(|n| n.ends_with("List")).cloned().collect();
-    lists.sort();
-    let mut opts: Vec<_> =
-        helper_names.iter().filter(|n| n.starts_with("Optional") || n.starts_with("SdkOptional")).cloned().collect();
-    opts.sort();
-    let mut rest: Vec<_> = helper_names.iter().filter(|n| !lists.contains(n) && !opts.contains(n)).cloned().collect();
-    rest.sort();
+    // Each helper lands in exactly one group: `*List` first, then `Optional*`, then the rest.
+    // A list of optionals (`OptionalLeadingDocCommentList`) matches both name shapes and is a list.
+    let (lists, others): (Vec<String>, Vec<String>) = helper_names.iter().cloned().partition(|n| n.ends_with("List"));
+    let (opts, rest): (Vec<String>, Vec<String>) =
+        others.into_iter().partition(|n| n.starts_with("Optional") || n.starts_with("SdkOptional"));
     let mut out = lists;
     out.extend(opts);
     out.extend(rest);

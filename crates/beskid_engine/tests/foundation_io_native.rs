@@ -476,6 +476,8 @@ fn lower_foundation_entry(fixture: &str, entry: &str) -> anyhow::Result<beskid_c
         "Core/String/Core.bd",
         "Core/String/Chars.bd",
         "Core/String/Utf8.bd",
+        "Core/String/Search.bd",
+        "Core/String/Transform.bd",
     ] {
         paths.push((foundation.join(relative), relative.to_owned()));
     }

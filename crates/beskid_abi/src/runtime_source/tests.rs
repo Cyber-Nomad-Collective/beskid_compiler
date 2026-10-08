@@ -764,7 +764,7 @@ fn runtime_support_is_source_bound_without_bootstrap_intrinsic_authority() {
     let sources = canonical_runtime_sources();
     let capability = canonical_runtime_intrinsic_capability(&manifest).unwrap();
     let support = canonical_runtime_support_sources();
-    assert_eq!(support.len(), 9);
+    assert_eq!(support.len(), 11);
     for unit in &support {
         assert!(sources.contains(unit));
         assert!(!capability.authorizes_source(&unit.logical_path));

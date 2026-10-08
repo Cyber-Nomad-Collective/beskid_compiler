@@ -151,7 +151,10 @@ pub pointer GrowArrayRootedWithPolicy(pointer array, word minimumCapacity, point
         targetCapacity = ARRAY_MINIMUM_GROWN_CAPACITY;
     }
     word geometricBacking = stride * targetCapacity;
-    if geometricBacking / stride != targetCapacity || geometricBacking + 48 < geometricBacking {
+    word geometricTotal = geometricBacking + 48;
+    word geometricAligned = AlignUp(geometricTotal, TypeDescriptorAlignment(descriptor));
+    if geometricBacking / stride != targetCapacity || geometricTotal < geometricBacking ||
+       geometricAligned < geometricTotal {
         targetCapacity = minimumCapacity;
     }
     word backingSize = stride * targetCapacity;

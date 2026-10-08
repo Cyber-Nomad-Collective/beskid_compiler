@@ -78,8 +78,7 @@ pub(super) fn native_syntax_factories(
     declarations: &BTreeMap<String, ParsedType>,
     helpers: &HelperPaths,
 ) -> io::Result<String> {
-    let mut source =
-        String::from("// Generated typed SDK constructors. Do not hand-edit.\nuse Beskid.Syntax.Nodes;\n\n");
+    let mut source = String::from("// Generated typed SDK constructors. Do not hand-edit.\n\n");
     let mut names = BTreeSet::new();
     for (name, declaration) in declarations {
         if crate::syntax_traversal::is_host_only_type(name) {

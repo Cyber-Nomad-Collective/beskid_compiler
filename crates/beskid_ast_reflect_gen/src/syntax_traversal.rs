@@ -229,7 +229,7 @@ pub contract Node {{
     {prefix}.NodeKind Kind();
     {prefix}.NodeRef Ref();
     {prefix}.NodeSpan Span();
-    unit PushChildren({prefix}.NodeChildSink sink);
+    unit PushChildren(NodeChildSink sink);
 }}
 
 pub contract NodeChildSink {{
