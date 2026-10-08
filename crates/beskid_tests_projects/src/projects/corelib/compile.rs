@@ -386,6 +386,7 @@ fn checked_in_corelib_beskid_test_sources_parse() {
         root.join("tests/corelib_tests/src/collections/CollectionsTests.bd"),
         root.join("tests/corelib_tests/src/query/QueryTests.bd"),
         root.join("tests/corelib_tests/src/collections/ListTests.bd"),
+        root.join("tests/corelib_tests/src/collections/PersistenceTests.bd"),
         root.join("tests/corelib_tests/src/collections/MapTests.bd"),
         root.join("tests/corelib_tests/src/collections/SetTests.bd"),
         root.join("tests/corelib_tests/src/collections/QueueTests.bd"),

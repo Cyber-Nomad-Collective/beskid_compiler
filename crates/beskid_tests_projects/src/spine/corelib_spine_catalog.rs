@@ -35,6 +35,7 @@ pub const CORELIB_TYPECHECK_ENTRIES: &[&str] = &[
     "collections/CollectionsTests.bd",
     "collections/CollectionsTier1Tests.bd",
     "collections/ListTests.bd",
+    "collections/PersistenceTests.bd",
     "collections/MapTests.bd",
     "collections/SetTests.bd",
     "collections/QueueTests.bd",
