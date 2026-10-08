@@ -109,17 +109,30 @@ fn new_template_authoring_project_locks_corelib_and_replays_after_relocation() {
     names.sort_unstable();
     assert_eq!(
         names,
+        // The 0.5.3 Corelib aggregate also ships the networking stack packages
+        // (codec, connect, crypto, http2, http3, quic, tls, uri, web, websocket, x509).
         [
             "Std",
+            "corelib_codec",
             "corelib_compiler_sdk",
             "corelib_concurrency",
+            "corelib_connect",
             "corelib_console",
+            "corelib_crypto",
             "corelib_foundation",
             "corelib_glue",
             "corelib_http",
+            "corelib_http2",
+            "corelib_http3",
             "corelib_interop",
             "corelib_network",
+            "corelib_quic",
             "corelib_runtime",
+            "corelib_tls",
+            "corelib_uri",
+            "corelib_web",
+            "corelib_websocket",
+            "corelib_x509",
         ],
         "authoring lock must contain the complete installed Corelib closure"
     );
