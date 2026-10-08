@@ -2,6 +2,7 @@
 
 use beskid_abi::abi_v5::TargetMetadata;
 use beskid_analysis::services::FrontEndTypedResult;
+use std::sync::{Mutex, PoisonError};
 
 use crate::error::AotResult;
 
@@ -35,10 +36,24 @@ pub fn lower_prepared_syntax_module(
 
 /// Lower the compiler-owned canonical runtime source through the same prepared-syntax AOT
 /// boundary used by hosts. Caller-provided sources never receive the runtime intrinsic authority.
+///
+/// The canonical corpus is embedded in the compiler, so its lowering for one target is fixed for
+/// the life of the process. A host that publishes several kits in one process (the debug and
+/// release kits of a bundle, or the kits of a test binary) reuses the first lowering instead of
+/// repeating it; each lowering of the corpus takes tens of seconds. Failures are not retained.
 pub fn lower_canonical_runtime_prepared_syntax(target: TargetMetadata) -> AotResult<beskid_codegen::CodegenArtifact> {
+    static LOWERED: Mutex<Vec<(TargetMetadata, beskid_codegen::CodegenArtifact)>> = Mutex::new(Vec::new());
+    // Holding the lock while lowering makes concurrent callers for one target wait for the
+    // first result rather than lower the corpus twice.
+    let mut lowered = LOWERED.lock().unwrap_or_else(PoisonError::into_inner);
+    if let Some((_, artifact)) = lowered.iter().find(|(cached, _)| *cached == target) {
+        return Ok(artifact.clone());
+    }
     let isa = crate::object_module::ObjectTargetIsa(target.triple.as_str())?;
-    beskid_queries::with_db(|db| {
-        beskid_codegen::lower_canonical_runtime_prepared_syntax(db, target, isa.as_ref())
+    let artifact = beskid_queries::with_db(|db| {
+        beskid_codegen::lower_canonical_runtime_prepared_syntax(db, target.clone(), isa.as_ref())
             .map_err(|error| crate::error::AotError::InvalidRequest { message: error.to_string() })
-    })
+    })?;
+    lowered.push((target, artifact.clone()));
+    Ok(artifact)
 }
