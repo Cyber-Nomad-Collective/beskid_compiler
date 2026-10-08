@@ -254,3 +254,24 @@ fn parsed_program_specializes_generic_pattern_payload_field_layout_without_hir()
         .expect("the specialized generic match helper must resolve its call imports");
     assert!(artifact.functions.iter().any(|function| function.name.starts_with("Rest#generic_")));
 }
+
+#[test]
+fn generic_local_annotated_with_a_type_parameter_lowers_for_scalar_and_string() {
+    let (input, isa, root) = item_fixture_with_root(
+        "T Same<T>(T value) { T held = value; return held; } i64 Main() { string text = Same(\"s\"); return Same(7_i64); }",
+    );
+    let items = find_function_definitions(input.database(), root);
+    let artifact = lower_syntax_program(
+        &input,
+        isa.as_ref(),
+        &[
+            SyntaxModuleItem { key: items[0], symbol: "Same".into() },
+            SyntaxModuleItem { key: items[1], symbol: "Main".into() },
+        ],
+    )
+    .expect("a local whose annotation is a type parameter takes its type from the specialization");
+
+    beskid_codegen::validate_artifact(&artifact).expect("generic local artifact");
+    let specializations = artifact.functions.iter().filter(|function| function.name.starts_with("Same#generic_")).count();
+    assert_eq!(specializations, 2, "one specialization each for i64 and string");
+}
