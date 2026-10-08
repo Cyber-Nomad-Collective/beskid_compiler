@@ -109,7 +109,7 @@ pub(in super::super) fn materialized_corelib_syscall_fixture()
         discovery: AssemblyDiscovery::ImportClosure,
         recovery_policy: beskid_analysis::projects::AssemblyRecoveryPolicy::Strict,
         module_index: Arc::new(ModuleIndex::empty()),
-        has_std_dependency: false,
+        has_core_dependency: false,
         trusted_corelib_service_paths: Arc::from([source_path.clone()]),
         glue_libraries: Arc::from([]),
     };
@@ -177,7 +177,7 @@ pub(in super::super) fn core_args_fixture(
         discovery: AssemblyDiscovery::ImportClosure,
         recovery_policy: beskid_analysis::projects::AssemblyRecoveryPolicy::Strict,
         module_index: Arc::new(ModuleIndex::empty()),
-        has_std_dependency: false,
+        has_core_dependency: false,
         trusted_corelib_service_paths,
         glue_libraries: Arc::from([]),
     };
@@ -382,7 +382,7 @@ pub(in super::super) fn include_imported_corelib_modules(
     let package_roots = ["foundation", "network"]
         .map(|package| std::fs::canonicalize(packages.join(package).join("src")).expect("Corelib package source root"));
     let module_of = |unit: &SourceUnit, roots: &EffectiveCompilationRoots| {
-        beskid_analysis::projects::infer_logical_module_path(unit, roots, false)
+        beskid_analysis::projects::infer_logical_module_path(unit, roots)
     };
     let mut present = units.iter().filter_map(|unit| module_of(unit, roots)).collect::<Vec<_>>();
     let imports = units

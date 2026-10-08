@@ -108,7 +108,6 @@ impl SemanticPipelineRule {
         }
 
         let mut known_roots = HashSet::new();
-        known_roots.insert("std".to_string());
         for item in &program.node.items {
             match &item.node {
                 Node::ModuleDeclaration(module_decl) => {

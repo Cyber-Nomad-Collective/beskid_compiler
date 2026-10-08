@@ -80,7 +80,7 @@ fn semantic_snapshot_query_hits_registry() {
             discovery: beskid_analysis::projects::AssemblyDiscovery::ImportClosure,
             recovery_policy: beskid_analysis::projects::AssemblyRecoveryPolicy::Strict,
             module_index: std::sync::Arc::new(beskid_analysis::projects::ModuleIndex::empty()),
-            has_std_dependency: false,
+            has_core_dependency: false,
             trusted_corelib_service_paths: std::sync::Arc::from([]),
             glue_libraries: std::sync::Arc::from([]),
         },
@@ -342,7 +342,7 @@ fn diagnostics_prepare_and_facts_share_one_session_for_noncanonical_root() {
     .expect("project manifest");
     std::fs::write(
         app.join("Src/Main.bd"),
-        "use Std.Core.Output;\n\ni32 Main() {\n    Output.WriteLine(\"ok\");\n    return 0;\n}\n",
+        "use Core.Output;\n\ni32 Main() {\n    Output.WriteLine(\"ok\");\n    return 0;\n}\n",
     )
     .expect("entry source");
 

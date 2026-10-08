@@ -2,10 +2,14 @@
 mod contracts;
 mod entry;
 mod expressions;
+#[cfg(test)]
+mod field_visibility_tests;
 mod helpers;
 mod items;
 mod iterable;
 pub(crate) mod precheck;
+#[cfg(test)]
+mod rc17_parity_tests;
 mod spawn;
 mod statements;
 mod types;
@@ -62,6 +66,11 @@ pub struct TypeChecker<'a> {
     pub(super) current_function_item: Option<ItemId>,
     pub(super) generic_params: HashMap<String, TypeId>,
     pub(super) current_receiver_item_id: Option<ItemId>,
+    /// Checking an `extend type` method body: visibility rule E1511 owns its private-field
+    /// reads of the extended type, so the general E1211 field-visibility check stays silent.
+    pub(super) in_extend_type_body: bool,
+    /// `(type item, field name)` of every field declared without `pub`, built on first use.
+    pub(super) private_field_index: std::cell::OnceCell<std::collections::HashSet<(ItemId, String)>>,
     pub(super) current_source_path: Option<PathBuf>,
     /// The checked unit is the canonical public Dynamic source; its `[Extern]` contracts are
     /// runtime-plane bridges (see [`crate::projects::ProgramAssembly::is_canonical_public_dynamic_unit`]).
@@ -126,6 +135,8 @@ impl<'a> TypeChecker<'a> {
             current_function_item: None,
             generic_params: HashMap::new(),
             current_receiver_item_id: None,
+            in_extend_type_body: false,
+            private_field_index: std::cell::OnceCell::new(),
             current_source_path: None,
             runtime_plane_extern_unit: false,
             glue_libraries: std::sync::Arc::from([]),
@@ -295,21 +306,10 @@ impl<'a> TypeChecker<'a> {
                 return self.primitive_type_id(PrimitiveType::Pointer);
             }
             let p = spec.beskid_path;
-            if ret
-                && matches!(
-                    p,
-                    &["__bytes_from_str"]
-                        | &["__syscall_read_bytes"]
-                        | &["__bytes_set"]
-                        | &["__str_new"]
-                        | &["__str_slice"]
-                )
-            {
-                return if matches!(p, &["__str_new"] | &["__str_slice"]) {
-                    self.primitive_type_id(PrimitiveType::String)
-                } else {
-                    self.u8_array_type_id()
-                };
+            // Managed string results are declared `String` by the generated table
+            // (`beskid_manifest` analysis codegen), never recovered here by name.
+            if ret && matches!(p, &["__bytes_from_str"] | &["__syscall_read_bytes"] | &["__bytes_set"]) {
+                return self.u8_array_type_id();
             }
             if matches!(
                 p,

@@ -193,24 +193,14 @@ mod tests {
     }
 
     #[test]
-    fn corelib_mvp_use_path_completion_offers_std_segments() {
+    fn corelib_mvp_use_path_completion_offers_core_segments() {
         let (snapshot, fixture, _) = snapshot_with_entry_resolution();
-        let offset = fixture.source.find("use Std.").expect("use Std.") + "use Std.".len();
+        let offset = fixture.source.find("use Core.").expect("use Core.") + "use Core.".len();
         let candidates = completion_candidates(&snapshot, &fixture.source, offset);
         let labels: Vec<_> = candidates.iter().map(|c| c.label.as_str()).collect();
+        assert!(labels.contains(&"Output"), "expected the Core.Output segment after use Core., got {labels:?}");
         assert!(
-            labels.iter().any(|label| {
-                *label == "System"
-                    || label.contains("System")
-                    || *label == "Core"
-                    || label.contains("corelib_runtime")
-                    || label.contains("corelib_foundation")
-                    || label.contains("crates")
-            }),
-            "expected Std shard segment after use Std., got {labels:?}"
-        );
-        assert!(
-            !labels.contains(&"Std.Core"),
+            !labels.contains(&"Core.Output"),
             "use-path completion must offer the next segment, not a repeated prefix: {labels:?}"
         );
     }

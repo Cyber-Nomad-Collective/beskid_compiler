@@ -14,7 +14,7 @@ pub struct AnalysisOptions {
     /// the forbidden-meta gate for ordinary host projects. `None` skips that gate (no manifest
     /// classification available).
     pub module_level_meta_items_allowed: Option<bool>,
-    /// Module paths (`Std::System::IO`) from program assembly; when set, `use` validation uses
+    /// Module paths (`Core::System::IO`) from program assembly; when set, `use` validation uses
     /// the merged module graph instead of file-local root heuristics.
     pub known_assembly_module_paths: Option<HashSet<String>>,
     /// Prefetched cross-unit graph for entry resolution (analyze / IDE parity with [`ModuleIndex::resolve_entry_program`]).

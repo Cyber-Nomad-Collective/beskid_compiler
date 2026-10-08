@@ -386,3 +386,52 @@ fn unresolved_call_target_accepts_calls_other_authorities_own() {
         assert_eq!(unresolved_call_in_item(source, item), None, "{source}");
     }
 }
+
+#[test]
+fn reachable_items_accepts_a_method_entry_and_follows_its_callees() {
+    // Native Mod adapters enter through contract methods and factory `Create` methods.
+    let source = "i32 Leaf() { return 7; } type Point { i32 x, i32 Ping() { return Leaf(); } } i32 Main() { return 0; }";
+    let (db, _project, unit, generation, index) = setup(source);
+    let program = key(unit, generation, &index, NodeKind::Program, 0);
+    let leaf = key(unit, generation, &index, NodeKind::FunctionDefinition, 0);
+    let method = key(unit, generation, &index, NodeKind::MethodDefinition, 0);
+
+    assert_eq!(
+        reachable_items(&db, program, method).expect("reachable query").expect("method entry facts").as_ref(),
+        &[method, leaf]
+    );
+    // A non-callable entry is still not an entrypoint.
+    let call = key(unit, generation, &index, NodeKind::CallExpression, 0);
+    assert_eq!(reachable_items(&db, program, call).expect("reachable query"), None);
+}
+
+#[test]
+fn native_mod_expression_payload_strips_only_expression_and_grouping_wrappers() {
+    let source = "type Point { i32 x, i32[] items, i32 y } \
+                  i32 Make(i32 value) { return value; } \
+                  Point Build(i32 value) { return Point { x: (value), items: [value], y: Make(value) }; }";
+    let (db, _project, unit, generation, index) = setup(source);
+    let literal = key(unit, generation, &index, NodeKind::StructLiteralExpression, 0);
+    let fields = beskid_queries::aggregate_literal_field_values(&db, literal)
+        .expect("field values query")
+        .expect("field values");
+    let payload_kind = |name: &str| {
+        let (_, value) = fields.iter().find(|(field, _)| field.as_ref() == name).expect("declared field");
+        assert_eq!(index.kind(value.node), Some(NodeKind::Expression), "{name} value is registered as its wrapper");
+        let payload = beskid_queries::native_mod_expression_payload(&db, *value)
+            .expect("payload query")
+            .expect("current payload");
+        assert_eq!(
+            beskid_queries::native_mod_expression_payload(&db, payload).expect("payload query"),
+            Some(payload),
+            "a payload is a fixed point"
+        );
+        index.kind(payload.node)
+    };
+    assert_eq!(payload_kind("x"), Some(NodeKind::PathExpression), "grouping is stripped down to the path");
+    assert_eq!(payload_kind("items"), Some(NodeKind::ArrayLiteralExpression));
+    assert_eq!(payload_kind("y"), Some(NodeKind::CallExpression), "a call is not descended into");
+
+    let stale = beskid_queries::AstNodeKey { generation: SyntaxGenerationId(generation.0 + 1), ..literal };
+    assert_eq!(beskid_queries::native_mod_expression_payload(&db, stale).expect("stale key"), None);
+}

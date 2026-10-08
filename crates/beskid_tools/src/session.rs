@@ -116,6 +116,7 @@ impl CommandSession {
             services::PrepareOptions {
                 front_end: services::FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
                 dependency_typing: services::DependencyTypingPolicy::FullClosure,
+                native_mod_adapter_sources: false,
                 mod_invoker: self.mod_invoker.clone(),
             },
             Some(self.pipeline.as_ref()),

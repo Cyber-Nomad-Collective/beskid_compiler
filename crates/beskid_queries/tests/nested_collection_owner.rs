@@ -50,7 +50,7 @@ fn fixture(
             vec![]
         },
         unresolved_dependencies: vec![],
-        has_std_dependency: false,
+        has_core_dependency: false,
     };
     let assembly = Arc::new(
         assemble_program_with_materializer(&plan, None, &path, None, &AssemblyOptions::default(), None, None).unwrap(),
@@ -79,7 +79,7 @@ fn fixture(
     let imports = beskid_queries::unresolved_imports(&db, program).unwrap().unwrap();
     for source in assembly.units.iter() {
         eprintln!("assembled unit {:?}, origin {:?}, module {:?}", source.path, source.origin_path,
-            beskid_analysis::projects::infer_logical_module_path(source, &assembly.roots, assembly.has_std_dependency));
+            beskid_analysis::projects::infer_logical_module_path(source, &assembly.roots));
     }
     assert!(imports.is_empty(), "real materializer must register the Array import: {imports:?}");
     let parsed_call = assembly
@@ -90,7 +90,7 @@ fn fixture(
     eprintln!("owner call syntax {:?}; generation {:?}", parsed_call.callee, assembly.generation);
     for source in assembly.units.iter() {
         eprintln!("owner assembled unit {:?}, module {:?}, origin {:?}", source.path,
-            beskid_analysis::projects::infer_logical_module_path(source, &assembly.roots, assembly.has_std_dependency), source.origin_path);
+            beskid_analysis::projects::infer_logical_module_path(source, &assembly.roots), source.origin_path);
         let source_unit = SourceUnitId::new(&db, source.path.clone());
         for declaration in
             assembly.syntax_index_for_path(&source.path).unwrap().ids_of_kind(NodeKind::FunctionDefinition)

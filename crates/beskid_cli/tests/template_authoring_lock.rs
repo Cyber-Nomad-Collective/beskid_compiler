@@ -118,7 +118,7 @@ fn new_template_authoring_project_locks_corelib_and_replays_after_relocation() {
     assert_eq!(
         names,
         [
-            "Std",
+            "Core",
             "corelib_bsol",
             "corelib_compiler_sdk",
             "corelib_concurrency",
@@ -130,6 +130,7 @@ fn new_template_authoring_project_locks_corelib_and_replays_after_relocation() {
             "corelib_network",
             "corelib_runtime",
             "corelib_serialization",
+            "serialization_mod",
         ],
         "authoring lock must contain the complete installed Corelib closure"
     );

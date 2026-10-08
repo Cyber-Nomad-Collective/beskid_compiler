@@ -83,11 +83,11 @@ fn corelib_mvp_fixture_resolves_std_modules_via_program_assembly() {
 
         assert!(
             resolution.items.iter().any(|item| item.name == "WriteLine"),
-            "expected WriteLine from Std.Core.Output in merged resolution"
+            "expected WriteLine from Core.Output in merged resolution"
         );
         assert!(
             resolution.items.iter().any(|item| item.name == "Len"),
-            "expected Len from Std.Core.String in merged resolution"
+            "expected Len from Core.String in merged resolution"
         );
     });
 }

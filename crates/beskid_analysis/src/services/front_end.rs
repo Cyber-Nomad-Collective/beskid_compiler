@@ -45,7 +45,7 @@ impl FrontEndTypedResult {
             assembly.entry_index,
             assembly.discovery,
             std::sync::Arc::clone(&assembly.module_index),
-            assembly.has_std_dependency,
+            assembly.has_core_dependency,
             assembly.generation,
         )
         .with_recovery_policy(assembly.recovery_policy)
@@ -138,7 +138,7 @@ mod tests {
         assert_eq!(syntax_assembly.entry_index, front.assembly.entry_index);
         assert_eq!(syntax_assembly.discovery, front.assembly.discovery);
         assert!(std::sync::Arc::ptr_eq(&syntax_assembly.module_index, &front.assembly.module_index,));
-        assert_eq!(syntax_assembly.has_std_dependency, front.assembly.has_std_dependency,);
+        assert_eq!(syntax_assembly.has_core_dependency, front.assembly.has_core_dependency,);
         let _ = std::fs::remove_dir_all(root);
     }
 }

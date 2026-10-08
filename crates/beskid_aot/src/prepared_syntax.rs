@@ -78,7 +78,9 @@ pub fn lower_prepared_native_mod(
     let isa = crate::object_module::ObjectTargetIsa(target.triple.as_str())?;
     beskid_queries::with_db(|db| {
         beskid_codegen::lower_prepared_native_mod(db, front, target, isa.as_ref())
-            .map_err(|error| crate::error::AotError::InvalidRequest { message: error.to_string() })
+            // Alternate formatting keeps the whole anyhow context chain (phase, site, original
+            // semantic error text) instead of only the outermost context.
+            .map_err(|error| crate::error::AotError::InvalidRequest { message: format!("{error:#}") })
     })
 }
 

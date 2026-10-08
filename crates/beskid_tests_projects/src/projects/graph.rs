@@ -21,7 +21,7 @@ target "App" {
   entry = "Main.bd"
 }
 
-dependency "RemoteStd" {
+dependency "RemoteShared" {
   source = "git"
   url = "git@example.com/std.git"
   rev = "abc123"
@@ -41,7 +41,7 @@ dependency "PkgCore" {
 
         let git =
             unresolved.iter().find(|note| note.kind == UnresolvedDependencyKind::Git).expect("git unresolved dep");
-        assert_eq!(git.dependency_name, "RemoteStd");
+        assert_eq!(git.dependency_name, "RemoteShared");
         assert_eq!(git.descriptor, "git@example.com/std.git@abc123");
 
         let registry = unresolved
@@ -135,7 +135,7 @@ target "App" {
   entry = "Main.bd"
 }
 
-dependency "Core" {
+dependency "Kernel" {
   source = "path"
   path = "../Core"
 }
@@ -147,7 +147,7 @@ dependency "Feature" {
 "#,
     );
 
-    let _std_root = super::scoped_std_dependency_root(&compiler_workspace_root().join("corelib"));
+    let _core_root = super::scoped_core_dependency_root(&compiler_workspace_root().join("corelib"));
     with_cwd_at_workspace_root(&compiler_workspace_root(), || {
         let graph = build_project_graph(&app_manifest_path).expect("graph should build");
         let deps = collect_dependency_projects(&graph);
@@ -166,9 +166,9 @@ dependency "Feature" {
                 "corelib_network",
                 "corelib_http",
                 "corelib_interop",
-                "Std",
-                "Util",
                 "Core",
+                "Util",
+                "Kernel",
                 "Feature",
             ],
             "dependency order: {names:?}"

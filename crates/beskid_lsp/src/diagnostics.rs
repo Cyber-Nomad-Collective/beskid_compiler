@@ -21,6 +21,17 @@ use crate::manifest_uri::{is_manifest_uri, is_standalone_bsol_uri};
 use crate::position::offset_range_to_lsp;
 use crate::session::store::{SyntaxDiagnostic, SyntaxDiagnosticSeverity};
 
+/// Qualified native Mod execution for editor diagnostics. The editor never builds Mods: it runs
+/// the artifact the CLI cached or the toolchain shipped, or reports the exact rebuild command.
+fn editor_mod_invoker(
+    resolved: &ResolvedInput,
+) -> anyhow::Result<Option<std::sync::Arc<dyn beskid_analysis::mod_host::ContractInvoker>>> {
+    match resolved.compile_plan.as_ref() {
+        Some(plan) => beskid_tools::native_mods::installed_cached_mod_invoker(plan),
+        None => Ok(None),
+    }
+}
+
 pub(crate) struct PreparedSyntaxFacts {
     pub(crate) assembly: ProgramAssembly,
     pub(crate) diagnostics: Vec<SyntaxDiagnostic>,
@@ -37,13 +48,14 @@ pub(crate) fn prepare_project_syntax_facts(
     let (prepared, diagnostics, fixes) = beskid_queries::prepare_compilation_diagnostics_with_db(
         db,
         resolved,
-        PrepareOptions { mod_invoker: None,
+        PrepareOptions { mod_invoker: editor_mod_invoker(resolved)?,
             front_end: FrontEndOptions {
                 assembly_recovery: beskid_analysis::projects::AssemblyRecoveryPolicy::EditorRetainRecovered,
                 with_semantic_diagnostics: dependency_typing == DependencyTypingPolicy::FullClosure,
                 ..Default::default()
             },
             dependency_typing,
+            native_mod_adapter_sources: false,
         },
         None,
     )?;
@@ -65,13 +77,14 @@ pub(crate) fn prepare_project_diagnostics_from_assembled(
 ) -> anyhow::Result<PreparedSyntaxFacts> {
     let (prepared, diagnostics, fixes) = beskid_queries::prepare_compilation_diagnostics_isolated(
         resolved,
-        PrepareOptions { mod_invoker: None,
+        PrepareOptions { mod_invoker: editor_mod_invoker(resolved)?,
             front_end: FrontEndOptions {
                 assembly_recovery: beskid_analysis::projects::AssemblyRecoveryPolicy::EditorRetainRecovered,
                 with_semantic_diagnostics: dependency_typing == DependencyTypingPolicy::FullClosure,
                 ..Default::default()
             },
             dependency_typing,
+            native_mod_adapter_sources: false,
         },
         None,
     )?;

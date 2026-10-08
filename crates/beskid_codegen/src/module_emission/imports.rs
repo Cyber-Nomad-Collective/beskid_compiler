@@ -186,7 +186,11 @@ pub(super) fn corelib_service_symbols(
         }
         if let Ok(Some(CallLowering::NativeModCallback(callback))) = call_lowering(input.database(), key) {
             if !input.permits_native_mod_callback(callback) {
-                return Err("SDK host callback requires a prepared native Mod invocation capability".into());
+                return Err(format!(
+                    "SDK host callback at {} (wrapper {}) requires a prepared native Mod invocation capability",
+                    beskid_queries::format_ast_node_site(input.database(), key),
+                    beskid_queries::format_ast_node_site(input.database(), callback.wrapper()),
+                ));
             }
             let symbol = beskid_queries::native_mod_callback_symbol(input.database(), callback)
                 .map_err(|error| error.to_string())?;

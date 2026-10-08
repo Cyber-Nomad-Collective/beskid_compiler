@@ -26,7 +26,7 @@ target "App" {
   entry = "Main.bd"
 }
 
-dependency "Core" {
+dependency "Kernel" {
   source = "path"
   path = "../Core"
 }
@@ -59,7 +59,7 @@ target "App" {
   entry = "Main.bd"
 }
 
-dependency "Core" {
+dependency "Kernel" {
   source = "path"
   path = "../Core"
 }
@@ -91,66 +91,13 @@ dependency "App" {
     let _ = fs::remove_dir_all(root);
 }
 
-#[test]
-fn compile_plan_detects_std_dependency_when_present() {
-    let root = temp_case_dir("std_dependency_disables_fallback");
-    let app_dir = root.join("App");
-    let std_dir = root.join("Std");
-    fs::create_dir_all(&app_dir).expect("create app dir");
-    fs::create_dir_all(&std_dir).expect("create std dir");
-
-    let std_manifest = r#"
-project {
-  name = "Std"
-  version = "0.1.0"
-}
-
-target "CoreLib" {
-  kind = "Lib"
-  entry = "Prelude.bd"
-}
-"#;
-    write_manifest(&std_dir, std_manifest);
-
-    let app_manifest = r#"
-project {
-  name = "App"
-  version = "0.1.0"
-}
-
-target "App" {
-  kind = "App"
-  entry = "Main.bd"
-}
-
-dependency "Std" {
-  source = "path"
-  path = "../Std"
-}
-"#;
-    let app_manifest_path = write_manifest(&app_dir, app_manifest);
-
-    with_cwd_at_workspace_root(&root, || {
-        let plan = build_compile_plan(&app_manifest_path, None).expect("plan should build");
-        assert!(plan.has_std_dependency);
-    });
-
-    let _ = fs::remove_dir_all(root);
-}
-
-#[test]
-fn compile_plan_injects_std_dependency_when_not_declared() {
-    let root = temp_case_dir("implicit_std_dependency");
-    let app_dir = root.join("App");
-    let std_dir = root.join("StdBundled");
-    fs::create_dir_all(&app_dir).expect("create app dir");
-    fs::create_dir_all(std_dir.join("Src")).expect("create std src dir");
-
+fn write_corelib_aggregate(dir: &std::path::Path) {
+    fs::create_dir_all(dir.join("Src")).expect("create corelib src dir");
     write_manifest(
-        &std_dir,
+        dir,
         r#"
 project {
-  name = "Std"
+  name = "corelib"
   version = "1.0.0"
 }
 
@@ -160,30 +107,97 @@ target "CoreLib" {
 }
 "#,
     );
-    fs::write(std_dir.join("Src/Prelude.bd"), "unit prelude() { }\n").expect("write std prelude");
+    fs::write(dir.join("Src/Prelude.bd"), "unit prelude() { }\n").expect("write corelib prelude");
+}
 
-    let app_manifest_path = write_manifest(
-        &app_dir,
-        r#"
-project {
+fn write_app_manifest(dir: &std::path::Path, dependencies: &str) -> std::path::PathBuf {
+    write_manifest(
+        dir,
+        &format!(
+            r#"
+project {{
   name = "App"
   version = "0.1.0"
-}
+}}
 
-target "App" {
+target "App" {{
   kind = "App"
   entry = "Main.bd"
+}}
+{dependencies}"#
+        ),
+    )
 }
-"#,
+
+#[test]
+fn compile_plan_detects_core_dependency_when_present() {
+    let root = temp_case_dir("core_dependency_disables_fallback");
+    let app_dir = root.join("App");
+    let corelib_dir = root.join("CorelibCheckout");
+    fs::create_dir_all(&app_dir).expect("create app dir");
+    write_corelib_aggregate(&corelib_dir);
+    let app_manifest_path = write_app_manifest(
+        &app_dir,
+        "\ndependency \"Core\" {\n  source = \"path\"\n  path = \"../CorelibCheckout\"\n}\n",
     );
 
-    let _std_root = super::super::scoped_std_dependency_root(&std_dir);
     with_cwd_at_workspace_root(&root, || {
         let plan = build_compile_plan(&app_manifest_path, None).expect("plan should build");
-        assert!(plan.has_std_dependency);
-        assert!(plan.dependency_projects.iter().any(|dependency| dependency.dependency_name == "Std"));
+        assert!(plan.has_core_dependency);
+        assert_eq!(
+            plan.dependency_projects.iter().filter(|dependency| dependency.dependency_name == "Core").count(),
+            1,
+            "an explicit `Core` dependency replaces the implicit one"
+        );
     });
-    drop(_std_root);
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn compile_plan_rejects_core_label_for_a_non_corelib_project() {
+    let root = temp_case_dir("core_label_reserved");
+    let app_dir = root.join("App");
+    let shared_dir = root.join("Shared");
+    fs::create_dir_all(&app_dir).expect("create app dir");
+    fs::create_dir_all(shared_dir.join("Src")).expect("create shared dir");
+    write_manifest(
+        &shared_dir,
+        "project {\n  name = \"Shared\"\n  version = \"0.1.0\"\n}\n\ntarget \"SharedLib\" {\n  kind = \"Lib\"\n  entry = \"Shared.bd\"\n}\n",
+    );
+    let app_manifest_path = write_app_manifest(
+        &app_dir,
+        "\ndependency \"Core\" {\n  source = \"path\"\n  path = \"../Shared\"\n}\n",
+    );
+
+    let error = with_cwd_at_workspace_root(&root, || {
+        build_compile_plan(&app_manifest_path, None).expect_err("`Core` is reserved for the Corelib aggregate")
+    });
+    assert!(
+        matches!(&error, ProjectError::Validation(message) if message.contains("reserved for the Corelib aggregate")),
+        "{error}"
+    );
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn compile_plan_injects_core_dependency_when_not_declared() {
+    let root = temp_case_dir("implicit_core_dependency");
+    let app_dir = root.join("App");
+    let corelib_dir = root.join("CorelibBundled");
+    fs::create_dir_all(&app_dir).expect("create app dir");
+    write_corelib_aggregate(&corelib_dir);
+    let app_manifest_path = write_app_manifest(&app_dir, "");
+
+    let _core_root = super::super::scoped_core_dependency_root(&corelib_dir);
+    with_cwd_at_workspace_root(&root, || {
+        let plan = build_compile_plan(&app_manifest_path, None).expect("plan should build");
+        assert!(plan.has_core_dependency);
+        assert!(plan.dependency_projects.iter().any(|dependency| dependency.dependency_name == "Core"));
+        assert!(plan.dependency_projects.iter().all(|dependency| dependency.dependency_name != "Std"));
+    });
+    drop(_core_root);
     let _ = fs::remove_dir_all(root);
 }
 
@@ -201,7 +215,7 @@ target "App" {
   entry = "Main.bd"
 }
 
-dependency "RemoteStd" {
+dependency "RemoteShared" {
   source = "git"
   url = "git@example.com/std.git"
   rev = "abc123"
@@ -213,7 +227,7 @@ dependency "RemoteStd" {
         let plan = build_compile_plan_with_policy(&manifest_path, None, UnresolvedDependencyPolicy::Warn)
             .expect("warn policy should collect unresolved deps");
         assert_eq!(plan.unresolved_dependencies.len(), 1);
-        assert_eq!(plan.unresolved_dependencies[0].dependency_name, "RemoteStd");
+        assert_eq!(plan.unresolved_dependencies[0].dependency_name, "RemoteShared");
         assert_eq!(plan.unresolved_dependencies[0].descriptor, "git@example.com/std.git@abc123");
     });
 
@@ -306,7 +320,7 @@ target "App" {
   entry = "Main.bd"
 }
 
-dependency "Core" {
+dependency "Kernel" {
   source = "path"
   path = "../Core"
 }

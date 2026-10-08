@@ -35,7 +35,7 @@ member "compiler" {
   path = "compiler"
 }
 
-override "Std" {
+override "Shared" {
   version = "1.2.0"
 }
 
@@ -47,7 +47,7 @@ registry "default" {
     let manifest = parse_workspace_manifest(source).expect("valid workspace manifest");
 
     assert_eq!(manifest.overrides.len(), 1);
-    assert_eq!(manifest.overrides[0].dependency, "Std");
+    assert_eq!(manifest.overrides[0].dependency, "Shared");
     assert_eq!(manifest.registries.len(), 1);
     assert_eq!(manifest.registries[0].name, "default");
 }

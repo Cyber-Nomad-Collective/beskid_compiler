@@ -95,7 +95,7 @@ pub fn build_project_graph_from_manifest(
     node_by_manifest.insert(root_manifest_path.clone(), root);
 
     let mut visiting = vec![root_manifest_path.clone()];
-    let mut has_std_dependency = false;
+    let mut has_core_dependency = false;
     let workspace_rules = discover_workspace_resolution_rules(&root_manifest_path)?;
 
     resolve_dependencies(
@@ -106,7 +106,7 @@ pub fn build_project_graph_from_manifest(
         workspace_rules.as_ref(),
         &mut node_by_manifest,
         &mut visiting,
-        &mut has_std_dependency,
+        &mut has_core_dependency,
     )?;
 
     Ok(ProjectGraph {
@@ -116,6 +116,6 @@ pub fn build_project_graph_from_manifest(
         root_project_root,
         root_manifest,
         node_by_manifest,
-        has_std_dependency,
+        has_core_dependency,
     })
 }

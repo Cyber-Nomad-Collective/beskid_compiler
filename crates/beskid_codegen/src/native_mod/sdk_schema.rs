@@ -208,7 +208,10 @@ impl CanonicalSdkSchema {
                 }
                 Body::Enum { variants } => {
                     for variant in variants {
-                        constructors.insert(format!("{name}{}Value", variant.beskid_name), variant.fields.len());
+                        // Generated factories drop a reserved-word escape (`Type::_This` is built by
+                        // `TypeThisValue`), matching `beskid_ast_reflect_gen` factory naming.
+                        let segment = variant.beskid_name.trim_start_matches('_');
+                        constructors.insert(format!("{name}{segment}Value"), variant.fields.len());
                     }
                 }
                 Body::List { .. } => {

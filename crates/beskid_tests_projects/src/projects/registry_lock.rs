@@ -39,7 +39,7 @@ struct RegistryFixture {
 
 impl RegistryFixture {
     fn new() -> Self {
-        let env_guard = super::std_dependency_env_lock();
+        let env_guard = super::core_dependency_env_lock();
         assert!(
             std::env::var_os("BESKID_PCKG_URL").is_none(),
             "unset BESKID_PCKG_URL so registry fixture requests stay on loopback"

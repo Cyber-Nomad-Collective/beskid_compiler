@@ -118,6 +118,7 @@ fn every_legality_compile_fail_target_is_rejected_with_its_code_in_the_dependenc
                 PrepareOptions { mod_invoker: None,
                     front_end: FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
                     dependency_typing: DependencyTypingPolicy::FullClosure,
+                    native_mod_adapter_sources: false,
                 },
                 None,
             );

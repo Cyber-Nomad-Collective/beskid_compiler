@@ -272,7 +272,7 @@ pub struct CompilePlan {
     pub target: Target,
     pub dependency_projects: Vec<ResolvedDependencyProject>,
     pub unresolved_dependencies: Vec<UnresolvedDependencyNote>,
-    pub has_std_dependency: bool,
+    pub has_core_dependency: bool,
 }
 
 /// Lock ownership and dependency materialization, independent of a compile target.
@@ -343,6 +343,12 @@ pub struct AssemblyOptions {
     pub max_units: usize,
     /// When true, skip units that fail to parse instead of failing the whole assembly (`beskid doc`).
     pub skip_parse_errors: bool,
+    /// Native Mod builds only: seed discovery with the compiler-owned SDK adapter sources
+    /// (`Beskid.Compiler.NativeRequests`, `Beskid.Syntax.NativeFactories`) from the
+    /// `corelib_compiler_sdk` dependency root, as rustc implicitly provides `proc_macro` to
+    /// proc-macro crates. Seeding grants no authority: codegen still requires exact embedded SDK
+    /// bytes and Corelib package identity. Missing seeds fail the assembly.
+    pub native_mod_adapter_sources: bool,
 }
 
 impl Default for AssemblyOptions {
@@ -352,6 +358,7 @@ impl Default for AssemblyOptions {
             recovery_policy: AssemblyRecoveryPolicy::Strict,
             max_units: 4096,
             skip_parse_errors: false,
+            native_mod_adapter_sources: false,
         }
     }
 }

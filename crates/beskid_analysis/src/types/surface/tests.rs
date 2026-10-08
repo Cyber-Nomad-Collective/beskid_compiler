@@ -12,8 +12,8 @@ use crate::types::{TypeId, TypeInfo, UnitTypeSurface, build_unit_type_surface, m
 fn qualified_same_named_module_type_retains_dependency_record_field() {
     let node_path = PathBuf::from("/tmp/qualified-field/Beskid/Syntax/Nodes/NodeRef.bd");
     let compilation_path = PathBuf::from("/tmp/qualified-field/Beskid/Compiler/Compilation.bd");
-    let node = parse_program("pub type NodeRef { u64 generation, }").unwrap();
-    let compilation = parse_program("pub type Compilation { Beskid.Syntax.Nodes.NodeRef entryRoot, }").unwrap();
+    let node = parse_program("pub type NodeRef { pub u64 generation, }").unwrap();
+    let compilation = parse_program("pub type Compilation { pub Beskid.Syntax.Nodes.NodeRef entryRoot, }").unwrap();
     let mut entry = parse_program(
         "use Beskid.Compiler.Compilation; \
         pub Compilation Make(Beskid.Syntax.Nodes.NodeRef entryRoot) { \
@@ -864,7 +864,7 @@ pub T Current<T>(T[] values, i64 iterator) {
 use Core.Collections.Array;
 
 pub enum Option<T> { Some(T value), None }
-pub type ArrayIterator<T> { T[] source }
+pub type ArrayIterator<T> { pub T[] source }
 pub Option<T> Current<T>(ArrayIterator<T> iterator) {
     return Option::None();
 }

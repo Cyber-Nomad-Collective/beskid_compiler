@@ -74,10 +74,11 @@ pub(in crate::semantic_contract) fn generic_source_type_identity_with_substituti
     Ok(match syntax_type {
         Type::Primitive(_) => GenericSourceTypeIdentity::Abi(abi_type_from_syntax(db, key, syntax_type)?),
         Type::Complex(path) => {
-            let declaration = resolve_type_declaration(db, key, &path.node)
-                .ok_or_else(|| SemanticError::unavailable("source_expression_type"))?;
+            let declaration = resolve_type_declaration(db, key, &path.node).ok_or_else(|| {
+                source_expression_unavailable(db, key, &format!("unresolved type `{}`", path_spelling(&path.node)))
+            })?;
             let qualified_name = stable_declaration_identity(db, declaration)
-                .ok_or_else(|| SemanticError::unavailable("source_expression_type"))?;
+                .ok_or_else(|| source_expression_unavailable(db, key, "type declaration has no stable identity"))?;
             let arguments = path
                 .node
                 .segments
@@ -105,10 +106,12 @@ pub(in crate::semantic_contract) fn generic_source_type_identity_with_substituti
                 substitutions,
             )?),
         },
-        Type::Associated { .. } => return Err(SemanticError::unavailable("source_expression_type")),
+        Type::Associated { .. } => {
+            return Err(source_expression_unavailable(db, key, "associated type has no concrete source identity"));
+        }
         Type::This => {
-            let receiver =
-                method_this_type(db, key).ok_or_else(|| SemanticError::unavailable("source_expression_type"))?;
+            let receiver = method_this_type(db, key)
+                .ok_or_else(|| source_expression_unavailable(db, key, "`This` has no enclosing receiver type"))?;
             return generic_source_type_identity_with_substitutions(db, key, &receiver, substitutions);
         }
     })
@@ -124,29 +127,47 @@ pub(in crate::semantic_contract) fn generic_source_local_identity(
     key: AstNodeKey,
     declaration: beskid_analysis::syntax::AstNodeId,
 ) -> Result<GenericSourceTypeIdentity, SemanticError> {
-    let parent = parent_node(index, declaration).ok_or_else(|| SemanticError::unavailable("source_expression_type"))?;
+    let parent = parent_node(index, declaration)
+        .ok_or_else(|| source_expression_unavailable(db, key, "local declaration has no parent node"))?;
     match index.kind(parent) {
         Some(beskid_analysis::syntax_query::NodeKind::Parameter) => index
             .node_at(program, parent)
             .and_then(|node| node.of::<beskid_analysis::syntax::Parameter>())
-            .ok_or_else(|| SemanticError::unavailable("source_expression_type"))
+            .ok_or_else(|| source_expression_unavailable(db, key, "parameter declaration is absent"))
             .and_then(|parameter| generic_source_type_identity(db, key, &parameter.ty.node)),
         Some(beskid_analysis::syntax_query::NodeKind::LetStatement) => {
             let statement = index
                 .node_at(program, parent)
                 .and_then(|node| node.of::<beskid_analysis::syntax::LetStatement>())
-                .ok_or_else(|| SemanticError::unavailable("source_expression_type"))?;
+                .ok_or_else(|| source_expression_unavailable(db, key, "let declaration is absent"))?;
             if let Some(annotation) = statement.type_annotation.as_ref() {
                 generic_source_type_identity(db, key, &annotation.node)
             } else {
                 let initializer = index
                     .direct_child_id(program, parent, beskid_analysis::syntax_query::DynNodeRef::from(&statement.value))
-                    .ok_or_else(|| SemanticError::unavailable("source_expression_type"))?;
+                    .ok_or_else(|| source_expression_unavailable(db, key, "let initializer node is absent"))?;
                 generic_source_expression_identity(db, AstNodeKey { node: initializer, ..key })
             }
         }
-        _ => Err(SemanticError::unavailable("source_expression_type")),
+        _ => Err(source_expression_unavailable(db, key, "binding is neither a parameter nor a let local")),
     }
+}
+
+/// The single `source_expression_type` gap constructor: every unproven source identity names the
+/// node it was asked about (path, construct kind, and range) plus the reason, so a gap that
+/// reaches an unsited boundary is still diagnosable.
+pub(in crate::semantic_contract) fn source_expression_unavailable(
+    db: &dyn Db,
+    site: AstNodeKey,
+    reason: &str,
+) -> SemanticError {
+    let rendered_site = crate::semantic_contract::format_ast_node_site(db, site);
+    SemanticError::unavailable_at_described("source_expression_type", site, &rendered_site, reason)
+}
+
+/// Dotted source spelling of a type path, for gap messages only.
+fn path_spelling(path: &beskid_analysis::syntax::Path) -> String {
+    path.segments.iter().map(|segment| segment.node.name.node.name.as_str()).collect::<Vec<_>>().join(".")
 }
 
 /// Deterministic assembly-relative identity for a resolved nominal declaration.

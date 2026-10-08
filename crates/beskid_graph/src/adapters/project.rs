@@ -23,7 +23,7 @@ pub fn from_project_graph(graph: &ProjectGraph) -> Result<GraphDocument, crate::
         index_to_id.insert(index, id);
     }
 
-    if graph.has_std_dependency
+    if graph.has_core_dependency
         && !graph.dag.graph().node_weights().any(|node| {
             matches!(
                 node,
@@ -33,13 +33,13 @@ pub fn from_project_graph(graph: &ProjectGraph) -> Result<GraphDocument, crate::
         })
     {
         let corelib_id = builder.add_node(
-            "corelib (stdlib)",
+            "corelib (Core)",
             GraphNodeKind::PathDependency,
             Some("lib"),
             NodeMetadata { project_name: Some("corelib".to_owned()), ..Default::default() },
         );
         if let Some(root_id) = index_to_id.get(&graph.root) {
-            builder.add_edge(root_id, &corelib_id, Some("Std".to_owned()), None);
+            builder.add_edge(root_id, &corelib_id, Some(beskid_analysis::projects::CORE_DEPENDENCY_NAME.to_owned()), None);
         }
     }
 

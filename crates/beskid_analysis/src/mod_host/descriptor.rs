@@ -18,6 +18,12 @@ use std::{
 pub const NATIVE_MOD_DESCRIPTOR_SCHEMA: u32 = 2;
 pub const NATIVE_MOD_HOST_ABI: u32 = 2;
 pub const NATIVE_MOD_DESCRIPTOR_FILE: &str = "mod.descriptor.json";
+/// Exact build-tool provenance roles, in producer order (`beskid_aot::build_mod_artifact`).
+pub const NATIVE_MOD_BUILD_TOOL_ROLES: [&str; 3] = ["compiler", "adapter-compiler", "linker"];
+/// Role of the Mod-host compiler executable in [`ModArtifactDescriptor::build_tools`]. The same
+/// executable serves `beskid dev native-mod-worker`, so its digest is the driver identity a cached
+/// or shipped artifact must match.
+pub const NATIVE_MOD_COMPILER_TOOL_ROLE: &str = "compiler";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -66,6 +72,10 @@ pub struct ModArtifactDescriptor {
     pub files: BTreeMap<String, String>,
     pub source_files: BTreeMap<String, String>,
     pub sdk_files: BTreeMap<String, String>,
+    /// Source identity of every dependency project of the Mod (dependency name to
+    /// [`native_mod_dependency_identity`]). A change in a dependency invalidates the artifact,
+    /// as a dependency fingerprint change does for a Cargo unit.
+    pub dependency_sources: BTreeMap<String, String>,
     pub build_tools: Vec<GlueProviderToolV1>,
     pub runtime: NativeModRuntimeBinding,
     #[serde(skip)]
@@ -197,8 +207,14 @@ impl ModArtifactDescriptor {
         {
             bail!("native Mod source/SDK identity mismatch");
         }
-        if self.build_tools.iter().map(|tool| tool.role.as_str()).collect::<Vec<_>>() != ["compiler", "linker"] {
-            bail!("native Mod requires exact compiler/linker provenance");
+        if self.build_tools.iter().map(|tool| tool.role.as_str()).collect::<Vec<_>>() != NATIVE_MOD_BUILD_TOOL_ROLES {
+            bail!("native Mod requires exact compiler/adapter-compiler/linker provenance");
+        }
+        for (name, digest) in &self.dependency_sources {
+            if name.is_empty() {
+                bail!("native Mod dependency evidence has an empty dependency name");
+            }
+            valid_digest(digest)?;
         }
         for tool in &self.build_tools {
             valid_digest(&tool.executable_sha256)?;
@@ -341,6 +357,127 @@ pub fn native_mod_runtime_binding(
         shared_library_sha256: native_mod_file_sha256(&provider.shared_library)?,
     })
 }
+/// Content-addressed artifact key: SHA-256 of the serialized descriptor identity. The cache
+/// directory `<root>/.beskid/obj/mods/<package>/<key>/<target>/` is named by this key, so a cache
+/// entry whose directory name differs from its recomputed key is never reused.
+pub fn native_mod_artifact_key(descriptor: &ModArtifactDescriptor) -> Result<String> {
+    // `artifact_key` and `artifact_dir` are `serde(skip)`, so the key covers identity only.
+    Ok(format!("{:x}", Sha256::digest(serde_json::to_vec(descriptor)?)))
+}
+
+/// Runtime-kit profile that native Mods are built, cached and loaded for: `BESKID_RUNTIME_KIT_PROFILE`
+/// when set, otherwise debug (the profile installed `beskid build` and `beskid run` select).
+pub fn native_mod_runtime_profile() -> Result<BuildProfile> {
+    match std::env::var("BESKID_RUNTIME_KIT_PROFILE") {
+        Ok(value) => BuildProfile::parse(&value).map_err(|error| anyhow::anyhow!("{error}")),
+        Err(std::env::VarError::NotPresent) => Ok(BuildProfile::Debug),
+        Err(error) => bail!("invalid BESKID_RUNTIME_KIT_PROFILE: {error}"),
+    }
+}
+
+/// Source identity of one dependency project: its manifest bytes and every `.bd` source under its
+/// source root. Build/VCS directories and nested projects are outside the package, by the same rule
+/// as package source proofs.
+pub fn native_mod_dependency_identity(manifest_path: &Path, source_root: &Path) -> Result<String> {
+    fn walk(root: &Path, at: &Path, files: &mut BTreeMap<String, String>, depth: usize) -> Result<()> {
+        if depth > 64 {
+            bail!("native Mod dependency source depth exceeded");
+        }
+        for entry in std::fs::read_dir(at).with_context(|| format!("read Mod dependency sources {}", at.display()))? {
+            let entry = entry?;
+            let path = entry.path();
+            let kind = entry.file_type()?;
+            if kind.is_symlink() {
+                bail!("native Mod dependency source symlink is forbidden: {}", path.display());
+            }
+            if kind.is_dir() {
+                if crate::projects::is_outside_package(&path)? {
+                    continue;
+                }
+                walk(root, &path, files, depth + 1)?;
+            } else if kind.is_file() && path.extension().and_then(|extension| extension.to_str()) == Some("bd") {
+                let name = path
+                    .strip_prefix(root)?
+                    .to_str()
+                    .context("non UTF8 Mod dependency source")?
+                    .replace(std::path::MAIN_SEPARATOR, "/");
+                if files.len() >= 65536 {
+                    bail!("native Mod dependency source budget exceeded");
+                }
+                files.insert(format!("sources/{name}"), native_mod_file_sha256(&path)?);
+            }
+        }
+        Ok(())
+    }
+    let mut files = BTreeMap::new();
+    files.insert("manifest".to_owned(), native_mod_file_sha256(manifest_path)?);
+    walk(source_root, source_root, &mut files, 0)?;
+    Ok(native_mod_inventory_identity(&files))
+}
+
+/// Dependency evidence for a Mod project's compile plan, keyed by dependency name.
+pub fn native_mod_dependency_sources(plan: &crate::projects::CompilePlan) -> Result<BTreeMap<String, String>> {
+    let mut sources = BTreeMap::new();
+    for dependency in &plan.dependency_projects {
+        let identity = native_mod_dependency_identity(&dependency.manifest_path, &dependency.source_root)?;
+        if let Some(previous) = sources.insert(dependency.dependency_name.clone(), identity.clone())
+            && previous != identity
+        {
+            bail!("native Mod dependency `{}` resolves to two different projects", dependency.dependency_name);
+        }
+    }
+    Ok(sources)
+}
+
+/// Whether a descriptor's source evidence equals the current Mod project: every recorded source,
+/// the exact source membership, the manifest, `Project.lock`, `project.mod`, and the dependency
+/// source identities. Any difference makes the artifact stale.
+pub fn native_mod_evidence_is_current(
+    descriptor: &ModArtifactDescriptor,
+    project_root: &Path,
+    manifest_path: &Path,
+    source_root: &Path,
+    dependency_sources: &BTreeMap<String, String>,
+) -> Result<bool> {
+    for (name, digest) in &descriptor.source_files {
+        let relative = name.strip_prefix("sources/").context("Mod source evidence outside source closure")?;
+        let current = project_root.join(relative);
+        if !current.exists() || native_mod_file_sha256(&current)? != *digest {
+            return Ok(false);
+        }
+    }
+    let source_inventory = mod_artifact_inventory(source_root)?;
+    let source_relative = source_root
+        .strip_prefix(project_root)?
+        .to_str()
+        .context("non UTF8 Mod source root")?
+        .replace(std::path::MAIN_SEPARATOR, "/");
+    for (name, digest) in source_inventory {
+        let evidence =
+            if source_relative.is_empty() { format!("sources/{name}") } else { format!("sources/{source_relative}/{name}") };
+        if descriptor.source_files.get(&evidence) != Some(&digest) {
+            return Ok(false);
+        }
+    }
+    for path in [
+        manifest_path.to_path_buf(),
+        project_root.join(crate::projects::PROJECT_LOCK_FILE_NAME),
+        project_root.join("project.mod"),
+    ] {
+        if path.exists() {
+            let relative = path
+                .strip_prefix(project_root)?
+                .to_str()
+                .context("non UTF8 Mod authority path")?
+                .replace(std::path::MAIN_SEPARATOR, "/");
+            if descriptor.source_files.get(&format!("sources/{relative}")) != Some(&native_mod_file_sha256(&path)?) {
+                return Ok(false);
+            }
+        }
+    }
+    Ok(descriptor.dependency_sources == *dependency_sources)
+}
+
 pub fn read_mod_artifact_descriptor(path: &Path, runtime_prefix: &Path) -> Result<ModArtifactDescriptor> {
     let metadata = std::fs::symlink_metadata(path)?;
     if !metadata.is_file() || metadata.len() > 16 * 1024 * 1024 {
@@ -375,6 +512,7 @@ impl ModArtifactDescriptor {
             files: BTreeMap::new(),
             source_files: BTreeMap::new(),
             sdk_files: BTreeMap::new(),
+            dependency_sources: BTreeMap::new(),
             build_tools: Vec::new(),
             runtime: NativeModRuntimeBinding {
                 profile: BuildProfile::Debug,

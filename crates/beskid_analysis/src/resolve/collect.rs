@@ -510,6 +510,37 @@ impl Resolver {
         }
     }
 
+    /// Credit every `use M;` that a resolved qualified path reaches through module `M`.
+    ///
+    /// `use Core.Output;` followed by the fully qualified `Core.Output.WriteLine(...)` reaches the
+    /// imported module without spelling its alias first, yet the reference still goes through
+    /// that module; the import is used. A path equal to `M` (`Beskid.Compiler.Workspace` after
+    /// `use Beskid.Compiler.Workspace;`, in type or value position) names the module's homonymous
+    /// item and goes through `M` too.
+    pub(crate) fn mark_module_imports_covering(&mut self, segments: &[String]) {
+        let covering = self
+            .module_imports
+            .iter()
+            .filter(|(_, module_path)| {
+                segments.starts_with(module_path)
+                    && (segments.len() > module_path.len() || self.module_declares_homonymous_item(module_path))
+            })
+            .filter_map(|(alias, _)| self.module_import_origins.get(alias).copied())
+            .collect::<Vec<_>>();
+        self.tables.used_import_spans.extend(covering);
+    }
+
+    /// Whether module `module_path` declares an item named like its own last segment.
+    fn module_declares_homonymous_item(&self, module_path: &[String]) -> bool {
+        let Some(name) = module_path.last() else {
+            return false;
+        };
+        self.module_graph
+            .module_id(module_path)
+            .and_then(|module_id| self.module_graph.module(module_id))
+            .is_some_and(|module| module.scope.contains_key(name))
+    }
+
     fn push_member_item(
         &mut self,
         name: String,
@@ -563,7 +594,7 @@ impl Resolver {
         let parent_name = parent.name.clone();
         let visibility = parent.visibility;
         for spec in member_items::collect_member_items(item, &parent_name) {
-            self.push_member_item(spec.name, spec.kind, visibility, spec.span, parent_id);
+            self.push_member_item(spec.name, spec.kind, spec.visibility.unwrap_or(visibility), spec.span, parent_id);
         }
     }
 

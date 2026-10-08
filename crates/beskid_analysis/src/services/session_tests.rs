@@ -45,7 +45,7 @@ fn test_plan(lock_bytes: Option<&[u8]>) -> (CompilePlan, SessionFingerprint, Pat
         },
         dependency_projects: Vec::new(),
         unresolved_dependencies: Vec::new(),
-        has_std_dependency: false,
+        has_core_dependency: false,
     };
     let fp = SessionFingerprint::for_entry(&plan, &entry_path);
     (plan, fp, root, entry_path)
@@ -66,7 +66,7 @@ fn empty_assembly(plan: &CompilePlan) -> ProgramAssembly {
         discovery: AssemblyDiscovery::ImportClosure,
         recovery_policy: crate::projects::AssemblyRecoveryPolicy::Strict,
         module_index: std::sync::Arc::new(ModuleIndex::empty()),
-        has_std_dependency: false,
+        has_core_dependency: false,
         trusted_corelib_service_paths: std::sync::Arc::from([]),
         glue_libraries: std::sync::Arc::from([]),
         verified_package_identities: Default::default(),

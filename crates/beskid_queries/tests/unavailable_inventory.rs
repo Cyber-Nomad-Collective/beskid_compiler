@@ -109,6 +109,7 @@ const FORWARDING_SITES: &[&str] = &["src/semantic_contract/calls/resolution.rs"]
 const LITERAL_PREFIXES: &[&str] = &[
     "unavailable(\"",
     "unavailable_at(\"",
+    "unavailable_at_described(\"",
     "PathCallResolution::Unavailable(\"",
     "PathCallResolution::UnresolvedTarget(\"",
 ];

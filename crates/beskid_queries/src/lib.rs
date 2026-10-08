@@ -131,7 +131,8 @@ pub use semantic_contract::{
 };
 pub use semantic_contract::{
     AppliedContractIdentity, applied_contract_argument_is_type, type_applied_contract_implementation,
-    type_contract_applications, type_contract_declarations, type_contract_implementation,
+    type_contract_applications, type_contract_applications_of, type_contract_declarations,
+    type_contract_implementation,
 };
 pub use semantic_contract::{
     CallArityMismatch, GateObligation, GateObligationKind, GenericBindingConflict, GenericBoundViolation,
@@ -189,7 +190,7 @@ pub use managed_opaque::{RuntimeManagedOpaqueKind, runtime_managed_opaque_kind};
 
 pub use semantic_contract::{CheckedProviderCall, checked_provider_call};
 
-pub use semantic_contract::native_mod_single_array_element;
+pub use semantic_contract::{native_mod_expression_payload, native_mod_single_array_element};
 
 pub use semantic_contract::{PortableNominalIdentity, portable_nominal_identity};
 

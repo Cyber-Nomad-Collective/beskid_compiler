@@ -912,7 +912,7 @@ impl RootUnitFixture {
             target: crate::projects::Target { name: "Fixture".to_string(), kind, entry: entry.map(str::to_string) },
             dependency_projects,
             unresolved_dependencies: Vec::new(),
-            has_std_dependency: false,
+            has_core_dependency: false,
         };
         Self { root, plan }
     }

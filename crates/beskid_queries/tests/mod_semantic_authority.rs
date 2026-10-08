@@ -53,7 +53,7 @@ pub unit Main() { return; }
             target: Target { name: "Main".into(), kind: TargetKind::Lib, entry: Some("Main.bd".into()) },
             dependency_projects: vec![],
             unresolved_dependencies: vec![],
-            has_std_dependency: false,
+            has_core_dependency: false,
         };
         let workspace = if verified {
             std::fs::write(&plan.manifest_path, "Host { name = \"Host\" version = \"1.0.0\" root = \"Src\" }\ntarget \"Main\" { kind = \"Lib\" entry = \"Main.bd\" }\n").unwrap();

@@ -337,7 +337,9 @@ mod source_ownership_tests {
     fn package(at: &std::path::Path, name: &str) -> std::path::PathBuf {
         std::fs::create_dir_all(at).unwrap();
         let manifest = at.join(format!("{name}.bproj"));
-        std::fs::write(&manifest, format!("{name} {{ name = \"{name}\" version = \"1.0.0\" root = \".\" }}\n")).unwrap();
+        std::fs::write(&manifest, format!(
+                "{name} {{ name = \"{name}\" version = \"1.0.0\" root = \".\" }}\ntarget \"{name}Lib\" {{ kind = Lib }}\n"
+            )).unwrap();
         manifest
     }
 

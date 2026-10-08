@@ -36,7 +36,7 @@ fn fixture(source: &str) -> (tempfile::TempDir, BeskidDatabase, Arc<ProgramAssem
             source_root: dependency.join("src"),
         }],
         unresolved_dependencies: vec![],
-        has_std_dependency: true,
+        has_core_dependency: false,
     };
     let assembly = Arc::new(
         assemble_program_with_materializer(&plan, None, &path, None, &AssemblyOptions::default(), None, None).unwrap(),
@@ -58,7 +58,7 @@ fn fixture(source: &str) -> (tempfile::TempDir, BeskidDatabase, Arc<ProgramAssem
 #[test]
 fn local_type_shadows_imported_same_leaf_at_parameter_legality() {
     let (_temporary, db, _assembly, items) = fixture(
-        "use Std.Probe.Bounded;\npub type PatternLimits { pub i64 maxDepth, }\npub i64 ValidateWithPatternLimits(PatternLimits policy) { return policy.maxDepth; }\n",
+        "use Probe.Bounded;\npub type PatternLimits { pub i64 maxDepth, }\npub i64 ValidateWithPatternLimits(PatternLimits policy) { return policy.maxDepth; }\n",
     );
     assert_eq!(
         unresolved_type_reference(&db, items[0]),
@@ -71,7 +71,7 @@ fn local_type_shadows_imported_same_leaf_at_parameter_legality() {
 #[test]
 fn qualified_import_and_local_same_leaf_keep_distinct_field_declarations() {
     let (_temporary, db, assembly, items) = fixture(
-        "use Std.Probe.Bounded;\npub type PatternLimits { pub i64 maxDepth, }\npub i64 Local(PatternLimits policy) { return policy.maxDepth; }\npub i64 Imported(Bounded.PatternLimits policy) { return policy.maxWork; }\n",
+        "use Probe.Bounded;\npub type PatternLimits { pub i64 maxDepth, }\npub i64 Local(PatternLimits policy) { return policy.maxDepth; }\npub i64 Imported(Bounded.PatternLimits policy) { return policy.maxWork; }\n",
     );
     assert!(check_items(&db, &items).is_ok(), "both scoped signatures are legal");
     let paths = assembly.entry_syntax_index().ids_of_kind(NodeKind::PathExpression).collect::<Vec<_>>();
@@ -93,7 +93,7 @@ fn qualified_import_and_local_same_leaf_keep_distinct_field_declarations() {
 #[test]
 fn conflicting_imports_without_local_declaration_remain_rejected() {
     let (_temporary, db, _assembly, items) =
-        fixture("use Std.Probe.Bounded;\nuse Std.Probe.Other;\npub unit Invalid(PatternLimits policy) {}\n");
+        fixture("use Probe.Bounded;\nuse Probe.Other;\npub unit Invalid(PatternLimits policy) {}\n");
     let finding =
         unresolved_type_reference(&db, items[0]).unwrap().expect("unqualified import ambiguity must stay unavailable");
     assert_eq!(finding.name.as_ref(), "PatternLimits");

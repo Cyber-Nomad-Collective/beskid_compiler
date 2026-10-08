@@ -178,7 +178,7 @@ mod tests {
                 source_root: PathBuf::from("/ws/ModA/Src"),
             }],
             unresolved_dependencies: Vec::new(),
-            has_std_dependency: false,
+            has_core_dependency: false,
         };
         let loaded = vec![LoadedModArtifact {
             discovered: DiscoveredMod {
@@ -232,7 +232,7 @@ mod tests {
             target: Target { name: "Host".to_owned(), kind: TargetKind::App, entry: Some("Main.bd".to_owned()) },
             dependency_projects: Vec::new(),
             unresolved_dependencies: Vec::new(),
-            has_std_dependency: false,
+            has_core_dependency: false,
         };
         let source = "unit Main() { return; }\n";
         let input = ModHostInput {
@@ -284,7 +284,7 @@ mod generation_authority_tests {
             target: Target { name: "Main".to_owned(), kind: TargetKind::Lib, entry: Some("Main.bd".to_owned()) },
             dependency_projects: vec![],
             unresolved_dependencies: vec![],
-            has_std_dependency: false,
+            has_core_dependency: false,
         };
         let assembly =
             assemble_program_with_materializer(&plan, None, &path, None, &AssemblyOptions::default(), None, None)

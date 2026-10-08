@@ -2,8 +2,11 @@
 
 use super::super::*;
 use beskid_abi::runtime_source::{
+    CANONICAL_CORELIB_MUTEX_GUARD_SOURCE_PATH, CANONICAL_CORELIB_MUTEX_SOURCE_PATH,
     CANONICAL_FOUNDATION_DEADLINE_SOURCE_PATH, CANONICAL_FOUNDATION_PROCESS_SOURCE_PATH,
-    CANONICAL_NETWORK_INTERNAL_SOURCE_PATH,
+    CANONICAL_NETWORK_INTERNAL_SOURCE_PATH, CANONICAL_NETWORK_RESOURCES_SOURCE_PATH,
+    CANONICAL_NETWORK_TCP_LISTENER_SOURCE_PATH, CANONICAL_NETWORK_TCP_STREAM_SOURCE_PATH,
+    CANONICAL_NETWORK_UDP_SOCKET_SOURCE_PATH,
 };
 use beskid_analysis::syntax_query::DynNodeRef;
 
@@ -74,17 +77,7 @@ fn aggregate_field_access_for_environment(
                 .filter(|field| field.node.kind == beskid_analysis::syntax::FieldKind::Value)
                 .nth(field_index as usize)
                 .ok_or_else(|| SemanticError::unavailable("aggregate_field_access"))?;
-            let process_private =
-                crate::process_source_authority::canonical_process_resource_kind(db, declaration).is_some();
-            let protected_field = process_private
-                || (definition.name.node.name == "Deadline" && field_name == "monotonicNanos")
-                || (field_name == "handle"
-                    && matches!(definition.name.node.name.as_str(), "TcpStream" | "TcpListener" | "UdpSocket"));
-            if protected_field
-                && declaration.unit != key.unit
-                && field.node.visibility.node != beskid_analysis::syntax::Visibility::Public
-                && !canonical_network_deadline_projection(db, key, declaration, &definition.name.node.name, field_name)
-            {
+            if field_inaccessible(db, key, declaration, definition, field, PrivateFieldUse::Read) {
                 return Err(SemanticError::unavailable("aggregate_field_access.visibility"));
             }
         }
@@ -186,6 +179,30 @@ pub(in crate::semantic_contract) fn nominal_field_projection(
     db: &dyn Db,
     key: AstNodeKey,
 ) -> Option<Result<(AggregateFieldAccess, GenericSourceTypeIdentity), SemanticError>> {
+    nominal_field_projection_at(db, key).map(|result| {
+        result.map_err(|error| {
+            // Name an unsited projection gap at the projected path, keeping its exact family.
+            let Some(query) = error.unavailable_query().filter(|query| {
+                error.unavailable_site().is_none()
+                    && (*query == "nominal_field_projection" || query.starts_with("nominal_field_projection."))
+            }) else {
+                return error;
+            };
+            let rendered_site = crate::semantic_contract::format_ast_node_site(db, key);
+            let reason = if query == "nominal_field_projection.visibility" {
+                "the projected field is not `pub` and is private to its declaring source unit"
+            } else {
+                "the receiver identity or projected field is not proven"
+            };
+            SemanticError::unavailable_at_described(query, key, &rendered_site, reason)
+        })
+    })
+}
+
+fn nominal_field_projection_at(
+    db: &dyn Db,
+    key: AstNodeKey,
+) -> Option<Result<(AggregateFieldAccess, GenericSourceTypeIdentity), SemanticError>> {
     let syntax = db.syntax_unit(key.unit).filter(|syntax| syntax.accepts_key(db, key))?;
     let program = syntax.expanded_program(db);
     let index = syntax.syntax_index(db);
@@ -210,7 +227,16 @@ pub(in crate::semantic_contract) fn nominal_field_projection(
             && !is_implicit_receiver_name(program, index, key, &path.path.node.segments[0].node.name.node.name)
             && resolve_lexical_declaration(program, index, key.node, &path.path.node.segments[0].node.name.node.name)
                 .is_none();
-        if path.path.node.segments.len() < 3 && !implicit_field_root {
+        // `binding.field` where `binding` is an enum-pattern binding (`Option::Some(binding)`):
+        // the binding has no written annotation, so its enum match fact is the only authority for
+        // the receiver identity. That is exactly the lexical-root chain below; parameter and
+        // `let` roots keep their own two-segment facts.
+        let pattern_binding_root = path.path.node.segments.len() == 2
+            && path.path.node.segments.iter().all(|segment| segment.node.type_args.is_empty())
+            && resolve_lexical_declaration(program, index, key.node, &path.path.node.segments[0].node.name.node.name)
+                .and_then(|declaration| parent_node(index, declaration))
+                .is_some_and(|parent| index.kind(parent) == Some(beskid_analysis::syntax_query::NodeKind::Pattern));
+        if path.path.node.segments.len() < 3 && !implicit_field_root && !pattern_binding_root {
             return None;
         }
         (key, path.path.node.segments.len() - 1)
@@ -434,10 +460,7 @@ fn project_nominal_field(
     let [(field_index, field)] = matches.as_slice() else {
         return Err(SemanticError::unavailable("nominal_field_projection"));
     };
-    if declaration.unit != key.unit
-        && field.node.visibility.node != beskid_analysis::syntax::Visibility::Public
-        && !canonical_network_deadline_projection(db, key, declaration, &definition.name.node.name, field_name)
-    {
+    if field_inaccessible(db, key, declaration, definition, field, PrivateFieldUse::Read) {
         return Err(SemanticError::unavailable("nominal_field_projection.visibility"));
     }
     let next_identity =
@@ -451,26 +474,89 @@ fn project_nominal_field(
     Ok((access, next_identity))
 }
 
-/// Permit one private projection only when both sides are exact compiler-owned source units.
-/// The nominal declaration key, rather than its pointer-shaped ABI or written name alone,
-/// proves that a lookalike `Deadline` cannot reach the monotonic sample.
-fn canonical_network_deadline_projection(
+/// How a source unit uses a field of a nominal type declared in another unit.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(in crate::semantic_contract) enum PrivateFieldUse {
+    /// A field read: `value.field`, `call().field`, or one step of a projection chain.
+    Read,
+    /// A field supplied (or required) by a struct literal of the type.
+    Construct,
+}
+
+/// The single field visibility policy shared by direct field access, nominal projection chains
+/// (`request.targets.targetIds`), and aggregate literals. A field without `pub` is private to the
+/// source unit (the logical module) that declares its type: that unit, including the type's
+/// inline methods, may read and construct it, and every other unit is denied. `extend type`
+/// bodies in another unit follow the same rule. The exact canonical admissions in
+/// [`canonical_private_field_admission`] are the only cross-unit exceptions.
+pub(in crate::semantic_contract) fn field_inaccessible(
+    db: &dyn Db,
+    key: AstNodeKey,
+    declaration: AstNodeKey,
+    definition: &beskid_analysis::syntax::TypeDefinition,
+    field: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Field>,
+    usage: PrivateFieldUse,
+) -> bool {
+    declaration.unit != key.unit
+        && field.node.visibility.node != beskid_analysis::syntax::Visibility::Public
+        && !canonical_private_field_admission(
+            db,
+            key,
+            declaration,
+            definition.name.node.name.as_str(),
+            field.node.name.node.name.as_str(),
+            usage,
+        )
+}
+
+/// Permit a private field across units only when both sides are exact compiler-owned source
+/// units. The nominal declaration key, rather than its pointer-shaped ABI or written name alone,
+/// proves that a lookalike type cannot reach the private field:
+/// - the canonical Network facade and Process source read the checked monotonic `Deadline`
+///   sample;
+/// - the canonical Network resource authority constructs the `handle` of the canonical
+///   `TcpListener`, `TcpStream`, and `UdpSocket` declarations;
+/// - the canonical Mutex facade constructs and reads the `mutexHandle` of the canonical
+///   `MutexGuard` declaration.
+fn canonical_private_field_admission(
     db: &dyn Db,
     key: AstNodeKey,
     declaration: AstNodeKey,
     type_name: &str,
     field_name: &str,
+    usage: PrivateFieldUse,
 ) -> bool {
-    if type_name != "Deadline" || field_name != "monotonicNanos" {
-        return false;
-    }
     let registry = db.syntax_dependency_registry().lock().expect("syntax dependency registry");
-    registry.corelib_source_paths.get(&(key.unit, key.generation)).is_some_and(|path| {
-        path == CANONICAL_NETWORK_INTERNAL_SOURCE_PATH || path == CANONICAL_FOUNDATION_PROCESS_SOURCE_PATH
-    }) && registry
-        .corelib_source_paths
-        .get(&(declaration.unit, declaration.generation))
-        .is_some_and(|path| path == CANONICAL_FOUNDATION_DEADLINE_SOURCE_PATH)
+    let (Some(owner_path), Some(declaration_path)) = (
+        registry.corelib_source_paths.get(&(key.unit, key.generation)),
+        registry.corelib_source_paths.get(&(declaration.unit, declaration.generation)),
+    ) else {
+        return false;
+    };
+    match (usage, type_name, field_name) {
+        (PrivateFieldUse::Read, "Deadline", "monotonicNanos") => {
+            (owner_path == CANONICAL_NETWORK_INTERNAL_SOURCE_PATH
+                || owner_path == CANONICAL_FOUNDATION_PROCESS_SOURCE_PATH)
+                && declaration_path == CANONICAL_FOUNDATION_DEADLINE_SOURCE_PATH
+        }
+        (PrivateFieldUse::Construct, "TcpListener", "handle") => {
+            owner_path == CANONICAL_NETWORK_RESOURCES_SOURCE_PATH
+                && declaration_path == CANONICAL_NETWORK_TCP_LISTENER_SOURCE_PATH
+        }
+        (PrivateFieldUse::Construct, "TcpStream", "handle") => {
+            owner_path == CANONICAL_NETWORK_RESOURCES_SOURCE_PATH
+                && declaration_path == CANONICAL_NETWORK_TCP_STREAM_SOURCE_PATH
+        }
+        (PrivateFieldUse::Construct, "UdpSocket", "handle") => {
+            owner_path == CANONICAL_NETWORK_RESOURCES_SOURCE_PATH
+                && declaration_path == CANONICAL_NETWORK_UDP_SOCKET_SOURCE_PATH
+        }
+        (_, "MutexGuard", "mutexHandle") => {
+            owner_path == CANONICAL_CORELIB_MUTEX_SOURCE_PATH
+                && declaration_path == CANONICAL_CORELIB_MUTEX_GUARD_SOURCE_PATH
+        }
+        _ => false,
+    }
 }
 
 /// Instantiate the aggregate layout denoted by an exact source-proven nominal identity. Each

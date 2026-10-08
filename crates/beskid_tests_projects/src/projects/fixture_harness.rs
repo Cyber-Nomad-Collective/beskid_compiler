@@ -15,7 +15,7 @@ use beskid_queries::{
     primitive_numeric_conversion, program_assembly, project_session_for_syntax_assembly, with_db,
 };
 
-use super::std_env_lock::std_dependency_env_lock;
+use super::core_env_lock::core_dependency_env_lock;
 use super::test_cwd::{compiler_workspace_root, with_cwd_at_workspace_root};
 
 /// Linux CI runners use a smaller default thread stack than macOS; corelib lowering needs more headroom.
@@ -42,7 +42,7 @@ pub fn try_expression_fixture() -> PathBuf {
 
 /// Compose cwd lock, optional std env lock, and Salsa persistence for a project fixture.
 pub fn with_project_test_env<F: FnOnce()>(project_root: &Path, f: F) {
-    let _env = std_dependency_env_lock();
+    let _env = core_dependency_env_lock();
     with_cwd_at_workspace_root(&compiler_workspace_root(), || {
         configure_db_for_project(project_root);
         f();

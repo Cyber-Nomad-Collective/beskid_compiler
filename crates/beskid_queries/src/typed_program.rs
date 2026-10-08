@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use beskid_abi::runtime_source::{
-    CANONICAL_FOUNDATION_DEADLINE_SOURCE_PATH, CorelibService, CorelibServiceCapability, RuntimeIntrinsicCapability,
-    canonical_corelib_deadline_source, canonical_corelib_service_sources, corelib_service_source_identity,
+    CorelibService, CorelibServiceCapability, RuntimeIntrinsicCapability, canonical_corelib_deadline_source,
+    canonical_corelib_private_field_sources, canonical_corelib_service_sources, corelib_service_source_identity,
     corelib_source_locations_match,
 };
 use beskid_analysis::projects::ProgramAssembly;
@@ -172,29 +172,11 @@ pub fn build_typed_program(
     }
 
     let mut module_units = std::collections::HashMap::<Vec<String>, Vec<SourceUnitId>>::new();
-    let mut corelib_local_modules = std::collections::HashSet::<Vec<String>>::new();
-    let mut corelib_shard_units = std::collections::HashSet::<SourceUnitId>::new();
     for unit in assembly.units.iter() {
-        let Some(module_path) =
-            beskid_analysis::projects::infer_logical_module_path(unit, &assembly.roots, assembly.has_std_dependency)
-        else {
+        let Some(module_path) = beskid_analysis::projects::infer_logical_module_path(unit, &assembly.roots) else {
             continue;
         };
         let unit_id = SourceUnitId::new(db, unit.path.clone());
-        let corelib_shard = assembly.has_std_dependency
-            && assembly.roots.dependencies.iter().any(|root| {
-                root.dependency_name.as_deref().is_some_and(|name| name.starts_with("corelib_"))
-                    && unit.origin_path.starts_with(&root.source_root)
-            });
-        if corelib_shard && module_path.first().is_some_and(|segment| segment == "Std") && module_path.len() > 1 {
-            corelib_shard_units.insert(unit_id);
-            let local_path = module_path[1..].to_vec();
-            corelib_local_modules.insert(local_path.clone());
-            let units = module_units.entry(local_path).or_default();
-            if !units.contains(&unit_id) {
-                units.push(unit_id);
-            }
-        }
         let units = module_units.entry(module_path).or_default();
         if !units.contains(&unit_id) {
             units.push(unit_id);
@@ -204,8 +186,11 @@ pub fn build_typed_program(
     for (path, units) in &module_units {
         registry.modules.insert((generation, path.clone()), units.clone());
     }
-    registry.corelib_local_modules.extend(corelib_local_modules.iter().cloned().map(|path| (generation, path)));
-    registry.corelib_shard_units.extend(corelib_shard_units.iter().copied().map(|unit| (unit, generation)));
+    // Attestation is source identity, not a runtime service, so every typed program records it
+    // whatever service capability (if any) the caller later attaches.
+    for (path, logical_path) in canonical_corelib_attested_units(&assembly) {
+        registry.corelib_source_paths.insert((SourceUnitId::new(db, path), generation), logical_path);
+    }
     for unit in assembly.units.iter() {
         let unit_id = SourceUnitId::new(db, unit.path.clone());
         let imports = unit
@@ -260,7 +245,7 @@ pub fn build_typed_program(
             })
             .filter_map(|(path, binding, has_explicit_alias, public)| {
                 registry
-                    .visible_module_units(unit_id, generation, &path)
+                    .visible_module_units(generation, &path)
                     .and_then(|targets| match targets {
                         [target] => Some(*target),
                         _ => None,
@@ -303,15 +288,7 @@ pub fn build_typed_program_with_corelib_services(
         .into_iter()
         .map(|(path, logical_path, services)| (SourceUnitId::new(db, path), logical_path, services))
         .collect::<Vec<_>>();
-    let deadline_unit = canonical_corelib_deadline_unit(&assembly).map(|path| SourceUnitId::new(db, path));
     let mut typed = build_typed_program(db, project, generation, assembly)?;
-    if let Some(deadline_unit) = deadline_unit {
-        db.syntax_dependency_registry()
-            .lock()
-            .expect("syntax dependency registry")
-            .corelib_source_paths
-            .insert((deadline_unit, typed.generation), CANONICAL_FOUNDATION_DEADLINE_SOURCE_PATH.into());
-    }
     if !service_units.is_empty() {
         for (service_unit, logical_path, services) in service_units {
             attach_corelib_services(db, &mut typed, service_unit, logical_path, services);
@@ -363,9 +340,17 @@ fn canonical_corelib_service_units(
         .collect()
 }
 
-fn canonical_corelib_deadline_unit(assembly: &ProgramAssembly) -> Option<std::path::PathBuf> {
-    let expected = canonical_corelib_deadline_source();
-    exact_compiler_owned_corelib_unit(assembly, &expected).map(|unit| unit.path.clone())
+/// Compiler-owned units that carry no runtime service but are source-attested for exact
+/// private-field admissions: the opaque Deadline declaration and the Network resource authority
+/// with the socket declarations it constructs. Each must be the exact canonical source.
+fn canonical_corelib_attested_units(assembly: &ProgramAssembly) -> Vec<(std::path::PathBuf, String)> {
+    std::iter::once(canonical_corelib_deadline_source())
+        .chain(canonical_corelib_private_field_sources())
+        .filter_map(|expected| {
+            let unit = exact_compiler_owned_corelib_unit(assembly, &expected)?;
+            Some((unit.path.clone(), expected.logical_path))
+        })
+        .collect()
 }
 
 fn exact_compiler_owned_corelib_unit<'a>(

@@ -20,7 +20,7 @@ pub(crate) fn with_cwd_at_workspace_root<R>(root: &Path, f: impl FnOnce() -> R) 
     with_cwd(root, f)
 }
 
-/// `compiler/crates/beskid_tests` → compiler workspace root (`compiler/`), where `corelib/beskid_corelib` exists for implicit `Std`.
+/// `compiler/crates/beskid_tests` → compiler workspace root (`compiler/`), where `corelib/beskid_corelib` exists for implicit `Core`.
 pub(crate) fn compiler_workspace_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()

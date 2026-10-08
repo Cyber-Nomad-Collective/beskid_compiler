@@ -138,8 +138,12 @@ pub fn program_assembly(
 
 fn assembly_options_fingerprint(options: &AssemblyOptions) -> String {
     format!(
-        "discovery={:?}:recovery={:?}:skip_parse={}:max_units={:?}",
-        options.discovery, options.recovery_policy, options.skip_parse_errors, options.max_units,
+        "discovery={:?}:recovery={:?}:skip_parse={}:max_units={:?}:native_mod_adapter={}",
+        options.discovery,
+        options.recovery_policy,
+        options.skip_parse_errors,
+        options.max_units,
+        options.native_mod_adapter_sources,
     )
 }
 

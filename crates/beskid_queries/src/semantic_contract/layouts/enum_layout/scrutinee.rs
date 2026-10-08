@@ -69,12 +69,18 @@ pub(in crate::semantic_contract) fn enum_match_scrutinee_layout(
             key.node,
             beskid_analysis::syntax_query::DynNodeRef::from(expression.scrutinee.as_ref()),
         )?;
-        let scrutinee = normalized_expression_node(index, scrutinee);
-        let access = aggregate_field_access(db, AstNodeKey { node: scrutinee, ..key }).ok().flatten()?;
+        let scrutinee = AstNodeKey { node: normalized_expression_node(index, scrutinee), ..key };
+        let access = aggregate_field_access(db, scrutinee).ok().flatten()?;
         let field = access.layout.fields.get(usize::try_from(access.index).ok()?)?;
         let AggregateFieldShape::Nominal(declaration) = field.1 else {
             return None;
         };
+        // A generic enum field (`Option<PackageDeclaration> packageDeclaration`) has no layout
+        // until it is applied; the field's applied source identity is the only authority for
+        // its payload shapes.
+        if generic_enum_declaration(db, declaration) {
+            return Some(enum_layout_for_expression_result(db, scrutinee));
+        }
         return Some(
             enum_layout(db, declaration)
                 .and_then(|layout| layout.ok_or_else(|| SemanticError::unavailable("enum_match")))
@@ -178,12 +184,20 @@ pub(super) fn enum_match_source_environment(
     if definition.generics.is_empty() {
         return Ok(HashMap::new());
     }
-    if matches!(
-        expression.scrutinee.node,
-        beskid_analysis::syntax::Expression::Call(_)
-            | beskid_analysis::syntax::Expression::Member(_)
-            | beskid_analysis::syntax::Expression::Index(_)
-    ) {
+    // A projected field path (`shape.packageDeclaration`) carries its applied type the same way a
+    // call result does: through the projection's exact source identity.
+    let projected_path = matches!(
+        &expression.scrutinee.node,
+        beskid_analysis::syntax::Expression::Path(path) if path.node.path.node.segments.len() >= 2
+    );
+    if projected_path
+        || matches!(
+            expression.scrutinee.node,
+            beskid_analysis::syntax::Expression::Call(_)
+                | beskid_analysis::syntax::Expression::Member(_)
+                | beskid_analysis::syntax::Expression::Index(_)
+        )
+    {
         let scrutinee = index
             .direct_child_id(
                 program,
@@ -259,4 +273,15 @@ pub(super) fn enum_match_scrutinee_layout_in_environment(
     let identity =
         binding.source_identity.as_ref().ok_or_else(|| SemanticError::unavailable("enum_match_specialization"))?;
     enum_layout_for_source_identity(db, key, identity).map(Some)
+}
+
+/// Whether `declaration` is a current enum definition with type parameters.
+fn generic_enum_declaration(db: &dyn Db, declaration: AstNodeKey) -> bool {
+    db.syntax_unit(declaration.unit).filter(|syntax| syntax.accepts_key(db, declaration)).is_some_and(|syntax| {
+        syntax
+            .syntax_index(db)
+            .node_at(syntax.expanded_program(db), declaration.node)
+            .and_then(|node| node.of::<beskid_analysis::syntax::EnumDefinition>())
+            .is_some_and(|definition| !definition.generics.is_empty())
+    })
 }

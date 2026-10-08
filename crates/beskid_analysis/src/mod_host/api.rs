@@ -699,7 +699,7 @@ dependency "ModA" {
                 source_root: mod_dir.join("Src"),
             }],
             unresolved_dependencies: Vec::new(),
-            has_std_dependency: false,
+            has_core_dependency: false,
         }
     }
 

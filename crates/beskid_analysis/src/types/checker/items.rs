@@ -261,9 +261,11 @@ impl<'a> TypeChecker<'a> {
             }
             Node::ExtendTypeDefinition(def) => {
                 self.type_id_for_type(&def.node.target_type);
+                let previous = std::mem::replace(&mut self.in_extend_type_body, true);
                 for method in &def.node.methods {
                     self.type_method_definition(method.span, method);
                 }
+                self.in_extend_type_body = previous;
             }
             Node::TestDefinition(def) => {
                 if let Some(meta) = &def.node.meta {

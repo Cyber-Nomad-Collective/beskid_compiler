@@ -143,14 +143,14 @@ target "App" {
   entry = "Main.bd"
 }
 
-dependency "Std" {
+dependency "Shared" {
   source = "path"
-  path = "../Std"
+  path = "../Shared"
 }
 
-dependency "Std" {
+dependency "Shared" {
   source = "git"
-  url = "git@example.com:std.git"
+  url = "git@example.com:shared.git"
   rev = "abc123"
 }
 "#;
@@ -255,12 +255,12 @@ target "App" {
 
 #[test]
 fn enforces_dependency_fields_by_source_type() {
-    let path_missing = format!("{}\ndependency \"Core\" {{\n  source = \"path\"\n}}\n", base_manifest());
+    let path_missing = format!("{}\ndependency \"Shared\" {{\n  source = \"path\"\n}}\n", base_manifest());
     let git_missing = format!(
-        "{}\ndependency \"Std\" {{\n  source = \"git\"\n  url = \"git@example.com:std.git\"\n}}\n",
+        "{}\ndependency \"Shared\" {{\n  source = \"git\"\n  url = \"git@example.com:shared.git\"\n}}\n",
         base_manifest()
     );
-    let registry_missing = format!("{}\ndependency \"Std\" {{\n  source = \"registry\"\n}}\n", base_manifest());
+    let registry_missing = format!("{}\ndependency \"Shared\" {{\n  source = \"registry\"\n}}\n", base_manifest());
 
     assert!(matches!(parse_manifest(&path_missing), Err(ProjectError::Validation(_))));
     assert!(matches!(parse_manifest(&git_missing), Err(ProjectError::Validation(_))));
@@ -268,13 +268,38 @@ fn enforces_dependency_fields_by_source_type() {
 }
 
 #[test]
-fn allows_std_path_dependency_without_explicit_path() {
+fn allows_core_path_dependency_without_explicit_path() {
+    let source = format!("{}\ndependency \"Core\" {{\n  source = \"path\"\n}}\n", base_manifest());
+
+    let manifest = parse_manifest(&source).expect("Core path dependency should be accepted");
+    assert_eq!(manifest.dependencies.len(), 1);
+    assert_eq!(manifest.dependencies[0].name, "Core");
+    assert!(manifest.dependencies[0].path.is_none());
+}
+
+#[test]
+fn std_path_dependency_without_path_names_the_core_label() {
     let source = format!("{}\ndependency \"Std\" {{\n  source = \"path\"\n}}\n", base_manifest());
 
-    let manifest = parse_manifest(&source).expect("Std path dependency should be accepted");
-    assert_eq!(manifest.dependencies.len(), 1);
-    assert_eq!(manifest.dependencies[0].name, "Std");
-    assert!(manifest.dependencies[0].path.is_none());
+    let error = parse_manifest(&source).expect_err("`Std` is not the Corelib dependency label");
+    assert!(
+        matches!(&error, ProjectError::Validation(message) if message.contains("named `Core`, not `Std`")),
+        "{error:?}"
+    );
+}
+
+#[test]
+fn core_dependency_label_requires_path_source() {
+    let source = format!(
+        "{}\ndependency \"Core\" {{\n  source = \"registry\"\n  version = \"1.2.3\"\n}}\n",
+        base_manifest()
+    );
+
+    let error = parse_manifest(&source).expect_err("`Core` is reserved for the Corelib aggregate");
+    assert!(
+        matches!(&error, ProjectError::Validation(message) if message.contains("reserved for the Corelib aggregate")),
+        "{error:?}"
+    );
 }
 
 #[test]
@@ -302,12 +327,12 @@ workspace {
 #[test]
 fn parses_registry_dependency_with_registry_alias() {
     let source = format!(
-        "{}\ndependency \"Std\" {{\n  source = \"registry\"\n  version = \"1.2.3\"\n  registry = \"default\"\n}}\n",
+        "{}\ndependency \"Shared\" {{\n  source = \"registry\"\n  version = \"1.2.3\"\n  registry = \"default\"\n}}\n",
         base_manifest()
     );
 
     let manifest = parse_manifest(&source).expect("valid manifest");
     assert_eq!(manifest.dependencies.len(), 1);
-    assert_eq!(manifest.dependencies[0].name, "Std");
+    assert_eq!(manifest.dependencies[0].name, "Shared");
     assert_eq!(manifest.dependencies[0].registry.as_deref(), Some("default"));
 }

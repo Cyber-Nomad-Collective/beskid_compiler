@@ -282,7 +282,7 @@ bool Main(Result<Request, HttpError> head) {
             ("Http/Server.bd", entry_source),
             ("Core/Results/Results.bd", RESULT_SOURCE),
             ("Http/Errors/Errors.bd", "pub enum HttpError { InvalidFraming(), Closed() }"),
-            ("Http/Requests/Requests.bd", "pub type Request { string method, u8[] body, }"),
+            ("Http/Requests/Requests.bd", "pub type Request { pub string method, pub u8[] body, }"),
         ],
         SyntaxGenerationId(191),
     );

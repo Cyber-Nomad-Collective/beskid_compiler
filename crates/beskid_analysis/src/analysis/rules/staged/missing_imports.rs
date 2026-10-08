@@ -130,17 +130,17 @@ mod tests {
     #[test]
     fn modules_exporting_matches_suffix() {
         let mut paths = HashSet::new();
-        paths.insert("Std::System::Console".to_string());
-        paths.insert("Std::IO::Console".to_string());
-        paths.insert("Std::System::Logger".to_string());
+        paths.insert("Core::System::Console".to_string());
+        paths.insert("Core::IO::Console".to_string());
+        paths.insert("Core::System::Logger".to_string());
 
         let console = modules_exporting("Console", &paths);
         assert_eq!(console.len(), 2);
-        assert!(console.contains(&"Std::System::Console".to_string()));
-        assert!(console.contains(&"Std::IO::Console".to_string()));
+        assert!(console.contains(&"Core::System::Console".to_string()));
+        assert!(console.contains(&"Core::IO::Console".to_string()));
 
         let logger = modules_exporting("Logger", &paths);
-        assert_eq!(logger, vec!["Std::System::Logger".to_string()]);
+        assert_eq!(logger, vec!["Core::System::Logger".to_string()]);
 
         let missing = modules_exporting("Absent", &paths);
         assert!(missing.is_empty());

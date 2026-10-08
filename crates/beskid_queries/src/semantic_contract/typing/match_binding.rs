@@ -89,14 +89,29 @@ pub(in crate::semantic_contract) fn pattern_binding_fact_in_environment(
     };
     let fact = match query {
         Ok(Some(fact)) => fact,
-        Ok(None) | Err(_) => return Some(Err(SemanticError::unavailable("pattern_binding"))),
+        Ok(None) => {
+            return Some(Err(pattern_binding_unavailable(db, outer_match, "the enclosing match has no enum match fact")));
+        }
+        Err(error) => {
+            return Some(Err(pattern_binding_unavailable(
+                db,
+                outer_match,
+                &format!("the enclosing enum match fact is unavailable: {error}"),
+            )));
+        }
     };
     fact.arms
         .iter()
         .filter_map(|arm| enum_match_pattern_binding(&arm.pattern, declaration))
         .find(|binding| binding.declaration.node == declaration)
         .map(Ok)
-        .or_else(|| Some(Err(SemanticError::unavailable("pattern_binding"))))
+        .or_else(|| Some(Err(pattern_binding_unavailable(db, outer_match, "no match arm binds this declaration"))))
+}
+
+/// The sited `pattern_binding` gap: names the enclosing match and why its binding is unproven.
+fn pattern_binding_unavailable(db: &dyn Db, outer_match: AstNodeKey, reason: &str) -> SemanticError {
+    let rendered_site = crate::semantic_contract::format_ast_node_site(db, outer_match);
+    SemanticError::unavailable_at_described("pattern_binding", outer_match, &rendered_site, reason)
 }
 
 /// Return the exact specialized fact for a path which resolves to an enum-pattern binding.

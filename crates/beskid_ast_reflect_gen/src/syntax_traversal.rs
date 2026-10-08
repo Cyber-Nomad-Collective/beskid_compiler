@@ -196,10 +196,10 @@ pub fn emit_node_ref_bd() -> String {
         r#"{BANNER}
 /// Opaque stable handle for a syntax node within one `syntaxGenerationId` window.
 pub type NodeRef {{
-    string sourceUnit,
-    u64 invocationIssuer,
-    u64 syntaxGenerationId,
-    u32 nodeId,
+    pub string sourceUnit,
+    pub u64 invocationIssuer,
+    pub u64 syntaxGenerationId,
+    pub u32 nodeId,
 }}
 "#
     )
@@ -210,12 +210,12 @@ pub fn emit_node_span_bd() -> String {
         r#"{BANNER}
 /// Source span for one syntax node in one generation.
 pub type NodeSpan {{
-    u64 start,
-    u64 end,
-    u64 lineStart,
-    u64 columnStart,
-    u64 lineEnd,
-    u64 columnEnd,
+    pub u64 start,
+    pub u64 end,
+    pub u64 lineStart,
+    pub u64 columnStart,
+    pub u64 lineEnd,
+    pub u64 columnEnd,
 }}
 "#
     )
@@ -245,7 +245,7 @@ pub fn emit_node_list_bd() -> String {
         r#"{BANNER}
 /// Ordered managed array of issued module-item node references.
 pub type NodeList {{
-    {SYNTAX_NODES_MODULE_PREFIX}.NodeRef[] items,
+    pub {SYNTAX_NODES_MODULE_PREFIX}.NodeRef[] items,
 }}
 "#
     )
@@ -256,12 +256,12 @@ pub fn emit_traversal_manifest_bd(entries: &[TraversalTypeEntry]) -> String {
         BANNER.to_string(),
         "/// Machine-readable child-slot table from Rust `#[ast(child|children|skip)]` (host + verification).".into(),
         "pub type TraversalManifestEntry {".into(),
-        "    string typeName,".into(),
-        "    string sourceRelPath,".into(),
-        "    string rustField,".into(),
-        "    string beskidField,".into(),
-        "    string beskidType,".into(),
-        "    string role,".into(),
+        "    pub string typeName,".into(),
+        "    pub string sourceRelPath,".into(),
+        "    pub string rustField,".into(),
+        "    pub string beskidField,".into(),
+        "    pub string beskidType,".into(),
+        "    pub string role,".into(),
         "}".into(),
         "".into(),
         "pub TraversalManifestEntry[] TraversalManifestRows() {".into(),
@@ -368,23 +368,24 @@ pub fn emit_query_as_projections(inventory: &[String]) -> String {
 pub fn emit_query_facade_body(inventory: &[String]) -> String {
     let mut source = String::from(
         r#"
-use Core.Optional;
+use Core.Optional.Option;
+use Core.Collections.Array;
 
 pub type QueryBounds {
-    i64 maxNodes,
-    i64 maxDepth,
+    pub i64 maxNodes,
+    pub i64 maxDepth,
 }
 pub type SyntaxQuery {
-    Beskid.Syntax.Nodes.NodeRef start,
-    QueryBounds bounds,
+    pub Beskid.Syntax.Nodes.NodeRef start,
+    pub QueryBounds bounds,
 }
 pub type SyntaxSelection {
-    Beskid.Syntax.Nodes.NodeRef[] nodes,
-    QueryBounds bounds,
+    pub Beskid.Syntax.Nodes.NodeRef[] nodes,
+    pub QueryBounds bounds,
 }
 pub type SyntaxPipeline {
-    Beskid.Syntax.Nodes.NodeRef root,
-    QueryBounds bounds,
+    pub Beskid.Syntax.Nodes.NodeRef root,
+    pub QueryBounds bounds,
 }
 "#,
     );
@@ -450,8 +451,11 @@ pub contract SyntaxVisitor {
         r#"
 pub unit Walk<V>(Beskid.Syntax.Nodes.NodeRef root, V visitor) where V: SyntaxVisitor {
     visitor.Enter(root);
-    for child in Children(root) {
-        Walk<V>(child, visitor);
+    Beskid.Syntax.Nodes.NodeRef[] children = Children(root);
+    mut i64 index = 0;
+    while index < Array.Len(children) {
+        Walk<V>(children[index], visitor);
+        index = index + 1;
     }
     visitor.Exit(root);
 }
@@ -477,7 +481,10 @@ mod native_callback_surface_tests {
         assert!(source.contains("pub unit Walk<V>"));
         assert!(source.contains("where V: SyntaxVisitor"));
         assert!(source.contains("visitor.Enter(root);"));
-        assert!(source.contains("Walk<V>(child, visitor);"));
+        assert!(source.contains("while index < Array.Len(children) {"));
+        assert!(source.contains("Walk<V>(children[index], visitor);"));
+        assert!(source.contains("use Core.Collections.Array;"));
+        assert!(!source.contains("for child in"));
         assert!(source.contains("visitor.Exit(root);"));
         assert!(!source.contains("__mod_query_Walk"));
         assert!(!source.contains("pub SyntaxQuery At(Beskid.Syntax.Nodes.NodeRef root);"));

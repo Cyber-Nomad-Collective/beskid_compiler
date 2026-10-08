@@ -20,7 +20,7 @@ pub(in crate::semantic_contract) use expression_identity::generic_source_express
 use source_identity::generic_source_path_identity;
 pub(in crate::semantic_contract) use source_identity::{
     generic_source_local_identity, generic_source_type_identity, generic_source_type_identity_with_substitutions,
-    stable_declaration_identity,
+    source_expression_unavailable, stable_declaration_identity,
 };
 pub(in crate::semantic_contract) use tracked::{
     generic_call_instantiation_tracked, generic_call_specialization_tracked, generic_call_template_tracked,

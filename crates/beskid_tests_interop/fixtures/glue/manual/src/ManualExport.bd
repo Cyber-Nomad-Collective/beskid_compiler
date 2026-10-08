@@ -1,5 +1,5 @@
-use Std.Testing.Assert;
-use Std.Core.Bytes.Slice;
+use Testing.Assert;
+use Core.Bytes.Slice;
 
 // Typed source profile: not a claim that current C lowering supports all forms.
 [Export(Abi:"C", Symbol:"beskid_i8")]

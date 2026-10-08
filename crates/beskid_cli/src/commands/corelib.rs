@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 #[derive(Args, Debug)]
 pub struct CorelibArgs {
     /// Destination directory for the materialized corelib **workspace** tree
-    /// (`.bws` workspace manifest, `packages/`, `beskid_corelib/`)
+    /// (`.bws` workspace manifest and every workspace member, including `mods/`)
     #[arg(long, default_value = "corelib")]
     pub output: PathBuf,
 }

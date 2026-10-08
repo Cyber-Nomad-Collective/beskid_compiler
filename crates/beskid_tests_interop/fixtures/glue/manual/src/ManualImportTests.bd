@@ -1,4 +1,4 @@
-use Std.Testing.Assert;
+use Testing.Assert;
 use ManualImport;
 use ManualImport.Foreign;
 

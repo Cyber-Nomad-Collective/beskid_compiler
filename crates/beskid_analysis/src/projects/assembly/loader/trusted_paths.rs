@@ -59,6 +59,7 @@ pub(super) fn trusted_corelib_service_paths(
     for source in beskid_abi::runtime_source::canonical_corelib_service_sources()
         .into_iter()
         .chain(std::iter::once(beskid_abi::runtime_source::canonical_corelib_deadline_source()))
+        .chain(beskid_abi::runtime_source::canonical_corelib_private_field_sources())
     {
         let Some(descriptor) = corelib_service_source_descriptor(&source.logical_path) else {
             continue;

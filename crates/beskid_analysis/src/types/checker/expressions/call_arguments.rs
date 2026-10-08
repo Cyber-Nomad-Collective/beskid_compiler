@@ -1,9 +1,11 @@
+use std::collections::{HashMap, HashSet};
+
 use crate::builtins::{BuiltinType, builtin_specs};
-use crate::resolve::ResolvedValue;
+use crate::resolve::{ItemId, ResolvedValue};
 use crate::syntax::Spanned;
 use crate::syntax::{CallExpression, Expression, LambdaExpression, PrimitiveType};
 use crate::types::path_value::{method_name_from_path_callee, receiver_type_for_path_callee};
-use crate::types::result::{CallLoweringKind, MethodReceiverSource, TypeError};
+use crate::types::result::{CallLoweringKind, FunctionSignature, MethodReceiverSource, TypeError};
 use crate::types::{TypeId, TypeInfo};
 
 use super::super::TypeChecker;
@@ -71,7 +73,11 @@ impl<'a> TypeChecker<'a> {
         Some(actual)
     }
 
-    fn type_argument_with_expected(&mut self, arg: &Spanned<Expression>, expected: TypeId) -> Option<TypeId> {
+    pub(in crate::types::checker) fn type_argument_with_expected(
+        &mut self,
+        arg: &Spanned<Expression>,
+        expected: TypeId,
+    ) -> Option<TypeId> {
         // Propagate the parameter's expected type into `contextual_expected_type` so that
         // expected-type-sensitive forms nested in call arguments (enum constructors of
         // generic enums, struct literals, ...) receive the substituted type arguments.
@@ -89,6 +95,140 @@ impl<'a> TypeChecker<'a> {
         };
         self.contextual_expected_type = previous;
         result
+    }
+
+    /// `Name(...)` inside a type-body method that the resolver bound to the implicit receiver
+    /// (`resolve_refs::expressions_patterns`, mirroring `unqualified_enclosing_method_call` in
+    /// `beskid_queries`): type it as the method dispatch `this.Name(...)`. Returns `None` when
+    /// the callee is not such a call, so ordinary call typing continues.
+    fn unqualified_sibling_method_call(
+        &mut self,
+        call: &Spanned<CallExpression>,
+        path_expr: &Spanned<crate::syntax::PathExpression>,
+    ) -> Option<Option<TypeId>> {
+        let [segment] = path_expr.node.path.node.segments.as_slice() else {
+            return None;
+        };
+        let method_name = segment.node.name.node.name.as_str();
+        if method_name == "this" || !segment.node.type_args.is_empty() {
+            return None;
+        }
+        let Some(ResolvedValue::Local(local_id)) = self.resolved_value_at(path_expr.node.path.span) else {
+            return None;
+        };
+        if self.resolution.tables.local_info(local_id).is_none_or(|info| info.name != "this") {
+            return None;
+        }
+        let Some(receiver_type) = self.local_types.get(&local_id).copied() else {
+            self.errors.push(TypeError::UnknownValueType { span: path_expr.node.path.span });
+            return Some(None);
+        };
+        let Some(method_item_id) = self.method_item_for_receiver(receiver_type, method_name) else {
+            self.errors.push(TypeError::UnknownCallTarget { span: call.node.callee.span });
+            return Some(None);
+        };
+        let Some(signature) = self.method_dispatch_signature(method_item_id, receiver_type) else {
+            self.errors.push(TypeError::UnknownCallTarget { span: call.node.callee.span });
+            return Some(None);
+        };
+        if call.node.args.len() != signature.params.len() {
+            self.errors.push(TypeError::CallArityMismatch {
+                span: call.span,
+                expected: signature.params.len(),
+                actual: call.node.args.len(),
+            });
+            return Some(Some(signature.return_type));
+        }
+        for (arg, expected) in call.node.args.iter().zip(signature.params.iter()) {
+            if let Some(actual) = self.type_argument_with_expected(arg, *expected) {
+                self.require_same_type(arg.span, *expected, actual);
+            }
+        }
+        self.record_call_kind(
+            call.id,
+            CallLoweringKind::MethodDispatch {
+                method_item_id,
+                receiver_source: MethodReceiverSource::Local(local_id),
+                receiver_type,
+            },
+        );
+        Some(Some(signature.return_type))
+    }
+
+    /// The single contract method `method_name` that the enclosing function's where-bounds make
+    /// callable on a value of generic parameter type `receiver_type`, with `This` bound to that
+    /// parameter. Mirrors `bounded_member_method` in `beskid_queries`: every bound on the
+    /// parameter contributes the contract that declares the method (bound contracts carry their
+    /// embedded contracts' methods), and the call resolves only when exactly one declaring
+    /// contract remains.
+    fn bounded_contract_method(
+        &mut self,
+        receiver_type: TypeId,
+        method_name: &str,
+    ) -> Option<(ItemId, FunctionSignature)> {
+        let Some(TypeInfo::GenericParam(parameter)) = self.type_table.get(receiver_type).cloned() else {
+            return None;
+        };
+        let bounds = self.current_function_item.and_then(|function| self.function_bounds.get(&function)).cloned()?;
+        let mut declaring = Vec::new();
+        for contract in bounds.iter().filter(|bound| bound.parameter == parameter).filter_map(|bound| bound.contract) {
+            let mut pending = vec![contract];
+            let mut visited = HashSet::new();
+            while let Some(candidate) = pending.pop() {
+                if !visited.insert(candidate)
+                    || !self.contract_signatures.contains_key(&(candidate, method_name.to_string()))
+                {
+                    continue;
+                }
+                let embedded = self.contract_embeddings.get(&candidate).cloned().unwrap_or_default();
+                let inherited = embedded
+                    .iter()
+                    .any(|inner| self.contract_signatures.contains_key(&(*inner, method_name.to_string())));
+                if inherited {
+                    pending.extend(embedded);
+                } else if !declaring.contains(&candidate) {
+                    declaring.push(candidate);
+                }
+            }
+        }
+        let [contract] = declaring.as_slice() else {
+            return None;
+        };
+        let signature = self.contract_signatures.get(&(*contract, method_name.to_string())).cloned()?;
+        let this = HashMap::from([("This".to_string(), receiver_type)]);
+        let params = signature.params.iter().map(|param| self.substitute_type_id(*param, &this)).collect();
+        let return_type = self.substitute_type_id(signature.return_type, &this);
+        Some((*contract, FunctionSignature { params, return_type }))
+    }
+
+    /// Type the arguments of a contract-dispatched call against `signature` and record the
+    /// dispatch; returns the call's result type.
+    fn type_contract_dispatch(
+        &mut self,
+        call: &Spanned<CallExpression>,
+        contract_item_id: ItemId,
+        signature: FunctionSignature,
+        receiver_source: MethodReceiverSource,
+        receiver_type: TypeId,
+    ) -> TypeId {
+        if call.node.args.len() != signature.params.len() {
+            self.errors.push(TypeError::CallArityMismatch {
+                span: call.span,
+                expected: signature.params.len(),
+                actual: call.node.args.len(),
+            });
+            return signature.return_type;
+        }
+        for (arg, expected) in call.node.args.iter().zip(signature.params.iter()) {
+            if let Some(actual) = self.type_argument_with_expected(arg, *expected) {
+                self.require_same_type(arg.span, *expected, actual);
+            }
+        }
+        self.record_call_kind(
+            call.id,
+            CallLoweringKind::ContractDispatch { contract_item_id, receiver_source, receiver_type },
+        );
+        signature.return_type
     }
 
     pub(in crate::types::checker) fn type_call_expression(&mut self, call: &Spanned<CallExpression>) -> Option<TypeId> {
@@ -172,6 +312,9 @@ impl<'a> TypeChecker<'a> {
                 self.check_fiber_join_call(call.span, handle);
             }
             let segments = &path_expr.node.path.node.segments;
+            if let Some(dispatch) = self.unqualified_sibling_method_call(call, path_expr) {
+                return dispatch;
+            }
             let source_path = self.current_source_path.as_ref();
             if segments.len() >= 2
                 && let Some(method_name) = method_name_from_path_callee(segments)
@@ -241,6 +384,15 @@ impl<'a> TypeChecker<'a> {
                         },
                     );
                     return Some(signature.return_type);
+                }
+                if let Some((contract_item_id, signature)) = self.bounded_contract_method(receiver_type, method_name) {
+                    return Some(self.type_contract_dispatch(
+                        call,
+                        contract_item_id,
+                        signature,
+                        MethodReceiverSource::Local(local_id),
+                        receiver_type,
+                    ));
                 }
             }
 
@@ -378,6 +530,15 @@ impl<'a> TypeChecker<'a> {
                     },
                 );
                 return Some(signature.return_type);
+            }
+            if let Some((contract_item_id, signature)) = self.bounded_contract_method(target_type, method_name) {
+                return Some(self.type_contract_dispatch(
+                    call,
+                    contract_item_id,
+                    signature,
+                    MethodReceiverSource::Expression(member.node.target.span),
+                    target_type,
+                ));
             }
         }
 

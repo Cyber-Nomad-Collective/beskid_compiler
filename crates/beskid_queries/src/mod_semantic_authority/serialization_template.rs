@@ -215,6 +215,11 @@ impl ModSemanticQueryAuthority<'_> {
         if parameters.is_empty() {
             return Err(Self::error("template target has no generic parameters"));
         }
+        super::serialization_target::require_contribution_field_access(
+            self.db,
+            owner,
+            &self.assembly.entry_unit().path,
+        )?;
         let unit = self
             .registered_unit(&declaration.source_unit)
             .ok_or_else(|| Self::error("template prepared unit absent"))?;

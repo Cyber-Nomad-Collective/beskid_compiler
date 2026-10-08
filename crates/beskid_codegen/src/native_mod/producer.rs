@@ -92,10 +92,15 @@ fn discover(input: &crate::CodegenInput<'_>) -> anyhow::Result<Vec<SelectedContr
         if visited.len() > 1_000_000 {
             bail!("native Mod declaration discovery budget exceeded");
         }
-        if node_kind(input.database(), key)? == Some(IndexedNodeKind::TypeDefinition) {
+        if node_kind(input.database(), key)
+            .with_context(|| format!("native Mod discovery: node kind query failed at {}", beskid_queries::format_ast_node_site(input.database(), key)))?
+            == Some(IndexedNodeKind::TypeDefinition)
+        {
             owners.push(key);
         }
-        if let Some(children) = child_nodes(input.database(), key)? {
+        if let Some(children) =
+            child_nodes(input.database(), key).with_context(|| format!("native Mod discovery: child nodes query failed at {}", beskid_queries::format_ast_node_site(input.database(), key)))?
+        {
             pending.extend(children.iter().copied());
         }
     }
@@ -104,7 +109,9 @@ fn discover(input: &crate::CodegenInput<'_>) -> anyhow::Result<Vec<SelectedContr
     for owner in &owners {
         // User dependency closures may contain ordinary non-contract records. Selection only
         // admits exact current canonical SDK conformances, never terminal spelling matches.
-        for witness in super::contracts::select_contract_witnesses(input, *owner)? {
+        for witness in super::contracts::select_contract_witnesses(input, *owner)
+            .with_context(|| format!("native Mod contract witness selection failed at {}", beskid_queries::format_ast_node_site(input.database(), *owner)))?
+        {
             if witness.family == NativeModContractFamily::Factory {
                 continue;
             }
@@ -112,7 +119,8 @@ fn discover(input: &crate::CodegenInput<'_>) -> anyhow::Result<Vec<SelectedContr
                 bail!("native Mod contract requires one exact callable method");
             }
             let method = witness.methods[0].1;
-            let factory = super::contracts::select_instance_factory(input, *owner, &owners)?;
+            let factory = super::contracts::select_instance_factory(input, *owner, &owners)
+                .with_context(|| format!("native Mod instance factory selection failed at {}", beskid_queries::format_ast_node_site(input.database(), *owner)))?;
             if factory.methods.len() != 1 {
                 bail!("native Mod instance factory has ambiguous callable methods");
             }
@@ -137,9 +145,13 @@ pub fn lower_prepared_native_mod(
     use beskid_queries::{NativeModTransportType, SourceUnitId, native_mod_transport_signature};
     use sha2::{Digest, Sha256};
     crate::prepared_syntax::with_prepared_module_input(db, front, target, |input, items| {
-        let selected = discover(input)?;
+        let selected = discover(input).context("native Mod phase: declaration discovery and contract witness selection")?;
         let selected_keys = selected.iter().flat_map(|entry| [entry.method, entry.factory_method]).collect::<Vec<_>>();
-        let capability = super::callbacks::NativeModCallbackCapability::for_selected_closure(input, &selected_keys)?;
+        let capability = super::callbacks::NativeModCallbackCapability::for_selected_closure(input, &selected_keys, items)
+                .with_context(|| format!(
+                    "native Mod phase: callback capability selection for {}",
+                    describe_sites(input.database(), &selected_keys)
+                ))?;
         let callbacks_issued = capability.callbacks().collect::<Vec<_>>();
         let input =
             input.with_artifact_namespace(input.artifact_namespace().into()).with_native_mod_callbacks(capability);
@@ -150,12 +162,21 @@ pub fn lower_prepared_native_mod(
         let mut constructors = Vec::new();
         let mut constructor_keys = Vec::new();
         for item in items {
-            if beskid_queries::native_mod_syntax_constructor(input.database(), item.key)?.is_some()
-                || beskid_queries::native_mod_request_constructor(input.database(), item.key)?.is_some()
-                || super::constructors::is_callback_value_constructor(&input, item)?
+            let site = || beskid_queries::format_ast_node_site(input.database(), item.key);
+            if beskid_queries::native_mod_syntax_constructor(input.database(), item.key)
+                .with_context(|| format!("native Mod phase: syntax constructor query failed at {}", site()))?
+                .is_some()
+                || beskid_queries::native_mod_request_constructor(input.database(), item.key)
+                    .with_context(|| format!("native Mod phase: request constructor query failed at {}", site()))?
+                    .is_some()
+                || super::constructors::is_callback_value_constructor(&input, item)
+                    .with_context(|| format!("native Mod phase: callback value constructor check failed at {}", site()))?
             {
                 constructor_keys.push(item.key);
-                constructors.push(super::constructors::issue_constructor(&input, item, &mut layouts)?);
+                constructors.push(
+                    super::constructors::issue_constructor(&input, item, &mut layouts)
+                        .with_context(|| format!("native Mod phase: constructor issuance failed at {}", site()))?,
+                );
             }
         }
         // Emit one canonical reachable union for actual methods/factories and all
@@ -169,7 +190,11 @@ pub fn lower_prepared_native_mod(
                 .copied()
                 .find(|root| root.unit == key.unit)
                 .context("native callable has no registered source root")?;
-            let reachable = beskid_queries::reachable_items(input.database(), root, key)?
+            let reachable = beskid_queries::reachable_items(input.database(), root, key)
+                .with_context(|| format!(
+                    "native Mod phase: reachable items query failed at {}",
+                    beskid_queries::format_ast_node_site(input.database(), key)
+                ))?
                 .context("native callable reachable facts are incomplete")?;
             emitted_keys.extend(reachable.iter().copied());
             emitted_keys.insert(key);
@@ -200,9 +225,17 @@ pub fn lower_prepared_native_mod(
                 .iter()
                 .find(|item| item.key == entry.factory_method)
                 .context("native factory is not in current lowered module")?;
-            let method_signature = native_mod_transport_signature(input.database(), entry.method)?
+            let method_signature = native_mod_transport_signature(input.database(), entry.method)
+                .with_context(|| format!(
+                    "native Mod phase: transport signature query for method at {}",
+                    beskid_queries::format_ast_node_site(input.database(), entry.method)
+                ))?
                 .context("native method source signature unavailable")?;
-            let factory_signature = native_mod_transport_signature(input.database(), entry.factory_method)?
+            let factory_signature = native_mod_transport_signature(input.database(), entry.factory_method)
+                .with_context(|| format!(
+                    "native Mod phase: transport signature query for factory at {}",
+                    beskid_queries::format_ast_node_site(input.database(), entry.factory_method)
+                ))?
                 .context("native factory source signature unavailable")?;
             if method_signature.parameters().len() != 2 || factory_signature.parameters().len() != 2 {
                 bail!("native contract methods require exact receiver and one source request");
@@ -281,7 +314,11 @@ pub fn lower_prepared_native_mod(
                         input.database(),
                         entry.method,
                         &method_signature.parameters()[0],
-                    )?
+                    )
+                    .with_context(|| format!(
+                        "native Mod phase: transport nominal query for owner at {}",
+                        beskid_queries::format_ast_node_site(input.database(), entry.method)
+                    ))?
                     .context("native owner projection absent")?
                     .name()
                     .to_owned(),
@@ -295,9 +332,19 @@ pub fn lower_prepared_native_mod(
             let key = issued.wrapper();
             let item = items.iter().find(|item| item.key == key).context("native callback wrapper is not lowered")?;
             let signature =
-                native_mod_transport_signature(input.database(), key)?.context("native callback signature absent")?;
+                native_mod_transport_signature(input.database(), key)
+                    .with_context(|| format!(
+                        "native Mod phase: transport signature query for callback wrapper at {}",
+                        beskid_queries::format_ast_node_site(input.database(), key)
+                    ))?
+                    .context("native callback signature absent")?;
             callbacks.push(NativeCallbackPlan {
-                symbol: beskid_queries::native_mod_callback_symbol(input.database(), issued)?,
+                symbol: beskid_queries::native_mod_callback_symbol(input.database(), issued).with_context(|| {
+                    format!(
+                        "native Mod phase: transport callback symbol query at {}",
+                        beskid_queries::format_ast_node_site(input.database(), key)
+                    )
+                })?,
                 operation: match issued.operation() {
                     beskid_queries::NativeModCallbackOperation::PlanCanonicalPaths => {
                         "__mod_semantic_plan_canonical_paths".into()
@@ -324,7 +371,11 @@ pub fn lower_prepared_native_mod(
                     }
                     beskid_queries::NativeModCallbackOperation::Query => format!(
                         "__mod_query_{}",
-                        beskid_queries::item_name(input.database(), key)?
+                        beskid_queries::item_name(input.database(), key)
+                            .with_context(|| format!(
+                                "native Mod phase: callback item name query failed at {}",
+                                beskid_queries::format_ast_node_site(input.database(), key)
+                            ))?
                             .context("native callback operation absent")?
                     ),
                 },
@@ -422,20 +473,40 @@ fn bootstrap_factory(
         if visited.len() > 1_000_000 {
             bail!("native factory bootstrap discovery limit");
         }
-        if beskid_queries::node_kind(input.database(), key)? == Some(beskid_queries::IndexedNodeKind::TypeDefinition) {
+        if beskid_queries::node_kind(input.database(), key)
+            .with_context(|| format!(
+                "native factory bootstrap: node kind query failed at {}",
+                beskid_queries::format_ast_node_site(input.database(), key)
+            ))?
+            == Some(beskid_queries::IndexedNodeKind::TypeDefinition)
+        {
             candidates.push(key);
         }
-        if let Some(children) = beskid_queries::child_nodes(input.database(), key)? {
+        if let Some(children) = beskid_queries::child_nodes(input.database(), key).with_context(|| {
+            format!(
+                "native factory bootstrap: child nodes query failed at {}",
+                beskid_queries::format_ast_node_site(input.database(), key)
+            )
+        })? {
             pending.extend(children.iter().copied());
         }
     }
-    let witness = super::contracts::select_instance_factory(input, owner, &candidates)?;
+    let witness = super::contracts::select_instance_factory(input, owner, &candidates).with_context(|| {
+        format!(
+            "native factory bootstrap: instance factory selection failed at {}",
+            beskid_queries::format_ast_node_site(input.database(), owner)
+        )
+    })?;
     if witness.methods.len() != 1 {
         bail!("native nested factory lacks one exact callable");
     }
     let method = witness.methods[0].1;
     let item = items.iter().find(|item| item.key == method).context("native nested factory method not lowered")?;
-    let signature = beskid_queries::native_mod_transport_signature(input.database(), method)?
+    let signature = beskid_queries::native_mod_transport_signature(input.database(), method)
+        .with_context(|| format!(
+            "native factory bootstrap: transport signature query failed at {}",
+            beskid_queries::format_ast_node_site(input.database(), method)
+        ))?
         .context("native nested factory signature unavailable")?;
     if signature.parameters().len() != 2 {
         bail!("native nested factory requires initialized receiver and CollectRequest");
@@ -447,4 +518,8 @@ fn bootstrap_factory(
         symbol: crate::internal_link_symbol(&item.symbol),
         arguments: vec![receiver, NativeReceiverBootstrap::FactoryRequest { type_id: request }],
     })
+}
+
+fn describe_sites(db: &dyn beskid_queries::Db, keys: &[beskid_queries::AstNodeKey]) -> String {
+    keys.iter().map(|key| beskid_queries::format_ast_node_site(db, *key)).collect::<Vec<_>>().join(", ")
 }

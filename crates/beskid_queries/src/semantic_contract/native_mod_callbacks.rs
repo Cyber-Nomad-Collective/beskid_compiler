@@ -163,7 +163,14 @@ pub fn native_mod_contract_declaration(
     {
         return Ok(None);
     }
-    let Some(name) = item_name(db, key)? else { return Ok(None) };
+    // `item_name` names only callables and test items; a contract's name comes from its own
+    // declaration node. A ContractDefinition kind without that node is a broken index.
+    let name = syntax
+        .syntax_index(db)
+        .node_at(syntax.expanded_program(db), key.node)
+        .and_then(|node| node.of::<beskid_analysis::syntax::ContractDefinition>())
+        .map(|contract| contract.name.node.name.clone())
+        .ok_or_else(|| SemanticError::new("canonical SDK contract declaration has no current contract syntax"))?;
     let family = [
         NativeModContractFamily::Factory,
         NativeModContractFamily::Collector,
@@ -174,7 +181,7 @@ pub fn native_mod_contract_declaration(
         NativeModContractFamily::AttributeGenerator,
     ]
     .into_iter()
-    .find(|family| name.as_ref() == family.canonical_name());
+    .find(|family| name == family.canonical_name());
     Ok(family.map(|family| NativeModContractDeclaration { key, family }))
 }
 

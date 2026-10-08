@@ -15,6 +15,7 @@ pub mod parser;
 pub use package_identity::{
     VerifiedPackageIdentities, VerifiedPackageIdentity, VerifiedPackageRoot, VerifiedPackageSource,
 };
+pub(crate) use package_identity::is_outside_package;
 mod readme;
 pub mod validator;
 pub mod workflow;
@@ -47,9 +48,10 @@ pub use glue_owner::{
     glue_owner_directory,
 };
 pub use graph::{
-    DependencyEdge, ProjectGraph, ProjectGraphBuildOptions, ProjectGraphNode, UnresolvedDependency,
+    CORE_DEPENDENCY_NAME, DependencyEdge, ProjectGraph, ProjectGraphBuildOptions, ProjectGraphNode, UnresolvedDependency,
     UnresolvedDependencyKind, WorkspaceResolutionRules, build_project_graph, build_project_graph_with_options,
     collect_dependency_projects, collect_unresolved_dependencies, discover_workspace_resolution_rules,
+    is_core_dependency_name,
 };
 pub use manifest_resolve::{
     discover_project_manifest_from_input_or_cwd, resolve_project_manifest_for_cwd,

@@ -167,9 +167,8 @@ pub(crate) fn ValidatePrefix(prefix: &Path, version: &Version, target: &str) -> 
             return Err(Invalid("Corelib manifests missing"));
         }
     }
-    if !corelib.join("packages").is_dir()
-        || beskid_abi::corelib_bundle::verified_corelib_bundle_root(&corelib).is_none()
-    {
+    // Verification covers every CoreLib.bws member, so no separate layout probe is needed.
+    if beskid_abi::corelib_bundle::verified_corelib_bundle_root(&corelib).is_none() {
         return Err(Invalid("Corelib bundle fingerprint invalid"));
     }
     for profile in [beskid_abi::runtime_kit::BuildProfile::Debug, beskid_abi::runtime_kit::BuildProfile::Release] {

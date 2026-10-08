@@ -201,6 +201,18 @@ fn v06_native_syntax_factories_preserve_concrete_fields_variants_and_wrappers() 
     assert!(source.contains("FunctionDefinitionValue("));
     assert!(source.contains("whereBounds"), "factory must not erase generic constraints");
     assert!(source.contains("PrimitiveTypeU64Value()"));
+    // A reserved-word escaped variant keeps its spelling in the expression only; the callable
+    // itself is PascalCase.
+    assert!(source.contains("pub Beskid.Syntax.Nodes.Type TypeThisValue() {"));
+    assert!(source.contains("return Beskid.Syntax.Nodes.Type::_This;"));
+    assert!(!source.contains("Type_ThisValue"));
+    assert!(
+        source
+            .lines()
+            .filter_map(|line| line.strip_prefix("pub "))
+            .all(|line| line.split_whitespace().nth(1).is_some_and(|callable| !callable.contains('_'))),
+        "every generated factory must be named in PascalCase"
+    );
     assert!(source.contains("return Beskid.Syntax.Nodes.PrimitiveType::U64;"));
     assert!(source.contains("SpannedIdentifierValue("));
     assert!(source.contains("NodeSpan span, u32 id"));

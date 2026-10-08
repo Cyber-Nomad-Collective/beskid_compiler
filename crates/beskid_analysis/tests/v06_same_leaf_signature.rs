@@ -31,13 +31,13 @@ fn checked_project_entry_resolves_its_own_pattern_limits() {
     let bounded_path = dependency.join("src/Probe/Bounded.bd");
     std::fs::create_dir_all(entry_path.parent().unwrap()).unwrap();
     std::fs::create_dir_all(bounded_path.parent().unwrap()).unwrap();
-    std::fs::write(&entry_path, "use Std.Probe.Bounded;\npub type PatternLimits { pub i64 maxDepth, }\npub i64 Validate() { return ValidateWithPatternLimits(PatternLimits { maxDepth:64_i64 }); }\npub i64 ValidateWithPatternLimits(PatternLimits policy) { return Bounded.Read(Bounded.PatternLimits {maxWork:policy.maxDepth}); }\n").unwrap();
+    std::fs::write(&entry_path, "use Probe.Bounded;\npub type PatternLimits { pub i64 maxDepth, }\npub i64 Validate() { return ValidateWithPatternLimits(PatternLimits { maxDepth:64_i64 }); }\npub i64 ValidateWithPatternLimits(PatternLimits policy) { return Bounded.Read(Bounded.PatternLimits {maxWork:policy.maxDepth}); }\n").unwrap();
     std::fs::write(&bounded_path, "pub type PatternLimits { pub i64 maxWork, } pub i64 Read(PatternLimits policy) { return policy.maxWork; }").unwrap();
     let plan = CompilePlan {
         project_root: host.clone(), manifest_path: host.join("schema.bproj"), project_name: "schema".into(), source_root: host.join("src"),
         target: Target { name: "SchemaCheck".into(), kind: TargetKind::Lib, entry: Some("Probe/Schema.bd".into()) },
         dependency_projects: vec![ResolvedDependencyProject { dependency_name: "bounded".into(), manifest_path: dependency.join("bounded.bproj"), project_root: dependency.clone(), project_name: "bounded".into(), source_root: dependency.join("src") }],
-        unresolved_dependencies: Vec::new(), has_std_dependency: true,
+        unresolved_dependencies: Vec::new(), has_core_dependency: false,
     };
     let assembly = assemble_program_with_materializer(&plan, None, &entry_path, None, &AssemblyOptions::default(), None, None).unwrap();
     let result = resolve_and_type_program_with_assembly(&assembly.entry_unit().program, Some(&assembly), None, DependencyTypingPolicy::FullClosure);

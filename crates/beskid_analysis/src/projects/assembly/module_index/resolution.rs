@@ -43,9 +43,16 @@ impl ModuleIndex {
         resolver.set_current_source_path(entry_source_path.clone());
 
         self.seed_resolver_from_assembly(&mut resolver, assembly);
+        // The entry is still a module of the assembly: sibling declarations may name it by its
+        // logical path (`Console.ConsoleSize` from `Platform/Terminal.bd`).
+        let entry_unit = entry_source_path
+            .as_ref()
+            .and_then(|path| assembly.units.iter().find(|unit| crate::paths::same_file(&unit.path, path)))
+            .unwrap_or_else(|| assembly.entry_unit());
+        let entry_module_path = infer_logical_module_path(entry_unit, &assembly.roots);
         resolver.set_current_source_path(entry_source_path);
 
-        let mut resolution = resolver.resolve_program(program)?;
+        let mut resolution = resolver.resolve_entry_program_in_module(program, entry_module_path.as_deref())?;
         self.merge_dependency_declaration_tables(&mut resolution, assembly);
         Ok(resolution)
     }
@@ -106,13 +113,21 @@ impl ModuleIndex {
             if index == assembly.entry_index {
                 continue;
             }
-            let module_path = infer_logical_module_path(unit, &assembly.roots, assembly.has_std_dependency);
+            let module_path = infer_logical_module_path(unit, &assembly.roots);
             if let Some(path) = module_path.as_ref() {
                 resolver.collect_program_in_module(&unit.program, path, Some(&unit.path));
             }
         }
         resolver.errors.clear();
         resolver.module_imports.clear();
+        // Native SDK callbacks are admitted only in the exact canonical compiler-SDK unit.
+        resolver.sdk_source_authority = source_path.as_ref().and_then(|path| {
+            assembly
+                .units
+                .iter()
+                .find(|unit| &unit.path == path)
+                .and_then(crate::resolve::sdk_authority::canonical_sdk_source_authority)
+        });
         resolver.current_source_path = source_path;
     }
 
@@ -124,7 +139,7 @@ impl ModuleIndex {
     ) -> Option<Resolution> {
         let entry_source_path = assembly.entry_unit().path.clone();
         let entry_module_path =
-            infer_logical_module_path(assembly.entry_unit(), &assembly.roots, assembly.has_std_dependency);
+            infer_logical_module_path(assembly.entry_unit(), &assembly.roots);
 
         let mut resolver = Resolver::new();
         resolver.set_current_source_path(Some(entry_source_path.clone()));
@@ -149,7 +164,7 @@ impl ModuleIndex {
             if index == assembly.entry_index {
                 continue;
             }
-            let module_path = infer_logical_module_path(unit, &assembly.roots, assembly.has_std_dependency);
+            let module_path = infer_logical_module_path(unit, &assembly.roots);
             dependency_resolver.set_current_source_path(Some(unit.path.clone()));
             let unit_tables =
                 dependency_resolver.resolve_collected_program_declarations(&unit.program, module_path.as_deref());

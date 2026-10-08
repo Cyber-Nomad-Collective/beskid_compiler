@@ -26,7 +26,7 @@ fn discovered_mod_without_descriptor_cannot_be_silently_skipped() {
             source_root: module.join("Src"),
         }],
         unresolved_dependencies: vec![],
-        has_std_dependency: false,
+        has_core_dependency: false,
     };
     assert!(native_invoker_for_plan(&plan, None).is_err(), "missing descriptor silently disabled required Mod");
     let input = ModHostInput { compile_plan: Some(&plan), ..Default::default() };

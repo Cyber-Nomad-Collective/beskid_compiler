@@ -129,6 +129,50 @@ const MANAGED_SOURCE_SERVICES: &[ManagedSourceService] = &[
         params: &["Usize"],
         returns: "TypeParameterArray",
     },
+    // Managed string results. Each adapter returns a managed string reference through the
+    // pointer register (the transport stays `pointer`, exactly as `abi-v5.json` and the runtime
+    // export declare it); the source callable returns `string`. Parameters keep their transport
+    // representation.
+    ManagedSourceService {
+        name: "__str_new",
+        transport: &["pointer", "usize"],
+        transport_result: "pointer",
+        type_parameters: &[],
+        params: &["Ptr", "Usize"],
+        returns: "String",
+    },
+    ManagedSourceService {
+        name: "__str_slice",
+        transport: &["pointer", "usize", "usize"],
+        transport_result: "pointer",
+        type_parameters: &[],
+        params: &["Ptr", "Usize", "Usize"],
+        returns: "String",
+    },
+    ManagedSourceService {
+        name: "__env_get",
+        transport: &["pointer"],
+        transport_result: "pointer",
+        type_parameters: &[],
+        params: &["Ptr"],
+        returns: "String",
+    },
+    ManagedSourceService {
+        name: "__env_getcwd",
+        transport: &[],
+        transport_result: "pointer",
+        type_parameters: &[],
+        params: &[],
+        returns: "String",
+    },
+    ManagedSourceService {
+        name: "__fiber_join_message",
+        transport: &["i64"],
+        transport_result: "pointer",
+        type_parameters: &[],
+        params: &["I64"],
+        returns: "String",
+    },
 ];
 
 fn managed_source_service(name: &str) -> Option<&'static ManagedSourceService> {
@@ -333,6 +377,11 @@ mod tests {
                 "__array_new",
                 "        type_parameters: [\"T\"],\n        params: [Usize],\n        returns: TypeParameterArray,\n",
             ),
+            ("__str_new", "        params: [Ptr, Usize],\n        returns: String,\n"),
+            ("__str_slice", "        params: [Ptr, Usize, Usize],\n        returns: String,\n"),
+            ("__env_get", "        params: [Ptr],\n        returns: String,\n"),
+            ("__env_getcwd", "        params: [],\n        returns: String,\n"),
+            ("__fiber_join_message", "        params: [I64],\n        returns: String,\n"),
         ] {
             let start = generated.find(&format!("&[\"{name}\"] =>")).expect("managed service entry");
             let entry = &generated[start..start + generated[start..].find("    },").expect("entry end")];

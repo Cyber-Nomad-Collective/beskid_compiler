@@ -89,7 +89,7 @@ fn syscall_origin_plan(root: &std::path::Path) -> beskid_analysis::projects::Com
         target: Target { name: "App".into(), kind: TargetKind::App, entry: Some("Syscall.bd".into()) },
         dependency_projects: Vec::new(),
         unresolved_dependencies: Vec::new(),
-        has_std_dependency: false,
+        has_core_dependency: false,
     }
 }
 
@@ -724,8 +724,8 @@ fn runtime_intrinsic_uses_the_manifest_owned_builtin_index() {
         ),
         "user code must not acquire __str_len call authority: {lowering:?}"
     );
-    assert_eq!(call_lowering(&db, call), Err(beskid_queries::SemanticError::unavailable("call_lowering")));
-    assert_eq!(call_abi_signature(&db, call), Err(beskid_queries::SemanticError::unavailable("call_lowering")));
+    assert_eq!(unavailable_query_of(call_lowering(&db, call)), Some("call_lowering".to_owned()));
+    assert_eq!(unavailable_query_of(call_abi_signature(&db, call)), Some("call_lowering".to_owned()));
 
     // The legality gate reports the denial at the call, instead of codegen failing later.
     let function = key(unit, generation, &index, NodeKind::FunctionDefinition, 0);
@@ -791,8 +791,8 @@ fn stale_legacy_builtin_shape_cannot_acquire_manifest_dispatch_authority() {
     let (db, _project, unit, generation, index) = setup(source);
     let call = key(unit, generation, &index, NodeKind::CallExpression, 0);
 
-    assert_eq!(call_lowering(&db, call), Err(beskid_queries::SemanticError::unavailable("call_lowering")));
-    assert_eq!(call_abi_signature(&db, call), Err(beskid_queries::SemanticError::unavailable("call_lowering")));
+    assert_eq!(unavailable_query_of(call_lowering(&db, call)), Some("call_lowering".to_owned()));
+    assert_eq!(unavailable_query_of(call_abi_signature(&db, call)), Some("call_lowering".to_owned()));
     assert!(abi_type(&db, call).is_err());
 }
 
@@ -866,8 +866,8 @@ fn canonical_concurrency_facade_gets_service_authority_but_copied_source_does_no
         setup("i64 Main() { return __channel_create(0, 0); }");
     let ordinary_call = key(ordinary_unit, ordinary_generation, &ordinary_index, NodeKind::CallExpression, 0);
     assert_eq!(
-        call_lowering(&ordinary_db, ordinary_call),
-        Err(beskid_queries::SemanticError::unavailable("call_lowering")),
+        unavailable_query_of(call_lowering(&ordinary_db, ordinary_call)),
+        Some("call_lowering".to_owned()),
         "application source must not acquire concurrency service authority"
     );
 }
@@ -955,8 +955,8 @@ fn corelib_syscall_source_gets_a_distinct_service_lowering_but_app_code_cannot_f
         setup("i64 Main() { return __syscall_write(1, \"not corelib\"); }");
     let ordinary_call = key(ordinary_unit, ordinary_generation, &ordinary_index, NodeKind::CallExpression, 0);
     assert_eq!(
-        call_lowering(&ordinary_db, ordinary_call),
-        Err(beskid_queries::SemanticError::unavailable("call_lowering")),
+        unavailable_query_of(call_lowering(&ordinary_db, ordinary_call)),
+        Some("call_lowering".to_owned()),
         "an application spelling must not gain the Corelib service capability"
     );
 
@@ -1096,11 +1096,11 @@ fn corelib_service_authority_is_registered_for_only_the_exact_syscall_unit_in_an
     let application_call =
         application_index.ids_of_kind(NodeKind::CallExpression).next().expect("application syscall spelling");
     assert_eq!(
-        call_lowering(
+        unavailable_query_of(call_lowering(
             &db,
             AstNodeKey { unit: SourceUnitId::new(&db, application_path.clone()), generation, node: application_call },
-        ),
-        Err(beskid_queries::SemanticError::unavailable("call_lowering")),
+        )),
+        Some("call_lowering".to_owned()),
         "only the embedded Core.Syscall unit receives service authority"
     );
 
@@ -1141,15 +1141,24 @@ fn corelib_service_authority_is_registered_for_only_the_exact_syscall_unit_in_an
     let forged_index = SyntaxIndex::from_program(&forged_program, SyntaxGenerationId(74));
     let forged_call = forged_index.ids_of_kind(NodeKind::CallExpression).next().expect("forged syscall call");
     assert_eq!(
-        call_lowering(
+        unavailable_query_of(call_lowering(
             &forged_db,
             AstNodeKey {
                 unit: SourceUnitId::new(&forged_db, syscall_path),
                 generation: SyntaxGenerationId(74),
                 node: forged_call,
             },
-        ),
-        Err(beskid_queries::SemanticError::unavailable("call_lowering")),
+        )),
+        Some("call_lowering".to_owned()),
         "altered Core.Syscall bytes cannot receive service authority"
     );
+}
+
+/// The unavailable query family of a failed fact; sited gap errors differ only in their rendered
+/// site text, so the assertions compare the family.
+fn unavailable_query_of<T: std::fmt::Debug>(result: Result<T, beskid_queries::SemanticError>) -> Option<String> {
+    match result {
+        Ok(value) => panic!("expected an unavailable fact, got {value:?}"),
+        Err(error) => error.unavailable_query().map(str::to_owned),
+    }
 }

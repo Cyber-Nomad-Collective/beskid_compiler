@@ -59,8 +59,8 @@ mod tests {
 
         let root = PathBuf::from("/tmp/intellisense-completion/src");
         let main_path = root.join("Main.bd");
-        let output_path = root.join("Std/Core/Output.bd");
-        let main_source = "use Std.Core.Output;\ni32 Main() { return Output.Write; }";
+        let output_path = root.join("Core/Output.bd");
+        let main_source = "use Core.Output;\ni32 Main() { return Output.Write; }";
         let output_source = "pub i32 WriteLine() { return 1; }";
         let main_program = expand_program(
             parse_program_with_source_name(main_path.to_str().unwrap(), main_source).expect("main parses"),

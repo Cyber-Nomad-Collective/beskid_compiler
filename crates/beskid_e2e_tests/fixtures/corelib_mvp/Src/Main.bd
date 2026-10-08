@@ -1,5 +1,5 @@
-use Std.Core.Output;
-use Std.Core.String;
+use Core.Output;
+use Core.String;
 
 i32 Main() {
     Output.WriteLine("ok");

@@ -76,11 +76,11 @@ fn json_rpc_completion_and_hover_use_dependency_syntax_facts() {
         "ProtocolSmoke {\n  name = \"ProtocolSmoke\"\n  version = \"0.1.0\"\n}\n\ntarget \"App\" {\n  kind = App\n  entry = \"Main.bd\"\n}\n",
     )
     .expect("project manifest");
-    let source = "use Std.Core.Output;\n\ni32 Main() {\n    Output.WriteLine(\"ok\");\n    return 0;\n}\n";
+    let source = "use Core.Output;\n\ni32 Main() {\n    Output.WriteLine(\"ok\");\n    return 0;\n}\n";
     let source_path = project.path().join("Src/Main.bd");
     std::fs::write(&source_path, source).expect("source file");
     let sibling_source =
-        "use Std.Core.Output;\n\ni32 Sibling() {\n    Output.WriteLine(\"ok\");\n    return \"wrong\";\n}\n";
+        "use Core.Output;\n\ni32 Sibling() {\n    Output.WriteLine(\"ok\");\n    return \"wrong\";\n}\n";
     let sibling_path = project.path().join("Src/Sibling.bd");
     std::fs::write(&sibling_path, sibling_source).expect("sibling source file");
 
@@ -261,7 +261,7 @@ fn json_rpc_completion_and_hover_use_dependency_syntax_facts() {
         "editing another buffer must not invalidate sibling completion facts: {sibling_completion:#}"
     );
 
-    let unimported_sibling = sibling_source.replacen("use Std.Core.Output;\n\n", "", 1);
+    let unimported_sibling = sibling_source.replacen("use Core.Output;\n\n", "", 1);
     send_message(
         &mut stdin,
         json!({

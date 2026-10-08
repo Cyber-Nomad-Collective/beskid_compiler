@@ -14,7 +14,11 @@ pub(in crate::semantic_contract) fn call_lowering_for_node(
     Some(match &call.callee.node {
         expression if expression_is_lambda(expression) => Ok(CallLowering::Dynamic),
         beskid_analysis::syntax::Expression::Path(path) => {
-            path_call_resolution(db, program, index, key, call, &path.node.path.node).into_query_result()
+            path_call_resolution(db, program, index, key, call, &path.node.path.node).into_query_result(
+                db,
+                key,
+                &path.node.path.node,
+            )
         }
         beskid_analysis::syntax::Expression::Member(member) => {
             // Nominal methods lower Direct when declaration authority exists.
@@ -30,8 +34,33 @@ pub(in crate::semantic_contract) fn call_lowering_for_node(
                 })
                 .unwrap_or(CallLowering::Dynamic))
         }
-        _ => Err(SemanticError::unavailable("call_lowering")),
+        other => Err(SemanticError::unavailable_at_described(
+            "call_lowering",
+            key,
+            &crate::semantic_contract::format_ast_node_site(db, key),
+            &format!("callee expression `{}` has no call-lowering authority", expression_construct_name(other)),
+        )),
     })
+}
+
+/// Construct name of a callee expression, for gap messages only.
+fn expression_construct_name(expression: &beskid_analysis::syntax::Expression) -> String {
+    let debug = format!("{expression:?}");
+    debug.split(|character: char| !character.is_alphanumeric() && character != '_').next().unwrap_or("expression").to_owned()
+}
+
+/// The single sited `call_lowering`-family gap: every path-callee failure names the call node
+/// (path, construct, range), the callee spelling and the reason.
+fn path_call_unavailable(
+    db: &dyn Db,
+    key: AstNodeKey,
+    path: &beskid_analysis::syntax::Path,
+    query: &'static str,
+    reason: &str,
+) -> SemanticError {
+    let callee = path.segments.iter().map(|segment| segment.node.name.node.name.as_str()).collect::<Vec<_>>().join(".");
+    let rendered_site = crate::semantic_contract::format_ast_node_site(db, key);
+    SemanticError::unavailable_at_described(query, key, &rendered_site, &format!("callee `{callee}`: {reason}"))
 }
 
 /// How one call with a path callee resolves, before it is folded into the public
@@ -56,13 +85,39 @@ pub(in crate::semantic_contract) enum PathCallResolution {
 }
 
 impl PathCallResolution {
-    fn into_query_result(self) -> Result<CallLowering, SemanticError> {
+    fn into_query_result(
+        self,
+        db: &dyn Db,
+        key: AstNodeKey,
+        path: &beskid_analysis::syntax::Path,
+    ) -> Result<CallLowering, SemanticError> {
         match self {
             Self::Lowered(lowering) => Ok(lowering),
-            Self::Unavailable(query) | Self::UnresolvedTarget(query) => Err(SemanticError::unavailable(query)),
+            Self::Unavailable(query) => {
+                Err(path_call_unavailable(db, key, path, query, "a resolution authority matched but could not complete"))
+            }
+            Self::UnresolvedTarget(query) => Err(path_call_unavailable(
+                db,
+                key,
+                path,
+                query,
+                "no declaration, import, inline module, builtin, runtime intrinsic or extern contract member names it",
+            )),
             Self::Failed(error) => Err(error),
-            Self::MissingTypeArguments => Err(SemanticError::unavailable("generic_call_instantiation")),
-            Self::PrivateBuiltin(_) => Err(SemanticError::unavailable("call_lowering")),
+            Self::MissingTypeArguments => Err(path_call_unavailable(
+                db,
+                key,
+                path,
+                "generic_call_instantiation",
+                "generic callee has neither type arguments nor value arguments",
+            )),
+            Self::PrivateBuiltin(name) => Err(path_call_unavailable(
+                db,
+                key,
+                path,
+                "call_lowering",
+                &format!("private runtime builtin `{name}` is not admitted in this unit"),
+            )),
         }
     }
 }

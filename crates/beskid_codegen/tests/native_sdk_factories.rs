@@ -49,7 +49,7 @@ fn every_generated_sdk_source_parses_without_recovery() {
 #[test]
 fn canonical_sdk_request_factories_lower_with_compiler_owned_descriptors() {
     let package = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../corelib/packages/compiler-sdk");
-    // Compile the real SDK package graph. Mutating an orphan's default Std plan
+    // Compile the real SDK package graph. Mutating an orphan's default Core plan
     // leaves its dependencies pointing at a different materialized SDK package.
     let plan = beskid_analysis::projects::build_compile_plan(
         &package.join("corelib_compiler_sdk.bproj"),

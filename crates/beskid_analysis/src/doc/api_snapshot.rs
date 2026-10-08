@@ -223,15 +223,15 @@ mod tests {
 
     #[test]
     fn api_symbol_key_serializes_as_json_string() {
-        let key = ApiSymbolKey::new("corelib::Std::Console::Esc");
+        let key = ApiSymbolKey::new("corelib::Console::Esc");
         let json = serde_json::to_string(&key).expect("serialize");
-        assert_eq!(json, "\"corelib::Std::Console::Esc\"");
+        assert_eq!(json, "\"corelib::Console::Esc\"");
     }
 
     #[test]
     fn api_symbol_key_deserializes_from_json_string() {
-        let key: ApiSymbolKey = serde_json::from_str("\"corelib::Std::Console::Esc\"").expect("deserialize");
-        assert_eq!(key.as_str(), "corelib::Std::Console::Esc");
+        let key: ApiSymbolKey = serde_json::from_str("\"corelib::Console::Esc\"").expect("deserialize");
+        assert_eq!(key.as_str(), "corelib::Console::Esc");
     }
 
     #[test]
@@ -239,7 +239,7 @@ mod tests {
         let item = ApiDocItem {
             id: Some(1),
             qualified_name: "Esc".into(),
-            symbol_key: Some(ApiSymbolKey::new("corelib::Std::Console::Esc")),
+            symbol_key: Some(ApiSymbolKey::new("corelib::Console::Esc")),
             name: "Esc".into(),
             kind: "function".into(),
             visibility: None,
@@ -266,6 +266,6 @@ mod tests {
             tier: None,
         };
         let value = serde_json::to_value(&item).expect("serialize item");
-        assert_eq!(value.get("symbolKey").and_then(|v| v.as_str()), Some("corelib::Std::Console::Esc"));
+        assert_eq!(value.get("symbolKey").and_then(|v| v.as_str()), Some("corelib::Console::Esc"));
     }
 }

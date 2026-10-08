@@ -2,6 +2,7 @@ use std::collections::HashSet;
 use std::path::{Component, Path};
 
 use crate::projects::error::ProjectError;
+use crate::projects::graph::resolver::{CORE_DEPENDENCY_NAME, is_core_dependency_name};
 use crate::projects::model::{
     DependencySource, ProjectGlueBackend, ProjectGlueOwner, ProjectKind, ProjectLinkSection, ProjectManifest,
     TargetKind, WorkspaceManifest, project_root_block_matches_package_name,
@@ -169,15 +170,25 @@ pub fn validate_manifest(manifest: &ProjectManifest) -> Result<(), ProjectError>
         if !dependency_names.insert(dependency.name.clone()) {
             return Err(ProjectError::Validation(format!("duplicate dependency label `{}`", dependency.name)));
         }
+        if is_core_dependency_name(&dependency.name) && dependency.source != DependencySource::Path {
+            return Err(ProjectError::Validation(format!(
+                "dependency label `{CORE_DEPENDENCY_NAME}` is reserved for the Corelib aggregate and requires source = path"
+            )));
+        }
 
         match dependency.source {
             DependencySource::Path => {
-                if dependency.name.eq_ignore_ascii_case("Std") {
+                if is_core_dependency_name(&dependency.name) {
                     continue;
                 }
                 if dependency.path.as_deref().map(str::trim).unwrap_or("").is_empty() {
+                    let hint = if dependency.name.eq_ignore_ascii_case("Std") {
+                        format!("; the installed Corelib dependency is named `{CORE_DEPENDENCY_NAME}`, not `Std`")
+                    } else {
+                        String::new()
+                    };
                     return Err(ProjectError::Validation(format!(
-                        "dependency `{}` with source = path requires `path`",
+                        "dependency `{}` with source = path requires `path`{hint}",
                         dependency.name
                     )));
                 }

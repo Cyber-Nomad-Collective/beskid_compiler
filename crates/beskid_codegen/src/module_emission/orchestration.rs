@@ -73,6 +73,19 @@ impl CheckedFailureEntry {
     }
 }
 
+/// The exact item keys [`lower_syntax_program`] emits for `items`: the source items plus every
+/// generic specialization, contract witness body and spawn body that module item resolution
+/// discovers. Native Mod callback admission uses this same closure, so a callback reached only
+/// through a witness (`S: ShapeSource` instantiated with `HostShapes`) is admitted exactly when
+/// its body is emitted.
+pub(crate) fn emitted_item_keys(
+    input: &CodegenInput<'_>,
+    items: &[SyntaxModuleItem],
+) -> Result<Vec<beskid_isle::AstNodeKey>, SyntaxModuleEmissionError> {
+    let items = resolve_module_items(input, items).and_then(|items| expand_direct_spawn_items(input, items))?;
+    Ok(items.into_iter().map(|item| item.key).collect())
+}
+
 pub fn checked_failure_entries(
     input: &CodegenInput<'_>,
     items: &[SyntaxModuleItem],

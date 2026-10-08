@@ -109,6 +109,25 @@ impl SemanticError {
         }
     }
 
+    /// [`SemanticError::unavailable_at`] whose message also names the rendered site and the
+    /// reason, so a gap that reaches an unsited boundary (an `anyhow` conversion or the CLI
+    /// `Invalid build request`) still identifies the exact construct. The query family and site
+    /// are the same as `unavailable_at`; only the text gains an `(at <site>: <reason>)` suffix.
+    pub(crate) fn unavailable_at_described(query: &str, site: AstNodeKey, rendered_site: &str, reason: &str) -> Self {
+        let message = Arc::<str>::from(format!(
+            "semantic query `{query}` is unavailable until its AST/Salsa port is complete (at {rendered_site}: \
+             {reason})"
+        ));
+        Self {
+            diagnostics: Arc::from([Arc::clone(&message)]),
+            message,
+            unavailable_query: Some(Arc::from(query)),
+            unavailable_site: Some(site),
+            binding_conflict: None,
+            bound_violation: None,
+        }
+    }
+
     /// The call specialization authority's own rejection of a call that binds `parameter` to two
     /// different types. It stays an unavailable `call_abi_signature` for every consumer that only
     /// asks whether a specialization exists, and carries the conflict for the legality gate.

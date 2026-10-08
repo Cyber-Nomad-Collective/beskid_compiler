@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Lower explicitly selected current-generation callables through their reachable source union while retaining ordinary import and callback admission.
 
+### Changed
+
+- Remove the `Std` module namespace. Logical module paths are package-native:
+  host modules are unprefixed and Corelib packages keep their own roots
+  (`Core.*`, `Testing.*`, `Concurrency.*`, `Beskid.Compiler.*`). The implicit
+  Corelib dependency label is `Core`; it is reserved for the Corelib aggregate
+  and requires `source = path`. A `Std.`-qualified import or module path now
+  fails with E1105/E1108 and names the package-native replacement. The App-only
+  `Std.*` alias layer and the shard-local bare-path registry are removed.
+
 ### Added
 
 - Add a Rust Glue peer service using the shared bounded codec and frame pump,

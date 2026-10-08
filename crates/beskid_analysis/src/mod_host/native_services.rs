@@ -23,6 +23,16 @@ fn bounds(v: &Value) -> Result<Value> {
     }
     Ok(json!({"max_nodes":nodes,"max_depth":depth}))
 }
+/// The retained-claim token of a `CatchallWitness` record argument. Fails closed on any other
+/// shape, including a bare token: the callback's single parameter is the witness itself.
+fn catchall_witness_token(witness: &Value) -> Result<u64> {
+    witness
+        .as_object()
+        .context("catchall witness argument is not a CatchallWitness record")?
+        .get("token")
+        .and_then(Value::as_u64)
+        .context("catchall witness token absent")
+}
 fn some(v: Value) -> Value {
     json!({"Some":{"value":v}})
 }
@@ -132,7 +142,10 @@ impl WorkerServices<'_> {
                 "span":{"start":span["start"],"end":span["end"],"line_start":span["lineStart"],"column_start":span["columnStart"],"line_end":span["lineEnd"],"column_end":span["columnEnd"]}}))?;
             super::native_semantic_values::catchall_result(&response)?
         } else if operation == "__mod_semantic_validate_catchall" {
-            let response = self.request(json!({"kind":"ValidateCatchall","token":arg(0)?}))?;
+            // `ValidateCatchall(CatchallWitness witness)` passes the whole witness record: the
+            // callback signature is the wrapper's own. The retained claim is keyed by its token.
+            let token = catchall_witness_token(arg(0)?)?;
+            let response = self.request(json!({"kind":"ValidateCatchall","token":token}))?;
             super::native_semantic_values::catchall_result(&response)?
         } else {
             let query =
@@ -264,5 +277,39 @@ impl WorkerServices<'_> {
         };
         let ty = u32::try_from(callback["result_type"].as_u64().context("callback result type absent")?)?;
         self.types.build(arena, ty, &result)
+    }
+}
+
+#[cfg(test)]
+mod catchall_witness_tests {
+    use serde_json::json;
+
+    use super::catchall_witness_token;
+
+    #[test]
+    fn v06_validate_catchall_reads_the_token_of_the_witness_record() {
+        let witness = json!({"token": 41, "owner": {"token": 7}, "field": {}, "map": {"token": 9}, "value": {}});
+        assert_eq!(catchall_witness_token(&witness).unwrap(), 41);
+    }
+
+    #[test]
+    fn v06_canonical_sdk_passes_the_witness_record_to_validate_catchall() {
+        let semantic = beskid_abi::sdk_source::canonical_sdk_sources()
+            .iter()
+            .find(|source| source.path() == "src/Beskid/Compiler/Semantic.bd")
+            .expect("canonical Semantic.bd is embedded");
+        let source = std::str::from_utf8(semantic.bytes()).expect("Semantic.bd is UTF-8");
+        let wrapper = concat!(
+            "ValidateCatchall(CatchallWitness witness) {\n",
+            "    return __mod_semantic_validate_catchall(witness);\n",
+            "}"
+        );
+        assert!(source.contains(wrapper), "the SDK wrapper must pass the witness record itself");
+    }
+
+    #[test]
+    fn v06_validate_catchall_rejects_a_bare_token_argument() {
+        assert!(catchall_witness_token(&json!(41)).is_err());
+        assert!(catchall_witness_token(&json!({"owner": {"token": 7}})).is_err());
     }
 }

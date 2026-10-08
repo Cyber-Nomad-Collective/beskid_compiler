@@ -113,11 +113,26 @@ impl Resolver {
         self.lookup_named_item_in_module(segments, &item_name)
     }
 
+    /// The nominal item a method receiver names. `resolve_type` records a complex type under its
+    /// path span, not the outer type span: a type-body method's receiver is re-spanned to the
+    /// method (see `MethodDefinition::parse_with_receiver`) while its path keeps the definition
+    /// span, so only the path span carries the resolution.
     pub(super) fn receiver_item_id_for_type(&self, receiver_type: &Spanned<Type>) -> Option<ItemId> {
-        match self.tables.resolved_types.get(&receiver_type.span) {
+        let Type::Complex(path) = &receiver_type.node else {
+            return None;
+        };
+        match self.tables.resolved_types.get(&path.span) {
             Some(ResolvedType::Item(item_id)) => Some(*item_id),
             _ => None,
         }
+    }
+
+    /// The enclosing type-body method's unique sibling method named `name`, if any. Mirrors
+    /// `unqualified_enclosing_method_call` in `beskid_queries`: an unqualified call inside a
+    /// method declared in a `type X { }` body binds to the sibling method before any lexical or
+    /// module lookup, and only when exactly one sibling carries the name.
+    pub(super) fn is_unique_sibling_method(&self, name: &str) -> bool {
+        self.current_type_sibling_methods.as_ref().and_then(|methods| methods.get(name)).is_some_and(|count| *count == 1)
     }
 
     pub(super) fn receiver_has_field(&self, field_name: &str) -> bool {

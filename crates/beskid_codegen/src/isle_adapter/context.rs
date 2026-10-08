@@ -56,7 +56,15 @@ impl<'db> SyntaxNodeFacts<'db> {
     }
 
     pub(super) fn query<T>(&self, result: beskid_queries::SemanticQueryResult<T>) -> Option<T> {
-        result.ok().flatten()
+        match result {
+            Ok(value) => value,
+            Err(error) => {
+                // A fact that ISLE treats as absent can be a semantic gap; the opt-in trace keeps
+                // its text so a later MissingRuleOrFact names the query that declined.
+                crate::isle_trace::event(|| format!("event=fact.unavailable detail={error}"));
+                None
+            }
+        }
     }
 
     /// Return the sole immutable specialization carried by this per-item fact view.

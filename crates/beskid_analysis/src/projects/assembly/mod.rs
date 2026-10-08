@@ -108,7 +108,7 @@ pub struct ProgramAssembly {
     pub discovery: AssemblyDiscovery,
     pub recovery_policy: crate::projects::AssemblyRecoveryPolicy,
     pub module_index: Arc<ModuleIndex>,
-    pub has_std_dependency: bool,
+    pub has_core_dependency: bool,
     /// Physical units copied from compiler-owned Foundation sources by workspace materialization.
     pub trusted_corelib_service_paths: Arc<[PathBuf]>,
     /// Owner library labels of the host manifest's `glue "<library>"` blocks. An `[Extern]`
@@ -127,7 +127,7 @@ impl std::fmt::Debug for ProgramAssembly {
             .field("root_set", &self.root_set)
             .field("discovery", &self.discovery)
             .field("recovery_policy", &self.recovery_policy)
-            .field("has_std_dependency", &self.has_std_dependency)
+            .field("has_core_dependency", &self.has_core_dependency)
             .field("trusted_corelib_service_paths", &self.trusted_corelib_service_paths.len())
             .field("glue_libraries", &self.glue_libraries)
             .finish()
@@ -141,7 +141,7 @@ impl ProgramAssembly {
         entry_index: usize,
         discovery: AssemblyDiscovery,
         module_index: Arc<ModuleIndex>,
-        has_std_dependency: bool,
+        has_core_dependency: bool,
         generation: SyntaxGenerationId,
     ) -> Self {
         let syntax_indexes =
@@ -159,7 +159,7 @@ impl ProgramAssembly {
             discovery,
             recovery_policy: crate::projects::AssemblyRecoveryPolicy::Strict,
             module_index,
-            has_std_dependency,
+            has_core_dependency,
             trusted_corelib_service_paths: Arc::from([]),
             glue_libraries: Arc::from([]),
         }

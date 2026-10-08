@@ -14,7 +14,7 @@ use beskid_queries::{
 };
 use std::{path::PathBuf, sync::Arc};
 
-fn fact_result<T>(
+pub(super) fn fact_result<T>(
     owner_path: PathBuf,
     owner_source: String,
     deadline_path: PathBuf,
@@ -363,7 +363,8 @@ fn deadline_literal_does_not_restrict_an_unrelated_lookalike() {
     let owner_path = temp.path().join("Main.bd");
     let deadline_path = temp.path().join("Core/Time/Deadline.bd");
     let owner_source = "use Core.Time.Deadline; Deadline Make() { return Deadline { monotonicNanos: 1_i64 }; }";
-    let deadline_source = "pub type Deadline { i64 monotonicNanos }";
+    // The general field rule still applies: only a `pub` field of the lookalike is constructible.
+    let deadline_source = "pub type Deadline { pub i64 monotonicNanos }";
     assert!(
         fact_result(
             owner_path,

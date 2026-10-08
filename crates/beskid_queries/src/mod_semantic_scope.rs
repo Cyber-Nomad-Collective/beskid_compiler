@@ -50,7 +50,7 @@ impl<'a> QueryModSemanticScope<'a> {
             current.entry_index,
             current.discovery,
             Arc::clone(&current.module_index),
-            current.has_std_dependency,
+            current.has_core_dependency,
             generation,
         )
         .with_recovery_policy(current.recovery_policy)

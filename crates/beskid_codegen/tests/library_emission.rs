@@ -51,7 +51,7 @@ fn entry_less_library_front(root: &std::path::Path) -> FrontEndTypedResult {
             source_root: dependency_root.join("src"),
         }],
         unresolved_dependencies: Vec::new(),
-        has_std_dependency: false,
+        has_core_dependency: false,
     };
     let entry_path = plan_entry_path(&plan, &source_root);
     let resolved = resolved_input_from_plan(entry_path, String::new(), plan, None, None);

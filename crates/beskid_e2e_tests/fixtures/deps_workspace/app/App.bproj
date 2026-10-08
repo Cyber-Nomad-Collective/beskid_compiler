@@ -8,7 +8,7 @@ target "App" {
   entry = "Main.bd"
 }
 
-dependency "Core" {
+dependency "Kernel" {
   source = "path"
   path = "../core"
 }

@@ -88,7 +88,7 @@ fn imported_try_diagnostics_share_exact_result_error_authority() {
     }
 }
 
-/// Build a single-unit, no-Std assembly for `source` and return the E1222 counts from the
+/// Build a single-unit assembly without Core for `source` and return the E1222 counts from the
 /// query-backed try authority (shared and isolated) and from the analysis-only path, whose
 /// staged try rule uses the pre-normalize precheck instead of a query authority.
 fn local_try_diagnostic_counts(source: &str) -> (usize, usize, usize) {

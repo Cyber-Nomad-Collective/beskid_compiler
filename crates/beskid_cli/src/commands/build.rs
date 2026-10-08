@@ -275,7 +275,7 @@ fn run_build(args: BuildArgs) -> Result<()> {
         println!("deps: {} materialized dependency project(s)", plan.dependency_projects.len());
         println!(
             "corelib: {}",
-            if plan.has_std_dependency { "available (implicit or declared)" } else { "not available" }
+            if plan.has_core_dependency { "available (implicit or declared)" } else { "not available" }
         );
     }
 

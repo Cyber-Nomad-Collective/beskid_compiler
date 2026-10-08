@@ -168,6 +168,7 @@ impl CompiledSerializationTarget {
         let [owner] = candidates.as_slice() else {
             return Err(reject("serialization target correspondence missing/ambiguous"));
         };
+        require_contribution_field_access(db, *owner, &current_entry.path)?;
         // A copied target claim paired with an unrelated implementation must not
         // authorize a preexisting conformance on the target.
         let entry_syntax = db
@@ -296,6 +297,7 @@ impl ModSemanticQueryAuthority<'_> {
             .ok_or_else(|| Self::error("serialization target has foreign/stale invocation issuer"))?;
         self.validate_key(owner)?;
         self.serialization_shape(target)?;
+        require_contribution_field_access(self.db, owner, &self.assembly.entry_unit().path)?;
         let Node::ImplBlock(block) = &contribution.node else {
             return Err(Self::error("serialization target requires an owned typed impl contribution"));
         };
@@ -358,4 +360,37 @@ pub(super) fn exact_append(
         ));
     }
     Ok(())
+}
+
+/// Serialization contributions are appended to the entry source unit, so a generated adapter
+/// reads and constructs its target from the entry unit. Rust places derive output in the
+/// module of the input item, where private fields are visible; this merger does the same only
+/// when the target is declared in the entry unit. A target record declared in another source
+/// unit with any non-`pub` value field cannot be bound: its adapter would read or build a field
+/// that is private to the declaring unit (E1211). Rejecting at the binding keeps the field
+/// visibility policy single-sourced; no contribution is attributed to another unit.
+pub(super) fn require_contribution_field_access(
+    db: &dyn Db,
+    owner: AstNodeKey,
+    entry: &std::path::Path,
+) -> Result<(), ModSemanticError> {
+    let contribution = AstNodeKey {
+        unit: SourceUnitId::new(db, entry.to_path_buf()),
+        generation: owner.generation,
+        node: crate::AstNodeId(0),
+    };
+    let inaccessible = crate::semantic_contract::serialization_contribution_inaccessible_fields(db, contribution, owner)
+        .map_err(|error| ModSemanticQueryAuthority::error(&error.to_string()))?;
+    let Some(field) = inaccessible.first() else {
+        return Ok(());
+    };
+    let name = mod_shape_lexical_path(db, owner).map(|path| path.join(".")).unwrap_or_else(|| "<unnamed>".into());
+    Err(ModSemanticQueryAuthority::error(&format!(
+        "serialization target `{name}` is declared in source unit `{}` and its field `{field}` is not `pub`; \
+         generated serialization adapters are merged into the entry source unit `{}` and cannot read or \
+         construct a field that is private to another source unit (E1211); mark the field `pub` or declare \
+         the type in the entry source unit",
+        owner.unit.path(db).display(),
+        entry.display(),
+    )))
 }

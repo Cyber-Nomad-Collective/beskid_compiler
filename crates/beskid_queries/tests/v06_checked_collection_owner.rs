@@ -50,7 +50,7 @@ fn fixture(
             vec![]
         },
         unresolved_dependencies: vec![],
-        has_std_dependency: false,
+        has_core_dependency: false,
     };
     let assembly = Arc::new(
         assemble_program_with_materializer(&plan, None, &path, None, &AssemblyOptions::default(), None, None).unwrap(),

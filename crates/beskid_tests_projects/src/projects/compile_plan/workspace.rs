@@ -43,9 +43,9 @@ fn materialized_dependency_names(workspace: &beskid_analysis::projects::Prepared
 
 #[test]
 fn relocated_sibling_path_keeps_lock_bytes_and_materialized_names() {
-    // Keep the implicit Std root stable across both plans while other project tests
+    // Keep the implicit Core root stable across both plans while other project tests
     // exercise temporary Corelib installations; acquire this before the cwd lock.
-    let _env = super::super::std_dependency_env_lock();
+    let _env = super::super::core_dependency_env_lock();
     let original_parent = temp_case_dir("portable_sibling_original");
     let moved_parent = temp_case_dir("portable_sibling_moved");
     let original_tree = original_parent.join("tree");
@@ -129,17 +129,20 @@ fn distinct_installed_corelib_roots_keep_lock_bytes_and_materialized_names() {
     let first_corelib = fixture.join("first-install");
     let second_corelib = fixture.join("second-install");
     for install in [&first_corelib, &second_corelib] {
-        write_portable_test_project(&install.join("beskid_corelib"), "Std", None);
+        write_portable_test_project(&install.join("beskid_corelib"), "corelib", None);
+        // A verified installed Corelib carries every member its workspace manifest lists.
+        fs::write(install.join("CoreLib.bws"), "workspace {\n  name = \"corelib\"\n  resolver = v1\n  schema = \"beskid.workspace.v1\"\n}\n\nmember \"corelib\" {\n  path = \"beskid_corelib\"\n}\n")
+            .expect("write installed Corelib workspace manifest");
         let fingerprint = fingerprint_corelib_bundle_dir(install).expect("fingerprint installed Corelib fixture");
         fs::write(install.join(CORELIB_BUNDLE_FINGERPRINT_FILE), format!("{fingerprint}\n"))
             .expect("mark verified Corelib fixture");
     }
 
     let (first_lock, first_names) = {
-        let _corelib_root = super::super::scoped_std_dependency_root(&first_corelib);
+        let _corelib_root = super::super::scoped_core_dependency_root(&first_corelib);
         with_cwd_at_workspace_root(&fixture, || {
             let plan = build_compile_plan(&app_manifest, None).expect("plan with first installed Corelib");
-            assert!(plan.has_std_dependency, "fixture must resolve implicit Std");
+            assert!(plan.has_core_dependency, "fixture must resolve implicit Core");
             let workspace = prepare_project_workspace(&plan).expect("workspace with first installed Corelib");
             (fs::read(&workspace.lockfile_path).expect("read first lock"), materialized_dependency_names(&workspace))
         })
@@ -149,10 +152,10 @@ fn distinct_installed_corelib_roots_keep_lock_bytes_and_materialized_names() {
     assert!(!first_names.is_empty());
 
     let (second_lock, second_names) = {
-        let _corelib_root = super::super::scoped_std_dependency_root(&second_corelib);
+        let _corelib_root = super::super::scoped_core_dependency_root(&second_corelib);
         with_cwd_at_workspace_root(&fixture, || {
             let plan = build_compile_plan(&app_manifest, None).expect("plan with second installed Corelib");
-            assert!(plan.has_std_dependency, "fixture must resolve implicit Std");
+            assert!(plan.has_core_dependency, "fixture must resolve implicit Core");
             let workspace = prepare_project_workspace_with_options(
                 &plan,
                 WorkspacePrepareOptions { offline: false, frozen: false, locked: true, refresh_lock: false },
@@ -224,7 +227,7 @@ target "App" {
   entry = "Main.bd"
 }
 
-dependency "Core" {
+dependency "Kernel" {
   source = "path"
   path = "../Core"
 }
@@ -314,7 +317,7 @@ target "App" {
   entry = "Main.bd"
 }
 
-dependency "Core" {
+dependency "Kernel" {
   source = "path"
   path = "../Core"
 }
@@ -331,12 +334,12 @@ dependency "Core" {
         assert!(lockfile_path.is_file());
         assert_same_canonical_path(&workspace.lockfile_path, &lockfile_path);
         assert!(!workspace.materialized_dependencies.is_empty());
-        assert!(workspace.materialized_dependencies.iter().any(|dependency| dependency.dependency_name == "Core"));
+        assert!(workspace.materialized_dependencies.iter().any(|dependency| dependency.dependency_name == "Kernel"));
         assert!(workspace.materialized_dependencies[0].materialized_source_root.is_dir());
         let lock_content = fs::read_to_string(&lockfile_path).expect("read lockfile");
         assert!(lock_content.starts_with("# Project.lock v2\n"));
         assert!(lock_content.contains("project_name=App"));
-        assert!(lock_content.contains("name=Core"));
+        assert!(lock_content.contains("name=Kernel"));
 
         let deps_src_root = app_dir.join("obj").join("beskid").join("deps").join("src");
         assert!(deps_src_root.is_dir());
@@ -402,7 +405,7 @@ target "App" {
   entry = "Main.bd"
 }
 
-dependency "Core" {
+dependency "Kernel" {
   source = "path"
   path = "../Core"
 }

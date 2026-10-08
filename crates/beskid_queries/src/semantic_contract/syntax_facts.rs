@@ -483,8 +483,11 @@ pub(super) fn reachable_items_tracked(
     if syntax.syntax_index(db).kind(program.node) != Some(beskid_analysis::syntax_query::NodeKind::Program)
         || !matches!(
             entry_syntax.syntax_index(db).kind(entry.node),
+            // Methods are entries too: native Mod adapters enter through selected contract
+            // methods and factory `Create` methods, and `visit` already follows method callees.
             Some(
                 beskid_analysis::syntax_query::NodeKind::FunctionDefinition
+                    | beskid_analysis::syntax_query::NodeKind::MethodDefinition
                     | beskid_analysis::syntax_query::NodeKind::TestDefinition
             )
         )

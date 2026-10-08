@@ -128,7 +128,7 @@ fn format_binary_ops_emit_canonical_operators() {
 
 #[test]
 fn format_type_enum_contract_match() {
-    let src = r#"use std.io;
+    let src = r#"use core.io;
 pub type Point { i32 x, i32 y, }
 pub enum E { A, B(i32 x,) }
 pub contract C { i32 m(); Other }
@@ -138,7 +138,7 @@ let v = match 0 { _ => 1, };
     let p = parse_program(src).expect("parse");
     let out = format_program(&p).expect("format");
     let expected = concat!(
-        "use Std.Io;\n",
+        "use Core.Io;\n",
         "\n",
         "pub type Point\n",
         "{\n",

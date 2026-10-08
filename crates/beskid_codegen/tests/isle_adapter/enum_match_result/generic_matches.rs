@@ -262,7 +262,7 @@ fn imported_generic_result_match_specialization_preserves_payload_provenance() {
         ),
         ("Core/Results.bd", "pub enum Result<TValue, TError> { Ok(TValue value), Error(TError error) }"),
         ("Http/Errors.bd", "pub enum HttpError { InvalidFraming(), Closed() }"),
-        ("Http/Requests.bd", "pub type Request { i64 id, }"),
+        ("Http/Requests.bd", "pub type Request { pub i64 id, }"),
     ]);
 }
 
@@ -275,7 +275,7 @@ fn imported_result_binding_array_field_flows_into_a_call_argument() {
         ),
         ("Core/Results.bd", "pub enum Result<TValue, TError> { Ok(TValue value), Error(TError error) }"),
         ("Http/Errors.bd", "pub enum HttpError { InvalidFraming(), Closed() }"),
-        ("Http/Requests.bd", "pub type Header { string name, } pub type Request { string method, Header[] headers, }"),
+        ("Http/Requests.bd", "pub type Header { pub string name, } pub type Request { pub string method, pub Header[] headers, }"),
     ]);
 }
 

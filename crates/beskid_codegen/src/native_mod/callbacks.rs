@@ -12,13 +12,49 @@ pub(crate) struct NativeModCallbackCapability {
 impl NativeModCallbackCapability {
     /// Called only by the prepared native adapter issuer after exact SDK/source layout
     /// and contract witness selection. Never exposed as a caller construction API.
-    pub(super) fn for_selected_closure(input: &CodegenInput<'_>, selected: &[AstNodeKey]) -> anyhow::Result<Self> {
+    ///
+    /// The admitted callbacks are exactly those called inside the bodies that module emission
+    /// lowers for the selected callables: their reachable source closure, expanded by the same
+    /// specialization, contract-witness and spawn resolution (`emitted_item_keys`). A callback
+    /// reached only through a witness (`S: ShapeSource` with `S = HostShapes`) is therefore
+    /// admitted, and nothing outside the emitted bodies is.
+    pub(super) fn for_selected_closure(
+        input: &CodegenInput<'_>,
+        selected: &[AstNodeKey],
+        items: &[crate::SyntaxModuleItem],
+    ) -> anyhow::Result<Self> {
+        use anyhow::Context;
+        let generation = input.typed_program().generation;
+        let mut reachable = HashSet::new();
+        for key in selected.iter().copied() {
+            let root = input
+                .roots()
+                .iter()
+                .copied()
+                .find(|root| root.unit == key.unit)
+                .context("native callable has no registered source root")?;
+            let closure = beskid_queries::reachable_items(input.database(), root, key)?
+                .with_context(|| {
+                    format!(
+                        "native callable reachable facts are incomplete at {}",
+                        beskid_queries::format_ast_node_site(input.database(), key)
+                    )
+                })?;
+            reachable.extend(closure.iter().copied());
+            reachable.insert(key);
+        }
+        let source_items = items.iter().filter(|item| reachable.contains(&item.key)).cloned().collect::<Vec<_>>();
+        let emitted = crate::module_emission::emitted_item_keys(input, &source_items)
+            .map_err(|error| anyhow::anyhow!("native callback closure resolution failed: {error}"))?;
         let mut wrappers = HashSet::new();
         let mut callbacks = Vec::new();
         let mut visited = HashSet::new();
-        let mut pending = selected.iter().copied().map(|key| (key, 0usize)).collect::<Vec<_>>();
+        let mut pending = emitted.into_iter().map(|key| (key, 0usize)).collect::<Vec<_>>();
         while let Some((key, depth)) = pending.pop() {
-            if depth > 1024 {
+            if key.generation != generation {
+                anyhow::bail!("native SDK callback closure contains a stale item");
+            }
+            if depth > 4096 {
                 anyhow::bail!("native SDK callback closure exceeds depth budget");
             }
             if !visited.insert(key) {
@@ -27,30 +63,20 @@ impl NativeModCallbackCapability {
             if visited.len() > 1_000_000 {
                 anyhow::bail!("native SDK callback closure exceeds traversal budget");
             }
-            if let Some(lowering) = call_lowering(input.database(), key)? {
-                match lowering {
-                    CallLowering::NativeModCallback(callback) => {
-                        let wrapper = callback.wrapper();
-                        super::authority::require_sdk_package(input, wrapper)?;
-                        if wrappers.insert(wrapper) { callbacks.push(callback); }
-                    }
-                    // Follow canonical resolved callees as well as syntax children.
-                    // A callback used through a helper must retain the same issuer
-                    // checks; a helper's spelling cannot grant callback authority.
-                    CallLowering::Direct(callee) => {
-                        if callee.generation != input.typed_program().generation {
-                            anyhow::bail!("native SDK callback closure contains a stale callee");
-                        }
-                        pending.push((callee, depth + 1));
-                    }
-                    _ => {}
+            // A source callback always classifies first in `path_call_resolution`; every other
+            // call form is lowered by its own fact and is not a callback.
+            if let Ok(Some(CallLowering::NativeModCallback(callback))) = call_lowering(input.database(), key) {
+                let wrapper = callback.wrapper();
+                super::authority::require_sdk_package(input, wrapper)?;
+                if wrappers.insert(wrapper) {
+                    callbacks.push(callback);
                 }
             }
             if let Some(children) = child_nodes(input.database(), key)? {
                 pending.extend(children.iter().copied().map(|child| (child, depth + 1)));
             }
         }
-        Ok(Self { generation: input.typed_program().generation, wrappers: Arc::new(wrappers), callbacks: Arc::new(callbacks) })
+        Ok(Self { generation, wrappers: Arc::new(wrappers), callbacks: Arc::new(callbacks) })
     }
     pub(super) fn callbacks(&self) -> impl Iterator<Item=NativeModCallback> + '_ { self.callbacks.iter().copied() }
     pub(super) fn wrappers(&self) -> impl Iterator<Item=AstNodeKey> + '_ { self.wrappers.iter().copied() }

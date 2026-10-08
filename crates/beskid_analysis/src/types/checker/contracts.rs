@@ -24,24 +24,33 @@ impl<'a> TypeChecker<'a> {
         let Some(method_item_id) = self.item_id_for_span(method_span) else {
             return;
         };
-        // Each method's receiver type is re-spanned to the method itself, so the resolver's type
-        // fact sits on the receiver path, not on this span. The declared receiver type is then
-        // the authority, as in the unit surface (`surface/builder.rs::seed_method_receiver`).
-        let receiver_item_id = match self.resolved_type_at(def.node.receiver_type.span) {
-            Some(ResolvedType::Item(item_id)) => Some(item_id),
-            _ => {
-                // Seeding only looks the receiver up; the method's own typing pass reports an
-                // unresolvable receiver.
-                let errors_before = self.errors.len();
-                let receiver = self.type_id_for_type(&def.node.receiver_type);
-                self.errors.truncate(errors_before);
-                receiver.and_then(|type_id| self.named_item_id(type_id))
-            }
-        };
+        // Each method's receiver type is re-spanned to the method itself, so no resolver fact
+        // sits on that span: the declared receiver path is the only authority. Looking the method
+        // span up would fall through to the merged, source-less span index, whose
+        // innermost-containing match can be a dependency type definition covering the same byte
+        // range (`TcpListener` in another file), registering this method under that receiver.
+        let receiver_item_id = self.declared_receiver_item(&def.node.receiver_type);
         let Some(receiver_item_id) = receiver_item_id else {
             return;
         };
         self.methods_by_receiver.insert((receiver_item_id, def.node.name.node.name.clone()), method_item_id);
+    }
+
+    /// The nominal item a method's declared receiver names: the resolver's exact fact on the
+    /// receiver path, else the declared receiver type. The method span itself is never consulted.
+    fn declared_receiver_item(&mut self, receiver: &Spanned<Type>) -> Option<ItemId> {
+        if let Type::Complex(path) = &receiver.node
+            && let Some(ResolvedType::Item(item_id)) =
+                self.resolution.tables.resolved_type_at(path.span, self.current_source_path.as_ref())
+        {
+            return Some(item_id);
+        }
+        // Seeding only looks the receiver up; the method's own typing pass reports an
+        // unresolvable receiver.
+        let errors_before = self.errors.len();
+        let receiver = self.type_id_for_type(receiver);
+        self.errors.truncate(errors_before);
+        receiver.and_then(|type_id| self.named_item_id(type_id))
     }
 
     pub(super) fn seed_contract_signatures(&mut self, program: &Spanned<Program>) {

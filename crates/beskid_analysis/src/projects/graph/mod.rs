@@ -15,4 +15,4 @@ pub use project_graph::{
     DependencyEdge, ProjectGraph, ProjectGraphNode, UnresolvedDependency, UnresolvedDependencyKind,
 };
 pub use projection::{collect_dependency_projects, collect_unresolved_dependencies};
-pub use resolver::WorkspaceResolutionRules;
+pub use resolver::{CORE_DEPENDENCY_NAME, WorkspaceResolutionRules, is_core_dependency_name};

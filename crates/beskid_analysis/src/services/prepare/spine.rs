@@ -50,9 +50,12 @@ pub(super) fn run_prepare_spine(
     mut fact_authority: Option<&mut dyn SemanticFactAuthority>,
 ) -> Result<PrepareSpineOutput> {
     // Injected executor identity is not part of a reusable session cache key.
-    let use_session_cache = use_session_cache && options.mod_invoker.is_none();
+    // A native Mod adapter closure is a different assembly than the session's ordinary one.
+    let use_session_cache =
+        use_session_cache && options.mod_invoker.is_none() && !options.native_mod_adapter_sources;
     let mut assembly_options = assembly_options_for_prepare(plan, options.front_end.assembly_discovery);
     assembly_options.recovery_policy = options.front_end.assembly_recovery;
+    assembly_options.native_mod_adapter_sources = options.native_mod_adapter_sources;
 
     let session_fingerprint = SessionFingerprint::for_entry(plan, entry_path);
     let _prepare_guard = tracing::info_span!(

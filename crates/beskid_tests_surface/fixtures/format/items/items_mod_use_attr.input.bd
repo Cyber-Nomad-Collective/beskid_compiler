@@ -1,6 +1,6 @@
 pub mod remote;
-use std.io;
+use core.io;
 pub mod nest {
-pub use std.io;
+pub use core.io;
 pub unit inner() { return; }
 }

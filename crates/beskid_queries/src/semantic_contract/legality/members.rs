@@ -86,17 +86,22 @@ fn unknown_struct_literal_field(
     literal: &StructLiteralExpression,
 ) -> Option<MemberReferenceFinding> {
     let declaration = resolve_nominal_layout_declaration(db, program, index, literal_key, &literal.path.node)?;
-    if let Ok(Some(private_field)) = private_deadline_literal_field(db, literal_key, declaration) {
-        let supplied = literal.fields.iter().find(|field| field.node.name.node.name == private_field);
+    if let Ok(private_fields) = inaccessible_literal_fields(db, literal_key, declaration)
+        && let Some(first_private) = private_fields.first()
+    {
+        // Prefer the supplied private field as the site; an omitted one is reported at the literal.
+        let supplied = literal
+            .fields
+            .iter()
+            .find(|field| private_fields.iter().any(|name| name.as_ref() == field.node.name.node.name));
+        let name =
+            supplied.map_or_else(|| first_private.clone(), |field| Arc::from(field.node.name.node.name.as_str()));
         let site = supplied
             .and_then(|field| {
                 index.direct_child_id(program, literal_key.node, beskid_analysis::syntax_query::DynNodeRef::from(field))
             })
             .map_or(literal_key, |node| AstNodeKey { node, ..literal_key });
-        return Some(MemberReferenceFinding {
-            site,
-            kind: MemberReferenceKind::InaccessibleStructField { name: Arc::from(private_field) },
-        });
+        return Some(MemberReferenceFinding { site, kind: MemberReferenceKind::InaccessibleStructField { name } });
     }
     let declared = declared_member_names(db, declaration)?;
     let field = literal.fields.iter().find(|field| !declared.fields.contains(field.node.name.node.name.as_str()))?;
@@ -120,12 +125,24 @@ fn unknown_field_read(
     site: AstNodeKey,
     reference: beskid_analysis::syntax_query::DynNodeRef<'_>,
 ) -> Option<MemberReferenceFinding> {
+    if is_call_callee(program, index, site.node) {
+        // `a.hidden.Method()`: the method itself is `call_lowering`'s, but every receiver
+        // projection before it must still be accessible.
+        let path = reference.of::<beskid_analysis::syntax::PathExpression>()?;
+        let name = first_denied_projection_segment(db, site, path, path.path.node.segments.len() - 1)?;
+        return Some(MemberReferenceFinding {
+            site,
+            kind: MemberReferenceKind::InaccessibleStructField { name: Arc::from(name) },
+        });
+    }
+    // A proven projection chain owns its own visibility answer; any other failure there is a
+    // lowering gap, not a user error.
+    if let Some(projection) = nominal_field_projection(db, site) {
+        return inaccessible_projection_field(db, site, reference, projection.err()?);
+    }
     if let Some(path) = reference.of::<beskid_analysis::syntax::PathExpression>()
         && path.path.node.segments.len() != 2
     {
-        return None;
-    }
-    if is_call_callee(program, index, site.node) || nominal_field_projection(db, site).is_some() {
         return None;
     }
     let FieldAccessReceiver { declaration, layout, field_name, .. } =
@@ -150,6 +167,47 @@ fn unknown_field_read(
         return None;
     }
     Some(MemberReferenceFinding { site, kind: MemberReferenceKind::UnknownStructField { name: Arc::from(field_name) } })
+}
+
+/// A projection chain (`request.targets.targetIds`, `this.a.b`, `call.member`) that crosses a
+/// field without `pub` declared in another source unit. The reported name is the first segment
+/// whose own projection is denied, so `a.hidden.c` names `hidden`.
+fn inaccessible_projection_field(
+    db: &dyn Db,
+    site: AstNodeKey,
+    reference: beskid_analysis::syntax_query::DynNodeRef<'_>,
+    error: SemanticError,
+) -> Option<MemberReferenceFinding> {
+    if error.unavailable_query() != Some(PROJECTION_VISIBILITY) {
+        return None;
+    }
+    let name = if let Some(member) = reference.of::<beskid_analysis::syntax::MemberExpression>() {
+        member.member.node.name.clone()
+    } else {
+        let path = reference.of::<beskid_analysis::syntax::PathExpression>()?;
+        first_denied_projection_segment(db, site, path, path.path.node.segments.len())?
+    };
+    Some(MemberReferenceFinding { site, kind: MemberReferenceKind::InaccessibleStructField { name: Arc::from(name) } })
+}
+
+const PROJECTION_VISIBILITY: &str = "nominal_field_projection.visibility";
+
+/// The first projected segment of `path` (before position `end`) whose own projection is denied
+/// by field visibility.
+fn first_denied_projection_segment(
+    db: &dyn Db,
+    site: AstNodeKey,
+    path: &beskid_analysis::syntax::PathExpression,
+    end: usize,
+) -> Option<String> {
+    let segments = &path.path.node.segments;
+    (1..end.min(segments.len())).find_map(|position| {
+        let segment = crate::semantic_contract::layouts::path_projection_segment(db, site, position)?;
+        let denied = nominal_field_projection(db, segment)?
+            .err()
+            .is_some_and(|error| error.unavailable_query() == Some(PROJECTION_VISIBILITY));
+        denied.then(|| segments[position].node.name.node.name.clone())
+    })
 }
 
 pub(super) fn is_call_callee(

@@ -10,7 +10,7 @@ fn v06_real_compiler_sdk_collector_generator_builds_executable_descriptor() {
     fs::copy(compiler.join("crates/beskid_tests_mods/fixtures/mods/native_sdk/Src/Mod.bd"), project.join("Src/Mod.bd"))
         .unwrap();
     let manifest = project.join("NativeMod.bproj");
-    // The compiler SDK ships in the implicit Std Corelib closure; a second explicit path dependency on the
+    // The compiler SDK ships in the implicit Core Corelib closure; a second explicit path dependency on the
     // checkout package would duplicate `corelib_compiler_sdk` and `corelib_foundation` in the lock.
     fs::write(&manifest, "NativeMod { name = \"NativeMod\" version = \"0.6.0\" type = Mod root = \"Src\" mod { capabilities = [read_project_sources, emit_syntax, query_semantic_snapshot] } }\n").unwrap();
     let output = Command::new(env!("CARGO_BIN_EXE_beskid_cli"))
@@ -61,9 +61,9 @@ fn v06_qualified_mod_worker_generates_callable_and_generic_record_for_real_host(
     fs::write(project.join("NativeMod.bproj"), "NativeMod { name = \"NativeMod\" version = \"0.6.0\" type = Mod root = \"Src\" mod { capabilities = [read_project_sources, emit_syntax, query_semantic_snapshot] } }\n").unwrap();
     let host = root.path().join("host");
     fs::create_dir_all(host.join("Src")).unwrap();
-    fs::write(host.join("Src/Main.bd"),"use Std.Testing.Assert;\nunit Main() { GeneratedUnit(); SerializedRecord<u32> value = SerializedRecord<u32> { Value: 7 }; Assert.True(value.Value == 7, \"generated generic field\"); }\n").unwrap();
+    fs::write(host.join("Src/Main.bd"),"use Testing.Assert;\nunit Main() { GeneratedUnit(); SerializedRecord<u32> value = SerializedRecord<u32> { Value: 7 }; Assert.True(value.Value == 7, \"generated generic field\"); }\n").unwrap();
     let manifest = host.join("Host.bproj");
-    fs::write(&manifest,format!("Host {{ name = \"Host\" version = \"0.6.0\" root = \"Src\" }}\ndependency \"NativeMod\" {{ source = path path = {:?} }}\n",project.to_string_lossy())).unwrap();
+    fs::write(&manifest,format!("Host {{ name = \"Host\" version = \"0.6.0\" root = \"Src\" }}\ndependency \"NativeMod\" {{ source = path path = {:?} }}\ntarget \"main\" {{ kind = App entry = \"Main.bd\" }}\n",project.to_string_lossy())).unwrap();
     let output = Command::new(env!("CARGO_BIN_EXE_beskid_cli"))
         .args(["run", "--project"])
         .arg(&manifest)

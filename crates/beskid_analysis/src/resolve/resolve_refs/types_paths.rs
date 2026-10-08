@@ -95,6 +95,7 @@ impl Resolver {
                     self.mark_imported_scope_name_used(root);
                     self.mark_module_import_alias_used(root);
                 }
+                self.mark_module_imports_covering(&segments);
             }
             ModulePathLookup::ModuleMissing => {
                 if let Some(local) = self.resolve_local(&segments[0]) {
@@ -155,13 +156,14 @@ impl Resolver {
             return;
         }
         let lookup_segments = self.expand_import_alias(&segments);
-        match self.resolve_item_in_module_path(&segments, &lookup_segments) {
+        match self.resolve_type_item_in_module_path(&segments, &lookup_segments) {
             ModulePathLookup::Found(item) => {
                 self.tables.insert_type(path.span, ResolvedType::Item(item));
                 if let Some(root) = segments.first() {
                     self.mark_imported_scope_name_used(root);
                     self.mark_module_import_alias_used(root);
                 }
+                self.mark_module_imports_covering(&segments);
             }
             ModulePathLookup::ModuleMissing => {
                 self.errors.push(ResolveError::UnknownModulePath {
@@ -175,6 +177,28 @@ impl Resolver {
             ModulePathLookup::NotVisible { module_path, name } => {
                 self.errors.push(ResolveError::PrivateItemInModule { module_path, name, span: path.span });
             }
+        }
+    }
+
+    /// Module-path lookup in type position: a module is never a type. When the path's last
+    /// segment names a module declaration (`Beskid.Syntax.Nodes.Field`, declared by
+    /// `pub mod Beskid.Syntax.Nodes.Field;`), the type is that module's homonymous item, as in
+    /// `beskid_queries::resolve_type_declaration`; without one the path names no type.
+    fn resolve_type_item_in_module_path(&self, original: &[String], lookup: &[String]) -> ModulePathLookup {
+        let is_type_item = |item: super::super::ids::ItemId| {
+            self.items
+                .get(item.0)
+                .is_some_and(|info| matches!(info.kind, ItemKind::Type | ItemKind::Enum | ItemKind::Contract))
+        };
+        match self.resolve_item_in_module_path(original, lookup) {
+            ModulePathLookup::Found(item) if !is_type_item(item) => match self.lookup_homonymous_module_item(lookup) {
+                ModulePathLookup::Found(homonymous) if is_type_item(homonymous) => ModulePathLookup::Found(homonymous),
+                _ => {
+                    let (module_path, name) = lookup.split_at(lookup.len() - 1);
+                    ModulePathLookup::NameMissing { module_path: module_path.join("::"), name: name[0].clone() }
+                }
+            },
+            other => other,
         }
     }
 

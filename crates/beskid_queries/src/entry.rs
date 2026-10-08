@@ -203,7 +203,7 @@ pub fn semantic_diagnostics_for_roots(
         assembly.entry_index,
         assembly.discovery,
         Arc::clone(&assembly.module_index),
-        assembly.has_std_dependency,
+        assembly.has_core_dependency,
         assembly.generation,
     )
     .with_recovery_policy(assembly.recovery_policy)
@@ -386,6 +386,7 @@ pub fn assemble_resolved_input_with_db(
         let mut assembly_options =
             beskid_analysis::projects::assembly_options_for_prepare(plan, options.front_end.assembly_discovery);
         assembly_options.recovery_policy = options.front_end.assembly_recovery;
+        assembly_options.native_mod_adapter_sources = options.native_mod_adapter_sources;
         let assembly = program_assembly(
             db,
             plan,
@@ -536,7 +537,7 @@ mod tests {
             target: Target { name: "Library".to_string(), kind: TargetKind::Lib, entry: None },
             dependency_projects: Vec::new(),
             unresolved_dependencies: Vec::new(),
-            has_std_dependency: false,
+            has_core_dependency: false,
         };
         let entry_path = plan_entry_path(&plan, &source_root);
         let resolved =

@@ -1,6 +1,6 @@
-use Std.Core.Syscall;
-use Std.Core.String;
-use Std.Core.Collections.Array;
+use Core.Syscall;
+use Core.String;
+use Core.Collections.Array;
 
 i32 Main() {
     Syscall.Write(1_i64, "ok");

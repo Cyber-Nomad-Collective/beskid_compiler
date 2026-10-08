@@ -99,7 +99,7 @@ target "lib" {
             target: Target { name: "main".to_owned(), kind: TargetKind::App, entry: Some("Main.bd".to_owned()) },
             dependency_projects: vec![dependency("Lib", &lib), dependency("ModA", &mod_a), dependency("ModA", &mod_a)],
             unresolved_dependencies: Vec::new(),
-            has_std_dependency: false,
+            has_core_dependency: false,
         };
 
         let discovered = discover_mod_dependencies(Some(&plan)).expect("discover mods");

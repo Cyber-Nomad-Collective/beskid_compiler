@@ -6,6 +6,25 @@ mod severity;
 
 use crate::syntax::SpanInfo;
 
+/// Package-native replacement for a module path that starts with the removed `Std` segment.
+///
+/// Beskid has no `Std` namespace: Corelib packages keep their own module paths (`Core.*`,
+/// `Testing.*`, `Concurrency.*`, `Beskid.Compiler.*`). A `Std.`-qualified path is therefore the
+/// native path with one extra leading segment. Returns `None` for paths that do not start with
+/// `Std`. The replacement keeps the separator style of `path` (`.` or `::`).
+pub fn removed_std_namespace_replacement(path: &str) -> Option<String> {
+    let rest = if let Some(rest) = path.strip_prefix("Std.") {
+        rest
+    } else if let Some(rest) = path.strip_prefix("Std::") {
+        rest
+    } else if path == "Std" {
+        ""
+    } else {
+        return None;
+    };
+    Some(if rest.is_empty() { "Core".to_string() } else { rest.to_string() })
+}
+
 #[derive(Debug, Clone)]
 pub enum SemanticIssueKind {
     // ── Definition / duplicate-name diagnostics ──
@@ -495,4 +514,30 @@ pub enum SemanticIssueKind {
         method: String,
         detail: String,
     },
+}
+
+#[cfg(test)]
+mod removed_std_namespace_tests {
+    use super::{SemanticIssueKind, removed_std_namespace_replacement};
+
+    #[test]
+    fn std_prefixed_paths_name_their_package_native_replacement() {
+        assert_eq!(removed_std_namespace_replacement("Std.Core.Output").as_deref(), Some("Core.Output"));
+        assert_eq!(removed_std_namespace_replacement("Std::Testing::Assert").as_deref(), Some("Testing::Assert"));
+        assert_eq!(removed_std_namespace_replacement("Std").as_deref(), Some("Core"));
+        assert_eq!(removed_std_namespace_replacement("Core.Output"), None);
+        assert_eq!(removed_std_namespace_replacement("Stdio.Bridge"), None);
+    }
+
+    #[test]
+    fn std_import_diagnostic_names_the_replacement() {
+        let issue = SemanticIssueKind::UnknownImportPath { path: "Std.Core.Output".to_string() };
+        assert_eq!(issue.code(), "E1105");
+        assert!(issue.message().contains("the `Std` namespace does not exist"), "{}", issue.message());
+        let help = issue.help().expect("help");
+        assert!(help.starts_with("use `Core.Output` instead"), "{help}");
+
+        let module = SemanticIssueKind::ResolveUnknownModulePath { path: "Std::Core::Results".to_string() };
+        assert!(module.help().expect("help").starts_with("use `Core::Results` instead"));
+    }
 }

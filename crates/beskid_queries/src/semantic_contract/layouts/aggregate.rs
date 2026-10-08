@@ -1,7 +1,5 @@
 //! Canonical semantic layout implementation.
 
-use beskid_abi::runtime_source::CANONICAL_FOUNDATION_DEADLINE_SOURCE_PATH;
-
 use super::{super::*, explicit_local_declaration_type};
 
 #[salsa::tracked(persist)]
@@ -279,9 +277,11 @@ pub(in crate::semantic_contract) fn aggregate_literal_declaration_tracked(
     .transpose()
 }
 
-/// Keep the checked monotonic Deadline opaque across source units. Other Foundation time
-/// aggregates currently expose their fields through literals without an explicit `pub` marker;
-/// their wider visibility contract is separate from this Deadline boundary.
+/// A struct literal is legal only where every value field it must supply is accessible: a
+/// field without `pub` is private to the source unit that declares the type, so a type with any
+/// private value field is constructible only inside its declaring unit (or by an exact canonical
+/// admission). Sealed runtime opaques and canonical process resources are never literal-built
+/// outside their own authority.
 fn validate_aggregate_literal_visibility(
     db: &dyn Db,
     key: AstNodeKey,
@@ -294,21 +294,22 @@ fn validate_aggregate_literal_visibility(
             return Err(SemanticError::unavailable("aggregate_literal.sealed_runtime_opaque"));
         }
     }
-    if private_deadline_literal_field(db, key, declaration)?.is_some() {
+    if !inaccessible_literal_fields(db, key, declaration)?.is_empty() {
         return Err(SemanticError::unavailable("aggregate_literal.visibility"));
     }
     Ok(())
 }
 
-/// The exact compiler-owned Deadline field hidden from literals in other units.
-/// Legality uses this same authority to issue a coded user diagnostic first.
-pub(in crate::semantic_contract) fn private_deadline_literal_field(
+/// The value fields of `declaration` that a struct literal at `key` cannot supply, in declaration
+/// order. Legality uses this same authority to issue the coded E1211 diagnostic first; lowering
+/// fails closed on any non-empty answer.
+pub(in crate::semantic_contract) fn inaccessible_literal_fields(
     db: &dyn Db,
     key: AstNodeKey,
     declaration: AstNodeKey,
-) -> Result<Option<&'static str>, SemanticError> {
+) -> Result<Vec<Arc<str>>, SemanticError> {
     if key.unit == declaration.unit {
-        return Ok(None);
+        return Ok(Vec::new());
     }
     let syntax = db
         .syntax_unit(declaration.unit)
@@ -320,25 +321,50 @@ pub(in crate::semantic_contract) fn private_deadline_literal_field(
         .and_then(|node| node.of::<beskid_analysis::syntax::TypeDefinition>())
         .ok_or_else(|| SemanticError::unavailable("aggregate_literal.visibility"))?;
     if crate::process_source_authority::canonical_process_resource_kind(db, declaration).is_some() {
-        return Ok(Some("token"));
+        return Ok(vec![Arc::from("token")]);
     }
-    if definition.name.node.name == "Deadline"
-        && definition.fields.iter().any(|field| {
-            field.node.kind == beskid_analysis::syntax::FieldKind::Value
-                && field.node.name.node.name == "monotonicNanos"
-                && field.node.visibility.node != beskid_analysis::syntax::Visibility::Public
+    Ok(definition
+        .fields
+        .iter()
+        .filter(|field| field.node.kind == beskid_analysis::syntax::FieldKind::Value)
+        .filter(|field| {
+            super::field_access::field_inaccessible(
+                db,
+                key,
+                declaration,
+                definition,
+                field,
+                super::field_access::PrivateFieldUse::Construct,
+            )
         })
-        && db
-            .syntax_dependency_registry()
-            .lock()
-            .expect("syntax dependency registry")
-            .corelib_source_paths
-            .get(&(declaration.unit, declaration.generation))
-            .is_some_and(|path| path == CANONICAL_FOUNDATION_DEADLINE_SOURCE_PATH)
-    {
-        return Ok(Some("monotonicNanos"));
+        .map(|field| Arc::from(field.node.name.node.name.as_str()))
+        .collect())
+}
+
+/// The value fields of a serialization target record that a generated adapter placed in
+/// `contribution`'s source unit (the unit the Mod merger appends to) could not read or construct.
+/// Generated decoders build the whole record literal and generated encoders read its fields, so
+/// this is the literal-construction answer of the one field visibility policy, never a second
+/// rule. Enum payload fields carry no field visibility, so an enum target has none.
+pub(crate) fn serialization_contribution_inaccessible_fields(
+    db: &dyn Db,
+    contribution: AstNodeKey,
+    declaration: AstNodeKey,
+) -> Result<Vec<Arc<str>>, SemanticError> {
+    if contribution.unit == declaration.unit {
+        return Ok(Vec::new());
     }
-    Ok(None)
+    let syntax = db
+        .syntax_unit(declaration.unit)
+        .filter(|syntax| syntax.accepts_key(db, declaration))
+        .ok_or_else(|| SemanticError::unavailable("serialization_target.visibility"))?;
+    match syntax.syntax_index(db).kind(declaration.node) {
+        Some(beskid_analysis::syntax_query::NodeKind::TypeDefinition) => {
+            inaccessible_literal_fields(db, contribution, declaration)
+        }
+        Some(beskid_analysis::syntax_query::NodeKind::EnumDefinition) => Ok(Vec::new()),
+        _ => Err(SemanticError::unavailable("serialization_target.visibility")),
+    }
 }
 
 /// Derive the element ABI of an empty array literal only from a direct declared `T[]` storage
@@ -436,6 +462,40 @@ pub(in crate::semantic_contract) fn empty_array_literal_element_abi_type_tracked
                 }
                 return Some(abi_type_from_syntax(db, constructor_key, &arguments.get(parameter_index)?.node));
             }
+            return Some(abi_type_from_syntax(db, declaration, &element.node));
+        }
+
+        // A direct argument of an exact non-generic call (`Named(builder, names, [])`) takes the
+        // declared element type of the matching callee parameter, exactly like a record field.
+        // Generic callees, bulk parameters and indirect calls stay unavailable.
+        if let Some(call) = index.node_at(program, local_node)?.of::<beskid_analysis::syntax::CallExpression>() {
+            let call_key = AstNodeKey { node: local_node, ..key };
+            let argument_index = call.args.iter().position(|argument| {
+                index.direct_child_id(program, local_node, beskid_analysis::syntax_query::DynNodeRef::from(argument))
+                    == Some(expression)
+            })?;
+            let Ok(Some(CallLowering::Direct(declaration))) = call_lowering(db, call_key) else {
+                return None;
+            };
+            if !generic_callable_parameters(db, declaration).is_some_and(|(names, _)| names.is_empty()) {
+                return None;
+            }
+            let callee_syntax = db.syntax_unit(declaration.unit).filter(|unit| unit.accepts_key(db, declaration))?;
+            let callee = callee_syntax.syntax_index(db).node_at(callee_syntax.expanded_program(db), declaration.node)?;
+            let parameters = callee
+                .of::<beskid_analysis::syntax::FunctionDefinition>()
+                .map(|function| &function.parameters)
+                .or_else(|| callee.of::<beskid_analysis::syntax::MethodDefinition>().map(|method| &method.parameters))?;
+            if parameters.len() != call.args.len() {
+                return None;
+            }
+            let parameter = parameters.get(argument_index)?;
+            if parameter.node.bulk {
+                return None;
+            }
+            let beskid_analysis::syntax::Type::Array(element) = &parameter.node.ty.node else {
+                return Some(Err(SemanticError::unavailable("empty_array_literal_element_abi_type")));
+            };
             return Some(abi_type_from_syntax(db, declaration, &element.node));
         }
 

@@ -2,7 +2,8 @@
 use crate::CodegenInput;
 use anyhow::{Result, bail};
 use beskid_queries::{
-    AppliedContractIdentity, AstNodeKey, type_applied_contract_implementation, type_contract_applications,
+    AppliedContractIdentity, AstNodeKey, type_applied_contract_implementation, type_contract_applications_of,
+    type_contract_declarations,
 };
 
 use beskid_queries::NativeModContractFamily as ContractFamily;
@@ -26,16 +27,24 @@ fn canonical_family(input: &CodegenInput<'_>, declaration: AstNodeKey) -> Result
     Ok(Some(family))
 }
 
+/// Admit only conformances whose contract declaration is a canonical SDK contract. The family is
+/// decided from the declaration identity alone, before any applied argument is interpreted, so a
+/// dependency type such as `ArrayIterator<T> : Iterator<T>` is never evaluated here.
 pub(super) fn select_contract_witnesses(input: &CodegenInput<'_>, owner: AstNodeKey) -> Result<Vec<ContractWitness>> {
     let db = input.database();
-    let applications = type_contract_applications(db, owner)?
+    let declarations = type_contract_declarations(db, owner)?
         .ok_or_else(|| anyhow::anyhow!("native Mod owner is not a current registered concrete type"))?;
     let mut witnesses = Vec::new();
-    for application in applications.iter() {
-        let Some(family) = canonical_family(input, application.declaration())? else { continue };
+    for declaration in declarations.iter().copied() {
+        let Some(family) = canonical_family(input, declaration)? else { continue };
         if witnesses.iter().any(|witness: &ContractWitness| witness.family == family) {
             bail!("native Mod type has ambiguous implementations of {}", family.canonical_name());
         }
+        let applications = type_contract_applications_of(db, owner, declaration)?
+            .ok_or_else(|| anyhow::anyhow!("native Mod owner is not a current registered concrete type"))?;
+        let [application] = applications.as_ref() else {
+            bail!("native Mod type has ambiguous implementations of {}", family.canonical_name());
+        };
         let methods = type_applied_contract_implementation(db, owner, application)?
             .ok_or_else(|| anyhow::anyhow!("native Mod contract lacks exact current implementation witnesses"))?;
         if methods.is_empty() {

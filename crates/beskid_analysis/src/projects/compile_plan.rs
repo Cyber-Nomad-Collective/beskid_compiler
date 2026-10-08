@@ -68,7 +68,7 @@ pub(crate) fn compile_plan_from_graph(
 ) -> Result<CompilePlan, ProjectError> {
     let workspace_plan = workspace_plan_from_graph(&graph, unresolved_dependency_policy)?;
 
-    let has_std_dependency = graph.has_std_dependency;
+    let has_core_dependency = graph.has_core_dependency;
     let manifest = graph.root_manifest;
     let project_root = graph.root_project_root;
     let normalized_manifest_path = graph.root_manifest_path;
@@ -123,7 +123,7 @@ pub(crate) fn compile_plan_from_graph(
         target,
         dependency_projects: workspace_plan.dependency_projects,
         unresolved_dependencies: workspace_plan.unresolved_dependencies,
-        has_std_dependency,
+        has_core_dependency,
     })
 }
 

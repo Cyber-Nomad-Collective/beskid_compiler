@@ -110,7 +110,7 @@ fn materialized_compiler_foundation_path_retains_service_provenance_but_a_copy_d
             source_root: canonical_source_root,
         }],
         unresolved_dependencies: Vec::new(),
-        has_std_dependency: false,
+        has_core_dependency: false,
     };
     let workspace = PreparedProjectWorkspace {
         verified_package_identities: Default::default(),
@@ -187,7 +187,7 @@ fn resolved_foundation_source_root_still_trusts_materialized_assert() {
             source_root: canonical_source_root,
         }],
         unresolved_dependencies: Vec::new(),
-        has_std_dependency: false,
+        has_core_dependency: false,
     };
     let workspace = PreparedProjectWorkspace {
         verified_package_identities: Default::default(),
@@ -228,6 +228,7 @@ fn verified_installed_corelib_bundle_preserves_slice_service_provenance() {
     let installed_source = source_root.join(relative);
     write_bd(&source_root, relative.to_str().unwrap(), &source.source);
     write_bd(&foundation_root, "foundation.bproj", "name = \"corelib_foundation\"\n");
+    write_foundation_only_workspace_manifest(&bundle_root);
 
     let fingerprint = test_bundle_fingerprint(&bundle_root);
     fs::write(bundle_root.join(".beskid-bundle.sha256"), format!("{fingerprint}\n"))
@@ -257,7 +258,7 @@ fn verified_installed_corelib_bundle_preserves_slice_service_provenance() {
             source_root,
         }],
         unresolved_dependencies: Vec::new(),
-        has_std_dependency: true,
+        has_core_dependency: true,
     };
     let roots = EffectiveCompilationRoots {
         host: RootEntry { dependency_name: None, source_root: project_root.join("obj/beskid/root/src") },
@@ -329,6 +330,7 @@ fn verified_installed_corelib_bundle_preserves_assert_service_provenance() {
     let relative = Path::new("Testing/Assert.bd");
     write_bd(&source_root, "Testing/Assert.bd", &source.source);
     write_bd(&foundation_root, "foundation.bproj", "name = \"corelib_foundation\"\n");
+    write_foundation_only_workspace_manifest(&bundle_root);
     let fingerprint = test_bundle_fingerprint(&bundle_root);
     fs::write(bundle_root.join(".beskid-bundle.sha256"), format!("{fingerprint}\n"))
         .expect("write complete bundle fingerprint");
@@ -357,7 +359,7 @@ fn verified_installed_corelib_bundle_preserves_assert_service_provenance() {
             source_root,
         }],
         unresolved_dependencies: Vec::new(),
-        has_std_dependency: true,
+        has_core_dependency: true,
     };
     let roots = EffectiveCompilationRoots {
         host: RootEntry { dependency_name: None, source_root: project_root.join("obj/beskid/root/src") },
@@ -431,7 +433,7 @@ impl InstalledFiberAuthorityFixture {
                 source_root,
             }],
             unresolved_dependencies: Vec::new(),
-            has_std_dependency: true,
+            has_core_dependency: true,
         };
         let roots = EffectiveCompilationRoots {
             host: RootEntry { dependency_name: None, source_root: project_root.join("obj/beskid/root/src") },
@@ -559,6 +561,16 @@ fn symlinked_materialized_fiber_cannot_gain_service_provenance() {
     assert!(fixture.trusted_paths(&fixture.unit()).is_empty());
 }
 
+/// A verified bundle carries every member its workspace manifest lists; these fixtures ship only
+/// Foundation, so their manifest lists only Foundation.
+fn write_foundation_only_workspace_manifest(bundle_root: &Path) {
+    fs::write(
+        bundle_root.join("CoreLib.bws"),
+        "workspace {\n  name = \"corelib\"\n  resolver = v1\n  schema = \"beskid.workspace.v1\"\n}\n\nmember \"foundation\" {\n  path = \"packages/foundation\"\n}\n",
+    )
+    .expect("write fixture Corelib workspace manifest");
+}
+
 fn test_bundle_fingerprint(root: &Path) -> String {
     fn collect(root: &Path, current: &Path, files: &mut Vec<PathBuf>) {
         for entry in fs::read_dir(current).expect("read bundle directory") {
@@ -632,7 +644,7 @@ fn lock_replayed_foundation_syscall_fixture(label: &str) -> (CompilePlan, PathBu
             source_root: canonical_source_root.clone(),
         }],
         unresolved_dependencies: Vec::new(),
-        has_std_dependency: false,
+        has_core_dependency: false,
     };
     // Use the production workspace writer so this is a real, graph-derived v2
     // lock, including its portable source identity and stable destination ID.
@@ -787,7 +799,7 @@ fn no_entry_plan_with_source(source: &str) -> (CompilePlan, PathBuf) {
         target: Target { name: "__aggregate__".to_string(), kind: TargetKind::Lib, entry: None },
         dependency_projects: Vec::new(),
         unresolved_dependencies: Vec::new(),
-        has_std_dependency: false,
+        has_core_dependency: false,
     };
     let entry_path = plan_entry_path(&plan, &source_root);
     (plan, entry_path)
@@ -880,7 +892,7 @@ fn import_closure_assembles_entry_without_sibling_units() {
         target: Target { name: "Entry".to_string(), kind: TargetKind::Lib, entry: Some("Entry.bd".to_string()) },
         dependency_projects: Vec::new(),
         unresolved_dependencies: Vec::new(),
-        has_std_dependency: false,
+        has_core_dependency: false,
     };
     let entry_path = source_root.join("Entry.bd");
     let options = assembly_options_for_plan(&plan);
@@ -914,7 +926,7 @@ fn import_closure_follows_qualified_nominal_references() {
         target: Target { name: "Entry".to_string(), kind: TargetKind::Lib, entry: Some("Entry.bd".to_string()) },
         dependency_projects: Vec::new(),
         unresolved_dependencies: Vec::new(),
-        has_std_dependency: false,
+        has_core_dependency: false,
     };
     let entry_path = source_root.join("Entry.bd");
     let options = assembly_options_for_plan(&plan);
@@ -937,7 +949,7 @@ fn import_closure_follows_complete_homonymous_nominal_path() {
     let plan = CompilePlan { source_root: source_root.clone(), project_root: root.clone(),
         manifest_path: root.join("project.bproj"), project_name: "fixture".into(),
         target: Target {name: "Entry".into(), kind: TargetKind::Lib, entry: Some("Entry.bd".into())},
-        dependency_projects: vec![], unresolved_dependencies: vec![], has_std_dependency: false };
+        dependency_projects: vec![], unresolved_dependencies: vec![], has_core_dependency: false };
     let assembly = assemble_program(&plan, None, &source_root.join("Entry.bd"), None,
         &assembly_options_for_plan(&plan), None).unwrap();
     assert!(assembly.units.iter().any(|unit| unit.path.ends_with("Beskid/Syntax/Nodes/NodeRef.bd")),
@@ -961,7 +973,7 @@ fn import_closure_follows_transitive_use_imports() {
         target: Target { name: "Entry".to_string(), kind: TargetKind::Lib, entry: Some("Entry.bd".to_string()) },
         dependency_projects: Vec::new(),
         unresolved_dependencies: Vec::new(),
-        has_std_dependency: false,
+        has_core_dependency: false,
     };
     let entry_path = source_root.join("Entry.bd");
     let options = assembly_options_for_plan(&plan);
@@ -996,7 +1008,7 @@ fn import_closure_follows_public_module_declarations() {
         target: Target { name: "Entry".to_string(), kind: TargetKind::Lib, entry: Some("Entry.bd".to_string()) },
         dependency_projects: Vec::new(),
         unresolved_dependencies: Vec::new(),
-        has_std_dependency: false,
+        has_core_dependency: false,
     };
     let assembly =
         assemble_program(&plan, None, &source_root.join("Entry.bd"), None, &assembly_options_for_plan(&plan), None)
@@ -1033,7 +1045,7 @@ fn import_closure_follows_public_module_declarations_into_generated_sources() {
         target: Target { name: "Entry".to_string(), kind: TargetKind::Lib, entry: Some("Entry.bd".to_string()) },
         dependency_projects: Vec::new(),
         unresolved_dependencies: Vec::new(),
-        has_std_dependency: false,
+        has_core_dependency: false,
     };
     let assembly =
         assemble_program(&plan, None, &source_root.join("Entry.bd"), None, &assembly_options_for_plan(&plan), None)
@@ -1059,7 +1071,7 @@ fn import_closure_ignores_missing_public_module_declarations() {
         target: Target { name: "Entry".to_string(), kind: TargetKind::Lib, entry: Some("Entry.bd".to_string()) },
         dependency_projects: Vec::new(),
         unresolved_dependencies: Vec::new(),
-        has_std_dependency: false,
+        has_core_dependency: false,
     };
     let assembly =
         assemble_program(&plan, None, &source_root.join("Entry.bd"), None, &assembly_options_for_plan(&plan), None)
@@ -1083,7 +1095,7 @@ fn import_closure_terminates_public_module_declaration_cycles() {
         target: Target { name: "Entry".to_string(), kind: TargetKind::Lib, entry: Some("Entry.bd".to_string()) },
         dependency_projects: Vec::new(),
         unresolved_dependencies: Vec::new(),
-        has_std_dependency: false,
+        has_core_dependency: false,
     };
     let assembly =
         assemble_program(&plan, None, &source_root.join("Entry.bd"), None, &assembly_options_for_plan(&plan), None)
@@ -1108,7 +1120,7 @@ fn workspace_scan_assembles_all_host_sources() {
         target: Target { name: "__aggregate__".to_string(), kind: TargetKind::Lib, entry: None },
         dependency_projects: Vec::new(),
         unresolved_dependencies: Vec::new(),
-        has_std_dependency: false,
+        has_core_dependency: false,
     };
     let entry_path = plan_entry_path(&plan, &source_root);
     let options = assembly_options_for_plan(&plan);
@@ -1143,7 +1155,7 @@ fn import_closure_module_index_skips_unimported_dependency_tree() {
             source_root: dep_source_root.clone(),
         }],
         unresolved_dependencies: Vec::new(),
-        has_std_dependency: false,
+        has_core_dependency: false,
     };
     let entry_path = source_root.join("Entry.bd");
     let options = AssemblyOptions { discovery: AssemblyDiscovery::ImportClosure, ..AssemblyOptions::default() };
@@ -1222,7 +1234,7 @@ fn v06_import_closure_preserves_same_line_transitive_declarations() {
         target: Target { name: "Entry".to_string(), kind: TargetKind::Lib, entry: Some("Entry.bd".to_string()) },
         dependency_projects: Vec::new(),
         unresolved_dependencies: Vec::new(),
-        has_std_dependency: false,
+        has_core_dependency: false,
     };
     let assembly =
         assemble_program(&plan, None, &source_root.join("Entry.bd"), None, &assembly_options_for_plan(&plan), None)
@@ -1290,7 +1302,7 @@ fn v06_import_closure_skip_parse_errors_skips_invalid_nonentry_authority() {
         target: Target { name: "Entry".to_owned(), kind: TargetKind::Lib, entry: Some("Entry.bd".to_owned()) },
         dependency_projects: vec![],
         unresolved_dependencies: vec![],
-        has_std_dependency: false,
+        has_core_dependency: false,
     };
     let options = AssemblyOptions { skip_parse_errors: true, ..assembly_options_for_plan(&plan) };
     let assembly = assemble_program(&plan, None, &source_root.join("Entry.bd"), None, &options, None)
@@ -1317,7 +1329,7 @@ fn assert_v06_materializer_recovery_policy(policy: crate::projects::AssemblyReco
         target: Target { name: "Entry".to_owned(), kind: TargetKind::Lib, entry: Some("Entry.bd".to_owned()) },
         dependency_projects: vec![],
         unresolved_dependencies: vec![],
-        has_std_dependency: false,
+        has_core_dependency: false,
     };
     let calls = Arc::new(AtomicUsize::new(0));
     let observed = Arc::clone(&calls);
@@ -1423,7 +1435,7 @@ fn v06_qualified_reference_closure_follows_transitive_calls_and_types_without_lo
         target: Target { name: "Entry".to_owned(), kind: TargetKind::Lib, entry: Some("Entry.bd".to_owned()) },
         dependency_projects: vec![],
         unresolved_dependencies: vec![],
-        has_std_dependency: false,
+        has_core_dependency: false,
     };
     let assembly =
         assemble_program(&plan, None, &source_root.join("Entry.bd"), None, &assembly_options_for_plan(&plan), None)
@@ -1462,7 +1474,7 @@ fn entry_less_lib_plan(label: &str, host: &[(&str, &str)], dependency: &[(&str, 
             source_root: dep_root.join("src"),
         }],
         unresolved_dependencies: Vec::new(),
-        has_std_dependency: false,
+        has_core_dependency: false,
     }
 }
 
@@ -1568,7 +1580,7 @@ fn aggregate_plan(label: &str, alpha: &[(&str, &str)], beta: &[(&str, &str)]) ->
         // Plan order (transitive first, then lexicographic) differs from manifest declaration order.
         dependency_projects: vec![shared, alpha, beta],
         unresolved_dependencies: Vec::new(),
-        has_std_dependency: false,
+        has_core_dependency: false,
     }
 }
 
@@ -1656,7 +1668,7 @@ fn checking_the_compiler_foundation_package_directly_trusts_its_materialized_ser
         target: Target { name: "Foundation".into(), kind: TargetKind::Lib, entry: None },
         dependency_projects: Vec::new(),
         unresolved_dependencies: Vec::new(),
-        has_std_dependency: false,
+        has_core_dependency: false,
     };
     let roots = EffectiveCompilationRoots {
         host: RootEntry { dependency_name: None, source_root: materialized_source_root.clone() },
@@ -1680,4 +1692,126 @@ fn checking_the_compiler_foundation_package_directly_trusts_its_materialized_ser
         "a byte-exact copy of the Foundation package elsewhere cannot inherit service provenance"
     );
     let _ = fs::remove_dir_all(workspace_root);
+}
+
+/// A Mod-shaped plan whose entry imports nothing, with a `corelib_compiler_sdk` dependency root
+/// holding both adapter sources, plus look-alike adapter files in the host root and in a second,
+/// differently named dependency root.
+fn native_mod_adapter_plan(label: &str, with_sdk: bool) -> (CompilePlan, PathBuf, FixtureDirGuard) {
+    let root = temp_project_root(label);
+    let guard = FixtureDirGuard(root.clone());
+    write_bd(&root, "mod/Src/Mod.bd", "pub i32 Marker() { return 0; }\n");
+    write_bd(&root, "mod/Src/Beskid/Compiler/NativeRequests.bd", "pub i32 HostLookalike() { return 1; }\n");
+    write_bd(&root, "other/src/Beskid/Compiler/NativeRequests.bd", "pub i32 OtherLookalike() { return 2; }\n");
+    write_bd(&root, "other/src/Beskid/Syntax/NativeFactories.bd", "pub i32 OtherFactories() { return 3; }\n");
+    let mut dependency_projects = vec![ResolvedDependencyProject {
+        dependency_name: "lookalike_sdk".into(),
+        manifest_path: root.join("other/lookalike_sdk.bproj"),
+        project_root: root.join("other"),
+        project_name: "lookalike_sdk".into(),
+        source_root: root.join("other/src"),
+    }];
+    if with_sdk {
+        write_bd(&root, "sdk/src/Beskid/Compiler/NativeRequests.bd", "pub i32 CompilationValue() { return 4; }\n");
+        write_bd(&root, "sdk/src/Beskid/Syntax/NativeFactories.bd", "pub i32 FieldValue() { return 5; }\n");
+        dependency_projects.push(ResolvedDependencyProject {
+            dependency_name: "corelib_compiler_sdk".into(),
+            manifest_path: root.join("sdk/corelib_compiler_sdk.bproj"),
+            project_root: root.join("sdk"),
+            project_name: "corelib_compiler_sdk".into(),
+            source_root: root.join("sdk/src"),
+        });
+    }
+    let plan = CompilePlan {
+        project_root: root.join("mod"),
+        manifest_path: root.join("mod/NativeMod.bproj"),
+        project_name: "NativeMod".into(),
+        source_root: root.join("mod/Src"),
+        target: Target { name: "NativeMod".into(), kind: TargetKind::Lib, entry: Some("Mod.bd".into()) },
+        dependency_projects,
+        unresolved_dependencies: Vec::new(),
+        has_core_dependency: false,
+    };
+    let entry = root.join("mod/Src/Mod.bd");
+    (plan, entry, guard)
+}
+
+fn native_mod_adapter_options(seed: bool) -> AssemblyOptions {
+    AssemblyOptions {
+        discovery: AssemblyDiscovery::ImportClosure,
+        native_mod_adapter_sources: seed,
+        ..Default::default()
+    }
+}
+
+fn assembled_paths(assembly: &crate::projects::ProgramAssembly) -> Vec<PathBuf> {
+    assembly.units.iter().map(|unit| fs::canonicalize(&unit.path).unwrap_or_else(|_| unit.path.clone())).collect()
+}
+
+#[test]
+fn native_mod_adapter_seeds_come_only_from_the_single_compiler_sdk_root() {
+    let (plan, entry, guard) = native_mod_adapter_plan("native_mod_seed_sdk_only", true);
+    let assembly = assemble_program(&plan, None, &entry, None, &native_mod_adapter_options(true), None)
+        .expect("seeded native Mod assembly");
+    let paths = assembled_paths(&assembly);
+    let canonical = |relative: &str| fs::canonicalize(guard.0.join(relative)).expect("fixture path");
+    for seeded in ["sdk/src/Beskid/Compiler/NativeRequests.bd", "sdk/src/Beskid/Syntax/NativeFactories.bd"] {
+        assert!(paths.contains(&canonical(seeded)), "missing SDK adapter seed {seeded}: {paths:?}");
+    }
+    for lookalike in [
+        "mod/Src/Beskid/Compiler/NativeRequests.bd",
+        "other/src/Beskid/Compiler/NativeRequests.bd",
+        "other/src/Beskid/Syntax/NativeFactories.bd",
+    ] {
+        assert!(!paths.contains(&canonical(lookalike)), "look-alike {lookalike} was seeded: {paths:?}");
+    }
+    assert_eq!(paths.len(), 3, "entry plus exactly two adapter sources: {paths:?}");
+}
+
+#[test]
+fn ordinary_build_never_seeds_native_mod_adapter_sources() {
+    let (plan, entry, _guard) = native_mod_adapter_plan("native_mod_seed_off", true);
+    let assembly = assemble_program(&plan, None, &entry, None, &native_mod_adapter_options(false), None)
+        .expect("ordinary assembly");
+    let paths = assembled_paths(&assembly);
+    assert_eq!(paths.len(), 1, "an ordinary build assembles only the import closure: {paths:?}");
+    assert!(
+        !assembly.units.iter().any(|unit| {
+            unit.path.ends_with("Beskid/Compiler/NativeRequests.bd") || unit.path.ends_with("Beskid/Syntax/NativeFactories.bd")
+        }),
+        "adapter sources reached a non-Mod build: {paths:?}"
+    );
+    assert!(!AssemblyOptions::default().native_mod_adapter_sources, "seeding must be opt-in");
+}
+
+#[test]
+fn native_mod_adapter_seeding_without_compiler_sdk_dependency_fails_closed() {
+    let (plan, entry, _guard) = native_mod_adapter_plan("native_mod_seed_no_sdk", false);
+    let error = assemble_program(&plan, None, &entry, None, &native_mod_adapter_options(true), None)
+        .expect_err("a native Mod build without the compiler SDK must fail");
+    assert!(matches!(error, AssemblyError::NativeModAdapterSource { .. }), "unexpected error: {error}");
+}
+
+#[test]
+fn native_mod_adapter_seeding_with_missing_adapter_file_fails_closed() {
+    let (plan, entry, guard) = native_mod_adapter_plan("native_mod_seed_missing_file", true);
+    fs::remove_file(guard.0.join("sdk/src/Beskid/Syntax/NativeFactories.bd")).expect("remove factories seed");
+    let error = assemble_program(&plan, None, &entry, None, &native_mod_adapter_options(true), None)
+        .expect_err("a missing adapter source must fail");
+    assert!(
+        matches!(&error, AssemblyError::NativeModAdapterSource { path, .. } if path.ends_with("Beskid/Syntax/NativeFactories.bd")),
+        "unexpected error: {error}"
+    );
+}
+
+#[test]
+fn native_mod_adapter_seeding_with_two_compiler_sdk_roots_fails_closed() {
+    let (mut plan, entry, guard) = native_mod_adapter_plan("native_mod_seed_two_sdks", true);
+    let mut duplicate = plan.dependency_projects.last().expect("SDK dependency").clone();
+    duplicate.source_root = guard.0.join("other/src");
+    duplicate.project_root = guard.0.join("other");
+    plan.dependency_projects.push(duplicate);
+    let error = assemble_program(&plan, None, &entry, None, &native_mod_adapter_options(true), None)
+        .expect_err("an ambiguous compiler SDK root must fail");
+    assert!(matches!(error, AssemblyError::NativeModAdapterSource { .. }), "unexpected error: {error}");
 }

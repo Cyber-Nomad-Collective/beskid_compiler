@@ -8,6 +8,7 @@ pub mod member_items;
 pub mod module_graph;
 pub mod resolve_refs;
 pub mod resolver;
+pub(crate) mod sdk_authority;
 pub mod span_index;
 pub mod symbol;
 pub mod symbol_lookup;

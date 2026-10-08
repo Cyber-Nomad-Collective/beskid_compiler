@@ -23,6 +23,9 @@ pub(crate) fn emit_type_error(ctx: &mut RuleContext, error: TypeError, result: O
         TypeError::UnknownStructField { span, name } => {
             ctx.emit_issue(span, SemanticIssueKind::TypeUnknownStructField { name });
         }
+        TypeError::InaccessibleStructField { span, name } => {
+            ctx.emit_issue(span, SemanticIssueKind::TypeInaccessibleStructField { name });
+        }
         TypeError::UnknownEnumVariant { span, name } => {
             ctx.emit_issue(span, SemanticIssueKind::TypeUnknownEnumVariant { name });
         }

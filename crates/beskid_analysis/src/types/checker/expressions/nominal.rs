@@ -1,4 +1,4 @@
-use crate::resolve::ItemKind;
+use crate::resolve::{ItemId, ItemKind};
 use crate::syntax::Spanned;
 use crate::syntax::{EnumConstructorExpression, Expression, MemberExpression, PathExpression, StructLiteralExpression};
 use crate::types::path_value::{first_field_segment_name, resolve_path_base_local};
@@ -48,6 +48,10 @@ impl<'a> TypeChecker<'a> {
                 self.errors.push(TypeError::UnknownStructField { span: field.node.name.span, name });
                 continue;
             };
+            if self.field_inaccessible(item_id, &name) {
+                self.errors.push(TypeError::InaccessibleStructField { span: field.node.name.span, name });
+                continue;
+            }
             let expected = if mapping.is_empty() { *expected } else { self.substitute_type_id(*expected, &mapping) };
             if let Some(actual) = self.type_expression(&field.node.value) {
                 self.require_same_type(field.node.value.span, expected, actual);
@@ -59,6 +63,10 @@ impl<'a> TypeChecker<'a> {
                 continue;
             }
             if self.struct_event_fields.get(&item_id).and_then(|event_fields| event_fields.get(name)).is_some() {
+                continue;
+            }
+            if self.field_inaccessible(item_id, name) {
+                self.errors.push(TypeError::InaccessibleStructField { span: literal.span, name: name.clone() });
                 continue;
             }
             self.errors.push(TypeError::MissingStructField { span: literal.span, name: name.clone() });
@@ -92,24 +100,6 @@ impl<'a> TypeChecker<'a> {
             self.errors.push(TypeError::UnknownEnumType { span: constructor.span });
             return None;
         };
-        let mapping = self.generic_mapping_for_type_id(type_id);
-        let mut applied_type_id = type_id;
-        if mapping.is_empty()
-            && let Some(expected) = self.contextual_expected_type
-            && let Some(expected_item) = self.named_item_id(expected)
-            && expected_item == item_id
-        {
-            applied_type_id = expected;
-        } else if mapping.is_empty()
-            && let Some(generic_names) = self.generic_items.get(&item_id)
-            && !generic_names.is_empty()
-            && let Some(arg_type) = constructor.node.args.first().and_then(|arg| self.type_expression(arg))
-            && let Some(TypeInfo::Applied { base, .. }) = self.type_table.get(arg_type)
-            && *base == item_id
-        {
-            applied_type_id = arg_type;
-        }
-        let mapping = self.generic_mapping_for_type_id(applied_type_id);
         let variants = self.enum_variants.get(&item_id).cloned().or_else(|| {
             self.resolution
                 .items
@@ -123,36 +113,114 @@ impl<'a> TypeChecker<'a> {
             return None;
         };
         let variant_name = constructor.node.path.node.variant.node.name.clone();
-        let Some(fields) = variants.get(&variant_name) else {
+        let Some(declared_fields) = variants.get(&variant_name).cloned() else {
             self.errors.push(TypeError::UnknownEnumVariant {
                 span: constructor.node.path.node.variant.span,
                 name: variant_name,
             });
             return Some(type_id);
         };
-
-        let fields: Vec<TypeId> = if mapping.is_empty() {
-            fields.clone()
-        } else {
-            fields.iter().map(|field| self.substitute_type_id(*field, &mapping)).collect()
-        };
-
-        if constructor.node.args.len() != fields.len() {
+        if constructor.node.args.len() != declared_fields.len() {
             self.errors.push(TypeError::EnumConstructorMismatch {
                 span: constructor.span,
-                expected: fields.len(),
+                expected: declared_fields.len(),
                 actual: constructor.node.args.len(),
             });
             return Some(type_id);
         }
 
+        let generic_names = self.generic_items.get(&item_id).cloned().unwrap_or_default();
+        if generic_names.is_empty() || !self.generic_mapping_for_type_id(type_id).is_empty() {
+            // Non-generic enum or an explicitly applied path: the declared fields, substituted by
+            // the path's own arguments, are the expectation for each argument.
+            let mapping = self.generic_mapping_for_type_id(type_id);
+            let fields = self.substitute_all(&declared_fields, &mapping);
+            self.type_constructor_arguments(constructor, &fields);
+            return Some(type_id);
+        }
+        let expected_application = self.contextual_expected_type.filter(|expected| {
+            self.named_item_id(*expected) == Some(item_id) && !self.generic_mapping_for_type_id(*expected).is_empty()
+        });
+        if let Some(expected) = expected_application {
+            // `Result::Ok(Option::Some(0_i64))` returned as `Result<Option<i64>, E>`: the
+            // contextual application fixes every generic argument, and each payload is typed
+            // against its substituted field so nested generic variants receive their own
+            // expected application (mirrors `type_argument_with_expected` for call arguments).
+            let mapping = self.generic_mapping_for_type_id(expected);
+            let fields = self.substitute_all(&declared_fields, &mapping);
+            self.type_constructor_arguments(constructor, &fields);
+            return Some(expected);
+        }
+
+        // No expected application: instantiate the generic enum from its payload types, the
+        // same way a generic call infers its arguments. An enclosing context names another type
+        // here, so it must not leak into the payloads.
+        let previous = self.contextual_expected_type.take();
+        let actuals: Vec<Option<TypeId>> = constructor.node.args.iter().map(|arg| self.type_expression(arg)).collect();
+        self.contextual_expected_type = previous;
+        let mut bindings = std::collections::HashMap::new();
+        for (field, actual) in declared_fields.iter().zip(actuals.iter()) {
+            if let Some(actual) = actual {
+                self.bind_generic_parameters(*field, *actual, &mut bindings);
+            }
+        }
+        let fields = self.substitute_all(&declared_fields, &bindings);
+        for ((arg, expected), actual) in constructor.node.args.iter().zip(fields.iter()).zip(actuals.iter()) {
+            if let Some(actual) = actual {
+                self.require_same_type(arg.span, *expected, *actual);
+            }
+        }
+        let arguments: Option<Vec<TypeId>> = generic_names.iter().map(|name| bindings.get(name).copied()).collect();
+        match arguments {
+            Some(args) => Some(self.type_table.intern(TypeInfo::Applied { base: item_id, args })),
+            None => Some(type_id),
+        }
+    }
+
+    fn substitute_all(&mut self, types: &[TypeId], mapping: &std::collections::HashMap<String, TypeId>) -> Vec<TypeId> {
+        if mapping.is_empty() {
+            return types.to_vec();
+        }
+        types.iter().map(|type_id| self.substitute_type_id(*type_id, mapping)).collect()
+    }
+
+    fn type_constructor_arguments(&mut self, constructor: &Spanned<EnumConstructorExpression>, fields: &[TypeId]) {
         for (arg, expected) in constructor.node.args.iter().zip(fields.iter()) {
-            if let Some(actual) = self.type_expression(arg) {
+            if let Some(actual) = self.type_argument_with_expected(arg, *expected) {
                 self.require_same_type(arg.span, *expected, actual);
             }
         }
+    }
 
-        Some(applied_type_id)
+    /// Bind the generic parameters a declared payload type mentions to the parts of the actual
+    /// payload type at the same position. The first binding of a parameter wins; a later
+    /// disagreement surfaces through `require_same_type` on the substituted field.
+    fn bind_generic_parameters(
+        &self,
+        declared: TypeId,
+        actual: TypeId,
+        bindings: &mut std::collections::HashMap<String, TypeId>,
+    ) {
+        match (self.type_table.get(declared), self.type_table.get(actual)) {
+            (Some(TypeInfo::GenericParam(name)), _) => {
+                bindings.entry(name.clone()).or_insert(actual);
+            }
+            (
+                Some(TypeInfo::Applied { base: declared_base, args: declared_args }),
+                Some(TypeInfo::Applied { base: actual_base, args: actual_args }),
+            ) if declared_base == actual_base && declared_args.len() == actual_args.len() => {
+                let pairs: Vec<(TypeId, TypeId)> =
+                    declared_args.iter().copied().zip(actual_args.iter().copied()).collect();
+                for (declared_arg, actual_arg) in pairs {
+                    self.bind_generic_parameters(declared_arg, actual_arg, bindings);
+                }
+            }
+            (Some(TypeInfo::Array(declared_element)), Some(TypeInfo::Array(actual_element))) => {
+                let (declared_element, actual_element) = (*declared_element, *actual_element);
+                self.bind_generic_parameters(declared_element, actual_element, bindings);
+            }
+            _ => {}
+        }
     }
 
     pub(super) fn type_member_expression(&mut self, member: &Spanned<MemberExpression>) -> Option<TypeId> {
@@ -185,8 +253,45 @@ impl<'a> TypeChecker<'a> {
             self.errors.push(TypeError::UnknownStructField { span: member.node.member.span, name });
             return None;
         };
+        if self.field_inaccessible(item_id, &name) {
+            self.errors.push(TypeError::InaccessibleStructField { span: member.node.member.span, name });
+            return None;
+        }
         let field_type = if mapping.is_empty() { *field_type } else { self.substitute_type_id(*field_type, &mapping) };
         Some(field_type)
+    }
+
+    /// A field without `pub` is private to the source unit that declares its type (E1211). The
+    /// declaring unit, including the type's inline methods, keeps full access; an `extend type`
+    /// body is judged by E1511 instead. An item without a known declaring source is never judged
+    /// here: the semantic query gate remains the authority for those programs.
+    pub(in crate::types::checker) fn field_inaccessible(&self, type_item: ItemId, field_name: &str) -> bool {
+        if self.in_extend_type_body && self.current_receiver_item_id == Some(type_item) {
+            return false;
+        }
+        let private_fields = self.private_field_index.get_or_init(|| {
+            self.resolution
+                .items
+                .iter()
+                .filter(|info| info.kind == ItemKind::Field && info.visibility != crate::syntax::Visibility::Public)
+                .filter_map(|info| {
+                    let parent = info.parent_id?;
+                    let prefix = format!("{}::", self.resolution.items.get(parent.0)?.name);
+                    Some((parent, info.name.strip_prefix(&prefix)?.to_string()))
+                })
+                .collect()
+        });
+        if !private_fields.contains(&(type_item, field_name.to_string())) {
+            return false;
+        }
+        let Some(declared) = self.resolution.items.get(type_item.0).and_then(|info| info.source_path.as_ref()) else {
+            return false;
+        };
+        let Some(current) = self.current_source_path.as_ref() else {
+            return false;
+        };
+        !crate::paths::same_file(declared, current)
+            && !canonical_private_field_admission(current, declared, field_name)
     }
 
     pub(super) fn is_event_member_expression(&self, member: &Spanned<MemberExpression>) -> bool {
@@ -271,4 +376,29 @@ impl<'a> TypeChecker<'a> {
             _ => None,
         }
     }
+}
+
+/// The exact compiler-owned private-field admissions of the semantic query gate
+/// (`beskid_queries` `canonical_private_field_admission`), matched here by logical corelib path
+/// only. The query gate proves exact source identity and stays the authority; this front-end
+/// check only avoids reporting E1211 where the gate admits the access.
+fn canonical_private_field_admission(current: &std::path::Path, declared: &std::path::Path, field_name: &str) -> bool {
+    use beskid_abi::runtime_source::{
+        CANONICAL_CORELIB_MUTEX_GUARD_SOURCE_PATH, CANONICAL_CORELIB_MUTEX_SOURCE_PATH,
+        CANONICAL_FOUNDATION_DEADLINE_SOURCE_PATH, CANONICAL_FOUNDATION_PROCESS_SOURCE_PATH,
+        CANONICAL_NETWORK_INTERNAL_SOURCE_PATH, CANONICAL_NETWORK_RESOURCES_SOURCE_PATH,
+        CANONICAL_NETWORK_TCP_LISTENER_SOURCE_PATH, CANONICAL_NETWORK_TCP_STREAM_SOURCE_PATH,
+        CANONICAL_NETWORK_UDP_SOCKET_SOURCE_PATH,
+    };
+    const ADMISSIONS: &[(&str, &str, &str)] = &[
+        (CANONICAL_NETWORK_INTERNAL_SOURCE_PATH, CANONICAL_FOUNDATION_DEADLINE_SOURCE_PATH, "monotonicNanos"),
+        (CANONICAL_FOUNDATION_PROCESS_SOURCE_PATH, CANONICAL_FOUNDATION_DEADLINE_SOURCE_PATH, "monotonicNanos"),
+        (CANONICAL_NETWORK_RESOURCES_SOURCE_PATH, CANONICAL_NETWORK_TCP_LISTENER_SOURCE_PATH, "handle"),
+        (CANONICAL_NETWORK_RESOURCES_SOURCE_PATH, CANONICAL_NETWORK_TCP_STREAM_SOURCE_PATH, "handle"),
+        (CANONICAL_NETWORK_RESOURCES_SOURCE_PATH, CANONICAL_NETWORK_UDP_SOCKET_SOURCE_PATH, "handle"),
+        (CANONICAL_CORELIB_MUTEX_SOURCE_PATH, CANONICAL_CORELIB_MUTEX_GUARD_SOURCE_PATH, "mutexHandle"),
+    ];
+    ADMISSIONS.iter().any(|(owner, declaration, field)| {
+        *field == field_name && current.ends_with(owner) && declared.ends_with(declaration)
+    })
 }

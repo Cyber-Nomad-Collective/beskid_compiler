@@ -127,8 +127,8 @@ fn use_path_completion_candidates(
             continue;
         }
         // Completion inserts the next segment at the cursor.  Its display label must therefore
-        // not repeat the already-typed module prefix (for example, `use Std.` offers `Core`,
-        // not `Std.Core`).
+        // not repeat the already-typed module prefix (for example, `use Core.` offers `Output`,
+        // not `Core.Output`).
         let label = (*next).to_string();
         candidates.push(CompletionInfo { label: label.clone(), kind: CompletionKind::Module, detail: Some(path) });
     }

@@ -97,6 +97,7 @@ pub fn run_semantic_analysis_gate(
                         ..Default::default()
                     },
                     dependency_typing: services::DependencyTypingPolicy::FullClosure,
+                    native_mod_adapter_sources: false,
                 },
                 pipeline,
             )?;

@@ -9,8 +9,9 @@ pub(in crate::semantic_contract) use aggregate::{
     aggregate_layout_from_definition, aggregate_layout_tracked, aggregate_literal_declaration_tracked,
     aggregate_literal_layout_tracked, applied_aggregate_shape, array_index_element_abi_type_tracked,
     array_index_element_template_tracked, empty_array_literal_element_abi_type_tracked, event_field_layout_tracked,
-    instantiated_aggregate_layout_for_path, private_deadline_literal_field,
+    inaccessible_literal_fields, instantiated_aggregate_layout_for_path,
 };
+pub(crate) use aggregate::serialization_contribution_inaccessible_fields;
 pub use aggregate::{
     aggregate_literal_specialization, array_index_element_specialization, empty_array_literal_element_specialization,
 };

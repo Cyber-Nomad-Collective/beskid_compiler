@@ -16,7 +16,7 @@ use beskid_queries::{
 };
 use std::sync::Arc;
 
-const HOST: &str = r#"use Std.Probe.Bounded;
+const HOST: &str = r#"use Probe.Bounded;
 pub type Settings { pub Bounded.Limits limits, pub i32 count, pub Box<i32> boxed, }
 pub type Box<T> { pub T Value, }
 pub i32 LocalCount() { return 1_i32; }
@@ -65,7 +65,7 @@ impl Fixture {
                 source_root: dependency.join("src"),
             }],
             unresolved_dependencies: vec![],
-            has_std_dependency: true,
+            has_core_dependency: false,
         };
         Self::assemble(root, plan, &path, false)
     }
@@ -84,7 +84,7 @@ impl Fixture {
             target: Target { name: "Main".into(), kind: TargetKind::Lib, entry: Some("Main.bd".into()) },
             dependency_projects: vec![],
             unresolved_dependencies: vec![],
-            has_std_dependency: false,
+            has_core_dependency: false,
         };
         std::fs::write(
             &plan.manifest_path,

@@ -70,7 +70,11 @@ fn corelib_bundle_members_present(root: &Path) -> bool {
     corelib_workspace_member_paths(root).is_ok()
 }
 
-/// Hash a Corelib bundle using the same stable file inventory as the embedded bundle builder.
+/// Hash every regular file of a Corelib bundle except build/VCS components and the marker.
+///
+/// A bundle holds exactly its member inventory ([`corelib_bundle_inventory`]), so for a produced
+/// bundle this covers the same files. Hashing everything present (rather than re-deriving the
+/// inventory) also seals content that a producer should never have added.
 pub fn fingerprint_corelib_bundle_dir(root: &Path) -> io::Result<String> {
     let mut files = Vec::new();
     collect_fingerprint_files(root, root, &mut files)?;
@@ -290,7 +294,7 @@ pub fn parse_corelib_workspace_member_paths(source: &str) -> Result<Vec<String>,
         at: usize,
     }
     impl Cursor {
-        fn next(&mut self) -> Option<&Token> {
+        fn advance(&mut self) -> Option<&Token> {
             let token = self.tokens.get(self.at);
             self.at += 1;
             token
@@ -299,20 +303,20 @@ pub fn parse_corelib_workspace_member_paths(source: &str) -> Result<Vec<String>,
             self.tokens.get(self.at)
         }
         fn expect(&mut self, wanted: Token, context: &str) -> Result<(), String> {
-            match self.next() {
+            match self.advance() {
                 Some(token) if *token == wanted => Ok(()),
                 other => Err(format!("expected {wanted:?} {context}, found {other:?}")),
             }
         }
         fn value(&mut self) -> Result<Option<String>, String> {
-            match self.next() {
+            match self.advance() {
                 Some(Token::Text(text)) => Ok(Some(text.clone())),
                 Some(Token::Word(_)) => Ok(None),
                 Some(Token::ListOpen) => {
                     loop {
-                        match self.next() {
+                        match self.advance() {
                             Some(Token::ListClose) => break,
-                            Some(Token::Text(_) | Token::Word(_)) => match self.next() {
+                            Some(Token::Text(_) | Token::Word(_)) => match self.advance() {
                                 Some(Token::Comma) => {}
                                 Some(Token::ListClose) => break,
                                 other => return Err(format!("expected `,` or `]` in list, found {other:?}")),
@@ -329,7 +333,7 @@ pub fn parse_corelib_workspace_member_paths(source: &str) -> Result<Vec<String>,
         fn block_body(&mut self, block: &str) -> Result<Option<String>, String> {
             let mut path = None;
             loop {
-                match self.next() {
+                match self.advance() {
                     Some(Token::Close) => return Ok(path),
                     Some(Token::Word(key)) => {
                         let key = key.clone();
@@ -364,7 +368,7 @@ pub fn parse_corelib_workspace_member_paths(source: &str) -> Result<Vec<String>,
 
     let mut cursor = Cursor { tokens, at: 0 };
     let mut members = Vec::new();
-    while let Some(token) = cursor.next() {
+    while let Some(token) = cursor.advance() {
         let Token::Word(kind) = token else {
             return Err(format!("expected a top-level block, found {token:?}"));
         };

@@ -8,7 +8,7 @@ use beskid_analysis::projects::{
 };
 use beskid_tests_support::{temp_case_dir, write_project_manifest as write_manifest};
 
-use super::{scoped_std_dependency_root, std_dependency_env_lock, test_cwd::with_cwd_at_workspace_root};
+use super::{scoped_core_dependency_root, core_dependency_env_lock, test_cwd::with_cwd_at_workspace_root};
 
 #[test]
 fn parses_template_type_and_nested_block() {
@@ -86,17 +86,17 @@ target "main" {
 }
 
 #[test]
-fn graph_includes_implicit_std_for_template_authoring_lock() {
-    let root = temp_case_dir("template_graph_std");
+fn graph_includes_implicit_core_for_template_authoring_lock() {
+    let root = temp_case_dir("template_graph_core");
     let template_dir = root.join("Tpl");
     fs::create_dir_all(template_dir.join("Src")).expect("mkdir");
-    let std_dir = root.join("Std");
-    fs::create_dir_all(std_dir.join("Src")).expect("Std sources");
+    let corelib_dir = root.join("Corelib");
+    fs::create_dir_all(corelib_dir.join("Src")).expect("Corelib sources");
     write_manifest(
-        &std_dir,
-        "Std {\n name = \"Std\"\n version = \"0.1.0\"\n}\ntarget \"StdLib\" {\n kind = Lib\n entry = \"Std.bd\"\n}\n",
+        &corelib_dir,
+        "corelib {\n name = \"corelib\"\n version = \"0.1.0\"\n}\ntarget \"CoreLib\" {\n kind = Lib\n entry = \"Core.bd\"\n}\n",
     );
-    let _std_root = scoped_std_dependency_root(&std_dir);
+    let _core_root = scoped_core_dependency_root(&corelib_dir);
 
     let manifest_path = write_manifest(
         &template_dir,
@@ -114,14 +114,14 @@ Tpl {
     with_cwd_at_workspace_root(&root, || {
         let graph = build_project_graph(&manifest_path).expect("graph");
         assert!(
-            graph.has_std_dependency,
+            graph.has_core_dependency,
             "template authoring locks must include implicit Corelib without acquiring a compile target"
         );
         assert_eq!(graph.root_manifest.project.kind, ProjectKind::Template);
         assert!(graph.root_manifest.targets.is_empty());
         let dependencies = collect_dependency_projects(&graph);
         assert_eq!(dependencies.len(), 1);
-        assert_eq!(dependencies[0].dependency_name, "Std");
+        assert_eq!(dependencies[0].dependency_name, "Core");
 
         let resolved = beskid_analysis::services::resolve_project_dependencies_with_policy(
             None,
@@ -263,7 +263,7 @@ target "app" {
         template_dir
     }
 
-    let _env = std_dependency_env_lock();
+    let _env = core_dependency_env_lock();
     let temp = tempfile::tempdir().expect("tempdir");
     let template_root = write_inline_fixture(temp.path());
     let manifest = load_manifest_from_template_root(&template_root).expect("load template manifest");

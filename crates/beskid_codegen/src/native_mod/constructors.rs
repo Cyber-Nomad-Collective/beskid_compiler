@@ -101,6 +101,10 @@ fn bind_parameter(
     field: usize,
     bindings: &mut [Option<NativeConstructorArgument>],
 ) -> Result<()> {
+    // Field values are registered as `Expression` wrapper nodes; the exact parameter path or
+    // single-element array literal is the payload beneath them.
+    let value = beskid_queries::native_mod_expression_payload(input.database(), value)?
+        .context("source constructor field value is not a current expression")?;
     let (reference, binding_kind) = if resolved_local(input.database(), value)?.is_some() {
         (value, NativeConstructorArgument::Field(u32::try_from(field)?))
     } else {

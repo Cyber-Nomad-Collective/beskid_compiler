@@ -49,6 +49,8 @@ mod closures_and_spawn;
 mod runtime_authority;
 #[path = "semantic_facts/deadline_projection.rs"]
 mod deadline_projection;
+#[path = "semantic_facts/field_visibility.rs"]
+mod field_visibility;
 #[rustfmt::skip]
 #[path = "semantic_facts/statement_result_storage.rs"]
 mod statement_result_storage;

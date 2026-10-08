@@ -66,6 +66,12 @@ pub fn assemble_program_with_materializer(
         return Err(AssemblyError::EntryNotFound { path: entry_path.to_path_buf() });
     }
 
+    let adapter_seeds = if options.native_mod_adapter_sources {
+        super::options::native_mod_adapter_seed_paths(&roots)?
+    } else {
+        Vec::new()
+    };
+
     let mut discovered: Vec<PathBuf> = Vec::new();
     let mut discovered_sources: Vec<(PathBuf, String)> = Vec::new();
     let mut seen = HashSet::new();
@@ -81,6 +87,7 @@ pub fn assemble_program_with_materializer(
         AssemblyDiscovery::ImportClosure => {
             let mut queue = VecDeque::new();
             queue.push_back(entry_path.to_path_buf());
+            queue.extend(adapter_seeds.iter().cloned());
 
             while let Some(path) = queue.pop_front() {
                 if discovered_sources.len() >= options.max_units {
@@ -163,6 +170,7 @@ pub fn assemble_program_with_materializer(
                     collect_bd_files(&generated_root, &mut paths);
                 }
             }
+            paths.extend(adapter_seeds.iter().cloned());
             paths.sort();
             for path in paths {
                 if discovered.len() >= options.max_units {
@@ -369,7 +377,7 @@ pub fn assemble_program_with_materializer(
             discovery: options.discovery,
             recovery_policy: options.recovery_policy,
             module_index,
-            has_std_dependency: plan.has_std_dependency,
+            has_core_dependency: plan.has_core_dependency,
             trusted_corelib_service_paths,
             glue_libraries,
         },

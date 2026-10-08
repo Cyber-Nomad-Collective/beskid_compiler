@@ -18,6 +18,9 @@ pub struct PrepareOptions {
     pub front_end: FrontEndOptions,
     /// Whether dependency unit bodies are fully type-checked or only signatures prefetched.
     pub dependency_typing: DependencyTypingPolicy,
+    /// Native Mod builds only: assemble the compiler-owned SDK adapter sources with the Mod
+    /// (see `AssemblyOptions::native_mod_adapter_sources`).
+    pub native_mod_adapter_sources: bool,
 }
 
 impl Default for PrepareOptions {
@@ -26,6 +29,7 @@ impl Default for PrepareOptions {
             mod_invoker: None,
             front_end: FrontEndOptions::default(),
             dependency_typing: DependencyTypingPolicy::FullClosure,
+            native_mod_adapter_sources: false,
         }
     }
 }
@@ -81,7 +85,7 @@ impl PreparedCompilation {
             self.assembly.entry_index,
             self.assembly.discovery,
             Arc::clone(&self.assembly.module_index),
-            self.assembly.has_std_dependency,
+            self.assembly.has_core_dependency,
             self.assembly.generation,
         )
         .with_recovery_policy(self.assembly.recovery_policy)
@@ -100,6 +104,7 @@ impl std::fmt::Debug for PrepareOptions {
             .field("front_end", &self.front_end)
             .field("dependency_typing", &self.dependency_typing)
             .field("mod_invoker", &self.mod_invoker.is_some())
+            .field("native_mod_adapter_sources", &self.native_mod_adapter_sources)
             .finish()
     }
 }

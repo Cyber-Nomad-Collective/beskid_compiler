@@ -90,7 +90,7 @@ impl ModSemanticQueryAuthority<'_> {
                 if *generation != caller.generation {
                     continue;
                 }
-                let Some(units) = registry.visible_module_units(caller.unit, caller.generation, route) else {
+                let Some(units) = registry.visible_module_units(caller.generation, route) else {
                     continue;
                 };
                 // The complete route must identify one physical source unit. A namespace

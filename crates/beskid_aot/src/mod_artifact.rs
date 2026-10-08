@@ -4,10 +4,11 @@ use crate::{
     error::{AotError, AotResult},
     linker::{LinkRequest, LinkToolInvocation, LinkToolReceipt, link_with_control, run_link_tool},
 };
-use beskid_abi::runtime_kit::GlueProviderToolV1;
+use beskid_abi::runtime_kit::{BuildProfile as RuntimeKitProfile, GlueProviderToolV1};
 pub use beskid_analysis::mod_host::{ContractRegistration, ModArtifactDescriptor};
 use beskid_analysis::mod_host::{
-    mod_artifact_inventory, native_mod_file_sha256, native_mod_inventory_identity, native_mod_runtime_binding,
+    NATIVE_MOD_COMPILER_TOOL_ROLE, NATIVE_MOD_DESCRIPTOR_FILE, mod_artifact_inventory, native_mod_artifact_key,
+    native_mod_evidence_is_current, native_mod_file_sha256, native_mod_inventory_identity, native_mod_runtime_binding,
     read_mod_artifact_descriptor,
 };
 use beskid_codegen::PreparedNativeMod;
@@ -18,8 +19,10 @@ use std::{
     path::{Path, PathBuf},
 };
 
-/// Source-to-native witness issued only by the actual typed producer and linker.
-/// Reading a descriptor or rehashing a caller-provided image cannot construct it.
+/// Source-to-native witness issued only by the producer: either the actual typed producer and
+/// linker ([`build_mod_artifact`]), or producer-side cache qualification
+/// ([`qualify_cached_mod_artifact`]) that proves the whole producer key tuple is unchanged. Reading a
+/// descriptor or rehashing a caller-provided image alone cannot construct it.
 pub struct QualifiedNativeMod {
     descriptor: ModArtifactDescriptor,
     runtime_prefix: PathBuf,
@@ -42,9 +45,166 @@ pub struct ModArtifactBuildRequest {
     pub lockfile_path: Option<PathBuf>,
     pub package_id: String,
     pub package_version: Option<String>,
+    /// Source identity of each dependency project (`native_mod_dependency_sources`).
+    pub dependency_sources: BTreeMap<String, String>,
     pub compiler_version: String,
     pub runtime: RuntimeKitRequest,
     pub control: NativeExecutionControl,
+}
+
+/// The producer key tuple a cached or toolchain-shipped Mod artifact must match to be reused
+/// without a rebuild (the Cargo fingerprint model: compiler identity, profile, target, sources and
+/// dependency fingerprints).
+pub struct CachedModArtifactRequest {
+    /// Directory holding `.beskid/obj/mods/<package>/`; the producer publishes under the Mod project root.
+    pub workspace_root: PathBuf,
+    pub project_root: PathBuf,
+    pub manifest_path: PathBuf,
+    pub source_root: PathBuf,
+    pub package_id: String,
+    pub dependency_sources: BTreeMap<String, String>,
+    /// The producing compiler's version when the caller is that compiler (the CLI). Consumers that
+    /// only run the Mod host pass `None`; the exact executable digest below binds the version anyway.
+    pub compiler_version: Option<String>,
+    /// The Mod-host executable: the compiler that produced the artifact and that serves
+    /// `beskid dev native-mod-worker`. Its exact digest must equal the recorded compiler identity.
+    pub compiler_executable: PathBuf,
+    pub runtime: RuntimeKitRequest,
+}
+
+/// Reuse an existing executable Mod artifact when its complete key tuple is current.
+///
+/// Returns `Ok(None)` when no entry for the requested target/profile exists or every entry is stale,
+/// so the caller rebuilds. An entry is reused only if its descriptor validates against the installed
+/// runtime kit (closed inventory, exports, runtime binding), its directory is named by its recomputed
+/// content key, and its package, target, profile, compiler version, exact compiler executable digest,
+/// source/manifest/lock evidence and dependency source identities all equal the request. Two current
+/// entries are ambiguous and fail closed.
+pub fn qualify_cached_mod_artifact(req: &CachedModArtifactRequest) -> AotResult<Option<QualifiedNativeMod>> {
+    if req.package_id.is_empty()
+        || req.package_id.contains(['/', '\\'])
+        || matches!(req.package_id.as_str(), "." | "..")
+    {
+        return Err(invalid("invalid Mod package identity"));
+    }
+    let package_root = req.workspace_root.join(".beskid/obj/mods").join(&req.package_id);
+    if !package_root.is_dir() {
+        return Ok(None);
+    }
+    let compiler_path = req.compiler_executable.canonicalize().map_err(|error| io(&req.compiler_executable, error))?;
+    let compiler_sha256 = native_mod_file_sha256(&compiler_path).map_err(invalid)?;
+    let target_triple = req.runtime.target.triple.as_str();
+    let mut current = Vec::new();
+    for sidecar in cached_descriptor_paths(&package_root, target_triple)? {
+        let Ok(descriptor) = read_mod_artifact_descriptor(&sidecar, &req.runtime.prefix) else {
+            continue;
+        };
+        if !cached_identity_matches(&descriptor, req, &compiler_sha256)? {
+            continue;
+        }
+        current.push(descriptor);
+    }
+    match current.len() {
+        0 => Ok(None),
+        1 => Ok(Some(QualifiedNativeMod { descriptor: current.remove(0), runtime_prefix: req.runtime.prefix.clone() })),
+        _ => Err(invalid(format!(
+            "ambiguous current native Mod cache entries for {}; run `beskid dev mod clean` and rebuild",
+            req.package_id
+        ))),
+    }
+}
+
+fn cached_identity_matches(
+    descriptor: &ModArtifactDescriptor,
+    req: &CachedModArtifactRequest,
+    compiler_sha256: &str,
+) -> AotResult<bool> {
+    let key = native_mod_artifact_key(descriptor).map_err(invalid)?;
+    let dir = &descriptor.artifact_dir;
+    let named_by_key = dir.file_name().and_then(|name| name.to_str()) == Some(descriptor.target_triple.as_str())
+        && dir.parent().and_then(Path::file_name).and_then(|name| name.to_str()) == Some(key.as_str());
+    let compiler_matches = descriptor
+        .build_tools
+        .iter()
+        .find(|tool| tool.role == NATIVE_MOD_COMPILER_TOOL_ROLE)
+        .is_some_and(|tool| tool.executable_sha256 == compiler_sha256);
+    if !named_by_key
+        || descriptor.package_id != req.package_id
+        || descriptor.target_triple != req.runtime.target.triple.as_str()
+        || descriptor.runtime.profile != req.runtime.profile
+        || req.compiler_version.as_ref().is_some_and(|version| *version != descriptor.compiler_version)
+        || !compiler_matches
+    {
+        return Ok(false);
+    }
+    native_mod_evidence_is_current(
+        descriptor,
+        &req.project_root,
+        &req.manifest_path,
+        &req.source_root,
+        &req.dependency_sources,
+    )
+    .map_err(invalid)
+}
+
+/// `<package>/<key>/<target>/mod.descriptor.json` entries. Staging directories and publication
+/// locks (dot-prefixed) are never cache entries.
+fn cached_descriptor_paths(package_root: &Path, target_triple: &str) -> AotResult<Vec<PathBuf>> {
+    let mut paths = Vec::new();
+    for entry in fs::read_dir(package_root).map_err(|error| io(package_root, error))? {
+        let entry = entry.map_err(|error| io(package_root, error))?;
+        let name = entry.file_name();
+        if name.to_str().is_none_or(|name| name.starts_with('.'))
+            || !entry.file_type().map_err(|error| io(&entry.path(), error))?.is_dir()
+        {
+            continue;
+        }
+        let target_dir = entry.path().join(target_triple);
+        let sidecar = target_dir.join(NATIVE_MOD_DESCRIPTOR_FILE);
+        if fs::symlink_metadata(&target_dir).is_ok_and(|metadata| metadata.is_dir())
+            && fs::symlink_metadata(&sidecar).is_ok_and(|metadata| metadata.is_file())
+        {
+            paths.push(sidecar);
+        }
+        if paths.len() > 4096 {
+            return Err(invalid("native Mod cache inventory exceeds bounds"));
+        }
+    }
+    paths.sort();
+    Ok(paths)
+}
+
+/// Remove cache entries of the same package, target and runtime profile that a new publication
+/// supersedes, so loaders scanning the cache see exactly one candidate per profile. Entries of
+/// another profile and unrelated files are kept.
+fn prune_superseded_mod_artifacts(
+    workspace_root: &Path,
+    package_id: &str,
+    target_triple: &str,
+    profile: RuntimeKitProfile,
+    keep: &Path,
+) -> AotResult<()> {
+    let package_root = workspace_root.join(".beskid/obj/mods").join(package_id);
+    for sidecar in cached_descriptor_paths(&package_root, target_triple)? {
+        let artifact_dir = sidecar.parent().expect("descriptor has an artifact directory");
+        if artifact_dir == keep {
+            continue;
+        }
+        let recorded_profile = fs::read(&sidecar)
+            .ok()
+            .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
+            .and_then(|value| serde_json::from_value::<RuntimeKitProfile>(value.get("runtime")?.get("profile")?.clone()).ok());
+        if recorded_profile.is_some_and(|recorded| recorded != profile) {
+            continue;
+        }
+        fs::remove_dir_all(artifact_dir).map_err(|error| io(artifact_dir, error))?;
+        if let Some(key_dir) = artifact_dir.parent()
+            && fs::read_dir(key_dir).is_ok_and(|mut entries| entries.next().is_none())
+        {
+            fs::remove_dir(key_dir).map_err(|error| io(key_dir, error))?;
+        }
+    }
+    Ok(())
 }
 fn invalid(error: impl std::fmt::Display) -> AotError {
     AotError::InvalidRequest { message: error.to_string() }
@@ -176,14 +336,14 @@ pub fn build_mod_artifact(req: ModArtifactBuildRequest) -> AotResult<QualifiedNa
         files: mod_artifact_inventory(dir).map_err(invalid)?,
         source_files,
         sdk_files,
+        dependency_sources: req.dependency_sources,
         build_tools,
         runtime: runtime_binding,
         artifact_key: String::new(),
         artifact_dir: dir.to_path_buf(),
     };
     descriptor.validate(&req.runtime.prefix).map_err(invalid)?;
-    let identity = serde_json::to_vec(&descriptor).map_err(invalid)?;
-    descriptor.artifact_key = format!("{:x}", Sha256::digest(identity));
+    descriptor.artifact_key = native_mod_artifact_key(&descriptor).map_err(invalid)?;
     let final_dir = mod_artifact_dir(
         &req.workspace_root,
         &descriptor.package_id,
@@ -201,6 +361,13 @@ pub fn build_mod_artifact(req: ModArtifactBuildRequest) -> AotResult<QualifiedNa
         if serde_json::to_value(&existing).map_err(invalid)? != serde_json::to_value(&descriptor).map_err(invalid)? {
             return Err(invalid("conflicting immutable Mod artifact cache entry"));
         }
+        prune_superseded_mod_artifacts(
+            &req.workspace_root,
+            &existing.package_id,
+            &existing.target_triple,
+            existing.runtime.profile,
+            &final_dir,
+        )?;
         return Ok(QualifiedNativeMod { descriptor: existing, runtime_prefix: req.runtime.prefix.clone() });
     }
     // The content-addressed parent lock excludes cooperating publishers; never replace a cache entry.
@@ -211,6 +378,14 @@ pub fn build_mod_artifact(req: ModArtifactBuildRequest) -> AotResult<QualifiedNa
     }
     publish_directory_no_replace(dir, &final_dir).map_err(|error| io(&final_dir, error))?;
     sync_directory(final_dir.parent().unwrap())?;
+    drop(_guard);
+    prune_superseded_mod_artifacts(
+        &req.workspace_root,
+        &descriptor.package_id,
+        &descriptor.target_triple,
+        descriptor.runtime.profile,
+        &final_dir,
+    )?;
     descriptor.artifact_dir = final_dir;
     Ok(QualifiedNativeMod { descriptor, runtime_prefix: req.runtime.prefix.clone() })
 }

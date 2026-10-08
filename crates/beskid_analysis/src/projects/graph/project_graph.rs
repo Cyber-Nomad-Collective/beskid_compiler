@@ -61,5 +61,5 @@ pub struct ProjectGraph {
     pub root_project_root: PathBuf,
     pub root_manifest: ProjectManifest,
     pub node_by_manifest: HashMap<PathBuf, NodeIndex>,
-    pub has_std_dependency: bool,
+    pub has_core_dependency: bool,
 }

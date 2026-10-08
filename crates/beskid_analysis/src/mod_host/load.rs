@@ -22,56 +22,50 @@ pub(crate) fn load_artifacts(
 fn load_artifact(workspace_root: Option<&Path>, discovered: DiscoveredMod) -> Result<LoadedModArtifact> {
     let descriptor = find_descriptor(workspace_root, &discovered)?;
     if descriptor.is_none() {
-        anyhow::bail!(
-            "required native Mod artifact is missing for dependency {} ({}); build its executable descriptor",
-            discovered.dependency_name,
-            discovered.project_name
-        );
+        anyhow::bail!("{}", missing_artifact_message(&discovered));
     }
     let registrations = descriptor.as_ref().map(|descriptor| descriptor.registrations.clone()).unwrap_or_default();
 
     Ok(LoadedModArtifact { discovered, descriptor, registrations })
 }
 
+/// Actionable explanation for a missing executable descriptor: where it is expected and how to
+/// produce it. Toolchain-provisioned Corelib Mods ship it; any other Mod is built by the CLI.
+fn missing_artifact_message(discovered: &DiscoveredMod) -> String {
+    let expected = discovered
+        .project_root
+        .join(".beskid")
+        .join("obj")
+        .join("mods")
+        .join(&discovered.project_name);
+    let shipped = beskid_abi::corelib_bundle::verified_corelib_bundle_root(&discovered.manifest_path).is_some();
+    let remedy = if shipped {
+        "this Mod belongs to the toolchain Corelib bundle, which ships its prebuilt executable descriptor; \
+         reinstall the toolchain, or build it with"
+    } else {
+        "build it with"
+    };
+    format!(
+        "required native Mod artifact is missing for dependency {} ({}): no current executable descriptor under {}; \
+         {remedy} `beskid dev mod rebuild {}` (any `beskid build`, `run` or `check` of this project also builds it)",
+        discovered.dependency_name,
+        discovered.project_name,
+        expected.display(),
+        discovered.manifest_path.display()
+    )
+}
+
 fn source_is_current(descriptor: &ModArtifactDescriptor, discovered: &DiscoveredMod) -> Result<bool> {
-    for (name, digest) in &descriptor.source_files {
-        let relative = name.strip_prefix("sources/").context("Mod source evidence outside source closure")?;
-        let current = discovered.project_root.join(relative);
-        if !current.exists() || super::descriptor::native_mod_file_sha256(&current)? != *digest {
-            return Ok(false);
-        }
-    }
-    let source_inventory = super::descriptor::mod_artifact_inventory(&discovered.source_root)?;
-    let source_relative = discovered
-        .source_root
-        .strip_prefix(&discovered.project_root)?
-        .to_str()
-        .context("non UTF8 Mod source root")?
-        .replace(std::path::MAIN_SEPARATOR, "/");
-    for (name, digest) in source_inventory {
-        if descriptor.source_files.get(&format!("sources/{source_relative}/{name}")) != Some(&digest) {
-            return Ok(false);
-        }
-    }
-    for path in [
-        discovered.manifest_path.clone(),
-        discovered.project_root.join(crate::projects::PROJECT_LOCK_FILE_NAME),
-        discovered.project_root.join("project.mod"),
-    ] {
-        if path.exists() {
-            let relative = path
-                .strip_prefix(&discovered.project_root)?
-                .to_str()
-                .context("non UTF8 Mod authority path")?
-                .replace(std::path::MAIN_SEPARATOR, "/");
-            if descriptor.source_files.get(&format!("sources/{relative}"))
-                != Some(&super::descriptor::native_mod_file_sha256(&path)?)
-            {
-                return Ok(false);
-            }
-        }
-    }
-    Ok(true)
+    let plan = crate::projects::build_compile_plan(&discovered.manifest_path, None)
+        .map_err(|error| anyhow::anyhow!("resolve native Mod dependency closure: {error}"))?;
+    let dependency_sources = super::descriptor::native_mod_dependency_sources(&plan)?;
+    super::descriptor::native_mod_evidence_is_current(
+        descriptor,
+        &discovered.project_root,
+        &discovered.manifest_path,
+        &discovered.source_root,
+        &dependency_sources,
+    )
 }
 
 fn read_descriptor(path: &Path) -> Result<ModArtifactDescriptor> {
@@ -104,9 +98,14 @@ fn find_descriptor(workspace_root: Option<&Path>, discovered: &DiscoveredMod) ->
 
     descriptors.sort();
     descriptors.dedup();
+    let profile = super::descriptor::native_mod_runtime_profile()?;
     let mut selected = None;
     let mut rejected = Vec::new();
     for path in descriptors {
+        // Each runtime-kit profile has its own cache entry; another profile's entry is not a candidate.
+        if descriptor_profile(&path).is_some_and(|candidate| candidate != profile) {
+            continue;
+        }
         match read_descriptor(&path).and_then(|descriptor| {
             if !source_is_current(&descriptor, discovered)? {
                 anyhow::bail!("stale source, manifest or lock closure");
@@ -130,12 +129,20 @@ fn find_descriptor(workspace_root: Option<&Path>, discovered: &DiscoveredMod) ->
     }
     if selected.is_none() && !rejected.is_empty() {
         anyhow::bail!(
-            "no current qualified native Mod artifact for {}; rebuild the Mod: {}",
+            "no current qualified native Mod artifact for {}; rebuild it with `beskid dev mod rebuild {}`: {}",
             discovered.project_name,
+            discovered.manifest_path.display(),
             rejected.join("; ")
         );
     }
     Ok(selected)
+}
+
+/// The runtime profile a descriptor records, read without validating the artifact.
+fn descriptor_profile(path: &Path) -> Option<beskid_abi::runtime_kit::BuildProfile> {
+    let bytes = fs::read(path).ok()?;
+    let value: serde_json::Value = serde_json::from_slice(&bytes).ok()?;
+    serde_json::from_value(value.get("runtime")?.get("profile")?.clone()).ok()
 }
 
 fn collect_descriptors(root: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
@@ -178,7 +185,10 @@ mod tests {
         let mod_dir = root.join("ModA");
         fs::create_dir_all(mod_dir.join("Src")).expect("mod dir");
         let error = load_artifacts(Some(&root), vec![discovered("ModA", &mod_dir)], None).unwrap_err();
-        assert!(error.to_string().contains("required native Mod artifact is missing"));
+        let message = error.to_string();
+        assert!(message.contains("required native Mod artifact is missing"), "{message}");
+        assert!(message.contains("beskid dev mod rebuild"), "missing descriptor names the remedy: {message}");
+        assert!(message.contains(".beskid"), "missing descriptor names the expected location: {message}");
 
         let _ = fs::remove_dir_all(root); // Discard result: temp dir cleanup
     }
@@ -217,6 +227,25 @@ mod tests {
         let _ = fs::remove_dir_all(root); // Discard result: temp dir cleanup
     }
 
+    fn evidence_is_current(descriptor: &ModArtifactDescriptor, discovered: &DiscoveredMod) -> bool {
+        evidence_is_current_with(descriptor, discovered, &std::collections::BTreeMap::new())
+    }
+
+    fn evidence_is_current_with(
+        descriptor: &ModArtifactDescriptor,
+        discovered: &DiscoveredMod,
+        dependencies: &std::collections::BTreeMap<String, String>,
+    ) -> bool {
+        super::super::descriptor::native_mod_evidence_is_current(
+            descriptor,
+            &discovered.project_root,
+            &discovered.manifest_path,
+            &discovered.source_root,
+            dependencies,
+        )
+        .unwrap()
+    }
+
     #[test]
     fn current_source_evidence_rejects_stale_added_source_and_new_lock() {
         let root = unique_temp_dir("mod-current-source-evidence");
@@ -232,18 +261,59 @@ mod tests {
                 super::super::descriptor::native_mod_file_sha256(&path).unwrap(),
             );
         }
-        assert!(source_is_current(&descriptor, &discovered).unwrap());
+        assert!(evidence_is_current(&descriptor, &discovered));
         fs::write(root.join("Src/Added.bd"), "pub type Added {}").unwrap();
-        assert!(
-            !source_is_current(&descriptor, &discovered).unwrap(),
-            "new source membership invalidates native authority"
-        );
+        assert!(!evidence_is_current(&descriptor, &discovered), "new source membership invalidates native authority");
         fs::remove_file(root.join("Src/Added.bd")).unwrap();
         fs::write(root.join(crate::projects::PROJECT_LOCK_FILE_NAME), "new lock").unwrap();
-        assert!(!source_is_current(&descriptor, &discovered).unwrap(), "a newly present lock cannot be ignored");
+        assert!(!evidence_is_current(&descriptor, &discovered), "a newly present lock cannot be ignored");
         fs::remove_file(root.join(crate::projects::PROJECT_LOCK_FILE_NAME)).unwrap();
         fs::write(&manifest, "changed manifest").unwrap();
-        assert!(!source_is_current(&descriptor, &discovered).unwrap());
+        assert!(!evidence_is_current(&descriptor, &discovered));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn dependency_source_change_makes_cached_evidence_stale() {
+        let root = unique_temp_dir("mod-dependency-evidence");
+        let dependency = root.join("Dep");
+        fs::create_dir_all(dependency.join("src/nested")).unwrap();
+        fs::create_dir_all(dependency.join("src/obj/beskid")).unwrap();
+        let dependency_manifest = dependency.join("Dep.bproj");
+        fs::write(&dependency_manifest, "Dep { name = \"Dep\" version = \"0.1.0\" }").unwrap();
+        fs::write(dependency.join("src/Lib.bd"), "pub unit Helper() { return; }").unwrap();
+        let identity = || {
+            super::super::descriptor::native_mod_dependency_identity(&dependency_manifest, &dependency.join("src"))
+                .unwrap()
+        };
+        let original = identity();
+        fs::write(dependency.join("src/obj/beskid/Generated.bd"), "build output").unwrap();
+        assert_eq!(identity(), original, "build output is outside the dependency package");
+
+        let mod_root = root.join("ModA");
+        fs::create_dir_all(mod_root.join("Src")).unwrap();
+        fs::write(mod_root.join("Project.proj"), "manifest").unwrap();
+        fs::write(mod_root.join("Src/Main.bd"), "pub unit Main() { return; }").unwrap();
+        let discovered = discovered("ModA", &mod_root);
+        let mut descriptor = ModArtifactDescriptor::context_fixture();
+        for relative in ["Project.proj", "Src/Main.bd"] {
+            descriptor.source_files.insert(
+                format!("sources/{relative}"),
+                super::super::descriptor::native_mod_file_sha256(&mod_root.join(relative)).unwrap(),
+            );
+        }
+        descriptor.dependency_sources.insert("Dep".to_owned(), original.clone());
+        let recorded = std::collections::BTreeMap::from([("Dep".to_owned(), original.clone())]);
+        assert!(evidence_is_current_with(&descriptor, &discovered, &recorded));
+
+        fs::write(dependency.join("src/nested/Added.bd"), "pub type Added {}").unwrap();
+        let changed = std::collections::BTreeMap::from([("Dep".to_owned(), identity())]);
+        assert_ne!(changed, recorded);
+        assert!(!evidence_is_current_with(&descriptor, &discovered, &changed), "changed dependency source is stale");
+        assert!(
+            !evidence_is_current_with(&descriptor, &discovered, &std::collections::BTreeMap::new()),
+            "a removed dependency is stale"
+        );
         fs::remove_dir_all(root).unwrap();
     }
 

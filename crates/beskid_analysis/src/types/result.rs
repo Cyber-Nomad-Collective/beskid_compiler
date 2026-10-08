@@ -40,6 +40,11 @@ pub enum TypeError {
         span: SpanInfo,
         name: String,
     },
+    /// A field without `pub` read or constructed outside the source unit that declares its type.
+    InaccessibleStructField {
+        span: SpanInfo,
+        name: String,
+    },
     UnknownEnumVariant {
         span: SpanInfo,
         name: String,
@@ -234,6 +239,9 @@ impl fmt::Display for TypeError {
             TypeError::UnknownEnumType { span } => write!(f, "unknown enum type at {}", at(*span)),
             TypeError::UnknownStructField { span, name } => {
                 write!(f, "unknown struct field `{name}` at {}", at(*span))
+            }
+            TypeError::InaccessibleStructField { span, name } => {
+                write!(f, "inaccessible struct field `{name}` at {}", at(*span))
             }
             TypeError::UnknownEnumVariant { span, name } => {
                 write!(f, "unknown enum variant `{name}` at {}", at(*span))

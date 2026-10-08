@@ -83,6 +83,10 @@ impl<'a> TypeChecker<'a> {
                 self.errors.push(TypeError::UnknownStructField { span: segment.span, name: field_name });
                 return None;
             };
+            if self.field_inaccessible(item_id, &field_name) {
+                self.errors.push(TypeError::InaccessibleStructField { span: segment.span, name: field_name });
+                return None;
+            }
             let mapping = self.generic_mapping_for_type_id(current_type);
             current_type =
                 if mapping.is_empty() { *field_type } else { self.substitute_type_id(*field_type, &mapping) };

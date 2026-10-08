@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use crate::syntax::Spanned;
 use crate::syntax::{Block, ContractNode, Node, Statement};
 
@@ -39,7 +41,10 @@ impl Resolver {
                     self.resolve_type(return_type);
                 }
                 if include_bodies {
+                    let previous_function =
+                        self.current_function.replace((def.node.name.node.name.clone(), item.span));
                     self.resolve_block(&def.node.body);
+                    self.current_function = previous_function;
                     self.pop_scope();
                 }
                 self.pop_generic_scope();
@@ -217,6 +222,11 @@ impl Resolver {
                 for field in &def.node.fields {
                     self.resolve_type(&field.node.ty);
                 }
+                let mut sibling_methods = HashMap::new();
+                for method in &def.node.methods {
+                    *sibling_methods.entry(method.node.name.node.name.clone()).or_insert(0_usize) += 1;
+                }
+                let previous_siblings = self.current_type_sibling_methods.replace(sibling_methods);
                 for method in &def.node.methods {
                     self.resolve_type(&method.node.receiver_type);
                     let previous_receiver = self.current_receiver_item_id;
@@ -240,6 +250,7 @@ impl Resolver {
                         self.pop_scope();
                     }
                 }
+                self.current_type_sibling_methods = previous_siblings;
                 for binding in &def.node.associated_type_bindings {
                     self.resolve_type(&binding.node.ty);
                 }

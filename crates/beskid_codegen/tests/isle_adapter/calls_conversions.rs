@@ -426,7 +426,7 @@ fn canonical_foundation_assert_trigger_failure_imports_only_baseline_strings_and
     let (input, isa, root) = canonical_foundation_assert_fixture();
     let trigger_failure = find_function_definitions(input.database(), root)
         .into_iter()
-        .find(|key| item_name(input.database(), *key).ok().flatten().as_deref() == Some("trigger_failure"))
+        .find(|key| item_name(input.database(), *key).ok().flatten().as_deref() == Some("TriggerFailure"))
         .expect("canonical Assert trigger_failure");
     let call = find_corelib_service_call(input.database(), trigger_failure, "__panic_str")
         .expect("canonical Assert panic call");
@@ -439,7 +439,7 @@ fn canonical_foundation_assert_trigger_failure_imports_only_baseline_strings_and
     let artifact = lower_syntax_program(
         &input,
         isa.as_ref(),
-        &[SyntaxModuleItem { key: trigger_failure, symbol: "trigger_failure".into() }],
+        &[SyntaxModuleItem { key: trigger_failure, symbol: "TriggerFailure".into() }],
     )
     .expect("canonical Assert lowers through syntax ISLE");
     let mut imports = artifact.extern_imports.iter().map(|import| import.symbol.as_str()).collect::<Vec<_>>();
@@ -452,7 +452,7 @@ fn canonical_foundation_assert_trigger_failure_imports_only_baseline_strings_and
     let trigger = artifact
         .functions
         .iter()
-        .find(|function| function.name == "trigger_failure")
+        .find(|function| function.name == "TriggerFailure")
         .expect("trigger_failure artifact");
     let clif = trigger.function.display().to_string();
     assert!(!clif.contains("load.i64"), "the managed panic string must cross the adapter boundary intact: {clif}");

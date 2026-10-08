@@ -67,7 +67,11 @@ fn fixture(version: &str, omit_release_kit: bool) -> (tempfile::TempDir, Vec<u8>
     let corelib = prefix.join("beskid_corelib");
     fs::create_dir_all(corelib.join("beskid_corelib")).unwrap();
     fs::create_dir_all(corelib.join("packages/foundation")).unwrap();
-    fs::write(corelib.join("CoreLib.bws"), "workspace { name = fixture }\n").unwrap();
+    fs::write(
+        corelib.join("CoreLib.bws"),
+        "workspace { name = fixture }\nmember \"corelib\" { path = \"beskid_corelib\" }\nmember \"foundation\" { path = \"packages/foundation\" }\n",
+    )
+    .unwrap();
     fs::write(corelib.join("beskid_corelib/corelib.bproj"), "fixture { name = fixture }\n").unwrap();
     fs::write(corelib.join("packages/foundation/foundation.bproj"), "foundation { name = foundation }\n").unwrap();
     let fingerprint = beskid_abi::corelib_bundle::fingerprint_corelib_bundle_dir(&corelib).unwrap();

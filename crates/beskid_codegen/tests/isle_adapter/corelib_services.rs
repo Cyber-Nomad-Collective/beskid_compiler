@@ -230,7 +230,7 @@ fn canonical_foundation_assert_public_helpers_lower_through_syntax_isle() {
     let (input, isa, root) = canonical_foundation_assert_fixture();
     // Non-generic helpers and their direct callees. Contains stays out: it pulls Core.String.
     // Equal is exercised below with an explicit call-derived i64 specialization.
-    let items = ["trigger_failure", "Fail", "fail_with_because", "True", "False"];
+    let items = ["TriggerFailure", "Fail", "FailWithBecause", "True", "False"];
     let mut module_items = Vec::new();
     for name in items {
         let key = find_function_definitions(input.database(), root)
@@ -363,9 +363,9 @@ fn canonical_foundation_assert_equal_specialization_lowers_through_syntax_isle()
 
     let mut module_items = Vec::new();
     for (root, name) in [
-        (assert_root, "trigger_failure"),
+        (assert_root, "TriggerFailure"),
         (assert_root, "Fail"),
-        (assert_root, "fail_with_because"),
+        (assert_root, "FailWithBecause"),
         (assert_root, "Equal"),
         (main_root, "Main"),
     ] {
@@ -583,7 +583,7 @@ fn copied_and_altered_foundation_assert_source_cannot_receive_runtime_service_au
     let trigger_failure = definitions
         .iter()
         .copied()
-        .find(|key| item_name(&db, *key).ok().flatten().as_deref() == Some("trigger_failure"))
+        .find(|key| item_name(&db, *key).ok().flatten().as_deref() == Some("TriggerFailure"))
         .expect("copied Assert trigger_failure");
     assert!(
         find_corelib_service_call(&db, trigger_failure, "__panic_str").is_none(),
@@ -664,7 +664,7 @@ fn symlinked_foundation_assert_source_cannot_receive_panic_authority() {
     let root = AstNodeKey { unit: SourceUnitId::new(&db, source_path.clone()), generation, node: AstNodeId(0) };
     let trigger_failure = find_function_definitions(&db, root)
         .into_iter()
-        .find(|key| item_name(&db, *key).ok().flatten().as_deref() == Some("trigger_failure"))
+        .find(|key| item_name(&db, *key).ok().flatten().as_deref() == Some("TriggerFailure"))
         .expect("symlinked Assert trigger_failure");
     assert!(
         find_corelib_service_call(&db, trigger_failure, "__panic_str").is_none(),

@@ -19,7 +19,7 @@ fn execute(source: &str, extra: &[&str]) -> std::process::Output {
 #[test]
 fn v06_native_tests_isolate_assertion_failure_and_continue_selected_entries() {
     let output = execute(
-        "use Std.Testing.Assert;\ntest First { Assert.Fail(\"isolated failure\"); }\ntest Second { return; }\n",
+        "use Testing.Assert;\ntest First { Assert.Fail(\"isolated failure\"); }\ntest Second { return; }\n",
         &[],
     );
     assert!(!output.status.success());
@@ -53,7 +53,7 @@ fn v06_native_real_project_target_keeps_manifest_resolution() {
     std::fs::create_dir(root.path().join("Src")).unwrap();
     std::fs::write(
         root.path().join("Src/Main.bd"),
-        "use Std.Testing.Assert;\ntest ProjectSmoke { Assert.True(true, \"real project standard library\"); }\n",
+        "use Testing.Assert;\ntest ProjectSmoke { Assert.True(true, \"real project standard library\"); }\n",
     )
     .unwrap();
     let manifest = root.path().join("Native.bproj");
@@ -82,10 +82,10 @@ fn v06_native_real_project_target_keeps_manifest_resolution() {
 }
 
 #[test]
-fn v06_native_external_unprefixed_internal_module_is_not_public_import_authority() {
+fn v06_native_std_qualified_import_is_rejected_with_native_replacement() {
     let root = tempfile::tempdir().unwrap();
     let input = root.path().join("Main.bd");
-    std::fs::write(&input, "use Testing.Assert;\ntest Unprefixed { Assert.Fail(\"must never execute\"); }\n").unwrap();
+    std::fs::write(&input, "use Std.Testing.Assert;\ntest Unprefixed { Assert.Fail(\"must never execute\"); }\n").unwrap();
     let output = Command::new(env!("CARGO_BIN_EXE_beskid_cli"))
         .args(["test", "--plain", "--json"])
         .arg(&input)
@@ -96,10 +96,13 @@ fn v06_native_external_unprefixed_internal_module_is_not_public_import_authority
         .unwrap();
     assert!(!output.status.success());
     let text = format!("{}{}", String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
-    assert!(text.contains("Testing.Assert") && (text.contains("unknown") || text.contains("resolve")), "{text}");
+    assert!(
+        text.contains("unknown import path `Std.Testing.Assert`: the `Std` namespace does not exist"),
+        "a Std-qualified import must report the removed namespace: {text}"
+    );
     assert!(
         !text.contains("native test `Unprefixed` exited"),
-        "invalid public import must fail before native execution: {text}"
+        "a Std-qualified import must fail before native execution: {text}"
     );
     assert!(!root.path().join("__synthetic__.bproj").exists());
 }

@@ -27,7 +27,7 @@ impl ProjectCase {
             NEXT_CASE.fetch_add(1, Ordering::Relaxed)
         ));
         let app = root.join("App");
-        let core = root.join("Core");
+        let core = root.join("Kernel");
         let other = root.join("Other");
         fs::create_dir_all(app.join("Src")).expect("app source directory");
         for project in [&core, &other] {
@@ -42,7 +42,7 @@ impl ProjectCase {
         }
         fs::write(app.join("Src/Main.bd"), "Fn Main() { }\n").expect("app source");
         let case = Self { lock: app.join("Project.lock"), root, app };
-        case.write_app_manifest("Core");
+        case.write_app_manifest("Kernel");
         case
     }
 
@@ -59,7 +59,7 @@ impl ProjectCase {
     fn write_legacy_lock(&self) -> Vec<u8> {
         // Deliberately stale v1 source paths: migration must resolve the current manifest.
         let content = format!(
-            "# Project.lock v1\nroot_manifest={}\nproject_name=App\ndependencies:\n- name=Core;manifest=/obsolete/Core/Core.bproj;project=/obsolete/Core;source_root=/obsolete/Core/Src;materialized_root=obj/beskid/deps/src/Core-old\n",
+            "# Project.lock v1\nroot_manifest={}\nproject_name=App\ndependencies:\n- name=Kernel;manifest=/obsolete/Kernel/Kernel.bproj;project=/obsolete/Kernel;source_root=/obsolete/Kernel/Src;materialized_root=obj/beskid/deps/src/Kernel-old\n",
             self.app.join("App.bproj").display()
         );
         fs::write(&self.lock, content.as_bytes()).expect("legacy lock");
@@ -200,8 +200,8 @@ fn lock_and_update_explicitly_migrate_v1_from_current_manifest() {
         let output = case.invoke(command, None);
         assert!(output.status.success(), "{command} failed: {}", output_text(&output));
         let lock = assert_v2_lock(&case.lock);
-        assert!(lock.contains("name=Core"), "current dependency missing: {lock}");
-        assert!(lock.contains("project=../Core"), "current relative project missing: {lock}");
+        assert!(lock.contains("name=Kernel"), "current dependency missing: {lock}");
+        assert!(lock.contains("project=../Kernel"), "current relative project missing: {lock}");
         assert!(!lock.contains("/obsolete/"), "v1 path reused: {lock}");
     }
 }
@@ -230,7 +230,7 @@ fn unknown_lock_header_fails_for_update_without_preparation_writes() {
 
 fn malformed_v2_case(command: &str) {
     let case = ProjectCase::new();
-    let malformed = b"# Project.lock v2\nroot_manifest=App.bproj\nproject_name=App\ndependencies:\n- name=Core;source=path;project=../Core;manifest=Core.bproj;source_root=Src;materialized_root=obj/beskid/deps/src/Core-old;unexpected=1\n";
+    let malformed = b"# Project.lock v2\nroot_manifest=App.bproj\nproject_name=App\ndependencies:\n- name=Kernel;source=path;project=../Kernel;manifest=Kernel.bproj;source_root=Src;materialized_root=obj/beskid/deps/src/Kernel-old;unexpected=1\n";
     fs::write(&case.lock, malformed).expect("write malformed v2 lock");
     assert_invalid_lock_rejected_without_mutation(&case, command, malformed);
 }
@@ -334,12 +334,12 @@ fn copied_source_project_has_identical_lock_and_locked_commands_preserve_it() {
     let original = ProjectCase::new();
     let relocated = ProjectCase::new();
     fs::write(original.app.join("Src/Main.bd"), "unit Main() {}\n").expect("app source");
-    fs::write(original.root.join("Core/Src/Core.bd"), "unit Core() {}\n").expect("dependency source");
+    fs::write(original.root.join("Kernel/Src/Kernel.bd"), "unit Kernel() {}\n").expect("dependency source");
     fs::write(original.app.join("Src/Tests.bd"), "test Smoke {}\n").expect("test source");
     let mut manifest = fs::read_to_string(original.app.join("App.bproj")).expect("app manifest");
     manifest.push_str("\ntarget \"AppTests\" {\n  kind = \"Test\"\n  entry = \"Tests.bd\"\n}\n");
     fs::write(original.app.join("App.bproj"), manifest).expect("test target manifest");
-    for relative in ["App/App.bproj", "App/Src/Main.bd", "App/Src/Tests.bd", "Core/Core.bproj", "Core/Src/Core.bd"] {
+    for relative in ["App/App.bproj", "App/Src/Main.bd", "App/Src/Tests.bd", "Kernel/Kernel.bproj", "Kernel/Src/Kernel.bd"] {
         fs::copy(original.root.join(relative), relocated.root.join(relative)).expect("copy source-bearing fixture");
     }
 

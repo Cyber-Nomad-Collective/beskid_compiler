@@ -89,7 +89,7 @@ fn fixture_with(main_body: &str, array: ArraySource) -> Fixture {
             ArraySource::HostLocal(_) => Vec::new(),
         },
         unresolved_dependencies: Vec::new(),
-        has_std_dependency: false,
+        has_core_dependency: false,
     };
     let assembly = Arc::new(
         assemble_program_with_materializer(&plan, None, &main_path, None, &AssemblyOptions::default(), None, None)

@@ -140,7 +140,7 @@ pub(super) fn emit_type_bd(name: &str, parsed: &ParsedType) -> String {
                 let mut lines: Vec<String> = Vec::new();
                 for f in &parsed.fields {
                     push_field_doc_lines("    ", &f.rust_doc_lines, &mut lines);
-                    lines.push(format!("    {} {},", f.beskid_ty, f.name));
+                    lines.push(format!("    pub {} {},", f.beskid_ty, f.name));
                 }
                 format!("pub type {name} {{\n{}\n}}", lines.join("\n"))
             }

@@ -42,6 +42,17 @@ pub struct Resolver {
     pub(crate) declaring_package: String,
     /// When resolving method bodies, the extended/receiver type for bare field access (`handle` → `this.handle`).
     pub(crate) current_receiver_item_id: Option<super::ids::ItemId>,
+    /// When resolving a method body declared inside a `type X { }` body, how many sibling methods
+    /// of that type carry each name. A bare `Name(...)` call binds to the sibling method when
+    /// exactly one carries the name, mirroring `unqualified_enclosing_method_call` in
+    /// `beskid_queries` (the production authority). `None` outside type-body methods.
+    pub(crate) current_type_sibling_methods: Option<HashMap<String, usize>>,
+    /// Canonical compiler-SDK path the unit being resolved corresponds to byte for byte
+    /// (`sdk_authority::canonical_sdk_source_authority`); `None` for every other unit.
+    pub(crate) sdk_source_authority: Option<&'static str>,
+    /// Name and item span of the function whose body is being resolved; `None` inside methods,
+    /// lambdas, tests, and declarations.
+    pub(crate) current_function: Option<(String, SpanInfo)>,
 }
 
 impl Resolver {

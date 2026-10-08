@@ -76,10 +76,10 @@ fn import_resolves(db: &dyn Db, key: AstNodeKey, path: &[String]) -> bool {
         let parent_units = path
             .split_last()
             .and_then(|(_, parent)| {
-                registry.visible_module_units(key.unit, key.generation, parent).map(|units| units.to_vec())
+                registry.visible_module_units(key.generation, parent).map(|units| units.to_vec())
             })
             .unwrap_or_default();
-        let module = registry.visible_module_units(key.unit, key.generation, path).is_some();
+        let module = registry.visible_module_units(key.generation, path).is_some();
         (module, parent_units)
     };
     if module {

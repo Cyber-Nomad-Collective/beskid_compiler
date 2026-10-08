@@ -68,15 +68,6 @@ pub fn applied_contract_argument_is_type(
         if *qualified_name == identity && arguments.is_empty()))
 }
 
-fn application_from_path(
-    db: &dyn Db,
-    owner: AstNodeKey,
-    context: AstNodeKey,
-    path: &Path,
-) -> Result<AppliedContractIdentity, SemanticError> {
-    application_from_path_with_arguments(db, owner, context, path, &HashMap::new())
-}
-
 fn application_from_path_with_arguments(
     db: &dyn Db,
     owner: AstNodeKey,
@@ -85,10 +76,7 @@ fn application_from_path_with_arguments(
     substitutions: &HashMap<&str, &GenericSourceTypeIdentity>,
 ) -> Result<AppliedContractIdentity, SemanticError> {
     let terminal = path.segments.last().ok_or_else(|| SemanticError::unavailable("contract_application.empty"))?;
-    let mut declaration_path = path.clone();
-    declaration_path.segments.last_mut().unwrap().node.type_args.clear();
-    let declaration = resolve_contract(db, context, &declaration_path)
-        .ok_or_else(|| SemanticError::unavailable("contract_application.declaration"))?;
+    let declaration = conformance_declaration(db, context, path)?;
     let syntax =
         db.syntax_unit(declaration.unit).ok_or_else(|| SemanticError::unavailable("contract_application.owner"))?;
     let definition = syntax
@@ -108,11 +96,15 @@ fn application_from_path_with_arguments(
     Ok(AppliedContractIdentity { owner, declaration, arguments: arguments.into() })
 }
 
-pub(super) fn type_contract_applications_registered(
+/// Visit every conformance written for nominal `key`: on its own declaration (context = the
+/// type) and on each `impl` block whose receiver resolves to it (context = that block).
+/// Returns `None` when `key` is not a current nominal type declaration.
+fn for_each_conformance_site(
     db: &dyn Db,
     syntax: SyntaxUnitInput,
     key: AstNodeKey,
-) -> SemanticQueryResult<Arc<[AppliedContractIdentity]>> {
+    mut visit: impl FnMut(AstNodeKey, &Path, Option<&ImplBlock>) -> Result<(), SemanticError>,
+) -> SemanticQueryResult<()> {
     if !syntax.accepts_key(db, key) {
         return Ok(None);
     }
@@ -121,10 +113,9 @@ pub(super) fn type_contract_applications_registered(
     let Some(node) = index.node_at(program, key.node) else {
         return Ok(None);
     };
-    let mut applications = Vec::new();
     if let Some(definition) = node.of::<TypeDefinition>() {
         for path in &definition.conformances {
-            applications.push(application_from_path(db, key, key, &path.node)?);
+            visit(key, &path.node, None)?;
         }
     } else if node.of::<EnumDefinition>().is_none() {
         return Ok(None);
@@ -142,16 +133,189 @@ pub(super) fn type_contract_applications_registered(
             continue;
         }
         for path in &block.conformances {
-            applications.push(application_from_path(db, key, implementation, &path.node)?);
+            visit(implementation, &path.node, Some(block))?;
         }
     }
-    let mut unique = Vec::new();
-    for application in applications {
-        if !unique.contains(&application) {
-            unique.push(application);
+    Ok(Some(()))
+}
+
+/// The contract declaration a written conformance path names, resolved without interpreting
+/// any of its applied arguments.
+fn conformance_declaration(db: &dyn Db, context: AstNodeKey, path: &Path) -> Result<AstNodeKey, SemanticError> {
+    let mut declaration_path = path.clone();
+    declaration_path
+        .segments
+        .last_mut()
+        .ok_or_else(|| SemanticError::unavailable("contract_application.empty"))?
+        .node
+        .type_args
+        .clear();
+    resolve_contract(db, context, &declaration_path)
+        .ok_or_else(|| SemanticError::unavailable("contract_application.declaration"))
+}
+
+/// Exact contract declarations a type conforms to. Selecting a declaration never evaluates an
+/// applied argument, so a consumer that admits only some contract families (native Mod
+/// discovery) is never exposed to an unrelated generic conformance such as `Iterator<T>`.
+pub(super) fn type_contract_declarations_registered(
+    db: &dyn Db,
+    syntax: SyntaxUnitInput,
+    key: AstNodeKey,
+) -> SemanticQueryResult<Arc<[AstNodeKey]>> {
+    let mut declarations = Vec::new();
+    let visited = for_each_conformance_site(db, syntax, key, |context, path, _| {
+        let declaration = conformance_declaration(db, context, path)?;
+        if !declarations.contains(&declaration) {
+            declarations.push(declaration);
         }
+        Ok(())
+    })?;
+    Ok(visited.map(|()| declarations.into()))
+}
+
+/// Whether `syntax` names one of `parameters` anywhere in its recursive shape.
+fn type_mentions_generic_parameter(syntax: &Type, parameters: &[&str]) -> bool {
+    if generic_parameter_reference_name(syntax).is_some_and(|name| parameters.contains(&name)) {
+        return true;
     }
-    Ok(Some(unique.into()))
+    match syntax {
+        Type::Complex(path) => path
+            .node
+            .segments
+            .iter()
+            .flat_map(|segment| segment.node.type_args.iter())
+            .any(|argument| type_mentions_generic_parameter(&argument.node, parameters)),
+        Type::Array(element) => type_mentions_generic_parameter(&element.node, parameters),
+        Type::Function { return_type, parameters: inputs } => {
+            inputs.iter().any(|input| type_mentions_generic_parameter(&input.node, parameters))
+                || type_mentions_generic_parameter(&return_type.node, parameters)
+        }
+        _ => false,
+    }
+}
+
+/// Applied conformances of `key` whose declaration `admit` accepts, interpreted in the owner's
+/// generic environment.
+///
+/// `receiver_arguments` is the owner's applied environment in declaration order. `None` asks for
+/// the unapplied owner: its declared parameters then have no source identity, and an admitted
+/// conformance whose arguments name one fails closed as an unapplied receiver instead of being
+/// misreported as an unresolved type. `impl<...>` parameters are bound only from the applied
+/// receiver; an unbound one used by an admitted conformance fails closed the same way.
+/// Declarations are filtered before any argument is interpreted.
+pub(super) fn type_contract_applications_in_environment(
+    db: &dyn Db,
+    syntax: SyntaxUnitInput,
+    key: AstNodeKey,
+    receiver_arguments: Option<&[GenericSourceTypeIdentity]>,
+    admit: &dyn Fn(AstNodeKey) -> bool,
+) -> SemanticQueryResult<Arc<[AppliedContractIdentity]>> {
+    if !syntax.accepts_key(db, key) {
+        return Ok(None);
+    }
+    let Some(node) = syntax.syntax_index(db).node_at(syntax.expanded_program(db), key.node) else {
+        return Ok(None);
+    };
+    let Some(owner_generics) = node
+        .of::<TypeDefinition>()
+        .map(|definition| &definition.generics)
+        .or_else(|| node.of::<EnumDefinition>().map(|definition| &definition.generics))
+    else {
+        return Ok(None);
+    };
+    let owner_names = owner_generics.iter().map(|generic| generic.node.name.as_str()).collect::<Vec<_>>();
+    let receiver_environment = match receiver_arguments {
+        Some(arguments) => {
+            if arguments.len() != owner_names.len() {
+                return Err(SemanticError::new("applied contract owner generic arity differs from its declaration"));
+            }
+            Some(
+                owner_names
+                    .iter()
+                    .zip(arguments)
+                    .map(|(name, argument)| ((*name).to_owned(), argument.clone()))
+                    .collect::<Vec<_>>(),
+            )
+        }
+        None if owner_names.is_empty() => Some(Vec::new()),
+        None => None,
+    };
+    let receiver_identity = match &receiver_environment {
+        Some(environment) => Some(GenericSourceTypeIdentity::Nominal {
+            qualified_name: stable_declaration_identity(db, key)
+                .ok_or_else(|| SemanticError::unavailable("contract_application.receiver_identity"))?,
+            arguments: environment.iter().map(|(_, identity)| identity.clone()).collect::<Vec<_>>().into(),
+        }),
+        None => None,
+    };
+    let mut applications = Vec::new();
+    let visited = for_each_conformance_site(db, syntax, key, |context, path, block| {
+        if !admit(conformance_declaration(db, context, path)?) {
+            return Ok(());
+        }
+        let implementation_names = block
+            .map(|block| block.generics.iter().map(|generic| generic.node.name.as_str()).collect::<Vec<_>>())
+            .unwrap_or_default();
+        let (bindings, unbound, parameter_kind) = match block.filter(|_| !implementation_names.is_empty()) {
+            // `impl<U> Box<U> : C<U>` names its own parameters; they are bound only from the
+            // applied receiver, never from the owner's declared names.
+            Some(block) => {
+                if implementation_names.iter().enumerate().any(|(i, name)| implementation_names[..i].contains(name)) {
+                    return Err(SemanticError::new("implementation generic scope is ambiguous"));
+                }
+                let mut bindings = Vec::new();
+                if let Some(receiver) = &receiver_identity
+                    && !bind_implementation_generics(
+                        &block.receiver_type.node,
+                        receiver,
+                        &implementation_names,
+                        &mut bindings,
+                    )
+                {
+                    // This block implements another instantiation of the receiver.
+                    return Ok(());
+                }
+                let unbound = implementation_names
+                    .iter()
+                    .copied()
+                    .filter(|name| !bindings.iter().any(|(bound, _)| bound == name))
+                    .collect::<Vec<_>>();
+                (bindings, unbound, "implementation generic parameters")
+            }
+            // The type's own conformances and `impl Box<T> : C<T>` share the receiver's names.
+            None => match &receiver_environment {
+                Some(environment) => (environment.clone(), Vec::new(), "the owner's declared generic parameters"),
+                None => (Vec::new(), owner_names.clone(), "the owner's declared generic parameters"),
+            },
+        };
+        let arguments = path.segments.last().map(|terminal| terminal.node.type_args.as_slice()).unwrap_or(&[]);
+        if arguments.iter().any(|argument| type_mentions_generic_parameter(&argument.node, &unbound)) {
+            return Err(SemanticError::unavailable_at_described(
+                "contract_application.unapplied_receiver",
+                context,
+                &crate::semantic_contract::format_ast_node_site(db, context),
+                &format!("conformance arguments name {parameter_kind} without an applied generic environment"),
+            ));
+        }
+        let application =
+            application_from_path_with_arguments(db, key, context, path, &environment_map(&bindings))?;
+        if !applications.contains(&application) {
+            applications.push(application);
+        }
+        Ok(())
+    })?;
+    Ok(visited.map(|()| applications.into()))
+}
+
+/// Every unapplied conformance of `key`. Consumers that need only some contracts use
+/// [`type_contract_applications_in_environment`] with a declaration filter so unrelated
+/// conformances are never interpreted.
+pub(super) fn type_contract_applications_registered(
+    db: &dyn Db,
+    syntax: SyntaxUnitInput,
+    key: AstNodeKey,
+) -> SemanticQueryResult<Arc<[AppliedContractIdentity]>> {
+    type_contract_applications_in_environment(db, syntax, key, None, &|_| true)
 }
 
 pub(super) fn type_applied_contract_implementation_registered(
@@ -166,8 +330,11 @@ pub(super) fn type_applied_contract_implementation_registered(
     if application.owner != concrete {
         return Err(SemanticError::new("applied contract was issued to another source owner"));
     }
-    let current = type_contract_applications_registered(db, syntax, concrete)?
-        .ok_or_else(|| SemanticError::unavailable("contract_application.owner"))?;
+    let declaration = application.declaration;
+    let current = type_contract_applications_in_environment(db, syntax, concrete, None, &|candidate| {
+        candidate == declaration
+    })?
+    .ok_or_else(|| SemanticError::unavailable("contract_application.owner"))?;
     if !current.contains(application) {
         return Err(SemanticError::new("applied contract no longer belongs to this source generation"));
     }
@@ -245,15 +412,7 @@ pub(super) fn type_contract_declarations_tracked(
     syntax: SyntaxUnitInput,
     key: AstNodeKey,
 ) -> SemanticQueryResult<Arc<[AstNodeKey]>> {
-    Ok(type_contract_applications_registered(db, syntax, key)?.map(|applications| {
-        let mut declarations = Vec::new();
-        for application in applications.iter() {
-            if !declarations.contains(&application.declaration) {
-                declarations.push(application.declaration);
-            }
-        }
-        declarations.into()
-    }))
+    type_contract_declarations_registered(db, syntax, key)
 }
 
 /// Resolve a contract in the same lexical/import namespaces as its source annotation.
@@ -296,10 +455,10 @@ pub(in crate::semantic_contract) fn resolve_contract(db: &dyn Db, key: AstNodeKe
         let modules = prefix.iter().map(|segment| segment.node.name.node.name.clone()).collect::<Vec<_>>();
         units.extend(resolve_qualified_module_unit(db, key, &modules));
         let registry = db.syntax_dependency_registry().lock().expect("syntax dependency registry");
-        units.extend(registry.visible_module_units(key.unit, key.generation, &modules).into_iter().flatten().copied());
+        units.extend(registry.visible_module_units(key.generation, &modules).into_iter().flatten().copied());
         let mut full = modules;
         full.push(name.to_owned());
-        units.extend(registry.visible_module_units(key.unit, key.generation, &full).into_iter().flatten().copied());
+        units.extend(registry.visible_module_units(key.generation, &full).into_iter().flatten().copied());
     }
     let mut visited = HashSet::new();
     let mut candidates = Vec::new();
@@ -533,11 +692,13 @@ pub(super) fn specialized_source_expression_identity(
     let syntax = db
         .syntax_unit(key.unit)
         .filter(|syntax| syntax.accepts_key(db, key))
-        .ok_or_else(|| SemanticError::unavailable("source_expression_type"))?;
+        .ok_or_else(|| source_expression_unavailable(db, key, "specialized expression is in a stale generation"))?;
     let index = syntax.syntax_index(db);
     let program = syntax.expanded_program(db);
     let key = AstNodeKey { node: normalized_expression_node(index, key.node), ..key };
-    let node = index.node_at(program, key.node).ok_or_else(|| SemanticError::unavailable("source_expression_type"))?;
+    let node = index
+        .node_at(program, key.node)
+        .ok_or_else(|| source_expression_unavailable(db, key, "specialized expression node is absent"))?;
     let environment =
         enclosing.substitutions.iter().map(|binding| (binding.parameter.as_ref(), binding.source_identity())).collect();
     if let Some(path) = node.of::<beskid_analysis::syntax::PathExpression>()
@@ -565,7 +726,7 @@ pub(super) fn specialized_source_expression_identity(
             }
             let initializer = index
                 .direct_child_id(program, parent, DynNodeRef::from(&local.value))
-                .ok_or_else(|| SemanticError::unavailable("source_expression_type"))?;
+                .ok_or_else(|| source_expression_unavailable(db, key, "let initializer node is absent"))?;
             return specialized_source_expression_identity(
                 db,
                 AstNodeKey { node: initializer, ..key },
@@ -591,11 +752,11 @@ pub(super) fn specialized_source_expression_identity(
     {
         let target = db
             .syntax_unit(instance.declaration.unit)
-            .ok_or_else(|| SemanticError::unavailable("source_expression_type"))?;
+            .ok_or_else(|| source_expression_unavailable(db, key, "specialized callee unit is not registered"))?;
         let target_node = target
             .syntax_index(db)
             .node_at(target.expanded_program(db), instance.declaration.node)
-            .ok_or_else(|| SemanticError::unavailable("source_expression_type"))?;
+            .ok_or_else(|| source_expression_unavailable(db, key, "specialized callee declaration is absent"))?;
         let result = target_node
             .of::<FunctionDefinition>()
             .and_then(|item| item.return_type.as_ref())
@@ -1852,13 +2013,67 @@ pub(crate) fn serialization_target_contract_methods_in_environment(
 }
 
 #[cfg(test)]
+mod generic_conformance_tests {
+    use super::serialization_target_tests::{fixture_with_source, key};
+    use super::*;
+
+    const SOURCE: &str = "pub contract Sequence<T> { T Head(); }\npub contract Marker { unit Mark(); }\npub type Holder<T> : Sequence<T> {\n    T value,\n\n    pub T Head() {\n        return this.value;\n    }\n}\npub type Plain : Marker { pub unit Mark() { return; } }\npub unit Main() { return; }";
+
+    #[test]
+    fn generic_conformance_identity_resolves_owner_parameters_in_applied_environment() {
+        let (_root, db, assembly) = fixture_with_source(SOURCE);
+        let holder = key(&db, &assembly, NodeKind::TypeDefinition, 0);
+        let syntax = db.syntax_unit(holder.unit).unwrap();
+        let args = [GenericSourceTypeIdentity::Abi(SemanticTypeId::I32)];
+        let applied =
+            type_contract_applications_in_environment(&db, syntax, holder, Some(&args), &|_| true).unwrap().unwrap();
+        assert_eq!(applied.len(), 1);
+        assert_eq!(applied[0].arguments(), &args, "`T` resolves to the owner's applied argument");
+        assert!(
+            type_contract_applications_in_environment(&db, syntax, holder, Some(&[]), &|_| true).is_err(),
+            "an environment of the wrong arity is rejected"
+        );
+        let error = type_contract_applications_registered(&db, syntax, holder).unwrap_err();
+        assert_eq!(
+            error.unavailable_query(),
+            Some("contract_application.unapplied_receiver"),
+            "an unapplied declared parameter is not an unresolved type: {error:?}"
+        );
+    }
+
+    #[test]
+    fn declaration_selection_never_interprets_unrelated_generic_conformances() {
+        let (_root, db, assembly) = fixture_with_source(SOURCE);
+        let holder = key(&db, &assembly, NodeKind::TypeDefinition, 0);
+        let plain = key(&db, &assembly, NodeKind::TypeDefinition, 1);
+        let sequence = key(&db, &assembly, NodeKind::ContractDefinition, 0);
+        let marker = key(&db, &assembly, NodeKind::ContractDefinition, 1);
+        let syntax = db.syntax_unit(holder.unit).unwrap();
+        let declarations = type_contract_declarations_registered(&db, syntax, holder).unwrap().unwrap();
+        assert_eq!(declarations.as_ref(), &[sequence]);
+        let unrelated =
+            type_contract_applications_in_environment(&db, syntax, holder, None, &|candidate| candidate == marker)
+                .unwrap()
+                .unwrap();
+        assert!(unrelated.is_empty(), "a filtered-out generic conformance is never evaluated");
+        let marked =
+            type_contract_applications_in_environment(&db, syntax, plain, None, &|candidate| candidate == marker)
+                .unwrap()
+                .unwrap();
+        assert_eq!(marked.len(), 1);
+        let methods = type_applied_contract_implementation_registered(&db, syntax, plain, &marked[0]).unwrap().unwrap();
+        assert_eq!(methods.len(), 1);
+    }
+}
+
+#[cfg(test)]
 mod serialization_target_tests {
     use super::*;
     use crate::{BeskidDatabase, build_typed_program, project_session_for_planned_syntax_assembly};
     use beskid_analysis::projects::{
         AssemblyOptions, CompilePlan, Target, TargetKind, assemble_program_with_materializer,
     };
-    fn fixture_with_source(
+    pub(super) fn fixture_with_source(
         source: &str,
     ) -> (tempfile::TempDir, BeskidDatabase, Arc<beskid_analysis::projects::ProgramAssembly>) {
         let root = tempfile::tempdir().unwrap();
@@ -1874,7 +2089,7 @@ mod serialization_target_tests {
             target: Target { name: "Main".into(), kind: TargetKind::Lib, entry: Some("Main.bd".into()) },
             dependency_projects: vec![],
             unresolved_dependencies: vec![],
-            has_std_dependency: false,
+            has_core_dependency: false,
         };
         let assembly = Arc::new(
             assemble_program_with_materializer(&plan, None, &path, None, &AssemblyOptions::default(), None, None)
@@ -1892,7 +2107,7 @@ mod serialization_target_tests {
             "pub contract Codec<T> { T Read(); }\npub type Box<T> { pub T Value, }\nimpl Box<T> : Codec<T> { pub T Read() { return this.Value; } }\npub enum Choice<T> { Some(T Value), }\nimpl Choice<T> : Codec<T> { pub T Read() { return 0; } }\npub unit Main() { return; }",
         )
     }
-    fn key(
+    pub(super) fn key(
         db: &dyn Db,
         assembly: &beskid_analysis::projects::ProgramAssembly,
         kind: NodeKind,
@@ -2097,27 +2312,25 @@ pub(crate) fn serialization_encoder_methods(
     }
     let substitutions =
         definition.generics.iter().zip(arguments).map(|(g, a)| (g.node.name.as_str(), a)).collect::<HashMap<_, _>>();
-    let applications = type_contract_applications_registered(db, syntax, owner)?
-        .ok_or_else(|| SemanticError::unavailable("serialization_encoder.applications"))?;
+    // Only the canonical Encoder declaration is admitted, and its arguments are interpreted in
+    // the owner's applied environment; other conformances (e.g. `Iterator<T>`) are never evaluated.
+    let canonical_encoder = |declaration: AstNodeKey| {
+        db.syntax_unit(declaration.unit).is_some_and(|s| {
+            s.accepts_key(db, declaration)
+                && s.project(db) == syntax.project(db)
+                && crate::canonical_corelib_source_path(db, declaration).as_deref()
+                    == Some(beskid_abi::runtime_source::CANONICAL_SERIALIZATION_CONTRACTS_SOURCE_PATH)
+        }) && crate::corelib_source_authority::registered_declaration_name(db, declaration).as_deref()
+            == Some("Encoder")
+    };
+    let applications =
+        type_contract_applications_in_environment(db, syntax, owner, Some(arguments), &canonical_encoder)?
+            .ok_or_else(|| SemanticError::unavailable("serialization_encoder.applications"))?;
     let mut found = None;
     for application in applications.iter() {
-        let Some(contract) = db.syntax_unit(application.declaration.unit).filter(|s| {
-            s.accepts_key(db, application.declaration)
-                && s.project(db) == syntax.project(db)
-                && crate::canonical_corelib_source_path(db, application.declaration()).as_deref()
-                    == Some(beskid_abi::runtime_source::CANONICAL_SERIALIZATION_CONTRACTS_SOURCE_PATH)
-        }) else {
-            continue;
-        };
-        if crate::corelib_source_authority::registered_declaration_name(db, application.declaration).as_deref()
-            != Some("Encoder")
-        {
-            continue;
-        }
         if !application.arguments.is_empty() || found.is_some() {
             return Err(SemanticError::new("serialization encoder application ambiguous"));
         }
-        let _ = contract;
         found = Some(validated_contract_methods_with_expected(
             db,
             owner,

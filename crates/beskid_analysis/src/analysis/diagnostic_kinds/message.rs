@@ -21,7 +21,10 @@ impl SemanticIssueKind {
                 "embedded contract `{contract_name}` introduces conflicting method `{method_name}`"
             ),
             Self::AmbiguousImport { name, .. } => format!("ambiguous import for `{name}`"),
-            Self::UnknownImportPath { path } => format!("unknown import path `{path}`"),
+            Self::UnknownImportPath { path } => match super::removed_std_namespace_replacement(path) {
+                Some(_) => format!("unknown import path `{path}`: the `Std` namespace does not exist"),
+                None => format!("unknown import path `{path}`"),
+            },
             Self::UseBeforeDeclaration { name } => {
                 format!("use of `{name}` before declaration")
             }
@@ -131,9 +134,10 @@ impl SemanticIssueKind {
             Self::ResolveDuplicateLocal { name, .. } => format!("duplicate local `{name}`"),
             Self::ResolveUnknownValue { name } => format!("unknown value `{name}`"),
             Self::ResolveUnknownType { name } => format!("unknown type `{name}`"),
-            Self::ResolveUnknownModulePath { path } => {
-                format!("unknown module path `{path}`")
-            }
+            Self::ResolveUnknownModulePath { path } => match super::removed_std_namespace_replacement(path) {
+                Some(_) => format!("unknown module path `{path}`: the `Std` namespace does not exist"),
+                None => format!("unknown module path `{path}`"),
+            },
             Self::ResolveUnknownValueInModule { module_path, name } => {
                 format!("unknown value `{name}` in module `{module_path}`")
             }

@@ -10,6 +10,7 @@
 pub mod corelib;
 pub mod diagnostics;
 pub mod entrypoint;
+pub mod native_mods;
 pub mod pipeline;
 pub mod prompt;
 pub mod registry;

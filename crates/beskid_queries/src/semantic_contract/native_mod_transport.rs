@@ -271,3 +271,15 @@ pub fn native_mod_single_array_element(db: &dyn Db, key: AstNodeKey) -> Semantic
         .direct_child_id(program, key.node, beskid_analysis::syntax_query::DynNodeRef::from(&array.elements[0]))
         .map(|node| AstNodeKey { node, ..key }))
 }
+
+/// The concrete expression a value position holds: `Expression` and parenthesized wrappers are
+/// peeled, so a constructor field `entryRoot: entryRoot` yields its `PathExpression` and a field
+/// `items: [value]` its `ArrayLiteralExpression`. Nothing else is rewritten.
+pub fn native_mod_expression_payload(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<AstNodeKey> {
+    let Some(syntax) = db.syntax_unit(key.unit).filter(|syntax| syntax.accepts_key(db, key)) else { return Ok(None) };
+    let index = syntax.syntax_index(db);
+    if index.metadata_for(key.generation, key.node).is_none() {
+        return Ok(None);
+    }
+    Ok(Some(AstNodeKey { node: normalized_expression_node(index, key.node), ..key }))
+}

@@ -247,7 +247,7 @@ target "App" {
   entry = "Main.bd"
 }
 
-dependency "Core" {
+dependency "Kernel" {
   source = "path"
   path = "../Core"
 }
@@ -258,7 +258,7 @@ dependency "Core" {
         let plan = build_compile_plan(&app_manifest_path, None).expect("plan should build");
         assert!(plan.dependency_projects.len() >= 2);
         assert!(plan.dependency_projects.iter().any(|dependency| dependency.dependency_name == "Util"));
-        assert!(plan.dependency_projects.iter().any(|dependency| dependency.dependency_name == "Core"));
+        assert!(plan.dependency_projects.iter().any(|dependency| dependency.dependency_name == "Kernel"));
     });
 
     let _ = fs::remove_dir_all(root);

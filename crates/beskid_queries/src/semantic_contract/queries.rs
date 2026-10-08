@@ -10,6 +10,21 @@ pub fn type_contract_applications(
     with_registered_syntax(db, key, contracts::type_contract_applications_registered)
 }
 
+/// Applied identities of only those conformances of `key` that name `declaration`. Other
+/// conformances are resolved to their declarations and never have their arguments interpreted,
+/// so selecting one contract cannot fail on an unrelated (for example generic) conformance.
+pub fn type_contract_applications_of(
+    db: &dyn Db,
+    key: AstNodeKey,
+    declaration: AstNodeKey,
+) -> SemanticQueryResult<Arc<[contracts::AppliedContractIdentity]>> {
+    with_registered_syntax(db, key, |db, syntax, key| {
+        contracts::type_contract_applications_in_environment(db, syntax, key, None, &|candidate| {
+            candidate == declaration
+        })
+    })
+}
+
 /// Validate the exact owner, arguments and source method signatures of an issued application.
 pub fn type_applied_contract_implementation(
     db: &dyn Db,
@@ -463,6 +478,7 @@ pub fn array_index_element_abi_type(db: &dyn Db, key: AstNodeKey) -> SemanticQue
 /// Return the exact field selected by a direct nominal local receiver member expression.
 pub fn aggregate_field_access(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<AggregateFieldAccess> {
     with_registered_syntax(db, key, aggregate_field_access_tracked)
+        .map_err(|error| site_unsited_gap(db, key, "aggregate_field_access", error))
 }
 
 /// Return target-neutral source variants and field shapes for a non-generic `enum` definition or
@@ -494,7 +510,22 @@ pub fn enum_match(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<EnumMatch
 
 /// Return the scalar ABI representation for one current syntax node.
 pub fn abi_type(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<SemanticTypeId> {
-    with_registered_syntax(db, key, abi_type_tracked)
+    with_registered_syntax(db, key, abi_type_tracked).map_err(|error| site_unsited_gap(db, key, "abi_type", error))
+}
+
+/// An unsited gap of `family` (or one of its `family.detail` points) is named at the innermost
+/// node whose fact was asked for. Nested requests go through the public entries, so the deepest
+/// key sites the error first and outer callers keep that site. The query name is unchanged;
+/// every other error passes through as is.
+fn site_unsited_gap(db: &dyn Db, key: AstNodeKey, family: &str, error: SemanticError) -> SemanticError {
+    let Some(query) = error.unavailable_query() else { return error };
+    let in_family = query == family || query.strip_prefix(family).is_some_and(|rest| rest.starts_with('.'));
+    if !in_family || error.unavailable_site().is_some() {
+        return error;
+    }
+    let rendered_site = crate::semantic_contract::format_ast_node_site(db, key);
+    let query = query.to_owned();
+    SemanticError::unavailable_at_described(&query, key, &rendered_site, "the fact is not proven for this node")
 }
 
 /// Return the exact call-parameter ABI selected for one bare integer argument.
@@ -503,6 +534,7 @@ pub fn abi_type(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<SemanticTyp
 /// all other expressions remain unavailable rather than being implicitly coerced.
 pub fn call_argument_abi_type(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<SemanticTypeId> {
     with_registered_syntax(db, key, call_argument_abi_type_tracked)
+        .map_err(|error| site_unsited_gap(db, key, "call_argument_abi_type", error))
 }
 
 pub fn binary_operand_abi_type(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<SemanticTypeId> {

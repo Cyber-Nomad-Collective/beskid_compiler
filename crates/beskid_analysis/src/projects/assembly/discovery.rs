@@ -14,14 +14,6 @@ pub fn module_path_to_relative_path(module_path: &str) -> PathBuf {
     relative
 }
 
-fn module_path_lookup_candidates(module_path: &str) -> Vec<String> {
-    let mut out = vec![module_path.to_string()];
-    if let Some(rest) = module_path.strip_prefix("Std.") {
-        out.push(rest.to_string());
-    }
-    out
-}
-
 fn module_file_candidates(relative: &std::path::Path, source_root: &Path) -> Vec<PathBuf> {
     let flat = relative.with_extension("bd");
     let homonymous = relative
@@ -39,18 +31,16 @@ fn module_file_candidates(relative: &std::path::Path, source_root: &Path) -> Vec
 
 pub fn resolve_module_file(module_path: &str, roots: &EffectiveCompilationRoots) -> Option<PathBuf> {
     let roots_list = module_roots_from_effective(roots);
-    for candidate in module_path_lookup_candidates(module_path) {
-        let relative = module_path_to_relative_path(&candidate);
-        if let Some(path) = roots_list.iter().find_map(|root| {
-            module_file_candidates(&relative, root)
-                .into_iter()
-                .find(|candidate| root.join(candidate).is_file())
-                .map(|candidate| root.join(candidate))
-        }) {
-            return Some(path);
-        }
+    let relative = module_path_to_relative_path(module_path);
+    if relative.as_os_str().is_empty() {
+        return None;
     }
-    None
+    roots_list.iter().find_map(|root| {
+        module_file_candidates(&relative, root)
+            .into_iter()
+            .find(|candidate| root.join(candidate).is_file())
+            .map(|candidate| root.join(candidate))
+    })
 }
 
 pub fn module_path_exists_on_disk(module_path: &str, roots: &[PathBuf]) -> bool {

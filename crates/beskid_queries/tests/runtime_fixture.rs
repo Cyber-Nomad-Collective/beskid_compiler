@@ -10,7 +10,7 @@ use std::sync::Arc;
 fn fixture(target: &str) -> ProgramAssembly {
     let manifest = runtime_fixture_project_root().join("runtime_semantics.bproj");
     let plan = build_compile_plan(&manifest, Some(target)).expect("real fixture plan");
-    assert!(!plan.has_std_dependency, "installed Std must not contaminate runtime module identities");
+    assert!(!plan.has_core_dependency, "installed Core must not contaminate runtime module identities");
     let entry = plan_entry_path(&plan, &plan.source_root);
     let source = std::fs::read_to_string(&entry).expect("fixture source");
     assemble_program_with_materializer(

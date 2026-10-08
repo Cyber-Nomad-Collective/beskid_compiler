@@ -145,6 +145,31 @@ fn mod_pipeline(plain: bool) -> Arc<CliPipeline> {
     Arc::new(CliPipeline::new_with_kind(use_cli_spinner(plain), PipelineProgressKind::ModBuild))
 }
 
+/// The producer key tuple of a resolved Mod project for the active host target and runtime profile.
+fn cached_mod_request(
+    resolved: &ResolvedModProject,
+    target_triple: Option<&str>,
+) -> Result<beskid_aot::CachedModArtifactRequest> {
+    let target = beskid_aot::target::detect_target(target_triple)?;
+    let abi_target = beskid_abi::abi_v5::TargetMetadata::for_triple(&target.triple)
+        .map_err(|_| anyhow!("unsupported native Mod ABI target"))?;
+    Ok(beskid_aot::CachedModArtifactRequest {
+        workspace_root: resolved.plan.project_root.clone(),
+        project_root: resolved.plan.project_root.clone(),
+        manifest_path: resolved.plan.manifest_path.clone(),
+        source_root: resolved.plan.source_root.clone(),
+        package_id: resolved.manifest.project.name.clone(),
+        dependency_sources: beskid_analysis::mod_host::native_mod_dependency_sources(&resolved.plan)?,
+        compiler_version: Some(env!("CARGO_PKG_VERSION").to_owned()),
+        compiler_executable: std::env::current_exe().context("locate the Mod-host compiler executable")?,
+        runtime: beskid_aot::api::RuntimeKitRequest {
+            prefix: beskid_abi::runtime_kit::installed_runtime_prefix()?,
+            target: abi_target,
+            profile: beskid_analysis::mod_host::native_mod_runtime_profile()?,
+        },
+    })
+}
+
 fn build_mod_artifact_for_resolved(
     resolved: &ResolvedModProject,
     prepared: &beskid_analysis::projects::PreparedProjectWorkspace,
@@ -152,6 +177,7 @@ fn build_mod_artifact_for_resolved(
     policy: beskid_analysis::projects::WorkspacePrepareOptions,
     pipeline: Option<&dyn PipelineObserver>,
 ) -> Result<beskid_aot::QualifiedNativeMod> {
+    let cache = cached_mod_request(resolved, target_triple.as_deref())?;
     let source_path = discover_mod_entry_source(&resolved.plan.source_root)?;
     let source = fs::read_to_string(&source_path)
         .with_context(|| format!("failed to read mod source {}", source_path.display()))?;
@@ -168,23 +194,16 @@ fn build_mod_artifact_for_resolved(
         beskid_analysis::services::PrepareOptions {
             mod_invoker,
             front_end: FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
+            native_mod_adapter_sources: true,
             ..Default::default()
         },
         pipeline,
     )?
     .into_executable()?;
-    let target = beskid_aot::target::detect_target(target_triple.as_deref())?;
-    let abi_target = beskid_abi::abi_v5::TargetMetadata::for_triple(&target.triple)
-        .map_err(|_| anyhow!("unsupported native Mod ABI target"))?;
+    let abi_target = cache.runtime.target.clone();
     let prepared_mod = observe_phase_result(pipeline, beskid_pipeline::phases::CODEGEN_CLIF, || {
         beskid_aot::lower_prepared_native_mod(&front, abi_target.clone()).map_err(anyhow::Error::from)
     })?;
-    let prefix = beskid_abi::runtime_kit::installed_runtime_prefix()?;
-    let profile = std::env::var("BESKID_RUNTIME_KIT_PROFILE")
-        .ok()
-        .map(|value| beskid_abi::runtime_kit::BuildProfile::parse(&value))
-        .transpose()?
-        .unwrap_or(beskid_abi::runtime_kit::BuildProfile::Debug);
     let control = beskid_aot::api::NativeExecutionControl::new(
         std::time::Instant::now() + std::time::Duration::from_secs(300),
         Arc::new(|| false),
@@ -192,15 +211,16 @@ fn build_mod_artifact_for_resolved(
     observe_phase_result(pipeline, AOT_LINK, || {
         build_mod_artifact(ModArtifactBuildRequest {
             prepared: prepared_mod,
-            runtime: beskid_aot::api::RuntimeKitRequest { prefix, target: abi_target, profile },
+            runtime: cache.runtime,
             control,
-            workspace_root: resolved.plan.project_root.clone(),
-            project_root: resolved.plan.project_root.clone(),
-            manifest_path: resolved.plan.manifest_path.clone(),
-            source_root: resolved.plan.source_root.clone(),
+            workspace_root: cache.workspace_root,
+            project_root: cache.project_root,
+            manifest_path: cache.manifest_path,
+            source_root: cache.source_root,
             lockfile_path: Some(prepared.lockfile_path.clone()),
-            package_id: resolved.manifest.project.name.clone(),
+            package_id: cache.package_id,
             package_version: Some(resolved.manifest.project.version.clone()),
+            dependency_sources: cache.dependency_sources,
             compiler_version: env!("CARGO_PKG_VERSION").to_owned(),
         })
         .map_err(anyhow::Error::from)
@@ -403,6 +423,178 @@ DemoMod {
         let _ = fs::remove_dir_all(root);
     }
 
+    /// Native Mod discovery visits every type in the assembly. A generic type conforming to an
+    /// unrelated generic contract (the shape of foundation's `ArrayIterator<T> : Iterator<T>`)
+    /// must be skipped by contract declaration identity, never evaluated as an applied
+    /// conformance without its generic environment.
+    #[test]
+    fn rebuilds_mod_whose_assembly_contains_unrelated_generic_conformance() {
+        let root = unique_temp_dir("beskid_cli_mod_generic_conformance");
+        let manifest_path = write_demo_mod(&root);
+        let mut source = include_str!("../../../beskid_tests_mods/fixtures/mods/native_sdk/Src/Mod.bd").to_owned();
+        source.push_str(
+            "\npub contract Sequence<T> { T Head(); }\n\
+             pub type Holder<T> : Sequence<T> {\n    T value,\n\n    pub T Head() {\n        return this.value;\n    }\n}\n",
+        );
+        fs::write(root.join("Src").join("Mod.bd"), source).expect("mod source");
+        let descriptor = rebuilt_demo_mod(&manifest_path);
+        let sidecar = fs::read_to_string(descriptor.descriptor().sidecar_path()).expect("descriptor");
+        let descriptor: serde_json::Value = serde_json::from_str(&sidecar).expect("descriptor json");
+        let registrations = descriptor["registrations"].as_array().expect("native registrations");
+        assert_eq!(registrations.len(), 2, "only the canonical Collector and Generator are registered");
+        let _ = fs::remove_dir_all(root);
+    }
+
+    /// Records phase starts so a test can prove whether the producer (codegen + link) ran.
+    #[derive(Default)]
+    struct PhaseRecorder(std::sync::Mutex<Vec<&'static str>>);
+    impl PipelineObserver for PhaseRecorder {
+        fn on_event(&self, event: beskid_pipeline::PipelineEvent) {
+            if let beskid_pipeline::PipelineEvent::PhaseStart { id } = event {
+                self.0.lock().expect("phase log").push(id);
+            }
+        }
+    }
+    impl PhaseRecorder {
+        fn linked(&self) -> bool {
+            self.0.lock().expect("phase log").contains(&AOT_LINK)
+        }
+    }
+
+    fn write_demo_mod(root: &Path) -> PathBuf {
+        let source_root = root.join("Src");
+        fs::create_dir_all(&source_root).expect("source root");
+        let manifest_path = root.join("DemoMod.bproj");
+        fs::write(
+            &manifest_path,
+            "DemoMod {\n  name = \"DemoMod\"\n  version = \"0.1.0\"\n  type = Mod\n  mod {\n    capabilities = [read_project_sources, emit_syntax, query_semantic_snapshot]\n  }\n}\n",
+        )
+        .expect("manifest");
+        fs::write(
+            source_root.join("Mod.bd"),
+            include_str!("../../../beskid_tests_mods/fixtures/mods/native_sdk/Src/Mod.bd"),
+        )
+        .expect("mod source");
+        manifest_path
+    }
+
+    fn resolved_demo_mod(manifest_path: &Path) -> ResolvedModProject {
+        let manifest = load_manifest_from_path(manifest_path).expect("load manifest");
+        let plan = build_compile_plan(manifest_path, None).expect("compile plan");
+        ResolvedModProject { manifest, plan }
+    }
+
+    /// The dependency path used by every consumer that builds on demand (`build`, `run`, `check`).
+    fn current_demo_mod(manifest_path: &Path) -> (beskid_aot::QualifiedNativeMod, PhaseRecorder) {
+        let recorder = PhaseRecorder::default();
+        let artifact = current_or_built_mod_artifact(
+            &resolved_demo_mod(manifest_path),
+            beskid_analysis::projects::WorkspacePrepareOptions::default(),
+            Some(&recorder),
+        )
+        .expect("mod artifact");
+        (artifact, recorder)
+    }
+
+    /// The provisioning path (`beskid dev mod rebuild`), which always runs the producer.
+    fn rebuilt_demo_mod(manifest_path: &Path) -> beskid_aot::QualifiedNativeMod {
+        let resolved = resolved_demo_mod(manifest_path);
+        let prepared = prepare_project_workspace_with_options(
+            &resolved.plan,
+            beskid_analysis::projects::WorkspacePrepareOptions::default(),
+            None,
+        )
+        .expect("prepare workspace");
+        build_mod_artifact_for_resolved(
+            &resolved,
+            &prepared,
+            Some(host_abi_target().to_owned()),
+            beskid_analysis::projects::WorkspacePrepareOptions::default(),
+            None,
+        )
+        .expect("mod rebuild")
+    }
+
+    #[test]
+    fn current_mod_artifact_is_reused_without_rebuild_and_stale_source_rebuilds() {
+        let root = unique_temp_dir("beskid_cli_mod_cache");
+        let manifest_path = write_demo_mod(&root);
+
+        let (first, first_phases) = current_demo_mod(&manifest_path);
+        assert!(first_phases.linked(), "an empty cache must run the producer");
+        let first_dir = first.descriptor().artifact_dir.clone();
+
+        let (reused, reused_phases) = current_demo_mod(&manifest_path);
+        assert!(!reused_phases.linked(), "a current cache entry must be reused without codegen or link");
+        assert_eq!(reused.descriptor().artifact_dir, first_dir);
+        reused.verify_native_closure().expect("reused artifact keeps its verified native closure");
+
+        let source = root.join("Src/Mod.bd");
+        let mut text = fs::read_to_string(&source).expect("mod source");
+        text.push_str("\n// stale-source cache invalidation\n");
+        fs::write(&source, text).expect("edit mod source");
+        let (rebuilt, rebuilt_phases) = current_demo_mod(&manifest_path);
+        assert!(rebuilt_phases.linked(), "a changed source must rebuild the Mod");
+        assert_ne!(rebuilt.descriptor().artifact_dir, first_dir, "stale evidence never selects the old entry");
+        assert!(!first_dir.exists(), "the superseded entry of the same target and profile is pruned");
+
+        let (_, again) = current_demo_mod(&manifest_path);
+        assert!(!again.linked(), "the rebuilt entry is current again");
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn shipped_mod_artifact_is_qualified_for_a_non_building_consumer() {
+        let root = unique_temp_dir("beskid_cli_mod_shipped");
+        let mod_root = root.join("DemoMod");
+        let manifest_path = write_demo_mod(&mod_root);
+        // The provisioning step: the toolchain CLI builds the descriptor into the Mod project.
+        let shipped = rebuilt_demo_mod(&manifest_path);
+        assert!(shipped.descriptor().artifact_dir.starts_with(mod_root.join(".beskid/obj/mods/DemoMod")));
+
+        let host = root.join("Host");
+        fs::create_dir_all(host.join("Src")).expect("host source");
+        fs::write(host.join("Src/Main.bd"), "unit Main() { return; }\n").expect("host entry");
+        let host_manifest = host.join("Host.bproj");
+        fs::write(
+            &host_manifest,
+            format!(
+                "Host {{ name = \"Host\" version = \"0.1.0\" root = \"Src\" }}\ndependency \"DemoMod\" {{ source = path path = {:?} }}\ntarget \"main\" {{ kind = App entry = \"Main.bd\" }}\n",
+                mod_root.to_string_lossy()
+            ),
+        )
+        .expect("host manifest");
+        let host_plan = build_compile_plan(&host_manifest, None).expect("host plan");
+
+        // The analysis loader (queries / engine path) finds the descriptor without building.
+        beskid_analysis::mod_host::native_invoker_for_plan(&host_plan, None)
+            .expect("loader finds the shipped descriptor")
+            .expect("host has a Mod dependency");
+        // The editor path qualifies it for execution against the Mod host that produced it.
+        let compiler = std::env::current_exe().expect("Mod host executable");
+        let invoker = beskid_tools::native_mods::cached_mod_invoker_for_plan(&host_plan, &compiler)
+            .expect("non-building consumer qualifies the shipped artifact");
+        assert!(invoker.is_some(), "a Mod dependency yields a qualified invoker");
+
+        // A different Mod host executable never qualifies the artifact; the error names the remedy.
+        let foreign = root.join("foreign-host");
+        fs::write(&foreign, b"not the producing compiler").expect("foreign host");
+        let error = beskid_tools::native_mods::cached_mod_invoker_for_plan(&host_plan, &foreign)
+            .err()
+            .expect("foreign Mod host must fail closed")
+            .to_string();
+        assert!(error.contains("beskid dev mod rebuild"), "{error}");
+
+        // Without a descriptor the loader fails with the same actionable remedy.
+        fs::remove_dir_all(mod_root.join(".beskid")).expect("remove shipped artifact");
+        let error = beskid_analysis::mod_host::native_invoker_for_plan(&host_plan, None)
+            .err()
+            .expect("missing descriptor fails closed")
+            .to_string();
+        assert!(error.contains("beskid dev mod rebuild"), "{error}");
+        let _ = fs::remove_dir_all(root);
+    }
+
     fn host_abi_target() -> &'static str {
         if cfg!(target_os = "macos") {
             "aarch64-apple-darwin"
@@ -419,7 +611,45 @@ DemoMod {
     }
 }
 
-/// Construct native authority from actual current Mod projects, never descriptor-only cache lookup.
+/// A Mod inside a verified Corelib bundle is sealed by the bundle fingerprint and ships without a
+/// generated `Project.lock` (release bundles never embed lockfiles). The consumer's `--locked` /
+/// `--frozen` policy governs the consumer's own graph; the sealed Mod closure is resolved offline
+/// from the verified bundle, so its own lock is generated rather than required.
+fn bundled_mod_policy(
+    manifest_path: &Path,
+    policy: beskid_analysis::projects::WorkspacePrepareOptions,
+) -> beskid_analysis::projects::WorkspacePrepareOptions {
+    if beskid_abi::corelib_bundle::verified_corelib_bundle_root(manifest_path).is_some() {
+        beskid_analysis::projects::WorkspacePrepareOptions { locked: false, frozen: false, ..policy }
+    } else {
+        policy
+    }
+}
+
+/// The executable artifact of a dependency Mod for the host target: a current cached or
+/// toolchain-shipped artifact when producer-side qualification proves its complete key tuple
+/// current, otherwise a fresh build. The cache is consulted before any workspace preparation, so
+/// a hit never writes into the Mod project (an installed toolchain prefix stays byte-identical to
+/// its install receipt).
+fn current_or_built_mod_artifact(
+    resolved_mod: &ResolvedModProject,
+    policy: beskid_analysis::projects::WorkspacePrepareOptions,
+    pipeline: Option<&dyn PipelineObserver>,
+) -> Result<beskid_aot::QualifiedNativeMod> {
+    if let Some(current) =
+        beskid_aot::qualify_cached_mod_artifact(&cached_mod_request(resolved_mod, None)?).map_err(anyhow::Error::from)?
+    {
+        return Ok(current);
+    }
+    let mod_policy = bundled_mod_policy(&resolved_mod.plan.manifest_path, policy);
+    let workspace = prepare_project_workspace_with_options(&resolved_mod.plan, mod_policy.clone(), pipeline)
+        .map_err(anyhow::Error::from)?;
+    build_mod_artifact_for_resolved(resolved_mod, &workspace, None, mod_policy, pipeline)
+}
+
+/// Construct native authority from the actual current Mod projects. Each Mod's artifact is reused
+/// only when producer-side cache qualification proves its complete key tuple current; otherwise
+/// it is built. A descriptor alone never grants execution authority.
 pub(crate) fn prepare_native_mod_executor(
     resolved: &beskid_analysis::services::ResolvedInput,
     policy: beskid_analysis::projects::WorkspacePrepareOptions,
@@ -439,15 +669,8 @@ pub(crate) fn prepare_native_mod_executor(
         }
         let mod_plan = build_compile_plan(&manifest_path, None).map_err(anyhow::Error::from)?;
         ensure_resolved_dependencies(&mod_plan)?;
-        let workspace =
-            prepare_project_workspace_with_options(&mod_plan, policy.clone(), pipeline).map_err(anyhow::Error::from)?;
-        artifacts.push(build_mod_artifact_for_resolved(
-            &ResolvedModProject { manifest, plan: mod_plan },
-            &workspace,
-            None,
-            policy.clone(),
-            pipeline,
-        )?);
+        let resolved_mod = ResolvedModProject { manifest, plan: mod_plan };
+        artifacts.push(current_or_built_mod_artifact(&resolved_mod, policy.clone(), pipeline)?);
     }
     if artifacts.is_empty() {
         return Ok(None);

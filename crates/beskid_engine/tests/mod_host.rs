@@ -142,7 +142,7 @@ impl TestWorkspace {
             target: Target { name: "main".to_owned(), kind: TargetKind::App, entry: Some("Main.bd".to_owned()) },
             dependency_projects: Vec::new(),
             unresolved_dependencies: Vec::new(),
-            has_std_dependency: false,
+            has_core_dependency: false,
         }
     }
 }

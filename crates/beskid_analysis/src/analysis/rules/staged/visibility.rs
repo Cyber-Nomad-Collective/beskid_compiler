@@ -8,6 +8,14 @@ use crate::syntax_query::Query;
 use std::collections::{HashMap, HashSet};
 use crate::projects::{module_path_to_relative_path, resolve_module_file};
 
+/// Private items of the canonical public Dynamic unit that only the compiler references, by
+/// name, when it issues specialized Dynamic bridges: `ReserveAllocationFailureV1`
+/// (`beskid_queries::semantic_contract::reserved_failure`) and the pack/unpack result factories
+/// (`beskid_queries::semantic_contract::dynamic_pack`). Source never calls them, so the unused
+/// private item rule exempts exactly these names in exactly that unit.
+const COMPILER_ISSUED_DYNAMIC_BRIDGE_ITEMS: &[&str] =
+    &["ReserveAllocationFailureV1", "PackedResultV1", "PackedInvalidV1", "UnpackedResultV1", "UnpackedInvalidV1"];
+
 impl SemanticPipelineRule {
     pub(super) fn stage5_modules_and_visibility(
         &self,
@@ -187,6 +195,8 @@ impl SemanticPipelineRule {
 
     fn check_unused_private_items(&self, ctx: &mut RuleContext, program: &Spanned<Program>) {
         let used_names = self.collect_used_value_names(program);
+        let compiler_issued: &[&str] =
+            if Self::is_canonical_dynamic_entry(ctx) { COMPILER_ISSUED_DYNAMIC_BRIDGE_ITEMS } else { &[] };
 
         for item in &program.node.items {
             // Tests are invoked by the `beskid test` harness, not by name references in source.
@@ -215,12 +225,33 @@ impl SemanticPipelineRule {
                 _ => continue,
             };
 
-            if visibility == Visibility::Public || name == "main" || used_names.contains(&name) {
+            if visibility == Visibility::Public
+                || name == "main"
+                || used_names.contains(&name)
+                || compiler_issued.contains(&name.as_str())
+            {
                 continue;
             }
 
             ctx.emit_issue(span, SemanticIssueKind::UnusedPrivateItem { name });
         }
+    }
+
+    /// Whether the unit under analysis is the exact canonical public Dynamic source
+    /// (`ProgramAssembly::is_canonical_public_dynamic_unit`: Corelib `corelib_foundation`, the
+    /// canonical relative path, and byte-identical source). Any other unit, or an analysis
+    /// without an assembly, gets no exemption.
+    fn is_canonical_dynamic_entry(ctx: &RuleContext) -> bool {
+        let (Some(assembly), Some(entry_path)) =
+            (ctx.options.program_assembly.as_ref(), ctx.options.entry_source_path.as_ref())
+        else {
+            return false;
+        };
+        assembly
+            .units
+            .iter()
+            .find(|unit| crate::paths::same_file(&unit.path, entry_path))
+            .is_some_and(|unit| assembly.is_canonical_public_dynamic_unit(unit))
     }
 
     fn collect_private_item_spans(&self, program: &Spanned<Program>) -> HashMap<String, crate::syntax::SpanInfo> {

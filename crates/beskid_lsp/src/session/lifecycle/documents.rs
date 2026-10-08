@@ -100,6 +100,7 @@ pub(super) async fn build_full_diagnostic_facts(
             ..Default::default()
         },
         dependency_typing: DependencyTypingPolicy::FullClosure,
+        native_mod_adapter_sources: false,
     };
     let assembled = with_compilation_db_for_project(state, &project_root, |db| {
         beskid_queries::invalidate_entry_sessions(&project_root);
@@ -243,6 +244,7 @@ async fn build_syntax_facts_with_policy_after_startup(
                     ..Default::default()
                 },
                 dependency_typing,
+                native_mod_adapter_sources: false,
             };
             let prepared = prepare_project_syntax_facts(db, &resolved_for_prepare, dependency_typing).ok()?;
             // Resolve registry-backed identity immediately, without waiting for the

@@ -57,7 +57,21 @@ fn variant(
     } else {
         format!("{result}::{variant}({})", fields.iter().map(|(_, name)| name.as_str()).collect::<Vec<_>>().join(", "))
     };
-    emit(source, names, &format!("{ty}{variant}Value"), &result, &fields, &expression)
+    emit(source, names, &format!("{ty}{}Value", factory_name_segment(variant)?), &result, &fields, &expression)
+}
+/// The PascalCase factory-name segment of a variant. A variant whose Beskid name escapes a
+/// reserved word with a leading underscore (`Type::_This`) keeps that spelling in the constructed
+/// expression, but the generated callable is named without it (`TypeThisValue`), so every factory
+/// is a PascalCase identifier.
+fn factory_name_segment(variant: &str) -> io::Result<&str> {
+    let segment = variant.trim_start_matches('_');
+    if !segment.starts_with(|first: char| first.is_ascii_uppercase()) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("native SDK variant {variant} has no PascalCase factory name"),
+        ));
+    }
+    Ok(segment)
 }
 
 pub(super) fn native_syntax_factories(

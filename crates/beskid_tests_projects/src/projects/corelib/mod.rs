@@ -148,4 +148,5 @@ pub(super) fn expected_corelib_workspace_sources() -> &'static [&'static str] {
 }
 
 mod compile;
+mod dynamic_bridge_items;
 mod layout;

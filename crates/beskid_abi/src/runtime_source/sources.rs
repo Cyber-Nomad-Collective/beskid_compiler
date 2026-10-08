@@ -118,6 +118,16 @@ pub const CANONICAL_FOUNDATION_OUTPUT_SOURCE_PATH: &str = "Core/Output/Output.bd
 pub const CANONICAL_FOUNDATION_ERROR_SOURCE_PATH: &str = "Core/Error/Error.bd";
 /// Canonical Network facade that alone owns the compiler-authorized socket ABI calls.
 pub const CANONICAL_NETWORK_INTERNAL_SOURCE_PATH: &str = "Network/Internal.bd";
+/// Canonical Network resource authority that alone constructs socket resources from raw handles.
+pub const CANONICAL_NETWORK_RESOURCES_SOURCE_PATH: &str = "Network/Internal/Resources.bd";
+/// Canonical TCP listener declaration whose private `handle` only the resource authority builds.
+pub const CANONICAL_NETWORK_TCP_LISTENER_SOURCE_PATH: &str = "Network/Tcp/TcpListener.bd";
+/// Canonical TCP stream declaration whose private `handle` only the resource authority builds.
+pub const CANONICAL_NETWORK_TCP_STREAM_SOURCE_PATH: &str = "Network/Tcp/TcpStream.bd";
+/// Canonical UDP socket declaration whose private `handle` only the resource authority builds.
+pub const CANONICAL_NETWORK_UDP_SOCKET_SOURCE_PATH: &str = "Network/Udp/UdpSocket.bd";
+/// Canonical mutex guard declaration whose private `mutexHandle` only the Mutex facade builds and reads.
+pub const CANONICAL_CORELIB_MUTEX_GUARD_SOURCE_PATH: &str = "Concurrency/MutexGuard.bd";
 
 const CANONICAL_BOOTSTRAP_SOURCE: &str =
     include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../runtime/beskid/src/Runtime/Bootstrap.bd"));
@@ -318,6 +328,20 @@ const CANONICAL_FOUNDATION_ERROR_SOURCE: &str =
     include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../corelib/packages/foundation/src/Core/Error/Error.bd"));
 const CANONICAL_NETWORK_INTERNAL_SOURCE: &str =
     include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../corelib/packages/network/src/Network/Internal.bd"));
+const CANONICAL_NETWORK_RESOURCES_SOURCE: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../corelib/packages/network/src/Network/Internal/Resources.bd"
+));
+const CANONICAL_NETWORK_TCP_LISTENER_SOURCE: &str =
+    include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../corelib/packages/network/src/Network/Tcp/TcpListener.bd"));
+const CANONICAL_NETWORK_TCP_STREAM_SOURCE: &str =
+    include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../corelib/packages/network/src/Network/Tcp/TcpStream.bd"));
+const CANONICAL_CORELIB_MUTEX_GUARD_SOURCE: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../corelib/packages/concurrency/src/Concurrency/MutexGuard.bd"
+));
+const CANONICAL_NETWORK_UDP_SOCKET_SOURCE: &str =
+    include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../corelib/packages/network/src/Network/Udp/UdpSocket.bd"));
 
 /// The runtime source corpus built into this compiler version.
 pub fn canonical_runtime_sources() -> Vec<SourceUnit> {
@@ -704,6 +728,25 @@ pub fn canonical_corelib_deadline_source() -> SourceUnit {
         logical_path: CANONICAL_FOUNDATION_DEADLINE_SOURCE_PATH.into(),
         source: CANONICAL_FOUNDATION_DEADLINE_SOURCE.into(),
     }
+}
+
+/// Compiler-owned units named by exact private-field admissions: the Network resource authority
+/// with the socket declarations whose private `handle` it alone constructs, and the Mutex facade
+/// with the guard whose private `mutexHandle` it alone constructs and reads. Like Deadline, these
+/// are source-attested separately from ABI service providers; attestation grants private-field
+/// admission only, never a runtime service.
+pub fn canonical_corelib_private_field_sources() -> Vec<SourceUnit> {
+    [
+        (CANONICAL_CORELIB_MUTEX_SOURCE_PATH, CANONICAL_CORELIB_MUTEX_SOURCE),
+        (CANONICAL_CORELIB_MUTEX_GUARD_SOURCE_PATH, CANONICAL_CORELIB_MUTEX_GUARD_SOURCE),
+        (CANONICAL_NETWORK_RESOURCES_SOURCE_PATH, CANONICAL_NETWORK_RESOURCES_SOURCE),
+        (CANONICAL_NETWORK_TCP_LISTENER_SOURCE_PATH, CANONICAL_NETWORK_TCP_LISTENER_SOURCE),
+        (CANONICAL_NETWORK_TCP_STREAM_SOURCE_PATH, CANONICAL_NETWORK_TCP_STREAM_SOURCE),
+        (CANONICAL_NETWORK_UDP_SOCKET_SOURCE_PATH, CANONICAL_NETWORK_UDP_SOCKET_SOURCE),
+    ]
+    .into_iter()
+    .map(|(logical_path, source)| SourceUnit { logical_path: logical_path.into(), source: source.into() })
+    .collect()
 }
 
 /// Hash of the corpus embedded in this compiler and eligible for ABI-v5 runtime authority.

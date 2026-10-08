@@ -102,9 +102,10 @@ use calls::{
     method_declaration_for_member_receiver, nominal_local_member_receiver, nominal_member_receiver_tracked,
     path_call_resolution, primitive_integer, primitive_numeric, primitive_numeric_conversion_target,
     primitive_numeric_conversion_tracked, range_for_fact_tracked, resolve_local_extern_contract_method,
-    result_type_parts, stable_declaration_identity, substitute_explicit_type, try_expression_fact_for_node,
-    try_expression_fact_tracked, try_operand_declaration, type_syntax_is_enclosing_generic_parameter_reference,
-    type_syntax_is_generic_parameter_reference, unique_nominal_method_declaration, unqualified_enclosing_method_call,
+    result_type_parts, source_expression_unavailable, stable_declaration_identity, substitute_explicit_type,
+    try_expression_fact_for_node, try_expression_fact_tracked, try_operand_declaration,
+    type_syntax_is_enclosing_generic_parameter_reference, type_syntax_is_generic_parameter_reference,
+    unique_nominal_method_declaration, unqualified_enclosing_method_call,
 };
 pub use cleanup::{ScopedAcquisition, ScopedCleanup, ScopedCleanupDiagnostic, scoped_cleanup};
 use closures_spawn::{
@@ -136,9 +137,9 @@ use layouts::{
     empty_array_literal_element_abi_type_tracked, enum_constructor_template_tracked, enum_constructor_tracked,
     enum_field_layout, enum_layout_from_definition, enum_layout_substitutions, enum_layout_tracked,
     enum_match_scrutinee_layout, enum_match_tracked, enum_pattern_targets_declaration, event_field_layout_tracked,
-    field_access_receiver, instantiated_aggregate_layout_for_path, instantiated_enum_layout_for_path,
-    nominal_aggregate_abi_type, nominal_field_projection, nominal_local_receiver_declaration,
-    private_deadline_literal_field, resolve_nominal_layout_declaration, resolve_type_declaration,
+    field_access_receiver, inaccessible_literal_fields, instantiated_aggregate_layout_for_path,
+    instantiated_enum_layout_for_path, nominal_aggregate_abi_type, nominal_field_projection,
+    nominal_local_receiver_declaration, resolve_nominal_layout_declaration, resolve_type_declaration,
     semantic_type_from_syntax, unique_exported_type_in_unit, unique_public_type_in_unit, unique_type_in_unit,
 };
 pub use legality::{
@@ -233,11 +234,11 @@ pub use queries::{
     operator_fact, parameter_generic_reference, primitive_numeric_conversion, range_for_fact, reachable_items,
     resolved_item, resolved_local, runtime_intrinsic, runtime_intrinsic_name, spawn_entry_validation,
     spawn_handle_type, spawn_legality, spawn_target, test_item, test_statement_nodes, try_expression_fact,
-    type_applied_contract_implementation, type_contract_applications, type_contract_declarations,
-    type_contract_implementation, typed_array_allocation, value_abi_type,
+    type_applied_contract_implementation, type_contract_applications, type_contract_applications_of,
+    type_contract_declarations, type_contract_implementation, typed_array_allocation, value_abi_type,
 };
 
-pub use native_mod_transport::native_mod_single_array_element;
+pub use native_mod_transport::{native_mod_expression_payload, native_mod_single_array_element};
 
 pub(crate) use contracts::{
     serialization_target_contract_methods, serialization_target_contract_methods_in_environment,
@@ -246,6 +247,7 @@ pub(crate) use contracts::{
 pub use checked_provider::{CheckedDynamicResultBridge, checked_dynamic_result_bridge};
 
 pub(crate) use contracts::serialization_encoder_methods;
+pub(crate) use layouts::serialization_contribution_inaccessible_fields;
 
 pub(crate) use contracts::{serialization_contribution_receiver_arguments, serialization_contribution_receiver_arguments_in_environment};
 

@@ -7,19 +7,9 @@ mod spawn;
 
 use super::{AstNodeKey, Db, layouts, unique_type_in_unit};
 
-/// Find the Fiber declaration through the requesting unit's module namespace.
-/// Corelib shards use `Concurrency.Fiber`; implicit-Std Apps use `Std.Concurrency.Fiber`.
+/// Find the Fiber declaration at its package-native module path `Concurrency.Fiber`.
 fn fiber_declaration_in_scope(db: &dyn Db, key: AstNodeKey) -> Option<AstNodeKey> {
     layouts::unique_assembled_type_in_module(db, key, &["Concurrency".into(), "Fiber".into()], "Fiber", 1)
-        .or_else(|| {
-            layouts::unique_assembled_type_in_module(
-                db,
-                key,
-                &["Std".into(), "Concurrency".into(), "Fiber".into()],
-                "Fiber",
-                1,
-            )
-        })
         .or_else(|| unique_type_in_unit(db, key.unit, key.generation, "Fiber", 1))
 }
 

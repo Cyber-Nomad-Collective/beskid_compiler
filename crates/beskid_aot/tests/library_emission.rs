@@ -32,7 +32,7 @@ fn library_with_entry_exports_its_own_imported_units() {
         target: Target { name: "Library".to_string(), kind: TargetKind::Lib, entry: Some("Lib.bd".to_string()) },
         dependency_projects: Vec::new(),
         unresolved_dependencies: Vec::new(),
-        has_std_dependency: false,
+        has_core_dependency: false,
     };
     let resolved = resolved_input_from_plan(source_root.join("Lib.bd"), entry_source.into(), plan, None, None);
     let front = compile_front_end_from_resolved_input(

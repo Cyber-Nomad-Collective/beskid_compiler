@@ -31,11 +31,11 @@ pub fn synthetic_compile_plan_for_source(path: &Path) -> CompilePlan {
         target: Target { name: "main".to_owned(), kind: TargetKind::App, entry: Some(entry) },
         dependency_projects: Vec::new(),
         unresolved_dependencies: Vec::new(),
-        has_std_dependency: false,
+        has_core_dependency: false,
     }
 }
 
-/// Resolve standalone source through the canonical in-memory project graph, including Std.
+/// Resolve standalone source through the canonical in-memory project graph, including the implicit `Core` dependency.
 /// The host manifest is an identity descriptor only and is never written to disk.
 pub fn standalone_compile_plan_for_source(path: &Path) -> Result<CompilePlan, crate::projects::ProjectError> {
     use crate::projects::{UnresolvedDependencyPolicy, parser::parse_manifest};
