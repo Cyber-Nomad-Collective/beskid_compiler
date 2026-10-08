@@ -6,11 +6,13 @@
 
 #[path = "support/native_fixture.rs"]
 mod native_fixture;
+#[path = "support/shared_kit.rs"]
+mod shared_kit;
 
 use anyhow::Context;
 use beskid_abi::{
     abi_v5::{AbiManifestV5, TRAP_DIAGNOSTIC_PREFIX},
-    runtime_kit::BuildProfile,
+    runtime_kit::{BuildProfile, resolve_installed_runtime_kit},
     runtime_source::{
         CANONICAL_FOUNDATION_TIME_SOURCE_PATH, canonical_corelib_service_capability,
         canonical_corelib_service_source_path, canonical_corelib_service_sources, corelib_source_locations_match,
@@ -34,13 +36,13 @@ use beskid_queries::{
 #[cfg(windows)]
 use beskid_tests_support::native_harness::place_shared_runtime;
 use beskid_tests_support::native_harness::{executable_name, native_c_compiler, run_bounded, shared_library_name};
-use beskid_tools::toolchain::runtime_kit::{RuntimeKitProfile, build_native_host};
 use std::{collections::HashSet, path::Path, process::Command, sync::Arc, time::Duration};
 
 const ROUTE_LIMIT: Duration = Duration::from_secs(180);
 const TIMER_FATAL_TEST: &str = "source_timer_sleep_invalid_runtime_status_fails_closed";
 const TIMER_FATAL_CASE: &str = "BESKID_TEST_TIMER_FATAL_CASE";
 const TIMER_FATAL_ROUTE: &str = "BESKID_TEST_TIMER_FATAL_ROUTE";
+const TIMER_FATAL_KIT_PREFIX: &str = "BESKID_TEST_TIMER_FATAL_KIT_PREFIX";
 const TIMER_FATAL_DIAGNOSTIC: &str = "Core.Time.Sleep observed an invalid runtime status";
 
 #[test]
@@ -346,7 +348,15 @@ fn timer_validation_observations(
     } else {
         tempfile::tempdir()?
     };
-    let kit = build_native_host(prefix.path().to_path_buf(), RuntimeKitProfile::Debug)?;
+    // A fatal child loads the kit its parent published instead of building its own; the kit is
+    // immutable, so every route still runs against one canonical build.
+    let kit_prefix = if validation_mode == TimerValidationMode::EngineFatalChild {
+        std::env::var_os(TIMER_FATAL_KIT_PREFIX).map(std::path::PathBuf::from).context("missing child kit prefix")?
+    } else {
+        shared_kit::debug().prefix().to_path_buf()
+    };
+    let kit = resolve_installed_runtime_kit(&kit_prefix, artifact.input.target(), BuildProfile::Debug)
+        .map_err(|error| anyhow::anyhow!("timer validation kit: {error:?}"))?;
     eprintln!(
         "timer validation kit: target={} source={} static={} shared={}",
         kit.metadata.target.triple.as_str(),
@@ -372,8 +382,13 @@ fn timer_validation_observations(
         cc.args(["-Wall", "-Wextra", "-Werror", "-I"]).arg(root.join("../beskid_abi/include"));
         cc
     };
-    // The callback shares the exact DLL directory loaded by Engine below.
-    let fixture_library = kit.shared_library.parent().unwrap().join(shared_library_name("timer-validation"));
+    // The callback shares the exact DLL directory loaded by Engine below. The kit directory is
+    // shared by every test and fatal child in this run, so each process owns a distinct name.
+    let fixture_library = kit.shared_library.parent().unwrap().join(shared_library_name(&format!(
+        "timer-validation-{}-{}",
+        std::process::id(),
+        validation_mode as u8
+    )));
     let mut cc = compiler();
     #[cfg(target_os = "macos")]
     cc.arg("-dynamiclib");
@@ -392,13 +407,13 @@ fn timer_validation_observations(
         for case in timer_fatal_cases() {
             let mut command = Command::new(std::env::current_exe()?);
             command.args([TIMER_FATAL_TEST, "--exact", "--nocapture", "--test-threads=1"]);
-            command.env("BESKID_TEST_TIMER_FATAL_BUILD_ROOT", prefix.path());
+            command.env("BESKID_TEST_TIMER_FATAL_BUILD_ROOT", prefix.path()).env(TIMER_FATAL_KIT_PREFIX, &kit_prefix);
             run_timer_fatal_child(&mut command, "engine", &case)?;
             counts[0].1 += 1;
         }
     } else {
         let mut engine = beskid_engine::Engine::with_runtime_kit(
-            prefix.path(),
+            &kit_prefix,
             artifact.input.target().clone(),
             BuildProfile::Debug,
         )?;
@@ -774,7 +789,8 @@ fn source_transfer_fixture(kind: &str, entry: &str, expected: i64) {
         .expect("typed Fiber source lowering");
     eprintln!("Fiber source lowering complete");
     let prefix = tempfile::tempdir().unwrap();
-    let kit = build_native_host(prefix.path().to_path_buf(), RuntimeKitProfile::Debug).unwrap();
+    let shared = shared_kit::debug();
+    let kit = &shared.kit;
     eprintln!(
         "{kind} native kit: target={} source={} static={} shared={}",
         kit.metadata.target.triple.as_str(),
@@ -795,7 +811,7 @@ fn source_transfer_fixture(kind: &str, entry: &str, expected: i64) {
         library
     };
     {
-        let mut engine = beskid_engine::Engine::with_runtime_kit(prefix.path(), target, BuildProfile::Debug).unwrap();
+        let mut engine = beskid_engine::Engine::with_runtime_kit(shared.prefix(), target, BuildProfile::Debug).unwrap();
         engine.compile_artifact(&lowered.artifact).expect("JIT typed Fiber artifact");
         let entry = unsafe { engine.entrypoint_ptr(&lowered.symbol) }.unwrap();
         let run: extern "C" fn() -> i64 = unsafe { std::mem::transmute(entry) };

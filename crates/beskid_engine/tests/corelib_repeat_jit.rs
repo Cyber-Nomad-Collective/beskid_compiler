@@ -8,7 +8,8 @@ use beskid_analysis::services::{PrepareOptions, resolve_input};
 use beskid_engine::Engine;
 use beskid_engine::services::run_entrypoint_from_front_end_with_engine;
 use beskid_queries::{configure_db_for_project, prepare_compilation_with_db, with_db};
-use beskid_tools::toolchain::runtime_kit::{RuntimeKitProfile, build_native_host};
+#[path = "support/shared_kit.rs"]
+mod shared_kit;
 
 /// Serializes cases in this binary.
 ///
@@ -31,9 +32,7 @@ fn run_corelib_test(entry: &str, target_name: &str, test_name: &str) -> String {
 
 fn run_corelib_tests(entry: &str, target_name: &str, test_names: &[&str]) -> Vec<String> {
     let _serial = CORELIB_JIT_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-    let runtime_prefix = tempfile::tempdir().expect("exact runtime-kit prefix");
-    build_native_host(runtime_prefix.path().to_path_buf(), RuntimeKitProfile::Debug)
-        .expect("publish exact native runtime kit");
+    let runtime_prefix = shared_kit::debug().prefix();
     let project_root = corelib_tests_root();
     let entry = project_root.join(entry);
     configure_db_for_project(&project_root);
@@ -45,7 +44,7 @@ fn run_corelib_tests(entry: &str, target_name: &str, test_names: &[&str]) -> Vec
     let front = prepared.into_executable().expect("executable front-end");
 
     let target = beskid_engine::host_runtime_target().expect("supported native host target");
-    let mut engine = Engine::with_runtime_kit(runtime_prefix.path(), target, BuildProfile::Debug)
+    let mut engine = Engine::with_runtime_kit(runtime_prefix, target, BuildProfile::Debug)
         .expect("load exact native runtime kit");
     test_names
         .iter()

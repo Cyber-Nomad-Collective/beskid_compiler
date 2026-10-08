@@ -13,8 +13,9 @@ use beskid_queries::{BeskidDatabase, SyntaxGenerationId};
 #[cfg(windows)]
 use beskid_tests_support::native_harness::place_shared_runtime;
 use beskid_tests_support::native_harness::{executable_name, native_c_compiler, run_bounded};
-use beskid_tools::toolchain::runtime_kit::{RuntimeKitProfile, build_native_host};
 use std::{path::Path, process::Command, sync::Arc, time::Duration};
+#[path = "support/shared_kit.rs"]
+mod shared_kit;
 
 const ROUTE_LIMIT: Duration = Duration::from_secs(60);
 
@@ -68,7 +69,8 @@ fn run_cleanup_fixture(fixture: &str) {
     )
     .expect("scoped cleanup must lower through source facts");
     let prefix = tempfile::tempdir().unwrap();
-    let kit = build_native_host(prefix.path().to_path_buf(), RuntimeKitProfile::Debug).unwrap();
+    let shared = shared_kit::debug();
+    let kit = &shared.kit;
     let object_path = prefix.path().join(if cfg!(windows) { "cleanup.obj" } else { "cleanup.o" });
     let native_symbol = beskid_codegen::object_link_symbol(&lowered.symbol, &lowered.artifact.exports);
     let mut object = beskid_aot::object_module::BeskidObjectModule::new(None, beskid_aot::BuildProfile::Debug).unwrap();
@@ -126,7 +128,7 @@ fn run_cleanup_fixture(fixture: &str) {
     };
     #[cfg(windows)]
     run_native_routes();
-    let mut engine = beskid_engine::Engine::with_runtime_kit(prefix.path(), target, BuildProfile::Debug).unwrap();
+    let mut engine = beskid_engine::Engine::with_runtime_kit(shared.prefix(), target, BuildProfile::Debug).unwrap();
     engine.compile_artifact(&lowered.artifact).expect("compile scoped cleanup artifact");
     let entry = unsafe { engine.entrypoint_ptr(&lowered.symbol) }.unwrap();
     let run: extern "C" fn() -> i64 = unsafe { std::mem::transmute(entry) };

@@ -6,6 +6,8 @@
 
 #[path = "support/native_fixture.rs"]
 mod native_fixture;
+#[path = "support/shared_kit.rs"]
+mod shared_kit;
 
 use beskid_abi::runtime_kit::BuildProfile;
 use beskid_analysis::{
@@ -16,7 +18,6 @@ use beskid_queries::{BeskidDatabase, SyntaxGenerationId};
 use beskid_tests_support::native_harness::{
     executable_name, native_c_compiler, place_shared_runtime, run_bounded, run_bounded_with_stdin, shared_library_name,
 };
-use beskid_tools::toolchain::runtime_kit::{RuntimeKitProfile, build_native_host};
 use std::{
     path::Path,
     process::Command,
@@ -375,7 +376,8 @@ fn foundation_syscall_closed_descriptor_returns_io_failure() {
 fn foundation_numeric_panic_preserves_process_trap_code() {
     let compiler = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let prefix = tempfile::tempdir().unwrap();
-    let kit = build_native_host(prefix.path().to_path_buf(), RuntimeKitProfile::Debug).unwrap();
+    let shared = shared_kit::debug();
+    let kit = &shared.kit;
     // Keep every canonical runtime object; replace only the terminal host trap for observation.
     let observed_library = prefix.path().join("observed-runtime.a");
     std::fs::copy(&kit.static_library, &observed_library).unwrap();
@@ -580,7 +582,8 @@ fn run_foundation_case(fixture: &str, entry: &str, expected: i64, input_mode: i3
     let lowered = lower_foundation_entry(fixture, entry).expect("Foundation fixture source lowering");
     eprintln!("{fixture}: source lowering complete");
     let prefix = tempfile::tempdir().unwrap();
-    let kit = build_native_host(prefix.path().to_path_buf(), RuntimeKitProfile::Debug).unwrap();
+    let shared = shared_kit::debug();
+    let kit = &shared.kit;
     eprintln!("{fixture}: native kit complete");
     eprintln!(
         "{entry}: target={} profile={:?} source_hash={} layout_hash={} artifacts={:?}",
@@ -661,7 +664,7 @@ fn run_foundation_case(fixture: &str, entry: &str, expected: i64, input_mode: i3
     object.finalize_to_path(&object_path).unwrap();
     let run_jit = || {
         let mut engine =
-            beskid_engine::Engine::with_runtime_kit(prefix.path(), target.clone(), BuildProfile::Debug).unwrap();
+            beskid_engine::Engine::with_runtime_kit(shared.prefix(), target.clone(), BuildProfile::Debug).unwrap();
         engine.compile_artifact(&lowered.artifact).expect("Foundation JIT");
         let pointer = unsafe { engine.entrypoint_ptr(&lowered.symbol) }.unwrap();
         let run: extern "C" fn() -> i64 = unsafe { std::mem::transmute(pointer) };

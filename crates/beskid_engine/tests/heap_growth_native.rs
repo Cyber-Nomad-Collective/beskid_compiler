@@ -21,8 +21,9 @@ use beskid_queries::{BeskidDatabase, SyntaxGenerationId};
 use beskid_tests_support::native_harness::{executable_name, native_c_compiler, run_bounded};
 #[cfg(windows)]
 use beskid_tests_support::native_harness::place_shared_runtime;
-use beskid_tools::toolchain::runtime_kit::{RuntimeKitProfile, build_native_host};
 use std::{collections::HashSet, path::Path, process::Command, sync::Arc, time::Duration};
+#[path = "support/shared_kit.rs"]
+mod shared_kit;
 
 const ROUTE_LIMIT: Duration = Duration::from_secs(180);
 
@@ -97,7 +98,8 @@ fn run_heap_fixture(label: &str, entry: &str, expected: i64) {
     let lowered = lower_syntax_assembly_entrypoint(&mut db, assembly, entry, target.clone(), isa.as_ref())
         .unwrap_or_else(|error| panic!("{label}: heap-growth source lowering failed: {error:?}"));
     let prefix = tempfile::tempdir().unwrap();
-    let kit = build_native_host(prefix.path().to_path_buf(), RuntimeKitProfile::Debug).unwrap();
+    let shared = shared_kit::debug();
+    let kit = &shared.kit;
     eprintln!(
         "{label} native kit: target={} source={}",
         kit.metadata.target.triple.as_str(),
@@ -111,7 +113,7 @@ fn run_heap_fixture(label: &str, entry: &str, expected: i64) {
         library
     };
     {
-        let mut engine = beskid_engine::Engine::with_runtime_kit(prefix.path(), target, BuildProfile::Debug).unwrap();
+        let mut engine = beskid_engine::Engine::with_runtime_kit(shared.prefix(), target, BuildProfile::Debug).unwrap();
         engine.compile_artifact(&lowered.artifact).expect("JIT heap-growth artifact");
         let entrypoint = unsafe { engine.entrypoint_ptr(&lowered.symbol) }.unwrap();
         let run: extern "C" fn() -> i64 = unsafe { std::mem::transmute(entrypoint) };
@@ -283,7 +285,8 @@ fn build_heap_executable(label: &str, entry: &str) -> (tempfile::TempDir, std::p
     let lowered = lower_syntax_assembly_entrypoint(&mut db, assembly, entry, target.clone(), isa.as_ref())
         .unwrap_or_else(|error| panic!("{label}: {entry} source lowering failed: {error:?}"));
     let prefix = tempfile::tempdir().unwrap();
-    let kit = build_native_host(prefix.path().to_path_buf(), RuntimeKitProfile::Debug).unwrap();
+    let shared = shared_kit::debug();
+    let kit = &shared.kit;
     let object_path = prefix.path().join(if cfg!(windows) { "fixture.obj" } else { "fixture.o" });
     let native_symbol = beskid_codegen::object_link_symbol(&lowered.symbol, &lowered.artifact.exports);
     let mut object = beskid_aot::object_module::BeskidObjectModule::new(None, beskid_aot::BuildProfile::Debug).unwrap();
