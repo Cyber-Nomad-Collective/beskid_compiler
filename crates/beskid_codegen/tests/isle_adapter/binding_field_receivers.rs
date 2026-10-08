@@ -375,3 +375,21 @@ unit Drive(i64[] state) {
     let drive = clif_of("Drive");
     assert_eq!(calls_to(&drive, "gc_register_root"), 1, "Drive registers its parameter root only:\n{drive}");
 }
+
+#[test]
+fn field_of_a_function_call_result_lowers() {
+    let (input, isa, root) = item_fixture_with_root(
+        r#"
+type Point { i64 x, i64 y, }
+Point Make() { return Point { x: 9_i64, y: 2_i64 }; }
+i64 Main() { return Make().x + Make().y; }
+"#,
+    );
+    let functions = find_function_definitions(input.database(), root);
+    let items = [
+        SyntaxModuleItem { key: functions[0], symbol: "Make".into() },
+        SyntaxModuleItem { key: functions[1], symbol: "Main".into() },
+    ];
+
+    lower_syntax_program(&input, isa.as_ref(), &items).expect("a field read directly from a call result lowers");
+}

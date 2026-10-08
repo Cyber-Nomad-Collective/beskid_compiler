@@ -191,8 +191,13 @@ pub(in crate::semantic_contract) fn nominal_field_projection(
     let index = syntax.syntax_index(db);
     let node = index.node_at(program, key.node)?;
     if let Some(member) = node.of::<beskid_analysis::syntax::MemberExpression>() {
-        // Existing generic-call-result projections keep their established specialized path.
-        if matches!(member.target.node, beskid_analysis::syntax::Expression::Call(_)) {
+        // Calls with explicit type arguments keep their established specialized path
+        // (`applied_call_result_layout`); every other call result is projected from the
+        // source identity of its direct call, functions and methods alike.
+        if let beskid_analysis::syntax::Expression::Call(call) = &member.target.node
+            && matches!(&call.node.callee.node, beskid_analysis::syntax::Expression::Path(callee)
+                if explicit_generic_type_argument_syntax(&callee.node.path.node).is_some())
+        {
             return None;
         }
         let receiver = index.direct_child_id(program, key.node, DynNodeRef::from(member.target.as_ref()))?;
