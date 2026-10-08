@@ -22,8 +22,7 @@ use beskid_tests_support::native_harness::{executable_name, native_c_compiler, r
 #[cfg(windows)]
 use beskid_tests_support::native_harness::place_shared_runtime;
 use std::{collections::HashSet, path::Path, process::Command, sync::Arc, time::Duration};
-#[path = "support/shared_kit.rs"]
-mod shared_kit;
+use crate::shared_kit;
 
 const ROUTE_LIMIT: Duration = Duration::from_secs(180);
 
@@ -99,7 +98,7 @@ fn run_heap_fixture(label: &str, entry: &str, expected: i64) {
         .unwrap_or_else(|error| panic!("{label}: heap-growth source lowering failed: {error:?}"));
     let prefix = tempfile::tempdir().unwrap();
     let shared = shared_kit::debug();
-    let kit = &shared.kit;
+    let kit = shared.kit();
     eprintln!(
         "{label} native kit: target={} source={}",
         kit.metadata.target.triple.as_str(),
@@ -286,7 +285,7 @@ fn build_heap_executable(label: &str, entry: &str) -> (tempfile::TempDir, std::p
         .unwrap_or_else(|error| panic!("{label}: {entry} source lowering failed: {error:?}"));
     let prefix = tempfile::tempdir().unwrap();
     let shared = shared_kit::debug();
-    let kit = &shared.kit;
+    let kit = shared.kit();
     let object_path = prefix.path().join(if cfg!(windows) { "fixture.obj" } else { "fixture.o" });
     let native_symbol = beskid_codegen::object_link_symbol(&lowered.symbol, &lowered.artifact.exports);
     let mut object = beskid_aot::object_module::BeskidObjectModule::new(None, beskid_aot::BuildProfile::Debug).unwrap();

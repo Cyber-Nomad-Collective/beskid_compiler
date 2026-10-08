@@ -6,16 +6,16 @@ use beskid_abi::runtime_kit::BuildProfile;
 use beskid_analysis::services::{FrontEndOptions, resolved_input_from_plan, synthetic_compile_plan_for_source};
 use beskid_engine::services::run_entrypoint_from_front_end_with_engine;
 use beskid_engine::{Engine, host_runtime_target};
-use beskid_tools::toolchain::runtime_kit::{RuntimeKitProfile, build_native_host};
+
+use crate::shared_kit;
 
 #[test]
 fn replacing_artifacts_restarts_runtime_before_descriptor_storage_is_retired() {
-    let prefix = tempfile::tempdir().expect("fresh runtime-kit prefix");
-    build_native_host(prefix.path().to_path_buf(), RuntimeKitProfile::Debug)
-        .expect("publish canonical native runtime kit");
+    let kit_lease = shared_kit::debug();
+    let prefix = kit_lease.prefix();
     let target = host_runtime_target().expect("supported native host target");
     let mut engine =
-        Engine::with_runtime_kit(prefix.path(), target, BuildProfile::Debug).expect("load exact runtime kit");
+        Engine::with_runtime_kit(prefix, target, BuildProfile::Debug).expect("load exact runtime kit");
 
     let source = r#"
 i64 AllocateArray() {

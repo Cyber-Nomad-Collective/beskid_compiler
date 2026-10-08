@@ -377,7 +377,7 @@ fn foundation_numeric_panic_preserves_process_trap_code() {
     let compiler = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let prefix = tempfile::tempdir().unwrap();
     let shared = shared_kit::debug();
-    let kit = &shared.kit;
+    let kit = shared.kit();
     // Keep every canonical runtime object; replace only the terminal host trap for observation.
     let observed_library = prefix.path().join("observed-runtime.a");
     std::fs::copy(&kit.static_library, &observed_library).unwrap();
@@ -583,7 +583,7 @@ fn run_foundation_case(fixture: &str, entry: &str, expected: i64, input_mode: i3
     eprintln!("{fixture}: source lowering complete");
     let prefix = tempfile::tempdir().unwrap();
     let shared = shared_kit::debug();
-    let kit = &shared.kit;
+    let kit = shared.kit();
     eprintln!("{fixture}: native kit complete");
     eprintln!(
         "{entry}: target={} profile={:?} source_hash={} layout_hash={} artifacts={:?}",

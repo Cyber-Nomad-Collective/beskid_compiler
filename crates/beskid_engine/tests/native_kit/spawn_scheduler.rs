@@ -1,17 +1,16 @@
-mod support;
-#[path = "support/shared_kit.rs"]
-mod shared_kit;
+use crate::shared_kit;
 
 use std::path::Path;
 
 use beskid_abi::runtime_kit::BuildProfile;
 use beskid_engine::services::{prepare_jit_entrypoint, run_entrypoint};
 use beskid_engine::{Engine, host_runtime_target};
-use support::runtime_prefix::RuntimePrefixContext;
+use crate::runtime_prefix::RuntimePrefixContext;
 
 #[test]
 fn jit_runs_zero_capture_lambda_spawn_under_fiber_scheduler() {
-    let prefix = shared_kit::debug().prefix();
+    let kit_lease = shared_kit::debug();
+    let prefix = kit_lease.prefix();
     let target = host_runtime_target().expect("supported native host target");
     let mut engine =
         Engine::with_runtime_kit(prefix, target, BuildProfile::Debug).expect("load exact native runtime kit");
@@ -27,7 +26,8 @@ fn jit_runs_zero_capture_lambda_spawn_under_fiber_scheduler() {
 
 #[test]
 fn jit_child_value_returns_42() {
-    let prefix = shared_kit::debug().prefix();
+    let kit_lease = shared_kit::debug();
+    let prefix = kit_lease.prefix();
     let _runtime_prefix = RuntimePrefixContext::install(prefix);
 
     let source = "i64 child_value() { return 42; } i64 Main() { return child_value(); }";

@@ -14,8 +14,7 @@ use beskid_queries::{BeskidDatabase, SyntaxGenerationId};
 use beskid_tests_support::native_harness::place_shared_runtime;
 use beskid_tests_support::native_harness::{executable_name, native_c_compiler, run_bounded};
 use std::{path::Path, process::Command, sync::Arc, time::Duration};
-#[path = "support/shared_kit.rs"]
-mod shared_kit;
+use crate::shared_kit;
 
 const ROUTE_LIMIT: Duration = Duration::from_secs(60);
 
@@ -70,7 +69,7 @@ fn run_cleanup_fixture(fixture: &str) {
     .expect("scoped cleanup must lower through source facts");
     let prefix = tempfile::tempdir().unwrap();
     let shared = shared_kit::debug();
-    let kit = &shared.kit;
+    let kit = shared.kit();
     let object_path = prefix.path().join(if cfg!(windows) { "cleanup.obj" } else { "cleanup.o" });
     let native_symbol = beskid_codegen::object_link_symbol(&lowered.symbol, &lowered.artifact.exports);
     let mut object = beskid_aot::object_module::BeskidObjectModule::new(None, beskid_aot::BuildProfile::Debug).unwrap();

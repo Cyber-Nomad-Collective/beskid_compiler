@@ -27,9 +27,10 @@ use beskid_pipeline::phases::{
     LOWER_READY, MACRO_EXPAND, MOD_ANALYZE, MOD_COLLECT, MOD_GENERATE, MOD_GLUE, MOD_LOAD, MOD_REWRITE,
 };
 use beskid_pipeline::{PipelineEvent, PipelineObserver, observe_phase};
-use beskid_tools::toolchain::runtime_kit::{RuntimeKitProfile, build_native_host};
 
-const SAMPLE_MOD_PROJECT: &str = include_str!("../../beskid_tests_mods/fixtures/mods/sample_mod/SampleMod.bproj");
+use crate::shared_kit;
+
+const SAMPLE_MOD_PROJECT: &str = include_str!("../../../beskid_tests_mods/fixtures/mods/sample_mod/SampleMod.bproj");
 
 const HOST_MANIFEST: &str = r#"
 Host {
@@ -128,10 +129,10 @@ fn mod_host_full_pipeline_compiles_in_engine() -> Result<()> {
     let prepared =
         prepare_jit_entrypoint(workspace.host_dir.join("Src").join("Main.bd").as_path(), HOST_SOURCE, "Main")?;
 
-    let kit_prefix = tempfile::tempdir().expect("exact kit prefix");
-    build_native_host(kit_prefix.path().to_path_buf(), RuntimeKitProfile::Debug).expect("publish exact native kit");
+    let kit_lease = shared_kit::debug();
+    let kit_prefix = kit_lease.prefix();
     let target = host_runtime_target().expect("host target");
-    let mut engine = Engine::with_runtime_kit(kit_prefix.path(), target, BuildProfile::Debug).expect("load exact kit");
+    let mut engine = Engine::with_runtime_kit(kit_prefix, target, BuildProfile::Debug).expect("load exact kit");
     engine
         .compile_artifact_with_pipeline(&prepared.artifact, Some(pipeline.as_ref()))
         .map_err(|err| anyhow::anyhow!("engine compile failed: {err}"))?;

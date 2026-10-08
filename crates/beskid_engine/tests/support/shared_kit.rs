@@ -6,34 +6,54 @@
 //! that exercise kit construction or alter kit files keep calling `build_native_host` with their
 //! own prefix. Consumers must treat the shared prefix as read-only and put scratch files in their
 //! own temporary directory.
+//!
+//! The runtime keeps its process state in the loaded runtime library, so two engines that load
+//! the same kit at the same time cannot both initialize it. [`debug`] therefore hands out an
+//! exclusive lease; a test holds it for as long as it uses the kit, which serializes kit
+//! consumers in one binary even under the parallel test harness.
 
 // Each test binary includes this module and uses a different part of it.
 #![allow(dead_code)]
 
 use std::{
     path::{Path, PathBuf},
-    sync::OnceLock,
+    sync::{Mutex, MutexGuard, OnceLock, PoisonError},
 };
 
 use beskid_abi::runtime_kit::ResolvedRuntimeKit;
 use beskid_tools::toolchain::runtime_kit::{RuntimeKitProfile, build_native_host};
 
-pub struct SharedKit {
+struct SharedKit {
     prefix: PathBuf,
-    pub kit: ResolvedRuntimeKit,
+    kit: ResolvedRuntimeKit,
 }
 
-impl SharedKit {
+/// Exclusive use of the shared kit; release it by dropping it when the test no longer runs code
+/// against the kit.
+pub struct SharedKitLease {
+    shared: &'static SharedKit,
+    _exclusive: MutexGuard<'static, ()>,
+}
+
+impl SharedKitLease {
     /// Prefix to pass to `Engine::with_runtime_kit` or `BESKID_RUNTIME_PREFIX`.
     pub fn prefix(&self) -> &Path {
-        &self.prefix
+        &self.shared.prefix
+    }
+
+    pub fn kit(&self) -> &ResolvedRuntimeKit {
+        &self.shared.kit
     }
 }
 
-/// The debug-profile canonical kit for this process, built on first use.
-pub fn debug() -> &'static SharedKit {
+/// Lease the debug-profile canonical kit for this process, building it on first use.
+pub fn debug() -> SharedKitLease {
+    static EXCLUSIVE: Mutex<()> = Mutex::new(());
     static KIT: OnceLock<SharedKit> = OnceLock::new();
-    KIT.get_or_init(|| {
+    // A test that panicked while holding the lease left no runtime state behind: its engine was
+    // dropped during unwinding.
+    let exclusive = EXCLUSIVE.lock().unwrap_or_else(PoisonError::into_inner);
+    let shared = KIT.get_or_init(|| {
         // The kit outlives every test, so keep it under Cargo's per-target scratch directory
         // (removed by `cargo clean`) rather than leaking it into the system temporary directory.
         let prefix = tempfile::Builder::new()
@@ -43,5 +63,6 @@ pub fn debug() -> &'static SharedKit {
             .keep();
         let kit = build_native_host(prefix.clone(), RuntimeKitProfile::Debug).expect("publish shared native kit");
         SharedKit { prefix, kit }
-    })
+    });
+    SharedKitLease { shared, _exclusive: exclusive }
 }

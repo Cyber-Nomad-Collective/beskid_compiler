@@ -350,10 +350,12 @@ fn timer_validation_observations(
     };
     // A fatal child loads the kit its parent published instead of building its own; the kit is
     // immutable, so every route still runs against one canonical build.
-    let kit_prefix = if validation_mode == TimerValidationMode::EngineFatalChild {
-        std::env::var_os(TIMER_FATAL_KIT_PREFIX).map(std::path::PathBuf::from).context("missing child kit prefix")?
-    } else {
-        shared_kit::debug().prefix().to_path_buf()
+    let kit_lease = (validation_mode != TimerValidationMode::EngineFatalChild).then(shared_kit::debug);
+    let kit_prefix = match &kit_lease {
+        Some(lease) => lease.prefix().to_path_buf(),
+        None => std::env::var_os(TIMER_FATAL_KIT_PREFIX)
+            .map(std::path::PathBuf::from)
+            .context("missing child kit prefix")?,
     };
     let kit = resolve_installed_runtime_kit(&kit_prefix, artifact.input.target(), BuildProfile::Debug)
         .map_err(|error| anyhow::anyhow!("timer validation kit: {error:?}"))?;
@@ -790,7 +792,7 @@ fn source_transfer_fixture(kind: &str, entry: &str, expected: i64) {
     eprintln!("Fiber source lowering complete");
     let prefix = tempfile::tempdir().unwrap();
     let shared = shared_kit::debug();
-    let kit = &shared.kit;
+    let kit = shared.kit();
     eprintln!(
         "{kind} native kit: target={} source={} static={} shared={}",
         kit.metadata.target.triple.as_str(),

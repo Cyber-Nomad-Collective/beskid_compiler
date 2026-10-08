@@ -5,7 +5,8 @@ use beskid_abi::runtime_kit::BuildProfile;
 use beskid_engine::services::prepare_jit_entrypoint;
 use beskid_engine::{Engine, host_runtime_target};
 use beskid_pipeline::{PipelineEvent, PipelineObserver, phases};
-use beskid_tools::toolchain::runtime_kit::{RuntimeKitProfile, build_native_host};
+
+use crate::shared_kit;
 
 #[derive(Clone)]
 struct Recorder(Arc<Mutex<Vec<&'static str>>>);
@@ -35,10 +36,10 @@ impl PipelineObserver for Recorder {
 
 #[test]
 fn jit_compile_emits_emit_work_units_and_finalize_phase() {
-    let prefix = tempfile::tempdir().expect("exact kit prefix");
-    build_native_host(prefix.path().to_path_buf(), RuntimeKitProfile::Debug).expect("publish exact native kit");
+    let kit_lease = shared_kit::debug();
+    let prefix = kit_lease.prefix();
     let target = host_runtime_target().expect("host target");
-    let mut engine = Engine::with_runtime_kit(prefix.path(), target, BuildProfile::Debug).expect("load exact kit");
+    let mut engine = Engine::with_runtime_kit(prefix, target, BuildProfile::Debug).expect("load exact kit");
 
     let src = r#"
 pub i64 Main() { return 0; }
