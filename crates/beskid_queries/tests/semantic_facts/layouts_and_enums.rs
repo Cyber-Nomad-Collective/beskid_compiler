@@ -614,6 +614,31 @@ fn enum_constructor_selects_the_source_variant_and_single_payload() {
 }
 
 #[test]
+fn generic_enum_constructor_takes_its_application_from_a_method_parameter() {
+    let source = r#"
+enum Maybe<T> { None(), Some(T value) }
+type Holder {
+    i64 n,
+
+    i64 Pick(Maybe<i64> other) { return 0; }
+}
+i64 Main() {
+    Holder holder = Holder { n: 1 };
+    return holder.Pick(Maybe::None());
+}
+"#;
+    let (db, _project, unit, generation, index) = setup(source);
+    let constructor = key(unit, generation, &index, NodeKind::EnumConstructorExpression, 0);
+    let declaration = key(unit, generation, &index, NodeKind::EnumDefinition, 0);
+
+    assert_eq!(
+        enum_constructor(&db, constructor).expect("enum constructor query in a method argument"),
+        Some(beskid_queries::EnumConstructorFact { declaration, variant_index: 0, payloads: Arc::from([]) }),
+        "an unapplied generic constructor in a method argument takes the parameter's application"
+    );
+}
+
+#[test]
 fn enum_constructor_preserves_multiple_payloads_in_source_order() {
     let source = "enum Pair { Value(i32 left, i32 right) } i32 Main() { Pair pair = Pair::Value(1, 2); return 0; }";
     let (db, _project, unit, generation, index) = setup(source);
