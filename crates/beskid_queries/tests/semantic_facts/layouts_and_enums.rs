@@ -230,6 +230,17 @@ type Holder {
 }
 
 #[test]
+fn this_qualified_sibling_call_uses_the_implicit_method_receiver() {
+    let source = "type Counter { i64 n, i64 Double() { return 2; } i64 Quad() { return this.Double() * 2; } }";
+    let (db, _project, unit, generation, index) = setup(source);
+    let quad = key(unit, generation, &index, NodeKind::MethodDefinition, 1);
+    let callee =
+        key_at_start(unit, generation, &index, NodeKind::PathExpression, source.find("this.Double").expect("callee"));
+
+    assert_eq!(implicit_method_receiver(&db, callee), Ok(Some(quad)));
+}
+
+#[test]
 fn self_path_resolves_to_its_implicit_method_receiver() {
     let source = "type List<T> { List<T> Identity() { return self; } }";
     let (db, _project, unit, generation, index) = setup(source);

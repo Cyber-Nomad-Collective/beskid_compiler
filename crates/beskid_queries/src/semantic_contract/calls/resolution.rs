@@ -132,7 +132,7 @@ pub(in crate::semantic_contract) fn path_call_resolution(
     }
 }
 
-/// Resolve `Method(args)` inside another method of the same nominal type.
+/// Resolve `Method(args)` or `this.Method(args)` inside another method of the same nominal type.
 ///
 /// Beskid does not spell `self` at these call sites, but the method ABI always carries the
 /// receiver first. This syntax-only authority is deliberately restricted to an unqualified,
@@ -143,7 +143,18 @@ pub(in crate::semantic_contract) fn unqualified_enclosing_method_call(
     key: AstNodeKey,
     path: &beskid_analysis::syntax::Path,
 ) -> Option<(AstNodeKey, AstNodeKey)> {
-    let [segment] = path.segments.as_slice() else { return None };
+    // `Method(args)` and `this.Method(args)` both name a sibling method on the implicit receiver.
+    let segment = match path.segments.as_slice() {
+        [segment] => segment,
+        [receiver, segment]
+            if receiver.node.type_args.is_empty()
+                && receiver.node.name.node.name == "this"
+                && resolve_lexical_declaration(program, index, key.node, "this").is_none() =>
+        {
+            segment
+        }
+        _ => return None,
+    };
     if !segment.node.type_args.is_empty() {
         return None;
     }
