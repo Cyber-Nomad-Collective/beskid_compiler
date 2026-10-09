@@ -146,6 +146,7 @@ pub(super) fn validate(manifest: &RuntimeManifestV5) -> Result<(), String> {
         "__str_cmp",
         "__str_concat",
         "__str_from_i64",
+        "__str_from_f64_bits",
         "__str_slice",
         "__str_from_bytes_utf8",
         "__dynamic_cast_checked",

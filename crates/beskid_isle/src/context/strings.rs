@@ -12,6 +12,17 @@ impl IsleContext<'_, '_, '_, '_> {
         if semantic == SemanticTypeId::BOOL {
             return self.bool_to_string(key, value);
         }
+        if semantic == SemanticTypeId::F64 {
+            // The runtime formats from the IEEE-754 bits: it has no float operations of its own.
+            let bits = self.builder.ins().bitcast(types::I64, MemFlagsData::new(), value);
+            return self.emit_corelib_service_call(
+                key,
+                "str_from_f64_bits",
+                &[bits],
+                &[types::I64],
+                Some(dispatch::pointer_type(self.frontend_config)),
+            );
+        }
         let pointer_type = self.builder.func.dfg.value_type(value);
         let coerced = match semantic {
             SemanticTypeId::I64 => value,

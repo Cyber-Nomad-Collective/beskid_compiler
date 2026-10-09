@@ -254,3 +254,411 @@ pub pointer StrFromBytesUtf8(pointer bytes, word len) {
     }
     return StrNew(bytes, len);
 }
+
+// Text of an `f64` is at most 25 bytes (`-0.0000012345678901234567`, `-1.2345678901234567e-308`).
+const F64_TEXT_CAPACITY = 32;
+// Scratch for the shortest digits (at most 17, one value 0-9 per byte) followed by the biased
+// decimal exponent as a word.
+const F64_DIGITS_BYTES = 32;
+const F64_POINT_OFFSET = 24;
+// The decimal exponent is stored biased so it fits an unsigned word.
+const F64_POINT_BIAS = 1000;
+// Bignums hold up to 1280 bits as little-endian 32-bit limbs, one per word: the scaled values
+// for the smallest subnormal and the largest finite `f64` need under 1090 bits.
+const BIG_LIMBS = 40;
+const BIG_BYTES = 320;
+const BIG_MASK = 0xFFFFFFFF;
+
+// Formats an `f64`, passed as its IEEE-754 bits, as the shortest decimal text that reads back
+// as the same value (Burger and Dybvig's free-format algorithm, exact with bignums), laid out
+// like ECMAScript `Number::toString`: plain decimal for magnitudes in [1e-6, 1e21) and
+// `d.ddde+x` / `d.ddde-x` otherwise, integral values without a fraction, and `NaN`,
+// `Infinity`, `-Infinity`. Negative zero prints as `0`.
+[Export(Abi:"C", Symbol:"str_from_f64_bits")]
+pub pointer StrFromF64Bits(i64 bits) {
+    i64 fraction = bits & 4503599627370495;
+    i64 biased = (bits >> 52) & 2047;
+    bool negative = bits < 0;
+    pointer out = SystemAllocate(F64_TEXT_CAPACITY, 1);
+    if out == NativePointer(0) {
+        return NativePointer(0);
+    }
+    mut word length = 0;
+    if biased == 2047 {
+        if fraction != 0 {
+            length = AppendAscii3(out, length, 78, 97, 78);
+        } else {
+            if negative {
+                raw_byte_store(out, 45);
+                length = 1;
+            }
+            length = AppendAscii3(out, length, 73, 110, 102);
+            length = AppendAscii3(out, length, 105, 110, 105);
+            length = AppendAscii2(out, length, 116, 121);
+        }
+        return FinishF64Text(out, length);
+    }
+    if biased == 0 && fraction == 0 {
+        raw_byte_store(out, 48);
+        return FinishF64Text(out, 1);
+    }
+    if negative {
+        raw_byte_store(out, 45);
+        length = 1;
+    }
+    pointer digits = SystemAllocate(F64_DIGITS_BYTES, 8);
+    if digits == NativePointer(0) {
+        SystemFree(out, F64_TEXT_CAPACITY);
+        return NativePointer(0);
+    }
+    word count = ShortestDigits(fraction, biased, digits);
+    if count == 0 {
+        SystemFree(digits, F64_DIGITS_BYTES);
+        SystemFree(out, F64_TEXT_CAPACITY);
+        return NativePointer(0);
+    }
+    // The value is 0.d1d2...dk x 10^n.
+    i64 n = i64(raw_word_load(pointer_add(digits, F64_POINT_OFFSET))) - F64_POINT_BIAS;
+    length = LayOutF64(out, length, digits, i64(count), n);
+    SystemFree(digits, F64_DIGITS_BYTES);
+    return FinishF64Text(out, length);
+}
+
+pointer FinishF64Text(pointer out, word length) {
+    pointer text = StrNew(out, length);
+    SystemFree(out, F64_TEXT_CAPACITY);
+    return text;
+}
+
+word AppendAscii2(pointer out, word at, i64 a, i64 b) {
+    raw_byte_store(pointer_add(out, at), u8(a));
+    raw_byte_store(pointer_add(out, at + 1), u8(b));
+    return at + 2;
+}
+
+word AppendAscii3(pointer out, word at, i64 a, i64 b, i64 c) {
+    raw_byte_store(pointer_add(out, at), u8(a));
+    raw_byte_store(pointer_add(out, at + 1), u8(b));
+    raw_byte_store(pointer_add(out, at + 2), u8(c));
+    return at + 3;
+}
+
+word AppendZeros(pointer out, word at, i64 count) {
+    mut word pos = at;
+    mut i64 left = count;
+    while left > 0 {
+        raw_byte_store(pointer_add(out, pos), 48);
+        pos = pos + 1;
+        left = left - 1;
+    }
+    return pos;
+}
+
+// Appends digits[from..to) as ASCII.
+word AppendDigits(pointer out, word at, pointer digits, i64 from, i64 to) {
+    mut word pos = at;
+    mut i64 index = from;
+    while index < to {
+        i64 digit = i64(raw_byte_load(pointer_add(digits, word(index))));
+        raw_byte_store(pointer_add(out, pos), u8(48 + digit));
+        pos = pos + 1;
+        index = index + 1;
+    }
+    return pos;
+}
+
+// ECMAScript Number::toString layout of the digits d1..dk of the value 0.d1..dk x 10^n.
+word LayOutF64(pointer out, word at, pointer digits, i64 k, i64 n) {
+    mut word pos = at;
+    if k <= n && n <= 21 {
+        pos = AppendDigits(out, pos, digits, 0, k);
+        return AppendZeros(out, pos, n - k);
+    }
+    if 0 < n && n <= 21 {
+        pos = AppendDigits(out, pos, digits, 0, n);
+        raw_byte_store(pointer_add(out, pos), 46);
+        return AppendDigits(out, pos + 1, digits, n, k);
+    }
+    if -6 < n && n <= 0 {
+        raw_byte_store(pointer_add(out, pos), 48);
+        raw_byte_store(pointer_add(out, pos + 1), 46);
+        pos = AppendZeros(out, pos + 2, 0 - n);
+        return AppendDigits(out, pos, digits, 0, k);
+    }
+    pos = AppendDigits(out, pos, digits, 0, 1);
+    if k > 1 {
+        raw_byte_store(pointer_add(out, pos), 46);
+        pos = AppendDigits(out, pos + 1, digits, 1, k);
+    }
+    raw_byte_store(pointer_add(out, pos), 101);
+    mut i64 exponent = n - 1;
+    if exponent < 0 {
+        raw_byte_store(pointer_add(out, pos + 1), 45);
+        exponent = 0 - exponent;
+    } else {
+        raw_byte_store(pointer_add(out, pos + 1), 43);
+    }
+    pos = pos + 2;
+    if exponent >= 100 {
+        raw_byte_store(pointer_add(out, pos), u8(48 + exponent / 100));
+        pos = pos + 1;
+    }
+    if exponent >= 10 {
+        raw_byte_store(pointer_add(out, pos), u8(48 + (exponent / 10) % 10));
+        pos = pos + 1;
+    }
+    raw_byte_store(pointer_add(out, pos), u8(48 + exponent % 10));
+    return pos + 1;
+}
+
+// Writes the shortest digits (values 0-9) of the finite, nonzero `f64` with the given fraction
+// and biased exponent fields, and stores its biased decimal exponent after them. Returns the
+// digit count, or 0 when an allocation fails.
+//
+// With v = f x 2^e, the scaled values keep r / s = v / 10^k and plus / s, minus / s = the
+// distances to the rounding boundaries above and below v, all as exact integers.
+word ShortestDigits(i64 fraction, i64 biased, pointer digits) {
+    pointer big = SystemAllocate(BIG_BYTES * 5, 8);
+    if big == NativePointer(0) {
+        return 0;
+    }
+    pointer r = big;
+    pointer s = pointer_add(big, BIG_BYTES);
+    pointer plus = pointer_add(big, BIG_BYTES * 2);
+    pointer minus = pointer_add(big, BIG_BYTES * 3);
+    pointer sum = pointer_add(big, BIG_BYTES * 4);
+    mut i64 f = fraction;
+    mut i64 e = -1074;
+    if biased != 0 {
+        f = fraction + 4503599627370496;
+        e = biased - 1075;
+    }
+    // The boundaries are half an ulp away, except at a power of two above the smallest normal
+    // exponent, where the ulp below is half as wide.
+    bool asymmetric = fraction == 0 && biased > 1;
+    if e >= 0 {
+        BigSetSmall(r, word(f));
+        BigSetSmall(plus, 1);
+        BigShiftLeft(plus, word(e));
+        BigSetSmall(minus, 1);
+        BigShiftLeft(minus, word(e));
+        if asymmetric {
+            BigShiftLeft(r, word(e + 2));
+            BigSetSmall(s, 4);
+            BigShiftLeft(plus, 1);
+        } else {
+            BigShiftLeft(r, word(e + 1));
+            BigSetSmall(s, 2);
+        }
+    } else {
+        BigSetSmall(plus, 1);
+        BigSetSmall(minus, 1);
+        if asymmetric {
+            BigSetSmall(r, word(f * 4));
+            BigSetSmall(s, 1);
+            BigShiftLeft(s, word(2 - e));
+            BigSetSmall(plus, 2);
+        } else {
+            BigSetSmall(r, word(f * 2));
+            BigSetSmall(s, 1);
+            BigShiftLeft(s, word(1 - e));
+        }
+    }
+    // Readers round half to even, so a boundary itself reads back as v when f is even.
+    bool inclusive = f % 2 == 0;
+    mut i64 k = DecimalExponentEstimate(f, e);
+    if k >= 0 {
+        BigMulPow10(s, k);
+    } else {
+        BigMulPow10(r, 0 - k);
+        BigMulPow10(plus, 0 - k);
+        BigMulPow10(minus, 0 - k);
+    }
+    // Correct the estimate in either direction until 0.1 <= (r + plus) / s < 1 (with the
+    // boundary included or excluded like the high termination test below).
+    while ReachesHigh(r, plus, s, sum, inclusive) {
+        BigMulSmall(s, 10);
+        k = k + 1;
+    }
+    BigAdd(sum, r, plus);
+    BigMulSmall(sum, 10);
+    while !ReachesBound(sum, s, inclusive) {
+        BigMulSmall(r, 10);
+        BigMulSmall(plus, 10);
+        BigMulSmall(minus, 10);
+        k = k - 1;
+        BigAdd(sum, r, plus);
+        BigMulSmall(sum, 10);
+    }
+    mut word count = 0;
+    mut bool done = false;
+    while !done {
+        BigMulSmall(r, 10);
+        BigMulSmall(plus, 10);
+        BigMulSmall(minus, 10);
+        mut i64 digit = 0;
+        while BigCompare(r, s) >= 0 {
+            BigSubtract(r, s);
+            digit = digit + 1;
+        }
+        // low: stopping at this digit reads back as v; high: so does rounding it up.
+        i64 lowOrder = BigCompare(r, minus);
+        bool low = lowOrder < 0 || (inclusive && lowOrder == 0);
+        bool high = ReachesHigh(r, plus, s, sum, inclusive);
+        if low && high {
+            // Both read back: take the nearer, and the even digit at an exact tie (ECMAScript).
+            BigAdd(sum, r, r);
+            i64 half = BigCompare(sum, s);
+            if half > 0 || (half == 0 && digit % 2 == 1) {
+                digit = digit + 1;
+            }
+            done = true;
+        } else if high {
+            digit = digit + 1;
+            done = true;
+        } else if low {
+            done = true;
+        }
+        raw_byte_store(pointer_add(digits, count), u8(digit));
+        count = count + 1;
+    }
+    raw_word_store(pointer_add(digits, F64_POINT_OFFSET), word(k + F64_POINT_BIAS));
+    SystemFree(big, BIG_BYTES * 5);
+    return count;
+}
+
+// Estimates the decimal exponent k with 10^(k-1) <= v < 10^k from floor(log2 v) x log10(2); the
+// caller corrects it by a step either way.
+i64 DecimalExponentEstimate(i64 f, i64 e) {
+    mut i64 bitLength = 0;
+    mut i64 rest = f;
+    while rest != 0 {
+        bitLength = bitLength + 1;
+        rest = rest / 2;
+    }
+    i64 scaled = (e + bitLength - 1) * 30103;
+    if scaled > 0 {
+        return (scaled + 99999) / 100000;
+    }
+    return scaled / 100000;
+}
+
+// Whether r + plus reaches s (`>=` when inclusive, `>` otherwise); `sum` is scratch.
+bool ReachesHigh(pointer r, pointer plus, pointer s, pointer sum, bool inclusive) {
+    BigAdd(sum, r, plus);
+    return ReachesBound(sum, s, inclusive);
+}
+
+bool ReachesBound(pointer value, pointer bound, bool inclusive) {
+    i64 order = BigCompare(value, bound);
+    if inclusive {
+        return order >= 0;
+    }
+    return order > 0;
+}
+
+word BigLimb(pointer n, word index) {
+    return raw_word_load(pointer_add(n, index * 8));
+}
+
+unit BigSetLimb(pointer n, word index, word value) {
+    raw_word_store(pointer_add(n, index * 8), value);
+    return;
+}
+
+unit BigSetSmall(pointer n, word value) {
+    BigSetLimb(n, 0, value & BIG_MASK);
+    BigSetLimb(n, 1, value >> 32);
+    mut word index = 2;
+    while index < BIG_LIMBS {
+        BigSetLimb(n, index, 0);
+        index = index + 1;
+    }
+    return;
+}
+
+unit BigShiftLeft(pointer n, word bits) {
+    word limbs = bits / 32;
+    word shift = bits % 32;
+    mut word index = BIG_LIMBS;
+    while index > 0 {
+        index = index - 1;
+        mut word value = 0;
+        if index >= limbs {
+            value = (BigLimb(n, index - limbs) << shift) & BIG_MASK;
+            if shift > 0 && index > limbs {
+                value = value | (BigLimb(n, index - limbs - 1) >> (32 - shift));
+            }
+        }
+        BigSetLimb(n, index, value);
+    }
+    return;
+}
+
+unit BigMulSmall(pointer n, word factor) {
+    mut word carry = 0;
+    mut word index = 0;
+    while index < BIG_LIMBS {
+        word product = BigLimb(n, index) * factor + carry;
+        BigSetLimb(n, index, product & BIG_MASK);
+        carry = product >> 32;
+        index = index + 1;
+    }
+    return;
+}
+
+unit BigMulPow10(pointer n, i64 power) {
+    mut i64 left = power;
+    while left > 0 {
+        BigMulSmall(n, 10);
+        left = left - 1;
+    }
+    return;
+}
+
+unit BigAdd(pointer out, pointer a, pointer b) {
+    mut word carry = 0;
+    mut word index = 0;
+    while index < BIG_LIMBS {
+        word total = BigLimb(a, index) + BigLimb(b, index) + carry;
+        BigSetLimb(out, index, total & BIG_MASK);
+        carry = total >> 32;
+        index = index + 1;
+    }
+    return;
+}
+
+// a -= b, for a >= b.
+unit BigSubtract(pointer a, pointer b) {
+    mut word borrow = 0;
+    mut word index = 0;
+    while index < BIG_LIMBS {
+        word subtrahend = BigLimb(b, index) + borrow;
+        word minuend = BigLimb(a, index);
+        if minuend >= subtrahend {
+            BigSetLimb(a, index, minuend - subtrahend);
+            borrow = 0;
+        } else {
+            BigSetLimb(a, index, minuend + 4294967296 - subtrahend);
+            borrow = 1;
+        }
+        index = index + 1;
+    }
+    return;
+}
+
+i64 BigCompare(pointer a, pointer b) {
+    mut word index = BIG_LIMBS;
+    while index > 0 {
+        index = index - 1;
+        word left = BigLimb(a, index);
+        word right = BigLimb(b, index);
+        if left < right {
+            return -1;
+        }
+        if left > right {
+            return 1;
+        }
+    }
+    return 0;
+}

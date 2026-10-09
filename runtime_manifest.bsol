@@ -667,6 +667,17 @@ corelib_service "__str_from_i64" {
   ]
 }
 
+corelib_service "__str_from_f64_bits" {
+  adapter = "str_from_f64_bits"
+  params = [{ name = bits, type = i64 }]
+  returns = pointer
+  target_bindings = [
+    { target = "x86_64-unknown-linux-gnu", implementation = "str_from_f64_bits", os_imports = [] },
+    { target = "aarch64-apple-darwin", implementation = "str_from_f64_bits", os_imports = [] },
+    { target = "x86_64-pc-windows-msvc", implementation = "str_from_f64_bits", os_imports = [] }
+  ]
+}
+
 corelib_service "__str_slice" {
   adapter = "str_slice"
   params = [{ name = value, type = pointer }, { name = start, type = usize }, { name = count, type = usize }]
