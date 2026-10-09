@@ -224,10 +224,7 @@ impl<'a> TypeChecker<'a> {
                     );
                     return Some(signature.return_type);
                 }
-                if let Some(contract_item_id) = self.named_item_id(receiver_type)
-                    && let Some(signature) =
-                        self.contract_signatures.get(&(contract_item_id, method_name.to_string())).cloned()
-                {
+                if let Some((contract_item_id, signature)) = self.receiver_contract_method(receiver_type, method_name) {
                     if !self.type_call_arguments(call, &signature.params, signature.bulk) {
                         return Some(signature.return_type);
                     }
@@ -319,10 +316,7 @@ impl<'a> TypeChecker<'a> {
                 );
                 return Some(signature.return_type);
             }
-            if let Some(contract_item_id) = self.named_item_id(target_type)
-                && let Some(signature) =
-                    self.contract_signatures.get(&(contract_item_id, method_name.to_string())).cloned()
-            {
+            if let Some((contract_item_id, signature)) = self.receiver_contract_method(target_type, method_name) {
                 if !self.type_call_arguments(call, &signature.params, signature.bulk) {
                     return Some(signature.return_type);
                 }

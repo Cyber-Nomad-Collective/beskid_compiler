@@ -356,6 +356,16 @@ pub(super) fn specialization_for_call_in_environment(
             })
         })
         .collect::<Vec<_>>();
+    // Parameters typed by a bounded type parameter get witnesses too, so contract methods called on
+    // them dispatch statically. They are optional: a body that calls no contract method on such a
+    // parameter needs none, and a body that does fails closed on the missing witness.
+    let bounded_witnesses =
+        bounded_generic_witnesses_for_call(db, declaration, &arguments, is_method, enclosing).unwrap_or_default();
+    let contract_witnesses = if bounded_witnesses.is_empty() {
+        contract_witnesses
+    } else {
+        contract_witnesses.iter().chain(bounded_witnesses.iter()).cloned().collect()
+    };
     Ok(GenericSpecializationInstance {
         declaration,
         declaration_identity,

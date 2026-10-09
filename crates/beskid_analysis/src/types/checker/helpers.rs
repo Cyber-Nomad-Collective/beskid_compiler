@@ -320,6 +320,33 @@ impl<'a> TypeChecker<'a> {
             .map(|item| canonical_item_id(self.resolution, item))
     }
 
+    /// The contract method a receiver dispatches `method_name` to: the receiver's own contract,
+    /// or for a value of generic type `T` the one `where T: Contract` bound of the enclosing
+    /// function that declares the method. Each specialization dispatches statically.
+    pub(super) fn receiver_contract_method(
+        &self,
+        receiver_type: TypeId,
+        method_name: &str,
+    ) -> Option<(ItemId, crate::types::result::FunctionSignature)> {
+        let lookup = |contract: ItemId| {
+            self.contract_signatures.get(&(contract, method_name.to_string())).cloned().map(|signature| (contract, signature))
+        };
+        if let Some(contract) = self.named_item_id(receiver_type) {
+            return lookup(contract);
+        }
+        let Some(TypeInfo::GenericParam(name)) = self.type_table.get(receiver_type) else {
+            return None;
+        };
+        let bounds = self.current_function_item.and_then(|function| self.function_bounds.get(&function))?;
+        let mut candidates = bounds
+            .iter()
+            .filter(|bound| &bound.parameter == name)
+            .filter_map(|bound| bound.contract)
+            .filter_map(lookup);
+        let found = candidates.next()?;
+        candidates.next().is_none().then_some(found)
+    }
+
     pub(super) fn generic_mapping_for_type_id(&self, type_id: TypeId) -> HashMap<String, TypeId> {
         let Some(TypeInfo::Applied { base, args }) = self.type_table.get(type_id) else {
             return HashMap::new();

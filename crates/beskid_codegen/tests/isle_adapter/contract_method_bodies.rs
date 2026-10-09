@@ -238,3 +238,20 @@ unit Main(Outer outer) {
     .expect("`this.field.field` must project through the implicit receiver");
 }
 
+#[test]
+fn bounded_generic_receivers_dispatch_to_each_instantiation() {
+    let (input, isa, root) = item_fixture_with_root(
+        "contract Sized { i64 Size(); } \
+         type Box : Sized { i64 n, pub i64 Size() { return this.n; } } \
+         type Bag : Sized { i64 m, pub i64 Size() { return 100; } } \
+         i64 SizeOf<T>(T value) where T: Sized { return value.Size(); } \
+         i64 Main() { return SizeOf<Box>(Box { n: 2 }) + SizeOf(Bag { m: 1 }); }",
+    );
+    let items = module_items(&input, &[root]);
+    let artifact = lower_syntax_program(&input, isa.as_ref(), &items)
+        .expect("a where-bounded receiver dispatches statically in every specialization");
+    beskid_codegen::validate_artifact(&artifact).expect("bounded dispatch artifact");
+    let specializations =
+        artifact.functions.iter().filter(|function| function.name.starts_with("SizeOf#generic_")).count();
+    assert_eq!(specializations, 2, "one specialization per receiver type");
+}

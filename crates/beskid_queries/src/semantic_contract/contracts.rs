@@ -190,18 +190,30 @@ pub(super) fn contract_member_receiver(
     let identifier = resolve_lexical_declaration(program, index, key.node, &receiver.node.name.node.name)?;
     let parameter_node = parent_node(index, identifier)?;
     let parameter = index.node_at(program, parameter_node)?.of::<Parameter>()?;
-    if type_syntax_is_enclosing_generic_parameter_reference(
-        db,
-        AstNodeKey { node: parameter_node, ..key },
-        &parameter.ty.node,
-    ) {
-        return None;
-    }
-    let Type::Complex(annotation) = &parameter.ty.node else {
-        return None;
+    let parameter_key = AstNodeKey { node: parameter_node, ..key };
+    let contracts = if type_syntax_is_enclosing_generic_parameter_reference(db, parameter_key, &parameter.ty.node) {
+        let declaration = AstNodeKey { node: parent_node(index, parameter_node)?, ..key };
+        let declarations = bounded_generic_parameter_declarations(db, declaration);
+        let contracts = declarations
+            .into_iter()
+            .filter(|(bounded, _, _)| *bounded == parameter_key)
+            .map(|(_, _, contract)| contract)
+            .collect::<Vec<_>>();
+        if contracts.is_empty() {
+            return None;
+        }
+        contracts
+    } else {
+        let Type::Complex(annotation) = &parameter.ty.node else {
+            return None;
+        };
+        vec![resolve_contract(db, key, &annotation.node)?]
     };
-    let contract = resolve_contract(db, key, &annotation.node)?;
-    let result = contract_methods(db, contract, &mut HashSet::new()).and_then(|methods| {
+    let methods = contracts.into_iter().try_fold(Vec::new(), |mut all, contract| {
+        all.extend(contract_methods(db, contract, &mut HashSet::new())?);
+        Ok::<_, SemanticError>(all)
+    });
+    let result = methods.and_then(|methods| {
         let candidates = methods
             .into_iter()
             .filter(|method| {
@@ -458,7 +470,65 @@ pub(super) fn contract_witnesses_for_call(
     is_method: bool,
     enclosing: Option<&GenericSpecializationInstance>,
 ) -> Result<Arc<[ContractParameterWitness]>, SemanticError> {
-    contract_parameter_declarations(db, declaration)
+    witnesses_for_parameters(db, contract_parameter_declarations(db, declaration), arguments, is_method, enclosing)
+}
+
+/// Witnesses for the parameters of a generic function typed by a type parameter with a
+/// `where T: Contract` bound. Each specialization knows `T`, so a contract method called on such
+/// a parameter dispatches statically to the concrete type's implementation, exactly as for a
+/// contract-typed parameter.
+pub(super) fn bounded_generic_witnesses_for_call(
+    db: &dyn Db,
+    declaration: AstNodeKey,
+    arguments: &[AstNodeKey],
+    is_method: bool,
+    enclosing: Option<&GenericSpecializationInstance>,
+) -> Result<Arc<[ContractParameterWitness]>, SemanticError> {
+    witnesses_for_parameters(db, bounded_generic_parameter_declarations(db, declaration), arguments, is_method, enclosing)
+}
+
+/// Parameters of a generic function whose type is a type parameter `T`, paired with each contract
+/// of a `where T: Contract` bound.
+fn bounded_generic_parameter_declarations(db: &dyn Db, declaration: AstNodeKey) -> Vec<(AstNodeKey, u32, AstNodeKey)> {
+    let Some(syntax) = db.syntax_unit(declaration.unit).filter(|syntax| syntax.accepts_key(db, declaration)) else {
+        return Vec::new();
+    };
+    let index = syntax.syntax_index(db);
+    let program = syntax.expanded_program(db);
+    let Some(function) = index.node_at(program, declaration.node).and_then(|node| node.of::<FunctionDefinition>())
+    else {
+        return Vec::new();
+    };
+    let mut declarations = Vec::new();
+    for (position, parameter) in function.parameters.iter().enumerate() {
+        let Some(name) = generic_parameter_reference_name(&parameter.node.ty.node) else {
+            continue;
+        };
+        if !function.generics.iter().any(|generic| generic.node.name == name) {
+            continue;
+        }
+        let (Some(node), Ok(position)) =
+            (index.direct_child_id(program, declaration.node, DynNodeRef::from(parameter)), u32::try_from(position))
+        else {
+            continue;
+        };
+        for bound in function.where_bounds.iter().filter(|bound| bound.parameter.node.name == name) {
+            if let Some(contract) = resolve_contract(db, declaration, &bound.contract.node) {
+                declarations.push((AstNodeKey { node, ..declaration }, position, contract));
+            }
+        }
+    }
+    declarations
+}
+
+fn witnesses_for_parameters(
+    db: &dyn Db,
+    parameters: Vec<(AstNodeKey, u32, AstNodeKey)>,
+    arguments: &[AstNodeKey],
+    is_method: bool,
+    enclosing: Option<&GenericSpecializationInstance>,
+) -> Result<Arc<[ContractParameterWitness]>, SemanticError> {
+    parameters
         .into_iter()
         .map(|(parameter, position, contract)| {
             let argument = *arguments
@@ -575,16 +645,17 @@ pub(super) fn contract_method_specialization(
         node: parent_node(index, receiver.node).ok_or_else(|| SemanticError::unavailable("contract_parameter"))?,
         ..receiver
     };
-    let witness = enclosing
+    let (witness, declaration) = enclosing
         .contract_witnesses
         .iter()
-        .find(|witness| witness.parameter == parameter)
+        .filter(|witness| witness.parameter == parameter)
+        .find_map(|witness| {
+            witness
+                .methods
+                .iter()
+                .find_map(|(signature, implementation)| (*signature == method).then_some((witness, *implementation)))
+        })
         .ok_or_else(|| SemanticError::unavailable("contract_witness"))?;
-    let declaration = witness
-        .methods
-        .iter()
-        .find_map(|(signature, implementation)| (*signature == method).then_some(*implementation))
-        .ok_or_else(|| SemanticError::unavailable("contract_method"))?;
     let target = db.syntax_unit(declaration.unit).ok_or_else(|| SemanticError::unavailable("contract_method"))?;
     let definition = target
         .syntax_index(db)

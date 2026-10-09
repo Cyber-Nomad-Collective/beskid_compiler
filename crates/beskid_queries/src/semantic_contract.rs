@@ -84,8 +84,9 @@ use closures_spawn::{
     spawn_handle_type_tracked, spawn_legality_tracked, spawn_stack_capture, spawn_target_tracked,
 };
 use contracts::{
-    contract_member_receiver, contract_method_specialization, contract_parameter_declarations,
-    contract_witnesses_for_call, resolve_contract, specialized_source_expression_identity,
+    bounded_generic_witnesses_for_call, contract_member_receiver, contract_method_specialization,
+    contract_parameter_declarations, contract_witnesses_for_call, resolve_contract,
+    specialized_source_expression_identity,
 };
 use events::{event_handler_lambda_for_local_tracked, event_operation_tracked};
 pub use growth::{DeadCollectionGrowth, dead_collection_growth, is_growth_call_candidate};
