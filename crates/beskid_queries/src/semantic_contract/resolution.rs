@@ -143,6 +143,39 @@ pub(super) fn unique_inline_module_in_scope(
 
 /// Resolve a qualified module path from an exact current import and, when required, explicit
 /// public child-module edges. Private imports remain available only inside their owner.
+/// A fully qualified module path names its module without an import, as in Java and C#: imports
+/// only introduce shorter names. It resolves only when exactly one visible unit declares the
+/// module, and every declared parent module exposes the next segment with `pub mod`, so private
+/// modules stay private. Absent and ambiguous modules stay unresolved.
+fn fully_qualified_module_unit(db: &dyn Db, key: AstNodeKey, module_path: &[String]) -> Option<SourceUnitId> {
+    let (target, parents) = {
+        let registry = db.syntax_dependency_registry().lock().expect("syntax dependency registry");
+        let target = match registry.visible_module_units(key.unit, key.generation, module_path) {
+            Some([unit]) => *unit,
+            _ => return None,
+        };
+        let parents = (1..module_path.len())
+            .map(|length| match registry.visible_module_units(key.unit, key.generation, &module_path[..length]) {
+                Some([parent]) => Some(*parent),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        (target, parents)
+    };
+    for (length, parent) in parents.into_iter().enumerate().map(|(index, parent)| (index + 1, parent)) {
+        let Some(parent) = parent else {
+            continue;
+        };
+        let exposes_next = public_module_routes(db, parent, key.generation)
+            .into_iter()
+            .any(|(binding, _)| binding == module_path[length]);
+        if !exposes_next {
+            return None;
+        }
+    }
+    Some(target)
+}
+
 pub(super) fn resolve_qualified_module_unit(
     db: &dyn Db,
     key: AstNodeKey,
@@ -179,6 +212,9 @@ pub(super) fn resolve_qualified_module_unit(
                     .filter_map(|(binding, child)| (binding == *segment).then_some((child, consumed + 1))),
             );
         }
+    }
+    if resolved.is_empty() {
+        return fully_qualified_module_unit(db, key, module_path);
     }
     let [unit] = resolved.as_slice() else {
         return None;
