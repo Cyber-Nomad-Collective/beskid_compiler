@@ -6,8 +6,14 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Instant;
 
+use beskid_analysis::SemanticDiagnostic;
+use beskid_analysis::mod_host::ContractInvoker;
 use beskid_analysis::projects::ProgramAssembly;
-use beskid_analysis::services::{ResolvedInput, resolve_input};
+use beskid_analysis::services::{
+    AnalyzeInProjectOptions, ResolvedInput, analyze_source_in_project_with_options, compile_plan_for_input_path,
+    resolve_input,
+};
+use beskid_tests_mod_host::ModHostScope;
 use beskid_analysis::syntax::CallExpression;
 use beskid_analysis::syntax_query::{NodeKind, SyntaxIndex};
 use beskid_queries::{
@@ -26,6 +32,29 @@ pub fn with_large_test_stack(f: impl FnOnce() + Send + 'static) {
         .expect("spawn large-stack test thread")
         .join()
         .expect("join large-stack test thread");
+}
+
+/// Enters the shared native Mod host scope. Hold it across Mod qualification and every
+/// preparation of a Core-dependent project; do not enter it again on the same thread.
+pub fn enter_mod_host() -> ModHostScope {
+    ModHostScope::enter().expect("enter the shared native Mod host scope")
+}
+
+/// The qualified native Mod invoker for the compile plan of `resolved`.
+pub fn mod_invoker_for(scope: &ModHostScope, resolved: &ResolvedInput) -> Arc<dyn ContractInvoker> {
+    let plan = resolved.compile_plan.as_ref().expect("Core-dependent input has a compile plan");
+    scope.corelib_mod_invoker(plan).expect("qualify the native Mods of the compile plan")
+}
+
+/// Project-aware analysis of the file at `path` with the qualified native Mods of its compile plan.
+pub fn analyze_file_with_mods(path: &Path) -> Result<Vec<SemanticDiagnostic>, String> {
+    let source = std::fs::read_to_string(path).map_err(|error| format!("read {}: {error}", path.display()))?;
+    let plan = compile_plan_for_input_path(path)
+        .ok_or_else(|| format!("{} has no project compile plan", path.display()))?;
+    let scope = enter_mod_host();
+    let mod_invoker = scope.corelib_mod_invoker(&plan).map_err(|error| format!("{error:#}"))?;
+    let options = AnalyzeInProjectOptions { mod_invoker: Some(mod_invoker), ..Default::default() };
+    analyze_source_in_project_with_options(path, &source, options).map_err(|error| format!("{error:#}"))
 }
 
 pub fn fixture_path(name: &str) -> PathBuf {

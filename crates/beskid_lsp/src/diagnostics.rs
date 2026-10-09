@@ -14,6 +14,7 @@ use beskid_analysis::services::{
 use beskid_analysis::syntax::Program;
 use beskid_analysis::{SemanticDiagnostic, Severity, SyntaxFix};
 use beskid_queries::BeskidDatabase;
+use beskid_tools::native_mods::ModHostSelection;
 use tower_lsp_server::ls_types::*;
 
 use crate::features::project_manifest::api as project_manifest;
@@ -22,13 +23,36 @@ use crate::position::offset_range_to_lsp;
 use crate::session::store::{SyntaxDiagnostic, SyntaxDiagnosticSeverity};
 
 /// Qualified native Mod execution for editor diagnostics. The editor never builds Mods: it runs
-/// the artifact the CLI cached or the toolchain shipped, or reports the exact rebuild command.
+/// the artifact the CLI cached or the toolchain shipped in the session's Mod host, or reports the
+/// exact rebuild command.
 fn editor_mod_invoker(
     resolved: &ResolvedInput,
+    mod_host: &ModHostSelection,
 ) -> anyhow::Result<Option<std::sync::Arc<dyn beskid_analysis::mod_host::ContractInvoker>>> {
     match resolved.compile_plan.as_ref() {
-        Some(plan) => beskid_tools::native_mods::installed_cached_mod_invoker(plan),
+        Some(plan) => mod_host.cached_mod_invoker(plan),
         None => Ok(None),
+    }
+}
+
+/// The session's Salsa database and native Mod host, which together prepare a project-backed
+/// buffer.
+pub struct ProjectPreparation<'a> {
+    pub db: &'a mut BeskidDatabase,
+    pub mod_host: &'a ModHostSelection,
+}
+
+/// A buffer-level error fact for a project preparation that failed outright (for example a native
+/// Mod without a current artifact), so the failure is visible instead of silently degrading to
+/// structural facts.
+pub(crate) fn project_preparation_failure(error: &anyhow::Error) -> SyntaxDiagnostic {
+    SyntaxDiagnostic {
+        start: 0,
+        end: 0,
+        severity: SyntaxDiagnosticSeverity::Error,
+        code: Some("project-preparation".to_string()),
+        message: format!("project preparation failed: {error:#}"),
+        source: "beskid".to_string(),
     }
 }
 
@@ -44,11 +68,12 @@ pub(crate) fn prepare_project_syntax_facts(
     db: &mut BeskidDatabase,
     resolved: &ResolvedInput,
     dependency_typing: DependencyTypingPolicy,
+    mod_host: &ModHostSelection,
 ) -> anyhow::Result<PreparedSyntaxFacts> {
     let (prepared, diagnostics, fixes) = beskid_queries::prepare_compilation_diagnostics_with_db(
         db,
         resolved,
-        PrepareOptions { mod_invoker: editor_mod_invoker(resolved)?,
+        PrepareOptions { mod_invoker: editor_mod_invoker(resolved, mod_host)?,
             front_end: FrontEndOptions {
                 assembly_recovery: beskid_analysis::projects::AssemblyRecoveryPolicy::EditorRetainRecovered,
                 with_semantic_diagnostics: dependency_typing == DependencyTypingPolicy::FullClosure,
@@ -74,10 +99,11 @@ pub(crate) fn prepare_project_syntax_facts(
 pub(crate) fn prepare_project_diagnostics_from_assembled(
     resolved: &ResolvedInput,
     dependency_typing: DependencyTypingPolicy,
+    mod_host: &ModHostSelection,
 ) -> anyhow::Result<PreparedSyntaxFacts> {
     let (prepared, diagnostics, fixes) = beskid_queries::prepare_compilation_diagnostics_isolated(
         resolved,
-        PrepareOptions { mod_invoker: editor_mod_invoker(resolved)?,
+        PrepareOptions { mod_invoker: editor_mod_invoker(resolved, mod_host)?,
             front_end: FrontEndOptions {
                 assembly_recovery: beskid_analysis::projects::AssemblyRecoveryPolicy::EditorRetainRecovered,
                 with_semantic_diagnostics: dependency_typing == DependencyTypingPolicy::FullClosure,
@@ -126,7 +152,7 @@ fn entry_buffer_diagnostics(
 /// risk a generation mismatch). Fixes are populated only on the prepare-spine path; the
 /// structural and manifest paths return an empty fix list.
 pub fn collect_syntax_diagnostics(
-    db: Option<&mut BeskidDatabase>,
+    project: Option<ProjectPreparation<'_>>,
     uri: &Uri,
     source: &str,
     compilation_context: Option<&CompilationContext>,
@@ -140,7 +166,7 @@ pub fn collect_syntax_diagnostics(
 
     if let Some(path) = uri.to_file_path()
         && path.extension().and_then(|ext| ext.to_str()) == Some("bd")
-        && let (Some(db), Some(ctx)) = (db, compilation_context)
+        && let (Some(ProjectPreparation { db, mod_host }), Some(ctx)) = (project, compilation_context)
         && ctx.compile_plan.is_some()
     {
         let resolved = resolved_input_from_plan(
@@ -157,9 +183,15 @@ pub fn collect_syntax_diagnostics(
         if beskid_queries::is_typed_bundle_stale(db, &entry_key) {
             return (structural_syntax_diagnostics(&uri.to_string(), source), Vec::new());
         }
-        if let Ok(prepared) = prepare_project_syntax_facts(db, &resolved, DependencyTypingPolicy::FullClosure) {
-            return (prepared.diagnostics, prepared.fixes);
-        }
+        return match prepare_project_syntax_facts(db, &resolved, DependencyTypingPolicy::FullClosure, mod_host) {
+            Ok(prepared) => (prepared.diagnostics, prepared.fixes),
+            Err(error) => {
+                tracing::warn!(uri = %uri.as_str(), "project preparation failed: {error:#}");
+                let mut diagnostics = structural_syntax_diagnostics(&uri.to_string(), source);
+                diagnostics.push(project_preparation_failure(&error));
+                (diagnostics, Vec::new())
+            }
+        };
     }
 
     (structural_syntax_diagnostics(&uri.to_string(), source), Vec::new())
@@ -176,12 +208,12 @@ pub fn lsp_diagnostics_from_syntax(source: &str, facts: &[SyntaxDiagnostic]) -> 
 /// that already hold generation-bound Document facts.
 #[cfg_attr(not(test), allow(dead_code))]
 pub fn analyze_document(
-    db: Option<&mut BeskidDatabase>,
+    project: Option<ProjectPreparation<'_>>,
     uri: &Uri,
     source: &str,
     compilation_context: Option<&CompilationContext>,
 ) -> Vec<Diagnostic> {
-    let (facts, _fixes) = collect_syntax_diagnostics(db, uri, source, compilation_context);
+    let (facts, _fixes) = collect_syntax_diagnostics(project, uri, source, compilation_context);
     lsp_diagnostics_from_syntax(source, &facts)
 }
 
@@ -393,7 +425,13 @@ mod tests {
         assert!(is_typed_bundle_stale(&db, &entry_key), "test requires a stale typed bundle after file revision bump");
 
         let expected = structural_syntax_diagnostics(uri.as_str(), &source);
-        let (collected, _fixes) = collect_syntax_diagnostics(Some(&mut db), &uri, &source, Some(&ctx));
+        let mod_host = beskid_tools::native_mods::ModHostSelection::installed();
+        let (collected, _fixes) = collect_syntax_diagnostics(
+            Some(super::ProjectPreparation { db: &mut db, mod_host: &mod_host }),
+            &uri,
+            &source,
+            Some(&ctx),
+        );
         std::env::set_current_dir(previous).expect("restore cwd");
 
         assert_eq!(
@@ -500,6 +538,7 @@ mod tests {
         let main = super::prepare_project_diagnostics_from_assembled(
             &main_entry,
             beskid_analysis::services::DependencyTypingPolicy::FullClosure,
+            &beskid_tools::native_mods::ModHostSelection::installed(),
         )
         .expect("main diagnostics");
         assert!(
@@ -512,6 +551,7 @@ mod tests {
         let helper = super::prepare_project_diagnostics_from_assembled(
             &helper_entry,
             beskid_analysis::services::DependencyTypingPolicy::FullClosure,
+            &beskid_tools::native_mods::ModHostSelection::installed(),
         )
         .expect("helper diagnostics");
         let found = helper.diagnostics.iter().filter(|diagnostic| diagnostic.code.as_deref() == Some("E1201")).count();

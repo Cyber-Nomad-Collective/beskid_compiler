@@ -47,7 +47,9 @@ impl SemanticPipelineRule {
                 continue;
             };
             let module_path = self.path_to_string_stage5(&module.node.path);
-            if resolve_module_file(&module_path, &roots).is_some() {
+            // A path provided by several packages exists; program assembly already failed closed
+            // on it with E1104, so it is not reported again as a missing module.
+            if !matches!(resolve_module_file(&module_path, &roots), Ok(None)) {
                 continue;
             }
             let relative = module_path_to_relative_path(&module_path);

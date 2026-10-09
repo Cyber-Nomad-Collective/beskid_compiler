@@ -8,7 +8,8 @@ use beskid_analysis::services::{PrepareOptions, resolve_input};
 use beskid_engine::Engine;
 use beskid_engine::services::run_entrypoint_from_front_end_with_engine;
 use beskid_queries::{configure_db_for_project, prepare_compilation_with_db, with_db};
-use beskid_tools::toolchain::runtime_kit::{RuntimeKitProfile, build_native_host};
+
+use beskid_tests_mod_host::ModHostScope;
 
 /// Serializes cases in this binary.
 ///
@@ -31,9 +32,9 @@ fn run_corelib_test(entry: &str, target_name: &str, test_name: &str) -> String {
 
 fn run_corelib_tests(entry: &str, target_name: &str, test_names: &[&str]) -> Vec<String> {
     let _serial = CORELIB_JIT_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-    let runtime_prefix = tempfile::tempdir().expect("exact runtime-kit prefix");
-    build_native_host(runtime_prefix.path().to_path_buf(), RuntimeKitProfile::Debug)
-        .expect("publish exact native runtime kit");
+    // One exact kit serves the engine and the native Mods that preparation runs.
+    let mod_host = ModHostScope::enter().expect("enter the shared native Mod host scope");
+    let kit_prefix = mod_host.runtime_prefix();
     let project_root = corelib_tests_root();
     let entry = project_root.join(entry);
     configure_db_for_project(&project_root);
@@ -45,13 +46,15 @@ fn run_corelib_tests(entry: &str, target_name: &str, test_names: &[&str]) -> Vec
         beskid_analysis::projects::WorkspacePrepareOptions::default(),
     )
     .expect("resolve corelib test target");
+    let plan = resolved.compile_plan.as_ref().expect("corelib test target has a compile plan");
+    let mod_invoker = Some(mod_host.corelib_mod_invoker(plan).expect("qualified Corelib native Mods"));
+    let options = PrepareOptions { mod_invoker, ..Default::default() };
     let prepared =
-        with_db(|db| prepare_compilation_with_db(db, &resolved, PrepareOptions { ..Default::default() }, None))
-            .expect("prepare executable");
+        with_db(|db| prepare_compilation_with_db(db, &resolved, options, None)).expect("prepare executable");
     let front = prepared.into_executable().expect("executable front-end");
 
     let target = beskid_engine::host_runtime_target().expect("supported native host target");
-    let mut engine = Engine::with_runtime_kit(runtime_prefix.path(), target, BuildProfile::Debug)
+    let mut engine = Engine::with_runtime_kit(kit_prefix, target, BuildProfile::Debug)
         .expect("load exact native runtime kit");
     test_names
         .iter()

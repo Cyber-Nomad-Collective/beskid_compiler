@@ -1,0 +1,14 @@
+[package]
+name = "beskid_tests_mod_host"
+version = "0.1.0"
+edition = "2024"
+license.workspace = true
+publish = false
+description = "Dev-only harness: shared debug runtime kit and qualified native Mod invokers for in-process tests"
+
+[dependencies]
+anyhow = "1"
+beskid_abi = { path = "../beskid_abi" }
+beskid_analysis = { path = "../beskid_analysis" }
+beskid_tools = { path = "../beskid_tools" }
+serde_json = "1"

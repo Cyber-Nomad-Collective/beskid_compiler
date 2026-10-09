@@ -433,6 +433,9 @@ pub fn check_items(db: &dyn Db, items: &[AstNodeKey]) -> Result<(), Vec<Semantic
                         name: name.to_string(),
                     }
                 }
+                UnresolvedCallKind::AmbiguousModulePath { path, candidates } => {
+                    SemanticIssueKind::ResolveAmbiguousModulePath { path: path.to_string(), candidates }
+                }
             };
             findings.push(SemanticFinding { kind, site: finding.call, related: Vec::new() });
         }

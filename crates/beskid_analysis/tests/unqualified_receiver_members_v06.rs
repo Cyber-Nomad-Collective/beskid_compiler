@@ -2,23 +2,41 @@
 //! (`beskid_queries::semantic_contract::calls::resolution::unqualified_enclosing_method_call`) on
 //! bare sibling-method calls and bare receiver field reads inside type-body methods.
 
-use beskid_analysis::resolve::ResolveError;
+use beskid_analysis::resolve::{ResolveError, ResolvedValue};
 use beskid_analysis::services::{SemanticFactsError, parse_program, resolve_and_type_program};
-use beskid_analysis::types::result::{CallLoweringKind, MethodReceiverSource};
+use beskid_analysis::syntax::{CallExpression, Expression};
+use beskid_analysis::syntax_query::Query;
 
+/// Bare `Name(...)` calls that the legacy resolver bound to the implicit receiver `this` in a
+/// program the legacy checker accepts. The checker accepts such a callee only through its
+/// sibling-method dispatch (`unqualified_sibling_method_call`): typed as an ordinary call, a
+/// `this`-bound callee is not callable and a free-function binding would be an arity error.
+///
+/// Observed through resolution rather than `TypeResult::lowering.call_kinds`: that map is keyed
+/// by `Spanned::id`, which `Program::parse` leaves at `AstNodeId::INVALID` (dense node ids live
+/// only in `SyntaxIndex`), so the checker records no call kinds for parsed source.
 fn method_dispatch_count(source: &str) -> usize {
     let program = parse_program(source).expect("source parses");
-    let (_, _, typed) = match resolve_and_type_program(&program) {
+    let (program, resolution, _) = match resolve_and_type_program(&program) {
         Ok(result) => result,
         Err(SemanticFactsError::Resolve(errors)) => panic!("resolution failed: {errors:?}"),
         Err(SemanticFactsError::Type { errors, .. }) => panic!("type check failed: {errors:?}"),
     };
-    typed
-        .lowering
-        .call_kinds
-        .values()
-        .filter(|kind| {
-            matches!(kind, CallLoweringKind::MethodDispatch { receiver_source: MethodReceiverSource::Local(_), .. })
+    Query::from(&program.node)
+        .of::<CallExpression>()
+        .filter(|call| {
+            let Expression::Path(path_expr) = &call.callee.node else {
+                return false;
+            };
+            let [segment] = path_expr.node.path.node.segments.as_slice() else {
+                return false;
+            };
+            segment.node.name.node.name != "this"
+                && matches!(
+                    resolution.tables.resolved_value_at(path_expr.node.path.span, None),
+                    Some(ResolvedValue::Local(local))
+                        if resolution.tables.local_info(local).is_some_and(|info| info.name == "this")
+                )
         })
         .count()
 }

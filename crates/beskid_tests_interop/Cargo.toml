@@ -19,5 +19,6 @@ beskid_analysis = { path = "../beskid_analysis" }
 beskid_codegen = { path = "../beskid_codegen" }
 beskid_pipeline = { path = "../beskid_pipeline" }
 beskid_queries = { path = "../beskid_queries" }
+beskid_tests_mod_host = { path = "../beskid_tests_mod_host" }
 sha2 = "0.10"
 tempfile = "3"

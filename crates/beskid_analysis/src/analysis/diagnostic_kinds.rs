@@ -213,6 +213,12 @@ pub enum SemanticIssueKind {
         module_path: String,
         name: String,
     },
+    /// A qualified path whose module path is claimed by more than one assembled module, such as
+    /// the same package-native path in two packages of the dependency closure.
+    ResolveAmbiguousModulePath {
+        path: String,
+        candidates: usize,
+    },
     ResolveShadowedLocal {
         name: String,
         previous: SpanInfo,

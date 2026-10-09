@@ -156,9 +156,10 @@ dependency "Feature" {
             names,
             [
                 "corelib_foundation",
+                "corelib_compiler_sdk",
+                "serialization_mod",
                 "corelib_serialization",
                 "corelib_bsol",
-                "corelib_compiler_sdk",
                 "corelib_concurrency",
                 "corelib_runtime",
                 "corelib_console",

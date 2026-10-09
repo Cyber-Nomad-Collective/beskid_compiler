@@ -91,7 +91,8 @@ pub fn resolve_dependencies(
     let consumer_project_root = project_root_from_manifest_path(consumer_manifest_path)?;
     let has_explicit_core_dependency =
         consumer_manifest.dependencies.iter().any(|dependency| is_core_dependency_name(&dependency.name));
-    let is_core_project = is_installed_corelib_manifest_path(consumer_manifest_path);
+    let is_core_project = is_installed_corelib_manifest_path(consumer_manifest_path)
+        || is_core_labelled_aggregate(dag, consumer_index);
 
     for dependency in &consumer_manifest.dependencies {
         match dependency.source {
@@ -319,6 +320,17 @@ fn attach_path_dependency(
     }
 
     Ok(())
+}
+
+/// A path dependency attached under the reserved `Core` label is this graph's Corelib aggregate:
+/// `attach_path_dependency` rejects that label for any other project. It is the Corelib, so it
+/// never receives a second, implicit Corelib of its own.
+fn is_core_labelled_aggregate(dag: &Dag<ProjectGraphNode, DependencyEdge>, index: NodeIndex) -> bool {
+    matches!(
+        dag.graph().node_weight(index),
+        Some(ProjectGraphNode::ResolvedPathDependency { dependency_name, project_name, .. })
+            if is_core_dependency_name(dependency_name) && project_name == CORELIB_AGGREGATE_PROJECT_NAME
+    )
 }
 
 fn default_corelib_dependency_path() -> Option<String> {

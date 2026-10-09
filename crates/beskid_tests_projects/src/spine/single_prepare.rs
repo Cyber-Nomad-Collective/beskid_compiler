@@ -12,6 +12,7 @@ use beskid_analysis::services::{FrontEndOptions, PrepareOptions, ResolvedInput, 
 use beskid_pipeline::{PipelineEvent, PipelineObserver, phases};
 use beskid_queries::{configure_db_for_project, prepare_compilation_diagnostics};
 
+use crate::projects::fixture_harness::{enter_mod_host, mod_invoker_for};
 use crate::projects::with_cwd;
 use beskid_tests_support::{temp_case_dir, write_project_manifest as write_manifest};
 
@@ -83,9 +84,11 @@ i32 Main() {
 
 /// Mirrors Wave 1 `beskid run`: one executable prepare, then syntax lowering from cached front-end.
 fn run_single_prepare_path(resolved: &ResolvedInput, observer: &PhaseStartRecorder) {
+    let mod_host = enter_mod_host();
     let (prepared, _gate_diagnostics, _fixes) = prepare_compilation_diagnostics(
         resolved,
-        PrepareOptions { mod_invoker: None,
+        PrepareOptions {
+            mod_invoker: Some(mod_invoker_for(&mod_host, resolved)),
             front_end: FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
             ..Default::default()
         },

@@ -19,7 +19,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   fails with E1105/E1108 and names the package-native replacement. The App-only
   `Std.*` alias layer and the shard-local bare-path registry are removed.
 
+- Fail closed on a logical module path that more than one package of the
+  dependency closure provides. Module discovery searches every effective root
+  instead of taking the first root with a module file; import-closure assembly
+  and semantic resolution report E1104 with the path and every providing
+  package and file in effective root order (host first). Roots that reach the
+  same canonical file are one provider.
+
 ### Added
+
+- Resolve fully qualified dependency module paths without a `use` declaration;
+  names in lexical scope (use bindings, inline modules, types, enums, contracts)
+  shadow the absolute lookup, and private items reached by a qualified path
+  fail with E1107.
+
+- Add the LSP initialization option `modHost = { "path": "<absolute beskid
+  executable>" }` to select the native Mod host (default: the `beskid` CLI
+  installed next to the language server), like rust-analyzer
+  `procMacro.server`. Invalid values fail `initialize` with `InvalidParams`
+  and never fall back; the selected host keeps Mod artifact descriptor and
+  authority qualification. Project preparation failures are published as a
+  `project-preparation` error diagnostic and logged.
 
 - Add a Rust Glue peer service using the shared bounded codec and frame pump,
   with exact handshake/binding admission, replay rejection and typed replies.

@@ -49,12 +49,17 @@ fn v06_canonical_dynamic_bridge_items_are_not_unused_private_items() {
         );
 
         // The same bytes without the canonical unit authority get no exemption: the rule keys on
-        // the exact unit, never on the item names alone.
+        // the exact unit, never on the item names alone. The unit still resolves against its
+        // assembly (it is that assembly's entry), so the rule runs; only the entry path that
+        // identifies the canonical unit is withheld. Without any assembly the unit cannot
+        // resolve, so no visibility rule would run and the check would prove nothing.
+        let mut unanchored_options = AnalysisOptions::default();
+        unanchored_options.program_assembly = Some(assembly.clone());
         let unanchored = semantic_rule_diagnostics_for_program_with_pipeline(
             &unit.program.node,
             unit.logical_name.clone(),
             &unit.source,
-            AnalysisOptions::default(),
+            unanchored_options,
             None,
         );
         assert_eq!(unused_private_items(&unanchored), COMPILER_ISSUED_BRIDGE_ITEMS.to_vec());

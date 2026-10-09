@@ -219,6 +219,7 @@ pub fn build_typed_program(
                         binding,
                         declaration.node.alias.is_some(),
                         declaration.node.visibility.node == beskid_analysis::syntax::Visibility::Public,
+                        crate::db::SyntaxImportOrigin::Use,
                     ))
                 }
                 // An out-of-line `pub mod A.B;` is an assembled syntax dependency and a
@@ -239,18 +240,26 @@ pub fn build_typed_program(
                         binding,
                         false,
                         declaration.node.visibility.node == beskid_analysis::syntax::Visibility::Public,
+                        crate::db::SyntaxImportOrigin::ModuleDeclaration,
                     ))
                 }
                 _ => None,
             })
-            .filter_map(|(path, binding, has_explicit_alias, public)| {
+            .filter_map(|(path, binding, has_explicit_alias, public, origin)| {
                 registry
                     .visible_module_units(generation, &path)
                     .and_then(|targets| match targets {
                         [target] => Some(*target),
                         _ => None,
                     })
-                    .map(|target| crate::db::SyntaxImport { path, binding, has_explicit_alias, target, public })
+                    .map(|target| crate::db::SyntaxImport {
+                        path,
+                        binding,
+                        has_explicit_alias,
+                        target,
+                        public,
+                        origin,
+                    })
             })
             .collect();
         registry.imports.insert((unit_id, generation), imports);
@@ -504,6 +513,7 @@ fn attach_private_runtime_scope(db: &BeskidDatabase, generation: SyntaxGeneratio
                 has_explicit_alias: true,
                 target,
                 public: false,
+                origin: crate::db::SyntaxImportOrigin::CanonicalRuntimeScope,
             });
         }
     }

@@ -45,6 +45,17 @@ pub struct ContractInvocationError {
     pub message: String,
 }
 
+impl ContractInvocationError {
+    /// Attributes the failure to the Mod package that declared the registration.
+    ///
+    /// Invokers dispatch a registration and do not own package identity; the Mod host, which
+    /// scheduled the registration from a loaded artifact, is the authority for it.
+    pub(crate) fn attributed_to(mut self, package_id: &str) -> Self {
+        self.package_id = package_id.to_owned();
+        self
+    }
+}
+
 impl std::fmt::Display for ContractInvocationError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(

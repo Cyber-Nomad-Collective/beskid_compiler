@@ -155,9 +155,13 @@ pub(crate) fn lockfile_digest_for_plan(plan: &beskid_analysis::projects::Compile
     format!("{:016x}", hasher.finish())
 }
 
+/// Executable prepare for the typed bundle. The caller's qualified Mod invoker is authoritative:
+/// every Corelib project runs the Corelib Mods (the Serialization Mod), so dropping it would make
+/// preparation fail closed on a missing Mod host even when the caller supplied one.
 fn materialize_typed_bundle(
     db: &mut BeskidDatabase,
     resolved: &ResolvedInput,
+    options: &PrepareOptions,
     dependency_typing: DependencyTypingPolicy,
     pipeline: Option<&dyn PipelineObserver>,
 ) -> Result<SharedFrontEnd> {
@@ -165,7 +169,7 @@ fn materialize_typed_bundle(
         db,
         resolved,
         PrepareOptions {
-            mod_invoker: None,
+            mod_invoker: options.mod_invoker.clone(),
             front_end: FrontEndOptions { with_semantic_diagnostics: false, ..Default::default() },
             dependency_typing,
             native_mod_adapter_sources: false,
@@ -211,7 +215,7 @@ fn run_tracked_typed_prepare(
     );
 
     let Some(project) = project_session_for_resolved(db, resolved) else {
-        return materialize_typed_bundle(db, resolved, DependencyTypingPolicy::FullClosure, pipeline);
+        return materialize_typed_bundle(db, resolved, options, DependencyTypingPolicy::FullClosure, pipeline);
     };
     let grammar = db.grammar_revision();
     let options_fingerprint = prepare_options_fingerprint(options);
@@ -236,7 +240,7 @@ fn run_tracked_typed_prepare(
         return Ok(front);
     }
 
-    let front = materialize_typed_bundle(db, resolved, DependencyTypingPolicy::FullClosure, pipeline)?;
+    let front = materialize_typed_bundle(db, resolved, options, DependencyTypingPolicy::FullClosure, pipeline)?;
     typed_entry_cache()
         .lock()
         .expect("typed entry cache")
@@ -249,6 +253,7 @@ fn run_tracked_entry_gate_prepare(
     db: &mut BeskidDatabase,
     resolved: &ResolvedInput,
     entry_key: &str,
+    options: &PrepareOptions,
     pipeline: Option<&dyn PipelineObserver>,
 ) -> Result<SharedFrontEnd> {
     let file_revision = file_revision_for(db, entry_key);
@@ -272,7 +277,7 @@ fn run_tracked_entry_gate_prepare(
         return Ok(front);
     }
 
-    let front = materialize_typed_bundle(db, resolved, DependencyTypingPolicy::EntryOnly, pipeline)?;
+    let front = materialize_typed_bundle(db, resolved, options, DependencyTypingPolicy::EntryOnly, pipeline)?;
     typed_entry_cache()
         .lock()
         .expect("typed entry cache")
@@ -297,7 +302,7 @@ pub fn typed_entry_state_with_db(
 
     let resolution = entry_resolution_with_db(db, resolved, options)?;
     let typed = if stale {
-        run_tracked_entry_gate_prepare(db, resolved, &entry_key, pipeline)?
+        run_tracked_entry_gate_prepare(db, resolved, &entry_key, options, pipeline)?
     } else {
         run_tracked_typed_prepare(db, resolved, &entry_key, options, pipeline)?
     };

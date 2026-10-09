@@ -9,6 +9,7 @@ use beskid_abi::runtime_source::{
     CANONICAL_NETWORK_UDP_SOCKET_SOURCE_PATH,
 };
 use beskid_analysis::syntax_query::DynNodeRef;
+use crate::semantic_contract::typing::pattern_binding_fact_in_environment;
 
 #[salsa::tracked(persist)]
 pub(in crate::semantic_contract) fn aggregate_field_access_tracked(
@@ -54,7 +55,12 @@ fn aggregate_field_access_for_environment(
     ambient: Option<&HashMap<String, AggregateFieldShape>>,
     enclosing: Option<&GenericSpecializationInstance>,
 ) -> Option<Result<AggregateFieldAccess, SemanticError>> {
-    if let Some(projection) = nominal_field_projection(db, key) {
+    // A projection rooted in an enum-pattern binding of a generic item (`success.rest` inside
+    // `Rest<T>`) is proven only through the enclosing specialization's match fact; the
+    // target-neutral projection cannot name `T` and must not pre-empt the specialized answer.
+    if let Some(projection) =
+        nominal_field_projection_in_environment(db, key, enclosing.map(|enclosing| &enclosing.substitutions))
+    {
         return Some(projection.map(|(access, _)| access));
     }
     let resolved = field_access_receiver(db, program, index, key, node, ambient, enclosing)?;
@@ -179,7 +185,22 @@ pub(in crate::semantic_contract) fn nominal_field_projection(
     db: &dyn Db,
     key: AstNodeKey,
 ) -> Option<Result<(AggregateFieldAccess, GenericSourceTypeIdentity), SemanticError>> {
-    nominal_field_projection_at(db, key).map(|result| {
+    nominal_field_projection_in_environment(db, key, None)
+}
+
+/// [`nominal_field_projection`] inside the immutable specialization of the enclosing item.
+///
+/// An enum-pattern binding root (`Result::Ok(success) => success.rest`) has no written
+/// annotation; its identity comes from the enclosing match fact. When that match scrutinizes a
+/// type that still names an enclosing generic (`Result<T> result` inside `Rest<T>`), only the
+/// specialized match fact can bind it, so the enclosing substitutions are applied to the root
+/// before any field is projected. Every other root keeps the target-neutral resolution.
+pub(in crate::semantic_contract) fn nominal_field_projection_in_environment(
+    db: &dyn Db,
+    key: AstNodeKey,
+    enclosing: Option<&Arc<[GenericSubstitution]>>,
+) -> Option<Result<(AggregateFieldAccess, GenericSourceTypeIdentity), SemanticError>> {
+    nominal_field_projection_at(db, key, enclosing).map(|result| {
         result.map_err(|error| {
             // Name an unsited projection gap at the projected path, keeping its exact family.
             let Some(query) = error.unavailable_query().filter(|query| {
@@ -202,6 +223,7 @@ pub(in crate::semantic_contract) fn nominal_field_projection(
 fn nominal_field_projection_at(
     db: &dyn Db,
     key: AstNodeKey,
+    enclosing: Option<&Arc<[GenericSubstitution]>>,
 ) -> Option<Result<(AggregateFieldAccess, GenericSourceTypeIdentity), SemanticError>> {
     let syntax = db.syntax_unit(key.unit).filter(|syntax| syntax.accepts_key(db, key))?;
     let program = syntax.expanded_program(db);
@@ -339,7 +361,7 @@ fn nominal_field_projection_at(
     // source-proven local identity of its initializer. Other unannotated roots stay unproven.
     let binding = match annotation {
         Some(_) => None,
-        None => Some(match pattern_binding_fact(db, index, path_key, root) {
+        None => Some(match pattern_binding_fact_in_environment(db, index, path_key, root, enclosing) {
             Some(binding) => binding.and_then(|binding| {
                 binding.source_identity.ok_or_else(|| SemanticError::unavailable("nominal_field_projection"))
             }),

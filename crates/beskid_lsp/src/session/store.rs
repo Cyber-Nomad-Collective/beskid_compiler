@@ -18,6 +18,7 @@ pub use beskid_analysis::{SyntaxFix, SyntaxTextEdit};
 use beskid_queries::{
     AstNodeKey, BeskidDatabase, configure_compilation_database_for_project, reset_compilation_database,
 };
+use beskid_tools::native_mods::ModHostSelection;
 use tokio::sync::{Mutex as AsyncMutex, Notify};
 use tower_lsp_server::ls_types::Uri;
 
@@ -191,6 +192,12 @@ pub struct State {
     /// Single global counter (the DB is shared across all URIs) — each document
     /// change bumps it, and a spawned save only fires when it is still the latest.
     pub(crate) persistence_save_revision: u64,
+    /// Native Mod host that project preparation runs Mods in.
+    ///
+    /// Defaults to the installed toolchain (the `beskid` CLI next to this server and its runtime
+    /// kit). The `modHost` initialization option selects another one, in the manner of
+    /// rust-analyzer's `procMacro.server`; artifact qualification applies to either.
+    pub mod_host: ModHostSelection,
 }
 
 impl Default for State {
@@ -210,6 +217,7 @@ impl Default for State {
             persistence_save_enabled: true,
             persistence_save_debounce: super::lifecycle::DEFAULT_PERSISTENCE_DEBOUNCE,
             persistence_save_revision: 0,
+            mod_host: ModHostSelection::installed(),
         }
     }
 }

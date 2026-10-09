@@ -141,23 +141,153 @@ pub(super) fn unique_inline_module_in_scope(
     Some(*module)
 }
 
-/// Resolve a qualified module path from an exact current import and, when required, explicit
-/// public child-module edges. Private imports remain available only inside their owner.
+/// How a qualified module path resolves for one source unit.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) enum QualifiedModuleResolution {
+    /// Exactly one assembled source unit is the module.
+    Unit(SourceUnitId),
+    /// More than one assembled source unit claims the module path. Resolution fails closed.
+    Ambiguous(Vec<SourceUnitId>),
+    /// No import route and no package-native module path names the module.
+    Missing,
+}
+
+/// Resolve a qualified module path to its one assembled source unit; see
+/// [`qualified_module_resolution`]. Ambiguous and missing paths resolve to nothing.
 pub(super) fn resolve_qualified_module_unit(
     db: &dyn Db,
     key: AstNodeKey,
     module_path: &[String],
 ) -> Option<SourceUnitId> {
-    let initial = db
-        .syntax_dependency_registry()
-        .lock()
-        .expect("syntax dependency registry")
-        .imports
-        .get(&(key.unit, key.generation))?
-        .iter()
-        .filter_map(|import| import_path_prefix_len(import, module_path).map(|consumed| (import.target, consumed)))
-        .collect::<Vec<_>>();
+    match qualified_module_resolution(db, key, module_path) {
+        QualifiedModuleResolution::Unit(unit) => Some(unit),
+        QualifiedModuleResolution::Ambiguous(_) | QualifiedModuleResolution::Missing => None,
+    }
+}
 
+/// Resolve a qualified module path in two ordered steps:
+///
+/// 1. Import routes: a `use` binding of this unit (or an unaliased `use` of the exact path) names
+///    the root, and explicit public child-module edges continue from it. Private imports remain
+///    available only inside their owner.
+/// 2. Package-native namespace: every assembled unit of the project and of its resolved
+///    dependency closure keeps its package-native logical path (`Core.Output`,
+///    `Testing.Assert`). When a `use` binding owns the root, the root stands for that import's
+///    logical path (`use Core.Output as Out; Out.Child.F()` names `Core.Output.Child`).
+///    Otherwise the path is absolute, so `Core.Output.WriteLine(...)` needs no `use`, as a fully
+///    qualified path in Rust or C#. Callers check item visibility against the resolved unit.
+///
+/// Names in scope shadow the absolute namespace: a `use` binding of the root segment, or an
+/// inline module, type, enum or contract of that name in the lexical module scope chain, never
+/// falls through to a different module of the same spelling. More than one unit at either step
+/// is an ambiguity and resolves to no unit.
+pub(super) fn qualified_module_resolution(
+    db: &dyn Db,
+    key: AstNodeKey,
+    module_path: &[String],
+) -> QualifiedModuleResolution {
+    let Some(root) = module_path.first() else {
+        return QualifiedModuleResolution::Missing;
+    };
+    let (initial, use_expansions) = {
+        let registry = db.syntax_dependency_registry().lock().expect("syntax dependency registry");
+        let imports = registry.imports.get(&(key.unit, key.generation)).map(Vec::as_slice).unwrap_or_default();
+        let initial = imports
+            .iter()
+            .filter_map(|import| import_path_prefix_len(import, module_path).map(|consumed| (import.target, consumed)))
+            .collect::<Vec<_>>();
+        // A `use` binding of the root stands for its target module's own logical path.
+        let use_expansions = imports
+            .iter()
+            .filter(|import| import.origin == crate::db::SyntaxImportOrigin::Use && import.binding == *root)
+            .map(|import| import.path.iter().chain(&module_path[1..]).cloned().collect::<Vec<_>>())
+            .collect::<Vec<_>>();
+        (initial, use_expansions)
+    };
+    match import_routed_module_units(db, key, module_path, initial).as_slice() {
+        [unit] => return QualifiedModuleResolution::Unit(*unit),
+        [] => {}
+        units => return QualifiedModuleResolution::Ambiguous(units.to_vec()),
+    }
+    let absolute_paths = if !use_expansions.is_empty() {
+        use_expansions
+    } else if lexical_namespace_declares(db, key, root) {
+        return QualifiedModuleResolution::Missing;
+    } else {
+        vec![module_path.to_vec()]
+    };
+    let registry = db.syntax_dependency_registry().lock().expect("syntax dependency registry");
+    let mut units = Vec::new();
+    for path in &absolute_paths {
+        for unit in registry.visible_module_units(key.generation, path).into_iter().flatten() {
+            if !units.contains(unit) {
+                units.push(*unit);
+            }
+        }
+    }
+    match units.len() {
+        0 => QualifiedModuleResolution::Missing,
+        1 => QualifiedModuleResolution::Unit(units[0]),
+        _ => QualifiedModuleResolution::Ambiguous(units),
+    }
+}
+
+/// Whether an inline module, type, enum or contract named `name` is declared in the lexical
+/// module scope chain of `key`. Such a name owns a qualified path rooted at it. A key whose
+/// syntax is not registered for its generation reports `true` so the absolute namespace is
+/// never consulted without lexical evidence.
+fn lexical_namespace_declares(db: &dyn Db, key: AstNodeKey, name: &str) -> bool {
+    use beskid_analysis::syntax_query::NodeKind;
+    let Some(syntax) = db.syntax_unit(key.unit).filter(|syntax| syntax.generation(db) == key.generation) else {
+        return true;
+    };
+    let program = syntax.expanded_program(db);
+    let index = syntax.syntax_index(db);
+    let declares = |scope: beskid_analysis::syntax::AstNodeId| {
+        let inline_module = index.ids_of_kind(NodeKind::InlineModule).any(|candidate| {
+            outer_module_scope(index, candidate) == Some(scope)
+                && index
+                    .node_at(program, candidate)
+                    .and_then(|node| node.of::<beskid_analysis::syntax::InlineModule>())
+                    .is_some_and(|module| module.name.node.name == name)
+        });
+        inline_module
+            || [NodeKind::TypeDefinition, NodeKind::EnumDefinition, NodeKind::ContractDefinition].into_iter().any(
+                |kind| {
+                    index.ids_of_kind(kind).any(|candidate| {
+                        module_scope(index, candidate) == Some(scope)
+                            && index.node_at(program, candidate).is_some_and(|node| {
+                                node.of::<beskid_analysis::syntax::TypeDefinition>()
+                                    .is_some_and(|item| item.name.node.name == name)
+                                    || node
+                                        .of::<beskid_analysis::syntax::EnumDefinition>()
+                                        .is_some_and(|item| item.name.node.name == name)
+                                    || node
+                                        .of::<beskid_analysis::syntax::ContractDefinition>()
+                                        .is_some_and(|item| item.name.node.name == name)
+                            })
+                    })
+                },
+            )
+    };
+    let mut scope = module_scope(index, key.node);
+    while let Some(current) = scope {
+        if declares(current) {
+            return true;
+        }
+        scope = outer_module_scope(index, current);
+    }
+    false
+}
+
+/// Units reached from the import routes `initial` of one qualified module path, following
+/// explicit public child-module edges.
+fn import_routed_module_units(
+    db: &dyn Db,
+    key: AstNodeKey,
+    module_path: &[String],
+    initial: Vec<(SourceUnitId, usize)>,
+) -> Vec<SourceUnitId> {
     let mut resolved = Vec::new();
     for (unit, consumed) in initial {
         let mut pending = vec![(unit, consumed)];
@@ -180,10 +310,7 @@ pub(super) fn resolve_qualified_module_unit(
             );
         }
     }
-    let [unit] = resolved.as_slice() else {
-        return None;
-    };
-    Some(*unit)
+    resolved
 }
 
 pub(super) fn import_path_prefix_len(import: &crate::db::SyntaxImport, module_path: &[String]) -> Option<usize> {

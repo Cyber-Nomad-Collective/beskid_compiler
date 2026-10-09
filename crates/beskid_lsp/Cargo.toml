@@ -28,5 +28,6 @@ reqwest = { version = "0.12", default-features = false, features = ["blocking", 
 salsa = { workspace = true }
 
 [dev-dependencies]
+beskid_tests_mod_host = { path = "../beskid_tests_mod_host" }
 tempfile = "3"
 futures-util = "0.3"

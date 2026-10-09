@@ -12,7 +12,7 @@ use crate::syntax::Spanned;
 use crate::syntax::{Node, Program};
 use crate::types::lowering_prep::{LoweringPrep, LoweringPrepSurfaces};
 use crate::types::result::{TypeError, TypeResult};
-use crate::types::surface::{build_unit_type_surface, merge_unit_surfaces_with_types};
+use crate::types::surface::{build_unit_type_surface, merge_unit_surfaces_with_types, source_less_function_bounds};
 
 use super::TypeChecker;
 
@@ -99,6 +99,9 @@ impl TypeChecker<'_> {
         );
 
         let mut checker = TypeChecker::from_merged(resolution, &merged, merged_types);
+        if entry_source_path.is_none() {
+            checker.function_bounds.extend(source_less_function_bounds(program, resolution));
+        }
 
         // Unit surfaces are the declaration authority for dependencies. Re-reading dependency
         // declarations through the entry unit's span tables aliases equal byte ranges across

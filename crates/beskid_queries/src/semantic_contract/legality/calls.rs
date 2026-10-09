@@ -35,6 +35,10 @@ pub enum UnresolvedCallKind {
     UnknownValueInModule { module_path: Arc<str>, name: Arc<str> },
     /// A qualified callee whose module declares the function privately (E1107).
     PrivateItemInModule { module_path: Arc<str>, name: Arc<str> },
+    /// A qualified callee whose module path names more than one assembled module, for example
+    /// the same package-native path in two packages of the dependency closure (E1104).
+    /// `candidates` is the number of modules that claim the path.
+    AmbiguousModulePath { path: Arc<str>, candidates: usize },
 }
 
 /// One call with a path callee that lowering cannot resolve to a call target.
@@ -157,10 +161,18 @@ fn unresolved_callee_kind(
         return None;
     }
     let qualifier = qualifier.iter().map(|segment| segment.node.name.node.name.clone()).collect::<Vec<_>>();
-    // A qualifier that names exactly one assembled module unit through this unit's imports is
-    // judged against that unit's own function declarations: a unit that re-exports child modules
-    // may route the name elsewhere, so only a route-free unit is a positive "unknown value".
-    if let Some(unit) = resolve_qualified_module_unit(db, call, &qualifier) {
+    // A qualifier that names exactly one assembled module unit, through this unit's imports or
+    // the package-native module namespace, is judged against that unit's own function
+    // declarations: a unit that re-exports child modules may route the name elsewhere, so only a
+    // route-free unit is a positive "unknown value".
+    let resolution = qualified_module_resolution(db, call, &qualifier);
+    if let QualifiedModuleResolution::Ambiguous(units) = &resolution {
+        return Some(UnresolvedCallKind::AmbiguousModulePath {
+            path: Arc::from(qualifier.join(".")),
+            candidates: units.len(),
+        });
+    }
+    if let QualifiedModuleResolution::Unit(unit) = resolution {
         let name = terminal.node.name.node.name.as_str();
         if unique_function_in_unit(db, unit, call.generation, name).is_some() {
             if unique_public_function_in_unit(db, unit, call.generation, name).is_none() {

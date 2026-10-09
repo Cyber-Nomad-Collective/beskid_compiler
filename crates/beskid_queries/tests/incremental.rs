@@ -16,7 +16,9 @@ use beskid_queries::{
 /// The bundle is the compiler checkout's `corelib/` tree, copied with the same CoreLib.bws member
 /// inventory the embedded bundle uses and sealed with a recomputed `.beskid-bundle.sha256` marker. That is
 /// what makes it a verified installed Corelib (lock replay and service-source admission both
-/// require one) whose bytes match the sources this compiler embeds. Runs once per process.
+/// require one) whose bytes match the sources this compiler embeds. The copy's native Mods are
+/// then provisioned inside it against the shared test runtime kit (Mod artifacts under `.beskid/`
+/// are outside the bundle fingerprint). Runs once per process.
 fn isolated_corelib_toolchain() -> &'static std::path::Path {
     use beskid_abi::corelib_bundle::{
         CORELIB_BUNDLE_FINGERPRINT_FILE, copy_corelib_bundle, fingerprint_corelib_bundle_dir,
@@ -38,6 +40,7 @@ fn isolated_corelib_toolchain() -> &'static std::path::Path {
             std::env::set_var("BESKID_CONFIG_DIR", home.path().join("config"));
             std::env::set_var("BESKID_CORELIB_ROOT", &corelib);
         }
+        beskid_tests_mod_host::provision_corelib_mods(&corelib).expect("provision the isolated Corelib's native Mods");
         home
     })
     .path()
@@ -255,7 +258,10 @@ fn typed_entry_state_uses_fast_resolution_when_stale() {
         )
         .expect("resolve fixture");
         let mut db = BeskidDatabase::with_persistence(&project_root);
+        let mod_host = beskid_tests_mod_host::ModHostScope::enter().expect("enter the shared native Mod host scope");
+        let plan = resolved.compile_plan.as_ref().expect("fixture compile plan");
         let mut options = PrepareOptions::default();
+        options.mod_invoker = Some(mod_host.corelib_mod_invoker(plan).expect("qualified Corelib native Mods"));
         options.front_end.assembly_discovery = AssemblyDiscovery::ImportClosure;
         let entry_key = resolved
             .compile_plan
@@ -363,7 +369,10 @@ fn diagnostics_prepare_and_facts_share_one_session_for_noncanonical_root() {
     .expect("resolve project");
     let plan = resolved.compile_plan.clone().expect("compile plan");
     let mut db = BeskidDatabase::default();
-    let options = PrepareOptions { mod_invoker: None,
+    let mod_host = beskid_tests_mod_host::ModHostScope::enter().expect("enter the shared native Mod host scope");
+    let mod_invoker = mod_host.corelib_mod_invoker(&plan).expect("qualified Corelib native Mods");
+    let options = PrepareOptions {
+        mod_invoker: Some(mod_invoker),
         front_end: FrontEndOptions { assembly_discovery: AssemblyDiscovery::ImportClosure, ..Default::default() },
         ..Default::default()
     };

@@ -2,14 +2,13 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, OnceLock};
 
 use beskid_abi::abi_v5::TargetMetadata;
 use beskid_abi::runtime_kit::BuildProfile;
 use beskid_abi::runtime_source::{canonical_runtime_source_hash, resolve_canonical_runtime_kit};
 
-static CORELIB_ROOT_COUNTER: AtomicU64 = AtomicU64::new(0);
+static PROVISIONED_CORELIB: OnceLock<Result<PathBuf, String>> = OnceLock::new();
 static BUILT_DEBUG_CLI: OnceLock<()> = OnceLock::new();
 static STAGED_RUNTIME_KIT: OnceLock<Mutex<HashMap<String, Result<PathBuf, String>>>> = OnceLock::new();
 
@@ -23,9 +22,7 @@ impl BeskidCliInvoker {
     pub fn new() -> Self {
         let binary = resolve_cli_binary();
         let runtime_prefix = ensure_exact_runtime_kit(&binary, "debug");
-        let corelib_root = unique_corelib_root();
-        fs::create_dir_all(&corelib_root)
-            .unwrap_or_else(|error| panic!("create e2e corelib root {}: {error}", corelib_root.display()));
+        let corelib_root = ensure_provisioned_corelib(&binary, &runtime_prefix);
         Self { binary, corelib_root, runtime_prefix }
     }
 
@@ -222,9 +219,59 @@ fn binary_name() -> &'static str {
     if cfg!(target_os = "windows") { "beskid_cli.exe" } else { "beskid_cli" }
 }
 
-fn unique_corelib_root() -> PathBuf {
-    let nonce = CORELIB_ROOT_COUNTER.fetch_add(1, Ordering::Relaxed);
-    std::env::temp_dir().join("beskid_e2e_corelib").join(format!("{}_{}", std::process::id(), nonce))
+/// The shared Corelib root of this test process, provisioned like an installed toolchain.
+///
+/// Corelib depends on the native Serialization Mod. A freshly materialized Corelib has no
+/// executable Mod artifact for this CLI, so the first command against it builds the Mod before
+/// its own work, which would charge that one-time provisioning to whichever case ran first
+/// (including the performance budgets). Release bundles ship the artifact prebuilt
+/// (`scripts/ci/build-release-artifact.sh`); this harness provisions one root the same way, once,
+/// through the ordinary consumer path (`beskid check` builds a missing Mod artifact) before any
+/// case runs a command. The root lives next to the keyed runtime kits: `.beskid`, `obj` and
+/// `Project.lock` are outside the Corelib fingerprint, so a current artifact is reused across
+/// runs, while a changed bundle is re-materialized and a changed CLI fails the Mod key check and
+/// rebuilds.
+fn ensure_provisioned_corelib(cli_binary: &Path, runtime_prefix: &Path) -> PathBuf {
+    PROVISIONED_CORELIB
+        .get_or_init(|| provision_corelib(cli_binary, runtime_prefix))
+        .clone()
+        .unwrap_or_else(|error| panic!("{error}"))
+}
+
+fn provision_corelib(cli_binary: &Path, runtime_prefix: &Path) -> Result<PathBuf, String> {
+    let base = install_prefix_for_cli(cli_binary)
+        .parent()
+        .map(|kits| kits.join("beskid-e2e-corelib"))
+        .ok_or_else(|| format!("CLI binary has no target directory: {}", cli_binary.display()))?;
+    let root = base.join("corelib");
+    let project = tempfile::tempdir().map_err(|error| format!("create Corelib provisioning project: {error}"))?;
+    fs::create_dir_all(project.path().join("Src")).map_err(|error| format!("create provisioning sources: {error}"))?;
+    fs::write(project.path().join("Src/Provision.bd"), "pub i64 Main() { return 0; }\n")
+        .map_err(|error| format!("write provisioning source: {error}"))?;
+    fs::write(
+        project.path().join("Provision.bproj"),
+        "Provision { name = \"Provision\" version = \"0.1.0\" }\n\
+         target \"Provision\" { kind = \"App\" entry = \"Provision.bd\" }\n",
+    )
+    .map_err(|error| format!("write provisioning manifest: {error}"))?;
+    let output = Command::new(cli_binary)
+        .current_dir(project.path())
+        .args(["check", "--project"])
+        .arg(project.path())
+        .arg("--plain")
+        .env("BESKID_CORELIB_ROOT", &root)
+        .env("BESKID_RUNTIME_PREFIX", runtime_prefix)
+        .output()
+        .map_err(|error| format!("invoke `{} check` to provision the e2e Corelib: {error}", cli_binary.display()))?;
+    if !output.status.success() {
+        return Err(format!(
+            "provisioning the e2e Corelib `{}` and its Serialization Mod failed\nstdout:\n{}\nstderr:\n{}",
+            root.display(),
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        ));
+    }
+    Ok(root)
 }
 
 #[cfg(test)]

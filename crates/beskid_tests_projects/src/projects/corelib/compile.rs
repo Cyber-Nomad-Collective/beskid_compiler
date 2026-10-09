@@ -1,14 +1,15 @@
 use std::fs;
 
 use crate::projects::fixture_harness::{
-    corelib_mvp_fixture, corelib_tests_project_root, resolve_corelib_tests_entry, resolve_fixture_with_assembly,
-    shared_corelib_mvp_assembly, with_large_test_stack, with_project_test_env,
+    analyze_file_with_mods, corelib_mvp_fixture, corelib_tests_project_root, enter_mod_host, mod_invoker_for,
+    resolve_corelib_tests_entry, resolve_fixture_with_assembly, shared_corelib_mvp_assembly, with_large_test_stack,
+    with_project_test_env,
 };
 use crate::projects::test_cwd::{compiler_workspace_root, with_cwd_at_workspace_root};
 use beskid_analysis::Severity;
 use beskid_analysis::projects::build_compile_plan;
 use beskid_analysis::services::{
-    FrontEndOptions, PrepareOptions, analyze_file_in_project, analyze_source_in_project, parse_program, resolve_input,
+    FrontEndOptions, PrepareOptions, analyze_source_in_project, parse_program, resolve_input,
 };
 use beskid_queries::{program_assembly, with_db};
 
@@ -48,7 +49,7 @@ fn checked_in_corelib_sources_parse_as_beskid_programs() {
 fn checked_in_corelib_syscall_file_does_not_report_module_resolution_false_positives() {
     with_project_test_env(&corelib_mvp_fixture(), || {
         let diagnostics =
-            analyze_file_in_project(&corelib_mvp_fixture().join("Src/Main.bd")).expect("analyze corelib_mvp entry");
+            analyze_file_with_mods(&corelib_mvp_fixture().join("Src/Main.bd")).expect("analyze corelib_mvp entry");
 
         assert!(
             diagnostics.iter().all(|diag| !matches!(diag.code.as_deref(), Some("E1105") | Some("E1108"))),
@@ -97,9 +98,11 @@ fn corelib_mvp_fixture_lowers_via_program_assembly() {
     with_large_test_stack(|| {
         with_project_test_env(&corelib_mvp_fixture(), || {
             let resolved = resolve_fixture_with_assembly(&corelib_mvp_fixture(), "src/Main.bd", "App");
+            let mod_host = enter_mod_host();
             beskid_queries::prepare_compilation(
                 &resolved,
-                PrepareOptions { mod_invoker: None,
+                PrepareOptions {
+                    mod_invoker: Some(mod_invoker_for(&mod_host, &resolved)),
                     front_end: FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
                     ..Default::default()
                 },
@@ -134,9 +137,11 @@ fn corelib_assembly_typechecks_nested_qualified_result_arguments_and_predicates(
             .expect("nested generic regression assembly");
 
             resolved.assembly = Some(assembly);
+            let mod_host = enter_mod_host();
             beskid_queries::prepare_compilation(
                 &resolved,
-                PrepareOptions { mod_invoker: None,
+                PrepareOptions {
+                    mod_invoker: Some(mod_invoker_for(&mod_host, &resolved)),
                     front_end: FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
                     ..Default::default()
                 },
@@ -154,7 +159,7 @@ fn corelib_assembly_typechecks_nested_qualified_result_arguments_and_predicates(
 fn corelib_mvp_fixture_entry_does_not_emit_module_resolution_false_positives() {
     with_project_test_env(&corelib_mvp_fixture(), || {
         let fixture_main = corelib_mvp_fixture().join("Src/Main.bd");
-        let diagnostics = analyze_file_in_project(&fixture_main).expect("analyze corelib_mvp fixture");
+        let diagnostics = analyze_file_with_mods(&fixture_main).expect("analyze corelib_mvp fixture");
 
         assert!(
             diagnostics.iter().all(|diag| !matches!(diag.code.as_deref(), Some("E1105") | Some("E1108"))),

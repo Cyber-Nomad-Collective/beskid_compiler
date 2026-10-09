@@ -258,12 +258,15 @@ pub fn compiler_corelib_package_source_root(package: &str) -> Option<std::path::
     if package.is_empty() || package.contains(['/', '\\']) || package == "." || package == ".." {
         return None;
     }
-    let declared = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()?
-        .parent()?
-        .join("corelib/packages")
-        .join(package)
-        .join("src");
+    std::fs::canonicalize(compiler_corelib_checkout_root()?.join("packages").join(package).join("src")).ok()
+}
+
+/// Physical root of the compiler checkout's own Corelib tree (`<checkout>/corelib`).
+///
+/// Packages, Mods, and test projects under this root are the compiler's own Corelib sources, not
+/// copies. It fails closed when the checkout path does not resolve.
+pub fn compiler_corelib_checkout_root() -> Option<std::path::PathBuf> {
+    let declared = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).parent()?.parent()?.join("corelib");
     std::fs::canonicalize(declared).ok()
 }
 

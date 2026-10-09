@@ -60,6 +60,21 @@ pub struct SyntaxImport {
     /// Whether the importing source unit exposes this target through its module API.
     /// Private imports remain available only to the importing unit's own syntax facts.
     pub(crate) public: bool,
+    /// The declaration that created this edge.
+    pub(crate) origin: SyntaxImportOrigin,
+}
+
+/// The source construct that created one [`SyntaxImport`] edge.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SyntaxImportOrigin {
+    /// A `use Path;` or `use Path as Alias;` declaration. Its binding is a name in the owner's
+    /// scope, so it shadows a package-native module root of the same spelling in qualified paths.
+    Use,
+    /// An out-of-line `mod A.B;` declaration: a namespace edge to the declared child module. It
+    /// does not bind a scope name that hides the package-native module namespace.
+    ModuleDeclaration,
+    /// The compiler-installed private scope of the verified canonical runtime corpus.
+    CanonicalRuntimeScope,
 }
 
 /// Cached heavy artifacts keyed by content fingerprint (invalidated via Salsa inputs).

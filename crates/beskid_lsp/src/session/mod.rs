@@ -5,6 +5,7 @@ pub(crate) mod diagnostics_bridge;
 pub(crate) mod documentation_facts;
 pub(crate) mod imports;
 pub(crate) mod lifecycle;
+pub(crate) mod mod_host;
 pub(crate) mod project_context;
 pub(crate) mod startup;
 #[cfg(test)]

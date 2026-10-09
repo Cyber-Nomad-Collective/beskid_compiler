@@ -11,6 +11,7 @@ mod tests {
     use crate::position::position_to_offset;
     use crate::session::lifecycle::build_document;
     use crate::session::store::{Document, State, SyntaxCompletion, SyntaxDefinition, SyntaxHover, SyntaxSymbol};
+    use crate::test_mod_host::ProvisionedModHost;
     use crate::workspace_scan::path_to_uri;
 
     struct CorelibMvpFixture {
@@ -154,7 +155,8 @@ mod tests {
         std::env::set_current_dir(&root).expect("chdir");
         let fixture = corelib_mvp_paths();
         let uri = fixture.uri.clone();
-        let state = tokio::sync::RwLock::new(State::default());
+        let mod_host = ProvisionedModHost::for_source(&fixture.main_path);
+        let state = tokio::sync::RwLock::new(mod_host.state());
         state.read().await.mark_initial_scan_complete();
         let doc = build_document(&state, &uri, 1, fixture.source.clone()).await;
         std::env::set_current_dir(previous).expect("restore cwd");
@@ -302,7 +304,8 @@ mod tests {
         std::env::set_current_dir(&root).expect("chdir");
         let fixture = corelib_mvp_paths();
         let uri = fixture.uri.clone();
-        let state = tokio::sync::RwLock::new(State::default());
+        let mod_host = ProvisionedModHost::for_source(&fixture.main_path);
+        let state = tokio::sync::RwLock::new(mod_host.state());
         state.read().await.mark_initial_scan_complete();
         let doc = build_document(&state, &uri, 1, fixture.source.clone()).await;
         std::env::set_current_dir(previous).expect("restore cwd");
@@ -368,7 +371,8 @@ mod tests {
         std::env::set_current_dir(&root).expect("chdir");
         let fixture = corelib_mvp_paths();
         let uri = fixture.uri.clone();
-        let state = tokio::sync::RwLock::new(State::default());
+        let mod_host = ProvisionedModHost::for_source(&fixture.main_path);
+        let state = tokio::sync::RwLock::new(mod_host.state());
         state.read().await.mark_initial_scan_complete();
         let doc = build_document(&state, &uri, 1, fixture.source.clone()).await;
         std::env::set_current_dir(previous).expect("restore cwd");
@@ -395,7 +399,8 @@ mod tests {
         std::env::set_current_dir(&root).expect("chdir");
         let fixture = corelib_mvp_paths();
         let uri = fixture.uri.clone();
-        let state = tokio::sync::RwLock::new(State::default());
+        let mod_host = ProvisionedModHost::for_source(&fixture.main_path);
+        let state = tokio::sync::RwLock::new(mod_host.state());
         state.read().await.mark_initial_scan_complete();
         let doc = build_document(&state, &uri, 1, fixture.source.clone()).await;
         std::env::set_current_dir(previous).expect("restore cwd");

@@ -28,4 +28,5 @@ thiserror = "2.0"
 tracing = { workspace = true }
 
 [dev-dependencies]
+beskid_tests_mod_host = { path = "../beskid_tests_mod_host" }
 tempfile = "3"

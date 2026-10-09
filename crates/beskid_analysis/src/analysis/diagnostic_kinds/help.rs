@@ -167,6 +167,9 @@ impl SemanticIssueKind {
             Self::ResolvePrivateItemInModule { .. } => {
                 Some("mark the item `pub` or avoid cross-module access".to_string())
             }
+            Self::ResolveAmbiguousModulePath { path, .. } => Some(format!(
+                "module `{path}` must be declared by exactly one package of the dependency closure"
+            )),
             Self::MissingImport { name, module_path } => {
                 Some(format!("add `use {module_path}::{name};` at the top of the file"))
             }

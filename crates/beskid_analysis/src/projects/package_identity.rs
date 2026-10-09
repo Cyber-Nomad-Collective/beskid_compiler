@@ -157,6 +157,14 @@ fn is_compiler_corelib_source_root(source_root: &Path) -> bool {
     };
     beskid_abi::runtime_source::compiler_corelib_package_source_root(package).is_some_and(|root| root == physical)
 }
+/// Whether `manifest` belongs to a project inside the compiler checkout's own Corelib tree
+/// (a Corelib package, Mod, aggregate, or test project of that checkout).
+fn is_inside_compiler_corelib_checkout(manifest: &Path) -> bool {
+    let Ok(physical) = manifest.canonicalize() else {
+        return false;
+    };
+    beskid_abi::runtime_source::compiler_corelib_checkout_root().is_some_and(|root| physical.starts_with(root))
+}
 impl VerifiedPackageIdentities {
     /// The one package that owns `path`. The most specific containing root across all entries
     /// decides; two different packages claiming the same deepest root are ambiguous and own nothing.
@@ -223,6 +231,7 @@ impl VerifiedPackageIdentities {
         lock_path: &Path,
     ) -> Result<Self, ProjectError> {
         let mut result = Self { entries: Vec::new(), lock: Some((lock_path.to_owned(), read(lock_path)?)) };
+        let host_in_compiler_corelib = is_inside_compiler_corelib_checkout(&plan.manifest_path);
         if let Some(source) = &plan.source_root {
             let identity_source = if is_compiler_corelib_source_root(source) {
                 VerifiedPackageSource::Corelib
@@ -251,10 +260,23 @@ impl VerifiedPackageIdentities {
                 ProjectLockSource::Corelib => (VerifiedPackageSource::Corelib, None),
                 ProjectLockSource::Path => (VerifiedPackageSource::Local, None),
             };
+            let original =
+                plan.dependency_projects.iter().find(|original| original.dependency_name == dependency.dependency_name);
+            // A project of the compiler's own Corelib checkout that names a sibling checkout
+            // package by path depends on that Corelib package itself, not on a copy: the
+            // physical package root decides, and `validate` below proves the materialized root
+            // byte-identical to it. Any other path dependency, including a copy of a Corelib
+            // package elsewhere or a checkout package named from outside the checkout, stays local.
+            let source = match (pin.source(), original) {
+                (ProjectLockSource::Path, Some(original))
+                    if host_in_compiler_corelib && is_compiler_corelib_source_root(&original.source_root) =>
+                {
+                    VerifiedPackageSource::Corelib
+                }
+                _ => source,
+            };
             let mut roots = vec![dependency.materialized_source_root.clone()];
-            if let Some(original) =
-                plan.dependency_projects.iter().find(|original| original.dependency_name == dependency.dependency_name)
-            {
+            if let Some(original) = original {
                 roots.push(original.source_root.clone());
             }
             result.issue(&dependency.manifest_path, roots, source, version)?;
@@ -312,7 +334,27 @@ impl VerifiedPackageIdentities {
 
 #[cfg(test)]
 mod corelib_host_identity_tests {
-    use super::is_compiler_corelib_source_root;
+    use super::{is_compiler_corelib_source_root, is_inside_compiler_corelib_checkout};
+
+    #[test]
+    fn only_projects_of_the_compiler_checkout_corelib_tree_are_corelib_hosts_for_path_dependencies() {
+        let checkout = beskid_abi::runtime_source::compiler_corelib_checkout_root().expect("compiler checkout Corelib");
+        let module = checkout.join("mods/serialization_mod/serialization_mod.bproj");
+        assert!(is_inside_compiler_corelib_checkout(&module), "a checkout Corelib Mod names sibling packages");
+        let tests = checkout.join("beskid_corelib/tests/corelib_tests/corelib_tests.bproj");
+        assert!(is_inside_compiler_corelib_checkout(&tests), "the checkout Corelib tests name sibling packages");
+
+        let copy = std::env::temp_dir()
+            .join(format!("beskid_corelib_path_host_identity_{}", std::process::id()))
+            .join("mods/serialization_mod");
+        std::fs::create_dir_all(&copy).expect("copied Mod project root");
+        let copied_manifest = copy.join("serialization_mod.bproj");
+        std::fs::write(&copied_manifest, "").expect("copied Mod manifest");
+        assert!(!is_inside_compiler_corelib_checkout(&copied_manifest), "a copied Corelib tree stays local");
+        let _ = std::fs::remove_dir_all(copy.ancestors().nth(2).expect("copy base"));
+        let missing = checkout.join("missing.bproj");
+        assert!(!is_inside_compiler_corelib_checkout(&missing), "unresolvable paths fail closed");
+    }
 
     #[test]
     fn only_the_compiler_checkout_corelib_package_root_is_a_corelib_host() {

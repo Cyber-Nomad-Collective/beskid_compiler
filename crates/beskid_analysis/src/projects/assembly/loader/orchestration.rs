@@ -133,11 +133,11 @@ pub fn assemble_program_with_materializer(
                     continue;
                 };
                 for import_path in import_paths_from_program(&discovery_program.node) {
-                    if let Some(dep_file) = resolve_module_file(&import_path, &roots) {
+                    if let Some(dep_file) = resolve_module_file(&import_path, &roots)? {
                         queue.push_back(dep_file);
                     }
                     if let Some(parent_import) = parent_module_import_path(&import_path)
-                        && let Some(parent_file) = resolve_module_file(&parent_import, &roots)
+                        && let Some(parent_file) = resolve_module_file(&parent_import, &roots)?
                     {
                         queue.push_back(parent_file);
                     }
@@ -145,12 +145,12 @@ pub fn assemble_program_with_materializer(
                 let mut qualified_paths = module_paths_from_qualified_references(&discovery_program.node);
                 qualified_paths.sort();
                 for module_path in qualified_paths {
-                    if let Some(dep_file) = resolve_module_file(&module_path, &roots) {
+                    if let Some(dep_file) = resolve_module_file(&module_path, &roots)? {
                         queue.push_back(dep_file);
                     }
                 }
                 for module_path in module_declaration_paths_from_program(&discovery_program.node) {
-                    if let Some(dep_file) = resolve_module_file(&module_path, &roots) {
+                    if let Some(dep_file) = resolve_module_file(&module_path, &roots)? {
                         queue.push_back(dep_file);
                     }
                 }
@@ -203,9 +203,9 @@ pub fn assemble_program_with_materializer(
             .iter()
             .map(|(path, source)| {
                 let path_key = path.canonicalize().unwrap_or_else(|_| path.clone());
-                Ok(UnitBuildInput { path: path.clone(), is_entry: path_key == entry_key, source: source.clone() })
+                UnitBuildInput { path: path.clone(), is_entry: path_key == entry_key, source: source.clone() }
             })
-            .collect::<Result<Vec<_>, _>>()?
+            .collect()
     } else {
         discovered
             .iter()

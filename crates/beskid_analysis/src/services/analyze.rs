@@ -110,13 +110,25 @@ pub fn analyze_source_with_compilation_context(
     source: &str,
     ctx: &ProjectSessionHandle,
 ) -> Result<Vec<SemanticDiagnostic>> {
+    analyze_source_in_session(path, source, ctx, None)
+}
+
+/// Project-aware analysis of `source` in `ctx`. Projects whose closure depends on a native Mod
+/// need the producer-issued `mod_invoker`; without one preparation fails closed.
+fn analyze_source_in_session(
+    path: &Path,
+    source: &str,
+    ctx: &ProjectSessionHandle,
+    mod_invoker: Option<std::sync::Arc<dyn crate::mod_host::ContractInvoker>>,
+) -> Result<Vec<SemanticDiagnostic>> {
     let Some(plan) = ctx.compile_plan.clone() else {
         return analyze_program(path, source);
     };
 
     let resolved = resolved_input_from_plan(path.to_path_buf(), source.to_string(), plan.clone(), None, None);
 
-    let prepare_options = PrepareOptions { mod_invoker: None,
+    let prepare_options = PrepareOptions {
+        mod_invoker,
         front_end: FrontEndOptions {
             with_semantic_diagnostics: true,
             module_level_meta_items_allowed: Some(ctx.module_level_meta_items_allowed()),
@@ -149,7 +161,7 @@ pub fn analyze_source_in_project_with_options(
     }
 
     match ProjectSessionHandle::try_for_analysis_path_with_graph_options(path, options.workspace_member, graph_opts) {
-        Some(ctx) => analyze_source_with_compilation_context(path, source, &ctx),
+        Some(ctx) => analyze_source_in_session(path, source, &ctx, options.mod_invoker),
         None => analyze_program(path, source),
     }
 }

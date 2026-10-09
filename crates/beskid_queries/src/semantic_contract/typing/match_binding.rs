@@ -84,7 +84,15 @@ pub(in crate::semantic_contract) fn pattern_binding_fact_in_environment(
     }
     let outer_match = AstNodeKey { node: outer_match, ..key };
     let query = match enclosing {
-        Some(enclosing) => enum_match_specialization(db, outer_match, enclosing.clone()),
+        // The specialization materializes only the scrutinee shapes that can name an enclosing
+        // generic (an explicitly typed local or a nested pattern binding). Any other shape (a
+        // call or projected path) proves its applied enum through its own source identity, so
+        // the target-neutral fact is the exact authority for it, as `enum_match_in_context` in
+        // codegen already orders them.
+        Some(enclosing) => match enum_match_specialization(db, outer_match, enclosing.clone()) {
+            Ok(None) => enum_match(db, outer_match),
+            specialized => specialized,
+        },
         None => enum_match(db, outer_match),
     };
     let fact = match query {

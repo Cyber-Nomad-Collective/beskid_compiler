@@ -153,6 +153,9 @@ impl SemanticIssueKind {
             Self::ResolvePrivateItemInModule { module_path, name } => {
                 format!("private item `{name}` cannot be accessed from module `{module_path}`")
             }
+            Self::ResolveAmbiguousModulePath { path, candidates } => {
+                format!("ambiguous module path `{path}`: {candidates} assembled modules declare it")
+            }
             Self::ResolveShadowedLocal { name, .. } => format!("shadowed local `{name}`"),
             Self::MissingImport { name, module_path } => {
                 format!("unresolved name `{name}` — did you mean to import `{module_path}::{name}`?")

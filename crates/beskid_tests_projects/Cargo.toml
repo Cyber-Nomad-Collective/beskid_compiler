@@ -18,6 +18,7 @@ beskid_pipeline = { path = "../beskid_pipeline" }
 beskid_queries = { path = "../beskid_queries" }
 beskid_template = { workspace = true }
 beskid_tests_support = { path = "../beskid_tests_support" }
+beskid_tests_mod_host = { path = "../beskid_tests_mod_host" }
 tempfile = "3"
 serde_json = "1"
 zip = "2"

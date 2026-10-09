@@ -5,7 +5,8 @@
 //! reuses an artifact that the CLI cached or that the toolchain shipped with its Corelib bundle,
 //! and only when producer-side cache qualification proves the complete key tuple current
 //! (`beskid_aot::qualify_cached_mod_artifact`). The Mod host executable is the installed `beskid`
-//! CLI: it produced the artifact and it serves `beskid dev native-mod-worker`. When no current
+//! CLI unless the consumer selects another one ([`ModHostSelection`]): it produced the artifact and
+//! it serves `beskid dev native-mod-worker`. When no current
 //! artifact exists the consumer fails with the exact command that produces one; it never skips a
 //! Mod silently.
 
@@ -43,13 +44,69 @@ pub fn installed_mod_host_executable() -> Result<PathBuf> {
         })
 }
 
-/// Build a qualified Mod invoker for `plan` from cached or toolchain-shipped artifacts, using the
-/// installed Mod host executable. `Ok(None)` when the plan has no Mod dependency.
-pub fn installed_cached_mod_invoker(plan: &CompilePlan) -> Result<Option<Arc<dyn ContractInvoker>>> {
-    if !has_mod_dependency(plan)? {
-        return Ok(None);
+/// The Mod host a non-building consumer runs native Mods in: the executable that produced the
+/// artifacts and serves `beskid dev native-mod-worker`.
+///
+/// The default selection is the installed toolchain's CLI ([`installed_mod_host_executable`]). An
+/// explicit selection (an editor setting, in the manner of rust-analyzer's `procMacro.server`)
+/// names another executable; it is validated when it is made and never bypasses artifact
+/// qualification. The runtime kit stays the one the process resolves
+/// (`beskid_abi::runtime_kit::installed_runtime_prefix`), because Mod loading reads it there too.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ModHostSelection {
+    executable: Option<PathBuf>,
+}
+
+impl ModHostSelection {
+    /// The installed toolchain's Mod host.
+    pub fn installed() -> Self {
+        Self::default()
     }
-    cached_mod_invoker_for_plan(plan, &installed_mod_host_executable()?)
+
+    /// An explicit Mod host: `executable` must be an absolute path to an existing executable file.
+    pub fn explicit(executable: &Path) -> Result<Self> {
+        Ok(Self { executable: Some(validated_mod_host_executable(executable)?) })
+    }
+
+    /// The explicit Mod host executable, if any.
+    pub fn executable(&self) -> Option<&Path> {
+        self.executable.as_deref()
+    }
+
+    /// Build a qualified Mod invoker for `plan` from cached or toolchain-shipped artifacts produced
+    /// by this Mod host. `Ok(None)` when the plan has no Mod dependency; the installed host is
+    /// located only when a Mod must run.
+    pub fn cached_mod_invoker(&self, plan: &CompilePlan) -> Result<Option<Arc<dyn ContractInvoker>>> {
+        if !has_mod_dependency(plan)? {
+            return Ok(None);
+        }
+        match &self.executable {
+            Some(executable) => qualified_mod_invoker(plan, executable),
+            None => qualified_mod_invoker(plan, &installed_mod_host_executable()?),
+        }
+    }
+}
+
+/// Canonicalize `path` and require an executable regular file.
+fn validated_mod_host_executable(path: &Path) -> Result<PathBuf> {
+    if !path.is_absolute() {
+        bail!("native Mod host executable {} is not an absolute path", path.display());
+    }
+    let canonical =
+        path.canonicalize().with_context(|| format!("resolve native Mod host executable {}", path.display()))?;
+    let metadata = std::fs::metadata(&canonical)
+        .with_context(|| format!("inspect native Mod host executable {}", canonical.display()))?;
+    if !metadata.is_file() {
+        bail!("native Mod host {} is not a file", canonical.display());
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if metadata.permissions().mode() & 0o111 == 0 {
+            bail!("native Mod host {} is not executable", canonical.display());
+        }
+    }
+    Ok(canonical)
 }
 
 /// Build a qualified Mod invoker for every Mod dependency of `plan` from current cached or
@@ -59,6 +116,13 @@ pub fn cached_mod_invoker_for_plan(
     plan: &CompilePlan,
     mod_host_executable: &Path,
 ) -> Result<Option<Arc<dyn ContractInvoker>>> {
+    if !has_mod_dependency(plan)? {
+        return Ok(None);
+    }
+    qualified_mod_invoker(plan, mod_host_executable)
+}
+
+fn qualified_mod_invoker(plan: &CompilePlan, mod_host_executable: &Path) -> Result<Option<Arc<dyn ContractInvoker>>> {
     let target = beskid_abi::runtime_kit::host_runtime_target()
         .map_err(|error| anyhow!("native Mod host target: {error}"))?;
     let prefix = beskid_abi::runtime_kit::installed_runtime_prefix()?;

@@ -10,6 +10,7 @@ use tower_lsp_server::ls_types::Uri;
 use crate::{
     diagnostics::{
         collect_syntax_diagnostics, prepare_project_diagnostics_from_assembled, prepare_project_syntax_facts,
+        project_preparation_failure,
     },
     manifest_uri::{is_manifest_uri, is_standalone_bsol_uri},
     session::{
@@ -93,6 +94,7 @@ pub(super) async fn build_full_diagnostic_facts(
             .collect::<Vec<_>>()
     };
     let project_root = plan.project_root.clone();
+    let mod_host = state.read().await.mod_host.clone();
     let options = PrepareOptions { mod_invoker: None,
         front_end: FrontEndOptions {
             assembly_recovery: beskid_analysis::projects::AssemblyRecoveryPolicy::EditorRetainRecovered,
@@ -108,24 +110,38 @@ pub(super) async fn build_full_diagnostic_facts(
             db.ensure_file_text(buffer_path, buffer_text);
         }
         db.ensure_file_text(path, text.to_string());
-        beskid_queries::assemble_resolved_input_with_db(db, &resolved, &options).ok()
+        beskid_queries::assemble_resolved_input_with_db(db, &resolved, &options)
     })
     .await;
-    let Some(assembled) = assembled else {
-        return collect_syntax_diagnostics_for_state(state, uri, text, None).await;
+    let assembled = match assembled {
+        Ok(assembled) => assembled,
+        Err(error) => return preparation_failure_facts(uri, text, &error),
     };
     let prepared = tokio::task::spawn_blocking(move || {
-        prepare_project_diagnostics_from_assembled(&assembled, DependencyTypingPolicy::FullClosure)
+        prepare_project_diagnostics_from_assembled(&assembled, DependencyTypingPolicy::FullClosure, &mod_host)
             .map(|prepared| (prepared.diagnostics, prepared.fixes))
-            .ok()
     })
     .await
-    .ok()
-    .flatten();
+    .map_err(|error| anyhow::anyhow!("project diagnostics task failed: {error}"))
+    .and_then(|prepared| prepared);
     match prepared {
-        Some(facts) => facts,
-        None => collect_syntax_diagnostics_for_state(state, uri, text, None).await,
+        Ok(facts) => facts,
+        Err(error) => preparation_failure_facts(uri, text, &error),
     }
+}
+
+/// Structural facts for the current buffer plus a visible error fact naming why project
+/// preparation failed. A failed preparation is never rerun through another path and never
+/// silently degrades to structural-only facts.
+fn preparation_failure_facts(
+    uri: &Uri,
+    text: &str,
+    error: &anyhow::Error,
+) -> (Vec<crate::session::store::SyntaxDiagnostic>, Vec<beskid_analysis::SyntaxFix>) {
+    tracing::warn!(uri = %uri.as_str(), "project preparation failed: {error:#}");
+    let (mut diagnostics, _fixes) = collect_syntax_diagnostics(None, uri, text, None);
+    diagnostics.push(project_preparation_failure(error));
+    (diagnostics, Vec::new())
 }
 
 use super::{
@@ -222,6 +238,7 @@ async fn build_syntax_facts_with_policy_after_startup(
             .collect::<Vec<_>>()
     };
     let project_root = plan.project_root.clone();
+    let mod_host = state.read().await.mod_host.clone();
     let resolved_for_prepare = resolved.clone();
     let path_for_prepare = path.clone();
     let text_for_prepare = text.to_string();
@@ -246,7 +263,7 @@ async fn build_syntax_facts_with_policy_after_startup(
                 dependency_typing,
                 native_mod_adapter_sources: false,
             };
-            let prepared = prepare_project_syntax_facts(db, &resolved_for_prepare, dependency_typing).ok()?;
+            let prepared = prepare_project_syntax_facts(db, &resolved_for_prepare, dependency_typing, &mod_host)?;
             // Resolve registry-backed identity immediately, without waiting for the
             // full executable dependency closure, against the same post-mod-rewrite
             // assembly that owns the generated syntax facts.
@@ -257,19 +274,20 @@ async fn build_syntax_facts_with_policy_after_startup(
             let _ = beskid_queries::entry_resolution_with_db(db, &resolved_generation, &options);
             prepared
         } else {
-            prepare_project_syntax_facts(db, &resolved_for_prepare, dependency_typing).ok()?
+            prepare_project_syntax_facts(db, &resolved_for_prepare, dependency_typing, &mod_host)?
         };
         let mut facts = syntax_facts_for_assembly(db, &resolved_for_prepare, Arc::new(prepared.assembly));
         facts.diagnostics = prepared.diagnostics;
         facts.fixes = prepared.fixes;
-        Some(facts)
+        anyhow::Ok(facts)
     })
     .await;
-    let mut facts = if let Some(facts) = prepared_facts {
-        facts
-    } else {
-        let (diagnostics, fixes) = fallback_diagnostics(state, uri, text, Some(&session), fallback).await;
-        SyntaxFacts { diagnostics, fixes, ..SyntaxFacts::default() }
+    let mut facts = match prepared_facts {
+        Ok(facts) => facts,
+        Err(error) => {
+            let (diagnostics, fixes) = preparation_failure_facts(uri, text, &error);
+            SyntaxFacts { diagnostics, fixes, ..SyntaxFacts::default() }
+        }
     };
     facts.documentation = documentation;
     facts.symbols = current_symbols;

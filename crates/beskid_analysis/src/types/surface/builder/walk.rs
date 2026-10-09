@@ -2,7 +2,8 @@ use std::collections::{HashMap, HashSet};
 
 use crate::resolve::collect::use_imported_name;
 use crate::resolve::resolver::path_segments;
-use crate::syntax::{ContractNode, Node, Spanned};
+use crate::resolve::ItemId;
+use crate::syntax::{ContractNode, FunctionDefinition, Node, Spanned};
 use crate::types::TypeInfo;
 
 use super::super::model::FunctionBound;
@@ -76,27 +77,51 @@ impl<'a> TypeSurfaceBuilder<'a> {
         self.module_import_scopes.push(imports);
     }
 
+    /// Where-bound provenance of one free function: a single-segment bound names a contract
+    /// visible from the function's declaring module; a qualified bound names it by path.
+    fn function_where_bounds(&self, item_id: ItemId, def: &FunctionDefinition) -> Vec<FunctionBound> {
+        def.where_bounds
+            .iter()
+            .map(|bound| {
+                let segments = path_segments(&bound.contract);
+                let contract_name = segments.join(".");
+                let contract = if segments.len() == 1 {
+                    self.visible_contract_in_owner_scope(item_id, &segments[0])
+                } else {
+                    self.item_id_for_type_path(&bound.contract)
+                }
+                .filter(|item| self.contract_visible_to_owner(item_id, *item));
+                FunctionBound { parameter: bound.parameter.node.name.clone(), contract_name, contract }
+            })
+            .collect()
+    }
+
+    /// Free-function where-bounds of `items` (and their inline modules) without building the
+    /// rest of a unit surface.
+    pub(in crate::types::surface) fn collect_function_bounds(
+        &self,
+        items: &[Spanned<Node>],
+        bounds: &mut HashMap<ItemId, Vec<FunctionBound>>,
+    ) {
+        for item in items {
+            match &item.node {
+                Node::Function(def) => {
+                    if let Some(item_id) = self.item_id_for_span(item.span) {
+                        bounds.insert(item_id, self.function_where_bounds(item_id, &def.node));
+                    }
+                }
+                Node::InlineModule(module) => self.collect_function_bounds(&module.node.items, bounds),
+                _ => {}
+            }
+        }
+    }
+
     pub(super) fn walk_item(&mut self, item: &Spanned<Node>) {
         match &item.node {
             Node::Function(def) => {
                 self.seed_generic_item(item.span, &def.node.generics);
                 if let Some(item_id) = self.item_id_for_span(item.span) {
-                    let bounds = def
-                        .node
-                        .where_bounds
-                        .iter()
-                        .map(|bound| {
-                            let segments = path_segments(&bound.contract);
-                            let contract_name = segments.join(".");
-                            let contract = if segments.len() == 1 {
-                                self.visible_contract_in_owner_scope(item_id, &segments[0])
-                            } else {
-                                self.item_id_for_type_path(&bound.contract)
-                            }
-                            .filter(|item| self.contract_visible_to_owner(item_id, *item));
-                            FunctionBound { parameter: bound.parameter.node.name.clone(), contract_name, contract }
-                        })
-                        .collect::<Vec<_>>();
+                    let bounds = self.function_where_bounds(item_id, &def.node);
                     self.surface.function_bounds.insert(item_id, bounds);
                 }
                 self.register_foreign_function(item.span, &def.node);

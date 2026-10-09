@@ -22,11 +22,12 @@ pub(crate) fn run_analyzers(
             .map(|host_input| ModInvocationContext::build(host_input, &[]))
             .unwrap_or_else(ModInvocationContext::empty);
 
-        for registration in session.registrations() {
+        for (package_id, registration) in session.attributed_registrations() {
             if !registration.contract_id.ends_with(".Analyzer") {
                 continue;
             }
-            ensure_snapshot_for_analyzer(snapshot, registration)?;
+            ensure_snapshot_for_analyzer(snapshot, registration)
+                .map_err(|err| anyhow::anyhow!(err.attributed_to(package_id).to_string()))?;
             let outcome = invoker
                 .invoke_analyzer(
                     registration,
@@ -34,7 +35,7 @@ pub(crate) fn run_analyzers(
                     snapshot,
                     input.and_then(|input| input.semantic_authority),
                 )
-                .map_err(|err| anyhow::anyhow!(err.to_string()))?;
+                .map_err(|err| anyhow::anyhow!(err.attributed_to(package_id).to_string()))?;
             outcomes.push(outcome);
         }
 
@@ -48,7 +49,7 @@ fn ensure_snapshot_for_analyzer(
 ) -> Result<(), ContractInvocationError> {
     let Some(snapshot) = snapshot else {
         return Err(ContractInvocationError {
-            package_id: registration.type_id.clone(),
+            package_id: String::new(),
             contract_id: registration.contract_id.clone(),
             type_id: registration.type_id.clone(),
             message: "semantic snapshot not available for Analyzer (requires composition stage)".to_owned(),
@@ -56,7 +57,7 @@ fn ensure_snapshot_for_analyzer(
     };
     if !snapshot.satisfies_minimum("composition") {
         return Err(ContractInvocationError {
-            package_id: registration.type_id.clone(),
+            package_id: String::new(),
             contract_id: registration.contract_id.clone(),
             type_id: registration.type_id.clone(),
             message: format!(

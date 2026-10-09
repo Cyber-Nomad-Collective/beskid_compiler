@@ -222,6 +222,8 @@ fn run_in_private_prefix(name: &str, staging: DriverStaging, body: impl FnOnce(&
         .env(GATE_ENV, staged.path().join("borrow.gate"))
         .env(beskid_abi::runtime_kit::ENV_CORELIB_ROOT, fs::canonicalize(corelib).unwrap())
         .env_remove(beskid_abi::runtime_kit::ENV_RUNTIME_PREFIX)
+        // Native Mods are qualified and loaded for the profile of the kit the child runs on.
+        .env("BESKID_RUNTIME_KIT_PROFILE", beskid_abi::runtime_kit::profile_directory_name(qualified_profile()))
         .output()
         .unwrap_or_else(|error| panic!("spawn private-prefix child {}: {error}", executable.display()));
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -323,9 +325,12 @@ fn with_owned_glue_input<T>(
     )?;
     let plan = resolved.compile_plan.as_ref().ok_or_else(|| anyhow::anyhow!("owned fixture has no CompilePlan"))?;
     anyhow::ensure!(plan.project_name == "manual_owned" && plan.target.name == "ManualOwned");
+    // Corelib depends on the native Serialization Mod: qualify it against this private prefix's kit.
+    let mod_invoker = beskid_tests_mod_host::installed_runtime_mod_invoker(plan)?;
     let front = beskid_queries::prepare_compilation(
         &resolved,
         beskid_analysis::services::PrepareOptions {
+            mod_invoker: Some(mod_invoker),
             front_end: beskid_analysis::services::FrontEndOptions {
                 with_semantic_diagnostics: true,
                 ..Default::default()

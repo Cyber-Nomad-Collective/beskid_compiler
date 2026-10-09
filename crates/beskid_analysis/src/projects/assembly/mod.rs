@@ -13,7 +13,10 @@ use std::{
     sync::Arc,
 };
 
-pub use discovery::{module_path_exists_on_disk, module_path_to_relative_path, resolve_module_file};
+pub use discovery::{
+    AmbiguousModulePath, ModulePathProvider, module_path_exists_on_disk, module_path_to_relative_path,
+    resolve_module_file,
+};
 pub(crate) use loader::assemble_program;
 pub use loader::{
     AssemblyError, UnitMaterializer, assemble_program_with_materializer, assembly_options_for_plan,

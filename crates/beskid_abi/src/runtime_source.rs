@@ -19,7 +19,8 @@ pub use corelib_services::{
     CorelibServiceImportPreflightError, CorelibServiceProof, CorelibServiceSourceDescriptor,
     CorelibServiceSourceIdentity, CorelibServiceValueDispatch, canonical_corelib_service_abi,
     canonical_corelib_service_abi_for_adapter, canonical_corelib_service_capability,
-    canonical_corelib_service_source_path, canonical_corelib_service_value_dispatch, compiler_corelib_package_source_root,
+    canonical_corelib_service_source_path, canonical_corelib_service_value_dispatch, compiler_corelib_checkout_root,
+    compiler_corelib_package_source_root,
     canonical_corelib_syscall_service_capability, corelib_service_source_descriptor, corelib_service_source_identity,
     corelib_source_locations_match, preflight_corelib_service_declaration, preflight_corelib_service_import,
 };

@@ -1872,3 +1872,76 @@ fn native_mod_adapter_seeding_with_two_compiler_sdk_roots_fails_closed() {
         .expect_err("an ambiguous compiler SDK root must fail");
     assert!(matches!(error, AssemblyError::NativeModAdapterSource { .. }), "unexpected error: {error}");
 }
+
+fn two_package_closure_plan(label: &str, entry: &str) -> (CompilePlan, PathBuf, FixtureDirGuard) {
+    let project_root = temp_project_root(label);
+    let guard = FixtureDirGuard(project_root.clone());
+    let source_root = project_root.join("src");
+    write_bd(&source_root, "Entry.bd", entry);
+    let dependency = |name: &str| {
+        let dep_root = project_root.join("deps").join(name);
+        ResolvedDependencyProject {
+            dependency_name: name.to_string(),
+            manifest_path: dep_root.join(format!("{name}.bproj")),
+            project_root: dep_root.clone(),
+            project_name: name.to_string(),
+            source_root: dep_root.join("src"),
+        }
+    };
+    let alpha = dependency("alpha");
+    let beta = dependency("beta");
+    write_bd(&alpha.source_root, "Shared/Codec.bd", "pub fn Encode() { }");
+    write_bd(&beta.source_root, "Shared/Codec/mod.bd", "pub fn Encode() { }");
+    write_bd(&alpha.source_root, "Alpha/Only.bd", "pub fn Run() { }");
+    let plan = CompilePlan {
+        source_root: source_root.clone(),
+        project_root: project_root.clone(),
+        manifest_path: project_root.join("project.bproj"),
+        project_name: "fixture".to_string(),
+        target: Target { name: "Entry".to_string(), kind: TargetKind::Lib, entry: Some("Entry.bd".to_string()) },
+        dependency_projects: vec![alpha, beta],
+        unresolved_dependencies: Vec::new(),
+        has_core_dependency: false,
+    };
+    (plan, source_root.join("Entry.bd"), guard)
+}
+
+#[test]
+fn import_closure_rejects_a_module_path_provided_by_two_packages() {
+    let (plan, entry, _guard) =
+        two_package_closure_plan("ambiguous_use", "use Shared.Codec;\npub fn Entry() { Shared.Codec.Encode(); }");
+    let error = assemble_program(&plan, None, &entry, None, &assembly_options_for_plan(&plan), None)
+        .expect_err("a module path provided by two packages must fail closed");
+    let AssemblyError::AmbiguousModulePath(ambiguity) = &error else {
+        panic!("unexpected error: {error}");
+    };
+    assert_eq!(ambiguity.path, "Shared::Codec");
+    let packages: Vec<_> = ambiguity.providers.iter().map(|provider| provider.package.as_deref()).collect();
+    assert_eq!(packages, vec![Some("alpha"), Some("beta")], "providers follow effective root order");
+    assert!(ambiguity.providers[0].file.ends_with("Shared/Codec.bd"));
+    assert!(ambiguity.providers[1].file.ends_with("Shared/Codec/mod.bd"));
+    let message = error.to_string();
+    assert!(message.contains("E1104") && message.contains("`alpha`") && message.contains("`beta`"), "{message}");
+}
+
+#[test]
+fn import_closure_rejects_an_ambiguous_fully_qualified_reference_without_use() {
+    let (plan, entry, _guard) =
+        two_package_closure_plan("ambiguous_qualified", "pub fn Entry() { Shared.Codec.Encode(); }");
+    let error = assemble_program(&plan, None, &entry, None, &assembly_options_for_plan(&plan), None)
+        .expect_err("a qualified reference to an ambiguous module path must fail closed");
+    assert!(
+        matches!(&error, AssemblyError::AmbiguousModulePath(ambiguity) if ambiguity.path == "Shared::Codec"),
+        "{error}"
+    );
+}
+
+#[test]
+fn import_closure_resolves_a_module_path_provided_by_one_package() {
+    let (plan, entry, _guard) =
+        two_package_closure_plan("unambiguous_use", "use Alpha.Only;\npub fn Entry() { Alpha.Only.Run(); }");
+    let assembly = assemble_program(&plan, None, &entry, None, &assembly_options_for_plan(&plan), None)
+        .expect("a module path provided by exactly one package resolves");
+    assert!(assembly.units.iter().any(|unit| unit.path.ends_with("Alpha/Only.bd")));
+    assert!(!assembly.units.iter().any(|unit| unit.path.ends_with("Shared/Codec.bd")));
+}

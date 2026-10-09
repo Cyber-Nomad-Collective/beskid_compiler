@@ -321,7 +321,7 @@ pub fn build_mod_artifact(req: ModArtifactBuildRequest) -> AotResult<QualifiedNa
     let compiler =
         LinkToolReceipt { sha256: native_mod_file_sha256(&compiler_path).map_err(invalid)?, executable: compiler_path };
     let build_tools = vec![
-        stage_tool(dir, "compiler", &compiler, &req.control)?,
+        stage_compiler(dir, &compiler, &req.compiler_version)?,
         stage_tool(dir, "adapter-compiler", &adapter_compiler, &req.control)?,
         stage_tool(dir, "linker", &linker, &req.control)?,
     ];
@@ -468,6 +468,36 @@ fn stage_sources(req: &ModArtifactBuildRequest, dir: &Path) -> AotResult<BTreeMa
         )?;
     }
     Ok(out)
+}
+/// Capture the producing compiler's identity: the exact digest of the running executable and the
+/// version this process reports for itself.
+///
+/// The producer is the current process, so its version is known in process. Spawning
+/// `current_exe --version` would execute whatever host embeds the producer (a test harness or an
+/// editor service) with a flag that only the CLI defines, and an external probe of the running
+/// image proves nothing that its digest does not. External tools are still probed below.
+fn stage_compiler(dir: &Path, receipt: &LinkToolReceipt, compiler_version: &str) -> AotResult<GlueProviderToolV1> {
+    if compiler_version.trim().is_empty() || compiler_version.len() > 1024 {
+        return Err(invalid("Mod compiler version identity is empty or unbounded"));
+    }
+    let binary = fs::read(&receipt.executable).map_err(|error| io(&receipt.executable, error))?;
+    if format!("{:x}", Sha256::digest(&binary)) != receipt.sha256 {
+        return Err(invalid("Mod compiler executable changed during the build"));
+    }
+    // Same framing as an external probe: length-prefixed stdout, then an empty stderr.
+    let stdout = format!("beskid {compiler_version}\n").into_bytes();
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(&(stdout.len() as u64).to_be_bytes());
+    bytes.extend_from_slice(&stdout);
+    bytes.extend_from_slice(&0u64.to_be_bytes());
+    let mut evidence = BTreeMap::new();
+    write_evidence(dir, "tools/compiler-version", &bytes, &mut evidence)?;
+    write_evidence(dir, "tools/compiler-executable", &binary, &mut evidence)?;
+    Ok(GlueProviderToolV1 {
+        role: NATIVE_MOD_COMPILER_TOOL_ROLE.into(),
+        executable_sha256: receipt.sha256.clone(),
+        version_output_sha256: format!("{:x}", Sha256::digest(bytes)),
+    })
 }
 fn stage_tool(
     dir: &Path,

@@ -39,6 +39,13 @@ pub(crate) struct LoadedModArtifact {
     pub(crate) registrations: Vec<ContractRegistration>,
 }
 
+impl LoadedModArtifact {
+    /// Package id of the Mod project that declared this artifact's registrations.
+    pub(crate) fn package_id(&self) -> &str {
+        &self.discovered.project_name
+    }
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct ModHostSession {
     loaded: Vec<LoadedModArtifact>,
@@ -60,6 +67,13 @@ impl ModHostSession {
 
     pub fn registrations(&self) -> impl Iterator<Item = &ContractRegistration> {
         self.loaded.iter().flat_map(|artifact| artifact.registrations.iter())
+    }
+
+    /// Every registration paired with the package id of the Mod that declared it.
+    pub(crate) fn attributed_registrations(&self) -> impl Iterator<Item = (&str, &ContractRegistration)> {
+        self.loaded.iter().flat_map(|artifact| {
+            artifact.registrations.iter().map(move |registration| (artifact.package_id(), registration))
+        })
     }
 
     pub fn loaded_descriptor_count(&self) -> usize {

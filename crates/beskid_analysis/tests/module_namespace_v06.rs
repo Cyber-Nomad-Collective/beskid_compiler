@@ -50,12 +50,13 @@ fn core_graph_keeps_host_unprefixed_and_corelib_package_native() {
         if actual != expected { failures.push(format!("namespace: expected {expected:?}, got {actual:?}")); }
     }
     match resolve_module_file("Core.Output", &roots) {
-        Some(path) if path.starts_with(corelib.join("packages/foundation")) => {}
+        Ok(Some(path)) if path.starts_with(corelib.join("packages/foundation")) => {}
         other => failures.push(format!("Core.Output must resolve to the foundation package, got {other:?}")),
     }
     for retired in ["Std.Core.Output", "Std.Testing.Assert", "Std::Core::Output"] {
-        if let Some(path) = resolve_module_file(retired, &roots) {
-            failures.push(format!("`{retired}` must not resolve: {}", path.display()));
+        match resolve_module_file(retired, &roots) {
+            Ok(None) => {}
+            other => failures.push(format!("`{retired}` must not resolve: {other:?}")),
         }
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));

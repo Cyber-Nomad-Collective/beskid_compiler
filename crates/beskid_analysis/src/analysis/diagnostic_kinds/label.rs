@@ -57,6 +57,7 @@ impl SemanticIssueKind {
             Self::ResolveUnknownTypeInModule { .. } => "unknown type in module".to_string(),
             Self::ResolveInvalidConformanceTarget { .. } => "invalid conformance target".to_string(),
             Self::ResolvePrivateItemInModule { .. } => "private item access".to_string(),
+            Self::ResolveAmbiguousModulePath { .. } => "ambiguous module path".to_string(),
             Self::ResolvePrivateRuntimeBuiltin { .. } => "private runtime builtin".to_string(),
             Self::ResolveShadowedLocal { .. } => "shadowed local".to_string(),
             Self::MissingImport { .. } => "missing import".to_string(),

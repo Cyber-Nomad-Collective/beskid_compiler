@@ -91,10 +91,32 @@ fn json_rpc_completion_and_hover_use_dependency_syntax_facts() {
     // replacing whatever is there. Give it a disposable root so an inherited
     // `BESKID_CORELIB_ROOT` (for example the checked-in `corelib/` source tree) is never
     // overwritten in place, and so the test uses exactly the bundle this binary embeds.
-    let corelib_root = tempfile::tempdir_in(&project_parent).expect("temporary corelib root");
+    let corelib_dir = tempfile::tempdir_in(&project_parent).expect("temporary corelib root");
+    let corelib_root = corelib_dir.path().canonicalize().expect("canonical corelib root");
+    // Preparing a Corelib project runs the native Serialization Mod in a Mod host. The server
+    // never builds Mods and this test binary has no installed `beskid` next to it, so the
+    // workspace CLI materializes the same embedded bundle into the disposable root, provisions
+    // its Mods against the shared debug runtime kit, and is selected as the server's Mod host.
+    let mod_host = beskid_tests_mod_host::provisioned_cli().expect("workspace Mod host CLI");
+    let runtime_prefix = beskid_tests_mod_host::shared_runtime_prefix().expect("shared runtime kit");
+    let materialized = Command::new(&mod_host)
+        .args(["dev", "corelib", "--output"])
+        .arg(&corelib_root)
+        .env("BESKID_CORELIB_ROOT", &corelib_root)
+        .output()
+        .expect("run `beskid dev corelib`");
+    assert!(
+        materialized.status.success(),
+        "materialize the embedded Corelib bundle\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&materialized.stdout),
+        String::from_utf8_lossy(&materialized.stderr)
+    );
+    beskid_tests_mod_host::provision_corelib_mods(&corelib_root).expect("provision Corelib native Mods");
     let mut child = Command::new(env!("CARGO_BIN_EXE_beskid_lsp"))
         .current_dir(compiler_root)
-        .env("BESKID_CORELIB_ROOT", corelib_root.path())
+        .env("BESKID_CORELIB_ROOT", &corelib_root)
+        .env("BESKID_RUNTIME_PREFIX", &runtime_prefix)
+        .env("BESKID_RUNTIME_KIT_PROFILE", "debug")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -135,7 +157,8 @@ fn json_rpc_completion_and_hover_use_dependency_syntax_facts() {
                 "processId": null,
                 "rootUri": project_uri,
                 "workspaceFolders": [{"uri": project_uri, "name": "ProtocolSmoke"}],
-                "capabilities": {}
+                "capabilities": {},
+                "initializationOptions": {"modHost": {"path": mod_host}}
             }
         }),
     );

@@ -40,6 +40,9 @@ pub enum AssemblyError {
     GlueOwners { manifest_path: PathBuf, message: String },
     #[error("assembly exceeded max_units ({max})")]
     MaxUnits { max: usize },
+    /// A module path the import closure needs is provided by more than one package (E1104).
+    #[error("{0}")]
+    AmbiguousModulePath(#[from] super::super::discovery::AmbiguousModulePath),
     #[error("native Mod build requires the compiler SDK adapter source {path}: {message}")]
     NativeModAdapterSource { path: PathBuf, message: String },
 }

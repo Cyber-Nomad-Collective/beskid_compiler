@@ -87,7 +87,11 @@ impl<'a> PrepWalker<'a> {
     }
 
     pub(super) fn record_call_kind(&mut self, node_id: AstNodeId, kind: CallLoweringKind) {
-        self.prep.call_kinds.insert(node_id, kind);
+        // Mirrors the checker's `record_call_kind`: an unset node id identifies no call, and
+        // keying it would collapse every unidentified call onto one bogus entry.
+        if node_id.is_valid() {
+            self.prep.call_kinds.insert(node_id, kind);
+        }
     }
 
     pub(super) fn record_numeric_cast(&mut self, node_id: AstNodeId, span: SpanInfo, expected: TypeId, actual: TypeId) {

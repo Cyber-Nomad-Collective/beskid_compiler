@@ -46,7 +46,7 @@ pub(crate) fn run_generators(
                 }
                 let outcome = invoker
                     .invoke_generator(registration, &generation_request, input.semantic_authority)
-                    .map_err(|err| anyhow::anyhow!(err.to_string()))?;
+                    .map_err(|err| anyhow::anyhow!(err.attributed_to(artifact.package_id()).to_string()))?;
                 typed_items.extend(outcome.typed_items.iter().cloned());
                 outcomes.push(outcome);
                 registrations.push(registration.clone());

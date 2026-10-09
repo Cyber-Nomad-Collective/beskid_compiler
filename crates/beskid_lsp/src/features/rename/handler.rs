@@ -129,6 +129,7 @@ mod tests {
 
     use super::*;
     use crate::session::lifecycle::build_document;
+    use crate::test_mod_host::ProvisionedModHost;
     use crate::workspace_scan::path_to_uri;
 
     fn source() -> &'static str {
@@ -160,9 +161,10 @@ target "App" {
 
     #[tokio::test]
     async fn prepare_rename_for_resolved_symbol_returns_selection() {
-        let state = tokio::sync::RwLock::new(crate::session::store::State::default());
+        let (root, uri) = project_fixture();
+        let mod_host = ProvisionedModHost::for_source(&root.path().join("Src").join("Main.bd"));
+        let state = tokio::sync::RwLock::new(mod_host.state());
         state.read().await.mark_initial_scan_complete();
-        let (_root, uri) = project_fixture();
         let doc = build_document(&state, &uri, 1, source().to_string()).await;
         let offset = source().find("lhs +").expect("lhs");
         let response = handle_prepare_rename(&uri, &doc, offset).expect("prepare rename");
@@ -174,9 +176,10 @@ target "App" {
 
     #[tokio::test]
     async fn rename_updates_definition_and_references() {
-        let state = tokio::sync::RwLock::new(crate::session::store::State::default());
+        let (root, uri) = project_fixture();
+        let mod_host = ProvisionedModHost::for_source(&root.path().join("Src").join("Main.bd"));
+        let state = tokio::sync::RwLock::new(mod_host.state());
         state.read().await.mark_initial_scan_complete();
-        let (_root, uri) = project_fixture();
         let doc = build_document(&state, &uri, 1, source().to_string()).await;
         let position = Position::new(1, 11);
         let edit = handle_rename(&uri, &doc, position, "left").expect("workspace edit");
