@@ -34,8 +34,12 @@ pub(in crate::semantic_contract) fn primitive_numeric_conversion_tracked(
             Ok(None) => return Some(Err(SemanticError::unavailable("primitive_numeric_conversion"))),
             Err(error) => return Some(Err(error)),
         };
+        // Integer sources convert to every primitive target. An `f64` source converts to an
+        // integer target with saturating semantics (NaN gives 0, out-of-range values clamp), or
+        // to `f64` itself.
+        let float_source = from == SemanticTypeId::F64 && (primitive_integer(to) || to == SemanticTypeId::F64);
         Some(
-            primitive_integer(from)
+            (primitive_integer(from) || float_source)
                 .then_some(PrimitiveNumericConversion { from, to })
                 .ok_or_else(|| SemanticError::unavailable("primitive_numeric_conversion")),
         )

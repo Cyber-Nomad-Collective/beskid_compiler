@@ -121,6 +121,24 @@ fn parsed_string_interpolation_coerces_i64_operand() {
 }
 
 #[test]
+fn parsed_f64_to_integer_conversions_saturate() {
+    for (source, expected) in [
+        ("i64 Main(f64 v) { return i64(v); }", "fcvt_to_sint_sat.i64"),
+        ("u32 Main(f64 v) { return u32(v); }", "fcvt_to_uint_sat.i32"),
+        ("u8 Main(f64 v) { return u8(v); }", "umin"),
+    ] {
+        let (input, isa, root) = item_fixture_with_root(source);
+        let item = named_function(&input, root, "Main");
+        let artifact =
+            lower_syntax_program(&input, isa.as_ref(), &[SyntaxModuleItem { key: item, symbol: "Main".into() }])
+                .unwrap_or_else(|error| panic!("{source}: f64 conversion lowers: {error:?}"));
+        let clif = artifact.functions[0].function.display().to_string();
+        assert!(clif.contains(expected), "{source}: expected {expected}: {clif}");
+        assert!(!clif.contains("fcvt_to_sint.") && !clif.contains("fcvt_to_uint."), "{source}: never traps: {clif}");
+    }
+}
+
+#[test]
 fn parsed_string_interpolation_spells_bool_operands() {
     let (input, isa, root) = item_fixture_with_root(r#"string Main(bool flag) { return "flag=${flag}"; }"#);
     let item = named_function(&input, root, "Main");
