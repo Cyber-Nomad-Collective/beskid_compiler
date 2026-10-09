@@ -514,6 +514,7 @@ int64_t str_cmp(void * left, void * right);
 void * str_concat(void * left, void * right);
 size_t str_eq(void * left, void * right);
 void * str_from_bytes_utf8(void * bytes, size_t len);
+void * str_from_f64_bits(int64_t bits);
 void * str_from_i64(int64_t value);
 size_t str_len(void * value);
 void * str_new(void * data, size_t length);

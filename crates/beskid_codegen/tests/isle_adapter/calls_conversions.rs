@@ -168,6 +168,21 @@ fn parsed_string_interpolation_spells_bool_operands() {
 }
 
 #[test]
+fn parsed_string_interpolation_formats_f64_operands_from_their_bits() {
+    let (input, isa, root) = item_fixture_with_root(r#"string Main(f64 value) { return "value=${value}"; }"#);
+    let item = named_function(&input, root, "Main");
+
+    let artifact = lower_syntax_program(&input, isa.as_ref(), &[SyntaxModuleItem { key: item, symbol: "Main".into() }])
+        .expect("f64 interpolation must lower through syntax ISLE string coercion");
+    let clif = artifact.functions[0].function.display().to_string();
+
+    assert!(clif.contains("bitcast.i64"), "the f64 passes to the runtime as its IEEE-754 bits: {clif}");
+    assert!(clif.contains("str_from_f64_bits"), "f64 formats through its own runtime service: {clif}");
+    assert!(!clif.contains("str_from_i64"), "f64 must not format as an integer: {clif}");
+    assert!(clif.contains("str_concat"), "string concatenation dispatch must be imported: {clif}");
+}
+
+#[test]
 fn parsed_pointer_signature_uses_the_target_pointer_type_without_hir() {
     let (input, isa, item) = item_fixture("pointer Echo(pointer value) { return value; }");
 
@@ -364,7 +379,7 @@ fn canonical_foundation_args_module_emits_only_the_authorized_args_imports() {
     imports.sort_unstable();
     assert_eq!(
         imports,
-        vec!["beskid_rt_v5_args_count", "beskid_rt_v5_args_get", "str_cmp", "str_concat", "str_eq", "str_from_i64", "str_new"],
+        vec!["beskid_rt_v5_args_count", "beskid_rt_v5_args_get", "str_cmp", "str_concat", "str_eq", "str_from_f64_bits", "str_from_i64", "str_new"],
         "canonical Core.Args receives its exact ABI-v5 services plus the always-available string baseline"
     );
 }
@@ -493,7 +508,7 @@ fn canonical_foundation_assert_trigger_failure_imports_only_baseline_strings_and
     imports.sort_unstable();
     assert_eq!(
         imports,
-        vec!["beskid_trap_message", "str_cmp", "str_concat", "str_eq", "str_from_i64", "str_new"],
+        vec!["beskid_trap_message", "str_cmp", "str_concat", "str_eq", "str_from_f64_bits", "str_from_i64", "str_new"],
         "canonical Assert may emit the always-admitted string baseline and its reachable panic service, but no other facade service"
     );
     let trigger = artifact
