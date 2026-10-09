@@ -4,6 +4,9 @@
 //! own their canonical persistence implementations. Owners are stable Authelia
 //! subjects (the `Remote-User` claim, or a carried-over `github:<numeric-id>`
 //! from the prior Auth Hub model), never legacy ASP.NET Identity ids.
+// `#[async_trait]` marks its generated boxed futures `#[must_use]`; Rust 1.99 clippy reports
+// that as `double_must_use` inside the macro expansion, not in this crate's code.
+#![allow(clippy::double_must_use)]
 
 mod administration;
 mod api_keys;
