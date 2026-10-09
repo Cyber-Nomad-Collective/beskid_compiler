@@ -61,13 +61,10 @@ impl IsleContext<'_, '_, '_, '_> {
         // has one array parameter, so this import bypasses `import_direct_call`'s scalar-arity
         // check (N scalars vs. one array parameter would otherwise fail it).
         let callee = self.facts.direct_callee(key)?;
+        // The result type is the callee's (specialized) signature, as for any direct call: a
+        // generic nominal result such as `List<T>` has no standalone node ABI.
         let signature = self.facts.call_signature(key)?;
-        let result_type = self.facts.scalar_type(key)?;
-        if signature.params.len() != 1
-            || signature.params[0].value_type != pointer
-            || signature.returns.len() != 1
-            || signature.returns[0].value_type != result_type
-        {
+        if signature.params.len() != 1 || signature.params[0].value_type != pointer || signature.returns.len() != 1 {
             return None;
         }
         let function = match self.call_importer.as_deref_mut()?.import(self.builder, callee.clone(), &signature) {

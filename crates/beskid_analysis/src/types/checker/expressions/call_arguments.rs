@@ -95,6 +95,44 @@ impl<'a> TypeChecker<'a> {
         result
     }
 
+    /// Types each call argument against its parameter. The last parameter of a `bulk` signature
+    /// is `T[]` and takes every trailing argument, zero or more, as a `T`; lowering packs them
+    /// into one array. Reports the mismatch and returns `false` when the argument count does not
+    /// fit.
+    fn type_call_arguments(&mut self, call: &Spanned<CallExpression>, params: &[TypeId], bulk: bool) -> bool {
+        let bulk_element = match (bulk, params.last().and_then(|last| self.type_table.get(*last))) {
+            (true, Some(TypeInfo::Array(element))) => Some(*element),
+            _ => None,
+        };
+        let fixed = params.len() - usize::from(bulk_element.is_some());
+        let count = call.node.args.len();
+        if count < fixed || (bulk_element.is_none() && count != fixed) {
+            self.errors.push(TypeError::CallArityMismatch { span: call.span, expected: fixed, actual: count });
+            return false;
+        }
+        for (index, arg) in call.node.args.iter().enumerate() {
+            let expected = params.get(index).copied().filter(|_| index < fixed).or(bulk_element);
+            if let Some(expected) = expected
+                && let Some(actual) = self.type_argument_with_expected(arg, expected)
+            {
+                self.require_same_type(arg.span, expected, actual);
+            }
+        }
+        true
+    }
+
+    /// For generic inference, folds the trailing arguments of a `bulk` call into one array of the
+    /// first trailing argument's type, so they line up with the declared `T[]` parameter. A call
+    /// without trailing arguments leaves `T` uninferred.
+    fn collapse_bulk_argument_types(&mut self, param_count: usize, mut arg_types: Vec<TypeId>) -> Vec<TypeId> {
+        let fixed = param_count.saturating_sub(1);
+        if let Some(&first) = arg_types.get(fixed) {
+            arg_types.truncate(fixed);
+            arg_types.push(self.type_table.intern(TypeInfo::Array(first)));
+        }
+        arg_types
+    }
+
     pub(in crate::types::checker) fn type_call_expression(&mut self, call: &Spanned<CallExpression>) -> Option<TypeId> {
         if let Some((receiver_source, receiver_type, receiver_item_id, field_type)) =
             self.resolve_event_call_target(&call.node.callee)
@@ -106,19 +144,8 @@ impl<'a> TypeChecker<'a> {
                 return None;
             };
 
-            if call.node.args.len() != params.len() {
-                self.errors.push(TypeError::CallArityMismatch {
-                    span: call.span,
-                    expected: params.len(),
-                    actual: call.node.args.len(),
-                });
+            if !self.type_call_arguments(call, &params, false) {
                 return Some(return_type);
-            }
-
-            for (arg, expected) in call.node.args.iter().zip(params.iter()) {
-                if let Some(actual) = self.type_argument_with_expected(arg, *expected) {
-                    self.require_same_type(arg.span, *expected, actual);
-                }
             }
 
             if self.current_receiver_item_id != Some(receiver_item_id) {
@@ -184,21 +211,8 @@ impl<'a> TypeChecker<'a> {
                         self.errors.push(TypeError::UnknownCallTarget { span: call.node.callee.span });
                         return None;
                     };
-                    let param_types = &signature.params;
-
-                    if call.node.args.len() != param_types.len() {
-                        self.errors.push(TypeError::CallArityMismatch {
-                            span: call.span,
-                            expected: param_types.len(),
-                            actual: call.node.args.len(),
-                        });
+                    if !self.type_call_arguments(call, &signature.params, signature.bulk) {
                         return Some(signature.return_type);
-                    }
-
-                    for (arg, expected) in call.node.args.iter().zip(param_types.iter()) {
-                        if let Some(actual) = self.type_argument_with_expected(arg, *expected) {
-                            self.require_same_type(arg.span, *expected, actual);
-                        }
                     }
                     self.record_call_kind(
                         call.id,
@@ -214,19 +228,8 @@ impl<'a> TypeChecker<'a> {
                     && let Some(signature) =
                         self.contract_signatures.get(&(contract_item_id, method_name.to_string())).cloned()
                 {
-                    if call.node.args.len() != signature.params.len() {
-                        self.errors.push(TypeError::CallArityMismatch {
-                            span: call.span,
-                            expected: signature.params.len(),
-                            actual: call.node.args.len(),
-                        });
+                    if !self.type_call_arguments(call, &signature.params, signature.bulk) {
                         return Some(signature.return_type);
-                    }
-
-                    for (arg, expected) in call.node.args.iter().zip(signature.params.iter()) {
-                        if let Some(actual) = self.type_argument_with_expected(arg, *expected) {
-                            self.require_same_type(arg.span, *expected, actual);
-                        }
                     }
                     self.record_call_kind(
                         call.id,
@@ -248,18 +251,8 @@ impl<'a> TypeChecker<'a> {
                 && let Some(signature) =
                     self.contract_signatures.get(&(contract_item_id, method_name.to_string())).cloned()
             {
-                if call.node.args.len() != signature.params.len() {
-                    self.errors.push(TypeError::CallArityMismatch {
-                        span: call.span,
-                        expected: signature.params.len(),
-                        actual: call.node.args.len(),
-                    });
+                if !self.type_call_arguments(call, &signature.params, signature.bulk) {
                     return Some(signature.return_type);
-                }
-                for (arg, expected) in call.node.args.iter().zip(signature.params.iter()) {
-                    if let Some(actual) = self.type_argument_with_expected(arg, *expected) {
-                        self.require_same_type(arg.span, *expected, actual);
-                    }
                 }
                 let receiver_type = self
                     .named_types
@@ -285,18 +278,8 @@ impl<'a> TypeChecker<'a> {
             {
                 let method_name = member.node.member.node.name.as_str().to_string();
                 if let Some(signature) = self.contract_signatures.get(&(item_id, method_name.clone())).cloned() {
-                    if call.node.args.len() != signature.params.len() {
-                        self.errors.push(TypeError::CallArityMismatch {
-                            span: call.span,
-                            expected: signature.params.len(),
-                            actual: call.node.args.len(),
-                        });
+                    if !self.type_call_arguments(call, &signature.params, signature.bulk) {
                         return Some(signature.return_type);
-                    }
-                    for (arg, expected) in call.node.args.iter().zip(signature.params.iter()) {
-                        if let Some(actual) = self.type_argument_with_expected(arg, *expected) {
-                            self.require_same_type(arg.span, *expected, actual);
-                        }
                     }
                     let receiver_type = self
                         .named_types
@@ -323,19 +306,8 @@ impl<'a> TypeChecker<'a> {
                     return None;
                 };
 
-                if call.node.args.len() != signature.params.len() {
-                    self.errors.push(TypeError::CallArityMismatch {
-                        span: call.span,
-                        expected: signature.params.len(),
-                        actual: call.node.args.len(),
-                    });
+                if !self.type_call_arguments(call, &signature.params, signature.bulk) {
                     return Some(signature.return_type);
-                }
-
-                for (arg, expected) in call.node.args.iter().zip(signature.params.iter()) {
-                    if let Some(actual) = self.type_argument_with_expected(arg, *expected) {
-                        self.require_same_type(arg.span, *expected, actual);
-                    }
                 }
                 self.record_call_kind(
                     call.id,
@@ -351,19 +323,8 @@ impl<'a> TypeChecker<'a> {
                 && let Some(signature) =
                     self.contract_signatures.get(&(contract_item_id, method_name.to_string())).cloned()
             {
-                if call.node.args.len() != signature.params.len() {
-                    self.errors.push(TypeError::CallArityMismatch {
-                        span: call.span,
-                        expected: signature.params.len(),
-                        actual: call.node.args.len(),
-                    });
+                if !self.type_call_arguments(call, &signature.params, signature.bulk) {
                     return Some(signature.return_type);
-                }
-
-                for (arg, expected) in call.node.args.iter().zip(signature.params.iter()) {
-                    if let Some(actual) = self.type_argument_with_expected(arg, *expected) {
-                        self.require_same_type(arg.span, *expected, actual);
-                    }
                 }
                 self.record_call_kind(
                     call.id,
@@ -388,19 +349,8 @@ impl<'a> TypeChecker<'a> {
             && let Some(callee_type) = self.type_expression(&call.node.callee)
             && let Some(TypeInfo::Function { params, return_type }) = self.type_table.get(callee_type).cloned()
         {
-            if call.node.args.len() != params.len() {
-                self.errors.push(TypeError::CallArityMismatch {
-                    span: call.span,
-                    expected: params.len(),
-                    actual: call.node.args.len(),
-                });
+            if !self.type_call_arguments(call, &params, false) {
                 return Some(return_type);
-            }
-
-            for (arg, expected) in call.node.args.iter().zip(params.iter()) {
-                if let Some(actual) = self.type_argument_with_expected(arg, *expected) {
-                    self.require_same_type(arg.span, *expected, actual);
-                }
             }
             self.record_call_kind(call.id, CallLoweringKind::CallableValueCall);
             return Some(return_type);
@@ -469,6 +419,11 @@ impl<'a> TypeChecker<'a> {
                     if expected != 0 {
                         let arg_types =
                             call.node.args.iter().filter_map(|arg| self.type_expression(arg)).collect::<Vec<_>>();
+                        let arg_types = if signature.bulk {
+                            self.collapse_bulk_argument_types(signature.params.len(), arg_types)
+                        } else {
+                            arg_types
+                        };
                         if let Some(item_id) = callee_item_id {
                             self.record_generic_call_constraints(item_id, &arg_types, expected, call.span);
                         }
@@ -546,18 +501,15 @@ impl<'a> TypeChecker<'a> {
             self.substitute_type_id(signature.return_type, &mapping)
         };
 
-        let expected_arity = builtin_param_kinds.as_ref().map(std::vec::Vec::len).unwrap_or(substituted_params.len());
-
-        if call.node.args.len() != expected_arity {
-            self.errors.push(TypeError::CallArityMismatch {
-                span: call.span,
-                expected: expected_arity,
-                actual: call.node.args.len(),
-            });
-            return Some(substituted_return);
-        }
-
         if let Some(kinds) = builtin_param_kinds.as_ref() {
+            if call.node.args.len() != kinds.len() {
+                self.errors.push(TypeError::CallArityMismatch {
+                    span: call.span,
+                    expected: kinds.len(),
+                    actual: call.node.args.len(),
+                });
+                return Some(substituted_return);
+            }
             for (index, (arg, kind)) in call.node.args.iter().zip(kinds.iter()).enumerate() {
                 if let Some(expected) = substituted_params.get(index) {
                     // Legacy managed Corelib bridges retain their surface adapters. Raw
@@ -574,12 +526,8 @@ impl<'a> TypeChecker<'a> {
                     }
                 }
             }
-        } else {
-            for (arg, expected) in call.node.args.iter().zip(substituted_params.iter()) {
-                if let Some(actual) = self.type_argument_with_expected(arg, *expected) {
-                    self.require_same_type(arg.span, *expected, actual);
-                }
-            }
+        } else if !self.type_call_arguments(call, &substituted_params, signature.bulk) {
+            return Some(substituted_return);
         }
 
         let mut return_type = substituted_return;
@@ -626,4 +574,56 @@ fn primitive_numeric_conversion_target_type(name: &str) -> Option<PrimitiveType>
         "f64" => PrimitiveType::F64,
         _ => return None,
     })
+}
+
+#[cfg(test)]
+mod bulk_tests {
+    use crate::services::{SemanticFactsError, parse_program, resolve_and_type_program};
+    use crate::types::result::TypeError;
+
+    fn type_errors(source: &str) -> Vec<TypeError> {
+        let program = parse_program(source).expect("source parses");
+        match resolve_and_type_program(&program) {
+            Ok(_) => Vec::new(),
+            Err(SemanticFactsError::Type { errors, .. }) => errors,
+            Err(other) => panic!("expected type checking to run: {other:?}"),
+        }
+    }
+
+    const SUM: &str = "i64 Sum(bulk i64[] values) { return values[0]; }\n\
+                       T First<T>(bulk T[] values) { return values[0]; }\n\
+                       i64 Tail(string label, bulk i64[] values) { return values[0]; }\n";
+
+    #[test]
+    fn bulk_parameter_takes_any_number_of_element_arguments() {
+        for call in [
+            "Sum()",
+            "Sum(1_i64)",
+            "Sum(1_i64, 2_i64, 3_i64)",
+            "First<i64>(1_i64, 2_i64)",
+            "First(4_i64, 5_i64)",
+            "Tail(\"t\", 1_i64, 2_i64)",
+            "Tail(\"t\")",
+        ] {
+            let source = format!("{SUM}i64 Main() {{ return {call}; }}");
+            assert!(type_errors(&source).is_empty(), "{call}: {:?}", type_errors(&source));
+        }
+    }
+
+    #[test]
+    fn bulk_arguments_are_typed_against_the_element_type() {
+        let errors = type_errors(&format!("{SUM}i64 Main() {{ return Sum(1_i64, \"two\"); }}"));
+        assert!(errors.iter().any(|error| matches!(error, TypeError::TypeMismatch { .. })), "{errors:?}");
+        let errors = type_errors(&format!("{SUM}i64 Main() {{ return Tail(); }}"));
+        assert!(
+            errors.iter().any(|error| matches!(error, TypeError::CallArityMismatch { expected: 1, actual: 0, .. })),
+            "{errors:?}"
+        );
+    }
+
+    #[test]
+    fn bulk_generic_without_arguments_needs_type_arguments() {
+        let errors = type_errors(&format!("{SUM}i64 Main() {{ return First(); }}"));
+        assert!(errors.iter().any(|error| matches!(error, TypeError::MissingTypeArguments { .. })), "{errors:?}");
+    }
 }

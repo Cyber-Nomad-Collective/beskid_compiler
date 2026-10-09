@@ -8,8 +8,8 @@
 use std::sync::Arc;
 
 use beskid_queries::{
-    AstNodeKey, CallLowering, GenericSpecializationInstance, IndexedNodeKind, SemanticTypeId,
-    aggregate_literal_declaration, bulk_parameter, call_arguments, call_lowering, child_nodes,
+    AstNodeKey, GenericSpecializationInstance, IndexedNodeKind, SemanticTypeId,
+    aggregate_literal_declaration, bulk_call_element_abi_type, call_arguments, child_nodes,
     ManagedReferenceKind, empty_array_literal_element_abi_type, empty_array_literal_element_specialization,
     generic_specialization_identity, managed_reference_kind, node_kind, node_type, typed_array_allocation, value_abi_type,
 };
@@ -250,27 +250,12 @@ impl CodegenInput<'_> {
     /// A bulk callee declares a `bulk T[]` parameter; the call site packs N scalar arguments into
     /// a fresh rooted array before the direct call. There is no `ArrayLiteralExpression` node to
     /// key a plan on, so this plan is keyed on the `CallExpression` node. The element ABI comes
-    /// from the callee's declared `bulk T[]` parameter (declared type over inferred — the same
-    /// authority `array_static_plan` uses for empty literals), and the length comes from the
-    /// call's scalar argument count. Reuses `build_array_static_plan` so the static-data emission
-    /// path is shared with literal plans.
+    /// from the callee's declared `bulk T[]` parameter, specialized by the call when `T` is
+    /// generic, and the length comes from the call's scalar argument count. Reuses
+    /// `build_array_static_plan` so the static-data emission path is shared with literal plans.
     pub fn bulk_array_static_plan(&self, call: AstNodeKey) -> Option<ArrayStaticPlan> {
         (node_kind(self.database(), call).ok().flatten() == Some(IndexedNodeKind::CallExpression)).then_some(())?;
-        let CallLowering::Direct(declaration) = call_lowering(self.database(), call).ok().flatten()? else {
-            return None;
-        };
-        let parameters = child_nodes(self.database(), declaration).ok().flatten()?;
-        let mut element_type = None;
-        for parameter in parameters.iter().copied() {
-            if node_kind(self.database(), parameter).ok().flatten() != Some(IndexedNodeKind::Parameter) {
-                continue;
-            }
-            if let Some(fact) = bulk_parameter(self.database(), parameter).ok().flatten() {
-                element_type = Some(fact.element_abi_type);
-                break;
-            }
-        }
-        let element_type = element_type?;
+        let element_type = bulk_call_element_abi_type(self.database(), call).ok().flatten()?;
         let arguments = call_arguments(self.database(), call).ok().flatten()?;
         let length = u64::try_from(arguments.len()).ok()?;
         self.build_array_static_plan(call, element_type, length, None)

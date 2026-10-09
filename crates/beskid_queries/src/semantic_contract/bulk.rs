@@ -75,3 +75,52 @@ pub(in crate::semantic_contract) fn bulk_parameter_tracked(
     })?
     .transpose()
 }
+
+/// The element ABI type a call packs its trailing arguments as when its direct callee ends in a
+/// `bulk T[]` parameter. A generic element takes the call's specialization, so `List.Of<i64>(1, 2)`
+/// packs `i64`. Calls to any other callee contain no fact.
+pub(in crate::semantic_contract) fn bulk_call_element_abi_type_for_call(
+    db: &dyn Db,
+    key: AstNodeKey,
+) -> SemanticQueryResult<SemanticTypeId> {
+    let Some(CallLowering::Direct(declaration)) = call_lowering(db, key)? else {
+        return Ok(None);
+    };
+    let Some(syntax) = db.syntax_unit(declaration.unit) else {
+        return Ok(None);
+    };
+    let program = syntax.expanded_program(db);
+    let index = syntax.syntax_index(db);
+    let Some(node) = index.node_at(program, declaration.node) else {
+        return Ok(None);
+    };
+    let parameters = node
+        .of::<beskid_analysis::syntax::FunctionDefinition>()
+        .map(|function| function.parameters.as_slice())
+        .or_else(|| node.of::<beskid_analysis::syntax::MethodDefinition>().map(|method| method.parameters.as_slice()));
+    let Some(last) = parameters.and_then(<[_]>::last).filter(|parameter| parameter.node.bulk) else {
+        return Ok(None);
+    };
+    let beskid_analysis::syntax::Type::Array(element) = &last.node.ty.node else {
+        return Ok(None);
+    };
+    let Some(parameter) =
+        index.direct_child_id(program, declaration.node, beskid_analysis::syntax_query::DynNodeRef::from(last))
+    else {
+        return Ok(None);
+    };
+    match bulk_parameter(db, AstNodeKey { node: parameter, ..declaration }) {
+        Ok(Some(fact)) => return Ok(Some(fact.element_abi_type)),
+        Ok(None) => return Ok(None),
+        // A generic element has no declaration-site ABI; the call's specialization supplies it.
+        Err(error) if error.is_unavailable() => {}
+        Err(error) => return Err(error),
+    }
+    let specialization = generic_specialization_instance_for_call(db, key)?;
+    let substitutions = specialization
+        .substitutions
+        .iter()
+        .map(|binding| (binding.parameter.to_string(), binding.argument))
+        .collect::<HashMap<_, _>>();
+    generic_abi_type(db, declaration, &element.node, &substitutions).map(Some)
+}

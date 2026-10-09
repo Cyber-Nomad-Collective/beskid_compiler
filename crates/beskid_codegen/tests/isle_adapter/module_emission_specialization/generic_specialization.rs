@@ -275,3 +275,26 @@ fn generic_local_annotated_with_a_type_parameter_lowers_for_scalar_and_string() 
     let specializations = artifact.functions.iter().filter(|function| function.name.starts_with("Same#generic_")).count();
     assert_eq!(specializations, 2, "one specialization each for i64 and string");
 }
+
+#[test]
+fn parsed_program_packs_generic_bulk_arguments_with_the_call_specialization() {
+    let (input, isa, root) = item_fixture_with_root(
+        "T First<T>(bulk T[] values) { return values[0]; } i64 Main() { return First<i64>(4, 5, 6) + First(7_i64); }",
+    );
+    let items = find_function_definitions(input.database(), root);
+    let artifact = lower_syntax_program(
+        &input,
+        isa.as_ref(),
+        &[
+            SyntaxModuleItem { key: items[0], symbol: "First".into() },
+            SyntaxModuleItem { key: items[1], symbol: "Main".into() },
+        ],
+    )
+    .expect("a generic bulk call packs its arguments as the specialized element type");
+
+    beskid_codegen::validate_artifact(&artifact).expect("generic bulk artifact");
+    assert!(artifact.functions.iter().any(|function| function.name.starts_with("First#generic_")));
+    let main = artifact.functions.iter().find(|function| function.name == "Main").expect("Main lowers");
+    let clif = main.function.display().to_string();
+    assert_eq!(clif.matches("store").count(), 4, "four i64 elements are stored: {clif}");
+}

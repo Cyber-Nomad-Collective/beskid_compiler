@@ -122,6 +122,7 @@ impl<'a> TypeChecker<'a> {
         Some(crate::types::result::FunctionSignature {
             params: signature.params.iter().map(|param| self.substitute_type_id(*param, &mapping)).collect(),
             return_type: self.substitute_type_id(signature.return_type, &mapping),
+            bulk: signature.bulk,
         })
     }
 

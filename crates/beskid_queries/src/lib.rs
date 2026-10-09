@@ -95,7 +95,7 @@ pub use semantic_contract::{
     aggregate_field_access, aggregate_field_access_specialization, aggregate_layout, aggregate_literal_declaration,
     aggregate_literal_field_values, aggregate_literal_layout, aggregate_literal_specialization,
     array_index_element_abi_type, array_index_element_specialization, binary_operand_abi_type, block_statement_nodes,
-    bulk_parameter, call_abi_signature, call_argument_abi_type, call_arguments, call_lowering,
+    bulk_call_element_abi_type, bulk_parameter, call_abi_signature, call_argument_abi_type, call_arguments, call_lowering,
     callable_fiber_ownership, callable_signature, capture_storage, cast_intents, child_nodes, clif_block_body,
     clif_block_parameters, closure_call_target, closure_environment, closure_signature, collection_operation, completion_candidates,
     completion_dependency_surface, completion_dependency_surface_for_assembly,

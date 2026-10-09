@@ -34,7 +34,7 @@ impl SyntaxNodeFacts<'_> {
         // callee declares a `bulk T[]` parameter; its call site packs N scalars into a fresh
         // rooted array before the direct call. This must precede the `Direct` fallback, which
         // would otherwise reject the N-scalar-vs-one-array arity mismatch.
-        if self.callee_bulk_parameter(key).is_some() {
+        if self.is_bulk_call(key) {
             return Some(CallKind::Bulk);
         }
         matches!(

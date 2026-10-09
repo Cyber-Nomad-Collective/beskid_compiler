@@ -2,7 +2,7 @@ use crate::resolve::{ItemId, ItemKind};
 use crate::syntax::{ContractNode, Node, PrimitiveType, Program, Type, TypeDefinition};
 use crate::syntax::{SpanInfo, Spanned};
 use crate::types::TypeId;
-use crate::types::result::{FunctionSignature, TypeError};
+use crate::types::result::{FunctionSignature, TypeError, ends_with_bulk};
 
 use super::TypeChecker;
 
@@ -219,7 +219,7 @@ impl<'a> TypeChecker<'a> {
                     }
                 }
                 self.current_clif_parameters = Some(clif_parameters);
-                self.record_signature(item.span, params, return_type);
+                self.record_signature(item.span, params, return_type, ends_with_bulk(&def.node.parameters));
                 let previous_function = self.current_function_item;
                 self.current_function_item = self
                     .item_id_for_span(item.span)
@@ -262,7 +262,7 @@ impl<'a> TypeChecker<'a> {
                 let return_type = self.primitive_type_id(PrimitiveType::Unit);
                 self.current_return_type = return_type;
                 self.current_clif_parameters = Some(Vec::new());
-                self.record_signature(item.span, Vec::new(), return_type);
+                self.record_signature(item.span, Vec::new(), return_type, false);
                 for statement in &def.node.statements {
                     self.type_statement(statement);
                 }
@@ -402,6 +402,7 @@ impl<'a> TypeChecker<'a> {
         item_span: crate::syntax::SpanInfo,
         params: Vec<TypeId>,
         return_type: Option<TypeId>,
+        bulk: bool,
     ) {
         // `canonical_item_id_for_span` requires the item to have an exportable symbol; a
         // `type X { method }` inline method never gets one (it is registered as a generic
@@ -418,7 +419,7 @@ impl<'a> TypeChecker<'a> {
         let Some(return_type) = return_type else {
             return;
         };
-        self.function_signatures.insert(item_id, FunctionSignature { params, return_type });
+        self.function_signatures.insert(item_id, FunctionSignature { params, return_type, bulk });
     }
 
     fn canonical_item_id_for_span(&self, span: crate::syntax::SpanInfo) -> Option<ItemId> {
@@ -466,11 +467,12 @@ impl<'a> TypeChecker<'a> {
             }
         }
         let previous_clif_parameters = self.current_clif_parameters.replace(clif_parameters);
-        self.record_signature(item_span, params.clone(), return_type);
+        let bulk = ends_with_bulk(&def.node.parameters);
+        self.record_signature(item_span, params.clone(), return_type, bulk);
         let method_item_id =
             self.canonical_item_id_for_span(item_span).or_else(|| self.item_id_for_span(item_span));
         if let (Some(method_item_id), Some(return_type)) = (method_item_id, return_type) {
-            self.method_function_signatures.insert(method_item_id, FunctionSignature { params, return_type });
+            self.method_function_signatures.insert(method_item_id, FunctionSignature { params, return_type, bulk });
         }
         self.type_block(&def.node.body);
         self.current_clif_parameters = previous_clif_parameters;

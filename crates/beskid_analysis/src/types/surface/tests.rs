@@ -15,13 +15,13 @@ fn merge_prefers_entry_surface_on_conflict() {
     let i64 = TypeId(1);
 
     let mut dep = UnitTypeSurface::default();
-    dep.function_signatures.insert(item, FunctionSignature { params: vec![i32], return_type: i32 });
+    dep.function_signatures.insert(item, FunctionSignature { params: vec![i32], return_type: i32, bulk: false });
 
     let mut entry = UnitTypeSurface::default();
-    entry.function_signatures.insert(item, FunctionSignature { params: vec![i64], return_type: i64 });
+    entry.function_signatures.insert(item, FunctionSignature { params: vec![i64], return_type: i64, bulk: false });
 
     let merged = merge_unit_surfaces(std::iter::once((PathBuf::from("dep.bd"), Arc::new(dep))), Arc::new(entry));
-    assert_eq!(merged.function_signatures.get(&item), Some(&FunctionSignature { params: vec![i64], return_type: i64 }));
+    assert_eq!(merged.function_signatures.get(&item), Some(&FunctionSignature { params: vec![i64], return_type: i64, bulk: false }));
 }
 
 #[test]

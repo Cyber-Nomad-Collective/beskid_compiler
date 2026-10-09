@@ -157,10 +157,11 @@ pub(in crate::semantic_contract) fn call_argument_abi_type_tracked(
                     };
                     let signature = call_abi_signature(db, parent_key)?
                         .ok_or_else(|| SemanticError::unavailable("call_argument_abi_type"))?;
-                    let expected = signature
-                        .parameters
-                        .get(argument_index)
-                        .copied()
+                    // Trailing arguments of a `bulk T[]` callee are packed as `T`.
+                    let bulk_element = bulk_call_element_abi_type(db, parent_key)?
+                        .filter(|_| argument_index + 1 >= signature.parameters.len());
+                    let expected = bulk_element
+                        .or_else(|| signature.parameters.get(argument_index).copied())
                         .ok_or_else(|| SemanticError::unavailable("call_argument_abi_type"));
                     return expected.and_then(|expected| {
                         (primitive_integer(expected) && integer_literal_fits_abi(db, key, expected)?)

@@ -1,6 +1,6 @@
 use crate::resolve::ItemKind;
 use crate::syntax::{FieldKind, FunctionDefinition, MethodDefinition, PrimitiveType, SpanInfo, Spanned};
-use crate::types::result::FunctionSignature;
+use crate::types::result::{FunctionSignature, ends_with_bulk};
 use crate::types::{TypeId, TypeInfo};
 
 use super::state::TypeSurfaceBuilder;
@@ -111,7 +111,7 @@ impl<'a> TypeSurfaceBuilder<'a> {
                 params.push(type_id);
             }
         }
-        self.record_signature(item_span, params.clone(), return_type);
+        self.record_signature(item_span, params.clone(), return_type, ends_with_bulk(&def.parameters));
         self.register_self_parameter_method(item_span, def, &params, return_type);
         for name in inserted {
             self.generic_params.remove(&name);
@@ -152,9 +152,12 @@ impl<'a> TypeSurfaceBuilder<'a> {
             }
             None => {}
         }
-        self.record_signature(item_span, params.clone(), return_type);
+        let bulk = ends_with_bulk(&def.node.parameters);
+        self.record_signature(item_span, params.clone(), return_type, bulk);
         if let (Some(method_item_id), Some(return_type)) = (self.canonical_item_id_for_span(item_span), return_type) {
-            self.surface.method_function_signatures.insert(method_item_id, FunctionSignature { params, return_type });
+            self.surface
+                .method_function_signatures
+                .insert(method_item_id, FunctionSignature { params, return_type, bulk });
         }
     }
 
@@ -186,17 +189,27 @@ impl<'a> TypeSurfaceBuilder<'a> {
         self.surface.methods_by_receiver.insert((receiver_item, def.name.node.name.clone()), method_item_id);
         self.surface.method_function_signatures.insert(
             method_item_id,
-            FunctionSignature { params: params.iter().skip(1).copied().collect(), return_type },
+            FunctionSignature {
+                params: params.iter().skip(1).copied().collect(),
+                return_type,
+                bulk: ends_with_bulk(&def.parameters),
+            },
         );
     }
 
-    pub(super) fn record_signature(&mut self, item_span: SpanInfo, params: Vec<TypeId>, return_type: Option<TypeId>) {
+    pub(super) fn record_signature(
+        &mut self,
+        item_span: SpanInfo,
+        params: Vec<TypeId>,
+        return_type: Option<TypeId>,
+        bulk: bool,
+    ) {
         let Some(item_id) = self.canonical_item_id_for_span(item_span) else {
             return;
         };
         let Some(return_type) = return_type else {
             return;
         };
-        self.surface.function_signatures.insert(item_id, FunctionSignature { params, return_type });
+        self.surface.function_signatures.insert(item_id, FunctionSignature { params, return_type, bulk });
     }
 }

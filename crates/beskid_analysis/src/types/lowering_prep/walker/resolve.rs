@@ -42,6 +42,7 @@ impl<'a> PrepWalker<'a> {
         Some(FunctionSignature {
             params: signature.params.iter().map(|p| substitute_type_id(self.surfaces, *p, &mapping)).collect(),
             return_type: substitute_type_id(self.surfaces, signature.return_type, &mapping),
+            bulk: signature.bulk,
         })
     }
 

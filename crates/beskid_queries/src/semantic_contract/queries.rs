@@ -121,6 +121,12 @@ pub fn bulk_parameter(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<BulkP
     with_registered_syntax(db, key, bulk_parameter_tracked)
 }
 
+/// Return the element ABI type one call packs its trailing arguments as, when its direct callee
+/// ends in a `bulk T[]` parameter; a generic element is taken from the call's specialization.
+pub fn bulk_call_element_abi_type(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<SemanticTypeId> {
+    bulk_call_element_abi_type_for_call(db, key)
+}
+
 /// Return exact current-generation bounds for the syntax-only `range(start, end)` loop form.
 pub fn range_for_fact(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<RangeForFact> {
     with_registered_syntax(db, key, range_for_fact_tracked)
