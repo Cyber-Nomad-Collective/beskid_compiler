@@ -510,6 +510,7 @@ void beskid_trap_message(void * message);
 void process_exit(int32_t code);
 int32_t process_getpid(void);
 void runtime_preempt_check(void);
+int64_t str_cmp(void * left, void * right);
 void * str_concat(void * left, void * right);
 size_t str_eq(void * left, void * right);
 void * str_from_bytes_utf8(void * bytes, size_t len);

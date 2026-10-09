@@ -91,6 +91,10 @@ pub(super) fn map_operator_fact(operator: beskid_queries::OperatorFact) -> Opera
         Syntax::StringAdd => OperatorFact::StringAdd,
         Syntax::StringEq => OperatorFact::StringEq,
         Syntax::StringNotEq => OperatorFact::StringNotEq,
+        Syntax::StringLt => OperatorFact::StringLt,
+        Syntax::StringLte => OperatorFact::StringLte,
+        Syntax::StringGt => OperatorFact::StringGt,
+        Syntax::StringGte => OperatorFact::StringGte,
     }
 }
 

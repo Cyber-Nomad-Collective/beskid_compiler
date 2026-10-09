@@ -634,6 +634,17 @@ corelib_service "__str_eq" {
   ]
 }
 
+corelib_service "__str_cmp" {
+  adapter = "str_cmp"
+  params = [{ name = left, type = pointer }, { name = right, type = pointer }]
+  returns = i64
+  target_bindings = [
+    { target = "x86_64-unknown-linux-gnu", implementation = "str_cmp", os_imports = [] },
+    { target = "aarch64-apple-darwin", implementation = "str_cmp", os_imports = [] },
+    { target = "x86_64-pc-windows-msvc", implementation = "str_cmp", os_imports = [] }
+  ]
+}
+
 corelib_service "__str_concat" {
   adapter = "str_concat"
   params = [{ name = left, type = pointer }, { name = right, type = pointer }]

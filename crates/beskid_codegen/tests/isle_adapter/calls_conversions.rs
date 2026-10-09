@@ -121,6 +121,21 @@ fn parsed_string_interpolation_coerces_i64_operand() {
 }
 
 #[test]
+fn parsed_string_ordering_lowers_through_str_cmp() {
+    for (operator, condition) in [("<", "slt"), ("<=", "sle"), (">", "sgt"), (">=", "sge")] {
+        let source = format!("bool Main(string a, string b) {{ return a {operator} b; }}");
+        let (input, isa, root) = item_fixture_with_root(&source);
+        let item = named_function(&input, root, "Main");
+        let artifact =
+            lower_syntax_program(&input, isa.as_ref(), &[SyntaxModuleItem { key: item, symbol: "Main".into() }])
+                .unwrap_or_else(|error| panic!("{source}: string ordering lowers: {error:?}"));
+        let clif = artifact.functions[0].function.display().to_string();
+        assert!(clif.contains("str_cmp"), "{source}: ordinal comparison service: {clif}");
+        assert!(clif.contains(&format!("icmp_imm {condition}")) || clif.contains(&format!("icmp {condition}")), "{source}: {clif}");
+    }
+}
+
+#[test]
 fn parsed_f64_to_integer_conversions_saturate() {
     for (source, expected) in [
         ("i64 Main(f64 v) { return i64(v); }", "fcvt_to_sint_sat.i64"),
@@ -349,7 +364,7 @@ fn canonical_foundation_args_module_emits_only_the_authorized_args_imports() {
     imports.sort_unstable();
     assert_eq!(
         imports,
-        vec!["beskid_rt_v5_args_count", "beskid_rt_v5_args_get", "str_concat", "str_eq", "str_from_i64", "str_new"],
+        vec!["beskid_rt_v5_args_count", "beskid_rt_v5_args_get", "str_cmp", "str_concat", "str_eq", "str_from_i64", "str_new"],
         "canonical Core.Args receives its exact ABI-v5 services plus the always-available string baseline"
     );
 }
@@ -478,7 +493,7 @@ fn canonical_foundation_assert_trigger_failure_imports_only_baseline_strings_and
     imports.sort_unstable();
     assert_eq!(
         imports,
-        vec!["beskid_trap_message", "str_concat", "str_eq", "str_from_i64", "str_new"],
+        vec!["beskid_trap_message", "str_cmp", "str_concat", "str_eq", "str_from_i64", "str_new"],
         "canonical Assert may emit the always-admitted string baseline and its reachable panic service, but no other facade service"
     );
     let trigger = artifact

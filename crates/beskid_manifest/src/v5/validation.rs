@@ -143,6 +143,7 @@ pub(super) fn validate(manifest: &RuntimeManifestV5) -> Result<(), String> {
         "__str_new",
         "__str_len",
         "__str_eq",
+        "__str_cmp",
         "__str_concat",
         "__str_from_i64",
         "__str_slice",

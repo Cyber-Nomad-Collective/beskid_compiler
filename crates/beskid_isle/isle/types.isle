@@ -6,7 +6,7 @@
 (type ForIterableKind extern (enum Range Other))
 (type CursorKind extern (enum More End))
 (type LiteralKind extern (enum Integer Float String Char Boolean))
-(type OperatorFact extern (enum Or And BitOr BitAnd Shl Shr IdentityEq IdentityNotEq Eq NotEq Lt Lte Gt Gte Add Sub Mul Div Mod Neg Not StringAdd StringEq StringNotEq EnumEq EnumNotEq))
+(type OperatorFact extern (enum Or And BitOr BitAnd Shl Shr IdentityEq IdentityNotEq Eq NotEq Lt Lte Gt Gte Add Sub Mul Div Mod Neg Not StringAdd StringEq StringNotEq StringLt StringLte StringGt StringGte EnumEq EnumNotEq))
 (type CallKind extern (enum Direct PrimitiveNumericConversion InlineLambda RuntimeIntrinsic CollectionOperation Bulk TypedArrayAllocation EventRaise Dynamic))
 (type EventOperation extern (enum Subscribe UnsubscribeFirst Raise))
 (type AssignmentKind extern (enum Local Field Index EventSubscribe EventUnsubscribeFirst))

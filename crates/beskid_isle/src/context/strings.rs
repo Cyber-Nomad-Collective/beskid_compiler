@@ -58,6 +58,27 @@ impl IsleContext<'_, '_, '_, '_> {
         Some(self.builder.block_params(merge_block)[0])
     }
 
+    /// `<`, `<=`, `>`, `>=` on strings: ordinal UTF-8 byte order through `str_cmp`, which
+    /// returns -1, 0, or 1.
+    pub(super) fn emit_string_ordering(&mut self, key: AstNodeKey) -> Option<Value> {
+        let condition = match self.facts.operator_fact(key)? {
+            OperatorFact::StringLt => IntCC::SignedLessThan,
+            OperatorFact::StringLte => IntCC::SignedLessThanOrEqual,
+            OperatorFact::StringGt => IntCC::SignedGreaterThan,
+            OperatorFact::StringGte => IntCC::SignedGreaterThanOrEqual,
+            _ => return None,
+        };
+        let left_key = self.facts.child(key, 0)?;
+        let right_key = self.facts.child(key, 1)?;
+        let left = self.coerce_expression_to_string(left_key)?;
+        let right = self.coerce_expression_to_string(right_key)?;
+        let pointer = dispatch::pointer_type(self.frontend_config);
+        let order =
+            self.emit_corelib_service_call(key, "str_cmp", &[left, right], &[pointer, pointer], Some(types::I64))?;
+        let zero = self.builder.ins().iconst(types::I64, 0);
+        Some(self.builder.ins().icmp(condition, order, zero))
+    }
+
     pub(super) fn emit_string_compare(&mut self, key: AstNodeKey, invert: bool) -> Option<Value> {
         let left_key = self.facts.child(key, 0)?;
         let right_key = self.facts.child(key, 1)?;
@@ -103,6 +124,10 @@ macro_rules! generated_string_methods {
 
         fn emit_string_ne(&mut self, key: AstNodeKey) -> Option<Value> {
             self.emit_string_compare(key, true)
+        }
+
+        fn emit_string_order(&mut self, key: AstNodeKey) -> Option<Value> {
+            self.emit_string_ordering(key)
         }
 
         fn emit_string_index_read(&mut self, key: AstNodeKey) -> Option<Value> {

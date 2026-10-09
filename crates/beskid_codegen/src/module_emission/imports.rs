@@ -202,7 +202,7 @@ pub(super) fn clif_declared_extern_imports(
 /// String runtime helpers that ISLE lowering emits directly (string literals, coercion,
 /// comparison, concatenation). These are always required — they are not gated by the
 /// Corelib syscall capability because they are fundamental operations, not facade services.
-const ALWAYS_AVAILABLE_STRING_SERVICES: &[&str] = &["str_new", "str_from_i64", "str_eq", "str_concat"];
+const ALWAYS_AVAILABLE_STRING_SERVICES: &[&str] = &["str_new", "str_from_i64", "str_eq", "str_cmp", "str_concat"];
 
 /// Compiler-planned composition calls are not source-callable Corelib services. Their
 /// authority comes from the attached, generation-validated composition graph, and the

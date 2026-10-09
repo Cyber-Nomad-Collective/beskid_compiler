@@ -68,8 +68,12 @@ impl<'a> TypeChecker<'a> {
             BinaryOp::Eq | BinaryOp::NotEq | BinaryOp::Lt | BinaryOp::Lte | BinaryOp::Gt | BinaryOp::Gte => {
                 let ordering =
                     matches!(binary.node.op.node, BinaryOp::Lt | BinaryOp::Lte | BinaryOp::Gt | BinaryOp::Gte);
+                // Strings order by their UTF-8 bytes, which is Unicode code point order.
+                let both_strings = [left, right].into_iter().all(|side| {
+                    matches!(self.type_table.get(side), Some(TypeInfo::Primitive(PrimitiveType::String)))
+                });
                 let comparable = if ordering {
-                    self.is_comparable(left)
+                    self.is_comparable(left) || both_strings
                 } else if self.is_comparable(left) {
                     true
                 } else {

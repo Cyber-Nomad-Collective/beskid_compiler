@@ -195,6 +195,10 @@ pub(super) fn operator_fact_for_binary(
             beskid_analysis::syntax::BinaryOp::Add => OperatorFact::StringAdd,
             beskid_analysis::syntax::BinaryOp::Eq => OperatorFact::StringEq,
             beskid_analysis::syntax::BinaryOp::NotEq => OperatorFact::StringNotEq,
+            beskid_analysis::syntax::BinaryOp::Lt => OperatorFact::StringLt,
+            beskid_analysis::syntax::BinaryOp::Lte => OperatorFact::StringLte,
+            beskid_analysis::syntax::BinaryOp::Gt => OperatorFact::StringGt,
+            beskid_analysis::syntax::BinaryOp::Gte => OperatorFact::StringGte,
             op => binary_operator(op),
         });
     }
