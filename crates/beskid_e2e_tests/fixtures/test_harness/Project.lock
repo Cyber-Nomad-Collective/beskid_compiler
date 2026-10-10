@@ -4,14 +4,25 @@ project_name=TestHarness
 dependencies:
 - name=Core;source=corelib;project=beskid_corelib;manifest=corelib.bproj;source_root=.;materialized_root=obj/beskid/deps/src/Core-81dbe9b059abfcd73535c29e5d790e42
 - name=corelib_bsol;source=corelib;project=packages/bsol;manifest=corelib_bsol.bproj;source_root=src;materialized_root=obj/beskid/deps/src/corelib_bsol-74b221473ad428661b653f55f992c9de
+- name=corelib_codec;source=corelib;project=packages/codec;manifest=corelib_codec.bproj;source_root=src;materialized_root=obj/beskid/deps/src/corelib_codec-a5b94b4058082139655b3174eb85047f
 - name=corelib_compiler_sdk;source=corelib;project=packages/compiler-sdk;manifest=corelib_compiler_sdk.bproj;source_root=src;materialized_root=obj/beskid/deps/src/corelib_compiler_sdk-b78cd396278b5ebc83f553772a9bac27
 - name=corelib_concurrency;source=corelib;project=packages/concurrency;manifest=corelib_concurrency.bproj;source_root=src;materialized_root=obj/beskid/deps/src/corelib_concurrency-13ab48f862ba0ae5e9bf5c20798a87d0
+- name=corelib_connect;source=corelib;project=packages/connect;manifest=corelib_connect.bproj;source_root=src;materialized_root=obj/beskid/deps/src/corelib_connect-12b3b7f02f2e48c3f3961772017f75d6
 - name=corelib_console;source=corelib;project=packages/console;manifest=corelib_console.bproj;source_root=src;materialized_root=obj/beskid/deps/src/corelib_console-e4ed4362d985e0eb51c1cd4b56ce2200
+- name=corelib_crypto;source=corelib;project=packages/crypto;manifest=corelib_crypto.bproj;source_root=src;materialized_root=obj/beskid/deps/src/corelib_crypto-ce0fffc459e1d3c09406ed6462d181da
 - name=corelib_foundation;source=corelib;project=packages/foundation;manifest=corelib_foundation.bproj;source_root=src;materialized_root=obj/beskid/deps/src/corelib_foundation-36af321ae161ad408c6868835985321c
 - name=corelib_glue;source=corelib;project=packages/glue;manifest=corelib_glue.bproj;source_root=src;materialized_root=obj/beskid/deps/src/corelib_glue-24d3acd0cbb1a75b5c6ee3883859cc97
 - name=corelib_http;source=corelib;project=packages/http;manifest=corelib_http.bproj;source_root=src;materialized_root=obj/beskid/deps/src/corelib_http-ec541acbd6cac8470a2e816c0351995d
+- name=corelib_http2;source=corelib;project=packages/http2;manifest=corelib_http2.bproj;source_root=src;materialized_root=obj/beskid/deps/src/corelib_http2-144508efc189d95177dc865e2907eebc
+- name=corelib_http3;source=corelib;project=packages/http3;manifest=corelib_http3.bproj;source_root=src;materialized_root=obj/beskid/deps/src/corelib_http3-5c012c1452f1d0fc3f5feb31627b6a51
 - name=corelib_interop;source=corelib;project=packages/interop;manifest=corelib_interop.bproj;source_root=src;materialized_root=obj/beskid/deps/src/corelib_interop-2f14f0d2e61774a9ab1673f72cd00901
 - name=corelib_network;source=corelib;project=packages/network;manifest=corelib_network.bproj;source_root=src;materialized_root=obj/beskid/deps/src/corelib_network-c99e2572bcc59d0344e495c09bcb3491
+- name=corelib_quic;source=corelib;project=packages/quic;manifest=corelib_quic.bproj;source_root=src;materialized_root=obj/beskid/deps/src/corelib_quic-ddb399779f2c177140c8510f0866ab8f
 - name=corelib_runtime;source=corelib;project=packages/runtime;manifest=corelib_runtime.bproj;source_root=src;materialized_root=obj/beskid/deps/src/corelib_runtime-dcc850f22061e60d06f6853b23dcfd17
 - name=corelib_serialization;source=corelib;project=packages/serialization;manifest=corelib_serialization.bproj;source_root=src;materialized_root=obj/beskid/deps/src/corelib_serialization-530502b7128d0828562f59bb54e6b98f
+- name=corelib_tls;source=corelib;project=packages/tls;manifest=corelib_tls.bproj;source_root=src;materialized_root=obj/beskid/deps/src/corelib_tls-fbf8bf30b5337d445ed62774b72ab246
+- name=corelib_uri;source=corelib;project=packages/uri;manifest=corelib_uri.bproj;source_root=src;materialized_root=obj/beskid/deps/src/corelib_uri-7307d79fe2b9e653474a6e8d3213ce05
+- name=corelib_web;source=corelib;project=packages/web;manifest=corelib_web.bproj;source_root=src;materialized_root=obj/beskid/deps/src/corelib_web-ac3f1bfdbbea0fa923456c9c0189795b
+- name=corelib_websocket;source=corelib;project=packages/websocket;manifest=corelib_websocket.bproj;source_root=src;materialized_root=obj/beskid/deps/src/corelib_websocket-f73616d297be25f3b183e344dd068937
+- name=corelib_x509;source=corelib;project=packages/x509;manifest=corelib_x509.bproj;source_root=src;materialized_root=obj/beskid/deps/src/corelib_x509-7431267eab7305700cc3f88f4dbfdebc
 - name=serialization_mod;source=corelib;project=mods/serialization_mod;manifest=serialization_mod.bproj;source_root=Src;materialized_root=obj/beskid/deps/src/serialization_mod-977e4e2d382e58ee4ada5e6d3d6b8b59

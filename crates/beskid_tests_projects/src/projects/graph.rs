@@ -158,11 +158,11 @@ dependency "Feature" {
             // precedes every package that depends on it.
             [
                 "corelib_foundation",
-                "corelib_codec",
                 "corelib_compiler_sdk",
                 "serialization_mod",
                 "corelib_serialization",
                 "corelib_bsol",
+                "corelib_codec",
                 "corelib_concurrency",
                 "corelib_network",
                 "corelib_connect",
