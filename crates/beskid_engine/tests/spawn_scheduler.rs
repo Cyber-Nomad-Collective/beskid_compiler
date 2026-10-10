@@ -17,7 +17,7 @@ fn jit_runs_zero_capture_lambda_spawn_under_fiber_scheduler() {
         Engine::with_runtime_kit(prefix.path(), target, BuildProfile::Debug).expect("load exact native runtime kit");
 
     let source = "pub type Fiber<T> { i64 handle, } i64 Main() { let child = spawn (() => 42_i64); return 5; }";
-    let prepared = prepare_jit_entrypoint(Path::new("spawn_lambda.bd"), source, "Main")
+    let prepared = prepare_jit_entrypoint(Path::new("spawn_lambda.bd"), source, "Main", &beskid_engine::ModHost::NoMods)
         .expect("syntax-owned lambda spawn must prepare for JIT");
     engine.compile_artifact(&prepared.artifact).expect("syntax-owned lambda spawn must compile in the JIT");
     let pointer = unsafe { engine.entrypoint_ptr(&prepared.symbol) }.expect("Main pointer");
@@ -32,6 +32,6 @@ fn jit_child_value_returns_42() {
     let _runtime_prefix = RuntimePrefixContext::install(prefix.path());
 
     let source = "i64 child_value() { return 42; } i64 Main() { return child_value(); }";
-    let output = run_entrypoint(Path::new("child_value.bd"), source, "Main").expect("main should run");
+    let output = run_entrypoint(Path::new("child_value.bd"), source, "Main", &beskid_engine::ModHost::NoMods).expect("main should run");
     assert_eq!(output, "42", "expected child_value return to round-trip through JIT");
 }

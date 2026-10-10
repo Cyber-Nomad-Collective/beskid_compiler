@@ -169,7 +169,7 @@ fn materialize_typed_bundle(
         db,
         resolved,
         PrepareOptions {
-            mod_invoker: options.mod_invoker.clone(),
+            mod_host: options.mod_host.clone(),
             front_end: FrontEndOptions { with_semantic_diagnostics: false, ..Default::default() },
             dependency_typing,
             native_mod_adapter_sources: false,

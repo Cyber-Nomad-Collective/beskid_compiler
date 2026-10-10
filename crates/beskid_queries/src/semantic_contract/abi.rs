@@ -11,10 +11,7 @@ pub use specialization::{
     specialized_corelib_value_service_result,
 };
 
-pub(in crate::semantic_contract) use control_flow::{
-    block_may_fall_through, control_flow_for_node, control_flow_tracked, if_may_fall_through,
-    statement_may_fall_through, statements_may_fall_through,
-};
+pub(in crate::semantic_contract) use control_flow::{control_flow_for_node, control_flow_tracked};
 
 pub(in crate::semantic_contract) use signatures::{
     call_abi_signature_for_call, call_abi_signature_tracked, declared_callable_return_type, item_abi_signature_tracked,
@@ -22,8 +19,8 @@ pub(in crate::semantic_contract) use signatures::{
 };
 
 pub(in crate::semantic_contract) use specialization::{
-    abi_signature_from_syntax, binary_operand_abi_type_tracked, builtin_type_to_semantic,
-    call_argument_abi_type_tracked, contextual_constant_integer, corelib_service_abi_signature,
+    abi_signature_from_syntax, builtin_type_to_semantic,
+    contextual_constant_integer, contextual_integer_operand_fits_abi, corelib_service_abi_signature,
     exact_assembled_nominal_envelope, generic_abi_type, generic_parameter_reference_name,
     generic_specialization_instance_for_call, generic_type_name, integer_has_explicit_abi_suffix,
     integer_literal_fits_abi, integer_literal_text, integer_literal_u64, item_abi_type_from_syntax,

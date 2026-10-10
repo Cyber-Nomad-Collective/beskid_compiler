@@ -10,6 +10,7 @@ pub mod error;
 pub mod export_table;
 pub mod linker;
 pub mod mod_artifact;
+pub mod mod_producer;
 pub mod object_module;
 mod object_symbols;
 pub mod prepared_syntax;
@@ -33,6 +34,7 @@ pub use mod_artifact::{
     CachedModArtifactRequest, ContractRegistration, ModArtifactBuildRequest, ModArtifactDescriptor, QualifiedModInvoker,
     ModCacheLock, QualifiedNativeMod, build_mod_artifact, mod_artifact_dir, qualify_cached_mod_artifact,
 };
+pub use mod_producer::ModProducerIdentity;
 pub use prepared_syntax::{
     lower_canonical_runtime_prepared_syntax, lower_prepared_syntax_entrypoint, lower_prepared_syntax_library,
     lower_prepared_syntax_module,

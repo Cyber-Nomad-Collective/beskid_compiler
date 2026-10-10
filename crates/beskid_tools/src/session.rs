@@ -42,7 +42,7 @@ impl Default for SemanticGateOptions {
 
 /// Shared CLI session: pipeline observer plus resolve and executable prepare gate helpers.
 pub struct CommandSession {
-    mod_invoker: Option<Arc<dyn beskid_analysis::mod_host::ContractInvoker>>,
+    mod_host: beskid_analysis::mod_host::ModHost,
     pipeline: Arc<CliPipeline>,
 }
 
@@ -50,14 +50,15 @@ impl CommandSession {
     /// Create a session with pipeline progress for the given phase budget.
     ///
     /// Use [`PipelineProgressKind::PrepareAndRun`] for run / test / clif paths that call
-    /// [`executable_gate_prepared`] once, then lower or JIT-run.
+    /// [`executable_gate_prepared`] once, then lower or JIT-run. The session starts without a native
+    /// Mod host; a command that prepares plans with Mod dependencies calls [`Self::set_mod_host`].
     pub fn with_progress(plain: bool, kind: PipelineProgressKind) -> Self {
-        Self { mod_invoker: None, pipeline: Arc::new(CliPipeline::new_with_kind(use_cli_spinner(plain), kind)) }
+        Self { mod_host: beskid_analysis::mod_host::ModHost::NoMods, pipeline: Arc::new(CliPipeline::new_with_kind(use_cli_spinner(plain), kind)) }
     }
 
-    /// Attach the private producer's executable service to this preparation session.
-    pub fn set_mod_invoker(&mut self, invoker: Option<Arc<dyn beskid_analysis::mod_host::ContractInvoker>>) {
-        self.mod_invoker = invoker;
+    /// Run the native Mods of this session's preparations in `mod_host`.
+    pub fn set_mod_host(&mut self, mod_host: beskid_analysis::mod_host::ModHost) {
+        self.mod_host = mod_host;
     }
 
     /// Resolve project input while forwarding pipeline events to this session.
@@ -117,7 +118,7 @@ impl CommandSession {
                 front_end: services::FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
                 dependency_typing: services::DependencyTypingPolicy::FullClosure,
                 native_mod_adapter_sources: false,
-                mod_invoker: self.mod_invoker.clone(),
+                mod_host: self.mod_host.clone(),
             },
             Some(self.pipeline.as_ref()),
         )?;

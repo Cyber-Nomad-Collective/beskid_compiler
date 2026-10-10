@@ -1,14 +1,11 @@
 //! Diagnostic deduplication, analyzer bridging, input resolution, and typed fingerprints.
 
-use crate::AnalysisOptions;
 use crate::analysis::SemanticDiagnostic;
-use crate::analysis::rules::{RuleContext, resolve, types};
 use crate::mod_host::SyntaxFix;
 use crate::mod_host::diagnostics::{analyzer_diagnostic_to_semantic, analyzer_fix_to_syntax_fix};
 use crate::projects::{CompilePlan, PreparedProjectWorkspace, ProgramAssembly, SourceUnit};
 
 use super::super::input::ResolvedInput;
-use super::super::semantic_facts::SemanticFactsError;
 
 /// Drop exact-duplicate diagnostics, keeping the first occurrence.
 ///
@@ -147,27 +144,6 @@ pub(super) fn collect_analyzer_fixes(analyzer_outcomes: &[crate::mod_host::Analy
         }
     }
     out
-}
-
-pub(super) fn semantic_facts_errors_to_diagnostics(
-    error: SemanticFactsError,
-    source_name: &str,
-    source: &str,
-) -> Vec<SemanticDiagnostic> {
-    let mut ctx = RuleContext::new(source_name, source, AnalysisOptions::default());
-    match error {
-        SemanticFactsError::Type { errors, typed } => {
-            for error in errors {
-                types::emit_type_error(&mut ctx, error, Some(&typed));
-            }
-        }
-        SemanticFactsError::Resolve(errors) => {
-            for error in errors {
-                resolve::emit_resolve_error(&mut ctx, error);
-            }
-        }
-    }
-    ctx.diagnostics
 }
 
 pub(super) fn typed_fingerprint(resolution: &crate::resolve::Resolution) -> u64 {

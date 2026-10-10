@@ -105,14 +105,7 @@ pub(crate) fn emit_type_error(ctx: &mut RuleContext, error: TypeError, result: O
             ctx.emit_issue(span, SemanticIssueKind::TypeInvalidPrimitiveConversionArgument);
         }
         TypeError::InvalidClifBlock { span, detail } => {
-            ctx.emit_simple(
-                span,
-                "E1232",
-                "invalid clif block",
-                "clif block",
-                Some(detail),
-                Severity::Error,
-            );
+            ctx.emit_issue(span, SemanticIssueKind::InvalidClifBlock { detail });
         }
         TypeError::InvalidEventInvocationScope { span } => {
             ctx.emit_issue(span, SemanticIssueKind::TypeInvalidEventInvocationScope);
@@ -190,14 +183,7 @@ pub(crate) fn emit_type_error(ctx: &mut RuleContext, error: TypeError, result: O
             );
         }
         TypeError::ExternInvalidOptional { span, detail } => {
-            ctx.emit_simple(
-                span,
-                "T0905",
-                "invalid optional extern contract",
-                "extern attribute",
-                Some(detail),
-                Severity::Error,
-            );
+            ctx.emit_issue(span, SemanticIssueKind::ExternInvalidOptional { detail });
         }
         TypeError::ContractMethodMissingImplementation { span, contract_name, method_name, expected } => {
             ctx.emit_issue(

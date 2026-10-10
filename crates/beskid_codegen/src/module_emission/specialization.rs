@@ -144,6 +144,18 @@ pub(super) fn resolve_module_items(
         }
         pending.extend(specializations.keys().filter(|key|!present.contains(key)).copied());
     }
+    // Every emitted specialization of a retained serialization template method rebinds the
+    // template's canonical contract application in that instance's complete environment (the
+    // serde precedent: a generic impl proven at each concrete use). An instance that is not a
+    // template contribution is `None`; a template instance that cannot rebind fails the module.
+    for instance in specializations.values().flatten() {
+        beskid_queries::serialization_template_instance_rebind(db, input.typed_program(), instance).map_err(|error| {
+            emission_verification(format!(
+                "serialization template instance {} cannot rebind its contract: {error}",
+                format_declaration_for_trace(db, instance.declaration)
+            ))
+        })?;
+    }
     let mut resolved = Vec::with_capacity(source_items.len());
     for item in &source_items {
         if item_abi_signature(db, item.key).ok().flatten().is_some() {

@@ -1,7 +1,7 @@
 //! Scalar values round-trip exactly; invalid scalar ranges never produce a character.
 use beskid_analysis::services::{FrontEndOptions, resolved_input_from_plan, synthetic_compile_plan_for_source};
 use beskid_codegen::lower_prepared_syntax_module;
-use beskid_queries::{compile_front_end_from_resolved_input, with_db};
+use beskid_queries::{compile_mod_free_front_end, with_db};
 use cranelift_codegen::{isa, settings};
 use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::{Linkage, Module, default_libcall_names};
@@ -13,7 +13,7 @@ fn checked_unicode_projection_preserves_scalars_and_rejects_invalid_ranges() {
     std::fs::write(&path, source).unwrap();
     let plan = synthetic_compile_plan_for_source(&path);
     let resolved = resolved_input_from_plan(path, source.into(), plan, None, None);
-    let front = compile_front_end_from_resolved_input(
+    let front = compile_mod_free_front_end(
         &resolved,
         FrontEndOptions { with_semantic_diagnostics: false, ..Default::default() },
         None,

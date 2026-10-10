@@ -7,7 +7,7 @@ use crate::{
 use beskid_abi::runtime_kit::{BuildProfile as RuntimeKitProfile, GlueProviderToolV1};
 pub use beskid_analysis::mod_host::{ContractRegistration, ModArtifactDescriptor};
 use beskid_analysis::mod_host::{
-    NATIVE_MOD_COMPILER_TOOL_ROLE, NATIVE_MOD_DESCRIPTOR_FILE, mod_artifact_inventory, native_mod_artifact_key,
+    NATIVE_MOD_COMPILER_TOOL_ROLE, NATIVE_MOD_DESCRIPTOR_FILE, NATIVE_MOD_DESCRIPTOR_SCHEMA, mod_artifact_inventory, native_mod_artifact_key,
     native_mod_evidence_is_current, native_mod_file_sha256, native_mod_inventory_identity, native_mod_runtime_binding,
     read_mod_artifact_descriptor,
 };
@@ -48,6 +48,8 @@ pub struct ModArtifactBuildRequest {
     /// Source identity of each dependency project (`native_mod_dependency_sources`).
     pub dependency_sources: BTreeMap<String, String>,
     pub compiler_version: String,
+    /// The producing compiler, captured when the build started.
+    pub producer: crate::mod_producer::ModProducerIdentity,
     pub runtime: RuntimeKitRequest,
     pub control: NativeExecutionControl,
 }
@@ -314,14 +316,11 @@ pub fn build_mod_artifact(req: ModArtifactBuildRequest) -> AotResult<QualifiedNa
         Some(&req.control),
     )?;
     let linker = linked.tool_receipt.ok_or_else(|| invalid("Mod shared library lacks exact linker receipt"))?;
-    let compiler_path = std::env::current_exe()
-        .map_err(|error| invalid(format!("Mod compiler identity: {error}")))?
-        .canonicalize()
-        .map_err(invalid)?;
-    let compiler =
-        LinkToolReceipt { sha256: native_mod_file_sha256(&compiler_path).map_err(invalid)?, executable: compiler_path };
+    // The recorded compiler identity must still name the on-disk executable, or no consumer could
+    // ever qualify this artifact against it.
+    req.producer.require_unchanged_on_disk(&req.package_id)?;
     let build_tools = vec![
-        stage_compiler(dir, &compiler, &req.compiler_version)?,
+        stage_compiler(dir, &req.producer, &req.compiler_version)?,
         stage_tool(dir, "adapter-compiler", &adapter_compiler, &req.control)?,
         stage_tool(dir, "linker", &linker, &req.control)?,
     ];
@@ -332,7 +331,7 @@ pub fn build_mod_artifact(req: ModArtifactBuildRequest) -> AotResult<QualifiedNa
         None => format!("{:x}", Sha256::digest([])),
     };
     let mut descriptor = ModArtifactDescriptor {
-        schema_version: 2,
+        schema_version: NATIVE_MOD_DESCRIPTOR_SCHEMA,
         artifact_kind: "executable-shared-library".into(),
         host_abi_version: 2,
         package_id: req.package_id,
@@ -469,20 +468,23 @@ fn stage_sources(req: &ModArtifactBuildRequest, dir: &Path) -> AotResult<BTreeMa
     }
     Ok(out)
 }
-/// Capture the producing compiler's identity: the exact digest of the running executable and the
-/// version this process reports for itself.
+/// Stage the producing compiler's identity: the digest of the running image captured at build
+/// start ([`crate::mod_producer::ModProducerIdentity`]) and the version this process reports for
+/// itself. Only the version output is staged as evidence; the executable is identified by its
+/// digest, which the descriptor records and the content-addressed artifact key covers, the way
+/// Cargo fingerprints `rustc` without storing it.
 ///
 /// The producer is the current process, so its version is known in process. Spawning
 /// `current_exe --version` would execute whatever host embeds the producer (a test harness or an
 /// editor service) with a flag that only the CLI defines, and an external probe of the running
 /// image proves nothing that its digest does not. External tools are still probed below.
-fn stage_compiler(dir: &Path, receipt: &LinkToolReceipt, compiler_version: &str) -> AotResult<GlueProviderToolV1> {
+fn stage_compiler(
+    dir: &Path,
+    producer: &crate::mod_producer::ModProducerIdentity,
+    compiler_version: &str,
+) -> AotResult<GlueProviderToolV1> {
     if compiler_version.trim().is_empty() || compiler_version.len() > 1024 {
         return Err(invalid("Mod compiler version identity is empty or unbounded"));
-    }
-    let binary = fs::read(&receipt.executable).map_err(|error| io(&receipt.executable, error))?;
-    if format!("{:x}", Sha256::digest(&binary)) != receipt.sha256 {
-        return Err(invalid("Mod compiler executable changed during the build"));
     }
     // Same framing as an external probe: length-prefixed stdout, then an empty stderr.
     let stdout = format!("beskid {compiler_version}\n").into_bytes();
@@ -492,10 +494,9 @@ fn stage_compiler(dir: &Path, receipt: &LinkToolReceipt, compiler_version: &str)
     bytes.extend_from_slice(&0u64.to_be_bytes());
     let mut evidence = BTreeMap::new();
     write_evidence(dir, "tools/compiler-version", &bytes, &mut evidence)?;
-    write_evidence(dir, "tools/compiler-executable", &binary, &mut evidence)?;
     Ok(GlueProviderToolV1 {
         role: NATIVE_MOD_COMPILER_TOOL_ROLE.into(),
-        executable_sha256: receipt.sha256.clone(),
+        executable_sha256: producer.sha256().to_owned(),
         version_output_sha256: format!("{:x}", Sha256::digest(bytes)),
     })
 }
@@ -526,8 +527,6 @@ fn stage_tool(
     }
     let mut evidence = BTreeMap::new();
     write_evidence(dir, &format!("tools/{role}-version"), &bytes, &mut evidence)?;
-    let binary = fs::read(&receipt.executable).map_err(invalid)?;
-    write_evidence(dir, &format!("tools/{role}-executable"), &binary, &mut evidence)?;
     Ok(GlueProviderToolV1 {
         role: role.into(),
         executable_sha256: receipt.sha256.clone(),
@@ -829,16 +828,22 @@ pub fn mod_artifact_dir(workspace_root: &Path, package_id: &str, artifact_key: &
 }
 
 /// A producer-owned executable set. Callers cannot attach a raw image or descriptor.
+/// Invokes producer-issued native Mods. Every contract invocation is one bounded native
+/// phase: it receives its own absolute deadline `invocation_budget` from its start. A
+/// long-lived host (a test matrix preparing many targets) holds one invoker, and an earlier
+/// invocation never spends a later one's budget.
 pub struct QualifiedModInvoker {
     artifacts: Vec<QualifiedNativeMod>,
     worker: PathBuf,
-    control: NativeExecutionControl,
+    invocation_budget: std::time::Duration,
+    cancelled: std::sync::Arc<dyn Fn() -> bool + Send + Sync>,
 }
 impl QualifiedModInvoker {
     pub fn new(
         artifacts: Vec<QualifiedNativeMod>,
         worker: PathBuf,
-        control: NativeExecutionControl,
+        invocation_budget: std::time::Duration,
+        cancelled: std::sync::Arc<dyn Fn() -> bool + Send + Sync>,
     ) -> AotResult<Self> {
         if artifacts.is_empty() {
             return Err(invalid("qualified Mod executor requires producer-issued artifacts"));
@@ -850,7 +855,12 @@ impl QualifiedModInvoker {
         for artifact in &artifacts {
             artifact.verify_native_closure()?;
         }
-        Ok(Self { artifacts, worker, control })
+        Ok(Self { artifacts, worker, invocation_budget, cancelled })
+    }
+
+    /// The control of one invocation, starting its budget now.
+    fn invocation_control(&self) -> NativeExecutionControl {
+        NativeExecutionControl::new(std::time::Instant::now() + self.invocation_budget, self.cancelled.clone())
     }
     fn execute(
         &self,
@@ -869,9 +879,9 @@ impl QualifiedModInvoker {
             anyhow::bail!("native registration has absent or ambiguous private producer authority");
         }
         let artifact = matches[0];
-        artifact.verify_native_closure()?;
         let authority =
             authority.ok_or_else(|| anyhow::anyhow!("native contract requires current registered syntax authority"))?;
+        // The transport validates the complete native closure once for this invocation.
         beskid_analysis::mod_host::invoke_qualified_native_transport(
             &artifact.descriptor,
             &artifact.runtime_prefix,
@@ -881,7 +891,7 @@ impl QualifiedModInvoker {
             targets,
             family,
             authority,
-            &self.control,
+            &self.invocation_control(),
         )
     }
     fn error(
@@ -901,8 +911,7 @@ impl QualifiedModInvoker {
         if matches.next().is_some() {
             anyhow::bail!("native registration ambiguous")
         };
-        artifact.verify_native_closure()?;
-        Ok(std::fs::read(artifact.descriptor.artifact_dir.join("sdk/schema.json"))?)
+        Ok(artifact.descriptor.read_sdk_schema()?)
     }
 }
 impl beskid_analysis::mod_host::ContractInvoker for QualifiedModInvoker {
@@ -972,7 +981,7 @@ impl beskid_analysis::mod_host::ContractInvoker for QualifiedModInvoker {
                 anyhow::bail!("Rewriter lacks unique private producer witness")
             };
             let artifact = matches[0];
-            artifact.verify_native_closure()?;
+            // The Rewriter transport validates the complete native closure once for this invocation.
             beskid_analysis::mod_host::invoke_qualified_native_rewriter(
                 &artifact.descriptor,
                 &artifact.runtime_prefix,
@@ -980,7 +989,7 @@ impl beskid_analysis::mod_host::ContractInvoker for QualifiedModInvoker {
                 &r.entry_symbol,
                 serde_json::to_value(request)?,
                 authority.ok_or_else(|| anyhow::anyhow!("Rewriter requires current registered syntax authority"))?,
-                &self.control,
+                &self.invocation_control(),
             )
         };
         run().map_err(|e| Self::error(r, e))

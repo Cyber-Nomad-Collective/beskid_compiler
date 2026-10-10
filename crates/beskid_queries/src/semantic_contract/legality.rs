@@ -22,12 +22,13 @@
 //! `check_items` collects every finding of the pass rather than stopping at the first, so
 //! `beskid test` and `beskid build` report every violation the requested items carry in one run.
 
+use super::local_type_resolution::UnresolvedTypeKind;
 use super::*;
 use beskid_analysis::analysis::SemanticIssueKind;
 use beskid_analysis::syntax::{FunctionDefinition, MethodDefinition};
 use beskid_analysis::syntax_query::{NodeKind, SyntaxIndex};
 
-mod calls;
+pub(super) mod calls;
 mod cleanup;
 mod externs;
 mod gate;
@@ -36,6 +37,7 @@ mod imports;
 mod members;
 mod typing;
 mod units;
+mod value_paths;
 mod values;
 
 pub use externs::extern_profile_findings;
@@ -396,11 +398,28 @@ pub fn check_items(db: &dyn Db, items: &[AstNodeKey]) -> Result<(), Vec<Semantic
             });
         }
         if let Ok(Some(finding)) = unresolved_type_reference(db, item) {
-            findings.push(SemanticFinding {
-                kind: SemanticIssueKind::TypeUnknownType { name: finding.name.to_string() },
-                site: finding.site,
-                related: Vec::new(),
-            });
+            let kind = match finding.kind {
+                UnresolvedTypeKind::UnknownType => SemanticIssueKind::TypeUnknownType { name: finding.name.to_string() },
+                UnresolvedTypeKind::UnknownModulePath { path } => {
+                    SemanticIssueKind::ResolveUnknownModulePath { path: path.to_string() }
+                }
+                UnresolvedTypeKind::AmbiguousModulePath { path, candidates } => {
+                    SemanticIssueKind::ResolveAmbiguousModulePath { path: path.to_string(), candidates }
+                }
+                UnresolvedTypeKind::PrivateItemInModule { module_path, name } => {
+                    SemanticIssueKind::ResolvePrivateItemInModule {
+                        module_path: module_path.to_string(),
+                        name: name.to_string(),
+                    }
+                }
+                UnresolvedTypeKind::UnknownTypeInModule { module_path, name } => {
+                    SemanticIssueKind::ResolveUnknownTypeInModule {
+                        module_path: module_path.to_string(),
+                        name: name.to_string(),
+                    }
+                }
+            };
+            findings.push(SemanticFinding { kind, site: finding.site, related: Vec::new() });
         }
         if let Ok(Some(finding)) = immutable_local_assignment(db, item) {
             findings.push(SemanticFinding {

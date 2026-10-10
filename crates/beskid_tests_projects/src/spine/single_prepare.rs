@@ -12,7 +12,7 @@ use beskid_analysis::services::{FrontEndOptions, PrepareOptions, ResolvedInput, 
 use beskid_pipeline::{PipelineEvent, PipelineObserver, phases};
 use beskid_queries::{configure_db_for_project, prepare_compilation_diagnostics};
 
-use crate::projects::fixture_harness::{enter_mod_host, mod_invoker_for};
+use crate::projects::fixture_harness::{enter_mod_host, mod_host_for};
 use crate::projects::with_cwd;
 use beskid_tests_support::{temp_case_dir, write_project_manifest as write_manifest};
 
@@ -88,9 +88,8 @@ fn run_single_prepare_path(resolved: &ResolvedInput, observer: &PhaseStartRecord
     let (prepared, _gate_diagnostics, _fixes) = prepare_compilation_diagnostics(
         resolved,
         PrepareOptions {
-            mod_invoker: Some(mod_invoker_for(&mod_host, resolved)),
             front_end: FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
-            ..Default::default()
+            ..PrepareOptions::with_mod_host(mod_host_for(&mod_host, resolved))
         },
         Some(observer),
     )

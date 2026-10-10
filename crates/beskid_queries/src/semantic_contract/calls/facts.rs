@@ -127,19 +127,32 @@ pub(in crate::semantic_contract) fn call_arguments_tracked(
                 return Some(Err(SemanticError::unavailable("call_arguments")));
             };
             // A field-chain receiver is denoted by its own path segment; only an unqualified
-            // local receiver is carried by the callee path expression itself.
+            // local receiver is carried by the callee path expression itself. A field typed by
+            // a bounded impl parameter is projected exactly like a nominal field.
+            let field_receiver = || {
+                nominal_local_member_receiver(db, program, index, key, &path.node.path.node)
+                    .map(|(_, receiver)| receiver)
+                    .or_else(|| {
+                        super::super::contracts::bounded_field_member_receiver(
+                            db,
+                            program,
+                            index,
+                            key,
+                            &path.node.path.node,
+                        )
+                        .and_then(Result::ok)
+                        .map(|(_, receiver)| receiver)
+                    })
+            };
             let receiver = if path.node.path.node.segments.len() > 2 {
-                nominal_local_member_receiver(db, program, index, key, &path.node.path.node)?.1
+                field_receiver()?
             } else {
                 let implicit_field_root = path.node.path.node.segments.first().is_some_and(|segment| {
                     nominal_local_receiver_declaration(db, program, index, key, segment.node.name.node.name.as_str())
                         .is_none()
                 });
-                match implicit_field_root
-                    .then(|| nominal_local_member_receiver(db, program, index, key, &path.node.path.node))
-                    .flatten()
-                {
-                    Some((_, receiver)) => receiver,
+                match implicit_field_root.then(field_receiver).flatten() {
+                    Some(receiver) => receiver,
                     None => AstNodeKey { node: normalized_expression_node(index, callee), ..key },
                 }
             };
@@ -230,6 +243,101 @@ pub(in crate::semantic_contract) fn try_expression_fact_tracked(
     .transpose()
 }
 
+/// Legality of `operand?`: the operand is a value of the canonical Result whose error type is
+/// exactly the error type of the enclosing callable's declared canonical Result.
+///
+/// This is the language rule, judged on declared types alone, so it holds in an unspecialized
+/// generic body where the payloads name generic parameters (`Result<T[], E>`). The lowering
+/// fact ([`try_expression_fact_for_node`]) requires this legality and adds the concrete payload
+/// and layout facts that only a concrete (or specialized) body has.
+pub(in crate::semantic_contract) fn try_expression_legality_for_node(
+    db: &dyn Db,
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    key: AstNodeKey,
+    node: beskid_analysis::syntax_query::DynNodeRef<'_>,
+) -> Result<(), SemanticError> {
+    let unavailable = || SemanticError::unavailable("try_expression");
+    let expression = node.of::<beskid_analysis::syntax::TryExpression>().ok_or_else(unavailable)?;
+    let operand = index
+        .direct_child_id(program, key.node, beskid_analysis::syntax_query::DynNodeRef::from(expression.expr.as_ref()))
+        .map(|node| AstNodeKey { node: normalized_expression_node(index, node), ..key })
+        .ok_or_else(unavailable)?;
+    let callable = super::super::locals::enclosing_executable_callable(index, key.node)
+        .and_then(|callable| index.node_at(program, callable))
+        .ok_or_else(unavailable)?;
+    let return_type = super::super::abi::declared_callable_return_type(callable).ok_or_else(unavailable)?;
+    let result_definition = canonical_result_definition_for_type(db, key, &return_type.node).ok_or_else(unavailable)?;
+    let (_, return_error) = result_type_parts(&return_type.node).ok_or_else(unavailable)?;
+    let return_error = generic_source_type_identity(db, key, &return_error.node)?;
+    let (operand_definition, operand_error) = try_operand_result(db, program, index, key, operand, node)?;
+    if operand_definition != result_definition || operand_error != return_error {
+        return Err(unavailable());
+    }
+    Ok(())
+}
+
+/// The canonical Result declaration and error identity of a try operand.
+fn try_operand_result(
+    db: &dyn Db,
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    key: AstNodeKey,
+    operand: AstNodeKey,
+    node: beskid_analysis::syntax_query::DynNodeRef<'_>,
+) -> Result<(AstNodeKey, GenericSourceTypeIdentity), SemanticError> {
+    let unavailable = || SemanticError::unavailable("try_expression");
+    if index.kind(operand.node) == Some(beskid_analysis::syntax_query::NodeKind::CallExpression) {
+        let Some(CallLowering::Direct(declaration)) = call_lowering(db, operand)? else {
+            return Err(unavailable());
+        };
+        let syntax = db.syntax_unit(declaration.unit).filter(|syntax| syntax.accepts_key(db, declaration)).ok_or_else(unavailable)?;
+        let declaration_node =
+            syntax.syntax_index(db).node_at(syntax.expanded_program(db), declaration.node).ok_or_else(unavailable)?;
+        // A member of a bound contract (`reader.Next()?` with `where R: Source`) is as exact a
+        // callee as a function: its declared result is the contract signature's result.
+        let (result, contract_member) =
+            if let Some(function) = declaration_node.of::<beskid_analysis::syntax::FunctionDefinition>() {
+                (function.return_type.as_ref(), false)
+            } else if let Some(method) = declaration_node.of::<beskid_analysis::syntax::MethodDefinition>() {
+                (method.return_type.as_ref(), false)
+            } else if let Some(signature) = declaration_node.of::<beskid_analysis::syntax::ContractMethodSignature>() {
+                (signature.return_type.as_ref(), true)
+            } else {
+                return Err(unavailable());
+            };
+        let result = result.ok_or_else(unavailable)?;
+        let definition = canonical_result_definition_for_type(db, declaration, &result.node).ok_or_else(unavailable)?;
+        let (_, error) = result_type_parts(&result.node).ok_or_else(unavailable)?;
+        let error = if super::generics::result_mentions_callable_generics(db, declaration, &error.node, contract_member) {
+            // The error type depends on this call's substitutions.
+            match generic_source_expression_identity(db, operand)? {
+                GenericSourceTypeIdentity::Nominal { arguments, .. } => match arguments.as_ref() {
+                    [_, error] => error.clone(),
+                    _ => return Err(unavailable()),
+                },
+                _ => return Err(unavailable()),
+            }
+        } else {
+            generic_source_type_identity(db, declaration, &error.node)?
+        };
+        return Ok((definition, error));
+    }
+    // A spelling or pointer ABI does not prove an arbitrary member or computed value: the
+    // operand must name one lexical declaration (parameter or `let`) whose declared or
+    // initialized identity the generic source identity can prove.
+    try_operand_declaration(program, index, key, node)?;
+    let identity = generic_source_expression_identity(db, operand)?;
+    let (definition, _) = super::super::layouts::enum_layout_for_source_identity(db, operand, &identity)?;
+    let GenericSourceTypeIdentity::Nominal { arguments, .. } = &identity else {
+        return Err(unavailable());
+    };
+    let [_, error] = arguments.as_ref() else {
+        return Err(unavailable());
+    };
+    Ok((definition, error.clone()))
+}
+
 pub(in crate::semantic_contract) fn try_expression_fact_for_node(
     db: &dyn Db,
     program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
@@ -237,6 +345,7 @@ pub(in crate::semantic_contract) fn try_expression_fact_for_node(
     key: AstNodeKey,
     node: beskid_analysis::syntax_query::DynNodeRef<'_>,
 ) -> Result<TryExpressionFact, SemanticError> {
+    try_expression_legality_for_node(db, program, index, key, node)?;
     let expression = node
         .of::<beskid_analysis::syntax::TryExpression>()
         .ok_or_else(|| SemanticError::unavailable("try_expression"))?;
@@ -249,9 +358,15 @@ pub(in crate::semantic_contract) fn try_expression_fact_for_node(
         let Some(CallLowering::Direct(declaration)) = call_lowering(db, operand)? else {
             return Err(SemanticError::unavailable("try_expression"));
         };
+        // A member of a bound contract (`reader.Next()?` with `where R: Source`) is as exact a
+        // callee as a function: its declared result is the contract signature's result.
         if !matches!(
             node_kind(db, declaration)?,
-            Some(IndexedNodeKind::FunctionDefinition | IndexedNodeKind::MethodDefinition)
+            Some(
+                IndexedNodeKind::FunctionDefinition
+                    | IndexedNodeKind::MethodDefinition
+                    | IndexedNodeKind::ContractMethodSignature
+            )
         ) {
             return Err(SemanticError::unavailable("try_expression"));
         }

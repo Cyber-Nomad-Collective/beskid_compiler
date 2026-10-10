@@ -39,17 +39,6 @@ impl ResolvedInput {
     }
 }
 
-/// Optional workspace member name for analysis parity with CLI `--workspace-member`.
-#[derive(Clone, Default)]
-pub struct AnalyzeInProjectOptions<'a> {
-    pub workspace_member: Option<&'a str>,
-    /// Forwarded into workspace graph construction (for example `workspace_member_for_meta_default`
-    /// for `attachTo: default` when multiple members exist).
-    pub project_graph: crate::projects::ProjectGraphBuildOptions,
-    /// Producer-issued native Mod executor for projects whose closure depends on a Mod.
-    pub mod_invoker: Option<std::sync::Arc<dyn crate::mod_host::ContractInvoker>>,
-}
-
 pub fn resolve_input(
     input: Option<&PathBuf>,
     project: Option<&PathBuf>,

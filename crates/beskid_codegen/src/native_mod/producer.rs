@@ -261,18 +261,6 @@ pub fn lower_prepared_native_mod(
                 &mut layouts,
                 &mut Vec::new(),
             )?;
-            let symbol = format!("beskid_mod_v2_entry_{ordinal}");
-            planned_entries.push(NativeEntryPlan {
-                symbol: symbol.clone(),
-                method_symbol: crate::internal_link_symbol(&method.symbol),
-                family: entry.witness.family.canonical_name().to_owned(),
-                receiver_type,
-                factory_symbol: crate::internal_link_symbol(&factory.symbol),
-                factory_receiver: bootstrap,
-                factory_request_type,
-                request_type,
-                result_type,
-            });
             let unit = input
                 .typed_program()
                 .assembly
@@ -286,7 +274,27 @@ pub fn lower_prepared_native_mod(
                 .verified_package_identities
                 .for_source(&unit.path)
                 .context("native source lacks prepared package proof")?;
-            input.typed_program().assembly.verified_package_identities.validate_source(&unit.path, &unit.source)?;
+            let package = input
+                .typed_program()
+                .assembly
+                .verified_package_identities
+                .validate_source(&unit.path, &unit.source)?
+                .context("native source lacks prepared package identity")?;
+            // Entry symbols are unique across every Mod artifact a host loads: the package
+            // identity qualifies the per-artifact ordinal (E1852 rejects a shared export name).
+            let package_tag = format!("{:x}", Sha256::digest(package.package_name().as_bytes()));
+            let symbol = format!("beskid_mod_v2_{}_entry_{ordinal}", &package_tag[..16]);
+            planned_entries.push(NativeEntryPlan {
+                symbol: symbol.clone(),
+                method_symbol: crate::internal_link_symbol(&method.symbol),
+                family: entry.witness.family.canonical_name().to_owned(),
+                receiver_type,
+                factory_symbol: crate::internal_link_symbol(&factory.symbol),
+                factory_receiver: bootstrap,
+                factory_request_type,
+                request_type,
+                result_type,
+            });
             let source_file = proof
                 .project_relative_source_path(&unit.path)
                 .context("native source path is ambiguous or outside owning project")?;

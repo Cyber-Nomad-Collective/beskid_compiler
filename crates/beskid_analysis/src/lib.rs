@@ -53,10 +53,9 @@ pub use compilation_context::{CompilationContext, ProjectSessionHandle, module_r
 pub use parser::{BeskidParser, Rule};
 pub use projects::{AssemblyDiscovery, AssemblyOptions, ProgramAssembly, effective_roots_for_plan};
 pub use projects::{ProjectGraphBuildOptions, WorkspaceResolutionSummary, resolve_project_manifest_for_source_path};
-#[allow(deprecated)]
 pub use services::{
-    AnalyzeInProjectOptions, analyze_program_with_options, analyze_source_with_compilation_context,
-    compile_plan_for_input_path, compile_plan_for_input_path_with_member, resolve_input_with_pipeline,
+    analyze_program_with_options, compile_plan_for_input_path, compile_plan_for_input_path_with_member,
+    resolve_input_with_pipeline,
 };
 pub use syntax::{AstNodeId, AstNodeKey, SyntaxGenerationId};
 pub use syntax_query::{

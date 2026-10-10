@@ -97,10 +97,12 @@ impl SyntaxNodeFacts<'_> {
             });
         }
         // Contextual scalar ABI facts also cover expressions such as native-word
-        // arithmetic that have no independently inferred node_type. Only a distinct
-        // scalar/string identity is sufficient here; POINTER remains ambiguous.
-        if let Some(semantic) =
-            self.scalar_semantic_type(key).or_else(|| self.query(call_argument_abi_type(self.db, key)))
+        // arithmetic that have no independently inferred node_type, and bare integer
+        // literals typed by their expected type. Only a distinct scalar/string identity is
+        // sufficient here; POINTER remains ambiguous.
+        if let Some(semantic) = self
+            .scalar_semantic_type(key)
+            .or_else(|| self.query(contextual_integer_literal_abi_type(self.db, key)))
             && semantic != SemanticTypeId::POINTER
         {
             return Some(if semantic == SemanticTypeId::STRING {

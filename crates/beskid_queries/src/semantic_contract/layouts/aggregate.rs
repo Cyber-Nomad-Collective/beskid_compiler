@@ -308,7 +308,7 @@ pub(in crate::semantic_contract) fn inaccessible_literal_fields(
     key: AstNodeKey,
     declaration: AstNodeKey,
 ) -> Result<Vec<Arc<str>>, SemanticError> {
-    if key.unit == declaration.unit {
+    if crate::contribution_attribution::contribution_attributed_unit(db, key) == declaration.unit {
         return Ok(Vec::new());
     }
     let syntax = db
@@ -341,272 +341,28 @@ pub(in crate::semantic_contract) fn inaccessible_literal_fields(
         .collect())
 }
 
-/// The value fields of a serialization target record that a generated adapter placed in
-/// `contribution`'s source unit (the unit the Mod merger appends to) could not read or construct.
-/// Generated decoders build the whole record literal and generated encoders read its fields, so
-/// this is the literal-construction answer of the one field visibility policy, never a second
-/// rule. Enum payload fields carry no field visibility, so an enum target has none.
-pub(crate) fn serialization_contribution_inaccessible_fields(
-    db: &dyn Db,
-    contribution: AstNodeKey,
-    declaration: AstNodeKey,
-) -> Result<Vec<Arc<str>>, SemanticError> {
-    if contribution.unit == declaration.unit {
-        return Ok(Vec::new());
-    }
-    let syntax = db
-        .syntax_unit(declaration.unit)
-        .filter(|syntax| syntax.accepts_key(db, declaration))
-        .ok_or_else(|| SemanticError::unavailable("serialization_target.visibility"))?;
-    match syntax.syntax_index(db).kind(declaration.node) {
-        Some(beskid_analysis::syntax_query::NodeKind::TypeDefinition) => {
-            inaccessible_literal_fields(db, contribution, declaration)
-        }
-        Some(beskid_analysis::syntax_query::NodeKind::EnumDefinition) => Ok(Vec::new()),
-        _ => Err(SemanticError::unavailable("serialization_target.visibility")),
-    }
-}
-
-/// Derive the element ABI of an empty array literal only from a direct declared `T[]` storage
-/// context or exact enum variant argument. An empty literal carries no element expression from which to infer a representation,
-/// so standalone, local-inferred, nested, assignment, and mismatched-field uses remain
-/// unavailable. The enclosing aggregate declaration or direct explicit-local annotation is the
-/// sole authority.
+/// Derive the element ABI of an empty array literal from its [`expected_type`].
+///
+/// An empty literal carries no element expression from which to infer a representation, so the
+/// expected array type of its position (a declared `T[]` local, assignment target, callee
+/// parameter, enum payload, struct field, return type, outer array element, match arm or block
+/// result) is the sole authority. A position with no expected type, or whose expected type is
+/// not an array, stays unavailable; a non-empty literal has no fact here.
 #[salsa::tracked(persist)]
 pub(in crate::semantic_contract) fn empty_array_literal_element_abi_type_tracked(
     db: &dyn Db,
     syntax: SyntaxUnitInput,
     key: AstNodeKey,
 ) -> SemanticQueryResult<SemanticTypeId> {
-    with_node(db, syntax, key, |program, index, node| {
+    with_node(db, syntax, key, |_program, _index, node| {
         let array = node.of::<beskid_analysis::syntax::ArrayLiteralExpression>()?;
         if !array.elements.is_empty() {
             return None;
         }
-
-        // The AST preserves a direct `Expression -> []` ownership chain. Do not walk arbitrary
-        // ancestors: that would turn contextual syntax into inference.
-        let expression = parent_node(index, key.node)?;
-        if index.kind(expression) != Some(beskid_analysis::syntax_query::NodeKind::Expression) {
-            return None;
-        }
-
-        // An explicitly typed local gives an empty literal the same declared element authority as
-        // an aggregate field, but only when the literal is that binding's direct initializer.
-        // `u8[] value = { [] }` and `value = []` deliberately do not enter this path.
-        let local_node = parent_node(index, expression)?;
-        if index.kind(local_node) == Some(beskid_analysis::syntax_query::NodeKind::LetStatement) {
-            let local = index.node_at(program, local_node)?.of::<beskid_analysis::syntax::LetStatement>()?;
-            let initializer = index.direct_child_id(
-                program,
-                local_node,
-                beskid_analysis::syntax_query::DynNodeRef::from(&local.value),
-            )?;
-            if initializer != expression {
-                return None;
-            }
-            let declaration = index.direct_child_id(
-                program,
-                local_node,
-                beskid_analysis::syntax_query::DynNodeRef::from(&local.name),
-            )?;
-            let declared = explicit_local_declaration_type(program, index, declaration)?;
-            let beskid_analysis::syntax::Type::Array(element) = declared else {
-                return Some(Err(SemanticError::unavailable("empty_array_literal_element_abi_type")));
-            };
-            return Some(abi_type_from_syntax(db, AstNodeKey { node: declaration, ..key }, &element.node));
-        }
-
-        // A direct enum payload has a declared element type just like a record field.
-        // Bind the argument by its exact AST child, then resolve the selected variant's
-        // declaration; neighboring payloads and arbitrary enclosing expressions are not authority.
-        if let Some(constructor) =
-            index.node_at(program, local_node)?.of::<beskid_analysis::syntax::EnumConstructorExpression>()
-        {
-            let constructor_key = AstNodeKey { node: local_node, ..key };
-            let argument_index = constructor.args.iter().position(|argument| {
-                index.direct_child_id(program, local_node, beskid_analysis::syntax_query::DynNodeRef::from(argument))
-                    == Some(expression)
-            })?;
-            let path = contextual_enum_constructor_type_path(db, program, index, constructor_key, constructor)
-                .unwrap_or_else(|| constructor.path.node.type_path.node.clone());
-            let declaration = resolve_type_declaration(db, constructor_key, &path)?;
-            let declaration_syntax =
-                db.syntax_unit(declaration.unit).filter(|unit| unit.generation(db) == declaration.generation)?;
-            let definition = declaration_syntax
-                .syntax_index(db)
-                .node_at(declaration_syntax.expanded_program(db), declaration.node)?
-                .of::<beskid_analysis::syntax::EnumDefinition>()?;
-            let variant = definition
-                .variants
-                .iter()
-                .find(|variant| variant.node.name.node.name == constructor.path.node.variant.node.name)?;
-            if variant.node.fields.len() != constructor.args.len() {
-                return None;
-            }
-            let beskid_analysis::syntax::Type::Array(element) = &variant.node.fields.get(argument_index)?.node.ty.node
-            else {
-                return None;
-            };
-            // A bare enum type parameter is owned by the caller's applied arguments.
-            // Concrete declared element names remain owned by the declaration unit.
-            if let beskid_analysis::syntax::Type::Complex(parameter_path) = &element.node
-                && let [segment] = parameter_path.node.segments.as_slice()
-                && segment.node.type_args.is_empty()
-                && let Some(parameter_index) =
-                    definition.generics.iter().position(|parameter| parameter.node.name == segment.node.name.node.name)
-            {
-                let arguments = &path.segments.last()?.node.type_args;
-                if arguments.len() != definition.generics.len() {
-                    return None;
-                }
-                return Some(abi_type_from_syntax(db, constructor_key, &arguments.get(parameter_index)?.node));
-            }
-            return Some(abi_type_from_syntax(db, declaration, &element.node));
-        }
-
-        // A direct argument of a direct call (`Named(builder, names, [])`,
-        // `Generation.Record(.., [])`, `Append<Item>([], item)`) takes its element type from the
-        // expected type of the matching callee parameter, exactly like a record field: the
-        // declared `T[]` syntax resolved in the callee's own unit, or, when `T` is one of the
-        // callee's generic parameters, the explicit terminal type argument of this call.
-        // Inferred generic calls, bulk parameters and indirect calls stay unavailable.
-        if let Some(call) = index.node_at(program, local_node)?.of::<beskid_analysis::syntax::CallExpression>() {
-            let call_key = AstNodeKey { node: local_node, ..key };
-            let argument_index = call.args.iter().position(|argument| {
-                index.direct_child_id(program, local_node, beskid_analysis::syntax_query::DynNodeRef::from(argument))
-                    == Some(expression)
-            })?;
-            let Ok(Some(CallLowering::Direct(declaration))) = call_lowering(db, call_key) else {
-                return None;
-            };
-            let callee_syntax = db.syntax_unit(declaration.unit).filter(|unit| unit.accepts_key(db, declaration))?;
-            let callee = callee_syntax.syntax_index(db).node_at(callee_syntax.expanded_program(db), declaration.node)?;
-            let parameters = callee
-                .of::<beskid_analysis::syntax::FunctionDefinition>()
-                .map(|function| &function.parameters)
-                .or_else(|| callee.of::<beskid_analysis::syntax::MethodDefinition>().map(|method| &method.parameters))?;
-            if parameters.len() != call.args.len() {
-                return None;
-            }
-            let parameter = parameters.get(argument_index)?;
-            if parameter.node.bulk {
-                return None;
-            }
-            let beskid_analysis::syntax::Type::Array(element) = &parameter.node.ty.node else {
-                return Some(Err(SemanticError::unavailable("empty_array_literal_element_abi_type")));
-            };
-            let Some((generic_names, _)) = generic_callable_parameters(db, declaration) else {
-                return Some(abi_type_from_syntax(db, declaration, &element.node));
-            };
-            // A bare callee type parameter is owned by this call's explicit type arguments; any
-            // other element spelling (including a qualified nominal) is owned by the declaration.
-            if let beskid_analysis::syntax::Type::Complex(parameter_path) = &element.node
-                && let [segment] = parameter_path.node.segments.as_slice()
-                && segment.node.type_args.is_empty()
-                && let Some(parameter_index) =
-                    generic_names.iter().position(|name| *name == segment.node.name.node.name)
-            {
-                return Some(match generic_call_instantiation(db, call_key) {
-                    Ok(Some(instantiation)) if instantiation.declaration == declaration => instantiation
-                        .arguments
-                        .get(parameter_index)
-                        .copied()
-                        .ok_or_else(|| SemanticError::unavailable("empty_array_literal_element_abi_type")),
-                    Ok(_) => Err(SemanticError::unavailable("empty_array_literal_element_abi_type")),
-                    Err(error) => Err(error),
-                });
-            }
-            return Some(abi_type_from_syntax(db, declaration, &element.node));
-        }
-
-        // The AST preserves the direct `StructLiteralField -> Expression -> []` ownership chain.
-        // Do not walk arbitrary ancestors: that would turn contextual syntax into inference.
-        let field_node = parent_node(index, expression)?;
-        let literal_node = parent_node(index, field_node)?;
-        let field = index.node_at(program, field_node)?.of::<beskid_analysis::syntax::StructLiteralField>()?;
-        if index.kind(literal_node) != Some(beskid_analysis::syntax_query::NodeKind::StructLiteralExpression) {
-            return None;
-        }
-
-        let literal = AstNodeKey { node: literal_node, ..key };
-        let declaration = aggregate_literal_declaration(db, literal).ok().flatten()?;
-        let declaration_syntax =
-            db.syntax_unit(declaration.unit).filter(|unit| unit.generation(db) == declaration.generation)?;
-        let definition = declaration_syntax
-            .syntax_index(db)
-            .node_at(declaration_syntax.expanded_program(db), declaration.node)?
-            .of::<beskid_analysis::syntax::TypeDefinition>()?;
-        let declared_field = definition.fields.iter().find(|candidate| {
-            candidate.node.kind == beskid_analysis::syntax::FieldKind::Value
-                && candidate.node.name.node.name == field.name.node.name
-        })?;
-        let beskid_analysis::syntax::Type::Array(element) = &declared_field.node.ty.node else {
-            return Some(Err(SemanticError::unavailable("empty_array_literal_element_abi_type")));
-        };
-        Some(abi_type_from_syntax(db, declaration, &element.node))
-    })?
-    .transpose()
-}
-
-/// Resolve an empty array literal that is the direct return value of a specialized generic item.
-///
-/// The declared `T[]` return type supplies the parameter name and the immutable enclosing
-/// specialization supplies its concrete ABI. Other empty-literal contexts remain unavailable.
-pub fn empty_array_literal_element_specialization(
-    db: &dyn Db,
-    key: AstNodeKey,
-    enclosing: Arc<[GenericSubstitution]>,
-) -> SemanticQueryResult<SemanticTypeId> {
-    let Some(syntax) = db.syntax_unit(key.unit).filter(|syntax| syntax.accepts_key(db, key)) else {
-        return Ok(None);
-    };
-    with_node(db, syntax, key, |program, index, node| {
-        let array = node.of::<beskid_analysis::syntax::ArrayLiteralExpression>()?;
-        if !array.elements.is_empty() {
-            return None;
-        }
-        let expression = parent_node(index, key.node)?;
-        if index.kind(expression) != Some(beskid_analysis::syntax_query::NodeKind::Expression) {
-            return None;
-        }
-        let return_node = parent_node(index, expression)?;
-        let statement = index.node_at(program, return_node)?.of::<beskid_analysis::syntax::ReturnStatement>()?;
-        let returned = statement.value.as_ref().and_then(|value| {
-            index.direct_child_id(program, return_node, beskid_analysis::syntax_query::DynNodeRef::from(value))
-        })?;
-        if returned != expression {
-            return None;
-        }
-        let item_node = nearest_ancestor(index, return_node, |kind| {
-            matches!(
-                kind,
-                beskid_analysis::syntax_query::NodeKind::FunctionDefinition
-                    | beskid_analysis::syntax_query::NodeKind::MethodDefinition
-            )
-        })?;
-        let item = index.node_at(program, item_node)?;
-        let return_type = item
-            .of::<beskid_analysis::syntax::FunctionDefinition>()
-            .and_then(|function| function.return_type.as_ref())
-            .or_else(|| {
-                item.of::<beskid_analysis::syntax::MethodDefinition>().and_then(|method| method.return_type.as_ref())
-            })?;
-        let beskid_analysis::syntax::Type::Array(element) = &return_type.node else { return None };
-        // Only a type parameter declared by the enclosing item is substituted; a single-segment
-        // nominal element such as `Chunk[]` keeps its concrete declaration ABI.
-        if type_syntax_is_enclosing_generic_parameter_reference(db, key, &element.node)
-            && let Some(parameter) = generic_parameter_reference_name(&element.node)
-        {
-            return Some(
-                enclosing
-                    .iter()
-                    .find(|binding| binding.parameter.as_ref() == parameter)
-                    .map(|binding| binding.argument)
-                    .ok_or_else(|| SemanticError::unavailable("empty_array_literal_element_specialization")),
-            );
-        }
-        Some(abi_type_from_syntax(db, AstNodeKey { node: item_node, ..key }, &element.node))
+        Some((|| {
+            let unavailable = || SemanticError::unavailable("empty_array_literal_element_abi_type");
+            expected_type(db, key)?.ok_or_else(unavailable)?.array_element_abi_type().ok_or_else(unavailable)
+        })())
     })?
     .transpose()
 }

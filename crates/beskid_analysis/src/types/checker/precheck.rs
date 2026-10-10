@@ -8,7 +8,7 @@ use crate::resolve::Resolution;
 use crate::syntax::{Expression, Node, Program, Statement};
 use crate::syntax::{SpanInfo, Spanned};
 use crate::types::TypeInfo;
-use crate::types::surface::{build_unit_type_surface, merge_unit_surfaces_with_types};
+use crate::types::surface::{build_entry_unit_type_surface, build_unit_type_surface, merge_unit_surfaces_with_types};
 
 use super::TypeChecker;
 
@@ -29,7 +29,7 @@ pub(crate) fn precheck_checker<'a>(resolution: &'a Resolution, programs: &[&'a S
 
     let root = Path::new(PRECHECK_ROOT);
     let entry_path = root.join("entry");
-    let entry_surface = Arc::new(build_unit_type_surface(entry, resolution, &entry_path));
+    let entry_surface = Arc::new(build_entry_unit_type_surface(entry, resolution, &entry_path));
 
     let dependency_surfaces =
         programs[..programs.len().saturating_sub(1)].iter().enumerate().map(|(index, program)| {

@@ -159,6 +159,27 @@ impl<'a> TypeChecker<'a> {
         Some(Some(signature.return_type))
     }
 
+    /// An argument typed by its expected parameter type when one exists: an enum constructor
+    /// without type arguments (`Result::Error(e)` leaves `TValue` to the context) or an empty
+    /// array literal. Generic inference lets such an argument bind only parameters that no
+    /// other argument witnesses.
+    fn is_context_typed_argument(expression: &Expression) -> bool {
+        match expression {
+            Expression::EnumConstructor(constructor) => constructor
+                .node
+                .path
+                .node
+                .type_path
+                .node
+                .segments
+                .last()
+                .is_some_and(|segment| segment.node.type_args.is_empty()),
+            Expression::ArrayLiteral(array) => array.node.elements.is_empty(),
+            Expression::Grouped(grouped) => Self::is_context_typed_argument(&grouped.node.expr.node),
+            _ => false,
+        }
+    }
+
     /// The single contract method `method_name` that the enclosing function's where-bounds make
     /// callable on a value of generic parameter type `receiver_type`, with `This` bound to that
     /// parameter. Mirrors `bounded_member_method` in `beskid_queries`: every bound on the
@@ -636,22 +657,19 @@ impl<'a> TypeChecker<'a> {
                 }
                 None => {
                     if expected != 0 {
-                        let arg_types =
-                            call.node.args.iter().filter_map(|arg| self.type_expression(arg)).collect::<Vec<_>>();
+                        let typed_args = call.node.args.iter().map(|arg| self.type_expression(arg)).collect::<Vec<_>>();
+                        let dense_arg_types = typed_args.iter().flatten().copied().collect::<Vec<_>>();
                         // A bare integer literal inherits the binding of the other argument.
                         let arg_types = match callee_item_id {
                             Some(item_id) => crate::types::inference::adapt_bare_literal_arguments(
                                 &self.type_table,
                                 &self.function_signatures,
                                 item_id,
-                                &arg_types,
+                                &dense_arg_types,
                                 &call.node.args,
                             ),
-                            None => arg_types,
+                            None => dense_arg_types,
                         };
-                        if let Some(item_id) = callee_item_id {
-                            self.record_generic_call_constraints(item_id, &arg_types, expected, call.span);
-                        }
                         // A genuine per-argument type conflict (e.g. `word` vs `i64` bound to
                         // the same `T`) must fail closed with a clear diagnostic here, before
                         // falling through to `infer_generic_args_from_call_types`'s numeric
@@ -667,6 +685,7 @@ impl<'a> TypeChecker<'a> {
                                 &call.node.args,
                             )
                         {
+                            self.record_generic_call_constraints(item_id, &arg_types, expected, call.span);
                             let span = call.node.args.get(conflict.second_arg_index).map_or(call.span, |arg| arg.span);
                             self.errors.push(TypeError::GenericParameterConflict {
                                 span,
@@ -676,15 +695,60 @@ impl<'a> TypeChecker<'a> {
                             });
                             return Some(signature.return_type);
                         }
+                        // Position-aligned inference arguments: the adapted types when every
+                        // argument typed, otherwise each typed argument at its own position.
+                        let positioned = if arg_types.len() == call.node.args.len() {
+                            arg_types.iter().copied().map(Some).collect::<Vec<_>>()
+                        } else {
+                            typed_args
+                        };
+                        let arguments = call
+                            .node
+                            .args
+                            .iter()
+                            .zip(positioned.iter())
+                            .map(|(arg, typed)| match typed {
+                                Some(type_id) if Self::is_context_typed_argument(&arg.node) => {
+                                    crate::types::inference::CallArgumentType::Contextual(*type_id)
+                                }
+                                Some(type_id) => crate::types::inference::CallArgumentType::Witness(*type_id),
+                                None => crate::types::inference::CallArgumentType::Untyped,
+                            })
+                            .collect::<Vec<_>>();
                         let inferred = callee_item_id.and_then(|item_id| {
-                            crate::types::inference::infer_generic_args_from_call_types(
+                            crate::types::inference::infer_generic_args_from_call_arguments(
                                 &self.type_table,
                                 &self.generic_items,
                                 &self.function_signatures,
                                 item_id,
-                                &arg_types,
+                                &arguments,
                             )
                         });
+                        if let Some(item_id) = callee_item_id {
+                            // The solver sees each contextual argument at the type its
+                            // substituted parameter gives it, exactly as it is checked below.
+                            let constraint_types = match &inferred {
+                                Some(inferred) => {
+                                    let mapping = self.generic_substitution_mapping(item_id, inferred);
+                                    let params = signature.params.clone();
+                                    arguments
+                                        .iter()
+                                        .zip(params.iter())
+                                        .filter_map(|(argument, param)| match argument {
+                                            crate::types::inference::CallArgumentType::Witness(type_id) => {
+                                                Some(*type_id)
+                                            }
+                                            crate::types::inference::CallArgumentType::Contextual(_) => {
+                                                Some(self.substitute_type_id(*param, &mapping))
+                                            }
+                                            crate::types::inference::CallArgumentType::Untyped => None,
+                                        })
+                                        .collect::<Vec<_>>()
+                                }
+                                None => arg_types.clone(),
+                            };
+                            self.record_generic_call_constraints(item_id, &constraint_types, expected, call.span);
+                        }
                         if let Some(inferred) = inferred {
                             generic_args = Some(inferred);
                         } else {

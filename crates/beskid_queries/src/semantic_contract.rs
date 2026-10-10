@@ -24,6 +24,9 @@ mod composition;
 mod contracts;
 pub use contracts::{AppliedContractIdentity, applied_contract_argument_is_type};
 mod events;
+mod expected_type;
+pub use expected_type::expected_type_in_environment;
+use expected_type::expected_type_tracked;
 mod portable_nominal;
 pub(crate) use portable_nominal::serialization_impl_receiver;
 pub use portable_nominal::{PortableNominalIdentity, portable_nominal_identity};
@@ -76,20 +79,21 @@ pub use typing::{pattern_binding_specialization, specialized_call_result_managed
 
 use abi::{
     abi_signature_from_syntax, abi_type_for_binary_expression, abi_type_for_expression, abi_type_from_syntax,
-    abi_type_tracked, binary_operand_abi_type_tracked, block_may_fall_through, builtin_type_to_semantic,
-    call_abi_signature_for_call, call_abi_signature_tracked, call_argument_abi_type_tracked,
-    contextual_constant_integer, contextual_integer_literal_abi_type_tracked, control_flow_for_node,
+    abi_type_tracked, builtin_type_to_semantic,
+    call_abi_signature_for_call, call_abi_signature_tracked,
+    contextual_constant_integer, contextual_integer_literal_abi_type_tracked, contextual_integer_operand_fits_abi,
+    control_flow_for_node,
     control_flow_tracked, corelib_service_abi_signature, exact_assembled_nominal_envelope, generic_abi_type,
-    generic_parameter_reference_name, generic_specialization_instance_for_call, generic_type_name, if_may_fall_through,
+    generic_parameter_reference_name, generic_specialization_instance_for_call, generic_type_name,
     integer_has_explicit_abi_suffix, integer_literal_fits_abi, integer_literal_text, integer_literal_u64,
     item_abi_signature_tracked, item_abi_type_from_syntax, item_signature_for_node, item_signature_tracked,
-    manifest_builtin_abi_signature, signature_from_syntax, statement_may_fall_through, statements_may_fall_through,
+    manifest_builtin_abi_signature, signature_from_syntax,
     type_syntax_mentions_generic_parameter, unsuffixed_integer_literal, value_abi_type_tracked,
 };
 use bulk::bulk_parameter_tracked;
 use calls::{
-    PathCallResolution, abi_semantic_type, call_arguments_tracked, call_lowering_for_node, call_lowering_tracked,
-    canonical_intrinsic_parameter_type, canonical_result_definition_for_type, canonical_result_variant,
+    PathCallResolution, call_arguments_tracked, call_lowering_for_node, call_lowering_tracked,
+    canonical_result_definition_for_type, canonical_result_variant,
     canonical_runtime_intrinsic_scope, cast_intents_for_node, cast_intents_tracked, corelib_service_for,
     expected_cast_type, expected_explicit_call_argument_type, explicit_generic_type_argument_syntax,
     exported_generic_type_named, expression_fact_target, expression_is_lambda, flatten_member_as_path_declaration,
@@ -98,12 +102,12 @@ use calls::{
     generic_call_uses_parameter_type_arguments, generic_callable_parameters, generic_nominal_method_receiver_tracked,
     generic_source_expression_identity, generic_source_local_identity, generic_source_type_identity,
     generic_source_type_identity_with_substitutions, imported_call_receiver_exists,
-    imported_generic_nominal_receiver_requires_instantiation, is_transparent_binary_operand_path,
+    imported_generic_nominal_receiver_requires_instantiation,
     method_declaration_for_member_receiver, nominal_local_member_receiver, nominal_member_receiver_tracked,
     path_call_resolution, primitive_integer, primitive_numeric, primitive_numeric_conversion_target,
     primitive_numeric_conversion_tracked, range_for_fact_tracked, resolve_local_extern_contract_method,
     result_type_parts, source_expression_unavailable, stable_declaration_identity, substitute_explicit_type,
-    try_expression_fact_for_node, try_expression_fact_tracked, try_operand_declaration,
+    try_expression_fact_for_node, try_expression_fact_tracked, try_expression_legality_for_node, try_operand_declaration,
     type_syntax_is_enclosing_generic_parameter_reference, type_syntax_is_generic_parameter_reference,
     unique_nominal_method_declaration, unqualified_enclosing_method_call,
 };
@@ -201,7 +205,7 @@ pub use completion::{
 pub use layouts::{
     aggregate_field_access_specialization, aggregate_literal_specialization, array_index_element_managed_reference_specialization,
     array_index_element_specialization,
-    empty_array_literal_element_specialization, enum_constructor_specialization, enum_match_call_specialization, enum_match_specialization,
+    enum_constructor_specialization, enum_match_call_specialization, enum_match_specialization,
 };
 pub use model::{
     AggregateFieldAccess, AggregateFieldShape, AggregateLayoutFact, AggregateLiteralFieldValues,
@@ -213,7 +217,7 @@ pub use model::{
     EnumConstructorSpecialization, EnumConstructorTemplate, EnumLayoutFact, EnumLayoutTemplateArgument,
     EnumMatchArmFact, EnumMatchBindingFact, EnumMatchFact, EnumMatchPatternFact, EnumMatchScalarLiteralFact,
     EnumMatchVariantPatternFact, EnumScalarPayloadObjectLayout, EnumScalarPayloadVariantLayout, EnumVariantLayoutFact,
-    EventFieldLayoutFact, EventHandlerLocalFact, EventOperationFact, EventOperationKind, ExportSymbol, FiberOwnership,
+    EventFieldLayoutFact, EventHandlerLocalFact, ExpectedType, ExpectedTypeContext, EventOperationFact, EventOperationKind, ExportSymbol, FiberOwnership,
     ForIteratorFact, GenericBindingConflict, GenericBoundViolation, GenericCallInstantiation, GenericCallSpecialization,
     GenericCallTemplate,
     GenericNominalMethodReceiver, GenericSpecializationInstance, GenericSubstitution, IndexedNodeKind, ItemSignature,
@@ -227,19 +231,19 @@ pub use model::{
 };
 pub use queries::{
     abi_type, aggregate_field_access, aggregate_layout, aggregate_literal_declaration, aggregate_literal_field_values,
-    aggregate_literal_layout, array_index_element_abi_type, binary_operand_abi_type, block_statement_nodes,
-    bulk_parameter, call_abi_signature, call_argument_abi_type, call_arguments, call_lowering,
+    aggregate_literal_layout, array_index_element_abi_type, block_statement_nodes,
+    bulk_parameter, call_abi_signature, call_arguments, call_lowering,
     callable_fiber_ownership, callable_signature, capture_storage, cast_intents, child_nodes, clif_block_body,
     clif_block_parameters, closure_call_target, closure_environment, closure_signature, collection_operation, constant_integer,
     contextual_integer_literal_abi_type, control_flow, direct_callees, empty_array_literal_element_abi_type,
     enum_constructor, enum_constructor_template, enum_layout, enum_match, event_field_layout,
-    event_handler_lambda_for_local, event_operation, for_iterator_fact, generic_call_instantiation,
+    event_handler_lambda_for_local, event_operation, expected_type, for_iterator_fact, generic_call_instantiation,
     generic_call_specialization, generic_call_template, generic_nominal_method_receiver, implicit_method_receiver,
     item_abi_signature, item_body, item_export_symbol, item_name, item_signature, literal_fact, local_slot,
     managed_reference_kind, mutable_local_assignment, node_kind, node_span, node_type, nominal_member_receiver,
     operator_fact, parameter_generic_reference, primitive_numeric_conversion, range_for_fact, reachable_items,
     resolved_item, resolved_local, runtime_intrinsic, runtime_intrinsic_name, spawn_entry_validation,
-    spawn_handle_type, spawn_legality, spawn_target, test_item, test_statement_nodes, try_expression_fact,
+    spawn_handle_type, spawn_legality, spawn_target, test_item, test_statement_nodes, try_expression_fact, try_expression_judgement, try_expression_legality,
     type_applied_contract_implementation, type_contract_applications, type_contract_applications_of,
     type_contract_declarations, type_contract_implementation, typed_array_allocation, value_abi_type,
 };
@@ -253,7 +257,6 @@ pub(crate) use contracts::{
 pub use checked_provider::{CheckedDynamicResultBridge, checked_dynamic_result_bridge};
 
 pub(crate) use contracts::serialization_encoder_methods;
-pub(crate) use layouts::serialization_contribution_inaccessible_fields;
 
 pub(crate) use contracts::{serialization_contribution_receiver_arguments, serialization_contribution_receiver_arguments_in_environment};
 

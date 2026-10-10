@@ -126,7 +126,7 @@ pub(super) fn claimed_by_another_call_authority(
         || (runtime_intrinsic_claims && matches!(runtime_intrinsic(db, call), Ok(Some(_))))
 }
 
-fn is_spawn_target(index: &SyntaxIndex, call: beskid_analysis::syntax::AstNodeId) -> bool {
+pub(super) fn is_spawn_target(index: &SyntaxIndex, call: beskid_analysis::syntax::AstNodeId) -> bool {
     let mut current = call;
     while let Some(parent) = parent_node(index, current) {
         match index.kind(parent) {
@@ -205,7 +205,7 @@ fn unresolved_callee_kind(
 /// Whether `unit` declares any function, method, type, enum, contract, constant, or inline module
 /// named `name` (ambiguous declarations included), so an unresolved terminal is never reported
 /// as unknown when the module does declare the name in some form.
-fn unit_declares_function_name(db: &dyn Db, unit: SourceUnitId, generation: SyntaxGenerationId, name: &str) -> bool {
+pub(in crate::semantic_contract) fn unit_declares_function_name(db: &dyn Db, unit: SourceUnitId, generation: SyntaxGenerationId, name: &str) -> bool {
     let Some(syntax) = db.syntax_unit(unit) else { return true };
     if syntax.generation(db) != generation {
         return true;
@@ -222,7 +222,7 @@ fn unit_declares_function_name(db: &dyn Db, unit: SourceUnitId, generation: Synt
         })
 }
 
-fn import_binds_name(db: &dyn Db, key: AstNodeKey, name: &str) -> bool {
+pub(in crate::semantic_contract) fn import_binds_name(db: &dyn Db, key: AstNodeKey, name: &str) -> bool {
     db.syntax_dependency_registry()
         .lock()
         .expect("syntax dependency registry")
@@ -233,7 +233,7 @@ fn import_binds_name(db: &dyn Db, key: AstNodeKey, name: &str) -> bool {
         })
 }
 
-fn assembly_declares_module(db: &dyn Db, key: AstNodeKey, module_path: &[String]) -> bool {
+pub(in crate::semantic_contract) fn assembly_declares_module(db: &dyn Db, key: AstNodeKey, module_path: &[String]) -> bool {
     let registry = db.syntax_dependency_registry().lock().expect("syntax dependency registry");
     (1..=module_path.len())
         .any(|length| registry.visible_module_units(key.generation, &module_path[..length]).is_some())
@@ -241,7 +241,7 @@ fn assembly_declares_module(db: &dyn Db, key: AstNodeKey, module_path: &[String]
 
 /// Whether the current unit declares a type, enum, contract, or inline module named `name`, at
 /// any depth. A qualified callee rooted at such a name is a member path, not a module path.
-fn unit_declares_namespace_name(
+pub(in crate::semantic_contract) fn unit_declares_namespace_name(
     program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
     index: &SyntaxIndex,
     name: &str,

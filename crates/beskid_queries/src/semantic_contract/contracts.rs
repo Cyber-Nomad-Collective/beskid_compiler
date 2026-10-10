@@ -589,6 +589,9 @@ pub(super) fn contract_member_receiver(
     key: AstNodeKey,
     path: &Path,
 ) -> Option<Result<(AstNodeKey, AstNodeKey), SemanticError>> {
+    if let Some(field_member) = bounded_field_member_receiver(db, program, index, key, path) {
+        return Some(field_member);
+    }
     let [receiver, member] = path.segments.as_slice() else {
         return None;
     };
@@ -650,6 +653,68 @@ pub(super) fn contract_member_receiver(
         }
     });
     Some(result)
+}
+
+/// A member call on a field of the implicit receiver (`this.element.Read(...)`, or
+/// `element.Read(...)`) whose declared type is a generic parameter of the method owner, bound by
+/// the enclosing `impl<...> ... where` clause. The owner's parameter maps to the impl parameter
+/// at the same position of the impl receiver (`impl<T, R, B> Binding<T, R, B>`), and the
+/// members are exactly that parameter's bound contracts' members. The receiver is the field
+/// segment of the callee path.
+pub(super) fn bounded_field_member_receiver(
+    db: &dyn Db,
+    program: &Spanned<beskid_analysis::syntax::Program>,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    key: AstNodeKey,
+    path: &Path,
+) -> Option<Result<(AstNodeKey, AstNodeKey), SemanticError>> {
+    let (field, member) = match path.segments.as_slice() {
+        [root, field, member] if root.node.name.node.name == "this" && root.node.type_args.is_empty() => {
+            (field, member)
+        }
+        [field, member]
+            if resolve_lexical_declaration(program, index, key.node, &field.node.name.node.name).is_none() =>
+        {
+            (field, member)
+        }
+        _ => return None,
+    };
+    if !field.node.type_args.is_empty() || !member.node.type_args.is_empty() {
+        return None;
+    }
+    let method = nearest_ancestor(index, key.node, |kind| kind == NodeKind::MethodDefinition)?;
+    let impl_block = parent_node(index, method)
+        .and_then(|parent| index.node_at(program, parent))
+        .and_then(|node| node.of::<ImplBlock>())?;
+    let owner = super::locals::method_owner_node(program, index, method)
+        .and_then(|owner| index.node_at(program, owner))
+        .and_then(|node| node.of::<TypeDefinition>())?;
+    let declared = owner.fields.iter().find(|candidate| candidate.node.name.node.name == field.node.name.node.name)?;
+    let owner_parameter = generic_parameter_reference_name(&declared.node.ty.node)?;
+    let position = owner.generics.iter().position(|generic| generic.node.name == owner_parameter)?;
+    let Type::Complex(receiver_type) = &impl_block.receiver_type.node else {
+        return None;
+    };
+    let argument = receiver_type.node.segments.last()?.node.type_args.get(position)?;
+    let impl_parameter = generic_parameter_reference_name(&argument.node)
+        .filter(|name| impl_block.generics.iter().any(|generic| generic.node.name == *name))?;
+    let bounds = match declared_where_bounds(db, AstNodeKey { node: method, ..key }) {
+        Ok(bounds) => bounds,
+        Err(error) => return Some(Err(error)),
+    };
+    let bounds = bounds.into_iter().filter(|bound| bound.generic == impl_parameter).collect::<Vec<_>>();
+    if bounds.is_empty() {
+        return None;
+    }
+    let callee = match index.node_at(program, key.node)?.of::<beskid_analysis::syntax::CallExpression>() {
+        Some(call) => AstNodeKey {
+            node: normalized_expression_node(index, index.direct_child_id(program, key.node, DynNodeRef::from(call.callee.as_ref()))?),
+            ..key
+        },
+        None => key,
+    };
+    let receiver = super::layouts::path_projection_segment(db, callee, path.segments.len() - 2)?;
+    Some(bounded_member_method(db, &bounds, &member.node.name.node.name).map(|method| (method, receiver)))
 }
 
 /// The unique member named `member` among the contracts bounding one generic receiver.

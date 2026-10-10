@@ -7,8 +7,7 @@ mod instance;
 mod manifest_map;
 
 pub(in crate::semantic_contract) use argument_abi::{
-    binary_operand_abi_type_tracked, call_argument_abi_type_tracked, contextual_constant_integer,
-    integer_has_explicit_abi_suffix, integer_literal_fits_abi, integer_literal_text, integer_literal_u64,
+    contextual_constant_integer, contextual_integer_operand_fits_abi, integer_has_explicit_abi_suffix, integer_literal_fits_abi, integer_literal_text, integer_literal_u64,
     unsuffixed_integer_literal,
 };
 pub(in crate::semantic_contract) use entry_points::generic_specialization_instance_for_call;

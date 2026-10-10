@@ -16,7 +16,7 @@ pub(in crate::semantic_contract) use explicit_arguments::{
     generic_call_uses_parameter_type_arguments, substitute_explicit_type,
     type_syntax_is_enclosing_generic_parameter_reference, type_syntax_is_generic_parameter_reference,
 };
-pub(in crate::semantic_contract) use expression_identity::generic_source_expression_identity;
+pub(in crate::semantic_contract) use expression_identity::{generic_source_expression_identity, result_mentions_callable_generics};
 use source_identity::generic_source_path_identity;
 pub(in crate::semantic_contract) use source_identity::{
     generic_source_local_identity, generic_source_type_identity, generic_source_type_identity_with_substitutions,

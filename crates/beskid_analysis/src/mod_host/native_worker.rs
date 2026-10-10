@@ -164,9 +164,7 @@ pub fn run_native_mod_worker(endpoint: &std::path::Path) -> Result<()> {
     let plan_bytes = std::fs::read(descriptor.artifact_dir.join("adapter-plan.json"))?;
     let types = WireTypes::read(&plan_bytes)?;
     let plan: serde_json::Value = serde_json::from_slice(&plan_bytes)?;
-    let schema = super::native_correspondence::SyntaxCorrespondence::read(&std::fs::read(
-        descriptor.artifact_dir.join("sdk/schema.json"),
-    )?)?;
+    let schema = super::native_correspondence::SyntaxCorrespondence::read(&descriptor.read_sdk_schema()?)?;
     let entry = entry_from_plan(&plan, &invocation.symbol)?;
     let mut exchange = |request: &serde_json::Value| -> Result<serde_json::Value> {
         super::native_channel::write_frame(&mut stream, &serde_json::json!({"kind":"Service","request":request}))?;

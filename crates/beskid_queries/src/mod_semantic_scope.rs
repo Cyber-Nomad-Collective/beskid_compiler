@@ -93,9 +93,19 @@ impl ModSemanticScope for QueryModSemanticScope<'_> {
         let authority = ModSemanticQueryAuthority::for_registered_assembly(&**db, project, &registered)?;
         invoke(&authority)?;
         let applied = authority.take_all_applied_syntax();
+        let issued = authority.take_issued_metadata();
         // Borrowed issuer map and database borrow both end before the next source generation.
         drop(authority);
         drop(db);
+        if !issued.is_empty() {
+            let mut current =
+                self.assembly.try_borrow_mut().map_err(|_| anyhow::anyhow!("reentrant Mod assembly update"))?;
+            for metadata in issued {
+                if !current.compiled_mod_metadata.contains(&metadata) {
+                    current.compiled_mod_metadata.push(metadata);
+                }
+            }
+        }
         let mut changed = None;
         for update in applied {
             if update.previous_generation != assembly.generation

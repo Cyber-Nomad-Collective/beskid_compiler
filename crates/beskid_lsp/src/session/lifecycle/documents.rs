@@ -95,7 +95,8 @@ pub(super) async fn build_full_diagnostic_facts(
     };
     let project_root = plan.project_root.clone();
     let mod_host = state.read().await.mod_host.clone();
-    let options = PrepareOptions { mod_invoker: None,
+    let options = PrepareOptions {
+        mod_host: beskid_analysis::mod_host::ModHost::NoMods,
         front_end: FrontEndOptions {
             assembly_recovery: beskid_analysis::projects::AssemblyRecoveryPolicy::EditorRetainRecovered,
             with_semantic_diagnostics: true,
@@ -254,7 +255,8 @@ async fn build_syntax_facts_with_policy_after_startup(
 
         let prepared = if dependency_typing == DependencyTypingPolicy::EntryOnly {
             beskid_queries::bump_file_revision(db, &entry_key);
-            let options = PrepareOptions { mod_invoker: None,
+            let options = PrepareOptions {
+                mod_host: beskid_analysis::mod_host::ModHost::NoMods,
                 front_end: FrontEndOptions {
                     assembly_recovery: beskid_analysis::projects::AssemblyRecoveryPolicy::EditorRetainRecovered,
                     with_semantic_diagnostics: false,

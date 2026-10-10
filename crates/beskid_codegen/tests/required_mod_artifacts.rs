@@ -1,5 +1,6 @@
-//! Every discovered compiler Mod requires an executable artifact before any phase.
-use beskid_analysis::mod_host::{ModHostInput, collect_mod_target_fingerprint, native_invoker_for_plan};
+//! Every discovered compiler Mod requires a native Mod host and an executable artifact before any
+//! phase.
+use beskid_analysis::mod_host::{ModHost, ModHostInput, collect_mod_target_fingerprint};
 use beskid_analysis::projects::{CompilePlan, ResolvedDependencyProject, Target, TargetKind};
 
 #[test]
@@ -28,7 +29,20 @@ fn discovered_mod_without_descriptor_cannot_be_silently_skipped() {
         unresolved_dependencies: vec![],
         has_core_dependency: false,
     };
-    assert!(native_invoker_for_plan(&plan, None).is_err(), "missing descriptor silently disabled required Mod");
-    let input = ModHostInput { compile_plan: Some(&plan), ..Default::default() };
-    assert!(collect_mod_target_fingerprint(&input).is_err(), "missing descriptor produced successful empty collection");
+    let input = ModHostInput {
+        semantic_scope: None,
+        semantic_authority: None,
+        syntax_generation_id: None,
+        compile_plan: Some(&plan),
+        source_name: "Main.bd",
+        source: "",
+        pipeline: None,
+        mod_host: &ModHost::NoMods,
+        cached_target_fingerprint: None,
+    };
+    let error = collect_mod_target_fingerprint(&input)
+        .err()
+        .expect("a required Mod without a Mod host produced a successful empty collection")
+        .to_string();
+    assert!(error.contains("`ModA`") && error.contains("ModHost::native"), "{error}");
 }

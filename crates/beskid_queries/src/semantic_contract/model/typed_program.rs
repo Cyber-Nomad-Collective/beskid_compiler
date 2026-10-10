@@ -49,9 +49,9 @@ pub struct SyntaxUnitRevision {
     pub(crate) expanded_program: Arc<beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>>,
     pub(crate) syntax_index: Arc<beskid_analysis::syntax_query::SyntaxIndex>,
     pub(crate) source_fingerprint: Arc<str>,
+    /// Span-free structural identity of `expanded_program`; equal trees may recur in later
+    /// generations (trivia edits, reverts) and stay distinct through `generation`.
     pub(crate) tree_fingerprint: Arc<str>,
-    pub(crate) source_fingerprint_history: Arc<[Arc<str>]>,
-    pub(crate) tree_fingerprint_history: Arc<[Arc<str>]>,
 }
 
 impl SyntaxUnitInput {

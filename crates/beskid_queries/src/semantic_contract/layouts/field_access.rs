@@ -519,7 +519,9 @@ pub(in crate::semantic_contract) fn field_inaccessible(
     field: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Field>,
     usage: PrivateFieldUse,
 ) -> bool {
-    declaration.unit != key.unit
+    // A Mod-generated serialization group appended to the entry is judged in the unit that
+    // declares its target (`contribution_attributed_unit`); every other node in its own unit.
+    declaration.unit != crate::contribution_attribution::contribution_attributed_unit(db, key)
         && field.node.visibility.node != beskid_analysis::syntax::Visibility::Public
         && !canonical_private_field_admission(
             db,

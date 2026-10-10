@@ -90,12 +90,19 @@ impl<'a> NativeSemanticSession<'a> {
         index: u32,
         token: u64,
         item: &crate::syntax::Spanned<super::ProgramItem>,
+        members: &[super::ModContributionMember],
     ) -> Result<super::ModCompiledMetadata> {
         if self.closed || token == 0 {
             bail!("serialization target invocation is closed or target is absent");
         }
         self.authority
-            .compile_serialization_target(self.invocation, index, super::ModSemanticHandle::from_token(token), item)
+            .compile_serialization_target(
+                self.invocation,
+                index,
+                super::ModSemanticHandle::from_token(token),
+                item,
+                members,
+            )
             .map_err(|e| anyhow::anyhow!(e.to_string()))
     }
     pub(crate) fn compile_template(
@@ -103,6 +110,7 @@ impl<'a> NativeSemanticSession<'a> {
         index: u32,
         reference: &super::ModSyntaxNodeRef,
         item: &crate::syntax::Spanned<super::ProgramItem>,
+        members: &[super::ModContributionMember],
     ) -> Result<super::ModCompiledMetadata> {
         if self.closed {
             bail!("serialization template invocation is closed");
@@ -121,7 +129,7 @@ impl<'a> NativeSemanticSession<'a> {
             span,
         };
         self.authority
-            .compile_serialization_template(self.invocation, index, reference, &declaration, item)
+            .compile_serialization_template(self.invocation, index, reference, &declaration, item, members)
             .map_err(|e| anyhow::anyhow!(e.to_string()))
     }
     pub(crate) fn take_compiled_metadata(&mut self) -> Vec<super::ModCompiledMetadata> {

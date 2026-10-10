@@ -212,7 +212,7 @@ fn entry_resolution_with_db_populates_symbol_registry() {
         )
         .expect("resolve fixture");
         let mut db = BeskidDatabase::with_persistence(&project_root);
-        let mut options = PrepareOptions::default();
+        let mut options = PrepareOptions::without_mods();
         options.front_end.assembly_discovery = AssemblyDiscovery::ImportClosure;
         entry_resolution_with_db(&mut db, &resolved, &options)
     };
@@ -258,10 +258,10 @@ fn typed_entry_state_uses_fast_resolution_when_stale() {
         )
         .expect("resolve fixture");
         let mut db = BeskidDatabase::with_persistence(&project_root);
-        let mod_host = beskid_tests_mod_host::ModHostScope::enter().expect("enter the shared native Mod host scope");
+        let mod_host = beskid_tests_mod_host::ModHostScope::shared().expect("enter the shared native Mod host scope");
         let plan = resolved.compile_plan.as_ref().expect("fixture compile plan");
-        let mut options = PrepareOptions::default();
-        options.mod_invoker = Some(mod_host.corelib_mod_invoker(plan).expect("qualified Corelib native Mods"));
+        let mut options = PrepareOptions::without_mods();
+        options.mod_host = mod_host.corelib_mod_host(plan).expect("qualified Corelib native Mods");
         options.front_end.assembly_discovery = AssemblyDiscovery::ImportClosure;
         let entry_key = resolved
             .compile_plan
@@ -369,12 +369,11 @@ fn diagnostics_prepare_and_facts_share_one_session_for_noncanonical_root() {
     .expect("resolve project");
     let plan = resolved.compile_plan.clone().expect("compile plan");
     let mut db = BeskidDatabase::default();
-    let mod_host = beskid_tests_mod_host::ModHostScope::enter().expect("enter the shared native Mod host scope");
-    let mod_invoker = mod_host.corelib_mod_invoker(&plan).expect("qualified Corelib native Mods");
+    let mod_host = beskid_tests_mod_host::ModHostScope::shared().expect("enter the shared native Mod host scope");
+    let native_mods = mod_host.corelib_mod_host(&plan).expect("qualified Corelib native Mods");
     let options = PrepareOptions {
-        mod_invoker: Some(mod_invoker),
         front_end: FrontEndOptions { assembly_discovery: AssemblyDiscovery::ImportClosure, ..Default::default() },
-        ..Default::default()
+        ..PrepareOptions::with_mod_host(native_mods)
     };
     let (prepared, _, _) =
         prepare_compilation_diagnostics_with_db(&mut db, &resolved, options, None).expect("diagnostics prepare");

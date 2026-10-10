@@ -18,7 +18,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::Result;
 use beskid_abi::runtime_kit::BuildProfile;
-use beskid_analysis::mod_host::{ModHostInput, run_analyze_rewrite_with_invoker, run_through_generate};
+use beskid_analysis::mod_host::{ModHost, ModHostInput, run_analyze_rewrite_with_host, run_through_generate};
 use beskid_analysis::projects::{CompilePlan, Target, TargetKind};
 use beskid_analysis::services::parse_program_with_source_name;
 use beskid_engine::services::prepare_jit_entrypoint;
@@ -76,7 +76,7 @@ fn mod_host_without_mod_dependencies_compiles_in_engine() -> Result<()> {
             source_name: "Main.bd",
             source: HOST_SOURCE,
             pipeline: Some(pipeline.as_ref()),
-            invoker: None,
+            mod_host: &ModHost::NoMods,
             cached_target_fingerprint: None,
             syntax_generation_id: None,
         },
@@ -87,10 +87,10 @@ fn mod_host_without_mod_dependencies_compiles_in_engine() -> Result<()> {
 
     let snapshot = beskid_analysis::services::SemanticSnapshot::from_diagnostics(&[], 1, "semantic")
         .with_composition(&generated.session.composition_snapshot_or_default());
-    let analyze = run_analyze_rewrite_with_invoker(
+    let analyze = run_analyze_rewrite_with_host(
         generated.program,
         &generated.session,
-        None,
+        &ModHost::NoMods,
         None,
         Some(&snapshot),
         Some(pipeline.as_ref()),
@@ -101,7 +101,7 @@ fn mod_host_without_mod_dependencies_compiles_in_engine() -> Result<()> {
     observe_phase(Some(pipeline.as_ref()), LOWER_READY, || {});
     // JIT compile uses the sole CodegenInput -> ISLE route against the host entry source.
     let prepared =
-        prepare_jit_entrypoint(workspace.host_dir.join("Src").join("Main.bd").as_path(), HOST_SOURCE, "Main")?;
+        prepare_jit_entrypoint(workspace.host_dir.join("Src").join("Main.bd").as_path(), HOST_SOURCE, "Main", &beskid_engine::ModHost::NoMods)?;
 
     let kit_prefix = tempfile::tempdir().expect("exact kit prefix");
     build_native_host(kit_prefix.path().to_path_buf(), RuntimeKitProfile::Debug).expect("publish exact native kit");
@@ -115,6 +115,37 @@ fn mod_host_without_mod_dependencies_compiles_in_engine() -> Result<()> {
     assert!(events.contains(&MACRO_EXPAND), "macro expansion always runs: {events:?}");
     assert!(!events.contains(&MOD_LOAD), "no Mod dependency means no mod.load phase: {events:?}");
     Ok(())
+}
+
+/// The engine never builds Mods: preparing a source whose project depends on a Mod without a
+/// native Mod host fails before `mod.load`, naming the Mod and how to provide a host.
+#[test]
+fn engine_without_a_mod_host_names_the_mod_and_the_remedy() {
+    let workspace = TestWorkspace::new("engine_mod_host_required");
+    let mod_dir = workspace.root.join("ModA");
+    fs::create_dir_all(mod_dir.join("Src")).expect("mod source root");
+    fs::write(
+        mod_dir.join("ModA.bproj"),
+        "ModA {\n  name = \"ModA\"\n  version = \"0.1.0\"\n  type = Mod\n  mod {\n    capabilities = [emit_syntax]\n  }\n}\n",
+    )
+    .expect("mod manifest");
+    fs::write(mod_dir.join("Src").join("Mod.bd"), "pub unit Unused() { return; }\n").expect("mod source");
+    fs::write(
+        workspace.host_dir.join("Host.bproj"),
+        format!("{HOST_MANIFEST}\ndependency \"ModA\" {{\n  source = path\n  path = \"../ModA\"\n}}\n"),
+    )
+    .expect("host manifest with a Mod dependency");
+
+    let error = beskid_engine::services::run_entrypoint(
+        workspace.host_dir.join("Src").join("Main.bd").as_path(),
+        HOST_SOURCE,
+        "Main",
+        &ModHost::NoMods,
+    )
+    .expect_err("a Mod dependency cannot run without a native Mod host");
+    let message = format!("{error:#}");
+    assert!(message.contains("`ModA`"), "the error names the Mod: {message}");
+    assert!(message.contains("ModHost::native"), "the error says how to provide a host: {message}");
 }
 
 struct TestWorkspace {

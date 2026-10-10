@@ -175,11 +175,6 @@ impl PreparedWorkspace {
         };
         let (mut session, base) =
             CommandSession::open_and_resolve(args.plain, PipelineProgressKind::PrepareAndRun, &resolve_args)?;
-        session.set_mod_invoker(super::compiler_mod::prepare_native_mod_executor(
-            &base,
-            args.lockfile.WorkspaceOptions(),
-            Some(session.observer()),
-        )?);
         let (manifest_path, manifest) =
             if let Some(plan) = base.compile_plan.as_ref().filter(|_| base.prepared_workspace.is_some()) {
                 let manifest_path = plan.manifest_path.clone();
@@ -190,7 +185,22 @@ impl PreparedWorkspace {
                 (base.source_path.clone(), None)
             };
         let revisions = revision_snapshot(&manifest_path);
-        Ok(Self { session, base, manifest, manifest_path, budgets, cancellation, started: Instant::now(), revisions })
+        let mut workspace =
+            Self { session, base, manifest, manifest_path, budgets, cancellation, started: Instant::now(), revisions };
+        // Each target is its own assembly and activates its own Mods; the shared session serves the
+        // Mods of every target the matrix may prepare, and only those.
+        let inputs = workspace
+            .test_targets()
+            .iter()
+            .filter_map(|name| workspace.target_input(name).ok())
+            .collect::<Vec<_>>();
+        let mod_host = super::compiler_mod::prepare_native_mod_executor_for_inputs(
+            &inputs,
+            args.lockfile.WorkspaceOptions(),
+            Some(workspace.session.observer()),
+        )?;
+        workspace.session.set_mod_host(mod_host);
+        Ok(workspace)
     }
 
     pub fn test_targets(&self) -> Vec<String> {
@@ -222,11 +232,18 @@ impl PreparedWorkspace {
 
     fn prepare_target(&self, name: &str) -> Result<PreparedTarget> {
         self.check_budget(name, "prepare_target", None)?;
+        let resolved = self.target_input(name)?;
+        self.prepare_resolved_target(name.to_string(), resolved)
+    }
+
+    /// The resolved input of one matrix target: the base input for a direct file, otherwise the
+    /// frozen manifest target's plan and entry over the base workspace.
+    fn target_input(&self, name: &str) -> Result<ResolvedInput> {
         let Some(manifest) = &self.manifest else {
             if name != "direct-file" {
                 return Err(anyhow!("direct-file input has no manifest target `{name}`"));
             }
-            return self.prepare_resolved_target(name.to_string(), self.base.clone());
+            return Ok(self.base.clone());
         };
         let target = manifest.targets.iter().find(|target| target.name == name).cloned().ok_or_else(|| {
             anyhow!("target `{name}` is not present in frozen manifest {}", self.manifest_path.display())
@@ -248,17 +265,14 @@ impl PreparedWorkspace {
         } else {
             return Err(anyhow!("target `{name}` entry does not exist: {}", source_path.display()));
         };
-        self.prepare_resolved_target(
-            name.to_string(),
-            ResolvedInput {
-                source_path,
-                source,
-                compile_plan: Some(plan),
-                prepared_workspace: self.base.prepared_workspace.clone(),
-                workspace_summary: self.base.workspace_summary.clone(),
-                assembly: None,
-            },
-        )
+        Ok(ResolvedInput {
+            source_path,
+            source,
+            compile_plan: Some(plan),
+            prepared_workspace: self.base.prepared_workspace.clone(),
+            workspace_summary: self.base.workspace_summary.clone(),
+            assembly: None,
+        })
     }
 
     fn prepare_resolved_target(&self, name: String, resolved: ResolvedInput) -> Result<PreparedTarget> {
@@ -303,7 +317,7 @@ impl PreparedWorkspace {
         let prepared = beskid_pipeline::observe_phase_result(
             Some(self.session.observer()),
             beskid_pipeline::phases::CODEGEN_CLIF,
-            || beskid_aot::prepared_syntax::lower_prepared_syntax_entrypoints(front, names, target),
+            || beskid_aot::prepared_syntax::lower_frozen_syntax_entrypoints(front, names, target),
         )?;
         control.check("lower_selected_tests")?;
         let libraries = beskid_engine::link_libraries::link_libraries_for_artifact(

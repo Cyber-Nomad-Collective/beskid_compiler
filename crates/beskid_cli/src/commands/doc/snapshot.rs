@@ -48,7 +48,7 @@ pub(super) fn build_doc_snapshot(
 
         configure_db_for_project(&plan.project_root);
         let mut db = BeskidDatabase::with_persistence(&plan.project_root);
-        let options = PrepareOptions::default();
+        let options = PrepareOptions::without_mods();
         let shared = entry_resolution_with_db(&mut db, resolved, &options).context("entry resolution for api.json")?;
         let resolution = (*shared).clone();
 

@@ -202,6 +202,11 @@ fn generic_source_callable_result_identity(
         .node_at(syntax.expanded_program(db), declaration.node)
         .ok_or_else(|| source_expression_unavailable(db, call, "callee declaration node is absent"))?;
     if let Some(signature) = node.of::<beskid_analysis::syntax::ContractMethodSignature>() {
+        if let Some(result) = signature.return_type.as_ref()
+            && !result_mentions_callable_generics(db, declaration, &result.node, true)
+        {
+            return generic_source_type_identity(db, declaration, &result.node);
+        }
         let specialization = generic_specialization_instance_for_call(db, call)?;
         let substitutions = specialization
             .substitutions
@@ -226,6 +231,9 @@ fn generic_source_callable_result_identity(
     let Some(result) = result else {
         return Ok(GenericSourceTypeIdentity::Abi(SemanticTypeId::UNIT));
     };
+    if !result_mentions_callable_generics(db, declaration, &result.node, false) {
+        return generic_source_type_identity(db, declaration, &result.node);
+    }
     let specialization = generic_specialization_instance_for_call(db, call)?;
     let substitutions = specialization
         .substitutions
@@ -233,6 +241,41 @@ fn generic_source_callable_result_identity(
         .map(|binding| (binding.parameter.as_ref(), binding.source_identity()))
         .collect::<HashMap<_, _>>();
     generic_source_type_identity_with_substitutions(db, declaration, &result.node, &substitutions)
+}
+
+/// Whether a callee's declared result depends on the call's substitutions. A result that names
+/// none of the callee's generic parameters (nor `This`, for a contract member) has one identity
+/// at every call, so it is proven from the declaration alone. That is the only authority inside
+/// an unspecialized generic body, where a call passing the enclosing generic parameter
+/// (`Check<R>(reader)`) has no concrete specialization.
+pub(in crate::semantic_contract) fn result_mentions_callable_generics(
+    db: &dyn Db,
+    declaration: AstNodeKey,
+    result: &beskid_analysis::syntax::Type,
+    contract_member: bool,
+) -> bool {
+    let generics = generic_callable_parameters(db, declaration).map(|(names, _)| names).unwrap_or_default();
+    generics.iter().any(|parameter| type_syntax_mentions_generic_parameter(result, parameter))
+        || (contract_member && type_syntax_mentions_this(result))
+}
+
+fn type_syntax_mentions_this(syntax_type: &beskid_analysis::syntax::Type) -> bool {
+    use beskid_analysis::syntax::Type;
+    match syntax_type {
+        Type::This => true,
+        Type::Primitive(_) => false,
+        Type::Complex(path) => path
+            .node
+            .segments
+            .iter()
+            .any(|segment| segment.node.type_args.iter().any(|argument| type_syntax_mentions_this(&argument.node))),
+        Type::Associated { .. } => true,
+        Type::Array(element) => type_syntax_mentions_this(&element.node),
+        Type::Function { return_type, parameters } => {
+            type_syntax_mentions_this(&return_type.node)
+                || parameters.iter().any(|parameter| type_syntax_mentions_this(&parameter.node))
+        }
+    }
 }
 
 /// Source identity of an array literal `[e0, e1, ...]`.
@@ -250,7 +293,7 @@ fn generic_source_array_literal_identity(
     key: AstNodeKey,
     array: &beskid_analysis::syntax::ArrayLiteralExpression,
 ) -> Result<GenericSourceTypeIdentity, SemanticError> {
-    if let Some(declared) = array_literal_declared_identity(db, program, index, key)? {
+    if let Some(declared) = array_literal_declared_identity(db, key)? {
         let GenericSourceTypeIdentity::Array(_) = declared else {
             return Err(source_expression_unavailable(db, key, "array literal is written into a non-array position"));
         };
@@ -305,116 +348,19 @@ fn contextual_numeric_literal(literal: &beskid_analysis::syntax::Literal) -> boo
     }
 }
 
-/// The declared type of the position an array literal is written into, when that position has one.
+/// The declared array type of an array literal's position, from its [`expected_type`]. A
+/// position with no expected type (an inferred local, an inferred generic argument) yields
+/// `None` so a non-empty literal can still prove its identity from its elements.
 fn array_literal_declared_identity(
     db: &dyn Db,
-    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
-    index: &beskid_analysis::syntax_query::SyntaxIndex,
     key: AstNodeKey,
 ) -> Result<Option<GenericSourceTypeIdentity>, SemanticError> {
-    use beskid_analysis::syntax_query::NodeKind;
-
-    // Climb out of the transparent wrappers `normalized_expression_node` descends through.
-    let mut position = key.node;
-    let context = loop {
-        let Some(parent) = parent_node(index, position) else { return Ok(None) };
-        match index.kind(parent) {
-            Some(NodeKind::Expression | NodeKind::GroupedExpression) => position = parent,
-            _ => break parent,
-        }
-    };
-    let context_key = AstNodeKey { node: context, ..key };
-    let Some(node) = index.node_at(program, context) else { return Ok(None) };
-
-    if let Some(field) = node.of::<beskid_analysis::syntax::StructLiteralField>() {
-        let Some(literal_node) = parent_node(index, context) else { return Ok(None) };
-        let literal_key = AstNodeKey { node: literal_node, ..key };
-        let Some(literal) = index
-            .node_at(program, literal_node)
-            .and_then(|node| node.of::<beskid_analysis::syntax::StructLiteralExpression>())
-        else {
-            return Ok(None);
-        };
-        let declaration = resolve_type_declaration(db, literal_key, &literal.path.node)
-            .ok_or_else(|| source_expression_unavailable(db, key, "struct literal type is unresolved"))?;
-        let owner = db
-            .syntax_unit(declaration.unit)
-            .filter(|syntax| syntax.accepts_key(db, declaration))
-            .ok_or_else(|| source_expression_unavailable(db, key, "struct literal declaration is stale"))?;
-        let Some(definition) = owner
-            .syntax_index(db)
-            .node_at(owner.expanded_program(db), declaration.node)
-            .and_then(|node| node.of::<beskid_analysis::syntax::TypeDefinition>())
-        else {
-            return Ok(None);
-        };
-        let declared = definition
-            .fields
-            .iter()
-            .find(|candidate| candidate.node.name.node.name == field.name.node.name)
-            .ok_or_else(|| source_expression_unavailable(db, key, "struct literal field is not declared"))?;
-        let GenericSourceTypeIdentity::Nominal { arguments, .. } =
-            generic_source_path_identity(db, literal_key, &literal.path.node)?
-        else {
-            return Err(source_expression_unavailable(db, key, "struct literal type is not nominal"));
-        };
-        if definition.generics.len() != arguments.len() {
-            return Err(source_expression_unavailable(
-                db,
-                key,
-                "struct literal of a generic type does not spell its type arguments",
-            ));
-        }
-        let substitutions = definition
-            .generics
-            .iter()
-            .map(|parameter| parameter.node.name.as_str())
-            .zip(arguments.iter())
-            .collect::<HashMap<_, _>>();
-        return generic_source_type_identity_with_substitutions(db, declaration, &declared.node.ty.node, &substitutions)
-            .map(Some);
+    match expected_type(db, key) {
+        Ok(Some(expected)) => Ok(Some(expected.identity().clone())),
+        Ok(None) => Ok(None),
+        Err(error) if error.is_unavailable() => Ok(None),
+        Err(error) => Err(error),
     }
-
-    if let Some(statement) = node.of::<beskid_analysis::syntax::LetStatement>() {
-        return statement
-            .type_annotation
-            .as_ref()
-            .map(|annotation| generic_source_type_identity(db, context_key, &annotation.node))
-            .transpose();
-    }
-
-    if node.of::<beskid_analysis::syntax::ReturnStatement>().is_some() {
-        let Some(callable) = nearest_ancestor(index, context, |kind| {
-            matches!(kind, NodeKind::FunctionDefinition | NodeKind::MethodDefinition | NodeKind::LambdaExpression)
-        }) else {
-            return Ok(None);
-        };
-        let callable_key = AstNodeKey { node: callable, ..key };
-        let Some(callable_node) = index.node_at(program, callable) else { return Ok(None) };
-        let declared = if let Some(function) = callable_node.of::<beskid_analysis::syntax::FunctionDefinition>() {
-            // A generic function's return type names its own parameters; only a specialization
-            // can interpret it.
-            if !function.generics.is_empty() {
-                return Ok(None);
-            }
-            function.return_type.as_ref()
-        } else if let Some(method) = callable_node.of::<beskid_analysis::syntax::MethodDefinition>() {
-            let generic_owner = parent_node(index, callable)
-                .and_then(|owner| index.node_at(program, owner))
-                .and_then(|owner| owner.of::<beskid_analysis::syntax::TypeDefinition>())
-                .is_none_or(|owner| !owner.generics.is_empty());
-            if generic_owner {
-                return Ok(None);
-            }
-            method.return_type.as_ref()
-        } else {
-            // A lambda's result type is inferred, not declared.
-            return Ok(None);
-        };
-        return declared.map(|result| generic_source_type_identity(db, callable_key, &result.node)).transpose();
-    }
-
-    Ok(None)
 }
 
 #[cfg(test)]

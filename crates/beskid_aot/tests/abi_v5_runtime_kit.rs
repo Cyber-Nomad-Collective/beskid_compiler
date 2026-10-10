@@ -8,7 +8,7 @@ use beskid_aot::api::BuildProfile;
 use beskid_aot::bundled::{installed_runtime_strategy, resolve_installed_runtime_archive};
 use beskid_aot::runtime::{RuntimeBuildRequest, RuntimeLinkage, prepare_runtime};
 use beskid_aot::{AotRunRequest, build_and_run, lower_prepared_syntax_entrypoint};
-use beskid_queries::compile_front_end_from_resolved_input;
+use beskid_queries::compile_mod_free_front_end;
 
 fn linux_target() -> TargetMetadata {
     TargetMetadata::supported()
@@ -98,7 +98,7 @@ fn staged_runtime_kit_links_and_executes_with_the_canonical_static_archive() {
         None,
         None,
     );
-    let front = compile_front_end_from_resolved_input(&resolved, FrontEndOptions::default(), None)
+    let front = compile_mod_free_front_end(&resolved, FrontEndOptions::default(), None)
         .expect("prepare AOT runtime-kit smoke frontend");
     let artifact = lower_prepared_syntax_entrypoint(&front, "Main", target)
         .expect("lower AOT runtime-kit smoke through the production path");

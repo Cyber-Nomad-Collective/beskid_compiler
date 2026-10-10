@@ -27,6 +27,10 @@ pub(super) fn foundation_root() -> PathBuf {
     corelib_workspace_root().join("packages/foundation")
 }
 
+pub(super) fn serialization_root() -> PathBuf {
+    corelib_workspace_root().join("packages/serialization")
+}
+
 pub(super) fn compiler_sdk_src() -> PathBuf {
     corelib_workspace_root().join("packages/compiler-sdk/src")
 }
@@ -152,4 +156,5 @@ pub(super) fn expected_corelib_workspace_sources() -> &'static [&'static str] {
 
 mod compile;
 mod dynamic_bridge_items;
+mod serialization_compiler_items;
 mod layout;

@@ -169,6 +169,8 @@ impl SemanticIssueKind {
             Self::ExternDisallowedParamType { .. } => "T0903",
             Self::ExternDisallowedReturnType { .. } => "T0904",
             Self::GlueBindingRejected { .. } => "T0903",
+            Self::ExternInvalidOptional { .. } => "T0906",
+            Self::InvalidClifBlock { .. } => "E1232",
         }
     }
 }

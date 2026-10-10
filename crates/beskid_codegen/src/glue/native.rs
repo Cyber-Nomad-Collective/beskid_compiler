@@ -278,7 +278,12 @@ pub(super) fn emit(manifest: &GlueManifest) -> Result<(Vec<u8>, Vec<u8>), GlueAr
                 .ok_or_else(|| GlueArtifactError::Invalid("invalid compiled source digest".into()))
         })
         .collect::<Result<_, _>>()?;
+    // The admitted closure is every binding shape (one distinct nonzero shape per binding) plus
+    // the shape of every opaque brand those bindings carry; the loader issues the same closure.
     let mut ids: BTreeSet<_> = manifest.bindings.iter().map(|binding| binding.shape_id).collect();
+    if ids.is_empty() || ids.len() != manifest.bindings.len() || ids.contains(&0) {
+        return Err(GlueArtifactError::Invalid("invalid compiled shape closure".into()));
+    }
     for binding in &manifest.bindings {
         for physical in binding.parameters.iter().chain(std::iter::once(&binding.result)) {
             if let Some(opaque) = &physical.opaque {
@@ -286,10 +291,8 @@ pub(super) fn emit(manifest: &GlueManifest) -> Result<(Vec<u8>, Vec<u8>), GlueAr
             }
         }
     }
-    if ids.len()>4096 {return Err(GlueArtifactError::Invalid("opaque shape closure exceeds4096".into()));}
-
-    if ids.is_empty() || ids.len() != manifest.bindings.len() || ids.len() > 4096 || ids.contains(&0) {
-        return Err(GlueArtifactError::Invalid("invalid compiled shape closure".into()));
+    if ids.len() > 4096 || ids.contains(&0) {
+        return Err(GlueArtifactError::Invalid("compiled shape closure exceeds 4096 shapes".into()));
     }
     c.push_str(&format!(
         "static const uint8_t compiled_source[32]={{{}}};\nstatic const uint64_t compiled_ids[]={{{}}};\n",
@@ -412,3 +415,93 @@ pub(super) fn emit(manifest: &GlueManifest) -> Result<(Vec<u8>, Vec<u8>), GlueAr
 }
 
 fn hex_c(hex:&str)->String {(0..32).map(|i|format!("0x{}",&hex[i*2..i*2+2])).collect::<Vec<_>>().join(",")}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn physical(logical: &str, slots: &[&str], opaque: Option<GlueOpaqueType>) -> GluePhysicalType {
+        GluePhysicalType {
+            logical: logical.into(),
+            slots: slots.iter().map(|slot| (*slot).to_owned()).collect(),
+            checked: false,
+            opaque,
+        }
+    }
+
+    fn manifest(bindings: Vec<GlueBindingManifest>) -> GlueManifest {
+        GlueManifest {
+            schema_version: 1,
+            backend: "glue-rust".into(),
+            target: "x86_64-unknown-linux-gnu".into(),
+            runtime_abi: 5,
+            runtime_linkage: "glue-shared-provider-v1".into(),
+            owner_issuer_version: 1,
+            native_width_bits: 64,
+            compiled_source_sha256: "ab".repeat(32),
+            bindings,
+            required_tools: Vec::new(),
+            required_native_adapters: Vec::new(),
+            expected_outputs: Vec::new(),
+        }
+    }
+
+    fn binding(shape: &str, parameters: Vec<GluePhysicalType>) -> GlueBindingManifest {
+        GlueBindingManifest {
+            identity_sha256: shape.into(),
+            direction: "export".into(),
+            library: "owner".into(),
+            symbol: format!("Exported{}", &shape[..4]),
+            body_symbol: format!("body_{}", &shape[..4]),
+            shape_id: super::super::artifact::shape_id(shape).expect("shape"),
+            parameters,
+            result: physical("unit", &[], None),
+            source: GlueSourceAuthority {
+                logical_unit: "Main".into(),
+                typed_unit_sha256: "cd".repeat(32),
+                span_start: 0,
+                span_end: 1,
+            },
+        }
+    }
+
+    /// The admitted closure of a binding that carries an opaque brand is its own shape plus the
+    /// brand shape, exactly the closure the loader issues; it is not one shape per binding.
+    #[test]
+    fn opaque_brand_shapes_extend_the_compiled_closure() {
+        let brand = "12".repeat(32);
+        let opaque = GlueOpaqueType {
+            brand_sha256: brand.clone(),
+            library: "owner".into(),
+            nullable: false,
+            constructor: "make_handle".into(),
+            reader: "read_handle".into(),
+            descriptor: "handle_descriptor".into(),
+        };
+        let manifest = manifest(vec![binding(&"34".repeat(32), vec![physical("Handle", &["uint64_t"], Some(opaque))])]);
+        let (source, _) = emit(&manifest).expect("opaque binding closure is valid");
+        let source = String::from_utf8(source).expect("C source");
+        let brand_id = super::super::artifact::shape_id(&brand).expect("brand shape");
+        let binding_id = manifest.bindings[0].shape_id;
+        let mut expected = [binding_id, brand_id];
+        expected.sort_unstable();
+        assert!(
+            source.contains(&format!(
+                "static const uint64_t compiled_ids[]={{UINT64_C({}),UINT64_C({})}};",
+                expected[0], expected[1]
+            )),
+            "{source}"
+        );
+    }
+
+    /// Two bindings never share one shape identity.
+    #[test]
+    fn duplicate_binding_shapes_fail_closed() {
+        let shape = "56".repeat(32);
+        let manifest = manifest(vec![
+            binding(&shape, vec![physical("u64", &["uint64_t"], None)]),
+            binding(&shape, vec![physical("u64", &["uint64_t"], None)]),
+        ]);
+        assert!(emit(&manifest).is_err());
+    }
+}

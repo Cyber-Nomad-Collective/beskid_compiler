@@ -12,6 +12,8 @@ pub struct CompiledSerializationTarget {
     lexical: Vec<String>,
     contribution: Spanned<ProgramItem>,
     contribution_index: u32,
+    /// The unbound items of the same generated group, attributed with the contribution.
+    members: Vec<ModContributionMember>,
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SerializationContributionKind {
@@ -59,6 +61,7 @@ impl ReboundSerializationTarget {
     }
 }
 impl CompiledSerializationTarget {
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn from_template(
         project: ProjectSession,
         assembly: ProgramAssembly,
@@ -68,8 +71,9 @@ impl CompiledSerializationTarget {
         lexical: Vec<String>,
         contribution: Spanned<ProgramItem>,
         contribution_index: u32,
+        members: Vec<ModContributionMember>,
     ) -> Self {
-        Self { project, assembly, owner, arguments, body, lexical, contribution, contribution_index }
+        Self { project, assembly, owner, arguments, body, lexical, contribution, contribution_index, members }
     }
 
     pub fn original_owner(&self) -> AstNodeKey {
@@ -80,6 +84,25 @@ impl CompiledSerializationTarget {
     }
     pub fn contribution(&self) -> &Spanned<ProgramItem> {
         &self.contribution
+    }
+    pub fn members(&self) -> &[ModContributionMember] {
+        &self.members
+    }
+    /// The attributed unit and the current top-level entry nodes of this group when `current`
+    /// is a later generation that preserves the original entry items and appends the exact
+    /// group once. `Ok(None)` when the group is not (or not exactly) appended in `current`, or
+    /// when the declaring unit's source or package provenance changed: such a group is
+    /// unattributed and keeps the entry unit.
+    pub(crate) fn appended_attribution(
+        &self,
+        db: &dyn Db,
+        project: ProjectSession,
+        current: &ProgramAssembly,
+    ) -> Result<Option<(SourceUnitId, Vec<crate::AstNodeId>)>, crate::SemanticError> {
+        if project != self.project {
+            return Err(crate::SemanticError::new("serialization contribution belongs to another project issuer"));
+        }
+        appended_group_attribution(db, &self.assembly, self.owner, &self.contribution, &self.members, current)
     }
     /// Reissue only after exact append correspondence. Current contract admission remains
     /// independent: this returns a target key, never an executable conformance witness.
@@ -129,7 +152,12 @@ impl CompiledSerializationTarget {
             .iter()
             .find(|unit| unit.path == original_entry.path)
             .ok_or_else(|| reject("serialization contribution entry correspondence absent"))?;
-        exact_append(&original_entry.program.node.items, &current_entry.program.node.items, &self.contribution)?;
+        exact_append(
+            &original_entry.program.node.items,
+            &current_entry.program.node.items,
+            &self.contribution,
+            &self.members,
+        )?;
         let old_syntax = self
             .assembly
             .syntax_indexes
@@ -168,7 +196,6 @@ impl CompiledSerializationTarget {
         let [owner] = candidates.as_slice() else {
             return Err(reject("serialization target correspondence missing/ambiguous"));
         };
-        require_contribution_field_access(db, *owner, &current_entry.path)?;
         // A copied target claim paired with an unrelated implementation must not
         // authorize a preexisting conformance on the target.
         let entry_syntax = db
@@ -286,6 +313,7 @@ impl ModSemanticQueryAuthority<'_> {
         contribution_index: u32,
         target: ModSemanticHandle,
         contribution: &Spanned<ProgramItem>,
+        members: &[ModContributionMember],
     ) -> Result<ModCompiledMetadata, ModSemanticError> {
         self.validate_registration()?;
         self.admit_semantic_invocation(invocation)?;
@@ -297,7 +325,7 @@ impl ModSemanticQueryAuthority<'_> {
             .ok_or_else(|| Self::error("serialization target has foreign/stale invocation issuer"))?;
         self.validate_key(owner)?;
         self.serialization_shape(target)?;
-        require_contribution_field_access(self.db, owner, &self.assembly.entry_unit().path)?;
+        validate_members(contribution_index, members)?;
         let Node::ImplBlock(block) = &contribution.node else {
             return Err(Self::error("serialization target requires an owned typed impl contribution"));
         };
@@ -320,12 +348,92 @@ impl ModSemanticQueryAuthority<'_> {
             lexical,
             contribution: contribution.clone(),
             contribution_index,
+            members: members.to_vec(),
         };
-        Ok(ModCompiledMetadata::with_issuer_payload(
-            ModSerializationTargetClaim { contribution_index, target, generation: self.assembly.generation },
+        let attribution = group_attribution(self.db, owner, contribution, members);
+        let metadata = ModCompiledMetadata::with_issuer_payload(
+            ModSerializationTargetClaim { contribution_index, target, generation: self.assembly.generation, attribution },
             proof,
-        ))
+        );
+        self.issued_metadata.borrow_mut().push(metadata.clone());
+        Ok(metadata)
     }
+}
+
+/// Members are the unbound items of the group: never an impl block (an impl is bound on its
+/// own), never the bound contribution itself, and each index at most once.
+pub(super) fn validate_members(contribution_index: u32, members: &[ModContributionMember]) -> Result<(), ModSemanticError> {
+    for (position, member) in members.iter().enumerate() {
+        if member.contribution_index == contribution_index
+            || members[..position].iter().any(|other| other.contribution_index == member.contribution_index)
+        {
+            return Err(ModSemanticQueryAuthority::error("serialization group member index is bound more than once"));
+        }
+        if matches!(member.item.node, Node::ImplBlock(_)) {
+            return Err(ModSemanticQueryAuthority::error(
+                "serialization group member is an impl block; bind it as a contribution",
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// The descriptive attribution carried on the claim: the declaring unit of `owner` and the
+/// exact group items, bound impl first.
+pub(super) fn group_attribution(
+    db: &dyn Db,
+    owner: AstNodeKey,
+    contribution: &Spanned<ProgramItem>,
+    members: &[ModContributionMember],
+) -> ModContributionAttribution {
+    ModContributionAttribution {
+        attributed_unit: owner.unit.path(db).clone(),
+        items: std::iter::once(contribution.clone()).chain(members.iter().map(|member| member.item.clone())).collect(),
+    }
+}
+
+/// The attribution of one retained group in `current`: the declaring unit of `owner` (which
+/// must still be registered with unchanged source and package provenance) and the current
+/// entry nodes of the exact appended group. See `CompiledSerializationTarget::appended_attribution`.
+pub(super) fn appended_group_attribution(
+    db: &dyn Db,
+    original: &ProgramAssembly,
+    owner: AstNodeKey,
+    contribution: &Spanned<ProgramItem>,
+    members: &[ModContributionMember],
+    current: &ProgramAssembly,
+) -> Result<Option<(SourceUnitId, Vec<crate::AstNodeId>)>, crate::SemanticError> {
+    if current.generation == original.generation {
+        return Ok(None);
+    }
+    let Some(original_unit) = original.units.iter().find(|unit| SourceUnitId::new(db, unit.path.clone()) == owner.unit)
+    else {
+        return Ok(None);
+    };
+    let Some(current_unit) = current.units.iter().find(|unit| unit.path == original_unit.path) else {
+        return Ok(None);
+    };
+    if current_unit.source != original_unit.source
+        || current.package_identities().for_source(&current_unit.path)
+            != original.package_identities().for_source(&original_unit.path)
+    {
+        return Ok(None);
+    }
+    let original_entry = original.entry_unit();
+    let current_entry = current.entry_unit();
+    if current_entry.path != original_entry.path {
+        return Ok(None);
+    }
+    let original_items = &original_entry.program.node.items;
+    let current_items = &current_entry.program.node.items;
+    if exact_append(original_items, current_items, contribution, members).is_err() {
+        return Ok(None);
+    }
+    let items = std::iter::once(contribution.clone()).chain(members.iter().map(|member| member.item.clone())).collect::<Vec<_>>();
+    let Some(nodes) = crate::contribution_attribution::appended_item_nodes(current, original_items.len(), &items) else {
+        return Ok(None);
+    };
+    Ok(Some((SourceUnitId::new(db, current_unit.path.clone()), nodes)))
 }
 
 fn same_semantic_body(a: &ShapeBodyProjection, b: &ShapeBodyProjection) -> bool {
@@ -345,52 +453,31 @@ fn same_semantic_body(a: &ShapeBodyProjection, b: &ShapeBodyProjection) -> bool 
 }
 
 /// The compiler merger appends owned typed items to the entry. The current entry
-/// must preserve every original item and contain the exact contribution once.
+/// must preserve every original item and contain the exact contribution and each of
+/// its group members exactly once in the appended tail.
 pub(super) fn exact_append(
     old_items: &[Spanned<ProgramItem>],
     new_items: &[Spanned<ProgramItem>],
     contribution: &Spanned<ProgramItem>,
+    members: &[ModContributionMember],
 ) -> Result<(), ModSemanticError> {
-    if new_items.len() < old_items.len()
-        || new_items[..old_items.len()] != old_items[..]
-        || new_items[old_items.len()..].iter().filter(|item| **item == *contribution).count() != 1
-    {
+    if new_items.len() < old_items.len() || new_items[..old_items.len()] != old_items[..] {
         return Err(ModSemanticQueryAuthority::error(
             "serialization contribution differs from exact compiler append correspondence",
         ));
     }
+    let appended = &new_items[old_items.len()..];
+    if appended.iter().filter(|item| **item == *contribution).count() != 1 {
+        return Err(ModSemanticQueryAuthority::error(
+            "serialization contribution differs from exact compiler append correspondence",
+        ));
+    }
+    for member in members {
+        if appended.iter().filter(|item| **item == member.item).count() != 1 {
+            return Err(ModSemanticQueryAuthority::error(
+                "serialization group member differs from exact compiler append correspondence",
+            ));
+        }
+    }
     Ok(())
-}
-
-/// Serialization contributions are appended to the entry source unit, so a generated adapter
-/// reads and constructs its target from the entry unit. Rust places derive output in the
-/// module of the input item, where private fields are visible; this merger does the same only
-/// when the target is declared in the entry unit. A target record declared in another source
-/// unit with any non-`pub` value field cannot be bound: its adapter would read or build a field
-/// that is private to the declaring unit (E1211). Rejecting at the binding keeps the field
-/// visibility policy single-sourced; no contribution is attributed to another unit.
-pub(super) fn require_contribution_field_access(
-    db: &dyn Db,
-    owner: AstNodeKey,
-    entry: &std::path::Path,
-) -> Result<(), ModSemanticError> {
-    let contribution = AstNodeKey {
-        unit: SourceUnitId::new(db, entry.to_path_buf()),
-        generation: owner.generation,
-        node: crate::AstNodeId(0),
-    };
-    let inaccessible = crate::semantic_contract::serialization_contribution_inaccessible_fields(db, contribution, owner)
-        .map_err(|error| ModSemanticQueryAuthority::error(&error.to_string()))?;
-    let Some(field) = inaccessible.first() else {
-        return Ok(());
-    };
-    let name = mod_shape_lexical_path(db, owner).map(|path| path.join(".")).unwrap_or_else(|| "<unnamed>".into());
-    Err(ModSemanticQueryAuthority::error(&format!(
-        "serialization target `{name}` is declared in source unit `{}` and its field `{field}` is not `pub`; \
-         generated serialization adapters are merged into the entry source unit `{}` and cannot read or \
-         construct a field that is private to another source unit (E1211); mark the field `pub` or declare \
-         the type in the entry source unit",
-        owner.unit.path(db).display(),
-        entry.display(),
-    )))
 }

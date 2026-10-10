@@ -12,7 +12,9 @@ use crate::syntax::Spanned;
 use crate::syntax::{Node, Program};
 use crate::types::lowering_prep::{LoweringPrep, LoweringPrepSurfaces};
 use crate::types::result::{TypeError, TypeResult};
-use crate::types::surface::{build_unit_type_surface, merge_unit_surfaces_with_types, source_less_function_bounds};
+use crate::types::surface::{
+    build_entry_unit_type_surface, build_unit_type_surface, merge_unit_surfaces_with_types, source_less_function_bounds,
+};
 
 use super::TypeChecker;
 
@@ -57,7 +59,7 @@ impl TypeChecker<'_> {
 
         let entry_surface = entry_source_path
             .as_ref()
-            .map(|path| build_unit_type_surface(program, resolution, path))
+            .map(|path| build_entry_unit_type_surface(program, resolution, path))
             .unwrap_or_default();
         if let Some(entry_path) = entry_source_path.as_ref() {
             let key = crate::paths::unit_path_key(entry_path);
@@ -159,7 +161,7 @@ impl TypeChecker<'_> {
                 .units
                 .iter()
                 .find(|unit| crate::paths::same_file(&unit.path, path))
-                .is_some_and(|unit| assembly.is_canonical_public_dynamic_unit(unit))
+                .is_some_and(|unit| assembly.is_runtime_bridge_extern_unit(unit))
         });
         checker.glue_libraries =
             assembly.map(|assembly| Arc::clone(&assembly.glue_libraries)).unwrap_or_else(|| Arc::from([]));
@@ -170,13 +172,34 @@ impl TypeChecker<'_> {
 
         let items = &program.node.items;
         let item_total = items.len() as u64;
+        // A retained serialization group appended to the entry is judged for field visibility
+        // in the unit that declares its target; every other item keeps the entry unit. Items
+        // are matched by exact equality with the assembly's entry items, never by position.
+        let item_attributions = assembly
+            .map(|assembly| {
+                assembly
+                    .entry_unit()
+                    .program
+                    .node
+                    .items
+                    .iter()
+                    .zip(assembly.entry_item_attributions())
+                    .filter_map(|(item, unit)| Some((item.clone(), crate::paths::unit_path_key(&unit?))))
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
         for (index, item) in items.iter().enumerate() {
             if let Some((observer, phase)) = progress {
                 let label = checker.progress_label_with_path(syntax_item_progress_label(item));
                 report_progress(Some(observer), phase, index as u64 + 1, item_total.max(1), label);
             }
+            checker.current_item_attribution = item_attributions
+                .iter()
+                .find(|(attributed, _)| attributed == item)
+                .map(|(_, unit)| unit.clone());
             checker.type_item(item);
         }
+        checker.current_item_attribution = None;
 
         // Conformance equality needs both the contract's declared signature and every
         // implementor's actual signature, so it runs after all of this unit's own items

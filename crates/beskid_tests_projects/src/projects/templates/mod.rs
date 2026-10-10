@@ -8,7 +8,7 @@ use beskid_analysis::projects::{
 };
 use beskid_tests_support::{temp_case_dir, write_project_manifest as write_manifest};
 
-use super::fixture_harness::{enter_mod_host, mod_invoker_for};
+use super::fixture_harness::{enter_mod_host, mod_host_for};
 use super::{scoped_core_dependency_root, core_dependency_env_lock, test_cwd::with_cwd_at_workspace_root};
 
 #[test]
@@ -307,9 +307,8 @@ target "app" {
     let (_, diagnostics, _fixes) = beskid_queries::prepare_compilation_diagnostics(
         &resolved,
         PrepareOptions {
-            mod_invoker: Some(mod_invoker_for(&mod_host, &resolved)),
             front_end: FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
-            ..Default::default()
+            ..PrepareOptions::with_mod_host(mod_host_for(&mod_host, &resolved))
         },
         None,
     )

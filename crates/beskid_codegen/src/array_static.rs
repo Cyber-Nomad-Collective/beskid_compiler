@@ -10,7 +10,7 @@ use std::sync::Arc;
 use beskid_queries::{
     AstNodeKey, CallLowering, GenericSpecializationInstance, IndexedNodeKind, ManagedReferenceKind, SemanticTypeId,
     aggregate_literal_declaration, bulk_parameter, call_arguments, call_lowering, child_nodes,
-    empty_array_literal_element_abi_type, empty_array_literal_element_specialization, generic_specialization_identity,
+    empty_array_literal_element_abi_type, expected_type_in_environment, generic_specialization_identity,
     managed_reference_kind, node_kind, node_type, typed_array_allocation, value_abi_type,
 };
 use cranelift_module::{DataDescription, DataId, Linkage, Module, ModuleError, ModuleResult};
@@ -195,18 +195,20 @@ impl CodegenInput<'_> {
                     .all(|element| self.nominal_literal_declaration(element) == Some(declaration))
                     .then_some(SemanticTypeId::POINTER)?
             }
-            // Every other element proves one exact ABI: a literal, conversion, call result or
-            // explicitly typed scalar local through `node_type`; a projected declared field
+            // Every other element proves one exact ABI through its current-generation value
+            // ABI: a bare literal at the width the literal's expected element type requires
+            // (`u8[] bytes = [1, 2]`), a conversion, a call result, a projected declared field
             // (`parameters[index].node.name`), a nominal local, a named or constructed enum
-            // value through its current-generation value ABI. The elements may mix those
-            // shapes (`[Let(builder, name), begin]`) but must agree on the representation; a
-            // pointer-shaped element additionally needs its managed classification below.
+            // value; an explicitly typed scalar local falls back to `node_type`. The elements
+            // may mix those shapes (`[Let(builder, name), begin]`) but must agree on the
+            // representation; a pointer-shaped element additionally needs its managed
+            // classification below.
             Some(first) => {
                 let element_abi = |element: AstNodeKey| {
-                    node_type(self.database(), element)
+                    value_abi_type(self.database(), element)
                         .ok()
                         .flatten()
-                        .or_else(|| value_abi_type(self.database(), element).ok().flatten())
+                        .or_else(|| node_type(self.database(), element).ok().flatten())
                 };
                 let element_type = element_abi(first)?;
                 if matches!(element_type, SemanticTypeId::UNIT | SemanticTypeId::NEVER) {
@@ -248,9 +250,7 @@ impl CodegenInput<'_> {
         let elements = child_nodes(self.database(), literal).ok().flatten()?;
         elements.is_empty().then_some(())?;
         let element_type =
-            empty_array_literal_element_specialization(self.database(), literal, specialization.substitutions.clone())
-                .ok()
-                .flatten()?;
+            expected_type_in_environment(self.database(), literal, specialization).ok().flatten()?.array_element_abi_type()?;
         let identity = generic_specialization_identity(specialization);
         self.build_array_static_plan(literal, element_type, 0, Some(identity.as_ref()))
     }

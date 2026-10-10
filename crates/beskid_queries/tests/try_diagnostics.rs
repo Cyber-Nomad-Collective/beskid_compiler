@@ -68,7 +68,7 @@ fn imported_try_diagnostics_share_exact_result_error_authority() {
         };
         let mut db = BeskidDatabase::default();
         let (_, diagnostics, _) =
-            prepare_compilation_diagnostics_with_db(&mut db, &resolved, PrepareOptions::default(), None)
+            prepare_compilation_diagnostics_with_db(&mut db, &resolved, PrepareOptions::without_mods(), None)
                 .expect("ordinary preparation preserves truthful try diagnostics");
         let errors = diagnostics.iter().filter(|diagnostic| diagnostic.code.as_deref() == Some("E1222")).count();
         assert_eq!(errors, expected_errors, "{diagnostics:?}");
@@ -78,7 +78,7 @@ fn imported_try_diagnostics_share_exact_result_error_authority() {
                 "{diagnostics:?}"
             );
         }
-        let (_, isolated, _) = prepare_compilation_diagnostics_isolated(&resolved, PrepareOptions::default(), None)
+        let (_, isolated, _) = prepare_compilation_diagnostics_isolated(&resolved, PrepareOptions::without_mods(), None)
             .expect("owned editor jobs use the same try authority");
         assert_eq!(
             isolated.iter().filter(|diagnostic| diagnostic.code.as_deref() == Some("E1222")).count(),
@@ -89,8 +89,9 @@ fn imported_try_diagnostics_share_exact_result_error_authority() {
 }
 
 /// Build a single-unit assembly without Core for `source` and return the E1222 counts from the
-/// query-backed try authority (shared and isolated) and from the analysis-only path, whose
-/// staged try rule uses the pre-normalize precheck instead of a query authority.
+/// query-backed try authority (shared and isolated) and from the project-less structural rules
+/// (`semantic_rule_diagnostics_for_program` without a deferring authority), whose staged try
+/// rule uses the pre-normalize precheck instead of a query authority.
 fn local_try_diagnostic_counts(source: &str) -> (usize, usize, usize) {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("Main.bd");
@@ -130,13 +131,16 @@ fn local_try_diagnostic_counts(source: &str) -> (usize, usize, usize) {
         diagnostics.iter().filter(|diagnostic| diagnostic.code.as_deref() == Some("E1222")).count()
     };
     let mut db = BeskidDatabase::default();
-    let (_, shared, _) = prepare_compilation_diagnostics_with_db(&mut db, &resolved, PrepareOptions::default(), None)
+    let (_, shared, _) = prepare_compilation_diagnostics_with_db(&mut db, &resolved, PrepareOptions::without_mods(), None)
         .expect("shared try authority");
-    let (_, isolated, _) = prepare_compilation_diagnostics_isolated(&resolved, PrepareOptions::default(), None)
+    let (_, isolated, _) = prepare_compilation_diagnostics_isolated(&resolved, PrepareOptions::without_mods(), None)
         .expect("isolated try authority");
-    let (_, precheck, _) =
-        beskid_analysis::services::prepare_compilation_diagnostics(&resolved, PrepareOptions::default(), None)
-            .expect("analysis-only precheck");
+    let precheck = beskid_analysis::services::semantic_rule_diagnostics_for_program(
+        &resolved.assembly.as_ref().expect("owned assembly").entry_unit().program.node,
+        "Main.bd",
+        source,
+        beskid_analysis::AnalysisOptions::default(),
+    );
     (count(&shared), count(&isolated), count(&precheck))
 }
 
@@ -282,7 +286,7 @@ fn primitive_conversion_rejects_non_numeric_argument() {
     };
     let mut db = BeskidDatabase::default();
     let (_, diagnostics, _) =
-        prepare_compilation_diagnostics_with_db(&mut db, &resolved, PrepareOptions::default(), None)
+        prepare_compilation_diagnostics_with_db(&mut db, &resolved, PrepareOptions::without_mods(), None)
             .expect("diagnostics collection must not hard-fail on a typed conversion error");
     let e1228 = diagnostics.iter().filter(|diagnostic| diagnostic.code.as_deref() == Some("E1228")).count();
     assert_eq!(e1228, 1, "expected exactly one E1228 for a non-numeric conversion argument: {diagnostics:?}");
@@ -335,9 +339,9 @@ fn fact_authority_diagnostics(
         )),
     };
     let mut db = BeskidDatabase::default();
-    let (_, shared, _) = prepare_compilation_diagnostics_with_db(&mut db, &resolved, PrepareOptions::default(), None)
+    let (_, shared, _) = prepare_compilation_diagnostics_with_db(&mut db, &resolved, PrepareOptions::without_mods(), None)
         .expect("shared semantic fact authority");
-    let (_, isolated, _) = prepare_compilation_diagnostics_isolated(&resolved, PrepareOptions::default(), None)
+    let (_, isolated, _) = prepare_compilation_diagnostics_isolated(&resolved, PrepareOptions::without_mods(), None)
         .expect("isolated semantic fact authority");
     (shared, isolated)
 }

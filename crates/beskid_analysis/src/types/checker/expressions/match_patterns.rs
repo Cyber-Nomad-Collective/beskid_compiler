@@ -37,13 +37,14 @@ impl<'a> TypeChecker<'a> {
         self.contextual_expected_type = *expected;
         let arm_type = self.type_expression(&arm.node.value);
         self.contextual_expected_type = previous_expected;
+        // Arms join like the query authority (`join_match_arm_type`): a `never` arm produces no
+        // value and neither fixes nor contradicts the type the other arms agree on.
         if let Some(actual) = arm_type {
-            if let Some(expected_type) = *expected {
-                if !self.is_never(expected_type) && !self.is_never(actual) {
-                    self.require_same_type(arm.node.value.span, expected_type, actual);
-                }
-            } else {
-                *expected = Some(actual);
+            match *expected {
+                Some(expected_type) if self.is_never(expected_type) => *expected = Some(actual),
+                Some(_) if self.is_never(actual) => {}
+                Some(expected_type) => self.require_same_type(arm.node.value.span, expected_type, actual),
+                None => *expected = Some(actual),
             }
         }
     }

@@ -1,7 +1,9 @@
 //! Invocation-lifetime projection of registered Salsa type identities.
 mod canonical_paths;
 mod serialization_template;
-pub use serialization_template::{CompiledSerializationTemplate, serialization_template_getter_shape};
+pub use serialization_template::{
+    CompiledSerializationTemplate, serialization_template_getter_shape, serialization_template_instance_rebind,
+};
 mod serialization_target;
 pub use serialization_target::{
     CompiledSerializationTarget, ReboundSerializationTarget, SerializationContributionKind,
@@ -40,6 +42,10 @@ pub struct ModSemanticQueryAuthority<'db> {
     pub(crate) syntax_state: RefCell<crate::mod_syntax_authority::SyntaxState>,
     handles: RefCell<HashMap<ModSemanticHandle, (AstNodeKey, Arc<[ShapeIdentity]>)>>,
     pub(crate) catchalls: RefCell<HashMap<(u64, u64), ModSemanticCatchall>>,
+    /// Serialization claims this authority issued during its invocation. The Mod scope
+    /// retains them on the next registered generation so the merged contributions carry their
+    /// unit attribution from the moment that generation exists.
+    pub(crate) issued_metadata: RefCell<Vec<ModCompiledMetadata>>,
 }
 impl<'db> ModSemanticQueryAuthority<'db> {
     pub fn for_registered_assembly(
@@ -54,9 +60,14 @@ impl<'db> ModSemanticQueryAuthority<'db> {
             handles: RefCell::new(HashMap::new()),
             catchalls: RefCell::new(HashMap::new()),
             syntax_state: RefCell::default(),
+            issued_metadata: RefCell::new(Vec::new()),
         };
         authority.validate_registration()?;
         Ok(authority)
+    }
+    /// Drain the serialization claims issued by this invocation.
+    pub fn take_issued_metadata(&self) -> Vec<ModCompiledMetadata> {
+        std::mem::take(&mut *self.issued_metadata.borrow_mut())
     }
     pub(crate) fn error(message: &str) -> ModSemanticError {
         ModSemanticError(message.into())
@@ -276,8 +287,9 @@ impl ModSemanticAuthority for ModSemanticQueryAuthority<'_> {
         contribution_index: u32,
         target: ModSemanticHandle,
         contribution: &beskid_analysis::syntax::Spanned<ProgramItem>,
+        members: &[ModContributionMember],
     ) -> Result<ModCompiledMetadata, ModSemanticError> {
-        self.compile_target(invocation, contribution_index, target, contribution)
+        self.compile_target(invocation, contribution_index, target, contribution, members)
     }
     fn compile_serialization_template(
         &self,
@@ -286,8 +298,9 @@ impl ModSemanticAuthority for ModSemanticQueryAuthority<'_> {
         reference: &ModSyntaxNodeRef,
         declaration: &ModSemanticDeclaration,
         contribution: &beskid_analysis::syntax::Spanned<ProgramItem>,
+        members: &[ModContributionMember],
     ) -> Result<ModCompiledMetadata, ModSemanticError> {
-        self.compile_template(invocation, contribution_index, reference, declaration, contribution)
+        self.compile_template(invocation, contribution_index, reference, declaration, contribution, members)
     }
     fn compile_catchall(
         &self,

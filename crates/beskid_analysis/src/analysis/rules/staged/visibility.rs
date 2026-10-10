@@ -16,6 +16,14 @@ use crate::projects::{module_path_to_relative_path, resolve_module_file};
 const COMPILER_ISSUED_DYNAMIC_BRIDGE_ITEMS: &[&str] =
     &["ReserveAllocationFailureV1", "PackedResultV1", "PackedInvalidV1", "UnpackedResultV1", "UnpackedInvalidV1"];
 
+/// Private factories of the canonical serialization descriptor unit that only the compiled
+/// serialization shape authority (`beskid_queries::serialization_shape_binding`) references.
+const COMPILER_ISSUED_SERIALIZATION_DESCRIPTOR_ITEMS: &[&str] = &["CompiledRoot", "AttachCompiledExtras"];
+
+/// The private constructor of the canonical compiled serialization recipe unit that only the
+/// compiled serialization shape authority references.
+const COMPILER_ISSUED_SERIALIZATION_COMPILED_ITEMS: &[&str] = &["ConstructCompiledGraph"];
+
 impl SemanticPipelineRule {
     pub(super) fn stage5_modules_and_visibility(
         &self,
@@ -197,8 +205,7 @@ impl SemanticPipelineRule {
 
     fn check_unused_private_items(&self, ctx: &mut RuleContext, program: &Spanned<Program>) {
         let used_names = self.collect_used_value_names(program);
-        let compiler_issued: &[&str] =
-            if Self::is_canonical_dynamic_entry(ctx) { COMPILER_ISSUED_DYNAMIC_BRIDGE_ITEMS } else { &[] };
+        let compiler_issued = Self::compiler_issued_items(ctx);
 
         for item in &program.node.items {
             // Tests are invoked by the `beskid test` harness, not by name references in source.
@@ -239,21 +246,28 @@ impl SemanticPipelineRule {
         }
     }
 
-    /// Whether the unit under analysis is the exact canonical public Dynamic source
-    /// (`ProgramAssembly::is_canonical_public_dynamic_unit`: Corelib `corelib_foundation`, the
-    /// canonical relative path, and byte-identical source). Any other unit, or an analysis
-    /// without an assembly, gets no exemption.
-    fn is_canonical_dynamic_entry(ctx: &RuleContext) -> bool {
+    /// Private items of the unit under analysis that the compiler references by name: those of
+    /// an exact canonical Corelib unit (Corelib package identity, the canonical relative path,
+    /// and byte-identical source) that carries compiler-issued bridges or factories. Any other
+    /// unit, or an analysis without an assembly, gets no exemption.
+    fn compiler_issued_items(ctx: &RuleContext) -> &'static [&'static str] {
         let (Some(assembly), Some(entry_path)) =
             (ctx.options.program_assembly.as_ref(), ctx.options.entry_source_path.as_ref())
         else {
-            return false;
+            return &[];
         };
-        assembly
-            .units
-            .iter()
-            .find(|unit| crate::paths::same_file(&unit.path, entry_path))
-            .is_some_and(|unit| assembly.is_canonical_public_dynamic_unit(unit))
+        let Some(unit) = assembly.units.iter().find(|unit| crate::paths::same_file(&unit.path, entry_path)) else {
+            return &[];
+        };
+        if assembly.is_canonical_public_dynamic_unit(unit) {
+            COMPILER_ISSUED_DYNAMIC_BRIDGE_ITEMS
+        } else if assembly.is_canonical_serialization_descriptors_unit(unit) {
+            COMPILER_ISSUED_SERIALIZATION_DESCRIPTOR_ITEMS
+        } else if assembly.is_canonical_serialization_compiled_unit(unit) {
+            COMPILER_ISSUED_SERIALIZATION_COMPILED_ITEMS
+        } else {
+            &[]
+        }
     }
 
     fn collect_private_item_spans(&self, program: &Spanned<Program>) -> HashMap<String, crate::syntax::SpanInfo> {

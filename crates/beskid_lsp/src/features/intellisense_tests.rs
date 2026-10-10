@@ -9,7 +9,7 @@ mod tests {
 
     use crate::features::{completion, definition, hover, references, signature_help};
     use crate::position::position_to_offset;
-    use crate::session::lifecycle::build_document;
+    use crate::session::lifecycle::{build_document, set_document};
     use crate::session::store::{Document, State, SyntaxCompletion, SyntaxDefinition, SyntaxHover, SyntaxSymbol};
     use crate::test_mod_host::ProvisionedModHost;
     use crate::workspace_scan::path_to_uri;
@@ -319,6 +319,57 @@ mod tests {
         );
     }
 
+    /// One long-lived server database must accept an expanded tree that matches an earlier
+    /// generation: open, comment-only edit (same tree, shifted spans), then undo (earlier
+    /// source text). Every revision must keep project preparation and typed facts, with
+    /// hover spans bound to that revision's text.
+    #[tokio::test]
+    async fn comment_only_edit_and_undo_keep_typed_facts_in_one_database() {
+        let _fixture = crate::SHARED_FIXTURE_LOCK.lock().await;
+        let root = compiler_workspace_root();
+        let previous = std::env::current_dir().expect("cwd");
+        std::env::set_current_dir(&root).expect("chdir");
+        let fixture = corelib_mvp_paths();
+        let uri = fixture.uri.clone();
+        let mod_host = ProvisionedModHost::for_source(&fixture.main_path);
+        let state = tokio::sync::RwLock::new(mod_host.state());
+        state.read().await.mark_initial_scan_complete();
+        let commented = format!("// comment-only edit\n{}", fixture.source);
+        let revisions = [(1, fixture.source.clone()), (2, commented), (3, fixture.source.clone())];
+        let mut checked = Vec::new();
+        for (version, text) in revisions {
+            assert!(set_document(&state, uri.clone(), version, text.clone()).await, "accept version {version}");
+            let entry_only = state.read().await.docs.get(&uri).expect("open document").clone();
+            let full = build_document(&state, &uri, version, text.clone()).await;
+            checked.push((version, text, entry_only, full));
+        }
+        std::env::set_current_dir(previous).expect("restore cwd");
+        for (version, text, entry_only, full) in checked {
+            for (policy, doc) in [("entry-only", &entry_only), ("full-closure", &full)] {
+                let failures = doc
+                    .syntax_diagnostics
+                    .iter()
+                    .filter(|diagnostic| diagnostic.code.as_deref() == Some("project-preparation"))
+                    .map(|diagnostic| diagnostic.message.as_str())
+                    .collect::<Vec<_>>();
+                assert!(failures.is_empty(), "version {version} ({policy}) failed project preparation: {failures:#?}");
+            }
+            let offset = text.find("WriteLine").expect("WriteLine");
+            assert!(
+                full.syntax_hovers.iter().any(|hover| {
+                    hover.reference_start <= offset
+                        && offset < hover.reference_end
+                        && &text[hover.reference_start..hover.reference_end] == "WriteLine"
+                }),
+                "version {version} must bind a WriteLine hover to its own spans, got {:?}",
+                full.syntax_hovers
+                    .iter()
+                    .map(|hover| (hover.reference_start, hover.reference_end, hover.markdown.as_str()))
+                    .collect::<Vec<_>>()
+            );
+        }
+    }
+
     #[tokio::test]
     async fn lifecycle_build_document_parses_corelib_mvp() {
         let _fixture = crate::SHARED_FIXTURE_LOCK.lock().await;
@@ -353,7 +404,7 @@ mod tests {
             let project_root = fixture.project_root.canonicalize().unwrap_or_else(|_| fixture.project_root.clone());
             configure_db_for_project(&project_root);
             let mut db = BeskidDatabase::with_persistence(&project_root);
-            let mut options = PrepareOptions::default();
+            let mut options = PrepareOptions::without_mods();
             options.front_end.assembly_discovery = AssemblyDiscovery::ImportClosure;
             let shared = entry_resolution_with_db(&mut db, &resolved, &options).expect("entry resolution");
             assert!(

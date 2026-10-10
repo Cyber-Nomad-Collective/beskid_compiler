@@ -13,9 +13,9 @@ use super::generate_output::{
 };
 use super::invoker::ContractInvoker;
 use super::invoker::GeneratorOutcome;
+use super::host::ModHost;
 use super::load::load_artifacts;
 use super::merge::merge_generated_syntax;
-use super::native::NativeContractInvoker;
 use super::reparse::reparse_if_needed;
 use super::rewrite::run_rewriters;
 use super::semantic_scope::invoke_in_scope;
@@ -26,51 +26,20 @@ use super::validate::validate_registrations;
 use crate::projects::CompilePlan;
 use crate::services::{SessionFingerprint, cached_semantic_snapshot};
 
-fn native_invoker_for_loaded(loaded: &[LoadedModArtifact]) -> Result<NativeContractInvoker> {
-    let paths = loaded
-        .iter()
-        .map(|artifact| {
-            artifact.descriptor.as_ref().map(|descriptor| descriptor.executable_path()).ok_or_else(|| {
-                anyhow::anyhow!("required native Mod descriptor is missing for {}", artifact.discovered.dependency_name)
-            })
-        })
-        .collect::<Result<Vec<_>>>()?;
-    let _ = paths;
-    Ok(NativeContractInvoker::unavailable())
-}
-
-/// Build native dispatch from every discovered Mod's validated executable descriptor.
-pub fn native_invoker_for_plan(
-    plan: &CompilePlan,
-    pipeline: Option<&dyn beskid_pipeline::PipelineObserver>,
-) -> Result<Option<NativeContractInvoker>> {
-    let discovered = discover_mod_dependencies(Some(plan))?;
-    if discovered.is_empty() {
-        return Ok(None);
-    }
-    let loaded = load_artifacts(Some(plan.project_root.as_path()), discovered, pipeline)?;
-    Ok(Some(native_invoker_for_loaded(&loaded)?))
-}
-
 /// Run `mod.collect` only and return the observed target fingerprint.
 pub fn collect_mod_target_fingerprint(input: &ModHostInput<'_>) -> Result<String> {
     let discovered = discover_mod_dependencies(input.compile_plan)?;
     if discovered.is_empty() {
         return Ok(String::new());
     }
+    let (invoker, runtime) = input.mod_host.require(&discovered)?;
 
     let workspace_root = input.compile_plan.map(|plan| plan.project_root.as_path());
-    let loaded = load_artifacts(workspace_root, discovered, input.pipeline)?;
+    let loaded = load_artifacts(workspace_root, discovered, runtime, input.pipeline)?;
     enforce_capabilities(&loaded)?;
     if let Err(diagnostics) = validate_registrations(&loaded) {
         return Err(anyhow::Error::new(diagnostics));
     }
-
-    let default_invoker = if input.invoker.is_none() { Some(native_invoker_for_loaded(&loaded)?) } else { None };
-    let invoker: &dyn ContractInvoker = match input.invoker {
-        Some(invoker) => invoker,
-        None => default_invoker.as_ref().expect("unqualified dispatch prepared"),
-    };
 
     let collected =
         invoke_in_scope(input, None, |scoped| collect_contracts(&loaded, scoped, invoker, scoped.pipeline))?.outcome;
@@ -111,9 +80,10 @@ fn run_through_generate_with_output_policy(
         });
     }
 
+    let (invoker, runtime) = input.mod_host.require(&discovered)?;
     let workspace_root = input.compile_plan.map(|plan| plan.project_root.as_path());
-    let loaded = load_artifacts(workspace_root, discovered, input.pipeline)?;
-    schedule_generate(program, macro_diagnostics, input, loaded, materialize_outputs)
+    let loaded = load_artifacts(workspace_root, discovered, runtime, input.pipeline)?;
+    schedule_generate(program, macro_diagnostics, input, invoker, loaded, materialize_outputs)
 }
 
 /// Everything after `mod.load`: static capability and registration validation (which must abort
@@ -123,6 +93,7 @@ fn schedule_generate(
     mut program: Spanned<Program>,
     mut macro_diagnostics: Vec<crate::analysis::SemanticDiagnostic>,
     input: &ModHostInput<'_>,
+    invoker: &dyn ContractInvoker,
     loaded: Vec<LoadedModArtifact>,
     materialize_outputs: bool,
 ) -> Result<ModHostGenerateResult> {
@@ -130,12 +101,6 @@ fn schedule_generate(
     if let Err(diagnostics) = validate_registrations(&loaded) {
         return Err(anyhow::Error::new(diagnostics));
     }
-
-    let default_invoker = if input.invoker.is_none() { Some(native_invoker_for_loaded(&loaded)?) } else { None };
-    let invoker: &dyn ContractInvoker = match input.invoker {
-        Some(invoker) => invoker,
-        None => default_invoker.as_ref().expect("unqualified dispatch prepared"),
-    };
 
     let max_rounds = resolved_max_generator_rounds(&loaded);
     let mut collector_outcomes = Vec::new();
@@ -280,38 +245,31 @@ fn typed_items_for_artifact(artifact: &LoadedModArtifact, outcomes: &[GeneratorO
         .collect()
 }
 
-pub fn run_analyze_rewrite(
-    program: Spanned<Program>,
-    session: &ModHostSession,
-    pipeline: Option<&dyn beskid_pipeline::PipelineObserver>,
-) -> Result<Spanned<Program>> {
-    Ok(run_analyze_rewrite_with_invoker(program, session, None, None, None, pipeline)?.program)
-}
-
 /// Run `mod.analyze` then `mod.rewrite` after semantic snapshot and composition (prepare spine).
 pub fn run_analyze_rewrite_after_composition(
     program: Spanned<Program>,
     session: &ModHostSession,
     fingerprint: &SessionFingerprint,
-    invoker: Option<&dyn ContractInvoker>,
+    mod_host: &ModHost,
     pipeline: Option<&dyn beskid_pipeline::PipelineObserver>,
 ) -> Result<ModHostAnalyzeResult> {
-    run_analyze_rewrite_with_invoker(
+    run_analyze_rewrite_with_host(
         program,
         session,
-        invoker,
+        mod_host,
         None,
         cached_semantic_snapshot(fingerprint).as_ref(),
         pipeline,
     )
 }
 
-/// Like [`run_analyze_rewrite`] but exposes per-contract outcomes for engine and tests
-/// that need to assert which Analyzer / Rewriter contracts ran.
-pub fn run_analyze_rewrite_with_invoker(
+/// Run `mod.analyze` then `mod.rewrite` for the Mods loaded into `session`, dispatching through
+/// `mod_host`, and expose per-contract outcomes for the engine and tests that assert which
+/// Analyzer / Rewriter contracts ran.
+pub fn run_analyze_rewrite_with_host(
     program: Spanned<Program>,
     session: &ModHostSession,
-    invoker: Option<&dyn ContractInvoker>,
+    mod_host: &ModHost,
     host_input: Option<&ModHostInput<'_>>,
     snapshot: Option<&crate::services::SemanticSnapshot>,
     pipeline: Option<&dyn beskid_pipeline::PipelineObserver>,
@@ -324,14 +282,20 @@ pub fn run_analyze_rewrite_with_invoker(
             edited_source: None,
         });
     }
+    let (invoker, _) =
+        mod_host.require(session.loaded_artifacts().iter().map(|artifact| &artifact.discovered))?;
+    analyze_rewrite_with_invoker(program, session, invoker, host_input, snapshot, pipeline)
+}
 
-    let default_invoker =
-        if invoker.is_none() { Some(native_invoker_for_loaded(session.loaded_artifacts())?) } else { None };
-    let invoker: &dyn ContractInvoker = match invoker {
-        Some(invoker) => invoker,
-        None => default_invoker.as_ref().expect("unqualified dispatch prepared"),
-    };
-
+/// `mod.analyze` and `mod.rewrite` for a non-empty `session` through an already selected invoker.
+pub(super) fn analyze_rewrite_with_invoker(
+    program: Spanned<Program>,
+    session: &ModHostSession,
+    invoker: &dyn ContractInvoker,
+    host_input: Option<&ModHostInput<'_>>,
+    snapshot: Option<&crate::services::SemanticSnapshot>,
+    pipeline: Option<&dyn beskid_pipeline::PipelineObserver>,
+) -> Result<ModHostAnalyzeResult> {
     let mut program = program;
     let analyzed = if let Some(input) = host_input {
         let invocation = invoke_in_scope(input, Some(&program), |scoped| {
@@ -447,7 +411,7 @@ dependency "ModA" {
                 source_name: "Main.bd",
                 source,
                 pipeline: Some(&pipeline),
-                invoker: None,
+                mod_host: &ModHost::NoMods,
                 cached_target_fingerprint: None,
                 syntax_generation_id: None,
             },
@@ -535,10 +499,11 @@ dependency "ModA" {
                 source_name: "Main.bd",
                 source,
                 pipeline: Some(pipeline.as_ref()),
-                invoker: Some(&invoker),
+                mod_host: &ModHost::NoMods,
                 cached_target_fingerprint: None,
                 syntax_generation_id: None,
             },
+            &invoker,
             loaded,
             true,
         )
@@ -549,10 +514,10 @@ dependency "ModA" {
         let composition_snapshot = generated.session.composition_snapshot_or_default();
         let semantic_snapshot = crate::services::SemanticSnapshot::from_diagnostics(&[], 1, "semantic")
             .with_composition(&composition_snapshot);
-        let analyze = run_analyze_rewrite_with_invoker(
+        let analyze = analyze_rewrite_with_invoker(
             generated.program,
             &generated.session,
-            Some(&invoker),
+            &invoker,
             None,
             Some(&semantic_snapshot),
             Some(pipeline.as_ref()),
@@ -596,7 +561,14 @@ dependency "ModA" {
         let program = parse_program_with_source_name("Main.bd", source).expect("parse");
         let plan = compile_plan(&host, &mod_dir);
         let pipeline = CapturePipeline::default();
-        let invoker = StubContractInvoker::new();
+        let invoker = Arc::new(StubContractInvoker::new());
+        let mod_host = ModHost::native(
+            invoker.clone(),
+            super::super::host::RuntimeKitSelection::fixture(
+                &std::env::temp_dir().join("beskid-test-runtime-prefix"),
+                beskid_abi::runtime_kit::BuildProfile::Debug,
+            ),
+        );
         let error = match run_through_generate(
             program,
             &ModHostInput {
@@ -606,7 +578,7 @@ dependency "ModA" {
                 source_name: "Main.bd",
                 source,
                 pipeline: Some(&pipeline),
-                invoker: Some(&invoker),
+                mod_host: &mod_host,
                 cached_target_fingerprint: None,
                 syntax_generation_id: None,
             },
@@ -618,6 +590,40 @@ dependency "ModA" {
         assert!(invoker.invocations().is_empty());
         let events = pipeline.events.lock().expect("events").clone();
         assert!(!events.contains(&beskid_pipeline::phases::MOD_COLLECT));
+
+        let _ = fs::remove_dir_all(root); // Discard result: temp dir cleanup
+    }
+
+    #[test]
+    fn no_mod_host_fails_before_mod_load_naming_the_mod() {
+        let root = unique_temp_dir("mod_host_no_mods");
+        let (host, mod_dir) = write_mod_projects(&root, MODA_MANIFEST);
+        let source = "unit Main() { return; }\n";
+        let program = parse_program_with_source_name("Main.bd", source).expect("parse");
+        let plan = compile_plan(&host, &mod_dir);
+        let pipeline = CapturePipeline::default();
+        let error = match run_through_generate(
+            program,
+            &ModHostInput {
+                semantic_scope: None,
+                semantic_authority: None,
+                compile_plan: Some(&plan),
+                source_name: "Main.bd",
+                source,
+                pipeline: Some(&pipeline),
+                mod_host: &ModHost::NoMods,
+                cached_target_fingerprint: None,
+                syntax_generation_id: None,
+            },
+        ) {
+            Ok(_) => panic!("a Mod dependency cannot run without a Mod host"),
+            Err(error) => error,
+        };
+        let message = error.to_string();
+        assert!(message.contains("`ModA`") && message.contains("ModA.bproj"), "{message}");
+        assert!(message.contains("ModHost::native"), "{message}");
+        let events = pipeline.events.lock().expect("events").clone();
+        assert!(!events.contains(&beskid_pipeline::phases::MOD_LOAD), "no artifact is loaded without a host");
 
         let _ = fs::remove_dir_all(root); // Discard result: temp dir cleanup
     }
@@ -662,10 +668,11 @@ dependency "ModA" {
                 source_name: "Main.bd",
                 source,
                 pipeline: Some(&pipeline),
-                invoker: Some(&invoker),
+                mod_host: &ModHost::NoMods,
                 cached_target_fingerprint: None,
                 syntax_generation_id: None,
             },
+            &invoker,
             loaded,
             true,
         );

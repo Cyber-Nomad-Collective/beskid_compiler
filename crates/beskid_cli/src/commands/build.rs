@@ -199,7 +199,7 @@ fn run_build(args: BuildArgs) -> Result<()> {
             ));
         }
     }
-    session.set_mod_invoker(super::compiler_mod::prepare_native_mod_executor(
+    session.set_mod_host(super::compiler_mod::prepare_native_mod_executor(
         &resolved,
         args.lockfile.WorkspaceOptions(),
         Some(session.observer()),

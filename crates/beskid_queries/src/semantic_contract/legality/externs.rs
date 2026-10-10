@@ -1,21 +1,30 @@
-//! Extern profile obligations of one root unit (T0901-T0904), judged once per unit.
+//! Extern profile obligations of one root unit (T0901-T0904, T0906), judged once per unit.
 //!
-//! Every `[Extern(...)]` contract must name `Abi:"C"` (T0901) and a `Library` (T0902). A library
+//! An `[Extern(...)]` `Optional` argument must be a boolean literal (T0906, judged first, as
+//! the legacy `validate_extern_contract` does). Every `[Extern(...)]` contract must name
+//! `Abi:"C"` (T0901) and a `Library` (T0902). In an `Optional:true` C import, `Available` is the
+//! compiler-supplied availability query, held to `bool Available();` (T0906) instead of the C
+//! profile (legacy `validate_extern_availability_method`). A library
 //! that the host manifest declares as a `glue "<library>"` owner block is a Glue import: its
 //! methods are held to the single Glue representation authority, `glue_binding` (Glue
 //! primitives, arrays, generics and `GlueHandle` nominals; raw pointers rejected), and the
 //! unit's `RustOwner` placements to `rust_owner_declarations`. Every other extern is a user C
 //! import held to the C user profile exactly as the legacy `validate_extern_method`: primitive
 //! parameters and results only, with `char`, `string`, and `unit` rejected by shape and `word`
-//! and `never` rejected by the profile's permitted scalars. The canonical public Dynamic unit
-//! of the Corelib carries compiler-issued runtime bridges and is exempt from the C profile.
+//! and `never` rejected by the profile's permitted scalars. The canonical public Dynamic and
+//! serialization descriptor units of the Corelib carry compiler-issued runtime bridges and are
+//! exempt from the C profile.
 //!
-//! The manifest's Glue libraries and the Dynamic-unit exemption are assembly facts the query
+//! The manifest's Glue libraries and the runtime-bridge unit exemption are assembly facts the query
 //! database does not hold, so this obligation is evaluated by the `check` gate with those
 //! inputs instead of being a Salsa fact.
 
 use super::*;
-use beskid_analysis::syntax::{Attribute, ContractDefinition, ContractMethodSignature, Expression, Literal, PrimitiveType, Spanned, Type};
+use beskid_abi::interop::c_profile::OPTIONAL_EXTERN_AVAILABILITY_METHOD;
+use beskid_analysis::syntax::{
+    Attribute, AttributeArgument, ContractDefinition, ContractMethodSignature, Expression, Literal, PrimitiveType,
+    Spanned, Type,
+};
 use beskid_analysis::syntax_query::DynNodeRef;
 
 /// Evaluate the extern profile of every `[Extern]` contract in the unit owning `root` (the
@@ -42,6 +51,26 @@ pub fn extern_profile_findings(
             continue;
         };
         let site = AstNodeKey { node, ..root };
+        let optional = match extern_optional_argument(&marker.node) {
+            Ok(optional) => optional,
+            Err(argument) => {
+                // Legacy `validate_extern_contract`: reported at the argument (the span
+                // `extract_extern_optional_arg` returns), and the contract is judged no further.
+                if let Some(argument_node) = index
+                    .direct_child_id(program, node, DynNodeRef::from(marker))
+                    .and_then(|attribute| index.direct_child_id(program, attribute, DynNodeRef::from(argument)))
+                {
+                    findings.push(SemanticFinding {
+                        kind: SemanticIssueKind::ExternInvalidOptional {
+                            detail: "Optional takes a boolean literal: Optional:true or Optional:false".to_string(),
+                        },
+                        site: AstNodeKey { node: argument_node, ..root },
+                        related: Vec::new(),
+                    });
+                }
+                continue;
+            }
+        };
         let (abi, library) = extern_attribute_arguments(&marker.node);
         if abi.as_deref() != Some("C") {
             findings.push(SemanticFinding {
@@ -82,6 +111,8 @@ pub fn extern_profile_findings(
                         related: Vec::new(),
                     });
                 }
+            } else if optional && signature.name.node.name == OPTIONAL_EXTERN_AVAILABILITY_METHOD {
+                judge_availability_method(method_key, signature, &mut findings);
             } else {
                 judge_c_profile_method(program, index, method_key, signature, &mut findings);
             }
@@ -136,6 +167,45 @@ fn extern_attribute_arguments(attribute: &Attribute) -> (Option<String>, Option<
         }
     }
     (abi, library)
+}
+
+/// The `Optional` argument of an `[Extern(...)]` attribute, decoded exactly as the legacy
+/// `extract_extern_optional_arg`: `Ok(false)` when absent, the argument when it is not a boolean
+/// literal.
+fn extern_optional_argument(attribute: &Attribute) -> Result<bool, &Spanned<AttributeArgument>> {
+    let Some(argument) = attribute.arguments.iter().find(|argument| argument.node.name.node.name == "Optional") else {
+        return Ok(false);
+    };
+    match &argument.node.value.node {
+        Expression::Literal(literal) => match &literal.node.literal.node {
+            Literal::Bool(value) => Ok(*value),
+            _ => Err(argument),
+        },
+        _ => Err(argument),
+    }
+}
+
+/// The legacy `validate_extern_availability_method`: in an `Optional:true` contract the
+/// availability query must be declared exactly `bool Available();`, reported at the signature.
+fn judge_availability_method(
+    method: AstNodeKey,
+    signature: &ContractMethodSignature,
+    findings: &mut Vec<SemanticFinding>,
+) {
+    let returns_bool = signature.return_type.as_ref().is_some_and(
+        |ty| matches!(&ty.node, Type::Primitive(primitive) if primitive.node == PrimitiveType::Bool),
+    );
+    if signature.parameters.is_empty() && returns_bool {
+        return;
+    }
+    findings.push(SemanticFinding {
+        kind: SemanticIssueKind::ExternInvalidOptional {
+            detail: "the availability query of an optional contract must be declared as `bool Available();`"
+                .to_string(),
+        },
+        site: method,
+        related: Vec::new(),
+    });
 }
 
 /// The legacy C user profile, parameter by parameter then the result, stopping at the first

@@ -3,17 +3,20 @@
 //! Mirrors the legacy `type_binary_expression`, `type_unary_expression`, and
 //! `type_id_for_literal`: operands are judged only when both are proven primitives that the
 //! legacy checker classifies (`judgeable_primitive`); two numeric primitives promote to one
-//! operand type as in `promote_binary_numeric_operands`. Unsuffixed integer literals take their
-//! primitive from context and keep their legacy authority; suffixed integers and float
-//! literals are closed.
+//! operand type as in `promote_binary_numeric_operands`. Suffixed integers and float literals
+//! are judged against their own primitive. An unsuffixed integer literal takes its primitive
+//! from the legacy `contextual_expected_type` and is judged only at a surface-declared
+//! destination that proves a primitive integer (`contextual_literal_primitive`).
 
-use super::super::typing::{is_numeric, nodes_of_kind};
+use super::super::typing::{enclosing_callable, is_numeric, nodes_of_kind};
 use super::*;
 use beskid_analysis::syntax::{
-    BinaryExpression, BinaryOp, Literal, UnaryExpression, UnaryOp, float_literal_magnitude,
+    BinaryExpression, BinaryOp, CallExpression, Expression, FunctionDefinition, LetStatement, Literal,
+    MethodDefinition, PrimitiveType, ReturnStatement, UnaryExpression, UnaryOp, float_literal_magnitude,
     float_literal_primitive_type, integer_literal_fits_primitive, integer_literal_magnitude,
     integer_literal_primitive_type,
 };
+use beskid_analysis::syntax_query::DynNodeRef;
 
 pub(super) fn collect_operator_obligations(
     db: &dyn Db,
@@ -86,10 +89,13 @@ pub(super) fn collect_operator_obligations(
     }
 }
 
-/// Suffixed integer literals (including a directly negated one, judged as the negative value at
-/// the unary expression exactly as the legacy checker does) and float literals outside their
-/// primitive's range.
+/// Integer literals (including a directly negated one, judged as the negative value at the unary
+/// expression exactly as the legacy `type_unary_expression` does) and float literals outside
+/// their primitive's range. A suffixed literal is judged against its suffix; an unsuffixed one
+/// against the primitive integer of its proven destination (legacy `type_id_for_literal` under
+/// `contextual_expected_type`), and not at all without one.
 pub(super) fn collect_literal_obligations(
+    db: &dyn Db,
     program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
     index: &SyntaxIndex,
     key: AstNodeKey,
@@ -99,13 +105,21 @@ pub(super) fn collect_literal_obligations(
         let Some(literal) = index.node_at(program, node).and_then(|node| node.of::<Literal>()) else { continue };
         match literal {
             Literal::Integer(text) => {
-                if integer_literal_magnitude(text) == text {
-                    // Unsuffixed: the primitive comes from the destination type (legacy
-                    // `contextual_expected_type`), which is not proven here.
-                    continue;
-                }
-                let primitive = integer_literal_primitive_type(text);
-                let (fits, site) = match negating_unary(program, index, node) {
+                let unsuffixed = integer_literal_magnitude(text) == text;
+                let negation = negating_unary(program, index, node);
+                let primitive = if unsuffixed {
+                    // The value root is the negation when there is one: the legacy checker types
+                    // the whole `-literal` under the destination's contextual type.
+                    let root = negation.or_else(|| parent_node(index, node));
+                    let Some(primitive) = root.and_then(|root| contextual_literal_primitive(db, program, index, key, root))
+                    else {
+                        continue;
+                    };
+                    primitive
+                } else {
+                    integer_literal_primitive_type(text)
+                };
+                let (fits, site) = match negation {
                     Some(unary) => (integer_literal_fits_primitive(&format!("-{text}"), primitive), unary),
                     None => (integer_literal_fits_primitive(text, primitive), node),
                 };
@@ -161,4 +175,100 @@ fn negating_unary(
         && matches!(&unary.expr.node, beskid_analysis::syntax::Expression::Literal(value)
             if matches!(value.node.literal.node, Literal::Integer(_))))
     .then_some(candidate)
+}
+
+/// The primitive integer the legacy `contextual_expected_type` gives the unsuffixed integer
+/// value rooted at `root` (its `LiteralExpression`, or the negating `UnaryExpression`), when the
+/// value is, up to `Expression` and grouping wrappers, directly one of the surface-declared
+/// destinations the legacy checker types it under:
+///
+/// * the initializer of an annotated `let` (`type_statement`, `Statement::Let`);
+/// * the value of a `return` owned by the item, against the declared result
+///   (`type_statement`, `Statement::Return`, with `current_return_type`);
+/// * an argument of a direct call to a non-generic function without `bulk` parameters, against
+///   the declared parameter (`type_argument_with_expected`).
+///
+/// A destination that is not a primitive integer gives no contextual primitive (the legacy
+/// checker then falls back to the literal's own `i64`), and is not judged here.
+/// `contextual_integer_literal_abi_type` cannot serve: it proves a destination only for a
+/// literal that fits it.
+fn contextual_literal_primitive(
+    db: &dyn Db,
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &SyntaxIndex,
+    key: AstNodeKey,
+    root: beskid_analysis::syntax::AstNodeId,
+) -> Option<PrimitiveType> {
+    let mut child = root;
+    let mut parent = parent_node(index, child)?;
+    while matches!(index.kind(parent), Some(NodeKind::Expression | NodeKind::GroupedExpression)) {
+        child = parent;
+        parent = parent_node(index, child)?;
+    }
+    let expected = match index.kind(parent)? {
+        NodeKind::LetStatement => {
+            let binding = index.node_at(program, parent)?.of::<LetStatement>()?;
+            if index.direct_child_id(program, parent, DynNodeRef::from(&binding.value))? != child {
+                return None;
+            }
+            semantic_type_from_syntax(&binding.type_annotation.as_ref()?.node).ok()?
+        }
+        NodeKind::ReturnStatement => {
+            let statement = index.node_at(program, parent)?.of::<ReturnStatement>()?;
+            if index.direct_child_id(program, parent, DynNodeRef::from(statement.value.as_ref()?))? != child {
+                return None;
+            }
+            if enclosing_callable(index, parent)? != key.node {
+                return None;
+            }
+            let item = index.node_at(program, key.node)?;
+            let declared = if let Some(function) = item.of::<FunctionDefinition>() {
+                function.return_type.as_ref()
+            } else {
+                item.of::<MethodDefinition>()?.return_type.as_ref()
+            };
+            semantic_type_from_syntax(&declared?.node).ok()?
+        }
+        NodeKind::CallExpression => {
+            let call = index.node_at(program, parent)?.of::<CallExpression>()?;
+            if !matches!(call.callee.node, Expression::Path(_))
+                || index.direct_child_id(program, parent, DynNodeRef::from(call.callee.as_ref()))? == child
+            {
+                return None;
+            }
+            let call_key = AstNodeKey { node: parent, ..key };
+            let Ok(Some(CallLowering::Direct(declaration))) = call_lowering(db, call_key) else { return None };
+            let declaration_syntax =
+                db.syntax_unit(declaration.unit).filter(|syntax| syntax.accepts_key(db, declaration))?;
+            let declaration_index = declaration_syntax.syntax_index(db);
+            let declaration_program = declaration_syntax.expanded_program(db);
+            let function =
+                declaration_index.node_at(declaration_program, declaration.node)?.of::<FunctionDefinition>()?;
+            if !function.generics.is_empty() || function.parameters.iter().any(|parameter| parameter.node.bulk) {
+                return None;
+            }
+            let arguments = call_arguments(db, call_key).ok()??;
+            if arguments.len() != function.parameters.len() {
+                return None;
+            }
+            let subject = normalized_expression_node(index, child);
+            let position = arguments
+                .iter()
+                .position(|argument| argument.node == child || normalized_expression_node(index, argument.node) == subject)?;
+            semantic_type_from_syntax(&function.parameters[position].node.ty.node).ok()?
+        }
+        _ => return None,
+    };
+    Some(match expected {
+        SemanticTypeId::I8 => PrimitiveType::I8,
+        SemanticTypeId::I16 => PrimitiveType::I16,
+        SemanticTypeId::I32 => PrimitiveType::I32,
+        SemanticTypeId::I64 => PrimitiveType::I64,
+        SemanticTypeId::U8 => PrimitiveType::U8,
+        SemanticTypeId::U16 => PrimitiveType::U16,
+        SemanticTypeId::U32 => PrimitiveType::U32,
+        SemanticTypeId::U64 => PrimitiveType::U64,
+        SemanticTypeId::WORD => PrimitiveType::Word,
+        _ => return None,
+    })
 }

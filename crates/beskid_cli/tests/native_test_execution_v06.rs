@@ -118,6 +118,23 @@ fn v06_native_matrix_parent_deadline_stops_active_nested_executable() {
     let manifest = root.path().join("Matrix.bproj");
     std::fs::write(&manifest,
         "Matrix { name = \"Matrix\" version = \"0.1.0\" }\ntarget \"Endless\" { kind = \"Test\" entry = \"Main.bd\" }\n").unwrap();
+    // Provision first: the whole-matrix deadline below bounds compilation and execution, never
+    // the one-time build of a missing or stale dependency Mod artifact (the Corelib Serialization
+    // Mod). `check` makes every dependency Mod of the project current.
+    let provision = Command::new(env!("CARGO_BIN_EXE_beskid_cli"))
+        .args(["check", "--plain", "--project"])
+        .arg(&manifest)
+        .env("BESKID_CONFIG_DIR", root.path().join("config"))
+        .env("BESKID_HOME", root.path().join("toolchain-home"))
+        .env("OTEL_SDK_DISABLED", "true")
+        .output()
+        .unwrap();
+    assert!(
+        provision.status.success(),
+        "provision dependency Mods before the timed matrix: {}{}",
+        String::from_utf8_lossy(&provision.stdout),
+        String::from_utf8_lossy(&provision.stderr)
+    );
     let stdout_path = root.path().join("stdout");
     let stderr_path = root.path().join("stderr");
     let mut supervisor = Command::new(env!("CARGO_BIN_EXE_beskid_cli"))

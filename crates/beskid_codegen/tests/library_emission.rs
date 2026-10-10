@@ -8,7 +8,7 @@ use beskid_analysis::projects::{
 };
 use beskid_analysis::services::{FrontEndOptions, FrontEndTypedResult, resolved_input_from_plan};
 use beskid_codegen::{CodegenArtifact, lower_prepared_syntax_library};
-use beskid_queries::{compile_front_end_from_resolved_input, with_db};
+use beskid_queries::{compile_mod_free_front_end, with_db};
 use cranelift_codegen::{isa, settings};
 
 const ALPHA: &str = "use Shared;\n\
@@ -55,7 +55,7 @@ fn entry_less_library_front(root: &std::path::Path) -> FrontEndTypedResult {
     };
     let entry_path = plan_entry_path(&plan, &source_root);
     let resolved = resolved_input_from_plan(entry_path, String::new(), plan, None, None);
-    let front = compile_front_end_from_resolved_input(
+    let front = compile_mod_free_front_end(
         &resolved,
         FrontEndOptions { with_semantic_diagnostics: false, ..Default::default() },
         None,

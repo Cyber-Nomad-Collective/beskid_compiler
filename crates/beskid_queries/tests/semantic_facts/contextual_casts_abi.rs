@@ -1,8 +1,8 @@
 use super::support::{assert_unavailable, key, key_at_start, setup};
 use beskid_analysis::syntax_query::NodeKind;
 use beskid_queries::{
-    SemanticTypeId, SyntaxGenerationId, abi_type, call_argument_abi_type, cast_intents,
-    contextual_integer_literal_abi_type, primitive_numeric_conversion, value_abi_type,
+    ExpectedTypeContext, SemanticTypeId, SyntaxGenerationId, abi_type, cast_intents, contextual_integer_literal_abi_type,
+    expected_type, primitive_numeric_conversion, value_abi_type,
 };
 use std::sync::Arc;
 
@@ -102,14 +102,14 @@ bool Main(pointer object) { return object == NativePointer(0); }
 }
 
 #[test]
-fn binary_operand_abi_type_does_not_cross_explicit_numeric_conversion_boundary() {
+fn expected_type_does_not_cross_an_explicit_numeric_conversion_boundary() {
     let source = "u8 Main(u8 b) { return b - u8(97); }";
     let (db, _project, unit, generation, index) = setup(source);
     let literal = key(unit, generation, &index, NodeKind::Literal, 0);
     let conversion = key(unit, generation, &index, NodeKind::CallExpression, 0);
 
-    assert_unavailable(beskid_queries::binary_operand_abi_type(&db, literal));
-    assert_unavailable(call_argument_abi_type(&db, literal));
+    assert_unavailable(expected_type(&db, literal));
+    assert_unavailable(contextual_integer_literal_abi_type(&db, literal));
     assert_eq!(cast_intents(&db, literal).expect("conversion argument cast intents"), None);
     assert_eq!(abi_type(&db, literal).expect("literal ABI type"), Some(SemanticTypeId::I32));
     assert_eq!(
@@ -119,21 +119,28 @@ fn binary_operand_abi_type_does_not_cross_explicit_numeric_conversion_boundary()
 }
 
 #[test]
-fn call_argument_abi_type_does_not_claim_literals_inside_compound_arguments() {
+fn compound_call_arguments_forward_the_parameter_type_to_their_bare_literal_operands() {
     let source = "unit Accept(i64 value) { return; } unit Main() { Accept(1 + 2); return; }";
     let (db, _project, unit, generation, index) = setup(source);
-    let literal = key(unit, generation, &index, NodeKind::Literal, 0);
+    let first = key(unit, generation, &index, NodeKind::Literal, 0);
+    let second = key(unit, generation, &index, NodeKind::Literal, 1);
+    let sum = key(unit, generation, &index, NodeKind::BinaryExpression, 0);
 
-    assert_unavailable(call_argument_abi_type(&db, literal));
+    let expected = expected_type(&db, first).expect("first operand expected type").expect("operand context");
+    assert!(matches!(expected.context, ExpectedTypeContext::BinaryOperand { expression, .. } if expression == sum));
+    assert_eq!(expected.abi_type(), SemanticTypeId::I64);
+    assert_eq!(contextual_integer_literal_abi_type(&db, first).expect("first operand ABI"), Some(SemanticTypeId::I64));
+    assert_eq!(contextual_integer_literal_abi_type(&db, second).expect("second operand ABI"), Some(SemanticTypeId::I64));
+    assert_eq!(abi_type(&db, sum).expect("sum ABI"), Some(SemanticTypeId::I64));
 }
 
 #[test]
-fn call_argument_abi_type_accepts_a_bare_negative_integer_argument() {
+fn a_bare_negative_integer_argument_takes_the_parameter_type() {
     let source = "unit Accept(i64 value) { return; } unit Main() { Accept(-1); return; }";
     let (db, _project, unit, generation, index) = setup(source);
     let unary = key(unit, generation, &index, NodeKind::UnaryExpression, 0);
 
-    assert_eq!(call_argument_abi_type(&db, unary).expect("negative argument ABI"), Some(SemanticTypeId::I64));
+    assert_eq!(contextual_integer_literal_abi_type(&db, unary).expect("negative argument ABI"), Some(SemanticTypeId::I64));
 }
 
 #[test]

@@ -5,22 +5,30 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use beskid_pipeline::{PipelineObserver, observe_phase_result, phases::MOD_LOAD};
 
+use super::host::RuntimeKitSelection;
 use super::types::{DiscoveredMod, LoadedModArtifact, ModArtifactDescriptor};
 
 const MOD_DESCRIPTOR_FILE: &str = "mod.descriptor.json";
 
+/// Load and qualify the executable descriptor of every discovered Mod against `runtime`, the exact
+/// kit of the Mod host that will run them.
 pub(crate) fn load_artifacts(
     workspace_root: Option<&Path>,
     mods: Vec<DiscoveredMod>,
+    runtime: &RuntimeKitSelection,
     pipeline: Option<&dyn PipelineObserver>,
 ) -> Result<Vec<LoadedModArtifact>> {
     observe_phase_result(pipeline, MOD_LOAD, || {
-        mods.into_iter().map(|discovered| load_artifact(workspace_root, discovered)).collect()
+        mods.into_iter().map(|discovered| load_artifact(workspace_root, discovered, runtime)).collect()
     })
 }
 
-fn load_artifact(workspace_root: Option<&Path>, discovered: DiscoveredMod) -> Result<LoadedModArtifact> {
-    let descriptor = find_descriptor(workspace_root, &discovered)?;
+fn load_artifact(
+    workspace_root: Option<&Path>,
+    discovered: DiscoveredMod,
+    runtime: &RuntimeKitSelection,
+) -> Result<LoadedModArtifact> {
+    let descriptor = find_descriptor(workspace_root, &discovered, runtime)?;
     if descriptor.is_none() {
         anyhow::bail!("{}", missing_artifact_message(&discovered));
     }
@@ -68,13 +76,11 @@ fn source_is_current(descriptor: &ModArtifactDescriptor, discovered: &Discovered
     )
 }
 
-fn read_descriptor(path: &Path) -> Result<ModArtifactDescriptor> {
-    let prefix = beskid_abi::runtime_kit::installed_runtime_prefix()
-        .map_err(|error| anyhow::anyhow!("native Mod runtime prefix: {error}"))?;
-    super::descriptor::read_mod_artifact_descriptor(path, &prefix)
-}
-
-fn find_descriptor(workspace_root: Option<&Path>, discovered: &DiscoveredMod) -> Result<Option<ModArtifactDescriptor>> {
+fn find_descriptor(
+    workspace_root: Option<&Path>,
+    discovered: &DiscoveredMod,
+    runtime: &RuntimeKitSelection,
+) -> Result<Option<ModArtifactDescriptor>> {
     let mut roots = BTreeSet::new();
     if let Some(workspace_root) = workspace_root {
         roots.insert(workspace_root.to_path_buf());
@@ -98,7 +104,7 @@ fn find_descriptor(workspace_root: Option<&Path>, discovered: &DiscoveredMod) ->
 
     descriptors.sort();
     descriptors.dedup();
-    let profile = super::descriptor::native_mod_runtime_profile()?;
+    let profile = runtime.profile();
     let mut selected = None;
     let mut rejected = Vec::new();
     for path in descriptors {
@@ -106,7 +112,7 @@ fn find_descriptor(workspace_root: Option<&Path>, discovered: &DiscoveredMod) ->
         if descriptor_profile(&path).is_some_and(|candidate| candidate != profile) {
             continue;
         }
-        match read_descriptor(&path).and_then(|descriptor| {
+        match super::descriptor::read_mod_artifact_descriptor(&path, runtime.prefix()).and_then(|descriptor| {
             if !source_is_current(&descriptor, discovered)? {
                 anyhow::bail!("stale source, manifest or lock closure");
             }
@@ -175,6 +181,8 @@ mod tests {
     use std::fs;
     use std::time::{SystemTime, UNIX_EPOCH};
 
+    use beskid_abi::runtime_kit::BuildProfile;
+
     use crate::projects::ProjectModSection;
 
     use super::*;
@@ -184,7 +192,7 @@ mod tests {
         let root = unique_temp_dir("mod_host_load_empty");
         let mod_dir = root.join("ModA");
         fs::create_dir_all(mod_dir.join("Src")).expect("mod dir");
-        let error = load_artifacts(Some(&root), vec![discovered("ModA", &mod_dir)], None).unwrap_err();
+        let error = load_artifacts(Some(&root), vec![discovered("ModA", &mod_dir)], &test_runtime(), None).unwrap_err();
         let message = error.to_string();
         assert!(message.contains("required native Mod artifact is missing"), "{message}");
         assert!(message.contains("beskid dev mod rebuild"), "missing descriptor names the remedy: {message}");
@@ -221,7 +229,7 @@ mod tests {
         )
         .expect("descriptor");
 
-        let error = load_artifacts(Some(&root), vec![discovered("ModA", &mod_dir)], None).unwrap_err();
+        let error = load_artifacts(Some(&root), vec![discovered("ModA", &mod_dir)], &test_runtime(), None).unwrap_err();
         assert!(error.to_string().contains("no current qualified native Mod artifact"));
 
         let _ = fs::remove_dir_all(root); // Discard result: temp dir cleanup
@@ -315,6 +323,33 @@ mod tests {
             "a removed dependency is stale"
         );
         fs::remove_dir_all(root).unwrap();
+    }
+
+    fn test_runtime() -> RuntimeKitSelection {
+        RuntimeKitSelection::fixture(&std::env::temp_dir().join("beskid-test-runtime-prefix"), BuildProfile::Debug)
+    }
+
+    #[test]
+    fn other_profile_cache_entry_is_not_a_candidate_for_the_selected_kit() {
+        let root = unique_temp_dir("mod_host_load_profile");
+        let mod_dir = root.join("ModA");
+        let descriptor_dir = root.join(".beskid/obj/mods/ModA/cache-key/target");
+        fs::create_dir_all(mod_dir.join("Src")).expect("mod dir");
+        fs::create_dir_all(&descriptor_dir).expect("descriptor dir");
+        fs::write(descriptor_dir.join(MOD_DESCRIPTOR_FILE), r#"{"runtime": {"profile": "release"}}"#)
+            .expect("descriptor");
+
+        // A debug selection skips the release entry entirely: the Mod has no artifact for its kit.
+        let error = load_artifacts(Some(&root), vec![discovered("ModA", &mod_dir)], &test_runtime(), None)
+            .unwrap_err();
+        assert!(error.to_string().contains("required native Mod artifact is missing"), "{error}");
+        // A release selection considers it and rejects it on qualification.
+        let release = RuntimeKitSelection::fixture(test_runtime().prefix(), BuildProfile::Release);
+        let error =
+            load_artifacts(Some(&root), vec![discovered("ModA", &mod_dir)], &release, None).unwrap_err();
+        assert!(error.to_string().contains("no current qualified native Mod artifact"), "{error}");
+
+        let _ = fs::remove_dir_all(root); // Discard result: temp dir cleanup
     }
 
     fn discovered(name: &str, root: &Path) -> DiscoveredMod {

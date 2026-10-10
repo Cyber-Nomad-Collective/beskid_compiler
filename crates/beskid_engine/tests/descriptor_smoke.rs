@@ -16,7 +16,7 @@ fn codegen_input_artifact_compiles_and_exposes_entrypoint_symbol() -> Result<()>
     let target = host_runtime_target().expect("host target");
     let mut engine = Engine::with_runtime_kit(prefix.path(), target, BuildProfile::Debug).expect("load exact kit");
 
-    let prepared = prepare_jit_entrypoint(Path::new("<memory>"), "pub i64 Main() { return 0; }", "Main")?;
+    let prepared = prepare_jit_entrypoint(Path::new("<memory>"), "pub i64 Main() { return 0; }", "Main", &beskid_engine::ModHost::NoMods)?;
     assert!(prepared.symbol.starts_with("Main#syntax_"));
 
     engine.compile_artifact(&prepared.artifact).expect("compile CodegenInput artifact");

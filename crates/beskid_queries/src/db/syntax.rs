@@ -109,29 +109,16 @@ impl BeskidDatabase {
                 &source_fingerprint,
                 allow_unchanged_relabel,
             )?;
-            let current = input.revision(self);
-            let source_changed = current.source_fingerprint != source_fingerprint;
-            if source_changed
-                && current.tree_fingerprint_history.iter().any(|fingerprint| fingerprint == &tree_fingerprint)
-            {
-                return Err(SemanticError::new(
-                    "expanded syntax cannot reuse a tree fingerprint from an existing generation",
-                ));
-            }
+            // Generation identity, not content identity, retires node handles: every
+            // `AstNodeKey` names its generation and `accepts_key` admits only the current one.
+            // A changed source whose expanded tree equals an earlier one (comment-only edit,
+            // undo, revert) is therefore an ordinary new generation with fresh spans.
             if generation == input.generation(self) {
                 return Err(SemanticError::new("one syntax generation cannot describe multiple expanded trees"));
             }
             let syntax_index =
                 Arc::new(beskid_analysis::syntax_query::SyntaxIndex::from_program(&expanded_program, generation));
             self.syntax_index_build_count.fetch_add(1, Ordering::Relaxed);
-            let mut source_fingerprint_history = current.source_fingerprint_history.to_vec();
-            if source_changed {
-                source_fingerprint_history.push(Arc::clone(&source_fingerprint));
-            }
-            let mut tree_fingerprint_history = current.tree_fingerprint_history.to_vec();
-            if current.tree_fingerprint != tree_fingerprint {
-                tree_fingerprint_history.push(Arc::clone(&tree_fingerprint));
-            }
             input.set_revision(self).to(Arc::new(SyntaxUnitRevision {
                 runtime_source_authority: None,
                 sdk_source_authority: None,
@@ -140,8 +127,6 @@ impl BeskidDatabase {
                 syntax_index,
                 source_fingerprint,
                 tree_fingerprint,
-                source_fingerprint_history: source_fingerprint_history.into(),
-                tree_fingerprint_history: tree_fingerprint_history.into(),
             }));
             return Ok(input);
         }
@@ -158,8 +143,6 @@ impl BeskidDatabase {
                 generation,
                 expanded_program,
                 syntax_index,
-                source_fingerprint_history: Arc::from([Arc::clone(&source_fingerprint)]),
-                tree_fingerprint_history: Arc::from([Arc::clone(&tree_fingerprint)]),
                 source_fingerprint,
                 tree_fingerprint,
             }),
@@ -186,15 +169,6 @@ impl BeskidDatabase {
         }
         if source_changed && generation.0 == current_generation.0 {
             return Err(SemanticError::new("changed syntax requires a strictly newer generation"));
-        }
-        if source_changed
-            && input
-                .revision(self)
-                .source_fingerprint_history
-                .iter()
-                .any(|fingerprint| fingerprint == source_fingerprint)
-        {
-            return Err(SemanticError::new("source syntax cannot resurrect a fingerprint from an earlier generation"));
         }
         if !allow_unchanged_relabel && !source_changed && generation != current_generation {
             return Err(SemanticError::new("unchanged syntax cannot be relabeled with a different generation"));

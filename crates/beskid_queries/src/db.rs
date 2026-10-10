@@ -35,6 +35,12 @@ pub struct SyntaxDependencyRegistry {
     pub(crate) corelib_services: HashMap<(SourceUnitId, SyntaxGenerationId), Vec<CorelibService>>,
     /// Canonical logical path proven by embedded bytes and trusted physical origin.
     pub(crate) corelib_source_paths: HashMap<(SourceUnitId, SyntaxGenerationId), String>,
+    /// Per entry unit and generation: the top-level items appended by the Mod merger that a
+    /// retained serialization claim attributes to another registered unit (the unit that
+    /// declares the claim's target). Derived from the issuer payload at registration; see
+    /// `contribution_attribution`.
+    pub(crate) contribution_attributions:
+        HashMap<(SourceUnitId, SyntaxGenerationId), std::sync::Arc<[(crate::AstNodeId, SourceUnitId)]>>,
 }
 
 impl SyntaxDependencyRegistry {

@@ -9,7 +9,7 @@ pub contract C { i64 getpid(); }
 
 pub i64 Main() { return 0; }
 "#;
-    let err = prepare_syntax_front_end(std::path::Path::new("<memory>"), src)
+    let err = prepare_syntax_front_end(std::path::Path::new("<memory>"), src, &beskid_engine::ModHost::NoMods)
         .expect_err("type checking should fail for invalid ABI");
     let msg = format!("{err:#}");
     assert!(msg.contains("invalid extern ABI"), "unexpected message: {msg}");
@@ -24,7 +24,7 @@ pub contract C { i64 getpid(); }
 
 pub i64 Main() { return 0; }
 "#;
-    let err = prepare_syntax_front_end(std::path::Path::new("<memory>"), src)
+    let err = prepare_syntax_front_end(std::path::Path::new("<memory>"), src, &beskid_engine::ModHost::NoMods)
         .expect_err("type checking should fail for missing library");
     let msg = format!("{err:#}");
     assert!(msg.contains("extern contract missing Library"), "unexpected message: {msg}");
@@ -39,7 +39,7 @@ pub contract C { i64 nope(string s); }
 
 pub i64 Main() { return 0; }
 "#;
-    let err = prepare_syntax_front_end(std::path::Path::new("<memory>"), src)
+    let err = prepare_syntax_front_end(std::path::Path::new("<memory>"), src, &beskid_engine::ModHost::NoMods)
         .expect_err("type checking should fail for disallowed param type");
     let msg = format!("{err:#}");
     assert!(msg.contains("extern param type not allowed in `nope`"), "unexpected message: {msg}");
@@ -54,7 +54,7 @@ pub contract C { i64 nope(ref i64 p); }
 
 pub i64 Main() { return 0; }
 "#;
-    let err = prepare_syntax_front_end(std::path::Path::new("<memory>"), src)
+    let err = prepare_syntax_front_end(std::path::Path::new("<memory>"), src, &beskid_engine::ModHost::NoMods)
         .expect_err("should fail for ref parameter modifier");
     let msg = format!("{err:#}");
     // `ref` is not parameter syntax: strict assembly rejects the source at parse time, so the

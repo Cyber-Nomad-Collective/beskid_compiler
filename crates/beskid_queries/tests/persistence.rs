@@ -194,7 +194,7 @@ fn warm_snapshot_source_edit_resumes_assembly_generation_in_a_fresh_process() {
             assembly: None,
         };
         let (prepared, diagnostics, _) =
-            beskid_queries::prepare_compilation_diagnostics_with_db(db, &resolved, PrepareOptions::default(), None)
+            beskid_queries::prepare_compilation_diagnostics_with_db(db, &resolved, PrepareOptions::without_mods(), None)
                 .expect("source edit must prepare against restored syntax authority");
         assert!(
             !diagnostics.iter().any(|diagnostic| diagnostic.severity == beskid_analysis::Severity::Error),

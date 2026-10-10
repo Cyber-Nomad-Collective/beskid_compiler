@@ -508,7 +508,10 @@ fn syntax_facts_resolve_core_output_writeline_via_import_alias() {
 }
 
 #[test]
-fn syntax_facts_do_not_resolve_core_output_writeline_through_alias() {
+/// `use Core.Output as Output;` binds only `Output`, so the root `Core` is not a lexical name and
+/// the fully qualified path resolves through the package-native module namespace without a `use`
+/// (decision 2026-10-09: qualified dependency module paths; OpenSpec `v06-qualified-dependency-paths`).
+fn syntax_facts_resolve_fully_qualified_core_output_writeline_beside_an_alias() {
     let mut db = BeskidDatabase::default();
     let root = PathBuf::from("/tmp/core-output-writeline-alias/project/src");
     let main_path = root.join("Main.bd");
@@ -536,9 +539,9 @@ fn syntax_facts_do_not_resolve_core_output_writeline_through_alias() {
             SourceUnit {
                 logical_name: output_path.display().to_string(),
                 origin_path: output_path.clone(),
-                path: output_path,
+                path: output_path.clone(),
                 source: output_source.to_string(),
-                program: output_program,
+                program: output_program.clone(),
             },
         ]),
         0,
@@ -548,6 +551,7 @@ fn syntax_facts_do_not_resolve_core_output_writeline_through_alias() {
         generation,
     ));
     let main_unit = SourceUnitId::new(&db, main_path);
+    let output_unit = SourceUnitId::new(&db, output_path);
     let project = ProjectSession::new(
         &db,
         root.parent().expect("project root").to_path_buf(),
@@ -557,16 +561,18 @@ fn syntax_facts_do_not_resolve_core_output_writeline_through_alias() {
     );
     build_typed_program(&mut db, project, generation, assembly).expect("typed syntax program");
     let main_index = SyntaxIndex::from_program(&main_program, generation);
+    let output_index = SyntaxIndex::from_program(&output_program, generation);
     let call = key(main_unit, generation, &main_index, NodeKind::CallExpression, 0);
     let main = key(main_unit, generation, &main_index, NodeKind::FunctionDefinition, 0);
+    let declaration = key(output_unit, generation, &output_index, NodeKind::FunctionDefinition, 0);
 
     assert_eq!(
-        call_lowering(&db, call).expect("aliased Core.Output.WriteLine syntax lowering"),
-        Some(beskid_queries::CallLowering::Dynamic)
+        call_lowering(&db, call).expect("fully qualified Core.Output.WriteLine syntax lowering"),
+        Some(beskid_queries::CallLowering::Direct(declaration))
     );
     assert_eq!(
-        direct_callees(&db, main).expect("aliased Core.Output.WriteLine syntax call graph"),
-        Some(Arc::from([]))
+        direct_callees(&db, main).expect("fully qualified Core.Output.WriteLine syntax call graph"),
+        Some(Arc::from([declaration]))
     );
 }
 

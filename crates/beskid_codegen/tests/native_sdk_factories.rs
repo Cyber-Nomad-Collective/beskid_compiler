@@ -2,7 +2,7 @@
 use beskid_abi::abi_v5::TargetMetadata;
 use beskid_analysis::services::{FrontEndOptions, resolved_input_from_plan};
 use beskid_codegen::lower_prepared_syntax_selected_callables;
-use beskid_queries::{compile_front_end_from_resolved_input, with_db};
+use beskid_queries::{compile_mod_free_front_end, with_db};
 use cranelift_codegen::{isa, settings};
 use std::path::PathBuf;
 
@@ -122,7 +122,7 @@ fn canonical_sdk_request_factories_lower_with_compiler_owned_descriptors() {
             surface.struct_fields_ordered, resolution.items.iter().filter(|item| item.name == "NodeRef").collect::<Vec<_>>());
     }
     let resolved = resolved_input_from_plan(path, source, plan, None, Some(assembly));
-    let front = compile_front_end_from_resolved_input(
+    let front = compile_mod_free_front_end(
         &resolved,
         FrontEndOptions { with_semantic_diagnostics: false, ..Default::default() },
         None,

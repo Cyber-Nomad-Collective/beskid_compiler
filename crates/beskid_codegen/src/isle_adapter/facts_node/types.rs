@@ -90,6 +90,9 @@ impl SyntaxNodeFacts<'_> {
         {
             return signature.returns.first().map(|parameter| parameter.value_type);
         }
+        // A bare integer literal takes the width its expected type requires (a callee
+        // parameter, a declared storage boundary, or a binary operand's peer) before any
+        // default literal width is consulted.
         let contextual = self.query(contextual_integer_literal_abi_type(self.db, key));
         let semantic = contextual
             .or_else(|| {
@@ -97,7 +100,6 @@ impl SyntaxNodeFacts<'_> {
                     .then(|| self.scalar_semantic_type(key))
                     .flatten()
             })
-            .or_else(|| self.query(call_argument_abi_type(self.db, key)))
             .or_else(|| self.scalar_semantic_type(key))
             .or_else(|| Some(self.query(call_abi_signature(self.db, key))?.result))?;
         if matches!(semantic, SemanticTypeId::WORD | SemanticTypeId::POINTER | SemanticTypeId::STRING) {

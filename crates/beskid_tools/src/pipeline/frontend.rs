@@ -91,7 +91,8 @@ pub fn run_semantic_analysis_gate(
             );
             let (_, diagnostics, _fixes) = beskid_queries::prepare_compilation_diagnostics(
                 &resolved,
-                services::PrepareOptions { mod_invoker: None,
+                services::PrepareOptions {
+                    mod_host: beskid_analysis::mod_host::ModHost::NoMods,
                     front_end: services::FrontEndOptions {
                         with_semantic_diagnostics: true,
                         ..Default::default()

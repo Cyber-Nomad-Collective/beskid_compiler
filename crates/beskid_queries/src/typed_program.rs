@@ -191,6 +191,11 @@ pub fn build_typed_program(
     for (path, logical_path) in canonical_corelib_attested_units(&assembly) {
         registry.corelib_source_paths.insert((SourceUnitId::new(db, path), generation), logical_path);
     }
+    drop(registry);
+    // Appended serialization groups are judged for field visibility in the unit that declares
+    // their target; the table is derived from the retained issuer payload, never the claim.
+    crate::contribution_attribution::register_contribution_attributions(db, project, &assembly)?;
+    let mut registry = db.syntax_dependency_registry().lock().expect("syntax dependency registry");
     for unit in assembly.units.iter() {
         let unit_id = SourceUnitId::new(db, unit.path.clone());
         let imports = unit

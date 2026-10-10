@@ -40,14 +40,14 @@ fn run_analyze(args: AnalyzeArgs) -> Result<()> {
         args.lockfile.WorkspaceOptions(),
         args.plain,
     ))?;
+    let mod_host = super::compiler_mod::prepare_native_mod_executor(
+        &resolved,
+        args.lockfile.WorkspaceOptions(),
+        Some(pipeline_ui.as_ref()),
+    )?;
     let prepare_options = PrepareOptions {
-        mod_invoker: super::compiler_mod::prepare_native_mod_executor(
-            &resolved,
-            args.lockfile.WorkspaceOptions(),
-            Some(pipeline_ui.as_ref()),
-        )?,
         front_end: FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
-        ..Default::default()
+        ..PrepareOptions::with_mod_host(mod_host)
     };
     let diagnostics = if resolved.compile_plan.is_some() {
         let (_, diagnostics, _fixes) =

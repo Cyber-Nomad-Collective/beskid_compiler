@@ -34,7 +34,23 @@ fn v06_real_compiler_sdk_collector_generator_builds_executable_descriptor() {
         .collect();
     assert_eq!(descriptors.len(), 1, "one authoritative executable artifact descriptor required");
     let descriptor: serde_json::Value = serde_json::from_slice(&fs::read(descriptors[0].path()).unwrap()).unwrap();
-    assert_eq!(descriptor["schemaVersion"], 2, "object-only schema1 does not prove executable Mod contracts");
+    assert_eq!(descriptor["schemaVersion"], 3, "object-only schema1 does not prove executable Mod contracts");
+    // Schema 3 identifies build tools by digest and version output; no tool executable is copied.
+    let files = descriptor["files"].as_object().expect("closed evidence inventory");
+    let tools = files.keys().filter(|name| name.starts_with("tools/")).cloned().collect::<Vec<_>>();
+    assert_eq!(
+        tools,
+        ["tools/adapter-compiler-version", "tools/compiler-version", "tools/linker-version"],
+        "tool evidence is digest-only"
+    );
+    let artifact_bytes: u64 = walkdir::WalkDir::new(descriptors[0].path().parent().unwrap())
+        .into_iter()
+        .map(Result::unwrap)
+        .filter(|entry| entry.file_type().is_file())
+        .map(|entry| entry.metadata().unwrap().len())
+        .sum();
+    let compiler_bytes = fs::metadata(env!("CARGO_BIN_EXE_beskid_cli")).unwrap().len();
+    assert!(artifact_bytes < compiler_bytes, "the artifact ({artifact_bytes} B) must not embed the compiler ({compiler_bytes} B)");
     assert_eq!(descriptor["artifactKind"], "executable-shared-library");
     assert!(descriptor.get("objectFile").is_none(), "relocatable objects cannot be executable authority");
     assert_eq!(descriptor["hostAbiVersion"], 2);

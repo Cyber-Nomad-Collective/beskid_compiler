@@ -11,10 +11,14 @@ use super::super::front_end::{FrontEndOptions, FrontEndTypedResult};
 use super::super::semantic_facts::DependencyTypingPolicy;
 
 /// Options for [`prepare_compilation`].
+///
+/// There is no default: a caller chooses its native Mod host with [`Self::without_mods`] (the plan
+/// must be Mod-free) or [`Self::with_mod_host`].
 #[derive(Clone)]
 pub struct PrepareOptions {
-    /// Producer-owned native service; borrowed semantic authority remains invocation-scoped.
-    pub mod_invoker: Option<Arc<dyn crate::mod_host::ContractInvoker>>,
+    /// The native Mod host that loads and runs the plan's Mods; borrowed semantic authority remains
+    /// invocation-scoped.
+    pub mod_host: crate::mod_host::ModHost,
     pub front_end: FrontEndOptions,
     /// Whether dependency unit bodies are fully type-checked or only signatures prefetched.
     pub dependency_typing: DependencyTypingPolicy,
@@ -23,10 +27,17 @@ pub struct PrepareOptions {
     pub native_mod_adapter_sources: bool,
 }
 
-impl Default for PrepareOptions {
-    fn default() -> Self {
+impl PrepareOptions {
+    /// Options for a Mod-free plan: preparing a plan with a native Mod dependency fails before
+    /// `mod.load` with an error that names each Mod and how to provide a host.
+    pub fn without_mods() -> Self {
+        Self::with_mod_host(crate::mod_host::ModHost::NoMods)
+    }
+
+    /// Options that run the plan's native Mods in `mod_host`.
+    pub fn with_mod_host(mod_host: crate::mod_host::ModHost) -> Self {
         Self {
-            mod_invoker: None,
+            mod_host,
             front_end: FrontEndOptions::default(),
             dependency_typing: DependencyTypingPolicy::FullClosure,
             native_mod_adapter_sources: false,
@@ -103,7 +114,7 @@ impl std::fmt::Debug for PrepareOptions {
         f.debug_struct("PrepareOptions")
             .field("front_end", &self.front_end)
             .field("dependency_typing", &self.dependency_typing)
-            .field("mod_invoker", &self.mod_invoker.is_some())
+            .field("mod_host", &self.mod_host)
             .field("native_mod_adapter_sources", &self.native_mod_adapter_sources)
             .finish()
     }

@@ -7,69 +7,7 @@
 //! query obligation behind each code. The negative cases are the Corelib shapes the legacy
 //! checker rejected wrongly when every own unit became a root; the query gate must stay silent.
 
-use std::sync::Arc;
-
-use beskid_analysis::projects::{
-    AssemblyDiscovery, EffectiveCompilationRoots, ModuleIndex, ProgramAssembly, RootEntry, SourceUnit,
-};
-use beskid_analysis::services::{SemanticFactFinding, parse_program_with_source_name, synthetic_compile_plan_for_source};
-use beskid_analysis::syntax::SyntaxGenerationId;
-use beskid_analysis::syntax_query::SyntaxIndex;
-
-use super::semantic_diagnostics_for_roots;
-use crate::BeskidDatabase;
-
-/// Judge `source` as the single own root of a library through the query gate only.
-fn root_findings(source: &str, generation: u64) -> Vec<SemanticFactFinding> {
-    root_findings_with_glue(source, generation, &[])
-}
-
-/// [`root_findings`] for an assembly whose host manifest declares `glue_libraries` as Rust Glue
-/// owner blocks.
-fn root_findings_with_glue(source: &str, generation: u64, glue_libraries: &[&str]) -> Vec<SemanticFactFinding> {
-    let root = std::env::temp_dir().join(format!("beskid_query_check_parity_{}_{generation}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&root);
-    let source_root = root.join("src");
-    std::fs::create_dir_all(&source_root).expect("library source root");
-    let path = source_root.join("Main.bd");
-    std::fs::write(&path, source).expect("library source");
-    let generation = SyntaxGenerationId(generation);
-    let unit = SourceUnit {
-        logical_name: "Main".to_string(),
-        origin_path: path.clone(),
-        program: parse_program_with_source_name(path.to_str().expect("utf-8 path"), source)
-            .unwrap_or_else(|error| panic!("fixture must parse: {error}\n{source}")),
-        path: path.clone(),
-        source: source.to_string(),
-    };
-    let plan = synthetic_compile_plan_for_source(&path);
-    let roots = EffectiveCompilationRoots {
-        host: RootEntry { dependency_name: None, source_root: source_root.clone() },
-        dependencies: Vec::new(),
-    };
-    let indexes = vec![SyntaxIndex::from_program(&unit.program, generation)];
-    let index = Arc::new(ModuleIndex::build(std::slice::from_ref(&unit), &indexes, &roots, &plan));
-    let program = unit.program.clone();
-    let assembly = ProgramAssembly::new(
-        roots,
-        Arc::new(vec![unit]),
-        0,
-        AssemblyDiscovery::ImportClosure,
-        index,
-        false,
-        generation,
-    )
-    .with_glue_libraries(glue_libraries.iter().map(|library| (*library).to_string()).collect::<Vec<_>>().into());
-    let mut db = BeskidDatabase::default();
-    let findings = semantic_diagnostics_for_roots(&mut db, None, &assembly, &program)
-        .unwrap_or_else(|error| panic!("query gate must judge the fixture: {error}\n{source}"));
-    let _ = std::fs::remove_dir_all(&root);
-    findings
-}
-
-fn codes(findings: &[SemanticFactFinding]) -> Vec<&'static str> {
-    findings.iter().map(|finding| finding.kind.code()).collect()
-}
+use super::parity_harness::{codes, root_findings, root_findings_with_glue};
 
 const PAIR: &str = "pub type Pair { i64 a } ";
 const SHAPE: &str = "enum Shape { Dot, Circle(i64 radius) } ";

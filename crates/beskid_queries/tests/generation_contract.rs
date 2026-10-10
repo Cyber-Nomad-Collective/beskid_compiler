@@ -7,7 +7,7 @@ use beskid_analysis::projects::{
 use beskid_queries::{
     AstNodeId, AstNodeKey, BeskidDatabase, CompletionContext, ModHostSyntaxGenerationId, ProjectSession, SourceUnitId,
     SyntaxGenerationId, TypedProgram, call_arguments, call_lowering, cast_intents, completion_candidates, control_flow,
-    item_signature, local_slot, node_type, resolved_item, resolved_local, runtime_intrinsic,
+    item_signature, local_slot, node_span, node_type, resolved_item, resolved_local, runtime_intrinsic,
 };
 
 fn empty_assembly() -> Arc<ProgramAssembly> {
@@ -282,8 +282,22 @@ fn generations_are_monotonic_and_bound_to_source_content() {
     assert_eq!(db.syntax_authority_counts(), (1, 1));
 }
 
+fn program_key(unit: SourceUnitId, generation: SyntaxGenerationId, source: &str) -> AstNodeKey {
+    use beskid_analysis::syntax_query::{NodeKind, SyntaxIndex};
+    let program = beskid_analysis::services::parse_program(source).expect("parse");
+    let index = SyntaxIndex::from_program(&program, generation);
+    AstNodeKey { unit, generation, node: index.ids_of_kind(NodeKind::Program).next().expect("program node") }
+}
+
+fn function_key(unit: SourceUnitId, generation: SyntaxGenerationId, source: &str) -> AstNodeKey {
+    use beskid_analysis::syntax_query::{NodeKind, SyntaxIndex};
+    let program = beskid_analysis::services::parse_program(source).expect("parse");
+    let index = SyntaxIndex::from_program(&program, generation);
+    AstNodeKey { unit, generation, node: index.ids_of_kind(NodeKind::FunctionDefinition).next().expect("function node") }
+}
+
 #[test]
-fn source_fingerprint_cannot_be_resurrected_in_a_later_generation() {
+fn reverting_to_an_earlier_source_is_a_fresh_generation_that_retires_older_keys() {
     let mut db = BeskidDatabase::default();
     let entry = SourceUnitId::new(&db, PathBuf::from("/tmp/project/src/History.bd"));
     let project = ProjectSession::new(
@@ -295,18 +309,38 @@ fn source_fingerprint_cannot_be_resurrected_in_a_later_generation() {
     );
     let source_a = "i32 Main() { return 1; }";
     let source_b = "i32 Main() { return 2; }";
-    db.update_syntax_source(project, entry, SyntaxGenerationId(4), source_a.to_string()).expect("generation A");
+    let authority =
+        db.update_syntax_source(project, entry, SyntaxGenerationId(4), source_a.to_string()).expect("generation A");
     db.update_syntax_source(project, entry, SyntaxGenerationId(5), source_b.to_string()).expect("generation B");
 
+    // Undo: A@g4 -> B@g5 -> A@g6. Content identity is not generation identity.
+    let reverted = db
+        .update_syntax_source(project, entry, SyntaxGenerationId(6), source_a.to_string())
+        .expect("reverting to earlier source text must be accepted as a new generation");
+    assert!(reverted == authority, "a revert must reuse the single Salsa input");
+    assert_eq!(db.syntax_authority_counts(), (3, 3));
+    assert_eq!(db.file_text(entry.path(&db)).expect("reverted file input").text(&db), source_a);
+
+    let stale_a = function_key(entry, SyntaxGenerationId(4), source_a);
+    let stale_b = function_key(entry, SyntaxGenerationId(5), source_b);
+    let current = function_key(entry, SyntaxGenerationId(6), source_a);
+    assert!(!reverted.accepts_key(&db, stale_a), "a handle from the earlier identical tree must stay stale");
+    assert!(!reverted.accepts_key(&db, stale_b));
+    assert!(reverted.accepts_key(&db, current));
+    assert_eq!(item_signature(&db, stale_a), Ok(None));
+    assert_eq!(node_span(&db, stale_a), Ok(None));
+    assert!(node_span(&db, current).expect("current span query").is_some());
+
+    // Monotonicity is unchanged: reverted content cannot travel back to an older generation.
+    assert!(db.update_syntax_source(project, entry, SyntaxGenerationId(5), source_b.to_string()).is_err());
     assert!(
-        db.update_syntax_source(project, entry, SyntaxGenerationId(6), source_a.to_string()).is_err(),
-        "A@g4 -> B@g5 -> A@g6 must not resurrect an old fingerprint"
+        db.update_syntax_source(project, entry, SyntaxGenerationId(7), source_a.to_string()).is_err(),
+        "unchanged syntax still cannot be relabeled through a source update"
     );
-    assert_eq!(db.syntax_authority_counts(), (2, 2));
 }
 
 #[test]
-fn trivia_only_edit_cannot_relabel_the_same_expanded_tree() {
+fn trivia_only_edit_advances_generation_with_fresh_spans() {
     let mut db = BeskidDatabase::default();
     let entry = SourceUnitId::new(&db, PathBuf::from("/tmp/project/src/Trivia.bd"));
     let project = ProjectSession::new(
@@ -317,15 +351,84 @@ fn trivia_only_edit_cannot_relabel_the_same_expanded_tree() {
         "lock".to_string(),
     );
     let compact = "i32 Main() { return 1; }";
-    let spaced = "i32   Main()   {   return 1;   }";
-    db.update_syntax_source(project, entry, SyntaxGenerationId(4), compact.to_string()).expect("initial syntax");
+    let commented = "// leading comment\ni32 Main() { return 1; }";
+    let authority =
+        db.update_syntax_source(project, entry, SyntaxGenerationId(4), compact.to_string()).expect("initial syntax");
+    let compact_span = node_span(&db, function_key(entry, SyntaxGenerationId(4), compact))
+        .expect("span query")
+        .expect("compact function span");
 
-    assert!(
-        db.update_syntax_source(project, entry, SyntaxGenerationId(5), spaced.to_string()).is_err(),
-        "trivia-only edits must not assign a new generation to the same expanded tree"
+    let edited = db
+        .update_syntax_source(project, entry, SyntaxGenerationId(5), commented.to_string())
+        .expect("a comment-only edit must be accepted as a new generation of the same expanded tree");
+    assert!(edited == authority);
+    assert_eq!(db.syntax_authority_counts(), (2, 2));
+    assert_eq!(db.file_text(entry.path(&db)).expect("edited file input").text(&db), commented);
+
+    let old = function_key(entry, SyntaxGenerationId(4), compact);
+    let new = function_key(entry, SyntaxGenerationId(5), commented);
+    assert!(!edited.accepts_key(&db, old), "trivia-only edits still retire handles from the older generation");
+    assert_eq!(node_span(&db, old), Ok(None));
+    let commented_span = node_span(&db, new).expect("span query").expect("commented function span");
+    let shift = "// leading comment\n".len();
+    assert_eq!(commented_span.start, compact_span.start + shift, "the new generation must carry the edited spans");
+
+    let reverted = db
+        .update_syntax_source(project, entry, SyntaxGenerationId(6), compact.to_string())
+        .expect("undoing the comment must be accepted");
+    assert!(reverted == authority);
+    let reverted_span = node_span(&db, function_key(entry, SyntaxGenerationId(6), compact))
+        .expect("span query")
+        .expect("reverted function span");
+    assert_eq!(reverted_span.start, compact_span.start);
+    assert_eq!(node_span(&db, new), Ok(None));
+}
+
+#[test]
+fn expanded_syntax_accepts_comment_only_edit_and_revert_across_generations() {
+    let mut db = BeskidDatabase::default();
+    let entry = SourceUnitId::new(&db, PathBuf::from("/tmp/project/src/ExpandedTrivia.bd"));
+    let project = ProjectSession::new(
+        &db,
+        PathBuf::from("/tmp/project"),
+        entry.path(&db).clone(),
+        "App".to_string(),
+        "lock".to_string(),
     );
-    assert_eq!(db.syntax_authority_counts(), (2, 1));
-    assert_eq!(db.file_text(entry.path(&db)).expect("original file input").text(&db), compact);
+    let original = "i32 Main() { return 0; }";
+    let commented = "i32 Main() { /* note */ return 0; }";
+    let expanded = |source: &str| Arc::new(beskid_analysis::services::parse_program(source).expect("parse"));
+
+    let first = db
+        .ensure_expanded_syntax_unit(project, entry, SyntaxGenerationId(1), original.to_string(), expanded(original))
+        .expect("open");
+    let second = db
+        .ensure_expanded_syntax_unit(project, entry, SyntaxGenerationId(2), commented.to_string(), expanded(commented))
+        .expect("comment-only change");
+    let third = db
+        .ensure_expanded_syntax_unit(project, entry, SyntaxGenerationId(3), original.to_string(), expanded(original))
+        .expect("change back");
+    assert!(first == second && second == third, "one Salsa input per source unit");
+    assert_eq!(db.file_text(entry.path(&db)).expect("file input").text(&db), original);
+    assert!(!third.accepts_key(&db, program_key(entry, SyntaxGenerationId(1), original)));
+    assert!(!third.accepts_key(&db, program_key(entry, SyntaxGenerationId(2), commented)));
+    assert!(third.accepts_key(&db, program_key(entry, SyntaxGenerationId(3), original)));
+
+    // Re-registering the current generation is idempotent; a second tree for it is not.
+    db.ensure_expanded_syntax_unit(project, entry, SyntaxGenerationId(3), original.to_string(), expanded(original))
+        .expect("idempotent current generation");
+    let different = "i32 Main() { return 9; }";
+    assert!(
+        db.ensure_expanded_syntax_unit(
+            project,
+            entry,
+            SyntaxGenerationId(3),
+            different.to_string(),
+            expanded(different)
+        )
+        .is_err(),
+        "one syntax generation cannot describe multiple expanded trees"
+    );
 }
 
 #[test]

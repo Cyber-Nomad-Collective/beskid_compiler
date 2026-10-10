@@ -466,7 +466,9 @@ impl SemanticIssueKind {
             Self::ExternMissingLibrary => Some("Provide Library:\"<soname>\"; e.g., libc.so.6 on Linux".to_string()),
             Self::ExternDisallowedParamType { detail, .. }
             | Self::ExternDisallowedReturnType { detail, .. }
-            | Self::GlueBindingRejected { detail, .. } => Some(detail.clone()),
+            | Self::GlueBindingRejected { detail, .. }
+            | Self::ExternInvalidOptional { detail }
+            | Self::InvalidClifBlock { detail } => Some(detail.clone()),
         }
     }
 }

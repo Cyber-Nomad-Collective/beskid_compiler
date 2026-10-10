@@ -163,6 +163,8 @@ impl SemanticIssueKind {
             Self::ExternDisallowedParamType { .. } => "parameter type".to_string(),
             Self::ExternDisallowedReturnType { .. } => "return type".to_string(),
             Self::GlueBindingRejected { .. } => "extern method".to_string(),
+            Self::ExternInvalidOptional { .. } => "extern attribute".to_string(),
+            Self::InvalidClifBlock { .. } => "clif block".to_string(),
         }
     }
 }

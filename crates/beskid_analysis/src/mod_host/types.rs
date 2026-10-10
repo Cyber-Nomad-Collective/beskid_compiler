@@ -93,7 +93,6 @@ impl ModHostSession {
     }
 }
 
-#[derive(Default)]
 pub struct ModHostInput<'a> {
     /// Query-owned synchronous scope for the exact program of this invocation.
     pub semantic_scope: Option<&'a dyn super::semantic_scope::ModSemanticScope>,
@@ -106,9 +105,9 @@ pub struct ModHostInput<'a> {
     pub source_name: &'a str,
     pub source: &'a str,
     pub pipeline: Option<&'a dyn beskid_pipeline::PipelineObserver>,
-    /// Optional explicit invoker. Otherwise dispatch uses every discovered Mod's
-    /// validated executable descriptor; unavailable artifacts are terminal errors.
-    pub invoker: Option<&'a dyn super::invoker::ContractInvoker>,
+    /// The native Mod host that loads and runs the plan's Mods. [`super::ModHost::NoMods`] fails
+    /// before `mod.load` when the plan has a native Mod dependency.
+    pub mod_host: &'a super::host::ModHost,
     /// When set and equal to the freshly observed collector target fingerprint,
     /// `mod.generate` and disk materialization are skipped.
     pub cached_target_fingerprint: Option<&'a str>,

@@ -1,7 +1,7 @@
 use std::fs;
 
 use crate::projects::fixture_harness::{
-    analyze_file_with_mods, corelib_mvp_fixture, corelib_tests_project_root, enter_mod_host, mod_invoker_for,
+    analyze_file_with_mods, corelib_mvp_fixture, corelib_tests_project_root, enter_mod_host, mod_host_for,
     resolve_corelib_tests_entry, resolve_fixture_with_assembly, shared_corelib_mvp_assembly, with_large_test_stack,
     with_project_test_env,
 };
@@ -9,7 +9,7 @@ use crate::projects::test_cwd::{compiler_workspace_root, with_cwd_at_workspace_r
 use beskid_analysis::Severity;
 use beskid_analysis::projects::build_compile_plan;
 use beskid_analysis::services::{
-    FrontEndOptions, PrepareOptions, analyze_source_in_project, parse_program, resolve_input,
+    FrontEndOptions, PrepareOptions, parse_program, resolve_input, resolved_input_from_plan,
 };
 use beskid_queries::{program_assembly, with_db};
 
@@ -66,8 +66,19 @@ fn checked_in_corelib_sources_do_not_emit_error_diagnostics_in_project_context()
         let relative = "packages/foundation/src/Core/Results/Results.bd";
         let path = root.join(relative);
         let source = fs::read_to_string(&path).unwrap_or_else(|_| panic!("read corelib source {}", path.display()));
-        let diagnostics =
-            analyze_source_in_project(&path, &source).unwrap_or_else(|_| panic!("analyze {}", path.display()));
+        let plan = beskid_analysis::CompilationContext::try_for_analysis_path(&path, None)
+            .and_then(|context| context.compile_plan)
+            .unwrap_or_else(|| panic!("compile plan for {}", path.display()));
+        let resolved = resolved_input_from_plan(path.clone(), source, plan, None, None);
+        let (_, diagnostics, _) = beskid_queries::prepare_compilation_diagnostics(
+            &resolved,
+            PrepareOptions {
+                front_end: FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
+                ..PrepareOptions::without_mods()
+            },
+            None,
+        )
+        .unwrap_or_else(|error| panic!("analyze {}: {error}", path.display()));
         let errors: Vec<_> = diagnostics.into_iter().filter(|diag| matches!(diag.severity, Severity::Error)).collect();
         assert!(errors.is_empty(), "expected no error diagnostics for {} but got: {errors:#?}", path.display());
     });
@@ -102,9 +113,8 @@ fn corelib_mvp_fixture_lowers_via_program_assembly() {
             beskid_queries::prepare_compilation(
                 &resolved,
                 PrepareOptions {
-                    mod_invoker: Some(mod_invoker_for(&mod_host, &resolved)),
                     front_end: FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
-                    ..Default::default()
+                    ..PrepareOptions::with_mod_host(mod_host_for(&mod_host, &resolved))
                 },
                 None,
             )
@@ -141,9 +151,8 @@ fn corelib_assembly_typechecks_nested_qualified_result_arguments_and_predicates(
             beskid_queries::prepare_compilation(
                 &resolved,
                 PrepareOptions {
-                    mod_invoker: Some(mod_invoker_for(&mod_host, &resolved)),
                     front_end: FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
-                    ..Default::default()
+                    ..PrepareOptions::with_mod_host(mod_host_for(&mod_host, &resolved))
                 },
                 None,
             )

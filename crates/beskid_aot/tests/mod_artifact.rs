@@ -7,7 +7,7 @@ use beskid_analysis::services::{
 use beskid_aot::lower_prepared_syntax_entrypoint;
 use beskid_aot::object_module::BeskidObjectModule;
 use beskid_codegen::CodegenArtifact;
-use beskid_queries::compile_front_end_from_resolved_input;
+use beskid_queries::compile_mod_free_front_end;
 
 fn host_target_triple() -> &'static str {
     if cfg!(all(target_arch = "aarch64", target_os = "macos")) {
@@ -31,7 +31,7 @@ fn source_only_module_cannot_issue_a_native_mod_adapter() {
     fs::write(&source_path, source).unwrap();
     let plan = synthetic_compile_plan_for_source(&source_path);
     let resolved = resolved_input_from_plan(source_path, source.into(), plan, None, None);
-    let front = compile_front_end_from_resolved_input(
+    let front = compile_mod_free_front_end(
         &resolved,
         FrontEndOptions { with_semantic_diagnostics: false, ..Default::default() },
         None,
@@ -60,7 +60,7 @@ i32 Main() {
 
     let plan = synthetic_compile_plan_for_source(&source_path);
     let resolved: ResolvedInput = resolved_input_from_plan(source_path, source.to_owned(), plan, None, None);
-    let front = compile_front_end_from_resolved_input(
+    let front = compile_mod_free_front_end(
         &resolved,
         FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
         None,

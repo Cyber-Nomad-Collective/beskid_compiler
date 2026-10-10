@@ -180,16 +180,28 @@ pub unit Walk<V>(Node root, V visitor) where V: Visitor {
     return;
 }
 "#;
-    let program = parse_program(source).expect("source parses");
+    let mut program = parse_program(source).expect("source parses");
+    // `lowering.call_kinds` is keyed by `Spanned::id`, which `Program::parse` leaves at
+    // `AstNodeId::INVALID` (dense ids live only in `SyntaxIndex`), so the checker records no call
+    // kinds for parsed source. Give the two bounded calls distinct ids to observe their dispatch.
+    let Node::Function(walk) = &mut program.node.items[2].node else { panic!("Walk function expected") };
+    let mut call_ids = Vec::new();
+    for statement in &mut walk.node.body.node.statements {
+        if let crate::syntax::Statement::Expression(statement) = &mut statement.node
+            && let crate::syntax::Expression::Call(call) = &mut statement.node.expression.node
+        {
+            call.id = crate::syntax::AstNodeId(call_ids.len() as u32 + 1);
+            call_ids.push(call.id);
+        }
+    }
+    assert_eq!(call_ids.len(), 2, "Walk holds the two bounded calls");
     let (_, _, typed) = match resolve_and_type_program(&program) {
         Ok(result) => result,
         Err(error) => panic!("bounded contract calls must type-check: {error:?}"),
     };
-    let dispatches = typed
-        .lowering
-        .call_kinds
-        .values()
-        .filter(|kind| matches!(kind, CallLoweringKind::ContractDispatch { .. }))
+    let dispatches = call_ids
+        .iter()
+        .filter(|id| matches!(typed.lowering.call_kinds.get(*id), Some(CallLoweringKind::ContractDispatch { .. })))
         .count();
     assert_eq!(dispatches, 2, "both bounded calls dispatch through `Visitor`");
 }

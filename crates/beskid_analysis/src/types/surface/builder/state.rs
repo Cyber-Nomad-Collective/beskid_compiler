@@ -22,6 +22,9 @@ pub(in crate::types::surface) struct TypeSurfaceBuilder<'a> {
     pub(super) named_types: HashMap<ItemId, TypeId>,
     pub(super) generic_params: HashMap<String, TypeId>,
     pub(super) module_import_scopes: Vec<HashMap<String, ModuleImport>>,
+    /// The resolution's unscoped span tables are the entry unit's own facts: only the entry
+    /// surface reads them, and a dependency surface reads only its source-scoped facts.
+    pub(in crate::types::surface) entry_unit: bool,
     pub(super) surface: UnitTypeSurface,
 }
 
@@ -35,6 +38,7 @@ impl<'a> TypeSurfaceBuilder<'a> {
             named_types: HashMap::new(),
             generic_params: HashMap::new(),
             module_import_scopes: Vec::new(),
+            entry_unit: false,
             surface: UnitTypeSurface::default(),
         };
         builder.seed_primitives();

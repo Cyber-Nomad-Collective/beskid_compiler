@@ -21,10 +21,18 @@ pub fn native_mod_contract_id(family: &str) -> String {
     format!("Beskid.Compiler.Collect.{family}")
 }
 
-pub const NATIVE_MOD_DESCRIPTOR_SCHEMA: u32 = 2;
+/// Schema 3 records each build tool by digest and captured version output only; schema 2 also
+/// copied every tool executable (the ~100 MB compiler among them) into the artifact.
+pub const NATIVE_MOD_DESCRIPTOR_SCHEMA: u32 = 3;
 pub const NATIVE_MOD_HOST_ABI: u32 = 2;
 pub const NATIVE_MOD_DESCRIPTOR_FILE: &str = "mod.descriptor.json";
 /// Exact build-tool provenance roles, in producer order (`beskid_aot::build_mod_artifact`).
+///
+/// A tool is identified by the SHA-256 of its executable and the digest of its captured version
+/// output (`tools/<role>-version`), the way Cargo fingerprints `rustc` by its identity instead of
+/// storing it. The executable is never copied into the artifact: the copy proved nothing beyond
+/// the digest the descriptor already records, which enters the content-addressed artifact key, and
+/// qualification compares the compiler digest against the running Mod host itself.
 pub const NATIVE_MOD_BUILD_TOOL_ROLES: [&str; 3] = ["compiler", "adapter-compiler", "linker"];
 /// Role of the Mod-host compiler executable in [`ModArtifactDescriptor::build_tools`]. The same
 /// executable serves `beskid dev native-mod-worker`, so its digest is the driver identity a cached
@@ -96,12 +104,21 @@ impl ModArtifactDescriptor {
     pub fn sidecar_path(&self) -> PathBuf {
         self.artifact_dir.join(NATIVE_MOD_DESCRIPTOR_FILE)
     }
+    /// The staged canonical SDK schema, read once and accepted only when its bytes carry the
+    /// descriptor's exact schema identity.
+    pub fn read_sdk_schema(&self) -> Result<Vec<u8>> {
+        let bytes = std::fs::read(self.artifact_dir.join("sdk/schema.json"))?;
+        if format!("{:x}", Sha256::digest(&bytes)) != self.sdk_schema_sha256 {
+            bail!("native Mod SDK schema differs from its descriptor identity");
+        }
+        Ok(bytes)
+    }
     pub fn validate(&self, prefix: &Path) -> Result<()> {
         if self.schema_version != NATIVE_MOD_DESCRIPTOR_SCHEMA
             || self.host_abi_version != NATIVE_MOD_HOST_ABI
             || self.artifact_kind != "executable-shared-library"
         {
-            bail!("required executable Mod descriptor V2/host ABI V2; rebuild the Mod");
+            bail!("required executable Mod descriptor V3/host ABI V2; rebuild the Mod");
         }
         let target = TargetMetadata::for_triple(&self.target_triple)
             .map_err(|_| anyhow::anyhow!("unsupported native Mod target"))?;
@@ -225,11 +242,16 @@ impl ModArtifactDescriptor {
         for tool in &self.build_tools {
             valid_digest(&tool.executable_sha256)?;
             valid_digest(&tool.version_output_sha256)?;
-            if self.files.get(&format!("tools/{}-executable", tool.role)) != Some(&tool.executable_sha256)
-                || self.files.get(&format!("tools/{}-version", tool.role)) != Some(&tool.version_output_sha256)
-            {
-                bail!("native Mod tool identity differs from captured exact executable/version evidence");
+            if self.files.get(&tool_version_evidence(&tool.role)) != Some(&tool.version_output_sha256) {
+                bail!("native Mod tool identity differs from captured version evidence");
             }
+        }
+        let tool_evidence = NATIVE_MOD_BUILD_TOOL_ROLES
+            .iter()
+            .map(|role| tool_version_evidence(role))
+            .collect::<std::collections::BTreeSet<_>>();
+        if self.files.keys().any(|name| name.starts_with("tools/") && !tool_evidence.contains(name)) {
+            bail!("native Mod tool evidence is digest-only; an artifact carrying tool executables is not schema V3");
         }
         let provider = resolve_glue_shared_provider(prefix, &target, self.runtime.profile)
             .map_err(|error| anyhow::anyhow!("native Mod canonical shared provider: {error}"))?;
@@ -239,6 +261,10 @@ impl ModArtifactDescriptor {
         }
         Ok(())
     }
+}
+/// Inventory path of a build tool's captured version output.
+fn tool_version_evidence(role: &str) -> String {
+    format!("tools/{role}-version")
 }
 fn symbol(value: &str) -> bool {
     let mut bytes = value.bytes();
@@ -373,7 +399,7 @@ pub fn native_mod_artifact_key(descriptor: &ModArtifactDescriptor) -> Result<Str
 
 /// Runtime-kit profile that native Mods are built, cached and loaded for: `BESKID_RUNTIME_KIT_PROFILE`
 /// when set, otherwise debug (the profile installed `beskid build` and `beskid run` select).
-pub fn native_mod_runtime_profile() -> Result<BuildProfile> {
+pub(crate) fn native_mod_runtime_profile() -> Result<BuildProfile> {
     match std::env::var("BESKID_RUNTIME_KIT_PROFILE") {
         Ok(value) => BuildProfile::parse(&value).map_err(|error| anyhow::anyhow!("{error}")),
         Err(std::env::VarError::NotPresent) => Ok(BuildProfile::Debug),
@@ -490,7 +516,7 @@ pub fn read_mod_artifact_descriptor(path: &Path, runtime_prefix: &Path) -> Resul
         bail!("native Mod descriptor must be a bounded regular file");
     }
     let mut descriptor: ModArtifactDescriptor =
-        serde_json::from_slice(&std::fs::read(path)?).context("invalid executable Mod descriptor V2")?;
+        serde_json::from_slice(&std::fs::read(path)?).context("invalid executable Mod descriptor V3")?;
     descriptor.artifact_dir = path.parent().context("native Mod descriptor has no artifact directory")?.to_path_buf();
     descriptor.validate(runtime_prefix)?;
     Ok(descriptor)
@@ -500,7 +526,7 @@ pub fn read_mod_artifact_descriptor(path: &Path, runtime_prefix: &Path) -> Resul
 impl ModArtifactDescriptor {
     pub(crate) fn context_fixture() -> Self {
         Self {
-            schema_version: 2,
+            schema_version: NATIVE_MOD_DESCRIPTOR_SCHEMA,
             artifact_kind: "executable-shared-library".into(),
             host_abi_version: 2,
             package_id: String::new(),

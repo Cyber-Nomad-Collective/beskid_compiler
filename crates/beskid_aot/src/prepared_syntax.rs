@@ -70,6 +70,23 @@ pub fn lower_prepared_syntax_entrypoints(
     })
 }
 
+/// [`lower_prepared_syntax_entrypoints`] in a database owned by this one lowering.
+///
+/// A test matrix prepares every target before it lowers any of them. Each later preparation
+/// registers its own (newer) syntax generation in the process database, so lowering an earlier
+/// frozen target there would have to regress that generation. A prepared target is a complete,
+/// frozen assembly: its lowering registers exactly that generation in a database of its own.
+pub fn lower_frozen_syntax_entrypoints(
+    front: &FrontEndTypedResult,
+    entrypoints: &[String],
+    target: TargetMetadata,
+) -> AotResult<beskid_codegen::PreparedSyntaxEntrypoints> {
+    let isa = crate::object_module::ObjectTargetIsa(target.triple.as_str())?;
+    let mut db = beskid_queries::BeskidDatabase::default();
+    beskid_codegen::lower_prepared_syntax_entrypoints(&mut db, front, entrypoints, target, isa.as_ref())
+        .map_err(|error| crate::error::AotError::InvalidRequest { message: error.to_string() })
+}
+
 /// Produce frozen C ABI Mod adapters from their canonical prepared source SDK authority.
 pub fn lower_prepared_native_mod(
     front: &FrontEndTypedResult,

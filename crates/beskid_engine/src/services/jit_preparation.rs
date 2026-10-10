@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use beskid_abi::abi_v5::TargetMetadata;
+use beskid_analysis::mod_host::ModHost;
 use beskid_analysis::services::{
     FrontEndOptions, FrontEndTypedResult, ResolvedInput, resolved_input_from_plan, synthetic_compile_plan_for_source,
 };
@@ -30,9 +31,15 @@ pub struct PreparedJitEntrypoint {
     pub target: TargetMetadata,
 }
 
-/// Prepare a no-arg entrypoint through the sole CodegenInput → ISLE route.
-pub fn prepare_jit_entrypoint(source_path: &Path, source: &str, entrypoint: &str) -> Result<PreparedJitEntrypoint> {
-    let front = prepare_syntax_front_end(source_path, source)?;
+/// Prepare a no-arg entrypoint through the sole CodegenInput → ISLE route, running the snippet's
+/// native Mods (if any) in `mod_host`.
+pub fn prepare_jit_entrypoint(
+    source_path: &Path,
+    source: &str,
+    entrypoint: &str,
+    mod_host: &ModHost,
+) -> Result<PreparedJitEntrypoint> {
+    let front = prepare_syntax_front_end(source_path, source, mod_host)?;
     let target =
         crate::host_runtime_target().map_err(|error| anyhow::anyhow!("host ABI-v5 target unavailable: {error}"))?;
     let lowered = with_db(|db| lower_syntax_entrypoint_from_front_end(db, &front, entrypoint, target.clone(), None))?;
@@ -44,9 +51,10 @@ pub fn prepare_jit_entrypoint(source_path: &Path, source: &str, entrypoint: &str
     })
 }
 
-/// Prepare every executable item in a snippet through CodegenInput → ISLE module emission.
-pub fn prepare_jit_module(source_path: &Path, source: &str) -> Result<CodegenArtifact> {
-    let front = prepare_syntax_front_end(source_path, source)?;
+/// Prepare every executable item in a snippet through CodegenInput → ISLE module emission, running
+/// its native Mods (if any) in `mod_host`.
+pub fn prepare_jit_module(source_path: &Path, source: &str, mod_host: &ModHost) -> Result<CodegenArtifact> {
+    let front = prepare_syntax_front_end(source_path, source, mod_host)?;
     let target =
         crate::host_runtime_target().map_err(|error| anyhow::anyhow!("host ABI-v5 target unavailable: {error}"))?;
     let isa = native_isa()?;
@@ -54,14 +62,17 @@ pub fn prepare_jit_module(source_path: &Path, source: &str) -> Result<CodegenArt
 }
 
 /// Front-end prepare for JIT/REPL snippets; semantic diagnostics stay enabled so invalid
-/// extern contracts fail closed before CodegenInput construction.
-pub fn prepare_syntax_front_end(source_path: &Path, source: &str) -> Result<FrontEndTypedResult> {
+/// extern contracts fail closed before CodegenInput construction. The snippet's native Mods run in
+/// `mod_host`; with [`ModHost::NoMods`] a snippet whose plan depends on a Mod fails with an error
+/// that names the Mod and how to provide a host.
+pub fn prepare_syntax_front_end(source_path: &Path, source: &str, mod_host: &ModHost) -> Result<FrontEndTypedResult> {
     let source_path = beskid_codegen::materialize_source_path_for_lowering(source_path, source)?;
     let plan = synthetic_compile_plan_for_source(&source_path);
     let resolved: ResolvedInput = resolved_input_from_plan(source_path, source.to_owned(), plan, None, None);
-    beskid_queries::compile_front_end_from_resolved_input(
+    beskid_queries::compile_front_end_with_mod_host(
         &resolved,
         FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
+        mod_host.clone(),
         None,
     )
 }

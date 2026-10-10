@@ -71,7 +71,13 @@ impl<'a> TypeChecker<'a> {
             Expression::Grouped(grouped) => self.type_expression(&grouped.node.expr),
             Expression::Block(block_expr) => {
                 self.type_block(&block_expr.node.block);
-                self.primitive_type_id(PrimitiveType::Unit)
+                // A block that cannot fall through (for example a `match` arm ending in
+                // `return`) produces no value: it is `never`, as in the query authority.
+                if block_expr.node.block.node.may_fall_through() {
+                    self.primitive_type_id(PrimitiveType::Unit)
+                } else {
+                    self.primitive_type_id(PrimitiveType::Never)
+                }
             }
             Expression::Call(call) => {
                 let type_id = self.type_call_expression(call);
@@ -101,8 +107,13 @@ impl<'a> TypeChecker<'a> {
     }
 
     fn type_index_expression(&mut self, index_expr: &Spanned<IndexExpression>) -> Option<TypeId> {
-        let target_type = self.type_expression(&index_expr.node.target)?;
+        // The surrounding expected type is the element's, never the target's or the
+        // subscript's: `Assert.Equal(bytes[9999], 7_u8, ..)` must not type `9999` as `u8`.
+        let previous = self.contextual_expected_type.take();
+        let target_type = self.type_expression(&index_expr.node.target);
         let _index_type = self.type_expression(&index_expr.node.index);
+        self.contextual_expected_type = previous;
+        let target_type = target_type?;
 
         match self.type_table.get(target_type).cloned() {
             Some(TypeInfo::Array(element_type_id)) => Some(element_type_id),
@@ -116,7 +127,11 @@ impl<'a> TypeChecker<'a> {
 
     fn type_array_literal_expression(&mut self, lit: &Spanned<ArrayLiteralExpression>) -> Option<TypeId> {
         if lit.node.elements.is_empty() {
-            return None;
+            // An empty literal has no element to type; a declared array position (a `return`
+            // of an array-returning callable, an annotated binding, a parameter) is its type.
+            return self
+                .contextual_expected_type
+                .filter(|expected| matches!(self.type_table.get(*expected), Some(TypeInfo::Array(_))));
         }
 
         let first_type = self.type_expression(&lit.node.elements[0])?;

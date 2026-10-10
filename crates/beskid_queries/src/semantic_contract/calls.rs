@@ -11,15 +11,15 @@ pub use resolution::{
 };
 
 pub(in crate::semantic_contract) use casts::{
-    abi_semantic_type, canonical_intrinsic_parameter_type, cast_intents_for_node, cast_intents_tracked,
-    expected_cast_type, expression_fact_target, is_transparent_binary_operand_path, primitive_integer,
+    cast_intents_for_node, cast_intents_tracked,
+    expected_cast_type, expression_fact_target, primitive_integer,
     primitive_numeric,
 };
 
 pub(in crate::semantic_contract) use facts::{
     call_arguments_tracked, call_lowering_tracked, canonical_result_definition_for_type, canonical_result_variant,
     for_iterator_fact_tracked, primitive_numeric_conversion_target, primitive_numeric_conversion_tracked,
-    range_for_fact_tracked, result_type_parts, try_expression_fact_for_node, try_expression_fact_tracked,
+    range_for_fact_tracked, result_type_parts, try_expression_fact_for_node, try_expression_fact_tracked, try_expression_legality_for_node,
     try_operand_declaration,
 };
 

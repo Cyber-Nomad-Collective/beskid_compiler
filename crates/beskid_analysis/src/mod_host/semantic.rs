@@ -122,12 +122,16 @@ pub trait ModSemanticAuthority: super::ModSyntaxAuthority {
     fn generation(&self) -> SyntaxGenerationId;
     fn resolve_declaration(&self, declaration: &ModSemanticDeclaration) -> Result<ModSemanticHandle, ModSemanticError>;
     fn type_shape(&self, handle: ModSemanticHandle) -> Result<ModSemanticShape, ModSemanticError>;
+    /// Bind the typed impl `contribution` to the issued concrete `target`. `members` are the
+    /// other items of the same generated group (the decoder record, its free `read` function
+    /// and factory), attributed together with the impl to the unit that declares the target.
     fn compile_serialization_target(
         &self,
         _invocation: u64,
         _contribution_index: u32,
         _target: ModSemanticHandle,
         _contribution: &crate::syntax::Spanned<super::ProgramItem>,
+        _members: &[ModContributionMember],
     ) -> Result<ModCompiledMetadata, ModSemanticError> {
         Err(ModSemanticError("authority cannot issue typed serialization contribution correspondence".into()))
     }
@@ -138,6 +142,7 @@ pub trait ModSemanticAuthority: super::ModSyntaxAuthority {
         _reference: &super::ModSyntaxNodeRef,
         _declaration: &ModSemanticDeclaration,
         _contribution: &crate::syntax::Spanned<super::ProgramItem>,
+        _members: &[ModContributionMember],
     ) -> Result<ModCompiledMetadata, ModSemanticError> {
         Err(ModSemanticError("authority cannot issue serialization template correspondence".into()))
     }
@@ -185,17 +190,48 @@ pub enum ModCompiledMetadataDescription {
     SerializationTarget(ModSerializationTargetClaim),
     SerializationTemplate(ModSerializationTemplateClaim),
 }
+/// One unbound item of a generated serialization group (the decoder record type, its free
+/// `read` function or its factory), attributed together with the bound impl. An impl block
+/// is never a member: it is bound as a contribution of its own.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ModContributionMember {
+    pub contribution_index: u32,
+    pub item: crate::syntax::Spanned<super::ProgramItem>,
+}
+/// Where a bound serialization group is judged. The merger appends generated items to the
+/// entry source unit; a group generated for a target declared in `attributed_unit` is
+/// attributed to that unit, as Rust appends derive output to the module of the input item,
+/// so field visibility (E1211) evaluates the group in the declaring unit. `items` are the
+/// exact appended items of the group (the bound impl first, then its members); an appended
+/// item that no retained claim names keeps the entry unit.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ModContributionAttribution {
+    pub attributed_unit: PathBuf,
+    pub items: Vec<crate::syntax::Spanned<super::ProgramItem>>,
+}
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ModSerializationTargetClaim {
     pub contribution_index: u32,
     pub target: ModSemanticHandle,
     pub generation: SyntaxGenerationId,
+    pub attribution: ModContributionAttribution,
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ModSerializationTemplateClaim {
     pub contribution_index: u32,
     pub declaration: ModSemanticDeclaration,
     pub parameters: Vec<String>,
+    pub attribution: ModContributionAttribution,
+}
+impl ModCompiledMetadataDescription {
+    /// The descriptive attribution of a serialization claim; a catchall claim has none.
+    pub fn attribution(&self) -> Option<&ModContributionAttribution> {
+        match self {
+            Self::SerializationTarget(claim) => Some(&claim.attribution),
+            Self::SerializationTemplate(claim) => Some(&claim.attribution),
+            Self::Catchall(_) => None,
+        }
+    }
 }
 impl From<ModSerializationTemplateClaim> for ModCompiledMetadataDescription {
     fn from(claim: ModSerializationTemplateClaim) -> Self {

@@ -13,7 +13,7 @@ use tracing::Span;
 use crate::AnalysisOptions;
 use crate::analysis::SemanticDiagnostic;
 use crate::mod_host::{
-    ModHostInput, SyntaxFix, native_invoker_for_plan, run_analyze_rewrite_with_invoker, run_through_generate,
+    ModHostInput, SyntaxFix, run_analyze_rewrite_with_host, run_through_generate,
     run_through_generate_without_materializing_outputs,
 };
 use crate::projects::{
@@ -27,7 +27,7 @@ use super::super::entry_session::{
 };
 use super::super::front_end::FrontEndTypedResult;
 use super::super::semantic::{require_no_semantic_errors, semantic_rule_diagnostics_for_program_with_pipeline};
-use super::super::semantic_facts::{DependencyTypingPolicy, resolve_and_type_program_with_assembly};
+use super::super::semantic_facts::resolve_and_type_program_with_assembly;
 use super::super::session::{SemanticSnapshot, SessionFingerprint, session_for_assembly};
 use super::*;
 
@@ -49,10 +49,20 @@ pub(super) fn run_prepare_spine(
     use_session_cache: bool,
     mut fact_authority: Option<&mut dyn SemanticFactAuthority>,
 ) -> Result<PrepareSpineOutput> {
+    // Diagnostics are judged by exactly one semantic authority: the generation-bound query gate
+    // (`beskid_queries::semantic_diagnostics_for_roots`), which judges every own unit of the
+    // project. Collecting diagnostics without that authority would silently report only the
+    // structural rules, so it fails closed instead of degrading.
+    if collect_diagnostics && fact_authority.is_none() {
+        anyhow::bail!(
+            "diagnostics-only preparation requires the query semantic authority; prepare through \
+             `beskid_queries::prepare_compilation_diagnostics` (or `_with_db` / `_isolated`)"
+        );
+    }
     // Injected executor identity is not part of a reusable session cache key.
     // A native Mod adapter closure is a different assembly than the session's ordinary one.
     let use_session_cache =
-        use_session_cache && options.mod_invoker.is_none() && !options.native_mod_adapter_sources;
+        use_session_cache && !options.mod_host.is_native() && !options.native_mod_adapter_sources;
     let mut assembly_options = assembly_options_for_prepare(plan, options.front_end.assembly_discovery);
     assembly_options.recovery_policy = options.front_end.assembly_recovery;
     assembly_options.native_mod_adapter_sources = options.native_mod_adapter_sources;
@@ -111,10 +121,10 @@ pub(super) fn run_prepare_spine(
                 require_no_semantic_errors(&facts)?;
             }
         }
-        // A cached executable proves only the entry unit; every other root is judged again. The
-        // query gate above has already judged every root, so its findings merge into the
-        // legacy root diagnostics the same way they merge on the uncached path.
-        let roots = additional_root_diagnostics(&front.assembly, options, run_rules, fact_authority.is_some())?;
+        // A cached executable proves only the entry unit's typing; the structural rules of every
+        // other own unit run again. The query gate above has already judged every own unit, so
+        // its findings merge behind the rule diagnostics exactly as on the uncached path.
+        let roots = own_unit_rule_diagnostics(&front.assembly, options, run_rules, fact_authority.is_some())?;
         let mut diagnostics = Vec::new();
         if collect_diagnostics {
             diagnostics = roots;
@@ -140,20 +150,17 @@ pub(super) fn run_prepare_spine(
     let mut program = entry_unit.program.clone();
     observe_phase(pipeline, PARSE, || {});
 
-    let native_invoker = if options.mod_invoker.is_none() { native_invoker_for_plan(plan, pipeline)? } else { None };
-    let invoker_ref = options
-        .mod_invoker
-        .as_deref()
-        .or_else(|| native_invoker.as_ref().map(|invoker| invoker as &dyn crate::mod_host::ContractInvoker));
-
+    // The Mod host sees only the Mods this assembly activates (`mod_host::activation`): a Mod of a
+    // package the program never reaches is not discovered, loaded or run.
+    let mod_plan = crate::mod_host::active_mod_plan(plan, &assembly)?;
     let mod_input = ModHostInput {
         semantic_scope: fact_authority.as_ref().and_then(|authority| authority.mod_scope()),
         semantic_authority: None,
-        compile_plan: Some(plan),
+        compile_plan: Some(&mod_plan),
         source_name: &entry_unit.logical_name,
         source: entry_source,
         pipeline,
-        invoker: invoker_ref,
+        mod_host: &options.mod_host,
         cached_target_fingerprint: None,
         syntax_generation_id: Some(assembly.generation),
     };
@@ -170,9 +177,14 @@ pub(super) fn run_prepare_spine(
         }
     }
 
-    assembly
-        .compiled_mod_metadata
-        .extend(generated.generator_outcomes.iter().flat_map(|outcome| outcome.compiled_metadata.iter().cloned()));
+    // The Mod scope already retains the metadata its authority issued (it carries the
+    // attribution of appended contributions into the registered generation); a scope-less
+    // prepare retains it here. Equal carriers are kept once.
+    for metadata in generated.generator_outcomes.iter().flat_map(|outcome| outcome.compiled_metadata.iter()) {
+        if !assembly.compiled_mod_metadata.contains(metadata) {
+            assembly.compiled_mod_metadata.push(metadata.clone());
+        }
+    }
     let mut collected_diagnostics = generated.macro_diagnostics;
     let syntax_generation_id = assembly.generation.0;
     Span::current().record("syntax_generation_id", syntax_generation_id);
@@ -186,7 +198,21 @@ pub(super) fn run_prepare_spine(
     rule_options.program_assembly = Some(assembly.clone());
     rule_options.defer_try_diagnostics = fact_authority.is_some();
 
-    if options.front_end.with_semantic_diagnostics || collect_diagnostics {
+    // Mod Analyzers read a semantic snapshot staged through composition, and their `Error`
+    // diagnostics fail the executable path too. An executable-only prepare therefore stages the
+    // snapshot itself when an Analyzer is registered and the session holds none for this exact
+    // syntax generation; it never hands an Analyzer a snapshot of an older generation.
+    let analyzers_registered =
+        generated.session.registrations().any(|registration| registration.contract_id.ends_with(".Analyzer"));
+    let current_snapshot_cached = use_session_cache
+        && super::super::session::cached_semantic_snapshot(&session_fingerprint).is_some_and(|snapshot| {
+            snapshot.syntax_generation_id == syntax_generation_id && snapshot.satisfies_minimum("composition")
+        });
+    let run_semantic_stage = options.front_end.with_semantic_diagnostics
+        || collect_diagnostics
+        || (analyzers_registered && !current_snapshot_cached);
+
+    if run_semantic_stage {
         let semantic = observe_phase_result(pipeline, SEMANTIC, || {
             Ok::<_, anyhow::Error>(semantic_rule_diagnostics_for_program_with_pipeline(
                 &program.node,
@@ -206,10 +232,9 @@ pub(super) fn run_prepare_spine(
         observe_phase(pipeline, SEMANTIC_SNAPSHOT, || {
             let snapshot = SemanticSnapshot::from_diagnostics(snapshot_diagnostics, syntax_generation_id, "semantic");
             if use_session_cache {
-                update_semantic_snapshot(&session_fingerprint, snapshot);
-            } else {
-                local_semantic_snapshot = Some(snapshot);
+                update_semantic_snapshot(&session_fingerprint, snapshot.clone());
             }
+            local_semantic_snapshot = Some(snapshot);
         });
     }
 
@@ -218,26 +243,26 @@ pub(super) fn run_prepare_spine(
     })?;
     composition_result.snapshot.source_unit_path = Some(entry_unit.path.clone());
 
-    if options.front_end.with_semantic_diagnostics || collect_diagnostics {
+    if let Some(snapshot) = local_semantic_snapshot.take() {
+        let snapshot = snapshot.with_composition(&composition_result.snapshot);
         if use_session_cache {
-            if let Some(mut snapshot) = super::super::session::cached_semantic_snapshot(&session_fingerprint) {
-                snapshot = snapshot.with_composition(&composition_result.snapshot);
-                update_semantic_snapshot(&session_fingerprint, snapshot);
-            }
-        } else if let Some(snapshot) = local_semantic_snapshot.take() {
-            local_semantic_snapshot = Some(snapshot.with_composition(&composition_result.snapshot));
+            update_semantic_snapshot(&session_fingerprint, snapshot.clone());
         }
+        local_semantic_snapshot = Some(snapshot);
     }
 
-    let mod_snapshot = if use_session_cache {
-        super::super::session::cached_semantic_snapshot(&session_fingerprint)
-    } else {
-        local_semantic_snapshot.clone()
-    };
-    let mod_rewrite = run_analyze_rewrite_with_invoker(
+    // The snapshot staged by this run is authoritative for its Analyzers; a session-cached one is
+    // used only when it belongs to this exact syntax generation.
+    let mod_snapshot = local_semantic_snapshot.clone().or_else(|| {
+        use_session_cache
+            .then(|| super::super::session::cached_semantic_snapshot(&session_fingerprint))
+            .flatten()
+            .filter(|snapshot| snapshot.syntax_generation_id == syntax_generation_id)
+    });
+    let mod_rewrite = run_analyze_rewrite_with_host(
         program.clone(),
         &generated.session,
-        invoker_ref,
+        &options.mod_host,
         Some(&mod_input),
         mod_snapshot.as_ref(),
         pipeline,
@@ -313,9 +338,10 @@ pub(super) fn run_prepare_spine(
     let binding_plan = composition_result.plan.clone();
     let composition_snapshot = composition_result.snapshot.clone();
 
-    // Entry-less libraries: every other own unit is a root too. Judge each before the entry's
-    // executable is cached, so a root failure can never hide behind a cached entry.
-    let root_diagnostics = additional_root_diagnostics(&assembly, options, run_rules, fact_authority.is_some())?;
+    // Every other own unit of the project runs the structural rules too, before the entry's
+    // executable is cached, so a rule failure in a sibling unit can never hide behind a cached
+    // entry. Their typing is judged by the query gate above.
+    let root_diagnostics = own_unit_rule_diagnostics(&assembly, options, run_rules, fact_authority.is_some())?;
     if collect_diagnostics {
         collected_diagnostics.extend(root_diagnostics);
     } else {
@@ -324,6 +350,10 @@ pub(super) fn run_prepare_spine(
 
     observe_phase(pipeline, LOWER_READY, || {});
 
+    // The legacy `TypeChecker` produces the executable front end for lowering. On the diagnostics
+    // path its errors are not rendered: the query gate is the one semantic authority, and the
+    // same obligations it judges are what the build gate (`check_items`) later enforces. A
+    // failed executable is reported as `typed: None` to the caller.
     let typed = match observe_phase_result(pipeline, LOWER, || {
         resolve_and_type_program_with_assembly(&program, Some(&assembly), pipeline, options.dependency_typing)
     }) {
@@ -361,11 +391,11 @@ pub(super) fn run_prepare_spine(
             }
         }
         Err(error) if collect_diagnostics => {
-            collected_diagnostics.extend(semantic_facts_errors_to_diagnostics(
-                error,
-                entry_unit.logical_name.as_str(),
-                entry_source,
-            ));
+            tracing::debug!(
+                target: "beskid.analysis",
+                entry = %entry_unit.logical_name,
+                "legacy executable typing failed during diagnostics collection: {error}"
+            );
             None
         }
         Err(error) => return Err(error.into()),
@@ -379,57 +409,45 @@ pub(super) fn run_prepare_spine(
     })
 }
 
-/// Rule, resolution, and type diagnostics for every root unit other than the entry unit.
-///
-/// Only an entry-less library assembly ([`AssemblyRootSet::OwnUnits`]) has such roots. Each one
-/// is judged as its own entry against the same assembly, so its errors are reported in its own
-/// source, while the other units stay dependencies whose errors are not reported against it.
-/// Dependency bodies are not re-typed per root ([`DependencyTypingPolicy::EntryOnly`]): their
-/// errors are discarded by the checker anyway, and re-typing every body for every root is
-/// quadratic. Fails closed when the root set names a unit outside the assembly.
-fn additional_root_diagnostics(
+/// Structural and style rule diagnostics (`SemanticPipelineRule`) for every own unit of the
+/// project other than the entry unit: the other roots of an entry-less library, or the sibling
+/// units under an App's own source root ([`ProgramAssembly::library_unit_indices`]). Each unit is
+/// judged as its own entry against the same assembly, so its diagnostics render in its own
+/// source. Typing and legality of these units are the query gate's obligations, never judged
+/// here. Fails closed when the root set names a unit outside the assembly.
+fn own_unit_rule_diagnostics(
     assembly: &ProgramAssembly,
     options: &PrepareOptions,
     run_rules: bool,
     defer_try_diagnostics: bool,
 ) -> Result<Vec<SemanticDiagnostic>> {
-    let roots = assembly
-        .additional_root_indices()
-        .ok_or_else(|| anyhow::anyhow!("assembly root set names a source unit outside the prepared assembly"))?;
-    if roots.is_empty() {
+    if !run_rules {
         return Ok(Vec::new());
     }
+    let units = assembly
+        .library_unit_indices()
+        .ok_or_else(|| anyhow::anyhow!("assembly root set names a source unit outside the prepared assembly"))?;
     let known_module_paths = assembly.module_index.known_module_path_strings();
     let mut diagnostics = Vec::new();
-    for index in roots {
+    for index in units.into_iter().filter(|index| *index != assembly.entry_index) {
         let root_assembly = assembly
             .with_entry_index(index)
             .ok_or_else(|| anyhow::anyhow!("assembly root unit {index} is outside the prepared assembly"))?;
         let unit = &assembly.units[index];
-        if run_rules {
-            let mut rule_options = AnalysisOptions::default();
-            rule_options.module_level_meta_items_allowed = options.front_end.module_level_meta_items_allowed;
-            rule_options.known_assembly_module_paths = Some(known_module_paths.clone());
-            rule_options.program_assembly_module_index = Some((*assembly.module_index).clone());
-            rule_options.entry_source_path = Some(unit.path.clone());
-            rule_options.program_assembly = Some(root_assembly.clone());
-            rule_options.defer_try_diagnostics = defer_try_diagnostics;
-            diagnostics.extend(semantic_rule_diagnostics_for_program_with_pipeline(
-                &unit.program.node,
-                unit.logical_name.clone(),
-                &unit.source,
-                rule_options,
-                None,
-            ));
-        }
-        if let Err(error) = resolve_and_type_program_with_assembly(
-            &unit.program,
-            Some(&root_assembly),
+        let mut rule_options = AnalysisOptions::default();
+        rule_options.module_level_meta_items_allowed = options.front_end.module_level_meta_items_allowed;
+        rule_options.known_assembly_module_paths = Some(known_module_paths.clone());
+        rule_options.program_assembly_module_index = Some((*assembly.module_index).clone());
+        rule_options.entry_source_path = Some(unit.path.clone());
+        rule_options.program_assembly = Some(root_assembly);
+        rule_options.defer_try_diagnostics = defer_try_diagnostics;
+        diagnostics.extend(semantic_rule_diagnostics_for_program_with_pipeline(
+            &unit.program.node,
+            unit.logical_name.clone(),
+            &unit.source,
+            rule_options,
             None,
-            DependencyTypingPolicy::EntryOnly,
-        ) {
-            diagnostics.extend(semantic_facts_errors_to_diagnostics(error, &unit.logical_name, &unit.source));
-        }
+        ));
     }
     Ok(diagnostics)
 }

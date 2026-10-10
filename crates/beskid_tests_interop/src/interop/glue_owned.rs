@@ -326,16 +326,15 @@ fn with_owned_glue_input<T>(
     let plan = resolved.compile_plan.as_ref().ok_or_else(|| anyhow::anyhow!("owned fixture has no CompilePlan"))?;
     anyhow::ensure!(plan.project_name == "manual_owned" && plan.target.name == "ManualOwned");
     // Corelib depends on the native Serialization Mod: qualify it against this private prefix's kit.
-    let mod_invoker = beskid_tests_mod_host::installed_runtime_mod_invoker(plan)?;
+    let native_mods = beskid_tests_mod_host::installed_runtime_mod_host(plan)?;
     let front = beskid_queries::prepare_compilation(
         &resolved,
         beskid_analysis::services::PrepareOptions {
-            mod_invoker: Some(mod_invoker),
             front_end: beskid_analysis::services::FrontEndOptions {
                 with_semantic_diagnostics: true,
                 ..Default::default()
             },
-            ..Default::default()
+            ..beskid_analysis::services::PrepareOptions::with_mod_host(native_mods)
         },
         None,
     )?
@@ -1358,7 +1357,7 @@ fn v06_native_test_object_compiles_shared_helper_once_and_links_distinct_entries
             let plan = synthetic_compile_plan_for_source(&path);
             let resolved = resolved_input_from_plan(path, source.into(), plan, None, None);
             let front =
-                beskid_queries::compile_front_end_from_resolved_input(&resolved, FrontEndOptions::default(), None)
+                beskid_queries::compile_mod_free_front_end(&resolved, FrontEndOptions::default(), None)
                     .unwrap();
             let profile = match qualified_profile() {
                 beskid_abi::runtime_kit::BuildProfile::Debug => beskid_aot::BuildProfile::Debug,

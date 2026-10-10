@@ -148,11 +148,14 @@ impl<'a> TypeSurfaceBuilder<'a> {
     }
 
     pub(super) fn resolved_type_at(&self, span: SpanInfo) -> Option<ResolvedType> {
-        // A unit surface must never consume the entry unit's unscoped span table. Different
-        // source files reuse byte offsets, so an exact offset collision can otherwise turn a
-        // dependency declaration such as `Stack<T>` into an unrelated entry type. Only an
-        // explicitly source-scoped fact belongs to this surface; declaration-path lookup below
-        // remains the authority when dependency bodies were not resolved.
-        self.resolution.tables.scoped_resolved_type_at(span, &self.source_path)
+        // A dependency surface must never consume the entry unit's unscoped span table.
+        // Different source files reuse byte offsets, so an exact offset collision can otherwise
+        // turn a dependency declaration such as `Stack<T>` into an unrelated entry type. Only an
+        // explicitly source-scoped fact belongs to a dependency surface; declaration-path lookup
+        // remains the authority when dependency bodies were not resolved. The unscoped table is
+        // the entry unit's own resolution, so the entry surface reads it.
+        self.resolution.tables.scoped_resolved_type_at(span, &self.source_path).or_else(|| {
+            self.entry_unit.then(|| self.resolution.tables.resolved_types.get(&span).cloned()).flatten()
+        })
     }
 }

@@ -19,6 +19,19 @@ pub fn build_unit_type_surface(
     builder.finish()
 }
 
+/// Build the type surface of the entry unit, whose declarations the resolution's unscoped span
+/// tables resolved. Impl where-bounds, for example, are known only from those facts.
+pub fn build_entry_unit_type_surface(
+    program: &Spanned<Program>,
+    resolution: &Resolution,
+    source_path: &Path,
+) -> UnitTypeSurface {
+    let mut builder = TypeSurfaceBuilder::new(resolution, source_path);
+    builder.entry_unit = true;
+    builder.walk_program(program);
+    builder.finish()
+}
+
 /// Free-function where-bound provenance for a program resolved without a source path.
 ///
 /// A source-less single-program resolution has no unit surface, so the checker would otherwise

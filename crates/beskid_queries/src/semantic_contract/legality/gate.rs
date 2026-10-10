@@ -10,11 +10,12 @@
 //! parameters, inferred lambdas) are never findings.
 //!
 //! The collectors live in `gate/operators.rs` (E1209, E1210, binary E1206, T0905),
-//! `gate/control.rs` (E1215-E1218, E1219, E1221, E1223-E1225) and `gate/expressions.rs`
-//! (E1102, E1201, E1202, E1204, E1211, E1213, E1228, E1606, E1610).
+//! `gate/control.rs` (E1215-E1218, E1219, E1221, E1223-E1225), `gate/expressions.rs`
+//! (E1102, E1201, E1202, E1204, E1211, E1213, E1228, E1606, E1610) and `gate/clif.rs` (E1232).
 
 use super::*;
 
+mod clif;
 mod control;
 mod expressions;
 mod operators;
@@ -29,7 +30,10 @@ pub enum GateObligationKind {
     InvalidUnaryOp,
     /// E1206: binary operands of two different, non-numeric proven primitives.
     OperandMismatch { expected: SemanticTypeId, actual: SemanticTypeId },
-    /// T0905: a suffixed integer literal or a float literal outside its primitive's range.
+    /// T0905: a suffixed integer literal or a float literal outside its primitive's range, or
+    /// an unsuffixed integer literal outside the primitive integer its proven destination
+    /// declares (legacy `type_id_for_literal` / `type_unary_expression` under
+    /// `contextual_expected_type`).
     NumericLiteralOutOfRange { primitive: Arc<str> },
     /// E1223: a `spawn` whose target is not a zero-argument callable entry.
     SpawnTargetNotFiberCompatible,
@@ -73,6 +77,9 @@ pub enum GateObligationKind {
     DuplicateLocal { name: Arc<str>, previous: SourceSpan },
     /// E1610: a call whose concrete type does not satisfy a `where` bound of the callee.
     GenericBoundNotSatisfied { type_name: Arc<str>, contract_name: Arc<str> },
+    /// E1232: a `clif { ... }` block the legacy `type_clif_block`, `type_clif_block_statement`,
+    /// `check_clif_block_body`, or `check_clif_parameters` rejects, with the legacy detail text.
+    InvalidClifBlock { detail: Arc<str> },
 }
 
 /// A failed `check` obligation and the exact node that carries the diagnostic.
@@ -103,7 +110,7 @@ fn gate_obligations_tracked(
         }
         let mut findings = Vec::new();
         operators::collect_operator_obligations(db, program, index, key, &mut findings);
-        operators::collect_literal_obligations(program, index, key, &mut findings);
+        operators::collect_literal_obligations(db, program, index, key, &mut findings);
         control::collect_spawn_obligations(db, program, index, key, &mut findings);
         control::collect_iterator_obligations(db, program, index, key, &mut findings);
         control::collect_event_obligations(db, program, index, key, &mut findings);
@@ -111,6 +118,7 @@ fn gate_obligations_tracked(
         expressions::collect_member_obligations(db, program, index, key, &mut findings);
         expressions::collect_call_obligations(db, program, index, key, &mut findings);
         expressions::collect_duplicate_local_obligations(program, index, key, &mut findings);
+        clif::collect_clif_obligations(db, program, index, key, &mut findings);
         findings.sort_by_key(|finding| finding.site.node.0);
         Some(Arc::from(findings))
     })
@@ -174,6 +182,9 @@ pub fn check_gate_obligations(db: &dyn Db, items: &[AstNodeKey]) -> Vec<Semantic
                         type_name: type_name.to_string(),
                         contract_name: contract_name.to_string(),
                     }
+                }
+                GateObligationKind::InvalidClifBlock { detail } => {
+                    SemanticIssueKind::InvalidClifBlock { detail: detail.to_string() }
                 }
             };
             findings.push(SemanticFinding { kind, site: obligation.site, related: Vec::new() });

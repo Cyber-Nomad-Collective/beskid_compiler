@@ -293,7 +293,7 @@ fn contextual_integer_literal_abi_type_contextualizes_only_bare_integer_literals
 }
 
 #[test]
-fn contextual_integer_literal_abi_type_return_boundary_rejects_literals_nested_in_return_calls() {
+fn contextual_integer_literal_abi_type_binds_nested_return_call_literals_to_the_callee_parameter() {
     let direct_return = "i32 Main() { return 8; }";
     let (db, _project, unit, generation, index) = setup(direct_return);
     let literal = key(unit, generation, &index, NodeKind::LiteralExpression, 0);
@@ -310,15 +310,23 @@ fn contextual_integer_literal_abi_type_return_boundary_rejects_literals_nested_i
         Some(SemanticTypeId::I64)
     );
 
+    // The innermost typed context owns a literal: the runtime intrinsic's `word` parameter,
+    // never the enclosing return type or conversion.
     let nested_in_return_call = "i32 Main(pointer state) { return i32(pointer_add(state, 8)); }";
     let (db, _project, unit, generation, index) = setup(nested_in_return_call);
     let literal = key(unit, generation, &index, NodeKind::LiteralExpression, 0);
-    assert_unavailable(contextual_integer_literal_abi_type(&db, literal));
+    assert_eq!(
+        contextual_integer_literal_abi_type(&db, literal).expect("intrinsic argument literal"),
+        Some(SemanticTypeId::WORD)
+    );
 
     let nested_in_return_call_same_width = "pointer Main(pointer state) { return pointer_add(state, 8); }";
     let (db, _project, unit, generation, index) = setup(nested_in_return_call_same_width);
     let literal = key(unit, generation, &index, NodeKind::LiteralExpression, 0);
-    assert_unavailable(contextual_integer_literal_abi_type(&db, literal));
+    assert_eq!(
+        contextual_integer_literal_abi_type(&db, literal).expect("same-width intrinsic argument literal"),
+        Some(SemanticTypeId::WORD)
+    );
 }
 
 #[test]

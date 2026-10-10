@@ -5,7 +5,7 @@ use beskid_abi::abi_v5::TargetMetadata;
 use beskid_analysis::projects::{CompilePlan, Target, TargetKind};
 use beskid_analysis::services::{FrontEndOptions, resolved_input_from_plan};
 use beskid_aot::lower_prepared_syntax_library;
-use beskid_queries::compile_front_end_from_resolved_input;
+use beskid_queries::compile_mod_free_front_end;
 
 #[test]
 fn library_with_entry_exports_its_own_imported_units() {
@@ -35,7 +35,7 @@ fn library_with_entry_exports_its_own_imported_units() {
         has_core_dependency: false,
     };
     let resolved = resolved_input_from_plan(source_root.join("Lib.bd"), entry_source.into(), plan, None, None);
-    let front = compile_front_end_from_resolved_input(
+    let front = compile_mod_free_front_end(
         &resolved,
         FrontEndOptions { with_semantic_diagnostics: false, ..Default::default() },
         None,

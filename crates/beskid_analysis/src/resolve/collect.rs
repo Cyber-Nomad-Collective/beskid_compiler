@@ -1,10 +1,11 @@
+use std::collections::{BTreeMap, HashSet};
 use std::path::PathBuf;
 
 use crate::syntax::{self, Spanned};
 use crate::syntax::{Node, Type, UseDeclaration, Visibility};
 
 use super::errors::ResolveError;
-use super::ids::ItemId;
+use super::ids::{ItemId, ModuleId};
 use super::items::{ItemInfo, ItemKind};
 use super::member_items;
 use super::module_graph::ModuleGraph;
@@ -160,6 +161,7 @@ impl Resolver {
                 self.collect_use_declaration(item, def);
             }
         }
+        self.apply_pending_reexport_imports();
         self.add_implicit_core_import();
     }
 
@@ -177,6 +179,7 @@ impl Resolver {
                 self.collect_item(item);
             }
         }
+        self.apply_pending_reexport_imports();
         self.add_implicit_core_import();
     }
 
@@ -446,6 +449,13 @@ impl Resolver {
     /// item visible that another module declares. When a later `use` names the declaring module
     /// of the same item, that `use` becomes the item's origin: usage must credit the import that
     /// declares the item, not one that only passes it through.
+    ///
+    /// A public module declaration (`pub mod Beskid.Syntax.Nodes.NodeSpan;` in the hub
+    /// `Beskid.Syntax.Nodes`) re-exports the public items of that child module, so `use` of the
+    /// hub reaches them too. Re-export distance decides precedence, as in the semantic contract
+    /// (`nearest_reexport_route`): an item of the used module shadows a re-exported one of the
+    /// same name, and two different items of one name at the same distance are ambiguous and
+    /// neither is imported.
     fn import_public_items_from_module(&mut self, module_path: &[String], origin_span: syntax::SpanInfo) {
         let Some(target_module_id) = self.module_graph.module_id(module_path) else {
             return;
@@ -453,7 +463,7 @@ impl Resolver {
         let Some(target_module) = self.module_graph.module(target_module_id) else {
             return;
         };
-        let imports: Vec<(String, ItemId, bool)> = target_module
+        let mut imports: Vec<(String, ItemId, bool)> = target_module
             .scope
             .iter()
             .filter_map(|(name, item_id)| {
@@ -470,9 +480,16 @@ impl Resolver {
                 }
             })
             .collect();
+        self.pending_reexport_imports.push((target_module_id, origin_span));
+        self.insert_scope_imports(imports, origin_span);
+    }
+
+    /// Bind imported public items in the current module scope. A local declaration (or a
+    /// different item already bound) shadows an import, which then keeps no origin.
+    fn insert_scope_imports(&mut self, mut imports: Vec<(String, ItemId, bool)>, origin_span: syntax::SpanInfo) {
+        imports.sort_by(|left, right| left.0.cmp(&right.0).then(left.1.0.cmp(&right.1.0)));
         for (name, item_id, declared) in imports {
             if let Some(previous) = self.module_graph.insert_item(self.current_module, name.clone(), item_id) {
-                // A local declaration (or a different item) shadows the import and keeps no origin.
                 let same_import = previous == item_id
                     && self.imported_scope_entries.contains(&(self.current_module, name.clone()));
                 if !same_import {
@@ -496,6 +513,91 @@ impl Resolver {
             }
             self.imported_scope_origins.insert(name, origin_span);
         }
+    }
+
+    /// Bind the public re-exports of every module the current unit used, once all of the unit's
+    /// direct imports are bound: an item a used module declares or imports itself always takes
+    /// precedence over an item another used module only re-exports, whatever the `use` order.
+    fn apply_pending_reexport_imports(&mut self) {
+        for (module_id, origin_span) in std::mem::take(&mut self.pending_reexport_imports) {
+            let items = self.reexported_public_items(module_id);
+            self.insert_scope_imports(items, origin_span);
+        }
+    }
+
+    /// Public items re-exported by the public child module declarations of `module_id`, nearest
+    /// re-export distance first. Names the module's own public surface provides, or that a nearer
+    /// distance provides, are shadowed; a name that two different items provide at one
+    /// distance is ambiguous and omitted.
+    fn reexported_public_items(&self, module_id: ModuleId) -> Vec<(String, ItemId, bool)> {
+        let mut shadowed: HashSet<String> = self
+            .module_graph
+            .module(module_id)
+            .map(|module| {
+                module
+                    .scope
+                    .iter()
+                    .filter(|(_, item_id)| {
+                        self.items.get(item_id.0).is_some_and(|item| {
+                            item.visibility == Visibility::Public
+                                && matches!(
+                                    item.kind,
+                                    ItemKind::Function | ItemKind::Enum | ItemKind::Type | ItemKind::Contract
+                                )
+                        })
+                    })
+                    .map(|(name, _)| name.clone())
+                    .collect()
+            })
+            .unwrap_or_default();
+        let mut visited: HashSet<ModuleId> = HashSet::from([module_id]);
+        let mut frontier = vec![module_id];
+        let mut out = Vec::new();
+        while !frontier.is_empty() {
+            let mut children = Vec::new();
+            for module in &frontier {
+                let Some(info) = self.module_graph.module(*module) else { continue };
+                for (name, item_id) in &info.scope {
+                    let Some(item) = self.items.get(item_id.0) else { continue };
+                    if item.kind != ItemKind::Module || item.visibility != Visibility::Public {
+                        continue;
+                    }
+                    let mut child_path = info.path.clone();
+                    child_path.push(name.clone());
+                    if let Some(child) = self.module_graph.module_id(&child_path)
+                        && visited.insert(child)
+                    {
+                        children.push(child);
+                    }
+                }
+            }
+            let mut level: BTreeMap<String, Vec<ItemId>> = BTreeMap::new();
+            for child in &children {
+                let Some(info) = self.module_graph.module(*child) else { continue };
+                for (name, item_id) in &info.scope {
+                    if shadowed.contains(name) || self.imported_scope_entries.contains(&(*child, name.clone())) {
+                        continue;
+                    }
+                    let Some(item) = self.items.get(item_id.0) else { continue };
+                    if item.visibility == Visibility::Public
+                        && matches!(item.kind, ItemKind::Function | ItemKind::Enum | ItemKind::Type | ItemKind::Contract)
+                    {
+                        let candidates = level.entry(name.clone()).or_default();
+                        if !candidates.contains(item_id) {
+                            candidates.push(*item_id);
+                        }
+                    }
+                }
+            }
+            for (name, items) in level {
+                shadowed.insert(name.clone());
+                if let [item_id] = items.as_slice() {
+                    out.push((name, *item_id, true));
+                }
+            }
+            frontier = children;
+        }
+        out
     }
 
     pub(crate) fn mark_imported_scope_name_used(&mut self, name: &str) {
@@ -673,5 +775,108 @@ mod tests {
                 "resolved imported declaration must retain its originating use span: {span:?}"
             );
         }
+    }
+
+    /// `use` of a hub module reaches the public items of the child modules it declares with
+    /// `pub mod`, the way the SDK hub `Beskid.Syntax.Nodes` exposes `NodeSpan`.
+    #[test]
+    fn hub_module_use_reaches_items_of_its_public_child_modules() {
+        let span = parse_program("pub type NodeSpan { pub u64 start, }").expect("parse child");
+        let field = parse_program("pub type Field { pub u64 id, }").expect("parse child");
+        let hidden = parse_program("pub type Hidden { pub u64 id, }").expect("parse private child");
+        let hub = parse_program(
+            "pub mod Beskid.Syntax.Nodes.NodeSpan;\npub mod Beskid.Syntax.Nodes.Field;\nmod Beskid.Syntax.Nodes.Hidden;",
+        )
+        .expect("parse hub");
+        let entry = parse_program("use Beskid.Syntax.Nodes;\npub NodeSpan Origin(Field field) { return NodeSpan { start: field.id }; }")
+            .expect("parse entry");
+        let nodes = ["Beskid".to_owned(), "Syntax".to_owned(), "Nodes".to_owned()];
+        let child = |name: &str| {
+            let mut path = nodes.to_vec();
+            path.push(name.to_owned());
+            path
+        };
+
+        let seeded = || {
+            let mut resolver = Resolver::new();
+            resolver.collect_program_in_module(&span, &child("NodeSpan"), None);
+            resolver.collect_program_in_module(&field, &child("Field"), None);
+            resolver.collect_program_in_module(&hidden, &child("Hidden"), None);
+            resolver.collect_program_in_module(&hub, &nodes, None);
+            resolver
+        };
+        seeded().resolve_program(&entry).expect("hub use reaches re-exported child items");
+
+        let private = parse_program("use Beskid.Syntax.Nodes;\npub Hidden Leak() { return Hidden { id: 0 }; }")
+            .expect("parse private probe");
+        let errors = seeded().resolve_program(&private).expect_err("a private child module is not re-exported");
+        assert!(
+            errors.iter().any(|error| matches!(error, super::ResolveError::UnknownType { name, .. } if name == "Hidden")),
+            "{errors:?}"
+        );
+    }
+
+    /// Two public child modules providing one name at the same re-export distance are ambiguous:
+    /// the hub `use` imports neither.
+    #[test]
+    fn hub_module_use_omits_names_two_children_provide() {
+        let left = parse_program("pub type Shared { pub u64 left, }").expect("parse left");
+        let right = parse_program("pub type Shared { pub u64 right, }").expect("parse right");
+        let hub = parse_program("pub mod Hub.Left;\npub mod Hub.Right;").expect("parse hub");
+        let entry = parse_program("use Hub;\npub Shared Pick(Shared value) { return value; }").expect("parse entry");
+
+        let mut resolver = Resolver::new();
+        resolver.collect_program_in_module(&left, &["Hub".to_owned(), "Left".to_owned()], None);
+        resolver.collect_program_in_module(&right, &["Hub".to_owned(), "Right".to_owned()], None);
+        resolver.collect_program_in_module(&hub, &["Hub".to_owned()], None);
+        let errors = resolver.resolve_program(&entry).expect_err("ambiguous re-export fails closed");
+        assert!(
+            errors.iter().any(|error| matches!(error, super::ResolveError::UnknownType { name, .. } if name == "Shared")),
+            "{errors:?}"
+        );
+    }
+
+    /// A type a used module declares itself takes precedence over a same-named type another used
+    /// hub only re-exports, whichever `use` comes first.
+    #[test]
+    fn direct_import_beats_hub_reexport_regardless_of_use_order() {
+        let syntax_field = parse_program("pub type Field { pub u64 id, }").expect("parse syntax field");
+        let hub = parse_program("pub mod Beskid.Syntax.Nodes.Field;").expect("parse hub");
+        let semantic = parse_program("pub type Field { pub u64 token, }").expect("parse semantic");
+        let entry = parse_program(
+            "use Beskid.Syntax.Nodes;\nuse Beskid.Compiler.Semantic;\npub u64 Token(Field field) { return field.token; }",
+        )
+        .expect("parse entry");
+
+        let mut resolver = Resolver::new();
+        resolver.collect_program_in_module(
+            &syntax_field,
+            &["Beskid".to_owned(), "Syntax".to_owned(), "Nodes".to_owned(), "Field".to_owned()],
+            None,
+        );
+        resolver.collect_program_in_module(&hub, &["Beskid".to_owned(), "Syntax".to_owned(), "Nodes".to_owned()], None);
+        resolver.collect_program_in_module(
+            &semantic,
+            &["Beskid".to_owned(), "Compiler".to_owned(), "Semantic".to_owned()],
+            None,
+        );
+        let resolution = resolver.resolve_program(&entry).expect("resolve entry");
+        let crate::syntax::Node::Function(function) = &entry.node.items[2].node else { panic!("function expected") };
+        let crate::syntax::Type::Complex(path) = &function.node.parameters[0].node.ty.node else {
+            panic!("nominal parameter type expected")
+        };
+        let Some(super::super::tables::ResolvedType::Item(item)) = resolution.tables.resolved_types.get(&path.span)
+        else {
+            panic!("`Field` must resolve to a type")
+        };
+        // `Semantic.bd` is collected after the syntax `Field`, so its type has the larger id.
+        let semantic_field = resolution
+            .items
+            .iter()
+            .filter(|info| info.name == "Field" && info.kind == super::ItemKind::Type)
+            .map(|info| info.id)
+            .max_by_key(|id| id.0)
+            .expect("Semantic.Field");
+        assert_eq!(*item, semantic_field, "the directly imported Semantic.Field wins over the re-exported one");
     }
 }

@@ -55,7 +55,7 @@ fn run_build_and_execute(args: RunArgs) -> Result<()> {
     };
     let (mut session, resolved) =
         CommandSession::open_and_resolve(args.plain, PipelineProgressKind::PrepareAndRun, &resolve_args)?;
-    session.set_mod_invoker(super::compiler_mod::prepare_native_mod_executor(
+    session.set_mod_host(super::compiler_mod::prepare_native_mod_executor(
         &resolved,
         args.lockfile.WorkspaceOptions(),
         Some(session.observer()),

@@ -3,7 +3,7 @@ use beskid_analysis::services::{
     FrontEndOptions, ResolvedInput, resolved_input_from_plan, synthetic_compile_plan_for_source,
 };
 use beskid_aot::lower_prepared_syntax_entrypoint;
-use beskid_queries::compile_front_end_from_resolved_input;
+use beskid_queries::compile_mod_free_front_end;
 
 #[test]
 fn aot_lowers_prepared_syntax_with_its_object_target_isa() {
@@ -14,7 +14,7 @@ fn aot_lowers_prepared_syntax_with_its_object_target_isa() {
     std::fs::write(&path, source).expect("write source");
     let plan = synthetic_compile_plan_for_source(&path);
     let resolved: ResolvedInput = resolved_input_from_plan(path, source.into(), plan, None, None);
-    let front = compile_front_end_from_resolved_input(
+    let front = compile_mod_free_front_end(
         &resolved,
         FrontEndOptions { with_semantic_diagnostics: false, ..Default::default() },
         None,

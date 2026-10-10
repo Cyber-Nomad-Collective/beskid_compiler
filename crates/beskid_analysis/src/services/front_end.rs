@@ -100,7 +100,7 @@ pub fn compile_front_end_with_pipeline(
     );
 
     let prepared =
-        prepare_compilation(&resolved, PrepareOptions { mod_invoker: None, front_end: options, ..Default::default() }, pipeline)?;
+        prepare_compilation(&resolved, PrepareOptions { front_end: options, ..PrepareOptions::without_mods() }, pipeline)?;
 
     prepared.into_executable()
 }

@@ -34,6 +34,9 @@ pub struct Resolver {
     pub(crate) declaring_scope_origins: HashSet<String>,
     /// Module scope entries that arrived through a `use` import rather than a declaration.
     pub(crate) imported_scope_entries: HashSet<(ModuleId, String)>,
+    /// Modules the unit being collected used, whose public re-exports (`pub mod` children) are
+    /// bound after all of the unit's direct imports.
+    pub(crate) pending_reexport_imports: Vec<(ModuleId, SpanInfo)>,
     /// Successful module-import aliases, keyed by the usable module alias.
     pub(crate) module_import_origins: HashMap<String, SpanInfo>,
     pub(crate) current_source_path: Option<PathBuf>,

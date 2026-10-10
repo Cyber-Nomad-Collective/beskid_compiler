@@ -553,9 +553,10 @@ impl<'a> TypeChecker<'a> {
             return;
         }
 
-        // Compiler-issued runtime bridges in the canonical Dynamic source use the runtime (Rust
-        // ABI) plane, not the user C ABI profile; the semantic Dynamic bridge authority admits
-        // each one exactly. Every other `[Extern]` contract is a user import under the C profile.
+        // Compiler-issued runtime bridges (the canonical Dynamic and serialization descriptor
+        // sources) use the runtime plane, not the user C ABI profile; their semantic bridge
+        // authorities admit each one exactly. Every other `[Extern]` contract is a user import
+        // under the C profile.
         if self.runtime_plane_extern_unit {
             return;
         }

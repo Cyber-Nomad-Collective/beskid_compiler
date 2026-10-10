@@ -141,8 +141,10 @@ pub(super) fn nodes_of_kind(index: &SyntaxIndex, root: AstNodeId, kind: NodeKind
 }
 
 /// `return` statements owned directly by the item (not by a nested lambda), judged against the
-/// item's declared result. Only functions and methods declare a result syntactically; a test
-/// body keeps its legacy authority.
+/// item's declared result. A test declares no result: the legacy checker types its body with
+/// `current_return_type` = `unit` (`type_item`, `Node::TestDefinition`), so a bare `return;` is
+/// legal there and a `return` of a proven non-unit value is a `require_same_type(unit, actual)`
+/// mismatch (E1206) at the statement.
 fn collect_return_obligations(
     db: &dyn Db,
     program: &Spanned<beskid_analysis::syntax::Program>,
@@ -155,6 +157,8 @@ fn collect_return_obligations(
         function.return_type.as_ref()
     } else if let Some(method) = item.of::<MethodDefinition>() {
         method.return_type.as_ref()
+    } else if item.of::<beskid_analysis::syntax::TestDefinition>().is_some() {
+        None
     } else {
         return;
     };

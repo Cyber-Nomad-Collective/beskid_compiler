@@ -95,7 +95,18 @@ mod tests {
             }],
         }];
         let invoker = crate::mod_host::NativeContractInvoker::unavailable();
-        let error = collect_contracts(&loaded, &ModHostInput::default(), &invoker, None)
+        let input = ModHostInput {
+            semantic_scope: None,
+            semantic_authority: None,
+            syntax_generation_id: None,
+            compile_plan: None,
+            source_name: "",
+            source: "",
+            pipeline: None,
+            mod_host: &crate::mod_host::ModHost::NoMods,
+            cached_target_fingerprint: None,
+        };
+        let error = collect_contracts(&loaded, &input, &invoker, None)
             .expect_err("unavailable native dispatch must fail closed");
         let message = format!("{error:#}");
         assert!(

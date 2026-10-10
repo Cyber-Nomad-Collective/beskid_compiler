@@ -86,42 +86,32 @@ impl SemanticPipelineRule {
         result
     }
 
-    fn collect_enum_variants(
-        &self,
-        ctx: &RuleContext,
-        program: &Spanned<Program>,
-    ) -> HashMap<String, HashMap<String, usize>> {
-        let mut result = HashMap::new();
-
-        for item in &program.node.items {
-            let Node::EnumDefinition(definition) = &item.node else {
-                continue;
-            };
-
-            let mut variants = HashMap::new();
-            for variant in Query::from(&definition.node).of::<crate::syntax::EnumVariant>() {
-                variants.insert(variant.name.node.name.clone(), variant.fields.len());
-            }
-            result.insert(definition.node.name.node.name.clone(), variants);
-        }
-
-        for unit_program in self.assembly_programs_excluding_entry(ctx) {
+    /// Variant arities of the enums this syntactic stage can identify by simple name.
+    ///
+    /// The stage runs before name resolution, so an enum path is matched only by the last
+    /// segment of its type path. That identifies a declaration only when exactly one enum of
+    /// that name exists in the entry unit and its assembled closure: two modules may each
+    /// declare `Kind`, and `A.Kind::X` / `B.Kind::Y` then name different enums. Such a name maps
+    /// to `None`, and the resolved type checker (unknown variants, pattern arity, and match
+    /// exhaustiveness over the resolved declaration) is its only judge.
+    fn collect_enum_variants(&self, ctx: &RuleContext, program: &Spanned<Program>) -> EnumVariantFacts {
+        let mut result = EnumVariantFacts::new();
+        let programs = std::iter::once(program).chain(self.assembly_programs_excluding_entry(ctx));
+        for unit_program in programs {
             for item in &unit_program.node.items {
                 let Node::EnumDefinition(definition) = &item.node else {
                     continue;
                 };
-                let enum_name = definition.node.name.node.name.clone();
-                if result.contains_key(&enum_name) {
-                    continue;
-                }
                 let mut variants = HashMap::new();
                 for variant in Query::from(&definition.node).of::<crate::syntax::EnumVariant>() {
                     variants.insert(variant.name.node.name.clone(), variant.fields.len());
                 }
-                result.insert(enum_name, variants);
+                result
+                    .entry(definition.node.name.node.name.clone())
+                    .and_modify(|existing| *existing = None)
+                    .or_insert(Some(variants));
             }
         }
-
         result
     }
 
@@ -144,7 +134,7 @@ impl SemanticPipelineRule {
         &self,
         ctx: &mut RuleContext,
         match_expression: &Spanned<crate::syntax::MatchExpression>,
-        enum_variants: &HashMap<String, HashMap<String, usize>>,
+        enum_variants: &EnumVariantFacts,
     ) {
         let mut arm_kind: Option<&'static str> = None;
         let mut wildcard_seen = false;
@@ -209,7 +199,7 @@ impl SemanticPipelineRule {
         let Some(enum_name) = enum_name else {
             return;
         };
-        let Some(variants) = enum_variants.get(&enum_name) else {
+        let Some(Some(variants)) = enum_variants.get(&enum_name) else {
             return;
         };
         if variants.keys().all(|variant| covered_variants.contains(variant)) {
@@ -253,7 +243,7 @@ impl SemanticPipelineRule {
         ctx: &mut RuleContext,
         pattern: &Spanned<Pattern>,
         names: &mut HashSet<String>,
-        enum_variants: &HashMap<String, HashMap<String, usize>>,
+        enum_variants: &EnumVariantFacts,
     ) {
         match &pattern.node {
             Pattern::Identifier(identifier) => {
@@ -276,30 +266,34 @@ impl SemanticPipelineRule {
                     .map(|segment| segment.node.name.node.name.clone())
                     .unwrap_or_default();
                 let variant_name = enum_pattern.node.path.node.variant.node.name.clone();
-                let Some(variants) = enum_variants.get(&enum_name) else {
-                    ctx.emit_issue(
-                        enum_pattern.node.path.span,
-                        SemanticIssueKind::UnknownEnumPath { enum_name, variant_name },
-                    );
-                    return;
-                };
-
-                let Some(expected_arity) = variants.get(&variant_name) else {
-                    ctx.emit_issue(
-                        enum_pattern.node.path.span,
-                        SemanticIssueKind::UnknownEnumPath { enum_name, variant_name },
-                    );
-                    return;
-                };
-
-                if enum_pattern.node.items.len() != *expected_arity {
-                    ctx.emit_issue(
-                        enum_pattern.span,
-                        SemanticIssueKind::PatternArityMismatch {
-                            expected: *expected_arity,
-                            actual: enum_pattern.node.items.len(),
-                        },
-                    );
+                match enum_variants.get(&enum_name) {
+                    None => {
+                        ctx.emit_issue(
+                            enum_pattern.node.path.span,
+                            SemanticIssueKind::UnknownEnumPath { enum_name, variant_name },
+                        );
+                        return;
+                    }
+                    // Several enums share this name; the resolved type checker judges the path.
+                    Some(None) => {}
+                    Some(Some(variants)) => {
+                        let Some(expected_arity) = variants.get(&variant_name) else {
+                            ctx.emit_issue(
+                                enum_pattern.node.path.span,
+                                SemanticIssueKind::UnknownEnumPath { enum_name, variant_name },
+                            );
+                            return;
+                        };
+                        if enum_pattern.node.items.len() != *expected_arity {
+                            ctx.emit_issue(
+                                enum_pattern.span,
+                                SemanticIssueKind::PatternArityMismatch {
+                                    expected: *expected_arity,
+                                    actual: enum_pattern.node.items.len(),
+                                },
+                            );
+                        }
+                    }
                 }
 
                 for item in &enum_pattern.node.items {
@@ -310,6 +304,10 @@ impl SemanticPipelineRule {
         }
     }
 }
+
+/// Variant arities keyed by enum simple name; `None` marks a name that more than one enum
+/// declaration in the assembled closure shares.
+type EnumVariantFacts = HashMap<String, Option<HashMap<String, usize>>>;
 
 /// A single-segment call whose callee name matches a variant of a known enum.
 pub(super) struct UnqualifiedVariantCall {
@@ -322,7 +320,7 @@ struct ControlFlowVisitor<'a> {
     rule: &'a SemanticPipelineRule,
     ctx: &'a mut RuleContext,
     loop_depth: usize,
-    enum_variants: &'a HashMap<String, HashMap<String, usize>>,
+    enum_variants: &'a EnumVariantFacts,
     variant_to_enum: &'a HashMap<String, String>,
     unqualified_calls: std::rc::Rc<std::cell::RefCell<Vec<UnqualifiedVariantCall>>>,
 }
@@ -331,7 +329,7 @@ impl<'a> ControlFlowVisitor<'a> {
     fn new(
         rule: &'a SemanticPipelineRule,
         ctx: &'a mut RuleContext,
-        enum_variants: &'a HashMap<String, HashMap<String, usize>>,
+        enum_variants: &'a EnumVariantFacts,
         variant_to_enum: &'a HashMap<String, String>,
         unqualified_calls: std::rc::Rc<std::cell::RefCell<Vec<UnqualifiedVariantCall>>>,
     ) -> Self {
@@ -420,12 +418,17 @@ impl<'a> ControlFlowVisitor<'a> {
             .map(|segment| segment.node.name.node.name.clone())
             .unwrap_or_default();
         let variant_name = constructor_expression.node.path.node.variant.node.name.clone();
-        let Some(variants) = self.enum_variants.get(&enum_name) else {
-            self.ctx.emit_issue(
-                constructor_expression.node.path.span,
-                SemanticIssueKind::UnknownEnumPath { enum_name, variant_name },
-            );
-            return;
+        let variants = match self.enum_variants.get(&enum_name) {
+            None => {
+                self.ctx.emit_issue(
+                    constructor_expression.node.path.span,
+                    SemanticIssueKind::UnknownEnumPath { enum_name, variant_name },
+                );
+                return;
+            }
+            // Several enums share this name; the resolved type checker judges the path.
+            Some(None) => return,
+            Some(Some(variants)) => variants,
         };
 
         let Some(expected_arity) = variants.get(&variant_name) else {

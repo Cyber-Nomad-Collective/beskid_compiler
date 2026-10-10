@@ -51,7 +51,7 @@ mod tests {
     use beskid_analysis::services::{
         FrontEndOptions, ResolvedInput, resolved_input_from_plan, synthetic_compile_plan_for_source,
     };
-    use beskid_queries::compile_front_end_from_resolved_input;
+    use beskid_queries::compile_mod_free_front_end;
 
     #[test]
     fn emits_reachable_syntax_items_without_hir_lowering() {
@@ -66,7 +66,7 @@ mod tests {
         std::fs::write(&path, source).expect("write source");
         let plan = synthetic_compile_plan_for_source(&path);
         let resolved: ResolvedInput = resolved_input_from_plan(path.clone(), source.into(), plan, None, None);
-        let front = compile_front_end_from_resolved_input(
+        let front = compile_mod_free_front_end(
             &resolved,
             FrontEndOptions { with_semantic_diagnostics: false, ..Default::default() },
             None,

@@ -56,7 +56,7 @@ fn fresh_native_runtime_kit_executes_a_canonical_entrypoint() {
         None,
         None,
     );
-    let front = beskid_queries::compile_front_end_from_resolved_input(&resolved, FrontEndOptions::default(), None)
+    let front = beskid_queries::compile_mod_free_front_end(&resolved, FrontEndOptions::default(), None)
         .expect("prepare canonical entrypoint");
 
     let output = run_entrypoint_from_front_end_with_engine(
@@ -100,6 +100,7 @@ fn public_run_entrypoint_uses_the_syntax_isle_path() {
         Path::new("public-syntax-entrypoint.bd"),
         "i64 Main() { return 41 + 1; }",
         "Main",
+        &beskid_engine::ModHost::NoMods,
     )
     .expect("public entrypoint executes through syntax ISLE");
     assert_eq!(output, "42");
@@ -129,7 +130,7 @@ fn staged_runtime_kit_executes_a_canonical_entrypoint() {
         None,
         None,
     );
-    let front = beskid_queries::compile_front_end_from_resolved_input(&resolved, FrontEndOptions::default(), None)
+    let front = beskid_queries::compile_mod_free_front_end(&resolved, FrontEndOptions::default(), None)
         .expect("prepare canonical entrypoint");
     let output = run_entrypoint_from_front_end_with_engine(
         &mut engine,

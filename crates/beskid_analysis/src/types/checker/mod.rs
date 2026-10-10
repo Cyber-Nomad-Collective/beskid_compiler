@@ -76,8 +76,13 @@ pub struct TypeChecker<'a> {
     /// `(type item, field name)` of every field declared without `pub`, built on first use.
     pub(super) private_field_index: std::cell::OnceCell<std::collections::HashSet<(ItemId, String)>>,
     pub(super) current_source_path: Option<PathBuf>,
-    /// The checked unit is the canonical public Dynamic source; its `[Extern]` contracts are
-    /// runtime-plane bridges (see [`crate::projects::ProgramAssembly::is_canonical_public_dynamic_unit`]).
+    /// Declaring unit of the retained serialization group that the top-level entry item being
+    /// typed belongs to (see [`crate::projects::ProgramAssembly::entry_item_attributions`]).
+    /// Field visibility (E1211) judges such an item in that unit; `None` keeps
+    /// `current_source_path`.
+    pub(super) current_item_attribution: Option<PathBuf>,
+    /// The checked unit carries compiler-issued runtime-plane `[Extern]` bridges (see
+    /// [`crate::projects::ProgramAssembly::is_runtime_bridge_extern_unit`]).
     pub(super) runtime_plane_extern_unit: bool,
     /// Host manifest Glue owner libraries (see [`crate::projects::ProgramAssembly::glue_libraries`]).
     /// An `[Extern]` contract naming one of them is a Rust Glue import, outside the C ABI profile.
@@ -143,6 +148,7 @@ impl<'a> TypeChecker<'a> {
             in_extend_type_body: false,
             private_field_index: std::cell::OnceCell::new(),
             current_source_path: None,
+            current_item_attribution: None,
             runtime_plane_extern_unit: false,
             glue_libraries: std::sync::Arc::from([]),
             fiber_scope_stack: vec![0],

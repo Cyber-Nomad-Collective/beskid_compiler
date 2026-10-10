@@ -5,6 +5,7 @@ pub use beskid_abi::runtime_source::CorelibService;
 mod closures;
 mod errors;
 mod events;
+mod expected;
 mod facts;
 mod generics;
 mod ids;
@@ -22,6 +23,7 @@ pub use closures::{
 };
 pub use errors::{GenericBindingConflict, GenericBoundViolation, SemanticError, SemanticFinding, SemanticQueryResult};
 pub use events::{EventHandlerLocalFact, EventOperationFact, EventOperationKind};
+pub use expected::{ExpectedType, ExpectedTypeContext};
 pub use facts::{
     BulkParameterFact, CastIntent, ControlFlow, ForIteratorFact, ItemSignature, PrimitiveNumericConversion,
     RangeForFact, TryExpressionFact,

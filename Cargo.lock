@@ -539,6 +539,7 @@ dependencies = [
  "beskid_repl",
  "beskid_telemetry",
  "beskid_template",
+ "beskid_tests_mod_host",
  "beskid_tools",
  "beskid_up",
  "bsol",

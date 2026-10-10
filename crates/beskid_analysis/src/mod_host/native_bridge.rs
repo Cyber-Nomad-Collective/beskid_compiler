@@ -28,7 +28,8 @@ fn run_worker<'a>(
     factory: Value,
     control: &beskid_execution::NativeExecutionControl,
 ) -> Result<(NativeInvocationOutput, NativeSemanticSession<'a>)> {
-    descriptor.validate(runtime_prefix)?;
+    // Every caller validated `descriptor` for this invocation; the worker validates it again
+    // before it maps the image, against the sidecar digest issued here.
     let initial = json!({"descriptor":descriptor.sidecar_path(),"descriptor_sha256":super::descriptor::native_mod_file_sha256(&descriptor.sidecar_path())?,"runtime_prefix":runtime_prefix,"symbol":symbol,"generation":session.generation(),"invocation":session.invocation(),"request":request,"factory_request":factory});
     let directory = tempfile::Builder::new().prefix("beskid-native-mod-").rand_bytes(32).tempdir()?;
     let token = directory
@@ -108,7 +109,7 @@ pub fn invoke_qualified_native_transport(
     let (mut output, session) =
         run_worker(descriptor, runtime_prefix, worker, symbol, session, request, context, control)?;
     if matches!(family, "Generator" | "GrammarGenerator") {
-        let schema = std::fs::read(descriptor.artifact_dir.join("sdk/schema.json"))?;
+        let schema = descriptor.read_sdk_schema()?;
         let decoded = super::native_results::native_generator_result("", &output.value, &schema)?;
         let bindings =
             output.value.get("targetBindings").and_then(Value::as_array).context("native target bindings absent")?;
@@ -131,7 +132,8 @@ pub fn invoke_qualified_native_transport(
                 .and_then(|v| v.get("token"))
                 .and_then(Value::as_u64)
                 .context("target binding handle invalid")?;
-            output.compiled_metadata.push(session.compile_target(index, token, item)?);
+            let members = binding_members(binding, &decoded.typed_items, &mut indices)?;
+            output.compiled_metadata.push(session.compile_target(index, token, item, &members)?);
         }
         let templates = output
             .value
@@ -162,10 +164,38 @@ pub fn invoke_qualified_native_transport(
                 "generation":source.get("syntaxGenerationId").context("template generation absent")?,
                 "node":source.get("nodeId").context("template node absent")?
             }))?;
-            output.compiled_metadata.push(session.compile_template(index, &reference, item)?);
+            let members = binding_members(binding, &decoded.typed_items, &mut indices)?;
+            output.compiled_metadata.push(session.compile_template(index, &reference, item, &members)?);
         }
     }
     Ok(output)
+}
+/// The `members` of one serialization binding: the unbound items of the same generated group
+/// (decoder record, free `read` function, factory). Each member index must name a contribution
+/// that is not an impl block (an impl is bound on its own) and that no other binding or member
+/// names. The field is required: a binding without it is not an admitted SDK contribution.
+fn binding_members(
+    binding: &Value,
+    items: &[crate::syntax::Spanned<super::ProgramItem>],
+    indices: &mut std::collections::HashSet<u32>,
+) -> Result<Vec<super::ModContributionMember>> {
+    let members = binding.get("members").and_then(Value::as_array).context("serialization binding members absent")?;
+    if members.len() > 65536 {
+        bail!("serialization binding member count exceeded");
+    }
+    let mut result = Vec::with_capacity(members.len());
+    for member in members {
+        let index = member.as_u64().and_then(|v| u32::try_from(v).ok()).context("binding member index invalid")?;
+        if !indices.insert(index) {
+            bail!("binding member index is bound more than once");
+        }
+        let item = items.get(index as usize).context("binding member index outside contributions")?;
+        if matches!(item.node, crate::syntax::Node::ImplBlock(_)) {
+            bail!("binding member is an impl block; bind it as a contribution");
+        }
+        result.push(super::ModContributionMember { contribution_index: index, item: item.clone() });
+    }
+    Ok(result)
 }
 fn node_type(plan: &Value, type_id: u64) -> Result<&str> {
     plan["syntax_types"]
@@ -247,7 +277,7 @@ pub fn invoke_qualified_native_rewriter(
     }
     let (target_name, target_kind, target_spanned) =
         syntax_type(node_type(&plan, fields[0]["type_id"].as_u64().context("Rewriter target type absent")?)?)?;
-    let correspondence = SyntaxCorrespondence::read(&std::fs::read(descriptor.artifact_dir.join("sdk/schema.json"))?)?;
+    let correspondence = SyntaxCorrespondence::read(&descriptor.read_sdk_schema()?)?;
     let mut session = NativeSemanticSession::new(authority)?;
     let ModSyntaxResponse::Node(Some(root)) = session.syntax_query(&ModSyntaxRequest::Root)? else {
         bail!("Rewriter root absent")

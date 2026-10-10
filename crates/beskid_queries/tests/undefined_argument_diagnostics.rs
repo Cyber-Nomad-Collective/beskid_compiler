@@ -55,9 +55,9 @@ fn reachable_imported_undefined_argument_is_diagnosed_before_lowering() {
         };
         let mut db = BeskidDatabase::default();
         let (_, shared, _) =
-            prepare_compilation_diagnostics_with_db(&mut db, &resolved, PrepareOptions::default(), None).unwrap();
+            prepare_compilation_diagnostics_with_db(&mut db, &resolved, PrepareOptions::without_mods(), None).unwrap();
         let (_, isolated, _) =
-            prepare_compilation_diagnostics_isolated(&resolved, PrepareOptions::default(), None).unwrap();
+            prepare_compilation_diagnostics_isolated(&resolved, PrepareOptions::without_mods(), None).unwrap();
         for diagnostics in [shared, isolated] {
             let errors = diagnostics
                 .iter()

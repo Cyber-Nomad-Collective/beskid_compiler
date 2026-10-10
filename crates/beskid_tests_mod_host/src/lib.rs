@@ -10,10 +10,10 @@
 //!   ([`shared_runtime_prefix`]);
 //! - locates the current CLI ([`provisioned_cli`]);
 //! - provisions Mod artifacts with that CLI (`beskid dev mod rebuild`, as release bundles and
-//!   `beskid build` do) when no current artifact exists, and returns the qualified invoker
-//!   ([`corelib_mod_invoker`], [`provision_corelib_mods`]), or, in a process that runs from a
+//!   `beskid build` do) when no current artifact exists, and returns the qualified native Mod host
+//!   ([`corelib_mod_host`], [`provision_corelib_mods`]), or, in a process that runs from a
 //!   staged installation prefix, against the runtime kit that process resolves
-//!   ([`installed_runtime_mod_invoker`]).
+//!   ([`installed_runtime_mod_host`]).
 //!
 //! It never skips a Mod and never substitutes an unqualified invoker; every failure is an error.
 //!
@@ -22,34 +22,34 @@
 //! provisioning machine-wide, because Mod artifacts live in the shared Corelib tree), so
 //! concurrent processes wait for, and then reuse, one publication.
 //!
-//! Mod qualification and Corelib preparation read `BESKID_RUNTIME_PREFIX` and
-//! `BESKID_RUNTIME_KIT_PROFILE`; hold a [`ModHostScope`] across qualification and preparation.
+//! The runtime kit is a value ([`RuntimeKitSelection`]) carried by the returned [`ModHost`] into
+//! qualification and preparation. The harness never mutates the process environment, so tests of
+//! one binary run concurrently; only the child `beskid` processes it spawns receive the kit through
+//! their environment.
 
 use std::collections::BTreeSet;
-use std::ffi::{OsStr, OsString};
+use std::ffi::OsStr;
 use std::fs::{self, File, OpenOptions};
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
+use std::sync::{Mutex, OnceLock};
 
 use anyhow::{Context, Result, anyhow, bail};
 use beskid_abi::runtime_kit::BuildProfile;
 use beskid_abi::runtime_source::{canonical_runtime_source_hash, resolve_canonical_runtime_kit};
-use beskid_analysis::mod_host::ContractInvoker;
+use beskid_analysis::mod_host::{ModHost, RuntimeKitSelection};
 use beskid_analysis::projects::{CompilePlan, ProjectKind, load_manifest_from_path};
 use beskid_tools::toolchain::runtime_kit::{RuntimeKitProfile, build_native_host};
 
 const ENV_RUNTIME_PREFIX: &str = "BESKID_RUNTIME_PREFIX";
 const ENV_RUNTIME_KIT_PROFILE: &str = "BESKID_RUNTIME_KIT_PROFILE";
 const ENV_CLI_BIN: &str = "BESKID_CLI_BIN";
-/// The shared kit's profile, as `BESKID_RUNTIME_KIT_PROFILE` spells it.
-const KIT_PROFILE: &str = "debug";
+const ENV_CORELIB_ROOT: &str = "BESKID_CORELIB_ROOT";
 const CLI_PACKAGE: &str = "beskid_cli";
 
 static CLI_BINARY: OnceLock<Result<PathBuf, String>> = OnceLock::new();
 static RUNTIME_PREFIX: OnceLock<Result<PathBuf, String>> = OnceLock::new();
 static PROVISIONED_CORELIBS: Mutex<BTreeSet<PathBuf>> = Mutex::new(BTreeSet::new());
-static SCOPE_LOCK: Mutex<()> = Mutex::new(());
 
 /// The debug runtime kit shared by every test of this target directory and by the Mods it
 /// provisions.
@@ -61,6 +61,12 @@ pub fn shared_runtime_prefix() -> Result<PathBuf> {
     cached(&RUNTIME_PREFIX, stage_runtime_prefix)
 }
 
+/// [`shared_runtime_prefix`] with its debug profile, as the runtime-kit value that qualification
+/// and preparation consume.
+pub fn shared_runtime_kit() -> Result<RuntimeKitSelection> {
+    RuntimeKitSelection::explicit(&shared_runtime_prefix()?, BuildProfile::Debug)
+}
+
 /// The Mod host executable: `BESKID_CLI_BIN` when the caller supplies one, otherwise the
 /// workspace CLI built through Cargo, which owns its freshness.
 pub fn provisioned_cli() -> Result<PathBuf> {
@@ -70,8 +76,9 @@ pub fn provisioned_cli() -> Result<PathBuf> {
 /// Provisions every native Mod of the Corelib workspace at `corelib_root` (each Mod project under
 /// `<corelib_root>/mods`) with [`provisioned_cli`] against [`shared_runtime_prefix`].
 ///
-/// Use it for sealed Corelib copies, whose Mod artifacts live inside the copy. Runs once per
-/// root and process.
+/// Use it for sealed Corelib copies, whose Mod artifacts live inside the copy. The CLI runs with
+/// `corelib_root` as its installed Corelib, so consumers must resolve the same root (set
+/// `BESKID_CORELIB_ROOT` to it). Runs once per root and process.
 pub fn provision_corelib_mods(corelib_root: &Path) -> Result<()> {
     let root = corelib_root
         .canonicalize()
@@ -85,136 +92,89 @@ pub fn provision_corelib_mods(corelib_root: &Path) -> Result<()> {
     let manifests = corelib_mod_manifests(&root)?;
     let _lock = FileLock::acquire(&provisioning_lock_path())?;
     for manifest in &manifests {
-        rebuild_mod(&cli, manifest, &prefix, BuildProfile::Debug)?;
+        rebuild_mod(&cli, manifest, &prefix, BuildProfile::Debug, Some(root.as_path()))?;
     }
     provisioned.insert(root);
     Ok(())
 }
 
-/// A qualified invoker for every native Mod dependency of `plan` against [`shared_runtime_prefix`],
-/// provisioning missing or stale artifacts with [`provisioned_cli`].
-///
-/// Requires an entered [`ModHostScope`]: qualification and the later preparation resolve the
-/// runtime kit from the process environment. Fails when `plan` has no Mod dependency.
-pub fn corelib_mod_invoker(plan: &CompilePlan) -> Result<Arc<dyn ContractInvoker>> {
-    let prefix = shared_runtime_prefix()?;
-    require_scope(&prefix)?;
-    qualified_invoker(plan, &prefix, BuildProfile::Debug)
+/// The qualified native Mod host for every native Mod dependency of `plan` against
+/// [`shared_runtime_kit`], provisioning missing or stale artifacts with [`provisioned_cli`].
+/// [`ModHost::NoMods`] when `plan` activates no Mod.
+pub fn corelib_mod_host(plan: &CompilePlan) -> Result<ModHost> {
+    qualified_mod_host(plan, &shared_runtime_kit()?)
 }
 
-/// A qualified invoker for every native Mod dependency of `plan` against the runtime kit this
-/// process resolves itself (`BESKID_RUNTIME_PREFIX`, else the installation prefix of the running
-/// executable, with `BESKID_RUNTIME_KIT_PROFILE`), provisioning missing or stale artifacts with
-/// [`provisioned_cli`] for that same kit.
+/// The qualified native Mod host for every native Mod dependency of `plan` against the runtime kit
+/// this process resolves itself ([`RuntimeKitSelection::installed`]: `BESKID_RUNTIME_PREFIX`,
+/// else the installation prefix of the running executable, with `BESKID_RUNTIME_KIT_PROFILE`),
+/// provisioning missing or stale artifacts with [`provisioned_cli`] for that same kit.
 ///
 /// Use it in processes that run from a staged installation prefix instead of a Cargo build tree.
-pub fn installed_runtime_mod_invoker(plan: &CompilePlan) -> Result<Arc<dyn ContractInvoker>> {
-    let prefix = beskid_abi::runtime_kit::installed_runtime_prefix()
-        .map_err(|error| anyhow!("resolve the installed runtime prefix: {error}"))?;
-    let profile = beskid_analysis::mod_host::native_mod_runtime_profile()?;
-    qualified_invoker(plan, &prefix, profile)
+pub fn installed_runtime_mod_host(plan: &CompilePlan) -> Result<ModHost> {
+    qualified_mod_host(plan, &RuntimeKitSelection::installed()?)
 }
 
-fn qualified_invoker(plan: &CompilePlan, prefix: &Path, profile: BuildProfile) -> Result<Arc<dyn ContractInvoker>> {
-    let cli = provisioned_cli()?;
-    let manifests = mod_manifests(plan)?;
+fn qualified_mod_host(plan: &CompilePlan, runtime: &RuntimeKitSelection) -> Result<ModHost> {
+    // Only the Mods the plan activates need artifacts (`mod_host::activation`); a plan that
+    // activates none runs without a native Mod host.
+    let manifests = beskid_tools::native_mods::active_mod_manifests_for_plan(plan)?;
     if manifests.is_empty() {
-        bail!("compile plan {} has no native Mod dependency", plan.manifest_path.display());
+        return Ok(ModHost::NoMods);
     }
-    if let Ok(Some(invoker)) = qualify(plan, &cli) {
-        return Ok(invoker);
+    let cli = provisioned_cli()?;
+    if let Ok(mod_host) = qualify(plan, &cli, runtime) {
+        return Ok(mod_host);
     }
     // Another process may be provisioning the same artifacts; wait for it and re-qualify before
     // rebuilding.
     let _lock = FileLock::acquire(&provisioning_lock_path())?;
-    if let Ok(Some(invoker)) = qualify(plan, &cli) {
-        return Ok(invoker);
+    if let Ok(mod_host) = qualify(plan, &cli, runtime) {
+        return Ok(mod_host);
     }
     for manifest in &manifests {
-        rebuild_mod(&cli, manifest, prefix, profile)?;
+        rebuild_mod(&cli, manifest, runtime.prefix(), runtime.profile(), None)?;
     }
-    qualify(plan, &cli)
-        .context("qualify provisioned native Mods")?
-        .ok_or_else(|| anyhow!("compile plan {} has no native Mod dependency", plan.manifest_path.display()))
+    qualify(plan, &cli, runtime).context("qualify provisioned native Mods")
 }
 
-/// Process-wide scope that points the runtime-kit environment at [`shared_runtime_prefix`].
+/// The shared native Mod host of this target directory: [`shared_runtime_kit`] as a value.
 ///
-/// `BESKID_RUNTIME_PREFIX` and `BESKID_RUNTIME_KIT_PROFILE` are process-global, while libtest
-/// runs cases of one binary concurrently. The scope holds a process-wide lock from the mutation
-/// through qualification and preparation and restores the previous values on drop. Do not enter
-/// it again on a thread that already holds it.
+/// It holds no lock and never touches the process environment; every qualification and
+/// preparation receives the kit through the [`ModHost`] it returns.
+#[derive(Clone, Debug)]
 pub struct ModHostScope {
-    prefix: PathBuf,
-    previous_prefix: Option<OsString>,
-    previous_profile: Option<OsString>,
-    _lock: MutexGuard<'static, ()>,
+    runtime: RuntimeKitSelection,
 }
 
 impl ModHostScope {
-    pub fn enter() -> Result<Self> {
-        let prefix = shared_runtime_prefix()?;
-        let lock = SCOPE_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-        let previous_prefix = std::env::var_os(ENV_RUNTIME_PREFIX);
-        let previous_profile = std::env::var_os(ENV_RUNTIME_KIT_PROFILE);
-        // SAFETY: every mutation of these variables in this process goes through this scope, and
-        // the process-wide lock is held until Drop restores the exact previous values.
-        unsafe {
-            std::env::set_var(ENV_RUNTIME_PREFIX, &prefix);
-            std::env::set_var(ENV_RUNTIME_KIT_PROFILE, KIT_PROFILE);
-        }
-        Ok(Self { prefix, previous_prefix, previous_profile, _lock: lock })
+    /// Stage (once per process) and select the shared debug runtime kit.
+    pub fn shared() -> Result<Self> {
+        Ok(Self { runtime: shared_runtime_kit()? })
     }
 
-    /// The exact runtime kit prefix this scope installed.
+    /// The exact runtime kit of this host.
+    pub fn runtime(&self) -> &RuntimeKitSelection {
+        &self.runtime
+    }
+
+    /// The installation prefix of [`Self::runtime`].
     pub fn runtime_prefix(&self) -> &Path {
-        &self.prefix
+        self.runtime.prefix()
     }
 
-    /// [`corelib_mod_invoker`] under this scope.
-    pub fn corelib_mod_invoker(&self, plan: &CompilePlan) -> Result<Arc<dyn ContractInvoker>> {
-        corelib_mod_invoker(plan)
-    }
-}
-
-impl Drop for ModHostScope {
-    fn drop(&mut self) {
-        // SAFETY: the scope still holds the process-wide lock taken in `enter`.
-        unsafe {
-            restore(ENV_RUNTIME_PREFIX, self.previous_prefix.take());
-            restore(ENV_RUNTIME_KIT_PROFILE, self.previous_profile.take());
-        }
+    /// The qualified native Mod host for `plan` against this kit ([`corelib_mod_host`]).
+    pub fn corelib_mod_host(&self, plan: &CompilePlan) -> Result<ModHost> {
+        qualified_mod_host(plan, &self.runtime)
     }
 }
 
-/// # Safety
-/// The caller holds [`SCOPE_LOCK`].
-unsafe fn restore(name: &str, value: Option<OsString>) {
-    match value {
-        Some(value) => unsafe { std::env::set_var(name, value) },
-        None => unsafe { std::env::remove_var(name) },
+fn qualify(plan: &CompilePlan, cli: &Path, runtime: &RuntimeKitSelection) -> Result<ModHost> {
+    match beskid_tools::native_mods::cached_mod_host_for_plan(plan, cli, runtime)? {
+        ModHost::NoMods => bail!("compile plan {} has no native Mod dependency", plan.manifest_path.display()),
+        mod_host => Ok(mod_host),
     }
 }
-
-fn require_scope(prefix: &Path) -> Result<()> {
-    let current_prefix = std::env::var_os(ENV_RUNTIME_PREFIX);
-    let current_profile = std::env::var_os(ENV_RUNTIME_KIT_PROFILE);
-    if current_prefix.as_deref() != Some(prefix.as_os_str()) || current_profile.as_deref() != Some(OsStr::new(KIT_PROFILE))
-    {
-        bail!(
-            "native Mod qualification requires an entered ModHostScope ({ENV_RUNTIME_PREFIX}={}, \
-             {ENV_RUNTIME_KIT_PROFILE}={KIT_PROFILE}); found {ENV_RUNTIME_PREFIX}={current_prefix:?}, \
-             {ENV_RUNTIME_KIT_PROFILE}={current_profile:?}",
-            prefix.display()
-        );
-    }
-    Ok(())
-}
-
-fn qualify(plan: &CompilePlan, cli: &Path) -> Result<Option<Arc<dyn ContractInvoker>>> {
-    beskid_tools::native_mods::cached_mod_invoker_for_plan(plan, cli)
-}
-
 fn cached(cell: &'static OnceLock<Result<PathBuf, String>>, init: fn() -> Result<PathBuf>) -> Result<PathBuf> {
     cell.get_or_init(|| init().map_err(|error| format!("{error:#}"))).clone().map_err(|error| anyhow!(error))
 }
@@ -291,20 +251,6 @@ fn locate_cli() -> Result<PathBuf> {
     Ok(binary)
 }
 
-fn mod_manifests(plan: &CompilePlan) -> Result<Vec<PathBuf>> {
-    let mut manifests = BTreeSet::new();
-    for dependency in &plan.dependency_projects {
-        let manifest_path = dependency
-            .manifest_path
-            .canonicalize()
-            .with_context(|| format!("resolve {}", dependency.manifest_path.display()))?;
-        if is_mod_manifest(&manifest_path)? {
-            manifests.insert(manifest_path);
-        }
-    }
-    Ok(manifests.into_iter().collect())
-}
-
 /// Every Mod project manifest directly under `<corelib_root>/mods/<project>/`.
 fn corelib_mod_manifests(corelib_root: &Path) -> Result<Vec<PathBuf>> {
     let mods = corelib_root.join("mods");
@@ -346,13 +292,29 @@ fn profile_name(profile: BuildProfile) -> &'static str {
     }
 }
 
-fn rebuild_mod(cli: &Path, manifest: &Path, prefix: &Path, profile: BuildProfile) -> Result<()> {
-    let output = Command::new(cli)
+/// Rebuild one Mod with `cli`. `corelib_root`, when given, is the Corelib installation the Mod
+/// belongs to: the CLI resolves it as its installed Corelib (`BESKID_CORELIB_ROOT`), so the Mod's
+/// path dependencies on sibling Corelib packages carry Corelib package identity, exactly as for a
+/// Mod of the toolchain's own installed Corelib. Without it the CLI inherits this process's
+/// Corelib resolution.
+fn rebuild_mod(
+    cli: &Path,
+    manifest: &Path,
+    prefix: &Path,
+    profile: BuildProfile,
+    corelib_root: Option<&Path>,
+) -> Result<()> {
+    let mut command = Command::new(cli);
+    command
         .args(["dev", "mod", "rebuild"])
         .arg(manifest)
         .args(["--offline", "--plain"])
         .env(ENV_RUNTIME_PREFIX, prefix)
-        .env(ENV_RUNTIME_KIT_PROFILE, profile_name(profile))
+        .env(ENV_RUNTIME_KIT_PROFILE, profile_name(profile));
+    if let Some(corelib_root) = corelib_root {
+        command.env(ENV_CORELIB_ROOT, corelib_root);
+    }
+    let output = command
         .output()
         .with_context(|| format!("invoke `{} dev mod rebuild`", cli.display()))?;
     if !output.status.success() {

@@ -259,8 +259,95 @@ impl ProgramAssembly {
         })
     }
 
+    /// Whether `[Extern]` contracts in `unit` are compiler-issued runtime-plane bridges instead
+    /// of user C imports: the canonical public Dynamic unit, and the canonical serialization
+    /// descriptor unit whose `CompiledShapeBridge` the serialization shape authority admits
+    /// exactly. Both require Corelib package identity and the compiler-embedded source bytes.
+    pub fn is_runtime_bridge_extern_unit(&self, unit: &SourceUnit) -> bool {
+        self.is_canonical_public_dynamic_unit(unit) || self.is_canonical_serialization_descriptors_unit(unit)
+    }
+
+    /// The canonical serialization descriptor unit (`Core/Serialization/Descriptors.bd`).
+    pub fn is_canonical_serialization_descriptors_unit(&self, unit: &SourceUnit) -> bool {
+        self.is_canonical_corelib_service_unit(
+            unit,
+            "corelib_serialization",
+            beskid_abi::runtime_source::CANONICAL_SERIALIZATION_DESCRIPTORS_SOURCE_PATH,
+        )
+    }
+
+    /// The canonical compiled serialization recipe unit (`Core/Serialization/Compiled.bd`).
+    pub fn is_canonical_serialization_compiled_unit(&self, unit: &SourceUnit) -> bool {
+        self.is_canonical_corelib_service_unit(
+            unit,
+            "corelib_serialization",
+            beskid_abi::runtime_source::CANONICAL_SERIALIZATION_COMPILED_SOURCE_PATH,
+        )
+    }
+
+    /// `unit` is the compiler-embedded Corelib service source `logical_path` of `package`:
+    /// Corelib package identity, the canonical relative path, and byte-identical source.
+    fn is_canonical_corelib_service_unit(&self, unit: &SourceUnit, package: &str, logical_path: &str) -> bool {
+        self.package_identities().for_source(&unit.path).is_some_and(|root| {
+            root.identity().package_name() == package
+                && matches!(root.identity().source(), super::VerifiedPackageSource::Corelib)
+                && root.relative_source_path(&unit.path).as_deref() == Some(logical_path)
+                && beskid_abi::runtime_source::canonical_corelib_service_sources()
+                    .iter()
+                    .any(|canonical| canonical.logical_path == logical_path && canonical.source == unit.source)
+        })
+    }
+
     pub fn entry_unit(&self) -> &SourceUnit {
         &self.units[self.entry_index]
+    }
+
+    /// The source unit each top-level entry item is judged in for field visibility, indexed
+    /// like `entry_unit().program.node.items`. An item of the entry source, or an appended
+    /// item that no retained serialization claim names, is `None` (the entry unit itself). An
+    /// appended item that exactly equals an item of a retained claim's group is attributed to
+    /// that claim's declaring unit, which must be a registered unit of this assembly.
+    ///
+    /// This is the descriptive mirror read by the legacy front-end checker so it reports no
+    /// E1211 where the gate admits the access. The semantic query gate derives the same table
+    /// from the issuer's private payload and stays the authority (`beskid_queries`
+    /// `contribution_attributed_unit`).
+    pub fn entry_item_attributions(&self) -> Vec<Option<PathBuf>> {
+        let entry = self.entry_unit();
+        let items = &entry.program.node.items;
+        let mut result = vec![None; items.len()];
+        for metadata in &self.compiled_mod_metadata {
+            let Some(attribution) = metadata.description().attribution() else { continue };
+            let Some(unit) = self
+                .units
+                .iter()
+                .find(|unit| crate::paths::same_file(&unit.path, &attribution.attributed_unit))
+            else {
+                continue;
+            };
+            // The group is attributed as a whole: every item must occur exactly once, as the
+            // typed binding's exact append correspondence requires. A missing or repeated item
+            // leaves the whole group in the entry unit, where the binding fails on the same
+            // correspondence.
+            let positions = attribution
+                .items
+                .iter()
+                .map(|item| {
+                    let matches = items.iter().enumerate().filter(|(_, candidate)| *candidate == item).collect::<Vec<_>>();
+                    match matches.as_slice() {
+                        [(index, _)] => Some(*index),
+                        _ => None,
+                    }
+                })
+                .collect::<Option<Vec<_>>>();
+            let Some(positions) = positions else { continue };
+            for index in positions {
+                if result[index].is_none() {
+                    result[index] = Some(unit.path.clone());
+                }
+            }
+        }
+        result
     }
 
     pub fn with_runtime_fixture(mut self, proof: Option<Arc<beskid_abi::runtime_source::RuntimeFixtureProof>>) -> Self {

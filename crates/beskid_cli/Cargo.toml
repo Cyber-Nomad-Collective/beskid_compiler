@@ -41,3 +41,4 @@ cargo-cross = { workspace = true }
 tempfile = "3"
 
 [dev-dependencies]
+beskid_tests_mod_host = { path = "../beskid_tests_mod_host" }

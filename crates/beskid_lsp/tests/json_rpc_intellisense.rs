@@ -96,7 +96,8 @@ fn json_rpc_completion_and_hover_use_dependency_syntax_facts() {
     // Preparing a Corelib project runs the native Serialization Mod in a Mod host. The server
     // never builds Mods and this test binary has no installed `beskid` next to it, so the
     // workspace CLI materializes the same embedded bundle into the disposable root, provisions
-    // its Mods against the shared debug runtime kit, and is selected as the server's Mod host.
+    // its Mods against the shared debug runtime kit, and is selected with that kit as the server's
+    // Mod host.
     let mod_host = beskid_tests_mod_host::provisioned_cli().expect("workspace Mod host CLI");
     let runtime_prefix = beskid_tests_mod_host::shared_runtime_prefix().expect("shared runtime kit");
     let materialized = Command::new(&mod_host)
@@ -115,8 +116,9 @@ fn json_rpc_completion_and_hover_use_dependency_syntax_facts() {
     let mut child = Command::new(env!("CARGO_BIN_EXE_beskid_lsp"))
         .current_dir(compiler_root)
         .env("BESKID_CORELIB_ROOT", &corelib_root)
-        .env("BESKID_RUNTIME_PREFIX", &runtime_prefix)
-        .env("BESKID_RUNTIME_KIT_PROFILE", "debug")
+        // The runtime kit reaches the server only through `modHost.runtimePrefix`.
+        .env_remove("BESKID_RUNTIME_PREFIX")
+        .env_remove("BESKID_RUNTIME_KIT_PROFILE")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -158,7 +160,11 @@ fn json_rpc_completion_and_hover_use_dependency_syntax_facts() {
                 "rootUri": project_uri,
                 "workspaceFolders": [{"uri": project_uri, "name": "ProtocolSmoke"}],
                 "capabilities": {},
-                "initializationOptions": {"modHost": {"path": mod_host}}
+                "initializationOptions": {"modHost": {
+                    "path": mod_host,
+                    "runtimePrefix": runtime_prefix,
+                    "runtimeProfile": "debug"
+                }}
             }
         }),
     );

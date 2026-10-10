@@ -447,6 +447,8 @@ impl SemanticIssueKind {
             Self::GlueBindingRejected { method, .. } => {
                 format!("Glue binding rejected for extern method `{method}`")
             }
+            Self::ExternInvalidOptional { .. } => "invalid optional extern contract".to_string(),
+            Self::InvalidClifBlock { .. } => "invalid clif block".to_string(),
         }
     }
 }

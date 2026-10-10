@@ -43,7 +43,7 @@ fn jit_compile_emits_emit_work_units_and_finalize_phase() {
     let src = r#"
 pub i64 Main() { return 0; }
 "#;
-    let prepared = prepare_jit_entrypoint(Path::new("<memory>"), src, "Main").unwrap();
+    let prepared = prepare_jit_entrypoint(Path::new("<memory>"), src, "Main", &beskid_engine::ModHost::NoMods).unwrap();
     let recorder = Recorder::default();
     let obs: &dyn PipelineObserver = &recorder;
 

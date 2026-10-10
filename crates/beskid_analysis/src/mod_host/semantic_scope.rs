@@ -48,7 +48,7 @@ pub(crate) fn invoke_in_scope<T>(
             source_name: input.source_name,
             source: input.source,
             pipeline: input.pipeline,
-            invoker: input.invoker,
+            mod_host: input.mod_host,
             cached_target_fingerprint: input.cached_target_fingerprint,
         };
         outcome = Some(action(&scoped)?);
@@ -107,7 +107,17 @@ mod tests {
     #[test]
     fn repeated_scope_cannot_invoke_contract_twice_or_retain_action() {
         let scope = RepeatedScope;
-        let input = ModHostInput { semantic_scope: Some(&scope), ..Default::default() };
+        let input = ModHostInput {
+            semantic_scope: Some(&scope),
+            semantic_authority: None,
+            syntax_generation_id: None,
+            compile_plan: None,
+            source_name: "",
+            source: "",
+            pipeline: None,
+            mod_host: &crate::mod_host::ModHost::NoMods,
+            cached_target_fingerprint: None,
+        };
         let mut calls = 0;
         let result = invoke_in_scope(&input, None, |scoped| {
             calls += 1;
@@ -125,7 +135,12 @@ mod tests {
             source: "source bytes",
             source_name: "Main.bd",
             syntax_generation_id: Some(SyntaxGenerationId(7)),
-            ..Default::default()
+            semantic_scope: None,
+            semantic_authority: None,
+            compile_plan: None,
+            pipeline: None,
+            mod_host: &crate::mod_host::ModHost::NoMods,
+            cached_target_fingerprint: None,
         };
         let result = invoke_in_scope(&input, None, |scoped| {
             assert!(scoped.semantic_authority.is_none());

@@ -61,7 +61,7 @@ pub i64 Repeat(i64 unit, i64 count) {
 }
 pub i64 Main() { return Repeat(1, 4); }
 "#;
-    let output = run_entrypoint(Path::new("repeat.bd"), source, "Main").expect("main should run");
+    let output = run_entrypoint(Path::new("repeat.bd"), source, "Main", &beskid_engine::ModHost::NoMods).expect("main should run");
     assert_eq!(output, "4", "expected accumulated sum 4, got {output}");
 }
 
@@ -84,7 +84,7 @@ pub i64 Repeat(i64 unit, i64 count) {
 }
 pub i64 Main() { return Repeat(1, 4); }
 "#;
-    let prepared = prepare_jit_entrypoint(Path::new("repeat.bd"), source, "Main").expect("CodegenInput prepare");
+    let prepared = prepare_jit_entrypoint(Path::new("repeat.bd"), source, "Main", &beskid_engine::ModHost::NoMods).expect("CodegenInput prepare");
     engine.compile_artifact(&prepared.artifact).expect("jit compile");
     let ptr = unsafe { engine.entrypoint_ptr(&prepared.symbol) }.expect("main ptr");
     let main: extern "C" fn() -> i64 = unsafe { std::mem::transmute(ptr) };
@@ -112,6 +112,6 @@ mod Frame {
 }
 pub i64 Main() { return Frame.Repeat(1, 4); }
 "#;
-    let output = run_entrypoint(Path::new("repeat.bd"), source, "Main").expect("main should run");
+    let output = run_entrypoint(Path::new("repeat.bd"), source, "Main", &beskid_engine::ModHost::NoMods).expect("main should run");
     assert_eq!(output, "4", "expected cross-module repeat sum 4, got {output}");
 }

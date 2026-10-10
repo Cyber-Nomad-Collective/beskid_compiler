@@ -7,11 +7,11 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Instant;
 
 use beskid_analysis::SemanticDiagnostic;
-use beskid_analysis::mod_host::ContractInvoker;
+use beskid_analysis::mod_host::ModHost;
 use beskid_analysis::projects::ProgramAssembly;
 use beskid_analysis::services::{
-    AnalyzeInProjectOptions, ResolvedInput, analyze_source_in_project_with_options, compile_plan_for_input_path,
-    resolve_input,
+    FrontEndOptions, PrepareOptions, ResolvedInput, compile_plan_for_input_path, resolve_input,
+    resolved_input_from_plan,
 };
 use beskid_tests_mod_host::ModHostScope;
 use beskid_analysis::syntax::CallExpression;
@@ -34,27 +34,35 @@ pub fn with_large_test_stack(f: impl FnOnce() + Send + 'static) {
         .expect("join large-stack test thread");
 }
 
-/// Enters the shared native Mod host scope. Hold it across Mod qualification and every
-/// preparation of a Core-dependent project; do not enter it again on the same thread.
+/// The shared native Mod host: the staged debug runtime kit as a value. It holds no lock and
+/// never touches the process environment.
 pub fn enter_mod_host() -> ModHostScope {
-    ModHostScope::enter().expect("enter the shared native Mod host scope")
+    ModHostScope::shared().expect("enter the shared native Mod host scope")
 }
 
-/// The qualified native Mod invoker for the compile plan of `resolved`.
-pub fn mod_invoker_for(scope: &ModHostScope, resolved: &ResolvedInput) -> Arc<dyn ContractInvoker> {
+/// The qualified native Mod host for the compile plan of `resolved`.
+pub fn mod_host_for(scope: &ModHostScope, resolved: &ResolvedInput) -> ModHost {
     let plan = resolved.compile_plan.as_ref().expect("Core-dependent input has a compile plan");
-    scope.corelib_mod_invoker(plan).expect("qualify the native Mods of the compile plan")
+    scope.corelib_mod_host(plan).expect("qualify the native Mods of the compile plan")
 }
 
-/// Project-aware analysis of the file at `path` with the qualified native Mods of its compile plan.
+/// Project-aware analysis of the file at `path` with the qualified native Mods of its compile plan,
+/// through the same query-backed prepare spine `beskid analyze` runs. Native Mods read syntax
+/// through the registered query authority, which only that spine installs.
 pub fn analyze_file_with_mods(path: &Path) -> Result<Vec<SemanticDiagnostic>, String> {
     let source = std::fs::read_to_string(path).map_err(|error| format!("read {}: {error}", path.display()))?;
     let plan = compile_plan_for_input_path(path)
         .ok_or_else(|| format!("{} has no project compile plan", path.display()))?;
     let scope = enter_mod_host();
-    let mod_invoker = scope.corelib_mod_invoker(&plan).map_err(|error| format!("{error:#}"))?;
-    let options = AnalyzeInProjectOptions { mod_invoker: Some(mod_invoker), ..Default::default() };
-    analyze_source_in_project_with_options(path, &source, options).map_err(|error| format!("{error:#}"))
+    let native_mods = scope.corelib_mod_host(&plan).map_err(|error| format!("{error:#}"))?;
+    let resolved = resolved_input_from_plan(path.to_path_buf(), source, plan, None, None);
+    let options = PrepareOptions {
+        front_end: FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
+        ..PrepareOptions::with_mod_host(native_mods)
+    };
+    beskid_queries::prepare_compilation_diagnostics(&resolved, options, None)
+        .map(|(_, diagnostics, _fixes)| diagnostics)
+        .map_err(|error| format!("{error:#}"))
 }
 
 pub fn fixture_path(name: &str) -> PathBuf {

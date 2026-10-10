@@ -6,7 +6,8 @@
 //! signature (E1202 at the parameter), the primitive conversion argument check (E1228 at the
 //! argument), `type_member_expression` and `type_struct_field_path` (E1213 at the member
 //! expression or path segment, E1201 for a method named as a value, E1211 at the member name of
-//! an unknown method call), `type_struct_literal_expression` and
+//! an unknown method call; for field paths of three or more segments, `field_path_failure` walks
+//! the declared field types: E1213, E1211, or E1201 at the first failing segment), `type_struct_literal_expression` and
 //! `type_enum_constructor_expression` (E1201 at the literal or constructor), the explicit
 //! type-argument count check of `type_call_expression` (E1204 at the call), the non-callable
 //! field call (E1606 at the call), a method call through a local or `this` receiver path that no
@@ -18,9 +19,9 @@ use super::super::members::{declared_member_names, is_call_callee};
 use super::super::typing::{is_numeric, nodes_of_kind};
 use super::*;
 use beskid_analysis::syntax::{
-    ArrayLiteralExpression, CallExpression, EnumConstructorExpression, Expression, ExtendTypeDefinition,
-    FunctionDefinition, IndexExpression, LambdaParameter, LetStatement, MemberExpression, Parameter, PathExpression,
-    StructLiteralExpression, Type, TypeDefinition,
+    ArrayLiteralExpression, CallExpression, EnumConstructorExpression, EnumDefinition, Expression,
+    ExtendTypeDefinition, FunctionDefinition, IndexExpression, LambdaParameter, LetStatement, MemberExpression,
+    Parameter, PathExpression, StructLiteralExpression, Type, TypeDefinition, Visibility,
 };
 use beskid_analysis::syntax_query::DynNodeRef;
 
@@ -172,22 +173,39 @@ pub(super) fn collect_member_obligations(
     }
     for node in nodes_of_kind(index, key.node, NodeKind::PathExpression) {
         let Some(path) = index.node_at(program, node).and_then(|node| node.of::<PathExpression>()) else { continue };
-        let [base, segment] = path.path.node.segments.as_slice() else { continue };
-        if !base.node.type_args.is_empty() || is_call_callee(program, index, node) {
+        let segments = path.path.node.segments.as_slice();
+        if segments.len() < 2
+            || segments.iter().any(|segment| !segment.node.type_args.is_empty())
+            || is_call_callee(program, index, node)
+        {
             continue;
         }
-        let Some(local) = resolve_lexical_declaration(program, index, node, base.node.name.node.name.as_str()) else {
+        let Some(local) = resolve_lexical_declaration(program, index, node, segments[0].node.name.node.name.as_str())
+        else {
             continue;
         };
-        let Some(Ok(ty)) = local_declaration_type(program, index, local) else { continue };
-        if matches!(ty, SemanticTypeId::POINTER | SemanticTypeId::NEVER) {
+        let segment_site = |position: usize| {
+            let site = index
+                .direct_child_id(program, node, DynNodeRef::from(&path.path))
+                .and_then(|path_node| index.direct_child_id(program, path_node, DynNodeRef::from(&segments[position])))
+                .unwrap_or(node);
+            AstNodeKey { node: site, ..key }
+        };
+        if let Some(Ok(ty)) = local_declaration_type(program, index, local)
+            && !matches!(ty, SemanticTypeId::POINTER | SemanticTypeId::NEVER)
+        {
+            findings.push(GateObligation { kind: GateObligationKind::InvalidMemberTarget, site: segment_site(1) });
             continue;
         }
-        let site = index
-            .direct_child_id(program, node, DynNodeRef::from(&path.path))
-            .and_then(|path_node| index.direct_child_id(program, path_node, DynNodeRef::from(segment)))
-            .unwrap_or(node);
-        findings.push(GateObligation { kind: GateObligationKind::InvalidMemberTarget, site: AstNodeKey { node: site, ..key } });
+        // A two-segment read through a nominal local is `member_reference_legality`'s
+        // (`unknown_field_read`, E1211 at the path); longer chains are walked here.
+        if segments.len() < 3 {
+            continue;
+        }
+        if let Some((kind, position)) = field_path_failure(db, program, index, AstNodeKey { node, ..key }, local, segments)
+        {
+            findings.push(GateObligation { kind, site: segment_site(position) });
+        }
     }
     for node in nodes_of_kind(index, key.node, NodeKind::StructLiteralExpression) {
         let Some(literal) = index.node_at(program, node).and_then(|node| node.of::<StructLiteralExpression>()) else {
@@ -212,6 +230,84 @@ pub(super) fn collect_member_obligations(
             findings.push(GateObligation { kind: GateObligationKind::UnknownEnumType, site });
         }
     }
+}
+
+/// The first failing segment of a field path of three or more segments rooted at a nominal local
+/// (`type_struct_field_path`): the walk starts at the local's declared type and follows declared
+/// field types, stopping at the first finding as the legacy checker does.
+///
+/// * an intermediate field of proven primitive type followed by another segment: E1213
+///   `InvalidMemberTarget` at that next segment;
+/// * a `type` without the segment's field: E1211 `UnknownStructField` at the segment;
+/// * an `enum` intermediate (a nominal without a fields table): E1201 `UnknownStructType` at the
+///   segment.
+///
+/// The walk is fail-closed: a local without a declared nominal type, a type that does not
+/// resolve, a contract, array, or function field type, a generic parameter of the declaring
+/// type, and a field without `pub` declared in another unit (`member_reference_legality`'s
+/// `InaccessibleStructField`) end it without a finding.
+fn field_path_failure(
+    db: &dyn Db,
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &SyntaxIndex,
+    site: AstNodeKey,
+    local: beskid_analysis::syntax::AstNodeId,
+    segments: &[beskid_analysis::syntax::Spanned<beskid_analysis::syntax::PathSegment>],
+) -> Option<(GateObligationKind, usize)> {
+    let declared = declared_local_type(program, index, local)?;
+    let Type::Complex(local_path) = &declared else { return None };
+    let mut declaration = resolve_type_declaration(db, site, &local_path.node)?;
+    for position in 1..segments.len() {
+        let name = segments[position].node.name.node.name.as_str();
+        let syntax = db.syntax_unit(declaration.unit).filter(|syntax| syntax.accepts_key(db, declaration))?;
+        let nominal = syntax.syntax_index(db).node_at(syntax.expanded_program(db), declaration.node)?;
+        if nominal.of::<EnumDefinition>().is_some() {
+            return Some((GateObligationKind::UnknownStructType, position));
+        }
+        let definition = nominal.of::<TypeDefinition>()?;
+        let Some(field) = definition.fields.iter().find(|field| field.node.name.node.name == name) else {
+            return Some((GateObligationKind::UnknownStructField { name: Arc::from(name) }, position));
+        };
+        if field.node.visibility.node != Visibility::Public && declaration.unit != site.unit {
+            return None;
+        }
+        if position + 1 == segments.len() {
+            return None;
+        }
+        match &field.node.ty.node {
+            primitive @ Type::Primitive(_) => {
+                let ty = semantic_type_from_syntax(primitive).ok()?;
+                if matches!(ty, SemanticTypeId::POINTER | SemanticTypeId::NEVER) {
+                    return None;
+                }
+                return Some((GateObligationKind::InvalidMemberTarget, position + 1));
+            }
+            Type::Complex(field_path) => {
+                if let [single] = field_path.node.segments.as_slice()
+                    && definition.generics.iter().any(|generic| generic.node.name == single.node.name.node.name)
+                {
+                    return None;
+                }
+                declaration = resolve_type_declaration(db, declaration, &field_path.node)?;
+            }
+            _ => return None,
+        }
+    }
+    None
+}
+
+/// The type a local's declaration spells: a parameter's type or a `let` annotation.
+fn declared_local_type(
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &SyntaxIndex,
+    local: beskid_analysis::syntax::AstNodeId,
+) -> Option<Type> {
+    let declaring = parent_node(index, local)?;
+    let node = index.node_at(program, declaring)?;
+    if let Some(parameter) = node.of::<Parameter>() {
+        return Some(parameter.ty.node.clone());
+    }
+    node.of::<LetStatement>()?.type_annotation.as_ref().map(|annotation| annotation.node.clone())
 }
 
 fn declaration_kind(db: &dyn Db, declaration: AstNodeKey) -> Option<NodeKind> {

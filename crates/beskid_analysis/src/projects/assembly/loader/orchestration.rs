@@ -212,8 +212,10 @@ pub fn assemble_program_with_materializer(
             .filter_map(|path| {
                 let path_key = path.canonicalize().unwrap_or_else(|_| path.clone());
                 let is_entry = path_key == entry_key;
-                let source = if is_entry {
-                    entry_source.map(str::to_string).unwrap_or_default()
+                // The caller's in-memory entry text wins (editor buffers); without one the entry
+                // is read from disk like every other unit. It is never assumed empty.
+                let source = if let Some(entry_text) = entry_source.filter(|_| is_entry) {
+                    entry_text.to_string()
                 } else {
                     match fs::read_to_string(path) {
                         Ok(text) => text,

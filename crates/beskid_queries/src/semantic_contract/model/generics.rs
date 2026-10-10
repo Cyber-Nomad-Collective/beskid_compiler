@@ -131,7 +131,7 @@ impl GenericSubstitution {
         Self { parameter: parameter.into(), argument, source_identity }
     }
 
-    pub(in crate::semantic_contract) fn source_identity(&self) -> &GenericSourceTypeIdentity {
+    pub(crate) fn source_identity(&self) -> &GenericSourceTypeIdentity {
         &self.source_identity
     }
 }

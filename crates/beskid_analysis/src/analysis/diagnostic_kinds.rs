@@ -520,6 +520,17 @@ pub enum SemanticIssueKind {
         method: String,
         detail: String,
     },
+    /// T0906: an `[Extern]` contract whose `Optional` argument is not a boolean literal, or an
+    /// `Optional:true` contract whose availability query is not declared `bool Available();`.
+    /// `detail` names the violated rule.
+    ExternInvalidOptional {
+        detail: String,
+    },
+    /// E1232: a `clif { ... }` block without a typed scalar context, with a body the CLIF
+    /// surface rejects, or naming a `%N` parameter it may not use. `detail` names the rule.
+    InvalidClifBlock {
+        detail: String,
+    },
 }
 
 #[cfg(test)]
@@ -545,5 +556,36 @@ mod removed_std_namespace_tests {
 
         let module = SemanticIssueKind::ResolveUnknownModulePath { path: "Std::Core::Results".to_string() };
         assert!(module.help().expect("help").starts_with("use `Core::Results` instead"));
+    }
+}
+
+#[cfg(test)]
+mod query_gate_kind_tests {
+    use super::SemanticIssueKind;
+    use crate::analysis::Severity;
+
+    #[test]
+    fn extern_invalid_optional_has_its_own_code_and_carries_the_rule_as_help() {
+        let issue = SemanticIssueKind::ExternInvalidOptional {
+            detail: "Optional takes a boolean literal: Optional:true or Optional:false".to_string(),
+        };
+        assert_eq!(issue.code(), "T0906");
+        assert_ne!(issue.code(), SemanticIssueKind::NumericLiteralOutOfRange { primitive: "i8".to_string() }.code());
+        assert_eq!(issue.message(), "invalid optional extern contract");
+        assert_eq!(issue.label(), "extern attribute");
+        assert_eq!(issue.help().as_deref(), Some("Optional takes a boolean literal: Optional:true or Optional:false"));
+        assert_eq!(issue.severity(), Severity::Error);
+    }
+
+    #[test]
+    fn invalid_clif_block_renders_the_legacy_code_and_carries_the_rule_as_help() {
+        let issue = SemanticIssueKind::InvalidClifBlock {
+            detail: "clif blocks inside lambdas cannot name parameters with `%N`".to_string(),
+        };
+        assert_eq!(issue.code(), "E1232");
+        assert_eq!(issue.message(), "invalid clif block");
+        assert_eq!(issue.label(), "clif block");
+        assert_eq!(issue.help().as_deref(), Some("clif blocks inside lambdas cannot name parameters with `%N`"));
+        assert_eq!(issue.severity(), Severity::Error);
     }
 }

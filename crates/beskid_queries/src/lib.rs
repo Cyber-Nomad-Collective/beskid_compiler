@@ -24,13 +24,15 @@
 //! let _ = authority.set_generation(&mut db);
 //! ```
 
+mod contribution_attribution;
+pub use contribution_attribution::contribution_attributed_unit;
 mod db;
 mod mod_semantic_authority;
 mod mod_semantic_scope;
 mod mod_syntax_authority;
 pub use mod_semantic_authority::{
     CompiledCatchallBinding, ReboundCatchallBinding, CompiledSerializationTarget, SerializationContributionKind, ModSemanticCatchall, ModSemanticQueryAuthority,
-    CompiledSerializationTemplate, serialization_template_getter_shape,
+    CompiledSerializationTemplate, serialization_template_getter_shape, serialization_template_instance_rebind,
 };
 pub use semantic_contract::{
     canonical_container_kind, CanonicalContainerKind, DynamicPackingBridge, DynamicPackingField, DynamicPackingNode, DynamicPackingShape, DynamicPackingVariant,
@@ -104,18 +106,19 @@ pub use semantic_contract::{
     ResolvedItem, ResolvedLocal, RuntimeIntrinsic, RuntimeIntrinsicName, ScalarAbiLayout, ScopedAcquisition,
     ScopedCleanup, ScopedCleanupDiagnostic, SemanticError, SemanticQueryResult, SemanticTypeId, SourceSpan,
     SourceUnitId, SpawnDiagnosticKind, SpawnEntryValidation, SpawnTarget, TestItem, TryExpressionFact,
+    ExpectedType, ExpectedTypeContext,
     TypedArrayAllocation, TypedProgram, abi_type, aggregate_field_access, aggregate_field_access_specialization,
     aggregate_layout, aggregate_literal_declaration, aggregate_literal_field_values, aggregate_literal_layout,
     aggregate_literal_specialization, array_index_element_abi_type, array_index_element_managed_reference_specialization,
     array_index_element_specialization,
-    binary_operand_abi_type, block_statement_nodes, bulk_parameter, call_abi_signature, call_argument_abi_type,
+    block_statement_nodes, bulk_parameter, call_abi_signature,
     call_arguments, call_lowering, callable_fiber_ownership, callable_signature, capture_storage, cast_intents,
     child_nodes, clif_block_body, clif_block_parameters, closure_call_target, closure_environment, closure_signature, collection_operation,
     completion_candidates, completion_dependency_surface, completion_dependency_surface_for_assembly,
     completion_dependency_surface_for_program, constant_integer, contextual_integer_literal_abi_type, control_flow,
-    direct_callees, empty_array_literal_element_abi_type, empty_array_literal_element_specialization, enum_constructor,
+    direct_callees, empty_array_literal_element_abi_type, enum_constructor,
     enum_constructor_specialization, enum_constructor_template, enum_layout, enum_match, enum_match_call_specialization, enum_match_specialization,
-    event_field_layout, event_handler_lambda_for_local, event_operation, extern_contract_declarations_in_unit, extern_contract_import_for_declaration,
+    event_field_layout, event_handler_lambda_for_local, event_operation, expected_type, expected_type_in_environment, extern_contract_declarations_in_unit, extern_contract_import_for_declaration,
     optional_extern_contract_members, ExternContractImport,
     for_iterator_fact, format_ast_node_key, format_ast_node_site, format_ast_node_trace, format_source_span_range,
     generic_call_instantiation, generic_call_specialization, generic_call_specialization_in_environment,
@@ -129,7 +132,7 @@ pub use semantic_contract::{
     reachable_items, resolved_item, resolved_local, runtime_intrinsic, runtime_intrinsic_name, scoped_cleanup,
     spawn_entry_validation, spawn_handle_type, spawn_legality, spawn_target,
     specialized_call_result_managed_reference_kind, specialized_corelib_value_service_result, test_item,
-    test_statement_nodes, try_expression_fact, typed_array_allocation, value_abi_type,
+    test_statement_nodes, try_expression_fact, try_expression_judgement, try_expression_legality, typed_array_allocation, value_abi_type,
 };
 pub use semantic_contract::{
     AppliedContractIdentity, applied_contract_argument_is_type, type_applied_contract_implementation,
@@ -156,7 +159,7 @@ pub use semantic_contract::{
 pub use semantic_contract::{DeadCollectionGrowth, dead_collection_growth, is_growth_call_candidate};
 pub use semantic_contract::{UnresolvedTypeReference, unresolved_type_reference};
 pub use session::{
-    compile_front_end_from_resolved_input, configure_db_for_project, prepare_compilation,
+    compile_front_end_with_mod_host, compile_mod_free_front_end, configure_db_for_project, prepare_compilation,
     prepare_compilation_diagnostics, reset_process_compilation_database, with_db,
 };
 pub use stats::{emit_salsa_stats, record_query_hit, record_query_miss, record_revision_bump, reset, snapshot};

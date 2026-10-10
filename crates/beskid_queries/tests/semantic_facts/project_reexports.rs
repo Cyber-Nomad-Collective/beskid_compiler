@@ -134,9 +134,17 @@ fn qualified_import_resolution_follows_public_reexports_and_declared_modules() {
         generation,
         &main_index,
         NodeKind::PathExpression,
-        main_source.find("Core.Text.Regex.Generated.ParseDigit").expect("unbound fully-qualified module"),
+        main_source.find("Core.Text.Regex.Generated.ParseDigit").expect("fully qualified public module"),
     );
-    assert_eq!(resolved_item(&db, fully_qualified).expect("unbound fully-qualified module"), None);
+    // A fully qualified path through public modules resolves without a `use` (decision 2026-10-09,
+    // OpenSpec `v06-qualified-dependency-paths`); `Parser.Private.Hidden` above stays unresolved
+    // because `Core.Text.Parser.Private` is a private module of `Core.Text.Parser`.
+    assert_eq!(
+        resolved_item(&db, fully_qualified).expect("fully qualified public module"),
+        Some(beskid_queries::ResolvedItem {
+            declaration: key(generated_unit, generation, &generated_index, NodeKind::FunctionDefinition, 0,),
+        })
+    );
     assert_eq!(
         resolved_item(&db, parse_digit).expect("declared module member"),
         Some(beskid_queries::ResolvedItem {

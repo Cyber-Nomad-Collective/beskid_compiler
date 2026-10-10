@@ -33,7 +33,7 @@ fn run_corelib_test(entry: &str, target_name: &str, test_name: &str) -> String {
 fn run_corelib_tests(entry: &str, target_name: &str, test_names: &[&str]) -> Vec<String> {
     let _serial = CORELIB_JIT_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     // One exact kit serves the engine and the native Mods that preparation runs.
-    let mod_host = ModHostScope::enter().expect("enter the shared native Mod host scope");
+    let mod_host = ModHostScope::shared().expect("enter the shared native Mod host scope");
     let kit_prefix = mod_host.runtime_prefix();
     let project_root = corelib_tests_root();
     let entry = project_root.join(entry);
@@ -47,8 +47,7 @@ fn run_corelib_tests(entry: &str, target_name: &str, test_names: &[&str]) -> Vec
     )
     .expect("resolve corelib test target");
     let plan = resolved.compile_plan.as_ref().expect("corelib test target has a compile plan");
-    let mod_invoker = Some(mod_host.corelib_mod_invoker(plan).expect("qualified Corelib native Mods"));
-    let options = PrepareOptions { mod_invoker, ..Default::default() };
+    let options = PrepareOptions::with_mod_host(mod_host.corelib_mod_host(plan).expect("qualified Corelib native Mods"));
     let prepared =
         with_db(|db| prepare_compilation_with_db(db, &resolved, options, None)).expect("prepare executable");
     let front = prepared.into_executable().expect("executable front-end");

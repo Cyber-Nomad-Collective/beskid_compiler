@@ -6,7 +6,7 @@ use beskid_codegen::{
     lower_prepared_syntax_entrypoint, lower_prepared_syntax_module, lower_syntax_assembly_entrypoint,
     object_link_symbol,
 };
-use beskid_queries::{compile_front_end_from_resolved_input, with_db};
+use beskid_queries::{compile_mod_free_front_end, with_db};
 use cranelift_codegen::{isa, settings};
 use std::process::Command;
 
@@ -19,7 +19,7 @@ fn prepared_syntax_entrypoint_lowers_without_hir_host_authority() {
     std::fs::write(&path, source).expect("write source");
     let plan = synthetic_compile_plan_for_source(&path);
     let resolved: ResolvedInput = resolved_input_from_plan(path, source.into(), plan, None, None);
-    let front = compile_front_end_from_resolved_input(
+    let front = compile_mod_free_front_end(
         &resolved,
         FrontEndOptions { with_semantic_diagnostics: false, ..Default::default() },
         None,
@@ -65,7 +65,7 @@ fn prepared_syntax_entrypoint_rejects_foreign_composition_snapshot_before_loweri
     std::fs::write(&path, source).expect("write source");
     let plan = synthetic_compile_plan_for_source(&path);
     let resolved = resolved_input_from_plan(path, source.into(), plan, None, None);
-    let mut front = compile_front_end_from_resolved_input(
+    let mut front = compile_mod_free_front_end(
         &resolved,
         FrontEndOptions { with_semantic_diagnostics: false, ..Default::default() },
         None,
@@ -134,7 +134,7 @@ fn compiler_trace_child_lowers_a_syntax_entrypoint() {
     std::fs::write(&path, source).expect("write source");
     let plan = synthetic_compile_plan_for_source(&path);
     let resolved: ResolvedInput = resolved_input_from_plan(path, source.into(), plan, None, None);
-    let front = compile_front_end_from_resolved_input(
+    let front = compile_mod_free_front_end(
         &resolved,
         FrontEndOptions { with_semantic_diagnostics: false, ..Default::default() },
         None,
@@ -163,7 +163,7 @@ fn prepared_syntax_module_lowers_functions_and_methods_without_hir() {
     std::fs::write(&path, source).expect("write source");
     let plan = synthetic_compile_plan_for_source(&path);
     let resolved: ResolvedInput = resolved_input_from_plan(path, source.into(), plan, None, None);
-    let front = compile_front_end_from_resolved_input(
+    let front = compile_mod_free_front_end(
         &resolved,
         FrontEndOptions { with_semantic_diagnostics: false, ..Default::default() },
         None,
@@ -198,7 +198,7 @@ pub unit plugin_init() { return; }
     std::fs::write(&path, source).expect("write source");
     let plan = synthetic_compile_plan_for_source(&path);
     let resolved: ResolvedInput = resolved_input_from_plan(path, source.into(), plan, None, None);
-    let front = compile_front_end_from_resolved_input(
+    let front = compile_mod_free_front_end(
         &resolved,
         FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
         None,
@@ -239,7 +239,7 @@ pub i64 Main() { return Helper() + 1; }
     std::fs::write(&path, source).expect("write source");
     let plan = synthetic_compile_plan_for_source(&path);
     let resolved: ResolvedInput = resolved_input_from_plan(path, source.into(), plan, None, None);
-    let front = compile_front_end_from_resolved_input(
+    let front = compile_mod_free_front_end(
         &resolved,
         FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
         None,
@@ -281,7 +281,7 @@ fn prepared_syntax_module_lowers_sample_mod_nominal_contract_methods() {
     std::fs::write(&path, source).expect("write source");
     let plan = synthetic_compile_plan_for_source(&path);
     let resolved: ResolvedInput = resolved_input_from_plan(path, source.into(), plan, None, None);
-    let front = compile_front_end_from_resolved_input(
+    let front = compile_mod_free_front_end(
         &resolved,
         FrontEndOptions { with_semantic_diagnostics: false, ..Default::default() },
         None,
@@ -310,7 +310,7 @@ fn selected_entrypoints_share_one_reachable_artifact() {
     std::fs::write(&path, source).unwrap();
     let plan = synthetic_compile_plan_for_source(&path);
     let resolved = resolved_input_from_plan(path, source.into(), plan, None, None);
-    let front = compile_front_end_from_resolved_input(
+    let front = compile_mod_free_front_end(
         &resolved,
         FrontEndOptions { with_semantic_diagnostics: false, ..Default::default() },
         None,

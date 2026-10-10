@@ -189,7 +189,7 @@ pub fn semantic_diagnostics_for_roots(
 ) -> Result<Vec<beskid_analysis::services::SemanticFactFinding>> {
     use crate::{
         AstNodeKey, IndexedNodeKind, build_runtime_fixture_typed_program,
-        build_typed_program_with_corelib_syscall_services, project_session_for_syntax_assembly, try_expression_fact,
+        build_typed_program_with_corelib_syscall_services, project_session_for_syntax_assembly, try_expression_judgement,
     };
     use beskid_abi::abi_v5::AbiManifestV5;
     use beskid_analysis::analysis::SemanticIssueKind;
@@ -244,9 +244,11 @@ pub fn semantic_diagnostics_for_roots(
             capability,
         )?
     };
-    // Every root unit is judged: the entry, plus each own unit of an entry-less library.
+    // Every own unit is judged: the entry plus every other unit of the host project's own source
+    // root (`library_unit_indices`), whether the target has an entry or not. Dependency units are
+    // judged by their own project.
     let root_indices = syntax
-        .root_unit_indices()
+        .library_unit_indices()
         .ok_or_else(|| anyhow::anyhow!("assembly root set names a source unit outside the prepared assembly"))?;
     let mut findings = Vec::new();
     // Every item of every root unit, in root order: the typing-obligation subjects.
@@ -269,7 +271,7 @@ pub fn semantic_diagnostics_for_roots(
         let index = &syntax.syntax_indexes[root_index];
         for node in index.ids_of_kind(IndexedNodeKind::TryExpression) {
             let key = AstNodeKey { unit: root_unit, generation: syntax.generation, node };
-            if !matches!(try_expression_fact(db, key), Ok(Some(_))) {
+            if !matches!(try_expression_judgement(db, key), Ok(Some(()))) {
                 let span = index
                     .node_at(root_program, node)
                     .and_then(|node| node.span())
@@ -287,7 +289,7 @@ pub fn semantic_diagnostics_for_roots(
             db,
             root,
             &syntax.glue_libraries,
-            syntax.is_canonical_public_dynamic_unit(&syntax.units[root_index]),
+            syntax.is_runtime_bridge_extern_unit(&syntax.units[root_index]),
         ));
         for kind in
             [IndexedNodeKind::FunctionDefinition, IndexedNodeKind::MethodDefinition, IndexedNodeKind::TestDefinition]
@@ -336,8 +338,20 @@ pub fn semantic_diagnostics_for_roots(
 }
 
 #[cfg(test)]
+#[path = "entry/parity_harness.rs"]
+mod parity_harness;
+#[cfg(test)]
 #[path = "entry/parity_tests.rs"]
 mod parity_tests;
+#[cfg(test)]
+#[path = "entry/parity_literals_externs_clif.rs"]
+mod parity_literals_externs_clif;
+#[cfg(test)]
+#[path = "entry/parity_values.rs"]
+mod parity_values;
+#[cfg(test)]
+#[path = "entry/parity_resolution.rs"]
+mod parity_resolution;
 
 pub fn typed_entry_bundle(
     db: &mut BeskidDatabase,
@@ -345,9 +359,8 @@ pub fn typed_entry_bundle(
     pipeline: Option<&dyn PipelineObserver>,
 ) -> Result<SharedFrontEnd> {
     let options = PrepareOptions {
-        mod_invoker: None,
         front_end: FrontEndOptions { with_semantic_diagnostics: false, ..Default::default() },
-        ..Default::default()
+        ..PrepareOptions::without_mods()
     };
     crate::typed_entry_bundle::typed_entry_bundle_with_db(db, resolved, &options, pipeline)
 }
@@ -544,7 +557,7 @@ mod tests {
             beskid_analysis::services::resolved_input_from_plan(entry_path, String::new(), plan, None, None);
         let mut db = BeskidDatabase::default();
         let (prepared, diagnostics, _) =
-            prepare_compilation_diagnostics_with_db(&mut db, &resolved, PrepareOptions::default(), None)
+            prepare_compilation_diagnostics_with_db(&mut db, &resolved, PrepareOptions::without_mods(), None)
                 .expect("prepare diagnostics");
         assert!(matches!(prepared.assembly.root_set, AssemblyRootSet::OwnUnits(ref paths) if paths.len() == 2));
         assert!(

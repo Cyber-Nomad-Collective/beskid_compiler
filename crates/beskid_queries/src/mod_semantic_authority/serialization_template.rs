@@ -11,6 +11,8 @@ pub struct CompiledSerializationTemplate {
     parameters: Vec<String>,
     contribution: Spanned<ProgramItem>,
     contribution_index: u32,
+    /// The unbound items of the same generated group, attributed with the contribution.
+    members: Vec<ModContributionMember>,
 }
 impl CompiledSerializationTemplate {
     pub fn contribution_index(&self) -> u32 {
@@ -21,6 +23,28 @@ impl CompiledSerializationTemplate {
     }
     pub fn contribution(&self) -> &Spanned<ProgramItem> {
         &self.contribution
+    }
+    pub fn members(&self) -> &[ModContributionMember] {
+        &self.members
+    }
+    /// See `CompiledSerializationTarget::appended_attribution`.
+    pub(crate) fn appended_attribution(
+        &self,
+        db: &dyn Db,
+        project: ProjectSession,
+        current: &ProgramAssembly,
+    ) -> Result<Option<(SourceUnitId, Vec<crate::AstNodeId>)>, crate::SemanticError> {
+        if project != self.project {
+            return Err(crate::SemanticError::new("serialization template belongs to another project issuer"));
+        }
+        serialization_target::appended_group_attribution(
+            db,
+            &self.assembly,
+            self.owner,
+            &self.contribution,
+            &self.members,
+            current,
+        )
     }
     /// Current owner declaration of this template and the exact appended
     /// contribution. Original source/package provenance must be unchanged.
@@ -68,6 +92,7 @@ impl CompiledSerializationTemplate {
             &original_entry.program.node.items,
             &current_entry.program.node.items,
             &self.contribution,
+            &self.members,
         )?;
         let syntax = db
             .syntax_unit(SourceUnitId::new(db, current_unit.path.clone()))
@@ -139,9 +164,93 @@ impl CompiledSerializationTemplate {
             lexical,
             self.contribution.clone(),
             self.contribution_index,
+            self.members.clone(),
         )
         .rebind_in_environment(db, program, environment)
     }
+}
+
+/// The per-instantiation contract rebind of a retained template: the serde precedent of a
+/// generic `impl<T: Serialize> Serialize for Owner<T>` proven at every concrete use.
+///
+/// `instance` is one emitted specialization of a method. When that method is declared by the
+/// impl block of a retained template contribution, the template is specialized with the
+/// owner's arguments taken from the instance's substitutions and its canonical `Serializable`
+/// or `Decoder` application is rebound in the instance's complete environment (the encoder,
+/// reader and field decoder parameters included). `Ok(None)` means the method is not a
+/// retained template contribution. Codegen fails closed on any error.
+pub fn serialization_template_instance_rebind(
+    db: &dyn Db,
+    program: &crate::TypedProgram,
+    instance: &crate::GenericSpecializationInstance,
+) -> Result<Option<ReboundSerializationTarget>, ModSemanticError> {
+    let reject = ModSemanticQueryAuthority::error;
+    let entry = program.assembly.entry_unit();
+    let entry_id = SourceUnitId::new(db, entry.path.clone());
+    let method = instance.declaration;
+    if method.unit != entry_id || method.generation != program.generation {
+        return Ok(None);
+    }
+    let index = program.assembly.entry_syntax_index();
+    if index.kind(method.node) != Some(NodeKind::MethodDefinition) {
+        return Ok(None);
+    }
+    let Some(block) = index.metadata().get(method.node.0 as usize).and_then(|metadata| metadata.parent) else {
+        return Ok(None);
+    };
+    if index.kind(block) != Some(NodeKind::ImplBlock) {
+        return Ok(None);
+    }
+    let Some(root) = index.ids_of_kind(NodeKind::Program).next() else { return Ok(None) };
+    let Some(item) = entry.program.node.items.iter().find(|item| {
+        index.direct_child_id(&entry.program, root, beskid_analysis::syntax_query::DynNodeRef::from(*item)) == Some(block)
+    }) else {
+        return Ok(None);
+    };
+    let templates = program
+        .assembly
+        .compiled_mod_metadata
+        .iter()
+        .filter_map(|metadata| metadata.issuer_payload::<CompiledSerializationTemplate>())
+        .filter(|template| template.contribution == *item)
+        .collect::<Vec<_>>();
+    let [template] = templates.as_slice() else {
+        if templates.is_empty() {
+            return Ok(None);
+        }
+        return Err(reject("serialization template contribution is retained more than once"));
+    };
+    let owner = template.current_owner(db, program)?;
+    let syntax = db.syntax_unit(owner.unit).ok_or_else(|| reject("template source absent"))?;
+    let node = syntax
+        .syntax_index(db)
+        .node_at(syntax.expanded_program(db), owner.node)
+        .ok_or_else(|| reject("template declaration absent"))?;
+    let parameters = if let Some(record) = node.of::<TypeDefinition>() {
+        record.generics.iter().map(|p| p.node.name.clone()).collect::<Vec<_>>()
+    } else if let Some(enumeration) = node.of::<EnumDefinition>() {
+        enumeration.generics.iter().map(|p| p.node.name.clone()).collect::<Vec<_>>()
+    } else {
+        return Err(reject("template target is not a nominal declaration"));
+    };
+    if parameters != template.parameters {
+        return Err(reject("template owner generic parameters changed"));
+    }
+    let mut arguments = Vec::with_capacity(parameters.len());
+    for parameter in &parameters {
+        let binding = instance
+            .substitutions
+            .iter()
+            .find(|binding| binding.parameter.as_ref() == parameter.as_str())
+            .ok_or_else(|| {
+                reject(&format!(
+                    "serialization template instance does not bind owner parameter `{parameter}`; \
+                     a generated adapter method is emitted only in a complete substitution environment"
+                ))
+            })?;
+        arguments.push(binding.source_identity().clone());
+    }
+    template.specialize(db, program, arguments.into(), &instance.substitutions).map(Some)
 }
 
 /// The retained template specialization behind a compiled descriptor getter.
@@ -194,6 +303,7 @@ impl ModSemanticQueryAuthority<'_> {
         reference: &ModSyntaxNodeRef,
         declaration: &ModSemanticDeclaration,
         contribution: &Spanned<ProgramItem>,
+        members: &[ModContributionMember],
     ) -> Result<ModCompiledMetadata, ModSemanticError> {
         self.validate_registration()?;
         let owner = self.syntax_key(invocation, reference)?;
@@ -215,11 +325,7 @@ impl ModSemanticQueryAuthority<'_> {
         if parameters.is_empty() {
             return Err(Self::error("template target has no generic parameters"));
         }
-        super::serialization_target::require_contribution_field_access(
-            self.db,
-            owner,
-            &self.assembly.entry_unit().path,
-        )?;
+        super::serialization_target::validate_members(contribution_index, members)?;
         let unit = self
             .registered_unit(&declaration.source_unit)
             .ok_or_else(|| Self::error("template prepared unit absent"))?;
@@ -243,11 +349,13 @@ impl ModSemanticQueryAuthority<'_> {
         {
             return Err(Self::error("template contribution lacks exact generic scope/methods/conformance"));
         }
-        Ok(ModCompiledMetadata::with_issuer_payload(
+        let attribution = super::serialization_target::group_attribution(self.db, owner, contribution, members);
+        let metadata = ModCompiledMetadata::with_issuer_payload(
             ModSerializationTemplateClaim {
                 contribution_index,
                 declaration: declaration.clone(),
                 parameters: parameters.clone(),
+                attribution,
             },
             CompiledSerializationTemplate {
                 project: self.project,
@@ -256,8 +364,11 @@ impl ModSemanticQueryAuthority<'_> {
                 parameters,
                 contribution: contribution.clone(),
                 contribution_index,
+                members: members.to_vec(),
             },
-        ))
+        );
+        self.issued_metadata.borrow_mut().push(metadata.clone());
+        Ok(metadata)
     }
 }
 

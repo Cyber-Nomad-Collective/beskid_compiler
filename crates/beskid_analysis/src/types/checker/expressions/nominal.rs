@@ -263,8 +263,10 @@ impl<'a> TypeChecker<'a> {
 
     /// A field without `pub` is private to the source unit that declares its type (E1211). The
     /// declaring unit, including the type's inline methods, keeps full access; an `extend type`
-    /// body is judged by E1511 instead. An item without a known declaring source is never judged
-    /// here: the semantic query gate remains the authority for those programs.
+    /// body is judged by E1511 instead. A retained serialization group appended to the entry is
+    /// judged in the unit that declares its target (`current_item_attribution`). An item without
+    /// a known declaring source is never judged here: the semantic query gate remains the
+    /// authority for those programs.
     pub(in crate::types::checker) fn field_inaccessible(&self, type_item: ItemId, field_name: &str) -> bool {
         if self.in_extend_type_body && self.current_receiver_item_id == Some(type_item) {
             return false;
@@ -287,7 +289,7 @@ impl<'a> TypeChecker<'a> {
         let Some(declared) = self.resolution.items.get(type_item.0).and_then(|info| info.source_path.as_ref()) else {
             return false;
         };
-        let Some(current) = self.current_source_path.as_ref() else {
+        let Some(current) = self.current_item_attribution.as_ref().or(self.current_source_path.as_ref()) else {
             return false;
         };
         !crate::paths::same_file(declared, current)

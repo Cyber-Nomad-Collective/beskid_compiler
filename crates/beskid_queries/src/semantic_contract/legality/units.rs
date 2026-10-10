@@ -5,20 +5,38 @@
 //! * E1102: the resolver's `collect_item` duplicates within one unit: two module-scope items
 //!   (function, type, enum, contract, test, inline module) of one name in one module scope (the
 //!   unit, or one inline module), two constants of one name in one module scope, a `type` method
-//!   named like one of the type's fields, and two top-level `use` declarations binding one alias.
-//!   Reported at the later declaration with the earlier one's span.
+//!   named like one of the type's fields, two top-level `use` declarations binding one alias, and
+//!   two `mod` declarations of one module path. Reported at the later declaration with the
+//!   earlier one's span.
+//! * E1102 across units (`collect_program_in_module` collecting every unit of one logical module
+//!   into one module scope): a top-level item or constant of a root unit whose name an earlier
+//!   unit of the same logical module (dependency registry order, the legacy collection order)
+//!   already declares. Reported in the later unit, with the earlier declaration's span.
+//! * E1102 builtin collision (`collect_builtins` registers every manifest builtin as an item of
+//!   its module before any unit is collected): a module-scope item whose module path plus name is
+//!   a builtin path.
+//! * E1101, E1104, E1107, E1108, E1201: value paths that name no value (`value_paths.rs`).
 //! * E1220: an `event` field declared with capacity `0` (`register_struct_definition_fields`).
-//! * E1601 / E1602 / E1607: every `type X : C` and `impl X : C` conformance of a non-generic
-//!   implementor to a non-generic contract (`check_contract_conformances`), classified by
-//!   `contract_conformance_failure`; a conformance path that names a type instead of a contract
-//!   is the resolver's `InvalidConformanceTarget` (E1607).
+//! * E1601 / E1602 / E1607: every `type X : C` and `impl X : C` conformance
+//!   (`check_contract_conformances`), generic implementors (`type Box<T> : C`) and applied generic
+//!   contracts (`type X : Seq<i64>`) included, classified by `contract_conformance_failure`; a
+//!   conformance path that names a type instead of a contract is the resolver's
+//!   `InvalidConformanceTarget` (E1607). Method presence (E1601) and associated-type bindings
+//!   (E1607) are judged by name, which generics do not change. E1602 compares closed signatures
+//!   only: a contract signature that mentions a contract generic is open and skipped
+//!   (`contract_conformance_failure`), and an implementing signature that mentions an implementor
+//!   generic has no source identity (`generic_source_type_identity` fails on a bare type
+//!   parameter) and is skipped, so the legacy substitution of `check_contract_conformances` is
+//!   never needed for a judged signature.
 //! * E1608 / E1609: `This` outside a method, contract, `impl`, or `type` scope, and every
 //!   associated-type reference (`type_id_for_type`, which fails closed on `Type::Associated`).
 
+use super::value_paths::{ValuePathKind, collect_value_path_obligations};
 use super::*;
 use beskid_analysis::syntax::{
     AssociatedTypeBinding, ConstantDefinition, ContractDefinition, ContractNode, EnumDefinition, Field, FieldKind,
-    FunctionDefinition, ImplBlock, InlineModule, Path, Spanned, TestDefinition, Type, TypeDefinition, UseDeclaration,
+    FunctionDefinition, ImplBlock, InlineModule, ModuleDeclaration, Path, Spanned, TestDefinition, Type, TypeDefinition,
+    UseDeclaration, Visibility,
 };
 use beskid_analysis::syntax_query::DynNodeRef;
 
@@ -41,6 +59,8 @@ pub enum UnitObligationKind {
     ThisUsedOutsideContractOrImpl,
     /// E1609: an associated-type reference (`T::Item`), which the type system fails closed on.
     UnresolvedAssociatedType { name: Arc<str> },
+    /// A value path that names no value (`value_paths.rs`).
+    ValuePath(ValuePathKind),
 }
 
 /// A failed unit-level obligation and the exact node that carries the diagnostic.
@@ -71,6 +91,15 @@ fn unit_obligations_tracked(
         collect_event_capacity_obligations(program, index, key, &mut findings);
         collect_type_scope_obligations(program, index, key, &mut findings);
         collect_conformance_obligations(db, program, index, key, &mut findings);
+        collect_module_declaration_obligations(program, index, key, &mut findings);
+        collect_cross_unit_duplicate_obligations(db, syntax, program, index, key, &mut findings);
+        collect_builtin_collision_obligations(db, syntax, program, index, key, &mut findings);
+        let mut value_paths = Vec::new();
+        collect_value_path_obligations(db, program, index, key, &mut value_paths);
+        findings.extend(value_paths.into_iter().map(|obligation| UnitObligation {
+            kind: UnitObligationKind::ValuePath(obligation.kind),
+            site: obligation.site,
+        }));
         findings.sort_by_key(|finding| finding.site.node.0);
         Some(Arc::from(findings))
     })
@@ -115,6 +144,27 @@ pub fn check_unit_obligations(db: &dyn Db, roots: &[AstNodeKey]) -> Vec<Semantic
                 UnitObligationKind::UnresolvedAssociatedType { name } => {
                     SemanticIssueKind::UnresolvedAssociatedType { name: name.to_string() }
                 }
+                UnitObligationKind::ValuePath(kind) => match kind {
+                    ValuePathKind::UnknownValueType => SemanticIssueKind::TypeUnknownValueType,
+                    ValuePathKind::UnknownModulePath { path } => {
+                        SemanticIssueKind::ResolveUnknownModulePath { path: path.to_string() }
+                    }
+                    ValuePathKind::AmbiguousModulePath { path, candidates } => {
+                        SemanticIssueKind::ResolveAmbiguousModulePath { path: path.to_string(), candidates: *candidates }
+                    }
+                    ValuePathKind::UnknownValueInModule { module_path, name } => {
+                        SemanticIssueKind::ResolveUnknownValueInModule {
+                            module_path: module_path.to_string(),
+                            name: name.to_string(),
+                        }
+                    }
+                    ValuePathKind::PrivateItemInModule { module_path, name } => {
+                        SemanticIssueKind::ResolvePrivateItemInModule {
+                            module_path: module_path.to_string(),
+                            name: name.to_string(),
+                        }
+                    }
+                },
             };
             findings.push(SemanticFinding { kind, site: obligation.site, related: Vec::new() });
         }
@@ -313,9 +363,6 @@ fn collect_conformance_obligations(
         let Some(definition) = index.node_at(program, node).and_then(|node| node.of::<TypeDefinition>()) else {
             continue;
         };
-        if !definition.generics.is_empty() {
-            continue;
-        }
         let concrete = AstNodeKey { node, ..key };
         for conformance in &definition.conformances {
             judge_conformance(db, program, index, concrete, concrete, conformance, &definition.associated_type_bindings, findings);
@@ -323,9 +370,6 @@ fn collect_conformance_obligations(
     }
     for node in index.ids_of_kind(NodeKind::ImplBlock) {
         let Some(block) = index.node_at(program, node).and_then(|node| node.of::<ImplBlock>()) else { continue };
-        if !block.generics.is_empty() {
-            continue;
-        }
         let Type::Complex(receiver) = &block.receiver_type.node else { continue };
         let owner = AstNodeKey { node, ..key };
         let Some(concrete) = resolve_type_declaration(db, owner, &receiver.node) else { continue };
@@ -335,9 +379,6 @@ fn collect_conformance_obligations(
         let Some(definition) = index.node_at(program, concrete.node).and_then(|node| node.of::<TypeDefinition>()) else {
             continue;
         };
-        if !definition.generics.is_empty() {
-            continue;
-        }
         let bindings = definition
             .associated_type_bindings
             .iter()
@@ -368,7 +409,13 @@ fn judge_conformance(
         .map_or(owner, |node| AstNodeKey { node, ..owner });
     let Some(terminal) = conformance.node.segments.last() else { return };
     let name = terminal.node.name.node.name.as_str();
-    let Some(contract) = resolve_contract(db, owner, &conformance.node) else {
+    // An applied contract (`Seq<i64>`) names the contract declaration of its terminal; the type
+    // arguments only substitute contract generics, whose signatures stay open below.
+    let mut contract_path = conformance.node.clone();
+    if let Some(last) = contract_path.segments.last_mut() {
+        last.node.type_args.clear();
+    }
+    let Some(contract) = resolve_contract(db, owner, &contract_path) else {
         if resolve_type_declaration(db, owner, &conformance.node).is_some() {
             findings.push(UnitObligation {
                 kind: UnitObligationKind::InvalidConformanceTarget { name: Arc::from(name) },
@@ -377,9 +424,6 @@ fn judge_conformance(
         }
         return;
     };
-    if !terminal.node.type_args.is_empty() {
-        return;
-    }
     let Some(contract_syntax) = db.syntax_unit(contract.unit).filter(|syntax| syntax.accepts_key(db, contract)) else {
         return;
     };
@@ -390,9 +434,6 @@ fn judge_conformance(
     else {
         return;
     };
-    if !contract_definition.generics.is_empty() {
-        return;
-    }
     let contract_name = Arc::<str>::from(contract_definition.name.node.name.as_str());
     for item in &contract_definition.items {
         let ContractNode::AssociatedType(associated) = &item.node else { continue };
@@ -432,5 +473,243 @@ fn judge_conformance(
             });
         }
         Ok(None) | Err(_) => {}
+    }
+}
+
+/// The index of the unit's file-scoped module declaration: the first top-level `mod` without `pub`
+/// and without attributes, which names the unit's own module instead of declaring a child
+/// (`resolver::file_scoped_module_index`).
+fn file_scoped_module_declaration(program: &Spanned<beskid_analysis::syntax::Program>) -> Option<usize> {
+    program.node.items.iter().position(|item| match &item.node {
+        beskid_analysis::syntax::Node::ModuleDeclaration(declaration) => {
+            declaration.node.visibility.node == Visibility::Private && declaration.node.attributes.is_empty()
+        }
+        _ => false,
+    })
+}
+
+fn path_names(path: &Path) -> Vec<String> {
+    path.segments.iter().map(|segment| segment.node.name.node.name.clone()).collect()
+}
+
+/// E1102 for a second `mod` declaration of one module path (`collect_item`, `Node::ModuleDeclaration`:
+/// the declaration's tail is inserted into its parent module, so a repeated path collides). The
+/// file-scoped declaration names the unit's own module and declares no child; it is excluded, as
+/// in `collect_items`.
+fn collect_module_declaration_obligations(
+    program: &Spanned<beskid_analysis::syntax::Program>,
+    index: &SyntaxIndex,
+    key: AstNodeKey,
+    findings: &mut Vec<UnitObligation>,
+) {
+    let file_scoped = file_scoped_module_declaration(program).and_then(|position| {
+        let item = program.node.items.get(position)?;
+        let beskid_analysis::syntax::Node::ModuleDeclaration(declaration) = &item.node else { return None };
+        index.ids_of_kind(NodeKind::ModuleDeclaration).find(|candidate| {
+            module_scope_of_item(index, *candidate).is_some_and(|scope| index.kind(scope) == Some(NodeKind::Program))
+                && index
+                    .node_at(program, *candidate)
+                    .and_then(|node| node.of::<ModuleDeclaration>())
+                    .is_some_and(|node| std::ptr::eq(node, &declaration.node))
+        })
+    });
+    let mut declarations = index
+        .ids_of_kind(NodeKind::ModuleDeclaration)
+        .filter(|node| Some(*node) != file_scoped)
+        .filter_map(|node| {
+            let declaration = index.node_at(program, node)?.of::<ModuleDeclaration>()?;
+            Some((path_names(&declaration.path.node), node))
+        })
+        .collect::<Vec<_>>();
+    declarations.sort_by_key(|(_, node)| node.0);
+    let mut seen: HashMap<Vec<String>, beskid_analysis::syntax::AstNodeId> = HashMap::new();
+    for (path, node) in declarations {
+        match seen.get(&path) {
+            Some(previous) => {
+                let previous =
+                    index.metadata_for(key.generation, *previous).and_then(|metadata| metadata.span).unwrap_or_default();
+                findings.push(UnitObligation {
+                    kind: UnitObligationKind::DuplicateItem {
+                        name: Arc::from(path.last().map(String::as_str).unwrap_or_default()),
+                        previous,
+                    },
+                    site: AstNodeKey { node, ..key },
+                });
+            }
+            None => {
+                seen.insert(path, node);
+            }
+        }
+    }
+}
+
+/// The resolver namespace a module-scope declaration is collected into: items share the module
+/// scope (`ModuleGraph::insert_item`), constants their own table (`Resolver::constants`).
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ModuleNamespace {
+    Item,
+    Constant,
+}
+
+/// Every top-level declaration of a unit that the resolver collects into the unit's own module
+/// scope, in source order: functions, types, enums, contracts, tests, inline modules, and
+/// constants.
+fn top_level_declarations(
+    program: &Spanned<beskid_analysis::syntax::Program>,
+    index: &SyntaxIndex,
+) -> Vec<(ModuleNamespace, String, beskid_analysis::syntax::AstNodeId)> {
+    let mut declarations = Vec::new();
+    for kind in [
+        NodeKind::FunctionDefinition,
+        NodeKind::TypeDefinition,
+        NodeKind::EnumDefinition,
+        NodeKind::ContractDefinition,
+        NodeKind::TestDefinition,
+        NodeKind::InlineModule,
+        NodeKind::ConstantDefinition,
+    ] {
+        for node in index.ids_of_kind(kind) {
+            if module_scope_of_item(index, node).is_none_or(|scope| index.kind(scope) != Some(NodeKind::Program)) {
+                continue;
+            }
+            let Some(reference) = index.node_at(program, node) else { continue };
+            let declaration = if let Some(item) = reference.of::<FunctionDefinition>() {
+                (ModuleNamespace::Item, item.name.node.name.clone())
+            } else if let Some(item) = reference.of::<TypeDefinition>() {
+                (ModuleNamespace::Item, item.name.node.name.clone())
+            } else if let Some(item) = reference.of::<EnumDefinition>() {
+                (ModuleNamespace::Item, item.name.node.name.clone())
+            } else if let Some(item) = reference.of::<ContractDefinition>() {
+                (ModuleNamespace::Item, item.name.node.name.clone())
+            } else if let Some(item) = reference.of::<TestDefinition>() {
+                (ModuleNamespace::Item, item.name.node.name.clone())
+            } else if let Some(item) = reference.of::<InlineModule>() {
+                (ModuleNamespace::Item, item.name.node.name.clone())
+            } else if let Some(item) = reference.of::<ConstantDefinition>() {
+                (ModuleNamespace::Constant, item.name.node.name.clone())
+            } else {
+                continue;
+            };
+            declarations.push((declaration.0, declaration.1, node));
+        }
+    }
+    declarations.sort_by_key(|(_, _, node)| node.0);
+    declarations
+}
+
+/// The assembly entry of the session that owns `syntax`. The legacy resolver collects the entry
+/// at the root module (`collect_program`) and binds it into its logical module without
+/// reporting collisions (`bind_root_items_in_module`), so it never takes part in a cross-unit
+/// module collision.
+fn session_entry(db: &dyn Db, syntax: SyntaxUnitInput) -> SourceUnitId {
+    SourceUnitId::new(db, syntax.project(db).entry_path(db))
+}
+
+/// The logical module path and the units of that module, in assembly order, for `unit`.
+fn logical_module(db: &dyn Db, key: AstNodeKey) -> Option<(Vec<String>, Vec<SourceUnitId>)> {
+    let registry = db.syntax_dependency_registry().lock().expect("syntax dependency registry");
+    registry
+        .modules
+        .iter()
+        .find(|((generation, _), units)| *generation == key.generation && units.contains(&key.unit))
+        .map(|((_, path), units)| (path.clone(), units.clone()))
+}
+
+/// E1102 across the units of one logical module (`collect_program_in_module` collects every
+/// non-entry unit of a module into one module scope, in assembly order; the later declaration
+/// collides). The root unit judges its own declarations against the units collected before it,
+/// so each collision is reported once, in the later unit. A root's second declaration of a name
+/// it already declares is the in-unit duplicate and is not reported again. Units with a
+/// file-scoped module declaration and the assembly entry are collected elsewhere and are not
+/// judged.
+fn collect_cross_unit_duplicate_obligations(
+    db: &dyn Db,
+    syntax: SyntaxUnitInput,
+    program: &Spanned<beskid_analysis::syntax::Program>,
+    index: &SyntaxIndex,
+    key: AstNodeKey,
+    findings: &mut Vec<UnitObligation>,
+) {
+    let entry = session_entry(db, syntax);
+    if key.unit == entry || file_scoped_module_declaration(program).is_some() {
+        return;
+    }
+    let Some((_, units)) = logical_module(db, key) else { return };
+    let Some(position) = units.iter().position(|unit| *unit == key.unit) else { return };
+    let mut earlier = Vec::new();
+    for unit in &units[..position] {
+        if *unit == entry {
+            continue;
+        }
+        let Some(sibling) = db.syntax_unit(*unit).filter(|sibling| sibling.generation(db) == key.generation) else {
+            continue;
+        };
+        let sibling_program = sibling.expanded_program(db);
+        if file_scoped_module_declaration(sibling_program).is_some() {
+            continue;
+        }
+        let sibling_index = sibling.syntax_index(db);
+        for (namespace, name, node) in top_level_declarations(sibling_program, sibling_index) {
+            let span = sibling_index.metadata_for(key.generation, node).and_then(|metadata| metadata.span);
+            earlier.push((namespace, name, span.unwrap_or_default()));
+        }
+    }
+    let mut own_names = HashSet::new();
+    for (namespace, name, node) in top_level_declarations(program, index) {
+        let first_in_unit = own_names.insert((namespace == ModuleNamespace::Constant, name.clone()));
+        if !first_in_unit {
+            continue;
+        }
+        let Some((_, _, previous)) =
+            earlier.iter().find(|(earlier_namespace, earlier_name, _)| *earlier_namespace == namespace && *earlier_name == name)
+        else {
+            continue;
+        };
+        findings.push(UnitObligation {
+            kind: UnitObligationKind::DuplicateItem { name: Arc::from(name.as_str()), previous: *previous },
+            site: AstNodeKey { node, ..key },
+        });
+    }
+}
+
+/// E1102 for a module-scope item named like a manifest builtin (`collect_builtins` registers every
+/// builtin as an item of its module before any unit is collected, so the unit's item collides).
+/// The module a unit is collected into is its file-scoped module declaration, else the root
+/// module for the assembly entry (`collect_program`), else its logical module path. The previous
+/// span is the builtin's synthetic span, as in the legacy resolver.
+fn collect_builtin_collision_obligations(
+    db: &dyn Db,
+    syntax: SyntaxUnitInput,
+    program: &Spanned<beskid_analysis::syntax::Program>,
+    index: &SyntaxIndex,
+    key: AstNodeKey,
+    findings: &mut Vec<UnitObligation>,
+) {
+    let module_path = if let Some(position) = file_scoped_module_declaration(program) {
+        let Some(beskid_analysis::syntax::Node::ModuleDeclaration(declaration)) =
+            program.node.items.get(position).map(|item| &item.node)
+        else {
+            return;
+        };
+        path_names(&declaration.node.path.node)
+    } else if key.unit == session_entry(db, syntax) {
+        Vec::new()
+    } else {
+        let Some((path, _)) = logical_module(db, key) else { return };
+        path
+    };
+    let builtin_previous = SourceSpan { start: 0, end: 0, line_col_start: (1, 1), line_col_end: (1, 1) };
+    for (namespace, name, node) in top_level_declarations(program, index) {
+        if namespace != ModuleNamespace::Item {
+            continue;
+        }
+        let mut path = module_path.clone();
+        path.push(name.clone());
+        if beskid_analysis::builtins::builtin_for_path(&path).is_some() {
+            findings.push(UnitObligation {
+                kind: UnitObligationKind::DuplicateItem { name: Arc::from(name.as_str()), previous: builtin_previous },
+                site: AstNodeKey { node, ..key },
+            });
+        }
     }
 }

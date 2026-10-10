@@ -23,15 +23,27 @@ use crate::position::offset_range_to_lsp;
 use crate::session::store::{SyntaxDiagnostic, SyntaxDiagnosticSeverity};
 
 /// Qualified native Mod execution for editor diagnostics. The editor never builds Mods: it runs
-/// the artifact the CLI cached or the toolchain shipped in the session's Mod host, or reports the
-/// exact rebuild command.
-fn editor_mod_invoker(
+/// the artifact the CLI cached or the toolchain shipped in the session's Mod host and runtime kit,
+/// or reports the exact rebuild command.
+///
+/// Only the Mods this buffer's assembly activates are qualified, decided on the same editor
+/// assembly policy the preparation uses.
+fn editor_mod_host(
     resolved: &ResolvedInput,
+    front_end: &FrontEndOptions,
     mod_host: &ModHostSelection,
-) -> anyhow::Result<Option<std::sync::Arc<dyn beskid_analysis::mod_host::ContractInvoker>>> {
+) -> anyhow::Result<beskid_analysis::mod_host::ModHost> {
     match resolved.compile_plan.as_ref() {
-        Some(plan) => mod_host.cached_mod_invoker(plan),
-        None => Ok(None),
+        Some(_) => mod_host.mod_host_for_input(resolved, front_end),
+        None => Ok(beskid_analysis::mod_host::ModHost::NoMods),
+    }
+}
+
+fn editor_front_end(dependency_typing: DependencyTypingPolicy) -> FrontEndOptions {
+    FrontEndOptions {
+        assembly_recovery: beskid_analysis::projects::AssemblyRecoveryPolicy::EditorRetainRecovered,
+        with_semantic_diagnostics: dependency_typing == DependencyTypingPolicy::FullClosure,
+        ..Default::default()
     }
 }
 
@@ -73,12 +85,9 @@ pub(crate) fn prepare_project_syntax_facts(
     let (prepared, diagnostics, fixes) = beskid_queries::prepare_compilation_diagnostics_with_db(
         db,
         resolved,
-        PrepareOptions { mod_invoker: editor_mod_invoker(resolved, mod_host)?,
-            front_end: FrontEndOptions {
-                assembly_recovery: beskid_analysis::projects::AssemblyRecoveryPolicy::EditorRetainRecovered,
-                with_semantic_diagnostics: dependency_typing == DependencyTypingPolicy::FullClosure,
-                ..Default::default()
-            },
+        PrepareOptions {
+            mod_host: editor_mod_host(resolved, &editor_front_end(dependency_typing), mod_host)?,
+            front_end: editor_front_end(dependency_typing),
             dependency_typing,
             native_mod_adapter_sources: false,
         },
@@ -103,12 +112,9 @@ pub(crate) fn prepare_project_diagnostics_from_assembled(
 ) -> anyhow::Result<PreparedSyntaxFacts> {
     let (prepared, diagnostics, fixes) = beskid_queries::prepare_compilation_diagnostics_isolated(
         resolved,
-        PrepareOptions { mod_invoker: editor_mod_invoker(resolved, mod_host)?,
-            front_end: FrontEndOptions {
-                assembly_recovery: beskid_analysis::projects::AssemblyRecoveryPolicy::EditorRetainRecovered,
-                with_semantic_diagnostics: dependency_typing == DependencyTypingPolicy::FullClosure,
-                ..Default::default()
-            },
+        PrepareOptions {
+            mod_host: editor_mod_host(resolved, &editor_front_end(dependency_typing), mod_host)?,
+            front_end: editor_front_end(dependency_typing),
             dependency_typing,
             native_mod_adapter_sources: false,
         },

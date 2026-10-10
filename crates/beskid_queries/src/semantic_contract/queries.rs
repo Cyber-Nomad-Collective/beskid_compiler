@@ -194,6 +194,37 @@ pub fn try_expression_fact(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<
     with_registered_syntax(db, key, try_expression_fact_tracked)
 }
 
+/// Whether `operand?` is legal: a canonical Result operand whose error type is exactly the
+/// enclosing callable's declared canonical Result error type. Unlike [`try_expression_fact`],
+/// this holds in unspecialized generic bodies.
+pub fn try_expression_legality(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<()> {
+    with_registered_syntax(db, key, |db, syntax, key| {
+        with_node(db, syntax, key, |program, index, node| {
+            Some(try_expression_legality_for_node(db, program, index, key, node))
+        })?
+        .transpose()
+    })
+}
+
+/// The `check` judgement of `operand?`. A body in generic scope is judged by the language rule
+/// alone ([`try_expression_legality`]): its payload layouts exist only per specialization. A
+/// concrete body must also prove the lowering fact ([`try_expression_fact`]) it compiles with.
+pub fn try_expression_judgement(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<()> {
+    let generic_scope = with_registered_syntax(db, key, |db, syntax, key| {
+        with_node(db, syntax, key, |_program, index, _node| {
+            let callable = nearest_ancestor(index, key.node, |kind| {
+                matches!(kind, IndexedNodeKind::FunctionDefinition | IndexedNodeKind::MethodDefinition)
+            })?;
+            Some(generic_callable_parameters(db, AstNodeKey { node: callable, ..key }).is_some())
+        })
+    })?;
+    match generic_scope {
+        None => Ok(None),
+        Some(true) => try_expression_legality(db, key),
+        Some(false) => try_expression_fact(db, key).map(|fact| fact.map(|_| ())),
+    }
+}
+
 /// Return the declaration identifier for the receiver of an exact `local.Method()` path.
 ///
 /// The fact exists only when the local has an explicit nominal parameter or let annotation and
@@ -528,23 +559,25 @@ fn site_unsited_gap(db: &dyn Db, key: AstNodeKey, family: &str, error: SemanticE
     SemanticError::unavailable_at_described(&query, key, &rendered_site, "the fact is not proven for this node")
 }
 
-/// Return the exact call-parameter ABI selected for one bare integer argument.
+/// Return the type an expression is checked against: the requirement of its typed parent
+/// context (an annotated local, an assignment target, a resolved callee parameter, an enum
+/// payload or struct field, a declared return type, an expected array's element, a match arm's
+/// match, a block result, a binary operand's peer, or `unit` for a statement).
 ///
-/// Only a singleton unsuffixed integer argument of a direct call receives this contextual fact;
-/// all other expressions remain unavailable rather than being implicitly coerced.
-pub fn call_argument_abi_type(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<SemanticTypeId> {
-    with_registered_syntax(db, key, call_argument_abi_type_tracked)
-        .map_err(|error| site_unsited_gap(db, key, "call_argument_abi_type", error))
+/// This is the checking direction of bidirectional typing. The expected type exists only where a
+/// declaration or sibling proves it; a position with no typed context, an inferred local, a
+/// lambda result, or a declared type that still names an unbound generic stays unavailable.
+pub fn expected_type(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<ExpectedType> {
+    with_registered_syntax(db, key, expected_type_tracked)
 }
 
-pub fn binary_operand_abi_type(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<SemanticTypeId> {
-    with_registered_syntax(db, key, binary_operand_abi_type_tracked)
-}
-
-/// Return the exact ABI selected for a bare integer literal at a declared contextual boundary.
+/// Return the exact ABI selected for a bare integer literal (or integer constant) by its
+/// [`expected_type`].
 ///
-/// This fact never performs a numeric conversion: it is unavailable for inferred locals,
-/// explicit literal suffixes, compound values, immutable destinations, and out-of-range values.
+/// This fact never performs a numeric conversion: the literal is emitted directly at the
+/// expected primitive integer width, and it must fit. Nodes that are not bare integer values
+/// have no fact; a literal whose context proves no primitive integer type, or that does not fit
+/// it, is unavailable.
 pub fn contextual_integer_literal_abi_type(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<SemanticTypeId> {
     with_registered_syntax(db, key, contextual_integer_literal_abi_type_tracked)
 }

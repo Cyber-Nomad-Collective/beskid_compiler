@@ -167,6 +167,34 @@ pub fn infer_generic_args_from_call_types(
     item_id: ItemId,
     arg_types: &[TypeId],
 ) -> Option<Vec<TypeId>> {
+    let arguments = arg_types.iter().copied().map(CallArgumentType::Witness).collect::<Vec<_>>();
+    infer_generic_args_from_call_arguments(types, generic_items, function_signatures, item_id, &arguments)
+}
+
+/// How one call argument takes part in generic argument inference.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CallArgumentType {
+    /// A value whose type does not depend on the call: it witnesses the generic parameters
+    /// its parameter mentions.
+    Witness(TypeId),
+    /// A value typed by its expected parameter type when one exists (an enum constructor without
+    /// type arguments, `Result::Error(e)`, or an empty array literal). Its standalone type
+    /// witnesses only parameters that no witness argument binds; the argument is checked
+    /// against the substituted parameter afterwards.
+    Contextual(TypeId),
+    /// The argument failed to type; its error is already reported.
+    Untyped,
+}
+
+/// Infer a call's generic arguments position by position. Witness arguments bind first; a
+/// contextual argument then binds only the parameters still unbound.
+pub fn infer_generic_args_from_call_arguments(
+    types: &TypeTable,
+    generic_items: &HashMap<ItemId, Vec<String>>,
+    function_signatures: &HashMap<ItemId, FunctionSignature>,
+    item_id: ItemId,
+    arguments: &[CallArgumentType],
+) -> Option<Vec<TypeId>> {
     let generic_names = generic_items.get(&item_id)?.clone();
     let expected_len = generic_names.len();
     if expected_len == 0 {
@@ -175,7 +203,22 @@ pub fn infer_generic_args_from_call_types(
 
     let params = function_signatures.get(&item_id)?.params.clone();
     let mut mapping: HashMap<String, TypeId> = HashMap::new();
-    for (arg_type, param_type) in arg_types.iter().zip(params.iter()) {
+    for (argument, param_type) in arguments.iter().zip(params.iter()) {
+        if let CallArgumentType::Witness(arg_type) = argument
+            && !bind_generic_inference(types, *param_type, *arg_type, &mut mapping)
+        {
+            return None;
+        }
+    }
+    for (argument, param_type) in arguments.iter().zip(params.iter()) {
+        let CallArgumentType::Contextual(arg_type) = argument else {
+            continue;
+        };
+        let mut mentioned = Vec::new();
+        mentioned_generic_parameters(types, *param_type, &mut mentioned);
+        if mentioned.iter().all(|name| mapping.contains_key(name)) {
+            continue;
+        }
         if !bind_generic_inference(types, *param_type, *arg_type, &mut mapping) {
             return None;
         }
@@ -188,6 +231,29 @@ pub fn infer_generic_args_from_call_types(
         substitution.push(*mapping.get(&name)?);
     }
     Some(substitution)
+}
+
+fn mentioned_generic_parameters(types: &TypeTable, type_id: TypeId, names: &mut Vec<String>) {
+    match types.get(type_id) {
+        Some(TypeInfo::GenericParam(name)) => {
+            if !names.contains(name) {
+                names.push(name.clone());
+            }
+        }
+        Some(TypeInfo::Applied { args, .. }) => {
+            for arg in args {
+                mentioned_generic_parameters(types, *arg, names);
+            }
+        }
+        Some(TypeInfo::Function { params, return_type }) => {
+            for param in params {
+                mentioned_generic_parameters(types, *param, names);
+            }
+            mentioned_generic_parameters(types, *return_type, names);
+        }
+        Some(TypeInfo::Array(element) | TypeInfo::Fiber(element)) => mentioned_generic_parameters(types, *element, names),
+        Some(TypeInfo::Primitive(_) | TypeInfo::Named(_)) | None => {}
+    }
 }
 
 fn bind_generic_inference(

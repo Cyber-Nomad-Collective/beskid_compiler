@@ -17,7 +17,7 @@ use beskid_queries::{
     aggregate_literal_declaration, aggregate_literal_field_values, aggregate_literal_layout,
     aggregate_literal_specialization, array_index_element_abi_type, array_index_element_managed_reference_specialization,
     array_index_element_specialization,
-    block_statement_nodes, bulk_parameter, call_abi_signature, call_argument_abi_type, call_arguments, call_lowering,
+    block_statement_nodes, bulk_parameter, call_abi_signature, call_arguments, call_lowering,
     cast_intents, child_nodes, clif_block_body, closure_call_target, closure_environment, closure_signature,
     constant_integer, contextual_integer_literal_abi_type, enum_constructor, enum_constructor_specialization,
     enum_layout, enum_match, enum_match_call_specialization, enum_match_specialization, for_iterator_fact, generic_call_specialization,

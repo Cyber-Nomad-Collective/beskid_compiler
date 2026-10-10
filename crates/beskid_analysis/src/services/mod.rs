@@ -36,15 +36,12 @@ mod synthetic_plan;
 #[cfg(test)]
 mod test_support;
 
-#[allow(deprecated)]
 pub use analyze::{
-    analyze_file_in_project, analyze_program, analyze_program_with_options, analyze_source_in_project,
-    analyze_source_in_project_with_options, analyze_source_with_compilation_context, compile_plan_for_input_path,
-    compile_plan_for_input_path_with_member,
+    analyze_program, analyze_program_with_options, compile_plan_for_input_path, compile_plan_for_input_path_with_member,
 };
 pub use composition::{
-    composition_diagnostics_for_program, composition_result_to_diagnostics, prepare_program_for_composition,
-    resolve_program_composition,
+    composition_diagnostics_for_program, composition_result_to_diagnostics, is_mod_compile_plan,
+    prepare_program_for_composition, resolve_program_composition,
 };
 pub use diagnostics_emit::{parse_error_diagnostic, pest_error_diagnostic, project_error_diagnostic};
 pub use document::{
@@ -61,17 +58,14 @@ pub use entry_session::{
     next_syntax_generation_id, update_semantic_snapshot,
 };
 pub use front_end::{FrontEndOptions, FrontEndTypedResult, compile_front_end_with_pipeline};
-pub use input::{
-    AnalyzeInProjectOptions, ResolvedInput, resolve_input, resolve_input_with_pipeline, resolve_input_with_policy,
-};
+pub use input::{ResolvedInput, resolve_input, resolve_input_with_pipeline, resolve_input_with_policy};
 pub use parse::{
     ParsedProgram, parse_expression_source, parse_program, parse_program_with_source_name,
     parse_program_with_source_name_and_diagnostics,
 };
 pub use prepare::{
     PrepareOptions, PreparedCompilation, SemanticFactAuthority, SemanticFactFinding, prepare_compilation,
-    prepare_compilation_diagnostics, prepare_compilation_diagnostics_isolated, prepare_compilation_with_fact_authority,
-    resolved_input_from_plan,
+    prepare_compilation_with_fact_authority, resolved_input_from_plan,
 };
 pub use project::{
     ResolvedProject, resolve_project, resolve_project_dependencies_with_policy, resolve_project_with_policy,

@@ -144,7 +144,20 @@ impl ModInvocationContext {
         Self { collect_request: ModCollectRequest { compilation, workspace, mods } }
     }
     pub fn empty() -> Self {
-        Self::build(&ModHostInput::default(), &[])
+        Self::build(
+            &ModHostInput {
+                semantic_scope: None,
+                semantic_authority: None,
+                syntax_generation_id: None,
+                compile_plan: None,
+                source_name: "",
+                source: "",
+                pipeline: None,
+                mod_host: &super::host::ModHost::NoMods,
+                cached_target_fingerprint: None,
+            },
+            &[],
+        )
     }
     pub fn generation_request(&mut self, target_ids: &[String]) -> ModGenerationRequest {
         ModGenerationRequest {
@@ -211,7 +224,7 @@ mod tests {
             source_name: "Main.bd",
             source: "unit Main() { return; }\n",
             pipeline: None,
-            invoker: None,
+            mod_host: &crate::mod_host::ModHost::NoMods,
             cached_target_fingerprint: None,
             syntax_generation_id: None,
         };
@@ -242,7 +255,7 @@ mod tests {
             source_name: "Main.bd",
             source,
             pipeline: None,
-            invoker: None,
+            mod_host: &crate::mod_host::ModHost::NoMods,
             cached_target_fingerprint: None,
             syntax_generation_id: None,
         };
@@ -294,7 +307,11 @@ mod generation_authority_tests {
             source_name: "Main.bd",
             source: "pub unit Main() { return; }",
             syntax_generation_id: Some(assembly.generation),
-            ..Default::default()
+            semantic_scope: None,
+            semantic_authority: None,
+            pipeline: None,
+            mod_host: &crate::mod_host::ModHost::NoMods,
+            cached_target_fingerprint: None,
         };
         let mut context = ModInvocationContext::build(&input, &[]);
         let request = context.generation_request(&[]);

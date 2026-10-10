@@ -219,6 +219,9 @@ pub(super) fn qualified_module_resolution(
     let registry = db.syntax_dependency_registry().lock().expect("syntax dependency registry");
     let mut units = Vec::new();
     for path in &absolute_paths {
+        if absolute_path_crosses_private_module(&registry, key, path) {
+            continue;
+        }
         for unit in registry.visible_module_units(key.generation, path).into_iter().flatten() {
             if !units.contains(unit) {
                 units.push(*unit);
@@ -230,6 +233,45 @@ pub(super) fn qualified_module_resolution(
         1 => QualifiedModuleResolution::Unit(units[0]),
         _ => QualifiedModuleResolution::Ambiguous(units),
     }
+}
+
+/// Whether the absolute module path `path` passes through a module that its parent declares
+/// private (`mod A.B;` without `pub`) while the referencing unit of `key` lies outside that
+/// parent. As in Rust (E0603), a private module is reachable by path only from inside its parent
+/// module and the parent's descendants; the absolute namespace never widens that visibility.
+/// A unit without a logical module path is inside no parent other than itself.
+fn absolute_path_crosses_private_module(
+    registry: &crate::db::SyntaxDependencyRegistry,
+    key: AstNodeKey,
+    path: &[String],
+) -> bool {
+    let logical_path = |unit: SourceUnitId| {
+        registry
+            .modules
+            .iter()
+            .find(|((generation, _), units)| *generation == key.generation && units.contains(&unit))
+            .map(|((_, module_path), _)| module_path.as_slice())
+    };
+    let referencing = logical_path(key.unit);
+    (1..=path.len()).any(|length| {
+        let Some(prefix_units) = registry.visible_module_units(key.generation, &path[..length]) else {
+            return false;
+        };
+        registry.imports.iter().filter(|((_, generation), _)| *generation == key.generation).any(
+            |((owner, _), imports)| {
+                imports.iter().any(|import| {
+                    import.origin == crate::db::SyntaxImportOrigin::ModuleDeclaration
+                        && !import.public
+                        && prefix_units.contains(&import.target)
+                        && *owner != key.unit
+                        && !match (referencing, logical_path(*owner)) {
+                            (Some(referencing), Some(parent)) => referencing.starts_with(parent),
+                            _ => false,
+                        }
+                })
+            },
+        )
+    })
 }
 
 /// Whether an inline module, type, enum or contract named `name` is declared in the lexical

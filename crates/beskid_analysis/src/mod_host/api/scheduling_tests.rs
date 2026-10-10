@@ -64,10 +64,11 @@ impl Case {
                 source_name: "Main.bd",
                 source: HOST_SOURCE,
                 pipeline: None,
-                invoker: Some(invoker),
+                mod_host: &ModHost::NoMods,
                 cached_target_fingerprint: None,
                 syntax_generation_id: None,
             },
+            invoker,
             loaded,
             true,
         )
@@ -79,10 +80,10 @@ impl Case {
     ) -> Result<crate::mod_host::ModHostAnalyzeResult> {
         let snapshot = crate::services::SemanticSnapshot::from_diagnostics(&[], 1, "semantic")
             .with_composition(&generated.session.composition_snapshot_or_default());
-        run_analyze_rewrite_with_invoker(
+        analyze_rewrite_with_invoker(
             generated.program,
             &generated.session,
-            Some(invoker),
+            invoker,
             None,
             Some(&snapshot),
             None,

@@ -112,7 +112,7 @@ struct SnapshotEnvelope<'a> {
 /// a literal usable by `concat!`.
 #[cfg(feature = "persistence")]
 fn snapshot_format_version() -> String {
-    format!("beskid-queries:{}:grammar:{}:snapshot:2", env!("CARGO_PKG_VERSION"), beskid_pipeline::GRAMMAR_REVISION,)
+    format!("beskid-queries:{}:grammar:{}:snapshot:3", env!("CARGO_PKG_VERSION"), beskid_pipeline::GRAMMAR_REVISION,)
 }
 
 /// Exact executable identity includes the ingredient schema, compiler semantics,

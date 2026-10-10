@@ -243,7 +243,7 @@ pub(super) fn run(args: BuildArgs, tools: RustGlueTools) -> Result<()> {
         );
     }
 
-    session.set_mod_invoker(super::super::compiler_mod::prepare_native_mod_executor(
+    session.set_mod_host(super::super::compiler_mod::prepare_native_mod_executor(
         &resolved,
         args.lockfile.WorkspaceOptions(),
         Some(session.observer()),

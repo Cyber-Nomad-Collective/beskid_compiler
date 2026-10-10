@@ -11,9 +11,8 @@ pub(in crate::semantic_contract) use aggregate::{
     array_index_element_template_tracked, empty_array_literal_element_abi_type_tracked, event_field_layout_tracked,
     inaccessible_literal_fields, instantiated_aggregate_layout_for_path,
 };
-pub(crate) use aggregate::serialization_contribution_inaccessible_fields;
 pub use aggregate::{
-    aggregate_literal_specialization, array_index_element_managed_reference_specialization, array_index_element_specialization, empty_array_literal_element_specialization,
+    aggregate_literal_specialization, array_index_element_managed_reference_specialization, array_index_element_specialization,
 };
 
 pub(in crate::semantic_contract) use common::{
