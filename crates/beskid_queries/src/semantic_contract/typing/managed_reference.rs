@@ -123,6 +123,14 @@ pub(in crate::semantic_contract) fn managed_reference_kind_tracked(
             return Some(kind);
         }
         if node.of::<beskid_analysis::syntax::CallExpression>().is_some()
+            && let Ok(Some(CallLowering::FunctionValue(_))) = call_lowering(db, key)
+        {
+            return Some(function_value_call(db, key).and_then(|call| {
+                call.map(|call| call.result_managed_reference)
+                    .ok_or_else(|| SemanticError::unavailable("managed_reference_kind"))
+            }));
+        }
+        if node.of::<beskid_analysis::syntax::CallExpression>().is_some()
             && let Ok(Some(CallLowering::CorelibService(service))) = call_lowering(db, key)
         {
             return Some(match corelib_service_abi_signature(service).map(|signature| signature.result) {

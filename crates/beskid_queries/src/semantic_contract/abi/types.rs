@@ -137,12 +137,30 @@ pub(in crate::semantic_contract) fn contextual_integer_literal_abi_type_tracked(
                         Some(
                             beskid_analysis::syntax_query::NodeKind::FunctionDefinition
                                 | beskid_analysis::syntax_query::NodeKind::MethodDefinition
+                                | beskid_analysis::syntax_query::NodeKind::LambdaExpression
                         )
                     ) {
                         item = parent_node(index, item)
                             .ok_or_else(|| SemanticError::unavailable("contextual_integer_literal_abi_type"))?;
                     }
                     let item_key = AstNodeKey { node: item, ..key };
+                    if index.kind(item) == Some(beskid_analysis::syntax_query::NodeKind::LambdaExpression) {
+                        // A `return` in a block-bodied lambda returns from the lambda, whose result
+                        // comes from its declared function type and never from its body. Any other
+                        // lambda body derives its result from its value, so it has no context here.
+                        let block_body = lambda_has_statement_body(program, index, item);
+                        if !block_body {
+                            return Err(SemanticError::unavailable("contextual_integer_literal_abi_type"));
+                        }
+                        let expected = callable_signature(db, item_key)?
+                            .ok_or_else(|| SemanticError::unavailable("contextual_integer_literal_abi_type"))?
+                            .result;
+                        return (primitive_integer(expected)
+                            && (contextual_constant_integer(db, return_value_key)?.is_some()
+                                || integer_literal_fits_abi(db, return_value_key, expected)?))
+                        .then_some(expected)
+                        .ok_or_else(|| SemanticError::unavailable("contextual_integer_literal_abi_type"));
+                    }
                     let item_syntax = index
                         .node_at(program, item)
                         .ok_or_else(|| SemanticError::unavailable("contextual_integer_literal_abi_type"))?;
@@ -233,6 +251,10 @@ pub(in crate::semantic_contract) fn abi_type_tracked(
                 _ => Err(SemanticError::unavailable("abi_type")),
             }));
         }
+        if node.of::<beskid_analysis::syntax::LambdaExpression>().is_some() {
+            // A lambda value is its managed closure record, whatever its callable signature.
+            return Some(Ok(SemanticTypeId::POINTER));
+        }
         if node.of::<beskid_analysis::syntax::SpawnExpression>().is_some() {
             return Some(spawn_handle_type(db, key).and_then(|fact| {
                 fact.map(|_| SemanticTypeId::POINTER).ok_or_else(|| SemanticError::unavailable("abi_type"))
@@ -305,6 +327,7 @@ pub(in crate::semantic_contract) fn abi_type_tracked(
             if !matches!(
                 lowering,
                 CallLowering::Direct(_)
+                    | CallLowering::FunctionValue(_)
                     | CallLowering::Runtime(_)
                     | CallLowering::ManifestBuiltin(_)
                     | CallLowering::CorelibService(_)
@@ -395,6 +418,7 @@ pub(in crate::semantic_contract) fn abi_type_for_expression(
         | Expression::ArrayLiteral(_)
         | Expression::StructLiteral(_)
         | Expression::Unary(_)
+        | Expression::Lambda(_)
         | Expression::Try(_) => {
             let normalized = normalized_expression_node(index, key.node);
             abi_type(db, AstNodeKey { node: normalized, ..key })?.ok_or_else(|| SemanticError::unavailable("abi_type"))
@@ -547,6 +571,9 @@ pub(in crate::semantic_contract) fn abi_type_from_syntax(
             .ok_or_else(|| SemanticError::unavailable("abi_type"))
             .and_then(|receiver| abi_type_from_syntax(db, key, &receiver)),
         Type::Array(_) => Ok(SemanticTypeId::POINTER),
-        Type::Function { .. } => Err(SemanticError::unavailable("abi_type")),
+        // A function value is a reference to a GC-managed closure record
+        // `{ header, code pointer, traced environment pointer }`; its parameter and result types
+        // shape only the indirect call through the record, never the value's own ABI.
+        Type::Function { .. } => Ok(SemanticTypeId::POINTER),
     }
 }

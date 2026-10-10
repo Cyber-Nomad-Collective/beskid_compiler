@@ -156,11 +156,12 @@ pub(super) fn event_handler_wrapper_required(input: &CodegenInput<'_>, items: &[
     for item in items {
         collect_ast_nodes(input.database(), item.key, &mut visited, &mut nodes);
     }
+    // Function values share the event-handler closure record layout and allocation request.
     nodes.into_iter().any(|key| {
         matches!(
             beskid_queries::event_operation(input.database(), key),
             Ok(Some(fact)) if fact.handler_lambda.is_some()
-        )
+        ) || matches!(beskid_queries::lambda_value_required(input.database(), key), Ok(Some(true)))
     })
 }
 

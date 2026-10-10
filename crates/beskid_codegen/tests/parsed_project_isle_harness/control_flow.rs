@@ -216,7 +216,7 @@ fn parsed_project_stored_capturing_lambda_reaches_verified_clif() {
 }
 
 #[test]
-fn mutable_capture_fails_closed_without_legacy_fallback() {
+fn mutable_capture_is_rejected_with_e1233_before_isle() {
     let project = tempfile::tempdir().expect("project directory");
     let source = "
         i32 Main() {
@@ -227,7 +227,7 @@ fn mutable_capture_fails_closed_without_legacy_fallback() {
     ";
     let assembly = parse_production_units(project.path(), &[("Lambda.bd", "Main", source)]);
     let (target, isa) = x86_64_target_and_isa();
-    assert_unsupported_closed_failure(assembly, target, isa.as_ref(), &["Lambda.bd", "MissingRuleOrFact"]);
+    assert_legality_failure(assembly, target, isa.as_ref(), &["Lambda.bd", "E1233", "`outer`"]);
 }
 
 #[test]
@@ -258,7 +258,7 @@ fn parsed_project_inline_method_reaches_verified_clif_through_production_entrypo
 }
 
 #[test]
-fn parsed_project_mutable_capture_keeps_generation_safe_facts_and_fails_closed() {
+fn parsed_project_mutable_capture_keeps_generation_safe_facts_and_is_rejected() {
     let project = tempfile::tempdir().expect("project directory");
     let source_path = project.path().join("Capture.bd");
     let source = "
@@ -315,5 +315,5 @@ fn parsed_project_mutable_capture_keeps_generation_safe_facts_and_fails_closed()
         assert_eq!(environment.parameters.len(), 1, "inner lambda parameter");
     });
 
-    assert_unsupported_closed_failure(assembly, target, isa.as_ref(), &["Capture.bd", "MissingRuleOrFact"]);
+    assert_legality_failure(assembly, target, isa.as_ref(), &["Capture.bd", "E1233", "`outer`"]);
 }

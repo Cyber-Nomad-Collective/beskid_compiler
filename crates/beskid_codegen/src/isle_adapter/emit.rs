@@ -18,12 +18,14 @@ pub fn emit_isle_closure_lambda_entry<'db>(
         body,
         &[],
         Some(captures),
+        None,
         importer,
     )
 }
 
 /// Emit a freestanding lambda entry with its source parameter bindings and optional capture
-/// environment.
+/// environment. Its string literals share the artifact string pool like any item body.
+#[expect(clippy::too_many_arguments, reason = "a lambda entry needs parameters, captures, and both services")]
 pub fn emit_isle_lambda_entry<'db>(
     input: &'db CodegenInput<'db>,
     isa: &dyn TargetIsa,
@@ -31,6 +33,7 @@ pub fn emit_isle_lambda_entry<'db>(
     result: Option<Type>,
     parameters: &[ParameterSlot],
     captures: Option<&[InlineCaptureField]>,
+    string_interner: &mut dyn StringInterner,
     importer: &mut dyn CallImporter,
 ) -> Result<cranelift_codegen::ir::Function, FunctionEmissionError> {
     let emitter = FunctionEmitter::new(isa);
@@ -42,6 +45,7 @@ pub fn emit_isle_lambda_entry<'db>(
         body,
         parameters,
         captures,
+        Some(string_interner),
         importer,
     )
 }

@@ -189,11 +189,15 @@ macro_rules! generated_control_flow_methods {
                     self.emit_event_handler_local(key, plan)?;
                     return Some(());
                 }
-                // Lambda locals are syntax-level bindings. Calls through them are resolved to
-                // their source lambda and lowered at the call site, where captured environments
-                // can be rooted for the duration of the call; closures are not scalar locals.
-                self.facts.lambda_entry(initializer)?;
-                return Some(());
+                if !self.facts.lambda_value_required(initializer)? {
+                    // An immutable lambda local used only as a callee stays a syntax-level
+                    // binding: each call lowers its source lambda inline at the call site.
+                    self.facts.lambda_entry(initializer)?;
+                    return Some(());
+                }
+                let record = generated::constructor_lower_expression(self, initializer)?;
+                let pointer = dispatch::pointer_type(self.frontend_config);
+                return self.bind_local(slot, record, pointer, ManagedReferenceFact::GcManaged);
             }
             let value = self.lower_nested_expression(initializer)?;
             let value_type = self.facts.scalar_type(key)?;

@@ -144,6 +144,24 @@ pub struct InlineLambdaCall {
 pub struct LambdaEntry {
     pub trampoline: DirectCallee,
     pub closure_environment: Option<InlineClosureEnvironment>,
+    /// Source parameter ABI of the trampoline, after its environment pointer when it captures.
+    pub parameters: Vec<Type>,
+    /// Result ABI of the trampoline; `None` for unit and never.
+    pub result: Option<Type>,
+}
+
+/// A call through the closure record held by a function-typed local value.
+///
+/// The record is `{ header, code pointer, environment pointer }`. A capture-free entry has a null
+/// environment and takes exactly `parameters`; a capturing entry takes the environment pointer
+/// first. The call site selects the convention from the loaded environment pointer.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FunctionValueCall {
+    pub callee: AstNodeKey,
+    pub parameters: Vec<Type>,
+    pub result: Option<Type>,
+    pub code_offset: i32,
+    pub environment_offset: i32,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

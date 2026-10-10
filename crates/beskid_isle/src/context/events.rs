@@ -133,23 +133,49 @@ impl IsleContext<'_, '_, '_, '_> {
 
     pub(super) fn emit_event_handler_local(&mut self, key: AstNodeKey, plan: EventHandlerLocalPlan) -> Option<()> {
         let pointer = dispatch::pointer_type(self.frontend_config);
+        let wrapper = self.emit_closure_record(
+            key,
+            &plan.trampoline,
+            plan.closure_environment.as_ref(),
+            &plan.parameters,
+            plan.result,
+        )?;
+        let slot = self.facts.local_slot(key)?;
+        self.bind_local(slot, wrapper, pointer, ManagedReferenceFact::GcManaged)
+    }
+
+    /// Allocate one closure record `{ header, code pointer, traced environment pointer }`.
+    ///
+    /// Event handlers and function values share this record. A capturing entry first allocates
+    /// and populates its environment, which stays rooted until the record that traces it holds
+    /// it. The returned record is unrooted: no allocation happens between its last store and the
+    /// return, and the caller roots it before anything else can collect.
+    pub(in crate::context) fn emit_closure_record(
+        &mut self,
+        key: AstNodeKey,
+        trampoline: &DirectCallee,
+        environment: Option<&InlineClosureEnvironment>,
+        parameters: &[Type],
+        result: Option<Type>,
+    ) -> Option<Value> {
+        let pointer = dispatch::pointer_type(self.frontend_config);
         let mut signature = Signature::new(self.builder.func.signature.call_conv);
-        if plan.closure_environment.is_some() {
+        if environment.is_some() {
             signature.params.push(AbiParam::new(pointer));
         }
-        signature.params.extend(plan.parameters.iter().copied().map(AbiParam::new));
-        signature.returns.extend(plan.result.map(AbiParam::new));
-        let callee = plan.trampoline.clone();
-        let trampoline = match self.call_importer.as_deref_mut()?.import(self.builder, callee.clone(), &signature) {
+        signature.params.extend(parameters.iter().copied().map(AbiParam::new));
+        signature.returns.extend(result.map(AbiParam::new));
+        let callee = trampoline.clone();
+        let entry = match self.call_importer.as_deref_mut()?.import(self.builder, callee.clone(), &signature) {
             Ok(function) => function,
             Err(CallImportError::UnknownCallee) => {
                 self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::UnknownCallee(callee) });
                 return None;
             }
         };
-        let code = self.builder.ins().func_addr(pointer, trampoline);
+        let code = self.builder.ins().func_addr(pointer, entry);
 
-        let (environment, environment_root) = if let Some(environment_plan) = &plan.closure_environment {
+        let (environment, environment_root) = if let Some(environment_plan) = environment {
             let (environment, root) = self.emit_inline_closure_environment(environment_plan)?;
             (environment, Some(root))
         } else {
@@ -158,16 +184,12 @@ impl IsleContext<'_, '_, '_, '_> {
         let request = self.symbol_global("__beskid_event_handler_allocation_request_v5", pointer)?;
         let allocate = self.import_runtime_helper("beskid_rt_v5_managed_object_allocate", &[pointer], Some(pointer))?;
         let allocation = self.builder.ins().call(allocate, &[request]);
-        let wrapper = self.builder.inst_results(allocation).first().copied()?;
-        self.builder.ins().trapz(wrapper, TrapCode::unwrap_user(5));
-        let wrapper_root = self.root_temporary(wrapper)?;
-        self.builder.ins().store(MemFlagsData::new(), code, wrapper, 16);
-        self.builder.ins().store(MemFlagsData::new(), environment, wrapper, 24);
+        let record = self.builder.inst_results(allocation).first().copied()?;
+        self.builder.ins().trapz(record, TrapCode::unwrap_user(5));
+        self.builder.ins().store(MemFlagsData::new(), code, record, 16);
+        self.builder.ins().store(MemFlagsData::new(), environment, record, 24);
         self.release_temporary_root(environment_root)?;
-
-        let slot = self.facts.local_slot(key)?;
-        self.bind_local(slot, wrapper, pointer, ManagedReferenceFact::GcManaged)?;
-        self.unregister_root_slot(wrapper_root)
+        Some(record)
     }
 
     pub(super) fn emit_event_mutation(&mut self, key: AstNodeKey, expected: EventOperation) -> Option<Value> {

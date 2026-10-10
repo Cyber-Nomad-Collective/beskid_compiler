@@ -11,7 +11,8 @@
 //! A legality fact is a positive, Salsa-tracked description of one user error
 //! (`unresolved_type_reference` for E1201, `unresolved_call_target` for E1101/E1108/E1203,
 //! `call_arity_mismatch` for E1204, `generic_parameter_conflict` for E1229,
-//! `member_reference_legality` for E1211/E1301/E1302/E1307, `match_exhaustiveness` for E1304; `unresolved_imports` for E1105, judged once per unit that owns
+//! `member_reference_legality` for E1211/E1301/E1302/E1307, `match_exhaustiveness` for E1304;
+//! lambda stack-reference captures for E1233; `unresolved_imports` for E1105, judged once per unit that owns
 //! a judged item; `scoped_cleanup` for E1230 and `dead_collection_growth` for E1231, which
 //! `build_typed_program` no longer judges eagerly for every unit): it is never string
 //! classification of an opaque `SemanticError::unavailable`.
@@ -24,6 +25,7 @@ use beskid_analysis::syntax::{FunctionDefinition, MethodDefinition};
 use beskid_analysis::syntax_query::{NodeKind, SyntaxIndex};
 
 mod calls;
+mod captures;
 mod cleanup;
 mod generics;
 mod imports;
@@ -279,6 +281,7 @@ pub fn check_items(db: &dyn Db, items: &[AstNodeKey]) -> Result<(), Vec<Semantic
         }
         findings.extend(cleanup::scoped_cleanup_findings(db, item));
         findings.extend(cleanup::dead_growth_findings(db, item));
+        findings.extend(captures::lambda_capture_findings(db, item));
         if let Ok(Some(finding)) = call_arity_mismatch(db, item) {
             findings.push(SemanticFinding {
                 kind: SemanticIssueKind::TypeCallArityMismatch { expected: finding.expected, actual: finding.actual },

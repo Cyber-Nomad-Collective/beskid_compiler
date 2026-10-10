@@ -276,4 +276,12 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
     fn lambda_entry(&self, key: AstNodeKey) -> Option<beskid_isle::LambdaEntry> {
         self.lambda_entry_impl(key)
     }
+
+    fn lambda_value_required(&self, key: AstNodeKey) -> Option<bool> {
+        self.query(beskid_queries::lambda_value_required(self.db, key))
+    }
+
+    fn function_value_call(&self, key: AstNodeKey) -> Option<beskid_isle::FunctionValueCall> {
+        self.function_value_call_impl(key)
+    }
 }

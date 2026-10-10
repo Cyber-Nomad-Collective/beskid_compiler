@@ -488,6 +488,24 @@ pub fn closure_call_target(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<
     with_registered_syntax(db, key, closure_call_target_tracked)
 }
 
+/// Return the indirect-call fact for a call whose callee names a function-typed local value.
+///
+/// The callee is a single-segment path to a parameter, typed lambda parameter, or local declared
+/// with a function type, or to an unannotated local initialized by a lambda. The signature is the
+/// ABI of the call through the closure record, excluding its environment pointer. Stale,
+/// unregistered, non-call, and statically targeted calls contain no fact.
+pub fn function_value_call(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<FunctionValueCall> {
+    with_registered_syntax(db, key, function_value_call_tracked)
+}
+
+/// Return whether a lambda expression lowers to an allocated closure record.
+///
+/// Immediate calls, spawn operands, event-handler locals, and immutable locals used only as call
+/// callees lower without a record. Stale, unregistered, and non-lambda nodes contain no fact.
+pub fn lambda_value_required(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<bool> {
+    with_registered_syntax(db, key, lambda_value_required_tracked)
+}
+
 /// Return the exact spawn operand and any captures required when it is a lambda expression.
 ///
 /// Stale, unregistered, and non-spawn nodes contain no fact.

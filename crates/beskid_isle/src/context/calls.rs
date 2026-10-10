@@ -79,36 +79,31 @@ macro_rules! generated_call_methods {
             Some(value)
         }
 
-        /// Lower a freestanding [`LambdaExpression`] to a closure value.
+        /// Lower a freestanding [`LambdaExpression`] to its closure record.
         ///
-        /// Capture-free lambdas return the trampoline function pointer directly. Capturing
-        /// lambdas allocate and populate an ABI-v5 closure environment at the expression site
-        /// before returning the trampoline function pointer; the trampoline loads captures
-        /// from the environment at its first-parameter pointer.
+        /// The record holds the lifted entry's code pointer and, for a capturing lambda, the
+        /// environment allocated here with a by-value snapshot of every capture.
         fn emit_lambda(&mut self, key: AstNodeKey) -> Option<Value> {
+            self.facts.lambda_value_required(key)?.then_some(())?;
             let entry = self.facts.lambda_entry(key)?;
-            let pointer = dispatch::pointer_type(self.frontend_config);
-            let mut signature = Signature::new(self.builder.func.signature.call_conv);
-            // The trampoline always receives the environment pointer as its first argument.
-            signature.params.push(AbiParam::new(pointer));
-            // Return type is a pointer (the function pointer itself for the closure struct).
-            signature.returns.push(AbiParam::new(pointer));
-            let trampoline =
-                match self.call_importer.as_deref_mut()?.import(self.builder, entry.trampoline.clone(), &signature) {
-                    Ok(function) => function,
-                    Err(CallImportError::UnknownCallee) => {
-                        self.pending_error =
-                            Some(LoweringError { key, kind: LoweringErrorKind::UnknownCallee(entry.trampoline) });
-                        return None;
-                    }
-                };
-            let entry_ptr = self.builder.ins().func_addr(pointer, trampoline);
-            if let Some(closure) = &entry.closure_environment {
-                let (_, root) = self.emit_inline_closure_environment(closure)?;
-                self.release_temporary_root(Some(root))?;
-            }
-            Some(entry_ptr)
+            self.emit_closure_record(
+                key,
+                &entry.trampoline,
+                entry.closure_environment.as_ref(),
+                &entry.parameters,
+                entry.result,
+            )
         }
+
+        fn emit_function_value_call(&mut self, key: AstNodeKey) -> Option<Value> {
+            self.function_value_call(key, true)?
+        }
+
+        /// A call in statement position discards any result.
+        fn emit_function_value_call_statement(&mut self, key: AstNodeKey) -> Option<()> {
+            self.function_value_call(key, false).map(|_| ())
+        }
+
         fn emit_inline_lambda_call(&mut self, key: AstNodeKey) -> Option<Value> {
             self.inline_lambda_call(key)
         }
