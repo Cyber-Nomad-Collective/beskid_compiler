@@ -89,6 +89,10 @@ pub(super) fn specialization_for_call_in_environment(
             && parent_node(declaration_syntax.syntax_index(db), enclosing.declaration.node) == Some(owner.node)
         {
             enclosing.substitutions.clone()
+        } else if let Some(bindings) =
+            specialized_receiver_bindings(db, arguments[0], owner, &generic_names, enclosing)?
+        {
+            bindings
         } else {
             generic_nominal_method_receiver(db, key)?
                 .filter(|receiver| receiver.method == declaration && receiver.owner == owner)
@@ -373,6 +377,52 @@ pub(super) fn specialization_for_call_in_environment(
         substitutions: substitutions.into(),
         contract_witnesses,
     })
+}
+
+/// Owner bindings for an explicit generic receiver read inside an already-specialized body.
+///
+/// A receiver such as `List<T> list` in `Single<T>` names the enclosing declaration's own type
+/// parameter, which the unspecialized receiver fact cannot give an ABI. Its source type is read
+/// in the enclosing environment instead, so `T` becomes the enclosing binding. The receiver must
+/// prove exactly the method owner with one argument per owner parameter; anything else fails
+/// closed. Without an enclosing environment, or when the receiver form has no specialized source
+/// identity, the caller keeps using the unspecialized receiver fact.
+fn specialized_receiver_bindings(
+    db: &dyn Db,
+    receiver: AstNodeKey,
+    owner: AstNodeKey,
+    generic_names: &[&str],
+    enclosing: Option<&GenericSpecializationInstance>,
+) -> Result<Option<Arc<[GenericSubstitution]>>, SemanticError> {
+    let Some(enclosing) = enclosing else { return Ok(None) };
+    // A `local.Method()` path callee carries its receiver as the local's declaration; a member
+    // callee carries the receiver expression itself.
+    let receiver = match nominal_member_receiver(db, receiver) {
+        Ok(Some(declaration)) => declaration,
+        Ok(None) => receiver,
+        Err(error) if error.is_unavailable() => receiver,
+        Err(error) => return Err(error),
+    };
+    let identity = match specialized_source_expression_identity(db, receiver, Some(enclosing)) {
+        Ok(identity) => identity,
+        Err(error) if error.is_unavailable() => return Ok(None),
+        Err(error) => return Err(error),
+    };
+    let GenericSourceTypeIdentity::Nominal { qualified_name, arguments } = identity else {
+        return Err(SemanticError::unavailable_at("call_abi_signature", receiver));
+    };
+    if stable_declaration_identity(db, owner).as_ref() != Some(&qualified_name)
+        || arguments.len() != generic_names.len()
+    {
+        return Err(SemanticError::unavailable_at("call_abi_signature", receiver));
+    }
+    Ok(Some(
+        generic_names
+            .iter()
+            .zip(arguments.iter())
+            .map(|(generic, argument)| GenericSubstitution::from_source(*generic, argument.abi_type(), argument.clone()))
+            .collect(),
+    ))
 }
 
 fn infer_source_substitutions(

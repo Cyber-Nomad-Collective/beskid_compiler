@@ -66,6 +66,59 @@ i64 Main() { return Helper(); }
 }
 
 #[test]
+fn type_qualified_calls_resolve_to_functions_of_the_declaring_unit() {
+    // Inside the unit that declares `Crate`, `Crate.Make<T>` and `Crate.Twice` name this unit's
+    // own functions, the same static spelling an importer writes as `Kit.Crate.Make`.
+    let source = r#"
+pub type Crate<T> { T value }
+pub Crate<T> Make<T>(T value) { return Crate<T> { value: value }; }
+pub i64 Twice(i64 value) { return value * 2; }
+pub Crate<T> Pack<T>(T value) { return Crate.Make<T>(value); }
+pub i64 Quad() { return Crate.Twice(Crate.Twice(1)); }
+"#;
+    let (db, _project, unit, generation, index) = setup(source);
+    let make = key(unit, generation, &index, NodeKind::FunctionDefinition, 0);
+    let twice = key(unit, generation, &index, NodeKind::FunctionDefinition, 1);
+    let calls = index.ids_of_kind(NodeKind::CallExpression).collect::<Vec<_>>();
+    let lowering = |node| call_lowering(&db, beskid_queries::AstNodeKey { unit, generation, node });
+    let expected = [make, twice, twice];
+    assert_eq!(calls.len(), expected.len(), "Pack and Quad (twice) own the calls");
+    for (call, declaration) in calls.into_iter().zip(expected) {
+        assert_eq!(
+            lowering(call).expect("type-qualified call lowering"),
+            Some(beskid_queries::CallLowering::Direct(declaration))
+        );
+    }
+}
+
+#[test]
+fn type_qualified_local_calls_fail_closed_without_one_exact_target() {
+    // A shadowing local, a mismatched written arity, a qualifier that names no type of this unit,
+    // and a function name declared twice stay unresolved instead of guessing a callable.
+    let source = r#"
+pub type Crate<T> { T value }
+pub i64 Twice(i64 value) { return value * 2; }
+pub i64 Twin() { return 1; }
+pub i64 Twin(i64 value) { return value; }
+pub i64 Shadowed(i64 Crate) { return Crate.Twice(1); }
+pub i64 Arity() { return Crate<i64, i64>.Twice(1); }
+pub i64 Unknown() { return Kit.Twice(1); }
+pub i64 Ambiguous() { return Crate.Twin(); }
+"#;
+    let (db, _project, unit, generation, index) = setup(source);
+    let calls = index.ids_of_kind(NodeKind::CallExpression).collect::<Vec<_>>();
+    assert_eq!(calls.len(), 4);
+    for node in calls {
+        let call = beskid_queries::AstNodeKey { unit, generation, node };
+        let lowering = call_lowering(&db, call);
+        assert!(
+            !matches!(lowering, Ok(Some(beskid_queries::CallLowering::Direct(_)))),
+            "{call:?} must not resolve to a direct callee: {lowering:?}"
+        );
+    }
+}
+
+#[test]
 fn collection_operation_denies_user_append_lookalikes() {
     let source = "i64 Append(i64 values, i64 value) { return values; } i64 Main() { return Append(1, 2); }";
     let (db, _project, unit, generation, index) = setup(source);

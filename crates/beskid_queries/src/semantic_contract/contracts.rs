@@ -255,9 +255,29 @@ pub(super) fn specialized_source_expression_identity(
     let node = index.node_at(program, key.node).ok_or_else(|| SemanticError::unavailable("source_expression_type"))?;
     let environment =
         enclosing.substitutions.iter().map(|binding| (binding.parameter.as_ref(), binding.source_identity())).collect();
-    if let Some(path) = node.of::<beskid_analysis::syntax::PathExpression>()
+    // A local read names its declaration through a single-segment path. A `local.Method()` call
+    // hands out the receiver as that declaration's own name identifier instead, so the binding
+    // name of a parameter or let is read the same way.
+    let declared_identifier = if let Some(path) = node.of::<beskid_analysis::syntax::PathExpression>()
         && let [segment] = path.path.node.segments.as_slice()
-        && let Some(identifier) = resolve_lexical_declaration(program, index, key.node, &segment.node.name.node.name)
+    {
+        resolve_lexical_declaration(program, index, key.node, &segment.node.name.node.name)
+    } else if node.of::<beskid_analysis::syntax::Identifier>().is_some()
+        && let Some(parent) = parent_node(index, key.node)
+        && index.node_at(program, parent).is_some_and(|declaration| {
+            let name = declaration
+                .of::<Parameter>()
+                .map(|parameter| &parameter.name)
+                .or_else(|| declaration.of::<beskid_analysis::syntax::LetStatement>().map(|local| &local.name));
+            name.and_then(|name| index.direct_child_id(program, parent, DynNodeRef::from(name)))
+                == Some(key.node)
+        })
+    {
+        Some(key.node)
+    } else {
+        None
+    };
+    if let Some(identifier) = declared_identifier
         && let Some(parent) = parent_node(index, identifier)
     {
         let declaration = AstNodeKey { node: parent, ..key };
