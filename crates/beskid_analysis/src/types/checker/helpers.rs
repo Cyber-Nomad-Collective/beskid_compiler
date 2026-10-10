@@ -355,6 +355,16 @@ impl<'a> TypeChecker<'a> {
                 let substituted = self.substitute_type_id(element, mapping);
                 if substituted != element { self.type_table.intern(TypeInfo::Array(substituted)) } else { type_id }
             }
+            Some(TypeInfo::Function { params, return_type }) => {
+                let new_params: Vec<TypeId> =
+                    params.iter().map(|parameter| self.substitute_type_id(*parameter, mapping)).collect();
+                let new_return = self.substitute_type_id(return_type, mapping);
+                if new_params != params || new_return != return_type {
+                    self.type_table.intern(TypeInfo::Function { params: new_params, return_type: new_return })
+                } else {
+                    type_id
+                }
+            }
             _ => type_id,
         }
     }

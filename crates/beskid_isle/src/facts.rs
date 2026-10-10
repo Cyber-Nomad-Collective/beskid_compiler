@@ -8,7 +8,8 @@ mod node_facts;
 mod operations;
 
 pub use call_shapes::{
-    CallImportError, DirectCallee, InlineCaptureField, InlineClosureEnvironment, InlineLambdaCall, LambdaEntry,
+    CallImportError, DirectCallee, FunctionValueCall, InlineCaptureField, InlineClosureEnvironment, InlineLambdaCall,
+    LambdaEntry,
     SpawnArgumentEnvironment, SpawnArgumentField, SpawnEntry, TracedFiberJoinLayout,
 };
 pub use catalogue::{

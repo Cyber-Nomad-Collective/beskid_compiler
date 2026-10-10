@@ -73,7 +73,10 @@ pub(in crate::semantic_contract) fn path_call_resolution(
     call: &beskid_analysis::syntax::CallExpression,
     path: &beskid_analysis::syntax::Path,
 ) -> PathCallResolution {
-    if imported_generic_nominal_receiver_requires_instantiation(db, key, path) {
+    if let Some(declaration) = function_value_declaration(program, index, key.node, path) {
+        // A function-typed local shadows every item, import, and builtin of the same name.
+        PathCallResolution::Lowered(CallLowering::FunctionValue(AstNodeKey { node: declaration, ..key }))
+    } else if imported_generic_nominal_receiver_requires_instantiation(db, key, path) {
         PathCallResolution::Unavailable("generic_receiver_instantiation")
     } else if let Some(service) = corelib_service_for(db, key, path) {
         PathCallResolution::Lowered(CallLowering::CorelibService(service))

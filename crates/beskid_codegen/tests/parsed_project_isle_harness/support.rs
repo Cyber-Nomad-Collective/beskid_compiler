@@ -64,6 +64,25 @@ pub(super) fn lower_verified_entrypoint(
     lowered
 }
 
+/// The requested items fail the legality gate with a user diagnostic before ISLE selection.
+pub(super) fn assert_legality_failure(
+    assembly: Arc<ProgramAssembly>,
+    target: TargetMetadata,
+    isa: &dyn cranelift_codegen::isa::TargetIsa,
+    expected_fragments: &[&str],
+) {
+    let result = with_db(|db| lower_syntax_assembly_entrypoint(db, assembly, "Main", target, isa));
+    let Err(error) = result else {
+        panic!("a legality violation must not lower");
+    };
+    let rendered = error.to_string();
+    assert!(rendered.contains("legality gate rejected"), "{rendered}");
+    assert!(!rendered.contains("MissingRuleOrFact"), "{rendered}");
+    for fragment in expected_fragments {
+        assert!(rendered.contains(fragment), "expected {fragment:?} in {rendered}");
+    }
+}
+
 pub(super) fn assert_unsupported_closed_failure(
     assembly: Arc<ProgramAssembly>,
     target: TargetMetadata,

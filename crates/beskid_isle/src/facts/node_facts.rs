@@ -181,6 +181,13 @@ pub trait NodeFacts {
     fn lambda_entry(&self, _key: AstNodeKey) -> Option<LambdaEntry> {
         None
     }
+    /// Whether this lambda expression must materialize its closure record.
+    fn lambda_value_required(&self, _key: AstNodeKey) -> Option<bool> {
+        None
+    }
+    fn function_value_call(&self, _key: AstNodeKey) -> Option<FunctionValueCall> {
+        None
+    }
     fn local_slot(&self, _key: AstNodeKey) -> Option<LocalSlotId> {
         None
     }

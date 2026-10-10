@@ -256,6 +256,10 @@ impl SemanticIssueKind {
             Self::DeadCollectionGrowth => {
                 Some("return the parameter or rebind the grown handle so the caller sees the growth".to_string())
             }
+            Self::LambdaCapturesStackReference { .. } => Some(
+                "lambdas capture values, not storage: copy the value into an immutable local and capture that"
+                    .to_string(),
+            ),
             Self::TypeInvalidEventInvocationScope => Some(
                 "events can only be raised from within methods on their declaring type".to_string()
             ),

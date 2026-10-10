@@ -26,6 +26,11 @@ impl SyntaxNodeFacts<'_> {
         if self.inline_lambda_call(key).is_some() {
             return Some(CallKind::InlineLambda);
         }
+        // A function-typed local shadows every other callee of its name; its call never reaches
+        // collection dispatch, which would misread the local path as a receiver.
+        if matches!(self.query(call_lowering(self.db, key)), Some(CallLowering::FunctionValue(_))) {
+            return self.function_value_call_impl(key).map(|_| CallKind::FunctionValue);
+        }
         match beskid_queries::collection_operation(self.db, key) {
             Ok(Some(_)) | Err(_) => return Some(CallKind::CollectionOperation),
             Ok(None) => {}
@@ -250,21 +255,61 @@ impl SyntaxNodeFacts<'_> {
 
     pub(super) fn lambda_entry_impl(&self, key: AstNodeKey) -> Option<beskid_isle::LambdaEntry> {
         let environment = self.query(closure_environment(self.db, key))?;
-        let _lambda = self.query(closure_signature(self.db, key))?;
-        self.lambda_entry_from_environment(key, environment, false)
+        let lambda = self.query(closure_signature(self.db, key))?;
+        self.lambda_entry_from_environment(key, environment, &lambda.callable, false)
     }
 
     pub(super) fn event_lambda_entry_impl(&self, key: AstNodeKey) -> Option<beskid_isle::LambdaEntry> {
         let environment = self.query(closure_environment(self.db, key))?;
-        self.lambda_entry_from_environment(key, environment, true)
+        let handler = self.query(beskid_queries::event_handler_lambda_for_local(self.db, key))?;
+        self.lambda_entry_from_environment(key, environment, &handler.signature, true)
+    }
+
+    pub(super) fn function_value_call_impl(&self, key: AstNodeKey) -> Option<beskid_isle::FunctionValueCall> {
+        // Inside a generic specialization the declared function type may name the enclosing
+        // declaration's parameters; its exact environment binds them.
+        let call = match self.current_item_specialization() {
+            Some(specialization) => self.query(beskid_queries::function_value_call_specialization(
+                self.db,
+                key,
+                &specialization.substitutions,
+            ))?,
+            None => self.query(beskid_queries::function_value_call(self.db, key))?,
+        };
+        let (parameters, result) = self.callable_abi(&call.signature)?;
+        Some(beskid_isle::FunctionValueCall {
+            callee: call.callee,
+            parameters,
+            result,
+            code_offset: crate::EVENT_HANDLER_CODE_OFFSET,
+            environment_offset: crate::EVENT_HANDLER_ENVIRONMENT_OFFSET,
+        })
+    }
+
+    /// Map a callable's semantic signature to entry parameter and result ABI types.
+    fn callable_abi(&self, signature: &ItemSignature) -> Option<(Vec<Type>, Option<Type>)> {
+        let parameters = signature
+            .parameters
+            .iter()
+            .copied()
+            .map(|ty| map_signature_type(self.isa?, ty))
+            .collect::<Option<Vec<_>>>()?;
+        let result = if matches!(signature.result, SemanticTypeId::UNIT | SemanticTypeId::NEVER) {
+            None
+        } else {
+            Some(map_signature_type(self.isa?, signature.result)?)
+        };
+        Some((parameters, result))
     }
 
     fn lambda_entry_from_environment(
         &self,
         key: AstNodeKey,
         environment: beskid_queries::ClosureEnvironment,
+        callable: &ItemSignature,
         event_handler: bool,
     ) -> Option<beskid_isle::LambdaEntry> {
+        let (parameters, result) = self.callable_abi(callable)?;
         // Only support capture-free or fully-resolved capture environments.
         let closure_environment = if environment.captures.is_empty() {
             None
@@ -299,6 +344,11 @@ impl SyntaxNodeFacts<'_> {
                 captures,
             })
         };
-        Some(beskid_isle::LambdaEntry { trampoline: DirectCallee::lambda_trampoline(key), closure_environment })
+        Some(beskid_isle::LambdaEntry {
+            trampoline: DirectCallee::lambda_trampoline(key),
+            closure_environment,
+            parameters,
+            result,
+        })
     }
 }

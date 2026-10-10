@@ -8,7 +8,7 @@ use crate::context::{
     materialize_parameters,
 };
 use crate::errors::FunctionEmissionError;
-use crate::facts::{AstNodeKey, InlineCaptureField, ManagedReferenceFact, NodeFacts, ParameterSlot};
+use crate::facts::{AstNodeKey, InlineCaptureField, ManagedReferenceFact, NodeFacts, NodeKind, ParameterSlot};
 
 /// Parsed item inputs for statement-oriented ISLE emission.
 pub struct ItemStatementEmission<'a> {
@@ -99,7 +99,7 @@ impl<'isa> FunctionEmitter<'isa> {
     /// Emit a lambda entry, binding source parameters and any captured locals before lowering its
     /// body through generated ISLE.
     #[expect(clippy::too_many_arguments, reason = "keep the codegen closure-entry ABI stable for release validation")]
-    pub fn emit_closure_lambda_entry_with_call_importer(
+    pub fn emit_closure_lambda_entry_with_call_importer<'services>(
         &self,
         name: UserFuncName,
         result: Option<Type>,
@@ -107,7 +107,8 @@ impl<'isa> FunctionEmitter<'isa> {
         body: AstNodeKey,
         parameters: &[ParameterSlot],
         captures: Option<&[InlineCaptureField]>,
-        call_importer: &mut dyn CallImporter,
+        string_interner: Option<&'services mut dyn StringInterner>,
+        call_importer: &'services mut dyn CallImporter,
     ) -> Result<Function, FunctionEmissionError> {
         let pointer = self.isa.pointer_type();
         let signature = self.signature(
@@ -127,9 +128,18 @@ impl<'isa> FunctionEmitter<'isa> {
             builder.switch_to_block(entry);
             builder.seal_block(entry);
             let incoming = builder.block_params(entry).to_vec();
+            // A block body with a result is a statement lambda: every path ends in `return`.
+            let statement_body = result.is_some()
+                && facts.node_kind(body) == Some(NodeKind::BlockExpression)
+                && facts.block_result(body).is_none();
             let value = {
-                let mut context =
-                    IsleContext::new_with_call_importer(&mut builder, facts, call_importer, self.isa.frontend_config());
+                let mut context = IsleContext::new_with_services(
+                    &mut builder,
+                    facts,
+                    string_interner,
+                    Some(call_importer),
+                    self.isa.frontend_config(),
+                );
                 if let Some(captures) = captures {
                     let environment = incoming[0];
                     for capture in captures {
@@ -154,7 +164,7 @@ impl<'isa> FunctionEmitter<'isa> {
                             FunctionEmissionError::verification(body, "lambda parameter slot or type is invalid")
                         })?;
                 }
-                let value = if result.is_some() {
+                let value = if result.is_some() && !statement_body {
                     Some(lower_expression(&mut context, body).map_err(FunctionEmissionError::Lowering)?)
                 } else {
                     lower_statement(&mut context, body).map_err(FunctionEmissionError::Lowering)?;
@@ -164,13 +174,19 @@ impl<'isa> FunctionEmitter<'isa> {
                     FunctionEmissionError::verification(body, "closure lambda entry has no final block")
                 })?;
                 if !block_is_terminated(context.builder, final_block) {
+                    if statement_body {
+                        return Err(FunctionEmissionError::verification(
+                            body,
+                            "a block-bodied lambda with a result must return on every path",
+                        ));
+                    }
                     context.release_managed_local_roots().ok_or_else(|| {
                         FunctionEmissionError::verification(body, "closure capture root cleanup is invalid")
                     })?;
                 }
                 value
             };
-            if value.map(|value| builder.func.dfg.value_type(value)) != result {
+            if !statement_body && value.map(|value| builder.func.dfg.value_type(value)) != result {
                 return Err(FunctionEmissionError::verification(body, "closure lambda entry result type mismatch"));
             }
             let final_block = builder

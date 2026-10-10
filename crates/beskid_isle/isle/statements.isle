@@ -28,6 +28,8 @@
 (extern constructor emit_expression_statement emit_expression_statement)
 (decl partial emit_direct_call_statement (AstNodeKey) Unit)
 (extern constructor emit_direct_call_statement emit_direct_call_statement)
+(decl partial emit_function_value_call_statement (AstNodeKey) Unit)
+(extern constructor emit_function_value_call_statement emit_function_value_call_statement)
 (decl partial emit_runtime_intrinsic_statement (AstNodeKey) Unit)
 (extern constructor emit_runtime_intrinsic_statement emit_runtime_intrinsic_statement)
 (rule (lower_statement key @ (node_kind (NodeKind.ExpressionStatement)))
@@ -36,6 +38,10 @@
         (node_kind (NodeKind.CallExpression))
         (call_kind (CallKind.Direct))))
       (emit_direct_call_statement key))
+(rule (lower_statement key @ (and
+        (node_kind (NodeKind.CallExpression))
+        (call_kind (CallKind.FunctionValue))))
+      (emit_function_value_call_statement key))
 (rule (lower_statement key @ (and
         (node_kind (NodeKind.CallExpression))
         (call_kind (CallKind.RuntimeIntrinsic))))

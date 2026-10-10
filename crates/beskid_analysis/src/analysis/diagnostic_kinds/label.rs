@@ -87,6 +87,7 @@ impl SemanticIssueKind {
             Self::TypeInvalidPrimitiveConversionArgument => "invalid conversion argument".to_string(),
             Self::ScopedCleanupRejected { reason } => format!("scoped use rejected: {reason}"),
             Self::DeadCollectionGrowth => "grown handle discarded".to_string(),
+            Self::LambdaCapturesStackReference { name } => format!("`{name}` captured here"),
             Self::InternalSemanticFactUnavailable { query } => format!("`{query}` unavailable here"),
             Self::InternalLoweringRuleMissing { construct } => format!("no lowering rule for this `{construct}`"),
             Self::TypeInvalidEventInvocationScope => "invalid event invocation scope".to_string(),

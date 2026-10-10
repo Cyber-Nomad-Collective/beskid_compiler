@@ -58,8 +58,25 @@ impl<'a> TypeChecker<'a> {
 
         // A lambda lowers to its own function; enclosing `%N` parameters are not in scope.
         let previous_clif_parameters = self.current_clif_parameters.take();
+        // A block body is a statement lambda: its `return`s return from the lambda, with the
+        // declared function type's result (unit without one), not from the enclosing function.
+        let statement_body = matches!(lambda.node.body.node, Expression::Block(_));
+        let statement_result = if statement_body {
+            expected_signature
+                .as_ref()
+                .map(|(_, expected_return, _)| *expected_return)
+                .or_else(|| self.primitive_type_id(PrimitiveType::Unit))
+        } else {
+            None
+        };
+        let previous_return_type = self.current_return_type;
+        if statement_body {
+            self.current_return_type = statement_result;
+        }
         let return_type = self.type_expression(&lambda.node.body);
+        self.current_return_type = previous_return_type;
         self.current_clif_parameters = previous_clif_parameters;
+        let return_type = if statement_body { return_type.and(statement_result) } else { return_type };
         let return_type = return_type?;
         if let Some((_, expected_return, _)) = expected_signature {
             self.require_same_type(lambda.node.body.span, expected_return, return_type);

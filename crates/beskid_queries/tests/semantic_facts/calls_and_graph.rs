@@ -230,7 +230,14 @@ i32 Main() {
     let shadowed_path = key_at_start(unit, generation, &index, NodeKind::PathExpression, shadowed_offset);
     let shadowed_call = key(unit, generation, &index, NodeKind::CallExpression, 0);
     assert_eq!(resolved_item(&db, shadowed_path).expect("shadowed item"), None);
-    assert_unavailable(call_lowering(&db, shadowed_call));
+    // The lambda-initialized local shadows the item: the call goes through that local value.
+    assert!(
+        matches!(
+            call_lowering(&db, shadowed_call).expect("shadowed call lowering"),
+            Some(beskid_queries::CallLowering::FunctionValue(_))
+        ),
+        "a function-valued local shadows the item of the same name"
+    );
 
     let unresolved_source = "i32 Main() { return Missing(); }";
     let (db, _project, unit, generation, index) = setup(unresolved_source);

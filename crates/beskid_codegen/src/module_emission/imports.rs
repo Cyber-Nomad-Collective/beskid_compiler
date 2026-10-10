@@ -336,7 +336,10 @@ fn collect_manifest_service_callees(
             CallLowering::CorelibService(service) => {
                 corelib_services.insert(service);
             }
-            CallLowering::Direct(_) | CallLowering::Dynamic | CallLowering::Runtime(_) => {}
+            CallLowering::Direct(_)
+            | CallLowering::Dynamic
+            | CallLowering::FunctionValue(_)
+            | CallLowering::Runtime(_) => {}
         }
     }
     if let Ok(Some(children)) = child_nodes(db, key) {

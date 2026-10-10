@@ -79,7 +79,10 @@ use closures_spawn::{
     callable_fiber_ownership_tracked, callable_signature_for_node, callable_signature_for_path,
     callable_signature_tracked, capture_storage_class, capture_storage_for_node, capture_storage_tracked,
     closure_call_target_tracked, closure_captures, closure_environment_for_node, closure_environment_tracked,
-    closure_signature_for_node, closure_signature_tracked, inferred_spawn_handle, normalized_expression_node,
+    closure_signature_for_node, closure_signature_tracked, function_value_call_tracked, function_value_declaration,
+    inferred_spawn_handle, lambda_expected_signature, lambda_has_statement_body, lambda_value_required_tracked,
+    normalized_expression_node,
+    untyped_lambda_parameter_type,
     runtime_intrinsic_name_tracked, runtime_intrinsic_tracked, spawn_entry_operand, spawn_entry_validation_tracked,
     spawn_handle_type_tracked, spawn_legality_tracked, spawn_stack_capture, spawn_target_tracked,
 };
@@ -88,6 +91,7 @@ use contracts::{
     contract_witnesses_for_call, resolve_contract, specialized_source_expression_identity,
 };
 use events::{event_handler_lambda_for_local_tracked, event_operation_tracked};
+pub use closures_spawn::function_value_call_specialization;
 pub use growth::{DeadCollectionGrowth, dead_collection_growth, is_growth_call_candidate};
 use layouts::{
     FieldAccessReceiver, abi_local_declaration_type, abi_type_for_direct_aggregate_field_projection,
@@ -168,6 +172,7 @@ pub use model::{
     EnumMatchArmFact, EnumMatchBindingFact, EnumMatchFact, EnumMatchPatternFact, EnumMatchScalarLiteralFact,
     EnumMatchVariantPatternFact, EnumScalarPayloadObjectLayout, EnumScalarPayloadVariantLayout, EnumVariantLayoutFact,
     EventFieldLayoutFact, EventHandlerLocalFact, EventOperationFact, EventOperationKind, ExportSymbol, FiberOwnership, ForIteratorFact,
+    FunctionValueCall,
     GenericBindingConflict, GenericCallInstantiation, GenericCallSpecialization, GenericCallTemplate,
     GenericNominalMethodReceiver, GenericSpecializationInstance, GenericSubstitution, IndexedNodeKind, ItemSignature,
     LiteralFact, LocalSlot, ManagedReferenceKind, ManifestBuiltin, MutableLocalAssignment, OperatorFact,
@@ -186,7 +191,8 @@ pub use queries::{
     clif_block_parameters, closure_call_target, closure_environment, closure_signature, collection_operation, constant_integer,
     contextual_integer_literal_abi_type, control_flow, direct_callees, empty_array_literal_element_abi_type,
     enum_constructor, enum_constructor_template, enum_layout, enum_match, event_field_layout,
-    event_handler_lambda_for_local, event_operation, for_iterator_fact, generic_call_instantiation,
+    event_handler_lambda_for_local, event_operation, for_iterator_fact, function_value_call, generic_call_instantiation,
+    lambda_value_required,
     generic_call_specialization, generic_call_template, generic_nominal_method_receiver, implicit_method_receiver,
     item_abi_signature, item_body, item_export_symbol, item_name, item_signature, literal_fact, local_slot,
     managed_reference_kind, mutable_local_assignment, node_kind, node_span, node_type, nominal_member_receiver,
