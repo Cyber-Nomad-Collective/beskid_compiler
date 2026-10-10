@@ -372,14 +372,21 @@ fn dependency_unit_legality_finding_surfaces_in_the_prepare_spine() {
     }
 }
 
-/// A dependency item nothing in the entry reaches is not judged.
+/// An own unit nothing in the entry reaches is still judged: `Lib/Helper.bd` lies under the host
+/// source root, so the prepare spine judges every item it holds (the own-unit ruling of
+/// `docs/reports/2026-10-04-v06-decisions.md`), and its E1201 surfaces in its own source.
 #[test]
-fn unreachable_dependency_item_is_not_judged_by_the_prepare_spine() {
+fn unreachable_own_unit_item_is_judged_by_the_prepare_spine() {
     let (shared, isolated) = fact_authority_diagnostics(
         &[("Main.bd", "use Lib.Helper;\ni64 Main() { return 0_i64; }"), ("Lib/Helper.bd", HELPER_WITH_UNIMPORTED_TYPE)],
         412,
     );
     for diagnostics in [&shared, &isolated] {
-        assert!(!diagnostics.iter().any(|diagnostic| diagnostic.code.as_deref() == Some("E1201")), "{diagnostics:?}");
+        let found = diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.code.as_deref() == Some("E1201"))
+            .collect::<Vec<_>>();
+        assert_eq!(found.len(), 1, "the own unit's E1201 is judged once: {diagnostics:?}");
+        assert_eq!(found[0].src.name(), "Lib/Helper.bd", "{:?}", found[0]);
     }
 }

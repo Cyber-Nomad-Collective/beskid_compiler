@@ -854,14 +854,23 @@ fn single_entry_app_judges_every_own_unit() {
             "the healthy entry stays clean ({discovery:?}): {diagnostics:?}"
         );
         let sibling_errors = error_diagnostics_in(&diagnostics, "Sibling.bd");
-        assert!(
-            !sibling_errors.is_empty(),
-            "a broken own unit of a single-entry App is judged like every other own unit ({discovery:?}): {diagnostics:?}"
-        );
-        assert!(
-            sibling_errors.iter().any(|diagnostic| diagnostic.code.as_deref() == Some("E1206")),
-            "the sibling error carries E1206 ({discovery:?}): {sibling_errors:?}"
-        );
+        let sibling_assembled = prepared.assembly.units.iter().any(|unit| unit.path.ends_with("Sibling.bd"));
+        match discovery {
+            // The import closure of the entry never reaches the uncalled sibling: it is not part of
+            // the assembly, so nothing can judge it (the build path).
+            AssemblyDiscovery::ImportClosure => {
+                assert!(!sibling_assembled, "the import closure does not assemble an uncalled sibling: {diagnostics:?}");
+                assert!(sibling_errors.is_empty(), "{diagnostics:?}");
+            }
+            // `beskid check` scans the workspace: every own unit is assembled and judged.
+            AssemblyDiscovery::WorkspaceScan => {
+                assert!(sibling_assembled, "the workspace scan assembles every own unit");
+                assert!(
+                    sibling_errors.iter().any(|diagnostic| diagnostic.code.as_deref() == Some("E1206")),
+                    "a broken own unit of a single-entry App is judged like every other own unit: {diagnostics:?}"
+                );
+            }
+        }
         invalidate_entry_sessions_for_project(&fixture.root);
     }
 }

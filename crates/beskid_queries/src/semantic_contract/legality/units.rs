@@ -30,6 +30,13 @@
 //!   never needed for a judged signature.
 //! * E1608 / E1609: `This` outside a method, contract, `impl`, or `type` scope, and every
 //!   associated-type reference (`type_id_for_type`, which fails closed on `Type::Associated`).
+//! * E1201 for `where` bounds (`type_item` for a function and an `impl` block): a bound whose
+//!   parameter is not one of the declaration's generics, and a bound whose contract path names
+//!   no contract. A single-segment bound names the nearest lexical declaration of that name
+//!   (`function_where_bounds`): a type or enum of that name in a nearer module scope shadows an
+//!   outer contract, an inline module's contract is invisible outside it, and an import binds
+//!   only public contracts. Reported at the declaring item (where-bound syntax carries no node of
+//!   its own).
 
 use super::value_paths::{ValuePathKind, collect_value_path_obligations};
 use super::*;
@@ -61,6 +68,9 @@ pub enum UnitObligationKind {
     UnresolvedAssociatedType { name: Arc<str> },
     /// A value path that names no value (`value_paths.rs`).
     ValuePath(ValuePathKind),
+    /// E1201: a `where` bound whose parameter is not a generic of its declaration, or whose
+    /// contract path names no contract (rendered as `TypeUnknownType`, the legacy class).
+    UnresolvedWhereBound { name: Arc<str> },
 }
 
 /// A failed unit-level obligation and the exact node that carries the diagnostic.
@@ -94,6 +104,7 @@ fn unit_obligations_tracked(
         collect_module_declaration_obligations(program, index, key, &mut findings);
         collect_cross_unit_duplicate_obligations(db, syntax, program, index, key, &mut findings);
         collect_builtin_collision_obligations(db, syntax, program, index, key, &mut findings);
+        collect_where_bound_obligations(db, program, index, key, &mut findings);
         let mut value_paths = Vec::new();
         collect_value_path_obligations(db, program, index, key, &mut value_paths);
         findings.extend(value_paths.into_iter().map(|obligation| UnitObligation {
@@ -143,6 +154,9 @@ pub fn check_unit_obligations(db: &dyn Db, roots: &[AstNodeKey]) -> Vec<Semantic
                 UnitObligationKind::ThisUsedOutsideContractOrImpl => SemanticIssueKind::ThisUsedOutsideContractOrImpl,
                 UnitObligationKind::UnresolvedAssociatedType { name } => {
                     SemanticIssueKind::UnresolvedAssociatedType { name: name.to_string() }
+                }
+                UnitObligationKind::UnresolvedWhereBound { name } => {
+                    SemanticIssueKind::TypeUnknownType { name: name.to_string() }
                 }
                 UnitObligationKind::ValuePath(kind) => match kind {
                     ValuePathKind::UnknownValueType => SemanticIssueKind::TypeUnknownValueType,
@@ -712,4 +726,140 @@ fn collect_builtin_collision_obligations(
             });
         }
     }
+}
+
+/// Every `where` bound of every function and `impl` block of the unit, judged as the legacy
+/// `type_item` judges them: the bound parameter must be one of the declaration's generics, and
+/// the bound path must name a contract visible from the declaration.
+fn collect_where_bound_obligations(
+    db: &dyn Db,
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &SyntaxIndex,
+    key: AstNodeKey,
+    findings: &mut Vec<UnitObligation>,
+) {
+    for kind in [NodeKind::FunctionDefinition, NodeKind::ImplBlock] {
+        for node in index.ids_of_kind(kind) {
+            let Some(reference) = index.node_at(program, node) else { continue };
+            let (generics, bounds) = if let Some(function) = reference.of::<FunctionDefinition>() {
+                (&function.generics, &function.where_bounds)
+            } else if let Some(block) = reference.of::<ImplBlock>() {
+                (&block.generics, &block.where_bounds)
+            } else {
+                continue;
+            };
+            let site = AstNodeKey { node, ..key };
+            for bound in bounds {
+                let parameter = bound.parameter.node.name.as_str();
+                if !generics.iter().any(|generic| generic.node.name == parameter) {
+                    findings.push(UnitObligation {
+                        kind: UnitObligationKind::UnresolvedWhereBound { name: Arc::from(parameter) },
+                        site,
+                    });
+                    continue;
+                }
+                if !where_bound_names_a_contract(db, program, index, site, &bound.contract.node) {
+                    let name = bound
+                        .contract
+                        .node
+                        .segments
+                        .iter()
+                        .map(|segment| segment.node.name.node.name.as_str())
+                        .collect::<Vec<_>>()
+                        .join(".");
+                    findings.push(UnitObligation {
+                        kind: UnitObligationKind::UnresolvedWhereBound { name: Arc::from(name.as_str()) },
+                        site,
+                    });
+                }
+            }
+        }
+    }
+}
+
+/// Whether a `where` bound path names a contract from `declaration`. A single-segment path is
+/// resolved through the lexical module scopes first, where the nearest declaration of the name
+/// decides: a type or enum shadows any outer contract (the legacy surface resolves the bound
+/// through the module's item namespace, not a contract-only namespace); only then do the unit's
+/// imports (public contracts of other units) apply, through `resolve_contract`.
+fn where_bound_names_a_contract(
+    db: &dyn Db,
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &SyntaxIndex,
+    declaration: AstNodeKey,
+    path: &Path,
+) -> bool {
+    let mut declaration_path = path.clone();
+    if let Some(segment) = declaration_path.segments.last_mut() {
+        segment.node.type_args.clear();
+    }
+    if let [segment] = declaration_path.segments.as_slice() {
+        let name = segment.node.name.node.name.as_str();
+        let declares = |scope: beskid_analysis::syntax::AstNodeId, kind: NodeKind| {
+            index.ids_of_kind(kind).any(|candidate| {
+                module_scope_of_item(index, candidate) == Some(scope)
+                    && index.node_at(program, candidate).is_some_and(|node| {
+                        node.of::<TypeDefinition>().is_some_and(|item| item.name.node.name == name)
+                            || node.of::<EnumDefinition>().is_some_and(|item| item.name.node.name == name)
+                            || node.of::<ContractDefinition>().is_some_and(|item| item.name.node.name == name)
+                    })
+            })
+        };
+        let mut scope = super::super::resolution::module_scope(index, declaration.node);
+        while let Some(current) = scope {
+            if declares(current, NodeKind::TypeDefinition) || declares(current, NodeKind::EnumDefinition) {
+                return false;
+            }
+            if declares(current, NodeKind::ContractDefinition) {
+                return true;
+            }
+            scope = super::super::resolution::outer_module_scope(index, current);
+        }
+    }
+    if inline_module_contract(program, index, declaration.node, &declaration_path) {
+        return true;
+    }
+    resolve_contract(db, declaration, &declaration_path).is_some()
+}
+
+/// Whether a qualified bound path names a contract of an inline module reachable from the
+/// declaration's lexical scope chain (`mod A { contract Reader {..} ... where T: A.Reader }`),
+/// as `resolve_inline_module_item_declaration` resolves callables. Visibility does not apply
+/// inside the declaring unit.
+fn inline_module_contract(
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &SyntaxIndex,
+    declaration: beskid_analysis::syntax::AstNodeId,
+    path: &Path,
+) -> bool {
+    let Some((terminal, module_path)) = path.segments.split_last() else { return false };
+    if module_path.is_empty() {
+        return false;
+    }
+    let name = terminal.node.name.node.name.as_str();
+    let mut scope = super::super::resolution::module_scope(index, declaration);
+    while let Some(start) = scope {
+        let mut current = Some(start);
+        for segment in module_path {
+            current = current.and_then(|scope| {
+                super::super::resolution::unique_inline_module_in_scope(
+                    program,
+                    index,
+                    scope,
+                    segment.node.name.node.name.as_str(),
+                )
+            });
+        }
+        if let Some(module) = current {
+            return index.ids_of_kind(NodeKind::ContractDefinition).any(|candidate| {
+                module_scope_of_item(index, candidate) == Some(module)
+                    && index
+                        .node_at(program, candidate)
+                        .and_then(|node| node.of::<ContractDefinition>())
+                        .is_some_and(|contract| contract.name.node.name == name)
+            });
+        }
+        scope = super::super::resolution::outer_module_scope(index, start);
+    }
+    false
 }

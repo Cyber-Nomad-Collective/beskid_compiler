@@ -119,8 +119,13 @@ target "app" {
         let mod_host = enter_mod_host();
         let native_mods = mod_host.corelib_mod_host(&plan).expect("qualify the native Mods of the compile plan");
         let resolved = resolved_input_from_plan(entry.clone(), source.to_string(), plan, None, None);
+        // `beskid check` assembles every own unit (workspace scan), not only the import closure.
         let options = |native_mods: beskid_analysis::mod_host::ModHost| PrepareOptions {
-            front_end: FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
+            front_end: FrontEndOptions {
+                with_semantic_diagnostics: true,
+                assembly_discovery: beskid_analysis::projects::AssemblyDiscovery::WorkspaceScan,
+                ..Default::default()
+            },
             ..PrepareOptions::with_mod_host(native_mods)
         };
 

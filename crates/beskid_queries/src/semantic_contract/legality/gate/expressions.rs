@@ -384,17 +384,25 @@ pub(super) fn collect_call_obligations(
                         continue;
                     }
                 }
-                if matches!(lowering, Ok(Some(CallLowering::Direct(_))))
-                    && let Err(error) = call_abi_signature(db, call_key)
-                    && let Some(violation) = error.bound_violation()
-                {
-                    findings.push(GateObligation {
-                        kind: GateObligationKind::GenericBoundNotSatisfied {
-                            type_name: Arc::clone(&violation.type_name),
-                            contract_name: Arc::clone(&violation.contract_name),
-                        },
-                        site: call_key,
-                    });
+                if let Ok(Some(CallLowering::Direct(declaration))) = lowering {
+                    match call_abi_signature(db, call_key) {
+                        Ok(Some(_)) => {}
+                        Err(error) if error.bound_violation().is_some() => {
+                            let violation = error.bound_violation().expect("checked");
+                            findings.push(GateObligation {
+                                kind: GateObligationKind::GenericBoundNotSatisfied {
+                                    type_name: Arc::clone(&violation.type_name),
+                                    contract_name: Arc::clone(&violation.contract_name),
+                                },
+                                site: call_key,
+                            });
+                        }
+                        // No signature: inside a generic body the call has no specialization
+                        // instance (`Ok(None)`) or its substitution is unavailable.
+                        Ok(None) | Err(_) => {
+                            judge_unconstrained_forwarding(db, program, index, key, node, declaration, findings);
+                        }
+                    }
                 }
             }
             _ => {}
@@ -579,6 +587,92 @@ fn report_duplicates(
             }
             None => {
                 seen.insert(name, node);
+            }
+        }
+    }
+}
+
+/// A call of a bounded callee from inside a generic callable that forwards one of its own
+/// generic parameters (`i64 Forward<U>(U value) { return Consume(value); }` with
+/// `Consume<T>(T value) where T: Reader`): the argument has no concrete identity, so
+/// `call_abi_signature` cannot prove the bound. The legacy `check_generic_function_bounds`
+/// accepts the forwarding only when the caller declares the same bound on that parameter
+/// (`where U: Reader`); otherwise it reports E1610 naming the caller's parameter. Mirrored here:
+/// the argument is a path to a parameter or local declared with a bare generic parameter of the
+/// enclosing callable, and that callable's `where` bounds name no contract equal to the callee's.
+fn judge_unconstrained_forwarding(
+    db: &dyn Db,
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &SyntaxIndex,
+    key: AstNodeKey,
+    call_node: beskid_analysis::syntax::AstNodeId,
+    declaration: AstNodeKey,
+    findings: &mut Vec<GateObligation>,
+) {
+    let call_key = AstNodeKey { node: call_node, ..key };
+    let Ok(bounds) = crate::semantic_contract::contracts::declared_where_bounds(db, declaration) else { return };
+    let Ok(Some(arguments)) = call_arguments(db, call_key) else { return };
+    let Some(enclosing) = super::super::typing::enclosing_callable(index, call_node) else { return };
+    let Some(enclosing_node) = index.node_at(program, enclosing) else { return };
+    let Some(function) = enclosing_node.of::<FunctionDefinition>() else { return };
+    let enclosing_key = AstNodeKey { node: enclosing, ..key };
+    for bound in bounds {
+        for (_, position) in &bound.parameters {
+            let Some(argument) = arguments.get(*position as usize) else { continue };
+            let argument_node = normalized_expression_node(index, argument.node);
+            let Some(path) = index.node_at(program, argument_node).and_then(|node| node.of::<PathExpression>()) else {
+                continue;
+            };
+            let [segment] = path.path.node.segments.as_slice() else { continue };
+            let Some(local) = resolve_lexical_declaration(program, index, argument_node, segment.node.name.node.name.as_str())
+            else {
+                continue;
+            };
+            let Some(owner) = parent_node(index, local).and_then(|owner| index.node_at(program, owner)) else { continue };
+            let declared = if let Some(parameter) = owner.of::<Parameter>() {
+                parameter.ty.node.clone()
+            } else if let Some(statement) = owner.of::<LetStatement>() {
+                match statement.type_annotation.as_ref() {
+                    Some(annotation) => annotation.node.clone(),
+                    None => continue,
+                }
+            } else {
+                continue;
+            };
+            let Type::Complex(declared_path) = &declared else { continue };
+            let [declared_segment] = declared_path.node.segments.as_slice() else { continue };
+            if !declared_segment.node.type_args.is_empty() {
+                continue;
+            }
+            let generic = declared_segment.node.name.node.name.as_str();
+            if !function.generics.iter().any(|candidate| candidate.node.name == generic) {
+                continue;
+            }
+            let covered = function.where_bounds.iter().any(|caller_bound| {
+                if caller_bound.parameter.node.name != generic {
+                    return false;
+                }
+                let mut contract_path = caller_bound.contract.node.clone();
+                if let Some(last) = contract_path.segments.last_mut() {
+                    last.node.type_args.clear();
+                }
+                resolve_contract(db, enclosing_key, &contract_path) == Some(bound.contract)
+            });
+            if !covered {
+                let contract_name = bound
+                    .path
+                    .segments
+                    .last()
+                    .map(|segment| segment.node.name.node.name.clone())
+                    .unwrap_or_default();
+                findings.push(GateObligation {
+                    kind: GateObligationKind::GenericBoundNotSatisfied {
+                        type_name: Arc::from(generic),
+                        contract_name: Arc::from(contract_name.as_str()),
+                    },
+                    site: call_key,
+                });
+                return;
             }
         }
     }

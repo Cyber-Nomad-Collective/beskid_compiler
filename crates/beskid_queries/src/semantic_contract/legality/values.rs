@@ -62,8 +62,8 @@ use super::*;
 use crate::semantic_contract::contracts::{concrete_declaration, type_declaration_conforms_to_contract};
 use beskid_analysis::syntax::{
     AssignExpression, AssignOp, AstNodeId, CallExpression, ContractMethodSignature, EnumConstructorExpression,
-    Expression, FieldKind, FunctionDefinition, LambdaExpression, LetStatement, MatchExpression,
-    MethodDefinition, Pattern, ReturnStatement, Spanned, StructLiteralExpression, TestDefinition, Type,
+    Expression, FieldKind, FunctionDefinition, LambdaExpression, LetStatement, MatchExpression, PathExpression,
+    MethodDefinition, Path, Pattern, ReturnStatement, Spanned, StructLiteralExpression, TestDefinition, Type,
     TypeDefinition,
 };
 use beskid_analysis::syntax_query::{DynNodeRef, NodeKind, SyntaxIndex};
@@ -847,6 +847,28 @@ fn contextual_destination_type(
     None
 }
 
+/// The declaration of a generic nominal literal spelled without arguments (`Box { .. }` into a
+/// `Box<i64>` destination): `resolve_type_declaration` requires the declared arity, so the
+/// declaration is taken from the contextual destination's identity when its name is the
+/// literal's own type name.
+fn contextual_literal_declaration(
+    db: &dyn Db,
+    program: &Program,
+    index: &SyntaxIndex,
+    key: AstNodeKey,
+    node: AstNodeId,
+    spelled: &Path,
+) -> Option<AstNodeKey> {
+    let spelled_name = spelled.segments.last()?.node.name.node.name.as_str();
+    let (scope, ty) = contextual_destination_type(db, program, index, key, node)?;
+    let Type::Complex(path) = &ty else { return None };
+    if path.node.segments.last()?.node.name.node.name != spelled_name {
+        return None;
+    }
+    let identity = generic_source_type_identity(db, scope, &ty).ok()?;
+    crate::semantic_contract::contracts::concrete_declaration(db, AstNodeKey { node, ..key }, &identity)
+}
+
 /// The generic arguments a nominal literal of `declaration` (a generic `type` or `enum` with
 /// `generics`) takes: from `spelled` (its own type path with explicit arguments) when it names
 /// them, otherwise from the contextual destination resolving to the same declaration.
@@ -893,7 +915,11 @@ fn collect_struct_literal_values(
             continue;
         };
         let literal_key = AstNodeKey { node, ..key };
+        // The layout authority needs the literal's instantiation; a generic literal typed only by
+        // its context (`Box<i64> b = Box { .. }`) resolves its declaration through the type path.
         let Some(declaration) = resolve_nominal_layout_declaration(db, program, index, literal_key, &literal.path.node)
+            .or_else(|| resolve_type_declaration(db, literal_key, &literal.path.node))
+            .or_else(|| contextual_literal_declaration(db, program, index, key, node, &literal.path.node))
         else {
             continue;
         };
@@ -997,15 +1023,57 @@ fn collect_pattern_values(
             continue;
         };
         let Some((_, scrutinee)) = expression_nodes(program, index, node, &expression.scrutinee) else { continue };
-        let Some(expected) = value_identity(db, AstNodeKey { node: scrutinee, ..key }) else { continue };
+        let scrutinee_key = AstNodeKey { node: scrutinee, ..key };
+        // A scrutinee that is a typed local or parameter carries its declared type's generic
+        // arguments (`Opt<bool> o`), which fix the variant field types of nested patterns; its
+        // declared syntax also resolves the declaration a generic pattern path names without
+        // arguments (`Opt::Some(..)`).
+        let declared = scrutinee_declared_identity(db, program, index, scrutinee_key);
+        let Some(expected) = declared.as_ref().map(|(identity, _)| identity.clone()).or_else(|| value_identity(db, scrutinee_key))
+        else {
+            continue;
+        };
+        let declaration = declared.and_then(|(_, declaration)| declaration);
         for arm in &expression.arms {
             let Some(arm_node) = index.direct_child_id(program, node, DynNodeRef::from(arm)) else { continue };
             let Some(pattern_node) = index.direct_child_id(program, arm_node, DynNodeRef::from(&arm.node.pattern))
             else {
                 continue;
             };
-            judge_pattern(db, program, index, key, &expected, &arm.node.pattern.node, pattern_node, findings);
+            judge_pattern(db, program, index, key, &expected, declaration, &arm.node.pattern.node, pattern_node, findings);
         }
+    }
+}
+
+/// The declared type identity of a scrutinee that is a single-segment path to a typed local or
+/// parameter, resolved at the scrutinee, with the declaration its declared type names.
+fn scrutinee_declared_identity(
+    db: &dyn Db,
+    program: &Program,
+    index: &SyntaxIndex,
+    scrutinee: AstNodeKey,
+) -> Option<(Identity, Option<AstNodeKey>)> {
+    let path = index.node_at(program, scrutinee.node)?.of::<PathExpression>()?;
+    let [segment] = path.path.node.segments.as_slice() else { return None };
+    if !segment.node.type_args.is_empty() {
+        return None;
+    }
+    let local = resolve_lexical_declaration(program, index, scrutinee.node, segment.node.name.node.name.as_str())?;
+    let owner = index.node_at(program, parent_node(index, local)?)?;
+    let declared = if let Some(parameter) = owner.of::<beskid_analysis::syntax::Parameter>() {
+        parameter.ty.node.clone()
+    } else if let Some(statement) = owner.of::<LetStatement>() {
+        statement.type_annotation.as_ref()?.node.clone()
+    } else {
+        return None;
+    };
+    let declaration = match &declared {
+        Type::Complex(path) => resolve_type_declaration(db, scrutinee, &path.node),
+        _ => None,
+    };
+    match declared_destination(db, scrutinee, &declared)? {
+        Destination::Identity(identity) => Some((identity, declaration)),
+        Destination::Contract { .. } => None,
     }
 }
 
@@ -1022,6 +1090,7 @@ fn judge_pattern(
     index: &SyntaxIndex,
     key: AstNodeKey,
     expected: &Identity,
+    expected_declaration: Option<AstNodeKey>,
     pattern: &Pattern,
     pattern_node: AstNodeId,
     findings: &mut Vec<ValueObligation>,
@@ -1034,7 +1103,16 @@ fn judge_pattern(
         }
         Pattern::Enum(enum_pattern) => {
             let type_path = &enum_pattern.node.path.node.type_path;
-            let Some(declaration) = resolve_type_declaration(db, pattern_site, &type_path.node) else { return };
+            // A generic enum named without arguments (`Opt::Some(..)` against an `Opt<bool>`
+            // scrutinee) resolves through the expected identity's declaration.
+            let Some(declaration) = resolve_type_declaration(db, pattern_site, &type_path.node).or_else(|| {
+                let spelled = type_path.node.segments.last()?.node.name.node.name.as_str();
+                let declaration = expected_declaration
+                    .or_else(|| crate::semantic_contract::contracts::concrete_declaration(db, pattern_site, expected))?;
+                (enum_definition(db, declaration)?.name.node.name == spelled).then_some(declaration)
+            }) else {
+                return;
+            };
             let Some(qualified_name) = stable_declaration_identity(db, declaration) else { return };
             let actual = Identity::Nominal { qualified_name: Arc::clone(&qualified_name), arguments: Arc::from([]) };
             judge(db, findings, &Destination::Identity(expected.clone()), &actual, pattern_site);
@@ -1072,7 +1150,15 @@ fn judge_pattern(
                 else {
                     continue;
                 };
-                judge_pattern(db, program, index, key, &expected_item, &item.node, item_node, findings);
+                // A nested generic enum field (`Opt<Opt<bool>>`) resolves its declaration from
+                // the field syntax under the same substitutions.
+                let item_declaration = match &field.node.ty.node {
+                    Type::Complex(path) if substitutions.is_some() => {
+                        resolve_type_declaration(db, declaration, &path.node)
+                    }
+                    _ => None,
+                };
+                judge_pattern(db, program, index, key, &expected_item, item_declaration, &item.node, item_node, findings);
             }
         }
         Pattern::Identifier(_) | Pattern::Wildcard => {}
@@ -1112,3 +1198,6 @@ mod tests {
         assert!(identities_compatible(&expected, &abi(SemanticTypeId::I64)));
     }
 }
+
+
+
