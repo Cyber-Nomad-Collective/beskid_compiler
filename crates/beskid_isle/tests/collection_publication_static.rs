@@ -30,6 +30,9 @@ fn append_publicates_the_proven_owner_before_exactly_one_finish() {
 
 #[test]
 fn canonical_collection_growth_uses_mutable_owner_slots_in_every_storage_adapter() {
+    // Array.Append grows storage in place since 0.5.3, so persistent adapters route every growth
+    // through Core.Collections.Storage.AppendAt, which appends in place only when the version owns
+    // the storage tip and copies the prefix otherwise.
     for source in [
         include_str!("../../../corelib/packages/foundation/src/Core/Collections/List.bd"),
         include_str!("../../../corelib/packages/foundation/src/Core/Collections/Map.bd"),
@@ -38,7 +41,11 @@ fn canonical_collection_growth_uses_mutable_owner_slots_in_every_storage_adapter
         include_str!("../../../corelib/packages/foundation/src/Core/Collections/Stack.bd"),
     ] {
         assert!(source.contains("mut "), "collection growth must establish a mutable owner slot");
-        assert!(source.contains("Array.Append"), "collection adapter must use canonical array growth");
-        assert!(!source.contains("= Array.Append"), "growth must not await a later assignment for rooting");
+        assert!(source.contains("Storage.AppendAt<"), "collection adapter must use the shared storage growth");
+        assert!(!source.contains("Array.Append"), "adapters must not grow shared storage in place directly");
     }
+    let storage = include_str!("../../../corelib/packages/foundation/src/Core/Collections/Storage.bd");
+    assert!(storage.contains("mut T[] grown = storage;"), "in-place growth must establish a mutable owner slot");
+    assert!(storage.contains("Array.Append<T>(grown, value);"), "storage growth must use canonical array growth");
+    assert!(!storage.contains("= Array.Append"), "growth must not await a later assignment for rooting");
 }

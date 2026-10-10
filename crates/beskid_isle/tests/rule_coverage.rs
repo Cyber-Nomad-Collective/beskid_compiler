@@ -138,7 +138,7 @@ fn every_isle_lowered_kind_has_verified_clif_evidence() {
         // scoped_cleanup_runs_once_in_reverse_order_on_every_structured_exit and
         // scoped_cleanup_preserves_constructor_and_argument_roots compile source
         // through ISLE and verifier-enabled AOT, then execute JIT and native kits.
-        (NodeKind::ScopedUseStatement, engine_tests.join("scoped_cleanup_native.rs")),
+        (NodeKind::ScopedUseStatement, engine_tests.join("native_kit/scoped_cleanup_native.rs")),
         (NodeKind::LaunchStatement, codegen_tests.join("isle_adapter/composition_conditions.rs")),
         (NodeKind::WithStatement, codegen_tests.join("isle_adapter/composition_conditions.rs")),
         (NodeKind::IfStatement, isle_tests.join("if_else.rs")),

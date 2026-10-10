@@ -487,9 +487,9 @@ pub(super) fn validate_package_metadata(metadata: &PackageMetadata) -> Result<()
         && metadata.tags.iter().collect::<std::collections::BTreeSet<_>>().len() == metadata.tags.len();
     let valid = valid_text(&metadata.description, 4_000, true)
         && valid_text(&metadata.category, 128, false)
-        && metadata.repository_url.as_deref().is_none_or(&valid_url)
-        && metadata.website_url.as_deref().is_none_or(&valid_url)
-        && metadata.icon_url.as_deref().is_none_or(&valid_url)
+        && metadata.repository_url.as_deref().is_none_or(valid_url)
+        && metadata.website_url.as_deref().is_none_or(valid_url)
+        && metadata.icon_url.as_deref().is_none_or(valid_url)
         && valid_tags;
     valid.then_some(()).ok_or(StoreError::InvalidPackageMetadata)
 }

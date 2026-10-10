@@ -1,2 +1,5 @@
 [toolchain]
-channel = "stable"
+# Match the pinned Woodpecker image (rust:1.98.1) and the 0.5.2 release toolchain;
+# trybuild expectations in vendored crates depend on the exact rustc wording.
+channel = "1.98.1"
+components = ["clippy"]

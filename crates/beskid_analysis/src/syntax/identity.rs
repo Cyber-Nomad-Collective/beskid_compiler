@@ -44,10 +44,16 @@ impl SyntaxGenerationId {
     /// Allocate after every generation constructed or successfully restored in
     /// this process. Exhaustion is an error, never a wrap or a reused identity.
     pub fn allocate() -> Option<Self> {
-        LAST_SYNTAX_GENERATION
-            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |last| last.checked_add(1))
-            .ok()
-            .map(|last| Self(last + 1))
+        // A compare-exchange loop instead of `fetch_update`, which newer stable
+        // toolchains deprecate in favour of `try_update` (absent on older ones).
+        let mut last = LAST_SYNTAX_GENERATION.load(Ordering::Relaxed);
+        loop {
+            let next = last.checked_add(1)?;
+            match LAST_SYNTAX_GENERATION.compare_exchange_weak(last, next, Ordering::Relaxed, Ordering::Relaxed) {
+                Ok(_) => return Some(Self(next)),
+                Err(observed) => last = observed,
+            }
+        }
     }
 
     /// Observe existing syntax authority before allocating any newer assembly.

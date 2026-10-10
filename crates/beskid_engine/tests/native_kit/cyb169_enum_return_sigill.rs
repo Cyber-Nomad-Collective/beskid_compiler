@@ -8,34 +8,11 @@ use std::path::Path;
 use beskid_engine::services::run_entrypoint;
 use beskid_tools::toolchain::runtime_kit::{RuntimeKitProfile, build_native_host};
 
-struct EnvironmentVariableGuard {
-    key: &'static str,
-    previous: Option<std::ffi::OsString>,
-}
-
-impl EnvironmentVariableGuard {
-    fn set(key: &'static str, value: &Path) -> Self {
-        let previous = std::env::var_os(key);
-        unsafe { std::env::set_var(key, value) };
-        Self { key, previous }
-    }
-}
-
-impl Drop for EnvironmentVariableGuard {
-    fn drop(&mut self) {
-        unsafe {
-            if let Some(value) = &self.previous {
-                std::env::set_var(self.key, value);
-            } else {
-                std::env::remove_var(self.key);
-            }
-        }
-    }
-}
+use crate::runtime_prefix::RuntimePrefixContext;
+use crate::shared_kit;
 
 #[test]
 fn returned_enum_survives_match_across_call_boundary() {
-    let prefix = tempfile::tempdir().expect("exact kit prefix");
     let profile = match std::env::var("BESKID_RUNTIME_KIT_PROFILE") {
         Ok(value) => match beskid_abi::runtime_kit::BuildProfile::parse(&value).expect("valid runtime-kit profile") {
             beskid_abi::runtime_kit::BuildProfile::Debug => RuntimeKitProfile::Debug,
@@ -44,8 +21,21 @@ fn returned_enum_survives_match_across_call_boundary() {
         Err(std::env::VarError::NotPresent) => RuntimeKitProfile::Debug,
         Err(error) => panic!("invalid BESKID_RUNTIME_KIT_PROFILE: {error}"),
     };
-    build_native_host(prefix.path().to_path_buf(), profile).expect("publish exact native kit");
-    let _runtime_prefix = EnvironmentVariableGuard::set("BESKID_RUNTIME_PREFIX", prefix.path());
+    // The debug kit is the one this binary already shares; a release run publishes its own.
+    let kit_lease;
+    let release_prefix;
+    let prefix = match profile {
+        RuntimeKitProfile::Debug => {
+            kit_lease = shared_kit::debug();
+            kit_lease.prefix()
+        }
+        RuntimeKitProfile::Release => {
+            release_prefix = tempfile::tempdir().expect("exact kit prefix");
+            build_native_host(release_prefix.path().to_path_buf(), profile).expect("publish exact native kit");
+            release_prefix.path()
+        }
+    };
+    let _runtime_prefix = RuntimePrefixContext::install(prefix);
 
     let source = r#"
 enum Result { Ok(i64 value), Error(i64 error) }

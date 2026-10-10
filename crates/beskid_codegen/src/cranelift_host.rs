@@ -55,7 +55,7 @@ use crate::CodegenArtifact;
 /// own growable guard-page mechanism (`GuardedStackAllocate` /
 /// `runtime/beskid/src/Runtime/Fiber/Scheduler/Context.bd`) only covers spawned
 /// fiber stacks, not a plain native-thread call into JIT code (see
-/// `crates/beskid_engine/tests/heap_growth_native.rs::run_heap_fixture`, which
+/// `crates/beskid_engine/tests/native_kit/heap_growth_native.rs::run_heap_fixture`, which
 /// calls the JIT entrypoint directly on the calling thread). Whether that
 /// distinction is the actual cause of the `deep_recursion` SIGSEGV, or whether
 /// something is separately corrupting a return address before any guard page is

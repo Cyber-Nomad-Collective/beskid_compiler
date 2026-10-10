@@ -4,7 +4,8 @@ use std::{ffi::CString, path::Path, process::Command};
 
 use beskid_abi::runtime_kit::BuildProfile;
 use beskid_engine::JitRuntimeKit;
-use beskid_tools::toolchain::runtime_kit::{RuntimeKitProfile, build_native_host};
+
+use crate::shared_kit;
 use cranelift_codegen::ir::{AbiParam, InstBuilder, types};
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
 use cranelift_jit::{JITBuilder, JITModule};
@@ -13,8 +14,8 @@ use cranelift_module::{Linkage, Module, default_libcall_names};
 #[test]
 fn traced_values_survive_collection_and_transfer_in_native_aot_and_jit() {
     let prefix = tempfile::tempdir().unwrap();
-    let kit = build_native_host(prefix.path().to_path_buf(), RuntimeKitProfile::Debug)
-        .expect("build canonical runtime with traced ABI-value operations");
+    let shared = shared_kit::debug();
+    let kit = shared.kit();
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let source = root.join("tests/fixtures/traced_abi_value.c");
     let include = root.join("../beskid_abi/include");
@@ -82,7 +83,7 @@ fn traced_values_survive_collection_and_transfer_in_native_aot_and_jit() {
         .output()
         .unwrap();
     assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
-    let runtime = JitRuntimeKit::load(prefix.path(), &kit.metadata.target, BuildProfile::Debug).unwrap();
+    let runtime = JitRuntimeKit::load(shared.prefix(), &kit.metadata.target, BuildProfile::Debug).unwrap();
     let mut builder = JITBuilder::new(default_libcall_names()).unwrap();
     for (name, address) in runtime.symbols() {
         builder.symbol(name, *address);

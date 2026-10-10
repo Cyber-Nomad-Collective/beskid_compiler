@@ -116,6 +116,7 @@ corelib_typecheck_test!(concurrency_status_abi_tests_front_end_typechecks, "conc
 corelib_typecheck_test!(collections_array_tests_front_end_typechecks, "collections/ArrayTests.bd");
 corelib_typecheck_test!(collections_tier1_tests_front_end_typechecks, "collections/CollectionsTier1Tests.bd");
 corelib_typecheck_test!(collections_list_tests_front_end_typechecks, "collections/ListTests.bd");
+corelib_typecheck_test!(collections_persistence_tests_front_end_typechecks, "collections/PersistenceTests.bd");
 corelib_typecheck_test!(collections_map_tests_front_end_typechecks, "collections/MapTests.bd");
 corelib_typecheck_test!(collections_set_tests_front_end_typechecks, "collections/SetTests.bd");
 corelib_typecheck_test!(collections_queue_tests_front_end_typechecks, "collections/QueueTests.bd");

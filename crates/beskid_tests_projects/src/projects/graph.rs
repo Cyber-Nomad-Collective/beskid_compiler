@@ -154,19 +154,32 @@ dependency "Feature" {
         let names: Vec<_> = deps.iter().map(|d| d.dependency_name.as_str()).collect();
         assert_eq!(
             names,
+            // The Corelib aggregate includes the networking stack; each package still
+            // precedes every package that depends on it.
             [
                 "corelib_foundation",
+                "corelib_codec",
                 "corelib_compiler_sdk",
                 "serialization_mod",
                 "corelib_serialization",
                 "corelib_bsol",
                 "corelib_concurrency",
+                "corelib_network",
+                "corelib_connect",
                 "corelib_runtime",
                 "corelib_console",
+                "corelib_crypto",
                 "corelib_glue",
-                "corelib_network",
                 "corelib_http",
+                "corelib_http2",
+                "corelib_x509",
+                "corelib_tls",
+                "corelib_quic",
+                "corelib_uri",
+                "corelib_http3",
                 "corelib_interop",
+                "corelib_web",
+                "corelib_websocket",
                 "Core",
                 "Util",
                 "Kernel",

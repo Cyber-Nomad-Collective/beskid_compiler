@@ -52,7 +52,7 @@ fn x86_64_isa(flags: settings::Flags) -> std::sync::Arc<dyn isa::TargetIsa> {
 /// guard-page probes, mirroring what a Beskid function with a large local array/struct would
 /// need (not what `RecurseHoldingLocals` itself needs -- that function's per-frame footprint is
 /// far under one guard page; this isolates the *single-oversized-frame* stack-clash gap from the
-/// *cumulative-recursion* question the `heap_growth_native.rs::deep_recursion_*` test covers).
+/// *cumulative-recursion* question the `native_kit/heap_growth_native.rs::deep_recursion_*` test covers).
 fn build_large_frame_function(isa: &dyn isa::TargetIsa) -> Function {
     let mut signature = Signature::new(CallConv::SystemV);
     signature.returns.push(AbiParam::new(types::I64));
