@@ -225,6 +225,9 @@ impl SemanticIssueKind {
             Self::DeadCollectionGrowth => "the grown handle of a `mut T[]` parameter is discarded and the body never \
                                            publishes the parameter, so the caller keeps the ungrown array"
                 .to_string(),
+            Self::LambdaCapturesStackReference { name } => {
+                format!("lambda cannot capture `{name}`: it is a mutable binding or a native pointer")
+            }
             Self::TypeInvalidEventInvocationScope => {
                 "events can only be invoked from methods on their declaring type".to_string()
             }

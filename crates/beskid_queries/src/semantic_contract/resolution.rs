@@ -58,6 +58,9 @@ pub(super) fn resolve_item_declaration_candidate(
         {
             return Some(declaration);
         }
+        if let Some(declaration) = resolve_type_qualified_local_function(db, program, index, key, path) {
+            return Some(declaration);
+        }
         return resolve_type_qualified_imported_function(db, key, path);
     };
     unique_exported_function_in_unit(db, target_unit, key.generation, &name.node.name.node.name)
@@ -143,6 +146,39 @@ pub(super) fn unique_inline_module_in_scope(
 
 /// Resolve a qualified module path from an exact current import and, when required, explicit
 /// public child-module edges. Private imports remain available only inside their owner.
+/// A fully qualified module path names its module without an import, as in Java and C#: imports
+/// only introduce shorter names. It resolves only when exactly one visible unit declares the
+/// module, and every declared parent module exposes the next segment with `pub mod`, so private
+/// modules stay private. Absent and ambiguous modules stay unresolved.
+fn fully_qualified_module_unit(db: &dyn Db, key: AstNodeKey, module_path: &[String]) -> Option<SourceUnitId> {
+    let (target, parents) = {
+        let registry = db.syntax_dependency_registry().lock().expect("syntax dependency registry");
+        let target = match registry.visible_module_units(key.unit, key.generation, module_path) {
+            Some([unit]) => *unit,
+            _ => return None,
+        };
+        let parents = (1..module_path.len())
+            .map(|length| match registry.visible_module_units(key.unit, key.generation, &module_path[..length]) {
+                Some([parent]) => Some(*parent),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        (target, parents)
+    };
+    for (length, parent) in parents.into_iter().enumerate().map(|(index, parent)| (index + 1, parent)) {
+        let Some(parent) = parent else {
+            continue;
+        };
+        let exposes_next = public_module_routes(db, parent, key.generation)
+            .into_iter()
+            .any(|(binding, _)| binding == module_path[length]);
+        if !exposes_next {
+            return None;
+        }
+    }
+    Some(target)
+}
+
 pub(super) fn resolve_qualified_module_unit(
     db: &dyn Db,
     key: AstNodeKey,
@@ -179,6 +215,9 @@ pub(super) fn resolve_qualified_module_unit(
                     .filter_map(|(binding, child)| (binding == *segment).then_some((child, consumed + 1))),
             );
         }
+    }
+    if resolved.is_empty() {
+        return fully_qualified_module_unit(db, key, module_path);
     }
     let [unit] = resolved.as_slice() else {
         return None;
@@ -237,6 +276,54 @@ pub(super) fn resolve_type_qualified_imported_function(
         type_segment.node.type_args.len(),
     )?;
     unique_exported_function_in_unit(db, target_unit, key.generation, &function.node.name.node.name)
+}
+
+/// Resolve `ModuleType.Function()` inside the unit that declares both, the same static-function
+/// spelling [`resolve_type_qualified_imported_function`] accepts through an import. A unit has no
+/// binding for its own module, so inside `Core.Collections.List` the qualifier `List` names the
+/// unit's nominal type, and `List.FromArray<T>(values)` names the unit's own `FromArray`.
+///
+/// The qualifier must be a single segment that no lexical declaration shadows and that names
+/// exactly one type or enum declared in this unit; written type arguments, if any, must match its
+/// arity. The terminal must name exactly one function of this unit. Anything else stays
+/// unresolved rather than guessing another callable.
+pub(super) fn resolve_type_qualified_local_function(
+    db: &dyn Db,
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    key: AstNodeKey,
+    path: &beskid_analysis::syntax::Path,
+) -> Option<AstNodeKey> {
+    let [type_segment, function] = path.segments.as_slice() else {
+        return None;
+    };
+    let type_name = type_segment.node.name.node.name.as_str();
+    if resolve_lexical_declaration(program, index, key.node, type_name).is_some() {
+        return None;
+    }
+    let written_arity = type_segment.node.type_args.len();
+    let declared = index
+        .ids_of_kind(beskid_analysis::syntax_query::NodeKind::TypeDefinition)
+        .chain(index.ids_of_kind(beskid_analysis::syntax_query::NodeKind::EnumDefinition))
+        .filter_map(|candidate| {
+            let node = index.node_at(program, candidate)?;
+            node.of::<beskid_analysis::syntax::TypeDefinition>()
+                .filter(|definition| definition.name.node.name == type_name)
+                .map(|definition| definition.generics.len())
+                .or_else(|| {
+                    node.of::<beskid_analysis::syntax::EnumDefinition>()
+                        .filter(|definition| definition.name.node.name == type_name)
+                        .map(|definition| definition.generics.len())
+                })
+        })
+        .collect::<Vec<_>>();
+    let [arity] = declared.as_slice() else {
+        return None;
+    };
+    if written_arity != 0 && written_arity != *arity {
+        return None;
+    }
+    unique_function_in_unit(db, key.unit, key.generation, &function.node.name.node.name)
 }
 
 /// Resolve a public module member through its defining syntax unit or an explicit public

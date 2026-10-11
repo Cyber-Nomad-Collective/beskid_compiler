@@ -264,7 +264,7 @@ impl<'a> TypeChecker<'a> {
             let Some(ret) = self.builtin_surface_type_id(spec, spec.returns, true) else {
                 continue;
             };
-            self.function_signatures.insert(*item_id, FunctionSignature { params, return_type: ret });
+            self.function_signatures.insert(*item_id, FunctionSignature { params, return_type: ret, bulk: false });
         }
     }
     fn rebuild_struct_field_maps(&mut self) {

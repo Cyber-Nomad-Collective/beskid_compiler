@@ -17,8 +17,8 @@ mod types;
 pub use closures::{
     CaptureStorage, CaptureStorageClass, ClosureAllocationStatus, ClosureCallTarget, ClosureCapture,
     ClosureEnvironment, ClosureEnvironmentAbiShape, ClosureEnvironmentField, ClosureLoweringStatus,
-    ClosurePointerMapRequirement, ClosureSignature, FiberOwnership, SpawnDiagnostic, SpawnDiagnosticKind,
-    SpawnEntryValidation, SpawnHandleType, SpawnLegality, SpawnTarget,
+    ClosurePointerMapRequirement, ClosureSignature, FiberOwnership, FunctionValueCall, SpawnDiagnostic,
+    SpawnDiagnosticKind, SpawnEntryValidation, SpawnHandleType, SpawnLegality, SpawnTarget,
 };
 pub use errors::{GenericBindingConflict, SemanticError, SemanticFinding, SemanticQueryResult};
 pub use events::{EventHandlerLocalFact, EventOperationFact, EventOperationKind};

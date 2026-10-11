@@ -96,6 +96,21 @@ pub struct ClosureCallTarget {
     pub callable: ItemSignature,
 }
 
+/// A call through a function-typed local value rather than a statically known callee.
+///
+/// `declaration` is the local or parameter that holds the closure record; `callee` is the path
+/// expression read at the call site. `signature` is the ABI of the indirect call (never including
+/// the environment pointer, which the record supplies), derived from the declared function type
+/// or, for an unannotated lambda-initialized local, from that lambda's callable signature.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub struct FunctionValueCall {
+    pub call: AstNodeKey,
+    pub callee: AstNodeKey,
+    pub declaration: AstNodeKey,
+    pub signature: ItemSignature,
+    pub result_managed_reference: ManagedReferenceKind,
+}
+
 /// Exact callable operand, eager arguments, and captures selected by a `spawn` expression.
 ///
 /// `spawn Entry()` and `spawn Entry(args)` both store the entry operand (path or lambda), never

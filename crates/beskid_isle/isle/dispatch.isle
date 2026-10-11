@@ -8,6 +8,9 @@
 (decl partial emit_string_ne (AstNodeKey) Value)
 (extern constructor emit_string_ne emit_string_ne)
 
+(decl partial emit_string_order (AstNodeKey) Value)
+(extern constructor emit_string_order emit_string_order)
+
 (decl partial emit_string_index_read (AstNodeKey) Value)
 (extern constructor emit_string_index_read emit_string_index_read)
 
@@ -27,6 +30,22 @@
         (node_kind (NodeKind.BinaryExpression))
         (operator_fact (OperatorFact.StringNotEq))))
       (emit_string_ne key))
+(rule (lower_expression key @ (and
+        (node_kind (NodeKind.BinaryExpression))
+        (operator_fact (OperatorFact.StringLt))))
+      (emit_string_order key))
+(rule (lower_expression key @ (and
+        (node_kind (NodeKind.BinaryExpression))
+        (operator_fact (OperatorFact.StringLte))))
+      (emit_string_order key))
+(rule (lower_expression key @ (and
+        (node_kind (NodeKind.BinaryExpression))
+        (operator_fact (OperatorFact.StringGt))))
+      (emit_string_order key))
+(rule (lower_expression key @ (and
+        (node_kind (NodeKind.BinaryExpression))
+        (operator_fact (OperatorFact.StringGte))))
+      (emit_string_order key))
 
 (rule (lower_expression key @ (and
         (node_kind (NodeKind.IndexExpression))

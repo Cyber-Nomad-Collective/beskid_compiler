@@ -174,6 +174,11 @@ pub(in crate::semantic_contract) fn call_abi_signature_for_call(
         }
         Some(CallLowering::ManifestBuiltin(builtin)) => return manifest_builtin_abi_signature(builtin),
         Some(CallLowering::Dynamic) => return Err(SemanticError::unavailable("call_abi_signature")),
+        Some(CallLowering::FunctionValue(_)) => {
+            return function_value_call(db, key)?
+                .map(|call| call.signature)
+                .ok_or_else(|| SemanticError::unavailable("call_abi_signature"));
+        }
         Some(CallLowering::Runtime(RuntimeIntrinsic(index))) => return call_abi::runtime_intrinsic_signature(index),
         None => {
             return Err(SemanticError::unavailable("call_abi_signature"));

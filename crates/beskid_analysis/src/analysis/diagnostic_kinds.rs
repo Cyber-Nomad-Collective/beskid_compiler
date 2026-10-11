@@ -278,6 +278,11 @@ pub enum SemanticIssueKind {
     /// `BSP-REQ-35580A7D7B75`: a discarded canonical growth of a `mut T[]` parameter whose body
     /// never publishes the parameter, so the caller keeps the ungrown array.
     DeadCollectionGrowth,
+    /// A lambda that is not a spawn operand captures a mutable binding or a native pointer.
+    /// Captures are by-value snapshots, so either would silently stop aliasing its source.
+    LambdaCapturesStackReference {
+        name: String,
+    },
     /// Internal compiler error (E2101-E2199 band): a semantic fact a lowering request needs is
     /// still unavailable after the legality gate passed for its items. A compiler gap, never a
     /// user error.

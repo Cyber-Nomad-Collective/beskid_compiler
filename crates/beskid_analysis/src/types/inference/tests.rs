@@ -70,7 +70,7 @@ fn infer_generic_args_widens_numeric_bindings() {
     generic_items.insert(item, vec!["T".to_string()]);
 
     let mut function_signatures = HashMap::new();
-    function_signatures.insert(item, FunctionSignature { params: vec![t, t], return_type: t });
+    function_signatures.insert(item, FunctionSignature { params: vec![t, t], return_type: t, bulk: false });
 
     let inferred = infer_generic_args_from_call_types(&table, &generic_items, &function_signatures, item, &[i32, i64])
         .expect("infer widened T");
@@ -88,7 +88,7 @@ fn solve_apply_generic_binds_result_vars() {
     generic_items.insert(item, vec!["T".to_string()]);
 
     let mut function_signatures = HashMap::new();
-    function_signatures.insert(item, FunctionSignature { params: vec![t], return_type: t });
+    function_signatures.insert(item, FunctionSignature { params: vec![t], return_type: t, bulk: false });
 
     let mut set = ConstraintSet::default();
     let result = set.fresh_var();

@@ -10,10 +10,8 @@ pub(super) fn implicit_method_receiver_tracked(
 ) -> SemanticQueryResult<AstNodeKey> {
     with_node(db, syntax, key, |program, index, node| {
         let path = node.of::<beskid_analysis::syntax::PathExpression>()?;
-        let [segment] = path.path.node.segments.as_slice() else {
-            return None;
-        };
-        if !segment.node.type_args.is_empty() {
+        let segments = path.path.node.segments.as_slice();
+        if segments.len() > 2 || segments.iter().any(|segment| !segment.node.type_args.is_empty()) {
             return None;
         }
         let method = nearest_ancestor(index, key.node, |kind| {
@@ -21,12 +19,15 @@ pub(super) fn implicit_method_receiver_tracked(
         })?;
         // `this` is the method receiver the resolver declares for every method body
         // (`resolve_refs/items_statements.rs`); `self` is the older spelling. Either names the
-        // implicit receiver slot unless a lexical declaration shadows it.
-        let receiver_name = segment.node.name.node.name.as_str();
-        if receiver_name == "self"
-            || (receiver_name == "this" && resolve_lexical_declaration(program, index, key.node, "this").is_none())
-        {
-            return Some(Ok(AstNodeKey { node: method, ..key }));
+        // implicit receiver slot unless a lexical declaration shadows it. A two-segment callee
+        // (`this.Method`) reaches the sibling-call check below.
+        if let [segment] = segments {
+            let receiver_name = segment.node.name.node.name.as_str();
+            if receiver_name == "self"
+                || (receiver_name == "this" && resolve_lexical_declaration(program, index, key.node, "this").is_none())
+            {
+                return Some(Ok(AstNodeKey { node: method, ..key }));
+            }
         }
         let call_node =
             nearest_ancestor(index, key.node, |kind| kind == beskid_analysis::syntax_query::NodeKind::CallExpression)?;

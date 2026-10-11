@@ -24,6 +24,44 @@ impl IsleContext<'_, '_, '_, '_> {
         self.builder.seal_block(merge_block);
         self.builder.block_params(merge_block).first().copied()
     }
+
+    /// `i64(x)` and the other integer conversions of an `f64` truncate toward zero and saturate:
+    /// NaN gives 0 and out-of-range values clamp to the target's minimum or maximum, as Rust's
+    /// `as`, Java, and WebAssembly's `trunc_sat` do. Cranelift saturates natively to 32 and 64
+    /// bits; an 8-bit target saturates through 32 bits and clamps before narrowing.
+    pub(super) fn saturating_float_to_int(
+        &mut self,
+        from: beskid_queries::SemanticTypeId,
+        to: beskid_queries::SemanticTypeId,
+        target: cranelift_codegen::ir::Type,
+        value: Value,
+    ) -> Value {
+        use cranelift_codegen::ir::types;
+        debug_assert_eq!(from, beskid_queries::SemanticTypeId::F64);
+        let unsigned = matches!(to, beskid_queries::SemanticTypeId::U8 | beskid_queries::SemanticTypeId::U32);
+        if target.bits() >= 32 {
+            return if unsigned {
+                self.builder.ins().fcvt_to_uint_sat(target, value)
+            } else {
+                self.builder.ins().fcvt_to_sint_sat(target, value)
+            };
+        }
+        let wide = if unsigned {
+            self.builder.ins().fcvt_to_uint_sat(types::I32, value)
+        } else {
+            self.builder.ins().fcvt_to_sint_sat(types::I32, value)
+        };
+        let max = if unsigned { (1_i64 << target.bits()) - 1 } else { (1_i64 << (target.bits() - 1)) - 1 };
+        let max = self.builder.ins().iconst(types::I32, max);
+        let clamped = if unsigned {
+            self.builder.ins().umin(wide, max)
+        } else {
+            let min = self.builder.ins().iconst(types::I32, -(1_i64 << (target.bits() - 1)));
+            let upper = self.builder.ins().smin(wide, max);
+            self.builder.ins().smax(upper, min)
+        };
+        self.builder.ins().ireduce(target, clamped)
+    }
 }
 
 pub(super) enum CompareOp {
@@ -394,6 +432,9 @@ macro_rules! generated_operator_methods {
                         self.builder.ins().fcvt_from_sint(target, value)
                     },
                 );
+            }
+            if actual == cranelift_codegen::ir::types::F64 && target.is_int() {
+                return Some(self.saturating_float_to_int(from, to, target, value));
             }
             if !actual.is_int() || !target.is_int() {
                 self.pending_error = Some(LoweringError {

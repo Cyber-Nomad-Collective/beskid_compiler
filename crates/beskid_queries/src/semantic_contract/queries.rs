@@ -121,6 +121,12 @@ pub fn bulk_parameter(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<BulkP
     with_registered_syntax(db, key, bulk_parameter_tracked)
 }
 
+/// Return the element ABI type one call packs its trailing arguments as, when its direct callee
+/// ends in a `bulk T[]` parameter; a generic element is taken from the call's specialization.
+pub fn bulk_call_element_abi_type(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<SemanticTypeId> {
+    bulk_call_element_abi_type_for_call(db, key)
+}
+
 /// Return exact current-generation bounds for the syntax-only `range(start, end)` loop form.
 pub fn range_for_fact(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<RangeForFact> {
     with_registered_syntax(db, key, range_for_fact_tracked)
@@ -480,6 +486,24 @@ pub fn closure_signature(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<Cl
 /// fact.
 pub fn closure_call_target(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<ClosureCallTarget> {
     with_registered_syntax(db, key, closure_call_target_tracked)
+}
+
+/// Return the indirect-call fact for a call whose callee names a function-typed local value.
+///
+/// The callee is a single-segment path to a parameter, typed lambda parameter, or local declared
+/// with a function type, or to an unannotated local initialized by a lambda. The signature is the
+/// ABI of the call through the closure record, excluding its environment pointer. Stale,
+/// unregistered, non-call, and statically targeted calls contain no fact.
+pub fn function_value_call(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<FunctionValueCall> {
+    with_registered_syntax(db, key, function_value_call_tracked)
+}
+
+/// Return whether a lambda expression lowers to an allocated closure record.
+///
+/// Immediate calls, spawn operands, event-handler locals, and immutable locals used only as call
+/// callees lower without a record. Stale, unregistered, and non-lambda nodes contain no fact.
+pub fn lambda_value_required(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<bool> {
+    with_registered_syntax(db, key, lambda_value_required_tracked)
 }
 
 /// Return the exact spawn operand and any captures required when it is a lambda expression.

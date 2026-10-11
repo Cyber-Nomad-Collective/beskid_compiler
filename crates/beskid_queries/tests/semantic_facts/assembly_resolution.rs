@@ -508,7 +508,7 @@ fn syntax_facts_resolve_core_output_writeline_via_import_alias() {
 }
 
 #[test]
-fn syntax_facts_do_not_resolve_core_output_writeline_through_alias() {
+fn fully_qualified_core_output_writeline_resolves_beside_an_alias() {
     let mut db = BeskidDatabase::default();
     let root = PathBuf::from("/tmp/core-output-writeline-alias/project/src");
     let main_path = root.join("Main.bd");
@@ -560,13 +560,18 @@ fn syntax_facts_do_not_resolve_core_output_writeline_through_alias() {
     let call = key(main_unit, generation, &main_index, NodeKind::CallExpression, 0);
     let main = key(main_unit, generation, &main_index, NodeKind::FunctionDefinition, 0);
 
-    assert_eq!(
-        call_lowering(&db, call).expect("aliased Core.Output.WriteLine syntax lowering"),
-        Some(beskid_queries::CallLowering::Dynamic)
+    // A fully qualified path names its module whether or not an alias is in scope, as in Java
+    // and C#; the alias only adds the shorter `Output.WriteLine` spelling.
+    assert!(
+        matches!(
+            call_lowering(&db, call).expect("fully qualified Core.Output.WriteLine syntax lowering"),
+            Some(beskid_queries::CallLowering::Direct(_))
+        ),
+        "the fully qualified call resolves to the declared function"
     );
     assert_eq!(
-        direct_callees(&db, main).expect("aliased Core.Output.WriteLine syntax call graph"),
-        Some(Arc::from([]))
+        direct_callees(&db, main).expect("fully qualified Core.Output.WriteLine syntax call graph").map(|callees| callees.len()),
+        Some(1)
     );
 }
 

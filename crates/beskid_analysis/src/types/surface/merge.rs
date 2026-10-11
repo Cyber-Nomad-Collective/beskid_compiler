@@ -101,5 +101,6 @@ fn remap_signature(remap: &HashMap<TypeId, TypeId>, signature: &FunctionSignatur
     FunctionSignature {
         params: signature.params.iter().map(|param| remap_type_id(remap, *param)).collect(),
         return_type: remap_type_id(remap, signature.return_type),
+        bulk: signature.bulk,
     }
 }

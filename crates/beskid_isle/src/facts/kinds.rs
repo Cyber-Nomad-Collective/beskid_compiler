@@ -56,6 +56,10 @@ pub enum OperatorFact {
     StringAdd,
     StringEq,
     StringNotEq,
+    StringLt,
+    StringLte,
+    StringGt,
+    StringGte,
     EnumEq,
     EnumNotEq,
 }
@@ -93,6 +97,8 @@ pub enum CallKind {
     TypedArrayAllocation,
     /// A syntax-proven event raise; emitted through field-owned event state rather than call lookup.
     EventRaise,
+    /// An indirect call through the closure record held by a function-typed local value.
+    FunctionValue,
     Dynamic,
 }
 

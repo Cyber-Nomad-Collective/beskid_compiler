@@ -2,6 +2,8 @@
 
 #[path = "module_emission_specialization/call_boundaries.rs"]
 mod call_boundaries;
+#[path = "module_emission_specialization/generic_function_bodies.rs"]
+mod generic_function_bodies;
 #[path = "module_emission_specialization/generic_literals.rs"]
 mod generic_literals;
 #[path = "module_emission_specialization/generic_specialization.rs"]

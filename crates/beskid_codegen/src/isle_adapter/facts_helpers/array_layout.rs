@@ -59,28 +59,10 @@ impl SyntaxNodeFacts<'_> {
         Some(scalar_aware_array_layout(plan.element_type, element, stride, length, plan.alignment.ilog2() as u8))
     }
 
-    /// The bulk calling-convention fact for the callee of one `CallExpression`.
-    ///
-    /// Resolves the callee declaration via [`call_lowering`], then walks the declaration's
-    /// parameter children for the first `bulk` parameter. Returns `None` for non-direct calls
-    /// and for direct calls whose callee declares no `bulk` parameter — so it is a safe
-    /// classification authority for [`CallKind::Bulk`].
-    pub(in crate::isle_adapter) fn callee_bulk_parameter(
-        &self,
-        key: AstNodeKey,
-    ) -> Option<beskid_queries::BulkParameterFact> {
-        let CallLowering::Direct(declaration) = self.query(call_lowering(self.db, key))? else {
-            return None;
-        };
-        let parameters = self.query(child_nodes(self.db, declaration))?;
-        for parameter in parameters.iter().copied() {
-            if self.query(node_kind(self.db, parameter)) != Some(beskid_queries::IndexedNodeKind::Parameter) {
-                continue;
-            }
-            if let Some(fact) = self.query(bulk_parameter(self.db, parameter)) {
-                return Some(fact);
-            }
-        }
-        None
+    /// Whether one `CallExpression` calls a callee ending in a `bulk T[]` parameter, and so packs
+    /// its trailing arguments into one array: the classification authority for
+    /// [`CallKind::Bulk`].
+    pub(in crate::isle_adapter) fn is_bulk_call(&self, key: AstNodeKey) -> bool {
+        self.query(bulk_call_element_abi_type(self.db, key)).is_some()
     }
 }

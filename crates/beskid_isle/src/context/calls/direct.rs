@@ -83,7 +83,7 @@ impl IsleContext<'_, '_, '_, '_> {
     }
 
     /// A local read whose binding owns a registered GC root slot.
-    fn is_rooted_local_read(&self, key: AstNodeKey) -> bool {
+    pub(in crate::context) fn is_rooted_local_read(&self, key: AstNodeKey) -> bool {
         self.facts.node_kind(key) == Some(NodeKind::PathExpression)
             && self.facts.field_index(key).is_none()
             && self.facts.block_result(key).is_none()

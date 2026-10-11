@@ -198,6 +198,49 @@ type List<T> {
 }
 
 #[test]
+fn parameters_and_locals_shadow_method_owned_fields() {
+    let source = r#"
+type Holder {
+    string text,
+    i64 count,
+
+    string Echo(string text) {
+        return text;
+    }
+
+    i64 Local() {
+        i64 count = 7;
+        return count;
+    }
+}
+"#;
+    let (db, _project, unit, generation, index) = setup(source);
+    let parameter_use =
+        key_at_start(unit, generation, &index, NodeKind::PathExpression, source.find("text;").expect("parameter use"));
+    let local_use =
+        key_at_start(unit, generation, &index, NodeKind::PathExpression, source.rfind("count;").expect("local use"));
+
+    for shadowed in [parameter_use, local_use] {
+        assert_eq!(
+            aggregate_field_access(&db, shadowed).expect("field access query"),
+            None,
+            "a parameter or local named like a field must not read the field"
+        );
+    }
+}
+
+#[test]
+fn this_qualified_sibling_call_uses_the_implicit_method_receiver() {
+    let source = "type Counter { i64 n, i64 Double() { return 2; } i64 Quad() { return this.Double() * 2; } }";
+    let (db, _project, unit, generation, index) = setup(source);
+    let quad = key(unit, generation, &index, NodeKind::MethodDefinition, 1);
+    let callee =
+        key_at_start(unit, generation, &index, NodeKind::PathExpression, source.find("this.Double").expect("callee"));
+
+    assert_eq!(implicit_method_receiver(&db, callee), Ok(Some(quad)));
+}
+
+#[test]
 fn self_path_resolves_to_its_implicit_method_receiver() {
     let source = "type List<T> { List<T> Identity() { return self; } }";
     let (db, _project, unit, generation, index) = setup(source);
@@ -578,6 +621,31 @@ fn enum_constructor_selects_the_source_variant_and_single_payload() {
     assert_eq!(
         enum_constructor(&db, constructor).expect("enum constructor query"),
         Some(beskid_queries::EnumConstructorFact { declaration, variant_index: 1, payloads: Arc::from([payload]) })
+    );
+}
+
+#[test]
+fn generic_enum_constructor_takes_its_application_from_a_method_parameter() {
+    let source = r#"
+enum Maybe<T> { None(), Some(T value) }
+type Holder {
+    i64 n,
+
+    i64 Pick(Maybe<i64> other) { return 0; }
+}
+i64 Main() {
+    Holder holder = Holder { n: 1 };
+    return holder.Pick(Maybe::None());
+}
+"#;
+    let (db, _project, unit, generation, index) = setup(source);
+    let constructor = key(unit, generation, &index, NodeKind::EnumConstructorExpression, 0);
+    let declaration = key(unit, generation, &index, NodeKind::EnumDefinition, 0);
+
+    assert_eq!(
+        enum_constructor(&db, constructor).expect("enum constructor query in a method argument"),
+        Some(beskid_queries::EnumConstructorFact { declaration, variant_index: 0, payloads: Arc::from([]) }),
+        "an unapplied generic constructor in a method argument takes the parameter's application"
     );
 }
 

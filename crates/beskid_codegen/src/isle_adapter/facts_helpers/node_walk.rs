@@ -66,6 +66,13 @@ impl SyntaxNodeFacts<'_> {
                                             })
                                             .and_then(|identifier| self.query(node_type(self.db, identifier)))
                                     })
+                                    // A local annotated with a type parameter (`T first = ...`) has
+                                    // no item-level type; its initializer is typed under the
+                                    // current specialization, as for the managed reference kind.
+                                    .or_else(|| {
+                                        self.let_initializer(key)
+                                            .and_then(|initializer| self.scalar_semantic_type(initializer))
+                                    })
                             })?
                     })
             })

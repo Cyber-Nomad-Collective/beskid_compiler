@@ -20,6 +20,8 @@ mod diagnostics_fail_closed;
 mod enum_match_result;
 #[path = "isle_adapter/events.rs"]
 mod events;
+#[path = "isle_adapter/function_values.rs"]
+mod function_values;
 #[path = "isle_adapter/importer_relocations.rs"]
 mod importer_relocations;
 #[path = "isle_adapter/literal_operators.rs"]

@@ -5,8 +5,15 @@ use super::super::*;
 impl SyntaxNodeFacts<'_> {
     pub(super) fn operator_fact_impl(&self, key: AstNodeKey) -> Option<OperatorFact> {
         let operator = self.query(operator_fact(self.db, key))?;
-        let specialized_string_operands =
-            matches!(operator, beskid_queries::OperatorFact::Eq | beskid_queries::OperatorFact::NotEq)
+        let specialized_string_operands = matches!(
+            operator,
+            beskid_queries::OperatorFact::Eq
+                | beskid_queries::OperatorFact::NotEq
+                | beskid_queries::OperatorFact::Lt
+                | beskid_queries::OperatorFact::Lte
+                | beskid_queries::OperatorFact::Gt
+                | beskid_queries::OperatorFact::Gte
+        )
                 && self.child(key, 0).and_then(|operand| self.scalar_semantic_type(operand))
                     == Some(SemanticTypeId::STRING)
                 && self.child(key, 1).and_then(|operand| self.scalar_semantic_type(operand))
@@ -20,6 +27,10 @@ impl SyntaxNodeFacts<'_> {
             (beskid_queries::OperatorFact::NotEq, _, true) => OperatorFact::EnumNotEq,
             (beskid_queries::OperatorFact::Eq, true, _) => OperatorFact::StringEq,
             (beskid_queries::OperatorFact::NotEq, true, _) => OperatorFact::StringNotEq,
+            (beskid_queries::OperatorFact::Lt, true, _) => OperatorFact::StringLt,
+            (beskid_queries::OperatorFact::Lte, true, _) => OperatorFact::StringLte,
+            (beskid_queries::OperatorFact::Gt, true, _) => OperatorFact::StringGt,
+            (beskid_queries::OperatorFact::Gte, true, _) => OperatorFact::StringGte,
             (operator, _, _) => map_operator_fact(operator),
         })
     }

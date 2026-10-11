@@ -273,6 +273,7 @@ impl<'a> TypeChecker<'a> {
                 let expected = FunctionSignature {
                     params: expected.params.iter().map(|param| self.substitute_type_id(*param, &subst)).collect(),
                     return_type: self.substitute_type_id(expected.return_type, &subst),
+                    bulk: expected.bulk,
                 };
 
                 let actual = self
@@ -472,7 +473,7 @@ impl<'a> TypeChecker<'a> {
                     let Some(return_type) = return_type else {
                         continue;
                     };
-                    methods.push((signature.node.name.node.name.clone(), FunctionSignature { params, return_type }));
+                    methods.push((signature.node.name.node.name.clone(), FunctionSignature { params, return_type, bulk: false }));
                 }
                 ContractNode::Embedding(embedding) => {
                     let embedded = self.collect_contract_signatures_recursive(

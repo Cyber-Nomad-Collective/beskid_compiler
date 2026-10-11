@@ -67,6 +67,7 @@ fn trace_node_facts(
                 ("Direct", Some(callee))
             }
             CallLowering::Dynamic => ("Dynamic", None),
+            CallLowering::FunctionValue(_) => ("FunctionValue", None),
             CallLowering::ManifestBuiltin(builtin) => {
                 ("ManifestBuiltin", Some(DirectCallee::corelib_service(builtin.symbol)))
             }

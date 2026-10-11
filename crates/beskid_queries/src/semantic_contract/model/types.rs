@@ -140,6 +140,9 @@ pub struct TypedArrayAllocation {
 pub enum CallLowering {
     Direct(AstNodeKey),
     Dynamic,
+    /// An indirect call through the closure record held by this function-typed local or
+    /// parameter declaration.
+    FunctionValue(AstNodeKey),
     ManifestBuiltin(ManifestBuiltin),
     Runtime(RuntimeIntrinsic),
     CorelibService(CorelibService),

@@ -130,4 +130,8 @@ pub enum OperatorFact {
     StringAdd,
     StringEq,
     StringNotEq,
+    StringLt,
+    StringLte,
+    StringGt,
+    StringGte,
 }

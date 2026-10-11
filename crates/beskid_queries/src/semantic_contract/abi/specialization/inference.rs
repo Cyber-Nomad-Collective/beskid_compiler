@@ -72,9 +72,11 @@ pub(super) fn specialization_for_call_in_environment(
     }
 
     let arguments = call_arguments(db, key)?.ok_or_else(|| SemanticError::unavailable_at("call_abi_signature", key))?;
-    if arguments.len() != parameters.len() + usize::from(is_method) {
-        return Err(SemanticError::unavailable_at("call_abi_signature", key));
-    }
+    let argument_parameter_types = arguments
+        .len()
+        .checked_sub(usize::from(is_method))
+        .and_then(|count| argument_parameter_types(&parameters, count))
+        .ok_or_else(|| SemanticError::unavailable_at("call_abi_signature", key))?;
     let contract_witnesses = contract_witnesses_for_call(db, declaration, &arguments, is_method, enclosing)?;
     let mut source_substitutions = HashMap::<String, GenericSubstitution>::new();
     let mut substitutions = if let Some(owner) = method_owner.filter(|_| !generic_names.is_empty()) {
@@ -87,6 +89,10 @@ pub(super) fn specialization_for_call_in_environment(
             && parent_node(declaration_syntax.syntax_index(db), enclosing.declaration.node) == Some(owner.node)
         {
             enclosing.substitutions.clone()
+        } else if let Some(bindings) =
+            specialized_receiver_bindings(db, arguments[0], owner, &generic_names, enclosing)?
+        {
+            bindings
         } else {
             generic_nominal_method_receiver(db, key)?
                 .filter(|receiver| receiver.method == declaration && receiver.owner == owner)
@@ -167,16 +173,16 @@ pub(super) fn specialization_for_call_in_environment(
     // Keep that distinction while inferring a generic call: a later exact argument can select
     // the binding and the bare literal can inherit it if its magnitude fits.
     let mut provisional_integer_substitutions = HashSet::new();
-    for (position, (parameter, argument)) in
-        parameters.iter().zip(arguments.iter().copied().skip(usize::from(is_method))).enumerate()
+    for (position, (parameter_type, argument)) in
+        argument_parameter_types.iter().copied().zip(arguments.iter().copied().skip(usize::from(is_method))).enumerate()
     {
         if contract_witnesses.iter().any(|witness| witness.position as usize == position) {
             continue;
         }
-        let generic = generic_type_name(&parameter.node.ty.node, &generic_names);
+        let generic = generic_type_name(parameter_type, &generic_names);
         let bare_integer = generic.is_some() && unsuffixed_integer_literal(db, argument)?;
         let parameter_mentions_generic =
-            generic_names.iter().any(|name| type_syntax_mentions_generic_parameter(&parameter.node.ty.node, name));
+            generic_names.iter().any(|name| type_syntax_mentions_generic_parameter(parameter_type, name));
         let infer_from_actual = parameter_mentions_generic && !bare_integer && !explicit_substitutions_complete;
         let proven_source_identity =
             infer_from_actual.then(|| specialized_source_expression_identity(db, argument, enclosing)).transpose()?;
@@ -188,13 +194,13 @@ pub(super) fn specialization_for_call_in_environment(
                 None => None,
             }
         } else if unsuffixed_integer_literal(db, argument)? {
-            let expected = generic_abi_type(db, declaration, &parameter.node.ty.node, &substitutions)?;
+            let expected = generic_abi_type(db, declaration, parameter_type, &substitutions)?;
             integer_literal_fits_abi(db, argument, expected)?.then_some(expected)
         } else {
             None
         };
         let explicit_expected = explicit_substitutions_complete
-            .then(|| generic_abi_type(db, declaration, &parameter.node.ty.node, &substitutions))
+            .then(|| generic_abi_type(db, declaration, parameter_type, &substitutions))
             .transpose()?;
         let actual = if let Some(source) = proven_source_identity.as_ref() {
             Some(source.abi_type())
@@ -228,7 +234,7 @@ pub(super) fn specialization_for_call_in_environment(
             infer_source_substitutions(
                 db,
                 declaration,
-                &parameter.node.ty.node,
+                parameter_type,
                 source_identity,
                 &generic_names,
                 &mut substitutions,
@@ -259,7 +265,7 @@ pub(super) fn specialization_for_call_in_environment(
                     ));
                 }
             }
-        } else if generic_abi_type(db, declaration, &parameter.node.ty.node, &substitutions)? != actual {
+        } else if generic_abi_type(db, declaration, parameter_type, &substitutions)? != actual {
             return Err(SemanticError::unavailable_at("call_abi_signature", key));
         }
     }
@@ -354,6 +360,16 @@ pub(super) fn specialization_for_call_in_environment(
             })
         })
         .collect::<Vec<_>>();
+    // Parameters typed by a bounded type parameter get witnesses too, so contract methods called on
+    // them dispatch statically. They are optional: a body that calls no contract method on such a
+    // parameter needs none, and a body that does fails closed on the missing witness.
+    let bounded_witnesses =
+        bounded_generic_witnesses_for_call(db, declaration, &arguments, is_method, enclosing).unwrap_or_default();
+    let contract_witnesses = if bounded_witnesses.is_empty() {
+        contract_witnesses
+    } else {
+        contract_witnesses.iter().chain(bounded_witnesses.iter()).cloned().collect()
+    };
     Ok(GenericSpecializationInstance {
         declaration,
         declaration_identity,
@@ -361,6 +377,52 @@ pub(super) fn specialization_for_call_in_environment(
         substitutions: substitutions.into(),
         contract_witnesses,
     })
+}
+
+/// Owner bindings for an explicit generic receiver read inside an already-specialized body.
+///
+/// A receiver such as `List<T> list` in `Single<T>` names the enclosing declaration's own type
+/// parameter, which the unspecialized receiver fact cannot give an ABI. Its source type is read
+/// in the enclosing environment instead, so `T` becomes the enclosing binding. The receiver must
+/// prove exactly the method owner with one argument per owner parameter; anything else fails
+/// closed. Without an enclosing environment, or when the receiver form has no specialized source
+/// identity, the caller keeps using the unspecialized receiver fact.
+fn specialized_receiver_bindings(
+    db: &dyn Db,
+    receiver: AstNodeKey,
+    owner: AstNodeKey,
+    generic_names: &[&str],
+    enclosing: Option<&GenericSpecializationInstance>,
+) -> Result<Option<Arc<[GenericSubstitution]>>, SemanticError> {
+    let Some(enclosing) = enclosing else { return Ok(None) };
+    // A `local.Method()` path callee carries its receiver as the local's declaration; a member
+    // callee carries the receiver expression itself.
+    let receiver = match nominal_member_receiver(db, receiver) {
+        Ok(Some(declaration)) => declaration,
+        Ok(None) => receiver,
+        Err(error) if error.is_unavailable() => receiver,
+        Err(error) => return Err(error),
+    };
+    let identity = match specialized_source_expression_identity(db, receiver, Some(enclosing)) {
+        Ok(identity) => identity,
+        Err(error) if error.is_unavailable() => return Ok(None),
+        Err(error) => return Err(error),
+    };
+    let GenericSourceTypeIdentity::Nominal { qualified_name, arguments } = identity else {
+        return Err(SemanticError::unavailable_at("call_abi_signature", receiver));
+    };
+    if stable_declaration_identity(db, owner).as_ref() != Some(&qualified_name)
+        || arguments.len() != generic_names.len()
+    {
+        return Err(SemanticError::unavailable_at("call_abi_signature", receiver));
+    }
+    Ok(Some(
+        generic_names
+            .iter()
+            .zip(arguments.iter())
+            .map(|(generic, argument)| GenericSubstitution::from_source(*generic, argument.abi_type(), argument.clone()))
+            .collect(),
+    ))
 }
 
 fn infer_source_substitutions(
@@ -463,5 +525,30 @@ fn infer_source_substitutions(
             let expected = generic_source_type_identity(db, declaration, parameter)?;
             (expected == *actual).then_some(()).ok_or_else(|| SemanticError::unavailable("call_abi_signature"))
         }
+    }
+}
+
+/// The declared type each call argument is checked against. A trailing `bulk T[]` parameter takes
+/// every remaining argument, zero or more, as a `T`; the callee still receives one `T[]`.
+fn argument_parameter_types<'a>(
+    parameters: &[&'a beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Parameter>],
+    argument_count: usize,
+) -> Option<Vec<&'a beskid_analysis::syntax::Type>> {
+    match parameters.split_last() {
+        Some((last, fixed)) if last.node.bulk => {
+            let beskid_analysis::syntax::Type::Array(element) = &last.node.ty.node else {
+                return None;
+            };
+            let trailing = argument_count.checked_sub(fixed.len())?;
+            Some(
+                fixed
+                    .iter()
+                    .map(|parameter| &parameter.node.ty.node)
+                    .chain(std::iter::repeat_n(&element.node, trailing))
+                    .collect(),
+            )
+        }
+        _ => (argument_count == parameters.len())
+            .then(|| parameters.iter().map(|parameter| &parameter.node.ty.node).collect()),
     }
 }

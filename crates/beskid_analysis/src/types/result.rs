@@ -286,6 +286,14 @@ pub enum CallLoweringKind {
 pub struct FunctionSignature {
     pub params: Vec<TypeId>,
     pub return_type: TypeId,
+    /// The last parameter is `bulk T[]`: a call passes any number of trailing `T` arguments,
+    /// which lowering packs into one array.
+    pub bulk: bool,
+}
+
+/// Whether a declared parameter list ends in a `bulk` parameter.
+pub(crate) fn ends_with_bulk(parameters: &[crate::syntax::Spanned<crate::syntax::Parameter>]) -> bool {
+    parameters.last().is_some_and(|parameter| parameter.node.bulk)
 }
 
 /// Output of type checking: intern table, per-node expression types, signatures, and lowering prep.

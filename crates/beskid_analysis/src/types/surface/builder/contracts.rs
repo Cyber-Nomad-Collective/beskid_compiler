@@ -148,7 +148,7 @@ impl<'a> TypeSurfaceBuilder<'a> {
                     };
                     match return_type {
                         Some(return_type) if valid => {
-                            methods.push((method_name, FunctionSignature { params, return_type }));
+                            methods.push((method_name, FunctionSignature { params, return_type, bulk: false }));
                         }
                         _ => {
                             if !unresolved.contains(&method_name) {
