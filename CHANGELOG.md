@@ -7,6 +7,62 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.4] - 2026-10-11
+
+### Added
+
+- Lambdas and function-typed values. A function value is a pointer to a
+  GC-managed closure record (code pointer plus traced environment), the
+  layout event handlers already use. Lambdas can be passed to function-typed
+  parameters, stored in locals, returned, and used with generic higher-order
+  functions such as `T Apply<T>(T value, (T) => T f)`. Captures are snapshots
+  taken when the record is created; capturing a `mut` local or a native
+  pointer is rejected with **E1233**. A capture-free or inline-only lambda
+  allocates no record. Calls on arbitrary expressions, function-typed fields,
+  and named functions as values are not supported yet.
+- `f64` string interpolation prints the shortest decimal that reads back as
+  the same value, in ECMAScript `Number::toString` layout (`1.5`, `0.1`,
+  `1e+21`, `5e-324`; ties to even; `NaN`, `Infinity`, `-Infinity`; negative
+  zero prints `0`). The runtime formats it exactly from the IEEE-754 bits
+  through the new ABI v5 service `str_from_f64_bits`.
+- `<`, `<=`, `>`, `>=` on two strings compare UTF-8 bytes (Unicode code point
+  order), a proper prefix first, through the new ABI v5 service `str_cmp`.
+- `bulk T[]` parameters accept any number of trailing arguments of the element
+  type, including generic element types (`List.Of<i64>(1, 2, 3)`); `T` is
+  inferred from the trailing arguments when they are present.
+- A value of a type parameter with a `where T: Contract` bound can call the
+  contract's methods; each specialization dispatches statically to the
+  concrete implementation.
+- Fully qualified module paths (`Core.Collections.Queue.New<i64>()`) resolve
+  without a `use` when exactly one visible unit declares the module and every
+  parent exposes the next segment with `pub mod`.
+
+### Changed
+
+- `f64` to integer conversions saturate at the target range and convert NaN
+  to 0 instead of trapping, as in Rust, Java, .NET, and WebAssembly
+  `trunc_sat`.
+- The Rust toolchain is pinned to 1.98.1 (from the v0.5.3 release branch).
+
+### Fixed
+
+- A method parameter or local named like a field of `this` now refers to the
+  parameter or local instead of silently reading the field.
+- `this.Method()` sibling calls, field access on call results (`Make().x`),
+  nested field projections through generic owners, locals annotated with a
+  type parameter, enum constructors passed directly as method arguments, and
+  array literals whose elements are calls, fields, or enum values lower
+  instead of failing with an internal compiler error.
+- Methods called on a local such as `List<T>` inside a generic function, and
+  self-qualified calls such as `List.FromArray<T>(values)` inside the `List`
+  module, lower in every specialization (also fixes `Queue.Of`, `Stack.Of`,
+  and `Set.Of`).
+- String interpolation spells `bool` as `true`/`false`, concatenating two
+  empty strings yields a valid empty string, and the minimum `i64` formats
+  correctly.
+- The pinned Corelib `Time.bd` declares its reassigned locals `mut`, so
+  `Time.ToUtcDateTime` compiles and runs.
+
 ## [0.5.3] - 2026-10-05
 
 ### Added
