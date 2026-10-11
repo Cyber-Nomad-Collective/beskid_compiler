@@ -344,10 +344,11 @@ pub(in crate::semantic_contract) fn inaccessible_literal_fields(
 /// Derive the element ABI of an empty array literal from its [`expected_type`].
 ///
 /// An empty literal carries no element expression from which to infer a representation, so the
-/// expected array type of its position (a declared `T[]` local, assignment target, callee
-/// parameter, enum payload, struct field, return type, outer array element, match arm or block
-/// result) is the sole authority. A position with no expected type, or whose expected type is
-/// not an array, stays unavailable; a non-empty literal has no fact here.
+/// expected array type of its position (a declared `T[]` local, callee parameter, enum payload,
+/// struct field, return type, outer array element or match arm) is the sole authority. An
+/// assignment is a store into existing storage, not an initialization context, and grants no
+/// allocation plan. A position with no expected type, or whose expected type is not an array,
+/// stays unavailable; a non-empty literal has no fact here.
 #[salsa::tracked(persist)]
 pub(in crate::semantic_contract) fn empty_array_literal_element_abi_type_tracked(
     db: &dyn Db,
@@ -361,7 +362,11 @@ pub(in crate::semantic_contract) fn empty_array_literal_element_abi_type_tracked
         }
         Some((|| {
             let unavailable = || SemanticError::unavailable("empty_array_literal_element_abi_type");
-            expected_type(db, key)?.ok_or_else(unavailable)?.array_element_abi_type().ok_or_else(unavailable)
+            let expected = expected_type(db, key)?.ok_or_else(unavailable)?;
+            if matches!(expected.context, ExpectedTypeContext::Assignment { .. }) {
+                return Err(unavailable());
+            }
+            expected.array_element_abi_type().ok_or_else(unavailable)
         })())
     })?
     .transpose()

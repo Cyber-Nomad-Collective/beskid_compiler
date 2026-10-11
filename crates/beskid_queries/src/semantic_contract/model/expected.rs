@@ -14,8 +14,8 @@ use super::ids::AstNodeKey;
 use super::types::{ManagedReferenceKind, SemanticTypeId};
 
 /// The typed parent context that supplies an expected type. The variants name the innermost
-/// context; a context that forwards its own expected type (a match arm, an array element, a
-/// block result) still reports itself so a consumer can see how the type reached the node.
+/// context; a context that forwards its own expected type (a match arm, an array element) still
+/// reports itself so a consumer can see how the type reached the node.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum ExpectedTypeContext {
     /// The initializer of an explicitly annotated `let` (`u8 value = ...`).
@@ -34,9 +34,6 @@ pub enum ExpectedTypeContext {
     ArrayElement { array: AstNodeKey },
     /// The body of a match arm; the match expression's expected type is forwarded.
     MatchArm { expression: AstNodeKey },
-    /// The value-producing last statement of a block expression; the block's expected type is
-    /// forwarded.
-    BlockResult { block: AstNodeKey },
     /// One operand of a binary expression whose peer operand proves the representation.
     BinaryOperand { expression: AstNodeKey, peer: AstNodeKey },
     /// An expression statement discards its value: the expectation is `unit`.

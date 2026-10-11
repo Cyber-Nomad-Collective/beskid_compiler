@@ -354,12 +354,13 @@ mod tests {
                     .collect::<Vec<_>>();
                 assert!(failures.is_empty(), "version {version} ({policy}) failed project preparation: {failures:#?}");
             }
-            let offset = text.find("WriteLine").expect("WriteLine");
+            // Hover references are path-expression spans, so the call's reference covers the whole
+            // qualified path; a stale span from another revision would cover different text.
+            let offset = text.find("Output.WriteLine").expect("Output.WriteLine");
             assert!(
                 full.syntax_hovers.iter().any(|hover| {
-                    hover.reference_start <= offset
-                        && offset < hover.reference_end
-                        && &text[hover.reference_start..hover.reference_end] == "WriteLine"
+                    hover.reference_start == offset
+                        && &text[hover.reference_start..hover.reference_end] == "Output.WriteLine"
                 }),
                 "version {version} must bind a WriteLine hover to its own spans, got {:?}",
                 full.syntax_hovers

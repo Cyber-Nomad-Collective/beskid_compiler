@@ -116,16 +116,20 @@ target "app" {
     with_cwd(&root, || {
         let ctx = CompilationContext::try_for_analysis_path(&entry, None).expect("context");
         let plan = ctx.compile_plan.clone().expect("plan");
-        let mod_host = enter_mod_host();
-        let native_mods = mod_host.corelib_mod_host(&plan).expect("qualify the native Mods of the compile plan");
         let resolved = resolved_input_from_plan(entry.clone(), source.to_string(), plan, None, None);
         // `beskid check` assembles every own unit (workspace scan), not only the import closure.
+        let front_end = FrontEndOptions {
+            with_semantic_diagnostics: true,
+            assembly_discovery: beskid_analysis::projects::AssemblyDiscovery::WorkspaceScan,
+            ..Default::default()
+        };
+        // Mod activation follows the assembly this preparation builds, so the host is qualified
+        // for the workspace scan rather than the entry's import closure.
+        let native_mods = enter_mod_host()
+            .mod_host_for_input(&resolved, &front_end)
+            .expect("qualify the native Mods the workspace scan activates");
         let options = |native_mods: beskid_analysis::mod_host::ModHost| PrepareOptions {
-            front_end: FrontEndOptions {
-                with_semantic_diagnostics: true,
-                assembly_discovery: beskid_analysis::projects::AssemblyDiscovery::WorkspaceScan,
-                ..Default::default()
-            },
+            front_end: front_end.clone(),
             ..PrepareOptions::with_mod_host(native_mods)
         };
 

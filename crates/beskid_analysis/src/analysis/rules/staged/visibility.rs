@@ -3,7 +3,8 @@ use crate::analysis::diagnostic_kinds::SemanticIssueKind;
 use crate::analysis::rules::RuleContext;
 use crate::resolve::Resolution;
 use crate::syntax::Spanned;
-use crate::syntax::{Block, Expression, Node, Path, Program, Statement, Type, Visibility};
+use crate::clif_surface::{ClifBlockMode, ClifStatement, parse_clif_surface_in};
+use crate::syntax::{Block, ContractNode, Expression, Node, Path, Program, Statement, Type, Visibility};
 use crate::syntax_query::Query;
 use std::collections::{HashMap, HashSet};
 use crate::projects::{module_path_to_relative_path, resolve_module_file};
@@ -205,6 +206,7 @@ impl SemanticPipelineRule {
 
     fn check_unused_private_items(&self, ctx: &mut RuleContext, program: &Spanned<Program>) {
         let used_names = self.collect_used_value_names(program);
+        let clif_symbols = Self::collect_clif_call_symbols(program);
         let compiler_issued = Self::compiler_issued_items(ctx);
 
         for item in &program.node.items {
@@ -238,6 +240,7 @@ impl SemanticPipelineRule {
                 || name == "main"
                 || used_names.contains(&name)
                 || compiler_issued.contains(&name.as_str())
+                || Self::extern_contract_called_from_clif(&item.node, &clif_symbols)
             {
                 continue;
             }
@@ -293,6 +296,34 @@ impl SemanticPipelineRule {
             }
         }
         items
+    }
+
+    /// Symbols named by `call @symbol(...)` in the unit's `clif { ... }` blocks. A block whose
+    /// surface does not parse names nothing here; the type checker reports it.
+    fn collect_clif_call_symbols(program: &Spanned<Program>) -> HashSet<String> {
+        let mut symbols = HashSet::new();
+        for expression in Query::from(&program.node).of::<Expression>() {
+            let Expression::ClifBlock(clif) = expression else { continue };
+            // Statement mode accepts every surface a value block accepts, so it sees every call.
+            let Ok(surface) = parse_clif_surface_in(&clif.node.body, ClifBlockMode::Statement) else { continue };
+            for statement in surface.statements {
+                if let ClifStatement::Call { symbol, .. } = statement {
+                    symbols.insert(symbol);
+                }
+            }
+        }
+        symbols
+    }
+
+    /// An `[Extern]` contract's members are link symbols (the method name is the symbol), so a
+    /// CLIF `call @symbol(...)` of one of them uses the contract.
+    fn extern_contract_called_from_clif(item: &Node, clif_symbols: &HashSet<String>) -> bool {
+        let Node::ContractDefinition(definition) = item else { return false };
+        definition.node.attributes.iter().any(|attribute| attribute.node.name.node.name == "Extern")
+            && definition.node.items.iter().any(|member| {
+                matches!(&member.node, ContractNode::MethodSignature(signature)
+                    if clif_symbols.contains(&signature.node.name.node.name))
+            })
     }
 
     fn collect_used_value_names(&self, program: &Spanned<Program>) -> HashSet<String> {
@@ -622,5 +653,70 @@ mod tests {
             "the nested generic parameter owns `Payload`; the shadowed import must remain unused: {:?}",
             context.diagnostics
         );
+    }
+
+    fn unused_private_items(source: &str) -> Vec<String> {
+        analyze(source)
+            .diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.code.as_deref() == Some("W1504"))
+            .map(|diagnostic| diagnostic.message.clone())
+            .collect()
+    }
+
+    #[test]
+    fn private_extern_contract_called_only_from_clif_is_used() {
+        let source = r#"
+            [Extern(Abi:"C", Library:"libc.so.6")]
+            contract MemLibc {
+                i64 memset(i64 pointer, i32 value, i64 count);
+            }
+            pub unit Zero(u8[] buffer, i64 count) {
+                clif {
+                    %b = payload %0
+                    %r = call @memset(%b, %1, %1) -> i64
+                };
+                return;
+            }
+        "#;
+        let unused = unused_private_items(source);
+        assert!(!unused.iter().any(|message| message.contains("MemLibc")), "clif call uses the extern contract: {unused:?}");
+    }
+
+    #[test]
+    fn private_extern_contract_without_clif_call_is_unused() {
+        let source = r#"
+            [Extern(Abi:"C", Library:"libc.so.6")]
+            contract MemLibc {
+                i64 memset(i64 pointer, i32 value, i64 count);
+            }
+            pub unit Zero(u8[] buffer, i64 count) {
+                clif {
+                    %b = payload %0
+                    %r = call @memmove(%b, %b, %1) -> i64
+                };
+                return;
+            }
+        "#;
+        let unused = unused_private_items(source);
+        assert!(unused.iter().any(|message| message.contains("MemLibc")), "an uncalled extern contract stays unused: {unused:?}");
+    }
+
+    #[test]
+    fn clif_call_does_not_use_a_non_extern_contract_with_that_member() {
+        let source = r#"
+            contract Plain {
+                i64 memset(i64 pointer, i32 value, i64 count);
+            }
+            pub unit Zero(u8[] buffer, i64 count) {
+                clif {
+                    %b = payload %0
+                    %r = call @memset(%b, %1, %1) -> i64
+                };
+                return;
+            }
+        "#;
+        let unused = unused_private_items(source);
+        assert!(unused.iter().any(|message| message.contains("Plain")), "only [Extern] members are link symbols: {unused:?}");
     }
 }

@@ -25,6 +25,10 @@ pub(in crate::semantic_contract) fn contextual_integer_literal_abi_type_tracked(
         ))();
         match bare_integer {
             Ok(true) => {}
+            // An explicitly suffixed literal already fixed its width; a contextual width is a gap.
+            Ok(false) if matches!(suffixed_integer_literal(db, key), Ok(true)) => {
+                return Some(Err(SemanticError::unavailable("contextual_integer_literal_abi_type")));
+            }
             Ok(false) => return None,
             Err(error) => return Some(Err(error)),
         }
@@ -37,6 +41,27 @@ pub(in crate::semantic_contract) fn contextual_integer_literal_abi_type_tracked(
         })())
     })?
     .transpose()
+}
+
+/// Whether `key` is an integer literal with an explicit ABI suffix, through singleton wrappers
+/// and unary negation.
+fn suffixed_integer_literal(db: &dyn Db, key: AstNodeKey) -> Result<bool, SemanticError> {
+    if let Some(literal) = literal_fact(db, key)? {
+        return Ok(matches!(literal, LiteralFact::Integer(text) if integer_has_explicit_abi_suffix(&text)));
+    }
+    let Some(children) = child_nodes(db, key)? else {
+        return Ok(false);
+    };
+    match children.as_ref() {
+        [child] => suffixed_integer_literal(db, *child),
+        [_, operand]
+            if node_kind(db, key)? == Some(IndexedNodeKind::UnaryExpression)
+                && operator_fact(db, key)? == Some(OperatorFact::Neg) =>
+        {
+            suffixed_integer_literal(db, *operand)
+        }
+        _ => Ok(false),
+    }
 }
 
 #[salsa::tracked(persist)]

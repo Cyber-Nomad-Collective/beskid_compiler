@@ -530,11 +530,17 @@ fn generic_target_template_rebinds_per_concrete_instance() {
     // The call `adapter.ReadTyped(limits)` in the entry instantiates the adapter method.
     let entry = next.entry_unit();
     let index = next.entry_syntax_index();
-    let offset = CROSS_UNIT_MAIN.find("adapter.ReadTyped(limits)").unwrap();
+    // The call node's span is the call operator inside the postfix chain, so locate it by
+    // containment in the source text of the whole call.
+    let text = "adapter.ReadTyped(limits)";
+    let offset = CROSS_UNIT_MAIN.find(text).unwrap();
     let call = index
         .metadata()
         .iter()
-        .find(|metadata| metadata.kind == NodeKind::CallExpression && metadata.span.is_some_and(|span| span.start == offset))
+        .find(|metadata| {
+            metadata.kind == NodeKind::CallExpression
+                && metadata.span.is_some_and(|span| span.start >= offset && span.end <= offset + text.len())
+        })
         .expect("ReadTyped call")
         .id;
     let call_key = AstNodeKey { unit: SourceUnitId::new(db, entry.path.clone()), generation: next.generation, node: call };

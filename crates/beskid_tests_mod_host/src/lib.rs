@@ -39,6 +39,8 @@ use beskid_abi::runtime_kit::BuildProfile;
 use beskid_abi::runtime_source::{canonical_runtime_source_hash, resolve_canonical_runtime_kit};
 use beskid_analysis::mod_host::{ModHost, RuntimeKitSelection};
 use beskid_analysis::projects::{CompilePlan, ProjectKind, load_manifest_from_path};
+use beskid_analysis::services::{FrontEndOptions, ResolvedInput};
+use beskid_tools::native_mods::ModHostSelection;
 use beskid_tools::toolchain::runtime_kit::{RuntimeKitProfile, build_native_host};
 
 const ENV_RUNTIME_PREFIX: &str = "BESKID_RUNTIME_PREFIX";
@@ -119,23 +121,49 @@ fn qualified_mod_host(plan: &CompilePlan, runtime: &RuntimeKitSelection) -> Resu
     // Only the Mods the plan activates need artifacts (`mod_host::activation`); a plan that
     // activates none runs without a native Mod host.
     let manifests = beskid_tools::native_mods::active_mod_manifests_for_plan(plan)?;
+    provisioned_mod_host(&manifests, runtime, |cli| qualify(plan, cli, runtime))
+}
+
+fn qualified_mod_host_for_input(
+    resolved: &ResolvedInput,
+    front_end: &FrontEndOptions,
+    runtime: &RuntimeKitSelection,
+) -> Result<ModHost> {
+    // Activation depends on the assembly `front_end` produces (a workspace scan reaches more
+    // packages than an import closure), so it is decided on that same assembly.
+    let manifests = beskid_analysis::mod_host::active_mod_manifests_for_input(resolved, front_end, false)?;
+    provisioned_mod_host(&manifests, runtime, |cli| {
+        match ModHostSelection::explicit(cli)?.with_runtime_kit(runtime.clone()).mod_host_for_input(resolved, front_end)? {
+            ModHost::NoMods => bail!("input {} activates no native Mod", resolved.source_path.display()),
+            mod_host => Ok(mod_host),
+        }
+    })
+}
+
+/// Qualify the Mods `manifests` names with `qualify`, provisioning their artifacts with
+/// [`provisioned_cli`] for `runtime` when they are missing or stale.
+fn provisioned_mod_host(
+    manifests: &[PathBuf],
+    runtime: &RuntimeKitSelection,
+    qualify: impl Fn(&Path) -> Result<ModHost>,
+) -> Result<ModHost> {
     if manifests.is_empty() {
         return Ok(ModHost::NoMods);
     }
     let cli = provisioned_cli()?;
-    if let Ok(mod_host) = qualify(plan, &cli, runtime) {
+    if let Ok(mod_host) = qualify(&cli) {
         return Ok(mod_host);
     }
     // Another process may be provisioning the same artifacts; wait for it and re-qualify before
     // rebuilding.
     let _lock = FileLock::acquire(&provisioning_lock_path())?;
-    if let Ok(mod_host) = qualify(plan, &cli, runtime) {
+    if let Ok(mod_host) = qualify(&cli) {
         return Ok(mod_host);
     }
-    for manifest in &manifests {
+    for manifest in manifests {
         rebuild_mod(&cli, manifest, runtime.prefix(), runtime.profile(), None)?;
     }
-    qualify(plan, &cli, runtime).context("qualify provisioned native Mods")
+    qualify(&cli).context("qualify provisioned native Mods")
 }
 
 /// The shared native Mod host of this target directory: [`shared_runtime_kit`] as a value.
@@ -166,6 +194,12 @@ impl ModHostScope {
     /// The qualified native Mod host for `plan` against this kit ([`corelib_mod_host`]).
     pub fn corelib_mod_host(&self, plan: &CompilePlan) -> Result<ModHost> {
         qualified_mod_host(plan, &self.runtime)
+    }
+
+    /// The qualified native Mod host for the Mods `resolved` activates when it is prepared with
+    /// `front_end` (for example a workspace scan), against this kit.
+    pub fn mod_host_for_input(&self, resolved: &ResolvedInput, front_end: &FrontEndOptions) -> Result<ModHost> {
+        qualified_mod_host_for_input(resolved, front_end, &self.runtime)
     }
 }
 

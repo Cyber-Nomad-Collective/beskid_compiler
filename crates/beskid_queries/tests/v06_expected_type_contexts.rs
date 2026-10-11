@@ -187,17 +187,21 @@ fn return_values_take_the_declared_return_type() {
 }
 
 #[test]
-fn array_elements_take_the_element_of_the_expected_array_through_nesting() {
-    let fixture = Fixture::new("unit Main() { u8[] bytes = [1, 2]; u16[][] rows = [[3]]; return; }");
+fn array_elements_take_the_element_of_the_expected_array_in_declared_and_argument_positions() {
+    let fixture = Fixture::new(
+        "unit Append<T>(T[] values, T value) { return; } unit Main() { u8[] bytes = [1, 2]; Append<u16>([3], 4); return; }",
+    );
     let bytes = fixture.key(NodeKind::ArrayLiteralExpression, 0);
     let first = fixture.expected(fixture.literal(0));
     assert_eq!(first.context, ExpectedTypeContext::ArrayElement { array: bytes });
     assert_eq!(first.abi_type(), SemanticTypeId::U8);
     assert_eq!(fixture.integer_abi(fixture.literal(1)), Some(SemanticTypeId::U8));
 
-    let inner = fixture.key(NodeKind::ArrayLiteralExpression, 2);
-    assert_eq!(fixture.expected(inner).array_element_abi_type(), Some(SemanticTypeId::U16));
+    // The element of an argument array forwards through the explicit generic parameter.
+    let argument = fixture.key(NodeKind::ArrayLiteralExpression, 1);
+    assert_eq!(fixture.expected(argument).array_element_abi_type(), Some(SemanticTypeId::U16));
     assert_eq!(fixture.integer_abi(fixture.literal(2)), Some(SemanticTypeId::U16));
+    assert_eq!(fixture.integer_abi(fixture.literal(3)), Some(SemanticTypeId::U16));
 }
 
 #[test]
@@ -213,19 +217,18 @@ fn match_arms_forward_the_match_expectation() {
 }
 
 #[test]
-fn block_results_forward_the_block_expectation_only_from_the_last_statement() {
+fn block_expressions_and_discarded_statements_forward_nothing() {
     let fixture = Fixture::new(
-        "enum Flag { On, Off } u8 Main(Flag flag) { u8 value = match flag { Flag::On => { 1; }, Flag::Off => { 2; 3; }, }; return value; }",
+        "enum Flag { On, Off } u8 Main(Flag flag) { u8 value = match flag { Flag::On => { 1; }, Flag::Off => { 2; 3; }, }; 4; return value; }",
     );
-    let first = fixture.expected(fixture.literal(0));
-    assert!(matches!(first.context, ExpectedTypeContext::BlockResult { .. }));
-    assert_eq!(first.abi_type(), SemanticTypeId::U8);
-    // `2;` is discarded: its expectation is `unit`, so it is not a contextual integer.
-    let discarded = fixture.expected(fixture.literal(1));
-    assert!(matches!(discarded.context, ExpectedTypeContext::ExpressionStatement { .. }));
-    assert_eq!(discarded.abi_type(), SemanticTypeId::UNIT);
-    assert_unavailable(contextual_integer_literal_abi_type(&fixture.db, fixture.literal(1)));
-    assert_eq!(fixture.integer_abi(fixture.literal(2)), Some(SemanticTypeId::U8));
+    // A value written inside a block has no direct typed context: `{ 1; }` is not `1`.
+    for occurrence in 0..3 {
+        let discarded = fixture.expected(fixture.literal(occurrence));
+        assert!(matches!(discarded.context, ExpectedTypeContext::ExpressionStatement { .. }));
+        assert_eq!(discarded.abi_type(), SemanticTypeId::UNIT);
+        assert_unavailable(contextual_integer_literal_abi_type(&fixture.db, fixture.literal(occurrence)));
+    }
+    assert_eq!(fixture.expected(fixture.literal(3)).abi_type(), SemanticTypeId::UNIT);
 }
 
 #[test]

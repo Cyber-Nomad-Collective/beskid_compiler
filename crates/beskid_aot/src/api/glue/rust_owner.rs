@@ -820,7 +820,11 @@ pub fn build_rust_owner(req: &RustOwnerBuildRequest<'_>) -> AotResult<PreparedRu
     let (metadata_output, metadata_receipt) =
         run_link_tool(&metadata_invocation, stage.path(), Some(&metadata_control))?;
     if !metadata_output.status.success() {
-        return Err(invalid("Cargo metadata failed"));
+        return Err(invalid(format!(
+            "Cargo metadata failed ({}): {}",
+            metadata_output.status,
+            String::from_utf8_lossy(&metadata_output.stderr)
+        )));
     }
     let metadata: serde_json::Value =
         serde_json::from_slice(&metadata_output.stdout).map_err(|e| invalid(e.to_string()))?;

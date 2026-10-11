@@ -202,8 +202,14 @@ pub fn serialization_template_instance_rebind(
         return Ok(None);
     }
     let Some(root) = index.ids_of_kind(NodeKind::Program).next() else { return Ok(None) };
+    // A program item is its own syntax node (the `Node` wrapper) whose child is the impl block,
+    // so the block's parent is the top-level item the template contribution was merged as.
+    let Some(item_node) = index.metadata().get(block.0 as usize).and_then(|metadata| metadata.parent) else {
+        return Ok(None);
+    };
     let Some(item) = entry.program.node.items.iter().find(|item| {
-        index.direct_child_id(&entry.program, root, beskid_analysis::syntax_query::DynNodeRef::from(*item)) == Some(block)
+        index.direct_child_id(&entry.program, root, beskid_analysis::syntax_query::DynNodeRef::from(*item))
+            == Some(item_node)
     }) else {
         return Ok(None);
     };

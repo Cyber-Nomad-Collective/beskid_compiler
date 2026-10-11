@@ -17,9 +17,11 @@ fn provisioned_corelib_root() -> &'static std::path::Path {
         // bundle keeps its current Mod artifact across runs. A changed bundle is re-materialized
         // and a changed CLI fails the Mod key check, so the consumer path below rebuilds exactly
         // when the artifact is not current, as an installed toolchain does on first use.
-        let base = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join("pipeline-output");
-        let root = base.join("corelib");
-        let project = base.join("provision");
+        // The consumer project itself is fresh per process: its `Project.lock` pins the Corelib
+        // dependency graph, so a lock kept from an earlier bundle would be stale by design.
+        let root = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join("pipeline-output").join("corelib");
+        let workspace = tempfile::tempdir().map_err(|error| format!("create provisioning project: {error}"))?;
+        let project = workspace.path().to_path_buf();
         std::fs::create_dir_all(project.join("Src")).map_err(|error| format!("create provisioning project: {error}"))?;
         std::fs::write(project.join("Src/Provision.bd"), "pub i64 Main() { return 0; }\n")
             .map_err(|error| format!("write provisioning source: {error}"))?;

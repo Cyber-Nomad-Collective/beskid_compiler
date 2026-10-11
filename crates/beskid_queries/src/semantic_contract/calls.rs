@@ -11,7 +11,7 @@ pub use resolution::{
 };
 
 pub(in crate::semantic_contract) use casts::{
-    cast_intents_for_node, cast_intents_tracked,
+    canonical_intrinsic_parameter_type, cast_intents_for_node, cast_intents_tracked,
     expected_cast_type, expression_fact_target, primitive_integer,
     primitive_numeric,
 };

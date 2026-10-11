@@ -87,22 +87,11 @@ fn explicit_and_contextual_generic_enum_payloads_substitute_element_type() {
 }
 
 #[test]
-fn block_valued_payload_forwards_the_declared_element_type() {
-    let (_temporary, db, _assembly, arrays) =
-        fixture("enum Bytes { Value(u8[] value), } unit Main() { Bytes::Value({ []; }); }", false);
-    assert_eq!(arrays.len(), 1);
-    assert_eq!(
-        empty_array_literal_element_abi_type(&db, arrays[0]),
-        Ok(Some(SemanticTypeId::U8)),
-        "the value-producing last statement of a block takes the block's expected payload type"
-    );
-}
-
-#[test]
-fn absent_declaration_and_nonarray_slot_have_no_array_authority() {
+fn absent_declaration_nonarray_slot_and_nested_expression_have_no_array_authority() {
     for source in [
         "unit Main() { Missing::Items([]); }",
         "enum Scalar { Value(i64 value), } unit Main() { Scalar::Value([]); }",
+        "enum Bytes { Value(u8[] value), } unit Main() { Bytes::Value({ []; }); }",
     ] {
         let (_temporary, db, _assembly, arrays) = fixture(source, false);
         assert_eq!(arrays.len(), 1);

@@ -392,10 +392,28 @@ pub(super) fn record_rust_source(symbol: &str, framed: &[u8]) -> String {
     )
 }
 
-/// The file bytes at `address`, from exactly one section that maps them.
+/// Whether `section` is part of the loaded image. Non-allocated sections (DWARF, symbol and
+/// string tables, comments) carry no load address: ELF gives them address 0, so their file
+/// ranges would alias low virtual addresses and must never back a loaded record.
+fn occupies_image(section: &object::Section<'_, '_>) -> bool {
+    match section.flags() {
+        object::SectionFlags::Elf { sh_flags } => sh_flags & u64::from(object::elf::SHF_ALLOC) != 0,
+        _ => !matches!(
+            section.kind(),
+            object::SectionKind::Debug
+                | object::SectionKind::DebugString
+                | object::SectionKind::Metadata
+                | object::SectionKind::Linker
+                | object::SectionKind::Note
+                | object::SectionKind::OtherString
+        ),
+    }
+}
+
+/// The file bytes at `address`, from exactly one loaded section that maps them.
 fn mapped<'d>(native: &object::File<'d>, address: u64, size: u64) -> AotResult<&'d [u8]> {
     let mut found = None;
-    for section in native.sections() {
+    for section in native.sections().filter(occupies_image) {
         if let Some(bytes) = section.data_range(address, size).map_err(|error| invalid(error.to_string()))? {
             if found.is_some() {
                 return Err(invalid("Glue admission record address maps to several sections"));

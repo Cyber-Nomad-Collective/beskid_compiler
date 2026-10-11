@@ -13,12 +13,14 @@
 //!   the other arguments (that would be a cycle through argument typing);
 //! - the declared payload or field type of an enum constructor or struct literal, with the
 //!   declaration's generic parameters bound by the written type arguments;
-//! - the element type of an array literal, the match expression of an arm, or the block
-//!   expression of a value-producing last statement, each forwarding its own expected type;
+//! - the element type of an array literal or the match expression of an arm, each forwarding
+//!   its own expected type (a block expression forwards nothing: a value written inside a block
+//!   has no direct typed context and stays unavailable);
 //! - the proven representation of the peer operand of a binary expression, or, when the peer
 //!   is itself an unsuffixed numeric literal, the binary expression's own expected type for the
 //!   arithmetic and bitwise operators;
-//! - `unit` for an expression statement.
+//! - `unit` for an expression statement;
+//! - for a runtime intrinsic the unit does not admit, the canonical ABI-v5 manifest parameter.
 //!
 //! Inside a generic item the enclosing specialization's substitutions interpret the parameter
 //! names its declared types mention. Without one, a declared type that still names an enclosing
@@ -81,7 +83,7 @@ fn enclosing_environment(enclosing: Option<&GenericSpecializationInstance>) -> E
 }
 
 /// The expected type of the node that forwards its requirement to `key` (a match expression, an
-/// array literal, a block expression, or a binary expression whose peer is a bare literal).
+/// array literal, or a binary expression whose peer is a bare literal).
 fn forwarded(
     db: &dyn Db,
     program: &Program,
@@ -139,7 +141,7 @@ fn expected_type_for(
 
     if let Some(call) = node.of::<syntax::CallExpression>() {
         let position = call.args.iter().position(|argument| is_child(DynNodeRef::from(argument))).ok_or_else(unavailable)?;
-        let identity = call_argument_identity(db, parent_key, call, position, &environment)?;
+        let identity = call_argument_identity(db, program, index, parent_key, call, position, &environment)?;
         let position = u32::try_from(position).map_err(|_| unavailable())?;
         return Ok(ExpectedType::new(ExpectedTypeContext::CallArgument { call: parent_key, position }, identity));
     }
@@ -263,10 +265,6 @@ fn expected_type_for(
         if !is_child(DynNodeRef::from(&statement.expression)) {
             return Err(unavailable());
         }
-        if let Some(block) = block_result_owner(db, index, parent_key) {
-            let outer = forwarded(db, program, index, block, enclosing)?;
-            return Ok(ExpectedType::new(ExpectedTypeContext::BlockResult { block }, outer.identity));
-        }
         return Ok(ExpectedType::new(
             ExpectedTypeContext::ExpressionStatement { statement: parent_key },
             GenericSourceTypeIdentity::Abi(SemanticTypeId::UNIT),
@@ -274,20 +272,6 @@ fn expected_type_for(
     }
 
     Err(unavailable())
-}
-
-/// The block expression whose value `statement` produces: the statement is the last executable
-/// statement of a `Block` owned by a `BlockExpression`.
-fn block_result_owner(db: &dyn Db, index: &SyntaxIndex, statement: AstNodeKey) -> Option<AstNodeKey> {
-    let wrapper = parent_node(index, statement.node)?;
-    (index.kind(wrapper) == Some(NodeKind::Statement)).then_some(())?;
-    let block = parent_node(index, wrapper)?;
-    (index.kind(block) == Some(NodeKind::Block)).then_some(())?;
-    let block_expression = parent_node(index, block)?;
-    (index.kind(block_expression) == Some(NodeKind::BlockExpression)).then_some(())?;
-    let statements = block_statement_nodes(db, AstNodeKey { node: block, ..statement }).ok()??;
-    (statements.last().map(|last| last.node) == Some(statement.node)).then_some(())?;
-    Some(AstNodeKey { node: block_expression, ..statement })
 }
 
 /// Whether a binary operand is a bare numeric literal (or integer constant) that takes its
@@ -327,6 +311,8 @@ fn unsuffixed_float_literal(db: &dyn Db, key: AstNodeKey) -> Result<bool, Semant
 /// manifest, corelib-service and native Mod callables contribute their ABI parameter.
 fn call_argument_identity(
     db: &dyn Db,
+    program: &Program,
+    index: &SyntaxIndex,
     call_key: AstNodeKey,
     call: &syntax::CallExpression,
     position: usize,
@@ -336,7 +322,17 @@ fn call_argument_identity(
     if primitive_numeric_conversion_target(call).is_some() {
         return Err(unavailable());
     }
-    match call_lowering(db, call_key)?.ok_or_else(unavailable)? {
+    let lowering = match call_lowering(db, call_key) {
+        Ok(Some(lowering)) => lowering,
+        // A runtime intrinsic the unit does not admit has no lowering, but its canonical ABI-v5
+        // signature is target-independent syntax authority for the width of its arguments.
+        Ok(None) => return canonical_intrinsic_argument_identity(program, index, call_key, call, position),
+        Err(error) if error.is_unavailable() => {
+            return canonical_intrinsic_argument_identity(program, index, call_key, call, position);
+        }
+        Err(error) => return Err(error),
+    };
+    match lowering {
         CallLowering::Direct(declaration) => {
             direct_parameter_identity(db, call_key, call, declaration, position, environment)
         }
@@ -352,6 +348,27 @@ fn call_argument_identity(
         }
         CallLowering::Dynamic => Err(unavailable()),
     }
+}
+
+/// The canonical manifest parameter of an unshadowed single-segment runtime intrinsic callee.
+fn canonical_intrinsic_argument_identity(
+    program: &Program,
+    index: &SyntaxIndex,
+    call_key: AstNodeKey,
+    call: &syntax::CallExpression,
+    position: usize,
+) -> Result<GenericSourceTypeIdentity, SemanticError> {
+    let syntax::Expression::Path(path) = &call.callee.node else {
+        return Err(unavailable());
+    };
+    let [segment] = path.node.path.node.segments.as_slice() else {
+        return Err(unavailable());
+    };
+    let name = segment.node.name.node.name.as_str();
+    if !segment.node.type_args.is_empty() || resolve_lexical_declaration(program, index, call_key.node, name).is_some() {
+        return Err(unavailable());
+    }
+    canonical_intrinsic_parameter_type(name, position).map(GenericSourceTypeIdentity::Abi).ok_or_else(unavailable)
 }
 
 fn direct_parameter_identity(

@@ -80,6 +80,38 @@ pub(in crate::semantic_contract) fn expected_cast_type(
     }
 }
 
+/// ABI-v5 intrinsic signatures are target-independent.  Selecting a supported target merely
+/// accesses the generated canonical manifest; codegen still requires its non-forgeable runtime
+/// capability before it can import any of these symbols.
+pub(in crate::semantic_contract) fn canonical_intrinsic_parameter_type(
+    name: &str,
+    argument_index: usize,
+) -> Option<SemanticTypeId> {
+    let target = TargetMetadata::supported().into_iter().next()?;
+    let manifest = AbiManifestV5::canonical_runtime(target);
+    let intrinsic = manifest.intrinsic_metadata(name)?;
+    abi_semantic_type(*intrinsic.params.get(argument_index)?)
+}
+
+pub(in crate::semantic_contract) fn abi_semantic_type(ty: AbiType) -> Option<SemanticTypeId> {
+    Some(match ty {
+        AbiType::Void => return None,
+        AbiType::Pointer => SemanticTypeId::POINTER,
+        AbiType::USize => SemanticTypeId::WORD,
+        AbiType::I8 => SemanticTypeId::I8,
+        AbiType::I16 => SemanticTypeId::I16,
+        AbiType::U16 => SemanticTypeId::U16,
+        AbiType::U64 => SemanticTypeId::U64,
+        AbiType::F32 => SemanticTypeId::F32,
+        AbiType::U8 => SemanticTypeId::U8,
+        AbiType::I32 => SemanticTypeId::I32,
+        AbiType::U32 => SemanticTypeId::U32,
+        AbiType::I64 => SemanticTypeId::I64,
+        AbiType::F64 => SemanticTypeId::F64,
+        _ => return None,
+    })
+}
+
 pub(in crate::semantic_contract) fn primitive_numeric(semantic_type: SemanticTypeId) -> bool {
     matches!(
         semantic_type,

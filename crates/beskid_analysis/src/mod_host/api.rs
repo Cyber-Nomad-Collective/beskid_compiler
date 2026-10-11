@@ -109,6 +109,11 @@ fn schedule_generate(
     let mut generators_skipped = false;
     let mut generated;
     let mut round = 0u32;
+    // Generators are incremental: a replay round runs only when the previous round's merged
+    // syntax changed the collected target set. Identical targets mean the merged program already
+    // holds every contribution for them, so the replay loop has reached its fixed point.
+    let mut converged = false;
+    let mut previous_round_fingerprint: Option<String> = None;
     while round < max_rounds {
         round += 1;
         let collection = invoke_in_scope(input, Some(&program), |scoped| {
@@ -123,8 +128,14 @@ fn schedule_generate(
 
         if !targets_changed(input.cached_target_fingerprint, &target_fingerprint) {
             generators_skipped = true;
+            converged = true;
             break;
         }
+        if previous_round_fingerprint.as_deref() == Some(target_fingerprint.as_str()) {
+            converged = true;
+            break;
+        }
+        previous_round_fingerprint = Some(target_fingerprint.clone());
 
         let invocation = invoke_in_scope(input, Some(&program), |scoped| {
             run_generators(&loaded, &collected, scoped, invoker, scoped.pipeline)
@@ -139,6 +150,7 @@ fn schedule_generate(
             materialize_declared_outputs(input.compile_plan, &loaded, &generator_outcomes)?;
         }
         if !generated.has_typed_merge() {
+            converged = true;
             break;
         }
         program = merge_generated_syntax(program, &generated, invocation_generation)?;
@@ -147,10 +159,11 @@ fn schedule_generate(
         }
         let needs_another_round = collected.outcomes.iter().any(|outcome| !outcome.narrowed_targets.is_empty());
         if !needs_another_round {
+            converged = true;
             break;
         }
     }
-    if round >= max_rounds && collector_outcomes.iter().any(|outcome| !outcome.narrowed_targets.is_empty()) {
+    if !converged {
         return Err(anyhow::Error::new(ModHostDiagnostics::new(vec![ModHostIssue::MaxGeneratorRoundsExceeded {
             limit: max_rounds,
         }])));

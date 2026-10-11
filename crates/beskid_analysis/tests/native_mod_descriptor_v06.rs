@@ -1,4 +1,4 @@
-//! Descriptor V2 evidence inventories are closed and source paths are not traversal authority.
+//! Descriptor V3 evidence inventories are closed and source paths are not traversal authority.
 use beskid_analysis::mod_host::{mod_artifact_inventory, native_mod_inventory_identity, read_mod_artifact_descriptor};
 use std::{collections::BTreeMap, fs};
 
@@ -8,7 +8,7 @@ fn v06_native_mod_rejects_legacy_object_descriptor_before_loading() {
     let descriptor = root.path().join("mod.descriptor.json");
     fs::write(&descriptor, r#"{"schemaVersion":1,"packageId":"Legacy","objectFile":"mod.o"}"#).unwrap();
     let error = read_mod_artifact_descriptor(&descriptor, root.path()).unwrap_err();
-    assert!(error.to_string().contains("V2"), "{error}");
+    assert!(error.to_string().contains("V3"), "{error}");
 }
 #[test]
 fn v06_native_mod_inventory_tracks_new_deleted_and_changed_files() {

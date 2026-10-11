@@ -93,7 +93,7 @@ use abi::{
 use bulk::bulk_parameter_tracked;
 use calls::{
     PathCallResolution, call_arguments_tracked, call_lowering_for_node, call_lowering_tracked,
-    canonical_result_definition_for_type, canonical_result_variant,
+    canonical_intrinsic_parameter_type, canonical_result_definition_for_type, canonical_result_variant,
     canonical_runtime_intrinsic_scope, cast_intents_for_node, cast_intents_tracked, corelib_service_for,
     expected_cast_type, expected_explicit_call_argument_type, explicit_generic_type_argument_syntax,
     exported_generic_type_named, expression_fact_target, expression_is_lambda, flatten_member_as_path_declaration,

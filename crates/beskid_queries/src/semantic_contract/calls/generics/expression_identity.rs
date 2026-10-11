@@ -348,15 +348,22 @@ fn contextual_numeric_literal(literal: &beskid_analysis::syntax::Literal) -> boo
     }
 }
 
-/// The declared array type of an array literal's position, from its [`expected_type`]. A
-/// position with no expected type (an inferred local, an inferred generic argument) yields
-/// `None` so a non-empty literal can still prove its identity from its elements.
+/// The declared array type of an array literal's position, from its [`expected_type`], for the
+/// direct declaration contexts only: an annotated local, a struct field and a declared return.
+/// A call argument's identity feeds that call's own argument typing, so it is never taken from
+/// the parameter it is checked against; it and every other position yield `None`, and a non-empty
+/// literal then proves its identity from its elements.
 fn array_literal_declared_identity(
     db: &dyn Db,
     key: AstNodeKey,
 ) -> Result<Option<GenericSourceTypeIdentity>, SemanticError> {
     match expected_type(db, key) {
-        Ok(Some(expected)) => Ok(Some(expected.identity().clone())),
+        Ok(Some(expected)) => Ok(match expected.context {
+            ExpectedTypeContext::DeclaredLocal { .. }
+            | ExpectedTypeContext::StructField { .. }
+            | ExpectedTypeContext::Return { .. } => Some(expected.identity().clone()),
+            _ => None,
+        }),
         Ok(None) => Ok(None),
         Err(error) if error.is_unavailable() => Ok(None),
         Err(error) => Err(error),
