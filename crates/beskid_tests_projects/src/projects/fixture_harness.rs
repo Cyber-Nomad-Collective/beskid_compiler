@@ -14,12 +14,7 @@ use beskid_analysis::services::{
     resolved_input_from_plan,
 };
 use beskid_tests_mod_host::ModHostScope;
-use beskid_analysis::syntax::CallExpression;
-use beskid_analysis::syntax_query::{NodeKind, SyntaxIndex};
-use beskid_queries::{
-    AstNodeKey, SourceUnitId, build_typed_program, call_lowering, configure_db_for_project,
-    primitive_numeric_conversion, program_assembly, project_session_for_syntax_assembly, with_db,
-};
+use beskid_queries::{configure_db_for_project, program_assembly, with_db};
 
 use super::core_env_lock::core_dependency_env_lock;
 use super::test_cwd::{compiler_workspace_root, with_cwd_at_workspace_root};
@@ -185,54 +180,6 @@ fn cached_corelib_tests_assembly(entry_relative: &str, resolved: &ResolvedInput)
     assembly
 }
 
-/// Syntax-fact gate for a `corelib_tests` entry.
-///
-/// Corelib's migration gate must not route entry calls through the retired HIR semantic resolver:
-/// its public-module re-export rules intentionally lag the generation-safe syntax registry.  This
-/// validates every entry call against the assembled syntax authority instead. Dependency bodies
-/// remain outside this entry gate, just as they did under `EntryOnly` typing.
-pub fn typecheck_corelib_tests_entry(entry_relative: &str) {
-    test_progress(&format!("→ corelib typecheck: {entry_relative}"));
-    let started = Instant::now();
-    let resolved = resolve_corelib_tests_entry_with_assembly(entry_relative);
-    with_db(|db| {
-        let syntax_assembly = std::sync::Arc::new(resolved.assembly.as_ref().expect("corelib entry assembly").clone());
-        let project =
-            project_session_for_syntax_assembly(db, &syntax_assembly, "corelib-syntax-gate", "prepared-corelib-entry")
-                .expect("corelib syntax project session");
-        let generation = syntax_assembly.generation;
-        let typed = build_typed_program(db, project, generation, syntax_assembly).expect("corelib syntax program");
-        let entry = typed.assembly.entry_unit();
-        let index = SyntaxIndex::from_program(&entry.program, generation);
-        let unit = SourceUnitId::new(db, entry.path.clone());
-        for node in index.ids_of_kind(NodeKind::CallExpression) {
-            let key = AstNodeKey { unit, generation, node };
-            // Codegen consumes a proven primitive conversion before ordinary call lowering.
-            if matches!(primitive_numeric_conversion(db, key), Ok(Some(_))) {
-                continue;
-            }
-            call_lowering(db, key)
-                .and_then(|fact| {
-                    fact.ok_or_else(|| {
-                        beskid_queries::SemanticError::unavailable("entry call has no syntax lowering fact")
-                    })
-                })
-                .unwrap_or_else(|error| {
-                    let callee = index
-                        .node_at(&entry.program, node)
-                        .and_then(|syntax| syntax.of::<CallExpression>())
-                        .map(|call| format!("{:?} at {:?}", call.callee.node, call.callee.span))
-                        .unwrap_or_else(|| "<call syntax unavailable>".to_string());
-                    panic!(
-                        "corelib syntax call gate for {entry_relative} failed at node {:?}, callee {callee}: {error}",
-                        node
-                    )
-                });
-        }
-    });
-    test_progress(&format!("✓ corelib typecheck: {entry_relative} ({:.1}s)", started.elapsed().as_secs_f64()));
-}
-
 /// Lower a single test entrypoint from a `corelib_tests` file to CLIF (same path as `beskid test`).
 pub fn lower_corelib_tests_entrypoint(entry_relative: &str, entrypoint: &str) -> beskid_codegen::CodegenArtifact {
     let resolved = resolve_corelib_tests_entry_with_assembly(entry_relative);
@@ -278,11 +225,19 @@ mod tests {
     use super::*;
     use std::time::{Duration, Instant};
 
+    /// Byte range of one former target's section in a merged `corelib_tests` suite entry.
+    fn suite_section(source: &str, former_file: &str) -> std::ops::Range<usize> {
+        let marker = format!("// ---- {former_file} ");
+        let start = source.find(&marker).unwrap_or_else(|| panic!("suite has no section for {former_file}"));
+        let end = source[start + marker.len()..].find("\n// ---- ").map_or(source.len(), |offset| start + marker.len() + offset);
+        start..end
+    }
+
     #[test]
     fn text_parser_tests_keep_parser_function_identity_and_signature_types() {
         let root = corelib_tests_project_root();
         with_project_test_env(&root, || {
-            let resolved = resolve_corelib_tests_entry_with_assembly("text/TextParserTests.bd");
+            let resolved = resolve_corelib_tests_entry_with_assembly("text/TextSuite.bd");
             let assembly = resolved.assembly.as_ref().expect("TextParser assembly");
             let started = Instant::now();
             let (_, resolution, _) =
@@ -309,10 +264,12 @@ mod tests {
                 dependency_locals.is_empty(),
                 "dependency declaration resolution must not retain body locals: {dependency_locals:?}"
             );
+            let section = suite_section(&resolved.source, "TextParserTests.bd");
             let parser_targets = resolution
                 .tables
                 .resolved_values
                 .iter()
+                .filter(|(span, _)| section.contains(&span.start))
                 .filter_map(|(span, value)| {
                     let source = resolved.source.get(span.start..span.end)?;
                     let expected_name = ["Literal", "IsOk", "Choice2"]
@@ -340,7 +297,7 @@ mod tests {
     fn collections_array_tests_keep_array_iterator_signature_types() {
         let root = corelib_tests_project_root();
         with_project_test_env(&root, || {
-            let resolved = resolve_corelib_tests_entry_with_assembly("collections/ArrayTests.bd");
+            let resolved = resolve_corelib_tests_entry_with_assembly("collections/CollectionsSuite.bd");
             let assembly = resolved.assembly.as_ref().expect("ArrayTests assembly");
             let raw_resolution = beskid_analysis::services::resolve_entry(
                 &assembly.entry_unit().program,
@@ -396,7 +353,7 @@ mod tests {
     fn fs_tests_nested_enum_pattern_bindings_pass_the_production_semantic_gate() {
         let root = corelib_tests_project_root();
         with_project_test_env(&root, || {
-            let resolved = resolve_corelib_tests_entry_with_assembly("system/FsTests.bd");
+            let resolved = resolve_corelib_tests_entry_with_assembly("system/SystemSuite.bd");
             let assembly = resolved.assembly.as_ref().expect("FS assembly");
             beskid_analysis::services::type_entry_gate(assembly.entry_unit().program.clone(), assembly)
                 .expect("nested enum payload bindings should retain their declared type");
@@ -408,11 +365,11 @@ mod tests {
         let root = corelib_tests_project_root();
         with_project_test_env(&root, || {
             lower_corelib_tests_entrypoint(
-                "system/EnvironmentTests.bd",
+                "system/SystemSuite.bd",
                 "env_get_empty_name_returns_invalid_name_error",
             );
             lower_corelib_tests_entrypoint(
-                "system/EnvironmentTests.bd",
+                "system/SystemSuite.bd",
                 "env_set_empty_name_returns_invalid_name_error",
             );
         });
@@ -422,7 +379,7 @@ mod tests {
     fn query_tests_pass_the_production_semantic_gate() {
         let root = corelib_tests_project_root();
         with_project_test_env(&root, || {
-            let resolved = resolve_corelib_tests_entry_with_assembly("query/QueryTests.bd");
+            let resolved = resolve_corelib_tests_entry_with_assembly("query/QuerySuite.bd");
             let assembly = resolved.assembly.as_ref().expect("query assembly");
             let resolution = beskid_analysis::services::resolve_entry(
                 &assembly.entry_unit().program,
@@ -430,10 +387,12 @@ mod tests {
                 Some(&assembly.entry_unit().path),
             )
             .expect("resolve QueryTests entry");
+            let section = suite_section(&resolved.source, "QueryTests.bd");
             let current_targets = resolution
                 .tables
                 .resolved_values
                 .iter()
+                .filter(|(span, _)| section.contains(&span.start))
                 .filter(|(span, _)| {
                     resolved
                         .source
@@ -461,11 +420,11 @@ mod tests {
     fn corelib_entry_assemblies_remain_isolated_by_explicit_source_path() {
         let root = corelib_tests_project_root();
         with_project_test_env(&root, || {
-            let channel = resolve_corelib_tests_entry_with_assembly("concurrency/ChannelApiTests.bd");
-            let messages = resolve_corelib_tests_entry_with_assembly("console/ConsoleMessageChannelTests.bd");
+            let channel = resolve_corelib_tests_entry_with_assembly("concurrency/ConcurrencySuite.bd");
+            let messages = resolve_corelib_tests_entry_with_assembly("console/ConsoleSuite.bd");
 
-            assert!(channel.source_path.ends_with("concurrency/ChannelApiTests.bd"));
-            assert!(messages.source_path.ends_with("console/ConsoleMessageChannelTests.bd"));
+            assert!(channel.source_path.ends_with("concurrency/ConcurrencySuite.bd"));
+            assert!(messages.source_path.ends_with("console/ConsoleSuite.bd"));
             assert!(
                 channel
                     .assembly
@@ -473,7 +432,7 @@ mod tests {
                     .expect("channel assembly")
                     .entry_unit()
                     .path
-                    .ends_with("concurrency/ChannelApiTests.bd")
+                    .ends_with("concurrency/ConcurrencySuite.bd")
             );
             assert!(
                 messages
@@ -482,7 +441,7 @@ mod tests {
                     .expect("messages assembly")
                     .entry_unit()
                     .path
-                    .ends_with("console/ConsoleMessageChannelTests.bd")
+                    .ends_with("console/ConsoleSuite.bd")
             );
         });
     }

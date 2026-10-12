@@ -138,7 +138,7 @@ pub(in crate::module_emission) fn resolve_spawn_trampolines(
                 let Some(target_symbol) = symbols.get(&callee).cloned() else {
                     continue;
                 };
-                let symbol = spawn_trampoline_symbol(&target_symbol, spawn);
+                let symbol = spawn_trampoline_symbol(input, &target_symbol, spawn);
                 let result_plan =
                     spawn_result_plan(input, spawn, &symbol, validation.callable.as_ref().unwrap().result)?;
                 trampolines.push(SpawnTrampoline {
@@ -202,8 +202,8 @@ pub(in crate::module_emission) fn resolve_spawn_trampolines(
                 if closure_captures.is_some() {
                     signature.params.insert(0, AbiParam::new(isa.pointer_type()));
                 }
-                let target_symbol = format!("__beskid_spawn_lambda_syntax_g{}_n{}", spawn.generation.0, spawn.node.0);
-                let symbol = spawn_trampoline_symbol(&target_symbol, spawn);
+                let target_symbol = format!("__beskid_spawn_lambda_syntax_g{}_n{}", input.generation_tag(spawn.generation), spawn.node.0);
+                let symbol = spawn_trampoline_symbol(input, &target_symbol, spawn);
                 let result_plan = spawn_result_plan(input, spawn, &symbol, lambda.callable.result)?;
                 trampolines.push(SpawnTrampoline {
                     spawn,
@@ -258,14 +258,18 @@ pub(in crate::module_emission) fn spawn_result_plan(
     })
 }
 
-pub(in crate::module_emission) fn spawn_trampoline_symbol(target_symbol: &str, spawn: AstNodeKey) -> String {
+pub(in crate::module_emission) fn spawn_trampoline_symbol(
+    input: &CodegenInput<'_>,
+    target_symbol: &str,
+    spawn: AstNodeKey,
+) -> String {
     format!(
         "__beskid_spawn_entry_syntax_{}_g{}_n{}",
         target_symbol
             .chars()
             .map(|character| if character.is_ascii_alphanumeric() { character } else { '_' })
             .collect::<String>(),
-        spawn.generation.0,
+        input.generation_tag(spawn.generation),
         spawn.node.0,
     )
 }

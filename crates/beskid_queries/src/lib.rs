@@ -83,8 +83,7 @@ pub use inputs::{FileText, GrammarRevision, ProjectSession};
 pub use modhost::{ManifestGenerationId, ModHostSyntaxGenerationId};
 pub use output::{SharedFrontEnd, SharedResolution, SharedTypeResult, SharedUnitResolution, SharedUnitTypeSurface};
 pub use persistence::{
-    SalsaPersistenceManifest, cache_root_for_project, ensure_salsa_dir, load_db_snapshot, load_manifest,
-    persist_session_snapshot, save_db_snapshot,
+    cache_root_for_project, ensure_salsa_dir, load_db_snapshot, persist_session_snapshot, save_db_snapshot,
 };
 pub use semantic_contract::{
     AggregateFieldAccess, AggregateFieldShape, AggregateLayoutFact, AggregateLiteralFieldValues,

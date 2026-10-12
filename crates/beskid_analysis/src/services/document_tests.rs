@@ -33,7 +33,7 @@ mod tests {
                 std::env::set_var("BESKID_CONFIG_DIR", home.path().join("config"));
                 std::env::set_var("BESKID_CORELIB_ROOT", home.path().join("corelib"));
             }
-            beskid_tools::ensure_bundled_corelib().expect("provision corelib_mvp fixture Corelib");
+            beskid_tools::ensure_bundled_corelib(&beskid_corelib_embed::CORELIB_BUNDLE).expect("provision corelib_mvp fixture Corelib");
             home
         })
         .path()

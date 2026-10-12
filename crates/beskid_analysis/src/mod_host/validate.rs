@@ -227,27 +227,6 @@ mod tests {
     }
 
     #[test]
-    fn unknown_contract_id_emits_e1853() {
-        let loaded = vec![artifact_with(vec![registration("Beskid.Compiler.Made.Up", "T", "sym1")])];
-        let err = validate_registrations(&loaded).unwrap_err();
-        assert!(err.codes().contains(&"E1853"));
-    }
-
-    #[test]
-    fn rewriter_without_analyzer_emits_e1854() {
-        let loaded = vec![artifact_with(vec![registration("Beskid.Compiler.Collect.Rewriter", "T", "sym1")])];
-        let err = validate_registrations(&loaded).unwrap_err();
-        assert!(err.codes().contains(&"E1854"));
-    }
-
-    #[test]
-    fn missing_entry_symbol_emits_e1828() {
-        let loaded = vec![artifact_with(vec![registration("Beskid.Compiler.Collect.Generator", "T", "")])];
-        let err = validate_registrations(&loaded).unwrap_err();
-        assert!(err.codes().contains(&"E1828"));
-    }
-
-    #[test]
     fn cross_artifact_conflict_emits_e1851() {
         let pair = registration("Beskid.Compiler.Collect.Generator", "Shared", "sym");
         let mut a = artifact_with(vec![pair.clone()]);

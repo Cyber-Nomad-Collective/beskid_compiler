@@ -6,6 +6,7 @@ license.workspace = true
 
 [dependencies]
 beskid_tools = { path = "../beskid_tools" }
+beskid_corelib_embed = { path = "../beskid_corelib_embed" }
 beskid_aot = { path = "../beskid_aot" }
 beskid_abi = { path = "../beskid_abi" }
 beskid_analysis = { path = "../beskid_analysis" }

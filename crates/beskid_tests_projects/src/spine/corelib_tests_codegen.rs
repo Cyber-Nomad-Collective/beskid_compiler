@@ -23,7 +23,7 @@ fn syscall_result_predicates_have_call_derived_pointer_specializations() {
     with_large_test_stack(|| {
         let root = corelib_tests_project_root();
         with_project_test_env(&root, || {
-            let resolved = resolve_corelib_tests_entry_with_assembly("system/SyscallWriteTests.bd");
+            let resolved = resolve_corelib_tests_entry_with_assembly("system/SystemSuite.bd");
             with_db(|db| {
                 let syntax_assembly = Arc::new(resolved.assembly.as_ref().expect("corelib entry assembly").clone());
                 let project = project_session_for_syntax_assembly(
@@ -41,13 +41,37 @@ fn syscall_result_predicates_have_call_derived_pointer_specializations() {
                 let index = SyntaxIndex::from_program(&entry.program, generation);
                 let expected =
                     ItemSignature { parameters: Arc::from([SemanticTypeId::POINTER]), result: SemanticTypeId::BOOL };
-                let matching = index
-                    .ids_of_kind(NodeKind::CallExpression)
-                    .filter_map(|node| {
-                        generic_call_specialization(db, AstNodeKey { unit, generation, node }).ok().flatten()
+                // The suite merges several former targets; count only the four `Results.IsOk` calls of
+                // the three syscall-write tests.
+                let mut pending = index
+                    .ids_of_kind(NodeKind::TestDefinition)
+                    .map(|node| AstNodeKey { unit, generation, node })
+                    .filter(|key| {
+                        matches!(
+                            item_name(db, *key).ok().flatten().as_deref(),
+                            Some(
+                                "syscall_write_empty_string_returns_non_negative"
+                                    | "syscall_write_stdout_smoke"
+                                    | "syscall_write_prints_newline"
+                            )
+                        )
                     })
-                    .filter(|specialization| specialization.signature == expected)
-                    .count();
+                    .collect::<Vec<_>>();
+                assert_eq!(pending.len(), 3, "the three syscall-write tests are in the system suite");
+                let mut matching = 0;
+                while let Some(key) = pending.pop() {
+                    if node_kind(db, key).ok().flatten() == Some(IndexedNodeKind::CallExpression)
+                        && generic_call_specialization(db, key)
+                            .ok()
+                            .flatten()
+                            .is_some_and(|specialization| specialization.signature == expected)
+                    {
+                        matching += 1;
+                    }
+                    if let Some(children) = child_nodes(db, key).expect("child nodes") {
+                        pending.extend(children.iter().copied());
+                    }
+                }
 
                 assert_eq!(matching, 4, "each Results.IsOk call must retain POINTER -> BOOL");
 
@@ -95,66 +119,3 @@ fn syscall_result_predicates_have_call_derived_pointer_specializations() {
         });
     });
 }
-
-macro_rules! corelib_lower_test {
-    ($name:ident, $entry:literal, $entrypoint:literal) => {
-        #[test]
-        #[ignore = "corelib spine codegen blocked by syntax-ISLE gaps / missing entrypoints"]
-        fn $name() {
-            with_project_test_env(&corelib_tests_project_root(), || {
-                let artifact = lower_corelib_tests_entrypoint($entry, $entrypoint);
-                assert!(!artifact.functions.is_empty(), "expected CLIF functions for {} in {}", $entrypoint, $entry);
-            });
-        }
-    };
-}
-
-#[ignore = "corelib spine codegen/typecheck blocked by syntax-ISLE gaps and corelib parse fixture errors"]
-#[test]
-fn channel_create_returns_handle_lowers_to_clif() {
-    with_project_test_env(&corelib_tests_project_root(), || {
-        let artifact =
-            lower_corelib_tests_entrypoint("concurrency/ChannelApiTests.bd", "channel_create_returns_handle");
-        assert!(!artifact.functions.is_empty(), "expected CLIF functions for channel test entrypoint");
-    });
-}
-
-corelib_lower_test!(style_chain_bold_wraps_lowers, "console/AnsiStyleChainTests.bd", "style_chain_bold_wraps");
-corelib_lower_test!(format_module_imports_lowers, "console/FormatMarkdownTests.bd", "format_module_imports");
-corelib_lower_test!(parse_env_columns_lowers, "console/TerminalPlatformTests.bd", "parse_env_columns_known_values");
-corelib_lower_test!(
-    messages_channel_factory_lowers,
-    "console/ConsoleMessageChannelTests.bd",
-    "messages_channel_factory_smoke"
-);
-corelib_lower_test!(panel_module_imports_lowers, "console/ControlsPanelTests.bd", "panel_module_imports");
-corelib_lower_test!(system_error_writeline_smoke_lowers, "system/ErrorWriteTests.bd", "error_writeline_smoke");
-corelib_lower_test!(system_input_read_returns_result_lowers, "system/InputReadTests.bd", "input_read_returns_result");
-corelib_lower_test!(
-    system_input_read_byte_returns_result_lowers,
-    "system/InputReadTests.bd",
-    "input_read_byte_returns_result"
-);
-corelib_lower_test!(vertical_stack_render_lowers, "console/ControlsLayoutTests.bd", "vertical_stack_render_smoke");
-corelib_lower_test!(
-    hub_register_returns_result_lowers,
-    "concurrency/HubRegisterTests.bd",
-    "hub_register_returns_result"
-);
-corelib_lower_test!(slice_returns_substring_lowers, "console/FormatScanTests.bd", "slice_returns_substring");
-corelib_lower_test!(
-    bytes_from_string_matches_utf8_length_lowers,
-    "core/BytesTests.bd",
-    "bytes_from_string_matches_utf8_length"
-);
-corelib_lower_test!(
-    utf8_encode_to_bytes_roundtrip_lowers,
-    "core/EncodingUtf8Tests.bd",
-    "utf8_encode_to_bytes_roundtrip"
-);
-corelib_lower_test!(text_cursor_from_starts_at_zero_lowers, "text/TextCursorTests.bd", "from_starts_at_zero");
-corelib_lower_test!(
-    text_parser_literal_matches_prefix_lowers,
-    "text/TextParserTests.bd",
-    "literal_matches_using_cursor"
-);

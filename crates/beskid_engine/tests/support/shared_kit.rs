@@ -1,8 +1,8 @@
-//! One canonical native runtime kit per test process.
+//! One canonical native runtime kit per target directory.
 //!
 //! `build_native_host` lowers, links and publishes the embedded ABI-v5 runtime corpus. That takes
-//! tens of seconds, and the corpus is fixed for the life of the process, so a second build in the
-//! same test binary produces the same kit. Tests that only consume a kit share this one; tests
+//! tens of seconds, and the corpus is fixed by its source hash, so every test binary of one target
+//! directory shares the kit that `beskid_tests_mod_host::shared_runtime_prefix` stages once on disk. Tests that only consume a kit share this one; tests
 //! that exercise kit construction or alter kit files keep calling `build_native_host` with their
 //! own prefix. Consumers must treat the shared prefix as read-only and put scratch files in their
 //! own temporary directory.
@@ -21,7 +21,8 @@ use std::{
 };
 
 use beskid_abi::runtime_kit::ResolvedRuntimeKit;
-use beskid_tools::toolchain::runtime_kit::{RuntimeKitProfile, build_native_host};
+use beskid_abi::runtime_kit::BuildProfile;
+use beskid_abi::runtime_source::resolve_canonical_runtime_kit;
 
 struct SharedKit {
     prefix: PathBuf,
@@ -54,14 +55,12 @@ pub fn debug() -> SharedKitLease {
     // dropped during unwinding.
     let exclusive = EXCLUSIVE.lock().unwrap_or_else(PoisonError::into_inner);
     let shared = KIT.get_or_init(|| {
-        // The kit outlives every test, so keep it under Cargo's per-target scratch directory
-        // (removed by `cargo clean`) rather than leaking it into the system temporary directory.
-        let prefix = tempfile::Builder::new()
-            .prefix("shared-native-kit-")
-            .tempdir_in(env!("CARGO_TARGET_TMPDIR"))
-            .expect("shared runtime-kit prefix")
-            .keep();
-        let kit = build_native_host(prefix.clone(), RuntimeKitProfile::Debug).expect("publish shared native kit");
+        // One kit per target directory and runtime-source hash, staged on disk under a file lock by
+        // the Mod-host harness, so every test binary of this target directory reuses one build.
+        let prefix = beskid_tests_mod_host::shared_runtime_prefix().expect("stage shared native kit");
+        let target = beskid_abi::runtime_kit::host_runtime_target().expect("supported native host target");
+        let kit = resolve_canonical_runtime_kit(&prefix, &target, BuildProfile::Debug)
+            .expect("shared native kit is exact for this compiler");
         SharedKit { prefix, kit }
     });
     SharedKitLease { shared, _exclusive: exclusive }

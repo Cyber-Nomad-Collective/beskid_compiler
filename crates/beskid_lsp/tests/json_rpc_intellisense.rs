@@ -87,32 +87,17 @@ fn json_rpc_completion_and_hover_use_dependency_syntax_facts() {
     let project_uri = url::Url::from_directory_path(project.path()).expect("project URI").to_string();
     let source_uri = url::Url::from_file_path(&source_path).expect("source URI").to_string();
     let sibling_uri = url::Url::from_file_path(&sibling_path).expect("sibling URI").to_string();
-    // `beskid_lsp` provisions its embedded Corelib into the resolved Corelib root on startup,
-    // replacing whatever is there. Give it a disposable root so an inherited
-    // `BESKID_CORELIB_ROOT` (for example the checked-in `corelib/` source tree) is never
-    // overwritten in place, and so the test uses exactly the bundle this binary embeds.
-    let corelib_dir = tempfile::tempdir_in(&project_parent).expect("temporary corelib root");
-    let corelib_root = corelib_dir.path().canonicalize().expect("canonical corelib root");
+    // `beskid_lsp` provisions its embedded Corelib into the resolved Corelib root on startup and
+    // keeps a sealed root whose fingerprint already matches. The target directory's shared sealed
+    // installation of that same embedded bundle is such a root, so an inherited
+    // `BESKID_CORELIB_ROOT` (for example the checked-in `corelib/` source tree) is never touched.
     // Preparing a Corelib project runs the native Serialization Mod in a Mod host. The server
-    // never builds Mods and this test binary has no installed `beskid` next to it, so the
-    // workspace CLI materializes the same embedded bundle into the disposable root, provisions
-    // its Mods against the shared debug runtime kit, and is selected with that kit as the server's
-    // Mod host.
+    // never builds Mods and this test binary has no installed `beskid` next to it, so the shared
+    // root carries Mods provisioned by the workspace CLI against the shared debug runtime kit, and
+    // that CLI is selected with that kit as the server's Mod host.
     let mod_host = beskid_tests_mod_host::provisioned_cli().expect("workspace Mod host CLI");
     let runtime_prefix = beskid_tests_mod_host::shared_runtime_prefix().expect("shared runtime kit");
-    let materialized = Command::new(&mod_host)
-        .args(["dev", "corelib", "--output"])
-        .arg(&corelib_root)
-        .env("BESKID_CORELIB_ROOT", &corelib_root)
-        .output()
-        .expect("run `beskid dev corelib`");
-    assert!(
-        materialized.status.success(),
-        "materialize the embedded Corelib bundle\nstdout:\n{}\nstderr:\n{}",
-        String::from_utf8_lossy(&materialized.stdout),
-        String::from_utf8_lossy(&materialized.stderr)
-    );
-    beskid_tests_mod_host::provision_corelib_mods(&corelib_root).expect("provision Corelib native Mods");
+    let corelib_root = beskid_tests_mod_host::shared_corelib_root().expect("shared provisioned Corelib");
     let mut child = Command::new(env!("CARGO_BIN_EXE_beskid_lsp"))
         .current_dir(compiler_root)
         .env("BESKID_CORELIB_ROOT", &corelib_root)

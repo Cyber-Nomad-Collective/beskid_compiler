@@ -429,6 +429,7 @@ dependencies = [
  "beskid_abi",
  "beskid_artifacts",
  "beskid_ast_derive",
+ "beskid_corelib_embed",
  "beskid_execution",
  "beskid_manifest",
  "beskid_pipeline",
@@ -530,6 +531,7 @@ dependencies = [
  "beskid_analysis",
  "beskid_aot",
  "beskid_codegen",
+ "beskid_corelib_embed",
  "beskid_engine",
  "beskid_graph",
  "beskid_lsp",
@@ -581,6 +583,14 @@ dependencies = [
  "target-lexicon",
  "tempfile",
  "thiserror",
+]
+
+[[package]]
+name = "beskid_corelib_embed"
+version = "0.1.0"
+dependencies = [
+ "include_dir",
+ "sha2",
 ]
 
 [[package]]
@@ -670,6 +680,7 @@ version = "0.5.3"
 dependencies = [
  "anyhow",
  "beskid_analysis",
+ "beskid_corelib_embed",
  "beskid_graph",
  "beskid_queries",
  "beskid_tests_mod_host",
@@ -1022,6 +1033,7 @@ dependencies = [
  "beskid_abi",
  "beskid_analysis",
  "beskid_aot",
+ "beskid_corelib_embed",
  "beskid_pckg",
  "beskid_pipeline",
  "beskid_queries",

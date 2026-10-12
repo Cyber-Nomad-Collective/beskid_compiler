@@ -53,27 +53,6 @@ fn core_graph_keeps_host_unprefixed_and_corelib_package_native() {
         Ok(Some(path)) if path.starts_with(corelib.join("packages/foundation")) => {}
         other => failures.push(format!("Core.Output must resolve to the foundation package, got {other:?}")),
     }
-    for retired in ["Std.Core.Output", "Std.Testing.Assert", "Std::Core::Output"] {
-        match resolve_module_file(retired, &roots) {
-            Ok(None) => {}
-            other => failures.push(format!("`{retired}` must not resolve: {other:?}")),
-        }
-    }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
 
-#[test]
-fn std_dependency_label_without_path_names_the_core_replacement() {
-    let directory = tempfile::tempdir().unwrap();
-    let host = directory.path();
-    std::fs::create_dir_all(host.join("Src")).unwrap();
-    std::fs::write(host.join("Src/Main.bd"), "i32 Main() { return 0; }").unwrap();
-    let manifest = host.join("App.bproj");
-    std::fs::write(&manifest, r#"App { name = "App" version = "0.6.0" root = "Src" }
- dependency "Std" { source = path }
- target "main" { kind = App entry = "Main.bd" }
-"#).unwrap();
-    let error = build_compile_plan(&manifest, None).expect_err("`Std` is not the Corelib dependency label");
-    let message = error.to_string();
-    assert!(message.contains("`Std`") && message.contains("`Core`"), "error must name the `Core` label: {message}");
-}

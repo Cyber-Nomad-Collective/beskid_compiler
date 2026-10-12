@@ -70,7 +70,6 @@ pub struct CodegenArtifact {
 pub struct CodegenContext {
     pub string_literals: HashMap<String, Vec<u8>>,
     artifact_namespace: String,
-    next_string_literal_id: usize,
 }
 
 impl CodegenContext {
@@ -83,20 +82,25 @@ impl CodegenContext {
     }
 
     /// Intern bytes in the artifact's addressable literal pool.
+    ///
+    /// The symbol is named by the SHA-256 of the stored bytes, so it does not depend on the order
+    /// in which functions intern their literals: items emitted in parallel name every literal
+    /// exactly as a serial emission would, and equal bytes share one symbol.
     pub fn intern_string_literal(&mut self, bytes: &[u8]) -> String {
+        use sha2::{Digest, Sha256};
         let storage = if bytes.is_empty() { &[0] } else { bytes };
-        for (symbol, data) in &self.string_literals {
-            if data.as_slice() == storage {
-                return symbol.clone();
+        let digest = format!("{:x}", Sha256::digest(storage));
+        let symbol = if self.artifact_namespace.is_empty() {
+            format!("__beskid_str_lit_{digest}")
+        } else {
+            format!("__beskid_{}_str_lit_{digest}", self.artifact_namespace)
+        };
+        match self.string_literals.get(&symbol) {
+            Some(existing) => assert!(existing.as_slice() == storage, "SHA-256 collision in the string literal pool"),
+            None => {
+                self.string_literals.insert(symbol.clone(), storage.to_vec());
             }
         }
-        let symbol = if self.artifact_namespace.is_empty() {
-            format!("__beskid_str_lit_{}", self.next_string_literal_id)
-        } else {
-            format!("__beskid_{}_str_lit_{}", self.artifact_namespace, self.next_string_literal_id)
-        };
-        self.next_string_literal_id += 1;
-        self.string_literals.insert(symbol.clone(), storage.to_vec());
         symbol
     }
 }
@@ -188,7 +192,26 @@ fn mangle_internal_link_name(name: &str) -> String {
 mod tests {
     use std::collections::HashSet;
 
-    use super::{ExportEntry, internal_link_symbol, is_valid_link_name, mangle_internal_link_name, object_link_symbol};
+    use super::{
+        CodegenContext, ExportEntry, internal_link_symbol, is_valid_link_name, mangle_internal_link_name,
+        object_link_symbol,
+    };
+
+    #[test]
+    fn string_literal_symbols_do_not_depend_on_interning_order() {
+        let mut forward = CodegenContext::new_with_artifact_namespace("module");
+        let mut backward = CodegenContext::new_with_artifact_namespace("module");
+        let texts: [&[u8]; 3] = [b"alpha", b"", b"beta"];
+        let forward_symbols = texts.iter().map(|text| forward.intern_string_literal(text)).collect::<Vec<_>>();
+        let mut backward_symbols =
+            texts.iter().rev().map(|text| backward.intern_string_literal(text)).collect::<Vec<_>>();
+        backward_symbols.reverse();
+        assert_eq!(forward_symbols, backward_symbols);
+        assert_eq!(forward.string_literals, backward.string_literals);
+        assert_eq!(forward.intern_string_literal(b"alpha"), forward_symbols[0], "equal bytes share one symbol");
+        assert_eq!(forward.string_literals.len(), 3);
+        assert!(forward_symbols.iter().all(|symbol| is_valid_link_name(symbol)));
+    }
 
     #[test]
     fn rejects_names_carrying_an_internal_trace_fragment() {

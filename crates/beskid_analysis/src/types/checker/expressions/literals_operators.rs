@@ -87,8 +87,11 @@ impl<'a> TypeChecker<'a> {
             BinaryOp::Eq | BinaryOp::NotEq | BinaryOp::Lt | BinaryOp::Lte | BinaryOp::Gt | BinaryOp::Gte => {
                 let ordering =
                     matches!(binary.node.op.node, BinaryOp::Lt | BinaryOp::Lte | BinaryOp::Gt | BinaryOp::Gte);
+                // Strings order by their UTF-8 bytes (the query layer's `StringLt`..`StringGte`
+                // facts); every other ordering needs a numeric or bool operand.
+                let string_ordering = left == right && self.is_string(left);
                 let comparable = if ordering {
-                    self.is_comparable(left)
+                    self.is_comparable(left) || string_ordering
                 } else if self.is_comparable(left) {
                     true
                 } else {

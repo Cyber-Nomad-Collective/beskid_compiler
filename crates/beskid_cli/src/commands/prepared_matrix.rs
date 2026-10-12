@@ -2,8 +2,9 @@
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::{Arc, Condvar, Mutex, PoisonError};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use anyhow::{Result, anyhow};
@@ -153,6 +154,8 @@ pub struct PreparedWorkspace {
     cancellation: Cancellation,
     started: Instant,
     revisions: RevisionSnapshot,
+    /// Targets whose Mods the session's Mod host serves; only these may be prepared.
+    mod_targets: Vec<String>,
 }
 
 pub struct PreparedTarget {
@@ -185,22 +188,32 @@ impl PreparedWorkspace {
                 (base.source_path.clone(), None)
             };
         let revisions = revision_snapshot(&manifest_path);
-        let mut workspace =
-            Self { session, base, manifest, manifest_path, budgets, cancellation, started: Instant::now(), revisions };
-        // Each target is its own assembly and activates its own Mods; the shared session serves the
-        // Mods of every target the matrix may prepare, and only those.
-        let inputs = workspace
-            .test_targets()
-            .iter()
-            .filter_map(|name| workspace.target_input(name).ok())
-            .collect::<Vec<_>>();
+        Ok(Self {
+            session,
+            base,
+            manifest,
+            manifest_path,
+            budgets,
+            cancellation,
+            started: Instant::now(),
+            revisions,
+            mod_targets: Vec::new(),
+        })
+    }
+
+    /// Activate the Mods of exactly the targets this process will prepare. Each target is its own
+    /// assembly and activates its own Mods; activation assembles every target it is given, so a
+    /// worker or a single-target run must not pay for targets it never prepares.
+    pub fn activate_mods(&mut self, targets: &[String], args: &TestArgs) -> Result<()> {
+        let inputs = targets.iter().map(|name| self.target_input(name)).collect::<Result<Vec<_>>>()?;
         let mod_host = super::compiler_mod::prepare_native_mod_executor_for_inputs(
             &inputs,
             args.lockfile.WorkspaceOptions(),
-            Some(workspace.session.observer()),
+            Some(self.session.observer()),
         )?;
-        workspace.session.set_mod_host(mod_host);
-        Ok(workspace)
+        self.session.set_mod_host(mod_host);
+        self.mod_targets = targets.to_vec();
+        Ok(())
     }
 
     pub fn test_targets(&self) -> Vec<String> {
@@ -232,6 +245,9 @@ impl PreparedWorkspace {
 
     fn prepare_target(&self, name: &str) -> Result<PreparedTarget> {
         self.check_budget(name, "prepare_target", None)?;
+        if !self.mod_targets.iter().any(|target| target == name) {
+            return Err(anyhow!("target `{name}` was not activated for Mods before preparation"));
+        }
         let resolved = self.target_input(name)?;
         self.prepare_resolved_target(name.to_string(), resolved)
     }
@@ -346,30 +362,65 @@ impl PreparedWorkspace {
         Ok(NativeTests { directory, object })
     }
 
-    pub fn run_native_test(
+    /// Links and executes `entries` (row index, qualified test name) on a bounded pool while
+    /// `body` consumes their results in its own order through [`NativeTestRuns::take`]. Every test
+    /// is still its own linked executable and process; the pool stops claiming new tests once
+    /// `body` returns or the workspace is cancelled, and the shared deadline of the native object
+    /// bounds the tests already running.
+    pub fn with_native_test_runs<R>(
         &self,
-        native: &NativeTests,
-        name: &str,
-        index: usize,
-        target: &str,
-        started: Instant,
-    ) -> Result<String> {
-        let directory = native.directory.path().join(format!("entry-{index}"));
-        self.check_budget(target, "link_test", Some(started))?;
-        let executable = beskid_pipeline::observe_phase_result(
-            Some(self.session.observer()),
-            beskid_pipeline::phases::AOT_LINK,
-            || native.object.link_entry(name, &directory),
-        )?;
-        self.check_budget(target, "execute_test", Some(started))?;
-        let output = native.object.execute_linked_entry(&executable, &directory)?;
-        self.check_budget(target, "execute_test", Some(started))?;
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        if !output.status.success() {
-            return Err(anyhow!("native test `{name}` exited {}: {stdout}{stderr}", output.status));
-        }
-        Ok(format!("{stdout}{stderr}"))
+        native: Option<&NativeTests>,
+        entries: &[(usize, String)],
+        body: impl FnOnce(&NativeTestRuns) -> R,
+    ) -> R {
+        let runs = NativeTestRuns {
+            results: Mutex::new(HashMap::new()),
+            ready: Condvar::new(),
+            stop: AtomicBool::new(false),
+            workers: AtomicUsize::new(0),
+        };
+        let Some(native) = native else {
+            let mut results = runs.results.lock().unwrap_or_else(PoisonError::into_inner);
+            for (row, name) in entries {
+                results.insert(*row, (Err(anyhow!("native test `{name}` has no prepared native object")), Duration::ZERO));
+            }
+            drop(results);
+            return body(&runs);
+        };
+        let observer = self.session.observer();
+        let cancellation = &self.cancellation;
+        let next = AtomicUsize::new(0);
+        std::thread::scope(|scope| {
+            let jobs = native_test_jobs().min(entries.len());
+            runs.workers.store(jobs, Ordering::Release);
+            for _ in 0..jobs {
+                scope.spawn(|| {
+                    while !runs.stop.load(Ordering::Acquire) && !cancellation.is_cancelled() {
+                        let Some((row, name)) = entries.get(next.fetch_add(1, Ordering::AcqRel)) else { break };
+                        let started = Instant::now();
+                        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                            native.run_entry(name, *row, observer)
+                        }))
+                        .unwrap_or_else(|_| Err(anyhow!("native test `{name}` runner panicked")));
+                        runs.results.lock().unwrap_or_else(PoisonError::into_inner).insert(*row, (result, started.elapsed()));
+                        runs.ready.notify_all();
+                    }
+                    // Wake a consumer waiting on a test no worker will claim any more.
+                    let results = runs.results.lock().unwrap_or_else(PoisonError::into_inner);
+                    runs.workers.fetch_sub(1, Ordering::AcqRel);
+                    drop(results);
+                    runs.ready.notify_all();
+                });
+            }
+            struct StopOnExit<'a>(&'a NativeTestRuns);
+            impl Drop for StopOnExit<'_> {
+                fn drop(&mut self) {
+                    self.0.stop.store(true, Ordering::Release);
+                }
+            }
+            let _stop = StopOnExit(&runs);
+            body(&runs)
+        })
     }
 
     pub fn target_timeout(&self) -> Duration {
@@ -491,4 +542,55 @@ mod tests;
 pub struct NativeTests {
     directory: tempfile::TempDir,
     object: beskid_aot::api::NativeTestObject,
+}
+
+impl NativeTests {
+    /// Link one selected test into its own executable and run it in a fresh process.
+    fn run_entry(&self, name: &str, index: usize, observer: &dyn beskid_pipeline::PipelineObserver) -> Result<String> {
+        let directory = self.directory.path().join(format!("entry-{index}"));
+        let executable =
+            beskid_pipeline::observe_phase_result(Some(observer), beskid_pipeline::phases::AOT_LINK, || {
+                self.object.link_entry(name, &directory)
+            })?;
+        let output = self.object.execute_linked_entry(&executable, &directory)?;
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        if !output.status.success() {
+            return Err(anyhow!("native test `{name}` exited {}: {stdout}{stderr}", output.status));
+        }
+        Ok(format!("{stdout}{stderr}"))
+    }
+}
+
+/// Results of [`PreparedWorkspace::with_native_test_runs`], keyed by row index.
+pub struct NativeTestRuns {
+    results: Mutex<HashMap<usize, (Result<String>, Duration)>>,
+    ready: Condvar,
+    stop: AtomicBool,
+    workers: AtomicUsize,
+}
+
+impl NativeTestRuns {
+    /// Block until the test of `row` has finished; returns its output and its link+run time.
+    pub fn take(&self, row: usize) -> (Result<String>, Duration) {
+        let mut results = self.results.lock().unwrap_or_else(PoisonError::into_inner);
+        loop {
+            if let Some(result) = results.remove(&row) {
+                return result;
+            }
+            if self.stop.load(Ordering::Acquire) || self.workers.load(Ordering::Acquire) == 0 {
+                return (Err(anyhow!("native test runs stopped before row {row} ran")), Duration::ZERO);
+            }
+            results = self.ready.wait(results).unwrap_or_else(PoisonError::into_inner);
+        }
+    }
+}
+
+/// `BESKID_NATIVE_TEST_JOBS` when set to a positive integer, otherwise up to four concurrent tests.
+fn native_test_jobs() -> usize {
+    std::env::var("BESKID_NATIVE_TEST_JOBS")
+        .ok()
+        .and_then(|raw| raw.trim().parse::<usize>().ok())
+        .filter(|jobs| *jobs > 0)
+        .unwrap_or_else(|| std::thread::available_parallelism().map_or(1, |cores| cores.get().min(4)))
 }

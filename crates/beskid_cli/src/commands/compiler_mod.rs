@@ -405,95 +405,6 @@ mod tests {
         let _ = fs::remove_dir_all(root);
     }
 
-    #[test]
-    fn rebuilds_sample_mod_through_prepared_syntax_and_writes_registrations() {
-        let scope = ModHostScope::shared().expect("native Mod host scope");
-        let root = unique_temp_dir("beskid_cli_mod_prepared_syntax");
-        let source_root = root.join("Src");
-        fs::create_dir_all(&source_root).expect("source root");
-        let manifest_path = root.join("DemoMod.bproj");
-        fs::write(
-            &manifest_path,
-            r#"
-DemoMod {
-  name = "DemoMod"
-  version = "0.1.0"
-  type = Mod
-  mod {
-    capabilities = [read_project_sources, emit_syntax, query_semantic_snapshot]
-  }
-}
-"#,
-        )
-        .expect("manifest");
-        // Production native Mods qualify only against the actual compiler-SDK contracts; the
-        // self-declared SDK-shaped contracts of `sample_mod` carry no exact canonical witness.
-        fs::write(
-            source_root.join("Mod.bd"),
-            include_str!("../../../beskid_tests_mods/fixtures/mods/native_sdk/Src/Mod.bd"),
-        )
-        .expect("mod source");
-
-        let manifest = load_manifest_from_path(&manifest_path).expect("load manifest");
-        let plan = build_compile_plan(&manifest_path, None).expect("compile plan");
-        let dependency_mods = scope.corelib_mod_host(&plan).expect("dependency Mods");
-        let prepared = prepare_project_workspace_with_options(
-            &plan,
-            beskid_analysis::projects::WorkspacePrepareOptions::default(),
-            None,
-        )
-        .expect("prepare workspace");
-        let descriptor = build_mod_artifact_for_resolved(
-            &ResolvedModProject { manifest, plan },
-            &prepared,
-            Some(host_abi_target().to_owned()),
-            scope.runtime(),
-            beskid_aot::ModProducerIdentity::capture().expect("producer identity"),
-            dependency_mods,
-            None,
-        )
-        .expect("syntax-only mod rebuild");
-
-        let sidecar = fs::read_to_string(descriptor.descriptor().sidecar_path()).expect("descriptor");
-        let descriptor: serde_json::Value = serde_json::from_str(&sidecar).expect("descriptor json");
-        let registrations = descriptor["registrations"].as_array().expect("native registrations");
-        assert_eq!(registrations.len(), 2, "actual Collector and Generator must both be registered");
-        for contract in ["Beskid.Compiler.Collect.Collector", "Beskid.Compiler.Collect.Generator"] {
-            let registration = registrations
-                .iter()
-                .find(|registration| registration["contractId"] == contract)
-                .unwrap_or_else(|| panic!("missing registration for {contract}"));
-            assert!(
-                registration["entrySymbol"].as_str().is_some_and(|symbol| !symbol.is_empty()),
-                "{contract} must name its exported entry symbol"
-            );
-        }
-        let _ = fs::remove_dir_all(root);
-    }
-
-    /// Native Mod discovery visits every type in the assembly. A generic type conforming to an
-    /// unrelated generic contract (the shape of foundation's `ArrayIterator<T> : Iterator<T>`)
-    /// must be skipped by contract declaration identity, never evaluated as an applied
-    /// conformance without its generic environment.
-    #[test]
-    fn rebuilds_mod_whose_assembly_contains_unrelated_generic_conformance() {
-        let scope = ModHostScope::shared().expect("native Mod host scope");
-        let root = unique_temp_dir("beskid_cli_mod_generic_conformance");
-        let manifest_path = write_demo_mod(&root);
-        let mut source = include_str!("../../../beskid_tests_mods/fixtures/mods/native_sdk/Src/Mod.bd").to_owned();
-        source.push_str(
-            "\npub contract Sequence<T> { T Head(); }\n\
-             pub type Holder<T> : Sequence<T> {\n    T value,\n\n    pub T Head() {\n        return this.value;\n    }\n}\n",
-        );
-        fs::write(root.join("Src").join("Mod.bd"), source).expect("mod source");
-        let descriptor = rebuilt_demo_mod(&scope, &manifest_path);
-        let sidecar = fs::read_to_string(descriptor.descriptor().sidecar_path()).expect("descriptor");
-        let descriptor: serde_json::Value = serde_json::from_str(&sidecar).expect("descriptor json");
-        let registrations = descriptor["registrations"].as_array().expect("native registrations");
-        assert_eq!(registrations.len(), 2, "only the canonical Collector and Generator are registered");
-        let _ = fs::remove_dir_all(root);
-    }
-
     /// The Corelib Mods a Mod project depends on run in the CLI, the only executable that serves
     /// `beskid dev native-mod-worker`; this test harness only embeds the producer. They are
     /// provisioned with, and qualified against, the CLI for the scope's runtime kit.
@@ -560,36 +471,42 @@ DemoMod {
         (artifact, recorder)
     }
 
-    /// The provisioning path (`beskid dev mod rebuild`), which always runs the producer.
-    fn rebuilt_demo_mod(scope: &ModHostScope, manifest_path: &Path) -> beskid_aot::QualifiedNativeMod {
-        let resolved = resolved_demo_mod(manifest_path);
-        let dependency_mods = scope.corelib_mod_host(&resolved.plan).expect("dependency Mods");
-        let prepared = prepare_project_workspace_with_options(
-            &resolved.plan,
-            beskid_analysis::projects::WorkspacePrepareOptions::default(),
-            None,
-        )
-        .expect("prepare workspace");
-        build_mod_artifact_for_resolved(
-            &resolved,
-            &prepared,
-            Some(host_abi_target().to_owned()),
-            scope.runtime(),
-            beskid_aot::ModProducerIdentity::capture().expect("producer identity"),
-            dependency_mods,
-            None,
-        )
-        .expect("mod rebuild")
-    }
-
+    /// One sample-Mod producer run plus one deliberate stale rebuild cover the producer's
+    /// registrations, its handling of unrelated generic conformances, and the artifact cache.
+    ///
+    /// Native Mod discovery visits every type in the assembly. A generic type conforming to an
+    /// unrelated generic contract (the shape of foundation's `ArrayIterator<T> : Iterator<T>`)
+    /// must be skipped by contract declaration identity, never evaluated as an applied
+    /// conformance without its generic environment.
     #[test]
-    fn current_mod_artifact_is_reused_without_rebuild_and_stale_source_rebuilds() {
+    fn sample_mod_registers_canonical_contracts_and_its_artifact_is_reused_until_stale() {
         let scope = ModHostScope::shared().expect("native Mod host scope");
         let root = unique_temp_dir("beskid_cli_mod_cache");
         let manifest_path = write_demo_mod(&root);
+        let source = root.join("Src/Mod.bd");
+        let mut text = fs::read_to_string(&source).expect("mod source");
+        text.push_str(
+            "\npub contract Sequence<T> { T Head(); }\n\
+             pub type Holder<T> : Sequence<T> {\n    T value,\n\n    pub T Head() {\n        return this.value;\n    }\n}\n",
+        );
+        fs::write(&source, text).expect("mod source with an unrelated generic conformance");
 
         let (first, first_phases) = current_demo_mod(&scope, &manifest_path);
         assert!(first_phases.linked(), "an empty cache must run the producer");
+        let sidecar = fs::read_to_string(first.descriptor().sidecar_path()).expect("descriptor");
+        let descriptor: serde_json::Value = serde_json::from_str(&sidecar).expect("descriptor json");
+        let registrations = descriptor["registrations"].as_array().expect("native registrations");
+        assert_eq!(registrations.len(), 2, "only the canonical Collector and Generator are registered");
+        for contract in ["Beskid.Compiler.Collect.Collector", "Beskid.Compiler.Collect.Generator"] {
+            let registration = registrations
+                .iter()
+                .find(|registration| registration["contractId"] == contract)
+                .unwrap_or_else(|| panic!("missing registration for {contract}"));
+            assert!(
+                registration["entrySymbol"].as_str().is_some_and(|symbol| !symbol.is_empty()),
+                "{contract} must name its exported entry symbol"
+            );
+        }
         let first_dir = first.descriptor().artifact_dir.clone();
         let cache_lock = root.join(".beskid/obj/mods/DemoMod/.cache-lock");
         fs::remove_file(&cache_lock).expect("the build held the package lock");
@@ -603,7 +520,6 @@ DemoMod {
         assert_eq!(reused.descriptor().artifact_dir, first_dir);
         reused.verify_native_closure().expect("reused artifact keeps its verified native closure");
 
-        let source = root.join("Src/Mod.bd");
         let mut text = fs::read_to_string(&source).expect("mod source");
         // A structural edit: one process's syntax database admits a changed source only with a
         // new expanded tree, so a trivia-only edit is not a new Mod revision there.
@@ -717,7 +633,7 @@ DemoMod {
     /// program that imports that package's surface activates it.
     #[test]
     fn corelib_mods_activate_only_for_programs_that_reach_their_package() {
-        beskid_tools::ensure_bundled_corelib().expect("provision the installed Corelib");
+        beskid_tools::ensure_bundled_corelib(&beskid_corelib_embed::CORELIB_BUNDLE).expect("provision the installed Corelib");
         let root = unique_temp_dir("beskid_cli_mod_activation");
         let host_input = |name: &str, source: &str| {
             let host = root.join(name);
@@ -790,16 +706,6 @@ DemoMod {
             } else {
                 fs::copy(entry.path(), &target).expect("copy file");
             }
-        }
-    }
-
-    fn host_abi_target() -> &'static str {
-        if cfg!(target_os = "macos") {
-            "aarch64-apple-darwin"
-        } else if cfg!(target_os = "linux") {
-            "x86_64-unknown-linux-gnu"
-        } else {
-            "x86_64-pc-windows-msvc"
         }
     }
 

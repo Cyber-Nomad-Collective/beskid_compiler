@@ -241,10 +241,8 @@ pub fn collect_validated_extern_signatures<M: Module>(
 ) -> Result<HashMap<String, Signature>, String> {
     let pointer = module.isa().pointer_type();
     let mut extern_sigs: HashMap<String, Signature> = HashMap::new();
-    let mut ctx_probe = module.make_context();
     for function in &artifact.functions {
-        ctx_probe.func = function.function.clone();
-        for (_func_ref, ext_func) in ctx_probe.func.dfg.ext_funcs.iter() {
+        for (_func_ref, ext_func) in function.function.dfg.ext_funcs.iter() {
             if let ExternalName::TestCase(name) = &ext_func.name {
                 let symbol = String::from_utf8_lossy(name.raw()).to_string();
                 if artifact
@@ -253,7 +251,7 @@ pub fn collect_validated_extern_signatures<M: Module>(
                     .chain(artifact.trusted_extern_imports.iter())
                     .any(|e| e.symbol == symbol)
                 {
-                    let sig = ctx_probe.func.dfg.signatures[ext_func.signature].clone();
+                    let sig = function.function.dfg.signatures[ext_func.signature].clone();
                     validate_ffi_signature(&sig, pointer)
                         .map_err(|msg| format!("extern signature not allowed for {symbol}: {msg}"))?;
                     if let Some(prev) = extern_sigs.get(&symbol) {
@@ -266,7 +264,6 @@ pub fn collect_validated_extern_signatures<M: Module>(
                 }
             }
         }
-        module.clear_context(&mut ctx_probe);
     }
     Ok(extern_sigs)
 }
@@ -343,7 +340,10 @@ pub fn declare_validated_extern_imports<M: Module>(
 ) -> Result<(), ExternDeclarationError> {
     let extern_sigs =
         collect_validated_extern_signatures(module, artifact).map_err(ExternDeclarationError::InvalidSignature)?;
-    for (symbol, sig) in &extern_sigs {
+    // Declare in symbol order: declaration order is the object's symbol-table order.
+    let mut extern_sigs = extern_sigs.iter().collect::<Vec<_>>();
+    extern_sigs.sort_unstable_by(|left, right| left.0.cmp(right.0));
+    for (symbol, sig) in extern_sigs {
         if func_ids.contains_key(symbol) {
             continue;
         }

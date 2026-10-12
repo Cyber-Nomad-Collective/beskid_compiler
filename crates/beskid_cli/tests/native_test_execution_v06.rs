@@ -81,32 +81,6 @@ fn v06_native_real_project_target_keeps_manifest_resolution() {
     assert!(!root.path().join("__synthetic__.bproj").exists());
 }
 
-#[test]
-fn v06_native_std_qualified_import_is_rejected_with_native_replacement() {
-    let root = tempfile::tempdir().unwrap();
-    let input = root.path().join("Main.bd");
-    std::fs::write(&input, "use Std.Testing.Assert;\ntest Unprefixed { Assert.Fail(\"must never execute\"); }\n").unwrap();
-    let output = Command::new(env!("CARGO_BIN_EXE_beskid_cli"))
-        .args(["test", "--plain", "--json"])
-        .arg(&input)
-        .env("BESKID_CONFIG_DIR", root.path().join("config"))
-        .env("BESKID_HOME", root.path().join("toolchain-home"))
-        .env("OTEL_SDK_DISABLED", "true")
-        .output()
-        .unwrap();
-    assert!(!output.status.success());
-    let text = format!("{}{}", String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
-    assert!(
-        text.contains("unknown import path `Std.Testing.Assert`: the `Std` namespace does not exist"),
-        "a Std-qualified import must report the removed namespace: {text}"
-    );
-    assert!(
-        !text.contains("native test `Unprefixed` exited"),
-        "a Std-qualified import must fail before native execution: {text}"
-    );
-    assert!(!root.path().join("__synthetic__.bproj").exists());
-}
-
 #[cfg(unix)]
 #[test]
 fn v06_native_matrix_parent_deadline_stops_active_nested_executable() {

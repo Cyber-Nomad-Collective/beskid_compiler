@@ -21,6 +21,9 @@ pub(in crate::semantic_contract) fn node_type_tracked(
         if let Some(binary) = node.of::<beskid_analysis::syntax::BinaryExpression>() {
             return Some(abi_type_for_binary_expression(db, program, index, key, binary));
         }
+        if node.of::<beskid_analysis::syntax::MemberExpression>().is_some() {
+            return Some(abi_type(db, key).and_then(|ty| ty.ok_or_else(|| SemanticError::unavailable("node_type"))));
+        }
         if node.of::<beskid_analysis::syntax::ClifBlockExpression>().is_some() {
             return Some(clif_block_context_type(db, key));
         }

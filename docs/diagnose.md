@@ -237,7 +237,7 @@ misattributed product bug.
 
 Usage:
 ```
-scripts/diagnose/crashdiag.sh --target TextRegexTests --slice cov
+scripts/diagnose/crashdiag.sh --target TextSuite --slice cov
 scripts/diagnose/crashdiag.sh --log /path/to/captured.log
 scripts/diagnose/crashdiag.sh --exit 132 --bin /target/cov/debug/beskid_cli
 ```

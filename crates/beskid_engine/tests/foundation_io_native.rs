@@ -112,7 +112,6 @@ fn foundation_io_closer_stream_and_scoped_cleanup_are_native_safe() {
 }
 
 #[test]
-#[ignore = "requires the staged native runtime-kit matrix prefix"]
 fn staged_runtime_kit_emitted_binary_round_trips_redirected_standard_streams() {
     run_staged_standard_stream_fixture(
         "foundation_redirected_streams.bd",
@@ -123,7 +122,6 @@ fn staged_runtime_kit_emitted_binary_round_trips_redirected_standard_streams() {
 }
 
 #[test]
-#[ignore = "requires the staged native runtime-kit matrix prefix"]
 fn staged_runtime_kit_emitted_binary_reads_redirected_standard_input() {
     run_staged_standard_stream_fixture(
         "foundation_redirected_input.bd",
@@ -134,19 +132,16 @@ fn staged_runtime_kit_emitted_binary_reads_redirected_standard_input() {
 }
 
 #[test]
-#[ignore = "requires the staged native runtime-kit matrix prefix"]
 fn staged_runtime_kit_emitted_binary_writes_redirected_standard_output() {
     run_staged_standard_stream_fixture("foundation_redirected_output.bd", b"", b"redirected-stdout\n", b"");
 }
 
 #[test]
-#[ignore = "requires the staged native runtime-kit matrix prefix"]
 fn staged_runtime_kit_emitted_binary_writes_redirected_standard_error() {
     run_staged_standard_stream_fixture("foundation_redirected_stderr.bd", b"", b"", b"redirected-stderr\n");
 }
 
 #[test]
-#[ignore = "requires the staged native runtime-kit matrix prefix"]
 fn staged_runtime_kit_emitted_binary_handoffs_core_args_through_the_executable_host() {
     let (output_dir, executable) = build_staged_foundation_executable("foundation_redirected_args.bd", "Main");
     #[cfg(all(target_os = "windows", target_arch = "x86_64", target_env = "msvc"))]
@@ -218,7 +213,6 @@ fn staged_runtime_kit_emitted_binary_handoffs_core_args_through_the_executable_h
 }
 
 #[test]
-#[ignore = "requires the staged native runtime-kit matrix prefix"]
 fn staged_runtime_kit_emitted_binary_runs_a_custom_unit_entry() {
     let (_output, executable) = build_staged_foundation_executable("foundation_redirected_unit.bd", "Start");
     let result = run_bounded("custom unit executable", &mut Command::new(&executable), ROUTE_LIMIT);

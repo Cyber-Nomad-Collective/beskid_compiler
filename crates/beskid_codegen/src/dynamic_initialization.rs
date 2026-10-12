@@ -203,9 +203,14 @@ pub(crate) fn issue_dynamic_initialization(
     if input.typed_program().generation.0 == 0 {
         return Err("Dynamic requires a nonzero actual source generation".into());
     }
-    let mut units =
-        input.typed_program().assembly.units.iter().map(|u| (&u.logical_name, &u.program)).collect::<Vec<_>>();
-    units.sort_by(|a, b| a.0.cmp(b.0));
+    let mut units = input
+        .typed_program()
+        .assembly
+        .units
+        .iter()
+        .map(|u| (input.portable_unit_label(&u.path, &u.logical_name), &u.program))
+        .collect::<Vec<_>>();
+    units.sort_by(|a, b| a.0.cmp(&b.0));
     let source: [u8; 32] = Sha256::digest(serde_json::to_vec(&units).map_err(|e| e.to_string())?).into();
     let mut identity = Sha256::new();
     identity.update(b"beskid.Dynamic.Initialization.V1\0");

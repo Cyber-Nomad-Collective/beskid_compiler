@@ -132,7 +132,8 @@ pub fn emit_work_unit<O: PipelineObserver + ?Sized>(
     }
 }
 
-/// Log the current unit to tracing and forward a [`PipelineEvent::WorkUnit`] to observers.
+/// Log the current unit to tracing at DEBUG (one line per unit is too much for the default INFO
+/// subscriber) and forward a [`PipelineEvent::WorkUnit`] to observers.
 pub fn report_progress<O: PipelineObserver + ?Sized>(
     obs: Option<&O>,
     id: &'static str,
@@ -142,7 +143,7 @@ pub fn report_progress<O: PipelineObserver + ?Sized>(
 ) {
     let label = label.into();
     if id.starts_with("semantic") {
-        tracing::info!(
+        tracing::debug!(
             target: "beskid_tools::pipeline::semantic",
             phase = id,
             done,
@@ -151,7 +152,7 @@ pub fn report_progress<O: PipelineObserver + ?Sized>(
             "progress"
         );
     } else {
-        tracing::info!(
+        tracing::debug!(
             target: "beskid_tools::pipeline::build",
             phase = id,
             done,

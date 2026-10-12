@@ -1,7 +1,6 @@
 //! JIT regression for corelib `Console.Controls.Frame.Repeat` via project resolution.
 
 use std::path::PathBuf;
-use std::sync::Mutex;
 
 use beskid_abi::runtime_kit::BuildProfile;
 use beskid_analysis::services::{PrepareOptions, resolve_input};
@@ -11,13 +10,7 @@ use beskid_queries::{configure_db_for_project, prepare_compilation_with_db, with
 
 use beskid_tests_mod_host::ModHostScope;
 
-/// Serializes cases in this binary.
-///
-/// Every case prepares an entry of the same corelib test project, so concurrent cases share
-/// the process-wide query database project and entry-session registry fingerprint, and each
-/// activates an engine against the runtime kit. The production CLI prepares and runs one entry
-/// at a time per process; this lock restores that model under libtest's parallel runner.
-static CORELIB_JIT_LOCK: Mutex<()> = Mutex::new(());
+use crate::shared_kit;
 
 fn corelib_tests_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../corelib/beskid_corelib/tests/corelib_tests")
@@ -31,10 +24,15 @@ fn run_corelib_test(entry: &str, target_name: &str, test_name: &str) -> String {
 }
 
 fn run_corelib_tests(entry: &str, target_name: &str, test_names: &[&str]) -> Vec<String> {
-    let _serial = CORELIB_JIT_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-    // One exact kit serves the engine and the native Mods that preparation runs.
+    // The shared-kit lease serializes the cases of this binary: every case prepares an entry of
+    // the same corelib test project (one process-wide query database project and entry-session
+    // fingerprint) and activates an engine over the one kit image this binary loads, which only
+    // one engine may initialize at a time. One exact kit serves the engine and the native Mods
+    // that preparation runs.
+    let kit_lease = shared_kit::debug();
     let mod_host = ModHostScope::shared().expect("enter the shared native Mod host scope");
-    let kit_prefix = mod_host.runtime_prefix();
+    assert_eq!(mod_host.runtime_prefix(), kit_lease.prefix(), "the Mod host and the engine share one kit");
+    let kit_prefix = kit_lease.prefix();
     let project_root = corelib_tests_root();
     let entry = project_root.join(entry);
     configure_db_for_project(&project_root);
@@ -73,14 +71,14 @@ fn run_corelib_tests(entry: &str, target_name: &str, test_names: &[&str]) -> Vec
 
 #[test]
 fn jit_corelib_repeat_builds_string_entrypoint() {
-    run_corelib_test("src/console/ControlsFrameTests.bd", "ConsoleControlsFrameTests", "repeat_builds_string");
+    run_corelib_test("src/console/ConsoleSuite.bd", "ConsoleSuite", "repeat_builds_string");
 }
 
 #[test]
 fn jit_progress_bar_mixed_interpolation_preserves_exact_fill() {
     run_corelib_test(
-        "src/console/ControlsProgressBarTests.bd",
-        "ConsoleControlsProgressBarTests",
+        "src/console/ConsoleSuite.bd",
+        "ConsoleSuite",
         "progress_bar_renders_body_with_exact_fill",
     );
 }
@@ -88,16 +86,16 @@ fn jit_progress_bar_mixed_interpolation_preserves_exact_fill() {
 #[test]
 fn jit_numeric_interpolation_preserves_value() {
     run_corelib_test(
-        "src/console/ControlsProgressBarTests.bd",
-        "ConsoleControlsProgressBarTests",
+        "src/console/ConsoleSuite.bd",
+        "ConsoleSuite",
         "progress_bar_formats_numeric_interpolation",
     );
 }
 
 #[test]
 fn jit_numeric_interpolation_has_decimal_bytes() {
-    let entry = "src/console/ControlsProgressBarTests.bd";
-    let target = "ConsoleControlsProgressBarTests";
+    let entry = "src/console/ConsoleSuite.bd";
+    let target = "ConsoleSuite";
     let actual = run_corelib_tests(
         entry,
         target,
@@ -109,8 +107,8 @@ fn jit_numeric_interpolation_has_decimal_bytes() {
 #[test]
 fn jit_adjacent_string_interpolation_preserves_values() {
     run_corelib_test(
-        "src/console/ControlsProgressBarTests.bd",
-        "ConsoleControlsProgressBarTests",
+        "src/console/ConsoleSuite.bd",
+        "ConsoleSuite",
         "progress_bar_concatenates_adjacent_string_interpolations",
     );
 }

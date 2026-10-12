@@ -1,4 +1,4 @@
-use std::collections::{HashSet, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -53,6 +53,7 @@ pub fn assemble_program_with_materializer(
     materializer: Option<UnitMaterializer>,
     pipeline: Option<&dyn PipelineObserver>,
 ) -> Result<ProgramAssembly, AssemblyError> {
+    let assembly_started = std::time::Instant::now();
     let generation = SyntaxGenerationId::allocate().ok_or(AssemblyError::GenerationExhausted)?;
     let roots = effective_roots_for_plan(plan, workspace);
     let module_roots: Vec<PathBuf> = super::roots::module_roots_from_effective(&roots);
@@ -85,6 +86,18 @@ pub fn assemble_program_with_materializer(
 
     match options.discovery {
         AssemblyDiscovery::ImportClosure => {
+            // One assembly sees one filesystem state, so each module path resolves once and each
+            // discovered path is canonicalized once, however many units import it.
+            let mut module_files: HashMap<String, Option<PathBuf>> = HashMap::new();
+            let mut resolve = |module_path: &str| -> Result<Option<PathBuf>, AssemblyError> {
+                if let Some(file) = module_files.get(module_path) {
+                    return Ok(file.clone());
+                }
+                let file = resolve_module_file(module_path, &roots)?;
+                module_files.insert(module_path.to_owned(), file.clone());
+                Ok(file)
+            };
+            let mut canonical_keys: HashMap<PathBuf, PathBuf> = HashMap::new();
             let mut queue = VecDeque::new();
             queue.push_back(entry_path.to_path_buf());
             queue.extend(adapter_seeds.iter().cloned());
@@ -93,7 +106,10 @@ pub fn assemble_program_with_materializer(
                 if discovered_sources.len() >= options.max_units {
                     return Err(AssemblyError::MaxUnits { max: options.max_units });
                 }
-                let key = path.canonicalize().unwrap_or_else(|_| path.clone());
+                let key = canonical_keys
+                    .entry(path.clone())
+                    .or_insert_with(|| path.canonicalize().unwrap_or_else(|_| path.clone()))
+                    .clone();
                 let is_entry = key == entry_canonical;
                 if !seen.insert(key) {
                     continue;
@@ -133,11 +149,11 @@ pub fn assemble_program_with_materializer(
                     continue;
                 };
                 for import_path in import_paths_from_program(&discovery_program.node) {
-                    if let Some(dep_file) = resolve_module_file(&import_path, &roots)? {
+                    if let Some(dep_file) = resolve(&import_path)? {
                         queue.push_back(dep_file);
                     }
                     if let Some(parent_import) = parent_module_import_path(&import_path)
-                        && let Some(parent_file) = resolve_module_file(&parent_import, &roots)?
+                        && let Some(parent_file) = resolve(&parent_import)?
                     {
                         queue.push_back(parent_file);
                     }
@@ -145,12 +161,12 @@ pub fn assemble_program_with_materializer(
                 let mut qualified_paths = module_paths_from_qualified_references(&discovery_program.node);
                 qualified_paths.sort();
                 for module_path in qualified_paths {
-                    if let Some(dep_file) = resolve_module_file(&module_path, &roots)? {
+                    if let Some(dep_file) = resolve(&module_path)? {
                         queue.push_back(dep_file);
                     }
                 }
                 for module_path in module_declaration_paths_from_program(&discovery_program.node) {
-                    if let Some(dep_file) = resolve_module_file(&module_path, &roots)? {
+                    if let Some(dep_file) = resolve(&module_path)? {
                         queue.push_back(dep_file);
                     }
                 }
@@ -252,6 +268,7 @@ pub fn assemble_program_with_materializer(
     let salsa_build = materializer.as_ref().map(|build| build.as_ref() as _);
     let build_total = build_inputs.len() as u64;
     let build_done = AtomicU64::new(0);
+    let discovery_elapsed = assembly_started.elapsed();
     let built_units: Result<Vec<(usize, bool, SourceUnit, SyntaxIndex)>, AssemblyError> = pool.install(|| {
         build_inputs
             .par_iter()
@@ -260,7 +277,7 @@ pub fn assemble_program_with_materializer(
                 let logical_name = input.path.display().to_string();
                 let file = input.path.display().to_string();
                 let started = std::time::Instant::now();
-                let unit_span = tracing::info_span!(
+                let unit_span = tracing::debug_span!(
                     target: "beskid.analysis.assembly",
                     "assembly.unit",
                     unit = %logical_name,
@@ -303,6 +320,15 @@ pub fn assemble_program_with_materializer(
     });
 
     let mut built_units = built_units?;
+    // Phase breakdown of one assembly (enable with `RUST_LOG=beskid.timing=debug`).
+    tracing::debug!(
+        target: "beskid.timing",
+        phase = "program.assemble",
+        units = built_units.len(),
+        discover_ms = discovery_elapsed.as_millis() as u64,
+        build_units_ms = (assembly_started.elapsed() - discovery_elapsed).as_millis() as u64,
+        "assembly timing"
+    );
     built_units.sort_by_key(|(index, _, _, _)| *index);
     let mut units = Vec::with_capacity(built_units.len());
     let mut syntax_indexes = Vec::with_capacity(built_units.len());

@@ -25,7 +25,7 @@ fn main() {
     )
     .unwrap_or_else(|| {
         panic!(
-            "beskid_tools: corelib workspace not found. Expected `../../corelib` with a \
+            "beskid_corelib_embed: corelib workspace not found. Expected `../../corelib` with a \
                  `.bws` workspace manifest plus `beskid_corelib/` (init the `compiler/corelib` \
                  submodule). Set {} to an absolute path to the **workspace** directory (parent of \
                  `beskid_corelib/`) to override. Hint: `git submodule update --init --recursive` \
@@ -43,7 +43,7 @@ fn main() {
     // malformed member fails the build instead of shipping a bundle that cannot resolve itself.
     let inventory = copy_corelib_bundle(&corelib_workspace_dir, &dest).unwrap_or_else(|error| {
         panic!(
-            "beskid_tools: cannot derive the embedded Corelib bundle from {}: {error}",
+            "beskid_corelib_embed: cannot derive the embedded Corelib bundle from {}: {error}",
             corelib_workspace_dir.display()
         )
     });

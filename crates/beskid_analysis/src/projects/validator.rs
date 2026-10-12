@@ -182,13 +182,8 @@ pub fn validate_manifest(manifest: &ProjectManifest) -> Result<(), ProjectError>
                     continue;
                 }
                 if dependency.path.as_deref().map(str::trim).unwrap_or("").is_empty() {
-                    let hint = if dependency.name.eq_ignore_ascii_case("Std") {
-                        format!("; the installed Corelib dependency is named `{CORE_DEPENDENCY_NAME}`, not `Std`")
-                    } else {
-                        String::new()
-                    };
                     return Err(ProjectError::Validation(format!(
-                        "dependency `{}` with source = path requires `path`{hint}",
+                        "dependency `{}` with source = path requires `path`",
                         dependency.name
                     )));
                 }

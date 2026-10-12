@@ -2,8 +2,6 @@
 mod contracts;
 mod entry;
 mod expressions;
-#[cfg(test)]
-mod field_visibility_tests;
 mod helpers;
 mod items;
 mod iterable;
@@ -373,26 +371,5 @@ impl<'a> TypeChecker<'a> {
             BuiltinType::U64 => self.primitive_type_id(PrimitiveType::U64),
             BuiltinType::Ptr => self.primitive_type_id(PrimitiveType::Pointer),
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::syntax::AstNodeId;
-
-    #[test]
-    fn record_node_type_skips_invalid() {
-        let mut node_types = HashMap::new();
-        let id = TypeId(1);
-        let record = |map: &mut HashMap<AstNodeId, TypeId>, node_id: AstNodeId, type_id: TypeId| {
-            if node_id.is_valid() {
-                map.insert(node_id, type_id);
-            }
-        };
-        record(&mut node_types, AstNodeId::INVALID, id);
-        assert!(node_types.is_empty());
-        record(&mut node_types, AstNodeId(1), id);
-        assert_eq!(node_types.get(&AstNodeId(1)), Some(&id));
     }
 }

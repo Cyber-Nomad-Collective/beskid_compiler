@@ -301,19 +301,30 @@ pub fn lower_prepared_native_mod(
             let identity = NativeModCallableIdentity {
                 source_file: format!("sources/{source_file}"),
                 source_sha256: format!("{:x}", Sha256::digest(unit.source.as_bytes())),
-                generation: entry.method.generation.0,
+                // Run-independent ordinal (1 = this program's generation): a restored session
+                // snapshot resumes absolute generation numbering, which must not reach the artifact.
+                generation: input
+                    .typed_program()
+                    .generation
+                    .0
+                    .checked_sub(entry.method.generation.0)
+                    .map(|distance| distance + 1)
+                    .context("native callable is newer than its program generation")?,
                 node: entry.method.node.0,
                 internal_symbol: method.symbol.clone(),
                 link_symbol: symbol.clone(),
-                signature_sha256: format!("{:x}", Sha256::digest(format!("{method_signature:?}").as_bytes())),
+                signature_sha256: format!(
+                    "{:x}",
+                    Sha256::digest(portable_transport_signature(&input, &method_signature).as_bytes())
+                ),
                 contract_family: entry.witness.family.canonical_name().to_owned(),
                 sdk_request_layout_sha256: format!(
                     "{:x}",
-                    Sha256::digest(format!("{:?}", method_signature.parameters()[1]).as_bytes())
+                    Sha256::digest(portable_transport_type(&input, &method_signature.parameters()[1]).as_bytes())
                 ),
                 sdk_result_layout_sha256: format!(
                     "{:x}",
-                    Sha256::digest(format!("{:?}", method_signature.result()).as_bytes())
+                    Sha256::digest(portable_transport_type(&input, method_signature.result()).as_bytes())
                 ),
             };
             entries.push(PreparedNativeModEntry {
@@ -443,14 +454,15 @@ fn bootstrap_factory(
     if let Some(plan) = input.native_empty_factory_plan(owner) {
         let getter = format!(
             "__beskid_mod_factory_request_u{}_g{}_n{}",
-            owner
-                .unit
-                .path(input.database())
-                .to_string_lossy()
-                .as_bytes()
-                .iter()
-                .fold(0u64, |hash, byte| hash.wrapping_mul(131).wrapping_add(u64::from(*byte))),
-            owner.generation.0,
+            {
+                let path = owner.unit.path(input.database());
+                input
+                    .portable_unit_label(&path, &path.to_string_lossy())
+                    .as_bytes()
+                    .iter()
+                    .fold(0u64, |hash, byte| hash.wrapping_mul(131).wrapping_add(u64::from(*byte)))
+            },
+            input.generation_tag(owner.generation),
             owner.node.0
         );
         if !artifact.functions.iter().any(|function| function.name == getter) {
@@ -515,6 +527,50 @@ fn bootstrap_factory(
         symbol: crate::internal_link_symbol(&item.symbol),
         arguments: vec![receiver, NativeReceiverBootstrap::FactoryRequest { type_id: request }],
     })
+}
+
+/// Run-independent rendering of a transport signature for descriptor identities. Debug output of
+/// the signature carries interned unit ids and absolute syntax generations, which differ between
+/// identical builds (a restored session snapshot shifts both); declarations are named by their
+/// portable unit label, generation tag and node instead.
+fn portable_transport_signature(
+    input: &crate::CodegenInput<'_>,
+    signature: &beskid_queries::NativeModTransportSignature,
+) -> String {
+    format!(
+        "{}({})->{}",
+        portable_declaration(input, signature.declaration()),
+        signature.parameters().iter().map(|ty| portable_transport_type(input, ty)).collect::<Vec<_>>().join(","),
+        portable_transport_type(input, signature.result())
+    )
+}
+
+fn portable_transport_type(input: &crate::CodegenInput<'_>, ty: &beskid_queries::NativeModTransportType) -> String {
+    use beskid_queries::NativeModTransportType;
+    match ty {
+        NativeModTransportType::Scalar(scalar) => format!("scalar:{}", scalar.0),
+        NativeModTransportType::Array(element) => format!("[{}]", portable_transport_type(input, element)),
+        NativeModTransportType::Nominal { declaration, arguments } => format!(
+            "{}<{}>",
+            portable_declaration(input, *declaration),
+            arguments.iter().map(|argument| portable_transport_type(input, argument)).collect::<Vec<_>>().join(",")
+        ),
+        NativeModTransportType::Function { parameters, result } => format!(
+            "fn({})->{}",
+            parameters.iter().map(|parameter| portable_transport_type(input, parameter)).collect::<Vec<_>>().join(","),
+            portable_transport_type(input, result)
+        ),
+    }
+}
+
+fn portable_declaration(input: &crate::CodegenInput<'_>, declaration: beskid_queries::AstNodeKey) -> String {
+    let path = declaration.unit.path(input.database());
+    format!(
+        "{}#g{}:n{}",
+        input.portable_unit_label(&path, &path.to_string_lossy()),
+        input.generation_tag(declaration.generation),
+        declaration.node.0
+    )
 }
 
 fn describe_sites(db: &dyn beskid_queries::Db, keys: &[beskid_queries::AstNodeKey]) -> String {

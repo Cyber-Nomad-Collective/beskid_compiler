@@ -76,6 +76,18 @@ impl NativeModCallbackCapability {
                 pending.extend(children.iter().copied().map(|child| (child, depth + 1)));
             }
         }
+        // The traversal follows hash-set order; the adapter plan, its type ids and the generated
+        // adapter must not, so admitted callbacks are ordered by their issued symbol and node.
+        let mut ordered = callbacks
+            .into_iter()
+            .map(|callback| {
+                let symbol = beskid_queries::native_mod_callback_symbol(input.database(), callback)
+                    .map_err(|error| anyhow::anyhow!("native callback symbol: {error}"))?;
+                Ok((symbol, callback.wrapper().node.0, callback))
+            })
+            .collect::<anyhow::Result<Vec<_>>>()?;
+        ordered.sort_by(|left, right| (&left.0, left.1).cmp(&(&right.0, right.1)));
+        let callbacks = ordered.into_iter().map(|(_, _, callback)| callback).collect::<Vec<_>>();
         Ok(Self { generation, wrappers: Arc::new(wrappers), callbacks: Arc::new(callbacks) })
     }
     pub(super) fn callbacks(&self) -> impl Iterator<Item=NativeModCallback> + '_ { self.callbacks.iter().copied() }

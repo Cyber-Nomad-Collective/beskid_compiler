@@ -444,8 +444,17 @@ pub(in crate::semantic_contract) fn array_index_element_template_tracked(
         if !segment.node.type_args.is_empty() {
             return Some(Err(SemanticError::unavailable("array_index_element_abi_type")));
         }
-        let declaration =
-            resolve_lexical_declaration(program, index, index_node, segment.node.name.node.name.as_str())?;
+        let Some(declaration) =
+            resolve_lexical_declaration(program, index, index_node, segment.node.name.node.name.as_str())
+        else {
+            // A bare name that is no lexical local is a field of the implicit method receiver
+            // (`entries[index]` inside a method of the declaring type); its array identity comes
+            // from the field access fact, exactly like every other non-local target above.
+            return Some(
+                generic_source_expression_identity(db, AstNodeKey { node: index_node, ..key })
+                    .map(|element| ArrayIndexElementTemplate::Concrete(element.abi_type())),
+            );
+        };
         let parent = parent_node(index, declaration)?;
         if index.kind(parent) == Some(beskid_analysis::syntax_query::NodeKind::Pattern) {
             return Some(

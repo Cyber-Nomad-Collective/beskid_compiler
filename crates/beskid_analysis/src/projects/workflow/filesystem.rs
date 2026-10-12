@@ -57,7 +57,13 @@ pub(super) fn copy_directory_when_newer(source: &Path, destination: &Path) -> Re
             .file_type()
             .map_err(|source| ProjectError::MaterializationMetadata { path: stale.clone(), source })?;
         let removed = if file_type.is_dir() { fs::remove_dir_all(&stale) } else { fs::remove_file(&stale) };
-        removed.map_err(|source| ProjectError::MaterializationPrune { path: stale, source })?;
+        match removed {
+            Ok(()) => {}
+            // Parallel target workers mirror the same source root; a stale entry another worker
+            // has already pruned is gone, which is the state this pass wanted.
+            Err(source) if source.kind() == std::io::ErrorKind::NotFound => {}
+            Err(source) => return Err(ProjectError::MaterializationPrune { path: stale, source }),
+        }
     }
 
     Ok(())

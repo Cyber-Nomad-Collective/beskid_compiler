@@ -25,34 +25,45 @@ impl StringInterner for ArtifactStringInterner<'_> {
         text: &str,
     ) -> Result<Value, beskid_isle::StringMaterializationError> {
         let symbol = self.context.intern_string_literal(text.as_bytes());
-        let global = builder.func.create_global_value(GlobalValueData::Symbol {
-            name: ExternalName::testcase(symbol),
-            offset: 0.into(),
-            // JIT code and readonly data use independent allocation arenas. Keep the literal
-            // address range-independent instead of promising an AArch64 ADRP-reachable target.
-            colocated: false,
-            tls: false,
-        });
-        let bytes = builder.ins().symbol_value(self.pointer_type, global);
-        let byte_len = builder.ins().iconst(self.pointer_type, text.len() as i64);
-        let mut signature = Signature::new(builder.func.signature.call_conv);
-        signature.params.push(cranelift_codegen::ir::AbiParam::new(self.pointer_type));
-        signature.params.push(cranelift_codegen::ir::AbiParam::new(self.pointer_type));
-        signature.returns.push(cranelift_codegen::ir::AbiParam::new(self.pointer_type));
-        let signature = builder.import_signature(signature);
-        let function = builder.func.import_function(ExtFuncData {
-            name: ExternalName::testcase("str_new"),
-            signature,
-            colocated: false,
-            patchable: false,
-        });
-        let call = builder.ins().call(function, &[bytes, byte_len]);
-        builder
-            .inst_results(call)
-            .first()
-            .copied()
-            .ok_or(beskid_isle::StringMaterializationError::Artifact("str_new returned no value"))
+        materialize_string_literal(builder, symbol, text, self.pointer_type)
     }
+}
+
+/// Materialize an interned literal as a managed string: its data address and byte length passed
+/// to `str_new`.
+pub(crate) fn materialize_string_literal(
+    builder: &mut FunctionBuilder<'_>,
+    symbol: String,
+    text: &str,
+    pointer_type: Type,
+) -> Result<Value, beskid_isle::StringMaterializationError> {
+    let global = builder.func.create_global_value(GlobalValueData::Symbol {
+        name: ExternalName::testcase(symbol),
+        offset: 0.into(),
+        // JIT code and readonly data use independent allocation arenas. Keep the literal
+        // address range-independent instead of promising an AArch64 ADRP-reachable target.
+        colocated: false,
+        tls: false,
+    });
+    let bytes = builder.ins().symbol_value(pointer_type, global);
+    let byte_len = builder.ins().iconst(pointer_type, text.len() as i64);
+    let mut signature = Signature::new(builder.func.signature.call_conv);
+    signature.params.push(cranelift_codegen::ir::AbiParam::new(pointer_type));
+    signature.params.push(cranelift_codegen::ir::AbiParam::new(pointer_type));
+    signature.returns.push(cranelift_codegen::ir::AbiParam::new(pointer_type));
+    let signature = builder.import_signature(signature);
+    let function = builder.func.import_function(ExtFuncData {
+        name: ExternalName::testcase("str_new"),
+        signature,
+        colocated: false,
+        patchable: false,
+    });
+    let call = builder.ins().call(function, &[bytes, byte_len]);
+    builder
+        .inst_results(call)
+        .first()
+        .copied()
+        .ok_or(beskid_isle::StringMaterializationError::Artifact("str_new returned no value"))
 }
 
 /// Manifest symbols available only to compiler-authorized canonical runtime source. Ordinary

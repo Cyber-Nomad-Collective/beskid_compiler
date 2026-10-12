@@ -19,7 +19,7 @@ pub fn execute(args: CorelibArgs) -> Result<()> {
 }
 
 fn generate_corelib_project(output: &Path) -> Result<()> {
-    let provisioned = beskid_tools::ensure_bundled_corelib()?;
+    let provisioned = beskid_tools::ensure_bundled_corelib(&beskid_corelib_embed::CORELIB_BUNDLE)?;
     let template_root = provisioned.root;
     validate_template_layout(&template_root)?;
 

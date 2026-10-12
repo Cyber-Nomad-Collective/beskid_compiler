@@ -58,7 +58,6 @@ fn aot_preparation_resolves_only_the_validated_static_artifact_and_allowlist() {
 }
 
 #[test]
-#[ignore = "requires the staged native runtime-kit matrix prefix"]
 fn staged_runtime_kit_resolves_the_canonical_static_archive() {
     let prefix = std::env::var_os("BESKID_RUNTIME_PREFIX")
         .map(std::path::PathBuf::from)
@@ -76,7 +75,6 @@ fn staged_runtime_kit_resolves_the_canonical_static_archive() {
 }
 
 #[test]
-#[ignore = "requires the staged native runtime-kit matrix prefix"]
 fn staged_runtime_kit_links_and_executes_with_the_canonical_static_archive() {
     let prefix = std::env::var_os("BESKID_RUNTIME_PREFIX")
         .map(std::path::PathBuf::from)

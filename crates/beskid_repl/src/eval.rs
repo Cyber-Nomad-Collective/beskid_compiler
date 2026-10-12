@@ -146,7 +146,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires the staged native runtime-kit matrix prefix"]
     fn staged_native_runtime_kit_evaluates_a_snippet() {
         let _serial = serial();
         let prefix = std::env::var_os("BESKID_RUNTIME_PREFIX")

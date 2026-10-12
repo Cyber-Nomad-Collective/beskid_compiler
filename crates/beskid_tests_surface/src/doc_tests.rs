@@ -63,7 +63,7 @@ fn doc_body_grammar_splits_variant_and_par_tags() {
     assert!(debug.iter().any(|(r, _)| *r == DocRule::ParTag), "expected ParTag in {debug:?}");
 }
 
-#[ignore = "doc/hover resolution fixtures need refreshed analysis facts after syntax-ISLE cutover"]
+#[ignore = "build_document_analysis returns no resolution for these sources (verified 2026-10-12); doc diagnostics need a query-backed analysis path"]
 #[test]
 fn doc_diagnostics_unknown_variant_name() {
     let src = "/// @variant(Ghost) nope\nenum Color {\n    Red,\n    Blue,\n}\n";
@@ -77,7 +77,7 @@ fn doc_diagnostics_unknown_variant_name() {
     );
 }
 
-#[ignore = "doc/hover resolution fixtures need refreshed analysis facts after syntax-ISLE cutover"]
+#[ignore = "build_document_analysis returns no resolution for these sources (verified 2026-10-12); doc diagnostics need a query-backed analysis path"]
 #[test]
 fn doc_diagnostics_variant_on_type_is_wrong_placement() {
     let src = "/// @variant(x) bad\ntype Point { i64 x, }\n";
@@ -91,10 +91,10 @@ fn doc_diagnostics_variant_on_type_is_wrong_placement() {
     );
 }
 
-#[ignore = "doc/hover resolution fixtures need refreshed analysis facts after syntax-ISLE cutover"]
+#[ignore = "build_document_analysis returns no resolution for these sources (verified 2026-10-12); doc diagnostics need a query-backed analysis path"]
 #[test]
 fn doc_diagnostics_par_without_generics_on_function() {
-    let src = "/// @par(T) bad\nunit Main() { return 42; }\n";
+    let src = "/// @par(T) bad\nunit Main() { return; }\n";
     let program = parse_program(src).unwrap();
     let snap = build_document_analysis(&program, "t.bd", src, None);
     assert!(snap.resolution.is_some());
@@ -105,7 +105,7 @@ fn doc_diagnostics_par_without_generics_on_function() {
     );
 }
 
-#[ignore = "doc/hover resolution fixtures need refreshed analysis facts after syntax-ISLE cutover"]
+#[ignore = "build_document_analysis returns no resolution for these sources (verified 2026-10-12); doc diagnostics need a query-backed analysis path"]
 #[test]
 fn doc_diagnostics_flag_unknown_arg_name() {
     let src = "/// @arg(nope) bad\ni64 Sum(\n    i64 left,\n    i64 right\n) { return left + right; }\n";
@@ -119,13 +119,13 @@ fn doc_diagnostics_flag_unknown_arg_name() {
     );
 }
 
-#[ignore = "doc/hover resolution fixtures need refreshed analysis facts after syntax-ISLE cutover"]
+#[ignore = "build_document_analysis returns no resolution for these sources (verified 2026-10-12); doc diagnostics need a query-backed analysis path"]
 #[test]
 fn hover_includes_doc_markdown_when_resolved() {
-    let src = "/// Hello **doc**\nunit Main() { return 42; }\n";
+    let src = "/// Hello **doc**\nunit Main() { return; }\n";
     let program = parse_program(src).unwrap();
     let snap = build_document_analysis(&program, "<memory>", src, None);
-    let name_start = src.find("main").expect("main");
+    let name_start = src.find("Main").expect("Main");
     let hover = hover_at_offset(&snap, name_start).expect("hover");
     assert!(hover.markdown.contains("Hello"));
     assert!(hover.markdown.contains("**doc**") || hover.markdown.contains("doc"));
@@ -208,7 +208,7 @@ test docs_inside_test_body {
     BeskidParser::parse(MainRule::Program, src).expect("program parser");
 }
 
-#[ignore = "doc/hover resolution fixtures need refreshed analysis facts after syntax-ISLE cutover"]
+#[ignore = "build_document_analysis returns no resolution for these sources (verified 2026-10-12); doc diagnostics need a query-backed analysis path"]
 #[test]
 fn hover_includes_member_doc_markdown() {
     let src = r#"
@@ -224,13 +224,13 @@ type User {
     assert!(hover.markdown.contains("Display name of the user."));
 }
 
-#[ignore = "doc/hover resolution fixtures need refreshed analysis facts after syntax-ISLE cutover"]
+#[ignore = "build_document_analysis returns no resolution for these sources (verified 2026-10-12); doc diagnostics need a query-backed analysis path"]
 #[test]
 fn resolved_ref_emits_pckg_doc_route_in_markdown_when_context_set() {
     let src = r#"
-/// See @ref(main) for details.
-unit other() { return 1; }
-unit Main() { return 42; }
+/// See @ref(Main) for details.
+unit Other() { return; }
+unit Main() { return; }
 "#;
     let program = parse_program(src).unwrap();
     let ctx = DocRefLinkContext {
@@ -246,5 +246,5 @@ unit Main() { return 42; }
         .collect::<Vec<_>>()
         .join("\n");
     assert!(blob.contains("/docs/demo-pkg%401.0.0/api/"), "expected pckg docs link, got {blob:?}");
-    assert!(blob.contains("](") && blob.contains("main"), "expected markdown link mentioning main, got {blob:?}");
+    assert!(blob.contains("](") && blob.contains("Main"), "expected markdown link mentioning Main, got {blob:?}");
 }

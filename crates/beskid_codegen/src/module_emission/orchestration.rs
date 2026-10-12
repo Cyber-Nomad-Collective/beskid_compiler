@@ -18,7 +18,6 @@ use super::imports::{
 use super::optional_externs::emit_optional_extern_support;
 use super::items::{ResolvedSyntaxModuleItem, SyntaxModuleItem};
 use super::specialization::resolve_module_items;
-use super::trace::{trace_item_facts, trace_key};
 use super::trampolines::{
     SchedulerCompletionTransfer, conservative_fiber_stack_requirement, emit_scheduler_fiber_entry,
     emit_scheduler_return_trampoline, emit_spawn_trampoline, expand_direct_spawn_items, resolve_lambda_trampolines,
@@ -34,7 +33,7 @@ use crate::closure_static::{
 use crate::isle_adapter::emit_isle_lambda_entry;
 use crate::{
     CodegenArtifact, CodegenContext, CodegenInput, ExternImport, emit_isle_closure_lambda_entry,
-    emit_isle_expression_with_call_importer, emit_isle_item_with_services, emit_isle_item_with_services_specialization,
+    emit_isle_expression_with_call_importer,
 };
 
 const ABI_V5_SCHEDULER_STACK_CHECK: &str = "beskid_rt_v5_scheduler_stack_check";
@@ -353,67 +352,7 @@ fn lower_resolved_syntax_program(
         };
         functions.push(crate::LoweredFunction { name: trampoline.symbol.clone(), function });
     }
-    for item in items {
-        {
-            let mut strings=ArtifactStringInterner{context:&mut context,pointer_type:isa.pointer_type()};
-            if let Some(function)=super::serialization::emit_compiled_shape_bridge(input,isa,item,items,&symbols,&mut strings)? {
-                functions.push(crate::LoweredFunction{name:item.symbol.clone(),function});continue;
-            }
-        }
-        if let Some(function)=super::dynamic::emit_unpack_bridge(input,isa,item,items,&symbols)? {
-            functions.push(crate::LoweredFunction{name:item.symbol.clone(),function});continue;
-        }
-        if let Some(function)=super::dynamic::emit_shape_bridge(input,isa,item,items)? {
-            functions.push(crate::LoweredFunction{name:item.symbol.clone(),function});continue;
-        }
-        if let Some(function) = super::dynamic::emit_pack_bridge(input, isa, item, items, &symbols)? {
-            functions.push(crate::LoweredFunction { name: item.symbol.clone(), function });
-            continue;
-        }
-        trace_item_facts(input, item.key, &symbols);
-        let started = Instant::now();
-        crate::isle_trace::event(|| {
-            format!(
-                "event=isle.selected rule=emit_item_statement item={} symbol={}",
-                trace_key(input.database(), item.key),
-                item.symbol
-            )
-        });
-        let function = {
-            let mut importer = ArtifactCallImporter { symbols: &symbols };
-            let mut strings = ArtifactStringInterner { context: &mut context, pointer_type: isa.pointer_type() };
-            match &item.specialization {
-                Some(specialization) => emit_isle_item_with_services_specialization(
-                    input,
-                    isa,
-                    item.key,
-                    specialization.clone(),
-                    &mut strings,
-                    &mut importer,
-                ),
-                None => emit_isle_item_with_services(input, isa, item.key, &mut strings, &mut importer),
-            }
-            .map_err(|error| {
-                crate::isle_trace::event(|| {
-                    format!(
-                        "event=isle.missing rule=emit_item_statement item={} elapsed_ms={} detail={}",
-                        beskid_queries::format_ast_node_site(input.database(), item.key),
-                        started.elapsed().as_millis(),
-                        error.display_with_db(input.database()),
-                    )
-                });
-                emission_error(input, error)
-            })?
-        };
-        crate::isle_trace::event(|| {
-            format!(
-                "event=isle.emitted item={} elapsed_ms={}",
-                trace_key(input.database(), item.key),
-                started.elapsed().as_millis(),
-            )
-        });
-        functions.push(crate::LoweredFunction { name: item.symbol.clone(), function });
-    }
+    functions.extend(super::parallel::emit_module_items(input, isa, items, &symbols, &mut context)?);
     let imports_scheduler_stack = !trampolines.is_empty() && scheduler_symbols.and_then(|(_, stack)| stack).is_none();
     if !trampolines.is_empty() {
         let (stack_check, stack_overflow) = scheduler_symbols
@@ -640,6 +579,9 @@ fn lower_resolved_syntax_program(
         input, isa, items, &symbols, &mut context, &mut functions,
     )?;
     let instances = items.iter().filter_map(|item| item.specialization.clone()).collect::<Vec<_>>();
+    // Item discovery order is not stable between runs; the emitted function order (object layout)
+    // must be, so functions are ordered by their unique symbol.
+    functions.sort_by(|left, right| left.name.cmp(&right.name));
     let mut artifact = CodegenArtifact {
         functions,
         string_literals: context.string_literals,

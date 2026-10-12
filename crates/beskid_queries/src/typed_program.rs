@@ -90,6 +90,7 @@ pub fn build_typed_program(
     if generation != assembly.generation {
         return Err(SemanticError::new("typed-program generation does not match ProgramAssembly generation"));
     }
+    let started = std::time::Instant::now();
     assembly.package_identities().validate().map_err(|error| SemanticError::new(error.to_string()))?;
     for unit in assembly.units.iter() {
         assembly
@@ -273,6 +274,13 @@ pub fn build_typed_program(
     // Scoped-cleanup (E1230) and dead-growth (E1231) legality are judged by the reachability-scoped
     // legality gate (`legality::check_items`) for the items a lowering request actually lowers,
     // never here for every unit: admission must not let an unreachable item poison the assembly.
+    tracing::debug!(
+        target: "beskid.timing",
+        phase = "typed_program.register",
+        units = assembly.units.len(),
+        elapsed_ms = started.elapsed().as_millis() as u64,
+        "typed program timing"
+    );
 
     Ok(TypedProgram {
         project,

@@ -8,6 +8,38 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 static NEXT_CASE: AtomicU64 = AtomicU64::new(0);
 
+/// One stable installed Corelib for every library case of this target directory:
+/// `<target>/<profile>/beskid-test-library-target/corelib`, outside every case's project root.
+///
+/// The CLI under test keeps a sealed root whose bundle fingerprint matches the bundle it embeds
+/// and replaces it when the bundle changes, so the root follows the Corelib sources. Mods that a
+/// case activates (an entry-less library scans the whole Corelib, which activates the
+/// Serialization Mod) are built into this root once for this CLI and runtime kit and then qualify
+/// for every later case and test run, instead of being rebuilt in a fresh copy per case. The root
+/// is materialized once per process before any case builds, so concurrent cases never race to
+/// create it. It is private to this test binary: other harnesses provision Mods with another CLI
+/// executable and runtime kit, which would supersede these artifacts.
+fn shared_installed_corelib() -> &'static std::path::Path {
+    static ROOT: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+    ROOT.get_or_init(|| {
+        let cli = std::path::Path::new(env!("CARGO_BIN_EXE_beskid_cli"));
+        let root = cli
+            .parent()
+            .expect("CLI binary has a profile directory")
+            .join("beskid-test-library-target")
+            .join("corelib");
+        fs::create_dir_all(root.parent().expect("Corelib parent")).expect("Corelib parent directory");
+        let output = Command::new(cli)
+            .args(["dev", "corelib", "--output"])
+            .arg(&root)
+            .env("BESKID_CORELIB_ROOT", &root)
+            .output()
+            .expect("run `beskid dev corelib`");
+        assert!(output.status.success(), "materialize the shared installed Corelib: {}", text(&output));
+        root
+    })
+}
+
 struct LibraryCase {
     root: PathBuf,
 }
@@ -37,7 +69,7 @@ impl LibraryCase {
             .arg(self.root.join("Library.bproj"))
             .arg("--output")
             .arg(&artifact)
-            .env("BESKID_CORELIB_ROOT", self.root.join("installed-corelib"))
+            .env("BESKID_CORELIB_ROOT", shared_installed_corelib())
             .current_dir(&self.root);
         if let Some(kind) = kind {
             command.args(["--kind", kind]);

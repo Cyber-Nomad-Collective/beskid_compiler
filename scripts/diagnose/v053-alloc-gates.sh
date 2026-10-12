@@ -20,7 +20,7 @@ case "$1" in
       BESKID_CORELIB_ROOT=$root timeout 3600 $CLI test --plain --project $1 --target $2 --target-timeout 3000 > $L-$3.log 2>&1
       echo "$3 EXIT=$? $(grep '^Result' $L-$3.log)" >> $out
     }
-    for t in CoreBytesTests CollectionsArrayTests CoreMathTests HttpCodecTests HttpExchangeTests NetworkTcpTests NetworkUdpTests NetworkDnsTests; do
+    for t in CoreSuite CollectionsSuite HttpCodecTests HttpExchangeTests NetworkTcpTests NetworkUdpTests NetworkDnsTests; do
       smoke corelib/beskid_corelib/tests/corelib_tests $t $t
     done
     for t in NetworkNativeTests GcTests; do smoke runtime/beskid/tests/runtime_semantics $t rt-$t; done

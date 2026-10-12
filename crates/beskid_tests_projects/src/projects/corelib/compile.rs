@@ -130,7 +130,7 @@ fn corelib_assembly_typechecks_nested_qualified_result_arguments_and_predicates(
         with_project_test_env(&project, || {
             // Verified package sources must match their proof snapshot byte for byte, so the checked-in
             // regression module (nested qualified Result arguments, Results.IsOk/IsError) is assembled as is.
-            let mut resolved = resolve_corelib_tests_entry("system/SyscallErgonomicsTests.bd");
+            let mut resolved = resolve_corelib_tests_entry("system/SystemSuite.bd");
             let source = resolved.source.clone();
             let plan = resolved.compile_plan.clone().expect("corelib tests compile plan");
             let options = beskid_analysis::projects::assembly_options_for_plan(&plan);
@@ -382,44 +382,11 @@ fn checked_in_corelib_beskid_test_sources_parse() {
         root.join("tests/corelib_tests/src/glue/BinaryCodecTests.bd"),
         root.join("tests/corelib_tests/src/glue/ControlEnvelopeTests.bd"),
         root.join("tests/corelib_tests/src/bsol/BuiltinProfilesTests.bd"),
-        root.join("tests/corelib_tests/src/system/SyscallWriteTests.bd"),
-        root.join("tests/corelib_tests/src/system/SyscallApiTests.bd"),
-        root.join("tests/corelib_tests/src/system/SyscallErgonomicsTests.bd"),
-        root.join("tests/corelib_tests/src/system/OutputWriteLineTests.bd"),
-        root.join("tests/corelib_tests/src/system/InputReadTests.bd"),
-        root.join("tests/corelib_tests/src/system/ErrorWriteTests.bd"),
-        root.join("tests/corelib_tests/src/system/FsTests.bd"),
-        root.join("tests/corelib_tests/src/system/PathTests.bd"),
-        root.join("tests/corelib_tests/src/system/TimeTests.bd"),
-        root.join("tests/corelib_tests/src/core/ResultsTests.bd"),
-        root.join("tests/corelib_tests/src/core/OptionalTests.bd"),
-        root.join("tests/corelib_tests/src/collections/ArrayTests.bd"),
-        root.join("tests/corelib_tests/src/collections/CollectionsTier1Tests.bd"),
-        root.join("tests/corelib_tests/src/collections/CollectionsTests.bd"),
-        root.join("tests/corelib_tests/src/query/QueryTests.bd"),
-        root.join("tests/corelib_tests/src/collections/ListTests.bd"),
-        root.join("tests/corelib_tests/src/collections/PersistenceTests.bd"),
-        root.join("tests/corelib_tests/src/collections/MapTests.bd"),
-        root.join("tests/corelib_tests/src/collections/SetTests.bd"),
-        root.join("tests/corelib_tests/src/collections/QueueTests.bd"),
-        root.join("tests/corelib_tests/src/collections/StackTests.bd"),
-        root.join("tests/corelib_tests/src/console/AnsiEscapeTests.bd"),
-        root.join("tests/corelib_tests/src/console/AnsiStyleChainTests.bd"),
-        root.join("tests/corelib_tests/src/console/AnsiSgrGoldenTests.bd"),
-        root.join("tests/corelib_tests/src/console/AnsiBuildersTests.bd"),
-        root.join("tests/corelib_tests/src/console/FormatMarkdownTests.bd"),
-        root.join("tests/corelib_tests/src/console/FormatAttributesTests.bd"),
-        root.join("tests/corelib_tests/src/console/FormatScanTests.bd"),
-        root.join("tests/corelib_tests/src/console/CapabilitiesTests.bd"),
-        root.join("tests/corelib_tests/src/console/TerminalPlatformTests.bd"),
-        root.join("tests/corelib_tests/src/console/ConsoleFacadeTests.bd"),
-        root.join("tests/corelib_tests/src/console/ConsoleMessageChannelTests.bd"),
-        root.join("tests/corelib_tests/src/console/ConsoleStyleTests.bd"),
-        root.join("tests/corelib_tests/src/console/ControlsPanelTests.bd"),
-        root.join("tests/corelib_tests/src/console/ControlsProgressBarTests.bd"),
-        root.join("tests/corelib_tests/src/console/ControlsLayoutTests.bd"),
-        root.join("tests/corelib_tests/src/console/ControlsFrameTests.bd"),
-        root.join("tests/corelib_tests/src/console/RenderContextTests.bd"),
+        root.join("tests/corelib_tests/src/system/SystemSuite.bd"),
+        root.join("tests/corelib_tests/src/core/CoreSuite.bd"),
+        root.join("tests/corelib_tests/src/collections/CollectionsSuite.bd"),
+        root.join("tests/corelib_tests/src/query/QuerySuite.bd"),
+        root.join("tests/corelib_tests/src/console/ConsoleSuite.bd"),
     ];
     for path in test_files {
         let source =

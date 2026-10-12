@@ -158,6 +158,17 @@ pub fn cached_mod_host_for_plan(
     qualified_mod_host(&active, mod_host_executable, runtime.clone())
 }
 
+/// The native Mod host for exactly `manifests` from current cached or toolchain-shipped artifacts
+/// produced by `mod_host_executable` for `runtime`, with the same actionable error as
+/// [`cached_mod_host_for_plan`] when one lacks a current artifact. Qualification is read-only.
+pub fn cached_mod_host_for_manifests(
+    manifests: &[PathBuf],
+    mod_host_executable: &Path,
+    runtime: &RuntimeKitSelection,
+) -> Result<ModHost> {
+    qualified_mod_host(manifests, mod_host_executable, runtime.clone())
+}
+
 /// Canonical manifests of the Mods `plan` activates when prepared from its own entry with the
 /// default assembly policy (a Mod project's plan with the SDK adapter sources its build adds).
 pub fn active_mod_manifests_for_plan(plan: &CompilePlan) -> Result<Vec<PathBuf>> {

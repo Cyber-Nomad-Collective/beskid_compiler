@@ -452,6 +452,19 @@ pub(in crate::semantic_contract) fn unique_type_in_unit(
     name: &str,
     generic_arity: usize,
 ) -> Option<AstNodeKey> {
+    unique_nominal_type_in_unit(db, unit, generation, name, Some(generic_arity))
+}
+
+/// The one `type` or `enum` of this unit with `name`; `generic_arity` restricts the match to that
+/// declared arity, `None` accepts any arity (an unparameterized qualifier such as `Crate.Make<T>`).
+pub(in crate::semantic_contract) fn unique_nominal_type_in_unit(
+    db: &dyn Db,
+    unit: SourceUnitId,
+    generation: SyntaxGenerationId,
+    name: &str,
+    generic_arity: Option<usize>,
+) -> Option<AstNodeKey> {
+    let arity_matches = |declared: usize| generic_arity.is_none_or(|arity| arity == declared);
     let syntax = db.syntax_unit(unit)?;
     if syntax.generation(db) != generation {
         return None;
@@ -464,9 +477,9 @@ pub(in crate::semantic_contract) fn unique_type_in_unit(
         .filter(|candidate| {
             index.node_at(program, *candidate).is_some_and(|node| {
                 node.of::<beskid_analysis::syntax::TypeDefinition>().is_some_and(|definition| {
-                    definition.name.node.name == name && definition.generics.len() == generic_arity
+                    definition.name.node.name == name && arity_matches(definition.generics.len())
                 }) || node.of::<beskid_analysis::syntax::EnumDefinition>().is_some_and(|definition| {
-                    definition.name.node.name == name && definition.generics.len() == generic_arity
+                    definition.name.node.name == name && arity_matches(definition.generics.len())
                 })
             })
         })

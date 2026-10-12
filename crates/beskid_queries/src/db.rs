@@ -99,6 +99,10 @@ pub trait Db: salsa::Database {
     fn module_index_cached(&self, fingerprint: &str) -> Option<Arc<ModuleIndex>>;
     fn syntax_unit(&self, unit: SourceUnitId) -> Option<SyntaxUnitInput>;
     fn syntax_dependency_registry(&self) -> &Mutex<SyntaxDependencyRegistry>;
+    /// Another handle of the same storage and registries for a worker thread. Handles share
+    /// every memo and input; a write through any handle waits until the others are dropped, so
+    /// read-only parallel work (code emission) observes exactly one revision.
+    fn fork_db(&self) -> Box<dyn Db>;
 }
 
 /// Process/workspace-scoped incremental compilation database.
@@ -168,5 +172,9 @@ impl Db for BeskidDatabase {
 
     fn module_index_cached(&self, fingerprint: &str) -> Option<Arc<ModuleIndex>> {
         self.module_index_cached(fingerprint)
+    }
+
+    fn fork_db(&self) -> Box<dyn Db> {
+        Box::new(self.clone())
     }
 }

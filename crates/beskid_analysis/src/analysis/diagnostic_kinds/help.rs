@@ -23,12 +23,9 @@ impl SemanticIssueKind {
             )),
 
             // ── Import / syntax diagnostics ──
-            Self::UnknownImportPath { path } => Some(match super::removed_std_namespace_replacement(path) {
-                Some(replacement) => format!(
-                    "use `{replacement}` instead; Corelib modules use their package-native paths (`Core.*`, `Testing.*`, `Concurrency.*`)"
-                ),
-                None => format!("check the module path `{path}` — it may not exist or may not be exported"),
-            }),
+            Self::UnknownImportPath { path } => {
+                Some(format!("check the module path `{path}` — it may not exist or may not be exported"))
+            }
             Self::UseBeforeDeclaration { name } => Some(format!(
                 "move the `use {name}` declaration before its first reference"
             )),
@@ -146,12 +143,9 @@ impl SemanticIssueKind {
             Self::ResolveUnknownType { name } => Some(format!(
                 "check the spelling of `{name}` or add a `use` import if it's defined elsewhere"
             )),
-            Self::ResolveUnknownModulePath { path } => Some(match super::removed_std_namespace_replacement(path) {
-                Some(replacement) => format!(
-                    "use `{replacement}` instead; Corelib modules use their package-native paths (`Core.*`, `Testing.*`, `Concurrency.*`)"
-                ),
-                None => format!("check the module path `{path}` — it may not exist or may not be in scope"),
-            }),
+            Self::ResolveUnknownModulePath { path } => {
+                Some(format!("check the module path `{path}` — it may not exist or may not be in scope"))
+            }
             Self::ResolveUnknownValueInModule { module_path, name } => Some(format!(
                 "check that module `{module_path}` exports a value named `{name}`"
             )),

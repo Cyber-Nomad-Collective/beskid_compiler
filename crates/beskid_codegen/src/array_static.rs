@@ -131,7 +131,7 @@ impl CodegenInput<'_> {
             .chars()
             .map(|character| if character.is_ascii_alphanumeric() { character } else { '_' })
             .collect::<String>();
-        let mut identity = format!("{namespace}_u{unit}_g{}_n{}", key.generation.0, key.node.0);
+        let mut identity = format!("{namespace}_u{unit}_g{}_n{}", self.generation_tag(key.generation), key.node.0);
         if let Some(specialization_identity) = specialization_identity {
             for component in specialization_identity {
                 identity.push('_');

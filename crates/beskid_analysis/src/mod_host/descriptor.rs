@@ -55,6 +55,9 @@ pub struct NativeModRuntimeBinding {
 pub struct NativeModCallableIdentity {
     pub source_file: String,
     pub source_sha256: String,
+    /// Syntax generation ordinal of the callable within the producing compilation: 1 for the
+    /// program's own generation. Never an absolute session generation, which a restored session
+    /// snapshot shifts between otherwise identical builds.
     pub generation: u64,
     pub node: u32,
     pub internal_symbol: String,

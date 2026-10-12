@@ -437,9 +437,14 @@ fn repeated_pinned_prepare_reuses_identical_materialization_without_rewriting_it
     let first = fixture.prepare(false).expect("initial materialization");
     let marker = marker_path(&first).join("Marker.bd");
     let original_bytes = fs::read(&marker).expect("read materialized marker");
-    let original_modified = fs::metadata(&marker).unwrap().modified().unwrap();
+    // Backdate the marker so a rewrite is visible at any filesystem timestamp granularity.
+    let original_modified = std::time::SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000_000);
+    fs::File::options()
+        .write(true)
+        .open(&marker)
+        .and_then(|file| file.set_modified(original_modified))
+        .expect("backdate materialized marker");
     let original_lock = fixture.lock();
-    thread::sleep(Duration::from_millis(1200));
 
     fixture.prepare(false).expect("reuse identical pinned package");
 

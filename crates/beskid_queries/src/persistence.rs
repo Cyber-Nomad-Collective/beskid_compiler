@@ -3,74 +3,12 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SalsaPersistenceManifest {
-    pub grammar_rev: String,
-    pub compiler_version: String,
-    pub persisted_files: usize,
-}
-
+/// Create the snapshot directory. The snapshot file itself is the only persisted state: file
+/// inputs travel inside it and are replaced from disk by the prepare spine when they differ.
 pub fn ensure_salsa_dir(root: &Path) -> std::io::Result<()> {
-    fs::create_dir_all(root)?;
-    let manifest_path = root.join("manifest.json");
-    if !manifest_path.is_file() {
-        let manifest = SalsaPersistenceManifest {
-            grammar_rev: env!("CARGO_PKG_VERSION").to_string(),
-            compiler_version: env!("CARGO_PKG_VERSION").to_string(),
-            persisted_files: 0,
-        };
-        fs::write(manifest_path, serde_json::to_string_pretty(&manifest)?)?;
-    }
-    fs::create_dir_all(root.join("files"))?;
-    Ok(())
-}
-
-pub fn persist_file_text(root: &Path, path: &Path, text: &str) -> std::io::Result<()> {
-    ensure_salsa_dir(root)?;
-    let key = file_key(path);
-    fs::write(root.join("files").join(format!("{key}.bd")), text)?;
-    update_manifest_count(root)
-}
-
-pub fn load_persisted_file_text(root: &Path, path: &Path) -> Option<String> {
-    let key = file_key(path);
-    fs::read_to_string(root.join("files").join(format!("{key}.bd"))).ok()
-}
-
-fn file_key(path: &Path) -> String {
-    use std::collections::hash_map::DefaultHasher;
-    use std::hash::{Hash, Hasher};
-    let mut hasher = DefaultHasher::new();
-    path.to_string_lossy().hash(&mut hasher);
-    format!("{:016x}", hasher.finish())
-}
-
-fn update_manifest_count(root: &Path) -> std::io::Result<()> {
-    let count = fs::read_dir(root.join("files"))?.filter_map(|e| e.ok()).count();
-    let manifest_path = root.join("manifest.json");
-    let mut manifest: SalsaPersistenceManifest = if manifest_path.is_file() {
-        serde_json::from_str(&fs::read_to_string(&manifest_path)?).unwrap_or(SalsaPersistenceManifest {
-            grammar_rev: env!("CARGO_PKG_VERSION").to_string(),
-            compiler_version: env!("CARGO_PKG_VERSION").to_string(),
-            persisted_files: 0,
-        })
-    } else {
-        SalsaPersistenceManifest {
-            grammar_rev: env!("CARGO_PKG_VERSION").to_string(),
-            compiler_version: env!("CARGO_PKG_VERSION").to_string(),
-            persisted_files: 0,
-        }
-    };
-    manifest.persisted_files = count;
-    fs::write(manifest_path, serde_json::to_string_pretty(&manifest)?)?;
-    Ok(())
-}
-
-pub fn load_manifest(root: &Path) -> Option<SalsaPersistenceManifest> {
-    let text = fs::read_to_string(root.join("manifest.json")).ok()?;
-    serde_json::from_str(&text).ok()
+    fs::create_dir_all(root)
 }
 
 pub fn cache_root_for_project(project_root: &Path) -> PathBuf {
@@ -92,13 +30,16 @@ pub fn cache_root_for_project(project_root: &Path) -> PathBuf {
 // feature wired.
 // ---------------------------------------------------------------------------
 
-/// On-disk snapshot envelope. `version` gates reload; `db` is the serialized salsa DB.
+/// On-disk snapshot envelope. `version`, `compiler` and `corelib` gate reload; `db` is the
+/// serialized Salsa DB and `digest` its SHA-256. The writer streams `db` first and appends the
+/// identity fields after it, so the payload is never held in memory twice while saving.
 #[cfg(feature = "persistence")]
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct SnapshotEnvelope<'a> {
     version: String,
     compiler: String,
+    corelib: String,
     digest: String,
     #[serde(borrow)]
     db: &'a serde_json::value::RawValue,
@@ -112,7 +53,22 @@ struct SnapshotEnvelope<'a> {
 /// a literal usable by `concat!`.
 #[cfg(feature = "persistence")]
 fn snapshot_format_version() -> String {
-    format!("beskid-queries:{}:grammar:{}:snapshot:3", env!("CARGO_PKG_VERSION"), beskid_pipeline::GRAMMAR_REVISION,)
+    format!("beskid-queries:{}:grammar:{}:snapshot:4", env!("CARGO_PKG_VERSION"), beskid_pipeline::GRAMMAR_REVISION,)
+}
+
+/// Identity of the Corelib every snapshot unit may have been materialized from: the sealed
+/// bundle fingerprint of the resolved installed Corelib, or the root path of an unmanaged
+/// (developer checkout) Corelib, whose text inputs the prepare spine re-reads from disk. A
+/// snapshot taken against another Corelib is rejected instead of being diffed unit by unit.
+#[cfg(feature = "persistence")]
+fn corelib_identity() -> String {
+    let Ok(root) = beskid_abi::runtime_kit::installed_corelib_root() else {
+        return "unresolved".into();
+    };
+    match fs::read_to_string(root.join(beskid_abi::corelib_bundle::CORELIB_BUNDLE_FINGERPRINT_FILE)) {
+        Ok(fingerprint) => format!("bundle:{}", fingerprint.trim()),
+        Err(_) => format!("unmanaged:{}", root.canonicalize().unwrap_or(root).display()),
+    }
 }
 
 /// Exact executable identity includes the ingredient schema, compiler semantics,
@@ -232,8 +188,10 @@ fn snapshot_path(root: &Path) -> PathBuf {
     root.join("db.json")
 }
 
-/// Limits apply to the complete encoded envelope, before allocating Salsa state.
-/// The iterative scanner is a resource preflight, not a replacement JSON parser.
+/// Limits apply to the complete encoded envelope, before allocating Salsa state, and to every
+/// snapshot the writer produces. The incremental scanner is a resource preflight, not a
+/// replacement JSON parser. The byte bound admits a whole-Corelib session (all ~1300 units with
+/// their persisted memos) with headroom while still refusing unbounded input.
 #[cfg(feature = "persistence")]
 #[derive(Clone, Copy)]
 struct SnapshotLimits {
@@ -246,68 +204,93 @@ struct SnapshotLimits {
 #[cfg(feature = "persistence")]
 impl Default for SnapshotLimits {
     fn default() -> Self {
-        Self { bytes: 64 * 1024 * 1024, depth: 256, containers: 2_000_000, string_bytes: 4 * 1024 * 1024 }
+        Self { bytes: 1024 * 1024 * 1024, depth: 256, containers: 64 * 1024 * 1024, string_bytes: 4 * 1024 * 1024 }
     }
 }
 
 #[cfg(feature = "persistence")]
 const SNAPSHOT_STACK_BYTES: usize = 16 * 1024 * 1024;
 
+/// Streaming JSON resource scanner: tracks string and container nesting across chunk boundaries.
 #[cfg(feature = "persistence")]
-fn validate_snapshot_limits(bytes: &[u8], limits: SnapshotLimits) -> Result<(), String> {
-    if bytes.len() > limits.bytes {
-        return Err("snapshot byte limit exceeded".into());
+struct LimitScanner {
+    limits: SnapshotLimits,
+    stack: Vec<u8>,
+    total: usize,
+    containers: usize,
+    quoted: bool,
+    escaped: bool,
+    string_bytes: usize,
+}
+
+#[cfg(feature = "persistence")]
+impl LimitScanner {
+    fn new(limits: SnapshotLimits) -> Self {
+        Self { limits, stack: Vec::new(), total: 0, containers: 0, quoted: false, escaped: false, string_bytes: 0 }
     }
-    let mut stack = Vec::new();
-    let mut containers = 0;
-    let mut quoted = false;
-    let mut escaped = false;
-    let mut string_bytes = 0;
-    for &byte in bytes {
-        if quoted {
-            if byte == b'"' && !escaped {
-                quoted = false;
+
+    fn feed(&mut self, bytes: &[u8]) -> Result<(), String> {
+        self.total = self.total.saturating_add(bytes.len());
+        if self.total > self.limits.bytes {
+            return Err("snapshot byte limit exceeded".into());
+        }
+        for &byte in bytes {
+            if self.quoted {
+                if byte == b'"' && !self.escaped {
+                    self.quoted = false;
+                    continue;
+                }
+                self.string_bytes += 1;
+                if self.string_bytes > self.limits.string_bytes {
+                    return Err("snapshot string byte limit exceeded".into());
+                }
+                if self.escaped {
+                    self.escaped = false;
+                } else if byte == b'\\' {
+                    self.escaped = true;
+                }
                 continue;
             }
-            string_bytes += 1;
-            if string_bytes > limits.string_bytes {
-                return Err("snapshot string byte limit exceeded".into());
+            match byte {
+                b'"' => {
+                    self.quoted = true;
+                    self.string_bytes = 0;
+                }
+                b'{' | b'[' => {
+                    if self.stack.len() >= self.limits.depth {
+                        return Err("snapshot container depth limit exceeded".into());
+                    }
+                    self.containers += 1;
+                    if self.containers > self.limits.containers {
+                        return Err("snapshot container count limit exceeded".into());
+                    }
+                    self.stack.push(byte);
+                }
+                b'}' | b']' => {
+                    let expected = if byte == b'}' { b'{' } else { b'[' };
+                    if self.stack.pop() != Some(expected) {
+                        return Err("snapshot has mismatched JSON delimiters".into());
+                    }
+                }
+                _ => {}
             }
-            if escaped {
-                escaped = false;
-            } else if byte == b'\\' {
-                escaped = true;
-            }
-            continue;
         }
-        match byte {
-            b'"' => {
-                quoted = true;
-                string_bytes = 0;
-            }
-            b'{' | b'[' => {
-                if stack.len() >= limits.depth {
-                    return Err("snapshot container depth limit exceeded".into());
-                }
-                containers += 1;
-                if containers > limits.containers {
-                    return Err("snapshot container count limit exceeded".into());
-                }
-                stack.push(byte);
-            }
-            b'}' | b']' => {
-                let expected = if byte == b'}' { b'{' } else { b'[' };
-                if stack.pop() != Some(expected) {
-                    return Err("snapshot has mismatched JSON delimiters".into());
-                }
-            }
-            _ => {}
+        Ok(())
+    }
+
+    fn finish(&self) -> Result<(), String> {
+        if self.quoted || !self.stack.is_empty() {
+            return Err("snapshot has incomplete JSON structure".into());
         }
+        Ok(())
     }
-    if quoted || !stack.is_empty() {
-        return Err("snapshot has incomplete JSON structure".into());
-    }
-    Ok(())
+}
+
+#[cfg(feature = "persistence")]
+fn validate_snapshot_limits(bytes: &[u8], limits: SnapshotLimits) -> Result<(), String> {
+    let mut scanner = LimitScanner::new(limits);
+    scanner.feed(bytes)?;
+    scanner.finish()
 }
 
 #[cfg(feature = "persistence")]
@@ -337,6 +320,31 @@ fn deserialize_snapshot<'de, T: Deserialize<'de>>(bytes: &'de [u8]) -> Result<T,
     Ok(value)
 }
 
+/// Writer that bounds, scans and optionally hashes everything it forwards. A limit violation
+/// aborts serialization at the first offending byte instead of after the payload is complete.
+#[cfg(feature = "persistence")]
+struct ScanningWriter<W: std::io::Write> {
+    inner: W,
+    scanner: LimitScanner,
+    digest: Option<sha2::Sha256>,
+}
+
+#[cfg(feature = "persistence")]
+impl<W: std::io::Write> std::io::Write for ScanningWriter<W> {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        self.scanner.feed(bytes).map_err(std::io::Error::other)?;
+        if let Some(digest) = &mut self.digest {
+            sha2::Digest::update(digest, bytes);
+        }
+        self.inner.write_all(bytes)?;
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.inner.flush()
+    }
+}
+
 /// Serialize the salsa DB snapshot to `root/db.json`.
 ///
 /// Only ingredients marked with `#[salsa::*(persist)]` are emitted; the rest are
@@ -347,26 +355,56 @@ pub fn save_db_snapshot(db: &mut crate::db::BeskidDatabase, root: &Path) -> std:
     stacker::grow(SNAPSHOT_STACK_BYTES, || save_db_snapshot_on_stack(db, root))
 }
 
+/// Stream the payload straight into a temporary sibling file while scanning and hashing it, then
+/// append the identity fields and publish the file with one rename. Any failure removes the
+/// temporary file and leaves the previous snapshot untouched.
 #[cfg(feature = "persistence")]
 fn save_db_snapshot_on_stack(db: &mut crate::db::BeskidDatabase, root: &Path) -> std::io::Result<()> {
+    use std::io::Write;
     ensure_salsa_dir(root)?;
-    // Salsa deliberately serializes structs before memos. Never pass through
-    // Value: its map ordering and owned-string deserializer break that protocol.
-    let serialized = serde_json::to_string(&<dyn salsa::Database>::as_serialize(db))
-        .map_err(|err| std::io::Error::other(err.to_string()))?;
-    let raw = serde_json::value::RawValue::from_string(serialized).map_err(std::io::Error::other)?;
-    let envelope = SnapshotEnvelope {
-        version: snapshot_format_version(),
-        compiler: compiler_fingerprint()?,
-        digest: payload_digest(raw.get()),
-        db: &raw,
-    };
-    let bytes = serde_json::to_vec_pretty(&envelope).map_err(|err| std::io::Error::other(err.to_string()))?;
-    validate_snapshot_limits(&bytes, SnapshotLimits::default()).map_err(std::io::Error::other)?;
     let path = snapshot_path(root);
     let tmp = path.with_extension("json.tmp");
-    fs::write(&tmp, &bytes)?;
+    let mut write = || -> std::io::Result<()> {
+        let file = std::io::BufWriter::with_capacity(1 << 20, fs::File::create(&tmp)?);
+        let mut writer =
+            ScanningWriter { inner: file, scanner: LimitScanner::new(SnapshotLimits::default()), digest: None };
+        writer.write_all(b"{\"db\":")?;
+        writer.digest = Some(<sha2::Sha256 as sha2::Digest>::new());
+        // Salsa deliberately serializes structs before memos. Never pass through
+        // Value: its map ordering and owned-string deserializer break that protocol.
+        {
+            // Batch Serde's many small writes so the scanner and digest see large chunks.
+            let mut buffered = std::io::BufWriter::with_capacity(1 << 20, &mut writer);
+            serde_json::to_writer(&mut buffered, &<dyn salsa::Database>::as_serialize(db))
+                .map_err(|err| std::io::Error::other(err.to_string()))?;
+            buffered.flush()?;
+        }
+        let digest = writer.digest.take().expect("payload digest");
+        let identity = serde_json::json!({
+            "version": snapshot_format_version(),
+            "compiler": compiler_fingerprint()?,
+            "corelib": corelib_identity(),
+            "digest": format!("{:x}", sha2::Digest::finalize(digest)),
+        });
+        let identity = serde_json::to_string(&identity).map_err(std::io::Error::other)?;
+        writer.write_all(b",")?;
+        writer.write_all(&identity.as_bytes()[1..])?;
+        writer.scanner.finish().map_err(std::io::Error::other)?;
+        let file = writer.inner.into_inner().map_err(|error| error.into_error())?;
+        file.sync_all()?;
+        Ok(())
+    };
+    let started = std::time::Instant::now();
+    if let Err(error) = write() {
+        let _ = fs::remove_file(&tmp);
+        return Err(error);
+    }
     fs::rename(&tmp, &path)?;
+    log::info!(
+        "beskid salsa snapshot saved: {} bytes in {} ms",
+        fs::metadata(&path).map(|metadata| metadata.len()).unwrap_or(0),
+        started.elapsed().as_millis()
+    );
     Ok(())
 }
 
@@ -379,6 +417,7 @@ fn save_db_snapshot_on_stack(db: &mut crate::db::BeskidDatabase, root: &Path) ->
 /// deserialization mutates only a disposable candidate until fully successful.
 #[cfg(feature = "persistence")]
 pub fn load_db_snapshot(db: &mut crate::db::BeskidDatabase, root: &Path) -> bool {
+    let started = std::time::Instant::now();
     let bytes = match read_bounded_snapshot(root) {
         Ok(bytes) => bytes,
         Err(error) => {
@@ -390,7 +429,11 @@ pub fn load_db_snapshot(db: &mut crate::db::BeskidDatabase, root: &Path) -> bool
     };
     // The depth preflight bounds this stack's work. Keep partial candidate Drop,
     // registry rehydration and replacement on it as well as deserialization.
-    stacker::grow(SNAPSHOT_STACK_BYTES, || load_db_snapshot_on_stack(db, &bytes))
+    let loaded = stacker::grow(SNAPSHOT_STACK_BYTES, || load_db_snapshot_on_stack(db, &bytes));
+    if loaded {
+        log::info!("beskid salsa snapshot loaded: {} bytes in {} ms", bytes.len(), started.elapsed().as_millis());
+    }
+    loaded
 }
 
 #[cfg(feature = "persistence")]
@@ -420,6 +463,10 @@ fn load_db_snapshot_on_stack(db: &mut crate::db::BeskidDatabase, bytes: &[u8]) -
     };
     if envelope.compiler != compiler || envelope.digest != payload_digest(envelope.db.get()) {
         log::warn!("beskid salsa snapshot rejected: compiler/schema identity or payload integrity mismatch");
+        return false;
+    }
+    if envelope.corelib != corelib_identity() {
+        log::info!("beskid salsa snapshot rejected: taken against a different Corelib");
         return false;
     }
     if let Err(error) = validate_payload_order(envelope.db.get()) {
@@ -528,7 +575,26 @@ pub fn persist_session_snapshot(db: &mut crate::db::BeskidDatabase) {
 
 #[cfg(all(test, feature = "persistence"))]
 mod snapshot_limit_tests {
-    use super::{SnapshotLimits, validate_snapshot_limits};
+    use super::{LimitScanner, SnapshotLimits, validate_snapshot_limits};
+
+    #[test]
+    fn chunked_scanning_matches_whole_input_scanning() {
+        let limits = SnapshotLimits { bytes: 100, depth: 3, containers: 4, string_bytes: 8 };
+        for input in [
+            br#"{"a":["x\"[",{"b":"]"}]}"#.as_slice(),
+            br#"{"a":[[[[]]]]}"#.as_slice(),
+            br#"{"a":"123456789"}"#.as_slice(),
+            br#"{"a":["#.as_slice(),
+        ] {
+            let whole = validate_snapshot_limits(input, limits);
+            let mut scanner = LimitScanner::new(limits);
+            let chunked = input
+                .iter()
+                .try_for_each(|byte| scanner.feed(std::slice::from_ref(byte)))
+                .and_then(|()| scanner.finish());
+            assert_eq!(whole, chunked, "{}", String::from_utf8_lossy(input));
+        }
+    }
 
     #[test]
     fn exact_limits_accept_and_each_resource_overrun_rejects() {

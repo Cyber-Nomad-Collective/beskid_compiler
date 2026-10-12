@@ -30,15 +30,6 @@ pub async fn open_document(server: &Backend, uri: Uri, language_id: &str, text: 
         .await;
 }
 
-pub async fn change_document(server: &Backend, uri: Uri, version: i32, text: String) {
-    server
-        .did_change(DidChangeTextDocumentParams {
-            text_document: VersionedTextDocumentIdentifier { uri, version },
-            content_changes: vec![TextDocumentContentChangeEvent { range: None, range_length: None, text }],
-        })
-        .await;
-}
-
 pub async fn open_sample_document(server: &Backend, uri: Uri) {
     open_document(server, uri, "beskid", sample_source()).await;
 }

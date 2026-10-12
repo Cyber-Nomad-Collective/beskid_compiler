@@ -66,7 +66,6 @@ i64 Main() { return Helper(); }
 }
 
 #[test]
-#[ignore = "0.6 gap: 708bbe72(c) Type.Function in the declaring unit stays generic_call_instantiation unavailable"]
 fn type_qualified_calls_resolve_to_functions_of_the_declaring_unit() {
     // Inside the unit that declares `Crate`, `Crate.Make<T>` and `Crate.Twice` name this unit's
     // own functions, the same static spelling an importer writes as `Kit.Crate.Make`.

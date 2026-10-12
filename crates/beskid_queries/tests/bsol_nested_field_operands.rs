@@ -10,7 +10,7 @@ use std::sync::Arc;
 
 #[test]
 fn bsol_nested_span_arithmetic_preserves_canonical_operand_abi_facts() {
-    let original = include_str!("../../../corelib/beskid_corelib/tests/corelib_tests/src/bsol/SyntaxTests.bd");
+    let original = include_str!("../../../corelib/beskid_corelib/tests/corelib_tests/src/bsol/BsolSuite.bd");
     assert!(
         original.contains("value.span.end - value.span.start"),
         "regression must remain bound to the native BSOL trigger"

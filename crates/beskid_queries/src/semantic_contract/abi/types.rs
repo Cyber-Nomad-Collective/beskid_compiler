@@ -79,6 +79,12 @@ pub(in crate::semantic_contract) fn abi_type_tracked(
         if let Some(projection) = super::super::layouts::nominal_field_projection(db, key) {
             return Some(projection.map(|(_, identity)| identity.abi_type()));
         }
+        if node.of::<beskid_analysis::syntax::MemberExpression>().is_some() {
+            // `call().field`: the field access fact names the projected field's shape.
+            return Some(aggregate_field_access(db, key).and_then(|access| {
+                access.and_then(|access| aggregate_field_access_abi_type(&access)).ok_or_else(|| SemanticError::unavailable("abi_type"))
+            }));
+        }
         if node.of::<beskid_analysis::syntax::ArrayLiteralExpression>().is_some() {
             // Array values have one managed-pointer representation, independently of the
             // element representation validated by array construction/lowering.
@@ -334,6 +340,15 @@ pub(in crate::semantic_contract) fn abi_type_for_expression(
         }
         _ => Err(SemanticError::unavailable("abi_type")),
     }
+}
+
+/// ABI representation of the field a resolved access reads: scalars and managed references keep
+/// their own representation, a nominal field is a managed pointer.
+pub(in crate::semantic_contract) fn aggregate_field_access_abi_type(access: &AggregateFieldAccess) -> Option<SemanticTypeId> {
+    access.layout.fields.get(usize::try_from(access.index).ok()?).map(|(_, shape)| match shape {
+        AggregateFieldShape::Scalar(semantic) | AggregateFieldShape::ManagedReference(semantic) => *semantic,
+        AggregateFieldShape::Nominal(_) => SemanticTypeId::POINTER,
+    })
 }
 
 pub(in crate::semantic_contract) fn abi_type_for_binary_expression(

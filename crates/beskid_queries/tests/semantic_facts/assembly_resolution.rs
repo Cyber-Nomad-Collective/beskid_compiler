@@ -792,7 +792,7 @@ fn unresolved_imports_are_judged_only_for_units_of_judged_items() {
 }
 
 #[test]
-fn core_app_resolves_native_core_import_and_rejects_std_prefix() {
+fn core_app_resolves_native_core_import_and_rejects_an_unknown_prefix() {
     let mut db = BeskidDatabase::default();
     let host_root = PathBuf::from("/tmp/core-import-scope/app/src");
     let shard_root = PathBuf::from("/tmp/core-import-scope/corelib/Src");
@@ -881,19 +881,11 @@ i32 ShardContract(Core.Results.Reader reader) { return 0; }
     assert_eq!(
         main_imports.iter().map(|import| import.path.as_ref()).collect::<Vec<_>>(),
         vec!["Std.Core.Results"],
-        "App units resolve the package-native `Core.*` path; the `Std` namespace does not exist"
+        "App units resolve the package-native `Core.*` path; an unknown `Std` prefix is an ordinary unknown import"
     );
     let findings = beskid_queries::check_items(&db, &[main]).expect_err("a Std-qualified import must fail E1105");
     assert_eq!(findings.iter().map(|finding| finding.kind.code()).collect::<Vec<_>>(), vec!["E1105"]);
-    assert_eq!(
-        findings[0].kind.message(),
-        "unknown import path `Std.Core.Results`: the `Std` namespace does not exist"
-    );
-    assert!(
-        findings[0].kind.help().is_some_and(|help| help.starts_with("use `Core.Results` instead")),
-        "the diagnostic must name the package-native replacement: {:?}",
-        findings[0].kind.help()
-    );
+    assert_eq!(findings[0].kind.message(), "unknown import path `Std.Core.Results`");
     let shard_imports =
         beskid_queries::unresolved_imports(&db, results_root).expect("shard query").expect("shard root");
     assert!(shard_imports.is_empty(), "corelib shard must resolve its own Core import");

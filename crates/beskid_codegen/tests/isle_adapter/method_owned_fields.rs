@@ -447,6 +447,36 @@ unit Main(List<i64> list) { list.Get(0_i64); return; }
 }
 
 #[test]
+fn field_of_an_indexed_method_owned_array_element_lowers() {
+    let (input, isa, root) = item_fixture_with_root(
+        r#"
+type Entry { string route, i64 signature, }
+type Table {
+    Entry[] entries,
+    i64 Find(string route) {
+        mut i64 index = 0_i64;
+        while (index < 2_i64) {
+            if (entries[index].route == route) { return entries[index].signature; }
+            index = index + 1_i64;
+        }
+        return 0_i64;
+    }
+}
+i64 Main(Table table) { return table.Find("a"); }
+"#,
+    );
+    let find = find_node(input.database(), root, beskid_queries::IndexedNodeKind::MethodDefinition).expect("Table.Find");
+    let main = find_function_definition(input.database(), root).expect("Main function");
+
+    lower_syntax_program(
+        &input,
+        isa.as_ref(),
+        &[SyntaxModuleItem { key: find, symbol: "Table_Find".into() }, SyntaxModuleItem { key: main, symbol: "Main".into() }],
+    )
+    .expect("a field read from an indexed element of a method-owned array lowers");
+}
+
+#[test]
 fn specialized_generic_method_lowers_a_nested_projection_through_the_implicit_receiver() {
     let outer_source = r#"
 pub type Inner<T> {

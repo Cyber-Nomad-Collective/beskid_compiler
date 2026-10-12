@@ -207,7 +207,10 @@ pub fn emit_string_literals<M: Module>(
     artifact: &CodegenArtifact,
 ) -> ModuleResult<HashMap<String, DataId>> {
     let mut handles = HashMap::new();
-    for (symbol, data) in &artifact.string_literals {
+    // Declare in symbol order so the object layout does not follow hash-map iteration order.
+    let mut literals = artifact.string_literals.iter().collect::<Vec<_>>();
+    literals.sort_unstable_by(|left, right| left.0.cmp(right.0));
+    for (symbol, data) in literals {
         let data_id = module.declare_data(symbol, Linkage::Local, false, false)?;
         let mut ctx = DataDescription::new();
         ctx.define(data.clone().into_boxed_slice());

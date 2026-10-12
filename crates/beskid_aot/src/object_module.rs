@@ -278,12 +278,12 @@ impl BeskidObjectModule {
             self.data_ids.entry(offsets_name).or_insert(handles.offsets);
         }
 
+        // Bind every function to its declared id and final external names first (cheap, needs
+        // the module), then compile the independent bodies to machine code in parallel, then
+        // define them in artifact order so the object layout does not depend on scheduling.
+        let mut bound = Vec::with_capacity(artifact.functions.len());
         let mut ctx = module.make_context();
-        let total = artifact.functions.len() as u64;
-        for (index, function) in artifact.functions.iter().enumerate() {
-            if let Some(control) = control {
-                control.check("compile_function")?;
-            }
+        for function in &artifact.functions {
             let func_id = self
                 .func_ids
                 .get(&function.name)
@@ -296,8 +296,19 @@ impl BeskidObjectModule {
                     AotError::InvalidRequest { message: "expected symbol global value".to_owned() }
                 }
             })?;
-            module.define_function(func_id, &mut ctx)?;
-            module.clear_context(&mut ctx);
+            bound.push((func_id, std::mem::replace(&mut ctx.func, cranelift_codegen::ir::Function::new())));
+        }
+        module.clear_context(&mut ctx);
+        if let Some(control) = control {
+            control.check("compile_function")?;
+        }
+        let compiled = compile_functions(module.isa(), bound)?;
+        let total = compiled.len() as u64;
+        for (index, (function, compiled)) in artifact.functions.iter().zip(compiled).enumerate() {
+            if let Some(control) = control {
+                control.check("compile_function")?;
+            }
+            module.define_function_bytes(compiled.func_id, compiled.alignment, &compiled.bytes, &compiled.relocs)?;
             emit_work_unit(pipeline, AOT_EMIT_OBJECT, (index as u64) + 1, total, function.name.clone());
         }
 
@@ -414,4 +425,107 @@ mod profile_tests {
         assert!(flags.is_pic());
         assert!(flags.preserve_frame_pointers());
     }
+}
+
+/// Machine code of one function, ready for [`Module::define_function_bytes`].
+struct CompiledFunction {
+    func_id: FuncId,
+    alignment: u64,
+    bytes: Vec<u8>,
+    relocs: Vec<cranelift_module::ModuleReloc>,
+}
+
+/// Fewer functions than this are compiled on the calling thread.
+const PARALLEL_COMPILE_THRESHOLD: usize = 32;
+
+/// Compile bound functions to machine code, in parallel for large artifacts, returning results in
+/// input order. The first failure in input order is reported, as serial compilation would.
+/// `BESKID_CODEGEN_THREADS` bounds the worker count (1 forces serial compilation).
+fn compile_functions(
+    isa: &dyn TargetIsa,
+    functions: Vec<(FuncId, cranelift_codegen::ir::Function)>,
+) -> AotResult<Vec<CompiledFunction>> {
+    use std::sync::Mutex;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    let compile = |func_id: FuncId, function: cranelift_codegen::ir::Function| -> AotResult<CompiledFunction> {
+        let mut ctx = cranelift_codegen::Context::for_function(function);
+        ctx.compile(isa, &mut cranelift_codegen::control::ControlPlane::default())
+            .map_err(|error| AotError::from(cranelift_module::ModuleError::from(error)))?;
+        let compiled = ctx.compiled_code().expect("compiled code after a successful compile");
+        let alignment = compiled.buffer.alignment as u64;
+        let bytes = compiled.buffer.data().to_vec();
+        let relocs = compiled
+            .buffer
+            .relocs()
+            .iter()
+            .map(|reloc| cranelift_module::ModuleReloc::from_mach_reloc(reloc, &ctx.func, func_id))
+            .collect();
+        Ok(CompiledFunction { func_id, alignment, bytes, relocs })
+    };
+    let count = functions.len();
+    let requested = std::env::var("BESKID_CODEGEN_THREADS").ok().and_then(|value| value.parse::<usize>().ok());
+    let available = std::thread::available_parallelism().map_or(1, std::num::NonZeroUsize::get);
+    let workers =
+        if count < PARALLEL_COMPILE_THRESHOLD { 1 } else { requested.unwrap_or(available).clamp(1, 16).min(count) };
+    if workers <= 1 {
+        return functions.into_iter().map(|(func_id, function)| compile(func_id, function)).collect();
+    }
+    let queue = functions.into_iter().map(Some).map(Mutex::new).collect::<Vec<_>>();
+    let next = AtomicUsize::new(0);
+    let first_error = AtomicUsize::new(usize::MAX);
+    let mut slots: Vec<Option<AotResult<CompiledFunction>>> = (0..count).map(|_| None).collect();
+    std::thread::scope(|scope| -> AotResult<()> {
+        let mut spawned = Vec::with_capacity(workers);
+        for _ in 0..workers {
+            let (queue, next, first_error, compile) = (&queue, &next, &first_error, &compile);
+            let worker = std::thread::Builder::new()
+                .name("beskid-object".into())
+                .stack_size(beskid_pipeline::compiler_stack_size())
+                .spawn_scoped(scope, move || {
+                    let mut done = Vec::new();
+                    loop {
+                        let index = next.fetch_add(1, Ordering::Relaxed);
+                        if index >= count || index > first_error.load(Ordering::Relaxed) {
+                            break;
+                        }
+                        let (func_id, function) =
+                            queue[index].lock().expect("compile queue").take().expect("each function is taken once");
+                        let result = compile(func_id, function);
+                        if result.is_err() {
+                            first_error.fetch_min(index, Ordering::Relaxed);
+                        }
+                        done.push((index, result));
+                    }
+                    done
+                })
+                .map_err(|error| AotError::InvalidRequest {
+                    message: format!("spawn object compile worker: {error}"),
+                })?;
+            spawned.push(worker);
+        }
+        for worker in spawned {
+            match worker.join() {
+                Ok(done) => {
+                    for (index, result) in done {
+                        slots[index] = Some(result);
+                    }
+                }
+                Err(panic) => std::panic::resume_unwind(panic),
+            }
+        }
+        Ok(())
+    })?;
+    let mut compiled = Vec::with_capacity(count);
+    for slot in slots {
+        match slot {
+            Some(result) => compiled.push(result?),
+            None => {
+                return Err(AotError::InvalidRequest {
+                    message: "parallel object compilation skipped a function before any failure".into(),
+                });
+            }
+        }
+    }
+    Ok(compiled)
 }

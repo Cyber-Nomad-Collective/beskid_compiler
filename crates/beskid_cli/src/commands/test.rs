@@ -128,6 +128,7 @@ fn execute_single_target(args: TestArgs) -> Result<()> {
         .into_iter()
         .find(|name| args.project.target.as_deref().is_none_or(|selected| selected == name))
         .ok_or_else(|| anyhow!("no Test or Lib target selected"))?;
+    workspace.activate_mods(std::slice::from_ref(&target_name), &args)?;
     let target = workspace
         .prepare_targets(std::slice::from_ref(&target_name), |_| Ok(()))?
         .pop()
@@ -205,130 +206,133 @@ pub(crate) fn execute_prepared_target(
     let mut budget_expired = false;
     let mut first_failure = None;
     let mut last_started_test = None;
-    let mut planned = planned.into_iter();
-    for (test, row_index, initial) in planned.by_ref() {
-        if let Err(error) = workspace.check_budget(&target.name, "execute_tests", Some(target_started)) {
-            timeout_error = Some(error);
-            budget_expired = true;
-            record_timed_out_test(&mut test_ui, &mut executions, &mut summary, emit, args.json, row_index, test)?;
-            break;
-        }
-        if initial == TestRowState::FilteredOut {
-            executions.push(TestExecution {
-                name: test.name.to_string(),
-                qualified_name: test.qualified_name.clone(),
-                outcome: TestOutcome::FilteredOut,
-                reason: Some("filtered by CLI options".to_string()),
-                output: None,
-            });
-            summary.filtered_out += 1;
-            continue;
-        }
-        if initial == TestRowState::Skipped {
-            let reason = test.skip_reason.as_deref().or(Some("skip.condition is true"));
-            if emit && !args.json {
-                test_ui.finish_row(row_index, TestRowState::Skipped, Duration::ZERO, reason)?;
+    // Pending tests link and run ahead of this loop on a bounded pool; the loop still reports,
+    // budgets and records them one by one in manifest order.
+    let pending = planned
+        .iter()
+        .filter(|(_, _, state)| *state == TestRowState::Pending)
+        .map(|(test, row_index, _)| (*row_index, test.qualified_name.clone()))
+        .collect::<Vec<_>>();
+    let runner: &PreparedWorkspace = workspace;
+    runner.with_native_test_runs(native.as_ref(), &pending, |runs| -> Result<()> {
+        let mut planned = planned.into_iter();
+        for (test, row_index, initial) in planned.by_ref() {
+            if let Err(error) = workspace.check_budget(&target.name, "execute_tests", Some(target_started)) {
+                timeout_error = Some(error);
+                budget_expired = true;
+                record_timed_out_test(&mut test_ui, &mut executions, &mut summary, emit, args.json, row_index, test)?;
+                break;
             }
-            executions.push(TestExecution {
-                name: test.name.to_string(),
-                qualified_name: test.qualified_name.clone(),
-                outcome: TestOutcome::Skipped,
-                reason: reason.map(str::to_owned),
-                output: None,
-            });
-            summary.skipped += 1;
-            continue;
-        }
-        on_test_started(&test.qualified_name)?;
-        last_started_test = Some(test.qualified_name.clone());
-        if emit && !args.json {
-            test_ui.start_running(row_index)?;
-            if !args.plain {
-                workspace.session().pipeline().halt_progress_bars_for_output();
-            }
-        }
-        let started = Instant::now();
-        match workspace.run_native_test(
-            native.as_ref().expect("selected test native object"),
-            &test.qualified_name,
-            row_index,
-            &target.name,
-            target_started,
-        ) {
-            Ok(output) => {
-                let duration = started.elapsed();
-                if emit && !args.json {
-                    test_ui.finish_row(row_index, TestRowState::Passed, duration, None)?;
-                    if !args.plain {
-                        workspace.session().pipeline().halt_progress_bars_for_output();
-                    }
-                }
+            if initial == TestRowState::FilteredOut {
                 executions.push(TestExecution {
                     name: test.name.to_string(),
                     qualified_name: test.qualified_name.clone(),
-                    outcome: TestOutcome::Passed,
-                    reason: None,
-                    output: Some(output),
-                });
-                summary.passed += 1;
-                if target_started.elapsed() >= workspace.target_timeout() {
-                    timeout_error = Some(anyhow!(
-                        "{}-second target budget expired for `{}` in phase `execute_tests`",
-                        workspace.target_timeout().as_secs(),
-                        target.name
-                    ));
-                    budget_expired = true;
-                    workspace.cancellation().cancel();
-                    break;
-                }
-            }
-            Err(error) => {
-                if let Err(budget_error) = workspace.check_budget(&target.name, "execute_tests", Some(target_started)) {
-                    timeout_error = Some(budget_error);
-                    budget_expired = true;
-                    record_timed_out_test(
-                        &mut test_ui,
-                        &mut executions,
-                        &mut summary,
-                        emit,
-                        args.json,
-                        row_index,
-                        test,
-                    )?;
-                    break;
-                }
-                let duration = started.elapsed();
-                let reason = if args.json {
-                    error.to_string()
-                } else {
-                    diagnostics::format_report(&diagnostics::report_from_anyhow(&error)).to_string()
-                };
-                if first_failure.is_none() {
-                    first_failure = Some(format!("{}: {}", test.qualified_name, reason.trim()));
-                }
-                if emit {
-                    let detail =
-                        format!("\n  FAIL {name}: {reason}", name = test.qualified_name, reason = reason.trim());
-                    workspace.session().pipeline().halt_progress_bars_for_output();
-                    eprintln!("{detail}");
-                    test_ui.finish_row(row_index, TestRowState::Failed, duration, Some(&reason))?;
-                }
-                executions.push(TestExecution {
-                    name: test.name.to_string(),
-                    qualified_name: test.qualified_name.clone(),
-                    outcome: TestOutcome::Failed,
-                    reason: Some(reason),
+                    outcome: TestOutcome::FilteredOut,
+                    reason: Some("filtered by CLI options".to_string()),
                     output: None,
                 });
-                summary.failed += 1;
+                summary.filtered_out += 1;
+                continue;
+            }
+            if initial == TestRowState::Skipped {
+                let reason = test.skip_reason.as_deref().or(Some("skip.condition is true"));
+                if emit && !args.json {
+                    test_ui.finish_row(row_index, TestRowState::Skipped, Duration::ZERO, reason)?;
+                }
+                executions.push(TestExecution {
+                    name: test.name.to_string(),
+                    qualified_name: test.qualified_name.clone(),
+                    outcome: TestOutcome::Skipped,
+                    reason: reason.map(str::to_owned),
+                    output: None,
+                });
+                summary.skipped += 1;
+                continue;
+            }
+            on_test_started(&test.qualified_name)?;
+            last_started_test = Some(test.qualified_name.clone());
+            if emit && !args.json {
+                test_ui.start_running(row_index)?;
+                if !args.plain {
+                    workspace.session().pipeline().halt_progress_bars_for_output();
+                }
+            }
+            let (outcome, duration) = runs.take(row_index);
+            match outcome {
+                Ok(output) => {
+                    if emit && !args.json {
+                        test_ui.finish_row(row_index, TestRowState::Passed, duration, None)?;
+                        if !args.plain {
+                            workspace.session().pipeline().halt_progress_bars_for_output();
+                        }
+                    }
+                    executions.push(TestExecution {
+                        name: test.name.to_string(),
+                        qualified_name: test.qualified_name.clone(),
+                        outcome: TestOutcome::Passed,
+                        reason: None,
+                        output: Some(output),
+                    });
+                    summary.passed += 1;
+                    if target_started.elapsed() >= workspace.target_timeout() {
+                        timeout_error = Some(anyhow!(
+                            "{}-second target budget expired for `{}` in phase `execute_tests`",
+                            workspace.target_timeout().as_secs(),
+                            target.name
+                        ));
+                        budget_expired = true;
+                        workspace.cancellation().cancel();
+                        break;
+                    }
+                }
+                Err(error) => {
+                    if let Err(budget_error) = workspace.check_budget(&target.name, "execute_tests", Some(target_started)) {
+                        timeout_error = Some(budget_error);
+                        budget_expired = true;
+                        record_timed_out_test(
+                            &mut test_ui,
+                            &mut executions,
+                            &mut summary,
+                            emit,
+                            args.json,
+                            row_index,
+                            test,
+                        )?;
+                        break;
+                    }
+                    let reason = if args.json {
+                        error.to_string()
+                    } else {
+                        diagnostics::format_report(&diagnostics::report_from_anyhow(&error)).to_string()
+                    };
+                    if first_failure.is_none() {
+                        first_failure = Some(format!("{}: {}", test.qualified_name, reason.trim()));
+                    }
+                    if emit {
+                        let detail =
+                            format!("\n  FAIL {name}: {reason}", name = test.qualified_name, reason = reason.trim());
+                        workspace.session().pipeline().halt_progress_bars_for_output();
+                        eprintln!("{detail}");
+                        test_ui.finish_row(row_index, TestRowState::Failed, duration, Some(&reason))?;
+                    }
+                    executions.push(TestExecution {
+                        name: test.name.to_string(),
+                        qualified_name: test.qualified_name.clone(),
+                        outcome: TestOutcome::Failed,
+                        reason: Some(reason),
+                        output: None,
+                    });
+                    summary.failed += 1;
+                }
             }
         }
-    }
-    if budget_expired {
-        for (test, row_index, _initial) in planned {
-            record_timed_out_test(&mut test_ui, &mut executions, &mut summary, emit, args.json, row_index, test)?;
+        if budget_expired {
+            for (test, row_index, _initial) in planned {
+                record_timed_out_test(&mut test_ui, &mut executions, &mut summary, emit, args.json, row_index, test)?;
+            }
         }
-    }
+        Ok(())
+    })?;
 
     // A `compile-fail` project (by convention, an entry path with a `compile-fail` path
     // component — see `corelib/packages/network/tests/compile-fail/` and

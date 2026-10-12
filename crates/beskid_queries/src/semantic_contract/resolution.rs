@@ -58,6 +58,9 @@ pub(super) fn resolve_item_declaration_candidate(
         {
             return Some(declaration);
         }
+        if let Some(declaration) = resolve_type_qualified_local_function(db, program, index, key, path) {
+            return Some(declaration);
+        }
         return resolve_type_qualified_imported_function(db, key, path);
     };
     unique_exported_function_in_unit(db, target_unit, key.generation, &name.node.name.node.name)
@@ -389,6 +392,30 @@ pub(super) fn public_module_routes(
 /// likewise unique. This preserves a direct call edge for the Corelib convention of spelling
 /// static functions through their nominal type without treating arbitrary nested paths as
 /// callable.
+/// Resolve `Type.Function` inside the unit that declares `Type`: the same static spelling an
+/// importer writes as `Module.Type.Function`. The qualifier must name exactly one type or enum of
+/// this unit with the written generic arity and must not be shadowed by a lexical declaration;
+/// the function must be the unique function of that name in this unit. Anything else stays
+/// unresolved rather than guessing a callable.
+fn resolve_type_qualified_local_function(
+    db: &dyn Db,
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    key: AstNodeKey,
+    path: &beskid_analysis::syntax::Path,
+) -> Option<AstNodeKey> {
+    let [type_segment, function] = path.segments.as_slice() else { return None };
+    let type_name = type_segment.node.name.node.name.as_str();
+    if resolve_lexical_declaration(program, index, key.node, type_name).is_some() {
+        return None;
+    }
+    // A bare qualifier names the type whatever its arity (`Crate.Make<T>` on `Crate<T>`); written
+    // type arguments must match the declared arity exactly.
+    let arity = (!type_segment.node.type_args.is_empty()).then_some(type_segment.node.type_args.len());
+    super::layouts::unique_nominal_type_in_unit(db, key.unit, key.generation, type_name, arity)?;
+    unique_function_in_unit(db, key.unit, key.generation, &function.node.name.node.name)
+}
+
 pub(super) fn resolve_type_qualified_imported_function(
     db: &dyn Db,
     key: AstNodeKey,

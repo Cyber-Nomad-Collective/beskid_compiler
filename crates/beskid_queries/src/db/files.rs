@@ -59,13 +59,10 @@ impl BeskidDatabase {
             registry.get(&canonical).copied()
         };
         if let Some(existing) = existing {
-            existing.set_text(self).to(text.clone());
+            existing.set_text(self).to(text);
         } else {
-            let file = FileText::new(self, canonical.clone(), text.clone());
-            self.file_registry.lock().expect("file registry").insert(canonical.clone(), file);
-        }
-        if let Some(root) = &self.persistence_root {
-            let _ = crate::persistence::persist_file_text(root, &canonical, &text);
+            let file = FileText::new(self, canonical.clone(), text);
+            self.file_registry.lock().expect("file registry").insert(canonical, file);
         }
     }
 

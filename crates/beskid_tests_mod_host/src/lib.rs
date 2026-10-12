@@ -51,6 +51,7 @@ const CLI_PACKAGE: &str = "beskid_cli";
 
 static CLI_BINARY: OnceLock<Result<PathBuf, String>> = OnceLock::new();
 static RUNTIME_PREFIX: OnceLock<Result<PathBuf, String>> = OnceLock::new();
+static SHARED_CORELIB: OnceLock<Result<PathBuf, String>> = OnceLock::new();
 static PROVISIONED_CORELIBS: Mutex<BTreeSet<PathBuf>> = Mutex::new(BTreeSet::new());
 
 /// The debug runtime kit shared by every test of this target directory and by the Mods it
@@ -75,8 +76,71 @@ pub fn provisioned_cli() -> Result<PathBuf> {
     cached(&CLI_BINARY, locate_cli)
 }
 
+/// One sealed Corelib installation per target directory and bundle fingerprint, with its native
+/// Mods provisioned: `<target>/<profile>/beskid-test-mod-host/corelib/<fingerprint>`.
+///
+/// The bundle is the one [`provisioned_cli`] embeds (`beskid dev corelib`), which is the bundle
+/// every binary of this target directory embeds. Tests that need an installed Corelib point
+/// `BESKID_CORELIB_ROOT` at this root instead of materializing a fresh copy: the copy, its
+/// `Project.lock` files and its Mod artifacts are reused by every later test process until the
+/// Corelib sources or the CLI change. A changed bundle gets a new fingerprint and a new root; a
+/// changed CLI or runtime kit fails Mod qualification and rebuilds the Mods in place.
+/// Materialization and provisioning are serialized across processes.
+pub fn shared_corelib_root() -> Result<PathBuf> {
+    cached(&SHARED_CORELIB, stage_shared_corelib)
+}
+
+fn stage_shared_corelib() -> Result<PathBuf> {
+    use beskid_abi::corelib_bundle::CORELIB_BUNDLE_FINGERPRINT_FILE;
+    let root = harness_root()?.join("corelib");
+    fs::create_dir_all(&root).with_context(|| format!("create {}", root.display()))?;
+    let cli = provisioned_cli()?;
+    let installed = {
+        let _lock = FileLock::acquire(&root.join(".materialize.lock"))?;
+        let staging = root.join(format!(".staging-{}", std::process::id()));
+        if staging.exists() {
+            fs::remove_dir_all(&staging).with_context(|| format!("remove {}", staging.display()))?;
+        }
+        let output = Command::new(&cli)
+            .args(["dev", "corelib", "--output"])
+            .arg(&staging)
+            .env(ENV_CORELIB_ROOT, &staging)
+            .output()
+            .with_context(|| format!("invoke `{} dev corelib`", cli.display()))?;
+        if !output.status.success() {
+            bail!(
+                "materialize the embedded Corelib bundle\nstdout:\n{}\nstderr:\n{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+        let marker = fs::read_to_string(staging.join(CORELIB_BUNDLE_FINGERPRINT_FILE))
+            .context("the materialized Corelib bundle carries no fingerprint marker")?;
+        let fingerprint = marker.trim().to_owned();
+        if fingerprint.len() != 64 || !fingerprint.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+            bail!("invalid Corelib bundle fingerprint `{fingerprint}`");
+        }
+        let installed = root.join(&fingerprint);
+        let current = fs::read_to_string(installed.join(CORELIB_BUNDLE_FINGERPRINT_FILE))
+            .is_ok_and(|existing| existing.trim() == fingerprint);
+        if current {
+            fs::remove_dir_all(&staging).with_context(|| format!("remove {}", staging.display()))?;
+        } else {
+            if installed.exists() {
+                fs::remove_dir_all(&installed)
+                    .with_context(|| format!("remove incomplete Corelib {}", installed.display()))?;
+            }
+            fs::rename(&staging, &installed).with_context(|| format!("install Corelib {}", installed.display()))?;
+        }
+        installed
+    };
+    provision_corelib_mods(&installed)?;
+    Ok(installed)
+}
+
 /// Provisions every native Mod of the Corelib workspace at `corelib_root` (each Mod project under
-/// `<corelib_root>/mods`) with [`provisioned_cli`] against [`shared_runtime_prefix`].
+/// `<corelib_root>/mods`) with [`provisioned_cli`] against [`shared_runtime_prefix`]. A Mod whose
+/// artifact already qualifies for that CLI and runtime kit is reused, not rebuilt.
 ///
 /// Use it for sealed Corelib copies, whose Mod artifacts live inside the copy. The CLI runs with
 /// `corelib_root` as its installed Corelib, so consumers must resolve the same root (set
@@ -89,12 +153,17 @@ pub fn provision_corelib_mods(corelib_root: &Path) -> Result<()> {
     if provisioned.contains(&root) {
         return Ok(());
     }
-    let prefix = shared_runtime_prefix()?;
+    let runtime = shared_runtime_kit()?;
     let cli = provisioned_cli()?;
     let manifests = corelib_mod_manifests(&root)?;
     let _lock = FileLock::acquire(&provisioning_lock_path())?;
     for manifest in &manifests {
-        rebuild_mod(&cli, manifest, &prefix, BuildProfile::Debug, Some(root.as_path()))?;
+        let current =
+            beskid_tools::native_mods::cached_mod_host_for_manifests(std::slice::from_ref(manifest), &cli, &runtime)
+                .is_ok();
+        if !current {
+            rebuild_mod(&cli, manifest, runtime.prefix(), BuildProfile::Debug, Some(root.as_path()))?;
+        }
     }
     provisioned.insert(root);
     Ok(())

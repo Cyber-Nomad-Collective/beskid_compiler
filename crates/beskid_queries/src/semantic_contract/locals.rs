@@ -10,15 +10,41 @@ pub(super) fn implicit_method_receiver_tracked(
 ) -> SemanticQueryResult<AstNodeKey> {
     with_node(db, syntax, key, |program, index, node| {
         let path = node.of::<beskid_analysis::syntax::PathExpression>()?;
-        let [segment] = path.path.node.segments.as_slice() else {
-            return None;
+        let method = nearest_ancestor(index, key.node, |kind| {
+            kind == beskid_analysis::syntax_query::NodeKind::MethodDefinition
+        })?;
+        let segment = match path.path.node.segments.as_slice() {
+            [segment] => segment,
+            // `this.Method(...)`: the callee path itself is the receiver argument of the sibling
+            // call, so it names the enclosing method's implicit receiver.
+            [receiver, _]
+                if receiver.node.type_args.is_empty()
+                    && super::layouts::is_implicit_receiver_name(
+                        program,
+                        index,
+                        key,
+                        receiver.node.name.node.name.as_str(),
+                    ) =>
+            {
+                let call_node = nearest_ancestor(index, key.node, |kind| {
+                    kind == beskid_analysis::syntax_query::NodeKind::CallExpression
+                })?;
+                let call = index.node_at(program, call_node)?.of::<beskid_analysis::syntax::CallExpression>()?;
+                let callee = index.direct_child_id(
+                    program,
+                    call_node,
+                    beskid_analysis::syntax_query::DynNodeRef::from(call.callee.as_ref()),
+                )?;
+                (normalized_expression_node(index, callee) == key.node).then_some(())?;
+                return unqualified_enclosing_method_call(program, index, AstNodeKey { node: call_node, ..key }, &path.path.node)
+                    .filter(|(_, enclosing)| enclosing.node == method)
+                    .map(|(_, enclosing)| Ok(enclosing));
+            }
+            _ => return None,
         };
         if !segment.node.type_args.is_empty() {
             return None;
         }
-        let method = nearest_ancestor(index, key.node, |kind| {
-            kind == beskid_analysis::syntax_query::NodeKind::MethodDefinition
-        })?;
         // `this` is the method receiver the resolver declares for every method body
         // (`resolve_refs/items_statements.rs`); `self` is the older spelling. Either names the
         // implicit receiver slot unless a lexical declaration shadows it.

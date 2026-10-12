@@ -198,7 +198,6 @@ type List<T> {
 }
 
 #[test]
-#[ignore = "0.6 gap: f857c827 single-segment parameter/local still reads the method-owned field"]
 fn parameters_and_locals_shadow_method_owned_fields() {
     let source = r#"
 type Holder {
@@ -231,7 +230,6 @@ type Holder {
 }
 
 #[test]
-#[ignore = "0.6 gap: 9c94c662 this.Method() callee has no implicit_method_receiver"]
 fn this_qualified_sibling_call_uses_the_implicit_method_receiver() {
     let source = "type Counter { i64 n, i64 Double() { return 2; } i64 Quad() { return this.Double() * 2; } }";
     let (db, _project, unit, generation, index) = setup(source);
@@ -240,6 +238,98 @@ fn this_qualified_sibling_call_uses_the_implicit_method_receiver() {
         key_at_start(unit, generation, &index, NodeKind::PathExpression, source.find("this.Double").expect("callee"));
 
     assert_eq!(implicit_method_receiver(&db, callee), Ok(Some(quad)));
+}
+
+#[test]
+fn this_qualified_sibling_call_lowers_as_a_direct_call_with_the_receiver_argument() {
+    let source = "type Counter { i64 n, i64 Double() { return 2; } i64 Quad() { return this.Double() * 2; } }";
+    let (db, _project, unit, generation, index) = setup(source);
+    let double = key(unit, generation, &index, NodeKind::MethodDefinition, 0);
+    let call = key(unit, generation, &index, NodeKind::CallExpression, 0);
+    let callee =
+        key_at_start(unit, generation, &index, NodeKind::PathExpression, source.find("this.Double").expect("callee"));
+
+    assert_eq!(
+        beskid_queries::call_lowering(&db, call).expect("sibling call lowering"),
+        Some(beskid_queries::CallLowering::Direct(double))
+    );
+    assert_eq!(call_arguments(&db, call).expect("arguments").expect("receiver argument").as_ref(), &[callee]);
+}
+
+#[test]
+fn field_of_a_call_result_resolves_through_the_callee_result_type() {
+    // `Make()` is not generic and the call site spells no type arguments: the callee's declared
+    // result is the receiver authority, and the projected field types the binary expression.
+    let source = r#"
+type Point { i64 x, i64 y, }
+Point Make() { return Point { x: 9_i64, y: 2_i64 }; }
+i64 Main() { return Make().x + Make().y; }
+"#;
+    let (db, _project, unit, generation, index) = setup(source);
+    let point = key(unit, generation, &index, NodeKind::TypeDefinition, 0);
+    let first = key(unit, generation, &index, NodeKind::MemberExpression, 0);
+    let second = key(unit, generation, &index, NodeKind::MemberExpression, 1);
+    let sum = key(unit, generation, &index, NodeKind::BinaryExpression, 0);
+
+    let access = aggregate_field_access(&db, first).expect("field access query").expect("call-result field access");
+    assert_eq!(access.declaration, point);
+    assert_eq!(access.index, 0);
+    assert_eq!(aggregate_field_access(&db, second).expect("field access query").map(|access| access.index), Some(1));
+    assert_eq!(abi_type(&db, first), Ok(Some(SemanticTypeId::I64)));
+    assert_eq!(abi_type(&db, sum), Ok(Some(SemanticTypeId::I64)));
+}
+
+#[test]
+fn field_of_a_generic_call_result_applies_the_call_substitutions() {
+    let source = r#"
+type Box<T> { T value, i64 tag, }
+Box<T> Wrap<T>(T value) { return Box<T> { value: value, tag: 1_i64 }; }
+i64 Main() { return Wrap<i64>(4_i64).value + Wrap<string>("s").tag; }
+"#;
+    let (db, _project, unit, generation, index) = setup(source);
+    let value = key(unit, generation, &index, NodeKind::MemberExpression, 0);
+    let tag = key(unit, generation, &index, NodeKind::MemberExpression, 1);
+
+    let access = aggregate_field_access(&db, value).expect("field access query").expect("generic call-result field");
+    assert_eq!(access.layout.fields[0].1, AggregateFieldShape::Scalar(SemanticTypeId::I64));
+    assert_eq!(abi_type(&db, value), Ok(Some(SemanticTypeId::I64)));
+    assert_eq!(abi_type(&db, tag), Ok(Some(SemanticTypeId::I64)));
+}
+
+#[test]
+fn field_of_an_indexed_method_owned_array_element_resolves_inside_the_method() {
+    let source = r#"
+type Entry { string route, i64 signature, }
+type Table {
+    Entry[] entries,
+    i64 Find(string route) {
+        mut i64 index = 0_i64;
+        while (index < 2_i64) {
+            if (entries[index].route == route) { return entries[index].signature; }
+            index = index + 1_i64;
+        }
+        return 0_i64;
+    }
+}
+"#;
+    let (db, _project, unit, generation, index) = setup(source);
+    let entry = key(unit, generation, &index, NodeKind::TypeDefinition, 0);
+    let route = key(unit, generation, &index, NodeKind::MemberExpression, 0);
+    let signature = key(unit, generation, &index, NodeKind::MemberExpression, 1);
+    let condition = key(unit, generation, &index, NodeKind::BinaryExpression, 1);
+
+    let access = aggregate_field_access(&db, route).expect("field access query").expect("indexed element field");
+    assert_eq!(access.declaration, entry);
+    assert_eq!(access.index, 0);
+    assert_eq!(abi_type(&db, route), Ok(Some(SemanticTypeId::STRING)));
+    assert_eq!(aggregate_field_access(&db, signature).expect("field access query").map(|access| access.index), Some(1));
+    assert_eq!(abi_type(&db, condition), Ok(Some(SemanticTypeId::BOOL)));
+    let indexed = key(unit, generation, &index, NodeKind::IndexExpression, 0);
+    assert_eq!(
+        beskid_queries::array_index_element_abi_type(&db, indexed),
+        Ok(Some(SemanticTypeId::POINTER)),
+        "a method-owned array field indexes to its nominal element"
+    );
 }
 
 #[test]

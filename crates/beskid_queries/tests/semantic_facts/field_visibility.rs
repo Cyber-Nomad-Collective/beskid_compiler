@@ -193,7 +193,6 @@ fn call_result_finding(owner_source: &str) -> Option<beskid_queries::MemberRefer
 }
 
 #[test]
-#[ignore = "0.6 gap: a4fac1b2 Make().x call-result projection yields no E1211 finding (Call targets unprojected)"]
 fn projection_of_a_cross_unit_call_result_names_the_private_field() {
     // Evidence ported from 0.5.4 (a4fac1b2 opens `Make().x`): the new read path must stay under E1211.
     let finding = call_result_finding("use Shapes.Request; i64 Reveal() { return Request.Make().token; }")

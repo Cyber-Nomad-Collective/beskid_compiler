@@ -153,7 +153,7 @@ impl CodegenInput<'_> {
             .units
             .iter()
             .position(|unit| beskid_queries::SourceUnitId::new(self.database(), unit.path.clone()) == site.unit)?;
-        let identity = format!("{}_u{unit}_g{}_r{registration_id}", artifact_namespace(self), site.generation.0);
+        let identity = format!("{}_u{unit}_g{}_r{registration_id}", artifact_namespace(self), self.generation_tag(site.generation));
         Some(AggregateStaticPlan {
             descriptor_flags: 0,
             descriptor_getter: None,
@@ -184,7 +184,7 @@ impl CodegenInput<'_> {
             beskid_queries::SourceUnitId::new(self.database(), unit.path.clone()) == declaration.unit
         })?;
         let identity =
-            format!("{}_u{unit}_g{}_n{}", artifact_namespace(self), declaration.generation.0, declaration.node.0);
+            format!("{}_u{unit}_g{}_n{}", artifact_namespace(self), self.generation_tag(declaration.generation), declaration.node.0);
         Some(AggregateStaticPlan {
             descriptor_flags: 0,
             descriptor_getter: None,
@@ -212,7 +212,7 @@ impl CodegenInput<'_> {
             .units
             .iter()
             .position(|unit| beskid_queries::SourceUnitId::new(self.database(), unit.path.clone()) == spawn.unit)?;
-        let identity = format!("{}_u{unit}_g{}_n{}", artifact_namespace(self), spawn.generation.0, spawn.node.0);
+        let identity = format!("{}_u{unit}_g{}_n{}", artifact_namespace(self), self.generation_tag(spawn.generation), spawn.node.0);
         Some(AggregateStaticPlan {
             descriptor_flags: 0,
             descriptor_getter: None,
@@ -276,7 +276,7 @@ impl CodegenInput<'_> {
             .units
             .iter()
             .position(|unit| beskid_queries::SourceUnitId::new(self.database(), unit.path.clone()) == spawn.unit)?;
-        let identity = format!("{}_u{unit}_g{}_n{}", artifact_namespace(self), spawn.generation.0, spawn.node.0);
+        let identity = format!("{}_u{unit}_g{}_n{}", artifact_namespace(self), self.generation_tag(spawn.generation), spawn.node.0);
         Some(AggregateStaticPlan {
             descriptor_flags: 0,
             descriptor_getter: None,
@@ -497,7 +497,7 @@ impl CodegenInput<'_> {
         let identity = format!(
             "{}_u{unit}_g{}_n{}{}",
             artifact_namespace(self),
-            literal.generation.0,
+            self.generation_tag(literal.generation),
             literal.node.0,
             specialization_identity.as_deref().map(|identity| format!("_s{identity}")).unwrap_or_default()
         );
@@ -584,7 +584,7 @@ impl CodegenInput<'_> {
         let identity = format!(
             "{}_enum_u{unit}_g{}_n{}{}",
             artifact_namespace(self),
-            literal.generation.0,
+            self.generation_tag(literal.generation),
             literal.node.0,
             specialization_identity.as_deref().map(|identity| format!("_s{identity}")).unwrap_or_default()
         );

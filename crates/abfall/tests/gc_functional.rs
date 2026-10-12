@@ -1,6 +1,5 @@
 use std::sync::Arc;
 use std::thread;
-use std::time::Duration;
 
 use abfall::{ArrayElementDescriptor, GcCell, GcContext, GcPtr, Heap, Trace, Tracer, TypeDescriptor};
 
@@ -65,8 +64,8 @@ fn threshold_triggers_collection() {
     for _ in 0..200 {
         let _t = ctx.allocate([0u8; 64]);
     }
-    // Background thread should run soon; wait a bit
-    thread::sleep(Duration::from_millis(200));
+    // Whether the background collector has run yet does not matter: an explicit collection never
+    // grows the heap, at any point of the background schedule.
     let after_bg = ctx.heap().bytes_allocated();
     ctx.heap().force_collect();
     let after_force = ctx.heap().bytes_allocated();

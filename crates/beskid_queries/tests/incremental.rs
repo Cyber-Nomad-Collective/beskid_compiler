@@ -9,30 +9,20 @@ use beskid_queries::{
     semantic_snapshot, snapshot, unit_content_fingerprint, unit_imports,
 };
 
-/// Install the Corelib under test into a process-private toolchain home and point every
-/// Corelib-resolving test at it, so these tests never read the developer's `~/.beskid` (or a
-/// shared install that an older toolchain left behind).
+/// Point every Corelib-resolving test at the Corelib under test and a process-private toolchain
+/// home, so these tests never read the developer's `~/.beskid` (or a shared install that an older
+/// toolchain left behind).
 ///
-/// The bundle is the compiler checkout's `corelib/` tree, copied with the same CoreLib.bws member
-/// inventory the embedded bundle uses and sealed with a recomputed `.beskid-bundle.sha256` marker. That is
-/// what makes it a verified installed Corelib (lock replay and service-source admission both
-/// require one) whose bytes match the sources this compiler embeds. The copy's native Mods are
-/// then provisioned inside it against the shared test runtime kit (Mod artifacts under `.beskid/`
-/// are outside the bundle fingerprint). Runs once per process.
+/// The Corelib is the target directory's shared sealed installation of the bundle this compiler
+/// embeds (`beskid_tests_mod_host::shared_corelib_root`), with its native Mods provisioned against
+/// the shared test runtime kit. It is a verified installed Corelib (lock replay and service-source
+/// admission both require one), reused by every test process until its sources or the CLI change,
+/// so no test run rebuilds the Serialization Mod for a fresh copy. Runs once per process.
 fn isolated_corelib_toolchain() -> &'static std::path::Path {
-    use beskid_abi::corelib_bundle::{
-        CORELIB_BUNDLE_FINGERPRINT_FILE, copy_corelib_bundle, fingerprint_corelib_bundle_dir,
-    };
-
     static HOME: std::sync::OnceLock<tempfile::TempDir> = std::sync::OnceLock::new();
     HOME.get_or_init(|| {
         let home = tempfile::tempdir().expect("create isolated BESKID_HOME");
-        let checkout = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../corelib");
-        let corelib = home.path().join("corelib");
-        copy_corelib_bundle(&checkout, &corelib).expect("copy the CoreLib.bws member inventory");
-        let fingerprint = fingerprint_corelib_bundle_dir(&corelib).expect("fingerprint isolated Corelib bundle");
-        std::fs::write(corelib.join(CORELIB_BUNDLE_FINGERPRINT_FILE), format!("{fingerprint}\n"))
-            .expect("seal isolated Corelib bundle");
+        let corelib = beskid_tests_mod_host::shared_corelib_root().expect("provision the shared Corelib under test");
         // SAFETY: runs exactly once, before any test in this binary resolves a Corelib project, so
         // no test observes the environment mid-update.
         unsafe {
@@ -40,7 +30,6 @@ fn isolated_corelib_toolchain() -> &'static std::path::Path {
             std::env::set_var("BESKID_CONFIG_DIR", home.path().join("config"));
             std::env::set_var("BESKID_CORELIB_ROOT", &corelib);
         }
-        beskid_tests_mod_host::provision_corelib_mods(&corelib).expect("provision the isolated Corelib's native Mods");
         home
     })
     .path()

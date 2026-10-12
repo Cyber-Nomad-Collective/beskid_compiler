@@ -278,12 +278,12 @@ fn allows_core_path_dependency_without_explicit_path() {
 }
 
 #[test]
-fn std_path_dependency_without_path_names_the_core_label() {
+fn non_core_path_dependency_without_path_is_rejected() {
     let source = format!("{}\ndependency \"Std\" {{\n  source = \"path\"\n}}\n", base_manifest());
 
-    let error = parse_manifest(&source).expect_err("`Std` is not the Corelib dependency label");
+    let error = parse_manifest(&source).expect_err("only the `Core` label may omit `path`");
     assert!(
-        matches!(&error, ProjectError::Validation(message) if message.contains("named `Core`, not `Std`")),
+        matches!(&error, ProjectError::Validation(message) if message == "dependency `Std` with source = path requires `path`"),
         "{error:?}"
     );
 }

@@ -126,7 +126,7 @@ fn over_limit_snapshot_input_preserves_the_live_database() {
         let (directory, path, _) = snapshot_fixture();
         let snapshot = beskid_queries::cache_root_for_project(directory.path()).join("db.json");
         match policy {
-            "bytes" => std::fs::File::create(&snapshot).unwrap().set_len(64 * 1024 * 1024 + 1).unwrap(),
+            "bytes" => std::fs::File::create(&snapshot).unwrap().set_len(1024 * 1024 * 1024 + 1).unwrap(),
             "depth" => std::fs::write(&snapshot, format!("{}null{}", "[".repeat(257), "]".repeat(257))).unwrap(),
             "string" => std::fs::write(&snapshot, format!("\"{}\"", "x".repeat(4 * 1024 * 1024 + 1))).unwrap(),
             _ => unreachable!(),
@@ -256,6 +256,7 @@ fn warm_snapshot_source_edit_resumes_assembly_generation_in_a_fresh_process() {
 struct Envelope {
     version: String,
     compiler: String,
+    corelib: String,
     digest: String,
     db: Box<serde_json::value::RawValue>,
 }
@@ -317,11 +318,12 @@ fn out_of_order_snapshot_is_rejected_before_salsa_mutation() {
 
 #[test]
 fn incompatible_or_damaged_snapshot_preserves_the_live_database() {
-    for component in ["version", "compiler", "digest"] {
+    for component in ["version", "compiler", "corelib", "digest"] {
         let (directory, path, _) = snapshot_fixture();
         rewrite_snapshot(directory.path(), |envelope| match component {
             "version" => envelope.version.push_str("-incompatible"),
             "compiler" => envelope.compiler = "other-schema-build".into(),
+            "corelib" => envelope.corelib = "bundle:another-corelib".into(),
             "digest" => envelope.digest = "damaged".into(),
             _ => unreachable!(),
         });

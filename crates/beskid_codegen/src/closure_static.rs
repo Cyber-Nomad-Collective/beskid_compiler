@@ -289,7 +289,7 @@ fn closure_identity(input: &CodegenInput<'_>, lambda: AstNodeKey) -> Option<Stri
         .chars()
         .map(|character| if character.is_ascii_alphanumeric() { character } else { '_' })
         .collect::<String>();
-    Some(format!("{namespace}_u{unit_index}_g{}_n{}", lambda.generation.0, lambda.node.0))
+    Some(format!("{namespace}_u{unit_index}_g{}_n{}", input.generation_tag(lambda.generation), lambda.node.0))
 }
 
 fn scalar_layout(pointer_width: u8, ty: SemanticTypeId) -> Option<(u64, u64, bool)> {

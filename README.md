@@ -60,7 +60,7 @@ Initialize the corelib submodule with `git submodule update --init corelib` befo
 
 ### Building
 
-The **core library sources** are pinned as a Git submodule at `corelib/` (repository: [beskid_standard](https://github.com/Cyber-Nomad-Collective/beskid_standard)), under `corelib/beskid_corelib/` (or `compiler/corelib/beskid_corelib/` from the aggregate superrepo root). The CLI embeds that tree at build time (`crates/beskid_tools/build.rs`).
+The **core library sources** are pinned as a Git submodule at `corelib/` (repository: [beskid_standard](https://github.com/Cyber-Nomad-Collective/beskid_standard)), under `corelib/beskid_corelib/` (or `compiler/corelib/beskid_corelib/` from the aggregate superrepo root). The CLI and the language server embed that tree at build time (`crates/beskid_corelib_embed/build.rs`).
 
 From an aggregate `beskid` checkout, `just replace` builds the exact shared editor release version and
 installs its CLI, LSP, updater, ABI-v5 runtime kit, corelib, and bundled packages under `~/.beskid`.

@@ -391,11 +391,20 @@ pub(super) fn run_prepare_spine(
             }
         }
         Err(error) if collect_diagnostics => {
-            tracing::debug!(
-                target: "beskid.analysis",
-                entry = %entry_unit.logical_name,
-                "legacy executable typing failed during diagnostics collection: {error}"
-            );
+            // The query gate is the semantic authority. When it accepted the program (no error
+            // diagnostic collected) but the executable front end still fails, the program cannot
+            // be lowered and nothing else would say why: fail closed with the executable's own
+            // findings as error diagnostics. When the gate already rejected the program its
+            // diagnostics explain the missing executable, and the legacy findings stay silent.
+            if require_no_semantic_errors(&collected_diagnostics).is_ok() {
+                collected_diagnostics.extend(executable_failure_diagnostics(&entry_unit, entry_source, &error));
+            } else {
+                tracing::debug!(
+                    target: "beskid.analysis",
+                    entry = %entry_unit.logical_name,
+                    "legacy executable typing failed during diagnostics collection: {error}"
+                );
+            }
             None
         }
         Err(error) => return Err(error.into()),
@@ -450,4 +459,41 @@ fn own_unit_rule_diagnostics(
         ));
     }
     Ok(diagnostics)
+}
+
+/// Error diagnostics for an executable front end that failed after the query gate accepted the
+/// program. Each legacy finding renders with its own message (which carries its location) anchored
+/// at the start of the entry unit, under the code `internal.executable`, so the build gate and the
+/// IDE report why no executable exists instead of hiding the failure behind a missing typed result.
+fn executable_failure_diagnostics(
+    entry_unit: &crate::projects::SourceUnit,
+    entry_source: &str,
+    error: &super::super::semantic_facts::SemanticFactsError,
+) -> Vec<SemanticDiagnostic> {
+    use super::super::semantic_facts::SemanticFactsError;
+    let messages: Vec<String> = match error {
+        SemanticFactsError::Resolve(errors) => errors.iter().map(|error| error.to_string()).collect(),
+        SemanticFactsError::Type { errors, .. } => errors.iter().map(|error| error.to_string()).collect(),
+    };
+    let messages = if messages.is_empty() { vec![error.to_string()] } else { messages };
+    let anchor_end = entry_source.len().min(1);
+    let anchor = crate::syntax::SpanInfo { start: 0, end: anchor_end, line_col_start: (1, 1), line_col_end: (1, 1) };
+    messages
+        .into_iter()
+        .map(|message| {
+            crate::analysis::diagnostics::make_diagnostic(
+                entry_unit.logical_name.as_str(),
+                entry_source,
+                anchor,
+                format!("executable front end rejected a program the semantic gate accepted: {message}"),
+                "executable",
+                Some(
+                    "the query gate found no error, but lowering cannot type this program; report the construct"
+                        .to_string(),
+                ),
+                Some("internal.executable".to_string()),
+                crate::analysis::Severity::Error,
+            )
+        })
+        .collect()
 }

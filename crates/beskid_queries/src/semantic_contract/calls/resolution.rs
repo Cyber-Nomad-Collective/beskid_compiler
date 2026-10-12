@@ -229,7 +229,23 @@ pub(in crate::semantic_contract) fn unqualified_enclosing_method_call(
     key: AstNodeKey,
     path: &beskid_analysis::syntax::Path,
 ) -> Option<(AstNodeKey, AstNodeKey)> {
-    let [segment] = path.segments.as_slice() else { return None };
+    // `Method()` or `this.Method()` (`self.Method()` is the older spelling): both name a sibling
+    // method on the implicit receiver unless a lexical declaration shadows the qualifier.
+    let segment = match path.segments.as_slice() {
+        [segment] => segment,
+        [receiver, segment]
+            if receiver.node.type_args.is_empty()
+                && super::super::layouts::is_implicit_receiver_name(
+                    program,
+                    index,
+                    key,
+                    receiver.node.name.node.name.as_str(),
+                ) =>
+        {
+            segment
+        }
+        _ => return None,
+    };
     if !segment.node.type_args.is_empty() {
         return None;
     }

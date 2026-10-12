@@ -49,6 +49,39 @@ pub struct CodegenInput<'db> {
     glue_handle_bindings: Arc<[AstNodeKey]>,
 }
 
+/// A [`CodegenInput`] without its database handle ([`CodegenInput::detach`]).
+pub(crate) struct DetachedCodegenInput {
+    typed_program: TypedProgram,
+    roots: Arc<[AstNodeKey]>,
+    target: TargetMetadata,
+    abi_manifest: AbiManifestV5,
+    artifact_namespace: Arc<str>,
+    composition_plan: Option<Arc<beskid_analysis::composition::BindingPlan>>,
+    composition_snapshot: Option<Arc<beskid_analysis::composition::CompositionSnapshot>>,
+    native_mod_callbacks: Option<crate::native_mod::callbacks::NativeModCallbackCapability>,
+    glue_imports: Arc<std::collections::HashMap<AstNodeKey, String>>,
+    glue_handle_bindings: Arc<[AstNodeKey]>,
+}
+
+impl DetachedCodegenInput {
+    /// Re-attach to a handle of the storage the input was validated against.
+    pub(crate) fn attach(self, db: &dyn Db) -> CodegenInput<'_> {
+        CodegenInput {
+            db,
+            typed_program: self.typed_program,
+            roots: self.roots,
+            target: self.target,
+            abi_manifest: self.abi_manifest,
+            artifact_namespace: self.artifact_namespace,
+            composition_plan: self.composition_plan,
+            composition_snapshot: self.composition_snapshot,
+            native_mod_callbacks: self.native_mod_callbacks,
+            glue_imports: self.glue_imports,
+            glue_handle_bindings: self.glue_handle_bindings,
+        }
+    }
+}
+
 impl<'db> CodegenInput<'db> {
     pub fn new(
         db: &'db dyn Db,
@@ -109,6 +142,47 @@ impl<'db> CodegenInput<'db> {
         &self.typed_program
     }
 
+    /// Location-independent label of one assembly unit, for symbol names and source identities.
+    ///
+    /// Workspace materialization places the project's own sources and every dependency (Corelib
+    /// packages included) beneath the compiled project's root, under directory names derived from
+    /// portable lock identities. The label is the unit path relative to that root, so two copies of
+    /// the same project at different locations produce equal symbols and identities. A unit outside
+    /// the root (a compiler-embedded corpus) keeps its logical name, which is already relative.
+    pub fn portable_unit_label(&self, path: &std::path::Path, logical_name: &str) -> String {
+        let root = self.typed_program.project.project_root(self.db);
+        let relative = path.strip_prefix(&root).ok().map(std::path::Path::to_path_buf).or_else(|| {
+            let canonical = root.canonicalize().ok()?;
+            path.strip_prefix(canonical).ok().map(std::path::Path::to_path_buf)
+        });
+        match relative {
+            Some(relative) => relative
+                .components()
+                .map(|component| component.as_os_str().to_string_lossy().into_owned())
+                .collect::<Vec<_>>()
+                .join("/"),
+            None => logical_name.to_owned(),
+        }
+    }
+
+    /// Run-independent tag of a syntax generation for emitted names and identities: its distance
+    /// from this program's generation (`0` for the program's own generation, `m<n>` for an older
+    /// one). A restored session snapshot resumes generation numbering, so absolute numbers differ
+    /// between otherwise identical compilations while the distance does not. Distinct generations
+    /// keep distinct tags, so names stay unique.
+    pub fn generation_tag(&self, generation: beskid_queries::SyntaxGenerationId) -> String {
+        let base = self.typed_program.generation.0;
+        if generation.0 >= base { (generation.0 - base).to_string() } else { format!("m{}", base - generation.0) }
+    }
+
+    /// Link-name fragment of [`Self::portable_unit_label`]: every byte outside `[A-Za-z0-9]` is `_`.
+    pub fn portable_unit_symbol_label(&self, path: &std::path::Path, logical_name: &str) -> String {
+        self.portable_unit_label(path, logical_name)
+            .chars()
+            .map(|character| if character.is_ascii_alphanumeric() { character } else { '_' })
+            .collect()
+    }
+
     pub fn roots(&self) -> &[AstNodeKey] {
         &self.roots
     }
@@ -132,6 +206,25 @@ impl<'db> CodegenInput<'db> {
             target: self.target.clone(),
             abi_manifest: self.abi_manifest.clone(),
             artifact_namespace,
+            composition_plan: self.composition_plan.clone(),
+            composition_snapshot: self.composition_snapshot.clone(),
+            native_mod_callbacks: self.native_mod_callbacks.clone(),
+            glue_imports: self.glue_imports.clone(),
+            glue_handle_bindings: self.glue_handle_bindings.clone(),
+        }
+    }
+
+    /// Every field of this validated input except its database handle, so the input can be
+    /// re-attached to another handle of the same Salsa storage on a worker thread (see
+    /// [`beskid_queries::Db::fork_db`]). All handles observe the one revision this input was
+    /// validated against, because nothing writes while emission runs.
+    pub(crate) fn detach(&self) -> DetachedCodegenInput {
+        DetachedCodegenInput {
+            typed_program: self.typed_program.clone(),
+            roots: self.roots.clone(),
+            target: self.target.clone(),
+            abi_manifest: self.abi_manifest.clone(),
+            artifact_namespace: self.artifact_namespace.clone(),
             composition_plan: self.composition_plan.clone(),
             composition_snapshot: self.composition_snapshot.clone(),
             native_mod_callbacks: self.native_mod_callbacks.clone(),

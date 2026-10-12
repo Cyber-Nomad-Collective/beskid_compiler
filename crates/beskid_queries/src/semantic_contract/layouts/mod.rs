@@ -19,7 +19,8 @@ pub(in crate::semantic_contract) use common::{
     abi_local_declaration_type, abi_type_for_direct_aggregate_field_projection, abi_type_for_local_path,
     aggregate_field_layout, aggregate_shape_for_binding, explicit_local_declaration_type, nominal_aggregate_abi_type,
     resolve_nominal_layout_declaration, resolve_type_declaration, semantic_type_from_syntax,
-    unique_assembled_type_in_module, unique_exported_type_in_unit, unique_public_type_in_unit, unique_type_in_unit,
+    unique_assembled_type_in_module, unique_exported_type_in_unit, unique_nominal_type_in_unit, unique_public_type_in_unit,
+    unique_type_in_unit,
 };
 
 pub(in crate::semantic_contract) use enum_layout::{
@@ -32,6 +33,6 @@ pub use enum_layout::{enum_constructor_specialization, enum_match_call_specializ
 
 pub use field_access::aggregate_field_access_specialization;
 pub(in crate::semantic_contract) use field_access::{
-    FieldAccessReceiver, aggregate_field_access_tracked, field_access_receiver, nominal_field_projection,
-    nominal_local_receiver_declaration, path_projection_segment,
+    FieldAccessReceiver, aggregate_field_access_tracked, field_access_receiver, is_implicit_receiver_name,
+    nominal_field_projection, nominal_local_receiver_declaration, path_projection_segment,
 };

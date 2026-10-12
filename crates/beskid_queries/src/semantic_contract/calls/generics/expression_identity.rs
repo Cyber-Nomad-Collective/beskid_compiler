@@ -60,6 +60,13 @@ pub(in crate::semantic_contract) fn generic_source_expression_identity(
     if node.of::<beskid_analysis::syntax::LambdaExpression>().is_some() {
         return lambda_source_identity(db, program, index, normalized_key);
     }
+    // `call().field` (and every member step rooted in it) is proven by the field access fact of
+    // the member expression itself, exactly like a method-owned field path below.
+    if node.of::<beskid_analysis::syntax::MemberExpression>().is_some() {
+        return aggregate_field_access(db, normalized_key)?
+            .ok_or_else(|| source_expression_unavailable(db, normalized_key, "member expression has no field access fact"))
+            .and_then(|access| generic_source_aggregate_field_identity(db, &access));
+    }
     if let Some(path) = node.of::<beskid_analysis::syntax::PathExpression>() {
         if let Ok(Some(access)) = aggregate_field_access(db, normalized_key) {
             return generic_source_aggregate_field_identity(db, &access);

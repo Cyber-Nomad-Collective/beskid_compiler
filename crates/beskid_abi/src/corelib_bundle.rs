@@ -67,10 +67,47 @@ fn is_verified_bundle_root(root: &Path) -> bool {
         return false;
     };
     let expected = expected.trim();
-    expected.len() == 64
-        && expected.bytes().all(|byte| byte.is_ascii_hexdigit())
-        && corelib_bundle_members_present(root)
-        && fingerprint_corelib_bundle_dir(root).ok().as_deref() == Some(expected)
+    if expected.len() != 64 || !expected.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return false;
+    }
+    // Hashing the whole bundle costs tens of milliseconds and repeats on every Mod build. A bundle
+    // whose marker and every file's path, size and modification time are unchanged since a
+    // verification in this process keeps that verdict; any edit, addition or removal re-hashes.
+    let Some(signature) = bundle_stat_signature(root, expected) else {
+        return false;
+    };
+    let cache = VERIFIED_BUNDLES.get_or_init(Default::default);
+    if let Some(verdict) = cache.lock().unwrap_or_else(std::sync::PoisonError::into_inner).get(root).and_then(
+        |(cached, verdict)| (*cached == signature).then_some(*verdict),
+    ) {
+        return verdict;
+    }
+    let verdict = corelib_bundle_members_present(root)
+        && fingerprint_corelib_bundle_dir(root).ok().as_deref() == Some(expected);
+    cache.lock().unwrap_or_else(std::sync::PoisonError::into_inner).insert(root.to_path_buf(), (signature, verdict));
+    verdict
+}
+
+/// Verification verdicts of this process, keyed by bundle root and its [`bundle_stat_signature`].
+static VERIFIED_BUNDLES: std::sync::OnceLock<std::sync::Mutex<HashMap<PathBuf, (u64, bool)>>> =
+    std::sync::OnceLock::new();
+
+/// Digest of the marker and of each fingerprinted file's relative path, size and modification
+/// time; `None` when the tree cannot be walked (verification then fails closed).
+fn bundle_stat_signature(root: &Path, expected: &str) -> Option<u64> {
+    use std::hash::{Hash, Hasher};
+    let mut files = Vec::new();
+    collect_fingerprint_files(root, root, &mut files).ok()?;
+    files.sort();
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    expected.hash(&mut hasher);
+    for relative in files {
+        let metadata = std::fs::symlink_metadata(root.join(&relative)).ok()?;
+        relative.hash(&mut hasher);
+        metadata.len().hash(&mut hasher);
+        metadata.modified().ok()?.hash(&mut hasher);
+    }
+    Some(hasher.finish())
 }
 
 /// A sealed bundle is only usable when it carries every project its own workspace manifest lists.

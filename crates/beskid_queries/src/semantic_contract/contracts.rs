@@ -744,6 +744,38 @@ fn bounded_member_method(
     }
 }
 
+/// Identity of the value a lexical declaration (`identifier`: the declared name node of a
+/// parameter or `let`) binds, interpreted in the enclosing specialization: a contract witness by
+/// parameter identity, a written type through the enclosing substitutions, or an unannotated
+/// `let` through its initializer. `None` when the declaration is neither a parameter nor a `let`.
+pub(super) fn specialized_local_declaration_identity(
+    db: &dyn Db,
+    identifier: AstNodeKey,
+    enclosing: &GenericSpecializationInstance,
+) -> Option<Result<GenericSourceTypeIdentity, SemanticError>> {
+    let syntax = db.syntax_unit(identifier.unit).filter(|syntax| syntax.accepts_key(db, identifier))?;
+    let index = syntax.syntax_index(db);
+    let program = syntax.expanded_program(db);
+    let parent = parent_node(index, identifier.node)?;
+    let declaration = AstNodeKey { node: parent, ..identifier };
+    let environment =
+        enclosing.substitutions.iter().map(|binding| (binding.parameter.as_ref(), binding.source_identity())).collect();
+    if let Some(witness) = enclosing.contract_witnesses.iter().find(|witness| witness.parameter == declaration) {
+        return Some(Ok(witness.source_identity.clone()));
+    }
+    if let Some(parameter) = index.node_at(program, parent).and_then(|node| node.of::<Parameter>()) {
+        return Some(generic_source_type_identity_with_substitutions(db, declaration, &parameter.ty.node, &environment));
+    }
+    let local = index.node_at(program, parent).and_then(|node| node.of::<beskid_analysis::syntax::LetStatement>())?;
+    if let Some(annotation) = &local.type_annotation {
+        return Some(generic_source_type_identity_with_substitutions(db, declaration, &annotation.node, &environment));
+    }
+    let Some(initializer) = index.direct_child_id(program, parent, DynNodeRef::from(&local.value)) else {
+        return Some(Err(source_expression_unavailable(db, identifier, "let initializer node is absent")));
+    };
+    Some(specialized_source_expression_identity(db, AstNodeKey { node: initializer, ..identifier }, Some(enclosing)))
+}
+
 /// Source interpretation in an immutable enclosing specialization. Contract witnesses are
 /// looked up by parameter identity; generic names keep their existing source substitution map.
 pub(super) fn specialized_source_expression_identity(
@@ -769,35 +801,9 @@ pub(super) fn specialized_source_expression_identity(
     if let Some(path) = node.of::<beskid_analysis::syntax::PathExpression>()
         && let [segment] = path.path.node.segments.as_slice()
         && let Some(identifier) = resolve_lexical_declaration(program, index, key.node, &segment.node.name.node.name)
-        && let Some(parent) = parent_node(index, identifier)
+        && let Some(identity) = specialized_local_declaration_identity(db, AstNodeKey { node: identifier, ..key }, enclosing)
     {
-        let declaration = AstNodeKey { node: parent, ..key };
-        if let Some(witness) = enclosing.contract_witnesses.iter().find(|witness| witness.parameter == declaration) {
-            return Ok(witness.source_identity.clone());
-        }
-        if let Some(parameter) = index.node_at(program, parent).and_then(|node| node.of::<Parameter>()) {
-            return generic_source_type_identity_with_substitutions(db, declaration, &parameter.ty.node, &environment);
-        }
-        if let Some(local) =
-            index.node_at(program, parent).and_then(|node| node.of::<beskid_analysis::syntax::LetStatement>())
-        {
-            if let Some(annotation) = &local.type_annotation {
-                return generic_source_type_identity_with_substitutions(
-                    db,
-                    declaration,
-                    &annotation.node,
-                    &environment,
-                );
-            }
-            let initializer = index
-                .direct_child_id(program, parent, DynNodeRef::from(&local.value))
-                .ok_or_else(|| source_expression_unavailable(db, key, "let initializer node is absent"))?;
-            return specialized_source_expression_identity(
-                db,
-                AstNodeKey { node: initializer, ..key },
-                Some(enclosing),
-            );
-        }
+        return identity;
     }
     if let Some(literal) = node.of::<beskid_analysis::syntax::StructLiteralExpression>() {
         return generic_source_type_identity_with_substitutions(

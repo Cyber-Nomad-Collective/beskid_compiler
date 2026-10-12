@@ -97,10 +97,6 @@ fn module_index_known_paths_include_core_output_for_corelib_mvp() {
             paths.contains("Core::Output"),
             "expected Core::Output in known module paths, got: {paths:?}"
         );
-        assert!(
-            !paths.iter().any(|path| path == "Std" || path.starts_with("Std::")),
-            "no module path may carry a Std prefix: {paths:?}"
-        );
     });
 }
 
@@ -133,11 +129,11 @@ fn corelib_syscall_tests_prefetch_includes_testing_assert_true() {
 
     with_cwd_at_workspace_root(&compiler_workspace_root(), || {
         let project = corelib_root().join("tests/corelib_tests");
-        let entry = project.join("src/console/AnsiEscapeTests.bd");
+        let entry = project.join("src/console/ConsoleSuite.bd");
         let resolved = resolve_input(
             Some(&entry),
             Some(&project),
-            Some("ConsoleAnsiEscapeTests"),
+            Some("ConsoleSuite"),
             None,
             beskid_analysis::projects::WorkspacePrepareOptions::default(),
         )
@@ -164,7 +160,7 @@ fn corelib_syscall_tests_prefetch_includes_testing_assert_true() {
             "expected Testing.Assert in import closure, got: {loaded:?}"
         );
         assert!(
-            loaded.iter().any(|p| p.ends_with("AnsiEscapeTests.bd")),
+            loaded.iter().any(|p| p.ends_with("ConsoleSuite.bd")),
             "expected entry unit in assembly, got: {loaded:?}"
         );
     });

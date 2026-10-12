@@ -5,6 +5,7 @@ pub(crate) mod imports;
 mod items;
 mod optional_externs;
 mod orchestration;
+mod parallel;
 mod runtime_checked;
 mod specialization;
 mod trace;

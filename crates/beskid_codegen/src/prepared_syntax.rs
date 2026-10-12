@@ -810,11 +810,7 @@ fn syntax_item_symbol(db: &dyn beskid_queries::Db, input: &CodegenInput<'_>, key
         .units
         .iter()
         .find(|unit| SourceUnitId::new(db, unit.path.clone()) == key.unit)?;
-    let logical = unit
-        .logical_name
-        .chars()
-        .map(|character| if character.is_ascii_alphanumeric() { character } else { '_' })
-        .collect::<String>();
+    let logical = input.portable_unit_symbol_label(&unit.path, &unit.logical_name);
     Some(format!("{name}#syntax_{logical}_{}", key.node.0))
 }
 

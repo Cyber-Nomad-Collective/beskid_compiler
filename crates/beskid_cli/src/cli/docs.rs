@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
 pub(super) fn ensure_corelib_ready() -> anyhow::Result<()> {
-    let provisioned = beskid_tools::ensure_bundled_corelib()?;
+    let provisioned = beskid_tools::ensure_bundled_corelib(&beskid_corelib_embed::CORELIB_BUNDLE)?;
     if provisioned.updated {
         eprintln!(
             "corelib: updated to {} at {}",

@@ -101,6 +101,10 @@ pub(super) fn specialization_for_call_in_environment(
             && parent_node(declaration_syntax.syntax_index(db), enclosing.declaration.node) == Some(owner.node)
         {
             enclosing.substitutions.clone()
+        } else if let Some(bindings) =
+            enclosing.and_then(|enclosing| specialized_method_receiver_bindings(db, key, arguments[0], owner, enclosing))
+        {
+            bindings
         } else {
             generic_nominal_method_receiver(db, key)?
                 .filter(|receiver| receiver.method == declaration && receiver.owner == owner)
@@ -333,6 +337,60 @@ pub(super) fn specialization_for_call_in_environment(
         substitutions: substitutions.into(),
         contract_witnesses,
     })
+}
+
+/// Owner generic bindings of a method receiver inside a specialized body. `Bag<T> bag` in
+/// `Single<T>` is typed by the enclosing parameters, so only its identity in the enclosing
+/// environment can bind the owner's generics; no target-neutral annotation fact can. `None` when
+/// the receiver has no nominal identity of exactly the owner type in that environment, so the
+/// target-neutral receiver authority still decides.
+fn specialized_method_receiver_bindings(
+    db: &dyn Db,
+    key: AstNodeKey,
+    receiver: AstNodeKey,
+    owner: AstNodeKey,
+    enclosing: &GenericSpecializationInstance,
+) -> Option<Arc<[GenericSubstitution]>> {
+    // A path callee (`bag.Put`) carries the receiver as its root segment: the receiver argument is
+    // the callee path itself, so its root local is the value whose identity binds the owner.
+    let syntax = db.syntax_unit(receiver.unit).filter(|syntax| syntax.accepts_key(db, receiver))?;
+    let index = syntax.syntax_index(db);
+    let program = syntax.expanded_program(db);
+    let identity = if let Some(path) = index
+        .node_at(program, receiver.node)
+        .and_then(|node| node.of::<beskid_analysis::syntax::PathExpression>())
+        && let [root, _] = path.path.node.segments.as_slice()
+        && root.node.type_args.is_empty()
+        && let Some(identifier) = resolve_lexical_declaration(program, index, receiver.node, &root.node.name.node.name)
+    {
+        super::super::super::contracts::specialized_local_declaration_identity(
+            db,
+            AstNodeKey { node: identifier, ..receiver },
+            enclosing,
+        )?
+        .ok()?
+    } else {
+        specialized_source_expression_identity(db, receiver, Some(enclosing)).ok()?
+    };
+    let GenericSourceTypeIdentity::Nominal { arguments, .. } = &identity else { return None };
+    (super::super::super::contracts::concrete_declaration(db, key, &identity) == Some(owner)).then_some(())?;
+    let owner_syntax = db.syntax_unit(owner.unit).filter(|syntax| syntax.accepts_key(db, owner))?;
+    let owner_definition = owner_syntax
+        .syntax_index(db)
+        .node_at(owner_syntax.expanded_program(db), owner.node)?
+        .of::<beskid_analysis::syntax::TypeDefinition>()?;
+    (owner_definition.generics.len() == arguments.len()).then_some(())?;
+    Some(
+        owner_definition
+            .generics
+            .iter()
+            .zip(arguments.iter())
+            .map(|(generic, argument)| {
+                GenericSubstitution::from_source(generic.node.name.as_str(), argument.abi_type(), argument.clone())
+            })
+            .collect::<Vec<_>>()
+            .into(),
+    )
 }
 
 fn infer_source_substitutions(
