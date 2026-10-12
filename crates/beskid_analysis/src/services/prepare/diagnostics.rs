@@ -9,15 +9,12 @@ use super::super::input::ResolvedInput;
 
 /// Drop exact-duplicate diagnostics, keeping the first occurrence.
 ///
-/// A genuine invalid `?` target is independently detected twice on the fact-authority path: once
-/// by the authority callback (driven by the typed `try_expression_fact`) and again by
-/// `resolve_and_type_program_with_assembly`'s own full type check, which runs the same
-/// `is_result_shaped_enum` judgment through `type_try_expression` and, on failure, surfaces
-/// the retired legacy checker. Both sites were
-/// correct in isolation; only the caller-facing duplicate needs suppressing, so this dedups by
-/// exact (source, span, code, message) rather than special-casing E1222 alone. The source name is
-/// part of the identity: a dependency-unit finding at the same offset as an entry diagnostic is a
-/// different diagnostic.
+/// The structural rules of the entry unit and the query gate's findings are merged into one
+/// stream; a shape both report at the same site (a Mod analyzer diagnostic repeated over a
+/// cached generation, a finding of a dependency unit reached from two own items) is reported
+/// once. The dedup key is the exact (source, span, code, message), never a code alone. The source
+/// name is part of the identity: a dependency-unit finding at the same offset as an entry
+/// diagnostic is a different diagnostic.
 pub(super) fn dedupe_diagnostics(diagnostics: Vec<SemanticDiagnostic>) -> Vec<SemanticDiagnostic> {
     let mut seen: std::collections::HashSet<(String, usize, usize, Option<String>, String)> =
         std::collections::HashSet::new();

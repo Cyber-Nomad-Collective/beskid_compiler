@@ -6,12 +6,9 @@
 
 use std::path::Path;
 
-use anyhow::Result;
-
 use crate::analysis::SemanticDiagnostic;
 use crate::compilation_context::ProjectSessionHandle;
 use crate::projects::CompilePlan;
-
 
 /// The reserved-keyword diagnostic of a source, reported before parsing: `async` and `await`
 /// are reserved and have no syntax, so every analysis path reports them with their own codes
