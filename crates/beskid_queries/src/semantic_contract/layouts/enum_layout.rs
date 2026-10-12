@@ -23,7 +23,9 @@ pub(in crate::semantic_contract) use constructor::{enum_constructor_template_tra
 pub(in crate::semantic_contract) use layout::enum_layout_tracked;
 pub use match_materialize::{enum_match_call_specialization, enum_match_specialization};
 pub(in crate::semantic_contract) use match_materialize::enum_match_tracked;
-pub(in crate::semantic_contract) use scrutinee::{enum_match_scrutinee_layout, enum_pattern_targets_declaration};
+pub(in crate::semantic_contract) use scrutinee::{
+    enum_match_scrutinee_layout, enum_pattern_targets_declaration, ungrouped_scrutinee,
+};
 use scrutinee::{
     enum_match_environment_for_applied_identity, enum_match_scrutinee_layout_in_environment, enum_match_source_environment,
 };

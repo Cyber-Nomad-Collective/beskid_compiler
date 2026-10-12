@@ -396,7 +396,11 @@ pub(super) fn run_prepare_spine(
             // be lowered and nothing else would say why: fail closed with the executable's own
             // findings as error diagnostics. When the gate already rejected the program its
             // diagnostics explain the missing executable, and the legacy findings stay silent.
-            if require_no_semantic_errors(&collected_diagnostics).is_ok() {
+            // The gate's fact findings are merged only below, so they are judged here as well:
+            // a fact error (such as a call arity mismatch) is a gate rejection.
+            if require_no_semantic_errors(&collected_diagnostics).is_ok()
+                && require_no_semantic_errors(&fact_diagnostics).is_ok()
+            {
                 collected_diagnostics.extend(executable_failure_diagnostics(&entry_unit, entry_source, &error));
             } else {
                 tracing::debug!(

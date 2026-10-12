@@ -43,6 +43,10 @@ const FILES: &[EmbeddedFile] = &[
     },
     EmbeddedFile { relative_path: "assembly/common/network.h", contents: include_str!("../assembly/common/network.h") },
     EmbeddedFile {
+        relative_path: "assembly/common/network_settle.h",
+        contents: include_str!("../assembly/common/network_settle.h"),
+    },
+    EmbeddedFile {
         relative_path: "assembly/common/network_posix.h",
         contents: include_str!("../assembly/common/network_posix.h"),
     },

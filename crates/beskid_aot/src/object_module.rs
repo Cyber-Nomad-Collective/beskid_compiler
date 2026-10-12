@@ -239,12 +239,19 @@ impl BeskidObjectModule {
             .as_mut()
             .ok_or_else(|| AotError::InvalidRequest { message: "object module already finalized".to_owned() })?;
 
+        let platform_imports = referenced_platform_imports(module.isa(), artifact)?;
         #[cfg(debug_assertions)]
         if let Err(missing) = validate_artifact(artifact) {
-            let names: Vec<_> = missing.iter().map(|m| m.name.as_str()).collect();
-            return Err(AotError::InvalidRequest {
-                message: format!("codegen artifact validation failed: undefined callees: {}", names.join(", ")),
-            });
+            let names: Vec<_> = missing
+                .iter()
+                .map(|m| m.name.as_str())
+                .filter(|name| !platform_imports.iter().any(|(symbol, _)| symbol == name))
+                .collect();
+            if !names.is_empty() {
+                return Err(AotError::InvalidRequest {
+                    message: format!("codegen artifact validation failed: undefined callees: {}", names.join(", ")),
+                });
+            }
         }
 
         let exports = artifact.exports.clone();
@@ -267,6 +274,16 @@ impl BeskidObjectModule {
             }
             beskid_codegen::cranelift_host::ExternDeclarationError::Module(error) => AotError::from(error),
         })?;
+        // Kit platform imports (libm math, libc, ...) are the exact-kit authority for `clif { call @symbol }`
+        // callees that no `[Extern]` contract declares, exactly as the JIT admits them through the kit
+        // import allowlist. The native link already carries the target's runtime platform libraries.
+        for (symbol, signature) in platform_imports {
+            if self.func_ids.contains_key(&symbol) {
+                continue;
+            }
+            let id = module.declare_function(&symbol, Linkage::Import, &signature)?;
+            self.func_ids.insert(symbol, id);
+        }
 
         self.data_ids = emit_string_literals(module, artifact)?;
         beskid_codegen::emit_closure_static_plans(module, artifact).map_err(AotError::from)?;
@@ -340,6 +357,85 @@ impl BeskidObjectModule {
         std::fs::write(output_object, bytes)
             .map_err(|err| AotError::Io { path: output_object.to_path_buf(), message: err.to_string() })
     }
+}
+
+/// Function-kind platform imports of the target's canonical ABI-v5 manifest that `artifact`'s CLIF
+/// calls and that no artifact function, extern import, or runtime builtin supplies, each with its
+/// call signature. Every call site must match the manifest signature exactly; a mismatch fails closed.
+fn referenced_platform_imports(
+    isa: &dyn TargetIsa,
+    artifact: &CodegenArtifact,
+) -> AotResult<Vec<(String, cranelift_codegen::ir::Signature)>> {
+    use beskid_abi::abi_v5::{AbiManifestV5, AbiType, PlatformImportKind, TargetMetadata};
+    use cranelift_codegen::ir::{ExternalName, types};
+
+    let defined = artifact.functions.iter().map(|function| function.name.as_str()).collect::<HashSet<_>>();
+    let supplied = artifact
+        .extern_imports
+        .iter()
+        .chain(artifact.trusted_extern_imports.iter())
+        .map(|import| import.symbol.as_str())
+        .chain(beskid_abi::all_builtin_specs().map(|spec| spec.symbol))
+        .collect::<HashSet<_>>();
+    let mut referenced: Vec<(String, cranelift_codegen::ir::Signature)> = Vec::new();
+    for function in &artifact.functions {
+        for (_, external) in function.function.dfg.ext_funcs.iter() {
+            let ExternalName::TestCase(name) = &external.name else {
+                continue;
+            };
+            let symbol = String::from_utf8_lossy(name.raw()).into_owned();
+            if defined.contains(symbol.as_str()) || supplied.contains(symbol.as_str()) {
+                continue;
+            }
+            referenced.push((symbol, function.function.dfg.signatures[external.signature].clone()));
+        }
+    }
+    if referenced.is_empty() {
+        return Ok(Vec::new());
+    }
+    let Ok(target) = TargetMetadata::for_triple(&isa.triple().to_string()) else {
+        return Ok(Vec::new());
+    };
+    let manifest = AbiManifestV5::canonical_runtime(target);
+    let pointer = isa.pointer_type();
+    let clif_type = |ty: AbiType| match ty {
+        AbiType::Void => None,
+        AbiType::Pointer | AbiType::USize | AbiType::ISize => Some(pointer),
+        AbiType::I8 | AbiType::U8 => Some(types::I8),
+        AbiType::I16 | AbiType::U16 => Some(types::I16),
+        AbiType::I32 | AbiType::U32 => Some(types::I32),
+        AbiType::I64 | AbiType::U64 => Some(types::I64),
+        AbiType::V128 => Some(types::I8X16),
+        AbiType::F32 => Some(types::F32),
+        AbiType::F64 => Some(types::F64),
+    };
+    let mut admitted: Vec<(String, cranelift_codegen::ir::Signature)> = Vec::new();
+    for (symbol, signature) in referenced {
+        let Some(import) = manifest
+            .platform_imports
+            .iter()
+            .find(|import| import.kind == PlatformImportKind::Function && import.symbol == symbol)
+        else {
+            continue;
+        };
+        let params = signature.params.iter().map(|param| Some(param.value_type)).collect::<Vec<_>>();
+        let expected_params = import.params.iter().map(|ty| clif_type(*ty)).collect::<Vec<_>>();
+        let returns = signature.returns.iter().map(|ret| ret.value_type).collect::<Vec<_>>();
+        let expected_returns = clif_type(import.result).into_iter().collect::<Vec<_>>();
+        if params != expected_params || returns != expected_returns {
+            return Err(AotError::InvalidRequest {
+                message: format!(
+                    "platform import `{symbol}` is called with signature {signature}, which does not match the \
+                     ABI-v5 manifest for target `{}`",
+                    isa.triple()
+                ),
+            });
+        }
+        if !admitted.iter().any(|(existing, _)| existing == &symbol) {
+            admitted.push((symbol, signature));
+        }
+    }
+    Ok(admitted)
 }
 
 // Matches the external Cranelift settings builder convention used across the AOT pipeline.
@@ -528,4 +624,64 @@ fn compile_functions(
         }
     }
     Ok(compiled)
+}
+
+#[cfg(test)]
+mod platform_import_tests {
+    use cranelift_codegen::ir::{AbiParam, ExtFuncData, ExternalName, Function, Signature, types};
+    use cranelift_codegen::settings;
+
+    use beskid_codegen::{CodegenArtifact, LoweredFunction};
+
+    use super::referenced_platform_imports;
+
+    fn host_isa() -> std::sync::Arc<dyn cranelift_codegen::isa::TargetIsa> {
+        cranelift_native::builder().expect("host ISA").finish(settings::Flags::new(settings::builder())).expect("ISA")
+    }
+
+    fn calling(symbol: &str, param: types::Type, result: types::Type) -> CodegenArtifact {
+        let isa = host_isa();
+        let mut function = Function::new();
+        let mut signature = Signature::new(isa.default_call_conv());
+        signature.params.push(AbiParam::new(param));
+        signature.returns.push(AbiParam::new(result));
+        let signature = function.import_signature(signature);
+        function.import_function(ExtFuncData {
+            name: ExternalName::testcase(symbol.as_bytes()),
+            signature,
+            colocated: false,
+            patchable: false,
+        });
+        CodegenArtifact { functions: vec![LoweredFunction { name: "Floor".into(), function }], ..Default::default() }
+    }
+
+    #[test]
+    fn manifest_math_import_is_admitted_with_its_exact_signature() {
+        let isa = host_isa();
+        if beskid_abi::abi_v5::TargetMetadata::for_triple(&isa.triple().to_string()).is_err() {
+            return;
+        }
+        let admitted = referenced_platform_imports(isa.as_ref(), &calling("floor", types::F64, types::F64))
+            .expect("floor matches the manifest");
+        assert_eq!(admitted.iter().map(|(symbol, _)| symbol.as_str()).collect::<Vec<_>>(), ["floor"]);
+    }
+
+    #[test]
+    fn manifest_math_import_with_a_mismatched_signature_fails_closed() {
+        let isa = host_isa();
+        if beskid_abi::abi_v5::TargetMetadata::for_triple(&isa.triple().to_string()).is_err() {
+            return;
+        }
+        let error = referenced_platform_imports(isa.as_ref(), &calling("floor", types::I64, types::I64))
+            .expect_err("an i64 floor call must not match the manifest");
+        assert!(error.to_string().contains("platform import `floor`"), "{error}");
+    }
+
+    #[test]
+    fn symbols_outside_the_manifest_are_not_admitted() {
+        let isa = host_isa();
+        let admitted = referenced_platform_imports(isa.as_ref(), &calling("not_a_platform_symbol", types::F64, types::F64))
+            .expect("unknown symbols are left to the undefined-callee check");
+        assert!(admitted.is_empty());
+    }
 }

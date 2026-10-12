@@ -76,7 +76,7 @@ pub fn enum_match_call_specialization(
         .node_at(program, key.node)
         .and_then(|node| node.of::<beskid_analysis::syntax::MatchExpression>())
         .ok_or_else(unavailable)?;
-    if !matches!(expression.scrutinee.node, beskid_analysis::syntax::Expression::Call(_)) {
+    if !matches!(super::scrutinee::ungrouped_scrutinee(expression), beskid_analysis::syntax::Expression::Call(_)) {
         return Ok(None);
     }
     let scrutinee = index

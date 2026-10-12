@@ -124,6 +124,20 @@ fn explicit_generic_call_arguments_substitute_the_callee_type_parameter() {
 }
 
 #[test]
+fn a_bare_integer_argument_of_an_inferred_generic_call_takes_the_inferred_parameter() {
+    // `T` is inferred as `i64` from `wide`; the literal must be passed as `i64`, not as a
+    // truncated default `i32`.
+    let fixture = Fixture::new(
+        "bool Same<T>(T left, T right) { return left == right; } bool Main() { i64 wide = 1; return Same(wide, 2147483649); }",
+    );
+    let literal = fixture.literal(1);
+    let expected = fixture.expected(literal);
+    assert!(matches!(expected.context, ExpectedTypeContext::CallArgument { position: 1, .. }), "{expected:?}");
+    assert_eq!(expected.abi_type(), SemanticTypeId::I64);
+    assert_eq!(fixture.integer_abi(literal), Some(SemanticTypeId::I64));
+}
+
+#[test]
 fn a_trailing_bulk_argument_expects_the_element_and_a_numeric_conversion_supplies_nothing() {
     // Every trailing argument of a `bulk u8[]` callee is one `u8`; the callee receives the pack.
     let bulk = Fixture::new("unit Pack(bulk u8[] values) { return; } unit Main() { Pack(1, 2); return; }");

@@ -52,6 +52,16 @@ int main(void) {
   const size_t maximum = 8 * 1024 * 1024;
   if (beskid_rt_v5_intrinsic_guarded_stack_allocate(65535, maximum) != 0) return 10;
   if (beskid_rt_v5_intrinsic_guarded_stack_allocate(initial, maximum + 4096) != 0) return 11;
+  if (beskid_rt_v5_intrinsic_guarded_stack_allocate(initial, initial - 4096) != 0) return 18;
+  // A configured maximum (BESKID_FIBER_STACK_MAX) is any whole multiple of the initial commit.
+  unsigned char *small = beskid_rt_v5_intrinsic_guarded_stack_allocate(initial, initial * 16);
+  if (small == 0) return 19;
+  small[initial * 16 - initial] = 1;
+  small[initial * 16 - 1] = 2;
+  if (!beskid_rt_v5_intrinsic_guarded_stack_grow(small, initial, initial * 16, initial * 16)) return 20;
+  small[0] = 4;
+  if (beskid_rt_v5_intrinsic_guarded_stack_grow(small, initial * 16, initial * 17, initial * 16)) return 21;
+  beskid_rt_v5_intrinsic_guarded_stack_free(small, initial * 16);
   unsigned char *usable = beskid_rt_v5_intrinsic_guarded_stack_allocate(initial, maximum);
   if (usable == 0) return 12;
   usable[maximum - initial] = 1;

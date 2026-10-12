@@ -2,14 +2,24 @@
 //
 // Hubs multiplex multiple channels: subscribers register channels by index,
 // and waiters poll all channels in round-robin order until one delivers.
-// Built on top of the channel subsystem.
+// Built on top of the channel subsystem. Hubs live in a scheduler-owned chunked
+// table (Storage.bd) and each hub's registrations and waiters are growable
+// vectors; neither the hub count nor the registration count has a fixed cap.
+//
+// Hub record layout (HUB_SLOT_SIZE bytes, never relocates):
+//   offset  0: cursor (word) — round-robin position
+//   offset  8: entries (growable vector; each entry is { index: i64 (8), channel: i64 (8) })
+//   offset 32: waiters (growable vector of parked fiber indices)
+// Re-registering an index replaces its channel in-place; removal compacts
+// in-order so cursor fairness is deterministic and cannot be perturbed by a
+// swap-remove.
+const HUB_CURSOR = 0;
+const HUB_ENTRIES = 8;
+const HUB_WAITERS = 32;
+const HUB_ENTRY_SIZE = 16;
+const HUB_SLOT_SIZE = 56;
 
-const HUB_TABLE_MAX = 16;
-// Each hub retains up to 256 stable registrations. Re-registering an index
-// replaces its channel in-place; removal compacts in-order so cursor fairness
-// is deterministic and cannot be perturbed by a swap-remove.
-const HUB_ENTRY_MAX = 256;
-const HUB_SLOT_SIZE = 4112;
+pub word HubSlotSize() { return HUB_SLOT_SIZE; }
 
 // Hub status discriminants (ABI-stable 4-6, gapped to align with ChannelStatus 0-3).
 const HUB_STATUS_HUB_EMPTY = 4;
@@ -36,7 +46,7 @@ pub enum HubStatus {
     HubNotFound(i64 index),
 }
 
-// Returns the separately allocated hub table owned by the active scheduler.
+// Returns the chunked hub table owned by the active scheduler.
 // Hub storage must never be derived from an undeclared RuntimeState offset.
 pub pointer HubTable() {
     return SchedulerHubTable();
@@ -44,92 +54,98 @@ pub pointer HubTable() {
 
 pub pointer HubSlot(word index) {
     pointer table = HubTable();
-    if table == NativePointer(0) || index >= raw_word_load(table) { return NativePointer(0); }
-    return pointer_add(table, 8 + index * HUB_SLOT_SIZE);
+    if table == NativePointer(0) || index >= ChunkTableCount(table) { return NativePointer(0); }
+    return ChunkTableRecord(table, index);
 }
 
-// Hub layout (4112 bytes):
-//   offset   0: entry_count (word)
-//   offset   8: cursor (word) — round-robin position
-//   offset  16: entries[HUB_ENTRY_MAX] — each is { index: i64 (8), channel: i64 (8) }
+pub pointer HubById(i64 hubId) {
+    if hubId < 0 { return NativePointer(0); }
+    return HubSlot(word(hubId));
+}
 
+pub word HubEntryCount(pointer hub) { return VecCount(pointer_add(hub, HUB_ENTRIES)); }
+pub pointer HubEntry(pointer hub, word position) {
+    return pointer_add(VecData(pointer_add(hub, HUB_ENTRIES)), position * HUB_ENTRY_SIZE);
+}
+
+// Shutdown only: releases one hub's vectors.
+pub unit HubRelease(pointer hub) {
+    VecFree(pointer_add(hub, HUB_ENTRIES), HUB_ENTRY_SIZE);
+    VecFree(pointer_add(hub, HUB_WAITERS), 8);
+    return;
+}
+
+// Creates a hub. A -1 return means the system allocator refused to grow the table.
 [Export(Abi:"C", Symbol:"hub_create")]
 pub i64 HubCreate() {
     pointer table = HubTable();
     if table == NativePointer(0) { return -1; }
-    word count = raw_word_load(table);
-    if count >= HUB_TABLE_MAX { return -1; }
-    pointer slot = pointer_add(table, 8 + count * HUB_SLOT_SIZE);
-    memory_set(slot, 0, HUB_SLOT_SIZE);
-    raw_word_store(table, count + 1);
-    return i64(count);
+    word index = ChunkTableAppend(table);
+    if index == 0xFFFFFFFFFFFFFFFF || index > 0x7FFFFFFFFFFFFFFF { return -1; }
+    return i64(index);
 }
 
 [Export(Abi:"C", Symbol:"hub_register")]
 pub i64 HubRegister(i64 hubId, i64 index, i64 channelId) {
-    if hubId < 0 { return HUB_STATUS_HUB_NOT_FOUND; }
-    mut word hi = word(hubId);
-    if hi >= HUB_TABLE_MAX { return HUB_STATUS_HUB_NOT_FOUND; }
-    pointer hub = HubSlot(hi);
+    pointer hub = HubById(hubId);
     if hub == NativePointer(0) || ChannelSlot(channelId) == NativePointer(0) { return HUB_STATUS_HUB_NOT_FOUND; }
-    word entryCount = raw_word_load(hub);
+    word entryCount = HubEntryCount(hub);
     // An index identifies one registration.  Replacement is stable: it keeps
     // the existing position and therefore preserves the circular poll order.
     mut word existing = 0;
     while existing < entryCount {
-        pointer existingEntry = pointer_add(hub, 16 + existing * 16);
+        pointer existingEntry = HubEntry(hub, existing);
         if i64(raw_word_load(existingEntry)) == index {
             raw_word_store(pointer_add(existingEntry, 8), word(channelId));
             return CHANNEL_STATUS_OK;
         }
         existing = existing + 1;
     }
-    if entryCount >= HUB_ENTRY_MAX { return HUB_STATUS_HUB_LIMIT; }
-    pointer entry = pointer_add(hub, 16 + entryCount * 16);
+    // Registrations grow on demand; HubLimit now reports only an allocator refusal.
+    pointer entries = pointer_add(hub, HUB_ENTRIES);
+    if !VecReserve(entries, HUB_ENTRY_SIZE, entryCount + 1) { return HUB_STATUS_HUB_LIMIT; }
+    pointer entry = HubEntry(hub, entryCount);
     raw_word_store(entry, word(index));
     raw_word_store(pointer_add(entry, 8), word(channelId));
-    raw_word_store(hub, entryCount + 1);
+    raw_word_store(entries, entryCount + 1);
     return CHANNEL_STATUS_OK;
 }
 
 [Export(Abi:"C", Symbol:"hub_unregister")]
 pub i64 HubUnregister(i64 hubId, i64 index) {
-    if hubId < 0 { return HUB_STATUS_HUB_NOT_FOUND; }
-    mut word hi = word(hubId);
-    if hi >= HUB_TABLE_MAX { return HUB_STATUS_HUB_NOT_FOUND; }
-    pointer hub = HubSlot(hi);
+    pointer hub = HubById(hubId);
     if hub == NativePointer(0) { return HUB_STATUS_HUB_NOT_FOUND; }
-    word entryCount = raw_word_load(hub);
+    word entryCount = HubEntryCount(hub);
     mut word i = 0;
     while i < entryCount {
-        pointer entry = pointer_add(hub, 16 + i * 16);
+        pointer entry = HubEntry(hub, i);
         mut i64 entryIndex = i64(raw_word_load(entry));
         if entryIndex == index {
             // Shift entries left to retain registration order.  Swap-removal
             // would make round-robin delivery depend on the removed position.
             mut word move = i;
             while move + 1 < entryCount {
-                pointer nextEntry = pointer_add(hub, 16 + (move + 1) * 16);
-                pointer currentEntry = pointer_add(hub, 16 + move * 16);
+                pointer nextEntry = HubEntry(hub, move + 1);
+                pointer currentEntry = HubEntry(hub, move);
                 raw_word_store(currentEntry, raw_word_load(nextEntry));
                 raw_word_store(pointer_add(currentEntry, 8), raw_word_load(pointer_add(nextEntry, 8)));
                 move = move + 1;
             }
-            pointer lastEntry = pointer_add(hub, 16 + (entryCount - 1) * 16);
+            pointer lastEntry = HubEntry(hub, entryCount - 1);
             raw_word_store(lastEntry, 0);
             raw_word_store(pointer_add(lastEntry, 8), 0);
             word remaining = entryCount - 1;
-            raw_word_store(hub, remaining);
+            raw_word_store(pointer_add(hub, HUB_ENTRIES), remaining);
             if remaining == 0 {
-                raw_word_store(pointer_add(hub, 8), 0);
+                raw_word_store(pointer_add(hub, HUB_CURSOR), 0);
             } else {
-                mut word cursor = raw_word_load(pointer_add(hub, 8));
+                mut word cursor = raw_word_load(pointer_add(hub, HUB_CURSOR));
                 // The next slot after a deletion is the deletion position,
                 // unless the cursor was earlier in the retained sequence.
                 if cursor > i {
                     cursor = cursor - 1;
                 }
-                raw_word_store(pointer_add(hub, 8), cursor % remaining);
+                raw_word_store(pointer_add(hub, HUB_CURSOR), cursor % remaining);
             }
             return CHANNEL_STATUS_OK;
         }
@@ -141,21 +157,19 @@ pub i64 HubUnregister(i64 hubId, i64 index) {
 // Poll all channels round-robin until one delivers, then return index and value.
 [Export(Abi:"C", Symbol:"hub_wait_receive_status")]
 pub i64 HubWaitReceiveStatus(i64 hubId) {
-    mut word hi = word(hubId);
-    if hi >= HUB_TABLE_MAX { return HUB_STATUS_HUB_NOT_FOUND; }
-    pointer hub = HubSlot(hi);
-    word entryCount = raw_word_load(hub);
+    pointer hub = HubById(hubId);
+    if hub == NativePointer(0) { return HUB_STATUS_HUB_NOT_FOUND; }
+    word entryCount = HubEntryCount(hub);
     if entryCount == 0 { return HUB_STATUS_HUB_EMPTY; }
-    word cursorState = raw_word_load(pointer_add(hub, 8));
-    word startPos = (cursorState & 0xFF) % entryCount;
+    word startPos = raw_word_load(pointer_add(hub, HUB_CURSOR)) % entryCount;
     mut word attempts = 0;
     while attempts < entryCount {
         word pos = (startPos + attempts) % entryCount;
-        word entry = pointer_add(hub, 16 + pos * 16);
+        pointer entry = HubEntry(hub, pos);
         i64 chId = i64(raw_word_load(pointer_add(entry, 8)));
         i64 status = ChannelClaimReceive(chId);
         if status == CHANNEL_STATUS_OK {
-            raw_word_store(pointer_add(hub, 8), ((pos + 1) % entryCount) | (cursorState & (0xFFFFFFFFFFFFFFFF - word(0xFF))));
+            raw_word_store(pointer_add(hub, HUB_CURSOR), (pos + 1) % entryCount);
             return CHANNEL_STATUS_OK;
         }
         attempts = attempts + 1;
@@ -164,11 +178,12 @@ pub i64 HubWaitReceiveStatus(i64 hubId) {
     if fiberIndex == FIBER_NONE || !FiberExists(fiberIndex) { return HUB_STATUS_HUB_EMPTY; }
     pointer fiber = FiberRecord(fiberIndex);
     if raw_byte_load(pointer_add(fiber, 41)) != 0 { return CHANNEL_STATUS_CANCELLED; }
-    raw_word_store(pointer_add(hub, 8), raw_word_load(pointer_add(hub, 8)) | ((word(1) << fiberIndex) << 8));
+    if !VecPushWordUnique(pointer_add(hub, HUB_WAITERS), fiberIndex) { Trap(5, NativePointer(0), 0); }
     FiberSetState(fiberIndex, FIBER_STATE_PARKED);
     SaveFiberLocalState(fiberIndex);
     SchedulerSetCurrentFiber(FIBER_NONE);
     ContextSwitch(NativePointer(raw_word_load(pointer_add(fiber, 104))), SchedulerContext());
+    VecRemoveWord(pointer_add(hub, HUB_WAITERS), fiberIndex);
     if raw_byte_load(pointer_add(fiber, 41)) != 0 { return CHANNEL_STATUS_CANCELLED; }
     return HubWaitReceiveStatus(hubId);
 }
@@ -176,25 +191,22 @@ pub i64 HubWaitReceiveStatus(i64 hubId) {
 pub unit HubWakeChannel(i64 channelId) {
     pointer table = HubTable();
     if table == NativePointer(0) { return; }
-    word hubCount = raw_word_load(table);
+    word hubCount = ChunkTableCount(table);
     mut word hi = 0;
     while hi < hubCount {
-        pointer hub = pointer_add(table, 8 + hi * HUB_SLOT_SIZE);
-        word entryCount = raw_word_load(hub);
+        pointer hub = ChunkTableRecord(table, hi);
+        word entryCount = HubEntryCount(hub);
         mut word entryIndex = 0;
         mut word matched = 0;
         while entryIndex < entryCount {
-            if i64(raw_word_load(pointer_add(hub, 24 + entryIndex * 16))) == channelId { matched = 1; }
+            if i64(raw_word_load(pointer_add(HubEntry(hub, entryIndex), 8))) == channelId { matched = 1; }
             entryIndex = entryIndex + 1;
         }
         if matched != 0 {
-            word cursorState = raw_word_load(pointer_add(hub, 8));
-            word waiters = cursorState >> 8;
-            raw_word_store(pointer_add(hub, 8), cursorState & 0xFF);
-            mut word fiberIndex = 0;
-            while fiberIndex < FIBER_TABLE_MAX {
-                if (waiters & (word(1) << fiberIndex)) != 0 { WakeEnqueue(fiberIndex); }
-                fiberIndex = fiberIndex + 1;
+            pointer waiters = pointer_add(hub, HUB_WAITERS);
+            while VecCount(waiters) != 0 {
+                word fiberIndex = VecShiftWord(waiters, FIBER_NONE);
+                if fiberIndex != FIBER_NONE { WakeEnqueue(fiberIndex); }
             }
         }
         hi = hi + 1;
@@ -204,27 +216,25 @@ pub unit HubWakeChannel(i64 channelId) {
 
 [Export(Abi:"C", Symbol:"hub_wait_receive_value")]
 pub bool HubWaitReceiveValue(i64 hubId, pointer destination) {
-    mut word hi = word(hubId);
-    if hi >= HUB_TABLE_MAX { return false; }
-    pointer hub = HubSlot(hi);
-    mut word cursor = raw_word_load(pointer_add(hub, 8)) & 0xFF;
-    word entryCount = raw_word_load(hub);
+    pointer hub = HubById(hubId);
+    if hub == NativePointer(0) { return false; }
+    mut word cursor = raw_word_load(pointer_add(hub, HUB_CURSOR));
+    word entryCount = HubEntryCount(hub);
     if entryCount == 0 { return false; }
     word pos = (cursor + entryCount - 1) % entryCount;
-    word entry = pointer_add(hub, 16 + pos * 16);
+    pointer entry = HubEntry(hub, pos);
     i64 chId = i64(raw_word_load(pointer_add(entry, 8)));
     return ChannelReceiveValue(chId, destination);
 }
 
 [Export(Abi:"C", Symbol:"hub_wait_receive_index")]
 pub i64 HubWaitReceiveIndex(i64 hubId) {
-    mut word hi = word(hubId);
-    if hi >= HUB_TABLE_MAX { return -1; }
-    pointer hub = HubSlot(hi);
-    mut word cursor = raw_word_load(pointer_add(hub, 8)) & 0xFF;
-    word entryCount = raw_word_load(hub);
+    pointer hub = HubById(hubId);
+    if hub == NativePointer(0) { return -1; }
+    mut word cursor = raw_word_load(pointer_add(hub, HUB_CURSOR));
+    word entryCount = HubEntryCount(hub);
     if entryCount == 0 { return -1; }
     word pos = (cursor + entryCount - 1) % entryCount;
-    word entry = pointer_add(hub, 16 + pos * 16);
+    pointer entry = HubEntry(hub, pos);
     return i64(raw_word_load(entry));
 }

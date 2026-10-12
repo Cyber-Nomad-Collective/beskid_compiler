@@ -254,8 +254,9 @@ pub fn assemble_program_with_materializer(
             .collect::<Result<Vec<_>, _>>()?
     };
 
-    let default_threads =
-        if materializer.is_some() { 1 } else { std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4) };
+    // A unit materializer only guards its cache behind a lock; parsing and expansion run outside
+    // it, so a materialized assembly builds its units in parallel like a plain one.
+    let default_threads = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4);
     let thread_cap =
         std::env::var("BESKID_ASSEMBLY_THREADS").ok().and_then(|value| value.parse().ok()).unwrap_or(default_threads);
     let pool = rayon::ThreadPoolBuilder::new()

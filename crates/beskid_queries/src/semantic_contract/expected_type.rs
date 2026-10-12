@@ -14,8 +14,10 @@
 //!   through `lambda_source_identity`;
 //! - the matching parameter of a resolved callee, with the callee's generic parameters bound by
 //!   its explicit type arguments or its instantiated nominal receiver, never by inference from
-//!   the other arguments (that would be a cycle through argument typing); the parameter of a
-//!   call through a function value is that function type's parameter; a trailing argument of a
+//!   the other arguments (that would be a cycle through argument typing). The one exception is a
+//!   bare integer literal argument outside a generic item: inference never types it through this
+//!   query, so it takes its parameter from the inferred call specialization instead of
+//!   defaulting to `i32` and being truncated; the parameter of a call through a function value is that function type's parameter; a trailing argument of a
 //!   `bulk T[]` callee expects the element type;
 //! - the declared payload or field type of an enum constructor or struct literal, with the
 //!   declaration's generic parameters bound by the written type arguments;
@@ -147,7 +149,14 @@ fn expected_type_for(
 
     if let Some(call) = node.of::<syntax::CallExpression>() {
         let position = call.args.iter().position(|argument| is_child(DynNodeRef::from(argument))).ok_or_else(unavailable)?;
-        let identity = call_argument_identity(db, program, index, parent_key, call, position, &environment, enclosing)?;
+        let identity = match call_argument_identity(db, program, index, parent_key, call, position, &environment, enclosing)
+        {
+            Err(error) if error.is_unavailable() && enclosing.is_none() => {
+                inferred_integer_argument_identity(db, parent_key, call, AstNodeKey { node: child, ..key }, position)
+                    .map_err(|_| error)?
+            }
+            result => result?,
+        };
         let position = u32::try_from(position).map_err(|_| unavailable())?;
         return Ok(ExpectedType::new(ExpectedTypeContext::CallArgument { call: parent_key, position }, identity));
     }
@@ -389,6 +398,41 @@ fn call_argument_identity(
         }
         CallLowering::Dynamic => Err(unavailable()),
     }
+}
+
+/// The parameter of an inferred generic call at `position` when its argument is a bare integer
+/// literal.
+///
+/// Generic inference ([`generic_call_specialization`]) binds `T` from the exactly typed sibling
+/// arguments and admits the bare literal only when it fits that binding, so `Equal(x, 2147483649)`
+/// with an `i64` `x` passes the literal as `i64`. The literal must take that width here too;
+/// otherwise it would fall back to the default `i32` and be silently truncated at the call. Only
+/// a bare integer argument consults the specialization: inference never asks for the expected
+/// type of such an argument, so the query cannot cycle.
+fn inferred_integer_argument_identity(
+    db: &dyn Db,
+    call_key: AstNodeKey,
+    call: &syntax::CallExpression,
+    argument: AstNodeKey,
+    position: usize,
+) -> Result<GenericSourceTypeIdentity, SemanticError> {
+    if !unsuffixed_integer_literal(db, argument)? {
+        return Err(unavailable());
+    }
+    let arguments = call_arguments(db, call_key)?.ok_or_else(unavailable)?;
+    let receiver = arguments.len().checked_sub(call.args.len()).ok_or_else(unavailable)?;
+    if arguments.get(receiver + position) != Some(&argument) {
+        return Err(unavailable());
+    }
+    let specialization = generic_call_specialization(db, call_key)?.ok_or_else(unavailable)?;
+    if specialization.substitutions.is_empty() || specialization.signature.parameters.len() != arguments.len() {
+        return Err(unavailable());
+    }
+    let parameter = specialization.signature.parameters[receiver + position];
+    if !integer_literal_fits_abi(db, argument, parameter)? {
+        return Err(unavailable());
+    }
+    Ok(GenericSourceTypeIdentity::Abi(parameter))
 }
 
 /// The canonical manifest parameter of an unshadowed single-segment runtime intrinsic callee.

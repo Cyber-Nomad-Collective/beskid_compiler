@@ -83,13 +83,17 @@ struct BeskidStr *beskid_rt_v5_args_get(int64_t index) {
 }
 
 #define BESKID_GUARDED_STACK_MIN (64u * 1024u)
-#define BESKID_GUARDED_STACK_MAX (8u * 1024u * 1024u)
 #define BESKID_GUARDED_STACK_GUARD 4096u
 
 static int beskid_guarded_stack_contract_valid(size_t initial_size,
                                                size_t maximum_size) {
+  /* The maximum is the scheduler's per-process reservation (8 MiB by default,
+   * `BESKID_FIBER_STACK_MAX` otherwise): a whole multiple of the 64 KiB initial
+   * commit, at least that commit, small enough to add the guard without overflow. */
   return initial_size == BESKID_GUARDED_STACK_MIN &&
-         maximum_size == BESKID_GUARDED_STACK_MAX;
+         maximum_size >= BESKID_GUARDED_STACK_MIN &&
+         maximum_size % BESKID_GUARDED_STACK_MIN == 0 &&
+         maximum_size <= SIZE_MAX - BESKID_GUARDED_STACK_GUARD;
 }
 
 void *beskid_rt_v5_intrinsic_guarded_stack_allocate(size_t initial_size,
@@ -115,7 +119,8 @@ uint8_t beskid_rt_v5_intrinsic_guarded_stack_grow(void *usable_base,
                                                   size_t committed_size,
                                                   size_t requested_size,
                                                   size_t maximum_size) {
-  if (usable_base == NULL || maximum_size != BESKID_GUARDED_STACK_MAX ||
+  if (usable_base == NULL || maximum_size < BESKID_GUARDED_STACK_MIN ||
+      maximum_size % BESKID_GUARDED_STACK_MIN != 0 ||
       committed_size < BESKID_GUARDED_STACK_MIN ||
       committed_size > maximum_size || requested_size < committed_size ||
       requested_size > maximum_size ||
@@ -132,12 +137,12 @@ uint8_t beskid_rt_v5_intrinsic_guarded_stack_grow(void *usable_base,
 
 void beskid_rt_v5_intrinsic_guarded_stack_free(void *usable_base,
                                                size_t maximum_size) {
-  if (usable_base == NULL || maximum_size != BESKID_GUARDED_STACK_MAX)
+  if (usable_base == NULL || maximum_size < BESKID_GUARDED_STACK_MIN ||
+      maximum_size % BESKID_GUARDED_STACK_MIN != 0)
     return;
   unsigned char *reservation =
       (unsigned char *)usable_base - BESKID_GUARDED_STACK_GUARD;
-  (void)munmap(reservation,
-               BESKID_GUARDED_STACK_GUARD + BESKID_GUARDED_STACK_MAX);
+  (void)munmap(reservation, BESKID_GUARDED_STACK_GUARD + maximum_size);
 }
 
 static int64_t beskid_clock_nanos(clockid_t clock_id) {

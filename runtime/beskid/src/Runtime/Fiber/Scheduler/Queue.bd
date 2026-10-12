@@ -1,39 +1,50 @@
 // Canonical scheduler deferred-operation queues.
+//
+// Every queue is a growable vector embedded in the scheduler header (see Storage.bd and the
+// layout comment in Core.bd); none has a fixed capacity. An enqueue fails closed only when the
+// system allocator refuses to grow the vector.
+const SCHEDULER_PENDING_SPAWNS_OFFSET = 48;
+const SCHEDULER_PENDING_CANCELS_OFFSET = 72;
+const SCHEDULER_PENDING_WAKES_OFFSET = 96;
+const PENDING_SPAWN_ENTRY_SIZE = 40;
 
 // Enqueue a pending spawn (applied at next scheduling step).
-pub unit PendingSpawnEnqueue(word entry, word arg, word cancelSlot, word parent) {
+pub bool PendingSpawnEnqueue(word entry, word arg, word cancelSlot, word parent) {
     pointer table = SchedTable();
-    if table == NativePointer(0) { return; }
-    word count = raw_word_load(pointer_add(table, 608));
-    if count >= 8 { return; }
-    pointer slot = pointer_add(table, 288 + count * 40);
+    if table == NativePointer(0) { return false; }
+    pointer spawns = pointer_add(table, SCHEDULER_PENDING_SPAWNS_OFFSET);
+    word count = VecCount(spawns);
+    if !VecReserve(spawns, PENDING_SPAWN_ENTRY_SIZE, count + 1) { return false; }
+    pointer slot = pointer_add(VecData(spawns), count * PENDING_SPAWN_ENTRY_SIZE);
     raw_word_store(slot, entry);
     raw_word_store(pointer_add(slot, 8), arg);
     raw_word_store(pointer_add(slot, 16), cancelSlot);
     raw_word_store(pointer_add(slot, 24), parent);
-    raw_word_store(pointer_add(table, 608), count + 1);
-    return;
+    raw_word_store(pointer_add(slot, 32), 0);
+    raw_word_store(spawns, count + 1);
+    return true;
 }
 
 // Apply all pending spawns.
 pub unit ApplyPendingSpawns() {
     pointer table = SchedTable();
     if table == NativePointer(0) { return; }
-    word count = raw_word_load(pointer_add(table, 608));
+    pointer spawns = pointer_add(table, SCHEDULER_PENDING_SPAWNS_OFFSET);
+    word count = VecCount(spawns);
     mut word i = 0;
     while i < count {
-        pointer slot = pointer_add(table, 288 + i * 40);
+        pointer slot = pointer_add(VecData(spawns), i * PENDING_SPAWN_ENTRY_SIZE);
         word entry = raw_word_load(slot);
         word arg = raw_word_load(pointer_add(slot, 8));
         word cancelSlot = raw_word_load(pointer_add(slot, 16));
         word parent = raw_word_load(pointer_add(slot, 24));
         word idx = FiberAlloc(entry, arg, cancelSlot, parent);
-        if idx != 0xFFFF {
+        if idx != FIBER_NONE {
             RunQueuePush(idx);
         }
         i = i + 1;
     }
-    raw_word_store(pointer_add(table, 608), 0);
+    VecClear(spawns);
     return;
 }
 
@@ -43,15 +54,7 @@ pub unit PendingCancelEnqueue(word fiberIndex) {
     word handle = FiberHandle(fiberIndex);
     pointer table = SchedTable();
     if table == NativePointer(0) { return; }
-    word count = raw_word_load(pointer_add(table, 872));
-    if count >= 32 { return; }
-    mut word existing = 0;
-    while existing < count {
-        if raw_word_load(pointer_add(table, 616 + existing * 8)) == handle { return; }
-        existing = existing + 1;
-    }
-    raw_word_store(pointer_add(table, 616 + count * 8), handle);
-    raw_word_store(pointer_add(table, 872), count + 1);
+    if !VecPushWordUnique(pointer_add(table, SCHEDULER_PENDING_CANCELS_OFFSET), handle) { Trap(5, NativePointer(0), 0); }
     return;
 }
 
@@ -59,10 +62,11 @@ pub unit PendingCancelEnqueue(word fiberIndex) {
 pub unit ApplyPendingCancels() {
     pointer table = SchedTable();
     if table == NativePointer(0) { return; }
-    word count = raw_word_load(pointer_add(table, 872));
+    pointer cancels = pointer_add(table, SCHEDULER_PENDING_CANCELS_OFFSET);
+    word count = VecCount(cancels);
     mut word i = 0;
     while i < count {
-        word handle = raw_word_load(pointer_add(table, 616 + i * 8));
+        word handle = VecWordAt(cancels, i);
         // A completed/consumed operation may leave a cancellation queued until
         // the next scheduler step. Never apply it to a reused record generation.
         if FiberHandleValid(handle) {
@@ -88,23 +92,16 @@ pub unit ApplyPendingCancels() {
         }
         i = i + 1;
     }
-    raw_word_store(pointer_add(table, 872), 0);
+    VecClear(cancels);
     return;
 }
 
-// Enqueue a wake (fiber is ready to run again).
+// Enqueue a wake (fiber is ready to run again). A wake is never dropped: losing one would
+// park its fiber forever, so allocation failure here is a fatal out-of-memory trap.
 pub unit WakeEnqueue(word fiberIndex) {
     pointer table = SchedTable();
     if table == NativePointer(0) { return; }
-    word count = raw_word_load(pointer_add(table, 1400));
-    if count >= 32 { return; }
-    mut word existing = 0;
-    while existing < count {
-        if raw_word_load(pointer_add(table, 1144 + existing * 8)) == fiberIndex { return; }
-        existing = existing + 1;
-    }
-    raw_word_store(pointer_add(table, 1144 + count * 8), fiberIndex);
-    raw_word_store(pointer_add(table, 1400), count + 1);
+    if !VecPushWordUnique(pointer_add(table, SCHEDULER_PENDING_WAKES_OFFSET), fiberIndex) { Trap(5, NativePointer(0), 0); }
     return;
 }
 
@@ -112,16 +109,25 @@ pub unit WakeEnqueue(word fiberIndex) {
 pub unit ApplyPendingWakes() {
     pointer table = SchedTable();
     if table == NativePointer(0) { return; }
-    word count = raw_word_load(pointer_add(table, 1400));
+    pointer wakes = pointer_add(table, SCHEDULER_PENDING_WAKES_OFFSET);
+    word count = VecCount(wakes);
     mut word i = 0;
     while i < count {
-        word idx = raw_word_load(pointer_add(table, 1144 + i * 8));
+        word idx = VecWordAt(wakes, i);
         if FiberExists(idx) && FiberParked(idx) {
             FiberSetState(idx, FIBER_STATE_RUNNABLE);
             RunQueuePush(idx);
         }
         i = i + 1;
     }
-    raw_word_store(pointer_add(table, 1400), 0);
+    VecClear(wakes);
+    return;
+}
+
+// Releases the deferred-operation vectors at scheduler shutdown.
+pub unit PendingQueuesShutdown(pointer table) {
+    VecFree(pointer_add(table, SCHEDULER_PENDING_SPAWNS_OFFSET), PENDING_SPAWN_ENTRY_SIZE);
+    VecFree(pointer_add(table, SCHEDULER_PENDING_CANCELS_OFFSET), 8);
+    VecFree(pointer_add(table, SCHEDULER_PENDING_WAKES_OFFSET), 8);
     return;
 }

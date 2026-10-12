@@ -37,6 +37,42 @@ fn scoped_cleanup_requires_disposable_result_and_unique_explicit_conversion() {
 }
 
 #[test]
+fn conversions_to_other_error_types_do_not_reject_an_unrelated_scoped_use() {
+    // Regression: merging the corelib Network tests into one target made `Core.IO`'s
+    // `IoError FromDisposeError` visible next to `NetworkError FromDisposeError`, and the foreign
+    // conversion was judged "invalid" for a `use` whose enclosing error is `NetworkError`.
+    const ERRORS: &str = "enum DomainError { Failed() } enum OtherError { Failed() }";
+    for (conversions, expected) in [
+        (
+            "[CleanupConversion] OtherError ToOther(DisposeError error) { return OtherError::Failed(); } [CleanupConversion] DomainError ToDomain(DisposeError error) { return DomainError::Failed(); }",
+            None,
+        ),
+        (
+            "[CleanupConversion] OtherError ToOther<T>(DisposeError error) { return OtherError::Failed(); } [CleanupConversion] DomainError ToDomain(DisposeError error) { return DomainError::Failed(); }",
+            None,
+        ),
+        (
+            "[CleanupConversion] OtherError ToOther(DisposeError error) { return OtherError::Failed(); }",
+            Some("MissingConversion"),
+        ),
+        (
+            "[CleanupConversion] DomainError Wrong(OtherError error) { return DomainError::Failed(); } [CleanupConversion] DomainError ToDomain(DisposeError error) { return DomainError::Failed(); }",
+            Some("InvalidConversion"),
+        ),
+    ] {
+        let source = format!(
+            "{CONTRACT} {ERRORS} {conversions} Result<unit, DomainError> Main() {{ use Resource resource = Open(); return Result::Ok(()); }}"
+        );
+        let (db, _, unit, generation, index) = setup(&source);
+        let fact = beskid_queries::scoped_cleanup(&db, key(unit, generation, &index, NodeKind::ScopedUseStatement, 0))
+            .unwrap()
+            .unwrap();
+        assert_eq!(fact.diagnostic.map(|diagnostic| format!("{diagnostic:?}")).as_deref(), expected, "{source}");
+        assert_eq!(fact.conversion.is_some(), expected.is_none(), "{source}");
+    }
+}
+
+#[test]
 fn nested_private_contract_does_not_shadow_the_visible_cleanup_contract() {
     let source = format!(
         "{CONTRACT} mod Hidden {{ contract Disposable {{ unit Dispose(); }} }} Result<unit, DisposeError> Main() {{ use Resource resource = Open(); return Result::Ok(()); }}"

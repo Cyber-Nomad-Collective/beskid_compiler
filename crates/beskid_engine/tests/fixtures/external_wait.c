@@ -256,14 +256,16 @@ static void readiness_close_timeout_triples(void) {
     fprintf(stderr, "readiness-close-timeout triples=24 winner-once=preserved\n");
 }
 
+/*
+ * The scheduler's fiber table and the external-wait table both grow on demand (no fixed
+ * capacity), so this fixture picks its own population: 16 fibers waiting at once, which is the
+ * old fixed table size and still exercises slot reuse, generation advance, and the one-wait-per-
+ * fiber rule on a table that had to grow past its first chunk of pending operations.
+ */
 enum {
-    BESKID_TEST_SCHEDULER_FIBER_CAPACITY =
-        (BESKID_SCHEDULER_STATE_SIZE - BESKID_SCHEDULER_STATE_FIBERS_OFFSET) /
-        BESKID_FIBER_RECORD_SIZE,
+    BESKID_TEST_SCHEDULER_FIBER_CAPACITY = 16,
     CAPACITY_WAITERS = BESKID_TEST_SCHEDULER_FIBER_CAPACITY - 1,
 };
-_Static_assert(BESKID_TEST_SCHEDULER_FIBER_CAPACITY >= 2,
-    "scheduler requires controller plus waiter");
 
 static uintptr_t capacity_tokens[CAPACITY_WAITERS];
 static int64_t capacity_handles[CAPACITY_WAITERS];

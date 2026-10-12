@@ -44,7 +44,7 @@ use std::{
     fs,
     path::{Path, PathBuf},
     process::Command,
-    sync::Arc,
+    sync::{Arc, OnceLock},
     time::{Duration, Instant},
 };
 
@@ -55,6 +55,20 @@ const RUSTC_ENV: &str = "BESKID_V06_GLUE_RUSTC";
 const LINKER_ENV: &str = "BESKID_V06_GLUE_LINKER";
 const CHILD_ENV: &str = "BESKID_V06_GLUE_CHILD";
 const GATE_ENV: &str = "BESKID_V06_GLUE_BORROW_GATE";
+/// Warmed owned project of this test-binary run, handed to private-prefix children.
+const TEMPLATE_PROJECT_ENV: &str = "BESKID_V06_GLUE_TEMPLATE_PROJECT";
+/// Owner image cache (`build_rust_owner` `image_cache`) handed to the private-prefix children of
+/// the owned cases. They assert owner admission and the owned ABI, not a cold tool chain; the
+/// cases that assert tool isolation run the installed CLI, which never uses a cache.
+const OWNER_IMAGE_CACHE_ENV: &str = "BESKID_V06_GLUE_OWNER_IMAGE_CACHE";
+/// Codegen worker bound (item emission and machine-code compilation) for every compiler this
+/// harness runs. Inherited when the caller sets it; otherwise [`DEFAULT_CODEGEN_THREADS`].
+const CODEGEN_THREADS_ENV: &str = "BESKID_CODEGEN_THREADS";
+/// Bounded so that concurrent tests stay within the builder: tests times workers is the core
+/// budget (two tests with four workers each on a shared 16-core builder). The unbounded default
+/// (5 emission plus 16 compilation workers per compilation, per test) drove the load average past
+/// 800 when several interop tests ran in parallel.
+const DEFAULT_CODEGEN_THREADS: &str = "4";
 const OWNER_LIBRARY: &str = "glue_manual";
 /// Consumer native library identity: the target name, as `beskid build --backend glue-rust` uses.
 const CONSUMER_LIBRARY: &str = "ManualOwned";
@@ -143,6 +157,251 @@ fn copy_tree(source: &Path, destination: &Path) {
     }
 }
 
+/// Hard link `source` at `destination`; a link across file systems falls back to a copy. Every
+/// linked file is read-only input to its consumer (kit files, materialized dependency sources,
+/// a session snapshot that is replaced by rename, Mod artifacts that are qualified by digest), so
+/// sharing an inode with the template never lets one test observe another.
+fn link_or_copy(source: &Path, destination: &Path) {
+    if fs::hard_link(source, destination).is_ok() {
+        return;
+    }
+    fs::copy(source, destination)
+        .unwrap_or_else(|error| panic!("copy {} to {}: {error}", source.display(), destination.display()));
+}
+
+/// [`copy_tree`] by hard links ([`link_or_copy`]).
+fn link_tree(source: &Path, destination: &Path) {
+    fs::create_dir_all(destination).unwrap();
+    for entry in fs::read_dir(source).unwrap_or_else(|error| panic!("read {}: {error}", source.display())) {
+        let entry = entry.unwrap();
+        let kind = entry.file_type().unwrap();
+        let target = destination.join(entry.file_name());
+        if kind.is_dir() {
+            link_tree(&entry.path(), &target);
+        } else if kind.is_file() {
+            link_or_copy(&entry.path(), &target);
+        } else {
+            panic!("template contains a non-regular entry: {}", entry.path().display());
+        }
+    }
+}
+
+fn codegen_threads() -> std::ffi::OsString {
+    std::env::var_os(CODEGEN_THREADS_ENV).unwrap_or_else(|| DEFAULT_CODEGEN_THREADS.into())
+}
+
+/// `<target>/<profile>/beskid-v06-glue`, beside the Cargo `deps/` directory this test executable
+/// runs from (the layout `beskid_tests_mod_host` uses). Private prefixes, projects and the
+/// template live here, on one file system, so per-test copies are hard links.
+fn harness_root() -> PathBuf {
+    let executable = std::env::current_exe().unwrap();
+    let deps = executable.parent().filter(|directory| directory.file_name() == Some(std::ffi::OsStr::new("deps")));
+    let deps = deps.unwrap_or_else(|| panic!("test executable {} is not inside a Cargo `deps` directory", executable.display()));
+    let root = deps.parent().unwrap().join("beskid-v06-glue");
+    fs::create_dir_all(&root).unwrap();
+    root
+}
+
+/// A temporary directory under [`harness_root`], removed when dropped like any other.
+fn harness_tempdir(prefix: &str) -> tempfile::TempDir {
+    tempfile::Builder::new().prefix(prefix).tempdir_in(harness_root()).unwrap()
+}
+
+/// Exclusive OS file lock, released on drop or process exit.
+struct FileLock(fs::File);
+
+impl FileLock {
+    fn acquire(path: &Path) -> Self {
+        let file = fs::OpenOptions::new().read(true).write(true).create(true).truncate(false).open(path).unwrap();
+        file.lock().unwrap_or_else(|error| panic!("lock {}: {error}", path.display()));
+        Self(file)
+    }
+}
+
+impl Drop for FileLock {
+    fn drop(&mut self) {
+        let _ = self.0.unlock();
+    }
+}
+
+/// Content key of everything the template is derived from: the qualified CLI and driver bytes,
+/// the kit ABI metadata, the owned fixture and every Corelib source of this checkout. A change to
+/// any of them yields a new template; consumers still qualify what they read from it.
+fn template_key(qualified: &Path) -> String {
+    let mut digest = Sha256::new();
+    for path in [installed_cli(qualified), qualified.join("bin").join(driver_name()), qualified.join(kit_relative()).join("abi.json")] {
+        digest.update(fs::read(&path).unwrap_or_else(|error| panic!("read {}: {error}", path.display())));
+    }
+    let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/glue/manual/owned");
+    for name in ["ManualTypes.bd", "ManualImport.bd", "ManualExport.bd", "manual_owned.bproj", "rust/implementation.rs"] {
+        digest.update(fs::read(fixture.join(name)).unwrap());
+    }
+    let corelib = fs::canonicalize(Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corelib")).unwrap();
+    digest.update(corelib.to_string_lossy().as_bytes());
+    let mut sources = Vec::new();
+    collect_corelib_sources(&corelib, &mut sources);
+    sources.sort();
+    for path in sources {
+        digest.update(path.strip_prefix(&corelib).unwrap().to_string_lossy().as_bytes());
+        digest.update(fs::read(&path).unwrap());
+    }
+    format!("{:x}", digest.finalize())[..16].to_owned()
+}
+
+fn collect_corelib_sources(directory: &Path, sources: &mut Vec<PathBuf>) {
+    for entry in fs::read_dir(directory).unwrap_or_else(|error| panic!("read {}: {error}", directory.display())) {
+        let entry = entry.unwrap();
+        let path = entry.path();
+        let name = entry.file_name();
+        if entry.file_type().unwrap().is_dir() {
+            if !matches!(name.to_str(), Some("obj" | ".beskid" | ".git" | "target")) {
+                collect_corelib_sources(&path, sources);
+            }
+        } else if path.extension().is_some_and(|extension| matches!(extension.to_str(), Some("bd" | "bproj" | "bws" | "bsol")))
+            || name == "Project.lock"
+        {
+            sources.push(path);
+        }
+    }
+}
+
+/// One copy of the qualified prefix's runtime kit and one owned project warmed by the installed
+/// CLI, under `<harness root>/template-<key>`, shared by every test of this binary and reused by
+/// later runs while [`template_key`] holds. Private prefixes hard link the kit instead of copying
+/// it per test; projects start from the warmed `obj/`. Creation is serialized across processes
+/// and published by a completion marker; the two newest templates are kept.
+///
+/// The template project lives at `<harness root>/template-<key>/manual_owned`, at the same depth
+/// as every seeded project (`<harness root>/<temporary directory>/manual_owned`): materialized
+/// dependency directories are named by the dependency's path relative to the project, so only a
+/// project at the same depth finds the seeded copies under their own names.
+struct Template {
+    kit: PathBuf,
+    root: PathBuf,
+}
+
+fn template() -> &'static Template {
+    // A failed warm-up is recorded once: every later case reports the same failure instead of
+    // repeating the build.
+    static TEMPLATE: OnceLock<Result<Template, String>> = OnceLock::new();
+    let template = TEMPLATE.get_or_init(|| {
+        std::panic::catch_unwind(build_template).map_err(|payload| {
+            payload
+                .downcast_ref::<String>()
+                .cloned()
+                .or_else(|| payload.downcast_ref::<&str>().map(|text| (*text).to_owned()))
+                .unwrap_or_else(|| "template preparation panicked".to_owned())
+        })
+    });
+    match template {
+        Ok(template) => template,
+        Err(error) => panic!("template preparation failed earlier in this run:\n{error}"),
+    }
+}
+
+fn build_template() -> Template {
+    {
+        let qualified = require_qualified_prefix();
+        let harness = harness_root();
+        let _lock = FileLock::acquire(&harness.join("template.lock"));
+        let root = harness.join(format!("template-{}", template_key(&qualified)));
+        let kit = root.join("kit");
+        if !root.join(".kit-complete").is_file() {
+            if root.exists() {
+                fs::remove_dir_all(&root).unwrap();
+            }
+            copy_tree(&qualified.join(kit_relative()), &kit.join(kit_relative()));
+            fs::write(root.join(".kit-complete"), b"").unwrap();
+            prune_templates(&harness, &root);
+        }
+        Template { kit, root }
+    }
+}
+
+/// The warmed owned project of this template ([`warm_template_project`]), built on first use by
+/// the cases that need one; driver-admission cases never wait for it. A failed warm-up is
+/// recorded once for the run.
+fn template_project() -> &'static Path {
+    static PROJECT: OnceLock<Result<PathBuf, String>> = OnceLock::new();
+    let project = PROJECT.get_or_init(|| {
+        std::panic::catch_unwind(|| {
+            let template = template();
+            let _lock = FileLock::acquire(&harness_root().join("template.lock"));
+            let project = template.root.join("manual_owned");
+            if !template.root.join(".project-complete").is_file() {
+                if project.exists() {
+                    fs::remove_dir_all(&project).unwrap();
+                }
+                warm_template_project(&template.root);
+                fs::write(template.root.join(".project-complete"), b"").unwrap();
+            }
+            project
+        })
+        .map_err(|payload| {
+            payload
+                .downcast_ref::<String>()
+                .cloned()
+                .or_else(|| payload.downcast_ref::<&str>().map(|text| (*text).to_owned()))
+                .unwrap_or_else(|| "template project preparation panicked".to_owned())
+        })
+    });
+    match project {
+        Ok(project) => project,
+        Err(error) => panic!("template project preparation failed earlier in this run:\n{error}"),
+    }
+}
+
+/// Remove every template but `keep` and the newest other one.
+fn prune_templates(harness: &Path, keep: &Path) {
+    let mut others = fs::read_dir(harness)
+        .unwrap()
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .filter(|path| {
+            path.is_dir()
+                && path != keep
+                && path.file_name().and_then(|name| name.to_str()).is_some_and(|name| name.starts_with("template-"))
+        })
+        .collect::<Vec<_>>();
+    others.sort_by_key(|path| fs::metadata(path).and_then(|metadata| metadata.modified()).ok());
+    for stale in others.iter().rev().skip(1) {
+        let _ = fs::remove_dir_all(stale);
+    }
+}
+
+/// Materialize the owned fixture under `root` and build it once with the installed CLI, exactly
+/// as the CLI cases do. Its `obj/beskid/deps` (materialized dependencies and the Mod artifacts
+/// built there) and `obj/beskid/cache` (AST store, session snapshot) seed every later project;
+/// every consumer still qualifies what it finds there (dependency sources by mtime and content,
+/// Mod artifacts by descriptor digests against the kit, the snapshot by compiler and Corelib
+/// identity and payload digest), so a tampered or stale seed is rebuilt, never trusted. The
+/// lockfile is not seeded: the CLI regenerates it for each project.
+fn warm_template_project(work: &Path) {
+    fs::create_dir_all(work).unwrap();
+    let manifest = materialize_owned_project(work);
+    let output = run_installed_build(&manifest, &work.join("out").join(native_name(CONSUMER_LIBRARY)), &[]);
+    assert!(output.status.success(), "template build with the installed CLI failed\n{}", output_text(&output));
+}
+
+/// Seed a freshly materialized project at `project` from the warmed template project, when one
+/// is available: the dependency and cache trees of `obj/` by hard links.
+fn seed_from_template(project: &Path) {
+    let explicit = TEMPLATE_PROJECT.with(|cell| cell.borrow().clone());
+    let Some(template) = explicit.or_else(|| std::env::var_os(TEMPLATE_PROJECT_ENV).map(PathBuf::from)) else {
+        return;
+    };
+    assert!(template.is_dir(), "{TEMPLATE_PROJECT_ENV}={} is not a directory", template.display());
+    // The project's own materialized sources (`obj/beskid/root`) are not seeded: they are
+    // rewritten from the fresh fixture copy, and a case that edits its owner source must not
+    // reach the template through a shared inode.
+    for relative in ["obj/beskid/deps", "obj/beskid/cache"] {
+        let source = template.join(relative);
+        if source.is_dir() {
+            link_tree(&source, &project.join(relative));
+        }
+    }
+}
+
 #[cfg(unix)]
 fn make_executable(path: &Path) {
     use std::os::unix::fs::PermissionsExt;
@@ -163,7 +422,7 @@ enum DriverStaging {
 /// Private prefix: `bin/` holds a copy of this test executable and the driver
 /// sibling; the exact runtime kit is copied from the qualified prefix.
 fn stage_private_prefix(qualified: &Path, staging: DriverStaging) -> tempfile::TempDir {
-    let staged = tempfile::Builder::new().prefix("beskid-v06-glue-prefix-").tempdir().unwrap();
+    let staged = harness_tempdir("beskid-v06-glue-prefix-");
     let bin = staged.path().join("bin");
     fs::create_dir(&bin).unwrap();
     let driver = qualified.join("bin").join(driver_name());
@@ -184,9 +443,9 @@ fn stage_private_prefix(qualified: &Path, staging: DriverStaging) -> tempfile::T
     if staging == DriverStaging::Tampered {
         make_executable(&staged_driver);
     }
-    copy_tree(&qualified.join(kit_relative()), &staged.path().join(kit_relative()));
+    link_tree(&template().kit.join(kit_relative()), &staged.path().join(kit_relative()));
     let executable = std::env::current_exe().unwrap();
-    fs::copy(&executable, bin.join(executable.file_name().unwrap())).unwrap();
+    link_or_copy(&executable, &bin.join(executable.file_name().unwrap()));
     staged
 }
 
@@ -198,7 +457,16 @@ fn test_path(name: &str) -> String {
 /// Runs `body` inside a child copy of this test executable placed in a private
 /// qualified prefix. In the parent this stages the prefix and requires that the
 /// child really executed exactly this test and passed.
-fn run_in_private_prefix(name: &str, staging: DriverStaging, body: impl FnOnce(&Path)) {
+/// Whether a private-prefix child starts its owned project from the warmed template.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ChildProject {
+    /// Driver-admission cases materialize no project.
+    None,
+    /// Owned cases: materialized dependencies, Mod artifacts and the session snapshot are seeded.
+    Warmed,
+}
+
+fn run_in_private_prefix(name: &str, staging: DriverStaging, project: ChildProject, body: impl FnOnce(&Path)) {
     let path = test_path(name);
     if std::env::var(CHILD_ENV).as_deref() == Ok(path.as_str()) {
         let executable = fs::canonicalize(std::env::current_exe().unwrap()).unwrap();
@@ -216,9 +484,15 @@ fn run_in_private_prefix(name: &str, staging: DriverStaging, body: impl FnOnce(&
     let staged = stage_private_prefix(&qualified, staging);
     let executable = staged.path().join("bin").join(std::env::current_exe().unwrap().file_name().unwrap());
     let corelib = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corelib");
-    let output = Command::new(&executable)
+    let mut command = Command::new(&executable);
+    if let ChildProject::Warmed = project {
+        command.env(TEMPLATE_PROJECT_ENV, template_project());
+        command.env(OWNER_IMAGE_CACHE_ENV, harness_root().join("owner-images"));
+    }
+    let output = command
         .args([path.as_str(), "--exact", "--nocapture", "--test-threads=1"])
         .env(CHILD_ENV, &path)
+        .env(CODEGEN_THREADS_ENV, codegen_threads())
         .env(GATE_ENV, staged.path().join("borrow.gate"))
         .env(beskid_abi::runtime_kit::ENV_CORELIB_ROOT, fs::canonicalize(corelib).unwrap())
         .env_remove(beskid_abi::runtime_kit::ENV_RUNTIME_PREFIX)
@@ -250,7 +524,7 @@ fn v06_glue_driver_denied_from_build_tree() {
 #[test]
 fn v06_glue_driver_admitted_only_from_private_prefix() {
     let qualified = std::env::var_os(QUALIFIED_PREFIX_ENV).map(PathBuf::from);
-    run_in_private_prefix("v06_glue_driver_admitted_only_from_private_prefix", DriverStaging::Exact, |prefix| {
+    run_in_private_prefix("v06_glue_driver_admitted_only_from_private_prefix", DriverStaging::Exact, ChildProject::None, |prefix| {
         let driver = beskid_abi::compiler_driver::installed_compiler_driver().unwrap_or_else(|error| {
             panic!("qualified driver rejected; build this test with BESKID_COMPILER_DRIVER_BUILD_RECEIPT: {error}")
         });
@@ -264,7 +538,7 @@ fn v06_glue_driver_admitted_only_from_private_prefix() {
 
 #[test]
 fn v06_glue_driver_denied_when_sibling_tampered() {
-    run_in_private_prefix("v06_glue_driver_denied_when_sibling_tampered", DriverStaging::Tampered, |_| {
+    run_in_private_prefix("v06_glue_driver_denied_when_sibling_tampered", DriverStaging::Tampered, ChildProject::None, |_| {
         let error = beskid_abi::compiler_driver::installed_compiler_driver().err().expect("tampered driver admitted");
         assert!(error.contains("installed compiler driver changed"), "{error}");
     });
@@ -272,7 +546,7 @@ fn v06_glue_driver_denied_when_sibling_tampered() {
 
 #[test]
 fn v06_glue_driver_denied_when_sibling_missing() {
-    run_in_private_prefix("v06_glue_driver_denied_when_sibling_missing", DriverStaging::Missing, |_| {
+    run_in_private_prefix("v06_glue_driver_denied_when_sibling_missing", DriverStaging::Missing, ChildProject::None, |_| {
         let error = beskid_abi::compiler_driver::installed_compiler_driver().err().expect("missing driver admitted");
         assert!(!error.contains("independently qualified native tool driver"), "unqualified test build: {error}");
     });
@@ -281,7 +555,7 @@ fn v06_glue_driver_denied_when_sibling_missing() {
 #[cfg(unix)]
 #[test]
 fn v06_glue_driver_denied_when_sibling_escapes_prefix() {
-    run_in_private_prefix("v06_glue_driver_denied_when_sibling_escapes_prefix", DriverStaging::Symlinked, |_| {
+    run_in_private_prefix("v06_glue_driver_denied_when_sibling_escapes_prefix", DriverStaging::Symlinked, ChildProject::None, |_| {
         let error = beskid_abi::compiler_driver::installed_compiler_driver().err().expect("symlinked driver admitted");
         // A symlinked sibling is not a regular file, so admission denies it before any prefix resolution.
         assert!(error.contains("installed compiler driver must be a bounded regular file"), "{error}");
@@ -308,6 +582,7 @@ fn materialize_owned_project(root: &Path) -> PathBuf {
     let corelib = fs::canonicalize(Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corelib/beskid_corelib")).unwrap();
     let corelib = corelib.to_str().expect("UTF-8 corelib path").replace('\\', "/");
     fs::write(project.join("manual_owned.bproj"), manifest.replace(relative, &format!("{corelib:?}"))).unwrap();
+    seed_from_template(&project);
     project.join("manual_owned.bproj")
 }
 
@@ -500,6 +775,7 @@ fn build_owner(
         .collect::<Vec<_>>();
     let runtime = runtime_request(prefix);
     let control = control();
+    let image_cache = std::env::var_os(OWNER_IMAGE_CACHE_ENV).map(PathBuf::from);
     Ok(build_rust_owner(&RustOwnerBuildRequest {
         input,
         selected: &selected,
@@ -515,6 +791,7 @@ fn build_owner(
         release: false,
         output_path: output,
         control: &control,
+        image_cache: image_cache.as_deref(),
     })?)
 }
 
@@ -832,8 +1109,8 @@ fn assert_owned_roundtrip(process: &GlueProcess, owner: usize, packet: &GlueArti
 
 #[test]
 fn v06_glue_owned_roundtrip_all_representations() {
-    run_in_private_prefix("v06_glue_owned_roundtrip_all_representations", DriverStaging::Exact, |prefix| {
-        let build = build_owned(prefix, &prefix.join("work"), OwnerVariant::Complete)
+    run_in_private_prefix("v06_glue_owned_roundtrip_all_representations", DriverStaging::Exact, ChildProject::Warmed, |prefix| {
+        let build = build_owned(prefix, prefix, OwnerVariant::Complete)
             .unwrap_or_else(|error| panic!("{error:#}"));
         let (process, owner, packet) = open_owned(build);
         assert_owned_roundtrip(&process, owner, &packet);
@@ -843,9 +1120,9 @@ fn v06_glue_owned_roundtrip_all_representations() {
 
 #[test]
 fn v06_glue_owned_opaque_borrow_survives_release() {
-    run_in_private_prefix("v06_glue_owned_opaque_borrow_survives_release", DriverStaging::Exact, |prefix| {
+    run_in_private_prefix("v06_glue_owned_opaque_borrow_survives_release", DriverStaging::Exact, ChildProject::Warmed, |prefix| {
         let gate = PathBuf::from(std::env::var_os(GATE_ENV).expect("parent supplies the borrow gate"));
-        let build = build_owned(prefix, &prefix.join("work"), OwnerVariant::Complete)
+        let build = build_owned(prefix, prefix, OwnerVariant::Complete)
             .unwrap_or_else(|error| panic!("{error:#}"));
         let (process, _owner, packet) = open_owned(build);
         let create: Create = unsafe { checked(&process, &packet, "manual_ImportCreate") };
@@ -886,8 +1163,8 @@ fn v06_glue_owned_opaque_borrow_survives_release() {
 
 #[test]
 fn v06_glue_owned_denies_missing_import_row() {
-    run_in_private_prefix("v06_glue_owned_denies_missing_import_row", DriverStaging::Exact, |prefix| {
-        let build = build_owned(prefix, &prefix.join("work"), OwnerVariant::MissingRow("glue_unit"))
+    run_in_private_prefix("v06_glue_owned_denies_missing_import_row", DriverStaging::Exact, ChildProject::Warmed, |prefix| {
+        let build = build_owned(prefix, prefix, OwnerVariant::MissingRow("glue_unit"))
             .unwrap_or_else(|error| panic!("{error:#}"));
         let (process, owner, packet) = open_owned(build);
         for symbol in ["manual_ImportI8", "manual_ImportUnit", "beskid_i8", "manual_ImportCreate"] {
@@ -908,8 +1185,8 @@ fn v06_glue_owned_denies_missing_import_row() {
 
 #[test]
 fn v06_glue_owned_denies_consumer_without_owner_domain() {
-    run_in_private_prefix("v06_glue_owned_denies_consumer_without_owner_domain", DriverStaging::Exact, |prefix| {
-        let OwnedBuild { owner, consumer, packet } = build_owned(prefix, &prefix.join("work"), OwnerVariant::Complete)
+    run_in_private_prefix("v06_glue_owned_denies_consumer_without_owner_domain", DriverStaging::Exact, ChildProject::Warmed, |prefix| {
+        let OwnedBuild { owner, consumer, packet } = build_owned(prefix, prefix, OwnerVariant::Complete)
             .unwrap_or_else(|error| panic!("{error:#}"));
         drop(owner);
         let process = GlueProcess::open(consumer).unwrap_or_else(|error| panic!("open consumer: {error}"));
@@ -922,8 +1199,8 @@ fn v06_glue_owned_denies_consumer_without_owner_domain() {
 
 #[test]
 fn v06_glue_owned_denies_duplicate_owner_library() {
-    run_in_private_prefix("v06_glue_owned_denies_duplicate_owner_library", DriverStaging::Exact, |prefix| {
-        let build = build_owned(prefix, &prefix.join("work"), OwnerVariant::Complete)
+    run_in_private_prefix("v06_glue_owned_denies_duplicate_owner_library", DriverStaging::Exact, ChildProject::Warmed, |prefix| {
+        let build = build_owned(prefix, prefix, OwnerVariant::Complete)
             .unwrap_or_else(|error| panic!("{error:#}"));
         let (mut process, _owner, _packet) = open_owned(build);
         let again = build_owned(prefix, &prefix.join("second"), OwnerVariant::Complete);
@@ -938,8 +1215,8 @@ fn v06_glue_owned_denies_duplicate_owner_library() {
 
 #[test]
 fn v06_glue_owned_rejects_foreign_owner_brand() {
-    run_in_private_prefix("v06_glue_owned_rejects_foreign_owner_brand", DriverStaging::Exact, |prefix| {
-        let error = match build_owned(prefix, &prefix.join("work"), OwnerVariant::ForeignBrand) {
+    run_in_private_prefix("v06_glue_owned_rejects_foreign_owner_brand", DriverStaging::Exact, ChildProject::Warmed, |prefix| {
+        let error = match build_owned(prefix, prefix, OwnerVariant::ForeignBrand) {
             Ok(_) => panic!("owner with a brand outside the source signature was admitted"),
             Err(error) => format!("{error:#}"),
         };
@@ -951,10 +1228,10 @@ fn v06_glue_owned_rejects_foreign_owner_brand() {
 /// owner producer must fail closed even with every other input valid.
 #[test]
 fn v06_glue_owned_rust_owner_fails_closed_outside_prefix() {
-    let qualified = require_qualified_prefix();
-    let work = tempfile::Builder::new().prefix("beskid-v06-glue-unqualified-").tempdir().unwrap();
+    require_qualified_prefix();
+    let work = harness_tempdir("beskid-v06-glue-unqualified-");
     let staged = work.path().join("kit");
-    copy_tree(&qualified.join(kit_relative()), &staged.join(kit_relative()));
+    link_tree(&template().kit.join(kit_relative()), &staged.join(kit_relative()));
     let error = match build_owned(&staged, &work.path().join("work"), OwnerVariant::Complete) {
         Ok(_) => panic!("Rust owner built without a qualified driver receipt"),
         Err(error) => format!("{error:#}"),
@@ -992,9 +1269,13 @@ struct CliProject {
 }
 
 impl CliProject {
+    /// A fresh project seeded from the warmed template ([`warm_template_project`]). The seed is
+    /// Corelib-side state only (materialized dependencies, Mod artifacts, session snapshot); the
+    /// Rust owner is always built cold by the CLI, so the cases that assert tool isolation keep
+    /// their meaning.
     fn new() -> Self {
-        let work = tempfile::Builder::new().prefix("beskid-v06-glue-cli-").tempdir().unwrap();
-        let manifest = materialize_owned_project(work.path());
+        let work = harness_tempdir("beskid-v06-glue-cli-");
+        let manifest = with_template_project(template_project(), || materialize_owned_project(work.path()));
         let out = work.path().join("out");
         Self { _work: work, manifest, out }
     }
@@ -1013,30 +1294,7 @@ impl CliProject {
 
     /// Runs the installed CLI with explicit tools. `environment` adds or overrides variables.
     fn build(&self, environment: &[(&str, std::ffi::OsString)]) -> std::process::Output {
-        let qualified = require_qualified_prefix();
-        let tools = require_tools();
-        let corelib = fs::canonicalize(Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corelib")).unwrap();
-        let mut command = Command::new(installed_cli(&qualified));
-        command
-            .args(["build", "--plain", "--project"])
-            .arg(&self.manifest)
-            .args(["--target", "ManualOwned", "--backend", "glue-rust", "--cargo"])
-            .arg(&tools.cargo)
-            .arg("--rustc")
-            .arg(&tools.rustc)
-            .arg("--linker")
-            .arg(&tools.linker)
-            .arg("--output")
-            .arg(self.consumer())
-            .env(beskid_abi::runtime_kit::ENV_CORELIB_ROOT, corelib)
-            .env_remove(beskid_abi::runtime_kit::ENV_RUNTIME_PREFIX);
-        if qualified_profile() == beskid_abi::runtime_kit::BuildProfile::Release {
-            command.arg("--release");
-        }
-        for (name, value) in environment {
-            command.env(name, value);
-        }
-        command.output().unwrap_or_else(|error| panic!("run installed beskid build: {error}"))
+        run_installed_build(&self.manifest, &self.consumer(), environment)
     }
 
     fn assert_no_staging_left(&self) {
@@ -1051,6 +1309,50 @@ impl CliProject {
     fn images(&self) -> (Vec<u8>, Vec<u8>) {
         (fs::read(self.consumer()).unwrap(), fs::read(self.owner()).unwrap())
     }
+}
+
+/// `<qualified prefix>/bin/beskid build --backend glue-rust` of `manifest` into `output`, with the
+/// explicit Rust tools and the codegen worker bound. `environment` adds or overrides variables.
+fn run_installed_build(manifest: &Path, output: &Path, environment: &[(&str, std::ffi::OsString)]) -> std::process::Output {
+    let qualified = require_qualified_prefix();
+    let tools = require_tools();
+    let corelib = fs::canonicalize(Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corelib")).unwrap();
+    let mut command = Command::new(installed_cli(&qualified));
+    command
+        .args(["build", "--plain", "--project"])
+        .arg(manifest)
+        .args(["--target", "ManualOwned", "--backend", "glue-rust", "--cargo"])
+        .arg(&tools.cargo)
+        .arg("--rustc")
+        .arg(&tools.rustc)
+        .arg("--linker")
+        .arg(&tools.linker)
+        .arg("--output")
+        .arg(output)
+        .env(beskid_abi::runtime_kit::ENV_CORELIB_ROOT, corelib)
+        .env(CODEGEN_THREADS_ENV, codegen_threads())
+        .env_remove(beskid_abi::runtime_kit::ENV_RUNTIME_PREFIX);
+    if qualified_profile() == beskid_abi::runtime_kit::BuildProfile::Release {
+        command.arg("--release");
+    }
+    for (name, value) in environment {
+        command.env(name, value);
+    }
+    command.output().unwrap_or_else(|error| panic!("run installed beskid build: {error}"))
+}
+
+/// Run `materialize` with [`TEMPLATE_PROJECT_ENV`] naming `template`, without touching the
+/// process environment (tests of this binary run concurrently): the seed source is passed through
+/// a thread-local instead.
+fn with_template_project<T>(template: &Path, materialize: impl FnOnce() -> T) -> T {
+    TEMPLATE_PROJECT.with(|cell| *cell.borrow_mut() = Some(template.to_path_buf()));
+    let result = materialize();
+    TEMPLATE_PROJECT.with(|cell| *cell.borrow_mut() = None);
+    result
+}
+
+thread_local! {
+    static TEMPLATE_PROJECT: std::cell::RefCell<Option<PathBuf>> = const { std::cell::RefCell::new(None) };
 }
 
 fn output_text(output: &std::process::Output) -> String {
@@ -1346,6 +1648,7 @@ fn v06_native_test_object_compiles_shared_helper_once_and_links_distinct_entries
     run_in_private_prefix(
         "v06_native_test_object_compiles_shared_helper_once_and_links_distinct_entries",
         DriverStaging::Exact,
+        ChildProject::None,
         |_| {
             use beskid_analysis::services::{
                 FrontEndOptions, resolved_input_from_plan, synthetic_compile_plan_for_source,

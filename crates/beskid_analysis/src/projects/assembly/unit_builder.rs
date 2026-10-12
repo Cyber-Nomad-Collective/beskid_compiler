@@ -57,7 +57,11 @@ impl<'a> UnitBuilder<'a> {
 
         if let Some(build) = self.salsa_build {
             crate::projects::assembly::unit_cache::record_disk_miss();
-            return build(path, source, generation);
+            let (unit, syntax_index) = build(path, source, generation)?;
+            // The store is content keyed, so a unit built through the Salsa cache is the same
+            // artifact a plain build publishes; the next process reads it instead of parsing.
+            self.write_artifacts(&unit)?;
+            return Ok((unit, syntax_index));
         }
 
         crate::projects::assembly::unit_cache::record_disk_miss();

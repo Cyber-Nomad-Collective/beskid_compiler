@@ -838,7 +838,7 @@ fn applied_pattern_binding_layout(
     let beskid_analysis::syntax::Pattern::Enum(pattern) = &arm.node.pattern.node else {
         return Err(SemanticError::unavailable("aggregate_field_access"));
     };
-    let scrutinee_path = match &expression.scrutinee.node {
+    let scrutinee_path = match super::enum_layout::ungrouped_scrutinee(expression) {
         beskid_analysis::syntax::Expression::Path(path) => &path.node.path.node,
         // A call scrutinee has no written local type. The enum match fact proves the applied
         // payload identity from the call's own source result type; that exact identity is the

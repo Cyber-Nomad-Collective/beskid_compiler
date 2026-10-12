@@ -91,9 +91,14 @@ fn closure_static_plan_is_generation_bound_and_never_claims_tls_or_root_frame_au
 
     let scalar =
         input.closure_static_plan(lambdas[0]).expect("current scalar capture receives a static descriptor plan");
-    assert_eq!(scalar.descriptor_symbol, "__beskid_closure_descriptor_module_u0_g21_n20");
-    assert_eq!(scalar.pointer_map_symbol, "__beskid_closure_pointer_map_module_u0_g21_n20");
-    assert_eq!(scalar.allocation_request_symbol, "__beskid_closure_allocation_request_module_u0_g21_n20");
+    // Static symbols are bound to the lambda's syntax generation, named relative to the typed
+    // program's own generation (`g0` for the current one), so otherwise identical compilations
+    // whose absolute generation numbers differ (a resumed session snapshot) emit the same names.
+    assert_eq!(lambdas[0].generation, input.typed_program().generation);
+    assert_eq!(input.generation_tag(lambdas[0].generation), "0");
+    assert_eq!(scalar.descriptor_symbol, "__beskid_closure_descriptor_module_u0_g0_n20");
+    assert_eq!(scalar.pointer_map_symbol, "__beskid_closure_pointer_map_module_u0_g0_n20");
+    assert_eq!(scalar.allocation_request_symbol, "__beskid_closure_allocation_request_module_u0_g0_n20");
     assert_eq!(scalar.object_size, 24, "16-byte header plus aligned i32 field");
     assert_eq!(scalar.object_alignment, 8);
     assert!(scalar.pointer_map_offsets.is_empty());

@@ -24,9 +24,13 @@ pub i32 FsReadText(pointer path, pointer textOut) {
     if text == NativePointer(0) {
         return 3;
     }
-    raw_word_store(textOut, raw_word_load(text));
-    raw_word_store(pointer_add(textOut, 8), raw_word_load(pointer_add(text, 8)));
-    SystemFree(text, 16);
+    // `textOut` is the caller's own string handle (`mut string text` in Core.FS.ReadAllText), a
+    // canonical managed view record. Its record adopts the new record's payload so the caller's
+    // reference owns the bytes and the GC keeps them alive; the view words are never written
+    // behind the GC's back and no GC handle is ever handed to the system allocator.
+    if Utf8RecordAdopt(textOut, text) == false {
+        return 4;
+    }
     return 0;
 }
 

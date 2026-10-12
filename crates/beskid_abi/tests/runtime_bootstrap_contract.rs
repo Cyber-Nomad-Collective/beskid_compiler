@@ -380,6 +380,7 @@ fn canonical_layouts_freeze_common_and_target_context_offsets() {
                 "BeskidCallbackEntry",
                 "BeskidCallbackRegistry",
                 "BeskidCheckedAllocationScope",
+                "BeskidChunkTable",
                 "BeskidCompositionContainer",
                 "BeskidCompositionScope",
                 "BeskidFiberRecord",

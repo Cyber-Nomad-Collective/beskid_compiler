@@ -11,6 +11,7 @@ use beskid_codegen::{
     module_emission::SyntaxModuleItem,
 };
 use object::{Object, ObjectKind};
+use sha2::{Digest, Sha256};
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs,
@@ -47,6 +48,112 @@ pub struct RustOwnerBuildRequest<'a> {
     pub release: bool,
     pub output_path: &'a Path,
     pub control: &'a NativeExecutionControl,
+    /// Directory of owner images keyed by their complete admission record ([`owner_image_key`]).
+    /// A hit re-admits the image a previous build of exactly these inputs produced, with the
+    /// evidence that build observed; a miss publishes the built image there. Hosts that must
+    /// prove a cold, isolated build (the CLI, tests of tool isolation) pass `None`.
+    pub image_cache: Option<&'a Path>,
+}
+
+/// Content key of an owner image: the complete admission record the build issues (every input
+/// except the image itself), the target and the profile.
+fn owner_image_key(record: &super::published::OwnerRecord, target: &str, release: bool) -> AotResult<String> {
+    let mut digest = Sha256::new();
+    digest.update(b"beskid.rust-owner-image/1");
+    digest.update(super::published::frame_owner_record(record)?);
+    digest.update(target.as_bytes());
+    digest.update([release as u8]);
+    Ok(format!("{:x}", digest.finalize()))
+}
+
+/// Evidence of one cached owner build, enough to restore its [`PreparedRustOwner`]: the
+/// receipts the build observed and the digests its verification re-checks.
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CachedOwnerWitness {
+    key: String,
+    library: String,
+    generation: u64,
+    payload_sha256: String,
+    provider_path: PathBuf,
+    provider_sha256: String,
+    source_sha256: String,
+    compiler: (PathBuf, String),
+    rustc: (PathBuf, String),
+    linker: (PathBuf, String),
+    driver_path: PathBuf,
+    driver_sha256: String,
+    child_receipts: Vec<beskid_execution::CompilerDriverReceipt>,
+    destructors: Vec<(String, String)>,
+    checked_exports: Vec<(String, String, u64)>,
+    exports: Vec<String>,
+    source_inventory: Vec<(String, String)>,
+}
+
+const CACHED_IMAGE_FILE: &str = "image";
+const CACHED_WITNESS_FILE: &str = "witness.json";
+
+/// Re-admit the cached image for `key` when its embedded record equals `record` and its witness
+/// names this exact producer closure; `None` when the cache has no current entry.
+fn cached_owner_image(
+    cache: &Path,
+    key: &str,
+    record: &super::published::OwnerRecord,
+) -> AotResult<Option<(Vec<u8>, CachedOwnerWitness)>> {
+    let entry = cache.join(key);
+    let witness_path = entry.join(CACHED_WITNESS_FILE);
+    if !witness_path.is_file() {
+        return Ok(None);
+    }
+    let witness: CachedOwnerWitness = serde_json::from_slice(&bounded_file(&witness_path)?)
+        .map_err(|e| invalid(format!("Rust owner image cache witness: {e}")))?;
+    let bytes = bounded_file(&entry.join(CACHED_IMAGE_FILE))?;
+    let embedded: super::published::OwnerRecord = super::published::read_record(
+        &object::File::parse(bytes.as_slice()).map_err(|e| invalid(e.to_string()))?,
+        super::published::OWNER_RECORD_SYMBOL,
+    )?;
+    if witness.key != key
+        || hash(&bytes) != witness.payload_sha256
+        || embedded != *record
+        || witness.library != record.library
+        || witness.generation != record.generation
+        || witness.provider_sha256 != record.provider_sha256
+        || witness.source_sha256 != record.source_sha256
+        || witness.compiler.1 != record.cargo_sha256
+        || witness.rustc.1 != record.rustc_sha256
+        || witness.linker.1 != record.linker_sha256
+        || witness.driver_sha256 != record.driver_sha256
+        || witness.exports != record.exports
+        || witness.checked_exports != record.checked_exports
+        || witness.destructors != record.destructors
+        || witness.source_inventory != record.source_inventory
+        || witness.child_receipts.is_empty()
+    {
+        return Err(invalid(format!("Rust owner image cache entry {key} does not match its admission record")));
+    }
+    Ok(Some((bytes, witness)))
+}
+
+/// Publish `bytes` and `witness` under `cache/<key>` atomically; a concurrent publication of the
+/// same key wins and this one is dropped.
+fn publish_owner_image(cache: &Path, key: &str, bytes: &[u8], witness: &CachedOwnerWitness) -> AotResult<()> {
+    fs::create_dir_all(cache).map_err(|e| invalid(e.to_string()))?;
+    let staging = tempfile::Builder::new()
+        .prefix(&format!(".{key}-"))
+        .tempdir_in(cache)
+        .map_err(|e| invalid(e.to_string()))?;
+    fs::write(staging.path().join(CACHED_IMAGE_FILE), bytes).map_err(|e| invalid(e.to_string()))?;
+    let encoded = serde_json::to_vec(witness).map_err(|e| invalid(e.to_string()))?;
+    fs::write(staging.path().join(CACHED_WITNESS_FILE), encoded).map_err(|e| invalid(e.to_string()))?;
+    let entry = cache.join(key);
+    match fs::rename(staging.path(), &entry) {
+        Ok(()) => {
+            let _ = staging.keep();
+            Ok(())
+        }
+        Err(_) if entry.join(CACHED_WITNESS_FILE).is_file() => Ok(()),
+        Err(e) => Err(invalid(format!("publish Rust owner image cache entry {key}: {e}"))),
+    }
 }
 /// Private, linear admission. No Clone, Deserialize, or public witness constructor.
 pub struct PreparedRustOwner {
@@ -723,6 +830,44 @@ pub fn build_rust_owner(req: &RustOwnerBuildRequest<'_>) -> AotResult<PreparedRu
         checked_exports: checked_exports.clone(),
         exports: exports.clone(),
     };
+    let target = req.runtime.kit.target.triple.as_str();
+    let image_key = match req.image_cache {
+        Some(_) => Some(owner_image_key(&record, target, req.release)?),
+        None => None,
+    };
+    if let (Some(cache), Some(key)) = (req.image_cache, image_key.as_deref())
+        && let Some((bytes, witness)) = cached_owner_image(cache, key, &record)?
+    {
+        let mut temporary = tempfile::NamedTempFile::new_in(parent).map_err(|e| invalid(e.to_string()))?;
+        std::io::Write::write_all(&mut temporary, &bytes).map_err(|e| invalid(e.to_string()))?;
+        temporary.as_file().sync_all().map_err(|e| invalid(e.to_string()))?;
+        temporary.persist_noclobber(req.output_path).map_err(|e| invalid(e.to_string()))?;
+        let result = PreparedRustOwner {
+            library: witness.library,
+            generation: witness.generation,
+            payload_path: fs::canonicalize(req.output_path).map_err(|e| invalid(e.to_string()))?,
+            payload_sha256: witness.payload_sha256,
+            provider_path: witness.provider_path,
+            provider_sha256: witness.provider_sha256,
+            source_sha256: digest_bytes(&witness.source_sha256)?,
+            compiler: LinkToolReceipt { executable: witness.compiler.0, sha256: witness.compiler.1 },
+            driver_path: witness.driver_path,
+            driver_sha256: witness.driver_sha256,
+            child_receipts: witness.child_receipts,
+            rustc: LinkToolReceipt { executable: witness.rustc.0, sha256: witness.rustc.1 },
+            linker: LinkToolReceipt { executable: witness.linker.0, sha256: witness.linker.1 },
+            destructors: witness
+                .destructors
+                .iter()
+                .map(|(brand, symbol)| Ok((digest_bytes(brand)?, symbol.clone())))
+                .collect::<AotResult<Vec<_>>>()?,
+            checked_exports: witness.checked_exports,
+            exports: witness.exports,
+            source_inventory: witness.source_inventory,
+        };
+        result.verify()?;
+        return Ok(result);
+    }
     let record_source = super::published::record_rust_source(
         super::published::OWNER_RECORD_SYMBOL,
         &super::published::frame_owner_record(&record)?,
@@ -751,7 +896,6 @@ pub fn build_rust_owner(req: &RustOwnerBuildRequest<'_>) -> AotResult<PreparedRu
     let configuration_path = stage.path().join("compiler-driver.json");
     let configuration_bytes = serde_json::to_vec(&configuration).map_err(|e| invalid(e.to_string()))?;
     fs::write(&configuration_path, &configuration_bytes).map_err(|e| invalid(e.to_string()))?;
-    let target = req.runtime.kit.target.triple.as_str();
     let target_root = stage.path().join("target");
     let mut invocation = LinkToolInvocation::new(req.cargo.as_os_str());
     invocation.current_dir = Some(stage.path().to_owned());
@@ -932,6 +1076,31 @@ pub fn build_rust_owner(req: &RustOwnerBuildRequest<'_>) -> AotResult<PreparedRu
     std::io::Write::write_all(&mut temporary, &bytes).map_err(|e| invalid(e.to_string()))?;
     temporary.as_file().sync_all().map_err(|e| invalid(e.to_string()))?;
     temporary.persist_noclobber(req.output_path).map_err(|e| invalid(e.to_string()))?;
+    if let (Some(cache), Some(key)) = (req.image_cache, image_key.as_deref()) {
+        let witness = CachedOwnerWitness {
+            key: key.to_owned(),
+            library: req.native_library.into(),
+            generation: req.input.typed_program().generation.0,
+            payload_sha256: hash(&bytes),
+            provider_path: provider.clone(),
+            provider_sha256: provider_digest.clone(),
+            source_sha256: hash(&framed),
+            compiler: (receipt.executable.clone(), receipt.sha256.clone()),
+            rustc: (rustc.clone(), rustc_digest.clone()),
+            linker: (linker.clone(), linker_digest.clone()),
+            driver_path: driver.path().to_owned(),
+            driver_sha256: driver.sha256().to_owned(),
+            child_receipts: serde_json::from_slice(
+                &serde_json::to_vec(&child_receipts).map_err(|e| invalid(e.to_string()))?,
+            )
+            .map_err(|e| invalid(e.to_string()))?,
+            destructors: destructors.iter().map(|(brand, symbol)| (super::published::hex(brand), symbol.clone())).collect(),
+            checked_exports: checked_exports.clone(),
+            exports: exports.clone(),
+            source_inventory: inventory.clone(),
+        };
+        publish_owner_image(cache, key, &bytes, &witness)?;
+    }
     let result = PreparedRustOwner {
         library: req.native_library.into(),
         generation: req.input.typed_program().generation.0,

@@ -31,6 +31,20 @@ pub(in crate::semantic_contract) fn enum_pattern_targets_declaration(
 
 /// Resolve enum scrutinees through registered source identity or explicit lexical declarations.
 /// Computed projections require canonical nominal facts; unknown identity stays unavailable.
+/// The match scrutinee with its grouping parentheses removed. `match (Call(...))` names the same
+/// scrutinee shape as `match Call(...)`: lowering already looks through the `GroupedExpression`
+/// node (`normalized_expression_node`), so every judgement of the scrutinee's AST shape must look
+/// through it as well, or the match has a lowering but no fact.
+pub(in crate::semantic_contract) fn ungrouped_scrutinee(
+    expression: &beskid_analysis::syntax::MatchExpression,
+) -> &beskid_analysis::syntax::Expression {
+    let mut scrutinee = &expression.scrutinee.node;
+    while let beskid_analysis::syntax::Expression::Grouped(grouped) = scrutinee {
+        scrutinee = &grouped.node.expr.node;
+    }
+    scrutinee
+}
+
 pub(in crate::semantic_contract) fn enum_match_scrutinee_layout(
     db: &dyn Db,
     program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
@@ -38,7 +52,7 @@ pub(in crate::semantic_contract) fn enum_match_scrutinee_layout(
     key: AstNodeKey,
     expression: &beskid_analysis::syntax::MatchExpression,
 ) -> Option<Result<(AstNodeKey, EnumLayoutFact), SemanticError>> {
-    if let beskid_analysis::syntax::Expression::EnumConstructor(constructor) = &expression.scrutinee.node {
+    if let beskid_analysis::syntax::Expression::EnumConstructor(constructor) = ungrouped_scrutinee(expression) {
         let declaration = resolve_type_declaration(db, key, &constructor.node.path.node.type_path.node)?;
         return Some(
             enum_layout(db, declaration)
@@ -47,7 +61,7 @@ pub(in crate::semantic_contract) fn enum_match_scrutinee_layout(
         );
     }
     if matches!(
-        expression.scrutinee.node,
+        ungrouped_scrutinee(expression),
         beskid_analysis::syntax::Expression::Call(_)
             | beskid_analysis::syntax::Expression::Member(_)
             | beskid_analysis::syntax::Expression::Index(_)
@@ -60,7 +74,7 @@ pub(in crate::semantic_contract) fn enum_match_scrutinee_layout(
         let call = AstNodeKey { node: normalized_expression_node(index, scrutinee), ..key };
         return Some(enum_layout_for_expression_result(db, call));
     }
-    let beskid_analysis::syntax::Expression::Path(path) = &expression.scrutinee.node else {
+    let beskid_analysis::syntax::Expression::Path(path) = ungrouped_scrutinee(expression) else {
         return None;
     };
     if path.node.path.node.segments.len() >= 2 {
@@ -152,7 +166,7 @@ fn enum_match_scrutinee_local_declaration(
     key: AstNodeKey,
     expression: &beskid_analysis::syntax::MatchExpression,
 ) -> Option<beskid_analysis::syntax::AstNodeId> {
-    let beskid_analysis::syntax::Expression::Path(path) = &expression.scrutinee.node else {
+    let beskid_analysis::syntax::Expression::Path(path) = ungrouped_scrutinee(expression) else {
         return None;
     };
     let [segment] = path.node.path.node.segments.as_slice() else {
@@ -194,12 +208,12 @@ pub(super) fn enum_match_source_environment(
     // A projected field path (`shape.packageDeclaration`) carries its applied type the same way a
     // call result does: through the projection's exact source identity.
     let projected_path = matches!(
-        &expression.scrutinee.node,
+        ungrouped_scrutinee(expression),
         beskid_analysis::syntax::Expression::Path(path) if path.node.path.node.segments.len() >= 2
     );
     if projected_path
         || matches!(
-            expression.scrutinee.node,
+            ungrouped_scrutinee(expression),
             beskid_analysis::syntax::Expression::Call(_)
                 | beskid_analysis::syntax::Expression::Member(_)
                 | beskid_analysis::syntax::Expression::Index(_)

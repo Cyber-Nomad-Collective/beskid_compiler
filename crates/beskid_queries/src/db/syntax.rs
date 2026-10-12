@@ -176,7 +176,7 @@ impl BeskidDatabase {
         Ok(())
     }
 
-    fn parse_and_expand(
+    pub(crate) fn parse_and_expand(
         &self,
         unit: SourceUnitId,
         source: &str,
@@ -209,7 +209,7 @@ impl BeskidDatabase {
     }
 }
 
-fn expanded_syntax_fingerprint(
+pub(crate) fn expanded_syntax_fingerprint(
     program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
 ) -> Result<String, SemanticError> {
     let mut structural = serde_json::to_value(program)

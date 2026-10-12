@@ -372,6 +372,17 @@ static void channel_race(ValueSlot *owner, int mode) {
     gc_collect();
 }
 
+/*
+ * Fiber records live in the scheduler's chunked table (`BeskidChunkTable`, chunks of 64 records
+ * that never move), so a record is found through the chunk pointer array, not by an inline offset.
+ */
+static unsigned char *fiber_record_at(const unsigned char *runtime_state, uint64_t index) {
+    uintptr_t scheduler = *(const uintptr_t *)(runtime_state + BESKID_RUNTIME_STATE_SCHEDULER_OFFSET);
+    uintptr_t table = *(uintptr_t *)(scheduler + BESKID_SCHEDULER_STATE_FIBER_TABLE_OFFSET);
+    uintptr_t *chunks = (uintptr_t *)*(uintptr_t *)(table + BESKID_CHUNK_TABLE_CHUNKS_OFFSET);
+    return (unsigned char *)chunks[index >> 6] + (index & 63u) * BESKID_FIBER_RECORD_SIZE;
+}
+
 int RunAbiValueFixture(MoveValue move) {
     _Alignas(8) unsigned char runtime[BESKID_RUNTIME_STATE_SIZE] = {0};
     assert(beskid_rt_v5_process_init(runtime) == runtime);
@@ -537,9 +548,7 @@ int RunAbiValueFixture(MoveValue move) {
     int64_t cancelled = fiber_spawn((void *)fiber_wait_fixture, 0);
     assert(fiber_cancel(cancelled, 17));
     assert(fiber_cancel(cancelled, 29));
-    uintptr_t *scheduler = (uintptr_t *)*(uintptr_t *)(runtime + BESKID_RUNTIME_STATE_SCHEDULER_OFFSET);
-    unsigned char *cancelled_record = (unsigned char *)scheduler + BESKID_SCHEDULER_STATE_FIBERS_OFFSET
-        + ((uint64_t)cancelled & UINT32_MAX) * BESKID_FIBER_RECORD_SIZE;
+    unsigned char *cancelled_record = fiber_record_at(runtime, (uint64_t)cancelled & UINT32_MAX);
     assert(*(uintptr_t *)(cancelled_record + BESKID_FIBER_RECORD_OUTCOME_REASON_OFFSET) == 17);
     assert(fiber_join_status(cancelled) == 1);
     fiber_detach(cancelled);
@@ -560,10 +569,8 @@ int RunAbiValueFixture(MoveValue move) {
 static unsigned char *receipt_runtime;
 static int receipt_count_underflow;
 static void *channel_receipt_count_corruption(void *argument) {
-    uintptr_t scheduler = *(uintptr_t *)(receipt_runtime + BESKID_RUNTIME_STATE_SCHEDULER_OFFSET);
     uintptr_t index = (uintptr_t)fiber_current_id() & UINT32_MAX;
-    unsigned char *operation = (unsigned char *)scheduler + BESKID_SCHEDULER_STATE_FIBERS_OFFSET
-        + index * BESKID_FIBER_RECORD_SIZE + BESKID_FIBER_RECORD_CHANNEL_OPERATION_OFFSET;
+    unsigned char *operation = fiber_record_at(receipt_runtime, index) + BESKID_FIBER_RECORD_CHANNEL_OPERATION_OFFSET;
     if (receipt_count_underflow) {
         assert(channel_try_receive(receipt_channel) == 0);
         *operation = 0; /* fault injection: resolving must reject count underflow */

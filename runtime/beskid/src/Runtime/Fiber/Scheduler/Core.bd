@@ -29,34 +29,29 @@ const FIBER_JOIN_NOT_DONE = 4;
 //
 // `BeskidRuntimeState` is a fixed ABI-v5 record (64 bytes); the scheduler table is
 // runtime-owned native storage and must never be embedded past that record.  The
-// table allocation and record stride come from the generated manifest constants:
-//   offset    0: fiber_count (word)
+// table is a fixed header whose growable parts (fiber records, run queue, pending
+// operation lists) live in separately allocated storage (see Storage.bd); the
+// header layout comes from the generated manifest constants:
+//   offset    0: fiber_count (word; records handed out so far)
 //   offset    8: main_fiber (word)
-//   offset   16: run_queue_head (word)
-//   offset   24: run_queue_tail (word)
-//   offset   32: run_queue[32] (32 words)
-//   offset  288: pending_spawns[8] (8 * 40 bytes: entry/arg/cancel/parent)
-//   offset  608: pending_spawn_count (word)
-//   offset  616: pending_cancels[32] (generation-safe handles, never bare indices)
-//   offset  872: pending_cancel_count (word)
-//   offset  880: pending_detaches[32] (32 words)
-//   offset 1136: pending_detach_count (word)
-//   offset 1144: pending_wakes[32] (32 words)
-//   offset 1400: pending_wake_count (word)
-//   offset 1408: owner external-wait state (native mailbox + wait/deadline tables)
-//   offset 3456: channel_table (pointer to a separately allocated, zeroed
-//                Channel.bd table)
-//   offset 3464: mutex_table (pointer to a separately allocated, zeroed
-//                Mutex.bd table)
-//   offset 3472: waitgroup_table (pointer to a separately allocated, zeroed
-//                WaitGroup.bd table)
-//   offset 3480: current_fiber (word; 0xFFFF when no canonical fiber is
+//   offset   16: run queue ring: head(16), tail(24), capacity(32), data(40)
+//   offset   48: pending_spawns vector: count(48), capacity(56), data(64); 40-byte entries
+//   offset   72: pending_cancels vector: count(72), capacity(80), data(88)
+//                (generation-safe handles, never bare indices)
+//   offset   96: pending_wakes vector: count(96), capacity(104), data(112)
+//   offset  120: owner external-wait state (native mailbox + wait/deadline tables)
+//   offset  128: channel_table (chunked Channel.bd table)
+//   offset  136: mutex_table (chunked Mutex.bd table)
+//   offset  144: waitgroup_table (chunked WaitGroup.bd table)
+//   offset  152: current_fiber (word; FIBER_NONE when no canonical fiber is
 //                executing on this scheduler thread)
-//   offset 3488: hub_table (pointer to a separately allocated, zeroed PubSub table)
-//   offset 3496: scheduler context
-//   offset 4032: Phase-A mutator token owner (BeskidTlsState pointer)
-//   offset 4040: poll executor state (pointer to separately allocated private state)
-//   offset 4048: fiber_table[FIBER_TABLE_MAX], BESKID_FIBER_RECORD_SIZE bytes per record
+//   offset  160: hub_table (chunked PubSub table)
+//   offset  168: scheduler context
+//   offset  176: Phase-A mutator token owner (BeskidTlsState pointer)
+//   offset  184: poll executor state (pointer to separately allocated private state)
+//   offset  192: fiber_table (chunked table of BESKID_FIBER_RECORD_SIZE records; a
+//                record never relocates, so handles and traced slots stay valid)
+//   offset  200: fiber_stack_max (word; per-fiber reservation, BESKID_FIBER_STACK_MAX)
 //
 // Each fiber record (BESKID_FIBER_RECORD_SIZE bytes):
 //   offset   0: state (word)
@@ -88,8 +83,11 @@ const FIBER_OUTCOME_CANCELER_OFFSET = 136;
 const FIBER_OUTCOME_LIMIT_OFFSET = 144;
 const FIBER_OUTCOME_REQUESTED_OFFSET = 152;
 
-const FIBER_TABLE_MAX = 16;
-const FIBER_NONE = 0xFFFF;
+// The no-fiber sentinel is outside the 32-bit slot range a public handle can carry, so no
+// grown table index ever collides with it.
+const FIBER_NONE = 0xFFFFFFFF;
+// Slot indices are the low 32 bits of a public handle; a table never hands out the sentinel.
+const FIBER_INDEX_MAX = 0xFFFFFFFE;
 
 // Beskid `const` items have no `pub` visibility (see the grammar's `ConstantDefinition` rule):
 // they only resolve within their own declaring file. Callers in other packages — including
@@ -100,11 +98,15 @@ pub word FiberNone() { return FIBER_NONE; }
 // adapter derives the target's guard granularity; source owns the portable
 // usable-capacity policy and never addresses below the returned usable base.
 const FIBER_STACK_INITIAL_SIZE = 65536;
+// Default per-fiber reservation; `BESKID_FIBER_STACK_MAX` (Lifecycle.bd) overrides it per process.
 const FIBER_STACK_MAX_SIZE = 8388608;
 const SCHEDULER_STATE_OFFSET = 32;
-const SCHEDULER_CURRENT_FIBER_OFFSET = 3480;
-const SCHEDULER_CONTEXT_OFFSET = 3496;
-const SCHEDULER_MUTATOR_TOKEN_OFFSET = 4032;
+const SCHEDULER_RUN_QUEUE_OFFSET = 16;
+const SCHEDULER_CURRENT_FIBER_OFFSET = 152;
+const SCHEDULER_CONTEXT_OFFSET = 168;
+const SCHEDULER_MUTATOR_TOKEN_OFFSET = 176;
+const SCHEDULER_FIBER_TABLE_OFFSET = 192;
+const SCHEDULER_FIBER_STACK_MAX_OFFSET = 200;
 
 // Returns the scheduler table owned by the active ABI-v5 runtime state.
 pub pointer SchedTable() {
@@ -115,13 +117,41 @@ pub pointer SchedTable() {
     return NativePointer(raw_word_load(pointer_add(state, SCHEDULER_STATE_OFFSET)));
 }
 
-// Returns a fiber record pointer by index.
-pub pointer FiberRecord(word index) {
+// Returns the chunked fiber-record table owned by the active scheduler.
+pub pointer SchedulerFiberTable() {
     mut pointer table = SchedTable();
-    if table == NativePointer(0) {
+    if table == NativePointer(0) { return NativePointer(0); }
+    return NativePointer(raw_word_load(pointer_add(table, SCHEDULER_FIBER_TABLE_OFFSET)));
+}
+
+// Returns a fiber record pointer by index. Records below `fiber_count` are always
+// addressable; `FiberAlloc` grows the table before it addresses a new index.
+pub pointer FiberRecord(word index) {
+    pointer fibers = SchedulerFiberTable();
+    if fibers == NativePointer(0) {
         return NativePointer(0);
     }
-    return pointer_add(table, BESKID_SCHEDULER_STATE_FIBERS_OFFSET + index * BESKID_FIBER_RECORD_SIZE);
+    return ChunkTableRecord(fibers, index);
+}
+
+// Per-fiber stack reservation in effect for new fibers (default 8 MiB).
+pub word SchedulerFiberStackMax() {
+    mut pointer table = SchedTable();
+    if table == NativePointer(0) { return FIBER_STACK_MAX_SIZE; }
+    word configured = raw_word_load(pointer_add(table, SCHEDULER_FIBER_STACK_MAX_OFFSET));
+    if configured == 0 { return FIBER_STACK_MAX_SIZE; }
+    return configured;
+}
+
+// Installs the per-fiber reservation for fibers spawned from now on. The value must be a
+// whole multiple of the initial committed size and at least that size; anything else is
+// rejected so a misconfigured process never runs with a stack policy nobody asked for.
+pub bool SchedulerSetFiberStackMax(word maximumSize) {
+    mut pointer table = SchedTable();
+    if table == NativePointer(0) { return false; }
+    if maximumSize < FIBER_STACK_INITIAL_SIZE || maximumSize % FIBER_STACK_INITIAL_SIZE != 0 { return false; }
+    raw_word_store(pointer_add(table, SCHEDULER_FIBER_STACK_MAX_OFFSET), maximumSize);
+    return true;
 }
 
 // Internal scheduler operations use slot indices. Public handles combine the
@@ -174,16 +204,19 @@ pub unit FiberAllocationFailed(word index, word generation) {
     FiberSetGeneration(fib, generation);
     raw_word_store(fib, FIBER_STATE_DONE);
     raw_word_store(pointer_add(fib, 48), FIBER_JOIN_STACK_OVERFLOW);
-    raw_word_store(pointer_add(fib, FIBER_OUTCOME_LIMIT_OFFSET), FIBER_STACK_MAX_SIZE);
+    raw_word_store(pointer_add(fib, FIBER_OUTCOME_LIMIT_OFFSET), SchedulerFiberStackMax());
     raw_word_store(pointer_add(fib, FIBER_OUTCOME_REQUESTED_OFFSET), FIBER_STACK_INITIAL_SIZE);
     return;
 }
 
 // Allocate a fiber slot. Detached terminal slots are reused with a new
-// generation; joined fibers remain stable until explicitly detached.
+// generation; joined fibers remain stable until explicitly detached. The table
+// has no fixed capacity: a fresh slot grows the chunked record table, and the
+// only failure is the system allocator refusing that growth.
 pub word FiberAlloc(word entry, word arg, word cancelSlot, word parent) {
     mut pointer table = SchedTable();
-    if table == NativePointer(0) { return FIBER_NONE; }
+    pointer fibers = SchedulerFiberTable();
+    if table == NativePointer(0) || fibers == NativePointer(0) { return FIBER_NONE; }
     word count = raw_word_load(table);
     mut word index = count;
     mut word generation = 1;
@@ -199,7 +232,11 @@ pub word FiberAlloc(word entry, word arg, word cancelSlot, word parent) {
             scan = scan + 1;
         }
     }
-    if index == count && count >= FIBER_TABLE_MAX { return FIBER_NONE; }
+    if index == count {
+        if count > FIBER_INDEX_MAX { return FIBER_NONE; }
+        if !ChunkTableEnsure(fibers, index) { return FIBER_NONE; }
+    }
+    word stackMaximumSize = SchedulerFiberStackMax();
     pointer fib = FiberRecord(index);
     memory_set(fib, 0, BESKID_FIBER_RECORD_SIZE);
     FiberSetGeneration(fib, generation);
@@ -212,7 +249,7 @@ pub word FiberAlloc(word entry, word arg, word cancelSlot, word parent) {
         if index == count { raw_word_store(table, count + 1); }
         return index;
     }
-    pointer stack = GuardedStackAllocate(FIBER_STACK_INITIAL_SIZE, FIBER_STACK_MAX_SIZE);
+    pointer stack = GuardedStackAllocate(FIBER_STACK_INITIAL_SIZE, stackMaximumSize);
     if stack == NativePointer(0) {
         SystemFree(context, ArchContextSize());
         if cancelSlot != 0 { SystemFree(NativePointer(cancelSlot), 8); }
@@ -228,7 +265,7 @@ pub word FiberAlloc(word entry, word arg, word cancelSlot, word parent) {
     raw_word_store(pointer_add(fib, 32), parent);
     raw_byte_store(pointer_add(fib, 40), 0); // detached
     raw_byte_store(pointer_add(fib, 41), 0); // cancelled
-    raw_word_store(pointer_add(fib, 88), FIBER_STACK_MAX_SIZE);
+    raw_word_store(pointer_add(fib, 88), stackMaximumSize);
     raw_word_store(pointer_add(fib, 96), NativeWord(stack));
     raw_word_store(pointer_add(fib, 104), NativeWord(context));
     raw_word_store(pointer_add(fib, 112), ArchContextSize());
@@ -244,14 +281,14 @@ pub word FiberAlloc(word entry, word arg, word cancelSlot, word parent) {
         }
     }
     if captureRooted == false {
-        GuardedStackFree(stack, FIBER_STACK_MAX_SIZE);
+        GuardedStackFree(stack, stackMaximumSize);
         SystemFree(context, ArchContextSize());
         if cancelSlot != 0 { SystemFree(NativePointer(cancelSlot), 8); }
         FiberAllocationFailed(index, generation);
         if index == count { raw_word_store(table, count + 1); }
         return index;
     }
-    ContextInit(context, pointer_add(stack, FIBER_STACK_MAX_SIZE), SchedulerFiberEntryAddress(), fib, SchedulerReturnTrampolineAddress());
+    ContextInit(context, pointer_add(stack, stackMaximumSize), SchedulerFiberEntryAddress(), fib, SchedulerReturnTrampolineAddress());
     if index == count { raw_word_store(table, count + 1); }
     return index;
 }
@@ -447,42 +484,28 @@ pub i64 FiberCurrentId() {
 
 // ── Run Queue ──────────────────────────────────────────────────────
 
-// Push a live runnable fiber exactly once. Returns false when the bounded ring
-// is full; one slot remains empty to distinguish full from empty.
+// Push a live runnable fiber exactly once. The ring grows on demand; false means
+// the system allocator refused the growth.
 pub bool RunQueuePush(word fiberIndex) {
     mut pointer table = SchedTable();
     if table == NativePointer(0) || !FiberExists(fiberIndex) { return false; }
-    word head = raw_word_load(pointer_add(table, 16));
-    word tail = raw_word_load(pointer_add(table, 24));
-    word nextTail = (tail + 1) % 32;
-    if nextTail == head { return false; }
-    mut word cursor = head;
-    while cursor != tail {
-        if raw_word_load(pointer_add(table, 32 + cursor * 8)) == fiberIndex { return true; }
-        cursor = (cursor + 1) % 32;
-    }
-    raw_word_store(pointer_add(table, 32 + tail * 8), fiberIndex);
-    raw_word_store(pointer_add(table, 24), nextTail);
-    return true;
+    pointer ring = pointer_add(table, SCHEDULER_RUN_QUEUE_OFFSET);
+    if RingContains(ring, fiberIndex) { return true; }
+    return RingPush(ring, fiberIndex);
 }
 
-// Pop a fiber index from the run queue. Returns 0xFFFF if empty.
+// Pop a fiber index from the run queue. Returns FIBER_NONE if empty.
 pub word RunQueuePop() {
     mut pointer table = SchedTable();
-    if table == NativePointer(0) { return 0xFFFF; }
-    word head = raw_word_load(pointer_add(table, 16));
-    word tail = raw_word_load(pointer_add(table, 24));
-    if head == tail { return 0xFFFF; }
-    word fiberIndex = raw_word_load(pointer_add(table, 32 + head * 8));
-    raw_word_store(pointer_add(table, 16), (head + 1) % 32);
-    return fiberIndex;
+    if table == NativePointer(0) { return FIBER_NONE; }
+    return RingPop(pointer_add(table, SCHEDULER_RUN_QUEUE_OFFSET), FIBER_NONE);
 }
 
 // Check if run queue is empty.
 pub bool RunQueueEmpty() {
     mut pointer table = SchedTable();
     if table == NativePointer(0) { return true; }
-    return raw_word_load(pointer_add(table, 16)) == raw_word_load(pointer_add(table, 24));
+    return RingEmpty(pointer_add(table, SCHEDULER_RUN_QUEUE_OFFSET));
 }
 
 // ── Fiber State Transitions ────────────────────────────────────────
@@ -631,10 +654,18 @@ pub unit SchedInit() {
     table = SystemAllocate(BESKID_SCHEDULER_STATE_SIZE, 8);
     if table == NativePointer(0) { return; }
     memory_set(table, 0, BESKID_SCHEDULER_STATE_SIZE);
+    pointer fibers = ChunkTableCreate(BESKID_FIBER_RECORD_SIZE);
+    if fibers == NativePointer(0) {
+        SystemFree(table, BESKID_SCHEDULER_STATE_SIZE);
+        return;
+    }
+    raw_word_store(pointer_add(table, SCHEDULER_FIBER_TABLE_OFFSET), NativeWord(fibers));
+    raw_word_store(pointer_add(table, SCHEDULER_FIBER_STACK_MAX_OFFSET), FIBER_STACK_MAX_SIZE);
     raw_word_store(pointer_add(state, SCHEDULER_STATE_OFFSET), NativeWord(table));
     pointer schedulerContext = SystemAllocate(ArchContextSize(), ArchContextAlignment());
     if schedulerContext == NativePointer(0) {
         raw_word_store(pointer_add(state, SCHEDULER_STATE_OFFSET), 0);
+        ChunkTableFree(fibers);
         SystemFree(table, BESKID_SCHEDULER_STATE_SIZE);
         return;
     }
@@ -702,6 +733,10 @@ pub bool SchedShutdownForced(bool forced) {
     ExternalShutdown(table);
     PollStateShutdown(table);
     SchedulerStorageShutdown(table);
+    PendingQueuesShutdown(table);
+    RingFree(pointer_add(table, SCHEDULER_RUN_QUEUE_OFFSET));
+    ChunkTableFree(SchedulerFiberTable());
+    raw_word_store(pointer_add(table, SCHEDULER_FIBER_TABLE_OFFSET), 0);
     pointer schedulerContext = SchedulerContext();
     if schedulerContext != NativePointer(0) { SystemFree(schedulerContext, ArchContextSize()); }
     pointer state = RuntimeState();

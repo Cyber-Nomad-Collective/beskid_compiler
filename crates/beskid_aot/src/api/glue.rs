@@ -160,7 +160,11 @@ pub fn build_glue_artifact(req: &GlueArtifactBuildRequest<'_>) -> AotResult<Prep
     // Source-issued immutable failure constructors join the same descriptor pass
     // as every other body. No second emitter may recreate their descriptors.
     let mut failures = std::collections::BTreeMap::new();
-    let checked_sources = beskid_codegen::module_emission::checked_failure_entries(req.input, req.all_items)
+    // Failure constructors are issued for the same executable closure the bodies were lowered
+    // from; items outside it are not part of this image.
+    let body_items = beskid_codegen::glue::native_body_items(req.input, req.all_items, req.selected)
+        .map_err(|error| invalid(error.to_string()))?;
+    let checked_sources = beskid_codegen::module_emission::checked_failure_entries(req.input, &body_items)
         .map_err(|error| invalid(error.to_string()))?;
     for entry in &checked_sources {
         let plan = entry.plan();

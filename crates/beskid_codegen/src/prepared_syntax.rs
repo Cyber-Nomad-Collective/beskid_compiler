@@ -736,7 +736,7 @@ fn syntax_export_entries_matching(
 /// When a selected item also contains a `spawn`, the generated spawn trampoline calls the
 /// [`SCHEDULER_STACK_HELPERS`](crate::module_emission::SCHEDULER_STACK_HELPERS) seams, so they are
 /// added as roots too.
-fn close_scheduler_entry_reachability(
+pub(crate) fn close_scheduler_entry_reachability(
     db: &dyn beskid_queries::Db,
     input: &CodegenInput<'_>,
     selected: &mut HashSet<AstNodeKey>,

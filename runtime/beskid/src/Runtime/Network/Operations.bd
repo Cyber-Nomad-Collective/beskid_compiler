@@ -118,12 +118,12 @@ pub i32 NetworkSetDeadlines(word handle, i64 readDeadline, i64 writeDeadline) {
 }
 
 // The caller owns request/buffer until this returns. Cancel detaches host state
-// before release, including IOCP completion state which retains its own native copy.
+// before release; IOCP settles its queued completion packet first (see the README).
 //
 // A completed transfer wins over the deadline. The deadline can win the one-winner wait after
-// the reactor has already run recv/recvmsg/accept/connect for this request (or IOCP has
-// delivered its completion) but before this fiber resumes. Cancel takes the native network lock
-// that completion also holds, so after it returns the request status is final: status 0 (OK) means
+// the reactor has already run recv/recvmsg/accept/connect for this request (or the IOCP kernel
+// has completed the operation) but before this fiber resumes. After cancel returns the request
+// status is final on every backend: status 0 (OK) means
 // bytes, a datagram, an accepted socket, or a connection were transferred, and they are
 // delivered instead of NETWORK_TIMED_OUT. Otherwise cancel marked the request cancelled before
 // any I/O and the timeout stands. Cancellation and close winners are unchanged.

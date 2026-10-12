@@ -1,6 +1,8 @@
 //! On-disk persistence adapter for Salsa session state under `obj/beskid/cache/salsa/`.
 
 use std::fs;
+#[cfg(feature = "persistence")]
+use std::sync::Arc;
 use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
@@ -41,6 +43,12 @@ struct SnapshotEnvelope<'a> {
     compiler: String,
     corelib: String,
     digest: String,
+    /// Project root the snapshot was taken under. A copy of the project (its `obj/` seeded from
+    /// another checkout of the same sources) relocates every path beneath this root to its own
+    /// root before deserialization; absent in snapshots whose root is unknown, which only load
+    /// in place.
+    #[serde(default)]
+    root: Option<String>,
     #[serde(borrow)]
     db: &'a serde_json::value::RawValue,
 }
@@ -53,7 +61,7 @@ struct SnapshotEnvelope<'a> {
 /// a literal usable by `concat!`.
 #[cfg(feature = "persistence")]
 fn snapshot_format_version() -> String {
-    format!("beskid-queries:{}:grammar:{}:snapshot:4", env!("CARGO_PKG_VERSION"), beskid_pipeline::GRAMMAR_REVISION,)
+    format!("beskid-queries:{}:grammar:{}:snapshot:5", env!("CARGO_PKG_VERSION"), beskid_pipeline::GRAMMAR_REVISION,)
 }
 
 /// Identity of the Corelib every snapshot unit may have been materialized from: the sealed
@@ -186,6 +194,50 @@ fn validate_payload_order(payload: &str) -> Result<(), String> {
 #[cfg(feature = "persistence")]
 fn snapshot_path(root: &Path) -> PathBuf {
     root.join("db.json")
+}
+
+/// The project root of a persistence root (`<project>/obj/beskid/cache/salsa`), canonical when
+/// it exists, as every path the snapshot records is.
+#[cfg(feature = "persistence")]
+fn snapshot_project_root(cache_root: &Path) -> Option<PathBuf> {
+    let root = cache_root.ancestors().nth(4)?;
+    Some(root.canonicalize().unwrap_or_else(|_| root.to_path_buf()))
+}
+
+/// Rewrite every path beneath `from` in the serialized payload to the same path beneath `to`.
+///
+/// Paths are JSON strings, so the old root is matched in its JSON-escaped form and only where a
+/// path separator or the closing quote follows it, never as a prefix of a longer name. Two
+/// projects of the same sources materialize identical dependency trees beneath their own roots,
+/// so the relocated inputs name files that exist; the prepare spine still replaces any text that
+/// differs from disk. Returns `None` when `from` cannot be encoded.
+#[cfg(feature = "persistence")]
+fn relocate_payload(payload: &str, from: &Path, to: &Path) -> Option<String> {
+    let encode = |path: &Path| -> Option<String> {
+        let encoded = serde_json::to_string(path.to_str()?).ok()?;
+        Some(encoded[1..encoded.len() - 1].to_owned())
+    };
+    let from = encode(from)?;
+    let to = encode(to)?;
+    if from.is_empty() {
+        return None;
+    }
+    let mut relocated = String::with_capacity(payload.len());
+    let mut rest = payload;
+    while let Some(index) = rest.find(&from) {
+        let (head, tail) = rest.split_at(index);
+        relocated.push_str(head);
+        let after = &tail[from.len()..];
+        let boundary = after.starts_with('/') || after.starts_with('"') || after.starts_with("\\");
+        if boundary {
+            relocated.push_str(&to);
+        } else {
+            relocated.push_str(&from);
+        }
+        rest = after;
+    }
+    relocated.push_str(rest);
+    Some(relocated)
 }
 
 /// Limits apply to the complete encoded envelope, before allocating Salsa state, and to every
@@ -385,6 +437,7 @@ fn save_db_snapshot_on_stack(db: &mut crate::db::BeskidDatabase, root: &Path) ->
             "compiler": compiler_fingerprint()?,
             "corelib": corelib_identity(),
             "digest": format!("{:x}", sha2::Digest::finalize(digest)),
+            "root": snapshot_project_root(root).and_then(|root| root.to_str().map(str::to_owned)),
         });
         let identity = serde_json::to_string(&identity).map_err(std::io::Error::other)?;
         writer.write_all(b",")?;
@@ -469,12 +522,35 @@ fn load_db_snapshot_on_stack(db: &mut crate::db::BeskidDatabase, bytes: &[u8]) -
         log::info!("beskid salsa snapshot rejected: taken against a different Corelib");
         return false;
     }
-    if let Err(error) = validate_payload_order(envelope.db.get()) {
+    // A snapshot copied along with its project (`obj/` seeded from a sibling checkout of the same
+    // sources) names the root it was taken under; relocate its paths to this root. The digest
+    // above covers the payload as written; the relocated text is validated like any other.
+    let current_root = db.persistence_root().and_then(snapshot_project_root);
+    let relocated;
+    let payload = match (envelope.root.as_deref().map(Path::new), current_root.as_deref()) {
+        (Some(from), Some(to)) if from != to => {
+            let Some(text) = relocate_payload(envelope.db.get(), from, to) else {
+                log::warn!("beskid salsa snapshot rejected: project root cannot be relocated");
+                return false;
+            };
+            log::info!("beskid salsa snapshot relocated from {} to {}", from.display(), to.display());
+            relocated = text;
+            relocated.as_str()
+        }
+        // Without a persistence root of its own (an in-memory database loading a snapshot in
+        // place) the paths stay as written.
+        _ => envelope.db.get(),
+    };
+    if let Err(error) = validate_snapshot_limits(payload.as_bytes(), SnapshotLimits::default()) {
+        log::warn!("beskid salsa snapshot rejected: relocated payload: {error}");
+        return false;
+    }
+    if let Err(error) = validate_payload_order(payload) {
         log::warn!("beskid salsa snapshot rejected: invalid payload order: {error}");
         return false;
     }
     let mut candidate = crate::db::BeskidDatabase::uninitialized(db.persistence_root().map(Path::to_path_buf));
-    let mut deserializer = serde_json::Deserializer::from_str(envelope.db.get());
+    let mut deserializer = serde_json::Deserializer::from_str(payload);
     deserializer.disable_recursion_limit();
     if let Err(err) = <dyn salsa::Database>::deserialize(&mut candidate, &mut deserializer) {
         log::warn!("beskid salsa snapshot rejected: deserialize error: {err}");
@@ -484,7 +560,7 @@ fn load_db_snapshot_on_stack(db: &mut crate::db::BeskidDatabase, bytes: &[u8]) -
         log::warn!("beskid salsa snapshot rejected: trailing payload: {err}");
         return false;
     }
-    let restored_generation = rehydrate_registries(&mut candidate);
+    let restored_generation = rehydrate_registries(&mut candidate, current_root.as_deref());
     candidate.grammar_revision();
     // Restored dependency memos may be verified through erased Salsa access
     // before their generated query accessor runs. Publish the existing typed
@@ -501,7 +577,10 @@ fn load_db_snapshot_on_stack(db: &mut crate::db::BeskidDatabase, bytes: &[u8]) -
 /// input entries so subsequent `set_file_text` / `ensure_file_text` calls reuse
 /// the existing `FileText` IDs instead of allocating duplicates.
 #[cfg(feature = "persistence")]
-fn rehydrate_registries(db: &mut crate::db::BeskidDatabase) -> Option<crate::SyntaxGenerationId> {
+fn rehydrate_registries(
+    db: &mut crate::db::BeskidDatabase,
+    project_root: Option<&Path>,
+) -> Option<crate::SyntaxGenerationId> {
     use crate::db::Db;
     use salsa::plumbing::ZalsaDatabase;
 
@@ -544,13 +623,85 @@ fn rehydrate_registries(db: &mut crate::db::BeskidDatabase) -> Option<crate::Syn
             registry.entry(key).or_insert(session);
         }
     }
+    let rehydrated = rehydrate_syntax_units(db, project_root, syntax_units);
     {
         let mut registry = db.syntax_unit_registry().lock().expect("syntax unit registry");
-        for (unit, input) in syntax_units {
+        for (unit, input) in rehydrated {
             registry.entry(unit).or_insert(input);
         }
     }
     restored_generation
+}
+
+/// Rebuild the expanded tree and syntax index of every restored unit from its persisted source
+/// text, and publish only the units whose rebuilt tree is the one the memos were computed from.
+///
+/// The persisted revision carries the generation and the source and tree fingerprints; the tree
+/// itself comes from the project's content-keyed AST store when it holds the unit, else from a
+/// fresh parse and expansion. A unit whose text is missing or whose rebuilt tree differs from
+/// `tree_fingerprint` (a Mod rewrote it before registration) is left unpublished: the next
+/// registration creates it anew and its restored memos are never reached. Setting the revision
+/// advances the input, so dependents re-verify against the rebuilt tree and Salsa backdates the
+/// ones whose results are unchanged. The rebuilt units also seed the assembly unit cache, so the
+/// following assembly does not parse them again.
+#[cfg(feature = "persistence")]
+fn rehydrate_syntax_units(
+    db: &mut crate::db::BeskidDatabase,
+    project_root: Option<&Path>,
+    units: Vec<(crate::semantic_contract::SourceUnitId, crate::semantic_contract::SyntaxUnitInput)>,
+) -> Vec<(crate::semantic_contract::SourceUnitId, crate::semantic_contract::SyntaxUnitInput)> {
+    use crate::db::Db;
+    use beskid_analysis::projects::assembly::SourceUnit;
+    use beskid_analysis::syntax_query::SyntaxIndex;
+    use salsa::Setter;
+    let store = project_root.map(beskid_artifacts::ArtifactStore::new);
+    let mut sources = Vec::with_capacity(units.len());
+    for (unit, input) in units {
+        let path = unit.path(db).clone();
+        let Some(text) = db.file_text(&path).map(|file| file.text(db).clone()) else { continue };
+        let revision = input.revision(db).clone();
+        if *revision.source_fingerprint != *beskid_artifacts::content_fingerprint(&text) {
+            continue;
+        }
+        sources.push((unit, input, path, text, revision));
+    }
+    let build = |path: &Path, text: &str, unit: crate::semantic_contract::SourceUnitId, db: &crate::db::BeskidDatabase| {
+        let fingerprint = beskid_artifacts::content_fingerprint(text);
+        let stored = store.as_ref().and_then(|store| store.read_ast(&fingerprint)).and_then(|snapshot| {
+            (snapshot.meta.source_len == text.len())
+                .then(|| beskid_analysis::artifacts::source_unit_from_ast_snapshot(&snapshot, path, text).ok())
+                .flatten()
+                .map(|unit| unit.program)
+        });
+        match stored {
+            Some(program) => Some((fingerprint, program)),
+            None => db.parse_and_expand(unit, text).ok().map(|program| (fingerprint, program)),
+        }
+    };
+    let mut published = Vec::with_capacity(sources.len());
+    for (unit, input, path, text, revision) in sources {
+        let Some((fingerprint, program)) = build(&path, &text, unit, db) else { continue };
+        let Ok(tree_fingerprint) = crate::db::expanded_syntax_fingerprint(&program) else { continue };
+        if *revision.tree_fingerprint != *tree_fingerprint {
+            continue;
+        }
+        let program = Arc::new(program);
+        let syntax_index = Arc::new(SyntaxIndex::from_program(&program, revision.generation));
+        let logical_name = path.display().to_string();
+        let source_unit = SourceUnit::bind_request(path.clone(), logical_name, text, (*program).clone());
+        db.unit_cache().lock().expect("unit cache").source_units.insert(fingerprint, Arc::new(source_unit));
+        input.set_revision(db).to(Arc::new(crate::semantic_contract::SyntaxUnitRevision {
+            runtime_source_authority: None,
+            sdk_source_authority: None,
+            generation: revision.generation,
+            expanded_program: program,
+            syntax_index,
+            source_fingerprint: Arc::clone(&revision.source_fingerprint),
+            tree_fingerprint: Arc::clone(&revision.tree_fingerprint),
+        }));
+        published.push((unit, input));
+    }
+    published
 }
 
 // No-op stubs when the `persistence` feature is disabled. Keeps call sites in

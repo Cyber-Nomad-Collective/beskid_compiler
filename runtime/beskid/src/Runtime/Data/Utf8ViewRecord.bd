@@ -29,6 +29,27 @@ pub unit Utf8RecordSetData(mut Utf8ViewRecord record, pointer data) {
     record.data = data;
 }
 
+// Re-seats the view record behind `target` onto the bytes owned by the record behind `source`.
+// Both are ABI-visible string handles (the `data` word of a canonical view record). After the
+// adoption `target` reads exactly `source`'s bytes and its record owns their payload, so the
+// caller's own reference keeps them alive; `source` keeps its payload and stays independent.
+// Fails closed (no store) when either handle is not a canonical managed view.
+pub bool Utf8RecordAdopt(pointer target, pointer source) {
+    pointer heap = Heap();
+    pointer targetRecord = ManagedObjectForReference(heap, target);
+    pointer sourceRecord = ManagedObjectForReference(heap, source);
+    if targetRecord == NativePointer(0) || sourceRecord == NativePointer(0) { return false; }
+    if TypeDescriptorFlags(NativePointer(raw_word_load(targetRecord))) != TypeDescriptorUtf8ViewFlag() { return false; }
+    if TypeDescriptorFlags(NativePointer(raw_word_load(sourceRecord))) != TypeDescriptorUtf8ViewFlag() { return false; }
+    pointer payload = NativePointer(raw_word_load(pointer_add(sourceRecord, 16)));
+    if payload == NativePointer(0) { return false; }
+    GcWriteBarrier(targetRecord, payload);
+    raw_word_store(pointer_add(targetRecord, 16), NativeWord(payload));
+    raw_word_store(pointer_add(targetRecord, 24), raw_word_load(pointer_add(sourceRecord, 24)));
+    raw_word_store(pointer_add(targetRecord, 32), raw_word_load(pointer_add(sourceRecord, 32)));
+    return true;
+}
+
 [Export(Abi:"C", Symbol:"beskid_rt_v5_managed_view_kind")]
 pub u64 ManagedViewKind(pointer value) {
     pointer object = ManagedObjectForReference(Heap(), value);

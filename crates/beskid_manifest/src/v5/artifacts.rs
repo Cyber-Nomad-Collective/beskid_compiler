@@ -73,6 +73,26 @@ pub fn write_v5_artifacts(manifest: &RuntimeManifestV5, workspace: &Path) -> Res
         fs::write(include.join(format!("beskid_runtime_abi_v5_{}.inc", target.replace('-', "_"))), contents)
             .map_err(|error| error.to_string())?;
     }
+    refresh_runtime_layout_prelude(manifest, &workspace.join("runtime/beskid/src/Runtime/Mem/AbiValue.bd"))
+}
+
+/// Rewrites the generated ABI-v5 layout prelude that leads `runtime/beskid/src/Runtime/Mem/AbiValue.bd`
+/// (see `checked_in_abi_value_layout_prelude_is_fresh`), keeping the hand-written remainder of the
+/// file intact. The prelude is the `// @generated` header line plus every following `const BESKID_`
+/// line; regenerating here is the only sanctioned way to change it.
+pub fn refresh_runtime_layout_prelude(manifest: &RuntimeManifestV5, abi_value_path: &Path) -> Result<(), String> {
+    let prelude = runtime_layout_source(manifest)?;
+    let on_disk = fs::read_to_string(abi_value_path).map_err(|error| format!("{}: {error}", abi_value_path.display()))?;
+    let mut lines = on_disk.split_inclusive('\n');
+    match lines.next() {
+        Some(first) if first.starts_with("// @generated from runtime_manifest.bsol") => {}
+        _ => return Err(format!("{} does not start with the generated layout prelude", abi_value_path.display())),
+    }
+    let remainder: String = lines.skip_while(|line| line.starts_with("const BESKID_")).collect();
+    let refreshed = format!("{prelude}{remainder}");
+    if refreshed != on_disk {
+        fs::write(abi_value_path, refreshed).map_err(|error| format!("{}: {error}", abi_value_path.display()))?;
+    }
     Ok(())
 }
 

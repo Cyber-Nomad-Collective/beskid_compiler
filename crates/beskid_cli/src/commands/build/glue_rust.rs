@@ -355,6 +355,7 @@ pub(super) fn run(args: BuildArgs, tools: RustGlueTools) -> Result<()> {
                 release,
                 output_path: &staged,
                 control: &control,
+                image_cache: None,
             })
             .with_context(|| format!("build Rust owner `{}`", owner.library))?;
             images.push(StagedImage { staged, destination, sha256: prepared.native_sha256().to_owned() });

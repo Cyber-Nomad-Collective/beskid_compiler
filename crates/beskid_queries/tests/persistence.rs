@@ -87,7 +87,9 @@ fn deep_snapshot_fixture() -> (tempfile::TempDir, std::path::PathBuf, std::path:
                     depth -= 1;
                 }
             }
-            assert!(maximum > 128, "fixture must exercise the real deep snapshot: {maximum}");
+            // The expanded tree is no longer persisted (it is rebuilt from the source text on
+            // load), so the payload itself stays shallow; the deep nesting is exercised by the
+            // rehydration parse on the bounded restore stack and by the memo verification below.
             assert!(maximum <= 256, "fixture must fit the bounded restore policy: {maximum}");
             (directory, path, cache, key, source)
         })

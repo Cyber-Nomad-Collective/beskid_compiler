@@ -8,9 +8,15 @@ host-work accounting, and network shutdown.
 
 The native layer owns system calls and epoll/kqueue/IOCP mechanics. It posts
 immutable `(owner, token, source)` completions through Foundation; it never
-changes a fiber state. `network_cancel` must atomically detach a request before
-returning, retaining any independent IOCP storage until its completion arrives.
-This lets Beskid free the runtime request without a late write into freed memory.
+changes a fiber state. When `network_cancel` returns, the request is detached and
+its status is final: either the native operation completed (status 0 with its
+transfer) or it was cancelled before any transfer. Readiness backends meet this by
+completing under the lock that cancel takes. IOCP settles: it issues `CancelIoEx`
+and waits until the reactor dequeues the operation's single completion packet,
+because only that packet holds the final status
+(`docs/design/2026-10-12-iocp-deadline-race.md`). This lets Beskid free the runtime
+request without a late write into freed memory and lets a completed transfer win
+over its deadline on every backend.
 
 ## Runtime/corelib services
 

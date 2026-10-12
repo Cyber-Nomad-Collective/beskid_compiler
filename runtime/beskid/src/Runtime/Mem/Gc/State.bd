@@ -70,7 +70,8 @@ const SIZE_CLASS_LARGE = 14;
 const HEAP_MIN_THRESHOLD = 524288;
 const HEAP_INITIAL_REGION_SIZE = 1048576;
 const HEAP_MAX_REGION_SIZE = 67108864;
-const HEAP_DEFAULT_CAP = 1073741824;
+// No fixed default cap (see Lifecycle.bd); `BESKID_HEAP_MAX` installs one explicitly.
+const HEAP_DEFAULT_CAP = 0xFFFFFFFFFFFFFFFF;
 
 // Exhaustion failure reasons (Decision 3, extended with reason 4 for root/handle stack growth).
 const HEAP_FAILURE_NONE = 0;

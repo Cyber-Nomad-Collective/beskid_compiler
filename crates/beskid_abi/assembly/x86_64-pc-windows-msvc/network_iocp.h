@@ -1,4 +1,10 @@
 #include "../common/network.h"
+#include "../common/network_settle.h"
+_Static_assert(BESKID_SETTLE_ERROR_NETNAME_DELETED == ERROR_NETNAME_DELETED && BESKID_SETTLE_ERROR_MORE_DATA == ERROR_MORE_DATA
+  && BESKID_SETTLE_ERROR_OPERATION_ABORTED == ERROR_OPERATION_ABORTED && BESKID_SETTLE_ERROR_NOT_FOUND == ERROR_NOT_FOUND
+  && BESKID_SETTLE_WSAEMSGSIZE == WSAEMSGSIZE, "settlement completion codes");
+_Static_assert(BESKID_SETTLE_CONNECT == NET_CONNECT && BESKID_SETTLE_ACCEPT == NET_ACCEPT && BESKID_SETTLE_READ == NET_READ
+  && BESKID_SETTLE_WRITE == NET_WRITE && BESKID_SETTLE_RECEIVE == NET_RECEIVE && BESKID_SETTLE_SEND == NET_SEND, "settlement operations");
 
 struct BeskidNetworkReactor;
 struct BeskidNetworkOperation;
@@ -17,6 +23,7 @@ struct BeskidNetworkOperation {
   struct BeskidNetworkRequest *request;
   SOCKET descriptor, accepted;
   uintptr_t operation;
+  int state, family; /* BeskidSettleState; listener family for AcceptEx */
   void *buffer;
   size_t capacity;
   struct sockaddr_storage address;
@@ -34,6 +41,8 @@ struct BeskidNetworkReactor {
 static SRWLOCK beskid_network_lock = SRWLOCK_INIT;
 static SRWLOCK beskid_network_table_lock = SRWLOCK_INIT;
 static SRWLOCK beskid_network_startup_lock = SRWLOCK_INIT;
+/* Signalled by the reactor after it delivers a packet to a settling operation. */
+static CONDITION_VARIABLE beskid_network_settled = CONDITION_VARIABLE_INIT;
 static uintptr_t beskid_network_table;
 static int beskid_network_started;
 static int BeskidNetworkPlatformReady(void) {
@@ -73,20 +82,45 @@ static void BeskidNetworkOperationFree(struct BeskidNetworkOperation *operation)
   BeskidNetworkFree(operation->buffer, operation->capacity);
   BeskidNetworkFree(operation, sizeof(*operation));
 }
-static void BeskidNetworkDetach(struct BeskidNetworkOperation *operation) {
+static void BeskidNetworkUnslot(struct BeskidNetworkOperation *operation) {
   if (operation->socket) {
     if (operation->socket->read == operation) operation->socket->read = NULL;
     if (operation->socket->write == operation) operation->socket->write = NULL;
   }
-  if (operation->request) operation->request->native_state = NULL;
-  operation->request = NULL; operation->socket = NULL;
+  operation->socket = NULL;
 }
-static void BeskidNetworkCancelLocked(struct BeskidNetworkOperation *operation) {
+static void BeskidNetworkDetach(struct BeskidNetworkOperation *operation) {
+  BeskidNetworkUnslot(operation);
+  if (operation->request) operation->request->native_state = NULL;
+  operation->request = NULL;
+}
+/* Native close: the close winner is already decided. The request is detached at once;
+ * the OVERLAPPED and buffers survive until the reactor removes the packet from IOCP. */
+static void BeskidNetworkOrphanLocked(struct BeskidNetworkOperation *operation) {
   if (!operation) return;
-  if (operation->request) operation->request->status = NET_CANCELLED;
+  operation->state = BeskidSettleOnClose(operation->state);
   BeskidNetworkDetach(operation);
-  /* OVERLAPPED and buffers survive until the completion is removed from IOCP. */
   CancelIoEx((HANDLE)operation->descriptor, &operation->overlapped);
+}
+/* Runtime cancel (deadline, fiber cancellation, runtime close). CancelIoEx is only a
+ * request: an operation that already completed still has its packet queued, and that
+ * packet alone holds the final status. Settle by waiting, with the network lock
+ * released, until the reactor delivers the packet to the request. The request status
+ * is then final, which is the network_cancel contract the readiness backends meet by
+ * completing under the same lock. A completed transfer therefore wins over a deadline.
+ * Called with beskid_network_lock held; the operation is freed when this returns. */
+static void BeskidNetworkSettleLocked(struct BeskidNetworkOperation *operation) {
+  if (!operation || !operation->request) return;
+  struct BeskidNetworkRequest *request = operation->request;
+  if (operation->state == BESKID_SETTLE_IN_FLIGHT) {
+    operation->state = BeskidSettleOnCancel(operation->state);
+    /* Leave the socket slots; a native close can no longer orphan this operation. */
+    BeskidNetworkUnslot(operation);
+    BOOL cancelled = CancelIoEx((HANDLE)operation->descriptor, &operation->overlapped);
+    /* Success or ERROR_NOT_FOUND guarantees one queued packet; anything else is corruption. */
+    if (!BeskidSettleCancelAccepted(cancelled != 0, cancelled ? 0u : (uint32_t)GetLastError())) beskid_rt_v5_trap(10, NULL, 0);
+  }
+  while (request->native_state == operation) SleepConditionVariableSRW(&beskid_network_settled, &beskid_network_lock, INFINITE, 0);
 }
 int32_t beskid_rt_v5_intrinsic_network_submit(void *reactor_value, void *socket_value, void *request_value) {
   struct BeskidNetworkReactor *reactor = reactor_value;
@@ -108,6 +142,7 @@ int32_t beskid_rt_v5_intrinsic_network_submit(void *reactor_value, void *socket_
   if (!operation) { status = NET_RESOURCE_EXHAUSTED; goto done; }
   operation->reactor = reactor; operation->socket = socket; operation->request = request;
   operation->operation = request->operation; operation->descriptor = socket->socket; operation->accepted = INVALID_SOCKET;
+  operation->state = BESKID_SETTLE_IN_FLIGHT; operation->family = socket->family;
   operation->capacity = request->length; operation->buffer = BeskidNetworkAllocate(operation->capacity);
   if (!operation->buffer) { status = NET_RESOURCE_EXHAUSTED; goto failed; }
   if ((request->operation == NET_WRITE || request->operation == NET_SEND) && request->length) memcpy(operation->buffer, request->buffer, request->length);
@@ -181,7 +216,7 @@ void beskid_rt_v5_intrinsic_network_cancel(void *reactor, void *value) {
   struct BeskidNetworkRequest *request = value;
   if (!request) return;
   AcquireSRWLockExclusive(&beskid_network_lock);
-  BeskidNetworkCancelLocked(request->native_state);
+  BeskidNetworkSettleLocked(request->native_state);
   ReleaseSRWLockExclusive(&beskid_network_lock);
 }
 static int BeskidNetworkCompletionError(DWORD error) {
@@ -203,14 +238,18 @@ int32_t beskid_rt_v5_intrinsic_network_reactor_poll(void *value, int32_t timeout
   if (*link) *link = operation->next;
   --reactor->pending;
   struct BeskidNetworkRequest *request = operation->request;
-  if (request) {
-    int status = error ? BeskidNetworkCompletionError(error) : NET_OK;
-    if (operation->operation == NET_RECEIVE && (error == WSAEMSGSIZE || error == ERROR_MORE_DATA)) { status = NET_OK; request->truncated = 1; bytes = (DWORD)operation->capacity; }
+  int delivery = BeskidSettleDelivery(operation->state);
+  if (request && delivery != BESKID_SETTLE_DISCARD) {
+    struct BeskidSettleOutcome outcome = BeskidSettleClassify(operation->operation, (uint32_t)error, bytes, operation->capacity);
+    int status = outcome.kind == BESKID_SETTLE_FAILED ? BeskidNetworkCompletionError(error)
+      : outcome.kind == BESKID_SETTLE_ABORTED ? NET_CANCELLED : NET_OK;
+    if (outcome.kind == BESKID_SETTLE_TRUNCATED) request->truncated = 1;
+    bytes = (DWORD)outcome.count;
     if (!status && operation->operation == NET_CONNECT && setsockopt(operation->descriptor, SOL_SOCKET, SO_UPDATE_CONNECT_CONTEXT, NULL, 0)) status = BeskidNetworkError(WSAGetLastError());
     if (!status && operation->operation == NET_ACCEPT) {
       if (setsockopt(operation->accepted, SOL_SOCKET, SO_UPDATE_ACCEPT_CONTEXT, (const char *)&operation->descriptor, sizeof(operation->descriptor))) status = BeskidNetworkError(WSAGetLastError());
       else {
-        request->accepted = BeskidNetworkWrap(operation->accepted, operation->socket->family, 1);
+        request->accepted = BeskidNetworkWrap(operation->accepted, operation->family, 1);
         operation->accepted = INVALID_SOCKET;
         if (!request->accepted) status = NET_RESOURCE_EXHAUSTED;
         else if (request->address) {
@@ -220,13 +259,13 @@ int32_t beskid_rt_v5_intrinsic_network_reactor_poll(void *value, int32_t timeout
       }
     }
     if (!status && (operation->operation == NET_READ || operation->operation == NET_RECEIVE)) {
-      if (bytes > operation->capacity) bytes = (DWORD)operation->capacity;
       if (bytes) memcpy(request->buffer, operation->buffer, bytes);
       if (operation->operation == NET_RECEIVE && request->address) BeskidNetworkEncode((struct sockaddr *)&operation->address, request->address);
     }
     request->count = bytes; request->status = status;
     BeskidNetworkDetach(operation);
-    beskid_rt_v5_intrinsic_owner_post(request->owner, request->token, 1);
+    if (delivery == BESKID_SETTLE_DELIVER_AND_POST) beskid_rt_v5_intrinsic_owner_post(request->owner, request->token, 1);
+    else WakeAllConditionVariable(&beskid_network_settled);
   }
   BeskidNetworkOperationFree(operation);
   ReleaseSRWLockExclusive(&beskid_network_lock); return 1;
@@ -261,7 +300,7 @@ int32_t beskid_rt_v5_intrinsic_network_close(void *value) {
   struct BeskidNetworkOperation *operations[2] = {socket->read, socket->write};
   for (int i = 0; i < 2; ++i) if (operations[i]) {
     struct BeskidNetworkRequest *request = operations[i]->request;
-    BeskidNetworkCancelLocked(operations[i]);
+    BeskidNetworkOrphanLocked(operations[i]);
     if (request) { request->status = NET_CLOSED; beskid_rt_v5_intrinsic_owner_post(request->owner, request->token, 1); }
   }
   if (socket->reactor) {

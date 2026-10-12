@@ -202,8 +202,24 @@ impl VerifiedPackageIdentities {
                 return Err(error("package proof manifest revision changed"));
             }
             for root in &entry.roots {
-                if files(root)? != entry.files {
-                    return Err(error("package proof source revision changed"));
+                let current = files(root)?;
+                if current != entry.files {
+                    let changed = entry
+                        .files
+                        .keys()
+                        .chain(current.keys())
+                        .find(|path| entry.files.get(*path) != current.get(*path))
+                        .map(|path| path.display().to_string())
+                        .unwrap_or_default();
+                    return Err(error(format!(
+                        "package proof source revision changed under {}: `{changed}` {}",
+                        root.display(),
+                        match (entry.files.contains_key(Path::new(&changed)), current.contains_key(Path::new(&changed))) {
+                            (true, false) => "was removed",
+                            (false, true) => "was added",
+                            _ => "differs",
+                        }
+                    )));
                 }
             }
         }
