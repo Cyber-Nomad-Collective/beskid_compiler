@@ -108,6 +108,11 @@ pub(super) fn collect_value_path_obligations(
             continue;
         }
         let site = AstNodeKey { node, ..key };
+        // A named, non-generic function read as a value is a closure record with the item's entry
+        // (`function_item_value`); it is a value, not an item named in value position.
+        if segments.len() == 1 && matches!(function_item_value(db, site), Ok(Some(_))) {
+            continue;
+        }
         let kind = if segments.len() == 1 {
             single_segment_item(db, program, index, site, base).then_some(ValuePathKind::UnknownValueType)
         } else {

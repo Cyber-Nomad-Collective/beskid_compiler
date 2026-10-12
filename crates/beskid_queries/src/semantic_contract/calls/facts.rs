@@ -261,6 +261,14 @@ pub(in crate::semantic_contract) fn for_iterator_element_identity(
             let element_managed = element.managed_reference_kind();
             Ok((*element, ForIterableSource::Array { element_managed }))
         }
+        // An array literal iterable with elements has no declared identity; its element type is
+        // the syntactic type of its elements, which is also what the loop variable reads.
+        Ok(_) | Err(_) if matches!(&statement.iterable.node, beskid_analysis::syntax::Expression::ArrayLiteral(_)) => {
+            let element = element_type_for_for_iterable(program, index, key.node, &statement.iterable.node)?;
+            let identity = GenericSourceTypeIdentity::Abi(element);
+            let element_managed = identity.managed_reference_kind();
+            Ok((identity, ForIterableSource::Array { element_managed }))
+        }
         Ok(_) | Err(_) => Err(SemanticError::unavailable("for_iterator_element_type")),
     }
 }

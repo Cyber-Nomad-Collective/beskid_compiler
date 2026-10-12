@@ -235,10 +235,16 @@ mod tests {
     }
 
     /// The production semantic gate of `beskid check`: the query-backed prepare spine with the
-    /// qualified Corelib Mods reports no error for the suite entry.
+    /// qualified Corelib Mods reports no error for the suite entry. The job owns its database, so
+    /// it never registers a generation in the process database other tests lower from.
     fn assert_production_semantic_gate(resolved: &ResolvedInput, suite: &str) {
-        let diagnostics = analyze_file_with_mods(&resolved.source_path)
-            .unwrap_or_else(|error| panic!("{suite}: the production semantic gate must judge the suite: {error}"));
+        let scope = enter_mod_host();
+        let options = PrepareOptions {
+            front_end: FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
+            ..PrepareOptions::with_mod_host(mod_host_for(&scope, resolved))
+        };
+        let (_, diagnostics, _fixes) = beskid_queries::prepare_compilation_diagnostics_isolated(resolved, options, None)
+            .unwrap_or_else(|error| panic!("{suite}: the production semantic gate must judge the suite: {error:#}"));
         let errors = diagnostics
             .iter()
             .filter(|diagnostic| diagnostic.severity == beskid_analysis::Severity::Error)

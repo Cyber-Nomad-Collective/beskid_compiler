@@ -104,14 +104,37 @@ fn unknown_struct_literal_field(
         return Some(MemberReferenceFinding { site, kind: MemberReferenceKind::InaccessibleStructField { name } });
     }
     let declared = declared_member_names(db, declaration)?;
-    let field = literal.fields.iter().find(|field| !declared.fields.contains(field.node.name.node.name.as_str()))?;
-    let site = index
-        .direct_child_id(program, literal_key.node, beskid_analysis::syntax_query::DynNodeRef::from(field))
-        .map_or(literal_key, |node| AstNodeKey { node, ..literal_key });
-    Some(MemberReferenceFinding {
-        site,
-        kind: MemberReferenceKind::UnknownStructField { name: Arc::from(field.node.name.node.name.as_str()) },
-    })
+    if let Some(field) = literal.fields.iter().find(|field| !declared.fields.contains(field.node.name.node.name.as_str()))
+    {
+        let site = index
+            .direct_child_id(program, literal_key.node, beskid_analysis::syntax_query::DynNodeRef::from(field))
+            .map_or(literal_key, |node| AstNodeKey { node, ..literal_key });
+        return Some(MemberReferenceFinding {
+            site,
+            kind: MemberReferenceKind::UnknownStructField { name: Arc::from(field.node.name.node.name.as_str()) },
+        });
+    }
+    // E1212: every declared value field must be supplied (event fields are never written by a
+    // literal). Reported at the literal, in declaration order, after the unknown and inaccessible
+    // field checks above.
+    let supplied = literal.fields.iter().map(|field| field.node.name.node.name.as_str()).collect::<HashSet<_>>();
+    let missing = declared_value_field_names(db, declaration)?.into_iter().find(|name| !supplied.contains(name.as_str()))?;
+    Some(MemberReferenceFinding { site: literal_key, kind: MemberReferenceKind::MissingStructField { name: Arc::from(missing) } })
+}
+
+/// The value fields of a `type` declaration, in declaration order.
+fn declared_value_field_names(db: &dyn Db, declaration: AstNodeKey) -> Option<Vec<String>> {
+    let syntax = db.syntax_unit(declaration.unit).filter(|syntax| syntax.accepts_key(db, declaration))?;
+    let definition =
+        syntax.syntax_index(db).node_at(syntax.expanded_program(db), declaration.node)?.of::<TypeDefinition>()?.clone();
+    Some(
+        definition
+            .fields
+            .iter()
+            .filter(|field| field.node.kind == beskid_analysis::syntax::FieldKind::Value)
+            .map(|field| field.node.name.node.name.clone())
+            .collect(),
+    )
 }
 
 /// A field read (`call().field`, `this.field`, `local.field`) whose receiver resolves to a
