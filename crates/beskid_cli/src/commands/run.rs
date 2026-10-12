@@ -30,7 +30,7 @@ pub struct RunArgs {
     pub lockfile: LockfilePolicyArgs,
 
     /// Entrypoint function name
-    #[arg(long, default_value = "Main")]
+    #[arg(long, default_value = beskid_aot::api::DEFAULT_ENTRYPOINT)]
     pub entrypoint: String,
 
     /// Disable animated progress and graph output

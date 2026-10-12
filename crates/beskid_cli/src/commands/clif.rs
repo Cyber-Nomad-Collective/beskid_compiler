@@ -44,7 +44,8 @@ pub fn execute(args: ClifArgs) -> Result<()> {
     )?;
     let prepared = session.executable_gate_prepared(&resolved, SemanticGateOptions::default())?;
     let front = prepared.into_executable()?;
-    let artifact = lower_prepared_entrypoint(&front, "Main", None, Some(session.observer()))?;
+    let artifact =
+        lower_prepared_entrypoint(&front, beskid_aot::api::DEFAULT_ENTRYPOINT, None, Some(session.observer()))?;
     session.pipeline().finish_session_with_summary(
         "CLIF ready",
         Some(CommandSummary::plain("CLIF", "CLIF ready")),
