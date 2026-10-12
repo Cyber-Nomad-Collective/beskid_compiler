@@ -156,6 +156,9 @@ impl SemanticIssueKind {
             Self::ResolveAmbiguousModulePath { path, candidates } => {
                 format!("ambiguous module path `{path}`: {candidates} assembled modules declare it")
             }
+            Self::ResolveAmbiguousItemInModule { module_path, name, candidates } => format!(
+                "ambiguous item `{name}` in module `{module_path}`: {candidates} re-exported items share the name"
+            ),
             Self::ResolveShadowedLocal { name, .. } => format!("shadowed local `{name}`"),
             Self::MissingImport { name, module_path } => {
                 format!("unresolved name `{name}` — did you mean to import `{module_path}::{name}`?")

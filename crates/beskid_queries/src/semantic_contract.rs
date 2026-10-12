@@ -168,10 +168,10 @@ use model::ContractParameterWitness;
 use model::GenericSourceTypeIdentity;
 use queries::with_registered_syntax;
 use resolution::{
-    import_path_prefix_len, module_scope, nearest_reexport_route, outer_module_scope, public_module_routes,
-    public_reexport_units, resolve_inline_module_item_declaration, resolve_item_declaration,
-    QualifiedModuleResolution, qualified_module_resolution, resolve_item_declaration_candidate,
-    resolve_qualified_module_unit, resolve_type_qualified_imported_function,
+    QualifiedModuleResolution, ReexportRoute, import_path_prefix_len, module_scope, nearest_reexport_route,
+    nearest_reexport_route_outcome, outer_module_scope, public_module_routes, public_reexport_units,
+    qualified_module_resolution, resolve_inline_module_item_declaration, resolve_item_declaration,
+    resolve_item_declaration_candidate, resolve_qualified_module_unit, resolve_type_qualified_imported_function,
     resolve_unqualified_item_declaration, resolved_item_tracked, unique_exported_function_in_unit,
     unique_function_in_unit, unique_imported_function, unique_inline_module_in_scope, unique_public_function_in_unit,
 };

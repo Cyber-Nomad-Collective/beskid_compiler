@@ -432,6 +432,9 @@ pub(in crate::semantic_contract) fn abi_type_from_syntax(
             .ok_or_else(|| SemanticError::unavailable("abi_type"))
             .and_then(|receiver| abi_type_from_syntax(db, key, &receiver)),
         Type::Array(_) => Ok(SemanticTypeId::POINTER),
-        Type::Function { .. } => Err(SemanticError::unavailable("abi_type")),
+        // A function-typed value is one managed closure handle, whatever its signature: that is
+        // what a lambda expression, an event handler field, and a captured callable already lower
+        // to, so a `unit(ConsoleSize) handler` parameter has the same representation.
+        Type::Function { .. } => Ok(SemanticTypeId::POINTER),
     }
 }

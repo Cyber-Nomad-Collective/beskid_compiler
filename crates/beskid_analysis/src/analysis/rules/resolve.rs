@@ -34,6 +34,9 @@ pub(crate) fn emit_resolve_error(ctx: &mut RuleContext, error: ResolveError) {
         ResolveError::PrivateItemInModule { module_path, name, span } => {
             ctx.emit_issue(span, SemanticIssueKind::ResolvePrivateItemInModule { module_path, name });
         }
+        ResolveError::AmbiguousItemInModule { module_path, name, candidates, span } => {
+            ctx.emit_issue(span, SemanticIssueKind::ResolveAmbiguousItemInModule { module_path, name, candidates });
+        }
     }
 }
 

@@ -21,7 +21,25 @@ impl<'a> TypeChecker<'a> {
     fn seed_struct_definitions_item(&mut self, item: &Spanned<Node>) {
         match &item.node {
             Node::TypeDefinition(def) => {
-                self.register_struct_definition_fields(item.span, &def.node, false);
+                // The seed pass runs before any item body is typed, so a struct literal in an
+                // earlier item sees the fields of a type declared after it (merged Mod-generated
+                // declarations always follow the host's items). A field typed by the definition's
+                // own generic parameter resolves only with that parameter in scope, exactly as
+                // `type_item` scopes it in the per-item pass.
+                let mut inserted = Vec::new();
+                for generic in &def.node.generics {
+                    let name = generic.node.name.clone();
+                    if self.generic_params.contains_key(&name) {
+                        continue;
+                    }
+                    let type_id = self.type_table.intern(crate::types::TypeInfo::GenericParam(name.clone()));
+                    self.generic_params.insert(name.clone(), type_id);
+                    inserted.push(name);
+                }
+                self.register_struct_definition_fields(item.span, &def.node, !def.node.generics.is_empty());
+                for name in inserted {
+                    self.generic_params.remove(&name);
+                }
             }
             Node::InlineModule(def) => {
                 for nested in &def.node.items {

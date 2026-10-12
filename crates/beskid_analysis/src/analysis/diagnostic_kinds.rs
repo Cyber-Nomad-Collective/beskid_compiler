@@ -219,6 +219,13 @@ pub enum SemanticIssueKind {
         path: String,
         candidates: usize,
     },
+    /// A qualified path `Module.Name` that the module serves only through its public re-exports,
+    /// where `candidates` distinct items share the name at the nearest providing distance.
+    ResolveAmbiguousItemInModule {
+        module_path: String,
+        name: String,
+        candidates: usize,
+    },
     ResolveShadowedLocal {
         name: String,
         previous: SpanInfo,

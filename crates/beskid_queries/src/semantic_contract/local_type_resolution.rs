@@ -66,6 +66,9 @@ pub enum UnresolvedTypeKind {
     PrivateItemInModule { module_path: Arc<str>, name: Arc<str> },
     /// E1201 `ResolveError::UnknownTypeInModule`: the module declares no type of the name.
     UnknownTypeInModule { module_path: Arc<str>, name: Arc<str> },
+    /// E1104 `ResolveError::AmbiguousItemInModule`: the module declares no type of the name
+    /// itself and reaches `candidates` distinct ones through its public re-exports at one distance.
+    AmbiguousItemInModule { module_path: Arc<str>, name: Arc<str>, candidates: usize },
 }
 
 /// Report the first unresolved nominal type name among every type position reachable from
@@ -237,10 +240,19 @@ fn classify_unresolved_type_path(db: &dyn Db, key: AstNodeKey, path: &Path) -> U
         QualifiedModuleResolution::Unit(unit) => match module_type_visibility(db, unit, key.generation, name) {
             Some(false) => UnresolvedTypeKind::PrivateItemInModule { module_path, name: Arc::from(name) },
             Some(true) => UnresolvedTypeKind::UnknownType,
-            None if public_module_routes(db, unit, key.generation).is_empty()
-                && db.syntax_unit(unit).is_some_and(|syntax| syntax.generation(db) == key.generation) =>
-            {
-                UnresolvedTypeKind::UnknownTypeInModule { module_path, name: Arc::from(name) }
+            None if db.syntax_unit(unit).is_some_and(|syntax| syntax.generation(db) == key.generation) => {
+                let generic_arity = terminal.node.type_args.len();
+                match nearest_reexport_route_outcome(db, unit, key.generation, |db, current, generation| {
+                    unique_public_type_in_unit(db, current, generation, name, generic_arity)
+                }) {
+                    ReexportRoute::Found(_) => UnresolvedTypeKind::UnknownType,
+                    ReexportRoute::Ambiguous(candidates) => {
+                        UnresolvedTypeKind::AmbiguousItemInModule { module_path, name: Arc::from(name), candidates }
+                    }
+                    ReexportRoute::Missing => {
+                        UnresolvedTypeKind::UnknownTypeInModule { module_path, name: Arc::from(name) }
+                    }
+                }
             }
             None => UnresolvedTypeKind::UnknownType,
         },

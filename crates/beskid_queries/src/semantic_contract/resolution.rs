@@ -438,6 +438,31 @@ pub(super) fn nearest_reexport_route(
     generation: SyntaxGenerationId,
     candidate_in_unit: impl Fn(&dyn Db, SourceUnitId, SyntaxGenerationId) -> Option<AstNodeKey>,
 ) -> Option<AstNodeKey> {
+    match nearest_reexport_route_outcome(db, unit, generation, candidate_in_unit) {
+        ReexportRoute::Found(candidate) => Some(candidate),
+        ReexportRoute::Ambiguous(_) | ReexportRoute::Missing => None,
+    }
+}
+
+/// Outcome of [`nearest_reexport_route_outcome`]: the one rule for reaching a member through a
+/// module's public re-exports, shared by callees, type paths, and value paths, and mirrored by
+/// `Resolver::reexported_item_route` in `beskid_analysis`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum ReexportRoute {
+    Found(AstNodeKey),
+    /// Distinct candidates at the nearest distance that provides any.
+    Ambiguous(usize),
+    Missing,
+}
+
+/// [`nearest_reexport_route`] with the ambiguity kept apart from absence, so a diagnostic can
+/// name it (E1104) instead of reporting the member as unknown.
+pub(super) fn nearest_reexport_route_outcome(
+    db: &dyn Db,
+    unit: SourceUnitId,
+    generation: SyntaxGenerationId,
+    candidate_in_unit: impl Fn(&dyn Db, SourceUnitId, SyntaxGenerationId) -> Option<AstNodeKey>,
+) -> ReexportRoute {
     let mut frontier = vec![unit];
     let mut visited = std::collections::HashSet::new();
     visited.insert(unit);
@@ -455,12 +480,12 @@ pub(super) fn nearest_reexport_route(
             );
         }
         match candidates.as_slice() {
-            [candidate] => return Some(*candidate),
+            [candidate] => return ReexportRoute::Found(*candidate),
             [] => frontier = next,
-            _ => return None,
+            candidates => return ReexportRoute::Ambiguous(candidates.len()),
         }
     }
-    None
+    ReexportRoute::Missing
 }
 
 pub(super) fn public_reexport_units(

@@ -178,6 +178,13 @@ pub fn check_unit_obligations(db: &dyn Db, roots: &[AstNodeKey]) -> Vec<Semantic
                             name: name.to_string(),
                         }
                     }
+                    ValuePathKind::AmbiguousItemInModule { module_path, name, candidates } => {
+                        SemanticIssueKind::ResolveAmbiguousItemInModule {
+                            module_path: module_path.to_string(),
+                            name: name.to_string(),
+                            candidates: *candidates,
+                        }
+                    }
                 },
             };
             findings.push(SemanticFinding { kind, site: obligation.site, related: Vec::new() });

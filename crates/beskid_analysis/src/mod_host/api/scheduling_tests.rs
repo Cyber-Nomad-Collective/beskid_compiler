@@ -13,7 +13,8 @@ use anyhow::Result;
 use super::tests::{MODA_MANIFEST, compile_plan, loaded_mod, unique_temp_dir, write_mod_projects};
 use super::*;
 use crate::mod_host::invoker::{
-    AnalyzerDiagnostic, AnalyzerSeverity, ContractInvoker, ScriptedContractInvoker, StubContractInvoker,
+    AnalyzerDiagnostic, AnalyzerSeverity, ContractInvoker, InvocationKind, ScriptedContractInvoker,
+    StubContractInvoker,
 };
 use crate::syntax::Node;
 
@@ -298,4 +299,60 @@ fn identical_registrations_produce_stable_outcomes_and_changed_registrations_do_
         .expect("reduced registrations");
     assert_ne!(first.collector_outcomes.len(), reduced.collector_outcomes.len());
     assert_ne!(first.generator_outcomes.len(), reduced.generator_outcomes.len());
+}
+
+#[test]
+fn stub_invoker_dispatches_every_registration_once_in_canonical_kind_order() {
+    let case = Case::new("sched_stub_canonical_order");
+    let invoker = StubContractInvoker::new();
+    let generated = case.generate(&DEFAULT_REGISTRATIONS, &invoker).expect("generate");
+    let analyze = Case::analyze(generated, &invoker).expect("analyze rewrite");
+    assert_eq!(analyze.analyzer_outcomes.len(), 1);
+    assert_eq!(analyze.rewriter_outcomes.len(), 1);
+
+    let invocations = invoker.invocations();
+    let kinds: Vec<&str> = invocations
+        .iter()
+        .map(|invocation| match invocation {
+            InvocationKind::Collector { .. } => "collector",
+            InvocationKind::Generator { .. } => "generator",
+            InvocationKind::Analyzer { .. } => "analyzer",
+            InvocationKind::Rewriter { .. } => "rewriter",
+        })
+        .collect();
+    assert_eq!(
+        kinds,
+        vec!["collector", "generator", "generator", "analyzer", "rewriter"],
+        "attribute generators dispatch in the generator slot; each registration exactly once"
+    );
+    let mut generator_ids: Vec<&str> = invocations[1..3].iter().map(InvocationKind::type_id).collect();
+    generator_ids.sort_unstable();
+    assert_eq!(generator_ids, vec!["SampleMod.SampleAttribute", "SampleMod.SampleGenerate"]);
+}
+
+#[test]
+fn scripted_generator_contributions_replay_identically_across_identical_runs() {
+    let case = Case::new("sched_scripted_replay");
+    let invoker = ScriptedContractInvoker::new().with_generator_contribution(
+        "SampleMod.SampleGenerate",
+        vec!["pub fn replay_marker() { return; }".to_owned()],
+    );
+    let registrations = [(GENERATOR, "SampleMod.SampleGenerate", "samplemod_generate")];
+    let first = case.generate(&registrations, &invoker).expect("first run");
+    let second = case.generate(&registrations, &invoker).expect("second run");
+    let shape = |result: &ModHostGenerateResult| {
+        result
+            .generator_outcomes
+            .iter()
+            .map(|outcome| {
+                let replay_markers =
+                    outcome.typed_items.iter().filter(|item| is_function(&item.node, "replay_marker")).count();
+                (outcome.type_id.clone(), outcome.typed_items.len(), replay_markers)
+            })
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(shape(&first), vec![("SampleMod.SampleGenerate".to_owned(), 1, 1)]);
+    assert_eq!(shape(&first), shape(&second), "identical inputs must replay identical generator contributions");
+    assert!(program_has_function(&first.program, "replay_marker"));
+    assert!(program_has_function(&second.program, "replay_marker"));
 }

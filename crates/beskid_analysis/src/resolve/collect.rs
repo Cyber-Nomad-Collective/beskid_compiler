@@ -52,6 +52,15 @@ pub(crate) fn use_imported_name(use_decl: &UseDeclaration) -> String {
     use_decl.alias.as_ref().map(|alias| alias.node.name.clone()).unwrap_or_else(|| path_tail(&use_decl.path))
 }
 
+/// Outcome of [`Resolver::reexported_item_route`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ReexportRoute {
+    Found(ItemId),
+    /// Distinct items of the name at the nearest providing distance.
+    Ambiguous(usize),
+    Missing,
+}
+
 impl Resolver {
     pub(crate) fn set_current_source_path(&mut self, source_path: Option<PathBuf>) {
         self.current_source_path = source_path.map(|path| crate::paths::unit_path_key(&path));
@@ -530,6 +539,42 @@ impl Resolver {
     /// distance provides, are shadowed; a name that two different items provide at one
     /// distance is ambiguous and omitted.
     fn reexported_public_items(&self, module_id: ModuleId) -> Vec<(String, ItemId, bool)> {
+        let mut out = Vec::new();
+        for level in self.reexport_levels(module_id) {
+            for (name, items) in level {
+                if let [item_id] = items.as_slice() {
+                    out.push((name, *item_id, true));
+                }
+            }
+        }
+        out
+    }
+
+    /// The one rule for reaching an item through a module's public re-exports, shared by scope
+    /// imports (`use Hub;`) and qualified paths (`Hub.Item`): the nearest re-export distance that
+    /// provides the name wins; two different items at that distance are ambiguous and the lookup
+    /// fails closed; the module's own public declarations shadow every re-export.
+    pub(crate) fn reexported_item_route(&self, module_id: ModuleId, name: &str) -> ReexportRoute {
+        for level in self.reexport_levels(module_id) {
+            if let Some(items) = level.get(name) {
+                return match items.as_slice() {
+                    [item_id] => ReexportRoute::Found(*item_id),
+                    items => ReexportRoute::Ambiguous(items.len()),
+                };
+            }
+        }
+        ReexportRoute::Missing
+    }
+
+    /// Breadth-first levels of the public re-export graph below `module_id`: for each distance,
+    /// the public items its `pub mod` children declare, keyed by name, after shadowing by the
+    /// module's own public surface and by every nearer distance. Only declared items of a child
+    /// count; what a child merely imported is not re-exported.
+    fn reexport_levels(&self, module_id: ModuleId) -> Vec<BTreeMap<String, Vec<ItemId>>> {
+        let reexportable = |item: &ItemInfo| {
+            item.visibility == Visibility::Public
+                && matches!(item.kind, ItemKind::Function | ItemKind::Enum | ItemKind::Type | ItemKind::Contract)
+        };
         let mut shadowed: HashSet<String> = self
             .module_graph
             .module(module_id)
@@ -537,22 +582,14 @@ impl Resolver {
                 module
                     .scope
                     .iter()
-                    .filter(|(_, item_id)| {
-                        self.items.get(item_id.0).is_some_and(|item| {
-                            item.visibility == Visibility::Public
-                                && matches!(
-                                    item.kind,
-                                    ItemKind::Function | ItemKind::Enum | ItemKind::Type | ItemKind::Contract
-                                )
-                        })
-                    })
+                    .filter(|(_, item_id)| self.items.get(item_id.0).is_some_and(reexportable))
                     .map(|(name, _)| name.clone())
                     .collect()
             })
             .unwrap_or_default();
         let mut visited: HashSet<ModuleId> = HashSet::from([module_id]);
         let mut frontier = vec![module_id];
-        let mut out = Vec::new();
+        let mut levels = Vec::new();
         while !frontier.is_empty() {
             let mut children = Vec::new();
             for module in &frontier {
@@ -578,10 +615,7 @@ impl Resolver {
                     if shadowed.contains(name) || self.imported_scope_entries.contains(&(*child, name.clone())) {
                         continue;
                     }
-                    let Some(item) = self.items.get(item_id.0) else { continue };
-                    if item.visibility == Visibility::Public
-                        && matches!(item.kind, ItemKind::Function | ItemKind::Enum | ItemKind::Type | ItemKind::Contract)
-                    {
+                    if self.items.get(item_id.0).is_some_and(reexportable) {
                         let candidates = level.entry(name.clone()).or_default();
                         if !candidates.contains(item_id) {
                             candidates.push(*item_id);
@@ -589,15 +623,11 @@ impl Resolver {
                     }
                 }
             }
-            for (name, items) in level {
-                shadowed.insert(name.clone());
-                if let [item_id] = items.as_slice() {
-                    out.push((name, *item_id, true));
-                }
-            }
+            shadowed.extend(level.keys().cloned());
+            levels.push(level);
             frontier = children;
         }
-        out
+        levels
     }
 
     pub(crate) fn mark_imported_scope_name_used(&mut self, name: &str) {
@@ -832,6 +862,69 @@ mod tests {
         let errors = resolver.resolve_program(&entry).expect_err("ambiguous re-export fails closed");
         assert!(
             errors.iter().any(|error| matches!(error, super::ResolveError::UnknownType { name, .. } if name == "Shared")),
+            "{errors:?}"
+        );
+    }
+
+    /// A qualified path `Hub.Item` follows the same re-export rule as `use Hub;`: the hub's
+    /// `pub mod` child provides the value, type, and callee, and the hub's own public declaration
+    /// of a name shadows the re-exported one.
+    #[test]
+    fn qualified_hub_path_reaches_items_of_its_public_child_modules() {
+        let option = parse_program(
+            "pub type Option<T> { pub bool present, }\npub Option<T> Empty<T>() { return Option<T> { present: false }; }\npub i64 Depth() { return 2_i64; }",
+        )
+        .expect("parse child");
+        let hub = parse_program("pub mod Core.Optional.Option;\npub i64 Depth() { return 1_i64; }").expect("parse hub");
+        let entry = parse_program(
+            "use Core.Optional;\npub Optional.Option<i64> Make() { Optional.Option<i64> value = Optional.Empty<i64>(); return value; }\npub i64 Which() { return Optional.Depth(); }",
+        )
+        .expect("parse entry");
+        let mut resolver = Resolver::new();
+        resolver.collect_program_in_module(&option, &["Core".to_owned(), "Optional".to_owned(), "Option".to_owned()], None);
+        resolver.collect_program_in_module(&hub, &["Core".to_owned(), "Optional".to_owned()], None);
+        let resolution = resolver.resolve_program(&entry).expect("qualified hub paths reach re-exported child items");
+
+        let crate::syntax::Node::Function(which) = &entry.node.items[2].node else { panic!("function expected") };
+        let crate::syntax::Statement::Return(returned) = &which.node.body.node.statements[0].node else {
+            panic!("return expected")
+        };
+        let Some(expression) = &returned.node.value else { panic!("returned value expected") };
+        let crate::syntax::Expression::Call(call) = &expression.node else { panic!("call expected") };
+        let crate::syntax::Expression::Path(callee) = &call.node.callee.node else { panic!("path callee expected") };
+        let Some(super::super::tables::ResolvedValue::Item(item)) =
+            resolution.tables.resolved_values.get(&callee.node.path.span)
+        else {
+            panic!("`Optional.Depth` must resolve to an item")
+        };
+        let info = &resolution.items[item.0];
+        assert_eq!(info.name, "Depth");
+        assert!(
+            info.source_path.is_none() && info.span == hub.node.items[1].span,
+            "the hub's own `Depth` shadows the re-exported child `Depth`: {info:?}"
+        );
+    }
+
+    /// Two public child modules providing one name at the same re-export distance make the
+    /// qualified path ambiguous; it fails closed instead of picking either.
+    #[test]
+    fn qualified_hub_path_to_a_name_two_children_provide_is_ambiguous() {
+        let left = parse_program("pub i64 Shared() { return 1_i64; }").expect("parse left");
+        let right = parse_program("pub i64 Shared() { return 2_i64; }").expect("parse right");
+        let hub = parse_program("pub mod Hub.Left;\npub mod Hub.Right;").expect("parse hub");
+        let entry = parse_program("use Hub;\npub i64 Pick() { return Hub.Shared(); }").expect("parse entry");
+
+        let mut resolver = Resolver::new();
+        resolver.collect_program_in_module(&left, &["Hub".to_owned(), "Left".to_owned()], None);
+        resolver.collect_program_in_module(&right, &["Hub".to_owned(), "Right".to_owned()], None);
+        resolver.collect_program_in_module(&hub, &["Hub".to_owned()], None);
+        let errors = resolver.resolve_program(&entry).expect_err("ambiguous re-export fails closed");
+        assert!(
+            errors.iter().any(|error| matches!(
+                error,
+                super::ResolveError::AmbiguousItemInModule { module_path, name, candidates: 2, .. }
+                    if module_path == "Hub" && name == "Shared"
+            )),
             "{errors:?}"
         );
     }

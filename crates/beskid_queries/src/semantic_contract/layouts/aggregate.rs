@@ -424,19 +424,20 @@ pub(in crate::semantic_contract) fn array_index_element_template_tracked(
             )
             .map(|target| normalized_expression_node(index, target))?;
         let target_node = index.node_at(program, target)?;
-        if target_node.of::<beskid_analysis::syntax::MemberExpression>().is_some()
-            || target_node
-                .of::<beskid_analysis::syntax::PathExpression>()
-                .is_some_and(|path| path.path.node.segments.len() > 1)
-        {
-            // The source query proves the field declaration, substitutions and integer index;
-            // an erased array pointer is never sufficient to authorize element storage.
+        let Some(target) = target_node
+            .of::<beskid_analysis::syntax::PathExpression>()
+            .filter(|path| path.path.node.segments.len() == 1)
+        else {
+            // Only a bare local path is proven through its declared array type below. Every other
+            // target (a field, a qualified path, a call result such as `Body(x)[0]`, or a nested
+            // index) goes through the source-identity query, which proves the array element
+            // declaration, its substitutions and the integer subscript; an erased array pointer
+            // is never sufficient to authorize an element load or store.
             return Some(
                 generic_source_expression_identity(db, AstNodeKey { node: index_node, ..key })
                     .map(|element| ArrayIndexElementTemplate::Concrete(element.abi_type())),
             );
-        }
-        let target = target_node.of::<beskid_analysis::syntax::PathExpression>()?;
+        };
         let [segment] = target.path.node.segments.as_slice() else {
             return Some(Err(SemanticError::unavailable("array_index_element_abi_type")));
         };

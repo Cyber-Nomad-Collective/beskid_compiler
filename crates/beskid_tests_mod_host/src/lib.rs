@@ -229,6 +229,23 @@ fn harness_root() -> Result<PathBuf> {
     Ok(profile.join("beskid-test-mod-host"))
 }
 
+/// Cargo arguments that select the profile of the running test executable, derived from its
+/// `<target>/<profile-directory>/deps` location (`debug` is the `dev` profile, `release` is
+/// `release`, any other directory is a custom profile of that name).
+fn cargo_profile_args() -> Result<Vec<String>> {
+    let profile = harness_root()?
+        .parent()
+        .and_then(Path::file_name)
+        .and_then(OsStr::to_str)
+        .map(str::to_owned)
+        .ok_or_else(|| anyhow!("the test executable has no UTF-8 Cargo profile directory"))?;
+    Ok(match profile.as_str() {
+        "debug" => Vec::new(),
+        "release" => vec!["--release".to_owned()],
+        custom => vec!["--profile".to_owned(), custom.to_owned()],
+    })
+}
+
 fn stage_runtime_prefix() -> Result<PathBuf> {
     let root = harness_root()?.join("runtime-kits");
     let hash = canonical_runtime_source_hash();
@@ -258,9 +275,12 @@ fn locate_cli() -> Result<PathBuf> {
         return Ok(binary);
     }
     let workspace = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    // Build the CLI in the Cargo profile of this test executable, so a `--release` or custom-profile
+    // test run drives Mods through a CLI of the same profile.
     let output = Command::new(std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into()))
         .current_dir(&workspace)
         .args(["build", "--locked", "-p", CLI_PACKAGE, "--bin", CLI_PACKAGE, "--message-format=json-render-diagnostics"])
+        .args(cargo_profile_args()?)
         .output()
         .context("invoke `cargo build -p beskid_cli`")?;
     if !output.status.success() {

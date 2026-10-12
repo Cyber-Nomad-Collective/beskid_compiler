@@ -186,11 +186,34 @@ fn ensure_current_default_cli_binary() {
 fn build_current_cli_command(workspace: &Path) -> Command {
     let mut command = Command::new("cargo");
     command.current_dir(workspace).args(["build", "-p", "beskid_cli"]);
+    // Same Cargo profile as this test executable (a `--release` or custom-profile run drives a matching CLI).
+    match cargo_profile_directory().as_str() {
+        "debug" => {}
+        "release" => {
+            command.arg("--release");
+        }
+        custom => {
+            command.args(["--profile", custom]);
+        }
+    }
     command
 }
 
 fn default_binary_path() -> PathBuf {
-    cargo_target_dir().join("debug").join(binary_name())
+    cargo_target_dir().join(cargo_profile_directory()).join(binary_name())
+}
+
+/// Profile directory of the running test executable (`<target>/<profile>/deps/<test>`).
+fn cargo_profile_directory() -> String {
+    let executable = std::env::current_exe().expect("locate the running test executable");
+    executable
+        .parent()
+        .filter(|deps| deps.file_name().is_some_and(|name| name == "deps"))
+        .and_then(Path::parent)
+        .and_then(Path::file_name)
+        .and_then(|name| name.to_str())
+        .map(str::to_owned)
+        .unwrap_or_else(|| panic!("test executable {} is not inside a Cargo `<profile>/deps` directory", executable.display()))
 }
 
 /// Target directory the nested `cargo build -p beskid_cli` writes to.
@@ -294,7 +317,13 @@ mod tests {
         let command = build_current_cli_command(&workspace_root());
 
         assert_eq!(command.get_program(), "cargo");
-        assert_eq!(command.get_args().collect::<Vec<_>>(), ["build", "-p", "beskid_cli"].map(std::ffi::OsStr::new));
+        assert_eq!(command.get_args().take(3).collect::<Vec<_>>(), ["build", "-p", "beskid_cli"].map(std::ffi::OsStr::new));
+        let profile = command.get_args().skip(3).collect::<Vec<_>>();
+        match cargo_profile_directory().as_str() {
+            "debug" => assert!(profile.is_empty(), "dev-profile run adds no profile flag: {profile:?}"),
+            "release" => assert_eq!(profile, [std::ffi::OsStr::new("--release")]),
+            custom => assert_eq!(profile, ["--profile", custom].map(std::ffi::OsStr::new)),
+        }
         assert_eq!(command.get_current_dir(), Some(workspace_root().as_path()));
     }
 

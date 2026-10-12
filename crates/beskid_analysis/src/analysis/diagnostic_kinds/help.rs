@@ -170,6 +170,9 @@ impl SemanticIssueKind {
             Self::ResolveAmbiguousModulePath { path, .. } => Some(format!(
                 "module `{path}` must be declared by exactly one package of the dependency closure"
             )),
+            Self::ResolveAmbiguousItemInModule { module_path, name, .. } => Some(format!(
+                "qualify `{name}` through the child module that declares it; `{module_path}` re-exports more than one"
+            )),
             Self::MissingImport { name, module_path } => {
                 Some(format!("add `use {module_path}::{name};` at the top of the file"))
             }

@@ -406,6 +406,13 @@ pub fn check_items(db: &dyn Db, items: &[AstNodeKey]) -> Result<(), Vec<Semantic
                 UnresolvedTypeKind::AmbiguousModulePath { path, candidates } => {
                     SemanticIssueKind::ResolveAmbiguousModulePath { path: path.to_string(), candidates }
                 }
+                UnresolvedTypeKind::AmbiguousItemInModule { module_path, name, candidates } => {
+                    SemanticIssueKind::ResolveAmbiguousItemInModule {
+                        module_path: module_path.to_string(),
+                        name: name.to_string(),
+                        candidates,
+                    }
+                }
                 UnresolvedTypeKind::PrivateItemInModule { module_path, name } => {
                     SemanticIssueKind::ResolvePrivateItemInModule {
                         module_path: module_path.to_string(),
@@ -454,6 +461,13 @@ pub fn check_items(db: &dyn Db, items: &[AstNodeKey]) -> Result<(), Vec<Semantic
                 }
                 UnresolvedCallKind::AmbiguousModulePath { path, candidates } => {
                     SemanticIssueKind::ResolveAmbiguousModulePath { path: path.to_string(), candidates }
+                }
+                UnresolvedCallKind::AmbiguousItemInModule { module_path, name, candidates } => {
+                    SemanticIssueKind::ResolveAmbiguousItemInModule {
+                        module_path: module_path.to_string(),
+                        name: name.to_string(),
+                        candidates,
+                    }
                 }
             };
             findings.push(SemanticFinding { kind, site: finding.call, related: Vec::new() });

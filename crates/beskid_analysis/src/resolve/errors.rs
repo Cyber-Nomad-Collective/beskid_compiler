@@ -21,6 +21,9 @@ pub enum ResolveError {
     UnknownTypeInModule { module_path: String, name: String, span: SpanInfo },
     InvalidConformanceTarget { name: String, span: SpanInfo },
     PrivateItemInModule { module_path: String, name: String, span: SpanInfo },
+    /// `Module.Name` reaches `candidates` distinct items through the module's public re-exports
+    /// at one distance, and the module declares none of its own.
+    AmbiguousItemInModule { module_path: String, name: String, candidates: usize, span: SpanInfo },
 }
 
 impl fmt::Display for ResolveError {
@@ -52,6 +55,13 @@ impl fmt::Display for ResolveError {
             }
             ResolveError::InvalidConformanceTarget { name, span } => {
                 write!(f, "invalid conformance target `{name}` at {}", span_loc(*span))
+            }
+            ResolveError::AmbiguousItemInModule { module_path, name, candidates, span } => {
+                write!(
+                    f,
+                    "ambiguous item `{name}` in module `{module_path}`: {candidates} re-exported items share the name at {}",
+                    span_loc(*span)
+                )
             }
             ResolveError::PrivateItemInModule { module_path, name, span } => {
                 write!(f, "private item `{name}` in module `{module_path}` at {}", span_loc(*span))

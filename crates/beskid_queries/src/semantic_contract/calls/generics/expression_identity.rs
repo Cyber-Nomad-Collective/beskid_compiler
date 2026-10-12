@@ -125,10 +125,15 @@ pub(in crate::semantic_contract) fn generic_source_expression_identity(
         };
         return Ok(*element);
     }
-    if node.of::<beskid_analysis::syntax::CallExpression>().is_some()
-        && let Some(CallLowering::Direct(declaration)) = call_lowering(db, normalized_key)?
-    {
-        return generic_source_callable_result_identity(db, normalized_key, declaration);
+    if node.of::<beskid_analysis::syntax::CallExpression>().is_some() {
+        // A primitive numeric conversion (`u8(value % 256_u64)`) is a call ISLE lowers through
+        // its own authority, ahead of `call_lowering`, which knows no declaration for `u8`.
+        if let Some(conversion) = primitive_numeric_conversion(db, normalized_key)? {
+            return Ok(GenericSourceTypeIdentity::Abi(conversion.to));
+        }
+        if let Some(CallLowering::Direct(declaration)) = call_lowering(db, normalized_key)? {
+            return generic_source_callable_result_identity(db, normalized_key, declaration);
+        }
     }
 
     let abi = abi_type(db, normalized_key)?.ok_or_else(|| {

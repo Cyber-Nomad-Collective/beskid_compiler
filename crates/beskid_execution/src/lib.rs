@@ -21,6 +21,28 @@ use std::process::{Child, Command, Output, Stdio};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+/// Spawn `command`, waiting out a transient `ETXTBSY` on its executable.
+///
+/// POSIX `execve` refuses an executable that any process still holds open for writing. A tool
+/// that was just written is exposed to exactly that window: a `fork` on another thread of this
+/// process, between the writer's `open` and `close`, duplicates the write descriptor into a child
+/// that keeps it until its own `exec` completes. The condition is transient by construction, so
+/// the spawn is retried with a bounded backoff (the same treatment Go's `os/exec` and Cargo's
+/// process builder apply); any other error, and a busy executable that never settles, fail closed.
+pub fn spawn_when_executable_settles(command: &mut Command) -> std::io::Result<Child> {
+    const ATTEMPTS: u32 = 50;
+    let mut attempt = 0;
+    loop {
+        match command.spawn() {
+            Err(error) if error.kind() == std::io::ErrorKind::ExecutableFileBusy && attempt < ATTEMPTS => {
+                attempt += 1;
+                std::thread::sleep(Duration::from_millis(u64::from(attempt.min(10))));
+            }
+            result => return result,
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct NativeExecutionControl {
     deadline: Instant,
@@ -186,7 +208,7 @@ impl ContainedChild {
             if !inherited_enclosure {
                 command.process_group(0);
             }
-            let child = command.spawn()?;
+            let child = spawn_when_executable_settles(command)?;
             let group = if inherited_enclosure {
                 None
             } else {
@@ -199,7 +221,7 @@ impl ContainedChild {
             use std::os::windows::process::CommandExt;
             let job = windows_job::Job::new()?;
             command.creation_flags(0x00000004 | 0x00000200);
-            let mut child = command.spawn()?;
+            let mut child = spawn_when_executable_settles(command)?;
             if let Err(error) = job.assign_and_resume(&child) {
                 let _ = child.kill();
                 let _ = child.wait();

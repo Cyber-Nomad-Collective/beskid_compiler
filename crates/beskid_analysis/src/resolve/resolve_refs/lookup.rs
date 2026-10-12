@@ -1,6 +1,7 @@
 use crate::syntax::Spanned;
 use crate::syntax::{Type, Visibility};
 
+use super::super::collect::ReexportRoute;
 use super::super::ids::ItemId;
 use super::super::items::ItemKind;
 use super::super::resolver::Resolver;
@@ -11,6 +12,8 @@ pub(super) enum ModulePathLookup {
     ModuleMissing,
     NameMissing { module_path: String, name: String },
     NotVisible { module_path: String, name: String },
+    /// The module reaches `candidates` distinct items of the name at one re-export distance.
+    Ambiguous { module_path: String, name: String, candidates: usize },
 }
 impl Resolver {
     pub(super) fn resolve_item_in_scope(&self, name: &str) -> Option<ItemId> {
@@ -100,7 +103,17 @@ impl Resolver {
                 ModulePathLookup::Found(item)
             }
         } else {
-            ModulePathLookup::NameMissing { module_path: module_path_string, name: name.to_string() }
+            // Not declared or imported by the module itself: reach it through the module's
+            // public re-exports under the same rule `use Hub;` applies (`reexported_item_route`).
+            match self.reexported_item_route(module_id, name) {
+                ReexportRoute::Found(item) => ModulePathLookup::Found(item),
+                ReexportRoute::Ambiguous(candidates) => {
+                    ModulePathLookup::Ambiguous { module_path: module_path_string, name: name.to_string(), candidates }
+                }
+                ReexportRoute::Missing => {
+                    ModulePathLookup::NameMissing { module_path: module_path_string, name: name.to_string() }
+                }
+            }
         }
     }
 

@@ -151,7 +151,12 @@ pub fn run_link_tool(
     let output = match control {
         Some(control) => control.run_command(&mut resolved, directory, "link")?,
         None => {
-            resolved.output().map_err(|error| AotError::Io { path: executable.clone(), message: error.to_string() })?
+            use std::process::Stdio;
+            beskid_execution::spawn_when_executable_settles(
+                resolved.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped()),
+            )
+            .and_then(|child| child.wait_with_output())
+            .map_err(|error| AotError::Io { path: executable.clone(), message: error.to_string() })?
         }
     };
     if digest(&executable)? != sha256 {

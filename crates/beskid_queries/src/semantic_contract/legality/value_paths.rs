@@ -57,6 +57,9 @@ pub enum ValuePathKind {
     UnknownValueInModule { module_path: Arc<str>, name: Arc<str> },
     /// E1107 `ResolveError::PrivateItemInModule`: the module declares the name only without `pub`.
     PrivateItemInModule { module_path: Arc<str>, name: Arc<str> },
+    /// E1104 `ResolveError::AmbiguousItemInModule`: the module declares no member of the name
+    /// itself and reaches `candidates` distinct ones through its public re-exports at one distance.
+    AmbiguousItemInModule { module_path: Arc<str>, name: Arc<str>, candidates: usize },
 }
 
 /// One value path of a unit that names no value, at the path expression.
@@ -249,9 +252,22 @@ fn qualified_value_path(
             MemberVisibility::Private => {
                 Some(ValuePathKind::PrivateItemInModule { module_path, name: Arc::from(name) })
             }
-            MemberVisibility::Undeclared => (public_module_routes(db, unit, site.generation).is_empty()
-                && !unit_declares_function_name(db, unit, site.generation, name))
-            .then(|| ValuePathKind::UnknownValueInModule { module_path, name: Arc::from(name) }),
+            // Not declared by the module itself: the member is reached through the module's
+            // public re-exports under the same nearest-distance rule as callees and types. A
+            // unit that declares the name publicly is one candidate, whatever it declares.
+            MemberVisibility::Undeclared => {
+                match nearest_reexport_route_outcome(db, unit, site.generation, |db, current, generation| {
+                    matches!(module_member_visibility(db, current, generation, name), MemberVisibility::Public)
+                        .then_some(AstNodeKey { unit: current, generation, node: AstNodeId(0) })
+                }) {
+                    ReexportRoute::Found(_) => Some(ValuePathKind::UnknownValueType),
+                    ReexportRoute::Ambiguous(candidates) => {
+                        Some(ValuePathKind::AmbiguousItemInModule { module_path, name: Arc::from(name), candidates })
+                    }
+                    ReexportRoute::Missing => (!unit_declares_function_name(db, unit, site.generation, name))
+                        .then(|| ValuePathKind::UnknownValueInModule { module_path, name: Arc::from(name) }),
+                }
+            }
             MemberVisibility::Unknown => None,
         },
         QualifiedModuleResolution::Missing => {

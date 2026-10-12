@@ -386,7 +386,10 @@ pub(in crate::semantic_contract) fn unique_assembled_type_in_module(
     unique_exported_type_in_unit(db, target, key.generation, name, generic_arity)
 }
 
-/// Resolve a public type member through its defining syntax unit or explicit public re-exports.
+/// Resolve a public type member through its defining syntax unit or explicit public re-exports,
+/// under the same nearest-distance rule as functions (`unique_exported_function_in_unit`): the
+/// unit's own declaration shadows a re-exported one, and two distinct types at one distance are
+/// ambiguous and resolve to nothing.
 pub(in crate::semantic_contract) fn unique_exported_type_in_unit(
     db: &dyn Db,
     unit: SourceUnitId,
@@ -394,22 +397,9 @@ pub(in crate::semantic_contract) fn unique_exported_type_in_unit(
     name: &str,
     generic_arity: usize,
 ) -> Option<AstNodeKey> {
-    let mut pending = vec![unit];
-    let mut visited = std::collections::HashSet::new();
-    let mut candidates = Vec::new();
-    while let Some(current) = pending.pop() {
-        if !visited.insert(current) {
-            continue;
-        }
-        if let Some(candidate) = unique_public_type_in_unit(db, current, generation, name, generic_arity) {
-            candidates.push(candidate);
-        }
-        pending.extend(public_reexport_units(db, current, generation));
-    }
-    let [candidate] = candidates.as_slice() else {
-        return None;
-    };
-    Some(*candidate)
+    nearest_reexport_route(db, unit, generation, |db, current, generation| {
+        unique_public_type_in_unit(db, current, generation, name, generic_arity)
+    })
 }
 
 /// The type or enum named `name` declared in the nearest module scope (inline module or program)

@@ -161,6 +161,33 @@ fn qualified_type_paths_are_classified_like_the_legacy_resolver() {
     assert_units_silent(&[("Main.bd", "use Lib.Helper; unit Main(Helper.Shown h) { return; }"), HELPER_TYPES], 3310);
 }
 
+/// A hub that re-exports a child through `pub mod` serves the child's members under qualified
+/// paths; a name two children provide at the same distance is ambiguous (E1104) in type and value
+/// position, and the hub's own declaration shadows a re-exported one. A qualified callee through
+/// a live import binding is not classified here: `path_call_resolution` lowers it as `Dynamic`
+/// (`imported_call_receiver_exists`) before `unresolved_call_target` can judge it.
+#[test]
+fn qualified_hub_paths_follow_the_reexport_rule() {
+    let hub = ("Lib/Hub.bd", "pub mod Lib.Hub.Left; pub mod Lib.Hub.Right; pub i64 Own() { return 0_i64; }");
+    let left = (
+        "Lib/Hub/Left.bd",
+        "pub i64 Shared() { return 1_i64; } pub i64 Only() { return 1_i64; } pub type Twin { i64 n } pub type Solo { i64 n } pub i64 Own() { return 1_i64; }",
+    );
+    let right = ("Lib/Hub/Right.bd", "pub i64 Shared() { return 2_i64; } pub type Twin { i64 n }");
+    assert_units_silent(
+        &[("Main.bd", "use Lib.Hub; i64 Main(Hub.Solo s) { return Hub.Only() + Hub.Own(); }"), hub, left, right],
+        3500,
+    );
+    let cases = [
+        ("use Lib.Hub; unit Main(Hub.Twin t) { return; }", "ResolveAmbiguousItemInModule", "E1104"),
+        ("use Lib.Hub; unit Main() { let f = Hub.Shared; return; }", "ResolveAmbiguousItemInModule", "E1104"),
+        ("use Lib.Hub; unit Main() { let f = Hub.Only; return; }", "TypeUnknownValueType", "E1201"),
+    ];
+    for (offset, (main, variant, code)) in cases.into_iter().enumerate() {
+        assert_reports(&[("Main.bd", main), hub, left, right], 3510 + offset as u64, variant, code, 0);
+    }
+}
+
 const HELPER_VALUES: (&str, &str) = ("Lib/Helper.bd", "pub i64 Run() { return 1_i64; } i64 Hidden() { return 2_i64; }");
 
 /// Module-qualified value paths that are not call targets: unknown module (E1108), unknown value

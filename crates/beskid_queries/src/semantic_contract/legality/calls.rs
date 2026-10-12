@@ -33,6 +33,9 @@ pub enum UnresolvedCallKind {
     /// A qualified callee whose module resolves to exactly one assembled unit that declares no
     /// function of the terminal name (E1101). `module_path` is the qualifier as written.
     UnknownValueInModule { module_path: Arc<str>, name: Arc<str> },
+    /// A qualified callee whose module declares no function of the terminal name itself and
+    /// reaches `candidates` distinct ones through its public re-exports at one distance (E1104).
+    AmbiguousItemInModule { module_path: Arc<str>, name: Arc<str>, candidates: usize },
     /// A qualified callee whose module declares the function privately (E1107).
     PrivateItemInModule { module_path: Arc<str>, name: Arc<str> },
     /// A qualified callee whose module path names more than one assembled module, for example
@@ -183,9 +186,20 @@ fn unresolved_callee_kind(
             }
             return None;
         }
-        if public_module_routes(db, unit, call.generation).is_empty()
-            && !unit_declares_function_name(db, unit, call.generation, name)
-        {
+        match nearest_reexport_route_outcome(db, unit, call.generation, |db, current, generation| {
+            unique_public_function_in_unit(db, current, generation, name)
+        }) {
+            ReexportRoute::Found(_) => return None,
+            ReexportRoute::Ambiguous(candidates) => {
+                return Some(UnresolvedCallKind::AmbiguousItemInModule {
+                    module_path: Arc::from(qualifier.join(".")),
+                    name: Arc::from(name),
+                    candidates,
+                });
+            }
+            ReexportRoute::Missing => {}
+        }
+        if !unit_declares_function_name(db, unit, call.generation, name) {
             return Some(UnresolvedCallKind::UnknownValueInModule {
                 module_path: Arc::from(qualifier.join(".")),
                 name: Arc::from(name),
