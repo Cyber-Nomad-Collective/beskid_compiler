@@ -90,7 +90,7 @@ use abi::{
     manifest_builtin_abi_signature, signature_from_syntax,
     type_syntax_mentions_generic_parameter, unsuffixed_integer_literal, value_abi_type_tracked,
 };
-use bulk::bulk_parameter_tracked;
+use bulk::{bulk_call_element_abi_type_for_call, bulk_parameter_tracked};
 use calls::{
     PathCallResolution, call_arguments_tracked, call_lowering_for_node, call_lowering_tracked,
     canonical_intrinsic_parameter_type, canonical_result_definition_for_type, canonical_result_variant,
@@ -112,11 +112,15 @@ use calls::{
     unique_nominal_method_declaration, unqualified_enclosing_method_call,
 };
 pub use cleanup::{ScopedAcquisition, ScopedCleanup, ScopedCleanupDiagnostic, scoped_cleanup};
+pub use closures_spawn::function_value_call_specialization;
+use closures_spawn::{untyped_lambda_parameter_identity, untyped_lambda_parameter_type};
 use closures_spawn::{
     callable_fiber_ownership_tracked, callable_signature_for_node, callable_signature_for_path,
     callable_signature_tracked, capture_storage_class, capture_storage_for_node, capture_storage_tracked,
     closure_call_target_tracked, closure_captures, closure_environment_for_node, closure_environment_tracked,
-    closure_signature_for_node, closure_signature_tracked, inferred_spawn_handle, normalized_expression_node,
+    closure_signature_for_node, closure_signature_tracked, function_item_value_identity, function_item_value_tracked,
+    function_value_call_tracked, function_value_callee, inferred_spawn_handle, lambda_has_statement_body,
+    lambda_source_identity, lambda_value_required_tracked, normalized_expression_node,
     runtime_intrinsic_name_tracked, runtime_intrinsic_tracked, spawn_entry_operand, spawn_entry_validation_tracked,
     spawn_handle_type_tracked, spawn_legality_tracked, spawn_stack_capture, spawn_target_tracked,
 };
@@ -218,7 +222,7 @@ pub use model::{
     EnumMatchArmFact, EnumMatchBindingFact, EnumMatchFact, EnumMatchPatternFact, EnumMatchScalarLiteralFact,
     EnumMatchVariantPatternFact, EnumScalarPayloadObjectLayout, EnumScalarPayloadVariantLayout, EnumVariantLayoutFact,
     EventFieldLayoutFact, EventHandlerLocalFact, ExpectedType, ExpectedTypeContext, EventOperationFact, EventOperationKind, ExportSymbol, FiberOwnership,
-    ForIteratorFact, GenericBindingConflict, GenericBoundViolation, GenericCallInstantiation, GenericCallSpecialization,
+    ForIteratorFact, FunctionItemValue, FunctionValueCall, GenericBindingConflict, GenericBoundViolation, GenericCallInstantiation, GenericCallSpecialization,
     GenericCallTemplate,
     GenericNominalMethodReceiver, GenericSpecializationInstance, GenericSubstitution, IndexedNodeKind, ItemSignature,
     LiteralFact, LocalSlot, ManagedReferenceKind, ManifestBuiltin, MutableLocalAssignment, OperatorFact,
@@ -232,12 +236,13 @@ pub use model::{
 pub use queries::{
     abi_type, aggregate_field_access, aggregate_layout, aggregate_literal_declaration, aggregate_literal_field_values,
     aggregate_literal_layout, array_index_element_abi_type, block_statement_nodes,
-    bulk_parameter, call_abi_signature, call_arguments, call_lowering,
+    bulk_call_element_abi_type, bulk_parameter, call_abi_signature, call_arguments, call_lowering,
     callable_fiber_ownership, callable_signature, capture_storage, cast_intents, child_nodes, clif_block_body,
     clif_block_parameters, closure_call_target, closure_environment, closure_signature, collection_operation, constant_integer,
     contextual_integer_literal_abi_type, control_flow, direct_callees, empty_array_literal_element_abi_type,
     enum_constructor, enum_constructor_template, enum_layout, enum_match, event_field_layout,
-    event_handler_lambda_for_local, event_operation, expected_type, for_iterator_fact, generic_call_instantiation,
+    event_handler_lambda_for_local, event_operation, expected_type, for_iterator_fact, function_item_value,
+    function_value_call, generic_call_instantiation, lambda_value_required,
     generic_call_specialization, generic_call_template, generic_nominal_method_receiver, implicit_method_receiver,
     item_abi_signature, item_body, item_export_symbol, item_name, item_signature, literal_fact, local_slot,
     managed_reference_kind, mutable_local_assignment, node_kind, node_span, node_type, nominal_member_receiver,

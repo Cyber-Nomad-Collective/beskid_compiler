@@ -2,6 +2,7 @@
 
 mod closures;
 mod fiber_ownership;
+mod function_values;
 mod intrinsics;
 mod spawn;
 
@@ -18,6 +19,12 @@ pub(in crate::semantic_contract) use closures::{
     capture_storage_for_node, capture_storage_tracked, closure_call_target_tracked, closure_captures,
     closure_environment_for_node, closure_environment_tracked, closure_signature_for_node, closure_signature_tracked,
 };
+pub(in crate::semantic_contract) use function_values::{
+    function_item_value_identity, function_item_value_tracked, function_value_call_tracked, function_value_callee,
+    lambda_has_statement_body, lambda_source_identity, lambda_value_required_tracked, untyped_lambda_parameter_identity,
+    untyped_lambda_parameter_type,
+};
+pub use function_values::function_value_call_specialization;
 pub(in crate::semantic_contract) use fiber_ownership::{callable_fiber_ownership_tracked, spawn_legality_tracked};
 pub(in crate::semantic_contract) use intrinsics::{runtime_intrinsic_name_tracked, runtime_intrinsic_tracked};
 pub(in crate::semantic_contract) use spawn::{

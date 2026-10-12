@@ -28,7 +28,8 @@ mod runtime;
 mod support;
 
 use support::{
-    assert_unsupported_closed_failure, lower_verified_entrypoint, parse_production_units, x86_64_target_and_isa,
+    assert_legality_failure, assert_unsupported_closed_failure, lower_verified_entrypoint, parse_production_units,
+    x86_64_target_and_isa,
 };
 
 #[test]

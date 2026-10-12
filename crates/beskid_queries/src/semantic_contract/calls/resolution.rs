@@ -27,19 +27,27 @@ pub(in crate::semantic_contract) fn call_lowering_for_node(
             // import/builtin fallback so production JIT/AOT can emit the call.
             // Module-qualified calls like `Core.IsEmpty(text)` parse as Member
             // expressions — flatten the member into a module path for direct resolution.
+            // A member whose source type is a function type (`Make().op(1)`) is a function
+            // value call.
             Ok(method_declaration_for_member_receiver(db, program, index, key, call, member)
                 .map(CallLowering::Direct)
                 .or_else(|| {
                     flatten_member_as_path_declaration(db, program, index, key, member).map(CallLowering::Direct)
                 })
+                .or_else(|| function_value_callee(db, program, index, key, call).map(CallLowering::FunctionValue))
                 .unwrap_or(CallLowering::Dynamic))
         }
-        other => Err(SemanticError::unavailable_at_described(
-            "call_lowering",
-            key,
-            &crate::semantic_contract::format_ast_node_site(db, key),
-            &format!("callee expression `{}` has no call-lowering authority", expression_construct_name(other)),
-        )),
+        // Any other callee (`Make()(1)`, `handlers[0](1)`, `(f)(1)`) is a call through the
+        // function value it evaluates to.
+        other => match function_value_callee(db, program, index, key, call) {
+            Some(callee) => Ok(CallLowering::FunctionValue(callee)),
+            None => Err(SemanticError::unavailable_at_described(
+                "call_lowering",
+                key,
+                &crate::semantic_contract::format_ast_node_site(db, key),
+                &format!("callee expression `{}` has no call-lowering authority", expression_construct_name(other)),
+            )),
+        },
     })
 }
 
@@ -132,7 +140,12 @@ pub(in crate::semantic_contract) fn path_call_resolution(
     call: &beskid_analysis::syntax::CallExpression,
     path: &beskid_analysis::syntax::Path,
 ) -> PathCallResolution {
-    if let Some(callback) = super::super::native_mod_callbacks::native_mod_callback_for(db, index, key, path) {
+    if path.segments.len() == 1
+        && let Some(callee) = function_value_callee(db, program, index, key, call)
+    {
+        // A function-typed local shadows every item, import, and builtin of the same name.
+        PathCallResolution::Lowered(CallLowering::FunctionValue(callee))
+    } else if let Some(callback) = super::super::native_mod_callbacks::native_mod_callback_for(db, index, key, path) {
         PathCallResolution::Lowered(CallLowering::NativeModCallback(callback))
     } else if imported_generic_nominal_receiver_requires_instantiation(db, key, path) {
         PathCallResolution::Unavailable("generic_receiver_instantiation")
@@ -142,6 +155,11 @@ pub(in crate::semantic_contract) fn path_call_resolution(
         PathCallResolution::Lowered(CallLowering::Direct(declaration))
     } else if let Some((declaration, _)) = nominal_local_member_receiver(db, program, index, key, path) {
         PathCallResolution::Lowered(CallLowering::Direct(declaration))
+    } else if path.segments.len() > 1
+        && let Some(callee) = function_value_callee(db, program, index, key, call)
+    {
+        // `holder.op(1)`: a function-typed field projection rooted in a local is a function value.
+        PathCallResolution::Lowered(CallLowering::FunctionValue(callee))
     } else if let Some(receiver) = contract_member_receiver(db, program, index, key, path) {
         match receiver {
             Ok((method, _)) => PathCallResolution::Lowered(CallLowering::Direct(method)),

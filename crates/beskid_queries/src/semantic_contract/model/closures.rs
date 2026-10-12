@@ -96,6 +96,35 @@ pub struct ClosureCallTarget {
     pub callable: ItemSignature,
 }
 
+/// A call through a function value rather than a statically known callee.
+///
+/// `callee` is the normalized callee expression that evaluates to the closure record: a
+/// function-typed local or parameter read, a function-typed field projection, a call that
+/// returns a function value, or any other expression whose source type is a function type.
+/// `signature` is the ABI of the indirect call (never including the environment pointer, which
+/// the record supplies), derived from the callee's source function type.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub struct FunctionValueCall {
+    pub call: AstNodeKey,
+    pub callee: AstNodeKey,
+    pub signature: ItemSignature,
+    pub result_managed_reference: ManagedReferenceKind,
+    /// Source identity of the call's result, so a nominal or array result keeps its identity.
+    pub(crate) result_identity: GenericSourceTypeIdentity,
+}
+
+/// A named function item used as a value rather than called.
+///
+/// The value is a closure record whose code pointer is the item's own entry and whose
+/// environment is null; the record is allocated where the path is evaluated. Only a non-generic
+/// function or test-free function item has a context-free entry.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub struct FunctionItemValue {
+    pub path: AstNodeKey,
+    pub declaration: AstNodeKey,
+    pub signature: ItemSignature,
+}
+
 /// Exact callable operand, eager arguments, and captures selected by a `spawn` expression.
 ///
 /// `spawn Entry()` and `spawn Entry(args)` both store the entry operand (path or lambda), never

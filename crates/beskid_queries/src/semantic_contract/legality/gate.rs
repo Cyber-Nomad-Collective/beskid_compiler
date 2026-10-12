@@ -10,7 +10,8 @@
 //! parameters, inferred lambdas) are never findings.
 //!
 //! The collectors live in `gate/operators.rs` (E1209, E1210, binary E1206, T0905),
-//! `gate/control.rs` (E1215-E1218, E1219, E1221, E1223-E1225), `gate/expressions.rs`
+//! `gate/strings.rs` (E1209 for a string concatenation or interpolation operand without a text
+//! form), `gate/control.rs` (E1215-E1218, E1219, E1221, E1223-E1225), `gate/expressions.rs`
 //! (E1102, E1201, E1202, E1204, E1211, E1213, E1228, E1606, E1610) and `gate/clif.rs` (E1232).
 
 use super::*;
@@ -19,6 +20,7 @@ mod clif;
 mod control;
 mod expressions;
 mod operators;
+mod strings;
 
 /// One `check` obligation an item fails. Codes name the legacy `SemanticIssueKind` rendered by
 /// [`check_gate_obligations`].
@@ -30,6 +32,9 @@ pub enum GateObligationKind {
     InvalidUnaryOp,
     /// E1206: binary operands of two different, non-numeric proven primitives.
     OperandMismatch { expected: SemanticTypeId, actual: SemanticTypeId },
+    /// E1209: a string concatenation or interpolation operand of a proven type that has no text
+    /// form (`found` is its source spelling).
+    StringConcatOperandNotConvertible { found: Arc<str> },
     /// T0905: a suffixed integer literal or a float literal outside its primitive's range, or
     /// an unsuffixed integer literal outside the primitive integer its proven destination
     /// declares (legacy `type_id_for_literal` / `type_unary_expression` under
@@ -111,6 +116,7 @@ fn gate_obligations_tracked(
         let mut findings = Vec::new();
         operators::collect_operator_obligations(db, program, index, key, &mut findings);
         operators::collect_literal_obligations(db, program, index, key, &mut findings);
+        strings::collect_string_concat_obligations(db, program, index, key, &mut findings);
         control::collect_spawn_obligations(db, program, index, key, &mut findings);
         control::collect_iterator_obligations(db, program, index, key, &mut findings);
         control::collect_event_obligations(db, program, index, key, &mut findings);
@@ -138,6 +144,9 @@ pub fn check_gate_obligations(db: &dyn Db, items: &[AstNodeKey]) -> Vec<Semantic
                     expected_name: expected.display_name(),
                     actual_name: actual.display_name(),
                 },
+                GateObligationKind::StringConcatOperandNotConvertible { found } => {
+                    SemanticIssueKind::TypeStringConcatOperandNotConvertible { found: found.to_string() }
+                }
                 GateObligationKind::NumericLiteralOutOfRange { primitive } => {
                     SemanticIssueKind::NumericLiteralOutOfRange { primitive: primitive.to_string() }
                 }

@@ -24,6 +24,48 @@ impl IsleContext<'_, '_, '_, '_> {
         self.builder.seal_block(merge_block);
         self.builder.block_params(merge_block).first().copied()
     }
+
+    /// An integer conversion of an `f32` or `f64` truncates toward zero and saturates: NaN gives 0
+    /// and out-of-range values clamp to the target's minimum or maximum, as Rust's `as`, Java, and
+    /// WebAssembly's `trunc_sat` do. The conversion never traps. Cranelift saturates natively to 32
+    /// and 64 bits; an 8- or 16-bit target saturates through 32 bits and clamps before narrowing.
+    /// Signedness comes from the semantic target type, not from the CLIF type.
+    pub(super) fn saturating_float_to_int(
+        &mut self,
+        to: beskid_queries::SemanticTypeId,
+        target: cranelift_codegen::ir::Type,
+        value: Value,
+    ) -> Value {
+        use beskid_queries::SemanticTypeId;
+        use cranelift_codegen::ir::types;
+        let unsigned = matches!(
+            to,
+            SemanticTypeId::U8 | SemanticTypeId::U16 | SemanticTypeId::U32 | SemanticTypeId::U64 | SemanticTypeId::WORD
+        );
+        if target.bits() >= 32 {
+            return if unsigned {
+                self.builder.ins().fcvt_to_uint_sat(target, value)
+            } else {
+                self.builder.ins().fcvt_to_sint_sat(target, value)
+            };
+        }
+        let bits = target.bits();
+        let wide = if unsigned {
+            self.builder.ins().fcvt_to_uint_sat(types::I32, value)
+        } else {
+            self.builder.ins().fcvt_to_sint_sat(types::I32, value)
+        };
+        let clamped = if unsigned {
+            let max = self.builder.ins().iconst(types::I32, (1_i64 << bits) - 1);
+            self.builder.ins().umin(wide, max)
+        } else {
+            let max = self.builder.ins().iconst(types::I32, (1_i64 << (bits - 1)) - 1);
+            let min = self.builder.ins().iconst(types::I32, -(1_i64 << (bits - 1)));
+            let upper = self.builder.ins().smin(wide, max);
+            self.builder.ins().smax(upper, min)
+        };
+        self.builder.ins().ireduce(target, clamped)
+    }
 }
 
 pub(super) enum CompareOp {
@@ -425,6 +467,9 @@ macro_rules! generated_operator_methods {
                 } else {
                     self.builder.ins().fdemote(target, value)
                 });
+            }
+            if actual.is_float() && target.is_int() {
+                return Some(self.saturating_float_to_int(to, target, value));
             }
             if !actual.is_int() || !target.is_int() {
                 self.pending_error = Some(LoweringError {

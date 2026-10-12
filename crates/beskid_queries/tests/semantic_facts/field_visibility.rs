@@ -174,3 +174,38 @@ fn inaccessible_field_diagnostic_is_e1211_with_pub_help() {
     let help = finding.kind.help().expect("inaccessible field help");
     assert!(help.contains("mark the field `pub` in its declaring type"), "{help}");
 }
+
+const MAKER_SOURCE: &str = "pub type Inner { i64 secret, pub i64 shared } pub type Request { pub Inner inner, i64 token } \
+                            pub Request Make() { return Request { inner: Inner { secret: 1_i64, shared: 2_i64 }, token: 3_i64 }; }";
+
+fn call_result_finding(owner_source: &str) -> Option<beskid_queries::MemberReferenceFinding> {
+    let (_temp, owner_path, model_path, owner_source) = model(owner_source);
+    fact_result(
+        owner_path,
+        owner_source,
+        model_path,
+        MAKER_SOURCE.into(),
+        "i64 Reveal",
+        NodeKind::FunctionDefinition,
+        |db, key| member_reference_legality(db, key),
+    )
+    .expect("member legality query")
+}
+
+#[test]
+#[ignore = "0.6 gap: a4fac1b2 Make().x call-result projection yields no E1211 finding (Call targets unprojected)"]
+fn projection_of_a_cross_unit_call_result_names_the_private_field() {
+    // Evidence ported from 0.5.4 (a4fac1b2 opens `Make().x`): the new read path must stay under E1211.
+    let finding = call_result_finding("use Shapes.Request; i64 Reveal() { return Request.Make().token; }")
+        .expect("a private field read from a call result of another unit must be rejected");
+    assert_eq!(finding.kind, MemberReferenceKind::InaccessibleStructField { name: "token".into() });
+    let chained = call_result_finding("use Shapes.Request; i64 Reveal() { return Request.Make().inner.secret; }")
+        .expect("a private field behind a call-result chain must be rejected");
+    assert_eq!(chained.kind, MemberReferenceKind::InaccessibleStructField { name: "secret".into() });
+}
+
+#[test]
+fn projection_of_a_cross_unit_call_result_through_pub_fields_is_accessible() {
+    let finding = call_result_finding("use Shapes.Request; i64 Reveal() { return Request.Make().inner.shared; }");
+    assert!(finding.is_none(), "pub fields of a call result are accessible: {finding:?}");
+}

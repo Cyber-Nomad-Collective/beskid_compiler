@@ -22,7 +22,7 @@ fn qualified_import_resolution_follows_public_reexports_and_declared_modules() {
     let private_path = root.join("Core/Text/Parser/Private.bd");
     let regex_path = root.join("Core/Text/Regex.bd");
     let generated_path = root.join("Core/Text/Regex/Generated.bd");
-    let main_source = "use Core.Text.Parser;\nuse Core.Text.Regex;\ni32 Main() { Parser.HiddenRecord record = Parser.HiddenRecord { value: 1 }; Parser.IsOk(); Parser.PrivateTerminal(); Parser.Private.Hidden(); Parser.Second.IsOk(); Regex.Generated.ParseDigit(); Core.Text.Regex.Generated.ParseDigit(); Parser.TextParseResult::Ok(); Parser.HiddenType::Nope(); return 1; }";
+    let main_source = "use Core.Text.Parser;\nuse Core.Text.Regex;\ni32 Main() { Parser.HiddenRecord record = Parser.HiddenRecord { value: 1 }; Parser.IsOk(); Parser.PrivateTerminal(); Parser.Private.Hidden(); Parser.Second.IsOk(); Regex.Generated.ParseDigit(); Core.Text.Regex.Generated.ParseDigit(); Parser.TextParseResult::Ok(); Parser.HiddenType::Nope(); Core.Text.Parser.Private.Hidden(); return 1; }";
     let parser_source =
         "pub use Core.Text.Parser.Result;\npub use Core.Text.Parser.Result as Second;\nmod Core.Text.Parser.Private;";
     let result_source = "pub i32 IsOk() { return 1; }\ni32 PrivateTerminal() { return 1; }\npub enum TextParseResult { Ok() }\nenum HiddenType { Nope() }\ntype HiddenRecord { i32 value }";
@@ -97,6 +97,17 @@ fn qualified_import_resolution_follows_public_reexports_and_declared_modules() {
         main_source.find("Parser.Private.Hidden").expect("private module"),
     );
     assert_eq!(resolved_item(&db, hidden).expect("private module"), None);
+
+    // Evidence ported from 0.5.4 (3763c00b): the fully qualified spelling of a private module stays
+    // unresolved when written outside `Core.Text.Parser`.
+    let fully_qualified_private = key_at_start(
+        main_unit,
+        generation,
+        &main_index,
+        NodeKind::PathExpression,
+        main_source.rfind("Core.Text.Parser.Private.Hidden").expect("fully-qualified private module"),
+    );
+    assert_eq!(resolved_item(&db, fully_qualified_private).expect("fully-qualified private module"), None);
 
     let private_terminal = key_at_start(
         main_unit,

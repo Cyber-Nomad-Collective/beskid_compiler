@@ -149,6 +149,17 @@ pub(in crate::semantic_contract) fn generic_source_local_identity(
                 generic_source_expression_identity(db, AstNodeKey { node: initializer, ..key })
             }
         }
+        Some(beskid_analysis::syntax_query::NodeKind::LambdaParameter) => {
+            let parameter = index
+                .node_at(program, parent)
+                .and_then(|node| node.of::<beskid_analysis::syntax::LambdaParameter>())
+                .ok_or_else(|| source_expression_unavailable(db, key, "lambda parameter declaration is absent"))?;
+            match parameter.ty.as_ref() {
+                Some(ty) => generic_source_type_identity(db, key, &ty.node),
+                // An untyped lambda parameter is checked against the lambda's expected function type.
+                None => untyped_lambda_parameter_identity(db, program, index, key, parent),
+            }
+        }
         _ => Err(source_expression_unavailable(db, key, "binding is neither a parameter nor a let local")),
     }
 }

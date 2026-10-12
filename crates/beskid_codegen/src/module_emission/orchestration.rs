@@ -338,6 +338,7 @@ fn lower_resolved_syntax_program(
         };
         let function = {
             let mut importer = ArtifactCallImporter { symbols: &symbols };
+            let mut strings = ArtifactStringInterner { context: &mut context, pointer_type: isa.pointer_type() };
             emit_isle_lambda_entry(
                 input,
                 isa,
@@ -345,6 +346,7 @@ fn lower_resolved_syntax_program(
                 result,
                 &trampoline.parameters,
                 trampoline.closure_captures.as_deref(),
+                &mut strings,
                 &mut importer,
             )
             .map_err(|error| emission_error(input, error))?

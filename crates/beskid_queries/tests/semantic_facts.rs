@@ -63,3 +63,7 @@ mod dead_growth;
 #[rustfmt::skip]
 #[path = "semantic_facts/local_type_resolution.rs"]
 mod local_type_resolution;
+#[path = "semantic_facts/function_values.rs"]
+mod function_values;
+#[path = "semantic_facts/string_concat_gate.rs"]
+mod string_concat_gate;

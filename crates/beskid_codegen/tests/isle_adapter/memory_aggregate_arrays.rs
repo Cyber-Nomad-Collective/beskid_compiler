@@ -35,6 +35,27 @@ fn primitive_conversion_array_literal_preserves_wrapper_type_and_lowers() {
 }
 
 #[test]
+fn array_literals_of_call_concatenations_and_enum_values_plan_their_element_abi() {
+    use beskid_queries::{IndexedNodeKind, SemanticTypeId};
+
+    let source = "enum Shape { Dot, Line(i64 length) } string Piece(string text) { return text; } \
+                  i64 Main() { string[] texts = [Piece(\"a\") + Piece(\"b\"), Piece(\"c\")]; \
+                  Shape[] shapes = [Shape::Dot, Shape::Line(3_i64)]; return 0_i64; }";
+    let (input, _isa, root) = item_fixture_with_root(source);
+    let arrays = find_nodes_of_kind(input.database(), root, IndexedNodeKind::ArrayLiteralExpression);
+    let [texts, shapes] = arrays.as_slice() else {
+        panic!("two array literals");
+    };
+
+    let texts = input.array_static_plan(*texts).expect("concatenated call elements plan their storage");
+    assert_eq!(texts.element_type, SemanticTypeId::STRING);
+    assert!(!texts.pointer_map_offsets.is_empty(), "string elements are traced references");
+    let shapes = input.array_static_plan(*shapes).expect("enum value elements plan their storage");
+    assert_eq!(shapes.element_type, SemanticTypeId::POINTER);
+    assert!(!shapes.pointer_map_offsets.is_empty(), "enum elements are traced references");
+}
+
+#[test]
 fn primitive_conversion_array_literal_rejects_invalid_conversions() {
     for expression in ["word(true)", "word(native)", "word(Unknown())", "word(0, 1)"] {
         let source = format!("word[] Main(pointer native) {{ return [{expression}]; }}");

@@ -198,6 +198,51 @@ type List<T> {
 }
 
 #[test]
+#[ignore = "0.6 gap: f857c827 single-segment parameter/local still reads the method-owned field"]
+fn parameters_and_locals_shadow_method_owned_fields() {
+    let source = r#"
+type Holder {
+    string text,
+    i64 count,
+
+    string Echo(string text) {
+        return text;
+    }
+
+    i64 Local() {
+        i64 count = 7;
+        return count;
+    }
+}
+"#;
+    let (db, _project, unit, generation, index) = setup(source);
+    let parameter_use =
+        key_at_start(unit, generation, &index, NodeKind::PathExpression, source.find("text;").expect("parameter use"));
+    let local_use =
+        key_at_start(unit, generation, &index, NodeKind::PathExpression, source.rfind("count;").expect("local use"));
+
+    for shadowed in [parameter_use, local_use] {
+        assert_eq!(
+            aggregate_field_access(&db, shadowed).expect("field access query"),
+            None,
+            "a parameter or local named like a field must not read the field"
+        );
+    }
+}
+
+#[test]
+#[ignore = "0.6 gap: 9c94c662 this.Method() callee has no implicit_method_receiver"]
+fn this_qualified_sibling_call_uses_the_implicit_method_receiver() {
+    let source = "type Counter { i64 n, i64 Double() { return 2; } i64 Quad() { return this.Double() * 2; } }";
+    let (db, _project, unit, generation, index) = setup(source);
+    let quad = key(unit, generation, &index, NodeKind::MethodDefinition, 1);
+    let callee =
+        key_at_start(unit, generation, &index, NodeKind::PathExpression, source.find("this.Double").expect("callee"));
+
+    assert_eq!(implicit_method_receiver(&db, callee), Ok(Some(quad)));
+}
+
+#[test]
 fn self_path_resolves_to_its_implicit_method_receiver() {
     let source = "type List<T> { List<T> Identity() { return self; } }";
     let (db, _project, unit, generation, index) = setup(source);

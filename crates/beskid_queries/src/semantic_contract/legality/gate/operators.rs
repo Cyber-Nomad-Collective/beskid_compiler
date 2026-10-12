@@ -54,7 +54,10 @@ pub(super) fn collect_operator_obligations(
             BinaryOp::Eq | BinaryOp::NotEq => {
                 is_numeric(left) || left == SemanticTypeId::BOOL || left == SemanticTypeId::STRING
             }
-            BinaryOp::Lt | BinaryOp::Lte | BinaryOp::Gt | BinaryOp::Gte => is_numeric(left) || left == SemanticTypeId::BOOL,
+            // Strings order by their UTF-8 bytes (Unicode code point order) through `str_cmp`.
+            BinaryOp::Lt | BinaryOp::Lte | BinaryOp::Gt | BinaryOp::Gte => {
+                is_numeric(left) || left == SemanticTypeId::BOOL || left == SemanticTypeId::STRING
+            }
             BinaryOp::Add => is_numeric(left) || left == SemanticTypeId::STRING,
             BinaryOp::Sub | BinaryOp::Mul | BinaryOp::Div | BinaryOp::Mod => is_numeric(left),
         };

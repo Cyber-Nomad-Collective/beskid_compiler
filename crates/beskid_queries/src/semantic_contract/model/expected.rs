@@ -11,6 +11,7 @@ use std::sync::Arc;
 
 use super::generics::GenericSourceTypeIdentity;
 use super::ids::AstNodeKey;
+use super::facts::ItemSignature;
 use super::types::{ManagedReferenceKind, SemanticTypeId};
 
 /// The typed parent context that supplies an expected type. The variants name the innermost
@@ -28,8 +29,12 @@ pub enum ExpectedTypeContext {
     EnumPayload { constructor: AstNodeKey, position: u32 },
     /// The value of one named field in a struct literal.
     StructField { literal: AstNodeKey, field: Arc<str> },
-    /// The value of a `return` in a function or method with a declared return type.
+    /// The value of a `return` in a function or method with a declared return type, or in a
+    /// block-bodied lambda whose own expected type is a function type (its result).
     Return { item: AstNodeKey },
+    /// The expression body of a lambda whose own expected type is a function type: the body is
+    /// checked against that function type's result.
+    LambdaBody { lambda: AstNodeKey },
     /// One element of an array literal whose own expected type is an array.
     ArrayElement { array: AstNodeKey },
     /// The body of a match arm; the match expression's expected type is forwarded.
@@ -74,6 +79,25 @@ impl ExpectedType {
 
     pub(crate) fn identity(&self) -> &GenericSourceTypeIdentity {
         &self.identity
+    }
+
+    /// The parameter and result identities when the expected type is a function type.
+    pub(crate) fn function_identity(&self) -> Option<(&[GenericSourceTypeIdentity], &GenericSourceTypeIdentity)> {
+        match &self.identity {
+            GenericSourceTypeIdentity::Function { parameters, result } => Some((parameters.as_ref(), result.as_ref())),
+            GenericSourceTypeIdentity::Abi(_)
+            | GenericSourceTypeIdentity::Nominal { .. }
+            | GenericSourceTypeIdentity::Array(_) => None,
+        }
+    }
+
+    /// The ABI call signature when the expected type is a function type.
+    pub fn function_signature(&self) -> Option<ItemSignature> {
+        let (parameters, result) = self.function_identity()?;
+        Some(ItemSignature {
+            parameters: parameters.iter().map(GenericSourceTypeIdentity::abi_type).collect(),
+            result: result.abi_type(),
+        })
     }
 
     pub(crate) fn array_element_identity(&self) -> Option<&GenericSourceTypeIdentity> {

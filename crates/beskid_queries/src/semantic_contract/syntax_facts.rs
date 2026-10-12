@@ -195,6 +195,10 @@ pub(super) fn operator_fact_for_binary(
             beskid_analysis::syntax::BinaryOp::Add => OperatorFact::StringAdd,
             beskid_analysis::syntax::BinaryOp::Eq => OperatorFact::StringEq,
             beskid_analysis::syntax::BinaryOp::NotEq => OperatorFact::StringNotEq,
+            beskid_analysis::syntax::BinaryOp::Lt => OperatorFact::StringLt,
+            beskid_analysis::syntax::BinaryOp::Lte => OperatorFact::StringLte,
+            beskid_analysis::syntax::BinaryOp::Gt => OperatorFact::StringGt,
+            beskid_analysis::syntax::BinaryOp::Gte => OperatorFact::StringGte,
             op => binary_operator(op),
         });
     }
@@ -516,6 +520,18 @@ pub(super) fn direct_callees_for_item(
                 continue;
             }
             callees.push(declaration);
+        }
+    }
+    // A named function read as a value (`Apply(5, Double)`) is reachable through its closure
+    // record exactly as through a direct call: its entry must be emitted and importable.
+    for path_id in index.ids_of_kind(beskid_analysis::syntax_query::NodeKind::PathExpression) {
+        if !is_ancestor(index, item.node, path_id) {
+            continue;
+        }
+        if let Ok(Some(value)) = function_item_value(db, AstNodeKey { node: path_id, ..item })
+            && !callees.contains(&value.declaration)
+        {
+            callees.push(value.declaration);
         }
     }
     Ok(callees.into())

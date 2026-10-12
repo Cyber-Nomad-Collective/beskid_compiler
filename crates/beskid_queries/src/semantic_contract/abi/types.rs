@@ -92,6 +92,16 @@ pub(in crate::semantic_contract) fn abi_type_tracked(
                 _ => Err(SemanticError::unavailable("abi_type")),
             }));
         }
+        if node.of::<beskid_analysis::syntax::LambdaExpression>().is_some() {
+            // A lambda value is its managed closure record, whatever its callable signature.
+            return Some(Ok(SemanticTypeId::POINTER));
+        }
+        if node.of::<beskid_analysis::syntax::PathExpression>().is_some()
+            && let Ok(Some(_)) = function_item_value(db, key)
+        {
+            // A named function read as a value is its managed closure record.
+            return Some(Ok(SemanticTypeId::POINTER));
+        }
         if node.of::<beskid_analysis::syntax::SpawnExpression>().is_some() {
             return Some(spawn_handle_type(db, key).and_then(|fact| {
                 fact.map(|_| SemanticTypeId::POINTER).ok_or_else(|| SemanticError::unavailable("abi_type"))
@@ -164,6 +174,7 @@ pub(in crate::semantic_contract) fn abi_type_tracked(
             if !matches!(
                 lowering,
                 CallLowering::Direct(_)
+                    | CallLowering::FunctionValue(_)
                     | CallLowering::Runtime(_)
                     | CallLowering::ManifestBuiltin(_)
                     | CallLowering::NativeModCallback(_)
@@ -270,6 +281,7 @@ pub(in crate::semantic_contract) fn abi_type_for_expression(
         | Expression::ArrayLiteral(_)
         | Expression::StructLiteral(_)
         | Expression::Unary(_)
+        | Expression::Lambda(_)
         | Expression::Try(_) => {
             let normalized = normalized_expression_node(index, key.node);
             abi_type(db, AstNodeKey { node: normalized, ..key })?.ok_or_else(|| SemanticError::unavailable("abi_type"))

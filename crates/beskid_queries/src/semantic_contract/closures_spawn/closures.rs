@@ -139,16 +139,20 @@ pub(in crate::semantic_contract) fn closure_call_target_tracked(
         let declaration = resolve_lexical_declaration(program, index, callee, segment.node.name.node.name.as_str())?;
         let binding = parent_node(index, declaration)
             .and_then(|parent| index.node_at(program, parent)?.of::<beskid_analysis::syntax::LetStatement>())?;
-        if !expression_is_lambda(&binding.value.node) {
+        // A mutable binding can be reassigned to another function value, so its calls go
+        // through the closure record it holds at the call site, never its initializer.
+        if binding.mutable || !expression_is_lambda(&binding.value.node) {
             return None;
         }
-        index
+        let lambda = index
             .direct_child_id(
                 program,
                 parent_node(index, declaration)?,
                 beskid_analysis::syntax_query::DynNodeRef::from(&binding.value),
             )
-            .map(|node| AstNodeKey { node: normalized_expression_node(index, node), ..key })
+            .map(|node| normalized_expression_node(index, node))?;
+        // A block body's `return` leaves the lambda, so it is called as a function, not inlined.
+        (!lambda_has_statement_body(program, index, lambda)).then_some(AstNodeKey { node: lambda, ..key })
     })?;
     let Some(lambda) = lambda else {
         return Ok(None);
@@ -293,28 +297,18 @@ pub(in crate::semantic_contract) fn callable_signature_for_node(
     if let Some(signature) = item_signature_for_node(node) {
         return Some(signature);
     }
-    if let Some(lambda) = node.of::<beskid_analysis::syntax::LambdaExpression>() {
-        let parameters = lambda
-            .parameters
-            .iter()
-            .map(|parameter| {
-                parameter.node.ty.as_ref().map_or_else(
-                    || Err(SemanticError::unavailable("callable_signature")),
-                    |ty| abi_type_from_syntax(db, key, &ty.node),
-                )
-            })
-            .collect::<Result<Vec<_>, _>>();
-        let result = index
-            .direct_child_id(program, key.node, beskid_analysis::syntax_query::DynNodeRef::from(lambda.body.as_ref()))
-            .ok_or_else(|| SemanticError::unavailable("callable_signature"))
-            .and_then(|node| {
-                value_abi_type(db, AstNodeKey { node: normalized_expression_node(index, node), ..key })?
-                    .ok_or_else(|| SemanticError::unavailable("callable_signature"))
-            });
-        return Some(
-            parameters
-                .and_then(|parameters| result.map(|result| ItemSignature { parameters: parameters.into(), result })),
-        );
+    if node.of::<beskid_analysis::syntax::LambdaExpression>().is_some() {
+        // The lambda's function type is its source identity: typed parameters and an expression
+        // body synthesize, untyped parameters and a block body check against the expected type.
+        return Some(lambda_source_identity(db, program, index, key).and_then(|identity| match identity {
+            GenericSourceTypeIdentity::Function { parameters, result } => Ok(ItemSignature {
+                parameters: parameters.iter().map(GenericSourceTypeIdentity::abi_type).collect(),
+                result: result.abi_type(),
+            }),
+            GenericSourceTypeIdentity::Abi(_)
+            | GenericSourceTypeIdentity::Nominal { .. }
+            | GenericSourceTypeIdentity::Array(_) => Err(SemanticError::unavailable("callable_signature")),
+        }));
     }
     if let Some(path) = node.of::<beskid_analysis::syntax::PathExpression>() {
         return callable_signature_for_path(db, program, index, key, &path.path.node);

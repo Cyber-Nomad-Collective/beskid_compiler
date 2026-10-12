@@ -120,6 +120,91 @@ fn parsed_string_interpolation_coerces_i64_operand() {
     assert!(clif.contains("str_concat"), "string concatenation dispatch must be imported: {clif}",);
 }
 
+fn lower_main_clif(source: &str) -> String {
+    let (input, isa, root) = item_fixture_with_root(source);
+    let item = named_function(&input, root, "Main");
+    let artifact = lower_syntax_program(&input, isa.as_ref(), &[SyntaxModuleItem { key: item, symbol: "Main".into() }])
+        .unwrap_or_else(|error| panic!("{source}: lowers: {error:?}"));
+    artifact.functions[0].function.display().to_string()
+}
+
+#[test]
+fn parsed_string_interpolation_spells_bool_operands() {
+    let clif = lower_main_clif(r#"string Main(bool flag) { return "flag=${flag}"; }"#);
+
+    assert!(!clif.contains("str_from_i64"), "bool must not format as an integer: {clif}");
+    assert!(clif.contains("brif"), "bool selects between its two spellings: {clif}");
+    assert!(clif.contains("str_new"), "the spellings materialize as string literals: {clif}");
+}
+
+#[test]
+fn parsed_string_interpolation_formats_f64_operands_from_their_bits() {
+    let clif = lower_main_clif(r#"string Main(f64 value) { return "value=${value}"; }"#);
+
+    assert!(clif.contains("bitcast.i64"), "the f64 passes to the runtime as its IEEE-754 bits: {clif}");
+    assert!(clif.contains("str_from_f64_bits"), "f64 formats through its own runtime service: {clif}");
+    assert!(!clif.contains("fpromote"), "an f64 is formatted without widening: {clif}");
+    assert!(!clif.contains("str_from_i64"), "f64 must not format as an integer: {clif}");
+    assert!(clif.contains("str_concat"), "string concatenation dispatch must be imported: {clif}");
+}
+
+#[test]
+fn parsed_string_interpolation_formats_f32_operands_through_exact_widening() {
+    let clif = lower_main_clif(r#"string Main(f32 value) { return "value=${value}"; }"#);
+
+    assert!(clif.contains("fpromote.f64"), "the f32 widens exactly to binary64 first: {clif}");
+    assert!(clif.contains("bitcast.i64"), "the widened value passes as its IEEE-754 bits: {clif}");
+    assert!(clif.contains("str_from_f64_bits"), "f32 formats through the binary64 service: {clif}");
+    assert!(!clif.contains("str_from_i64"), "f32 must not format as an integer: {clif}");
+}
+
+#[test]
+fn parsed_string_ordering_lowers_through_str_cmp() {
+    for (operator, condition) in [("<", "slt"), ("<=", "sle"), (">", "sgt"), (">=", "sge")] {
+        let source = format!("bool Main(string a, string b) {{ return a {operator} b; }}");
+        let clif = lower_main_clif(&source);
+        assert!(clif.contains("str_cmp"), "{source}: ordinal comparison service: {clif}");
+        assert!(!clif.contains("str_eq"), "{source}: ordering is not equality: {clif}");
+        assert!(
+            clif.contains(&format!("icmp_imm {condition}")) || clif.contains(&format!("icmp {condition}")),
+            "{source}: {clif}"
+        );
+    }
+}
+
+/// Integer conversions of `f32` and `f64` truncate toward zero and saturate (NaN gives 0,
+/// out-of-range values clamp) for every 0.6 integer width. Signedness follows the semantic
+/// target, so `u16`, `u64`, and `word` saturate as unsigned values.
+#[test]
+fn parsed_float_to_integer_conversions_saturate() {
+    let cases: &[(&str, &str, &[&str], &str)] = &[
+        ("i64", "fcvt_to_sint_sat.i64", &[], "fcvt_to_uint_sat"),
+        ("i32", "fcvt_to_sint_sat.i32", &[], "fcvt_to_uint_sat"),
+        ("i16", "fcvt_to_sint_sat.i32", &["smin", "smax", "ireduce.i16"], "fcvt_to_uint_sat"),
+        ("i8", "fcvt_to_sint_sat.i32", &["smin", "smax", "ireduce.i8"], "fcvt_to_uint_sat"),
+        ("u64", "fcvt_to_uint_sat.i64", &[], "fcvt_to_sint_sat"),
+        ("word", "fcvt_to_uint_sat.i64", &[], "fcvt_to_sint_sat"),
+        ("u32", "fcvt_to_uint_sat.i32", &[], "fcvt_to_sint_sat"),
+        ("u16", "fcvt_to_uint_sat.i32", &["umin", "ireduce.i16"], "fcvt_to_sint_sat"),
+        ("u8", "fcvt_to_uint_sat.i32", &["umin", "ireduce.i8"], "fcvt_to_sint_sat"),
+    ];
+    for source_type in ["f64", "f32"] {
+        for (target, conversion, clamps, wrong_sign) in cases {
+            let source = format!("{target} Main({source_type} v) {{ return {target}(v); }}");
+            let clif = lower_main_clif(&source);
+            assert!(clif.contains(conversion), "{source}: expected {conversion}: {clif}");
+            for clamp in *clamps {
+                assert!(clif.contains(clamp), "{source}: expected {clamp}: {clif}");
+            }
+            assert!(!clif.contains(wrong_sign), "{source}: signedness follows the target: {clif}");
+            assert!(
+                !clif.contains("fcvt_to_sint.") && !clif.contains("fcvt_to_uint."),
+                "{source}: the conversion never traps: {clif}"
+            );
+        }
+    }
+}
+
 #[test]
 fn parsed_pointer_signature_uses_the_target_pointer_type_without_hir() {
     let (input, isa, item) = item_fixture("pointer Echo(pointer value) { return value; }");
@@ -317,7 +402,16 @@ fn canonical_foundation_args_module_emits_only_the_authorized_args_imports() {
     imports.sort_unstable();
     assert_eq!(
         imports,
-        vec!["beskid_rt_v5_args_count", "beskid_rt_v5_args_get", "str_concat", "str_eq", "str_from_i64", "str_new"],
+        vec![
+            "beskid_rt_v5_args_count",
+            "beskid_rt_v5_args_get",
+            "str_cmp",
+            "str_concat",
+            "str_eq",
+            "str_from_f64_bits",
+            "str_from_i64",
+            "str_new"
+        ],
         "canonical Core.Args receives its exact ABI-v5 services plus the always-available string baseline"
     );
 }
@@ -446,7 +540,15 @@ fn canonical_foundation_assert_trigger_failure_imports_only_baseline_strings_and
     imports.sort_unstable();
     assert_eq!(
         imports,
-        vec!["beskid_trap_message", "str_concat", "str_eq", "str_from_i64", "str_new"],
+        vec![
+            "beskid_trap_message",
+            "str_cmp",
+            "str_concat",
+            "str_eq",
+            "str_from_f64_bits",
+            "str_from_i64",
+            "str_new"
+        ],
         "canonical Assert may emit the always-admitted string baseline and its reachable panic service, but no other facade service"
     );
     let trigger = artifact

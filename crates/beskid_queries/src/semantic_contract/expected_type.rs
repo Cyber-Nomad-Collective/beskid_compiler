@@ -8,9 +8,15 @@
 //! node that owns a type requirement:
 //!
 //! - an annotated `let`, an assignment target, a declared `return` type;
+//! - inside a lambda, the function type the lambda's own position declares: a block body's
+//!   `return` and an expression body expect its result (a lambda is never an expectation of its
+//!   own, only through that function type), and an untyped parameter takes its parameter type
+//!   through `lambda_source_identity`;
 //! - the matching parameter of a resolved callee, with the callee's generic parameters bound by
 //!   its explicit type arguments or its instantiated nominal receiver, never by inference from
-//!   the other arguments (that would be a cycle through argument typing);
+//!   the other arguments (that would be a cycle through argument typing); the parameter of a
+//!   call through a function value is that function type's parameter; a trailing argument of a
+//!   `bulk T[]` callee expects the element type;
 //! - the declared payload or field type of an enum constructor or struct literal, with the
 //!   declaration's generic parameters bound by the written type arguments;
 //! - the element type of an array literal or the match expression of an arm, each forwarding
@@ -141,7 +147,7 @@ fn expected_type_for(
 
     if let Some(call) = node.of::<syntax::CallExpression>() {
         let position = call.args.iter().position(|argument| is_child(DynNodeRef::from(argument))).ok_or_else(unavailable)?;
-        let identity = call_argument_identity(db, program, index, parent_key, call, position, &environment)?;
+        let identity = call_argument_identity(db, program, index, parent_key, call, position, &environment, enclosing)?;
         let position = u32::try_from(position).map_err(|_| unavailable())?;
         return Ok(ExpectedType::new(ExpectedTypeContext::CallArgument { call: parent_key, position }, identity));
     }
@@ -183,7 +189,17 @@ fn expected_type_for(
         .ok_or_else(unavailable)?;
         let item_key = AstNodeKey { node: item, ..key };
         let item_node = index.node_at(program, item).ok_or_else(unavailable)?;
-        // A lambda's result type is inferred from its body, so it is never an expectation.
+        if item_node.of::<syntax::LambdaExpression>().is_some() {
+            // A `return` in a block-bodied lambda leaves the lambda; its value is checked against
+            // the result of the function type the lambda's own position declares. A lambda never
+            // supplies an expectation of its own.
+            if !lambda_has_statement_body(program, index, item) {
+                return Err(unavailable());
+            }
+            let outer = forwarded(db, program, index, item_key, enclosing)?;
+            let (_, result) = outer.function_identity().ok_or_else(unavailable)?;
+            return Ok(ExpectedType::new(ExpectedTypeContext::Return { item: item_key }, result.clone()));
+        }
         let return_type = item_node
             .of::<syntax::FunctionDefinition>()
             .and_then(|function| function.return_type.as_ref())
@@ -191,6 +207,18 @@ fn expected_type_for(
             .ok_or_else(unavailable)?;
         let identity = generic_source_type_identity_with_substitutions(db, item_key, &return_type.node, &environment)?;
         return Ok(ExpectedType::new(ExpectedTypeContext::Return { item: item_key }, identity));
+    }
+
+    if let Some(lambda) = node.of::<syntax::LambdaExpression>() {
+        // The expression body of a lambda is checked against the result of the function type the
+        // lambda's position declares. A block body forwards nothing: its `return`s carry the
+        // expectation.
+        if !is_child(DynNodeRef::from(lambda.body.as_ref())) || index.kind(child) == Some(NodeKind::BlockExpression) {
+            return Err(unavailable());
+        }
+        let outer = forwarded(db, program, index, parent_key, enclosing)?;
+        let (_, result) = outer.function_identity().ok_or_else(unavailable)?;
+        return Ok(ExpectedType::new(ExpectedTypeContext::LambdaBody { lambda: parent_key }, result.clone()));
     }
 
     if let Some(array) = node.of::<syntax::ArrayLiteralExpression>() {
@@ -307,8 +335,10 @@ fn unsuffixed_float_literal(db: &dyn Db, key: AstNodeKey) -> Result<bool, Semant
 /// A direct callee contributes its written parameter syntax, resolved in the callee's own unit.
 /// Its generic parameters are bound only by this call's explicit type arguments or by the
 /// instantiated nominal receiver of a method call; a parameter that still names an unbound
-/// generic stays unavailable rather than being inferred from the sibling arguments. Runtime,
-/// manifest, corelib-service and native Mod callables contribute their ABI parameter.
+/// generic stays unavailable rather than being inferred from the sibling arguments. A call
+/// through a function value contributes the parameter of the callee's source function type.
+/// Runtime, manifest, corelib-service and native Mod callables contribute their ABI parameter.
+#[expect(clippy::too_many_arguments, reason = "one walk carries the call, its position and both environments")]
 fn call_argument_identity(
     db: &dyn Db,
     program: &Program,
@@ -317,6 +347,7 @@ fn call_argument_identity(
     call: &syntax::CallExpression,
     position: usize,
     environment: &Environment<'_>,
+    enclosing: Option<&GenericSpecializationInstance>,
 ) -> Result<GenericSourceTypeIdentity, SemanticError> {
     // `u8(97)` converts its operand; it does not check it against `u8`.
     if primitive_numeric_conversion_target(call).is_some() {
@@ -335,6 +366,16 @@ fn call_argument_identity(
     match lowering {
         CallLowering::Direct(declaration) => {
             direct_parameter_identity(db, call_key, call, declaration, position, environment)
+        }
+        CallLowering::FunctionValue(callee) => {
+            let identity = specialized_source_expression_identity(db, callee, enclosing)?;
+            let GenericSourceTypeIdentity::Function { parameters, .. } = identity else {
+                return Err(unavailable());
+            };
+            if parameters.len() != call.args.len() {
+                return Err(unavailable());
+            }
+            parameters.get(position).cloned().ok_or_else(unavailable)
         }
         CallLowering::Runtime(_)
         | CallLowering::ManifestBuiltin(_)
@@ -391,20 +432,40 @@ fn direct_parameter_identity(
         .or_else(|| callee.of::<syntax::MethodDefinition>().map(|method| &method.parameters))
         .or_else(|| callee.of::<syntax::ContractMethodSignature>().map(|method| &method.parameters))
         .ok_or_else(unavailable)?;
-    if parameters.len() != call.args.len() {
-        return Err(unavailable());
-    }
-    let parameter = &parameters.get(position).ok_or_else(unavailable)?.node;
-    // A `bulk T[]` parameter packs the written arguments; the pack, not one argument, has the
-    // declared type.
-    if parameter.bulk {
-        return Err(unavailable());
-    }
+    // A trailing `bulk T[]` parameter takes every remaining written argument as one `T`; any
+    // other parameter takes exactly its position.
+    let bulk_element = match parameters.split_last() {
+        Some((last, fixed)) if last.node.bulk => {
+            if call.args.len() < fixed.len() {
+                return Err(unavailable());
+            }
+            let syntax::Type::Array(element) = &last.node.ty.node else {
+                return Err(unavailable());
+            };
+            (position >= fixed.len()).then_some(element.as_ref())
+        }
+        _ => {
+            if parameters.len() != call.args.len() {
+                return Err(unavailable());
+            }
+            None
+        }
+    };
+    let parameter_type = match bulk_element {
+        Some(element) => &element.node,
+        None => {
+            let parameter = &parameters.get(position).ok_or_else(unavailable)?.node;
+            if parameter.bulk {
+                return Err(unavailable());
+            }
+            &parameter.ty.node
+        }
+    };
     let generic_names = generic_callable_parameters(db, declaration).map(|(names, _)| names).unwrap_or_default();
     let mentioned = generic_names
         .iter()
         .copied()
-        .filter(|name| type_syntax_mentions_generic_parameter(&parameter.ty.node, name))
+        .filter(|name| type_syntax_mentions_generic_parameter(parameter_type, name))
         .collect::<Vec<_>>();
     let mut bindings = Vec::<(String, GenericSourceTypeIdentity)>::new();
     if !mentioned.is_empty() {
@@ -431,7 +492,7 @@ fn direct_parameter_identity(
         }
     }
     let callee_environment = bindings.iter().map(|(name, identity)| (name.as_str(), identity)).collect::<Environment<'_>>();
-    generic_source_type_identity_with_substitutions(db, declaration, &parameter.ty.node, &callee_environment)
+    generic_source_type_identity_with_substitutions(db, declaration, parameter_type, &callee_environment)
 }
 
 fn enum_payload_identity(

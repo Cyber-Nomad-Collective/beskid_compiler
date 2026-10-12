@@ -219,6 +219,9 @@ impl SemanticIssueKind {
             }
             Self::TypeUnknownCallTarget => "unknown call target".to_string(),
             Self::TypeInvalidBinaryOp => "invalid binary operation".to_string(),
+            Self::TypeStringConcatOperandNotConvertible { found } => {
+                format!("a value of type `{found}` cannot be concatenated or interpolated into a string")
+            }
             Self::TypeInvalidUnaryOp => "invalid unary operation".to_string(),
             Self::TypeNonBoolCondition => "non-boolean condition".to_string(),
             Self::TypeUnsupportedExpression => "unsupported expression".to_string(),
@@ -238,6 +241,9 @@ impl SemanticIssueKind {
             Self::DeadCollectionGrowth => "the grown handle of a `mut T[]` parameter is discarded and the body never \
                                            publishes the parameter, so the caller keeps the ungrown array"
                 .to_string(),
+            Self::LambdaCapturesStackReference { name } => {
+                format!("lambda cannot capture `{name}`: it is a mutable binding or a native pointer")
+            }
             Self::TypeInvalidEventInvocationScope => {
                 "events can only be invoked from methods on their declaring type".to_string()
             }

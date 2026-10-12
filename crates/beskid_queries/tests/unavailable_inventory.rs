@@ -68,6 +68,8 @@ const KNOWN_GAPS: &[&str] = &[
     "enum_match_specialization",
     "expected_type",
     "for_iterator_element_type",
+    "function_item_value",
+    "function_value_call",
     "generic_nominal_method_receiver",
     "generic_receiver_instantiation",
     "generic_source_type_identity",

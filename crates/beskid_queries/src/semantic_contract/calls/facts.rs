@@ -41,9 +41,12 @@ pub(in crate::semantic_contract) fn primitive_numeric_conversion_tracked(
                     (SemanticTypeId::U32, SemanticTypeId::CHAR) | (SemanticTypeId::CHAR, SemanticTypeId::U32)
                 )
             } else {
+                // Integer sources convert to every numeric target. A float source converts to the
+                // other float width, or to an integer target with saturating semantics (NaN gives 0,
+                // out-of-range values clamp to the target's minimum or maximum).
                 primitive_integer(from)
                     || (matches!(from, SemanticTypeId::F32 | SemanticTypeId::F64)
-                        && matches!(to, SemanticTypeId::F32 | SemanticTypeId::F64))
+                        && (primitive_integer(to) || matches!(to, SemanticTypeId::F32 | SemanticTypeId::F64)))
             })
             .then_some(PrimitiveNumericConversion { from, to })
             .ok_or_else(|| SemanticError::unavailable("primitive_numeric_conversion")),

@@ -70,6 +70,7 @@ fn trace_node_facts(
                 ("NativeModCallback", Some(DirectCallee::NativeModCallback(callback.wrapper())))
             }
             CallLowering::Dynamic => ("Dynamic", None),
+            CallLowering::FunctionValue(_) => ("FunctionValue", None),
             CallLowering::ManifestBuiltin(builtin) => {
                 ("ManifestBuiltin", Some(DirectCallee::corelib_service(builtin.symbol)))
             }

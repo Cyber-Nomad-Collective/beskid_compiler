@@ -14867,6 +14867,38 @@
       ]
     },
     {
+      "name": "__str_cmp",
+      "adapter": "str_cmp",
+      "params": [
+        {
+          "name": "left",
+          "type": "pointer"
+        },
+        {
+          "name": "right",
+          "type": "pointer"
+        }
+      ],
+      "result": "i64",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "str_cmp",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "str_cmp",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "str_cmp",
+          "osImports": []
+        }
+      ]
+    },
+    {
       "name": "__str_concat",
       "adapter": "str_concat",
       "params": [
@@ -14958,6 +14990,34 @@
         {
           "target": "x86_64-unknown-linux-gnu",
           "implementation": "str_from_bytes_utf8",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__str_from_f64_bits",
+      "adapter": "str_from_f64_bits",
+      "params": [
+        {
+          "name": "bits",
+          "type": "i64"
+        }
+      ],
+      "result": "pointer",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "str_from_f64_bits",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "str_from_f64_bits",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "str_from_f64_bits",
           "osImports": []
         }
       ]

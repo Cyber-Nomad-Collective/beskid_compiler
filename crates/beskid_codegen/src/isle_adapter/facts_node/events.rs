@@ -4,27 +4,13 @@ impl SyntaxNodeFacts<'_> {
     pub(super) fn event_handler_local_impl(&self, key: AstNodeKey) -> Option<beskid_isle::EventHandlerLocalPlan> {
         let handler = self.query(beskid_queries::event_handler_lambda_for_local(self.db, key))?;
         let lambda = handler.lambda;
-        let signature = handler.signature;
         let entry = self.event_lambda_entry_impl(lambda)?;
-        let parameters = signature
-            .parameters
-            .iter()
-            .copied()
-            .map(|ty| map_signature_type(self.isa?, ty))
-            .collect::<Option<Vec<_>>>()?;
-        let result =
-            if matches!(signature.result, beskid_queries::SemanticTypeId::UNIT | beskid_queries::SemanticTypeId::NEVER)
-            {
-                None
-            } else {
-                Some(map_signature_type(self.isa?, signature.result)?)
-            };
         Some(beskid_isle::EventHandlerLocalPlan {
             lambda,
             trampoline: entry.trampoline,
             closure_environment: entry.closure_environment,
-            parameters: parameters.into(),
-            result,
+            parameters: entry.parameters.into(),
+            result: entry.result,
         })
     }
 

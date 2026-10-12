@@ -57,9 +57,16 @@ pub(in crate::semantic_contract) fn generic_source_expression_identity(
             .unwrap_or_else(|| constructor.path.node.type_path.node.clone());
         return generic_source_path_identity(db, normalized_key, &path);
     }
+    if node.of::<beskid_analysis::syntax::LambdaExpression>().is_some() {
+        return lambda_source_identity(db, program, index, normalized_key);
+    }
     if let Some(path) = node.of::<beskid_analysis::syntax::PathExpression>() {
         if let Ok(Some(access)) = aggregate_field_access(db, normalized_key) {
             return generic_source_aggregate_field_identity(db, &access);
+        }
+        // A named function item read as a value has the function type of its declaration.
+        if let Ok(Some(value)) = function_item_value(db, normalized_key) {
+            return function_item_value_identity(db, &value);
         }
         if let [segment] = path.path.node.segments.as_slice()
             && segment.node.type_args.is_empty()
@@ -131,8 +138,17 @@ pub(in crate::semantic_contract) fn generic_source_expression_identity(
         if let Some(conversion) = primitive_numeric_conversion(db, normalized_key)? {
             return Ok(GenericSourceTypeIdentity::Abi(conversion.to));
         }
-        if let Some(CallLowering::Direct(declaration)) = call_lowering(db, normalized_key)? {
-            return generic_source_callable_result_identity(db, normalized_key, declaration);
+        match call_lowering(db, normalized_key)? {
+            Some(CallLowering::Direct(declaration)) => {
+                return generic_source_callable_result_identity(db, normalized_key, declaration);
+            }
+            // A call through a function value returns that function type's result.
+            Some(CallLowering::FunctionValue(_)) => {
+                return function_value_call(db, normalized_key)?.map(|call| call.result_identity).ok_or_else(|| {
+                    source_expression_unavailable(db, normalized_key, "function value call has no signature")
+                });
+            }
+            _ => {}
         }
     }
 

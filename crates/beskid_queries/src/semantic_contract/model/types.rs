@@ -154,6 +154,10 @@ pub struct TypedArrayAllocation {
 pub enum CallLowering {
     Direct(AstNodeKey),
     Dynamic,
+    /// An indirect call through the closure record a function-typed callee expression evaluates
+    /// to. The key is the normalized callee expression: a function-typed local or parameter, a
+    /// function-typed field projection, or any expression whose source type is a function type.
+    FunctionValue(AstNodeKey),
     ManifestBuiltin(ManifestBuiltin),
     Runtime(RuntimeIntrinsic),
     CorelibService(CorelibService),

@@ -124,9 +124,16 @@ fn explicit_generic_call_arguments_substitute_the_callee_type_parameter() {
 }
 
 #[test]
-fn a_bulk_parameter_and_a_numeric_conversion_supply_no_argument_expectation() {
+fn a_trailing_bulk_argument_expects_the_element_and_a_numeric_conversion_supplies_nothing() {
+    // Every trailing argument of a `bulk u8[]` callee is one `u8`; the callee receives the pack.
     let bulk = Fixture::new("unit Pack(bulk u8[] values) { return; } unit Main() { Pack(1, 2); return; }");
-    assert_unavailable(expected_type(&bulk.db, bulk.literal(0)));
+    let first = bulk.expected(bulk.literal(0));
+    assert!(matches!(first.context, ExpectedTypeContext::CallArgument { position: 0, .. }), "{first:?}");
+    assert_eq!(first.abi_type(), SemanticTypeId::U8);
+    assert_eq!(bulk.integer_abi(bulk.literal(1)), Some(SemanticTypeId::U8));
+    // A generic element is never inferred from the sibling arguments.
+    let generic = Fixture::new("T First<T>(bulk T[] values) { return values[0]; } i64 Main() { return First(1, 2); }");
+    assert_unavailable(expected_type(&generic.db, generic.literal(1)));
 
     let conversion = Fixture::new("u8 Main() { return u8(300); }");
     assert_unavailable(expected_type(&conversion.db, conversion.literal(0)));
@@ -280,3 +287,52 @@ fn nodes_that_are_not_bare_integers_have_no_contextual_integer_fact() {
     assert_eq!(fixture.integer_abi(path), None, "a local path has no integer-literal fact, available or not");
     assert_eq!(fixture.expected(path).abi_type(), SemanticTypeId::U8);
 }
+
+#[test]
+fn a_block_bodied_lambda_return_expects_the_declared_function_result() {
+    let fixture = Fixture::new("u8 Pick(u8 v, (u8) => u8 f) { return f(v); } u8 Main() { return Pick(9, (u8 x) => { return 2; }); }");
+    let lambda = fixture.key(NodeKind::LambdaExpression, 0);
+    // The lambda itself is checked against the callee parameter `(u8) => u8`.
+    let own = fixture.expected(lambda);
+    assert!(matches!(own.context, ExpectedTypeContext::CallArgument { position: 1, .. }), "{own:?}");
+    let signature = own.function_signature().expect("a function-typed expectation");
+    assert_eq!(signature.parameters.as_ref(), &[SemanticTypeId::U8]);
+    assert_eq!(signature.result, SemanticTypeId::U8);
+    // `return 2` leaves the lambda and takes that function type's result, never the enclosing `Main`.
+    let returned = fixture.expected(fixture.literal(1));
+    assert!(matches!(returned.context, ExpectedTypeContext::Return { item } if item == lambda), "{returned:?}");
+    assert_eq!(returned.abi_type(), SemanticTypeId::U8);
+    assert_eq!(fixture.integer_abi(fixture.literal(1)), Some(SemanticTypeId::U8));
+}
+
+#[test]
+fn an_expression_bodied_lambda_body_expects_the_declared_function_result() {
+    let fixture = Fixture::new("u8 Main() { (i64) => u8 pick = (i64 x) => 1; return pick(0); }");
+    let lambda = fixture.key(NodeKind::LambdaExpression, 0);
+    let body = fixture.expected(fixture.literal(0));
+    assert!(matches!(body.context, ExpectedTypeContext::LambdaBody { lambda: owner } if owner == lambda), "{body:?}");
+    assert_eq!(body.abi_type(), SemanticTypeId::U8);
+    assert_eq!(fixture.integer_abi(fixture.literal(0)), Some(SemanticTypeId::U8));
+    // The call through the local checks its argument against the function type's parameter.
+    let argument = fixture.expected(fixture.literal(1));
+    assert!(matches!(argument.context, ExpectedTypeContext::CallArgument { position: 0, .. }), "{argument:?}");
+    assert_eq!(argument.abi_type(), SemanticTypeId::I64);
+}
+
+#[test]
+fn an_untyped_lambda_parameter_takes_the_expected_parameter_type_and_nothing_without_one() {
+    let fixture =
+        Fixture::new("i64 Apply(i64 v, (i64) => i64 f) { return f(v); } i64 Main() { return Apply(5, x => x + 1); }");
+    // Path expressions in order: `f`, `v` (Apply body), `Apply`, `x` (Main body).
+    let parameter_read = fixture.key(NodeKind::PathExpression, 3);
+    assert_eq!(abi_type(&fixture.db, parameter_read).expect("parameter ABI query"), Some(SemanticTypeId::I64));
+    let lambda = fixture.key(NodeKind::LambdaExpression, 0);
+    let signature = beskid_queries::closure_signature(&fixture.db, lambda).expect("closure query").expect("signature");
+    assert_eq!(signature.callable.parameters.as_ref(), &[SemanticTypeId::I64]);
+    assert_eq!(signature.callable.result, SemanticTypeId::I64);
+
+    let orphan = Fixture::new("i64 Main() { let f = x => 1; return 0; }");
+    assert_unavailable(expected_type(&orphan.db, orphan.key(NodeKind::LambdaExpression, 0)));
+    assert_unavailable(beskid_queries::closure_signature(&orphan.db, orphan.key(NodeKind::LambdaExpression, 0)));
+}
+

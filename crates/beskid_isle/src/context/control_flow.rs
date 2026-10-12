@@ -222,11 +222,15 @@ macro_rules! generated_control_flow_methods {
                     self.emit_event_handler_local(key, plan)?;
                     return Some(());
                 }
-                // Lambda locals are syntax-level bindings. Calls through them are resolved to
-                // their source lambda and lowered at the call site, where captured environments
-                // can be rooted for the duration of the call; closures are not scalar locals.
-                self.facts.lambda_entry(initializer)?;
-                return Some(());
+                if !self.facts.lambda_value_required(initializer)? {
+                    // An immutable lambda local used only as a callee stays a syntax-level
+                    // binding: each call lowers its source lambda inline at the call site.
+                    self.facts.lambda_entry(initializer)?;
+                    return Some(());
+                }
+                let record = generated::constructor_lower_expression(self, initializer)?;
+                let pointer = dispatch::pointer_type(self.frontend_config);
+                return self.bind_local(slot, record, pointer, ManagedReferenceFact::GcManaged);
             }
             let value_type = self.facts.scalar_type(key)?;
             let managed_reference = self.local_managed_reference(key, value_type)?;
@@ -485,6 +489,11 @@ macro_rules! generated_control_flow_methods {
             if let Some(value) = self.facts.constant_integer(key) {
                 let value_type = self.facts.scalar_type(key)?;
                 return Some(self.builder.ins().iconst(value_type, value));
+            }
+            // A named function read as a value is a closure record with the item's own entry
+            // and a null environment, allocated where the path is evaluated.
+            if let Some(value) = self.facts.function_item_value(key) {
+                return self.emit_closure_record(key, &value.callee, None, &value.parameters, value.result);
             }
             let slot = self.facts.local_slot(key)?;
             let binding = self.locals.get(&slot).copied()?;

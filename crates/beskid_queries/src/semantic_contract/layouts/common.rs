@@ -20,8 +20,11 @@ pub(in crate::semantic_contract) fn aggregate_field_layout(
             resolve_nominal_layout_declaration(db, program, index, key, &path.node)
                 .ok_or_else(|| SemanticError::unavailable("aggregate_layout"))?,
         ),
-        // Arrays are heap-backed reference values in ABI v5, including empty literal payloads.
-        beskid_analysis::syntax::Type::Array(_) => AggregateFieldShape::ManagedReference(SemanticTypeId::POINTER),
+        // Arrays are heap-backed reference values in ABI v5, including empty literal payloads, and
+        // a function value is its GC-managed closure record.
+        beskid_analysis::syntax::Type::Array(_) | beskid_analysis::syntax::Type::Function { .. } => {
+            AggregateFieldShape::ManagedReference(SemanticTypeId::POINTER)
+        }
         _ => return Err(SemanticError::unavailable("aggregate_layout")),
     };
     Ok((Arc::from(field.node.name.node.name.as_str()), shape))
@@ -255,11 +258,10 @@ pub(in crate::semantic_contract) fn abi_local_declaration_type(
             .map(|parameter| abi_type_from_syntax(db, key, &parameter.ty.node)),
         beskid_analysis::syntax_query::NodeKind::LambdaParameter => {
             index.node_at(program, parent)?.of::<beskid_analysis::syntax::LambdaParameter>().map(|parameter| {
-                parameter
-                    .ty
-                    .as_ref()
-                    .ok_or_else(|| SemanticError::unavailable("abi_type"))
-                    .and_then(|ty| abi_type_from_syntax(db, key, &ty.node))
+                parameter.ty.as_ref().map_or_else(
+                    || untyped_lambda_parameter_type(db, program, index, key, parent),
+                    |ty| abi_type_from_syntax(db, key, &ty.node),
+                )
             })
         }
         beskid_analysis::syntax_query::NodeKind::LetStatement => {

@@ -79,7 +79,12 @@ pub(super) fn collect_expression_obligations(
         {
             owner = parent_node(index, candidate);
         }
-        if owner.is_some_and(|owner| matches!(index.kind(owner), Some(NodeKind::LetStatement | NodeKind::ReturnStatement)))
+        // An annotated local or a declared function-typed return supplies the signature through
+        // `expected_type`; only a position proven to declare no function type is a finding.
+        let lambda_key = AstNodeKey { node: lambda, ..key };
+        let expected_function = matches!(expected_type(db, lambda_key), Ok(Some(expected)) if expected.function_signature().is_some());
+        if !expected_function
+            && owner.is_some_and(|owner| matches!(index.kind(owner), Some(NodeKind::LetStatement | NodeKind::ReturnStatement)))
         {
             findings.push(GateObligation {
                 kind: GateObligationKind::MissingTypeAnnotation { name: Arc::from(parameter.name.node.name.as_str()) },
