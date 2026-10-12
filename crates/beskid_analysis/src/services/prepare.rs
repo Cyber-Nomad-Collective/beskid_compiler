@@ -8,12 +8,10 @@ mod spine;
 pub use diagnostics::resolved_input_from_plan;
 use diagnostics::{
     collect_analyzer_diagnostics, collect_analyzer_fixes, dedupe_diagnostics, fact_findings_to_diagnostics,
-    merge_fact_diagnostics, typed_fingerprint, typed_fingerprint_types,
+    merge_fact_diagnostics,
 };
 use entry_points::session_fingerprint_field;
-pub use entry_points::{
-    SemanticFactAuthority, SemanticFactFinding, prepare_compilation, prepare_compilation_with_fact_authority,
-};
+pub use entry_points::{SemanticFactAuthority, SemanticFactFinding, prepare_compilation_with_fact_authority};
 pub use options::{PrepareOptions, PreparedCompilation};
 use spine::run_prepare_spine;
 

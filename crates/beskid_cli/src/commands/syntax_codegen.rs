@@ -10,7 +10,7 @@ use beskid_pipeline::{PipelineObserver, observe_phase_result, phases::CODEGEN_CL
 /// snapshot intact preserves post-`mod` syntax rewrites and the generation-safe identities used
 /// by `TypedProgram`, `CodegenInput`, and ISLE emission.
 pub(super) fn lower_prepared_entrypoint(
-    front: &beskid_analysis::services::FrontEndTypedResult,
+    front: &beskid_analysis::services::ExecutableFrontEnd,
     entrypoint: &str,
     target_triple: Option<&str>,
     pipeline: Option<&dyn PipelineObserver>,
@@ -24,7 +24,7 @@ pub(super) fn lower_prepared_entrypoint(
 /// Lower the library output (shared, static, object) of a prepared frontend snapshot through the
 /// AOT target ISA: every item of the units the library owns plus the dependency items they reach.
 pub(super) fn lower_prepared_module(
-    front: &beskid_analysis::services::FrontEndTypedResult,
+    front: &beskid_analysis::services::ExecutableFrontEnd,
     target_triple: Option<&str>,
     pipeline: Option<&dyn PipelineObserver>,
 ) -> Result<beskid_codegen::CodegenArtifact> {

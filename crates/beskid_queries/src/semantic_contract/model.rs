@@ -25,7 +25,7 @@ pub use errors::{GenericBindingConflict, GenericBoundViolation, SemanticError, S
 pub use events::{EventHandlerLocalFact, EventOperationFact, EventOperationKind};
 pub use expected::{ExpectedType, ExpectedTypeContext};
 pub use facts::{
-    BulkParameterFact, CastIntent, ControlFlow, ForIteratorFact, ItemSignature, PrimitiveNumericConversion,
+    BulkParameterFact, CastIntent, ControlFlow, ForIterableSource, ForIteratorFact, ItemSignature, PrimitiveNumericConversion,
     RangeForFact, TryExpressionFact,
 };
 pub(crate) use generics::GenericSourceTypeIdentity;

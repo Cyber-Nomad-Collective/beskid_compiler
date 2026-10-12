@@ -352,6 +352,9 @@ mod parity_values;
 #[cfg(test)]
 #[path = "entry/parity_resolution.rs"]
 mod parity_resolution;
+#[cfg(test)]
+#[path = "entry/parity_front_end.rs"]
+mod parity_front_end;
 
 pub fn typed_entry_bundle(
     db: &mut BeskidDatabase,

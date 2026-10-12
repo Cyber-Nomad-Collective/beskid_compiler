@@ -32,7 +32,7 @@ impl SyntaxNodeFacts<'_> {
             _ => {}
         }
         if self.query(node_kind(self.db, key)) == Some(beskid_queries::IndexedNodeKind::ForStatement) {
-            return self.query(for_iterator_fact(self.db, key)).map(|fact| fact.element_type);
+            return self.for_iterator_in_context(key).map(|fact| fact.element_type);
         }
         if let Some(binding) = self.specialized_pattern_binding(key) {
             return Some(match binding.payload {

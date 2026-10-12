@@ -178,6 +178,11 @@ pub trait NodeFacts {
     fn range_fact(&self, _key: AstNodeKey) -> Option<RangeFact> {
         None
     }
+    /// The array iterated by a `ForStatement` node, when its iterable's source identity is an
+    /// array; `None` for `range` loops and for iterables with no array identity.
+    fn array_for_fact(&self, _key: AstNodeKey) -> Option<ArrayForFact> {
+        None
+    }
     fn spawn_entry(&self, _key: AstNodeKey) -> Option<SpawnEntry> {
         None
     }

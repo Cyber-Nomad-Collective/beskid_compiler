@@ -21,11 +21,12 @@ pub struct AnalysisOptions {
     pub program_assembly_module_index: Option<ModuleIndex>,
     /// Entry `.bd` path paired with [`Self::program_assembly_module_index`].
     pub entry_source_path: Option<PathBuf>,
-    /// Full assembly for dependency-aware type checking in staged rules.
+    /// Full assembly for assembly-aware structural rules (module lookup, compiler-issued items).
     pub program_assembly: Option<crate::projects::ProgramAssembly>,
-    /// A project preparation owner will validate postfix try with its generation-bound
-    /// semantic authority after the final source rewrite, rather than the local precheck.
-    pub defer_try_diagnostics: bool,
+    /// The program entry function of the unit under analysis (`Main` in the entry unit of an
+    /// App or Test target). The host invokes it, so it is never an unused private item. `None`
+    /// for sibling units, entry-less libraries, and analyses without a target.
+    pub program_entry_function: Option<String>,
 }
 
 impl Default for AnalysisOptions {
@@ -37,7 +38,7 @@ impl Default for AnalysisOptions {
             program_assembly_module_index: None,
             entry_source_path: None,
             program_assembly: None,
-            defer_try_diagnostics: false,
+            program_entry_function: None,
         }
     }
 }

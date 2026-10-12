@@ -84,6 +84,20 @@ pub(in crate::semantic_contract) fn managed_reference_kind_tracked(
                         .and_then(|kind| kind.ok_or_else(|| SemanticError::unavailable("managed_reference_kind"))),
                 );
             }
+            // A `for` variable is classified by the elements its iterable yields.
+            if index
+                .node_at(program, parent)
+                .and_then(|parent| parent.of::<beskid_analysis::syntax::ForStatement>())
+                .is_some()
+            {
+                return Some(for_iterator_fact(db, AstNodeKey { node: parent, ..key }).and_then(|fact| {
+                    fact.map(|fact| match fact.source {
+                        ForIterableSource::Range => ManagedReferenceKind::NativeOrScalar,
+                        ForIterableSource::Array { element_managed } => element_managed,
+                    })
+                    .ok_or_else(|| SemanticError::unavailable("managed_reference_kind"))
+                }));
+            }
         }
         if node.of::<beskid_analysis::syntax::ArrayLiteralExpression>().is_some()
             || node.of::<beskid_analysis::syntax::StructLiteralExpression>().is_some()

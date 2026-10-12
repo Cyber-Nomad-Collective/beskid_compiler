@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 use beskid_analysis::{
+    SemanticDiagnostic,
     projects::{UnresolvedDependencyPolicy, WorkspacePrepareOptions},
     services::{self, ResolvedProject},
     syntax::{Program, Spanned},
@@ -97,16 +98,39 @@ pub fn run_semantic_analysis_gate(
                         with_semantic_diagnostics: true,
                         ..Default::default()
                     },
-                    dependency_typing: services::DependencyTypingPolicy::FullClosure,
                     native_mod_adapter_sources: false,
                 },
                 pipeline,
             )?;
             diagnostics
         } else {
-            services::analyze_program(path, source)?
+            standalone_semantic_diagnostics(path, source, pipeline)?
         };
         session.report_semantic_diagnostics(&diagnostics);
         services::require_no_semantic_errors(&diagnostics).map_err(anyhow::Error::from)
     })
+}
+
+/// Diagnostics of a standalone `.bd` file that belongs to no project: the same query gate judges
+/// it as a project entry, over a synthetic single-file `App` plan with no dependencies and no
+/// Mods. A reserved keyword is reported before parsing, as for every source.
+pub fn standalone_semantic_diagnostics(
+    path: &Path,
+    source: &str,
+    pipeline: Option<&dyn PipelineObserver>,
+) -> Result<Vec<SemanticDiagnostic>> {
+    if let Some(diagnostic) = services::reserved_keyword_diagnostic(path, source) {
+        return Ok(vec![diagnostic]);
+    }
+    let plan = services::synthetic_compile_plan_for_source(path);
+    let resolved = services::resolved_input_from_plan(path.to_path_buf(), source.to_string(), plan, None, None);
+    let (_, diagnostics, _fixes) = beskid_queries::prepare_compilation_diagnostics(
+        &resolved,
+        services::PrepareOptions {
+            front_end: services::FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
+            ..services::PrepareOptions::without_mods()
+        },
+        pipeline,
+    )?;
+    Ok(diagnostics)
 }

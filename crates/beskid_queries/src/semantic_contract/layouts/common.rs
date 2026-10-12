@@ -275,6 +275,11 @@ pub(in crate::semantic_contract) fn abi_local_declaration_type(
                 )
             })
         }
+        // A `for` variable has the element ABI of its iterable (`for_iterator_fact`).
+        beskid_analysis::syntax_query::NodeKind::ForStatement => Some(
+            for_iterator_fact(db, AstNodeKey { node: parent, ..key })
+                .and_then(|fact| fact.map(|fact| fact.element_type).ok_or_else(|| SemanticError::unavailable("abi_type"))),
+        ),
         _ => None,
     }
 }

@@ -7,8 +7,7 @@ use beskid_analysis::resolve::{
     ItemId, Resolution, SymbolId, SymbolRegistry, canonical_item_id, item_id_for_symbol, qualified_name,
     symbol_for_item,
 };
-use beskid_analysis::services::FrontEndTypedResult;
-use beskid_analysis::types::{TypeResult, UnitTypeSurface};
+use beskid_analysis::services::ExecutableFrontEnd;
 
 #[derive(Debug, Clone)]
 pub struct SharedResolution(pub Arc<Resolution>);
@@ -51,56 +50,13 @@ impl std::ops::Deref for SharedResolution {
     }
 }
 
+/// The executable front end of one prepared entry, shared between the entry session cache and
+/// its consumers.
 #[derive(Debug, Clone)]
-pub struct SharedTypeResult(pub Arc<TypeResult>);
-
-impl std::ops::Deref for SharedTypeResult {
-    type Target = TypeResult;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct SharedUnitResolution(pub Arc<Resolution>);
-
-impl From<Arc<Resolution>> for SharedUnitResolution {
-    fn from(value: Arc<Resolution>) -> Self {
-        Self(value)
-    }
-}
-
-impl std::ops::Deref for SharedUnitResolution {
-    type Target = Resolution;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct SharedUnitTypeSurface(pub Arc<UnitTypeSurface>);
-
-impl From<Arc<UnitTypeSurface>> for SharedUnitTypeSurface {
-    fn from(value: Arc<UnitTypeSurface>) -> Self {
-        Self(value)
-    }
-}
-
-impl std::ops::Deref for SharedUnitTypeSurface {
-    type Target = UnitTypeSurface;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct SharedFrontEnd(pub Arc<FrontEndTypedResult>);
+pub struct SharedFrontEnd(pub Arc<ExecutableFrontEnd>);
 
 impl std::ops::Deref for SharedFrontEnd {
-    type Target = FrontEndTypedResult;
+    type Target = ExecutableFrontEnd;
 
     fn deref(&self) -> &Self::Target {
         &self.0

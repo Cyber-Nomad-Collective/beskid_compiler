@@ -40,8 +40,8 @@ pub use array_static::{
     ABI_V5_ARRAY_ALLOCATE_ROOTED, ABI_V5_ARRAY_CONSTRUCTION_FINISH, ArrayStaticPlan, emit_array_static_data,
 };
 pub use artifact::{
-    CodegenArtifact, CodegenContext, ExportEntry, ExternImport, LoweredFunction, TypeDescriptorData,
-    internal_link_symbol, object_link_symbol,
+    CodegenArtifact, CodegenContext, ExportEntry, ExternImport, LoweredFunction, internal_link_symbol,
+    object_link_symbol,
 };
 pub use artifact_validation::{
     MissingSymbol, referenced_extern_imports, referenced_trusted_extern_imports, validate_artifact,
@@ -63,8 +63,8 @@ pub use isle_adapter::{
 };
 
 pub use module_emission::{
-    DescriptorHandles, ModuleEmissionSession, OPTIONAL_EXTERN_ABSENT_SYMBOL, SyntaxModuleItem, emit_closure_static_plans,
-    emit_string_literals, emit_syntax_program_in_session, emit_type_descriptors, lower_syntax_program,
+    ModuleEmissionSession, OPTIONAL_EXTERN_ABSENT_SYMBOL, SyntaxModuleItem, emit_closure_static_plans,
+    emit_string_literals, emit_syntax_program_in_session, lower_syntax_program,
 };
 pub use prepared_syntax::{
     PreparedSyntaxEntry, PreparedSyntaxEntrypoint, PreparedSyntaxEntrypoints, lower_canonical_runtime_prepared_syntax,

@@ -74,9 +74,12 @@ pub enum IndexTarget {
     Array,
 }
 
+/// What a `for` statement iterates: the syntax-only `range(start, end)` form, an array value
+/// (`array_for_fact`), or anything else (no lowering).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ForIterableKind {
     Range,
+    Array,
     Other,
 }
 

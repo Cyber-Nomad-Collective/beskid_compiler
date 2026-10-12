@@ -51,7 +51,7 @@ pub fn run_entrypoint_with_pipeline(
 
 /// JIT-compile and run using a pre-built front-end (avoids re-running semantic analysis).
 pub fn run_entrypoint_from_front_end_with_pipeline(
-    front: &beskid_analysis::services::FrontEndTypedResult,
+    front: &beskid_analysis::services::ExecutableFrontEnd,
     source_name: &str,
     source: &str,
     entrypoint: &str,
@@ -64,7 +64,7 @@ pub fn run_entrypoint_from_front_end_with_pipeline(
 /// Like [`run_entrypoint_from_front_end_with_pipeline`] but reuses an existing [`Engine`].
 pub fn run_entrypoint_from_front_end_with_engine(
     engine: &mut Engine,
-    front: &beskid_analysis::services::FrontEndTypedResult,
+    front: &beskid_analysis::services::ExecutableFrontEnd,
     source_name: &str,
     source: &str,
     entrypoint: &str,

@@ -89,10 +89,9 @@ fn imported_try_diagnostics_share_exact_result_error_authority() {
 }
 
 /// Build a single-unit assembly without Core for `source` and return the E1222 counts from the
-/// query-backed try authority (shared and isolated) and from the project-less structural rules
-/// (`semantic_rule_diagnostics_for_program` without a deferring authority), whose staged try
-/// rule uses the pre-normalize precheck instead of a query authority.
-fn local_try_diagnostic_counts(source: &str) -> (usize, usize, usize) {
+/// query-backed try authority, shared and isolated. The query gate is the only try authority:
+/// no structural precheck exists beside it.
+fn local_try_diagnostic_counts(source: &str) -> (usize, usize) {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("Main.bd");
     std::fs::write(&path, source).unwrap();
@@ -135,13 +134,7 @@ fn local_try_diagnostic_counts(source: &str) -> (usize, usize, usize) {
         .expect("shared try authority");
     let (_, isolated, _) = prepare_compilation_diagnostics_isolated(&resolved, PrepareOptions::without_mods(), None)
         .expect("isolated try authority");
-    let precheck = beskid_analysis::services::semantic_rule_diagnostics_for_program(
-        &resolved.assembly.as_ref().expect("owned assembly").entry_unit().program.node,
-        "Main.bd",
-        source,
-        beskid_analysis::AnalysisOptions::default(),
-    );
-    (count(&shared), count(&isolated), count(&precheck))
+    (count(&shared), count(&isolated))
 }
 
 const LOCAL_GENERIC_RESULT: &str = "enum Error { Failed() }
@@ -158,7 +151,7 @@ fn try_accepts_let_bound_local_generic_result() {
 }}
 "
     );
-    assert_eq!(local_try_diagnostic_counts(&source), (0, 0, 0));
+    assert_eq!(local_try_diagnostic_counts(&source), (0, 0));
 }
 
 #[test]
@@ -175,7 +168,7 @@ fn try_accepts_let_bound_result_after_statement_match() {
 }}
 "
     );
-    assert_eq!(local_try_diagnostic_counts(&source), (0, 0, 0));
+    assert_eq!(local_try_diagnostic_counts(&source), (0, 0));
 }
 
 #[test]
@@ -190,19 +183,17 @@ Result<i32, Error> Propagate() {{
 }}
 "
         );
-        let (shared, isolated, precheck) = local_try_diagnostic_counts(&source);
-        assert!(shared >= 1 && isolated >= 1 && precheck >= 1, "{operand}: {shared} {isolated} {precheck}");
+        let (shared, isolated) = local_try_diagnostic_counts(&source);
+        assert!(shared >= 1 && isolated >= 1, "{operand}: {shared} {isolated}");
     }
 }
 
 /// Item 1 (spec conformance): an enum that declares only `Ok` (no `Error` variant) is not
 /// Result-shaped per OpenSpec `language-meta--contracts-and-effects--error-handling`, "Postfix
-/// try operator". The full type check (the lower-spine `type_try_expression`) must reject it
-/// exactly like the precheck stage does, not just the precheck.
+/// try operator".
 ///
-/// Item 2 (no duplicate diagnostic): the try-authority path and the lower-spine full type check
-/// both judge this operand invalid using the same shared predicate, so without deduping they
-/// would each contribute one E1222 for the same span. Assert exactly one survives.
+/// Item 2 (no duplicate diagnostic): the query gate judges the operand once per authority, so
+/// exactly one E1222 survives for the span.
 #[test]
 fn try_rejects_ok_only_enum_with_exactly_one_diagnostic() {
     let source = format!(
@@ -214,17 +205,15 @@ Result<i32, Error> Propagate() {{
 }}
 "
     );
-    let (shared, isolated, precheck) = local_try_diagnostic_counts(&source);
-    assert_eq!(shared, 1, "try authority + full type check must emit exactly one E1222, got {shared}");
-    assert_eq!(isolated, 1, "isolated authority + full type check must emit exactly one E1222, got {isolated}");
-    assert_eq!(precheck, 1, "analysis-only precheck must emit exactly one E1222, got {precheck}");
+    let (shared, isolated) = local_try_diagnostic_counts(&source);
+    assert_eq!(shared, 1, "the try authority must emit exactly one E1222, got {shared}");
+    assert_eq!(isolated, 1, "the isolated try authority must emit exactly one E1222, got {isolated}");
 }
 
-/// Item 3: the early stage-7 try walker must descend into `if`/`while`/`for` bodies so an
-/// invalid `?` nested inside one is reported by the precheck stage, not only by the later
-/// full type check.
+/// Item 3: the try authority descends into `if`/`while`/`for` bodies so an invalid `?` nested
+/// inside one is reported.
 #[test]
-fn try_precheck_descends_into_nested_control_flow_bodies() {
+fn try_authority_descends_into_nested_control_flow_bodies() {
     for wrapper in [
         "if (true) { i32 value = bound?; }",
         "while (true) { i32 value = bound?; break; }",
@@ -238,8 +227,8 @@ fn try_precheck_descends_into_nested_control_flow_bodies() {
 }}
 "
         );
-        let (_, _, precheck) = local_try_diagnostic_counts(&source);
-        assert!(precheck >= 1, "{wrapper}: precheck did not descend into the nested body ({precheck})");
+        let (shared, isolated) = local_try_diagnostic_counts(&source);
+        assert!(shared >= 1 && isolated >= 1, "{wrapper}: the try authority did not descend into the nested body ({shared} {isolated})");
     }
 }
 

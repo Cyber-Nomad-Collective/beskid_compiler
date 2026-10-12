@@ -45,8 +45,6 @@ pub const SEMANTIC_NAME_RESOLUTION: &str = "semantic.name_resolution";
 pub const SEMANTIC_VISIBILITY: &str = "semantic.visibility";
 /// Contract and method signature checks.
 pub const SEMANTIC_CONTRACTS: &str = "semantic.contracts";
-/// Error-handling (`try` / `catch`) rules.
-pub const SEMANTIC_ERROR_HANDLING: &str = "semantic.error_handling";
 /// Expression and declaration type checking.
 pub const SEMANTIC_TYPE_CHECK: &str = "semantic.type_check";
 /// Code style and naming convention checks (W163x).
@@ -64,21 +62,13 @@ pub const MOD_REWRITE: &str = "mod.rewrite";
 /// rewriter contracts and before lowering. Glue mods prepare foreign
 /// bindings from the fully rewritten syntax.
 pub const MOD_GLUE: &str = "mod.glue";
-/// Merged program ready for HIR lowering (instant boundary immediately before [`LOWER`]).
+/// Every own unit passed the structural rules and the query gate (instant boundary immediately
+/// before [`LOWER`]).
 pub const LOWER_READY: &str = "lower.ready";
-/// HIR lowering and middle-end.
+/// The executable front end (rewritten syntax assembly plus composition authority) exists for
+/// this syntax generation. Typing is the query layer's; no second pass runs here.
 pub const LOWER: &str = "lower";
-/// AST → HIR lowering inside the typed-HIR spine.
-pub const LOWER_AST: &str = "lower.ast";
-/// First resolution pass against assembly / module index.
-pub const LOWER_RESOLVE_PASS1: &str = "lower.resolve_pass1";
-/// HIR normalization after initial resolution.
-pub const LOWER_NORMALIZE: &str = "lower.normalize";
-/// Final resolution pass before type checking.
-pub const LOWER_RESOLVE: &str = "lower.resolve";
-/// Type-check the lowered program.
-pub const LOWER_TYPE_CHECK: &str = "lower.type_check";
-/// CLIF generation from typed HIR.
+/// CLIF generation from the executable front end through the generated ISLE rules.
 pub const CODEGEN_CLIF: &str = "codegen_clif";
 /// Cranelift object emission (per-function work units common here).
 pub const AOT_EMIT_OBJECT: &str = "aot.emit_object";

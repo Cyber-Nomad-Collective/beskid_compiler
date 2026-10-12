@@ -224,12 +224,86 @@ pub(in crate::semantic_contract) fn for_iterator_fact_tracked(
             key.node,
             beskid_analysis::syntax_query::DynNodeRef::from(&statement.iterator),
         )?;
-        match element_type_for_for_iterable(program, index, key.node, &statement.iterable.node) {
-            Ok(element_type) => {
-                Some(Ok(ForIteratorFact { declaration: AstNodeKey { node: declaration, ..key }, element_type }))
+        Some(for_iterator_element_identity(db, program, index, key, statement).map(|(identity, source)| {
+            ForIteratorFact {
+                declaration: AstNodeKey { node: declaration, ..key },
+                element_type: identity.abi_type(),
+                source,
             }
-            Err(error) => Some(Err(error)),
+        }))
+    })?
+    .transpose()
+}
+
+/// The source identity of the values a `for` statement binds its variable to, and where they
+/// come from: the start operand's type of a `range(start, end)` iterable, or the element identity
+/// of an iterable whose source identity is an array (`T[]` parameters and locals, field
+/// projections, call results, array literals; `GenericSourceTypeIdentity::Array`). An iterable of
+/// any other identity, or of no proven identity (an element that names an enclosing generic
+/// parameter, see [`for_iterator_specialization`]), is unavailable; the check gate judges proven
+/// non-iterables as E1215 and the nominal iterator protocol has no lowering fact.
+pub(in crate::semantic_contract) fn for_iterator_element_identity(
+    db: &dyn Db,
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    key: AstNodeKey,
+    statement: &beskid_analysis::syntax::ForStatement,
+) -> Result<(GenericSourceTypeIdentity, ForIterableSource), SemanticError> {
+    if range_iterable_bounds(&statement.iterable.node).is_some() {
+        let element = element_type_for_for_iterable(program, index, key.node, &statement.iterable.node)?;
+        return Ok((GenericSourceTypeIdentity::Abi(element), ForIterableSource::Range));
+    }
+    let iterable = index
+        .direct_child_id(program, key.node, beskid_analysis::syntax_query::DynNodeRef::from(&statement.iterable))
+        .ok_or_else(|| SemanticError::unavailable("for_iterator_element_type"))?;
+    match generic_source_expression_identity(db, AstNodeKey { node: iterable, ..key }) {
+        Ok(GenericSourceTypeIdentity::Array(element)) => {
+            let element_managed = element.managed_reference_kind();
+            Ok((*element, ForIterableSource::Array { element_managed }))
         }
+        Ok(_) | Err(_) => Err(SemanticError::unavailable("for_iterator_element_type")),
+    }
+}
+
+/// [`for_iterator_fact`](super::super::for_iterator_fact) through one exact enclosing generic
+/// specialization: a `for` over a local or parameter declared `T[]`, where `T` is a generic
+/// parameter of the enclosing item, takes its element type and GC classification from the
+/// specialization's source binding (the same authority `array_index_element_specialization`
+/// uses for `values[index]`). A statement whose fact is available without the specialization
+/// returns that fact.
+pub fn for_iterator_specialization(
+    db: &dyn Db,
+    key: AstNodeKey,
+    enclosing: Arc<[GenericSubstitution]>,
+) -> SemanticQueryResult<ForIteratorFact> {
+    let Some(syntax) = db.syntax_unit(key.unit) else { return Ok(None) };
+    if !syntax.accepts_key(db, key) {
+        return Ok(None);
+    }
+    match for_iterator_fact_tracked(db, syntax, key) {
+        Ok(Some(fact)) => return Ok(Some(fact)),
+        Ok(None) => return Ok(None),
+        Err(error) if error.is_unavailable() => {}
+        Err(error) => return Err(error),
+    }
+    with_node(db, syntax, key, |program, index, node| {
+        let statement = node.of::<beskid_analysis::syntax::ForStatement>()?;
+        let declaration = index.direct_child_id(
+            program,
+            key.node,
+            beskid_analysis::syntax_query::DynNodeRef::from(&statement.iterator),
+        )?;
+        let element = for_iterable_declared_array_element(program, index, key.node, &statement.iterable.node)?;
+        let parameter = generic_parameter_reference_name(element)?;
+        if !type_syntax_is_enclosing_generic_parameter_reference(db, key, element) {
+            return None;
+        }
+        let binding = enclosing.iter().find(|binding| binding.parameter.as_ref() == parameter)?;
+        Some(Ok(ForIteratorFact {
+            declaration: AstNodeKey { node: declaration, ..key },
+            element_type: binding.argument,
+            source: ForIterableSource::Array { element_managed: binding.managed_reference_kind() },
+        }))
     })?
     .transpose()
 }

@@ -116,7 +116,6 @@ impl CommandSession {
             resolved,
             services::PrepareOptions {
                 front_end: services::FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
-                dependency_typing: services::DependencyTypingPolicy::FullClosure,
                 native_mod_adapter_sources: false,
                 mod_host: self.mod_host.clone(),
             },

@@ -316,7 +316,13 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
     fn for_iterable_class(&mut self, key: AstNodeKey) -> Option<ForIterableKind> {
         let iterable = self.facts.child(key, 0)?;
         let kind = self.facts.node_kind(iterable)?;
-        if kind == NodeKind::RangeExpression { Some(ForIterableKind::Range) } else { Some(ForIterableKind::Other) }
+        if kind == NodeKind::RangeExpression {
+            Some(ForIterableKind::Range)
+        } else if self.facts.array_for_fact(key).is_some() {
+            Some(ForIterableKind::Array)
+        } else {
+            Some(ForIterableKind::Other)
+        }
     }
 
     fn child_at(&mut self, key: AstNodeKey, index: u8) -> Option<AstNodeKey> {

@@ -32,17 +32,13 @@ fn extern_signature_validation_rejects_disallowed_types() -> Result<()> {
     // Artifact carries extern import for the same symbol so the engine resolves it.
     let artifact = CodegenArtifact {
         functions: vec![LoweredFunction { name: "main".into(), function: func }],
-        type_descriptors: Default::default(),
-        string_literals: Default::default(),
-        closure_static_plans: Default::default(),
         extern_imports: vec![ExternImport {
             symbol: "getpid".into(),
             abi: Some("C".into()),
             library: Some("libc.so.6".into()),
             optional: false,
         }],
-        trusted_extern_imports: vec![],
-        exports: vec![],
+        ..CodegenArtifact::default()
     };
 
     let mut engine = Engine::new();

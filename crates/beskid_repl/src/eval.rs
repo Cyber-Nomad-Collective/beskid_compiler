@@ -83,7 +83,7 @@ fn is_likely_statement(snippet: &str) -> bool {
     STATEMENT_PREFIXES.iter().any(|prefix| trimmed.starts_with(prefix))
 }
 
-fn prepare_wrapped(source: &str) -> Result<beskid_analysis::services::FrontEndTypedResult, String> {
+fn prepare_wrapped(source: &str) -> Result<beskid_analysis::services::ExecutableFrontEnd, String> {
     prepare_syntax_front_end(std::path::Path::new(REPL_SOURCE_PATH), source, &beskid_engine::ModHost::NoMods).map_err(format_lower_error)
 }
 

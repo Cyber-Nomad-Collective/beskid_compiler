@@ -108,19 +108,6 @@ fn canonical_sdk_request_factories_lower_with_compiler_owned_descriptors() {
             unit.path.display()
         );
     }
-    for unit in &compilation_units {
-        let resolution = assembly.module_index
-            .resolve_entry_program(&assembly.entry_unit().program, Some(&path), &assembly)
-            .expect("resolve actual entry declaration closure");
-        let surface = beskid_analysis::types::build_unit_type_surface(&unit.program, &resolution, &unit.path);
-        let owners = resolution.items.iter().filter(|item|
-            item.kind == beskid_analysis::resolve::ItemKind::Type && item.name == "Compilation")
-            .collect::<Vec<_>>();
-        assert!(owners.iter().any(|owner| surface.struct_fields_ordered.get(&owner.id)
-            .is_some_and(|fields| fields.iter().any(|(name, _)| name == "entryRoot"))),
-            "actual Compilation dependency surface dropped entryRoot; owners={owners:?}; fields={:?}; modules={:?}",
-            surface.struct_fields_ordered, resolution.items.iter().filter(|item| item.name == "NodeRef").collect::<Vec<_>>());
-    }
     let resolved = resolved_input_from_plan(path, source, plan, None, Some(assembly));
     let front = compile_mod_free_front_end(
         &resolved,

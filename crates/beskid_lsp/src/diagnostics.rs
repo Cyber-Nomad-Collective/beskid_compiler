@@ -8,9 +8,7 @@ use beskid_analysis::AnalysisOptions;
 use beskid_analysis::CompilationContext;
 use beskid_analysis::projects::ProgramAssembly;
 use beskid_analysis::projects::{ProjectError, parse_bsol_document, parse_manifest, parse_workspace_manifest};
-use beskid_analysis::services::{
-    self, DependencyTypingPolicy, FrontEndOptions, PrepareOptions, ResolvedInput, resolved_input_from_plan,
-};
+use beskid_analysis::services::{self, FrontEndOptions, PrepareOptions, ResolvedInput, resolved_input_from_plan};
 use beskid_analysis::syntax::Program;
 use beskid_analysis::{SemanticDiagnostic, Severity, SyntaxFix};
 use beskid_queries::BeskidDatabase;
@@ -39,10 +37,20 @@ fn editor_mod_host(
     }
 }
 
-fn editor_front_end(dependency_typing: DependencyTypingPolicy) -> FrontEndOptions {
+/// Which of the editor's two preparation passes runs. Both run the one query gate; they differ
+/// only in scheduling. The immediate pass after an edit prepares the buffer without collecting
+/// the structural rule diagnostics, so completion and navigation facts refresh at once; the
+/// complete pass (debounced, on open, and after invalidation) collects every diagnostic.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum EditorPreparePass {
+    Immediate,
+    Complete,
+}
+
+fn editor_front_end(pass: EditorPreparePass) -> FrontEndOptions {
     FrontEndOptions {
         assembly_recovery: beskid_analysis::projects::AssemblyRecoveryPolicy::EditorRetainRecovered,
-        with_semantic_diagnostics: dependency_typing == DependencyTypingPolicy::FullClosure,
+        with_semantic_diagnostics: pass == EditorPreparePass::Complete,
         ..Default::default()
     }
 }
@@ -79,16 +87,15 @@ pub(crate) struct PreparedSyntaxFacts {
 pub(crate) fn prepare_project_syntax_facts(
     db: &mut BeskidDatabase,
     resolved: &ResolvedInput,
-    dependency_typing: DependencyTypingPolicy,
+    pass: EditorPreparePass,
     mod_host: &ModHostSelection,
 ) -> anyhow::Result<PreparedSyntaxFacts> {
     let (prepared, diagnostics, fixes) = beskid_queries::prepare_compilation_diagnostics_with_db(
         db,
         resolved,
         PrepareOptions {
-            mod_host: editor_mod_host(resolved, &editor_front_end(dependency_typing), mod_host)?,
-            front_end: editor_front_end(dependency_typing),
-            dependency_typing,
+            mod_host: editor_mod_host(resolved, &editor_front_end(pass), mod_host)?,
+            front_end: editor_front_end(pass),
             native_mod_adapter_sources: false,
         },
         None,
@@ -107,15 +114,14 @@ pub(crate) fn prepare_project_syntax_facts(
 /// release its session writer before performing full dependency analysis.
 pub(crate) fn prepare_project_diagnostics_from_assembled(
     resolved: &ResolvedInput,
-    dependency_typing: DependencyTypingPolicy,
+    pass: EditorPreparePass,
     mod_host: &ModHostSelection,
 ) -> anyhow::Result<PreparedSyntaxFacts> {
     let (prepared, diagnostics, fixes) = beskid_queries::prepare_compilation_diagnostics_isolated(
         resolved,
         PrepareOptions {
-            mod_host: editor_mod_host(resolved, &editor_front_end(dependency_typing), mod_host)?,
-            front_end: editor_front_end(dependency_typing),
-            dependency_typing,
+            mod_host: editor_mod_host(resolved, &editor_front_end(pass), mod_host)?,
+            front_end: editor_front_end(pass),
             native_mod_adapter_sources: false,
         },
         None,
@@ -189,7 +195,7 @@ pub fn collect_syntax_diagnostics(
         if beskid_queries::is_typed_bundle_stale(db, &entry_key) {
             return (structural_syntax_diagnostics(&uri.to_string(), source), Vec::new());
         }
-        return match prepare_project_syntax_facts(db, &resolved, DependencyTypingPolicy::FullClosure, mod_host) {
+        return match prepare_project_syntax_facts(db, &resolved, EditorPreparePass::Complete, mod_host) {
             Ok(prepared) => (prepared.diagnostics, prepared.fixes),
             Err(error) => {
                 tracing::warn!(uri = %uri.as_str(), "project preparation failed: {error:#}");
@@ -543,7 +549,7 @@ mod tests {
         let (_main_dir, main_entry) = dependency_assembly_input(0, 511);
         let main = super::prepare_project_diagnostics_from_assembled(
             &main_entry,
-            beskid_analysis::services::DependencyTypingPolicy::FullClosure,
+            super::EditorPreparePass::Complete,
             &beskid_tools::native_mods::ModHostSelection::installed(),
         )
         .expect("main diagnostics");
@@ -556,7 +562,7 @@ mod tests {
         let (_helper_dir, helper_entry) = dependency_assembly_input(1, 512);
         let helper = super::prepare_project_diagnostics_from_assembled(
             &helper_entry,
-            beskid_analysis::services::DependencyTypingPolicy::FullClosure,
+            super::EditorPreparePass::Complete,
             &beskid_tools::native_mods::ModHostSelection::installed(),
         )
         .expect("helper diagnostics");

@@ -17,7 +17,7 @@ use crate::mod_host::{
     run_through_generate_without_materializing_outputs,
 };
 use crate::projects::{
-    AssemblyRootSet, CompilePlan, PreparedProjectWorkspace, ProgramAssembly, assemble_program,
+    AssemblyRootSet, CompilePlan, PreparedProjectWorkspace, ProgramAssembly, TargetKind, assemble_program,
     assembly_options_for_prepare,
 };
 
@@ -25,9 +25,8 @@ use super::super::composition::{composition_result_to_diagnostics, resolve_progr
 use super::super::entry_session::{
     cached_executable_if_valid, store_executable_and_snapshot, update_semantic_snapshot,
 };
-use super::super::front_end::FrontEndTypedResult;
+use super::super::front_end::ExecutableFrontEnd;
 use super::super::semantic::{require_no_semantic_errors, semantic_rule_diagnostics_for_program_with_pipeline};
-use super::super::semantic_facts::resolve_and_type_program_with_assembly;
 use super::super::session::{SemanticSnapshot, SessionFingerprint, session_for_assembly};
 use super::*;
 
@@ -37,6 +36,11 @@ pub(super) struct PrepareSpineOutput {
     pub(super) collected_fixes: Vec<SyntaxFix>,
 }
 
+/// The one typing and legality authority of the spine is `fact_authority`, the generation-bound
+/// query gate (`beskid_queries::semantic_diagnostics_for_roots`), which judges every own unit of
+/// the project. Structural and style rules (`SemanticPipelineRule`) and Mod analyzer diagnostics
+/// run beside it. When the gate accepts the program the spine assembles the executable front end
+/// (`ExecutableFrontEnd`); nothing after the gate types the program a second time.
 pub(super) fn run_prepare_spine(
     entry_path: &Path,
     entry_source: &str,
@@ -47,18 +51,8 @@ pub(super) fn run_prepare_spine(
     pipeline: Option<&dyn PipelineObserver>,
     collect_diagnostics: bool,
     use_session_cache: bool,
-    mut fact_authority: Option<&mut dyn SemanticFactAuthority>,
+    fact_authority: &mut dyn SemanticFactAuthority,
 ) -> Result<PrepareSpineOutput> {
-    // Diagnostics are judged by exactly one semantic authority: the generation-bound query gate
-    // (`beskid_queries::semantic_diagnostics_for_roots`), which judges every own unit of the
-    // project. Collecting diagnostics without that authority would silently report only the
-    // structural rules, so it fails closed instead of degrading.
-    if collect_diagnostics && fact_authority.is_none() {
-        anyhow::bail!(
-            "diagnostics-only preparation requires the query semantic authority; prepare through \
-             `beskid_queries::prepare_compilation_diagnostics` (or `_with_db` / `_isolated`)"
-        );
-    }
     // Injected executor identity is not part of a reusable session cache key.
     // A native Mod adapter closure is a different assembly than the session's ordinary one.
     let use_session_cache =
@@ -106,25 +100,24 @@ pub(super) fn run_prepare_spine(
         entry_source
     };
     let run_rules = options.front_end.with_semantic_diagnostics || collect_diagnostics;
+    // The program entry function (`Main`) of an App or Test target is invoked by the host, not
+    // by a source reference; the unused-private-item rule exempts it in the entry unit only.
+    let entry_function = (plan.target.kind != TargetKind::Lib && !matches!(assembly.root_set, AssemblyRootSet::OwnUnits(_)))
+        .then(|| crate::projects::PROGRAM_ENTRY_FUNCTION.to_owned());
 
     if use_session_cache && let Some(cached) = cached_executable_if_valid(&session_fingerprint, assembly.generation) {
         let syntax_generation_id = assembly.generation.0;
         Span::current().record("syntax_generation_id", syntax_generation_id);
         let front = cached.as_ref();
-        let mut fact_diagnostics = Vec::new();
-        if let Some(authority) = fact_authority.as_mut() {
-            let findings = authority.fact_findings(&front.assembly, &front.program)?;
-            let facts = fact_findings_to_diagnostics(&front.assembly, entry_source, findings)?;
-            if collect_diagnostics {
-                fact_diagnostics = facts;
-            } else {
-                require_no_semantic_errors(&facts)?;
-            }
+        let findings = fact_authority.fact_findings(&front.assembly, &front.program)?;
+        let fact_diagnostics = fact_findings_to_diagnostics(&front.assembly, entry_source, findings)?;
+        if !collect_diagnostics {
+            require_no_semantic_errors(&fact_diagnostics)?;
         }
-        // A cached executable proves only the entry unit's typing; the structural rules of every
-        // other own unit run again. The query gate above has already judged every own unit, so
-        // its findings merge behind the rule diagnostics exactly as on the uncached path.
-        let roots = own_unit_rule_diagnostics(&front.assembly, options, run_rules, fact_authority.is_some())?;
+        // A cached executable proves only that the entry unit was prepared; the structural rules
+        // of every other own unit run again. The query gate above has already judged every own
+        // unit, so its findings merge behind the rule diagnostics exactly as on the uncached path.
+        let roots = own_unit_rule_diagnostics(&front.assembly, options, run_rules)?;
         let mut diagnostics = Vec::new();
         if collect_diagnostics {
             diagnostics = roots;
@@ -139,7 +132,7 @@ pub(super) fn run_prepare_spine(
                 program: front.program.clone(),
                 binding_plan: front.binding_plan.clone(),
                 composition_snapshot: front.composition_snapshot.clone(),
-                typed: Some(cached),
+                executable: cached,
             },
             collected_diagnostics: diagnostics,
             collected_fixes: Vec::new(),
@@ -154,7 +147,7 @@ pub(super) fn run_prepare_spine(
     // package the program never reaches is not discovered, loaded or run.
     let mod_plan = crate::mod_host::active_mod_plan(plan, &assembly)?;
     let mod_input = ModHostInput {
-        semantic_scope: fact_authority.as_ref().and_then(|authority| authority.mod_scope()),
+        semantic_scope: fact_authority.mod_scope(),
         semantic_authority: None,
         compile_plan: Some(&mod_plan),
         source_name: &entry_unit.logical_name,
@@ -196,7 +189,7 @@ pub(super) fn run_prepare_spine(
     rule_options.program_assembly_module_index = Some((*assembly.module_index).clone());
     rule_options.entry_source_path = Some(entry_unit.path.clone());
     rule_options.program_assembly = Some(assembly.clone());
-    rule_options.defer_try_diagnostics = fact_authority.is_some();
+    rule_options.program_entry_function = entry_function;
 
     // Mod Analyzers read a semantic snapshot staged through composition, and their `Error`
     // diagnostics fail the executable path too. An executable-only prepare therefore stages the
@@ -283,29 +276,23 @@ pub(super) fn run_prepare_spine(
     drop(mod_input);
     let syntax_generation_id = assembly.generation.0;
 
-    // Semantic-fact findings (invalid `?` targets and the reachability-scoped legality facts the
-    // lowering gate evaluates) for the entry's reachable items, possibly in dependency units. On
-    // the diagnostics path they are merged after World A has run, so an entry-unit error both
-    // authorities judge is reported once.
-    let mut fact_diagnostics = Vec::new();
-    if let Some(authority) = fact_authority.as_mut() {
-        let findings = authority.fact_findings(&assembly, &program)?;
-        let facts = fact_findings_to_diagnostics(&assembly, entry_source, findings)?;
-        if collect_diagnostics {
-            fact_diagnostics = facts;
-        } else {
-            require_no_semantic_errors(&facts)?;
-        }
+    // The query gate: typing and legality obligations of every own unit (plus the direct-call
+    // closure of each own item, possibly in dependency units) over the final rewritten syntax.
+    // On the diagnostics path its findings are merged after the structural rules have run, so an
+    // entry-unit error both report is reported once. On the executable path an error finding
+    // fails preparation here: nothing after this point judges the program again.
+    let findings = fact_authority.fact_findings(&assembly, &program)?;
+    let fact_diagnostics = fact_findings_to_diagnostics(&assembly, entry_source, findings)?;
+    if !collect_diagnostics {
+        require_no_semantic_errors(&fact_diagnostics)?;
     }
 
     // Mod analyzer diagnostics are always collected so a mod `Error`-severity
-    // diagnostic fails the typed/codegen build (mirrors `require_no_semantic_errors`
-    // at the compiler-semantic gate above). On the diagnostics path they surface to
-    // LSP; on the typed/codegen path `Warning`/`Note` are dropped, matching the
-    // existing compiler-diagnostic contract.
+    // diagnostic fails the executable path (the same gate as compiler semantic errors). On the
+    // diagnostics path they surface to the IDE; on the executable path `Warning`/`Note` are
+    // dropped, matching the existing compiler-diagnostic contract.
     let analyzer_diagnostics = collect_analyzer_diagnostics(&mod_rewrite.analyzer_outcomes, &entry_unit, entry_source);
-    // Mod quick-fixes are an IDE concern — collect them only on the diagnostics path
-    // (the typed/codegen build path does not need fixes).
+    // Mod quick-fixes are an IDE concern: collected only on the diagnostics path.
     let analyzer_fixes =
         if collect_diagnostics { collect_analyzer_fixes(&mod_rewrite.analyzer_outcomes) } else { Vec::new() };
     if collect_diagnostics {
@@ -341,7 +328,7 @@ pub(super) fn run_prepare_spine(
     // Every other own unit of the project runs the structural rules too, before the entry's
     // executable is cached, so a rule failure in a sibling unit can never hide behind a cached
     // entry. Their typing is judged by the query gate above.
-    let root_diagnostics = own_unit_rule_diagnostics(&assembly, options, run_rules, fact_authority.is_some())?;
+    let root_diagnostics = own_unit_rule_diagnostics(&assembly, options, run_rules)?;
     if collect_diagnostics {
         collected_diagnostics.extend(root_diagnostics);
     } else {
@@ -350,73 +337,39 @@ pub(super) fn run_prepare_spine(
 
     observe_phase(pipeline, LOWER_READY, || {});
 
-    // The legacy `TypeChecker` produces the executable front end for lowering. On the diagnostics
-    // path its errors are not rendered: the query gate is the one semantic authority, and the
-    // same obligations it judges are what the build gate (`check_items`) later enforces. A
-    // failed executable is reported as `typed: None` to the caller.
-    let typed = match observe_phase_result(pipeline, LOWER, || {
-        resolve_and_type_program_with_assembly(&program, Some(&assembly), pipeline, options.dependency_typing)
-    }) {
-        Ok((program, resolution, typed)) => {
-            let resolution_fingerprint = typed_fingerprint(&resolution);
-            let types_fingerprint = typed_fingerprint_types(&typed);
-            let typed_result = FrontEndTypedResult {
-                assembly: assembly.clone(),
-                program,
-                resolution,
-                typed,
-                binding_plan: binding_plan.clone(),
-                composition_snapshot: composition_snapshot.clone(),
-            };
-            let executable_snapshot = (if use_session_cache {
-                super::super::session::cached_semantic_snapshot(&session_fingerprint)
-            } else {
-                local_semantic_snapshot.clone()
-            })
-            .map(|snap| snap.with_typed_resolution(resolution_fingerprint, types_fingerprint))
-            .unwrap_or_else(|| {
-                SemanticSnapshot::from_diagnostics(&[], syntax_generation_id, "executable")
-                    .with_composition(&composition_snapshot)
-                    .with_typed_resolution(resolution_fingerprint, types_fingerprint)
-            });
-            if use_session_cache {
-                let stored =
-                    store_executable_and_snapshot(&session_fingerprint, Some(typed_result), executable_snapshot)
-                        .ok_or_else(|| {
-                            anyhow::anyhow!("entry session missing or changed before executable cache store")
-                        })?;
-                Some(stored)
-            } else {
-                Some(Arc::new(typed_result))
-            }
+    // The executable front end is the rewritten syntax assembly with its composition authority.
+    // Codegen builds its `TypedProgram` from it and reads every semantic fact from the same
+    // generation-bound queries the gate judged; the legality gate runs again over the reachable
+    // items at emission (`beskid_queries::check_items`).
+    let executable = observe_phase_result(pipeline, LOWER, || {
+        let executable = ExecutableFrontEnd {
+            assembly: assembly.clone(),
+            program: program.clone(),
+            binding_plan: binding_plan.clone(),
+            composition_snapshot: composition_snapshot.clone(),
+        };
+        let executable_snapshot = (if use_session_cache {
+            super::super::session::cached_semantic_snapshot(&session_fingerprint)
+        } else {
+            local_semantic_snapshot.clone()
+        })
+        .map(SemanticSnapshot::with_executable)
+        .unwrap_or_else(|| {
+            SemanticSnapshot::from_diagnostics(&[], syntax_generation_id, "executable")
+                .with_composition(&composition_snapshot)
+                .with_executable()
+        });
+        if use_session_cache {
+            store_executable_and_snapshot(&session_fingerprint, Some(executable), executable_snapshot)
+                .ok_or_else(|| anyhow::anyhow!("entry session missing or changed before executable cache store"))
+        } else {
+            Ok(Arc::new(executable))
         }
-        Err(error) if collect_diagnostics => {
-            // The query gate is the semantic authority. When it accepted the program (no error
-            // diagnostic collected) but the executable front end still fails, the program cannot
-            // be lowered and nothing else would say why: fail closed with the executable's own
-            // findings as error diagnostics. When the gate already rejected the program its
-            // diagnostics explain the missing executable, and the legacy findings stay silent.
-            // The gate's fact findings are merged only below, so they are judged here as well:
-            // a fact error (such as a call arity mismatch) is a gate rejection.
-            if require_no_semantic_errors(&collected_diagnostics).is_ok()
-                && require_no_semantic_errors(&fact_diagnostics).is_ok()
-            {
-                collected_diagnostics.extend(executable_failure_diagnostics(&entry_unit, entry_source, &error));
-            } else {
-                tracing::debug!(
-                    target: "beskid.analysis",
-                    entry = %entry_unit.logical_name,
-                    "legacy executable typing failed during diagnostics collection: {error}"
-                );
-            }
-            None
-        }
-        Err(error) => return Err(error.into()),
-    };
+    })?;
 
     merge_fact_diagnostics(&mut collected_diagnostics, fact_diagnostics);
     Ok(PrepareSpineOutput {
-        prepared: PreparedCompilation { assembly, program, binding_plan, composition_snapshot, typed },
+        prepared: PreparedCompilation { assembly, program, binding_plan, composition_snapshot, executable },
         collected_diagnostics: dedupe_diagnostics(collected_diagnostics),
         collected_fixes: analyzer_fixes,
     })
@@ -432,7 +385,6 @@ fn own_unit_rule_diagnostics(
     assembly: &ProgramAssembly,
     options: &PrepareOptions,
     run_rules: bool,
-    defer_try_diagnostics: bool,
 ) -> Result<Vec<SemanticDiagnostic>> {
     if !run_rules {
         return Ok(Vec::new());
@@ -453,7 +405,6 @@ fn own_unit_rule_diagnostics(
         rule_options.program_assembly_module_index = Some((*assembly.module_index).clone());
         rule_options.entry_source_path = Some(unit.path.clone());
         rule_options.program_assembly = Some(root_assembly);
-        rule_options.defer_try_diagnostics = defer_try_diagnostics;
         diagnostics.extend(semantic_rule_diagnostics_for_program_with_pipeline(
             &unit.program.node,
             unit.logical_name.clone(),
@@ -463,41 +414,4 @@ fn own_unit_rule_diagnostics(
         ));
     }
     Ok(diagnostics)
-}
-
-/// Error diagnostics for an executable front end that failed after the query gate accepted the
-/// program. Each legacy finding renders with its own message (which carries its location) anchored
-/// at the start of the entry unit, under the code `internal.executable`, so the build gate and the
-/// IDE report why no executable exists instead of hiding the failure behind a missing typed result.
-fn executable_failure_diagnostics(
-    entry_unit: &crate::projects::SourceUnit,
-    entry_source: &str,
-    error: &super::super::semantic_facts::SemanticFactsError,
-) -> Vec<SemanticDiagnostic> {
-    use super::super::semantic_facts::SemanticFactsError;
-    let messages: Vec<String> = match error {
-        SemanticFactsError::Resolve(errors) => errors.iter().map(|error| error.to_string()).collect(),
-        SemanticFactsError::Type { errors, .. } => errors.iter().map(|error| error.to_string()).collect(),
-    };
-    let messages = if messages.is_empty() { vec![error.to_string()] } else { messages };
-    let anchor_end = entry_source.len().min(1);
-    let anchor = crate::syntax::SpanInfo { start: 0, end: anchor_end, line_col_start: (1, 1), line_col_end: (1, 1) };
-    messages
-        .into_iter()
-        .map(|message| {
-            crate::analysis::diagnostics::make_diagnostic(
-                entry_unit.logical_name.as_str(),
-                entry_source,
-                anchor,
-                format!("executable front end rejected a program the semantic gate accepted: {message}"),
-                "executable",
-                Some(
-                    "the query gate found no error, but lowering cannot type this program; report the construct"
-                        .to_string(),
-                ),
-                Some("internal.executable".to_string()),
-                crate::analysis::Severity::Error,
-            )
-        })
-        .collect()
 }

@@ -210,6 +210,10 @@ pub(crate) fn project_root_block_matches_package_name(block_kind: &str, package_
     block_kind == package_name || block_kind == package_name.replace('-', "_")
 }
 
+/// The function the host invokes to run an `App` or `Test` target: `Main`, the only program entry
+/// point (`beskid run --entrypoint` defaults to it and the native link entry symbol maps to it).
+pub const PROGRAM_ENTRY_FUNCTION: &str = "Main";
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Target {
     pub name: String,

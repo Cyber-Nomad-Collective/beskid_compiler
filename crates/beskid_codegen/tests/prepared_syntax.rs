@@ -349,3 +349,72 @@ fn selected_entrypoints_share_one_reachable_artifact() {
         );
     }
 }
+
+/// Prepare `source` as a Mod-free project entry (the query gate judges it) and lower `Main`.
+fn lower_main(label: &str, source: &str) -> beskid_codegen::CodegenArtifact {
+    let directory = std::env::temp_dir().join(format!("beskid_codegen_front_end_{label}_{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&directory);
+    std::fs::create_dir_all(&directory).expect("create project");
+    let path = directory.join("Main.bd");
+    std::fs::write(&path, source).expect("write source");
+    let plan = synthetic_compile_plan_for_source(&path);
+    let resolved: ResolvedInput = resolved_input_from_plan(path, source.into(), plan, None, None);
+    let front = compile_mod_free_front_end(
+        &resolved,
+        FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
+        None,
+    )
+    .unwrap_or_else(|error| panic!("{label}: the query gate must accept the program: {error:#}"));
+    let target = TargetMetadata::for_triple("x86_64-unknown-linux-gnu").unwrap();
+    let isa = isa::lookup_by_name("x86_64").unwrap().finish(settings::Flags::new(settings::builder())).unwrap();
+    let lowered = with_db(|db| lower_prepared_syntax_entrypoint(db, &front, "Main", target.clone(), isa.as_ref()))
+        .unwrap_or_else(|error| panic!("{label}: a program the gate accepted must lower: {error:#}"));
+    std::fs::remove_dir_all(directory).expect("remove project");
+    lowered.into_artifact()
+}
+
+/// Constructs the retired legacy checker rejected after the query gate had accepted them
+/// (`docs/design/2026-10-12-query-front-end.md`, section 3): they now build end to end.
+#[test]
+fn named_function_values_build_through_the_prepared_front_end() {
+    let artifact = lower_main(
+        "named_function_value",
+        "i64 Double(i64 value) { return value * 2_i64; } \
+         i64 Apply(i64 value, (i64) => i64 operation) { return operation(value); } \
+         i64 Main() { return Apply(5_i64, Double); }",
+    );
+    assert!(artifact.functions.iter().any(|function| function.name.starts_with("Double#syntax_")), "the named function is emitted as a callee");
+}
+
+#[test]
+fn function_typed_fields_build_through_the_prepared_front_end() {
+    let artifact = lower_main(
+        "function_typed_field",
+        "type Holder { (i64) => i64 op } \
+         i64 Increment(i64 value) { return value + 1_i64; } \
+         i64 Main() { Holder holder = Holder { op: Increment }; return holder.op(41_i64); }",
+    );
+    assert!(artifact.functions.iter().any(|function| function.name.starts_with("Main#syntax_")));
+}
+
+#[test]
+fn calls_on_call_results_build_through_the_prepared_front_end() {
+    let artifact = lower_main(
+        "call_on_call_result",
+        "i64 Increment(i64 value) { return value + 1_i64; } \
+         (i64) => i64 Make() { return Increment; } \
+         i64 Main() { return Make()(41_i64); }",
+    );
+    assert!(artifact.functions.iter().any(|function| function.name.starts_with("Make#syntax_")));
+}
+
+#[test]
+fn for_over_arrays_builds_through_the_prepared_front_end() {
+    let artifact = lower_main(
+        "for_over_array",
+        "i64 Sum(i64[] values) { mut i64 total = 0_i64; for value in values { total = total + value; } return total; } \
+         i64 Main() { i64[] values = [1_i64, 2_i64, 3_i64]; return Sum(values); }",
+    );
+    let sum = artifact.functions.iter().find(|function| function.name.starts_with("Sum#syntax_")).expect("Sum is emitted");
+    assert!(sum.function.display().to_string().contains("icmp ult"), "the array loop compares against the header length");
+}

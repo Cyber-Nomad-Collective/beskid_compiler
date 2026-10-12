@@ -4,7 +4,10 @@ use beskid_abi::runtime_source::runtime_fixture_project_root;
 use beskid_analysis::projects::{
     ProgramAssembly, assemble_program_with_materializer, assembly_options_for_plan, build_compile_plan, plan_entry_path,
 };
-use beskid_queries::{BeskidDatabase, build_runtime_fixture_typed_program, project_session_for_syntax_assembly};
+use beskid_queries::{
+    BeskidDatabase, build_runtime_fixture_typed_program, project_session_for_syntax_assembly,
+    semantic_diagnostics_for_roots,
+};
 use std::sync::Arc;
 
 fn fixture(target: &str) -> ProgramAssembly {
@@ -38,8 +41,14 @@ fn manifest() -> AbiManifestV5 {
 fn real_runtime_fixtures_resolve_actual_module_signatures_and_constants() {
     for name in ["LifecycleTests", "ExternalWorkTests", "NetworkNativeTests"] {
         let assembly = fixture(name);
-        let result = beskid_analysis::services::type_entry_gate(assembly.entry_unit().program.clone(), &assembly);
-        assert!(result.is_ok(), "{name}: {result:?}");
+        let mut db = BeskidDatabase::default();
+        let findings = semantic_diagnostics_for_roots(&mut db, None, &assembly, &assembly.entry_unit().program)
+            .unwrap_or_else(|error| panic!("{name}: the query gate must judge the fixture: {error:#}"));
+        let errors = findings
+            .iter()
+            .filter(|finding| finding.kind.severity() == beskid_analysis::Severity::Error)
+            .collect::<Vec<_>>();
+        assert!(errors.is_empty(), "{name}: {errors:?}");
     }
 }
 

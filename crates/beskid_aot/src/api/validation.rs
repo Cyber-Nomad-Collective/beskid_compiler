@@ -21,8 +21,9 @@ pub fn default_output_kind(target_kind: Option<ProjectTargetKind>) -> BuildOutpu
     }
 }
 
-/// Normalize CLI-style entrypoint: non-empty string or default [`DEFAULT_ENTRYPOINT`].
-pub const DEFAULT_ENTRYPOINT: &str = "Main";
+/// The program entry function (`Main`), shared with the analysis rules that exempt it from the
+/// unused-private-item warning (`beskid_analysis::projects::PROGRAM_ENTRY_FUNCTION`).
+pub const DEFAULT_ENTRYPOINT: &str = beskid_analysis::projects::PROGRAM_ENTRY_FUNCTION;
 
 /// Beskid entrypoint name mapped to the native C link symbol for executable output.
 pub fn native_link_entrypoint(beskid_entrypoint: &str) -> &str {

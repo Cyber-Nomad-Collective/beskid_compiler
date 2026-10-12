@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
 
 use anyhow::Result;
-use beskid_analysis::services::{DependencyTypingPolicy, FrontEndOptions, PrepareOptions, ResolvedInput};
+use beskid_analysis::services::{FrontEndOptions, PrepareOptions, ResolvedInput};
 use beskid_pipeline::PipelineObserver;
 use salsa::Setter;
 
@@ -30,11 +30,12 @@ pub struct TypedPrepareRevision {
     pub revision: u64,
 }
 
-/// Combined entry products for IDE hosts: resolution always available; typed when prepare caught up.
+/// Combined entry products for IDE hosts: resolution always available; the executable front end
+/// of the prepare that last caught up with the file revision.
 #[derive(Debug, Clone)]
 pub struct TypedEntryState {
     pub resolution: SharedResolution,
-    pub typed: Option<SharedFrontEnd>,
+    pub executable: Option<SharedFrontEnd>,
     /// Syntax generation owned by the prepared program assembly.
     pub generation: u64,
 }
@@ -128,11 +129,10 @@ pub fn is_typed_bundle_stale(db: &dyn Db, entry_key: &str) -> bool {
 
 fn prepare_options_fingerprint(options: &PrepareOptions) -> String {
     format!(
-        "discovery={:?}:recovery={:?}:semantic={}:typing={:?}",
+        "discovery={:?}:recovery={:?}:semantic={}",
         options.front_end.assembly_discovery,
         options.front_end.assembly_recovery,
         options.front_end.with_semantic_diagnostics,
-        options.dependency_typing,
     )
 }
 
@@ -162,7 +162,6 @@ fn materialize_typed_bundle(
     db: &mut BeskidDatabase,
     resolved: &ResolvedInput,
     options: &PrepareOptions,
-    dependency_typing: DependencyTypingPolicy,
     pipeline: Option<&dyn PipelineObserver>,
 ) -> Result<SharedFrontEnd> {
     let prepared = prepare_compilation_with_db(
@@ -171,7 +170,6 @@ fn materialize_typed_bundle(
         PrepareOptions {
             mod_host: options.mod_host.clone(),
             front_end: FrontEndOptions { with_semantic_diagnostics: false, ..Default::default() },
-            dependency_typing,
             native_mod_adapter_sources: false,
         },
         pipeline,
@@ -215,7 +213,7 @@ fn run_tracked_typed_prepare(
     );
 
     let Some(project) = project_session_for_resolved(db, resolved) else {
-        return materialize_typed_bundle(db, resolved, options, DependencyTypingPolicy::FullClosure, pipeline);
+        return materialize_typed_bundle(db, resolved, options, pipeline);
     };
     let grammar = db.grammar_revision();
     let options_fingerprint = prepare_options_fingerprint(options);
@@ -240,7 +238,7 @@ fn run_tracked_typed_prepare(
         return Ok(front);
     }
 
-    let front = materialize_typed_bundle(db, resolved, options, DependencyTypingPolicy::FullClosure, pipeline)?;
+    let front = materialize_typed_bundle(db, resolved, options, pipeline)?;
     typed_entry_cache()
         .lock()
         .expect("typed entry cache")
@@ -277,7 +275,7 @@ fn run_tracked_entry_gate_prepare(
         return Ok(front);
     }
 
-    let front = materialize_typed_bundle(db, resolved, options, DependencyTypingPolicy::EntryOnly, pipeline)?;
+    let front = materialize_typed_bundle(db, resolved, options, pipeline)?;
     typed_entry_cache()
         .lock()
         .expect("typed entry cache")
@@ -286,7 +284,8 @@ fn run_tracked_entry_gate_prepare(
     Ok(front)
 }
 
-/// Debounced entry bundle: fast resolution always; typed HIR when prepare revision caught up.
+/// Debounced entry bundle: fast resolution always; the executable front end of the gate prepare
+/// while file edits are ahead of the debounced prepare revision, else of the full prepare.
 pub fn typed_entry_state_with_db(
     db: &mut BeskidDatabase,
     resolved: &ResolvedInput,
@@ -307,7 +306,7 @@ pub fn typed_entry_state_with_db(
         run_tracked_typed_prepare(db, resolved, &entry_key, options, pipeline)?
     };
     let generation = typed.assembly.generation.0;
-    Ok(TypedEntryState { resolution, typed: Some(typed), generation })
+    Ok(TypedEntryState { resolution, executable: Some(typed), generation })
 }
 
 /// Executable typed bundle when prepare revision caught up; otherwise runs full prepare.
@@ -318,8 +317,8 @@ pub fn typed_entry_bundle_with_db(
     pipeline: Option<&dyn PipelineObserver>,
 ) -> Result<SharedFrontEnd> {
     let state = typed_entry_state_with_db(db, resolved, options, pipeline)?;
-    if let Some(typed) = state.typed {
-        return Ok(typed);
+    if let Some(executable) = state.executable {
+        return Ok(executable);
     }
     run_tracked_typed_prepare(
         db,

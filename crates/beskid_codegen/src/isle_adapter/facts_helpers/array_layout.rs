@@ -44,6 +44,38 @@ impl SyntaxNodeFacts<'_> {
         Some(scalar_aware_array_layout(plan.element_type, element, stride, length, plan.alignment.ilog2() as u8))
     }
 
+    /// The iterator fact of a `ForStatement`, through the enclosing generic specialization when
+    /// the iterable's element names one of the enclosing item's generic parameters.
+    pub(in crate::isle_adapter) fn for_iterator_in_context(
+        &self,
+        key: AstNodeKey,
+    ) -> Option<beskid_queries::ForIteratorFact> {
+        if let Some(fact) = self.query(for_iterator_fact(self.db, key)) {
+            return Some(fact);
+        }
+        let enclosing = self.current_item_specialization()?;
+        self.query(for_iterator_specialization(self.db, key, enclosing.substitutions.clone()))
+    }
+
+    /// The array a `ForStatement` iterates: its element layout (the stride and CLIF element type
+    /// of a read; the length is a runtime header field) and the GC classification of its elements.
+    /// `None` for `range` loops and for iterables without an array source identity.
+    pub(in crate::isle_adapter) fn array_for_fact_impl(&self, key: AstNodeKey) -> Option<beskid_isle::ArrayForFact> {
+        if self.query(node_kind(self.db, key)) != Some(beskid_queries::IndexedNodeKind::ForStatement) {
+            return None;
+        }
+        let fact = self.for_iterator_in_context(key)?;
+        let ForIterableSource::Array { element_managed } = fact.source else { return None };
+        let element = map_signature_type(self.isa?, fact.element_type)?;
+        let stride = element.bytes();
+        let layout = scalar_aware_array_layout(fact.element_type, element, stride, 0, stride.ilog2() as u8);
+        let element_managed = match element_managed {
+            ManagedReferenceKind::GcManaged => ManagedReferenceFact::GcManaged,
+            ManagedReferenceKind::NativeOrScalar => ManagedReferenceFact::NativeOrScalar,
+        };
+        Some(beskid_isle::ArrayForFact { layout, element_managed })
+    }
+
     pub(in crate::isle_adapter) fn typed_array_plan(&self, key: AstNodeKey) -> Option<crate::ArrayStaticPlan> {
         self.input.typed_array_static_plan(key, self.current_item_specialization())
     }

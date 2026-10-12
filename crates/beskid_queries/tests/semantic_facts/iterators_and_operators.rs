@@ -74,7 +74,7 @@ impl Value { i32 Sum(i32 first) { let local = first; return local; } }"#;
 
 #[test]
 fn for_iterator_fact_proves_range_element_type_and_shadowing() {
-    use beskid_queries::ForIteratorFact;
+    use beskid_queries::{ForIterableSource, ForIteratorFact};
 
     let source = "i32 Main() { let value = 1_i64; for value in range(1, 4) { let copy = value; } return 0; }";
     let (db, _project, unit, generation, index) = setup(source);
@@ -88,7 +88,7 @@ fn for_iterator_fact_proves_range_element_type_and_shadowing() {
     );
     assert_eq!(
         for_iterator_fact(&db, for_stmt).expect("for iterator fact"),
-        Some(ForIteratorFact { declaration, element_type: SemanticTypeId::I32 })
+        Some(ForIteratorFact { declaration, element_type: SemanticTypeId::I32, source: ForIterableSource::Range })
     );
     assert_eq!(node_type(&db, declaration).expect("iterator declaration type"), Some(SemanticTypeId::I32));
     let body_reference = key_at_start(
@@ -143,8 +143,62 @@ fn stale_generation_cannot_reuse_for_iterator_fact() {
 }
 
 #[test]
-fn for_iterator_fact_rejects_non_range_iterables() {
+fn for_iterator_fact_proves_array_iterables_through_their_source_identity() {
+    use beskid_queries::{ForIterableSource, ManagedReferenceKind, managed_reference_kind};
+
+    // A declared `i64[]` parameter: scalar elements, the loop variable is a scalar local.
+    let source = "i64 Sum(i64[] values) { mut i64 total = 0_i64; for value in values { total = total + value; } return total; }";
+    let (db, _project, unit, generation, index) = setup(source);
+    let for_stmt = key(unit, generation, &index, NodeKind::ForStatement, 0);
+    let fact = for_iterator_fact(&db, for_stmt).expect("array for fact").expect("array iterable proves a fact");
+    assert_eq!(fact.element_type, SemanticTypeId::I64);
+    assert_eq!(fact.source, ForIterableSource::Array { element_managed: ManagedReferenceKind::NativeOrScalar });
+    assert_eq!(node_type(&db, fact.declaration).expect("loop variable type"), Some(SemanticTypeId::I64));
+    let body_reference = key_at_start(
+        unit,
+        generation,
+        &index,
+        NodeKind::PathExpression,
+        source.find("+ value").expect("body use") + "+ ".len(),
+    );
+    assert_eq!(node_type(&db, body_reference).expect("loop variable reference type"), Some(SemanticTypeId::I64));
+    assert_eq!(abi_type(&db, body_reference).expect("loop variable reference abi"), Some(SemanticTypeId::I64));
+    assert_eq!(
+        managed_reference_kind(&db, body_reference).expect("loop variable classification"),
+        Some(ManagedReferenceKind::NativeOrScalar)
+    );
+
+    // A `string[]` local: managed elements, the loop variable is a GC-rooted pointer local.
+    let source = "string Last(string[] names) { mut string last = \"\"; for name in names { last = name; } return last; }";
+    let (db, _project, unit, generation, index) = setup(source);
+    let for_stmt = key(unit, generation, &index, NodeKind::ForStatement, 0);
+    let fact = for_iterator_fact(&db, for_stmt).expect("array for fact").expect("string array iterable proves a fact");
+    assert_eq!(fact.element_type, SemanticTypeId::STRING);
+    assert_eq!(fact.source, ForIterableSource::Array { element_managed: ManagedReferenceKind::GcManaged });
+    let body_reference = key_at_start(
+        unit,
+        generation,
+        &index,
+        NodeKind::PathExpression,
+        source.find("= name").expect("body use") + "= ".len(),
+    );
+    assert_eq!(
+        managed_reference_kind(&db, body_reference).expect("loop variable classification"),
+        Some(ManagedReferenceKind::GcManaged)
+    );
+
+    // An array literal iterable proves its element type too.
     let source = "unit Main() { for item in [1] { let copy = item; } }";
+    let (db, _project, unit, generation, index) = setup(source);
+    let for_stmt = key(unit, generation, &index, NodeKind::ForStatement, 0);
+    let fact = for_iterator_fact(&db, for_stmt).expect("array literal for fact").expect("array literal proves a fact");
+    assert_eq!(fact.element_type, SemanticTypeId::I32);
+    assert!(matches!(fact.source, ForIterableSource::Array { .. }));
+}
+
+#[test]
+fn for_iterator_fact_rejects_non_iterable_values() {
+    let source = "unit Main(i64 count) { for item in count { let copy = item; } }";
     let (db, _project, unit, generation, index) = setup(source);
     let for_stmt = key(unit, generation, &index, NodeKind::ForStatement, 0);
     assert_unavailable(for_iterator_fact(&db, for_stmt));

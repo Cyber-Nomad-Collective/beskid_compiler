@@ -81,7 +81,7 @@ pub use graph_viz::{
 };
 pub use inputs::{FileText, GrammarRevision, ProjectSession};
 pub use modhost::{ManifestGenerationId, ModHostSyntaxGenerationId};
-pub use output::{SharedFrontEnd, SharedResolution, SharedTypeResult, SharedUnitResolution, SharedUnitTypeSurface};
+pub use output::{SharedFrontEnd, SharedResolution};
 pub use persistence::{
     cache_root_for_project, ensure_salsa_dir, load_db_snapshot, persist_session_snapshot, save_db_snapshot,
 };
@@ -95,7 +95,7 @@ pub use semantic_contract::{
     EnumLayoutTemplateArgument, EnumMatchArmFact, EnumMatchBindingFact, EnumMatchFact, EnumMatchPatternFact,
     EnumMatchScalarLiteralFact, EnumMatchVariantPatternFact, EnumScalarPayloadObjectLayout,
     EnumScalarPayloadVariantLayout, EnumVariantLayoutFact, EventFieldLayoutFact, EventHandlerLocalFact,
-    EventOperationFact, EventOperationKind, ExportSymbol, FiberOwnership, ForIteratorFact, FunctionItemValue,
+    EventOperationFact, EventOperationKind, ExportSymbol, FiberOwnership, ForIterableSource, ForIteratorFact, FunctionItemValue,
     FunctionValueCall, GenericCallInstantiation,
     GenericCallSpecialization, GenericCallTemplate, GenericNominalMethodReceiver, GenericSpecializationInstance,
     GenericSubstitution, IndexedNodeKind, ItemSignature, LiteralFact, LocalSlot, ManagedReferenceKind, ManifestBuiltin,
@@ -110,7 +110,7 @@ pub use semantic_contract::{
     TypedArrayAllocation, TypedProgram, abi_type, aggregate_field_access, aggregate_field_access_specialization,
     aggregate_layout, aggregate_literal_declaration, aggregate_literal_field_values, aggregate_literal_layout,
     aggregate_literal_specialization, array_index_element_abi_type, array_index_element_managed_reference_specialization,
-    array_index_element_specialization,
+    array_index_element_specialization, for_iterator_specialization,
     block_statement_nodes, bulk_call_element_abi_type, bulk_parameter, call_abi_signature,
     call_arguments, call_lowering, callable_fiber_ownership, callable_signature, capture_storage, cast_intents,
     child_nodes, clif_block_body, clif_block_parameters, closure_call_target, closure_environment, closure_signature, collection_operation,
@@ -181,7 +181,7 @@ pub use unit::{
     unit_content_fingerprint, unit_imports,
 };
 
-pub use beskid_analysis::services::{FrontEndOptions, FrontEndTypedResult, PrepareOptions, PreparedCompilation};
+pub use beskid_analysis::services::{FrontEndOptions, ExecutableFrontEnd, PrepareOptions, PreparedCompilation};
 
 pub use semantic_contract::{
     GlueBindingFact, GlueDirection, GlueHandleBrand, GlueLogicalType, GlueOwnerBindingDigest, GlueParameterFact,

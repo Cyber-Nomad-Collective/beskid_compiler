@@ -5,7 +5,7 @@ use anyhow::Result;
 use beskid_abi::abi_v5::TargetMetadata;
 use beskid_analysis::mod_host::ModHost;
 use beskid_analysis::services::{
-    FrontEndOptions, FrontEndTypedResult, ResolvedInput, resolved_input_from_plan, synthetic_compile_plan_for_source,
+    FrontEndOptions, ExecutableFrontEnd, ResolvedInput, resolved_input_from_plan, synthetic_compile_plan_for_source,
 };
 #[cfg(test)]
 use beskid_analysis::syntax::{AstNodeId, SyntaxGenerationId};
@@ -65,7 +65,7 @@ pub fn prepare_jit_module(source_path: &Path, source: &str, mod_host: &ModHost) 
 /// extern contracts fail closed before CodegenInput construction. The snippet's native Mods run in
 /// `mod_host`; with [`ModHost::NoMods`] a snippet whose plan depends on a Mod fails with an error
 /// that names the Mod and how to provide a host.
-pub fn prepare_syntax_front_end(source_path: &Path, source: &str, mod_host: &ModHost) -> Result<FrontEndTypedResult> {
+pub fn prepare_syntax_front_end(source_path: &Path, source: &str, mod_host: &ModHost) -> Result<ExecutableFrontEnd> {
     let source_path = beskid_codegen::materialize_source_path_for_lowering(source_path, source)?;
     let plan = synthetic_compile_plan_for_source(&source_path);
     let resolved: ResolvedInput = resolved_input_from_plan(source_path, source.to_owned(), plan, None, None);
@@ -79,7 +79,7 @@ pub fn prepare_syntax_front_end(source_path: &Path, source: &str, mod_host: &Mod
 
 pub(super) fn lower_syntax_entrypoint_from_front_end(
     db: &mut BeskidDatabase,
-    front: &beskid_analysis::services::FrontEndTypedResult,
+    front: &beskid_analysis::services::ExecutableFrontEnd,
     entrypoint: &str,
     target: beskid_abi::abi_v5::TargetMetadata,
     pipeline: Option<&dyn PipelineObserver>,
@@ -163,7 +163,7 @@ fn lower_syntax_entrypoint(
 /// Test and tooling callers that only need CLIF can use this without constructing an Engine or
 /// a runtime kit. Linked execution must still use [`crate::Engine`]'s exact ABI-v5 kit authority.
 pub fn lower_prepared_syntax_entrypoint(
-    front: &beskid_analysis::services::FrontEndTypedResult,
+    front: &beskid_analysis::services::ExecutableFrontEnd,
     entrypoint: &str,
     target: beskid_abi::abi_v5::TargetMetadata,
 ) -> Result<beskid_codegen::CodegenArtifact> {

@@ -110,6 +110,7 @@ use calls::{
     try_expression_fact_for_node, try_expression_fact_tracked, try_expression_legality_for_node, try_operand_declaration,
     type_syntax_is_enclosing_generic_parameter_reference, type_syntax_is_generic_parameter_reference,
     unique_nominal_method_declaration, unqualified_enclosing_method_call,
+    for_iterator_element_identity,
 };
 pub use cleanup::{ScopedAcquisition, ScopedCleanup, ScopedCleanupDiagnostic, scoped_cleanup};
 pub use closures_spawn::function_value_call_specialization;
@@ -188,7 +189,8 @@ use syntax_facts::{
 };
 use typed_arrays::typed_array_allocation_tracked;
 use typing::{
-    element_type_for_for_iterable, enum_match_result_semantic_type, local_declaration_type,
+    element_type_for_for_iterable, enum_match_result_semantic_type, for_iterable_declared_array_element,
+    local_declaration_type, range_iterable_bounds,
     managed_reference_kind_tracked, node_type_tracked, pattern_binding_fact, pattern_binding_semantic_type,
     semantic_type_for_binary_operands, semantic_type_for_expression, semantic_type_for_literal,
     semantic_type_for_local_path, semantic_type_for_node,
@@ -206,6 +208,7 @@ pub use completion::{
     completion_candidates, completion_dependency_surface, completion_dependency_surface_for_assembly,
     completion_dependency_surface_for_program,
 };
+pub use calls::for_iterator_specialization;
 pub use layouts::{
     aggregate_field_access_specialization, aggregate_literal_specialization, array_index_element_managed_reference_specialization,
     array_index_element_specialization,
@@ -222,7 +225,7 @@ pub use model::{
     EnumMatchArmFact, EnumMatchBindingFact, EnumMatchFact, EnumMatchPatternFact, EnumMatchScalarLiteralFact,
     EnumMatchVariantPatternFact, EnumScalarPayloadObjectLayout, EnumScalarPayloadVariantLayout, EnumVariantLayoutFact,
     EventFieldLayoutFact, EventHandlerLocalFact, ExpectedType, ExpectedTypeContext, EventOperationFact, EventOperationKind, ExportSymbol, FiberOwnership,
-    ForIteratorFact, FunctionItemValue, FunctionValueCall, GenericBindingConflict, GenericBoundViolation, GenericCallInstantiation, GenericCallSpecialization,
+    ForIterableSource, ForIteratorFact, FunctionItemValue, FunctionValueCall, GenericBindingConflict, GenericBoundViolation, GenericCallInstantiation, GenericCallSpecialization,
     GenericCallTemplate,
     GenericNominalMethodReceiver, GenericSpecializationInstance, GenericSubstitution, IndexedNodeKind, ItemSignature,
     LiteralFact, LocalSlot, ManagedReferenceKind, ManifestBuiltin, MutableLocalAssignment, OperatorFact,

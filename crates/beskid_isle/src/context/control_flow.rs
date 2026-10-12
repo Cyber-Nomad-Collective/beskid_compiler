@@ -419,6 +419,117 @@ macro_rules! generated_control_flow_methods {
             Some(())
         }
 
+        /// `for id in array { body }`: the array value is evaluated once, checked non-null and
+        /// rooted for the whole loop; its length is read once from the header; every iteration
+        /// reloads the data pointer (the header is the rooted authority), loads the element at the
+        /// layout stride and assigns it to the loop variable, a scalar or a GC-rooted pointer local.
+        /// The loop scope owns the array root and the loop variable; the body runs in a nested
+        /// scope, so `break` and `continue` release only the body's roots, `return` releases all.
+        fn emit_array_for(&mut self, key: AstNodeKey) -> Option<()> {
+            let iterable = self.facts.child(key, 0)?;
+            let body_key = self.facts.child(key, 1)?;
+            let fact = self.facts.array_for_fact(key)?;
+            let element_type = self.facts.scalar_type(key)?;
+            let slot = self.facts.local_slot(key)?;
+            let pointer = dispatch::pointer_type(self.frontend_config);
+            if !fact.layout.is_valid()
+                || fact.layout.element_type != element_type
+                || (fact.element_managed == ManagedReferenceFact::GcManaged && element_type != pointer)
+                || self.locals.contains_key(&slot)
+            {
+                self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidArrayFor });
+                return None;
+            }
+            let array = generated::constructor_lower_expression(self, iterable)?;
+            if self.builder.func.dfg.value_type(array) != pointer {
+                self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidArrayFor });
+                return None;
+            }
+            self.builder.ins().trapz(array, TrapCode::unwrap_user(1));
+
+            self.begin_local_root_scope();
+            let _array_root = self.root_expression_value_if_needed(iterable, array)?;
+            let length = self.builder.ins().load(
+                pointer,
+                MemFlagsData::new(),
+                array,
+                i32::try_from(pointer.bytes()).ok()?,
+            );
+            let index = self.builder.declare_var(pointer);
+            let zero = self.builder.ins().iconst(pointer, 0);
+            self.builder.def_var(index, zero);
+            let initial = if element_type == cranelift_codegen::ir::types::F32 {
+                self.builder.ins().f32const(cranelift_codegen::ir::immediates::Ieee32::with_bits(0))
+            } else if element_type == cranelift_codegen::ir::types::F64 {
+                self.builder.ins().f64const(cranelift_codegen::ir::immediates::Ieee64::with_bits(0))
+            } else if element_type.is_int() {
+                self.builder.ins().iconst(element_type, 0)
+            } else {
+                self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidArrayFor });
+                return None;
+            };
+            self.bind_local(slot, initial, element_type, fact.element_managed)?;
+
+            let header = self.builder.create_block();
+            let body = self.builder.create_block();
+            let latch = self.builder.create_block();
+            let exit = self.builder.create_block();
+            self.builder.ins().jump(header, &[]);
+
+            self.builder.switch_to_block(header);
+            let current = self.builder.use_var(index);
+            let in_bounds = self.builder.ins().icmp(IntCC::UnsignedLessThan, current, length);
+            self.builder.ins().brif(in_bounds, body, &[], exit, &[]);
+
+            self.builder.switch_to_block(body);
+            self.builder.seal_block(body);
+            let data = self.builder.ins().load(pointer, MemFlagsData::new(), array, 0);
+            let offset = if fact.layout.stride == 1 {
+                current
+            } else {
+                self.builder.ins().imul_imm_s(current, i64::from(fact.layout.stride))
+            };
+            let address = self.builder.ins().iadd(data, offset);
+            let element = self.builder.ins().load(element_type, MemFlagsData::new(), address, 0);
+            self.assign_local(slot, element)?;
+            let body_scope_depth = self.local_root_scope_depth();
+            self.begin_local_root_scope();
+            self.loop_stack.push(LoopTargets {
+                continue_block: latch,
+                break_block: exit,
+                root_scope_depth: body_scope_depth,
+                break_reached: false,
+            });
+            let lowered = generated::constructor_lower_statement(self, body_key);
+            self.loop_stack.pop();
+            if lowered.is_none() {
+                let _ = self.end_local_root_scope_for_current_block();
+                let _ = self.end_local_root_scope_for_current_block();
+                return None;
+            }
+            self.end_local_root_scope_for_current_block()?;
+            // Body may nest control flow and leave the builder on a descendant block.
+            let _ = jump_from_current_if_unterminated(self.builder, latch);
+
+            self.builder.switch_to_block(latch);
+            self.builder.seal_block(latch);
+            let current = self.builder.use_var(index);
+            let next = self.builder.ins().iadd_imm_s(current, 1);
+            self.builder.def_var(index, next);
+            self.builder.ins().jump(header, &[]);
+
+            self.builder.seal_block(header);
+            self.builder.switch_to_block(exit);
+            self.builder.seal_block(exit);
+            // Leaving the loop scope releases the array root and the loop variable on the normal
+            // and the `break` edges alike.
+            self.end_local_root_scope_for_current_block()?;
+            Some(())
+        }
+
+        /// The nominal iterator protocol (`Next()` returning `Option<T>`) has no lowering fact;
+        /// the check gate accepts it (E1215-E1218 judge its shape), so a program that reaches
+        /// emission here fails closed as a compiler gap.
         fn emit_iterator_for(&mut self, key: AstNodeKey) -> Option<()> {
             self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidRangeFor });
             None
