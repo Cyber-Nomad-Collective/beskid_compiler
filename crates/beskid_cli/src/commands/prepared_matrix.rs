@@ -299,7 +299,7 @@ impl PreparedWorkspace {
                 prepare_message: "Analysis complete",
             },
         )?;
-        let tests = beskid_engine::services::syntax_test_items_from_front_end(prepared.executable()?)?;
+        let tests = beskid_engine::services::syntax_test_items_from_front_end(prepared.executable())?;
         let front = prepared.into_executable()?;
         Ok(PreparedTarget { name, resolved, front, tests })
     }

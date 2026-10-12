@@ -37,7 +37,4 @@ pub use orchestration::{
 
 pub(crate) use orchestration::emitted_item_keys;
 
-#[allow(unused_imports)] // Keep the pre-split crate-internal facade path.
-pub(crate) use data::{descriptor_offsets_symbol_name, descriptor_symbol_name};
-
 mod serialization;

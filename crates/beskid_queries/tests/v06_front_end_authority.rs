@@ -85,9 +85,16 @@ fn cached_editor_assembly_cannot_enter_strict_prepare_and_projections_preserve_p
     let mut assembly_options =
         beskid_analysis::projects::assembly_options_for_prepare(&plan, FrontEndOptions::default().assembly_discovery);
     assembly_options.recovery_policy = AssemblyRecoveryPolicy::EditorRetainRecovered;
-    let cached =
-        beskid_analysis::projects::assemble_program(&plan, None, &entry_path, Some(source), &assembly_options, None)
-            .expect("actual editor-policy assembly");
+    let cached = beskid_analysis::projects::assemble_program_with_materializer(
+        &plan,
+        None,
+        &entry_path,
+        Some(source),
+        &assembly_options,
+        None,
+        None,
+    )
+    .expect("actual editor-policy assembly");
     let resolved = resolved_input_from_plan(entry_path.clone(), source.to_owned(), plan, None, Some(cached));
     let error = match beskid_queries::prepare_compilation(&resolved, PrepareOptions::without_mods(), None) {
         Ok(_) => panic!("strict preparation must not consume cached editor authority"),

@@ -9,8 +9,7 @@ mod tests {
     };
     use crate::services::{
         build_document_analysis_from_resolution, build_document_analysis_with_context, completion_candidates,
-        definition_at_offset, parse_program_with_source_name, references_at_offset_workspace, resolve_entry,
-        resolve_input,
+        definition_at_offset, parse_program_with_source_name, references_at_offset_workspace, resolve_input,
     };
 
     struct CorelibMvpFixture {
@@ -122,7 +121,9 @@ mod tests {
     ) -> crate::services::DocumentAnalysisSnapshot {
         let program = parse_program_with_source_name(&fixture.main_path.to_string_lossy(), &fixture.source)
             .expect("parse Main.bd");
-        let resolution = resolve_entry(&assembly.entry_unit().program, assembly, Some(&fixture.main_path))
+        let resolution = assembly
+            .module_index
+            .resolve_entry_program(&assembly.entry_unit().program, Some(&fixture.main_path), assembly)
             .expect("entry resolution");
         let module_paths = assembly.module_index.known_module_path_strings();
         build_document_analysis_from_resolution(
