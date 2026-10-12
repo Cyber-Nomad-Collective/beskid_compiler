@@ -217,12 +217,14 @@ Ported to the query authority:
   primitive signatures, module integer constants, same-leaf dependency signatures, dependency call
   argument types, unknown bare call inside a method, missing accessible field (E1212).
 - `beskid_queries/tests/v06_front_end_authority.rs`: bare sibling-method dispatch through
-  `call_lowering`, `try_expression_fact` for `let`-bound operands, spine products (`executable`
-  always present, syntax assembly projection, editor recovery policy).
+  `call_lowering`, spine products (`executable` always present, syntax assembly projection, editor
+  recovery policy). The `let`-bound `?` operand cases were already covered by
+  `beskid_queries/tests/try_diagnostics.rs`, whose precheck column is removed.
 - `beskid_codegen/tests/prepared_syntax.rs`: named function value, function-typed field, call on a
   call result and `for` over an array lower through the prepared front end.
 - `beskid_codegen/tests/isle_adapter/control_flow_loop_termination.rs`: CLIF shape of the array
-  loop (scalar and managed elements, break inside the body).
+  loop (scalar and byte elements, managed elements rooted, break inside the body). Nested
+  `T[][]` is not spelled by the grammar (`ArrayType = TypeAtom "[" "]"`), so it is not tested.
 - `beskid_tests_projects` fixture harness and `beskid_queries/tests/runtime_fixture.rs`: the
   "production semantic gate" assertions use `semantic_diagnostics_for_roots`; the resolution-table
   assertions use the resolver directly.

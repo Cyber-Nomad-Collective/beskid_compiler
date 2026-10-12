@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+
+- The legacy `beskid_analysis` `TypeChecker` and everything only it fed: the typed
+  session fingerprints, the `EntryOnly` / `FullClosure` dependency typing policy,
+  the authority-less prepare entry points, the stage-7 `?` precheck, the HIR-era
+  pipeline phase ids (`lower.ast`, `lower.resolve_pass1`, `lower.normalize`,
+  `lower.resolve`, `lower.type_check`, `semantic.error_handling`) and the dead
+  type-descriptor artifact path. The query gate is the only typing authority on
+  the diagnostics and the executable path; codegen lowers the executable front
+  end (`ExecutableFrontEnd`, formerly `FrontEndTypedResult`) through
+  `TypedProgram`, `CodegenInput` and ISLE. Programs the gate accepts but the old
+  checker rejected (a named function as a value, a function-typed field, a call
+  on a call result) now build (`docs/design/2026-10-12-query-front-end.md`).
+
+### Added
+
+- `for id in expr` over an array value: the array is evaluated once and iterated
+  in index order, the loop variable is typed and GC-classified by the element's
+  source identity (`for_iterator_fact`, `ForIterableSource::Array`), including
+  through an enclosing generic specialization (`for_iterator_specialization`);
+  ISLE lowers it with `emit_array_for`.
+
+### Fixed
+
+- The program entry function `Main` of an `App` or `Test` target is no longer
+  reported as an unused private item (W1504); the exemption of a lowercase
+  `main`, which is not the entry point, is removed. `Main` is one constant
+  (`beskid_analysis::projects::PROGRAM_ENTRY_FUNCTION`) shared by the rules, the
+  AOT entrypoint default and the CLI.
+- A standalone `.bd` file outside any project is judged by the query gate over a
+  synthetic single-file plan instead of the structural rules alone.
+
 - Lower explicitly selected current-generation callables through their reachable source union while retaining ordinary import and callback admission.
 
 ### Changed
