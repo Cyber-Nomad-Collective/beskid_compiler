@@ -160,7 +160,16 @@ pub(in crate::semantic_contract) fn generic_source_local_identity(
                 None => untyped_lambda_parameter_identity(db, program, index, key, parent),
             }
         }
-        _ => Err(source_expression_unavailable(db, key, "binding is neither a parameter nor a let local")),
+        Some(beskid_analysis::syntax_query::NodeKind::ForStatement) => {
+            let statement = index
+                .node_at(program, parent)
+                .and_then(|node| node.of::<beskid_analysis::syntax::ForStatement>())
+                .ok_or_else(|| source_expression_unavailable(db, key, "for statement is absent"))?;
+            // The loop variable has the identity of the values the iterable yields.
+            for_iterator_element_identity(db, program, index, AstNodeKey { node: parent, ..key }, statement)
+                .map(|(identity, _)| identity)
+        }
+        _ => Err(source_expression_unavailable(db, key, "binding is neither a parameter, a let local nor a for variable")),
     }
 }
 

@@ -47,3 +47,52 @@ fn while_true_with_a_reachable_break_still_falls_through_normally() {
     let clif = function.display().to_string();
     assert!(clif.contains("iconst.i64 9"), "{clif}");
 }
+
+#[test]
+fn for_over_a_scalar_array_reads_the_header_length_and_indexes_by_stride() {
+    let (input, isa, item) = item_fixture(
+        "i64 Sum(i64[] values) { mut i64 total = 0_i64; for value in values { total = total + value; } return total; }",
+    );
+    let function = emit_isle_item(&input, isa.as_ref(), item).expect("a for over an i64[] parameter lowers");
+    let clif = function.display().to_string();
+    assert!(clif.contains("icmp ult"), "the index is compared unsigned against the header length:\n{clif}");
+    assert!(clif.contains("imul_imm"), "an 8-byte element is addressed by its stride:\n{clif}");
+    assert!(clif.contains("iadd_imm"), "the index advances by one per iteration:\n{clif}");
+    assert!(clif.contains("trapz"), "a null array traps before the first element is read:\n{clif}");
+    assert!(clif.contains("explicit_slot"), "the array value is rooted for the loop:\n{clif}");
+}
+
+#[test]
+fn for_over_a_byte_array_addresses_elements_without_a_stride_multiply() {
+    let (input, isa, item) =
+        item_fixture("i64 Count(u8[] bytes) { mut i64 total = 0_i64; for byte in bytes { total = total + 1_i64; } return total; }");
+    let function = emit_isle_item(&input, isa.as_ref(), item).expect("a for over a u8[] parameter lowers");
+    let clif = function.display().to_string();
+    assert!(clif.contains("icmp ult"), "{clif}");
+    assert!(!clif.contains("imul_imm"), "a 1-byte element needs no stride multiply:\n{clif}");
+}
+
+#[test]
+fn for_over_a_managed_array_roots_the_loop_variable() {
+    let (input, isa, item) = item_fixture(
+        "string Last(string[] names) { mut string last = \"\"; for name in names { last = name; } return last; }",
+    );
+    let function = emit_isle_item(&input, isa.as_ref(), item).expect("a for over a string[] parameter lowers");
+    let clif = function.display().to_string();
+    assert!(clif.contains("icmp ult"), "{clif}");
+    assert!(
+        clif.matches("explicit_slot").count() >= 2,
+        "the array and the loop variable are rooted in stack slots for the loop:\n{clif}"
+    );
+    assert!(clif.contains("stack_store"), "each iteration publishes the element into the loop variable's root:\n{clif}");
+}
+
+#[test]
+fn for_over_an_array_with_a_break_in_its_body_lowers() {
+    let (input, isa, item) = item_fixture(
+        "i64 Find(i64[] values) { mut i64 found = -1_i64; for value in values { if value == 3_i64 { found = value; break; } } return found; }",
+    );
+    let function = emit_isle_item(&input, isa.as_ref(), item).expect("a break inside an array for lowers");
+    let clif = function.display().to_string();
+    assert!(clif.contains("icmp ult"), "{clif}");
+}

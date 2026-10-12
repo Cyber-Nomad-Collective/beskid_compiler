@@ -16,9 +16,11 @@ pub(in crate::semantic_contract) use casts::{
     primitive_numeric,
 };
 
+pub use facts::for_iterator_specialization;
+
 pub(in crate::semantic_contract) use facts::{
     call_arguments_tracked, call_lowering_tracked, canonical_result_definition_for_type, canonical_result_variant,
-    for_iterator_fact_tracked, primitive_numeric_conversion_target, primitive_numeric_conversion_tracked,
+    for_iterator_element_identity, for_iterator_fact_tracked, primitive_numeric_conversion_target, primitive_numeric_conversion_tracked,
     range_for_fact_tracked, result_type_parts, try_expression_fact_for_node, try_expression_fact_tracked, try_expression_legality_for_node,
     try_operand_declaration,
 };

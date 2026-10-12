@@ -184,10 +184,12 @@ pub fn range_for_fact(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<Range
     with_registered_syntax(db, key, range_for_fact_tracked)
 }
 
-/// Return the iterator declaration identity and element type for one current `ForStatement`.
+/// Return the iterator declaration identity, element type and source for one current
+/// `ForStatement`.
 ///
-/// Only the syntax-only `range(start, end)` iterable proves an element type. Stale generations,
-/// unregistered nodes, and non-for statements contain no fact.
+/// The syntax-only `range(start, end)` iterable and every iterable whose source identity is an
+/// array prove an element type; see [`ForIteratorFact`]. Stale generations, unregistered nodes,
+/// and non-for statements contain no fact.
 pub fn for_iterator_fact(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<ForIteratorFact> {
     with_registered_syntax(db, key, for_iterator_fact_tracked)
 }

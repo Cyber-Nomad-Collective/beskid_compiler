@@ -33,6 +33,14 @@
         (for_iterable_class (ForIterableKind.Range))))
       (emit_range_for key))
 
+(decl partial emit_array_for (AstNodeKey) Unit)
+(extern constructor emit_array_for emit_array_for)
+
+(rule (lower_statement key @ (and
+        (node_kind (NodeKind.ForStatement))
+        (for_iterable_class (ForIterableKind.Array))))
+      (emit_array_for key))
+
 (decl partial emit_iterator_for (AstNodeKey) Unit)
 (extern constructor emit_iterator_for emit_iterator_for)
 

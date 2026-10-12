@@ -108,6 +108,10 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
         self.managed_reference_impl(key)
     }
 
+    fn array_for_fact(&self, key: AstNodeKey) -> Option<beskid_isle::ArrayForFact> {
+        self.array_for_fact_impl(key)
+    }
+
     fn try_expression_fact(&self, key: AstNodeKey) -> Option<beskid_queries::TryExpressionFact> {
         self.try_expression_fact_impl(key)
     }

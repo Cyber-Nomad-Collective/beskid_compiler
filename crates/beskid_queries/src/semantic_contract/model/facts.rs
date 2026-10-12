@@ -42,14 +42,28 @@ pub struct RangeForFact {
     pub end: AstNodeKey,
 }
 
-/// Generation-bound iterator declaration and element type for one `ForStatement`.
+/// What a `for` statement iterates: the syntax-only `range(start, end)` form, or an array value
+/// whose element identity the source proves (`T[]` parameters and locals, field projections,
+/// call results, array literals). The nominal iterator protocol has no lowering fact.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub enum ForIterableSource {
+    Range,
+    /// The loop reads every element of the array value evaluated once at loop entry, in index
+    /// order. `element_managed` is the GC classification of the elements (the loop variable's
+    /// root discipline), derived from the element's source identity, never from its ABI.
+    Array { element_managed: super::types::ManagedReferenceKind },
+}
+
+/// Generation-bound iterator declaration, element type and source for one `ForStatement`.
 ///
-/// The declaration is the loop-variable identifier. Element type is proven only for the
-/// syntax-only `range(start, end)` iterable; other iterables remain unavailable.
+/// The declaration is the loop-variable identifier. The element type is the start type of a
+/// `range(start, end)` iterable or the element ABI of an array iterable; anything else remains
+/// unavailable (the check gate judges proven non-iterables as E1215).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct ForIteratorFact {
     pub declaration: AstNodeKey,
     pub element_type: SemanticTypeId,
+    pub source: ForIterableSource,
 }
 
 /// Source-proven bulk calling-convention marker for one function or method parameter.

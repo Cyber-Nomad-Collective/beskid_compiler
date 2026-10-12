@@ -1,6 +1,7 @@
 //! Semantic types for expressions, operands, locals, iterables, and literals.
 
 use super::super::*;
+use super::super::layouts::explicit_local_declaration_type;
 use super::*;
 
 pub(in crate::semantic_contract) fn semantic_type_for_node(
@@ -198,28 +199,65 @@ pub(in crate::semantic_contract) fn local_declaration_type(
     }
 }
 
+/// The syntax-only element type of a `for` iterable: the start of a `range(start, end)`, the
+/// declared element of a local or parameter annotated `T[]`, or the first element of an array
+/// literal. Iterables whose element type needs semantic facts (a call result, a field, a nominal
+/// element) are the tracked `for_iterator_fact`'s, which proves them through source identity.
 pub(in crate::semantic_contract) fn element_type_for_for_iterable(
     program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
     index: &beskid_analysis::syntax_query::SyntaxIndex,
     for_statement: beskid_analysis::syntax::AstNodeId,
     iterable: &beskid_analysis::syntax::Expression,
 ) -> Result<SemanticTypeId, SemanticError> {
-    let beskid_analysis::syntax::Expression::Call(call) = iterable else {
-        return Err(SemanticError::unavailable("for_iterator_element_type"));
-    };
-    let beskid_analysis::syntax::Expression::Path(path) = &call.node.callee.node else {
-        return Err(SemanticError::unavailable("for_iterator_element_type"));
-    };
-    let [segment] = path.node.path.node.segments.as_slice() else {
-        return Err(SemanticError::unavailable("for_iterator_element_type"));
-    };
-    if segment.node.name.node.name != "range" || !segment.node.type_args.is_empty() {
-        return Err(SemanticError::unavailable("for_iterator_element_type"));
+    if let Some((start, _end)) = range_iterable_bounds(iterable) {
+        return semantic_type_for_expression(program, index, for_statement, &start.node);
     }
-    let [start, _end] = call.node.args.as_slice() else {
-        return Err(SemanticError::unavailable("for_iterator_element_type"));
-    };
-    semantic_type_for_expression(program, index, for_statement, &start.node)
+    if let Some(element) = for_iterable_declared_array_element(program, index, for_statement, iterable) {
+        return semantic_type_from_syntax(element);
+    }
+    if let beskid_analysis::syntax::Expression::ArrayLiteral(literal) = iterable
+        && let Some(first) = literal.node.elements.first()
+    {
+        return semantic_type_for_expression(program, index, for_statement, &first.node);
+    }
+    Err(SemanticError::unavailable("for_iterator_element_type"))
+}
+
+/// The `(start, end)` operands of the syntax-only `range(start, end)` iterable form.
+pub(in crate::semantic_contract) fn range_iterable_bounds(
+    iterable: &beskid_analysis::syntax::Expression,
+) -> Option<(
+    &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Expression>,
+    &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Expression>,
+)> {
+    let beskid_analysis::syntax::Expression::Call(call) = iterable else { return None };
+    let beskid_analysis::syntax::Expression::Path(path) = &call.node.callee.node else { return None };
+    let [segment] = path.node.path.node.segments.as_slice() else { return None };
+    if segment.node.name.node.name != "range" || !segment.node.type_args.is_empty() {
+        return None;
+    }
+    let [start, end] = call.node.args.as_slice() else { return None };
+    Some((start, end))
+}
+
+/// The declared element type of a `for` iterable that is a bare lexical local or parameter
+/// annotated with an array type `T[]`.
+pub(in crate::semantic_contract) fn for_iterable_declared_array_element<'a>(
+    program: &'a beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    for_statement: beskid_analysis::syntax::AstNodeId,
+    iterable: &beskid_analysis::syntax::Expression,
+) -> Option<&'a beskid_analysis::syntax::Type> {
+    let beskid_analysis::syntax::Expression::Path(path) = iterable else { return None };
+    let [segment] = path.node.path.node.segments.as_slice() else { return None };
+    if !segment.node.type_args.is_empty() {
+        return None;
+    }
+    let declaration = resolve_lexical_declaration(program, index, for_statement, segment.node.name.node.name.as_str())?;
+    match explicit_local_declaration_type(program, index, declaration)? {
+        beskid_analysis::syntax::Type::Array(element) => Some(&element.node),
+        _ => None,
+    }
 }
 
 pub(in crate::semantic_contract) fn semantic_type_for_literal(

@@ -5,7 +5,7 @@ use std::sync::Arc;
 use cranelift_codegen::ir::{Signature, Type};
 
 use super::*;
-use crate::layout::ManagedStructAllocation;
+use crate::layout::{ArrayLayout, ManagedStructAllocation};
 
 /// Exact query authority consumed by the event emitters. No receiver/field identity is
 /// reconstructed by generated ISLE or by the backend.
@@ -65,6 +65,15 @@ pub enum CollectionOperation {
 pub enum ManagedReferenceFact {
     NativeOrScalar,
     GcManaged,
+}
+
+/// The array a `for` statement iterates: the element layout the loop reads with (stride and CLIF
+/// element type; the length is read from the array header at loop entry) and the GC classification
+/// of the elements, which decides whether the loop variable is a rooted managed local.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ArrayForFact {
+    pub layout: ArrayLayout,
+    pub element_managed: ManagedReferenceFact,
 }
 
 #[derive(Clone)]

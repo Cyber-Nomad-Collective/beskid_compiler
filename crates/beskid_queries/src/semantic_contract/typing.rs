@@ -6,7 +6,8 @@ mod match_binding;
 mod node_type;
 
 pub(in crate::semantic_contract) use expression::{
-    element_type_for_for_iterable, local_declaration_type, semantic_type_for_binary_operands,
+    element_type_for_for_iterable, for_iterable_declared_array_element, local_declaration_type,
+    range_iterable_bounds, semantic_type_for_binary_operands,
     semantic_type_for_expression, semantic_type_for_literal, semantic_type_for_local_path, semantic_type_for_node,
 };
 pub use managed_reference::specialized_call_result_managed_reference_kind;
