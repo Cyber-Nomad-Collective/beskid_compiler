@@ -200,7 +200,11 @@ fn warm_snapshot_source_edit_resumes_assembly_generation_in_a_fresh_process() {
             !diagnostics.iter().any(|diagnostic| diagnostic.severity == beskid_analysis::Severity::Error),
             "{diagnostics:?}"
         );
-        assert!(prepared.typed.is_some(), "the regression must materialize real executable frontend facts");
+        assert_eq!(
+            prepared.executable().assembly.generation,
+            prepared.assembly.generation,
+            "the regression must materialize the executable front end of the prepared generation"
+        );
         prepared
     };
     if let Ok(root) = std::env::var("BESKID_GENERATION_REPLAY_FIXTURE") {
@@ -219,7 +223,7 @@ fn warm_snapshot_source_edit_resumes_assembly_generation_in_a_fresh_process() {
         let edited =
             std::fs::read_to_string(&path).unwrap().replace("return Result::Ok(2_i64)", "return Result::Ok(3_i64)");
         std::fs::write(&path, edited).unwrap();
-        // Keep `next.typed` alive so this also exercises the executable cache's
+        // Keep `next.executable` alive so this also exercises the executable cache's
         // weak handle, not just an entry containing an expired executable.
         let following = prepare(&mut restored, &path);
         assert!(

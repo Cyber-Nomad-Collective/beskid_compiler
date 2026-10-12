@@ -1,6 +1,4 @@
-use std::sync::atomic::{AtomicU64, Ordering};
-
-use super::{PrepareOptions, collect_analyzer_diagnostics, prepare_compilation};
+use super::collect_analyzer_diagnostics;
 use crate::analysis::diagnostics::Severity;
 use crate::mod_host::{
     AnalyzerDiagnostic, AnalyzerSeverity, ContractInvoker, ContractRegistration, ModHostAnalyzeResult,
@@ -8,57 +6,7 @@ use crate::mod_host::{
 };
 use crate::projects::SourceUnit;
 use crate::services::semantic::require_no_semantic_errors;
-use crate::services::{
-    FrontEndOptions, parse_program_with_source_name, resolved_input_from_plan, synthetic_compile_plan_for_source,
-};
-
-static TEST_ID: AtomicU64 = AtomicU64::new(0);
-
-#[test]
-fn prepare_spine_syntax_assembly_uses_rewritten_entry_without_document_snapshot() {
-    let test_id = TEST_ID.fetch_add(1, Ordering::Relaxed);
-    let root = std::env::temp_dir().join(format!("beskid_prepare_syntax_assembly_{test_id}"));
-    std::fs::create_dir_all(&root).expect("test source root");
-    let entry_path = root.join("Main.bd");
-    let source = "i32 Main() { return 0; }";
-    std::fs::write(&entry_path, source).expect("entry source");
-
-    let plan = synthetic_compile_plan_for_source(&entry_path);
-    let resolved = resolved_input_from_plan(entry_path.clone(), source.to_string(), plan, None, None);
-    let prepared = prepare_compilation(
-        &resolved,
-        PrepareOptions {
-            front_end: FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
-            ..PrepareOptions::without_mods()
-        },
-        None,
-    )
-    .expect("prepare");
-
-    // Typed prepare projects through FrontEndTypedResult::syntax_assembly (post-rewrite entry).
-    let syntax = prepared.syntax_assembly();
-    assert_eq!(
-        syntax.entry_unit().program,
-        prepared.program,
-        "prepare-spine syntax assembly must match the prepare entry program"
-    );
-    let typed = prepared.typed.as_ref().expect("typed front-end");
-    assert_eq!(syntax.entry_unit().program, typed.syntax_assembly().entry_unit().program);
-
-    // Untyped path: rewritten prepare.program is the sole authority (no DocumentAnalysisSnapshot).
-    let rewritten = parse_program_with_source_name("Main.bd", "i32 Rewritten() { return 1; }").expect("rewritten");
-    let mut untyped = prepared;
-    untyped.typed = None;
-    untyped.program = rewritten.clone();
-    assert_eq!(
-        untyped.syntax_assembly().entry_unit().program,
-        rewritten,
-        "untyped prepare-spine syntax assembly must project prepare.program"
-    );
-    assert!(!untyped.syntax_assembly().units.is_empty(), "syntax assembly must retain immutable source units");
-
-    let _ = std::fs::remove_dir_all(root);
-}
+use crate::services::parse_program_with_source_name;
 
 /// Build a `ModHostAnalyzeResult` carrying one scripted `Analyzer` outcome so the
 /// prepare-spine mod-diagnostic gate can be exercised without a native mod artifact.
@@ -144,50 +92,4 @@ fn mod_warning_diagnostic_does_not_fail_typed_build_path() {
         require_no_semantic_errors(&analyzer_diagnostics).is_ok(),
         "mod Warning-severity diagnostic must not fail the typed build path"
     );
-}
-#[test]
-fn cached_editor_assembly_cannot_enter_strict_prepare_and_projections_preserve_policy() {
-    use crate::projects::AssemblyRecoveryPolicy;
-    let directory = tempfile::tempdir().expect("isolated policy project");
-    let entry_path = directory.path().join("Main.bd");
-    let source = "i32 Main() { return 0; }";
-    std::fs::write(&entry_path, source).unwrap();
-    let plan = synthetic_compile_plan_for_source(&entry_path);
-    let mut assembly_options =
-        crate::projects::assembly_options_for_prepare(&plan, FrontEndOptions::default().assembly_discovery);
-    assembly_options.recovery_policy = AssemblyRecoveryPolicy::EditorRetainRecovered;
-    let cached = crate::projects::assemble_program(&plan, None, &entry_path, Some(source), &assembly_options, None)
-        .expect("actual editor-policy assembly");
-    let resolved = resolved_input_from_plan(entry_path.clone(), source.to_owned(), plan, None, Some(cached));
-    let error = match prepare_compilation(&resolved, PrepareOptions::without_mods(), None) {
-        Ok(_) => panic!("strict preparation must not consume cached editor authority"),
-        Err(error) => error,
-    };
-    assert!(error.to_string().contains("recovery policy"), "must diagnose authority mismatch: {error}");
-
-    let mut prepared = prepare_compilation(
-        &resolved,
-        PrepareOptions {
-            front_end: FrontEndOptions {
-                assembly_recovery: AssemblyRecoveryPolicy::EditorRetainRecovered,
-                ..Default::default()
-            },
-            ..PrepareOptions::without_mods()
-        },
-        None,
-    )
-    .expect("matching editor-policy prepare");
-    assert_eq!(prepared.assembly.recovery_policy, AssemblyRecoveryPolicy::EditorRetainRecovered);
-    assert_eq!(prepared.syntax_assembly().recovery_policy, AssemblyRecoveryPolicy::EditorRetainRecovered);
-    assert_eq!(
-        prepared.typed.as_ref().expect("typed result").syntax_assembly().recovery_policy,
-        AssemblyRecoveryPolicy::EditorRetainRecovered
-    );
-    prepared.typed = None;
-    assert_eq!(
-        prepared.syntax_assembly().recovery_policy,
-        AssemblyRecoveryPolicy::EditorRetainRecovered,
-        "untyped projection retains recovery authority too"
-    );
-    crate::services::entry_session::invalidate_project(directory.path());
 }

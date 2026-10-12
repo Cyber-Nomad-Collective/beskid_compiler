@@ -27,7 +27,7 @@ pub(crate) const SCHEDULER_ENTRY_HELPERS: &[&str] = &[
 pub(crate) const SCHEDULER_STACK_HELPERS: &[&str] = &["SchedulerStackCheck", "SchedulerStackOverflowObserved"];
 
 pub use contracts::SyntaxModuleEmissionError;
-pub use data::{DescriptorHandles, emit_closure_static_plans, emit_string_literals, emit_type_descriptors};
+pub use data::{emit_closure_static_plans, emit_string_literals};
 pub use items::SyntaxModuleItem;
 pub use optional_externs::OPTIONAL_EXTERN_ABSENT_SYMBOL;
 pub use orchestration::{

@@ -2,7 +2,6 @@
 
 use std::collections::HashMap;
 
-use beskid_analysis::types::TypeId;
 use cranelift_codegen::ir::Function;
 
 /// One generated function at the Cranelift artifact boundary.
@@ -32,20 +31,11 @@ pub struct ExportEntry {
     pub abi: String,
 }
 
-/// Serialized type descriptor payload emitted into object or JIT data.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TypeDescriptorData {
-    pub size: usize,
-    pub align: usize,
-    pub pointer_offsets: Vec<usize>,
-}
-
 /// Complete output of the syntax → ISLE → verified CLIF path.
 #[derive(Debug, Clone, Default)]
 pub struct CodegenArtifact {
     pub functions: Vec<LoweredFunction>,
     pub dynamic_initialization: Option<crate::dynamic_initialization::DynamicInitializationPlan>,
-    pub type_descriptors: HashMap<TypeId, TypeDescriptorData>,
     pub string_literals: HashMap<String, Vec<u8>>,
     pub closure_static_plans: Vec<crate::closure_static::ClosureStaticPlan>,
     /// Whether this artifact requires the fixed managed wrapper layout used by event handlers.

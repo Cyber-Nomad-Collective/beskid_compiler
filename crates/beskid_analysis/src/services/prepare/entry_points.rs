@@ -1,4 +1,10 @@
-//! Public prepare entry points: the executable spine and the fact-authority diagnostics spine.
+//! Public prepare entry point: the spine driven by a generation-bound semantic fact authority.
+//!
+//! Every preparation, executable or diagnostics-only, runs behind
+//! [`prepare_compilation_with_fact_authority`]. The query gate
+//! (`beskid_queries::{prepare_compilation, prepare_compilation_diagnostics}`, `_with_db`,
+//! `_isolated`) is the one semantic authority of `beskid build`, `run`, `test`, `check`,
+//! `analyze`, and the language server, so no authority-less entry point exists here.
 
 use anyhow::Result;
 use beskid_pipeline::PipelineObserver;
@@ -12,37 +18,6 @@ use super::super::input::ResolvedInput;
 use super::super::session::SessionFingerprint;
 use super::*;
 
-/// Single front-end spine: assemble → mod host → rewrite → semantic → composition → (optional) typed syntax.
-pub fn prepare_compilation(
-    resolved: &ResolvedInput,
-    options: PrepareOptions,
-    pipeline: Option<&dyn PipelineObserver>,
-) -> Result<PreparedCompilation> {
-    let plan = resolved
-        .compile_plan
-        .as_ref()
-        .ok_or_else(|| anyhow::anyhow!("prepare_compilation requires a CompilePlan (project context)"))?;
-
-    let spine = run_prepare_spine(
-        &resolved.source_path,
-        &resolved.source,
-        plan,
-        resolved.prepared_workspace.as_ref(),
-        resolved.assembly.as_ref(),
-        &options,
-        pipeline,
-        false,
-        true,
-        None,
-    )?;
-
-    Ok(spine.prepared)
-}
-
-/// Diagnostics-only preparation lives behind [`prepare_compilation_with_fact_authority`]: the
-/// query gate (`beskid_queries::prepare_compilation_diagnostics`, `_with_db`, `_isolated`) is the
-/// one semantic authority of `beskid check`, `analyze`, and the language server, so no
-/// authority-less diagnostics entry point exists here.
 /// One positive semantic-fact finding from a generation-bound semantic owner: a registered
 /// diagnostic kind located in one unit of the assembly the spine prepared. `unit` indexes
 /// [`ProgramAssembly::units`]; a finding outside the entry unit renders against that unit's own
@@ -56,8 +31,8 @@ pub struct SemanticFactFinding {
 
 /// Inversion seam for a generation-bound semantic owner. The callback consumes the final
 /// rewritten entry and its actual assembly, not a second frontend tree, and returns every
-/// finding its facts produce for the entry's reachable items (invalid `?` targets and the
-/// reachability-scoped legality facts the lowering gate also evaluates).
+/// finding its facts produce for every own unit (typing and legality obligations, invalid `?`
+/// targets, and the reachability-scoped legality facts the lowering gate also evaluates).
 pub trait SemanticFactAuthority {
     fn fact_findings(
         &mut self,
@@ -81,6 +56,9 @@ where
     }
 }
 
+/// Run the prepare spine: assemble, Mod host, rewrite, structural rules, composition, query gate,
+/// executable front end. With `collect_diagnostics` every diagnostic is returned; otherwise an
+/// error diagnostic fails preparation.
 pub fn prepare_compilation_with_fact_authority(
     resolved: &ResolvedInput,
     options: PrepareOptions,
@@ -106,7 +84,7 @@ pub fn prepare_compilation_with_fact_authority(
         pipeline,
         collect_diagnostics,
         !isolated,
-        Some(authority),
+        authority,
     )?;
     Ok((output.prepared, output.collected_diagnostics, output.collected_fixes))
 }

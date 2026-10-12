@@ -46,7 +46,6 @@ const SEMANTIC_SUB_PHASE_IDS: &[&str] = &[
     phases::SEMANTIC_NAME_RESOLUTION,
     phases::SEMANTIC_VISIBILITY,
     phases::SEMANTIC_CONTRACTS,
-    phases::SEMANTIC_ERROR_HANDLING,
     phases::SEMANTIC_TYPE_CHECK,
     phases::SEMANTIC_NAMING_STYLE,
 ];

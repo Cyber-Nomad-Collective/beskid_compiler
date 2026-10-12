@@ -63,7 +63,11 @@ fn run_analyze(args: AnalyzeArgs) -> Result<()> {
         )?;
         diagnostics
     } else {
-        services::analyze_program(&resolved.source_path, &resolved.source)?
+        beskid_tools::pipeline::frontend::standalone_semantic_diagnostics(
+            &resolved.source_path,
+            &resolved.source,
+            Some(pipeline_ui.as_ref()),
+        )?
     };
     let counts = pipeline_ui.report_semantic_diagnostics(&diagnostics);
     let severity_line = format_severity_summary(counts);

@@ -7,10 +7,9 @@ use anyhow::Result;
 use crate::projects::ProgramAssembly;
 use crate::syntax::Spanned;
 
-use super::super::front_end::{FrontEndOptions, FrontEndTypedResult};
-use super::super::semantic_facts::DependencyTypingPolicy;
+use super::super::front_end::{ExecutableFrontEnd, FrontEndOptions};
 
-/// Options for [`prepare_compilation`].
+/// Options for the prepare spine.
 ///
 /// There is no default: a caller chooses its native Mod host with [`Self::without_mods`] (the plan
 /// must be Mod-free) or [`Self::with_mod_host`].
@@ -20,8 +19,6 @@ pub struct PrepareOptions {
     /// invocation-scoped.
     pub mod_host: crate::mod_host::ModHost,
     pub front_end: FrontEndOptions,
-    /// Whether dependency unit bodies are fully type-checked or only signatures prefetched.
-    pub dependency_typing: DependencyTypingPolicy,
     /// Native Mod builds only: assemble the compiler-owned SDK adapter sources with the Mod
     /// (see `AssemblyOptions::native_mod_adapter_sources`).
     pub native_mod_adapter_sources: bool,
@@ -36,33 +33,27 @@ impl PrepareOptions {
 
     /// Options that run the plan's native Mods in `mod_host`.
     pub fn with_mod_host(mod_host: crate::mod_host::ModHost) -> Self {
-        Self {
-            mod_host,
-            front_end: FrontEndOptions::default(),
-            dependency_typing: DependencyTypingPolicy::FullClosure,
-            native_mod_adapter_sources: false,
-        }
+        Self { mod_host, front_end: FrontEndOptions::default(), native_mod_adapter_sources: false }
     }
 }
 
-/// Result of the unified prepare spine (typed syntax when lower succeeds).
+/// Result of the unified prepare spine.
+///
+/// `executable` exists whenever the spine completed: the query gate is the one typing authority,
+/// so nothing after it can reject the program before lowering. A gate error is reported through
+/// the collected diagnostics (diagnostics path) or fails preparation (executable path).
 pub struct PreparedCompilation {
     pub assembly: ProgramAssembly,
     pub program: Spanned<crate::syntax::Program>,
     pub binding_plan: crate::composition::BindingPlan,
     pub composition_snapshot: crate::composition::CompositionSnapshot,
-    pub typed: Option<Arc<FrontEndTypedResult>>,
+    pub executable: Arc<ExecutableFrontEnd>,
 }
 
 impl PreparedCompilation {
-    /// Typed syntax bundle for codegen.
-    pub fn into_executable(self) -> Result<FrontEndTypedResult> {
-        let Some(typed) = self.typed else {
-            return Err(anyhow::anyhow!(
-                "prepare_compilation did not produce typed syntax (lower failed during diagnostic collection)"
-            ));
-        };
-        Arc::try_unwrap(typed).map_err(|shared| {
+    /// The executable front end for codegen, taken out of the entry session cache.
+    pub fn into_executable(self) -> Result<ExecutableFrontEnd> {
+        Arc::try_unwrap(self.executable).map_err(|shared| {
             anyhow::anyhow!(
                 "executable front-end is still shared in the entry session cache (strong_refs={})",
                 Arc::strong_count(&shared)
@@ -70,42 +61,14 @@ impl PreparedCompilation {
         })
     }
 
-    pub fn executable(&self) -> Result<&FrontEndTypedResult> {
-        self.typed.as_ref().map(|typed| typed.as_ref()).ok_or_else(|| {
-            anyhow::anyhow!(
-                "prepare_compilation did not produce typed syntax (lower failed during diagnostic collection)"
-            )
-        })
+    pub fn executable(&self) -> &ExecutableFrontEnd {
+        &self.executable
     }
 
-    /// Syntax-only project assembly for generation-safe consumers (LSP, queries, ISLE).
-    ///
-    /// Prefer this over reading [`ProgramAssembly::units`]. When typed syntax exists, the
-    /// post-mod-rewrite entry program is projected; otherwise the prepare-spine rewritten
-    /// `program` replaces the entry unit. Callers must not fall back to
-    /// `DocumentAnalysisSnapshot` for IDE authority.
+    /// Syntax-only project assembly for generation-safe consumers (LSP, queries, ISLE): the
+    /// post-mod-rewrite entry program projected over the immutable source units.
     pub fn syntax_assembly(&self) -> crate::projects::ProgramAssembly {
-        if let Some(typed) = self.typed.as_ref() {
-            return typed.syntax_assembly();
-        }
-        let mut units = self.assembly.units.as_ref().clone();
-        units[self.assembly.entry_index].program = self.program.clone();
-        let mut syntax = crate::projects::ProgramAssembly::new(
-            self.assembly.roots.clone(),
-            Arc::new(units),
-            self.assembly.entry_index,
-            self.assembly.discovery,
-            Arc::clone(&self.assembly.module_index),
-            self.assembly.has_core_dependency,
-            self.assembly.generation,
-        )
-        .with_recovery_policy(self.assembly.recovery_policy)
-        .with_trusted_corelib_service_paths(Arc::clone(&self.assembly.trusted_corelib_service_paths))
-        .with_glue_libraries(Arc::clone(&self.assembly.glue_libraries))
-        .with_runtime_fixture(self.assembly.runtime_fixture.clone())
-        .with_root_set(self.assembly.root_set.clone());
-        syntax.verified_package_identities = self.assembly.verified_package_identities.clone();
-        syntax
+        self.executable.syntax_assembly()
     }
 }
 
@@ -113,7 +76,6 @@ impl std::fmt::Debug for PrepareOptions {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("PrepareOptions")
             .field("front_end", &self.front_end)
-            .field("dependency_typing", &self.dependency_typing)
             .field("mod_host", &self.mod_host)
             .field("native_mod_adapter_sources", &self.native_mod_adapter_sources)
             .finish()

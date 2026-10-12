@@ -9,7 +9,7 @@ use beskid_codegen::cranelift_host::{
 };
 #[cfg(debug_assertions)]
 use beskid_codegen::validate_artifact;
-use beskid_codegen::{CodegenArtifact, emit_string_literals, emit_type_descriptors};
+use beskid_codegen::{CodegenArtifact, emit_string_literals};
 use cranelift_codegen::isa::TargetIsa;
 use cranelift_codegen::settings;
 use cranelift_codegen::settings::Configurable;
@@ -270,13 +270,6 @@ impl BeskidObjectModule {
 
         self.data_ids = emit_string_literals(module, artifact)?;
         beskid_codegen::emit_closure_static_plans(module, artifact).map_err(AotError::from)?;
-        let descriptor_ids = emit_type_descriptors(module, artifact)?;
-        for handles in descriptor_ids.values() {
-            let descriptor_name = format!("__data_{}", handles.descriptor.as_u32());
-            let offsets_name = format!("__data_{}", handles.offsets.as_u32());
-            self.data_ids.entry(descriptor_name).or_insert(handles.descriptor);
-            self.data_ids.entry(offsets_name).or_insert(handles.offsets);
-        }
 
         // Bind every function to its declared id and final external names first (cheap, needs
         // the module), then compile the independent bodies to machine code in parallel, then

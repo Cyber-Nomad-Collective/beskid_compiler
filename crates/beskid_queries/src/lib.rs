@@ -81,7 +81,7 @@ pub use graph_viz::{
 };
 pub use inputs::{FileText, GrammarRevision, ProjectSession};
 pub use modhost::{ManifestGenerationId, ModHostSyntaxGenerationId};
-pub use output::{SharedFrontEnd, SharedResolution, SharedTypeResult, SharedUnitResolution, SharedUnitTypeSurface};
+pub use output::{SharedFrontEnd, SharedResolution};
 pub use persistence::{
     cache_root_for_project, ensure_salsa_dir, load_db_snapshot, persist_session_snapshot, save_db_snapshot,
 };
@@ -181,7 +181,7 @@ pub use unit::{
     unit_content_fingerprint, unit_imports,
 };
 
-pub use beskid_analysis::services::{FrontEndOptions, FrontEndTypedResult, PrepareOptions, PreparedCompilation};
+pub use beskid_analysis::services::{FrontEndOptions, ExecutableFrontEnd, PrepareOptions, PreparedCompilation};
 
 pub use semantic_contract::{
     GlueBindingFact, GlueDirection, GlueHandleBrand, GlueLogicalType, GlueOwnerBindingDigest, GlueParameterFact,

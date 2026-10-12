@@ -65,7 +65,7 @@ pub use model::{
     ProjectGlueBackend, ProjectGlueOwner, ProjectGrammarSection, ProjectKind, ProjectLinkSection, ProjectManifest,
     ProjectModSection, ProjectSection, ProjectTemplateSection, ProjectWorkspacePlan, ResolvedDependencyProject,
     Target, TargetKind, UnresolvedDependencyNote, UnresolvedDependencyPolicy, WorkspaceManifest, WorkspaceMember,
-    WorkspaceOverride, WorkspaceRegistry, WorkspaceResolutionSummary, WorkspaceSection,
+    PROGRAM_ENTRY_FUNCTION, WorkspaceOverride, WorkspaceRegistry, WorkspaceResolutionSummary, WorkspaceSection,
 };
 pub use parser::{parse_manifest, parse_workspace_manifest};
 pub use readme::{

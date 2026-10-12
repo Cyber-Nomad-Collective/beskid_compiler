@@ -5,7 +5,6 @@ use std::collections::HashSet;
 
 mod control_flow;
 mod definitions;
-mod error_handling;
 mod missing_imports;
 mod name_resolution;
 mod naming_style;
@@ -58,18 +57,9 @@ impl SemanticPipelineRule {
         observe_stage(pipeline, phases::SEMANTIC_VISIBILITY, || {
             self.stage5_modules_and_visibility(ctx, &program, &resolution);
         });
-        // Contract conformance (`type X : Contract` / `impl X : Contract`) is validated with
-        // real `TypeId`-based `FunctionSignature` equality inside the `TypeChecker` itself
-        // (`TypeChecker::check_contract_conformances`, called from `check_entry` after every
-        // item is typed) rather than here: this `run_stages`/`RuleContext` pipeline never runs
-        // full type checking (`stage2_type_check` below is structural-immutability-only), so a
-        // stage living here could only ever compare declared syntax shapes, not real types.
-        // Its `TypeError`s reach diagnostics via `emit_type_error` (analysis/rules/types.rs),
-        // which callers merge in through `SemanticFactsError::Type` (see
-        // services::resolve_and_type_program / prepare_compilation_diagnostics).
-        observe_stage(pipeline, phases::SEMANTIC_ERROR_HANDLING, || {
-            self.stage7_error_handling(ctx, &program, &resolution);
-        });
+        // Typing, contract conformance and `?` legality are the query gate's obligations
+        // (`beskid_queries::semantic_diagnostics_for_roots`); this pipeline keeps the structural
+        // and style rules only (`stage2_type_check` below is structural-immutability-only).
         observe_stage(pipeline, phases::SEMANTIC_TYPE_CHECK, || {
             self.stage2_type_check(ctx, &program);
         });

@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use anyhow::Result;
 use beskid_analysis::analysis::SemanticDiagnostic;
 use beskid_analysis::services::{
-    FrontEndOptions, FrontEndTypedResult, PrepareOptions, PreparedCompilation, ResolvedInput,
+    FrontEndOptions, ExecutableFrontEnd, PrepareOptions, PreparedCompilation, ResolvedInput,
 };
 use beskid_pipeline::PipelineObserver;
 
@@ -100,7 +100,7 @@ pub fn compile_mod_free_front_end(
     resolved: &ResolvedInput,
     options: FrontEndOptions,
     pipeline: Option<&dyn PipelineObserver>,
-) -> Result<FrontEndTypedResult> {
+) -> Result<ExecutableFrontEnd> {
     compile_front_end_with_mod_host(resolved, options, beskid_analysis::mod_host::ModHost::NoMods, pipeline)
 }
 
@@ -110,7 +110,7 @@ pub fn compile_front_end_with_mod_host(
     options: FrontEndOptions,
     mod_host: beskid_analysis::mod_host::ModHost,
     pipeline: Option<&dyn PipelineObserver>,
-) -> Result<FrontEndTypedResult> {
+) -> Result<ExecutableFrontEnd> {
     let prepared =
         prepare_compilation(resolved, PrepareOptions { front_end: options, ..PrepareOptions::with_mod_host(mod_host) }, pipeline)?;
     prepared.into_executable()

@@ -225,6 +225,27 @@ mod tests {
     use super::*;
     use std::time::{Duration, Instant};
 
+    /// Entry resolution of the raw assembly through the module index (the resolver is a syntax
+    /// authority, not a typing one).
+    fn resolve_entry(assembly: &ProgramAssembly) -> beskid_analysis::resolve::Resolution {
+        assembly
+            .module_index
+            .resolve_entry_program(&assembly.entry_unit().program, Some(&assembly.entry_unit().path), assembly)
+            .expect("resolve the suite entry")
+    }
+
+    /// The production semantic gate of `beskid check`: the query-backed prepare spine with the
+    /// qualified Corelib Mods reports no error for the suite entry.
+    fn assert_production_semantic_gate(resolved: &ResolvedInput, suite: &str) {
+        let diagnostics = analyze_file_with_mods(&resolved.source_path)
+            .unwrap_or_else(|error| panic!("{suite}: the production semantic gate must judge the suite: {error}"));
+        let errors = diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.severity == beskid_analysis::Severity::Error)
+            .collect::<Vec<_>>();
+        assert!(errors.is_empty(), "{suite} must pass the production semantic gate: {errors:#?}");
+    }
+
     /// Byte range of one former target's section in a merged `corelib_tests` suite entry.
     fn suite_section(source: &str, former_file: &str) -> std::ops::Range<usize> {
         let marker = format!("// ---- {former_file} ");
@@ -240,11 +261,9 @@ mod tests {
             let resolved = resolve_corelib_tests_entry_with_assembly("text/TextSuite.bd");
             let assembly = resolved.assembly.as_ref().expect("TextParser assembly");
             let started = Instant::now();
-            let (_, resolution, _) =
-                beskid_analysis::services::type_entry_gate(assembly.entry_unit().program.clone(), assembly)
-                    .expect("Parser facade signatures should retain TextCursor and TextParseResult types");
+            let resolution = resolve_entry(assembly);
             let elapsed = started.elapsed();
-            assert!(elapsed < Duration::from_secs(5), "TextParser declaration-only semantic gate took {elapsed:?}");
+            assert!(elapsed < Duration::from_secs(5), "TextParser declaration-only resolution took {elapsed:?}");
             assert!(
                 resolution.tables.scoped_resolved_values.is_empty(),
                 "dependency declaration resolution must not retain body value facts"
@@ -299,12 +318,7 @@ mod tests {
         with_project_test_env(&root, || {
             let resolved = resolve_corelib_tests_entry_with_assembly("collections/CollectionsSuite.bd");
             let assembly = resolved.assembly.as_ref().expect("ArrayTests assembly");
-            let raw_resolution = beskid_analysis::services::resolve_entry(
-                &assembly.entry_unit().program,
-                assembly,
-                Some(&assembly.entry_unit().path),
-            )
-            .expect("resolve ArrayTests entry");
+            let raw_resolution = resolve_entry(assembly);
             let array_unit = assembly
                 .units
                 .iter()
@@ -336,16 +350,11 @@ mod tests {
                     .all(|target| target.ends_with("::Core::Collections::Array::ArrayIter::ArrayIter")),
                 "Array iterator declarations resolved to {iterator_targets:?}"
             );
-            let started = Instant::now();
-            let (_, resolution, _) =
-                beskid_analysis::services::type_entry_gate(assembly.entry_unit().program.clone(), assembly)
-                    .expect("Array facade signatures should retain ArrayIter<i64> parameters and return types");
-            let elapsed = started.elapsed();
-            assert!(elapsed < Duration::from_secs(5), "ArrayTests declaration-only semantic gate took {elapsed:?}");
             assert!(
-                resolution.tables.scoped_resolved_values.is_empty(),
+                raw_resolution.tables.scoped_resolved_values.is_empty(),
                 "dependency declaration resolution must not retain body value facts"
             );
+            assert_production_semantic_gate(&resolved, "ArrayTests");
         });
     }
 
@@ -354,9 +363,7 @@ mod tests {
         let root = corelib_tests_project_root();
         with_project_test_env(&root, || {
             let resolved = resolve_corelib_tests_entry_with_assembly("system/SystemSuite.bd");
-            let assembly = resolved.assembly.as_ref().expect("FS assembly");
-            beskid_analysis::services::type_entry_gate(assembly.entry_unit().program.clone(), assembly)
-                .expect("nested enum payload bindings should retain their declared type");
+            assert_production_semantic_gate(&resolved, "FS");
         });
     }
 
@@ -381,12 +388,7 @@ mod tests {
         with_project_test_env(&root, || {
             let resolved = resolve_corelib_tests_entry_with_assembly("query/QuerySuite.bd");
             let assembly = resolved.assembly.as_ref().expect("query assembly");
-            let resolution = beskid_analysis::services::resolve_entry(
-                &assembly.entry_unit().program,
-                assembly,
-                Some(&assembly.entry_unit().path),
-            )
-            .expect("resolve QueryTests entry");
+            let resolution = resolve_entry(assembly);
             let section = suite_section(&resolved.source, "QueryTests.bd");
             let current_targets = resolution
                 .tables
@@ -411,8 +413,7 @@ mod tests {
                 current_targets.iter().all(|target| target.ends_with("::Query::ArrayIterator::Current")),
                 "ArrayIterator.Current calls resolved to {current_targets:?}"
             );
-            beskid_analysis::services::type_entry_gate(assembly.entry_unit().program.clone(), assembly)
-                .expect("QueryTests should pass the production semantic gate");
+            assert_production_semantic_gate(&resolved, "QueryTests");
         });
     }
 

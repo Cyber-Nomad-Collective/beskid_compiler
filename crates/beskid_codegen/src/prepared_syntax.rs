@@ -16,7 +16,7 @@ use beskid_abi::{
 };
 use beskid_analysis::{
     projects::{AssemblyDiscovery, EffectiveCompilationRoots, ModuleIndex, ProgramAssembly, RootEntry, SourceUnit},
-    services::{FrontEndTypedResult, parse_program_with_source_name},
+    services::{ExecutableFrontEnd, parse_program_with_source_name},
 };
 use beskid_isle::AstNodeKey;
 use beskid_queries::{
@@ -146,7 +146,7 @@ impl PreparedSyntaxModule {
 /// Lower selected entries once through their shared generation-bound authority.
 pub fn lower_prepared_syntax_entrypoints(
     db: &mut BeskidDatabase,
-    front: &FrontEndTypedResult,
+    front: &ExecutableFrontEnd,
     entrypoints: &[String],
     target: TargetMetadata,
     isa: &dyn TargetIsa,
@@ -333,7 +333,7 @@ pub fn lower_canonical_runtime_prepared_syntax(
 /// prepared-syntax → `TypedProgram` → `CodegenInput` → ISLE transition.
 pub fn lower_prepared_syntax_entrypoint(
     db: &mut BeskidDatabase,
-    front: &FrontEndTypedResult,
+    front: &ExecutableFrontEnd,
     entrypoint: &str,
     target: TargetMetadata,
     isa: &dyn TargetIsa,
@@ -363,7 +363,7 @@ fn lower_syntax_assembly_entrypoint_with_composition(
     entrypoint: &str,
     target: TargetMetadata,
     isa: &dyn TargetIsa,
-    front: Option<&FrontEndTypedResult>,
+    front: Option<&ExecutableFrontEnd>,
 ) -> Result<PreparedSyntaxEntrypoint> {
     let lowered =
         lower_syntax_assembly_entrypoints_with_composition(db, assembly, &[entrypoint.to_owned()], target, isa, front)?;
@@ -377,7 +377,7 @@ fn lower_syntax_assembly_entrypoints_with_composition(
     entrypoints: &[String],
     target: TargetMetadata,
     isa: &dyn TargetIsa,
-    front: Option<&FrontEndTypedResult>,
+    front: Option<&ExecutableFrontEnd>,
 ) -> Result<PreparedSyntaxEntrypoints> {
     if entrypoints.is_empty() {
         anyhow::bail!("at least one entrypoint must be selected");
@@ -478,7 +478,7 @@ fn lower_syntax_assembly_entrypoints_with_composition(
 /// reconstructing legacy resolution or type-result state.
 pub fn lower_prepared_syntax_module(
     db: &mut BeskidDatabase,
-    front: &FrontEndTypedResult,
+    front: &ExecutableFrontEnd,
     target: TargetMetadata,
     isa: &dyn TargetIsa,
 ) -> Result<CodegenArtifact> {
@@ -489,7 +489,7 @@ pub fn lower_prepared_syntax_module(
 /// Consumers select by key, never by guessing a linker symbol from a method's leaf name.
 pub fn lower_prepared_syntax_module_with_callables(
     db: &mut BeskidDatabase,
-    front: &FrontEndTypedResult,
+    front: &ExecutableFrontEnd,
     target: TargetMetadata,
     isa: &dyn TargetIsa,
 ) -> Result<PreparedSyntaxModule> {
@@ -500,7 +500,7 @@ pub fn lower_prepared_syntax_module_with_callables(
 /// Selection grants no callback or runtime capability; every import retains ordinary admission.
 pub fn lower_prepared_syntax_selected_callables(
     db: &mut BeskidDatabase,
-    front: &FrontEndTypedResult,
+    front: &ExecutableFrontEnd,
     entries: &[AstNodeKey],
     target: TargetMetadata,
     isa: &dyn TargetIsa,
@@ -545,7 +545,7 @@ pub fn lower_prepared_syntax_selected_callables(
 /// re-exported by the consumer. Emission and export order follow assembly order.
 pub fn lower_prepared_syntax_library(
     db: &mut BeskidDatabase,
-    front: &FrontEndTypedResult,
+    front: &ExecutableFrontEnd,
     target: TargetMetadata,
     isa: &dyn TargetIsa,
 ) -> Result<CodegenArtifact> {
@@ -622,7 +622,7 @@ fn lower_registered_module_callables(
 /// One registered prepared-generation authority shared by module and native adapter lowering.
 pub(crate) fn with_prepared_module_input<T>(
     db: &mut BeskidDatabase,
-    front: &FrontEndTypedResult,
+    front: &ExecutableFrontEnd,
     target: TargetMetadata,
     execute: impl FnOnce(&CodegenInput<'_>, &[SyntaxModuleItem]) -> Result<T>,
 ) -> Result<T> {
@@ -678,7 +678,7 @@ pub(crate) fn with_prepared_module_input<T>(
 /// no second materializer and callers never reconstruct symbols themselves.
 pub fn with_prepared_glue_input<T>(
     db: &mut BeskidDatabase,
-    front: &FrontEndTypedResult,
+    front: &ExecutableFrontEnd,
     target: TargetMetadata,
     execute: impl FnOnce(&CodegenInput<'_>, &[SyntaxModuleItem]) -> Result<T>,
 ) -> Result<T> {

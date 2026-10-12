@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use crate::composition::CompositionSnapshot;
 use crate::projects::ProgramAssembly;
-use crate::services::front_end::FrontEndTypedResult;
+use crate::services::front_end::ExecutableFrontEnd;
 
 /// Stable key for a compilation session within a process.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -42,7 +42,7 @@ fn lockfile_digest_for_plan(plan: &crate::projects::CompilePlan) -> u64 {
 pub struct CompilationSession {
     pub fingerprint: SessionFingerprint,
     pub assembly: Arc<ProgramAssembly>,
-    pub prepared_executable: Option<Arc<FrontEndTypedResult>>,
+    pub prepared_executable: Option<Arc<ExecutableFrontEnd>>,
     pub semantic_snapshot: Option<SemanticSnapshot>,
 }
 
@@ -54,8 +54,6 @@ pub struct SemanticSnapshot {
     pub diagnostic_count: usize,
     pub diagnostic_fingerprint: u64,
     pub composition_fingerprint: u64,
-    pub resolution_fingerprint: u64,
-    pub typed_fingerprint: u64,
     /// Minimum pipeline stage materialized in this snapshot (`semantic`, `composition`, `executable`).
     pub staged_through: &'static str,
 }
@@ -74,8 +72,6 @@ impl SemanticSnapshot {
             diagnostic_count: diagnostics.len(),
             diagnostic_fingerprint: fingerprint_diagnostics(diagnostics),
             composition_fingerprint: 0,
-            resolution_fingerprint: 0,
-            typed_fingerprint: 0,
             staged_through,
         }
     }
@@ -86,9 +82,8 @@ impl SemanticSnapshot {
         self
     }
 
-    pub fn with_typed_resolution(mut self, resolution_fingerprint: u64, typed_fingerprint: u64) -> Self {
-        self.resolution_fingerprint = resolution_fingerprint;
-        self.typed_fingerprint = typed_fingerprint;
+    /// Mark the snapshot as having reached the executable front end of its syntax generation.
+    pub fn with_executable(mut self) -> Self {
         self.staged_through = "executable";
         self
     }
@@ -134,14 +129,14 @@ pub fn session_for_assembly(
 /// Store optional executable front-end and semantic snapshot on an existing session.
 pub fn store_executable_on_session(
     fingerprint: &SessionFingerprint,
-    executable: Option<FrontEndTypedResult>,
+    executable: Option<ExecutableFrontEnd>,
     snapshot: SemanticSnapshot,
 ) {
     super::entry_session::store_executable_and_snapshot(fingerprint, executable, snapshot);
 }
 
 /// Lookup cached executable front-end for an entry fingerprint.
-pub fn cached_executable(fingerprint: &SessionFingerprint) -> Option<Arc<FrontEndTypedResult>> {
+pub fn cached_executable(fingerprint: &SessionFingerprint) -> Option<Arc<ExecutableFrontEnd>> {
     super::entry_session::cached_executable(fingerprint)
 }
 

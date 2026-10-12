@@ -1,4 +1,4 @@
-//! Diagnostic deduplication, analyzer bridging, input resolution, and typed fingerprints.
+//! Diagnostic deduplication, analyzer bridging, and input resolution.
 
 use crate::analysis::SemanticDiagnostic;
 use crate::mod_host::SyntaxFix;
@@ -13,7 +13,7 @@ use super::super::input::ResolvedInput;
 /// by the authority callback (driven by the typed `try_expression_fact`) and again by
 /// `resolve_and_type_program_with_assembly`'s own full type check, which runs the same
 /// `is_result_shaped_enum` judgment through `type_try_expression` and, on failure, surfaces
-/// `TypeError::InvalidTryTarget` via `semantic_facts_errors_to_diagnostics`. Both sites are
+/// the retired legacy checker. Both sites were
 /// correct in isolation; only the caller-facing duplicate needs suppressing, so this dedups by
 /// exact (source, span, code, message) rather than special-casing E1222 alone. The source name is
 /// part of the identity: a dependency-unit finding at the same offset as an entry diagnostic is a
@@ -144,22 +144,4 @@ pub(super) fn collect_analyzer_fixes(analyzer_outcomes: &[crate::mod_host::Analy
         }
     }
     out
-}
-
-pub(super) fn typed_fingerprint(resolution: &crate::resolve::Resolution) -> u64 {
-    use std::collections::hash_map::DefaultHasher;
-    use std::hash::{Hash, Hasher};
-    let mut hasher = DefaultHasher::new();
-    resolution.items.len().hash(&mut hasher);
-    resolution.tables.resolved_values.len().hash(&mut hasher);
-    hasher.finish()
-}
-
-pub(super) fn typed_fingerprint_types(typed: &crate::types::TypeResult) -> u64 {
-    use std::collections::hash_map::DefaultHasher;
-    use std::hash::{Hash, Hasher};
-    let mut hasher = DefaultHasher::new();
-    typed.node_types.len().hash(&mut hasher);
-    typed.lowering.cast_intents.len().hash(&mut hasher);
-    hasher.finish()
 }

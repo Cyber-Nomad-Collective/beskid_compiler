@@ -136,7 +136,7 @@ fn discover(input: &crate::CodegenInput<'_>) -> anyhow::Result<Vec<SelectedContr
 
 pub fn lower_prepared_native_mod(
     db: &mut beskid_queries::BeskidDatabase,
-    front: &beskid_analysis::services::FrontEndTypedResult,
+    front: &beskid_analysis::services::ExecutableFrontEnd,
     target: TargetMetadata,
     isa: &dyn cranelift_codegen::isa::TargetIsa,
 ) -> anyhow::Result<PreparedNativeMod> {

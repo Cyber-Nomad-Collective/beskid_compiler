@@ -4,7 +4,7 @@
 //!
 //! Legacy sites mirrored here:
 //!
-//! * `TypeChecker::type_id_for_path` (`beskid_analysis::types::checker::expressions::paths`): a
+//! * the retired legacy checker's `type_id_for_path`: a
 //!   single-segment path that the resolver bound to an item (`ResolvedValue::Item`) is
 //!   `TypeError::UnknownValueType` (E1201) at the path. Only items these facts prove are judged:
 //!   a function of the lexical module scope chain (`resolve_unqualified_item_declaration`), an

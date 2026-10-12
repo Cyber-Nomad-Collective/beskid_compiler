@@ -263,10 +263,10 @@ fn typed_entry_state_uses_fast_resolution_when_stale() {
         assert!(is_typed_bundle_stale(&db, &entry_key));
 
         let state = typed_entry_state_with_db(&mut db, &resolved, &options, None).expect("typed entry state");
-        assert!(state.typed.is_some(), "stale typed bundle should run EntryOnly gate prepare");
+        assert!(state.executable.is_some(), "stale typed bundle should run the gate prepare");
         assert_eq!(
             state.generation,
-            state.typed.as_ref().expect("typed bundle").assembly.generation.0,
+            state.executable.as_ref().expect("executable bundle").assembly.generation.0,
             "typed entry state must expose the prepared syntax generation, not its cache revision"
         );
         assert!(!state.resolution.by_symbol().is_empty(), "fast resolution path should still populate registry");
@@ -282,7 +282,7 @@ fn typed_entry_state_uses_fast_resolution_when_stale() {
     std::env::set_current_dir(previous).expect("restore cwd");
 
     let state = result;
-    assert!(state.typed.is_some(), "caught-up typed prepare revision should produce executable bundle");
+    assert!(state.executable.is_some(), "caught-up typed prepare revision should produce executable bundle");
     assert!(!state.resolution.by_symbol().is_empty(), "typed state should retain resolution");
 }
 

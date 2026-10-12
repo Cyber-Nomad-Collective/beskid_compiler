@@ -6,7 +6,7 @@ use beskid_abi::abi_v5::TargetMetadata;
 use beskid_analysis::projects::{
     AssemblyRootSet, CompilePlan, ResolvedDependencyProject, Target, TargetKind, plan_entry_path,
 };
-use beskid_analysis::services::{FrontEndOptions, FrontEndTypedResult, resolved_input_from_plan};
+use beskid_analysis::services::{FrontEndOptions, ExecutableFrontEnd, resolved_input_from_plan};
 use beskid_codegen::{CodegenArtifact, lower_prepared_syntax_library};
 use beskid_queries::{compile_mod_free_front_end, with_db};
 use cranelift_codegen::{isa, settings};
@@ -23,7 +23,7 @@ const SHARED: &str = "pub i32 Help() { return 41; }\n\
     [Export(Abi:\"C\", Symbol:\"dependency_export\")]\n\
     pub i32 DependencyExport() { return 1; }\n";
 
-fn entry_less_library_front(root: &std::path::Path) -> FrontEndTypedResult {
+fn entry_less_library_front(root: &std::path::Path) -> ExecutableFrontEnd {
     let source_root = root.join("src");
     let dependency_root = root.join("deps").join("shared");
     std::fs::create_dir_all(&source_root).expect("host source root");
@@ -69,7 +69,7 @@ fn entry_less_library_front(root: &std::path::Path) -> FrontEndTypedResult {
     front
 }
 
-fn lower_library(front: &FrontEndTypedResult) -> CodegenArtifact {
+fn lower_library(front: &ExecutableFrontEnd) -> CodegenArtifact {
     let target = TargetMetadata::supported()
         .into_iter()
         .find(|target| target.triple.as_str().starts_with("x86_64-"))

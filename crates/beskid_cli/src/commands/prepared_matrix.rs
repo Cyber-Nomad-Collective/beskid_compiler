@@ -161,7 +161,7 @@ pub struct PreparedWorkspace {
 pub struct PreparedTarget {
     pub name: String,
     pub resolved: ResolvedInput,
-    pub front: beskid_analysis::services::FrontEndTypedResult,
+    pub front: beskid_analysis::services::ExecutableFrontEnd,
     pub tests: Vec<beskid_engine::services::SyntaxTestItem>,
 }
 
@@ -317,7 +317,7 @@ impl PreparedWorkspace {
     }
     pub fn prepare_native_tests(
         &self,
-        front: &beskid_analysis::services::FrontEndTypedResult,
+        front: &beskid_analysis::services::ExecutableFrontEnd,
         resolved: &ResolvedInput,
         names: &[String],
         target_started: Instant,

@@ -15,7 +15,7 @@
 use std::path::PathBuf;
 
 use beskid_analysis::Severity;
-use beskid_analysis::services::{DependencyTypingPolicy, FrontEndOptions, PrepareOptions};
+use beskid_analysis::services::{FrontEndOptions, PrepareOptions};
 
 use crate::projects::fixture_harness::{enter_mod_host, mod_host_for, resolve_fixture, with_project_test_env};
 
@@ -118,7 +118,6 @@ fn every_legality_compile_fail_target_is_rejected_with_its_code_in_the_dependenc
                 &resolved,
                 PrepareOptions {
                     front_end: FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
-                    dependency_typing: DependencyTypingPolicy::FullClosure,
                     native_mod_adapter_sources: false,
                     mod_host: mod_host_for(&mod_host, &resolved),
                 },

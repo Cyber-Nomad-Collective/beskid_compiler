@@ -26,7 +26,7 @@ pub struct SyntaxTestItem {
 /// This deliberately registers and queries the post-expansion syntax assembly rather than
 /// traversing the legacy HIR-backed `ProgramAssembly` retained for compatibility consumers.
 pub fn syntax_test_items_from_front_end(
-    front: &beskid_analysis::services::FrontEndTypedResult,
+    front: &beskid_analysis::services::ExecutableFrontEnd,
 ) -> Result<Vec<SyntaxTestItem>> {
     let assembly = Arc::new(front.syntax_assembly());
     let mut db = BeskidDatabase::default();
@@ -38,7 +38,7 @@ pub fn syntax_test_items_from_front_end(
 /// REPL type inspection uses this authority directly instead of reading the legacy typed-HIR
 /// result retained in the frontend compatibility bundle.
 pub fn syntax_entrypoint_return_type_from_front_end(
-    front: &beskid_analysis::services::FrontEndTypedResult,
+    front: &beskid_analysis::services::ExecutableFrontEnd,
     entrypoint: &str,
 ) -> Result<SemanticTypeId> {
     let assembly = Arc::new(front.syntax_assembly());

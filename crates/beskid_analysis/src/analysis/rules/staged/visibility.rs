@@ -237,7 +237,7 @@ impl SemanticPipelineRule {
             };
 
             if visibility == Visibility::Public
-                || name == "main"
+                || ctx.options.program_entry_function.as_deref() == Some(name.as_str())
                 || used_names.contains(&name)
                 || compiler_issued.contains(&name.as_str())
                 || Self::extern_contract_called_from_clif(&item.node, &clif_symbols)
@@ -662,6 +662,40 @@ mod tests {
             .filter(|diagnostic| diagnostic.code.as_deref() == Some("W1504"))
             .map(|diagnostic| diagnostic.message.clone())
             .collect()
+    }
+
+    fn unused_private_items_with_entry(source: &str, entry: Option<&str>) -> Vec<String> {
+        let pair =
+            BeskidParser::parse(Rule::Program, source).expect("source should parse").next().expect("program pair");
+        let program = Program::parse(pair).expect("source should build AST");
+        let options = AnalysisOptions { program_entry_function: entry.map(str::to_owned), ..AnalysisOptions::default() };
+        run_rules(&program.node, "test.bd", source, &builtin_rules(), options)
+            .diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.code.as_deref() == Some("W1504"))
+            .map(|diagnostic| diagnostic.message.clone())
+            .collect()
+    }
+
+    #[test]
+    fn the_program_entry_function_is_not_an_unused_private_item() {
+        let source = "i32 Main() { return 0; }";
+        let unused = unused_private_items_with_entry(source, Some(crate::projects::PROGRAM_ENTRY_FUNCTION));
+        assert!(unused.is_empty(), "the host invokes `Main`: {unused:?}");
+    }
+
+    #[test]
+    fn a_private_main_outside_the_entry_unit_is_an_unused_private_item() {
+        let source = "i32 Main() { return 0; }";
+        let unused = unused_private_items_with_entry(source, None);
+        assert!(unused.iter().any(|message| message.contains("Main")), "no entry function here: {unused:?}");
+    }
+
+    #[test]
+    fn a_lowercase_main_is_not_the_entry_function() {
+        let source = "i32 main() { return 0; }";
+        let unused = unused_private_items_with_entry(source, Some(crate::projects::PROGRAM_ENTRY_FUNCTION));
+        assert!(unused.iter().any(|message| message.contains("main")), "`main` is an ordinary private item: {unused:?}");
     }
 
     #[test]

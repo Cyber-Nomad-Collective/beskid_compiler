@@ -7,7 +7,6 @@ use std::collections::{BTreeMap, HashMap};
 #[derive(Debug, Clone)]
 struct ArtifactSeal {
     functions: Vec<crate::artifact::LoweredFunction>,
-    types: HashMap<beskid_analysis::types::TypeId, crate::artifact::TypeDescriptorData>,
     literals: HashMap<String, Vec<u8>>,
     closures: Vec<crate::closure_static::ClosureStaticPlan>,
     event_wrapper: bool,
@@ -21,7 +20,6 @@ impl ArtifactSeal {
     fn capture(a: &CodegenArtifact) -> Self {
         Self {
             functions: a.functions.clone(),
-            types: a.type_descriptors.clone(),
             literals: a.string_literals.clone(),
             closures: a.closure_static_plans.clone(),
             event_wrapper: a.event_handler_wrapper_required,
@@ -34,7 +32,6 @@ impl ArtifactSeal {
     }
     fn matches(&self, a: &CodegenArtifact) -> bool {
         self.functions == a.functions
-            && self.types == a.type_descriptors
             && self.literals == a.string_literals
             && self.closures == a.closure_static_plans
             && self.event_wrapper == a.event_handler_wrapper_required
