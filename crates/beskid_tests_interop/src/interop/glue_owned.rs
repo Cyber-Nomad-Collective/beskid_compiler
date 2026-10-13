@@ -234,19 +234,48 @@ impl Drop for FileLock {
     }
 }
 
+/// The owned fixture project (`fixtures/glue/manual/owned`), embedded in this harness when it is
+/// compiled. No test reads the source checkout at run time: the release producer runs a retained
+/// copy of this executable against the installed candidate alone.
+const OWNED_FIXTURE_FILES: [(&str, &str); 4] = [
+    ("ManualTypes.bd", include_str!("../../fixtures/glue/manual/owned/ManualTypes.bd")),
+    ("ManualImport.bd", include_str!("../../fixtures/glue/manual/owned/ManualImport.bd")),
+    ("ManualExport.bd", include_str!("../../fixtures/glue/manual/owned/ManualExport.bd")),
+    ("rust/implementation.rs", include_str!("../../fixtures/glue/manual/owned/rust/implementation.rs")),
+];
+const OWNED_FIXTURE_MANIFEST: &str = include_str!("../../fixtures/glue/manual/owned/manual_owned.bproj");
+/// The fixture manifest's Corelib path dependency, rebound to the installed Corelib.
+const OWNED_FIXTURE_CORELIB: &str = "\"../../../../../../corelib/beskid_corelib\"";
+/// Digest of the installed Corelib bundle, written by the bundle assembly.
+const CORELIB_BUNDLE_FINGERPRINT: &str = ".beskid-bundle.sha256";
+
+/// The Corelib workspace bundled in the qualified prefix (`<prefix>/beskid_corelib`), the only
+/// Corelib that installed builds and the in-process producer may use. Absence is a failure.
+fn installed_corelib(qualified: &Path) -> PathBuf {
+    let root = qualified.join("beskid_corelib");
+    assert!(
+        root.join(CORELIB_BUNDLE_FINGERPRINT).is_file(),
+        "qualified prefix {} lacks a bundled Corelib ({}); assemble it like build-release-artifact.sh",
+        qualified.display(),
+        root.join(CORELIB_BUNDLE_FINGERPRINT).display()
+    );
+    fs::canonicalize(&root).unwrap_or_else(|error| panic!("{}: {error}", root.display()))
+}
+
 /// Content key of everything the template is derived from: the qualified CLI and driver bytes,
-/// the kit ABI metadata, the owned fixture and every Corelib source of this checkout. A change to
-/// any of them yields a new template; consumers still qualify what they read from it.
+/// the kit ABI metadata, the embedded owned fixture and every source of the installed Corelib. A
+/// change to any of them yields a new template; consumers still qualify what they read from it.
 fn template_key(qualified: &Path) -> String {
     let mut digest = Sha256::new();
     for path in [installed_cli(qualified), qualified.join("bin").join(driver_name()), qualified.join(kit_relative()).join("abi.json")] {
         digest.update(fs::read(&path).unwrap_or_else(|error| panic!("read {}: {error}", path.display())));
     }
-    let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/glue/manual/owned");
-    for name in ["ManualTypes.bd", "ManualImport.bd", "ManualExport.bd", "manual_owned.bproj", "rust/implementation.rs"] {
-        digest.update(fs::read(fixture.join(name)).unwrap());
+    for (name, text) in OWNED_FIXTURE_FILES {
+        digest.update(name.as_bytes());
+        digest.update(text.as_bytes());
     }
-    let corelib = fs::canonicalize(Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corelib")).unwrap();
+    digest.update(OWNED_FIXTURE_MANIFEST.as_bytes());
+    let corelib = installed_corelib(qualified);
     digest.update(corelib.to_string_lossy().as_bytes());
     let mut sources = Vec::new();
     collect_corelib_sources(&corelib, &mut sources);
@@ -493,7 +522,7 @@ fn run_in_private_prefix(name: &str, staging: DriverStaging, project: ChildProje
     let qualified = require_qualified_prefix();
     let staged = stage_private_prefix(&qualified, staging);
     let executable = staged.path().join("bin").join(std::env::current_exe().unwrap().file_name().unwrap());
-    let corelib = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corelib");
+    let corelib = installed_corelib(&qualified);
     let mut command = Command::new(&executable);
     if let ChildProject::Warmed = project {
         command.env(TEMPLATE_PROJECT_ENV, template_project());
@@ -504,7 +533,7 @@ fn run_in_private_prefix(name: &str, staging: DriverStaging, project: ChildProje
         .env(CHILD_ENV, &path)
         .env(CODEGEN_THREADS_ENV, codegen_threads())
         .env(GATE_ENV, staged.path().join("borrow.gate"))
-        .env(beskid_abi::runtime_kit::ENV_CORELIB_ROOT, fs::canonicalize(corelib).unwrap())
+        .env(beskid_abi::runtime_kit::ENV_CORELIB_ROOT, corelib)
         .env_remove(beskid_abi::runtime_kit::ENV_RUNTIME_PREFIX)
         // Native Mods are qualified and loaded for the profile of the kit the child runs on.
         .env("BESKID_RUNTIME_KIT_PROFILE", beskid_abi::runtime_kit::profile_directory_name(qualified_profile()))
@@ -575,23 +604,23 @@ fn v06_glue_driver_denied_when_sibling_escapes_prefix() {
 // ---------------------------------------------------------------------------
 // Actual project -> CompilePlan -> prepared front end -> Glue producers.
 
-/// Copies the owned fixture project into `root`, binding its corelib path
-/// dependency to this checkout. Fixture sources stay unmodified.
+/// Writes the embedded owned fixture project into `root`, binding its Corelib path dependency to
+/// the Corelib package of the installed prefix.
 fn materialize_owned_project(root: &Path) -> PathBuf {
-    let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/glue/manual/owned");
     let project = root.join("manual_owned");
-    fs::create_dir_all(&project).unwrap();
-    for name in ["ManualTypes.bd", "ManualImport.bd", "ManualExport.bd"] {
-        fs::copy(fixture.join(name), project.join(name)).unwrap();
-    }
     fs::create_dir_all(project.join("rust")).unwrap();
-    fs::copy(fixture.join("rust/implementation.rs"), project.join("rust/implementation.rs")).unwrap();
-    let relative = "\"../../../../../../corelib/beskid_corelib\"";
-    let manifest = fs::read_to_string(fixture.join("manual_owned.bproj")).unwrap();
-    assert!(manifest.contains(relative), "owned manifest corelib dependency changed");
-    let corelib = fs::canonicalize(Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corelib/beskid_corelib")).unwrap();
+    for (name, text) in OWNED_FIXTURE_FILES {
+        fs::write(project.join(name), text).unwrap();
+    }
+    assert!(OWNED_FIXTURE_MANIFEST.contains(OWNED_FIXTURE_CORELIB), "owned manifest corelib dependency changed");
+    let corelib = installed_corelib(&require_qualified_prefix()).join("beskid_corelib");
+    assert!(corelib.is_dir(), "installed Corelib lacks its package {}", corelib.display());
     let corelib = corelib.to_str().expect("UTF-8 corelib path").replace('\\', "/");
-    fs::write(project.join("manual_owned.bproj"), manifest.replace(relative, &format!("{corelib:?}"))).unwrap();
+    fs::write(
+        project.join("manual_owned.bproj"),
+        OWNED_FIXTURE_MANIFEST.replace(OWNED_FIXTURE_CORELIB, &format!("{corelib:?}")),
+    )
+    .unwrap();
     seed_from_template(&project);
     project.join("manual_owned.bproj")
 }
@@ -1406,7 +1435,6 @@ fn run_glue_build(
     tool_arguments: &[OsString],
     environment: &[(&str, OsString)],
 ) -> std::process::Output {
-    let corelib = fs::canonicalize(Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corelib")).unwrap();
     let mut command = Command::new(cli);
     command
         .args(["build", "--plain", "--project"])
@@ -1415,9 +1443,12 @@ fn run_glue_build(
         .args(tool_arguments)
         .arg("--output")
         .arg(output)
-        .env(beskid_abi::runtime_kit::ENV_CORELIB_ROOT, corelib)
         .env(CODEGEN_THREADS_ENV, codegen_threads())
-        .env_remove(beskid_abi::runtime_kit::ENV_RUNTIME_PREFIX);
+        // Installed builds discover the prefix's own Corelib and kit; developer overrides that
+        // would reach a source checkout or a development kit never reach them.
+        .env_remove(beskid_abi::runtime_kit::ENV_CORELIB_ROOT)
+        .env_remove(beskid_abi::runtime_kit::ENV_RUNTIME_PREFIX)
+        .env_remove("BESKID_RUNTIME_KIT_PROFILE");
     if qualified_profile() == beskid_abi::runtime_kit::BuildProfile::Release {
         command.arg("--release");
     }
@@ -1919,6 +1950,116 @@ fn assert_manual_generated_equivalence(process: &GlueProcess, owner: usize, pack
     let generated_unit: unsafe extern "C" fn() -> i32 = unsafe { checked(process, packet, "beskid_unit") };
     unsafe { direct_unit() };
     assert_eq!(unsafe { generated_unit() }, 0, "beskid_unit generated status");
+
+    assert_manual_generated_views(process, packet);
+    assert_manual_generated_opaque(process, owner, packet);
+}
+
+/// utf8_view and byte_view exports: the export's own C transport (manual) against its generated
+/// checked invocation. Both return the same owned bytes, each owned result releases exactly once
+/// through the consumer library, and a view that one route rejects the other rejects too, without
+/// publishing a token.
+fn assert_manual_generated_views(process: &GlueProcess, packet: &GlueArtifact) {
+    type View = unsafe extern "C" fn(*const u8, usize, *mut GlueOwnedView) -> i32;
+    fn read(call: View, release: Release, value: &[u8], label: &str) -> Vec<u8> {
+        let pointer = if value.is_empty() { std::ptr::null() } else { value.as_ptr() };
+        let mut out = GlueOwnedView::empty();
+        assert_eq!(unsafe { call(pointer, value.len(), &mut out) }, 0, "{label}({value:?}) status");
+        assert_ne!(out.token, 0, "{label}({value:?}) owned result has no release token");
+        let copied =
+            if out.length == 0 { Vec::new() } else { unsafe { std::slice::from_raw_parts(out.pointer, out.length) }.to_vec() };
+        assert_eq!(unsafe { release(out.token) }, 0, "{label}({value:?}) release");
+        assert_ne!(unsafe { release(out.token) }, 0, "{label}({value:?}) released twice");
+        copied
+    }
+    let utf8: [&[u8]; 2] = [b"A\0\xf0\x9f\x98\x80", b""];
+    let bytes: [&[u8]; 2] = [&[0, 128, 255, 65], b""];
+    let invalid_utf8: [&[u8]; 2] = [b"\xff", b"\xed\xa0\x80"];
+    for (symbol, valid, invalid) in
+        [("beskid_utf8", &utf8[..], &invalid_utf8[..]), ("beskid_bytes", &bytes[..], &[][..])]
+    {
+        let binding = export_binding(packet, symbol);
+        assert_eq!(
+            beskid_codegen::glue::artifact::export_transport_symbol(binding),
+            symbol,
+            "{symbol} has a direct C transport"
+        );
+        let name = CString::new(symbol).unwrap();
+        let direct: View =
+            *unsafe { process.export::<View>(0, &name) }.unwrap_or_else(|error| panic!("{symbol}: {error}"));
+        let generated: View = unsafe { checked(process, packet, symbol) };
+        let release_name = CString::new(owned_release_symbol(&binding.library)).unwrap();
+        let release: Release =
+            *unsafe { process.export::<Release>(0, &release_name) }.unwrap_or_else(|error| panic!("{error}"));
+        for value in valid {
+            let manual = read(direct, release, value, &format!("{symbol} manual"));
+            let generated = read(generated, release, value, &format!("{symbol} generated"));
+            assert_eq!(manual.as_slice(), *value, "{symbol} manual roundtrip");
+            assert_eq!(manual, generated, "{symbol}: manual and generated results differ");
+        }
+        for value in invalid.iter().copied() {
+            for (route, call) in [("manual", direct), ("generated", generated)] {
+                let mut out = GlueOwnedView::empty();
+                assert_ne!(unsafe { call(value.as_ptr(), value.len(), &mut out) }, 0, "{symbol} {route} accepted {value:?}");
+                assert_eq!(out.token, 0, "{symbol} {route} leaked a token on rejection");
+            }
+        }
+        for (route, call) in [("manual", direct), ("generated", generated)] {
+            let mut out = GlueOwnedView::empty();
+            assert_ne!(unsafe { call(std::ptr::null(), 1, &mut out) }, 0, "{symbol} {route} accepted null with length");
+            assert_eq!(out.token, 0, "{symbol} {route} leaked a token for a null view");
+        }
+    }
+}
+
+/// opaque_handle in both directions. Import: the owner's issued factory and borrowed reader entries
+/// (manual) against `manual_ImportCreate`/`manual_ImportInspect` through the generated import
+/// adapters (generated); every reader accepts every live token, the owner limit error is the same
+/// status without a token. Export: a token produced by the manual route crosses the export's own C
+/// transport (`beskid_handle`) by hand and stays readable. Each token releases exactly once through
+/// the consumer release entry, after which both readers reject it.
+fn assert_manual_generated_opaque(process: &GlueProcess, owner: usize, packet: &GlueArtifact) {
+    let manual_create: Create = unsafe { owner_entry(process, owner, packet, "make_manual_owned") };
+    let manual_inspect: Inspect = unsafe { owner_entry(process, owner, packet, "check_manual_owned") };
+    let generated_create: Create = unsafe { checked(process, packet, "manual_ImportCreate") };
+    let generated_inspect: Inspect = unsafe { checked(process, packet, "manual_ImportInspect") };
+    let transport = beskid_codegen::glue::artifact::export_transport_symbol(export_binding(packet, "beskid_handle"));
+    let transport = CString::new(transport).unwrap();
+    let identity: Handle =
+        *unsafe { process.export::<Handle>(0, &transport) }.unwrap_or_else(|error| panic!("beskid_handle: {error}"));
+    let release = opaque_release(process, packet);
+    let mut tokens = Vec::new();
+    for (route, create) in [("manual", manual_create), ("generated", generated_create)] {
+        let mut token = 0;
+        assert_eq!(unsafe { create(16, &mut token) }, 0, "{route} factory status");
+        assert_ne!(token, 0, "{route} factory published no token");
+        let mut rejected = u64::MAX;
+        assert_eq!(unsafe { create(OWNED_LIMIT + 1, &mut rejected) }, 1, "{route} factory limit error status");
+        assert_eq!(rejected, 0, "{route} rejected factory leaked a token");
+        tokens.push((route, token));
+    }
+    for (route, token) in &tokens {
+        for (reader_route, reader) in [("manual", manual_inspect), ("generated", generated_inspect)] {
+            let mut length = 0;
+            assert_eq!(unsafe { reader(*token, &mut length) }, 0, "{reader_route} reader of the {route} token");
+            assert_eq!(length, 16, "{reader_route} reader of the {route} token");
+        }
+        let mut returned = 0;
+        assert_eq!(unsafe { identity(*token, &mut returned) }, 0, "{route} token across the export transport");
+        let mut length = 0;
+        assert_eq!(unsafe { manual_inspect(returned, &mut length) }, 0, "token returned by the export transport");
+        assert_eq!(length, 16, "token returned by the export transport");
+    }
+    for (route, token) in &tokens {
+        assert_eq!(unsafe { release(*token) }, 0, "{route} token release");
+        assert_ne!(unsafe { release(*token) }, 0, "{route} token released twice");
+        for (reader_route, reader) in [("manual", manual_inspect), ("generated", generated_inspect)] {
+            let mut length = 0;
+            assert_ne!(unsafe { reader(*token, &mut length) }, 0, "{reader_route} reader accepted the released {route} token");
+        }
+        let mut returned = 0;
+        assert_ne!(unsafe { identity(*token, &mut returned) }, 0, "export transport accepted the released {route} token");
+    }
 }
 
 /// R4-CALL-01/02: manual and generated routes agree on the images the installed CLI published.
@@ -2234,6 +2375,7 @@ fn stage_cli_prefix(staging: DriverStaging) -> (tempfile::TempDir, PathBuf) {
         _ => panic!("CLI driver staging covers only rejected drivers"),
     }
     link_tree(&template().kit.join(kit_relative()), &staged.path().join(kit_relative()));
+    link_tree(&installed_corelib(&qualified), &staged.path().join("beskid_corelib"));
     (staged, cli)
 }
 
