@@ -5,10 +5,185 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when applicable.
 
+## [0.6.0] - Unreleased (in qualification)
+
+Not released. The candidate is in qualification on Linux x64, macOS arm64 and
+Windows x64 through the superrepo release cases
+(`scripts/ci/release-cases-v06.json`). This section is the release summary and
+matches the 0.6.0 section of the superrepo `CHANGELOG.md`; the itemized
+development log stays under [Unreleased] below.
+
+### Language
+
+- Function values. A function type is a reference type whose value is a
+  GC-managed closure record. Calls go through function-typed parameters,
+  locals, fields (`holder.op(1)`) and call results (`Make()(1)`). A named
+  function can be used as a value; a generic one is instantiated from its type
+  arguments or the expected function type. An immutable expression-bodied
+  lambda used only as a callee is a stack closure; every other lambda is a heap
+  closure. Captures are by-value snapshots (OpenSpec `v06-function-values`).
+- Lambda parameters and bodies are typed from the position that declares the
+  function type, through one contextual typing query.
+- `for id in expr` iterates an array value, evaluated once, in index order, in
+  addition to `range(start, end)` (OpenSpec `v06-query-front-end`).
+- New primitive types `i8`, `i16`, `u16`, `u64` and `f32`. Checked `char`/`u32`
+  conversions reject surrogates and values outside the Unicode scalar range.
+- Struct fields without `pub` are private to the source unit that declares the
+  type. Reads, projection chains and struct literals elsewhere fail with E1211
+  (OpenSpec `v06-field-visibility`).
+- A fully qualified path to a public module of any package in the dependency
+  closure resolves without `use`. Lexical names shadow it. A logical module
+  path that two packages provide fails with E1104; a private item reached by a
+  qualified path fails with E1107 (OpenSpec `v06-qualified-dependency-paths`).
+- Logical module paths are package-native: host modules have no prefix and
+  Corelib packages keep their own roots (`Core.*`, `Testing.*`,
+  `Concurrency.*`). The implicit Corelib dependency label is `Core`
+  (OpenSpec `v06-core-namespace`).
+- New diagnostics: E1233 for a lambda that captures a `mut` local or a native
+  pointer outside `spawn`; E1209 for an interpolation or concatenation operand
+  without a text form; E1212 for an omitted struct field.
+
+### Compiler
+
+- The `beskid_queries` query gate is the only semantic authority for `check`,
+  `build`, `run`, `test` and the language server. The executable front end is
+  built from the same gate; codegen lowers it through `TypedProgram`,
+  `CodegenInput` and ISLE. Programs the gate accepts no longer fail a second
+  type check at build time (OpenSpec `v06-query-front-end`).
+- A standalone `.bd` file outside a project is judged by the query gate over a
+  synthetic single-file `App` plan.
+- The entry function `Main` of an `App` or `Test` target is never reported as an
+  unused private item (W1504).
+- Build speed: parallel item emission, streamed query snapshots and
+  content-stable query reuse.
+
+### Corelib
+
+- Serialization library (`Core.Serialization`): format-independent data values,
+  256-bit shape identities, metadata, limits and checked decimal parsing.
+- Native BSOL package (`Core.Bsol`), written in Beskid: lexer, parser, writer,
+  schema validation, profile composition, offline import resolution, migration
+  and typed reads and writes.
+- `Core.Process` child processes: `Spawn`, `SpawnUntil`, `Run`, piped standard
+  streams, `Wait` with a deadline and `Terminate`.
+- `Core.Dynamic`, `Core.Json`, `Core.Numeric.FloatBits`,
+  `Core.String.Search`/`Transform`/`Builder`, `Core.Text.Number`,
+  `Core.Collections.Sort` and hashed collections, `Core.Path.Lexical`,
+  `Core.Time.Calendar` and `Testing.Expect`.
+- Saturating float-to-integer conversions, ordinal string ordering, `f32` and
+  `f64` interpolation, `i64` minimum value text and `bool` text.
+- The Corelib test workspace is consolidated into 40 suite targets.
+
+### Runtime
+
+- Every scheduler and synchronization table (fibers, run queue, pending
+  operations, channels, mutexes, wait groups, hubs, poll tasks, monitors and
+  links, external waits, composition slots) grows on demand from the system
+  allocator. Records never move, so handles stay valid. The only remaining
+  limit is the system allocator (OpenSpec `v06-runtime-limits`).
+- The managed heap has no fixed cap. `BESKID_HEAP_MAX` (bytes, optional `k`,
+  `m` or `g` suffix) installs one; `BESKID_FIBER_STACK_MAX` sets the per-fiber
+  stack reservation (default 8 MiB, a whole multiple of 64 KiB). The runtime
+  reads both at process init on every activation path.
+- Windows IOCP: a network completion that races its deadline keeps its data.
+  Cancellation waits for the kernel's completion packet instead of discarding it
+  (superrepo `docs/design/2026-10-12-iocp-deadline-race.md`).
+
+### Mods
+
+- Native Mods are compiled ahead of time and run in the native Mod host. The
+  artifact descriptor (`mod.descriptor.json`, schema 3) records each build tool
+  by digest and version output instead of copying it.
+- Generators contribute typed syntax through a generation-owned structural
+  arena (contracts, types, functions, impl blocks), never source strings.
+- The toolchain Corelib bundle ships prebuilt Mod executables. Other Mods are
+  built by `beskid dev mod rebuild` or by any `build`, `run` or `check` of the
+  consuming project. Mod artifacts no longer depend on their location.
+- The Serialization Mod is loaded transitively from the Serialization library
+  with its Compiler SDK and Foundation dependency closure.
+
+### Interop (Rust Glue)
+
+- Rust Glue is delivered as an in-process checked C ABI path: a Beskid consumer
+  image and one Rust owner image per manifest `glue "<library>"` block
+  (`backend = rust`, `path` to the project-relative Rust owner sources). The
+  label equals the `Library` string of the `Extern` contracts and
+  `GlueHandle` types it implements (OpenSpec `v06-rust-glue-integration`).
+- `[GlueHandle(Library: .., Nullable: ..)]` brands an opaque handle type.
+  `[RustOwner(Path: .., Fallible: ..)]` maps an `Extern` contract method, or a
+  handle type, to a Rust path under the generated `implementation` module.
+- Admitted boundary types: fixed-width integers, `f32`/`f64`, `bool`, Unicode
+  scalars, UTF-8 and byte views, arrays, unit and branded opaque handles.
+  Fallible imports surface the foreign failure.
+- Each image carries an immutable admission record. The consumer record pins
+  every Rust owner image by digest; a record from another compiler version is
+  not admitted.
+- `beskid build --backend glue-rust` builds a `Lib` target with explicit tools:
+  `--linker`, and `--rust-toolchain` or `--cargo` with `--rustc`. The
+  `glue-dotnet` backend is unavailable.
+
+### CLI and tooling
+
+- New root command surface: `new`, `check`, `build`, `run`, `test`, `fmt`,
+  `doc`, `add`, `remove`, `update`, `package`, `toolchain`, `doctor` and `dev`.
+  Compiler inspection and maintenance move under `beskid dev` (`syntax`,
+  `build`, `project`, `corelib`, `runtime-kit`, `mod`, `import`, `lsp`, `bsol`,
+  `repl`, `capabilities`). A removed command fails with its replacement.
+- `beskid add <package>[@<version>]` (or `--path`), `beskid remove` and
+  `beskid update <package> [--version]`/`--all [--dry-run]` edit dependency
+  intent and the lock as one transaction and preserve unrelated manifest text.
+- `beskid new` uses the bundled offline application template; `--list` and
+  `--template` select others. `beskid package template` manages templates.
+- `beskid doctor` reports installation problems without changing anything.
+  `beskid toolchain status|update` replaces `beskid up`.
+- LSP: the initialization option `modHost` (`path`, `runtimePrefix`,
+  `runtimeProfile`) selects the native Mod host and runtime kit. An invalid
+  value fails `initialize`. Project preparation failures are published as a
+  `project-preparation` diagnostic.
+
+### Breaking changes
+
+- Old root commands (`analyze`, `format`, `pckg`, `up`, `parse`, `tree`,
+  `clif`, `fetch`, `lock`, `graph`, `mod`, `import`, `lsp`, `runtime-kit`,
+  `corelib`, `repl`, `validate-bsol`, `migrate-bsol`) are rejected with their
+  replacement.
+- `Std.`-qualified paths no longer resolve; a Corelib dependency labeled `Std`
+  must be labeled `Core`.
+- Non-`pub` fields are inaccessible outside their declaring source unit (E1211).
+- A module path provided by two packages of the closure fails (E1104).
+- A lambda that captures a `mut` local outside `spawn` fails (E1233).
+- `BESKID_HEAP_MAX_BYTES` is replaced by `BESKID_HEAP_MAX`.
+- The HIR-era phase ids `lower.ast`, `lower.resolve_pass1`, `lower.normalize`,
+  `lower.resolve`, `lower.type_check` and `semantic.error_handling` are no
+  longer emitted.
+- Glue is selected by `glue` manifest blocks, `[GlueHandle]` and `[RustOwner]`;
+  the 0.4 Glue attributes and Mod contracts are gone.
+
+### Removed
+
+- `Core.Threading.Thread.Spawn`, `Thread.Join`, the `Thread` handle type,
+  `ThreadError` and the `LinuxPthread`/`DarwinPthread` contracts. Fibers are
+  the concurrency model; `Thread.Yield` remains (OpenSpec
+  `v06-remove-raw-thread-spawn`).
+- The 0.4 Glue scaffold: the seven Glue Mod contracts, the `[Glue]`,
+  `[GlueImport]` and `[GlueExport]` attributes, `GlueBackendKind` and the no-op
+  `mod.glue` phase. The stdio bridge (`Core.Glue`) remains as a provisional
+  package without a 0.6 obligation.
+- The legacy `beskid_analysis` `TypeChecker`, its dependency typing policy and
+  its lowering preparation.
+- The `Std` namespace and its App-only alias layer.
+- The fixed runtime table sizes and the fixed 1 GiB heap cap.
+
 ## [Unreleased]
 
 ### Removed
 
+- The 0.4 Glue scaffold: `beskid_analysis/src/mod_host/glue.rs` (the no-op
+  `mod.glue` phase that returned the program unchanged, `GlueAttributeKind`,
+  `collect_glue_annotations`, `is_glue_attribute`), the seven
+  `Beskid.Glue.Contracts.*` SDK Mod registrations and the `mod.glue` pipeline
+  phase id with its tool label. Delivered Rust Glue is driven by `beskid_queries`
+  binding facts, not Mod contracts (OpenSpec change `v06-rust-glue-integration`).
 - The legacy `beskid_analysis` `TypeChecker` and everything only it fed: the typed
   session fingerprints, the `EntryOnly` / `FullClosure` dependency typing policy,
   the authority-less prepare entry points, the stage-7 `?` precheck, the HIR-era
@@ -28,6 +203,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   source identity (`for_iterator_fact`, `ForIterableSource::Array`), including
   through an enclosing generic specialization (`for_iterator_specialization`);
   ISLE lowers it with `emit_array_for`.
+- Typed top-level serialization of `[Serialize]` types. The canonical
+  `Core.Serialization.Reader.ReadField<T,R>` and `Core.Serialization.Contracts.WriteField<T,E>`
+  have a compiler-issued body for each concrete T
+  (`beskid_queries::serialization_field_codec_binding`): the field decoder or encoder factory of
+  the retained generated group of T, selected by its resolved signature and admitted through the
+  group's target correspondence, or a canonical scalar or container read or write. Codegen runs
+  the correspondence to a fixpoint and emits each bridge body as a forward to the issued
+  function. The Serialization Mod reads and writes every nominal field through these entries, so
+  a primitive generic argument (`Boxed<i32>`) needs no `Serializable` bound. New API:
+  `Reader.ReadComplete<T,R>`, `Decoding.DecoderFor<T,R>(reader)` and
+  `Core.Bsol.Serialization.Read<T>`.
+- Generated syntax fixes found by running the Mod end to end: impl-block generic parameters are
+  enclosing generics of their methods (E1201), where-bound proofs admit enums that conform
+  through an `impl`, merged generated nodes are spanned in source (field) order, generated
+  method calls use path callees, and generated names follow the naming rules.
 
 ### Fixed
 
@@ -203,21 +393,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `Array.Append` grows geometrically. When the array is full, the
   replacement has twice the capacity (at least 4 elements; when doubling
   overflows, the exact requested capacity), and `Array.Capacity` reports it.
-- Typed top-level serialization of `[Serialize]` types. The canonical
-  `Core.Serialization.Reader.ReadField<T,R>` and `Core.Serialization.Contracts.WriteField<T,E>`
-  have a compiler-issued body for each concrete T
-  (`beskid_queries::serialization_field_codec_binding`): the field decoder or encoder factory of
-  the retained generated group of T, selected by its resolved signature and admitted through the
-  group's target correspondence, or a canonical scalar or container read or write. Codegen runs
-  the correspondence to a fixpoint and emits each bridge body as a forward to the issued
-  function. The Serialization Mod reads and writes every nominal field through these entries, so
-  a primitive generic argument (`Boxed<i32>`) needs no `Serializable` bound. New API:
-  `Reader.ReadComplete<T,R>`, `Decoding.DecoderFor<T,R>(reader)` and
-  `Core.Bsol.Serialization.Read<T>`.
-- Generated syntax fixes found by running the Mod end to end: impl-block generic parameters are
-  enclosing generics of their methods (E1201), where-bound proofs admit enums that conform
-  through an `impl`, merged generated nodes are spanned in source (field) order, generated
-  method calls use path callees, and generated names follow the naming rules.
+  When capacity remains, the element is stored in place and every handle to
+  the same array sees the new length, as `RemoveLast` already did. n appends
+  copy O(n) elements in total instead of O(n^2).
+- A process that publishes more than one runtime kit, for example the debug
+  and release kits of a release bundle, lowers the canonical runtime source
+  once for each target instead of once for each kit. Each lowering takes
+  about 40 s on the Linux build host.
 
 ### Fixed
 

@@ -1,17 +1,19 @@
 # Beskid ISLE Lowering: Coverage and Completion Plan
 
-Status: living document. Generated from a scan of `crates/beskid_isle` and the reference
-lowering surface in `crates/beskid_codegen`.
+Status: living document, updated for 0.6.0 (in qualification) from a scan of
+`crates/beskid_isle/isle`.
 
 ## Purpose
 
-Beskid is migrating instruction selection off the legacy HIR lowering path onto a generated
-**ISLE** ("Instruction Selection Lowering Expressions") path. This document inventories:
+ISLE ("Instruction Selection Lowering Expressions") is the only lowering path. In 0.6 the query
+gate's executable front end is lowered through `TypedProgram`, `CodegenInput` and ISLE to stock
+Cranelift CLIF; the legacy HIR lowering and the `beskid_codegen/src/lowering/` tree are deleted.
+The "Legacy reference" column below names those deleted files for history only. This document
+inventories:
 
 1. Which lowering rules are **implemented** today in ISLE, and in which file each lives.
-2. Which rules remain **to implement** to cover the required language surface, including both
-   parity gaps with the legacy `beskid_codegen` path and constructs not yet lowered by either path,
-   and where each new rule should go.
+2. Which constructs the check gate accepts but ISLE still cannot select, and where each new rule
+   should go.
 
 Use the two tables in [Implemented rules](#implemented-isle-rule-files) and
 [Rules to implement](#rules-to-implement) as the working checklist.
@@ -28,27 +30,25 @@ The ISLE path selects stock Cranelift CLIF for each Beskid AST node. It has thre
   constructor`/`extractor` the rules call, driving a Cranelift `FunctionBuilder`. It reads all
   structural facts through the `NodeFacts` trait, and reports selection gaps as a
   `LoweringError` whose kind is usually `MissingRuleOrFact`.
-- **Fact adapter (`crates/beskid_codegen/src/isle_adapter.rs`).** `SyntaxNodeFacts` answers
+- **Fact adapter (`crates/beskid_codegen/src/isle_adapter/`).** `SyntaxNodeFacts` answers
   `NodeFacts` from generation-safe Salsa/syntax queries. Facts that are not yet ported simply
-  return `None`, so an unported construct surfaces deterministically as `MissingRuleOrFact`
-  instead of falling back to HIR.
+  return `None`, so an unported construct surfaces deterministically as `MissingRuleOrFact`;
+  there is no fallback lowering path.
 
 A construct is "fully lowered by ISLE" only when all three exist: a matching rule, an emitter
 in `IsleContext`, and the facts feeding it in `SyntaxNodeFacts`.
 
 ## Node surface reference
 
-The AST surface ISLE must eventually cover is enumerated by `NodeKind` in
-`crates/beskid_isle/isle/types.isle`, cross-checked against the legacy dispatchers
-`crates/beskid_codegen/src/lowering/expressions/expression.rs` and
-`.../statements/statement.rs`. Some HIR nodes (`MacroInvocation`, `MacroMetavariable`,
-`CodeStringExpression`, raw `TryExpression`) are rejected or desugared before codegen in both
-paths and are out of scope for ISLE (see [Out of scope](#out-of-scope)).
+The AST surface ISLE must cover is enumerated by `NodeKind` in
+`crates/beskid_isle/isle/types.isle`. Some syntax nodes (`MacroInvocation`, `MacroMetavariable`,
+`CodeStringExpression`) are rejected or expanded before codegen and are out of scope for ISLE (see
+[Out of scope](#out-of-scope)).
 
 ## Implemented ISLE rule files
 
 Rule files live in `crates/beskid_isle/isle/`. Every rule delegates to an emitter implemented
-in `crates/beskid_isle/src/lib.rs` (`IsleContext`), with trusted primitives in
+in `crates/beskid_isle/src/context.rs` and `src/context/` (`IsleContext`), with trusted primitives in
 `src/clif_primitives.rs` and dispatch-route emission in `src/dispatch.rs`.
 
 | File | Kind | Implemented lowering rules / constructs |
@@ -56,28 +56,30 @@ in `crates/beskid_isle/src/lib.rs` (`IsleContext`), with trusted primitives in
 | `types.isle` | Foundation | Type + enum declarations shared by all rules: `AstNodeKey`, `Value`, `Unit`, `StatementCursor`, and the fact enums `NodeKind`, `CursorKind`, `LiteralKind`, `OperatorFact`, `CallKind`, `IndexTarget`. No rules. |
 | `ast.isle` | Foundation | Fact extractors (`node_kind`, `literal_kind`, `operator_fact`, `call_kind`, `assignment_target_kind`, `for_iterable_kind`) and the `child_at` child-access constructor. No rules. |
 | `primitives.isle` | Foundation | Trusted CLIF primitive constructors (contract; Rust bridge in `clif_primitives.rs`): extending loads (`load_i8/i16/i32` zext/sext), stores, `icmp_*` including `ult`, f64 arith/`fcvt_*`, `icmp_byte_ne`, `bounded_memcmp`. Explicit `stack_load`/`stack_store` live on `ClifPrimitives` for scratch slots (AST locals use SSA vars). No AST rules. |
-| `expressions.isle` | Expressions | `lower_expression` entry decl; `GroupedExpression` (unwrap child 0); `BlockExpression` value (`emit_block_expression`); `SpawnExpression` (`emit_spawn`). |
+| `expressions.isle` | Expressions | `lower_expression` entry decl; `GroupedExpression` (unwrap child 0); `BlockExpression` value (`emit_block_expression`); `SpawnExpression` (`emit_spawn`); `LambdaExpression` (`emit_lambda`, closure record); `TryExpression` as expression and statement; `ClifBlock`. |
 | `literals.isle` | Expressions | Literal lowering for `Integer`, `Boolean`, `Float`, `Char`, `String`. |
 | `binary.isle` | Expressions | Binary arithmetic/comparison: `IdentityEq`, `IdentityNotEq`, `Eq`, `NotEq`, `Lt`, `Lte`, `Gt`, `Gte`, `Add`, `Sub`, `Mul`, `Div`, `Mod`. Emitters are type-polymorphic: float uses `fadd`/`fsub`/`fmul`/`fdiv`/`fcmp`; CLIF `i8` (Beskid `u8`/`bool`) uses unsigned compares and `udiv`/`urem`; wider integers stay signed. Float `%` fails closed (partial `clif_srem`). |
 | `unary_casts.isle` | Expressions | Unary `Neg` (`ineg`/`fneg`) and `Not` (`bnot`). |
-| `control_flow.isle` | Expr + Stmt | Short-circuit `Or`/`And`; `IfStatement` (`emit_if_else`); `WhileStatement`; `BreakStatement`; `ContinueStatement`; `ForStatement` over a `RangeExpression` iterable (`emit_range_for`) and over an array value (`emit_array_for`, selected by `array_for_fact`). |
-| `calls.isle` | Expressions | Direct call expressions (`CallKind.Direct` -> `emit_direct_call`), including method/receiver calls resolved to a direct callee. |
+| `control_flow.isle` | Expr + Stmt | Short-circuit `Or`/`And`; `IfStatement` (`emit_if_else`); `WhileStatement`; `BreakStatement`; `ContinueStatement`; `ForStatement` over a `RangeExpression` iterable (`emit_range_for`), over an array value (`emit_array_for`, selected by `array_for_fact`), and over a nominal iterator whose `Next()` returns `Option<T>` (`emit_iterator_for`; the iterable is rooted and `Next()` resolves per specialization). |
+| `calls.isle` | Expressions | Call expressions by `CallKind`: `Direct` (including method/receiver calls resolved to a direct callee), `FunctionValue` (indirect call through a closure record), `InlineLambda` (stack closure called inline), `Bulk`, `TypedArrayAllocation`, `PrimitiveNumericConversion`, `CollectionOperation`. |
+| `events.isle` | Expr + Stmt | Event subscribe and unsubscribe-first assignments; event raise statements. |
+| `composition.isle` | Statements | `LaunchStatement` and `WithStatement`, selected only for a source key the frozen composition graph owns. |
 | `runtime_intrinsics.isle` | Expressions | Canonical runtime-intrinsic calls (`CallKind.RuntimeIntrinsic` -> `emit_runtime_intrinsic`). |
 | `dispatch.isle` | Expressions | Dynamic dispatch calls (`CallKind.Dynamic`); string `concat`/`eq`/`ne` from interpolation desugar (`StringAdd`/`StringEq`/`StringNotEq`); `string[index]` byte read (`IndexTarget.String`). |
 | `memory.isle` | Expressions | `PathExpression` local read; `AssignExpression` to a `PathExpression` target (local assign), to a `FieldExpression` target (field assign), and to an `IndexExpression` target (`emit_index_assign`); `ArrayLiteralExpression`; `IndexExpression` array read (`IndexTarget.Array`); `StructLiteralExpression`; `FieldExpression` read; `EnumLiteralExpression` (nullary + single-payload); `MatchExpression` (`emit_match` / `emit_match_statement`, see [Match coverage](#match-coverage)). |
-| `statements.isle` | Statements | `ExpressionStatement`; `ReturnStatement`; `LetStatement`; `BlockExpression`/`TestDefinition` statement-cursor traversal; statement sequencing (`sequence_statements` / `finish_statements`). |
+| `statements.isle` | Statements | `ExpressionStatement` (including direct, function-value and runtime-intrinsic call statements); `ReturnStatement`; `LetStatement`; `ScopedUseStatement`; `BlockExpression`/`TestDefinition`/`MethodDefinition` statement-cursor traversal; statement sequencing (`sequence_statements` / `finish_statements`). |
 | `items.isle` | Items | `item_body` selection for `FunctionDefinition` (child 0) and `TestDefinition` (self). |
 
 ### Supporting Rust (not ISLE rules, but part of the lowering path)
 
 | File | Role |
 | --- | --- |
-| `crates/beskid_isle/src/lib.rs` | `IsleContext` emitter implementations for every extern constructor/extractor; `FunctionEmitter` entrypoints (`emit_expression`, `emit_statement`, `emit_item_statement*`); `NodeFacts` trait; `LoweringError` / `LoweringErrorKind` (`MissingRuleOrFact`, layout/match errors). |
+| `crates/beskid_isle/src/context.rs`, `src/context/` | `IsleContext` emitter implementations for every extern constructor/extractor. |
+| `crates/beskid_isle/src/facts/`, `src/errors.rs`, `src/emitter.rs` | `NodeFacts` trait; `LoweringError` / `LoweringErrorKind`; `FunctionEmitter` entrypoints. |
 | `crates/beskid_isle/src/clif_primitives.rs` | Bridges the trusted CLIF primitives in `primitives.isle` to `FunctionBuilder` (plus `stack_load`/`stack_store` scratch helpers). |
 | `crates/beskid_isle/src/dispatch.rs` | Emits dispatch-route calls (`emit_dispatch_call`, `emit_str_from_i64_dispatch`) used by dynamic + string rules. |
 | `crates/beskid_isle/build.rs` | Compiles `isle/*.isle` into the generated selector consumed by `IsleContext`. |
-| `crates/beskid_codegen/src/isle_adapter.rs` | `SyntaxNodeFacts` (query-backed `NodeFacts`) plus `emit_isle_expression` / `emit_isle_item*` production entrypoints and ABI/layout derivation. |
-| `crates/beskid_codegen/src/lowering/dispatch.rs` | Thin bridge from codegen call sites to `beskid_isle::emit_dispatch_call`. |
+| `crates/beskid_codegen/src/isle_adapter/` | `SyntaxNodeFacts` (query-backed `NodeFacts`) plus `emit_isle_expression` / `emit_isle_item*` production entrypoints and ABI/layout derivation. |
 | `crates/beskid_isle/src/isle` tests (`crates/beskid_isle/tests/*`) | Rule/emitter coverage (`rule_coverage.rs` asserts each owned group has a real rule and every operator fact has a rule). |
 
 ### Match coverage
@@ -112,35 +114,21 @@ and `return` of a `unit` function evaluate it for effect only.
 
 ## Rules to implement
 
-These are constructs that ISLE cannot yet select, including legacy-parity gaps and language
-features that neither lowering path currently implements. Each currently fails as
-`MissingRuleOrFact` (or is silently unreachable because no `NodeKind` variant exists). "Target
-file" is where the new rule belongs; a new `NodeKind`/`OperatorFact` variant in `types.isle`
-plus a `SyntaxNodeFacts` fact in `isle_adapter.rs` and an emitter in `lib.rs` are implied for
-each unless noted.
+These are constructs that ISLE cannot yet select. Each fails as `MissingRuleOrFact` or another
+`LoweringError`. "Target file" is where the new rule belongs; a new `NodeKind`/`OperatorFact`
+variant in `types.isle`, a `SyntaxNodeFacts` fact in `beskid_codegen/src/isle_adapter/` and an emitter in the
+`beskid_isle` context are implied for each unless noted.
 
-| # | Construct / rule to add | Target ISLE file | Legacy reference | Notes / scope |
-| --- | --- | --- | --- | --- |
-| 1 | `SpawnExpression` lowering | new `spawn.isle` | `expressions/spawn_expression.rs` | Concurrency: spawn a lambda target as a fiber; needs capture-env materialization. No `NodeKind::SpawnExpression` yet. |
-| 2 | `LambdaExpression` / closure values | new `lambda.isle` | `expressions/call_expression.rs::lower_lambda_function_value` | Lambda function value + capture environment struct. No `NodeKind` variant; also unblocks (1). |
-| 3 | `LaunchStatement` registration and injection completion | `composition.isle` | `lowering/composition/launch_statement.rs` | Generated ISLE now selects a source-keyed validated launch and emits canonical create/launch/shutdown/drop calls. Ordered registration construction, injection and startup remain release work. |
-| 4 | `WithStatement` scope identity completion | `composition.isle` | `lowering/composition/with_statement.rs` | Generated ISLE now selects a source-keyed validated scope and emits enter/leave on structured exits. The v0.5 runtime ABI still needs to carry the validated scope ID. |
-| 5 | Index-target assignment `arr[i] = v` (heap `T[]`) | `memory.isle` (+ `dispatch.isle` for string bytes) | `expressions/assign_expression.rs` (`AssignTargetKind::IndexElement`) | Typed array literals now use syntax-derived ABI-v5 static element descriptors and `beskid_rt_v5_array_allocate_rooted`; pointer element publication routes through the manifest-owned array write barrier. Array-index mutation facts remain a separate required port. This source slice is deliberately unverified until the post-implementation Cargo/Cranelift gate. |
-| 6 | Compound assignment `+=` / `-=` | `memory.isle` | `expressions/assign_expression.rs` (`AddAssign`/`SubAssign`) | For local, field, and index targets; includes float `fadd`/`fsub`, integer `iadd`/`isub`, and string `+=` concat. Needs compound-assign `OperatorFact`s (currently absent). |
-| 7 | Event-member `+=` / `-=` (subscribe/unsubscribe) | `dispatch.isle` | `expressions/assign_expression.rs` (`AssignTargetKind::EventMember`) | Lower to `TAG_EVENT_SUBSCRIBE` / `TAG_EVENT_UNSUBSCRIBE_FIRST` dispatch routes with capacity. Depends on event-field facts. |
-| 9 | `ForStatement` over the nominal iterator protocol | `control_flow.isle` | (none) | `for x in iter { ... }` where `iter.Next()` returns `Option<T>`: the check gate judges the shape (E1215-E1218) but `emit_iterator_for` still fails closed. Range-for and array-for (`emit_array_for`, `for_iterator_fact` with `ForIterableSource::Array`) are done. |
-| 10 | Non-field member reads | `memory.isle` | `expressions/member_expression.rs` | Fiber-handle `.handle` passthrough and other special member reads not backed by an `aggregate_field_access` layout fact. General field reads on expression receivers already work via recursive base lowering. |
-| 11 | Multi-segment path field-chain assignment | `memory.isle` | `expressions/assign_expression.rs` (`load_path_field_chain`) | Assignment through a chained path receiver (`a.b.c = v`) beyond a single field level. Confirm coverage; extend `emit_field_assign` base resolution if the chain fact is unavailable. |
+Spawn, lambdas and closure values, function-value calls, index assignment and event
+subscribe/unsubscribe/raise now have rules (see the table above) and are no longer listed.
 
-### Suggested ordering
-
-1. **Heap `T[]` index writes and compound assignment** close everyday imperative gaps that
-   block ordinary application code on the syntax-only path (stack index assign is already done).
-2. **#2 then #1** (lambda before spawn-of-lambda value forms; zero-arg named spawn already works).
-3. **#3, #4, #7** cover the composition/eventing surface; gated today by
-   `composition_policy::RUNTIME_CONTAINER_LOWERING_ENABLED` and intentionally
-   `UnsupportedTypedOperation` for 0.4 W4.1 (CYB-81).
-4. **#9, #10, #11** are smaller parity items.
+| # | Construct / rule to add | Target ISLE file | Notes / scope |
+| --- | --- | --- | --- |
+| 1 | `LaunchStatement` registration and injection completion | `composition.isle` | The rule exists. The 0.5 note recorded that ordered registration construction, injection and startup remained release work; this has not been re-verified for 0.6. |
+| 2 | `WithStatement` scope identity completion | `composition.isle` | The rule exists. The 0.5 note recorded that the runtime ABI still needed to carry the validated scope ID; this has not been re-verified for 0.6. |
+| 3 | Compound assignment `+=` / `-=` on values | `memory.isle` | For local, field and index targets; includes float `fadd`/`fsub`, integer `iadd`/`isub` and string `+=` concat. No compound-assign rule exists; event `+=`/`-=` is handled by `events.isle`. |
+| 6 | Non-field member reads | `memory.isle` | Fiber-handle `.handle` passthrough and other special member reads not backed by an `aggregate_field_access` layout fact. |
+| 7 | Multi-segment path field-chain assignment | `memory.isle` | Assignment through a chained path receiver (`a.b.c = v`) beyond one field level. Confirm coverage; extend `emit_field_assign` base resolution if the chain fact is unavailable. |
 
 ## Out of scope
 
@@ -148,8 +136,7 @@ These reach codegen only in error or are desugared upstream, and are intentional
 lowering targets:
 
 - `MacroInvocation`, `MacroMetavariable` (expanded before codegen).
-- `CodeStringExpression` (unsupported in both paths).
-- Raw `TryExpression` (normalized to `match` before codegen).
+- `CodeStringExpression` (unsupported).
 - SIMD vector ops (Beskid has no vector types in TypedProgram today).
 - Bitwise / shift / rotate / bitcount operators (no Beskid language operators).
 - Cranelift `vmctx` parameters (managed ABI uses `GlobalValueData::Symbol` + runtime helpers).
@@ -159,8 +146,8 @@ lowering targets:
 
 1. Add the `NodeKind`/`OperatorFact` variant (if new) to `crates/beskid_isle/isle/types.isle`.
 2. Add the `(rule ...)` to the appropriate rule file and the emitter to
-   `crates/beskid_isle/src/lib.rs` (`IsleContext`).
-3. Supply the facts in `crates/beskid_codegen/src/isle_adapter.rs` (`SyntaxNodeFacts`).
+   `crates/beskid_isle/src/context/` (`IsleContext`).
+3. Supply the facts in `crates/beskid_codegen/src/isle_adapter/` (`SyntaxNodeFacts`).
 4. Extend `crates/beskid_isle/tests/rule_coverage.rs` and add a focused emitter test under
    `crates/beskid_isle/tests/` mirroring the existing per-construct tests.
 5. Trace failures with `BESKID_COMPILER_TRACE=1`, which records selection failures and CLIF
