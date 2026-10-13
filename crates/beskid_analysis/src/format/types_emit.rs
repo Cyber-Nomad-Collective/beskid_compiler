@@ -170,6 +170,11 @@ impl Emit for Spanned<Parameter> {
 
 impl Emit for Field {
     fn emit<W: Write>(&self, w: &mut W, cx: &mut EmitCtx) -> Result<(), EmitError> {
+        for attribute in &self.attributes {
+            attribute.emit(w, cx)?;
+            cx.nl(w)?;
+            cx.write_indent(w)?;
+        }
         self.visibility.emit(w, cx)?;
         match self.kind {
             FieldKind::Value => {

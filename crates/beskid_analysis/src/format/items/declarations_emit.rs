@@ -191,6 +191,11 @@ impl Emit for Spanned<EnumDefinition> {
 
 impl Emit for ContractMethodSignature {
     fn emit<W: Write>(&self, w: &mut W, cx: &mut EmitCtx) -> Result<(), EmitError> {
+        if !self.attributes.is_empty() {
+            emit_attribute_lines(&self.attributes, w, cx)?;
+            cx.nl(w)?;
+            cx.write_indent(w)?;
+        }
         if let Some(rt) = &self.return_type {
             rt.emit(w, cx)?;
             cx.space(w)?;
