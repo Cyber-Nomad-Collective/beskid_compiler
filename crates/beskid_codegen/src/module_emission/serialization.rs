@@ -92,28 +92,28 @@ pub(super) fn emit_compiled_shape_bridge(
     Ok(None)
 }
 
-/// The compiler-issued body of a `FieldDecoderBridge<T,R>` instance: forward the reader and limits
-/// unchanged to the exact issued field read of T. The forwarded function is selected only by the
-/// field decoder correspondence of the `ReadField<T,R>` instance that calls this bridge.
-pub(super) fn emit_field_decoder_bridge(
+/// The compiler-issued body of a `FieldDecoderBridge<T,R>` or `FieldEncoderBridge<T,E>` instance:
+/// forward every argument unchanged to the exact issued field read or write of T. The forwarded
+/// function is selected only by the field codec correspondence of the entry that calls this bridge.
+pub(super) fn emit_field_codec_bridge(
     input: &CodegenInput<'_>, isa: &dyn TargetIsa, item: &ResolvedSyntaxModuleItem,
     items: &[ResolvedSyntaxModuleItem], symbols: &HashMap<DirectCallee, String>,
 ) -> Result<Option<Function>, SyntaxModuleEmissionError> {
     let Some(instance) = item.specialization.as_ref() else { return Ok(None) };
     let db = input.database();
     for requested in items.iter().filter_map(|item| item.specialization.as_ref()) {
-        let Some(bridge) = beskid_queries::serialization_field_decoder_bridge(db, requested)
+        let Some(bridge) = beskid_queries::serialization_field_codec_bridge(db, requested)
             .map_err(|error| emission_verification(error.to_string()))? else { continue };
         if &bridge != instance { continue }
-        let binding = beskid_queries::serialization_field_decoder_binding(db, input.typed_program(), requested)
+        let binding = beskid_queries::serialization_field_codec_binding(db, input.typed_program(), requested)
             .map_err(|error| emission_verification(error.to_string()))?
-            .ok_or_else(|| emission_verification("field decoder bridge lacks its correspondence"))?;
+            .ok_or_else(|| emission_verification("field codec bridge lacks its correspondence"))?;
         let target = binding.target();
         let symbol = symbols
             .get(&DirectCallee::specialized_item(target.declaration, beskid_queries::generic_specialization_identity(target)))
-            .ok_or_else(|| emission_verification("issued field read was not emitted"))?;
+            .ok_or_else(|| emission_verification("issued field codec function was not emitted"))?;
         let signature = crate::isle_adapter::mappings::signature_for_item(isa, instance.signature.clone())
-            .ok_or_else(|| emission_verification("field decoder bridge ABI unavailable"))?;
+            .ok_or_else(|| emission_verification("field codec bridge ABI unavailable"))?;
         let mut function = Function::new();
         function.signature = signature.clone();
         let mut context = FunctionBuilderContext::new();

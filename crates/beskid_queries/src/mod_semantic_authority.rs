@@ -9,8 +9,8 @@ pub use serialization_target::{
     CompiledSerializationTarget, ReboundSerializationTarget, SerializationContributionKind,
 };
 mod catchall;
-mod field_decoder;
-pub(crate) use field_decoder::generated_field_decoder_factory;
+mod field_codec;
+pub(crate) use field_codec::generated_field_codec_factory;
 mod functions;
 use crate::semantic_contract::mod_shapes::{
     ShapeBodyProjection, ShapeIdentity, mod_shape_is_managed, mod_shape_lexical_path, mod_shape_projection,

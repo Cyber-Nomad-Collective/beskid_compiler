@@ -1,7 +1,7 @@
 //! The canonical serialization descriptor and compiled-recipe units declare private factories
 //! that only the compiled serialization shape authority (`beskid_queries::serialization_shape`)
 //! names, and the descriptor unit's `[Extern]` `CompiledShapeBridge` is a compiler-issued
-//! runtime bridge, not a user C import, as is the reader unit's `FieldDecoderBridge`. Every
+//! runtime bridge, not a user C import, as are the reader and contracts units' field codec bridges. Every
 //! exemption keys on the exact canonical unit.
 
 use beskid_analysis::AnalysisOptions;
@@ -39,6 +39,17 @@ fn v06_canonical_serialization_factories_are_compiler_issued() {
             .expect("the reader assembly carries Core/Serialization/Reader.bd");
         assert!(reader_assembly.is_canonical_serialization_reader_unit(reader));
         assert!(reader_assembly.is_runtime_bridge_extern_unit(reader), "FieldDecoderBridge is a runtime bridge");
+        let contracts_assembly =
+            resolve_fixture_with_assembly(&root, "src/Core/Serialization/Contracts.bd", "SerializationLib")
+                .assembly
+                .expect("contracts assembly");
+        let contracts = contracts_assembly
+            .units
+            .iter()
+            .find(|unit| unit.path.ends_with("Core/Serialization/Contracts.bd"))
+            .expect("the contracts assembly carries Core/Serialization/Contracts.bd");
+        assert!(contracts_assembly.is_canonical_serialization_contracts_unit(contracts));
+        assert!(contracts_assembly.is_runtime_bridge_extern_unit(contracts), "FieldEncoderBridge is a runtime bridge");
         for (logical, names) in [
             ("Core/Serialization/Descriptors.bd", &["CompiledRoot", "AttachCompiledExtras"][..]),
             ("Core/Serialization/Compiled.bd", &["ConstructCompiledGraph"][..]),

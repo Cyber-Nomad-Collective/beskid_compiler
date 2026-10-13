@@ -215,7 +215,7 @@ pub mod process_source_authority;
 
 pub use semantic_contract::{SerializationShapeBinding, serialization_shape_binding};
 pub use semantic_contract::{
-    SerializationFieldDecoderBinding, serialization_field_decoder_binding, serialization_field_decoder_bridge,
+    SerializationFieldCodecBinding, serialization_field_codec_binding, serialization_field_codec_bridge,
 };
 
 mod serialization_field_policy;

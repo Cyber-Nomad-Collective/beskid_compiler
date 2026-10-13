@@ -186,6 +186,15 @@ pub(in crate::semantic_contract) fn type_syntax_is_enclosing_generic_parameter_r
     if let Some(function) = enclosing_node.of::<beskid_analysis::syntax::FunctionDefinition>() {
         return function.generics.iter().any(|generic| generic.node.name == parameter_name);
     }
+    // A method of `impl<E> Point : Serializable<E>` sees the impl block's own parameters, which
+    // the receiver declaration does not declare.
+    if parent_node(index, enclosing)
+        .and_then(|parent| index.node_at(program, parent))
+        .and_then(|parent| parent.of::<beskid_analysis::syntax::ImplBlock>())
+        .is_some_and(|block| block.generics.iter().any(|generic| generic.node.name == parameter_name))
+    {
+        return true;
+    }
     let Some(owner) = method_owner_node(program, index, enclosing)
         .and_then(|owner| index.node_at(program, owner))
         .and_then(|owner| owner.of::<beskid_analysis::syntax::TypeDefinition>())

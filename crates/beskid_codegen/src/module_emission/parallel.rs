@@ -150,7 +150,7 @@ fn emit_module_item(
     {
         return Ok(lowered(function));
     }
-    if let Some(function) = super::serialization::emit_field_decoder_bridge(input, isa, item, items, symbols)? {
+    if let Some(function) = super::serialization::emit_field_codec_bridge(input, isa, item, items, symbols)? {
         return Ok(lowered(function));
     }
     if let Some(function) = super::dynamic::emit_unpack_bridge(input, isa, item, items, symbols)? {

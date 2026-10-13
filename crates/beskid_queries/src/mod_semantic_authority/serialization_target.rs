@@ -90,17 +90,21 @@ impl CompiledSerializationTarget {
     }
     /// The attributed unit and the current top-level entry nodes of this group when `current`
     /// is a later generation that preserves the original entry items and appends the exact
-    /// group once. `Ok(None)` when the group is not (or not exactly) appended in `current`, or
-    /// when the declaring unit's source or package provenance changed: such a group is
-    /// unattributed and keeps the entry unit.
+    /// group once. `Ok(None)` when the group is not (or not exactly) appended in `current`, when
+    /// the declaring unit's source or package provenance changed, or when `project` is not the
+    /// issuing project session: such a group is unattributed and keeps the entry unit.
     pub(crate) fn appended_attribution(
         &self,
         db: &dyn Db,
         project: ProjectSession,
         current: &ProgramAssembly,
     ) -> Result<Option<(SourceUnitId, Vec<crate::AstNodeId>)>, crate::SemanticError> {
+        // Attribution is descriptive placement for the issuing project's own judgement. A
+        // typed program of another session (test enumeration, a REPL snapshot) carries no
+        // issuer authority for the group, so the group stays unattributed there; it never
+        // gains conformance or codegen eligibility, which `rebind` still rejects.
         if project != self.project {
-            return Err(crate::SemanticError::new("serialization contribution belongs to another project issuer"));
+            return Ok(None);
         }
         appended_group_attribution(db, &self.assembly, self.owner, &self.contribution, &self.members, current)
     }

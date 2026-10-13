@@ -262,13 +262,23 @@ impl ProgramAssembly {
     /// Whether `[Extern]` contracts in `unit` are compiler-issued runtime-plane bridges instead
     /// of user C imports: the canonical public Dynamic unit, the canonical serialization
     /// descriptor unit whose `CompiledShapeBridge` the serialization shape authority admits
-    /// exactly, and the canonical serialization reader unit whose `FieldDecoderBridge` the field
-    /// decoder correspondence admits exactly. Each requires Corelib package identity and the
-    /// compiler-embedded source bytes.
+    /// exactly, and the canonical serialization reader and contracts units whose
+    /// `FieldDecoderBridge` and `FieldEncoderBridge` the field codec correspondence admits exactly.
+    /// Each requires Corelib package identity and the compiler-embedded source bytes.
     pub fn is_runtime_bridge_extern_unit(&self, unit: &SourceUnit) -> bool {
         self.is_canonical_public_dynamic_unit(unit)
             || self.is_canonical_serialization_descriptors_unit(unit)
             || self.is_canonical_serialization_reader_unit(unit)
+            || self.is_canonical_serialization_contracts_unit(unit)
+    }
+
+    /// The canonical serialization contracts unit (`Core/Serialization/Contracts.bd`).
+    pub fn is_canonical_serialization_contracts_unit(&self, unit: &SourceUnit) -> bool {
+        self.is_canonical_corelib_service_unit(
+            unit,
+            "corelib_serialization",
+            beskid_abi::runtime_source::CANONICAL_SERIALIZATION_CONTRACTS_SOURCE_PATH,
+        )
     }
 
     /// The canonical serialization reader unit (`Core/Serialization/Reader.bd`).

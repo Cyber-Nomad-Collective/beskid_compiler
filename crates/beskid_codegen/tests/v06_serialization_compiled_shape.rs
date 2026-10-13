@@ -697,10 +697,10 @@ fn field_decoder_fixture(factory_output: &str) -> Result<String, String> {
         }
     }
     let [read_field] = instances.as_slice() else { panic!("one ReadField<Counter, Wire> call: {seen:#?}") };
-    let bridge = beskid_queries::serialization_field_decoder_bridge(&db, read_field)
+    let bridge = beskid_queries::serialization_field_codec_bridge(&db, read_field)
         .map_err(|error| error.to_string())?
         .expect("the canonical ReadField has one bridge call");
-    let binding = beskid_queries::serialization_field_decoder_binding(&db, &typed, read_field)
+    let binding = beskid_queries::serialization_field_codec_binding(&db, &typed, read_field)
         .map_err(|error| error.to_string())?
         .expect("the canonical ReadField issues a field read");
     assert_eq!(binding.instance(), &bridge, "the issued body belongs to the ReadField bridge call");

@@ -1500,10 +1500,32 @@ fn environment_substitutions(bindings: Vec<(String, GenericSourceTypeIdentity)>)
 /// Prove `concrete<source_arguments> : contract<arguments>` against the exact applied
 /// conformance written on the type or on one of its `impl` blocks, including that block's own
 /// where-bounds. Returns the selected implementation's generic environment in declaration order.
+/// The generic parameters, declared conformances and name of a conforming nominal: a `type`
+/// (which may also declare `type X : Contract`) or an `enum` (which conforms only through `impl`).
+struct NominalHead {
+    name: String,
+    generics: Vec<Spanned<beskid_analysis::syntax::Identifier>>,
+    conformances: Vec<Spanned<Path>>,
+}
+
+fn nominal_head(db: &dyn Db, concrete: AstNodeKey) -> Option<NominalHead> {
+    let syntax = db.syntax_unit(concrete.unit).filter(|unit| unit.accepts_key(db, concrete))?;
+    let node = syntax.syntax_index(db).node_at(syntax.expanded_program(db), concrete.node)?;
+    if let Some(definition) = node.of::<TypeDefinition>() {
+        return Some(NominalHead {
+            name: definition.name.node.name.clone(),
+            generics: definition.generics.clone(),
+            conformances: definition.conformances.clone(),
+        });
+    }
+    let definition = node.of::<EnumDefinition>()?;
+    Some(NominalHead { name: definition.name.node.name.clone(), generics: definition.generics.clone(), conformances: Vec::new() })
+}
+
 fn applied_conformance_environment(
     db: &dyn Db,
     concrete: AstNodeKey,
-    definition: &TypeDefinition,
+    definition: &NominalHead,
     source_arguments: &[GenericSourceTypeIdentity],
     contract: AstNodeKey,
     arguments: &[GenericSourceTypeIdentity],
@@ -1619,19 +1641,15 @@ fn implementation_bounds_hold(
         let Ok(arguments) = applied_contract_arguments(db, implementation, &bound.contract.node, environment) else {
             return Ok(false);
         };
-        let Some(concrete) = concrete_declaration(db, implementation, source) else {
+        let Some(concrete) = concrete_type_or_enum_declaration(db, implementation, source) else {
             return Ok(false);
         };
         let GenericSourceTypeIdentity::Nominal { arguments: source_arguments, .. } = source else {
             return Ok(false);
         };
-        let syntax = db.syntax_unit(concrete.unit).ok_or_else(|| SemanticError::unavailable("contract_conformance"))?;
-        let definition = syntax
-            .syntax_index(db)
-            .node_at(syntax.expanded_program(db), concrete.node)
-            .and_then(|node| node.of::<TypeDefinition>())
-            .ok_or_else(|| SemanticError::unavailable("contract_conformance"))?;
-        if applied_conformance_environment(db, concrete, definition, source_arguments, contract, &arguments, depth + 1)?
+        let definition =
+            nominal_head(db, concrete).ok_or_else(|| SemanticError::unavailable("contract_conformance"))?;
+        if applied_conformance_environment(db, concrete, &definition, source_arguments, contract, &arguments, depth + 1)?
             .is_none()
         {
             return Ok(false);
@@ -1687,19 +1705,14 @@ fn prove_applied_conformance(
     applied_arguments: &[GenericSourceTypeIdentity],
     unsatisfied: &dyn Fn(Option<&str>) -> SemanticError,
 ) -> Result<ProvenConformance, SemanticError> {
-    let concrete = concrete_declaration(db, context, source_identity).ok_or_else(|| unsatisfied(None))?;
+    let concrete = concrete_type_or_enum_declaration(db, context, source_identity).ok_or_else(|| unsatisfied(None))?;
     let GenericSourceTypeIdentity::Nominal { arguments: source_arguments, .. } = source_identity else {
         return Err(unsatisfied(None));
     };
-    let syntax = db.syntax_unit(concrete.unit).ok_or_else(|| SemanticError::unavailable("contract_conformance"))?;
-    let definition = syntax
-        .syntax_index(db)
-        .node_at(syntax.expanded_program(db), concrete.node)
-        .and_then(|node| node.of::<TypeDefinition>())
-        .ok_or_else(|| SemanticError::unavailable("contract_conformance"))?;
+    let definition = nominal_head(db, concrete).ok_or_else(|| SemanticError::unavailable("contract_conformance"))?;
     let environment =
-        applied_conformance_environment(db, concrete, definition, source_arguments, contract, applied_arguments, 0)?
-            .ok_or_else(|| unsatisfied(Some(definition.name.node.name.as_str())))?;
+        applied_conformance_environment(db, concrete, &definition, source_arguments, contract, applied_arguments, 0)?
+            .ok_or_else(|| unsatisfied(Some(definition.name.as_str())))?;
     let methods = applied_contract_methods(db, concrete, contract, applied_arguments, &environment)?;
     Ok(ProvenConformance { concrete, environment: environment.into(), methods })
 }
@@ -1881,14 +1894,7 @@ pub(super) fn validate_current_parameter_witness(
             return Ok(false);
         }
     }
-    let syntax = db
-        .syntax_unit(witness.concrete.unit)
-        .filter(|unit| unit.accepts_key(db, witness.concrete))
-        .ok_or_else(|| SemanticError::unavailable("publication.concrete"))?;
-    let definition = syntax
-        .syntax_index(db)
-        .node_at(syntax.expanded_program(db), witness.concrete.node)
-        .and_then(|node| node.of::<TypeDefinition>())
+    let definition = nominal_head(db, witness.concrete)
         .ok_or_else(|| SemanticError::unavailable("publication.concrete"))?;
     let GenericSourceTypeIdentity::Nominal { qualified_name, arguments } = &witness.source_identity else {
         return Ok(false);
@@ -1901,7 +1907,7 @@ pub(super) fn validate_current_parameter_witness(
     let Some(environment) = applied_conformance_environment(
         db,
         witness.concrete,
-        definition,
+        &definition,
         arguments,
         witness.contract,
         &witness.applied_arguments,

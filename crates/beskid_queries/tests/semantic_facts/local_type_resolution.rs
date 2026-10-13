@@ -286,3 +286,18 @@ fn generic_contract_parameter_naming_an_unknown_type_is_still_reported() {
     assert_eq!(fact.site, outcome);
     assert_eq!(&*fact.name, "U");
 }
+
+#[test]
+fn impl_block_parameter_named_in_a_method_body_resolves() {
+    // `impl<E> Point : Sink<E>`: E is an impl parameter the receiver declaration does not declare.
+    let (db, _project, unit, generation, index) = support::setup(
+        "pub contract Sink<E> { unit Put(E value); } pub type Point { pub i64 x, } \
+         impl<E> Point : Sink<E> { pub unit Put(E value) { E copy = value; return; } }",
+    );
+    let method = key(unit, generation, &index, NodeKind::MethodDefinition, 0);
+    assert_eq!(
+        unresolved_type_reference(&db, method).expect("unresolved_type_reference query"),
+        None,
+        "an impl block parameter is an enclosing generic parameter of its methods"
+    );
+}

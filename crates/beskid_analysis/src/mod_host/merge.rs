@@ -107,41 +107,132 @@ fn synthetic_span_origin(program: &Spanned<Program>) -> usize {
 /// of its own, nested inside its parent's, in tree order, starting at `cursor`. Line/column
 /// positions are left as the generator reported them: generated code has no source line.
 ///
-/// The walk runs over the node's serialized form, the one representation that reaches every
-/// `Spanned<_>` of every node kind uniformly; the syntax types themselves offer no mutable
-/// traversal.
+/// Tree order is source order: the syntax types declare their fields in source order (a
+/// function's parameters before its body, a `for` variable before its body), and lexical
+/// resolution compares spans to decide that a declaration precedes its use. The walk therefore
+/// runs over the node's serialized form in serialization (field declaration) order, the one
+/// representation that reaches every `Spanned<_>` of every node kind uniformly; the syntax types
+/// themselves offer no mutable traversal.
 fn respan_generated_item(
     item: &Spanned<super::types::ProgramItem>,
     cursor: &mut usize,
 ) -> Result<Spanned<super::types::ProgramItem>> {
-    let mut value = serde_json::to_value(item)?;
+    let mut value: OrderedValue = serde_json::from_str(&serde_json::to_string(item)?)?;
     assign_synthetic_spans(&mut value, cursor);
-    Ok(serde_json::from_value(value)?)
+    Ok(serde_json::from_str(&serde_json::to_string(&value)?)?)
 }
 
-fn assign_synthetic_spans(value: &mut serde_json::Value, cursor: &mut usize) {
-    use serde_json::Value;
+/// A JSON value whose objects keep their keys in serialization order.
+enum OrderedValue {
+    Object(Vec<(String, OrderedValue)>),
+    Array(Vec<OrderedValue>),
+    Leaf(serde_json::Value),
+}
+
+impl<'de> serde::Deserialize<'de> for OrderedValue {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> std::result::Result<Self, D::Error> {
+        struct Visitor;
+        impl<'de> serde::de::Visitor<'de> for Visitor {
+            type Value = OrderedValue;
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("a JSON value")
+            }
+            fn visit_bool<E>(self, value: bool) -> std::result::Result<OrderedValue, E> {
+                Ok(OrderedValue::Leaf(value.into()))
+            }
+            fn visit_i64<E>(self, value: i64) -> std::result::Result<OrderedValue, E> {
+                Ok(OrderedValue::Leaf(value.into()))
+            }
+            fn visit_u64<E>(self, value: u64) -> std::result::Result<OrderedValue, E> {
+                Ok(OrderedValue::Leaf(value.into()))
+            }
+            fn visit_f64<E>(self, value: f64) -> std::result::Result<OrderedValue, E> {
+                Ok(OrderedValue::Leaf(value.into()))
+            }
+            fn visit_str<E>(self, value: &str) -> std::result::Result<OrderedValue, E> {
+                Ok(OrderedValue::Leaf(value.into()))
+            }
+            fn visit_string<E>(self, value: String) -> std::result::Result<OrderedValue, E> {
+                Ok(OrderedValue::Leaf(value.into()))
+            }
+            fn visit_unit<E>(self) -> std::result::Result<OrderedValue, E> {
+                Ok(OrderedValue::Leaf(serde_json::Value::Null))
+            }
+            fn visit_none<E>(self) -> std::result::Result<OrderedValue, E> {
+                Ok(OrderedValue::Leaf(serde_json::Value::Null))
+            }
+            fn visit_some<D: serde::Deserializer<'de>>(self, deserializer: D) -> std::result::Result<OrderedValue, D::Error> {
+                serde::Deserialize::deserialize(deserializer)
+            }
+            fn visit_seq<A: serde::de::SeqAccess<'de>>(self, mut seq: A) -> std::result::Result<OrderedValue, A::Error> {
+                let mut items = Vec::new();
+                while let Some(item) = seq.next_element()? {
+                    items.push(item);
+                }
+                Ok(OrderedValue::Array(items))
+            }
+            fn visit_map<A: serde::de::MapAccess<'de>>(self, mut map: A) -> std::result::Result<OrderedValue, A::Error> {
+                let mut entries = Vec::new();
+                while let Some(entry) = map.next_entry()? {
+                    entries.push(entry);
+                }
+                Ok(OrderedValue::Object(entries))
+            }
+        }
+        deserializer.deserialize_any(Visitor)
+    }
+}
+
+impl serde::Serialize for OrderedValue {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error> {
+        use serde::ser::{SerializeMap, SerializeSeq};
+        match self {
+            Self::Object(entries) => {
+                let mut map = serializer.serialize_map(Some(entries.len()))?;
+                for (key, value) in entries {
+                    map.serialize_entry(key, value)?;
+                }
+                map.end()
+            }
+            Self::Array(items) => {
+                let mut seq = serializer.serialize_seq(Some(items.len()))?;
+                for item in items {
+                    seq.serialize_element(item)?;
+                }
+                seq.end()
+            }
+            Self::Leaf(value) => value.serialize(serializer),
+        }
+    }
+}
+
+fn assign_synthetic_spans(value: &mut OrderedValue, cursor: &mut usize) {
     match value {
-        Value::Object(object) => {
-            let spanned = object.contains_key("node") && object.contains_key("span") && object.contains_key("id");
-            if !spanned {
-                object.values_mut().for_each(|value| assign_synthetic_spans(value, cursor));
+        OrderedValue::Object(entries) => {
+            let has = |key: &str| entries.iter().any(|(name, _)| name == key);
+            if !(has("node") && has("span") && has("id")) {
+                entries.iter_mut().for_each(|(_, value)| assign_synthetic_spans(value, cursor));
                 return;
             }
             let start = *cursor;
             *cursor += 1;
-            object.iter_mut().filter(|(key, _)| *key != "span").for_each(|(_, value)| {
+            entries.iter_mut().filter(|(key, _)| key != "span").for_each(|(_, value)| {
                 assign_synthetic_spans(value, cursor);
             });
             let end = *cursor;
             *cursor += 1;
-            if let Some(Value::Object(span)) = object.get_mut("span") {
-                span.insert("start".into(), Value::from(start));
-                span.insert("end".into(), Value::from(end));
+            if let Some((_, OrderedValue::Object(span))) = entries.iter_mut().find(|(key, _)| key == "span") {
+                for (key, value) in span.iter_mut() {
+                    match key.as_str() {
+                        "start" => *value = OrderedValue::Leaf(start.into()),
+                        "end" => *value = OrderedValue::Leaf(end.into()),
+                        _ => {}
+                    }
+                }
             }
         }
-        Value::Array(items) => items.iter_mut().for_each(|value| assign_synthetic_spans(value, cursor)),
-        _ => {}
+        OrderedValue::Array(items) => items.iter_mut().for_each(|value| assign_synthetic_spans(value, cursor)),
+        OrderedValue::Leaf(_) => {}
     }
 }
 
@@ -199,6 +290,21 @@ mod respan_tests {
         assert_eq!(merged.lineage[0].merged_span, merged.program.node.items[1].span);
         assert_eq!(merged.lineage[1].merged_span, merged.program.node.items[2].span);
         assert_eq!(merged.lineage[1].provenance.origin_span, items[1].span);
+    }
+
+    /// Synthetic spans follow source order: a generated function's parameters precede its body,
+    /// so lexical resolution sees each parameter declared before its uses.
+    #[test]
+    fn synthetic_spans_follow_source_field_order() {
+        let item = generated_function("pub i64 Twice(i64 value) { i64 doubled = value + value; return doubled; }")
+            .remove(0);
+        let mut cursor = 100;
+        let respanned = respan_generated_item(&item, &mut cursor).expect("respan");
+        let crate::syntax::Node::Function(function) = &respanned.node else { panic!("function expected") };
+        let parameter = &function.node.parameters[0];
+        assert!(parameter.span.end < function.node.body.span.start, "parameter {:?} body {:?}", parameter.span, function.node.body.span);
+        assert!(function.node.name.span.end <= parameter.span.start, "name precedes parameters");
+        assert!(respanned.span.start >= 100 && respanned.span.end < cursor, "item nests the walk");
     }
 
     fn spans(value: &serde_json::Value, out: &mut Vec<(usize, usize)>) {

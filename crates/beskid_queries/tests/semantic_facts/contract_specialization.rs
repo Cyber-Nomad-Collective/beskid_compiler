@@ -334,3 +334,42 @@ unit Main() { Encode<Item,OtherWire>(Item {}, OtherWire {}); }
         "pointer ABI cannot equate distinct encoder applications"
     );
 }
+
+#[test]
+fn where_bound_admits_an_enum_conforming_through_a_generic_impl() {
+    // A payload enum conforms only through `impl<E> Signal : Serializable<E>`; the applied bound
+    // `T: Serializable<E>` with T = Signal must resolve exactly like a record receiver.
+    let source = r#"
+contract Encoder { unit Finish(); }
+contract Serializable<E> { unit WriteTyped(E encoder); }
+type Wire : Encoder { pub unit Finish() { return; } }
+enum Signal { Idle, Level(i64 amount), }
+impl<E> Signal : Serializable<E> where E: Encoder { pub unit WriteTyped(E encoder) { encoder.Finish(); return; } }
+unit Encode<T,E>(T value, E encoder) where T: Serializable<E>, E: Encoder { value.WriteTyped(encoder); }
+unit Main() { Encode<Signal,Wire>(Signal::Idle, Wire {}); }
+"#;
+    let (db, _, unit, generation, index) = setup(source);
+    let instance = generic_call_specialization(&db, key(unit, generation, &index, NodeKind::CallExpression, 2))
+        .expect("an enum conforming through a generic impl satisfies the applied bound")
+        .expect("Encode specializes");
+    assert_eq!(instance.contract_witnesses.len(), 2, "both T and E receive a witness");
+}
+
+#[test]
+fn a_method_of_a_generic_implementation_has_no_declaration_level_abi() {
+    // `impl<E> Point : Sink<E>`: the receiver is not generic, the implementation is. Its method
+    // is emitted only in a witnessed environment, never as one declaration-level item.
+    let source = r#"
+contract Sink<E> { unit Put(E value); }
+type Point { pub i64 x, }
+impl<E> Point : Sink<E> { pub unit Put(E value) { return; } }
+unit Main() { return; }
+"#;
+    let (db, _, unit, generation, index) = setup(source);
+    let method = key(unit, generation, &index, NodeKind::MethodDefinition, 0);
+    assert_eq!(
+        beskid_queries::item_abi_signature(&db, method).expect("item ABI query"),
+        None,
+        "a method of a generic implementation is generic"
+    );
+}

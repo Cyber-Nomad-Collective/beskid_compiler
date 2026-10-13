@@ -50,11 +50,12 @@ pub(super) fn resolve_module_items(
     let mut source_items = source_items.to_vec();
     let mut present = source_items.iter().map(|item| item.key).collect::<std::collections::HashSet<_>>();
     close_source_items(input, &mut source_items, &mut present, &mut specializations)?;
-    // Each canonical `ReadField<T,R>` instance has a compiler-issued body: its bridge forwards to
-    // the exact issued field read of T. Issued reads (generated field decoder factories and the
-    // canonical scalar and container reads) call `ReadField` again for their own fields, so the
-    // correspondence runs to a fixpoint before any other bridge authority inspects the worklist.
-    let mut field_decoders = Vec::<beskid_queries::SerializationFieldDecoderBinding>::new();
+    // Each canonical `ReadField<T,R>` and `WriteField<T,E>` instance has a compiler-issued body:
+    // its bridge forwards to the exact issued field read or write of T. Issued functions
+    // (generated field codec factories and the canonical scalar and container reads and writes)
+    // call the entry again for their own fields, so the correspondence runs to a fixpoint before
+    // any other bridge authority inspects the worklist.
+    let mut field_codecs = Vec::<beskid_queries::SerializationFieldCodecBinding>::new();
     let mut resolved_reads = std::collections::HashSet::<GenericSpecializationInstance>::new();
     loop {
         let mut issued = Vec::new();
@@ -62,10 +63,10 @@ pub(super) fn resolve_module_items(
             if resolved_reads.contains(instance) {
                 continue;
             }
-            let binding = beskid_queries::serialization_field_decoder_binding(db, input.typed_program(), instance)
+            let binding = beskid_queries::serialization_field_codec_binding(db, input.typed_program(), instance)
                 .map_err(|error| {
                     emission_verification(format!(
-                        "field decoder correspondence failed for {}: {error}",
+                        "field codec correspondence failed for {}: {error}",
                         format_declaration_for_trace(db, instance.declaration)
                     ))
                 })?;
@@ -93,8 +94,8 @@ pub(super) fn resolve_module_items(
                     )?;
                 }
             }
-            if !field_decoders.contains(&binding) {
-                field_decoders.push(binding);
+            if !field_codecs.contains(&binding) {
+                field_codecs.push(binding);
             }
         }
         close_source_items(input, &mut source_items, &mut present, &mut specializations)?;
@@ -202,7 +203,7 @@ pub(super) fn resolve_module_items(
             || mapping_bridges.iter().any(|binding|binding.instance().declaration==item.key)
             || unpack_bridges.iter().any(|bridge|bridge.instance().declaration==item.key)
             || serialization_bridges.iter().any(|binding|binding.instance().declaration==item.key)
-            || field_decoders.iter().any(|binding| binding.instance().declaration == item.key);
+            || field_codecs.iter().any(|binding| binding.instance().declaration == item.key);
         // A compiler-issued bridge method has no source body; it is emitted only for its exact
         // call-derived specialization. A bridge whose signature names no generic (Shape, Mapping)
         // still has a declaration-level ABI, which must not become a bodyless ordinary item.

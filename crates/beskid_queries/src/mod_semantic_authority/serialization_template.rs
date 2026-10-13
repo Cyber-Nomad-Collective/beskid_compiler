@@ -34,8 +34,12 @@ impl CompiledSerializationTemplate {
         project: ProjectSession,
         current: &ProgramAssembly,
     ) -> Result<Option<(SourceUnitId, Vec<crate::AstNodeId>)>, crate::SemanticError> {
+        // Attribution is descriptive placement for the issuing project's own judgement. A
+        // typed program of another session (test enumeration, a REPL snapshot) carries no
+        // issuer authority for the group, so the group stays unattributed there; it never
+        // gains conformance or codegen eligibility, which `rebind` still rejects.
         if project != self.project {
-            return Err(crate::SemanticError::new("serialization template belongs to another project issuer"));
+            return Ok(None);
         }
         serialization_target::appended_group_attribution(
             db,

@@ -203,24 +203,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `Array.Append` grows geometrically. When the array is full, the
   replacement has twice the capacity (at least 4 elements; when doubling
   overflows, the exact requested capacity), and `Array.Capacity` reports it.
-- Typed top-level decoding of `[Serialize]` types. The canonical
-  `Core.Serialization.Reader.ReadField<T,R>` has a compiler-issued body for each
-  concrete T (`beskid_queries::serialization_field_decoder_binding`): the field
-  decoder factory of the retained generated decoder group of T, selected by its
-  resolved signature and admitted through the group's target correspondence, or
-  a canonical scalar or container read. Codegen runs the correspondence to a
-  fixpoint and emits each `FieldDecoderBridge` body as a forward to the issued
-  read. The Serialization Mod reads every nominal field through `ReadField` and
-  no longer emits field decoder binding parameters or an unreachable factory.
-  New API: `Decoding.IssuedField<T,R>`, `Decoding.FieldFor<T,R>()`,
-  `Decoding.DecoderFor<T,R>(reader)` and `Core.Bsol.Serialization.Read<T>`.
-  When capacity remains, the element is stored in place and every handle to
-  the same array sees the new length, as `RemoveLast` already did. n appends
-  copy O(n) elements in total instead of O(n^2).
-- A process that publishes more than one runtime kit, for example the debug
-  and release kits of a release bundle, lowers the canonical runtime source
-  once for each target instead of once for each kit. Each lowering takes
-  about 40 s on the Linux build host.
+- Typed top-level serialization of `[Serialize]` types. The canonical
+  `Core.Serialization.Reader.ReadField<T,R>` and `Core.Serialization.Contracts.WriteField<T,E>`
+  have a compiler-issued body for each concrete T
+  (`beskid_queries::serialization_field_codec_binding`): the field decoder or encoder factory of
+  the retained generated group of T, selected by its resolved signature and admitted through the
+  group's target correspondence, or a canonical scalar or container read or write. Codegen runs
+  the correspondence to a fixpoint and emits each bridge body as a forward to the issued
+  function. The Serialization Mod reads and writes every nominal field through these entries, so
+  a primitive generic argument (`Boxed<i32>`) needs no `Serializable` bound. New API:
+  `Reader.ReadComplete<T,R>`, `Decoding.DecoderFor<T,R>(reader)` and
+  `Core.Bsol.Serialization.Read<T>`.
+- Generated syntax fixes found by running the Mod end to end: impl-block generic parameters are
+  enclosing generics of their methods (E1201), where-bound proofs admit enums that conform
+  through an `impl`, merged generated nodes are spanned in source (field) order, generated
+  method calls use path callees, and generated names follow the naming rules.
 
 ### Fixed
 

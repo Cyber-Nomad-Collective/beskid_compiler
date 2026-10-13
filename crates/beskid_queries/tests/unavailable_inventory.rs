@@ -91,7 +91,7 @@ const KNOWN_GAPS: &[&str] = &[
     "reachable_items",
     "runtime_intrinsic",
     "serialization_encoder",
-    "serialization_field_decoder",
+    "serialization_field_codec",
     "serialization_shape",
     "serialization_target",
     "source_expression_type",
