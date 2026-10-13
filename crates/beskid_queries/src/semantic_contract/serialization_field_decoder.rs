@@ -87,7 +87,12 @@ pub fn serialization_field_decoder_bridge(
     }
     let reissued = generic_specialization_instance(db, read_field.declaration, read_field.substitutions.clone())?
         .ok_or_else(|| SemanticError::unavailable("serialization_field_decoder.specialization"))?;
-    if &reissued != read_field {
+    // A call-derived instance also carries the proven `R: Reader` witness, which the
+    // declaration-level reissue does not; the declaration, environment and ABI must match.
+    if reissued.declaration != read_field.declaration
+        || reissued.substitutions != read_field.substitutions
+        || reissued.signature != read_field.signature
+    {
         return Err(error("ReadField specialization differs from source authority"));
     }
     let mut pending = vec![read_field.declaration];

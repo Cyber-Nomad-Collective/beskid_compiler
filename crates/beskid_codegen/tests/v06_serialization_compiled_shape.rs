@@ -604,6 +604,19 @@ fn field_decoder_fixture(factory_output: &str) -> Result<String, String> {
             source: canonical.source,
         });
     }
+    // Reader.bd names `Metadata.ShapeId`; the bound `Wire: Reader` needs that real declaration.
+    let metadata = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../corelib/packages/serialization/src/Core/Serialization/Metadata.bd")
+        .canonicalize()
+        .unwrap();
+    let metadata_text = std::fs::read_to_string(&metadata).unwrap();
+    units.push(SourceUnit {
+        logical_name: "Core.Serialization.Metadata".into(),
+        origin_path: metadata.clone(),
+        path: metadata,
+        program: parse_program_with_source_name("Metadata", &metadata_text).unwrap(),
+        source: metadata_text,
+    });
     units.push(SourceUnit {
         logical_name: "User.Main".into(),
         origin_path: path.clone(),
