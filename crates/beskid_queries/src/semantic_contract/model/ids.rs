@@ -73,7 +73,27 @@ pub fn format_ast_node_trace(db: &dyn Db, key: AstNodeKey, source_label: &str) -
     format!("{source_label}:{position} ({construct})")
 }
 
+/// Normalized identities of source paths that exist, so the hot `SourceUnitId::new` (called per
+/// item and per node by lowering and fact queries) resolves each absolute path once per process
+/// instead of once per call: `canonicalize` walks every path component with `readlink`. A relative
+/// path (resolved against the working directory) or a path that does not exist (yet) is never
+/// cached, so a file first named before it is created still normalizes to its created location.
 fn normalized_source_path(path: &Path) -> PathBuf {
+    static EXISTING: std::sync::LazyLock<std::sync::RwLock<std::collections::HashMap<PathBuf, PathBuf>>> =
+        std::sync::LazyLock::new(Default::default);
+    if let Some(normalized) = EXISTING.read().unwrap_or_else(|poison| poison.into_inner()).get(path) {
+        return normalized.clone();
+    }
+    let (normalized, exists) = resolve_source_path(path);
+    if exists && path.is_absolute() {
+        EXISTING.write().unwrap_or_else(|poison| poison.into_inner()).insert(path.to_path_buf(), normalized.clone());
+    }
+    normalized
+}
+
+/// Normalize the deepest existing ancestor and append the remaining logical suffix; the flag is
+/// whether the whole path exists.
+fn resolve_source_path(path: &Path) -> (PathBuf, bool) {
     let absolute = if path.is_absolute() {
         path.to_path_buf()
     } else {
@@ -84,17 +104,18 @@ fn normalized_source_path(path: &Path) -> PathBuf {
 
     loop {
         if let Ok(mut canonical) = ancestor.canonicalize() {
+            let exists = suffix.is_empty();
             for component in suffix.iter().rev() {
                 canonical.push(component);
             }
-            return canonical;
+            return (canonical, exists);
         }
         let Some(leaf) = ancestor.file_name().map(ToOwned::to_owned) else {
-            return absolute;
+            return (absolute, false);
         };
         suffix.push(leaf);
         if !ancestor.pop() {
-            return absolute;
+            return (absolute, false);
         }
     }
 }

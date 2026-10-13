@@ -82,7 +82,7 @@ fn parse_program_strict(source_name: &str, source: &str) -> Result<Spanned<Progr
         );
         anyhow::Error::new(MietteReportError::new(diagnostic))
     })?;
-    Program::parse(pair).map_err(|err| {
+    crate::syntax::common::span::with_line_index(source, || Program::parse(pair)).map_err(|err| {
         let diagnostic = parse_error_diagnostic(source_name, source, &err);
         anyhow!(MietteReportError::new(diagnostic))
     })
@@ -111,7 +111,11 @@ pub fn parse_expression_source(source_name: &str, source: &str) -> Result<Spanne
             Severity::Error,
         )))
     })?;
-    crate::syntax::expressions::expression::parse_expression(pair).map_err(|err| {
+    let trimmed = source.trim();
+    crate::syntax::common::span::with_line_index(trimmed, || {
+        crate::syntax::expressions::expression::parse_expression(pair)
+    })
+    .map_err(|err| {
         let diagnostic = parse_error_diagnostic(source_name, source, &err);
         anyhow!(MietteReportError::new(diagnostic))
     })

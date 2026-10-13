@@ -308,6 +308,12 @@ pub(super) fn resolve_lexical_declaration(
 ) -> Option<beskid_analysis::syntax::AstNodeId> {
     let mut best: Option<(usize, u32, beskid_analysis::syntax::AstNodeId)> = None;
     for declaration in index.ids_of_kind(beskid_analysis::syntax_query::NodeKind::Identifier) {
+        // The scope test reads only the index; most identifiers (paths, members, types) are no
+        // local declaration at all, so it runs before the name, whose node must be walked to
+        // from the unit root.
+        let Some(scope) = local_declaration_scope(index, declaration, reference) else {
+            continue;
+        };
         let Some(identifier) =
             index.node_at(program, declaration).and_then(|node| node.of::<beskid_analysis::syntax::Identifier>())
         else {
@@ -316,9 +322,6 @@ pub(super) fn resolve_lexical_declaration(
         if identifier.name != name {
             continue;
         }
-        let Some(scope) = local_declaration_scope(index, declaration, reference) else {
-            continue;
-        };
         let Some(distance) = ancestor_distance(index, scope, reference) else {
             continue;
         };
