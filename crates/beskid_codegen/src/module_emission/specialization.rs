@@ -366,6 +366,26 @@ fn collect_generic_call_specializations_in_environment(
             )?;
         }
     }
+    // A generic function read as a value (`Apply(5, Identity)`) is instantiated where it is read;
+    // its record points at that instance's entry, so the instance joins this worklist exactly
+    // like a direct generic call. A value without an instance is a legality finding (E1203,
+    // E1204, E1229, E1610) judged before lowering, never an emission error here.
+    if node_kind(db, key).map_err(|error| emission_verification(error.to_string()))?
+        == Some(beskid_queries::IndexedNodeKind::PathExpression)
+        && let Ok(Some(value)) = beskid_queries::function_item_value(db, key)
+        && let Some(instance) = value.specialization
+    {
+        let instances = specializations.entry(instance.declaration).or_default();
+        if !instances.contains(&instance) {
+            instances.push(instance.clone());
+            collect_generic_call_specializations_in_environment(
+                db,
+                instance.declaration,
+                Some(&instance),
+                specializations,
+            )?;
+        }
+    }
     // A `for` over a nominal iterator calls `Next()` without a CallExpression node. Its exact
     // instance (generic owner bindings, or the iterable's identity proven only in `environment`)
     // is the callee the loop lowering imports, so it enters this worklist like a direct call.

@@ -8,13 +8,13 @@ use super::parity_harness::{assert_covered_kinds, assert_silent, codes, reports_
 
 /// Single-unit classes: (legacy class, variant, code, source).
 const COVERED_KINDS: &[(&str, &str, &str, &str)] = &[
-    // A named non-generic function read as a value is a closure record (`function_item_value`),
-    // so `let f = Helper;` is legal. A generic function has no single entry to capture and stays an
-    // item named in value position.
+    // A named function read as a value is a closure record (`function_item_value`); a generic one
+    // is instantiated where it is read. Without explicit type arguments or an expected function
+    // type, `let f = Helper;` has no type arguments to instantiate `Helper` with.
     (
-        "TypeError::UnknownValueType (generic function named as a value)",
-        "TypeUnknownValueType",
-        "E1201",
+        "TypeError::MissingTypeArguments (generic function named as a value without a type context)",
+        "TypeMissingTypeArguments",
+        "E1203",
         "T Helper<T>(T value) { return value; } unit Main() { let f = Helper; return; }",
     ),
     (

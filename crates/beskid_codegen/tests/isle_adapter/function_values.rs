@@ -1,4 +1,5 @@
-//! Function-typed values: lambdas and named functions lowered to closure records, and indirect
+//! Function-typed values: lambdas and named functions (generic ones through the specialization
+//! selected where they are read) lowered to closure records, and indirect
 //! calls through function-typed parameters, locals, fields and call results.
 
 use super::support::{
@@ -317,16 +318,63 @@ fn named_function_read_as_a_value_is_a_closure_record_with_the_item_entry() {
 }
 
 #[test]
-fn generic_function_read_as_a_value_fails_closed() {
-    let source = "T Same<T>(T x) { return x; }\ni64 Main() { (i64) => i64 f = Same; return f(1); }\n";
-    let (input, _isa, root) = item_fixture_with_root(source);
+fn generic_function_read_as_a_value_points_at_its_specialization() {
+    // Explicit type arguments and the expected function type of the position both select the
+    // `Identity<i64>` instance; one specialization is emitted and both records point at it.
+    let source = format!(
+        "{APPLY}T Identity<T>(T x) {{ return x; }}\n\
+         i64 Main() {{ (i64) => i64 f = Identity; return f(1) + Apply(5, Identity<i64>); }}\n"
+    );
+    let (input, isa, root) = item_fixture_with_root(&source);
     let db = input.database();
-    let value = find_nodes_of_kind(db, root, beskid_queries::IndexedNodeKind::PathExpression)
+    let functions = find_function_definitions(db, root);
+    let (apply, identity, main) =
+        (named(db, &functions, "Apply"), named(db, &functions, "Identity"), named(db, &functions, "Main"));
+    let values = find_nodes_of_kind(db, root, beskid_queries::IndexedNodeKind::PathExpression)
         .into_iter()
-        .find(|path| beskid_queries::function_item_value(db, *path).is_err())
-        .expect("a generic function has no context-free entry");
-    let error = beskid_queries::function_item_value(db, value).expect_err("generic item value is unavailable");
-    assert!(error.is_unavailable(), "{error:?}");
+        .filter_map(|path| beskid_queries::function_item_value(db, path).ok().flatten())
+        .collect::<Vec<_>>();
+    assert_eq!(values.len(), 2, "both reads of `Identity` are function values: {values:?}");
+    for value in &values {
+        assert_eq!(value.declaration, identity);
+        assert_eq!(value.signature.parameters.as_ref(), &[beskid_queries::SemanticTypeId::I64]);
+        let instance = value.specialization.as_ref().expect("a generic value is a specialization");
+        assert_eq!(instance.substitutions[0].argument, beskid_queries::SemanticTypeId::I64);
+    }
+    assert_eq!(values[0].specialization, values[1].specialization, "one instance for one type argument list");
+    let artifact = lower_syntax_program(
+        &input,
+        isa.as_ref(),
+        &[SyntaxModuleItem { key: apply, symbol: "Apply".into() }, SyntaxModuleItem { key: main, symbol: "Main".into() }],
+    )
+    .expect("a generic function read as a value lowers");
+    let specialized = artifact
+        .functions
+        .iter()
+        .filter(|function| function.name.contains("Identity") && function.name.contains("#generic_"))
+        .count();
+    assert_eq!(specialized, 1, "exactly one `Identity<i64>` specialization is emitted");
+    let clif = lowered_clif(&artifact, "Main");
+    assert_eq!(clif.matches("func_addr").count(), 2, "{clif}");
+    assert!(clif.contains("beskid_rt_v5_managed_object_allocate"), "{clif}");
+}
+
+#[test]
+fn generic_function_value_without_type_arguments_stops_at_the_legality_gate() {
+    let cases = [
+        ("T Same<T>(T x) { return x; }\ni64 Main() { let f = Same; return 1; }\n", "E1203"),
+        ("T Same<T>(T x) { return x; }\ni64 Main() { (i64) => string f = Same; return 1; }\n", "E1229"),
+    ];
+    for (source, code) in cases {
+        let (input, isa, root) = item_fixture_with_root(source);
+        let db = input.database();
+        let main = named(db, &find_function_definitions(db, root), "Main");
+        let error = lower_syntax_program(&input, isa.as_ref(), &[SyntaxModuleItem { key: main, symbol: "Main".into() }])
+            .expect_err("a generic function value without an instance must not lower");
+        let rendered = error.to_string();
+        assert!(rendered.contains(code), "{source}: {rendered}");
+        assert!(!rendered.contains("MissingRuleOrFact"), "{source}: {rendered}");
+    }
 }
 
 #[test]

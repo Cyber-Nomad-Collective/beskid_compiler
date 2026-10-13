@@ -292,11 +292,20 @@ impl SyntaxNodeFacts<'_> {
         })
     }
 
-    /// A named function read as a value: its closure record carries the item's own entry.
+    /// A named function read as a value: its closure record carries the item's own entry, or the
+    /// entry of the specialization a generic item is instantiated with where it is read.
     pub(super) fn function_item_value_impl(&self, key: AstNodeKey) -> Option<beskid_isle::FunctionItemValue> {
         let value = self.query(beskid_queries::function_item_value(self.db, key))?;
         let (parameters, result) = self.callable_abi(&value.signature)?;
-        Some(beskid_isle::FunctionItemValue { callee: DirectCallee::item(value.declaration), parameters, result })
+        let callee = match value.specialization.as_ref() {
+            Some(specialization)
+                if !specialization.substitutions.is_empty() || !specialization.contract_witnesses.is_empty() =>
+            {
+                DirectCallee::specialized_item(value.declaration, specialization_identity(specialization))
+            }
+            _ => DirectCallee::item(value.declaration),
+        };
+        Some(beskid_isle::FunctionItemValue { callee, parameters, result })
     }
 
     /// Map a callable's semantic signature to entry parameter and result ABI types.

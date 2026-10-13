@@ -520,3 +520,81 @@ fn argument_parameter_types<'a>(
             .then(|| parameters.iter().map(|parameter| &parameter.node.ty.node).collect()),
     }
 }
+
+/// The type arguments that instantiate a generic function item read as a value.
+///
+/// Explicit type arguments (`Identity<i64>`) bind every generic parameter in declaration order
+/// and are interpreted in the reading site's scope. Without them, the expected function type of
+/// the value's position binds the generics: every declared parameter type is unified with the
+/// expected parameter at its position and the declared result with the expected result, with the
+/// same structural unification a generic call uses for its arguments. A generic parameter bound
+/// twice to different types is a binding conflict (E1229); a generic parameter left unbound, or
+/// no usable expected function type, is unavailable. `where` bounds are proven in the complete
+/// environment exactly as at a call. A function with contract-typed parameters has no value
+/// form in this release.
+pub(in crate::semantic_contract) fn function_value_specialization(
+    db: &dyn Db,
+    site: AstNodeKey,
+    declaration: AstNodeKey,
+    function: &beskid_analysis::syntax::FunctionDefinition,
+    explicit: &[beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Type>],
+    expected: Option<(&[GenericSourceTypeIdentity], &GenericSourceTypeIdentity)>,
+) -> Result<GenericSpecializationInstance, SemanticError> {
+    let unavailable = || SemanticError::unavailable_at("function_item_value", site);
+    if !contract_parameter_declarations(db, declaration).is_empty() {
+        return Err(unavailable());
+    }
+    let generic_names = function.generics.iter().map(|generic| generic.node.name.as_str()).collect::<Vec<_>>();
+    let mut abi_substitutions = HashMap::<String, SemanticTypeId>::new();
+    let mut source_substitutions = HashMap::<String, GenericSubstitution>::new();
+    if !explicit.is_empty() {
+        if explicit.len() != generic_names.len() {
+            return Err(unavailable());
+        }
+        for (generic, argument) in generic_names.iter().zip(explicit) {
+            let source = generic_source_type_identity(db, site, &argument.node)?;
+            abi_substitutions.insert((*generic).to_owned(), source.abi_type());
+            source_substitutions
+                .insert((*generic).to_owned(), GenericSubstitution::from_source(*generic, source.abi_type(), source));
+        }
+    } else {
+        let (parameters, result) = expected.ok_or_else(unavailable)?;
+        if parameters.len() != function.parameters.len() || function.parameters.iter().any(|parameter| parameter.node.bulk)
+        {
+            return Err(unavailable());
+        }
+        for (parameter, actual) in function.parameters.iter().zip(parameters) {
+            infer_source_substitutions(
+                db,
+                declaration,
+                &parameter.node.ty.node,
+                actual,
+                &generic_names,
+                &mut abi_substitutions,
+                &mut source_substitutions,
+            )?;
+        }
+        match function.return_type.as_ref() {
+            Some(return_type) => infer_source_substitutions(
+                db,
+                declaration,
+                &return_type.node,
+                result,
+                &generic_names,
+                &mut abi_substitutions,
+                &mut source_substitutions,
+            )?,
+            None if *result == GenericSourceTypeIdentity::Abi(SemanticTypeId::UNIT) => {}
+            None => return Err(unavailable()),
+        }
+    }
+    let substitutions = generic_names
+        .iter()
+        .map(|generic| source_substitutions.get(*generic).map(|binding| binding.rebind(*generic)))
+        .collect::<Option<Vec<_>>>()
+        .ok_or_else(unavailable)?;
+    let mut instance = generic_specialization_instance(db, declaration, substitutions.clone().into())?
+        .ok_or_else(unavailable)?;
+    instance.contract_witnesses = contract_witnesses_for_call(db, declaration, &[], false, None, &substitutions)?;
+    Ok(instance)
+}

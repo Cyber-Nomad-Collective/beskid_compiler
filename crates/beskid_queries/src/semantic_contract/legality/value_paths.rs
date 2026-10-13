@@ -108,9 +108,14 @@ pub(super) fn collect_value_path_obligations(
             continue;
         }
         let site = AstNodeKey { node, ..key };
-        // A named, non-generic function read as a value is a closure record with the item's entry
-        // (`function_item_value`); it is a value, not an item named in value position.
-        if segments.len() == 1 && matches!(function_item_value(db, site), Ok(Some(_))) {
+        // A named function read as a value is a closure record with the item's entry
+        // (`function_item_value`); it is a value, not an item named in value position. A generic
+        // function whose type arguments cannot be determined is judged by the legality gate
+        // (`legality::function_values`), not as an item in value position.
+        if segments.len() == 1
+            && (matches!(function_item_value(db, site), Ok(Some(_)))
+                || names_generic_function_item(db, program, index, site, &path.path.node))
+        {
             continue;
         }
         let kind = if segments.len() == 1 {

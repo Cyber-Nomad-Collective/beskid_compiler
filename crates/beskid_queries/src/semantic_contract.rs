@@ -88,7 +88,8 @@ use abi::{
     call_abi_signature_for_call, call_abi_signature_tracked,
     contextual_constant_integer, contextual_integer_literal_abi_type_tracked, contextual_integer_operand_fits_abi,
     control_flow_for_node,
-    control_flow_tracked, corelib_service_abi_signature, exact_assembled_nominal_envelope, generic_abi_type,
+    control_flow_tracked, corelib_service_abi_signature, exact_assembled_nominal_envelope, function_value_specialization,
+    generic_abi_type,
     generic_parameter_reference_name, generic_specialization_instance_for_call, generic_type_name,
     integer_has_explicit_abi_suffix, integer_literal_fits_abi, integer_literal_text, integer_literal_u64,
     item_abi_signature_tracked, item_abi_type_from_syntax, item_signature_for_node, item_signature_tracked,
@@ -120,7 +121,7 @@ use calls::{
 };
 pub use cleanup::{ScopedAcquisition, ScopedCleanup, ScopedCleanupDiagnostic, scoped_cleanup};
 pub use closures_spawn::function_value_call_specialization;
-use closures_spawn::{untyped_lambda_parameter_identity, untyped_lambda_parameter_type};
+use closures_spawn::{names_generic_function_item, untyped_lambda_parameter_identity, untyped_lambda_parameter_type};
 use closures_spawn::{
     callable_fiber_ownership_tracked, callable_signature_for_node, callable_signature_for_path,
     callable_signature_tracked, capture_storage_class, capture_storage_for_node, capture_storage_tracked,

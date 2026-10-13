@@ -1,13 +1,14 @@
 //! Function values: calls through function-typed fields and call results, named functions read
-//! as values, and lambdas that must materialize their closure record.
+//! as values (generic ones instantiated where they are read), and lambdas that must materialize
+//! their closure record.
 
 use beskid_analysis::syntax_query::NodeKind;
 use beskid_queries::{
-    CallLowering, ManagedReferenceKind, SemanticTypeId, abi_type, call_lowering, direct_callees, function_item_value,
-    function_value_call, lambda_value_required, managed_reference_kind,
+    CallLowering, ManagedReferenceKind, SemanticTypeId, abi_type, call_lowering, check_items, direct_callees,
+    function_item_value, function_value_call, lambda_value_required, managed_reference_kind,
 };
 
-use super::support::{assert_unavailable, key, setup};
+use super::support::{assert_unavailable, key, key_at_start, setup};
 
 #[test]
 fn a_function_typed_field_projection_is_a_function_value_callee() {
@@ -60,12 +61,112 @@ fn a_named_function_read_as_a_value_has_a_record_abi_and_is_reachable() {
     assert_eq!(function_item_value(&db, key(unit, generation, &index, NodeKind::PathExpression, 0)).expect("local"), None);
 }
 
+/// The path expression that starts at the first occurrence of `needle` in `source`.
+fn path_at(
+    source: &str,
+    needle: &str,
+    unit: beskid_queries::SourceUnitId,
+    generation: beskid_queries::SyntaxGenerationId,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+) -> beskid_queries::AstNodeKey {
+    let start = source.find(needle).unwrap_or_else(|| panic!("`{needle}` is in the source"));
+    key_at_start(unit, generation, index, NodeKind::PathExpression, start)
+}
+
+/// The diagnostic codes the legality gate reports for `item`.
+fn gate_codes(db: &beskid_queries::BeskidDatabase, item: beskid_queries::AstNodeKey) -> Vec<String> {
+    match check_items(db, &[item]) {
+        Ok(()) => Vec::new(),
+        Err(findings) => findings.iter().map(|finding| finding.kind.code().to_string()).collect(),
+    }
+}
+
 #[test]
-fn a_generic_function_read_as_a_value_is_unavailable() {
-    let source = "T Same<T>(T x) { return x; } i64 Main() { (i64) => i64 f = Same; return f(1); }";
+fn a_generic_function_with_explicit_type_arguments_is_a_specialized_value() {
+    let source = "T Identity<T>(T x) { return x; } i64 Apply(i64 v, (i64) => i64 f) { return f(v); } \
+                  i64 Main() { return Apply(5, Identity<i64>); }";
     let (db, _project, unit, generation, index) = setup(source);
-    // Paths in order: `x` (Same), `Same`, `f` (Main).
-    assert_unavailable(function_item_value(&db, key(unit, generation, &index, NodeKind::PathExpression, 1)));
+    let identity = key(unit, generation, &index, NodeKind::FunctionDefinition, 0);
+    let main = key(unit, generation, &index, NodeKind::FunctionDefinition, 2);
+    let value = path_at(source, "Identity<i64>)", unit, generation, &index);
+    let fact = function_item_value(&db, value).expect("function item query").expect("function item value");
+    assert_eq!(fact.declaration, identity);
+    assert_eq!(fact.signature.parameters.as_ref(), &[SemanticTypeId::I64]);
+    assert_eq!(fact.signature.result, SemanticTypeId::I64);
+    let instance = fact.specialization.expect("a generic value is a specialization");
+    assert_eq!(instance.declaration, identity);
+    assert_eq!(instance.substitutions.len(), 1);
+    assert_eq!(instance.substitutions[0].parameter.as_ref(), "T");
+    assert_eq!(instance.substitutions[0].argument, SemanticTypeId::I64);
+    assert_eq!(abi_type(&db, value).expect("value ABI query"), Some(SemanticTypeId::POINTER));
+    assert_eq!(managed_reference_kind(&db, value).expect("managed query"), Some(ManagedReferenceKind::GcManaged));
+    assert!(direct_callees(&db, main).expect("callees query").expect("callees").contains(&identity));
+    assert_eq!(gate_codes(&db, main), Vec::<String>::new());
+}
+
+#[test]
+fn the_expected_function_type_fixes_the_type_arguments_of_a_generic_value() {
+    let source = "T Same<T>(T x) { return x; } i64 Apply(i64 v, (i64) => i64 f) { return f(v); } \
+                  i64 Main() { (i64) => i64 f = Same; return f(1) + Apply(2, Same); }";
+    let (db, _project, unit, generation, index) = setup(source);
+    let main = key(unit, generation, &index, NodeKind::FunctionDefinition, 2);
+    for needle in ["Same; return", "Same); }"] {
+        let value = path_at(source, needle, unit, generation, &index);
+        let fact = function_item_value(&db, value).expect("function item query").expect("function item value");
+        assert_eq!(fact.signature.parameters.as_ref(), &[SemanticTypeId::I64], "{needle}");
+        assert_eq!(fact.signature.result, SemanticTypeId::I64, "{needle}");
+        let instance = fact.specialization.expect("a generic value is a specialization");
+        assert_eq!(instance.substitutions[0].argument, SemanticTypeId::I64, "{needle}");
+    }
+    assert_eq!(gate_codes(&db, main), Vec::<String>::new());
+}
+
+#[test]
+fn the_explicit_type_arguments_of_a_generic_callee_type_a_generic_value_argument() {
+    let source = "T Identity<T>(T x) { return x; } T Apply<T>(T v, (T) => T f) { return f(v); } \
+                  i64 Main() { return Apply<i64>(5, Identity); }";
+    let (db, _project, unit, generation, index) = setup(source);
+    let main = key(unit, generation, &index, NodeKind::FunctionDefinition, 2);
+    let value = path_at(source, "Identity); }", unit, generation, &index);
+    let fact = function_item_value(&db, value).expect("function item query").expect("function item value");
+    assert_eq!(fact.signature.parameters.as_ref(), &[SemanticTypeId::I64]);
+    assert_eq!(gate_codes(&db, main), Vec::<String>::new());
+}
+
+#[test]
+fn a_generic_value_without_type_arguments_or_expected_type_is_e1203() {
+    let source = "T Same<T>(T x) { return x; } i64 Main() { let f = Same; return 1; }";
+    let (db, _project, unit, generation, index) = setup(source);
+    let main = key(unit, generation, &index, NodeKind::FunctionDefinition, 1);
+    assert_unavailable(function_item_value(&db, path_at(source, "Same; return", unit, generation, &index)));
+    assert_eq!(gate_codes(&db, main), vec!["E1203".to_string()]);
+}
+
+#[test]
+fn a_generic_value_bound_to_two_types_by_its_expected_type_is_e1229() {
+    let source = "T Same<T>(T x) { return x; } i64 Main() { (i64) => string f = Same; return 1; }";
+    let (db, _project, unit, generation, index) = setup(source);
+    let main = key(unit, generation, &index, NodeKind::FunctionDefinition, 1);
+    let error = function_item_value(&db, path_at(source, "Same; return", unit, generation, &index))
+        .expect_err("the expected type binds `T` twice");
+    assert!(error.binding_conflict().is_some(), "{error:?}");
+    assert_eq!(gate_codes(&db, main), vec!["E1229".to_string()]);
+}
+
+#[test]
+fn a_generic_value_with_the_wrong_type_argument_count_is_e1204() {
+    let source = "T Same<T>(T x) { return x; } i64 Main() { (i64) => i64 f = Same<i64, i64>; return f(1); }";
+    let (db, _project, unit, generation, index) = setup(source);
+    let main = key(unit, generation, &index, NodeKind::FunctionDefinition, 1);
+    assert_eq!(gate_codes(&db, main), vec!["E1204".to_string()]);
+}
+
+#[test]
+fn a_generic_value_typed_by_an_enclosing_generic_parameter_is_e1203() {
+    let source = "T Same<T>(T x) { return x; } T Wrap<T>(T x) { (T) => T f = Same; return f(x); }";
+    let (db, _project, unit, generation, index) = setup(source);
+    let wrap = key(unit, generation, &index, NodeKind::FunctionDefinition, 1);
+    assert_eq!(gate_codes(&db, wrap), vec!["E1203".to_string()]);
 }
 
 #[test]

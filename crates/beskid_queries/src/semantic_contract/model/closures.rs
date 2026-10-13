@@ -116,13 +116,16 @@ pub struct FunctionValueCall {
 /// A named function item used as a value rather than called.
 ///
 /// The value is a closure record whose code pointer is the item's own entry and whose
-/// environment is null; the record is allocated where the path is evaluated. Only a non-generic
-/// function or test-free function item has a context-free entry.
+/// environment is null; the record is allocated where the path is evaluated. A generic function
+/// item is instantiated at the point of use: `specialization` is the exact instance its explicit
+/// type arguments or the expected function type of its position select, and the record points
+/// at that instance's entry. A non-generic item has no specialization.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct FunctionItemValue {
     pub path: AstNodeKey,
     pub declaration: AstNodeKey,
     pub signature: ItemSignature,
+    pub specialization: Option<crate::semantic_contract::GenericSpecializationInstance>,
 }
 
 /// Exact callable operand, eager arguments, and captures selected by a `spawn` expression.
