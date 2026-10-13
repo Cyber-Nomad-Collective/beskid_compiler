@@ -35,6 +35,14 @@ fn isolated_corelib_toolchain() -> &'static std::path::Path {
     .path()
 }
 
+/// The Salsa hit/miss counters are process-global production statistics, so every test in this
+/// binary that runs a query holds this lock; counter-reading tests then observe only their own
+/// work. Poisoning from a failed test is ignored so one failure cannot cascade.
+fn counters_guard() -> std::sync::MutexGuard<'static, ()> {
+    static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    LOCK.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
 fn fixture_source() -> String {
     "use std.io;\ni32 Main() { return 0; }".to_string()
 }
@@ -45,6 +53,7 @@ fn fixture_path() -> PathBuf {
 
 #[test]
 fn semantic_snapshot_query_hits_registry() {
+    let _counters = counters_guard();
     invalidate_entry_sessions_for_project(std::path::Path::new("/tmp/project"));
     let fp = SessionFingerprint {
         project_root: PathBuf::from("/tmp/project"),
@@ -97,6 +106,7 @@ fn unit_fingerprint_changes_when_source_changes() {
 
 #[test]
 fn second_parse_hits_unit_cache() {
+    let _counters = counters_guard();
     reset();
     let mut db = BeskidDatabase::default();
     let path = fixture_path();
@@ -117,6 +127,7 @@ fn second_parse_hits_unit_cache() {
 
 #[test]
 fn file_edit_invalidates_unit_cache() {
+    let _counters = counters_guard();
     reset();
     let mut db = BeskidDatabase::default();
     let path = fixture_path();
@@ -135,6 +146,7 @@ fn file_edit_invalidates_unit_cache() {
 
 #[test]
 fn unit_imports_tracks_use_paths() {
+    let _counters = counters_guard();
     let mut db = BeskidDatabase::default();
     let path = fixture_path();
     db.ensure_file_text(path.clone(), fixture_source());
@@ -147,6 +159,7 @@ fn unit_imports_tracks_use_paths() {
 
 #[test]
 fn warm_second_parse_reuses_unit_cache() {
+    let _counters = counters_guard();
     reset();
     let mut db = BeskidDatabase::default();
     let path = fixture_path();
@@ -172,6 +185,7 @@ fn warm_second_parse_reuses_unit_cache() {
 
 #[test]
 fn entry_resolution_with_db_populates_symbol_registry() {
+    let _counters = counters_guard();
     isolated_corelib_toolchain();
     use std::path::PathBuf;
 
@@ -218,6 +232,7 @@ fn entry_resolution_with_db_populates_symbol_registry() {
 
 #[test]
 fn typed_entry_state_uses_fast_resolution_when_stale() {
+    let _counters = counters_guard();
     isolated_corelib_toolchain();
     use beskid_analysis::projects::AssemblyDiscovery;
     use beskid_analysis::services::{PrepareOptions, resolve_input};
@@ -288,6 +303,7 @@ fn typed_entry_state_uses_fast_resolution_when_stale() {
 
 #[test]
 fn manifest_digest_changes_when_manifest_or_lock_changes() {
+    let _counters = counters_guard();
     use beskid_queries::manifest_digest;
 
     let dir = tempfile::tempdir().expect("tempdir");
@@ -316,6 +332,7 @@ fn manifest_digest_changes_when_manifest_or_lock_changes() {
 /// process-global entry-session state.
 #[test]
 fn diagnostics_prepare_and_facts_share_one_session_for_noncanonical_root() {
+    let _counters = counters_guard();
     isolated_corelib_toolchain();
     use std::sync::Arc;
 
