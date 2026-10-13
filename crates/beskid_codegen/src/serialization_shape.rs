@@ -57,14 +57,14 @@ impl CodegenInput<'_> {
             for catchall in &catchalls {
                 // Distinct source units/owner declarations are not silently treated as
                 // catchall claims for this target. Matched claims must all revalidate.
-                if catchall.owner().unit != rebound.owner().unit {
+                if catchall.owner().path() != rebound.owner().unit.path(self.database()).as_path() {
                     continue;
                 }
                 if let Ok(binding) = catchall.rebind(self.database(), program, &rebound) {
                     if extras.replace(binding).is_some() {
                         return Err("duplicate catchall for current serialization target".into());
                     }
-                } else if catchall.owner().node == target.original_owner().node {
+                } else if catchall.owner() == target.original_owner() {
                     return Err("serialization catchall correspondence changed".into());
                 }
             }

@@ -61,6 +61,39 @@ pub(crate) fn same_retained_syntax<T: serde::Serialize>(left: &T, right: &T) -> 
     }
 }
 
+/// A declaration of the assembly that issued retained Mod metadata, identified without a query
+/// database: its source unit path and node in the issuing generation.
+///
+/// Retained metadata outlives the database that issued it. Executable lowering registers the
+/// prepared assembly in a database of its own (`beskid run`, every `beskid test` target), where
+/// interned `SourceUnitId`s and `ProjectSession`s of the issuing database name nothing, or
+/// something else. A payload therefore keeps paths and node ids and resolves them in the current
+/// database.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RetainedDeclaration {
+    path: std::path::PathBuf,
+    node: crate::AstNodeId,
+}
+impl RetainedDeclaration {
+    pub(crate) fn of(db: &dyn Db, key: AstNodeKey) -> Self {
+        Self { path: key.unit.path(db).clone(), node: key.node }
+    }
+    pub fn path(&self) -> &std::path::Path {
+        &self.path
+    }
+    pub fn node(&self) -> crate::AstNodeId {
+        self.node
+    }
+}
+
+/// Whether `current` is an assembly of the project that issued metadata over `issuing`: the same
+/// host source root and the same entry unit. Retained payloads compare this, never a
+/// `ProjectSession` of the issuing database (see [`RetainedDeclaration`]).
+pub(crate) fn same_issuing_project(issuing: &ProgramAssembly, current: &ProgramAssembly) -> bool {
+    issuing.roots.host.source_root == current.roots.host.source_root
+        && issuing.entry_unit().path == current.entry_unit().path
+}
+
 static NEXT_HANDLE: AtomicU64 = AtomicU64::new(1);
 const HANDLE_LIMIT: usize = 65536;
 const DEPTH_LIMIT: usize = 128;

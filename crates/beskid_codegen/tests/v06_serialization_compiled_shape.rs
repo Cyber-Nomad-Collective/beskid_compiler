@@ -493,6 +493,82 @@ fn missing_group_member_breaks_correspondence_and_attribution() {
     assert!(next.entry_item_attributions().iter().all(Option::is_none));
 }
 
+/// Every typed program of one generation registers the same attribution table. The compile
+/// session, the query gate (`semantic_diagnostics_for_roots`, run after the Mod rewrite on the
+/// rewritten entry) and test enumeration (a fresh session over the front end's syntax assembly)
+/// each rebuild the assembly through `ProgramAssembly::with_entry_program`, which retains the
+/// compiled Mod metadata; a rebuild that drops it would derive an empty table and is rejected.
+#[test]
+fn every_build_of_a_generation_registers_the_same_attribution() {
+    let mut fixture = cross_unit(SyntaxGenerationId(165));
+    let owner = fixture.type_key("Hidden");
+    let contribution = decoder_item("Hidden");
+    let read = hidden_read_item("ReadHidden");
+    let carrier = {
+        let authority =
+            ModSemanticQueryAuthority::for_registered_assembly(&fixture.db, fixture.project, &fixture.assembly).unwrap();
+        let handle = authority.resolve_type(owner).unwrap();
+        let members = [ModContributionMember { contribution_index: 1, item: read.clone() }];
+        authority.compile_serialization_target(996, 0, handle, &contribution, &members).unwrap()
+    };
+    let (_, next) = fixture.appended(&[contribution.clone(), read.clone()], &[carrier]);
+    let model = SourceUnitId::new(&fixture.db, fixture.model_path.clone());
+    // The query gate over the same generation.
+    let program = next.entry_unit().program.clone();
+    beskid_queries::semantic_diagnostics_for_roots(&mut fixture.db, None, &next, &program, None)
+        .expect("the query gate registers the attribution the compile session registered");
+    // The rebuilt syntax assembly (the front end's `syntax_assembly`) registers the same table.
+    let rebuilt = next.with_entry_program(program, next.generation);
+    assert_eq!(rebuilt.compiled_mod_metadata, next.compiled_mod_metadata);
+    build_typed_program_with_corelib_services(
+        &mut fixture.db,
+        fixture.project,
+        next.generation,
+        Arc::new(rebuilt.clone()),
+        linux_capability(),
+    )
+    .expect("a rebuilt assembly registers the same attribution");
+    assert_eq!(contribution_attributed_unit(&fixture.db, item_key(&fixture.db, &next, &read)), model);
+    // Executable lowering registers the prepared assembly in a database of its own, under a
+    // session of its own. The retained payload names no interned id of the issuing database, so
+    // the group is attributed and the target rebinds there too.
+    let mut lowering = BeskidDatabase::default();
+    let session = ProjectSession::new(
+        &lowering,
+        next.roots.host.source_root.clone(),
+        fixture.entry_path.clone(),
+        "syntax-codegen".into(),
+        "prepared-frontend".into(),
+    );
+    let typed = build_typed_program_with_corelib_services(
+        &mut lowering,
+        session,
+        next.generation,
+        Arc::new(rebuilt.clone()),
+        linux_capability(),
+    )
+    .expect("the lowering database registers the prepared generation");
+    let lowering_model = SourceUnitId::new(&lowering, fixture.model_path.clone());
+    assert_eq!(contribution_attributed_unit(&lowering, item_key(&lowering, &rebuilt, &read)), lowering_model);
+    let proof = rebuilt.compiled_mod_metadata[0].issuer_payload::<CompiledSerializationTarget>().unwrap();
+    let rebound = proof.rebind(&lowering, &typed).expect("the retained target rebinds in the lowering database");
+    assert_eq!(rebound.kind(), SerializationContributionKind::Decoder);
+    // Dropping the retained metadata derives a different table for the registered generation.
+    let mut stripped = next.clone();
+    stripped.compiled_mod_metadata.clear();
+    let error = build_typed_program_with_corelib_services(
+        &mut fixture.db,
+        fixture.project,
+        next.generation,
+        Arc::new(stripped),
+        linux_capability(),
+    )
+    .err()
+    .expect("a build without the retained metadata cannot re-register the generation")
+    .to_string();
+    assert!(error.contains("attribution differs"), "{error}");
+}
+
 /// Generic serialization: a template bound to `Box<T>` is rebound per concrete instantiation.
 /// The emitted specialization of the adapter method `ReadTyped` for `Adapter<i32, Reader>`
 /// rebinds the canonical `Decoder<Box<i32>>` application in its complete environment; an

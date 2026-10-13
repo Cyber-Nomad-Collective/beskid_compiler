@@ -311,12 +311,11 @@ impl ModSemanticQueryAuthority<'_> {
 /// reconstructed from callback JSON, names, hashes, or a public metadata description.
 #[derive(Clone)]
 pub struct CompiledCatchallBinding {
-    project: ProjectSession,
+    /// The issuing assembly; its project is the only one this binding rebinds in.
     assembly: ProgramAssembly,
-    owner: AstNodeKey,
+    owner: RetainedDeclaration,
     owner_arguments: Arc<[ShapeIdentity]>,
     field: ModSemanticDeclaration,
-    map: AstNodeKey,
     map_arguments: Arc<[ShapeIdentity]>,
 }
 #[derive(Clone)]
@@ -341,14 +340,11 @@ impl ReboundCatchallBinding {
     }
 }
 impl CompiledCatchallBinding {
-    pub fn owner(&self) -> AstNodeKey {
-        self.owner
+    pub fn owner(&self) -> &RetainedDeclaration {
+        &self.owner
     }
     pub fn field(&self) -> &ModSemanticDeclaration {
         &self.field
-    }
-    pub fn map(&self) -> AstNodeKey {
-        self.map
     }
     /// Rebase only alongside the independently rebound, exact generated target.
     pub fn rebind(
@@ -358,14 +354,16 @@ impl CompiledCatchallBinding {
         target: &super::ReboundSerializationTarget,
     ) -> Result<ReboundCatchallBinding, ModSemanticError> {
         let reject = ModSemanticQueryAuthority::error;
-        if program.project != self.project || target.arguments() != self.owner_arguments.as_ref() {
+        if !super::same_issuing_project(&self.assembly, &program.assembly)
+            || target.arguments() != self.owner_arguments.as_ref()
+        {
             return Err(reject("catchall target has another project/application"));
         }
         let original = self
             .assembly
             .units
             .iter()
-            .find(|unit| SourceUnitId::new(db, unit.path.clone()) == self.owner.unit)
+            .find(|unit| unit.path == self.owner.path())
             .ok_or_else(|| reject("catchall original owner absent"))?;
         let current = program
             .assembly
@@ -389,7 +387,7 @@ impl CompiledCatchallBinding {
             .map(|(index, _)| index)
             .ok_or_else(|| reject("catchall original syntax absent"))?;
         let old = original_index
-            .node_at(&original.program, self.owner.node)
+            .node_at(&original.program, self.owner.node())
             .and_then(|node| node.of::<beskid_analysis::syntax::TypeDefinition>())
             .ok_or_else(|| reject("catchall original record absent"))?;
         let syntax = db
@@ -432,18 +430,6 @@ impl CompiledCatchallBinding {
             map_arguments: args.clone(),
         })
     }
-    /// Revalidation includes the prepare-issued package closure and exact current registered
-    /// trees, then reissues the canonical applied Map and value eligibility proof.
-    pub fn revalidate(&self, db: &dyn Db) -> Result<(), ModSemanticError> {
-        let authority = ModSemanticQueryAuthority::for_registered_assembly(db, self.project, &self.assembly)?;
-        let owner = authority.issue(self.owner, self.owner_arguments.clone())?;
-        let witness = authority.catchall_field(owner, &self.field)?;
-        let handles = authority.handles.borrow();
-        if handles.get(&witness.map) != Some(&(self.map, self.map_arguments.clone())) {
-            return Err(ModSemanticQueryAuthority::error("compiled catchall application changed"));
-        }
-        Ok(())
-    }
 }
 impl ModSemanticQueryAuthority<'_> {
     pub(super) fn compile_retained_catchall(
@@ -457,16 +443,23 @@ impl ModSemanticQueryAuthority<'_> {
             handles.get(&claim.owner).cloned().ok_or_else(|| Self::error("compiled catchall owner issuer absent"))?;
         let (map, map_arguments) =
             handles.get(&claim.map).cloned().ok_or_else(|| Self::error("compiled catchall map issuer absent"))?;
+        drop(handles);
+        // Revalidate against the prepare-issued package closure and exact current registered
+        // trees: a fresh authority over the same registration reissues the canonical applied Map
+        // and value eligibility proof.
+        let authority = ModSemanticQueryAuthority::for_registered_assembly(self.db, self.project, &self.assembly)?;
+        let issued_owner = authority.issue(owner, owner_arguments.clone())?;
+        let witness = authority.catchall_field(issued_owner, &claim.field)?;
+        if authority.handles.borrow().get(&witness.map) != Some(&(map, map_arguments.clone())) {
+            return Err(Self::error("compiled catchall application changed"));
+        }
         let binding = CompiledCatchallBinding {
-            project: self.project,
             assembly: self.assembly.clone(),
-            owner,
+            owner: RetainedDeclaration::of(self.db, owner),
             owner_arguments,
             field: claim.field.clone(),
-            map,
             map_arguments,
         };
-        binding.revalidate(self.db)?;
         Ok(ModCompiledMetadata::with_issuer_payload(claim.clone(), binding))
     }
 }

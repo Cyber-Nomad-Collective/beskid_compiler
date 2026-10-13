@@ -65,24 +65,7 @@ impl<'a> QueryModSemanticScope<'a> {
         current.generation.resume_after();
         let generation =
             SyntaxGenerationId::allocate().ok_or_else(|| anyhow::anyhow!("syntax generation exhausted"))?;
-        let mut units = current.units.as_ref().clone();
-        units[current.entry_index].program = program.clone();
-        let mut next = ProgramAssembly::new(
-            current.roots.clone(),
-            Arc::new(units),
-            current.entry_index,
-            current.discovery,
-            Arc::clone(&current.module_index),
-            current.has_core_dependency,
-            generation,
-        )
-        .with_recovery_policy(current.recovery_policy)
-        .with_trusted_corelib_service_paths(Arc::clone(&current.trusted_corelib_service_paths))
-        .with_glue_libraries(Arc::clone(&current.glue_libraries))
-        .with_runtime_fixture(current.runtime_fixture.clone())
-        .with_root_set(current.root_set.clone());
-        next.verified_package_identities = current.package_identities().clone();
-        next.compiled_mod_metadata = current.compiled_mod_metadata.clone();
+        let next = current.with_entry_program(program.clone(), generation);
         *current = next;
         Ok(())
     }

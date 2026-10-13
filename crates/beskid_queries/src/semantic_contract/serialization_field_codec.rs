@@ -383,8 +383,13 @@ pub fn serialization_field_codec_binding(
             target_type.display_name()
         )));
     }
-    let target = generic_specialization_instance(db, key, substitutions.into())?
+    let mut target = generic_specialization_instance(db, key, substitutions.clone().into())?
         .ok_or_else(|| SemanticError::unavailable("serialization_field_codec.target_specialization"))?;
+    // The issued function reads or writes through its format parameter (`reader.BeginRecord()`
+    // under `where R: Reader`): its body dispatches through the where-bound witnesses that a
+    // source call would prove, proven here from the complete environment.
+    target.contract_witnesses =
+        super::contracts::contract_witnesses_for_call(db, key, &[], false, None, &substitutions)?;
     if target.signature != instance.signature {
         return Err(error("issued field codec ABI differs from the bridge signature"));
     }

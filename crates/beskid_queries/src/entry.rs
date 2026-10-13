@@ -200,24 +200,9 @@ pub fn semantic_diagnostics_for_roots(
     use beskid_analysis::analysis::SemanticIssueKind;
     use beskid_analysis::services::SemanticFactFinding;
     use std::sync::Arc;
-    let mut units = assembly.units.as_ref().clone();
-    units[assembly.entry_index].program = program.clone();
-    let mut syntax = beskid_analysis::projects::ProgramAssembly::new(
-        assembly.roots.clone(),
-        Arc::new(units),
-        assembly.entry_index,
-        assembly.discovery,
-        Arc::clone(&assembly.module_index),
-        assembly.has_core_dependency,
-        assembly.generation,
-    )
-    .with_recovery_policy(assembly.recovery_policy)
-    .with_trusted_corelib_service_paths(Arc::clone(&assembly.trusted_corelib_service_paths))
-    .with_glue_libraries(Arc::clone(&assembly.glue_libraries))
-    .with_runtime_fixture(assembly.runtime_fixture.clone())
-    .with_root_set(assembly.root_set.clone());
-    syntax.verified_package_identities = assembly.package_identities().clone();
-    let syntax = Arc::new(syntax);
+    // The judged assembly keeps every property of `assembly` (its retained Mod metadata among
+    // them), so its typed program registers the facts every other build of this generation does.
+    let syntax = Arc::new(assembly.with_entry_program(program.clone(), assembly.generation));
     let project = match planned.and_then(|resolved| Some((resolved.compile_plan.as_ref()?, resolved))) {
         Some((plan, resolved)) => crate::project_session_for_planned_syntax_assembly(
             db,

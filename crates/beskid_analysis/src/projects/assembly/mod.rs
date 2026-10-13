@@ -173,6 +173,35 @@ impl ProgramAssembly {
         self
     }
 
+    /// The same assembly with `program` as the entry unit's syntax, indexed under `generation`.
+    ///
+    /// Every other property is carried over, including the verified package identities and the
+    /// retained compiled Mod metadata: a typed program built from the result registers the same
+    /// generation-bound facts (contribution attribution among them) as any other build of this
+    /// assembly at `generation`. Every rebuild of an entry program goes through here, so no caller
+    /// can drop a property and register a diverging table for the same generation.
+    pub fn with_entry_program(&self, program: Spanned<Program>, generation: SyntaxGenerationId) -> Self {
+        let mut units = self.units.as_ref().clone();
+        units[self.entry_index].program = program;
+        let mut next = Self::new(
+            self.roots.clone(),
+            Arc::new(units),
+            self.entry_index,
+            self.discovery,
+            Arc::clone(&self.module_index),
+            self.has_core_dependency,
+            generation,
+        )
+        .with_recovery_policy(self.recovery_policy)
+        .with_trusted_corelib_service_paths(Arc::clone(&self.trusted_corelib_service_paths))
+        .with_glue_libraries(Arc::clone(&self.glue_libraries))
+        .with_runtime_fixture(self.runtime_fixture.clone())
+        .with_root_set(self.root_set.clone());
+        next.verified_package_identities = self.verified_package_identities.clone();
+        next.compiled_mod_metadata = self.compiled_mod_metadata.clone();
+        next
+    }
+
     /// Carry an explicit root set onto a rebuilt assembly; [`ProgramAssembly::new`] starts from
     /// [`AssemblyRootSet::Entry`].
     pub fn with_root_set(mut self, root_set: AssemblyRootSet) -> Self {

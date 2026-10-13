@@ -30,26 +30,7 @@ impl ExecutableFrontEnd {
     /// entry consumed by generation-safe semantic facts. Replacing exactly that unit keeps syntax
     /// item keys aligned.
     pub fn syntax_assembly(&self) -> crate::projects::ProgramAssembly {
-        let assembly = &self.assembly;
-        let mut units = assembly.units.as_ref().clone();
-        units[assembly.entry_index].program = self.program.clone();
-        let mut syntax = crate::projects::ProgramAssembly::new(
-            assembly.roots.clone(),
-            std::sync::Arc::new(units),
-            assembly.entry_index,
-            assembly.discovery,
-            std::sync::Arc::clone(&assembly.module_index),
-            assembly.has_core_dependency,
-            assembly.generation,
-        )
-        .with_recovery_policy(assembly.recovery_policy)
-        .with_trusted_corelib_service_paths(std::sync::Arc::clone(&assembly.trusted_corelib_service_paths))
-        .with_glue_libraries(std::sync::Arc::clone(&assembly.glue_libraries))
-        .with_runtime_fixture(assembly.runtime_fixture.clone())
-        .with_root_set(assembly.root_set.clone());
-        syntax.verified_package_identities = assembly.verified_package_identities.clone();
-        syntax.compiled_mod_metadata = assembly.compiled_mod_metadata.clone();
-        syntax
+        self.assembly.with_entry_program(self.program.clone(), self.assembly.generation)
     }
 }
 

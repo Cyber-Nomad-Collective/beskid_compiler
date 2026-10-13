@@ -4,9 +4,9 @@ use beskid_analysis::syntax::{Node, Spanned};
 
 #[derive(Clone)]
 pub struct CompiledSerializationTarget {
-    project: ProjectSession,
+    /// The issuing assembly; its project is the only one this target rebinds in.
     assembly: ProgramAssembly,
-    owner: AstNodeKey,
+    owner: RetainedDeclaration,
     arguments: Arc<[ShapeIdentity]>,
     body: ShapeBodyProjection,
     lexical: Vec<String>,
@@ -63,9 +63,8 @@ impl ReboundSerializationTarget {
 impl CompiledSerializationTarget {
     #[allow(clippy::too_many_arguments)]
     pub(super) fn from_template(
-        project: ProjectSession,
         assembly: ProgramAssembly,
-        owner: AstNodeKey,
+        owner: RetainedDeclaration,
         arguments: Arc<[ShapeIdentity]>,
         body: ShapeBodyProjection,
         lexical: Vec<String>,
@@ -73,11 +72,11 @@ impl CompiledSerializationTarget {
         contribution_index: u32,
         members: Vec<ModContributionMember>,
     ) -> Self {
-        Self { project, assembly, owner, arguments, body, lexical, contribution, contribution_index, members }
+        Self { assembly, owner, arguments, body, lexical, contribution, contribution_index, members }
     }
 
-    pub fn original_owner(&self) -> AstNodeKey {
-        self.owner
+    pub fn original_owner(&self) -> &RetainedDeclaration {
+        &self.owner
     }
     pub fn contribution_index(&self) -> u32 {
         self.contribution_index
@@ -101,7 +100,7 @@ impl CompiledSerializationTarget {
         db: &dyn Db,
         current: &ProgramAssembly,
     ) -> Result<Option<(SourceUnitId, Vec<crate::AstNodeId>)>, crate::SemanticError> {
-        appended_group_attribution(db, &self.assembly, self.owner, &self.contribution, &self.members, current)
+        appended_group_attribution(db, &self.assembly, &self.owner, &self.contribution, &self.members, current)
     }
     /// Reissue only after exact append correspondence. Current contract admission remains
     /// independent: this returns a target key, never an executable conformance witness.
@@ -119,14 +118,14 @@ impl CompiledSerializationTarget {
         environment: &[crate::GenericSubstitution],
     ) -> Result<ReboundSerializationTarget, ModSemanticError> {
         let reject = ModSemanticQueryAuthority::error;
-        if program.project != self.project {
+        if !super::same_issuing_project(&self.assembly, &program.assembly) {
             return Err(reject("serialization contribution belongs to another project issuer"));
         }
         let original_unit = self
             .assembly
             .units
             .iter()
-            .find(|unit| SourceUnitId::new(db, unit.path.clone()) == self.owner.unit)
+            .find(|unit| unit.path == self.owner.path())
             .ok_or_else(|| reject("original serialization target source absent"))?;
         let current_unit = program
             .assembly
@@ -166,7 +165,7 @@ impl CompiledSerializationTarget {
             .map(|(index, _)| index)
             .ok_or_else(|| reject("serialization target original syntax index absent"))?;
         let old_node = old_syntax
-            .node_at(&original_unit.program, self.owner.node)
+            .node_at(&original_unit.program, self.owner.node())
             .ok_or_else(|| reject("serialization original target absent"))?;
         let syntax = db
             .syntax_unit(SourceUnitId::new(db, current_unit.path.clone()))
@@ -339,9 +338,8 @@ impl ModSemanticQueryAuthority<'_> {
         let lexical = mod_shape_lexical_path(self.db, owner)
             .ok_or_else(|| Self::error("serialization target lexical identity absent"))?;
         let proof = CompiledSerializationTarget {
-            project: self.project,
             assembly: self.assembly.clone(),
-            owner,
+            owner: RetainedDeclaration::of(self.db, owner),
             arguments,
             body,
             lexical,
@@ -397,7 +395,7 @@ pub(super) fn group_attribution(
 pub(super) fn appended_group_attribution(
     db: &dyn Db,
     original: &ProgramAssembly,
-    owner: AstNodeKey,
+    owner: &RetainedDeclaration,
     contribution: &Spanned<ProgramItem>,
     members: &[ModContributionMember],
     current: &ProgramAssembly,
@@ -405,8 +403,7 @@ pub(super) fn appended_group_attribution(
     if current.generation == original.generation {
         return Ok(None);
     }
-    let Some(original_unit) = original.units.iter().find(|unit| SourceUnitId::new(db, unit.path.clone()) == owner.unit)
-    else {
+    let Some(original_unit) = original.units.iter().find(|unit| unit.path == owner.path()) else {
         return Ok(None);
     };
     let Some(current_unit) = current.units.iter().find(|unit| unit.path == original_unit.path) else {

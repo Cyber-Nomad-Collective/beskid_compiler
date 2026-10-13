@@ -5,9 +5,9 @@ use std::collections::HashSet;
 
 #[derive(Clone)]
 pub struct CompiledSerializationTemplate {
-    project: ProjectSession,
+    /// The issuing assembly; its project is the only one this template rebinds in.
     assembly: ProgramAssembly,
-    owner: AstNodeKey,
+    owner: RetainedDeclaration,
     parameters: Vec<String>,
     contribution: Spanned<ProgramItem>,
     contribution_index: u32,
@@ -36,7 +36,7 @@ impl CompiledSerializationTemplate {
         serialization_target::appended_group_attribution(
             db,
             &self.assembly,
-            self.owner,
+            &self.owner,
             &self.contribution,
             &self.members,
             current,
@@ -50,14 +50,14 @@ impl CompiledSerializationTemplate {
         program: &crate::TypedProgram,
     ) -> Result<AstNodeKey, ModSemanticError> {
         let reject = ModSemanticQueryAuthority::error;
-        if program.project != self.project {
+        if !super::same_issuing_project(&self.assembly, &program.assembly) {
             return Err(reject("foreign template project"));
         }
         let old_unit = self
             .assembly
             .units
             .iter()
-            .find(|unit| SourceUnitId::new(db, unit.path.clone()) == self.owner.unit)
+            .find(|unit| unit.path == self.owner.path())
             .ok_or_else(|| reject("original template unit absent"))?;
         let old_index = self
             .assembly
@@ -68,7 +68,7 @@ impl CompiledSerializationTemplate {
             .map(|(_, index)| index)
             .ok_or_else(|| reject("original template index absent"))?;
         let old_node =
-            old_index.node_at(&old_unit.program, self.owner.node).ok_or_else(|| reject("original template node absent"))?;
+            old_index.node_at(&old_unit.program, self.owner.node()).ok_or_else(|| reject("original template node absent"))?;
         let current_unit = program
             .assembly
             .units
@@ -156,9 +156,8 @@ impl CompiledSerializationTemplate {
         let lexical = mod_shape_lexical_path(db, owner)
             .ok_or_else(|| ModSemanticQueryAuthority::error("template lexical correspondence absent"))?;
         serialization_target::CompiledSerializationTarget::from_template(
-            self.project,
             self.assembly.clone(),
-            self.owner,
+            self.owner.clone(),
             arguments,
             body,
             lexical,
@@ -364,9 +363,8 @@ impl ModSemanticQueryAuthority<'_> {
                 attribution,
             },
             CompiledSerializationTemplate {
-                project: self.project,
                 assembly: self.assembly.clone(),
-                owner,
+                owner: RetainedDeclaration::of(self.db, owner),
                 parameters,
                 contribution: contribution.clone(),
                 contribution_index,
@@ -422,24 +420,24 @@ impl ModSemanticQueryAuthority<'_> {
         let policy_error = |error: crate::SemanticError| Self::error(&error.to_string());
         match &projection.body {
             ShapeBodyProjection::Record(fields) => {
-                for (field, name, ty) in fields {
+                for (field, _, ty) in fields {
                     let policy = crate::serialization_field_policy(self.db, *field).map_err(policy_error)?;
                     self.template_default_factory(*field, &policy, ty)?;
                     if policy.absent_from_wire() {
                         continue;
                     }
-                    self.template_field(name, ty, std::slice::from_ref(&root), &mut walk, 0)?;
+                    self.template_nested(ty, std::slice::from_ref(&root), &mut walk, 0)?;
                 }
             }
             ShapeBodyProjection::Enum(variants) => {
                 for variant in variants {
-                    for (field, name, ty) in &variant.fields {
+                    for (field, _, ty) in &variant.fields {
                         let policy = crate::serialization_payload_field_policy(self.db, *field).map_err(policy_error)?;
                         self.template_default_factory(*field, &policy, ty)?;
                         if policy.absent_from_wire() {
                             continue;
                         }
-                        self.template_field(name, ty, &[], &mut walk, 0)?;
+                        self.template_nested(ty, &[], &mut walk, 0)?;
                     }
                 }
             }
@@ -509,35 +507,11 @@ impl ModSemanticQueryAuthority<'_> {
         Ok(())
     }
 
-    /// One serialized field owned by the template. Arrays stay template-owned
-    /// syntax, so a container element of an array is rejected as well.
-    fn template_field(
-        &self,
-        field: &str,
-        identity: &ShapeIdentity,
-        direct: &[ShapeIdentity],
-        walk: &mut TemplateWalk,
-        depth: usize,
-    ) -> Result<(), ModSemanticError> {
-        match identity {
-            ShapeIdentity::Array(element) => self.template_field(field, element, &[], walk, depth + 1),
-            ShapeIdentity::Nominal { qualified_name, arguments } => {
-                let key = self.nominal_key(qualified_name)?;
-                if crate::canonical_container_kind(self.db, key, arguments.len()).is_some() {
-                    return Err(Self::error(&format!(
-                        "SerializationTemplateContainer: field `{field}` of a generic serialization template is a \
-                         Foundation List, Map or Option after specialization; container proof is issued only for \
-                         concrete targets, so declare the container field in a concrete record"
-                    )));
-                }
-                self.template_nested(identity, direct, walk, depth)
-            }
-            ShapeIdentity::Abi(_) | ShapeIdentity::Function { .. } => Ok(()),
-        }
-    }
-
     /// Semantic-only recursion check of the specialized closure. `direct` holds
-    /// the nominal identities reached through direct record fields only.
+    /// the nominal identities reached through direct record fields only. A Foundation
+    /// container, an array or an enum is an indirection: a container field of a template,
+    /// declared or arriving through a type parameter, is written and read by the canonical
+    /// container operations of the field codec correspondence for its specialized element.
     fn template_nested(
         &self,
         identity: &ShapeIdentity,

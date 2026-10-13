@@ -1,9 +1,9 @@
-//! A specialized serialization template cannot carry a Foundation container field.
+//! A specialized serialization template carries Foundation container fields.
 //!
-//! The Mod proves a `ContainerSite` only through the semantic closure of a
-//! concrete target. Generic templates have no such proof, so the host
-//! specialization gate rejects List, Map and Option fields after substitution,
-//! including a container that arrives through a type parameter.
+//! A generated adapter writes and reads every nominal field through `WriteField` and
+//! `ReadField`, and the compiler issues the canonical List, Map and Option operations for the
+//! specialized element of each container field. A container declared in a template, or arriving
+//! through a type parameter, specializes like any other field.
 use beskid_abi::abi_v5::{AbiManifestV5, TargetMetadata};
 use beskid_abi::runtime_source::canonical_corelib_service_capability;
 use beskid_analysis::mod_host::{ModSemanticAuthority, ModSemanticFieldType, ModSemanticShapeBody};
@@ -83,7 +83,7 @@ fn fixture() -> Fixture {
 }
 
 #[test]
-fn specialized_template_rejects_foundation_container_fields() {
+fn specialized_template_admits_foundation_container_fields() {
     let fixture = fixture();
     let authority =
         ModSemanticQueryAuthority::for_registered_assembly(&fixture.db, fixture.project, &fixture.assembly).unwrap();
@@ -101,14 +101,16 @@ fn specialized_template_rejects_foundation_container_fields() {
         let ModSemanticFieldType::Nominal(handle) = fields[index].ty else { panic!("applied template field") };
         handle
     };
-    // Declared Option<T>, a List<T> reached through an array, and an Option
-    // that arrives only through the type parameter all fail the same way.
-    for index in 0..3 {
-        let error = authority.serialization_template_shape(applied(index)).unwrap_err().to_string();
-        assert!(error.contains("SerializationTemplateContainer"), "field {index}: {error}");
-    }
-    // A template without container fields is not rejected by the container rule.
-    if let Err(error) = authority.serialization_template_shape(applied(3)) {
-        assert!(!error.to_string().contains("SerializationTemplateContainer"), "{error}");
+    // A declared Option<T>, a List<T> reached through an array, an Option that arrives only
+    // through the type parameter, and a template without containers pass the template walk.
+    // This fixture has no prepare-owned package proof, so the concrete shape graph of a container
+    // may still fail closed on that proof afterwards; the template walk itself never rejects a
+    // container field.
+    for index in 0..4 {
+        if let Err(error) = authority.serialization_template_shape(applied(index)) {
+            let error = error.to_string();
+            assert!(!error.contains("SerializationTemplateContainer"), "field {index}: {error}");
+            assert!(!error.contains("SerializationRecursiveCycle"), "field {index}: {error}");
+        }
     }
 }
