@@ -26,7 +26,7 @@ pub use contracts::{AppliedContractIdentity, applied_contract_argument_is_type};
 mod events;
 mod expected_type;
 pub use expected_type::expected_type_in_environment;
-use expected_type::expected_type_tracked;
+use expected_type::{expected_type_tracked, lambda_argument_parameter_identities};
 mod portable_nominal;
 pub(crate) use portable_nominal::serialization_impl_receiver;
 pub use portable_nominal::{PortableNominalIdentity, portable_nominal_identity};
@@ -101,12 +101,12 @@ use calls::{
     PathCallResolution, call_arguments_tracked, call_lowering_for_node, call_lowering_tracked,
     canonical_intrinsic_parameter_type, canonical_result_definition_for_type, canonical_result_variant,
     canonical_runtime_intrinsic_scope, cast_intents_for_node, cast_intents_tracked, corelib_service_for,
-    expected_cast_type, expected_explicit_call_argument_type, explicit_generic_type_argument_syntax,
+    expected_cast_type, call_explicit_member_type_arguments, expected_explicit_call_argument_type, explicit_generic_type_argument_syntax,
     exported_generic_type_named, expression_fact_target, expression_is_lambda, flatten_member_as_path_declaration,
     for_iterator_fact_tracked, for_statement_in_generic_context, function_declares_generics,
     generic_call_instantiation_for_node, specialized_for_element_identity,
     generic_call_instantiation_tracked, generic_call_specialization_tracked, generic_call_template_tracked,
-    generic_call_uses_parameter_type_arguments, generic_callable_parameters, generic_nominal_method_receiver_tracked,
+    generic_call_uses_parameter_type_arguments, generic_callable_owner_count, generic_callable_parameters, method_own_generic_names, generic_nominal_method_receiver_tracked,
     generic_source_expression_identity, generic_source_local_identity, generic_source_type_identity,
     generic_source_type_identity_with_substitutions, imported_call_receiver_exists,
     imported_generic_nominal_receiver_requires_instantiation,

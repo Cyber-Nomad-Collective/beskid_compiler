@@ -250,7 +250,10 @@ pub enum SemanticIssueKind {
     TypeMissingTypeAnnotation {
         name: String,
     },
-    TypeMissingTypeArguments,
+    /// E1203. `parameter` names the type parameter inference left unbound, when known.
+    TypeMissingTypeArguments {
+        parameter: Option<String>,
+    },
     TypeGenericArgumentMismatch {
         expected: usize,
         actual: usize,

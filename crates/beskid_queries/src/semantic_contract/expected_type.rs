@@ -470,6 +470,32 @@ fn direct_parameter_identity(
         .syntax_index(db)
         .node_at(callee_syntax.expanded_program(db), declaration.node)
         .ok_or_else(unavailable)?;
+    let parameter_type = declared_parameter_type(callee, call, position)?;
+    let generic_names = generic_callable_parameters(db, declaration).map(|(names, _)| names).unwrap_or_default();
+    let mentioned = generic_names
+        .iter()
+        .copied()
+        .filter(|name| type_syntax_mentions_generic_parameter(parameter_type, name))
+        .collect::<Vec<_>>();
+    let bindings = if mentioned.is_empty() {
+        Vec::new()
+    } else {
+        let bindings = callee_generic_bindings(db, call_key, call, declaration, &generic_names, environment)?;
+        if mentioned.iter().any(|name| !bindings.iter().any(|(bound, _)| bound == name)) {
+            return Err(unavailable());
+        }
+        bindings
+    };
+    let callee_environment = bindings.iter().map(|(name, identity)| (name.as_str(), identity)).collect::<Environment<'_>>();
+    generic_source_type_identity_with_substitutions(db, declaration, parameter_type, &callee_environment)
+}
+
+/// The written type of the callee parameter that receives argument `position`.
+fn declared_parameter_type<'a>(
+    callee: DynNodeRef<'a>,
+    call: &syntax::CallExpression,
+    position: usize,
+) -> Result<&'a syntax::Type, SemanticError> {
     let parameters = callee
         .of::<syntax::FunctionDefinition>()
         .map(|function| &function.parameters)
@@ -495,35 +521,33 @@ fn direct_parameter_identity(
             None
         }
     };
-    let parameter_type = match bulk_element {
-        Some(element) => &element.node,
+    match bulk_element {
+        Some(element) => Ok(&element.node),
         None => {
             let parameter = &parameters.get(position).ok_or_else(unavailable)?.node;
             if parameter.bulk {
                 return Err(unavailable());
             }
-            &parameter.ty.node
+            Ok(&parameter.ty.node)
         }
-    };
-    let generic_names = generic_callable_parameters(db, declaration).map(|(names, _)| names).unwrap_or_default();
-    let mentioned = generic_names
-        .iter()
-        .copied()
-        .filter(|name| type_syntax_mentions_generic_parameter(parameter_type, name))
-        .collect::<Vec<_>>();
+    }
+}
+
+/// The callee's type parameters this call binds without inference: a method's owner parameters
+/// from its instantiated nominal receiver and its own from the type arguments written on the
+/// member name; a function's from the type arguments on its path.
+fn callee_generic_bindings(
+    db: &dyn Db,
+    call_key: AstNodeKey,
+    call: &syntax::CallExpression,
+    declaration: AstNodeKey,
+    generic_names: &[&str],
+    environment: &Environment<'_>,
+) -> Result<Vec<(String, GenericSourceTypeIdentity)>, SemanticError> {
     let mut bindings = Vec::<(String, GenericSourceTypeIdentity)>::new();
-    if !mentioned.is_empty() {
-        if let syntax::Expression::Path(path) = &call.callee.node
-            && let Some(arguments) = explicit_generic_type_argument_syntax(&path.node.path.node)
-        {
-            if arguments.len() != generic_names.len() {
-                return Err(unavailable());
-            }
-            for (name, argument) in generic_names.iter().zip(arguments) {
-                let identity = generic_source_type_identity_with_substitutions(db, call_key, &argument.node, environment)?;
-                bindings.push(((*name).to_owned(), identity));
-            }
-        } else if let Some(receiver) = generic_nominal_method_receiver(db, call_key)? {
+    let is_method = matches!(generic_callable_parameters(db, declaration), Some((_, true)));
+    if is_method {
+        if let Some(receiver) = generic_nominal_method_receiver(db, call_key)? {
             bindings.extend(
                 receiver
                     .substitutions
@@ -531,12 +555,96 @@ fn direct_parameter_identity(
                     .map(|binding| (binding.parameter.to_string(), binding.source_identity().clone())),
             );
         }
-        if mentioned.iter().any(|name| !bindings.iter().any(|(bound, _)| bound == name)) {
+        if let Some(arguments) = call_explicit_member_type_arguments(db, call_key) {
+            let own = &generic_names[generic_callable_owner_count(db, declaration).min(generic_names.len())..];
+            if own.len() != arguments.len() {
+                return Err(unavailable());
+            }
+            for (name, argument) in own.iter().zip(arguments.iter()) {
+                let identity = generic_source_type_identity_with_substitutions(db, call_key, &argument.node, environment)?;
+                bindings.push(((*name).to_owned(), identity));
+            }
+        }
+        return Ok(bindings);
+    }
+    if let syntax::Expression::Path(path) = &call.callee.node
+        && let Some(arguments) = explicit_generic_type_argument_syntax(&path.node.path.node)
+    {
+        if arguments.len() != generic_names.len() {
             return Err(unavailable());
         }
+        for (name, argument) in generic_names.iter().zip(arguments) {
+            let identity = generic_source_type_identity_with_substitutions(db, call_key, &argument.node, environment)?;
+            bindings.push(((*name).to_owned(), identity));
+        }
+    } else if let Some(receiver) = generic_nominal_method_receiver(db, call_key)? {
+        bindings.extend(
+            receiver.substitutions.iter().map(|binding| (binding.parameter.to_string(), binding.source_identity().clone())),
+        );
     }
+    Ok(bindings)
+}
+
+/// The parameter types a lambda literal argument takes from its callee when the function-typed
+/// callee parameter still names an unbound type parameter in its result only
+/// (`U Apply<U>((T) => U f)` with `T` bound by the receiver). This is the 2026-10-13 refinement of
+/// the `expected_type` rule: the parameter types are supplied, the result has no expected type and
+/// is synthesized from the lambda body. `Ok(None)` when the lambda is not such an argument.
+pub(in crate::semantic_contract) fn lambda_argument_parameter_identities(
+    db: &dyn Db,
+    lambda: AstNodeKey,
+) -> Result<Option<Vec<GenericSourceTypeIdentity>>, SemanticError> {
+    let Some(syntax) = db.syntax_unit(lambda.unit).filter(|syntax| syntax.accepts_key(db, lambda)) else {
+        return Ok(None);
+    };
+    let program = syntax.expanded_program(db);
+    let index = syntax.syntax_index(db);
+    let mut child = lambda.node;
+    let Some(mut parent) = parent_node(index, child) else { return Ok(None) };
+    while matches!(index.kind(parent), Some(NodeKind::Expression | NodeKind::GroupedExpression)) {
+        child = parent;
+        let Some(next) = parent_node(index, parent) else { return Ok(None) };
+        parent = next;
+    }
+    let Some(call) = index.node_at(program, parent).and_then(|node| node.of::<syntax::CallExpression>()) else {
+        return Ok(None);
+    };
+    let Some(position) =
+        call.args.iter().position(|argument| index.direct_child_id(program, parent, DynNodeRef::from(argument)) == Some(child))
+    else {
+        return Ok(None);
+    };
+    let call_key = AstNodeKey { node: parent, ..lambda };
+    let Ok(Some(CallLowering::Direct(declaration))) = call_lowering(db, call_key) else { return Ok(None) };
+    let Some(callee_syntax) = db.syntax_unit(declaration.unit).filter(|syntax| syntax.accepts_key(db, declaration))
+    else {
+        return Ok(None);
+    };
+    let Some(callee) = callee_syntax.syntax_index(db).node_at(callee_syntax.expanded_program(db), declaration.node)
+    else {
+        return Ok(None);
+    };
+    let Ok(syntax::Type::Function { parameters, .. }) = declared_parameter_type(callee, call, position) else {
+        return Ok(None);
+    };
+    let generic_names = generic_callable_parameters(db, declaration).map(|(names, _)| names).unwrap_or_default();
+    let bindings = callee_generic_bindings(db, call_key, call, declaration, &generic_names, &Environment::new())?;
     let callee_environment = bindings.iter().map(|(name, identity)| (name.as_str(), identity)).collect::<Environment<'_>>();
-    generic_source_type_identity_with_substitutions(db, declaration, parameter_type, &callee_environment)
+    let mut identities = Vec::with_capacity(parameters.len());
+    for parameter in parameters {
+        if generic_names.iter().any(|name| {
+            type_syntax_mentions_generic_parameter(&parameter.node, name) && !callee_environment.contains_key(name)
+        }) {
+            return Ok(None);
+        }
+        identities.push(generic_source_type_identity_with_substitutions(
+            db,
+            declaration,
+            &parameter.node,
+            &callee_environment,
+        )?);
+    }
+    Ok(Some(identities))
 }
 
 fn enum_payload_identity(

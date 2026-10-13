@@ -349,14 +349,23 @@ pub(in crate::semantic_contract) fn lambda_source_identity(
     let statement_body = index.kind(body.node) == Some(beskid_analysis::syntax_query::NodeKind::BlockExpression);
     let untyped = lambda.parameters.iter().any(|parameter| parameter.node.ty.is_none());
     let expected = if statement_body || untyped { lambda_expected_function(db, key, lambda.parameters.len())? } else { None };
+    // Without a complete expected function type, a lambda argument whose callee parameter names an
+    // unbound type parameter only in its result still takes its parameter types from that callee
+    // parameter; its result is synthesized from the body (method type argument inference).
+    let supplied = if expected.is_none() && untyped {
+        lambda_argument_parameter_identities(db, key)?.filter(|parameters| parameters.len() == lambda.parameters.len())
+    } else {
+        None
+    };
     let parameters = lambda
         .parameters
         .iter()
         .enumerate()
-        .map(|(position, parameter)| match (&parameter.node.ty, &expected) {
-            (Some(ty), _) => generic_source_type_identity(db, key, &ty.node),
-            (None, Some((parameters, _))) => Ok(parameters[position].clone()),
-            (None, None) => Err(source_expression_unavailable(
+        .map(|(position, parameter)| match (&parameter.node.ty, &expected, &supplied) {
+            (Some(ty), _, _) => generic_source_type_identity(db, key, &ty.node),
+            (None, Some((parameters, _)), _) => Ok(parameters[position].clone()),
+            (None, None, Some(parameters)) => Ok(parameters[position].clone()),
+            (None, None, None) => Err(source_expression_unavailable(
                 db,
                 key,
                 "untyped lambda parameter has no expected function type",
@@ -364,7 +373,10 @@ pub(in crate::semantic_contract) fn lambda_source_identity(
         })
         .collect::<Result<Vec<_>, _>>()?;
     let result = if statement_body {
-        expected.map_or(GenericSourceTypeIdentity::Abi(SemanticTypeId::UNIT), |(_, result)| result)
+        match expected {
+            Some((_, result)) => result,
+            None => block_lambda_result_identity(db, index, body)?,
+        }
     } else {
         // A pointer-shaped body keeps its source identity; a scalar body takes its value ABI,
         // which checks a bare literal against the expected result through the body's own
@@ -380,6 +392,51 @@ pub(in crate::semantic_contract) fn lambda_source_identity(
         }
     };
     Ok(GenericSourceTypeIdentity::Function { parameters: parameters.into(), result: Box::new(result) })
+}
+
+/// The result of a block-bodied lambda with no expected result: the common proven type of its
+/// `return` values (not those of nested lambdas), or `unit` when no `return` carries a value.
+fn block_lambda_result_identity(
+    db: &dyn Db,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    body: AstNodeKey,
+) -> Result<GenericSourceTypeIdentity, SemanticError> {
+    use beskid_analysis::syntax_query::NodeKind;
+    let mut pending = vec![body.node];
+    let mut values = Vec::new();
+    while let Some(node) = pending.pop() {
+        for child in index.children(node).unwrap_or_default().iter().copied() {
+            match index.kind(child) {
+                Some(NodeKind::LambdaExpression) => {}
+                Some(NodeKind::ReturnStatement) => {
+                    if let Some(value) = index.children(child).and_then(|children| children.first().copied()) {
+                        values.push(AstNodeKey { node: normalized_expression_node(index, value), ..body });
+                    }
+                }
+                _ => pending.push(child),
+            }
+        }
+    }
+    let mut result: Option<GenericSourceTypeIdentity> = None;
+    for value in values {
+        let identity = match generic_source_expression_identity(db, value) {
+            Ok(identity @ (GenericSourceTypeIdentity::Nominal { .. }
+            | GenericSourceTypeIdentity::Array(_)
+            | GenericSourceTypeIdentity::Function { .. })) => identity,
+            Ok(GenericSourceTypeIdentity::Abi(_)) | Err(_) => GenericSourceTypeIdentity::Abi(
+                value_abi_type(db, value)?
+                    .ok_or_else(|| source_expression_unavailable(db, value, "lambda return has no value type"))?,
+            ),
+        };
+        match &result {
+            None => result = Some(identity),
+            Some(previous) if *previous == identity => {}
+            Some(_) => {
+                return Err(source_expression_unavailable(db, value, "lambda returns values of different types"));
+            }
+        }
+    }
+    Ok(result.unwrap_or(GenericSourceTypeIdentity::Abi(SemanticTypeId::UNIT)))
 }
 
 /// The parameter and result identities of the function type a lambda's position declares, when

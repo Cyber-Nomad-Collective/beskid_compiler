@@ -183,7 +183,10 @@ impl SemanticIssueKind {
             Self::TypeMissingTypeAnnotation { name } => {
                 format!("missing type annotation for `{name}`")
             }
-            Self::TypeMissingTypeArguments => "missing type arguments for generic type".to_string(),
+            Self::TypeMissingTypeArguments { parameter: None } => "missing type arguments for generic type".to_string(),
+            Self::TypeMissingTypeArguments { parameter: Some(parameter) } => {
+                format!("cannot infer type parameter `{parameter}` of this call")
+            }
             Self::TypeGenericArgumentMismatch { expected, actual } => {
                 format!("generic argument mismatch: expected {expected}, got {actual}")
             }

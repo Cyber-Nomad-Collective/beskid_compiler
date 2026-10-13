@@ -359,7 +359,7 @@ Parameter = { AttributeList? ~ BulkKeyword? ~ MutKeyword? ~ BeskidType ~ Identif
 
 FieldList = { FieldWithDocs ~ ("," ~ DocGap* ~ FieldWithDocs)* ~ ","? }
 FieldWithDocs = { (DocRun ~ Field) | Field }
-ValueField = { BeskidType ~ Identifier ~ !"(" }
+ValueField = { BeskidType ~ Identifier ~ !("(" | "<") }
 EventCapacity = { "{" ~ IntegerLiteral ~ "}" }
 EventField = { KwEvent ~ EventCapacity? ~ Identifier ~ "(" ~ ParameterList? ~ ")" }
 InjectQualifier = { (KwGlobal | KwParent) ~ "::" }

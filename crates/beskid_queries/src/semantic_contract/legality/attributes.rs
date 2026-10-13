@@ -194,7 +194,7 @@ pub fn resolve_attribute_use(db: &dyn Db, root: AstNodeKey, name: &str) -> Attri
             .get(&(root.unit, generation))
             .map(|imports| imports.iter().map(|import| import.target).collect::<Vec<_>>())
             .unwrap_or_default();
-        let mut all_units = registry
+        let all_units = registry
             .modules
             .iter()
             .filter(|((module_generation, _), _)| *module_generation == generation)

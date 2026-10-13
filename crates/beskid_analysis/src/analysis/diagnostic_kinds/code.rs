@@ -78,7 +78,7 @@ impl SemanticIssueKind {
             Self::TypeUnknownEnumVariant { .. } => "E1301",
             Self::TypeMissingStructField { .. } => "E1212",
             Self::TypeMissingTypeAnnotation { .. } => "E1202",
-            Self::TypeMissingTypeArguments => "E1203",
+            Self::TypeMissingTypeArguments { .. } => "E1203",
             Self::TypeGenericArgumentMismatch { .. } => "E1204",
             Self::TypeGenericParameterConflict { .. } => "E1229",
             Self::TypeMismatch { .. } => "E1206",

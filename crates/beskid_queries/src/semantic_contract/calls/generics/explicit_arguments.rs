@@ -186,22 +186,9 @@ pub(in crate::semantic_contract) fn type_syntax_is_enclosing_generic_parameter_r
     if let Some(function) = enclosing_node.of::<beskid_analysis::syntax::FunctionDefinition>() {
         return function.generics.iter().any(|generic| generic.node.name == parameter_name);
     }
-    // A method of `impl<E> Point : Serializable<E>` sees the impl block's own parameters, which
-    // the receiver declaration does not declare.
-    if parent_node(index, enclosing)
-        .and_then(|parent| index.node_at(program, parent))
-        .and_then(|parent| parent.of::<beskid_analysis::syntax::ImplBlock>())
-        .is_some_and(|block| block.generics.iter().any(|generic| generic.node.name == parameter_name))
-    {
-        return true;
-    }
-    let Some(owner) = method_owner_node(program, index, enclosing)
-        .and_then(|owner| index.node_at(program, owner))
-        .and_then(|owner| owner.of::<beskid_analysis::syntax::TypeDefinition>())
-    else {
-        return false;
-    };
-    owner.generics.iter().any(|generic| generic.node.name == parameter_name)
+    // A method sees its owner's type parameters and its own.
+    generic_callable_parameters(db, AstNodeKey { node: enclosing, ..key })
+        .is_some_and(|(names, _)| names.contains(&parameter_name))
 }
 
 pub(in crate::semantic_contract) fn generic_call_uses_parameter_type_arguments(
@@ -230,4 +217,27 @@ pub(in crate::semantic_contract) fn generic_call_uses_parameter_type_arguments(
             || type_syntax_is_generic_parameter_reference(&argument.node, generic)
             || type_syntax_is_enclosing_generic_parameter_reference(db, key, &argument.node)
     })
+}
+
+/// The explicit type arguments written on a method call's member name: the last segment of a
+/// path callee (`s.Spawn<i64>(...)`) or a member access (`values.Parallel().Map<i64>(...)`).
+pub(in crate::semantic_contract) fn call_explicit_member_type_arguments(
+    db: &dyn Db,
+    key: AstNodeKey,
+) -> Option<Vec<beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Type>>> {
+    let syntax = db.syntax_unit(key.unit).filter(|syntax| syntax.accepts_key(db, key))?;
+    let call = syntax
+        .syntax_index(db)
+        .node_at(syntax.expanded_program(db), key.node)?
+        .of::<beskid_analysis::syntax::CallExpression>()?;
+    let mut callee = &call.callee.node;
+    while let beskid_analysis::syntax::Expression::Grouped(grouped) = callee {
+        callee = &grouped.node.expr.node;
+    }
+    let arguments = match callee {
+        beskid_analysis::syntax::Expression::Path(path) => &path.node.path.node.segments.last()?.node.type_args,
+        beskid_analysis::syntax::Expression::Member(member) => &member.node.type_args,
+        _ => return None,
+    };
+    (!arguments.is_empty()).then(|| arguments.clone())
 }

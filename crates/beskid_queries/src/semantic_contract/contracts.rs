@@ -1526,20 +1526,23 @@ pub(super) fn declared_where_bounds(
     let (parameters, bounds, scope) = if let Some(function) = node.of::<FunctionDefinition>() {
         (
             function.parameters.as_slice(),
-            function.where_bounds.as_slice(),
+            function.where_bounds.iter().collect::<Vec<_>>(),
             function.generics.iter().map(|generic| generic.node.name.as_str()).collect::<Vec<_>>(),
         )
     } else if let Some(method) = node.of::<MethodDefinition>() {
-        let Some(block) = nearest_ancestor(index, declaration.node, |kind| kind == NodeKind::ImplBlock)
+        // An `impl` block's bounds and the method's own bounds, which may name the owner's
+        // type parameters and the method's own.
+        let block_bounds = nearest_ancestor(index, declaration.node, |kind| kind == NodeKind::ImplBlock)
             .and_then(|parent| index.node_at(program, parent))
             .and_then(|node| node.of::<ImplBlock>())
-        else {
-            return Ok(Vec::new());
-        };
+            .map(|block| block.where_bounds.iter().collect::<Vec<_>>())
+            .unwrap_or_default();
+        let mut bounds = block_bounds;
+        bounds.extend(method.where_bounds.iter());
         (
             method.parameters.as_slice(),
-            block.where_bounds.as_slice(),
-            block.generics.iter().map(|generic| generic.node.name.as_str()).collect::<Vec<_>>(),
+            bounds,
+            generic_callable_parameters(db, declaration).map(|(names, _)| names).unwrap_or_default(),
         )
     } else {
         return Ok(Vec::new());

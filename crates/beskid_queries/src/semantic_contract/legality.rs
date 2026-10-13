@@ -452,7 +452,7 @@ pub fn check_items(db: &dyn Db, items: &[AstNodeKey]) -> Result<(), Vec<Semantic
                 UnresolvedCallKind::UnknownModulePath { path } => {
                     SemanticIssueKind::ResolveUnknownModulePath { path: path.to_string() }
                 }
-                UnresolvedCallKind::MissingTypeArguments => SemanticIssueKind::TypeMissingTypeArguments,
+                UnresolvedCallKind::MissingTypeArguments => SemanticIssueKind::TypeMissingTypeArguments { parameter: None },
                 UnresolvedCallKind::PrivateBuiltin { name } => {
                     SemanticIssueKind::ResolvePrivateRuntimeBuiltin { name: name.to_string() }
                 }
@@ -807,6 +807,147 @@ mod tests {
         assert!(!super::resolve_attribute_use(&db, root, "Immutable").is_recognized());
         let (db, root) = one_unit_assembly("pub type Point { i64 x }", SyntaxGenerationId(6113));
         assert!(super::resolve_attribute_use(&db, root, "Immutable").is_recognized());
+    }
+
+    fn nodes_of_kind(db: &dyn Db, key: AstNodeKey, kind: IndexedNodeKind, found: &mut Vec<AstNodeKey>) {
+        if node_kind(db, key).expect("node kind") == Some(kind) {
+            found.push(key);
+        }
+        if let Some(children) = child_nodes(db, key).expect("child nodes") {
+            for child in children.iter().copied() {
+                nodes_of_kind(db, child, kind, found);
+            }
+        }
+    }
+
+    /// Every finding of `check_items` over every function and method plus the substitutions of
+    /// each call in the last function.
+    fn method_generic_report(source: &str, generation: u64) -> (Vec<(String, String)>, Vec<String>) {
+        let (db, root) = one_unit_assembly(source, SyntaxGenerationId(generation));
+        let mut items = Vec::new();
+        nodes_of_kind(&db, root, IndexedNodeKind::FunctionDefinition, &mut items);
+        nodes_of_kind(&db, root, IndexedNodeKind::MethodDefinition, &mut items);
+        let mut findings = super::check_items(&db, &items)
+            .err()
+            .unwrap_or_default()
+            .into_iter()
+            .map(|finding| (finding.kind.code().to_string(), finding.kind.message()))
+            .collect::<Vec<_>>();
+        findings.extend(
+            super::check_gate_obligations(&db, &items)
+                .into_iter()
+                .map(|finding| (finding.kind.code().to_string(), finding.kind.message())),
+        );
+        let last = *function_definitions(&db, root).last().expect("function");
+        let mut calls = Vec::new();
+        nodes_of_kind(&db, last, IndexedNodeKind::CallExpression, &mut calls);
+        let substitutions = calls
+            .into_iter()
+            .map(|call| format!("{:?} => {}", call_lowering(&db, call).map(|lowering| lowering.map(|l| format!("{l:?}").chars().take(40).collect::<String>())), match generic_call_specialization(&db, call) {
+                Ok(Some(specialization)) => specialization
+                    .substitutions
+                    .iter()
+                    .map(|binding| format!("{}={}", binding.parameter, binding.argument.display_name()))
+                    .collect::<Vec<_>>()
+                    .join(","),
+                Ok(None) => "none".to_string(),
+                Err(error) => format!("error: {error}"),
+            }))
+            .collect();
+        (findings, substitutions)
+    }
+
+    const BOX: &str = "pub type Box<T> { T item, \
+        pub U Apply<U>((T) => U f) { return f(this.item); } \
+        pub Box<U> Map<U>((T) => U f) { return Box<U> { item: f(this.item) }; } } ";
+
+    const SCOPE: &str = "pub type Task<T> { T value } pub enum Outcome<T> { Done(T value), Failed(string reason) } \
+        pub type Scope { i64 id, \
+        pub Task<T> Spawn<T>(() => T body) { return Task<T> { value: body() }; } \
+        pub i64 SpawnTry<T>(() => Outcome<T> body) { return 0_i64; } } ";
+    const SEQ: &str = "pub contract Folder<T> { T Add(T a, T b); } \
+        pub type AddAll : Folder<i64> { i64 unused, pub i64 Add(i64 a, i64 b) { return a + b; } } \
+        pub type Plain { i64 x } \
+        pub contract Shown { i64 Show(); } \
+        pub type Label : Shown { i64 x, pub i64 Show() { return this.x; } } \
+        pub type Cell<T> { T value, pub T Read() where T: Shown { return this.value; } } \
+        pub type Seq<T> { T[] items, pub T Fold<C>(T seed, C combiner) where C: Folder<T> { return seed; } } \
+        pub T Pick<T>(T a, T b) { return a; } ";
+    const CLASH: &str = "pub type Clash<T> { T value, pub T Same<T>(T other) { return other; } } ";
+
+    fn assert_method_call(source: &str, generation: u64, findings: &[&str], substitutions: &[&str]) {
+        let (actual_findings, actual_substitutions) = method_generic_report(source, generation);
+        let codes = actual_findings.iter().map(|(code, _)| code.as_str()).collect::<Vec<_>>();
+        assert_eq!(codes, findings, "{source}: {actual_findings:?}");
+        for (expected, actual) in substitutions.iter().zip(actual_substitutions.iter()) {
+            assert!(actual.ends_with(&format!("=> {expected}")), "{source}: expected {expected}, got {actual}");
+        }
+    }
+
+    #[test]
+    fn generic_methods_bind_explicit_type_arguments_on_paths_and_member_accesses() {
+        let main = "i64 Main() { Box<bool> b = Box<bool> { item: true }; return b.Apply<i64>((bool s) => 3_i64); }";
+        assert_method_call(&format!("{BOX}{main}"), 6200, &[], &["T=bool,U=i64"]);
+        let chain =
+            "Box<bool> Twice(Box<i64> b) { return b.Map<i64>((i64 x) => x * 2_i64).Map<bool>((i64 y) => y > 2_i64); }";
+        assert_method_call(&format!("{BOX}{chain}"), 6201, &[], &["T=i64,U=bool", "T=i64,U=i64"]);
+        let wrong = "i64 Main() { Box<bool> b = Box<bool> { item: true }; return b.Apply<i64, bool>((bool s) => 3_i64); }";
+        assert_method_call(&format!("{BOX}{wrong}"), 6202, &["E1204"], &[]);
+    }
+
+    #[test]
+    fn method_type_arguments_are_inferred_from_receiver_arguments_and_lambda_results() {
+        for (offset, main) in [
+            "i64 Main() { Box<bool> b = Box<bool> { item: true }; return b.Apply((bool s) => 3_i64); }",
+            "i64 Main() { Box<bool> b = Box<bool> { item: true }; return b.Apply((s) => 3_i64); }",
+            "i64 Main() { Box<bool> b = Box<bool> { item: true }; return b.Apply((s) => { return 7_i64; }); }",
+        ]
+        .iter()
+        .enumerate()
+        {
+            assert_method_call(&format!("{BOX}{main}"), 6203 + offset as u64, &[], &["T=bool,U=i64"]);
+        }
+        let spawn = format!("{SCOPE}i64 Main(Scope s) {{ Task<i64> t = s.Spawn(() => 20_i64); return t.value; }}");
+        assert_method_call(&spawn, 6300, &[], &["T=i64"]);
+        let block = format!(
+            "{SCOPE}i64 Main(Scope s) {{ Task<i64> t = s.Spawn(() => {{ i64 a = 3_i64; return 7_i64; }}); return t.value; }}"
+        );
+        assert_method_call(&block, 6301, &[], &["T=i64"]);
+        let bare = format!("{SCOPE}i32 Main(Scope s) {{ Task<i32> t = s.Spawn(() => 20); return t.value; }}");
+        assert_method_call(&bare, 6310, &[], &["T=i32"]);
+        let fold = format!("{SEQ}i64 Main(Seq<i64> numbers) {{ return numbers.Fold(0_i64, AddAll {{ unused: 0_i64 }}); }}");
+        assert_method_call(&fold, 6304, &[], &["T=i64,C=pointer"]);
+    }
+
+    #[test]
+    fn method_type_argument_inference_failures_are_reported() {
+        let unresolved = format!("{SCOPE}i64 Main(Scope s) {{ return s.SpawnTry(() => Outcome::Failed(\"no input\")); }}");
+        let (findings, _) = method_generic_report(&unresolved, 6302);
+        assert_eq!(findings.len(), 1, "{findings:?}");
+        assert_eq!(findings[0].0, "E1203");
+        assert!(findings[0].1.contains("`T`"), "{findings:?}");
+        let explicit = format!("{SCOPE}i64 Main(Scope s) {{ return s.SpawnTry<i64>(() => Outcome::Failed(\"no input\")); }}");
+        assert_method_call(&explicit, 6303, &[], &["T=i64"]);
+        let conflict = format!("{SEQ}i64 Main() {{ return Pick(1_i64, true); }}");
+        let (findings, _) = method_generic_report(&conflict, 6308);
+        assert_eq!(findings.iter().map(|(code, _)| code.as_str()).collect::<Vec<_>>(), ["E1229"]);
+        assert!(findings[0].1.contains("i64") && findings[0].1.contains("bool"));
+        let clash = format!("{CLASH}i64 Main(Clash<i64> c) {{ return c.Same(1_i64); }}");
+        assert_method_call(&clash, 6309, &["E1229"], &[]);
+    }
+
+    #[test]
+    fn method_where_bounds_are_proven_at_the_call() {
+        let own = format!("{SEQ}i64 Main(Seq<i64> numbers) {{ return numbers.Fold<Plain>(0_i64, Plain {{ x: 1_i64 }}); }}");
+        let (findings, _) = method_generic_report(&own, 6305);
+        assert_eq!(findings.iter().map(|(code, _)| code.as_str()).collect::<Vec<_>>(), ["E1610"]);
+        assert!(findings[0].1.contains("Folder"));
+        let owner = format!("{SEQ}i64 Main(Cell<Plain> c) {{ Plain p = c.Read(); return p.x; }}");
+        let (findings, _) = method_generic_report(&owner, 6306);
+        assert_eq!(findings.iter().map(|(code, _)| code.as_str()).collect::<Vec<_>>(), ["E1610"]);
+        assert!(findings[0].1.contains("Shown"));
+        let satisfied = format!("{SEQ}i64 Main(Cell<Label> c) {{ Label l = c.Read(); return l.x; }}");
+        assert_method_call(&satisfied, 6307, &[], &[]);
     }
 
     fn assert_immutable_assignment(source: &str, generation: u64, item: usize, name: &str) {

@@ -214,9 +214,12 @@ impl SemanticIssueKind {
             Self::TypeMissingTypeAnnotation { name } => Some(format!(
                 "add an explicit type annotation for `{name}`, e.g. `let {name}: i32 = ...`"
             )),
-            Self::TypeMissingTypeArguments => {
+            Self::TypeMissingTypeArguments { parameter: None } => {
                 Some("provide explicit type arguments, e.g. `Type<i32>`".to_string())
             }
+            Self::TypeMissingTypeArguments { parameter: Some(parameter) } => Some(format!(
+                "write the type arguments at the call, e.g. `.Name<i64>(...)`, to bind `{parameter}`"
+            )),
             Self::TypeGenericArgumentMismatch { expected, actual } => Some(format!(
                 "the generic type expects {expected} argument(s) but got {actual}"
             )),

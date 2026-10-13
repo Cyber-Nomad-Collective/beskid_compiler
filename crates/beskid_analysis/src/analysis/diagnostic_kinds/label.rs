@@ -73,7 +73,7 @@ impl SemanticIssueKind {
             Self::TypeUnknownEnumVariant { .. } => "unknown enum variant".to_string(),
             Self::TypeMissingStructField { .. } => "missing struct field".to_string(),
             Self::TypeMissingTypeAnnotation { .. } => "missing type annotation".to_string(),
-            Self::TypeMissingTypeArguments => "missing type arguments".to_string(),
+            Self::TypeMissingTypeArguments { .. } => "missing type arguments".to_string(),
             Self::TypeGenericArgumentMismatch { .. } => "generic argument mismatch".to_string(),
             Self::TypeGenericParameterConflict { .. } => "generic parameter conflict".to_string(),
             Self::TypeMismatch { .. } => "type mismatch".to_string(),
