@@ -159,6 +159,43 @@ development log stays under [Unreleased] below.
 - Glue is selected by `glue` manifest blocks, `[GlueHandle]` and `[RustOwner]`;
   the 0.4 Glue attributes and Mod contracts are gone.
 
+### Added (0.6.1 runtime groundwork, `v061-attributes-and-isolate-prerequisites`)
+
+- Thread and atomic runtime intrinsics for the canonical runtime corpus:
+  `thread_create`, `thread_join`, `atomic_word_load`, `atomic_word_store`,
+  `atomic_word_compare_exchange`, `atomic_word_fetch_add` and `atomic_fence`
+  (order byte 0 relaxed to 4 sequentially consistent), implemented in
+  `assembly/common/host_threads.h` for Linux, macOS and Windows and wrapped in
+  `Runtime/Bootstrap/Native.bd`.
+- `host_processor_count` intrinsic and `__host_processor_count` Corelib service
+  (`sysconf(_SC_NPROCESSORS_ONLN)`, `GetActiveProcessorCount`; at least 1),
+  exposed as `Concurrency.HostProcessorCount()`. `ProcessorCount()` still
+  reports the scheduler mutator count.
+- Runtime instance lifecycle exports `beskid_rt_v5_isolate_create`,
+  `beskid_rt_v5_isolate_destroy` and `beskid_rt_v5_isolate_panic_message`.
+  `ProcessInit` now does the process-wide steps and creates the primary instance
+  through `IsolateCreate`; `ProcessShutdown` destroys it and releases the
+  process state. Exactly one instance exists per process.
+- A main-fiber panic message is copied into native storage before fiber records
+  and the heap are released, and stays readable through the instance record
+  (`BeskidRuntimeState.instance`, formerly the unused `tls_key` word).
+- Process-wide, lock-free region-to-owner map (`Runtime/Mem/Gc/RegionMap.bd`,
+  export `beskid_rt_v5_region_owner`), registered at instance creation and on
+  every heap growth.
+- `TYPE_DESCRIPTOR_IMMUTABLE = 4` descriptor property bit. The canonical string
+  record descriptor carries it; nominal descriptors carry it once the
+  transfer-class query exists. Representation checks use `TypeDescriptorKind`.
+
+### Changed
+
+- The syscall worker pool is process-wide and reference counted: the first
+  `worker_pool_init` creates the threads, later calls share them, and the last
+  `worker_pool_shutdown` stops and joins them.
+- The runtime provenance audit accepts a manifest-declared `beskid_rt_v5_*`
+  export whose name contains a forbidden family word; Rust-mangled symbols are
+  still rejected.
+
+
 ### Removed
 
 - `Core.Threading.Thread.Spawn`, `Thread.Join`, the `Thread` handle type,
