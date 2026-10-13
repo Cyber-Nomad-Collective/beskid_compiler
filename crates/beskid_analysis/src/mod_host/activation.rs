@@ -96,6 +96,49 @@ pub fn active_mod_manifests_for_input(
     active_mods(plan, &mods, &reached)
 }
 
+/// Project names of the reached dependency packages that declare a Mod directly: the **companion
+/// packages** of the Mods active for this compilation.
+///
+/// A Mod's typed contributions route only to canonical declarations of the package that ships it
+/// (the Serialization Mod's generated adapters name `Core.Serialization.Reader.Reader`,
+/// `Core.Serialization.Descriptors.CompiledShape`, ...). Those routes must not depend on which
+/// modules of that package the program happened to import, so the assembly loader adds every
+/// source unit of each companion package to an import-closure assembly (and follows their
+/// imports). The host project is never a companion: its own Mod dependencies route to the host's
+/// own sources. A Mod's own dependencies belong to that Mod's build and are never companions.
+///
+/// `reached` holds the project names of the packages with a unit in the assembly. A dependency
+/// whose manifest is not on disk (a synthetic in-memory plan) declares nothing.
+pub fn mod_companion_packages(plan: &CompilePlan, reached: &BTreeSet<String>) -> Result<BTreeSet<String>> {
+    let mut companions = BTreeSet::new();
+    let reached_dependencies = plan
+        .dependency_projects
+        .iter()
+        .filter(|dependency| reached.contains(&dependency.project_name) && dependency.manifest_path.is_file())
+        .collect::<Vec<_>>();
+    if reached_dependencies.is_empty() {
+        return Ok(companions);
+    }
+    let mut on_disk = plan.clone();
+    on_disk.dependency_projects.retain(|dependency| dependency.manifest_path.is_file());
+    let mods = plan_mods(&on_disk)?;
+    if mods.is_empty() {
+        return Ok(companions);
+    }
+    let mut seen = BTreeSet::new();
+    let mut declared = BTreeSet::new();
+    for dependency in reached_dependencies {
+        let manifest_path = canonical_manifest(&dependency.manifest_path)?;
+        if mods.contains_key(&manifest_path) || !seen.insert(manifest_path.clone()) {
+            continue;
+        }
+        if declared_mods(&manifest_path, &dependency.project_root, &mods, &mut declared)? {
+            companions.insert(dependency.project_name.clone());
+        }
+    }
+    Ok(companions)
+}
+
 /// Every `type = Mod` project of the plan, by canonical manifest path.
 fn plan_mods(plan: &CompilePlan) -> Result<BTreeMap<PathBuf, &ResolvedDependencyProject>> {
     let mut mods = BTreeMap::new();
@@ -154,15 +197,16 @@ fn active_mods(
     Ok(active.into_iter().collect())
 }
 
-/// Add the Mods that the manifest at `manifest_path` declares directly. A path dependency is
-/// identified by its resolved manifest; a registry or git dependency, which the resolver
-/// materializes under its declared name, by that name.
+/// Add the Mods that the manifest at `manifest_path` declares directly, returning whether it
+/// declares any. A path dependency is identified by its resolved manifest; a registry or git
+/// dependency, which the resolver materializes under its declared name, by that name.
 fn declared_mods(
     manifest_path: &Path,
     project_root: &Path,
     mods: &BTreeMap<PathBuf, &ResolvedDependencyProject>,
     active: &mut BTreeSet<PathBuf>,
-) -> Result<()> {
+) -> Result<bool> {
+    let mut declares_any = false;
     let manifest = load_manifest_from_path(manifest_path)
         .map_err(anyhow::Error::from)
         .with_context(|| format!("load manifest {} for Mod activation", manifest_path.display()))?;
@@ -182,10 +226,11 @@ fn declared_mods(
             };
             if declared_here {
                 active.insert(mod_manifest.clone());
+                declares_any = true;
             }
         }
     }
-    Ok(())
+    Ok(declares_any)
 }
 
 fn canonical_manifest(path: &Path) -> Result<PathBuf> {
@@ -280,6 +325,27 @@ mod tests {
             .map(|dependency| dependency.project_name.as_str())
             .collect::<Vec<_>>();
         assert_eq!(mods, ["ModA"], "a Mod's own Mod dependency (ModC) belongs to that Mod's build");
+    }
+
+    #[test]
+    fn a_reached_mod_declaring_package_joins_the_assembly_whole() {
+        let (root, plan) = workspace("use Lib.Api;\nunit Main() { Api.Touch(); return; }\n");
+        fs::write(root.path().join("Lib/Src/Lib/Routes.bd"), "pub unit Route() { return; }\n").expect("route unit");
+        let assembly = assembly(&plan);
+        let has = |suffix: &str| assembly.units.iter().any(|unit| unit.path.ends_with(suffix));
+        assert!(has("Lib/Routes.bd"), "the companion package of an active Mod joins the assembly whole");
+        assert!(!has("Facade/Api.bd"), "a package that is not reached stays out");
+        assert!(!has("ModA/Src/Mod.bd"), "a Mod's own sources never join the host assembly");
+        let reached = reached_packages(&plan, &assembly);
+        assert_eq!(mod_companion_packages(&plan, &reached).expect("companions").into_iter().collect::<Vec<_>>(), ["Lib"]);
+    }
+
+    #[test]
+    fn unreached_mod_declaring_packages_add_no_units() {
+        let (root, plan) = workspace("unit Main() { return; }\n");
+        fs::write(root.path().join("Lib/Src/Lib/Routes.bd"), "pub unit Route() { return; }\n").expect("route unit");
+        let assembly = assembly(&plan);
+        assert_eq!(assembly.units.len(), 1, "only the entry unit: {:?}", assembly.units.iter().map(|unit| &unit.path).collect::<Vec<_>>());
     }
 
     #[test]

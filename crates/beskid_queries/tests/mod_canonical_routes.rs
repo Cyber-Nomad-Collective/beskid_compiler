@@ -26,6 +26,14 @@ fn isolated_corelib_toolchain() -> &'static std::path::Path {
 }
 
 fn resolved_app(root: &std::path::Path, db: &mut BeskidDatabase) -> ResolvedInput {
+    resolved_app_with_main(
+        root,
+        db,
+        "use Core.Results;\n\ni32 Main() {\n    Result<i32, string> value = Result::Ok(1);\n    return 0;\n}\n",
+    )
+}
+
+fn resolved_app_with_main(root: &std::path::Path, db: &mut BeskidDatabase, main: &str) -> ResolvedInput {
     let app = root.join("app");
     std::fs::create_dir_all(app.join("Src")).unwrap();
     std::fs::write(
@@ -33,11 +41,7 @@ fn resolved_app(root: &std::path::Path, db: &mut BeskidDatabase) -> ResolvedInpu
         "Routes {\n  name = \"Routes\"\n  version = \"0.1.0\"\n}\n\ntarget \"App\" {\n  kind = App\n  entry = \"Main.bd\"\n}\n",
     )
     .unwrap();
-    std::fs::write(
-        app.join("Src/Main.bd"),
-        "use Core.Results;\n\ni32 Main() {\n    Result<i32, string> value = Result::Ok(1);\n    return 0;\n}\n",
-    )
-    .unwrap();
+    std::fs::write(app.join("Src/Main.bd"), main).unwrap();
     configure_db_for_project(&app);
     let resolved = resolve_input(
         Some(&app.join("Src/Main.bd")),
@@ -55,6 +59,15 @@ fn plan_result_route(
     project: beskid_queries::ProjectSession,
     assembly: &beskid_analysis::projects::ProgramAssembly,
 ) -> Result<Vec<String>, String> {
+    plan_route(db, project, assembly, "Core.Results.Result")
+}
+
+fn plan_route(
+    db: &BeskidDatabase,
+    project: beskid_queries::ProjectSession,
+    assembly: &beskid_analysis::projects::ProgramAssembly,
+    selector: &str,
+) -> Result<Vec<String>, String> {
     let authority =
         ModSemanticQueryAuthority::for_registered_assembly(db, project, assembly).map_err(|error| error.0)?;
     let issuer = 41;
@@ -64,7 +77,7 @@ fn plan_result_route(
         return Err("compilation root missing".into());
     };
     let paths = authority
-        .plan_canonical_paths(issuer, &root, &["Core.Results.Result".into()])
+        .plan_canonical_paths(issuer, &root, &[selector.into()])
         .map_err(|error| error.0)?;
     Ok(paths.into_iter().next().map(|path| path.segments).unwrap_or_default())
 }
@@ -106,5 +119,76 @@ fn mod_authority_plans_the_canonical_core_results_route() {
     assert!(
         plan_result_route(&bare_db, bare_project, &bare_assembly).is_err(),
         "without Corelib attestation the route is absent"
+    );
+}
+
+/// The Serialization Mod's generated adapters route to canonical declarations across the whole
+/// `corelib_serialization` package, the package that declares the Mod. A program that imports only
+/// `Core.Serialization.Contracts` still holds every unit of that package in its assembly, so the
+/// Mod authority plans `Core.Serialization.Reader.Reader` (and the other serialization routes)
+/// although the program never imports `Core.Serialization.Reader`.
+#[test]
+fn mod_companion_package_routes_do_not_depend_on_user_imports() {
+    isolated_corelib_toolchain();
+    let temp = tempfile::tempdir().unwrap();
+    let mut db = BeskidDatabase::default();
+    let resolved = resolved_app_with_main(
+        temp.path(),
+        &mut db,
+        "use Core.Serialization.Contracts;\n\n[Serialize]\npub type Point {\n    pub i32 x,\n    pub i32 y,\n}\n\ni32 Main() {\n    Point point = Point { x: 1, y: 2 };\n    return point.x - 1;\n}\n",
+    );
+    let assembly = Arc::new(resolved.assembly.clone().expect("assembly"));
+    for logical in [
+        "Core/Serialization/Contracts.bd",
+        "Core/Serialization/Reader.bd",
+        "Core/Serialization/Descriptors.bd",
+        "Core/Serialization/Decoding.bd",
+        "Core/Serialization/Registry.bd",
+    ] {
+        assert!(
+            assembly.units.iter().any(|unit| unit.path.ends_with(logical)),
+            "the companion package unit {logical} is in the assembly although Main imports only Contracts"
+        );
+    }
+    let plan = resolved.compile_plan.clone().expect("compile plan");
+    let project =
+        project_session_for_planned_syntax_assembly(&mut db, &assembly, &plan, &resolved.source_path, "routes".into())
+            .unwrap();
+    build_mod_authority_typed_program(&mut db, project, Arc::clone(&assembly)).expect("Mod authority program");
+    for selector in [
+        "Core.Serialization.Contracts.Serializable",
+        "Core.Serialization.Reader.Reader",
+        "Core.Serialization.Reader.ReadField",
+        "Core.Serialization.Descriptors.CompiledShape",
+        "Core.Serialization.Errors.SerializationError",
+        "Core.Serialization.Limits.SerializationLimits",
+    ] {
+        let segments = plan_route(&db, project, &assembly, selector)
+            .unwrap_or_else(|error| {
+                let units = assembly
+                    .units
+                    .iter()
+                    .filter(|unit| unit.path.to_string_lossy().contains("Serialization/"))
+                    .map(|unit| format!("{} (origin {})", unit.path.display(), unit.origin_path.display()))
+                    .collect::<Vec<_>>();
+                panic!("canonical route `{selector}` must be planned: {error}\nserialization units: {units:#?}")
+            });
+        let name = selector.rsplit('.').next().unwrap();
+        assert_eq!(segments.last().map(String::as_str), Some(name), "{selector}: {segments:?}");
+    }
+}
+
+/// A program that never reaches `corelib_serialization` does not activate the Serialization Mod,
+/// so its assembly gains none of that package's units.
+#[test]
+fn unreached_mod_companion_package_stays_out_of_the_assembly() {
+    isolated_corelib_toolchain();
+    let temp = tempfile::tempdir().unwrap();
+    let mut db = BeskidDatabase::default();
+    let resolved = resolved_app(temp.path(), &mut db);
+    let assembly = resolved.assembly.clone().expect("assembly");
+    assert!(
+        !assembly.units.iter().any(|unit| unit.path.to_string_lossy().contains("Core/Serialization/")),
+        "no serialization unit joins an assembly that never reaches corelib_serialization"
     );
 }

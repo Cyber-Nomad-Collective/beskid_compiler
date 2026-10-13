@@ -8,7 +8,7 @@ use beskid_pipeline::{PipelineObserver, compiler_stack_size, phases::PROGRAM_ASS
 use rayon::prelude::*;
 
 use super::super::discovery::resolve_module_file;
-use super::super::module_index::ModuleIndex;
+use super::super::module_index::{ModuleIndex, package_for_path};
 use super::super::unit_builder::UnitBuilder;
 use super::super::unit_cache::{disk_cache_stats, ensure_manifest};
 use super::super::roots::EffectiveCompilationRoots;
@@ -100,8 +100,20 @@ pub fn assemble_program_with_materializer(
             let mut queue = VecDeque::new();
             queue.push_back(entry_path.to_path_buf());
             queue.extend(adapter_seeds.iter().cloned());
+            let mut seeded_companions: HashSet<String> = HashSet::new();
 
-            while let Some(path) = queue.pop_front() {
+            // The closure of the entry, then of every Mod companion package it reaches, until no
+            // reached package adds a companion (see `mod_host::mod_companion_packages`).
+            loop {
+                let Some(path) = queue.pop_front() else {
+                    let companion_seeds =
+                        mod_companion_seed_paths(plan, &roots, &discovered, &mut seeded_companions)?;
+                    if companion_seeds.is_empty() {
+                        break;
+                    }
+                    queue.extend(companion_seeds);
+                    continue;
+                };
                 if discovered_sources.len() >= options.max_units {
                     return Err(AssemblyError::MaxUnits { max: options.max_units });
                 }
@@ -411,6 +423,57 @@ pub fn assemble_program_with_materializer(
         },
         plan,
     )
+}
+
+/// Every source unit of each Mod companion package the discovered units reach that has not been
+/// seeded yet, in stable order.
+///
+/// A Mod's typed contributions route to canonical declarations of the package that declares the
+/// Mod (`mod_host::mod_companion_packages`); an import-closure assembly holds that whole package,
+/// so a program that imports only `Core.Serialization.Contracts` still compiles the
+/// `Core.Serialization.Reader` the Serialization Mod's generated adapters name. A companion is
+/// seeded once; its units' imports are then followed like any other unit's.
+fn mod_companion_seed_paths(
+    plan: &CompilePlan,
+    roots: &EffectiveCompilationRoots,
+    discovered: &[PathBuf],
+    seeded: &mut HashSet<String>,
+) -> Result<Vec<PathBuf>, AssemblyError> {
+    if plan.dependency_projects.is_empty() {
+        return Ok(Vec::new());
+    }
+    let dependency_packages: HashMap<String, String> = plan
+        .dependency_projects
+        .iter()
+        .map(|dependency| (dependency.dependency_name.clone(), dependency.project_name.clone()))
+        .collect();
+    let mut reached: std::collections::BTreeSet<String> = discovered
+        .iter()
+        .map(|path| package_for_path(path, roots, &plan.project_name, &dependency_packages))
+        .collect();
+    reached.insert(plan.project_name.clone());
+    let companions = crate::mod_host::mod_companion_packages(plan, &reached)
+        .map_err(|error| AssemblyError::ModCompanionPackages { message: format!("{error:#}") })?;
+    let mut seeds = Vec::new();
+    for companion in companions {
+        if !seeded.insert(companion.clone()) {
+            continue;
+        }
+        for entry in roots.dependencies.iter().filter(|entry| {
+            entry.dependency_name.as_ref().and_then(|name| dependency_packages.get(name)) == Some(&companion)
+        }) {
+            let mut paths = Vec::new();
+            collect_bd_files(&entry.source_root, &mut paths);
+            if let Some(generated_root) = entry.source_root.parent().map(|parent| parent.join(".generated"))
+                && generated_root.is_dir()
+            {
+                collect_bd_files(&generated_root, &mut paths);
+            }
+            paths.sort();
+            seeds.extend(paths);
+        }
+    }
+    Ok(seeds)
 }
 
 /// Owner library labels of the plan manifest's `glue` blocks, in declaration order. A plan

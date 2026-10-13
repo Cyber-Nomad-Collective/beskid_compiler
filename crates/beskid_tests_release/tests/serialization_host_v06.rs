@@ -253,6 +253,40 @@ fn ser02_installed_check_rejects_pointer_field_at_declaration_span() {
 }
 
 // ---------------------------------------------------------------------------------------------
+// Serialization Mod routes independent of user imports
+
+/// The Serialization Mod's generated adapters name canonical declarations of the whole
+/// `corelib_serialization` package (`Core.Serialization.Reader.Reader`, descriptors, errors). A
+/// program whose only `use` is `Core.Serialization.Contracts` must build and run: the package that
+/// declares the Mod joins the compilation whole, whatever the program imported.
+#[test]
+fn ser_contracts_only_import_builds_runs_and_round_trips_bsol() {
+    let cli = Cli::qualified();
+    let home = Home::new();
+    let declaration = "use Core.Serialization.Contracts;\n\n[Serialize]\npub type Point {\n    pub i32 x,\n    pub i32 y,\n}\n\n";
+    let plain = format!("{declaration}i32 Main() {{\n    Point point = Point {{ x: 3_i32, y: 4_i32 }};\n    if (point.x + point.y == 7_i32) {{ return 0; }}\n    return 1;\n}}\n");
+    let manifest = write_app(&home.work(), "ContractsOnly", &plain);
+    let output = run(cli, &home, &["run", "--offline", "--plain", "--project", path_text(&manifest)]);
+    assert!(
+        output.status.success(),
+        "a [Serialize] record in a program importing only Contracts must compile its generated adapters and run:\n{}",
+        transcript(&output)
+    );
+
+    // BSOL round trip through fully qualified paths; the only `use` is still Contracts.
+    let round_trip = format!(
+        "{declaration}i32 Main() {{\n    Point original = Point {{ x: 3_i32, y: 4_i32 }};\n    Core.Serialization.Registry.ShapeRegistry table = Core.Serialization.Registry.Create();\n    if (!Core.Results.IsOk(Core.Serialization.Registry.RegisterCompiled<Point>(table, 1048576_i64, 8388608_i64, 100000_i64))) {{ return 1; }}\n    match Core.Bsol.Serialization.WriteTyped<Point>(original, Core.Serialization.Descriptors.CompiledShape<Point>().id, table, Core.Serialization.Limits.DefaultLimits()) {{\n        Core.Results.Result::Error(_) => {{ return 2; }},\n        Core.Results.Result::Ok(text) => {{\n            match Core.Bsol.Serialization.Read<Point>(text, Core.Serialization.Limits.DefaultLimits()) {{\n                Core.Results.Result::Error(_) => {{ return 3; }},\n                Core.Results.Result::Ok(decoded) => {{\n                    if (decoded.x == 3_i32 && decoded.y == 4_i32) {{ return 0; }}\n                    return 4;\n                }},\n            }};\n        }},\n    }};\n    return 5;\n}}\n"
+    );
+    let manifest = write_app(&home.work(), "ContractsRoundTrip", &round_trip);
+    let output = run(cli, &home, &["run", "--offline", "--plain", "--project", path_text(&manifest)]);
+    assert!(
+        output.status.success(),
+        "the generated adapters of a Contracts-only program must round-trip the record through BSOL (exit 1 register, 2 write, 3 read, 4 value):\n{}",
+        transcript(&output)
+    );
+}
+
+// ---------------------------------------------------------------------------------------------
 // MOD-06-01 Required native failure, real native generator
 
 #[test]

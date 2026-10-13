@@ -9,7 +9,17 @@ pub fn package_for_unit(
     host_project_name: &str,
     dependency_packages: &HashMap<String, String>,
 ) -> String {
-    let path = &unit.path;
+    package_for_path(&unit.path, roots, host_project_name, dependency_packages)
+}
+
+/// Declaring package name of the source file at `path`: the package whose effective source root
+/// holds it, by project name (the host project when no dependency root holds it).
+pub fn package_for_path(
+    path: &Path,
+    roots: &EffectiveCompilationRoots,
+    host_project_name: &str,
+    dependency_packages: &HashMap<String, String>,
+) -> String {
     if path.starts_with(&roots.host.source_root) {
         return host_project_name.to_string();
     }

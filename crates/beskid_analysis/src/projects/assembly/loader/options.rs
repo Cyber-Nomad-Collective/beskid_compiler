@@ -43,6 +43,8 @@ pub enum AssemblyError {
     /// A module path the import closure needs is provided by more than one package (E1104).
     #[error("{0}")]
     AmbiguousModulePath(#[from] super::super::discovery::AmbiguousModulePath),
+    #[error("cannot determine the Mod companion packages of the assembly: {message}")]
+    ModCompanionPackages { message: String },
     #[error("native Mod build requires the compiler SDK adapter source {path}: {message}")]
     NativeModAdapterSource { path: PathBuf, message: String },
 }

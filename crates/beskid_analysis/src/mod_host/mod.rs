@@ -5,7 +5,7 @@
 //! See `site/website/src/content/docs/platform-spec/compiler/compiler-mods/`.
 
 mod activation;
-pub use activation::{active_mod_manifests, active_mod_manifests_for_input, active_mod_plan};
+pub use activation::{active_mod_manifests, active_mod_manifests_for_input, active_mod_plan, mod_companion_packages};
 mod analyze;
 mod api;
 mod capabilities;
