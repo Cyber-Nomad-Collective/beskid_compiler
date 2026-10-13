@@ -9,11 +9,18 @@
  *   completion packet, also after CancelIoEx. CancelIoEx is a request, not a result.
  * - The final status of the operation exists only in that dequeued packet.
  * - A runtime cancel (deadline or fiber cancellation winner) therefore SETTLES the
- *   operation: it issues CancelIoEx and waits until the reactor dequeues the packet.
- *   The packet result is written to the request, so a transfer that completed before
- *   the cancel took effect wins over the deadline, as on the readiness backends.
+ *   operation: it issues CancelIoEx and waits, for at most BESKID_SETTLE_WAIT_MS, until
+ *   the reactor dequeues the packet. The packet result is written to the request, so a
+ *   transfer that completed before the cancel took effect wins over the deadline, as on
+ *   the readiness backends.
+ * - When the bound expires first, the operation is ABANDONED: the request is detached
+ *   with a cancelled status, and the operation (OVERLAPPED, native buffer, accept
+ *   socket) stays in its socket slot, owned by the reactor, until its packet arrives.
+ *   The slot rejects new operations of that direction as busy meanwhile. A late packet
+ *   that moved stream bytes poisons the socket, because the caller was told that
+ *   nothing moved.
  * - A native close ORPHANS the operation: the close winner is already decided, and the
- *   packet only releases the OVERLAPPED storage. */
+ *   packet only releases the OVERLAPPED storage. Closing the handle forces the packet. */
 #ifndef BESKID_NATIVE_NETWORK_SETTLE_H
 #define BESKID_NATIVE_NETWORK_SETTLE_H
 #include <stddef.h>
@@ -25,6 +32,17 @@
 #define BESKID_SETTLE_ERROR_NOT_FOUND 1168u
 #define BESKID_SETTLE_WSAEMSGSIZE 10040u
 
+/* Upper bound of one settling cancel. Winsock (AFD) completes a cancelled receive,
+ * send, AcceptEx, or ConnectEx at once, so the bound is reached only when the reactor
+ * thread is starved or a layered provider withholds the packet. The settling cancel
+ * holds the runtime network table lock, so the bound also limits how long other
+ * network calls of the process wait behind it. */
+#define BESKID_SETTLE_WAIT_MS 250u
+/* Upper bound of the reactor drain at shutdown, after every socket handle is closed
+ * (which forces the packet of each remaining operation). Operations still pending
+ * after it are leaked by design together with the reactor (see network_iocp.h). */
+#define BESKID_SETTLE_DRAIN_MS 2000u
+
 /* Mirrors NET_CONNECT..NET_SEND in network.h; network_iocp.h asserts parity. */
 enum { BESKID_SETTLE_CONNECT = 1, BESKID_SETTLE_ACCEPT, BESKID_SETTLE_READ, BESKID_SETTLE_WRITE,
   BESKID_SETTLE_RECEIVE, BESKID_SETTLE_SEND };
@@ -33,7 +51,9 @@ enum { BESKID_SETTLE_CONNECT = 1, BESKID_SETTLE_ACCEPT, BESKID_SETTLE_READ, BESK
 enum BeskidSettleState {
   BESKID_SETTLE_IN_FLIGHT = 0, /* request attached; packet result is delivered and posted */
   BESKID_SETTLE_SETTLING,      /* request attached; a cancel waits for the packet */
-  BESKID_SETTLE_ORPHANED       /* request detached; packet only frees native storage */
+  BESKID_SETTLE_ORPHANED,      /* request detached, socket closed; packet only frees native storage */
+  BESKID_SETTLE_ABANDONED      /* request detached after the settle bound; operation keeps its
+                                  socket slot until the packet; packet decides stream sync */
 };
 
 /* What one dequeued packet means for the operation. */
@@ -84,13 +104,52 @@ static inline int BeskidSettleDelivery(int state) {
   return BESKID_SETTLE_DISCARD;
 }
 
-/* Runtime cancel on an attached operation always settles; it never orphans, because
- * only the packet holds the final status. Native close orphans. Other states are final. */
+/* Runtime cancel on an attached operation settles first, because only the packet holds
+ * the final status. Native close orphans an in-flight or abandoned operation. A settling
+ * operation stays settling on close: its cancel still waits for the packet, which the
+ * closed handle forces. The settle bound turns a settling operation into an abandoned one. */
 static inline int BeskidSettleOnCancel(int state) {
   return state == BESKID_SETTLE_IN_FLIGHT ? BESKID_SETTLE_SETTLING : state;
 }
 static inline int BeskidSettleOnClose(int state) {
-  return state == BESKID_SETTLE_IN_FLIGHT ? BESKID_SETTLE_ORPHANED : state;
+  return state == BESKID_SETTLE_IN_FLIGHT || state == BESKID_SETTLE_ABANDONED ? BESKID_SETTLE_ORPHANED : state;
+}
+static inline int BeskidSettleOnExpire(int state) {
+  return state == BESKID_SETTLE_SETTLING ? BESKID_SETTLE_ABANDONED : state;
+}
+
+/* Bounded settle wait. The transport supplies the clock (milliseconds), the settled test,
+ * and a wait that releases its lock for at most the given time; spurious and unrelated
+ * wakes are allowed. Returns 1 when the packet was delivered, 0 when the bound expired
+ * first. The caller holds its lock on entry and on return, so the result and the
+ * operation state cannot change between the last test and the state transition. */
+struct BeskidSettleWait {
+  void *context;
+  uint64_t (*now)(void *context);
+  int (*settled)(void *context);
+  void (*wait)(void *context, uint32_t milliseconds);
+};
+static inline int BeskidSettleAwait(const struct BeskidSettleWait *wait, uint32_t bound) {
+  uint64_t start = wait->now(wait->context);
+  for (;;) {
+    if (wait->settled(wait->context)) return 1;
+    uint64_t elapsed = wait->now(wait->context) - start;
+    if (elapsed >= bound) return 0;
+    wait->wait(wait->context, (uint32_t)(bound - elapsed));
+  }
+}
+
+/* A late packet of an abandoned operation. The caller already received a cancelled
+ * status, so any transfer it reports was not delivered. For a stream that breaks the
+ * byte order: received bytes are gone from the socket, sent bytes reached the peer, and
+ * a late connect left a connection the caller treats as timed out. The socket is then
+ * poisoned and fails every later operation. End of stream (a zero-byte read) and an
+ * abort leave the stream intact. Datagram loss is within UDP semantics, and a late
+ * accepted connection is closed with the operation, which the peer sees as a reset. */
+static inline int BeskidSettleAbandonedPoisons(uintptr_t operation, struct BeskidSettleOutcome outcome) {
+  if (!BeskidSettleCompleted(outcome)) return 0;
+  if (operation == BESKID_SETTLE_CONNECT) return 1;
+  return (operation == BESKID_SETTLE_READ || operation == BESKID_SETTLE_WRITE) && outcome.count > 0;
 }
 
 /* CancelIoEx result handling: success, or ERROR_NOT_FOUND (the operation already

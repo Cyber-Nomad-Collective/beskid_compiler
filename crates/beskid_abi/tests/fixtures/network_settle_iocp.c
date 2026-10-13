@@ -4,7 +4,16 @@
  *      deadline wins: CancelIoEx fails with ERROR_NOT_FOUND and the dequeued packet
  *      reports success with the byte, which the settlement rules deliver;
  *   B. a receive with no data is cancelled: the packet reports ERROR_OPERATION_ABORTED
- *      with zero bytes, and the stream data sent afterwards is not consumed by it. */
+ *      with zero bytes, and the stream data sent afterwards is not consumed by it;
+ *   C. the bounded settle wait (BeskidSettleAwait over GetTickCount64 and an SRW
+ *      condition variable, as in network_iocp.h) expires when nobody dequeues the
+ *      packet, within the bound plus timer slack; the abandoned operation's packet is
+ *      still queued afterwards, its OVERLAPPED and buffer intact, and a late transfer
+ *      is recognised as stream poison;
+ *   D. closesocket on a socket with a pending receive forces its packet, which is what
+ *      the bounded shutdown drain relies on.
+ * Run on Windows (Woodpecker windows pipeline runs `cargo test --workspace`):
+ *   cd compiler && cargo test --locked -p beskid_abi --test network_iocp_settle */
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #include <windows.h>
@@ -20,6 +29,15 @@ static int WaitCompleted(OVERLAPPED *overlapped) {
     Sleep(1);
   }
   return 0;
+}
+
+static SRWLOCK settleLock = SRWLOCK_INIT;
+static CONDITION_VARIABLE settleCondition = CONDITION_VARIABLE_INIT;
+static uint64_t SettleNow(void *context) { (void)context; return GetTickCount64(); }
+static int SettleNever(void *context) { return *(volatile int *)context; }
+static void SettleSleep(void *context, uint32_t milliseconds) {
+  (void)context;
+  SleepConditionVariableSRW(&settleCondition, &settleLock, milliseconds, 0);
 }
 
 int main(void) {
@@ -86,7 +104,47 @@ int main(void) {
   ok = GetQueuedCompletionStatus(port, &bytes, &key, &dequeued, 5000);
   CHECK(ok && dequeued == &overlapped && bytes == 1 && byte == 'y', 37, "cancelled receive consumed no data");
 
-  closesocket(server); closesocket(client); closesocket(listener); CloseHandle(port); WSACleanup();
+  /* C. Bounded settle: data arrives, the receive completes in the kernel, the cancel is
+   *    issued, and no reactor dequeues. The wait expires within the bound; the packet
+   *    is still queued and reports the transfer, which an abandoned operation turns
+   *    into stream poison. The OVERLAPPED and buffer were never released meanwhile. */
+  char late = 0;
+  WSABUF lateBuffer = {1, &late};
+  memset(&overlapped, 0, sizeof(overlapped)); bytes = 0; flags = 0;
+  result = WSARecv(server, &lateBuffer, 1, &bytes, &flags, &overlapped, NULL);
+  CHECK(result == SOCKET_ERROR && WSAGetLastError() == WSA_IO_PENDING, 40, "receive C is pending");
+  CHECK(send(client, "z", 1, 0) == 1, 41, "send C");
+  CHECK(WaitCompleted(&overlapped), 42, "receive C completes in the kernel");
+  cancelled = CancelIoEx((HANDLE)server, &overlapped);
+  CHECK(BeskidSettleCancelAccepted(cancelled != 0, cancelled ? 0u : (uint32_t)GetLastError()), 43, "cancel C accepted");
+  int delivered = 0;
+  struct BeskidSettleWait wait = {&delivered, SettleNow, SettleNever, SettleSleep};
+  AcquireSRWLockExclusive(&settleLock);
+  uint64_t start = GetTickCount64();
+  int settled = BeskidSettleAwait(&wait, BESKID_SETTLE_WAIT_MS);
+  uint64_t elapsed = GetTickCount64() - start;
+  ReleaseSRWLockExclusive(&settleLock);
+  CHECK(!settled, 44, "settle wait expires without a reactor");
+  CHECK(elapsed >= BESKID_SETTLE_WAIT_MS && elapsed < BESKID_SETTLE_WAIT_MS + 1000u, 45, "settle wait is bounded");
+  dequeued = NULL; bytes = 0;
+  ok = GetQueuedCompletionStatus(port, &bytes, &key, &dequeued, 5000);
+  error = ok ? 0 : GetLastError();
+  CHECK(dequeued == &overlapped && late == 'z', 46, "abandoned packet is still queued with its transfer");
+  outcome = BeskidSettleClassify(BESKID_SETTLE_READ, (uint32_t)error, bytes, 1);
+  CHECK(BeskidSettleAbandonedPoisons(BESKID_SETTLE_READ, outcome), 47, "late stream transfer poisons");
+
+  /* D. Closing the handle forces the packet of a pending receive (shutdown drain). */
+  memset(&overlapped, 0, sizeof(overlapped)); bytes = 0; flags = 0;
+  result = WSARecv(server, &lateBuffer, 1, &bytes, &flags, &overlapped, NULL);
+  CHECK(result == SOCKET_ERROR && WSAGetLastError() == WSA_IO_PENDING, 50, "receive D is pending");
+  CHECK(closesocket(server) == 0, 51, "close D");
+  dequeued = NULL; bytes = 0;
+  ok = GetQueuedCompletionStatus(port, &bytes, &key, &dequeued, BESKID_SETTLE_DRAIN_MS);
+  CHECK(!ok && dequeued == &overlapped && bytes == 0, 52, "closed handle forces the packet within the drain bound");
+  outcome = BeskidSettleClassify(BESKID_SETTLE_READ, (uint32_t)GetLastError(), bytes, 1);
+  CHECK(!BeskidSettleCompleted(outcome), 53, "forced packet reports no transfer");
+
+  closesocket(client); closesocket(listener); CloseHandle(port); WSACleanup();
   printf("iocp-settle=ok\n");
   return 0;
 }

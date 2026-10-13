@@ -13,6 +13,7 @@ struct BeskidNativeSocket {
   struct BeskidNetworkReactor *reactor;
   SOCKET socket;
   int family, kind;
+  int poisoned; /* a late packet of an abandoned stream operation moved bytes */
   struct BeskidNetworkOperation *read, *write;
 };
 struct BeskidNetworkOperation {
@@ -95,32 +96,59 @@ static void BeskidNetworkDetach(struct BeskidNetworkOperation *operation) {
   operation->request = NULL;
 }
 /* Native close: the close winner is already decided. The request is detached at once;
- * the OVERLAPPED and buffers survive until the reactor removes the packet from IOCP. */
+ * the OVERLAPPED and buffers survive until the reactor removes the packet from IOCP.
+ * A settling operation only leaves the socket slots: its cancel keeps waiting for the
+ * packet, which closing the handle forces. */
 static void BeskidNetworkOrphanLocked(struct BeskidNetworkOperation *operation) {
   if (!operation) return;
   operation->state = BeskidSettleOnClose(operation->state);
+  if (operation->state == BESKID_SETTLE_SETTLING) { BeskidNetworkUnslot(operation); return; }
   BeskidNetworkDetach(operation);
   CancelIoEx((HANDLE)operation->descriptor, &operation->overlapped);
+}
+struct BeskidNetworkSettleContext { struct BeskidNetworkRequest *request; struct BeskidNetworkOperation *operation; };
+static uint64_t BeskidNetworkSettleNow(void *context) { (void)context; return GetTickCount64(); }
+static int BeskidNetworkSettleDone(void *value) {
+  struct BeskidNetworkSettleContext *context = value;
+  return context->request->native_state != context->operation;
+}
+static void BeskidNetworkSettleSleep(void *context, uint32_t milliseconds) {
+  (void)context;
+  /* Releases beskid_network_lock while it waits; a timeout return is checked by the caller. */
+  SleepConditionVariableSRW(&beskid_network_settled, &beskid_network_lock, milliseconds, 0);
 }
 /* Runtime cancel (deadline, fiber cancellation, runtime close). CancelIoEx is only a
  * request: an operation that already completed still has its packet queued, and that
  * packet alone holds the final status. Settle by waiting, with the network lock
- * released, until the reactor delivers the packet to the request. The request status
- * is then final, which is the network_cancel contract the readiness backends meet by
- * completing under the same lock. A completed transfer therefore wins over a deadline.
- * Called with beskid_network_lock held; the operation is freed when this returns. */
+ * released, until the reactor delivers the packet to the request, for at most
+ * BESKID_SETTLE_WAIT_MS. The request status is then final, which is the network_cancel
+ * contract the readiness backends meet by completing under the same lock. A completed
+ * transfer therefore wins over a deadline.
+ *
+ * When the bound expires first, the operation is abandoned: the request is detached
+ * with NET_CANCELLED (the deadline or cancellation winner stands), and the operation
+ * stays in its socket slot, owned by the reactor, until its packet arrives. The
+ * OVERLAPPED, native buffer, and accept socket are never freed or reused before that
+ * packet, and the request buffer is never written after this returns. A new operation
+ * in that direction is rejected with NET_BUSY meanwhile, and a late stream transfer
+ * poisons the socket (BeskidSettleAbandonedPoisons).
+ * Called with beskid_network_lock held. */
 static void BeskidNetworkSettleLocked(struct BeskidNetworkOperation *operation) {
   if (!operation || !operation->request) return;
   struct BeskidNetworkRequest *request = operation->request;
   if (operation->state == BESKID_SETTLE_IN_FLIGHT) {
     operation->state = BeskidSettleOnCancel(operation->state);
-    /* Leave the socket slots; a native close can no longer orphan this operation. */
-    BeskidNetworkUnslot(operation);
     BOOL cancelled = CancelIoEx((HANDLE)operation->descriptor, &operation->overlapped);
     /* Success or ERROR_NOT_FOUND guarantees one queued packet; anything else is corruption. */
     if (!BeskidSettleCancelAccepted(cancelled != 0, cancelled ? 0u : (uint32_t)GetLastError())) beskid_rt_v5_trap(10, NULL, 0);
   }
-  while (request->native_state == operation) SleepConditionVariableSRW(&beskid_network_settled, &beskid_network_lock, INFINITE, 0);
+  struct BeskidNetworkSettleContext context = {request, operation};
+  struct BeskidSettleWait wait = {&context, BeskidNetworkSettleNow, BeskidNetworkSettleDone, BeskidNetworkSettleSleep};
+  if (BeskidSettleAwait(&wait, BESKID_SETTLE_WAIT_MS)) return;
+  /* Not delivered, so the reactor has not freed the operation: abandon it. */
+  operation->state = BeskidSettleOnExpire(operation->state);
+  request->count = 0; request->truncated = 0; request->accepted = NULL; request->status = NET_CANCELLED;
+  request->native_state = NULL; operation->request = NULL;
 }
 int32_t beskid_rt_v5_intrinsic_network_submit(void *reactor_value, void *socket_value, void *request_value) {
   struct BeskidNetworkReactor *reactor = reactor_value;
@@ -130,12 +158,13 @@ int32_t beskid_rt_v5_intrinsic_network_submit(void *reactor_value, void *socket_
   AcquireSRWLockExclusive(&beskid_network_lock);
   int status = NET_CLOSED;
   if (reactor->stopping || (socket->reactor && socket->reactor != reactor)) goto done;
+  if (socket->poisoned) { status = NET_CONNECTION_ABORTED; goto done; }
   if (!socket->reactor) {
     if (!CreateIoCompletionPort((HANDLE)socket->socket, reactor->port, 1, 0)) { status = NET_RESOURCE_EXHAUSTED; goto done; }
     socket->reactor = reactor; socket->next = reactor->sockets; reactor->sockets = socket;
   }
   struct BeskidNetworkOperation **slot = (request->operation == NET_ACCEPT || request->operation == NET_READ || request->operation == NET_RECEIVE) ? &socket->read : &socket->write;
-  if (*slot) { status = NET_BUSY; goto done; }
+  if (*slot) { status = NET_BUSY; goto done; } /* also an abandoned operation awaiting its packet */
   if (request->length > ULONG_MAX) { status = NET_MESSAGE_TOO_LARGE; goto done; }
   request->count = 0; request->truncated = 0; request->accepted = NULL; request->native_state = NULL;
   struct BeskidNetworkOperation *operation = BeskidNetworkAllocate(sizeof(*operation));
@@ -266,7 +295,12 @@ int32_t beskid_rt_v5_intrinsic_network_reactor_poll(void *value, int32_t timeout
     BeskidNetworkDetach(operation);
     if (delivery == BESKID_SETTLE_DELIVER_AND_POST) beskid_rt_v5_intrinsic_owner_post(request->owner, request->token, 1);
     else WakeAllConditionVariable(&beskid_network_settled);
+  } else if (operation->state == BESKID_SETTLE_ABANDONED && operation->socket) {
+    struct BeskidSettleOutcome outcome = BeskidSettleClassify(operation->operation, (uint32_t)error, bytes, operation->capacity);
+    if (BeskidSettleAbandonedPoisons(operation->operation, outcome)) operation->socket->poisoned = 1;
   }
+  /* An abandoned operation releases its socket slot only now. */
+  BeskidNetworkUnslot(operation);
   BeskidNetworkOperationFree(operation);
   ReleaseSRWLockExclusive(&beskid_network_lock); return 1;
 }
@@ -299,9 +333,11 @@ int32_t beskid_rt_v5_intrinsic_network_close(void *value) {
   AcquireSRWLockExclusive(&beskid_network_lock);
   struct BeskidNetworkOperation *operations[2] = {socket->read, socket->write};
   for (int i = 0; i < 2; ++i) if (operations[i]) {
+    int settling = operations[i]->state == BESKID_SETTLE_SETTLING;
     struct BeskidNetworkRequest *request = operations[i]->request;
     BeskidNetworkOrphanLocked(operations[i]);
-    if (request) { request->status = NET_CLOSED; beskid_rt_v5_intrinsic_owner_post(request->owner, request->token, 1); }
+    /* A settling request belongs to its cancel; the closed handle forces its packet. */
+    if (request && !settling) { request->status = NET_CLOSED; beskid_rt_v5_intrinsic_owner_post(request->owner, request->token, 1); }
   }
   if (socket->reactor) {
     struct BeskidNativeSocket **link = &socket->reactor->sockets;
@@ -311,13 +347,20 @@ int32_t beskid_rt_v5_intrinsic_network_close(void *value) {
   int status = closesocket(socket->socket) ? NET_CLEANUP_FAILED : NET_OK;
   BeskidNetworkFree(socket, sizeof(*socket)); ReleaseSRWLockExclusive(&beskid_network_lock); return status;
 }
+/* Shutdown drain. Closing every socket handle forces the packet of each remaining
+ * operation (in flight, abandoned, or orphaned earlier), and the reactor thread exits
+ * once none is pending. The drain is bounded by BESKID_SETTLE_DRAIN_MS. If a provider
+ * still withholds a packet after it, the reactor, its port, its thread, and the pending
+ * operations are leaked by design: freeing an OVERLAPPED the kernel may still write is
+ * the one outcome that is never allowed. The leak is at most one reactor and its pending
+ * operations, once per runtime shutdown. */
 void beskid_rt_v5_intrinsic_network_reactor_destroy(void *value) {
   struct BeskidNetworkReactor *reactor = value;
   if (!reactor) return;
   AcquireSRWLockExclusive(&beskid_network_lock); reactor->stopping = 1; ReleaseSRWLockExclusive(&beskid_network_lock);
   while (reactor->sockets) beskid_rt_v5_intrinsic_network_close(reactor->sockets);
   PostQueuedCompletionStatus(reactor->port, 0, 0, NULL);
-  WaitForSingleObject(reactor->thread, INFINITE);
+  if (WaitForSingleObject(reactor->thread, BESKID_SETTLE_DRAIN_MS) != WAIT_OBJECT_0) return;
   CloseHandle(reactor->thread); CloseHandle(reactor->port); BeskidNetworkFree(reactor, sizeof(*reactor));
 }
 int32_t beskid_rt_v5_intrinsic_network_bind(void *value, void *wire, int32_t backlog) {

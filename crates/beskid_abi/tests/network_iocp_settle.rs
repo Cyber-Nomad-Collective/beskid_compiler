@@ -72,6 +72,8 @@ fn iocp_settlement_lets_a_queued_completion_win_over_its_deadline() {
     compile_and_run("network_settle.c", &[], "settle=ok");
 }
 
+// Windows only; runs in the Woodpecker windows pipeline (`cargo test --workspace`), or by
+// hand: `cd compiler && cargo test --locked -p beskid_abi --test network_iocp_settle`.
 #[cfg(windows)]
 #[test]
 fn iocp_cancel_leaves_a_completed_packet_queued_and_aborts_an_idle_receive() {
@@ -79,7 +81,7 @@ fn iocp_cancel_leaves_a_completed_packet_queued_and_aborts_an_idle_receive() {
 }
 
 #[test]
-fn iocp_transport_settles_runtime_cancels_and_orphans_only_on_native_close() {
+fn iocp_transport_settles_runtime_cancels_boundedly_and_orphans_only_on_native_close() {
     let source = include_str!("../assembly/x86_64-pc-windows-msvc/network_iocp.h").replace("\r\n", "\n");
     assert!(source.contains("#include \"../common/network_settle.h\""));
     let cancel = &source[source.find("void beskid_rt_v5_intrinsic_network_cancel").unwrap()..];
@@ -89,9 +91,31 @@ fn iocp_transport_settles_runtime_cancels_and_orphans_only_on_native_close() {
     let close = &close[..close.find("\n}\n").unwrap()];
     assert!(close.contains("BeskidNetworkOrphanLocked("), "native close must orphan");
     assert!(
-        source.contains("SleepConditionVariableSRW(&beskid_network_settled, &beskid_network_lock, INFINITE, 0)"),
+        source.contains("SleepConditionVariableSRW(&beskid_network_settled, &beskid_network_lock, milliseconds, 0)"),
         "settlement must wait for the dequeued packet with the network lock released"
     );
+    let settle = &source[source.find("static void BeskidNetworkSettleLocked").unwrap()..];
+    let settle = &settle[..settle.find("\n}\n").unwrap()];
+    assert!(
+        settle.contains("BeskidSettleAwait(&wait, BESKID_SETTLE_WAIT_MS)") && !settle.contains("INFINITE"),
+        "a runtime cancel must wait for its packet for a bounded time only"
+    );
+    assert!(
+        settle.contains("BeskidSettleOnExpire(") && settle.contains("request->status = NET_CANCELLED"),
+        "an expired settle must abandon the operation and give the caller a final cancelled status"
+    );
+    assert!(!settle.contains("BeskidNetworkOperationFree"), "an abandoned operation must keep its storage until its packet");
+    let poll = &source[source.find("int32_t beskid_rt_v5_intrinsic_network_reactor_poll").unwrap()..];
+    let poll = &poll[..poll.find("\n}\n").unwrap()];
+    assert!(poll.contains("BeskidSettleAbandonedPoisons("), "a late abandoned packet must decide stream poison");
+    assert!(poll.contains("BeskidNetworkUnslot(operation);\n  BeskidNetworkOperationFree(operation);"), "the slot is released only with the packet");
+    let destroy = &source[source.find("void beskid_rt_v5_intrinsic_network_reactor_destroy").unwrap()..];
+    let destroy = &destroy[..destroy.find("\n}\n").unwrap()];
+    assert!(
+        destroy.contains("WaitForSingleObject(reactor->thread, BESKID_SETTLE_DRAIN_MS)") && !destroy.contains("INFINITE"),
+        "the shutdown drain must be bounded"
+    );
+    assert!(source.contains("if (socket->poisoned) { status = NET_CONNECTION_ABORTED; goto done; }"), "a poisoned stream fails closed");
     assert!(source.contains("BeskidSettleClassify("), "the reactor must classify packets with the shared rules");
     assert!(source.contains("WakeAllConditionVariable(&beskid_network_settled)"));
 }
