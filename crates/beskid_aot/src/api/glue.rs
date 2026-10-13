@@ -271,6 +271,15 @@ pub fn build_glue_artifact(req: &GlueArtifactBuildRequest<'_>) -> AotResult<Prep
     for (symbol, plan) in &failures {
         module.emit_glue_failure_admission(plan, symbol)?;
     }
+    // A fallible export's checked invocation runs its checked body counterpart, whose closure
+    // reaches the packet's import adapters through the Glue body input.
+    let glue_input = beskid_codegen::glue::glue_body_input(req.input, req.selected, &packet)
+        .map_err(|error| invalid(error.to_string()))?;
+    for (entry, symbol) in beskid_codegen::glue::fallible_exports(req.input, req.selected, &packet)
+        .map_err(|error| invalid(error.to_string()))?
+    {
+        module.emit_glue_checked_export(&glue_input, isa.as_ref(), entry, &symbol)?;
+    }
     let mut checked_entries = Vec::new();
     let mut emitted = std::collections::BTreeSet::new();
     for entry in &checked_sources {

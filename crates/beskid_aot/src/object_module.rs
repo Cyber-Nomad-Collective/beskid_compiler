@@ -135,6 +135,35 @@ impl BeskidObjectModule {
         Ok(emitted)
     }
 
+    /// Emit the checked body counterpart of a fallible Glue export into the same object after its
+    /// sole descriptor pass. `input` is the Glue body input of the current packet.
+    pub(crate) fn emit_glue_checked_export<'db>(
+        &mut self,
+        input: &'db beskid_codegen::CodegenInput<'db>,
+        isa: &'db dyn TargetIsa,
+        entry: beskid_queries::AstNodeKey,
+        symbol: &str,
+    ) -> AotResult<()> {
+        let module = self.module.as_mut().ok_or_else(|| AotError::InvalidRequest {
+            message: "checked Glue export after object finalization".into(),
+        })?;
+        let mut literals = beskid_codegen::CodegenContext::new_with_artifact_namespace(symbol);
+        let function = beskid_codegen::glue::emit_checked_export(
+            module,
+            input,
+            isa,
+            entry,
+            &mut literals,
+            &self.func_ids,
+            symbol,
+        )?;
+        let literal_artifact = CodegenArtifact { string_literals: literals.string_literals, ..Default::default() };
+        self.data_ids.extend(emit_string_literals(module, &literal_artifact)?);
+        self.func_ids.insert(symbol.to_owned(), function);
+        self.declared_symbols.push(symbol.to_owned());
+        Ok(())
+    }
+
     /// Source-issued Glue admission reuses the sole artifact descriptor pass.
     /// It never accepts an independently reconstructed allocation request.
     pub(crate) fn emit_glue_failure_admission(

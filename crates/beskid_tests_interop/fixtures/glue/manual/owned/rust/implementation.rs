@@ -103,12 +103,40 @@ fn borrow_gate() -> Result<(), i32> {
     }
     Ok(())
 }
+/// Length whose borrow releases the borrowed handle on the same thread, through the consumer
+/// release entry the harness names in `<gate>.reentrant` as `<entry address hex>:<token hex>`.
+/// Each release must report busy (4); another status `s` returns `Err(100 + s)`.
+pub const REENTRANT_RELEASE_LENGTH: usize = 4091;
+fn reentrant_release() -> Result<(), i32> {
+    let Some(gate) = std::env::var_os("BESKID_V06_GLUE_BORROW_GATE") else {
+        return Err(5);
+    };
+    let request = std::fs::read_to_string(std::path::PathBuf::from(gate).with_extension("reentrant")).map_err(|_| 5)?;
+    let (address, token) = request.trim().split_once(':').ok_or(5)?;
+    let address = usize::from_str_radix(address, 16).map_err(|_| 5)?;
+    let token = u64::from_str_radix(token, 16).map_err(|_| 5)?;
+    if address == 0 || token == 0 {
+        return Err(5);
+    }
+    // SAFETY: the harness names the issued consumer opaque release entry of this process image.
+    let release = unsafe { std::mem::transmute::<usize, unsafe extern "C" fn(u64) -> i32>(address) };
+    for _ in 0..2 {
+        let status = unsafe { release(token) };
+        if status != 4 {
+            return Err(100 + status);
+        }
+    }
+    Ok(())
+}
 pub fn check_manual_owned(value: &ManualOwned) -> Result<usize, i32> {
     if value.bytes.len() > LIMIT {
         return Err(1);
     }
     if value.bytes.len() == BORROW_GATE_LENGTH {
         borrow_gate()?;
+    }
+    if value.bytes.len() == REENTRANT_RELEASE_LENGTH {
+        reentrant_release()?;
     }
     Ok(value.bytes.len())
 }

@@ -45,6 +45,35 @@ pub fn emit_checked_callback<'db, M: Module>(
     let proof = input
         .checked_effect_closure(isa, entry, specialization.cloned())
         .map_err(|failure| error(format!("checked callback effect unavailable: {failure:?}")))?;
+    declare_closure_literals(module, input, isa, &proof, literals)?;
+    let mut interner =
+        crate::module_emission::imports::ArtifactStringInterner { context: literals, pointer_type: isa.pointer_type() };
+    let closure = crate::checked_effect::emit_checked_effect_closure(
+        module,
+        input,
+        isa,
+        &proof,
+        &mut interner,
+        runtime,
+        namespace,
+    )?;
+    let signature = module.declarations().get_function_decl(closure.entry()).signature.clone();
+    if signature.returns.len() != 1 || signature.returns[0].value_type != isa.pointer_type() {
+        return Err(error("checked Dynamic callback requires its exact managed pointer result ABI".into()));
+    }
+    let function = emit_scoped_counterpart(module, input, isa, closure.entry(), signature, runtime, symbol)?;
+    Ok(EmittedCheckedCallback { function, entry, specialization: specialization.cloned() })
+}
+
+/// Declare the string literal data every closure member reads, before the closure is emitted.
+pub(crate) fn declare_closure_literals<M: Module>(
+    module: &mut M,
+    input: &CodegenInput<'_>,
+    isa: &dyn TargetIsa,
+    proof: &crate::checked_effect::CheckedEffectClosure,
+    literals: &mut CodegenContext,
+) -> ModuleResult<()> {
+    let error = |message: String| ModuleError::Backend(anyhow::anyhow!(message));
     use beskid_isle::NodeFacts;
     for (_, member) in proof.members() {
         let facts = match member.specialization() {
@@ -76,21 +105,21 @@ pub fn emit_checked_callback<'db, M: Module>(
             );
         }
     }
-    let mut interner =
-        crate::module_emission::imports::ArtifactStringInterner { context: literals, pointer_type: isa.pointer_type() };
-    let closure = crate::checked_effect::emit_checked_effect_closure(
-        module,
-        input,
-        isa,
-        &proof,
-        &mut interner,
-        runtime,
-        namespace,
-    )?;
-    let signature = module.declarations().get_function_decl(closure.entry()).signature.clone();
-    if signature.returns.len() != 1 || signature.returns[0].value_type != isa.pointer_type() {
-        return Err(error("checked Dynamic callback requires its exact managed pointer result ABI".into()));
-    }
+    Ok(())
+}
+
+/// Exported counterpart over a checked closure entry with a single managed pointer result. It
+/// returns zero, without invoking the body, when no checked scope is active or the active scope
+/// already holds a failure, and zero whenever the body leaves a failure in the scope.
+fn emit_scoped_counterpart<M: Module>(
+    module: &mut M,
+    input: &CodegenInput<'_>,
+    isa: &dyn TargetIsa,
+    entry: FuncId,
+    signature: cranelift_codegen::ir::Signature,
+    runtime: &HashMap<String, FuncId>,
+    symbol: &str,
+) -> ModuleResult<FuncId> {
     let mut providers = runtime.clone();
     for name in ["beskid_rt_v5_checked_scope_current", "beskid_rt_v5_checked_scope_failure_reason"] {
         crate::checked_effect::ensure_checked_runtime_import(module, input, &mut providers, name)?;
@@ -100,7 +129,7 @@ pub fn emit_checked_callback<'db, M: Module>(
     context.func.signature = signature;
     let current = module.declare_func_in_func(providers["beskid_rt_v5_checked_scope_current"], &mut context.func);
     let reason = module.declare_func_in_func(providers["beskid_rt_v5_checked_scope_failure_reason"], &mut context.func);
-    let body = module.declare_func_in_func(closure.entry(), &mut context.func);
+    let body = module.declare_func_in_func(entry, &mut context.func);
     let mut frontend = FunctionBuilderContext::new();
     {
         let mut builder = FunctionBuilder::new(&mut context.func, &mut frontend);
@@ -135,5 +164,5 @@ pub fn emit_checked_callback<'db, M: Module>(
         builder.ins().return_(&[result]);
     }
     module.define_function(function, &mut context)?;
-    Ok(EmittedCheckedCallback { function, entry, specialization: specialization.cloned() })
+    Ok(function)
 }

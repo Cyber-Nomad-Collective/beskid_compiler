@@ -1,8 +1,10 @@
 pub mod artifact;
+mod checked;
 mod native;
 pub(crate) mod handles;
 mod rust;
 pub use artifact::{GeneratedFile, GlueArtifact, GlueArtifactError, GlueBindingManifest, GlueManifest};
+pub use checked::emit_checked_export;
 pub use rust::emit;
 pub use handles::{EmittedHandleTransport,emit_source_handle_transports};
 
@@ -62,41 +64,77 @@ pub fn lower_native_bodies(
         return Err(GlueArtifactError::Invalid("packet differs from current registered assembly".into()).into());
     }
     let mut items = native_body_items(input, all_items, selected)?;
-    let mut imports = std::collections::HashMap::new();
     // Exports are executable items: their bodies are emitted under the packet's body symbol.
-    // Imports are contract method signatures, never items; a call to one lowers to the packet's
-    // import body symbol (the generated adapter that reaches the owner), so the map is keyed by
-    // the declaration itself, not by an item it has none of.
+    for (key, binding) in selected_bindings(input, selected, &current)? {
+        if binding.direction == "export" {
+            let item = items
+                .iter_mut()
+                .find(|item| item.key == key)
+                .ok_or(crate::backend::BackendError::MissingRustGlueBinding(key))?;
+            item.symbol = binding.body_symbol.clone();
+        }
+    }
+    let input = glue_body_input(input, selected, &current)?;
+    Ok(crate::module_emission::lower_syntax_program(&input, isa, &items)?)
+}
+
+/// The packet binding of every selected declaration that has a Glue binding fact (handle types
+/// only bind transports and have none).
+fn selected_bindings<'packet>(
+    input: &crate::CodegenInput<'_>,
+    selected: &[crate::module_emission::SyntaxModuleItem],
+    packet: &'packet GlueArtifact,
+) -> Result<Vec<(beskid_queries::AstNodeKey, &'packet GlueBindingManifest)>, crate::backend::BackendError> {
+    let mut bindings = Vec::new();
     for selected_item in selected {
-        // Selected declarations without a binding fact (handle types) only bind transports.
         let Some(fact) = beskid_queries::glue_binding(input.database(), selected_item.key)
             .map_err(|error| crate::backend::BackendError::RustGlueFact { key: selected_item.key, message: error.to_string() })?
         else {
             continue;
         };
-        if fact.direction == beskid_queries::GlueDirection::Export {
-            let binding = current
-                .manifest
-                .bindings
-                .iter()
-                .find(|binding| binding.direction == "export" && binding.symbol == fact.symbol)
-                .ok_or(crate::backend::BackendError::MissingRustGlueBinding(selected_item.key))?;
-            let item = items
-                .iter_mut()
-                .find(|item| item.key == selected_item.key)
-                .ok_or(crate::backend::BackendError::MissingRustGlueBinding(selected_item.key))?;
-            item.symbol = binding.body_symbol.clone();
-        } else {
-            let binding = current
-                .manifest
-                .bindings
-                .iter()
-                .find(|binding| binding.direction == "import" && binding.symbol == fact.symbol)
-                .ok_or(crate::backend::BackendError::MissingRustGlueBinding(selected_item.key))?;
-            imports.insert(selected_item.key, binding.body_symbol.clone());
-        }
+        let direction = match fact.direction {
+            beskid_queries::GlueDirection::Export => "export",
+            beskid_queries::GlueDirection::Import => "import",
+        };
+        let binding = packet
+            .manifest
+            .bindings
+            .iter()
+            .find(|binding| binding.direction == direction && binding.symbol == fact.symbol)
+            .ok_or(crate::backend::BackendError::MissingRustGlueBinding(selected_item.key))?;
+        bindings.push((selected_item.key, binding));
     }
-    let input = input.with_glue_imports(imports).with_glue_handle_bindings(
-        selected.iter().map(|item|item.key).collect::<Vec<_>>().into());
-    Ok(crate::module_emission::lower_syntax_program(&input, isa, &items)?)
+    Ok(bindings)
+}
+
+/// The codegen input that lowers the native bodies of `packet`. Imports are contract method
+/// signatures, never items; a call to one lowers to the packet's import body symbol (the generated
+/// adapter that reaches the owner), so the map is keyed by the declaration itself.
+pub fn glue_body_input<'db>(
+    input: &crate::CodegenInput<'db>,
+    selected: &[crate::module_emission::SyntaxModuleItem],
+    packet: &GlueArtifact,
+) -> Result<crate::CodegenInput<'db>, crate::backend::BackendError> {
+    let imports = selected_bindings(input, selected, packet)?
+        .into_iter()
+        .filter(|(_, binding)| binding.direction == "import")
+        .map(|(key, binding)| (key, binding.body_symbol.clone()))
+        .collect::<std::collections::HashMap<_, _>>();
+    Ok(input
+        .with_glue_imports(imports)
+        .with_glue_handle_bindings(selected.iter().map(|item| item.key).collect::<Vec<_>>().into()))
+}
+
+/// Fallible exports of `packet`: the source entry and the checked body counterpart symbol that
+/// the export's checked invocation calls ([`artifact::checked_body_symbol`]).
+pub fn fallible_exports(
+    input: &crate::CodegenInput<'_>,
+    selected: &[crate::module_emission::SyntaxModuleItem],
+    packet: &GlueArtifact,
+) -> Result<Vec<(beskid_queries::AstNodeKey, String)>, crate::backend::BackendError> {
+    Ok(selected_bindings(input, selected, packet)?
+        .into_iter()
+        .filter(|(_, binding)| binding.direction == "export" && binding.fallible)
+        .map(|(key, binding)| (key, artifact::checked_body_symbol(binding)))
+        .collect())
 }

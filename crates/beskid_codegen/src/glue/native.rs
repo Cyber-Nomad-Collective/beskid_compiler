@@ -10,6 +10,42 @@ fn rooted(ty:&GluePhysicalType)->bool {managed(ty)||ty.opaque.is_some()}
 fn body_type(ty: &GluePhysicalType) -> &str {
     if rooted(ty) { "void*" } else { ty.slots.first().map(String::as_str).unwrap_or("void") }
 }
+/// Canonical `BeskidCheckedAllocationScope` geometry from the ABI-v5 manifest. A Glue checked
+/// scope is that runtime scope; its failure reason word records the first foreign status.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CheckedScopeGeometry {
+    pub size: u64,
+    pub failure_reason_offset: u64,
+}
+impl CheckedScopeGeometry {
+    pub fn from_manifest(manifest: &beskid_abi::abi_v5::AbiManifestV5) -> Result<Self, GlueArtifactError> {
+        let invalid = |message: &str| GlueArtifactError::Invalid(message.into());
+        let layout = manifest
+            .layouts
+            .iter()
+            .find(|layout| layout.name == "BeskidCheckedAllocationScope")
+            .ok_or_else(|| invalid("checked scope geometry unavailable"))?;
+        let reason = layout
+            .fields
+            .iter()
+            .find(|field| field.name == "failure_reason" && field.ty == "usize")
+            .ok_or_else(|| invalid("checked scope failure reason field unavailable"))?;
+        if layout.size != 64 || layout.alignment != 8 || reason.offset % 8 != 0 || reason.offset + 8 > layout.size {
+            return Err(invalid("checked scope geometry differs"));
+        }
+        Ok(Self { size: layout.size, failure_reason_offset: reason.offset })
+    }
+}
+/// Glue checked scope services, emitted only when a binding is fallible. A fallible import adapter
+/// records its first nonzero foreign status in the runtime checked scope that this thread's Glue
+/// checked invocation entered; checked body counterparts observe it after the call and return, and
+/// the invocation returns the recorded status. Any other scope, or no scope, keeps the trap.
+fn emit_checked_scope_services(scope: &CheckedScopeGeometry, c: &mut String) {
+    c.push_str(&format!(
+        "extern void *beskid_rt_v5_checked_scope_current(void);\nextern uint8_t beskid_rt_v5_checked_scope_enter(void*,size_t);\nextern size_t beskid_rt_v5_checked_scope_failure_reason(void);\nextern void beskid_rt_v5_checked_scope_leave(void*);\n_Static_assert(sizeof(size_t)==8,\"Glue checked scope reason width\");\n#define GLUE_CHECKED_SCOPE_SIZE {}\n#define GLUE_CHECKED_FOREIGN_TAG UINT64_C(0x474c554500000000)\nstatic _Thread_local void *glue_checked_scope=NULL;\nstatic int glue_checked_absorb(int32_t status) {{\n void *scope=beskid_rt_v5_checked_scope_current();\n if(!status || !scope || scope!=glue_checked_scope) return 0;\n size_t *reason=(size_t*)((uint8_t*)scope+{});\n if(!*reason) *reason=(size_t)(GLUE_CHECKED_FOREIGN_TAG|(uint64_t)(uint32_t)status);\n return 1;\n}}\nstatic int32_t glue_checked_status(size_t reason) {{\n if(((uint64_t)reason&UINT64_C(0xffffffff00000000))==GLUE_CHECKED_FOREIGN_TAG) return (int32_t)(uint32_t)reason;\n return 3;\n}}\n",
+        scope.size, scope.failure_reason_offset
+    ));
+}
 fn emit_checked_wrappers(manifest: &GlueManifest, c: &mut String) {
     c.push_str("extern void *beskid_rt_v5_gc_resolve_handle(size_t);\nextern int32_t beskid_glue_v1_owner_validate_binding(uint64_t,uint64_t);\n");
     c.push_str("extern int32_t beskid_glue_v1_owner_validate_opaque(uint64_t,const uint8_t*,uint64_t);\nextern size_t beskid_rt_v5_gc_try_root_handle(void*);\n");
@@ -36,10 +72,11 @@ fn emit_checked_wrappers(manifest: &GlueManifest, c: &mut String) {
         if has_result {
             arguments.push(format!("{result_type} *output"));
         }
+        let callee = if b.fallible { checked_body_symbol(b) } else { b.body_symbol.clone() };
         c.push_str(&format!(
             "extern {} {}({});\nint32_t {}({}) {{\n",
             body_type(&b.result),
-            b.body_symbol,
+            callee,
             if body_types.is_empty() { "void".into() } else { body_types.join(",") },
             checked_invocation_symbol(b),
             if arguments.is_empty() { "void".into() } else { arguments.join(",") }
@@ -73,33 +110,56 @@ fn emit_checked_wrappers(manifest: &GlueManifest, c: &mut String) {
             }
             c.push_str("return status;}\n");
         }
+        if b.fallible {
+            // The reserved failure cell is admitted before the managed arguments are resolved, so
+            // its allocation cannot move them; the scope publishes no managed failure value.
+            c.push_str(" size_t checked_root=0; uint8_t checked_entered=0; void *checked_previous=glue_checked_scope; _Alignas(8) uint8_t checked_scope[GLUE_CHECKED_SCOPE_SIZE]; memset(checked_scope,0,sizeof checked_scope);\n");
+            c.push_str(" { static const uint8_t checked_cell_bytes[1]={0}; void *checked_cell=NULL; if(beskid_glue_v1_input_bytes(checked_cell_bytes,0,&checked_cell,&checked_root)) status=3; else if(!beskid_rt_v5_checked_scope_enter(checked_scope,checked_root)) status=3; else {checked_entered=1; glue_checked_scope=checked_scope;} }\n");
+        }
         for (index, _) in b.parameters.iter().enumerate().filter(|(_, parameter)| rooted(parameter)) {
             c.push_str(&format!(" managed_{index}=beskid_rt_v5_gc_resolve_handle(root_{index}); if(!managed_{index}) status=2;\n"));
         }
         c.push_str(" if(!status) {\n");
-        let invocation = format!("{}({})", b.body_symbol, body_arguments.join(","));
-        if owned {
-            c.push_str(&format!(
-                " void *result={invocation};\n status=beskid_glue_v1_result_{}(library,UINT64_C({}),result,output);\n",
-                b.result.logical, b.shape_id
-            ));
+        let invocation = format!("{}({})", callee, body_arguments.join(","));
+        let (call, publish) = if owned {
+            (
+                format!(" void *result={invocation};\n"),
+                format!(
+                    " status=beskid_glue_v1_result_{}(library,UINT64_C({}),result,output);\n",
+                    b.result.logical, b.shape_id
+                ),
+            )
         } else if let Some(opaque)=&b.result.opaque {
             let brand=hex_c(&opaque.brand_sha256);
-            c.push_str(&format!(" extern int32_t {}(void*,uint64_t*);static const uint8_t result_brand[32]={{{brand}}};void *result={invocation};uint64_t token=0;status={}(result,&token);\n",opaque.reader,opaque.reader));
-            if opaque.nullable {c.push_str(" if(!status&&token)status=beskid_glue_v1_owner_validate_opaque(library,result_brand,token);\n");}
-            else {c.push_str(" if(!status)status=beskid_glue_v1_owner_validate_opaque(library,result_brand,token);\n");}
-            c.push_str(" if(!status)*output=token;\n");
+            let mut publish = format!(" status={}(result,&token);\n", opaque.reader);
+            if opaque.nullable {publish.push_str(" if(!status&&token)status=beskid_glue_v1_owner_validate_opaque(library,result_brand,token);\n");}
+            else {publish.push_str(" if(!status)status=beskid_glue_v1_owner_validate_opaque(library,result_brand,token);\n");}
+            publish.push_str(" if(!status)*output=token;\n");
+            (format!(" extern int32_t {}(void*,uint64_t*);static const uint8_t result_brand[32]={{{brand}}};void *result={invocation};uint64_t token=0;\n",opaque.reader), publish)
         } else if has_result {
-            c.push_str(&format!(" {result_type} result={invocation};\n"));
-            match b.result.logical.as_str() {
-                "bool" => c.push_str(" if(result>1) status=1; else *output=result;\n"),
-                "char" => c.push_str(" if(result>UINT32_C(0x10ffff) || (result>=UINT32_C(0xd800) && result<=UINT32_C(0xdfff))) status=1; else *output=result;\n"),
-                _ => c.push_str(" *output=result;\n"),
-            }
+            let publish = match b.result.logical.as_str() {
+                "bool" => " if(result>1) status=1; else *output=result;\n",
+                "char" => " if(result>UINT32_C(0x10ffff) || (result>=UINT32_C(0xd800) && result<=UINT32_C(0xdfff))) status=1; else *output=result;\n",
+                _ => " *output=result;\n",
+            };
+            (format!(" {result_type} result={invocation};\n"), publish.to_owned())
         } else {
-            c.push_str(&format!(" {invocation};\n"));
+            (format!(" {invocation};\n"), String::new())
+        };
+        c.push_str(&call);
+        if b.fallible {
+            // Leaving restores the prior scope before any result is published; the managed result
+            // stays valid because neither leaving nor unrooting the failure cell can collect.
+            c.push_str(" size_t checked_reason=beskid_rt_v5_checked_scope_failure_reason(); beskid_rt_v5_checked_scope_leave(checked_scope); glue_checked_scope=checked_previous; checked_entered=0; gc_unroot_handle(checked_root); checked_root=0;\n if(checked_reason) status=glue_checked_status(checked_reason);\n if(!status) {\n");
+            c.push_str(&publish);
+            c.push_str(" }\n");
+        } else {
+            c.push_str(&publish);
         }
         c.push_str(" }\n");
+        if b.fallible {
+            c.push_str(" if(checked_entered) {beskid_rt_v5_checked_scope_leave(checked_scope); glue_checked_scope=checked_previous;}\n if(checked_root) gc_unroot_handle(checked_root);\n");
+        }
         for (index, _) in b.parameters.iter().enumerate().filter(|(_, parameter)| rooted(parameter)) {
             c.push_str(&format!(" gc_unroot_handle(root_{index});\n"));
         }
@@ -254,8 +314,16 @@ fn emit_import_wrappers(manifest: &GlueManifest, c: &mut String) {
             c.push_str(&format!(" {result} output={{0}};\n"));
             source_values.push("&output".into());
         }
+        // A fallible import inside its thread's Glue checked scope records the status and returns
+        // the zeroed output; the checked body counterpart returns before the output is used. Every
+        // other failure is terminal.
+        let absorb = if binding.fallible {
+            if has_result { "if(glue_checked_absorb(status)) return output; " } else { "if(glue_checked_absorb(status)) return; " }
+        } else {
+            ""
+        };
         c.push_str(&format!(
-            " int32_t status={checked}({}); if(status) {{ static const char message[]=\"Rust Glue foreign invocation failed: {}\"; beskid_rt_v5_trap(8,(void*)message,sizeof(message)-1); }}\n",
+            " int32_t status={checked}({}); if(status) {{ {absorb}static const char message[]=\"Rust Glue foreign invocation failed: {}\"; beskid_rt_v5_trap(8,(void*)message,sizeof(message)-1); }}\n",
             source_values.join(","),
             binding.symbol
         ));
@@ -265,7 +333,10 @@ fn emit_import_wrappers(manifest: &GlueManifest, c: &mut String) {
         c.push_str("}\n");
     }
 }
-pub(super) fn emit(manifest: &GlueManifest) -> Result<(Vec<u8>, Vec<u8>), GlueArtifactError> {
+pub(super) fn emit(
+    manifest: &GlueManifest,
+    scope: &CheckedScopeGeometry,
+) -> Result<(Vec<u8>, Vec<u8>), GlueArtifactError> {
     let shapes = serde_json::to_vec(&manifest.bindings)?;
     let mut c = String::from(
         "/* Canonical fact-derived normalized wrappers. */\n#include <stdint.h>\n#include <stddef.h>\n#include <stdatomic.h>\n#include <string.h>\n#include \"../include/beskid_glue.h\"\nextern int32_t beskid_glue_v1_input_utf8(const uint8_t*,size_t,void**,size_t*);\nextern int32_t beskid_glue_v1_input_bytes(const uint8_t*,size_t,void**,size_t*);\nextern int32_t beskid_glue_v1_result_utf8(uint64_t,uint64_t,void*,GlueOwnedView*);\nextern int32_t beskid_glue_v1_result_bytes(uint64_t,uint64_t,void*,GlueOwnedView*);\nextern int32_t beskid_glue_v1_owner_copy(uint64_t,uint64_t,uint64_t,uint64_t,const uint8_t*,size_t,GlueOwnedView*);\nextern void gc_unroot_handle(size_t);\n",
@@ -393,6 +464,9 @@ pub(super) fn emit(manifest: &GlueManifest) -> Result<(Vec<u8>, Vec<u8>), GlueAr
         }
         c.push_str("}\n");
     }
+    if manifest.bindings.iter().any(|binding| binding.fallible) {
+        emit_checked_scope_services(scope, &mut c);
+    }
     emit_checked_wrappers(manifest, &mut c);
     emit_import_wrappers(manifest, &mut c);
     if !owned_release_symbols(manifest).is_empty() {
@@ -420,6 +494,8 @@ fn hex_c(hex:&str)->String {(0..32).map(|i|format!("0x{}",&hex[i*2..i*2+2])).col
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const SCOPE: CheckedScopeGeometry = CheckedScopeGeometry { size: 64, failure_reason_offset: 24 };
 
     fn physical(logical: &str, slots: &[&str], opaque: Option<GlueOpaqueType>) -> GluePhysicalType {
         GluePhysicalType {
@@ -457,6 +533,7 @@ mod tests {
             shape_id: super::super::artifact::shape_id(shape).expect("shape"),
             parameters,
             result: physical("unit", &[], None),
+            fallible: false,
             source: GlueSourceAuthority {
                 logical_unit: "Main".into(),
                 typed_unit_sha256: "cd".repeat(32),
@@ -481,7 +558,7 @@ mod tests {
             descriptor: "handle_descriptor".into(),
         };
         let manifest = manifest(vec![binding(&"34".repeat(32), vec![physical("Handle", &["uint64_t"], Some(opaque))])]);
-        let (source, _) = emit(&manifest).expect("opaque binding closure is valid");
+        let (source, _) = emit(&manifest, &SCOPE).expect("opaque binding closure is valid");
         let source = String::from_utf8(source).expect("C source");
         let brand_id = super::super::artifact::brand_shape(&brand).expect("brand shape");
         assert_eq!(brand_id, u64::from_le_bytes([1, 2, 3, 4, 5, 6, 7, 8]), "the brand folds little-endian");
@@ -498,6 +575,37 @@ mod tests {
         );
     }
 
+    /// A fallible import records its status only inside this thread's Glue checked scope, and a
+    /// fallible export's checked invocation runs its checked body counterpart inside that scope.
+    /// Without fallible bindings no scope service is emitted and every import failure traps.
+    #[test]
+    fn fallible_bindings_route_through_the_glue_checked_scope() {
+        let mut import = binding(&"78".repeat(32), vec![physical("u64", &["uint64_t"], None)]);
+        import.direction = "import".into();
+        import.result = physical("u64", &["uint64_t"], None);
+        import.fallible = true;
+        let mut export = binding(&"9a".repeat(32), vec![physical("u64", &["uint64_t"], None)]);
+        export.result = physical("u64", &["uint64_t"], None);
+        export.fallible = true;
+        let (source, _) = emit(&manifest(vec![export.clone(), import.clone()]), &SCOPE).expect("fallible closure");
+        let source = String::from_utf8(source).expect("C source");
+        assert!(source.contains("static _Thread_local void *glue_checked_scope=NULL;"), "{source}");
+        assert!(source.contains("size_t *reason=(size_t*)((uint8_t*)scope+24);"), "{source}");
+        assert!(source.contains(&format!("extern uint64_t {}(uint64_t);", checked_body_symbol(&export))), "{source}");
+        assert!(source.contains("beskid_rt_v5_checked_scope_enter(checked_scope,checked_root)"), "{source}");
+        assert!(source.contains("if(checked_reason) status=glue_checked_status(checked_reason);"), "{source}");
+        assert!(
+            source.contains("if(status) { if(glue_checked_absorb(status)) return output; static const char message[]"),
+            "{source}"
+        );
+        import.fallible = false;
+        export.fallible = false;
+        let (source, _) = emit(&manifest(vec![export, import]), &SCOPE).expect("infallible closure");
+        let source = String::from_utf8(source).expect("C source");
+        assert!(!source.contains("glue_checked_absorb") && !source.contains("_checked_body"), "{source}");
+        assert!(source.contains("if(status) { static const char message[]"), "{source}");
+    }
+
     /// Two bindings never share one shape identity.
     #[test]
     fn duplicate_binding_shapes_fail_closed() {
@@ -506,6 +614,6 @@ mod tests {
             binding(&shape, vec![physical("u64", &["uint64_t"], None)]),
             binding(&shape, vec![physical("u64", &["uint64_t"], None)]),
         ]);
-        assert!(emit(&manifest).is_err());
+        assert!(emit(&manifest, &SCOPE).is_err());
     }
 }

@@ -12,6 +12,9 @@ pub struct CheckedEffectClosure {
     members: HashMap<DirectCallee, CheckedEffectItem>,
     visited_nodes: usize,
     providers: HashSet<&'static str>,
+    /// Rust Glue imports the closure calls. Each is a leaf: its generated import adapter is the
+    /// callee, and it is admitted only when the input carries the current Glue packet's imports.
+    glue_imports: HashSet<DirectCallee>,
 }
 #[derive(Debug, Clone)]
 pub struct CheckedEffectItem {
@@ -68,6 +71,10 @@ impl CheckedEffectClosure {
     }
     pub fn visited_nodes(&self) -> usize {
         self.visited_nodes
+    }
+    /// Rust Glue import declarations this exact closure calls.
+    pub fn glue_imports(&self) -> impl Iterator<Item = &DirectCallee> + '_ {
+        self.glue_imports.iter()
     }
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -163,6 +170,7 @@ fn emit_effect_closure<'db, M: cranelift_module::Module>(
         .checked_effect_closure(isa, root.key, root.specialization.clone())
         .map_err(|failure| error(format!("checked closure unavailable at {:?}: {}", failure.site, failure.reason)))?;
     if current.providers != proof.providers
+        || current.glue_imports != proof.glue_imports
         || current.members.len() != proof.members.len()
         || current.members.iter().any(|(key, value)| {
             proof.members.get(key).is_none_or(|prior| {
@@ -186,6 +194,16 @@ fn emit_effect_closure<'db, M: cranelift_module::Module>(
             ensure_checked_runtime_import(module, input, &mut runtime_functions, symbol)?;
         }
     }
+    let glue_imports = current
+        .glue_imports
+        .iter()
+        .map(|callee| {
+            input
+                .glue_import_callee_symbol(callee)
+                .map(|symbol| (callee.clone(), symbol.to_owned()))
+                .ok_or_else(|| error("checked closure Glue import has no current adapter symbol".into()))
+        })
+        .collect::<cranelift_module::ModuleResult<HashMap<_, _>>>()?;
     let mut ordered = current.members().collect::<Vec<_>>();
     ordered.sort_by_key(|(callee, _)| format!("{callee:?}"));
     let mut functions = HashMap::new();
@@ -260,7 +278,8 @@ fn emit_effect_closure<'db, M: cranelift_module::Module>(
                 }
             }
         } else {
-            let mut importer = crate::isle_adapter::ItemModuleImporter::new(module, functions.clone());
+            let mut importer =
+                crate::isle_adapter::ItemModuleImporter::new(module, functions.clone()).with_imports(glue_imports.clone());
             crate::isle_adapter::emit_isle_checked_effect_item(
                 input,
                 isa,
@@ -277,11 +296,10 @@ fn emit_effect_closure<'db, M: cranelift_module::Module>(
             if let cranelift_codegen::ir::ExternalName::TestCase(name) = &external.name {
                 let name = String::from_utf8_lossy(name.raw());
                 ensure_checked_runtime_import(module, input, &mut runtime_functions, name.as_ref())?;
-                let id = runtime_functions
-                    .get(name.as_ref())
-                    .ok_or_else(|| error(format!("checked provider import unavailable: {name}")))?;
-                let signature = &context.func.dfg.signatures[external.signature];
-                if &module.declarations().get_function_decl(*id).signature != signature {
+                // The call-site signature must be the canonical ABI catalog shape; an existing
+                // legacy builtin declaration of the same symbol does not govern the call ABI.
+                let canonical = canonical_checked_runtime_signature(module, input, name.as_ref())?;
+                if context.func.dfg.signatures[external.signature] != canonical {
                     return Err(error(format!("checked provider ABI mismatch: {name}")));
                 }
             }
@@ -320,6 +338,7 @@ impl CodegenInput<'_> {
         let mut members = HashMap::new();
         let mut visited_nodes = 0usize;
         let mut providers = HashSet::new();
+        let mut glue_imports = HashSet::new();
         let mut bridges: HashMap<DirectCallee, CheckedDynamicBridge> = HashMap::new();
         while let Some((callee, mut item)) = pending.pop() {
             if members.contains_key(&callee) {
@@ -448,19 +467,25 @@ impl CodegenInput<'_> {
                                 }
                                 _ => return Err(reject(site, "provider or callback lacks no-yield witness")),
                             };
-                            let instance = facts.generic_call_specialization_in_context(site);
-                            if identity(declaration, &instance) != target {
-                                return Err(reject(site, "callee specialization identity mismatch"));
+                            if matches!(target, DirectCallee::Item(_)) && self.glue_import_symbol(declaration).is_some() {
+                                // A current Glue import has no Beskid body: the call reaches its
+                                // generated adapter, which yields no fiber and runs no callback.
+                                glue_imports.insert(target);
+                            } else {
+                                let instance = facts.generic_call_specialization_in_context(site);
+                                if identity(declaration, &instance) != target {
+                                    return Err(reject(site, "callee specialization identity mismatch"));
+                                }
+                                pending.push((
+                                    target,
+                                    CheckedEffectItem {
+                                        key: declaration,
+                                        specialization: instance,
+                                        bridge: None,
+                                        owned_bridge: None,
+                                    },
+                                ));
                             }
-                            pending.push((
-                                target,
-                                CheckedEffectItem {
-                                    key: declaration,
-                                    specialization: instance,
-                                    bridge: None,
-                                    owned_bridge: None,
-                                },
-                            ));
                         }
                         _ => return Err(reject(site, "open or unresolved call effect")),
                     },
@@ -474,7 +499,7 @@ impl CodegenInput<'_> {
             }
             members.insert(callee, item);
         }
-        Ok(CheckedEffectClosure { entry: root, members, visited_nodes, providers })
+        Ok(CheckedEffectClosure { entry: root, members, visited_nodes, providers, glue_imports })
     }
 }
 
@@ -500,6 +525,10 @@ impl CodegenInput<'_> {
     ) -> Result<NonAllocatingPublication, CheckedEffectRejection> {
         use beskid_isle::{LiteralKind, OperatorFact};
         let closure = self.checked_effect_closure(isa, entry, specialization)?;
+        if !closure.glue_imports.is_empty() {
+            // A Glue import adapter copies managed values and may allocate.
+            return Err(CheckedEffectRejection { site: entry, reason: "publication calls a Rust Glue import" });
+        }
         for (_, item) in closure.members() {
             if item.bridge.is_some() {
                 return Err(CheckedEffectRejection {
@@ -727,9 +756,45 @@ pub(crate) fn ensure_checked_runtime_import<M: cranelift_module::Module>(
     functions: &mut HashMap<String, cranelift_module::FuncId>,
     symbol: &str,
 ) -> cranelift_module::ModuleResult<cranelift_module::FuncId> {
+    use cranelift_module::{Linkage, ModuleError};
+    let error = |reason: &str| ModuleError::Backend(anyhow::anyhow!("{reason}: {symbol}"));
+    let signature = canonical_checked_runtime_signature(module, input, symbol)?;
+    if let Some(id) = functions.get(symbol).copied() {
+        let declared = &module.declarations().get_function_decl(id).signature;
+        // The ordinary artifact pass may already have declared the symbol from the legacy builtin
+        // catalog, whose shape can lag the canonical binding (`gc_register_root` is declared void
+        // there but returns its `u8` registration status). Calls carry their own signature, so
+        // that declaration is accepted only when it is exactly the legacy catalog entry.
+        let legacy = beskid_abi::all_builtin_specs().into_iter().find(|spec| spec.symbol == symbol).map(|spec| {
+            crate::cranelift_host::builtin_signature(
+                module.target_config().pointer_type(),
+                module.isa().default_call_conv(),
+                spec.params,
+                spec.returns,
+            )
+        });
+        if module.get_name(symbol) != Some(cranelift_module::FuncOrDataId::Func(id))
+            || (declared != &signature && legacy.as_ref() != Some(declared))
+        {
+            return Err(error("checked runtime import differs from canonical ABI catalog"));
+        }
+        return Ok(id);
+    }
+    let id = module.declare_function(symbol, Linkage::Import, &signature)?;
+    functions.insert(symbol.to_owned(), id);
+    Ok(id)
+}
+
+/// Canonical call signature of a checked runtime import: ABI-v5 manifest exports, then canonical
+/// Corelib service bindings, then the legacy builtin catalog.
+pub(crate) fn canonical_checked_runtime_signature<M: cranelift_module::Module>(
+    module: &M,
+    input: &CodegenInput<'_>,
+    symbol: &str,
+) -> cranelift_module::ModuleResult<cranelift_codegen::ir::Signature> {
     use beskid_abi::abi_v5::AbiType;
     use cranelift_codegen::ir::{AbiParam, Signature, types};
-    use cranelift_module::{Linkage, ModuleError};
+    use cranelift_module::ModuleError;
     let error = |reason: &str| ModuleError::Backend(anyhow::anyhow!("{reason}: {symbol}"));
     let pointer = module.target_config().pointer_type();
     let conv = module.isa().default_call_conv();
@@ -756,22 +821,35 @@ pub(crate) fn ensure_checked_runtime_import<M: cranelift_module::Module>(
             ));
         }
         signature
+    } else if let Some(abi) = beskid_abi::runtime_source::canonical_corelib_service_abi_for_adapter(symbol) {
+        // Canonical ABI-v5 service bindings carry the exact runtime export shape (for example the
+        // `u8` registration result of `gc_register_root`), which the builtin catalog does not.
+        use beskid_abi::runtime_source::CorelibServiceAbiType as Service;
+        let scalar = |ty: Service| match ty {
+            Service::Pointer | Service::String | Service::Usize => Some(pointer),
+            Service::U8 => Some(types::I8),
+            Service::I32 | Service::U32 => Some(types::I32),
+            Service::I64 | Service::U64 => Some(types::I64),
+            Service::F32 => Some(types::F32),
+            Service::F64 => Some(types::F64),
+            Service::Void | Service::Never => None,
+        };
+        let mut signature = Signature::new(conv);
+        for ty in abi.parameters {
+            signature
+                .params
+                .push(AbiParam::new(scalar(ty).ok_or_else(|| error("unsupported canonical service parameter ABI"))?));
+        }
+        if let Some(result) = scalar(abi.result) {
+            signature.returns.push(AbiParam::new(result));
+        }
+        signature
     } else if let Some(spec) = beskid_abi::all_builtin_specs().into_iter().find(|spec| spec.symbol == symbol) {
         crate::cranelift_host::builtin_signature(pointer, conv, spec.params, spec.returns)
     } else {
         return Err(error("checked runtime import absent from canonical ABI catalog"));
     };
-    if let Some(id) = functions.get(symbol).copied() {
-        if module.get_name(symbol) != Some(cranelift_module::FuncOrDataId::Func(id))
-            || module.declarations().get_function_decl(id).signature != signature
-        {
-            return Err(error("checked runtime import differs from canonical ABI catalog"));
-        }
-        return Ok(id);
-    }
-    let id = module.declare_function(symbol, Linkage::Import, &signature)?;
-    functions.insert(symbol.to_owned(), id);
-    Ok(id)
+    Ok(signature)
 }
 
 impl CodegenInput<'_> {

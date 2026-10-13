@@ -75,7 +75,10 @@ const CONSUMER_LIBRARY: &str = "ManualOwned";
 /// `RustOwner` type path the fixture declares on `ManualOpaque`.
 const OWNER_TYPE_PATH: &str = "implementation::ManualOwned";
 const BORROW_GATE_LENGTH: usize = 4093;
+/// Fixture length whose borrow releases its own handle on the same thread (`<gate>.reentrant`).
+const REENTRANT_RELEASE_LENGTH: usize = 4091;
 const OWNED_LIMIT: usize = 16 * 1024 * 1024;
+const PROVIDER_FOREIGN: i32 = 2;
 const PROVIDER_BUSY: i32 = 4;
 
 
@@ -1118,6 +1121,10 @@ fn v06_glue_owned_roundtrip_all_representations() {
     });
 }
 
+/// A live borrow lease survives every release attempt. Owner records are bound to the thread
+/// that opened the runtime (the loader's opening-thread restriction, as a Rust `!Send` owner):
+/// on that thread a release during the borrow reports busy, while a foreign OS thread cannot
+/// observe borrow state at all and is denied as foreign. Neither runs the destructor.
 #[test]
 fn v06_glue_owned_opaque_borrow_survives_release() {
     run_in_private_prefix("v06_glue_owned_opaque_borrow_survives_release", DriverStaging::Exact, ChildProject::Warmed, |prefix| {
@@ -1128,6 +1135,24 @@ fn v06_glue_owned_opaque_borrow_survives_release() {
         let create: Create = unsafe { checked(&process, &packet, "manual_ImportCreate") };
         let inspect: Inspect = unsafe { checked(&process, &packet, "manual_ImportInspect") };
         let release = opaque_release(&process, &packet);
+
+        // Same thread: the owner releases its borrowed handle twice from inside the borrow.
+        let mut reentrant = 0;
+        assert_eq!(unsafe { create(REENTRANT_RELEASE_LENGTH, &mut reentrant) }, 0);
+        fs::write(gate.with_extension("reentrant"), format!("{:x}:{reentrant:x}", release as usize)).unwrap();
+        let mut length = 0;
+        let status = unsafe { inspect(reentrant, &mut length) };
+        assert_eq!(
+            status,
+            0,
+            "same-thread release during a live borrow must report busy (owner observed status {})",
+            status - 100
+        );
+        assert_eq!(length, REENTRANT_RELEASE_LENGTH, "borrowed payload changed under same-thread release");
+        assert_eq!(unsafe { release(reentrant) }, 0, "busy releases must not consume the token");
+        assert_ne!(unsafe { release(reentrant) }, 0, "double release accepted");
+
+        // Foreign OS thread: denied as foreign while the borrow is live.
         let mut token = 0;
         assert_eq!(unsafe { create(BORROW_GATE_LENGTH, &mut token) }, 0);
         let entered = gate.with_extension("entered");
@@ -1139,7 +1164,8 @@ fn v06_glue_owned_opaque_borrow_survives_release() {
                     assert!(Instant::now() < deadline, "owner borrow never became live");
                     std::thread::sleep(Duration::from_millis(5));
                 }
-                // The borrow lease is live inside the owner; release must not tear it down.
+                // The borrow lease is live inside the owner on the opening thread; this thread
+                // is foreign to the owner records, so release is denied without effects.
                 let first = unsafe { release(token) };
                 let second = unsafe { release(token) };
                 fs::write(&gate, b"").unwrap();
@@ -1151,8 +1177,8 @@ fn v06_glue_owned_opaque_borrow_survives_release() {
         let (first, second) = releaser.join().expect("releaser thread");
         assert_eq!(status, 0, "borrowed call failed after a concurrent release attempt");
         assert_eq!(length, BORROW_GATE_LENGTH, "borrowed payload changed under release");
-        assert_eq!(first, PROVIDER_BUSY, "release during a live borrow must report busy");
-        assert_eq!(second, PROVIDER_BUSY, "repeated release during a live borrow must report busy");
+        assert_eq!(first, PROVIDER_FOREIGN, "release from a foreign thread must be denied as foreign");
+        assert_eq!(second, PROVIDER_FOREIGN, "repeated foreign-thread release must be denied as foreign");
         // The lease ended with the call; the owner may now release exactly once.
         assert_eq!(unsafe { release(token) }, 0);
         assert_ne!(unsafe { inspect(token, &mut length) }, 0, "released token still borrowable");

@@ -296,6 +296,11 @@ fn bridge_source(
         if matches.next().is_some() {
             return Err(invalid("Rust owner binding ambiguous"));
         }
+        // The issued import row carries the declared fallibility; the consumer recovers a status
+        // only for a fallible row, so the owner bridge must expose exactly that contract.
+        if binding.direction != "import" || callable.fallible != binding.fallible {
+            return Err(invalid("Rust owner callable fallibility differs from its issued import row"));
+        }
         let symbol = format!("beskid_glue_rust_owner_v1_{}", binding.identity_sha256);
         digest_bytes(&binding.identity_sha256)?;
         let mut args = Vec::new();

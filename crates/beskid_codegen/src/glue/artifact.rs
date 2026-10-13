@@ -52,6 +52,11 @@ pub struct GlueBindingManifest {
     pub shape_id: u64,
     pub parameters: Vec<GluePhysicalType>,
     pub result: GluePhysicalType,
+    /// Import: the Rust owner callable is declared `[RustOwner(Fallible:true)]` and its nonzero
+    /// status may be recovered by a checked Glue invocation. Export: the body reaches such an
+    /// import, so its checked invocation runs the body in a Glue checked scope and returns the
+    /// recorded foreign status instead of trapping.
+    pub fallible: bool,
     pub source: GlueSourceAuthority,
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -93,6 +98,11 @@ pub fn owned_release_symbol(library: &str) -> String {
 }
 pub fn checked_invocation_symbol(binding: &GlueBindingManifest) -> String {
     format!("beskid_glue_checked_{}", binding.identity_sha256)
+}
+/// Checked counterpart of a fallible export body. It runs only inside the Glue checked scope that
+/// the export's checked invocation enters; it is linked into the image and never exported.
+pub fn checked_body_symbol(binding: &GlueBindingManifest) -> String {
+    format!("{}_checked_body", binding.body_symbol)
 }
 pub fn checked_invocation_symbols(manifest: &GlueManifest) -> Vec<String> {
     manifest.bindings.iter().filter(|binding| binding.direction == "export").map(checked_invocation_symbol).collect()

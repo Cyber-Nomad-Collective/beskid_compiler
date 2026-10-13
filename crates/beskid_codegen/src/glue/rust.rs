@@ -3,8 +3,67 @@
 use super::artifact::*;
 use crate::{CodegenInput, backend::BackendError, module_emission::SyntaxModuleItem};
 use beskid_analysis::syntax::PrimitiveType;
-use beskid_queries::{GlueDirection, GlueLogicalType, glue_binding, node_span};
-use std::collections::BTreeSet;
+use beskid_queries::{
+    AstNodeKey, CallLowering, GlueDirection, GlueLogicalType, call_lowering, child_nodes, glue_binding, node_span,
+};
+use std::collections::{BTreeSet, HashSet};
+
+/// Selected imports whose Rust owner callable is declared `[RustOwner(Fallible:true)]`.
+fn fallible_imports(input: &CodegenInput<'_>, items: &[SyntaxModuleItem]) -> Result<HashSet<AstNodeKey>, BackendError> {
+    let mut keys = HashSet::new();
+    for item in items {
+        let fact = glue_binding(input.database(), item.key)
+            .map_err(|e| BackendError::RustGlueFact { key: item.key, message: e.to_string() })?;
+        if let Some(fact) = fact
+            && fact.direction == GlueDirection::Import
+            && fact.rust_owner.as_ref().is_some_and(|owner| owner.fallible)
+        {
+            keys.insert(item.key);
+        }
+    }
+    Ok(keys)
+}
+
+/// Whether `export` reaches one of the `fallible` imports through its direct-call closure. Such an
+/// export is fallible: its checked invocation runs a checked counterpart of the body and returns a
+/// recorded foreign status. A path the direct-call closure does not contain never enters a Glue
+/// checked scope, so a failure on it still traps.
+fn reaches_fallible_import(
+    input: &CodegenInput<'_>,
+    export: AstNodeKey,
+    fallible: &HashSet<AstNodeKey>,
+) -> Result<bool, BackendError> {
+    if fallible.is_empty() {
+        return Ok(false);
+    }
+    let db = input.database();
+    let fact_error = |message: String| BackendError::RustGlueFact { key: export, message };
+    let root = input
+        .roots()
+        .iter()
+        .copied()
+        .find(|root| root.unit == export.unit)
+        .ok_or_else(|| fact_error("Glue export has no source root".into()))?;
+    let closure = beskid_queries::reachable_items(db, root, export)
+        .map_err(|error| fact_error(error.to_string()))?
+        .ok_or_else(|| fact_error("incomplete direct-call facts for a Glue export".into()))?;
+    let mut pending = std::iter::once(export).chain(closure.iter().copied()).collect::<Vec<_>>();
+    let mut seen = HashSet::new();
+    while let Some(node) = pending.pop() {
+        if !seen.insert(node) {
+            continue;
+        }
+        if let Ok(Some(CallLowering::Direct(declaration))) = call_lowering(db, node)
+            && fallible.contains(&declaration)
+        {
+            return Ok(true);
+        }
+        if let Some(children) = child_nodes(db, node).map_err(|error| fact_error(error.to_string()))? {
+            pending.extend(children.iter().copied());
+        }
+    }
+    Ok(false)
+}
 fn scalar(value: PrimitiveType) -> Result<(&'static str, &'static str, &'static str, bool), BackendError> {
     Ok(match value {
         PrimitiveType::I8 => ("i8", "i8", "int8_t", false),
@@ -229,6 +288,7 @@ pub fn emit(
     let mut bindings = Vec::new();
     let mut seen = BTreeSet::new();
     let mut adapters = BTreeSet::new();
+    let fallible_imports = fallible_imports(input, items)?;
     for item in items {
         if item.key.generation != input.typed_program().generation
             || !input
@@ -307,6 +367,10 @@ pub fn emit(
             span_start: span.start,
             span_end: span.end,
         };
+        let fallible = match fact.direction {
+            GlueDirection::Import => fallible_imports.contains(&item.key),
+            GlueDirection::Export => reaches_fallible_import(input, item.key, &fallible_imports)?,
+        };
         let mut binding = GlueBindingManifest {
             identity_sha256: String::new(),
             direction: match fact.direction {
@@ -320,6 +384,7 @@ pub fn emit(
             shape_id: 0,
             parameters,
             result,
+            fallible,
             source,
         };
         let shape = binding_shape_digest(&compiled_source_sha256, &binding)?;
@@ -440,7 +505,8 @@ unsafe fn copy_owned(view:GlueOwnedView,release:unsafe extern "C" fn(u64)->i32)-
         required_native_adapters: adapters.into_iter().collect(),
         expected_outputs: vec!["libbeskid_glue_client.rlib".into()],
     };
-    let (native, shapes) = super::native::emit(&manifest)?;
+    let scope = super::native::CheckedScopeGeometry::from_manifest(input.abi_manifest())?;
+    let (native, shapes) = super::native::emit(&manifest, &scope)?;
     let manifest_bytes = serde_json::to_vec_pretty(&manifest).map_err(GlueArtifactError::from)?;
     let mut files = vec![GeneratedFile::new("Cargo.toml",b"[package]\nname = \"beskid_glue_client\"\nversion = \"0.0.0\"\nedition = \"2024\"\n[lib]\npath = \"src/lib.rs\"\ncrate-type = [\"rlib\"]\n[dependencies]\nbeskid_glue = { path = \"vendor/beskid_glue\" }\nbeskid_serialization = { path = \"vendor/beskid_serialization\" }\n".to_vec()),GeneratedFile::new("src/lib.rs",format!("pub mod peer;\n{rust}").into_bytes()),GeneratedFile::new("include/beskid_glue.h",header.into_bytes()),GeneratedFile::new("glue-manifest.json",manifest_bytes),GeneratedFile::new("native/adapters.c",native),GeneratedFile::new("native/compiled-shapes.json",shapes)];
     files.push(GeneratedFile::new("src/peer.rs", generated_peer(&manifest)?));
