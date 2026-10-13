@@ -52,20 +52,44 @@ impl BeskidDatabase {
     }
 
     /// Workspace grammar revision input; bumps invalidate all unit tracked queries.
+    ///
+    /// Adopts a revision restored from a snapshot only when it equals the running compiler's
+    /// [`beskid_pipeline::GRAMMAR_REVISION`]. Snapshot loading rejects a candidate whose revision
+    /// differs (see [`Self::restored_grammar_revision_mismatch`]), so a stale revision never
+    /// reaches a published database; meeting one here is a broken invariant, not a cache miss.
     pub fn grammar_revision(&mut self) -> GrammarRevision {
         if let Some(rev) = self.grammar_revision {
             return rev;
         }
-        // If the snapshot loaded a GrammarRevision, reuse it instead of allocating a duplicate.
-        use salsa::plumbing::ZalsaDatabase;
-        let loaded = GrammarRevision::ingredient(self).entries(self.zalsa()).next().map(|entry| entry.as_struct());
-        if let Some(rev) = loaded {
-            self.grammar_revision = Some(rev);
-            return rev;
-        }
-        let rev = GrammarRevision::new(self, beskid_pipeline::GRAMMAR_REVISION.to_string());
+        let rev = match self.restored_grammar_revisions().as_slice() {
+            [] => GrammarRevision::new(self, beskid_pipeline::GRAMMAR_REVISION.to_string()),
+            [rev] if rev.rev(self) == beskid_pipeline::GRAMMAR_REVISION => *rev,
+            restored => panic!(
+                "salsa database holds grammar revisions {:?}, expected exactly `{}`",
+                restored.iter().map(|rev| rev.rev(self).clone()).collect::<Vec<_>>(),
+                beskid_pipeline::GRAMMAR_REVISION,
+            ),
+        };
         self.grammar_revision = Some(rev);
         rev
+    }
+
+    /// Describes why restored `GrammarRevision` inputs cannot be adopted by this compiler:
+    /// more than one revision, or one that differs from [`beskid_pipeline::GRAMMAR_REVISION`].
+    /// `None` when the candidate holds no revision or exactly the current one.
+    pub(crate) fn restored_grammar_revision_mismatch(&self) -> Option<String> {
+        let restored =
+            self.restored_grammar_revisions().into_iter().map(|rev| rev.rev(self).clone()).collect::<Vec<_>>();
+        match restored.as_slice() {
+            [] => None,
+            [rev] if rev == beskid_pipeline::GRAMMAR_REVISION => None,
+            _ => Some(format!("snapshot grammar revisions {restored:?}, compiler `{}`", beskid_pipeline::GRAMMAR_REVISION)),
+        }
+    }
+
+    fn restored_grammar_revisions(&self) -> Vec<GrammarRevision> {
+        use salsa::plumbing::ZalsaDatabase;
+        GrammarRevision::ingredient(self).entries(self.zalsa()).map(|entry| entry.as_struct()).collect()
     }
 
     pub fn grammar_revision_ref(&self) -> GrammarRevision {

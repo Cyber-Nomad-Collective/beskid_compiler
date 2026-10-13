@@ -560,6 +560,12 @@ fn load_db_snapshot_on_stack(db: &mut crate::db::BeskidDatabase, bytes: &[u8]) -
         log::warn!("beskid salsa snapshot rejected: trailing payload: {err}");
         return false;
     }
+    // The envelope version already names the grammar revision; the restored input is checked
+    // as well so a payload carrying another compiler's revision is never adopted.
+    if let Some(mismatch) = candidate.restored_grammar_revision_mismatch() {
+        log::warn!("beskid salsa snapshot rejected: grammar revision mismatch: {mismatch}");
+        return false;
+    }
     let restored_generation = rehydrate_registries(&mut candidate, current_root.as_deref());
     candidate.grammar_revision();
     // Restored dependency memos may be verified through erased Salsa access

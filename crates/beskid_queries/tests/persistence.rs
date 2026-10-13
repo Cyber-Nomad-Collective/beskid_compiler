@@ -323,6 +323,32 @@ fn out_of_order_snapshot_is_rejected_before_salsa_mutation() {
 }
 
 #[test]
+fn snapshot_from_another_grammar_revision_is_rejected_not_adopted() {
+    // The envelope version names the grammar revision too; keep it current so only the restored
+    // `GrammarRevision` input differs and the database-level check is what rejects it.
+    let (directory, path, _) = snapshot_fixture();
+    rewrite_snapshot(directory.path(), |envelope| {
+        let current = serde_json::to_string(beskid_pipeline::GRAMMAR_REVISION).unwrap();
+        let original = envelope.db.get();
+        let stale = original.replace(&current, "\"0.0.0+0000000000000000\"");
+        assert_ne!(stale, original, "the persisted GrammarRevision input carries the current revision");
+        replace_payload(envelope, stale);
+    });
+    assert_rejected_and_usable(directory.path(), &path);
+}
+
+#[test]
+fn snapshot_version_names_the_content_derived_grammar_revision() {
+    let (directory, _, _) = snapshot_fixture();
+    let snapshot = beskid_queries::cache_root_for_project(directory.path()).join("db.json");
+    let envelope: serde_json::Value = serde_json::from_slice(&std::fs::read(snapshot).unwrap()).unwrap();
+    let version = envelope["version"].as_str().unwrap();
+    assert!(version.contains(&format!(":grammar:{}:", beskid_pipeline::GRAMMAR_REVISION)), "{version}");
+    let (_, digest) = beskid_pipeline::GRAMMAR_REVISION.split_once('+').expect("<version>+<digest>");
+    assert!(digest.len() >= 16 && digest.bytes().all(|byte| byte.is_ascii_hexdigit()), "{digest}");
+}
+
+#[test]
 fn incompatible_or_damaged_snapshot_preserves_the_live_database() {
     for component in ["version", "compiler", "corelib", "digest"] {
         let (directory, path, _) = snapshot_fixture();
