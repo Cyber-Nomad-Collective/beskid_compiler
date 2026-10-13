@@ -52,6 +52,42 @@ fn real_runtime_fixtures_resolve_actual_module_signatures_and_constants() {
     }
 }
 
+/// Regression: a `Project.lock` plus `obj/beskid/{deps,root}` snapshot left beside the fixture by
+/// an earlier `beskid test` run (or copied with a builder slot's state) was replayed as the
+/// fixture's source roots, so the assembly carried a second copy of every canonical Foundation
+/// unit and `Core.Results` resolved ambiguously. The fixture assembly reads only the
+/// plan-declared checkout roots, whatever local build state sits beside it.
+#[test]
+fn fixture_assembly_never_replays_local_materialized_snapshots() {
+    use beskid_analysis::projects::effective_roots_from_plan_and_workspace;
+    let manifest = runtime_fixture_project_root().join("runtime_semantics.bproj");
+    let plan = build_compile_plan(&manifest, Some("NetworkNativeTests")).expect("real fixture plan");
+    let declared = effective_roots_from_plan_and_workspace(&plan, None);
+    let assembly = fixture("NetworkNativeTests");
+    assert_eq!(assembly.roots.host, declared.host, "host root must be the checkout fixture source root");
+    for root in &assembly.roots.dependencies {
+        let checkout = root.source_root.canonicalize().expect("dependency root exists");
+        assert!(
+            declared.dependencies.iter().any(|declared| declared.source_root.canonicalize().ok().as_ref() == Some(&checkout)),
+            "dependency root {root:?} is not a plan-declared checkout root"
+        );
+    }
+    let local_state = plan.project_root.join("obj").canonicalize().ok();
+    for unit in assembly.units.iter() {
+        assert!(
+            local_state.as_ref().is_none_or(|obj| !unit.path.starts_with(obj)),
+            "fixture unit {} comes from a local materialized snapshot",
+            unit.path.display()
+        );
+    }
+    let results = assembly
+        .units
+        .iter()
+        .filter(|unit| unit.path.ends_with("Core/Results/Results.bd"))
+        .count();
+    assert_eq!(results, 1, "exactly one Core.Results declaration enters the fixture assembly");
+}
+
 #[test]
 fn extra_runtime_source_cannot_extend_fixture_authority() {
     let mut assembly = fixture("LifecycleTests");

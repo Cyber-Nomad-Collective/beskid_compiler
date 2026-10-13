@@ -9,7 +9,6 @@ use rayon::prelude::*;
 
 use super::super::discovery::resolve_module_file;
 use super::super::module_index::ModuleIndex;
-use super::super::roots::effective_roots_for_plan;
 use super::super::unit_builder::UnitBuilder;
 use super::super::unit_cache::{disk_cache_stats, ensure_manifest};
 use super::super::roots::EffectiveCompilationRoots;
@@ -55,7 +54,7 @@ pub fn assemble_program_with_materializer(
 ) -> Result<ProgramAssembly, AssemblyError> {
     let assembly_started = std::time::Instant::now();
     let generation = SyntaxGenerationId::allocate().ok_or(AssemblyError::GenerationExhausted)?;
-    let roots = effective_roots_for_plan(plan, workspace);
+    let roots = super::super::runtime_fixture::assembly_roots(plan, workspace);
     let module_roots: Vec<PathBuf> = super::roots::module_roots_from_effective(&roots);
 
     let entry_canonical = entry_path.canonicalize().unwrap_or_else(|_| entry_path.to_path_buf());

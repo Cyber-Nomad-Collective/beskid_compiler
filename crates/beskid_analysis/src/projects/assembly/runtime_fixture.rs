@@ -1,7 +1,8 @@
 //! Assemble a declared fixture beside, never inside, the exact production runtime corpus.
 
+use super::roots::{EffectiveCompilationRoots, effective_roots_for_plan, effective_roots_from_plan_and_workspace};
 use super::{AssemblyError, ModuleIndex, ProgramAssembly, RootEntry, SourceUnit};
-use crate::projects::CompilePlan;
+use crate::projects::{CompilePlan, PreparedProjectWorkspace};
 use crate::syntax_query::SyntaxIndex;
 use beskid_abi::abi_v5::SourceUnit as CanonicalSourceUnit;
 use beskid_abi::runtime_source::{
@@ -16,6 +17,32 @@ use std::{
 
 /// Logical prefix of every unit owned by the native runtime package root (`runtime/beskid`).
 const RUNTIME_ROOT_LOGICAL_PREFIX: &str = "src/";
+
+/// Source roots an assembly of `plan` reads.
+///
+/// The declared runtime fixture project is proven against the compiler checkout itself (runtime
+/// root, Foundation root and the fixture's own sources), so without a prepared workspace its
+/// roots are exactly the plan-declared checkout roots. A `Project.lock` and `obj/beskid` snapshot
+/// left beside the fixture by an earlier CLI run are a local replay hint whose bytes may be stale
+/// and whose paths are not the checkout paths [`attach_runtime_fixture`] replaces; replaying them
+/// would admit a second copy of every canonical Foundation unit (`Core.Results` declared twice)
+/// and move the host root away from the fixture entry. Every other plan keeps the ordinary
+/// workspace / lockfile / plan precedence.
+pub(super) fn assembly_roots(
+    plan: &CompilePlan,
+    workspace: Option<&PreparedProjectWorkspace>,
+) -> EffectiveCompilationRoots {
+    if workspace.is_none() && is_runtime_fixture_manifest(&plan.manifest_path) {
+        return effective_roots_from_plan_and_workspace(plan, None);
+    }
+    effective_roots_for_plan(plan, workspace)
+}
+
+/// Whether `manifest` is the compiler-declared runtime fixture manifest of this checkout.
+fn is_runtime_fixture_manifest(manifest: &Path) -> bool {
+    let expected = runtime_fixture_project_root().join("runtime_semantics.bproj");
+    manifest.canonicalize().ok().zip(expected.canonicalize().ok()).is_some_and(|(actual, expected)| actual == expected)
+}
 
 pub(super) fn attach_runtime_fixture(
     mut assembly: ProgramAssembly,
