@@ -486,7 +486,12 @@ ExpressionList = { Expression ~ ("," ~ Expression)* ~ ","? }
 
 MatchExpression = { KwMatch ~ Expression ~ "{" ~ (MatchArm ~ ("," ~ MatchArm?)*)? ~ "}" }
 MatchArm = { Pattern ~ MatchGuard? ~ "=>" ~ Expression }
-MatchGuard = { KwWhen ~ Expression }
+// A guard ends at the arm's `=>`, so a guard that starts like lambda parameters (`when strict => ...`,
+// `when (ready) => ...`) parses without the lambda alternative: an unparenthesized lambda is never a
+// guard. A parenthesized lambda inside the guard stays an ordinary expression. Every other guard keeps
+// the `Expression` node, so existing trees and spans are unchanged.
+MatchGuard = { KwWhen ~ (MatchGuardExpression | Expression) }
+MatchGuardExpression = { &(LambdaParameters ~ "=>") ~ AssignmentExpression }
 
 Pattern = { "_" | EnumPattern | Identifier | Literal }
 EnumPattern = { EnumPath ~ ("(" ~ PatternList? ~ ")")? }

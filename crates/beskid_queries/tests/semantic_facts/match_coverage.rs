@@ -92,6 +92,20 @@ fn guarded_arms_retain_their_normalized_guard_expression() {
 }
 
 #[test]
+fn bare_name_guard_is_a_boolean_guard_expression() {
+    let source = "enum Choice { Value(i64 value), Empty } i64 Main(Choice choice, bool strict) { return match choice { \
+                  Choice::Value(v) when strict => v, Choice::Value(_) => 0_i64, Choice::Empty => -1_i64, }; }";
+    let (db, _project, unit, generation, index) = setup(source);
+    let expression = key(unit, generation, &index, NodeKind::MatchExpression, 0);
+    let fact = enum_match(&db, expression).expect("match query").expect("guarded match fact");
+    let guard = fact.arms[0].guard.expect("the first arm keeps its bare-name guard");
+    assert_eq!(node_kind(&db, guard).expect("guard kind"), Some(IndexedNodeKind::PathExpression));
+    assert_eq!(node_type(&db, guard).expect("guard type"), Some(SemanticTypeId::BOOL));
+    assert!(fact.arms[1].guard.is_none() && fact.arms[2].guard.is_none());
+    assert_eq!(node_type(&db, expression).expect("match type"), Some(SemanticTypeId::I64));
+}
+
+#[test]
 fn primitive_scrutinee_matches_have_a_scalar_match_fact() {
     let source = "i64 Main(i64 count, string name) { \
                   i64 first = match count { 0 => 1_i64, 7_i64 => 2_i64, other => other, }; \

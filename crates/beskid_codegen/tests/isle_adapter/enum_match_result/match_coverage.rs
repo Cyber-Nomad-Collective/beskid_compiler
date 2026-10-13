@@ -155,6 +155,25 @@ fn guarded_arms_lower_as_conditional_arm_selection() {
     assert!(score.matches("icmp").count() >= 4, "each guard and tag test compares explicitly: {score}");
 }
 
+/// A bare-name guard (`when strict =>`) is the guard expression, not a lambda over the arm body,
+/// both as a value arm and as a statement arm.
+#[test]
+fn bare_name_guards_lower_as_conditional_arm_selection() {
+    let functions = lower_program(
+        "bare-name guards",
+        "enum Choice { Value(i64 value), Empty } \
+         i64 Score(Choice choice, bool strict) { return match choice { \
+         Choice::Value(v) when strict => v, \
+         Choice::Value(_) => 0_i64, \
+         Choice::Empty => -1_i64, }; } \
+         i64 Main(Choice choice, bool strict) { mut i64 total = 0_i64; \
+         match choice { Choice::Value(v) when (strict) => { total = v; }, _ => { total = -1_i64; }, }; \
+         return total + Score(choice, strict); }",
+    );
+    let score = clif_of(&functions, "Score");
+    assert!(score.contains("brif"), "the bare-name guard selects between arms: {score}");
+}
+
 /// A whole-scrutinee binding arm of an enum match binds the enum value itself.
 #[test]
 fn whole_scrutinee_binding_arm_of_an_enum_match_lowers() {
