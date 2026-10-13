@@ -407,7 +407,12 @@ impl beskid_isle::CallImporter for ArtifactCallImporter<'_> {
         callee: DirectCallee,
         signature: &Signature,
     ) -> Result<FuncRef, beskid_isle::CallImportError> {
-        let symbol = self.symbols.get(&callee).ok_or(beskid_isle::CallImportError::UnknownCallee)?;
+        let symbol = self.symbols.get(&callee).ok_or_else(|| {
+            crate::isle_trace::event(|| {
+                format!("event=import.unknown callee={callee:?} known={}", self.symbols.len())
+            });
+            beskid_isle::CallImportError::UnknownCallee
+        })?;
         let signature = builder.import_signature(signature.clone());
         Ok(builder.func.import_function(ExtFuncData {
             name: ExternalName::testcase(symbol.as_bytes()),

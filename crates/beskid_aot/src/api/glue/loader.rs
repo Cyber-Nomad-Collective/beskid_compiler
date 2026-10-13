@@ -336,7 +336,7 @@ impl GlueProcess {
         }
         let mut shapes: BTreeSet<_> = artifact.packet.manifest.bindings.iter().map(|binding| binding.shape_id).collect();
         for transport in &artifact.producer.handle_transports {
-            shapes.insert(beskid_codegen::glue::artifact::shape_id(&transport.brand)
+            shapes.insert(beskid_codegen::glue::artifact::brand_shape(&transport.brand)
                 .map_err(|error|invalid(error.to_string()))?);
         }
         // Complete source-issued immutable reservation before any usable domain

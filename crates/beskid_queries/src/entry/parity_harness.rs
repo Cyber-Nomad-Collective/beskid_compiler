@@ -84,7 +84,7 @@ pub(super) fn unit_findings_with_glue(
     .with_root_set(AssemblyRootSet::OwnUnits(Arc::from(own_paths)))
     .with_glue_libraries(glue_libraries.iter().map(|library| (*library).to_string()).collect::<Vec<_>>().into());
     let mut db = BeskidDatabase::default();
-    let findings = semantic_diagnostics_for_roots(&mut db, None, &assembly, &program).unwrap_or_else(|error| {
+    let findings = semantic_diagnostics_for_roots(&mut db, None, &assembly, &program, None).unwrap_or_else(|error| {
         panic!("query gate must judge the fixture: {error}\n{}", units.iter().map(|(_, s)| *s).collect::<Vec<_>>().join("\n---\n"))
     });
     let _ = std::fs::remove_dir_all(&root);

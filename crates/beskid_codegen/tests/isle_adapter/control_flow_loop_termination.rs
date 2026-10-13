@@ -66,7 +66,12 @@ fn for_over_a_scalar_array_reads_the_header_length_and_indexes_by_stride() {
     let clif = function.display().to_string();
     assert!(clif.contains("icmp ult"), "the index is compared unsigned against the header length:\n{clif}");
     assert!(clif.contains("imul"), "an 8-byte element is addressed by its stride:\n{clif}");
-    assert!(clif.contains("iadd_imm"), "the index advances by one per iteration:\n{clif}");
+    // Cranelift's `iadd_imm_s` helper materializes the immediate (`iconst.i64 1` + `iadd`); the
+    // IR has no immediate-form add instruction to assert on.
+    assert!(
+        clif.contains("iconst.i64 1\n") && clif.contains("iadd.i64"),
+        "the index advances by one per iteration:\n{clif}"
+    );
     assert!(clif.contains("trapz"), "a null array traps before the first element is read:\n{clif}");
     assert!(clif.contains("explicit_slot"), "the array value is rooted for the loop:\n{clif}");
 }
@@ -84,8 +89,10 @@ fn for_over_a_byte_array_addresses_elements_without_a_stride_multiply() {
 
 #[test]
 fn for_over_a_managed_array_roots_the_loop_variable() {
+    // The loop variable starts from a parameter: `emit_isle_item` is the syntax-only path without a
+    // string interner, so a string literal initializer is not part of what this test exercises.
     let (input, isa, item) = item_fixture(
-        "string Last(string[] names) { mut string last = \"\"; for name in names { last = name; } return last; }",
+        "string Last(string[] names, string fallback) { mut string last = fallback; for name in names { last = name; } return last; }",
     );
     let function = emit_isle_item(&input, isa.as_ref(), item)
         .unwrap_or_else(|error| panic!("a for over a string[] parameter lowers: {}", describe(&input, error)));
@@ -95,7 +102,13 @@ fn for_over_a_managed_array_roots_the_loop_variable() {
         clif.matches("explicit_slot").count() >= 2,
         "the array and the loop variable are rooted in stack slots for the loop:\n{clif}"
     );
-    assert!(clif.contains("stack_store"), "each iteration publishes the element into the loop variable's root:\n{clif}");
+    // The body block loads the element and stores it through `stack_addr` into the loop
+    // variable's root slot (roots are addressed, not `stack_store`d).
+    let body = clif.split("block2:").nth(1).and_then(|rest| rest.split("block3:").next()).unwrap_or_default();
+    assert!(
+        body.contains("stack_addr.i64") && body.contains("store notrap"),
+        "each iteration publishes the element into the loop variable's root:\n{clif}"
+    );
 }
 
 #[test]

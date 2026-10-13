@@ -34,10 +34,13 @@ pub struct SemanticFactFinding {
 /// finding its facts produce for every own unit (typing and legality obligations, invalid `?`
 /// targets, and the reachability-scoped legality facts the lowering gate also evaluates).
 pub trait SemanticFactAuthority {
+    /// `pipeline` observes the gate's reported sub-phases (`semantic.contracts` around contract
+    /// conformance); the authority forwards it, never records phases of its own.
     fn fact_findings(
         &mut self,
         assembly: &ProgramAssembly,
         program: &Spanned<crate::syntax::Program>,
+        pipeline: Option<&dyn beskid_pipeline::PipelineObserver>,
     ) -> Result<Vec<SemanticFactFinding>>;
     fn mod_scope(&self) -> Option<&dyn crate::mod_host::ModSemanticScope> {
         None
@@ -45,14 +48,19 @@ pub trait SemanticFactAuthority {
 }
 impl<F> SemanticFactAuthority for F
 where
-    F: FnMut(&ProgramAssembly, &Spanned<crate::syntax::Program>) -> Result<Vec<SemanticFactFinding>>,
+    F: FnMut(
+        &ProgramAssembly,
+        &Spanned<crate::syntax::Program>,
+        Option<&dyn beskid_pipeline::PipelineObserver>,
+    ) -> Result<Vec<SemanticFactFinding>>,
 {
     fn fact_findings(
         &mut self,
         assembly: &ProgramAssembly,
         program: &Spanned<crate::syntax::Program>,
+        pipeline: Option<&dyn beskid_pipeline::PipelineObserver>,
     ) -> Result<Vec<SemanticFactFinding>> {
-        self(assembly, program)
+        self(assembly, program, pipeline)
     }
 }
 

@@ -109,7 +109,7 @@ pub(super) fn run_prepare_spine(
         let syntax_generation_id = assembly.generation.0;
         Span::current().record("syntax_generation_id", syntax_generation_id);
         let front = cached.as_ref();
-        let findings = fact_authority.fact_findings(&front.assembly, &front.program)?;
+        let findings = fact_authority.fact_findings(&front.assembly, &front.program, pipeline)?;
         let fact_diagnostics = fact_findings_to_diagnostics(&front.assembly, entry_source, findings)?;
         if !collect_diagnostics {
             require_no_semantic_errors(&fact_diagnostics)?;
@@ -281,7 +281,7 @@ pub(super) fn run_prepare_spine(
     // On the diagnostics path its findings are merged after the structural rules have run, so an
     // entry-unit error both report is reported once. On the executable path an error finding
     // fails preparation here: nothing after this point judges the program again.
-    let findings = fact_authority.fact_findings(&assembly, &program)?;
+    let findings = fact_authority.fact_findings(&assembly, &program, pipeline)?;
     let fact_diagnostics = fact_findings_to_diagnostics(&assembly, entry_source, findings)?;
     if !collect_diagnostics {
         require_no_semantic_errors(&fact_diagnostics)?;

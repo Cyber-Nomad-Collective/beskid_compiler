@@ -8,11 +8,14 @@ use super::parity_harness::{assert_covered_kinds, assert_silent, codes, reports_
 
 /// Single-unit classes: (legacy class, variant, code, source).
 const COVERED_KINDS: &[(&str, &str, &str, &str)] = &[
+    // A named non-generic function read as a value is a closure record (`function_item_value`),
+    // so `let f = Helper;` is legal. A generic function has no single entry to capture and stays an
+    // item named in value position.
     (
-        "TypeError::UnknownValueType (function named as a value)",
+        "TypeError::UnknownValueType (generic function named as a value)",
         "TypeUnknownValueType",
         "E1201",
-        "i64 Helper() { return 1_i64; } unit Main() { let f = Helper; return; }",
+        "T Helper<T>(T value) { return value; } unit Main() { let f = Helper; return; }",
     ),
     (
         "TypeError::UnknownValueType (type-qualified value path)",

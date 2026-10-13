@@ -7,11 +7,17 @@ impl SyntaxNodeFacts<'_> {
         &self,
         key: AstNodeKey,
     ) -> Option<beskid_queries::GenericSpecializationInstance> {
-        if let Some(enclosing) = self.current_item_specialization()
-            && let Some(specialization) =
-                self.query(generic_call_specialization_in_environment(self.db, key, enclosing))
-        {
-            return Some(specialization);
+        if let Some(enclosing) = self.current_item_specialization() {
+            match generic_call_specialization_in_environment(self.db, key, enclosing) {
+                Ok(Some(specialization)) => return Some(specialization),
+                Ok(None) => {}
+                Err(error) => crate::isle_trace::event(|| {
+                    format!(
+                        "event=fact.unavailable query=generic_call_specialization_in_environment key={} detail={error}",
+                        beskid_queries::format_ast_node_site(self.db, key)
+                    )
+                }),
+            }
         }
         self.query(generic_call_specialization(self.db, key))
             .and_then(|specialization| self.query(generic_call_specialization_instance(self.db, specialization)))

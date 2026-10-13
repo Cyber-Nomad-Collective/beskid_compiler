@@ -89,6 +89,23 @@ impl SyntaxNodeFacts<'_> {
                 ManagedReferenceKind::NativeOrScalar => ManagedReferenceFact::NativeOrScalar,
             });
         }
+        // A field typed by an enclosing generic parameter (`this.binding` with `B binding` in
+        // `impl<T, B>`, `decoder.binding` on a `Dec<T, B>` parameter) has no source-level managed
+        // category of its own; the specialization's applied field layout carries it.
+        if let Some(enclosing) = self.current_item_specialization()
+            && let Some(access) = self.query(aggregate_field_access_specialization(self.db, key, enclosing))
+            && let Some((_, shape)) = access.layout.fields.get(usize::try_from(access.index).ok()?)
+        {
+            return Some(match shape {
+                AggregateFieldShape::Scalar(semantic) if *semantic == SemanticTypeId::STRING => {
+                    ManagedReferenceFact::GcManaged
+                }
+                AggregateFieldShape::Scalar(_) => ManagedReferenceFact::NativeOrScalar,
+                AggregateFieldShape::ManagedReference(_) | AggregateFieldShape::Nominal(_) => {
+                    ManagedReferenceFact::GcManaged
+                }
+            });
+        }
         if let Some(operator) = self.operator_fact(key) {
             return Some(if operator == OperatorFact::StringAdd {
                 ManagedReferenceFact::GcManaged

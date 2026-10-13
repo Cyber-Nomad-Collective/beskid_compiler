@@ -125,6 +125,24 @@ pub fn binding_shape_digest(source: &str, binding: &GlueBindingManifest) -> Resu
     logical.shape_id = 0;
     Ok(digest(&serde_json::to_vec(&(source, logical))?))
 }
+/// The folded shape of an opaque brand: the first eight bytes of the brand digest as a
+/// little-endian word, exactly as the owner runtime (`opaque_shape` in `owner_identity_v1.c`) and
+/// the Rust owner admission fold it. A consumer image, its loader-issued shape closure and the
+/// owner side must agree on this one fold or the opaque domain binding is rejected.
+pub fn brand_shape(brand_sha256: &str) -> Result<u64, GlueArtifactError> {
+    let mut bytes = [0u8; 8];
+    for (index, byte) in bytes.iter_mut().enumerate() {
+        *byte = brand_sha256
+            .get(index * 2..index * 2 + 2)
+            .and_then(|pair| u8::from_str_radix(pair, 16).ok())
+            .ok_or_else(|| GlueArtifactError::Invalid("invalid opaque brand digest".into()))?;
+    }
+    if brand_sha256.len() != 64 || !brand_sha256.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return Err(GlueArtifactError::Invalid("invalid opaque brand digest".into()));
+    }
+    let shape = u64::from_le_bytes(bytes);
+    (shape != 0).then_some(shape).ok_or_else(|| GlueArtifactError::Invalid("zero opaque brand shape".into()))
+}
 pub fn shape_id(digest: &str) -> Result<u64, GlueArtifactError> {
     u64::from_str_radix(digest.get(..16).unwrap_or(""), 16)
         .ok()

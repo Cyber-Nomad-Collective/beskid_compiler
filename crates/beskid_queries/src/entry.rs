@@ -181,11 +181,16 @@ pub fn prepare_compilation_diagnostics_isolated(
 /// LSP/IDE fact queries over the same units find that owner instead of
 /// colliding with a second, unregistered session. Only the isolated, job-local
 /// database passes `None` and lets the assembly mint its own owner.
+///
+/// `pipeline` observes the gate's one reported sub-phase: `semantic.contracts` spans the
+/// unit-level obligations, where contract conformance (missing methods, signature mismatches,
+/// associated-type bindings) is judged since it moved out of the structural rule pipeline.
 pub fn semantic_diagnostics_for_roots(
     db: &mut BeskidDatabase,
     planned: Option<&ResolvedInput>,
     assembly: &beskid_analysis::projects::ProgramAssembly,
     program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    pipeline: Option<&dyn PipelineObserver>,
 ) -> Result<Vec<beskid_analysis::services::SemanticFactFinding>> {
     use crate::{
         AstNodeKey, IndexedNodeKind, build_runtime_fixture_typed_program,
@@ -314,7 +319,11 @@ pub fn semantic_diagnostics_for_roots(
     let mut semantic_findings = crate::check_items(db, &items).err().unwrap_or_default();
     semantic_findings.extend(crate::check_typing_obligations(db, &root_items));
     semantic_findings.extend(crate::check_gate_obligations(db, &root_items));
-    semantic_findings.extend(crate::check_unit_obligations(db, &root_units));
+    let mut unit_findings = Vec::new();
+    observe_phase(pipeline, phases::SEMANTIC_CONTRACTS, || {
+        unit_findings = crate::check_unit_obligations(db, &root_units);
+    });
+    semantic_findings.extend(unit_findings);
     semantic_findings.extend(extern_findings);
     if !semantic_findings.is_empty() {
         let units = syntax
@@ -483,7 +492,7 @@ mod tests {
             generation,
         );
         let mut db = BeskidDatabase::default();
-        let findings = semantic_diagnostics_for_roots(&mut db, None, &assembly, &program)
+        let findings = semantic_diagnostics_for_roots(&mut db, None, &assembly, &program, None)
             .expect("canonical Corelib semantic fact findings");
         assert!(
             !findings.iter().any(|finding| {
@@ -519,7 +528,7 @@ mod tests {
         .expect("exact runtime fixture assembly");
         let program = assembly.entry_unit().program.clone();
         let mut db = BeskidDatabase::default();
-        let findings = semantic_diagnostics_for_roots(&mut db, None, &assembly, &program)
+        let findings = semantic_diagnostics_for_roots(&mut db, None, &assembly, &program, None)
             .expect("runtime fixture semantic fact findings");
         assert!(
             !findings.iter().any(|finding| {

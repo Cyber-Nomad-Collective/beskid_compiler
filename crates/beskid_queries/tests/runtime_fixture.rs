@@ -42,7 +42,7 @@ fn real_runtime_fixtures_resolve_actual_module_signatures_and_constants() {
     for name in ["LifecycleTests", "ExternalWorkTests", "NetworkNativeTests"] {
         let assembly = fixture(name);
         let mut db = BeskidDatabase::default();
-        let findings = semantic_diagnostics_for_roots(&mut db, None, &assembly, &assembly.entry_unit().program)
+        let findings = semantic_diagnostics_for_roots(&mut db, None, &assembly, &assembly.entry_unit().program, None)
             .unwrap_or_else(|error| panic!("{name}: the query gate must judge the fixture: {error:#}"));
         let errors = findings
             .iter()

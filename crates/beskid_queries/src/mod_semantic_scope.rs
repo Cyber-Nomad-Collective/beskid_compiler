@@ -128,13 +128,14 @@ impl beskid_analysis::services::SemanticFactAuthority for QueryModSemanticScope<
         &mut self,
         assembly: &ProgramAssembly,
         program: &Spanned<Program>,
+        pipeline: Option<&dyn beskid_pipeline::PipelineObserver>,
     ) -> Result<Vec<beskid_analysis::services::SemanticFactFinding>> {
         self.update_program(Some(program))?;
         let current = self.assembly();
         if current.generation != assembly.generation {
             bail!("semantic findings assembly differs from current Mod generation");
         }
-        self.with_db(|db| crate::entry::semantic_diagnostics_for_roots(db, self.planned, &current, program))
+        self.with_db(|db| crate::entry::semantic_diagnostics_for_roots(db, self.planned, &current, program, pipeline))
     }
     fn mod_scope(&self) -> Option<&dyn ModSemanticScope> {
         Some(self)

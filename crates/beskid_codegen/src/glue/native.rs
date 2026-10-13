@@ -255,8 +255,9 @@ fn emit_import_wrappers(manifest: &GlueManifest, c: &mut String) {
             source_values.push("&output".into());
         }
         c.push_str(&format!(
-            " int32_t status={checked}({}); if(status) glue_import_failure();\n",
-            source_values.join(",")
+            " int32_t status={checked}({}); if(status) {{ static const char message[]=\"Rust Glue foreign invocation failed: {}\"; beskid_rt_v5_trap(8,(void*)message,sizeof(message)-1); }}\n",
+            source_values.join(","),
+            binding.symbol
         ));
         if has_result {
             c.push_str(" return output;\n");
@@ -287,7 +288,7 @@ pub(super) fn emit(manifest: &GlueManifest) -> Result<(Vec<u8>, Vec<u8>), GlueAr
     for binding in &manifest.bindings {
         for physical in binding.parameters.iter().chain(std::iter::once(&binding.result)) {
             if let Some(opaque) = &physical.opaque {
-                ids.insert(super::artifact::shape_id(&opaque.brand_sha256)?);
+                ids.insert(super::artifact::brand_shape(&opaque.brand_sha256)?);
             }
         }
     }
@@ -469,7 +470,8 @@ mod tests {
     /// brand shape, exactly the closure the loader issues; it is not one shape per binding.
     #[test]
     fn opaque_brand_shapes_extend_the_compiled_closure() {
-        let brand = "12".repeat(32);
+        // Not byte-symmetric: the big-endian hex prefix and the little-endian owner fold differ.
+        let brand = "0102030405060708".to_owned() + &"ab".repeat(24);
         let opaque = GlueOpaqueType {
             brand_sha256: brand.clone(),
             library: "owner".into(),
@@ -481,7 +483,9 @@ mod tests {
         let manifest = manifest(vec![binding(&"34".repeat(32), vec![physical("Handle", &["uint64_t"], Some(opaque))])]);
         let (source, _) = emit(&manifest).expect("opaque binding closure is valid");
         let source = String::from_utf8(source).expect("C source");
-        let brand_id = super::super::artifact::shape_id(&brand).expect("brand shape");
+        let brand_id = super::super::artifact::brand_shape(&brand).expect("brand shape");
+        assert_eq!(brand_id, u64::from_le_bytes([1, 2, 3, 4, 5, 6, 7, 8]), "the brand folds little-endian");
+        assert_ne!(brand_id, super::super::artifact::shape_id(&brand).expect("hex prefix"), "a binding shape is not a brand fold");
         let binding_id = manifest.bindings[0].shape_id;
         let mut expected = [binding_id, brand_id];
         expected.sort_unstable();

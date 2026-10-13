@@ -399,6 +399,18 @@ fn lower_resolved_syntax_program(
             extern_imports.push(import);
         }
     }
+    // Checked collection transactions (`Array.Append` under a checked owner) call runtime kit
+    // helpers that are not builtin-table symbols; a module that references one declares it.
+    for symbol in ["beskid_rt_v5_gc_try_register_root", "beskid_rt_v5_array_try_grow_rooted"] {
+        let referenced = functions.iter().any(|function| {
+            function.function.dfg.ext_funcs.iter().any(|(_, external)| {
+                matches!(&external.name, cranelift_codegen::ir::ExternalName::TestCase(name) if name.raw() == symbol.as_bytes())
+            })
+        });
+        if referenced && !extern_imports.iter().any(|existing| existing.symbol == symbol) {
+            extern_imports.push(ExternImport { symbol: symbol.to_owned(), abi: Some("C".into()), library: None, optional: false });
+        }
+    }
     if items.iter().any(|item| {
         item.specialization.as_ref().is_some_and(|instance| {
             beskid_queries::dynamic_packing_shape(input.database(), instance).ok().flatten().is_some()

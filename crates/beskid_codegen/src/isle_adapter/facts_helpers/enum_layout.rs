@@ -16,8 +16,22 @@ impl SyntaxNodeFacts<'_> {
             .specialized_enum_constructor(key)
             .map(|fact| fact.layout)
             .or_else(|| self.enum_match_in_context(key).map(|fact| fact.layout))
-            .or_else(|| self.query(enum_layout(self.db, key)))?;
+            .or_else(|| self.query(enum_layout(self.db, key)))
+            .or_else(|| self.enum_field_read_layout(key))?;
         self.enum_layout_from_fact(&source)
+    }
+
+    /// The layout of an enum read from an aggregate field (`node.kind`, `this.state`): the field
+    /// shape names the enum declaration, whose layout is the operand's layout. Without it an
+    /// enum-to-enum comparison of two field reads has no enum layout and would degrade to the
+    /// pointer comparison of two distinct variant objects.
+    fn enum_field_read_layout(&self, key: AstNodeKey) -> Option<beskid_queries::EnumLayoutFact> {
+        let access = self.aggregate_field_access_in_context(key)?;
+        let (_, shape) = access.layout.fields.get(usize::try_from(access.index).ok()?)?;
+        let AggregateFieldShape::Nominal(declaration) = shape else {
+            return None;
+        };
+        self.query(enum_layout(self.db, *declaration))
     }
 
     pub(in crate::isle_adapter) fn enum_match_in_context(

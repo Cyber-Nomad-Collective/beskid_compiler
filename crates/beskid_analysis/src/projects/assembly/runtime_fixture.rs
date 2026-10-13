@@ -55,10 +55,22 @@ pub(super) fn attach_runtime_fixture(
         .ok_or_else(|| failure("runtime fixture requires the real native runtime dependency"))?
         .source_root
         .clone();
-    let mut units =
-        assembly.units.iter().filter(|unit| !unit.path.starts_with(&native_root)).cloned().collect::<Vec<_>>();
+    // Every canonical unit enters the fixture assembly exactly once. Runtime-root units replace
+    // the plan's native dependency units; Foundation support units (`Core/...`) replace the same
+    // files the plan's `corelib` dependency already contributed, at their real Foundation paths,
+    // so `use Core.Results;` and the private runtime scope name one declaration, not two copies.
+    let canonical_paths = expected
+        .iter()
+        .map(|source| canonical_source_path(&runtime_root, &foundation_root, &source.logical_path))
+        .collect::<std::collections::HashSet<_>>();
+    let mut units = assembly
+        .units
+        .iter()
+        .filter(|unit| !unit.path.starts_with(&native_root) && !canonical_paths.contains(&unit.path))
+        .cloned()
+        .collect::<Vec<_>>();
     for source in expected {
-        let path = runtime_root.join(&source.logical_path);
+        let path = canonical_source_path(&runtime_root, &foundation_root, &source.logical_path);
         let program =
             crate::services::parse_program_with_source_name(path.to_str().unwrap_or_default(), &source.source)
                 .map_err(|error| AssemblyError::Parse { path: path.clone(), message: error.to_string() })?;
@@ -86,6 +98,16 @@ pub(super) fn attach_runtime_fixture(
     assembly.syntax_indexes = Arc::new(indexes);
     assembly.runtime_fixture = Some(Arc::new(proof));
     Ok(assembly)
+}
+
+/// The on-disk identity of one canonical unit: runtime-root units (`src/...`) live under the native
+/// runtime package, every other canonical unit is a Foundation support source.
+fn canonical_source_path(runtime_root: &Path, foundation_root: &Path, logical_path: &str) -> PathBuf {
+    if logical_path.starts_with(RUNTIME_ROOT_LOGICAL_PREFIX) {
+        runtime_root.join(logical_path)
+    } else {
+        foundation_root.join(logical_path)
+    }
 }
 
 /// Verify the compiler-embedded runtime closure against its two exact on-disk owners.

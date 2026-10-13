@@ -1,5 +1,7 @@
 #[path = "isle_adapter/binding_field_receivers.rs"]
 mod binding_field_receivers;
+#[path = "isle_adapter/bounded_impl_generic_calls.rs"]
+mod bounded_impl_generic_calls;
 #[path = "isle_adapter/call_argument_array_literals.rs"]
 mod call_argument_array_literals;
 #[path = "isle_adapter/calls_conversions.rs"]

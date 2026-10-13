@@ -380,15 +380,13 @@ fn bridge_source(
                 ty.rust_type_path, brand
             )
         } else if matches!(binding.result.logical.as_str(), "utf8" | "bytes") {
-            args.extend([
-                "out_pointer:*mut *const u8".into(),
-                "out_length:*mut usize".into(),
-                "out_token:*mut u64".into(),
-            ]);
+            // The consumer adapter passes one `GlueOwnedView*` (`{pointer, length, token}`, the
+            // same `repr(C)` layout as `OwnedView`); the owner publishes the copied view into it.
+            args.push("out:*mut OwnedView".into());
             let logical = if binding.result.logical == "utf8" { "String" } else { "Vec<u8>" };
             let kind = if binding.result.logical == "utf8" { 1 } else { 2 };
             format!(
-                "if out_pointer.is_null()||out_length.is_null()||out_token.is_null(){{return 1;}}unsafe{{*out_pointer=std::ptr::null();*out_length=0;*out_token=0;}}{checks}let value:{logical}={call};if value.len()>16777216{{return 1;}}let mut owned=OwnedView{{pointer:std::ptr::null(),length:0,token:0}};let status=unsafe{{beskid_glue_v1_owner_copy(LIB.load(Ordering::Acquire),{},GEN.load(Ordering::Acquire),{kind},value.as_ptr(),value.len(),&mut owned)}};if status!=0{{return status;}}if owned.token==0||owned.length!=value.len()||(owned.pointer.is_null()&&owned.length!=0){{if owned.token!=0{{unsafe{{beskid_glue_v1_owner_release_token(LIB.load(Ordering::Acquire),owned.token);}}}}return 1;}}unsafe{{*out_pointer=owned.pointer;*out_length=owned.length;*out_token=owned.token;}}0",
+                "if out.is_null(){{return 1;}}unsafe{{out.write(OwnedView{{pointer:std::ptr::null(),length:0,token:0}});}}{checks}let value:{logical}={call};if value.len()>16777216{{return 1;}}let mut owned=OwnedView{{pointer:std::ptr::null(),length:0,token:0}};let status=unsafe{{beskid_glue_v1_owner_copy(LIB.load(Ordering::Acquire),{},GEN.load(Ordering::Acquire),{kind},value.as_ptr(),value.len(),&mut owned)}};if status!=0{{return status;}}if owned.token==0||owned.length!=value.len()||(owned.pointer.is_null()&&owned.length!=0){{if owned.token!=0{{unsafe{{beskid_glue_v1_owner_release_token(LIB.load(Ordering::Acquire),owned.token);}}}}return 1;}}unsafe{{out.write(owned);}}0",
                 binding.shape_id
             )
         } else {
@@ -415,7 +413,7 @@ fn bridge_source(
                 "if !out.is_null(){{let token=unsafe{{*out}};if token!=0{{let brand:[u8;32]={brand:?};unsafe{{beskid_glue_v1_owner_opaque_release(LIB.load(Ordering::Acquire),brand.as_ptr(),token);*out=0;}}}}}}"
             )
         } else if matches!(binding.result.logical.as_str(), "utf8" | "bytes") {
-            "if !out_token.is_null(){let token=unsafe{*out_token};if token!=0{unsafe{beskid_glue_v1_owner_release_token(LIB.load(Ordering::Acquire),token);*out_token=0;*out_length=0;*out_pointer=std::ptr::null();}}}".to_owned()
+            "if !out.is_null(){let token=unsafe{(*out).token};if token!=0{unsafe{beskid_glue_v1_owner_release_token(LIB.load(Ordering::Acquire),token);out.write(OwnedView{pointer:std::ptr::null(),length:0,token:0});}}}".to_owned()
         } else if binding.result.logical != "unit" {
             "if !out.is_null(){unsafe{out.write(Default::default());}}".to_owned()
         } else {
