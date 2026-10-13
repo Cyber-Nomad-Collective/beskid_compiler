@@ -120,7 +120,10 @@ fn current_entry_function(
     let matches = index
         .ids_of_kind(NodeKind::FunctionDefinition)
         .filter(|node| {
-            index.node_at(&entry.program, *node).and_then(|item| item.of::<FunctionDefinition>()) == Some(expected)
+            index
+                .node_at(&entry.program, *node)
+                .and_then(|item| item.of::<FunctionDefinition>())
+                .is_some_and(|function| super::same_retained_syntax(function, expected))
         })
         .map(|node| AstNodeKey { unit: syntax.unit(db), generation: program.generation, node })
         .collect::<Vec<_>>();

@@ -31,16 +31,8 @@ impl CompiledSerializationTemplate {
     pub(crate) fn appended_attribution(
         &self,
         db: &dyn Db,
-        project: ProjectSession,
         current: &ProgramAssembly,
     ) -> Result<Option<(SourceUnitId, Vec<crate::AstNodeId>)>, crate::SemanticError> {
-        // Attribution is descriptive placement for the issuing project's own judgement. A
-        // typed program of another session (test enumeration, a REPL snapshot) carries no
-        // issuer authority for the group, so the group stays unattributed there; it never
-        // gains conformance or codegen eligibility, which `rebind` still rejects.
-        if project != self.project {
-            return Ok(None);
-        }
         serialization_target::appended_group_attribution(
             db,
             &self.assembly,
@@ -226,7 +218,7 @@ pub fn serialization_template_instance_rebind(
         .compiled_mod_metadata
         .iter()
         .filter_map(|metadata| metadata.issuer_payload::<CompiledSerializationTemplate>())
-        .filter(|template| template.contribution == *item)
+        .filter(|template| super::same_retained_syntax(&template.contribution, item))
         .collect::<Vec<_>>();
     let [template] = templates.as_slice() else {
         if templates.is_empty() {

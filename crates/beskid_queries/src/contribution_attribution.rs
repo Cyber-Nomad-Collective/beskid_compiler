@@ -11,7 +11,7 @@
 //! `CompiledSerializationTemplate`) when the generation is registered, never from the
 //! descriptive claim. An appended item that no retained payload names exactly once keeps the
 //! entry unit, so an unattributed contribution fails closed under the ordinary rule.
-use crate::{AstNodeId, AstNodeKey, Db, ProjectSession, SemanticError, SourceUnitId};
+use crate::{AstNodeId, AstNodeKey, Db, SemanticError, SourceUnitId};
 use beskid_analysis::projects::ProgramAssembly;
 use beskid_analysis::syntax::SyntaxGenerationId;
 use beskid_analysis::syntax_query::NodeKind;
@@ -48,7 +48,6 @@ pub fn contribution_attributed_unit(db: &dyn Db, key: AstNodeKey) -> SourceUnitI
 /// registration must derive the same table or the assembly is rejected.
 pub(crate) fn register_contribution_attributions(
     db: &dyn Db,
-    project: ProjectSession,
     assembly: &ProgramAssembly,
 ) -> Result<(), SemanticError> {
     let entry = assembly.entry_unit();
@@ -57,9 +56,9 @@ pub(crate) fn register_contribution_attributions(
     let mut table = BTreeMap::<AstNodeId, SourceUnitId>::new();
     for metadata in &assembly.compiled_mod_metadata {
         let attribution = if let Some(target) = metadata.issuer_payload::<crate::CompiledSerializationTarget>() {
-            target.appended_attribution(db, project, assembly)?
+            target.appended_attribution(db, assembly)?
         } else if let Some(template) = metadata.issuer_payload::<crate::CompiledSerializationTemplate>() {
-            template.appended_attribution(db, project, assembly)?
+            template.appended_attribution(db, assembly)?
         } else {
             None
         };
@@ -102,7 +101,13 @@ pub(crate) fn appended_item_nodes(
     let root = index.ids_of_kind(NodeKind::Program).next()?;
     let mut nodes = Vec::with_capacity(items.len());
     for item in items {
-        let matches = program.node.items.iter().enumerate().filter(|(_, candidate)| *candidate == item).collect::<Vec<_>>();
+        let matches = program
+            .node
+            .items
+            .iter()
+            .enumerate()
+            .filter(|(_, candidate)| crate::mod_semantic_authority::same_retained_syntax(*candidate, item))
+            .collect::<Vec<_>>();
         let [(position, appended)] = matches.as_slice() else { return None };
         if *position < original_count {
             return None;

@@ -33,6 +33,34 @@ use std::{
     },
 };
 
+/// Whether two syntax values are the same retained syntax. The merger re-spans every generated
+/// node into the synthetic region of its unit and a registered unit owns its node identities, so
+/// a retained contribution and its merged occurrence differ in `span` and `id` alone; every
+/// other field must be identical.
+pub(crate) fn same_retained_syntax<T: serde::Serialize>(left: &T, right: &T) -> bool {
+    fn strip(value: &mut serde_json::Value) {
+        match value {
+            serde_json::Value::Object(object) => {
+                if object.contains_key("node") && object.contains_key("span") && object.contains_key("id") {
+                    object.remove("span");
+                    object.remove("id");
+                }
+                object.values_mut().for_each(strip);
+            }
+            serde_json::Value::Array(items) => items.iter_mut().for_each(strip),
+            _ => {}
+        }
+    }
+    match (serde_json::to_value(left), serde_json::to_value(right)) {
+        (Ok(mut left), Ok(mut right)) => {
+            strip(&mut left);
+            strip(&mut right);
+            left == right
+        }
+        _ => false,
+    }
+}
+
 static NEXT_HANDLE: AtomicU64 = AtomicU64::new(1);
 const HANDLE_LIMIT: usize = 65536;
 const DEPTH_LIMIT: usize = 128;

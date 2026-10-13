@@ -195,7 +195,7 @@ pub fn build_typed_program(
     drop(registry);
     // Appended serialization groups are judged for field visibility in the unit that declares
     // their target; the table is derived from the retained issuer payload, never the claim.
-    crate::contribution_attribution::register_contribution_attributions(db, project, &assembly)?;
+    crate::contribution_attribution::register_contribution_attributions(db, &assembly)?;
     let mut registry = db.syntax_dependency_registry().lock().expect("syntax dependency registry");
     for unit in assembly.units.iter() {
         let unit_id = SourceUnitId::new(db, unit.path.clone());

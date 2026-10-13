@@ -90,22 +90,17 @@ impl CompiledSerializationTarget {
     }
     /// The attributed unit and the current top-level entry nodes of this group when `current`
     /// is a later generation that preserves the original entry items and appends the exact
-    /// group once. `Ok(None)` when the group is not (or not exactly) appended in `current`, when
-    /// the declaring unit's source or package provenance changed, or when `project` is not the
-    /// issuing project session: such a group is unattributed and keeps the entry unit.
+    /// group once. `Ok(None)` when the group is not (or not exactly) appended in `current`, or
+    /// when the declaring unit's source or package provenance changed: such a group is
+    /// unattributed and keeps the entry unit. Attribution is descriptive placement derived from
+    /// the assembly alone, so every typed program of the generation (the compile session, test
+    /// enumeration, a REPL snapshot) registers the same table; it grants no conformance or codegen
+    /// eligibility, which `rebind` restricts to the issuing project.
     pub(crate) fn appended_attribution(
         &self,
         db: &dyn Db,
-        project: ProjectSession,
         current: &ProgramAssembly,
     ) -> Result<Option<(SourceUnitId, Vec<crate::AstNodeId>)>, crate::SemanticError> {
-        // Attribution is descriptive placement for the issuing project's own judgement. A
-        // typed program of another session (test enumeration, a REPL snapshot) carries no
-        // issuer authority for the group, so the group stays unattributed there; it never
-        // gains conformance or codegen eligibility, which `rebind` still rejects.
-        if project != self.project {
-            return Ok(None);
-        }
         appended_group_attribution(db, &self.assembly, self.owner, &self.contribution, &self.members, current)
     }
     /// Reissue only after exact append correspondence. Current contract admission remains
@@ -214,7 +209,7 @@ impl CompiledSerializationTarget {
                 .syntax_index(db)
                 .node_at(&current_entry.program, node)
                 .and_then(|item| item.of::<beskid_analysis::syntax::ImplBlock>())
-                .is_some_and(|block| block == &expected_block.node)
+                .is_some_and(|block| super::same_retained_syntax(block, &expected_block.node))
             {
                 implementations.push(AstNodeKey { unit: entry_syntax.unit(db), generation: program.generation, node });
             }
@@ -471,13 +466,13 @@ pub(super) fn exact_append(
         ));
     }
     let appended = &new_items[old_items.len()..];
-    if appended.iter().filter(|item| **item == *contribution).count() != 1 {
+    if appended.iter().filter(|item| super::same_retained_syntax(*item, contribution)).count() != 1 {
         return Err(ModSemanticQueryAuthority::error(
             "serialization contribution differs from exact compiler append correspondence",
         ));
     }
     for member in members {
-        if appended.iter().filter(|item| **item == member.item).count() != 1 {
+        if appended.iter().filter(|item| super::same_retained_syntax(*item, &member.item)).count() != 1 {
             return Err(ModSemanticQueryAuthority::error(
                 "serialization group member differs from exact compiler append correspondence",
             ));
