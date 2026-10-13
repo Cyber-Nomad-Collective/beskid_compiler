@@ -162,7 +162,8 @@ fn Apply(
 }
 
 /// One `change` record per dependency effect, then the `result` fields. Unversioned path and Git
-/// sources keep null version fields and report their actual coordinates.
+/// sources keep null version and digest fields and report their actual coordinates; the result
+/// carries the `sha256:` digest of the lock before and after the change (planned, for --dry-run).
 fn ChangeRecords(records: &Records, report: serde_json::Value, dry_run: bool) -> Result<serde_json::Value> {
     let serde_json::Value::Object(mut report) = report else {
         anyhow::bail!("dependency change report is not a JSON object");
@@ -185,8 +186,36 @@ fn ChangeRecords(records: &Records, report: serde_json::Value, dry_run: bool) ->
         "manifest": report.remove("path"),
         "operation": report.remove("operation"),
         "changed": report.remove("changed"),
+        "previousLockDigest": report.remove("previousLockDigest"),
+        "lockDigest": report.remove("lockDigest"),
         "dryRun": dry_run,
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn v06_change_result_carries_lock_digests_and_effects_become_records() {
+        let report = serde_json::json!({
+            "path": "/work/App/App.bproj", "operation": "update", "changed": true,
+            "previousLockDigest": "sha256:aa", "lockDigest": "sha256:bb",
+            "effects": [{
+                "package": "Math", "source": "Registry", "action": "changed",
+                "fromVersion": "1.0.0", "toVersion": "1.1.0",
+                "fromCoordinate": "registry default @ 1.0.0", "toCoordinate": "registry default @ 1.1.0",
+                "fromDigest": "sha256:01", "toDigest": "sha256:02",
+            }],
+        });
+        let result = ChangeRecords(&Records::new("update"), report, true).unwrap();
+        assert_eq!(result["previousLockDigest"], "sha256:aa");
+        assert_eq!(result["lockDigest"], "sha256:bb");
+        assert_eq!(result["operation"], "update");
+        assert_eq!(result["dryRun"], true);
+        assert!(result.get("effects").is_none(), "effects are emitted as change records, not result fields");
+        assert!(ChangeRecords(&Records::new("update"), serde_json::json!({"effects": [{"package": "X"}]}), false).is_err());
+    }
 }
 
 #[cfg(test)]

@@ -19,6 +19,10 @@ pub struct DependencyChangeReport {
     operation: &'static str,
     changed: bool,
     effects: Vec<DependencyEffect>,
+    /// `sha256:<hex>` of `Project.lock` before the change, when one existed.
+    previous_lock_digest: Option<String>,
+    /// `sha256:<hex>` of `Project.lock` after the change, when one results.
+    lock_digest: Option<String>,
 }
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -30,6 +34,22 @@ struct DependencyEffect {
     action: &'static str,
     from_coordinate: Option<String>,
     to_coordinate: Option<String>,
+    /// Locked artifact digest before and after the change; absent for path and Git sources.
+    from_digest: Option<String>,
+    to_digest: Option<String>,
+}
+
+fn LockDigest(bytes: Option<&[u8]>) -> Option<String> {
+    use sha2::{Digest, Sha256};
+    bytes.map(|bytes| format!("sha256:{:x}", Sha256::digest(bytes)))
+}
+
+/// Locked artifact digest of every dependency in a v2 lock; a v1 or unreadable lock has none.
+fn LockedDigests(entries: &[super::ProjectLockDependencyEntry]) -> std::collections::BTreeMap<String, String> {
+    entries
+        .iter()
+        .filter_map(|entry| entry.artifact_digest.clone().map(|digest| (entry.name.clone(), digest)))
+        .collect()
 }
 impl fmt::Display for DependencyChangeReport {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -154,8 +174,15 @@ pub fn PlanDependencyChange(
         && policy.refresh == RefreshScope::None
         && matches!(mutation, DependencyMutation::Remove(_))
     {
-        let report =
-            DependencyChangeReport { path: manifest.clone(), operation: "remove", changed: false, effects: Vec::new() };
+        let digest = LockDigest(original_lock.as_deref());
+        let report = DependencyChangeReport {
+            path: manifest.clone(),
+            operation: "remove",
+            changed: false,
+            effects: Vec::new(),
+            previous_lock_digest: digest.clone(),
+            lock_digest: digest,
+        };
         return Ok(DependencyChangePlan {
             manifest,
             original,
@@ -176,6 +203,13 @@ pub fn PlanDependencyChange(
     }
     entries.sort_by(|left, right| left.name.cmp(&right.name));
     let replacement_lock = Some(ProjectLockfileV2::from_plan(&workspace, &entries)?.to_v2_content().into_bytes());
+    let before_digests = original_lock
+        .as_deref()
+        .and_then(|bytes| std::str::from_utf8(bytes).ok())
+        .and_then(|text| ProjectLockfileV2::parse_v2(text).ok())
+        .map(|lock| LockedDigests(&lock.dependencies))
+        .unwrap_or_default();
+    let after_digests = LockedDigests(&entries);
     let mut effects = Vec::new();
     for dependency in &after.dependencies {
         let old = before.dependencies.iter().find(|old| old.name == dependency.name);
@@ -194,6 +228,8 @@ pub fn PlanDependencyChange(
                 },
                 from_coordinate: old.map(DependencyCoordinate),
                 to_coordinate: Some(DependencyCoordinate(dependency)),
+                from_digest: old.and_then(|_| before_digests.get(&dependency.name).cloned()),
+                to_digest: after_digests.get(&dependency.name).cloned(),
             });
         }
     }
@@ -207,6 +243,8 @@ pub fn PlanDependencyChange(
                 action: "removed",
                 from_coordinate: Some(DependencyCoordinate(dependency)),
                 to_coordinate: None,
+                from_digest: before_digests.get(&dependency.name).cloned(),
+                to_digest: None,
             });
         }
     }
@@ -219,6 +257,8 @@ pub fn PlanDependencyChange(
         },
         changed: changed_intent || replacement_lock != original_lock,
         effects,
+        previous_lock_digest: LockDigest(original_lock.as_deref()),
+        lock_digest: LockDigest(replacement_lock.as_deref()),
     };
     Ok(DependencyChangePlan {
         manifest,
@@ -271,7 +311,10 @@ mod report_tests {
                 from_version: None, to_version: None, action: "changed",
                 from_coordinate: Some("path ../Old".into()),
                 to_coordinate: Some("path ../New".into()),
+                from_digest: None, to_digest: None,
             }],
+            previous_lock_digest: LockDigest(Some(b"old")),
+            lock_digest: LockDigest(Some(b"new")),
         };
         assert!(report.to_string().contains("changed Local: path ../Old -> path ../New"));
         assert!(!report.to_string().contains("absent"));
@@ -280,5 +323,12 @@ mod report_tests {
         assert_eq!(json["effects"][0]["toCoordinate"], "path ../New");
         assert!(json["effects"][0]["fromVersion"].is_null());
         assert!(json["effects"][0]["toVersion"].is_null());
+        assert!(json["effects"][0]["fromDigest"].is_null() && json["effects"][0]["toDigest"].is_null());
+        assert_eq!(
+            json["lockDigest"],
+            "sha256:11507a0e2f5e69d5dfa40a62a1bd7b6ee57e6bcd85c67c9b8431b36fff21c437",
+            "the lock digest is the SHA-256 of the written lock bytes"
+        );
+        assert!(json["previousLockDigest"].as_str().unwrap().starts_with("sha256:"));
     }
 }

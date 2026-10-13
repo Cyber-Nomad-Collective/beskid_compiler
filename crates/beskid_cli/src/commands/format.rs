@@ -37,10 +37,10 @@ pub fn execute(args: FormatArgs) -> Result<()> {
         .with_context(|| format!("scan {}", args.input.display()))?;
 
     if paths.is_empty() {
-        eprintln!(
+        Progress(format!(
             "beskid fmt: 0 .bd file(s) in {}",
             fmt_duration(started.elapsed())
-        );
+        ));
         return Ok(());
     }
 
@@ -54,7 +54,7 @@ pub fn execute(args: FormatArgs) -> Result<()> {
     {
         let formatted = format_path_to_string(&paths[0])?;
         fs::write(out, formatted).with_context(|| format!("write {}", out.display()))?;
-        eprintln!("beskid fmt: 1 file in {}", fmt_duration(started.elapsed()));
+        Progress(format!("beskid fmt: 1 file in {}", fmt_duration(started.elapsed())));
         return Ok(());
     }
 
@@ -64,11 +64,7 @@ pub fn execute(args: FormatArgs) -> Result<()> {
 
     let elapsed = started.elapsed();
     let label = if args.check { "checked" } else { "formatted" };
-    eprintln!(
-        "beskid fmt: {label} {} .bd file(s) in {}",
-        paths.len(),
-        fmt_duration(elapsed)
-    );
+    Progress(format!("beskid fmt: {label} {} .bd file(s) in {}", paths.len(), fmt_duration(elapsed)));
 
     Ok(())
 }
@@ -206,5 +202,13 @@ mod v06_tests {
             "canonical fmt should edit the selected source without extra --write"
         );
         assert!(actual.contains("    return 0;"));
+    }
+}
+
+/// Summary line on stderr, suppressed by `--quiet`.
+#[allow(non_snake_case)]
+fn Progress(line: String) {
+    if beskid_telemetry::verbosity() != beskid_telemetry::Verbosity::Quiet {
+        eprintln!("{line}");
     }
 }

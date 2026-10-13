@@ -22,8 +22,25 @@ use super::docs::{anyhow_to_miette, ensure_corelib_ready, maybe_generate_docs_fo
     after_help = "First project:\n  beskid new hello\n  cd hello\n  beskid add <package>[@<version>]\n  beskid run\n\nUse `beskid dev --help` for compiler inspection and maintenance."
 )]
 pub struct Cli {
+    /// Print only errors, diagnostics and command results (no progress, summaries or info logs)
+    #[arg(short, long, global = true, conflicts_with = "verbose")]
+    pub quiet: bool,
+    /// Print every progress step and debug-level logs
+    #[arg(short, long, global = true)]
+    pub verbose: bool,
     #[command(subcommand)]
     pub command: Commands,
+}
+
+impl Cli {
+    /// Output verbosity selected by `--quiet` / `--verbose`.
+    pub fn Verbosity(&self) -> beskid_telemetry::Verbosity {
+        match (self.quiet, self.verbose) {
+            (true, _) => beskid_telemetry::Verbosity::Quiet,
+            (false, true) => beskid_telemetry::Verbosity::Verbose,
+            (false, false) => beskid_telemetry::Verbosity::Normal,
+        }
+    }
 }
 #[derive(Subcommand)]
 pub enum Commands {
@@ -65,7 +82,7 @@ where
 {
     let args = args.into_iter().map(Into::into).collect::<Vec<std::ffi::OsString>>();
     match Cli::try_parse_from(&args) {
-        Ok(Cli { command: Commands::Run(arguments) }) if arguments.json => {
+        Ok(Cli { command: Commands::Run(arguments), .. }) if arguments.json => {
             Err(clap::Error::raw(clap::error::ErrorKind::ArgumentConflict, format!("{}\n", run::JsonRejection())))
         }
         Ok(cli) => Ok(cli),
@@ -113,7 +130,7 @@ pub fn run() -> miette::Result<()> {
         .map_err(|error| miette::miette!("cannot expand argument file: {error}"))?;
     let cli = ParseInvocation(args).unwrap_or_else(|error| error.exit());
     let backend_logs = matches!(&cli.command, Commands::Dev(args) if args.log_cranelift);
-    beskid_telemetry::init(InitOptions::cli(backend_logs));
+    beskid_telemetry::init(InitOptions::cli(backend_logs).with_verbosity(cli.Verbosity()));
     if NeedsCorelib(&cli.command) {
         ensure_corelib_ready().map_err(anyhow_to_miette)?;
     }

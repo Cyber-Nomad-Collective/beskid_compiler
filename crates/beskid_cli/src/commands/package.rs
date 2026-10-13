@@ -23,8 +23,6 @@ pub struct PackageArgs {
     pub timeout_secs: u64,
     #[arg(long, default_value = ".beskid/pckg/repositories.json")]
     pub config_file: PathBuf,
-    #[arg(short, long)]
-    pub verbose: bool,
     #[command(subcommand)]
     pub command: PackageCommand,
 }
@@ -83,7 +81,7 @@ pub fn execute(args: PackageArgs) -> Result<()> {
         api_key: args.api_key,
         timeout_secs: args.timeout_secs,
         config_file: args.config_file,
-        verbose: args.verbose,
+        verbose: beskid_telemetry::verbosity() == beskid_telemetry::Verbosity::Verbose,
         command,
     })
 }

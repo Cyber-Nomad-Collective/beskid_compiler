@@ -11,4 +11,7 @@ mod init;
 mod otel;
 
 pub use buffer::{BufferLayer, TelemetryBuffer, TelemetryEvent, TelemetrySnapshot, TelemetrySpan, telemetry_buffer};
-pub use init::{InitOptions, clear_stderr_progress, init, init_lsp, render_stderr_progress, shutdown_otel};
+pub use init::{
+    InitOptions, Verbosity, clear_stderr_progress, init, init_lsp, render_stderr_progress, set_verbosity, shutdown_otel,
+    verbosity,
+};

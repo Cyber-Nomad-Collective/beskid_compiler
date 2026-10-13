@@ -264,6 +264,9 @@ impl OrderedProgress {
 
 fn print_target_line(report: &TargetReport) {
     if report.result == TargetResult::Passed {
+        if beskid_telemetry::verbosity() == beskid_telemetry::Verbosity::Quiet {
+            return;
+        }
         eprintln!("Running {}... PASS ({:.1?})", report.target, Duration::from_millis(report.duration_ms));
     } else {
         eprintln!("Running {}... FAIL: {}", report.target, report.error.as_deref().unwrap_or("target failed"));
