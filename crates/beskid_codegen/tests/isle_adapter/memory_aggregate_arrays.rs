@@ -273,7 +273,7 @@ fn parsed_empty_array_local_uses_its_direct_declared_element_abi_without_hir() {
 }
 
 #[test]
-fn empty_array_local_context_rejects_inferred_assignment_and_nested_literals() {
+fn empty_array_context_rejects_inferred_and_nested_literals_and_admits_assignments() {
     for source in ["unit Main() { let values = []; }", "u8[] Main() { u8[] values = { [] }; return values; }"] {
         let (input, _isa, root) = item_fixture_with_root(source);
         let arrays = find_nodes_of_kind(input.database(), root, beskid_queries::IndexedNodeKind::ArrayLiteralExpression);
@@ -285,7 +285,25 @@ fn empty_array_local_context_rejects_inferred_assignment_and_nested_literals() {
     let arrays = find_nodes_of_kind(input.database(), root, beskid_queries::IndexedNodeKind::ArrayLiteralExpression);
     assert_eq!(arrays.len(), 2, "fixture has initializer and assignment literals");
     assert!(input.array_static_plan(arrays[0]).is_some(), "direct explicit initializer stays authorized");
-    assert!(input.array_static_plan(arrays[1]).is_none(), "an assignment is not an initialization context");
+    assert!(input.array_static_plan(arrays[1]).is_some(), "an assignment allocates for its target's declared type");
+
+    // A field assignment takes the field's declared element type.
+    let (input, isa, root) = item_fixture_with_root(
+        "type Token { i64 n } type Bag { i64[] items, Token[] tokens } Bag Main() { Bag bag = Bag { items: [1_i64], tokens: [Token { n: 1_i64 }] }; bag.items = []; bag.tokens = []; return bag; }",
+    );
+    let arrays = find_nodes_of_kind(input.database(), root, beskid_queries::IndexedNodeKind::ArrayLiteralExpression);
+    let empty = arrays
+        .iter()
+        .copied()
+        .filter(|array| beskid_queries::child_nodes(input.database(), *array).ok().flatten().is_none_or(|children| children.is_empty()))
+        .collect::<Vec<_>>();
+    assert_eq!(empty.len(), 2, "fixture has two empty field assignments");
+    assert_eq!(
+        empty.iter().map(|array| empty_array_literal_element_abi_type(input.database(), *array).ok().flatten()).collect::<Vec<_>>(),
+        vec![Some(beskid_queries::SemanticTypeId::I64), Some(beskid_queries::SemanticTypeId::POINTER)],
+    );
+    let main = find_function_definition(input.database(), root).expect("Main");
+    emit_isle_item(&input, isa.as_ref(), main).expect("empty field assignments lower");
 }
 
 #[test]

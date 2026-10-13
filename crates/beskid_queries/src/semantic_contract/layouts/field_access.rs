@@ -129,6 +129,39 @@ pub(in crate::semantic_contract) fn field_access_receiver<'a>(
                 |(declaration, receiver, layout)| FieldAccessReceiver { declaration, receiver, layout, field_name },
             ));
         }
+        // `(value).field` / `Member(Local("value"), field)`: a named local or parameter, exactly
+        // like the `value.field` path spelling below (generic in the enclosing specialization).
+        // Parentheses around the receiver name (`(value).field`) do not change it.
+        let mut named = receiver.node;
+        while let Some(grouped) =
+            index.node_at(program, named).and_then(|node| node.of::<beskid_analysis::syntax::GroupedExpression>())
+        {
+            named = normalized_expression_node(
+                index,
+                index.direct_child_id(
+                    program,
+                    named,
+                    beskid_analysis::syntax_query::DynNodeRef::from(grouped.expr.as_ref()),
+                )?,
+            );
+        }
+        if let Some(path) = index
+            .node_at(program, named)
+            .and_then(|node| node.of::<beskid_analysis::syntax::PathExpression>())
+            && let [segment] = path.path.node.segments.as_slice()
+            && segment.node.type_args.is_empty()
+            && resolve_lexical_declaration(program, index, key.node, segment.node.name.node.name.as_str()).is_some()
+        {
+            return Some(
+                applied_local_receiver_layout(db, program, index, key, segment.node.name.node.name.as_str(), ambient)
+                    .map(|(declaration, receiver, layout)| FieldAccessReceiver {
+                        declaration,
+                        receiver,
+                        layout,
+                        field_name,
+                    }),
+            );
+        }
         let resolved = applied_call_result_layout(db, receiver, &member.target.node, enclosing);
         return Some(resolved.map(|(declaration, layout)| FieldAccessReceiver {
             declaration,
@@ -256,9 +289,27 @@ fn nominal_field_projection_at(
         if is_implicit_receiver_expression(program, index, receiver) {
             return implicit_receiver_field_projection(db, program, index, key, &member.member.node.name, enclosing);
         }
+        let identity = generic_source_expression_identity(db, receiver);
+        // A named local or parameter whose type names the enclosing generic parameters
+        // (`Member(Local("value"), field)` with `Boxed<T> value`) has no target-neutral identity;
+        // the receiver layout of its declared type, applied in the environment, owns that access.
+        if identity.as_ref().is_err_and(|error| error.is_unavailable())
+            && index
+                .node_at(program, receiver.node)
+                .and_then(|node| node.of::<beskid_analysis::syntax::PathExpression>())
+                .is_some_and(|path| match path.path.node.segments.as_slice() {
+                    [segment] => {
+                        segment.node.type_args.is_empty()
+                            && resolve_lexical_declaration(program, index, key.node, &segment.node.name.node.name)
+                                .is_some()
+                    }
+                    _ => false,
+                })
+        {
+            return None;
+        }
         return Some(
-            generic_source_expression_identity(db, receiver)
-                .and_then(|identity| project_nominal_field(db, key, receiver, &identity, &member.member.node.name)),
+            identity.and_then(|identity| project_nominal_field(db, key, receiver, &identity, &member.member.node.name)),
         );
     }
     let (path_key, last) = if let Some(path) = node.of::<beskid_analysis::syntax::PathExpression>() {

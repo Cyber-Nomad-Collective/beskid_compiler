@@ -150,6 +150,20 @@ impl SyntaxNodeFacts<'_> {
                 ManagedReferenceFact::NativeOrScalar
             });
         }
+        // A match or block value (`field: match slot { Some(value) => value, None() => ... }`) is
+        // classified by the type its position expects, read in the specialization's environment.
+        if matches!(
+            self.query(node_kind(self.db, key)),
+            Some(beskid_queries::IndexedNodeKind::MatchExpression | beskid_queries::IndexedNodeKind::BlockExpression)
+        ) && let Some(expected) = match self.current_item_specialization() {
+            Some(enclosing) => self.query(beskid_queries::expected_type_in_environment(self.db, key, enclosing)),
+            None => self.query(beskid_queries::expected_type(self.db, key)),
+        } {
+            return Some(match expected.managed_reference_kind() {
+                ManagedReferenceKind::GcManaged => ManagedReferenceFact::GcManaged,
+                ManagedReferenceKind::NativeOrScalar => ManagedReferenceFact::NativeOrScalar,
+            });
+        }
         (self.query(node_kind(self.db, key)) == Some(beskid_queries::IndexedNodeKind::LetStatement))
             .then(|| self.let_initializer(key))?
             .and_then(|initializer| self.managed_reference_in_context(initializer))

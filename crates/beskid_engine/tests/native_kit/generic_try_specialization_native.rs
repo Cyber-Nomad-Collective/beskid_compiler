@@ -30,8 +30,19 @@ Result<unit, Error> Admit<T>(i64 limit) { if (limit < 0_i64) { return Result::Er
 Result<T, Error> Load<T>(T value, i64 limit) { Admit<T>(limit)?; return Result::Ok(value); }
 type Point { i64 x }
 type Boxed<T> { T item, T[] history }
+enum Option<T> { Some(T value), None() }
+type Holder<T> { T item }
+Result<Holder<T>, Error> Assemble<T, R>(R reader, T value) where R: Source {
+    mut Option<T> slot = Option<T>::None();
+    slot = Option<T>::Some(ReadOne<T, R>(reader, value)?);
+    return Result::Ok(Holder<T> { item: match slot { Option::Some(found) => found, Option::None() => { return Result::Error(Error::Failed()); }, } });
+}
 Result<i64, Error> CountAll<T>(T[] values) { return Result::Ok(1_i64); }
-Result<i64, Error> Measure<T>(Boxed<T> value) { i64 counted = CountAll(value.history)?; return Result::Ok(counted); }
+Result<i64, Error> Measure<T>(Boxed<T> value) {
+    i64 counted = CountAll(value.history)?;
+    i64 again = CountAll<T>((value).history)?;
+    return Result::Ok(counted + again - 1_i64);
+}
 Result<T, Error> Complete<T, R>(R reader, T value) where R: Source {
     reader.Begin(1_i64)?;
     T loaded = ReadOne<T, R>(reader, value)?;
@@ -46,7 +57,9 @@ i64 Main() {
     i64 d = match Complete<i64, Reader>(reader, 2_i64) { Result::Ok(v) => v, Result::Error(_) => -1_i64, };
     i64 f = match Measure<i64>(Boxed<i64> { item: 1_i64, history: [1_i64] }) { Result::Ok(v) => v, Result::Error(_) => -1_i64, };
     i64 e = match Complete<Point, Reader>(reader, Point { x: -3_i64 }) { Result::Ok(p) => p.x, Result::Error(_) => -1_i64, };
-    return a + b + c + d + e + f;
+    i64 g = match Assemble<i32, Reader>(reader, 5_i32) { Result::Ok(holder) => i64(holder.item), Result::Error(_) => -100_i64, };
+    i64 h = match Assemble<Point, Reader>(reader, Point { x: -5_i64 }) { Result::Ok(holder) => holder.item.x, Result::Error(_) => -100_i64, };
+    return a + b + c + d + e + f + g + h;
 }
 "#;
 

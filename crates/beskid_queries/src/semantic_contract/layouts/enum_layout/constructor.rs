@@ -61,7 +61,14 @@ pub(in crate::semantic_contract) fn enum_constructor_template_tracked(
 ) -> SemanticQueryResult<EnumConstructorTemplate> {
     with_node(db, syntax, key, |program, index, node| {
         let constructor = node.of::<beskid_analysis::syntax::EnumConstructorExpression>()?;
-        let contextual = contextual_enum_constructor_type_path(db, program, index, key, constructor)?;
+        // An explicitly applied constructor (`Option<T>::Some(value)`) names its own application;
+        // an unapplied one takes it from its context.
+        let written = &constructor.path.node.type_path.node;
+        let contextual = if written.segments.last()?.node.type_args.is_empty() {
+            contextual_enum_constructor_type_path(db, program, index, key, constructor)?
+        } else {
+            written.clone()
+        };
         let declaration = resolve_type_declaration(db, key, &contextual)?;
         let declaration_syntax = db.syntax_unit(declaration.unit)?;
         let definition = declaration_syntax
