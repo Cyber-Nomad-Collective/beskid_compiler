@@ -21,19 +21,24 @@ pub(in crate::semantic_contract) fn call_lowering_for_node(
             )
         }
         beskid_analysis::syntax::Expression::Member(member) => {
-            // Nominal methods lower Direct when declaration authority exists.
-            // Extern/contract members and other receivers without a syntax method
-            // declaration remain Dynamic rather than unavailable, matching Path
-            // import/builtin fallback so production JIT/AOT can emit the call.
-            // Module-qualified calls like `Core.IsEmpty(text)` parse as Member
+            // The member is classified by what it resolves to on the receiver's type, exactly
+            // as the path callee the same name chain spells: a nominal or impl method of a
+            // source-proven receiver, then a contract member of a contract-typed or
+            // where-bounded receiver (a parameter, or a generic field of a bounded impl) are
+            // method calls. Module-qualified calls like `Core.IsEmpty(text)` parse as Member
             // expressions — flatten the member into a module path for direct resolution.
-            // A member whose source type is a function type (`Make().op(1)`) is a function
-            // value call.
-            Ok(method_declaration_for_member_receiver(db, program, index, key, call, member)
+            // Only a member whose source type is a function type (`Make().op(1)`) is a
+            // function value call. Extern members and other receivers without a syntax
+            // method declaration remain Dynamic rather than unavailable, matching Path
+            // import/builtin fallback so production JIT/AOT can emit the call.
+            if let Some(method) = method_declaration_for_member_receiver(db, program, index, key, call, member) {
+                return Some(Ok(CallLowering::Direct(method)));
+            }
+            if let Some(receiver) = contract_member_call_receiver(db, program, index, key, call) {
+                return Some(receiver.map(|(method, _)| CallLowering::Direct(method)));
+            }
+            Ok(flatten_member_as_path_declaration(db, program, index, key, member)
                 .map(CallLowering::Direct)
-                .or_else(|| {
-                    flatten_member_as_path_declaration(db, program, index, key, member).map(CallLowering::Direct)
-                })
                 .or_else(|| function_value_callee(db, program, index, key, call).map(CallLowering::FunctionValue))
                 .unwrap_or(CallLowering::Dynamic))
         }

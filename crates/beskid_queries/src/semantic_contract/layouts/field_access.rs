@@ -121,8 +121,15 @@ pub(in crate::semantic_contract) fn field_access_receiver<'a>(
             beskid_analysis::syntax_query::DynNodeRef::from(member.target.as_ref()),
         )?;
         let receiver = AstNodeKey { node: normalized_expression_node(index, receiver), ..key };
-        let resolved = applied_call_result_layout(db, receiver, &member.target.node, enclosing);
         let field_name = member.member.node.name.as_str();
+        // `(this).field` / `Member(Local("this"), field)`: the implicit method receiver, exactly
+        // like the `this.field` path spelling below.
+        if is_implicit_receiver_expression(program, index, receiver) {
+            return Some(applied_method_receiver_layout(db, program, index, key, ambient).map(
+                |(declaration, receiver, layout)| FieldAccessReceiver { declaration, receiver, layout, field_name },
+            ));
+        }
+        let resolved = applied_call_result_layout(db, receiver, &member.target.node, enclosing);
         return Some(resolved.map(|(declaration, layout)| FieldAccessReceiver {
             declaration,
             receiver,
@@ -244,6 +251,11 @@ fn nominal_field_projection_at(
         }
         let receiver = index.direct_child_id(program, key.node, DynNodeRef::from(member.target.as_ref()))?;
         let receiver = AstNodeKey { node: normalized_expression_node(index, receiver), ..key };
+        // `this.field` as a member access (`(this).field`, or the `Member(Local("this"), field)`
+        // a Mod spells) is the same projection from the implicit receiver as the path spelling.
+        if is_implicit_receiver_expression(program, index, receiver) {
+            return implicit_receiver_field_projection(db, program, index, key, &member.member.node.name, enclosing);
+        }
         return Some(
             generic_source_expression_identity(db, receiver)
                 .and_then(|identity| project_nominal_field(db, key, receiver, &identity, &member.member.node.name)),
@@ -753,6 +765,25 @@ fn applied_local_receiver_layout(
     let identity = generic_source_local_identity(db, program, index, key, local)
         .map_err(|_| SemanticError::unavailable("aggregate_field_access"))?;
     nominal_identity_layout(db, key, &identity).map(|(declaration, layout)| (declaration, receiver, layout))
+}
+
+/// Whether the expression at `key` is the bare implicit method receiver (`this` or `self`), the
+/// target of a member access such as `(this).field`.
+fn is_implicit_receiver_expression(
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    key: AstNodeKey,
+) -> bool {
+    index
+        .node_at(program, key.node)
+        .and_then(|node| node.of::<beskid_analysis::syntax::PathExpression>())
+        .is_some_and(|path| match path.path.node.segments.as_slice() {
+            [root] => {
+                root.node.type_args.is_empty()
+                    && is_implicit_receiver_name(program, index, key, root.node.name.node.name.as_str())
+            }
+            _ => false,
+        })
 }
 
 /// Whether `name` spells the implicit method receiver at `key`: `this` or `self` inside a

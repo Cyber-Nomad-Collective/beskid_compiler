@@ -138,9 +138,9 @@ pub use composition::{
     composition_registration, composition_scope,
 };
 use contracts::{
-    ContractConformanceFailure, contract_conformance_failure, contract_member_receiver, contract_method_specialization,
-    contract_parameter_declarations, contract_witnesses_for_call, render_signature_syntax, render_type_syntax,
-    resolve_contract, specialized_source_expression_identity,
+    ContractConformanceFailure, contract_conformance_failure, contract_member_call_receiver, contract_member_receiver,
+    contract_method_specialization, contract_parameter_declarations, contract_witnesses_for_call,
+    render_signature_syntax, render_type_syntax, resolve_contract, specialized_source_expression_identity,
 };
 use events::{event_handler_lambda_for_local_tracked, event_operation_tracked};
 pub use growth::{DeadCollectionGrowth, dead_collection_growth, is_growth_call_candidate};

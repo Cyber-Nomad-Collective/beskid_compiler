@@ -69,3 +69,5 @@ mod function_values;
 mod string_concat_gate;
 #[path = "semantic_facts/match_coverage.rs"]
 mod match_coverage;
+#[path = "semantic_facts/member_callees.rs"]
+mod member_callees;

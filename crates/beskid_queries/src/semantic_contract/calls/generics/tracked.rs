@@ -29,9 +29,7 @@ pub(in crate::semantic_contract) fn generic_call_specialization_tracked(
         // A contract member call (`value.WriteTyped(encoder)` on a contract-typed or bounded
         // generic receiver) dispatches only through an enclosing specialization's witness; it
         // has no call-local specialization of the contract signature itself.
-        if let beskid_analysis::syntax::Expression::Path(path) = &call.callee.node
-            && contract_member_receiver(db, program, index, key, &path.node.path.node).is_some()
-        {
+        if contract_member_call_receiver(db, program, index, key, call).is_some() {
             return None;
         }
         let lowering = match call_lowering(db, key) {

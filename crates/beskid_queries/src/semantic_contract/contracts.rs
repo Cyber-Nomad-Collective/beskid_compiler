@@ -582,6 +582,60 @@ fn contract_methods(
     Ok(methods)
 }
 
+/// The contract member a call names on a contract-typed or where-bounded receiver, and that
+/// receiver, for either callee shape: one path (`reader.Begin`, `this.reader.Begin`) or a member
+/// access whose receiver is a name chain (`(reader).Begin`, `(this).reader.Begin`, and the
+/// `Member(Member(Local("this"), "reader"), "Begin")` a Mod spells). Both shapes resolve the
+/// member on the receiver's declared type; only the receiver node differs (a path segment or
+/// lexical declaration, or the member receiver expression).
+pub(super) fn contract_member_call_receiver(
+    db: &dyn Db,
+    program: &Spanned<beskid_analysis::syntax::Program>,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    key: AstNodeKey,
+    call: &beskid_analysis::syntax::CallExpression,
+) -> Option<Result<(AstNodeKey, AstNodeKey), SemanticError>> {
+    match &call.callee.node {
+        Expression::Path(path) => contract_member_receiver(db, program, index, key, &path.node.path.node),
+        Expression::Member(member) => {
+            contract_member_receiver(db, program, index, key, &member_callee_name_path(member)?)
+        }
+        _ => None,
+    }
+}
+
+/// The path a member access callee spells when its receiver is a name chain: path segments,
+/// member accesses and parentheses only (`(this).reader.Begin` is `this.reader.Begin`). `None`
+/// for any other receiver (a call result, an index, a literal) and for explicit type arguments.
+fn member_callee_name_path(member: &Spanned<beskid_analysis::syntax::MemberExpression>) -> Option<Path> {
+    fn member_segment(member: &Spanned<beskid_analysis::syntax::MemberExpression>) -> Spanned<PathSegment> {
+        Spanned::new(PathSegment { name: member.node.member.clone(), type_args: Vec::new() }, member.node.member.span)
+    }
+    fn chain(expression: &Expression, segments: &mut Vec<Spanned<PathSegment>>) -> Option<()> {
+        match expression {
+            Expression::Path(path) => {
+                let path = &path.node.path.node;
+                if path.segments.iter().any(|segment| !segment.node.type_args.is_empty()) {
+                    return None;
+                }
+                segments.extend(path.segments.iter().cloned());
+                Some(())
+            }
+            Expression::Grouped(grouped) => chain(&grouped.node.expr.node, segments),
+            Expression::Member(member) => {
+                chain(&member.node.target.node, segments)?;
+                segments.push(member_segment(member));
+                Some(())
+            }
+            _ => None,
+        }
+    }
+    let mut segments = Vec::new();
+    chain(&member.node.target.node, &mut segments)?;
+    segments.push(member_segment(member));
+    Some(Path { segments })
+}
+
 pub(super) fn contract_member_receiver(
     db: &dyn Db,
     program: &Spanned<beskid_analysis::syntax::Program>,
@@ -660,7 +714,7 @@ pub(super) fn contract_member_receiver(
 /// the enclosing `impl<...> ... where` clause. The owner's parameter maps to the impl parameter
 /// at the same position of the impl receiver (`impl<T, R, B> Binding<T, R, B>`), and the
 /// members are exactly that parameter's bound contracts' members. The receiver is the field
-/// segment of the callee path.
+/// segment of the callee path, or the receiver expression of a member access callee.
 pub(super) fn bounded_field_member_receiver(
     db: &dyn Db,
     program: &Spanned<beskid_analysis::syntax::Program>,
@@ -668,6 +722,43 @@ pub(super) fn bounded_field_member_receiver(
     key: AstNodeKey,
     path: &Path,
 ) -> Option<Result<(AstNodeKey, AstNodeKey), SemanticError>> {
+    let bounds = match bounded_field_receiver_bounds(db, program, index, key, path)? {
+        Ok(bounds) => bounds,
+        Err(error) => return Some(Err(error)),
+    };
+    let member = path.segments.last()?;
+    let callee = match index.node_at(program, key.node)?.of::<beskid_analysis::syntax::CallExpression>() {
+        Some(call) => AstNodeKey {
+            node: normalized_expression_node(index, index.direct_child_id(program, key.node, DynNodeRef::from(call.callee.as_ref()))?),
+            ..key
+        },
+        None => key,
+    };
+    // A member access callee (`(this).reader.Begin`) carries its receiver as its own target
+    // expression; a path callee denotes it by the field segment.
+    let receiver = match index.node_at(program, callee.node)?.of::<beskid_analysis::syntax::MemberExpression>() {
+        Some(member) => AstNodeKey {
+            node: normalized_expression_node(
+                index,
+                index.direct_child_id(program, callee.node, DynNodeRef::from(member.target.as_ref()))?,
+            ),
+            ..key
+        },
+        None => super::layouts::path_projection_segment(db, callee, path.segments.len() - 2)?,
+    };
+    Some(bounded_member_method(db, &bounds, &member.node.name.node.name).map(|method| (method, receiver)))
+}
+
+/// The where-bounds of the impl parameter that types the implicit receiver's field a bounded
+/// field member path names (`this.field.Member`, `field.Member`); `None` when the path is not
+/// such a member path or the parameter has no bound.
+fn bounded_field_receiver_bounds(
+    db: &dyn Db,
+    program: &Spanned<beskid_analysis::syntax::Program>,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    key: AstNodeKey,
+    path: &Path,
+) -> Option<Result<Vec<DeclaredWhereBound>, SemanticError>> {
     let (field, member) = match path.segments.as_slice() {
         [root, field, member] if root.node.name.node.name == "this" && root.node.type_args.is_empty() => {
             (field, member)
@@ -703,18 +794,7 @@ pub(super) fn bounded_field_member_receiver(
         Err(error) => return Some(Err(error)),
     };
     let bounds = bounds.into_iter().filter(|bound| bound.generic == impl_parameter).collect::<Vec<_>>();
-    if bounds.is_empty() {
-        return None;
-    }
-    let callee = match index.node_at(program, key.node)?.of::<beskid_analysis::syntax::CallExpression>() {
-        Some(call) => AstNodeKey {
-            node: normalized_expression_node(index, index.direct_child_id(program, key.node, DynNodeRef::from(call.callee.as_ref()))?),
-            ..key
-        },
-        None => key,
-    };
-    let receiver = super::layouts::path_projection_segment(db, callee, path.segments.len() - 2)?;
-    Some(bounded_member_method(db, &bounds, &member.node.name.node.name).map(|method| (method, receiver)))
+    (!bounds.is_empty()).then_some(Ok(bounds))
 }
 
 /// The unique member named `member` among the contracts bounding one generic receiver.
@@ -1806,32 +1886,27 @@ pub(super) fn contract_method_specialization(
     else {
         return Ok(None);
     };
-    let Expression::Path(path) = &call.callee.node else {
-        return Ok(None);
-    };
-    let Some(receiver) = contract_member_receiver(db, program, index, key, &path.node.path.node) else {
+    let Some(receiver) = contract_member_call_receiver(db, program, index, key, call) else {
         return Ok(None);
     };
     let (method, receiver) = receiver?;
-    let parameter = AstNodeKey {
-        node: parent_node(index, receiver.node).ok_or_else(|| SemanticError::unavailable("contract_parameter"))?,
-        ..receiver
-    };
+    let parameter = parent_node(index, receiver.node).map(|node| AstNodeKey { node, ..receiver });
     // A parameter may carry several bound witnesses (`T: A, T: B`); the member's contract
     // method selects exactly one of them.
-    let (witness, declaration) = enclosing
+    let parameter_witness = enclosing
         .contract_witnesses
         .iter()
-        .filter(|witness| witness.parameter == parameter)
+        .filter(|witness| Some(witness.parameter) == parameter)
         .find_map(|witness| {
-            witness
-                .methods
-                .iter()
-                .find_map(|(signature, implementation)| (*signature == method).then_some((witness, *implementation)))
-        })
-        .ok_or_else(|| SemanticError::unavailable("contract_witness"))?;
+            witness.methods.iter().find_map(|(signature, implementation)| {
+                (*signature == method).then(|| (witness.environment.clone(), *implementation))
+            })
+        });
+    let (substitutions, declaration) = match parameter_witness {
+        Some(witness) => witness,
+        None => bounded_field_member_implementation(db, program, index, key, call, method, enclosing)?,
+    };
     let target = db.syntax_unit(declaration.unit).ok_or_else(|| SemanticError::unavailable("contract_method"))?;
-    let substitutions = witness.environment.clone();
     let environment = substitutions.iter().map(|binding| (binding.parameter.to_string(), binding.argument)).collect();
     let implementation = target
         .syntax_index(db)
@@ -1858,6 +1933,56 @@ pub(super) fn contract_method_specialization(
         substitutions,
         contract_witnesses: Arc::from([]),
     }))
+}
+
+/// The implementation a where-bounded generic field of the implicit receiver dispatches to
+/// (`this.reader.Begin(...)` inside `impl<R> Adapter<R> : Decoder where R: Source`). Such a
+/// receiver has no parameter witness: the enclosing impl instance binds the impl parameter
+/// itself, so that binding's conformance to the parameter's bounds selects the implementation
+/// of `method` and its generic environment.
+fn bounded_field_member_implementation(
+    db: &dyn Db,
+    program: &Spanned<beskid_analysis::syntax::Program>,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    key: AstNodeKey,
+    call: &beskid_analysis::syntax::CallExpression,
+    method: AstNodeKey,
+    enclosing: &GenericSpecializationInstance,
+) -> Result<(Arc<[GenericSubstitution]>, AstNodeKey), SemanticError> {
+    let unavailable = || SemanticError::unavailable("contract_witness");
+    let member_path;
+    let path = match &call.callee.node {
+        Expression::Path(path) => &path.node.path.node,
+        Expression::Member(member) => {
+            member_path = member_callee_name_path(member).ok_or_else(unavailable)?;
+            &member_path
+        }
+        _ => return Err(unavailable()),
+    };
+    let bounds = bounded_field_receiver_bounds(db, program, index, key, path).ok_or_else(unavailable)??;
+    let environment =
+        enclosing.substitutions.iter().map(|binding| (binding.parameter.as_ref(), binding.source_identity())).collect();
+    for bound in &bounds {
+        let Some(binding) = enclosing.substitutions.iter().find(|binding| &*binding.parameter == bound.generic.as_str())
+        else {
+            continue;
+        };
+        let applied_arguments = applied_contract_arguments(db, key, &bound.path, &environment)?;
+        let proven = prove_applied_conformance(
+            db,
+            key,
+            binding.source_identity(),
+            bound.contract,
+            &applied_arguments,
+            &|concrete| generic_bound_not_satisfied(concrete.unwrap_or(bound.generic.as_str()).to_owned(), &bound.path),
+        )?;
+        if let Some(implementation) =
+            proven.methods.iter().find_map(|(signature, implementation)| (*signature == method).then_some(*implementation))
+        {
+            return Ok((proven.environment, implementation));
+        }
+    }
+    Err(unavailable())
 }
 
 /// Recompute executable conformance before a persisted specialization is used as effect

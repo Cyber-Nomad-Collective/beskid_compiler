@@ -60,7 +60,6 @@ const KNOWN_GAPS: &[&str] = &[
     "contract_argument",
     "contract_conformance",
     "contract_method",
-    "contract_parameter",
     "contract_witness",
     "corelib_value_service_result",
     "empty_array_literal_element_abi_type",

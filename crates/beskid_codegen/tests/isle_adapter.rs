@@ -36,6 +36,8 @@ mod literal_operators;
 mod managed_references;
 #[path = "isle_adapter/memory_aggregate_arrays.rs"]
 mod memory_aggregate_arrays;
+#[path = "isle_adapter/member_callee_methods.rs"]
+mod member_callee_methods;
 #[path = "isle_adapter/method_owned_fields.rs"]
 mod method_owned_fields;
 #[path = "isle_adapter/module_emission_specialization.rs"]
