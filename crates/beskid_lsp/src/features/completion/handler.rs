@@ -40,6 +40,12 @@ pub fn handle_completion(
     }
 
     let context = completion_context(&doc.text, offset);
+    if let Some(context) = context {
+        let catalogue = doc.syntax_completion.as_ref().map(|completion| completion.attributes.as_ref()).unwrap_or(&[]);
+        if let Some(items) = super::attributes::attribute_completion_items(&doc.text, context, catalogue) {
+            return CompletionResponse::Array(items);
+        }
+    }
     let syntax_candidates = doc.syntax_completion.as_ref().and_then(|completion| {
         context.map(|context| {
             let current = completion
@@ -230,7 +236,12 @@ mod tests {
             syntax_hovers: Vec::new(),
             syntax_symbols: Vec::new(),
             bsol_semantic_token_candidates: Vec::new(),
-            syntax_completion: Some(SyntaxCompletion { entry_anchor: Some(anchor), dependency_surface: Arc::from([]) }),
+            syntax_attribute_names: Vec::new(),
+            syntax_completion: Some(SyntaxCompletion {
+                entry_anchor: Some(anchor),
+                dependency_surface: Arc::from([]),
+                attributes: Arc::from([]),
+            }),
             syntax_inlay_hints: Vec::new(),
             syntax_documentation: Vec::new(),
             syntax_diagnostics: Vec::new(),
@@ -255,6 +266,7 @@ mod tests {
             syntax_hovers: Vec::new(),
             syntax_symbols: Vec::new(),
             bsol_semantic_token_candidates: Vec::new(),
+            syntax_attribute_names: Vec::new(),
             syntax_completion: None,
             syntax_inlay_hints: Vec::new(),
             syntax_documentation: Vec::new(),
@@ -352,7 +364,12 @@ mod tests {
             syntax_hovers: Vec::new(),
             syntax_symbols: Vec::new(),
             bsol_semantic_token_candidates: Vec::new(),
-            syntax_completion: Some(SyntaxCompletion { entry_anchor: Some(anchor), dependency_surface: Arc::from([]) }),
+            syntax_attribute_names: Vec::new(),
+            syntax_completion: Some(SyntaxCompletion {
+                entry_anchor: Some(anchor),
+                dependency_surface: Arc::from([]),
+                attributes: Arc::from([]),
+            }),
             syntax_inlay_hints: Vec::new(),
             syntax_documentation: Vec::new(),
             syntax_diagnostics: Vec::new(),

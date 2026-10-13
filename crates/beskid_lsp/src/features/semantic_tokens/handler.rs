@@ -12,7 +12,7 @@ pub fn handle_semantic_tokens(uri: &Uri, doc: &Document) -> SemanticTokensResult
     let data = if is_manifest_uri(uri) || is_standalone_bsol_uri(uri) {
         build_bsol_semantic_tokens(&doc.text, &doc.bsol_semantic_token_candidates, offset_to_position)
     } else {
-        build_semantic_tokens(&doc.text, &doc.syntax_symbols, offset_to_position)
+        build_semantic_tokens(&doc.text, &doc.syntax_symbols, &doc.syntax_attribute_names, offset_to_position)
     };
     SemanticTokensResult::Tokens(SemanticTokens { result_id: None, data })
 }
@@ -38,6 +38,7 @@ mod tests {
                 end: 7,
             }],
             bsol_semantic_token_candidates: Vec::new(),
+            syntax_attribute_names: Vec::new(),
             syntax_completion: None,
             syntax_inlay_hints: Vec::new(),
             syntax_documentation: Vec::new(),
@@ -72,6 +73,7 @@ mod tests {
                 end: 6,
                 kind: BsolSemanticTokenKind::Namespace,
             }],
+            syntax_attribute_names: Vec::new(),
             syntax_completion: None,
             syntax_inlay_hints: Vec::new(),
             syntax_documentation: Vec::new(),

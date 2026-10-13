@@ -144,6 +144,8 @@ fn preparation_failure_facts(
     (diagnostics, Vec::new())
 }
 
+use crate::session::attribute_facts::attribute_names_for_program;
+
 use super::{
     facts::{SyntaxFacts, bsol_semantic_token_candidates, syntax_facts_for_assembly, syntax_symbols_for_program},
     revisions_resolution::resolved_input_for_path,
@@ -184,11 +186,11 @@ async fn build_syntax_facts_with_policy_after_startup(
     // Outline symbols belong to the current buffer's recoverable syntax, not to
     // the last successfully typed project closure. Keep this independent of
     // resolution so an incomplete expression cannot erase or stale the outline.
-    let current_symbols = if is_manifest_uri(uri) || is_standalone_bsol_uri(uri) {
-        Vec::new()
+    let (current_symbols, current_attribute_names) = if is_manifest_uri(uri) || is_standalone_bsol_uri(uri) {
+        (Vec::new(), Vec::new())
     } else {
         beskid_analysis::services::parse_program_with_source_name(uri.as_str(), text)
-            .map(|program| syntax_symbols_for_program(&program))
+            .map(|program| (syntax_symbols_for_program(&program), attribute_names_for_program(&program)))
             .unwrap_or_default()
     };
     if is_manifest_uri(uri) || is_standalone_bsol_uri(uri) {
@@ -203,26 +205,53 @@ async fn build_syntax_facts_with_policy_after_startup(
     }
     let Some(path) = uri_to_path(uri) else {
         let (diagnostics, fixes) = fallback_diagnostics(state, uri, text, None, fallback).await;
-        return SyntaxFacts { documentation, symbols: current_symbols, diagnostics, fixes, ..SyntaxFacts::default() };
+        return SyntaxFacts {
+            documentation,
+            symbols: current_symbols,
+            attribute_names: current_attribute_names,
+            diagnostics,
+            fixes,
+            ..SyntaxFacts::default()
+        };
     };
     let Some((resolved, session)) = resolved_input_for_path(state, &path, text).await else {
         let (diagnostics, fixes) = fallback_diagnostics(state, uri, text, None, fallback).await;
-        return SyntaxFacts { documentation, symbols: current_symbols, diagnostics, fixes, ..SyntaxFacts::default() };
+        return SyntaxFacts {
+            documentation,
+            symbols: current_symbols,
+            attribute_names: current_attribute_names,
+            diagnostics,
+            fixes,
+            ..SyntaxFacts::default()
+        };
     };
     if current_document_only {
         let read = state.read().await;
         if read.docs.get(uri).or_else(|| read.workspace_index.get(uri)).is_none_or(|document| document.text != text) {
-            return SyntaxFacts { documentation, symbols: current_symbols, ..SyntaxFacts::default() };
+            return SyntaxFacts {
+                documentation,
+                symbols: current_symbols,
+                attribute_names: current_attribute_names,
+                ..SyntaxFacts::default()
+            };
         }
     }
     let Some(plan) = session.compile_plan.as_ref() else {
         let (diagnostics, fixes) = fallback_diagnostics(state, uri, text, Some(&session), fallback).await;
-        return SyntaxFacts { documentation, symbols: current_symbols, diagnostics, fixes, ..SyntaxFacts::default() };
+        return SyntaxFacts {
+            documentation,
+            symbols: current_symbols,
+            attribute_names: current_attribute_names,
+            diagnostics,
+            fixes,
+            ..SyntaxFacts::default()
+        };
     };
     if let Some(diagnostic) = lockfile_replay_diagnostic(plan) {
         return SyntaxFacts {
             documentation,
             symbols: current_symbols,
+            attribute_names: current_attribute_names,
             diagnostics: vec![diagnostic],
             ..SyntaxFacts::default()
         };
@@ -291,6 +320,7 @@ async fn build_syntax_facts_with_policy_after_startup(
     };
     facts.documentation = documentation;
     facts.symbols = current_symbols;
+    facts.attribute_names = current_attribute_names;
     facts
 }
 
@@ -306,6 +336,7 @@ fn document_from_syntax_facts(version: i32, text: String, syntax_facts: SyntaxFa
         syntax_hovers: syntax_facts.hovers,
         syntax_symbols: syntax_facts.symbols,
         bsol_semantic_token_candidates: syntax_facts.bsol_semantic_token_candidates,
+        syntax_attribute_names: syntax_facts.attribute_names,
         syntax_completion: syntax_facts.completion,
         syntax_inlay_hints: syntax_facts.inlay_hints,
         syntax_documentation: syntax_facts.documentation,
@@ -319,6 +350,7 @@ pub(super) fn apply_syntax_facts(doc: &mut Document, syntax_facts: SyntaxFacts) 
     doc.syntax_hovers = syntax_facts.hovers;
     doc.syntax_symbols = syntax_facts.symbols;
     doc.bsol_semantic_token_candidates = syntax_facts.bsol_semantic_token_candidates;
+    doc.syntax_attribute_names = syntax_facts.attribute_names;
     doc.syntax_completion = syntax_facts.completion;
     doc.syntax_inlay_hints = syntax_facts.inlay_hints;
     doc.syntax_documentation = syntax_facts.documentation;
@@ -372,7 +404,7 @@ pub async fn set_disk_snapshot(state: &RwLock<State>, uri: Uri, doc: Document) {
 pub async fn set_document(state: &RwLock<State>, uri: Uri, version: i32, text: String) -> bool {
     let update_gate = document_update_gate(state, &uri).await;
     let _update_guard = update_gate.lock().await;
-    let prior_dependency_surface = {
+    let (prior_dependency_surface, prior_attributes) = {
         let mut write_state = state.write().await;
         if let Some(existing) = write_state.docs.get(&uri)
             && version < existing.version
@@ -398,8 +430,17 @@ pub async fn set_document(state: &RwLock<State>, uri: Uri, version: i32, text: S
                     .collect::<Vec<_>>()
             })
             .unwrap_or_default();
+        // The attribute catalogue is owned data from the last typed generation; keep it while
+        // an incomplete edit (such as a freshly typed `[`) cannot be typed.
+        let prior_attributes = write_state
+            .docs
+            .get(&uri)
+            .or_else(|| write_state.workspace_index.get(&uri))
+            .and_then(|document| document.syntax_completion.as_ref())
+            .map(|completion| completion.attributes.clone())
+            .unwrap_or_else(|| std::sync::Arc::from([]));
         write_state.workspace_index.remove(&uri);
-        prior_dependency_surface
+        (prior_dependency_surface, prior_attributes)
     };
 
     // Keep editing responsive: type only the entry unit synchronously. The debounced
@@ -413,7 +454,24 @@ pub async fn set_document(state: &RwLock<State>, uri: Uri, version: i32, text: S
         match &mut syntax_facts.completion {
             Some(completion) => completion.dependency_surface = dependency_surface,
             None => {
-                syntax_facts.completion = Some(SyntaxCompletion { entry_anchor: None, dependency_surface });
+                syntax_facts.completion = Some(SyntaxCompletion {
+                    entry_anchor: None,
+                    dependency_surface,
+                    attributes: std::sync::Arc::from([]),
+                });
+            }
+        }
+    }
+    if !prior_attributes.is_empty() {
+        match &mut syntax_facts.completion {
+            Some(completion) if completion.attributes.is_empty() => completion.attributes = prior_attributes,
+            Some(_) => {}
+            None => {
+                syntax_facts.completion = Some(SyntaxCompletion {
+                    entry_anchor: None,
+                    dependency_surface: std::sync::Arc::from([]),
+                    attributes: prior_attributes,
+                });
             }
         }
     }
@@ -449,8 +507,7 @@ pub async fn rebuild_open_document_syntax_facts(state: &RwLock<State>) {
     };
 
     for (uri, version, text) in entries {
-        let syntax_facts =
-            build_syntax_facts_with_policy(state, &uri, &text, EditorPreparePass::Complete, true).await;
+        let syntax_facts = build_syntax_facts_with_policy(state, &uri, &text, EditorPreparePass::Complete, true).await;
         let update_gate = document_update_gate(state, &uri).await;
         let _update_guard = update_gate.lock().await;
         let mut write = state.write().await;
@@ -502,13 +559,17 @@ target "App" {
             .expect("v1 lock");
         let doc = build_initial_workspace_document(&state, &uri, 1, source.to_string()).await;
         assert!(
-            doc.syntax_diagnostics.iter().any(|d| d.message.contains("v1") && d.message.contains("beskid dev project lock")),
+            doc.syntax_diagnostics
+                .iter()
+                .any(|d| d.message.contains("v1") && d.message.contains("beskid dev project lock")),
             "diagnostics: {:?}",
             doc.syntax_diagnostics
         );
         state.read().await.mark_initial_scan_complete();
         let (full_diagnostics, _) = build_full_diagnostic_facts(&state, &uri, source).await;
-        assert!(full_diagnostics.iter().any(|d| d.message.contains("v1") && d.message.contains("beskid dev project lock")));
+        assert!(
+            full_diagnostics.iter().any(|d| d.message.contains("v1") && d.message.contains("beskid dev project lock"))
+        );
 
         fs::write(&lock_path, "# Project.lock v2\nnot-a-lock\n").expect("malformed lock");
         let doc = build_initial_workspace_document(&state, &uri, 2, source.to_string()).await;

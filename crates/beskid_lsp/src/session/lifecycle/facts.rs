@@ -28,6 +28,8 @@ pub(super) struct SyntaxFacts {
     pub(super) hovers: Vec<SyntaxHover>,
     pub(super) symbols: Vec<SyntaxSymbol>,
     pub(super) bsol_semantic_token_candidates: Vec<BsolSemanticTokenCandidate>,
+    /// Attribute names of the current buffer's recoverable syntax.
+    pub(super) attribute_names: Vec<crate::session::store::SyntaxAttributeName>,
     pub(super) completion: Option<SyntaxCompletion>,
     pub(super) inlay_hints: Vec<SyntaxInlayHint>,
     pub(super) documentation: Vec<SyntaxDocumentationFact>,
@@ -70,8 +72,11 @@ pub(super) fn syntax_facts_for_assembly(
     let Ok(typed) = typed else {
         return SyntaxFacts {
             symbols: recoverable_symbols,
-            completion: (!dependency_surface.is_empty())
-                .then_some(SyntaxCompletion { entry_anchor: None, dependency_surface }),
+            completion: (!dependency_surface.is_empty()).then_some(SyntaxCompletion {
+                entry_anchor: None,
+                dependency_surface,
+                attributes: Arc::from([]),
+            }),
             ..SyntaxFacts::default()
         };
     };
@@ -142,6 +147,12 @@ pub(super) fn syntax_facts_for_assembly(
             });
         }
     }
+    let (attribute_definitions, attribute_hovers) =
+        crate::session::attribute_facts::attribute_reference_facts(db, unit, generation, entry, &typed.assembly.units);
+    definitions.extend(attribute_definitions);
+    hovers.extend(attribute_hovers);
+    let attributes =
+        crate::session::attribute_facts::attribute_completion_catalogue(db, unit, generation, &typed.assembly.units);
     definitions.sort_by_key(|definition| {
         (definition.reference_start, definition.reference_end, definition.declaration_path.clone())
     });
@@ -154,12 +165,13 @@ pub(super) fn syntax_facts_for_assembly(
         .ids_of_kind(beskid_analysis::syntax_query::NodeKind::Program)
         .next()
         .map(|node| AstNodeKey { unit, generation, node })
-        .map(|entry_anchor| SyntaxCompletion { entry_anchor: Some(entry_anchor), dependency_surface });
+        .map(|entry_anchor| SyntaxCompletion { entry_anchor: Some(entry_anchor), dependency_surface, attributes });
     SyntaxFacts {
         definitions,
         hovers,
         symbols: syntax_symbols_for_program(&entry.program),
         bsol_semantic_token_candidates: Vec::new(),
+        attribute_names: Vec::new(),
         completion,
         inlay_hints,
         documentation: Vec::new(),
