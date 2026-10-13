@@ -45,14 +45,14 @@ pub pointer ManagedObjectForReference(pointer heap, pointer value) {
     }
     pointer descriptor = NativePointer(raw_word_load(object));
     if ValidateTypeDescriptor(descriptor) == false { return NativePointer(0); }
-    if TypeDescriptorFlags(descriptor) == TypeDescriptorUtf8ViewFlag() {
+    if TypeDescriptorKind(descriptor) == TypeDescriptorUtf8ViewFlag() {
         pointer payload = NativePointer(raw_word_load(pointer_add(object, 16)));
         if payload == NativePointer(0) || NativeWord(payload) < 24 { return NativePointer(0); }
         pointer backing = NativePointer(NativeWord(payload) - 24);
         if IsAllocatedObject(heap, backing) == false { return NativePointer(0); }
         pointer backingDescriptor = NativePointer(raw_word_load(backing));
         if ValidateTypeDescriptor(backingDescriptor) == false ||
-            TypeDescriptorFlags(backingDescriptor) != TypeDescriptorArrayFlag() {
+            TypeDescriptorKind(backingDescriptor) != TypeDescriptorArrayFlag() {
             return NativePointer(0);
         }
         pointer element = NativePointer(raw_word_load(pointer_add(backing, 16)));
@@ -66,7 +66,7 @@ pub pointer ManagedObjectForReference(pointer heap, pointer value) {
         }
         return object;
     }
-    if TypeDescriptorFlags(descriptor) != TypeDescriptorArrayFlag() { return NativePointer(0); }
+    if TypeDescriptorKind(descriptor) != TypeDescriptorArrayFlag() { return NativePointer(0); }
     if pointer_add(object, 24) != value || NativePointer(raw_word_load(value)) != pointer_add(object, 48) {
         return NativePointer(0);
     }
@@ -146,7 +146,7 @@ pub unit GcMarkGray(pointer object) {
 // Traces one object's pointer fields (array or aggregate pointer-map walk), shading every
 // non-null child. Shared by the small-span slot scan and the large-object scan below.
 pub bool TraceObjectFields(pointer object, pointer descriptor) {
-    if TypeDescriptorFlags(descriptor) == TYPE_DESCRIPTOR_ARRAY {
+    if TypeDescriptorKind(descriptor) == TYPE_DESCRIPTOR_ARRAY {
         pointer element = NativePointer(raw_word_load(pointer_add(object, 16)));
         word stride = raw_word_load(element);
         pointer pointerMap = NativePointer(raw_word_load(pointer_add(element, 16)));

@@ -58,8 +58,27 @@ pub word TypeDescriptorFlags(pointer descriptor) {
 
 const TYPE_DESCRIPTOR_ARRAY = 1;
 const TYPE_DESCRIPTOR_UTF8_VIEW = 2;
+// Set on descriptors of Shared nominal types (transfer class Shared, not an enum) and on the
+// canonical string record. Array descriptors never carry it. No collector behavior depends on
+// it in this release; later releases read it when tracing a foreign object.
+const TYPE_DESCRIPTOR_IMMUTABLE = 4;
+const TYPE_DESCRIPTOR_KIND_MASK = 3;
+const TYPE_DESCRIPTOR_KNOWN_FLAGS = 7;
 
 pub word TypeDescriptorUtf8ViewFlag() { return TYPE_DESCRIPTOR_UTF8_VIEW; }
+
+pub word TypeDescriptorImmutableFlag() { return TYPE_DESCRIPTOR_IMMUTABLE; }
+
+// The representation kind of a descriptor: 0 for an ordinary record, `TYPE_DESCRIPTOR_ARRAY` or
+// `TYPE_DESCRIPTOR_UTF8_VIEW`. Property bits such as `TYPE_DESCRIPTOR_IMMUTABLE` are masked off,
+// so every representation test compares this value, never the raw flags word.
+pub word TypeDescriptorKind(pointer descriptor) {
+    return TypeDescriptorFlags(descriptor) & TYPE_DESCRIPTOR_KIND_MASK;
+}
+
+pub bool TypeDescriptorIsImmutable(pointer descriptor) {
+    return (TypeDescriptorFlags(descriptor) & TYPE_DESCRIPTOR_IMMUTABLE) != 0;
+}
 
 // Beskid `const` items have no `pub` visibility (see the grammar's `ConstantDefinition` rule):
 // they only resolve within their own declaring file. Callers outside this module — including
@@ -101,7 +120,7 @@ pub bool ValidateArrayElementDescriptor(pointer descriptor) {
 // prefix; the heap walk derives the checked allocation extent from capacity and element stride.
 pub word ManagedObjectSize(pointer object, pointer descriptor) {
     word fixedSize = TypeDescriptorSize(descriptor);
-    if TypeDescriptorFlags(descriptor) != TYPE_DESCRIPTOR_ARRAY { return fixedSize; }
+    if TypeDescriptorKind(descriptor) != TYPE_DESCRIPTOR_ARRAY { return fixedSize; }
     if fixedSize != 48 { return 0; }
     pointer element = NativePointer(raw_word_load(pointer_add(object, 16)));
     if ValidateArrayElementDescriptor(element) == false { return 0; }
@@ -196,15 +215,17 @@ pub bool ValidateTypeDescriptor(pointer descriptor) {
             word alignment = TypeDescriptorAlignment(descriptor);
             bool alignmentOk = IsValidObjectAlignment(alignment);
             if alignmentOk {
-                if TypeDescriptorFlags(descriptor) == TYPE_DESCRIPTOR_ARRAY {
+                word flags = TypeDescriptorFlags(descriptor);
+                if (flags & (0 - 1 - TYPE_DESCRIPTOR_KNOWN_FLAGS)) != 0 { return false; }
+                if flags == TYPE_DESCRIPTOR_ARRAY {
                     return size == 48 && TypeDescriptorPointerCount(descriptor) == 0;
                 }
-                if TypeDescriptorFlags(descriptor) == TYPE_DESCRIPTOR_UTF8_VIEW {
+                if TypeDescriptorKind(descriptor) == TYPE_DESCRIPTOR_UTF8_VIEW {
                     pointer map = TypeDescriptorPointerMap(descriptor);
                     return size == 40 && alignment == 8 && TypeDescriptorPointerCount(descriptor) == 1
                         && map != NativePointer(0) && raw_word_load(map) == 16;
                 }
-                if TypeDescriptorFlags(descriptor) != 0 { return false; }
+                if TypeDescriptorKind(descriptor) != 0 { return false; }
                 return ValidatePointerMap(
                     TypeDescriptorPointerMap(descriptor),
                     TypeDescriptorPointerCount(descriptor),

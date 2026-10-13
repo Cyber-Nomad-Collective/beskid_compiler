@@ -31,7 +31,7 @@ pub pointer AllocateArrayRootedWithPolicy(pointer request, pointer rootHandleOut
     pointer element = NativePointer(raw_word_load(request));
     pointer descriptor = NativePointer(raw_word_load(pointer_add(request, 16)));
     if ValidateArrayElementDescriptor(element) == false || ValidateTypeDescriptor(descriptor) == false ||
-       TypeDescriptorFlags(descriptor) != TYPE_DESCRIPTOR_ARRAY || raw_word_load(pointer_add(request, 24)) != 0 {
+       TypeDescriptorKind(descriptor) != TYPE_DESCRIPTOR_ARRAY || raw_word_load(pointer_add(request, 24)) != 0 {
         return NativePointer(0);
     }
     word stride = raw_word_load(element);
@@ -126,7 +126,7 @@ pub pointer GrowArrayRootedWithPolicy(pointer array, word minimumCapacity, point
     }
 
     pointer element = NativePointer(raw_word_load(pointer_add(object, 16)));
-    if TypeDescriptorFlags(descriptor) != TYPE_DESCRIPTOR_ARRAY || ValidateArrayElementDescriptor(element) == false {
+    if TypeDescriptorKind(descriptor) != TYPE_DESCRIPTOR_ARRAY || ValidateArrayElementDescriptor(element) == false {
         return NativePointer(0);
     }
     word stride = raw_word_load(element);

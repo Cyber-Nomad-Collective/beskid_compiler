@@ -16,6 +16,15 @@ use crate::CodegenInput;
 /// Canonical ABI-v5 allocation entrypoint for managed aggregate values.
 pub const ABI_V5_MANAGED_OBJECT_ALLOCATE: &str = "beskid_rt_v5_managed_object_allocate";
 
+/// `BeskidTypeDescriptor.flags` bits (`Runtime/Bootstrap/Objects.bd`). The low two bits are the
+/// representation kind; `TYPE_DESCRIPTOR_IMMUTABLE` is a property bit that marks a descriptor
+/// whose objects nothing writes after construction. It is set on the canonical string record and,
+/// once the transfer-class query proves a nominal type Shared, on that type's descriptor. Array
+/// descriptors never carry it.
+pub const TYPE_DESCRIPTOR_ARRAY: u64 = 1;
+pub const TYPE_DESCRIPTOR_UTF8_VIEW: u64 = 2;
+pub const TYPE_DESCRIPTOR_IMMUTABLE: u64 = 4;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AggregateStaticField {
     pub abi_type: SemanticTypeId,
@@ -523,8 +532,10 @@ impl CodegenInput<'_> {
             {
                 return None;
             }
-            2
+            TYPE_DESCRIPTOR_UTF8_VIEW | TYPE_DESCRIPTOR_IMMUTABLE
         } else {
+            // Nominal records carry no property bit until `transfer_class` (v061 task 3.2)
+            // proves a type Shared; `[Immutable]` types then set `TYPE_DESCRIPTOR_IMMUTABLE`.
             0
         };
         Some(AggregateStaticPlan {

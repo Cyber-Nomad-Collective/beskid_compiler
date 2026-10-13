@@ -1,6 +1,7 @@
 use Concurrency.Fiber;
 use Runtime.Bootstrap.Lifecycle;
 use Runtime.Bootstrap.Native;
+use Runtime.Bootstrap.Objects;
 use Runtime.Fiber.Scheduler.Core;
 use Runtime.Io.Syscalls;
 use Runtime.Mem.Gc.RegionMap;
@@ -79,6 +80,24 @@ test isolate_prerequisite_atomics_follow_the_word_contract {
     Assert.Equal(Native.AtomicWordLoad(cell, 9), 3, "an unknown order byte acts as sequentially consistent");
     Native.SystemFree(cell, 8);
     Assert.True(Native.HostProcessorCount() >= 1, "the host reports at least one logical processor");
+}
+
+test isolate_prerequisite_descriptor_immutable_flag_is_a_property_bit {
+    Assert.Equal(Objects.TypeDescriptorImmutableFlag(), 4, "TYPE_DESCRIPTOR_IMMUTABLE is bit value 4");
+    pointer descriptor = Native.SystemAllocate(40, 8);
+    memory_set(descriptor, 0, 40);
+    raw_word_store(descriptor, 24);
+    raw_word_store(pointer_add(descriptor, 8), 8);
+    raw_word_store(pointer_add(descriptor, 32), 4);
+    Assert.True(Objects.ValidateTypeDescriptor(descriptor), "an immutable record descriptor is valid");
+    Assert.True(Objects.TypeDescriptorIsImmutable(descriptor), "the immutable bit is readable");
+    Assert.Equal(Objects.TypeDescriptorKind(descriptor), 0, "the immutable bit is not a representation kind");
+    raw_word_store(pointer_add(descriptor, 32), 8);
+    Assert.False(Objects.ValidateTypeDescriptor(descriptor), "unknown descriptor flag bits fail closed");
+    raw_word_store(descriptor, 48);
+    raw_word_store(pointer_add(descriptor, 32), Objects.TypeDescriptorArrayFlag() | 4);
+    Assert.False(Objects.ValidateTypeDescriptor(descriptor), "array descriptors never carry the immutable bit");
+    Native.SystemFree(descriptor, 40);
 }
 
 test isolate_lifecycle_publishes_instance_record_region_owner_and_primary {
