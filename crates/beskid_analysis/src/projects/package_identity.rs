@@ -158,12 +158,18 @@ fn is_compiler_corelib_source_root(source_root: &Path) -> bool {
     beskid_abi::runtime_source::compiler_corelib_package_source_root(package).is_some_and(|root| root == physical)
 }
 /// Whether `manifest` belongs to a project inside the compiler checkout's own Corelib tree
-/// (a Corelib package, Mod, aggregate, or test project of that checkout).
+/// (a Corelib package, Mod, aggregate, or test project of that checkout) or inside the same
+/// checkout's canonical runtime tree (`<checkout>/runtime/beskid`, whose runtime semantics test
+/// projects name the checkout Corelib by path). Both trees are the compiler's own sources.
 fn is_inside_compiler_corelib_checkout(manifest: &Path) -> bool {
     let Ok(physical) = manifest.canonicalize() else {
         return false;
     };
-    beskid_abi::runtime_source::compiler_corelib_checkout_root().is_some_and(|root| physical.starts_with(root))
+    let Some(corelib) = beskid_abi::runtime_source::compiler_corelib_checkout_root() else {
+        return false;
+    };
+    let runtime = corelib.parent().map(|checkout| checkout.join("runtime").join("beskid")).and_then(|root| root.canonicalize().ok());
+    physical.starts_with(&corelib) || runtime.is_some_and(|root| physical.starts_with(root))
 }
 impl VerifiedPackageIdentities {
     /// The one package that owns `path`. The most specific containing root across all entries

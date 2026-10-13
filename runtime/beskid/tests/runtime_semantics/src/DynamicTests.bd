@@ -61,7 +61,7 @@ test dynamic_box_preserves_canonical_descriptor_across_collection {
     GcCollect();
     Assert.True(GcResolveHandle(root) == payload, "rooted box survives collection");
     Assert.True(raw_word_load(payload) == descriptor && descriptor != 0, "descriptor header remains intact");
-    Assert.Equal(raw_word_load(pointer_add(payload, 16)), 101_word, "canonical primitive box retains value");
+    Assert.Equal(raw_word_load(pointer_add(payload, 16)), word(101), "canonical primitive box retains value");
     GcUnrootHandle(root);
 }
 test dynamic_null_input_fails_closed {

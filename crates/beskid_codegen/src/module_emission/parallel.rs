@@ -159,6 +159,9 @@ fn emit_module_item(
     if let Some(function) = super::dynamic::emit_shape_bridge(input, isa, item, items)? {
         return Ok(lowered(function));
     }
+    if let Some(function) = super::dynamic::emit_mapping_bridge(input, isa, item, items)? {
+        return Ok(lowered(function));
+    }
     if let Some(function) = super::dynamic::emit_pack_bridge(input, isa, item, items, symbols)? {
         return Ok(lowered(function));
     }

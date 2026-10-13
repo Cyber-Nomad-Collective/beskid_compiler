@@ -237,4 +237,39 @@ mod runtime_input_v06_tests {
         assert!(!args(&request(None, BuildOutputKind::SharedLib)).contains(&"-Wl,-z,defs".to_owned()));
         assert!(!args(&request(runtime, BuildOutputKind::Exe)).contains(&"-Wl,-z,defs".to_owned()));
     }
+
+    #[test]
+    fn v06_canonical_runtime_input_supplies_the_beskid_runtime_extern_library() {
+        let request = |runtime| LinkRequest {
+            target_triple: Some("x86_64-unknown-linux-gnu".into()),
+            output_kind: BuildOutputKind::Exe,
+            output_path: PathBuf::from("out/test"),
+            object_path: PathBuf::from("tests.o"),
+            additional_object_paths: Vec::new(),
+            runtime,
+            host_staticlib: None,
+            entrypoint_symbol: String::new(),
+            exported_symbols: Vec::new(),
+            link_mode: LinkMode::Auto,
+            verbose: false,
+            external_libraries: vec!["beskid_runtime".into(), "c".into()],
+            optional_libraries: Vec::new(),
+            library_search_paths: Vec::new(),
+        };
+        let args = |req: &LinkRequest| -> Vec<String> {
+            unix_link_command(req, "x86_64-unknown-linux-gnu", "cc")
+                .unwrap()
+                .get_args()
+                .map(|arg| arg.to_string_lossy().into_owned())
+                .collect()
+        };
+        let provider = Some(RuntimeLinkInput::GlueSharedProviderV1 {
+            link_path: PathBuf::from("/validated/prefix/shared/libbeskid_runtime.so"),
+            shared_library_path: PathBuf::from("/validated/prefix/shared/libbeskid_runtime.so"),
+        });
+        let linked = args(&request(provider));
+        assert!(!linked.contains(&"-lbeskid_runtime".to_owned()), "{linked:?}");
+        assert!(linked.contains(&"-lc".to_owned()));
+        assert!(args(&request(None)).contains(&"-lbeskid_runtime".to_owned()), "no runtime input keeps the logical library");
+    }
 }

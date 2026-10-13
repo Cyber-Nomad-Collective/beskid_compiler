@@ -62,6 +62,24 @@ impl DynamicSignatureData {
         format!("beskid_dynamic_shape_tag_v1_{}", hex(&self.digest))
     }
 }
+/// One approved registered mapping between two shapes of this initializer.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DynamicMappingData {
+    source: usize,
+    destination: usize,
+    mapping: crate::dynamic_mapping::ApprovedDynamicMapping,
+}
+impl DynamicMappingData {
+    pub fn signature(&self) -> &[u8] {
+        self.mapping.signature()
+    }
+    pub fn digest(&self) -> &[u8; 32] {
+        self.mapping.digest()
+    }
+    pub fn token_getter(&self) -> String {
+        self.mapping.token_getter()
+    }
+}
 /// No public constructor/deserializer. Cloning this cannot grant authority to
 /// changed functions, imports, data, exports or descriptor/request plans.
 #[derive(Debug, Clone)]
@@ -71,6 +89,7 @@ pub struct DynamicInitializationPlan {
     source: [u8; 32],
     symbol: String,
     shapes: Vec<DynamicSignatureData>,
+    mappings: Vec<DynamicMappingData>,
     seal: ArtifactSeal,
 }
 impl DynamicInitializationPlan {
@@ -83,6 +102,9 @@ impl DynamicInitializationPlan {
     }
     pub fn signatures(&self) -> &[DynamicSignatureData] {
         &self.shapes
+    }
+    pub fn mappings(&self) -> &[DynamicMappingData] {
+        &self.mappings
     }
     pub fn requires_shared_provider_v1(&self) -> bool {
         true
@@ -104,6 +126,7 @@ impl DynamicInitializationPlan {
                 .iter()
                 .zip(&self.shapes)
                 .any(|(a, b)| a.bytes != b.bytes || a.digest != b.digest || a.payload_getter != b.payload_getter)
+            || current.mappings != self.mappings
         {
             return Err("Dynamic initializer plan changed".into());
         }
@@ -118,7 +141,15 @@ impl DynamicInitializationPlan {
         for (i, s) in self.shapes.iter().enumerate() {
             c.push_str(&format!("extern void *{}(void);\nstatic const uint8_t signature_{i}[]={{{}}};\nconst uint8_t *{}(void){{return signature_{i};}}\nstatic uint64_t tag_{i}=0;\nuint64_t {}(void){{return tag_{i};}}\n",s.payload_getter,numbers(&s.bytes),s.signature_getter(),s.shape_tag_getter()));
         }
-        c.push_str(&format!("int32_t {}(uint64_t generation){{\nif(!generation || library) return 1;\nuint64_t admitted=0;int32_t status=beskid_glue_v1_owner_open_library(generation,&admitted);if(status || !admitted)return status?status:1;\nBeskidGlueImageClosureRowV1 rows[{}]={{0}};\n",self.symbol,self.shapes.len()*6));
+        if !self.mappings.is_empty() {
+            c.push_str(&crate::dynamic_mapping::native_support());
+        }
+        for (i, m) in self.mappings.iter().enumerate() {
+            c.push_str(m.mapping.native_definitions());
+            c.push_str(&format!("static const uint8_t mapping_signature_{i}[]={{{}}};\nstatic uint64_t token_{i}=0;\nuint64_t {}(void){{return token_{i};}}\n",numbers(m.mapping.signature()),m.mapping.token_getter()));
+        }
+        let rows = self.shapes.len() * 6 + self.mappings.len() * 2;
+        c.push_str(&format!("int32_t {}(uint64_t generation){{\nif(!generation || library) return 1;\nuint64_t admitted=0;int32_t status=beskid_glue_v1_owner_open_library(generation,&admitted);if(status || !admitted)return status?status:1;\nBeskidGlueImageClosureRowV1 rows[{}]={{0}};\n",self.symbol,rows));
         for (i, s) in self.shapes.iter().enumerate() {
             c.push_str(&format!(
                 "static const uint8_t source_{i}[32]={{{}}},digest_{i}[32]={{{}}};\n",
@@ -137,13 +168,26 @@ impl DynamicInitializationPlan {
                 c.push_str(&format!("memcpy(rows[{row}].source_sha256,source_{i},32);memcpy(rows[{row}].signature_sha256,digest_{i},32);rows[{row}].address=(uint64_t)(uintptr_t)({address});rows[{row}].role={role};\n"));
             }
         }
-        c.push_str(&format!("qsort(rows,{},sizeof *rows,row_order);status=beskid_glue_v1_owner_bind_image_closure(admitted,generation,rows,{});if(status)goto failed;\n",self.shapes.len()*6,self.shapes.len()*6));
+        for (i, m) in self.mappings.iter().enumerate() {
+            c.push_str(&format!("static const uint8_t mapping_digest_{i}[32]={{{}}};\n", numbers(m.mapping.digest())));
+            for (offset, (role, address)) in [(5, m.mapping.transform_symbol()), (15, m.mapping.checked_transform_symbol())].into_iter().enumerate() {
+                let row = self.shapes.len() * 6 + i * 2 + offset;
+                c.push_str(&format!("memcpy(rows[{row}].source_sha256,source_0,32);memcpy(rows[{row}].signature_sha256,mapping_digest_{i},32);rows[{row}].address=(uint64_t)(uintptr_t)({address});rows[{row}].role={role};\n"));
+            }
+        }
+        c.push_str(&format!("qsort(rows,{rows},sizeof *rows,row_order);status=beskid_glue_v1_owner_bind_image_closure(admitted,generation,rows,{rows});if(status)goto failed;\n"));
         for (i, s) in self.shapes.iter().enumerate() {
             c.push_str(&format!("BeskidDynamicShapeRegistrationV1 shape_{i}={{0}};shape_{i}.version=1;shape_{i}.size=sizeof shape_{i};shape_{i}.library=admitted;shape_{i}.generation=generation;memcpy(shape_{i}.source_sha256,source_{i},32);memcpy(shape_{i}.signature_sha256,digest_{i},32);shape_{i}.signature={}();shape_{i}.signature_length={};shape_{i}.payload_descriptor={}();shape_{i}.cell_descriptor=beskid_dynamic_v1_erased_cell_descriptor();shape_{i}.construct=beskid_dynamic_v1_erased_construct;shape_{i}.read=beskid_dynamic_v1_erased_read;status=beskid_dynamic_v1_register_shape(&shape_{i},&tag_{i});if(status || !tag_{i}){{if(!status)status=1;goto failed;}}\n",s.signature_getter(),s.bytes.len(),s.payload_getter));
+        }
+        for (i, m) in self.mappings.iter().enumerate() {
+            c.push_str(&format!("BeskidDynamicMappingRegistrationV1 mapping_{i}={{0}};mapping_{i}.version=1;mapping_{i}.size=sizeof mapping_{i};mapping_{i}.library=admitted;mapping_{i}.generation=generation;mapping_{i}.source_tag=tag_{};mapping_{i}.destination_tag=tag_{};mapping_{i}.signature=mapping_signature_{i};mapping_{i}.signature_length={};mapping_{i}.transform={};status=beskid_dynamic_v1_register_mapping(&mapping_{i},&token_{i});if(status || !token_{i}){{if(!status)status=1;goto failed;}}\n",m.source,m.destination,m.mapping.signature().len(),m.mapping.transform_symbol()));
         }
         c.push_str("library=admitted;return 0;\nfailed:\n");
         for i in 0..self.shapes.len() {
             c.push_str(&format!("tag_{i}=0;\n"));
+        }
+        for i in 0..self.mappings.len() {
+            c.push_str(&format!("token_{i}=0;\n"));
         }
         c.push_str("if(beskid_glue_v1_owner_close_library(admitted,generation))return 2;return status;\n}\n");
         c.into_bytes()
@@ -163,11 +207,28 @@ pub(crate) fn issue_dynamic_initialization(
 ) -> Result<Option<DynamicInitializationPlan>, String> {
     let mut shapes = BTreeMap::new();
     let mut total = 0usize;
+    let mut mappings = BTreeMap::new();
+    let mut packings = Vec::new();
     for requested in instances {
         let binding=beskid_queries::dynamic_shape_binding(input.database(),requested).map_err(|e|e.to_string())?;
         let unpack=beskid_queries::dynamic_unpacking_bridge(input.database(),requested).map_err(|e|e.to_string())?;
+        let mapping=beskid_queries::dynamic_mapping_binding(input.database(),requested).map_err(|e|e.to_string())?;
+        if let Some(mapping) = mapping {
+            // Both shapes of a mapping are registered; an approved plan also registers
+            // its transform. A rejected plan registers no mapping and keeps token zero.
+            packings.push(mapping.source().clone());
+            packings.push(mapping.destination().clone());
+            let compiled = input.compiled_dynamic_mapping(&mapping)?;
+            if let Some(approved) = compiled.approved() {
+                mappings.insert(*approved.digest(), (*compiled.source_shape(), *compiled.destination_shape(), approved.clone()));
+            }
+            continue;
+        }
         let instance=binding.as_ref().map(|binding|binding.packing())
             .or_else(||unpack.as_ref().map(|bridge|bridge.packing())).unwrap_or(requested);
+        packings.push(instance.clone());
+    }
+    for instance in &packings {
         let Some(shape) = input.compiled_dynamic_packing_shape(instance)? else { continue };
         let bridge = beskid_queries::dynamic_packing_bridge(input.database(), instance)
             .map_err(|e| e.to_string())?
@@ -182,7 +243,7 @@ pub(crate) fn issue_dynamic_initialization(
             continue;
         }
         total = total.checked_add(shape.bytes().len()).ok_or("Dynamic signature total overflow")?;
-        if total > 16 * 1024 * 1024 || shapes.len() >= 4096 / 6 {
+        if total > 16 * 1024 * 1024 || (shapes.len() + 1) * 6 + mappings.len() * 2 > 4096 {
             return Err("Dynamic initializer closure exceeds profile bound".into());
         }
         shapes.insert(
@@ -196,6 +257,18 @@ pub(crate) fn issue_dynamic_initialization(
     }
     if shapes.is_empty() {
         return Ok(None);
+    }
+    let order = shapes.keys().copied().collect::<Vec<_>>();
+    let mut issued_mappings = Vec::with_capacity(mappings.len());
+    for (source, destination, mapping) in mappings.into_values() {
+        let index = |digest: &[u8; 32]| {
+            order.iter().position(|candidate| candidate == digest).ok_or("Dynamic mapping shape was not registered")
+        };
+        total = total.checked_add(mapping.signature().len()).ok_or("Dynamic signature total overflow")?;
+        issued_mappings.push(DynamicMappingData { source: index(&source)?, destination: index(&destination)?, mapping });
+    }
+    if total > 16 * 1024 * 1024 || shapes.len() * 6 + issued_mappings.len() * 2 > 4096 {
+        return Err("Dynamic initializer closure exceeds profile bound".into());
     }
     if input.typed_program().generation.0 == 0 {
         return Err("Dynamic requires a nonzero actual source generation".into());
@@ -215,12 +288,16 @@ pub(crate) fn issue_dynamic_initialization(
     for digest in shapes.keys() {
         identity.update(digest);
     }
+    for mapping in &issued_mappings {
+        identity.update(mapping.digest());
+    }
     Ok(Some(DynamicInitializationPlan {
         generation: input.typed_program().generation,
         target: input.target().clone(),
         source,
         symbol: format!("beskid_dynamic_initialize_v1_{:x}", identity.finalize()),
         shapes: shapes.into_values().collect(),
+        mappings: issued_mappings,
         seal: ArtifactSeal::capture(artifact),
     }))
 }

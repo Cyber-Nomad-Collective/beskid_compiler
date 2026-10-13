@@ -290,6 +290,45 @@ pub(super) fn emit_shape_bridge(
     Ok(None)
 }
 
+/// Mapping's bodyless token method is admitted only through the exact canonical
+/// `Mapping<S, D>` source call. An approved plan reads the token its sealed native
+/// initializer registered; a rejected plan has no registration and returns zero, which
+/// the canonical source turns into a checked `Invalid` result.
+pub(super) fn emit_mapping_bridge(
+    input:&CodegenInput<'_>,isa:&dyn TargetIsa,item:&ResolvedSyntaxModuleItem,
+    items:&[ResolvedSyntaxModuleItem],
+)->Result<Option<Function>,SyntaxModuleEmissionError> {
+    let Some(instance)=item.specialization.as_ref() else{return Ok(None)};
+    for requested in items.iter().filter_map(|item|item.specialization.as_ref()) {
+        let Some(binding)=beskid_queries::dynamic_mapping_binding(input.database(),requested)
+            .map_err(|error|emission_verification(error.to_string()))? else{continue};
+        if binding.instance()!=instance{continue}
+        if !instance.signature.parameters.is_empty() || instance.signature.result!=beskid_queries::SemanticTypeId::U64 {
+            return Err(emission_verification("canonical Mapping bridge ABI mismatch"));
+        }
+        let compiled=input.compiled_dynamic_mapping(&binding).map_err(emission_verification)?;
+        let mut function=Function::new();function.signature=Signature::new(isa.default_call_conv());
+        function.signature.returns.push(AbiParam::new(cranelift_codegen::ir::types::I64));
+        let mut context=FunctionBuilderContext::new();
+        {
+            let mut builder=FunctionBuilder::new(&mut function,&mut context);let entry=builder.create_block();
+            builder.switch_to_block(entry);builder.seal_block(entry);
+            let token=match compiled.approved() {
+                Some(approved)=>{
+                    let called_signature=builder.func.signature.clone();
+                    let signature=builder.import_signature(called_signature);
+                    let callee=builder.func.import_function(ExtFuncData{name:ExternalName::testcase(&approved.token_getter()),signature,colocated:false,patchable:false});
+                    let call=builder.ins().call(callee,&[]);builder.inst_results(call)[0]
+                }
+                None=>builder.ins().iconst(cranelift_codegen::ir::types::I64,0),
+            };
+            builder.ins().return_(&[token]);builder.finalize(isa.frontend_config());
+        }
+        return Ok(Some(function));
+    }
+    Ok(None)
+}
+
 pub(super) fn emit_unpack_bridge(
     input:&CodegenInput<'_>,isa:&dyn TargetIsa,item:&ResolvedSyntaxModuleItem,
     items:&[ResolvedSyntaxModuleItem],symbols:&HashMap<DirectCallee,String>,

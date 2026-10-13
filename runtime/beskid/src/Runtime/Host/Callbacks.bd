@@ -284,7 +284,11 @@ pub u64 GlueOwnerRuntimeGeneration() {
     pointer ownerRegistry = CallbackRegistry();
     if state == NativePointer(0) || ownerRegistry == NativePointer(0) || raw_word_load(ownerRegistry) != NativeWord(state) { return 0; }
     word lifecycle = raw_word_load(pointer_add(state, 56));
-    if (lifecycle & 0xFFFFFFFF) != 2 { return 0; }
+    // Active (2) admits owner operations. Shutting down (3) keeps the same generation so
+    // process shutdown can revoke and close every still-open library after the scheduler
+    // and children have stopped; no later lifecycle state admits anything.
+    word phase = lifecycle & 0xFFFFFFFF;
+    if phase != 2 && phase != 3 { return 0; }
     return u64(lifecycle >> 32);
 }
 

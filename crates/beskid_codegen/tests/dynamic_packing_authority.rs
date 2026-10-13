@@ -43,3 +43,50 @@ fn generic_extern_contract_binds_receiver_arguments_to_current_method() {
     let instance = beskid_queries::generic_call_specialization_instance(&db, specialization).unwrap().unwrap();
     assert!(beskid_queries::dynamic_packing_shape(&db, &instance).unwrap().is_none());
 }
+
+fn calls(db: &dyn beskid_queries::Db, key: AstNodeKey, found: &mut Vec<AstNodeKey>) {
+    if node_kind(db, key).ok().flatten() == Some(IndexedNodeKind::CallExpression) {
+        found.push(key);
+    }
+    for child in child_nodes(db, key).ok().flatten().unwrap_or_default().iter() {
+        calls(db, *child, found);
+    }
+}
+
+#[test]
+fn ordinary_mapping_lookalike_binds_both_contract_arguments_but_has_no_mapping_authority() {
+    let source = r#"
+        [Extern(Abi:"C", Library:"foreign")]
+        contract Pair<S, D> { u64 Token(); }
+        pub u64 Mapping<S, D>() { return Pair<S, D>.Token(); }
+        pub u64 Entry() { return Mapping<i32, i64>(); }
+    "#;
+    let (db, _typed, root, _) = support::input_fixture_with_source(source);
+    let mut found = Vec::new();
+    calls(&db, root, &mut found);
+    let mapping = found
+        .iter()
+        .filter_map(|call| beskid_queries::generic_call_specialization(&db, *call).ok().flatten())
+        .find(|specialization| specialization.substitutions.len() == 2 && specialization.signature.parameters.is_empty())
+        .expect("concrete Mapping<i32, i64> call");
+    let instance = beskid_queries::generic_call_specialization_instance(&db, mapping).unwrap().unwrap();
+    assert!(
+        beskid_queries::dynamic_mapping_binding(&db, &instance).unwrap().is_none(),
+        "a user-owned Mapping declaration never acquires canonical Dynamic mapping authority"
+    );
+    let bridge = found
+        .iter()
+        .filter_map(|call| beskid_queries::generic_call_specialization_in_environment(&db, *call, &instance).ok().flatten())
+        .find(|bridge| bridge.declaration != instance.declaration)
+        .expect("contract bridge specialized in the Mapping environment");
+    let bound = bridge
+        .substitutions
+        .iter()
+        .map(|binding| (binding.parameter.to_string(), binding.argument))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        bound,
+        vec![("S".to_owned(), beskid_queries::SemanticTypeId::I32), ("D".to_owned(), beskid_queries::SemanticTypeId::I64)]
+    );
+    assert_eq!(bridge.signature.result, beskid_queries::SemanticTypeId::U64);
+}

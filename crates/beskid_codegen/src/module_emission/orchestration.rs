@@ -435,6 +435,16 @@ fn lower_resolved_syntax_program(
                 extern_imports.push(ExternImport{symbol,abi:Some("C".into()),library:None,optional:false});
             }
         }
+        if let Some(binding)=beskid_queries::dynamic_mapping_binding(input.database(),instance)
+            .map_err(|error|emission_verification(error.to_string()))? {
+            let compiled=input.compiled_dynamic_mapping(&binding).map_err(emission_verification)?;
+            if let Some(approved)=compiled.approved() {
+                let symbol=approved.token_getter();
+                if !extern_imports.iter().any(|import|import.symbol==symbol) {
+                    extern_imports.push(ExternImport{symbol,abi:Some("C".into()),library:None,optional:false});
+                }
+            }
+        }
     }
 
     for import in clif_declared_extern_imports(input, &functions, &extern_imports) {
@@ -500,7 +510,12 @@ fn lower_resolved_syntax_program(
             .map_err(|error|emission_verification(error.to_string()))?;
         let unpack=beskid_queries::dynamic_unpacking_bridge(input.database(),instance)
             .map_err(|error|emission_verification(error.to_string()))?;
-        if let Some(packing)=shape.as_ref().map(|binding|binding.packing()).or_else(||unpack.as_ref().map(|bridge|bridge.packing())) {
+        let mapping=beskid_queries::dynamic_mapping_binding(input.database(),instance)
+            .map_err(|error|emission_verification(error.to_string()))?;
+        let mut packings=shape.as_ref().map(|binding|binding.packing()).or_else(||unpack.as_ref().map(|bridge|bridge.packing()))
+            .into_iter().cloned().collect::<Vec<_>>();
+        if let Some(mapping)=&mapping {packings.extend([mapping.source().clone(),mapping.destination().clone()]);}
+        for packing in &packings {
             let bridge=beskid_queries::dynamic_packing_bridge(input.database(),packing)
                 .map_err(|error|emission_verification(error.to_string()))?
                 .ok_or_else(||emission_verification("Shape lacks canonical Pack box authority"))?;

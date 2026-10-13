@@ -300,7 +300,7 @@ fn module_type_visibility(db: &dyn Db, unit: SourceUnitId, generation: SyntaxGen
 }
 
 /// Whether `ty` is a bare reference to a generic parameter declared by the nearest enclosing
-/// `type` or `enum` declaration.
+/// `type`, `enum` or `contract` declaration.
 ///
 /// `type_syntax_is_enclosing_generic_parameter_reference` only recognizes a function's or
 /// method's own generics (walking up to the nearest `FunctionDefinition`/`MethodDefinition`, then
@@ -308,7 +308,8 @@ fn module_type_visibility(db: &dyn Db, unit: SourceUnitId, generation: SyntaxGen
 /// type sits directly under its `type`/`enum` declaration with no enclosing function/method
 /// ancestor at all -- `enum Box<T> { Some(T value) }`'s `T` is exactly this shape, and every
 /// generic declaration's own field positions need it, not only calls that specialize the
-/// declaration.
+/// declaration. A generic contract's method signature parameters bind the contract's own
+/// generics the same way (`contract Bridge<T> { R Pack(Box<T> boxed); }`).
 fn is_enclosing_container_generic_parameter(db: &dyn Db, key: AstNodeKey, ty: &Type) -> bool {
     let Some(parameter_name) = generic_parameter_reference_name(ty) else { return false };
     let Some(syntax) = db.syntax_unit(key.unit) else { return false };
@@ -317,7 +318,9 @@ fn is_enclosing_container_generic_parameter(db: &dyn Db, key: AstNodeKey, ty: &T
     }
     let index = syntax.syntax_index(db);
     let Some(enclosing) =
-        nearest_ancestor(index, key.node, |kind| matches!(kind, NodeKind::TypeDefinition | NodeKind::EnumDefinition))
+        nearest_ancestor(index, key.node, |kind| {
+            matches!(kind, NodeKind::TypeDefinition | NodeKind::EnumDefinition | NodeKind::ContractDefinition)
+        })
     else {
         return false;
     };
@@ -328,6 +331,9 @@ fn is_enclosing_container_generic_parameter(db: &dyn Db, key: AstNodeKey, ty: &T
     }
     if let Some(enum_definition) = node.of::<EnumDefinition>() {
         return enum_definition.generics.iter().any(|generic| generic.node.name == parameter_name);
+    }
+    if let Some(contract_definition) = node.of::<beskid_analysis::syntax::ContractDefinition>() {
+        return contract_definition.generics.iter().any(|generic| generic.node.name == parameter_name);
     }
     false
 }

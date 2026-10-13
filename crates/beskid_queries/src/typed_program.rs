@@ -568,7 +568,7 @@ pub fn build_runtime_fixture_typed_program(
         .filter(|unit| expected_runtime.iter().any(|expected| expected.logical_path == unit.logical_name))
         .cloned()
         .collect::<Vec<_>>();
-    let runtime = Arc::new(ProgramAssembly::new(
+    let mut runtime = ProgramAssembly::new(
         assembly.roots.clone(),
         Arc::new(runtime_units),
         0,
@@ -576,7 +576,12 @@ pub fn build_runtime_fixture_typed_program(
         assembly.module_index.clone(),
         false,
         generation,
-    ));
+    );
+    // Both typed programs below register the same (project, generation). The runtime corpus
+    // sub-assembly is a view of the same verified packages, so it carries the same package
+    // proof; an empty proof here would be registered first and reject the full assembly.
+    runtime.verified_package_identities = assembly.package_identities().clone();
+    let runtime = Arc::new(runtime);
     // Keep the original exact-corpus constructor as the sole production authority check.
     build_canonical_runtime_typed_program(
         db,

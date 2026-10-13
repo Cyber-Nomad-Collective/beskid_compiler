@@ -21,6 +21,7 @@ pub mod closure_static;
 pub mod codegen_input;
 pub mod dynamic_shape;
 pub mod dynamic_initialization;
+pub mod dynamic_mapping;
 pub mod cranelift_host;
 pub mod event_handler_static;
 pub mod isle_adapter;

@@ -155,6 +155,13 @@ pub fn build_glue_artifact(req: &GlueArtifactBuildRequest<'_>) -> AotResult<Prep
     // public bare-artifact path cannot perform this privileged transformation.
     if let Some(plan) = &bodies.dynamic_initialization {
         plan.validate_artifact(&bodies).map_err(invalid)?;
+        // The Glue loader registers shapes only; a registered mapping transform lives in
+        // the program Dynamic initializer, which a Glue image does not link.
+        if !plan.mappings().is_empty() {
+            return Err(invalid(
+                "Dynamic Mapping<S, D> is not supported inside a Glue image; issue the mapping in the consuming program",
+            ));
+        }
     }
     let _issued_initialization = bodies.dynamic_initialization.take();
     // Source-issued immutable failure constructors join the same descriptor pass

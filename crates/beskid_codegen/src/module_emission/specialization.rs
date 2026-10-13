@@ -196,14 +196,6 @@ pub(super) fn resolve_module_items(
     }
     let mut resolved = Vec::with_capacity(source_items.len());
     for item in &source_items {
-        if item_abi_signature(db, item.key).ok().flatten().is_some() {
-            resolved.push(ResolvedSyntaxModuleItem {
-                key: item.key,
-                symbol: item.symbol.clone(),
-                callee: DirectCallee::item(item.key),
-                specialization: None,
-            });
-        }
         let kind = node_kind(db, item.key).map_err(|error| emission_verification(error.to_string()))?;
         let dynamic_bridge = dynamic_bridges.iter().any(|bridge| bridge.instance().declaration == item.key)
             || shape_bridges.iter().any(|binding|binding.instance().declaration==item.key)
@@ -211,6 +203,17 @@ pub(super) fn resolve_module_items(
             || unpack_bridges.iter().any(|bridge|bridge.instance().declaration==item.key)
             || serialization_bridges.iter().any(|binding|binding.instance().declaration==item.key)
             || field_decoders.iter().any(|binding| binding.instance().declaration == item.key);
+        // A compiler-issued bridge method has no source body; it is emitted only for its exact
+        // call-derived specialization. A bridge whose signature names no generic (Shape, Mapping)
+        // still has a declaration-level ABI, which must not become a bodyless ordinary item.
+        if !dynamic_bridge && item_abi_signature(db, item.key).ok().flatten().is_some() {
+            resolved.push(ResolvedSyntaxModuleItem {
+                key: item.key,
+                symbol: item.symbol.clone(),
+                callee: DirectCallee::item(item.key),
+                specialization: None,
+            });
+        }
         if !dynamic_bridge
             && !matches!(
                 kind,
