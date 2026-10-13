@@ -58,8 +58,45 @@ pub unit SetCurrentThreadState(pointer state) {
     return;
 }
 
+// OS threads. `entry` is a `pointer (pointer)` function; the host stores an opaque
+// handle cell in `handleOut`. A new thread has no runtime TLS state until it calls
+// `ThreadAttach` or `IsolateCreate`. These wrappers are the only callers.
+pub i32 ThreadCreate(pointer entry, pointer argument, pointer handleOut) {
+    return thread_create(entry, argument, handleOut);
+}
+pub i32 ThreadJoin(pointer handle) { return thread_join(handle); }
+
+// Single-word atomics on naturally aligned native storage. Order bytes: 0 relaxed,
+// 1 acquire, 2 release, 3 acquire-release, 4 sequentially consistent.
+pub word AtomicWordLoad(pointer address, u8 order) { return atomic_word_load(address, order); }
+pub unit AtomicWordStore(pointer address, word value, u8 order) {
+    atomic_word_store(address, value, order);
+    return;
+}
+// Returns the observed value; the exchange happened exactly when it equals `expected`.
+pub word AtomicWordCompareExchange(pointer address, word expected, word desired, u8 order) {
+    return atomic_word_compare_exchange(address, expected, desired, order);
+}
+// Returns the previous value.
+pub word AtomicWordFetchAdd(pointer address, word delta, u8 order) {
+    return atomic_word_fetch_add(address, delta, order);
+}
+pub unit AtomicFence(u8 order) {
+    atomic_fence(order);
+    return;
+}
+
+// The host's logical processor count (at least 1); not the scheduler mutator count.
+pub word HostProcessorCount() { return host_processor_count(); }
+
+// One zero-initialized block of process-wide native words (see Lifecycle.bd for its layout).
+pub pointer ProcessStateRoot() { return process_state_root(); }
+
 // OS workers operate exclusively on native request storage. These calls are the
 // complete Beskid/host seam; worker entrypoints never attach as mutators or call GC.
+// The pool is process-wide and reference counted: every runtime instance holds it
+// once (`WorkerPoolInit`) and releases it once (`WorkerPoolShutdown`); the last
+// release stops and joins the threads.
 pub i32 WorkerPoolInit(word workerCount) { return worker_pool_init(workerCount); }
 pub unit WorkerPoolShutdown() { worker_pool_shutdown(); return; }
 pub i32 WorkerSubmit(pointer request) { return worker_submit(request); }

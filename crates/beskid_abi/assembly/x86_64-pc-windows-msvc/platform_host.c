@@ -14,6 +14,7 @@
 
 #define BESKID_NETWORK_TRANSPORT 1
 #include "../common/external_wait.h"
+#include "../common/host_threads.h"
 #include "network_iocp.h"
 
 struct BeskidStr {

@@ -261,6 +261,7 @@ pub(super) fn validate(manifest: &RuntimeManifestV5) -> Result<(), String> {
         "__args_count",
         "__args_get",
         "__thread_yield",
+        "__host_processor_count",
     ]
     .into_iter()
     .collect::<BTreeSet<_>>();
@@ -308,6 +309,7 @@ pub(super) fn validate(manifest: &RuntimeManifestV5) -> Result<(), String> {
                     | "__panic"
                     | "__panic_str"
                     | "__thread_yield"
+                    | "__host_processor_count"
             )
         {
             return Err(format!("corelib service `{}` must use canonical adapter `{expected_adapter}`", service.name));
@@ -331,6 +333,7 @@ pub(super) fn validate(manifest: &RuntimeManifestV5) -> Result<(), String> {
         ("__panic", "beskid_trap_code", &["i64"][..], "never"),
         ("__panic_str", "beskid_trap_message", &["pointer"][..], "never"),
         ("__thread_yield", "beskid_rt_v5_thread_yield", &[][..], "void"),
+        ("__host_processor_count", "beskid_rt_v5_host_processor_count", &[][..], "usize"),
     ] {
         let service = manifest
             .corelib_services

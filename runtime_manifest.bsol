@@ -66,6 +66,9 @@ platform_import "memcpy" { target = "x86_64-pc-windows-msvc" library = vcruntime
 platform_import "sched_yield" { target = "x86_64-unknown-linux-gnu" library = libc params = [] returns = i32 }
 platform_import "sched_yield" { target = "aarch64-apple-darwin" library = libSystem params = [] returns = i32 }
 platform_import "SwitchToThread" { target = "x86_64-pc-windows-msvc" library = kernel32 params = [] returns = i32 }
+platform_import "sysconf" { target = "x86_64-unknown-linux-gnu" library = libc params = [{ name = name, type = i32 }] returns = i64 }
+platform_import "sysconf" { target = "aarch64-apple-darwin" library = libSystem params = [{ name = name, type = i32 }] returns = i64 }
+platform_import "GetActiveProcessorCount" { target = "x86_64-pc-windows-msvc" library = kernel32 params = [{ name = group, type = u16 }] returns = u32 }
 # All Rust, C, GNU-as, MASM, abi.json, and audit artifacts are generated from this file.
 manifest {
   abi_version = 5
@@ -112,6 +115,14 @@ export "beskid_library_attach_v5" { params = [{ name = runtime, type = pointer }
 export "beskid_library_detach_v5" { params = [{ name = runtime, type = pointer }] returns = void }
 export "beskid_rt_v5_process_init" { params = [{ name = config, type = pointer }] returns = pointer }
 export "beskid_rt_v5_process_shutdown" { params = [{ name = runtime, type = pointer }] returns = void }
+# Runtime instance lifecycle (Runtime/Bootstrap/Lifecycle.bd). `process_init` and
+# `process_shutdown` wrap the primary instance; these exports create and destroy
+# one instance on the calling thread. No Corelib or user surface reaches them.
+export "beskid_rt_v5_isolate_create" { params = [{ name = config, type = pointer }] returns = pointer }
+export "beskid_rt_v5_isolate_destroy" { params = [{ name = runtime, type = pointer }] returns = void }
+export "beskid_rt_v5_isolate_panic_message" { params = [{ name = runtime, type = pointer }, { name = data_out, type = pointer }, { name = length_out, type = pointer }] returns = u8 }
+# Process-wide region-to-owner map (Runtime/Mem/Gc/RegionMap.bd).
+export "beskid_rt_v5_region_owner" { params = [{ name = address, type = pointer }] returns = pointer }
 export "beskid_rt_v5_heap_set_cap" { params = [{ name = bytes, type = usize }] returns = u8 }
 export "beskid_rt_v5_thread_attach" { params = [{ name = runtime, type = pointer }] returns = pointer }
 export "beskid_rt_v5_thread_detach" { params = [{ name = thread, type = pointer }] returns = void }
@@ -178,6 +189,55 @@ intrinsic "thread_yield" {
     { target = "x86_64-pc-windows-msvc", implementation = "beskid_rt_v5_thread_yield", os_imports = [SwitchToThread] }
   ]
 }
+# OS threads for the canonical runtime corpus only. `entry` is a `pointer (pointer)`
+# function; the host adapts it to the target thread entry convention and stores an
+# opaque handle cell in `handle_out`. Joining releases the cell.
+intrinsic "thread_create" {
+  symbol = "beskid_rt_v5_intrinsic_thread_create"
+  capability = "runtime.adapter.thread_create"
+  params = [{ name = entry, type = pointer }, { name = argument, type = pointer }, { name = handle_out, type = pointer }]
+  returns = i32
+  target_bindings = [
+    { target = "x86_64-unknown-linux-gnu", implementation = "beskid_rt_v5_intrinsic_thread_create", os_imports = [pthread_create] },
+    { target = "aarch64-apple-darwin", implementation = "beskid_rt_v5_intrinsic_thread_create", os_imports = [pthread_create] },
+    { target = "x86_64-pc-windows-msvc", implementation = "beskid_rt_v5_intrinsic_thread_create", os_imports = [CreateThread] }
+  ]
+}
+intrinsic "thread_join" {
+  symbol = "beskid_rt_v5_intrinsic_thread_join"
+  capability = "runtime.adapter.thread_join"
+  params = [{ name = handle, type = pointer }]
+  returns = i32
+  target_bindings = [
+    { target = "x86_64-unknown-linux-gnu", implementation = "beskid_rt_v5_intrinsic_thread_join", os_imports = [pthread_join] },
+    { target = "aarch64-apple-darwin", implementation = "beskid_rt_v5_intrinsic_thread_join", os_imports = [pthread_join] },
+    { target = "x86_64-pc-windows-msvc", implementation = "beskid_rt_v5_intrinsic_thread_join", os_imports = [WaitForSingleObject, CloseHandle] }
+  ]
+}
+# Single-word atomics on a naturally aligned native address. `order`: 0 relaxed,
+# 1 acquire, 2 release, 3 acquire-release, 4 (or any other byte) sequentially
+# consistent. Compare-exchange returns the observed value; fetch-add the previous.
+intrinsic "atomic_word_load" { symbol = "beskid_rt_v5_intrinsic_atomic_word_load" capability = "runtime.bootstrap.atomic_word_load" params = [{ name = address, type = pointer }, { name = order, type = u8 }] returns = usize }
+intrinsic "atomic_word_store" { symbol = "beskid_rt_v5_intrinsic_atomic_word_store" capability = "runtime.bootstrap.atomic_word_store" params = [{ name = address, type = pointer }, { name = value, type = usize }, { name = order, type = u8 }] returns = void }
+intrinsic "atomic_word_compare_exchange" { symbol = "beskid_rt_v5_intrinsic_atomic_word_compare_exchange" capability = "runtime.bootstrap.atomic_word_compare_exchange" params = [{ name = address, type = pointer }, { name = expected, type = usize }, { name = desired, type = usize }, { name = order, type = u8 }] returns = usize }
+intrinsic "atomic_word_fetch_add" { symbol = "beskid_rt_v5_intrinsic_atomic_word_fetch_add" capability = "runtime.bootstrap.atomic_word_fetch_add" params = [{ name = address, type = pointer }, { name = delta, type = usize }, { name = order, type = u8 }] returns = usize }
+intrinsic "atomic_fence" { symbol = "beskid_rt_v5_intrinsic_atomic_fence" capability = "runtime.bootstrap.atomic_fence" params = [{ name = order, type = u8 }] returns = void }
+# The host's logical processor count (at least 1). Not the scheduler's mutator
+# count, which `fiber_processor_count` reports.
+intrinsic "host_processor_count" {
+  symbol = "beskid_rt_v5_host_processor_count"
+  capability = "runtime.adapter.host_processor_count"
+  params = []
+  returns = usize
+  target_bindings = [
+    { target = "x86_64-unknown-linux-gnu", implementation = "beskid_rt_v5_host_processor_count", os_imports = [sysconf] },
+    { target = "aarch64-apple-darwin", implementation = "beskid_rt_v5_host_processor_count", os_imports = [sysconf] },
+    { target = "x86_64-pc-windows-msvc", implementation = "beskid_rt_v5_host_processor_count", os_imports = [GetActiveProcessorCount] }
+  ]
+}
+# One zero-initialized block of process-wide native words. Its layout belongs to
+# Runtime/Bootstrap/Lifecycle.bd and Runtime/Mem/Gc/RegionMap.bd.
+intrinsic "process_state_root" { symbol = "beskid_rt_v5_intrinsic_process_state_root" capability = "runtime.bootstrap.process_state_root" params = [] returns = pointer }
 intrinsic "clock_monotonic_nanos" { symbol = "beskid_rt_v5_intrinsic_clock_monotonic_nanos" capability = "runtime.adapter.clock_monotonic_nanos" params = [] returns = i64 }
 intrinsic "clock_realtime_nanos" { symbol = "beskid_rt_v5_intrinsic_clock_realtime_nanos" capability = "runtime.adapter.clock_realtime_nanos" params = [] returns = i64 }
 intrinsic "process_exit" { symbol = "beskid_rt_v5_intrinsic_process_exit" capability = "runtime.adapter.process_exit" params = [{ name = code, type = i32 }] returns = never }
@@ -823,6 +883,17 @@ corelib_service "__fiber_processor_count" {
     { target = "x86_64-unknown-linux-gnu", implementation = "fiber_processor_count", os_imports = [] },
     { target = "aarch64-apple-darwin", implementation = "fiber_processor_count", os_imports = [] },
     { target = "x86_64-pc-windows-msvc", implementation = "fiber_processor_count", os_imports = [] }
+  ]
+}
+
+corelib_service "__host_processor_count" {
+  adapter = "beskid_rt_v5_host_processor_count"
+  params = []
+  returns = usize
+  target_bindings = [
+    { target = "x86_64-unknown-linux-gnu", implementation = "beskid_rt_v5_host_processor_count", os_imports = [sysconf] },
+    { target = "aarch64-apple-darwin", implementation = "beskid_rt_v5_host_processor_count", os_imports = [sysconf] },
+    { target = "x86_64-pc-windows-msvc", implementation = "beskid_rt_v5_host_processor_count", os_imports = [GetActiveProcessorCount] }
   ]
 }
 
@@ -1733,7 +1804,7 @@ layout "BeskidHandle" { size = 16 alignment = 8 fields = [{ name = slot, offset 
 layout "BeskidObjectHeader" { size = 16 alignment = 8 fields = [{ name = descriptor, offset = 0, type = pointer }, { name = gc_word, offset = 8, type = usize }] }
 layout "BeskidRootFrame" { size = 24 alignment = 8 fields = [{ name = previous, offset = 0, type = pointer }, { name = slots, offset = 8, type = pointer }, { name = slot_count, offset = 16, type = usize }] }
 layout "BeskidRootSlot" { size = 8 alignment = 8 fields = [{ name = value, offset = 0, type = pointer }] }
-layout "BeskidRuntimeState" { size = 64 alignment = 8 project_to_runtime = accessors fields = [{ name = abi_version, offset = 0, type = u32 }, { name = flags, offset = 4, type = u32 }, { name = current_thread, offset = 8, type = pointer }, { name = heap, offset = 16, type = pointer }, { name = callback_registry, offset = 24, type = pointer }, { name = scheduler, offset = 32, type = pointer }, { name = root_frame, offset = 40, type = pointer }, { name = tls_key, offset = 48, type = usize }, { name = lifecycle_state, offset = 56, type = u32 }, { name = lifecycle_generation, offset = 60, type = u32 }] }
+layout "BeskidRuntimeState" { size = 64 alignment = 8 project_to_runtime = accessors fields = [{ name = abi_version, offset = 0, type = u32 }, { name = flags, offset = 4, type = u32 }, { name = current_thread, offset = 8, type = pointer }, { name = heap, offset = 16, type = pointer }, { name = callback_registry, offset = 24, type = pointer }, { name = scheduler, offset = 32, type = pointer }, { name = root_frame, offset = 40, type = pointer }, { name = instance, offset = 48, type = pointer }, { name = lifecycle_state, offset = 56, type = u32 }, { name = lifecycle_generation, offset = 60, type = u32 }] }
 # Native-only worker request. `buffer` is never a managed address: submission owns
 # a copied system allocation until the canonical fiber resumes and releases it.
 layout "BeskidWorkerRequest" { size = 72 alignment = 8 project_to_runtime = constants fields = [{ name = next, offset = 0, type = pointer }, { name = tag, offset = 8, type = u64 }, { name = operation, offset = 16, type = u32 }, { name = state, offset = 20, type = u32 }, { name = native_handle, offset = 24, type = usize }, { name = buffer, offset = 32, type = pointer }, { name = length, offset = 40, type = usize }, { name = result, offset = 48, type = isize }, { name = error, offset = 56, type = i32 }, { name = abandoned, offset = 60, type = u32 }, { name = owner_scheduler_id, offset = 64, type = usize }] }

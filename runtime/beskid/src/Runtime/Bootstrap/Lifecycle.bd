@@ -4,7 +4,7 @@ const RUNTIME_HEAP_OFFSET = 16;
 const RUNTIME_CALLBACK_REGISTRY_OFFSET = 24;
 const RUNTIME_SCHEDULER_OFFSET = 32;
 const RUNTIME_ROOT_FRAME_OFFSET = 40;
-const RUNTIME_TLS_KEY_OFFSET = 48;
+const RUNTIME_INSTANCE_OFFSET = 48;
 const RUNTIME_LIFECYCLE_STATE_OFFSET = 56;
 const RUNTIME_LIFECYCLE_GENERATION_OFFSET = 60;
 
@@ -55,8 +55,74 @@ pub u32 AbiVersion() {
     return 5;
 }
 
+// ── Process-wide state ────────────────────────────────────────────────
+// `ProcessStateRoot()` is one zero-initialized block of native words that lives for the whole
+// process. Word 8 and 16 belong to RegionMap.bd. Every other word is owned here:
+//   0  holders of the process state (one per active `ProcessInit`)
+//   24 1 when `ApplyEnvironmentLimits` has recorded the process limits
+//   32 recorded heap cap, or LIMIT_UNSET
+//   40 recorded fiber stack maximum, or LIMIT_UNSET
+//   48 the primary runtime instance (the record most recently activated by `ProcessInit`)
+//   56 live runtime instances
+const PROCESS_HOLDERS = 0;
+const PROCESS_LIMITS_RECORDED = 24;
+const PROCESS_HEAP_CAP = 32;
+const PROCESS_FIBER_STACK_MAX = 40;
+const PROCESS_PRIMARY_RUNTIME = 48;
+const PROCESS_LIVE_INSTANCES = 56;
+
+// ── Runtime instance record ───────────────────────────────────────────
+// `BeskidRuntimeState.instance` points at this native record. It is created by `IsolateCreate`
+// and outlives the instance's heap so that a main-fiber panic message stays readable after
+// `IsolateDestroy`; `IsolateRecordRelease` frees it.
+const INSTANCE_RECORD_SIZE = 40;
+const INSTANCE_MAIN_FIBER = 0;
+const INSTANCE_PANIC_DATA = 8;
+const INSTANCE_PANIC_LENGTH = 16;
+const INSTANCE_FLAGS = 24;
+const INSTANCE_WORKERS_HELD = 32;
+const INSTANCE_FLAG_PRIMARY = 1;
+const INSTANCE_FLAG_PANICKED = 2;
+const FIBER_JOIN_STATUS_OFFSET = 48;
+const FIBER_PANIC_MESSAGE_OFFSET = 56;
+const FIBER_JOIN_PANICKED = 2;
+const WORKER_POOL_SIZE = 4;
+
 [Export(Abi:"C", Symbol:"beskid_rt_v5_process_init")]
 pub pointer ProcessInit(pointer config) {
+    if config == NativePointer(0) { return NativePointer(0); }
+    pointer process = ProcessStateRoot();
+    AtomicWordFetchAdd(pointer_add(process, PROCESS_HOLDERS), 1, 4);
+    pointer runtime = IsolateCreate(config);
+    if runtime == NativePointer(0) {
+        ProcessStateRelease();
+        return NativePointer(0);
+    }
+    pointer instance = IsolateRecord(runtime);
+    raw_word_store(pointer_add(instance, INSTANCE_FLAGS), raw_word_load(pointer_add(instance, INSTANCE_FLAGS)) | INSTANCE_FLAG_PRIMARY);
+    AtomicWordStore(pointer_add(process, PROCESS_PRIMARY_RUNTIME), NativeWord(runtime), 2);
+    // Process-wide limits come from the environment once the primary heap, thread and scheduler
+    // exist; a malformed or rejected value is a fatal configuration error, never a silent
+    // default. Later instances inherit the recorded values without reading the environment.
+    ApplyEnvironmentLimits();
+    pointer composition = CompositionContainerCreate(0);
+    if composition == NativePointer(0) || CompositionLaunch(composition) == false {
+        if composition != NativePointer(0) { raw_word_store(pointer_add(composition, 8), 5); CompositionContainerDrop(composition); }
+        IsolateAbandon(runtime);
+        ProcessStateRelease();
+        return NativePointer(0);
+    }
+    pointer callbacks = NativePointer(raw_word_load(pointer_add(runtime, RUNTIME_CALLBACK_REGISTRY_OFFSET)));
+    raw_word_store(pointer_add(callbacks, CALLBACK_COMPOSITION_OFFSET), NativeWord(composition));
+    return runtime;
+}
+
+// Creates one runtime instance on the calling thread: heap, callback registry, thread binding,
+// scheduler, region-map registration and a hold on the process-wide worker pool. Process limits
+// already recorded by `ProcessInit` are applied; the environment is not read. The calling thread
+// must have no runtime TLS state. Returns `config` or null; on null nothing stays published.
+[Export(Abi:"C", Symbol:"beskid_rt_v5_isolate_create")]
+pub pointer IsolateCreate(pointer config) {
     if config == NativePointer(0) { return NativePointer(0); }
     word lifecycle = raw_word_load(pointer_add(config, RUNTIME_LIFECYCLE_STATE_OFFSET)) & 0xFFFFFFFF;
     if lifecycle != RUNTIME_UNINITIALIZED && lifecycle != RUNTIME_SHUT_DOWN { return NativePointer(0); }
@@ -65,13 +131,21 @@ pub pointer ProcessInit(pointer config) {
        raw_word_load(pointer_add(config, RUNTIME_CALLBACK_REGISTRY_OFFSET)) != 0 ||
        raw_word_load(pointer_add(config, RUNTIME_SCHEDULER_OFFSET)) != 0 ||
        raw_word_load(pointer_add(config, RUNTIME_ROOT_FRAME_OFFSET)) != 0 ||
-       raw_word_load(pointer_add(config, RUNTIME_TLS_KEY_OFFSET)) != 0 {
+       raw_word_load(pointer_add(config, RUNTIME_INSTANCE_OFFSET)) != 0 {
         return NativePointer(0);
     }
+    if CurrentThreadState() != NativePointer(0) { return NativePointer(0); }
     word generation = raw_word_load(pointer_add(config, RUNTIME_LIFECYCLE_STATE_OFFSET)) >> 32;
     raw_word_store(pointer_add(config, RUNTIME_LIFECYCLE_STATE_OFFSET), RUNTIME_INITIALIZING | (generation << 32));
+    pointer instance = SystemAllocate(INSTANCE_RECORD_SIZE, 8);
+    if instance == NativePointer(0) {
+        raw_word_store(pointer_add(config, RUNTIME_LIFECYCLE_STATE_OFFSET), RUNTIME_SHUT_DOWN | (generation << 32));
+        return NativePointer(0);
+    }
+    memory_set(instance, 0, INSTANCE_RECORD_SIZE);
     pointer heap = SystemAllocate(HEAP_STATE_SIZE, 8);
     if heap == NativePointer(0) {
+        SystemFree(instance, INSTANCE_RECORD_SIZE);
         raw_word_store(pointer_add(config, RUNTIME_LIFECYCLE_STATE_OFFSET), RUNTIME_SHUT_DOWN | (generation << 32));
         return NativePointer(0);
     }
@@ -93,6 +167,7 @@ pub pointer ProcessInit(pointer config) {
     }
     if region == NativePointer(0) {
         SystemFree(heap, HEAP_STATE_SIZE);
+        SystemFree(instance, INSTANCE_RECORD_SIZE);
         raw_word_store(pointer_add(config, RUNTIME_LIFECYCLE_STATE_OFFSET), RUNTIME_SHUT_DOWN | (generation << 32));
         return NativePointer(0);
     }
@@ -100,6 +175,7 @@ pub pointer ProcessInit(pointer config) {
     if callbacks == NativePointer(0) {
         SystemFree(region, HEAP_INITIAL_REGION_SIZE);
         SystemFree(heap, HEAP_STATE_SIZE);
+        SystemFree(instance, INSTANCE_RECORD_SIZE);
         raw_word_store(pointer_add(config, RUNTIME_LIFECYCLE_STATE_OFFSET), RUNTIME_SHUT_DOWN | (generation << 32));
         return NativePointer(0);
     }
@@ -108,93 +184,209 @@ pub pointer ProcessInit(pointer config) {
     HeapInit(heap, region, HEAP_INITIAL_REGION_SIZE, HEAP_DEFAULT_CAP);
     raw_word_store(pointer_add(config, RUNTIME_HEAP_OFFSET), NativeWord(heap));
     raw_word_store(pointer_add(config, RUNTIME_CALLBACK_REGISTRY_OFFSET), NativeWord(callbacks));
+    raw_word_store(pointer_add(config, RUNTIME_INSTANCE_OFFSET), NativeWord(instance));
     raw_word_store(pointer_add(config, RUNTIME_ABI_VERSION_OFFSET), 5);
     mut word nextGeneration = (generation + 1) & 0xFFFFFFFF;
     if nextGeneration == 0 { nextGeneration = 1; }
     raw_word_store(pointer_add(config, RUNTIME_LIFECYCLE_STATE_OFFSET), RUNTIME_ACTIVE | (nextGeneration << 32));
+    // The region is published before the first allocation in it.
+    if RegionMapRegisterHeap(heap, config) == false {
+        IsolateCreateUnwind(config, NativePointer(0), false, false, nextGeneration);
+        return NativePointer(0);
+    }
     pointer thread = ThreadAttach(config);
     if thread == NativePointer(0) {
-        raw_word_store(pointer_add(config, RUNTIME_HEAP_OFFSET), 0);
-        raw_word_store(pointer_add(config, RUNTIME_CALLBACK_REGISTRY_OFFSET), 0);
-        SystemFree(callbacks, CALLBACK_REGISTRY_SIZE);
-        FreeRootAndHandleStacks(heap);
-        SystemFree(region, HEAP_INITIAL_REGION_SIZE);
-        SystemFree(heap, HEAP_STATE_SIZE);
-        raw_word_store(pointer_add(config, RUNTIME_ABI_VERSION_OFFSET), 0);
-        raw_word_store(pointer_add(config, RUNTIME_LIFECYCLE_STATE_OFFSET), RUNTIME_SHUT_DOWN | (nextGeneration << 32));
+        IsolateCreateUnwind(config, NativePointer(0), false, false, nextGeneration);
         return NativePointer(0);
     }
     SchedInit();
     if SchedTable() == NativePointer(0) {
-        ThreadDetach(thread);
-        raw_word_store(pointer_add(config, RUNTIME_HEAP_OFFSET), 0);
-        raw_word_store(pointer_add(config, RUNTIME_CALLBACK_REGISTRY_OFFSET), 0);
-        SystemFree(callbacks, CALLBACK_REGISTRY_SIZE);
-        FreeRootAndHandleStacks(heap);
-        SystemFree(region, HEAP_INITIAL_REGION_SIZE);
-        SystemFree(heap, HEAP_STATE_SIZE);
-        raw_word_store(pointer_add(config, RUNTIME_ABI_VERSION_OFFSET), 0);
-        raw_word_store(pointer_add(config, RUNTIME_LIFECYCLE_STATE_OFFSET), RUNTIME_SHUT_DOWN | (nextGeneration << 32));
+        IsolateCreateUnwind(config, thread, false, false, nextGeneration);
         return NativePointer(0);
     }
-    // Process-wide limits come from the environment once the heap, thread, and scheduler exist;
-    // a malformed or rejected value is a fatal configuration error, never a silent default.
-    ApplyEnvironmentLimits();
-    if WorkerPoolInit(4) != 0 {
-        SchedShutdownForced(true);
-        ThreadDetach(thread);
-        raw_word_store(pointer_add(config, RUNTIME_HEAP_OFFSET), 0);
-        raw_word_store(pointer_add(config, RUNTIME_CALLBACK_REGISTRY_OFFSET), 0);
-        SystemFree(callbacks, CALLBACK_REGISTRY_SIZE);
-        FreeRootAndHandleStacks(heap);
-        SystemFree(region, HEAP_INITIAL_REGION_SIZE);
-        SystemFree(heap, HEAP_STATE_SIZE);
-        raw_word_store(pointer_add(config, RUNTIME_ABI_VERSION_OFFSET), 0);
-        raw_word_store(pointer_add(config, RUNTIME_LIFECYCLE_STATE_OFFSET), RUNTIME_SHUT_DOWN | (nextGeneration << 32));
+    if IsolateApplyRecordedLimits() == false {
+        IsolateCreateUnwind(config, thread, true, false, nextGeneration);
         return NativePointer(0);
     }
-    pointer composition = CompositionContainerCreate(0);
-    if composition == NativePointer(0) || CompositionLaunch(composition) == false {
-        if composition != NativePointer(0) { raw_word_store(pointer_add(composition, 8), 5); CompositionContainerDrop(composition); }
-        WorkerPoolShutdown();
-        SchedShutdownForced(true);
-        ThreadDetach(thread);
-        raw_word_store(pointer_add(config, RUNTIME_HEAP_OFFSET), 0);
-        raw_word_store(pointer_add(config, RUNTIME_CALLBACK_REGISTRY_OFFSET), 0);
-        SystemFree(callbacks, CALLBACK_REGISTRY_SIZE);
-        FreeRootAndHandleStacks(heap);
-        SystemFree(region, HEAP_INITIAL_REGION_SIZE);
-        SystemFree(heap, HEAP_STATE_SIZE);
-        raw_word_store(pointer_add(config, RUNTIME_ABI_VERSION_OFFSET), 0);
-        raw_word_store(pointer_add(config, RUNTIME_LIFECYCLE_STATE_OFFSET), RUNTIME_SHUT_DOWN | (nextGeneration << 32));
+    if WorkerPoolInit(WORKER_POOL_SIZE) != 0 {
+        IsolateCreateUnwind(config, thread, true, false, nextGeneration);
         return NativePointer(0);
     }
-    raw_word_store(pointer_add(callbacks, CALLBACK_COMPOSITION_OFFSET), NativeWord(composition));
+    raw_word_store(pointer_add(instance, INSTANCE_WORKERS_HELD), 1);
+    AtomicWordFetchAdd(pointer_add(ProcessStateRoot(), PROCESS_LIVE_INSTANCES), 1, 4);
     return config;
 }
 
-[Export(Abi:"C", Symbol:"beskid_rt_v5_process_shutdown")]
-pub unit ProcessShutdown(pointer runtime) {
+// Reverses a partially completed `IsolateCreate`. `scheduler` is true once `SchedInit`
+// succeeded; `workers` once the worker pool is held.
+pub unit IsolateCreateUnwind(pointer config, pointer thread, bool scheduler, bool workers, word generation) {
+    if workers { WorkerPoolShutdown(); }
+    if scheduler { SchedShutdownForced(true); }
+    if thread != NativePointer(0) { ThreadDetach(thread); }
+    pointer heap = NativePointer(raw_word_load(pointer_add(config, RUNTIME_HEAP_OFFSET)));
+    pointer callbacks = NativePointer(raw_word_load(pointer_add(config, RUNTIME_CALLBACK_REGISTRY_OFFSET)));
+    pointer instance = NativePointer(raw_word_load(pointer_add(config, RUNTIME_INSTANCE_OFFSET)));
+    pointer region = NativePointer(raw_word_load(pointer_add(heap, HEAP_FIRST_REGION)));
+    RegionMapUnregisterOwner(config);
+    raw_word_store(pointer_add(config, RUNTIME_HEAP_OFFSET), 0);
+    raw_word_store(pointer_add(config, RUNTIME_CALLBACK_REGISTRY_OFFSET), 0);
+    raw_word_store(pointer_add(config, RUNTIME_INSTANCE_OFFSET), 0);
+    SystemFree(callbacks, CALLBACK_REGISTRY_SIZE);
+    FreeRootAndHandleStacks(heap);
+    SystemFree(region, HEAP_INITIAL_REGION_SIZE);
+    SystemFree(heap, HEAP_STATE_SIZE);
+    SystemFree(instance, INSTANCE_RECORD_SIZE);
+    raw_word_store(pointer_add(config, RUNTIME_ABI_VERSION_OFFSET), 0);
+    raw_word_store(pointer_add(config, RUNTIME_LIFECYCLE_STATE_OFFSET), RUNTIME_SHUT_DOWN | (generation << 32));
+    return;
+}
+
+// Tears down an instance whose `IsolateCreate` completed but whose owner failed before handing
+// it out (`ProcessInit` composition failure). Children are cancelled, not joined.
+pub unit IsolateAbandon(pointer runtime) {
+    word generation = raw_word_load(pointer_add(runtime, RUNTIME_LIFECYCLE_STATE_OFFSET)) >> 32;
+    pointer instance = IsolateRecord(runtime);
+    raw_word_store(pointer_add(instance, INSTANCE_WORKERS_HELD), 0);
+    AtomicWordFetchAdd(pointer_add(ProcessStateRoot(), PROCESS_LIVE_INSTANCES), 0 - 1, 4);
+    IsolateCreateUnwind(runtime, CurrentThreadState(), true, true, generation);
+    return;
+}
+
+// Applies the process limits recorded by `ApplyEnvironmentLimits` to the calling instance's
+// heap and scheduler. Nothing is read from the environment.
+pub bool IsolateApplyRecordedLimits() {
+    pointer process = ProcessStateRoot();
+    if AtomicWordLoad(pointer_add(process, PROCESS_LIMITS_RECORDED), 1) == 0 { return true; }
+    word heapMax = raw_word_load(pointer_add(process, PROCESS_HEAP_CAP));
+    if heapMax != LIMIT_UNSET && GcHeapSetCap(heapMax) == 0 { return false; }
+    word stackMax = raw_word_load(pointer_add(process, PROCESS_FIBER_STACK_MAX));
+    if stackMax != LIMIT_UNSET && !SchedulerSetFiberStackMax(stackMax) { return false; }
+    return true;
+}
+
+// The native instance record of `runtime`, or null.
+pub pointer IsolateRecord(pointer runtime) {
+    if runtime == NativePointer(0) { return NativePointer(0); }
+    return NativePointer(raw_word_load(pointer_add(runtime, RUNTIME_INSTANCE_OFFSET)));
+}
+
+// Names the fiber whose panic is the instance's panic (the isolate main fiber, 0.6.3). The
+// primary instance runs its entry outside a fiber and names none.
+pub bool IsolateSetMainFiber(pointer runtime, word index) {
+    pointer instance = IsolateRecord(runtime);
+    if instance == NativePointer(0) { return false; }
+    raw_word_store(pointer_add(instance, INSTANCE_MAIN_FIBER), index + 1);
+    return true;
+}
+
+// Copies the main fiber's panic message into native storage owned by the instance record. The
+// scheduler calls this after every fiber has finished and before fiber records are cleaned up,
+// so the message is still present and the heap is still alive.
+pub unit IsolateCapturePanicMessage(pointer runtime) {
+    pointer instance = IsolateRecord(runtime);
+    if instance == NativePointer(0) { return; }
+    word main = raw_word_load(pointer_add(instance, INSTANCE_MAIN_FIBER));
+    if main == 0 || !FiberExists(main - 1) { return; }
+    pointer fiber = FiberRecord(main - 1);
+    if raw_word_load(pointer_add(fiber, FIBER_JOIN_STATUS_OFFSET)) != FIBER_JOIN_PANICKED { return; }
+    IsolateReleasePanicMessage(instance);
+    pointer message = NativePointer(raw_word_load(pointer_add(fiber, FIBER_PANIC_MESSAGE_OFFSET)));
+    mut word length = 0;
+    mut pointer source = NativePointer(0);
+    if message != NativePointer(0) {
+        source = NativePointer(raw_word_load(message));
+        length = raw_word_load(pointer_add(message, 8));
+    }
+    mut word size = length;
+    if size == 0 { size = 1; }
+    pointer copy = SystemAllocate(size, 8);
+    if copy == NativePointer(0) { Trap(5, NativePointer(0), 0); }
+    memory_set(copy, 0, size);
+    if length != 0 && source != NativePointer(0) { memory_copy(copy, source, length); }
+    raw_word_store(pointer_add(instance, INSTANCE_PANIC_DATA), NativeWord(copy));
+    raw_word_store(pointer_add(instance, INSTANCE_PANIC_LENGTH), length);
+    raw_word_store(pointer_add(instance, INSTANCE_FLAGS), raw_word_load(pointer_add(instance, INSTANCE_FLAGS)) | INSTANCE_FLAG_PANICKED);
+    return;
+}
+
+pub unit IsolateReleasePanicMessage(pointer instance) {
+    word flags = raw_word_load(pointer_add(instance, INSTANCE_FLAGS));
+    if (flags & INSTANCE_FLAG_PANICKED) == 0 { return; }
+    mut word size = raw_word_load(pointer_add(instance, INSTANCE_PANIC_LENGTH));
+    if size == 0 { size = 1; }
+    SystemFree(NativePointer(raw_word_load(pointer_add(instance, INSTANCE_PANIC_DATA))), size);
+    raw_word_store(pointer_add(instance, INSTANCE_PANIC_DATA), 0);
+    raw_word_store(pointer_add(instance, INSTANCE_PANIC_LENGTH), 0);
+    raw_word_store(pointer_add(instance, INSTANCE_FLAGS), flags - INSTANCE_FLAG_PANICKED);
+    return;
+}
+
+// Returns 1 and writes the copied message bytes and length when the instance's main fiber ended
+// panicked; returns 0 and writes nothing otherwise. Valid until `IsolateRecordRelease`.
+[Export(Abi:"C", Symbol:"beskid_rt_v5_isolate_panic_message")]
+pub u8 IsolatePanicMessage(pointer runtime, pointer dataOut, pointer lengthOut) {
+    pointer instance = IsolateRecord(runtime);
+    if instance == NativePointer(0) { return 0; }
+    if (raw_word_load(pointer_add(instance, INSTANCE_FLAGS)) & INSTANCE_FLAG_PANICKED) == 0 { return 0; }
+    if dataOut != NativePointer(0) { raw_word_store(dataOut, raw_word_load(pointer_add(instance, INSTANCE_PANIC_DATA))); }
+    if lengthOut != NativePointer(0) { raw_word_store(lengthOut, raw_word_load(pointer_add(instance, INSTANCE_PANIC_LENGTH))); }
+    return 1;
+}
+
+// Frees the instance record of a destroyed instance and its panic copy. `ProcessShutdown` calls
+// it for the primary; the destroyer of any other instance calls it after reading the message.
+pub unit IsolateRecordRelease(pointer runtime) {
+    if (raw_word_load(pointer_add(runtime, RUNTIME_LIFECYCLE_STATE_OFFSET)) & 0xFFFFFFFF) != RUNTIME_SHUT_DOWN {
+        Trap(10, NativePointer(0), 0);
+    }
+    pointer instance = IsolateRecord(runtime);
+    if instance == NativePointer(0) { return; }
+    IsolateReleasePanicMessage(instance);
+    memory_set(instance, 0, INSTANCE_RECORD_SIZE);
+    SystemFree(instance, INSTANCE_RECORD_SIZE);
+    raw_word_store(pointer_add(runtime, RUNTIME_INSTANCE_OFFSET), 0);
+    return;
+}
+
+// Destroys one runtime instance from its own attached thread: joins its fibers, copies a main
+// fiber panic message out, releases the worker pool hold, the heap and the thread binding. The
+// instance record stays until `IsolateRecordRelease`.
+[Export(Abi:"C", Symbol:"beskid_rt_v5_isolate_destroy")]
+pub unit IsolateDestroy(pointer runtime) {
+    IsolateBeginShutdown(runtime);
+    if SchedShutdown() == false { IsolateReleaseWorkers(runtime); Trap(10, NativePointer(0), 0); }
+    IsolateReleaseWorkers(runtime);
+    IsolateReleaseHeap(runtime);
+    return;
+}
+
+// Validates an active instance attached to the calling thread and marks it shutting down.
+pub unit IsolateBeginShutdown(pointer runtime) {
     if runtime == NativePointer(0) ||
        raw_word_load(pointer_add(runtime, RUNTIME_ABI_VERSION_OFFSET)) != 5 ||
-       (raw_word_load(pointer_add(runtime, RUNTIME_LIFECYCLE_STATE_OFFSET)) & 0xFFFFFFFF) != RUNTIME_ACTIVE {
+       (raw_word_load(pointer_add(runtime, RUNTIME_LIFECYCLE_STATE_OFFSET)) & 0xFFFFFFFF) != RUNTIME_ACTIVE ||
+       IsolateRecord(runtime) == NativePointer(0) {
         Trap(10, NativePointer(0), 0);
     }
     word generation = raw_word_load(pointer_add(runtime, RUNTIME_LIFECYCLE_STATE_OFFSET)) >> 32;
     raw_word_store(pointer_add(runtime, RUNTIME_LIFECYCLE_STATE_OFFSET), RUNTIME_SHUTTING_DOWN | (generation << 32));
-    pointer callbacks = NativePointer(raw_word_load(pointer_add(runtime, RUNTIME_CALLBACK_REGISTRY_OFFSET)));
-    pointer composition = NativePointer(raw_word_load(pointer_add(callbacks, CALLBACK_COMPOSITION_OFFSET)));
-    if composition != NativePointer(0) {
-        CompositionShutdown(composition);
-        CompositionContainerDrop(composition);
-        raw_word_store(pointer_add(callbacks, CALLBACK_COMPOSITION_OFFSET), 0);
-    }
-    if SchedShutdown() == false { WorkerPoolShutdown(); Trap(10, NativePointer(0), 0); }
-    if ChildShutdown() != 0 { WorkerPoolShutdown(); Trap(10, NativePointer(0), 0); }
+    return;
+}
+
+pub unit IsolateReleaseWorkers(pointer runtime) {
+    pointer instance = IsolateRecord(runtime);
+    if instance == NativePointer(0) || raw_word_load(pointer_add(instance, INSTANCE_WORKERS_HELD)) == 0 { return; }
+    raw_word_store(pointer_add(instance, INSTANCE_WORKERS_HELD), 0);
     WorkerPoolShutdown();
+    return;
+}
+
+// Releases the heap, callback registry and thread binding of a shutting-down instance whose
+// scheduler has already shut down. Ends in `RUNTIME_SHUT_DOWN`.
+pub unit IsolateReleaseHeap(pointer runtime) {
+    word generation = raw_word_load(pointer_add(runtime, RUNTIME_LIFECYCLE_STATE_OFFSET)) >> 32;
+    pointer callbacks = NativePointer(raw_word_load(pointer_add(runtime, RUNTIME_CALLBACK_REGISTRY_OFFSET)));
     pointer heap = NativePointer(raw_word_load(pointer_add(runtime, RUNTIME_HEAP_OFFSET)));
-    if dynamic_registry_shutdown_v1() == 0 { Trap(10, NativePointer(0), 0); }
-    if glue_owner_shutdown() == 0 { Trap(10, NativePointer(0), 0); }
     CallbackRegistryRootsDrop();
     if GcExternalRootCount() != 0 || GcHandlesClear() == false { Trap(10, NativePointer(0), 0); }
     if heap != NativePointer(0) { FreeRootAndHandleStacks(heap); }
@@ -217,6 +409,10 @@ pub unit ProcessShutdown(pointer runtime) {
     raw_word_store(pointer_add(runtime, RUNTIME_CALLBACK_REGISTRY_OFFSET), 0);
     raw_word_store(pointer_add(runtime, RUNTIME_SCHEDULER_OFFSET), 0);
     if callbacks != NativePointer(0) { memory_set(callbacks, 0, CALLBACK_REGISTRY_SIZE); SystemFree(callbacks, CALLBACK_REGISTRY_SIZE); }
+    // No mutator or collector of this instance runs any more. Withdraw its ranges from the
+    // process-wide map before the regions are unmapped, so no lookup can name this instance for
+    // an address the system allocator hands out again.
+    RegionMapUnregisterOwner(runtime);
     while region != NativePointer(0) {
         pointer nextRegion = NativePointer(raw_word_load(region));
         word regionSize = raw_word_load(pointer_add(region, REGION_SIZE_FIELD));
@@ -224,10 +420,57 @@ pub unit ProcessShutdown(pointer runtime) {
         region = nextRegion;
     }
     if heap != NativePointer(0) { memory_set(heap, 0, HEAP_STATE_SIZE); SystemFree(heap, HEAP_STATE_SIZE); }
-    raw_word_store(pointer_add(runtime, RUNTIME_TLS_KEY_OFFSET), 0);
     raw_word_store(pointer_add(runtime, RUNTIME_ABI_VERSION_OFFSET), 0);
     raw_word_store(pointer_add(runtime, RUNTIME_LIFECYCLE_STATE_OFFSET), RUNTIME_SHUT_DOWN | (generation << 32));
+    AtomicWordFetchAdd(pointer_add(ProcessStateRoot(), PROCESS_LIVE_INSTANCES), 0 - 1, 4);
     return;
+}
+
+[Export(Abi:"C", Symbol:"beskid_rt_v5_process_shutdown")]
+pub unit ProcessShutdown(pointer runtime) {
+    IsolateBeginShutdown(runtime);
+    pointer callbacks = NativePointer(raw_word_load(pointer_add(runtime, RUNTIME_CALLBACK_REGISTRY_OFFSET)));
+    pointer composition = NativePointer(raw_word_load(pointer_add(callbacks, CALLBACK_COMPOSITION_OFFSET)));
+    if composition != NativePointer(0) {
+        CompositionShutdown(composition);
+        CompositionContainerDrop(composition);
+        raw_word_store(pointer_add(callbacks, CALLBACK_COMPOSITION_OFFSET), 0);
+    }
+    if SchedShutdown() == false { IsolateReleaseWorkers(runtime); Trap(10, NativePointer(0), 0); }
+    if ChildShutdown() != 0 { IsolateReleaseWorkers(runtime); Trap(10, NativePointer(0), 0); }
+    IsolateReleaseWorkers(runtime);
+    if dynamic_registry_shutdown_v1() == 0 { Trap(10, NativePointer(0), 0); }
+    if glue_owner_shutdown() == 0 { Trap(10, NativePointer(0), 0); }
+    IsolateReleaseHeap(runtime);
+    IsolateRecordRelease(runtime);
+    pointer process = ProcessStateRoot();
+    if AtomicWordLoad(pointer_add(process, PROCESS_PRIMARY_RUNTIME), 1) == NativeWord(runtime) {
+        AtomicWordStore(pointer_add(process, PROCESS_PRIMARY_RUNTIME), 0, 2);
+    }
+    ProcessStateRelease();
+    return;
+}
+
+// Drops one hold on the process-wide state. The last hold frees the region map and forgets the
+// recorded limits, so a later `ProcessInit` starts from the same state as the first.
+pub unit ProcessStateRelease() {
+    pointer process = ProcessStateRoot();
+    if AtomicWordFetchAdd(pointer_add(process, PROCESS_HOLDERS), 0 - 1, 4) != 1 { return; }
+    RegionMapRelease();
+    AtomicWordStore(pointer_add(process, PROCESS_LIMITS_RECORDED), 0, 2);
+    raw_word_store(pointer_add(process, PROCESS_HEAP_CAP), 0);
+    raw_word_store(pointer_add(process, PROCESS_FIBER_STACK_MAX), 0);
+    return;
+}
+
+// The primary runtime instance, or null.
+pub pointer ProcessPrimaryRuntime() {
+    return NativePointer(AtomicWordLoad(pointer_add(ProcessStateRoot(), PROCESS_PRIMARY_RUNTIME), 1));
+}
+
+// Number of runtime instances that are created and not yet destroyed.
+pub word ProcessLiveInstances() {
+    return AtomicWordLoad(pointer_add(ProcessStateRoot(), PROCESS_LIVE_INSTANCES), 1);
 }
 
 [Export(Abi:"C", Symbol:"beskid_library_attach_v5")]
@@ -385,7 +628,8 @@ pub word EnvironmentLimit(pointer key) {
     return scaled;
 }
 
-// Reads `BESKID_HEAP_MAX` and `BESKID_FIBER_STACK_MAX` and installs them. An unparsable value, or
+// Reads `BESKID_HEAP_MAX` and `BESKID_FIBER_STACK_MAX`, installs them on the calling (primary)
+// instance and records them in the process state for later instances. An unparsable value, or
 // one the runtime rejects (a heap cap below the committed or initial region size, a stack maximum
 // that is not a whole multiple of the 64 KiB initial commit), traps with the variable name as the
 // diagnostic so the process never runs with a limit nobody asked for.
@@ -402,5 +646,10 @@ pub unit ApplyEnvironmentLimits() {
         Trap(5, pointer_add(scratch, LIMIT_KEY_BYTES_OFFSET), LIMIT_KEY_FIBER_STACK_MAX_LENGTH);
     }
     SystemFree(scratch, LIMIT_KEY_SCRATCH_SIZE);
+    // Record the accepted values; `IsolateCreate` applies them to every later instance.
+    pointer process = ProcessStateRoot();
+    raw_word_store(pointer_add(process, PROCESS_HEAP_CAP), heapMax);
+    raw_word_store(pointer_add(process, PROCESS_FIBER_STACK_MAX), stackMax);
+    AtomicWordStore(pointer_add(process, PROCESS_LIMITS_RECORDED), 1, 2);
     return;
 }

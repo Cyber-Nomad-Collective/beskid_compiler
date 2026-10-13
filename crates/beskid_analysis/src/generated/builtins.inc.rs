@@ -374,6 +374,12 @@ define_builtins! {
         returns: Usize,
         injected: true,
     },
+    &["__host_processor_count"] => {
+        symbol: "beskid_rt_v5_host_processor_count",
+        params: [],
+        returns: Usize,
+        injected: true,
+    },
     &["__fiber_current_id"] => {
         symbol: "fiber_current_id",
         params: [],
@@ -1088,6 +1094,60 @@ define_builtins! {
         symbol: "beskid_rt_v5_thread_yield",
         params: [],
         returns: Unit,
+        injected: true,
+    },
+    &["thread_create"] => {
+        symbol: "beskid_rt_v5_intrinsic_thread_create",
+        params: [Ptr, Ptr, Ptr],
+        returns: I32,
+        injected: true,
+    },
+    &["thread_join"] => {
+        symbol: "beskid_rt_v5_intrinsic_thread_join",
+        params: [Ptr],
+        returns: I32,
+        injected: true,
+    },
+    &["atomic_word_load"] => {
+        symbol: "beskid_rt_v5_intrinsic_atomic_word_load",
+        params: [Ptr, U8],
+        returns: Usize,
+        injected: true,
+    },
+    &["atomic_word_store"] => {
+        symbol: "beskid_rt_v5_intrinsic_atomic_word_store",
+        params: [Ptr, Usize, U8],
+        returns: Unit,
+        injected: true,
+    },
+    &["atomic_word_compare_exchange"] => {
+        symbol: "beskid_rt_v5_intrinsic_atomic_word_compare_exchange",
+        params: [Ptr, Usize, Usize, U8],
+        returns: Usize,
+        injected: true,
+    },
+    &["atomic_word_fetch_add"] => {
+        symbol: "beskid_rt_v5_intrinsic_atomic_word_fetch_add",
+        params: [Ptr, Usize, U8],
+        returns: Usize,
+        injected: true,
+    },
+    &["atomic_fence"] => {
+        symbol: "beskid_rt_v5_intrinsic_atomic_fence",
+        params: [U8],
+        returns: Unit,
+        injected: true,
+    },
+    &["host_processor_count"] => {
+        symbol: "beskid_rt_v5_host_processor_count",
+        params: [],
+        returns: Usize,
+        injected: true,
+    },
+    &["process_state_root"] => {
+        symbol: "beskid_rt_v5_intrinsic_process_state_root",
+        params: [],
+        returns: Ptr,
         injected: true,
     },
     &["clock_monotonic_nanos"] => {

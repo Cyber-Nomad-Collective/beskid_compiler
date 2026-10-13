@@ -262,7 +262,7 @@ static inline const char *BESKID_TRAP_NAME(unsigned char code) {
 #define BESKID_RUNTIME_STATE_CALLBACK_REGISTRY_OFFSET 24
 #define BESKID_RUNTIME_STATE_SCHEDULER_OFFSET 32
 #define BESKID_RUNTIME_STATE_ROOT_FRAME_OFFSET 40
-#define BESKID_RUNTIME_STATE_TLS_KEY_OFFSET 48
+#define BESKID_RUNTIME_STATE_INSTANCE_OFFSET 48
 #define BESKID_RUNTIME_STATE_LIFECYCLE_STATE_OFFSET 56
 #define BESKID_RUNTIME_STATE_LIFECYCLE_GENERATION_OFFSET 60
 #define BESKID_SCHEDULER_STATE_SIZE 208
@@ -618,6 +618,9 @@ void * beskid_rt_v5_gc_try_alloc(size_t size, size_t alignment);
 uint8_t beskid_rt_v5_gc_try_register_root(void * ptrAddr);
 size_t beskid_rt_v5_gc_try_root_handle(void * valuePtr);
 uint8_t beskid_rt_v5_heap_set_cap(size_t bytes);
+void * beskid_rt_v5_isolate_create(void * config);
+void beskid_rt_v5_isolate_destroy(void * runtime);
+uint8_t beskid_rt_v5_isolate_panic_message(void * runtime, void * data_out, void * length_out);
 void * beskid_rt_v5_managed_object_allocate(void * request);
 void * beskid_rt_v5_managed_object_try_allocate(void * request);
 uint64_t beskid_rt_v5_managed_view_kind(void * value);
@@ -634,6 +637,7 @@ int64_t beskid_rt_v5_poll_monitor_new(int64_t task);
 int32_t beskid_rt_v5_poll_monitor_poll(int64_t monitor, void * result_slot);
 void * beskid_rt_v5_process_init(void * config);
 void beskid_rt_v5_process_shutdown(void * runtime);
+void * beskid_rt_v5_region_owner(void * address);
 uint8_t beskid_rt_v5_scheduler_stack_check(size_t required_usable_size);
 void beskid_rt_v5_scheduler_stack_overflow_observed(void);
 void * beskid_rt_v5_thread_attach(void * runtime);
@@ -738,6 +742,7 @@ size_t beskid_rt_v5_gc_try_root_handle(void * valuePtr);
 void gc_unregister_root(void * ptrAddr);
 void gc_unroot_handle(size_t handle);
 void gc_write_barrier(void * parent, void * child);
+size_t beskid_rt_v5_host_processor_count(void);
 int64_t hub_create(void);
 int64_t hub_register(int64_t hubId, int64_t index, int64_t channelId);
 int64_t hub_unregister(int64_t hubId, int64_t index);

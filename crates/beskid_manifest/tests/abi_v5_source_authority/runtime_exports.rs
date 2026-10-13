@@ -289,7 +289,7 @@ fn canonical_runtime_source_exports_exactly_match_manifest_provenance() {
         );
     }
     for service in &manifest.corelib_services {
-        if matches!(service.name.as_str(), "__args_count" | "__args_get" | "__thread_yield") {
+        if matches!(service.name.as_str(), "__args_count" | "__args_get" | "__thread_yield" | "__host_processor_count") {
             continue;
         }
         let signature =
@@ -336,7 +336,7 @@ fn canonical_runtime_source_exports_exactly_match_manifest_provenance() {
         manifest
             .corelib_services
             .iter()
-            .filter(|service| matches!(service.name.as_str(), "__args_count" | "__args_get" | "__thread_yield"))
+            .filter(|service| matches!(service.name.as_str(), "__args_count" | "__args_get" | "__thread_yield" | "__host_processor_count"))
             .map(|service| service.adapter.clone()),
     );
     for assembly in &manifest.assembly {

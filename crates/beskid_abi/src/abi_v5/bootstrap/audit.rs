@@ -170,7 +170,13 @@ impl RuntimeAuditMetadata {
     }
 
     fn normalized_symbol(&self, raw: &str) -> Result<String, String> {
-        reject_forbidden_provenance(raw, &self.forbidden_rust_symbols)?;
+        // A manifest-declared, ABI-v5-versioned runtime export is canonical by declaration; its
+        // name may contain a forbidden family word (`beskid_rt_v5_isolate_panic_message`). It is
+        // still rejected when it demangles as a Rust symbol.
+        let candidate = normalize_object_symbol(raw, &self.object_format, &self.symbol_prefix);
+        let declared_runtime_export = candidate.starts_with("beskid_rt_v5_")
+            && self.loader_required_exports.binary_search(&candidate).is_ok();
+        reject_forbidden_provenance(raw, if declared_runtime_export { &[] } else { &self.forbidden_rust_symbols })?;
         // Object readers may already have removed Mach-O decoration. Preserve an
         // exact manifest-owned import identity before stripping another underscore;
         // undeclared names still take the ordinary one-prefix, fail-closed path.

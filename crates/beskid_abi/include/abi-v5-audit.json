@@ -2791,6 +2791,35 @@
       ]
     },
     {
+      "name": "__host_processor_count",
+      "adapter": "beskid_rt_v5_host_processor_count",
+      "params": [],
+      "result": "usize",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "beskid_rt_v5_host_processor_count",
+          "osImports": [
+            "sysconf"
+          ]
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "beskid_rt_v5_host_processor_count",
+          "osImports": [
+            "GetActiveProcessorCount"
+          ]
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "beskid_rt_v5_host_processor_count",
+          "osImports": [
+            "sysconf"
+          ]
+        }
+      ]
+    },
+    {
       "name": "__hub_create",
       "adapter": "hub_create",
       "params": [],

@@ -17,6 +17,7 @@ pub const CANONICAL_GC_CHECKED_SCOPE_SOURCE_PATH: &str = "src/Runtime/Mem/Gc/Che
 pub const CANONICAL_BOOTSTRAP_CHECKED_OBJECTS_SOURCE_PATH: &str = "src/Runtime/Bootstrap/CheckedObjects.bd";
 pub const CANONICAL_GC_IDENTITY_SOURCE_PATH: &str = "src/Runtime/Mem/Gc/Identity.bd";
 pub const CANONICAL_GC_ALLOCATION_SOURCE_PATH: &str = "src/Runtime/Mem/Gc/Allocation.bd";
+pub const CANONICAL_GC_REGION_MAP_SOURCE_PATH: &str = "src/Runtime/Mem/Gc/RegionMap.bd";
 pub const CANONICAL_STRINGS_SOURCE_PATH: &str = "src/Runtime/Data/Strings.bd";
 pub const CANONICAL_COLLECTIONS_SOURCE_PATH: &str = "src/Runtime/Data/Collections.bd";
 pub const CANONICAL_FIBER_SOURCE_PATH: &str = "src/Runtime/Fiber/Fiber.bd";
@@ -163,6 +164,8 @@ const CANONICAL_GC_IDENTITY_SOURCE: &str =
     include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../runtime/beskid/src/Runtime/Mem/Gc/Identity.bd"));
 const CANONICAL_GC_ALLOCATION_SOURCE: &str =
     include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../runtime/beskid/src/Runtime/Mem/Gc/Allocation.bd"));
+const CANONICAL_GC_REGION_MAP_SOURCE: &str =
+    include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../runtime/beskid/src/Runtime/Mem/Gc/RegionMap.bd"));
 const CANONICAL_STRINGS_SOURCE: &str =
     include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../runtime/beskid/src/Runtime/Data/Strings.bd"));
 const CANONICAL_COLLECTIONS_SOURCE: &str =
@@ -425,6 +428,10 @@ pub fn canonical_runtime_sources() -> Vec<SourceUnit> {
         SourceUnit {
             logical_path: CANONICAL_GC_ALLOCATION_SOURCE_PATH.into(),
             source: CANONICAL_GC_ALLOCATION_SOURCE.into(),
+        },
+        SourceUnit {
+            logical_path: CANONICAL_GC_REGION_MAP_SOURCE_PATH.into(),
+            source: CANONICAL_GC_REGION_MAP_SOURCE.into(),
         },
         SourceUnit { logical_path: CANONICAL_STRINGS_SOURCE_PATH.into(), source: CANONICAL_STRINGS_SOURCE.into() },
         SourceUnit {

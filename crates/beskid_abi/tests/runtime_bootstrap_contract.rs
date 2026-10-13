@@ -237,7 +237,7 @@ fn trusted_intrinsics_are_typed_and_owned_only_by_the_canonical_package() {
     assert_eq!(package.name(), CANONICAL_RUNTIME_PACKAGE_NAME);
     assert_eq!(package.abi_version(), ABI_V5);
     let names = manifest.trusted_runtime_intrinsics.iter().map(|intrinsic| intrinsic.name.as_str()).collect::<Vec<_>>();
-    assert_eq!(names.len(), 88);
+    assert_eq!(names.len(), 97);
     for added in ["glue_owner_shutdown", "float_to_bits32", "float_from_bits32", "float_to_bits64", "float_from_bits64", "utf8_view_new", "dynamic_registry_shutdown_v1", "child_begin", "child_argument", "child_environment", "child_spawn", "child_poll", "child_read", "child_write", "child_close_pipe", "child_terminate", "child_close", "child_shutdown"] {
         assert!(names.contains(&added), "missing source-owned runtime intrinsic {added}");
     }
@@ -251,6 +251,19 @@ fn trusted_intrinsics_are_typed_and_owned_only_by_the_canonical_package() {
     assert!(names.contains(&"trap"));
     assert!(names.contains(&"clock_monotonic_nanos"));
     assert!(names.contains(&"thread_yield"));
+    for name in [
+        "thread_create",
+        "thread_join",
+        "atomic_word_load",
+        "atomic_word_store",
+        "atomic_word_compare_exchange",
+        "atomic_word_fetch_add",
+        "atomic_fence",
+        "host_processor_count",
+        "process_state_root",
+    ] {
+        assert!(names.contains(&name), "missing isolate-prerequisite runtime intrinsic {name}");
+    }
     assert!(names.contains(&"process_getpid"));
     assert!(names.contains(&"fiber_yield"));
     assert!(names.contains(&"env_get"));
@@ -723,6 +736,8 @@ fn target_system_imports_are_exact_and_unknown_contracts_are_rejected() {
             }
             unsupported => panic!("unsupported target in contract test: {unsupported}"),
         };
+        // Host logical processor count (`host_processor_count`).
+        expected_symbols.push(if is_windows { "GetActiveProcessorCount" } else { "sysconf" });
         if !is_windows {
             expected_symbols.extend(["chdir", "dup2", "execve", "fork", "getrlimit", "kill", "memchr", "memcmp", "pthread_sigmask", "setpgid", "sigpending", "sigwait", "strchr", "strnlen", "waitpid"]);
         }

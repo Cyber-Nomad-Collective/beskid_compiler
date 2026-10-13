@@ -227,6 +227,12 @@ pub word GcGrow(pointer heap, word objectPages) {
         return HEAP_FAILURE_SYSTEM_ALLOCATE_FAILED;
     }
     RegionInit(region, newSize);
+    // The process-wide region-to-owner map learns the region before anything is allocated in
+    // it. Only the heap installed in the calling instance is registered, under that instance.
+    if heap == Heap() && RegionMapRegisterRegion(region, RuntimeState()) == false {
+        SystemFree(rawRegionAllocation, newSize + PAGE_SIZE);
+        return HEAP_FAILURE_SYSTEM_ALLOCATE_FAILED;
+    }
     pointer current = NativePointer(raw_word_load(pointer_add(heap, HEAP_CURRENT_REGION)));
     raw_word_store(pointer_add(current, REGION_NEXT), NativeWord(region));
     raw_word_store(pointer_add(heap, HEAP_CURRENT_REGION), NativeWord(region));
