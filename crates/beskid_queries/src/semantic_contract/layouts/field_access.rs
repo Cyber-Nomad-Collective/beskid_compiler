@@ -446,14 +446,26 @@ fn nominal_field_projection_at(
     };
     Some((|| {
         let mut identity = match (annotation, binding) {
-            (Some(annotation), _) => generic_source_type_identity(
-                db,
-                path_key,
-                &beskid_analysis::syntax::Type::Complex(beskid_analysis::syntax::Spanned::new(
+            // A root whose written type names the enclosing generics (`Outer<T> o` in
+            // `o.inner.slot`) is applied in the specialization's environment when there is one.
+            (Some(annotation), _) => {
+                let written = beskid_analysis::syntax::Type::Complex(beskid_analysis::syntax::Spanned::new(
                     annotation.clone(),
                     path.segments[0].span,
-                )),
-            )?,
+                ));
+                match enclosing {
+                    Some(enclosing) => generic_source_type_identity_with_substitutions(
+                        db,
+                        path_key,
+                        &written,
+                        &enclosing
+                            .iter()
+                            .map(|binding| (binding.parameter.as_ref(), binding.source_identity()))
+                            .collect(),
+                    )?,
+                    None => generic_source_type_identity(db, path_key, &written)?,
+                }
+            }
             (None, Some(binding)) => binding?,
             (None, None) => return Err(SemanticError::unavailable("nominal_field_projection")),
         };
@@ -547,6 +559,134 @@ pub(in crate::semantic_contract) fn implicit_receiver_field_projection(
         };
         Ok((access, identity))
     })())
+}
+
+/// The applied source identity of a field read inside the immutable specialization of the
+/// enclosing item: `this.slot`, a bare implicit-receiver `slot`, `h.slot`, `(h).slot`, or a
+/// longer chain such as `o.inner.slot`.
+///
+/// The target-neutral projection cannot name a receiver whose declared type mentions an enclosing
+/// generic (`Holder<T> h`, the receiver of a method of `Holder<T>`), so a field typed by it
+/// (`Option<T[]> slot`) has no identity there. Here the root is read in the specialization's
+/// environment (a parameter or annotated local through its written type, an enum-pattern binding
+/// through its specialized match, the implicit receiver through the owner's bound parameters)
+/// and every later field is projected from that applied identity. `None` when `key` is not such a
+/// field read; an unproven root or field stays an error rather than a guess.
+pub(in crate::semantic_contract) fn field_read_identity_in_environment(
+    db: &dyn Db,
+    key: AstNodeKey,
+    enclosing: &Arc<[GenericSubstitution]>,
+) -> Option<Result<GenericSourceTypeIdentity, SemanticError>> {
+    let syntax = db.syntax_unit(key.unit).filter(|syntax| syntax.accepts_key(db, key))?;
+    let program = syntax.expanded_program(db);
+    let index = syntax.syntax_index(db);
+    let key = AstNodeKey { node: normalized_expression_node(index, key.node), ..key };
+    let node = index.node_at(program, key.node)?;
+    if let Some(member) = node.of::<beskid_analysis::syntax::MemberExpression>() {
+        let receiver = index.direct_child_id(program, key.node, DynNodeRef::from(member.target.as_ref()))?;
+        let receiver = AstNodeKey { node: normalized_expression_node(index, receiver), ..key };
+        let field = member.member.node.name.as_str();
+        if is_implicit_receiver_expression(program, index, receiver) {
+            return implicit_receiver_field_projection(db, program, index, key, field, Some(enclosing))
+                .map(|projection| projection.map(|(_, identity)| identity));
+        }
+        let identity = field_read_identity_in_environment(db, receiver, enclosing)
+            .or_else(|| local_root_identity_in_environment(db, program, index, receiver, enclosing))?;
+        return Some(identity.and_then(|identity| {
+            project_nominal_field(db, key, receiver, &identity, field).map(|(_, identity)| identity)
+        }));
+    }
+    let path = &node.of::<beskid_analysis::syntax::PathExpression>()?.path.node;
+    if path.segments.iter().any(|segment| !segment.node.type_args.is_empty()) {
+        return None;
+    }
+    let names = path.segments.iter().map(|segment| segment.node.name.node.name.as_str()).collect::<Vec<_>>();
+    let lexical_root = resolve_lexical_declaration(program, index, key.node, names[0]).is_some();
+    // The root identity and the first field still to project from it.
+    let (root, first) = match names.as_slice() {
+        [field] if !lexical_root => {
+            return implicit_receiver_field_projection(db, program, index, key, field, Some(enclosing))
+                .map(|projection| projection.map(|(_, identity)| identity));
+        }
+        [_] => return None,
+        [receiver, field, ..] if is_implicit_receiver_name(program, index, key, receiver) => {
+            (implicit_receiver_field_projection(db, program, index, key, field, Some(enclosing))?.map(|(_, identity)| identity), 2)
+        }
+        [field, ..] if !lexical_root => {
+            (implicit_receiver_field_projection(db, program, index, key, field, Some(enclosing))?.map(|(_, identity)| identity), 1)
+        }
+        [root, ..] => {
+            let declaration = resolve_lexical_declaration(program, index, key.node, root)?;
+            (local_declaration_identity_in_environment(db, program, index, key, declaration, enclosing)?, 1)
+        }
+        [] => return None,
+    };
+    Some(root.and_then(|mut identity| {
+        for field in &names[first..] {
+            identity = project_nominal_field(db, key, key, &identity, field)?.1;
+        }
+        Ok(identity)
+    }))
+}
+
+/// The identity of a single-name local or parameter read (`h` in `(h).slot`) in the environment.
+fn local_root_identity_in_environment(
+    db: &dyn Db,
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    key: AstNodeKey,
+    enclosing: &Arc<[GenericSubstitution]>,
+) -> Option<Result<GenericSourceTypeIdentity, SemanticError>> {
+    let path = index.node_at(program, key.node)?.of::<beskid_analysis::syntax::PathExpression>()?;
+    let [segment] = path.path.node.segments.as_slice() else {
+        return None;
+    };
+    if !segment.node.type_args.is_empty() {
+        return None;
+    }
+    let declaration = resolve_lexical_declaration(program, index, key.node, segment.node.name.node.name.as_str())?;
+    local_declaration_identity_in_environment(db, program, index, key, declaration, enclosing)
+}
+
+/// The identity a lexical declaration binds in the environment: a parameter or annotated `let`
+/// through its written type with the enclosing parameters substituted, an enum-pattern binding
+/// through its specialized match, and an unannotated `let` through its initializer's own
+/// target-neutral identity.
+fn local_declaration_identity_in_environment(
+    db: &dyn Db,
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    key: AstNodeKey,
+    declaration: beskid_analysis::syntax::AstNodeId,
+    enclosing: &Arc<[GenericSubstitution]>,
+) -> Option<Result<GenericSourceTypeIdentity, SemanticError>> {
+    let parent = parent_node(index, declaration)?;
+    let environment = enclosing
+        .iter()
+        .map(|binding| (binding.parameter.as_ref(), binding.source_identity()))
+        .collect::<HashMap<_, _>>();
+    let parent_key = AstNodeKey { node: parent, ..key };
+    let written = match index.kind(parent)? {
+        beskid_analysis::syntax_query::NodeKind::Parameter => {
+            index.node_at(program, parent)?.of::<beskid_analysis::syntax::Parameter>().map(|parameter| &parameter.ty.node)
+        }
+        beskid_analysis::syntax_query::NodeKind::LetStatement => index
+            .node_at(program, parent)?
+            .of::<beskid_analysis::syntax::LetStatement>()?
+            .type_annotation
+            .as_ref()
+            .map(|annotation| &annotation.node),
+        beskid_analysis::syntax_query::NodeKind::Pattern => {
+            return Some(pattern_binding_fact_in_environment(db, index, key, declaration, Some(enclosing))?.and_then(
+                |binding| binding.source_identity.ok_or_else(|| SemanticError::unavailable("nominal_field_projection")),
+            ));
+        }
+        _ => None,
+    };
+    Some(match written {
+        Some(written) => generic_source_type_identity_with_substitutions(db, parent_key, written, &environment),
+        None => generic_source_local_identity(db, program, index, key, declaration),
+    })
 }
 
 fn project_nominal_field(

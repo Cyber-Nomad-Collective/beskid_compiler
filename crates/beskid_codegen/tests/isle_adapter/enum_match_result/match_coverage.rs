@@ -4,7 +4,8 @@
 //! fails here as the original `MissingRuleOrFact` would.
 
 use super::super::support::{
-    SyntaxModuleItem, find_function_definitions, item_fixture_with_root, item_name, lower_syntax_program,
+    SyntaxModuleItem, find_function_definitions, find_nodes_of_kind, item_fixture_with_root, item_name,
+    lower_syntax_program,
 };
 
 const OPTION_RESULT: &str = "enum Option<T> { Some(T value), None } \
@@ -273,5 +274,145 @@ fn unit_payload_binding_read_as_a_value_lowers() {
              unit Main(i64 token) {{ match Close(token) {{ \
              Result::Ok(value) => {{ return value; }}, Result::Error(_) => {{ }}, }}; return; }}"
         ),
+    );
+}
+
+/// A generic record whose field is a generic enum over the record's own parameter, instantiated
+/// for a scalar and a managed record `T`. Every match below reads that field inside a
+/// specialization (a method of `Holder<T>` or a generic function), so its enum match fact must be
+/// proven in the specialization's environment.
+const GENERIC_FIELD_HOLDER: &str = "enum Option<T> { Some(T value), None } \
+     type Point { i64 x } \
+     type Holder<T> { Option<T[]> slot, Option<T> one } \
+     type Outer<T> { Holder<T> inner } ";
+
+/// Instantiations of the probed generic items for `i64` and `Point`.
+const GENERIC_FIELD_MAIN: &str = "Holder<i64> Ints() { i64[] values = [3_i64, 4_i64]; \
+     return Holder<i64> { slot: Option::Some(values), one: Option::None }; } \
+     Holder<Point> Points() { Point[] values = [Point { x: 5_i64 }]; \
+     return Holder<Point> { slot: Option::Some(values), one: Option::Some(Point { x: 6_i64 }) }; } ";
+
+/// Lower every method and function of `source`, generic specializations included.
+fn lower_generic_program(label: &str, source: &str) {
+    let (input, isa, root) = item_fixture_with_root(source);
+    let db = input.database();
+    let mut keys = find_nodes_of_kind(db, root, beskid_queries::IndexedNodeKind::MethodDefinition);
+    keys.extend(find_function_definitions(db, root));
+    let items = keys
+        .into_iter()
+        .map(|key| SyntaxModuleItem { key, symbol: item_name(db, key).unwrap().unwrap().to_string() })
+        .collect::<Vec<_>>();
+    if let Err(error) = lower_syntax_program(&input, isa.as_ref(), &items) {
+        panic!("{label} must lower: {error}");
+    }
+}
+
+/// One probed form: generic declarations (`Holder<T>` methods are spliced in through `methods`)
+/// and a `Main` that calls them for `i64` and `Point`.
+fn lower_generic_field_form(label: &str, methods: &str, functions: &str, main: &str) {
+    let source = GENERIC_FIELD_HOLDER.replace(
+        "type Holder<T> { Option<T[]> slot, Option<T> one }",
+        &if methods.is_empty() {
+            "type Holder<T> { Option<T[]> slot, Option<T> one }".to_string()
+        } else {
+            format!("type Holder<T> {{ Option<T[]> slot, Option<T> one, {methods} }}")
+        },
+    );
+    lower_generic_program(label, &format!("{source}{GENERIC_FIELD_MAIN}{functions} i64 Main() {{ {main} }}"));
+}
+
+#[test]
+fn wildcard_payload_match_on_this_field_in_a_generic_method_lowers() {
+    lower_generic_field_form(
+        "wildcard on this.slot",
+        "i64 Has() { return match this.slot { Option::Some(_) => 1_i64, Option::None => 0_i64, }; }",
+        "",
+        "return Ints().Has() + Points().Has();",
+    );
+}
+
+#[test]
+fn wildcard_payload_match_on_a_bare_field_in_a_generic_method_lowers() {
+    lower_generic_field_form(
+        "wildcard on bare slot",
+        "i64 Has() { return match slot { Option::Some(_) => 1_i64, Option::None => 0_i64, }; }",
+        "",
+        "return Ints().Has() + Points().Has();",
+    );
+}
+
+#[test]
+fn wildcard_payload_match_on_a_parameter_field_in_a_generic_function_lowers() {
+    lower_generic_field_form(
+        "wildcard on h.slot and (h).slot",
+        "",
+        "i64 Has<T>(Holder<T> h) { return match h.slot { Option::Some(_) => 1_i64, Option::None => 0_i64, }; } \
+         i64 HasGrouped<T>(Holder<T> h) { return match (h).slot { Option::Some(_) => 1_i64, Option::None => 0_i64, }; } \
+         i64 HasOne<T>(Holder<T> h) { return match h.one { Option::Some(_) => 1_i64, Option::None => 0_i64, }; }",
+        "return Has<i64>(Ints()) + Has<Point>(Points()) + HasGrouped<i64>(Ints()) + HasGrouped<Point>(Points()) \
+         + HasOne<i64>(Ints()) + HasOne<Point>(Points());",
+    );
+}
+
+#[test]
+fn let_bound_value_match_on_a_parameter_field_in_a_generic_function_lowers() {
+    lower_generic_field_form(
+        "let x = match h.slot",
+        "",
+        "T FirstOr<T>(Holder<T> h, T fallback) { let x = match h.slot { Option::Some(values) => values[0], Option::None => fallback, }; return x; } \
+         i64 Count<T>(Holder<T> h) { let n = match h.slot { Option::Some(values) => 2_i64, Option::None => 0_i64, }; return n; } \
+         T Typed<T>(Holder<T> h, T fallback) { T x = match (h).slot { Option::Some(values) => values[0], Option::None => fallback, }; return x; }",
+        "Point p = FirstOr<Point>(Points(), Point { x: 0_i64 }); Point q = Typed<Point>(Points(), Point { x: 0_i64 }); \
+         return FirstOr<i64>(Ints(), 0_i64) + Count<i64>(Ints()) + Count<Point>(Points()) + Typed<i64>(Ints(), 0_i64) + p.x + q.x;",
+    );
+}
+
+#[test]
+fn let_bound_value_match_on_this_field_in_a_generic_method_lowers() {
+    lower_generic_field_form(
+        "let x = match this.slot",
+        "T FirstOr(T fallback) { let x = match this.slot { Option::Some(values) => values[0], Option::None => fallback, }; return x; } \
+         T OneOr(T fallback) { let x = match one { Option::Some(value) => value, Option::None => fallback, }; return x; }",
+        "",
+        "Point p = Points().FirstOr(Point { x: 0_i64 }); Point q = Points().OneOr(Point { x: 0_i64 }); \
+         return Ints().FirstOr(0_i64) + Ints().OneOr(1_i64) + p.x + q.x;",
+    );
+}
+
+#[test]
+fn match_on_a_nested_generic_record_field_lowers() {
+    lower_generic_field_form(
+        "match o.inner.slot",
+        "",
+        "i64 Has<T>(Outer<T> o) { return match o.inner.slot { Option::Some(_) => 1_i64, Option::None => 0_i64, }; } \
+         T FirstOr<T>(Outer<T> o, T fallback) { let x = match o.inner.slot { Option::Some(values) => values[0], Option::None => fallback, }; return x; }",
+        "Outer<i64> ints = Outer<i64> { inner: Ints() }; Outer<Point> points = Outer<Point> { inner: Points() }; \
+         Point p = FirstOr<Point>(points, Point { x: 0_i64 }); \
+         return Has<i64>(ints) + Has<Point>(points) + FirstOr<i64>(ints, 0_i64) + p.x;",
+    );
+}
+
+#[test]
+fn statement_and_guarded_matches_on_a_generic_record_field_lower() {
+    lower_generic_field_form(
+        "statement and guarded match on h.slot",
+        "i64 Mark(i64 limit) { mut i64 total = 0_i64; \
+         match this.slot { Option::Some(_) when limit > 0_i64 => { total = 2_i64; }, Option::Some(values) => { total = 1_i64; }, Option::None => { }, }; \
+         return total; }",
+        "i64 Walk<T>(Holder<T> h, i64 limit) { mut i64 total = 0_i64; \
+         match h.slot { Option::Some(values) when limit > 0_i64 => { total = 2_i64; }, Option::Some(_) => { total = 1_i64; }, Option::None => { }, }; \
+         i64 extra = match h.slot { Option::Some(_) when limit > 0_i64 => 4_i64, _ => 0_i64, }; return total + extra; }",
+        "return Ints().Mark(1_i64) + Points().Mark(0_i64) + Walk<i64>(Ints(), 1_i64) + Walk<Point>(Points(), 0_i64);",
+    );
+}
+
+#[test]
+fn return_match_with_a_named_binding_on_a_generic_record_field_lowers() {
+    lower_generic_field_form(
+        "return match h.slot with a binding",
+        "T FirstOr(T fallback) { return match this.slot { Option::Some(values) => values[0], Option::None => fallback, }; }",
+        "T First<T>(Holder<T> h, T fallback) { return match h.slot { Option::Some(values) => values[0], Option::None => fallback, }; }",
+        "Point p = First<Point>(Points(), Point { x: 0_i64 }); Point q = Points().FirstOr(Point { x: 0_i64 }); \
+         return First<i64>(Ints(), 0_i64) + Ints().FirstOr(0_i64) + p.x + q.x;",
     );
 }

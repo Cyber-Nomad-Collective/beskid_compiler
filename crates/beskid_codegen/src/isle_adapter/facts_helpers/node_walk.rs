@@ -97,6 +97,48 @@ impl SyntaxNodeFacts<'_> {
             })
             .or_else(|| self.specialized_declared_local_type(key))
             .or_else(|| self.field_semantic_type_in_context(key))
+            .or_else(|| self.specialized_match_value_type(key))
+            .or_else(|| self.specialized_inferred_local_type(key))
+    }
+
+    /// The bodies of a match's arms in the specialization being lowered: its enum match fact in
+    /// that environment, else its by-value scalar match fact.
+    pub(in crate::isle_adapter) fn specialized_match_arm_bodies(&self, key: AstNodeKey) -> Option<Vec<AstNodeKey>> {
+        (self.query(node_kind(self.db, key)) == Some(beskid_queries::IndexedNodeKind::MatchExpression)).then_some(())?;
+        self.current_item_specialization()?;
+        match self.enum_match_in_context(key) {
+            Some(fact) => Some(fact.arms.iter().map(|arm| arm.body).collect()),
+            None => Some(self.query(scalar_match(self.db, key))?.arms.iter().map(|arm| arm.body).collect()),
+        }
+    }
+
+    /// The value type of a match in a specialized body that has no target-neutral type
+    /// (`match this.slot { Option::Some(values) => values[0], Option::None => fallback }` in
+    /// `Holder<T>`): the one type every arm that produces a value has in the specialization.
+    /// Diverging arms do not constrain it; an arm of unknown or differing type proves nothing.
+    fn specialized_match_value_type(&self, key: AstNodeKey) -> Option<SemanticTypeId> {
+        let mut result = None;
+        for body in self.specialized_match_arm_bodies(key)? {
+            match self.scalar_semantic_type(body)? {
+                SemanticTypeId::NEVER => {}
+                semantic if result.is_none_or(|previous| previous == semantic) => result = Some(semantic),
+                _ => return None,
+            }
+        }
+        result
+    }
+
+    /// The type of an unannotated `let` inside a specialized body (`let x = match h.slot { ... }`):
+    /// its initializer's type in the specialization. An annotated `let` is typed by its declared
+    /// expectation alone.
+    fn specialized_inferred_local_type(&self, key: AstNodeKey) -> Option<SemanticTypeId> {
+        (self.query(node_kind(self.db, key)) == Some(beskid_queries::IndexedNodeKind::LetStatement)).then_some(())?;
+        let enclosing = self.current_item_specialization()?;
+        let initializer = self.let_initializer(key)?;
+        if self.query(beskid_queries::expected_type_in_environment(self.db, initializer, enclosing)).is_some() {
+            return None;
+        }
+        self.scalar_semantic_type(initializer).filter(|semantic| *semantic != SemanticTypeId::NEVER)
     }
 
     /// The declared type of an annotated `let` inside a specialized body (`T once = f(x)`), read

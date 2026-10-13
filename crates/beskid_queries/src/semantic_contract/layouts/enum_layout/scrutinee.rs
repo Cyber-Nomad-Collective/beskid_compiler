@@ -226,6 +226,13 @@ pub(super) fn enum_match_source_environment(
     if definition.generics.is_empty() {
         return Ok(HashMap::new());
     }
+    // A field read inside a specialization (`this.slot`, `h.slot` with `Holder<T> h`) is applied
+    // in the specialization's environment; its target-neutral identity cannot name `T`.
+    if let Some(enclosing) = enclosing
+        && let Some(identity) = specialized_field_read_scrutinee_identity(program, index, key, expression, enclosing, db)
+    {
+        return enum_match_environment_for_applied_identity(definition, &identity?);
+    }
     // A projected field path (`shape.packageDeclaration`) carries its applied type the same way a
     // call result does: through the projection's exact source identity.
     let projected_path = matches!(
@@ -296,6 +303,9 @@ pub(super) fn enum_match_scrutinee_layout_in_environment(
     expression: &beskid_analysis::syntax::MatchExpression,
     enclosing: &[GenericSubstitution],
 ) -> Result<Option<(AstNodeKey, EnumLayoutFact)>, SemanticError> {
+    if let Some(identity) = specialized_field_read_scrutinee_identity(program, index, key, expression, enclosing, db) {
+        return enum_layout_for_source_identity(db, key, &identity?).map(Some);
+    }
     if let Some(path) = enum_match_scrutinee_explicit_type_path(program, index, key, expression) {
         let declaration = resolve_type_declaration(db, key, &path)
             .ok_or_else(|| SemanticError::unavailable("enum_match_specialization"))?;
@@ -317,6 +327,39 @@ pub(super) fn enum_match_scrutinee_layout_in_environment(
     let identity =
         binding.source_identity.as_ref().ok_or_else(|| SemanticError::unavailable("enum_match_specialization"))?;
     enum_layout_for_source_identity(db, key, identity).map(Some)
+}
+
+/// The applied identity of a match scrutinee that reads a field (`this.slot`, a bare
+/// implicit-receiver `slot`, `h.slot`, `(h).slot`, `o.inner.slot`) in the enclosing
+/// specialization. `None` for every other scrutinee shape, which keeps its own authority.
+fn specialized_field_read_scrutinee_identity(
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    key: AstNodeKey,
+    expression: &beskid_analysis::syntax::MatchExpression,
+    enclosing: &[GenericSubstitution],
+    db: &dyn Db,
+) -> Option<Result<GenericSourceTypeIdentity, SemanticError>> {
+    let field_read = match ungrouped_scrutinee(expression) {
+        beskid_analysis::syntax::Expression::Member(_) => true,
+        beskid_analysis::syntax::Expression::Path(path) => match path.node.path.node.segments.as_slice() {
+            [segment] => {
+                resolve_lexical_declaration(program, index, key.node, segment.node.name.node.name.as_str()).is_none()
+            }
+            segments => segments.len() >= 2,
+        },
+        _ => false,
+    };
+    if !field_read {
+        return None;
+    }
+    let scrutinee = index.direct_child_id(
+        program,
+        key.node,
+        beskid_analysis::syntax_query::DynNodeRef::from(expression.scrutinee.as_ref()),
+    )?;
+    let scrutinee = AstNodeKey { node: normalized_expression_node(index, scrutinee), ..key };
+    super::super::field_read_identity_in_environment(db, scrutinee, &Arc::<[GenericSubstitution]>::from(enclosing))
 }
 
 /// Bind a generic enum's parameters to the applied arguments of one proven source identity

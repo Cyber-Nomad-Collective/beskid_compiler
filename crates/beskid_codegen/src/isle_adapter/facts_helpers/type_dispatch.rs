@@ -164,6 +164,22 @@ impl SyntaxNodeFacts<'_> {
                 ManagedReferenceKind::NativeOrScalar => ManagedReferenceFact::NativeOrScalar,
             });
         }
+        // A match value without an expected type (`let x = match h.slot { ... }` in a
+        // specialization) is classified like the arms that produce its value; they must agree.
+        if let Some(bodies) = self.specialized_match_arm_bodies(key) {
+            let mut result = None;
+            for body in bodies {
+                if self.scalar_semantic_type(body) == Some(SemanticTypeId::NEVER) {
+                    continue;
+                }
+                let managed = self.managed_reference_in_context(body)?;
+                if result.is_some_and(|previous| previous != managed) {
+                    return None;
+                }
+                result = Some(managed);
+            }
+            return result;
+        }
         (self.query(node_kind(self.db, key)) == Some(beskid_queries::IndexedNodeKind::LetStatement))
             .then(|| self.let_initializer(key))?
             .and_then(|initializer| self.managed_reference_in_context(initializer))

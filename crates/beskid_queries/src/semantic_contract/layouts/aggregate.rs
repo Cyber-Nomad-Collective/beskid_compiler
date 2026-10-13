@@ -502,7 +502,15 @@ pub fn array_index_element_specialization(
     if !syntax.accepts_key(db, key) {
         return Ok(None);
     }
-    let Some(template) = array_index_element_template_tracked(db, syntax, key)? else { return Ok(None) };
+    let template = match array_index_element_template_tracked(db, syntax, key) {
+        Ok(Some(template)) => template,
+        unproven => {
+            return match specialized_index_element_identity(db, key, &enclosing) {
+                Some(element) => element.map(|element| Some(element.abi_type())),
+                None => unproven.map(|_| None),
+            };
+        }
+    };
     match template {
         ArrayIndexElementTemplate::Concrete(element) => Ok(Some(element)),
         ArrayIndexElementTemplate::EnclosingParameter(parameter) => Ok(enclosing
@@ -510,6 +518,53 @@ pub fn array_index_element_specialization(
             .find(|binding| binding.parameter.as_ref() == parameter.as_ref())
             .map(|binding| binding.argument)),
     }
+}
+
+/// The element identity of `target[index]` whose target array is typed only in the enclosing
+/// specialization: an enum-pattern binding of a match over a generic payload
+/// (`Option::Some(values) => values[0]` over `Option<T[]>`), or a field of a generic record
+/// (`this.values[0]` in `Holder<T>`). The target-neutral template cannot name `T` for either.
+/// `None` when `key` is no such index expression.
+fn specialized_index_element_identity(
+    db: &dyn Db,
+    key: AstNodeKey,
+    enclosing: &Arc<[GenericSubstitution]>,
+) -> Option<Result<GenericSourceTypeIdentity, SemanticError>> {
+    let syntax = db.syntax_unit(key.unit).filter(|syntax| syntax.accepts_key(db, key))?;
+    let program = syntax.expanded_program(db);
+    let index = syntax.syntax_index(db);
+    let indexed = index.node_at(program, key.node)?.of::<beskid_analysis::syntax::IndexExpression>()?;
+    let target = index
+        .direct_child_id(program, key.node, beskid_analysis::syntax_query::DynNodeRef::from(indexed.target.as_ref()))
+        .map(|target| AstNodeKey { node: normalized_expression_node(index, target), ..key })?;
+    let binding = index
+        .node_at(program, target.node)
+        .and_then(|node| node.of::<beskid_analysis::syntax::PathExpression>())
+        .and_then(|path| match path.path.node.segments.as_slice() {
+            [segment] if segment.node.type_args.is_empty() => {
+                resolve_lexical_declaration(program, index, target.node, segment.node.name.node.name.as_str())
+            }
+            _ => None,
+        })
+        .filter(|declaration| {
+            parent_node(index, *declaration).and_then(|parent| index.kind(parent))
+                == Some(beskid_analysis::syntax_query::NodeKind::Pattern)
+        });
+    let array = match binding {
+        Some(declaration) => crate::semantic_contract::typing::pattern_binding_fact_in_environment(
+            db,
+            index,
+            target,
+            declaration,
+            Some(enclosing),
+        )?
+        .and_then(|binding| binding.source_identity.ok_or_else(|| SemanticError::unavailable("array_index_element_abi_type"))),
+        None => super::field_read_identity_in_environment(db, target, enclosing)?,
+    };
+    Some(array.and_then(|array| match array {
+        GenericSourceTypeIdentity::Array(element) => Ok(*element),
+        _ => Err(SemanticError::unavailable("array_index_element_abi_type")),
+    }))
 }
 
 /// Classify an indexed element whose declared element type is one of the enclosing item's
@@ -528,12 +583,18 @@ pub fn array_index_element_managed_reference_specialization(
     if !syntax.accepts_key(db, key) {
         return Ok(None);
     }
-    match array_index_element_template_tracked(db, syntax, key)? {
-        Some(ArrayIndexElementTemplate::EnclosingParameter(parameter)) => Ok(enclosing
+    match array_index_element_template_tracked(db, syntax, key) {
+        Ok(Some(ArrayIndexElementTemplate::EnclosingParameter(parameter))) => Ok(enclosing
             .iter()
             .find(|binding| binding.parameter.as_ref() == parameter.as_ref())
             .map(|binding| binding.managed_reference_kind())),
-        Some(ArrayIndexElementTemplate::Concrete(_)) | None => Ok(None),
+        Ok(Some(ArrayIndexElementTemplate::Concrete(_))) => Ok(None),
+        // An element typed only in this specialization (`values[0]` with `values : T[]` bound by
+        // a match over `Option<T[]>`) is classified by its applied identity.
+        unproven => match specialized_index_element_identity(db, key, &enclosing) {
+            Some(element) => element.map(|element| Some(element.managed_reference_kind())),
+            None => unproven.map(|_| None),
+        },
     }
 }
 
