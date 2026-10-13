@@ -17,6 +17,8 @@ use std::{
     fs,
     ffi::{OsStr, OsString},
     path::{Path, PathBuf},
+    sync::Arc,
+    time::{Duration, Instant},
 };
 
 pub struct RustOwnerSource {
@@ -112,24 +114,35 @@ fn cached_owner_image(
         &object::File::parse(bytes.as_slice()).map_err(|e| invalid(e.to_string()))?,
         super::published::OWNER_RECORD_SYMBOL,
     )?;
-    if witness.key != key
-        || hash(&bytes) != witness.payload_sha256
-        || embedded != *record
-        || witness.library != record.library
-        || witness.generation != record.generation
-        || witness.provider_sha256 != record.provider_sha256
-        || witness.source_sha256 != record.source_sha256
-        || witness.compiler.1 != record.cargo_sha256
-        || witness.rustc.1 != record.rustc_sha256
-        || witness.linker.1 != record.linker_sha256
-        || witness.driver_sha256 != record.driver_sha256
-        || witness.exports != record.exports
-        || witness.checked_exports != record.checked_exports
-        || witness.destructors != record.destructors
-        || witness.source_inventory != record.source_inventory
-        || witness.child_receipts.is_empty()
-    {
-        return Err(invalid(format!("Rust owner image cache entry {key} does not match its admission record")));
+    // The build inventory is the record's inventory plus the admission record source compiled
+    // from that same record (`owner_admission.rs`), which the record cannot cover itself.
+    let admission_source = super::published::record_rust_source(
+        super::published::OWNER_RECORD_SYMBOL,
+        &super::published::frame_owner_record(record)?,
+    );
+    let mut build_inventory = record.source_inventory.clone();
+    build_inventory.push(("owner_admission.rs".into(), hash(admission_source.as_bytes())));
+    build_inventory.sort();
+    let checks = [
+        ("key", witness.key == key),
+        ("payload digest", hash(&bytes) == witness.payload_sha256),
+        ("embedded record", embedded == *record),
+        ("library", witness.library == record.library),
+        ("generation", witness.generation == record.generation),
+        ("provider", witness.provider_sha256 == record.provider_sha256),
+        ("source digest", witness.source_sha256 == record.source_sha256),
+        ("cargo", witness.compiler.1 == record.cargo_sha256),
+        ("rustc", witness.rustc.1 == record.rustc_sha256),
+        ("linker", witness.linker.1 == record.linker_sha256),
+        ("driver", witness.driver_sha256 == record.driver_sha256),
+        ("exports", witness.exports == record.exports),
+        ("checked exports", witness.checked_exports == record.checked_exports),
+        ("destructors", witness.destructors == record.destructors),
+        ("source inventory", witness.source_inventory == build_inventory),
+        ("child receipts", !witness.child_receipts.is_empty()),
+    ];
+    if let Some((field, _)) = checks.iter().find(|(_, holds)| !holds) {
+        return Err(invalid(format!("Rust owner image cache entry {key} does not match its admission record ({field})")));
     }
     Ok(Some((bytes, witness)))
 }
@@ -695,6 +708,97 @@ fn reject_ambient_cargo_inputs(stage: &Path) -> AotResult<()> {
     Ok(())
 }
 
+/// Deadline of one tool probe, inside the enclosing build budget.
+const TOOL_PROBE_DEADLINE: Duration = Duration::from_secs(10);
+/// Captured output bound of one tool probe.
+const TOOL_PROBE_OUTPUT_LIMIT: u64 = 1024 * 1024;
+/// Oldest Rust compiler that builds the generated owner crate (edition 2024).
+const MINIMUM_RUSTC: (u64, u64) = (1, 85);
+
+/// The explicit Cargo and Rust compiler of one owner build, with the digests recorded for it.
+struct RustToolProbe<'a> {
+    cargo: &'a Path,
+    cargo_sha256: &'a str,
+    rustc: &'a Path,
+    rustc_sha256: &'a str,
+}
+
+/// Bounded interrogation of the explicit Rust tools before any external build (R4-TOOL-02,
+/// R4-TOOL-04). Each probe runs the tool with direct argv in the staging directory and the
+/// hermetic owner-build environment, under a deadline of [`TOOL_PROBE_DEADLINE`] inside the build
+/// budget and an output bound of [`TOOL_PROBE_OUTPUT_LIMIT`]. A probe that exceeds the deadline is
+/// terminated together with its process tree and reaped. The executable digest is rechecked after
+/// each probe. Cargo must report its version; the compiler must report a release of at least
+/// [`MINIMUM_RUSTC`] and a host, and it must hold the standard library of the requested target:
+/// a host version and triple alone do not prove that the target can be built.
+fn probe_rust_tools(
+    tools: &RustToolProbe<'_>,
+    target: &str,
+    stage: &Path,
+    environment: &[EnvironmentEntry],
+    control: &NativeExecutionControl,
+) -> AotResult<()> {
+    let budget = control.clone();
+    let probe_control = NativeExecutionControl::new(
+        Instant::now() + TOOL_PROBE_DEADLINE.min(control.remaining_budget()),
+        Arc::new(move || budget.check("Rust tool probe").is_err()),
+    )
+    .with_output_limit(TOOL_PROBE_OUTPUT_LIMIT)?;
+    let run = |tool: &Path, digest: &str, role: &str, args: &[&str]| -> AotResult<String> {
+        let label = format!("{role} probe `{}`", args.join(" "));
+        let mut invocation = LinkToolInvocation::new(tool.as_os_str());
+        invocation.current_dir = Some(stage.to_owned());
+        invocation.environment = environment.to_vec();
+        invocation.args = args.iter().map(|argument| OsString::from(*argument)).collect();
+        let (output, receipt) =
+            run_link_tool(&invocation, stage, Some(&probe_control)).map_err(|error| invalid(format!("{label} failed: {error}")))?;
+        if receipt.sha256 != digest {
+            return Err(invalid(format!("{label}: the tool changed after its digest was recorded")));
+        }
+        if !output.status.success() {
+            return Err(invalid(format!("{label} exited with {}", output.status)));
+        }
+        String::from_utf8(output.stdout).map_err(|_| invalid(format!("{label} output is not UTF-8")))
+    };
+    let cargo = run(tools.cargo, tools.cargo_sha256, "Cargo", &["-V"])?;
+    if !cargo.starts_with("cargo ") {
+        return Err(invalid("Cargo probe `-V` did not report a Cargo version"));
+    }
+    let version = run(tools.rustc, tools.rustc_sha256, "Rust compiler", &["-vV"])?;
+    fn field<'a>(text: &'a str, name: &str) -> Option<&'a str> {
+        text.lines().find_map(|line| line.strip_prefix(name)).map(str::trim).filter(|value| !value.is_empty())
+    }
+    let release = field(&version, "release:").ok_or_else(|| invalid("Rust compiler probe `-vV` reported no release"))?;
+    field(&version, "host:").ok_or_else(|| invalid("Rust compiler probe `-vV` reported no host"))?;
+    let mut numbers = release.split(['.', '-']).map(|part| part.parse::<u64>().ok());
+    let (Some(Some(major)), Some(Some(minor))) = (numbers.next(), numbers.next()) else {
+        return Err(invalid(format!("Rust compiler release `{release}` is malformed")));
+    };
+    if (major, minor) < MINIMUM_RUSTC {
+        return Err(invalid(format!(
+            "Rust compiler release `{release}` is older than {}.{}",
+            MINIMUM_RUSTC.0, MINIMUM_RUSTC.1
+        )));
+    }
+    let libdir = run(tools.rustc, tools.rustc_sha256, "Rust compiler", &["--print", "target-libdir", "--target", target])?;
+    let libdir = Path::new(libdir.trim());
+    let has_core = !libdir.as_os_str().is_empty()
+        && fs::read_dir(libdir).is_ok_and(|entries| {
+            entries.filter_map(Result::ok).any(|entry| {
+                let name = entry.file_name();
+                let name = name.to_string_lossy();
+                name.starts_with("libcore-") && name.ends_with(".rlib")
+            })
+        });
+    if !has_core {
+        return Err(invalid(format!(
+            "Rust compiler cannot build target `{target}`: no standard library for it in `{}`",
+            libdir.display()
+        )));
+    }
+    Ok(())
+}
+
 /// Private staging directory in the system temporary area, never inside the output directory or project.
 fn private_stage(output_parent: &Path) -> AotResult<(tempfile::TempDir, PathBuf)> {
     let stage = tempfile::Builder::new()
@@ -796,6 +900,14 @@ pub fn build_rust_owner(req: &RustOwnerBuildRequest<'_>) -> AotResult<PreparedRu
     let driver = beskid_abi::compiler_driver::installed_compiler_driver().map_err(invalid)?;
     let cargo = fs::canonicalize(req.cargo).map_err(|e| invalid(e.to_string()))?;
     let cargo_digest = hash_file(&cargo)?;
+    let probe_environment = hermetic_environment(std::env::vars_os().map(|(name, _)| name), &cargo_home);
+    probe_rust_tools(
+        &RustToolProbe { cargo: &cargo, cargo_sha256: &cargo_digest, rustc: &rustc, rustc_sha256: &rustc_digest },
+        req.runtime.kit.target.triple.as_str(),
+        stage.path(),
+        &probe_environment,
+        req.control,
+    )?;
     let checked_exports = req
         .callables
         .iter()
@@ -850,15 +962,18 @@ pub fn build_rust_owner(req: &RustOwnerBuildRequest<'_>) -> AotResult<PreparedRu
             generation: witness.generation,
             payload_path: fs::canonicalize(req.output_path).map_err(|e| invalid(e.to_string()))?,
             payload_sha256: witness.payload_sha256,
-            provider_path: witness.provider_path,
+            // The cached record equals the current one, so the provider, driver and tool digests are
+            // this build's. Their paths are this process's own: a witness path may name another
+            // process's private prefix that no longer exists.
+            provider_path: provider.clone(),
             provider_sha256: witness.provider_sha256,
             source_sha256: digest_bytes(&witness.source_sha256)?,
-            compiler: LinkToolReceipt { executable: witness.compiler.0, sha256: witness.compiler.1 },
-            driver_path: witness.driver_path,
+            compiler: LinkToolReceipt { executable: cargo.clone(), sha256: witness.compiler.1 },
+            driver_path: driver.path().to_owned(),
             driver_sha256: witness.driver_sha256,
             child_receipts: witness.child_receipts,
-            rustc: LinkToolReceipt { executable: witness.rustc.0, sha256: witness.rustc.1 },
-            linker: LinkToolReceipt { executable: witness.linker.0, sha256: witness.linker.1 },
+            rustc: LinkToolReceipt { executable: rustc.clone(), sha256: witness.rustc.1 },
+            linker: LinkToolReceipt { executable: linker.clone(), sha256: witness.linker.1 },
             destructors: witness
                 .destructors
                 .iter()

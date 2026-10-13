@@ -39,11 +39,14 @@ pub fn glue_utf8(value: &str) -> Result<String, i32> {
     result.push_str(value);
     Ok(result)
 }
+/// Mode 0 succeeds, 1 returns the declared error 6, 2 panics (contained by the generated wrapper)
+/// and any other mode aborts the hosting process.
 pub fn glue_failure(mode: u32) -> Result<i32, i32> {
     match mode {
         0 => Ok(0),
         1 => Err(6),
-        _ => panic!("retained Rust panic fixture"),
+        2 => panic!("retained Rust panic fixture"),
+        _ => std::process::abort(),
     }
 }
 pub fn glue_f32_bits(value: f32) -> u32 {

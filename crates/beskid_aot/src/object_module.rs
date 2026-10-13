@@ -382,7 +382,7 @@ impl BeskidObjectModule {
 }
 
 /// Function-kind platform imports of the target's canonical ABI-v5 manifest that `artifact`'s CLIF
-/// calls and that no artifact function, extern import, or runtime builtin supplies, each with its
+/// calls and that no artifact function, extern import, or runtime import supplies, each with its
 /// call signature. Every call site must match the manifest signature exactly; a mismatch fails closed.
 fn referenced_platform_imports(
     isa: &dyn TargetIsa,
@@ -397,7 +397,6 @@ fn referenced_platform_imports(
         .iter()
         .chain(artifact.trusted_extern_imports.iter())
         .map(|import| import.symbol.as_str())
-        .chain(beskid_abi::all_builtin_specs().map(|spec| spec.symbol))
         .collect::<HashSet<_>>();
     let mut referenced: Vec<(String, cranelift_codegen::ir::Signature)> = Vec::new();
     for function in &artifact.functions {
@@ -406,7 +405,10 @@ fn referenced_platform_imports(
                 continue;
             };
             let symbol = String::from_utf8_lossy(name.raw()).into_owned();
-            if defined.contains(symbol.as_str()) || supplied.contains(symbol.as_str()) {
+            if defined.contains(symbol.as_str())
+                || supplied.contains(symbol.as_str())
+                || beskid_abi::is_runtime_import_symbol(&symbol)
+            {
                 continue;
             }
             referenced.push((symbol, function.function.dfg.signatures[external.signature].clone()));

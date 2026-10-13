@@ -40,8 +40,9 @@ use beskid_codegen::{
 };
 use sha2::{Digest, Sha256};
 use std::{
-    ffi::CString,
+    ffi::{CString, OsStr, OsString},
     fs,
+    io::Write,
     path::{Path, PathBuf},
     process::Command,
     sync::{Arc, OnceLock},
@@ -193,14 +194,20 @@ fn codegen_threads() -> std::ffi::OsString {
     std::env::var_os(CODEGEN_THREADS_ENV).unwrap_or_else(|| DEFAULT_CODEGEN_THREADS.into())
 }
 
-/// `<target>/<profile>/beskid-v06-glue`, beside the Cargo `deps/` directory this test executable
-/// runs from (the layout `beskid_tests_mod_host` uses). Private prefixes, projects and the
-/// template live here, on one file system, so per-test copies are hard links.
+/// Work root of this run. Under Cargo it is `<target>/<profile>/beskid-v06-glue`, beside the
+/// `deps/` directory this test executable runs from (the layout `beskid_tests_mod_host` uses). The
+/// release producer runs a retained copy of the executable outside any build tree; its root is
+/// `beskid-v06-glue` in the system temporary directory. Private prefixes, projects and the
+/// template live under one root, on one file system, so per-test copies are hard links.
 fn harness_root() -> PathBuf {
     let executable = std::env::current_exe().unwrap();
-    let deps = executable.parent().filter(|directory| directory.file_name() == Some(std::ffi::OsStr::new("deps")));
-    let deps = deps.unwrap_or_else(|| panic!("test executable {} is not inside a Cargo `deps` directory", executable.display()));
-    let root = deps.parent().unwrap().join("beskid-v06-glue");
+    let directory = executable.parent().unwrap();
+    let base = if directory.file_name() == Some(OsStr::new("deps")) {
+        directory.parent().unwrap().to_owned()
+    } else {
+        std::env::temp_dir()
+    };
+    let root = base.join("beskid-v06-glue");
     fs::create_dir_all(&root).unwrap();
     root
 }
@@ -1132,59 +1139,66 @@ fn v06_glue_owned_opaque_borrow_survives_release() {
         let build = build_owned(prefix, prefix, OwnerVariant::Complete)
             .unwrap_or_else(|error| panic!("{error:#}"));
         let (process, _owner, packet) = open_owned(build);
-        let create: Create = unsafe { checked(&process, &packet, "manual_ImportCreate") };
-        let inspect: Inspect = unsafe { checked(&process, &packet, "manual_ImportInspect") };
-        let release = opaque_release(&process, &packet);
-
-        // Same thread: the owner releases its borrowed handle twice from inside the borrow.
-        let mut reentrant = 0;
-        assert_eq!(unsafe { create(REENTRANT_RELEASE_LENGTH, &mut reentrant) }, 0);
-        fs::write(gate.with_extension("reentrant"), format!("{:x}:{reentrant:x}", release as usize)).unwrap();
-        let mut length = 0;
-        let status = unsafe { inspect(reentrant, &mut length) };
-        assert_eq!(
-            status,
-            0,
-            "same-thread release during a live borrow must report busy (owner observed status {})",
-            status - 100
-        );
-        assert_eq!(length, REENTRANT_RELEASE_LENGTH, "borrowed payload changed under same-thread release");
-        assert_eq!(unsafe { release(reentrant) }, 0, "busy releases must not consume the token");
-        assert_ne!(unsafe { release(reentrant) }, 0, "double release accepted");
-
-        // Foreign OS thread: denied as foreign while the borrow is live.
-        let mut token = 0;
-        assert_eq!(unsafe { create(BORROW_GATE_LENGTH, &mut token) }, 0);
-        let entered = gate.with_extension("entered");
-        let releaser = {
-            let gate = gate.clone();
-            std::thread::spawn(move || {
-                let deadline = Instant::now() + Duration::from_secs(60);
-                while !entered.exists() {
-                    assert!(Instant::now() < deadline, "owner borrow never became live");
-                    std::thread::sleep(Duration::from_millis(5));
-                }
-                // The borrow lease is live inside the owner on the opening thread; this thread
-                // is foreign to the owner records, so release is denied without effects.
-                let first = unsafe { release(token) };
-                let second = unsafe { release(token) };
-                fs::write(&gate, b"").unwrap();
-                (first, second)
-            })
-        };
-        let mut length = 0;
-        let status = unsafe { inspect(token, &mut length) };
-        let (first, second) = releaser.join().expect("releaser thread");
-        assert_eq!(status, 0, "borrowed call failed after a concurrent release attempt");
-        assert_eq!(length, BORROW_GATE_LENGTH, "borrowed payload changed under release");
-        assert_eq!(first, PROVIDER_FOREIGN, "release from a foreign thread must be denied as foreign");
-        assert_eq!(second, PROVIDER_FOREIGN, "repeated foreign-thread release must be denied as foreign");
-        // The lease ended with the call; the owner may now release exactly once.
-        assert_eq!(unsafe { release(token) }, 0);
-        assert_ne!(unsafe { inspect(token, &mut length) }, 0, "released token still borrowable");
-        assert_ne!(unsafe { release(token) }, 0, "double release accepted");
+        assert_borrow_survives_release(&process, &packet, &gate);
         drop(process);
     });
+}
+
+/// The borrow assertions of [`v06_glue_owned_opaque_borrow_survives_release`] over an admitted
+/// process. `gate` is the path the owner fixture reads from `BESKID_V06_GLUE_BORROW_GATE` of this
+/// process (R4-OWN-14 same-thread busy, R4-OWN-19 foreign-thread denial, borrowed call).
+fn assert_borrow_survives_release(process: &GlueProcess, packet: &GlueArtifact, gate: &Path) {
+    let create: Create = unsafe { checked(process, packet, "manual_ImportCreate") };
+    let inspect: Inspect = unsafe { checked(process, packet, "manual_ImportInspect") };
+    let release = opaque_release(process, packet);
+
+    // Same thread: the owner releases its borrowed handle twice from inside the borrow.
+    let mut reentrant = 0;
+    assert_eq!(unsafe { create(REENTRANT_RELEASE_LENGTH, &mut reentrant) }, 0);
+    fs::write(gate.with_extension("reentrant"), format!("{:x}:{reentrant:x}", release as usize)).unwrap();
+    let mut length = 0;
+    let status = unsafe { inspect(reentrant, &mut length) };
+    assert_eq!(
+        status,
+        0,
+        "same-thread release during a live borrow must report busy (owner observed status {})",
+        status - 100
+    );
+    assert_eq!(length, REENTRANT_RELEASE_LENGTH, "borrowed payload changed under same-thread release");
+    assert_eq!(unsafe { release(reentrant) }, 0, "busy releases must not consume the token");
+    assert_ne!(unsafe { release(reentrant) }, 0, "double release accepted");
+
+    // Foreign OS thread: denied as foreign while the borrow is live.
+    let mut token = 0;
+    assert_eq!(unsafe { create(BORROW_GATE_LENGTH, &mut token) }, 0);
+    let entered = gate.with_extension("entered");
+    let releaser = {
+        let gate = gate.to_owned();
+        std::thread::spawn(move || {
+            let deadline = Instant::now() + Duration::from_secs(60);
+            while !entered.exists() {
+                assert!(Instant::now() < deadline, "owner borrow never became live");
+                std::thread::sleep(Duration::from_millis(5));
+            }
+            // The borrow lease is live inside the owner on the opening thread; this thread
+            // is foreign to the owner records, so release is denied without effects.
+            let first = unsafe { release(token) };
+            let second = unsafe { release(token) };
+            fs::write(&gate, b"").unwrap();
+            (first, second)
+        })
+    };
+    let mut length = 0;
+    let status = unsafe { inspect(token, &mut length) };
+    let (first, second) = releaser.join().expect("releaser thread");
+    assert_eq!(status, 0, "borrowed call failed after a concurrent release attempt");
+    assert_eq!(length, BORROW_GATE_LENGTH, "borrowed payload changed under release");
+    assert_eq!(first, PROVIDER_FOREIGN, "release from a foreign thread must be denied as foreign");
+    assert_eq!(second, PROVIDER_FOREIGN, "repeated foreign-thread release must be denied as foreign");
+    // The lease ended with the call; the owner may now release exactly once.
+    assert_eq!(unsafe { release(token) }, 0);
+    assert_ne!(unsafe { inspect(token, &mut length) }, 0, "released token still borrowable");
+    assert_ne!(unsafe { release(token) }, 0, "double release accepted");
 }
 
 #[test]
@@ -1319,8 +1333,34 @@ impl CliProject {
     }
 
     /// Runs the installed CLI with explicit tools. `environment` adds or overrides variables.
-    fn build(&self, environment: &[(&str, std::ffi::OsString)]) -> std::process::Output {
+    fn build(&self, environment: &[(&str, OsString)]) -> std::process::Output {
         run_installed_build(&self.manifest, &self.consumer(), environment)
+    }
+
+    /// Runs `cli` (the installed CLI or a byte-identical link of it) with `tool_arguments` in
+    /// place of the explicit tools.
+    fn build_with(
+        &self,
+        cli: &Path,
+        tool_arguments: &[OsString],
+        environment: &[(&str, OsString)],
+    ) -> std::process::Output {
+        run_glue_build(cli, &self.manifest, &self.consumer(), tool_arguments, environment)
+    }
+
+    fn export_source(&self) -> PathBuf {
+        self.manifest.parent().unwrap().join("ManualExport.bd")
+    }
+
+    /// The build failed and left neither a published image nor a staging entry.
+    fn assert_rejected_without_publication(&self, output: &std::process::Output, label: &str) {
+        assert!(!output.status.success(), "{label}: build succeeded\n{}", output_text(output));
+        assert!(
+            !self.consumer().exists() && !self.owner().exists(),
+            "{label}: rejected build published an image\n{}",
+            output_text(output)
+        );
+        self.assert_no_staging_left();
     }
 
     fn assert_no_staging_left(&self) {
@@ -1339,20 +1379,40 @@ impl CliProject {
 
 /// `<qualified prefix>/bin/beskid build --backend glue-rust` of `manifest` into `output`, with the
 /// explicit Rust tools and the codegen worker bound. `environment` adds or overrides variables.
-fn run_installed_build(manifest: &Path, output: &Path, environment: &[(&str, std::ffi::OsString)]) -> std::process::Output {
-    let qualified = require_qualified_prefix();
-    let tools = require_tools();
+fn run_installed_build(manifest: &Path, output: &Path, environment: &[(&str, OsString)]) -> std::process::Output {
+    let cli = installed_cli(&require_qualified_prefix());
+    run_glue_build(&cli, manifest, output, &explicit_tool_arguments(&require_tools()), environment)
+}
+
+/// `--cargo <cargo> --rustc <rustc> --linker <linker>` of the explicit Rust tools.
+fn explicit_tool_arguments(tools: &Tools) -> Vec<OsString> {
+    vec![
+        "--cargo".into(),
+        tools.cargo.clone().into_os_string(),
+        "--rustc".into(),
+        tools.rustc.clone().into_os_string(),
+        "--linker".into(),
+        tools.linker.clone().into_os_string(),
+    ]
+}
+
+/// `<cli> build --plain --project <manifest> --target ManualOwned --backend glue-rust <tool
+/// arguments> --output <output>` with the codegen worker bound. `cli` is the installed CLI or a
+/// byte-identical link of it in a private prefix. `environment` adds or overrides variables.
+fn run_glue_build(
+    cli: &Path,
+    manifest: &Path,
+    output: &Path,
+    tool_arguments: &[OsString],
+    environment: &[(&str, OsString)],
+) -> std::process::Output {
     let corelib = fs::canonicalize(Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corelib")).unwrap();
-    let mut command = Command::new(installed_cli(&qualified));
+    let mut command = Command::new(cli);
     command
         .args(["build", "--plain", "--project"])
         .arg(manifest)
-        .args(["--target", "ManualOwned", "--backend", "glue-rust", "--cargo"])
-        .arg(&tools.cargo)
-        .arg("--rustc")
-        .arg(&tools.rustc)
-        .arg("--linker")
-        .arg(&tools.linker)
+        .args(["--target", "ManualOwned", "--backend", "glue-rust"])
+        .args(tool_arguments)
         .arg("--output")
         .arg(output)
         .env(beskid_abi::runtime_kit::ENV_CORELIB_ROOT, corelib)
@@ -1364,7 +1424,22 @@ fn run_installed_build(manifest: &Path, output: &Path, environment: &[(&str, std
     for (name, value) in environment {
         command.env(name, value);
     }
+    prove_installed_invocation(cli);
     command.output().unwrap_or_else(|error| panic!("run installed beskid build: {error}"))
+}
+
+/// Writes the installed invocation proof line to the process stderr before `cli` runs:
+/// `beskid-installed-invocation sha256=<digest of the executed CLI bytes> argv0=<file name>`. The
+/// release producer marks a required test without such a line `not_executed`, and the release
+/// reader requires the digest to be the installed candidate's. A link of the installed CLI in a
+/// private prefix has the same bytes, so its line names the same digest. The line is written to
+/// the stream directly, so libtest output capture does not hide it.
+fn prove_installed_invocation(cli: &Path) {
+    let name = cli.file_name().and_then(OsStr::to_str).expect("installed CLI file name");
+    let line = format!("beskid-installed-invocation sha256={} argv0={name}\n", sha256_file(cli));
+    let mut stderr = std::io::stderr().lock();
+    stderr.write_all(line.as_bytes()).expect("write installed invocation proof");
+    stderr.flush().expect("flush installed invocation proof");
 }
 
 /// Run `materialize` with [`TEMPLATE_PROJECT_ENV`] naming `template`, without touching the
@@ -1652,6 +1727,631 @@ fn v06_glue_cli_rebuild_replaces_and_failed_rebuild_preserves() {
     assert!(!output.status.success(), "broken owner rebuild succeeded\n{}", output_text(&output));
     assert_eq!(project.images(), published, "failed rebuild changed the published images");
     project.assert_no_staging_left();
+}
+
+// ---------------------------------------------------------------------------
+// Release host cases over the installed CLI and its published images.
+//
+// Every case below runs `<qualified prefix>/bin/beskid` (or a byte-identical link of it in a
+// private prefix) and so writes the installed invocation proof line. Cases that call into the
+// published images in ways that need process-wide state (the owner's borrow gate) or that end the
+// process (an owner abort) run those calls in a child copy of this executable.
+
+const PUBLISHED_CONSUMER_ENV: &str = "BESKID_V06_GLUE_PUBLISHED_CONSUMER";
+const PUBLISHED_OWNER_ENV: &str = "BESKID_V06_GLUE_PUBLISHED_OWNER";
+const PUBLISHED_PIN_ENV: &str = "BESKID_V06_GLUE_PUBLISHED_PIN";
+/// Printed by the abort child immediately before the aborting owner call.
+const ABORT_MARKER: &str = "beskid-v06-glue-owner-abort-call";
+
+/// A fresh owned project built by the installed CLI, with the consumer digest it printed.
+fn published_project() -> (CliProject, String) {
+    let project = CliProject::new();
+    let output = project.build(&[]);
+    assert_cli_success(&output);
+    let pin = reported_sha256(&output, &project.consumer());
+    (project, pin)
+}
+
+/// The admitted packet of a published consumer, taken out of a process that is closed again.
+fn published_packet(project: &CliProject, pin: &str) -> GlueArtifact {
+    let published = admit_published(&project.consumer(), pin, &[project.owner()])
+        .unwrap_or_else(|error| panic!("admit published images: {error}"));
+    let packet = published.packet().clone();
+    drop(published);
+    packet
+}
+
+/// In a child started by [`run_published_child`] for test `name`: admit the published images the
+/// parent built with the installed CLI, run `body` over them and return `true`. In the parent:
+/// return `false` without running `body`.
+fn published_child_body(name: &str, body: impl FnOnce(&PublishedGlue)) -> bool {
+    if std::env::var(CHILD_ENV).as_deref() != Ok(test_path(name).as_str()) {
+        return false;
+    }
+    let variable =
+        |key: &str| PathBuf::from(std::env::var_os(key).unwrap_or_else(|| panic!("parent supplies {key}")));
+    let pin = std::env::var(PUBLISHED_PIN_ENV).expect("parent supplies the consumer pin");
+    let published = admit_published(&variable(PUBLISHED_CONSUMER_ENV), &pin, &[variable(PUBLISHED_OWNER_ENV)])
+        .unwrap_or_else(|error| panic!("admit published images: {error}"));
+    body(&published);
+    drop(published);
+    true
+}
+
+/// Runs test `name` again in a child copy of this executable over the published images of
+/// `project`, pinned by the consumer digest `pin` that the installed CLI printed. `environment`
+/// (for example the owner fixture's borrow gate) reaches only the child, never sibling tests.
+fn run_published_child(
+    name: &str,
+    project: &CliProject,
+    pin: &str,
+    environment: &[(&str, OsString)],
+) -> std::process::Output {
+    let path = test_path(name);
+    let mut command = Command::new(std::env::current_exe().unwrap());
+    command
+        .args([path.as_str(), "--exact", "--nocapture", "--test-threads=1"])
+        .env(CHILD_ENV, &path)
+        .env(PUBLISHED_CONSUMER_ENV, project.consumer())
+        .env(PUBLISHED_OWNER_ENV, project.owner())
+        .env(PUBLISHED_PIN_ENV, pin);
+    for (key, value) in environment {
+        command.env(key, value);
+    }
+    command.output().unwrap_or_else(|error| panic!("spawn published-image child {path}: {error}"))
+}
+
+fn assert_child_passed(output: &std::process::Output, label: &str) {
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        output.status.success() && stdout.contains("test result: ok. 1 passed"),
+        "{label}: published-image child failed\n{}",
+        output_text(output)
+    );
+}
+
+/// Whether the CLI output mentions `needle`, ignoring line wrapping and report gutters.
+fn mentions(output: &std::process::Output, needle: &str) -> bool {
+    let squash = |text: &str| text.chars().filter(|c| !c.is_whitespace() && *c != '│').collect::<String>();
+    squash(&output_text(output)).contains(&squash(needle))
+}
+
+/// R4-CALL-01 and R4-CALL-02 on one admitted process. Import: the owner's issued checked entry,
+/// called directly with its hand-written C signature (manual), against the Beskid call through the
+/// generated import adapter (`manual_Import*`, generated). Export: the export's own C transport
+/// symbol (manual) against its generated checked invocation. Both routes of a row return the same
+/// results, and a value that one route rejects the other rejects too.
+fn assert_manual_generated_equivalence(process: &GlueProcess, owner: usize, packet: &GlueArtifact) {
+    #[allow(clippy::too_many_arguments)]
+    fn import_row<T: Copy + std::fmt::Debug + 'static>(
+        process: &GlueProcess,
+        owner: usize,
+        packet: &GlueArtifact,
+        owner_symbol: &str,
+        generated_symbol: &str,
+        values: &[T],
+        zero: T,
+        same: impl Fn(T, T) -> bool,
+    ) {
+        let manual: unsafe extern "C" fn(T, *mut T) -> i32 = unsafe { owner_entry(process, owner, packet, owner_symbol) };
+        let generated: unsafe extern "C" fn(T, *mut T) -> i32 = unsafe { checked(process, packet, generated_symbol) };
+        for value in values {
+            let (mut left, mut right) = (zero, zero);
+            let manual_status = unsafe { manual(*value, &mut left) };
+            let generated_status = unsafe { generated(*value, &mut right) };
+            assert_eq!(
+                manual_status == 0,
+                generated_status == 0,
+                "{owner_symbol}/{generated_symbol}({value:?}): manual status {manual_status}, generated status {generated_status}"
+            );
+            if manual_status == 0 {
+                assert!(same(left, right), "{owner_symbol}/{generated_symbol}({value:?}): {left:?} differs from {right:?}");
+            }
+        }
+    }
+    fn export_row<T: Copy + std::fmt::Debug + 'static>(
+        process: &GlueProcess,
+        packet: &GlueArtifact,
+        symbol: &str,
+        values: &[T],
+        zero: T,
+        same: impl Fn(T, T) -> bool,
+    ) {
+        assert_eq!(
+            beskid_codegen::glue::artifact::export_transport_symbol(export_binding(packet, symbol)),
+            symbol,
+            "{symbol} has a direct C transport"
+        );
+        let name = CString::new(symbol).unwrap();
+        let direct: unsafe extern "C" fn(T) -> T = *unsafe { process.export::<unsafe extern "C" fn(T) -> T>(0, &name) }
+            .unwrap_or_else(|error| panic!("{symbol}: {error}"));
+        let generated: unsafe extern "C" fn(T, *mut T) -> i32 = unsafe { checked(process, packet, symbol) };
+        for value in values {
+            let manual = unsafe { direct(*value) };
+            let mut out = zero;
+            assert_eq!(unsafe { generated(*value, &mut out) }, 0, "{symbol}({value:?}) generated status");
+            assert!(same(manual, out), "{symbol}({value:?}): manual {manual:?} differs from generated {out:?}");
+        }
+    }
+    import_row::<i8>(process, owner, packet, "glue_i8", "manual_ImportI8", &[i8::MIN, -1, 0, i8::MAX], 0, |a, b| a == b);
+    import_row::<i16>(process, owner, packet, "glue_i16", "manual_ImportI16", &[i16::MIN, 0, i16::MAX], 0, |a, b| a == b);
+    import_row::<i32>(process, owner, packet, "glue_i32", "manual_ImportI32", &[i32::MIN, 0, i32::MAX], 0, |a, b| a == b);
+    import_row::<i64>(process, owner, packet, "glue_i64", "manual_ImportI64", &[i64::MIN, 0, i64::MAX], 0, |a, b| a == b);
+    import_row::<u8>(process, owner, packet, "glue_u8", "manual_ImportU8", &[0, 128, u8::MAX], 0, |a, b| a == b);
+    import_row::<u16>(process, owner, packet, "glue_u16", "manual_ImportU16", &[0, u16::MAX], 0, |a, b| a == b);
+    import_row::<u32>(process, owner, packet, "glue_u32", "manual_ImportU32", &[0, u32::MAX], 0, |a, b| a == b);
+    import_row::<u64>(process, owner, packet, "glue_u64", "manual_ImportU64", &[0, u64::MAX], 0, |a, b| a == b);
+    let f32_values = [0.0, -0.0, f32::MIN, f32::MAX, f32::INFINITY, f32::NEG_INFINITY, f32::from_bits(0x7fc0_1234)];
+    let f64_values =
+        [0.0, -0.0, f64::MIN, f64::MAX, f64::INFINITY, f64::NEG_INFINITY, f64::from_bits(0x7ff8_0000_0000_1234)];
+    import_row::<f32>(process, owner, packet, "glue_f32", "manual_ImportF32", &f32_values, 0.0, |a, b| a.to_bits() == b.to_bits());
+    import_row::<f64>(process, owner, packet, "glue_f64", "manual_ImportF64", &f64_values, 0.0, |a, b| a.to_bits() == b.to_bits());
+    import_row::<u8>(process, owner, packet, "glue_bool", "manual_ImportBool", &[0, 1, 2, 255], 0, |a, b| a == b);
+    let chars = [0, 0x41, 0xd7ff, 0xe000, 0x1f600, 0x10ffff, 0xd800, 0xdfff, 0x110000];
+    import_row::<u32>(process, owner, packet, "glue_char", "manual_ImportChar", &chars, 0, |a, b| a == b);
+    import_row::<usize>(process, owner, packet, "glue_native_width", "manual_ImportNativeWidth", &[0, usize::MAX], 0, |a, b| a == b);
+    let manual_unit: unsafe extern "C" fn() -> i32 = unsafe { owner_entry(process, owner, packet, "glue_unit") };
+    let generated_unit: unsafe extern "C" fn() -> i32 = unsafe { checked(process, packet, "manual_ImportUnit") };
+    assert_eq!(unsafe { manual_unit() }, 0, "glue_unit manual status");
+    assert_eq!(unsafe { generated_unit() }, 0, "manual_ImportUnit generated status");
+
+    export_row::<i8>(process, packet, "beskid_i8", &[i8::MIN, -1, 0, i8::MAX], 0, |a, b| a == b);
+    export_row::<i16>(process, packet, "beskid_i16", &[i16::MIN, 0, i16::MAX], 0, |a, b| a == b);
+    export_row::<i32>(process, packet, "beskid_i32", &[i32::MIN, 0, i32::MAX], 0, |a, b| a == b);
+    export_row::<i64>(process, packet, "beskid_i64", &[i64::MIN, 0, i64::MAX], 0, |a, b| a == b);
+    export_row::<u8>(process, packet, "beskid_u8", &[0, 128, u8::MAX], 0, |a, b| a == b);
+    export_row::<u16>(process, packet, "beskid_u16", &[0, u16::MAX], 0, |a, b| a == b);
+    export_row::<u32>(process, packet, "beskid_u32", &[0, u32::MAX], 0, |a, b| a == b);
+    export_row::<u64>(process, packet, "beskid_u64", &[0, u64::MAX], 0, |a, b| a == b);
+    export_row::<f32>(process, packet, "beskid_f32", &f32_values, 0.0, |a, b| a.to_bits() == b.to_bits());
+    export_row::<f64>(process, packet, "beskid_f64", &f64_values, 0.0, |a, b| a.to_bits() == b.to_bits());
+    export_row::<u8>(process, packet, "beskid_bool", &[0, 1], 0, |a, b| a == b);
+    export_row::<u32>(process, packet, "beskid_char", &[0, 0x41, 0xd7ff, 0xe000, 0x1f600, 0x10ffff], 0, |a, b| a == b);
+    export_row::<usize>(process, packet, "beskid_native_width", &[0, usize::MAX], 0, |a, b| a == b);
+    assert_eq!(
+        beskid_codegen::glue::artifact::export_transport_symbol(export_binding(packet, "beskid_unit")),
+        "beskid_unit",
+        "beskid_unit has a direct C transport"
+    );
+    let name = CString::new("beskid_unit").unwrap();
+    let direct_unit: unsafe extern "C" fn() = *unsafe { process.export::<unsafe extern "C" fn()>(0, &name) }
+        .unwrap_or_else(|error| panic!("beskid_unit: {error}"));
+    let generated_unit: unsafe extern "C" fn() -> i32 = unsafe { checked(process, packet, "beskid_unit") };
+    unsafe { direct_unit() };
+    assert_eq!(unsafe { generated_unit() }, 0, "beskid_unit generated status");
+}
+
+/// R4-CALL-01/02: manual and generated routes agree on the images the installed CLI published.
+#[test]
+fn v06_glue_cli_manual_and_generated_routes_agree() {
+    const NAME: &str = "v06_glue_cli_manual_and_generated_routes_agree";
+    if published_child_body(NAME, |published| {
+        let owner = published.owner_image(OWNER_LIBRARY).expect("published owner image admitted");
+        assert_manual_generated_equivalence(published.process(), owner, published.packet());
+    }) {
+        return;
+    }
+    let (project, pin) = published_project();
+    assert_child_passed(&run_published_child(NAME, &project, &pin, &[]), NAME);
+}
+
+/// R4-ABI-10 borrowed call, R4-OWN-14 and R4-OWN-19 on the images `beskid build --backend
+/// glue-rust` published. Only the child process sees the owner fixture's borrow gate.
+#[test]
+fn v06_glue_cli_published_borrow_survives_release() {
+    const NAME: &str = "v06_glue_cli_published_borrow_survives_release";
+    if published_child_body(NAME, |published| {
+        let gate = PathBuf::from(std::env::var_os(GATE_ENV).expect("parent supplies the borrow gate"));
+        assert_borrow_survives_release(published.process(), published.packet(), &gate);
+    }) {
+        return;
+    }
+    let (project, pin) = published_project();
+    let gates = harness_tempdir("beskid-v06-glue-gate-");
+    let gate = gates.path().join("borrow.gate").into_os_string();
+    assert_child_passed(&run_published_child(NAME, &project, &pin, &[(GATE_ENV, gate)]), NAME);
+}
+
+/// R4-CALL-04: a Rust owner abort is not unwound into Beskid or the host. The process that
+/// hosts the published images ends abnormally at the aborting call; the harness observes it as a
+/// failed child process.
+#[test]
+fn v06_glue_cli_owner_abort_is_a_terminal_process_failure() {
+    const NAME: &str = "v06_glue_cli_owner_abort_is_a_terminal_process_failure";
+    if published_child_body(NAME, |published| {
+        let owner = published.owner_image(OWNER_LIBRARY).expect("published owner image admitted");
+        let failure: unsafe extern "C" fn(u32, *mut i32) -> i32 =
+            unsafe { owner_entry(published.process(), owner, published.packet(), "glue_failure") };
+        let mut out = -1;
+        assert_eq!(unsafe { failure(0, &mut out) }, 0, "owner entry is live before the abort");
+        let mut stdout = std::io::stdout().lock();
+        stdout.write_all(format!("{ABORT_MARKER}\n").as_bytes()).unwrap();
+        stdout.flush().unwrap();
+        drop(stdout);
+        let status = unsafe { failure(3, &mut out) };
+        panic!("owner abort returned status {status} to the caller");
+    }) {
+        return;
+    }
+    let (project, pin) = published_project();
+    let output = run_published_child(NAME, &project, &pin, &[]);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(!output.status.success(), "aborting owner call left the process successful\n{}", output_text(&output));
+    assert!(stdout.contains(ABORT_MARKER), "child did not reach the aborting call\n{}", output_text(&output));
+    assert!(!stdout.contains("test result:"), "abort must end the process, not a test\n{}", output_text(&output));
+    assert!(!output_text(&output).contains("owner abort returned"), "abort returned to the caller\n{}", output_text(&output));
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::ExitStatusExt;
+        assert_eq!(output.status.signal(), Some(6), "owner abort ends the host with SIGABRT\n{}", output_text(&output));
+    }
+}
+
+/// R4-BIND-01/02/03, R4-ABI-11 and R4-ABI-21, R4-GEN-02/03 on the packet the installed CLI
+/// published: the admitted packet validates, and every binding or packet field that the identity
+/// covers cannot change without the issued identity, digest or profile check rejecting it.
+#[test]
+fn v06_glue_cli_published_packet_rejects_identity_profile_and_path_mutations() {
+    use beskid_codegen::glue::artifact::GeneratedFile;
+    let (project, pin) = published_project();
+    let packet = published_packet(&project, &pin);
+    packet.validate().unwrap_or_else(|error| panic!("published packet: {error}"));
+    assert_eq!(packet.manifest.native_width_bits, 64, "selected-target word width");
+    assert_eq!(packet.manifest.target, host_target().triple.as_str(), "selected target");
+    let rejected = |mutated: &GlueArtifact, expected: &str, label: &str| match mutated.validate() {
+        Ok(()) => panic!("{label}: mutated packet validated"),
+        Err(error) => assert!(error.to_string().contains(expected), "{label}: expected `{expected}`, got `{error}`"),
+    };
+    let position = |symbol: &str| {
+        packet
+            .manifest
+            .bindings
+            .iter()
+            .position(|binding| binding.direction == "export" && binding.symbol == symbol)
+            .unwrap_or_else(|| panic!("export row {symbol} absent"))
+    };
+    let create = position("manual_ImportCreate");
+    assert!(packet.manifest.bindings[create].fallible, "manual_ImportCreate reaches a fallible import");
+
+    // Binding identity covers direction, fallibility, ownership and library.
+    let mut direction = packet.clone();
+    direction.manifest.bindings[create].direction = "import".into();
+    rejected(&direction, "binding identity differs", "direction");
+    let mut fallible = packet.clone();
+    fallible.manifest.bindings[create].fallible = false;
+    rejected(&fallible, "binding identity differs", "export fallibility");
+    let factory = packet
+        .manifest
+        .bindings
+        .iter()
+        .position(|binding| binding.direction == "import" && binding.symbol == "make_manual_owned")
+        .expect("import row make_manual_owned absent");
+    assert!(packet.manifest.bindings[factory].fallible, "make_manual_owned is declared RustOwner(Fallible:true)");
+    let mut import_fallible = packet.clone();
+    import_fallible.manifest.bindings[factory].fallible = false;
+    rejected(&import_fallible, "binding identity differs", "import fallibility (R4-ABI-21)");
+    let utf8 = position("beskid_utf8");
+    let mut ownership = packet.clone();
+    let binding = &mut ownership.manifest.bindings[utf8];
+    std::mem::swap(&mut binding.parameters[0], &mut binding.result);
+    rejected(&ownership, "binding identity differs", "borrowed input and owned result swapped");
+    let mut library = packet.clone();
+    for binding in &mut library.manifest.bindings {
+        binding.library = format!("z{}", binding.library);
+    }
+    rejected(&library, "binding identity differs", "library");
+
+    // The packet profile covers the selected target and its word width.
+    let mut target = packet.clone();
+    target.manifest.target = if packet.manifest.target == "x86_64-unknown-linux-gnu" {
+        "aarch64-apple-darwin".into()
+    } else {
+        "x86_64-unknown-linux-gnu".into()
+    };
+    rejected(&target, "differs", "target");
+    let mut width = packet.clone();
+    width.manifest.native_width_bits = 32;
+    rejected(&width, "schema/target/runtime provider profile differs", "native width");
+
+    // Generated paths are confined, unique and digest-bound; the packet digest covers them.
+    for path in ["../escape.rs", "/absolute.rs", "nested/./file.rs", "C:/drive.rs", "back\\slash.rs"] {
+        let mut escaping = packet.clone();
+        escaping.files.push(GeneratedFile::new(path, b"escape".to_vec()));
+        rejected(&escaping, "unsafe or duplicate generated path", path);
+    }
+    let mut duplicate = packet.clone();
+    duplicate.files.push(duplicate.files[0].clone());
+    rejected(&duplicate, "unsafe or duplicate generated path", "duplicate path");
+    let generated = packet
+        .files
+        .iter()
+        .position(|file| file.path != "glue-manifest.json" && !file.bytes.is_empty())
+        .expect("packet carries a generated adapter file");
+    let mut stale = packet.clone();
+    stale.files[generated].bytes[0] ^= 0xff;
+    rejected(&stale, "generated bytes exceed bound or digest differs", "file bytes under a stale digest");
+    let mut rehashed = packet.clone();
+    let path = rehashed.files[generated].path.clone();
+    let mut bytes = rehashed.files[generated].bytes.clone();
+    bytes[0] ^= 0xff;
+    rehashed.files[generated] = GeneratedFile::new(path, bytes);
+    rejected(&rehashed, "artifact digest differs", "rehashed file under the issued packet digest");
+}
+
+/// R4-GEN-01: two installed builds of equivalent projects at different paths issue the same
+/// packet; machine-local paths do not reach the generated files or the binding identities.
+#[test]
+fn v06_glue_cli_equivalent_projects_issue_identical_packets() {
+    let (first, first_pin) = published_project();
+    let (second, second_pin) = published_project();
+    assert_ne!(first.manifest, second.manifest, "projects live at different paths");
+    let (left, right) = (published_packet(&first, &first_pin), published_packet(&second, &second_pin));
+    let mut differences = Vec::new();
+    if left.manifest.compiled_source_sha256 != right.manifest.compiled_source_sha256 {
+        differences.push("compiled_source_sha256".to_owned());
+    }
+    for (a, b) in left.manifest.bindings.iter().zip(&right.manifest.bindings) {
+        if a != b {
+            differences.push(format!("binding {}: {:?} vs {:?}", a.symbol, a.source, b.source));
+        }
+    }
+    let files = |packet: &GlueArtifact| packet.files.iter().map(|file| (file.path.clone(), file.sha256.clone())).collect::<Vec<_>>();
+    if files(&left) != files(&right) {
+        differences.push(format!("generated files {:?} vs {:?}", files(&left), files(&right)));
+    }
+    assert!(
+        left == right && left.sha256 == right.sha256,
+        "packets of equivalent projects differ ({} vs {}):\n{}",
+        left.sha256,
+        right.sha256,
+        differences.join("\n")
+    );
+}
+
+/// R4-BIND-04: closed boundary metadata. Two `Export` attributes, a repeated argument or an
+/// unknown argument on a boundary function are rejected before generation, without publication.
+#[test]
+fn v06_glue_cli_rejects_closed_boundary_metadata_violations() {
+    const ORIGINAL: &str = "[Export(Abi:\"C\", Symbol:\"beskid_i8\")]";
+    for (label, replacement) in [
+        ("two Export attributes", "[Export(Abi:\"C\", Symbol:\"beskid_i8\")]\n[Export(Abi:\"C\", Symbol:\"beskid_i8_again\")]"),
+        ("repeated Symbol argument", "[Export(Abi:\"C\", Symbol:\"beskid_i8\", Symbol:\"beskid_i8\")]"),
+        ("unknown argument", "[Export(Abi:\"C\", Symbol:\"beskid_i8\", Library:\"glue_manual\")]"),
+    ] {
+        let project = CliProject::new();
+        let source = project.export_source();
+        let text = fs::read_to_string(&source).unwrap();
+        assert_eq!(text.matches(ORIGINAL).count(), 1, "fixture export declaration changed");
+        fs::write(&source, text.replace(ORIGINAL, replacement)).unwrap();
+        let output = project.build(&[]);
+        project.assert_rejected_without_publication(&output, label);
+        assert!(
+            mentions(&output, "Export") || mentions(&output, "Glue"),
+            "{label}: rejection does not name the boundary metadata\n{}",
+            output_text(&output)
+        );
+    }
+}
+
+/// R4-TOOL-01: the installed CLI accepts only `--rust-toolchain <prefix>` XOR `--cargo` with
+/// `--rustc`, plus `--linker`, and names the required form for every other combination.
+#[test]
+fn v06_glue_cli_tool_selection_names_the_required_form() {
+    let tools = require_tools();
+    let cli = installed_cli(&require_qualified_prefix());
+    let path = |path: &PathBuf| path.clone().into_os_string();
+    let project = CliProject::new();
+    let cases: [(&str, Vec<OsString>, &str); 4] = [
+        ("no Rust tools", vec!["--linker".into(), path(&tools.linker)], "requires explicit Rust tools"),
+        (
+            "toolchain and cargo",
+            vec![
+                "--rust-toolchain".into(),
+                "beskid-v06-unused-toolchain".into(),
+                "--cargo".into(),
+                path(&tools.cargo),
+                "--linker".into(),
+                path(&tools.linker),
+            ],
+            "`--rust-toolchain` conflicts with `--cargo`/`--rustc`",
+        ),
+        (
+            "cargo without rustc",
+            vec!["--cargo".into(), path(&tools.cargo), "--linker".into(), path(&tools.linker)],
+            "`--cargo` requires `--rustc`",
+        ),
+        (
+            "no linker",
+            vec!["--cargo".into(), path(&tools.cargo), "--rustc".into(), path(&tools.rustc)],
+            "requires `--linker <path>`",
+        ),
+    ];
+    for (label, arguments, expected) in cases {
+        let output = project.build_with(&cli, &arguments, &[]);
+        project.assert_rejected_without_publication(&output, label);
+        assert!(mentions(&output, expected), "{label}: expected `{expected}`\n{}", output_text(&output));
+        assert!(mentions(&output, "pass `--rust-toolchain <prefix>`"), "{label}: required form not named\n{}", output_text(&output));
+    }
+}
+
+/// R4-TOOL-03: a missing, non-regular or non-executable tool fails the build before any image is
+/// published.
+#[test]
+fn v06_glue_cli_unusable_tools_fail_before_publication() {
+    let tools = require_tools();
+    let cli = installed_cli(&require_qualified_prefix());
+    let scratch = harness_tempdir("beskid-v06-glue-tools-");
+    let suffix = std::env::consts::EXE_SUFFIX;
+    let missing = scratch.path().join(format!("missing-cargo{suffix}"));
+    let directory = scratch.path().join(format!("directory-rustc{suffix}"));
+    fs::create_dir(&directory).unwrap();
+    let text = scratch.path().join(format!("text-cargo{suffix}"));
+    fs::write(&text, b"not an executable tool\n").unwrap();
+    let arguments = |cargo: &Path, rustc: &Path| -> Vec<OsString> {
+        vec![
+            "--cargo".into(),
+            cargo.as_os_str().to_owned(),
+            "--rustc".into(),
+            rustc.as_os_str().to_owned(),
+            "--linker".into(),
+            tools.linker.clone().into_os_string(),
+        ]
+    };
+    let project = CliProject::new();
+    let cases: [(&str, Vec<OsString>, Option<&str>); 3] = [
+        ("missing cargo", arguments(missing.as_path(), tools.rustc.as_path()), Some("cannot be resolved")),
+        ("directory rustc", arguments(tools.cargo.as_path(), directory.as_path()), Some("is not a regular file")),
+        ("non-executable cargo", arguments(text.as_path(), tools.rustc.as_path()), None),
+    ];
+    for (label, arguments, expected) in cases {
+        let output = project.build_with(&cli, &arguments, &[]);
+        project.assert_rejected_without_publication(&output, label);
+        if let Some(expected) = expected {
+            assert!(mentions(&output, expected), "{label}: expected `{expected}`\n{}", output_text(&output));
+        }
+    }
+}
+
+/// A private prefix holding a link of the installed CLI, a tampered or missing driver sibling and
+/// a link of the qualified runtime kit. Returns the prefix and its CLI path.
+fn stage_cli_prefix(staging: DriverStaging) -> (tempfile::TempDir, PathBuf) {
+    let qualified = require_qualified_prefix();
+    let installed = installed_cli(&qualified);
+    let staged = harness_tempdir("beskid-v06-glue-cli-prefix-");
+    let bin = staged.path().join("bin");
+    fs::create_dir(&bin).unwrap();
+    let cli = bin.join(installed.file_name().unwrap());
+    link_or_copy(&installed, &cli);
+    let driver = bin.join(driver_name());
+    match staging {
+        DriverStaging::Tampered => {
+            let mut bytes = fs::read(qualified.join("bin").join(driver_name())).unwrap();
+            bytes.push(0);
+            fs::write(&driver, bytes).unwrap();
+            make_executable(&driver);
+        }
+        DriverStaging::Missing => {}
+        _ => panic!("CLI driver staging covers only rejected drivers"),
+    }
+    link_tree(&template().kit.join(kit_relative()), &staged.path().join(kit_relative()));
+    (staged, cli)
+}
+
+/// R4-TOOL-08: the installed CLI admits its Rust owner driver only as the exact qualified sibling
+/// in its own prefix. The same CLI bytes beside a tampered or missing driver fail closed.
+#[test]
+fn v06_glue_cli_private_prefix_driver_admission_fails_closed() {
+    let tools = explicit_tool_arguments(&require_tools());
+    for (staging, label) in [(DriverStaging::Tampered, "tampered driver"), (DriverStaging::Missing, "missing driver")] {
+        let (prefix, cli) = stage_cli_prefix(staging);
+        assert_eq!(sha256_file(&cli), sha256_file(&installed_cli(&require_qualified_prefix())), "linked CLI bytes");
+        let project = CliProject::new();
+        let output = project.build_with(&cli, &tools, &[]);
+        project.assert_rejected_without_publication(&output, label);
+        assert!(
+            !mentions(&output, "independently qualified native tool driver"),
+            "{label}: the CLI under test was built without a qualified driver\n{}",
+            output_text(&output)
+        );
+        if staging == DriverStaging::Tampered {
+            assert!(mentions(&output, "installed compiler driver changed"), "{label}\n{}", output_text(&output));
+        }
+        drop(prefix);
+    }
+}
+
+/// Names the release fixture binary (`beskid_release_fixture`); the producer supplies it for the
+/// cases bound to it. Absence is a test failure, never a skip.
+const RELEASE_FIXTURE_ENV: &str = "BESKID_V06_RELEASE_FIXTURE";
+
+fn release_fixture() -> PathBuf {
+    let raw = std::env::var_os(RELEASE_FIXTURE_ENV)
+        .unwrap_or_else(|| panic!("{RELEASE_FIXTURE_ENV} must name the release fixture binary"));
+    fs::canonicalize(&raw).unwrap_or_else(|error| panic!("{RELEASE_FIXTURE_ENV}={}: {error}", PathBuf::from(&raw).display()))
+}
+
+/// A Rust compiler that runs and reports its version and host but holds no standard library for
+/// any target: links of the files of `<sysroot>/bin` and `<sysroot>/lib` of the explicit `rustc`
+/// (its own executables and shared libraries) under `root`, without `lib/rustlib`.
+fn stage_rustc_without_target_library(root: &Path, rustc: &Path) -> PathBuf {
+    let sysroot = rustc.parent().and_then(Path::parent).expect("the explicit rustc lives in <sysroot>/bin");
+    for directory in ["bin", "lib"] {
+        let destination = root.join(directory);
+        fs::create_dir_all(&destination).unwrap();
+        for entry in fs::read_dir(sysroot.join(directory)).unwrap() {
+            let entry = entry.unwrap();
+            if entry.file_type().unwrap().is_file() {
+                link_or_copy(&entry.path(), &destination.join(entry.file_name()));
+            }
+        }
+    }
+    root.join("bin").join(rustc.file_name().unwrap())
+}
+
+/// R4-TOOL-02: a Rust compiler that answers its version probe but cannot build the requested
+/// target is rejected by the installed CLI before the owner build, without publication.
+#[test]
+fn v06_glue_cli_rustc_without_the_target_library_is_rejected_before_build() {
+    let tools = require_tools();
+    let cli = installed_cli(&require_qualified_prefix());
+    let scratch = harness_tempdir("beskid-v06-glue-sysroot-");
+    let rustc = stage_rustc_without_target_library(scratch.path(), &tools.rustc);
+    let arguments: Vec<OsString> = vec![
+        "--cargo".into(),
+        tools.cargo.clone().into_os_string(),
+        "--rustc".into(),
+        rustc.into_os_string(),
+        "--linker".into(),
+        tools.linker.clone().into_os_string(),
+    ];
+    let project = CliProject::new();
+    let output = project.build_with(&cli, &arguments, &[]);
+    project.assert_rejected_without_publication(&output, "rustc without the target library");
+    assert!(
+        mentions(&output, &format!("Rust compiler cannot build target `{}`", host_target().triple.as_str())),
+        "rejection does not name the missing target support\n{}",
+        output_text(&output)
+    );
+}
+
+/// R4-TOOL-04: a tool probe that never answers is terminated with its process tree within the
+/// probe bound, and the build fails without publication.
+#[test]
+fn v06_glue_cli_hanging_tool_probe_is_terminated() {
+    let tools = require_tools();
+    let cli = installed_cli(&require_qualified_prefix());
+    let scratch = harness_tempdir("beskid-v06-glue-hanging-");
+    let hanging = scratch.path().join(format!("beskid-hanging-tool{}", std::env::consts::EXE_SUFFIX));
+    fs::copy(release_fixture(), &hanging).unwrap();
+    make_executable(&hanging);
+    let arguments: Vec<OsString> = vec![
+        "--cargo".into(),
+        tools.cargo.clone().into_os_string(),
+        "--rustc".into(),
+        hanging.clone().into_os_string(),
+        "--linker".into(),
+        tools.linker.clone().into_os_string(),
+    ];
+    let project = CliProject::new();
+    let started = Instant::now();
+    let output = project.build_with(&cli, &arguments, &[]);
+    let elapsed = started.elapsed();
+    project.assert_rejected_without_publication(&output, "hanging rustc probe");
+    assert!(mentions(&output, "Rust compiler probe"), "rejection does not name the probe\n{}", output_text(&output));
+    let pid = fs::read_to_string(scratch.path().join("beskid-hanging-tool.pid"))
+        .unwrap_or_else(|error| panic!("the hanging probe never started: {error}\n{}", output_text(&output)));
+    assert!(
+        elapsed < Duration::from_secs(300),
+        "the probe bound did not end the build early ({elapsed:?})\n{}",
+        output_text(&output)
+    );
+    #[cfg(unix)]
+    {
+        let alive = Command::new("kill").args(["-0", pid.trim()]).status().unwrap().success();
+        assert!(!alive, "hanging probe process {} outlived the build", pid.trim());
+    }
+    #[cfg(not(unix))]
+    let _ = pid;
 }
 
 /// Records one label per emitted object work unit.

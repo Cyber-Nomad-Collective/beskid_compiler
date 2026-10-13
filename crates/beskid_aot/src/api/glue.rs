@@ -237,7 +237,7 @@ pub fn build_glue_artifact(req: &GlueArtifactBuildRequest<'_>) -> AotResult<Prep
             beskid_queries::SourceUnitId::new(req.input.database(),unit.path.clone()) == source.unit)
             .ok_or_else(|| invalid("opaque source unit is not in current assembly"))?;
         let binding = packet.manifest.bindings.iter().find(|binding|
-            binding.source.logical_unit == unit.logical_name
+            binding.source.logical_unit == req.input.portable_unit_label(&unit.path, &unit.logical_name)
             && binding.source.span_start == span.start && binding.source.span_end == span.end)
             .ok_or_else(|| invalid("opaque object transport has no selected source binding"))?;
         let physical = match transport.position() {

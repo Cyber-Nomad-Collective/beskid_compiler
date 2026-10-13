@@ -17,15 +17,24 @@ pub mod types;
 pub mod version;
 
 pub use abi_types::{AbiParamKind, AbiReturnKind, BuiltinFnSpec};
-pub use generated::builtins::BUILTIN_SPECS;
-
-/// Every process-linked runtime builtin accepted by lowering and the JIT.
+/// Every ABI-v5 soft builtin, generated at build time from `runtime_manifest.bsol`.
 ///
-/// `BUILTIN_SPECS` is the remaining ABI-v4 transition table. ABI-v5-owned soft builtin rows are
-/// generated from `runtime_manifest.bsol` and are intentionally appended here rather than copied
-/// into that legacy snapshot.
+/// There is no checked-in builtin catalog: the former ABI-v4 `BUILTIN_SPECS` snapshot lost its
+/// generator in the ABI-v5 move and drifted from the manifest (for example it declared
+/// `gc_register_root` as returning nothing while the runtime returns its `u8` status). Runtime
+/// import shapes come only from the generated ABI-v5 tables; see [`is_runtime_import_symbol`].
 pub fn all_builtin_specs() -> impl Iterator<Item = &'static BuiltinFnSpec> {
-    BUILTIN_SPECS.iter().chain(generated::abi_v5_contract::ABI_V5_SOFT_BUILTINS.iter())
+    generated::abi_v5_contract::ABI_V5_SOFT_BUILTINS.iter()
+}
+
+/// Whether `symbol` is a process-linked runtime import that generated code may call directly:
+/// an ABI-v5 soft builtin or the direct runtime implementation of a canonical Corelib service
+/// binding. Its call shape is `runtime_source::canonical_corelib_service_abi_for_adapter`.
+pub fn is_runtime_import_symbol(symbol: &str) -> bool {
+    all_builtin_specs().any(|spec| spec.symbol == symbol)
+        || generated::abi_v5_contract::ABI_V5_CORELIB_SERVICE_BINDINGS
+            .iter()
+            .any(|binding| binding.adapter == symbol && binding.implementation == symbol)
 }
 pub use generated::symbols::{
     BESKID_USER_FFI_LAYOUT_BAND, RUNTIME_EXPORT_SYMBOLS, SYM_ABI_VERSION, SYM_ALLOC, SYM_ARRAY_LEN, SYM_ARRAY_NEW,

@@ -1,4 +1,4 @@
-//! Parameter/return classification for builtins shared by codegen (`BUILTIN_SPECS`) and JIT hosts.
+//! Parameter/return classification of the generated ABI-v5 soft builtins (`all_builtin_specs`).
 
 /// Scalar kinds used when building Cranelift signatures for builtins (`Ptr` vs fixed `I64`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

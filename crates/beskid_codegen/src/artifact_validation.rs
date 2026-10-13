@@ -4,7 +4,6 @@ use std::collections::HashSet;
 
 use cranelift_codegen::ir::ExternalName;
 
-use beskid_abi::all_builtin_specs;
 
 use crate::{CodegenArtifact, ExternImport};
 
@@ -97,7 +96,7 @@ fn collect_referenced_testcase_symbols(artifact: &CodegenArtifact) -> HashSet<St
 }
 
 fn is_runtime_builtin(symbol: &str) -> bool {
-    all_builtin_specs().any(|spec| spec.symbol == symbol)
+    beskid_abi::is_runtime_import_symbol(symbol)
 }
 
 #[cfg(test)]

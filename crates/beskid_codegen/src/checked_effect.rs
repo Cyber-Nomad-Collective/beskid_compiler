@@ -786,21 +786,9 @@ pub(crate) fn ensure_checked_runtime_import<M: cranelift_module::Module>(
     let signature = canonical_checked_runtime_signature(module, input, symbol)?;
     if let Some(id) = functions.get(symbol).copied() {
         let declared = &module.declarations().get_function_decl(id).signature;
-        // The ordinary artifact pass may already have declared the symbol from the legacy builtin
-        // catalog, whose shape can lag the canonical binding (`gc_register_root` is declared void
-        // there but returns its `u8` registration status). Calls carry their own signature, so
-        // that declaration is accepted only when it is exactly the legacy catalog entry.
-        let legacy = beskid_abi::all_builtin_specs().into_iter().find(|spec| spec.symbol == symbol).map(|spec| {
-            crate::cranelift_host::builtin_signature(
-                module.target_config().pointer_type(),
-                module.isa().default_call_conv(),
-                spec.params,
-                spec.returns,
-            )
-        });
-        if module.get_name(symbol) != Some(cranelift_module::FuncOrDataId::Func(id))
-            || (declared != &signature && legacy.as_ref() != Some(declared))
-        {
+        // Every declaration path (`declare_referenced_builtin_imports` and this one) derives the
+        // signature from the same generated ABI-v5 tables, so any difference is a real conflict.
+        if module.get_name(symbol) != Some(cranelift_module::FuncOrDataId::Func(id)) || declared != &signature {
             return Err(error("checked runtime import differs from canonical ABI catalog"));
         }
         return Ok(id);
@@ -810,8 +798,8 @@ pub(crate) fn ensure_checked_runtime_import<M: cranelift_module::Module>(
     Ok(id)
 }
 
-/// Canonical call signature of a checked runtime import: ABI-v5 manifest exports, then canonical
-/// Corelib service bindings, then the legacy builtin catalog.
+/// Canonical call signature of a checked runtime import: ABI-v5 manifest exports, then the canonical
+/// Corelib service bindings (which also cover manifest source builtins and soft builtins).
 pub(crate) fn canonical_checked_runtime_signature<M: cranelift_module::Module>(
     module: &M,
     input: &CodegenInput<'_>,
@@ -847,30 +835,11 @@ pub(crate) fn canonical_checked_runtime_signature<M: cranelift_module::Module>(
         }
         signature
     } else if let Some(abi) = beskid_abi::runtime_source::canonical_corelib_service_abi_for_adapter(symbol) {
-        // Canonical ABI-v5 service bindings carry the exact runtime export shape (for example the
-        // `u8` registration result of `gc_register_root`), which the builtin catalog does not.
-        use beskid_abi::runtime_source::CorelibServiceAbiType as Service;
-        let scalar = |ty: Service| match ty {
-            Service::Pointer | Service::String | Service::Usize => Some(pointer),
-            Service::U8 => Some(types::I8),
-            Service::I32 | Service::U32 => Some(types::I32),
-            Service::I64 | Service::U64 => Some(types::I64),
-            Service::F32 => Some(types::F32),
-            Service::F64 => Some(types::F64),
-            Service::Void | Service::Never => None,
-        };
-        let mut signature = Signature::new(conv);
-        for ty in abi.parameters {
-            signature
-                .params
-                .push(AbiParam::new(scalar(ty).ok_or_else(|| error("unsupported canonical service parameter ABI"))?));
-        }
-        if let Some(result) = scalar(abi.result) {
-            signature.returns.push(AbiParam::new(result));
-        }
-        signature
-    } else if let Some(spec) = beskid_abi::all_builtin_specs().into_iter().find(|spec| spec.symbol == symbol) {
-        crate::cranelift_host::builtin_signature(pointer, conv, spec.params, spec.returns)
+        // Canonical ABI-v5 service bindings, manifest source builtins and soft builtins carry the
+        // exact runtime export shape (for example the `u8` registration result of
+        // `gc_register_root`). This is the only catalog; there is no legacy builtin snapshot.
+        crate::cranelift_host::corelib_service_signature(pointer, conv, &abi)
+            .ok_or_else(|| error("unsupported canonical service ABI"))?
     } else {
         return Err(error("checked runtime import absent from canonical ABI catalog"));
     };

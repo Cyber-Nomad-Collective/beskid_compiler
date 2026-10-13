@@ -281,7 +281,9 @@ pub fn emit(
         .assembly
         .units
         .iter()
-        .map(|unit| (unit.logical_name.clone(), unit.program.clone()))
+        // Project-relative unit labels: absolute paths (temporary directories, checkouts) never
+        // enter the packet, so equivalent projects at different locations issue one packet.
+        .map(|unit| (input.portable_unit_label(&unit.path, &unit.logical_name), unit.program.clone()))
         .collect::<Vec<_>>();
     source_units.sort_by(|a, b| a.0.cmp(&b.0));
     let compiled_source_sha256 = digest(&serde_json::to_vec(&source_units).map_err(GlueArtifactError::from)?);
@@ -362,7 +364,7 @@ pub fn emit(
             .map_err(|e| BackendError::RustGlueFact { key: item.key, message: e.to_string() })?
             .ok_or_else(|| BackendError::MissingRustGlueBinding(item.key))?;
         let source = GlueSourceAuthority {
-            logical_unit: unit.logical_name.clone(),
+            logical_unit: input.portable_unit_label(&unit.path, &unit.logical_name),
             typed_unit_sha256: digest(&serde_json::to_vec(&unit.program).map_err(GlueArtifactError::from)?),
             span_start: span.start,
             span_end: span.end,
