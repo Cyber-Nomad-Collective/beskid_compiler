@@ -21,7 +21,7 @@ fn admitted_selector(selector: &str) -> bool {
             | "Core.Serialization.Contracts.Encoder"
             | "Core.Serialization.Contracts.Decoder"
             | "Core.Serialization.Reader.Reader"
-            | "Core.Serialization.Reader.FieldDecoder"
+            | "Core.Serialization.Reader.ReadField"
             | "Core.Serialization.Limits.SerializationLimits"
             | "Core.Serialization.Errors.SerializationError"
             | "Core.Serialization.Errors.Diagnostic"
@@ -82,7 +82,10 @@ impl ModSemanticQueryAuthority<'_> {
                 }
             }
             let [declaration] = declarations.as_slice() else {
-                return Err(Self::error("canonical route declaration is absent or ambiguous"));
+                return Err(Self::error(&format!(
+                    "canonical route declaration `{selector}` is absent or ambiguous ({} candidates)",
+                    declarations.len()
+                )));
             };
             let registry = self.db.syntax_dependency_registry().lock().expect("syntax dependency registry");
             let mut routes = Vec::new();
@@ -109,7 +112,7 @@ impl ModSemanticQueryAuthority<'_> {
             let segments = routes
                 .into_iter()
                 .next()
-                .ok_or_else(|| Self::error("canonical declaration has no caller-visible route"))?;
+                .ok_or_else(|| Self::error(&format!("canonical declaration `{selector}` has no caller-visible route")))?;
             output.push(ModCanonicalPath { logical_name: selector.clone(), segments });
         }
         Ok(output)

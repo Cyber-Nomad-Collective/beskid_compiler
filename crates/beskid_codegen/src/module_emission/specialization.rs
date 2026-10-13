@@ -49,26 +49,55 @@ pub(super) fn resolve_module_items(
     // Add those bodies and their ordinary direct dependencies to this same module worklist.
     let mut source_items = source_items.to_vec();
     let mut present = source_items.iter().map(|item| item.key).collect::<std::collections::HashSet<_>>();
-    let mut pending = specializations.keys().copied().collect::<Vec<_>>();
-    while let Some(key) = pending.pop() {
-        if !present.insert(key) {
-            continue;
+    close_source_items(input, &mut source_items, &mut present, &mut specializations)?;
+    // Each canonical `ReadField<T,R>` instance has a compiler-issued body: its bridge forwards to
+    // the exact issued field read of T. Issued reads (generated field decoder factories and the
+    // canonical scalar and container reads) call `ReadField` again for their own fields, so the
+    // correspondence runs to a fixpoint before any other bridge authority inspects the worklist.
+    let mut field_decoders = Vec::<beskid_queries::SerializationFieldDecoderBinding>::new();
+    let mut resolved_reads = std::collections::HashSet::<GenericSpecializationInstance>::new();
+    loop {
+        let mut issued = Vec::new();
+        for instance in specializations.values().flatten() {
+            if resolved_reads.contains(instance) {
+                continue;
+            }
+            let binding = beskid_queries::serialization_field_decoder_binding(db, input.typed_program(), instance)
+                .map_err(|error| {
+                    emission_verification(format!(
+                        "field decoder correspondence failed for {}: {error}",
+                        format_declaration_for_trace(db, instance.declaration)
+                    ))
+                })?;
+            if let Some(binding) = binding {
+                issued.push((instance.clone(), binding));
+            }
         }
-        source_items.push(SyntaxModuleItem {
-            key,
-            symbol: syntax_item_symbol(input, key)
-                .ok_or_else(|| emission_verification("specialization declaration symbol is unavailable"))?,
-        });
-        if is_concrete_executable_item(db, key)? {
-            collect_generic_call_specializations(db, key, &mut specializations)?;
+        if issued.is_empty() {
+            break;
         }
-        pending.extend(
-            beskid_queries::direct_callees(db, key)
-                .map_err(|error| emission_verification(error.to_string()))?
-                .into_iter()
-                .flat_map(|callees| callees.iter().copied().collect::<Vec<_>>()),
-        );
-        pending.extend(specializations.keys().filter(|key| !present.contains(key)).copied());
+        for (read, binding) in issued {
+            resolved_reads.insert(read);
+            for instance in [binding.instance(), binding.target()] {
+                let entries = specializations.entry(instance.declaration).or_default();
+                let fresh = !entries.contains(instance);
+                if fresh {
+                    entries.push(instance.clone());
+                }
+                if fresh && instance == binding.target() {
+                    collect_generic_call_specializations_in_environment(
+                        db,
+                        instance.declaration,
+                        Some(instance),
+                        &mut specializations,
+                    )?;
+                }
+            }
+            if !field_decoders.contains(&binding) {
+                field_decoders.push(binding);
+            }
+        }
+        close_source_items(input, &mut source_items, &mut present, &mut specializations)?;
     }
     // Canonical Pack's hidden method has no source statement body. Its exact
     // call-derived instance is emitted by the checked representation bridge;
@@ -180,7 +209,8 @@ pub(super) fn resolve_module_items(
             || shape_bridges.iter().any(|binding|binding.instance().declaration==item.key)
             || mapping_bridges.iter().any(|binding|binding.instance().declaration==item.key)
             || unpack_bridges.iter().any(|bridge|bridge.instance().declaration==item.key)
-            || serialization_bridges.iter().any(|binding|binding.instance().declaration==item.key);
+            || serialization_bridges.iter().any(|binding|binding.instance().declaration==item.key)
+            || field_decoders.iter().any(|binding| binding.instance().declaration == item.key);
         if !dynamic_bridge
             && !matches!(
                 kind,
@@ -218,6 +248,39 @@ pub(super) fn resolve_module_items(
         }
     }
     Ok(resolved)
+}
+
+/// Add every specialization declaration not yet in `source_items`, its ordinary direct callees
+/// and the generic calls of concrete bodies, until the worklist is closed.
+fn close_source_items(
+    input: &CodegenInput<'_>,
+    source_items: &mut Vec<SyntaxModuleItem>,
+    present: &mut std::collections::HashSet<AstNodeKey>,
+    specializations: &mut HashMap<AstNodeKey, Vec<GenericSpecializationInstance>>,
+) -> Result<(), SyntaxModuleEmissionError> {
+    let db = input.database();
+    let mut pending = specializations.keys().filter(|key| !present.contains(key)).copied().collect::<Vec<_>>();
+    while let Some(key) = pending.pop() {
+        if !present.insert(key) {
+            continue;
+        }
+        source_items.push(SyntaxModuleItem {
+            key,
+            symbol: syntax_item_symbol(input, key)
+                .ok_or_else(|| emission_verification("specialization declaration symbol is unavailable"))?,
+        });
+        if is_concrete_executable_item(db, key)? {
+            collect_generic_call_specializations(db, key, specializations)?;
+        }
+        pending.extend(
+            beskid_queries::direct_callees(db, key)
+                .map_err(|error| emission_verification(error.to_string()))?
+                .into_iter()
+                .flat_map(|callees| callees.iter().copied().collect::<Vec<_>>()),
+        );
+        pending.extend(specializations.keys().filter(|key| !present.contains(key)).copied());
+    }
+    Ok(())
 }
 
 /// Return true only for a declaration body with a declaration-level, non-generic ABI.

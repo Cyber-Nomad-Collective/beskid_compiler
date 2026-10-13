@@ -91,3 +91,49 @@ pub(super) fn emit_compiled_shape_bridge(
     }
     Ok(None)
 }
+
+/// The compiler-issued body of a `FieldDecoderBridge<T,R>` instance: forward the reader and limits
+/// unchanged to the exact issued field read of T. The forwarded function is selected only by the
+/// field decoder correspondence of the `ReadField<T,R>` instance that calls this bridge.
+pub(super) fn emit_field_decoder_bridge(
+    input: &CodegenInput<'_>, isa: &dyn TargetIsa, item: &ResolvedSyntaxModuleItem,
+    items: &[ResolvedSyntaxModuleItem], symbols: &HashMap<DirectCallee, String>,
+) -> Result<Option<Function>, SyntaxModuleEmissionError> {
+    let Some(instance) = item.specialization.as_ref() else { return Ok(None) };
+    let db = input.database();
+    for requested in items.iter().filter_map(|item| item.specialization.as_ref()) {
+        let Some(bridge) = beskid_queries::serialization_field_decoder_bridge(db, requested)
+            .map_err(|error| emission_verification(error.to_string()))? else { continue };
+        if &bridge != instance { continue }
+        let binding = beskid_queries::serialization_field_decoder_binding(db, input.typed_program(), requested)
+            .map_err(|error| emission_verification(error.to_string()))?
+            .ok_or_else(|| emission_verification("field decoder bridge lacks its correspondence"))?;
+        let target = binding.target();
+        let symbol = symbols
+            .get(&DirectCallee::specialized_item(target.declaration, beskid_queries::generic_specialization_identity(target)))
+            .ok_or_else(|| emission_verification("issued field read was not emitted"))?;
+        let signature = crate::isle_adapter::mappings::signature_for_item(isa, instance.signature.clone())
+            .ok_or_else(|| emission_verification("field decoder bridge ABI unavailable"))?;
+        let mut function = Function::new();
+        function.signature = signature.clone();
+        let mut context = FunctionBuilderContext::new();
+        {
+            let mut builder = FunctionBuilder::new(&mut function, &mut context);
+            let entry = builder.create_block();
+            builder.append_block_params_for_function_params(entry);
+            builder.switch_to_block(entry);
+            builder.seal_block(entry);
+            let arguments = builder.block_params(entry).to_vec();
+            let signature = builder.import_signature(signature);
+            let callee = builder.func.import_function(ExtFuncData {
+                name: ExternalName::testcase(symbol), signature, colocated: false, patchable: false,
+            });
+            let call = builder.ins().call(callee, &arguments);
+            let results = builder.inst_results(call).to_vec();
+            builder.ins().return_(&results);
+            builder.finalize(isa.frontend_config());
+        }
+        return Ok(Some(function));
+    }
+    Ok(None)
+}

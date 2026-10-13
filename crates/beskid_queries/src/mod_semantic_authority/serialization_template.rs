@@ -48,7 +48,11 @@ impl CompiledSerializationTemplate {
     }
     /// Current owner declaration of this template and the exact appended
     /// contribution. Original source/package provenance must be unchanged.
-    fn current_owner(&self, db: &dyn Db, program: &crate::TypedProgram) -> Result<AstNodeKey, ModSemanticError> {
+    pub(super) fn current_owner(
+        &self,
+        db: &dyn Db,
+        program: &crate::TypedProgram,
+    ) -> Result<AstNodeKey, ModSemanticError> {
         let reject = ModSemanticQueryAuthority::error;
         if program.project != self.project {
             return Err(reject("foreign template project"));

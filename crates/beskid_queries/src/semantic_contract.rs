@@ -278,3 +278,7 @@ pub(crate) use contracts::{serialization_contribution_receiver_arguments, serial
 
 mod serialization_shape;
 pub use serialization_shape::{SerializationShapeBinding, serialization_shape_binding};
+mod serialization_field_decoder;
+pub use serialization_field_decoder::{
+    SerializationFieldDecoderBinding, serialization_field_decoder_binding, serialization_field_decoder_bridge,
+};

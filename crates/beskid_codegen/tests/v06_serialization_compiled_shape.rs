@@ -563,3 +563,148 @@ fn generic_target_template_rebinds_per_concrete_instance() {
     let foreign = beskid_queries::GenericSpecializationInstance { declaration: main, ..instance.clone() };
     assert!(beskid_queries::serialization_template_instance_rebind(db, &typed, &foreign).unwrap().is_none());
 }
+
+/// Typed field decoder factory correspondence: a retained Counter decoder group with its field
+/// decoder factory `ReadCounter<R>`, one decoy member with the wrong arity and one with the wrong
+/// output. `ReadField<Counter, Wire>` must issue exactly `ReadCounter<Wire>`, selected by its
+/// resolved signature and admitted through the group's target correspondence.
+fn field_decoder_fixture(factory_output: &str) -> Result<String, String> {
+    let mut db = BeskidDatabase::default();
+    let directory = tempfile::tempdir().unwrap();
+    let user_root = directory.path().join("User");
+    std::fs::create_dir(&user_root).unwrap();
+    let path = user_root.join("Main.bd");
+    let source = "use Core.Serialization.Contracts; use Core.Serialization.Errors; use Core.Serialization.Limits; use Core.Serialization.Metadata; use Core.Serialization.Reader; use Core.Results; pub type Counter { pub i32 value, } pub type Wire : Reader { pub SourceLocation Location() { return SourceLocation { path: \"wire\", start: 0_i64, end: 0_i64 }; } pub Result<unit, SerializationError> Begin(SerializationLimits limits) { return Result::Error(Errors.NumericError(\"wire\")); } pub Result<unit, SerializationError> Finish() { return Result::Error(Errors.NumericError(\"wire\")); } pub Result<unit, SerializationError> ReadUnit() { return Result::Error(Errors.NumericError(\"wire\")); } pub Result<bool, SerializationError> ReadBoolean() { return Result::Error(Errors.NumericError(\"wire\")); } pub Result<i64, SerializationError> ReadSigned(u8 width) { return Result::Error(Errors.NumericError(\"wire\")); } pub Result<u64, SerializationError> ReadUnsigned(u8 width) { return Result::Error(Errors.NumericError(\"wire\")); } pub Result<u64, SerializationError> ReadFloat(u8 width) { return Result::Error(Errors.NumericError(\"wire\")); } pub Result<char, SerializationError> ReadScalar() { return Result::Error(Errors.NumericError(\"wire\")); } pub Result<string, SerializationError> ReadString() { return Result::Error(Errors.NumericError(\"wire\")); } pub Result<u8[], SerializationError> ReadBytes() { return Result::Error(Errors.NumericError(\"wire\")); } pub Result<i64, SerializationError> BeginRecord(Metadata.ShapeId shape) { return Result::Error(Errors.NumericError(\"wire\")); } pub Result<string, SerializationError> BeginField() { return Result::Error(Errors.NumericError(\"wire\")); } pub Result<unit, SerializationError> EndField() { return Result::Error(Errors.NumericError(\"wire\")); } pub Result<unit, SerializationError> EndRecord() { return Result::Error(Errors.NumericError(\"wire\")); } pub Result<i64, SerializationError> BeginSequence() { return Result::Error(Errors.NumericError(\"wire\")); } pub Result<unit, SerializationError> EndSequence() { return Result::Error(Errors.NumericError(\"wire\")); } pub Result<i64, SerializationError> BeginMap() { return Result::Error(Errors.NumericError(\"wire\")); } pub Result<string, SerializationError> BeginMapEntry() { return Result::Error(Errors.NumericError(\"wire\")); } pub Result<unit, SerializationError> EndMapEntry() { return Result::Error(Errors.NumericError(\"wire\")); } pub Result<unit, SerializationError> EndMap() { return Result::Error(Errors.NumericError(\"wire\")); } pub Result<string, SerializationError> BeginVariant(Metadata.ShapeId shape) { return Result::Error(Errors.NumericError(\"wire\")); } pub Result<i64, SerializationError> VariantCount() { return Result::Error(Errors.NumericError(\"wire\")); } pub Result<unit, SerializationError> EndVariant() { return Result::Error(Errors.NumericError(\"wire\")); } pub Result<bool, SerializationError> BeginOptional() { return Result::Error(Errors.NumericError(\"wire\")); } pub Result<unit, SerializationError> EndOptional() { return Result::Error(Errors.NumericError(\"wire\")); } } pub Result<Counter, SerializationError> Use(Wire wire, SerializationLimits limits) { return Core.Serialization.Reader.ReadField<Counter, Wire>(wire, limits); } pub unit Main() { return; }";
+    std::fs::write(&path, source).unwrap();
+    let manifest_path = directory.path().join("Host.bproj");
+    std::fs::write(&manifest_path, "Host { name = \"Host\" version = \"1.0.0\" root = \"User\" } target \"Main\" { kind = Lib entry = \"Main.bd\" }").unwrap();
+    let plan = CompilePlan {
+        project_root: directory.path().into(),
+        manifest_path,
+        project_name: "Host".into(),
+        source_root: user_root,
+        target: Target { name: "Main".into(), kind: TargetKind::Lib, entry: Some("Main.bd".into()) },
+        dependency_projects: vec![],
+        unresolved_dependencies: vec![],
+        has_core_dependency: false,
+    };
+    let prepared = prepare_project_workspace(&plan).unwrap();
+    let generation = SyntaxGenerationId(130);
+    let (base, _) = canonical_runtime_test_assembly(&mut db, directory.path(), generation);
+    let mut units = base.units.as_ref().clone();
+    for canonical in canonical_corelib_service_sources() {
+        let identity = beskid_abi::runtime_source::corelib_service_source_identity(&canonical.logical_path)
+            .expect("canonical service has a compiler-owned source identity");
+        units.retain(|unit| unit.logical_name != canonical.logical_path);
+        units.push(SourceUnit {
+            logical_name: canonical.logical_path,
+            origin_path: identity.declared_path,
+            path: identity.canonical_path,
+            program: parse_program_with_source_name("canonical-corelib", &canonical.source).unwrap(),
+            source: canonical.source,
+        });
+    }
+    units.push(SourceUnit {
+        logical_name: "User.Main".into(),
+        origin_path: path.clone(),
+        path: path.clone(),
+        source: source.into(),
+        program: parse_program_with_source_name("User.Main", source).unwrap(),
+    });
+    let entry_index = units.len() - 1;
+    let mut assembly = ProgramAssembly::new(
+        base.roots.clone(),
+        Arc::new(units),
+        entry_index,
+        base.discovery,
+        base.module_index.clone(),
+        false,
+        generation,
+    );
+    assembly.verified_package_identities = prepared.verified_package_identities;
+    let project =
+        ProjectSession::new(&db, directory.path().into(), path.clone(), "serialization-field-decoder".into(), "canonical".into());
+    build_typed_program_with_corelib_services(&mut db, project, generation, Arc::new(assembly.clone()), linux_capability())
+        .unwrap();
+    let owner = AstNodeKey {
+        unit: SourceUnitId::new(&db, path.clone()),
+        generation,
+        node: assembly.entry_syntax_index().ids_of_kind(NodeKind::TypeDefinition).next().unwrap(),
+    };
+    let group = format!(
+        "impl<R> Adapter<R> : Decoder<Counter> where R: Reader {{ pub Result<Counter, SerializationError> ReadTyped(SerializationLimits limits) {{ return Result::Error(Errors.NumericError(\"fixture\")); }} }} \
+         pub type Adapter<R> {{ R reader, }} \
+         pub Result<{factory_output}, SerializationError> ReadCounter<R>(R reader, SerializationLimits limits) where R: Reader {{ return Result::Error(Errors.NumericError(\"fixture\")); }} \
+         pub Result<Counter, SerializationError> ReadWithoutLimits<R>(R reader) where R: Reader {{ return Result::Error(Errors.NumericError(\"fixture\")); }}"
+    );
+    let items = parse_program_with_source_name("generated", &group).unwrap().node.items;
+    let contribution = items[0].clone();
+    let members = items[1..]
+        .iter()
+        .enumerate()
+        .map(|(index, item)| ModContributionMember { contribution_index: index as u32 + 1, item: item.clone() })
+        .collect::<Vec<_>>();
+    let carrier = {
+        let authority = ModSemanticQueryAuthority::for_registered_assembly(&db, project, &assembly).unwrap();
+        let handle = authority.resolve_type(owner).unwrap();
+        authority.compile_serialization_target(992, 0, handle, &contribution, &members).unwrap()
+    };
+    let mut units = assembly.units.as_ref().clone();
+    units[assembly.entry_index].program.node.items.extend(items.iter().cloned());
+    let mut next = ProgramAssembly::new(
+        assembly.roots.clone(),
+        Arc::new(units),
+        assembly.entry_index,
+        assembly.discovery,
+        assembly.module_index.clone(),
+        false,
+        SyntaxGenerationId(131),
+    );
+    next.verified_package_identities = assembly.verified_package_identities.clone();
+    next.compiled_mod_metadata.push(carrier);
+    let typed = build_typed_program_with_corelib_services(&mut db, project, next.generation, Arc::new(next), linux_capability())
+        .unwrap();
+    let entry = SourceUnitId::new(&db, path.clone());
+    let mut instances = Vec::new();
+    let mut seen = Vec::new();
+    for node in typed.assembly.entry_syntax_index().ids_of_kind(NodeKind::CallExpression) {
+        let key = AstNodeKey { unit: entry, generation: typed.generation, node };
+        match beskid_queries::generic_call_specialization(&db, key) {
+            Ok(Some(call)) => match beskid_queries::generic_call_specialization_instance(&db, call) {
+                Ok(Some(instance)) => {
+                    let name = item_name(&db, instance.declaration).ok().flatten();
+                    seen.push(format!("{node:?}: {name:?}"));
+                    if name.as_deref() == Some("ReadField") {
+                        instances.push(instance);
+                    }
+                }
+                other => seen.push(format!("{node:?}: instance {other:?}")),
+            },
+            other => seen.push(format!("{node:?}: call {other:?}")),
+        }
+    }
+    let [read_field] = instances.as_slice() else { panic!("one ReadField<Counter, Wire> call: {seen:#?}") };
+    let bridge = beskid_queries::serialization_field_decoder_bridge(&db, read_field)
+        .map_err(|error| error.to_string())?
+        .expect("the canonical ReadField has one bridge call");
+    let binding = beskid_queries::serialization_field_decoder_binding(&db, &typed, read_field)
+        .map_err(|error| error.to_string())?
+        .expect("the canonical ReadField issues a field read");
+    assert_eq!(binding.instance(), &bridge, "the issued body belongs to the ReadField bridge call");
+    assert_eq!(binding.target().signature, bridge.signature, "the issued read has the bridge ABI");
+    item_name(&db, binding.target().declaration)
+        .map_err(|error| error.to_string())?
+        .map(|name| name.to_string())
+        .ok_or_else(|| "issued read has no name".into())
+}
+
+#[test]
+fn field_decoder_correspondence_issues_the_generated_factory_by_signature() {
+    assert_eq!(field_decoder_fixture("Counter").unwrap(), "ReadCounter");
+}
+
+#[test]
+fn field_decoder_correspondence_rejects_a_factory_with_another_output() {
+    let error = field_decoder_fixture("i32").expect_err("a factory for another output cannot decode Counter");
+    assert!(error.contains("no admitted field decoder factory"), "{error}");
+}
