@@ -25,13 +25,6 @@ const SDK_MOD_CONTRACTS: &[SdkContractSpec] = &[
     SdkContractSpec { contract_id: "Beskid.Compiler.Collect.Analyzer", entry_method: "Analyze" },
     SdkContractSpec { contract_id: "Beskid.Compiler.Collect.Rewriter", entry_method: "Rewrite" },
     SdkContractSpec { contract_id: "Beskid.Compiler.Collect.GrammarGenerator", entry_method: "Generate" },
-    SdkContractSpec { contract_id: "Beskid.Glue.Contracts.TypeMapping", entry_method: "MapType" },
-    SdkContractSpec { contract_id: "Beskid.Glue.Contracts.SymbolEmission", entry_method: "EmitSymbol" },
-    SdkContractSpec { contract_id: "Beskid.Glue.Contracts.LinkArgs", entry_method: "ResolveLinkArgs" },
-    SdkContractSpec { contract_id: "Beskid.Glue.Contracts.SignatureReader", entry_method: "ReadSignatures" },
-    SdkContractSpec { contract_id: "Beskid.Glue.Contracts.SignatureWriter", entry_method: "WriteSignatures" },
-    SdkContractSpec { contract_id: "Beskid.Glue.Contracts.ToolchainProbe", entry_method: "ResolveTool" },
-    SdkContractSpec { contract_id: "Beskid.Glue.Contracts.StdioBridge", entry_method: "GenerateBridge" },
 ];
 
 /// Discover mod SDK contract registrations from resolved type conformances.

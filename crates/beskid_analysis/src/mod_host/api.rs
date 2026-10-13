@@ -311,10 +311,8 @@ pub(super) fn analyze_rewrite_with_invoker(
     } else {
         run_rewriters(program, source, session, &analyzed, None, invoker, pipeline)?
     };
-    let program = super::glue::run_glue(rewrite.program, session, pipeline)?;
-
     Ok(ModHostAnalyzeResult {
-        program,
+        program: rewrite.program,
         analyzer_outcomes,
         rewriter_outcomes: rewrite.outcomes,
         edited_source: rewrite.edited_source,
@@ -527,7 +525,6 @@ dependency "ModA" {
                 beskid_pipeline::phases::MACRO_EXPAND,
                 beskid_pipeline::phases::MOD_ANALYZE,
                 beskid_pipeline::phases::MOD_REWRITE,
-                beskid_pipeline::phases::MOD_GLUE,
             ]
         );
 

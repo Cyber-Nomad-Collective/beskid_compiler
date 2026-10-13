@@ -461,7 +461,7 @@ fn contextual_generic_enum_constructor_assignment_is_not_a_finding() {
     assert!(findings.is_empty(), "{findings:?}");
 }
 
-/// A hub unit that only re-exports child modules (`pub mod Core.Glue.StdioBridge;` in
+/// A hub unit that only re-exports child modules (`pub mod Core.Glue.Envelope;` in
 /// `Core.Glue.Glue`) declares no import the query gate must resolve.
 #[test]
 fn hub_module_declarations_are_not_a_finding() {

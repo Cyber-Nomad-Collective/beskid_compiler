@@ -41,7 +41,7 @@ fn corelib_source_candidates(manifest_dir: &Path) -> [PathBuf; 1] {
 
 /// Representative corelib sources for fast parse smoke (full inventory stays in `layout`).
 pub(super) fn stratified_corelib_parse_samples() -> &'static [&'static str] {
-    &["packages/foundation/src/Core/Results/Results.bd", "packages/console/src/Platform/Terminal.bd", "packages/glue/src/Core/Glue/Glue.bd", "packages/glue/src/Core/Glue/StdioBridge.bd", "packages/glue/src/Core/Glue/Pump.bd", "packages/glue/src/Core/Glue/BinaryCodec.bd", "packages/glue/src/Core/Glue/Envelope.bd", "packages/glue/src/Core/Glue/Session.bd"]
+    &["packages/foundation/src/Core/Results/Results.bd", "packages/console/src/Platform/Terminal.bd", "packages/glue/src/Core/Glue/Glue.bd", "packages/glue/src/Core/Glue/Pump.bd", "packages/glue/src/Core/Glue/BinaryCodec.bd", "packages/glue/src/Core/Glue/Envelope.bd", "packages/glue/src/Core/Glue/Session.bd"]
 }
 
 /// Workspace-relative `.bd` sources that must exist for the split corelib layout.
@@ -107,7 +107,6 @@ pub(super) fn expected_corelib_workspace_sources() -> &'static [&'static str] {
         "packages/foundation/src/Core/Output/Output.bd",
         "packages/foundation/src/Core/Error/Error.bd",
         "packages/foundation/src/Core/Threading/Thread.bd",
-        "packages/foundation/src/Core/Threading/ThreadError.bd",
         "packages/console/src/Console.bd",
         "packages/console/src/Ansi/Escape.bd",
         "packages/console/src/Ansi/Contracts.bd",

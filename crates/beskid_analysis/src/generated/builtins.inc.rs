@@ -268,13 +268,19 @@ define_builtins! {
     &["__str_new"] => {
         symbol: "str_new",
         params: [Ptr, Usize],
-        returns: Ptr,
+        returns: String,
         injected: true,
     },
     &["__str_eq"] => {
         symbol: "str_eq",
         params: [Ptr, Ptr],
         returns: Usize,
+        injected: true,
+    },
+    &["__str_cmp"] => {
+        symbol: "str_cmp",
+        params: [Ptr, Ptr],
+        returns: I64,
         injected: true,
     },
     &["__str_concat"] => {
@@ -289,10 +295,16 @@ define_builtins! {
         returns: Ptr,
         injected: true,
     },
+    &["__str_from_f64_bits"] => {
+        symbol: "str_from_f64_bits",
+        params: [I64],
+        returns: Ptr,
+        injected: true,
+    },
     &["__str_slice"] => {
         symbol: "str_slice",
         params: [Ptr, Usize, Usize],
-        returns: Ptr,
+        returns: String,
         injected: true,
     },
     &["__str_from_bytes_utf8"] => {
@@ -341,7 +353,7 @@ define_builtins! {
     &["__fiber_join_message"] => {
         symbol: "fiber_join_message",
         params: [I64],
-        returns: Ptr,
+        returns: String,
         injected: true,
     },
     &["__fiber_join_error_finish"] => {
@@ -461,7 +473,7 @@ define_builtins! {
     &["__env_get"] => {
         symbol: "env_get",
         params: [Ptr],
-        returns: Ptr,
+        returns: String,
         injected: true,
     },
     &["__env_set"] => {
@@ -473,7 +485,7 @@ define_builtins! {
     &["__env_getcwd"] => {
         symbol: "env_getcwd",
         params: [],
-        returns: Ptr,
+        returns: String,
         injected: true,
     },
     &["__tty_winsize"] => {

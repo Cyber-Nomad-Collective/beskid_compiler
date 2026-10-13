@@ -57,11 +57,6 @@ pub const COMPOSITION_RESOLVE: &str = "composition.resolve";
 pub const MOD_ANALYZE: &str = "mod.analyze";
 /// Run Rewriter contracts after analysis.
 pub const MOD_REWRITE: &str = "mod.rewrite";
-/// Run Beskid.Glue contracts (TypeMapping, SymbolEmission, LinkArgs,
-/// SignatureReader, SignatureWriter, ToolchainProbe, StdioBridge) after
-/// rewriter contracts and before lowering. Glue mods prepare foreign
-/// bindings from the fully rewritten syntax.
-pub const MOD_GLUE: &str = "mod.glue";
 /// Every own unit passed the structural rules and the query gate (instant boundary immediately
 /// before [`LOWER`]).
 pub const LOWER_READY: &str = "lower.ready";
@@ -113,7 +108,6 @@ pub const FULL_BUILD_PHASE_ORDER: &[&str] = &[
     COMPOSITION_RESOLVE,
     MOD_ANALYZE,
     MOD_REWRITE,
-    MOD_GLUE,
     LOWER_READY,
     LOWER,
     CODEGEN_CLIF,
@@ -160,7 +154,6 @@ pub const JIT_RUN_PHASE_ORDER: &[&str] = &[
     COMPOSITION_RESOLVE,
     MOD_ANALYZE,
     MOD_REWRITE,
-    MOD_GLUE,
     LOWER_READY,
     LOWER,
     CODEGEN_CLIF,
@@ -184,7 +177,6 @@ pub const RUN_AOT_PHASE_ORDER: &[&str] = &[
     COMPOSITION_RESOLVE,
     MOD_ANALYZE,
     MOD_REWRITE,
-    MOD_GLUE,
     LOWER_READY,
     LOWER,
     CODEGEN_CLIF,
@@ -213,8 +205,7 @@ mod tests {
         assert!(pos(o, SEMANTIC).unwrap() < pos(o, SEMANTIC_SNAPSHOT).unwrap());
         assert!(pos(o, SEMANTIC_SNAPSHOT).unwrap() < pos(o, MOD_ANALYZE).unwrap());
         assert!(pos(o, MOD_ANALYZE).unwrap() < pos(o, MOD_REWRITE).unwrap());
-        assert!(pos(o, MOD_REWRITE).unwrap() < pos(o, MOD_GLUE).unwrap());
-        assert!(pos(o, MOD_GLUE).unwrap() < pos(o, LOWER_READY).unwrap());
+        assert!(pos(o, MOD_REWRITE).unwrap() < pos(o, LOWER_READY).unwrap());
         assert!(pos(o, LOWER_READY).unwrap() < pos(o, LOWER).unwrap());
         assert!(pos(o, RESOLVE_GRAPH).unwrap() < pos(o, WORKSPACE_GRAPH_CHANGED).unwrap());
         assert!(pos(o, WORKSPACE_GRAPH_CHANGED).unwrap() < pos(o, WORKSPACE_MATERIALIZE).unwrap());
@@ -241,8 +232,7 @@ mod tests {
         assert!(pos(o, MOD_GENERATE).unwrap() < pos(o, SEMANTIC).unwrap());
         assert!(pos(o, SEMANTIC_SNAPSHOT).unwrap() < pos(o, MOD_ANALYZE).unwrap());
         assert!(pos(o, MOD_ANALYZE).unwrap() < pos(o, MOD_REWRITE).unwrap());
-        assert!(pos(o, MOD_REWRITE).unwrap() < pos(o, MOD_GLUE).unwrap());
-        assert!(pos(o, MOD_GLUE).unwrap() < pos(o, LOWER_READY).unwrap());
+        assert!(pos(o, MOD_REWRITE).unwrap() < pos(o, LOWER_READY).unwrap());
         assert!(pos(o, LOWER_READY).unwrap() < pos(o, LOWER).unwrap());
         assert!(pos(o, LOWER).unwrap() < pos(o, CODEGEN_CLIF).unwrap());
     }
@@ -251,8 +241,7 @@ mod tests {
     fn run_aot_orders_aot_tail_after_codegen_clif() {
         let o = RUN_AOT_PHASE_ORDER;
         assert!(pos(o, PARSE).unwrap() < pos(o, MOD_LOAD).unwrap());
-        assert!(pos(o, MOD_REWRITE).unwrap() < pos(o, MOD_GLUE).unwrap());
-        assert!(pos(o, MOD_GLUE).unwrap() < pos(o, LOWER_READY).unwrap());
+        assert!(pos(o, MOD_REWRITE).unwrap() < pos(o, LOWER_READY).unwrap());
         assert!(pos(o, LOWER).unwrap() < pos(o, CODEGEN_CLIF).unwrap());
         assert!(pos(o, CODEGEN_CLIF).unwrap() < pos(o, AOT_EMIT_OBJECT).unwrap());
         assert!(pos(o, AOT_EMIT_OBJECT).unwrap() < pos(o, AOT_RUNTIME).unwrap());
