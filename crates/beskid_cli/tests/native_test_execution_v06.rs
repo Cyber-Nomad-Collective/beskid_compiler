@@ -29,8 +29,14 @@ fn v06_native_tests_isolate_assertion_failure_and_continue_selected_entries() {
         "stdout: {stdout}; stderr: {}",
         String::from_utf8_lossy(&output.stderr)
     );
+    let record: serde_json::Value = serde_json::from_str(stdout.trim())
+        .unwrap_or_else(|error| panic!("stdout is one JSON record ({error}): {stdout}"));
+    assert_eq!(record["schemaVersion"], 1);
+    assert_eq!(record["command"], "test");
+    assert_eq!(record["event"], "result");
+    assert_eq!(record["status"], "failure");
     assert!(
-        stdout.contains("\"passed\": 1") && stdout.contains("\"failed\": 1"),
+        record["summary"]["passed"] == 1 && record["summary"]["failed"] == 1,
         "stdout: {stdout}; stderr: {}",
         String::from_utf8_lossy(&output.stderr)
     );

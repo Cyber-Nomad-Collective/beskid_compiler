@@ -9,7 +9,7 @@
 //! The native test-runner (`beskid test`) and AOT (`beskid build` + run) cases need an installed
 //! exact runtime kit with debug and release profiles; they run when `BESKID_RUNTIME_PREFIX` names
 //! one and are skipped otherwise. Build one with
-//! `beskid runtime-kit build-native-host --prefix <prefix> --profile debug` (and `release`).
+//! `beskid dev runtime-kit build-native-host --prefix <prefix> --profile debug` (and `release`).
 
 use std::fs;
 use std::path::{Path, PathBuf};

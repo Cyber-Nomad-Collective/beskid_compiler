@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use crate::commands::syntax_codegen::{lower_prepared_entrypoint, lower_prepared_module};
+use crate::machine_output::Records;
 use crate::project_args::{LockfilePolicyArgs, ProjectResolveArgs};
 use anyhow::Result;
 use beskid_analysis::projects::{TargetKind, load_manifest_from_path};
@@ -109,6 +110,10 @@ pub struct BuildArgs {
     /// Linker for the Rust owner images of `--backend glue-rust`. Required for that backend.
     #[arg(long, value_name = "PATH")]
     pub linker: Option<PathBuf>,
+
+    /// Print schema-1 newline-delimited JSON records (`diagnostic`, then one `result`) on stdout
+    #[arg(long)]
+    pub json: bool,
 }
 
 /// Backend selected for one `beskid build` invocation, after flag validation.
@@ -119,10 +124,27 @@ enum SelectedBackend {
 
 /// Resolve, lower, emit CLIF, and run the AOT/link pipeline according to `args`.
 pub fn execute(args: BuildArgs) -> Result<()> {
-    match select_backend(&args)? {
-        SelectedBackend::Clif => run_build(args),
-        SelectedBackend::GlueRust(tools) => glue_rust::run(args, tools),
+    if args.json {
+        return Records::new("build").Run(|records| build_selected(args, Some(records)));
     }
+    build_selected(args, None).map(|_| ())
+}
+
+fn build_selected(args: BuildArgs, records: Option<&Records>) -> Result<serde_json::Value> {
+    match select_backend(&args)? {
+        SelectedBackend::Clif => run_build(args, records),
+        SelectedBackend::GlueRust(tools) => glue_rust::run(args, tools, records),
+    }
+}
+
+/// Emit the executable gate's diagnostics as `diagnostic` records before its outcome is applied.
+fn emit_gate_diagnostics(session: &CommandSession, records: Option<&Records>) -> Result<()> {
+    if let Some(records) = records {
+        for diagnostic in session.gate_diagnostics() {
+            records.Diagnostic(&diagnostic)?;
+        }
+    }
+    Ok(())
 }
 
 /// Validate `--backend` and the backend-specific flags before any resolution or external tool.
@@ -184,7 +206,7 @@ fn default_output_path(
     parent.join(file_name)
 }
 
-fn run_build(args: BuildArgs) -> Result<()> {
+fn run_build(args: BuildArgs, records: Option<&Records>) -> Result<serde_json::Value> {
     let resolve_args = resolve_input_args(&args);
     let (mut session, resolved) =
         CommandSession::open_and_resolve(args.plain, PipelineProgressKind::FullBuild, &resolve_args)?;
@@ -204,11 +226,12 @@ fn run_build(args: BuildArgs) -> Result<()> {
         args.lockfile.WorkspaceOptions(),
         Some(session.observer()),
     )?);
-    let prepared = session.executable_gate_prepared(
+    let gated = session.executable_gate_prepared(
         &resolved,
         SemanticGateOptions { finish_prepare_ui: false, prepare_message: "Analysis complete" },
-    )?;
-    let front = prepared.into_executable()?;
+    );
+    emit_gate_diagnostics(&session, records)?;
+    let front = gated?.into_executable()?;
 
     let project_target_kind = resolved.compile_plan.as_ref().map(|plan| plan.target.kind);
 
@@ -269,6 +292,15 @@ fn run_build(args: BuildArgs) -> Result<()> {
         CommandSummary::plain("Build", "Build complete").with_stat("output", output.display().to_string()),
     );
 
+    if records.is_some() {
+        return Ok(serde_json::json!({
+            "backend": "clif",
+            "object": result.object_path,
+            "output": result.final_path,
+            "linkerInvocation": if args.verbose_link { result.linker_invocation } else { None },
+        }));
+    }
+
     if args.plain
         && let Some(plan) = resolved.compile_plan.as_ref()
     {
@@ -281,16 +313,16 @@ fn run_build(args: BuildArgs) -> Result<()> {
 
     println!();
     println!("  object   {}", result.object_path.display());
-    if let Some(final_path) = result.final_path {
+    if let Some(final_path) = &result.final_path {
         println!("  output   {}", final_path.display());
     }
     if args.verbose_link
-        && let Some(cmd) = result.linker_invocation
+        && let Some(cmd) = &result.linker_invocation
     {
         println!("  link     {cmd}");
     }
 
-    Ok(())
+    Ok(serde_json::json!({ "output": result.final_path }))
 }
 
 fn resolve_output_kind(kind: Option<BuildKind>, target_kind: Option<TargetKind>) -> BuildOutputKind {

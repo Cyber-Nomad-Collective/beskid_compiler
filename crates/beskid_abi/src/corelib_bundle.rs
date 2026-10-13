@@ -23,7 +23,7 @@ pub fn corelib_bundle_marker_root(path: &Path) -> Option<PathBuf> {
 }
 
 /// Return the managed Corelib bundle containing `path` only when its marker matches the current
-/// contents of the complete bundle. This is an install-integrity check (doctor, `beskid up`,
+/// contents of the complete bundle. This is an install-integrity check (doctor, `beskid toolchain update`,
 /// shipped prebuilt Mods); it never grants Corelib service authority.
 pub fn verified_corelib_bundle_root(path: &Path) -> Option<PathBuf> {
     verified_corelib_bundle_roots(&[path.to_path_buf()]).into_iter().next().flatten()

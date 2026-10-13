@@ -1,6 +1,6 @@
 //! Gate diagnostics must match `prepare_compilation` for project-backed sources.
 //!
-//! The command gate (`beskid analyze` / `beskid check`: the process-scoped query database) and an
+//! The command gate (`beskid check`: the process-scoped query database) and an
 //! editor-owned query database (the language server's session) run the one query-backed prepare
 //! spine; both must report the same diagnostic codes. Native Mods read syntax through the
 //! registered query authority, which only that spine installs.

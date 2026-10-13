@@ -42,7 +42,7 @@ pub fn mod_host_for(scope: &ModHostScope, resolved: &ResolvedInput) -> ModHost {
 }
 
 /// Project-aware analysis of the file at `path` with the qualified native Mods of its compile plan,
-/// through the same query-backed prepare spine `beskid analyze` runs. Native Mods read syntax
+/// through the same query-backed prepare spine `beskid check` runs. Native Mods read syntax
 /// through the registered query authority, which only that spine installs.
 pub fn analyze_file_with_mods(path: &Path) -> Result<Vec<SemanticDiagnostic>, String> {
     let source = std::fs::read_to_string(path).map_err(|error| format!("read {}: {error}", path.display()))?;

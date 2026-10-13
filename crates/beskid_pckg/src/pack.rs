@@ -58,7 +58,7 @@ impl PackProfile {
 ///
 /// `Auto` reproduces the manifest-driven detection used before the `tool` packageKind landed
 /// (D-TOOL-PCKG-0004). `Tool` forces the tool profile even when the source tree omits
-/// a `.bproj`, which keeps `beskid pckg pack --package-kind tool` usable for CLI-only
+/// a `.bproj`, which keeps `beskid package pack --package-kind tool` usable for CLI-only
 /// tool packages that ship without a normative project manifest.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum PackProfileOverride {
@@ -324,7 +324,7 @@ pub fn prepare_template_pack_entries(entries: &mut Vec<(String, Vec<u8>)>) -> Re
 
 /// Remove generated API docs from tool artifacts (tool profile does not require api.json).
 ///
-/// `api.json` is *optional* for tool packages per platform-spec, but `beskid pckg pack` strips
+/// `api.json` is *optional* for tool packages per platform-spec, but `beskid package pack` strips
 /// any prior generated docs to keep the artifact body lean unless the publisher explicitly opts in.
 pub fn strip_tool_pack_excludes(entries: &mut Vec<(String, Vec<u8>)>) {
     entries.retain(|(name, _)| {

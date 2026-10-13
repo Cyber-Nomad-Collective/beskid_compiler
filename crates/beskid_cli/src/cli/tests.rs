@@ -594,3 +594,88 @@ fn v06_owner_producer_is_explicit_closed_and_has_no_prefix_override() {
         .is_err()
     );
 }
+
+#[test]
+fn v06_run_passes_trailing_program_arguments_unchanged() {
+    let cli = super::app::ParseInvocation([
+        "beskid", "run", "--plain", "--project", "App.bproj", "--", "", "two words", "--dash", "caf\u{e9}", "--json",
+    ])
+    .expect("run with program arguments");
+    let Commands::Run(args) = cli.command else { panic!("expected run") };
+    assert!(!args.json, "`--json` after `--` belongs to the program");
+    assert_eq!(args.program_args, ["", "two words", "--dash", "caf\u{e9}", "--json"].map(std::ffi::OsString::from));
+    let Commands::Run(bare) = Cli::try_parse_from(["beskid", "run"]).unwrap().command else { panic!("expected run") };
+    assert!(bare.program_args.is_empty());
+}
+
+#[test]
+fn v06_run_json_is_a_usage_error_naming_machine_output_commands() {
+    let error = match super::app::ParseInvocation(["beskid", "run", "--json", "--plain"]) {
+        Ok(_) => panic!("run --json parsed"),
+        Err(error) => error,
+    };
+    assert_eq!(error.exit_code(), 2);
+    let text = error.to_string();
+    for command in ["check", "build", "test", "add", "remove", "update", "doctor"] {
+        assert!(text.contains(command), "{command} missing from: {text}");
+    }
+    let help = Cli::command().find_subcommand_mut("run").unwrap().render_long_help().to_string();
+    assert!(!help.contains("--json"), "the rejected flag stays out of run help:\n{help}");
+}
+
+#[test]
+fn v06_cli_owned_commands_accept_json() {
+    for args in [
+        vec!["beskid", "check", "--json", "Main.bd"],
+        vec!["beskid", "build", "--json", "Main.bd"],
+        vec!["beskid", "test", "--json", "Main.bd"],
+        vec!["beskid", "add", "Local", "--path", "../Local", "--json"],
+        vec!["beskid", "remove", "Local", "--json"],
+        vec!["beskid", "update", "Local", "--dry-run", "--json"],
+        vec!["beskid", "doctor", "--json"],
+    ] {
+        let json = match super::app::ParseInvocation(args.clone()).unwrap_or_else(|error| panic!("{args:?}: {error}")).command {
+            Commands::Check(args) => args.json,
+            Commands::Build(args) => args.json,
+            Commands::Test(args) => args.json,
+            Commands::Add(args) => args.policy.json,
+            Commands::Remove(args) => args.policy.json,
+            Commands::Update(args) => args.policy.json,
+            Commands::Doctor(args) => args.json,
+            _ => panic!("{args:?} dispatched elsewhere"),
+        };
+        assert!(json, "{args:?}");
+    }
+}
+
+#[test]
+fn v06_capability_document_lists_version_commands_dev_routes_and_schemas() {
+    let document = super::app::CapabilityDocument();
+    assert_eq!(document["schemaVersion"], 1);
+    assert_eq!(document["cliVersion"], env!("CARGO_PKG_VERSION"));
+    let names = |key: &str| {
+        let mut names: Vec<String> =
+            document[key].as_array().unwrap().iter().map(|value| value.as_str().unwrap().to_owned()).collect();
+        names.sort();
+        names
+    };
+    assert_eq!(
+        names("commands"),
+        ["add", "build", "check", "dev", "doc", "doctor", "fmt", "new", "package", "remove", "run", "test", "toolchain", "update"]
+    );
+    let dev = names("devCommands");
+    for route in ["syntax", "build", "project", "corelib", "runtime-kit", "mod", "import", "lsp", "bsol", "repl", "toolchain-owner", "capabilities"] {
+        assert!(dev.iter().any(|name| name == route), "dev route {route}: {dev:?}");
+    }
+    assert!(!dev.iter().any(|name| name == "native-mod-worker" || name == "help"), "{dev:?}");
+    let schemas = document["outputSchemas"].as_array().unwrap();
+    for command in ["check", "build", "test", "add", "remove", "update", "doctor"] {
+        assert!(
+            schemas.iter().any(|schema| schema["command"] == command && schema["schemaVersion"] == 1 && schema["format"] == "ndjson"),
+            "{command}: {schemas:?}"
+        );
+    }
+    assert!(!schemas.iter().any(|schema| schema["command"] == "run"), "run has no machine output");
+    let line = document.to_string();
+    assert!(!line.contains('\n'), "the document is one line");
+}

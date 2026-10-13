@@ -39,7 +39,7 @@ pub struct TestArgs {
     #[arg(long)]
     pub group: Option<String>,
 
-    /// Print machine-readable JSON summary
+    /// Print one schema-1 JSON `result` record on stdout (target, summary and per-test outcomes)
     #[arg(long)]
     pub json: bool,
 
@@ -358,12 +358,11 @@ pub(crate) fn execute_prepared_target(
     phases.push(phase_record("execute_tests", execute_unix_ms, execute_started, result));
     if emit {
         if args.json {
-            println!(
-                "{}",
-                serde_json::to_string_pretty(&serde_json::json!({
-                    "target": target.name, "summary": summary, "tests": executions,
-                }))?
-            );
+            crate::machine_output::Records::new("test").Emit(
+                "result",
+                if result == TargetResult::Passed { "success" } else { "failure" },
+                serde_json::json!({ "target": target.name, "summary": summary, "tests": executions }),
+            )?;
         } else if tests.is_empty() {
             if compile_fail_target_without_tests {
                 eprintln!(

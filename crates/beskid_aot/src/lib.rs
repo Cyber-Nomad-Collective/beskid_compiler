@@ -39,6 +39,6 @@ pub use prepared_syntax::{
     lower_canonical_runtime_prepared_syntax, lower_prepared_syntax_entrypoint, lower_prepared_syntax_library,
     lower_prepared_syntax_module,
 };
-pub use run::{AotRunRequest, AotRunResult, build_and_run, run_linked_executable};
+pub use run::{AotRunRequest, AotRunResult, CANCELLED_EXIT_CODE, build_and_run, run_linked_executable, run_program};
 
 pub use prepared_syntax::{lower_prepared_native_mod, with_prepared_glue_input};

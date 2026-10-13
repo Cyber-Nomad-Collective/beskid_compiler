@@ -1,6 +1,6 @@
 //! `beskid run` — AOT-compile the resolved program and execute it in a subprocess.
 
-use std::io::{self, Write};
+#![allow(non_snake_case)]
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -9,7 +9,7 @@ use crate::project_args::{LockfilePolicyArgs, ProjectResolveArgs};
 use anyhow::Result;
 use beskid_aot::{
     AotBuildRequest, BuildOutputKind, BuildProfile, ExportPolicy, LinkMode, build, default_runtime_strategy,
-    run_linked_executable,
+    run_program,
 };
 use beskid_engine::link_libraries::{apply_link_libraries, link_libraries_for_artifact};
 use beskid_pipeline::PipelineObserver;
@@ -36,9 +36,29 @@ pub struct RunArgs {
     /// Disable animated progress and graph output
     #[arg(long)]
     pub plain: bool,
+
+    /// Rejected: stdout belongs to the program. Machine output is available from other commands.
+    #[arg(long, hide = true)]
+    pub json: bool,
+
+    /// Arguments passed unchanged to the program, after `--`
+    #[arg(last = true, value_name = "PROGRAM_ARGS")]
+    pub program_args: Vec<std::ffi::OsString>,
 }
 
-/// Resolve, AOT-link, and run `args.entrypoint` in a subprocess with pipeline progress on stderr when enabled.
+/// Usage guidance for `beskid run --json`: the program owns stdout.
+pub fn JsonRejection() -> String {
+    format!(
+        "`beskid run` does not support `--json`: stdout carries only the program's output. \
+         Machine-readable output is available from: {}. Pass program arguments after `--`, \
+         for example `beskid run -- --json`.",
+        crate::machine_output::JsonCommandList()
+    )
+}
+
+/// Resolve and AOT-link the program, then run `args.entrypoint` as the foreground program: progress
+/// stays on stderr and ends before the program starts, the program inherits stdin/stdout/stderr
+/// and receives `args.program_args`, and its exit status becomes this process's exit status.
 pub fn execute(args: RunArgs) -> Result<()> {
     run_build_and_execute(args)
 }
@@ -113,24 +133,17 @@ fn run_build_and_execute(args: RunArgs) -> Result<()> {
     let build_result = build(build_request)?;
     let exe_path = build_result.final_path.unwrap_or(exe_path);
 
-    let run_result = run_linked_executable(&exe_path)?;
+    // Progress ends before the program owns the terminal; the summary follows its exit.
+    session.pipeline().finish_session("Build complete");
+    let exit_code = run_program(&exe_path, &args.program_args);
+    let _ = std::fs::remove_dir_all(&temp_dir);
+    let exit_code = exit_code?;
     session.pipeline().finish_session_with_summary(
         "Run complete",
-        Some(CommandSummary::plain("Run", "Run complete").with_stat("exit", run_result.exit_code.to_string())),
+        Some(CommandSummary::plain("Run", "Run complete").with_stat("exit", exit_code.to_string())),
     );
-
-    if !run_result.stdout.is_empty() {
-        io::stdout().write_all(&run_result.stdout)?;
+    if exit_code != 0 {
+        std::process::exit(exit_code);
     }
-    if !run_result.stderr.is_empty() {
-        io::stderr().write_all(&run_result.stderr)?;
-    }
-
-    let _ = std::fs::remove_dir_all(temp_dir);
-
-    if run_result.exit_code != 0 {
-        std::process::exit(run_result.exit_code);
-    }
-
     Ok(())
 }

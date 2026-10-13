@@ -684,7 +684,12 @@ fn present_report(args: &TestArgs, report: &MatrixReport) -> Result<()> {
     let passed = report.targets.iter().filter(|target| target.result == TargetResult::Passed).count();
     let failed = report.targets.iter().filter(|target| target.result != TargetResult::Passed).count();
     if args.json {
-        println!("{}", serde_json::to_string_pretty(report)?);
+        let complete = passed == report.selected && !report.timed_out && !report.cancelled;
+        crate::machine_output::Records::new("test").Emit(
+            "result",
+            if complete { "success" } else { "failure" },
+            serde_json::to_value(report)?,
+        )?;
     } else {
         eprintln!("\nmatrix: {passed}/{} passed, {failed}/{} failed", report.selected, report.selected);
         eprintln!("release eligible: {}", report.release_eligible);

@@ -763,7 +763,7 @@ fn current_or_built_mod_artifact(
         anyhow::bail!(
             "the installed toolchain at {} ships Corelib Mod `{}` prebuilt, but has no current artifact for this \
              `beskid` ({}), target {} and the {:?} runtime kit; an installed toolchain is never modified, so the \
-             Mod is not built on demand. Reinstall the toolchain (`beskid up`) so the shipped artifact matches its \
+             Mod is not built on demand. Update the toolchain (`beskid toolchain update`) so the shipped artifact matches its \
              CLI, or use the debug runtime kit (unset BESKID_RUNTIME_KIT_PROFILE), which installed toolchains ship",
             prefix.display(),
             cache.package_id,

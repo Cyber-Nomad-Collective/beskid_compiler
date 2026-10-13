@@ -44,6 +44,8 @@ impl Default for SemanticGateOptions {
 pub struct CommandSession {
     mod_host: beskid_analysis::mod_host::ModHost,
     pipeline: Arc<CliPipeline>,
+    /// Diagnostics of the most recent executable gate, kept for machine-readable (`--json`) output.
+    gate_diagnostics: std::sync::Mutex<Vec<SemanticDiagnostic>>,
 }
 
 impl CommandSession {
@@ -53,7 +55,11 @@ impl CommandSession {
     /// [`executable_gate_prepared`] once, then lower or JIT-run. The session starts without a native
     /// Mod host; a command that prepares plans with Mod dependencies calls [`Self::set_mod_host`].
     pub fn with_progress(plain: bool, kind: PipelineProgressKind) -> Self {
-        Self { mod_host: beskid_analysis::mod_host::ModHost::NoMods, pipeline: Arc::new(CliPipeline::new_with_kind(use_cli_spinner(plain), kind)) }
+        Self {
+            mod_host: beskid_analysis::mod_host::ModHost::NoMods,
+            pipeline: Arc::new(CliPipeline::new_with_kind(use_cli_spinner(plain), kind)),
+            gate_diagnostics: std::sync::Mutex::new(Vec::new()),
+        }
     }
 
     /// Run the native Mods of this session's preparations in `mod_host`.
@@ -144,7 +150,14 @@ impl CommandSession {
         Ok(())
     }
 
+    /// Diagnostics reported by the most recent executable gate, including warnings of a passing gate
+    /// and the errors of a failing one.
+    pub fn gate_diagnostics(&self) -> Vec<SemanticDiagnostic> {
+        self.gate_diagnostics.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).clone()
+    }
+
     fn finish_gate(&self, gate_diagnostics: &[SemanticDiagnostic], options: SemanticGateOptions) -> Result<()> {
+        *self.gate_diagnostics.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = gate_diagnostics.to_vec();
         self.pipeline.report_semantic_diagnostics(gate_diagnostics);
         services::require_no_semantic_errors(gate_diagnostics).map_err(anyhow::Error::from)?;
 

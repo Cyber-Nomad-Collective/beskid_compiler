@@ -65,6 +65,9 @@ where
 {
     let args = args.into_iter().map(Into::into).collect::<Vec<std::ffi::OsString>>();
     match Cli::try_parse_from(&args) {
+        Ok(Cli { command: Commands::Run(arguments) }) if arguments.json => {
+            Err(clap::Error::raw(clap::error::ErrorKind::ArgumentConflict, format!("{}\n", run::JsonRejection())))
+        }
         Ok(cli) => Ok(cli),
         Err(error) if error.kind() == clap::error::ErrorKind::InvalidSubcommand => {
             let old = args.get(1).and_then(|arg| arg.to_str());
@@ -176,21 +179,34 @@ fn execute_dev(args: DevArgs) -> anyhow::Result<()> {
         DevCommand::NativeModWorker(args) => beskid_analysis::mod_host::run_native_mod_worker(&args.endpoint),
         DevCommand::ToolchainOwner(args) => crate::commands::toolchain_owner::execute(args),
         DevCommand::Capabilities(_) => {
-            use clap::CommandFactory;
-            let root = Cli::command();
-            let commands = root
-                .get_subcommands()
-                .filter(|command| command.get_name() != "help")
-                .map(|command| command.get_name())
-                .collect::<Vec<_>>();
-            println!(
-                "{}",
-                serde_json::json!({"schemaVersion":1,"cliVersion":env!("CARGO_PKG_VERSION"),"commands":commands,"outputSchemas":[]})
-            );
+            println!("{}", CapabilityDocument());
             Ok(())
         }
     }
 }
+/// Schema-1 capability document: running CLI version, visible root commands, visible `dev` routes
+/// and the `--json` output schemas. Every list derives from the parsed command model.
+pub(crate) fn CapabilityDocument() -> serde_json::Value {
+    use clap::CommandFactory;
+    let root = Cli::command();
+    let visible = |command: &clap::Command| command.get_name() != "help" && !command.is_hide_set();
+    let commands = root.get_subcommands().filter(|command| visible(*command)).map(|command| command.get_name()).collect::<Vec<_>>();
+    let dev_commands = root
+        .find_subcommand("dev")
+        .expect("dev route family")
+        .get_subcommands()
+        .filter(|command| visible(*command))
+        .map(|command| command.get_name())
+        .collect::<Vec<_>>();
+    serde_json::json!({
+        "schemaVersion": 1,
+        "cliVersion": env!("CARGO_PKG_VERSION"),
+        "commands": commands,
+        "devCommands": dev_commands,
+        "outputSchemas": crate::machine_output::SchemaDescriptions(),
+    })
+}
+
 pub(crate) fn execute_pckg(args: PckgArgs) -> anyhow::Result<()> {
     maybe_generate_docs_for_pack(&args).and_then(|_| beskid_pckg::cli::execute(args).map_err(Into::into))
 }

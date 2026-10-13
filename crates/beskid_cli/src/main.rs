@@ -6,6 +6,7 @@
 
 pub mod cli;
 pub mod commands;
+pub mod machine_output;
 pub mod project_args;
 
 fn main() {

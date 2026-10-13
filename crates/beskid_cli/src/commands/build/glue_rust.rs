@@ -40,6 +40,7 @@ use beskid_tools::PipelineProgressKind;
 use beskid_tools::pipeline::tui::CommandSummary;
 use beskid_tools::session::{CommandSession, SemanticGateOptions};
 
+use crate::machine_output::Records;
 use super::{BuildArgs, BuildKind, default_output_path, resolve_input_args};
 
 /// Wall-clock budget for the complete owner and consumer production of one build.
@@ -206,7 +207,7 @@ fn select_owner<'a>(manifest: &'a ProjectManifest, library: &str) -> Option<&'a 
     manifest.glue.iter().find(|owner| owner.library == library)
 }
 
-pub(super) fn run(args: BuildArgs, tools: RustGlueTools) -> Result<()> {
+pub(super) fn run(args: BuildArgs, tools: RustGlueTools, records: Option<&Records>) -> Result<serde_json::Value> {
     let tools = tools.resolve(args.rust_toolchain.is_some())?;
     let resolve_args = resolve_input_args(&args);
     let (mut session, resolved) =
@@ -248,11 +249,12 @@ pub(super) fn run(args: BuildArgs, tools: RustGlueTools) -> Result<()> {
         args.lockfile.WorkspaceOptions(),
         Some(session.observer()),
     )?);
-    let prepared = session.executable_gate_prepared(
+    let gated = session.executable_gate_prepared(
         &resolved,
         SemanticGateOptions { finish_prepare_ui: false, prepare_message: "Analysis complete" },
-    )?;
-    let front = prepared.into_executable()?;
+    );
+    super::emit_gate_diagnostics(&session, records)?;
+    let front = gated?.into_executable()?;
 
     let target = beskid_aot::target::detect_target(args.target_triple.as_deref())?;
     let abi_target = beskid_abi::abi_v5::TargetMetadata::for_triple(&target.triple)
@@ -386,14 +388,23 @@ pub(super) fn run(args: BuildArgs, tools: RustGlueTools) -> Result<()> {
         "Build complete",
         CommandSummary::plain("Build", "Build complete").with_stat("output", output.display().to_string()),
     );
-    println!();
     // The consumer digest is the trust root a host passes to
     // `beskid_aot::api::glue::admit_published_glue_images` (Gate WEB-GLUE03).
-    for image in &images {
-        println!("  output   {}", image.destination.display());
-        println!("  sha256   {}  {}", image.sha256, image.destination.display());
+    if records.is_none() {
+        println!();
+        for image in &images {
+            println!("  output   {}", image.destination.display());
+            println!("  sha256   {}  {}", image.sha256, image.destination.display());
+        }
     }
-    Ok(())
+    Ok(serde_json::json!({
+        "backend": "glue-rust",
+        "output": output,
+        "images": images
+            .iter()
+            .map(|image| serde_json::json!({ "path": image.destination, "sha256": image.sha256 }))
+            .collect::<Vec<_>>(),
+    }))
 }
 
 #[cfg(test)]
