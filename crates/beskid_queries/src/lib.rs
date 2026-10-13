@@ -29,6 +29,7 @@ pub use contribution_attribution::contribution_attributed_unit;
 mod db;
 mod mod_semantic_authority;
 mod mod_semantic_scope;
+pub use mod_semantic_scope::build_mod_authority_typed_program;
 mod mod_syntax_authority;
 pub use mod_semantic_authority::{
     CompiledCatchallBinding, ReboundCatchallBinding, CompiledSerializationTarget, SerializationContributionKind, ModSemanticCatchall, ModSemanticQueryAuthority,

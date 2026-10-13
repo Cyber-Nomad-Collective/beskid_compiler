@@ -126,6 +126,17 @@ pub struct ModHostGenerateResult {
     pub target_fingerprint: String,
     /// `true` when generator execution and disk materialization were skipped.
     pub generators_skipped: bool,
+    /// Origin lineage of every generated item the typed merge appended, in merge order.
+    pub generated_lineage: Vec<GeneratedItemLineage>,
+}
+
+/// One generated item appended by the typed merge. `merged_span` is the synthetic span the
+/// merge issued in the merged entry program; `provenance` is the origin lineage the generator
+/// invocation reported. The origin is lineage only, never a key of the merged generation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GeneratedItemLineage {
+    pub merged_span: crate::syntax::SpanInfo,
+    pub provenance: super::StructuralProvenance,
 }
 
 pub struct ModHostAnalyzeResult {
@@ -152,19 +163,15 @@ pub(crate) struct GeneratedSyntax {
     #[allow(dead_code)]
     pub(crate) registrations: Vec<ContractRegistration>,
     pub(crate) typed_items: Vec<Spanned<ProgramItem>>,
+    /// Origin lineage aligned one-to-one with `typed_items`.
+    pub(crate) provenance: Vec<super::StructuralProvenance>,
     pub(crate) pipeline_ops: Vec<PipelineOp>,
-    /// Legacy text fragments retained only for transitional reparse fallback.
-    pub(crate) text_contributions: Vec<String>,
     pub(crate) outcomes: Vec<GeneratorOutcome>,
 }
 
 impl GeneratedSyntax {
     pub(crate) fn has_typed_merge(&self) -> bool {
         !self.typed_items.is_empty() || !self.pipeline_ops.is_empty()
-    }
-
-    pub(crate) fn requires_reparse(&self) -> bool {
-        !self.text_contributions.is_empty() && !self.has_typed_merge()
     }
 }
 

@@ -47,15 +47,27 @@ typedef struct ModScope {
  const ModHeader *header;
  size_t roots[65536]; size_t root_count,work,bytes;
  int32_t failure;
+ int32_t limit; /* 1 depth, 2 work, 3 bytes: the first transport bound a value exceeded */
+ uint32_t rejected_type; int32_t rejected; /* first adapter type whose value could not be encoded */
  struct ModScope *previous;
 } ModScope;
 static MOD_TLS ModScope *mod_active;
+/* Entry status: which stage failed. Encoding adds the exceeded transport bound (`limit`). */
+#define MOD_STATUS_DECODE 1
+#define MOD_STATUS_INVOKE 2
+#define MOD_STATUS_ENCODE 3
+static int mod_reject(ModScope *s,uint32_t type) {
+ if (s && !s->rejected) { s->rejected=1; s->rejected_type=type; }
+ return 0;
+}
 static int mod_step(ModScope *s,unsigned depth) {
- if (!s || s->failure || depth>128 || s->work>=1048576) return 0;
+ if (!s || s->failure) return 0;
+ if (depth>128) { if(!s->limit) s->limit=1; return 0; }
+ if (s->work>=1048576) { if(!s->limit) s->limit=2; return 0; }
  ++s->work; return 1;
 }
 static int mod_bytes(ModScope *s,size_t count) {
- if (count>16777216 || s->bytes>16777216-count) return 0;
+ if (count>16777216 || s->bytes>16777216-count) { if(!s->limit) s->limit=3; return 0; }
  s->bytes+=count; return 1;
 }
 static int mod_utf8(const uint8_t *p,size_t n) {
@@ -190,7 +202,7 @@ fn emit_scalar_codec(
         )?;
         writeln!(
             encoded,
-            "static int mod_encode_{id}(ModScope*s,ModValue value,unsigned d,uint64_t*out){{*out=0;if(!mod_step(s,d)||!value.pointer)return 0;size_t n={}(value.pointer);const uint8_t*p=NULL;memcpy(&p,(const uint8_t*)value.pointer+{},sizeof(p));if(!mod_bytes(s,n)||!mod_utf8(p,n))return 0;return !s->header->callbacks->new_text(s->header->context,p,n,out)&&*out;}}",
+            "static int mod_encode_{id}(ModScope*s,ModValue value,unsigned d,uint64_t*out){{*out=0;if(!mod_step(s,d))return 0;if(!value.pointer)return mod_reject(s,{id});size_t n={}(value.pointer);const uint8_t*p=NULL;memcpy(&p,(const uint8_t*)value.pointer+{},sizeof(p));if(!mod_bytes(s,n))return 0;if(!mod_utf8(p,n))return mod_reject(s,{id});return !s->header->callbacks->new_text(s->header->context,p,n,out)&&*out;}}",
             plan.runtime.string_length, plan.runtime.string_data_offset
         )?;
         if decode {
@@ -518,7 +530,7 @@ fn emit_aggregate_codec(
             if encode {
                 writeln!(
                     output,
-                    "static int mod_encode_{id}(ModScope*s,ModValue value,unsigned d,uint64_t*out){{*out=0;if(!mod_step(s,d)||!value.pointer)return 0;size_t n=0;void*data=NULL;memcpy(&n,(const uint8_t*)value.pointer+{length_offset},sizeof(n));memcpy(&data,(const uint8_t*)value.pointer+{data_offset},sizeof(data));if(n>1048576||n>SIZE_MAX/{stride}ULL||n>SIZE_MAX/sizeof(uint64_t)||(!data&&n)||!mod_bytes(s,n*sizeof(uint64_t)))return 0;uint64_t*children=n?calloc(n,sizeof(uint64_t)):NULL;if(n&&!children)return 0;int ok=1;for(size_t i=0;i<n;i++){{ModValue child={{0}};memcpy(&child.{slot},(const uint8_t*)data+i*{stride}ULL,sizeof(child.{slot}));if(!mod_encode_{element}(s,child,d+1,&children[i])){{ok=0;break;}}}}if(ok)ok=!s->header->callbacks->new_sequence(s->header->context,{id},children,n,out)&&*out;free(children);return ok;}}"
+                    "static int mod_encode_{id}(ModScope*s,ModValue value,unsigned d,uint64_t*out){{*out=0;if(!mod_step(s,d))return 0;if(!value.pointer)return mod_reject(s,{id});size_t n=0;void*data=NULL;memcpy(&n,(const uint8_t*)value.pointer+{length_offset},sizeof(n));memcpy(&data,(const uint8_t*)value.pointer+{data_offset},sizeof(data));if(n>1048576||n>SIZE_MAX/{stride}ULL||n>SIZE_MAX/sizeof(uint64_t)||(!data&&n)||!mod_bytes(s,n*sizeof(uint64_t)))return 0;uint64_t*children=n?calloc(n,sizeof(uint64_t)):NULL;if(n&&!children)return 0;int ok=1;for(size_t i=0;i<n;i++){{ModValue child={{0}};memcpy(&child.{slot},(const uint8_t*)data+i*{stride}ULL,sizeof(child.{slot}));if(!mod_encode_{element}(s,child,d+1,&children[i])){{ok=0;break;}}}}if(ok)ok=!s->header->callbacks->new_sequence(s->header->context,{id},children,n,out)&&*out;free(children);return ok;}}"
                 )?;
             }
         }
@@ -534,7 +546,7 @@ fn emit_aggregate_codec(
             if encode {
                 writeln!(
                     output,
-                    "static int mod_encode_{id}(ModScope*s,ModValue value,unsigned d,uint64_t*out){{*out=0;if(!mod_step(s,d)||!value.pointer)return 0;"
+                    "static int mod_encode_{id}(ModScope*s,ModValue value,unsigned d,uint64_t*out){{*out=0;if(!mod_step(s,d))return 0;if(!value.pointer)return mod_reject(s,{id});"
                 )?;
                 emit_fields_encode(plan, fields, output)?;
                 writeln!(
@@ -560,7 +572,7 @@ fn emit_aggregate_codec(
             if encode {
                 writeln!(
                     output,
-                    "static int mod_encode_{id}(ModScope*s,ModValue value,unsigned d,uint64_t*out){{*out=0;if(!mod_step(s,d)||!value.pointer)return 0;uint{}_t tag=0;memcpy(&tag,(const uint8_t*)value.pointer+{tag_offset},sizeof(tag));switch(tag){{",
+                    "static int mod_encode_{id}(ModScope*s,ModValue value,unsigned d,uint64_t*out){{*out=0;if(!mod_step(s,d))return 0;if(!value.pointer)return mod_reject(s,{id});uint{}_t tag=0;memcpy(&tag,(const uint8_t*)value.pointer+{tag_offset},sizeof(tag));switch(tag){{",
                     u32::from(*tag_bytes) * 8
                 )?;
                 for (index, variant) in variants.iter().enumerate() {
@@ -572,7 +584,7 @@ fn emit_aggregate_codec(
                         variant.fields.len()
                     )?;
                 }
-                output.push_str("default:return 0;}}\n");
+                writeln!(output, "default:return mod_reject(s,{id});}}}}")?;
             }
         }
     }
@@ -797,7 +809,7 @@ pub(crate) fn emit_native_adapters(plan: &NativeAdapterPlan) -> Result<Vec<u8>> 
         )?;
         writeln!(
             output,
-            "MOD_EXPORT int32_t {}(const ModHeader*h,uint64_t*out){{if(!out)return 1;*out=0;if(!mod_header(h)||mod_active)return 1;ModScope* s=calloc(1,sizeof(*s));if(!s)return 1;s->header=h;s->previous=mod_active;mod_active=s;ModValue request={{0}},mod_factory_input={{0}},result={{0}};if(!mod_decode_{}(s,h->factory_request,0,&mod_factory_input)||!mod_decode_{}(s,h->request,0,&request))goto failed;",
+            "MOD_EXPORT int32_t {}(const ModHeader*h,uint64_t*out){{if(!out)return 1;*out=0;if(!mod_header(h)||mod_active)return 1;ModScope* s=calloc(1,sizeof(*s));if(!s)return 1;s->header=h;s->previous=mod_active;mod_active=s;int32_t status=MOD_STATUS_DECODE;ModValue request={{0}},mod_factory_input={{0}},result={{0}};if(!mod_decode_{}(s,h->factory_request,0,&mod_factory_input)||!mod_decode_{}(s,h->request,0,&request))goto failed;",
             entry.symbol, entry.factory_request_type, entry.request_type
         )?;
         let bootstrap = emit_bootstrap(plan, &entry.factory_receiver, &mut output, &mut 0, 0)?;
@@ -805,7 +817,7 @@ pub(crate) fn emit_native_adapters(plan: &NativeAdapterPlan) -> Result<Vec<u8>> 
             if is_unit(plan, entry.result_type) { String::new() } else { format!("result.{result_slot}=") };
         writeln!(
             output,
-            "void*receiver={}({bootstrap}{factory_argument});if(s->failure||!mod_keep(s,receiver))goto failed;{result_assignment}{}(receiver{request_argument});if(s->failure)goto failed;",
+            "status=MOD_STATUS_INVOKE;void*receiver={}({bootstrap}{factory_argument});if(s->failure||!mod_keep(s,receiver))goto failed;{result_assignment}{}(receiver{request_argument});if(s->failure)goto failed;",
             entry.factory_symbol, entry.method_symbol
         )?;
         if result_slot == "pointer" {
@@ -813,7 +825,7 @@ pub(crate) fn emit_native_adapters(plan: &NativeAdapterPlan) -> Result<Vec<u8>> 
         }
         writeln!(
             output,
-            "if(!mod_encode_{}(s,result,0,out)||s->failure)goto failed;mod_active=s->previous;mod_drop(s);free(s);return 0;failed:*out=0;mod_active=s->previous;mod_drop(s);free(s);return 1;}}",
+            "status=MOD_STATUS_ENCODE;if(!mod_encode_{}(s,result,0,out)||s->failure)goto failed;mod_active=s->previous;mod_drop(s);free(s);return 0;failed:*out=0;if(s->limit)status=MOD_STATUS_ENCODE+s->limit;else if(status==MOD_STATUS_ENCODE&&s->rejected)*out=(uint64_t)s->rejected_type+1;mod_active=s->previous;mod_drop(s);free(s);return status;}}",
             entry.result_type
         )?;
     }
@@ -1048,6 +1060,87 @@ int main(void){
             .unwrap();
         assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
         assert!(std::process::Command::new(executable).status().unwrap().success());
+    }
+    /// The canonical enum object stores an `i32` tag and packs a narrow scalar payload into the
+    /// bytes right after it (`scalar_payload_object_layout`). Every variant must round-trip with the
+    /// tag read at its exact width; a pointer-wide tag read would include the payload byte and
+    /// reject `Flag(true)` as an unknown variant (the former `Literal::Bool` transport failure).
+    #[test]
+    fn enum_tag_is_read_at_its_width_beside_a_packed_scalar_payload() {
+        let mut plan = fixture();
+        plan.types = vec![
+            NativeAdapterType { id: 0, name: "bool".into(), kind: NativeAdapterKind::Scalar(SemanticTypeId::BOOL) },
+            NativeAdapterType { id: 1, name: "i64".into(), kind: NativeAdapterKind::Scalar(SemanticTypeId::I64) },
+            NativeAdapterType {
+                id: 2,
+                name: "Literal".into(),
+                kind: NativeAdapterKind::Enum {
+                    tag_offset: 16,
+                    tag_bytes: 4,
+                    variants: vec![
+                        NativeAdapterVariant {
+                            name: "Count".into(),
+                            tag: 0,
+                            fields: vec![NativeAdapterField { name: "payload".into(), type_id: 1, offset: 24 }],
+                        },
+                        NativeAdapterVariant {
+                            name: "Flag".into(),
+                            tag: 1,
+                            fields: vec![NativeAdapterField { name: "payload".into(), type_id: 0, offset: 20 }],
+                        },
+                        NativeAdapterVariant { name: "Unit".into(), tag: 2, fields: vec![] },
+                    ],
+                },
+            },
+        ];
+        plan.constructors.clear();
+        plan.entries.clear();
+        plan.callbacks.clear();
+        let mut source = codec_fixture_source(&plan, &[], &[2]);
+        source.push_str(
+            r#"
+size_t gc_root_handle(void*p){return (size_t)p;}
+void gc_unroot_handle(size_t p){(void)p;}
+static uint64_t scalar_bits;static uint32_t scalar_kind,variant_ordinal;static size_t variant_children;
+static int32_t scalar_builder(void*c,uint32_t kind,uint64_t bits,uint64_t*out){(void)c;scalar_kind=kind;scalar_bits=bits;*out=7;return 0;}
+static int32_t variant_builder(void*c,uint32_t type,uint32_t ordinal,const uint64_t*children,size_t n,uint64_t*out){
+ (void)c;if(type!=2||(n&&children[0]!=7))return 1;variant_ordinal=ordinal;variant_children=n;*out=9;return 0;
+}
+static int encode(uint8_t*object,uint64_t*output){
+ ModCallbacks callbacks={0};callbacks.new_scalar=scalar_builder;callbacks.new_variant=variant_builder;
+ ModHeader header={0};header.callbacks=&callbacks;ModScope scope={0};scope.header=&header;
+ ModValue value={0};value.pointer=object;return mod_encode_2(&scope,value,0,output);
+}
+int main(void){
+ uint64_t output=0;uint32_t tag;
+ for(uint8_t flag=0;flag<2;flag++){
+  uint8_t object[32]={0};tag=1;memcpy(object+16,&tag,sizeof(tag));object[20]=flag;
+  if(!encode(object,&output)||output!=9||variant_ordinal!=1||variant_children!=1||scalar_kind!=1||scalar_bits!=flag)return 1+flag;
+ }
+ uint8_t count[32]={0};tag=0;memcpy(count+16,&tag,sizeof(tag));int64_t value=-5;memcpy(count+24,&value,sizeof(value));
+ if(!encode(count,&output)||variant_ordinal!=0||scalar_kind!=2||scalar_bits!=(uint64_t)value)return 3;
+ uint8_t unit[32]={0};tag=2;memcpy(unit+16,&tag,sizeof(tag));
+ if(!encode(unit,&output)||variant_ordinal!=2||variant_children!=0)return 4;
+ uint8_t unknown[32]={0};tag=3;memcpy(unknown+16,&tag,sizeof(tag));
+ if(encode(unknown,&output))return 5;
+ return 0;
+}
+"#,
+        );
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("enum.c");
+        let executable = dir.path().join("enum");
+        std::fs::write(&path, source).unwrap();
+        let result = std::process::Command::new("clang")
+            .args(["-std=c11", "-O2"])
+            .arg(path)
+            .arg("-o")
+            .arg(&executable)
+            .output()
+            .unwrap();
+        assert!(result.status.success(), "{}", String::from_utf8_lossy(&result.stderr));
+        let status = std::process::Command::new(executable).status().unwrap();
+        assert!(status.success(), "every enum variant must round-trip with an i32 tag: {status}");
     }
     #[test]
     fn symbols_cannot_inject_c_source() {

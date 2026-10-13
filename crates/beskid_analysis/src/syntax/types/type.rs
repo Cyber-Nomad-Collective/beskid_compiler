@@ -225,6 +225,39 @@ mod tests {
         parse_program(&formatted).expect("formatted associated types should reparse");
     }
 
+    /// Every nesting level parses its generic argument once. Under the former alternation each
+    /// level re-parsed its argument per alternative, which never finished for this input.
+    #[test]
+    fn deeply_nested_generic_arguments_parse_in_linear_time() {
+        let (sender, receiver) = std::sync::mpsc::channel();
+        std::thread::Builder::new()
+            .stack_size(256 * 1024 * 1024)
+            .spawn(move || {
+                let source = (0..200).fold("i32".to_owned(), |inner, _| format!("Wrap<{inner}>"));
+                let mut ty = parse_type(&source);
+                let mut depth = 0;
+                loop {
+                    let next = match &ty.node {
+                        Type::Complex(path) => {
+                            let [segment] = path.node.segments.as_slice() else { panic!("one segment per level") };
+                            let [argument] = segment.node.type_args.as_slice() else { panic!("one argument per level") };
+                            argument.clone()
+                        }
+                        _ => break,
+                    };
+                    ty = next;
+                    depth += 1;
+                }
+                assert!(matches!(ty.node, Type::Primitive(_)));
+                let _ = sender.send(depth);
+            })
+            .expect("parser thread");
+        let depth = receiver
+            .recv_timeout(std::time::Duration::from_secs(30))
+            .expect("a 200-deep generic type must parse in bounded time");
+        assert_eq!(depth, 200);
+    }
+
     fn parse_type(source: &str) -> Spanned<Type> {
         let pair = BeskidParser::parse(Rule::BeskidType, source)
             .expect("Beskid type should parse")

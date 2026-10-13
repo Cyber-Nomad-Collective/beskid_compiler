@@ -15,7 +15,11 @@ pub struct ModCompilation {
     pub active_project_name: String,
     pub active_project_root: String,
     pub target_triple: String,
-    pub syntax_generation_id: u64,
+    /// Actual assembly generation the invocation observes. Absent authority stays absent: it is
+    /// never encoded as generation zero, and native transport replaces the field with the
+    /// generation its issued semantic session owns.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub syntax_generation_id: Option<u64>,
     pub entry_source_path: String,
     pub entry_source_name: String,
     #[serde(skip)]
@@ -84,7 +88,7 @@ impl ModInvocationContext {
             active_project_name: input.compile_plan.map(|p| p.project_name.clone()).unwrap_or_default(),
             active_project_root: input.compile_plan.map(|p| path(&p.project_root)).unwrap_or_default(),
             target_triple: descriptor.map(|d| d.target_triple.clone()).unwrap_or_default(),
-            syntax_generation_id: input.syntax_generation_id.map_or(0, |g| g.0),
+            syntax_generation_id: input.syntax_generation_id.map(|generation| generation.0),
             entry_source_path: input.source_name.into(),
             entry_source_name: input.source_name.into(),
             entry_source_text: input.source.into(),
@@ -316,7 +320,7 @@ mod generation_authority_tests {
         let mut context = ModInvocationContext::build(&input, &[]);
         let request = context.generation_request(&[]);
         assert_ne!(assembly.generation.0, 0);
-        assert_eq!(request.context.compilation.syntax_generation_id, assembly.generation.0);
+        assert_eq!(request.context.compilation.syntax_generation_id, Some(assembly.generation.0));
     }
 }
 
@@ -335,5 +339,10 @@ mod owned_transport_tests {
         let wire = serde_json::to_value(&request).unwrap();
         assert_eq!(wire["context"]["compilation"]["entrySourceName"], "Owned.bd");
         assert!(wire["context"]["compilation"].get("entrySourceText").is_none());
+        assert_eq!(request.context.compilation.syntax_generation_id, None);
+        assert!(
+            wire["context"]["compilation"].get("syntaxGenerationId").is_none(),
+            "absent generation authority is never transported as generation zero"
+        );
     }
 }

@@ -248,10 +248,14 @@ fn checked_in_compiler_sdk_emitter_contribution_helpers_exist() {
         .expect("read Emitter.Contribution");
     for needle in [
         "pub GeneratedSyntaxContribution Empty()",
-        "pub GeneratedSyntaxContribution AppendCode(",
-        "pub CodeContribution CodeOutput(",
+        "pub GeneratedSyntaxContribution From(",
+        "pub GeneratedSyntaxContribution AppendItem(",
     ] {
         assert!(contribution.contains(needle), "Emitter.Contribution missing `{needle}`");
+    }
+    // A Generator contributes typed syntax only: no source-text contribution surface remains.
+    for retired in ["CodeContribution", "CodeOutput", "CodeBody", "codeOutputs", "AppendCode"] {
+        assert!(!contribution.contains(retired), "Emitter.Contribution retains text surface `{retired}`");
     }
     parse_program(&contribution).expect("Emitter.Contribution should parse");
 }

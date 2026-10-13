@@ -171,6 +171,26 @@ impl<'a> NativeSemanticSession<'a> {
         }
         result
     }
+    /// A semantic rejection of a valid, current request: the Mod receives it as an error reply
+    /// (its SDK call returns `Result::Error`) and the invocation stays open. Protocol and
+    /// authority violations remain hard errors that close the invocation.
+    fn reply(&mut self, sequence: u64, error: &str) -> Result<Vec<u8>> {
+        self.encode_response(serde_json::json!({"version":2,"sequence":sequence,"error":error}))
+    }
+    fn encode_response(&mut self, response: Value) -> Result<Vec<u8>> {
+        let bytes = serde_json::to_vec(&response)?;
+        if bytes.len() > RESPONSE_BYTES {
+            bail!("native semantic response exceeds frame bounds");
+        }
+        self.bytes = self
+            .bytes
+            .checked_add(bytes.len())
+            .ok_or_else(|| anyhow::anyhow!("native semantic byte budget exhausted"))?;
+        if self.bytes > TOTAL_BYTES {
+            bail!("native semantic invocation byte budget exhausted");
+        }
+        Ok(bytes)
+    }
     fn handle_frame_inner(&mut self, frame: &[u8]) -> Result<Vec<u8>> {
         if frame.is_empty() || frame.len() > REQUEST_BYTES {
             bail!("native semantic request exceeds frame bounds");
@@ -192,10 +212,16 @@ impl<'a> NativeSemanticSession<'a> {
                 if requested.len() > 64 || requested.iter().any(|name| name.is_empty() || name.len() > 256) {
                     bail!("canonical path selectors exceed bounds");
                 }
-                let paths = self
-                    .authority
-                    .plan_canonical_paths(self.invocation, &reference, &requested)
+                // The issued caller reference is validated first: a foreign, stale or forged
+                // reference is a protocol violation. A current reference whose selectors have no
+                // caller-visible route is a semantic answer the Mod receives as an error reply.
+                self.authority
+                    .syntax_query(self.invocation, &super::ModSyntaxRequest::Span { node: reference.clone() })
                     .map_err(|error| anyhow::anyhow!(error.to_string()))?;
+                let paths = match self.authority.plan_canonical_paths(self.invocation, &reference, &requested) {
+                    Ok(paths) => paths,
+                    Err(error) => return self.reply(request.sequence, &error.to_string()),
+                };
                 if paths.len() != requested.len()
                     || paths.iter().zip(&requested).any(|(path, request)| {
                         path.logical_name != *request
@@ -254,7 +280,7 @@ impl<'a> NativeSemanticSession<'a> {
                     }
                 }
                 if !generic {
-                    bail!("issued syntax reference is not a generic nominal template");
+                    return self.reply(request.sequence, "issued syntax reference is not a generic nominal template");
                 }
                 serde_json::json!({"version":2,"sequence":request.sequence,"template":reference})
             }
@@ -265,7 +291,7 @@ impl<'a> NativeSemanticSession<'a> {
                     .syntax_query(self.invocation, &super::ModSyntaxRequest::Span { node: reference.clone() })
                     .map_err(|error| anyhow::anyhow!(error.to_string()))?;
                 let super::ModSyntaxResponse::Span(Some(span)) = response else {
-                    bail!("issued syntax reference has no canonical declaration span");
+                    return self.reply(request.sequence, "issued syntax reference has no canonical declaration span");
                 };
                 let mut nominal = false;
                 for kind in
@@ -284,14 +310,15 @@ impl<'a> NativeSemanticSession<'a> {
                             .and_then(serde_json::Value::as_array)
                             .ok_or_else(|| anyhow::anyhow!("canonical nominal projection has no generic metadata"))?;
                         if !generics.is_empty() {
-                            bail!("unapplied generic declaration requires template authority");
+                            return self
+                                .reply(request.sequence, "unapplied generic declaration requires template authority");
                         }
                         nominal = true;
                         break;
                     }
                 }
                 if !nominal {
-                    bail!("issued syntax reference is not a concrete nominal declaration");
+                    return self.reply(request.sequence, "issued syntax reference is not a concrete nominal declaration");
                 }
                 let declaration = ModSemanticDeclaration {
                     source_unit: reference.source_unit,
@@ -380,18 +407,7 @@ impl<'a> NativeSemanticSession<'a> {
                 Err(error) => serde_json::json!({"version":2,"sequence":request.sequence,"error":error.to_string()}),
             },
         };
-        let bytes = serde_json::to_vec(&response)?;
-        if bytes.len() > RESPONSE_BYTES {
-            bail!("native semantic response exceeds frame bounds");
-        }
-        self.bytes = self
-            .bytes
-            .checked_add(bytes.len())
-            .ok_or_else(|| anyhow::anyhow!("native semantic byte budget exhausted"))?;
-        if self.bytes > TOTAL_BYTES {
-            bail!("native semantic invocation byte budget exhausted");
-        }
-        Ok(bytes)
+        self.encode_response(response)
     }
 }
 /// A function route is a short identifier path; it is never a filesystem or symbol string.
@@ -640,8 +656,24 @@ mod tests {
         let frame = serde_json::to_vec(&serde_json::json!({"version":2,"invocation":session.invocation(),"sequence":2,
             "operation":{"kind":"ResolveSyntaxType","reference":reference}}))
         .unwrap();
-        assert!(session.handle_frame(&frame).unwrap_err().to_string().contains("requires template authority"));
+        // An unapplied generic is a semantic rejection of a valid reference: the Mod receives an
+        // error reply and the invocation stays open for its next request.
+        let output: serde_json::Value = serde_json::from_slice(&session.handle_frame(&frame).unwrap()).unwrap();
+        assert!(output["error"].as_str().is_some_and(|error| error.contains("requires template authority")), "{output}");
+        assert!(output.get("handle").is_none());
+        let frame = serde_json::to_vec(&serde_json::json!({"version":2,"invocation":session.invocation(),"sequence":3,
+            "operation":{"kind":"ResolveSyntaxTemplate","reference":reference}}))
+        .unwrap();
+        let output: serde_json::Value = serde_json::from_slice(&session.handle_frame(&frame).unwrap()).unwrap();
+        assert_eq!(output["template"]["node"], 7, "the invocation survives a semantic rejection");
         assert_eq!(authority.semantic_calls.get(), 0);
+        // A forged reference is still a protocol violation that closes the invocation.
+        let forged = serde_json::json!({"source_unit":"Template.bd","invocation_issuer":session.invocation(),"generation":91,"node":8});
+        let frame = serde_json::to_vec(&serde_json::json!({"version":2,"invocation":session.invocation(),"sequence":4,
+            "operation":{"kind":"PlanCanonicalPaths","reference":forged,"requested":["Core.Results.Result"]}}))
+        .unwrap();
+        assert!(session.handle_frame(&frame).is_err());
+        assert!(session.handle_frame(&frame).is_err(), "the invocation is closed after a protocol violation");
     }
     #[test]
     fn v06_function_and_serializable_transport_bounds_routes_and_reports_issuer_denial() {

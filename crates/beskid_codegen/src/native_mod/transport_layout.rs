@@ -172,11 +172,18 @@ impl TransportLayouts {
                                 fields,
                             });
                         }
+                        // The canonical enum object stores its discriminant as an `i32` at
+                        // `tag_offset` (the same field `aggregate_static` emits); scalar payloads
+                        // may occupy the bytes right after it, so the adapter reads exactly the
+                        // tag's width, never a pointer-sized word.
+                        let tag = beskid_queries::SemanticTypeId::I32
+                            .scalar_abi_layout(input.target().pointer_width)
+                            .context("canonical enum tag geometry unavailable")?;
                         (
                             nominal.name().to_owned(),
                             NativeAdapterKind::Enum {
                                 tag_offset: layout.tag_offset,
-                                tag_bytes: 8,
+                                tag_bytes: u8::try_from(tag.size).context("enum tag width")?,
                                 variants: projected,
                             },
                         )

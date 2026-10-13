@@ -9,7 +9,6 @@ pub use activation::{active_mod_manifests, active_mod_manifests_for_input, activ
 mod analyze;
 mod api;
 mod capabilities;
-mod code_string;
 mod collect;
 mod context;
 mod descriptor;
@@ -32,7 +31,6 @@ mod merge;
 mod native;
 mod query_bridge;
 mod registrations;
-mod reparse;
 mod rewrite;
 mod semantic;
 mod semantic_scope;
@@ -59,8 +57,8 @@ pub use emit_bridge::{
     materialize_program_items, materialize_type_definition,
 };
 pub use generate_output::{
-    CodeGenerateOutput, GenerateOutputFile, GenerateOutputLayout, load_generate_output_layout, resolve_generated_path,
-    resolve_package_root, write_code_generate_output, write_typed_generate_output,
+    GenerateOutputFile, GenerateOutputLayout, load_generate_output_layout, resolve_generated_path, resolve_package_root,
+    write_typed_generate_output,
 };
 pub use glue::{GlueAnnotation, GlueAttributeKind, collect_glue_annotations, is_glue_attribute};
 pub use invoker::{
@@ -77,8 +75,8 @@ pub use registrations::{
     extract_mod_contract_registrations, extract_mod_contract_registrations_from_syntax, mod_contract_entry_symbol,
 };
 pub use types::{
-    ContractRegistration, ModArtifactDescriptor, ModHostAnalyzeResult, ModHostGenerateResult, ModHostInput,
-    ModHostSession, ProgramItem,
+    ContractRegistration, GeneratedItemLineage, ModArtifactDescriptor, ModHostAnalyzeResult, ModHostGenerateResult,
+    ModHostInput, ModHostSession, ProgramItem,
 };
 
 pub use structural::{

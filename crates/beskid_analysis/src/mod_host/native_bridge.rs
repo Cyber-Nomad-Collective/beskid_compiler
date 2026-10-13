@@ -54,16 +54,19 @@ fn run_worker<'a>(
         if channel_error.is_none()
             && let Err(error) = channel.poll()
         {
+            // The worker waits for the reply to its request; abort the channel so it exits now
+            // with its own error instead of blocking until the invocation deadline.
+            channel.abort();
             channel_error = Some(error);
         }
         Ok(())
     })?;
     let stderr = String::from_utf8_lossy(&output.stderr);
-    if !output.status.success() {
-        bail!("native Mod worker failed ({}) : {}", output.status, stderr.trim())
-    }
     if let Some(error) = channel_error {
         bail!("native Mod worker channel: {error}; worker exited {} with stderr: {}", output.status, stderr.trim())
+    }
+    if !output.status.success() {
+        bail!("native Mod worker failed ({}) : {}", output.status, stderr.trim())
     }
     // The worker has exited, so every remaining frame is already in the socket buffer: drain it
     // up to the frame budget instead of reading one 8 KiB chunk and declaring the result absent.

@@ -56,7 +56,25 @@ pub(crate) unsafe fn invoke_entry(
         bail!("native contract callback failed: {error}");
     }
     if status != 0 || result == 0 {
-        bail!("native contract failed with status {status} and result {result}");
+        // Stages of the generated CABI2 entry (`beskid_codegen::native_mod::c_codec`).
+        let stage = match status {
+            0 => "returned no result",
+            1 => "request decoding failed",
+            2 => "the contract method failed",
+            3 => "result encoding failed",
+            4 => "result exceeds the transport depth bound 128",
+            5 => "result exceeds the transport work bound 1048576 values",
+            6 => "result exceeds the transport byte bound 16 MiB",
+            _ => "unknown entry status",
+        };
+        // On a plain encoding failure the entry reports the first adapter type whose value it
+        // could not encode (null reference, invalid UTF-8 or unknown variant tag) as `type + 1`.
+        if status == 3 && result != 0 {
+            let rejected = usize::try_from(result - 1).ok().and_then(|id| types.types.get(id));
+            let name = rejected.map_or("<unknown adapter type>", |ty| ty.name.as_str());
+            bail!("native contract failed with status {status} ({stage}): a `{name}` value could not be encoded");
+        }
+        bail!("native contract failed with status {status} ({stage}) and result {result}");
     }
     types.json(&values.arena, result, entry.result_type)
 }

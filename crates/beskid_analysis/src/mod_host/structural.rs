@@ -15,6 +15,7 @@ pub enum StructuralContributionTag {
     TypeDefinition,
     FunctionDefinition,
     ImplBlock,
+    AttributeDeclaration,
 }
 
 /// Only a live arena issues identities. This is an owned token, never an address.
@@ -29,9 +30,13 @@ pub struct StructuralContributionItem {
     pub node: StructuralNodeHandle,
 }
 
+/// Origin lineage of one generated item: the source unit and actual syntax generation the
+/// generator observed, the generator registration that produced the item and the span it
+/// reported. Lineage is retained beside the item; it is never a current registered key.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StructuralProvenance {
     pub source_name: String,
+    pub origin_generation: u64,
     pub generator_type_id: String,
     pub origin_span: SpanInfo,
 }
@@ -128,6 +133,12 @@ impl StructuralContributionArena {
         if provenance.generator_type_id != self.owner {
             return Err(StructuralContributionError::OwnerMismatch);
         }
+        if provenance.origin_generation != self.generation {
+            return Err(StructuralContributionError::GenerationMismatch {
+                expected: self.generation,
+                actual: provenance.origin_generation,
+            });
+        }
         let tag = contribution_tag(&item.node)?;
         let node_count = validate_tree(&item, self.bounds)?;
         let mut state = self.state.lock().map_err(|_| StructuralContributionError::Poisoned)?;
@@ -199,12 +210,44 @@ impl StructuralContributionArena {
     }
 }
 
+/// Admit one generator invocation's typed items through a fresh invocation arena.
+///
+/// Every item is checked against the per-invocation bounds (4096 items, 65536 nodes, depth
+/// 128), receives its origin lineage, and is materialized from issued handles in its original
+/// order before the arena closes. A rejected item publishes nothing: the whole invocation fails.
+pub(crate) fn admit_generated_items(
+    generator_type_id: &str,
+    generation: u64,
+    source_name: &str,
+    items: Vec<Spanned<Node>>,
+) -> Result<Vec<StructuralMaterializedItem>, StructuralContributionError> {
+    let arena = StructuralContributionArena::new(
+        generator_type_id.to_owned(),
+        generation,
+        StructuralContributionBounds::default(),
+    )?;
+    let mut handles = Vec::with_capacity(items.len());
+    for item in items {
+        let provenance = StructuralProvenance {
+            source_name: source_name.to_owned(),
+            origin_generation: generation,
+            generator_type_id: generator_type_id.to_owned(),
+            origin_span: item.span,
+        };
+        handles.push(arena.insert(item, provenance)?);
+    }
+    let materialized = arena.materialize(&handles, generator_type_id, generation);
+    arena.close()?;
+    materialized
+}
+
 fn contribution_tag(node: &Node) -> Result<StructuralContributionTag, StructuralContributionError> {
     match node {
         Node::Function(_) => Ok(StructuralContributionTag::FunctionDefinition),
         Node::TypeDefinition(_) => Ok(StructuralContributionTag::TypeDefinition),
         Node::ContractDefinition(_) => Ok(StructuralContributionTag::ContractDefinition),
         Node::ImplBlock(_) => Ok(StructuralContributionTag::ImplBlock),
+        Node::AttributeDeclaration(_) => Ok(StructuralContributionTag::AttributeDeclaration),
         _ => Err(StructuralContributionError::UnsupportedItem),
     }
 }

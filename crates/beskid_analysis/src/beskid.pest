@@ -296,7 +296,7 @@ GenericParameters = { "<" ~ Identifier ~ ("," ~ Identifier)* ~ ">" }
 GenericArguments = { "<" ~ BeskidType ~ ("," ~ BeskidType)* ~ ">" }
 
 TypeName = { PrimitiveType | Path }
-AssociatedTypeRef = { Path ~ "::" ~ Identifier }
+AssociatedTypeRef = { &(PathScan ~ "::") ~ Path ~ "::" ~ Identifier }
 // Atomic: a non-atomic rule here would let pest's implicit whitespace insertion skip past the
 // word boundary before the lookahead runs, so `!ASCII_ALPHANUMERIC` would test the *next*
 // token's first character (e.g. "This Make()"'s `M`) instead of the character immediately
@@ -304,8 +304,17 @@ AssociatedTypeRef = { Path ~ "::" ~ Identifier }
 // `Identifier`'s own atomic `!Keyword ~ ...` boundary check.
 ThisType = @{ "This" ~ !IdentTail }
 TypeAtom = { AssociatedTypeRef | ThisType | TypeName }
-ArrayType = { TypeAtom ~ "[" ~ "]" }
-FunctionType = { TypeAtom ~ "(" ~ BeskidTypeList? ~ ")" }
+// The guards below decide each alternative with a linear scan before the type atom is parsed.
+// Without them every alternative re-parsed its atom, so each nesting level of `A<B<C<...>>>`
+// was parsed once per alternative: exponential in the nesting depth. The scans accept a
+// superset of type atoms and never produce pairs, so rule structure and spans are unchanged.
+// Scans are silent (no Rule variants, no pairs) and only ever run inside a lookahead.
+TypeAtomScan = _{ ThisType | PrimitiveType | PathScan ~ ("::" ~ Identifier)? }
+PathScan = _{ PathSegmentScan ~ ("." ~ PathSegmentScan)* }
+PathSegmentScan = _{ Identifier ~ GenericArgumentsScan? }
+GenericArgumentsScan = _{ "<" ~ ("=>" | GenericArgumentsScan | ASCII_ALPHANUMERIC | "_" | "," | "." | "(" | ")" | "[" | "]" | ":")* ~ ">" }
+ArrayType = { &(TypeAtomScan ~ "[") ~ TypeAtom ~ "[" ~ "]" }
+FunctionType = { &(TypeAtomScan ~ "(") ~ TypeAtom ~ "(" ~ BeskidTypeList? ~ ")" }
 ArrowFunctionType = { "(" ~ BeskidTypeList? ~ ")" ~ "=>" ~ BeskidType }
 BeskidTypeList = { BeskidType ~ ("," ~ BeskidType)* }
 BeskidType = { ArrowFunctionType | FunctionType | ArrayType | TypeAtom }

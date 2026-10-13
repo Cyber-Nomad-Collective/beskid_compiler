@@ -3,21 +3,59 @@ use anyhow::Result;
 use crate::syntax::{Program, Spanned};
 
 use super::query_bridge::{QueryBounds, SdkNodeRef, SdkSyntaxPipeline, materialize_snapshot};
-use super::types::GeneratedSyntax;
+use super::types::{GeneratedItemLineage, GeneratedSyntax};
 
+/// The merged program together with the lineage of every item the merge appended.
+pub(crate) struct MergedSyntax {
+    pub program: Spanned<Program>,
+    pub lineage: Vec<GeneratedItemLineage>,
+}
+
+/// Append admitted generated items to `program` and apply pipeline operations.
+///
+/// Items and their origin lineage are validated together before anything is appended: the
+/// lineage must align one-to-one with the items and every origin must be the actual syntax
+/// generation this invocation was issued. A mismatch publishes nothing.
 pub(crate) fn merge_generated_syntax(
     program: Spanned<Program>,
     generated: &GeneratedSyntax,
     generation: Option<crate::syntax::SyntaxGenerationId>,
-) -> Result<Spanned<Program>> {
+) -> Result<MergedSyntax> {
     if !generated.has_typed_merge() {
-        return Ok(program);
+        return Ok(MergedSyntax { program, lineage: Vec::new() });
+    }
+    if generated.typed_items.len() != generated.provenance.len() {
+        anyhow::bail!(
+            "generated syntax carries {} items but {} origin lineages",
+            generated.typed_items.len(),
+            generated.provenance.len()
+        );
+    }
+    if !generated.typed_items.is_empty() {
+        let issued = generation
+            .filter(|generation| generation.0 != 0)
+            .ok_or_else(|| anyhow::anyhow!("generated syntax requires actual syntax generation authority"))?;
+        if let Some(foreign) = generated.provenance.iter().find(|origin| origin.origin_generation != issued.0) {
+            anyhow::bail!(
+                "generated item from `{}` originates in generation {}, not the issued generation {}",
+                foreign.generator_type_id,
+                foreign.origin_generation,
+                issued.0
+            );
+        }
     }
 
     let mut merged = program;
+    let mut lineage = Vec::with_capacity(generated.typed_items.len());
     let mut cursor = synthetic_span_origin(&merged);
-    for item in &generated.typed_items {
-        merged.node.items.push(respan_generated_item(item, &mut cursor)?);
+    let mut appended = Vec::with_capacity(generated.typed_items.len());
+    for (item, provenance) in generated.typed_items.iter().zip(&generated.provenance) {
+        let item = respan_generated_item(item, &mut cursor)?;
+        lineage.push(GeneratedItemLineage { merged_span: item.span, provenance: provenance.clone() });
+        appended.push(item);
+    }
+    for item in appended {
+        merged.node.items.push(item);
         merged.node.leading_docs.push(None);
     }
 
@@ -43,7 +81,7 @@ pub(crate) fn merge_generated_syntax(
         }
     }
 
-    Ok(merged)
+    Ok(MergedSyntax { program: merged, lineage })
 }
 
 /// First byte of the synthetic span region: one past every byte the host unit's own syntax
@@ -112,6 +150,57 @@ mod respan_tests {
     use super::*;
     use crate::services::parse_program_with_source_name;
 
+    fn origin(generation: u64, span: crate::syntax::SpanInfo) -> crate::mod_host::StructuralProvenance {
+        crate::mod_host::StructuralProvenance {
+            source_name: "Main.bd".into(),
+            origin_generation: generation,
+            generator_type_id: "Fixture.Generator".into(),
+            origin_span: span,
+        }
+    }
+
+    fn generated_function(source: &str) -> Vec<Spanned<crate::mod_host::types::ProgramItem>> {
+        parse_program_with_source_name("Gen.bd", source).expect("parse generated").node.items
+    }
+
+    /// Lineage is validated with its items before anything is appended: a missing lineage,
+    /// an absent issued generation or a foreign origin generation publish nothing.
+    #[test]
+    fn typed_merge_rejects_unaligned_absent_and_foreign_lineage_atomically() {
+        let host = parse_program_with_source_name("Main.bd", "unit Main() { return; }").expect("parse host");
+        let items = generated_function("pub unit First() { return; }\npub unit Second() { return; }");
+        let issued = Some(crate::syntax::SyntaxGenerationId(7));
+
+        let unaligned = GeneratedSyntax {
+            provenance: vec![origin(7, items[0].span)],
+            typed_items: items.clone(),
+            ..Default::default()
+        };
+        assert!(merge_generated_syntax(host.clone(), &unaligned, issued).is_err());
+
+        let aligned: Vec<_> = items.iter().map(|item| origin(7, item.span)).collect();
+        let complete = GeneratedSyntax { typed_items: items.clone(), provenance: aligned, ..Default::default() };
+        assert!(merge_generated_syntax(host.clone(), &complete, None).is_err(), "absent generation authority");
+        assert!(
+            merge_generated_syntax(host.clone(), &complete, Some(crate::syntax::SyntaxGenerationId(0))).is_err(),
+            "generation zero is not authority"
+        );
+
+        let foreign = GeneratedSyntax {
+            provenance: vec![origin(7, items[0].span), origin(8, items[1].span)],
+            typed_items: items.clone(),
+            ..Default::default()
+        };
+        assert!(merge_generated_syntax(host.clone(), &foreign, issued).is_err());
+
+        let merged = merge_generated_syntax(host.clone(), &complete, issued).expect("aligned lineage merges");
+        assert_eq!(merged.program.node.items.len(), host.node.items.len() + 2);
+        assert_eq!(merged.lineage.len(), 2);
+        assert_eq!(merged.lineage[0].merged_span, merged.program.node.items[1].span);
+        assert_eq!(merged.lineage[1].merged_span, merged.program.node.items[2].span);
+        assert_eq!(merged.lineage[1].provenance.origin_span, items[1].span);
+    }
+
     fn spans(value: &serde_json::Value, out: &mut Vec<(usize, usize)>) {
         match value {
             serde_json::Value::Object(object) => {
@@ -158,10 +247,15 @@ mod respan_tests {
             })
             .collect::<Vec<_>>();
         assert!(generated_items.iter().all(|item| item.span.start == 0 && item.span.end == 0));
-        let generated = GeneratedSyntax { typed_items: generated_items, ..Default::default() };
+        let provenance = generated_items.iter().map(|item| origin(7, item.span)).collect();
+        let generated = GeneratedSyntax { typed_items: generated_items, provenance, ..Default::default() };
         let host_end = synthetic_span_origin(&host);
 
-        let merged = merge_generated_syntax(host, &generated, None).expect("merge");
+        let merged = merge_generated_syntax(host, &generated, Some(crate::syntax::SyntaxGenerationId(7)))
+            .expect("merge");
+        assert_eq!(merged.lineage.len(), 2, "every appended item retains its origin lineage");
+        assert!(merged.lineage.iter().all(|lineage| lineage.provenance.origin_generation == 7));
+        let merged = merged.program;
         let [_, function, record] = merged.node.items.as_slice() else { panic!("two generated items expected") };
         assert!(function.span.start >= host_end && record.span.start > function.span.end, "{function:?} {record:?}");
         let mut all = Vec::new();

@@ -8,15 +8,12 @@ use super::collect::{capture_target_fingerprint, collect_contracts, targets_chan
 use super::diagnostics::{ModHostDiagnostics, ModHostIssue};
 use super::discovery::discover_mod_dependencies;
 use super::generate::{is_generate_registration, resolved_max_generator_rounds, run_generators};
-use super::generate_output::{
-    CodeGenerateOutput, load_generate_output_layout, write_code_generate_output, write_typed_generate_output,
-};
+use super::generate_output::{load_generate_output_layout, write_typed_generate_output};
 use super::invoker::ContractInvoker;
 use super::invoker::GeneratorOutcome;
 use super::host::ModHost;
 use super::load::load_artifacts;
 use super::merge::merge_generated_syntax;
-use super::reparse::reparse_if_needed;
 use super::rewrite::run_rewriters;
 use super::semantic_scope::invoke_in_scope;
 use super::types::{
@@ -77,6 +74,7 @@ fn run_through_generate_with_output_policy(
             generator_outcomes: Vec::new(),
             target_fingerprint: String::new(),
             generators_skipped: false,
+            generated_lineage: Vec::new(),
         });
     }
 
@@ -107,6 +105,7 @@ fn schedule_generate(
     let mut generator_outcomes = Vec::new();
     let mut target_fingerprint = String::new();
     let mut generators_skipped = false;
+    let mut generated_lineage = Vec::new();
     let mut generated;
     let mut round = 0u32;
     // Generators are incremental: a replay round runs only when the previous round's merged
@@ -153,10 +152,9 @@ fn schedule_generate(
             converged = true;
             break;
         }
-        program = merge_generated_syntax(program, &generated, invocation_generation)?;
-        if generated.requires_reparse() {
-            program = reparse_if_needed(program, &generated, input.source_name, input.source, input.pipeline)?;
-        }
+        let merged = merge_generated_syntax(program, &generated, invocation_generation)?;
+        program = merged.program;
+        generated_lineage.extend(merged.lineage);
         let needs_another_round = collected.outcomes.iter().any(|outcome| !outcome.narrowed_targets.is_empty());
         if !needs_another_round {
             converged = true;
@@ -180,6 +178,7 @@ fn schedule_generate(
         generator_outcomes,
         target_fingerprint,
         generators_skipped,
+        generated_lineage,
     })
 }
 
@@ -200,45 +199,18 @@ fn materialize_declared_outputs(
         };
 
         let typed_items = typed_items_for_artifact(artifact, outcomes);
-        let code_outputs = code_outputs_for_artifact(artifact, outcomes);
-
+        if typed_items.is_empty() {
+            continue;
+        }
         for output in outputs {
             let layout_path = artifact.discovered.project_root.join(&output.layout);
             let layout = load_generate_output_layout(&layout_path).map_err(|err| anyhow::anyhow!("{err}"))?;
-            if layout.schema_version >= 2 {
-                if code_outputs.is_empty() {
-                    continue;
-                }
-                write_code_generate_output(compile_plan, &artifact.discovered.project_root, &layout, &code_outputs)
-                    .map_err(|err| anyhow::anyhow!("{err}"))?;
-                continue;
-            }
             let output_root = artifact.discovered.project_root.join(output.resolved_root());
-            if typed_items.is_empty() {
-                continue;
-            }
-            write_typed_generate_output(&output_root, &typed_items, Some(&layout))
+            write_typed_generate_output(compile_plan, &artifact.discovered.project_root, &output_root, &typed_items, &layout)
                 .map_err(|err| anyhow::anyhow!("{err}"))?;
         }
     }
     Ok(())
-}
-
-fn code_outputs_for_artifact(artifact: &LoadedModArtifact, outcomes: &[GeneratorOutcome]) -> Vec<CodeGenerateOutput> {
-    use std::collections::HashSet;
-
-    let generator_type_ids: HashSet<&str> = artifact
-        .registrations
-        .iter()
-        .filter(|registration| is_generate_registration(registration))
-        .map(|registration| registration.type_id.as_str())
-        .collect();
-
-    outcomes
-        .iter()
-        .filter(|outcome| generator_type_ids.contains(outcome.type_id.as_str()))
-        .flat_map(|outcome| outcome.code_outputs.iter().cloned())
-        .collect()
 }
 
 fn typed_items_for_artifact(artifact: &LoadedModArtifact, outcomes: &[GeneratorOutcome]) -> Vec<Spanned<ProgramItem>> {

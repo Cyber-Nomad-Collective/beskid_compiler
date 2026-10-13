@@ -779,3 +779,182 @@ fn specialized_template_proves_default_factories_against_substituted_field_types
     assert!(wrong.contains("SerializationDefaultType"), "{wrong}");
     assert!(wrong.contains("Main.bd:"), "the rejection names the field source span: {wrong}");
 }
+
+fn authority_error(result: Result<ModSemanticShape, beskid_analysis::mod_host::ModSemanticError>) -> String {
+    match result {
+        Ok(shape) => panic!("shape {} must be unavailable", shape.name),
+        Err(error) => error.0,
+    }
+}
+
+/// Authority covers a whole registered assembly or nothing: an assembly that lists a unit the
+/// database never registered for this owner/generation, or a unit whose tree differs from its
+/// registered syntax, cannot obtain authority over the registered remainder.
+#[test]
+fn mod_shape_authority_rejects_partial_assembly_registration() {
+    let fixture = Fixture::new();
+    let mut partial = (*fixture.assembly).clone();
+    let mut units = (*partial.units).clone();
+    let mut unregistered = units[partial.entry_index].clone();
+    unregistered.path = fixture._root.path().join("Src/Unregistered.bd");
+    unregistered.origin_path = unregistered.path.clone();
+    unregistered.logical_name = "Unregistered.bd".into();
+    units.push(unregistered);
+    partial.units = Arc::new(units);
+    let error = match ModSemanticQueryAuthority::for_registered_assembly(&fixture.db, fixture.project, &partial) {
+        Ok(_) => panic!("a partially registered assembly must not issue authority"),
+        Err(error) => error.0,
+    };
+    assert!(error.contains("unregistered"), "{error}");
+
+    let mut stale = (*fixture.assembly).clone();
+    let mut units = (*stale.units).clone();
+    units[stale.entry_index].program.node.items.pop();
+    stale.units = Arc::new(units);
+    let error = match ModSemanticQueryAuthority::for_registered_assembly(&fixture.db, fixture.project, &stale) {
+        Ok(_) => panic!("a unit tree that differs from its registration must not issue authority"),
+        Err(error) => error.0,
+    };
+    assert!(error.contains("differs"), "{error}");
+
+    assert!(
+        ModSemanticQueryAuthority::for_registered_assembly(&fixture.db, fixture.project, &fixture.assembly).is_ok(),
+        "the complete registered assembly still issues authority"
+    );
+}
+
+const RECURSIVE_SOURCE: &str = r#"
+pub type Tree { pub i32 Value, pub Tree[] Children, }
+pub type Wrap<T> { pub T Value, }
+pub type Grow<T> { pub Grow<Wrap<T> >[] Next, }
+pub type GrowRoot { pub Grow<i32> Start, }
+pub unit Main() { return; }
+"#;
+
+/// An ordinary self-referential record projects one level and interns its own handle for the
+/// recursive field; it is never expanded indefinitely.
+#[test]
+fn mod_shape_recursive_record_interns_its_own_handle() {
+    bounded(120, || {
+        let fixture = Fixture::with_source(false, RECURSIVE_SOURCE);
+        let authority =
+            ModSemanticQueryAuthority::for_registered_assembly(&fixture.db, fixture.project, &fixture.assembly).unwrap();
+        let tree = authority.resolve_type(fixture.key(NodeKind::TypeDefinition, 0)).unwrap();
+        let shape = authority.type_shape(tree).unwrap();
+        assert_eq!(shape.name, "Tree");
+        assert_eq!(record_fields(&shape)[0].ty, ModSemanticFieldType::Scalar(PrimitiveType::I32));
+        let ModSemanticFieldType::Array(element) = &record_fields(&shape)[1].ty else { panic!("array of Tree") };
+        assert_eq!(element.as_ref(), &ModSemanticFieldType::Nominal(tree), "recursive handle is interned");
+        assert_eq!(record_fields(&authority.type_shape(tree).unwrap())[1].ty, record_fields(&shape)[1].ty);
+    });
+}
+
+/// `Grow<T>` applies itself to a strictly larger argument on every expansion. Stepping through
+/// the issued child handles terminates with an identity-limit error instead of growing without
+/// bound or overflowing the stack.
+#[test]
+fn mod_shape_cyclic_substitution_expansion_terminates_at_the_identity_limit() {
+    bounded(120, || {
+        let fixture = Fixture::with_source(false, RECURSIVE_SOURCE);
+        let authority =
+            ModSemanticQueryAuthority::for_registered_assembly(&fixture.db, fixture.project, &fixture.assembly).unwrap();
+        let root = authority.type_shape(authority.resolve_type(fixture.key(NodeKind::TypeDefinition, 3)).unwrap()).unwrap();
+        assert_eq!(root.name, "GrowRoot");
+        let ModSemanticFieldType::Nominal(mut current) = record_fields(&root)[0].ty else { panic!("applied Grow") };
+        let mut steps = 0usize;
+        let error = loop {
+            let shape = match authority.type_shape(current) {
+                Ok(shape) => shape,
+                Err(error) => break error.0,
+            };
+            assert_eq!(shape.name, "Grow");
+            let ModSemanticFieldType::Array(element) = &record_fields(&shape)[0].ty else { panic!("array of Grow") };
+            let ModSemanticFieldType::Nominal(next) = element.as_ref() else { panic!("applied Grow element") };
+            assert_ne!(*next, current, "every expansion applies a strictly larger argument");
+            current = *next;
+            steps += 1;
+            assert!(steps <= 256, "cyclic substitution expansion must reach the identity limit");
+        };
+        assert!(error.contains("limit"), "{error}");
+        assert!(steps >= 64, "bounded nesting stays available before the limit: {steps}");
+    });
+}
+
+/// Explicit applied nesting deeper than the 128-level identity bound is unavailable; bounded
+/// nesting of the same declaration projects normally.
+#[test]
+fn mod_shape_explicit_nesting_past_the_identity_depth_is_unavailable() {
+    bounded(120, || {
+        let nest = |depth: usize| (0..depth).fold("i32".to_owned(), |inner, _| format!("Wrap<{inner} >"));
+        let source = format!(
+            "pub type Wrap<T> {{ pub T Value, }}\npub type Deep {{ pub {} Item, }}\npub type Shallow {{ pub {} Item, }}\npub unit Main() {{ return; }}\n",
+            nest(140),
+            nest(8)
+        );
+        let fixture = Fixture::with_source(false, &source);
+        let authority =
+            ModSemanticQueryAuthority::for_registered_assembly(&fixture.db, fixture.project, &fixture.assembly).unwrap();
+        let shallow = authority.type_shape(authority.resolve_type(fixture.key(NodeKind::TypeDefinition, 2)).unwrap()).unwrap();
+        assert_eq!(shallow.name, "Shallow");
+        assert!(matches!(record_fields(&shallow)[0].ty, ModSemanticFieldType::Nominal(_)));
+        let deep = authority.resolve_type(fixture.key(NodeKind::TypeDefinition, 1)).unwrap();
+        let error = authority_error(authority.type_shape(deep));
+        assert!(error.contains("limit"), "{error}");
+    });
+}
+
+/// `Double<T>` applies itself to `Pair<T, T>`, so every expansion doubles the applied identity
+/// while its depth grows by one. The per-shape identity node budget (65536) ends the expansion
+/// long before the 128-level depth bound could.
+#[test]
+fn mod_shape_doubling_substitution_terminates_at_the_identity_node_budget() {
+    bounded(120, || {
+        let fixture = Fixture::with_source(
+            false,
+            r#"
+    pub type Pair<A, B> { pub A First, pub B Second, }
+    pub type Double<T> { pub Double<Pair<T, T> >[] Next, }
+    pub type DoubleRoot { pub Double<i32> Start, }
+    pub unit Main() { return; }
+    "#,
+        );
+        let authority =
+            ModSemanticQueryAuthority::for_registered_assembly(&fixture.db, fixture.project, &fixture.assembly).unwrap();
+        let root = authority.type_shape(authority.resolve_type(fixture.key(NodeKind::TypeDefinition, 2)).unwrap()).unwrap();
+        assert_eq!(root.name, "DoubleRoot");
+        let ModSemanticFieldType::Nominal(mut current) = record_fields(&root)[0].ty else { panic!("applied Double") };
+        let mut steps = 0usize;
+        let error = loop {
+            let shape = match authority.type_shape(current) {
+                Ok(shape) => shape,
+                Err(error) => break error.0,
+            };
+            assert_eq!(shape.name, "Double");
+            let ModSemanticFieldType::Array(element) = &record_fields(&shape)[0].ty else { panic!("array of Double") };
+            let ModSemanticFieldType::Nominal(next) = element.as_ref() else { panic!("applied Double element") };
+            current = *next;
+            steps += 1;
+            assert!(steps <= 24, "doubling expansion must reach the identity node budget");
+        };
+        assert!(error.contains("limit"), "{error}");
+        assert!(steps >= 8, "small applications stay available: {steps}");
+    });
+}
+
+/// Run a test body on a large-stack thread and fail when it does not finish within `seconds`:
+/// a non-terminating or exponential expansion fails the test instead of blocking the suite.
+fn bounded(seconds: u64, body: impl FnOnce() + Send + 'static) {
+    let (sender, receiver) = std::sync::mpsc::channel();
+    std::thread::Builder::new()
+        .stack_size(256 * 1024 * 1024)
+        .spawn(move || {
+            body();
+            let _ = sender.send(());
+        })
+        .expect("bounded test thread");
+    match receiver.recv_timeout(std::time::Duration::from_secs(seconds)) {
+        Ok(()) => {}
+        Err(std::sync::mpsc::RecvTimeoutError::Timeout) => panic!("test body did not finish within {seconds}s"),
+        Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => panic!("test body panicked"),
+    }
+}

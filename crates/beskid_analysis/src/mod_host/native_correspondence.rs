@@ -40,6 +40,21 @@ impl SyntaxCorrespondence {
         Ok(match body["kind"].as_str().context("syntax schema body kind absent")? {
             "record" => {
                 let fields = body["fields"].as_array().context("syntax schema fields absent")?;
+                if fields.is_empty() {
+                    // A field-less syntax record (`BreakStatement`, `ContinueStatement`) is a Rust
+                    // unit struct, serialized as `null`; its SDK value is an empty record.
+                    return if forward {
+                        if !value.is_null() {
+                            bail!("syntax unit record {name} carries data");
+                        }
+                        Ok(json!({}))
+                    } else {
+                        if value.as_object().is_none_or(|object| !object.is_empty()) {
+                            bail!("SDK unit record {name} carries fields");
+                        }
+                        Ok(Value::Null)
+                    };
+                }
                 let object = value.as_object().context("syntax record requires object")?;
                 if object.len() != fields.len() {
                     bail!("syntax record field count mismatch for {name}");
@@ -191,10 +206,84 @@ mod tests {
         assert_eq!(schema.to_rust("SpannedExpressionList", &source).unwrap(), empty);
         assert_eq!(schema.to_source("OptionalSpannedExpression", &Value::Null).unwrap(), json!("None"));
     }
+    /// `break;`/`continue;` round-trip between the Rust unit structs and empty SDK records.
+    #[test]
+    fn field_less_syntax_records_round_trip_as_rust_unit_structs() {
+        let schema = schema();
+        for name in ["BreakStatement", "ContinueStatement"] {
+            assert_eq!(schema.to_source(name, &Value::Null).unwrap(), json!({}));
+            assert_eq!(schema.to_rust(name, &json!({})).unwrap(), Value::Null);
+            assert!(schema.to_rust(name, &json!({"extra":1})).is_err());
+            assert!(schema.to_source(name, &json!({})).is_err());
+        }
+        let parsed = crate::services::parse_program_with_source_name("Loop.bd", "unit Loop() { while true { break; } }")
+            .expect("parse loop");
+        let crate::syntax::Node::Function(function) = &parsed.node.items[0].node else { panic!("function") };
+        let rust = serde_json::to_value(function).unwrap();
+        let source = schema.to_source("SpannedFunctionDefinition", &rust).unwrap();
+        assert_eq!(schema.to_rust("SpannedFunctionDefinition", &source).unwrap(), rust);
+    }
     #[test]
     fn native_syntax_correspondence_rejects_lost_float_payload() {
         assert!(schema().to_source("f64", &Value::Null).is_err());
     }
+    fn identifiers(count: usize) -> Value {
+        Value::Array(
+            (0..count)
+                .map(|index| {
+                    json!({"node":{"name":"i"},"span":{"start":0,"end":1,"line_col_start":[1,1],"line_col_end":[1,2]},"id":index})
+                })
+                .collect(),
+        )
+    }
+
+    /// A transported syntax list holds at most 65536 elements in either direction.
+    #[test]
+    fn transport_list_budget_is_exact_at_65536_elements() {
+        let schema = schema();
+        let exact = schema.to_source("SpannedIdentifierList", &identifiers(65536)).expect("65536 elements fit");
+        assert_eq!(schema.to_rust("SpannedIdentifierList", &exact).unwrap().as_array().unwrap().len(), 65536);
+        assert!(schema.to_source("SpannedIdentifierList", &identifiers(65537)).is_err());
+        let mut over = exact;
+        let first = over["items"][0].clone();
+        over["items"].as_array_mut().unwrap().push(first);
+        assert!(schema.to_rust("SpannedIdentifierList", &over).is_err(), "SDK-to-host direction is bounded too");
+    }
+
+    /// Correspondence recursion is bounded at depth 128: a deeply nested expression is
+    /// rejected in both directions rather than exhausting the stack.
+    #[test]
+    fn transport_depth_budget_rejects_nesting_past_128() {
+        let schema = schema();
+        let span = json!({"start":0,"end":1,"line_col_start":[1,1],"line_col_end":[1,2]});
+        let nested = |depth: usize| -> Value {
+            let mut expression = json!({
+                "node":{"Literal":{"node":{"literal":{"node":{"Integer":"1"},"span":span,"id":1}},"span":span,"id":2}},
+                "span":span,"id":3
+            });
+            for level in 0..depth {
+                expression = json!({
+                    "node":{"Grouped":{"node":{"expr":expression},"span":span,"id":4 + 2 * level}},
+                    "span":span,"id":5 + 2 * level
+                });
+            }
+            expression
+        };
+        let shallow = schema.to_source("SpannedExpression", &nested(4)).expect("shallow nesting is transported");
+        assert_eq!(schema.to_rust("SpannedExpression", &shallow).unwrap(), nested(4));
+        let deep = nested(200);
+        let error = schema.to_source("SpannedExpression", &deep).unwrap_err().to_string();
+        assert!(error.contains("recursion budget"), "{error}");
+        let mut source = shallow;
+        for level in 0..200 {
+            source = json!({
+                "node":{"Grouped":{"payload":{"node":{"expr":source},"span":schema.to_source("NodeSpan",&span).unwrap(),"id":level}}},
+                "span":schema.to_source("NodeSpan",&span).unwrap(),"id":level
+            });
+        }
+        assert!(schema.to_rust("SpannedExpression", &source).is_err(), "SDK-to-host direction is bounded too");
+    }
+
     #[test]
     fn flat_sdk_list_preserves_256_identifiers_spans_and_ids() {
         let schema = schema();

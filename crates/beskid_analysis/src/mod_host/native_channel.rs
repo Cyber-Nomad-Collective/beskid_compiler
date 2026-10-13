@@ -52,6 +52,14 @@ impl<'a> ParentChannel<'a> {
             compiled_metadata: self.session.take_compiled_metadata(),
         })
     }
+    /// Fail the invocation closed after a channel or session error: the worker is blocked on
+    /// its reply, so the stream is shut down and the worker observes end-of-stream at once
+    /// instead of waiting for a response that will never be sent.
+    pub fn abort(&mut self) {
+        if let Some(stream) = self.stream.take() {
+            let _ = stream.shutdown(std::net::Shutdown::Both);
+        }
+    }
     pub fn into_session(self) -> NativeSemanticSession<'a> {
         self.session
     }

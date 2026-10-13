@@ -19,6 +19,8 @@ use crate::mod_host::invoker::{
 use crate::syntax::Node;
 
 const HOST_SOURCE: &str = "unit Main() { return; }\n";
+/// The actual syntax generation the scheduler entry issues to these invocations.
+const SCHEDULING_GENERATION: u64 = 41;
 
 const COLLECTOR: &str = "Beskid.Compiler.Collect.Collector";
 const GENERATOR: &str = "Beskid.Compiler.Collect.Generator";
@@ -52,6 +54,15 @@ impl Case {
         registrations: &[(&str, &str, &str)],
         invoker: &dyn ContractInvoker,
     ) -> Result<ModHostGenerateResult> {
+        self.generate_at(registrations, invoker, Some(crate::syntax::SyntaxGenerationId(SCHEDULING_GENERATION)))
+    }
+
+    fn generate_at(
+        &self,
+        registrations: &[(&str, &str, &str)],
+        invoker: &dyn ContractInvoker,
+        generation: Option<crate::syntax::SyntaxGenerationId>,
+    ) -> Result<ModHostGenerateResult> {
         let loaded = loaded_mod(&self.host, &self.mod_dir, registrations);
         let plan = compile_plan(&self.host, &self.mod_dir);
         let program = crate::services::parse_program_with_source_name("Main.bd", HOST_SOURCE).expect("parse host");
@@ -67,7 +78,7 @@ impl Case {
                 pipeline: None,
                 mod_host: &ModHost::NoMods,
                 cached_target_fingerprint: None,
-                syntax_generation_id: None,
+                syntax_generation_id: generation,
             },
             invoker,
             loaded,
@@ -355,4 +366,78 @@ fn scripted_generator_contributions_replay_identically_across_identical_runs() {
     assert_eq!(shape(&first), shape(&second), "identical inputs must replay identical generator contributions");
     assert!(program_has_function(&first.program, "replay_marker"));
     assert!(program_has_function(&second.program, "replay_marker"));
+}
+
+/// Generated items reach the merge only through the invocation arena: each one carries the
+/// origin lineage of the source unit, actual generation and generator registration that
+/// produced it, in item order, and the merge retains that lineage beside the appended item.
+#[test]
+fn generated_items_carry_arena_issued_lineage_through_typed_merge() {
+    let case = Case::new("sched_generated_lineage");
+    let invoker = ScriptedContractInvoker::new().with_generator_contribution(
+        "SampleMod.SampleGenerate",
+        vec!["pub fn first_lineage() { return; }".to_owned(), "pub fn second_lineage() { return; }".to_owned()],
+    );
+    let generated =
+        case.generate(&[(GENERATOR, "SampleMod.SampleGenerate", "samplemod_generate")], &invoker).expect("generate");
+    let outcome = &generated.generator_outcomes[0];
+    assert_eq!(outcome.typed_items.len(), 2);
+    assert_eq!(outcome.provenance.len(), outcome.typed_items.len(), "one lineage per item");
+    for (item, origin) in outcome.typed_items.iter().zip(&outcome.provenance) {
+        assert_eq!(origin.source_name, "Main.bd");
+        assert_eq!(origin.origin_generation, SCHEDULING_GENERATION);
+        assert_eq!(origin.generator_type_id, "SampleMod.SampleGenerate");
+        assert_eq!(origin.origin_span, item.span);
+    }
+    assert_eq!(generated.generated_lineage.len(), 2, "the typed merge retains every appended item's lineage");
+    let merged: Vec<_> = generated.generated_lineage.iter().map(|lineage| lineage.merged_span).collect();
+    for name in ["first_lineage", "second_lineage"] {
+        let item = generated
+            .program
+            .node
+            .items
+            .iter()
+            .find(|item| is_function(&item.node, name))
+            .expect("merged generated item");
+        assert!(merged.contains(&item.span), "lineage names the merged item's issued span");
+    }
+}
+
+/// Without actual generation authority a contributed item cannot be admitted; generation zero
+/// is not authority either. A generator that contributes nothing needs no authority.
+#[test]
+fn generated_items_without_actual_generation_authority_fail_closed() {
+    let registrations = [(GENERATOR, "SampleMod.SampleGenerate", "samplemod_generate")];
+    let contributing = ScriptedContractInvoker::new()
+        .with_generator_contribution("SampleMod.SampleGenerate", vec!["pub fn unowned() { return; }".to_owned()]);
+    for generation in [None, Some(crate::syntax::SyntaxGenerationId(0))] {
+        let case = Case::new("sched_absent_generation");
+        let error = match case.generate_at(&registrations, &contributing, generation) {
+            Ok(_) => panic!("generated syntax without generation authority must not merge"),
+            Err(error) => error,
+        };
+        assert!(error.to_string().contains("generation authority"), "{error}");
+    }
+    let case = Case::new("sched_absent_generation_empty");
+    let silent = StubContractInvoker::new();
+    case.generate_at(&registrations, &silent, None).expect("an empty contribution needs no authority");
+}
+
+/// One invocation may publish at most 4096 items; the 4097th rejects the whole invocation
+/// before anything merges.
+#[test]
+fn generator_invocation_item_budget_is_enforced_by_the_arena() {
+    let registrations = [(GENERATOR, "SampleMod.SampleGenerate", "samplemod_generate")];
+    let items = |count: usize| (0..count).map(|index| format!("pub unit Budget{index}() {{ return; }}")).collect();
+    let case = Case::new("sched_item_budget_exact");
+    let exact = ScriptedContractInvoker::new().with_generator_contribution("SampleMod.SampleGenerate", items(4096));
+    let generated = case.generate(&registrations, &exact).expect("4096 items fit the invocation budget");
+    assert_eq!(generated.generator_outcomes[0].typed_items.len(), 4096);
+    let case = Case::new("sched_item_budget_over");
+    let over = ScriptedContractInvoker::new().with_generator_contribution("SampleMod.SampleGenerate", items(4097));
+    let error = match case.generate(&registrations, &over) {
+        Ok(_) => panic!("4097 items exceed the invocation budget"),
+        Err(error) => error,
+    };
+    assert!(error.to_string().contains("exceeds declared bounds"), "{error}");
 }

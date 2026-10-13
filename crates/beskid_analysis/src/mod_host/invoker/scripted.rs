@@ -18,7 +18,6 @@ use super::stub::StubContractInvoker;
 pub struct ScriptedContractInvoker {
     pub collector_narrowed_targets: Mutex<Vec<(String, Vec<String>)>>,
     pub generator_typed_items: Mutex<Vec<(String, Vec<Spanned<ProgramItem>>)>>,
-    pub generator_code_outputs: Mutex<Vec<(String, Vec<super::super::generate_output::CodeGenerateOutput>)>>,
     pub analyzer_diagnostics: Mutex<Vec<(String, Vec<AnalyzerDiagnostic>)>>,
     pub analyzer_fixes: Mutex<Vec<(String, Vec<AnalyzerFix>)>>,
     pub rewriter_edits: Mutex<Vec<(String, Vec<RewriteEdit>)>>,
@@ -45,34 +44,6 @@ impl ScriptedContractInvoker {
     ) -> Self {
         self.generator_typed_items.lock().expect("scripted typed items").push((type_id.into(), typed_items));
         self
-    }
-
-    pub fn with_generator_code_outputs(
-        self,
-        type_id: impl Into<String>,
-        code_outputs: Vec<super::super::generate_output::CodeGenerateOutput>,
-    ) -> Self {
-        self.generator_code_outputs.lock().expect("scripted code outputs").push((type_id.into(), code_outputs));
-        self
-    }
-
-    /// Evaluate Beskid-tagged code bodies and register them for generator dispatch tests.
-    pub fn with_generator_code_contribution(
-        self,
-        type_id: impl Into<String>,
-        module_path: impl Into<String>,
-        file_name: impl Into<String>,
-        language: impl Into<String>,
-        body: impl Into<String>,
-    ) -> Self {
-        let output = super::super::code_string::code_generate_output(
-            &module_path.into(),
-            &file_name.into(),
-            &language.into(),
-            &body.into(),
-        )
-        .expect("scripted code contribution must evaluate");
-        self.with_generator_code_outputs(type_id, vec![output])
     }
 
     /// Parse canonical source fragments into typed items for tests and transitional callers.
@@ -137,13 +108,6 @@ impl ContractInvoker for ScriptedContractInvoker {
         for (type_id, typed_items) in scripted.iter() {
             if registration.type_id == *type_id {
                 outcome.typed_items.extend(typed_items.iter().cloned());
-            }
-        }
-        drop(scripted);
-        let scripted_code = self.generator_code_outputs.lock().expect("scripted code outputs");
-        for (type_id, code_outputs) in scripted_code.iter() {
-            if registration.type_id == *type_id {
-                outcome.code_outputs.extend(code_outputs.iter().cloned());
             }
         }
         Ok(outcome)

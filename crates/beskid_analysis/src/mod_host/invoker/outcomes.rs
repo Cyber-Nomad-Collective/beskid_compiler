@@ -12,12 +12,16 @@ pub struct CollectorOutcome {
 
 /// Outcome from a `Generator.Generate` invocation: zero or more typed AST contributions
 /// spliced directly into the host program by `merge::merge_generated_syntax`.
+///
+/// An invoker returns `typed_items` only. The scheduler admits them through the invocation
+/// arena, which fills `provenance` with exactly one origin lineage per item, in item order;
+/// the merge rejects an outcome whose lineage does not align with its items.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct GeneratorOutcome {
     pub compiled_metadata: Vec<super::super::ModCompiledMetadata>,
     pub type_id: String,
     pub typed_items: Vec<Spanned<ProgramItem>>,
-    pub code_outputs: Vec<super::super::generate_output::CodeGenerateOutput>,
+    pub provenance: Vec<super::super::StructuralProvenance>,
 }
 
 /// Outcome from `Analyzer.Analyze` — diagnostics it wants the host to emit and quick-fixes

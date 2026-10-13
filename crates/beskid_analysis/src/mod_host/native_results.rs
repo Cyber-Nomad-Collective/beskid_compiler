@@ -22,8 +22,23 @@ pub fn native_collector_result(type_id: &str, value: &Value) -> Result<Collector
             .collect::<Result<_>>()?,
     })
 }
+/// A native result object must carry exactly the fields of its SDK result type. A field
+/// outside that set (for example a retired source-text contribution) rejects the result.
+fn exact_fields(value: &Value, fields: &[&str]) -> Result<()> {
+    let object = value.as_object().context("native result must be an SDK record")?;
+    if let Some(foreign) = object.keys().find(|key| !fields.contains(&key.as_str())) {
+        bail!("native result carries a field outside its typed SDK contract: {foreign}")
+    }
+    if object.len() != fields.len() {
+        bail!("native result is missing a field of its typed SDK contract")
+    }
+    Ok(())
+}
+/// Decode a Generator result. Only typed syntax contributions and their issuer bindings are
+/// admitted; the host has no source-text contribution path.
 #[doc(hidden)]
 pub fn native_generator_result(type_id: &str, value: &Value, schema: &[u8]) -> Result<GeneratorOutcome> {
+    exact_fields(value, &["items", "targetBindings", "templateBindings"])?;
     let correspondence = SyntaxCorrespondence::read(schema)?;
     let mut outcome = GeneratorOutcome { compiled_metadata: Vec::new(), type_id: type_id.into(), ..Default::default() };
     for item in array(value, "items")? {
@@ -46,16 +61,6 @@ pub fn native_generator_result(type_id: &str, value: &Value, schema: &[u8]) -> R
         node.insert(variant.into(), projected.clone());
         let item = serde_json::json!({"node":node,"span":projected["span"],"id":projected["id"]});
         outcome.typed_items.push(serde_json::from_value(item)?);
-    }
-    for item in array(value, "codeOutputs")? {
-        let language = item["body"]["language"].as_str().context("native code language absent")?;
-        if language != "beskid" {
-            bail!("native code contribution language is not beskid")
-        }
-        outcome.code_outputs.push(super::generate_output::CodeGenerateOutput {
-            module_path: string(item, "modulePath")?,
-            body: string(&item["body"], "body")?,
-        });
     }
     Ok(outcome)
 }
@@ -121,6 +126,7 @@ pub fn native_analyzer_result(type_id: &str, value: &Value, source_len: usize) -
 
 #[doc(hidden)]
 pub fn native_attribute_result(type_id: &str, value: &Value, schema: &[u8]) -> Result<GeneratorOutcome> {
+    exact_fields(value, &["declarations"])?;
     let correspondence = SyntaxCorrespondence::read(schema)?;
     let mut outcome = GeneratorOutcome { compiled_metadata: Vec::new(), type_id: type_id.into(), ..Default::default() };
     for declaration in array(value, "declarations")? {
@@ -151,7 +157,7 @@ mod typed_result_tests {
         let source = SyntaxCorrespondence::read(schema).unwrap().to_source("SpannedFunctionDefinition", &rust).unwrap();
         let result = native_generator_result(
             "Fixture.Generator",
-            &serde_json::json!({"items":[{"FunctionDefinition":{"definition":source}}],"codeOutputs":[]}),
+            &serde_json::json!({"items":[{"FunctionDefinition":{"definition":source}}],"targetBindings":[],"templateBindings":[]}),
             schema,
         )
         .unwrap();
@@ -159,5 +165,25 @@ mod typed_result_tests {
             panic!("typed function contribution")
         };
         assert_eq!(serde_json::to_value(actual).unwrap(), rust);
+        assert!(result.provenance.is_empty(), "lineage is issued by the host arena, never decoded");
+    }
+
+    /// The retired source-text contribution field, and any other field outside the typed SDK
+    /// contract, rejects the whole result; a missing typed field rejects it too.
+    #[test]
+    fn v06_native_generator_result_rejects_source_text_and_foreign_fields() {
+        let schema = include_bytes!("../../../../corelib/packages/compiler-sdk/src/Beskid/Syntax/syntax.schema.json");
+        let text = serde_json::json!({
+            "items": [], "targetBindings": [], "templateBindings": [],
+            "codeOutputs": [{"modulePath": "Generated", "fileName": "Generated", "body": {"language": "beskid", "body": "pub unit Generated() { return; }"}}]
+        });
+        let error = native_generator_result("Fixture.Generator", &text, schema).unwrap_err().to_string();
+        assert!(error.contains("codeOutputs"), "{error}");
+        let missing = serde_json::json!({"items": [], "targetBindings": []});
+        assert!(native_generator_result("Fixture.Generator", &missing, schema).is_err());
+        let empty = serde_json::json!({"items": [], "targetBindings": [], "templateBindings": []});
+        assert!(native_generator_result("Fixture.Generator", &empty, schema).unwrap().typed_items.is_empty());
+        let attribute = serde_json::json!({"declarations": [], "codeOutputs": []});
+        assert!(native_attribute_result("Fixture.Attributes", &attribute, schema).is_err());
     }
 }
