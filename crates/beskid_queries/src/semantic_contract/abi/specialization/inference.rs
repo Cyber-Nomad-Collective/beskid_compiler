@@ -420,7 +420,7 @@ fn specialized_method_receiver_bindings(
     )
 }
 
-fn infer_source_substitutions(
+pub(in crate::semantic_contract) fn infer_source_substitutions(
     db: &dyn Db,
     declaration: AstNodeKey,
     parameter: &beskid_analysis::syntax::Type,

@@ -90,7 +90,7 @@ use abi::{
     control_flow_for_node,
     control_flow_tracked, corelib_service_abi_signature, exact_assembled_nominal_envelope, function_value_specialization,
     generic_abi_type,
-    generic_parameter_reference_name, generic_specialization_instance_for_call, generic_type_name,
+    generic_parameter_reference_name, generic_specialization_instance_for_call, generic_type_name, infer_source_substitutions,
     integer_has_explicit_abi_suffix, integer_literal_fits_abi, integer_literal_text, integer_literal_u64,
     item_abi_signature_tracked, item_abi_type_from_syntax, item_signature_for_node, item_signature_tracked,
     manifest_builtin_abi_signature, signature_from_syntax,

@@ -480,8 +480,15 @@ pub(in crate::semantic_contract) fn untyped_lambda_parameter_identity(
                 == Some(parameter)
         })
         .ok_or_else(unavailable)?;
-    let (parameters, _) = lambda_expected_function(db, AstNodeKey { node: lambda, ..key }, lambda_syntax.parameters.len())?
-        .ok_or_else(unavailable)?;
+    let lambda_key = AstNodeKey { node: lambda, ..key };
+    let parameters = match lambda_expected_function(db, lambda_key, lambda_syntax.parameters.len())? {
+        Some((parameters, _)) => parameters,
+        // The callee parameter names an unbound type parameter only in its result: its
+        // parameter types are still supplied (method type argument inference).
+        None => lambda_argument_parameter_identities(db, lambda_key)?
+            .filter(|parameters| parameters.len() == lambda_syntax.parameters.len())
+            .ok_or_else(unavailable)?,
+    };
     parameters.into_iter().nth(position).ok_or_else(unavailable)
 }
 

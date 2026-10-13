@@ -629,6 +629,18 @@ pub(in crate::semantic_contract) fn lambda_argument_parameter_identities(
     };
     let generic_names = generic_callable_parameters(db, declaration).map(|(names, _)| names).unwrap_or_default();
     let bindings = callee_generic_bindings(db, call_key, call, declaration, &generic_names, &Environment::new())?;
+    let bindings = sibling_argument_bindings(
+        db,
+        program,
+        index,
+        call_key,
+        call,
+        callee,
+        declaration,
+        position,
+        &generic_names,
+        bindings,
+    );
     let callee_environment = bindings.iter().map(|(name, identity)| (name.as_str(), identity)).collect::<Environment<'_>>();
     let mut identities = Vec::with_capacity(parameters.len());
     for parameter in parameters {
@@ -645,6 +657,77 @@ pub(in crate::semantic_contract) fn lambda_argument_parameter_identities(
         )?);
     }
     Ok(Some(identities))
+}
+
+/// Inference steps 3 and 4 for one lambda argument at `position`: extend the receiver and
+/// explicit bindings by unifying, left to right, every non-lambda argument's proven type with its
+/// declared parameter type, then every earlier lambda argument's synthesized function type. Bare
+/// integer literals are skipped (their type follows from the call, not the other way round), and
+/// an argument whose type is unavailable or conflicts contributes nothing here; the call's own
+/// specialization reports the conflict (E1229).
+#[expect(clippy::too_many_arguments, reason = "one call walk with its callee and bindings")]
+fn sibling_argument_bindings(
+    db: &dyn Db,
+    program: &Program,
+    index: &SyntaxIndex,
+    call_key: AstNodeKey,
+    call: &syntax::CallExpression,
+    callee: DynNodeRef<'_>,
+    declaration: AstNodeKey,
+    position: usize,
+    generic_names: &[&str],
+    bindings: Vec<(String, GenericSourceTypeIdentity)>,
+) -> Vec<(String, GenericSourceTypeIdentity)> {
+    let mut abi = bindings.iter().map(|(name, identity)| (name.clone(), identity.abi_type())).collect::<HashMap<_, _>>();
+    let mut sources = bindings
+        .iter()
+        .map(|(name, identity)| {
+            (name.clone(), GenericSubstitution::from_source(name.as_str(), identity.abi_type(), identity.clone()))
+        })
+        .collect::<HashMap<_, _>>();
+    let lambdas = call.args.iter().map(|argument| expression_is_lambda(&argument.node)).collect::<Vec<_>>();
+    let order = (0..call.args.len())
+        .filter(|candidate| *candidate != position && !lambdas[*candidate])
+        .chain((0..position).filter(|candidate| lambdas[*candidate]));
+    for candidate in order {
+        let Ok(parameter_type) = declared_parameter_type(callee, call, candidate) else { continue };
+        if !generic_names
+            .iter()
+            .any(|name| type_syntax_mentions_generic_parameter(parameter_type, name) && !abi.contains_key(*name))
+        {
+            continue;
+        }
+        let Some(argument) = index.direct_child_id(program, call_key.node, DynNodeRef::from(&call.args[candidate]))
+        else {
+            continue;
+        };
+        let argument = AstNodeKey { node: normalized_expression_node(index, argument), ..call_key };
+        if !lambdas[candidate] && matches!(unsuffixed_integer_literal(db, argument), Ok(true) | Err(_)) {
+            continue;
+        }
+        let Ok(identity) = generic_source_expression_identity(db, argument) else { continue };
+        let (mut next_abi, mut next_sources) = (abi.clone(), sources.clone());
+        if infer_source_substitutions(
+            db,
+            declaration,
+            parameter_type,
+            &identity,
+            generic_names,
+            &mut next_abi,
+            &mut next_sources,
+        )
+        .is_ok()
+        {
+            abi = next_abi;
+            sources = next_sources;
+        }
+    }
+    let mut extended = sources
+        .into_iter()
+        .map(|(name, binding)| (name, binding.source_identity().clone()))
+        .collect::<Vec<_>>();
+    extended.sort_by(|left, right| left.0.cmp(&right.0));
+    extended
 }
 
 fn enum_payload_identity(

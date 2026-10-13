@@ -936,6 +936,23 @@ mod tests {
         assert_method_call(&clash, 6309, &["E1229"], &[]);
     }
 
+    const FOLD: &str = "pub type Numbers<T> { T[] items, \
+        pub U Fold<U>(U seed, (U, T) => U step) { return seed; } \
+        pub B Pipe<A, B>(() => A first, (A) => B second) { return second(first()); } } ";
+
+    #[test]
+    fn untyped_lambda_parameters_take_types_inferred_from_sibling_arguments() {
+        // `acc` is `U`, bound only by the sibling `seed` argument; `x` is the receiver's `T`.
+        let fold = format!("{FOLD}i64 Main(Numbers<bool> numbers) {{ return numbers.Fold(0_i64, (acc, x) => acc + 1_i64); }}");
+        assert_method_call(&fold, 6330, &[], &["T=bool,U=i64"]);
+        // The sibling may follow the lambda: non-lambda arguments are unified first.
+        let pipe = format!("{FOLD}bool Main(Numbers<bool> numbers) {{ return numbers.Pipe(() => 3_i64, (a) => a > 2_i64); }}");
+        assert_method_call(&pipe, 6331, &[], &["T=bool,A=i64,B=bool"]);
+        // A receiver-supplied parameter used in the body types the result.
+        let apply = format!("{BOX}bool Main() {{ Box<bool> b = Box<bool> {{ item: true }}; return b.Apply((s) => s); }}");
+        assert_method_call(&apply, 6332, &[], &["T=bool,U=bool"]);
+    }
+
     #[test]
     fn an_explicit_receiver_resolves_like_the_implicit_one() {
         let source = "pub attribute Receiver(ReceiverParameter) { } \
