@@ -60,6 +60,35 @@ impl ReboundSerializationTarget {
         authority.serialization_shape(handle)
     }
 }
+/// A retained target in the current program by exact correspondence, without a conformance
+/// proof (see [`CompiledSerializationTarget::corresponding_target`]).
+#[derive(Clone)]
+pub struct CorrespondingSerializationTarget {
+    owner: AstNodeKey,
+    implementation: AstNodeKey,
+    arguments: Arc<[ShapeIdentity]>,
+}
+impl CorrespondingSerializationTarget {
+    pub fn owner(&self) -> AstNodeKey {
+        self.owner
+    }
+    pub fn implementation(&self) -> AstNodeKey {
+        self.implementation
+    }
+    pub fn arguments(&self) -> &[ShapeIdentity] {
+        &self.arguments
+    }
+    /// The target's current descriptor graph, reissued through the registered typed assembly.
+    pub fn shape(
+        &self,
+        db: &dyn Db,
+        program: &crate::TypedProgram,
+    ) -> Result<crate::DynamicPackingShape, ModSemanticError> {
+        let authority = ModSemanticQueryAuthority::for_registered_assembly(db, program.project, &program.assembly)?;
+        let handle = authority.issue(self.owner, self.arguments.clone())?;
+        authority.serialization_shape(handle)
+    }
+}
 impl CompiledSerializationTarget {
     #[allow(clippy::too_many_arguments)]
     pub(super) fn from_template(
@@ -111,12 +140,24 @@ impl CompiledSerializationTarget {
     ) -> Result<ReboundSerializationTarget, ModSemanticError> {
         self.rebind_in_environment(db, program, &[])
     }
-    pub(crate) fn rebind_in_environment(
+    /// The current target and bound implementation of this group by exact correspondence alone:
+    /// unchanged source and package provenance, the exact appended group, the same resolved field
+    /// and variant applications. It proves no conformance, which a group generic over its format
+    /// (`impl<E> Point : Serializable<E>`, a decoder adapter over `R`) has only in a complete
+    /// environment; the format-independent descriptor graph of the target needs none.
+    pub fn corresponding_target(
         &self,
         db: &dyn Db,
         program: &crate::TypedProgram,
-        environment: &[crate::GenericSubstitution],
-    ) -> Result<ReboundSerializationTarget, ModSemanticError> {
+    ) -> Result<CorrespondingSerializationTarget, ModSemanticError> {
+        let (owner, implementation) = self.correspondence(db, program)?;
+        Ok(CorrespondingSerializationTarget { owner, implementation, arguments: self.arguments.clone() })
+    }
+    fn correspondence(
+        &self,
+        db: &dyn Db,
+        program: &crate::TypedProgram,
+    ) -> Result<(AstNodeKey, AstNodeKey), ModSemanticError> {
         let reject = ModSemanticQueryAuthority::error;
         if !super::same_issuing_project(&self.assembly, &program.assembly) {
             return Err(reject("serialization contribution belongs to another project issuer"));
@@ -139,8 +180,7 @@ impl CompiledSerializationTarget {
         {
             return Err(reject("serialization target prepared source/package provenance changed"));
         }
-        let current_authority =
-            ModSemanticQueryAuthority::for_registered_assembly(db, program.project, &program.assembly)?;
+        ModSemanticQueryAuthority::for_registered_assembly(db, program.project, &program.assembly)?;
         // The actual merger appends typed items to the entry. Require preserved original
         // items plus the exact owned item, rather than accepting an equal leaf name.
         let original_entry = self.assembly.entry_unit();
@@ -221,6 +261,19 @@ impl CompiledSerializationTarget {
         if !same_semantic_body(&self.body, &projection.body) {
             return Err(reject("serialization target resolved field/variant applications changed"));
         }
+        Ok((*owner, *implementation))
+    }
+    pub(crate) fn rebind_in_environment(
+        &self,
+        db: &dyn Db,
+        program: &crate::TypedProgram,
+        environment: &[crate::GenericSubstitution],
+    ) -> Result<ReboundSerializationTarget, ModSemanticError> {
+        let reject = ModSemanticQueryAuthority::error;
+        let (owner, implementation) = self.correspondence(db, program)?;
+        let (owner, implementation) = (&owner, &implementation);
+        let current_authority =
+            ModSemanticQueryAuthority::for_registered_assembly(db, program.project, &program.assembly)?;
         let (receiver, receiver_arguments) =
             crate::semantic_contract::serialization_contribution_receiver_arguments_in_environment(
                 db,

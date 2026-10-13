@@ -29,6 +29,9 @@ Result<Bag<T>, Error> Collect<T, R>(R reader, T value) where R: Source {
 Result<unit, Error> Admit<T>(i64 limit) { if (limit < 0_i64) { return Result::Error(Error::Failed()); } return Result::Ok(()); }
 Result<T, Error> Load<T>(T value, i64 limit) { Admit<T>(limit)?; return Result::Ok(value); }
 type Point { i64 x }
+type Boxed<T> { T item, T[] history }
+Result<i64, Error> CountAll<T>(T[] values) { return Result::Ok(1_i64); }
+Result<i64, Error> Measure<T>(Boxed<T> value) { i64 counted = CountAll(value.history)?; return Result::Ok(counted); }
 Result<T, Error> Complete<T, R>(R reader, T value) where R: Source {
     reader.Begin(1_i64)?;
     T loaded = ReadOne<T, R>(reader, value)?;
@@ -40,9 +43,10 @@ i64 Main() {
     i64 a = match Collect<i64, Reader>(reader, 5_i64) { Result::Ok(_) => 1_i64, Result::Error(_) => -1_i64, };
     i64 b = match Load<i64>(40_i64, 1_i64) { Result::Ok(v) => v, Result::Error(_) => -100_i64, };
     i64 c = match Load<i64>(40_i64, -1_i64) { Result::Ok(_) => -1000_i64, Result::Error(_) => 1_i64, };
-    i64 d = match Complete<i64, Reader>(reader, 3_i64) { Result::Ok(v) => v, Result::Error(_) => -1_i64, };
+    i64 d = match Complete<i64, Reader>(reader, 2_i64) { Result::Ok(v) => v, Result::Error(_) => -1_i64, };
+    i64 f = match Measure<i64>(Boxed<i64> { item: 1_i64, history: [1_i64] }) { Result::Ok(v) => v, Result::Error(_) => -1_i64, };
     i64 e = match Complete<Point, Reader>(reader, Point { x: -3_i64 }) { Result::Ok(p) => p.x, Result::Error(_) => -1_i64, };
-    return a + b + c + d + e;
+    return a + b + c + d + e + f;
 }
 "#;
 

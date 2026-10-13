@@ -277,7 +277,10 @@ pub fn serialization_template_getter_shape(
         return Ok(None);
     }
     let authority = ModSemanticQueryAuthority::for_registered_assembly(db, program.project, &program.assembly)?;
-    let mut selected = None;
+    // One owner retains one template per generated group (its encoder and its decoder). The
+    // descriptor graph is format-independent: every group's specialization must gate the same
+    // graph as the binding.
+    let mut gated = None;
     for template in program
         .assembly
         .compiled_mod_metadata
@@ -288,16 +291,13 @@ pub fn serialization_template_getter_shape(
         if mod_shape_stable_identity(db, owner).as_ref() != Some(qualified_name) {
             continue;
         }
-        if selected.replace(template).is_some() {
-            return Err(ModSemanticQueryAuthority::error("serialization template owner has repeated retained templates"));
+        let (_, shape) = template.specialized(&authority, db, program, arguments)?;
+        if shape.nodes() != binding.graph().nodes() {
+            return Err(ModSemanticQueryAuthority::error("compiled getter application differs from gated template shape"));
         }
+        gated = Some(shape);
     }
-    let Some(template) = selected else { return Ok(None) };
-    let (_, shape) = template.specialized(&authority, db, program, arguments)?;
-    if shape.nodes() != binding.graph().nodes() {
-        return Err(ModSemanticQueryAuthority::error("compiled getter application differs from gated template shape"));
-    }
-    Ok(Some(shape))
+    Ok(gated)
 }
 
 impl ModSemanticQueryAuthority<'_> {

@@ -122,6 +122,10 @@ impl std::fmt::Display for SemanticTypeId {
 pub enum CollectionMutationOwner {
     Local(LocalSlot),
     AggregateField { root: LocalSlot, receiver: AstNodeKey, declaration: AstNodeKey, index: u32 },
+    /// A field projected from the enclosing method's implicit receiver (`this.items`,
+    /// `this.state.frames`). `method` names that receiver; `receiver` is the terminal receiver
+    /// expression, or `method` itself for a field of the receiver.
+    ReceiverField { method: AstNodeKey, receiver: AstNodeKey, declaration: AstNodeKey, index: u32 },
 }
 
 /// Compiler-owned operation selected only from the resolved canonical Core.Collections.Array declaration.

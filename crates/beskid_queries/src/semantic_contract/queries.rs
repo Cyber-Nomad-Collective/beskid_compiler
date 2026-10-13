@@ -330,10 +330,15 @@ pub fn collection_operation(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult
                 // Each intermediate projection is already proven by the canonical field query.
                 let mut current = access.receiver;
                 let mut root = None;
+                let mut method_receiver = None;
                 let mut seen = HashSet::new();
                 for _ in 0..128 {
                     if current.generation != key.generation || !seen.insert(current) {
                         return Err(SemanticError::unavailable("collection_operation.owner_cycle"));
+                    }
+                    if node_kind(db, current)? == Some(IndexedNodeKind::MethodDefinition) {
+                        method_receiver = Some(current);
+                        break;
                     }
                     if let Some(slot) = local_slot(db, current)? {
                         root = Some(slot);
@@ -347,12 +352,21 @@ pub fn collection_operation(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult
                         .ok_or_else(|| SemanticError::unavailable("collection_operation.owner_projection"))?;
                     current = projection.receiver;
                 }
-                let root = root.ok_or_else(|| SemanticError::unavailable("collection_operation.owner_root"))?;
-                CollectionMutationOwner::AggregateField {
-                    root,
-                    receiver: access.receiver,
-                    declaration: access.declaration,
-                    index: access.index,
+                if let Some(method) = method_receiver {
+                    CollectionMutationOwner::ReceiverField {
+                        method,
+                        receiver: access.receiver,
+                        declaration: access.declaration,
+                        index: access.index,
+                    }
+                } else {
+                    let root = root.ok_or_else(|| SemanticError::unavailable("collection_operation.owner_root"))?;
+                    CollectionMutationOwner::AggregateField {
+                        root,
+                        receiver: access.receiver,
+                        declaration: access.declaration,
+                        index: access.index,
+                    }
                 }
             };
             if function.name.node.name == "TryAppend" {

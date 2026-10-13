@@ -27,4 +27,6 @@ mod mod_host;
 mod repeat_loop_probe;
 mod scoped_cleanup_native;
 mod spawn_scheduler;
+mod struct_literal_enum_field_native;
 mod traced_abi_value_native;
+mod unary_field_write_native;

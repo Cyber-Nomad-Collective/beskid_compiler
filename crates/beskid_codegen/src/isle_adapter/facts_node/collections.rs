@@ -23,6 +23,14 @@ impl SyntaxNodeFacts<'_> {
                             field_index: index,
                         }
                     }
+                    // The implicit receiver is the method's rooted receiver parameter.
+                    beskid_queries::CollectionMutationOwner::ReceiverField { receiver, index, .. } => {
+                        CollectionMutationOwner::AggregateField {
+                            root: super::super::context::IMPLICIT_METHOD_RECEIVER_SLOT,
+                            receiver,
+                            field_index: index,
+                        }
+                    }
                 };
                 if matches!(operation, beskid_queries::CollectionOperation::TryAppend { .. }) {
                     CollectionOperation::TryAppend { owner }

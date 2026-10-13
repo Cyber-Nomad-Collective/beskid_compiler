@@ -11,7 +11,17 @@ use beskid_queries::{
 };
 use std::sync::Arc;
 
+const MAIN: &str = "use Core.Collections.Array;\npub type Profile { pub i64[] roots, } pub type Loader { pub Profile profile, } pub unit Main(Loader loader) { Array.Append<i64>(loader.profile.roots, 7_i64); return; }";
+
 fn fixture(
+    copied_source: Option<&str>,
+) -> (tempfile::TempDir, BeskidDatabase, Arc<beskid_analysis::projects::ProgramAssembly>, AstNodeKey) {
+    fixture_with_main(MAIN, copied_source)
+}
+
+/// `main`'s first call must be the `Array.Append` under test.
+fn fixture_with_main(
+    main: &str,
     copied_source: Option<&str>,
 ) -> (tempfile::TempDir, BeskidDatabase, Arc<beskid_analysis::projects::ProgramAssembly>, AstNodeKey) {
     let root = tempfile::tempdir().unwrap();
@@ -31,7 +41,7 @@ fn fixture(
         .canonicalize()
         .unwrap();
     let path = source_root.join("Main.bd");
-    std::fs::write(&path, "use Core.Collections.Array;\npub type Profile { pub i64[] roots, } pub type Loader { pub Profile profile, } pub unit Main(Loader loader) { Array.Append<i64>(loader.profile.roots, 7_i64); return; }").unwrap();
+    std::fs::write(&path, main).unwrap();
     let plan = CompilePlan {
         project_root: source_root.parent().unwrap().to_owned(),
         manifest_path: source_root.parent().unwrap().join("Host.bproj"),
@@ -157,4 +167,29 @@ fn user_array_path_collision_does_not_gain_intrinsic_authority() {
 #[test]
 fn exact_copied_canonical_array_without_physical_authority_is_ordinary_source() {
     reject_untrusted_source(include_str!("../../../corelib/packages/foundation/src/Core/Collections/Array.bd"));
+}
+
+/// A method appending to a field of its own implicit receiver (`this.items`, or a field nested
+/// under it, `this.state.items`) owns the replacement through that receiver.
+#[test]
+fn receiver_field_collection_owner_is_the_method_receiver() {
+    for (main, nested) in [
+        (
+            "use Core.Collections.Array;\npub type Bag { pub i64[] items, pub unit Add(i64 value) { this.items = Array.Append<i64>(this.items, value); return; } }",
+            false,
+        ),
+        (
+            "use Core.Collections.Array;\npub type State { pub i64[] items, } pub type Bag { pub State state, pub unit Add(i64 value) { this.state.items = Array.Append<i64>(this.state.items, value); return; } }",
+            true,
+        ),
+    ] {
+        let (_root, db, _assembly, call) = fixture_with_main(main, None);
+        let Some(CollectionOperation::Append { owner: CollectionMutationOwner::ReceiverField { method, receiver, .. } }) =
+            collection_operation(&db, call).unwrap()
+        else {
+            panic!("receiver field owner proof required for {main}")
+        };
+        assert_eq!(beskid_queries::node_kind(&db, method).unwrap(), Some(beskid_queries::IndexedNodeKind::MethodDefinition));
+        assert_eq!(receiver == method, !nested, "the terminal receiver is the method only for a direct field");
+    }
 }

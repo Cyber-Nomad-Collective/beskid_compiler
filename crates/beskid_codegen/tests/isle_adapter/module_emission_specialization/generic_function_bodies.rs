@@ -79,7 +79,9 @@ fn type_qualified_call_to_a_function_of_the_declaring_unit_specializes() {
 /// an operand whose call carries the parameter only as an explicit type argument
 /// (`Admit<T>(limit)?`), and a `T` local initialized by a propagated generic call
 /// (`T loaded = ReadOne<T, R>(reader, value)?`) for a scalar and a managed record `T`. All read
-/// their operand and return type in the specialization.
+/// their operand and return type in the specialization. A propagated call whose argument is a
+/// field of a generic record (`CountAll(value.history)?` in `Measure<T>`) infers from the field's
+/// identity in the specialization.
 pub(crate) const PROPAGATING_GENERICS: &str = r#"
 enum Error { Failed() }
 enum Result<TValue, TError> { Ok(TValue value), Error(TError error) }
@@ -99,6 +101,9 @@ Result<Bag<T>, Error> Collect<T, R>(R reader, T value) where R: Source {
 Result<unit, Error> Admit<T>(i64 limit) { if (limit < 0_i64) { return Result::Error(Error::Failed()); } return Result::Ok(()); }
 Result<T, Error> Load<T>(T value, i64 limit) { Admit<T>(limit)?; return Result::Ok(value); }
 type Point { i64 x }
+type Boxed<T> { T item, T[] history }
+Result<i64, Error> CountAll<T>(T[] values) { return Result::Ok(1_i64); }
+Result<i64, Error> Measure<T>(Boxed<T> value) { i64 counted = CountAll(value.history)?; return Result::Ok(counted); }
 Result<T, Error> Complete<T, R>(R reader, T value) where R: Source {
     reader.Begin(1_i64)?;
     T loaded = ReadOne<T, R>(reader, value)?;
@@ -110,9 +115,10 @@ i64 Main() {
     i64 a = match Collect<i64, Reader>(reader, 5_i64) { Result::Ok(_) => 1_i64, Result::Error(_) => -1_i64, };
     i64 b = match Load<i64>(40_i64, 1_i64) { Result::Ok(v) => v, Result::Error(_) => -100_i64, };
     i64 c = match Load<i64>(40_i64, -1_i64) { Result::Ok(_) => -1000_i64, Result::Error(_) => 1_i64, };
-    i64 d = match Complete<i64, Reader>(reader, 3_i64) { Result::Ok(v) => v, Result::Error(_) => -1_i64, };
+    i64 d = match Complete<i64, Reader>(reader, 2_i64) { Result::Ok(v) => v, Result::Error(_) => -1_i64, };
+    i64 f = match Measure<i64>(Boxed<i64> { item: 1_i64, history: [1_i64] }) { Result::Ok(v) => v, Result::Error(_) => -1_i64, };
     i64 e = match Complete<Point, Reader>(reader, Point { x: -3_i64 }) { Result::Ok(p) => p.x, Result::Error(_) => -1_i64, };
-    return a + b + c + d + e;
+    return a + b + c + d + e + f;
 }
 "#;
 
@@ -180,7 +186,7 @@ fn generic_calls_propagated_with_try_inside_a_specialization_have_specialized_fa
     assert_eq!(put.signature.parameters.last(), Some(&beskid_queries::SemanticTypeId::I64));
 
     let names = lower_all(PROPAGATING_GENERICS);
-    for name in ["Collect#generic_", "ReadOne#generic_", "Load#generic_", "Admit#generic_", "Put#generic_", "Complete#generic_"] {
+    for name in ["Collect#generic_", "ReadOne#generic_", "Load#generic_", "Admit#generic_", "Put#generic_", "Complete#generic_", "Measure#generic_", "CountAll#generic_"] {
         assert!(names.iter().any(|emitted| emitted.starts_with(name)), "{name}: {names:?}");
     }
 }

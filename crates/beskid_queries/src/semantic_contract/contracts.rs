@@ -860,6 +860,65 @@ pub(super) fn specialized_local_declaration_identity(
     Some(specialized_source_expression_identity(db, AstNodeKey { node: initializer, ..identifier }, Some(enclosing)))
 }
 
+/// The identity of the field read `key` in the specialization `enclosing`: the declared field
+/// type with the record's parameters bound to the receiver's applied arguments. `None` when `key`
+/// is not a field read of an aggregate in this environment.
+fn specialized_field_read_identity(
+    db: &dyn Db,
+    program: &Spanned<beskid_analysis::syntax::Program>,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    key: AstNodeKey,
+    enclosing: &GenericSpecializationInstance,
+) -> Option<Result<GenericSourceTypeIdentity, SemanticError>> {
+    let access = super::layouts::aggregate_field_access_specialization(db, key, enclosing).ok()??;
+    let environment: HashMap<&str, &GenericSourceTypeIdentity> =
+        enclosing.substitutions.iter().map(|binding| (binding.parameter.as_ref(), binding.source_identity())).collect();
+    // The receiver's applied identity: a declared local or parameter, the implicit method receiver
+    // (the method's owner applied to the enclosing environment), or a receiver expression.
+    let receiver = match index.kind(access.receiver.node)? {
+        NodeKind::Identifier => specialized_local_declaration_identity(db, access.receiver, enclosing)?,
+        NodeKind::MethodDefinition => {
+            let owner = super::locals::method_owner_node(program, index, access.receiver.node)?;
+            let definition = index.node_at(program, owner)?.of::<TypeDefinition>()?;
+            let owner = AstNodeKey { node: owner, ..access.receiver };
+            let arguments = definition
+                .generics
+                .iter()
+                .map(|generic| environment.get(generic.node.name.as_str()).map(|identity| (*identity).clone()))
+                .collect::<Option<Vec<_>>>()?;
+            stable_declaration_identity(db, owner)
+                .map(|qualified_name| GenericSourceTypeIdentity::Nominal { qualified_name, arguments: arguments.into() })
+                .ok_or_else(|| source_expression_unavailable(db, key, "method receiver has no stable identity"))
+        }
+        _ => specialized_source_expression_identity(db, access.receiver, Some(enclosing)),
+    };
+    let receiver = match receiver {
+        Ok(receiver) => receiver,
+        Err(error) => return Some(Err(error)),
+    };
+    let GenericSourceTypeIdentity::Nominal { arguments, .. } = &receiver else { return None };
+    let owner = db.syntax_unit(access.declaration.unit).filter(|syntax| syntax.accepts_key(db, access.declaration))?;
+    let definition = owner
+        .syntax_index(db)
+        .node_at(owner.expanded_program(db), access.declaration.node)?
+        .of::<TypeDefinition>()?;
+    if definition.generics.len() != arguments.len() {
+        return None;
+    }
+    let field = definition
+        .fields
+        .iter()
+        .filter(|field| field.node.kind == beskid_analysis::syntax::FieldKind::Value)
+        .nth(access.index as usize)?;
+    let applied = definition
+        .generics
+        .iter()
+        .map(|generic| generic.node.name.as_str())
+        .zip(arguments.iter())
+        .collect::<HashMap<_, _>>();
+    Some(generic_source_type_identity_with_substitutions(db, access.declaration, &field.node.ty.node, &applied))
+}
+
 /// Source interpretation in an immutable enclosing specialization. Contract witnesses are
 /// looked up by parameter identity; generic names keep their existing source substitution map.
 pub(super) fn specialized_source_expression_identity(
@@ -896,6 +955,14 @@ pub(super) fn specialized_source_expression_identity(
             &Type::Complex(literal.path.clone()),
             &environment,
         );
+    }
+    // A field read (`value.history`, `this.reader`) has the declared field type applied to its
+    // receiver's identity in this environment (`List<T>` of a `Boxed<i32>` value is `List<i32>`).
+    if (node.of::<beskid_analysis::syntax::PathExpression>().is_some()
+        || node.of::<beskid_analysis::syntax::MemberExpression>().is_some())
+        && let Some(identity) = specialized_field_read_identity(db, program, index, key, enclosing)
+    {
+        return identity;
     }
     // `operand?` has the payload of its operand read in this environment
     // (`values.Push(ReadField<T, R>(reader, limits)?)` inside a specialization of `ReadList<T, R>`).

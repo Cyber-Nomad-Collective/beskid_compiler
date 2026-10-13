@@ -43,6 +43,32 @@ pub(in crate::semantic_contract) fn contextual_integer_literal_abi_type_tracked(
     .transpose()
 }
 
+/// The ABI of `!operand` or `-operand` from its operand's ABI fact: `!` requires and keeps
+/// `bool`; `-` keeps a signed integer or float operand.
+fn unary_operand_abi_type(db: &dyn Db, key: AstNodeKey) -> Result<SemanticTypeId, SemanticError> {
+    let unavailable = || SemanticError::unavailable("abi_type");
+    let children = child_nodes(db, key)?.ok_or_else(unavailable)?;
+    let [_, operand] = children.as_ref() else { return Err(unavailable()) };
+    let operand = abi_type(db, *operand)?.ok_or_else(unavailable)?;
+    match operator_fact(db, key)? {
+        Some(OperatorFact::Not) if operand == SemanticTypeId::BOOL => Ok(operand),
+        Some(OperatorFact::Neg)
+            if matches!(
+                operand,
+                SemanticTypeId::I8
+                    | SemanticTypeId::I16
+                    | SemanticTypeId::I32
+                    | SemanticTypeId::I64
+                    | SemanticTypeId::F32
+                    | SemanticTypeId::F64
+            ) =>
+        {
+            Ok(operand)
+        }
+        _ => Err(unavailable()),
+    }
+}
+
 /// Whether `key` is an integer literal with an explicit ABI suffix, through singleton wrappers
 /// and unary negation.
 fn suffixed_integer_literal(db: &dyn Db, key: AstNodeKey) -> Result<bool, SemanticError> {
@@ -118,8 +144,15 @@ pub(in crate::semantic_contract) fn abi_type_tracked(
         }
         if node.of::<beskid_analysis::syntax::UnaryExpression>().is_some() {
             // Unary semantic typing already validates the operator and preserves the
-            // operand type; expose that same authority at ABI conversion boundaries.
-            return Some(node_type(db, key).and_then(|ty| ty.ok_or_else(|| SemanticError::unavailable("abi_type"))));
+            // operand type; expose that same authority at ABI conversion boundaries. An operand
+            // node typing does not cover (`!this.state.input.failed`, a field read) has the ABI
+            // its own fact proves, which `!` and `-` preserve.
+            return Some(match node_type(db, key) {
+                Ok(Some(ty)) => Ok(ty),
+                Ok(None) => unary_operand_abi_type(db, key),
+                Err(error) if error.is_unavailable() => unary_operand_abi_type(db, key),
+                Err(error) => Err(error),
+            });
         }
         if let Some(expression) = node.of::<beskid_analysis::syntax::Expression>() {
             return Some(abi_type_for_expression(db, program, index, key, expression));

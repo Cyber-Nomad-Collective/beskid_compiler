@@ -346,12 +346,12 @@ impl CompiledCatchallBinding {
     pub fn field(&self) -> &ModSemanticDeclaration {
         &self.field
     }
-    /// Rebase only alongside the independently rebound, exact generated target.
+    /// Rebase only alongside the exact current correspondence of its generated target.
     pub fn rebind(
         &self,
         db: &dyn Db,
         program: &crate::TypedProgram,
-        target: &super::ReboundSerializationTarget,
+        target: &super::CorrespondingSerializationTarget,
     ) -> Result<ReboundCatchallBinding, ModSemanticError> {
         let reject = ModSemanticQueryAuthority::error;
         if !super::same_issuing_project(&self.assembly, &program.assembly)

@@ -33,7 +33,7 @@ pub use mod_semantic_scope::build_mod_authority_typed_program;
 mod mod_syntax_authority;
 pub use mod_semantic_authority::{
     CompiledCatchallBinding, ReboundCatchallBinding, CompiledSerializationTarget, SerializationContributionKind, ModSemanticCatchall, ModSemanticQueryAuthority,
-    CompiledSerializationTemplate, RetainedDeclaration, serialization_template_getter_shape,
+    CompiledSerializationTemplate, CorrespondingSerializationTarget, RetainedDeclaration, serialization_template_getter_shape,
     serialization_template_instance_rebind,
 };
 pub use semantic_contract::{

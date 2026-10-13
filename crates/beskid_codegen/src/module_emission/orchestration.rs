@@ -399,9 +399,17 @@ fn lower_resolved_syntax_program(
             extern_imports.push(import);
         }
     }
-    // Checked collection transactions (`Array.Append` under a checked owner) call runtime kit
-    // helpers that are not builtin-table symbols; a module that references one declares it.
-    for symbol in ["beskid_rt_v5_gc_try_register_root", "beskid_rt_v5_array_try_grow_rooted"] {
+    // Checked collection transactions (`Array.Append` under a checked owner) and the compiled
+    // descriptor getters of serialization targets (which keep their managed literals in GC
+    // handles) call runtime kit helpers that are not builtin-table symbols; a module that
+    // references one declares it.
+    for symbol in [
+        "beskid_rt_v5_gc_try_register_root",
+        "beskid_rt_v5_array_try_grow_rooted",
+        "gc_root_handle",
+        "beskid_rt_v5_gc_resolve_handle",
+        "gc_unroot_handle",
+    ] {
         let referenced = functions.iter().any(|function| {
             function.function.dfg.ext_funcs.iter().any(|(_, external)| {
                 matches!(&external.name, cranelift_codegen::ir::ExternalName::TestCase(name) if name.raw() == symbol.as_bytes())

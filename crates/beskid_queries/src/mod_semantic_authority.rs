@@ -6,7 +6,8 @@ pub use serialization_template::{
 };
 mod serialization_target;
 pub use serialization_target::{
-    CompiledSerializationTarget, ReboundSerializationTarget, SerializationContributionKind,
+    CompiledSerializationTarget, CorrespondingSerializationTarget, ReboundSerializationTarget,
+    SerializationContributionKind,
 };
 mod catchall;
 mod field_codec;

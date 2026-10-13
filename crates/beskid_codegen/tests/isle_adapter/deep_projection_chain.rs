@@ -67,3 +67,38 @@ fn four_segment_projection_as_a_call_argument_matches_the_let_form() {
     assert_eq!(let_form.len(), 3, "{let_form:?}\n{let_clif}");
     assert_eq!(argument_form, let_form, "argument and let spellings of one chain must load identically\n{argument_clif}\n{let_clif}");
 }
+
+/// A unary operator over a nested field read (`!this.state.input.failed`, `-this.state.count`)
+/// has the operand field's ABI wherever it is written, including as the value of a field write.
+#[test]
+fn unary_operators_over_nested_field_reads_lower_as_field_write_values() {
+    let source = r#"
+type Input { bool failed, i64 nodes }
+type State { Input input, bool active, i64 count }
+type Reader {
+    State state,
+    pub i64 Go() {
+        this.state.active = !this.state.input.failed;
+        this.state.count = -this.state.input.nodes;
+        if (this.state.active) { return this.state.count; }
+        return 0_i64;
+    }
+}
+i64 Main() {
+    Reader reader = Reader { state: State { input: Input { failed: false, nodes: 7_i64 }, active: false, count: 0_i64 } };
+    return reader.Go();
+}
+"#;
+    let (input, isa, root) = item_fixture_with_root(source);
+    let db = input.database();
+    let mut items = super::support::find_function_definitions(db, root);
+    items.extend(super::support::find_nodes_of_kind(db, root, beskid_queries::IndexedNodeKind::MethodDefinition));
+    let items = items
+        .into_iter()
+        .map(|key| super::support::SyntaxModuleItem {
+            key,
+            symbol: beskid_queries::item_name(db, key).ok().flatten().expect("item name").to_string(),
+        })
+        .collect::<Vec<_>>();
+    super::support::lower_syntax_program(&input, isa.as_ref(), &items).expect("unary field write values lower");
+}

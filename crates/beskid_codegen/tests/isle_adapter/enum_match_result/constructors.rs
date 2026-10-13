@@ -481,3 +481,38 @@ fn zero_sized_unit_enum_payload_still_evaluates_its_direct_call() {
         "the unit payload must call the exact Touch function even though no payload bytes are stored: {clif}"
     );
 }
+
+/// A generic enum constructor written as a struct literal field value takes its application
+/// from the declared field type (`Option<i32[]> window` admits `Option::Some([...])`), as an
+/// annotated local or a return value does.
+#[test]
+fn generic_enum_constructor_as_a_struct_literal_field_value_uses_the_field_type() {
+    let source = r#"
+enum Option<T> { Some(T value), None() }
+type Holder<T> { Option<i32[]> window, Option<T> item, i64 count }
+Holder<string> Make() {
+    return Holder<string> { window: Option::Some([3_i32, -4_i32]), item: Option::Some("x"), count: 1_i64 };
+}
+i64 Main() {
+    Holder<string> holder = Make();
+    return match holder.window { Option::Some(values) => 2_i64, Option::None() => 0_i64, };
+}
+"#;
+    let (input, isa, root) = item_fixture_with_root(source);
+    let db = input.database();
+    for constructor in find_nodes_of_kind(db, root, beskid_queries::IndexedNodeKind::EnumConstructorExpression) {
+        assert!(
+            enum_constructor(db, constructor).expect("enum constructor query").is_some(),
+            "{} has its application from the field type",
+            beskid_queries::format_ast_node_site(db, constructor)
+        );
+    }
+    let items = find_function_definitions(db, root)
+        .into_iter()
+        .map(|key| SyntaxModuleItem {
+            key,
+            symbol: item_name(db, key).expect("item name query").expect("item name").to_string(),
+        })
+        .collect::<Vec<_>>();
+    lower_syntax_program(&input, isa.as_ref(), &items).expect("struct literal field constructors lower");
+}

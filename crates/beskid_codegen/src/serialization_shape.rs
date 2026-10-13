@@ -5,16 +5,12 @@ use beskid_queries::{AstNodeKey, CompiledCatchallBinding, CompiledSerializationT
 
 #[derive(Clone)]
 pub struct CompiledSerializationShape {
-    kind: beskid_queries::SerializationContributionKind,
     owner: AstNodeKey,
     implementation: AstNodeKey,
     shape: CompiledStableShape,
     extras: Option<ReboundCatchallBinding>,
 }
 impl CompiledSerializationShape {
-    pub fn kind(&self) -> beskid_queries::SerializationContributionKind {
-        self.kind
-    }
     pub fn owner(&self) -> AstNodeKey {
         self.owner
     }
@@ -31,6 +27,11 @@ impl CompiledSerializationShape {
 impl CodegenInput<'_> {
     /// Metadata is parent-owned immutable issuer payload. Each carrier must rebind
     /// through exact appended-contribution correspondence in this current assembly.
+    ///
+    /// A target's descriptor graph is format-independent, so it is issued from the exact
+    /// correspondence of its retained groups, one shape per target declaration. Conformance of a
+    /// group generic over its format (`impl<E> Point : Serializable<E>`, the decoder adapter over
+    /// `R`) is proven per use in a complete environment (the field codec correspondence).
     pub fn compiled_serialization_shapes(
         &self,
         schema_version: &str,
@@ -43,16 +44,22 @@ impl CodegenInput<'_> {
             .iter()
             .filter_map(|metadata| metadata.issuer_payload::<CompiledCatchallBinding>())
             .collect::<Vec<_>>();
-        let mut emitted = Vec::new();
+        let mut emitted = Vec::<CompiledSerializationShape>::new();
+        let mut implementations = std::collections::HashSet::new();
         for target in targets {
-            let rebound = target.rebind(self.database(), program).map_err(|error| error.to_string())?;
-            if emitted.iter().any(|issued: &CompiledSerializationShape| {
-                issued.owner == rebound.owner() && issued.kind == rebound.kind()
-            }) {
+            let rebound = target.corresponding_target(self.database(), program).map_err(|error| error.to_string())?;
+            if !implementations.insert(rebound.implementation()) {
                 return Err("duplicate current serialization contribution target".into());
             }
             let graph = rebound.shape(self.database(), program).map_err(|error| error.to_string())?;
             let shape = self.compile_stable_shape_graph(&graph, schema_version, max_signature_bytes)?;
+            // The encoder and decoder groups of one target issue the same graph once.
+            if let Some(issued) = emitted.iter().find(|issued| issued.owner == rebound.owner()) {
+                if issued.shape.sha256() != shape.sha256() {
+                    return Err("serialization groups of one target issue different graphs".into());
+                }
+                continue;
+            }
             let mut extras = None;
             for catchall in &catchalls {
                 // Distinct source units/owner declarations are not silently treated as
@@ -69,7 +76,6 @@ impl CodegenInput<'_> {
                 }
             }
             emitted.push(CompiledSerializationShape {
-                kind: rebound.kind(),
                 owner: rebound.owner(),
                 implementation: rebound.implementation(),
                 shape,

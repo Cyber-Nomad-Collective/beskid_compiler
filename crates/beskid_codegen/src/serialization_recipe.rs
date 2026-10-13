@@ -158,7 +158,7 @@ impl CodegenInput<'_> {
   let (expected_root,extras_binding)=match shapes.iter().find(|shape|shape.owner()==root) {
    Some(shape)=>{
     // Compare actual resolved source body/arguments, not only a declaration or digest.
-    let target=self.typed_program().assembly.compiled_mod_metadata.iter().filter_map(|m|m.issuer_payload::<beskid_queries::CompiledSerializationTarget>()).find_map(|target|target.rebind(self.database(),self.typed_program()).ok().filter(|current|current.owner()==root));
+    let target=self.typed_program().assembly.compiled_mod_metadata.iter().filter_map(|m|m.issuer_payload::<beskid_queries::CompiledSerializationTarget>()).find_map(|target|target.corresponding_target(self.database(),self.typed_program()).ok().filter(|current|current.owner()==root));
     let current=target.ok_or("compiled getter target correspondence absent")?;
     if current.shape(self.database(),self.typed_program()).map_err(|e|e.to_string())?.nodes()!=graph.nodes(){return Err("compiled getter application differs from retained target graph".into())}
     (Some(*shape.shape().sha256()),shape.extras().cloned())

@@ -144,6 +144,8 @@ impl SyntaxNodeFacts<'_> {
 
     pub(super) fn local_slot_impl(&self, key: AstNodeKey) -> Option<LocalSlotId> {
         match self.query(node_kind(self.db, key))? {
+            // A field access whose receiver is the method itself reads the implicit receiver.
+            beskid_queries::IndexedNodeKind::MethodDefinition => Some(super::super::context::IMPLICIT_METHOD_RECEIVER_SLOT),
             beskid_queries::IndexedNodeKind::PathExpression => {
                 if self.query(implicit_method_receiver(self.db, key)).is_some() {
                     return Some(super::super::context::IMPLICIT_METHOD_RECEIVER_SLOT);
