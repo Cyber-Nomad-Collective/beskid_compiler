@@ -533,24 +533,43 @@ fn stage_tool(
         version_output_sha256: format!("{:x}", Sha256::digest(bytes)),
     })
 }
+/// Flush every staged file, then every directory after its contents, before publication.
+///
+/// The files are independent, so their flushes run concurrently: the filesystem journal commits
+/// concurrent flushes together instead of paying one commit per file (a Mod artifact stages a few
+/// hundred source snapshots next to its library). Directories still flush after all files.
 fn sync_tree(path: &Path) -> AotResult<()> {
+    let mut files = Vec::new();
+    let mut directories = Vec::new();
+    collect_staged_tree(path, &mut files, &mut directories)?;
+    let workers = std::thread::available_parallelism().map_or(4, |count| count.get()).clamp(1, 16);
+    let chunk = files.len().div_ceil(workers).max(1);
+    std::thread::scope(|scope| {
+        let flushes = files
+            .chunks(chunk)
+            .map(|batch| scope.spawn(move || batch.iter().try_for_each(|file| sync_staged_file(file))))
+            .collect::<Vec<_>>();
+        flushes.into_iter().try_for_each(|flush| flush.join().unwrap_or_else(|panic| std::panic::resume_unwind(panic)))
+    })?;
+    directories.iter().try_for_each(|directory| sync_directory(directory))
+}
+/// Staged files and directories under `path`; each directory follows its own contents.
+fn collect_staged_tree(path: &Path, files: &mut Vec<PathBuf>, directories: &mut Vec<PathBuf>) -> AotResult<()> {
     for entry in fs::read_dir(path).map_err(invalid)? {
         let entry = entry.map_err(invalid)?;
         if entry.file_type().map_err(invalid)?.is_dir() {
-            sync_tree(&entry.path())?;
+            collect_staged_tree(&entry.path(), files, directories)?;
         } else {
-            // FlushFileBuffers requires a write-capable handle on Windows. These are
-            // private staged files, never pre-existing user/cache payloads.
-            fs::OpenOptions::new()
-                .read(true)
-                .write(true)
-                .open(entry.path())
-                .map_err(invalid)?
-                .sync_all()
-                .map_err(invalid)?;
+            files.push(entry.path());
         }
     }
-    sync_directory(path)
+    directories.push(path.to_path_buf());
+    Ok(())
+}
+fn sync_staged_file(path: &Path) -> AotResult<()> {
+    // FlushFileBuffers requires a write-capable handle on Windows. These are
+    // private staged files, never pre-existing user/cache payloads.
+    fs::OpenOptions::new().read(true).write(true).open(path).map_err(invalid)?.sync_all().map_err(invalid)
 }
 fn sync_directory(path: &Path) -> AotResult<()> {
     #[cfg(unix)]

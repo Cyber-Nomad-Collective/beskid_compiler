@@ -2,9 +2,30 @@
 
 use std::path::{Path, PathBuf};
 
+/// Canonical form of an existing absolute path, resolved once per process.
+///
+/// Resolution and rule stages key and compare unit paths per item and per assembled unit, and
+/// `canonicalize` walks every component with `readlink`. A relative path (resolved against the
+/// working directory) or a path that does not exist (yet) is never cached, so a file first named
+/// before it is created still canonicalizes to its created location. Scoped lookups
+/// ([`ScopedPathIdentity`]) never use this cache: they follow a retargeted symlink to the file it
+/// names now.
+fn canonical_path(path: &Path) -> std::io::Result<PathBuf> {
+    static EXISTING: std::sync::LazyLock<std::sync::RwLock<std::collections::HashMap<PathBuf, PathBuf>>> =
+        std::sync::LazyLock::new(Default::default);
+    if let Some(canonical) = EXISTING.read().unwrap_or_else(|poison| poison.into_inner()).get(path) {
+        return Ok(canonical.clone());
+    }
+    let canonical = path.canonicalize()?;
+    if path.is_absolute() {
+        EXISTING.write().unwrap_or_else(|poison| poison.into_inner()).insert(path.to_path_buf(), canonical.clone());
+    }
+    Ok(canonical)
+}
+
 /// Stable key for per-unit scoped tables (canonical when the path exists on disk).
 pub fn unit_path_key(path: &Path) -> PathBuf {
-    path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
+    canonical_path(path).unwrap_or_else(|_| path.to_path_buf())
 }
 
 /// Whether two paths refer to the same on-disk file (equality or matching canonical paths).
@@ -12,7 +33,7 @@ pub fn same_file(left: &Path, right: &Path) -> bool {
     if left == right {
         return true;
     }
-    match (left.canonicalize(), right.canonicalize()) {
+    match (canonical_path(left), canonical_path(right)) {
         (Ok(a), Ok(b)) if a == b => return true,
         _ => {}
     }

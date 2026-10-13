@@ -19,6 +19,9 @@ pub struct SyntaxIndex {
     metadata: Vec<SyntaxNodeMetadata>,
     children: Vec<Vec<AstNodeId>>,
     paths: Vec<Vec<u32>>,
+    /// Node ids per `NodeKind` (indexed by discriminant) in pre-order, so kind lookups visit only
+    /// the matching nodes instead of the whole unit.
+    kinds: Vec<Vec<AstNodeId>>,
 }
 
 impl SyntaxIndex {
@@ -32,7 +35,11 @@ impl SyntaxIndex {
         // every other node; the bare `Program` has no span and would leave `Query.Span(entryRoot)`
         // unanswerable while every child answers.
         index_node(DynNodeRef::from(program), None, &[], &mut metadata, &mut children, &mut paths);
-        Self { generation, metadata, children, paths }
+        let mut kinds = vec![Vec::new(); NodeKind::ALL.len()];
+        for node in &metadata {
+            kinds[node.kind as usize].push(node.id);
+        }
+        Self { generation, metadata, children, paths, kinds }
     }
 
     pub fn generation(&self) -> SyntaxGenerationId {
@@ -56,7 +63,7 @@ impl SyntaxIndex {
     }
 
     pub fn ids_of_kind(&self, kind: NodeKind) -> impl Iterator<Item = AstNodeId> + '_ {
-        self.metadata.iter().filter(move |node| node.kind == kind).map(|node| node.id)
+        self.kinds.get(kind as usize).into_iter().flatten().copied()
     }
 
     /// Direct children in deterministic AST order.

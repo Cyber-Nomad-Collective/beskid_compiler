@@ -106,15 +106,20 @@ pub fn build_typed_program(
 
     for unit in assembly.units.iter() {
         let identity = SourceUnitId::new(db, unit.path.clone());
-        db.ensure_expanded_syntax_unit(
-            project,
-            identity,
-            generation,
-            unit.source.clone(),
-            Arc::new(unit.program.clone()),
-        )?;
+        let input =
+            db.ensure_borrowed_expanded_syntax_unit(project, identity, generation, &unit.source, &unit.program)?;
         let public_dynamic = assembly.is_canonical_public_dynamic_unit(unit);
-        if public_dynamic {
+        // A registration this call left current keeps the authority it was granted for the same
+        // source bytes and the same tree; only a new revision re-proves it against a fresh parse.
+        let granted = input.revision(db);
+        let granted_tree =
+            |granted: &crate::semantic_contract::SyntaxUnitRevision| *granted.expanded_program == unit.program;
+        let dynamic_granted = public_dynamic
+            && granted.runtime_source_authority.as_deref()
+                == Some(beskid_abi::runtime_source::CANONICAL_PUBLIC_DYNAMIC_SOURCE_PATH)
+            && granted_tree(granted);
+        let granted_sdk_authority = granted.sdk_source_authority.clone().filter(|_| granted_tree(granted));
+        if public_dynamic && !dynamic_granted {
             let parsed = beskid_analysis::services::parse_program_with_source_name_and_diagnostics(
                 &unit.logical_name,
                 &unit.source,
@@ -142,7 +147,9 @@ pub fn build_typed_program(
                     .path
                     .ends_with(std::path::Path::new(expected.path().strip_prefix("src/").unwrap_or(expected.path())))
         });
-        if let Some(expected) = canonical {
+        if let Some(expected) = canonical
+            && granted_sdk_authority.as_deref() != Some(expected.path())
+        {
             let parsed = beskid_analysis::services::parse_program_with_source_name_and_diagnostics(
                 &unit.logical_name,
                 &unit.source,

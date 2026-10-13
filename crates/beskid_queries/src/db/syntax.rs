@@ -38,7 +38,16 @@ impl BeskidDatabase {
             }
         }
         let program = self.parse_and_expand(unit, &source)?;
-        self.register_expanded_syntax(project, unit, generation, source_fingerprint, Arc::new(program), false)
+        let tree_fingerprint = Arc::<str>::from(expanded_syntax_fingerprint(&program)?);
+        self.register_expanded_syntax(
+            project,
+            unit,
+            generation,
+            source_fingerprint,
+            tree_fingerprint,
+            Arc::new(program),
+            false,
+        )
     }
 
     /// Register an already expanded source unit without reparsing away mod rewrites.
@@ -50,21 +59,85 @@ impl BeskidDatabase {
         source: String,
         expanded_program: Arc<beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>>,
     ) -> Result<SyntaxUnitInput, SemanticError> {
-        let source_fingerprint = Arc::<str>::from(beskid_artifacts::content_fingerprint(&source));
-        let tree_fingerprint = Arc::<str>::from(expanded_syntax_fingerprint(&expanded_program)?);
-        if let Some(input) = self.syntax_unit(unit) {
-            self.validate_existing_registration(input, project, generation, &source_fingerprint, true)?;
-            if input.generation(self) == generation
-                && input.source_fingerprint(self) == &source_fingerprint
-                && input.revision(self).tree_fingerprint == tree_fingerprint
-            {
-                return Ok(input);
+        match self.current_expanded_syntax_unit(project, unit, generation, &source, &expanded_program)? {
+            ExpandedRegistration::Current(input) => Ok(input),
+            ExpandedRegistration::Changed { source_fingerprint, tree_fingerprint } => {
+                let input = self.register_expanded_syntax(
+                    project,
+                    unit,
+                    generation,
+                    source_fingerprint,
+                    tree_fingerprint,
+                    expanded_program,
+                    true,
+                )?;
+                self.ensure_file_text(unit.path(self).clone(), source);
+                Ok(input)
             }
         }
-        let input =
-            self.register_expanded_syntax(project, unit, generation, source_fingerprint, expanded_program, true)?;
-        self.ensure_file_text(unit.path(self).clone(), source);
-        Ok(input)
+    }
+
+    /// [`Self::ensure_expanded_syntax_unit`] for a borrowed assembly unit: the source and tree are
+    /// copied only when the registration actually changes.
+    pub(crate) fn ensure_borrowed_expanded_syntax_unit(
+        &mut self,
+        project: ProjectSession,
+        unit: SourceUnitId,
+        generation: beskid_analysis::syntax::SyntaxGenerationId,
+        source: &str,
+        expanded_program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    ) -> Result<SyntaxUnitInput, SemanticError> {
+        match self.current_expanded_syntax_unit(project, unit, generation, source, expanded_program)? {
+            ExpandedRegistration::Current(input) => Ok(input),
+            ExpandedRegistration::Changed { source_fingerprint, tree_fingerprint } => {
+                let input = self.register_expanded_syntax(
+                    project,
+                    unit,
+                    generation,
+                    source_fingerprint,
+                    tree_fingerprint,
+                    Arc::new(expanded_program.clone()),
+                    true,
+                )?;
+                self.ensure_file_text(unit.path(self).clone(), source.to_owned());
+                Ok(input)
+            }
+        }
+    }
+
+    /// The registered input when it already describes `expanded_program` for this generation and
+    /// source, else the fingerprints a new registration needs. A tree equal to the registered one
+    /// (spans included) is current without computing its structural fingerprint.
+    fn current_expanded_syntax_unit(
+        &self,
+        project: ProjectSession,
+        unit: SourceUnitId,
+        generation: beskid_analysis::syntax::SyntaxGenerationId,
+        source: &str,
+        expanded_program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    ) -> Result<ExpandedRegistration, SemanticError> {
+        let source_fingerprint = Arc::<str>::from(beskid_artifacts::content_fingerprint(source));
+        let existing = self.syntax_unit(unit);
+        let mut same_source = None;
+        if let Some(input) = existing {
+            self.validate_existing_registration(input, project, generation, &source_fingerprint, true)?;
+            if input.generation(self) == generation && input.source_fingerprint(self) == &source_fingerprint {
+                let revision = input.revision(self);
+                if std::ptr::eq(revision.expanded_program.as_ref(), expanded_program)
+                    || *revision.expanded_program == *expanded_program
+                {
+                    return Ok(ExpandedRegistration::Current(input));
+                }
+                same_source = Some((input, Arc::clone(&revision.tree_fingerprint)));
+            }
+        }
+        let tree_fingerprint = Arc::<str>::from(expanded_syntax_fingerprint(expanded_program)?);
+        if let Some((input, registered)) = same_source
+            && registered == tree_fingerprint
+        {
+            return Ok(ExpandedRegistration::Current(input));
+        }
+        Ok(ExpandedRegistration::Changed { source_fingerprint, tree_fingerprint })
     }
 
     /// Parse, expand, register, and invalidate one edited source as a single semantic update.
@@ -83,8 +156,16 @@ impl BeskidDatabase {
             }
         }
         let program = self.parse_and_expand(unit, &source)?;
-        let input =
-            self.register_expanded_syntax(project, unit, generation, source_fingerprint, Arc::new(program), false)?;
+        let tree_fingerprint = Arc::<str>::from(expanded_syntax_fingerprint(&program)?);
+        let input = self.register_expanded_syntax(
+            project,
+            unit,
+            generation,
+            source_fingerprint,
+            tree_fingerprint,
+            Arc::new(program),
+            false,
+        )?;
         self.ensure_file_text(unit.path(self).clone(), source);
         Ok(input)
     }
@@ -95,10 +176,10 @@ impl BeskidDatabase {
         unit: SourceUnitId,
         generation: beskid_analysis::syntax::SyntaxGenerationId,
         source_fingerprint: Arc<str>,
+        tree_fingerprint: Arc<str>,
         expanded_program: Arc<beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>>,
         allow_unchanged_relabel: bool,
     ) -> Result<SyntaxUnitInput, SemanticError> {
-        let tree_fingerprint = Arc::<str>::from(expanded_syntax_fingerprint(&expanded_program)?);
         let registry = Arc::clone(&self.syntax_unit_registry);
         let mut registry = registry.lock().expect("syntax unit registry");
         if let Some(input) = registry.get(&unit).copied() {
@@ -207,6 +288,12 @@ impl BeskidDatabase {
     pub fn syntax_authority_counts(&self) -> (u64, u64) {
         (self.syntax_parse_count.load(Ordering::Relaxed), self.syntax_index_build_count.load(Ordering::Relaxed))
     }
+}
+
+/// Outcome of comparing an expanded unit against its registered input.
+enum ExpandedRegistration {
+    Current(SyntaxUnitInput),
+    Changed { source_fingerprint: Arc<str>, tree_fingerprint: Arc<str> },
 }
 
 pub(crate) fn expanded_syntax_fingerprint(

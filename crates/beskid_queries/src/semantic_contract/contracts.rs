@@ -983,14 +983,22 @@ fn concrete_nominal_declaration_of_kinds(
             let Some(definition) = index.node_at(program, node) else {
                 continue;
             };
-            let Some(arity) = definition
+            let Some((name, arity)) = definition
                 .of::<TypeDefinition>()
-                .map(|definition| definition.generics.len())
-                .or_else(|| definition.of::<EnumDefinition>().map(|definition| definition.generics.len()))
+                .map(|definition| (definition.name.node.name.as_str(), definition.generics.len()))
+                .or_else(|| {
+                    definition
+                        .of::<EnumDefinition>()
+                        .map(|definition| (definition.name.node.name.as_str(), definition.generics.len()))
+                })
             else {
                 continue;
             };
-            if arity == arguments.len() && stable_declaration_identity(db, declaration).as_ref() == Some(qualified_name)
+            // A stable identity always ends with the declaration's own name, so only same-named
+            // declarations can match; the full identity (a registry scan) is computed for those.
+            if arity == arguments.len()
+                && qualified_identity_names(qualified_name, name)
+                && stable_declaration_identity(db, declaration).as_ref() == Some(qualified_name)
             {
                 candidates.push(declaration);
             }
@@ -1000,6 +1008,13 @@ fn concrete_nominal_declaration_of_kinds(
         [candidate] => Some(*candidate),
         _ => None,
     }
+}
+
+/// Whether a `::`-joined stable identity names a declaration called `name` as its final segment.
+fn qualified_identity_names(qualified_name: &str, name: &str) -> bool {
+    qualified_name
+        .strip_suffix(name)
+        .is_some_and(|prefix| prefix.is_empty() || prefix.ends_with("::"))
 }
 
 /// `impl` blocks in `concrete`'s own unit whose receiver names `type_name`. Same-unit only,

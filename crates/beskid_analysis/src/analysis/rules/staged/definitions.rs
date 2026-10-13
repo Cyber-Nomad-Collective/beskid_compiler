@@ -401,26 +401,9 @@ impl SemanticPipelineRule {
             known.insert(primitive.to_string());
         }
 
-        self.extend_known_type_names::<crate::syntax::TypeDefinition>(program, &mut known, |definition| {
-            definition.name.node.name.clone()
-        });
-        self.extend_known_type_names::<crate::syntax::EnumDefinition>(program, &mut known, |definition| {
-            definition.name.node.name.clone()
-        });
-        self.extend_known_type_names::<crate::syntax::ContractDefinition>(program, &mut known, |definition| {
-            definition.name.node.name.clone()
-        });
-
+        Self::extend_known_type_names(program, &mut known);
         for unit_program in self.assembly_programs_excluding_entry(ctx) {
-            self.extend_known_type_names::<crate::syntax::TypeDefinition>(unit_program, &mut known, |definition| {
-                definition.name.node.name.clone()
-            });
-            self.extend_known_type_names::<crate::syntax::EnumDefinition>(unit_program, &mut known, |definition| {
-                definition.name.node.name.clone()
-            });
-            self.extend_known_type_names::<crate::syntax::ContractDefinition>(unit_program, &mut known, |definition| {
-                definition.name.node.name.clone()
-            });
+            Self::extend_known_type_names(unit_program, &mut known);
         }
 
         known
@@ -594,14 +577,21 @@ impl SemanticPipelineRule {
         ctx.emit_issue(span, issue);
     }
 
-    fn extend_known_type_names<T: AstNode + 'static>(
-        &self,
-        program: &Spanned<Program>,
-        known: &mut HashSet<String>,
-        name_of: impl Fn(&T) -> String,
-    ) {
-        for node in Query::from(&program.node).of::<T>() {
-            known.insert(name_of(node));
+    /// Type, enum, and contract names declared anywhere in `program`, in one traversal.
+    fn extend_known_type_names(program: &Spanned<Program>, known: &mut HashSet<String>) {
+        for node in Query::from(&program.node).descendants() {
+            let name = node
+                .of::<crate::syntax::TypeDefinition>()
+                .map(|definition| &definition.name.node.name)
+                .or_else(|| node.of::<crate::syntax::EnumDefinition>().map(|definition| &definition.name.node.name))
+                .or_else(|| {
+                    node.of::<crate::syntax::ContractDefinition>().map(|definition| &definition.name.node.name)
+                });
+            if let Some(name) = name
+                && !known.contains(name)
+            {
+                known.insert(name.clone());
+            }
         }
     }
 }
