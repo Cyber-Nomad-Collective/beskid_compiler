@@ -37,6 +37,9 @@ struct DependencyEffect {
     /// Locked artifact digest before and after the change; absent for path and Git sources.
     from_digest: Option<String>,
     to_digest: Option<String>,
+    /// A registry package reached only through another package's requirements; its coordinates
+    /// come from the lock, not from the manifest.
+    transitive: bool,
 }
 
 fn LockDigest(bytes: Option<&[u8]>) -> Option<String> {
@@ -67,7 +70,8 @@ impl fmt::Display for DependencyChangeReport {
                 (Some(before), None) => before.clone(),
                 (None, None) => unreachable!("a dependency effect retains at least one coordinate"),
             };
-            writeln!(f, "  {} {}: {}", effect.action, effect.package, coordinate)?;
+            let transitive = if effect.transitive { " (transitive)" } else { "" };
+            writeln!(f, "  {} {}{transitive}: {}", effect.action, effect.package, coordinate)?;
         }
         Ok(())
     }
@@ -88,6 +92,61 @@ fn DependencyCoordinate(dependency: &crate::projects::Dependency) -> String {
             dependency.version.as_deref().unwrap_or("<missing version>")
         ),
     }
+}
+
+/// Lock-level changes of registry packages that no manifest declares directly, ordered by name.
+fn TransitiveEffects(
+    before: &[super::ProjectLockDependencyEntry],
+    after: &[super::ProjectLockDependencyEntry],
+    declared: &std::collections::BTreeSet<&str>,
+) -> Vec<DependencyEffect> {
+    use super::ProjectLockSource;
+    let pins = |entries: &[super::ProjectLockDependencyEntry]| {
+        entries
+            .iter()
+            .filter(|entry| entry.source == ProjectLockSource::Registry && !declared.contains(entry.name.as_str()))
+            .map(|entry| (entry.name.clone(), entry.clone()))
+            .collect::<std::collections::BTreeMap<_, _>>()
+    };
+    let (before, after) = (pins(before), pins(after));
+    let coordinate = |entry: &super::ProjectLockDependencyEntry| {
+        format!(
+            "registry {} @ {}",
+            entry.registry.as_deref().unwrap_or("default"),
+            entry.resolved_version.as_deref().unwrap_or("<unpinned>")
+        )
+    };
+    let names = before.keys().chain(after.keys()).collect::<std::collections::BTreeSet<_>>();
+    names
+        .into_iter()
+        .filter_map(|name| {
+            let (old, new) = (before.get(name), after.get(name));
+            let action = match (old, new) {
+                (None, Some(_)) => "added",
+                (Some(_), None) => "removed",
+                (Some(old), Some(new))
+                    if old.resolved_version != new.resolved_version
+                        || old.artifact_digest != new.artifact_digest
+                        || old.registry != new.registry =>
+                {
+                    "changed"
+                }
+                _ => return None,
+            };
+            Some(DependencyEffect {
+                package: name.clone(),
+                source: "Registry".into(),
+                from_version: old.and_then(|entry| entry.resolved_version.clone()),
+                to_version: new.and_then(|entry| entry.resolved_version.clone()),
+                action,
+                from_coordinate: old.map(coordinate),
+                to_coordinate: new.map(coordinate),
+                from_digest: old.and_then(|entry| entry.artifact_digest.clone()),
+                to_digest: new.and_then(|entry| entry.artifact_digest.clone()),
+                transitive: true,
+            })
+        })
+        .collect()
 }
 
 pub struct DependencyChangePlan {
@@ -230,6 +289,7 @@ pub fn PlanDependencyChange(
                 to_coordinate: Some(DependencyCoordinate(dependency)),
                 from_digest: old.and_then(|_| before_digests.get(&dependency.name).cloned()),
                 to_digest: after_digests.get(&dependency.name).cloned(),
+                transitive: false,
             });
         }
     }
@@ -245,9 +305,23 @@ pub fn PlanDependencyChange(
                 to_coordinate: None,
                 from_digest: before_digests.get(&dependency.name).cloned(),
                 to_digest: None,
+                transitive: false,
             });
         }
     }
+    let declared = before
+        .dependencies
+        .iter()
+        .chain(&after.dependencies)
+        .map(|dependency| dependency.name.as_str())
+        .collect::<std::collections::BTreeSet<_>>();
+    let before_registry = original_lock
+        .as_deref()
+        .and_then(|bytes| std::str::from_utf8(bytes).ok())
+        .and_then(|text| ProjectLockfileV2::parse_v2(text).ok())
+        .map(|lock| lock.dependencies)
+        .unwrap_or_default();
+    effects.extend(TransitiveEffects(&before_registry, &entries, &declared));
     let report = DependencyChangeReport {
         path: manifest.clone(),
         operation: match mutation {
@@ -311,7 +385,7 @@ mod report_tests {
                 from_version: None, to_version: None, action: "changed",
                 from_coordinate: Some("path ../Old".into()),
                 to_coordinate: Some("path ../New".into()),
-                from_digest: None, to_digest: None,
+                from_digest: None, to_digest: None, transitive: false,
             }],
             previous_lock_digest: LockDigest(Some(b"old")),
             lock_digest: LockDigest(Some(b"new")),

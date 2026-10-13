@@ -498,3 +498,59 @@ fn dep06_registry_published_package_path_dependency_is_rejected() {
     assert!(error.to_string().contains("`Alpha@1.0.0` declares path dependency `Local`"), "{error}");
     assert_eq!(fixture.snapshot(), before);
 }
+
+#[test]
+fn dep06_registry_change_reports_list_transitive_coordinate_changes() {
+    let registry = Registry::new();
+    diamond(&registry);
+    let fixture = Fixture::new(&registry);
+    let change = |mutation: DependencyMutation| {
+        let plan = PlanDependencyChange(&fixture.manifest, &mutation, &policy(false, RefreshScope::None)).unwrap();
+        let report = CommitDependencyChange(plan).unwrap();
+        let json = serde_json::to_value(&report).unwrap();
+        json["effects"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|effect| {
+                format!(
+                    "{} {} transitive={} {} -> {} digests={}/{}",
+                    effect["action"].as_str().unwrap(),
+                    effect["package"].as_str().unwrap(),
+                    effect["transitive"],
+                    effect["fromVersion"],
+                    effect["toVersion"],
+                    effect["fromDigest"].as_str().is_some_and(|digest| digest.starts_with("sha256:")),
+                    effect["toDigest"].as_str().is_some_and(|digest| digest.starts_with("sha256:")),
+                )
+            })
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        change(add("Alpha", "1.0.0")),
+        [
+            "added Alpha transitive=false null -> \"1.0.0\" digests=false/true",
+            "added OnlyAlpha transitive=true null -> \"1.0.0\" digests=false/true",
+            "added Shared transitive=true null -> \"1.0.0\" digests=false/true",
+        ],
+        "adding a direct reports every newly locked transitive"
+    );
+    assert_eq!(
+        change(add("Beta", "1.0.0")),
+        ["added Beta transitive=false null -> \"1.0.0\" digests=false/true"],
+        "an already locked shared transitive is not a change"
+    );
+    assert_eq!(
+        change(DependencyMutation::Remove("Alpha".into())),
+        [
+            "removed Alpha transitive=false \"1.0.0\" -> null digests=true/false",
+            "removed OnlyAlpha transitive=true \"1.0.0\" -> null digests=true/false",
+        ],
+        "removal reports transitives that become unreachable and keeps the shared one silent"
+    );
+    let text = PlanDependencyChange(&fixture.manifest, &DependencyMutation::Remove("Beta".into()), &policy(false, RefreshScope::None))
+        .unwrap()
+        .Report()
+        .to_string();
+    assert!(text.contains("removed Shared (transitive): registry test @ 1.0.0"), "{text}");
+}
