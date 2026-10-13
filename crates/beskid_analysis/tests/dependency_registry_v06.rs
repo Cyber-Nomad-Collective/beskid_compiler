@@ -79,9 +79,29 @@ impl Registry {
         let bytes = archive.finish().unwrap().into_inner();
         self.routes.lock().unwrap().insert(format!("/api/packages/{name}/versions/{version}/download"), (200, bytes));
     }
+    /// Publish a package whose manifest declares `requires` as dependencies (raw manifest lines).
+    fn package_requiring(&self, name: &str, version: &str, requires: &[String]) {
+        let mut archive = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        let options = zip::write::SimpleFileOptions::default();
+        archive.start_file(format!("{name}.bproj"), options).unwrap();
+        write!(archive, "{name} {{ name = \"{name}\" version = \"{version}\" }}\ntarget \"{name}\" {{ kind = \"Lib\" entry = \"Main.bd\" }}\n").unwrap();
+        for line in requires {
+            writeln!(archive, "{line}").unwrap();
+        }
+        archive.start_file("src/Main.bd", options).unwrap();
+        archive.write_all(b"i32 Value() { return 1; }\n").unwrap();
+        let bytes = archive.finish().unwrap().into_inner();
+        self.routes.lock().unwrap().insert(format!("/api/packages/{name}/versions/{version}/download"), (200, bytes));
+        self.versions(name, &format!(r#"[{{"version":"{version}","isYanked":false}}]"#));
+    }
     fn count(&self) -> usize {
         self.requests.lock().unwrap().len()
     }
+}
+
+/// A registry requirement line of a published package (the fixture registry alias is `test`).
+fn requires(name: &str, version: &str) -> String {
+    format!("dependency \"{name}\" {{ source = \"registry\" registry = \"test\" version = \"{version}\" }}")
 }
 impl Drop for Registry {
     fn drop(&mut self) {
@@ -271,6 +291,7 @@ fn ordinary_workspace_plan(fixture: &Fixture) -> beskid_analysis::projects::Proj
                     UnresolvedDependencyKind::Git => DependencySource::Git,
                 },
                 descriptor: dependency.descriptor,
+                requester: dependency.requester,
             })
             .collect(),
     }
@@ -367,4 +388,113 @@ fn dep06_ordinary_prepare_offline_locked_rejects_missing_lock_even_with_verified
     assert_eq!(registry.count(), count);
     assert_eq!(fixture.snapshot(), before);
     assert!(!fixture.manifest.with_file_name("Project.lock").exists());
+}
+
+// ---------------------------------------------------------------------------------------------
+// Transitive registry closure (DEP06-03 shared transitives, DEP06-04 policies over the closure)
+
+fn diamond(registry: &Registry) {
+    registry.package_requiring("Shared", "1.0.0", &[]);
+    registry.package_requiring("OnlyAlpha", "1.0.0", &[]);
+    registry.package_requiring("Alpha", "1.0.0", &[requires("Shared", "1.0.0"), requires("OnlyAlpha", "1.0.0")]);
+    registry.package_requiring("Beta", "1.0.0", &[requires("Shared", "1.0.0")]);
+}
+
+#[test]
+fn dep06_registry_transitive_closure_is_locked_and_removal_keeps_shared_transitives() {
+    let registry = Registry::new();
+    diamond(&registry);
+    let fixture = Fixture::new(&registry);
+    fixture.commit(add("Alpha", "1.0.0"), policy(false, RefreshScope::None));
+    let lock = fixture.lock();
+    for name in ["Alpha", "Shared", "OnlyAlpha"] {
+        assert!(pin(&lock, name).contains("resolved_version=1.0.0"), "{name} is locked:\n{lock}");
+    }
+    let shared = pin(&lock, "Shared");
+    fixture.commit(add("Beta", "1.0.0"), policy(false, RefreshScope::None));
+    assert_eq!(pin(&fixture.lock(), "Shared"), shared, "a second requester reuses the shared pin");
+    fixture.commit(DependencyMutation::Remove("Alpha".into()), policy(false, RefreshScope::None));
+    let lock = fixture.lock();
+    assert!(!lock.contains("- name=Alpha;"), "the removed direct is gone:\n{lock}");
+    assert!(!lock.contains("- name=OnlyAlpha;"), "a transitive reachable only through it is gone:\n{lock}");
+    assert!(lock.contains("- name=Beta;"), "{lock}");
+    assert_eq!(pin(&lock, "Shared"), shared, "the transitive reachable from Beta keeps its exact pin");
+}
+
+#[test]
+fn dep06_registry_offline_and_frozen_preparation_replay_the_transitive_closure_without_http() {
+    use beskid_analysis::projects::{WorkspacePrepareOptions, prepare_project_workspace_plan_with_options};
+    let registry = Registry::new();
+    diamond(&registry);
+    let fixture = Fixture::new(&registry);
+    fixture.commit(add("Alpha", "1.0.0"), policy(false, RefreshScope::None));
+    let plan = ordinary_workspace_plan(&fixture);
+    let source_root = plan.source_root.as_ref().unwrap();
+    std::fs::create_dir_all(source_root).unwrap();
+    std::fs::write(source_root.join("Main.bd"), "i32 Main() { return 0; }\n").unwrap();
+    let lock = fixture.lock();
+    let count = registry.count();
+    for options in [
+        WorkspacePrepareOptions { offline: true, ..Default::default() },
+        WorkspacePrepareOptions { frozen: true, ..Default::default() },
+        WorkspacePrepareOptions { locked: true, ..Default::default() },
+        WorkspacePrepareOptions::default(),
+    ] {
+        let prepared = prepare_project_workspace_plan_with_options(&plan, options, None)
+            .unwrap_or_else(|error| panic!("{options:?} preparation replays the locked closure: {error}"));
+        let mut names = prepared
+            .materialized_dependencies
+            .iter()
+            .map(|dependency| dependency.dependency_name.as_str())
+            .filter(|name| ["Alpha", "Shared", "OnlyAlpha"].contains(name))
+            .collect::<Vec<_>>();
+        names.sort();
+        assert_eq!(names, ["Alpha", "OnlyAlpha", "Shared"], "{options:?} materializes every locked package");
+        assert_eq!(fixture.lock(), lock, "{options:?} never rewrites a lock that covers the closure");
+    }
+    assert_eq!(registry.count(), count, "a lock and warm cache covering the closure need no request");
+
+    // A transitive pin missing from the lock fails strict preparation with update guidance.
+    let without_shared = lock.lines().filter(|line| !line.starts_with("- name=Shared;")).collect::<Vec<_>>().join("\n") + "\n";
+    std::fs::write(fixture.manifest.with_file_name("Project.lock"), &without_shared).unwrap();
+    let error = prepare_project_workspace_plan_with_options(
+        &plan,
+        WorkspacePrepareOptions { frozen: true, ..Default::default() },
+        None,
+    )
+    .expect_err("frozen preparation requires a pin for every reachable package");
+    assert!(error.to_string().contains("`Shared` (required by `Alpha@1.0.0`) has no lock pin"), "{error}");
+    assert_eq!(registry.count(), count, "frozen makes no request");
+    assert_eq!(fixture.lock(), without_shared, "frozen never writes the lock");
+}
+
+#[test]
+fn dep06_registry_conflicting_transitive_versions_fail_closed_without_project_writes() {
+    let registry = Registry::new();
+    registry.package_requiring("Shared", "1.0.0", &[]);
+    registry.package_requiring("Alpha", "1.0.0", &[requires("Shared", "1.0.0")]);
+    registry.package_requiring("Beta", "1.0.0", &[requires("Shared", "2.0.0")]);
+    let fixture = Fixture::new(&registry);
+    fixture.commit(add("Alpha", "1.0.0"), policy(false, RefreshScope::None));
+    let before = fixture.snapshot();
+    let error = PlanDependencyChange(&fixture.manifest, &add("Beta", "1.0.0"), &policy(false, RefreshScope::None))
+        .err()
+        .expect("two versions of one package fail closed");
+    let message = error.to_string();
+    assert!(message.contains("`Alpha@1.0.0` requires `Shared@1.0.0`"), "{message}");
+    assert!(message.contains("`Beta@1.0.0` requires `Shared@2.0.0`"), "{message}");
+    assert_eq!(fixture.snapshot(), before, "a conflict changes no manifest, lock or materialized byte");
+}
+
+#[test]
+fn dep06_registry_published_package_path_dependency_is_rejected() {
+    let registry = Registry::new();
+    registry.package_requiring("Alpha", "1.0.0", &["dependency \"Local\" { source = \"path\" path = \"../Local\" }".to_owned()]);
+    let fixture = Fixture::new(&registry);
+    let before = fixture.snapshot();
+    let error = PlanDependencyChange(&fixture.manifest, &add("Alpha", "1.0.0"), &policy(false, RefreshScope::None))
+        .err()
+        .expect("a published path dependency fails closed");
+    assert!(error.to_string().contains("`Alpha@1.0.0` declares path dependency `Local`"), "{error}");
+    assert_eq!(fixture.snapshot(), before);
 }

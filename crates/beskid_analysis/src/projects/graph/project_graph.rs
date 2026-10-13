@@ -51,6 +51,8 @@ pub struct UnresolvedDependency {
     pub dependency_name: String,
     pub kind: UnresolvedDependencyKind,
     pub descriptor: String,
+    /// Project name of the manifest that declares this dependency.
+    pub requester: String,
 }
 
 #[derive(Debug)]

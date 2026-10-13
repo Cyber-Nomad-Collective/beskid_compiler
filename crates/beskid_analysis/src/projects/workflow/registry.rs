@@ -14,7 +14,7 @@ use super::lockfile::{PortableLockPath, PortableLockPathBaseKind, ProjectLockDep
 use crate::projects::discovery::is_project_manifest_path;
 use crate::projects::error::ProjectError;
 use crate::projects::graph::WorkspaceResolutionRules;
-use crate::projects::model::{MaterializedDependencyProject, UnresolvedDependencyNote};
+use crate::projects::model::{Dependency, MaterializedDependencyProject, UnresolvedDependencyNote};
 
 pub(super) struct ResolvedRegistryDependency {
     pub(super) dependency_name: String,
@@ -94,6 +94,37 @@ impl ResolvedRegistryDependency {
         }
         Ok(())
     }
+    pub(super) fn selected_version(&self) -> &str {
+        &self.selected_version
+    }
+
+    /// The dependencies the package's own manifest declares, read from the verified artifact bytes.
+    ///
+    /// The manifest is parsed and validated like any project manifest; its size is bounded so a
+    /// hostile archive cannot inflate resolution memory before materialization limits apply.
+    pub(super) fn declared_dependencies(&self) -> Result<Vec<Dependency>, ProjectError> {
+        let layout = registry_artifact_layout(&self.artifact)?;
+        let reader =
+            self.artifact.reopen().map_err(|_| ProjectError::Validation("failed to reopen registry scratch artifact".into()))?;
+        let mut archive = ZipArchive::new(reader)
+            .map_err(|error| ProjectError::Validation(format!("invalid registry artifact ZIP: {error}")))?;
+        let entry = archive
+            .by_name(&layout.manifest)
+            .map_err(|error| ProjectError::Validation(format!("failed to read registry artifact manifest: {error}")))?;
+        let mut text = String::new();
+        entry
+            .take(MAX_REGISTRY_MANIFEST_BYTES + 1)
+            .read_to_string(&mut text)
+            .map_err(|_| ProjectError::Validation("registry artifact manifest is not UTF-8".into()))?;
+        if text.len() as u64 > MAX_REGISTRY_MANIFEST_BYTES {
+            return Err(ProjectError::Validation(format!(
+                "registry artifact manifest of `{}@{}` exceeds 1 MiB",
+                self.dependency_name, self.selected_version
+            )));
+        }
+        Ok(crate::projects::parse_manifest(&text)?.dependencies)
+    }
+
     /// Check every portable path in an existing pin before preparation creates
     /// `obj`. The artifact digest has already been verified by resolution.
     pub(super) fn validate_existing_lock_entry(
@@ -167,6 +198,7 @@ fn stale_registry_pin(dependency_name: &str) -> ProjectError {
 }
 
 const MAX_REGISTRY_ARTIFACT_BYTES: u64 = 64 * 1024 * 1024;
+const MAX_REGISTRY_MANIFEST_BYTES: u64 = 1024 * 1024;
 const REGISTRY_SCRATCH_PREFIX: &str = ".beskid-registry-artifact-";
 
 enum RegistryArtifactDownloadError {
@@ -629,7 +661,7 @@ fn resolve_registry_base_url(
     "https://pckg.beskid-lang.org".trim_end_matches('/').to_string()
 }
 
-fn parse_registry_descriptor(descriptor: &str) -> (Option<String>, Option<String>) {
+pub(super) fn parse_registry_descriptor(descriptor: &str) -> (Option<String>, Option<String>) {
     if let Some((left, right)) = descriptor.split_once('@') {
         if left.trim().is_empty() {
             return (None, Some(right.trim().to_string()));

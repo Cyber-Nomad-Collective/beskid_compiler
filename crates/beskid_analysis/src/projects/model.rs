@@ -258,6 +258,8 @@ pub struct UnresolvedDependencyNote {
     pub dependency_name: String,
     pub source: DependencySource,
     pub descriptor: String,
+    /// Project name of the manifest that declares this dependency (named in conflict diagnostics).
+    pub requester: String,
 }
 
 /// Workspace member selection aligned with [`super::manifest_resolve`](crate::projects::manifest_resolve).

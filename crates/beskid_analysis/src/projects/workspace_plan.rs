@@ -21,6 +21,7 @@ pub(crate) fn workspace_plan_from_graph(
                 UnresolvedDependencyKind::Registry => DependencySource::Registry,
             },
             descriptor: dependency.descriptor,
+            requester: dependency.requester,
         })
         .collect::<Vec<_>>();
 

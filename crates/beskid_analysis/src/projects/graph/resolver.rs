@@ -57,7 +57,7 @@ impl WorkspaceResolutionRules {
         Self { workspace_root, workspace_members, overrides_by_dependency, registry_aliases, registry_urls }
     }
 
-    fn override_version_for(&self, dependency_name: &str) -> Option<&str> {
+    pub(crate) fn override_version_for(&self, dependency_name: &str) -> Option<&str> {
         self.overrides_by_dependency.get(&dependency_name.to_ascii_lowercase()).map(String::as_str)
     }
 
