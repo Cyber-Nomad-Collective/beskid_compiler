@@ -937,6 +937,17 @@ mod tests {
     }
 
     #[test]
+    fn an_explicit_receiver_resolves_like_the_implicit_one() {
+        let source = "pub attribute Receiver(ReceiverParameter) { } \
+            pub type Counter { i64 count, pub i64 Read([Receiver] this) { return this.count; } \
+            pub i64 Bump(this, i64 by) { return this.count + by; } } \
+            i64 Main(Counter c) { return c.Read() + c.Bump(2_i64); }";
+        let (findings, substitutions) = method_generic_report(source, 6320);
+        assert!(findings.is_empty(), "{findings:?}");
+        assert!(substitutions.iter().all(|call| call.starts_with("Ok(Some(\"Direct")), "{substitutions:?}");
+    }
+
+    #[test]
     fn method_where_bounds_are_proven_at_the_call() {
         let own = format!("{SEQ}i64 Main(Seq<i64> numbers) {{ return numbers.Fold<Plain>(0_i64, Plain {{ x: 1_i64 }}); }}");
         let (findings, _) = method_generic_report(&own, 6305);
