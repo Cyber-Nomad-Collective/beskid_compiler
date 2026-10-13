@@ -21,7 +21,7 @@ pub type ExactGenerator : Generator {
             attributes: EmitterNodes.EmptyAttributes(),
             visibility: EmitterNodes.PubVisibility(origin, 0),
             name: EmitterNodes.PubIdentifier("GeneratedUnit", origin, 0),
-            generics: SpannedIdentifierList { items: [] },
+            generics: SpannedTypeParameterList { items: [] },
             whereBounds: WhereBoundList { items: [] },
             parameters: SpannedParameterList { items: [] },
             parameterDocs: OptionalLeadingDocCommentList { items: [] },
@@ -31,7 +31,7 @@ pub type ExactGenerator : Generator {
         SpannedIdentifier generic = EmitterNodes.PubIdentifier("T", origin, 1);
         SpannedType fieldType = SpannedType { node: Type::Complex(SpannedPath { node: Path { segments: SpannedPathSegmentList { items: [SpannedPathSegment { node: PathSegment { name: generic, typeArgs: SpannedTypeList { items: [] } }, span: origin, id: 2 }] } }, span: origin, id: 3 }), span: origin, id: 4 };
         Field field = Field { attributes: EmitterNodes.EmptyAttributes(), visibility: EmitterNodes.PubVisibility(origin, 5), kind: FieldKind::Value, eventCapacity: Optionalusize::None, injectQualifier: OptionalInjectQualifier::None, name: EmitterNodes.PubIdentifier("Value", origin, 6), ty: fieldType };
-        TypeDefinition record = TypeDefinition { attributes: EmitterNodes.EmptyAttributes(), visibility: EmitterNodes.PubVisibility(origin, 7), name: EmitterNodes.PubIdentifier("SerializedRecord", origin, 8), generics: SpannedIdentifierList { items: [generic] }, conformances: SpannedPathList { items: [] }, fields: SpannedFieldList { items: [SpannedField { node: field, span: origin, id: 9 }] }, fieldDocs: OptionalLeadingDocCommentList { items: [OptionalLeadingDocComment::None] }, methods: SpannedMethodDefinitionList { items: [] }, methodDocs: OptionalLeadingDocCommentList { items: [] }, associatedTypeBindings: SpannedAssociatedTypeBindingList { items: [] } };
+        TypeDefinition record = TypeDefinition { attributes: EmitterNodes.EmptyAttributes(), visibility: EmitterNodes.PubVisibility(origin, 7), name: EmitterNodes.PubIdentifier("SerializedRecord", origin, 8), generics: SpannedTypeParameterList { items: [SpannedTypeParameter { node: TypeParameter { attributes: EmitterNodes.EmptyAttributes(), name: "T" }, span: origin, id: 1 }] }, conformances: SpannedPathList { items: [] }, fields: SpannedFieldList { items: [SpannedField { node: field, span: origin, id: 9 }] }, fieldDocs: OptionalLeadingDocCommentList { items: [OptionalLeadingDocComment::None] }, methods: SpannedMethodDefinitionList { items: [] }, methodDocs: OptionalLeadingDocCommentList { items: [] }, associatedTypeBindings: SpannedAssociatedTypeBindingList { items: [] } };
         return Beskid.Compiler.Emitter.Contribution.From([
             Beskid.Compiler.Emitter.Items.FunctionItem(SpannedFunctionDefinition { node: definition, span: origin, id: 0 }),
             Beskid.Compiler.Emitter.Items.TypeItem(SpannedTypeDefinition { node: record, span: origin, id: 10 })

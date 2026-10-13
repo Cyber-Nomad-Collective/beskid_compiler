@@ -1,9 +1,10 @@
 use crate::format::emit::{Emit, EmitCtx, EmitError};
-use crate::syntax::{Attribute, Identifier, Parameter, Spanned};
+use crate::format::attribute_lists::emit_inline_attributes;
+use crate::syntax::{Parameter, ReceiverParameter, Spanned, TypeParameter};
 use std::fmt::Write;
 
 pub(super) fn emit_generics_list<W: Write>(
-    ids: &[Spanned<Identifier>],
+    ids: &[Spanned<TypeParameter>],
     w: &mut W,
     cx: &mut EmitCtx,
 ) -> Result<(), EmitError> {
@@ -15,7 +16,8 @@ pub(super) fn emit_generics_list<W: Write>(
         if i > 0 {
             cx.token(w, ", ")?;
         }
-        id.emit(w, cx)?;
+        emit_inline_attributes(&id.node.attributes, w, cx)?;
+        w.write_str(&id.node.name)?;
     }
     w.write_char('>')?;
     Ok(())
@@ -26,7 +28,28 @@ pub(super) fn emit_parameter_list<W: Write>(
     w: &mut W,
     cx: &mut EmitCtx,
 ) -> Result<(), EmitError> {
+    emit_method_parameter_list(None, params, w, cx)
+}
+
+/// A method parameter list whose first entry may be an explicit receiver.
+pub(super) fn emit_method_parameter_list<W: Write>(
+    receiver: Option<&Spanned<ReceiverParameter>>,
+    params: &[Spanned<Parameter>],
+    w: &mut W,
+    cx: &mut EmitCtx,
+) -> Result<(), EmitError> {
     w.write_char('(')?;
+    if let Some(receiver) = receiver {
+        emit_inline_attributes(&receiver.node.attributes, w, cx)?;
+        if receiver.node.mutable {
+            cx.token(w, "mut")?;
+            cx.space(w)?;
+        }
+        cx.token(w, "this")?;
+        if !params.is_empty() {
+            cx.token(w, ", ")?;
+        }
+    }
     for (i, p) in params.iter().enumerate() {
         if i > 0 {
             cx.token(w, ", ")?;
@@ -37,17 +60,3 @@ pub(super) fn emit_parameter_list<W: Write>(
     Ok(())
 }
 
-pub(super) fn emit_attribute_lines<W: Write>(
-    attrs: &[Spanned<Attribute>],
-    w: &mut W,
-    cx: &mut EmitCtx,
-) -> Result<(), EmitError> {
-    for (i, a) in attrs.iter().enumerate() {
-        if i > 0 {
-            cx.nl(w)?;
-            cx.write_indent(w)?;
-        }
-        a.emit(w, cx)?;
-    }
-    Ok(())
-}

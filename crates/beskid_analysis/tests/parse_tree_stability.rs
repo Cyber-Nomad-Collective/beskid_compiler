@@ -67,6 +67,20 @@ fn tree_digest(source: &str) -> String {
     }
 }
 
+/// Debug aid: `BESKID_DUMP_PARSE_TREE=<file> cargo test --test parse_tree_stability dump` prints
+/// the pair tree of one source so that two grammar revisions can be diffed.
+#[test]
+fn dump_parse_tree_on_request() {
+    let Some(path) = std::env::var_os("BESKID_DUMP_PARSE_TREE") else { return };
+    let source = std::fs::read_to_string(&path).expect("source to dump");
+    let pairs = BeskidParser::parse(Rule::Program, &source).expect("source parses");
+    let mut text = String::new();
+    for pair in pairs {
+        write_pair(pair, 0, &mut text);
+    }
+    println!("{text}");
+}
+
 #[test]
 fn existing_sources_keep_identical_parse_trees() {
     let root = repo_root();

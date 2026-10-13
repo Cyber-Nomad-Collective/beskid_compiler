@@ -409,8 +409,8 @@ impl SemanticPipelineRule {
         known
     }
 
-    fn collect_generic_names(&self, generics: &[Spanned<crate::syntax::Identifier>]) -> HashSet<String> {
-        generics.iter().map(|identifier| identifier.node.name.clone()).collect()
+    fn collect_generic_names(&self, generics: &[Spanned<crate::syntax::TypeParameter>]) -> HashSet<String> {
+        generics.iter().map(|parameter| parameter.node.name.clone()).collect()
     }
 
     /// Type parameters a receiver such as `List<T>` introduces: its bare, argument-less type

@@ -11,6 +11,8 @@ use beskid_ast_derive::AstNode;
 /// for a generic contract (`Iterator<T>;`).
 #[derive(AstNode, Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ContractEmbedding {
+    #[ast(children)]
+    pub attributes: Vec<Spanned<crate::syntax::Attribute>>,
     #[ast(child)]
     pub name: Spanned<Identifier>,
     #[ast(children)]
@@ -20,7 +22,8 @@ pub struct ContractEmbedding {
 impl Parsable for ContractEmbedding {
     fn parse(pair: Pair<Rule>) -> Result<Spanned<Self>, ParseError> {
         let span = SpanInfo::from_span(&pair.as_span());
-        let mut inner = pair.into_inner();
+        let mut inner = pair.into_inner().peekable();
+        let attributes = crate::syntax::items::parse_helpers::parse_attributes(&mut inner)?;
         let name = Identifier::parse(inner.next().ok_or(ParseError::missing(Rule::Identifier))?)?;
         let mut type_args = Vec::new();
         if let Some(generic_args) = inner.next()
@@ -29,6 +32,6 @@ impl Parsable for ContractEmbedding {
             type_args = generic_args.into_inner().map(Type::parse).collect::<Result<Vec<_>, _>>()?;
         }
 
-        Ok(Spanned::new(Self { name, type_args }, span))
+        Ok(Spanned::new(Self { attributes, name, type_args }, span))
     }
 }
