@@ -1,0 +1,29 @@
+[package]
+name = "beskid_tests_release"
+version = "0.1.0"
+edition = "2024"
+license.workspace = true
+publish = false
+description = "0.6 release host harness: reviewed tests that drive the installed candidate prefix only"
+# One libtest executable (`harness-beskid_tests_release`) holds every host-level release case so the
+# producer can run `--exact <module>::<test>` per required id against the retained harness bytes.
+autotests = false
+
+[lib]
+path = "src/lib.rs"
+
+[[test]]
+name = "beskid_tests_release"
+path = "tests/main.rs"
+
+# No `beskid_cli` dependency: the harness must never see `CARGO_BIN_EXE_beskid_cli`. The only compiler
+# it may run is `<BESKID_V06_QUALIFIED_PREFIX>/bin/beskid`.
+[dependencies]
+sha2 = "0.10"
+tempfile = "3"
+zip = "2"
+
+[dev-dependencies]
+beskid_analysis = { path = "../beskid_analysis" }
+bsol = { workspace = true }
+serde_json = "1"

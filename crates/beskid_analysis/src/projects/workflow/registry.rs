@@ -264,7 +264,15 @@ pub(super) fn resolve_registry_dependency(
         match http_get_artifact(&download_url, project_root) {
             Ok(downloaded) => downloaded,
             Err(RegistryArtifactDownloadError::Unavailable(_)) if tolerate_unavailable => return Ok(None),
-            Err(error) => return Err(error.into_project_error()),
+            Err(error) => {
+                return Err(RegistryFailure(
+                    &base_url,
+                    &unresolved.dependency_name,
+                    Some(&selected_version),
+                    &format!("artifact download failed: {}", Cause(error.into_project_error())),
+                    REGISTRY_UNAVAILABLE_GUIDANCE,
+                ));
+            }
         }
     };
     if let Some(pin) = pinned
@@ -435,28 +443,58 @@ pub(super) fn materialize_registry_dependency(
     Ok((lock_entry, materialized_dependency))
 }
 
+/// A registry failure that names the package, the requested version and the registry, with
+/// credential-free recovery guidance (DEP06-02).
+#[allow(non_snake_case)]
+fn RegistryFailure(base_url: &str, package: &str, requested: Option<&str>, cause: &str, guidance: &str) -> ProjectError {
+    let coordinate = match requested {
+        Some(version) => format!("`{package}@{version}`"),
+        None => format!("`{package}` (greatest stable version)"),
+    };
+    // Never echo URL credentials into a diagnostic.
+    let registry = reqwest::Url::parse(base_url)
+        .map(|mut url| {
+            let _ = url.set_username("");
+            let _ = url.set_password(None);
+            url.to_string().trim_end_matches('/').to_owned()
+        })
+        .unwrap_or_else(|_| "with an invalid base URL".to_owned());
+    ProjectError::Validation(format!("registry {registry} cannot resolve {coordinate}: {cause}; {guidance}"))
+}
+
+/// The message of a registry failure without the `manifest validation error` prefix.
+#[allow(non_snake_case)]
+fn Cause(error: ProjectError) -> String {
+    match error {
+        ProjectError::Validation(message) => message,
+        other => other.to_string(),
+    }
+}
+
+const REGISTRY_UNAVAILABLE_GUIDANCE: &str =
+    "check the `registry` URL of the workspace and retry; nothing was changed";
+
 fn select_registry_version(
     base_url: &str,
     package: &str,
     requested_version: Option<&str>,
 ) -> Result<String, ProjectError> {
-    let versions_url = registry_url(base_url, &["api", "packages", package, "versions"])?;
-    let versions_json = http_get_text(&versions_url)?;
-    let versions: Vec<Value> = serde_json::from_str(&versions_json)
-        .map_err(|error| ProjectError::Validation(format!("registry version response is malformed: {error}")))?;
     let requested = requested_version.filter(|version| *version != "*");
+    let failure = |cause: &str, guidance: &str| RegistryFailure(base_url, package, requested, cause, guidance);
+    let versions_url = registry_url(base_url, &["api", "packages", package, "versions"])?;
+    let versions_json = http_get_text(&versions_url).map_err(|error| failure(&Cause(error), REGISTRY_UNAVAILABLE_GUIDANCE))?;
+    let versions: Vec<Value> = serde_json::from_str(&versions_json).map_err(|error| {
+        failure(&format!("registry version response is malformed: {error}"), REGISTRY_UNAVAILABLE_GUIDANCE)
+    })?;
     let mut seen = std::collections::BTreeSet::new();
     let mut available = Vec::new();
     for item in versions {
-        let malformed =
-            || ProjectError::Validation(format!("registry package `{package}` has malformed version metadata"));
+        let malformed = || failure("the registry returned malformed version metadata", REGISTRY_UNAVAILABLE_GUIDANCE);
         let text = item.get("version").and_then(Value::as_str).ok_or_else(malformed)?;
         let version = semver::Version::parse(text).map_err(|_| malformed())?;
         let yanked = item.get("isYanked").and_then(Value::as_bool).ok_or_else(malformed)?;
         if !seen.insert(text.to_owned()) {
-            return Err(ProjectError::Validation(format!(
-                "registry package `{package}` has duplicate version metadata"
-            )));
+            return Err(failure("the registry returned duplicate version metadata", REGISTRY_UNAVAILABLE_GUIDANCE));
         }
         if !yanked && requested.map_or(version.pre.is_empty(), |requested| text == requested) {
             available.push((version, text.to_owned()));
@@ -468,8 +506,15 @@ fn select_registry_version(
             left.cmp_precedence(right).then_with(|| left_text.cmp(right_text))
         })
         .map(|(_, text)| text)
-        .ok_or_else(|| {
-            ProjectError::Validation(format!("registry package `{package}` has no available requested version"))
+        .ok_or_else(|| match requested {
+            Some(_) => failure(
+                "the version is not published or is yanked",
+                &format!("no other version is substituted; run `beskid package info {package}` and request a published exact version"),
+            ),
+            None => failure(
+                "no non-yanked stable version is published",
+                &format!("request an exact version with `beskid add {package}@<version>`"),
+            ),
         })
 }
 

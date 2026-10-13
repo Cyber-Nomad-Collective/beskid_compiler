@@ -25,6 +25,7 @@ pub struct DependencyPolicyArgs {
 #[derive(Args, Debug)]
 pub struct AddArgs {
     /// Package name, optionally @exact-version.
+    #[arg(value_parser = ParsePackageSelector)]
     pub package: String,
     /// Local project dependency path, relative to the selected project directory.
     #[arg(long)]
@@ -39,12 +40,15 @@ pub struct RemoveArgs {
     pub policy: DependencyPolicyArgs,
 }
 #[derive(Args, Debug)]
+#[command(group = clap::ArgGroup::new("scope").args(["package", "all"]).required(true))]
 pub struct UpdateArgs {
-    #[arg(required_unless_present = "all", conflicts_with = "all")]
+    /// Direct dependency to refresh or move; use --all to refresh every dependency.
     pub package: Option<String>,
-    #[arg(long, conflicts_with_all = ["package", "version"])]
+    /// Refresh every dependency at its exact declared intent.
+    #[arg(long, conflicts_with = "version")]
     pub all: bool,
-    #[arg(long, requires = "package")]
+    /// Move the selected dependency to this exact version.
+    #[arg(long, requires = "package", value_parser = ParseExactVersion)]
     pub version: Option<String>,
     #[arg(long)]
     pub dry_run: bool,
@@ -52,23 +56,36 @@ pub struct UpdateArgs {
     pub policy: DependencyPolicyArgs,
 }
 
+/// `package[@exact-version]`; a range or other selector is a usage error (exit 2) before any work.
+fn ParsePackageSelector(value: &str) -> std::result::Result<String, String> {
+    let (name, version) = value.split_once('@').map_or((value, None), |(name, version)| (name, Some(version)));
+    if name.trim().is_empty() || version == Some("") {
+        return Err("expected package[@exact-version], for example `Numbers` or `Numbers@1.2.0`".into());
+    }
+    if let Some(version) = version {
+        ParseExactVersion(version)?;
+    }
+    Ok(value.to_owned())
+}
+
+/// An exact SemVer version; ranges, wildcards and Git sources are unsupported in 0.6.
+fn ParseExactVersion(value: &str) -> std::result::Result<String, String> {
+    semver::Version::parse(value).map(|_| value.to_owned()).map_err(|_| {
+        format!("`{value}` is not an exact SemVer version; version ranges and Git sources are unsupported, so name one exact version such as `1.2.0`")
+    })
+}
+
 pub fn Add(args: AddArgs) -> Result<()> {
     let (name, version) =
         args.package.split_once('@').map_or((args.package.as_str(), None), |(name, version)| (name, Some(version)));
-    if name.trim().is_empty() || version == Some("") {
-        anyhow::bail!("add: expected package[@exact-version]; run `beskid add --help`");
-    }
     let source = if let Some(path) = args.path {
         if version.is_some() {
             anyhow::bail!("add: --path conflicts with @version");
         }
         DependencyIntentSource::Path(path)
     } else {
-        if let Some(version) = version {
-            semver::Version::parse(version)
-                .map_err(|_| anyhow::anyhow!("add: version must be exact SemVer; ranges and Git are unsupported"))?;
-        }
-        // Empty requested version delegates bare stable selection to the sole resolver.
+        // Clap validated the exact selector; an empty requested version delegates bare stable
+        // selection to the sole resolver.
         DependencyIntentSource::Registry { registry: None, version: version.unwrap_or("").into() }
     };
     Execute(
@@ -83,9 +100,6 @@ pub fn Remove(args: RemoveArgs) -> Result<()> {
     Execute("remove", args.policy, DependencyMutation::Remove(args.package), RefreshScope::None, false)
 }
 pub fn Update(args: UpdateArgs) -> Result<()> {
-    if let Some(version) = &args.version {
-        semver::Version::parse(version)?;
-    }
     let refresh = if args.all {
         RefreshScope::All
     } else {
@@ -173,4 +187,37 @@ fn ChangeRecords(records: &Records, report: serde_json::Value, dry_run: bool) ->
         "changed": report.remove("changed"),
         "dryRun": dry_run,
     }))
+}
+
+#[cfg(test)]
+mod selector_tests {
+    use crate::cli::app::ParseInvocation;
+
+    #[test]
+    fn dep06_01_range_and_git_selectors_are_usage_errors() {
+        for args in [
+            vec!["beskid", "add", "Numbers@^1.0"],
+            vec!["beskid", "add", "Numbers@1.x"],
+            vec!["beskid", "add", "Numbers@>=1.0.0"],
+            vec!["beskid", "add", "Numbers@"],
+            vec!["beskid", "add", "Numbers", "--git", "https://example.invalid/numbers.git"],
+            vec!["beskid", "update", "Numbers", "--version", "^2.0"],
+        ] {
+            let error = ParseInvocation(args.clone()).err().unwrap_or_else(|| panic!("{args:?} parsed"));
+            assert_eq!(error.exit_code(), 2, "{args:?}: {error}");
+        }
+        assert!(ParseInvocation(["beskid", "add", "Numbers@1.2.0"]).is_ok());
+        assert!(ParseInvocation(["beskid", "add", "Numbers"]).is_ok());
+    }
+
+    #[test]
+    fn dep06_03_update_scope_is_a_usage_error_naming_package_and_all() {
+        for args in [vec!["beskid", "update"], vec!["beskid", "update", "Numbers", "--all"], vec!["beskid", "update", "--all", "--version", "1.0.0"]] {
+            let error = ParseInvocation(args.clone()).err().unwrap_or_else(|| panic!("{args:?} parsed"));
+            assert_eq!(error.exit_code(), 2, "{args:?}: {error}");
+            assert!(error.to_string().contains("--all"), "{args:?} names --all: {error}");
+        }
+        assert!(ParseInvocation(["beskid", "update", "--all"]).is_ok());
+        assert!(ParseInvocation(["beskid", "update", "Numbers", "--version", "2.0.0"]).is_ok());
+    }
 }

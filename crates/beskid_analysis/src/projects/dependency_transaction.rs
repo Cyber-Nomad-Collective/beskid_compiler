@@ -231,6 +231,18 @@ pub fn CommitDependencyPairWithIo(
     Ok(())
 }
 
+/// Recover an interrupted commit of `manifest_path` before any project read (DEP06-05). Only a project
+/// that has a commit journal is touched: no private state is created for an ordinary read.
+pub fn RecoverInterruptedDependencyPair(manifest_path: &Path) -> Result<bool, ProjectError> {
+    let parent = manifest_path.parent().filter(|path| !path.as_os_str().is_empty()).unwrap_or(Path::new("."));
+    let journal = parent.join(".beskid").join("dependency-transaction").join("journal.json");
+    match fs::symlink_metadata(&journal) {
+        Ok(_) => RecoverDependencyPair(manifest_path),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(false),
+        Err(error) => Err(Io(error)),
+    }
+}
+
 /// Recover before project reads; never overwrite bytes outside the recorded original/staged pair.
 pub fn RecoverDependencyPair(manifest_path: &Path) -> Result<bool, ProjectError> {
     let guard = Guard::Acquire(manifest_path)?;

@@ -1014,6 +1014,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "beskid_tests_release"
+version = "0.1.0"
+dependencies = [
+ "beskid_analysis",
+ "bsol",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "zip 2.4.2",
+]
+
+[[package]]
 name = "beskid_tests_support"
 version = "0.1.0"
 

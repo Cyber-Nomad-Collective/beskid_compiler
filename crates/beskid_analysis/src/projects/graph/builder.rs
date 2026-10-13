@@ -68,6 +68,8 @@ pub fn build_project_graph_with_options(
     manifest_path: &Path,
     _options: ProjectGraphBuildOptions,
 ) -> Result<ProjectGraph, ProjectError> {
+    // An interrupted dependency commit is recovered before the root manifest is read.
+    crate::projects::dependency_transaction::RecoverInterruptedDependencyPair(manifest_path)?;
     let root_manifest = load_manifest_from_path(manifest_path)?;
     build_project_graph_from_manifest(manifest_path, root_manifest)
 }
