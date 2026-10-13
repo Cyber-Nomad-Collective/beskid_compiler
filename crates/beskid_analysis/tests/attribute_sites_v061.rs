@@ -238,3 +238,33 @@ fn receiver_named_like_this_prefix_is_a_parameter() {
     assert!(method.receiver.is_none());
     assert_eq!(method.parameters.len(), 1);
 }
+
+#[test]
+fn corelib_declares_every_recognized_attribute_with_the_enforced_targets() {
+    use beskid_analysis::attribute_targets::{COMPILER_RECOGNIZED_ATTRIBUTES, is_attribute_target};
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../corelib/packages/foundation/src/Core/Attributes.bd");
+    let source = std::fs::read_to_string(path).expect("Core.Attributes source");
+    let program = parse(&source);
+    let declared: Vec<(String, Vec<String>)> = program
+        .node
+        .items
+        .iter()
+        .filter_map(|item| match &item.node {
+            Node::AttributeDeclaration(declaration) => Some((
+                declaration.node.name.node.name.clone(),
+                declaration.node.targets.iter().map(|target| target.node.name.node.name.clone()).collect(),
+            )),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(declared.len(), COMPILER_RECOGNIZED_ATTRIBUTES.len());
+    for attribute in COMPILER_RECOGNIZED_ATTRIBUTES {
+        let (_, targets) = declared
+            .iter()
+            .find(|(name, _)| name == attribute.name)
+            .unwrap_or_else(|| panic!("Core.Attributes lacks {}", attribute.name));
+        assert_eq!(targets, attribute.targets, "{}", attribute.name);
+        assert!(targets.iter().all(|target| is_attribute_target(target)));
+    }
+}

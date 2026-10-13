@@ -45,6 +45,9 @@ impl SemanticIssueKind {
                 "target already listed at line {}, column {}",
                 previous.line_col_start.0, previous.line_col_start.1
             )),
+            Self::AttributeTargetNotAllowed { attribute, declared: false, .. } => Some(format!(
+                "no attribute declaration named `{attribute}` exists; declare it with `attribute {attribute}(<targets>) {{ }}` or import its module"
+            )),
             Self::UnknownAttributeDeclarationTarget { allowed, .. }
             | Self::AttributeTargetNotAllowed { allowed, .. } => {
                 Some(format!("allowed targets: {}", allowed.join(", ")))

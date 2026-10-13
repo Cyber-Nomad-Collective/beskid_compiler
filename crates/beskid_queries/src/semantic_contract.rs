@@ -160,7 +160,9 @@ use layouts::{
     integer_primitive_for_semantic, semantic_type_for_primitive, semantic_type_from_syntax, unique_exported_type_in_unit, unique_public_type_in_unit, unique_type_in_unit,
 };
 pub use legality::{
-    CallArgumentTypeMismatch, CallArityMismatch, GateObligation, GateObligationKind, GenericParameterConflict,
+    AttributeResolution, CallArgumentTypeMismatch, CallArityMismatch, GateObligation, UnitAttributeDeclaration,
+    UnitAttributeSurface, UnitAttributeUse, attribute_findings, check_attribute_obligations, resolve_attribute_use,
+    unit_attribute_surface, GateObligationKind, GenericParameterConflict,
     ImmutableLocalAssignment,
     MemberReferenceFinding, MemberReferenceKind, NonExhaustiveMatch, TypingObligation, TypingObligationKind,
     UnitObligation, UnitObligationKind, UnresolvedCallKind, UnresolvedCallTarget, UnresolvedImport,

@@ -60,10 +60,13 @@ pub enum SemanticIssueKind {
         target: String,
         allowed: Vec<String>,
     },
+    /// E1510. `declared` is false when no attribute declaration of that name is in scope and
+    /// the name is not compiler-recognized.
     AttributeTargetNotAllowed {
         attribute: String,
         target: String,
         allowed: Vec<String>,
+        declared: bool,
     },
 
     VisibilityModuleNotFound {

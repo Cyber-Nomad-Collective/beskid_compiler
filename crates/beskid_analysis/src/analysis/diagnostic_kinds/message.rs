@@ -43,10 +43,11 @@ impl SemanticIssueKind {
             Self::UnknownAttributeDeclarationTarget { target, .. } => {
                 format!("unknown attribute declaration target kind `{target}`")
             }
-            Self::AttributeTargetNotAllowed {
-                attribute, target, ..
-            } => {
+            Self::AttributeTargetNotAllowed { attribute, target, declared: true, .. } => {
                 format!("attribute `{attribute}` cannot be applied to `{target}`")
+            }
+            Self::AttributeTargetNotAllowed { attribute, target, declared: false, .. } => {
+                format!("attribute `{attribute}` on `{target}` has no declaration in scope")
             }
             Self::VisibilityModuleNotFound { module_path, .. } => {
                 format!("module `{module_path}` not found")

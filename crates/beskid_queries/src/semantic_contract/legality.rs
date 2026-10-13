@@ -31,6 +31,7 @@ use beskid_analysis::syntax::{FunctionDefinition, MethodDefinition};
 use beskid_analysis::syntax_query::{NodeKind, SyntaxIndex};
 
 pub(super) mod calls;
+mod attributes;
 mod captures;
 mod cleanup;
 mod externs;
@@ -44,6 +45,10 @@ mod units;
 mod value_paths;
 mod values;
 
+pub use attributes::{
+    AttributeResolution, UnitAttributeDeclaration, UnitAttributeSurface, UnitAttributeUse, attribute_findings,
+    check_attribute_obligations, resolve_attribute_use, unit_attribute_surface,
+};
 pub use externs::extern_profile_findings;
 pub use gate::{GateObligation, GateObligationKind, check_gate_obligations, gate_obligations};
 pub use typing::{TypingObligation, TypingObligationKind, typing_obligations};
@@ -598,6 +603,7 @@ fn import_findings(db: &dyn Db, items: &[AstNodeKey]) -> Vec<SemanticFinding> {
             continue;
         }
         judged_units.push(unit_root);
+        findings.extend(attributes::attribute_findings(db, unit_root));
         if let Ok(Some(imports)) = unresolved_imports(db, unit_root) {
             findings.extend(imports.iter().map(|import| SemanticFinding {
                 kind: SemanticIssueKind::UnknownImportPath { path: import.path.to_string() },
@@ -720,6 +726,87 @@ mod tests {
             .expect("Helper call is missing one argument");
         assert_eq!(mismatch.expected, 2);
         assert_eq!(mismatch.actual, 1);
+    }
+
+    fn attribute_codes(source: &str, generation: u64) -> Vec<(String, String)> {
+        let (db, root) = one_unit_assembly(source, SyntaxGenerationId(generation));
+        super::attribute_findings(&db, root)
+            .into_iter()
+            .map(|finding| (finding.kind.code().to_string(), finding.kind.message()))
+            .collect()
+    }
+
+    #[test]
+    fn attribute_declaration_targets_are_the_closed_catalogue() {
+        let findings = attribute_codes("pub attribute Tag(Widget) { } pub attribute Twice(Field, Field) { }", 6101);
+        assert_eq!(findings.len(), 2, "{findings:?}");
+        assert_eq!(findings[0].0, "E1509");
+        assert!(findings[0].1.contains("Widget"));
+        assert_eq!(findings[1].0, "E1508");
+        let (db, root) = one_unit_assembly("pub attribute Tag(method) { }", SyntaxGenerationId(6102));
+        let finding = super::attribute_findings(&db, root).pop().expect("E1509");
+        let SemanticIssueKind::UnknownAttributeDeclarationTarget { allowed, .. } = finding.kind else {
+            panic!("E1509 expected")
+        };
+        assert!(allowed.iter().any(|name| name == "MethodDefinition"));
+    }
+
+    #[test]
+    fn attribute_uses_are_checked_against_their_declaration() {
+        // Declaration without targets accepts nothing.
+        let findings = attribute_codes("pub attribute Sealed { } [Sealed] pub type Door { i64 width }", 6103);
+        assert_eq!(findings.iter().map(|f| f.0.as_str()).collect::<Vec<_>>(), ["E1510"]);
+        // Field attribute on a type, then on a field.
+        let findings =
+            attribute_codes("pub attribute FluentInner(Field) { } [FluentInner] pub type Wrapper { i64 inner }", 6104);
+        assert_eq!(findings.len(), 1);
+        assert!(findings[0].1.contains("TypeDefinition"), "{findings:?}");
+        assert!(attribute_codes("pub attribute FluentInner(Field) { } pub type Wrapper { [FluentInner] i64 inner }", 6105).is_empty());
+        // Undeclared.
+        let findings = attribute_codes("[Frozen] pub type Ice { i64 temperature }", 6106);
+        assert_eq!(findings.len(), 1);
+        assert!(findings[0].1.contains("no declaration"), "{findings:?}");
+    }
+
+    #[test]
+    fn attributes_at_new_sites_are_enforced() {
+        let source = "pub attribute Trace(Parameter) { } pub attribute Pure(LambdaExpression) { } \
+                      pub attribute Hot(LambdaParameter) { } pub attribute Any(TypeParameter) { } \
+                      pub attribute Pinned(LetStatement) { } pub attribute Legacy(EnumVariant) { } \
+                      pub attribute Receiver(ReceiverParameter) { } \
+                      pub enum Mode { Fast, [Legacy] Slow } \
+                      pub type Counter { i64 count, pub i64 Read([Receiver] this) { return this.count; } } \
+                      unit Keep<[Any] T>(T value) { } \
+                      i64 Add([Trace] i64 left, i64 right) { [Pinned] mut i64 total = 0; \
+                      let square = [Pure] ([Hot] i64 x) => x * x; return left + right; }";
+        assert!(attribute_codes(source, 6107).is_empty(), "{:?}", attribute_codes(source, 6107));
+        let wrong = "pub attribute Trace(Parameter) { } i64 Add([Trace] i64 left) { [Trace] let y = left; return y; }";
+        let findings = attribute_codes(wrong, 6108);
+        assert_eq!(findings.len(), 1, "{findings:?}");
+        assert!(findings[0].1.contains("LetStatement"));
+    }
+
+    #[test]
+    fn compiler_recognized_attributes_keep_their_targets_without_corelib() {
+        let findings = attribute_codes("[Extern(Abi:\"C\", Library:\"libc\")] pub i64 Getpid() { return 0; }", 6109);
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].0, "E1510");
+        let (db, root) = one_unit_assembly("pub type Point { [Immutable] i64 x, i64 y }", SyntaxGenerationId(6110));
+        let finding = super::attribute_findings(&db, root).pop().expect("E1510");
+        let SemanticIssueKind::AttributeTargetNotAllowed { allowed, declared, .. } = finding.kind else { panic!() };
+        assert!(declared);
+        assert_eq!(allowed, ["TypeDefinition"]);
+        assert!(attribute_codes("[Export(Abi:\"C\")] pub i64 Answer() { return 42; }", 6111).is_empty());
+    }
+
+    #[test]
+    fn a_user_declaration_shadows_a_recognized_attribute() {
+        let source = "pub attribute Immutable(Field) { } pub type Point { [Immutable] i64 x }";
+        let (db, root) = one_unit_assembly(source, SyntaxGenerationId(6112));
+        assert!(super::attribute_findings(&db, root).is_empty());
+        assert!(!super::resolve_attribute_use(&db, root, "Immutable").is_recognized());
+        let (db, root) = one_unit_assembly("pub type Point { i64 x }", SyntaxGenerationId(6113));
+        assert!(super::resolve_attribute_use(&db, root, "Immutable").is_recognized());
     }
 
     fn assert_immutable_assignment(source: &str, generation: u64, item: usize, name: &str) {

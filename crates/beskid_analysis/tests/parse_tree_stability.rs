@@ -29,7 +29,7 @@ fn collect_sources(dir: &Path, out: &mut Vec<PathBuf>) {
         let name = entry.file_name();
         let name = name.to_string_lossy();
         if path.is_dir() {
-            if name == "target" || name == "node_modules" || name.starts_with('.') {
+            if name == "target" || name == "obj" || name == "node_modules" || name.starts_with('.') {
                 continue;
             }
             collect_sources(&path, out);

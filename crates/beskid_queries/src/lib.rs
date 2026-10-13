@@ -155,6 +155,8 @@ pub use semantic_contract::{
     UnresolvedCallKind, UnresolvedCallTarget, UnresolvedImport, UnresolvedValueArgument, ValueObligation,
     call_argument_type_mismatch, call_arity_mismatch,
     check_gate_obligations, check_items, check_typing_obligations, check_unit_obligations, extern_profile_findings,
+    AttributeResolution, UnitAttributeSurface, attribute_findings, check_attribute_obligations, resolve_attribute_use,
+    unit_attribute_surface,
     gate_obligations, generic_parameter_conflict, immutable_local_assignment, match_exhaustiveness,
     member_reference_legality, typing_obligations, unit_obligations, unresolved_call_target, unresolved_imports,
     unresolved_value_argument, value_obligations,
