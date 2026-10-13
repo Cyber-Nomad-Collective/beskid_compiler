@@ -428,8 +428,8 @@ fn lexical_type_in_unit(
     let mut scope = module_scope(index, key.node);
     while let Some(current) = scope {
         let matches = index
-            .ids_of_kind(beskid_analysis::syntax_query::NodeKind::TypeDefinition)
-            .chain(index.ids_of_kind(beskid_analysis::syntax_query::NodeKind::EnumDefinition))
+            .ids_named(beskid_analysis::syntax_query::NodeKind::TypeDefinition, name)
+            .chain(index.ids_named(beskid_analysis::syntax_query::NodeKind::EnumDefinition, name))
             .filter(|candidate| {
                 module_scope(index, *candidate) == Some(current)
                     && index.node_at(program, *candidate).is_some_and(|node| {
@@ -477,8 +477,8 @@ pub(in crate::semantic_contract) fn unique_nominal_type_in_unit(
     let program = syntax.expanded_program(db);
     let index = syntax.syntax_index(db);
     let matches = index
-        .ids_of_kind(beskid_analysis::syntax_query::NodeKind::TypeDefinition)
-        .chain(index.ids_of_kind(beskid_analysis::syntax_query::NodeKind::EnumDefinition))
+        .ids_named(beskid_analysis::syntax_query::NodeKind::TypeDefinition, name)
+        .chain(index.ids_named(beskid_analysis::syntax_query::NodeKind::EnumDefinition, name))
         .filter(|candidate| {
             index.node_at(program, *candidate).is_some_and(|node| {
                 node.of::<beskid_analysis::syntax::TypeDefinition>().is_some_and(|definition| {
@@ -509,8 +509,8 @@ pub(in crate::semantic_contract) fn unique_public_type_in_unit(
     let program = syntax.expanded_program(db);
     let index = syntax.syntax_index(db);
     let matches = index
-        .ids_of_kind(beskid_analysis::syntax_query::NodeKind::TypeDefinition)
-        .chain(index.ids_of_kind(beskid_analysis::syntax_query::NodeKind::EnumDefinition))
+        .ids_named(beskid_analysis::syntax_query::NodeKind::TypeDefinition, name)
+        .chain(index.ids_named(beskid_analysis::syntax_query::NodeKind::EnumDefinition, name))
         .filter(|candidate| {
             index.node_at(program, *candidate).is_some_and(|node| {
                 node.of::<beskid_analysis::syntax::TypeDefinition>().is_some_and(|definition| {

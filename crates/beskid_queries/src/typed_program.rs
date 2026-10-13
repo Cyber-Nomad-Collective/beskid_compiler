@@ -191,9 +191,7 @@ pub fn build_typed_program(
         }
     }
     let mut registry = db.syntax_dependency_registry().lock().expect("syntax dependency registry");
-    for (path, units) in &module_units {
-        registry.modules.insert((generation, path.clone()), units.clone());
-    }
+    registry.publish_modules(generation, module_units);
     // Attestation is source identity, not a runtime service, so every typed program records it
     // whatever service capability (if any) the caller later attaches.
     for (path, logical_path) in canonical_corelib_attested_units(&assembly) {

@@ -232,11 +232,8 @@ pub(in crate::semantic_contract) fn stable_declaration_identity(
         .syntax_dependency_registry()
         .lock()
         .expect("syntax dependency registry")
-        .modules
-        .iter()
-        .filter(|((generation, _), units)| *generation == declaration.generation && units.contains(&declaration.unit))
-        .map(|((_, module_path), _)| module_path.clone())
-        .min()
+        .least_unit_module(declaration.unit, declaration.generation)
+        .map(<[String]>::to_vec)
         .unwrap_or_default();
     let mut inline = Vec::new();
     let mut parent = parent_node(index, declaration.node);

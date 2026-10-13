@@ -102,7 +102,7 @@ pub(super) fn resolve_inline_module_item_declaration(
             continue;
         }
         let functions = index
-            .ids_of_kind(beskid_analysis::syntax_query::NodeKind::FunctionDefinition)
+            .ids_named(beskid_analysis::syntax_query::NodeKind::FunctionDefinition, function_name)
             .filter(|candidate| {
                 module_scope(index, *candidate) == Some(current)
                     && index
@@ -299,7 +299,7 @@ fn lexical_namespace_declares(db: &dyn Db, key: AstNodeKey, name: &str) -> bool 
         inline_module
             || [NodeKind::TypeDefinition, NodeKind::EnumDefinition, NodeKind::ContractDefinition].into_iter().any(
                 |kind| {
-                    index.ids_of_kind(kind).any(|candidate| {
+                    index.ids_named(kind, name).any(|candidate| {
                         module_scope(index, candidate) == Some(scope)
                             && index.node_at(program, candidate).is_some_and(|node| {
                                 node.of::<beskid_analysis::syntax::TypeDefinition>()
@@ -520,15 +520,14 @@ pub(super) fn public_reexport_units(
     unit: SourceUnitId,
     generation: SyntaxGenerationId,
 ) -> Vec<SourceUnitId> {
-    public_module_routes(db, unit, generation).into_iter().map(|(_, target)| target).fold(
-        Vec::new(),
-        |mut targets, target| {
-            if !targets.contains(&target) {
-                targets.push(target);
-            }
-            targets
-        },
-    )
+    let registry = db.syntax_dependency_registry().lock().expect("syntax dependency registry");
+    let mut targets = Vec::new();
+    for import in registry.imports.get(&(unit, generation)).into_iter().flatten().filter(|import| import.public) {
+        if !targets.contains(&import.target) {
+            targets.push(import.target);
+        }
+    }
+    targets
 }
 
 pub(super) fn unique_public_function_in_unit(
@@ -544,7 +543,7 @@ pub(super) fn unique_public_function_in_unit(
     let program = syntax.expanded_program(db);
     let index = syntax.syntax_index(db);
     let candidates = index
-        .ids_of_kind(beskid_analysis::syntax_query::NodeKind::FunctionDefinition)
+        .ids_named(beskid_analysis::syntax_query::NodeKind::FunctionDefinition, name)
         .filter(|candidate| {
             index
                 .node_at(program, *candidate)
@@ -577,7 +576,7 @@ pub(super) fn unique_function_in_unit(
     let program = syntax.expanded_program(db);
     let index = syntax.syntax_index(db);
     let candidates = index
-        .ids_of_kind(beskid_analysis::syntax_query::NodeKind::FunctionDefinition)
+        .ids_named(beskid_analysis::syntax_query::NodeKind::FunctionDefinition, name)
         .filter(|candidate| {
             index
                 .node_at(program, *candidate)
@@ -661,7 +660,7 @@ pub(super) fn resolve_unqualified_item_declaration(
     let mut scope = module_scope(index, key.node)?;
     loop {
         let candidates = index
-            .ids_of_kind(beskid_analysis::syntax_query::NodeKind::FunctionDefinition)
+            .ids_named(beskid_analysis::syntax_query::NodeKind::FunctionDefinition, name)
             .filter(|candidate| {
                 module_scope(index, *candidate) == Some(scope)
                     && index

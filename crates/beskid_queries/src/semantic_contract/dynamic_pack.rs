@@ -505,13 +505,7 @@ impl Projection<'_> {
         let mut units = HashSet::from([self.owner.unit]);
         {
             let registry = self.db.syntax_dependency_registry().lock().expect("syntax dependency registry");
-            units.extend(
-                registry
-                    .modules
-                    .iter()
-                    .filter(|((generation, _), _)| *generation == self.owner.generation)
-                    .flat_map(|(_, units)| units.iter().copied()),
-            );
+            units.extend(registry.generation_units(self.owner.generation).iter().copied());
         }
         let mut found = None;
         for unit in units {

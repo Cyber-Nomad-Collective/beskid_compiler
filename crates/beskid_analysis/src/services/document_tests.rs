@@ -123,7 +123,7 @@ mod tests {
             .expect("parse Main.bd");
         let resolution = assembly
             .module_index
-            .resolve_entry_program(&assembly.entry_unit().program, Some(&fixture.main_path), assembly)
+            .resolve_entry_program(&assembly.entry_unit().program, Some(&fixture.main_path), assembly, None)
             .expect("entry resolution");
         let module_paths = assembly.module_index.known_module_path_strings();
         build_document_analysis_from_resolution(

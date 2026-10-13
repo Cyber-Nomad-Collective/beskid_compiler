@@ -22,6 +22,9 @@ pub struct SyntaxIndex {
     /// Node ids per `NodeKind` (indexed by discriminant) in pre-order, so kind lookups visit only
     /// the matching nodes instead of the whole unit.
     kinds: Vec<Vec<AstNodeId>>,
+    /// Declaration ids per `NodeKind` and declared name (types, enums, contracts, functions,
+    /// methods), in pre-order: the unit's name table for declaration lookups.
+    names: Vec<std::collections::BTreeMap<String, Vec<AstNodeId>>>,
 }
 
 impl SyntaxIndex {
@@ -39,7 +42,17 @@ impl SyntaxIndex {
         for node in &metadata {
             kinds[node.kind as usize].push(node.id);
         }
-        Self { generation, metadata, children, paths, kinds }
+        let mut index = Self { generation, metadata, children, paths, kinds, names: Vec::new() };
+        let mut names = vec![std::collections::BTreeMap::<String, Vec<AstNodeId>>::new(); NodeKind::ALL.len()];
+        for kind in NAMED_DECLARATION_KINDS {
+            for id in index.ids_of_kind(kind) {
+                if let Some(name) = index.node_at(program, id).and_then(declared_name) {
+                    names[kind as usize].entry(name.to_owned()).or_default().push(id);
+                }
+            }
+        }
+        index.names = names;
+        index
     }
 
     pub fn generation(&self) -> SyntaxGenerationId {
@@ -64,6 +77,12 @@ impl SyntaxIndex {
 
     pub fn ids_of_kind(&self, kind: NodeKind) -> impl Iterator<Item = AstNodeId> + '_ {
         self.kinds.get(kind as usize).into_iter().flatten().copied()
+    }
+
+    /// Declarations of `kind` named `name`, in pre-order. Answers only for the declaration kinds
+    /// that carry a name (types, enums, contracts, functions, methods); empty for any other kind.
+    pub fn ids_named<'a>(&'a self, kind: NodeKind, name: &str) -> impl Iterator<Item = AstNodeId> + 'a {
+        self.names.get(kind as usize).and_then(|names| names.get(name)).into_iter().flatten().copied()
     }
 
     /// Direct children in deterministic AST order.
@@ -128,6 +147,25 @@ impl SyntaxIndex {
     ) -> impl Iterator<Item = &'a T> + 'a {
         self.ids_of_kind(kind).filter_map(|id| self.node_at(program, id)?.of::<T>())
     }
+}
+
+/// Declaration kinds indexed by name in [`SyntaxIndex::ids_named`].
+const NAMED_DECLARATION_KINDS: [NodeKind; 5] = [
+    NodeKind::TypeDefinition,
+    NodeKind::EnumDefinition,
+    NodeKind::ContractDefinition,
+    NodeKind::FunctionDefinition,
+    NodeKind::MethodDefinition,
+];
+
+fn declared_name(node: DynNodeRef<'_>) -> Option<&str> {
+    use crate::syntax::{ContractDefinition, EnumDefinition, FunctionDefinition, MethodDefinition, TypeDefinition};
+    node.of::<TypeDefinition>()
+        .map(|definition| definition.name.node.name.as_str())
+        .or_else(|| node.of::<EnumDefinition>().map(|definition| definition.name.node.name.as_str()))
+        .or_else(|| node.of::<ContractDefinition>().map(|definition| definition.name.node.name.as_str()))
+        .or_else(|| node.of::<FunctionDefinition>().map(|definition| definition.name.node.name.as_str()))
+        .or_else(|| node.of::<MethodDefinition>().map(|definition| definition.name.node.name.as_str()))
 }
 
 fn path_segments(path: &crate::syntax::Path) -> Vec<String> {

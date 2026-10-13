@@ -965,16 +965,18 @@ fn concrete_nominal_declaration_of_kinds(
     let GenericSourceTypeIdentity::Nominal { qualified_name, arguments } = source else {
         return None;
     };
+    // A stable identity always ends with the declaration's own name, so only declarations of
+    // that name can match; the full identity is computed for those.
+    let name = qualified_name.rsplit("::").next()?;
     let mut units = HashSet::from([key.unit]);
-    let registry = db.syntax_dependency_registry().lock().expect("syntax dependency registry");
     units.extend(
-        registry
-            .modules
+        db.syntax_dependency_registry()
+            .lock()
+            .expect("syntax dependency registry")
+            .generation_units(key.generation)
             .iter()
-            .filter(|((generation, _), _)| *generation == key.generation)
-            .flat_map(|(_, units)| units.iter().copied()),
+            .copied(),
     );
-    drop(registry);
     let mut candidates = Vec::new();
     for unit in units {
         let syntax = db.syntax_unit(unit)?;
@@ -983,28 +985,20 @@ fn concrete_nominal_declaration_of_kinds(
         }
         let index = syntax.syntax_index(db);
         let program = syntax.expanded_program(db);
-        let enums = index.ids_of_kind(NodeKind::EnumDefinition).filter(|_| include_enums);
-        for node in index.ids_of_kind(NodeKind::TypeDefinition).chain(enums) {
+        let enums = index.ids_named(NodeKind::EnumDefinition, name).filter(|_| include_enums);
+        for node in index.ids_named(NodeKind::TypeDefinition, name).chain(enums) {
             let declaration = AstNodeKey { unit, node, ..key };
             let Some(definition) = index.node_at(program, node) else {
                 continue;
             };
-            let Some((name, arity)) = definition
+            let Some(arity) = definition
                 .of::<TypeDefinition>()
-                .map(|definition| (definition.name.node.name.as_str(), definition.generics.len()))
-                .or_else(|| {
-                    definition
-                        .of::<EnumDefinition>()
-                        .map(|definition| (definition.name.node.name.as_str(), definition.generics.len()))
-                })
+                .map(|definition| definition.generics.len())
+                .or_else(|| definition.of::<EnumDefinition>().map(|definition| definition.generics.len()))
             else {
                 continue;
             };
-            // A stable identity always ends with the declaration's own name, so only same-named
-            // declarations can match; the full identity (a registry scan) is computed for those.
-            if arity == arguments.len()
-                && qualified_identity_names(qualified_name, name)
-                && stable_declaration_identity(db, declaration).as_ref() == Some(qualified_name)
+            if arity == arguments.len() && stable_declaration_identity(db, declaration).as_ref() == Some(qualified_name)
             {
                 candidates.push(declaration);
             }
@@ -1014,13 +1008,6 @@ fn concrete_nominal_declaration_of_kinds(
         [candidate] => Some(*candidate),
         _ => None,
     }
-}
-
-/// Whether a `::`-joined stable identity names a declaration called `name` as its final segment.
-fn qualified_identity_names(qualified_name: &str, name: &str) -> bool {
-    qualified_name
-        .strip_suffix(name)
-        .is_some_and(|prefix| prefix.is_empty() || prefix.ends_with("::"))
 }
 
 /// `impl` blocks in `concrete`'s own unit whose receiver names `type_name`. Same-unit only,

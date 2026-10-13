@@ -30,7 +30,13 @@ pub struct SyntaxDependencyRegistry {
         HashMap<(ProjectSession, SyntaxGenerationId), beskid_analysis::projects::VerifiedPackageIdentities>,
     pub(crate) imports: HashMap<(SourceUnitId, SyntaxGenerationId), Vec<SyntaxImport>>,
     /// Exact logical module paths assembled for one syntax generation.
+    /// Written only through [`SyntaxDependencyRegistry::publish_modules`], which keeps the derived
+    /// per-generation indexes below in step.
     pub(crate) modules: HashMap<(SyntaxGenerationId, Vec<String>), Vec<SourceUnitId>>,
+    /// Every unit of any module of one generation, each once.
+    generation_units: HashMap<SyntaxGenerationId, Vec<SourceUnitId>>,
+    /// The least module path (in `Vec<String>` order) that contains one unit in one generation.
+    least_unit_module: HashMap<(SourceUnitId, SyntaxGenerationId), Vec<String>>,
     /// Compiler-minted Corelib service names available to one exact source unit generation.
     /// Ordinary program syntax never populates this registry entry.
     pub(crate) corelib_services: HashMap<(SourceUnitId, SyntaxGenerationId), Vec<CorelibService>>,
@@ -53,6 +59,46 @@ impl SyntaxDependencyRegistry {
         path: &[String],
     ) -> Option<&[SourceUnitId]> {
         self.modules.get(&(generation, path.to_vec())).map(Vec::as_slice)
+    }
+
+    /// Register the units of logical modules assembled for `generation` and rebuild that
+    /// generation's derived indexes.
+    pub(crate) fn publish_modules(
+        &mut self,
+        generation: SyntaxGenerationId,
+        modules: impl IntoIterator<Item = (Vec<String>, Vec<SourceUnitId>)>,
+    ) {
+        for (path, units) in modules {
+            self.modules.insert((generation, path), units);
+        }
+        let mut units = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+        self.least_unit_module.retain(|(_, unit_generation), _| *unit_generation != generation);
+        for ((module_generation, path), module_units) in &self.modules {
+            if *module_generation != generation {
+                continue;
+            }
+            for unit in module_units {
+                if seen.insert(*unit) {
+                    units.push(*unit);
+                }
+                let least = self.least_unit_module.entry((*unit, generation)).or_insert_with(|| path.clone());
+                if path < least {
+                    *least = path.clone();
+                }
+            }
+        }
+        self.generation_units.insert(generation, units);
+    }
+
+    /// Every unit of any module assembled for `generation`.
+    pub(crate) fn generation_units(&self, generation: SyntaxGenerationId) -> &[SourceUnitId] {
+        self.generation_units.get(&generation).map_or(&[], Vec::as_slice)
+    }
+
+    /// The least logical module path that contains `unit` in `generation`.
+    pub(crate) fn least_unit_module(&self, unit: SourceUnitId, generation: SyntaxGenerationId) -> Option<&[String]> {
+        self.least_unit_module.get(&(unit, generation)).map(Vec::as_slice)
     }
 }
 

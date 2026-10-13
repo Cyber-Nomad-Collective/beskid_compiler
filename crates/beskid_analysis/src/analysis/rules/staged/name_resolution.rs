@@ -25,6 +25,7 @@ impl SemanticPipelineRule {
                 program,
                 ctx.options.entry_source_path.as_deref(),
                 assembly,
+                ctx.options.assembly_declaration_tables.as_deref(),
             ) {
                 Ok(resolution) => resolution,
                 Err(errors) => {

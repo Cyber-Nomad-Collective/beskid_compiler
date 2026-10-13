@@ -11,4 +11,5 @@ mod tests;
 
 pub use self::model::{AssemblyModule, ModuleGraph, ModuleIndex};
 pub use self::path_inference::infer_logical_module_path;
+pub use self::resolution::AssemblyDeclarationTables;
 pub(crate) use self::path_inference::package_for_path;
