@@ -347,8 +347,8 @@ fn canonical_runtime_source_exports_exactly_match_manifest_provenance() {
     }
     assert_eq!(
         provenance.len(),
-        declared.len() + 3 + manifest.assembly.len(),
-        "runtime provenance is source exports plus generated Core.Args and host-thread adapters plus assembly"
+        declared.len() + 4 + manifest.assembly.len(),
+        "runtime provenance is source exports plus generated Core.Args, thread-yield and host-processor adapters plus assembly"
     );
 }
 
