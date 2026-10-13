@@ -29,6 +29,7 @@ const LEGALITY_MAPPED: &[(&str, &str)] = &[
     ("enum_constructor", "member_reference_legality (E1301, E1302)"),
     ("enum_layout", "unresolved_type_reference (E1201)"),
     ("enum_match", "member_reference_legality (E1301), match_exhaustiveness (E1304)"),
+    ("for_iterator_protocol", "gate_obligations iterator obligations (E1215-E1218)"),
     ("generic_call_instantiation", "unresolved_call_target (E1203)"),
     ("mutable_local_assignment", "immutable_local_assignment (E1214)"),
     ("pattern_binding", "member_reference_legality (E1307)"),

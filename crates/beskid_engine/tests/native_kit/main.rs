@@ -19,6 +19,7 @@ mod corelib_repeat_jit;
 mod cyb169_enum_return_sigill;
 mod descriptor_smoke;
 mod heap_growth_native;
+mod iterator_for_native;
 mod jit_pipeline_observer;
 mod mod_host;
 mod repeat_loop_probe;

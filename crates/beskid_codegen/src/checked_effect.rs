@@ -489,6 +489,31 @@ impl CodegenInput<'_> {
                         }
                         _ => return Err(reject(site, "open or unresolved call effect")),
                     },
+                    // A `for` over a nominal iterator calls `Next()` every iteration: the same
+                    // exact callee its lowering imports joins the closure like a direct call.
+                    IndexedNodeKind::ForStatement => {
+                        if let Some(fact) = facts.iterator_for_fact(site) {
+                            let protocol = beskid_queries::for_iterator_protocol(self.database(), site, None)
+                                .ok()
+                                .flatten()
+                                .or_else(|| {
+                                    let enclosing = item.specialization.as_ref()?;
+                                    beskid_queries::for_iterator_protocol(self.database(), site, Some(enclosing))
+                                        .ok()
+                                        .flatten()
+                                })
+                                .ok_or_else(|| reject(site, "missing iterator protocol"))?;
+                            let declaration = protocol.next.declaration;
+                            let instance = Some(protocol.next);
+                            if identity(declaration, &instance) != fact.next {
+                                return Err(reject(site, "iterator callee specialization identity mismatch"));
+                            }
+                            pending.push((
+                                fact.next,
+                                CheckedEffectItem { key: declaration, specialization: instance, bridge: None, owned_bridge: None },
+                            ));
+                        }
+                    }
                     _ => {}
                 }
                 let children = child_nodes(self.database(), site)

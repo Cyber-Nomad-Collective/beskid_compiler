@@ -93,7 +93,8 @@ pub(in crate::semantic_contract) fn managed_reference_kind_tracked(
                 return Some(for_iterator_fact(db, AstNodeKey { node: parent, ..key }).and_then(|fact| {
                     fact.map(|fact| match fact.source {
                         ForIterableSource::Range => ManagedReferenceKind::NativeOrScalar,
-                        ForIterableSource::Array { element_managed } => element_managed,
+                        ForIterableSource::Array { element_managed }
+                        | ForIterableSource::Iterator { element_managed } => element_managed,
                     })
                     .ok_or_else(|| SemanticError::unavailable("managed_reference_kind"))
                 }));

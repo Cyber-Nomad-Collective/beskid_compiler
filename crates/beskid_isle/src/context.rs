@@ -320,8 +320,10 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
             Some(ForIterableKind::Range)
         } else if self.facts.array_for_fact(key).is_some() {
             Some(ForIterableKind::Array)
+        } else if self.facts.iterator_for_fact(key).is_some() {
+            Some(ForIterableKind::Iterator)
         } else {
-            Some(ForIterableKind::Other)
+            None
         }
     }
 

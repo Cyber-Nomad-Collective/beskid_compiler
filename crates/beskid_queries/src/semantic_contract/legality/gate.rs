@@ -46,7 +46,9 @@ pub enum GateObligationKind {
     JoinWouldDeadlock,
     /// E1225: a `spawn` lambda capturing a stack reference.
     StackReferenceEscapesSpawn,
-    /// E1215: a `for` iterable of a proven primitive type, or a nominal type without `Next`.
+    /// E1215: a `for` iterable of a proven primitive type, a nominal type without `Next`, or,
+    /// outside a generic or contract-parameterized item, any non-`range` iterable that is neither
+    /// a proven array nor a proven nominal iterator (so `check` admits only what `build` lowers).
     NonIterableForTarget,
     /// E1216: the iterable's `Next` method declares parameters.
     IterableNextArityMismatch { expected: usize, actual: usize },

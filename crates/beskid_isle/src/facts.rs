@@ -24,6 +24,6 @@ pub use match_range::{MatchArmBindingFact, MatchArmFact, MatchPayloadPatternFact
 pub use node_facts::NodeFacts;
 pub use operations::{
     ArrayForFact, CollectionMutationOwner, CollectionOperation, CompositionInjectionPlan, CompositionLaunchPlan,
-    CompositionRegistrationPlan, CompositionScopePlan, EventHandlerLocalPlan, EventOperationPlan, LocalSlotId,
-    ManagedReferenceFact, ParameterSlot, ScopedCleanupPlan,
+    CompositionRegistrationPlan, CompositionScopePlan, EventHandlerLocalPlan, EventOperationPlan, IteratorForFact,
+    LocalSlotId, ManagedReferenceFact, ParameterSlot, ScopedCleanupPlan,
 };

@@ -54,7 +54,7 @@ impl SyntaxNodeFacts<'_> {
             return Some(fact);
         }
         let enclosing = self.current_item_specialization()?;
-        self.query(for_iterator_specialization(self.db, key, enclosing.substitutions.clone()))
+        self.query(for_iterator_specialization(self.db, key, enclosing))
     }
 
     /// The array a `ForStatement` iterates: its element layout (the stride and CLIF element type
@@ -74,6 +74,41 @@ impl SyntaxNodeFacts<'_> {
             ManagedReferenceKind::NativeOrScalar => ManagedReferenceFact::NativeOrScalar,
         };
         Some(beskid_isle::ArrayForFact { layout, element_managed })
+    }
+
+    /// The nominal iterator a `ForStatement` iterates through the iterator protocol: the exact
+    /// `Next()` callee (specialized when its owner is generic, or when the iterable's identity is
+    /// only proven in the enclosing specialization), its receiver-to-`Option` signature, the
+    /// physical `Option<T>` layout and the GC classification of the elements. `None` for `range`
+    /// and array loops and for iterables without a proven protocol.
+    pub(in crate::isle_adapter) fn iterator_for_fact_impl(&self, key: AstNodeKey) -> Option<beskid_isle::IteratorForFact> {
+        if self.query(node_kind(self.db, key)) != Some(beskid_queries::IndexedNodeKind::ForStatement) {
+            return None;
+        }
+        let fact = self.for_iterator_in_context(key)?;
+        let ForIterableSource::Iterator { element_managed } = fact.source else { return None };
+        let protocol = self.query(for_iterator_protocol(self.db, key, None)).or_else(|| {
+            let enclosing = self.current_item_specialization()?;
+            self.query(for_iterator_protocol(self.db, key, Some(enclosing)))
+        })?;
+        if protocol.element_type != fact.element_type || protocol.element_managed != element_managed {
+            return None;
+        }
+        let next = if protocol.next.substitutions.is_empty() && protocol.next.contract_witnesses.is_empty() {
+            DirectCallee::item(protocol.next.declaration)
+        } else {
+            DirectCallee::specialized_item(protocol.next.declaration, specialization_identity(&protocol.next))
+        };
+        Some(beskid_isle::IteratorForFact {
+            next,
+            next_signature: signature_for_item(self.isa?, protocol.next.signature.clone())?,
+            option_layout: self.enum_layout_from_fact(&protocol.option_layout)?,
+            some_variant: protocol.some_variant,
+            element_managed: match element_managed {
+                ManagedReferenceKind::GcManaged => ManagedReferenceFact::GcManaged,
+                ManagedReferenceKind::NativeOrScalar => ManagedReferenceFact::NativeOrScalar,
+            },
+        })
     }
 
     pub(in crate::isle_adapter) fn typed_array_plan(&self, key: AstNodeKey) -> Option<crate::ArrayStaticPlan> {

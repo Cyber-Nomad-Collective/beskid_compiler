@@ -76,6 +76,19 @@ pub struct ArrayForFact {
     pub element_managed: ManagedReferenceFact,
 }
 
+/// The nominal iterator a `for` statement iterates through the iterator protocol: the exact
+/// `Next()` callee (receiver pointer to `Option<T>` pointer), the physical `Option<T>` layout and
+/// the index of its `Some` variant (whose single payload field is the element the loop variable
+/// reads), and the GC classification of the elements.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct IteratorForFact {
+    pub next: DirectCallee,
+    pub next_signature: Signature,
+    pub option_layout: crate::EnumLayout,
+    pub some_variant: u32,
+    pub element_managed: ManagedReferenceFact,
+}
+
 #[derive(Clone)]
 pub struct ScopedCleanupPlan {
     pub binding: AstNodeKey,

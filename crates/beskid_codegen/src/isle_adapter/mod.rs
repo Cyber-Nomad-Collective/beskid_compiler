@@ -21,7 +21,7 @@ use beskid_queries::{
     block_statement_nodes, bulk_parameter, call_abi_signature, call_arguments, call_lowering,
     cast_intents, child_nodes, clif_block_body, closure_call_target, closure_environment, closure_signature,
     constant_integer, contextual_integer_literal_abi_type, enum_constructor, enum_constructor_specialization,
-    enum_layout, enum_match, enum_match_call_specialization, enum_match_specialization, for_iterator_fact, for_iterator_specialization, generic_call_specialization,
+    enum_layout, enum_match, enum_match_call_specialization, enum_match_specialization, for_iterator_fact, for_iterator_protocol, for_iterator_specialization, generic_call_specialization,
     generic_call_specialization_in_environment, generic_call_specialization_instance, implicit_method_receiver,
     item_abi_signature, item_body, literal_fact, local_slot, managed_reference_kind, mutable_local_assignment,
     node_kind, node_type, nominal_member_receiver, operator_fact, parameter_generic_reference, range_for_fact,

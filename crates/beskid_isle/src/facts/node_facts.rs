@@ -183,6 +183,11 @@ pub trait NodeFacts {
     fn array_for_fact(&self, _key: AstNodeKey) -> Option<ArrayForFact> {
         None
     }
+    /// The nominal iterator a `ForStatement` node iterates (`Next()` returning `Option<T>`);
+    /// `None` for `range` and array loops and for iterables without a proven protocol.
+    fn iterator_for_fact(&self, _key: AstNodeKey) -> Option<IteratorForFact> {
+        None
+    }
     fn spawn_entry(&self, _key: AstNodeKey) -> Option<SpawnEntry> {
         None
     }

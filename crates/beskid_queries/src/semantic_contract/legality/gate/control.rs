@@ -4,9 +4,12 @@
 //!   diagnostics are rendered with the legacy codes at the spawn expression. A join of a handle
 //!   from inside a fiber spawned within the handle's own fiber body is the legacy
 //!   `JoinWouldDeadlock` (fiber scope strictly below the handle's scope).
-//! * Iterators: a `for` iterable that is not the `range(..)` form is judged when its value is a
-//!   proven primitive (no `Next` method) or a local of a declared nominal type, whose `Next`
-//!   declaration is then held to the legacy protocol.
+//! * Iterators: a `for` iterable that is not the `range(..)` form and has no iterator fact is
+//!   judged when its value is a proven primitive (no `Next` method) or of a nominal type, whose
+//!   `Next` declaration is then held to the legacy protocol (E1216-E1218). Outside a generic or
+//!   contract-parameterized item every other iterable without an iterator fact is E1215: the
+//!   fact is the lowering authority, so `check` never admits a loop `build` cannot lower. Inside
+//!   such an item the fact is proven per specialization and only the declared shape is judged.
 //! * Events: a raise (`event_operation` `Raise`) outside a method of the declaring type, and a
 //!   lambda subscribed to a target that no event fact describes.
 
@@ -117,6 +120,10 @@ pub(super) fn collect_iterator_obligations(
             continue;
         };
         let site = AstNodeKey { node: site_node, ..key };
+        let statement_key = AstNodeKey { node, ..key };
+        // A `range(..)` loop is lowered from syntax alone; its operands are judged elsewhere.
+        let lowers_without_fact = crate::semantic_contract::typing::range_iterable_bounds(&statement.iterable.node).is_some();
+        let unproven_fails = !lowers_without_fact && !for_statement_in_generic_context(db, statement_key);
         // `pointer` is also the ABI of every nominal value: such an iterable is judged by its
         // declared nominal type below, never as a primitive.
         if let Some(ty) = super::super::typing::proven_type(db, AstNodeKey { node: subject, ..key }) {
@@ -128,43 +135,61 @@ pub(super) fn collect_iterator_obligations(
                 continue;
             }
         }
-        let Some(declaration) = nominal_local_type_declaration(db, program, index, key, subject) else { continue };
+        let declaration = nominal_local_type_declaration(db, program, index, key, subject)
+            .or_else(|| nominal_source_type_declaration(db, AstNodeKey { node: subject, ..key }));
+        let Some(declaration) = declaration else {
+            if unproven_fails {
+                findings.push(GateObligation { kind: GateObligationKind::NonIterableForTarget, site });
+            }
+            continue;
+        };
         let Some(next) = unique_nominal_method_declaration(db, declaration, "Next") else {
             findings.push(GateObligation { kind: GateObligationKind::NonIterableForTarget, site });
             continue;
         };
-        let Some(next_syntax) = db.syntax_unit(next.unit).filter(|syntax| syntax.accepts_key(db, next)) else {
-            continue;
-        };
-        let Some(method) = next_syntax
-            .syntax_index(db)
-            .node_at(next_syntax.expanded_program(db), next.node)
-            .and_then(|node| node.of::<MethodDefinition>())
-        else {
-            continue;
-        };
-        if !method.parameters.is_empty() {
-            findings.push(GateObligation {
-                kind: GateObligationKind::IterableNextArityMismatch { expected: 0, actual: method.parameters.len() },
-                site,
-            });
-            continue;
-        }
-        match method.return_type.as_ref().map(|result| &result.node) {
-            Some(Type::Complex(path))
-                if path.node.segments.last().is_some_and(|segment| segment.node.name.node.name == "Option") =>
-            {
-                let arguments = path.node.segments.last().map_or(0, |segment| segment.node.type_args.len());
-                if arguments != 0 && arguments != 1 {
-                    findings.push(GateObligation {
-                        kind: GateObligationKind::IterableOptionSomeArityMismatch { expected: 1, actual: arguments },
-                        site,
-                    });
-                }
+        let shape = next_shape_obligation(db, next);
+        match shape {
+            Some(kind) => findings.push(GateObligation { kind, site }),
+            // The declared shape holds, yet no iterator fact proves the loop (an `Option` that is
+            // not the two-variant `Some`/`None` enum, a unit element, an unprovable receiver):
+            // the loop cannot lower, so it is not iterable.
+            None if unproven_fails => {
+                findings.push(GateObligation { kind: GateObligationKind::NonIterableForTarget, site })
             }
-            _ => findings.push(GateObligation { kind: GateObligationKind::IterableNextReturnNotOption, site }),
+            None => {}
         }
     }
+}
+
+/// The legacy protocol obligation a `Next` declaration fails (E1215-E1218), if any. A
+/// declaration whose syntax is not registered is never a finding.
+fn next_shape_obligation(db: &dyn Db, next: AstNodeKey) -> Option<GateObligationKind> {
+    let next_syntax = db.syntax_unit(next.unit).filter(|syntax| syntax.accepts_key(db, next))?;
+    let method = next_syntax
+        .syntax_index(db)
+        .node_at(next_syntax.expanded_program(db), next.node)
+        .and_then(|node| node.of::<MethodDefinition>())?;
+    if !method.parameters.is_empty() {
+        return Some(GateObligationKind::IterableNextArityMismatch { expected: 0, actual: method.parameters.len() });
+    }
+    match method.return_type.as_ref().map(|result| &result.node) {
+        Some(Type::Complex(path))
+            if path.node.segments.last().is_some_and(|segment| segment.node.name.node.name == "Option") =>
+        {
+            let arguments = path.node.segments.last().map_or(0, |segment| segment.node.type_args.len());
+            (arguments != 0 && arguments != 1)
+                .then_some(GateObligationKind::IterableOptionSomeArityMismatch { expected: 1, actual: arguments })
+        }
+        _ => Some(GateObligationKind::IterableNextReturnNotOption),
+    }
+}
+
+/// The `type` declaration an iterable expression's proven nominal source identity names (call
+/// results, field projections, inferred locals).
+fn nominal_source_type_declaration(db: &dyn Db, subject: AstNodeKey) -> Option<AstNodeKey> {
+    let identity = generic_source_expression_identity(db, subject).ok()?;
+    matches!(identity, GenericSourceTypeIdentity::Nominal { .. }).then_some(())?;
+    crate::semantic_contract::contracts::concrete_declaration(db, subject, &identity)
 }
 
 /// The declaration a local path's declared nominal type (`Iter it = ...`, `Iter it` parameter)

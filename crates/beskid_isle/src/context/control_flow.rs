@@ -2,6 +2,20 @@ use super::*;
 use crate::context::generated::Context as _;
 
 impl IsleContext<'_, '_, '_, '_> {
+    /// The zero value a `for` loop variable is bound to before its first element is assigned;
+    /// `None` for a CLIF type no loop variable can have.
+    pub(super) fn loop_variable_initial_value(&mut self, element_type: Type) -> Option<Value> {
+        if element_type == cranelift_codegen::ir::types::F32 {
+            Some(self.builder.ins().f32const(cranelift_codegen::ir::immediates::Ieee32::with_bits(0)))
+        } else if element_type == cranelift_codegen::ir::types::F64 {
+            Some(self.builder.ins().f64const(cranelift_codegen::ir::immediates::Ieee64::with_bits(0)))
+        } else if element_type.is_int() {
+            Some(self.builder.ins().iconst(element_type, 0))
+        } else {
+            None
+        }
+    }
+
     /// Adapt one already-lowered scalar to a declared storage, parameter, or return boundary.
     ///
     /// Source typing has already authorized the assignment. This seam only reconciles the
@@ -458,13 +472,7 @@ macro_rules! generated_control_flow_methods {
             let index = self.builder.declare_var(pointer);
             let zero = self.builder.ins().iconst(pointer, 0);
             self.builder.def_var(index, zero);
-            let initial = if element_type == cranelift_codegen::ir::types::F32 {
-                self.builder.ins().f32const(cranelift_codegen::ir::immediates::Ieee32::with_bits(0))
-            } else if element_type == cranelift_codegen::ir::types::F64 {
-                self.builder.ins().f64const(cranelift_codegen::ir::immediates::Ieee64::with_bits(0))
-            } else if element_type.is_int() {
-                self.builder.ins().iconst(element_type, 0)
-            } else {
+            let Some(initial) = self.loop_variable_initial_value(element_type) else {
                 self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidArrayFor });
                 return None;
             };
@@ -527,12 +535,116 @@ macro_rules! generated_control_flow_methods {
             Some(())
         }
 
-        /// The nominal iterator protocol (`Next()` returning `Option<T>`) has no lowering fact;
-        /// the check gate accepts it (E1215-E1218 judge its shape), so a program that reaches
-        /// emission here fails closed as a compiler gap.
+        /// `for id in iterator { body }` over the nominal iterator protocol (`Next()` returning
+        /// `Option<T>`): the iterable is evaluated once, checked non-null and rooted for the whole
+        /// loop. The header, which is also the `continue` target, calls `Next()` on the iterator
+        /// and reads the tag of the returned `Option<T>`: `None` leaves the loop, `Some` loads its
+        /// payload into the loop variable, a scalar or a GC-rooted pointer local. As in
+        /// `emit_array_for`, the loop scope owns the iterator root and the loop variable and the
+        /// body runs in a nested scope, so `break` and `continue` release only the body's roots.
         fn emit_iterator_for(&mut self, key: AstNodeKey) -> Option<()> {
-            self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidRangeFor });
-            None
+            let iterable = self.facts.child(key, 0)?;
+            let body_key = self.facts.child(key, 1)?;
+            let fact = self.facts.iterator_for_fact(key)?;
+            let element_type = self.facts.scalar_type(key)?;
+            let slot = self.facts.local_slot(key)?;
+            let pointer = dispatch::pointer_type(self.frontend_config);
+            let some = usize::try_from(fact.some_variant).ok().and_then(|index| fact.option_layout.variants.get(index));
+            let payload = some.and_then(|variant| match variant.payload_fields.as_slice() {
+                [Some(field)] => Some(*field),
+                _ => None,
+            });
+            let signature_is_receiver_to_pointer = matches!(
+                (fact.next_signature.params.as_slice(), fact.next_signature.returns.as_slice()),
+                ([receiver], [result]) if receiver.value_type == pointer && result.value_type == pointer
+            );
+            let (Some(some), Some(payload)) = (some, payload) else {
+                self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidIteratorFor });
+                return None;
+            };
+            let some_discriminant = i64::try_from(some.discriminant).ok();
+            if !fact.option_layout.is_valid()
+                || !signature_is_receiver_to_pointer
+                || payload.value_type != element_type
+                || some_discriminant.is_none()
+                || (fact.element_managed == ManagedReferenceFact::GcManaged && element_type != pointer)
+                || self.locals.contains_key(&slot)
+            {
+                self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidIteratorFor });
+                return None;
+            }
+            let some_discriminant = some_discriminant?;
+            let tag = fact.option_layout.tag;
+            let next = match self.call_importer.as_deref_mut()?.import(self.builder, fact.next.clone(), &fact.next_signature)
+            {
+                Ok(function) => function,
+                Err(CallImportError::UnknownCallee) => {
+                    self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::UnknownCallee(fact.next) });
+                    return None;
+                }
+            };
+            let iterator = generated::constructor_lower_expression(self, iterable)?;
+            if self.builder.func.dfg.value_type(iterator) != pointer {
+                self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidIteratorFor });
+                return None;
+            }
+            self.builder.ins().trapz(iterator, TrapCode::unwrap_user(1));
+
+            self.begin_local_root_scope();
+            let _iterator_root = self.root_expression_value_if_needed(iterable, iterator)?;
+            let Some(initial) = self.loop_variable_initial_value(element_type) else {
+                self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidIteratorFor });
+                return None;
+            };
+            self.bind_local(slot, initial, element_type, fact.element_managed)?;
+
+            let header = self.builder.create_block();
+            let body = self.builder.create_block();
+            let exit = self.builder.create_block();
+            self.builder.ins().jump(header, &[]);
+
+            self.builder.switch_to_block(header);
+            let call = self.builder.ins().call(next, &[iterator]);
+            self.guard_checked_allocation()?;
+            let option = self.builder.inst_results(call).first().copied()?;
+            let tag_value =
+                self.builder.ins().load(tag.value_type, MemFlagsData::new(), option, i32::try_from(tag.offset).ok()?);
+            let is_some = self.builder.ins().icmp_imm_s(IntCC::Equal, tag_value, some_discriminant);
+            self.builder.ins().brif(is_some, body, &[], exit, &[]);
+
+            self.builder.switch_to_block(body);
+            self.builder.seal_block(body);
+            // No call runs between `Next()` returning and this load, so the `Option` object needs
+            // no root of its own; the loaded element is published into the loop variable's root.
+            let element =
+                self.builder.ins().load(element_type, MemFlagsData::new(), option, i32::try_from(payload.offset).ok()?);
+            self.assign_local(slot, element)?;
+            let body_scope_depth = self.local_root_scope_depth();
+            self.begin_local_root_scope();
+            self.loop_stack.push(LoopTargets {
+                continue_block: header,
+                break_block: exit,
+                root_scope_depth: body_scope_depth,
+                break_reached: false,
+            });
+            let lowered = generated::constructor_lower_statement(self, body_key);
+            self.loop_stack.pop();
+            if lowered.is_none() {
+                let _ = self.end_local_root_scope_for_current_block();
+                let _ = self.end_local_root_scope_for_current_block();
+                return None;
+            }
+            self.end_local_root_scope_for_current_block()?;
+            // Body may nest control flow and leave the builder on a descendant block.
+            let _ = jump_from_current_if_unterminated(self.builder, header);
+
+            self.builder.seal_block(header);
+            self.builder.switch_to_block(exit);
+            self.builder.seal_block(exit);
+            // Leaving the loop scope releases the iterator root and the loop variable on the
+            // normal (`None`) and the `break` edges alike.
+            self.end_local_root_scope_for_current_block()?;
+            Some(())
         }
 
         fn emit_break(&mut self, _key: AstNodeKey) -> Option<()> {

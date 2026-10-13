@@ -30,6 +30,11 @@ use expected_type::expected_type_tracked;
 mod portable_nominal;
 pub(crate) use portable_nominal::serialization_impl_receiver;
 pub use portable_nominal::{PortableNominalIdentity, portable_nominal_identity};
+mod dynamic_mapping;
+pub use dynamic_mapping::{
+    DynamicMappingBinding, DynamicMappingFieldStep, DynamicMappingOutcome, DynamicMappingPlan, DynamicMappingStep,
+    dynamic_mapping_binding, dynamic_mapping_plan,
+};
 mod dynamic_pack;
 pub(crate) use dynamic_pack::project_serialization_shape;
 pub use dynamic_pack::{
@@ -97,7 +102,8 @@ use calls::{
     canonical_runtime_intrinsic_scope, cast_intents_for_node, cast_intents_tracked, corelib_service_for,
     expected_cast_type, expected_explicit_call_argument_type, explicit_generic_type_argument_syntax,
     exported_generic_type_named, expression_fact_target, expression_is_lambda, flatten_member_as_path_declaration,
-    for_iterator_fact_tracked, function_declares_generics, generic_call_instantiation_for_node,
+    for_iterator_fact_tracked, for_statement_in_generic_context, function_declares_generics,
+    generic_call_instantiation_for_node, specialized_for_element_identity,
     generic_call_instantiation_tracked, generic_call_specialization_tracked, generic_call_template_tracked,
     generic_call_uses_parameter_type_arguments, generic_callable_parameters, generic_nominal_method_receiver_tracked,
     generic_source_expression_identity, generic_source_local_identity, generic_source_type_identity,
@@ -208,7 +214,7 @@ pub use completion::{
     completion_candidates, completion_dependency_surface, completion_dependency_surface_for_assembly,
     completion_dependency_surface_for_program,
 };
-pub use calls::for_iterator_specialization;
+pub use calls::{for_iterator_protocol, for_iterator_specialization};
 pub use layouts::{
     aggregate_field_access_specialization, aggregate_literal_specialization, array_index_element_managed_reference_specialization,
     array_index_element_specialization,
@@ -225,7 +231,7 @@ pub use model::{
     EnumMatchArmFact, EnumMatchBindingFact, EnumMatchFact, EnumMatchPatternFact, EnumMatchScalarLiteralFact,
     EnumMatchVariantPatternFact, EnumScalarPayloadObjectLayout, EnumScalarPayloadVariantLayout, EnumVariantLayoutFact,
     EventFieldLayoutFact, EventHandlerLocalFact, ExpectedType, ExpectedTypeContext, EventOperationFact, EventOperationKind, ExportSymbol, FiberOwnership,
-    ForIterableSource, ForIteratorFact, FunctionItemValue, FunctionValueCall, GenericBindingConflict, GenericBoundViolation, GenericCallInstantiation, GenericCallSpecialization,
+    ForIterableSource, ForIteratorFact, ForIteratorProtocol, FunctionItemValue, FunctionValueCall, GenericBindingConflict, GenericBoundViolation, GenericCallInstantiation, GenericCallSpecialization,
     GenericCallTemplate,
     GenericNominalMethodReceiver, GenericSpecializationInstance, GenericSubstitution, IndexedNodeKind, ItemSignature,
     LiteralFact, LocalSlot, ManagedReferenceKind, ManifestBuiltin, MutableLocalAssignment, OperatorFact,

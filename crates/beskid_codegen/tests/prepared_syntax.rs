@@ -418,3 +418,73 @@ fn for_over_arrays_builds_through_the_prepared_front_end() {
     let sum = artifact.functions.iter().find(|function| function.name.starts_with("Sum#syntax_")).expect("Sum is emitted");
     assert!(sum.function.display().to_string().contains("icmp ult"), "the array loop compares against the header length");
 }
+
+const ITERATORS: &str = "pub enum Option<T> { Some(T value), None } \
+     pub type Counter { i64 current, i64 limit, \
+         pub Option<i64> Next() { \
+             if this.current >= this.limit { return Option::None; } \
+             this.current = this.current + 1_i64; \
+             return Option::Some(this.current); \
+         } \
+     } \
+     pub type Repeat<T> { T value, i64 left, \
+         pub Option<T> Next() { \
+             if this.left <= 0_i64 { return Option::None; } \
+             this.left = this.left - 1_i64; \
+             return Option::Some(this.value); \
+         } \
+     } ";
+
+#[test]
+fn for_over_a_nominal_iterator_builds_through_the_prepared_front_end() {
+    let source = format!(
+        "{ITERATORS} \
+         i64 Sum(Counter counter) {{ \
+             mut i64 total = 0_i64; \
+             for value in counter {{ \
+                 if value == 2_i64 {{ continue; }} \
+                 if value == 5_i64 {{ break; }} \
+                 total = total + value; \
+             }} \
+             return total; \
+         }} \
+         i64 Main() {{ return Sum(Counter {{ current: 0_i64, limit: 9_i64 }}); }}"
+    );
+    let artifact = lower_main("for_over_nominal_iterator", &source);
+    assert!(
+        artifact.functions.iter().any(|function| function.name.contains("Next#syntax_")),
+        "the iterator's Next() is emitted as the loop's callee"
+    );
+    let sum = artifact.functions.iter().find(|function| function.name.starts_with("Sum#syntax_")).expect("Sum is emitted");
+    let clif = sum.function.display().to_string();
+    assert!(clif.contains("call fn"), "the loop header calls Next():\n{clif}");
+    assert!(clif.contains("brif"), "the loop header branches on the Option tag:\n{clif}");
+}
+
+#[test]
+fn for_over_generic_iterators_builds_specialized_next_callees() {
+    let source = format!(
+        "{ITERATORS} \
+         i64 Count<T>(Repeat<T> source) {{ mut i64 count = 0_i64; for item in source {{ count = count + 1_i64; }} return count; }} \
+         i64 Lengths(Repeat<string> names) {{ mut i64 total = 0_i64; for name in names {{ total = total + 1_i64; }} return total; }} \
+         i64 Main() {{ \
+             Repeat<i64> numbers = Repeat<i64> {{ value: 7_i64, left: 3_i64 }}; \
+             Repeat<string> names = Repeat<string> {{ value: \"x\", left: 2_i64 }}; \
+             return Count(numbers) + Lengths(names); \
+         }}"
+    );
+    let artifact = lower_main("for_over_generic_iterator", &source);
+    let specialized_next = artifact
+        .functions
+        .iter()
+        .filter(|function| function.name.contains("Next#syntax_") && function.name.contains("#generic_"))
+        .count();
+    assert_eq!(specialized_next, 2, "Repeat<i64>.Next and Repeat<string>.Next are distinct specializations");
+    assert!(
+        artifact
+            .functions
+            .iter()
+            .any(|function| function.name.starts_with("Count#syntax_") && function.name.contains("#generic_")),
+        "the generic loop body is emitted through its specialization"
+    );
+}

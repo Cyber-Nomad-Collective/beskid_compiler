@@ -766,6 +766,10 @@ pub(super) fn specialized_local_declaration_identity(
     if let Some(parameter) = index.node_at(program, parent).and_then(|node| node.of::<Parameter>()) {
         return Some(generic_source_type_identity_with_substitutions(db, declaration, &parameter.ty.node, &environment));
     }
+    // A `for` variable has the identity of the elements its iterable yields in this environment.
+    if index.node_at(program, parent).and_then(|node| node.of::<beskid_analysis::syntax::ForStatement>()).is_some() {
+        return Some(specialized_for_element_identity(db, declaration, enclosing));
+    }
     let local = index.node_at(program, parent).and_then(|node| node.of::<beskid_analysis::syntax::LetStatement>())?;
     if let Some(annotation) = &local.type_annotation {
         return Some(generic_source_type_identity_with_substitutions(db, declaration, &annotation.node, &environment));

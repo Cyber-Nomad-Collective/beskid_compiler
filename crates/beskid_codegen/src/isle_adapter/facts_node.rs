@@ -112,6 +112,10 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
         self.array_for_fact_impl(key)
     }
 
+    fn iterator_for_fact(&self, key: AstNodeKey) -> Option<beskid_isle::IteratorForFact> {
+        self.iterator_for_fact_impl(key)
+    }
+
     fn try_expression_fact(&self, key: AstNodeKey) -> Option<beskid_queries::TryExpressionFact> {
         self.try_expression_fact_impl(key)
     }

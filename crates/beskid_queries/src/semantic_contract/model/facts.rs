@@ -42,9 +42,10 @@ pub struct RangeForFact {
     pub end: AstNodeKey,
 }
 
-/// What a `for` statement iterates: the syntax-only `range(start, end)` form, or an array value
+/// What a `for` statement iterates: the syntax-only `range(start, end)` form, an array value
 /// whose element identity the source proves (`T[]` parameters and locals, field projections,
-/// call results, array literals). The nominal iterator protocol has no lowering fact.
+/// call results, array literals), or a nominal value of the iterator protocol (a type whose
+/// unique `Next()` method takes no parameters and returns `Option<T>`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum ForIterableSource {
     Range,
@@ -52,13 +53,34 @@ pub enum ForIterableSource {
     /// order. `element_managed` is the GC classification of the elements (the loop variable's
     /// root discipline), derived from the element's source identity, never from its ABI.
     Array { element_managed: super::types::ManagedReferenceKind },
+    /// The loop calls `Next()` on the iterator value evaluated once at loop entry until it
+    /// returns `None`, binding each `Some` payload. The callee and `Option` layout are the
+    /// [`ForIteratorProtocol`] of the statement; `element_managed` classifies the payloads.
+    Iterator { element_managed: super::types::ManagedReferenceKind },
+}
+
+/// Lowering authority of one `for` over the nominal iterator protocol.
+///
+/// `next` is the exact `Next()` instance the loop calls with the iterator as its receiver (empty
+/// substitutions for a non-generic owner; the owner's bindings for a generic one). `option` and
+/// `option_layout` describe the `Option<T>` it returns, `some_variant` is the source-order index
+/// of its `Some` variant, and the element is that variant's single payload.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ForIteratorProtocol {
+    pub next: super::generics::GenericSpecializationInstance,
+    pub option: AstNodeKey,
+    pub option_layout: super::layouts::EnumLayoutFact,
+    pub some_variant: u32,
+    pub element_type: SemanticTypeId,
+    pub element_managed: super::types::ManagedReferenceKind,
 }
 
 /// Generation-bound iterator declaration, element type and source for one `ForStatement`.
 ///
 /// The declaration is the loop-variable identifier. The element type is the start type of a
-/// `range(start, end)` iterable or the element ABI of an array iterable; anything else remains
-/// unavailable (the check gate judges proven non-iterables as E1215).
+/// `range(start, end)` iterable, the element ABI of an array iterable, or the `Some` payload ABI
+/// of a nominal iterator; anything else remains unavailable (the check gate judges unproven
+/// iterables as E1215).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct ForIteratorFact {
     pub declaration: AstNodeKey,

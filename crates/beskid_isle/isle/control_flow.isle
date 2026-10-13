@@ -46,5 +46,5 @@
 
 (rule (lower_statement key @ (and
         (node_kind (NodeKind.ForStatement))
-        (for_iterable_class (ForIterableKind.Other))))
+        (for_iterable_class (ForIterableKind.Iterator))))
       (emit_iterator_for key))

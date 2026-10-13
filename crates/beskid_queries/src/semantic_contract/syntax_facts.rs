@@ -522,6 +522,18 @@ pub(super) fn direct_callees_for_item(
             callees.push(declaration);
         }
     }
+    // A `for` over a nominal iterator calls the iterable's `Next()` every iteration, an implicit
+    // direct call with no CallExpression node, exactly like scoped cleanup above.
+    for for_id in index.ids_of_kind(beskid_analysis::syntax_query::NodeKind::ForStatement) {
+        if !is_ancestor(index, item.node, for_id) {
+            continue;
+        }
+        if let Ok(Some(protocol)) = for_iterator_protocol(db, AstNodeKey { node: for_id, ..item }, None)
+            && !callees.contains(&protocol.next.declaration)
+        {
+            callees.push(protocol.next.declaration);
+        }
+    }
     // A named function read as a value (`Apply(5, Double)`) is reachable through its closure
     // record exactly as through a direct call: its entry must be emitted and importable.
     for path_id in index.ids_of_kind(beskid_analysis::syntax_query::NodeKind::PathExpression) {

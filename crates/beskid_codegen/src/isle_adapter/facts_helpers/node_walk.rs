@@ -28,6 +28,19 @@ impl SyntaxNodeFacts<'_> {
                 if let Some(element) = self.array_index_element_type_in_context(key) {
                     return Some(element);
                 }
+                // A field write inside a specialized body (`this.left = ...` in a method of a
+                // generic type) has no target-neutral value ABI; the assigned field's shape in
+                // the specialization types the assignment.
+                if self.current_item_specialization().is_some()
+                    && let Some(semantic) = self
+                        .raw_children(key)
+                        .first()
+                        .copied()
+                        .and_then(|target| self.unwrap_transparent(target))
+                        .and_then(|target| self.field_semantic_type_in_context(target))
+                {
+                    return Some(semantic);
+                }
             }
             _ => {}
         }
@@ -69,16 +82,17 @@ impl SyntaxNodeFacts<'_> {
                             })?
                     })
             })
-            .or_else(|| {
-                self.aggregate_field_access_in_context(key).and_then(|access| {
-                    access.layout.fields.get(usize::try_from(access.index).ok()?).map(|(_, shape)| match shape {
-                        AggregateFieldShape::Scalar(semantic) | AggregateFieldShape::ManagedReference(semantic) => {
-                            *semantic
-                        }
-                        AggregateFieldShape::Nominal(_) => SemanticTypeId::POINTER,
-                    })
-                })
-            })
+            .or_else(|| self.field_semantic_type_in_context(key))
+    }
+
+    /// The semantic ABI of the field a field access (`this.left`, `value.field`) reads or writes,
+    /// through the enclosing specialization when the receiver's layout needs one.
+    fn field_semantic_type_in_context(&self, key: AstNodeKey) -> Option<SemanticTypeId> {
+        let access = self.aggregate_field_access_in_context(key)?;
+        access.layout.fields.get(usize::try_from(access.index).ok()?).map(|(_, shape)| match shape {
+            AggregateFieldShape::Scalar(semantic) | AggregateFieldShape::ManagedReference(semantic) => *semantic,
+            AggregateFieldShape::Nominal(_) => SemanticTypeId::POINTER,
+        })
     }
 
     /// Project one pattern binding from the same immutable item specialization used for the

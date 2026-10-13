@@ -75,6 +75,7 @@ pub(super) fn resolve_module_items(
     // ordinary user extern methods never enter this synthetic-body authority.
     let mut dynamic_bridges = Vec::new();
     let mut shape_bridges = Vec::new();
+    let mut mapping_bridges = Vec::new();
     let mut unpack_bridges=Vec::new();
     let mut serialization_bridges=Vec::new();
     for instance in specializations.values().flatten() {
@@ -84,6 +85,8 @@ pub(super) fn resolve_module_items(
             .map_err(|error|emission_verification(error.to_string()))? {unpack_bridges.push(bridge);}
         if let Some(binding)=beskid_queries::dynamic_shape_binding(db,instance)
             .map_err(|error|emission_verification(error.to_string()))? {shape_bridges.push(binding);}
+        if let Some(binding)=beskid_queries::dynamic_mapping_binding(db,instance)
+            .map_err(|error|emission_verification(error.to_string()))? {mapping_bridges.push(binding);}
         if let Some(bridge) = beskid_queries::dynamic_packing_bridge(db, instance)
             .map_err(|error| emission_verification(error.to_string()))?
         {
@@ -105,6 +108,12 @@ pub(super) fn resolve_module_items(
         let key=binding.instance().declaration;
         if present.insert(key) { source_items.push(SyntaxModuleItem {
             key,symbol:syntax_item_symbol(input,key).ok_or_else(||emission_verification("canonical Shape helper symbol unavailable"))?,
+        }); }
+    }
+    for binding in &mapping_bridges {
+        let key=binding.instance().declaration;
+        if present.insert(key) { source_items.push(SyntaxModuleItem {
+            key,symbol:syntax_item_symbol(input,key).ok_or_else(||emission_verification("canonical Mapping helper symbol unavailable"))?,
         }); }
     }
     for bridge in &unpack_bridges {
@@ -169,6 +178,7 @@ pub(super) fn resolve_module_items(
         let kind = node_kind(db, item.key).map_err(|error| emission_verification(error.to_string()))?;
         let dynamic_bridge = dynamic_bridges.iter().any(|bridge| bridge.instance().declaration == item.key)
             || shape_bridges.iter().any(|binding|binding.instance().declaration==item.key)
+            || mapping_bridges.iter().any(|binding|binding.instance().declaration==item.key)
             || unpack_bridges.iter().any(|bridge|bridge.instance().declaration==item.key)
             || serialization_bridges.iter().any(|binding|binding.instance().declaration==item.key);
         if !dynamic_bridge
@@ -354,6 +364,43 @@ fn collect_generic_call_specializations_in_environment(
                 Some(&specialization),
                 specializations,
             )?;
+        }
+    }
+    // A `for` over a nominal iterator calls `Next()` without a CallExpression node. Its exact
+    // instance (generic owner bindings, or the iterable's identity proven only in `environment`)
+    // is the callee the loop lowering imports, so it enters this worklist like a direct call.
+    if node_kind(db, key).map_err(|error| emission_verification(error.to_string()))?
+        == Some(beskid_queries::IndexedNodeKind::ForStatement)
+    {
+        let protocol = match beskid_queries::for_iterator_protocol(db, key, environment) {
+            Ok(protocol) => protocol,
+            // Arrays, ranges and iterables without a proven protocol add no callee; their loop
+            // lowering fails closed on its own facts.
+            Err(error) if error.is_unavailable() => None,
+            Err(error) => {
+                return Err(semantic_fact_error(
+                    db,
+                    key,
+                    format_args!("for iterator protocol failed at {}", beskid_queries::format_ast_node_site(db, key)),
+                    error,
+                ));
+            }
+        };
+        if let Some(protocol) = protocol {
+            let instance = protocol.next;
+            let specialized = !instance.substitutions.is_empty() || !instance.contract_witnesses.is_empty();
+            let instances = specializations.entry(instance.declaration).or_default();
+            if !instances.contains(&instance) {
+                instances.push(instance.clone());
+                if specialized {
+                    collect_generic_call_specializations_in_environment(
+                        db,
+                        instance.declaration,
+                        Some(&instance),
+                        specializations,
+                    )?;
+                }
+            }
         }
     }
     if let Some(children) = child_nodes(db, key).map_err(|error| emission_verification(error.to_string()))? {
