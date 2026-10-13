@@ -15,6 +15,13 @@ impl SyntaxNodeFacts<'_> {
         {
             return Some(instance.signature.result);
         }
+        // `operand?` in a specialized body has the payload its operand has in that environment.
+        if self.query(node_kind(self.db, key)) == Some(beskid_queries::IndexedNodeKind::TryExpression)
+            && let Some(enclosing) = self.current_item_specialization()
+            && let Some(fact) = self.query(beskid_queries::specialized_try_expression_fact(self.db, key, enclosing))
+        {
+            return Some(fact.payload_type);
+        }
         if self.query(node_kind(self.db, key)) == Some(beskid_queries::IndexedNodeKind::CallExpression)
             && self.current_item_specialization().is_some()
             && let Some(call) = self.function_value_call_in_context(key)

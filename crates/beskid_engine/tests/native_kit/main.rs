@@ -19,6 +19,7 @@ mod corelib_repeat_jit;
 mod cyb169_enum_return_sigill;
 mod descriptor_smoke;
 mod generic_function_values_native;
+mod generic_try_specialization_native;
 mod heap_growth_native;
 mod iterator_for_native;
 mod jit_pipeline_observer;

@@ -120,6 +120,12 @@ pub struct TryExpressionFact {
     pub return_layout: EnumLayoutFact,
     pub error_managed: bool,
 }
+impl TryExpressionFact {
+    /// Whether the propagated payload is a managed reference (a record, enum or string payload).
+    pub fn payload_managed_reference_kind(&self) -> ManagedReferenceKind {
+        self.payload_identity.managed_reference_kind()
+    }
+}
 
 /// Callable item signature expressed entirely in semantic type identities.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]

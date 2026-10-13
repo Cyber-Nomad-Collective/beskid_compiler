@@ -164,7 +164,7 @@ pub(in crate::semantic_contract) fn enum_layout_tracked(
             })
             .or_else(|| {
                 node.of::<beskid_analysis::syntax::TryExpression>()
-                    .map(|_| Ok(try_expression_fact_for_node(db, program, index, key, node)?.operand_layout))
+                    .map(|_| Ok(try_expression_fact_for_node(db, program, index, key, node, None)?.operand_layout))
             })
     })?
     .transpose()

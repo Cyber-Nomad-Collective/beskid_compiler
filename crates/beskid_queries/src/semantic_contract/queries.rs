@@ -202,6 +202,21 @@ pub fn try_expression_fact(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<
     with_registered_syntax(db, key, try_expression_fact_tracked)
 }
 
+/// [`try_expression_fact`] of `operand?` in the body of the specialization `enclosing`: the
+/// operand and the enclosing return type are read with its generic environment bound.
+pub fn specialized_try_expression_fact(
+    db: &dyn Db,
+    key: AstNodeKey,
+    enclosing: &GenericSpecializationInstance,
+) -> SemanticQueryResult<TryExpressionFact> {
+    with_registered_syntax(db, key, |db, syntax, key| {
+        with_node(db, syntax, key, |program, index, node| {
+            Some(try_expression_fact_for_node(db, program, index, key, node, Some(enclosing)))
+        })?
+        .transpose()
+    })
+}
+
 /// Whether `operand?` is legal: a canonical Result operand whose error type is exactly the
 /// enclosing callable's declared canonical Result error type. Unlike [`try_expression_fact`],
 /// this holds in unspecialized generic bodies.

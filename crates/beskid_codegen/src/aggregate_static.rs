@@ -557,7 +557,15 @@ impl CodegenInput<'_> {
                 .ok()
                 .flatten()
         });
-        let propagated = beskid_queries::try_expression_fact(self.database(), literal).ok().flatten();
+        // `operand?` allocates its propagated error in the enclosing return layout, which a
+        // specialized body reads in its own environment.
+        let propagated = match specialization {
+            Some(enclosing) => {
+                beskid_queries::specialized_try_expression_fact(self.database(), literal, enclosing).ok().flatten()
+            }
+            None => beskid_queries::try_expression_fact(self.database(), literal).ok().flatten(),
+        };
+        let specialized_propagation = specialization.is_some() && propagated.is_some();
         let layout = propagated
             .map(|fact| fact.return_layout)
             .or_else(|| specialized.as_ref().map(|fact| fact.layout.clone()))
@@ -578,7 +586,7 @@ impl CodegenInput<'_> {
                 beskid_queries::SourceUnitId::new(self.database(), unit.path.clone()) == literal.unit
             })?;
         let specialization_identity = specialization
-            .filter(|_| specialized.is_some())
+            .filter(|_| specialized.is_some() || specialized_propagation)
             .map(generic_specialization_identity)
             .map(|identity| identity.iter().map(u32::to_string).collect::<Vec<_>>().join("_"));
         let identity = format!(

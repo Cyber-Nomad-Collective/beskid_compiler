@@ -897,6 +897,12 @@ pub(super) fn specialized_source_expression_identity(
             &environment,
         );
     }
+    // `operand?` has the payload of its operand read in this environment
+    // (`values.Push(ReadField<T, R>(reader, limits)?)` inside a specialization of `ReadList<T, R>`).
+    if node.of::<beskid_analysis::syntax::TryExpression>().is_some() {
+        return super::calls::try_expression_fact_for_node(db, program, index, key, node, Some(enclosing))
+            .map(|fact| fact.payload_identity);
+    }
     if node.of::<beskid_analysis::syntax::CallExpression>().is_some()
         && let Some(result) = specialized_corelib_value_service_result(db, key, enclosing)?
     {

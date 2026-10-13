@@ -16,9 +16,20 @@ impl SyntaxNodeFacts<'_> {
             .specialized_enum_constructor(key)
             .map(|fact| fact.layout)
             .or_else(|| self.enum_match_in_context(key).map(|fact| fact.layout))
+            .or_else(|| self.specialized_try_operand_layout(key))
             .or_else(|| self.query(enum_layout(self.db, key)))
             .or_else(|| self.enum_field_read_layout(key))?;
         self.enum_layout_from_fact(&source)
+    }
+
+    /// The operand layout of `operand?` in the body of a specialization, read in its environment
+    /// (`Admit<T>(limit)?` inside `Load<i64>`).
+    fn specialized_try_operand_layout(&self, key: AstNodeKey) -> Option<beskid_queries::EnumLayoutFact> {
+        if self.query(node_kind(self.db, key)) != Some(beskid_queries::IndexedNodeKind::TryExpression) {
+            return None;
+        }
+        let enclosing = self.current_item_specialization()?;
+        self.query(beskid_queries::specialized_try_expression_fact(self.db, key, enclosing)).map(|fact| fact.operand_layout)
     }
 
     /// The layout of an enum read from an aggregate field (`node.kind`, `this.state`): the field

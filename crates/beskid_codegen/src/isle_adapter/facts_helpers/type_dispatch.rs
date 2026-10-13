@@ -41,6 +41,17 @@ impl SyntaxNodeFacts<'_> {
                     ManagedReferenceKind::NativeOrScalar => ManagedReferenceFact::NativeOrScalar,
                 });
         }
+        // `operand?` in a specialized body is classified by its payload in the instance: a `T`
+        // payload bound to a record is managed, bound to `i64` is not.
+        if self.query(node_kind(self.db, key)) == Some(beskid_queries::IndexedNodeKind::TryExpression)
+            && let Some(enclosing) = self.current_item_specialization()
+            && let Some(fact) = self.query(beskid_queries::specialized_try_expression_fact(self.db, key, enclosing))
+        {
+            return Some(match fact.payload_managed_reference_kind() {
+                ManagedReferenceKind::GcManaged => ManagedReferenceFact::GcManaged,
+                ManagedReferenceKind::NativeOrScalar => ManagedReferenceFact::NativeOrScalar,
+            });
+        }
         // A call through a function value in a specialized body is classified by its result in
         // the instance: a `T` result bound to `string` is managed, bound to `i64` is not.
         if self.current_item_specialization().is_some()

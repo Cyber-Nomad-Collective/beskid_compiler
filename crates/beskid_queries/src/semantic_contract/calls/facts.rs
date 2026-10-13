@@ -549,7 +549,7 @@ pub(in crate::semantic_contract) fn try_expression_fact_tracked(
     key: AstNodeKey,
 ) -> SemanticQueryResult<TryExpressionFact> {
     with_node(db, syntax, key, |program, index, node| {
-        Some(try_expression_fact_for_node(db, program, index, key, node))
+        Some(try_expression_fact_for_node(db, program, index, key, node, None))
     })?
     .transpose()
 }
@@ -649,12 +649,17 @@ fn try_operand_result(
     Ok((definition, error.clone()))
 }
 
+/// The lowering fact of `operand?`. With `enclosing`, the operand and the enclosing callable's
+/// return type are read in that specialization's environment: inside `Result<T, E> Load<T>()`,
+/// `Admit<T>(limit)?` and `ReadField<T, R>(reader, limits)?` have exact payloads and layouts only
+/// once `T` and `R` are bound, so a specialized body is lowered with this fact.
 pub(in crate::semantic_contract) fn try_expression_fact_for_node(
     db: &dyn Db,
     program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
     index: &beskid_analysis::syntax_query::SyntaxIndex,
     key: AstNodeKey,
     node: beskid_analysis::syntax_query::DynNodeRef<'_>,
+    enclosing: Option<&GenericSpecializationInstance>,
 ) -> Result<TryExpressionFact, SemanticError> {
     try_expression_legality_for_node(db, program, index, key, node)?;
     let expression = node
@@ -687,7 +692,7 @@ pub(in crate::semantic_contract) fn try_expression_fact_for_node(
         // initialized identity the generic source identity can prove.
         try_operand_declaration(program, index, key, node)?;
     }
-    let operand_identity = generic_source_expression_identity(db, operand)?;
+    let operand_identity = super::super::contracts::specialized_source_expression_identity(db, operand, enclosing)?;
     let callable = super::super::locals::enclosing_executable_callable(index, key.node)
         .and_then(|callable| index.node_at(program, callable))
         .ok_or_else(|| SemanticError::unavailable("try_expression"))?;
@@ -695,7 +700,17 @@ pub(in crate::semantic_contract) fn try_expression_fact_for_node(
         .ok_or_else(|| SemanticError::unavailable("try_expression"))?;
     let result_definition = canonical_result_definition_for_type(db, key, &return_type.node)
         .ok_or_else(|| SemanticError::unavailable("try_expression"))?;
-    let return_identity = generic_source_type_identity(db, key, &return_type.node)?;
+    let return_identity = match enclosing {
+        Some(enclosing) => {
+            let environment = enclosing
+                .substitutions
+                .iter()
+                .map(|binding| (binding.parameter.as_ref(), binding.source_identity()))
+                .collect();
+            generic_source_type_identity_with_substitutions(db, key, &return_type.node, &environment)?
+        }
+        None => generic_source_type_identity(db, key, &return_type.node)?,
+    };
     let (
         GenericSourceTypeIdentity::Nominal { qualified_name: operand_name, arguments: operand_arguments },
         GenericSourceTypeIdentity::Nominal { qualified_name: return_name, arguments: return_arguments },

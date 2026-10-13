@@ -60,12 +60,17 @@ impl SyntaxNodeFacts<'_> {
         self.managed_reference_in_context(key)
     }
 
+    /// The try fact of the body being lowered: a specialized body reads its operand and return
+    /// type in the specialization's environment.
     pub(super) fn try_expression_fact_impl(&self, key: AstNodeKey) -> Option<beskid_queries::TryExpressionFact> {
-        self.query(try_expression_fact(self.db, key))
+        match self.current_item_specialization() {
+            Some(enclosing) => self.query(beskid_queries::specialized_try_expression_fact(self.db, key, enclosing)),
+            None => self.query(try_expression_fact(self.db, key)),
+        }
     }
 
     pub(super) fn try_return_layout_impl(&self, key: AstNodeKey) -> Option<EnumLayout> {
-        self.enum_layout_from_fact(&self.query(try_expression_fact(self.db, key))?.return_layout)
+        self.enum_layout_from_fact(&self.try_expression_fact_impl(key)?.return_layout)
     }
 
     pub(super) fn scalar_type_impl(&self, key: AstNodeKey) -> Option<Type> {

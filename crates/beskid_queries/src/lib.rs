@@ -140,7 +140,7 @@ pub use semantic_contract::{
     reachable_items, resolved_item, resolved_local, runtime_intrinsic, runtime_intrinsic_name, scoped_cleanup,
     spawn_entry_validation, spawn_handle_type, spawn_legality, spawn_target,
     specialized_call_result_managed_reference_kind, specialized_corelib_value_service_result, test_item,
-    test_statement_nodes, try_expression_fact, try_expression_judgement, try_expression_legality, typed_array_allocation, value_abi_type,
+    test_statement_nodes, specialized_try_expression_fact, try_expression_fact, try_expression_judgement, try_expression_legality, typed_array_allocation, value_abi_type,
 };
 pub use semantic_contract::{
     AppliedContractIdentity, applied_contract_argument_is_type, type_applied_contract_implementation,

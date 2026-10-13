@@ -259,7 +259,7 @@ pub use queries::{
     managed_reference_kind, mutable_local_assignment, node_kind, node_span, node_type, nominal_member_receiver,
     operator_fact, parameter_generic_reference, primitive_numeric_conversion, range_for_fact, reachable_items,
     resolved_item, resolved_local, runtime_intrinsic, runtime_intrinsic_name, spawn_entry_validation,
-    spawn_handle_type, spawn_legality, spawn_target, test_item, test_statement_nodes, try_expression_fact, try_expression_judgement, try_expression_legality,
+    spawn_handle_type, spawn_legality, spawn_target, test_item, test_statement_nodes, specialized_try_expression_fact, try_expression_fact, try_expression_judgement, try_expression_legality,
     type_applied_contract_implementation, type_contract_applications, type_contract_applications_of,
     type_contract_declarations, type_contract_implementation, typed_array_allocation, value_abi_type,
 };
