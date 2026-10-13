@@ -317,8 +317,39 @@ static void *beskid_worker_main(void *unused) {
   BeskidUnlock();
   return 0;
 }
+/* The pool is process-wide and reference counted: the first holder creates
+ * the threads, later holders share them, and the last release stops and joins
+ * them. The holder lock is separate from the transport lock because shutdown
+ * joins workers that take the transport lock. */
+#ifdef _WIN32
+static SRWLOCK beskid_pool_lock = SRWLOCK_INIT;
+static void BeskidPoolLock(void) { AcquireSRWLockExclusive(&beskid_pool_lock); }
+static void BeskidPoolUnlock(void) { ReleaseSRWLockExclusive(&beskid_pool_lock); }
+#else
+static pthread_mutex_t beskid_pool_lock = PTHREAD_MUTEX_INITIALIZER;
+static void BeskidPoolLock(void) { pthread_mutex_lock(&beskid_pool_lock); }
+static void BeskidPoolUnlock(void) { pthread_mutex_unlock(&beskid_pool_lock); }
+#endif
+static size_t beskid_worker_holders;
+static void BeskidWorkerPoolStopLocked(void) {
+  BeskidLock(); beskid_workers_stop = 1; BeskidConditionSignal(&beskid_work_ready); BeskidUnlock();
+  for (size_t i = 0; i < beskid_worker_count; ++i) {
+#ifdef _WIN32
+    WaitForSingleObject(beskid_workers[i], INFINITE); CloseHandle(beskid_workers[i]);
+#else
+    pthread_join(beskid_workers[i], NULL);
+#endif
+  }
+  beskid_worker_count = 0;
+}
 int32_t beskid_rt_v5_intrinsic_worker_pool_init(size_t count) {
-  if (beskid_worker_count || !count || count > BESKID_WORKER_MAX) return -1;
+  BeskidPoolLock();
+  if (beskid_worker_holders) {
+    ++beskid_worker_holders;
+    BeskidPoolUnlock();
+    return 0;
+  }
+  if (!count || count > BESKID_WORKER_MAX) { BeskidPoolUnlock(); return -1; }
   BeskidLock(); beskid_workers_stop = 0; BeskidUnlock();
   size_t created = 0;
   for (; created < count; ++created) {
@@ -330,20 +361,27 @@ int32_t beskid_rt_v5_intrinsic_worker_pool_init(size_t count) {
 #endif
   }
   beskid_worker_count = created;
-  if (created == count) return 0;
-  beskid_rt_v5_intrinsic_worker_pool_shutdown();
+  if (created == count) {
+    beskid_worker_holders = 1;
+    BeskidPoolUnlock();
+    return 0;
+  }
+  BeskidWorkerPoolStopLocked();
+  BeskidPoolUnlock();
   return -1;
 }
 void beskid_rt_v5_intrinsic_worker_pool_shutdown(void) {
-  BeskidLock(); beskid_workers_stop = 1; BeskidConditionSignal(&beskid_work_ready); BeskidUnlock();
-  for (size_t i = 0; i < beskid_worker_count; ++i) {
-#ifdef _WIN32
-    WaitForSingleObject(beskid_workers[i], INFINITE); CloseHandle(beskid_workers[i]);
-#else
-    pthread_join(beskid_workers[i], NULL);
-#endif
-  }
-  beskid_worker_count = 0;
+  BeskidPoolLock();
+  if (beskid_worker_holders && --beskid_worker_holders == 0) BeskidWorkerPoolStopLocked();
+  BeskidPoolUnlock();
+}
+/* Test and diagnostic view of the holder count; the runtime corpus never
+ * branches on it. */
+static inline size_t BeskidWorkerPoolHolders(void) {
+  BeskidPoolLock();
+  size_t holders = beskid_worker_holders;
+  BeskidPoolUnlock();
+  return holders;
 }
 int32_t beskid_rt_v5_intrinsic_worker_submit(struct BeskidWorkerRequest *r) {
   if (!r || !beskid_worker_count) return -1;
