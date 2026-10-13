@@ -5,8 +5,8 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use beskid_analysis::projects::{ProjectKind, ProjectManifest, is_project_manifest_path, load_manifest_from_path};
 use bsol::{
-    AnalysisOptions, AnalysisSession, BsolError, CompositeSchemaSource, ImportSchemaSpec, ImportSource, SchemaProfile,
-    SchemaSource, resolve_active_profile, validate_profile_document,
+    AnalysisOptions, AnalysisSession, BsolLimits, CompositeSchemaSource, ImportFailure, ImportSchemaSpec, ImportSource,
+    MaterializedSchema, SchemaProfile, SchemaSource, resolve_active_profile, validate_profile_document,
 };
 #[cfg(test)]
 use bsol::{load_profile, parse_bsol_document, validate};
@@ -140,10 +140,11 @@ fn validate_bsol_project(
     for export in &schemas.exports {
         let path = package_file(&project_root, &project_root, &export.path)
             .with_context(|| format!("schema export `{}`", export.name))?;
-        let profile = load_package_profile(&path, &export.profile)
+        let (_, source) = load_package_profile(&path, &export.profile)
             .with_context(|| format!("schema export `{}`", export.name))?;
         let base_dir = path.parent().unwrap_or(&project_root).to_path_buf();
-        resolve_active_profile(profile, &base_dir, &sources)
+        let root = MaterializedSchema::owned(source, format!("file:{}", path.display()));
+        resolve_active_profile(root, &base_dir, &sources, &BsolLimits::default())
             .map_err(|err| anyhow::anyhow!("schema export `{}`: {err}", export.name))?;
         validated.push(export.profile.clone());
     }
@@ -169,7 +170,8 @@ fn package_file(root: &Path, base_dir: &Path, relative: &str) -> Result<PathBuf>
     Ok(resolved)
 }
 
-fn load_package_profile(path: &Path, expected: &str) -> Result<SchemaProfile> {
+/// Read and validate a package-local schema document; returns its profile and owned source.
+fn load_package_profile(path: &Path, expected: &str) -> Result<(SchemaProfile, String)> {
     let source = std::fs::read_to_string(path).with_context(|| format!("failed to read `{}`", path.display()))?;
     let profile = validate_profile_document(&source)
         .map_err(|err| anyhow::anyhow!("`{}` is not a valid schema profile: {err}", path.display()))?;
@@ -179,7 +181,7 @@ fn load_package_profile(path: &Path, expected: &str) -> Result<SchemaProfile> {
         path.display(),
         profile.name
     );
-    Ok(profile)
+    Ok((profile, source))
 }
 
 /// Package-local `from = file` schema imports, confined to the Bsol project root.
@@ -188,16 +190,26 @@ struct PackageFileSchemaSource {
 }
 
 impl SchemaSource for PackageFileSchemaSource {
-    fn resolve(&self, spec: &ImportSchemaSpec, base_dir: &Path) -> Result<SchemaProfile, BsolError> {
+    fn materialize(&self, spec: &ImportSchemaSpec, base_dir: &Path) -> Result<MaterializedSchema, ImportFailure> {
         let ImportSource::File { path } = &spec.from else {
-            return Err(BsolError::Import(format!(
-                "schema import `{}` is not package-local; supply --schema-import-root and --schema-import-lock",
-                spec.name
-            )));
+            return Err(ImportFailure::new(
+                "MissingImportLock",
+                format!(
+                    "schema import `{}` is not package-local; supply --schema-import-root and --schema-import-lock",
+                    spec.name
+                ),
+            ));
         };
-        package_file(&self.root, base_dir, path)
-            .and_then(|path| load_package_profile(&path, &spec.name))
-            .map_err(|err| BsolError::Import(format!("schema import `{}`: {err:#}", spec.name)))
+        // The import graph checks the declared profile identity; the package host only
+        // admits files inside the package root that validate as schema documents.
+        let path = package_file(&self.root, base_dir, path)
+            .map_err(|err| ImportFailure::new("MissingCache", format!("schema import `{}`: {err:#}", spec.name)))?;
+        let source = std::fs::read_to_string(&path)
+            .map_err(|err| ImportFailure::new("MissingCache", format!("schema import `{}`: {err}", spec.name)))?;
+        validate_profile_document(&source).map_err(|err| {
+            ImportFailure::new("InvalidSchemaProfile", format!("schema import `{}`: {err}", spec.name))
+        })?;
+        Ok(MaterializedSchema::owned(source, format!("file:{}", path.display())))
     }
 }
 
@@ -219,6 +231,7 @@ mod tests {
     }
 
     const BASE_SCHEMA: &str = r#"profile "base.v1" {
+  version = 1
   rule "option" {
     scope = top
     match = keyword
@@ -231,6 +244,7 @@ mod tests {
 "#;
 
     const DERIVED_SCHEMA: &str = r#"profile "derived.v1" {
+  version = 1
   import_schema "base.v1" {
     from = file
     path = "base.v1.bsol"
