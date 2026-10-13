@@ -26,7 +26,7 @@ pub(in crate::semantic_contract) use common::{
 pub(in crate::semantic_contract) use enum_layout::{
     aggregate_shape_from_applied_type, contextual_enum_constructor_type_path, enum_constructor_template_tracked,
     enum_constructor_tracked, enum_field_layout, enum_layout_for_source_identity, enum_layout_from_definition,
-    enum_layout_substitutions, enum_layout_tracked, enum_match_scrutinee_layout, enum_match_tracked,
+    enum_layout_substitutions, enum_layout_tracked, enum_match_scrutinee_layout, enum_match_tracked, scalar_match_tracked,
     enum_pattern_targets_declaration, instantiated_enum_layout_for_path,
 };
 pub use enum_layout::{enum_constructor_specialization, enum_match_call_specialization, enum_match_specialization};

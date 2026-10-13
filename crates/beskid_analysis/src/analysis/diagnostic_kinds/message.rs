@@ -102,8 +102,8 @@ impl SemanticIssueKind {
             }
             Self::MatchGuardMustBeBoolean => "match guard must be boolean".to_string(),
             Self::MatchArmTypeMismatch { .. } => "match arm type mismatch".to_string(),
-            Self::MatchNonExhaustive { enum_name } => {
-                format!("non-exhaustive match on enum `{enum_name}`")
+            Self::MatchNonExhaustive { enum_name, missing_pattern } => {
+                format!("non-exhaustive match on enum `{enum_name}`: `{missing_pattern}` not covered")
             }
             Self::DuplicatePatternBinding { name } => {
                 format!("duplicate pattern binding `{name}`")

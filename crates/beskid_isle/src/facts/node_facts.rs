@@ -175,6 +175,11 @@ pub trait NodeFacts {
     fn match_arms(&self, _key: AstNodeKey) -> Option<Vec<MatchArmFact>> {
         None
     }
+    /// The CLIF type of the primitive scrutinee of a `MatchExpression` that matches by value
+    /// (integer, `bool`, `char`, float, or `string`); `None` for an enum match.
+    fn scalar_match_scrutinee(&self, _key: AstNodeKey) -> Option<Type> {
+        None
+    }
     fn range_fact(&self, _key: AstNodeKey) -> Option<RangeFact> {
         None
     }

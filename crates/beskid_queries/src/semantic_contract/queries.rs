@@ -541,10 +541,15 @@ pub fn enum_constructor_template(db: &dyn Db, key: AstNodeKey) -> SemanticQueryR
 
 /// Return the exact source enum declaration and arms selected by one `match` expression.
 ///
-/// Guarded and payload-destructuring arms remain unavailable until generated ISLE owns their
-/// binding and control-flow representation.
+/// Arms carry recursive payload patterns and their optional `when` guard.
 pub fn enum_match(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<EnumMatchFact> {
     with_registered_syntax(db, key, enum_match_tracked)
+}
+
+/// Return the primitive scrutinee type and arms of one `match` over a proven integer, `bool`,
+/// `char`, float, or `string` scrutinee. Enum scrutinees have no scalar match fact.
+pub fn scalar_match(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<ScalarMatchFact> {
+    with_registered_syntax(db, key, scalar_match_tracked)
 }
 
 /// Return the scalar ABI representation for one current syntax node.

@@ -272,6 +272,10 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
         self.match_arms_impl(key)
     }
 
+    fn scalar_match_scrutinee(&self, key: AstNodeKey) -> Option<Type> {
+        self.scalar_match_scrutinee_impl(key)
+    }
+
     fn range_fact(&self, key: AstNodeKey) -> Option<beskid_isle::RangeFact> {
         self.range_fact_impl(key)
     }

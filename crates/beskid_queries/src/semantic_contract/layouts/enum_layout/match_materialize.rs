@@ -132,24 +132,36 @@ fn materialize_enum_match(
     declaration: AstNodeKey,
     layout: EnumLayoutFact,
 ) -> Result<EnumMatchFact, SemanticError> {
+    let arms = materialize_match_arms(
+        context,
+        expression,
+        &MatchPatternExpectation::NominalEnum { declaration, layout: layout.clone() },
+    )?;
+    Ok(EnumMatchFact { declaration, layout, arms: arms.into() })
+}
+
+/// Materialize every source arm of one match against the scrutinee's expectation: its recursive
+/// pattern, its optional `when` guard, and its body, all as normalized current-generation keys.
+fn materialize_match_arms(
+    context: &EnumMatchMaterializer<'_>,
+    expression: &beskid_analysis::syntax::MatchExpression,
+    expected: &MatchPatternExpectation,
+) -> Result<Vec<EnumMatchArmFact>, SemanticError> {
     let mut arms = Vec::with_capacity(expression.arms.len());
     for arm in &expression.arms {
-        if arm.node.guard.is_some() {
-            return Err(SemanticError::unavailable("enum_match"));
-        }
         let arm_node = context
             .index
             .direct_child_id(context.program, context.key.node, beskid_analysis::syntax_query::DynNodeRef::from(arm))
             .ok_or_else(|| SemanticError::unavailable("enum_match"))?;
-        let body = context
-            .index
-            .direct_child_id(
-                context.program,
-                arm_node,
-                beskid_analysis::syntax_query::DynNodeRef::from(&arm.node.value),
-            )
-            .map(|body| AstNodeKey { node: normalized_expression_node(context.index, body), ..context.key })
-            .ok_or_else(|| SemanticError::unavailable("enum_match"))?;
+        let expression_key = |child: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Expression>| {
+            context
+                .index
+                .direct_child_id(context.program, arm_node, beskid_analysis::syntax_query::DynNodeRef::from(child))
+                .map(|node| AstNodeKey { node: normalized_expression_node(context.index, node), ..context.key })
+                .ok_or_else(|| SemanticError::unavailable("enum_match"))
+        };
+        let body = expression_key(&arm.node.value)?;
+        let guard = arm.node.guard.as_ref().map(expression_key).transpose()?;
         let pattern_node = context
             .index
             .direct_child_id(
@@ -158,16 +170,72 @@ fn materialize_enum_match(
                 beskid_analysis::syntax_query::DynNodeRef::from(&arm.node.pattern),
             )
             .ok_or_else(|| SemanticError::unavailable("enum_match"))?;
-        let pattern = materialize_match_pattern(
-            context,
-            pattern_node,
-            &arm.node.pattern,
-            MatchPatternExpectation::NominalEnum { declaration, layout: layout.clone() },
-            None,
-        )?;
-        arms.push(EnumMatchArmFact { pattern, body });
+        let pattern = materialize_match_pattern(context, pattern_node, &arm.node.pattern, expected.clone(), None)?;
+        arms.push(EnumMatchArmFact { pattern, guard, body });
     }
-    Ok(EnumMatchFact { declaration, layout, arms: arms.into() })
+    Ok(arms)
+}
+
+/// Materialize a `match` over a proven primitive scrutinee (`match count { 0 => ..., _ => ... }`).
+///
+/// The scrutinee's own proven type is the only authority for the arm patterns: wildcards,
+/// identifier bindings of the whole scrutinee, and literals of that type. A scrutinee of any other
+/// type (an enum, struct, array, or native pointer) has no scalar match fact.
+#[salsa::tracked(persist)]
+pub(in crate::semantic_contract) fn scalar_match_tracked(
+    db: &dyn Db,
+    syntax: SyntaxUnitInput,
+    key: AstNodeKey,
+) -> SemanticQueryResult<ScalarMatchFact> {
+    with_node(db, syntax, key, |program, index, node| {
+        let expression = node.of::<beskid_analysis::syntax::MatchExpression>()?;
+        let scrutinee = index
+            .direct_child_id(program, key.node, beskid_analysis::syntax_query::DynNodeRef::from(expression.scrutinee.as_ref()))
+            .map(|node| AstNodeKey { node: normalized_expression_node(index, node), ..key })?;
+        // Only a proven primitive scrutinee type makes a by-value match; an enum, struct, or
+        // unproven scrutinee has no scalar match fact (its enum match fact is the authority).
+        let scrutinee_type = match node_type(db, scrutinee) {
+            Ok(Some(scrutinee_type)) if scalar_match_scrutinee_type(scrutinee_type) => scrutinee_type,
+            Ok(_) | Err(_) => return None,
+        };
+        let managed_reference = if scrutinee_type == SemanticTypeId::STRING {
+            ManagedReferenceKind::GcManaged
+        } else {
+            ManagedReferenceKind::NativeOrScalar
+        };
+        let environment = HashMap::new();
+        let context = EnumMatchMaterializer { db, program, index, key, environment: &environment };
+        Some(
+            materialize_match_arms(
+                &context,
+                expression,
+                &MatchPatternExpectation::Scalar { semantic_type: scrutinee_type, managed_reference },
+            )
+            .map(|arms| ScalarMatchFact { scrutinee_type, arms: arms.into() }),
+        )
+    })?
+    .transpose()
+}
+
+/// Primitive scrutinee types a scalar match compares by value.
+fn scalar_match_scrutinee_type(semantic_type: SemanticTypeId) -> bool {
+    matches!(
+        semantic_type,
+        SemanticTypeId::BOOL
+            | SemanticTypeId::CHAR
+            | SemanticTypeId::STRING
+            | SemanticTypeId::I8
+            | SemanticTypeId::I16
+            | SemanticTypeId::I32
+            | SemanticTypeId::I64
+            | SemanticTypeId::U8
+            | SemanticTypeId::U16
+            | SemanticTypeId::U32
+            | SemanticTypeId::U64
+            | SemanticTypeId::WORD
+            | SemanticTypeId::F32
+            | SemanticTypeId::F64
+    )
 }
 
 #[derive(Clone)]
@@ -208,9 +276,8 @@ fn materialize_match_pattern(
     match &pattern.node {
         beskid_analysis::syntax::Pattern::Wildcard => Ok(EnumMatchPatternFact::Wildcard),
         beskid_analysis::syntax::Pattern::Identifier(identifier) => {
-            if matches!(expected, MatchPatternExpectation::Scalar { semantic_type: SemanticTypeId::UNIT, .. }) {
-                return Err(SemanticError::unavailable("enum_match"));
-            }
+            // A binding of a zero-sized `unit` payload (`Result::Ok(value)` over `Result<unit, E>`)
+            // is a `Scalar(unit)` binding: it names no storage, and lowering loads nothing.
             let declaration = context
                 .index
                 .direct_child_id(
@@ -245,11 +312,47 @@ fn materialize_match_pattern(
                 {
                     Ok(EnumMatchPatternFact::UnitLiteral { literal: literal_key })
                 }
-                beskid_analysis::syntax::Literal::Integer(value) => materialize_scalar_literal(
+                beskid_analysis::syntax::Literal::Integer(value) => {
+                    // An unsuffixed integer literal takes the integer type the pattern position
+                    // expects, exactly like a contextually typed literal, when it fits that type.
+                    let semantic_type = match &expected {
+                        MatchPatternExpectation::Scalar { semantic_type, .. }
+                            if !integer_has_explicit_abi_suffix(value)
+                                && integer_literal_fits_abi(context.db, literal_key, *semantic_type)? =>
+                        {
+                            *semantic_type
+                        }
+                        _ => semantic_type_for_literal(&literal.node),
+                    };
+                    materialize_scalar_literal(
+                        literal_key,
+                        &expected,
+                        semantic_type,
+                        LiteralFact::Integer(Arc::from(value.as_str())),
+                    )
+                }
+                beskid_analysis::syntax::Literal::Float(value) => {
+                    // An unsuffixed float literal takes the float type the pattern position expects.
+                    let semantic_type = match &expected {
+                        MatchPatternExpectation::Scalar {
+                            semantic_type: expected @ (SemanticTypeId::F32 | SemanticTypeId::F64),
+                            ..
+                        } if !value.ends_with("_f32") && !value.ends_with("_f64") => *expected,
+                        _ if value.ends_with("_f32") => SemanticTypeId::F32,
+                        _ => SemanticTypeId::F64,
+                    };
+                    materialize_scalar_literal(
+                        literal_key,
+                        &expected,
+                        semantic_type,
+                        LiteralFact::Float(Arc::from(value.as_str())),
+                    )
+                }
+                beskid_analysis::syntax::Literal::String(value) => materialize_scalar_literal(
                     literal_key,
                     &expected,
-                    semantic_type_for_literal(&literal.node),
-                    LiteralFact::Integer(Arc::from(value.as_str())),
+                    SemanticTypeId::STRING,
+                    LiteralFact::String(Arc::from(value.as_str())),
                 ),
                 beskid_analysis::syntax::Literal::Bool(value) => {
                     materialize_scalar_literal(literal_key, &expected, SemanticTypeId::BOOL, LiteralFact::Bool(*value))
@@ -260,18 +363,29 @@ fn materialize_match_pattern(
                     SemanticTypeId::CHAR,
                     LiteralFact::Char(Arc::from(value.as_str())),
                 ),
-                beskid_analysis::syntax::Literal::Float(_)
-                | beskid_analysis::syntax::Literal::String(_)
-                | beskid_analysis::syntax::Literal::Unit => Err(SemanticError::unavailable("enum_match")),
+                beskid_analysis::syntax::Literal::Unit => Err(SemanticError::unavailable("enum_match")),
             }
         }
         beskid_analysis::syntax::Pattern::Enum(enum_pattern) => {
             let (declaration, layout) = match expected {
                 MatchPatternExpectation::NominalEnum { declaration, layout } => (declaration, layout),
                 MatchPatternExpectation::Nominal(declaration) => {
-                    let layout = enum_layout(context.db, declaration)?
-                        .ok_or_else(|| SemanticError::unavailable("enum_match"))?;
-                    (declaration, layout)
+                    // A generic enum payload (`Option<i64>` inside `Result<Option<i64>, E>`) has
+                    // no declaration layout until applied; its proven applied identity is the
+                    // authority, and without one it stays unavailable.
+                    if generic_enum_declaration(context.db, declaration) {
+                        let identity =
+                            source_identity.as_ref().ok_or_else(|| SemanticError::unavailable("enum_match"))?;
+                        let (applied, layout) = enum_layout_for_source_identity(context.db, context.key, identity)?;
+                        if applied != declaration {
+                            return Err(SemanticError::unavailable("enum_match"));
+                        }
+                        (declaration, layout)
+                    } else {
+                        let layout = enum_layout(context.db, declaration)?
+                            .ok_or_else(|| SemanticError::unavailable("enum_match"))?;
+                        (declaration, layout)
+                    }
                 }
                 MatchPatternExpectation::Scalar { .. } => return Err(SemanticError::unavailable("enum_match")),
             };

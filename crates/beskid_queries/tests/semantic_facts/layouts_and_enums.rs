@@ -961,6 +961,7 @@ fn enum_match_keeps_source_ordered_nullary_variant_arms() {
                         variant_index: 0,
                         items: Arc::from([]),
                     }),
+                    guard: None,
                     body: first_body,
                 },
                 EnumMatchArmFact {
@@ -975,6 +976,7 @@ fn enum_match_keeps_source_ordered_nullary_variant_arms() {
                         variant_index: 1,
                         items: Arc::from([]),
                     }),
+                    guard: None,
                     body: second_body,
                 },
             ]),
@@ -1045,10 +1047,17 @@ fn enum_match_preserves_multi_field_payload_patterns_in_source_order() {
 }
 
 #[test]
-fn enum_match_rejects_identifier_bindings_for_zero_sized_unit_payloads() {
+fn enum_match_binds_zero_sized_unit_payloads_without_storage() {
     let source = "enum Result { Ok(unit value), Error(i64 error) } bool Main(Result result) { return match result { Result::Ok(value) => true, Result::Error(_) => false, }; }";
     let (db, _project, unit, generation, index) = setup(source);
     let expression = key(unit, generation, &index, NodeKind::MatchExpression, 0);
 
-    assert_unavailable(enum_match(&db, expression));
+    let fact = enum_match(&db, expression).expect("unit binding match query").expect("unit binding match fact");
+    let EnumMatchPatternFact::Enum(ok) = &fact.arms[0].pattern else {
+        panic!("Ok arm must remain an enum pattern");
+    };
+    let [EnumMatchPatternFact::Binding(value)] = ok.items.as_ref() else {
+        panic!("the unit payload must bind: {:?}", ok.items);
+    };
+    assert_eq!(value.payload, AggregateFieldShape::Scalar(SemanticTypeId::UNIT));
 }

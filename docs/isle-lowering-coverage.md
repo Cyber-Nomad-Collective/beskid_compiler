@@ -64,7 +64,7 @@ in `crates/beskid_isle/src/lib.rs` (`IsleContext`), with trusted primitives in
 | `calls.isle` | Expressions | Direct call expressions (`CallKind.Direct` -> `emit_direct_call`), including method/receiver calls resolved to a direct callee. |
 | `runtime_intrinsics.isle` | Expressions | Canonical runtime-intrinsic calls (`CallKind.RuntimeIntrinsic` -> `emit_runtime_intrinsic`). |
 | `dispatch.isle` | Expressions | Dynamic dispatch calls (`CallKind.Dynamic`); string `concat`/`eq`/`ne` from interpolation desugar (`StringAdd`/`StringEq`/`StringNotEq`); `string[index]` byte read (`IndexTarget.String`). |
-| `memory.isle` | Expressions | `PathExpression` local read; `AssignExpression` to a `PathExpression` target (local assign), to a `FieldExpression` target (field assign), and to an `IndexExpression` target (`emit_index_assign`); `ArrayLiteralExpression`; `IndexExpression` array read (`IndexTarget.Array`); `StructLiteralExpression`; `FieldExpression` read; `EnumLiteralExpression` (nullary + single-payload); `MatchExpression` (enum-tag switch). |
+| `memory.isle` | Expressions | `PathExpression` local read; `AssignExpression` to a `PathExpression` target (local assign), to a `FieldExpression` target (field assign), and to an `IndexExpression` target (`emit_index_assign`); `ArrayLiteralExpression`; `IndexExpression` array read (`IndexTarget.Array`); `StructLiteralExpression`; `FieldExpression` read; `EnumLiteralExpression` (nullary + single-payload); `MatchExpression` (`emit_match` / `emit_match_statement`, see [Match coverage](#match-coverage)). |
 | `statements.isle` | Statements | `ExpressionStatement`; `ReturnStatement`; `LetStatement`; `BlockExpression`/`TestDefinition` statement-cursor traversal; statement sequencing (`sequence_statements` / `finish_statements`). |
 | `items.isle` | Items | `item_body` selection for `FunctionDefinition` (child 0) and `TestDefinition` (self). |
 
@@ -79,6 +79,36 @@ in `crates/beskid_isle/src/lib.rs` (`IsleContext`), with trusted primitives in
 | `crates/beskid_codegen/src/isle_adapter.rs` | `SyntaxNodeFacts` (query-backed `NodeFacts`) plus `emit_isle_expression` / `emit_isle_item*` production entrypoints and ABI/layout derivation. |
 | `crates/beskid_codegen/src/lowering/dispatch.rs` | Thin bridge from codegen call sites to `beskid_isle::emit_dispatch_call`. |
 | `crates/beskid_isle/src/isle` tests (`crates/beskid_isle/tests/*`) | Rule/emitter coverage (`rule_coverage.rs` asserts each owned group has a real rule and every operator fact has a rule). |
+
+### Match coverage
+
+`emit_match` (value position) and `emit_match_statement` lower every `match` form the 0.6 check
+gate admits, as an ordered chain of arm tests (`crates/beskid_isle/src/context/enums.rs`). The
+facts are `enum_match` / `enum_match_specialization` / `enum_match_call_specialization` for an
+enum scrutinee and `scalar_match` for a primitive one, both in
+`crates/beskid_queries/src/semantic_contract/layouts/enum_layout/match_materialize.rs`.
+
+| Form | Fact / emitter |
+| --- | --- |
+| Enum scrutinee: local, parameter, call, member, index, projected field, or a pattern binding of an enclosing match | `enum_match`. A binding of a generic payload (`Result::Ok(sent) => match sent`, `sent : Option<i64>`) takes the binding's applied source identity as its layout authority. |
+| Unit, single-field, and multi-field variants; wildcard; payload bindings | `EnumMatchPatternFact::{Enum, Wildcard, Binding}` -> tag test, then one field test per payload slot. |
+| Nested enum patterns, including a generic payload (`Result::Ok(Option::Some(x))`) | Recursive `Enum` pattern; the nested layout comes from the payload's applied identity. |
+| Literal patterns in payloads and on primitive scrutinees: integer (an unsuffixed literal takes the expected integer type), float, `bool`, `char`, `string` | `ScalarLiteral` -> `icmp`/`fcmp`; `StringLiteral` -> `str_eq`. |
+| Whole-scrutinee binding arm (`other => ...`) on enum and primitive scrutinees | `MatchArmFact::value` with a `Binding` pattern. |
+| `when` guards | `EnumMatchArmFact::guard` -> evaluated after the bindings are installed; a false guard releases the arm's roots and continues with the next arm. Guarded arms do not count toward exhaustiveness. |
+| Diverging arms in value position (`return`, `break`, `continue`, a `never` call, a block that cannot fall through) | The arm's type is `never`; it terminates without a merge value. |
+| Match as a statement; arms as unit calls, empty blocks, or blocks with locals, nested control flow, and nested matches | `emit_match_statement`. A primitive statement match without a catch-all arm continues after the match when no arm applies. |
+
+Exhaustiveness: an enum match without an unguarded catch-all arm must cover every variant with
+unguarded arms whose payload patterns are collectively irrefutable. The legality gate
+(`match_exhaustiveness`, E1304) applies the same judgement to the `enum_match` fact and names one
+uncovered value pattern (`Result::Ok(_)`), so `check` rejects exactly what `emit_match_dispatch`
+would reject as `NonExhaustiveMatch`. A value-position primitive match without a catch-all arm
+traps when no arm applies.
+
+A binding of a zero-sized `unit` payload (`Result::Ok(value)` over `Result<unit, E>`) has no
+storage. Read as a value it is the unit constant: call arguments, enum payloads, aggregate fields
+and `return` of a `unit` function evaluate it for effect only.
 
 ## Rules to implement
 
@@ -98,7 +128,6 @@ each unless noted.
 | 5 | Index-target assignment `arr[i] = v` (heap `T[]`) | `memory.isle` (+ `dispatch.isle` for string bytes) | `expressions/assign_expression.rs` (`AssignTargetKind::IndexElement`) | Typed array literals now use syntax-derived ABI-v5 static element descriptors and `beskid_rt_v5_array_allocate_rooted`; pointer element publication routes through the manifest-owned array write barrier. Array-index mutation facts remain a separate required port. This source slice is deliberately unverified until the post-implementation Cargo/Cranelift gate. |
 | 6 | Compound assignment `+=` / `-=` | `memory.isle` | `expressions/assign_expression.rs` (`AddAssign`/`SubAssign`) | For local, field, and index targets; includes float `fadd`/`fsub`, integer `iadd`/`isub`, and string `+=` concat. Needs compound-assign `OperatorFact`s (currently absent). |
 | 7 | Event-member `+=` / `-=` (subscribe/unsubscribe) | `dispatch.isle` | `expressions/assign_expression.rs` (`AssignTargetKind::EventMember`) | Lower to `TAG_EVENT_SUBSCRIBE` / `TAG_EVENT_UNSUBSCRIBE_FIRST` dispatch routes with capacity. Depends on event-field facts. |
-| 8 | Full `match` patterns | `memory.isle` (extend `emit_match`) | HIR match lowering | Current `emit_match` only switches on an enum tag to arm bodies. Missing: payload binding into arm locals, literal/struct/nested patterns, and guards. |
 | 9 | `ForStatement` over the nominal iterator protocol | `control_flow.isle` | (none) | `for x in iter { ... }` where `iter.Next()` returns `Option<T>`: the check gate judges the shape (E1215-E1218) but `emit_iterator_for` still fails closed. Range-for and array-for (`emit_array_for`, `for_iterator_fact` with `ForIterableSource::Array`) are done. |
 | 10 | Non-field member reads | `memory.isle` | `expressions/member_expression.rs` | Fiber-handle `.handle` passthrough and other special member reads not backed by an `aggregate_field_access` layout fact. General field reads on expression receivers already work via recursive base lowering. |
 | 11 | Multi-segment path field-chain assignment | `memory.isle` | `expressions/assign_expression.rs` (`load_path_field_chain`) | Assignment through a chained path receiver (`a.b.c = v`) beyond a single field level. Confirm coverage; extend `emit_field_assign` base resolution if the chain fact is unavailable. |

@@ -152,6 +152,7 @@ use layouts::{
     empty_array_literal_element_abi_type_tracked, enum_constructor_template_tracked, enum_constructor_tracked,
     enum_field_layout, enum_layout_from_definition, enum_layout_substitutions, enum_layout_tracked,
     enum_match_scrutinee_layout, enum_match_tracked, enum_pattern_targets_declaration, event_field_layout_tracked,
+    scalar_match_tracked,
     field_access_receiver, inaccessible_literal_fields, instantiated_aggregate_layout_for_path,
     instantiated_enum_layout_for_path, nominal_aggregate_abi_type, nominal_field_projection,
     nominal_local_receiver_declaration, resolve_nominal_layout_declaration, resolve_type_declaration,
@@ -195,7 +196,7 @@ use syntax_facts::{
 };
 use typed_arrays::typed_array_allocation_tracked;
 use typing::{
-    element_type_for_for_iterable, enum_match_result_semantic_type, for_iterable_declared_array_element,
+    element_type_for_for_iterable, for_iterable_declared_array_element, match_arms_result_semantic_type,
     local_declaration_type, range_iterable_bounds,
     managed_reference_kind_tracked, node_type_tracked, pattern_binding_fact, pattern_binding_semantic_type,
     semantic_type_for_binary_operands, semantic_type_for_expression, semantic_type_for_literal,
@@ -228,7 +229,7 @@ pub use model::{
     ClosureSignature, ClifParameterShape, CollectionMutationOwner, CollectionOperation, CompletionCandidate, CompletionContext,
     CompletionKind, CompletionMemberSurface, ControlFlow, CorelibService, EnumConstructorFact,
     EnumConstructorSpecialization, EnumConstructorTemplate, EnumLayoutFact, EnumLayoutTemplateArgument,
-    EnumMatchArmFact, EnumMatchBindingFact, EnumMatchFact, EnumMatchPatternFact, EnumMatchScalarLiteralFact,
+    EnumMatchArmFact, EnumMatchBindingFact, EnumMatchFact, EnumMatchPatternFact, EnumMatchScalarLiteralFact, ScalarMatchFact,
     EnumMatchVariantPatternFact, EnumScalarPayloadObjectLayout, EnumScalarPayloadVariantLayout, EnumVariantLayoutFact,
     EventFieldLayoutFact, EventHandlerLocalFact, ExpectedType, ExpectedTypeContext, EventOperationFact, EventOperationKind, ExportSymbol, FiberOwnership,
     ForIterableSource, ForIteratorFact, ForIteratorProtocol, FunctionItemValue, FunctionValueCall, GenericBindingConflict, GenericBoundViolation, GenericCallInstantiation, GenericCallSpecialization,
@@ -249,7 +250,7 @@ pub use queries::{
     callable_fiber_ownership, callable_signature, capture_storage, cast_intents, child_nodes, clif_block_body,
     clif_block_parameters, closure_call_target, closure_environment, closure_signature, collection_operation, constant_integer,
     contextual_integer_literal_abi_type, control_flow, direct_callees, empty_array_literal_element_abi_type,
-    enum_constructor, enum_constructor_template, enum_layout, enum_match, event_field_layout,
+    enum_constructor, enum_constructor_template, enum_layout, enum_match, event_field_layout, scalar_match,
     event_handler_lambda_for_local, event_operation, expected_type, for_iterator_fact, function_item_value,
     function_value_call, generic_call_instantiation, lambda_value_required,
     generic_call_specialization, generic_call_template, generic_nominal_method_receiver, implicit_method_receiver,

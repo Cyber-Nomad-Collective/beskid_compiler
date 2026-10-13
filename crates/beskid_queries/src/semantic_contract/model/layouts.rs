@@ -174,12 +174,15 @@ pub enum EnumMatchPatternFact {
     Enum(EnumMatchVariantPatternFact),
 }
 
-/// One source arm consumed by enum-match lowering.
+/// One source arm consumed by match lowering (enum and scalar scrutinees alike).
 ///
-/// Guards remain unavailable. Pattern structure is expressed once through the recursive tree.
+/// Pattern structure is expressed once through the recursive tree. A `when` guard is the
+/// normalized guard expression; it is evaluated after the pattern matched and its bindings are
+/// in scope, and a false guard continues with the next arm.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct EnumMatchArmFact {
     pub pattern: EnumMatchPatternFact,
+    pub guard: Option<AstNodeKey>,
     pub body: AstNodeKey,
 }
 
@@ -192,5 +195,16 @@ pub struct EnumMatchFact {
     /// Keeping this applied source layout on the match fact lets codegen lower generic enums
     /// without reconstructing type arguments from retired HIR artifacts.
     pub layout: EnumLayoutFact,
+    pub arms: Arc<[EnumMatchArmFact]>,
+}
+
+/// Primitive scrutinee type and source-ordered arms of a `match` whose scrutinee is a proven
+/// integer, `bool`, `char`, float, or `string` value.
+///
+/// Arm patterns are only wildcards, identifier bindings of the whole scrutinee, and literals of
+/// the scrutinee type (`EnumMatchPatternFact::ScalarLiteral`); enum patterns never occur.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub struct ScalarMatchFact {
+    pub scrutinee_type: SemanticTypeId,
     pub arms: Arc<[EnumMatchArmFact]>,
 }

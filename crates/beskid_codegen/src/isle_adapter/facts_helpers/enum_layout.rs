@@ -74,6 +74,12 @@ impl SyntaxNodeFacts<'_> {
         match pattern {
             beskid_queries::EnumMatchPatternFact::Wildcard => Some(MatchPayloadPatternFact::Ignore),
             beskid_queries::EnumMatchPatternFact::UnitLiteral { .. } => Some(MatchPayloadPatternFact::Unit),
+            // A zero-sized `unit` payload binding has no storage to load or bind.
+            beskid_queries::EnumMatchPatternFact::Binding(binding)
+                if binding.payload == AggregateFieldShape::Scalar(SemanticTypeId::UNIT) =>
+            {
+                Some(MatchPayloadPatternFact::Unit)
+            }
             beskid_queries::EnumMatchPatternFact::Binding(binding) => {
                 let slot = self.query(local_slot(self.db, binding.declaration))?;
                 let value_type = match binding.payload {
@@ -91,6 +97,11 @@ impl SyntaxNodeFacts<'_> {
                     value_type,
                     managed_reference,
                 }))
+            }
+            beskid_queries::EnumMatchPatternFact::ScalarLiteral(literal)
+                if literal.semantic_type == SemanticTypeId::STRING =>
+            {
+                Some(MatchPayloadPatternFact::StringLiteral { expression: literal.literal })
             }
             beskid_queries::EnumMatchPatternFact::ScalarLiteral(literal) => {
                 Some(MatchPayloadPatternFact::ScalarLiteral {

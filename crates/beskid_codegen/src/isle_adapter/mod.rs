@@ -25,7 +25,7 @@ use beskid_queries::{
     generic_call_specialization_in_environment, generic_call_specialization_instance, implicit_method_receiver,
     item_abi_signature, item_body, literal_fact, local_slot, managed_reference_kind, mutable_local_assignment,
     node_kind, node_type, nominal_member_receiver, operator_fact, parameter_generic_reference, range_for_fact,
-    resolved_item, resolved_local, runtime_intrinsic_name, spawn_entry_validation, test_statement_nodes,
+    resolved_item, resolved_local, runtime_intrinsic_name, scalar_match, spawn_entry_validation, test_statement_nodes,
     try_expression_fact,
 };
 use cranelift_codegen::ir::{FuncRef, Type, UserFuncName, types};

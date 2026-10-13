@@ -20,4 +20,4 @@ pub use match_binding::pattern_binding_specialization;
 pub(in crate::semantic_contract) use match_binding::{
     pattern_binding_fact, pattern_binding_fact_in_environment, pattern_binding_semantic_type,
 };
-pub(in crate::semantic_contract) use node_type::{enum_match_result_semantic_type, node_type_tracked};
+pub(in crate::semantic_contract) use node_type::{match_arms_result_semantic_type, node_type_tracked};

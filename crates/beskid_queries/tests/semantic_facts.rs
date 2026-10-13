@@ -67,3 +67,5 @@ mod local_type_resolution;
 mod function_values;
 #[path = "semantic_facts/string_concat_gate.rs"]
 mod string_concat_gate;
+#[path = "semantic_facts/match_coverage.rs"]
+mod match_coverage;

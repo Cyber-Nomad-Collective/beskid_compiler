@@ -212,6 +212,18 @@ macro_rules! generated_control_flow_methods {
         }
 
         fn emit_return(&mut self, key: AstNodeKey) -> Option<()> {
+            // A `unit` value (`return value;` of a `unit` binding, `return ();`) has no storage:
+            // it is evaluated for its effects and the function returns nothing.
+            if let Some(value_key) = self.facts.child(key, 0)
+                && self.builder.func.signature.returns.is_empty()
+                && self.facts.semantic_type(value_key) == Some(beskid_queries::SemanticTypeId::UNIT)
+            {
+                self.lower_expression_for_effect(value_key)?;
+                self.emit_composition_cleanup_from(0)?;
+                self.release_managed_local_roots()?;
+                self.builder.ins().return_(&[]);
+                return Some(());
+            }
             if let Some(value_key) = self.facts.child(key, 0) {
                 let value = self.lower_nested_expression(value_key)?;
                 let expected = self.builder.func.signature.returns.first()?.value_type;

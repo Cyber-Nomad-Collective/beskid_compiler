@@ -115,18 +115,39 @@ pub(in crate::semantic_contract) fn enum_match_scrutinee_layout(
             Ok(binding) => binding,
             Err(error) => return Some(Err(error)),
         };
-        let AggregateFieldShape::Nominal(declaration) = binding.payload else {
-            return Some(Err(SemanticError::unavailable("enum_match")));
-        };
-        return Some(
-            enum_layout(db, declaration)
-                .and_then(|layout| layout.ok_or_else(|| SemanticError::unavailable("enum_match")))
-                .map(|layout| (declaration, layout)),
-        );
+        return Some(pattern_binding_scrutinee_layout(db, key, &binding));
     }
     let path = enum_match_scrutinee_explicit_type_path(program, index, key, expression)?;
     let declaration = resolve_type_declaration(db, key, &path)?;
     Some(instantiated_enum_layout_for_path(db, key, &path).map(|layout| (declaration, layout)))
+}
+
+/// The applied enum layout of a scrutinee that is itself an enclosing match's pattern binding
+/// (`Result::Ok(sent) => match sent { ... }`).
+///
+/// A generic enum payload (`Option<i64>` inside `Result<Option<i64>, IoError>`) has no layout of
+/// its own declaration until it is applied, so the binding's exact applied source identity is the
+/// authority for it. A non-generic enum's declaration layout is exact. A generic enum binding
+/// without a proven source identity stays unavailable rather than guessed.
+fn pattern_binding_scrutinee_layout(
+    db: &dyn Db,
+    key: AstNodeKey,
+    binding: &EnumMatchBindingFact,
+) -> Result<(AstNodeKey, EnumLayoutFact), SemanticError> {
+    let AggregateFieldShape::Nominal(declaration) = binding.payload else {
+        return Err(SemanticError::unavailable("enum_match"));
+    };
+    if generic_enum_declaration(db, declaration) {
+        let identity = binding.source_identity.as_ref().ok_or_else(|| SemanticError::unavailable("enum_match"))?;
+        let (applied, layout) = enum_layout_for_source_identity(db, key, identity)?;
+        if applied != declaration {
+            return Err(SemanticError::unavailable("enum_match"));
+        }
+        return Ok((applied, layout));
+    }
+    enum_layout(db, declaration)
+        .and_then(|layout| layout.ok_or_else(|| SemanticError::unavailable("enum_match")))
+        .map(|layout| (declaration, layout))
 }
 
 /// Retain the source-level applied type of a local match scrutinee.
@@ -229,6 +250,19 @@ pub(super) fn enum_match_source_environment(
         let call = AstNodeKey { node: normalized_expression_node(index, scrutinee), ..key };
         return enum_match_environment_for_applied_identity(definition, &generic_source_expression_identity(db, call)?);
     }
+    // A scrutinee bound by an enclosing match pattern carries the applied identity that match
+    // proved for it; that identity alone binds this generic enum's parameters.
+    if let Some(local) = enum_match_scrutinee_local_declaration(program, index, key, expression)
+        && parent_node(index, local).and_then(|parent| index.kind(parent))
+            == Some(beskid_analysis::syntax_query::NodeKind::Pattern)
+    {
+        let enclosing = enclosing.map(Arc::<[GenericSubstitution]>::from);
+        let binding = pattern_binding_fact_in_environment(db, index, key, local, enclosing.as_ref())
+            .transpose()?
+            .ok_or_else(|| SemanticError::unavailable("enum_match"))?;
+        let identity = binding.source_identity.as_ref().ok_or_else(|| SemanticError::unavailable("enum_match"))?;
+        return enum_match_environment_for_applied_identity(definition, identity);
+    }
     let Some(path) = enum_match_scrutinee_explicit_type_path(program, index, key, expression) else {
         // Other supported scrutinee shapes retain their existing conservative field inference.
         // In particular, pointer-shaped generic fields remain unavailable rather than guessed.
@@ -309,7 +343,7 @@ pub(super) fn enum_match_environment_for_applied_identity(
 }
 
 /// Whether `declaration` is a current enum definition with type parameters.
-fn generic_enum_declaration(db: &dyn Db, declaration: AstNodeKey) -> bool {
+pub(super) fn generic_enum_declaration(db: &dyn Db, declaration: AstNodeKey) -> bool {
     db.syntax_unit(declaration.unit).filter(|syntax| syntax.accepts_key(db, declaration)).is_some_and(|syntax| {
         syntax
             .syntax_index(db)

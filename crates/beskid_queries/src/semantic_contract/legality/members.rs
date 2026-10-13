@@ -367,23 +367,26 @@ fn arm_pattern_site(
         .map_or(match_key, |node| AstNodeKey { node, ..match_key })
 }
 
-/// A `match` over an enum that leaves at least one variant without an arm.
+/// A `match` over an enum whose unguarded arms do not match every value.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct NonExhaustiveMatch {
     /// The match expression (the diagnostic site).
     pub site: AstNodeKey,
     pub enum_name: Arc<str>,
-    /// The first declared variant no unguarded arm names.
+    /// The variant of the scrutinee enum that the missing value belongs to.
     pub missing_variant: Arc<str>,
+    /// One value pattern no unguarded arm matches (`Result::Ok(_)`, `Pair::Both(Bit::One, _)`).
+    pub missing_pattern: Arc<str>,
 }
 
-/// Report the first `match` in `key` (an item) whose scrutinee resolves to an enum and that
-/// leaves a declared variant without any unguarded arm, with no unguarded wildcard or binding
-/// arm (E1304).
+/// Report the first `match` in `key` (an item) whose scrutinee resolves to an enum and whose
+/// unguarded arms leave some value unmatched (E1304).
 ///
-/// A variant counts as covered as soon as one unguarded arm names it, whatever its payload
-/// patterns: nested payload exhaustiveness stays with ISLE's `emit_match_dispatch`. This fact can
-/// therefore miss a non-exhaustive match but never rejects one lowering accepts.
+/// The judgement is the one ISLE's `emit_match_dispatch` applies: a guarded arm covers nothing, a
+/// literal payload pattern is refutable, and a nested enum pattern covers only what its own
+/// sub-patterns cover. So `check` rejects exactly the enum matches lowering would reject. When
+/// the scrutinee has no target-neutral match fact (a generic-dependent scrutinee), only missing
+/// variant names are judged, which never rejects a match lowering accepts.
 pub fn match_exhaustiveness(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<NonExhaustiveMatch> {
     with_registered_syntax(db, key, match_exhaustiveness_tracked)
 }
@@ -400,10 +403,105 @@ fn match_exhaustiveness_tracked(
         matches.into_iter().find_map(|node| {
             let site = AstNodeKey { node, ..key };
             let expression = index.node_at(program, node)?.of::<MatchExpression>()?;
-            non_exhaustive_match(db, program, index, site, expression)
+            match enum_match(db, site) {
+                Ok(Some(fact)) => non_exhaustive_enum_match_fact(db, site, &fact),
+                _ => non_exhaustive_match(db, program, index, site, expression),
+            }
         })
     })?;
     Ok(finding)
+}
+
+/// Exhaustiveness of a materialized enum match over its unguarded arms.
+fn non_exhaustive_enum_match_fact(db: &dyn Db, site: AstNodeKey, fact: &EnumMatchFact) -> Option<NonExhaustiveMatch> {
+    let rows = fact.arms.iter().filter(|arm| arm.guard.is_none()).map(|arm| vec![&arm.pattern]).collect::<Vec<_>>();
+    let columns = [Some((fact.declaration, &fact.layout))];
+    let witness = missing_pattern_witness(db, &rows, &columns)?;
+    let pattern = witness.into_iter().next()?;
+    let definition = enum_definition(db, fact.declaration)?;
+    let enum_name = definition.name.node.name.as_str();
+    let variant = pattern
+        .strip_prefix(&format!("{enum_name}::"))
+        .map(|rest| rest.split('(').next().unwrap_or(rest).to_owned())
+        .unwrap_or_else(|| pattern.clone());
+    Some(NonExhaustiveMatch {
+        site,
+        enum_name: Arc::from(enum_name),
+        missing_variant: Arc::from(variant.as_str()),
+        missing_pattern: Arc::from(pattern.as_str()),
+    })
+}
+
+/// A row of patterns (one per column) that no row of `rows` matches, rendered as source
+/// patterns, or `None` when the rows are exhaustive.
+///
+/// `columns` carries the enum (declaration and applied layout) each column holds, when known; a
+/// column of another type is covered only by an irrefutable pattern. Wildcards, bindings and the
+/// unit literal are irrefutable; scalar literals are refutable; an enum pattern covers its variant
+/// only as far as its sub-patterns do.
+fn missing_pattern_witness(
+    db: &dyn Db,
+    rows: &[Vec<&EnumMatchPatternFact>],
+    columns: &[Option<(AstNodeKey, &EnumLayoutFact)>],
+) -> Option<Vec<String>> {
+    let Some((column, rest_columns)) = columns.split_first() else {
+        return rows.is_empty().then(Vec::new);
+    };
+    let irrefutable = |pattern: &EnumMatchPatternFact| {
+        matches!(
+            pattern,
+            EnumMatchPatternFact::Wildcard | EnumMatchPatternFact::Binding(_) | EnumMatchPatternFact::UnitLiteral { .. }
+        )
+    };
+    let enum_column = column.or_else(|| {
+        rows.iter().find_map(|row| match row[0] {
+            EnumMatchPatternFact::Enum(pattern) => Some((pattern.declaration, &pattern.layout)),
+            _ => None,
+        })
+    });
+    let Some((declaration, layout)) = enum_column else {
+        let default = rows.iter().filter(|row| irrefutable(row[0])).map(|row| row[1..].to_vec()).collect::<Vec<_>>();
+        let mut witness = missing_pattern_witness(db, &default, rest_columns)?;
+        witness.insert(0, "_".to_owned());
+        return Some(witness);
+    };
+    let enum_name = enum_definition(db, declaration)
+        .map(|definition| definition.name.node.name.clone())
+        .unwrap_or_else(|| "_".to_owned());
+    for (variant_index, variant) in layout.variants.iter().enumerate() {
+        let arity = variant.fields.len();
+        let specialized = rows
+            .iter()
+            .filter_map(|row| {
+                let mut fields = match row[0] {
+                    pattern if irrefutable(pattern) => vec![&EnumMatchPatternFact::Wildcard; arity],
+                    EnumMatchPatternFact::Enum(pattern)
+                        if pattern.declaration == declaration
+                            && usize::try_from(pattern.variant_index).ok() == Some(variant_index)
+                            && pattern.items.len() == arity =>
+                    {
+                        pattern.items.iter().collect()
+                    }
+                    _ => return None,
+                };
+                fields.extend_from_slice(&row[1..]);
+                Some(fields)
+            })
+            .collect::<Vec<_>>();
+        let mut field_columns = vec![None; arity];
+        field_columns.extend_from_slice(rest_columns);
+        if let Some(mut witness) = missing_pattern_witness(db, &specialized, &field_columns) {
+            let fields = witness.drain(..arity).collect::<Vec<_>>();
+            let rendered = if fields.is_empty() {
+                format!("{enum_name}::{}", variant.name)
+            } else {
+                format!("{enum_name}::{}({})", variant.name, fields.join(", "))
+            };
+            witness.insert(0, rendered);
+            return Some(witness);
+        }
+    }
+    None
 }
 
 fn non_exhaustive_match(
@@ -436,9 +534,17 @@ fn non_exhaustive_match(
         return None;
     }
     let missing = definition.variants.iter().find(|variant| !covered.contains(variant.node.name.node.name.as_str()))?;
+    let enum_name = definition.name.node.name.as_str();
+    let missing_variant = missing.node.name.node.name.as_str();
+    let missing_pattern = if missing.node.fields.is_empty() {
+        format!("{enum_name}::{missing_variant}")
+    } else {
+        format!("{enum_name}::{missing_variant}({})", vec!["_"; missing.node.fields.len()].join(", "))
+    };
     Some(NonExhaustiveMatch {
         site,
-        enum_name: Arc::from(definition.name.node.name.as_str()),
-        missing_variant: Arc::from(missing.node.name.node.name.as_str()),
+        enum_name: Arc::from(enum_name),
+        missing_variant: Arc::from(missing_variant),
+        missing_pattern: Arc::from(missing_pattern.as_str()),
     })
 }

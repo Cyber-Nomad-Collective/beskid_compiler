@@ -108,8 +108,8 @@ impl SemanticIssueKind {
             Self::MatchArmTypeMismatch { expected, actual } => {
                 Some(format!("expected `{expected}`, got `{actual}`"))
             }
-            Self::MatchNonExhaustive { enum_name } => Some(format!(
-                "add a match arm for every variant of `{enum_name}` or a wildcard `_` arm"
+            Self::MatchNonExhaustive { enum_name, missing_pattern } => Some(format!(
+                "add an arm matching `{missing_pattern}`, cover every variant of `{enum_name}`, or add a wildcard `_` arm"
             )),
             Self::DuplicatePatternBinding { name } => Some(format!(
                 "rename one of the bindings named `{name}` in this pattern"

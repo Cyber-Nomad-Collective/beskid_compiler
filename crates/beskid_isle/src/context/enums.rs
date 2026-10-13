@@ -47,7 +47,9 @@ fn pattern_rows_are_exhaustive(rows: &[Vec<MatchPayloadPatternFact>]) -> bool {
             MatchPayloadPatternFact::Ignore | MatchPayloadPatternFact::Unit | MatchPayloadPatternFact::Binding(_) => {
                 false
             }
-            MatchPayloadPatternFact::Fields(_) | MatchPayloadPatternFact::ScalarLiteral { .. } => true,
+            MatchPayloadPatternFact::Fields(_)
+            | MatchPayloadPatternFact::ScalarLiteral { .. }
+            | MatchPayloadPatternFact::StringLiteral { .. } => true,
         })
     {
         return false;
@@ -265,80 +267,136 @@ impl IsleContext<'_, '_, '_, '_> {
                 matches!(payload_layout, [None]).then_some(())?;
                 self.builder.ins().jump(destinations.success, &[]);
             }
-            MatchPayloadPatternFact::Binding(binding) => {
+            pattern @ (MatchPayloadPatternFact::Binding(_)
+            | MatchPayloadPatternFact::ScalarLiteral { .. }
+            | MatchPayloadPatternFact::StringLiteral { .. }
+            | MatchPayloadPatternFact::Enum { .. }) => {
                 let [Some(layout)] = payload_layout else {
                     self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidMatchArms });
                     return None;
                 };
-                if layout.value_type != binding.value_type || self.locals.contains_key(&binding.slot) {
-                    self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidMatchArms });
-                    return None;
-                }
                 let value = self.builder.ins().load(
                     layout.value_type,
                     MemFlagsData::new(),
                     object,
                     i32::try_from(layout.offset).ok()?,
                 );
+                self.emit_value_pattern_branch(key, value, pattern, destinations, bindings)?;
+            }
+        }
+        Some(())
+    }
+
+    /// Test one already-loaded value (a whole scalar scrutinee or one enum payload field) against
+    /// a pattern that inspects the value itself: ignore, bind, compare to a scalar or string
+    /// literal, or dispatch on a nested enum's tag.
+    fn emit_value_pattern_branch(
+        &mut self,
+        key: AstNodeKey,
+        value: Value,
+        pattern: MatchPayloadPatternFact,
+        destinations: MatchDestinations,
+        bindings: &mut Vec<(MatchArmBindingFact, Value)>,
+    ) -> Option<()> {
+        let actual_type = self.builder.func.dfg.value_type(value);
+        match pattern {
+            MatchPayloadPatternFact::Ignore => {
+                self.builder.ins().jump(destinations.success, &[]);
+            }
+            MatchPayloadPatternFact::Binding(binding) => {
+                if actual_type != binding.value_type || self.locals.contains_key(&binding.slot) {
+                    self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidMatchArms });
+                    return None;
+                }
                 bindings.push((binding, value));
                 self.builder.ins().jump(destinations.success, &[]);
             }
             MatchPayloadPatternFact::ScalarLiteral { expression, value_type } => {
-                let [Some(layout)] = payload_layout else {
-                    self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidMatchArms });
-                    return None;
-                };
-                if layout.value_type != value_type {
+                if actual_type != value_type {
                     self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidMatchArms });
                     return None;
                 }
-                let actual = self.builder.ins().load(
-                    value_type,
-                    MemFlagsData::new(),
-                    object,
-                    i32::try_from(layout.offset).ok()?,
-                );
-                let expected = generated::constructor_lower_expression(self, expression)?;
-                if self.builder.func.dfg.value_type(expected) != value_type {
-                    self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidMatchArms });
-                    return None;
-                }
+                let expected = self.match_literal_value(key, expression, value_type)?;
                 let matches = if value_type.is_int() {
-                    self.builder.ins().icmp(IntCC::Equal, actual, expected)
+                    self.builder.ins().icmp(IntCC::Equal, value, expected)
                 } else if value_type.is_float() {
-                    self.builder.ins().fcmp(FloatCC::Equal, actual, expected)
+                    self.builder.ins().fcmp(FloatCC::Equal, value, expected)
                 } else {
                     self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidMatchArms });
                     return None;
                 };
                 self.builder.ins().brif(matches, destinations.success, &[], destinations.failure, &[]);
             }
-            MatchPayloadPatternFact::Enum { layout, discriminant, payload } => {
-                let [Some(parent_layout)] = payload_layout else {
-                    self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidMatchArms });
-                    return None;
-                };
-                if !parent_layout.value_type.is_int() || !layout.is_valid() {
+            MatchPayloadPatternFact::StringLiteral { expression } => {
+                let pointer = dispatch::pointer_type(self.frontend_config);
+                if actual_type != pointer {
                     self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidMatchArms });
                     return None;
                 }
-                let nested = self.builder.ins().load(
-                    parent_layout.value_type,
-                    MemFlagsData::new(),
-                    object,
-                    i32::try_from(parent_layout.offset).ok()?,
-                );
+                let expected = generated::constructor_lower_expression(self, expression)?;
+                if self.builder.func.dfg.value_type(expected) != pointer {
+                    self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidMatchArms });
+                    return None;
+                }
+                let equal = self.emit_corelib_service_call(
+                    key,
+                    "str_eq",
+                    &[value, expected],
+                    &[pointer, pointer],
+                    Some(types::I64),
+                )?;
+                let matches = self.builder.ins().icmp_imm_s(IntCC::NotEqual, equal, 0);
+                self.builder.ins().brif(matches, destinations.success, &[], destinations.failure, &[]);
+            }
+            MatchPayloadPatternFact::Enum { layout, discriminant, payload } => {
+                if !actual_type.is_int() || !layout.is_valid() {
+                    self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidMatchArms });
+                    return None;
+                }
                 self.emit_enum_pattern_branch(
                     key,
-                    MatchedEnum { object: nested, layout: &layout },
+                    MatchedEnum { object: value, layout: &layout },
                     discriminant,
                     *payload,
                     destinations,
                     bindings,
                 )?;
             }
+            MatchPayloadPatternFact::Unit | MatchPayloadPatternFact::Fields(_) => {
+                self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidMatchArms });
+                return None;
+            }
         }
         Some(())
+    }
+
+    /// The constant a scalar literal pattern compares against, in the matched value's type.
+    ///
+    /// The pattern fact already proved the literal fits that type (an unsuffixed integer or float
+    /// literal takes the type of its pattern position), so integer and float immediates are
+    /// materialized directly at that width; `bool` and `char` literals lower as expressions.
+    fn match_literal_value(&mut self, key: AstNodeKey, expression: AstNodeKey, value_type: Type) -> Option<Value> {
+        if value_type.is_int()
+            && let Some(immediate) = self.facts.integer_literal(expression)
+        {
+            return Some(self.builder.ins().iconst(value_type, immediate));
+        }
+        if let Some(immediate) = self.facts.float_literal(expression) {
+            return match value_type {
+                types::F32 => Some(self.builder.ins().f32const(Ieee32::with_float(immediate as f32))),
+                types::F64 => Some(self.builder.ins().f64const(Ieee64::with_float(immediate))),
+                _ => {
+                    self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidMatchArms });
+                    None
+                }
+            };
+        }
+        let expected = generated::constructor_lower_expression(self, expression)?;
+        if self.builder.func.dfg.value_type(expected) != value_type {
+            self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidMatchArms });
+            return None;
+        }
+        Some(expected)
     }
 
     fn emit_enum_pattern_branch(
@@ -384,42 +442,77 @@ impl IsleContext<'_, '_, '_, '_> {
         Some(installed)
     }
 
+    /// Lower one `match` as an ordered chain of arm tests.
+    ///
+    /// An enum scrutinee is dispatched on its tag and payload patterns; a primitive scrutinee
+    /// (`scalar_match_scrutinee`) is compared by value. Each arm's test jumps to its body block,
+    /// where the pattern bindings are installed and a `when` guard, if any, is evaluated: a false
+    /// guard releases the arm's roots and continues with the next arm's test. Exhaustiveness is
+    /// judged over unguarded arms only. A primitive statement match without a catch-all arm
+    /// continues after the match when no arm applies; every other unmatched path traps.
     pub(super) fn emit_match_dispatch(&mut self, key: AstNodeKey, result_type: Option<Type>) -> Option<Option<Value>> {
-        let layout = self.facts.enum_layout(key)?;
-        if !layout.is_valid() {
-            self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidEnumLayout });
-            return None;
-        }
         let arms = self.facts.match_arms(key)?;
         if arms.is_empty() {
             self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidMatchArms });
             return None;
         }
-        let layout_discriminants = layout.variants.iter().map(|variant| variant.discriminant).collect::<HashSet<_>>();
-        if arms
-            .iter()
-            .filter_map(|arm| arm.discriminant)
-            .any(|discriminant| !layout_discriminants.contains(&discriminant))
-        {
-            self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidMatchArms });
-            return None;
-        }
-        let has_wildcard = arms.iter().any(|arm| arm.discriminant.is_none());
-        let exhaustively_covers_variants = layout_discriminants.iter().all(|discriminant| {
-            let payloads = arms
+        let layout = match self.facts.enum_layout(key) {
+            Some(layout) => Some(layout),
+            None => {
+                // A by-value match has no enum layout; anything else lacks its fact.
+                self.facts.scalar_match_scrutinee(key)?;
+                None
+            }
+        };
+        let unguarded = || arms.iter().filter(|arm| arm.guard.is_none());
+        let has_catch_all = unguarded().any(|arm| arm.discriminant.is_none() && pattern_is_irrefutable(&arm.payload));
+        if let Some(layout) = layout.as_ref() {
+            if !layout.is_valid() {
+                self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidEnumLayout });
+                return None;
+            }
+            let layout_discriminants =
+                layout.variants.iter().map(|variant| variant.discriminant).collect::<HashSet<_>>();
+            if arms
                 .iter()
-                .filter_map(|arm| (arm.discriminant == Some(*discriminant)).then_some(&arm.payload))
-                .collect::<Vec<_>>();
-            payload_patterns_are_exhaustive(&payloads)
-        });
-        if !has_wildcard && !exhaustively_covers_variants {
-            self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::NonExhaustiveMatch });
+                .filter_map(|arm| arm.discriminant)
+                .any(|discriminant| !layout_discriminants.contains(&discriminant))
+            {
+                self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidMatchArms });
+                return None;
+            }
+            let exhaustively_covers_variants = layout_discriminants.iter().all(|discriminant| {
+                let payloads = unguarded()
+                    .filter_map(|arm| (arm.discriminant == Some(*discriminant)).then_some(&arm.payload))
+                    .collect::<Vec<_>>();
+                payload_patterns_are_exhaustive(&payloads)
+            });
+            if !has_catch_all && !exhaustively_covers_variants {
+                self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::NonExhaustiveMatch });
+                return None;
+            }
+        } else if arms.iter().any(|arm| {
+            arm.discriminant.is_some()
+                || !matches!(
+                    arm.payload,
+                    MatchPayloadPatternFact::Ignore
+                        | MatchPayloadPatternFact::Binding(_)
+                        | MatchPayloadPatternFact::ScalarLiteral { .. }
+                        | MatchPayloadPatternFact::StringLiteral { .. }
+                )
+        }) {
+            self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidMatchArms });
             return None;
         }
 
         let scrutinee_key = self.facts.child(key, 0)?;
         let scrutinee = generated::constructor_lower_expression(self, scrutinee_key)?;
-        if !self.builder.func.dfg.value_type(scrutinee).is_int() {
+        let scrutinee_type = self.builder.func.dfg.value_type(scrutinee);
+        let scrutinee_matches = match layout {
+            Some(_) => scrutinee_type.is_int(),
+            None => self.facts.scalar_match_scrutinee(key) == Some(scrutinee_type),
+        };
+        if !scrutinee_matches {
             self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidEnumLayout });
             return None;
         }
@@ -436,22 +529,21 @@ impl IsleContext<'_, '_, '_, '_> {
         let mut merge_reachable = false;
         for (index, arm) in arms.into_iter().enumerate() {
             let next = test_blocks.get(index + 1).copied().unwrap_or(failure);
+            let destinations = MatchDestinations { success: body_blocks[index], failure: next };
             let mut bindings = Vec::new();
             self.builder.switch_to_block(test_blocks[index]);
             self.builder.seal_block(test_blocks[index]);
-            match arm.discriminant {
-                Some(discriminant) => self.emit_enum_pattern_branch(
+            match (arm.discriminant, layout.as_ref()) {
+                (Some(discriminant), Some(layout)) => self.emit_enum_pattern_branch(
                     key,
-                    MatchedEnum { object: scrutinee, layout: &layout },
+                    MatchedEnum { object: scrutinee, layout },
                     discriminant,
                     arm.payload,
-                    MatchDestinations { success: body_blocks[index], failure: next },
+                    destinations,
                     &mut bindings,
                 )?,
-                None if matches!(arm.payload, MatchPayloadPatternFact::Ignore) => {
-                    self.builder.ins().jump(body_blocks[index], &[]);
-                }
-                None => {
+                (None, _) => self.emit_value_pattern_branch(key, scrutinee, arm.payload, destinations, &mut bindings)?,
+                (Some(_), None) => {
                     self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidMatchArms });
                     return None;
                 }
@@ -461,6 +553,24 @@ impl IsleContext<'_, '_, '_, '_> {
             self.builder.seal_block(body_blocks[index]);
             self.begin_local_root_scope();
             let _installed = self.install_match_bindings(key, &bindings)?;
+            if let Some(guard) = arm.guard {
+                let condition = generated::constructor_lower_expression(self, guard)?;
+                if !self.builder.func.dfg.value_type(condition).is_int() {
+                    self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidMatchArms });
+                    return None;
+                }
+                let accepted = self.builder.create_block();
+                let rejected = self.builder.create_block();
+                self.builder.ins().brif(condition, accepted, &[], rejected, &[]);
+                // A rejected guard leaves the arm: its binding roots are released on this edge
+                // only, and the next arm's test runs.
+                self.builder.switch_to_block(rejected);
+                self.builder.seal_block(rejected);
+                self.release_local_roots_from(self.local_root_scope_depth().checked_sub(1)?)?;
+                self.builder.ins().jump(next, &[]);
+                self.builder.switch_to_block(accepted);
+                self.builder.seal_block(accepted);
+            }
             if let Some(result_type) = result_type {
                 if self.facts.semantic_type(arm.body) == Some(beskid_queries::SemanticTypeId::NEVER) {
                     self.lower_expression_for_effect(arm.body)?;
@@ -486,7 +596,13 @@ impl IsleContext<'_, '_, '_, '_> {
 
         self.builder.switch_to_block(failure);
         self.builder.seal_block(failure);
-        self.builder.ins().trap(TrapCode::unwrap_user(1));
+        if layout.is_none() && result_type.is_none() && !has_catch_all {
+            // A primitive statement match need not be exhaustive: no applicable arm is a no-op.
+            self.builder.ins().jump(merge, &[]);
+            merge_reachable = true;
+        } else {
+            self.builder.ins().trap(TrapCode::unwrap_user(1));
+        }
         self.builder.switch_to_block(merge);
         self.builder.seal_block(merge);
         if result_type.is_none() && !merge_reachable {

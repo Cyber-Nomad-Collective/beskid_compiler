@@ -134,6 +134,8 @@ pub enum SemanticIssueKind {
     },
     MatchNonExhaustive {
         enum_name: String,
+        /// One value pattern no unguarded arm matches (`Result::Ok(_)`).
+        missing_pattern: String,
     },
     DuplicatePatternBinding {
         name: String,

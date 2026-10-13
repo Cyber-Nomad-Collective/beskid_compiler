@@ -65,9 +65,13 @@ pub(in crate::semantic_contract) fn node_type_tracked(
         {
             return Some(Ok(SemanticTypeId::I32));
         }
-        if node.of::<beskid_analysis::syntax::MatchExpression>().is_some() && matches!(enum_match(db, key), Ok(Some(_)))
-        {
-            return Some(enum_match_result_semantic_type(db, key));
+        if node.of::<beskid_analysis::syntax::MatchExpression>().is_some() {
+            if let Ok(Some(fact)) = enum_match(db, key) {
+                return Some(match_arms_result_semantic_type(db, &fact.arms));
+            }
+            if let Ok(Some(fact)) = scalar_match(db, key) {
+                return Some(match_arms_result_semantic_type(db, &fact.arms));
+            }
         }
         if let Some(beskid_analysis::syntax::Expression::Call(call)) = node.of::<beskid_analysis::syntax::Expression>()
         {
@@ -85,13 +89,13 @@ pub(in crate::semantic_contract) fn node_type_tracked(
     .transpose()
 }
 
-pub(in crate::semantic_contract) fn enum_match_result_semantic_type(
+/// The joined result type of a match's arm bodies; `never` arms do not constrain it.
+pub(in crate::semantic_contract) fn match_arms_result_semantic_type(
     db: &dyn Db,
-    key: AstNodeKey,
+    arms: &[EnumMatchArmFact],
 ) -> Result<SemanticTypeId, SemanticError> {
-    let fact = enum_match(db, key)?.ok_or_else(|| SemanticError::unavailable("node_type"))?;
     let mut result = None;
-    for arm in fact.arms.iter() {
+    for arm in arms {
         let contextual = match contextual_integer_literal_abi_type(db, arm.body) {
             Ok(contextual) => contextual,
             Err(error) if error.is_unavailable() => None,

@@ -95,8 +95,17 @@ pub(in crate::semantic_contract) fn pattern_binding_fact_in_environment(
         },
         None => enum_match(db, outer_match),
     };
-    let fact = match query {
-        Ok(Some(fact)) => fact,
+    // A match over a primitive scrutinee binds the scrutinee value itself through its scalar
+    // match fact; an enum match is the authority for every other binding.
+    let query = match query {
+        Ok(Some(fact)) => Ok(Some(fact.arms)),
+        enum_result => match scalar_match(db, outer_match) {
+            Ok(Some(fact)) => Ok(Some(fact.arms)),
+            _ => enum_result.map(|fact| fact.map(|fact| fact.arms)),
+        },
+    };
+    let arms = match query {
+        Ok(Some(arms)) => arms,
         Ok(None) => {
             return Some(Err(pattern_binding_unavailable(db, outer_match, "the enclosing match has no enum match fact")));
         }
@@ -108,7 +117,7 @@ pub(in crate::semantic_contract) fn pattern_binding_fact_in_environment(
             )));
         }
     };
-    fact.arms
+    arms
         .iter()
         .filter_map(|arm| enum_match_pattern_binding(&arm.pattern, declaration))
         .find(|binding| binding.declaration.node == declaration)

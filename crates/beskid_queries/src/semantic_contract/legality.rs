@@ -500,7 +500,10 @@ pub fn check_items(db: &dyn Db, items: &[AstNodeKey]) -> Result<(), Vec<Semantic
         }
         if let Ok(Some(finding)) = match_exhaustiveness(db, item) {
             findings.push(SemanticFinding {
-                kind: SemanticIssueKind::MatchNonExhaustive { enum_name: finding.enum_name.to_string() },
+                kind: SemanticIssueKind::MatchNonExhaustive {
+                    enum_name: finding.enum_name.to_string(),
+                    missing_pattern: finding.missing_pattern.to_string(),
+                },
                 site: finding.site,
                 related: Vec::new(),
             });
@@ -851,6 +854,58 @@ mod tests {
         let (db, root) = one_unit_assembly(&wildcard, SyntaxGenerationId(131));
         let key = function_definitions(&db, root)[0];
         assert_eq!(super::match_exhaustiveness(&db, key).expect("query"), None);
+    }
+
+    /// `check` agrees with ISLE: a refutable payload pattern (a literal, or a nested enum pattern
+    /// that does not cover its enum) does not cover its variant, and the finding names one
+    /// uncovered value pattern.
+    #[test]
+    fn refutable_payload_patterns_do_not_cover_their_variant() {
+        let cases = [
+            (
+                "enum Result { Ok(i64 value), Error(i64 error) } \
+                 i64 Main(Result r) { return match r { Result::Ok(7_i64) => 1_i64, Result::Error(_) => 0_i64, }; }",
+                "Result::Ok(_)",
+            ),
+            (
+                "enum Bit { Zero, One } enum Pair { Both(Bit left, Bit right), Empty } \
+                 i64 Main(Pair pair) { return match pair { Pair::Both(Bit::Zero, _) => 0_i64, Pair::Empty => 2_i64, }; }",
+                "Pair::Both(Bit::One, _)",
+            ),
+            (
+                "enum Choice { Value(i64 value), Empty } \
+                 i64 Main(Choice choice) { return match choice { Choice::Value(v) when v > 0_i64 => v, Choice::Empty => 0_i64, }; }",
+                "Choice::Value(_)",
+            ),
+        ];
+        for (offset, (source, missing)) in cases.into_iter().enumerate() {
+            let (db, root) = one_unit_assembly(source, SyntaxGenerationId(140 + offset as u64));
+            let key = function_definitions(&db, root)[0];
+            let finding = super::match_exhaustiveness(&db, key).expect("query").expect(source);
+            assert_eq!(finding.missing_pattern.as_ref(), missing, "{source}");
+            let findings = super::check_items(&db, &[key]).expect_err("the legality gate rejects the match");
+            let rejection = findings.iter().find(|finding| finding.kind.code() == "E1304").expect(source);
+            assert!(rejection.kind.message().contains(missing), "{}", rejection.kind.message());
+        }
+    }
+
+    /// A variant is covered by a catch-all sub-pattern after refutable ones, or by nested enum
+    /// patterns that together cover the nested enum.
+    #[test]
+    fn irrefutable_or_collectively_exhaustive_payload_patterns_cover_their_variant() {
+        let cases = [
+            "enum Result { Ok(i64 value), Error(i64 error) } \
+             i64 Main(Result r) { return match r { Result::Ok(7_i64) => 1_i64, Result::Ok(_) => 2_i64, Result::Error(_) => 0_i64, }; }",
+            "enum Bit { Zero, One } enum Pair { Both(Bit left, Bit right), Empty } \
+             i64 Main(Pair pair) { return match pair { Pair::Both(Bit::Zero, _) => 0_i64, Pair::Both(Bit::One, other) => 1_i64, Pair::Empty => 2_i64, }; }",
+            "enum Choice { Value(i64 value), Empty } \
+             i64 Main(Choice choice) { return match choice { Choice::Value(v) when v > 0_i64 => v, Choice::Value(v) => 0_i64, Choice::Empty => 0_i64, }; }",
+        ];
+        for (offset, source) in cases.into_iter().enumerate() {
+            let (db, root) = one_unit_assembly(source, SyntaxGenerationId(150 + offset as u64));
+            let key = function_definitions(&db, root)[0];
+            assert_eq!(super::match_exhaustiveness(&db, key).expect("query"), None, "{source}");
+        }
     }
 
     #[test]

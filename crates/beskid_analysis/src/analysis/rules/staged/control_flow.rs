@@ -202,11 +202,11 @@ impl SemanticPipelineRule {
         let Some(Some(variants)) = enum_variants.get(&enum_name) else {
             return;
         };
-        if variants.keys().all(|variant| covered_variants.contains(variant)) {
+        let Some(missing) = variants.keys().filter(|variant| !covered_variants.contains(*variant)).min() else {
             return;
-        }
-
-        ctx.emit_issue(match_expression.span, SemanticIssueKind::MatchNonExhaustive { enum_name });
+        };
+        let missing_pattern = format!("{enum_name}::{missing}");
+        ctx.emit_issue(match_expression.span, SemanticIssueKind::MatchNonExhaustive { enum_name, missing_pattern });
     }
 
     fn is_boolean_like_guard(expression: &Spanned<Expression>) -> bool {
