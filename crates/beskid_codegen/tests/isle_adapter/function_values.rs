@@ -277,6 +277,38 @@ fn generic_higher_order_function_specializes_its_function_value_call() {
 }
 
 #[test]
+fn function_value_call_results_typed_by_the_instance_are_values_in_a_specialized_body() {
+    // `f(f(x))` passes one indirect call's `T` result to another, and `T once = f(x)` stores it;
+    // both need the result type and managed category the instance binds `T` to.
+    let source = "T Twice<T>(T x, (T) => T f) { return f(f(x)); }\n\
+                  T Stored<T>(T x, (T) => T f) { T once = f(x); return f(once); }\n\
+                  i64 Main(string label) {\n\
+                      string twice = Twice<string>(label, (string s) => s + \"!\");\n\
+                      string stored = Stored<string>(label, (string s) => s + \"?\");\n\
+                      return Twice<i64>(1, (i64 x) => x + 1) + Stored<i64>(2, (i64 x) => x * 3);\n\
+                  }\n";
+    let (input, isa, root) = item_fixture_with_root(source);
+    let db = input.database();
+    let main = named(db, &find_function_definitions(db, root), "Main");
+    let artifact = lower_syntax_program(&input, isa.as_ref(), &[SyntaxModuleItem { key: main, symbol: "Main".into() }])
+        .unwrap_or_else(|error| panic!("function value call results lower in specialized bodies: {error}"));
+    let specialized = artifact
+        .functions
+        .iter()
+        .filter(|function| {
+            (function.name.starts_with("Twice#") || function.name.starts_with("Stored#"))
+                && function.name.contains("#generic_")
+        })
+        .map(|function| function.function.display().to_string())
+        .collect::<Vec<_>>();
+    assert_eq!(specialized.len(), 4, "Twice and Stored for string and i64");
+    for clif in &specialized {
+        // Two calls through the record, each with its null- and captured-environment convention.
+        assert_eq!(clif.matches("call_indirect").count(), 4, "{clif}");
+    }
+}
+
+#[test]
 fn named_function_read_as_a_value_is_a_closure_record_with_the_item_entry() {
     let source = format!("{APPLY}i64 Double(i64 x) {{ return x * 2; }}\ni64 Main() {{ return Apply(4, Double); }}\n");
     let (input, isa, root) = item_fixture_with_root(&source);

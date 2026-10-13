@@ -5,7 +5,8 @@
 use beskid_analysis::syntax_query::NodeKind;
 use beskid_queries::{
     CallLowering, ManagedReferenceKind, SemanticTypeId, abi_type, call_lowering, check_items, direct_callees,
-    function_item_value, function_value_call, lambda_value_required, managed_reference_kind,
+    function_item_value, function_value_call, function_value_call_specialization, generic_call_specialization,
+    generic_call_specialization_instance, lambda_value_required, managed_reference_kind,
 };
 
 use super::support::{assert_unavailable, key, key_at_start, setup};
@@ -167,6 +168,37 @@ fn a_generic_value_typed_by_an_enclosing_generic_parameter_is_e1203() {
     let (db, _project, unit, generation, index) = setup(source);
     let wrap = key(unit, generation, &index, NodeKind::FunctionDefinition, 1);
     assert_eq!(gate_codes(&db, wrap), vec!["E1203".to_string()]);
+}
+
+#[test]
+fn a_function_value_call_in_a_specialized_body_takes_its_result_from_the_instance() {
+    let source = "T Twice<T>(T x, (T) => T f) { return f(f(x)); } \
+                  string Main(string s) { i64 n = Twice<i64>(1, (i64 x) => x + 1); \
+                  return Twice<string>(s, (string v) => v); }";
+    let (db, _project, unit, generation, index) = setup(source);
+    // Calls in order: `f(f(x))`, `f(x)` (Twice), `Twice<i64>(..)`, `Twice<string>(..)` (Main).
+    let outer = key(unit, generation, &index, NodeKind::CallExpression, 0);
+    let inner = key(unit, generation, &index, NodeKind::CallExpression, 1);
+    let instance = |occurrence| {
+        let call = key(unit, generation, &index, NodeKind::CallExpression, occurrence);
+        let specialization =
+            generic_call_specialization(&db, call).expect("specialization query").expect("generic call");
+        generic_call_specialization_instance(&db, specialization).expect("instance query").expect("instance")
+    };
+    for (occurrence, result, managed) in [
+        (2, SemanticTypeId::I64, ManagedReferenceKind::NativeOrScalar),
+        (3, SemanticTypeId::STRING, ManagedReferenceKind::GcManaged),
+    ] {
+        let enclosing = instance(occurrence);
+        for call in [outer, inner] {
+            let fact = function_value_call_specialization(&db, call, &enclosing)
+                .expect("specialized function value query")
+                .expect("function value call");
+            assert_eq!(fact.signature.parameters.as_ref(), &[result]);
+            assert_eq!(fact.signature.result, result);
+            assert_eq!(fact.result_managed_reference, managed);
+        }
+    }
 }
 
 #[test]

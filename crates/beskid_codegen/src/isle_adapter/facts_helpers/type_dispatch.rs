@@ -41,6 +41,17 @@ impl SyntaxNodeFacts<'_> {
                     ManagedReferenceKind::NativeOrScalar => ManagedReferenceFact::NativeOrScalar,
                 });
         }
+        // A call through a function value in a specialized body is classified by its result in
+        // the instance: a `T` result bound to `string` is managed, bound to `i64` is not.
+        if self.current_item_specialization().is_some()
+            && self.query(node_kind(self.db, key)) == Some(beskid_queries::IndexedNodeKind::CallExpression)
+            && let Some(call) = self.function_value_call_in_context(key)
+        {
+            return Some(match call.result_managed_reference {
+                ManagedReferenceKind::GcManaged => ManagedReferenceFact::GcManaged,
+                ManagedReferenceKind::NativeOrScalar => ManagedReferenceFact::NativeOrScalar,
+            });
+        }
         // These compiler-authorized intrinsics produce native addresses. Their
         // pointer-shaped ABI alone cannot prove that category to the source query.
         if matches!(

@@ -141,6 +141,14 @@ impl SyntaxNodeFacts<'_> {
         if let Some(specialization) = self.generic_call_specialization_in_context(key) {
             return signature_for_item(self.isa?, specialization.signature);
         }
+        // A call through a function value inside a specialized body: its result type is the
+        // callee's function type in the instance (`T` of `(T) => T f` bound), which the
+        // target-neutral `call_abi_signature` cannot prove.
+        if self.current_item_specialization().is_some()
+            && let Some(call) = self.function_value_call_in_context(key)
+        {
+            return signature_for_item(self.isa?, call.signature);
+        }
         signature_for_item(self.isa?, self.query(call_abi_signature(self.db, key))?)
     }
 
@@ -276,12 +284,7 @@ impl SyntaxNodeFacts<'_> {
     pub(super) fn function_value_call_impl(&self, key: AstNodeKey) -> Option<beskid_isle::FunctionValueCall> {
         // Inside a generic specialization the callee's function type may name the enclosing
         // declaration's parameters; its exact instance binds them.
-        let call = match self.current_item_specialization() {
-            Some(specialization) => {
-                self.query(beskid_queries::function_value_call_specialization(self.db, key, specialization))?
-            }
-            None => self.query(beskid_queries::function_value_call(self.db, key))?,
-        };
+        let call = self.function_value_call_in_context(key)?;
         let (parameters, result) = self.callable_abi(&call.signature)?;
         Some(beskid_isle::FunctionValueCall {
             callee: call.callee,

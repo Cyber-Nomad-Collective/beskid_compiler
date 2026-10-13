@@ -14,6 +14,17 @@ i64 Apply(i64 v, (i64) => i64 f) { return f(v); }
 
 T ApplyGeneric<T>(T v, (T) => T f) { return f(v); }
 
+// Indirect call results typed by the instance are values: passed on and stored.
+T Twice<T>(T x, (T) => T f) { return f(f(x)); }
+
+T Stored<T>(T x, (T) => T f) {
+    T once = f(x);
+    Probe.gc_collect();
+    return f(once);
+}
+
+i64 AddOne(i64 x) { return x + 1_i64; }
+
 // The callee parameter `(i64) => i64` fixes `T`.
 i64 FromCalleeParameter() { return Apply(5_i64, Identity); }
 
@@ -39,6 +50,10 @@ i64 NominalInstance() {
     return back.value;
 }
 
+// A generic higher-order callee with a non-generic value (1 + 1 + 1) and with a generic one
+// instantiated from the callee's explicit type arguments (4 passed through twice).
+i64 GenericHigherOrder() { return Twice<i64>(1_i64, AddOne) + Stored<i64>(4_i64, Identity); }
+
 [Export(Abi:"C", Symbol:"RunGenericFunctionValues")]
 pub i64 RunGenericFunctionValues() {
     if FromCalleeParameter() != 5_i64 { return 1_i64; }
@@ -46,5 +61,6 @@ pub i64 RunGenericFunctionValues() {
     if FromGenericCallee() != 7_i64 { return 3_i64; }
     if FromAnnotatedLocal() != 8_i64 { return 4_i64; }
     if NominalInstance() != 9_i64 { return 5_i64; }
+    if GenericHigherOrder() != 7_i64 { return 6_i64; }
     return 42_i64;
 }

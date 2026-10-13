@@ -16,6 +16,12 @@ impl SyntaxNodeFacts<'_> {
             return Some(instance.signature.result);
         }
         if self.query(node_kind(self.db, key)) == Some(beskid_queries::IndexedNodeKind::CallExpression)
+            && self.current_item_specialization().is_some()
+            && let Some(call) = self.function_value_call_in_context(key)
+        {
+            return Some(call.signature.result);
+        }
+        if self.query(node_kind(self.db, key)) == Some(beskid_queries::IndexedNodeKind::CallExpression)
             && let Some(signature) = self.query(call_abi_signature(self.db, key))
         {
             return Some(signature.result);
@@ -82,7 +88,20 @@ impl SyntaxNodeFacts<'_> {
                             })?
                     })
             })
+            .or_else(|| self.specialized_declared_local_type(key))
             .or_else(|| self.field_semantic_type_in_context(key))
+    }
+
+    /// The declared type of an annotated `let` inside a specialized body (`T once = f(x)`), read
+    /// through the one checking-direction query in the instance's environment: the initializer's
+    /// `DeclaredLocal` expectation. A target-neutral declaration naming `T` has no ABI.
+    fn specialized_declared_local_type(&self, key: AstNodeKey) -> Option<SemanticTypeId> {
+        (self.query(node_kind(self.db, key)) == Some(beskid_queries::IndexedNodeKind::LetStatement)).then_some(())?;
+        let enclosing = self.current_item_specialization()?;
+        let initializer = self.let_initializer(key)?;
+        let expected = self.query(beskid_queries::expected_type_in_environment(self.db, initializer, enclosing))?;
+        matches!(expected.context, beskid_queries::ExpectedTypeContext::DeclaredLocal { .. })
+            .then(|| expected.abi_type())
     }
 
     /// The semantic ABI of the field a field access (`this.left`, `value.field`) reads or writes,

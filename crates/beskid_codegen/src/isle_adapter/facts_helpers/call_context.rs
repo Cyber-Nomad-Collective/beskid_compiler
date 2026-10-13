@@ -23,6 +23,21 @@ impl SyntaxNodeFacts<'_> {
             .and_then(|specialization| self.query(generic_call_specialization_instance(self.db, specialization)))
     }
 
+    /// A call through a function value, with its callee's function type interpreted in the
+    /// specialization of the item being lowered: inside `T Twice<T>(T x, (T) => T f)` the call
+    /// `f(x)` has the result type the instance binds `T` to, never a target-neutral one.
+    pub(in crate::isle_adapter) fn function_value_call_in_context(
+        &self,
+        key: AstNodeKey,
+    ) -> Option<beskid_queries::FunctionValueCall> {
+        match self.current_item_specialization() {
+            Some(specialization) => {
+                self.query(beskid_queries::function_value_call_specialization(self.db, key, specialization))
+            }
+            None => self.query(beskid_queries::function_value_call(self.db, key)),
+        }
+    }
+
     pub(in crate::isle_adapter) fn runtime_intrinsic(
         &self,
         key: AstNodeKey,
