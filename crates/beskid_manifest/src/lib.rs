@@ -20,7 +20,11 @@ pub fn generate_analysis_with_v5_intrinsics_from_source(
     let runtime = load_v5_manifest_source(source)?;
     let generated = analysis_codegen::append_analysis_intrinsics(base, &runtime)?;
     match std::fs::read(out_path) {
-        Ok(existing) if existing == generated.as_bytes() => return Ok(()),
+        // A Windows checkout (no .gitattributes, core.autocrlf) holds this tracked file with CRLF
+        // while the regenerated tail uses LF. Rewriting it for line endings alone would leave a
+        // tracked input newer than its build-script run, so the next Cargo invocation would
+        // rebuild beskid_analysis and relink every dependent binary (Woodpecker #285).
+        Ok(existing) if same_text_ignoring_crlf(&existing, generated.as_bytes()) => return Ok(()),
         Ok(_) => {}
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
         Err(error) => return Err(error.to_string()),
@@ -29,6 +33,13 @@ pub fn generate_analysis_with_v5_intrinsics_from_source(
         std::fs::create_dir_all(parent).map_err(|err| err.to_string())?;
     }
     std::fs::write(out_path, generated).map_err(|err| err.to_string())
+}
+
+fn same_text_ignoring_crlf(left: &[u8], right: &[u8]) -> bool {
+    fn lines(bytes: &[u8]) -> impl Iterator<Item = &[u8]> {
+        bytes.split(|byte| *byte == b'\n').map(|line| line.strip_suffix(b"\r").unwrap_or(line))
+    }
+    lines(left).eq(lines(right))
 }
 
 pub fn default_manifest_path(manifest_dir: &Path) -> PathBuf {

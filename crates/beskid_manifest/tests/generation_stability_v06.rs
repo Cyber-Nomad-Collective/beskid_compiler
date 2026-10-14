@@ -23,6 +23,15 @@ fn v06_unchanged_builtin_generation_preserves_mtime_and_bytes() {
     let after = fs::metadata(&output).unwrap().modified().unwrap();
     assert_eq!(fs::read(&output).unwrap(), bytes);
     assert_eq!(after, before, "unchanged generation must not invalidate its own Cargo build input");
+    // A CRLF checkout of the same generated text is unchanged input: no rewrite, no new mtime.
+    let crlf = generated.replace('\n', "\r\n");
+    fs::write(&output, &crlf).unwrap();
+    File::options().write(true).open(&output).unwrap()
+        .set_times(FileTimes::new().set_modified(sentinel)).unwrap();
+    generate_analysis_with_v5_intrinsics_from_source(source, &crlf, &output).unwrap();
+    assert_eq!(fs::read(&output).unwrap(), crlf.as_bytes(), "line endings alone never rewrite the output");
+    assert_eq!(fs::metadata(&output).unwrap().modified().unwrap(), before, "a CRLF checkout keeps its mtime");
+    fs::write(&output, &bytes).unwrap();
     let changed_base = format!("// updated baseline\n{generated}");
     generate_analysis_with_v5_intrinsics_from_source(source, &changed_base, &output).unwrap();
     let changed = fs::read(&output).unwrap();
