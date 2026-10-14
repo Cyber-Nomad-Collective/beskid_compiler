@@ -17,6 +17,8 @@ use std::{
 
 /// Logical prefix of every unit owned by the native runtime package root (`runtime/beskid`).
 const RUNTIME_ROOT_LOGICAL_PREFIX: &str = "src/";
+/// Dependency name of the Corelib Foundation package in every fixture plan's closure.
+const FOUNDATION_DEPENDENCY_NAME: &str = "corelib_foundation";
 
 /// Source roots an assembly of `plan` reads.
 ///
@@ -73,6 +75,19 @@ pub(super) fn attach_runtime_fixture(
     verify_runtime_closure(&runtime_root, &foundation_root, &expected, &proof)
         .map_err(|()| failure("canonical runtime source closure differs from the compiler-embedded corpus"))?;
 
+    // The canonical Foundation units replace the same files of the Foundation package the
+    // assembly actually reads: the checkout root without a prepared workspace, or the workspace's
+    // materialized copy of it. Placing them at the checkout path while a materialized Foundation
+    // root is assembled would admit a second declaration of every canonical module
+    // (`Core.Results` declared twice), outside any verified package root.
+    let assembled_foundation_root = assembly
+        .roots
+        .dependencies
+        .iter()
+        .find(|root| root.dependency_name.as_deref() == Some(FOUNDATION_DEPENDENCY_NAME))
+        .ok_or_else(|| failure("runtime fixture requires the Corelib Foundation dependency"))?
+        .source_root
+        .clone();
     let entry_path = assembly.entry_unit().path.clone();
     let native_root = assembly
         .roots
@@ -84,11 +99,13 @@ pub(super) fn attach_runtime_fixture(
         .clone();
     // Every canonical unit enters the fixture assembly exactly once. Runtime-root units replace
     // the plan's native dependency units; Foundation support units (`Core/...`) replace the same
-    // files the plan's `corelib` dependency already contributed, at their real Foundation paths,
-    // so `use Core.Results;` and the private runtime scope name one declaration, not two copies.
+    // files the assembled Foundation root already contributed, at that root's paths, so
+    // `use Core.Results;` and the private runtime scope name one declaration, not two copies.
+    let foundation_roots = [assembled_foundation_root.clone(), assembled_foundation_root.canonicalize().unwrap_or_default()];
     let canonical_paths = expected
         .iter()
-        .map(|source| canonical_source_path(&runtime_root, &foundation_root, &source.logical_path))
+        .filter(|source| !source.logical_path.starts_with(RUNTIME_ROOT_LOGICAL_PREFIX))
+        .flat_map(|source| foundation_roots.iter().map(move |root| root.join(&source.logical_path)))
         .collect::<std::collections::HashSet<_>>();
     let mut units = assembly
         .units
@@ -97,7 +114,7 @@ pub(super) fn attach_runtime_fixture(
         .cloned()
         .collect::<Vec<_>>();
     for source in expected {
-        let path = canonical_source_path(&runtime_root, &foundation_root, &source.logical_path);
+        let path = canonical_source_path(&runtime_root, &assembled_foundation_root, &source.logical_path);
         let program =
             crate::services::parse_program_with_source_name(path.to_str().unwrap_or_default(), &source.source)
                 .map_err(|error| AssemblyError::Parse { path: path.clone(), message: error.to_string() })?;

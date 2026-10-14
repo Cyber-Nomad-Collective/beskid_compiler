@@ -88,6 +88,57 @@ fn fixture_assembly_never_replays_local_materialized_snapshots() {
     assert_eq!(results, 1, "exactly one Core.Results declaration enters the fixture assembly");
 }
 
+/// Regression (rc30 NetworkNativeTests): `beskid test` assembles the fixture over its prepared
+/// workspace, whose Foundation root is the materialized copy under `obj/beskid/deps`. The canonical
+/// Foundation support units were added at the checkout Foundation path beside that copy, so the
+/// assembly declared `Core.Results` twice and Corelib Concurrency/Network units failed with
+/// ResolveAmbiguousModulePath and unknown `Result`. The canonical units now replace the files of
+/// the Foundation root the assembly actually reads. This prepares the real fixture's workspace
+/// (gitignored `obj/` and `Project.lock`), exactly as the CLI does.
+#[test]
+fn prepared_workspace_fixture_assembles_one_foundation_copy() {
+    use beskid_analysis::projects::{WorkspacePrepareOptions, prepare_project_workspace_with_options};
+    let manifest = runtime_fixture_project_root().join("runtime_semantics.bproj");
+    let plan = build_compile_plan(&manifest, Some("NetworkNativeTests")).expect("real fixture plan");
+    let workspace = prepare_project_workspace_with_options(
+        &plan,
+        WorkspacePrepareOptions { offline: true, ..WorkspacePrepareOptions::default() },
+        None,
+    )
+    .expect("prepared fixture workspace");
+    let entry = plan_entry_path(&plan, &workspace.materialized_source_root);
+    let source = std::fs::read_to_string(&entry).expect("materialized fixture source");
+    let assembly = assemble_program_with_materializer(
+        &plan,
+        Some(&workspace),
+        &entry,
+        Some(&source),
+        &assembly_options_for_plan(&plan),
+        None,
+        None,
+    )
+    .expect("prepared fixture assembly");
+    assert!(assembly.runtime_fixture.is_some(), "the prepared fixture keeps its runtime proof");
+    let foundation = assembly
+        .roots
+        .dependencies
+        .iter()
+        .find(|root| root.dependency_name.as_deref() == Some("corelib_foundation"))
+        .expect("Foundation root")
+        .source_root
+        .clone();
+    let results =
+        assembly.units.iter().filter(|unit| unit.path.ends_with("Core/Results/Results.bd")).collect::<Vec<_>>();
+    assert_eq!(results.len(), 1, "exactly one Core.Results declaration enters the prepared fixture assembly");
+    assert!(results[0].path.starts_with(&foundation), "Core.Results comes from the assembled Foundation root");
+    let mut db = BeskidDatabase::default();
+    let findings = semantic_diagnostics_for_roots(&mut db, None, &assembly, &assembly.entry_unit().program, None)
+        .expect("the query gate must judge the prepared fixture");
+    let errors =
+        findings.iter().filter(|finding| finding.kind.severity() == beskid_analysis::Severity::Error).collect::<Vec<_>>();
+    assert!(errors.is_empty(), "{errors:?}");
+}
+
 #[test]
 fn extra_runtime_source_cannot_extend_fixture_authority() {
     let mut assembly = fixture("LifecycleTests");
