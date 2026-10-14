@@ -5,7 +5,7 @@ use beskid_pckg_store::{AsyncApiKeyRepository, SqlxPackageRepository};
 
 use super::backend_memory::PackageBackend;
 use super::config::AuthConfig;
-use crate::{operations_routes, workspace_review_routes};
+use crate::{community::CommunityService, operations_routes, workspace_review_routes};
 
 #[derive(Clone)]
 pub(crate) struct AppState {
@@ -16,4 +16,14 @@ pub(crate) struct AppState {
     pub(crate) api_key_auth: Option<Arc<dyn AsyncApiKeyRepository>>,
     pub(crate) reviews: workspace_review_routes::ReviewQueueState,
     pub(crate) operations: operations_routes::OperationsState,
+    /// NodeBB integration; `None` keeps every community surface absent.
+    pub(crate) community: Option<Arc<CommunityService>>,
+}
+
+impl AppState {
+    /// Public discussion URL for a linked package, when the integration is on.
+    pub(crate) fn community_url(&self, package: &beskid_pckg_store::Package) -> Option<String> {
+        let service = self.community.as_ref()?;
+        package.community.as_ref().map(|community| service.category_url(community))
+    }
 }

@@ -1,5 +1,7 @@
+use beskid_pckg_contract::PackageCommunityResponse;
+
 use super::{
-    ApiErrorResponse, ArtifactRecord, IntoResponse, Json, Package, PackageDependencyResponse,
+    ApiErrorResponse, AppState, ArtifactRecord, IntoResponse, Json, Package, PackageDependencyResponse,
     PackageHealthSnapshotResponse, PackageKind, PackageKindResponse, PackageManifestMetadata, PackageSummaryResponse,
     PackageVersion, PackageVersionSummaryResponse, Response, StatusCode, parse_package_manifest_metadata,
     select_download,
@@ -16,7 +18,11 @@ pub(super) fn package_manifest_metadata(
     parse_package_manifest_metadata(&version.manifest_json, &package.name, &version.version)
 }
 
-pub(super) fn package_summary(package: &Package, metadata: &PackageManifestMetadata) -> PackageSummaryResponse {
+pub(super) fn package_summary(
+    package: &Package,
+    metadata: &PackageManifestMetadata,
+    community: Option<PackageCommunityResponse>,
+) -> PackageSummaryResponse {
     PackageSummaryResponse {
         id: package.id.clone(),
         name: package.name.clone(),
@@ -40,7 +46,19 @@ pub(super) fn package_summary(package: &Package, metadata: &PackageManifestMetad
         owner_user_id: package.owner_subject.clone(),
         owner_display_name: package.owner_subject.clone(),
         owner_is_publisher_verified: false,
+        community,
     }
+}
+
+/// Community link projection; absent unless the integration is configured
+/// and the package is linked.
+pub(super) fn community_response(state: &AppState, package: &Package) -> Option<PackageCommunityResponse> {
+    let url = state.community_url(package)?;
+    package.community.as_ref().map(|community| PackageCommunityResponse {
+        url,
+        category_id: community.category_id,
+        category_slug: community.category_slug.clone(),
+    })
 }
 
 pub(super) fn dependencies(metadata: &PackageManifestMetadata) -> Vec<PackageDependencyResponse> {

@@ -1,8 +1,9 @@
 use std::io::{Cursor, Write};
 
 use beskid_pckg_artifacts::{
-    ArtifactBrowser, ArtifactDependency, ArtifactError, ArtifactRecord, LocalFileArtifactStore, PackageArtifactStore,
-    PackageKind, PublishRequest, canonicalize_project_dependencies, select_download, validate_package_artifact,
+    ArtifactBrowser, ArtifactDependency, ArtifactError, ArtifactFileContent, ArtifactRecord, LocalFileArtifactStore,
+    MAX_BROWSE_READ_BYTES, PackageArtifactStore, PackageKind, PublishRequest, canonicalize_project_dependencies,
+    select_download, validate_package_artifact,
 };
 use sha2::{Digest, Sha256};
 use zip::write::SimpleFileOptions;
@@ -269,14 +270,18 @@ fn download_selection_uses_highest_non_yanked_semver() {
 }
 
 #[test]
-fn browser_lists_and_reads_documentation_source_and_metadata() {
+fn browser_lists_and_reads_documentation_source_and_api_docs() {
     let artifact = archive_with_files(
         "acme.math",
         "1.2.3",
         &[
             ("README.md", "# Acme Math\n"),
             ("docs/guide.md", "Use `acme.math`.\n"),
-            (".beskid/docs/metadata.json", r#"{"title":"Acme Math","order":1}"#),
+            (
+                ".beskid/docs/api.json",
+                r#"{"schemaVersion":4,"navigationModel":"graph-v1","generator":"t","source":"src/main.bd","items":[]}"#,
+            ),
+            ("LICENSE", "Apache-2.0\n"),
             ("src/internal/add.bd", "fn add() {}\n"),
         ],
     );
@@ -286,7 +291,7 @@ fn browser_lists_and_reads_documentation_source_and_metadata() {
 
     assert_eq!(
         browser.list_docs().unwrap().iter().map(|entry| entry.path.as_str()).collect::<Vec<_>>(),
-        vec!["README.md", ".beskid/docs/metadata.json", "docs/guide.md"]
+        vec!["README.md", ".beskid/docs/api.json", "docs/guide.md"]
     );
     assert_eq!(browser.read_doc("docs/guide.md").unwrap(), "Use `acme.math`.\n");
     assert_eq!(
@@ -296,7 +301,41 @@ fn browser_lists_and_reads_documentation_source_and_metadata() {
     assert_eq!(browser.read_source("src/internal/add.bd").unwrap(), "fn add() {}\n");
     let documentation = browser.documentation().unwrap();
     assert_eq!(documentation.readme.as_deref(), Some("# Acme Math\n"));
-    assert_eq!(documentation.metadata.unwrap()["title"], "Acme Math");
+    assert_eq!(documentation.api.unwrap()["schemaVersion"], 4);
+    assert_eq!(
+        browser.list_files().iter().map(|entry| entry.path.as_str()).collect::<Vec<_>>(),
+        vec![
+            ".beskid/docs/api.json",
+            "LICENSE",
+            "README.md",
+            "acme_math.bproj",
+            "checksums.sha256",
+            "docs/guide.md",
+            "package.json",
+            "src/internal/add.bd",
+            "src/main.bd",
+        ]
+    );
+    let license = browser.read_file("LICENSE").unwrap();
+    assert_eq!(license.size_bytes, 11);
+    assert_eq!(license.content, ArtifactFileContent::Text("Apache-2.0\n".into()));
+}
+
+#[test]
+fn browser_reads_binary_and_oversized_files_without_decoding_them() {
+    let oversized = "x".repeat(1024 * 1024 + 1);
+    let artifact =
+        archive_with_files("acme.math", "1.2.3", &[("assets/big.txt", &oversized), ("assets/blob.bin", "a\0b")]);
+    let validated = validate_package_artifact(&artifact, "acme.math", "1.2.3").unwrap();
+    let browser = ArtifactBrowser::from_validated_bytes(&artifact, &validated).unwrap();
+
+    assert_eq!(browser.read_file("assets/blob.bin").unwrap().content, ArtifactFileContent::Binary);
+    assert!(matches!(
+        browser.read_file("assets/big.txt").unwrap().content,
+        ArtifactFileContent::TooLarge { limit_bytes } if limit_bytes == MAX_BROWSE_READ_BYTES
+    ));
+    assert!(matches!(browser.read_file("assets/../package.json"), Err(ArtifactError::ForbiddenBrowsePath)));
+    assert!(matches!(browser.read_file("assets/missing.txt"), Err(ArtifactError::EntryNotFound)));
 }
 
 #[test]
@@ -328,21 +367,25 @@ fn browser_indexes_docs_without_rejecting_safe_unrelated_artifact_entries() {
 
 #[test]
 fn browser_rejects_hidden_and_traversal_reads() {
-    let artifact =
-        archive_with_files("acme.math", "1.2.3", &[("docs/.draft.md", "not public"), ("src/.secret.bd", "not public")]);
-    let validated = validate_package_artifact(&artifact, "acme.math", "1.2.3").unwrap();
+    for hidden in ["docs/.draft.md", "src/.secret.bd", "src/.beskid/private.bd"] {
+        let artifact = archive_with_files("acme.math", "1.2.3", &[(hidden, "not public")]);
+        let validated = validate_package_artifact(&artifact, "acme.math", "1.2.3").unwrap();
+        assert!(
+            matches!(
+                ArtifactBrowser::from_validated_bytes(&artifact, &validated),
+                Err(ArtifactError::UnsafeBrowseEntry(path)) if path == hidden
+            ),
+            "{hidden} inside the public docs/source trees must make the artifact unbrowseable"
+        );
+    }
 
-    assert!(matches!(
-        ArtifactBrowser::from_validated_bytes(&artifact, &validated),
-        Err(ArtifactError::UnsafeBrowseEntry(_))
-    ));
-
-    let nested_hidden = archive_with_files("acme.math", "1.2.3", &[("src/.beskid/private.bd", "not public")]);
-    let validated = validate_package_artifact(&nested_hidden, "acme.math", "1.2.3").unwrap();
-    assert!(matches!(
-        ArtifactBrowser::from_validated_bytes(&nested_hidden, &validated),
-        Err(ArtifactError::UnsafeBrowseEntry(_))
-    ));
+    let unrelated_hidden =
+        archive_with_files("acme.math", "1.2.3", &[(".gitignore", "obj/"), ("assets/.cache/blob", "x")]);
+    let validated = validate_package_artifact(&unrelated_hidden, "acme.math", "1.2.3").unwrap();
+    let browser = ArtifactBrowser::from_validated_bytes(&unrelated_hidden, &validated).unwrap();
+    assert!(browser.list_files().iter().all(|entry| !entry.path.starts_with('.') && !entry.path.contains("/.")));
+    assert!(matches!(browser.read_file(".gitignore"), Err(ArtifactError::ForbiddenBrowsePath)));
+    assert!(matches!(browser.read_file("assets/.cache/blob"), Err(ArtifactError::ForbiddenBrowsePath)));
 
     let clean = archive_with_files("acme.math", "1.2.3", &[("docs/guide.md", "safe")]);
     let validated = validate_package_artifact(&clean, "acme.math", "1.2.3").unwrap();

@@ -33,7 +33,8 @@ mod versions;
 
 pub use self::artifacts::download_artifact;
 pub use self::catalog::{
-    delete_package, list_packages, list_publishers, package_detail, publisher_packages, search_packages, upsert_package,
+    delete_package, list_packages, list_publishers, package_community, package_detail, publisher_packages,
+    reconcile_community, search_packages, upsert_package,
 };
 pub use self::publishing::publish_version;
 pub use self::reviews::{create_community_review, list_community_reviews};

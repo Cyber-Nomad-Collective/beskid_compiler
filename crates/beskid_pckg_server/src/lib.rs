@@ -3,12 +3,17 @@
 mod admin_routes;
 mod api_key_routes;
 mod artifact_routes;
+mod community;
 mod embed;
 mod operations_routes;
 mod packages;
 mod server;
 mod workspace_review_routes;
 
+pub use self::community::{
+    CommunityConfig, CommunityError, CreateCategoryRequest, HttpNodebbClient, NodebbCategory, NodebbCategoryStats,
+    NodebbClient,
+};
 pub(crate) use self::server::{
     AppState, authenticated_principal, authenticated_publisher_subject, authenticated_subject, format_timestamp,
     now_unix_seconds, unauthorized_response,

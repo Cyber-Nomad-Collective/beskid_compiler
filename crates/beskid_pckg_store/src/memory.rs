@@ -1,9 +1,9 @@
 use std::collections::BTreeMap;
 
 use crate::package::{
-    NewPackage, Package, PackageRepository, PackageVersion, PublishOutcome, PublishVersion, StoreError,
-    validate_checksum, validate_manifest_metadata, validate_package_metadata, validate_package_name, validate_subject,
-    validate_version,
+    NewPackage, Package, PackageCommunity, PackageRepository, PackageVersion, PublishOutcome, PublishVersion,
+    StoreError, validate_checksum, validate_community, validate_manifest_metadata, validate_package_metadata,
+    validate_package_name, validate_subject, validate_version,
 };
 
 /// Deterministic test double. The Postgres adapter must preserve the outcomes
@@ -28,6 +28,7 @@ impl PackageRepository for InMemoryPackageRepository {
             owner_subject: request.owner_subject,
             is_public: request.is_public,
             metadata: request.metadata,
+            community: None,
             created_at_unix_seconds: request.now_unix_seconds,
             updated_at_unix_seconds: request.now_unix_seconds,
         };
@@ -102,5 +103,12 @@ impl PackageRepository for InMemoryPackageRepository {
         entity.is_yanked = yanked;
         entity.yanked_at_unix_seconds = yanked.then_some(now_unix_seconds);
         Ok(entity.clone())
+    }
+
+    fn set_community(&mut self, name: &str, community: PackageCommunity) -> Result<Package, StoreError> {
+        validate_community(&community)?;
+        let package = self.packages_by_name.get_mut(name).ok_or(StoreError::PackageNotFound)?;
+        package.community = Some(community);
+        Ok(package.clone())
     }
 }

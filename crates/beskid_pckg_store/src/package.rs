@@ -13,8 +13,32 @@ pub struct Package {
     pub owner_subject: String,
     pub is_public: bool,
     pub metadata: PackageMetadata,
+    /// NodeBB discussion category linked on first public creation or by an
+    /// administrator reconciliation; `None` until the community sync succeeds.
+    pub community: Option<PackageCommunity>,
     pub created_at_unix_seconds: i64,
     pub updated_at_unix_seconds: i64,
+}
+
+/// Identity of a package's NodeBB discussion category.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PackageCommunity {
+    pub category_id: i64,
+    pub category_slug: String,
+}
+
+impl PackageCommunity {
+    /// Projects persisted community columns; a row is linked only when both
+    /// the category id and slug are present, so a half-written link never
+    /// surfaces.
+    pub fn from_columns(category_id: Option<i64>, category_slug: Option<String>) -> Option<Self> {
+        match (category_id, category_slug) {
+            (Some(category_id), Some(category_slug)) if category_id > 0 && !category_slug.trim().is_empty() => {
+                Some(Self { category_id, category_slug })
+            }
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -98,6 +122,7 @@ pub enum StoreError {
     VersionAlreadyYanked,
     VersionNotYanked,
     InvalidIdentifier,
+    InvalidCommunity,
     Database(String),
 }
 
@@ -116,6 +141,8 @@ pub trait PackageRepository {
         yanked: bool,
         now_unix_seconds: i64,
     ) -> Result<PackageVersion, StoreError>;
+    /// Records the NodeBB category linked to a package.
+    fn set_community(&mut self, name: &str, community: PackageCommunity) -> Result<Package, StoreError>;
 }
 
 /// Async counterpart to [`PackageRepository`] for networked persistence.
@@ -140,6 +167,8 @@ pub trait AsyncPackageRepository: Send + Sync {
         yanked: bool,
         now_unix_seconds: i64,
     ) -> Result<PackageVersion, StoreError>;
+    /// Records the NodeBB category linked to a package.
+    async fn set_community(&self, name: &str, community: PackageCommunity) -> Result<Package, StoreError>;
 }
 
 /// PostgreSQL implementation of the package repository contract.
@@ -194,6 +223,7 @@ impl AsyncPackageRepository for SqlxPackageRepository {
                 owner_subject: request.owner_subject,
                 is_public: request.is_public,
                 metadata: request.metadata,
+                community: None,
                 created_at_unix_seconds: request.now_unix_seconds,
                 updated_at_unix_seconds: request.now_unix_seconds,
             }),
@@ -204,7 +234,7 @@ impl AsyncPackageRepository for SqlxPackageRepository {
 
     async fn find_package(&self, name: &str) -> Result<Option<Package>, StoreError> {
         let row = sqlx::query_as::<_, PackageRow>(
-            "SELECT id, name, owner_subject, is_public, description, category, repository_url, website_url, tags, icon_url, created_at_utc, updated_at_utc \
+            "SELECT id, name, owner_subject, is_public, description, category, repository_url, website_url, tags, icon_url, community_category_id, community_category_slug, created_at_utc, updated_at_utc \
              FROM pckg_packages WHERE name = $1",
         )
         .bind(name)
@@ -373,6 +403,24 @@ impl AsyncPackageRepository for SqlxPackageRepository {
         transaction.commit().await.map_err(database_error)?;
         Ok(row.into_domain())
     }
+
+    async fn set_community(&self, name: &str, community: PackageCommunity) -> Result<Package, StoreError> {
+        validate_community(&community)?;
+        let category_id = i32::try_from(community.category_id).map_err(|_| StoreError::InvalidCommunity)?;
+        let updated = sqlx::query(
+            "UPDATE pckg_packages SET community_category_id = $2, community_category_slug = $3 WHERE name = $1",
+        )
+        .bind(name)
+        .bind(category_id)
+        .bind(&community.category_slug)
+        .execute(&self.pool)
+        .await
+        .map_err(database_error)?;
+        if updated.rows_affected() == 0 {
+            return Err(StoreError::PackageNotFound);
+        }
+        self.find_package(name).await?.ok_or(StoreError::PackageNotFound)
+    }
 }
 
 #[derive(sqlx::FromRow)]
@@ -387,6 +435,8 @@ struct PackageRow {
     website_url: Option<String>,
     tags: Vec<String>,
     icon_url: Option<String>,
+    community_category_id: Option<i32>,
+    community_category_slug: Option<String>,
     created_at_utc: DateTime<Utc>,
     updated_at_utc: DateTime<Utc>,
 }
@@ -406,6 +456,10 @@ impl PackageRow {
                 tags: self.tags,
                 icon_url: self.icon_url,
             },
+            community: PackageCommunity::from_columns(
+                self.community_category_id.map(i64::from),
+                self.community_category_slug,
+            ),
             created_at_unix_seconds: self.created_at_utc.timestamp(),
             updated_at_unix_seconds: self.updated_at_utc.timestamp(),
         }
@@ -492,6 +546,18 @@ pub(super) fn validate_package_metadata(metadata: &PackageMetadata) -> Result<()
         && metadata.icon_url.as_deref().is_none_or(valid_url)
         && valid_tags;
     valid.then_some(()).ok_or(StoreError::InvalidPackageMetadata)
+}
+
+pub(crate) fn validate_community(community: &PackageCommunity) -> Result<(), StoreError> {
+    let slug = community.category_slug.as_str();
+    if community.category_id <= 0
+        || slug.is_empty()
+        || slug.len() > 255
+        || !slug.bytes().all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'/'))
+    {
+        return Err(StoreError::InvalidCommunity);
+    }
+    Ok(())
 }
 
 pub(super) fn validate_subject(subject: &str) -> Result<(), StoreError> {

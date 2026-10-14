@@ -29,8 +29,8 @@ pub use operations::{
     RegistryOperationsStoreError, WeeklySpotlightRun,
 };
 pub use package::{
-    AsyncPackageRepository, NewPackage, Package, PackageMetadata, PackageRepository, PackageVersion, PublishOutcome,
-    PublishVersion, SqlxPackageRepository, StoreError,
+    AsyncPackageRepository, NewPackage, Package, PackageCommunity, PackageMetadata, PackageRepository, PackageVersion,
+    PublishOutcome, PublishVersion, SqlxPackageRepository, StoreError,
 };
 pub use package_reviews::{AsyncPackageCommunityReviewRepository, PackageCommunityReview, PackageCommunityReviewError};
 

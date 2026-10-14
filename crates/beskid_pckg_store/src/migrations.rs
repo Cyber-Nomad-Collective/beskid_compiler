@@ -34,6 +34,9 @@ pub const CREATE_PACKAGE_COMMUNITY_REVIEWS: &str =
 /// pre-migration rows as an empty description, General category and no tags.
 pub const ADD_PACKAGE_METADATA: &str = include_str!("../migrations/0011_add_package_metadata.sql");
 
+/// Links packages to their NodeBB discussion category; NodeBB keeps the posts.
+pub const ADD_PACKAGE_COMMUNITY: &str = include_str!("../migrations/0012_add_package_community.sql");
+
 pub const ALL: &[(&str, &str)] = &[
     ("0001_create_package_registry", CREATE_PACKAGE_REGISTRY),
     ("0005_create_api_keys", CREATE_API_KEYS),
@@ -42,6 +45,7 @@ pub const ALL: &[(&str, &str)] = &[
     ("0009_create_registry_operations", CREATE_REGISTRY_OPERATIONS),
     ("0010_create_package_community_reviews", CREATE_PACKAGE_COMMUNITY_REVIEWS),
     ("0011_add_package_metadata", ADD_PACKAGE_METADATA),
+    ("0012_add_package_community", ADD_PACKAGE_COMMUNITY),
 ];
 
 impl SqlxPackageRepository {

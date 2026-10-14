@@ -15,6 +15,12 @@ fn row_package(row: sqlx::postgres::PgRow) -> Result<Package, StoreError> {
             tags: row.try_get("tags").map_err(|error| StoreError::Database(error.to_string()))?,
             icon_url: row.try_get("icon_url").map_err(|error| StoreError::Database(error.to_string()))?,
         },
+        community: beskid_pckg_store::PackageCommunity::from_columns(
+            row.try_get::<Option<i32>, _>("community_category_id")
+                .map_err(|error| StoreError::Database(error.to_string()))?
+                .map(i64::from),
+            row.try_get("community_category_slug").map_err(|error| StoreError::Database(error.to_string()))?,
+        ),
         created_at_unix_seconds: row.try_get("created_at").map_err(|error| StoreError::Database(error.to_string()))?,
         updated_at_unix_seconds: row.try_get("updated_at").map_err(|error| StoreError::Database(error.to_string()))?,
     })
@@ -38,7 +44,7 @@ fn row_version(row: sqlx::postgres::PgRow) -> Result<PackageVersion, StoreError>
     })
 }
 
-const PACKAGE_SELECT: &str = "SELECT id::text AS id, name, owner_subject, is_public, description, category, repository_url, website_url, tags, icon_url, EXTRACT(EPOCH FROM created_at_utc)::bigint AS created_at, EXTRACT(EPOCH FROM updated_at_utc)::bigint AS updated_at FROM pckg_packages";
+const PACKAGE_SELECT: &str = "SELECT id::text AS id, name, owner_subject, is_public, description, category, repository_url, website_url, tags, icon_url, community_category_id, community_category_slug, EXTRACT(EPOCH FROM created_at_utc)::bigint AS created_at, EXTRACT(EPOCH FROM updated_at_utc)::bigint AS updated_at FROM pckg_packages";
 
 const VERSION_SELECT: &str = "SELECT id::text AS id, package_id::text AS package_id, version, checksum_sha256, storage_key, size_bytes, manifest_json, is_yanked, EXTRACT(EPOCH FROM published_at_utc)::bigint AS published_at, EXTRACT(EPOCH FROM yanked_at_utc)::bigint AS yanked_at FROM pckg_package_versions";
 

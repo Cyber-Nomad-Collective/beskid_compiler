@@ -1,7 +1,7 @@
 use super::contracts::{CreatedPackageResponse, DeletePackageResponse, ListQuery, PublisherResponse};
 use super::mapping::{
-    dependencies, health, latest_non_yanked, next_id, now, package_manifest_metadata, package_not_found,
-    package_storage_failure, package_summary, version_summary,
+    community_response, dependencies, health, latest_non_yanked, next_id, now, package_manifest_metadata,
+    package_not_found, package_storage_failure, package_summary, version_summary,
 };
 use super::{
     ApiErrorResponse, AppState, HeaderMap, IntoResponse, Json, NewPackage, PackageArtifactStore,
@@ -9,7 +9,10 @@ use super::{
     Path, Query, Response, State, StatusCode, StoreError, UpsertPackageRequest, authenticated_publisher_subject,
     authenticated_subject,
 };
+use beskid_pckg_auth::SubjectRole;
 use beskid_pckg_store::AsyncAdministrationRepository;
+
+use crate::{authenticated_principal, community::sync_failure_activity};
 
 /// Legacy package index. Results are visibility-filtered before paging so a
 /// private package never leaks through a count or a later page.
@@ -180,7 +183,7 @@ pub async fn package_detail(
     };
     let latest_version = latest_non_yanked(&versions).map(|version| version.version.clone());
     Json(PackageDetailsResponse {
-        package: package_summary(&package, &metadata),
+        package: package_summary(&package, &metadata, community_response(&state, &package)),
         versions: versions.iter().map(|version| version_summary(&package, version)).collect(),
         dependencies: dependencies(&metadata),
         dependents_count: 0,
@@ -244,11 +247,18 @@ pub async fn upsert_package(
         })
         .await
     {
-        Ok(package) => (
-            StatusCode::CREATED,
-            Json(CreatedPackageResponse { id: package.id, name: package.name, owner_user_id: package.owner_subject }),
-        )
-            .into_response(),
+        Ok(package) => {
+            link_new_package_community(&state, &package.owner_subject, &package).await;
+            (
+                StatusCode::CREATED,
+                Json(CreatedPackageResponse {
+                    id: package.id,
+                    name: package.name,
+                    owner_user_id: package.owner_subject,
+                }),
+            )
+                .into_response()
+        }
         Err(StoreError::PackageAlreadyExists) => {
             (StatusCode::CONFLICT, Json(ApiErrorResponse::new("package already exists"))).into_response()
         }
@@ -262,5 +272,125 @@ async fn published_summary(state: &AppState, package: &super::Package) -> Result
         return Ok(None);
     };
     let metadata: PackageManifestMetadata = package_manifest_metadata(package, version).map_err(|_| ())?;
-    Ok(Some(package_summary(package, &metadata)))
+    Ok(Some(package_summary(package, &metadata, community_response(state, package))))
+}
+
+/// Discussion link plus live NodeBB counters for a visible, linked package.
+/// Counters are `null` when NodeBB cannot be reached so the link still renders.
+pub async fn package_community(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(name): Path<String>,
+) -> Response {
+    let subject = authenticated_subject(&state, &headers);
+    let Some(service) = state.community.as_ref() else {
+        return package_not_found();
+    };
+    let package = match state.packages.find_package(&name).await {
+        Ok(Some(package)) if package.is_public || subject.as_deref() == Some(&package.owner_subject) => package,
+        Ok(_) => return package_not_found(),
+        Err(_) => return package_storage_failure(),
+    };
+    let Some(community) = package.community.as_ref() else {
+        return package_not_found();
+    };
+    let stats = service.stats(community).await;
+    Json(PackageCommunityStatusResponse {
+        url: service.category_url(community),
+        category_id: community.category_id,
+        category_slug: community.category_slug.clone(),
+        topic_count: stats.map(|stats| stats.topic_count),
+        post_count: stats.map(|stats| stats.post_count),
+    })
+    .into_response()
+}
+
+/// Creates missing NodeBB categories for every public package. Administrator
+/// repair path for packages created while NodeBB was unavailable or before
+/// the integration was configured.
+pub async fn reconcile_community(State(state): State<AppState>, headers: HeaderMap) -> Response {
+    let Some(principal) = authenticated_principal(&state, &headers) else {
+        return crate::unauthorized_response();
+    };
+    if !principal.has_role(SubjectRole::SuperAdmin) {
+        return (StatusCode::FORBIDDEN, Json(ApiErrorResponse::new("administrator access required"))).into_response();
+    }
+    let Some(service) = state.community.as_ref() else {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(ApiErrorResponse::new("NodeBB community integration is not configured")),
+        )
+            .into_response();
+    };
+    let packages = match state.packages.list_packages(200, 0).await {
+        Ok(packages) => packages,
+        Err(_) => return package_storage_failure(),
+    };
+    let mut linked = Vec::new();
+    let mut failed = Vec::new();
+    for package in packages.into_iter().filter(|package| package.is_public && package.community.is_none()) {
+        match service.ensure_linked(&state.packages, &package, &package_page_url(&package.name)).await {
+            Ok(community) => linked.push(CommunityReconcileEntry {
+                package: package.name,
+                url: Some(service.category_url(&community)),
+                error: None,
+            }),
+            Err(error) => {
+                let _ = state
+                    .operations
+                    .append_activity(sync_failure_activity(now(), Some(principal.subject()), &package.name, &error))
+                    .await;
+                failed.push(CommunityReconcileEntry {
+                    package: package.name,
+                    url: None,
+                    error: Some(error.to_string()),
+                });
+            }
+        }
+    }
+    Json(CommunityReconcileResponse { linked, failed }).into_response()
+}
+
+/// Links a freshly created public package to NodeBB. Failures never fail the
+/// creation; they are recorded for the administrator reconcile path.
+async fn link_new_package_community(state: &AppState, subject: &str, package: &super::Package) {
+    let Some(service) = state.community.as_ref() else {
+        return;
+    };
+    if !package.is_public {
+        return;
+    }
+    if let Err(error) = service.ensure_linked(&state.packages, package, &package_page_url(&package.name)).await {
+        let _ =
+            state.operations.append_activity(sync_failure_activity(now(), Some(subject), &package.name, &error)).await;
+    }
+}
+
+fn package_page_url(name: &str) -> String {
+    format!("https://pckg.beskid-lang.org/packages/{name}")
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PackageCommunityStatusResponse {
+    url: String,
+    category_id: i64,
+    category_slug: String,
+    topic_count: Option<u64>,
+    post_count: Option<u64>,
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CommunityReconcileEntry {
+    package: String,
+    url: Option<String>,
+    error: Option<String>,
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CommunityReconcileResponse {
+    linked: Vec<CommunityReconcileEntry>,
+    failed: Vec<CommunityReconcileEntry>,
 }

@@ -8,6 +8,8 @@ use std::{
 use beskid_pckg_auth::AuthMode;
 use beskid_pckg_store::{AsyncApiKeyRepository, validate_release_publisher_key_sha256};
 
+use crate::community::{CommunityConfig, NodebbClient};
+
 #[derive(Clone)]
 pub struct PckgServerConfig {
     pub bind_address: SocketAddr,
@@ -17,6 +19,8 @@ pub struct PckgServerConfig {
     pub(crate) auth: Option<AuthConfig>,
     pub(crate) api_key_repository: Option<Arc<dyn AsyncApiKeyRepository>>,
     pub(crate) release_publisher_key_sha256: Option<String>,
+    pub(crate) community: Option<CommunityConfig>,
+    pub(crate) community_client: Option<Arc<dyn NodebbClient>>,
 }
 
 /// Authentication configuration. pckg is a resource server that trusts
@@ -55,6 +59,8 @@ impl Default for PckgServerConfig {
             auth: None,
             api_key_repository: None,
             release_publisher_key_sha256: None,
+            community: None,
+            community_client: None,
         }
     }
 }
@@ -74,6 +80,9 @@ impl PckgServerConfig {
             .with_database_url(env::var("PCKG_DATABASE_URL").ok())
             .with_bind_address(env::var("PCKG_BIND_ADDRESS").ok())
             .with_release_publisher_key_sha256(env::var("PCKG_RELEASE_PUBLISHER_KEY_SHA256").ok())?;
+        if let Some(community) = CommunityConfig::from_environment()? {
+            config = config.with_community(community);
+        }
         if let Ok(mode) = env::var("SHELL_AUTH_MODE") {
             let mode = AuthMode::parse(&mode)
                 .map_err(|error| ServerStartupError(format!("invalid SHELL_AUTH_MODE: {error}")))?;
@@ -146,6 +155,20 @@ impl PckgServerConfig {
             self.release_publisher_key_sha256 = Some(token_sha256);
         }
         Ok(self)
+    }
+
+    /// Enables the NodeBB community integration over HTTP.
+    pub fn with_community(mut self, community: CommunityConfig) -> Self {
+        self.community = Some(community);
+        self
+    }
+
+    /// Enables the NodeBB community integration over an injected transport.
+    /// Intended for tests; production uses [`Self::with_community`].
+    pub fn with_community_client(mut self, community: CommunityConfig, client: Arc<dyn NodebbClient>) -> Self {
+        self.community = Some(community);
+        self.community_client = Some(client);
+        self
     }
 
     pub(crate) fn with_auth(mut self, auth: AuthConfig) -> Self {

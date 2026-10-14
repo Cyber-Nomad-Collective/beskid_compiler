@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- pckg: browse every file of a verified package artifact through
+  `GET /api/packages/{name}/versions/{version}/files` and
+  `.../files/content?path=`; hidden, traversal and unknown paths stay
+  not-found and binary or oversized entries are described without bytes.
+- pckg: registry-owned NodeBB community linking. A public package gets one
+  discussion category on creation (`PCKG_NODEBB_API_URL`,
+  `PCKG_NODEBB_ADMIN_TOKEN`, `PCKG_NODEBB_PACKAGES_PARENT_CID`,
+  `PCKG_COMMUNITY_URL`), package summaries carry `community`,
+  `GET /api/packages/{name}/community` serves live counters, and
+  `POST /api/admin/community/reconcile` links packages created while NodeBB
+  was unavailable. Migration `0012_add_package_community`.
+
+### Changed
+
+- pckg: `docs/structured` returns the packed `.beskid/docs/api.json` as
+  `api`; the `metadata` field that never matched the packer is removed. The
+  artifact browser indexes every validated entry for the file browser while
+  still refusing artifacts with hidden segments inside `docs/`, `src/` or
+  `.beskid/docs/`.
+
 ## [0.5.4] - 2026-10-11
 
 ### Added

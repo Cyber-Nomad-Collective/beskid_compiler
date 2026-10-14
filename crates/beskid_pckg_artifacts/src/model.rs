@@ -75,11 +75,30 @@ pub struct BrowseEntry {
     pub size_bytes: u64,
 }
 
-/// Extracted public documentation metadata.  A package may omit either field.
+/// Extracted public documentation.  A package may omit either field; `api`
+/// is the validated `.beskid/docs/api.json` document when the artifact ships one.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ArtifactDocumentation {
     pub readme: Option<String>,
-    pub metadata: Option<Value>,
+    pub api: Option<Value>,
+}
+
+/// One file read from a verified artifact for display.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ArtifactFile {
+    pub path: String,
+    pub size_bytes: u64,
+    pub content: ArtifactFileContent,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ArtifactFileContent {
+    /// UTF-8 text without NUL bytes.
+    Text(String),
+    /// Bytes that are not displayable as text; never returned to clients.
+    Binary,
+    /// The entry exceeds the browse read limit and was not decoded.
+    TooLarge { limit_bytes: u64 },
 }
 
 pub struct PublishRequest<'a> {

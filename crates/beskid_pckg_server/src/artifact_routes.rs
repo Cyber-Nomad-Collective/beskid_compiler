@@ -7,7 +7,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use beskid_pckg_artifacts::{
-    ArtifactBrowser, ArtifactRecord, BrowseEntry, PackageArtifactStore, ValidatedArtifact,
+    ArtifactBrowser, ArtifactFileContent, ArtifactRecord, BrowseEntry, PackageArtifactStore, ValidatedArtifact,
     parse_package_manifest_metadata, select_download,
 };
 use beskid_pckg_contract::ApiErrorResponse;
@@ -34,11 +34,33 @@ struct BrowseEntryResponse {
     size_bytes: u64,
 }
 
+/// README plus the package's generated `api.json` (schema v4 graph model)
+/// when the publisher packed one.
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct StructuredDocumentationResponse {
     readme: Option<String>,
-    metadata: Option<serde_json::Value>,
+    api: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct FileListResponse {
+    package: String,
+    version: String,
+    entries: Vec<BrowseEntryResponse>,
+}
+
+/// One artifact file for display. `encoding` tells the client how to treat
+/// `content`: `utf-8` carries the text, `binary` and `too-large` carry `null`.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct FileContentResponse {
+    path: String,
+    size_bytes: u64,
+    encoding: &'static str,
+    limit_bytes: Option<u64>,
+    content: Option<String>,
 }
 
 pub(crate) async fn list_docs(
@@ -94,7 +116,52 @@ pub(crate) async fn structured_docs(
     };
     match browser.documentation() {
         Ok(documentation) => {
-            Json(StructuredDocumentationResponse { readme: documentation.readme, metadata: documentation.metadata })
+            Json(StructuredDocumentationResponse { readme: documentation.readme, api: documentation.api })
+                .into_response()
+        }
+        Err(_) => hidden_not_found(),
+    }
+}
+
+/// Every displayable file of the verified artifact, in archive path order.
+pub(crate) async fn list_files(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(path): Path<ArtifactPath>,
+) -> Response {
+    let Some((browser, version)) = browser_and_version_for_request(&state, &headers, &path).await else {
+        return hidden_not_found();
+    };
+    Json(FileListResponse {
+        package: path.name,
+        version,
+        entries: browser.list_files().into_iter().map(entry_response).collect(),
+    })
+    .into_response()
+}
+
+/// One displayable file. Path traversal, hidden entries and unknown entries
+/// all answer with the same not-found so the archive layout never leaks.
+pub(crate) async fn read_file(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(path): Path<ArtifactPath>,
+    Query(query): Query<BrowseFileQuery>,
+) -> Response {
+    let Some(browser) = browser_for_request(&state, &headers, &path).await else {
+        return hidden_not_found();
+    };
+    let Some(requested) = query.path.as_deref() else {
+        return hidden_not_found();
+    };
+    match browser.read_file(requested) {
+        Ok(file) => {
+            let (encoding, limit_bytes, content) = match file.content {
+                ArtifactFileContent::Text(text) => ("utf-8", None, Some(text)),
+                ArtifactFileContent::Binary => ("binary", None, None),
+                ArtifactFileContent::TooLarge { limit_bytes } => ("too-large", Some(limit_bytes), None),
+            };
+            Json(FileContentResponse { path: file.path, size_bytes: file.size_bytes, encoding, limit_bytes, content })
                 .into_response()
         }
         Err(_) => hidden_not_found(),
@@ -134,6 +201,15 @@ pub(crate) async fn read_source(
 }
 
 async fn browser_for_request(state: &AppState, headers: &HeaderMap, path: &ArtifactPath) -> Option<ArtifactBrowser> {
+    browser_and_version_for_request(state, headers, path).await.map(|(browser, _)| browser)
+}
+
+/// Resolves the browser together with the concrete version `latest` mapped to.
+async fn browser_and_version_for_request(
+    state: &AppState,
+    headers: &HeaderMap,
+    path: &ArtifactPath,
+) -> Option<(ArtifactBrowser, String)> {
     let subject = authenticated_subject(state, headers);
     let package = state.packages.find_package(&path.name).await.ok()??;
     if !package.is_public && subject.as_deref() != Some(&package.owner_subject) {
@@ -145,7 +221,8 @@ async fn browser_for_request(state: &AppState, headers: &HeaderMap, path: &Artif
     }
     let bytes = state.artifacts.open(&version.storage_key).ok()?;
     let metadata = parse_package_manifest_metadata(&version.manifest_json, &package.name, &version.version).ok()?;
-    ArtifactBrowser::from_validated_bytes(
+    let resolved_version = version.version.clone();
+    let browser = ArtifactBrowser::from_validated_bytes(
         &bytes,
         &ValidatedArtifact {
             package_name: package.name,
@@ -156,7 +233,8 @@ async fn browser_for_request(state: &AppState, headers: &HeaderMap, path: &Artif
             metadata,
         },
     )
-    .ok()
+    .ok()?;
+    Some((browser, resolved_version))
 }
 
 async fn resolve_version(state: &AppState, package: &Package, requested: &str) -> Option<PackageVersion> {

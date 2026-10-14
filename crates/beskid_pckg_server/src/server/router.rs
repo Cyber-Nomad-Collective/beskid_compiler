@@ -17,7 +17,9 @@ use super::backend_memory::PackageBackend;
 use super::config::{PckgServerConfig, ServerStartupError};
 use super::model::AppState;
 use crate::{
-    admin_routes, api_key_routes, artifact_routes, embed, operations_routes, packages, workspace_review_routes,
+    admin_routes, api_key_routes, artifact_routes,
+    community::{CommunityService, HttpNodebbClient},
+    embed, operations_routes, packages, workspace_review_routes,
 };
 
 /// Builds the in-memory server used by unit tests and explicitly database-free
@@ -77,6 +79,13 @@ fn router_with_backend(config: PckgServerConfig, packages: PackageBackend) -> Ro
         PackageBackend::Sqlx(repository) => operations_routes::OperationsState::sqlx(repository.clone()),
         PackageBackend::InMemory(_) => operations_routes::OperationsState::in_memory(),
     };
+    let community = config.community.as_ref().map(|settings| {
+        let client = config
+            .community_client
+            .clone()
+            .unwrap_or_else(|| Arc::new(HttpNodebbClient::new(settings)) as Arc<dyn crate::community::NodebbClient>);
+        Arc::new(CommunityService::new(client, &settings.public_url, settings.packages_parent_cid))
+    });
     let api_keys = moderation_repository.clone();
     let api_key_auth = config.api_key_repository.clone().or_else(|| {
         moderation_repository.as_ref().map(|repository| Arc::clone(repository) as Arc<dyn AsyncApiKeyRepository>)
@@ -95,6 +104,7 @@ fn router_with_backend(config: PckgServerConfig, packages: PackageBackend) -> Ro
             "/api/packages/{name}/community-reviews",
             get(packages::list_community_reviews).post(packages::create_community_review),
         )
+        .route("/api/packages/{name}/community", get(packages::package_community))
         .route("/api/packages/{idOrName}", get(packages::package_detail).delete(packages::delete_package))
         .route("/api/packages/{name}/versions", get(packages::list_versions).post(packages::publish_version))
         .route("/api/packages/{name}/versions/{version}/yank", axum::routing::post(packages::yank_version))
@@ -106,6 +116,8 @@ fn router_with_backend(config: PckgServerConfig, packages: PackageBackend) -> Ro
         .route("/api/packages/{name}/versions/{version}/docs/structured", get(artifact_routes::structured_docs))
         .route("/api/packages/{name}/versions/{version}/source/tree", get(artifact_routes::source_tree))
         .route("/api/packages/{name}/versions/{version}/source/file", get(artifact_routes::read_source))
+        .route("/api/packages/{name}/versions/{version}/files", get(artifact_routes::list_files))
+        .route("/api/packages/{name}/versions/{version}/files/content", get(artifact_routes::read_file))
         .route(
             "/api/packages/{name}/review-requests",
             axum::routing::post(workspace_review_routes::submit_review_request),
@@ -126,6 +138,7 @@ fn router_with_backend(config: PckgServerConfig, packages: PackageBackend) -> Ro
             "/api/admin/packages/{name}/versions/{version}/review",
             axum::routing::post(admin_routes::review_package_version),
         )
+        .route("/api/admin/community/reconcile", axum::routing::post(packages::reconcile_community))
         .merge(operations_routes::router())
         .route("/api", any(api_not_found))
         .route("/api/{*path}", any(api_not_found))
@@ -137,6 +150,7 @@ fn router_with_backend(config: PckgServerConfig, packages: PackageBackend) -> Ro
             api_key_auth,
             reviews: workspace_review_routes::ReviewQueueState::default(),
             operations,
+            community,
         })
         .fallback_service(ServeDir::new(web_root).fallback(ServeFile::new(index)))
 }

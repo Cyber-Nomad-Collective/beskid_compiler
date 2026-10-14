@@ -27,7 +27,12 @@ fn artifact_with_browsable_content(name: &str, version: &str, include_nested_hid
         (project_manifest.as_str(), project.into_bytes()),
         ("README.md", b"# Public Demo\n".to_vec()),
         ("docs/guide.md", b"Use `public.demo`.\n".to_vec()),
-        (".beskid/docs/metadata.json", br#"{"title":"Public Demo"}"#.to_vec()),
+        (
+            ".beskid/docs/api.json",
+            br#"{"schemaVersion":4,"navigationModel":"graph-v1","generator":"test","source":"src/main.bd","items":[{"id":1,"qualifiedName":"Main","name":"Main","kind":"module","visibility":"public","location":{"file":"src/main.bd","startLine":1,"startColumn":1,"endLine":1,"endColumn":1}}]}"#.to_vec(),
+        ),
+        ("LICENSE", b"Apache-2.0\n".to_vec()),
+        ("assets/logo.bin", b"\x89PNG\x00\x01".to_vec()),
         ("src/main.bd", b"module Main\n".to_vec()),
         ("Project.lock", b"lock data".to_vec()),
         ("package-icon.svg", b"<svg></svg>".to_vec()),
@@ -348,7 +353,10 @@ async fn public_package_artifact_browse_routes_expose_only_verified_docs_and_sou
         .await
         .unwrap();
     assert_eq!(metadata.status(), StatusCode::OK);
-    assert_eq!(json(metadata).await["metadata"]["title"], "Public Demo");
+    let metadata = json(metadata).await;
+    assert_eq!(metadata["readme"], "# Public Demo\n");
+    assert_eq!(metadata["api"]["schemaVersion"], 4);
+    assert_eq!(metadata["api"]["items"][0]["kind"], "module");
 
     let traversal = app
         .oneshot(
@@ -397,5 +405,110 @@ async fn nested_hidden_document_is_not_served_by_public_browse_routes() {
         .await
         .unwrap();
     assert_eq!(docs.status(), StatusCode::NOT_FOUND);
+    std::fs::remove_dir_all(root).expect("artifact root is removed");
+}
+
+#[tokio::test]
+async fn package_file_browser_lists_every_visible_file_and_guards_binary_and_traversal_reads() {
+    let root = std::env::temp_dir().join(format!("pckg-artifact-files-{}", std::process::id()));
+    let app = router(config(&root));
+    let artifact = artifact_with_browsable_content("Public.Demo", "1.0.0", false);
+
+    for request in [
+        Request::post("/api/packages")
+            .header("content-type", "application/json")
+            .header("remote-user", "owner")
+            .body(Body::from(r#"{"name":"Public.Demo","isPublic":true,"submitForReview":false}"#))
+            .unwrap(),
+        multipart_publish_request("Public.Demo", "1.0.0", "owner", artifact),
+    ] {
+        assert!(app.clone().oneshot(request).await.unwrap().status().is_success());
+    }
+
+    let listing = app
+        .clone()
+        .oneshot(Request::get("/api/packages/Public.Demo/versions/latest/files").body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(listing.status(), StatusCode::OK);
+    let listing = json(listing).await;
+    assert_eq!(listing["package"], "Public.Demo");
+    assert_eq!(listing["version"], "1.0.0", "latest resolves to the concrete version");
+    let paths = listing["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|entry| entry["path"].as_str().unwrap().to_owned())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        paths,
+        vec![
+            ".beskid/docs/api.json",
+            "LICENSE",
+            "Project.lock",
+            "README.md",
+            "assets/logo.bin",
+            "checksums.sha256",
+            "docs/guide.md",
+            "package-icon.svg",
+            "package.json",
+            "public_demo.bproj",
+            "src/main.bd",
+            "tests/smoke.bd",
+        ]
+    );
+    assert_eq!(listing["entries"][1]["sizeBytes"], 11);
+
+    let text = app
+        .clone()
+        .oneshot(
+            Request::get("/api/packages/Public.Demo/versions/1.0.0/files/content?path=src%2Fmain.bd")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(text.status(), StatusCode::OK);
+    let text = json(text).await;
+    assert_eq!(text["encoding"], "utf-8");
+    assert_eq!(text["content"], "module Main\n");
+    assert_eq!(text["sizeBytes"], 12);
+
+    let binary = app
+        .clone()
+        .oneshot(
+            Request::get("/api/packages/Public.Demo/versions/1.0.0/files/content?path=assets%2Flogo.bin")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(binary.status(), StatusCode::OK);
+    let binary = json(binary).await;
+    assert_eq!(binary["encoding"], "binary");
+    assert!(binary["content"].is_null(), "binary bytes are never returned");
+
+    for hidden in ["src%2F..%2Fpackage.json", "..%2Fetc%2Fpasswd", "%2Fpackage.json", "missing.txt", ""] {
+        let response = app
+            .clone()
+            .oneshot(
+                Request::get(format!("/api/packages/Public.Demo/versions/1.0.0/files/content?path={hidden}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND, "{hidden} must stay hidden");
+    }
+    let no_path = app
+        .clone()
+        .oneshot(Request::get("/api/packages/Public.Demo/versions/1.0.0/files/content").body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(no_path.status(), StatusCode::NOT_FOUND);
+
+    let private_listing =
+        app.oneshot(authed("GET", "/api/packages/Nope.Demo/versions/1.0.0/files", "other")).await.unwrap();
+    assert_eq!(private_listing.status(), StatusCode::NOT_FOUND);
     std::fs::remove_dir_all(root).expect("artifact root is removed");
 }

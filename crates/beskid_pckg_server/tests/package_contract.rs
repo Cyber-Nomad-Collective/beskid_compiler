@@ -43,6 +43,7 @@ fn package(name: &str, is_public: bool) -> PackageSummaryResponse {
         owner_user_id: "owner-1".to_owned(),
         owner_display_name: "Fixture Owner".to_owned(),
         owner_is_publisher_verified: true,
+        community: None,
     }
 }
 
@@ -77,7 +78,7 @@ fn list_and_search_contracts_preserve_the_full_summary_wire_shape() {
             "websiteUrl": "https://example.test", "tags": ["fixtures"], "isPublic": true,
             "totalDownloads": 42, "updatedAtUtc": "2026-07-13T12:00:00Z",
             "pendingReviewsCount": 0, "averageRating": 4.5, "iconUrl": "https://example.test/icon.svg",
-            "ownerUserId": "owner-1", "ownerDisplayName": "Fixture Owner", "ownerIsPublisherVerified": true
+            "ownerUserId": "owner-1", "ownerDisplayName": "Fixture Owner", "ownerIsPublisherVerified": true, "community": null
         }])
     );
     assert_eq!(serde_json::to_value(search).unwrap()["reviewCount"], 3);

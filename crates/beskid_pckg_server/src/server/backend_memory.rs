@@ -5,8 +5,8 @@ use std::{
 
 use beskid_pckg_store::{
     AsyncPackageCommunityReviewRepository, AsyncPackageRepository, InMemoryPackageRepository, NewPackage, Package,
-    PackageCommunityReview, PackageCommunityReviewError, PackageRepository, PackageVersion, PublishOutcome,
-    PublishVersion, SqlxPackageRepository, StoreError,
+    PackageCommunity, PackageCommunityReview, PackageCommunityReviewError, PackageRepository, PackageVersion,
+    PublishOutcome, PublishVersion, SqlxPackageRepository, StoreError,
 };
 
 use super::backend_sql::{sqlx_find_package_by_id, sqlx_list_packages, sqlx_list_versions};
@@ -146,6 +146,17 @@ impl PackageBackend {
                 Ok(versions)
             }
             Self::Sqlx(repository) => sqlx_list_versions(repository, package_id).await,
+        }
+    }
+
+    pub(crate) async fn set_community(&self, name: &str, community: PackageCommunity) -> Result<Package, StoreError> {
+        match self {
+            Self::InMemory(repository) => repository
+                .repository
+                .lock()
+                .expect("package repository mutex is not poisoned")
+                .set_community(name, community),
+            Self::Sqlx(repository) => repository.set_community(name, community).await,
         }
     }
 
