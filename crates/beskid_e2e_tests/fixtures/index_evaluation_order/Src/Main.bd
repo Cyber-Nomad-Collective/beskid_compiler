@@ -1,0 +1,63 @@
+// The array of an indexed place is read after the index and the assigned value are evaluated, so
+// a side effect of either that grows the array (and so replaces it) is seen by the store or read.
+use Core.Collections.Array;
+
+type Table {
+    i64[] values,
+}
+
+// Appends a zero and returns its index. Growth replaces `table.values` with a new array whenever
+// the old one is full.
+i64 Grow(Table table) {
+    Array.Append<i64>(table.values, 0);
+    return Array.Len<i64>(table.values) - 1;
+}
+
+// Appends `value` and returns `result`.
+i64 Push(Table table, i64 value, i64 result) {
+    Array.Append<i64>(table.values, value);
+    return result;
+}
+
+i32 Main() {
+    Table table = Table { values: Array.Empty<i64>() };
+    // Index side effect, store: every round grows the array, several rounds reallocate it.
+    mut i64 round = 0;
+    while round < 20 {
+        table.values[Grow(table)] = round + 100;
+        round = round + 1;
+    }
+    if Array.Len<i64>(table.values) != 20 {
+        return 1;
+    }
+    round = 0;
+    while round < 20 {
+        if table.values[round] != round + 100 {
+            return 2;
+        }
+        round = round + 1;
+    }
+    // Index side effect, read: the new last element (zero) of the grown array.
+    mut i64 reads = 0;
+    while reads < 20 {
+        if table.values[Grow(table)] != 0 {
+            return 3;
+        }
+        reads = reads + 1;
+    }
+    // Value side effect, store: the array is full at 4, 8, ... elements; fill to a power of two
+    // first so the append in `Push` reallocates.
+    Table small = Table { values: [1, 2, 3, 4] };
+    small.values[0] = Push(small, 5, 7);
+    if Array.Len<i64>(small.values) != 5 || small.values[0] != 7 || small.values[4] != 5 {
+        return 4;
+    }
+    // Index and value side effects together: the index grows the array, then the value grows it
+    // again; the store goes to the array after both.
+    Table both = Table { values: [10, 20, 30, 40] };
+    both.values[Grow(both)] = Push(both, 50, 60);
+    if Array.Len<i64>(both.values) != 6 || both.values[4] != 60 || both.values[5] != 50 {
+        return 5;
+    }
+    return 42;
+}

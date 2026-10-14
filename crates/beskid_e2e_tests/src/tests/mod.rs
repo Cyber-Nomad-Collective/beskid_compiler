@@ -23,3 +23,6 @@ mod semantic_matrix;
 
 #[cfg(target_os = "linux")]
 mod workflow_matrix;
+
+#[cfg(target_os = "linux")]
+mod toolchain_gaps;

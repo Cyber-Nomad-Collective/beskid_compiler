@@ -1,0 +1,49 @@
+// Argument strings are ordinary managed strings: every string consumer accepts them directly.
+// Usage: <program> <path> <text>. Writes <text> to stdout in several ways, writes it to <path>,
+// and reads it back.
+use Core.Args;
+use Core.Collections.Array;
+use Core.FS;
+use Core.Output;
+use Core.Results;
+use Core.String;
+
+i32 Main() {
+    string[] all = Args.All();
+    if Array.Len<string>(all) != 3 {
+        return 1;
+    }
+    string path = all[1];
+    string text = all[2];
+    Output.Write(text);
+    Output.WriteLine("");
+    Output.WriteLine(text);
+    Output.WriteLine("${text}|${String.Len(text)}");
+    Output.WriteLine(String.SubSlice(text, 1, 3));
+    match FS.WriteAllText(path, text) {
+        Result::Ok(_) => {},
+        Result::Error(_) => {
+            return 2;
+        },
+    };
+    string back = match FS.ReadAllText(path) {
+        Result::Ok(value) => value,
+        Result::Error(_) => {
+            return 3;
+        },
+    };
+    if back != text {
+        return 4;
+    }
+    match Args.Get(2) {
+        Result::Ok(value) => {
+            if value != text || String.ByteAt(value, 0) != String.ByteAt(text, 0) {
+                return 5;
+            }
+        },
+        Result::Error(_) => {
+            return 6;
+        },
+    };
+    return 42;
+}

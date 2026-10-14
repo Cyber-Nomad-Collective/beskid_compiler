@@ -193,11 +193,23 @@ development log stays under [Unreleased] below.
   `StringMap` lookup from 1.5 µs to 95 ns, an `I64Map` lookup from 1.0 µs to
   55 ns, interpolation from 19.7 µs to 2.6 µs and concatenation from 14.8 µs to
   1.2 µs.
-- `str_concat` and `str_slice` root an operand across the result allocation only
-  when it is a managed string. A string outside the managed heap, such as a
-  `Core.Args` value, cannot be rooted, so `"arg:" + Args.All()[1]` returned a
-  null string and `Output.WriteLine` of it trapped with `Core.Output.Write
-  failed` (release case CLI06-03).
+- `Core.Args` values are managed strings, as the Core.Args specification
+  requires: `__args_get` returns a new managed copy of the argument instead of a
+  view into the argument arena that the platform host maps at startup. Every
+  runtime string consumer assumes a managed string, so an argument could not be
+  rooted (`"arg:" + Args.All()[1]` returned a null string), written to standard
+  output, or used as a file path. The special case in `str_concat` and
+  `str_slice` that skipped rooting strings outside the managed heap is removed.
+- A string index has type `u8` wherever the string comes from. Indexing a
+  string field (`cursor.text[at]`, `this.text[at]`) in a conversion, a
+  comparison or a typed local failed with internal error E2102, and a literal
+  index (`text[5]`) failed CLIF verification.
+- The array of an index expression is read after the index and the assigned
+  value are evaluated (OpenSpec `v06-toolchain-gap-rulings`). A growth in either
+  (`table.values[Grow(table)] = v` where `Grow` appends to `table.values`) no
+  longer stores into the replaced array and traps on the bounds check.
+- `T[][]` parses: an array type takes any number of `[]` suffixes, one array rank
+  each.
 - Binary string operations (`+`, interpolation, `==`, `!=` and ordering) keep the
   left operand rooted while the right operand is evaluated, unless the right
   operand is a plain `string` local. A collection during the right operand's
