@@ -49,32 +49,6 @@ typedef struct ModScope {
  uint32_t rejected_type; int32_t rejected; /* first adapter type whose value could not be encoded */
  struct ModScope *previous;
 } ModScope;
-#if defined(_WIN32)
-/* The Mod DLL links /NOENTRY against import libraries only, so compiler-implicit thread-local
-   storage would need the static CRT's _tls_index. Keep the active scope in a kernel32 TLS slot,
-   as the runtime does. */
-__declspec(dllimport) unsigned long __stdcall TlsAlloc(void);
-__declspec(dllimport) void *__stdcall TlsGetValue(unsigned long);
-__declspec(dllimport) int __stdcall TlsSetValue(unsigned long,void*);
-__declspec(dllimport) int __stdcall InitOnceExecuteOnce(void**,int(__stdcall*)(void**,void*,void**),void*,void**);
-#define MOD_TLS_OUT_OF_INDEXES 0xFFFFFFFFul
-static void *mod_active_once; /* INIT_ONCE_STATIC_INIT is all-zero */
-static unsigned long mod_active_slot=MOD_TLS_OUT_OF_INDEXES;
-static int __stdcall mod_active_init(void **once,void *parameter,void **context) {
- (void)once; (void)parameter; (void)context;
- mod_active_slot=TlsAlloc();
- return mod_active_slot!=MOD_TLS_OUT_OF_INDEXES;
-}
-static int mod_active_ready(void) {
- return InitOnceExecuteOnce(&mod_active_once,mod_active_init,NULL,NULL) && mod_active_slot!=MOD_TLS_OUT_OF_INDEXES;
-}
-static ModScope *mod_active_get(void) { return mod_active_ready() ? (ModScope*)TlsGetValue(mod_active_slot) : NULL; }
-static int mod_active_set(ModScope *s) { return mod_active_ready() && TlsSetValue(mod_active_slot,s); }
-#else
-static _Thread_local ModScope *mod_active;
-static ModScope *mod_active_get(void) { return mod_active; }
-static int mod_active_set(ModScope *s) { mod_active=s; return 1; }
-#endif
 /* Entry status: which stage failed. Encoding adds the exceeded transport bound (`limit`). */
 #define MOD_STATUS_DECODE 1
 #define MOD_STATUS_INVOKE 2
@@ -132,6 +106,8 @@ fn emit_runtime_support(plan: &NativeAdapterPlan, output: &mut String) -> Result
         symbol(name)?;
     }
     output.push_str(C_TRANSPORT);
+    // The active scope is per thread; the slot never uses CRT-implicit TLS on Windows.
+    crate::native_tls::emit_thread_slot("mod_active", "ModScope *", output);
     writeln!(output, "_Static_assert(sizeof(void*)=={},\"adapter target mismatch\");", plan.pointer_bytes)?;
     writeln!(output, "extern void *{}(const uint8_t*,size_t);", runtime.string_construct)?;
     writeln!(output, "extern size_t {}(void*);", runtime.string_length)?;

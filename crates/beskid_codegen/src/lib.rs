@@ -28,6 +28,7 @@ pub mod isle_adapter;
 mod isle_trace;
 pub mod module_emission;
 pub mod native_mod;
+mod native_tls;
 pub mod prepared_syntax;
 pub mod reserved_failure;
 pub mod checked_effect;

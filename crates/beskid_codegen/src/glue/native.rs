@@ -41,8 +41,10 @@ impl CheckedScopeGeometry {
 /// checked invocation entered; checked body counterparts observe it after the call and return, and
 /// the invocation returns the recorded status. Any other scope, or no scope, keeps the trap.
 fn emit_checked_scope_services(scope: &CheckedScopeGeometry, c: &mut String) {
+    // The entered scope is per thread; the slot never uses CRT-implicit TLS on Windows.
+    crate::native_tls::emit_thread_slot("glue_checked_scope", "void *", c);
     c.push_str(&format!(
-        "extern void *beskid_rt_v5_checked_scope_current(void);\nextern uint8_t beskid_rt_v5_checked_scope_enter(void*,size_t);\nextern size_t beskid_rt_v5_checked_scope_failure_reason(void);\nextern void beskid_rt_v5_checked_scope_leave(void*);\n_Static_assert(sizeof(size_t)==8,\"Glue checked scope reason width\");\n#define GLUE_CHECKED_SCOPE_SIZE {}\n#define GLUE_CHECKED_FOREIGN_TAG UINT64_C(0x474c554500000000)\nstatic _Thread_local void *glue_checked_scope=NULL;\nstatic int glue_checked_absorb(int32_t status) {{\n void *scope=beskid_rt_v5_checked_scope_current();\n if(!status || !scope || scope!=glue_checked_scope) return 0;\n size_t *reason=(size_t*)((uint8_t*)scope+{});\n if(!*reason) *reason=(size_t)(GLUE_CHECKED_FOREIGN_TAG|(uint64_t)(uint32_t)status);\n return 1;\n}}\nstatic int32_t glue_checked_status(size_t reason) {{\n if(((uint64_t)reason&UINT64_C(0xffffffff00000000))==GLUE_CHECKED_FOREIGN_TAG) return (int32_t)(uint32_t)reason;\n return 3;\n}}\n",
+        "extern void *beskid_rt_v5_checked_scope_current(void);\nextern uint8_t beskid_rt_v5_checked_scope_enter(void*,size_t);\nextern size_t beskid_rt_v5_checked_scope_failure_reason(void);\nextern void beskid_rt_v5_checked_scope_leave(void*);\n_Static_assert(sizeof(size_t)==8,\"Glue checked scope reason width\");\n#define GLUE_CHECKED_SCOPE_SIZE {}\n#define GLUE_CHECKED_FOREIGN_TAG UINT64_C(0x474c554500000000)\nstatic int glue_checked_absorb(int32_t status) {{\n void *scope=beskid_rt_v5_checked_scope_current();\n if(!status || !scope || scope!=glue_checked_scope_get()) return 0;\n size_t *reason=(size_t*)((uint8_t*)scope+{});\n if(!*reason) *reason=(size_t)(GLUE_CHECKED_FOREIGN_TAG|(uint64_t)(uint32_t)status);\n return 1;\n}}\nstatic int32_t glue_checked_status(size_t reason) {{\n if(((uint64_t)reason&UINT64_C(0xffffffff00000000))==GLUE_CHECKED_FOREIGN_TAG) return (int32_t)(uint32_t)reason;\n return 3;\n}}\n",
         scope.size, scope.failure_reason_offset
     ));
 }
@@ -113,8 +115,8 @@ fn emit_checked_wrappers(manifest: &GlueManifest, c: &mut String) {
         if b.fallible {
             // The reserved failure cell is admitted before the managed arguments are resolved, so
             // its allocation cannot move them; the scope publishes no managed failure value.
-            c.push_str(" size_t checked_root=0; uint8_t checked_entered=0; void *checked_previous=glue_checked_scope; _Alignas(8) uint8_t checked_scope[GLUE_CHECKED_SCOPE_SIZE]; memset(checked_scope,0,sizeof checked_scope);\n");
-            c.push_str(" { static const uint8_t checked_cell_bytes[1]={0}; void *checked_cell=NULL; if(beskid_glue_v1_input_bytes(checked_cell_bytes,0,&checked_cell,&checked_root)) status=3; else if(!beskid_rt_v5_checked_scope_enter(checked_scope,checked_root)) status=3; else {checked_entered=1; glue_checked_scope=checked_scope;} }\n");
+            c.push_str(" size_t checked_root=0; uint8_t checked_entered=0; void *checked_previous=glue_checked_scope_get(); _Alignas(8) uint8_t checked_scope[GLUE_CHECKED_SCOPE_SIZE]; memset(checked_scope,0,sizeof checked_scope);\n");
+            c.push_str(" { static const uint8_t checked_cell_bytes[1]={0}; void *checked_cell=NULL; if(beskid_glue_v1_input_bytes(checked_cell_bytes,0,&checked_cell,&checked_root)) status=3; else if(!beskid_rt_v5_checked_scope_enter(checked_scope,checked_root)) status=3; else if(!glue_checked_scope_set(checked_scope)) {beskid_rt_v5_checked_scope_leave(checked_scope); status=3;} else checked_entered=1; }\n");
         }
         for (index, _) in b.parameters.iter().enumerate().filter(|(_, parameter)| rooted(parameter)) {
             c.push_str(&format!(" managed_{index}=beskid_rt_v5_gc_resolve_handle(root_{index}); if(!managed_{index}) status=2;\n"));
@@ -150,7 +152,7 @@ fn emit_checked_wrappers(manifest: &GlueManifest, c: &mut String) {
         if b.fallible {
             // Leaving restores the prior scope before any result is published; the managed result
             // stays valid because neither leaving nor unrooting the failure cell can collect.
-            c.push_str(" size_t checked_reason=beskid_rt_v5_checked_scope_failure_reason(); beskid_rt_v5_checked_scope_leave(checked_scope); glue_checked_scope=checked_previous; checked_entered=0; gc_unroot_handle(checked_root); checked_root=0;\n if(checked_reason) status=glue_checked_status(checked_reason);\n if(!status) {\n");
+            c.push_str(" size_t checked_reason=beskid_rt_v5_checked_scope_failure_reason(); beskid_rt_v5_checked_scope_leave(checked_scope); glue_checked_scope_set(checked_previous); checked_entered=0; gc_unroot_handle(checked_root); checked_root=0;\n if(checked_reason) status=glue_checked_status(checked_reason);\n if(!status) {\n");
             c.push_str(&publish);
             c.push_str(" }\n");
         } else {
@@ -158,7 +160,7 @@ fn emit_checked_wrappers(manifest: &GlueManifest, c: &mut String) {
         }
         c.push_str(" }\n");
         if b.fallible {
-            c.push_str(" if(checked_entered) {beskid_rt_v5_checked_scope_leave(checked_scope); glue_checked_scope=checked_previous;}\n if(checked_root) gc_unroot_handle(checked_root);\n");
+            c.push_str(" if(checked_entered) {beskid_rt_v5_checked_scope_leave(checked_scope); glue_checked_scope_set(checked_previous);}\n if(checked_root) gc_unroot_handle(checked_root);\n");
         }
         for (index, _) in b.parameters.iter().enumerate().filter(|(_, parameter)| rooted(parameter)) {
             c.push_str(&format!(" gc_unroot_handle(root_{index});\n"));
@@ -589,7 +591,7 @@ mod tests {
         export.fallible = true;
         let (source, _) = emit(&manifest(vec![export.clone(), import.clone()]), &SCOPE).expect("fallible closure");
         let source = String::from_utf8(source).expect("C source");
-        assert!(source.contains("static _Thread_local void *glue_checked_scope=NULL;"), "{source}");
+        assert!(source.contains("static void * glue_checked_scope_get(void)") && !source.contains("__declspec(thread)"), "{source}");
         assert!(source.contains("size_t *reason=(size_t*)((uint8_t*)scope+24);"), "{source}");
         assert!(source.contains(&format!("extern uint64_t {}(uint64_t);", checked_body_symbol(&export))), "{source}");
         assert!(source.contains("beskid_rt_v5_checked_scope_enter(checked_scope,checked_root)"), "{source}");
