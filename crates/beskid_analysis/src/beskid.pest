@@ -313,7 +313,12 @@ TypeAtomScan = _{ ThisType | PrimitiveType | PathScan ~ ("::" ~ Identifier)? }
 PathScan = _{ PathSegmentScan ~ ("." ~ PathSegmentScan)* }
 PathSegmentScan = _{ Identifier ~ GenericArgumentsScan? }
 GenericArgumentsScan = _{ "<" ~ ("=>" | GenericArgumentsScan | ASCII_ALPHANUMERIC | "_" | "," | "." | "(" | ")" | "[" | "]" | ":")* ~ ">" }
-ArrayType = { &(TypeAtomScan ~ "[") ~ TypeAtom ~ "[" ~ "]" }
+// `T[]`, `T[][]`, ...: one array rank per `[]`, innermost first, so `i64[][]` is an array whose
+// elements are `i64[]`. Every rank but the outermost is an `ArraySuffix`; the outermost `[]` ends
+// the rule. A one-rank array therefore keeps its tree, and the rule never ends in skipped
+// whitespace (a trailing repetition would consume the whitespace before trying to match).
+ArrayType = { &(TypeAtomScan ~ "[") ~ TypeAtom ~ (ArraySuffix ~ &("[" ~ "]"))* ~ "[" ~ "]" }
+ArraySuffix = { "[" ~ "]" }
 FunctionType = { &(TypeAtomScan ~ "(") ~ TypeAtom ~ "(" ~ BeskidTypeList? ~ ")" }
 ArrowFunctionType = { "(" ~ BeskidTypeList? ~ ")" ~ "=>" ~ BeskidType }
 BeskidTypeList = { BeskidType ~ ("," ~ BeskidType)* }
