@@ -176,6 +176,15 @@ development log stays under [Unreleased] below.
 
 ## [Unreleased]
 
+### Fixed
+
+- A clean clone builds: `crates/beskid_template/bundled/app/.beskid/template.json`,
+  embedded by `beskid_template`, was excluded by the `.beskid/` ignore rule and
+  never committed. A precise ignore exception now tracks it.
+- `beskid_cli`, `beskid_lsp` and `beskid_up` carry version 0.6.0 in their
+  manifests and `Cargo.lock`, so the release build checks the version instead of
+  editing manifests and `--locked` builds succeed.
+
 ### Removed
 
 - The 0.4 Glue scaffold: `beskid_analysis/src/mod_host/glue.rs` (the no-op
