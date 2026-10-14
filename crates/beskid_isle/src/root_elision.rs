@@ -284,4 +284,26 @@ block0(v0: i64):
         let non_collecting = non_collecting_functions([("ping", &ping), ("pong", &pong)]);
         assert_eq!(non_collecting.len(), 2);
     }
+
+    #[test]
+    fn indirect_call_keeps_roots_even_with_non_collecting_module_functions() {
+        let leaf = parse(LEAF);
+        let mut caller = parse(&CALLER.replace("    v3 = call fn2(v0)\n", "    v3 = call_indirect sig2, v0(v0)\n"));
+        let non_collecting = non_collecting_functions([("leaf", &leaf), ("caller", &caller)]);
+        assert_eq!(non_collecting, HashSet::from(["leaf".to_owned()]));
+        assert_eq!(elide_non_collecting_function_roots(&mut caller, &non_collecting), 0);
+        assert_eq!(elide_non_collecting_function_roots(&mut caller, &HashSet::from(["caller".to_owned()])), 0);
+    }
+
+    /// Every runtime service that allocates, formats, writes or parks, like any other import outside
+    /// the allow-list, can collect: a caller of one keeps its roots.
+    #[test]
+    fn allocating_and_io_runtime_services_count_as_collecting() {
+        for service in ["str_new", "str_concat", "str_slice", "str_from_i64", "syscall_write", "beskid_trap_message", "unknown"] {
+            let (leaf, mut caller) = module(&CALLER.replace("%leaf sig2", &format!("%{service} sig2")));
+            let non_collecting = non_collecting_functions([("leaf", &leaf), ("caller", &caller)]);
+            assert!(!non_collecting.contains("caller"), "{service}: {non_collecting:?}");
+            assert_eq!(elide_non_collecting_function_roots(&mut caller, &non_collecting), 0, "{service}");
+        }
+    }
 }

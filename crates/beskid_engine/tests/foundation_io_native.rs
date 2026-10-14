@@ -196,8 +196,8 @@ fn staged_runtime_kit_emitted_binary_handoffs_core_args_through_the_executable_h
     );
     assert_eq!(
         result.stdout,
-        format!("{}\nalpha\nbeta\n", executable.display()).as_bytes(),
-        "argv-zero, order, and values"
+        format!("{}\nalpha\nbeta\narg:beta:beta\n", executable.display()).as_bytes(),
+        "argv-zero, order, values, and an argument concatenated across collections"
     );
     assert!(result.stderr.is_empty(), "Core.Args executable wrote unexpected stderr");
 
@@ -207,7 +207,7 @@ fn staged_runtime_kit_emitted_binary_handoffs_core_args_through_the_executable_h
         command.args(["zażółć-🙂", "", "final"]);
         let result = run_bounded("Core.Args wide executable", &mut command, ROUTE_LIMIT);
         assert_eq!(result.status.code(), Some(4), "UTF-16 argument capture: {result:?}");
-        assert_eq!(result.stdout, format!("{}\nzażółć-🙂\n\nfinal\n", executable.display()).as_bytes());
+        assert_eq!(result.stdout, format!("{}\nzażółć-🙂\n\nfinal\narg:final:final\n", executable.display()).as_bytes());
         assert!(result.stderr.is_empty());
     }
 }

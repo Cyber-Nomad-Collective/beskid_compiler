@@ -193,6 +193,11 @@ development log stays under [Unreleased] below.
   `StringMap` lookup from 1.5 µs to 95 ns, an `I64Map` lookup from 1.0 µs to
   55 ns, interpolation from 19.7 µs to 2.6 µs and concatenation from 14.8 µs to
   1.2 µs.
+- `str_concat` and `str_slice` root an operand across the result allocation only
+  when it is a managed string. A string outside the managed heap, such as a
+  `Core.Args` value, cannot be rooted, so `"arg:" + Args.All()[1]` returned a
+  null string and `Output.WriteLine` of it trapped with `Core.Output.Write
+  failed` (release case CLI06-03).
 - Binary string operations (`+`, interpolation, `==`, `!=` and ordering) keep the
   left operand rooted while the right operand is evaluated, unless the right
   operand is a plain `string` local. A collection during the right operand's
