@@ -259,9 +259,11 @@ pub(super) struct RegistryClosure<T> {
 /// Requests are processed breadth-first, so every direct request is seen before any transitive one.
 ///
 /// Conflict rule (no range solving): all requests for one package name SHALL name the same registry
-/// and the same requested version text. Two different requests fail closed with a diagnostic naming
-/// both requesters and both coordinates; a workspace `override` aligns them. Requirement cycles
-/// between registry packages are rejected like path dependency cycles.
+/// and the same requested version text. Identical requests from different requesters (a diamond)
+/// share one materialized package. Two different requests fail closed with a diagnostic naming
+/// both requesters and both coordinates; a workspace `override` aligns them. One requester that
+/// requests the same package twice is two declarations for one materialized destination and fails
+/// closed. Requirement cycles between registry packages are rejected like path dependency cycles.
 pub(super) fn ResolveRegistryClosure<T>(
     roots: Vec<RegistryRequest>,
     mut resolve: impl FnMut(&RegistryRequest) -> Result<Option<(T, Vec<RegistryRequest>)>, ProjectError>,
@@ -272,8 +274,17 @@ pub(super) fn ResolveRegistryClosure<T>(
         requires: Vec<String>,
     }
     let mut nodes: BTreeMap<String, Node<T>> = BTreeMap::new();
+    let mut declarations: HashSet<(String, String)> = HashSet::new();
     let mut queue = VecDeque::from(roots);
     while let Some(request) = queue.pop_front() {
+        if !declarations.insert((request.note.requester.clone(), request.Name().to_owned())) {
+            return Err(ProjectError::Validation(format!(
+                "`{}` declares registry package `{}` twice; two declarations cannot share one materialized \
+                 destination",
+                request.note.requester,
+                request.Name()
+            )));
+        }
         if let Some(first) = nodes.get(request.Name()) {
             if first.request.registry != request.registry || first.request.version != request.version {
                 return Err(ProjectError::Validation(format!(
@@ -505,6 +516,30 @@ mod tests {
             for expected in ["`Alpha@1.0.0` requires `Shared@1.0.0`", "`Beta@1.0.0` requires `Shared@2.0.0`", "override"] {
                 assert!(message.contains(expected), "{expected} in {message}");
             }
+        }
+
+        #[test]
+        fn identical_requests_from_two_requesters_share_one_package() {
+            let mut calls = Vec::new();
+            let roots = vec![request("Shared", "1.0.0", "App", true), request("Shared", "1.0.0", "Lib", true)];
+            let closure = ResolveRegistryClosure(roots, |request| {
+                calls.push(request.note.requester.clone());
+                Ok(Some(((), Vec::new())))
+            })
+            .unwrap();
+            assert_eq!(closure.resolved.len(), 1);
+            assert_eq!(calls, ["App"], "one selection per package");
+        }
+
+        #[test]
+        fn one_requester_declaring_a_package_twice_fails_closed_before_unifying() {
+            let roots = vec![request("Shared", "1.0.0", "App", true), request("Shared", "1.0.0", "App", true)];
+            let Err(error) = ResolveRegistryClosure(roots, |_| Ok(Some(((), Vec::new())))) else {
+                panic!("a requester declaring one package twice must fail closed");
+            };
+            let message = error.to_string();
+            assert!(message.contains("`App` declares registry package `Shared` twice"), "{message}");
+            assert!(message.contains("materialized destination"), "{message}");
         }
 
         #[test]
