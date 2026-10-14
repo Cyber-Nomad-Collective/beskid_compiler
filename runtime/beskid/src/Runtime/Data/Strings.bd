@@ -16,6 +16,19 @@ pub pointer StrNew(pointer data, word length) {
     return utf8_view_new(data, length);
 }
 
+// Allocates a string of `length` zero bytes that the runtime fills in place before handing it
+// out (`utf8_view_new` with a null source). Building a result this way copies each byte once and
+// needs no native scratch buffer; the system allocator maps and unmaps whole pages, so a scratch
+// buffer per string cost a pair of system calls.
+pointer StrNewZeroed(word length) {
+    return utf8_view_new(NativePointer(0), length);
+}
+
+// The data address of a string returned by `StrNewZeroed`.
+pointer StrData(pointer value) {
+    return NativePointer(raw_word_load(value));
+}
+
 // Returns the byte length of a string, or 0 for a null handle.
 [Export(Abi:"C", Symbol:"str_len")]
 pub word StrLen(pointer value) {
@@ -103,47 +116,41 @@ pub pointer StrConcat(pointer left, pointer right) {
     }
     word leftLen = raw_word_load(pointer_add(left, 8));
     word rightLen = raw_word_load(pointer_add(right, 8));
-    pointer leftPtr = NativePointer(raw_word_load(left));
-    pointer rightPtr = NativePointer(raw_word_load(right));
     word totalLen = leftLen + rightLen;
     if totalLen < leftLen {
         return NativePointer(0);
     }
-    mut word allocation = totalLen;
-    if allocation == 0 {
-        allocation = 1;
-    }
-    pointer buffer = SystemAllocateScratch(allocation, 1);
-    if buffer == NativePointer(0) {
+    // The result is allocated before the operands are copied, so both stay rooted across the
+    // allocation: the caller may pass temporaries that nothing else references.
+    word leftRoot = GcRootHandle(left);
+    if leftRoot == 0 {
         return NativePointer(0);
     }
-    if totalLen == 0 {
-        raw_byte_store(buffer, 0);
+    word rightRoot = GcRootHandle(right);
+    if rightRoot == 0 {
+        GcUnrootHandle(leftRoot);
+        return NativePointer(0);
     }
-    if leftLen > 0 && leftPtr != NativePointer(0) {
-        memory_copy(buffer, leftPtr, leftLen);
+    pointer result = StrNewZeroed(totalLen);
+    if result != NativePointer(0) {
+        pointer buffer = StrData(result);
+        pointer leftPtr = NativePointer(raw_word_load(left));
+        pointer rightPtr = NativePointer(raw_word_load(right));
+        if leftLen > 0 && leftPtr != NativePointer(0) {
+            memory_copy(buffer, leftPtr, leftLen);
+        }
+        if rightLen > 0 && rightPtr != NativePointer(0) {
+            memory_copy(pointer_add(buffer, leftLen), rightPtr, rightLen);
+        }
     }
-    if rightLen > 0 && rightPtr != NativePointer(0) {
-        memory_copy(pointer_add(buffer, leftLen), rightPtr, rightLen);
-    }
-    pointer result = StrNew(buffer, totalLen);
-    SystemFree(buffer, allocation);
+    GcUnrootHandle(rightRoot);
+    GcUnrootHandle(leftRoot);
     return result;
 }
 
 // Formats a signed integer as a decimal string.
 [Export(Abi:"C", Symbol:"str_from_i64")]
 pub pointer StrFromI64(i64 value) {
-    if value == 0 {
-        pointer buf = SystemAllocateScratch(1, 1);
-        if buf == NativePointer(0) {
-            return NativePointer(0);
-        }
-        raw_byte_store(buf, 48);
-        pointer result = StrNew(buf, 1);
-        SystemFree(buf, 1);
-        return result;
-    }
     // Digits come from the signed value without negating it, so the minimum i64 (whose
     // negation overflows) formats like every other value.
     bool negative = value < 0;
@@ -153,12 +160,20 @@ pub pointer StrFromI64(i64 value) {
         count = count + 1;
         digits = digits / 10;
     }
+    if value == 0 {
+        count = 1;
+    }
     if negative {
         count = count + 1;
     }
-    pointer buf = SystemAllocateScratch(count, 1);
-    if buf == NativePointer(0) {
+    pointer result = StrNewZeroed(count);
+    if result == NativePointer(0) {
         return NativePointer(0);
+    }
+    pointer buf = StrData(result);
+    if value == 0 {
+        raw_byte_store(buf, 48);
+        return result;
     }
     // Fill from the end; `%` truncates toward zero, so a negative value yields negative digits.
     mut word pos = count;
@@ -175,8 +190,6 @@ pub pointer StrFromI64(i64 value) {
     if negative {
         raw_byte_store(buf, 45);
     }
-    pointer result = StrNew(buf, count);
-    SystemFree(buf, count);
     return result;
 }
 

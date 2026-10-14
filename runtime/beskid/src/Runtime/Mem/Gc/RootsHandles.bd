@@ -41,6 +41,12 @@ const PAGE_SIZE = 8192;
 // would overwrite that buffer, and a real report never returns.
 const HEAP_TEST_FORCE_ROOT_STACK_FAILURE = 136;
 
+const HEAP_FAILURE_REASON = 88;
+const HEAP_FAILURE_REQUEST_BYTES = 96;
+const HEAP_FAILURE_NONE = 0;
+const RUNTIME_HEAP_OFFSET = 16;
+const TLS_CHECKED_ALLOCATION_SCOPE_OFFSET = 48;
+
 const ROOT_BLOCK_NEXT = 0;
 const ROOT_BLOCK_COUNT = 8;
 const ROOT_BLOCK_SLOTS = 16;
@@ -108,8 +114,35 @@ pub bool GcTryRegisterRoot(pointer ptrAddr) {
     return true;
 }
 
+// The heap of an attached thread that is outside every checked allocation scope, or null.
+// Root registration and release run on every managed call boundary; this reads the thread
+// state once instead of going through `CheckedScopeFailureReason`, `GcClearAllocationFailure`
+// and `Heap`, which each read it again.
+pointer UncheckedHeap() {
+    pointer thread = CurrentThreadState();
+    if thread == NativePointer(0) { return thread; }
+    if raw_word_load(pointer_add(thread, TLS_CHECKED_ALLOCATION_SCOPE_OFFSET)) != 0 { return NativePointer(0); }
+    word state = raw_word_load(thread);
+    if state == 0 { return NativePointer(0); }
+    return NativePointer(raw_word_load(pointer_add(NativePointer(state), RUNTIME_HEAP_OFFSET)));
+}
+
 [Export(Abi:"C", Symbol:"gc_register_root")]
 pub bool GcRegisterRoot(pointer ptrAddr) {
+    // Fast path: no checked scope and room in the current block. This does exactly what the
+    // general path below does in that case (reset the allocation failure, push the slot).
+    pointer heap = UncheckedHeap();
+    if heap != NativePointer(0) && ptrAddr != NativePointer(0) {
+        word block = raw_word_load(pointer_add(heap, HEAP_ROOT_STACK_CURRENT));
+        word count = raw_word_load(pointer_add(NativePointer(block), ROOT_BLOCK_COUNT));
+        if count < ROOT_BLOCK_CAPACITY {
+            raw_word_store(pointer_add(heap, HEAP_FAILURE_REASON), HEAP_FAILURE_NONE);
+            raw_word_store(pointer_add(heap, HEAP_FAILURE_REQUEST_BYTES), 0);
+            raw_word_store(pointer_add(NativePointer(block), ROOT_BLOCK_SLOTS + count * 8), NativeWord(ptrAddr));
+            raw_word_store(pointer_add(NativePointer(block), ROOT_BLOCK_COUNT), count + 1);
+            return true;
+        }
+    }
     if CheckedScopeFailureReason() != 0 { return false; }
     bool registered = GcTryRegisterRoot(ptrAddr);
     if !registered && GcAllocationFailureReason() == 4 {
@@ -124,7 +157,12 @@ pub bool GcRegisterRoot(pointer ptrAddr) {
 // works, at the cost of a full scan across blocks.
 [Export(Abi:"C", Symbol:"gc_unregister_root")]
 pub unit GcUnregisterRoot(pointer ptrAddr) {
-    pointer heap = Heap();
+    // Read the heap through the thread state directly; `Heap()` costs three nested calls.
+    pointer thread = CurrentThreadState();
+    if thread == NativePointer(0) { return; }
+    word state = raw_word_load(thread);
+    if state == 0 { return; }
+    pointer heap = NativePointer(raw_word_load(pointer_add(NativePointer(state), RUNTIME_HEAP_OFFSET)));
     if heap == NativePointer(0) || ptrAddr == NativePointer(0) { return; }
     pointer current = NativePointer(raw_word_load(pointer_add(heap, HEAP_ROOT_STACK_CURRENT)));
     word currentCount = raw_word_load(pointer_add(current, ROOT_BLOCK_COUNT));

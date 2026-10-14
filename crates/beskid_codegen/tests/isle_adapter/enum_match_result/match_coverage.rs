@@ -200,7 +200,11 @@ fn primitive_scrutinee_matches_lower_by_value() {
     let integer = clif_of(&functions, "Integer");
     assert!(integer.contains("iconst.i64 0") && integer.contains("iconst.i64 7"), "{integer}");
     let text = clif_of(&functions, "Text");
-    assert!(text.contains("str_eq") || text.matches("call").count() >= 2, "string patterns compare content: {text}");
+    // Short literal patterns compare length and bytes in place; no literal is materialized.
+    assert!(
+        text.matches("bxor").count() >= 2 && !text.contains("%str_new") && !text.contains("%str_eq"),
+        "string patterns compare content in place: {text}"
+    );
 }
 
 /// A primitive statement match need not be exhaustive: no applicable arm continues after it.

@@ -10,11 +10,18 @@ pub type Utf8ViewRecord {
 
 [Export(Abi:"C", Symbol:"beskid_rt_v5_utf8_record_construct")]
 pub Utf8ViewRecord Utf8RecordConstruct(pointer source, word length) {
-    mut u8[] payload = Array.Empty<u8>();
-    mut word index = 0;
-    while index < length {
-        Array.Append<u8>(payload, u8(raw_byte_load(pointer_add(source, index))));
-        index = index + 1;
+    // One allocation sized to the text, then a plain byte copy. Growing the payload one
+    // `Array.Append` at a time made every string construction cost a rooted growth protocol
+    // per byte (about 300 ns per byte).
+    // A null source leaves the bytes zero: `StrNewZeroed` fills them before publishing the string.
+    mut u8[] payload = Array.Zeroed<u8>(i64(length));
+    if source != NativePointer(0) {
+        i64 count = i64(length);
+        mut i64 index = 0;
+        while index < count {
+            payload[index] = u8(raw_byte_load(pointer_add(source, word(index))));
+            index = index + 1;
+        }
     }
     return Utf8ViewRecord { payload: payload, data: NativePointer(0), length: length };
 }

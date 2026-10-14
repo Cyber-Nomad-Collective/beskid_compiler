@@ -70,8 +70,10 @@ extern size_t gc_root_handle(void *);
 extern void gc_unroot_handle(size_t);
 extern void *beskid_rt_v5_gc_resolve_handle(size_t);
 
+/* A null source with a nonzero length yields zero bytes, which the canonical runtime
+ * (`StrNewZeroed`) fills in place before the string is handed out. */
 void *beskid_rt_v5_intrinsic_utf8_view_new(void *source, size_t length) {
-    if ((!source && length) || length > INT64_MAX) return NULL;
+    if (length > INT64_MAX) return NULL;
     int checked = beskid_rt_v5_checked_scope_current() != NULL;
     void *record = checked ? beskid_rt_v5_checked_utf8_record_construct(source, length)
                            : beskid_rt_v5_utf8_record_construct(source, length);

@@ -108,7 +108,7 @@ impl IsleContext<'_, '_, '_, '_> {
 
     /// An argument whose lowering emits no call and assigns no local: a plain local read or a
     /// scalar literal.
-    fn is_trivial_call_argument(&self, key: AstNodeKey) -> bool {
+    pub(in crate::context) fn is_trivial_call_argument(&self, key: AstNodeKey) -> bool {
         match self.facts.node_kind(key) {
             Some(NodeKind::PathExpression) => {
                 self.facts.field_index(key).is_none()

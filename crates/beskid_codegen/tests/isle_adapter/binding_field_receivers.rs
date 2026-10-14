@@ -369,10 +369,15 @@ unit Drive(i64[] state) {
     let step = clif_of("Step");
     assert_eq!(calls_to(&step, "beskid_rt_v5_array_write_barrier"), 0, "{step}");
     assert_eq!(calls_to(&step, "gc_register_root") + calls_to(&step, "gc_unregister_root"), 0, "{step}");
-    // Drive calls Step, so it keeps its own parameter root, but takes no snapshot root for the
-    // rooted local it passes.
+    // Drive only calls Step, which cannot reach a collection, so module emission drops Drive's
+    // roots too: no parameter root and no snapshot root for the local it passes.
     let drive = clif_of("Drive");
-    assert_eq!(calls_to(&drive, "gc_register_root"), 1, "Drive registers its parameter root only:\n{drive}");
+    assert_eq!(calls_to(&drive, "Step"), 1, "{drive}");
+    assert_eq!(
+        calls_to(&drive, "gc_register_root") + calls_to(&drive, "gc_unregister_root"),
+        0,
+        "Drive calls only a non-collecting function:\n{drive}"
+    );
 }
 
 #[test]

@@ -159,6 +159,52 @@ fn parsed_string_interpolation_formats_f32_operands_through_exact_widening() {
 }
 
 #[test]
+fn string_equality_with_a_short_literal_compares_in_place() {
+    for source in [
+        r#"bool Main(string a) { return a == "PrimaryExpression"; }"#,
+        r#"bool Main(string a) { return "PrimaryExpression" != a; }"#,
+    ] {
+        let clif = lower_main_clif(source);
+        assert!(!clif.contains("str_new"), "{source}: the literal is not materialized: {clif}");
+        assert!(!clif.contains("str_eq"), "{source}: no runtime comparison call: {clif}");
+        // 17 bytes: two 8-byte chunks and one 1-byte chunk, after the null and length checks.
+        assert_eq!(clif.matches("bxor").count(), 3, "{source}: {clif}");
+        assert!(clif.contains("iconst.i64 17"), "{source}: length check against 17: {clif}");
+    }
+}
+
+#[test]
+fn string_equality_with_a_long_literal_uses_str_eq() {
+    let literal = "x".repeat(65);
+    let clif = lower_main_clif(&format!("bool Main(string a) {{ return a == \"{literal}\"; }}"));
+    assert!(clif.contains("str_new") && clif.contains("str_eq"), "{clif}");
+}
+
+#[test]
+fn string_concatenation_roots_the_left_operand_while_the_right_one_allocates() {
+    let clif = lower_main_clif(r#"string Main(i64 n) { return "${n}|Name"; }"#);
+    let callee = |line: &str| line.split("call ").nth(1).and_then(|rest| rest.split('(').next()).map(str::to_owned);
+    let calls_to = |symbol: &str| {
+        clif.lines()
+            .enumerate()
+            .filter(|(_, line)| {
+                callee(line).is_some_and(|name| {
+                    clif.lines().any(|decl| decl.trim_start().starts_with(&format!("{name} = %{symbol} ")))
+                })
+            })
+            .map(|(index, _)| index)
+            .collect::<Vec<_>>()
+    };
+    // The `|Name` literal is materialized last; the formatted number is already rooted then.
+    let literal = *calls_to("str_new").last().unwrap_or_else(|| panic!("a literal materialization: {clif}"));
+    assert!(
+        calls_to("gc_register_root").iter().any(|register| *register < literal),
+        "the left operand is rooted before the literal allocates: {clif}"
+    );
+    assert!(calls_to("str_concat").iter().any(|concat| *concat > literal), "{clif}");
+}
+
+#[test]
 fn parsed_string_ordering_lowers_through_str_cmp() {
     for (operator, condition) in [("<", "slt"), ("<=", "sle"), (">", "sgt"), (">=", "sge")] {
         let source = format!("bool Main(string a, string b) {{ return a {operator} b; }}");

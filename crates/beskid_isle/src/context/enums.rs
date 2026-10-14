@@ -333,6 +333,16 @@ impl IsleContext<'_, '_, '_, '_> {
                     self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidMatchArms });
                     return None;
                 }
+                // A short literal compares in place, without materializing it as a string.
+                if let Some(text) = self
+                    .facts
+                    .string_literal(expression)
+                    .filter(|text| text.len() <= super::strings::INLINE_LITERAL_COMPARE_BYTES)
+                {
+                    let matches = self.emit_string_equals_bytes(value, text.as_bytes());
+                    self.builder.ins().brif(matches, destinations.success, &[], destinations.failure, &[]);
+                    return Some(());
+                }
                 let expected = generated::constructor_lower_expression(self, expression)?;
                 if self.builder.func.dfg.value_type(expected) != pointer {
                     self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidMatchArms });

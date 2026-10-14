@@ -29,7 +29,7 @@ pub use emitter::{EmissionServices, FunctionEmitter, ItemStatementEmission};
 pub use errors::{FunctionEmissionError, LoweringError, LoweringErrorKind, StringMaterializationError};
 pub use facts::*;
 pub use layout::*;
-pub use root_elision::elide_leaf_function_roots;
+pub use root_elision::{NON_COLLECTING_IMPORTS, elide_non_collecting_function_roots, non_collecting_functions};
 
 include!(concat!(env!("OUT_DIR"), "/beskid_isle_metadata.rs"));
 

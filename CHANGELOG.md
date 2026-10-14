@@ -178,6 +178,26 @@ development log stays under [Unreleased] below.
 
 ### Fixed
 
+- String operations no longer cost microseconds (measured on the builder, debug
+  runtime kit). Every string construction (`str_new`, `str_concat`,
+  `str_from_i64`) sizes its payload once instead of growing it by one
+  `Array.Append` per byte, and builds the result in place instead of in a native
+  scratch buffer that the system allocator mapped and unmapped per call. `==` and
+  `!=` against a string literal of up to 64 bytes, and string literal match
+  patterns, compare the length and the bytes in place without materializing the
+  literal. Module emission now drops root registration from every function that
+  cannot reach a collection: it calls only such functions and the byte-reading
+  services `str_eq`, `str_cmp`, `str_len`, `array_len`, `bytes_compare` and
+  `bytes_copy`. Root registration outside a checked allocation scope reads the
+  thread state once. String `==` against a literal went from 5.2 µs to 1 ns, a
+  `StringMap` lookup from 1.5 µs to 95 ns, an `I64Map` lookup from 1.0 µs to
+  55 ns, interpolation from 19.7 µs to 2.6 µs and concatenation from 14.8 µs to
+  1.2 µs.
+- Binary string operations (`+`, interpolation, `==`, `!=` and ordering) keep the
+  left operand rooted while the right operand is evaluated, unless the right
+  operand is a plain `string` local. A collection during the right operand's
+  allocation, such as the literal in `"${n}|Name"`, could free the left value
+  before the runtime call read it.
 - A clean clone builds: `crates/beskid_template/bundled/app/.beskid/template.json`,
   embedded by `beskid_template`, was excluded by the `.beskid/` ignore rule and
   never committed. A precise ignore exception now tracks it.

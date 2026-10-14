@@ -472,9 +472,18 @@ fn lower_resolved_syntax_program(
         &extern_contracts.availability,
         &mut context,
     )?;
-    // A function whose only calls are root registrations cannot reach a collection; drop them.
+    // A function that cannot reach a collection needs no roots; drop them. The whole-module
+    // analysis assumes the collector lies outside the module, which the canonical runtime
+    // corpus violates, so there only leaf functions (no calls but root registration) qualify.
+    let non_collecting = if input.runtime_intrinsic_capability().is_some() {
+        std::collections::HashSet::new()
+    } else {
+        beskid_isle::non_collecting_functions(
+            functions.iter().map(|function| (function.name.as_str(), &function.function)),
+        )
+    };
     for function in &mut functions {
-        beskid_isle::elide_leaf_function_roots(&mut function.function);
+        beskid_isle::elide_non_collecting_function_roots(&mut function.function, &non_collecting);
     }
 
     let closure_static_plans = collect_closure_static_plans(input, items, &trampolines, &lambda_trampolines);
