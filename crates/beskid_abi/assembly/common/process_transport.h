@@ -8,8 +8,11 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
-#include <wchar.h>
 #ifdef _WIN32
+/* No wchar.h and no printf family: UCRT defines their inline helpers (and the
+ * `_Avx2WmemEnabledWeakValue` selectany) in every object that includes or calls
+ * them, and the runtime archive's defined-symbol set is exact. The Windows child
+ * transport scans and formats UTF-16 with the ChildWide* helpers below. */
 #include <windows.h>
 #else
 #include <fcntl.h>
@@ -252,6 +255,28 @@ int32_t beskid_rt_v5_intrinsic_child_environment(uint64_t token,
   return result;
 }
 #ifdef _WIN32
+static size_t ChildWideLength(const wchar_t *s) {
+  size_t n = 0;
+  while (s[n])
+    n++;
+  return n;
+}
+static wchar_t *ChildWideAppend(wchar_t *at, const wchar_t *text) {
+  while (*text)
+    *at++ = *text++;
+  return at;
+}
+static wchar_t *ChildWideDecimal(wchar_t *at, unsigned long long value) {
+  wchar_t digits[20];
+  size_t n = 0;
+  do {
+    digits[n++] = (wchar_t)(L'0' + value % 10);
+    value /= 10;
+  } while (value);
+  while (n)
+    *at++ = digits[--n];
+  return at;
+}
 static wchar_t *ChildWide(const char *s, size_t n, size_t *allocated) {
   if (n > INT_MAX)
     return NULL;
@@ -281,11 +306,13 @@ static int ChildWindowsPipe(HANDLE *parent, HANDLE *child, int input,
     *child = write;
     return 0;
   }
-  wchar_t name[128];
-  int count = swprintf(name, 128, L"\\\\.\\pipe\\beskid-child-%lu-%llu",
-                       GetCurrentProcessId(), (unsigned long long)token);
-  if (count <= 0)
-    return -1;
+  /* 22-character prefix + 10-digit process id + '-' + 20-digit token + NUL. */
+  wchar_t name[64];
+  wchar_t *at = ChildWideAppend(name, L"\\\\.\\pipe\\beskid-child-");
+  at = ChildWideDecimal(at, GetCurrentProcessId());
+  *at++ = L'-';
+  at = ChildWideDecimal(at, token);
+  *at = 0;
   HANDLE server =
       CreateNamedPipeW(name, PIPE_ACCESS_OUTBOUND | FILE_FLAG_OVERLAPPED,
                        PIPE_TYPE_BYTE | PIPE_WAIT, 1, 65536, 65536, 0, NULL);
@@ -354,8 +381,8 @@ static int ChildSpawnPlatform(struct ChildTransport *c) {
   wchar_t *base = c->inherit ? GetEnvironmentStringsW() : NULL;
   size_t base_count = 0;
   if (base)
-    for (wchar_t *p = base; *p; p += wcslen(p) + 1)
-      base_count += wcslen(p) + 1;
+    for (wchar_t *p = base; *p; p += ChildWideLength(p) + 1)
+      base_count += ChildWideLength(p) + 1;
   environment_bytes =
       (base_count + c->total + CHILD_ARGUMENTS + 2) * sizeof(wchar_t);
   environment = ChildAllocate(environment_bytes);
@@ -366,10 +393,12 @@ static int ChildSpawnPlatform(struct ChildTransport *c) {
   }
   size_t at = 0;
   if (base) {
-    for (wchar_t *p = base; *p; p += wcslen(p) + 1) {
+    for (wchar_t *p = base; *p; p += ChildWideLength(p) + 1) {
       int replace = 0;
-      wchar_t *equal = wcschr(p + (*p == L'='), L'=');
-      size_t key = equal ? (size_t)(equal - p) : wcslen(p);
+      /* A leading '=' belongs to the key (drive-current-directory entries). */
+      size_t key = (size_t)(*p == L'=');
+      while (p[key] && p[key] != L'=')
+        key++;
       for (size_t i = 0; i < c->envc; i++) {
         size_t bytes = 0;
         wchar_t *w = ChildWide(c->env[i].data, c->env[i].length, &bytes);
@@ -377,12 +406,15 @@ static int ChildSpawnPlatform(struct ChildTransport *c) {
           FreeEnvironmentStringsW(base);
           goto done;
         }
-        if (wcslen(w) > key && w[key] == L'=' && !_wcsnicmp(w, p, key))
+        /* Environment keys compare case-insensitively, as in
+         * the duplicate check in beskid_rt_v5_intrinsic_child_environment. */
+        if (key <= INT_MAX && ChildWideLength(w) > key && w[key] == L'=' &&
+            CompareStringOrdinal(w, (int)key, p, (int)key, TRUE) == CSTR_EQUAL)
           replace = 1;
         ChildFree(w, bytes);
       }
       if (!replace) {
-        size_t n = wcslen(p) + 1;
+        size_t n = ChildWideLength(p) + 1;
         memcpy(environment + at, p, n * sizeof(wchar_t));
         at += n;
       }

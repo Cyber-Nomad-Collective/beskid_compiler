@@ -661,6 +661,31 @@ fn target_system_imports_are_exact_and_unknown_contracts_are_rejected() {
     ];
     let windows_completion_imports =
         ["CancelIoEx", "CreateIoCompletionPort", "GetQueuedCompletionStatus", "PostQueuedCompletionStatus"];
+    // Child-process transport (assembly/common/process_transport.h). The transport formats and
+    // scans UTF-16 itself, so it imports no UCRT wide-string or printf-family function.
+    let windows_process_imports = [
+        "AssignProcessToJobObject",
+        "CompareStringOrdinal",
+        "CreateEventW",
+        "CreateJobObjectW",
+        "CreateNamedPipeW",
+        "CreatePipe",
+        "CreateProcessW",
+        "DeleteProcThreadAttributeList",
+        "FreeEnvironmentStringsW",
+        "GetEnvironmentStringsW",
+        "GetExitCodeProcess",
+        "GetOverlappedResult",
+        "InitializeProcThreadAttributeList",
+        "PeekNamedPipe",
+        "ResumeThread",
+        "SetHandleInformation",
+        "SetInformationJobObject",
+        "TerminateJobObject",
+        "TerminateProcess",
+        "UpdateProcThreadAttribute",
+    ];
+    let windows_vcruntime_imports = ["memchr", "memcmp", "memcpy", "memset"];
     let math_imports = ["atan2", "ceil", "cos", "fabs", "floor", "log", "log10", "log2", "pow", "sin", "sqrt", "tan"];
     let windows_ucrt_descriptor_imports =
         ["_close", "_dup", "_errno", "_read", "_set_thread_local_invalid_parameter_handler", "_setmode", "_write"];
@@ -692,7 +717,8 @@ fn target_system_imports_are_exact_and_unknown_contracts_are_rejected() {
                 let mut imports = windows_imports.to_vec();
                 imports.extend(windows_winsock_imports);
                 imports.extend(windows_completion_imports);
-                imports.push("memcpy");
+                imports.extend(windows_process_imports);
+                imports.extend(["memchr", "memcmp", "memcpy"]);
                 (imports, Some(("kernel32", "ucrt")))
             }
             unsupported => panic!("unsupported target in contract test: {unsupported}"),
@@ -717,7 +743,7 @@ fn target_system_imports_are_exact_and_unknown_contracts_are_rejected() {
             None => assert!(manifest.platform_imports.iter().all(|entry| entry.library == "libSystem")),
             Some((platform, math)) => {
                 for entry in &manifest.platform_imports {
-                    let expected = if is_windows && matches!(entry.symbol.as_str(), "memcpy" | "memset") {
+                    let expected = if is_windows && windows_vcruntime_imports.contains(&entry.symbol.as_str()) {
                         "vcruntime"
                     } else if is_windows && windows_winsock_imports.contains(&entry.symbol.as_str()) {
                         "ws2_32"

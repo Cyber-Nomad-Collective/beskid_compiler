@@ -8134,6 +8134,23 @@
     },
     {
       "kind": "function",
+      "symbol": "AssignProcessToJobObject",
+      "target": "x86_64-pc-windows-msvc",
+      "library": "kernel32",
+      "params": [
+        {
+          "name": "job",
+          "type": "pointer"
+        },
+        {
+          "name": "process",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "kind": "function",
       "symbol": "CancelIoEx",
       "target": "x86_64-pc-windows-msvc",
       "library": "kernel32",
@@ -8164,6 +8181,35 @@
     },
     {
       "kind": "function",
+      "symbol": "CompareStringOrdinal",
+      "target": "x86_64-pc-windows-msvc",
+      "library": "kernel32",
+      "params": [
+        {
+          "name": "first",
+          "type": "pointer"
+        },
+        {
+          "name": "first_length",
+          "type": "i32"
+        },
+        {
+          "name": "second",
+          "type": "pointer"
+        },
+        {
+          "name": "second_length",
+          "type": "i32"
+        },
+        {
+          "name": "ignore_case",
+          "type": "i32"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "kind": "function",
       "symbol": "CreateDirectoryW",
       "target": "x86_64-pc-windows-msvc",
       "library": "kernel32",
@@ -8178,6 +8224,31 @@
         }
       ],
       "result": "i32"
+    },
+    {
+      "kind": "function",
+      "symbol": "CreateEventW",
+      "target": "x86_64-pc-windows-msvc",
+      "library": "kernel32",
+      "params": [
+        {
+          "name": "attributes",
+          "type": "pointer"
+        },
+        {
+          "name": "manual_reset",
+          "type": "i32"
+        },
+        {
+          "name": "initial_state",
+          "type": "i32"
+        },
+        {
+          "name": "name",
+          "type": "pointer"
+        }
+      ],
+      "result": "pointer"
     },
     {
       "kind": "function",
@@ -8243,6 +8314,138 @@
     },
     {
       "kind": "function",
+      "symbol": "CreateJobObjectW",
+      "target": "x86_64-pc-windows-msvc",
+      "library": "kernel32",
+      "params": [
+        {
+          "name": "attributes",
+          "type": "pointer"
+        },
+        {
+          "name": "name",
+          "type": "pointer"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
+      "kind": "function",
+      "symbol": "CreateNamedPipeW",
+      "target": "x86_64-pc-windows-msvc",
+      "library": "kernel32",
+      "params": [
+        {
+          "name": "name",
+          "type": "pointer"
+        },
+        {
+          "name": "open_mode",
+          "type": "u32"
+        },
+        {
+          "name": "pipe_mode",
+          "type": "u32"
+        },
+        {
+          "name": "max_instances",
+          "type": "u32"
+        },
+        {
+          "name": "out_buffer_size",
+          "type": "u32"
+        },
+        {
+          "name": "in_buffer_size",
+          "type": "u32"
+        },
+        {
+          "name": "default_timeout",
+          "type": "u32"
+        },
+        {
+          "name": "attributes",
+          "type": "pointer"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
+      "kind": "function",
+      "symbol": "CreatePipe",
+      "target": "x86_64-pc-windows-msvc",
+      "library": "kernel32",
+      "params": [
+        {
+          "name": "read",
+          "type": "pointer"
+        },
+        {
+          "name": "write",
+          "type": "pointer"
+        },
+        {
+          "name": "attributes",
+          "type": "pointer"
+        },
+        {
+          "name": "size",
+          "type": "u32"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "kind": "function",
+      "symbol": "CreateProcessW",
+      "target": "x86_64-pc-windows-msvc",
+      "library": "kernel32",
+      "params": [
+        {
+          "name": "application",
+          "type": "pointer"
+        },
+        {
+          "name": "command_line",
+          "type": "pointer"
+        },
+        {
+          "name": "process_attributes",
+          "type": "pointer"
+        },
+        {
+          "name": "thread_attributes",
+          "type": "pointer"
+        },
+        {
+          "name": "inherit_handles",
+          "type": "i32"
+        },
+        {
+          "name": "creation_flags",
+          "type": "u32"
+        },
+        {
+          "name": "environment",
+          "type": "pointer"
+        },
+        {
+          "name": "current_directory",
+          "type": "pointer"
+        },
+        {
+          "name": "startup_info",
+          "type": "pointer"
+        },
+        {
+          "name": "process_information",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "kind": "function",
       "symbol": "CreateThread",
       "target": "x86_64-pc-windows-msvc",
       "library": "kernel32",
@@ -8289,6 +8492,19 @@
     },
     {
       "kind": "function",
+      "symbol": "DeleteProcThreadAttributeList",
+      "target": "x86_64-pc-windows-msvc",
+      "library": "kernel32",
+      "params": [
+        {
+          "name": "list",
+          "type": "pointer"
+        }
+      ],
+      "result": "void"
+    },
+    {
+      "kind": "function",
       "symbol": "ExitProcess",
       "target": "x86_64-pc-windows-msvc",
       "library": "kernel32",
@@ -8299,6 +8515,19 @@
         }
       ],
       "result": "never"
+    },
+    {
+      "kind": "function",
+      "symbol": "FreeEnvironmentStringsW",
+      "target": "x86_64-pc-windows-msvc",
+      "library": "kernel32",
+      "params": [
+        {
+          "name": "block",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32"
     },
     {
       "kind": "function",
@@ -8344,6 +8573,14 @@
     },
     {
       "kind": "function",
+      "symbol": "GetEnvironmentStringsW",
+      "target": "x86_64-pc-windows-msvc",
+      "library": "kernel32",
+      "params": [],
+      "result": "pointer"
+    },
+    {
+      "kind": "function",
       "symbol": "GetEnvironmentVariableW",
       "target": "x86_64-pc-windows-msvc",
       "library": "kernel32",
@@ -8362,6 +8599,23 @@
         }
       ],
       "result": "u32"
+    },
+    {
+      "kind": "function",
+      "symbol": "GetExitCodeProcess",
+      "target": "x86_64-pc-windows-msvc",
+      "library": "kernel32",
+      "params": [
+        {
+          "name": "process",
+          "type": "pointer"
+        },
+        {
+          "name": "exit_code",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32"
     },
     {
       "kind": "function",
@@ -8400,6 +8654,31 @@
       "library": "kernel32",
       "params": [],
       "result": "u32"
+    },
+    {
+      "kind": "function",
+      "symbol": "GetOverlappedResult",
+      "target": "x86_64-pc-windows-msvc",
+      "library": "kernel32",
+      "params": [
+        {
+          "name": "file",
+          "type": "pointer"
+        },
+        {
+          "name": "overlapped",
+          "type": "pointer"
+        },
+        {
+          "name": "transferred",
+          "type": "pointer"
+        },
+        {
+          "name": "wait",
+          "type": "i32"
+        }
+      ],
+      "result": "i32"
     },
     {
       "kind": "function",
@@ -8504,6 +8783,31 @@
     },
     {
       "kind": "function",
+      "symbol": "InitializeProcThreadAttributeList",
+      "target": "x86_64-pc-windows-msvc",
+      "library": "kernel32",
+      "params": [
+        {
+          "name": "list",
+          "type": "pointer"
+        },
+        {
+          "name": "attribute_count",
+          "type": "u32"
+        },
+        {
+          "name": "flags",
+          "type": "u32"
+        },
+        {
+          "name": "size",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "kind": "function",
       "symbol": "MultiByteToWideChar",
       "target": "x86_64-pc-windows-msvc",
       "library": "kernel32",
@@ -8531,6 +8835,39 @@
         {
           "name": "output_length",
           "type": "i32"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "kind": "function",
+      "symbol": "PeekNamedPipe",
+      "target": "x86_64-pc-windows-msvc",
+      "library": "kernel32",
+      "params": [
+        {
+          "name": "pipe",
+          "type": "pointer"
+        },
+        {
+          "name": "buffer",
+          "type": "pointer"
+        },
+        {
+          "name": "buffer_size",
+          "type": "u32"
+        },
+        {
+          "name": "read",
+          "type": "pointer"
+        },
+        {
+          "name": "available",
+          "type": "pointer"
+        },
+        {
+          "name": "left_this_message",
+          "type": "pointer"
         }
       ],
       "result": "i32"
@@ -8604,6 +8941,19 @@
     },
     {
       "kind": "function",
+      "symbol": "ResumeThread",
+      "target": "x86_64-pc-windows-msvc",
+      "library": "kernel32",
+      "params": [
+        {
+          "name": "thread",
+          "type": "pointer"
+        }
+      ],
+      "result": "u32"
+    },
+    {
+      "kind": "function",
       "symbol": "SetEnvironmentVariableW",
       "target": "x86_64-pc-windows-msvc",
       "library": "kernel32",
@@ -8615,6 +8965,52 @@
         {
           "name": "value",
           "type": "pointer"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "kind": "function",
+      "symbol": "SetHandleInformation",
+      "target": "x86_64-pc-windows-msvc",
+      "library": "kernel32",
+      "params": [
+        {
+          "name": "handle",
+          "type": "pointer"
+        },
+        {
+          "name": "mask",
+          "type": "u32"
+        },
+        {
+          "name": "flags",
+          "type": "u32"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "kind": "function",
+      "symbol": "SetInformationJobObject",
+      "target": "x86_64-pc-windows-msvc",
+      "library": "kernel32",
+      "params": [
+        {
+          "name": "job",
+          "type": "pointer"
+        },
+        {
+          "name": "information_class",
+          "type": "i32"
+        },
+        {
+          "name": "information",
+          "type": "pointer"
+        },
+        {
+          "name": "length",
+          "type": "u32"
         }
       ],
       "result": "i32"
@@ -8667,6 +9063,40 @@
     },
     {
       "kind": "function",
+      "symbol": "TerminateJobObject",
+      "target": "x86_64-pc-windows-msvc",
+      "library": "kernel32",
+      "params": [
+        {
+          "name": "job",
+          "type": "pointer"
+        },
+        {
+          "name": "exit_code",
+          "type": "u32"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "kind": "function",
+      "symbol": "TerminateProcess",
+      "target": "x86_64-pc-windows-msvc",
+      "library": "kernel32",
+      "params": [
+        {
+          "name": "process",
+          "type": "pointer"
+        },
+        {
+          "name": "exit_code",
+          "type": "u32"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "kind": "function",
       "symbol": "TlsAlloc",
       "target": "x86_64-pc-windows-msvc",
       "library": "kernel32",
@@ -8698,6 +9128,43 @@
         },
         {
           "name": "value",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "kind": "function",
+      "symbol": "UpdateProcThreadAttribute",
+      "target": "x86_64-pc-windows-msvc",
+      "library": "kernel32",
+      "params": [
+        {
+          "name": "list",
+          "type": "pointer"
+        },
+        {
+          "name": "flags",
+          "type": "u32"
+        },
+        {
+          "name": "attribute",
+          "type": "usize"
+        },
+        {
+          "name": "value",
+          "type": "pointer"
+        },
+        {
+          "name": "size",
+          "type": "usize"
+        },
+        {
+          "name": "previous_value",
+          "type": "pointer"
+        },
+        {
+          "name": "return_size",
           "type": "pointer"
         }
       ],
@@ -9469,6 +9936,48 @@
         }
       ],
       "result": "f64"
+    },
+    {
+      "kind": "function",
+      "symbol": "memchr",
+      "target": "x86_64-pc-windows-msvc",
+      "library": "vcruntime",
+      "params": [
+        {
+          "name": "arg0",
+          "type": "pointer"
+        },
+        {
+          "name": "arg1",
+          "type": "i32"
+        },
+        {
+          "name": "arg2",
+          "type": "usize"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
+      "kind": "function",
+      "symbol": "memcmp",
+      "target": "x86_64-pc-windows-msvc",
+      "library": "vcruntime",
+      "params": [
+        {
+          "name": "arg0",
+          "type": "pointer"
+        },
+        {
+          "name": "arg1",
+          "type": "pointer"
+        },
+        {
+          "name": "arg2",
+          "type": "usize"
+        }
+      ],
+      "result": "i32"
     },
     {
       "kind": "function",
