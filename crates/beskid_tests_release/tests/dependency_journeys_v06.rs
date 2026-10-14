@@ -502,12 +502,15 @@ fn dep06_05_interrupted_pair_is_recovered_by_next_installed_command_before_reads
     assert_success(&run(cli, &home, &["add", "Local", "--path", "../Local", "--offline", "--project", path_text(&manifest)]), "add path dependency");
     let original = std::fs::read(&manifest).unwrap();
     let original_lock = std::fs::read(manifest.with_file_name("Project.lock")).unwrap();
-    let status = std::process::Command::new(std::env::current_exe().unwrap())
+    // The child's libtest streams are captured, never inherited: an inherited run header would land
+    // in this harness's stdout and break the single-run libtest output the release case requires.
+    let child = std::process::Command::new(std::env::current_exe().unwrap())
         .args(["--exact", "dependency_journeys_v06::dep06_05_interrupted_pair_is_recovered_by_next_installed_command_before_reads", "--nocapture"])
         .env(CRASH_ENV, &manifest)
-        .status()
+        .stdin(std::process::Stdio::null())
+        .output()
         .unwrap();
-    assert_eq!(status.code(), Some(91), "the child died after the first replacement");
+    assert_eq!(child.status.code(), Some(91), "the child died after the first replacement:\n{}", transcript(&child));
     assert_ne!(std::fs::read(&manifest).unwrap(), original, "the manifest shows the interrupted replacement");
     assert!(manifest.parent().unwrap().join(".beskid").exists(), "the private journal survives the death");
     let check = run(cli, &home, &["check", "--plain", "--offline", "--project", path_text(&manifest)]);

@@ -150,3 +150,54 @@ fn two_attached_native_images_use_one_retained_provider_instance() {
     std::fs::OpenOptions::new().append(true).open(&second).unwrap().write_all(b"changed").unwrap();
     assert!(images.verify_integrity().is_err());
 }
+
+/// The macOS loader never unloads an image with thread-local variables, so a provider stays
+/// process-visible after its handles drop. A later load of the same provider digest in this
+/// process must reopen that resident image, not a competing copy whose identity check fails.
+#[cfg(unix)]
+#[test]
+fn sequential_loads_of_one_provider_keep_a_single_process_provider() {
+    use beskid_execution::NativeExecutionControl;
+    use std::{
+        process::Command,
+        sync::Arc,
+        time::{Duration, Instant},
+    };
+    let root = tempfile::tempdir().unwrap();
+    let provider = root.path().join(format!("resident_provider{}", std::env::consts::DLL_SUFFIX));
+    let image = root.path().join(format!("resident_image{}", std::env::consts::DLL_SUFFIX));
+    let control = NativeExecutionControl::new(Instant::now() + Duration::from_secs(30), Arc::new(|| false));
+    for (name, code, output) in [
+        ("provider", "__thread int value = 0; int resident_fixture_next(void) { return ++value; }", &provider),
+        (
+            "image",
+            "extern int resident_fixture_next(void); int resident_fixture_image(void) { return resident_fixture_next(); }",
+            &image,
+        ),
+    ] {
+        let source = root.path().join(format!("{name}.c"));
+        std::fs::write(&source, code).unwrap();
+        let mut command = Command::new("cc");
+        if cfg!(target_os = "macos") {
+            command.args(["-dynamiclib", "-Wl,-undefined,dynamic_lookup"]);
+        } else {
+            command.args(["-shared", "-fPIC"]);
+        }
+        command.arg(source).arg("-o").arg(output);
+        let output = control.run_command(&mut command, root.path(), "resident provider fixture").unwrap();
+        assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    }
+    let provider_hash = hash(&std::fs::read(&provider).unwrap());
+    let image_hash = hash(&std::fs::read(&image).unwrap());
+    for round in 0..2 {
+        let images = unsafe { PinnedNativeImages::load(&provider, &provider_hash, &image, &image_hash) }
+            .unwrap_or_else(|error| panic!("load round {round}: {error}"));
+        images
+            .verify_process_provider(c"resident_fixture_next")
+            .unwrap_or_else(|error| panic!("process provider identity in round {round}: {error}"));
+        let entry = unsafe { images.symbol::<unsafe extern "C" fn() -> i32>(c"resident_fixture_image") }.unwrap();
+        assert!(unsafe { entry() } >= 1);
+        drop(entry);
+        images.verify_integrity().unwrap();
+    }
+}

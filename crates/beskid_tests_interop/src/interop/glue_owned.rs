@@ -2489,7 +2489,7 @@ fn v06_glue_cli_hanging_tool_probe_is_terminated() {
     );
     #[cfg(unix)]
     {
-        let alive = Command::new("kill").args(["-0", pid.trim()]).status().unwrap().success();
+        let alive = Command::new("kill").args(["-0", pid.trim()]).output().unwrap().status.success();
         assert!(!alive, "hanging probe process {} outlived the build", pid.trim());
     }
     #[cfg(not(unix))]
@@ -2559,7 +2559,8 @@ fn v06_native_test_object_compiles_shared_helper_once_and_links_distinct_entries
             drop(labels);
             for name in ["One", "Two"] {
                 let executable = object.link_entry(name, &directory.path().join(name)).unwrap();
-                assert!(Command::new(executable).status().unwrap().success());
+                let run = Command::new(executable).output().unwrap();
+                assert!(run.status.success(), "{name} failed\n{}", output_text(&run));
             }
             assert!(object.link_entry("Unreachable", &directory.path().join("unselected")).is_err());
         },

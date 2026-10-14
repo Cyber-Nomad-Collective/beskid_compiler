@@ -7,6 +7,7 @@ use std::{
     fs,
     io::Read,
     path::{Path, PathBuf},
+    sync::Mutex,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -76,11 +77,104 @@ impl PinnedImage {
     }
 }
 
+/// A provider snapshot whose loaded image outlived its last loader handle. The macOS loader
+/// never unloads an image with thread-local variables, so the canonical provider stays mapped,
+/// and process-visible, after `dlclose`. Its snapshot stays on disk while it stays loaded, and
+/// the next load of the same digest in this process reopens that exact image instead of
+/// loading a competing provider copy that the process-provider identity check would reject.
+struct ResidentProvider {
+    sha256: String,
+    loaded: PathBuf,
+    directory: tempfile::TempDir,
+}
+static RESIDENT_PROVIDERS: Mutex<Vec<ResidentProvider>> = Mutex::new(Vec::new());
+
+fn resident_providers() -> std::sync::MutexGuard<'static, Vec<ResidentProvider>> {
+    RESIDENT_PROVIDERS.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+/// The private provider snapshot of one image set, exclusively owned while the set is live.
+/// Dropped after the provider handle: a snapshot whose image is still loaded returns to the
+/// resident set; any other snapshot is removed.
+struct ProviderSnapshot {
+    sha256: String,
+    loaded: PathBuf,
+    directory: Option<tempfile::TempDir>,
+}
+impl ProviderSnapshot {
+    /// Take the resident snapshot of this exact provider digest, or make a new private one.
+    fn acquire(pin: &PinnedImage) -> Result<Self> {
+        let resident = {
+            let mut resident = resident_providers();
+            resident.iter().position(|entry| entry.sha256 == pin.sha256).map(|index| resident.swap_remove(index))
+        };
+        if let Some(entry) = resident {
+            let snapshot = Self { sha256: entry.sha256, loaded: entry.loaded, directory: Some(entry.directory) };
+            if digest(&snapshot.loaded)? != pin.sha256 {
+                return Err(invalid(&snapshot.loaded, "resident provider snapshot changed"));
+            }
+            return Ok(snapshot);
+        }
+        let directory = tempfile::Builder::new()
+            .prefix("beskid-native-provider-")
+            .tempdir()
+            .map_err(|error| invalid(&pin.path, error))?;
+        let loaded = snapshot_image(pin, directory.path())?;
+        Ok(Self { sha256: pin.sha256.clone(), loaded, directory: Some(directory) })
+    }
+}
+impl Drop for ProviderSnapshot {
+    fn drop(&mut self) {
+        let Some(directory) = self.directory.take() else { return };
+        if image_still_loaded(&self.loaded) {
+            remove_resident_snapshots_at_exit();
+            resident_providers().push(ResidentProvider {
+                sha256: std::mem::take(&mut self.sha256),
+                loaded: std::mem::take(&mut self.loaded),
+                directory,
+            });
+        }
+    }
+}
+/// Resident snapshots cannot be removed while their images stay mapped; remove them when the
+/// process exits normally so each process leaves no provider copy behind.
+#[cfg(unix)]
+fn remove_resident_snapshots_at_exit() {
+    static REGISTERED: std::sync::Once = std::sync::Once::new();
+    extern "C" fn remove_resident_snapshots() {
+        for entry in std::mem::take(&mut *resident_providers()) {
+            let _ = entry.directory.close();
+        }
+    }
+    REGISTERED.call_once(|| unsafe {
+        libc::atexit(remove_resident_snapshots);
+    });
+}
+#[cfg(not(unix))]
+fn remove_resident_snapshots_at_exit() {}
+#[cfg(unix)]
+fn image_still_loaded(path: &Path) -> bool {
+    use std::os::unix::ffi::OsStrExt;
+    let Ok(path) = std::ffi::CString::new(path.as_os_str().as_bytes()) else { return false };
+    let handle = unsafe { libc::dlopen(path.as_ptr(), libc::RTLD_LAZY | libc::RTLD_NOLOAD) };
+    if handle.is_null() {
+        return false;
+    }
+    unsafe { libc::dlclose(handle) };
+    true
+}
+#[cfg(not(unix))]
+fn image_still_loaded(_path: &Path) -> bool {
+    false
+}
+
 /// Image drops before provider. Borrowed symbol handles cannot outlive this set.
 pub struct PinnedNativeImages {
     attached: Vec<AttachedImage>,
     image: Library,
     _provider: Library,
+    /// Declared after the provider handle so it drops after `dlclose`.
+    _provider_snapshot: ProviderSnapshot,
     image_pin: PinnedImage,
     provider_pin: PinnedImage,
     loaded_image: PathBuf,
@@ -103,17 +197,18 @@ impl PinnedNativeImages {
     pub unsafe fn load(provider: &Path, provider_sha256: &str, image: &Path, image_sha256: &str) -> Result<Self> {
         let provider_pin = PinnedImage::new(provider, provider_sha256)?;
         let image_pin = PinnedImage::new(image, image_sha256)?;
+        if provider_pin.path.file_name() == image_pin.path.file_name() {
+            return Err(invalid(image, "provider and image names conflict"));
+        }
         // dlopen must consume private verified copies, not mutable producer paths.
-        // Retain the private directory until both image handles have been dropped.
+        // Retain the private directories until both image handles have been dropped.
+        let provider_snapshot = ProviderSnapshot::acquire(&provider_pin)?;
         let snapshot = tempfile::Builder::new()
             .prefix("beskid-native-images-")
             .tempdir()
             .map_err(|error| invalid(image, error))?;
-        let loaded_provider = snapshot_image(&provider_pin, snapshot.path())?;
+        let loaded_provider = provider_snapshot.loaded.clone();
         let loaded_image = snapshot_image(&image_pin, snapshot.path())?;
-        if loaded_provider == loaded_image {
-            return Err(invalid(image, "provider and image names conflict"));
-        }
         let provider = unsafe { open_image(&loaded_provider, true) }?;
         provider_pin.verify()?;
         let image = unsafe { open_image(&loaded_image, false) }?;
@@ -123,6 +218,7 @@ impl PinnedNativeImages {
             attached: Vec::new(),
             image,
             _provider: provider,
+            _provider_snapshot: provider_snapshot,
             image_pin,
             provider_pin,
             loaded_image,
