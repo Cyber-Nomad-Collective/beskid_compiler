@@ -28,13 +28,24 @@ enum VersionProbe {
     MsvcLinker,
 }
 
-pub(super) fn version_evidence(
-    role: &str,
+/// Validated version output of an actual native build tool. For `--version` probes it is the
+/// tool's full stdout/stderr; for MSVC `link.exe` it is only the banner line (as stdout, with an
+/// empty stderr), because the usage text that follows is not version evidence.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ToolVersionOutput {
+    pub stdout: Vec<u8>,
+    pub stderr: Vec<u8>,
+}
+
+/// Probe the exact tool named by `receipt` and fail closed unless its identity is unchanged and
+/// it reports a version. `windows_target` selects the banner probe for MSVC `link.exe`.
+pub(crate) fn probe_tool_version(
     receipt: &LinkToolReceipt,
     directory: &Path,
-    windows_linker: bool,
-) -> AotResult<GlueProviderToolV1> {
-    let probe = select_probe(&receipt.executable, windows_linker);
+    control: &NativeExecutionControl,
+    windows_target: bool,
+) -> AotResult<ToolVersionOutput> {
+    let probe = select_probe(&receipt.executable, windows_target);
     let mut invocation = LinkToolInvocation::new(receipt.executable.as_os_str());
     match probe {
         VersionProbe::DashVersion => invocation.args.push("--version".into()),
@@ -44,23 +55,45 @@ pub(super) fn version_evidence(
             invocation.environment.push(("_LINK_".into(), None));
         }
     }
-    let control = NativeExecutionControl::new(Instant::now() + Duration::from_secs(10), Arc::new(|| false));
-    let (output, observed) = run_link_tool(&invocation, directory, Some(&control))?;
+    let (output, observed) = run_link_tool(&invocation, directory, Some(control))?;
     if observed.sha256 != receipt.sha256 || observed.executable != receipt.executable {
         return Err(AotError::InvalidRequest {
             message: "native provider tool changed between build and version receipt".into(),
         });
     }
-    let version_output_sha256 = version_output_digest(probe, output.status.code(), &output.stdout, &output.stderr)?;
-    Ok(GlueProviderToolV1 { role: role.into(), executable_sha256: observed.sha256, version_output_sha256 })
+    validated_version_output(probe, output.status.code(), output.stdout, output.stderr)
 }
 
-fn select_probe(executable: &Path, windows_linker: bool) -> VersionProbe {
+pub(super) fn version_evidence(
+    role: &str,
+    receipt: &LinkToolReceipt,
+    directory: &Path,
+    windows_linker: bool,
+) -> AotResult<GlueProviderToolV1> {
+    let control = NativeExecutionControl::new(Instant::now() + Duration::from_secs(10), Arc::new(|| false));
+    let output = probe_tool_version(receipt, directory, &control, windows_linker)?;
+    Ok(GlueProviderToolV1 {
+        role: role.into(),
+        executable_sha256: receipt.sha256.clone(),
+        version_output_sha256: provider_version_digest(&output),
+    })
+}
+
+fn provider_version_digest(output: &ToolVersionOutput) -> String {
+    let mut digest = Sha256::new();
+    digest.update((output.stdout.len() as u64).to_le_bytes());
+    digest.update(&output.stdout);
+    digest.update((output.stderr.len() as u64).to_le_bytes());
+    digest.update(&output.stderr);
+    format!("{:x}", digest.finalize())
+}
+
+fn select_probe(executable: &Path, windows_target: bool) -> VersionProbe {
     let is_msvc_link = executable
         .file_stem()
         .and_then(|stem| stem.to_str())
         .is_some_and(|stem| stem.eq_ignore_ascii_case("link"));
-    if windows_linker && is_msvc_link { VersionProbe::MsvcLinker } else { VersionProbe::DashVersion }
+    if windows_target && is_msvc_link { VersionProbe::MsvcLinker } else { VersionProbe::DashVersion }
 }
 
 fn probe_failed(detail: &str) -> AotError {
@@ -69,7 +102,12 @@ fn probe_failed(detail: &str) -> AotError {
     }
 }
 
-fn version_output_digest(probe: VersionProbe, status: Option<i32>, stdout: &[u8], stderr: &[u8]) -> AotResult<String> {
+fn validated_version_output(
+    probe: VersionProbe,
+    status: Option<i32>,
+    stdout: Vec<u8>,
+    stderr: Vec<u8>,
+) -> AotResult<ToolVersionOutput> {
     if stdout.len().saturating_add(stderr.len()) > VERSION_OUTPUT_LIMIT {
         return Err(probe_failed("output exceeds 1 MiB"));
     }
@@ -81,12 +119,7 @@ fn version_output_digest(probe: VersionProbe, status: Option<i32>, stdout: &[u8]
             if stdout.is_empty() && stderr.is_empty() {
                 return Err(probe_failed("--version produced no output"));
             }
-            let mut digest = Sha256::new();
-            digest.update((stdout.len() as u64).to_le_bytes());
-            digest.update(stdout);
-            digest.update((stderr.len() as u64).to_le_bytes());
-            digest.update(stderr);
-            Ok(format!("{:x}", digest.finalize()))
+            Ok(ToolVersionOutput { stdout, stderr })
         }
         VersionProbe::MsvcLinker => {
             match status {
@@ -94,8 +127,8 @@ fn version_output_digest(probe: VersionProbe, status: Option<i32>, stdout: &[u8]
                 Some(code) if code >= 1000 => {}
                 other => return Err(probe_failed(&format!("link.exe exited with {other:?}"))),
             }
-            let banner = msvc_linker_banner(stdout).ok_or_else(|| probe_failed("link.exe printed no version banner"))?;
-            Ok(format!("{:x}", Sha256::digest(banner.as_bytes())))
+            let banner = msvc_linker_banner(&stdout).ok_or_else(|| probe_failed("link.exe printed no version banner"))?;
+            Ok(ToolVersionOutput { stdout: format!("{banner}\n").into_bytes(), stderr: Vec::new() })
         }
     }
 }
@@ -127,18 +160,26 @@ Copyright (C) Microsoft Corporation.  All rights reserved.\r\n\r\n usage: LINK [
         assert_eq!(select_probe(Path::new("/usr/bin/link"), false), VersionProbe::DashVersion);
     }
 
+    fn validate(probe: VersionProbe, status: Option<i32>, stdout: &[u8], stderr: &[u8]) -> AotResult<ToolVersionOutput> {
+        validated_version_output(probe, status, stdout.to_vec(), stderr.to_vec())
+    }
+
     #[test]
     fn msvc_banner_is_the_version_evidence_for_documented_exit_codes() {
-        let expected = format!("{:x}", Sha256::digest(b"Microsoft (R) Incremental Linker Version 14.44.35215.0"));
-        for status in [Some(0), Some(1561), Some(4044)] {
-            assert_eq!(version_output_digest(VersionProbe::MsvcLinker, status, BANNER, b"").unwrap(), expected);
+        // link.exe 14.44 exits 1100 when run without arguments (observed on the Windows agent).
+        let expected = ToolVersionOutput {
+            stdout: b"Microsoft (R) Incremental Linker Version 14.44.35215.0\n".to_vec(),
+            stderr: Vec::new(),
+        };
+        for status in [Some(0), Some(1100), Some(1561)] {
+            assert_eq!(validate(VersionProbe::MsvcLinker, status, BANNER, b"").unwrap(), expected);
         }
     }
 
     #[test]
     fn msvc_probe_fails_closed() {
         for status in [None, Some(1), Some(128), Some(-1)] {
-            assert!(version_output_digest(VersionProbe::MsvcLinker, status, BANNER, b"").is_err());
+            assert!(validate(VersionProbe::MsvcLinker, status, BANNER, b"").is_err());
         }
         for stdout in [
             &b""[..],
@@ -147,16 +188,16 @@ Copyright (C) Microsoft Corporation.  All rights reserved.\r\n\r\n usage: LINK [
             b"Microsoft (R) Incremental Linker Version 14\r\n",
             b"Microsoft (R) Incremental Linker Version 14.x.1\r\n",
         ] {
-            assert!(version_output_digest(VersionProbe::MsvcLinker, Some(0), stdout, b"").is_err());
+            assert!(validate(VersionProbe::MsvcLinker, Some(0), stdout, b"").is_err());
         }
         let oversized = [BANNER, &vec![b' '; VERSION_OUTPUT_LIMIT]].concat();
-        assert!(version_output_digest(VersionProbe::MsvcLinker, Some(0), &oversized, b"").is_err());
+        assert!(validate(VersionProbe::MsvcLinker, Some(0), &oversized, b"").is_err());
     }
 
     #[test]
     fn dash_version_requires_success_and_output() {
-        assert!(version_output_digest(VersionProbe::DashVersion, Some(0), b"clang version 18.1.8\n", b"").is_ok());
-        assert!(version_output_digest(VersionProbe::DashVersion, Some(1), b"clang version 18.1.8\n", b"").is_err());
-        assert!(version_output_digest(VersionProbe::DashVersion, Some(0), b"", b"").is_err());
+        assert!(validate(VersionProbe::DashVersion, Some(0), b"clang version 18.1.8\n", b"").is_ok());
+        assert!(validate(VersionProbe::DashVersion, Some(1), b"clang version 18.1.8\n", b"").is_err());
+        assert!(validate(VersionProbe::DashVersion, Some(0), b"", b"").is_err());
     }
 }

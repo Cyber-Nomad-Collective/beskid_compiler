@@ -7,7 +7,7 @@ mod native_tests;
 mod object_stage;
 mod pipeline;
 mod platform_objects;
-mod provider_evidence;
+pub(crate) mod provider_evidence;
 mod validation;
 
 pub use host_emit::{

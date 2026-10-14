@@ -2,7 +2,7 @@
 use crate::{
     api::{BuildOutputKind, BuildProfile, LinkMode, NativeExecutionControl, RuntimeKitRequest},
     error::{AotError, AotResult},
-    linker::{LinkRequest, LinkToolInvocation, LinkToolReceipt, link_with_control, run_link_tool},
+    linker::{LinkRequest, LinkToolReceipt, link_with_control},
 };
 use beskid_abi::runtime_kit::{BuildProfile as RuntimeKitProfile, GlueProviderToolV1};
 pub use beskid_analysis::mod_host::{ContractRegistration, ModArtifactDescriptor};
@@ -319,10 +319,11 @@ pub fn build_mod_artifact(req: ModArtifactBuildRequest) -> AotResult<QualifiedNa
     // The recorded compiler identity must still name the on-disk executable, or no consumer could
     // ever qualify this artifact against it.
     req.producer.require_unchanged_on_disk(&req.package_id)?;
+    let windows_target = req.runtime.target.triple.as_str().contains("windows");
     let build_tools = vec![
         stage_compiler(dir, &req.producer, &req.compiler_version)?,
-        stage_tool(dir, "adapter-compiler", &adapter_compiler, &req.control)?,
-        stage_tool(dir, "linker", &linker, &req.control)?,
+        stage_tool(dir, "adapter-compiler", &adapter_compiler, &req.control, windows_target)?,
+        stage_tool(dir, "linker", &linker, &req.control, windows_target)?,
     ];
     let runtime_binding =
         native_mod_runtime_binding(&req.runtime.prefix, &req.runtime.target, req.runtime.profile).map_err(invalid)?;
@@ -505,21 +506,10 @@ fn stage_tool(
     role: &str,
     receipt: &LinkToolReceipt,
     control: &NativeExecutionControl,
+    windows_target: bool,
 ) -> AotResult<GlueProviderToolV1> {
-    let invocation = LinkToolInvocation {
-        program: receipt.executable.as_os_str().to_owned(),
-        args: vec!["--version".into()],
-        environment: Vec::new(),
-        current_dir: None,
-    };
-    let (output, current) = run_link_tool(&invocation, dir, Some(control))?;
-    if !output.status.success()
-        || current.sha256 != receipt.sha256
-        || output.stdout.len() + output.stderr.len() > 1024 * 1024
-        || output.stdout.is_empty() && output.stderr.is_empty()
-    {
-        return Err(invalid("Mod tool version/identity verification failed"));
-    }
+    let output = crate::api::provider_evidence::probe_tool_version(receipt, dir, control, windows_target)
+        .map_err(|error| invalid(&format!("Mod tool version/identity verification failed: {error}")))?;
     let mut bytes = Vec::new();
     for part in [&output.stdout, &output.stderr] {
         bytes.extend_from_slice(&(part.len() as u64).to_be_bytes());
