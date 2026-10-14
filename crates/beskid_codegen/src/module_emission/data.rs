@@ -29,7 +29,7 @@ pub(super) fn collect_array_static_plans(
         for key in nodes {
             let plan = input
                 .array_static_plan_for_specialization(key, item.specialization.as_ref())
-                .or_else(|| input.bulk_array_static_plan(key))
+                .or_else(|| input.bulk_array_static_plan(key, item.specialization.as_ref()))
                 .or_else(|| input.typed_array_static_plan(key, item.specialization.as_ref()));
             if let Some(plan) = plan
                 && symbols.insert(plan.allocation_request_symbol.clone())

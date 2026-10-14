@@ -37,7 +37,7 @@ impl SyntaxNodeFacts<'_> {
     /// inferred, the same authority [`array_layout_for_literal`] uses for empty literals), and the
     /// length comes from the call's scalar argument count.
     pub(in crate::isle_adapter) fn array_layout_for_bulk(&self, key: AstNodeKey) -> Option<beskid_isle::ArrayLayout> {
-        let plan = self.input.bulk_array_static_plan(key)?;
+        let plan = self.input.bulk_array_static_plan(key, self.current_item_specialization())?;
         let element = map_signature_type(self.isa?, plan.element_type)?;
         let stride = u32::try_from(plan.stride).ok()?;
         let length = u32::try_from(plan.length).ok()?;
@@ -126,28 +126,18 @@ impl SyntaxNodeFacts<'_> {
         Some(scalar_aware_array_layout(plan.element_type, element, stride, length, plan.alignment.ilog2() as u8))
     }
 
-    /// The bulk calling-convention fact for the callee of one `CallExpression`.
+    /// Whether one `CallExpression` uses the bulk calling convention.
     ///
-    /// Resolves the callee declaration via [`call_lowering`], then walks the declaration's
-    /// parameter children for the first `bulk` parameter. Returns `None` for non-direct calls
-    /// and for direct calls whose callee declares no `bulk` parameter — so it is a safe
-    /// classification authority for [`CallKind::Bulk`].
-    pub(in crate::isle_adapter) fn callee_bulk_parameter(
-        &self,
-        key: AstNodeKey,
-    ) -> Option<beskid_queries::BulkParameterFact> {
-        let CallLowering::Direct(declaration) = self.query(call_lowering(self.db, key))? else {
-            return None;
-        };
-        let parameters = self.query(child_nodes(self.db, declaration))?;
-        for parameter in parameters.iter().copied() {
-            if self.query(node_kind(self.db, parameter)) != Some(beskid_queries::IndexedNodeKind::Parameter) {
-                continue;
-            }
-            if let Some(fact) = self.query(bulk_parameter(self.db, parameter)) {
-                return Some(fact);
-            }
-        }
-        None
+    /// True when the direct callee ends in a `bulk T[]` parameter, whether or not its element ABI
+    /// is provable here: [`bulk_call_element_abi_type`] answers "no fact" only for callees without
+    /// a bulk parameter, and an error for a bulk callee it cannot prove (an unresolved generic
+    /// element). Classifying an unproven bulk call as `Bulk` keeps it on the packing path, which
+    /// then fails closed; the `Direct` fallback would pass a single scalar argument where the
+    /// callee expects an array handle (`Array.Of<i64>(7)` would dereference address 7).
+    pub(in crate::isle_adapter) fn is_bulk_call(&self, key: AstNodeKey) -> bool {
+        !matches!(
+            bulk_call_element_abi_type(self.db, key, self.current_item_specialization()),
+            Ok(None)
+        )
     }
 }

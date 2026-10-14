@@ -174,9 +174,15 @@ pub fn bulk_parameter(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<BulkP
 }
 
 /// Return the element ABI type one call packs its trailing arguments as, when its direct callee
-/// ends in a `bulk T[]` parameter; a generic element is taken from the call's specialization.
-pub fn bulk_call_element_abi_type(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<SemanticTypeId> {
-    bulk_call_element_abi_type_for_call(db, key)
+/// ends in a `bulk T[]` parameter; a generic element is taken from the call's specialization,
+/// interpreted in `enclosing` when the call sits in a specialized generic item. A bulk callee
+/// whose element ABI cannot be proven returns an error, not `Ok(None)`.
+pub fn bulk_call_element_abi_type(
+    db: &dyn Db,
+    key: AstNodeKey,
+    enclosing: Option<&GenericSpecializationInstance>,
+) -> SemanticQueryResult<SemanticTypeId> {
+    bulk_call_element_abi_type_for_call(db, key, enclosing)
 }
 
 /// Return exact current-generation bounds for the syntax-only `range(start, end)` loop form.

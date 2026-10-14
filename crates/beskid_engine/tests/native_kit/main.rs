@@ -15,6 +15,7 @@ mod runtime_prefix;
 mod shared_kit;
 
 mod artifact_runtime_reset;
+mod bulk_array_of_native;
 mod corelib_repeat_jit;
 mod cyb169_enum_return_sigill;
 mod descriptor_smoke;

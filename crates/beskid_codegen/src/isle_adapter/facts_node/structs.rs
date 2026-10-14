@@ -23,7 +23,7 @@ impl SyntaxNodeFacts<'_> {
         let plan = self
             .input
             .array_static_plan_for_specialization(key, self.current_item_specialization())
-            .or_else(|| self.input.bulk_array_static_plan(key))
+            .or_else(|| self.input.bulk_array_static_plan(key, self.current_item_specialization()))
             .or_else(|| self.typed_array_plan(key))?;
         Some(beskid_isle::ManagedArrayAllocation { allocation_request_symbol: plan.allocation_request_symbol.into() })
     }
