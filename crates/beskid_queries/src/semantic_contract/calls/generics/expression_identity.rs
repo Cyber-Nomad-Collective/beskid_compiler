@@ -134,10 +134,12 @@ pub(in crate::semantic_contract) fn generic_source_expression_identity(
         } else {
             generic_source_expression_identity(db, target)?
         };
-        let GenericSourceTypeIdentity::Array(element) = target_identity else {
-            return Err(source_expression_unavailable(db, target, "indexed value is not an array"));
+        return match target_identity {
+            GenericSourceTypeIdentity::Array(element) => Ok(*element),
+            // A string index reads one UTF-8 byte.
+            GenericSourceTypeIdentity::Abi(SemanticTypeId::STRING) => Ok(GenericSourceTypeIdentity::Abi(SemanticTypeId::U8)),
+            _ => Err(source_expression_unavailable(db, target, "indexed value is not an array or a string")),
         };
-        return Ok(*element);
     }
     if node.of::<beskid_analysis::syntax::CallExpression>().is_some() {
         // A primitive numeric conversion (`u8(value % 256_u64)`) is a call ISLE lowers through

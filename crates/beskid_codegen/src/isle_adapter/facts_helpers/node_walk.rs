@@ -35,7 +35,10 @@ impl SyntaxNodeFacts<'_> {
         }
         match self.query(node_kind(self.db, key)) {
             Some(beskid_queries::IndexedNodeKind::IndexExpression) => {
-                return self.array_index_element_type_in_context(key);
+                // An array element, else the `u8` byte of a string index.
+                return self.array_index_element_type_in_context(key).or_else(|| {
+                    self.query(beskid_queries::value_abi_type(self.db, key)).filter(|ty| *ty == SemanticTypeId::U8)
+                });
             }
             Some(beskid_queries::IndexedNodeKind::AssignExpression) => {
                 if let Some(element) = self.array_index_element_type_in_context(key) {

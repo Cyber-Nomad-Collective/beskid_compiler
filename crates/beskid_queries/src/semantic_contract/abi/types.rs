@@ -184,6 +184,12 @@ pub(in crate::semantic_contract) fn abi_type_tracked(
         if let Some(path) = node.of::<beskid_analysis::syntax::PathExpression>() {
             return Some(abi_type_for_local_path(db, program, index, key, &path.path.node));
         }
+        if let Some(indexed) = node.of::<beskid_analysis::syntax::IndexExpression>()
+            && string_index_target(db, program, index, key, indexed)
+        {
+            // A string index reads one UTF-8 byte, wherever the string comes from.
+            return Some(Ok(SemanticTypeId::U8));
+        }
         if node.of::<beskid_analysis::syntax::AssignExpression>().is_some()
             || node.of::<beskid_analysis::syntax::IndexExpression>().is_some()
         {
@@ -497,4 +503,24 @@ pub(in crate::semantic_contract) fn abi_type_from_syntax(
         // to, so a `unit(ConsoleSize) handler` parameter has the same representation.
         Type::Function { .. } => Ok(SemanticTypeId::POINTER),
     }
+}
+
+/// Whether the target of the index expression `key` is a `string`: a local, a parameter, a field
+/// at any depth, or any other expression whose source identity is `string`.
+pub(in crate::semantic_contract) fn string_index_target(
+    db: &dyn Db,
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    key: AstNodeKey,
+    indexed: &beskid_analysis::syntax::IndexExpression,
+) -> bool {
+    index
+        .direct_child_id(program, key.node, beskid_analysis::syntax_query::DynNodeRef::from(indexed.target.as_ref()))
+        .map(|target| AstNodeKey { node: normalized_expression_node(index, target), ..key })
+        .is_some_and(|target| {
+            matches!(
+                generic_source_expression_identity(db, target),
+                Ok(GenericSourceTypeIdentity::Abi(SemanticTypeId::STRING))
+            )
+        })
 }

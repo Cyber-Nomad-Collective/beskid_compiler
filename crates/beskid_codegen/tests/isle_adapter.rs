@@ -48,6 +48,8 @@ mod projected_path_match;
 mod runtime_gc_aggregate;
 #[path = "isle_adapter/statement_result_storage.rs"]
 mod statement_result_storage;
+#[path = "isle_adapter/string_index_places.rs"]
+mod string_index_places;
 #[path = "isle_adapter/support.rs"]
 mod support;
 #[path = "isle_adapter/waitgroup_conditions.rs"]

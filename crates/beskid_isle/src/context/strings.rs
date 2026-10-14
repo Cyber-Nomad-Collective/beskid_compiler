@@ -278,9 +278,19 @@ macro_rules! generated_string_methods {
             let handle = generated::constructor_lower_expression(self, base_key)?;
             let index = generated::constructor_lower_expression(self, index_key)?;
             let pointer_type = self.builder.func.dfg.value_type(handle);
-            if !pointer_type.is_int() || !self.builder.func.dfg.value_type(index).is_int() {
+            let index_type = self.builder.func.dfg.value_type(index);
+            if !pointer_type.is_int() || !index_type.is_int() {
                 return None;
             }
+            // Any integer index (an unsuffixed literal is `i32`) is widened to the pointer width
+            // as for array elements; a negative index becomes out of range.
+            let index = if index_type.bits() < pointer_type.bits() {
+                self.builder.ins().uextend(pointer_type, index)
+            } else if index_type.bits() > pointer_type.bits() {
+                self.builder.ins().ireduce(pointer_type, index)
+            } else {
+                index
+            };
             let ptr = self.builder.ins().load(pointer_type, MemFlagsData::new(), handle, 0);
             let len = self.builder.ins().load(pointer_type, MemFlagsData::new(), handle, 8);
             let out_of_bounds = self.builder.ins().icmp(IntCC::UnsignedGreaterThanOrEqual, index, len);
