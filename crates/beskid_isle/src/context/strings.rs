@@ -273,10 +273,10 @@ macro_rules! generated_string_methods {
         }
 
         fn emit_string_index_read(&mut self, key: AstNodeKey) -> Option<Value> {
-            let base_key = self.facts.child(key, 0)?;
-            let index_key = self.facts.child(key, 1)?;
-            let handle = generated::constructor_lower_expression(self, base_key)?;
-            let index = generated::constructor_lower_expression(self, index_key)?;
+            // The string is read from its place after the index is evaluated, as for arrays.
+            let base = self.indexed_base_operands(self.facts.child(key, 0)?)?;
+            let index = generated::constructor_lower_expression(self, self.facts.child(key, 1)?)?;
+            let handle = self.read_indexed_base(base)?;
             let pointer_type = self.builder.func.dfg.value_type(handle);
             let index_type = self.builder.func.dfg.value_type(index);
             if !pointer_type.is_int() || !index_type.is_int() {

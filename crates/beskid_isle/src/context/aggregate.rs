@@ -17,6 +17,130 @@ impl IsleContext<'_, '_, '_, '_> {
         };
         self.builder.func.dfg.value_type(base).is_int().then_some(base)
     }
+
+    /// The validated layout slot of the field that the field expression `key` names, as its CLIF
+    /// type and byte offset.
+    pub(crate) fn field_slot(&mut self, key: AstNodeKey) -> Option<(Type, i32)> {
+        let layout = self.facts.struct_layout(key)?;
+        if !layout.is_valid() {
+            self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidStructLayout });
+            return None;
+        }
+        let field_index = self.facts.field_index(key)?;
+        let Some(field) = usize::try_from(field_index).ok().and_then(|index| layout.fields.get(index)).copied() else {
+            self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidStructField(field_index) });
+            return None;
+        };
+        let field = field?;
+        if self.facts.scalar_type(key)? != field.value_type {
+            self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidStructLayout });
+            return None;
+        }
+        Some((field.value_type, i32::try_from(field.offset).ok()?))
+    }
+
+    /// Evaluates the operands of the indexed base `key` (the `values` of `values[index]`): the
+    /// receiver of a field, the operands and index of an element. The base itself is read later
+    /// by [`Self::read_indexed_base`], after the index (and an assigned value) are evaluated, so
+    /// a side effect of either on the place, such as a growth that replaces the array a field
+    /// holds, is observed. A base that is not a place (a call, a literal) is its value.
+    pub(crate) fn indexed_base_operands(&mut self, key: AstNodeKey) -> Option<IndexedBase> {
+        match self.facts.node_kind(key)? {
+            NodeKind::PathExpression
+                if self.facts.constant_integer(key).is_none()
+                    && self.facts.function_item_value(key).is_none()
+                    && self.facts.field_index(key).is_none()
+                    && self.facts.local_slot(key).is_some_and(|slot| self.locals.contains_key(&slot)) =>
+            {
+                Some(IndexedBase::Local(self.facts.local_slot(key)?))
+            }
+            NodeKind::FieldExpression => {
+                let (value_type, offset) = self.field_slot(key)?;
+                let receiver = self.field_base_pointer(key)?;
+                Some(IndexedBase::Field { receiver, value_type, offset })
+            }
+            NodeKind::IndexExpression => {
+                let layout = self.array_index_layout(key)?;
+                let array = self.indexed_base_operands(self.facts.child(key, 0)?)?;
+                let index = generated::constructor_lower_expression(self, self.facts.child(key, 1)?)?;
+                Some(IndexedBase::Element { array: Box::new(array), index, layout })
+            }
+            _ => Some(IndexedBase::Value(generated::constructor_lower_expression(self, key)?)),
+        }
+    }
+
+    /// Reads the indexed base whose operands [`Self::indexed_base_operands`] evaluated.
+    pub(crate) fn read_indexed_base(&mut self, base: IndexedBase) -> Option<Value> {
+        match base {
+            IndexedBase::Local(slot) => {
+                let binding = self.locals.get(&slot).copied()?;
+                Some(self.builder.use_var(binding.variable))
+            }
+            IndexedBase::Field { receiver, value_type, offset } => {
+                Some(self.builder.ins().load(value_type, MemFlagsData::new(), receiver, offset))
+            }
+            IndexedBase::Element { array, index, layout } => {
+                let array = self.read_indexed_base(*array)?;
+                let address = self.checked_element_address(array, index, layout)?;
+                Some(self.builder.ins().load(layout.element_type, MemFlagsData::new(), address, 0))
+            }
+            IndexedBase::Value(value) => Some(value),
+        }
+    }
+
+    /// The validated array layout of the index expression `key`, whose value is one element.
+    pub(crate) fn array_index_layout(&mut self, key: AstNodeKey) -> Option<crate::layout::ArrayLayout> {
+        let layout = self.facts.array_layout(key)?;
+        if !layout.is_valid() || self.facts.scalar_type(key)? != layout.element_type {
+            self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidArrayLayout });
+            return None;
+        }
+        Some(layout)
+    }
+
+    /// The address of element `index` of `array`, after the null and bounds checks.
+    pub(crate) fn checked_element_address(&mut self, array: Value, index: Value, layout: crate::layout::ArrayLayout) -> Option<Value> {
+        let index_type = self.builder.func.dfg.value_type(index);
+        let pointer_type = self.builder.func.dfg.value_type(array);
+        if !index_type.is_int() || !pointer_type.is_int() {
+            return None;
+        }
+        self.builder.ins().trapz(array, TrapCode::unwrap_user(1));
+        let pointer_index = if index_type.bits() < pointer_type.bits() {
+            self.builder.ins().uextend(pointer_type, index)
+        } else if index_type.bits() > pointer_type.bits() {
+            self.builder.ins().ireduce(pointer_type, index)
+        } else {
+            index
+        };
+        let length = self.builder.ins().load(
+            pointer_type,
+            MemFlagsData::new(),
+            array,
+            i32::try_from(pointer_type.bytes()).ok()?,
+        );
+        let out_of_bounds = self.builder.ins().icmp(IntCC::UnsignedGreaterThanOrEqual, pointer_index, length);
+        self.builder.ins().trapnz(out_of_bounds, TrapCode::HEAP_OUT_OF_BOUNDS);
+        let offset = if layout.stride == 1 {
+            pointer_index
+        } else {
+            self.builder.ins().imul_imm_s(pointer_index, i64::from(layout.stride))
+        };
+        let data = self.builder.ins().load(pointer_type, MemFlagsData::new(), array, 0);
+        Some(self.builder.ins().iadd(data, offset))
+    }
+}
+
+/// The base of an index expression with its operands evaluated and its storage not yet read.
+pub(crate) enum IndexedBase {
+    /// A local binding, read when the base is read.
+    Local(LocalSlotId),
+    /// A field of an evaluated receiver.
+    Field { receiver: Value, value_type: Type, offset: i32 },
+    /// An element of an array base, at an evaluated index.
+    Element { array: Box<IndexedBase>, index: Value, layout: crate::layout::ArrayLayout },
+    /// A base that is not a place, already evaluated.
+    Value(Value),
 }
 
 macro_rules! generated_aggregate_methods {
@@ -90,43 +214,11 @@ macro_rules! generated_aggregate_methods {
         }
 
         fn emit_index_read(&mut self, key: AstNodeKey) -> Option<Value> {
-            let layout = self.facts.array_layout(key)?;
-            if !layout.is_valid() || self.facts.scalar_type(key)? != layout.element_type {
-                self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidArrayLayout });
-                return None;
-            }
-            let base_key = self.facts.child(key, 0)?;
-            let index_key = self.facts.child(key, 1)?;
-            let base = generated::constructor_lower_expression(self, base_key)?;
-            let index = generated::constructor_lower_expression(self, index_key)?;
-            let index_type = self.builder.func.dfg.value_type(index);
-            let pointer_type = self.builder.func.dfg.value_type(base);
-            if !index_type.is_int() || !pointer_type.is_int() {
-                return None;
-            }
-            self.builder.ins().trapz(base, TrapCode::unwrap_user(1));
-            let pointer_index = if index_type.bits() < pointer_type.bits() {
-                self.builder.ins().uextend(pointer_type, index)
-            } else if index_type.bits() > pointer_type.bits() {
-                self.builder.ins().ireduce(pointer_type, index)
-            } else {
-                index
-            };
-            let length = self.builder.ins().load(
-                pointer_type,
-                MemFlagsData::new(),
-                base,
-                i32::try_from(pointer_type.bytes()).ok()?,
-            );
-            let out_of_bounds = self.builder.ins().icmp(IntCC::UnsignedGreaterThanOrEqual, pointer_index, length);
-            self.builder.ins().trapnz(out_of_bounds, TrapCode::HEAP_OUT_OF_BOUNDS);
-            let offset = if layout.stride == 1 {
-                pointer_index
-            } else {
-                self.builder.ins().imul_imm_s(pointer_index, i64::from(layout.stride))
-            };
-            let data = self.builder.ins().load(pointer_type, MemFlagsData::new(), base, 0);
-            let address = self.builder.ins().iadd(data, offset);
+            let layout = self.array_index_layout(key)?;
+            let base = self.indexed_base_operands(self.facts.child(key, 0)?)?;
+            let index = generated::constructor_lower_expression(self, self.facts.child(key, 1)?)?;
+            let array = self.read_indexed_base(base)?;
+            let address = self.checked_element_address(array, index, layout)?;
             Some(self.builder.ins().load(layout.element_type, MemFlagsData::new(), address, 0))
         }
 
@@ -138,51 +230,27 @@ macro_rules! generated_aggregate_methods {
                 self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidArrayLayout });
                 return None;
             }
-            let base_key = self.facts.child(target, 0)?;
-            let index_key = self.facts.child(target, 1)?;
-            let base = generated::constructor_lower_expression(self, base_key)?;
-            let index = generated::constructor_lower_expression(self, index_key)?;
+            // The base's operands, the index, and the value are evaluated in source order; the
+            // array is read from the base after them (language-meta/evaluation/control-flow,
+            // "Index expression evaluation order").
+            let base = self.indexed_base_operands(self.facts.child(target, 0)?)?;
+            let index = generated::constructor_lower_expression(self, self.facts.child(target, 1)?)?;
             let value = generated::constructor_lower_expression(self, value_key)?;
             if self.builder.func.dfg.value_type(value) != layout.element_type {
                 self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidArrayLayout });
                 return None;
             }
-            let index_type = self.builder.func.dfg.value_type(index);
-            let pointer_type = self.builder.func.dfg.value_type(base);
-            if !index_type.is_int() || !pointer_type.is_int() {
-                return None;
-            }
-            self.builder.ins().trapz(base, TrapCode::unwrap_user(1));
-            let pointer_index = if index_type.bits() < pointer_type.bits() {
-                self.builder.ins().uextend(pointer_type, index)
-            } else if index_type.bits() > pointer_type.bits() {
-                self.builder.ins().ireduce(pointer_type, index)
-            } else {
-                index
-            };
-            let length = self.builder.ins().load(
-                pointer_type,
-                MemFlagsData::new(),
-                base,
-                i32::try_from(pointer_type.bytes()).ok()?,
-            );
-            let out_of_bounds = self.builder.ins().icmp(IntCC::UnsignedGreaterThanOrEqual, pointer_index, length);
-            self.builder.ins().trapnz(out_of_bounds, TrapCode::HEAP_OUT_OF_BOUNDS);
-            let offset = if layout.stride == 1 {
-                pointer_index
-            } else {
-                self.builder.ins().imul_imm_s(pointer_index, i64::from(layout.stride))
-            };
-            let data = self.builder.ins().load(pointer_type, MemFlagsData::new(), base, 0);
-            let address = self.builder.ins().iadd(data, offset);
+            let array = self.read_indexed_base(base)?;
+            let address = self.checked_element_address(array, index, layout)?;
             self.builder.ins().store(MemFlagsData::new(), value, address, 0);
+            let pointer_type = self.builder.func.dfg.value_type(array);
             if layout.needs_write_barrier(pointer_type) {
                 let barrier = self.import_runtime_helper(
                     "beskid_rt_v5_array_write_barrier",
                     &[pointer_type, pointer_type],
                     Some(types::I8),
                 )?;
-                let barrier_call = self.builder.ins().call(barrier, &[base, value]);
+                let barrier_call = self.builder.ins().call(barrier, &[array, value]);
                 let published = self.builder.inst_results(barrier_call).first().copied()?;
                 self.builder.ins().trapz(published, TrapCode::unwrap_user(8));
             }
@@ -241,30 +309,9 @@ macro_rules! generated_aggregate_methods {
         }
 
         fn emit_field_read(&mut self, key: AstNodeKey) -> Option<Value> {
-            let layout = self.facts.struct_layout(key)?;
-            if !layout.is_valid() {
-                self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidStructLayout });
-                return None;
-            }
-            let field_index = self.facts.field_index(key)?;
-            let Some(field) = usize::try_from(field_index).ok().and_then(|index| layout.fields.get(index)).copied()
-            else {
-                self.pending_error =
-                    Some(LoweringError { key, kind: LoweringErrorKind::InvalidStructField(field_index) });
-                return None;
-            };
-            let field = field?;
-            if self.facts.scalar_type(key)? != field.value_type {
-                self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidStructLayout });
-                return None;
-            }
+            let (value_type, offset) = self.field_slot(key)?;
             let base = self.field_base_pointer(key)?;
-            Some(self.builder.ins().load(
-                field.value_type,
-                MemFlagsData::new(),
-                base,
-                i32::try_from(field.offset).ok()?,
-            ))
+            Some(self.builder.ins().load(value_type, MemFlagsData::new(), base, offset))
         }
 
         fn emit_field_assign(&mut self, key: AstNodeKey) -> Option<Value> {
