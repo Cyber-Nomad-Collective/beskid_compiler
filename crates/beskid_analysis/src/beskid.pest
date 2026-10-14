@@ -231,14 +231,14 @@ StringLiteral = @{ "\"" ~ StringContent* ~ "\"" }
 StringLiteralValueBody = ${ (StringContent)* }
 StringLiteralValue = ${ SOI ~ StringLiteralValueBody ~ EOI }
 StringContent = { StringInterpolation | StringEscape | StringText }
-StringInterpolation = { "${" ~ InterpolationExpression ~ "}" }
+StringInterpolation = { PUSH("${") ~ InterpolationExpression ~ DROP ~ "}" }
 InterpolationExpression = !{ Expression }
 StringEscape = { "\\\"" | "\\\\" | "\\${" }
 StringText = { (!("\"" | "\\" | "$") ~ ANY)+ | ("$" ~ !("{")) }
 CharLiteral = @{ "'" ~ ("\\'" | !("'") ~ ANY) ~ "'" }
 
 CodeLanguageTag = @{ ASCII_ALPHA+ }
-CodeHole = { "@{" ~ InterpolationExpression ~ "}" }
+CodeHole = { PUSH("@{") ~ InterpolationExpression ~ DROP ~ "}" }
 CodeFenceChar = { !("`" | "@") ~ ANY | "@" ~ !("{") }
 CodeFenceBodyContents = ${ (CodeHole | CodeFenceChar)* }
 CodeFenceBody = { CodeFenceBodyContents }
@@ -399,7 +399,7 @@ TestSkipEntry = { Identifier ~ "=" ~ Expression ~ ";" }
 ////////////////////////////////////////////////////////////
 // 5) STATEMENTS AND BLOCKS
 ////////////////////////////////////////////////////////////
-Block = { "{" ~ Statement* ~ "}" }
+Block = { PUSH("{") ~ Statement* ~ DROP ~ "}" }
 
 WithStatement = { KwWith ~ Identifier ~ "(" ~ ArgumentList? ~ ")" ~ Block }
 LaunchStatement = { KwLaunch ~ Path ~ "(" ~ ArgumentList? ~ ")" ~ ";" }
@@ -417,11 +417,20 @@ ReturnStatement = { KwReturn ~ Expression? ~ ";" }
 BreakStatement = { KwBreak ~ ";" }
 ContinueStatement = { KwContinue ~ ";" }
 
-IfStatement = { KwIf ~ Expression ~ Block ~ ElsePart? }
+// Condition, iterable and scrutinee positions (`if`, `while`, `for ... in`, `match`) are followed by a
+// `{`, so a struct literal is not allowed at their top level: `if a == b {}` is the path `b` and an
+// empty block, not the struct literal `b {}`. A struct literal there must be parenthesized. The parser
+// stack carries the context without new tree nodes or input changes: `PUSH("")` marks a restricted
+// position, and every bracketed or braced nested position (groups, calls, subscripts, array literals,
+// blocks, match arms, interpolations) pushes its opening delimiter with `PUSH` to lift the restriction
+// until its `DROP`. `StructLiteralExpression` tests the top marker with `PEEK[-1..]` right after its
+// `{`: the empty marker always matches, so the literal is rejected; a delimiter marker matches only
+// where the field list could not parse anyway; an empty stack never matches.
+IfStatement = { KwIf ~ PUSH("") ~ Expression ~ DROP ~ Block ~ ElsePart? }
 ElsePart = { ElseKeyword ~ (IfStatement | Block) }
-WhileStatement = { KwWhile ~ Expression ~ Block }
-ForStatement = { KwFor ~ Identifier ~ KwIn ~ Expression ~ Block }
-RangeExpression = { KwRange ~ "(" ~ Expression ~ "," ~ Expression ~ ")" }
+WhileStatement = { KwWhile ~ PUSH("") ~ Expression ~ DROP ~ Block }
+ForStatement = { KwFor ~ Identifier ~ KwIn ~ PUSH("") ~ Expression ~ DROP ~ Block }
+RangeExpression = { KwRange ~ PUSH("(") ~ Expression ~ "," ~ Expression ~ DROP ~ ")" }
 
 ExpressionStatement = { Expression ~ ";" }
 
@@ -455,13 +464,13 @@ PrefixUnary = { ("-" | "!")* ~ PostfixExpression }
 PostfixExpression = { PrimaryExpression ~ PostfixOperator* }
 PostfixOperator = { CallOperator | MemberAccess | SubscriptOperator | TryOperator }
 
-CallOperator = { "(" ~ ArgumentList? ~ ")" }
+CallOperator = { PUSH("(") ~ ArgumentList? ~ DROP ~ ")" }
 MemberAccess = { "." ~ Identifier }
-SubscriptOperator = { "[" ~ Expression ~ "]" }
+SubscriptOperator = { PUSH("[") ~ Expression ~ DROP ~ "]" }
 TryOperator = { "?" }
 TryBlockExpression = { TryKeyword ~ Block ~ CatchKeyword ~ "(" ~ Identifier ~ ")" ~ Block }
 
-MacroInvocation = { Identifier ~ "!" ~ "(" ~ MacroArgumentList? ~ ")"? ~ MacroInvocationBlock? }
+MacroInvocation = { Identifier ~ "!" ~ PUSH("(") ~ MacroArgumentList? ~ DROP ~ ")"? ~ MacroInvocationBlock? }
 MacroArgumentList = { Expression ~ ("," ~ Expression)* }
 MacroInvocationBlock = { Block }
 MacroMetavariable = { "$" ~ Identifier }
@@ -472,19 +481,19 @@ ClifBlockExpression = { ClifKeyword ~ "{" ~ (!"}" ~ ANY)* ~ "}" }
 
 EnumConstructorExpression = { enum_constructor_nullary | enum_constructor_with_args }
 enum_constructor_nullary = { EnumPath ~ !"(" }
-enum_constructor_with_args = { EnumPath ~ "(" ~ ArgumentList? ~ ")" }
+enum_constructor_with_args = { EnumPath ~ PUSH("(") ~ ArgumentList? ~ DROP ~ ")" }
 
-StructLiteralExpression = { Path ~ "{" ~ FieldValueList? ~ "}" }
+StructLiteralExpression = { Path ~ "{" ~ !PEEK[-1..] ~ FieldValueList? ~ "}" }
 FieldValueList = { FieldValue ~ ("," ~ FieldValue)* ~ ","? }
 FieldValue = { Identifier ~ ":" ~ Expression }
 
-ArrayLiteralExpression = { "[" ~ ExpressionList? ~ "]" }
+ArrayLiteralExpression = { PUSH("[") ~ ExpressionList? ~ DROP ~ "]" }
 
-CallExpression = { Identifier ~ "(" ~ ArgumentList? ~ ")" }
+CallExpression = { Identifier ~ PUSH("(") ~ ArgumentList? ~ DROP ~ ")" }
 ArgumentList = { Expression ~ ("," ~ Expression)* }
 ExpressionList = { Expression ~ ("," ~ Expression)* ~ ","? }
 
-MatchExpression = { KwMatch ~ Expression ~ "{" ~ (MatchArm ~ ("," ~ MatchArm?)*)? ~ "}" }
+MatchExpression = { KwMatch ~ PUSH("") ~ Expression ~ DROP ~ PUSH("{") ~ (MatchArm ~ ("," ~ MatchArm?)*)? ~ DROP ~ "}" }
 MatchArm = { Pattern ~ MatchGuard? ~ "=>" ~ Expression }
 // A guard ends at the arm's `=>`, so a guard that starts like lambda parameters (`when strict => ...`,
 // `when (ready) => ...`) parses without the lambda alternative: an unparenthesized lambda is never a
@@ -497,5 +506,5 @@ Pattern = { "_" | EnumPattern | Identifier | Literal }
 EnumPattern = { EnumPath ~ ("(" ~ PatternList? ~ ")")? }
 PatternList = { Pattern ~ ("," ~ Pattern)* }
 
-GroupedExpression = { "(" ~ Expression ~ ")" }
+GroupedExpression = { PUSH("(") ~ Expression ~ DROP ~ ")" }
 BlockExpression = { Block }
