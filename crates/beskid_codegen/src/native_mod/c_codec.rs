@@ -13,10 +13,8 @@ const C_TRANSPORT: &str = r#"
 #include <math.h>
 #if defined(_WIN32)
 #define MOD_EXPORT __declspec(dllexport)
-#define MOD_TLS __declspec(thread)
 #else
 #define MOD_EXPORT __attribute__((visibility("default")))
-#define MOD_TLS _Thread_local
 #endif
 typedef struct ModCallbacks {
  int32_t (*kind)(void*,uint64_t,uint32_t*);
@@ -51,7 +49,32 @@ typedef struct ModScope {
  uint32_t rejected_type; int32_t rejected; /* first adapter type whose value could not be encoded */
  struct ModScope *previous;
 } ModScope;
-static MOD_TLS ModScope *mod_active;
+#if defined(_WIN32)
+/* The Mod DLL links /NOENTRY against import libraries only, so compiler-implicit thread-local
+   storage would need the static CRT's _tls_index. Keep the active scope in a kernel32 TLS slot,
+   as the runtime does. */
+__declspec(dllimport) unsigned long __stdcall TlsAlloc(void);
+__declspec(dllimport) void *__stdcall TlsGetValue(unsigned long);
+__declspec(dllimport) int __stdcall TlsSetValue(unsigned long,void*);
+__declspec(dllimport) int __stdcall InitOnceExecuteOnce(void**,int(__stdcall*)(void**,void*,void**),void*,void**);
+#define MOD_TLS_OUT_OF_INDEXES 0xFFFFFFFFul
+static void *mod_active_once; /* INIT_ONCE_STATIC_INIT is all-zero */
+static unsigned long mod_active_slot=MOD_TLS_OUT_OF_INDEXES;
+static int __stdcall mod_active_init(void **once,void *parameter,void **context) {
+ (void)once; (void)parameter; (void)context;
+ mod_active_slot=TlsAlloc();
+ return mod_active_slot!=MOD_TLS_OUT_OF_INDEXES;
+}
+static int mod_active_ready(void) {
+ return InitOnceExecuteOnce(&mod_active_once,mod_active_init,NULL,NULL) && mod_active_slot!=MOD_TLS_OUT_OF_INDEXES;
+}
+static ModScope *mod_active_get(void) { return mod_active_ready() ? (ModScope*)TlsGetValue(mod_active_slot) : NULL; }
+static int mod_active_set(ModScope *s) { return mod_active_ready() && TlsSetValue(mod_active_slot,s); }
+#else
+static _Thread_local ModScope *mod_active;
+static ModScope *mod_active_get(void) { return mod_active; }
+static int mod_active_set(ModScope *s) { mod_active=s; return 1; }
+#endif
 /* Entry status: which stage failed. Encoding adds the exceeded transport bound (`limit`). */
 #define MOD_STATUS_DECODE 1
 #define MOD_STATUS_INVOKE 2
@@ -762,7 +785,7 @@ pub(crate) fn emit_native_adapters(plan: &NativeAdapterPlan) -> Result<Vec<u8>> 
         let operation = callback.operation.bytes().map(|b| b.to_string()).collect::<Vec<_>>().join(",");
         writeln!(
             output,
-            "MOD_EXPORT {result_abi} {}({}){{ModScope*s=mod_active;ModValue result={{0}};if(!s||s->failure){{{return_value}}}uint64_t args[{}]={{0}};static const uint8_t operation[]={{ {operation}{} }};",
+            "MOD_EXPORT {result_abi} {}({}){{ModScope*s=mod_active_get();ModValue result={{0}};if(!s||s->failure){{{return_value}}}uint64_t args[{}]={{0}};static const uint8_t operation[]={{ {operation}{} }};",
             callback.symbol,
             if parameters.is_empty() { "void".to_owned() } else { parameters.join(",") },
             callback.parameters.len().max(1),
@@ -809,7 +832,7 @@ pub(crate) fn emit_native_adapters(plan: &NativeAdapterPlan) -> Result<Vec<u8>> 
         )?;
         writeln!(
             output,
-            "MOD_EXPORT int32_t {}(const ModHeader*h,uint64_t*out){{if(!out)return 1;*out=0;if(!mod_header(h)||mod_active)return 1;ModScope* s=calloc(1,sizeof(*s));if(!s)return 1;s->header=h;s->previous=mod_active;mod_active=s;int32_t status=MOD_STATUS_DECODE;ModValue request={{0}},mod_factory_input={{0}},result={{0}};if(!mod_decode_{}(s,h->factory_request,0,&mod_factory_input)||!mod_decode_{}(s,h->request,0,&request))goto failed;",
+            "MOD_EXPORT int32_t {}(const ModHeader*h,uint64_t*out){{if(!out)return 1;*out=0;if(!mod_header(h)||mod_active_get())return 1;ModScope* s=calloc(1,sizeof(*s));if(!s)return 1;s->header=h;s->previous=NULL;if(!mod_active_set(s)){{free(s);return 1;}}int32_t status=MOD_STATUS_DECODE;ModValue request={{0}},mod_factory_input={{0}},result={{0}};if(!mod_decode_{}(s,h->factory_request,0,&mod_factory_input)||!mod_decode_{}(s,h->request,0,&request))goto failed;",
             entry.symbol, entry.factory_request_type, entry.request_type
         )?;
         let bootstrap = emit_bootstrap(plan, &entry.factory_receiver, &mut output, &mut 0, 0)?;
@@ -825,7 +848,7 @@ pub(crate) fn emit_native_adapters(plan: &NativeAdapterPlan) -> Result<Vec<u8>> 
         }
         writeln!(
             output,
-            "status=MOD_STATUS_ENCODE;if(!mod_encode_{}(s,result,0,out)||s->failure)goto failed;mod_active=s->previous;mod_drop(s);free(s);return 0;failed:*out=0;if(s->limit)status=MOD_STATUS_ENCODE+s->limit;else if(status==MOD_STATUS_ENCODE&&s->rejected)*out=(uint64_t)s->rejected_type+1;mod_active=s->previous;mod_drop(s);free(s);return status;}}",
+            "status=MOD_STATUS_ENCODE;if(!mod_encode_{}(s,result,0,out)||s->failure)goto failed;mod_active_set(s->previous);mod_drop(s);free(s);return 0;failed:*out=0;if(s->limit)status=MOD_STATUS_ENCODE+s->limit;else if(status==MOD_STATUS_ENCODE&&s->rejected)*out=(uint64_t)s->rejected_type+1;mod_active_set(s->previous);mod_drop(s);free(s);return status;}}",
             entry.result_type
         )?;
     }
@@ -964,13 +987,21 @@ mod tests {
             parameters: vec![5],
             result_type: 5,
         });
-        std::fs::write(&path, emit_native_adapters(&plan).unwrap()).unwrap();
-        let output = std::process::Command::new("clang")
-            .args(["-std=c11", "-Wall", "-Wextra", "-fsyntax-only"])
-            .arg(&path)
-            .output()
-            .expect("clang required to verify generated native adapter");
-        assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+        let source = emit_native_adapters(&plan).unwrap();
+        std::fs::write(&path, &source).unwrap();
+        // The second pass checks the Win32 TLS branch with host headers; the Mod DLL has no
+        // static CRT, so implicit TLS (`__declspec(thread)`, `_tls_index`) must never be emitted.
+        let text = String::from_utf8(source).unwrap();
+        assert!(!text.contains("__declspec(thread)") && text.contains("TlsAlloc()"), "{text}");
+        for extra in [&[][..], &["-fms-extensions", "-D_WIN32", "-Wno-ignored-attributes"][..]] {
+            let output = std::process::Command::new("clang")
+                .args(["-std=c11", "-Wall", "-Wextra", "-fsyntax-only"])
+                .args(extra)
+                .arg(&path)
+                .output()
+                .expect("clang required to verify generated native adapter");
+            assert!(output.status.success(), "{extra:?}: {}", String::from_utf8_lossy(&output.stderr));
+        }
     }
     #[test]
     fn output_only_nominal_values_do_not_require_source_constructors() {
