@@ -33,6 +33,8 @@ impl Registry {
             while !s.load(Ordering::SeqCst) {
                 match listener.accept() {
                     Ok((mut stream, _)) => {
+                        // macOS accepted sockets inherit the listener's O_NONBLOCK.
+                        stream.set_nonblocking(false).unwrap();
                         stream.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
                         let mut bytes = Vec::new();
                         let mut chunk = [0; 1024];

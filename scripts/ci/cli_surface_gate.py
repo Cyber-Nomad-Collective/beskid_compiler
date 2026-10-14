@@ -30,7 +30,7 @@ SMOKE = {
     ("dev", "syntax", "clif"), ("dev", "project", "fetch"), ("dev", "project", "lock"),
     ("dev", "project", "graph"), ("dev", "bsol", "validate"), ("dev", "bsol", "migrate"),
     ("package", "search"), ("package", "info"), ("package", "pack"),
-    ("package", "template", "list"), ("toolchain", "status"),
+    ("package", "template", "list"), ("toolchain", "status"), ("dev", "toolchain-owner"),
 }
 SETUP_SKIPS = {
     ("add",): "requires isolated dependency transaction fixture",
@@ -320,7 +320,8 @@ def smoke_args(path, source, project, test_project, migration_project, root, reg
     if path == ("package", "template", "list"):
         return [], None, "app"
     if path == ("toolchain", "status"):
-        return [], None, "no direct-install version is active"
+        # The gated binary runs from the build output, outside any installed prefix.
+        return [], None, "Installation owner: unmanaged"
     if path == ("dev", "capabilities"):
         return ["--json"], None, '"schemaVersion"'
     if tail in {"fetch", "lock", "update"}:
@@ -364,6 +365,46 @@ def smoke_args(path, source, project, test_project, migration_project, root, reg
     if path == ("dev", "repl"):
         return [], b":help\n:quit\n", "commands: :quit"
     raise ValueError(f"no smoke fixture for {path}")
+
+
+def toolchain_owner_case(binary_sha256, runtime_prefix, root, env):
+    """Stamp a private copy of the verified installed prefix and read the owner back.
+
+    The release bundle passed as BESKID_RUNTIME_PREFIX is never modified; the copy must carry the
+    exact gated CLI so the receipt covers the binary under test.
+    """
+    row = {"expected_exit": 0}
+    if not runtime_prefix:
+        row.update(status="fail", reason="BESKID_RUNTIME_PREFIX must name the verified release bundle prefix")
+        return row
+    prefix = root / "owner-prefix"
+    shutil.copytree(Path(runtime_prefix), prefix, symlinks=True)
+    extension = ".exe" if os.name == "nt" else ""
+    installed = prefix / "bin" / f"beskid{extension}"
+    targets = sorted(entry.name for entry in (prefix / "lib" / "beskid-runtime" / "abi-5").iterdir() if entry.is_dir())
+    version = (prefix / "release-version.txt").read_text().strip()
+    installed_sha256 = hashlib.sha256(installed.read_bytes()).hexdigest() if installed.is_file() else None
+    row.update(installed_sha256=installed_sha256, targets=targets, version=version)
+    if installed_sha256 != binary_sha256 or len(targets) != 1:
+        row.update(status="fail", reason="bundle prefix does not carry the gated CLI for exactly one target")
+        return row
+    stamp_args = ["dev", "toolchain-owner", "--owner", "manual", "--version", version, "--target", targets[0]]
+    stamp = run(installed, stamp_args, env, root)
+    status = run(installed, ["toolchain", "status"], env, root)
+    conflict_args = [*stamp_args[:3], "homebrew", *stamp_args[4:]]
+    conflict = run(installed, conflict_args, env, root)
+    receipt = prefix / ".beskid-owner.json"
+    row.update(argv=stamp_args, exit=stamp.returncode, **output_evidence(stamp.stdout, stamp.stderr))
+    row["receipt_written"] = receipt.is_file() and json.loads(receipt.read_text()).get("owner") == "manual"
+    row["status_reports_owner"] = (status.returncode == 0
+                                   and f"Installation owner: manual\nPrefix: {prefix.resolve()}".encode() in status.stdout)
+    row["conflicting_owner_rejected"] = (conflict.returncode != 0
+                                         and b"different owner" in conflict.stdout + conflict.stderr)
+    row["marker_seen"] = b"Verified manual installation owner at" in stamp.stdout
+    row["status"] = "pass" if (stamp.returncode == 0 and not row["control_bytes"] and row["marker_seen"]
+                               and row["receipt_written"] and row["status_reports_owner"]
+                               and row["conflicting_owner_rejected"]) else "fail"
+    return row
 
 
 def main(argv=None):
@@ -421,6 +462,9 @@ def main(argv=None):
                 continue
             if row["status"] == "uncovered":
                 row["reason"] = "advertised leaf outside bounded safe smoke set"
+                continue
+            if path == ("dev", "toolchain-owner"):
+                row.update(toolchain_owner_case(binary_sha256, env.get("BESKID_RUNTIME_PREFIX"), root, env))
                 continue
             case_root = root / "cases" / "-".join(path)
             case_root.mkdir(parents=True)

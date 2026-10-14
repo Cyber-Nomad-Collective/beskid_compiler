@@ -43,6 +43,10 @@ impl Registry {
             while !s.load(Ordering::SeqCst) {
                 match listener.accept() {
                     Ok((mut stream, _)) => {
+                        // BSD-derived systems (macOS) let the accepted socket inherit the listener's
+                        // O_NONBLOCK; a request not yet arrived would then read as WouldBlock and be
+                        // served as an empty-path 404.
+                        stream.set_nonblocking(false).expect("blocking accepted stream");
                         stream.set_read_timeout(Some(Duration::from_secs(2))).expect("read timeout");
                         let mut bytes = Vec::new();
                         let mut chunk = [0; 1024];

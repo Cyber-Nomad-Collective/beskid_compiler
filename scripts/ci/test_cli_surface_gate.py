@@ -39,7 +39,7 @@ Options:
         for path in [("dev", "project", "graph"), ("dev", "project", "lock"),
                      ("toolchain", "status"), ("dev", "bsol", "validate"),
                      ("build",), ("dev", "build"), ("package", "pack"),
-                     ("package", "search"), ("new",), ("fmt",)]:
+                     ("package", "search"), ("new",), ("fmt",), ("dev", "toolchain-owner")]:
             self.assertEqual(gate.classify(path), "smoke", path)
         for path in [("package", "publish"), ("toolchain", "update"), ("add",)]:
             self.assertEqual(gate.classify(path), "setup_skip", path)
@@ -47,6 +47,21 @@ Options:
                         ("dev", "package", "registry", "search"), ("dev", "build", "test")]:
             self.assertEqual(gate.classify(retired), "uncovered", retired)
         self.assertEqual(gate.classify(("future-command",)), "uncovered")
+
+    def test_toolchain_owner_requires_the_gated_cli_in_a_private_bundle_copy(self):
+        gate = self.load_gate()
+        with tempfile.TemporaryDirectory() as scratch:
+            root = Path(scratch)
+            self.assertEqual(gate.toolchain_owner_case("a" * 64, None, root, {})["status"], "fail")
+            bundle = root / "bundle"
+            (bundle / "bin").mkdir(parents=True)
+            (bundle / "lib" / "beskid-runtime" / "abi-5" / "x86_64-unknown-linux-gnu").mkdir(parents=True)
+            (bundle / "bin" / "beskid").write_bytes(b"other binary")
+            (bundle / "release-version.txt").write_text("0.6.0\n")
+            row = gate.toolchain_owner_case("a" * 64, str(bundle), root / "case", {})
+            self.assertEqual(row["status"], "fail")
+            self.assertEqual(row["targets"], ["x86_64-unknown-linux-gnu"])
+            self.assertFalse((bundle / ".beskid-owner.json").exists())
 
     def test_uncovered_leaf_is_release_failure(self):
         gate = self.load_gate()
