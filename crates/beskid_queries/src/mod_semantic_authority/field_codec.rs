@@ -132,3 +132,86 @@ fn current_entry_function(
     };
     Ok(*function)
 }
+
+/// Fail-closed admission of the field codec facts of every retained concrete `[Serialize]` target,
+/// before lowering and independent of reachability.
+///
+/// The generated encoder and decoder of a target read and write each nested nominal field through
+/// `WriteField<F, E>` / `ReadField<F, R>`, whose bodies the compiler issues per concrete
+/// application. A generic helper reached with a type argument (`Pair<Opaque>`) is only applied
+/// there, so without this pass an application lacking facts would surface only if a format
+/// specialization were lowered. Every record or enum application in a target's serialization
+/// wire closure must itself be a retained `[Serialize]` target or template of the same program;
+/// scalars, arrays and the canonical Foundation containers are issued by the correspondence
+/// directly, and their element applications are part of the same closure.
+pub fn serialization_field_codec_admission(db: &dyn Db, program: &crate::TypedProgram) -> Result<(), String> {
+    let metadata = &program.assembly.compiled_mod_metadata;
+    let targets =
+        metadata.iter().filter_map(|metadata| metadata.issuer_payload::<CompiledSerializationTarget>()).collect::<Vec<_>>();
+    if targets.is_empty() {
+        return Ok(());
+    }
+    let mut served = std::collections::HashSet::new();
+    let mut graphs = Vec::with_capacity(targets.len());
+    for target in &targets {
+        let current = target.corresponding_target(db, program).map_err(|error| error.to_string())?;
+        served.insert(current.owner());
+        graphs.push(current.shape(db, program).map_err(|error| error.to_string())?);
+    }
+    for template in metadata.iter().filter_map(|metadata| metadata.issuer_payload::<CompiledSerializationTemplate>()) {
+        served.insert(template.current_owner(db, program).map_err(|error| error.to_string())?);
+    }
+    for graph in &graphs {
+        let nodes = graph.nodes();
+        let name = |index: u32| match nodes.get(index as usize) {
+            Some(
+                crate::DynamicPackingNode::Record { identity, .. } | crate::DynamicPackingNode::Enum { identity, .. },
+            ) => identity.to_string(),
+            Some(crate::DynamicPackingNode::Scalar { name, .. }) => (*name).to_owned(),
+            Some(crate::DynamicPackingNode::Array { .. }) => "array".to_owned(),
+            None => "<absent>".to_owned(),
+        };
+        // Walk the wire closure as the issued codecs traverse it: record and enum fields, array
+        // elements, and only the type arguments of a canonical container (its internal
+        // representation is written by the canonical container codec, not by field codecs).
+        let mut visited = std::collections::HashSet::new();
+        let mut pending = vec![(0_u32, None::<(u32, String)>)];
+        while let Some((index, reached_by)) = pending.pop() {
+            if !visited.insert(index) {
+                continue;
+            }
+            let node = nodes.get(index as usize).ok_or_else(|| "serialization wire closure is incomplete".to_owned())?;
+            let fields = match node {
+                crate::DynamicPackingNode::Scalar { .. } => continue,
+                crate::DynamicPackingNode::Array { element } => {
+                    pending.push((*element, reached_by));
+                    continue;
+                }
+                crate::DynamicPackingNode::Record { container: Some(_), arguments, .. }
+                | crate::DynamicPackingNode::Enum { container: Some(_), arguments, .. } => {
+                    pending.extend(arguments.iter().map(|argument| (*argument, reached_by.clone())));
+                    continue;
+                }
+                crate::DynamicPackingNode::Record { container: None, declaration, identity, fields, .. } => {
+                    (declaration, identity, fields.iter().collect::<Vec<_>>())
+                }
+                crate::DynamicPackingNode::Enum { container: None, declaration, identity, variants, .. } => {
+                    (declaration, identity, variants.iter().flat_map(|variant| variant.fields.iter()).collect())
+                }
+            };
+            let (declaration, identity, fields) = fields;
+            if !served.contains(declaration) {
+                let site = match &reached_by {
+                    Some((owner, field)) => format!(" through field `{field}` of `{}`", name(*owner)),
+                    None => String::new(),
+                };
+                return Err(format!(
+                    "serialization target `{}` reaches `{identity}`{site}, which is neither a [Serialize] target, a scalar nor a canonical container; this instantiation has no compiler-issued field codec facts",
+                    name(0)
+                ));
+            }
+            pending.extend(fields.into_iter().map(|field| (field.ty, Some((index, field.name.clone())))));
+        }
+    }
+    Ok(())
+}

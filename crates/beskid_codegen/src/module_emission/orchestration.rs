@@ -145,6 +145,12 @@ pub fn lower_syntax_program(
         crate::isle_trace::event(|| format!("event=isle.missing rule=legality_gate detail={error}"));
         return Err(error);
     }
+    // MOD-06-02: every retained `[Serialize]` target's instantiations carry compiler-issued
+    // field codec facts, whether or not the requested items reach them.
+    if let Err(error) = beskid_queries::serialization_field_codec_admission(db, input.typed_program()) {
+        crate::isle_trace::event(|| format!("event=isle.missing rule=serialization_field_codec_admission detail={error}"));
+        return Err(SyntaxModuleEmissionError::SerializationFacts(error));
+    }
     let items = match resolve_module_items(input, items).and_then(|items| expand_direct_spawn_items(input, items)) {
         Ok(items) => items,
         Err(error) => {

@@ -12,6 +12,7 @@ pub use serialization_target::{
 mod catchall;
 mod field_codec;
 pub(crate) use field_codec::generated_field_codec_factory;
+pub use field_codec::serialization_field_codec_admission;
 mod functions;
 use crate::semantic_contract::mod_shapes::{
     ShapeBodyProjection, ShapeIdentity, mod_shape_is_managed, mod_shape_lexical_path, mod_shape_projection,
