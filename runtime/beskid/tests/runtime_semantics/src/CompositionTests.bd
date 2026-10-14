@@ -21,9 +21,14 @@ pub unit CompositionFiberScopeEntry(pointer state) {
     return;
 }
 
+// `Fiber.handle` is private to Concurrency.Fiber (E1211). Nothing in these tests finishes or
+// detaches a fiber before the next spawn, so `FiberAlloc` takes a fresh record and the spawned
+// fiber is the newest one in the scheduler table.
 pub i64 SpawnCompositionFiberScopeEntry(pointer state) {
     Fiber<unit> child = spawn CompositionFiberScopeEntry(state);
-    return child.handle;
+    pointer table = SchedTable();
+    if table == NativePointer(0) { return -1; }
+    return i64(FiberHandle(raw_word_load(table) - 1));
 }
 
 test composition_activates_scopes_and_disposes_compiler_materialized_slots {
@@ -129,7 +134,12 @@ test composition_rejects_plan_sizes_outside_the_compiler_runtime_contract {
     pointer runtime = SystemAllocate(64, 8);
     memory_set(runtime, 0, 64);
     Assert.True(ProcessInit(runtime) == runtime, "runtime initialized");
-    Assert.True(CompositionContainerCreate(257) == NativePointer(0), "oversized compiler plans fail closed");
+    // Plans have no fixed entry cap; a slot count whose storage overflows the word range fails closed.
+    Assert.True(CompositionContainerCreate(0x1000000000000000) == NativePointer(0), "plans whose slot storage overflows fail closed");
+    pointer large = CompositionContainerCreate(257);
+    Assert.True(large != NativePointer(0), "plans above the former 256-entry cap are sized exactly");
+    CompositionShutdown(large);
+    CompositionContainerDrop(large);
     ProcessShutdown(runtime);
     SystemFree(runtime, 64);
     ResumeHostRuntime(hostRuntime);

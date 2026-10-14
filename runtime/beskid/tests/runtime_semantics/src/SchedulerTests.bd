@@ -43,9 +43,14 @@ pub unit YieldingEntry(pointer argument) {
 
 // Spawns YieldingEntry with an eager argument and returns only its scheduler handle, so the
 // GC-rooted `Fiber<unit>` local is released before the test shuts its own runtime down.
+// `Fiber.handle` is private to Concurrency.Fiber (E1211); the scheduler is fresh and no fiber is
+// finished or detached before this spawn, so `FiberAlloc` takes a fresh record and the spawned
+// fiber is the newest one in the scheduler table.
 pub i64 SpawnYieldingEntry(pointer argument) {
     Fiber<unit> childFiber = spawn YieldingEntry(argument);
-    return childFiber.handle;
+    pointer table = SchedTable();
+    if table == NativePointer(0) { return -1; }
+    return i64(FiberHandle(raw_word_load(table) - 1));
 }
 
 pub unit ShutdownSchedulerRuntime(pointer runtime) {
@@ -127,8 +132,8 @@ test scheduler_executes_argument_yield_resume_and_return_trampoline {
     // `Some(ResolvedValue::Item(_)) => UnknownValueType` branch); only the compiler's own
     // `spawn` lowering can materialize a real, callable entry address for `SchedulerSpawn`.
     // This test steps the fiber and observes YieldingEntry's real side effects, so it must
-    // reach the raw scheduler primitive through `spawn` (not a dummy address) and read the
-    // resulting `Fiber<unit>`'s `i64 handle` field.
+    // reach the raw scheduler primitive through `spawn` (not a dummy address) and recover the
+    // spawned fiber's handle from the scheduler table.
     i64 handle = SpawnYieldingEntry(argument);
     Assert.True(handle >= 0, "real entry receives a generation-safe handle");
     word handleIndex = FiberHandleIndex(word(handle));
