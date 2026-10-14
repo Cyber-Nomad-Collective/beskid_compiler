@@ -24,15 +24,6 @@ pointer StrNewZeroed(word length) {
     return utf8_view_new(NativePointer(0), length);
 }
 
-// True when `value` is a string in the managed heap. A string outside it (the `Core.Args`
-// storage the platform host maps once at startup) is never freed by a collection, so an operation
-// that allocates needs no root for it; `GcRootHandle` rejects such a string, and requiring a root
-// made `"arg:" + Args.All()[1]` return a null string.
-bool IsManagedString(pointer value) {
-    pointer heap = Heap();
-    return heap != NativePointer(0) && ManagedObjectForReference(heap, value) != NativePointer(0);
-}
-
 // The data address of a string returned by `StrNewZeroed`.
 pointer StrData(pointer value) {
     return NativePointer(raw_word_load(value));
@@ -130,21 +121,16 @@ pub pointer StrConcat(pointer left, pointer right) {
         return NativePointer(0);
     }
     // The result is allocated before the operands are copied, so both stay rooted across the
-    // allocation: the caller may pass temporaries that nothing else references.
-    mut word leftRoot = 0;
-    if IsManagedString(left) {
-        leftRoot = GcRootHandle(left);
-        if leftRoot == 0 {
-            return NativePointer(0);
-        }
+    // allocation: the caller may pass temporaries that nothing else references. Every string is
+    // a managed heap string (`Core.Args` values included), so a failed root is a failure.
+    word leftRoot = GcRootHandle(left);
+    if leftRoot == 0 {
+        return NativePointer(0);
     }
-    mut word rightRoot = 0;
-    if IsManagedString(right) {
-        rightRoot = GcRootHandle(right);
-        if rightRoot == 0 {
-            GcUnrootHandle(leftRoot);
-            return NativePointer(0);
-        }
+    word rightRoot = GcRootHandle(right);
+    if rightRoot == 0 {
+        GcUnrootHandle(leftRoot);
+        return NativePointer(0);
     }
     pointer result = StrNewZeroed(totalLen);
     if result != NativePointer(0) {
@@ -236,11 +222,8 @@ pub pointer StrSlice(pointer value, word start, mut word count) {
     if data == NativePointer(0) {
         return NativePointer(0);
     }
-    mut word retained = 0;
-    if IsManagedString(value) {
-        retained = GcRootHandle(value);
-        if retained == 0 { return NativePointer(0); }
-    }
+    word retained = GcRootHandle(value);
+    if retained == 0 { return NativePointer(0); }
     pointer result = StrNew(pointer_add(data, start), sliceLen);
     GcUnrootHandle(retained);
     return result;

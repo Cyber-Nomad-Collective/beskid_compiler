@@ -76,10 +76,16 @@ void beskid_rt_v5_args_handoff_utf8(int64_t argc, const char *const *argv) {
 
 int64_t beskid_rt_v5_args_count(void) { return beskid_args.count; }
 
+/* Each call returns a new managed string with a copy of the argument: `string` values are
+   canonical heap strings, and the argument arena is not part of the managed heap. */
 struct BeskidStr *beskid_rt_v5_args_get(int64_t index) {
   if (index < 0 || index >= beskid_args.count)
     beskid_args_trap(2, "Core.Args argument index is out of range");
-  return &beskid_args.values[index];
+  const struct BeskidStr *value = &beskid_args.values[index];
+  void *managed = str_new((void *)value->ptr, value->len);
+  if (managed == NULL)
+    beskid_args_trap(5, "Core.Args argument allocation failed");
+  return (struct BeskidStr *)managed;
 }
 
 #define BESKID_GUARDED_STACK_MIN (64u * 1024u)
