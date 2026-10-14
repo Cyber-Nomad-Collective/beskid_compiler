@@ -1,28 +1,12 @@
 use std::collections::HashSet;
 use std::path::Path;
-use std::sync::Arc;
 
-use crate::resolve::{Resolution, ResolutionTables, ResolveResult, Resolver};
+use crate::resolve::{Resolution, ResolveResult, Resolver};
 use crate::syntax::{Program, Spanned};
 
 use super::super::ProgramAssembly;
 use super::model::ModuleIndex;
 use super::path_inference::infer_logical_module_path;
-
-/// Declaration annotations of every unit of one assembly, resolved once with every unit
-/// collected: units of one assembly see each other, whichever of them is being analyzed.
-#[derive(Debug)]
-pub struct AssemblyDeclarationTables {
-    units: Arc<Vec<crate::projects::assembly::SourceUnit>>,
-    tables: Vec<ResolutionTables>,
-}
-
-impl AssemblyDeclarationTables {
-    /// Whether these tables were resolved for `assembly`'s exact unit list.
-    fn describes(&self, assembly: &ProgramAssembly) -> bool {
-        Arc::ptr_eq(&self.units, &assembly.units)
-    }
-}
 
 impl ModuleIndex {
     /// Logical module paths present or explicitly declared in expanded syntax.
@@ -48,22 +32,17 @@ impl ModuleIndex {
     /// Seeds the resolver with all known module paths and collects dependency
     /// units so that `use` declarations and cross-module references in the entry
     /// program resolve against the full assembled closure.
-    ///
-    /// `declarations` are the assembly's shared dependency declaration tables when the caller
-    /// resolves several entries of one assembly; without them (or for another assembly) they are
-    /// resolved here.
     pub fn resolve_entry_program(
         &self,
         program: &Spanned<Program>,
         entry_source_path: Option<&Path>,
         assembly: &ProgramAssembly,
-        declarations: Option<&AssemblyDeclarationTables>,
     ) -> ResolveResult<Resolution> {
         let mut resolver = Resolver::new();
         let entry_source_path = entry_source_path.map(|path| path.to_path_buf());
         resolver.set_current_source_path(entry_source_path.clone());
 
-        self.seed_resolver_from_assembly(&mut resolver, assembly, Some(assembly.entry_index));
+        self.seed_resolver_from_assembly(&mut resolver, assembly);
         // The entry is still a module of the assembly: sibling declarations may name it by its
         // logical path (`Console.ConsoleSize` from `Platform/Terminal.bd`).
         let entry_unit = entry_source_path
@@ -74,7 +53,7 @@ impl ModuleIndex {
         resolver.set_current_source_path(entry_source_path);
 
         let mut resolution = resolver.resolve_entry_program_in_module(program, entry_module_path.as_deref())?;
-        self.merge_dependency_declaration_tables(&mut resolution, assembly, declarations);
+        self.merge_dependency_declaration_tables(&mut resolution, assembly);
         Ok(resolution)
     }
 
@@ -91,20 +70,15 @@ impl ModuleIndex {
         let mut resolver = Resolver::new();
         resolver.set_current_source_path(Some(unit_source_path.to_path_buf()));
 
-        self.seed_resolver_from_assembly(&mut resolver, assembly, Some(assembly.entry_index));
+        self.seed_resolver_from_assembly(&mut resolver, assembly);
 
         resolver.resolve_program(program)
     }
 
-    /// Seed `resolver` with all known module paths and collect every unit's items except
-    /// `excluded` (the entry, which its own resolution collects) so `use` declarations and
-    /// references resolve against the full assembled closure.
-    fn seed_resolver_from_assembly(
-        &self,
-        resolver: &mut Resolver,
-        assembly: &ProgramAssembly,
-        excluded: Option<usize>,
-    ) {
+    /// Seed `resolver` with all known module paths and collect every non-entry
+    /// unit's items so the entry program's `use` declarations and references
+    /// resolve against the full assembled closure.
+    fn seed_resolver_from_assembly(&self, resolver: &mut Resolver, assembly: &ProgramAssembly) {
         let source_path = resolver.current_source_path.clone();
         if let Some(proof) = assembly.runtime_fixture.as_ref()
             && source_path.as_ref().is_some_and(|path| {
@@ -136,7 +110,7 @@ impl ModuleIndex {
             resolver.module_graph.ensure_module_path(path);
         }
         for (index, unit) in assembly.units.iter().enumerate() {
-            if Some(index) == excluded {
+            if index == assembly.entry_index {
                 continue;
             }
             let module_path = infer_logical_module_path(unit, &assembly.roots);
@@ -169,58 +143,32 @@ impl ModuleIndex {
 
         let mut resolver = Resolver::new();
         resolver.set_current_source_path(Some(entry_source_path.clone()));
-        self.seed_resolver_from_assembly(&mut resolver, assembly, Some(assembly.entry_index));
+        self.seed_resolver_from_assembly(&mut resolver, assembly);
         let mut resolution =
             resolver.resolve_collected_program_for_api_documentation(entry_program, entry_module_path.as_deref());
 
-        self.merge_dependency_declaration_tables(&mut resolution, assembly, None);
+        self.merge_dependency_declaration_tables(&mut resolution, assembly);
         Some(resolution)
     }
 
-    /// Resolve every unit's declaration annotations once, under its own logical module and import
-    /// scope, against a resolver that collected every unit of the assembly.
+    /// Merge source-scoped reference facts for every dependency unit into an entry resolution.
     ///
-    /// Dependency declarations are collected while seeding an entry resolver, but their type
-    /// annotations can depend on imports declared by the dependency itself; resolving each unit
-    /// in its own scope preserves those annotations for declaration surfaces without duplicating
-    /// import expansion in the type checker. The tables do not depend on which unit is the entry,
-    /// so every own-unit analysis of one assembly shares them.
-    pub fn assembly_declaration_tables(&self, assembly: &ProgramAssembly) -> AssemblyDeclarationTables {
-        let mut resolver = Resolver::new();
-        self.seed_resolver_from_assembly(&mut resolver, assembly, None);
-        let tables = assembly
-            .units
-            .iter()
-            .map(|unit| {
-                let module_path = infer_logical_module_path(unit, &assembly.roots);
-                resolver.set_current_source_path(Some(unit.path.clone()));
-                resolver.resolve_collected_program_declarations(&unit.program, module_path.as_deref())
-            })
-            .collect();
-        AssemblyDeclarationTables { units: Arc::clone(&assembly.units), tables }
-    }
-
-    /// Merge the declaration tables of every dependency (every unit but the entry) into an entry
-    /// resolution.
-    fn merge_dependency_declaration_tables(
-        &self,
-        resolution: &mut Resolution,
-        assembly: &ProgramAssembly,
-        declarations: Option<&AssemblyDeclarationTables>,
-    ) {
-        let resolved;
-        let declarations = match declarations.filter(|declarations| declarations.describes(assembly)) {
-            Some(declarations) => declarations,
-            None => {
-                resolved = self.assembly_declaration_tables(assembly);
-                &resolved
-            }
-        };
-        for (index, (unit, unit_tables)) in assembly.units.iter().zip(&declarations.tables).enumerate() {
+    /// Dependency declarations are collected while seeding the entry resolver, but their type
+    /// annotations can depend on imports declared by the dependency itself. Resolving each
+    /// collected unit under its own logical module and import scope preserves those annotations
+    /// for declaration surfaces without duplicating import expansion in the type checker.
+    fn merge_dependency_declaration_tables(&self, resolution: &mut Resolution, assembly: &ProgramAssembly) {
+        let mut dependency_resolver = Resolver::new();
+        self.seed_resolver_from_assembly(&mut dependency_resolver, assembly);
+        for (index, unit) in assembly.units.iter().enumerate() {
             if index == assembly.entry_index {
                 continue;
             }
-            resolution.tables.merge_declaration_types_from(unit_tables, unit.path.clone());
+            let module_path = infer_logical_module_path(unit, &assembly.roots);
+            dependency_resolver.set_current_source_path(Some(unit.path.clone()));
+            let unit_tables =
+                dependency_resolver.resolve_collected_program_declarations(&unit.program, module_path.as_deref());
+            resolution.tables.merge_declaration_types_from(&unit_tables, unit.path.clone());
         }
         resolution.rebuild_span_index();
     }

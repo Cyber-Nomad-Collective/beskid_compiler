@@ -90,7 +90,7 @@ fn corelib_mvp_fixture_resolves_std_modules_via_program_assembly() {
         let assembly = shared_corelib_mvp_assembly();
         let resolution = assembly
             .module_index
-            .resolve_entry_program(&assembly.entry_unit().program, None, &assembly, None)
+            .resolve_entry_program(&assembly.entry_unit().program, None, &assembly)
             .expect("cross-module resolve via ModuleIndex");
 
         assert!(
@@ -381,17 +381,35 @@ fn checked_in_compiler_sdk_query_facade_contract_first_nodes() {
 
 #[test]
 fn checked_in_corelib_beskid_test_sources_parse() {
-    let root = corelib_root();
-    let test_files = [
-        root.join("tests/corelib_tests/src/glue/BinaryCodecTests.bd"),
-        root.join("tests/corelib_tests/src/glue/ControlEnvelopeTests.bd"),
-        root.join("tests/corelib_tests/src/bsol/BuiltinProfilesTests.bd"),
-        root.join("tests/corelib_tests/src/system/SystemSuite.bd"),
-        root.join("tests/corelib_tests/src/core/CoreSuite.bd"),
-        root.join("tests/corelib_tests/src/collections/CollectionsSuite.bd"),
-        root.join("tests/corelib_tests/src/query/QuerySuite.bd"),
-        root.join("tests/corelib_tests/src/console/ConsoleSuite.bd"),
-    ];
+    // Every checked-in source of the corelib_tests project, discovered from its source root, so
+    // folded or added suites never leave this list stale.
+    let source_root = corelib_root().join("tests/corelib_tests/src");
+    let mut pending = vec![source_root.clone()];
+    let mut test_files = Vec::new();
+    while let Some(directory) = pending.pop() {
+        for entry in fs::read_dir(&directory).unwrap_or_else(|err| panic!("read {}: {err}", directory.display())) {
+            let path = entry.expect("corelib test source entry").path();
+            if path.is_dir() {
+                // Tool state (`.beskid`, `.generated`) is not checked-in source.
+                if !path.file_name().is_some_and(|name| name.to_string_lossy().starts_with('.')) {
+                    pending.push(path);
+                }
+            } else if path.extension().is_some_and(|extension| extension == "bd") {
+                test_files.push(path);
+            }
+        }
+    }
+    test_files.sort();
+    // Every target entry of the manifest is among the discovered sources.
+    let manifest = fs::read_to_string(source_root.with_file_name("corelib_tests.bproj")).expect("read corelib_tests.bproj");
+    let entries = manifest
+        .lines()
+        .filter_map(|line| line.trim().strip_prefix("entry = \"")?.strip_suffix('"'))
+        .collect::<Vec<_>>();
+    assert!(!entries.is_empty(), "corelib_tests.bproj declares target entries");
+    for entry in &entries {
+        assert!(test_files.contains(&source_root.join(entry)), "target entry {entry} is not a checked-in source");
+    }
     for path in test_files {
         let source =
             fs::read_to_string(&path).unwrap_or_else(|_| panic!("read corelib test source {}", path.display()));

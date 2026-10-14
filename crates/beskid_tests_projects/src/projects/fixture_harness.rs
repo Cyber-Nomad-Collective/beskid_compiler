@@ -230,7 +230,7 @@ mod tests {
     fn resolve_entry(assembly: &ProgramAssembly) -> beskid_analysis::resolve::Resolution {
         assembly
             .module_index
-            .resolve_entry_program(&assembly.entry_unit().program, Some(&assembly.entry_unit().path), assembly, None)
+            .resolve_entry_program(&assembly.entry_unit().program, Some(&assembly.entry_unit().path), assembly)
             .expect("resolve the suite entry")
     }
 

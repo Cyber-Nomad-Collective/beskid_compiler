@@ -123,7 +123,7 @@ mod tests {
             .expect("parse Main.bd");
         let resolution = assembly
             .module_index
-            .resolve_entry_program(&assembly.entry_unit().program, Some(&fixture.main_path), assembly, None)
+            .resolve_entry_program(&assembly.entry_unit().program, Some(&fixture.main_path), assembly)
             .expect("entry resolution");
         let module_paths = assembly.module_index.known_module_path_strings();
         build_document_analysis_from_resolution(
@@ -147,6 +147,64 @@ mod tests {
             let snapshot = snapshot_from_entry_resolution(&assembly, &fixture);
             (snapshot, fixture, assembly)
         })
+    }
+
+    /// Dependency declaration type facts merged into an entry resolution name items of that
+    /// resolution's own item table: every fact names a type-like item whose name the annotated
+    /// source spells. Regression: the merged facts once came from a resolver whose item ids were
+    /// shifted by the entry unit, so a dependency annotation after the entry resolved to an
+    /// unrelated parameter or field (`ArrayIter` -> `FromUtf8CodeUnits::data`).
+    #[test]
+    fn dependency_declaration_type_facts_name_items_of_the_entry_resolution_for_every_entry_position() {
+        use crate::resolve::{ItemKind, ResolvedType};
+        let root = compiler_workspace_root();
+        with_cwd_at_workspace_root(&root, || {
+            let fixture = corelib_mvp_paths();
+            let assembly = assemble_corelib_mvp(&fixture.main_path, &fixture.source, &fixture.project_root);
+            let last = assembly.units.len() - 1;
+            assert!(last >= 2, "corelib_mvp assembles several units");
+            let mut entries = vec![assembly.entry_index, 0, last / 2, last];
+            entries.dedup();
+            assert!(entries.iter().any(|entry| *entry < last), "an entry before later dependency units");
+            let mut checked = 0usize;
+            let mut mismatches = Vec::new();
+            for entry in entries {
+                let entry_assembly = assembly.with_entry_index(entry).expect("entry inside the assembly");
+                let entry_unit = entry_assembly.entry_unit();
+                let resolution = entry_assembly
+                    .module_index
+                    .resolve_entry_program(&entry_unit.program, Some(&entry_unit.path), &entry_assembly)
+                    .expect("entry resolution");
+                for (unit_path, facts) in &resolution.tables.scoped_resolved_types {
+                    let unit = entry_assembly
+                        .units
+                        .iter()
+                        .find(|unit| crate::paths::same_file(&unit.path, unit_path))
+                        .expect("scoped facts belong to an assembled unit");
+                    for (span, ty) in facts {
+                        let ResolvedType::Item(item) = ty else { continue };
+                        let spelled = unit.source.get(span.start..span.end).unwrap_or_default();
+                        let info = resolution.items.get(item.0);
+                        let admitted = info.is_some_and(|info| {
+                            matches!(info.kind, ItemKind::Type | ItemKind::Enum | ItemKind::Contract)
+                                && spelled.contains(info.name.as_str())
+                        });
+                        checked += 1;
+                        if !admitted {
+                            mismatches.push(format!(
+                                "entry {entry}: {}:{}..{} `{spelled}` -> {:?}",
+                                unit.logical_name,
+                                span.start,
+                                span.end,
+                                info.map(|info| (&info.name, info.kind))
+                            ));
+                        }
+                    }
+                }
+            }
+            assert!(checked > 0, "dependency declaration type facts were merged");
+            assert!(mismatches.is_empty(), "misattributed dependency declaration types: {mismatches:#?}");
+        });
     }
 
     #[test]

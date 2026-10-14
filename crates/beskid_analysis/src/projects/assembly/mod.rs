@@ -22,9 +22,7 @@ pub use loader::{
     AssemblyError, UnitMaterializer, assemble_program_with_materializer, assembly_options_for_plan,
     assembly_options_for_prepare,
 };
-pub use module_index::{
-    AssemblyDeclarationTables, AssemblyModule, ModuleGraph, ModuleIndex, infer_logical_module_path,
-};
+pub use module_index::{AssemblyModule, ModuleGraph, ModuleIndex, infer_logical_module_path};
 pub use roots::{
     EffectiveCompilationRoots, RootEntry, effective_roots_for_plan, effective_roots_from_lockfile,
     effective_roots_from_lockfile_checked, effective_roots_from_plan_and_workspace, module_roots_from_effective,

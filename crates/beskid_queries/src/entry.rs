@@ -374,7 +374,7 @@ pub fn entry_resolution_with_db(
         resolved.assembly.as_ref().ok_or_else(|| anyhow::anyhow!("entry resolution requires assembled program"))?;
     let resolution = assembly
         .module_index
-        .resolve_entry_program(&assembly.entry_unit().program, Some(resolved.source_path.as_path()), assembly, None)
+        .resolve_entry_program(&assembly.entry_unit().program, Some(resolved.source_path.as_path()), assembly)
         .map_err(|err| anyhow::anyhow!("{err:?}"))?;
     Ok(SharedResolution::from_resolution(resolution))
 }

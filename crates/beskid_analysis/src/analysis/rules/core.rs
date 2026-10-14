@@ -27,9 +27,6 @@ pub struct AnalysisOptions {
     /// App or Test target). The host invokes it, so it is never an unused private item. `None`
     /// for sibling units, entry-less libraries, and analyses without a target.
     pub program_entry_function: Option<String>,
-    /// Dependency declaration tables shared by every own-unit analysis of
-    /// [`Self::program_assembly`]; resolved per analysis when absent.
-    pub assembly_declaration_tables: Option<std::sync::Arc<crate::projects::assembly::AssemblyDeclarationTables>>,
 }
 
 impl Default for AnalysisOptions {
@@ -42,7 +39,6 @@ impl Default for AnalysisOptions {
             entry_source_path: None,
             program_assembly: None,
             program_entry_function: None,
-            assembly_declaration_tables: None,
         }
     }
 }

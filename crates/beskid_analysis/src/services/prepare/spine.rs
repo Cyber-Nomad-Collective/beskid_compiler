@@ -393,8 +393,6 @@ fn own_unit_rule_diagnostics(
         .library_unit_indices()
         .ok_or_else(|| anyhow::anyhow!("assembly root set names a source unit outside the prepared assembly"))?;
     let known_module_paths = assembly.module_index.known_module_path_strings();
-    // Every own-unit analysis merges the same dependency declarations; resolve them once.
-    let declarations = std::sync::Arc::new(assembly.module_index.assembly_declaration_tables(assembly));
     let mut diagnostics = Vec::new();
     for index in units.into_iter().filter(|index| *index != assembly.entry_index) {
         let root_assembly = assembly
@@ -407,7 +405,6 @@ fn own_unit_rule_diagnostics(
         rule_options.program_assembly_module_index = Some((*assembly.module_index).clone());
         rule_options.entry_source_path = Some(unit.path.clone());
         rule_options.program_assembly = Some(root_assembly);
-        rule_options.assembly_declaration_tables = Some(std::sync::Arc::clone(&declarations));
         diagnostics.extend(semantic_rule_diagnostics_for_program_with_pipeline(
             &unit.program.node,
             unit.logical_name.clone(),
