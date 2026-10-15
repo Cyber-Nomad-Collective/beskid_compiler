@@ -176,6 +176,23 @@ development log stays under [Unreleased] below.
 
 ## [Unreleased]
 
+### Added
+
+- Corelib `Core.Parallel` (package `corelib_concurrency`, OpenSpec
+  `v063-isolates-and-scope`, `v064-ports-and-pipelines`,
+  `v065-parallel-sequences`): fork-join scopes (`Parallel.Scope`,
+  `Scope.Spawn`/`SpawnTry`/`Cancel`, `Task<T>.Join`, structured failure in
+  spawn order, serial elision), `Isolate` handles, `ReadOnlyArray.Freeze`,
+  bounded `Port<T>` with long-lived `Scope.Isolate` workers, pipelines
+  (`Source`/`Stage`/`Ordered`/`Sink`), and `ParallelSeq<T>`
+  (`List<T>.Parallel()`, fused `Where`/`Map`, `Chunk`/`MinChunk`, adaptive
+  heartbeat splitting, `Collect`/`ForEach`/`Count`/`Reduce`/`ReduceUnordered`
+  with the `Associative`/`Commutative` combiner contracts). The transfer marker
+  contracts and attributes are declared in `Core.Parallel`. Tests:
+  `ParallelSuite` and the `compile-fail/parallel` corpus. Guide and cost table:
+  `corelib/beskid_corelib/docs/Core/Parallel.md`. Not built yet: it needs the
+  runtime builtins and language rules listed in the slice handoff.
+
 ### Fixed
 
 - A `match` scrutinee stays rooted while a `when` guard or a materialized string
