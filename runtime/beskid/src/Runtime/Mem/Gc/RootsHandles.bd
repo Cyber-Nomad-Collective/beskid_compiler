@@ -28,7 +28,8 @@ const HEAP_HANDLE_STACK_HEAD = 184;
 const HEAP_HANDLE_STACK_CURRENT = 192;
 const HEAP_QUARANTINE_BUDGET = 384;
 const HEAP_DEBUG_KIT = 392;
-const HEAP_STATE_SIZE = 400;
+const HEAP_MARK_TRIGGER = 400;
+const HEAP_STATE_SIZE = 512;
 // Default quarantine budget of the debug kit (`BESKID_GC_QUARANTINE` overrides it).
 const GC_QUARANTINE_DEFAULT_BUDGET = 4194304;
 
@@ -555,6 +556,8 @@ pub unit HeapInit(pointer heapStruct, pointer region, word regionSize, word capB
     }
     raw_word_store(pointer_add(heapStruct, HEAP_NEXT_REGION_SIZE), nextRegionSize);
     raw_word_store(pointer_add(heapStruct, HEAP_COLLECTION_THRESHOLD), HEAP_MIN_THRESHOLD);
+    // An idle heap starts an incremental cycle at three quarters of the threshold (Collection.bd).
+    raw_word_store(pointer_add(heapStruct, HEAP_MARK_TRIGGER), HEAP_MIN_THRESHOLD - HEAP_MIN_THRESHOLD / 4);
     // The debug kit poisons freed memory and holds freed small slots in quarantine (Sweep.bd);
     // `BESKID_GC_QUARANTINE` replaces the default budget at process init.
     if KitDebugProfile() {

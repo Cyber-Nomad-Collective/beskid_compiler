@@ -13,13 +13,13 @@ pub pointer AllocationDescriptor(pointer request) {
     return NativePointer(raw_word_load(pointer_add(request, 16)));
 }
 
-// Installs the fixed `BeskidObjectHeader` fields at the start of a freshly zeroed object.
+// Installs the descriptor word at the start of a freshly zeroed object.
 //
-// `gc_word` stays zero until the future marker owns mark-state transitions. Descriptor pointer
-// maps are validated before closure-environment allocation; this helper only stamps headers.
+// `gc_word` (offset 8) belongs to the collector: `GcTryAlloc` zeroes it and, for a large object
+// allocated while its heap is marking, sets it black, so this helper never writes it. Descriptor
+// pointer maps are validated before closure-environment allocation; this helper only stamps headers.
 pub unit InitializeObjectHeader(pointer object, pointer descriptor) {
     raw_word_store(object, NativeWord(descriptor));
-    raw_word_store(pointer_add(object, 8), 0);
     return;
 }
 
@@ -270,7 +270,7 @@ pub pointer AllocateObjectWithPolicy(pointer request, bool checked) {
                     if object == NativePointer(0) {
                           return object;
                     } else {
-                        memory_set(object, 0, size);
+                        // `GcTryAlloc` returned zeroed bytes (black while marking).
                         InitializeObjectHeader(object, descriptor);
                         return object;
                     }

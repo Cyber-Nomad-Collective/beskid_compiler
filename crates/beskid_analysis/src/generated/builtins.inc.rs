@@ -614,6 +614,42 @@ define_builtins! {
         returns: Unit,
         injected: true,
     },
+    &["__gc_cycle_start"] => {
+        symbol: "gc_cycle_start",
+        params: [],
+        returns: U8,
+        injected: true,
+    },
+    &["__gc_mark_step"] => {
+        symbol: "gc_mark_step",
+        params: [Usize],
+        returns: Usize,
+        injected: true,
+    },
+    &["__gc_last_cycle_max_step_bytes"] => {
+        symbol: "gc_last_cycle_max_step_bytes",
+        params: [],
+        returns: Usize,
+        injected: true,
+    },
+    &["__gc_heap_set_incremental_stress"] => {
+        symbol: "gc_heap_set_incremental_stress",
+        params: [Usize],
+        returns: Unit,
+        injected: true,
+    },
+    &["__gc_object_mark_state"] => {
+        symbol: "gc_object_mark_state",
+        params: [Ptr],
+        returns: Usize,
+        injected: true,
+    },
+    &["__gc_heap_force_barrier_skip"] => {
+        symbol: "gc_heap_force_barrier_skip",
+        params: [Usize],
+        returns: Unit,
+        injected: true,
+    },
     &["__gc_heap_force_root_stack_failure"] => {
         symbol: "gc_heap_force_root_stack_failure",
         params: [Usize],
@@ -1142,6 +1178,12 @@ define_builtins! {
         symbol: "beskid_rt_v5_host_processor_count",
         params: [],
         returns: Usize,
+        injected: true,
+    },
+    &["gc_barrier_active_word"] => {
+        symbol: "beskid_rt_v5_intrinsic_gc_barrier_active_word",
+        params: [],
+        returns: Ptr,
         injected: true,
     },
     &["kit_debug_profile"] => {

@@ -68,6 +68,8 @@ impl RuntimeAuditMetadata {
             .iter()
             .map(|entry| entry.symbol.clone())
             .chain(manifest.assembly_exports.iter().map(|entry| entry.symbol.as_str().into()))
+            // Process-wide data words (`export_data`), defined by the platform object.
+            .chain(crate::generated::abi_v5_contract::ABI_V5_DATA_EXPORTS.iter().map(|(symbol, _)| (*symbol).into()))
             .chain(
                 crate::generated::abi_v5_contract::ABI_V5_CORELIB_SERVICE_BINDINGS
                     .iter()

@@ -1,10 +1,14 @@
-// Canonical per-span sweep. Walks every region's span directory once: a small span exchanges its
-// allocation bitmap for its mark bitmap (the classic bitmap swap) and rebuilds its free-slot list
-// from the newly free slots; a fully empty small span returns its page to the region's free-page
-// list. A large span with its object still marked survives; otherwise its pages return to the
-// free-page list. After each region is swept, adjacent free spans are merged
-// (`CoalesceRegionFreeSpans`, Span.bd) so later requests of any page count can reuse them.
-// Sweeping never reads or writes the byte contents of a live object.
+// Canonical per-span sweep, incremental since v0.6.2. After mark termination the heap's sweep
+// generation advances and the sweep proceeds in bounded steps (`GcSweepStepOn`) from a cursor over
+// every region's span directory: a small span exchanges its allocation bitmap for its mark bitmap
+// (the classic bitmap swap) and rebuilds its free-slot list from the newly free slots; a fully
+// empty small span returns its page to the region's free-page list. A large span with its object
+// black survives (reset to white); otherwise its pages return to the free-page list. Each swept
+// span records the generation it was swept in (`SPAN_SWEEP_GENERATION`), so a span carved during
+// the sweep, or swept early by the allocator before it pops a slot (`EnsureSpanSwept`), is not
+// swept twice. `live_bytes` and `live_count` drop by what each span frees. When the sweep leaves a
+// region its adjacent free spans are merged (`CoalesceRegionFreeSpans`, Span.bd). Sweeping never
+// reads or writes the byte contents of a live object.
 //
 // Debug kit (`BeskidHeapState.debug_kit`, set from the `kit_debug_profile` intrinsic): a slot that
 // this sweep frees is poisoned and enters the heap's quarantine instead of its span's free list,
@@ -19,12 +23,26 @@
 const HEAP_FIRST_REGION = 0;
 const HEAP_LIVE_BYTES = 32;
 const HEAP_LIVE_COUNT = 40;
+const HEAP_COLLECTION_COUNT = 48;
+const HEAP_COLLECTION_THRESHOLD = 56;
+const HEAP_GC_PHASE = 64;
 const HEAP_CURRENT_SPAN_BY_CLASS = 200;
 const HEAP_QUARANTINE_HEAD = 360;
 const HEAP_QUARANTINE_TAIL = 368;
 const HEAP_QUARANTINE_BYTES = 376;
 const HEAP_QUARANTINE_BUDGET = 384;
 const HEAP_DEBUG_KIT = 392;
+const HEAP_MARK_TRIGGER = 400;
+const HEAP_SCAN_ESTIMATE = 416;
+const HEAP_SWEEP_GENERATION = 432;
+const HEAP_SWEEP_CURSOR_REGION = 440;
+const HEAP_SWEEP_CURSOR_PAGE = 448;
+const HEAP_LAST_CYCLE_MAX_STEP_BYTES = 456;
+const HEAP_CYCLE_MAX_STEP_BYTES = 496;
+
+const HEAP_MIN_THRESHOLD = 524288;
+const GC_PHASE_SWEEPING = 2;
+const STRESS_VERIFY_AFTER = 1;
 
 const REGION_NEXT = 0;
 const REGION_SIZE = 8;
@@ -39,6 +57,7 @@ const SPAN_FREE_SLOT = 48;
 const SPAN_ALLOC_BITS = 56;
 const SPAN_MARK_BITS = 120;
 const SPAN_SCANNED_BITS = 184;
+const SPAN_SWEEP_GENERATION = 248;
 const SPAN_HEADER_SIZE = 256;
 const SPAN_BITMAP_WORDS = 8;
 const SIZE_CLASS_LARGE = 14;
@@ -155,64 +174,145 @@ pub unit QuarantineReleaseOldest(pointer heap) {
     return;
 }
 
-pub bool Sweep(pointer heap) {
+// Sweeps `entry` (a populated span of `region` whose generation differs from the heap's) and
+// stamps it with the current generation, unless it is freed.
+pub unit SweepSpan(pointer heap, pointer region, pointer entry) {
     bool debugKit = raw_word_load(pointer_add(heap, HEAP_DEBUG_KIT)) != 0;
-    mut word liveBytes = 0;
-    mut word liveCount = 0;
-    mut pointer region = NativePointer(raw_word_load(pointer_add(heap, HEAP_FIRST_REGION)));
-    while region != NativePointer(0) {
-        word regionSize = raw_word_load(pointer_add(region, REGION_SIZE));
-        word totalPages = regionSize / PAGE_SIZE;
-        mut word pageIndex = 0;
-        while pageIndex < totalPages {
-            pointer entry = pointer_add(region, REGION_HEADER_SIZE + pageIndex * SPAN_HEADER_SIZE);
-            word base = raw_word_load(pointer_add(entry, SPAN_BASE));
-            word sizeClass = raw_word_load(pointer_add(entry, SPAN_SIZE_CLASS));
-            if base != 0 && sizeClass != 0 && sizeClass != SIZE_CLASS_LARGE {
-                word classBytes = SizeClassBytes(sizeClass);
-                if debugKit {
-                    QuarantineDeadSlots(heap, entry, base, classBytes);
-                }
-                word nalloc = PopcountBitmap(pointer_add(entry, SPAN_MARK_BITS));
-                if nalloc == 0 && raw_word_load(pointer_add(entry, SPAN_QUARANTINED)) == 0 {
-                    memory_set(pointer_add(entry, SPAN_ALLOC_BITS), 0, SPAN_BITMAP_WORDS * 8 * 3);
-                    FreeSpanEntry(heap, region, entry);
-                } else {
-                    mut word i = 0;
-                    while i < SPAN_BITMAP_WORDS {
-                        word markWord = raw_word_load(pointer_add(entry, SPAN_MARK_BITS + i * 8));
-                        raw_word_store(pointer_add(entry, SPAN_ALLOC_BITS + i * 8), markWord);
-                        raw_word_store(pointer_add(entry, SPAN_MARK_BITS + i * 8), 0);
-                        raw_word_store(pointer_add(entry, SPAN_SCANNED_BITS + i * 8), 0);
-                        i = i + 1;
-                    }
-                    RebuildSmallSpanFreeList(heap, entry);
-                    liveBytes = liveBytes + nalloc * classBytes;
-                    liveCount = liveCount + nalloc;
-                }
-            } else if base != 0 && sizeClass == SIZE_CLASS_LARGE {
-                pointer object = NativePointer(base);
-                if raw_word_load(pointer_add(object, 8)) == GcMarkBlack() {
-                    raw_word_store(pointer_add(object, 8), GcMarkWhite());
-                    word pageCount = raw_word_load(pointer_add(entry, SPAN_PAGE_COUNT));
-                    liveBytes = liveBytes + pageCount * PAGE_SIZE;
-                    liveCount = liveCount + 1;
-                } else {
-                    // Unmarked: the large object is dead. Return its pages to the region's
-                    // free-page list (exact-page-count reuse, see `CarveSpan`). The debug kit
-                    // poisons the header and the first page only, to bound the cost.
-                    if debugKit {
-                        PoisonWords(object, PAGE_SIZE);
-                    }
-                    FreeSpanEntry(heap, region, entry);
-                }
+    word generation = raw_word_load(pointer_add(heap, HEAP_SWEEP_GENERATION));
+    word base = raw_word_load(pointer_add(entry, SPAN_BASE));
+    word sizeClass = raw_word_load(pointer_add(entry, SPAN_SIZE_CLASS));
+    if sizeClass == SIZE_CLASS_LARGE {
+        pointer object = NativePointer(base);
+        if raw_word_load(pointer_add(object, 8)) == GcMarkBlack() {
+            raw_word_store(pointer_add(object, 8), GcMarkWhite());
+            raw_word_store(pointer_add(entry, SPAN_SWEEP_GENERATION), generation);
+        } else {
+            // Unmarked: the large object is dead. Return its pages to the region's free-page list
+            // (exact-page-count reuse, see `CarveSpan`). The debug kit poisons the header and the
+            // first page only, to bound the cost.
+            word pageCount = raw_word_load(pointer_add(entry, SPAN_PAGE_COUNT));
+            DecreaseLive(heap, pageCount * PAGE_SIZE, 1);
+            if debugKit {
+                PoisonWords(object, PAGE_SIZE);
             }
-            pageIndex = pageIndex + 1;
+            FreeSpanEntry(heap, region, entry);
         }
-        CoalesceRegionFreeSpans(region);
-        region = NativePointer(raw_word_load(pointer_add(region, REGION_NEXT)));
+        return;
     }
-    raw_word_store(pointer_add(heap, HEAP_LIVE_BYTES), liveBytes);
-    raw_word_store(pointer_add(heap, HEAP_LIVE_COUNT), liveCount);
-    return true;
+    word classBytes = SizeClassBytes(sizeClass);
+    word allocated = PopcountBitmap(pointer_add(entry, SPAN_ALLOC_BITS));
+    if debugKit {
+        QuarantineDeadSlots(heap, entry, base, classBytes);
+    }
+    word marked = PopcountBitmap(pointer_add(entry, SPAN_MARK_BITS));
+    if allocated > marked {
+        DecreaseLive(heap, (allocated - marked) * classBytes, allocated - marked);
+    }
+    if marked == 0 && raw_word_load(pointer_add(entry, SPAN_QUARANTINED)) == 0 {
+        memory_set(pointer_add(entry, SPAN_ALLOC_BITS), 0, SPAN_BITMAP_WORDS * 8 * 3);
+        FreeSpanEntry(heap, region, entry);
+        return;
+    }
+    mut word i = 0;
+    while i < SPAN_BITMAP_WORDS {
+        word markWord = raw_word_load(pointer_add(entry, SPAN_MARK_BITS + i * 8));
+        raw_word_store(pointer_add(entry, SPAN_ALLOC_BITS + i * 8), markWord);
+        raw_word_store(pointer_add(entry, SPAN_MARK_BITS + i * 8), 0);
+        raw_word_store(pointer_add(entry, SPAN_SCANNED_BITS + i * 8), 0);
+        i = i + 1;
+    }
+    RebuildSmallSpanFreeList(heap, entry);
+    raw_word_store(pointer_add(entry, SPAN_SWEEP_GENERATION), generation);
+    return;
+}
+
+// Lowers the live statistics by what a swept span freed, saturating at zero.
+pub unit DecreaseLive(pointer heap, word bytes, word count) {
+    word liveBytes = raw_word_load(pointer_add(heap, HEAP_LIVE_BYTES));
+    word liveCount = raw_word_load(pointer_add(heap, HEAP_LIVE_COUNT));
+    mut word nextBytes = 0;
+    if liveBytes > bytes { nextBytes = liveBytes - bytes; }
+    mut word nextCount = 0;
+    if liveCount > count { nextCount = liveCount - count; }
+    raw_word_store(pointer_add(heap, HEAP_LIVE_BYTES), nextBytes);
+    raw_word_store(pointer_add(heap, HEAP_LIVE_COUNT), nextCount);
+    return;
+}
+
+// True when `entry` is an in-use span that the current sweep has not reached yet.
+pub bool SpanNeedsSweep(pointer heap, pointer entry) {
+    if raw_word_load(pointer_add(heap, HEAP_GC_PHASE)) != GC_PHASE_SWEEPING { return false; }
+    word base = raw_word_load(pointer_add(entry, SPAN_BASE));
+    word sizeClass = raw_word_load(pointer_add(entry, SPAN_SIZE_CLASS));
+    if base == 0 || sizeClass == 0 { return false; }
+    return raw_word_load(pointer_add(entry, SPAN_SWEEP_GENERATION)) != raw_word_load(pointer_add(heap, HEAP_SWEEP_GENERATION));
+}
+
+// Sweep-on-allocate: the allocator sweeps a span the cursor has not reached before it pops a slot
+// from it, so a new object is never placed on a span whose dead slots the sweep would free later.
+pub unit EnsureSpanSwept(pointer heap, pointer entry) {
+    if SpanNeedsSweep(heap, entry) == false { return; }
+    pointer region = FindHeapRegionContaining(heap, raw_word_load(pointer_add(entry, SPAN_BASE)));
+    if region == NativePointer(0) { return; }
+    SweepSpan(heap, region, entry);
+    return;
+}
+
+// Positions the sweep cursor at the first span of the heap (mark termination).
+pub unit GcSweepBegin(pointer heap) {
+    raw_word_store(pointer_add(heap, HEAP_SWEEP_CURSOR_REGION), raw_word_load(pointer_add(heap, HEAP_FIRST_REGION)));
+    raw_word_store(pointer_add(heap, HEAP_SWEEP_CURSOR_PAGE), 0);
+    return;
+}
+
+// One sweep step: sweeps at most `maxSpans` unswept spans from the cursor, merging a region's
+// free spans when the cursor leaves it. The step that reaches the end finishes the cycle
+// (`GcFinishSweep`). Returns true when the sweep is complete.
+pub bool GcSweepStepOn(pointer heap, word maxSpans) {
+    mut pointer region = NativePointer(raw_word_load(pointer_add(heap, HEAP_SWEEP_CURSOR_REGION)));
+    mut word page = raw_word_load(pointer_add(heap, HEAP_SWEEP_CURSOR_PAGE));
+    mut word swept = 0;
+    while region != NativePointer(0) && swept < maxSpans {
+        word totalPages = raw_word_load(pointer_add(region, REGION_SIZE)) / PAGE_SIZE;
+        if page >= totalPages {
+            CoalesceRegionFreeSpans(region);
+            region = NativePointer(raw_word_load(pointer_add(region, REGION_NEXT)));
+            page = 0;
+        } else {
+            pointer entry = pointer_add(region, REGION_HEADER_SIZE + page * SPAN_HEADER_SIZE);
+            if SpanNeedsSweep(heap, entry) {
+                SweepSpan(heap, region, entry);
+                swept = swept + 1;
+            }
+            page = page + 1;
+        }
+    }
+    raw_word_store(pointer_add(heap, HEAP_SWEEP_CURSOR_REGION), NativeWord(region));
+    raw_word_store(pointer_add(heap, HEAP_SWEEP_CURSOR_PAGE), page);
+    if region == NativePointer(0) {
+        GcFinishSweep(heap);
+        return true;
+    }
+    return false;
+}
+
+// Ends the cycle: the live totals are final, the pacing values follow them
+// (`collection_threshold = max(2 * live, 512 KiB)`, `mark_trigger` at three quarters of it,
+// `scan_estimate = live`), the cycle's step statistics become the last cycle's, and the heap is
+// idle again.
+pub unit GcFinishSweep(pointer heap) {
+    word liveBytes = raw_word_load(pointer_add(heap, HEAP_LIVE_BYTES));
+    mut word threshold = HEAP_MIN_THRESHOLD;
+    word doubled = liveBytes * 2;
+    if doubled > threshold && doubled > liveBytes { threshold = doubled; }
+    raw_word_store(pointer_add(heap, HEAP_COLLECTION_THRESHOLD), threshold);
+    raw_word_store(pointer_add(heap, HEAP_MARK_TRIGGER), threshold - threshold / 4);
+    raw_word_store(pointer_add(heap, HEAP_SCAN_ESTIMATE), liveBytes);
+    raw_word_store(pointer_add(heap, HEAP_COLLECTION_COUNT), raw_word_load(pointer_add(heap, HEAP_COLLECTION_COUNT)) + 1);
+    raw_word_store(pointer_add(heap, HEAP_LAST_CYCLE_MAX_STEP_BYTES), raw_word_load(pointer_add(heap, HEAP_CYCLE_MAX_STEP_BYTES)));
+    raw_word_store(pointer_add(heap, HEAP_SWEEP_CURSOR_REGION), 0);
+    raw_word_store(pointer_add(heap, HEAP_SWEEP_CURSOR_PAGE), 0);
+    raw_word_store(pointer_add(heap, HEAP_GC_PHASE), 0);
+    GcStressVerify(heap, STRESS_VERIFY_AFTER);
+    return;
 }

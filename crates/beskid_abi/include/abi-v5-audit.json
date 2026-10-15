@@ -2287,6 +2287,29 @@
       ]
     },
     {
+      "name": "__gc_cycle_start",
+      "adapter": "gc_cycle_start",
+      "params": [],
+      "result": "u8",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "gc_cycle_start",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "gc_cycle_start",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "gc_cycle_start",
+          "osImports": []
+        }
+      ]
+    },
+    {
       "name": "__gc_external_root_count",
       "adapter": "gc_external_root_count",
       "params": [],
@@ -2379,6 +2402,34 @@
       ]
     },
     {
+      "name": "__gc_heap_force_barrier_skip",
+      "adapter": "gc_heap_force_barrier_skip",
+      "params": [
+        {
+          "name": "enabled",
+          "type": "usize"
+        }
+      ],
+      "result": "void",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "gc_heap_force_barrier_skip",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "gc_heap_force_barrier_skip",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "gc_heap_force_barrier_skip",
+          "osImports": []
+        }
+      ]
+    },
+    {
       "name": "__gc_heap_force_root_stack_failure",
       "adapter": "gc_heap_force_root_stack_failure",
       "params": [
@@ -2425,6 +2476,34 @@
         {
           "target": "x86_64-unknown-linux-gnu",
           "implementation": "gc_heap_region_count",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__gc_heap_set_incremental_stress",
+      "adapter": "gc_heap_set_incremental_stress",
+      "params": [
+        {
+          "name": "n",
+          "type": "usize"
+        }
+      ],
+      "result": "void",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "gc_heap_set_incremental_stress",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "gc_heap_set_incremental_stress",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "gc_heap_set_incremental_stress",
           "osImports": []
         }
       ]
@@ -2481,6 +2560,57 @@
       ]
     },
     {
+      "name": "__gc_last_cycle_max_step_bytes",
+      "adapter": "gc_last_cycle_max_step_bytes",
+      "params": [],
+      "result": "usize",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "gc_last_cycle_max_step_bytes",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "gc_last_cycle_max_step_bytes",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "gc_last_cycle_max_step_bytes",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__gc_mark_step",
+      "adapter": "gc_mark_step",
+      "params": [
+        {
+          "name": "budget",
+          "type": "usize"
+        }
+      ],
+      "result": "usize",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "gc_mark_step",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "gc_mark_step",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "gc_mark_step",
+          "osImports": []
+        }
+      ]
+    },
+    {
       "name": "__gc_object_count",
       "adapter": "gc_object_count",
       "params": [],
@@ -2499,6 +2629,34 @@
         {
           "target": "x86_64-unknown-linux-gnu",
           "implementation": "gc_object_count",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__gc_object_mark_state",
+      "adapter": "gc_object_mark_state",
+      "params": [
+        {
+          "name": "object",
+          "type": "pointer"
+        }
+      ],
+      "result": "usize",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "gc_object_mark_state",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "gc_object_mark_state",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "gc_object_mark_state",
           "osImports": []
         }
       ]

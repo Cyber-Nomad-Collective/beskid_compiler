@@ -60,7 +60,7 @@ pub pointer AllocateArrayRootedWithPolicy(pointer request, pointer rootHandleOut
     if object == NativePointer(0) {
         return NativePointer(0);
     }
-    memory_set(object, 0, allocationSize);
+    // `GcTryAlloc` returned zeroed bytes (black while marking).
     raw_word_store(object, NativeWord(descriptor));
     raw_word_store(pointer_add(object, 16), NativeWord(element));
     pointer array = pointer_add(object, 24);
@@ -184,7 +184,8 @@ pub pointer GrowArrayRootedWithPolicy(pointer array, word minimumCapacity, point
         GcUnrootHandle(sourceHandle);
         return NativePointer(0);
     }
-    memory_set(replacementObject, 0, allocationSize);
+    // `GcTryAlloc` returned zeroed bytes (black while marking). The element copy below is an
+    // initialization store into a new object: it carries no barrier.
     raw_word_store(replacementObject, NativeWord(descriptor));
     raw_word_store(pointer_add(replacementObject, 16), NativeWord(element));
     pointer replacement = pointer_add(replacementObject, 24);
@@ -225,17 +226,6 @@ pub u8 ArrayConstructionFinish(pointer rootHandle) {
         return 0;
     }
     GcUnrootHandle(handle);
-    return 1;
-}
-
-// Publishes a pointer element write to the GC's insertion barrier while the array remains under
-// its construction root. Scalar arrays do not call this entrypoint.
-[Export(Abi:"C", Symbol:"beskid_rt_v5_array_write_barrier")]
-pub u8 ArrayWriteBarrier(pointer array, pointer value) {
-    if array == NativePointer(0) {
-        return 0;
-    }
-    GcWriteBarrier(NativePointer(NativeWord(array) - 24), value);
     return 1;
 }
 

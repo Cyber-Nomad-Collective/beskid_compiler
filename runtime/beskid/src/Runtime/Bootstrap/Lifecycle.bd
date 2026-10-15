@@ -22,7 +22,7 @@ const TLS_RESERVED_OFFSET = 16;
 const TLS_ATTACH_DEPTH_OFFSET = 24;
 const TLS_COMPOSITION_SCOPE_OFFSET = 32;
 const TLS_COMPOSITION_DEPTH_OFFSET = 40;
-const HEAP_STATE_SIZE = 400;
+const HEAP_STATE_SIZE = 512;
 const HEAP_INITIAL_REGION_SIZE = 1048576;
 // Every region must be page-aligned: `SpanEntryInRegion` derives a page index as
 // `(address - region) / PAGE_SIZE`, and `CarveSpan` writes a span's `base` using that same
@@ -401,6 +401,9 @@ pub unit IsolateReleaseHeap(pointer runtime) {
     pointer heap = NativePointer(raw_word_load(pointer_add(runtime, RUNTIME_HEAP_OFFSET)));
     CallbackRegistryRootsDrop();
     if GcExternalRootCount() != 0 || GcHandlesClear() == false { Trap(10, NativePointer(0), 0); }
+    // A cycle in progress is discarded without sweeping; a marking heap lowers the process
+    // barrier word first.
+    GcDiscardCycle(heap);
     if heap != NativePointer(0) { FreeRootAndHandleStacks(heap); }
     mut pointer region = NativePointer(raw_word_load(pointer_add(heap, HEAP_FIRST_REGION)));
     pointer thread = CurrentThreadState();

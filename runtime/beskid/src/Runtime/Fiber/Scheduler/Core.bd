@@ -453,6 +453,9 @@ pub bool MarkSuspendedFiberRoots() {
 // Yields the current fiber.
 [Export(Abi:"C", Symbol:"beskid_rt_v5_fiber_yield")]
 pub unit FiberYield() {
+    // Incremental collection: a marking or sweeping heap performs one step here, before any
+    // scheduler state changes, so fibers that yield without allocating still finish a cycle.
+    GcYieldStep();
     mut word index = SchedulerCurrentFiber();
     if index == FIBER_NONE || !FiberExists(index) {
         return;

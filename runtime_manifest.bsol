@@ -132,7 +132,13 @@ export "beskid_rt_v5_managed_object_allocate" { params = [{ name = request, type
 export "beskid_rt_v5_array_allocate_rooted" { params = [{ name = request, type = pointer }, { name = root_handle_out, type = pointer }] returns = pointer }
 export "beskid_rt_v5_array_grow_rooted" { params = [{ name = array, type = pointer }, { name = minimum_capacity, type = usize }, { name = root_handle_out, type = pointer }] returns = pointer }
 export "beskid_rt_v5_array_construction_finish" { params = [{ name = root_handle, type = pointer }] returns = u8 }
-export "beskid_rt_v5_array_write_barrier" { params = [{ name = array, type = pointer }, { name = value, type = pointer }] returns = u8 }
+# Incremental marking (v0.6.2). The hybrid barrier of generated code and of runtime stores into
+# existing objects: shades the value in `slot`, then `value`, while the calling thread's heap is
+# marking; otherwise it returns at once. Never allocates, collects, steps, yields or traps.
+export "beskid_rt_v5_gc_write_barrier" { params = [{ name = slot, type = pointer }, { name = value, type = pointer }] returns = void }
+# The number of heaps in the process that are marking; generated code tests it before calling the
+# barrier. Defined by the platform object (platform_tls.c).
+export_data "beskid_rt_v5_gc_barrier_active" { type = usize }
 export "beskid_rt_v5_closure_environment_allocate" { params = [{ name = request, type = pointer }] returns = pointer }
 export "beskid_rt_v5_closure_capture_store" { params = [{ name = environment, type = pointer }, { name = descriptor, type = pointer }, { name = map_index, type = usize }, { name = value, type = pointer }] returns = u8 }
 export "beskid_rt_v5_closure_environment_root" { params = [{ name = tls_state, type = pointer }, { name = slot_index, type = usize }, { name = environment, type = pointer }] returns = u8 }
@@ -240,6 +246,8 @@ intrinsic "host_processor_count" {
 # The build profile of the runtime kit: 1 for the debug kit, 0 for the release kit. The
 # platform object is compiled with BESKID_RUNTIME_KIT_DEBUG=1 for the debug profile; without the
 # definition the host reports release. The debug kit poisons and quarantines freed slots.
+# The address of `beskid_rt_v5_gc_barrier_active`; the runtime changes the word with atomic add.
+intrinsic "gc_barrier_active_word" { symbol = "beskid_rt_v5_intrinsic_gc_barrier_active_word" capability = "runtime.bootstrap.gc_barrier_active_word" params = [] returns = pointer }
 intrinsic "kit_debug_profile" { symbol = "beskid_rt_v5_intrinsic_kit_debug_profile" capability = "runtime.bootstrap.kit_debug_profile" params = [] returns = u8 }
 intrinsic "process_state_root" { symbol = "beskid_rt_v5_intrinsic_process_state_root" capability = "runtime.bootstrap.process_state_root" params = [] returns = pointer }
 intrinsic "clock_monotonic_nanos" { symbol = "beskid_rt_v5_intrinsic_clock_monotonic_nanos" capability = "runtime.adapter.clock_monotonic_nanos" params = [] returns = i64 }
@@ -1341,6 +1349,73 @@ corelib_service "__gc_heap_set_stress_interval" {
   ]
 }
 
+# Incremental collection cycle hooks (v0.6.2, Runtime/Mem/Gc/Collection.bd and Verify.bd).
+corelib_service "__gc_cycle_start" {
+  adapter = "gc_cycle_start"
+  params = []
+  returns = u8
+  target_bindings = [
+    { target = "x86_64-unknown-linux-gnu", implementation = "gc_cycle_start", os_imports = [] },
+    { target = "aarch64-apple-darwin", implementation = "gc_cycle_start", os_imports = [] },
+    { target = "x86_64-pc-windows-msvc", implementation = "gc_cycle_start", os_imports = [] }
+  ]
+}
+
+corelib_service "__gc_mark_step" {
+  adapter = "gc_mark_step"
+  params = [{ name = budget, type = usize }]
+  returns = usize
+  target_bindings = [
+    { target = "x86_64-unknown-linux-gnu", implementation = "gc_mark_step", os_imports = [] },
+    { target = "aarch64-apple-darwin", implementation = "gc_mark_step", os_imports = [] },
+    { target = "x86_64-pc-windows-msvc", implementation = "gc_mark_step", os_imports = [] }
+  ]
+}
+
+corelib_service "__gc_last_cycle_max_step_bytes" {
+  adapter = "gc_last_cycle_max_step_bytes"
+  params = []
+  returns = usize
+  target_bindings = [
+    { target = "x86_64-unknown-linux-gnu", implementation = "gc_last_cycle_max_step_bytes", os_imports = [] },
+    { target = "aarch64-apple-darwin", implementation = "gc_last_cycle_max_step_bytes", os_imports = [] },
+    { target = "x86_64-pc-windows-msvc", implementation = "gc_last_cycle_max_step_bytes", os_imports = [] }
+  ]
+}
+
+corelib_service "__gc_heap_set_incremental_stress" {
+  adapter = "gc_heap_set_incremental_stress"
+  params = [{ name = n, type = usize }]
+  returns = void
+  target_bindings = [
+    { target = "x86_64-unknown-linux-gnu", implementation = "gc_heap_set_incremental_stress", os_imports = [] },
+    { target = "aarch64-apple-darwin", implementation = "gc_heap_set_incremental_stress", os_imports = [] },
+    { target = "x86_64-pc-windows-msvc", implementation = "gc_heap_set_incremental_stress", os_imports = [] }
+  ]
+}
+
+corelib_service "__gc_object_mark_state" {
+  adapter = "gc_object_mark_state"
+  params = [{ name = object, type = pointer }]
+  returns = usize
+  target_bindings = [
+    { target = "x86_64-unknown-linux-gnu", implementation = "gc_object_mark_state", os_imports = [] },
+    { target = "aarch64-apple-darwin", implementation = "gc_object_mark_state", os_imports = [] },
+    { target = "x86_64-pc-windows-msvc", implementation = "gc_object_mark_state", os_imports = [] }
+  ]
+}
+
+corelib_service "__gc_heap_force_barrier_skip" {
+  adapter = "gc_heap_force_barrier_skip"
+  params = [{ name = enabled, type = usize }]
+  returns = void
+  target_bindings = [
+    { target = "x86_64-unknown-linux-gnu", implementation = "gc_heap_force_barrier_skip", os_imports = [] },
+    { target = "aarch64-apple-darwin", implementation = "gc_heap_force_barrier_skip", os_imports = [] },
+    { target = "x86_64-pc-windows-msvc", implementation = "gc_heap_force_barrier_skip", os_imports = [] }
+  ]
+}
+
 corelib_service "__gc_heap_force_root_stack_failure" {
   adapter = "gc_heap_force_root_stack_failure"
   params = [{ name = enabled, type = usize }]
@@ -1826,7 +1901,12 @@ layout "BeskidArrayAllocationRequest" { size = 32 alignment = 8 fields = [{ name
 # each collection (`BESKID_GC_STRESS`). `quarantine_*` is the FIFO of freed small slots that the
 # debug kit holds back from reuse; `quarantine_budget` 0 disables it. `debug_kit` is 1 in a kit
 # whose `kit_debug_profile` intrinsic reports the debug profile (poisoning on).
-layout "BeskidHeapState" { size = 400 alignment = 8 project_to_runtime = accessors fields = [{ name = first_region, offset = 0, type = pointer }, { name = current_region, offset = 8, type = pointer }, { name = region_count, offset = 16, type = usize }, { name = committed_bytes, offset = 24, type = usize }, { name = live_bytes, offset = 32, type = usize }, { name = live_count, offset = 40, type = usize }, { name = collection_count, offset = 48, type = usize }, { name = collection_threshold, offset = 56, type = usize }, { name = gc_phase, offset = 64, type = usize }, { name = cap_bytes, offset = 72, type = usize }, { name = next_region_size, offset = 80, type = usize }, { name = failure_reason, offset = 88, type = usize }, { name = failure_request_bytes, offset = 96, type = usize }, { name = diagnostic, offset = 104, type = "u8[64]" }, { name = root_stack_head, offset = 168, type = pointer }, { name = root_stack_current, offset = 176, type = pointer }, { name = handle_stack_head, offset = 184, type = pointer }, { name = handle_stack_current, offset = 192, type = pointer }, { name = current_span_by_class, offset = 200, type = "pointer[14]" }, { name = mark_fifo_head, offset = 312, type = pointer }, { name = mark_fifo_tail, offset = 320, type = pointer }, { name = stress_interval, offset = 328, type = usize }, { name = stress_counter, offset = 336, type = usize }, { name = stress_flags, offset = 344, type = usize }, { name = test_force_root_stack_failure, offset = 352, type = usize }, { name = quarantine_head, offset = 360, type = pointer }, { name = quarantine_tail, offset = 368, type = pointer }, { name = quarantine_bytes, offset = 376, type = usize }, { name = quarantine_budget, offset = 384, type = usize }, { name = debug_kit, offset = 392, type = usize }] }
+# Incremental collection fields (v0.6.2, Runtime/Mem/Gc/Collection.bd): pacing (`mark_trigger`,
+# `mark_start_live`, `scan_estimate`, `scan_work_done`), the lazy sweep (`sweep_generation`, the
+# span-directory cursor), statistics (`last_cycle_max_step_bytes`, `rescan_shaded_count`, and the
+# running `cycle_max_step_bytes`/`cycle_shade_count` of the cycle in progress) and the test hooks
+# (`incremental_stress_*`, `force_barrier_skip`).
+layout "BeskidHeapState" { size = 512 alignment = 8 project_to_runtime = accessors fields = [{ name = first_region, offset = 0, type = pointer }, { name = current_region, offset = 8, type = pointer }, { name = region_count, offset = 16, type = usize }, { name = committed_bytes, offset = 24, type = usize }, { name = live_bytes, offset = 32, type = usize }, { name = live_count, offset = 40, type = usize }, { name = collection_count, offset = 48, type = usize }, { name = collection_threshold, offset = 56, type = usize }, { name = gc_phase, offset = 64, type = usize }, { name = cap_bytes, offset = 72, type = usize }, { name = next_region_size, offset = 80, type = usize }, { name = failure_reason, offset = 88, type = usize }, { name = failure_request_bytes, offset = 96, type = usize }, { name = diagnostic, offset = 104, type = "u8[64]" }, { name = root_stack_head, offset = 168, type = pointer }, { name = root_stack_current, offset = 176, type = pointer }, { name = handle_stack_head, offset = 184, type = pointer }, { name = handle_stack_current, offset = 192, type = pointer }, { name = current_span_by_class, offset = 200, type = "pointer[14]" }, { name = mark_fifo_head, offset = 312, type = pointer }, { name = mark_fifo_tail, offset = 320, type = pointer }, { name = stress_interval, offset = 328, type = usize }, { name = stress_counter, offset = 336, type = usize }, { name = stress_flags, offset = 344, type = usize }, { name = test_force_root_stack_failure, offset = 352, type = usize }, { name = quarantine_head, offset = 360, type = pointer }, { name = quarantine_tail, offset = 368, type = pointer }, { name = quarantine_bytes, offset = 376, type = usize }, { name = quarantine_budget, offset = 384, type = usize }, { name = debug_kit, offset = 392, type = usize }, { name = mark_trigger, offset = 400, type = usize }, { name = mark_start_live, offset = 408, type = usize }, { name = scan_estimate, offset = 416, type = usize }, { name = scan_work_done, offset = 424, type = usize }, { name = sweep_generation, offset = 432, type = usize }, { name = sweep_cursor_region, offset = 440, type = pointer }, { name = sweep_cursor_page, offset = 448, type = usize }, { name = last_cycle_max_step_bytes, offset = 456, type = usize }, { name = rescan_shaded_count, offset = 464, type = usize }, { name = incremental_stress_interval, offset = 472, type = usize }, { name = incremental_stress_counter, offset = 480, type = usize }, { name = force_barrier_skip, offset = 488, type = usize }, { name = cycle_max_step_bytes, offset = 496, type = usize }, { name = cycle_shade_count, offset = 504, type = usize }] }
 layout "BeskidGcHandleSlot" { size = 16 alignment = 8 fields = [{ name = value, offset = 0, type = pointer }, { name = generation, offset = 8, type = usize }] }
 layout "BeskidHeapRegion" { size = 64 alignment = 8 fields = [{ name = next, offset = 0, type = pointer }, { name = size, offset = 8, type = usize }, { name = bump, offset = 16, type = pointer }, { name = limit, offset = 24, type = pointer }, { name = free_bytes, offset = 32, type = usize }, { name = largest_free, offset = 40, type = usize }, { name = objects_start, offset = 48, type = pointer }, { name = free_span_list, offset = 56, type = usize }] }
 layout "BeskidCallbackRegistry" { size = 1072 alignment = 8 project_to_runtime = accessors fields = [{ name = owner_runtime, offset = 0, type = pointer }, { name = callback_count, offset = 8, type = usize }, { name = handler_count, offset = 16, type = usize }, { name = composition_container, offset = 24, type = pointer }, { name = callbacks, offset = 32, type = "BeskidCallbackEntry[32]" }, { name = handlers, offset = 544, type = "BeskidCallbackEntry[32]" }, { name = dynamic_root_handle_v2, offset = 1056, type = usize }, { name = glue_owner_root_handle_v3, offset = 1064, type = usize }] }

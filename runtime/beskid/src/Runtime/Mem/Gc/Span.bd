@@ -28,7 +28,10 @@
 //   56  alloc_bits    u64[8]    1 bit per slot: allocated since the last sweep or since
 //   120 mark_bits     u64[8]    1 bit per slot: marked in the current cycle
 //   184 scanned_bits  u64[8]    1 bit per slot: already scanned in the current cycle
-//                      = 248, padded to 256
+//                                (a large span keeps its scan cursor in mark_bits word 0)
+//   248 sweep_gen     usize     the heap sweep generation this span was last swept in, or the
+//                                generation current when it was carved (Sweep.bd)
+//                      = 256
 
 const PAGE_SIZE = 8192;
 

@@ -167,7 +167,6 @@ fn canonical_bootstrap_lifecycle_closure_and_trap_signatures_are_preserved() {
                 &[AbiType::Pointer, AbiType::USize, AbiType::Pointer][..],
                 AbiType::Pointer,
             ),
-            ("beskid_rt_v5_array_write_barrier", &[AbiType::Pointer, AbiType::Pointer][..], AbiType::U8,),
             (
                 "beskid_rt_v5_closure_capture_store",
                 &[AbiType::Pointer, AbiType::Pointer, AbiType::USize, AbiType::Pointer,][..],
@@ -237,7 +236,7 @@ fn trusted_intrinsics_are_typed_and_owned_only_by_the_canonical_package() {
     assert_eq!(package.name(), CANONICAL_RUNTIME_PACKAGE_NAME);
     assert_eq!(package.abi_version(), ABI_V5);
     let names = manifest.trusted_runtime_intrinsics.iter().map(|intrinsic| intrinsic.name.as_str()).collect::<Vec<_>>();
-    assert_eq!(names.len(), 98);
+    assert_eq!(names.len(), 99);
     for added in ["glue_owner_shutdown", "float_to_bits32", "float_from_bits32", "float_to_bits64", "float_from_bits64", "utf8_view_new", "dynamic_registry_shutdown_v1", "child_begin", "child_argument", "child_environment", "child_spawn", "child_poll", "child_read", "child_write", "child_close_pipe", "child_terminate", "child_close", "child_shutdown"] {
         assert!(names.contains(&added), "missing source-owned runtime intrinsic {added}");
     }
@@ -466,7 +465,7 @@ fn heap_state_and_heap_region_layouts_match_the_growable_heap_design() {
     let manifest = AbiManifestV5::canonical_runtime(supported_targets()[0].clone());
 
     let heap_state = manifest.layouts.iter().find(|layout| layout.name == "BeskidHeapState").unwrap();
-    assert_eq!((heap_state.size, heap_state.alignment), (400, 8));
+    assert_eq!((heap_state.size, heap_state.alignment), (512, 8));
     let expected_heap_state_fields: &[(&str, u64)] = &[
         ("first_region", 0),
         ("current_region", 8),
@@ -498,6 +497,20 @@ fn heap_state_and_heap_region_layouts_match_the_growable_heap_design() {
         ("quarantine_bytes", 376),
         ("quarantine_budget", 384),
         ("debug_kit", 392),
+        ("mark_trigger", 400),
+        ("mark_start_live", 408),
+        ("scan_estimate", 416),
+        ("scan_work_done", 424),
+        ("sweep_generation", 432),
+        ("sweep_cursor_region", 440),
+        ("sweep_cursor_page", 448),
+        ("last_cycle_max_step_bytes", 456),
+        ("rescan_shaded_count", 464),
+        ("incremental_stress_interval", 472),
+        ("incremental_stress_counter", 480),
+        ("force_barrier_skip", 488),
+        ("cycle_max_step_bytes", 496),
+        ("cycle_shade_count", 504),
     ];
     for (name, offset) in expected_heap_state_fields {
         assert_eq!(

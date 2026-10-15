@@ -6,6 +6,12 @@
 // `GcAlloc` never returns null for a valid request (`size >= 16`, 8-byte aligned, valid object
 // alignment): a request that cannot be satisfied even after collecting and growing is a typed
 // exhaustion trap (Decision 3 of the growable-heap design), not a silent null return.
+//
+// Incremental collection (v0.6.2): `GcTryAlloc` returns zeroed bytes; while the heap is marking it
+// allocates black (small: mark and scanned bits; large: header mark word black after zeroing).
+// While the heap is sweeping, a span is swept before a slot is popped from it (`EnsureSpanSwept`),
+// and every carved span is stamped with the current sweep generation. Span refills and large
+// requests are the pacing points (`GcPace`, Collection.bd).
 
 const HEAP_FIRST_REGION = 0;
 const HEAP_CURRENT_REGION = 8;
@@ -21,7 +27,11 @@ const HEAP_FAILURE_REQUEST_BYTES = 96;
 const HEAP_DIAGNOSTIC = 104;
 const HEAP_DIAGNOSTIC_SIZE = 64;
 const HEAP_CURRENT_SPAN_BY_CLASS = 200;
+const HEAP_GC_PHASE = 64;
 const HEAP_DEBUG_KIT = 392;
+const HEAP_SWEEP_GENERATION = 432;
+const GC_PHASE_MARKING_ALLOC = 1;
+const GC_PHASE_SWEEPING_ALLOC = 2;
 
 const REGION_NEXT = 0;
 const REGION_BUMP = 16;
@@ -40,6 +50,9 @@ const REGION_HEADER_SIZE_ALLOC = 64;
 const PAGE_SIZE = 8192;
 const SPAN_BASE = 8;
 const SPAN_SIZE_CLASS = 24;
+const SPAN_MARK_BITS_ALLOC = 120;
+const SPAN_SCANNED_BITS_ALLOC = 184;
+const SPAN_SWEEP_GENERATION = 248;
 const SPAN_HEADER_SIZE = 256;
 const SIZE_CLASS_LARGE = 14;
 
@@ -65,19 +78,25 @@ pub pointer CarveSpanInAnyRegion(pointer heap, word pageCount, word sizeClass) {
     pointer current = NativePointer(raw_word_load(pointer_add(heap, HEAP_CURRENT_REGION)));
     pointer entry = CarveSpan(current, pageCount, sizeClass);
     if entry != NativePointer(0) {
-        return entry;
+        return StampSweepGeneration(heap, entry);
     }
     mut pointer region = NativePointer(raw_word_load(pointer_add(heap, HEAP_FIRST_REGION)));
     while region != NativePointer(0) {
         if region != current {
             pointer other = CarveSpan(region, pageCount, sizeClass);
             if other != NativePointer(0) {
-                return other;
+                return StampSweepGeneration(heap, other);
             }
         }
         region = NativePointer(raw_word_load(pointer_add(region, REGION_NEXT)));
     }
     return NativePointer(0);
+}
+
+// A carved span holds no object of the current cycle's sweep: it counts as swept.
+pub pointer StampSweepGeneration(pointer heap, pointer entry) {
+    raw_word_store(pointer_add(entry, SPAN_SWEEP_GENERATION), raw_word_load(pointer_add(heap, HEAP_SWEEP_GENERATION)));
+    return entry;
 }
 
 // ---- Small-object path ----
@@ -107,6 +126,9 @@ pub pointer GcAllocSmall(pointer heap, word class) {
         // that frees a span directly — trusting `SPAN_FREE_SLOT` under a class mismatch would
         // silently alias two classes' objects onto the same memory. Re-check the entry's own
         // recorded class before popping a slot from it.
+        // Sweep-on-allocate: a cached span the current sweep has not reached is swept first; the
+        // sweep may free it, so its class is re-read afterwards.
+        EnsureSpanSwept(heap, entry);
         word base = raw_word_load(pointer_add(entry, SPAN_BASE));
         word cachedClass = raw_word_load(pointer_add(entry, SPAN_SIZE_CLASS));
         if base != 0 && cachedClass == class {
@@ -114,6 +136,9 @@ pub pointer GcAllocSmall(pointer heap, word class) {
         }
     }
     if slot == NativePointer(0) {
+        // A span refill is a pacing point. The step may sweep or free the cached span, so the
+        // refill below always carves a fresh one.
+        GcPace(heap);
         entry = RefillSpanForClass(heap, class);
         if entry == NativePointer(0) {
             return NativePointer(0);
@@ -148,6 +173,8 @@ pub pointer GcAllocLargeOnce(pointer heap, word size, word alignment) {
     if pages == 0 {
         return NativePointer(0);
     }
+    // A large request is a pacing point.
+    GcPace(heap);
     pointer entry = CarveSpanInAnyRegion(heap, pages, SIZE_CLASS_LARGE);
     if entry == NativePointer(0) {
         return NativePointer(0);
@@ -365,32 +392,42 @@ pub pointer GcTryAlloc(word size, word alignment) {
     if StressShouldCollect() {
         GcCollect();
     }
+    GcIncrementalStressStep(heap);
     word class = SizeClassForSize(size);
     mut pointer result = TryAllocOnce(heap, size, alignment, class);
-    mut bool collected = false;
     if result == NativePointer(0) {
+        // No committed page can serve the request. A heap whose live bytes reached the threshold
+        // completes its cycle (starting one when idle) before it grows; a sweeping heap finishes
+        // its sweep before it grows; otherwise it grows, also while marking.
         word live = raw_word_load(pointer_add(heap, HEAP_LIVE_BYTES));
         word threshold = raw_word_load(pointer_add(heap, HEAP_COLLECTION_THRESHOLD));
         if live >= threshold {
-            GcCollect();
-            collected = true;
+            GcCompleteCycle(heap, true);
+            result = TryAllocOnce(heap, size, alignment, class);
+        } else if raw_word_load(pointer_add(heap, HEAP_GC_PHASE)) == GC_PHASE_SWEEPING_ALLOC {
+            GcCompleteCycle(heap, false);
             result = TryAllocOnce(heap, size, alignment, class);
         }
     }
     if result == NativePointer(0) {
         mut word growStatus = GrowForRequest(heap, size, alignment, class);
-        if growStatus == HEAP_FAILURE_CAP_REACHED && collected == false {
-            GcCollect();
-            collected = true;
+        if growStatus == HEAP_FAILURE_NONE {
+            result = TryAllocOnce(heap, size, alignment, class);
+        } else if growStatus == HEAP_FAILURE_CAP_REACHED {
+            // Cap pressure: complete the cycle in progress and retry; then one more complete
+            // cycle and one more retry, so garbage dropped during a cycle is reclaimed.
+            GcCompleteCycle(heap, true);
             result = TryAllocOnce(heap, size, alignment, class);
             if result == NativePointer(0) {
-                growStatus = GrowForRequest(heap, size, alignment, class);
-            } else {
-                growStatus = HEAP_FAILURE_NONE;
+                GcCompleteCycle(heap, true);
+                result = TryAllocOnce(heap, size, alignment, class);
             }
-        }
-        if growStatus == HEAP_FAILURE_NONE && result == NativePointer(0) {
-            result = TryAllocOnce(heap, size, alignment, class);
+            if result == NativePointer(0) {
+                growStatus = GrowForRequest(heap, size, alignment, class);
+                if growStatus == HEAP_FAILURE_NONE {
+                    result = TryAllocOnce(heap, size, alignment, class);
+                }
+            }
         }
         if result == NativePointer(0) {
             mut word reason = growStatus;
@@ -406,7 +443,29 @@ pub pointer GcTryAlloc(word size, word alignment) {
     word slotBytes = SlotBytesForRequest(size, alignment, class);
     raw_word_store(pointer_add(heap, HEAP_LIVE_BYTES), raw_word_load(pointer_add(heap, HEAP_LIVE_BYTES)) + slotBytes);
     raw_word_store(pointer_add(heap, HEAP_LIVE_COUNT), raw_word_load(pointer_add(heap, HEAP_LIVE_COUNT)) + 1);
+    // Zeroed bytes for every caller, then the black state while marking: the large-object mark
+    // word is part of the object bytes, so it is set after zeroing.
+    memory_set(result, 0, size);
+    if raw_word_load(pointer_add(heap, HEAP_GC_PHASE)) == GC_PHASE_MARKING_ALLOC {
+        AllocateBlack(heap, result, class);
+    }
     return result;
+}
+
+// Allocation in black (Yuasa): an object allocated while its heap is marking survives the cycle
+// and is never traced by it.
+pub unit AllocateBlack(pointer heap, pointer object, word class) {
+    pointer entry = SpanHeaderFor(heap, NativeWord(object));
+    if entry == NativePointer(0) { return; }
+    if class == 0 {
+        raw_word_store(pointer_add(object, 8), GcMarkBlack());
+        return;
+    }
+    word base = raw_word_load(pointer_add(entry, SPAN_BASE));
+    word idx = (NativeWord(object) - base) / SizeClassBytes(class);
+    BitmapSetBit(pointer_add(entry, SPAN_MARK_BITS_ALLOC), idx);
+    BitmapSetBit(pointer_add(entry, SPAN_SCANNED_BITS_ALLOC), idx);
+    return;
 }
 
 pub unit GcClearAllocationFailure() {
@@ -461,7 +520,7 @@ pub pointer Alloc(word size, pointer descriptorPtr) {
     if object == NativePointer(0) {
         return object;
     }
-    memory_set(object, 0, size);
+    // `GcTryAlloc` returned zeroed bytes (and, while marking, a black large-object mark word).
     raw_word_store(object, NativeWord(descriptorPtr));
     return object;
 }
