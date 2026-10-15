@@ -260,14 +260,26 @@ pub i64 RunStressWorkload() {
 }
 
 // ---- Negative control: the deletion case with the barrier skipped traps in stress mode. ----
+// The stores run before any mark step: stress mode performs a mark step at every allocation while
+// marking, and a step that traced `x` before `x.f` is overwritten would shade `w` itself and hide
+// the skipped barrier. So every object is allocated before the stores except the black `b`, and
+// stress mode (with its termination checks) is switched on only after them. The closure check at
+// termination then finds the black `b` pointing at the white `w`.
 [Export(Abi:"C", Symbol:"RunBarrierSkipDetected")]
 pub i64 RunBarrierSkipDetected() {
-    Probe.gc_heap_set_incremental_stress(1000000);
+    mut Holder x = Holder { f: NewLeaf(41_i64), tag: 1_i64 };
+    Leaf replacement = NewLeaf(7_i64);
+    Leaf placeholder = NewLeaf(0_i64);
     Probe.gc_heap_force_barrier_skip(1);
-    i64 result = RunFieldOverwrite();
+    if Probe.gc_cycle_start() != 1_u8 { return -1_i64; }
+    mut Holder b = Holder { f: placeholder, tag: 2_i64 };
+    b.f = x.f;
+    x.f = replacement;
+    Probe.gc_heap_set_incremental_stress(1000000);
+    if FinishCycle(100000_i64) < 0_i64 { return -2_i64; }
     Probe.gc_heap_force_barrier_skip(0);
     Probe.gc_heap_set_incremental_stress(0);
-    return result;
+    return b.f.value;
 }
 
 // ---- Explicit collection frees objects dropped during a cycle. ----

@@ -113,7 +113,7 @@ fn build(entry: &str) -> (tempfile::TempDir, std::path::PathBuf, std::path::Path
 fn run(entry: &str, environment: &[(&str, &str)]) -> std::process::Output {
     let (_prefix, executable, _library_directory) = build(entry);
     let mut command = Command::new(&executable);
-    command.env_remove("BESKID_GC_STRESS");
+    command.env_remove("BESKID_GC_STRESS").env_remove("BESKID_GC_QUARANTINE");
     for (key, value) in environment {
         command.env(key, value);
     }
@@ -178,19 +178,25 @@ fn yielding_fibers_finish_a_cycle_without_allocating() {
     assert_passes("RunYieldingFibersFinishCycle", &[]);
 }
 
+/// The pacing cases measure the heap footprint that pacing alone produces. The shared kit is the
+/// debug kit, whose quarantine (v0.6.1) holds up to 4 MiB of freed slots and keeps their spans
+/// committed by design; a zero budget keeps the poisoning and gives freed slots back at once, as
+/// the release kit does.
+const NO_QUARANTINE: (&str, &str) = ("BESKID_GC_QUARANTINE", "0");
+
 /// 9.4 pacing: the mark trigger starts a cycle while the heap keeps growing, and garbage-only
 /// allocation completes every cycle at the threshold without committing a second region.
 #[test]
 fn mark_trigger_does_not_block_growth_and_cycles_complete_before_growth() {
-    assert_passes("RunTriggerWithoutBlockingGrowth", &[]);
-    assert_passes("RunCompletionBeforeGrowth", &[]);
+    assert_passes("RunTriggerWithoutBlockingGrowth", &[NO_QUARANTINE]);
+    assert_passes("RunCompletionBeforeGrowth", &[NO_QUARANTINE]);
 }
 
 /// 9.4 cap pressure: a cap of 8 MiB, a 4 MiB graph dropped during a cycle and 4 MiB of new
 /// reachable objects complete without exhaustion (two completed cycles at the cap).
 #[test]
 fn cap_pressure_completes_two_cycles_instead_of_trapping() {
-    assert_passes("RunCapPressure", &[("BESKID_HEAP_MAX", "8m")]);
+    assert_passes("RunCapPressure", &[("BESKID_HEAP_MAX", "8m"), NO_QUARANTINE]);
 }
 
 /// 9.5 pause bound: 64 MiB live and 128 MiB churn keep every paced step at or below
