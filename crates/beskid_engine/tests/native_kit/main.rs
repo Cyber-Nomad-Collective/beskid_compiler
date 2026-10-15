@@ -26,6 +26,7 @@ mod generic_try_specialization_native;
 mod heap_growth_native;
 mod incremental_marking_native;
 mod iterator_for_native;
+mod parallel_counts_native;
 mod jit_pipeline_observer;
 mod mod_host;
 mod repeat_loop_probe;

@@ -20,6 +20,8 @@ pub contract Probe {
     word gc_last_cycle_max_step_bytes();
     unit gc_heap_set_incremental_stress(word n);
     unit gc_heap_force_barrier_skip(word enabled);
+    word gc_heap_region_count();
+    word gc_heap_committed();
 }
 
 [Extern(Abi:"C")]
@@ -319,4 +321,47 @@ pub i64 RunCapPressure() {
     dropped = Array.Empty<Leaf>();
     Leaf[] fresh = BuildLeaves(131072_i64);
     return i64(Array.Len<Leaf>(kept)) + i64(Array.Len<Leaf>(fresh));
+}
+
+// ---- Pacing: the mark trigger starts a cycle without blocking heap growth (9.4). ----
+// Retained leaves pass the mark trigger (three quarters of the 512 KiB threshold): a cycle starts
+// at a pacing point while allocation goes on, and the heap still grows to hold every leaf.
+[Export(Abi:"C", Symbol:"RunTriggerWithoutBlockingGrowth")]
+pub i64 RunTriggerWithoutBlockingGrowth() {
+    word regionsBefore = Probe.gc_heap_region_count();
+    mut Leaf[] keep = Array.Empty<Leaf>();
+    mut bool started = false;
+    mut i64 i = 0_i64;
+    while i < 262144_i64 {
+        Array.Append<Leaf>(keep, NewLeaf(i));
+        if Probe.gc_phase() != 0 { started = true; }
+        i = i + 1_i64;
+    }
+    if started == false { return -1_i64; }
+    if Probe.gc_heap_region_count() <= regionsBefore { return -2_i64; }
+    mut i64 sum = 0_i64;
+    for leaf in keep { sum = sum + leaf.value; }
+    if sum != 34359607296_i64 { return -3_i64; }
+    return 0_i64;
+}
+
+// ---- Pacing: a cycle completes at the threshold before the heap grows (9.4). ----
+// Only short-lived garbage is allocated: every cycle that the trigger starts completes by the
+// collection threshold and frees the garbage, so the heap never commits a second region.
+[Export(Abi:"C", Symbol:"RunCompletionBeforeGrowth")]
+pub i64 RunCompletionBeforeGrowth() {
+    Probe.gc_collect();
+    word regionsBefore = Probe.gc_heap_region_count();
+    mut i64 round = 0_i64;
+    while round < 64_i64 {
+        mut Leaf[] garbage = Array.Empty<Leaf>();
+        mut i64 i = 0_i64;
+        while i < 4096_i64 {
+            Array.Append<Leaf>(garbage, NewLeaf(i));
+            i = i + 1_i64;
+        }
+        round = round + 1_i64;
+    }
+    if Probe.gc_heap_region_count() != regionsBefore { return -1_i64; }
+    return 0_i64;
 }
