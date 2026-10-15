@@ -3,8 +3,8 @@ use super::api_keys::{
     validate_release_publisher_key_sha256,
 };
 use super::{
-    InMemoryPackageRepository, NewPackage, PackageMetadata, PackageRepository, PublishOutcome, PublishVersion,
-    StoreError, migrations,
+    InMemoryPackageRepository, NewPackage, PackageCommunity, PackageMetadata, PackageRepository, PublishOutcome,
+    PublishVersion, StoreError, migrations,
 };
 
 const CHECKSUM: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
@@ -169,4 +169,26 @@ fn release_publisher_reconciliation_has_one_stable_idempotent_rotation_path() {
     assert!(RECONCILE_RELEASE_PUBLISHER_KEY_SQL.contains("token_sha256=EXCLUDED.token_sha256"));
     assert!(RECONCILE_RELEASE_PUBLISHER_KEY_SQL.contains("revoked_at_utc=NULL"));
     assert!(RECONCILE_RELEASE_PUBLISHER_KEY_SQL.contains("pckg_api_keys.subject=EXCLUDED.subject"));
+}
+
+#[test]
+fn community_links_accept_nodebb_slugs_with_dots_and_reject_unsafe_ones() {
+    let mut repository = InMemoryPackageRepository::default();
+    let package = repository.create_package(package_request()).unwrap();
+    let dotted = PackageCommunity { topic_id: 4, topic_slug: "4/beskid.templates.console".into() };
+    let linked = repository.set_community(&package.name, dotted.clone()).unwrap();
+    assert_eq!(linked.community, Some(dotted));
+    let tilde = PackageCommunity { topic_id: 5, topic_slug: "5/acme~math_v2".into() };
+    assert!(repository.set_community(&package.name, tilde).is_ok());
+    for (topic_id, slug) in [(0, "1/ok"), (6, ""), (6, "6/with space"), (6, "6/a?b"), (6, "6/%2e")] {
+        assert_eq!(
+            repository.set_community(&package.name, PackageCommunity { topic_id, topic_slug: slug.into() }),
+            Err(StoreError::InvalidCommunity),
+            "{topic_id} {slug:?}"
+        );
+    }
+    assert_eq!(
+        repository.set_community("missing", PackageCommunity { topic_id: 1, topic_slug: "1/x".into() }),
+        Err(StoreError::PackageNotFound)
+    );
 }

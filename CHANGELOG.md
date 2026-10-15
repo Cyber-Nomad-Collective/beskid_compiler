@@ -35,6 +35,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   still refusing artifacts with hidden segments inside `docs/`, `src/` or
   `.beskid/docs/`.
 
+### Fixed
+
+- pckg: accept NodeBB topic slugs with dots (`4/beskid.templates.console`)
+  when persisting a package's community link; the previous charset rejected
+  them after the thread had already been opened. Thread creation is now
+  idempotent against NodeBB itself: the registry adopts an existing thread in
+  the Packages category whose title is the package name and whose author is
+  the bot user before it opens a new one, so a failure between creation and
+  persistence can no longer leave an orphan thread.
+
 ## [0.5.4] - 2026-10-11
 
 ### Added

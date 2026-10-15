@@ -547,12 +547,14 @@ pub(super) fn validate_package_metadata(metadata: &PackageMetadata) -> Result<()
     valid.then_some(()).ok_or(StoreError::InvalidPackageMetadata)
 }
 
+/// NodeBB keeps dots in topic slugs (`4/beskid.templates.console`), so the
+/// slug may use the RFC 3986 unreserved set plus `/`.
 pub(crate) fn validate_community(community: &PackageCommunity) -> Result<(), StoreError> {
     let slug = community.topic_slug.as_str();
     if community.topic_id <= 0
         || slug.is_empty()
         || slug.len() > 255
-        || !slug.bytes().all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'/'))
+        || !slug.bytes().all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'.' | b'_' | b'~' | b'/'))
     {
         return Err(StoreError::InvalidCommunity);
     }

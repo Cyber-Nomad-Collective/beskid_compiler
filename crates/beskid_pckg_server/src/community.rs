@@ -23,7 +23,12 @@
 //! in the post queue and carries no usable identity, so it is treated as "not
 //! linked" and left to the reconcile path. Thread reads use the public Read
 //! API (`GET /api/topic/{tid}`) from the server, cached for about a minute,
-//! so browsers never call NodeBB (no CORS).
+//! so browsers never call NodeBB (no CORS). Thread creation is idempotent
+//! against NodeBB itself: before `POST /api/v3/topics` the registry scans the
+//! Packages category (`GET /api/category/{cid}?page=N`) and adopts a topic
+//! whose title is the package name and whose author is the bot (looked up
+//! once through `GET /api/self`), so a crash between creation and
+//! persistence can never produce a second thread.
 
 use std::{
     collections::HashMap,
@@ -149,6 +154,27 @@ pub struct ReplyRequest {
     pub content: String,
 }
 
+/// One topic row of a category listing (`GET /api/category/{cid}`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CategoryTopic {
+    pub tid: i64,
+    pub slug: String,
+    pub title: String,
+    /// Author uid.
+    pub uid: i64,
+}
+
+/// One page of a category listing.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CategoryTopicsPage {
+    pub topics: Vec<CategoryTopic>,
+    /// Total pages NodeBB reports for the category.
+    pub page_count: u32,
+}
+
+/// Upper bound on category pages scanned before creating a topic.
+const MAX_CATEGORY_PAGES: u32 = 50;
+
 /// Topic identity returned by NodeBB.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NodebbTopic {
@@ -187,6 +213,10 @@ const SNAPSHOT_TTL: Duration = Duration::from_secs(60);
 /// Transport seam over the NodeBB Write/Read APIs. Tests inject a double.
 #[async_trait]
 pub trait NodebbClient: Send + Sync {
+    /// Uid of the user the bearer token acts as (`GET /api/self`).
+    async fn bot_uid(&self) -> Result<i64, CommunityError>;
+    /// One page (1-based) of the category's topics, newest first.
+    async fn category_topics(&self, cid: i64, page: u32) -> Result<CategoryTopicsPage, CommunityError>;
     async fn create_topic(&self, request: CreateTopicRequest) -> Result<NodebbTopic, CommunityError>;
     async fn reply(&self, request: ReplyRequest) -> Result<(), CommunityError>;
     async fn topic_stats(&self, tid: i64) -> Result<NodebbTopicStats, CommunityError>;
@@ -234,6 +264,36 @@ struct TopicPayload {
     viewcount: Option<serde_json::Value>,
     #[serde(default)]
     posts: Vec<PostPayload>,
+}
+
+#[derive(Deserialize)]
+struct SelfPayload {
+    uid: Option<serde_json::Value>,
+}
+
+#[derive(Deserialize)]
+struct CategoryPayload {
+    #[serde(default)]
+    topics: Vec<CategoryTopicPayload>,
+    #[serde(default)]
+    pagination: Option<PaginationPayload>,
+}
+
+#[derive(Deserialize)]
+struct CategoryTopicPayload {
+    tid: Option<serde_json::Value>,
+    #[serde(default)]
+    slug: Option<String>,
+    #[serde(default)]
+    title: Option<String>,
+    #[serde(default)]
+    uid: Option<serde_json::Value>,
+}
+
+#[derive(Deserialize)]
+struct PaginationPayload {
+    #[serde(default, rename = "pageCount")]
+    page_count: Option<serde_json::Value>,
 }
 
 #[derive(Deserialize)]
@@ -342,6 +402,54 @@ async fn write_api<T: serde::de::DeserializeOwned>(
 
 #[async_trait]
 impl NodebbClient for HttpNodebbClient {
+    async fn bot_uid(&self) -> Result<i64, CommunityError> {
+        let response = self
+            .http
+            .get(format!("{}/api/self", self.api_url))
+            .bearer_auth(&self.bot_token)
+            .send()
+            .await
+            .map_err(|error| CommunityError::Nodebb(error.to_string()))?;
+        if !response.status().is_success() {
+            return Err(CommunityError::Nodebb(format!("self lookup returned {}", response.status())));
+        }
+        let payload: SelfPayload =
+            response.json().await.map_err(|error| CommunityError::InvalidResponse(error.to_string()))?;
+        number(&payload.uid).filter(|uid| *uid > 0).ok_or_else(|| {
+            CommunityError::InvalidResponse("self lookup carries no uid; is the token user-bound?".into())
+        })
+    }
+
+    async fn category_topics(&self, cid: i64, page: u32) -> Result<CategoryTopicsPage, CommunityError> {
+        let response = self
+            .http
+            .get(format!("{}/api/category/{cid}?page={}", self.api_url, page.max(1)))
+            .bearer_auth(&self.bot_token)
+            .send()
+            .await
+            .map_err(|error| CommunityError::Nodebb(error.to_string()))?;
+        if !response.status().is_success() {
+            return Err(CommunityError::Nodebb(format!("category read returned {}", response.status())));
+        }
+        let payload: CategoryPayload =
+            response.json().await.map_err(|error| CommunityError::InvalidResponse(error.to_string()))?;
+        let topics = payload
+            .topics
+            .into_iter()
+            .filter_map(|topic| {
+                Some(CategoryTopic {
+                    tid: number(&topic.tid).filter(|tid| *tid > 0)?,
+                    slug: topic.slug.filter(|slug| !slug.trim().is_empty())?,
+                    title: topic.title.unwrap_or_default(),
+                    uid: number(&topic.uid).unwrap_or_default(),
+                })
+            })
+            .collect();
+        let page_count =
+            payload.pagination.and_then(|pagination| number(&pagination.page_count)).unwrap_or(1).max(1) as u32;
+        Ok(CategoryTopicsPage { topics, page_count })
+    }
+
     async fn create_topic(&self, request: CreateTopicRequest) -> Result<NodebbTopic, CommunityError> {
         let response = self
             .http
@@ -411,6 +519,7 @@ pub(crate) struct CommunityService {
     /// user with `already-posting`.
     write_lock: tokio::sync::Mutex<()>,
     snapshots: Mutex<HashMap<i64, (Instant, NodebbTopicStats)>>,
+    bot_uid: Mutex<Option<i64>>,
 }
 
 impl CommunityService {
@@ -421,6 +530,7 @@ impl CommunityService {
             packages_cid,
             write_lock: tokio::sync::Mutex::new(()),
             snapshots: Mutex::new(HashMap::new()),
+            bot_uid: Mutex::new(None),
         }
     }
 
@@ -446,21 +556,53 @@ impl CommunityService {
             return Ok(existing.clone());
         }
         let _serialized = self.write_lock.lock().await;
-        let topic = self
-            .client
-            .create_topic(CreateTopicRequest {
-                cid: self.packages_cid,
-                title: package.name.clone(),
-                content: opening_post(package, package_kind),
-                tags: package.metadata.tags.iter().take(5).cloned().collect(),
-            })
-            .await?;
+        let topic = match self.find_bot_topic(&package.name).await? {
+            Some(existing) => existing,
+            None => {
+                self.client
+                    .create_topic(CreateTopicRequest {
+                        cid: self.packages_cid,
+                        title: package.name.clone(),
+                        content: opening_post(package, package_kind),
+                        tags: package.metadata.tags.iter().take(5).cloned().collect(),
+                    })
+                    .await?
+            }
+        };
         let community = PackageCommunity { topic_id: topic.tid, topic_slug: topic.slug };
         packages
             .set_community(&package.name, community)
             .await
             .map(|package| package.community.expect("set_community stores the link it was given"))
             .map_err(CommunityError::Store)
+    }
+
+    /// Uid the bot token acts as, looked up once per process.
+    async fn bot_uid(&self) -> Result<i64, CommunityError> {
+        if let Some(uid) = *self.bot_uid.lock().expect("bot uid mutex is not poisoned") {
+            return Ok(uid);
+        }
+        let uid = self.client.bot_uid().await?;
+        *self.bot_uid.lock().expect("bot uid mutex is not poisoned") = Some(uid);
+        Ok(uid)
+    }
+
+    /// Finds a thread the bot already opened for `title` in the Packages
+    /// category, scanning page by page. Threads by other users are never
+    /// adopted, even with the same title.
+    async fn find_bot_topic(&self, title: &str) -> Result<Option<NodebbTopic>, CommunityError> {
+        let bot_uid = self.bot_uid().await?;
+        let mut page = 1;
+        loop {
+            let listing = self.client.category_topics(self.packages_cid, page).await?;
+            if let Some(topic) = listing.topics.into_iter().find(|topic| topic.uid == bot_uid && topic.title == title) {
+                return Ok(Some(NodebbTopic { tid: topic.tid, slug: topic.slug }));
+            }
+            if page >= listing.page_count || page >= MAX_CATEGORY_PAGES {
+                return Ok(None);
+            }
+            page += 1;
+        }
     }
 
     /// Posts the release announcement reply for a linked package.

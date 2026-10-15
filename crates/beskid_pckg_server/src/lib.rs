@@ -11,8 +11,9 @@ mod server;
 mod workspace_review_routes;
 
 pub use self::community::{
-    CommunityConfig, CommunityError, CreateTopicRequest, EXCERPT_CHARS, HttpNodebbClient, NodebbClient, NodebbPost,
-    NodebbTopic, NodebbTopicStats, RECENT_POSTS, ReplyRequest, plain_excerpt,
+    CategoryTopic, CategoryTopicsPage, CommunityConfig, CommunityError, CreateTopicRequest, EXCERPT_CHARS,
+    HttpNodebbClient, NodebbClient, NodebbPost, NodebbTopic, NodebbTopicStats, RECENT_POSTS, ReplyRequest,
+    plain_excerpt,
 };
 pub(crate) use self::server::{
     AppState, authenticated_principal, authenticated_publisher_subject, authenticated_subject, format_timestamp,

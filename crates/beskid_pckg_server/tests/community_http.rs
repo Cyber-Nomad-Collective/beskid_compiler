@@ -12,15 +12,19 @@ use async_trait::async_trait;
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use beskid_pckg_server::{
-    CommunityConfig, CommunityError, CreateTopicRequest, NodebbClient, NodebbPost, NodebbTopic, NodebbTopicStats,
-    PckgServerConfig, ReplyRequest, router,
+    CategoryTopic, CategoryTopicsPage, CommunityConfig, CommunityError, CreateTopicRequest, NodebbClient, NodebbPost,
+    NodebbTopic, NodebbTopicStats, PckgServerConfig, ReplyRequest, router,
 };
+
+const BOT_UID: i64 = 7;
 use http_body_util::BodyExt;
 use support::{artifact, multipart_publish_request};
 use tower::ServiceExt;
 
 #[derive(Default)]
 struct FakeNodebb {
+    /// Topics that already exist in the category before the registry acts.
+    existing: Mutex<Vec<CategoryTopic>>,
     topics: Mutex<Vec<CreateTopicRequest>>,
     replies: Mutex<Vec<ReplyRequest>>,
     fail_topics: Mutex<bool>,
@@ -41,7 +45,28 @@ impl NodebbClient for FakeNodebb {
         let mut topics = self.topics.lock().unwrap();
         topics.push(request.clone());
         let tid = 40 + topics.len() as i64;
-        Ok(NodebbTopic { tid, slug: format!("{tid}/{}", request.title.to_ascii_lowercase().replace('.', "-")) })
+        // NodeBB keeps dots in slugs: `41/beskid.templates.console`.
+        let slug = format!("{tid}/{}", request.title.to_ascii_lowercase());
+        self.existing.lock().unwrap().push(CategoryTopic {
+            tid,
+            slug: slug.clone(),
+            title: request.title.clone(),
+            uid: BOT_UID,
+        });
+        Ok(NodebbTopic { tid, slug })
+    }
+
+    async fn bot_uid(&self) -> Result<i64, CommunityError> {
+        Ok(BOT_UID)
+    }
+
+    async fn category_topics(&self, _cid: i64, page: u32) -> Result<CategoryTopicsPage, CommunityError> {
+        // Two topics per page so adoption has to paginate.
+        let existing = self.existing.lock().unwrap();
+        let start = ((page.max(1) - 1) * 2) as usize;
+        let topics = existing.iter().skip(start).take(2).cloned().collect::<Vec<_>>();
+        let page_count = existing.len().div_ceil(2).max(1) as u32;
+        Ok(CategoryTopicsPage { topics, page_count })
     }
 
     async fn reply(&self, request: ReplyRequest) -> Result<(), CommunityError> {
@@ -170,9 +195,9 @@ async fn public_package_creation_opens_one_thread_and_each_publish_replies() {
     let detail =
         json(app.clone().oneshot(Request::get("/api/packages/Acme.Math").body(Body::empty()).unwrap()).await.unwrap())
             .await;
-    assert_eq!(detail["package"]["community"]["url"], "https://community.beskid-lang.org/topic/41/acme-math");
+    assert_eq!(detail["package"]["community"]["url"], "https://community.beskid-lang.org/topic/41/acme.math");
     assert_eq!(detail["package"]["community"]["topicId"], 41);
-    assert_eq!(detail["package"]["community"]["topicSlug"], "41/acme-math");
+    assert_eq!(detail["package"]["community"]["topicSlug"], "41/acme.math");
 
     let status = app
         .clone()
@@ -181,7 +206,7 @@ async fn public_package_creation_opens_one_thread_and_each_publish_replies() {
         .unwrap();
     assert_eq!(status.status(), StatusCode::OK);
     let status = json(status).await;
-    assert_eq!(status["url"], "https://community.beskid-lang.org/topic/41/acme-math");
+    assert_eq!(status["url"], "https://community.beskid-lang.org/topic/41/acme.math");
     assert_eq!(status["replyCount"], 41);
     assert_eq!(status["viewCount"], 123);
     assert_eq!(status["recentPosts"][0]["pid"], 900);
@@ -211,7 +236,7 @@ async fn public_package_creation_opens_one_thread_and_each_publish_replies() {
         app.oneshot(Request::get("/api/packages/Acme.Other/community").body(Body::empty()).unwrap()).await.unwrap(),
     )
     .await;
-    assert_eq!(degraded["url"], "https://community.beskid-lang.org/topic/42/acme-other");
+    assert_eq!(degraded["url"], "https://community.beskid-lang.org/topic/42/acme.other");
     assert!(degraded["replyCount"].is_null(), "counters degrade to null when NodeBB is unreachable");
     assert!(degraded["recentPosts"].as_array().unwrap().is_empty());
     std::fs::remove_dir_all(root).expect("artifact root is removed");
@@ -295,7 +320,7 @@ async fn nodebb_outage_never_blocks_creation_or_publication_and_administrators_r
     *nodebb.fail_topics.lock().unwrap() = false;
     let reconciled = json(app.clone().oneshot(reconcile("admin", "pckg-admins")).await.unwrap()).await;
     assert_eq!(reconciled["linked"][0]["package"], "Late.Demo");
-    assert_eq!(reconciled["linked"][0]["url"], "https://community.beskid-lang.org/topic/41/late-demo");
+    assert_eq!(reconciled["linked"][0]["url"], "https://community.beskid-lang.org/topic/41/late.demo");
     assert!(reconciled["failed"].as_array().unwrap().is_empty());
     assert!(
         nodebb.topics.lock().unwrap()[0].content.contains("Kind: library"),
@@ -325,7 +350,7 @@ async fn nodebb_outage_never_blocks_creation_or_publication_and_administrators_r
 
     let detail =
         json(app.oneshot(Request::get("/api/packages/Late.Demo").body(Body::empty()).unwrap()).await.unwrap()).await;
-    assert_eq!(detail["package"]["community"]["topicSlug"], "41/late-demo");
+    assert_eq!(detail["package"]["community"]["topicSlug"], "41/late.demo");
     std::fs::remove_dir_all(root).expect("artifact root is removed");
 }
 
@@ -366,5 +391,108 @@ async fn queued_posts_are_not_linked_until_reconcile_succeeds() {
     let reconciled = json(app.clone().oneshot(reconcile("admin", "pckg-admins")).await.unwrap()).await;
     assert_eq!(reconciled["linked"][0]["package"], "Queued.Demo");
     assert_eq!(nodebb.topics.lock().unwrap().len(), 1);
+    std::fs::remove_dir_all(root).expect("artifact root is removed");
+}
+
+fn existing_topic(tid: i64, title: &str, uid: i64) -> CategoryTopic {
+    CategoryTopic { tid, slug: format!("{tid}/{}", title.to_ascii_lowercase()), title: title.into(), uid }
+}
+
+#[tokio::test]
+async fn dotted_nodebb_slugs_persist_and_link() {
+    let root = temp_root("dotted");
+    let nodebb = Arc::new(FakeNodebb::default());
+    let app = app(&root, nodebb);
+
+    assert_eq!(
+        app.clone().oneshot(create_package("beskid.templates.console", true)).await.unwrap().status(),
+        StatusCode::CREATED
+    );
+    let published = app
+        .clone()
+        .oneshot(multipart_publish_request(
+            "beskid.templates.console",
+            "1.0.0",
+            "owner",
+            artifact("beskid.templates.console", "1.0.0"),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(published.status(), StatusCode::CREATED);
+    let detail = json(
+        app.clone()
+            .oneshot(Request::get("/api/packages/beskid.templates.console").body(Body::empty()).unwrap())
+            .await
+            .unwrap(),
+    )
+    .await;
+    let activity = json(
+        app.clone()
+            .oneshot(
+                Request::get("/api/admin/registry-activity?take=50")
+                    .header("remote-user", "admin")
+                    .header("remote-groups", "pckg-admins")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(detail["package"]["community"]["topicSlug"], "41/beskid.templates.console", "{activity} {detail}");
+    assert_eq!(activity.as_array().unwrap().iter().filter(|e| e["action"] == "community_sync_failed").count(), 0);
+    assert_eq!(
+        detail["package"]["community"]["url"],
+        "https://community.beskid-lang.org/topic/41/beskid.templates.console"
+    );
+    std::fs::remove_dir_all(root).expect("artifact root is removed");
+}
+
+#[tokio::test]
+async fn existing_bot_thread_with_the_package_title_is_adopted_instead_of_duplicated() {
+    let root = temp_root("adopt");
+    let nodebb = Arc::new(FakeNodebb {
+        existing: Mutex::new(vec![
+            existing_topic(10, "Unrelated.Thread", BOT_UID),
+            existing_topic(11, "Acme.Math", 99), // same title, posted by a human: never adopted
+            existing_topic(12, "Other.Pkg", BOT_UID),
+            existing_topic(13, "Acme.Math", BOT_UID), // on the second page: adopted
+        ]),
+        ..FakeNodebb::default()
+    });
+    let app = app(&root, nodebb.clone());
+
+    assert_eq!(app.clone().oneshot(create_package("Acme.Math", true)).await.unwrap().status(), StatusCode::CREATED);
+    assert!(nodebb.topics.lock().unwrap().is_empty(), "the bot's existing thread is adopted, nothing is created");
+    let published = app
+        .clone()
+        .oneshot(multipart_publish_request("Acme.Math", "1.0.0", "owner", artifact("Acme.Math", "1.0.0")))
+        .await
+        .unwrap();
+    assert_eq!(published.status(), StatusCode::CREATED);
+    assert_eq!(nodebb.replies.lock().unwrap()[0].tid, 13, "releases are announced in the adopted thread");
+    let detail =
+        json(app.clone().oneshot(Request::get("/api/packages/Acme.Math").body(Body::empty()).unwrap()).await.unwrap())
+            .await;
+    assert_eq!(detail["package"]["community"]["topicId"], 13, "{detail}");
+    assert_eq!(detail["package"]["community"]["topicSlug"], "13/acme.math");
+
+    // A package whose only same-titled thread belongs to another user gets a fresh thread.
+    assert_eq!(app.clone().oneshot(create_package("Human.Pkg", true)).await.unwrap().status(), StatusCode::CREATED);
+    nodebb.existing.lock().unwrap().push(existing_topic(14, "Fresh.Pkg", 99));
+    assert_eq!(app.clone().oneshot(create_package("Fresh.Pkg", true)).await.unwrap().status(), StatusCode::CREATED);
+    let created = nodebb.topics.lock().unwrap().iter().map(|topic| topic.title.clone()).collect::<Vec<_>>();
+    assert_eq!(created, vec!["Human.Pkg".to_owned(), "Fresh.Pkg".to_owned()]);
+
+    // Reconcile adopts too: a thread NodeBB opened while the registry failed to
+    // persist it (an orphan) is reused instead of duplicated.
+    *nodebb.fail_topics.lock().unwrap() = true;
+    assert_eq!(app.clone().oneshot(create_package("Orphan.Pkg", true)).await.unwrap().status(), StatusCode::CREATED);
+    nodebb.existing.lock().unwrap().push(existing_topic(20, "Orphan.Pkg", BOT_UID));
+    *nodebb.fail_topics.lock().unwrap() = false;
+    let reconciled = json(app.clone().oneshot(reconcile("admin", "pckg-admins")).await.unwrap()).await;
+    assert_eq!(reconciled["linked"][0]["package"], "Orphan.Pkg");
+    assert_eq!(reconciled["linked"][0]["url"], "https://community.beskid-lang.org/topic/20/orphan.pkg");
+    assert_eq!(nodebb.topics.lock().unwrap().len(), 2, "reconcile adopted the orphan thread");
     std::fs::remove_dir_all(root).expect("artifact root is removed");
 }
