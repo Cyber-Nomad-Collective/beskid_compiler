@@ -41,9 +41,10 @@ i32 Main() {
     if Total(square) != 36 || square[2][1] != 7 {
         return 2;
     }
+    // The struct literal takes `square` by move, so the write is observed through the field.
     Grid grid = Grid { cells: square };
     grid.cells[0][0] = 100;
-    if grid.cells[0][0] != 100 || square[0][0] != 100 {
+    if grid.cells[0][0] != 100 || Total(grid.cells) != 136 {
         return 3;
     }
     string[][] words = [["a", "b"], ["c"]];

@@ -89,7 +89,7 @@ fn reachable_callable_rejects_moved_fiber_parameters_without_local_spawn() {
         let error = with_db(|db| lower_syntax_assembly_entrypoint(db, assembly, "Main", target, isa.as_ref()))
             .err()
             .expect("moved Fiber rejected");
-        assert!(error.to_string().contains("UseAfterMove"), "{body}: {error}");
+        assert!(error.to_string().contains("E1234"), "{body}: {error}");
     }
 }
 
@@ -108,7 +108,7 @@ fn reachable_callable_rejects_repeatable_fiber_capture_and_inferred_method_doubl
         let error = with_db(|db| lower_syntax_assembly_entrypoint(db, assembly, "Main", target, isa.as_ref()))
             .err()
             .expect("invalid inferred Fiber ownership rejected before emission");
-        assert!(error.to_string().contains("UseAfterMove"), "{body}: {error}");
+        assert!(error.to_string().contains("E1234"), "{body}: {error}");
     }
 }
 

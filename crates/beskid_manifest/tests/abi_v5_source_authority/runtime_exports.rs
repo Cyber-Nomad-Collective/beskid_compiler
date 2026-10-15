@@ -23,7 +23,9 @@ fn runtime_sources(root: &Path) -> Vec<PathBuf> {
 }
 
 fn source_type(ty: &str, nominals: &BTreeSet<String>) -> String {
+    // The `move` parameter mode transfers ownership; it does not change the ABI type.
     let ty = ty.trim();
+    let ty = ty.strip_prefix("move ").map_or(ty, str::trim_start);
     match ty {
         "word" => "usize".into(),
         "unit" => "void".into(),
