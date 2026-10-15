@@ -1,0 +1,25 @@
+// An unapplied generic enum constructor passed to a method takes its type application from the
+// method parameter (0.5.4 regression 8e230afe).
+enum Maybe<T> { None(), Some(T value) }
+
+type Holder {
+    i64 n,
+
+    i64 Pick(Maybe<i64> other) {
+        return match other {
+            Maybe::None() => n + 40,
+            Maybe::Some(value) => value,
+        };
+    }
+}
+
+i32 Main() {
+    Holder holder = Holder { n: 2 };
+    if holder.Pick(Maybe::None) != 42 {
+        return 1;
+    }
+    if holder.Pick(Maybe::Some(42)) != 42 {
+        return 2;
+    }
+    return 42;
+}

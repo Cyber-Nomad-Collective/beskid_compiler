@@ -982,3 +982,19 @@ fn bounded_generic_receiver_calls_the_bound_contract_methods() {
         "contract methods of every bound are callable: {diagnostics:?}"
     );
 }
+
+#[test]
+fn bounded_generic_receiver_rejects_methods_no_bound_declares() {
+    let contracts = "contract Sized { i64 Size(); } contract Scaled { i64 Scale(i64 factor); } \
+                     type Box : Sized, Scaled { i64 n, pub i64 Size() { return this.n; } pub i64 Scale(i64 factor) { return this.n * factor; } } ";
+    for (name, body) in [
+        ("bound_dispatch_outside", "i64 Other<T>(T value) where T: Sized { return value.Extra(); }"),
+        ("bound_dispatch_unbounded", "i64 Free<T>(T value) { return value.Size(); }"),
+    ] {
+        let diagnostics = bound_dispatch_diagnostics(name, &format!("{contracts}{body}"));
+        assert!(
+            diagnostics.iter().any(|diagnostic| diagnostic.severity == Severity::Error),
+            "{name}: a method no bound declares is rejected: {diagnostics:?}"
+        );
+    }
+}

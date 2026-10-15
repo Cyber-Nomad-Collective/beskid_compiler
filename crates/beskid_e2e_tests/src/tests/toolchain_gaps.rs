@@ -70,6 +70,13 @@ fn nested_array_types_compile_and_run() {
     assert_runs("nested_array_types", "NestedArrayTypes.bproj");
 }
 
+/// An unapplied generic enum constructor in a method argument takes the parameter's application
+/// (0.5.4 regression 8e230afe).
+#[test]
+fn generic_enum_constructor_in_a_method_argument_runs() {
+    assert_runs("generic_enum_method_argument", "GenericEnumMethodArgument.bproj");
+}
+
 /// `T held = value;` lowers for a scalar and a string specialization (0.5.4 regression b2ea9586).
 #[test]
 fn generic_local_annotated_with_a_type_parameter_runs() {
