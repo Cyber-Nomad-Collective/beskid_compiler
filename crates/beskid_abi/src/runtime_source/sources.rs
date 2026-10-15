@@ -241,6 +241,30 @@ const CANONICAL_FOUNDATION_THREAD_SOURCE: &str = include_str!(concat!(
 ));
 const CANONICAL_CORELIB_FIBER_SOURCE: &str =
     include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../corelib/packages/concurrency/src/Concurrency/Fiber.bd"));
+const CANONICAL_CORELIB_PARALLEL_SOURCE: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../corelib/packages/concurrency/src/Core/Parallel/Parallel.bd"
+));
+const CANONICAL_CORELIB_PARALLEL_SCOPES_SOURCE: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../corelib/packages/concurrency/src/Core/Parallel/Scopes.bd"
+));
+const CANONICAL_CORELIB_PARALLEL_ISOLATE_SOURCE: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../corelib/packages/concurrency/src/Core/Parallel/Isolate.bd"
+));
+const CANONICAL_CORELIB_PARALLEL_PORT_SOURCE: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../corelib/packages/concurrency/src/Core/Parallel/Port.bd"
+));
+const CANONICAL_CORELIB_PARALLEL_SEQ_SOURCE: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../corelib/packages/concurrency/src/Core/Parallel/ParallelSeq.bd"
+));
+const CANONICAL_CORELIB_PARALLEL_READ_ONLY_ARRAY_SOURCE: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../corelib/packages/concurrency/src/Core/Parallel/ReadOnlyArray.bd"
+));
 const CANONICAL_CORELIB_CONSOLE_LINUX_SOURCE: &str =
     include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../corelib/packages/console/src/Platform/Linux.bd"));
 const CANONICAL_CORELIB_CONSOLE_MACOS_SOURCE: &str =
@@ -669,6 +693,30 @@ pub fn canonical_corelib_service_sources() -> Vec<SourceUnit> {
     sources.push(SourceUnit {
         logical_path: CANONICAL_CORELIB_FIBER_SOURCE_PATH.into(),
         source: CANONICAL_CORELIB_FIBER_SOURCE.into(),
+    });
+    sources.push(SourceUnit {
+        logical_path: CANONICAL_CORELIB_PARALLEL_SOURCE_PATH.into(),
+        source: CANONICAL_CORELIB_PARALLEL_SOURCE.into(),
+    });
+    sources.push(SourceUnit {
+        logical_path: CANONICAL_CORELIB_PARALLEL_SCOPES_SOURCE_PATH.into(),
+        source: CANONICAL_CORELIB_PARALLEL_SCOPES_SOURCE.into(),
+    });
+    sources.push(SourceUnit {
+        logical_path: CANONICAL_CORELIB_PARALLEL_ISOLATE_SOURCE_PATH.into(),
+        source: CANONICAL_CORELIB_PARALLEL_ISOLATE_SOURCE.into(),
+    });
+    sources.push(SourceUnit {
+        logical_path: CANONICAL_CORELIB_PARALLEL_PORT_SOURCE_PATH.into(),
+        source: CANONICAL_CORELIB_PARALLEL_PORT_SOURCE.into(),
+    });
+    sources.push(SourceUnit {
+        logical_path: CANONICAL_CORELIB_PARALLEL_SEQ_SOURCE_PATH.into(),
+        source: CANONICAL_CORELIB_PARALLEL_SEQ_SOURCE.into(),
+    });
+    sources.push(SourceUnit {
+        logical_path: CANONICAL_CORELIB_PARALLEL_READ_ONLY_ARRAY_SOURCE_PATH.into(),
+        source: CANONICAL_CORELIB_PARALLEL_READ_ONLY_ARRAY_SOURCE.into(),
     });
     sources.push(SourceUnit {
         logical_path: CANONICAL_CORELIB_CONSOLE_LINUX_SOURCE_PATH.into(),

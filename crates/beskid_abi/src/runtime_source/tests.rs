@@ -356,8 +356,11 @@ fn canonical_foundation_service_table_covers_every_implemented_raw_call_and_noth
             .collect::<std::collections::BTreeSet<_>>();
 
         for name in &raw_names {
-            let deliberately_compiler_lowered =
-                source.logical_path == CANONICAL_FOUNDATION_ARRAY_SOURCE_PATH && *name == "__array_new";
+            // `__array_new` is a compiler-owned typed allocation; `__transfer_class<T>()` folds to
+            // an i64 constant per instantiation in the query layer. Neither reaches the runtime.
+            let deliberately_compiler_lowered = (source.logical_path == CANONICAL_FOUNDATION_ARRAY_SOURCE_PATH
+                && *name == "__array_new")
+                || (source.logical_path == CANONICAL_CORELIB_PARALLEL_PORT_SOURCE_PATH && *name == "__transfer_class");
             if deliberately_compiler_lowered {
                 assert!(
                     capability.service_for_source(&source.logical_path, name).is_none(),
