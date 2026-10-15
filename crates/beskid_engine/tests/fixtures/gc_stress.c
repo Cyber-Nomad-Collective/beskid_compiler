@@ -14,7 +14,7 @@
  *                  it to `str_concat`. With `alloc` stress the allocation collects first and
  *                  `str_concat` traps; without the variable nothing collects and it succeeds.
  *   verify-corrupt writes the poison pattern into the header word of an allocated, unrooted
- *                  string, then collects. With `verify` the verifier traps before the collection;
+ *                  string record, then collects. With `verify` the verifier traps before the collection;
  *                  without it the sweep frees the string and the fixture succeeds.
  *   quarantine     collects a string, allocates more strings of the same size class (far below
  *                  the quarantine budget), then passes the collected string to `str_len`. The
@@ -42,7 +42,9 @@ static int missing_root(void) {
 }
 
 static int verify_corrupt(void) {
-    void *victim = str_new((void *)"victim", 6);
+    /* The record itself, not the string view (`str_new` returns the record's `data` field at
+     * record + 24): the poison must land in the object's header word, where the verifier looks. */
+    void *victim = beskid_rt_v5_utf8_record_construct((void *)"victim", 6);
     assert(victim);
     *(volatile uint64_t *)victim = POISON_WORD;
     gc_collect();
