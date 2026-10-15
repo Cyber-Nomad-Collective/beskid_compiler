@@ -216,8 +216,8 @@ impl SemanticPipelineRule {
             }
         }
 
-        // A method declares no generic parameters of its own: it sees those of the type or impl
-        // that owns it; an `extend type` or free method sees its receiver's parameters.
+        // A method sees the generic parameters of the type or impl that owns it (an `extend type`
+        // or free method: its receiver's parameters) and its own (`Map<U>(...)`).
         let mut owner_generics: HashMap<SpanInfo, HashSet<String>> = HashMap::new();
         for definition in Query::from(&program.node).of::<crate::syntax::TypeDefinition>() {
             let generic_names = self.collect_generic_names(&definition.generics);
@@ -234,10 +234,11 @@ impl SemanticPipelineRule {
         }
 
         for definition in Query::from(&program.node).of::<crate::syntax::MethodDefinition>() {
-            let generic_names = owner_generics
+            let mut generic_names = owner_generics
                 .get(&definition.name.span)
                 .cloned()
                 .unwrap_or_else(|| Self::receiver_generic_names(&definition.receiver_type, &known_types));
+            generic_names.extend(self.collect_generic_names(&definition.generics));
             Self::validate_type_reference(ctx, &definition.receiver_type, &known_types, &generic_names);
             for parameter in &definition.parameters {
                 Self::validate_type_reference(ctx, &parameter.node.ty, &known_types, &generic_names);
@@ -645,6 +646,20 @@ mod tests {
             pub type Box<T> { T value }
             impl<T> Box<T> {
                 pub T Get() { return this.value; }
+            }
+        "#;
+        assert!(unknown_definition_types(source).is_empty(), "{:?}", unknown_definition_types(source));
+    }
+
+    /// A method's own generic parameters are in scope in its signature (`Core.Parallel`
+    /// `ParallelSeq.Map<U>((T) => U project)`).
+    #[test]
+    fn methods_see_their_own_generic_parameters() {
+        let source = r#"
+            pub type Seq<T> {
+                T head,
+
+                pub U Map<U>((T) => U project, U fallback) { return fallback; }
             }
         "#;
         assert!(unknown_definition_types(source).is_empty(), "{:?}", unknown_definition_types(source));

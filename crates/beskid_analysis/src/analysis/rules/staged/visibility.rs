@@ -791,6 +791,10 @@ mod tests {
         if let Err(errors) = resolver.resolve_program(&entry) {
             panic!("exchange must resolve as the builtin: {errors:?}");
         }
+        let intrinsic = "i64 Class<T>() { return __transfer_class<T>(); }";
+        if let Err(errors) = Resolver::new().resolve_program(&parse_program(intrinsic).expect("parse intrinsic")) {
+            panic!("__transfer_class<T>() must resolve as the intrinsic: {errors:?}");
+        }
         let unknown = "unit Run() { Swap(1); return; }";
         let entry = parse_program(unknown).expect("parse entry");
         assert!(Resolver::new().resolve_program(&entry).is_err(), "an undeclared callee is still unknown");

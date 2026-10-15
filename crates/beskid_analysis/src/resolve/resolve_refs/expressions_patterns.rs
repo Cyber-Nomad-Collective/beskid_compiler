@@ -61,6 +61,11 @@ impl Resolver {
                 } else if self.is_exchange_builtin_call(&call_expr.node) {
                     // `exchange(place, move value)` is a builtin, not a declared item (mirrors
                     // `exchange_call_for_node` in `beskid_queries`): its callee names nothing.
+                } else if let Some(argument) = transfer_class_intrinsic_argument(&call_expr.node) {
+                    // `__transfer_class<T>()` is a compiler intrinsic (mirrors
+                    // `is_transfer_class_intrinsic` in `beskid_queries`); only its type argument
+                    // names something.
+                    self.resolve_type(argument);
                 } else if !super::super::resolver::is_primitive_numeric_conversion_call(&call_expr.node) {
                     self.resolve_expression(&call_expr.node.callee);
                 }
@@ -211,4 +216,22 @@ impl Resolver {
             .is_some_and(|info| info.kind == super::super::items::ItemKind::Function && info.span == *function_span)
             .then_some((&path_expr.node.path, wrapper))
     }
+}
+
+/// The type argument of `__transfer_class<T>()`: an unqualified callee with exactly one type
+/// argument and no value arguments.
+fn transfer_class_intrinsic_argument(call: &crate::syntax::CallExpression) -> Option<&Spanned<crate::syntax::Type>> {
+    let Expression::Path(path_expr) = &call.callee.node else {
+        return None;
+    };
+    let [segment] = path_expr.node.path.node.segments.as_slice() else {
+        return None;
+    };
+    if segment.node.name.node.name != "__transfer_class" || !call.args.is_empty() {
+        return None;
+    }
+    let [argument] = segment.node.type_args.as_slice() else {
+        return None;
+    };
+    Some(argument)
 }
