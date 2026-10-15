@@ -304,6 +304,8 @@ fn emit_effect_closure<'db, M: cranelift_module::Module>(
                 }
             }
         }
+        // A checked body that stores a managed field reads the write-barrier flag word.
+        crate::module_emission::data::declare_function_runtime_data_imports(module, &context.func)?;
         crate::cranelift_host::remap_testcase_externals(module, &mut context, &runtime_functions)
             .map_err(|failure| error(format!("checked provider remapping failed: {failure}")))?;
         module.define_function(functions[callee], &mut context)?;

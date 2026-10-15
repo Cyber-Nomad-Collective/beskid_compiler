@@ -181,16 +181,27 @@ fn collect_ast_nodes(
 /// guarded barrier of a managed field or element store loads. The kit defines it; a module that
 /// does not read it declares nothing.
 pub(crate) fn declare_runtime_data_imports<M: Module>(module: &mut M, artifact: &CodegenArtifact) -> ModuleResult<()> {
-    let referenced = artifact.functions.iter().any(|function| {
-        function.function.global_values.values().any(|global| {
-            matches!(
-                global,
-                cranelift_codegen::ir::GlobalValueData::Symbol {
-                    name: cranelift_codegen::ir::ExternalName::TestCase(name),
-                    ..
-                } if name.raw() == beskid_isle::GC_BARRIER_ACTIVE_SYMBOL.as_bytes()
-            )
-        })
+    for function in &artifact.functions {
+        declare_function_runtime_data_imports(module, &function.function)?;
+    }
+    Ok(())
+}
+
+/// Declare the runtime kit data imports one lowered function reads ([`declare_runtime_data_imports`]),
+/// for bodies that are defined outside the artifact (checked-effect closures) before their symbol
+/// globals are remapped. Declaring the same import twice yields the same data id.
+pub(crate) fn declare_function_runtime_data_imports<M: Module>(
+    module: &mut M,
+    function: &cranelift_codegen::ir::Function,
+) -> ModuleResult<()> {
+    let referenced = function.global_values.values().any(|global| {
+        matches!(
+            global,
+            cranelift_codegen::ir::GlobalValueData::Symbol {
+                name: cranelift_codegen::ir::ExternalName::TestCase(name),
+                ..
+            } if name.raw() == beskid_isle::GC_BARRIER_ACTIVE_SYMBOL.as_bytes()
+        )
     });
     if referenced {
         module.declare_data(beskid_isle::GC_BARRIER_ACTIVE_SYMBOL, Linkage::Import, false, false)?;
