@@ -26,6 +26,9 @@ const SPAN_SCANNED_BITS = 184;
 const SPAN_HEADER_SIZE = 256;
 const SIZE_CLASS_LARGE = 14;
 
+// Debug-kit poison pattern (Sweep.bd); never the header word of a live object.
+const GC_POISON_WORD = 0xDEADBEEFFEEDFACE;
+
 /// Resolves an ABI-visible managed reference to its exact GC object start.
 ///
 /// Most managed values already point at their allocation header. Arrays are the deliberate
@@ -34,6 +37,8 @@ const SIZE_CLASS_LARGE = 14;
 /// common marking contract without teaching any producer about GC header offsets.
 pub pointer ManagedObjectForReference(pointer heap, pointer value) {
     if IsAllocatedObject(heap, value) {
+        // An allocated slot never carries the debug kit's poison in its header word.
+        if raw_word_load(value) == GC_POISON_WORD { TrapPoisonedObjectHeader(); }
         return value;
     }
     if value == NativePointer(0) || NativeWord(value) < 24 {
@@ -43,6 +48,7 @@ pub pointer ManagedObjectForReference(pointer heap, pointer value) {
     if IsAllocatedObject(heap, object) == false {
         return NativePointer(0);
     }
+    if raw_word_load(object) == GC_POISON_WORD { TrapPoisonedObjectHeader(); }
     pointer descriptor = NativePointer(raw_word_load(object));
     if ValidateTypeDescriptor(descriptor) == false { return NativePointer(0); }
     if TypeDescriptorKind(descriptor) == TypeDescriptorUtf8ViewFlag() {
@@ -183,6 +189,7 @@ pub bool TraceObjectFields(pointer object, pointer descriptor) {
 pub bool TraceObjectAt(pointer object) {
     word descriptorWord = raw_word_load(object);
     if descriptorWord == 0 { return false; }
+    if descriptorWord == GC_POISON_WORD { TrapPoisonedObjectHeader(); }
     pointer descriptor = NativePointer(descriptorWord);
     if ValidateTypeDescriptor(descriptor) == false { return false; }
     return TraceObjectFields(object, descriptor);

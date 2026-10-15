@@ -33,6 +33,10 @@ const GC_PHASE_MARKING = 1;
 const GC_PHASE_SWEEPING = 2;
 const GC_PHASE_FAILED = 3;
 
+// `GcStressVerify` (Verify.bd) positions.
+const STRESS_VERIFY_BEFORE = 0;
+const STRESS_VERIFY_AFTER = 1;
+
 [Export(Abi:"C", Symbol:"gc_write_barrier")]
 pub unit GcWriteBarrier(pointer parent, pointer child) {
     pointer heap = Heap();
@@ -150,6 +154,7 @@ pub unit ResetMarkedObjects(pointer heap) {
 pub word GcCollect() {
     pointer heap = Heap();
     if heap == NativePointer(0) { return 0; }
+    GcStressVerify(heap, STRESS_VERIFY_BEFORE);
     raw_word_store(pointer_add(heap, HEAP_GC_PHASE), GC_PHASE_MARKING);
     bool rootsOk = MarkRoots();
     if rootsOk == false || ProcessMarkWork() == false {
@@ -169,6 +174,7 @@ pub word GcCollect() {
     if doubledLive > threshold { threshold = doubledLive; }
     raw_word_store(pointer_add(heap, HEAP_COLLECTION_THRESHOLD), threshold);
     raw_word_store(pointer_add(heap, HEAP_GC_PHASE), 0);
+    GcStressVerify(heap, STRESS_VERIFY_AFTER);
     return liveBytes;
 }
 

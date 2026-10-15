@@ -161,7 +161,16 @@ static void shared_pool(void) {
     printf("pool=shared-refcounted\n");
 }
 
+/* The kit's build profile: 0 unless the object is compiled with
+ * BESKID_RUNTIME_KIT_DEBUG=1, as the debug runtime kit is. */
+static void kit_profile(void) {
+    uint8_t debug = beskid_rt_v5_intrinsic_kit_debug_profile();
+    assert(debug == 0 || debug == 1);
+    printf("kit-profile=%u\n", (unsigned)debug);
+}
+
 int main(void) {
+    kit_profile();
     process_state();
     thread_create_and_join();
     atomic_words();

@@ -4208,6 +4208,15 @@
       ]
     },
     {
+      "name": "kit_debug_profile",
+      "symbol": "beskid_rt_v5_intrinsic_kit_debug_profile",
+      "capability": "runtime.bootstrap.kit_debug_profile",
+      "params": [],
+      "result": "u8",
+      "resultStatus": null,
+      "targetBindings": []
+    },
+    {
       "name": "memory_compare",
       "symbol": "beskid_rt_v5_intrinsic_memory_compare",
       "capability": "runtime.bootstrap.memory_compare",
@@ -5871,7 +5880,7 @@
     {
       "name": "BeskidHeapState",
       "target": null,
-      "size": 328,
+      "size": 400,
       "alignment": 8,
       "fields": [
         {
@@ -5978,6 +5987,51 @@
           "name": "mark_fifo_tail",
           "offset": 320,
           "type": "pointer"
+        },
+        {
+          "name": "stress_interval",
+          "offset": 328,
+          "type": "usize"
+        },
+        {
+          "name": "stress_counter",
+          "offset": 336,
+          "type": "usize"
+        },
+        {
+          "name": "stress_flags",
+          "offset": 344,
+          "type": "usize"
+        },
+        {
+          "name": "test_force_root_stack_failure",
+          "offset": 352,
+          "type": "usize"
+        },
+        {
+          "name": "quarantine_head",
+          "offset": 360,
+          "type": "pointer"
+        },
+        {
+          "name": "quarantine_tail",
+          "offset": 368,
+          "type": "pointer"
+        },
+        {
+          "name": "quarantine_bytes",
+          "offset": 376,
+          "type": "usize"
+        },
+        {
+          "name": "quarantine_budget",
+          "offset": 384,
+          "type": "usize"
+        },
+        {
+          "name": "debug_kit",
+          "offset": 392,
+          "type": "usize"
         }
       ]
     },

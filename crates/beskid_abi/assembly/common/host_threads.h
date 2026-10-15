@@ -1,8 +1,8 @@
 /* OS thread, atomic word and host processor primitives for the canonical
  * runtime corpus (Runtime/Bootstrap/Native.bd). Policy stays in Beskid: these
  * functions start and join native threads, perform single-word atomic
- * operations, report the host's logical processor count, and expose one
- * process-wide native word block. They never touch a managed heap.
+ * operations, report the host's logical processor count and the kit's build
+ * profile, and expose one process-wide native word block. They never touch a managed heap.
  *
  * Memory order bytes follow C11 `memory_order` without `consume`:
  * 0 relaxed, 1 acquire, 2 release, 3 acquire-release, 4 sequentially
@@ -171,6 +171,17 @@ size_t beskid_rt_v5_host_processor_count(void) {
 /* One zero-initialized block of process-wide native words. Only the canonical
  * runtime corpus reads or writes it (Runtime/Bootstrap/Lifecycle.bd and
  * Runtime/Mem/Gc/RegionMap.bd own the word layout). */
+/* The runtime kit's build profile. The kit builder compiles this object with
+ * BESKID_RUNTIME_KIT_DEBUG=1 for the debug profile; any other build reports
+ * release, so a kit without the definition never poisons or quarantines. */
+uint8_t beskid_rt_v5_intrinsic_kit_debug_profile(void) {
+#if defined(BESKID_RUNTIME_KIT_DEBUG) && BESKID_RUNTIME_KIT_DEBUG
+  return 1;
+#else
+  return 0;
+#endif
+}
+
 #define BESKID_PROCESS_STATE_WORDS 16
 static size_t beskid_process_state[BESKID_PROCESS_STATE_WORDS];
 void *beskid_rt_v5_intrinsic_process_state_root(void) { return beskid_process_state; }

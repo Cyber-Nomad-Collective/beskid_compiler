@@ -22,7 +22,8 @@
 //   16  page_count    usize     pages in this span
 //   24  size_class    usize     0 = free or large; 1..SIZE_CLASS_COUNT = small-object class
 //   32  queued        usize     0/1: on the mark-phase span FIFO right now
-//   40  live_count    usize     slots with a live object, refreshed by sweep (diagnostic only)
+//   40  quarantined   usize     slots of this span held in the debug kit's quarantine (Sweep.bd);
+//                                a span with quarantined slots is never freed
 //   48  free_slot     pointer   head of the span's free-slot list; 0 = full or large
 //   56  alloc_bits    u64[8]    1 bit per slot: allocated since the last sweep or since
 //   120 mark_bits     u64[8]    1 bit per slot: marked in the current cycle
@@ -42,7 +43,7 @@ const SPAN_BASE = 8;
 const SPAN_PAGE_COUNT = 16;
 const SPAN_SIZE_CLASS = 24;
 const SPAN_QUEUED = 32;
-const SPAN_LIVE_COUNT = 40;
+const SPAN_QUARANTINED = 40;
 const SPAN_FREE_SLOT = 48;
 const SPAN_ALLOC_BITS = 56;
 const SPAN_MARK_BITS = 120;
@@ -66,6 +67,9 @@ const SIZE_CLASS_MAX_BYTES = 4096;
 const SIZE_CLASS_LARGE = 14;
 
 const HEAP_CURRENT_SPAN_BY_CLASS = 200;
+
+// Debug-kit poison pattern (see Sweep.bd).
+const GC_POISON_WORD = 0xDEADBEEFFEEDFACE;
 
 pub word SizeClassForSize(word size) {
     if size <= 16 { return 1; }
@@ -126,7 +130,7 @@ pub unit InitSpanHeader(pointer entry, word base, word pageCount, word sizeClass
     raw_word_store(pointer_add(entry, SPAN_PAGE_COUNT), pageCount);
     raw_word_store(pointer_add(entry, SPAN_SIZE_CLASS), sizeClass);
     raw_word_store(pointer_add(entry, SPAN_QUEUED), 0);
-    raw_word_store(pointer_add(entry, SPAN_LIVE_COUNT), 0);
+    raw_word_store(pointer_add(entry, SPAN_QUARANTINED), 0);
     raw_word_store(pointer_add(entry, SPAN_FREE_SLOT), 0);
     memory_set(pointer_add(entry, SPAN_ALLOC_BITS), 0, SPAN_BITMAP_WORDS * 8 * 3);
     return;
@@ -285,8 +289,10 @@ pub unit FreeSpanEntry(pointer heap, pointer region, pointer entry) {
 // slot's own first word to store the next free slot's address (the same free-list-through-freed-
 // memory convention the pre-span design used for its coalesced free blocks). A slot popped for
 // allocation has that word overwritten with the real descriptor before it is ever read as a
-// pointer, so there is no ambiguity between "free" and "live" content.
-pub unit InitSmallSpanFreeList(pointer entry, word base, word classBytes) {
+// pointer, so there is no ambiguity between "free" and "live" content. With `poison` (the debug
+// kit) every word after the link holds `GC_POISON_WORD`, so a reused page never carries a stale
+// quarantine tag or object bytes (Sweep.bd).
+pub unit InitSmallSpanFreeList(pointer entry, word base, word classBytes, bool poison) {
     word slotsPerSpan = PAGE_SIZE / classBytes;
     mut word idx = slotsPerSpan;
     mut pointer head = NativePointer(0);
@@ -294,9 +300,20 @@ pub unit InitSmallSpanFreeList(pointer entry, word base, word classBytes) {
         idx = idx - 1;
         pointer slot = NativePointer(base + idx * classBytes);
         raw_word_store(slot, NativeWord(head));
+        if poison { PoisonWords(pointer_add(slot, 8), classBytes - 8); }
         head = slot;
     }
     raw_word_store(pointer_add(entry, SPAN_FREE_SLOT), NativeWord(head));
+    return;
+}
+
+// Writes `GC_POISON_WORD` into every word of `[start, start + bytes)`; `bytes` is a multiple of 8.
+pub unit PoisonWords(pointer start, word bytes) {
+    mut word offset = 0;
+    while offset < bytes {
+        raw_word_store(pointer_add(start, offset), GC_POISON_WORD);
+        offset = offset + 8;
+    }
     return;
 }
 

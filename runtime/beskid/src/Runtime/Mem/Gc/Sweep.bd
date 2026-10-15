@@ -5,11 +5,26 @@
 // free-page list. After each region is swept, adjacent free spans are merged
 // (`CoalesceRegionFreeSpans`, Span.bd) so later requests of any page count can reuse them.
 // Sweeping never reads or writes the byte contents of a live object.
+//
+// Debug kit (`BeskidHeapState.debug_kit`, set from the `kit_debug_profile` intrinsic): a slot that
+// this sweep frees is poisoned and enters the heap's quarantine instead of its span's free list,
+// so a dangling reference keeps pointing at a freed slot that the liveness check reports as not
+// live (Go `clobberfree`, HotSpot `ZapUnusedHeapArea`, ASan quarantine). A quarantined slot keeps
+// its allocation bit clear; its first word links the quarantine FIFO, its second word holds
+// `GC_QUARANTINE_TAG`, and every later word `GC_POISON_WORD`. The FIFO holds at most
+// `quarantine_budget` bytes; the oldest slots return to their spans' free lists (poisoned) when a
+// push overflows it. A span with quarantined slots is never freed. A freed large span is
+// poisoned in its first page. The release kit does neither.
 
 const HEAP_FIRST_REGION = 0;
 const HEAP_LIVE_BYTES = 32;
 const HEAP_LIVE_COUNT = 40;
 const HEAP_CURRENT_SPAN_BY_CLASS = 200;
+const HEAP_QUARANTINE_HEAD = 360;
+const HEAP_QUARANTINE_TAIL = 368;
+const HEAP_QUARANTINE_BYTES = 376;
+const HEAP_QUARANTINE_BUDGET = 384;
+const HEAP_DEBUG_KIT = 392;
 
 const REGION_NEXT = 0;
 const REGION_SIZE = 8;
@@ -19,7 +34,7 @@ const PAGE_SIZE = 8192;
 const SPAN_BASE = 8;
 const SPAN_PAGE_COUNT = 16;
 const SPAN_SIZE_CLASS = 24;
-const SPAN_LIVE_COUNT = 40;
+const SPAN_QUARANTINED = 40;
 const SPAN_FREE_SLOT = 48;
 const SPAN_ALLOC_BITS = 56;
 const SPAN_MARK_BITS = 120;
@@ -28,22 +43,31 @@ const SPAN_HEADER_SIZE = 256;
 const SPAN_BITMAP_WORDS = 8;
 const SIZE_CLASS_LARGE = 14;
 
+const GC_POISON_WORD = 0xDEADBEEFFEEDFACE;
+const GC_QUARANTINE_TAG = 0xDEADBEEFFEEDFAC0;
+
 // Rebuilds `entry`'s free-slot list from its (just-copied) allocation bitmap: every slot whose
-// bit is clear is free. Also refreshes `HEAP_CURRENT_SPAN_BY_CLASS` for this span's class so the
-// next allocation of that class reuses newly freed slots instead of carving another span.
+// bit is clear is free, except a slot held in quarantine (tagged, counted in `SPAN_QUARANTINED`).
+// Also refreshes `HEAP_CURRENT_SPAN_BY_CLASS` for this span's class so the next allocation of
+// that class reuses newly freed slots instead of carving another span. Returns the number of
+// allocated slots.
 pub word RebuildSmallSpanFreeList(pointer heap, pointer entry) {
     word base = raw_word_load(pointer_add(entry, SPAN_BASE));
     word sizeClass = raw_word_load(pointer_add(entry, SPAN_SIZE_CLASS));
     word classBytes = SizeClassBytes(sizeClass);
     word slotsPerSpan = PAGE_SIZE / classBytes;
     pointer allocBits = pointer_add(entry, SPAN_ALLOC_BITS);
+    bool skipQuarantined = raw_word_load(pointer_add(entry, SPAN_QUARANTINED)) != 0;
     mut pointer head = NativePointer(0);
     mut word freeCount = 0;
+    mut word allocated = 0;
     mut word idx = slotsPerSpan;
     while idx > 0 {
         idx = idx - 1;
-        if BitmapTestBit(allocBits, idx) == false {
-            pointer slot = NativePointer(base + idx * classBytes);
+        pointer slot = NativePointer(base + idx * classBytes);
+        if BitmapTestBit(allocBits, idx) {
+            allocated = allocated + 1;
+        } else if skipQuarantined == false || raw_word_load(pointer_add(slot, 8)) != GC_QUARANTINE_TAG {
             raw_word_store(slot, NativeWord(head));
             head = slot;
             freeCount = freeCount + 1;
@@ -53,10 +77,86 @@ pub word RebuildSmallSpanFreeList(pointer heap, pointer entry) {
     if freeCount > 0 {
         raw_word_store(pointer_add(heap, HEAP_CURRENT_SPAN_BY_CLASS + sizeClass * 8), NativeWord(entry));
     }
-    return slotsPerSpan - freeCount;
+    return allocated;
+}
+
+// ---- Debug-kit quarantine ----
+
+// Poisons and quarantines every slot of `entry` that this sweep frees (allocated, not marked).
+// Runs before the bitmap swap.
+pub unit QuarantineDeadSlots(pointer heap, pointer entry, word base, word classBytes) {
+    word slotsPerSpan = PAGE_SIZE / classBytes;
+    pointer allocBits = pointer_add(entry, SPAN_ALLOC_BITS);
+    pointer markBits = pointer_add(entry, SPAN_MARK_BITS);
+    mut word idx = 0;
+    while idx < slotsPerSpan {
+        if BitmapTestBit(allocBits, idx) && BitmapTestBit(markBits, idx) == false {
+            pointer slot = NativePointer(base + idx * classBytes);
+            PoisonWords(pointer_add(slot, 16), classBytes - 16);
+            raw_word_store(pointer_add(slot, 8), GC_QUARANTINE_TAG);
+            QuarantinePush(heap, entry, slot, classBytes);
+        }
+        idx = idx + 1;
+    }
+    return;
+}
+
+// Appends `slot` (already tagged and poisoned) to the quarantine FIFO, then returns the oldest
+// slots to their spans while the FIFO exceeds its byte budget. A budget of 0 poisons without
+// holding anything back.
+pub unit QuarantinePush(pointer heap, pointer entry, pointer slot, word classBytes) {
+    raw_word_store(slot, 0);
+    pointer tail = NativePointer(raw_word_load(pointer_add(heap, HEAP_QUARANTINE_TAIL)));
+    if tail == NativePointer(0) {
+        raw_word_store(pointer_add(heap, HEAP_QUARANTINE_HEAD), NativeWord(slot));
+    } else {
+        raw_word_store(tail, NativeWord(slot));
+    }
+    raw_word_store(pointer_add(heap, HEAP_QUARANTINE_TAIL), NativeWord(slot));
+    raw_word_store(pointer_add(entry, SPAN_QUARANTINED), raw_word_load(pointer_add(entry, SPAN_QUARANTINED)) + 1);
+    raw_word_store(pointer_add(heap, HEAP_QUARANTINE_BYTES), raw_word_load(pointer_add(heap, HEAP_QUARANTINE_BYTES)) + classBytes);
+    word budget = raw_word_load(pointer_add(heap, HEAP_QUARANTINE_BUDGET));
+    while raw_word_load(pointer_add(heap, HEAP_QUARANTINE_BYTES)) > budget &&
+          raw_word_load(pointer_add(heap, HEAP_QUARANTINE_HEAD)) != 0 {
+        QuarantineReleaseOldest(heap);
+    }
+    return;
+}
+
+// Replaces the quarantine budget (`BESKID_GC_QUARANTINE`). The release kit has no quarantine and
+// keeps a budget of 0; a smaller budget releases the oldest slots at once.
+pub unit GcHeapSetQuarantineBudget(word bytes) {
+    pointer heap = Heap();
+    if heap == NativePointer(0) || raw_word_load(pointer_add(heap, HEAP_DEBUG_KIT)) == 0 { return; }
+    raw_word_store(pointer_add(heap, HEAP_QUARANTINE_BUDGET), bytes);
+    while raw_word_load(pointer_add(heap, HEAP_QUARANTINE_BYTES)) > bytes &&
+          raw_word_load(pointer_add(heap, HEAP_QUARANTINE_HEAD)) != 0 {
+        QuarantineReleaseOldest(heap);
+    }
+    return;
+}
+
+// Moves the oldest quarantined slot onto its span's free list. The slot stays poisoned (its tag
+// becomes the poison word); its allocation bit is already clear.
+pub unit QuarantineReleaseOldest(pointer heap) {
+    pointer slot = NativePointer(raw_word_load(pointer_add(heap, HEAP_QUARANTINE_HEAD)));
+    word next = raw_word_load(slot);
+    raw_word_store(pointer_add(heap, HEAP_QUARANTINE_HEAD), next);
+    if next == 0 {
+        raw_word_store(pointer_add(heap, HEAP_QUARANTINE_TAIL), 0);
+    }
+    pointer entry = SpanHeaderFor(heap, NativeWord(slot));
+    word classBytes = SizeClassBytes(raw_word_load(pointer_add(entry, SPAN_SIZE_CLASS)));
+    raw_word_store(pointer_add(heap, HEAP_QUARANTINE_BYTES), raw_word_load(pointer_add(heap, HEAP_QUARANTINE_BYTES)) - classBytes);
+    raw_word_store(pointer_add(entry, SPAN_QUARANTINED), raw_word_load(pointer_add(entry, SPAN_QUARANTINED)) - 1);
+    raw_word_store(pointer_add(slot, 8), GC_POISON_WORD);
+    raw_word_store(slot, raw_word_load(pointer_add(entry, SPAN_FREE_SLOT)));
+    raw_word_store(pointer_add(entry, SPAN_FREE_SLOT), NativeWord(slot));
+    return;
 }
 
 pub bool Sweep(pointer heap) {
+    bool debugKit = raw_word_load(pointer_add(heap, HEAP_DEBUG_KIT)) != 0;
     mut word liveBytes = 0;
     mut word liveCount = 0;
     mut pointer region = NativePointer(raw_word_load(pointer_add(heap, HEAP_FIRST_REGION)));
@@ -70,8 +170,11 @@ pub bool Sweep(pointer heap) {
             word sizeClass = raw_word_load(pointer_add(entry, SPAN_SIZE_CLASS));
             if base != 0 && sizeClass != 0 && sizeClass != SIZE_CLASS_LARGE {
                 word classBytes = SizeClassBytes(sizeClass);
+                if debugKit {
+                    QuarantineDeadSlots(heap, entry, base, classBytes);
+                }
                 word nalloc = PopcountBitmap(pointer_add(entry, SPAN_MARK_BITS));
-                if nalloc == 0 {
+                if nalloc == 0 && raw_word_load(pointer_add(entry, SPAN_QUARANTINED)) == 0 {
                     memory_set(pointer_add(entry, SPAN_ALLOC_BITS), 0, SPAN_BITMAP_WORDS * 8 * 3);
                     FreeSpanEntry(heap, region, entry);
                 } else {
@@ -83,7 +186,6 @@ pub bool Sweep(pointer heap) {
                         raw_word_store(pointer_add(entry, SPAN_SCANNED_BITS + i * 8), 0);
                         i = i + 1;
                     }
-                    raw_word_store(pointer_add(entry, SPAN_LIVE_COUNT), nalloc);
                     RebuildSmallSpanFreeList(heap, entry);
                     liveBytes = liveBytes + nalloc * classBytes;
                     liveCount = liveCount + nalloc;
@@ -97,7 +199,11 @@ pub bool Sweep(pointer heap) {
                     liveCount = liveCount + 1;
                 } else {
                     // Unmarked: the large object is dead. Return its pages to the region's
-                    // free-page list (exact-page-count reuse, see `CarveSpan`).
+                    // free-page list (exact-page-count reuse, see `CarveSpan`). The debug kit
+                    // poisons the header and the first page only, to bound the cost.
+                    if debugKit {
+                        PoisonWords(object, PAGE_SIZE);
+                    }
                     FreeSpanEntry(heap, region, entry);
                 }
             }

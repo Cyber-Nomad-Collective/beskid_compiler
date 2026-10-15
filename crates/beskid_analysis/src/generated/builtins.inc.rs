@@ -1144,6 +1144,12 @@ define_builtins! {
         returns: Usize,
         injected: true,
     },
+    &["kit_debug_profile"] => {
+        symbol: "beskid_rt_v5_intrinsic_kit_debug_profile",
+        params: [],
+        returns: U8,
+        injected: true,
+    },
     &["process_state_root"] => {
         symbol: "beskid_rt_v5_intrinsic_process_state_root",
         params: [],

@@ -89,6 +89,9 @@ pub unit AtomicFence(u8 order) {
 // The host's logical processor count (at least 1); not the scheduler mutator count.
 pub word HostProcessorCount() { return host_processor_count(); }
 
+// True in the debug runtime kit (the platform object reports its build profile).
+pub bool KitDebugProfile() { return kit_debug_profile() != 0; }
+
 // One zero-initialized block of process-wide native words (see Lifecycle.bd for its layout).
 pub pointer ProcessStateRoot() { return process_state_root(); }
 

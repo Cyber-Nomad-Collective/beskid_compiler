@@ -237,7 +237,7 @@ fn trusted_intrinsics_are_typed_and_owned_only_by_the_canonical_package() {
     assert_eq!(package.name(), CANONICAL_RUNTIME_PACKAGE_NAME);
     assert_eq!(package.abi_version(), ABI_V5);
     let names = manifest.trusted_runtime_intrinsics.iter().map(|intrinsic| intrinsic.name.as_str()).collect::<Vec<_>>();
-    assert_eq!(names.len(), 97);
+    assert_eq!(names.len(), 98);
     for added in ["glue_owner_shutdown", "float_to_bits32", "float_from_bits32", "float_to_bits64", "float_from_bits64", "utf8_view_new", "dynamic_registry_shutdown_v1", "child_begin", "child_argument", "child_environment", "child_spawn", "child_poll", "child_read", "child_write", "child_close_pipe", "child_terminate", "child_close", "child_shutdown"] {
         assert!(names.contains(&added), "missing source-owned runtime intrinsic {added}");
     }
@@ -466,7 +466,7 @@ fn heap_state_and_heap_region_layouts_match_the_growable_heap_design() {
     let manifest = AbiManifestV5::canonical_runtime(supported_targets()[0].clone());
 
     let heap_state = manifest.layouts.iter().find(|layout| layout.name == "BeskidHeapState").unwrap();
-    assert_eq!((heap_state.size, heap_state.alignment), (328, 8));
+    assert_eq!((heap_state.size, heap_state.alignment), (400, 8));
     let expected_heap_state_fields: &[(&str, u64)] = &[
         ("first_region", 0),
         ("current_region", 8),
@@ -489,6 +489,15 @@ fn heap_state_and_heap_region_layouts_match_the_growable_heap_design() {
         ("current_span_by_class", 200),
         ("mark_fifo_head", 312),
         ("mark_fifo_tail", 320),
+        ("stress_interval", 328),
+        ("stress_counter", 336),
+        ("stress_flags", 344),
+        ("test_force_root_stack_failure", 352),
+        ("quarantine_head", 360),
+        ("quarantine_tail", 368),
+        ("quarantine_bytes", 376),
+        ("quarantine_budget", 384),
+        ("debug_kit", 392),
     ];
     for (name, offset) in expected_heap_state_fields {
         assert_eq!(

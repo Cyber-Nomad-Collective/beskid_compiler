@@ -22,7 +22,7 @@ const TLS_RESERVED_OFFSET = 16;
 const TLS_ATTACH_DEPTH_OFFSET = 24;
 const TLS_COMPOSITION_SCOPE_OFFSET = 32;
 const TLS_COMPOSITION_DEPTH_OFFSET = 40;
-const HEAP_STATE_SIZE = 328;
+const HEAP_STATE_SIZE = 400;
 const HEAP_INITIAL_REGION_SIZE = 1048576;
 // Every region must be page-aligned: `SpanEntryInRegion` derives a page index as
 // `(address - region) / PAGE_SIZE`, and `CarveSpan` writes a span's `base` using that same
@@ -45,6 +45,12 @@ const LIMIT_KEY_SCRATCH_SIZE = 64;
 const LIMIT_KEY_BYTES_OFFSET = 16;
 const LIMIT_KEY_HEAP_MAX_LENGTH = 15;
 const LIMIT_KEY_FIBER_STACK_MAX_LENGTH = 22;
+const LIMIT_KEY_GC_STRESS_LENGTH = 16;
+const LIMIT_KEY_GC_QUARANTINE_LENGTH = 20;
+// `BESKID_GC_STRESS` items as packed little-endian ASCII: "alloc", "alloc:", "verify".
+const GC_STRESS_ITEM_ALLOC = 0x636f6c6c61;
+const GC_STRESS_ITEM_ALLOC_COLON = 0x3a636f6c6c61;
+const GC_STRESS_ITEM_VERIFY = 0x796669726576;
 const HEAP_FIRST_REGION = 0;
 const REGION_SIZE_FIELD = 8;
 const CALLBACK_REGISTRY_SIZE = 1072;
@@ -64,12 +70,16 @@ pub u32 AbiVersion() {
 //   40 recorded fiber stack maximum, or LIMIT_UNSET
 //   48 the primary runtime instance (the record most recently activated by `ProcessInit`)
 //   56 live runtime instances
+//   64 recorded `BESKID_GC_STRESS` setting (`interval << 1 | verify`), or LIMIT_UNSET
+//   72 recorded `BESKID_GC_QUARANTINE` budget, or LIMIT_UNSET
 const PROCESS_HOLDERS = 0;
 const PROCESS_LIMITS_RECORDED = 24;
 const PROCESS_HEAP_CAP = 32;
 const PROCESS_FIBER_STACK_MAX = 40;
 const PROCESS_PRIMARY_RUNTIME = 48;
 const PROCESS_LIVE_INSTANCES = 56;
+const PROCESS_GC_STRESS = 64;
+const PROCESS_GC_QUARANTINE = 72;
 
 // ── Runtime instance record ───────────────────────────────────────────
 // `BeskidRuntimeState.instance` points at this native record. It is created by `IsolateCreate`
@@ -261,6 +271,8 @@ pub bool IsolateApplyRecordedLimits() {
     if heapMax != LIMIT_UNSET && GcHeapSetCap(heapMax) == 0 { return false; }
     word stackMax = raw_word_load(pointer_add(process, PROCESS_FIBER_STACK_MAX));
     if stackMax != LIMIT_UNSET && !SchedulerSetFiberStackMax(stackMax) { return false; }
+    ApplyGcEnvironmentSettings(raw_word_load(pointer_add(process, PROCESS_GC_STRESS)),
+        raw_word_load(pointer_add(process, PROCESS_GC_QUARANTINE)));
     return true;
 }
 
@@ -645,11 +657,140 @@ pub unit ApplyEnvironmentLimits() {
     if stackMax == LIMIT_INVALID || (stackMax != LIMIT_UNSET && !SchedulerSetFiberStackMax(stackMax)) {
         Trap(5, pointer_add(scratch, LIMIT_KEY_BYTES_OFFSET), LIMIT_KEY_FIBER_STACK_MAX_LENGTH);
     }
+    word gcStress = EnvironmentGcStress(LimitKeyGcStress(scratch));
+    if gcStress == LIMIT_INVALID {
+        Trap(5, pointer_add(scratch, LIMIT_KEY_BYTES_OFFSET), LIMIT_KEY_GC_STRESS_LENGTH);
+    }
+    word gcQuarantine = EnvironmentLimit(LimitKeyGcQuarantine(scratch));
+    if gcQuarantine == LIMIT_INVALID {
+        Trap(5, pointer_add(scratch, LIMIT_KEY_BYTES_OFFSET), LIMIT_KEY_GC_QUARANTINE_LENGTH);
+    }
     SystemFree(scratch, LIMIT_KEY_SCRATCH_SIZE);
+    ApplyGcEnvironmentSettings(gcStress, gcQuarantine);
     // Record the accepted values; `IsolateCreate` applies them to every later instance.
     pointer process = ProcessStateRoot();
     raw_word_store(pointer_add(process, PROCESS_HEAP_CAP), heapMax);
     raw_word_store(pointer_add(process, PROCESS_FIBER_STACK_MAX), stackMax);
+    raw_word_store(pointer_add(process, PROCESS_GC_STRESS), gcStress);
+    raw_word_store(pointer_add(process, PROCESS_GC_QUARANTINE), gcQuarantine);
     AtomicWordStore(pointer_add(process, PROCESS_LIMITS_RECORDED), 1, 2);
+    return;
+}
+
+// ── GC stress and quarantine from the environment ─────────────────────
+// `BESKID_GC_STRESS` is a comma list of `alloc` (collect before every managed allocation),
+// `alloc:<n>` (before every n-th, n at least 1) and `verify` (verify the heap before and after
+// every collection), each at most once. `BESKID_GC_QUARANTINE` is a byte count (same syntax as
+// `BESKID_HEAP_MAX`) that replaces the debug kit's quarantine budget; the release kit ignores a
+// valid value. Both are read once at process init, like the limits above.
+
+// Writes `BESKID_GC_STRESS` into the scratch record and returns it as a `BeskidStr`.
+pub pointer LimitKeyGcStress(pointer scratch) {
+    pointer bytes = pointer_add(scratch, LIMIT_KEY_BYTES_OFFSET);
+    raw_byte_store(bytes, 66); raw_byte_store(pointer_add(bytes, 1), 69); raw_byte_store(pointer_add(bytes, 2), 83);
+    raw_byte_store(pointer_add(bytes, 3), 75); raw_byte_store(pointer_add(bytes, 4), 73); raw_byte_store(pointer_add(bytes, 5), 68);
+    raw_byte_store(pointer_add(bytes, 6), 95); raw_byte_store(pointer_add(bytes, 7), 71); raw_byte_store(pointer_add(bytes, 8), 67);
+    raw_byte_store(pointer_add(bytes, 9), 95); raw_byte_store(pointer_add(bytes, 10), 83); raw_byte_store(pointer_add(bytes, 11), 84);
+    raw_byte_store(pointer_add(bytes, 12), 82); raw_byte_store(pointer_add(bytes, 13), 69); raw_byte_store(pointer_add(bytes, 14), 83);
+    raw_byte_store(pointer_add(bytes, 15), 83);
+    raw_word_store(scratch, NativeWord(bytes));
+    raw_word_store(pointer_add(scratch, 8), LIMIT_KEY_GC_STRESS_LENGTH);
+    return scratch;
+}
+
+// Writes `BESKID_GC_QUARANTINE` into the scratch record and returns it as a `BeskidStr`.
+pub pointer LimitKeyGcQuarantine(pointer scratch) {
+    pointer bytes = pointer_add(scratch, LIMIT_KEY_BYTES_OFFSET);
+    raw_byte_store(bytes, 66); raw_byte_store(pointer_add(bytes, 1), 69); raw_byte_store(pointer_add(bytes, 2), 83);
+    raw_byte_store(pointer_add(bytes, 3), 75); raw_byte_store(pointer_add(bytes, 4), 73); raw_byte_store(pointer_add(bytes, 5), 68);
+    raw_byte_store(pointer_add(bytes, 6), 95); raw_byte_store(pointer_add(bytes, 7), 71); raw_byte_store(pointer_add(bytes, 8), 67);
+    raw_byte_store(pointer_add(bytes, 9), 95); raw_byte_store(pointer_add(bytes, 10), 81); raw_byte_store(pointer_add(bytes, 11), 85);
+    raw_byte_store(pointer_add(bytes, 12), 65); raw_byte_store(pointer_add(bytes, 13), 82); raw_byte_store(pointer_add(bytes, 14), 65);
+    raw_byte_store(pointer_add(bytes, 15), 78); raw_byte_store(pointer_add(bytes, 16), 84); raw_byte_store(pointer_add(bytes, 17), 73);
+    raw_byte_store(pointer_add(bytes, 18), 78); raw_byte_store(pointer_add(bytes, 19), 69);
+    raw_word_store(scratch, NativeWord(bytes));
+    raw_word_store(pointer_add(scratch, 8), LIMIT_KEY_GC_QUARANTINE_LENGTH);
+    return scratch;
+}
+
+// True when the `count` (at most 8) bytes at `data + index` equal the low bytes of `packed`,
+// least significant first.
+pub bool BytesMatchPacked(pointer data, word index, word count, word packed) {
+    mut word offset = 0;
+    while offset < count {
+        word expected = (packed >> (offset * 8)) & 0xFF;
+        if (word(raw_byte_load(pointer_add(data, index + offset))) & 0xFF) != expected { return false; }
+        offset = offset + 1;
+    }
+    return true;
+}
+
+// Parses the decimal digits in `[index, end)`: at least one digit, nothing else, below 2^62.
+// Returns LIMIT_INVALID otherwise.
+pub word ParseDecimalRange(pointer data, word index, word end) {
+    if index >= end { return LIMIT_INVALID; }
+    mut word cursor = index;
+    mut word number = 0;
+    while cursor < end {
+        word code = word(raw_byte_load(pointer_add(data, cursor))) & 0xFF;
+        if code < 48 || code > 57 { return LIMIT_INVALID; }
+        word next = number * 10 + (code - 48);
+        if next / 10 != number || (next >> 62) != 0 { return LIMIT_INVALID; }
+        number = next;
+        cursor = cursor + 1;
+    }
+    return number;
+}
+
+// Parses `BESKID_GC_STRESS`. Returns `interval << 1 | verify`, LIMIT_UNSET for an absent or
+// empty variable, or LIMIT_INVALID for any other text (an unknown or repeated item, an empty
+// item, `alloc:0`, or a count that is not decimal). Keeps no reference to the managed string.
+pub word EnvironmentGcStress(pointer key) {
+    pointer value = EnvGet(key);
+    if value == NativePointer(0) { return LIMIT_INVALID; }
+    word length = raw_word_load(pointer_add(value, 8));
+    if length == 0 { return LIMIT_UNSET; }
+    pointer data = NativePointer(raw_word_load(value));
+    if data == NativePointer(0) { return LIMIT_INVALID; }
+    mut word index = 0;
+    mut word interval = 0;
+    mut word verify = 0;
+    mut bool sawAlloc = false;
+    mut bool more = true;
+    while more {
+        mut word end = index;
+        while end < length && (word(raw_byte_load(pointer_add(data, end))) & 0xFF) != 44 {
+            end = end + 1;
+        }
+        word itemLength = end - index;
+        if itemLength == 5 && BytesMatchPacked(data, index, 5, GC_STRESS_ITEM_ALLOC) {
+            if sawAlloc { return LIMIT_INVALID; }
+            sawAlloc = true;
+            interval = 1;
+        } else if itemLength > 6 && BytesMatchPacked(data, index, 6, GC_STRESS_ITEM_ALLOC_COLON) {
+            if sawAlloc { return LIMIT_INVALID; }
+            sawAlloc = true;
+            interval = ParseDecimalRange(data, index + 6, end);
+            if interval == LIMIT_INVALID || interval == 0 { return LIMIT_INVALID; }
+        } else if itemLength == 6 && BytesMatchPacked(data, index, 6, GC_STRESS_ITEM_VERIFY) {
+            if verify != 0 { return LIMIT_INVALID; }
+            verify = 1;
+        } else {
+            return LIMIT_INVALID;
+        }
+        if end >= length {
+            more = false;
+        } else {
+            index = end + 1;
+        }
+    }
+    return (interval << 1) | verify;
+}
+
+// Installs a recorded `BESKID_GC_STRESS` / `BESKID_GC_QUARANTINE` setting on the calling
+// instance's heap.
+pub unit ApplyGcEnvironmentSettings(word stress, word quarantine) {
+    if stress != LIMIT_UNSET { GcHeapSetStressMode(stress >> 1, stress & 1); }
+    if quarantine != LIMIT_UNSET { GcHeapSetQuarantineBudget(quarantine); }
     return;
 }

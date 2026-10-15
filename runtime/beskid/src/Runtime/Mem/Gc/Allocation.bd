@@ -21,6 +21,7 @@ const HEAP_FAILURE_REQUEST_BYTES = 96;
 const HEAP_DIAGNOSTIC = 104;
 const HEAP_DIAGNOSTIC_SIZE = 64;
 const HEAP_CURRENT_SPAN_BY_CLASS = 200;
+const HEAP_DEBUG_KIT = 392;
 
 const REGION_NEXT = 0;
 const REGION_BUMP = 16;
@@ -90,7 +91,7 @@ pub pointer RefillSpanForClass(pointer heap, word class) {
         return NativePointer(0);
     }
     word base = raw_word_load(pointer_add(entry, SPAN_BASE));
-    InitSmallSpanFreeList(entry, base, SizeClassBytes(class));
+    InitSmallSpanFreeList(entry, base, SizeClassBytes(class), raw_word_load(pointer_add(heap, HEAP_DEBUG_KIT)) != 0);
     raw_word_store(pointer_add(heap, HEAP_CURRENT_SPAN_BY_CLASS + class * 8), NativeWord(entry));
     return entry;
 }
@@ -155,6 +156,11 @@ pub pointer GcAllocLargeOnce(pointer heap, word size, word alignment) {
     if base == 0 {
         return NativePointer(0);
     }
+    // A reused page can hold a freed object's header or the debug kit's poison: clear the header
+    // and mark words so the new object is never mistaken for a live or poisoned one before its
+    // caller writes the descriptor.
+    raw_word_store(NativePointer(base), 0);
+    raw_word_store(NativePointer(base + 8), 0);
     return NativePointer(base);
 }
 
@@ -349,13 +355,13 @@ pub pointer GcTryAlloc(word size, word alignment) {
     raw_word_store(pointer_add(heap, HEAP_FAILURE_REASON), HEAP_FAILURE_NONE);
     raw_word_store(pointer_add(heap, HEAP_FAILURE_REQUEST_BYTES), 0);
     if size < 16 || size % 8 != 0 || IsValidObjectAlignment(alignment) == false { return NativePointer(0); }
-    // Stress mode (test-only, Verify.bd): collect BEFORE this allocation's object exists, not
-    // after. At this point every live object is already reachable from the root stack, the
-    // handle stack (construction temporaries hold a `gc_root_handle` slot before any nested
-    // allocation that could trigger this), or a fiber frame; the object this call is about to
-    // produce does not exist yet, so there is nothing new for the collector to lose. Collecting
-    // after allocating instead would sweep the just-allocated, not-yet-rooted object out from
-    // under its own caller.
+    // Stress mode (`BESKID_GC_STRESS` or `gc_heap_set_stress_interval`, Verify.bd): collect
+    // BEFORE this allocation's object exists, not after. At this point every live object is
+    // already reachable from the root stack, the handle stack (construction temporaries hold a
+    // `gc_root_handle` slot before any nested allocation that could trigger this), or a fiber
+    // frame; the object this call is about to produce does not exist yet, so there is nothing new
+    // for the collector to lose. Collecting after allocating instead would sweep the
+    // just-allocated, not-yet-rooted object out from under its own caller.
     if StressShouldCollect() {
         GcCollect();
     }
