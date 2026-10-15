@@ -558,6 +558,26 @@ pub(in crate::semantic_contract) fn semantic_type_for_primitive(
     }
 }
 
+/// The source primitive integer type of a semantic integer identity; none for any other type.
+pub(in crate::semantic_contract) fn integer_primitive_for_semantic(
+    semantic: SemanticTypeId,
+) -> Option<beskid_analysis::syntax::PrimitiveType> {
+    use beskid_analysis::syntax::PrimitiveType;
+
+    Some(match semantic {
+        SemanticTypeId::I8 => PrimitiveType::I8,
+        SemanticTypeId::I16 => PrimitiveType::I16,
+        SemanticTypeId::I32 => PrimitiveType::I32,
+        SemanticTypeId::I64 => PrimitiveType::I64,
+        SemanticTypeId::U8 => PrimitiveType::U8,
+        SemanticTypeId::U16 => PrimitiveType::U16,
+        SemanticTypeId::U32 => PrimitiveType::U32,
+        SemanticTypeId::U64 => PrimitiveType::U64,
+        SemanticTypeId::WORD => PrimitiveType::Word,
+        _ => return None,
+    })
+}
+
 pub(in crate::semantic_contract) fn semantic_type_from_syntax(
     syntax_type: &beskid_analysis::syntax::Type,
 ) -> Result<SemanticTypeId, SemanticError> {

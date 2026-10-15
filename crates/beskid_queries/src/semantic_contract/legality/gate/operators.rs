@@ -114,7 +114,7 @@ pub(super) fn collect_literal_obligations(
                     // The value root is the negation when there is one: the legacy checker types
                     // the whole `-literal` under the destination's contextual type.
                     let root = negation.or_else(|| parent_node(index, node));
-                    match root.and_then(|root| contextual_literal_primitive(db, program, index, key, root)) {
+                    match root.and_then(|root| literal_destination_primitive(db, program, index, key, root)) {
                         Some(primitive) => primitive,
                         // An inferred `let` takes the literal's natural type, so the literal must
                         // fit it (a decimal above `i64::MAX` has no natural integer type).
@@ -177,7 +177,7 @@ fn collect_constant_obligations(
     for node in nodes_of_kind(index, key.node, NodeKind::PathExpression) {
         let site = AstNodeKey { node, ..key };
         let Ok(Some(text)) = constant_integer_literal(db, site) else { continue };
-        let Some(primitive) = contextual_literal_primitive(db, program, index, key, node) else { continue };
+        let Some(primitive) = literal_destination_primitive(db, program, index, key, node) else { continue };
         if !integer_literal_fits_primitive(&text, primitive) {
             findings.push(GateObligation {
                 kind: GateObligationKind::NumericLiteralOutOfRange {
@@ -187,6 +187,25 @@ fn collect_constant_obligations(
             });
         }
     }
+}
+
+/// The primitive integer an unsuffixed literal or constant use rooted at `root` takes: its
+/// surface-declared destination, else (rule T1) the type of the other operand of the binary
+/// expression it is an operand of, a call result included. Two bare operands share the type
+/// their binary expression takes from its own context. No promotion to a wider type exists.
+fn literal_destination_primitive(
+    db: &dyn Db,
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &SyntaxIndex,
+    key: AstNodeKey,
+    root: beskid_analysis::syntax::AstNodeId,
+) -> Option<PrimitiveType> {
+    contextual_literal_primitive(db, program, index, key, root).or_else(|| {
+        let expected = expected_type(db, AstNodeKey { node: root, ..key }).ok()??;
+        matches!(expected.context, ExpectedTypeContext::BinaryOperand { .. })
+            .then(|| integer_primitive_for_semantic(expected.abi_type()))
+            .flatten()
+    })
 }
 
 /// Whether `root` (a literal value root) is the initializer of a `let` without a type annotation.

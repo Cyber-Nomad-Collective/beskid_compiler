@@ -162,6 +162,20 @@ fn wide_module_constants_materialize_their_full_value_in_every_context() {
 }
 
 #[test]
+fn literal_and_constant_operands_take_the_i32_type_of_the_other_operand() {
+    let (input, isa, item) =
+        item_fixture("const SMALL = 7; bool Main(i32 x) { return x + 3000 == 4000 || x != SMALL; }");
+
+    let function = emit_isle_item(&input, isa.as_ref(), item)
+        .expect("fitting literal and constant operands lower at the other operand's i32 type");
+    let clif = function.display().to_string();
+    assert!(clif.contains("iconst.i32 3000"), "{clif}");
+    assert!(clif.contains("iconst.i32 4000"), "{clif}");
+    assert!(clif.contains("iconst.i32 7"), "the constant takes i32 from its peer:\n{clif}");
+    assert!(!clif.contains("sextend"), "no operand may be promoted to a wider type:\n{clif}");
+}
+
+#[test]
 fn parsed_mixed_u8_i64_arithmetic_coerces_the_u8_operand_without_hir() {
     let (input, isa, item) = item_fixture("i64 Main(u8 b, i64 acc) { return acc + (b - 48); }");
 

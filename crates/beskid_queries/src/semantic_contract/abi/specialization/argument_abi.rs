@@ -62,21 +62,13 @@ pub(in crate::semantic_contract) fn contextual_integer_operand_fits_abi(
     if integer_literal_text(db, key)?.is_some() {
         return integer_literal_fits_abi(db, key, expected);
     }
-    let Some(value) = contextual_constant_integer(db, key)? else {
+    // A constant use behaves as its declared literal: it fits exactly where that literal fits,
+    // judged on the literal's text so a word-sized bit pattern is never read as a negative i64.
+    let Some(text) = contextual_constant_literal(db, key)? else {
         return Ok(false);
     };
-    Ok(match expected {
-        SemanticTypeId::I8 => i8::try_from(value).is_ok(),
-        SemanticTypeId::I16 => i16::try_from(value).is_ok(),
-        SemanticTypeId::U16 => u16::try_from(value).is_ok(),
-        SemanticTypeId::U64 => u64::try_from(value).is_ok(),
-        SemanticTypeId::I32 => i32::try_from(value).is_ok(),
-        SemanticTypeId::I64 => true,
-        SemanticTypeId::U32 => u32::try_from(value).is_ok(),
-        SemanticTypeId::U8 => u8::try_from(value).is_ok(),
-        SemanticTypeId::WORD => u64::try_from(value).is_ok(),
-        _ => false,
-    })
+    Ok(integer_primitive_for_semantic(expected)
+        .is_some_and(|primitive| beskid_analysis::syntax::integer_literal_fits_primitive(&text, primitive)))
 }
 
 pub(in crate::semantic_contract) fn integer_literal_text(
@@ -120,6 +112,23 @@ pub(in crate::semantic_contract) fn contextual_constant_integer(
         return Ok(None);
     };
     contextual_constant_integer(db, *child)
+}
+
+/// The declared literal of a module constant use, through singleton wrappers.
+pub(in crate::semantic_contract) fn contextual_constant_literal(
+    db: &dyn Db,
+    key: AstNodeKey,
+) -> Result<Option<Arc<str>>, SemanticError> {
+    if let Some(text) = constant_integer_literal(db, key)? {
+        return Ok(Some(text));
+    }
+    let Some(children) = child_nodes(db, key)? else {
+        return Ok(None);
+    };
+    let [child] = children.as_ref() else {
+        return Ok(None);
+    };
+    contextual_constant_literal(db, *child)
 }
 
 pub(in crate::semantic_contract) fn integer_has_explicit_abi_suffix(text: &str) -> bool {

@@ -137,6 +137,69 @@ fn constants_that_fit_their_destination_are_silent() {
     );
 }
 
+/// Rule T1: a bare literal or constant operand takes the type of the other operand of its binary
+/// expression (a call result included), and is T0905 when it does not fit. It never promotes the
+/// other operand to a wider type, in arithmetic or in a comparison.
+const BINARY_OPERAND_OUT_OF_RANGE: &[(&str, &str, &str, &str)] = &[
+    (
+        "NumericLiteralOutOfRange (literal next to an i32 operand)",
+        "NumericLiteralOutOfRange",
+        "T0905",
+        "unit Main(i32 x) { i32 y = x + 3000000000; return; }",
+    ),
+    (
+        "NumericLiteralOutOfRange (constant compared with an i32 operand)",
+        "NumericLiteralOutOfRange",
+        "T0905",
+        "const BIG = 3000000000; bool F(i32 x) { return x == BIG; }",
+    ),
+    (
+        "NumericLiteralOutOfRange (literal next to an i32 call result)",
+        "NumericLiteralOutOfRange",
+        "T0905",
+        "i32 Seven() { return 7; } bool F() { return Seven() < 3000000000; }",
+    ),
+    (
+        "NumericLiteralOutOfRange (two bare operands at an i32 destination)",
+        "NumericLiteralOutOfRange",
+        "T0905",
+        "unit Main() { i32 y = 3000000000 + 1; return; }",
+    ),
+];
+
+#[test]
+fn binary_operand_literal_or_constant_takes_the_other_operand_type() {
+    assert_covered_kinds(BINARY_OPERAND_OUT_OF_RANGE, 1060);
+}
+
+#[test]
+fn binary_operand_out_of_range_names_the_other_operand_type_at_the_literal() {
+    let source = "bool F(i32 x) { return x == 3000000000; }";
+    let findings = root_findings(source, 1070);
+    let finding = findings
+        .iter()
+        .find(|finding| matches!(&finding.kind, SemanticIssueKind::NumericLiteralOutOfRange { primitive } if primitive == "i32"))
+        .unwrap_or_else(|| panic!("expected an i32 T0905, got {findings:?}"));
+    assert_eq!(&source[finding.span.start..finding.span.end], "3000000000");
+    assert_eq!(findings.len(), 1, "{findings:?}");
+}
+
+#[test]
+fn binary_operands_that_fit_the_other_operand_are_silent() {
+    assert_silent(
+        &[
+            ("literal next to an i32 operand", "bool F(i32 x) { return x + 5 == 12; }"),
+            ("wide literal next to an i64 operand", "bool F(i64 x) { return x == 3000000000; }"),
+            (
+                "word constant next to a word operand",
+                "const LIMIT_UNSET = 0xFFFFFFFFFFFFFFFF; bool F(word x) { return x == LIMIT_UNSET; }",
+            ),
+            ("small constant next to a u8 operand", "const SMALL = 7; bool F(u8 x) { return x != SMALL; }"),
+        ],
+        1080,
+    );
+}
+
 /// The `Optional` argument of an `[Extern]` contract and its availability query: the legacy
 /// `validate_extern_contract` and `validate_extern_availability_method`, now T0906.
 #[test]

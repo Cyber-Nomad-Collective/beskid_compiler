@@ -20,7 +20,7 @@ pub(in crate::semantic_contract) use signatures::{
 
 pub(in crate::semantic_contract) use specialization::{
     abi_signature_from_syntax, builtin_type_to_semantic,
-    contextual_constant_integer, contextual_integer_operand_fits_abi, corelib_service_abi_signature,
+    contextual_constant_integer, contextual_constant_literal, contextual_integer_operand_fits_abi, corelib_service_abi_signature,
     exact_assembled_nominal_envelope, function_value_specialization, generic_abi_type, generic_parameter_reference_name,
     generic_specialization_instance_for_call, generic_type_name, integer_has_explicit_abi_suffix,
     integer_literal_fits_abi, integer_literal_text, integer_literal_u64, item_abi_type_from_syntax,

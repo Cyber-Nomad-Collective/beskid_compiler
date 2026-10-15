@@ -18,7 +18,7 @@ pub use aggregate::{
 pub(in crate::semantic_contract) use common::{
     abi_local_declaration_type, abi_type_for_direct_aggregate_field_projection, abi_type_for_local_path,
     aggregate_field_layout, aggregate_shape_for_binding, explicit_local_declaration_type, nominal_aggregate_abi_type,
-    resolve_nominal_layout_declaration, resolve_type_declaration, semantic_type_for_primitive, semantic_type_from_syntax,
+    resolve_nominal_layout_declaration, resolve_type_declaration, integer_primitive_for_semantic, semantic_type_for_primitive, semantic_type_from_syntax,
     unique_assembled_type_in_module, unique_exported_type_in_unit, unique_nominal_type_in_unit, unique_public_type_in_unit,
     unique_type_in_unit,
 };

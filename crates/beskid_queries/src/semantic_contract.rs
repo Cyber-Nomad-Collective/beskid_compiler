@@ -86,7 +86,7 @@ use abi::{
     abi_signature_from_syntax, abi_type_for_binary_expression, abi_type_for_expression, abi_type_from_syntax,
     abi_type_tracked, builtin_type_to_semantic,
     call_abi_signature_for_call, call_abi_signature_tracked,
-    contextual_constant_integer, contextual_integer_literal_abi_type_tracked, contextual_integer_operand_fits_abi,
+    contextual_constant_integer, contextual_constant_literal, contextual_integer_literal_abi_type_tracked, contextual_integer_operand_fits_abi,
     control_flow_for_node,
     control_flow_tracked, corelib_service_abi_signature, exact_assembled_nominal_envelope, function_value_specialization,
     generic_abi_type,
@@ -157,7 +157,7 @@ use layouts::{
     field_access_receiver, inaccessible_literal_fields, instantiated_aggregate_layout_for_path,
     instantiated_enum_layout_for_path, nominal_aggregate_abi_type, nominal_field_projection,
     nominal_local_receiver_declaration, resolve_nominal_layout_declaration, resolve_type_declaration,
-    semantic_type_for_primitive, semantic_type_from_syntax, unique_exported_type_in_unit, unique_public_type_in_unit, unique_type_in_unit,
+    integer_primitive_for_semantic, semantic_type_for_primitive, semantic_type_from_syntax, unique_exported_type_in_unit, unique_public_type_in_unit, unique_type_in_unit,
 };
 pub use legality::{
     CallArgumentTypeMismatch, CallArityMismatch, GateObligation, GateObligationKind, GenericParameterConflict,

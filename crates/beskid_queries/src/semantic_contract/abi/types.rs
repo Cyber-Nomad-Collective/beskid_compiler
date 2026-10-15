@@ -288,6 +288,12 @@ pub(in crate::semantic_contract) fn value_abi_type_tracked(
             {
                 return Ok(intent.to);
             }
+            // T1: a bare integer literal or constant takes the integer type its context gives it
+            // (a declared destination or the other operand of a binary expression). A value that
+            // does not fit that type is T0905 at check time; lowering never widens it instead.
+            if contextual_integer_misfit(db, key)? {
+                return Err(SemanticError::unavailable("value_abi_type"));
+            }
             let contextual = optional_abi_fact(contextual_integer_literal_abi_type(db, key))?;
             let call_result = optional_abi_fact(call_abi_signature(db, key))?.map(|signature| signature.result);
             let enum_value = optional_abi_fact(enum_constructor(db, key))?.map(|_| SemanticTypeId::POINTER);
@@ -302,6 +308,21 @@ pub(in crate::semantic_contract) fn value_abi_type_tracked(
         })())
     })?
     .transpose()
+}
+
+/// Whether `key` is a bare integer literal or module constant whose context names a primitive
+/// integer type that its value does not fit.
+fn contextual_integer_misfit(db: &dyn Db, key: AstNodeKey) -> Result<bool, SemanticError> {
+    if !(unsuffixed_integer_literal(db, key)? || contextual_constant_literal(db, key)?.is_some()) {
+        return Ok(false);
+    }
+    let expected = match expected_type(db, key) {
+        Ok(Some(expected)) => expected.abi_type(),
+        Ok(None) => return Ok(false),
+        Err(error) if error.is_unavailable() => return Ok(false),
+        Err(error) => return Err(error),
+    };
+    Ok(primitive_integer(expected) && !contextual_integer_operand_fits_abi(db, key, expected)?)
 }
 
 fn optional_abi_fact<T>(result: SemanticQueryResult<T>) -> Result<Option<T>, SemanticError> {
@@ -408,14 +429,18 @@ pub(in crate::semantic_contract) fn abi_type_for_binary_expression(
     let left_type = value_abi_type(db, left)?.ok_or_else(|| SemanticError::unavailable("abi_type"))?;
     let right_type = value_abi_type(db, right)?.ok_or_else(|| SemanticError::unavailable("abi_type"))?;
     if left_type != right_type {
-        if integer_literal_text(db, left)?.is_some() && primitive_integer(right_type) {
-            integer_literal_fits_abi(db, left, right_type)?
+        if (integer_literal_text(db, left)?.is_some() || contextual_constant_literal(db, left)?.is_some())
+            && primitive_integer(right_type)
+        {
+            contextual_integer_operand_fits_abi(db, left, right_type)?
                 .then_some(())
                 .ok_or_else(|| SemanticError::unavailable("abi_type"))?;
             return binary_result_type(binary.op.node, right_type);
         }
-        if integer_literal_text(db, right)?.is_some() && primitive_integer(left_type) {
-            integer_literal_fits_abi(db, right, left_type)?
+        if (integer_literal_text(db, right)?.is_some() || contextual_constant_literal(db, right)?.is_some())
+            && primitive_integer(left_type)
+        {
+            contextual_integer_operand_fits_abi(db, right, left_type)?
                 .then_some(())
                 .ok_or_else(|| SemanticError::unavailable("abi_type"))?;
             return binary_result_type(binary.op.node, left_type);
