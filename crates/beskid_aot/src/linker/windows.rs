@@ -70,12 +70,56 @@ pub(super) fn link_windows(
             detail: format_link_detail(&output),
         });
     }
+    place_shared_provider_beside_executable(req)?;
     Ok(LinkResult {
         tool_receipt: Some(tool_receipt),
         output_path: req.output_path.clone(),
         command_line,
         exported_symbols: req.exported_symbols.clone(),
     })
+}
+
+/// PE/COFF has no run path. An executable linked against the canonical shared provider imports it
+/// by its canonical DLL basename, and the Windows loader resolves that name through its standard
+/// search order, which starts with the directory the application was loaded from
+/// (<https://learn.microsoft.com/windows/win32/dlls/dynamic-link-library-search-order>). The ELF and
+/// Mach-O links record the provider's installed directory as a run path instead; on Windows the
+/// exact validated provider is published beside the executable, so the program loads it without
+/// `PATH` changes. The copy is staged in the output directory and renamed into place; an identical
+/// provider already there is kept, and any failure fails the link.
+pub(super) fn place_shared_provider_beside_executable(req: &LinkRequest) -> AotResult<()> {
+    let Some(super::RuntimeLinkInput::GlueSharedProviderV1 { shared_library_path, .. }) = &req.runtime else {
+        return Ok(());
+    };
+    if req.output_kind != BuildOutputKind::Exe {
+        return Ok(());
+    }
+    let io_error =
+        |path: &Path, error: std::io::Error| AotError::Io { path: path.to_owned(), message: error.to_string() };
+    let name = shared_library_path.file_name().ok_or_else(|| AotError::InvalidRequest {
+        message: format!("shared runtime provider `{}` has no file name", shared_library_path.display()),
+    })?;
+    let directory = req.output_path.parent().filter(|parent| !parent.as_os_str().is_empty()).unwrap_or(Path::new("."));
+    let destination = directory.join(name);
+    if destination == *shared_library_path {
+        return Ok(());
+    }
+    let provider = std::fs::read(shared_library_path).map_err(|error| io_error(shared_library_path, error))?;
+    match std::fs::read(&destination) {
+        Ok(existing) if existing == provider => return Ok(()),
+        Ok(_) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(io_error(&destination, error)),
+    }
+    let mut staged = tempfile::Builder::new()
+        .prefix(".beskid-provider-")
+        .tempfile_in(directory)
+        .map_err(|error| io_error(directory, error))?;
+    std::io::Write::write_all(&mut staged, &provider).map_err(|error| io_error(staged.path(), error))?;
+    staged.as_file().sync_all().map_err(|error| io_error(staged.path(), error))?;
+    // `persist` clears the temporary-file attribute before it renames over the destination.
+    staged.persist(&destination).map_err(|error| io_error(&destination, error.error))?;
+    Ok(())
 }
 
 fn run_command_with_fallback(
@@ -192,7 +236,81 @@ mod tests {
 
     use crate::api::{BuildOutputKind, LinkMode};
 
-    use super::{LinkRequest, windows_import_library_path, windows_link_command};
+    use super::{
+        LinkRequest, place_shared_provider_beside_executable, windows_import_library_path, windows_link_command,
+    };
+
+    fn provider_request(output_kind: BuildOutputKind, output_path: PathBuf, provider: PathBuf) -> LinkRequest {
+        LinkRequest {
+            target_triple: Some("x86_64-pc-windows-msvc".into()),
+            output_kind,
+            output_path,
+            object_path: "app.obj".into(),
+            additional_object_paths: Vec::new(),
+            runtime: Some(crate::linker::RuntimeLinkInput::GlueSharedProviderV1 {
+                link_path: provider.with_file_name("beskid_runtime_import.lib"),
+                shared_library_path: provider,
+            }),
+            host_staticlib: None,
+            entrypoint_symbol: "main".into(),
+            exported_symbols: Vec::new(),
+            link_mode: LinkMode::Auto,
+            verbose: false,
+            external_libraries: Vec::new(),
+            optional_libraries: Vec::new(),
+            library_search_paths: Vec::new(),
+        }
+    }
+
+    /// Windows regression (v0.6.0 release DYN-06-01..05): every native test executable that links
+    /// the shared provider exited STATUS_DLL_NOT_FOUND, because PE has no run path and the provider
+    /// stayed only in the runtime kit.
+    #[test]
+    fn windows_executable_with_shared_provider_gets_the_exact_provider_beside_it() {
+        let temp = tempfile::tempdir().unwrap();
+        let kit = temp.path().join("kit/shared");
+        std::fs::create_dir_all(&kit).unwrap();
+        let provider = kit.join("beskid_runtime.dll");
+        std::fs::write(&provider, b"canonical provider bytes").unwrap();
+        let output = temp.path().join("entry-0");
+        std::fs::create_dir_all(&output).unwrap();
+        let placed = output.join("beskid_runtime.dll");
+
+        place_shared_provider_beside_executable(&provider_request(
+            BuildOutputKind::Exe,
+            output.join("test.exe"),
+            provider.clone(),
+        ))
+        .unwrap();
+        assert_eq!(std::fs::read(&placed).unwrap(), b"canonical provider bytes");
+
+        // A stale provider from another kit is replaced by the one this executable linked.
+        std::fs::write(&placed, b"stale provider").unwrap();
+        place_shared_provider_beside_executable(&provider_request(
+            BuildOutputKind::Exe,
+            output.join("test.exe"),
+            provider.clone(),
+        ))
+        .unwrap();
+        assert_eq!(std::fs::read(&placed).unwrap(), b"canonical provider bytes");
+        let leftovers = std::fs::read_dir(&output)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+            .filter(|name| name.starts_with(".beskid-provider-"))
+            .collect::<Vec<_>>();
+        assert!(leftovers.is_empty(), "staging files left behind: {leftovers:?}");
+
+        // Shared libraries are loaded by a host that already loaded the provider.
+        let library = temp.path().join("lib");
+        std::fs::create_dir_all(&library).unwrap();
+        place_shared_provider_beside_executable(&provider_request(
+            BuildOutputKind::SharedLib,
+            library.join("mod.dll"),
+            provider,
+        ))
+        .unwrap();
+        assert!(!library.join("beskid_runtime.dll").exists());
+    }
 
     #[test]
     fn derives_a_stable_windows_import_library_name_from_the_shared_dll() {
