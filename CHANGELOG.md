@@ -235,6 +235,11 @@ feature area.
 - A `move T` parameter over `T: Transferable` is owning inside the generic
   definition; at a call a Moved argument needs `move` (E1242), and `move` on a
   Shared or Copied argument is E1239.
+- A borrowed parameter that a `[Captures]`-bounded lambda of its callable
+  captures while its class is decided per instantiation (the
+  `ParallelSeq.Reduce` and `ReduceUnordered` seed) admits only Shared and
+  Copied arguments: a Moved argument is E1236 at the argument, naming the
+  class `Moved`. Build a Moved accumulator inside the combiner instead.
 - Corelib collection mutators take `move this` (`list = list.Push(v)`). The
   Http, Http2, Http3 and Codec byte builders and Pest `AppendExpr` take their
   buffer as a `move` parameter (`out = EncodeInteger(move out, ..)`).

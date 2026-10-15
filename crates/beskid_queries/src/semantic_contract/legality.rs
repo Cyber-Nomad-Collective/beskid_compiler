@@ -537,6 +537,7 @@ pub fn check_items(db: &dyn Db, items: &[AstNodeKey]) -> Result<(), Vec<Semantic
         findings.extend(ownership::affine_findings(db, item));
         findings.extend(captures::captures_argument_findings(db, item));
         findings.extend(captures::isolate_spawn_findings(db, item));
+        findings.extend(captures::repeated_capture_argument_findings(db, item));
         findings.extend(function_values::generic_function_value_semantic_findings(db, item));
         if let Ok(Some(finding)) = call_argument_type_mismatch(db, item) {
             findings.push(SemanticFinding {
@@ -1604,6 +1605,23 @@ mod tests {
         ];
         for (offset, (body, expected)) in cases.iter().enumerate() {
             let codes = captures_codes(body, 6700 + offset as u64);
+            assert_eq!(codes, *expected, "{body}");
+        }
+    }
+
+    #[test]
+    fn moved_argument_for_a_repeatedly_captured_parameter_is_e1236() {
+        // `Fold` captures its borrowed `T seed` in a bounded (repeatable) lambda, like the
+        // `ParallelSeq.Reduce` seed: only Shared and Copied instantiations are admitted.
+        let fold = "pub i64 Probe<T>(T value) { return 0; } \
+                    pub unit Fold<T>(T seed) where T: Transferable { Run(() => Probe<T>(seed)); return; } ";
+        let cases: &[(&str, &[&str])] = &[
+            ("[Immutable] pub type Config { i64 retries } unit Main(Config config) { Fold<Config>(config); return; }", &[]),
+            ("unit Main() { Fold<i64>(1_i64); return; }", &[]),
+            ("unit Main(move u8[] data) { Fold<u8[]>(data); return; }", &["E1236"]),
+        ];
+        for (offset, (body, expected)) in cases.iter().enumerate() {
+            let codes = captures_codes(&format!("{fold}{body}"), 6760 + offset as u64);
             assert_eq!(codes, *expected, "{body}");
         }
     }

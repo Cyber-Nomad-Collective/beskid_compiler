@@ -549,3 +549,123 @@ pub(super) fn isolate_spawn_findings(db: &dyn Db, key: AstNodeKey) -> Vec<Semant
     }
     findings
 }
+
+/// One borrowed parameter that a `[Captures]`-bounded lambda of its callable's body captures while
+/// the parameter's transfer class is decided per instantiation (`T seed` captured by `() => seed`
+/// in `ParallelSeq<T>.Reduce`). `position` excludes the method receiver.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub struct RepeatedCaptureParameter {
+    pub position: u32,
+    pub name: Arc<str>,
+}
+
+/// The parameters of the function or method `declaration` that a bounded lambda of its body
+/// captures without `move` while their class is `SomeTransferable`. A bounded lambda is
+/// repeatable and the parameter is borrowed, so every instantiation must be Shared or Copied:
+/// a Moved value would be used once per call of the lambda after one consumption (lang ruling on
+/// the `Reduce` seed, v0.6.5 "Moved seed is rejected").
+fn repeated_capture_parameters(db: &dyn Db, declaration: AstNodeKey) -> Arc<[RepeatedCaptureParameter]> {
+    match with_registered_syntax(db, declaration, repeated_capture_parameters_tracked) {
+        Ok(Some(parameters)) => parameters,
+        Ok(None) | Err(_) => Arc::from([]),
+    }
+}
+
+#[salsa::tracked(persist)]
+fn repeated_capture_parameters_tracked(
+    db: &dyn Db,
+    syntax: SyntaxUnitInput,
+    key: AstNodeKey,
+) -> SemanticQueryResult<Arc<[RepeatedCaptureParameter]>> {
+    with_node(db, syntax, key, |program, index, node| {
+        let parameters = node
+            .of::<beskid_analysis::syntax::FunctionDefinition>()
+            .map(|function| &function.parameters)
+            .or_else(|| node.of::<beskid_analysis::syntax::MethodDefinition>().map(|method| &method.parameters))?;
+        // Borrowed parameters whose class is decided per instantiation, by declaration node.
+        let candidates = parameters
+            .iter()
+            .enumerate()
+            .filter(|(_, parameter)| !parameter.node.movable && !parameter.node.bulk)
+            .filter_map(|(position, parameter)| {
+                let declaration = index.direct_child_id(program, key.node, DynNodeRef::from(parameter))?;
+                let name = index.direct_child_id(program, declaration, DynNodeRef::from(&parameter.node.name))?;
+                let class = transfer_class_of_type(db, AstNodeKey { node: declaration, ..key }, &parameter.node.ty.node);
+                matches!(class, Ok(TransferClass::SomeTransferable))
+                    .then(|| (name, position, parameter.node.name.node.name.clone()))
+            })
+            .collect::<Vec<_>>();
+        if candidates.is_empty() {
+            return Some(Ok(Arc::from([])));
+        }
+        let mut lambdas = Vec::new();
+        collect_nodes_of_kind(index, key.node, NodeKind::LambdaExpression, &mut lambdas);
+        let mut repeated = Vec::<RepeatedCaptureParameter>::new();
+        for lambda in lambdas.into_iter().map(|node| AstNodeKey { node, ..key }) {
+            if !matches!(bound_of_position(db, lambda), Some(CapturesBound::Marker(_))) {
+                continue;
+            }
+            for (declaration, name) in lambda_captures(program, index, lambda) {
+                let Some((_, position, _)) = candidates.iter().find(|(node, _, _)| *node == declaration.node) else {
+                    continue;
+                };
+                // `move seed` hands the value over once; it is judged by the affine rules instead.
+                let (_, moved, _) = capture_uses(program, index, lambda.node, declaration.node, &name);
+                let position = u32::try_from(*position).ok()?;
+                if !moved && !repeated.iter().any(|known| known.position == position) {
+                    repeated.push(RepeatedCaptureParameter { position, name: Arc::from(name.as_str()) });
+                }
+            }
+        }
+        repeated.sort_by_key(|parameter| parameter.position);
+        Some(Ok(Arc::from(repeated)))
+    })?
+    .transpose()
+}
+
+/// E1236 at every argument of class Moved passed to a repeated-capture parameter
+/// ([`repeated_capture_parameters`]) of its callee.
+pub(super) fn repeated_capture_argument_findings(db: &dyn Db, key: AstNodeKey) -> Vec<SemanticFinding> {
+    let Some(syntax) = db.syntax_unit(key.unit) else { return Vec::new() };
+    let calls = match with_node(db, syntax, key, |_program, index, _node| {
+        let mut calls = Vec::new();
+        collect_nodes_of_kind(index, key.node, NodeKind::CallExpression, &mut calls);
+        Some(calls)
+    }) {
+        Ok(Some(calls)) => calls,
+        Ok(None) | Err(_) => return Vec::new(),
+    };
+    let mut findings = Vec::new();
+    for call in calls.into_iter().map(|node| AstNodeKey { node, ..key }) {
+        let Ok(Some(CallLowering::Direct(declaration))) = call_lowering(db, call) else { continue };
+        let repeated = repeated_capture_parameters(db, declaration);
+        if repeated.is_empty() {
+            continue;
+        }
+        let Ok(Some(arguments)) = call_arguments(db, call) else { continue };
+        let is_method = matches!(
+            node_kind(db, declaration),
+            Ok(Some(IndexedNodeKind::MethodDefinition))
+        );
+        let receiver_offset = usize::from(is_method);
+        for parameter in repeated.iter() {
+            let Some(argument) = arguments.get(parameter.position as usize + receiver_offset).copied() else { continue };
+            let Ok(identity) = generic_source_expression_identity(db, argument) else { continue };
+            if !matches!(transfer_class(db, argument, &identity), Ok(TransferClass::Moved)) {
+                continue;
+            }
+            findings.push(SemanticFinding {
+                kind: SemanticIssueKind::CaptureNotTransferable {
+                    name: parameter.name.to_string(),
+                    type_name: identity_spelling(&identity),
+                    class: "Moved (every call of a bounded lambda captures the parameter, so it must be Shared or \
+                            Copied)"
+                        .to_owned(),
+                },
+                site: argument,
+                related: vec![(call, "in this call")],
+            });
+        }
+    }
+    findings
+}
