@@ -219,3 +219,46 @@ fn glue_host_at_project_root_owns_its_nominal_sources_through_the_nested_materia
     assert!(identities.for_source(&generated).is_none());
     assert!(owner.relative_source_path(&generated).is_none());
 }
+
+/// Test-matrix workers prepare one project in parallel processes. Each one mirrors the sources
+/// into the shared `obj/beskid` tree and then proves the mirror byte-identical to the package;
+/// none may observe another's half-written copy as a changed package source.
+#[test]
+fn parallel_preparations_of_one_project_never_observe_a_partial_mirror() {
+    for round in 0..4 {
+        let root = tempfile::tempdir().unwrap();
+        let at = root.path().join(format!("round-{round}"));
+        std::fs::create_dir_all(at.join("src")).unwrap();
+        for index in 0..8 {
+            let body = format!("pub type Item{index} {{ pub i32 Value, }}\n// {}\n", "x".repeat(2 * 1024 * 1024));
+            std::fs::write(at.join(format!("src/Unit{index}.bd")), body).unwrap();
+        }
+        let manifest = at.join("Example.bproj");
+        std::fs::write(
+            &manifest,
+            "Example { name = \"Example\" version = \"1.0.0\" }\ntarget \"Example\" { kind = \"Lib\" }\n",
+        )
+        .unwrap();
+        let plan = ProjectWorkspacePlan {
+            project_root: at.clone(),
+            manifest_path: manifest,
+            project_name: "Example".into(),
+            source_root: Some(at.join("src")),
+            dependency_projects: vec![],
+            unresolved_dependencies: vec![],
+        };
+        std::thread::scope(|scope| {
+            let workers = (0..6)
+                .map(|_| {
+                    scope.spawn(|| {
+                        prepare_project_workspace_plan_with_options(&plan, WorkspacePrepareOptions::default(), None)
+                    })
+                })
+                .collect::<Vec<_>>();
+            for worker in workers {
+                let prepared = worker.join().unwrap().unwrap_or_else(|error| panic!("round {round}: {error}"));
+                prepared.package_identities().validate().unwrap();
+            }
+        });
+    }
+}

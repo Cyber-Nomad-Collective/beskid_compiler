@@ -141,6 +141,9 @@ pub fn prepare_project_workspace_plan_with_options(
     let resolved = super::resolution::ResolveWorkspaceDependencies(plan, &policy, options.refresh_lock)?;
     let mut lock_entries = resolved.entries;
     let resolved_registry = resolved.registry;
+    // Parallel processes (test-matrix workers, concurrent builds) prepare the same project; its
+    // materialized tree, lockfile and package proof are written and read here as one unit.
+    let _materialization = MaterializationGuard::acquire(&plan.project_root)?;
     for registry in &resolved_registry {
         registry.lock_entry()?;
         registry.cache_artifact(&plan.project_root)?;
@@ -234,6 +237,41 @@ pub fn prepare_project_workspace_plan_with_options(
         materialized_source_root,
         materialized_dependencies,
     })
+}
+
+/// Exclusive cross-process ownership of one project's materialized workspace
+/// (`obj/beskid`): mirroring sources, syncing `Project.lock` and capturing the package proof.
+///
+/// The mirror rewrites files in place, so a second process that captured its package proof from
+/// the shared materialized tree while the first was still copying would read a partially written
+/// source and fail with a spurious "package proof source revision changed". Holding this guard
+/// for the whole preparation makes every process observe a complete mirror.
+struct MaterializationGuard {
+    file: fs::File,
+}
+
+impl MaterializationGuard {
+    fn acquire(project_root: &Path) -> Result<Self, ProjectError> {
+        let directory = project_root.join("obj").join("beskid");
+        fs::create_dir_all(&directory)
+            .map_err(|source| ProjectError::MaterializationCreateDir { path: directory.clone(), source })?;
+        let path = directory.join(".materialize-lock");
+        let file = fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(&path)
+            .map_err(|source| ProjectError::MaterializationLock { path: path.clone(), source })?;
+        fs2::FileExt::lock_exclusive(&file).map_err(|source| ProjectError::MaterializationLock { path, source })?;
+        Ok(Self { file })
+    }
+}
+
+impl Drop for MaterializationGuard {
+    fn drop(&mut self) {
+        let _ = fs2::FileExt::unlock(&self.file);
+    }
 }
 
 /// Mirror the package's checked-in generated sources beside the materialized source root.

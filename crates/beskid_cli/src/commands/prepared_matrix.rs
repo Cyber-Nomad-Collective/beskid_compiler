@@ -307,7 +307,10 @@ impl PreparedWorkspace {
     pub fn reject_mutation(&self, phase: &str) -> Result<()> {
         let current = revision_snapshot(&self.manifest_path);
         if current != self.revisions {
-            return Err(anyhow!("prepared workspace content mutated during phase `{phase}`"));
+            return Err(anyhow!(
+                "prepared workspace content mutated during phase `{phase}`: {}",
+                describe_mutation(&self.manifest_path, &self.revisions, &current)
+            ));
         }
         Ok(())
     }
@@ -471,13 +474,52 @@ pub fn duration_ms(duration: Duration) -> u64 {
 }
 
 pub fn revision_snapshot(manifest_path: &Path) -> RevisionSnapshot {
+    let [root, compiler, corelib] = snapshot_repositories(manifest_path);
+    RevisionSnapshot {
+        root: root.1.as_deref().and_then(git_revision),
+        compiler: compiler.1.as_deref().and_then(git_revision),
+        corelib: corelib.1.as_deref().and_then(git_revision),
+    }
+}
+
+/// The repositories a [`RevisionSnapshot`] covers, in field order: the superproject, the compiler
+/// checkout this CLI was built from, and the repository holding the tested manifest.
+fn snapshot_repositories(manifest_path: &Path) -> [(&'static str, Option<PathBuf>); 3] {
     let compiler = Path::new(env!("CARGO_MANIFEST_DIR")).ancestors().nth(2).map(Path::to_path_buf);
     let root = compiler.as_deref().and_then(git_superproject_root);
-    RevisionSnapshot {
-        root: root.as_deref().and_then(git_revision),
-        compiler: compiler.as_deref().and_then(git_revision),
-        corelib: manifest_path.parent().and_then(git_revision),
+    [("root", root), ("compiler", compiler), ("corelib", manifest_path.parent().map(Path::to_path_buf))]
+}
+
+/// Names each repository whose snapshot changed and its current non-ignored status entries, so a
+/// mutation failure identifies the writer's output instead of only the phase.
+fn describe_mutation(manifest_path: &Path, before: &RevisionSnapshot, after: &RevisionSnapshot) -> String {
+    let pairs = [(&before.root, &after.root), (&before.compiler, &after.compiler), (&before.corelib, &after.corelib)];
+    let mut changed = Vec::new();
+    for ((name, path), (before, after)) in snapshot_repositories(manifest_path).into_iter().zip(pairs) {
+        if before == after {
+            continue;
+        }
+        let status = path
+            .as_deref()
+            .and_then(|path| {
+                Command::new("git")
+                    .arg("-C")
+                    .arg(path)
+                    .args(["status", "--porcelain=v1", "--untracked-files=all", "--ignore-submodules=none"])
+                    .output()
+                    .ok()
+            })
+            .filter(|output| output.status.success())
+            .map(|output| String::from_utf8_lossy(&output.stdout).lines().map(str::trim).collect::<Vec<_>>().join(", "))
+            .unwrap_or_default();
+        let location = path.as_deref().map(|path| path.display().to_string()).unwrap_or_default();
+        changed.push(if status.is_empty() {
+            format!("{name} repository at {location} changed content (status now clean)")
+        } else {
+            format!("{name} repository at {location} now reports [{status}]")
+        });
     }
+    changed.join("; ")
 }
 
 fn git_superproject_root(compiler: &Path) -> Option<PathBuf> {

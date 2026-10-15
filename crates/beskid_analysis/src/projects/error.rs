@@ -59,6 +59,12 @@ pub enum ProjectError {
         #[source]
         source: std::io::Error,
     },
+    #[error("failed to lock the materialized workspace at {path}: {source}")]
+    MaterializationLock {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
     #[error("failed to read materialization directory at {path}: {source}")]
     MaterializationReadDir {
         path: PathBuf,
@@ -138,6 +144,7 @@ impl ProjectError {
             Self::LockfileFrozenMode => "E3023",
             Self::LockfileRequired { .. } => "E3023",
             Self::MaterializationCreateDir { .. } => "E3030",
+            Self::MaterializationLock { .. } => "E3030",
             Self::MaterializationReadDir { .. } => "E3030",
             Self::MaterializationMetadata { .. } => "E3030",
             Self::MaterializationCopy { .. } => "E3031",
