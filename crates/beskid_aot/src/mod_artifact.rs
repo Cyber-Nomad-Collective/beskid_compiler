@@ -82,6 +82,13 @@ pub struct CachedModArtifactRequest {
 /// content key, and its package, target, profile, compiler version, exact compiler executable digest,
 /// source/manifest/lock evidence and dependency source identities all equal the request. Two current
 /// entries are ambiguous and fail closed.
+///
+/// An entry changed after publication (its descriptor no longer hashes to its directory name, or
+/// its files differ from the recorded inventory) is an error, never a miss: treating it as stale
+/// would let the caller rebuild and prune it, so whether a tampered artifact stops the build would
+/// depend on whether the rebuild reproduces the original key (Linux rebuilds collided with the
+/// tampered entry and stopped; Windows rebuilds published a new key and pruned it). Callers that qualify without the package cache lock may observe
+/// a cooperating publisher's prune mid-read and should qualify again under [`ModCacheLock`].
 pub fn qualify_cached_mod_artifact(req: &CachedModArtifactRequest) -> AotResult<Option<QualifiedNativeMod>> {
     if req.package_id.is_empty()
         || req.package_id.contains(['/', '\\'])
@@ -98,8 +105,9 @@ pub fn qualify_cached_mod_artifact(req: &CachedModArtifactRequest) -> AotResult<
     let target_triple = req.runtime.target.triple.as_str();
     let mut current = Vec::new();
     for sidecar in cached_descriptor_paths(&package_root, target_triple)? {
-        let Ok(descriptor) = read_mod_artifact_descriptor(&sidecar, &req.runtime.prefix) else {
-            continue;
+        let descriptor = match read_cached_entry(&sidecar, &req.package_id, &req.runtime.prefix)? {
+            CachedEntry::Intact(descriptor) => descriptor,
+            CachedEntry::Stale | CachedEntry::Vanished => continue,
         };
         if !cached_identity_matches(&descriptor, req, &compiler_sha256)? {
             continue;
@@ -116,22 +124,81 @@ pub fn qualify_cached_mod_artifact(req: &CachedModArtifactRequest) -> AotResult<
     }
 }
 
+/// What a published cache entry is, before its producer key tuple is compared with a request.
+enum CachedEntry {
+    /// Byte-for-byte what its producer published, and valid against the current runtime kit.
+    Intact(ModArtifactDescriptor),
+    /// Published by another descriptor schema, or bound to a runtime kit or host target that is no
+    /// longer current: a rebuild supersedes it.
+    Stale,
+    /// A cooperating publisher pruned the entry while it was being read.
+    Vanished,
+}
+
+/// Classify one published cache entry. Integrity is decided before staleness and fails closed:
+/// every entry directory is named by the SHA-256 of its descriptor identity, and that identity
+/// records the digest of every published file, so a descriptor whose recomputed key differs from
+/// its directory, or a file tree that differs from the recorded inventory, was changed after
+/// publication. Such an entry is neither loaded, rebuilt over, nor pruned: the build stops and
+/// names it. Only an intact entry may be stale, and only then does the caller rebuild.
+fn read_cached_entry(sidecar: &Path, package_id: &str, runtime_prefix: &Path) -> AotResult<CachedEntry> {
+    let artifact_dir = sidecar.parent().expect("descriptor has an artifact directory");
+    let tampered = |reason: &str| {
+        invalid(format!(
+            "native Mod `{package_id}` cache entry {} failed integrity verification: {reason}. The entry was changed \
+             after publication, so it is neither loaded nor replaced; inspect it, then remove it with `beskid dev mod \
+             clean` and rebuild",
+            artifact_dir.display()
+        ))
+    };
+    let bytes = match fs::read(sidecar) {
+        Ok(bytes) => bytes,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(CachedEntry::Vanished),
+        Err(error) => return Err(io(sidecar, error)),
+    };
+    let value: serde_json::Value =
+        serde_json::from_slice(&bytes).map_err(|_| tampered("the descriptor is not a JSON document"))?;
+    if value.get("schemaVersion").and_then(serde_json::Value::as_u64) != Some(u64::from(NATIVE_MOD_DESCRIPTOR_SCHEMA)) {
+        return Ok(CachedEntry::Stale);
+    }
+    let mut descriptor: ModArtifactDescriptor =
+        serde_json::from_value(value).map_err(|_| tampered("the descriptor does not match descriptor schema V3"))?;
+    descriptor.artifact_dir = artifact_dir.to_path_buf();
+    let key = native_mod_artifact_key(&descriptor).map_err(invalid)?;
+    let named_by_key = artifact_dir.file_name().and_then(|name| name.to_str()) == Some(descriptor.target_triple.as_str())
+        && artifact_dir.parent().and_then(Path::file_name).and_then(|name| name.to_str()) == Some(key.as_str());
+    if !named_by_key {
+        return Err(tampered("the descriptor identity no longer matches its content-addressed directory"));
+    }
+    let vanished = || !sidecar.exists();
+    match mod_artifact_inventory(artifact_dir) {
+        Ok(inventory) if inventory == descriptor.files => {}
+        Ok(_) if vanished() => return Ok(CachedEntry::Vanished),
+        Ok(_) => return Err(tampered("the published files differ from the recorded inventory")),
+        Err(_) if vanished() => return Ok(CachedEntry::Vanished),
+        Err(error) => return Err(tampered(&format!("the published files cannot be inventoried ({error})"))),
+    }
+    // The files are exactly the producer's; what can still differ is the environment the entry
+    // was bound to (runtime kit, host target).
+    match descriptor.validate(runtime_prefix) {
+        Ok(()) => Ok(CachedEntry::Intact(descriptor)),
+        Err(_) if vanished() => Ok(CachedEntry::Vanished),
+        Err(_) => Ok(CachedEntry::Stale),
+    }
+}
+
 fn cached_identity_matches(
     descriptor: &ModArtifactDescriptor,
     req: &CachedModArtifactRequest,
     compiler_sha256: &str,
 ) -> AotResult<bool> {
-    let key = native_mod_artifact_key(descriptor).map_err(invalid)?;
-    let dir = &descriptor.artifact_dir;
-    let named_by_key = dir.file_name().and_then(|name| name.to_str()) == Some(descriptor.target_triple.as_str())
-        && dir.parent().and_then(Path::file_name).and_then(|name| name.to_str()) == Some(key.as_str());
+    // `read_cached_entry` already proved the entry is named by its recomputed content key.
     let compiler_matches = descriptor
         .build_tools
         .iter()
         .find(|tool| tool.role == NATIVE_MOD_COMPILER_TOOL_ROLE)
         .is_some_and(|tool| tool.executable_sha256 == compiler_sha256);
-    if !named_by_key
-        || descriptor.package_id != req.package_id
+    if descriptor.package_id != req.package_id
         || descriptor.target_triple != req.runtime.target.triple.as_str()
         || descriptor.runtime.profile != req.runtime.profile
         || req.compiler_version.as_ref().is_some_and(|version| *version != descriptor.compiler_version)
@@ -1002,5 +1069,176 @@ impl beskid_analysis::mod_host::ContractInvoker for QualifiedModInvoker {
             )
         };
         run().map_err(|e| Self::error(r, e))
+    }
+}
+
+/// MOD-06-01 regression: a published cache entry changed after publication fails qualification
+/// closed on every target. Before this, qualification treated it as a stale miss, so the caller
+/// rebuilt and pruned it; the build then stopped only where the rebuild reproduced the original
+/// content key (Linux), and silently ran on a fresh artifact where it did not (Windows).
+#[cfg(test)]
+mod cache_integrity_v06_tests {
+    use super::*;
+    use beskid_analysis::mod_host::NativeModRuntimeBinding;
+
+    const TRIPLE: &str = "x86_64-unknown-linux-gnu";
+
+    fn descriptor(files: BTreeMap<String, String>) -> ModArtifactDescriptor {
+        ModArtifactDescriptor {
+            schema_version: NATIVE_MOD_DESCRIPTOR_SCHEMA,
+            artifact_kind: "executable-shared-library".into(),
+            host_abi_version: 2,
+            package_id: "DemoMod".into(),
+            package_version: None,
+            mod_source_hash: "0".repeat(64),
+            lock_hash: "0".repeat(64),
+            sdk_schema_sha256: "0".repeat(64),
+            sdk_source_sha256: "0".repeat(64),
+            target_triple: TRIPLE.into(),
+            compiler_version: "0.6.0".into(),
+            executable_file: "libmod.so".into(),
+            discriminator_symbol: "beskid_mod_discriminator".into(),
+            registrations: Vec::new(),
+            callables: BTreeMap::new(),
+            files,
+            source_files: BTreeMap::new(),
+            sdk_files: BTreeMap::new(),
+            dependency_sources: BTreeMap::new(),
+            build_tools: Vec::new(),
+            runtime: NativeModRuntimeBinding {
+                profile: RuntimeKitProfile::Debug,
+                abi_metadata_sha256: "0".repeat(64),
+                provider_manifest_sha256: "0".repeat(64),
+                runtime_source_sha256: "0".repeat(64),
+                issuer_source_sha256: "0".repeat(64),
+                shared_library_sha256: "0".repeat(64),
+            },
+            artifact_key: String::new(),
+            artifact_dir: PathBuf::new(),
+        }
+    }
+
+    /// Publish one entry the way the producer does: content-addressed directory, inventory of
+    /// every file, descriptor sidecar. Returns the sidecar path.
+    fn publish(workspace: &Path) -> PathBuf {
+        let stage = workspace.join("stage");
+        fs::create_dir_all(stage.join("sdk")).unwrap();
+        fs::write(stage.join("libmod.so"), b"\x7fELF producer image").unwrap();
+        fs::write(stage.join("sdk/schema.json"), b"{}").unwrap();
+        let descriptor = descriptor(mod_artifact_inventory(&stage).unwrap());
+        let key = native_mod_artifact_key(&descriptor).unwrap();
+        let final_dir = mod_artifact_dir(workspace, "DemoMod", &key, TRIPLE);
+        fs::create_dir_all(final_dir.parent().unwrap()).unwrap();
+        fs::rename(&stage, &final_dir).unwrap();
+        let sidecar = final_dir.join(NATIVE_MOD_DESCRIPTOR_FILE);
+        fs::write(&sidecar, serde_json::to_vec_pretty(&descriptor).unwrap()).unwrap();
+        sidecar
+    }
+
+    fn edit_descriptor(sidecar: &Path, edit: impl FnOnce(&mut serde_json::Value)) {
+        let mut value: serde_json::Value = serde_json::from_slice(&fs::read(sidecar).unwrap()).unwrap();
+        edit(&mut value);
+        fs::write(sidecar, serde_json::to_vec_pretty(&value).unwrap()).unwrap();
+    }
+
+    fn classify(sidecar: &Path) -> AotResult<CachedEntry> {
+        // No runtime kit lives here, so an untouched entry can only be stale, never intact.
+        read_cached_entry(sidecar, "DemoMod", Path::new("/nonexistent-runtime-kit"))
+    }
+
+    fn integrity_error(result: AotResult<CachedEntry>) -> String {
+        match result {
+            Err(error) => error.to_string(),
+            Ok(CachedEntry::Intact(_)) => panic!("tampered entry qualified as intact"),
+            Ok(CachedEntry::Stale) => panic!("tampered entry treated as a stale miss"),
+            Ok(CachedEntry::Vanished) => panic!("tampered entry treated as vanished"),
+        }
+    }
+
+    #[test]
+    fn v06_untouched_entry_bound_to_another_runtime_is_stale() {
+        let root = tempfile::tempdir().unwrap();
+        let sidecar = publish(root.path());
+        assert!(matches!(classify(&sidecar).unwrap(), CachedEntry::Stale));
+    }
+
+    #[test]
+    fn v06_corrupted_image_with_relabeled_descriptor_digest_fails_closed() {
+        let root = tempfile::tempdir().unwrap();
+        let sidecar = publish(root.path());
+        let image = sidecar.parent().unwrap().join("libmod.so");
+        let corrupted = vec![0x4b_u8; 64];
+        fs::write(&image, &corrupted).unwrap();
+        let digest = format!("{:x}", Sha256::digest(&corrupted));
+        edit_descriptor(&sidecar, |value| value["files"]["libmod.so"] = serde_json::Value::String(digest));
+        let message = integrity_error(classify(&sidecar));
+        assert!(message.contains("DemoMod") && message.contains("integrity"), "{message}");
+        assert!(message.contains("content-addressed directory"), "{message}");
+        assert_eq!(fs::read(&image).unwrap(), corrupted, "the tampered entry is left in place");
+    }
+
+    #[test]
+    fn v06_corrupted_image_under_untouched_descriptor_fails_closed() {
+        let root = tempfile::tempdir().unwrap();
+        let sidecar = publish(root.path());
+        fs::write(sidecar.parent().unwrap().join("libmod.so"), b"\x7fELF swapped image").unwrap();
+        let message = integrity_error(classify(&sidecar));
+        assert!(message.contains("recorded inventory"), "{message}");
+    }
+
+    #[test]
+    fn v06_unlisted_file_in_published_entry_fails_closed() {
+        let root = tempfile::tempdir().unwrap();
+        let sidecar = publish(root.path());
+        fs::write(sidecar.parent().unwrap().join("injected.dll"), b"MZ").unwrap();
+        let message = integrity_error(classify(&sidecar));
+        assert!(message.contains("recorded inventory"), "{message}");
+    }
+
+    #[test]
+    fn v06_unparseable_descriptor_fails_closed() {
+        let root = tempfile::tempdir().unwrap();
+        let sidecar = publish(root.path());
+        fs::write(&sidecar, b"{\"schemaVersion\": 3, \"files\": ").unwrap();
+        integrity_error(classify(&sidecar));
+    }
+
+    #[test]
+    fn v06_other_descriptor_schema_is_stale_and_missing_sidecar_vanished() {
+        let root = tempfile::tempdir().unwrap();
+        let sidecar = publish(root.path());
+        edit_descriptor(&sidecar, |value| value["schemaVersion"] = serde_json::json!(NATIVE_MOD_DESCRIPTOR_SCHEMA - 1));
+        assert!(matches!(classify(&sidecar).unwrap(), CachedEntry::Stale));
+        fs::remove_file(&sidecar).unwrap();
+        assert!(matches!(classify(&sidecar).unwrap(), CachedEntry::Vanished));
+    }
+
+    #[test]
+    fn v06_qualification_reports_tampered_entry_instead_of_a_miss() {
+        let root = tempfile::tempdir().unwrap();
+        let sidecar = publish(root.path());
+        let image = sidecar.parent().unwrap().join("libmod.so");
+        fs::write(&image, b"tampered").unwrap();
+        let request = CachedModArtifactRequest {
+            workspace_root: root.path().to_path_buf(),
+            project_root: root.path().to_path_buf(),
+            manifest_path: root.path().join("DemoMod.bproj"),
+            source_root: root.path().join("Src"),
+            package_id: "DemoMod".into(),
+            dependency_sources: BTreeMap::new(),
+            compiler_version: None,
+            compiler_executable: std::env::current_exe().unwrap(),
+            runtime: RuntimeKitRequest {
+                prefix: PathBuf::from("/nonexistent-runtime-kit"),
+                target: beskid_abi::abi_v5::TargetMetadata::for_triple(TRIPLE).unwrap(),
+                profile: RuntimeKitProfile::Debug,
+            },
+        };
+        let error = match qualify_cached_mod_artifact(&request) {
+            Err(error) => error.to_string(),
+            Ok(found) => panic!("tampered entry must not qualify or miss, got hit={}", found.is_some()),
+        };
+        assert!(error.contains("integrity"), "{error}");
+        assert_eq!(fs::read(&image).unwrap(), b"tampered", "qualification never rewrites the entry");
     }
 }

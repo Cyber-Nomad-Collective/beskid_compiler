@@ -756,10 +756,15 @@ fn current_or_built_mod_artifact(
     // The producer identity is captured before any work, so a CLI replaced mid-build fails clearly.
     let producer = beskid_aot::ModProducerIdentity::capture().map_err(anyhow::Error::from)?;
     let cache = cached_mod_request(resolved_mod, None, runtime, &producer)?;
-    if let Some(current) = beskid_aot::qualify_cached_mod_artifact(&cache).map_err(anyhow::Error::from)? {
+    // Lock-free, this read may observe a cooperating publisher's prune; an integrity failure is
+    // decided only by the qualification under the package cache lock below.
+    let unlocked = beskid_aot::qualify_cached_mod_artifact(&cache);
+    if let Ok(Some(current)) = unlocked {
         return Ok(current);
     }
     if let Some(prefix) = installed_toolchain_prefix_of(&resolved_mod.plan.manifest_path) {
+        // An installed prefix is immutable and never pruned, so its integrity failure is final.
+        unlocked.map_err(anyhow::Error::from)?;
         anyhow::bail!(
             "the installed toolchain at {} ships Corelib Mod `{}` prebuilt, but has no current artifact for this \
              `beskid` ({}), target {} and the {:?} runtime kit; an installed toolchain is never modified, so the \
