@@ -14,24 +14,24 @@ pub(in crate::semantic_contract) enum CapturesBound {
     NotMarker(Option<String>),
 }
 
-/// The `[Captures]` bound among `attributes`, written in the unit of `key`.
-pub(in crate::semantic_contract) fn captures_bound(
+/// The `[Captures]` bound among `attributes`, written in the unit of `key`, and its attribute use.
+pub(in crate::semantic_contract) fn captures_bound<'a>(
     db: &dyn Db,
     key: AstNodeKey,
-    attributes: &[beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Attribute>],
-) -> Option<(CapturesBound, beskid_analysis::syntax::AstNodeId)> {
+    attributes: &'a [beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Attribute>],
+) -> Option<(CapturesBound, &'a beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Attribute>)> {
     let attribute = recognized_attribute_use(db, key, attributes, "Captures")?;
     let Some(argument) = attribute.node.arguments.iter().find(|argument| argument.node.name.node.name == "Bound") else {
-        return Some((CapturesBound::NotMarker(None), attribute.id));
+        return Some((CapturesBound::NotMarker(None), attribute));
     };
     let beskid_analysis::syntax::Expression::Path(path) = &argument.node.value.node else {
-        return Some((CapturesBound::NotMarker(Some("<expression>".to_owned())), attribute.id));
+        return Some((CapturesBound::NotMarker(Some("<expression>".to_owned())), attribute));
     };
     let spelling =
         path.node.path.node.segments.iter().map(|segment| segment.node.name.node.name.as_str()).collect::<Vec<_>>().join(".");
     let marker = super::super::contracts::resolve_contract(db, key, &path.node.path.node)
         .and_then(|contract| transfer_marker_contract(db, contract));
-    Some((marker.map_or(CapturesBound::NotMarker(Some(spelling)), CapturesBound::Marker), attribute.id))
+    Some((marker.map_or(CapturesBound::NotMarker(Some(spelling)), CapturesBound::Marker), attribute))
 }
 
 /// Read the syntax node of a declaration `key` in its own unit.

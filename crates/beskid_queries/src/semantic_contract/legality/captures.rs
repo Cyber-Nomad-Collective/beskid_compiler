@@ -12,7 +12,7 @@
 //! captures (E1235, E1236, E1237, E1241), a function item, a value read from a bounded parameter
 //! or field (or an immutable binding initialized only from one), or else E1238.
 
-use super::super::transfer::{TransferClass, TransferMarker, transfer_class, transfer_class_of_type};
+use super::super::transfer::{TransferClass, TransferMarker, indexed_site, transfer_class, transfer_class_of_type};
 use super::*;
 use beskid_analysis::syntax::AstNodeId;
 use beskid_analysis::syntax_query::DynNodeRef;
@@ -120,7 +120,7 @@ pub(super) fn captures_declaration_findings(db: &dyn Db, unit_root: AstNodeKey) 
         };
         findings.push(SemanticFinding {
             kind: SemanticIssueKind::CapturesBoundNotMarker { bound },
-            site: AstNodeKey { node: attribute, ..unit_root },
+            site: indexed_site(db, key, DynNodeRef::from(attribute)),
             related: Vec::new(),
         });
     };

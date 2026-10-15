@@ -294,7 +294,9 @@ feature area.
   workers, pipelines (`Source`/`Stage`/`Ordered`/`Sink`), and `ParallelSeq<T>`
   (`List<T>.Parallel()`, fused `Where`/`Map`, `Chunk`/`MinChunk`, adaptive
   heartbeat splitting, `Collect`/`ForEach`/`Count`/`Reduce`/`ReduceUnordered`
-  with the `Associative`/`Commutative` combiner contracts). A `Reduce` seed
+  with the `Associative`/`Commutative` combiner contracts). `Associative<T>`
+  declares `Combine`; `Commutative<T>` is a method-less marker, because a
+  member that two `where` bounds declare is ambiguous (E1250). A `Reduce` seed
   must be Shared or Copied.
 - Tests: `ParallelSuite` and the `compile-fail/parallel` corpus. Guide and
   cost table: `corelib/beskid_corelib/docs/Core/Parallel.md`.
@@ -326,6 +328,31 @@ feature area.
 
 ### Fixed
 
+- `beskid check` reports transfer and capture-bound findings on attributes,
+  fields, conformances and contract members (E1248, E1510, E1244, E1246,
+  E1247, E1607, E1003) at the span of that syntax. Before, a `[Captures]`
+  attribute on a parameter stopped the check with "semantic finding requires
+  its exact source span" and hid the other diagnostics.
+- Affine and staged-check rule fixes found by the Corelib audit: a `move`
+  parameter can be rebound (E1214); a consumption does not flow past a
+  `return`, `break` or `continue` on its path (E1234, E1240); an assignment
+  decides whether a local is owning (E1241); `exchange`, `__transfer_class<T>()`,
+  method-level generic parameters and imports used only by a `where` bound
+  resolve under `beskid check`.
+- Corelib packages follow the affine rules: byte builders, JSON, regex,
+  crypto, Bsol, TLS, HTTP/2, HTTP/3, QUIC, WebSocket and Glue store and hand
+  over owned buffers by `move`; `Slice.Set` stores in place and returns `unit`;
+  `Slice.Fill`, `Json.With` and `Json.Push` take their target by `move`.
+- `Core.Parallel` parses and resolves: no `scope` identifiers (a reserved
+  keyword), `[Captures]` bounds resolve through `use Core.Parallel`, and
+  `ParallelSeq` reads its source through `SeqSource<T>.At` instead of a
+  captured field (E1245).
+- Tests: the GC stress verify and skipped-barrier native-kit fixtures poison
+  the record header and allocate before the cycle starts; pacing tests run
+  without the debug quarantine; `DynamicTests`, `SchedulerTests` and
+  `GcTests` root their payloads and pass under
+  `BESKID_GC_STRESS=alloc:1,verify`. Collection tests are rewritten for
+  consuming `List` methods.
 - An unapplied generic enum constructor passed as a method argument
   (`holder.Pick(Maybe::None)`) takes its type application from the method
   parameter, as a module-function argument already did; it no longer stops

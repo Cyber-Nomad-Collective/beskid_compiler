@@ -8,7 +8,8 @@
 //! by the transfer class query, never here.
 use super::typing::nodes_of_kind;
 use super::*;
-use crate::semantic_contract::transfer::declared_field_class;
+use crate::semantic_contract::transfer::{declared_field_class, indexed_site};
+use beskid_analysis::syntax_query::DynNodeRef;
 use beskid_analysis::syntax::{ContractDefinition, ContractNode, ImplBlock, Path, Spanned, TypeDefinition};
 
 /// Whether the unit at `key` belongs to a `Core.*` module (corelib).
@@ -39,7 +40,7 @@ fn compiler_derived_contract(db: &dyn Db, key: AstNodeKey, path: &Path) -> Optio
 
 fn conformance_findings(db: &dyn Db, root: AstNodeKey, conformances: &[Spanned<Path>], findings: &mut Vec<SemanticFinding>) {
     for conformance in conformances {
-        let site = AstNodeKey { node: conformance.id, ..root };
+        let site = indexed_site(db, root, DynNodeRef::from(conformance));
         if let Some(contract) = compiler_derived_contract(db, site, &conformance.node) {
             findings.push(SemanticFinding {
                 kind: SemanticIssueKind::CompilerDerivedConformance { contract },
@@ -56,19 +57,19 @@ fn contract_findings(db: &dyn Db, key: AstNodeKey, definition: &ContractDefiniti
     if TransferMarker::from_name(&contract).is_none() {
         findings.push(SemanticFinding {
             kind: SemanticIssueKind::CompilerDerivedNotMarker { contract: contract.clone() },
-            site: AstNodeKey { node: attribute.id, ..key },
+            site: indexed_site(db, key, DynNodeRef::from(attribute)),
             related: Vec::new(),
         });
     }
     for item in &definition.items {
         let (member, id) = match &item.node {
-            ContractNode::MethodSignature(signature) => (signature.node.name.node.name.clone(), signature.id),
-            ContractNode::Embedding(embedding) => (embedding.node.name.node.name.clone(), embedding.id),
-            ContractNode::AssociatedType(associated) => (associated.node.name.node.name.clone(), associated.id),
+            ContractNode::MethodSignature(signature) => (signature.node.name.node.name.clone(), DynNodeRef::from(signature)),
+            ContractNode::Embedding(embedding) => (embedding.node.name.node.name.clone(), DynNodeRef::from(embedding)),
+            ContractNode::AssociatedType(associated) => (associated.node.name.node.name.clone(), DynNodeRef::from(associated)),
         };
         findings.push(SemanticFinding {
             kind: SemanticIssueKind::DerivedContractMember { contract: contract.clone(), member },
-            site: AstNodeKey { node: id, ..key },
+            site: indexed_site(db, key, id),
             related: Vec::new(),
         });
     }
@@ -111,7 +112,7 @@ fn type_findings(db: &dyn Db, key: AstNodeKey, definition: &TypeDefinition, find
             continue;
         };
         let field_name = field.node.name.node.name.clone();
-        let field_site = AstNodeKey { node: field.id, ..key };
+        let field_site = indexed_site(db, key, DynNodeRef::from(field));
         if never_cause(&class) {
             findings.push(SemanticFinding {
                 kind: SemanticIssueKind::MarkerOnNeverTransferable {
@@ -183,7 +184,7 @@ pub fn transfer_declaration_findings(db: &dyn Db, root: AstNodeKey) -> Vec<Seman
             if let Some(attribute) = recognized_attribute_use(db, key, &definition.attributes, "ScopeBorrowed") {
                 findings.push(SemanticFinding {
                     kind: SemanticIssueKind::CorelibOnlyAttribute { attribute: "ScopeBorrowed".to_owned() },
-                    site: AstNodeKey { node: attribute.id, ..key },
+                    site: indexed_site(db, key, DynNodeRef::from(attribute)),
                     related: Vec::new(),
                 });
             }
@@ -197,7 +198,7 @@ pub fn transfer_declaration_findings(db: &dyn Db, root: AstNodeKey) -> Vec<Seman
             if let Some(attribute) = recognized_attribute_use(db, key, &field.attributes, "ImmutableStorage") {
                 findings.push(SemanticFinding {
                     kind: SemanticIssueKind::CorelibOnlyAttribute { attribute: "ImmutableStorage".to_owned() },
-                    site: AstNodeKey { node: attribute.id, ..key },
+                    site: indexed_site(db, key, DynNodeRef::from(attribute)),
                     related: Vec::new(),
                 });
             }

@@ -217,6 +217,29 @@ pub(in crate::semantic_contract) fn recognized_attribute_use<'a>(
     })
 }
 
+/// The indexed node of `target`, a syntax value borrowed from the expanded program of `owner`'s
+/// unit at or below `owner` (an attribute, field, conformance or contract member). Expanded
+/// syntax values carry no identity of their own (`Spanned::id` stays unset), so a finding site is
+/// found through the syntax index; `owner` itself when `target` is not below it.
+pub(in crate::semantic_contract) fn indexed_site(
+    db: &dyn Db,
+    owner: AstNodeKey,
+    target: beskid_analysis::syntax_query::DynNodeRef<'_>,
+) -> AstNodeKey {
+    let Some(syntax) = db.syntax_unit(owner.unit).filter(|syntax| syntax.accepts_key(db, owner)) else { return owner };
+    let index = syntax.syntax_index(db);
+    let program = syntax.expanded_program(db);
+    let wanted = std::ptr::from_ref(target.0).cast::<()>();
+    let mut pending = std::collections::VecDeque::from([owner.node]);
+    while let Some(node) = pending.pop_front() {
+        if index.node_at(program, node).is_some_and(|candidate| std::ptr::eq(std::ptr::from_ref(candidate.0).cast::<()>(), wanted)) {
+            return AstNodeKey { node, ..owner };
+        }
+        pending.extend(index.children(node).into_iter().flatten().copied());
+    }
+    owner
+}
+
 /// The marker attributes on a declaration, in source order.
 pub(in crate::semantic_contract) fn marker_attributes(
     db: &dyn Db,
@@ -231,7 +254,7 @@ pub(in crate::semantic_contract) fn marker_attributes(
                 .find(|marker| marker.name() == attribute.node.name.node.name)?;
             resolve_attribute_use(db, unit_root_of(key), marker.name())
                 .is_recognized()
-                .then_some((marker, AstNodeKey { node: attribute.id, ..key }))
+                .then(|| (marker, indexed_site(db, key, beskid_analysis::syntax_query::DynNodeRef::from(attribute))))
         })
         .collect()
 }
