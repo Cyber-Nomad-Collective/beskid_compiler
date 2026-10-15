@@ -227,11 +227,11 @@ mod tests {
     fn native_syntax_correspondence_rejects_lost_float_payload() {
         assert!(schema().to_source("f64", &Value::Null).is_err());
     }
-    fn identifiers(count: usize) -> Value {
+    fn type_parameters(count: usize) -> Value {
         Value::Array(
             (0..count)
                 .map(|index| {
-                    json!({"node":{"name":"i"},"span":{"start":0,"end":1,"line_col_start":[1,1],"line_col_end":[1,2]},"id":index})
+                    json!({"node":{"attributes":[],"name":"T"},"span":{"start":0,"end":1,"line_col_start":[1,1],"line_col_end":[1,2]},"id":index})
                 })
                 .collect(),
         )
@@ -241,13 +241,13 @@ mod tests {
     #[test]
     fn transport_list_budget_is_exact_at_65536_elements() {
         let schema = schema();
-        let exact = schema.to_source("SpannedIdentifierList", &identifiers(65536)).expect("65536 elements fit");
-        assert_eq!(schema.to_rust("SpannedIdentifierList", &exact).unwrap().as_array().unwrap().len(), 65536);
-        assert!(schema.to_source("SpannedIdentifierList", &identifiers(65537)).is_err());
+        let exact = schema.to_source("SpannedTypeParameterList", &type_parameters(65536)).expect("65536 elements fit");
+        assert_eq!(schema.to_rust("SpannedTypeParameterList", &exact).unwrap().as_array().unwrap().len(), 65536);
+        assert!(schema.to_source("SpannedTypeParameterList", &type_parameters(65537)).is_err());
         let mut over = exact;
         let first = over["items"][0].clone();
         over["items"].as_array_mut().unwrap().push(first);
-        assert!(schema.to_rust("SpannedIdentifierList", &over).is_err(), "SDK-to-host direction is bounded too");
+        assert!(schema.to_rust("SpannedTypeParameterList", &over).is_err(), "SDK-to-host direction is bounded too");
     }
 
     /// Correspondence recursion is bounded at depth 128: a deeply nested expression is
