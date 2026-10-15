@@ -1,0 +1,17 @@
+// A local annotated with a type parameter (`T held = value;`) takes its type from the
+// specialization, for a scalar and a string (0.5.4 regression b2ea9586).
+T Same<T>(T value) {
+    T held = value;
+    return held;
+}
+
+i32 Main() {
+    string text = Same("s");
+    if text != "s" {
+        return 1;
+    }
+    if Same(7_i64) != 7 {
+        return 2;
+    }
+    return 42;
+}

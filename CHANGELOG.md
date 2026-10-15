@@ -313,6 +313,17 @@ feature area.
 
 ### Fixed
 
+- An unapplied generic enum constructor passed as a method argument
+  (`holder.Pick(Maybe::None)`) takes its type application from the method
+  parameter, as a module-function argument already did; it no longer stops
+  lowering with a missing `CallExpression` rule.
+- A method call on a value of a type parameter that no `where` bound declares
+  (with or without bounds) is the check error E1250 instead of a lowering
+  internal error.
+- `fiber_spawn` (dead capture environment), `beskid_rt_v5_gc_same_identity`
+  (dead operand) and `beskid_rt_v5_gc_resolve_handle` (released or never-issued
+  handle) trap `invalid_or_stale_handle` with a diagnostic naming the service
+  instead of returning a substitute value.
 - A `match` scrutinee stays rooted while a `when` guard or a materialized string
   pattern (longer than 64 bytes) can collect. Before, a scrutinee that only the
   match referenced (`match Make() { ... }`) could be freed by a collection in a

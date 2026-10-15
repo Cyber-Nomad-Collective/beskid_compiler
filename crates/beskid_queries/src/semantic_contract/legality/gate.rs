@@ -86,6 +86,9 @@ pub enum GateObligationKind {
     UninferredTypeParameter { parameter: Arc<str> },
     /// E1102: a second `let` of the same name in one block, or a repeated parameter name.
     DuplicateLocal { name: Arc<str>, previous: SourceSpan },
+    /// E1250: a method call on a value of a type parameter whose `where` bounds declare no
+    /// method of that name.
+    GenericReceiverMethodUndeclared { method: Arc<str>, parameter: Arc<str> },
     /// E1610: a call whose concrete type does not satisfy a `where` bound of the callee.
     GenericBoundNotSatisfied { type_name: Arc<str>, contract_name: Arc<str>, reason: Option<Arc<str>> },
     /// E1232: a `clif { ... }` block the legacy `type_clif_block`, `type_clif_block_statement`,
@@ -208,6 +211,12 @@ pub fn check_gate_obligations(db: &dyn Db, items: &[AstNodeKey]) -> Vec<Semantic
                         type_name: type_name.to_string(),
                         contract_name: contract_name.to_string(),
                         reason: reason.as_deref().map(str::to_owned),
+                    }
+                }
+                GateObligationKind::GenericReceiverMethodUndeclared { method, parameter } => {
+                    SemanticIssueKind::GenericReceiverMethodUndeclared {
+                        method: method.to_string(),
+                        parameter: parameter.to_string(),
                     }
                 }
                 GateObligationKind::InvalidClifBlock { detail } => {

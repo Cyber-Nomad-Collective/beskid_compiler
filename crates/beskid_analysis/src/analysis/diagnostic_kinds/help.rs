@@ -324,6 +324,9 @@ impl SemanticIssueKind {
             Self::InjectInsideIsolateBody { field } => Some(format!(
                 "read `{field}` before the task starts and capture the value instead"
             )),
+            Self::GenericReceiverMethodUndeclared { method, parameter } => Some(format!(
+                "add a `where {parameter}: Contract` bound whose contract declares `{method}`"
+            )),
             Self::CompilerDerivedConformance { contract } => {
                 Some(format!("remove `{contract}` from the conformance list and use a marker attribute on the type"))
             }

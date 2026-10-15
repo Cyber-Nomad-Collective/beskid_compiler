@@ -1,0 +1,33 @@
+// A receiver typed by a where-bounded type parameter calls the bound contract's methods and
+// dispatches to each instantiation (0.5.4 regression 570fdd56).
+contract Sized { i64 Size(); }
+contract Scaled { i64 Scale(i64 factor); }
+
+type Box : Sized, Scaled {
+    i64 n,
+    pub i64 Size() { return this.n; }
+    pub i64 Scale(i64 factor) { return this.n * factor; }
+}
+
+type Bag : Sized {
+    i64 m,
+    pub i64 Size() { return 100; }
+}
+
+i64 SizeOf<T>(T value) where T: Sized {
+    return value.Size();
+}
+
+i64 Both<T>(T value) where T: Sized, T: Scaled {
+    return value.Size() + value.Scale(10);
+}
+
+i32 Main() {
+    if SizeOf<Box>(Box { n: 2 }) + SizeOf(Bag { m: 1 }) != 102 {
+        return 1;
+    }
+    if Both<Box>(Box { n: 3 }) != 33 {
+        return 2;
+    }
+    return 42;
+}

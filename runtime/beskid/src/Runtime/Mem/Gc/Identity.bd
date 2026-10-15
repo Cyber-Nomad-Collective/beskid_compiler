@@ -4,11 +4,18 @@ use Runtime.Mem.Gc.State;
 use Runtime.Mem.Gc.Marking;
 use Runtime.Bootstrap.Native;
 
-// 0 distinct; 1 identical; 2 invalid. Null is never a managed identity.
+// Service number for the not-live diagnostic; the same numbering as RootsHandles.bd.
+const LIVENESS_GC_SAME_IDENTITY = 11;
+
+// 0 distinct; 1 identical; 2 invalid. Null is never a managed identity. A non-null operand that
+// is not a live managed object (use after collection) traps `invalid_or_stale_handle`; it is never
+// reported as an invalid identity.
 [Export(Abi:"C", Symbol:"beskid_rt_v5_gc_same_identity")]
 pub word GcSameIdentity(pointer left, pointer right) {
     pointer heap = Heap();
     if heap == NativePointer(0) { return 2; }
+    RequireLiveManagedReference(left, LIVENESS_GC_SAME_IDENTITY);
+    RequireLiveManagedReference(right, LIVENESS_GC_SAME_IDENTITY);
     pointer leftObject = ManagedObjectForReference(heap, left);
     pointer rightObject = ManagedObjectForReference(heap, right);
     if leftObject == NativePointer(0) || rightObject == NativePointer(0) { return 2; }

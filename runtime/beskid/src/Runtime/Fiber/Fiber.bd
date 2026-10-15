@@ -1,8 +1,14 @@
 // Canonical Beskid fiber primitives.
 
-// Spawns a runtime-owned child with a source-described managed capture environment.
+// Service number for the not-live diagnostic; the same numbering as RootsHandles.bd.
+const LIVENESS_FIBER_SPAWN = 10;
+
+// Spawns a runtime-owned child with a source-described managed capture environment. A non-null
+// environment that is not a live managed object (use after collection) traps
+// `invalid_or_stale_handle` before any fiber state is created.
 [Export(Abi:"C", Symbol:"fiber_spawn")]
 pub i64 FiberSpawn(pointer entry, pointer argument) {
+    RequireLiveManagedReference(argument, LIVENESS_FIBER_SPAWN);
     pointer cancelSlot = SystemAllocate(8, 8);
     if cancelSlot == NativePointer(0) {
         return -1;
