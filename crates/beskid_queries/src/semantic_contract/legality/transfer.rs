@@ -286,7 +286,7 @@ fn context_node(
 }
 
 /// Whether passing the argument expression `argument` (an `Expression` node) to the call `call`
-/// binds it to a parameter declared `mut`.
+/// binds it to a parameter declared `mut` or `move`.
 fn passed_to_mut_parameter(
     db: &dyn Db,
     key: AstNodeKey,
@@ -308,7 +308,7 @@ fn passed_to_mut_parameter(
     } else {
         None
     };
-    parameter.is_some_and(|parameter| parameter.node.mutable)
+    parameter.is_some_and(|parameter| parameter.node.mutable || parameter.node.movable)
 }
 
 /// E1245 in the callable `item`: an assignment (`=`, `+=`, `-=`) whose target is a field of an

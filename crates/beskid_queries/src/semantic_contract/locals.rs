@@ -360,7 +360,8 @@ pub(super) fn local_declaration_is_mutable(
         return false;
     };
     node.of::<beskid_analysis::syntax::LetStatement>().is_some_and(|binding| binding.mutable)
-        || node.of::<beskid_analysis::syntax::Parameter>().is_some_and(|parameter| parameter.mutable)
+        // An owning (`move`) parameter belongs to the callee, which may grow or rebind it.
+        || node.of::<beskid_analysis::syntax::Parameter>().is_some_and(|parameter| parameter.mutable || parameter.movable)
 }
 
 pub(super) fn resolve_lexical_declaration(
