@@ -15,22 +15,7 @@ pub fn specialized_corelib_value_service_result(
     if beskid_abi::runtime_source::canonical_corelib_service_value_dispatch(service).is_none() {
         return Ok(None);
     }
-    let syntax = db
-        .syntax_unit(key.unit)
-        .filter(|syntax| syntax.accepts_key(db, key))
-        .ok_or_else(|| SemanticError::unavailable("corelib_value_service_result"))?;
-    let call = syntax
-        .syntax_index(db)
-        .node_at(syntax.expanded_program(db), key.node)
-        .and_then(|node| node.of::<beskid_analysis::syntax::CallExpression>())
-        .ok_or_else(|| SemanticError::unavailable("corelib_value_service_result"))?;
-    let beskid_analysis::syntax::Expression::Path(callee) = &call.callee.node else { return Ok(None) };
-    let [terminal] = callee.node.path.node.segments.as_slice() else { return Ok(None) };
-    let [argument] = terminal.node.type_args.as_slice() else { return Ok(None) };
-    let environment =
-        enclosing.substitutions.iter().map(|binding| (binding.parameter.as_ref(), binding.source_identity())).collect();
-    let source = generic_source_type_identity_with_substitutions(db, key, &argument.node, &environment)?;
-    let binding = GenericSubstitution::from_source("value", source.abi_type(), source);
+    let Some(binding) = specialized_builtin_type_argument(db, key, Some(enclosing))? else { return Ok(None) };
     if binding.argument == SemanticTypeId::POINTER
         && binding.managed_reference_kind() != ManagedReferenceKind::GcManaged
     {
@@ -39,6 +24,35 @@ pub fn specialized_corelib_value_service_result(
         ));
     }
     Ok(Some(binding))
+}
+
+/// The single explicit type argument of a one-segment builtin call (`__isolate_spawn<T>(..)`,
+/// `__transfer_class<T>()`), interpreted in `enclosing` when the call sits in a specialized
+/// body and at the call site otherwise.
+pub fn specialized_builtin_type_argument(
+    db: &dyn Db,
+    key: AstNodeKey,
+    enclosing: Option<&GenericSpecializationInstance>,
+) -> SemanticQueryResult<GenericSubstitution> {
+    let syntax = db
+        .syntax_unit(key.unit)
+        .filter(|syntax| syntax.accepts_key(db, key))
+        .ok_or_else(|| SemanticError::unavailable("builtin_type_argument"))?;
+    let call = syntax
+        .syntax_index(db)
+        .node_at(syntax.expanded_program(db), key.node)
+        .and_then(|node| node.of::<beskid_analysis::syntax::CallExpression>())
+        .ok_or_else(|| SemanticError::unavailable("builtin_type_argument"))?;
+    let beskid_analysis::syntax::Expression::Path(callee) = &call.callee.node else { return Ok(None) };
+    let [terminal] = callee.node.path.node.segments.as_slice() else { return Ok(None) };
+    let [argument] = terminal.node.type_args.as_slice() else { return Ok(None) };
+    let environment = enclosing
+        .map(|enclosing| {
+            enclosing.substitutions.iter().map(|binding| (binding.parameter.as_ref(), binding.source_identity())).collect()
+        })
+        .unwrap_or_default();
+    let source = generic_source_type_identity_with_substitutions(db, key, &argument.node, &environment)?;
+    Ok(Some(GenericSubstitution::from_source("value", source.abi_type(), source)))
 }
 
 /// Materialize a call-owned specialization with its deterministic emitted declaration identity.

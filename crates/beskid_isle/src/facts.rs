@@ -9,7 +9,7 @@ mod operations;
 
 pub use call_shapes::{
     CallImportError, DirectCallee, FunctionItemValue, FunctionValueCall, InlineCaptureField, InlineClosureEnvironment,
-    InlineLambdaCall, LambdaEntry,
+    InlineLambdaCall, IsolateSpawnCall, LambdaEntry,
     SpawnArgumentEnvironment, SpawnArgumentField, SpawnEntry, TracedFiberJoinLayout,
 };
 pub use catalogue::{

@@ -296,6 +296,14 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
         self.traced_channel_send_layout_impl(key)
     }
 
+    fn isolate_spawn_call(&self, key: AstNodeKey) -> Option<beskid_isle::IsolateSpawnCall> {
+        self.isolate_spawn_call_impl(key)
+    }
+
+    fn transfer_class_constant(&self, key: AstNodeKey) -> Option<i64> {
+        self.transfer_class_constant_impl(key)
+    }
+
     fn lambda_entry(&self, key: AstNodeKey) -> Option<beskid_isle::LambdaEntry> {
         self.lambda_entry_impl(key)
     }

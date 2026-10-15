@@ -142,7 +142,7 @@ pub use semantic_contract::{
     parameter_generic_reference, pattern_binding_specialization, primitive_numeric_conversion, range_for_fact,
     reachable_items, resolved_item, resolved_local, runtime_intrinsic, runtime_intrinsic_name, scoped_cleanup,
     spawn_entry_validation, spawn_handle_type, spawn_legality, spawn_target,
-    specialized_call_result_managed_reference_kind, specialized_corelib_value_service_result, test_item,
+    specialized_call_result_managed_reference_kind, specialized_builtin_type_argument, specialized_corelib_value_service_result, test_item,
     test_statement_nodes, specialized_try_expression_fact, try_expression_fact, try_expression_judgement, try_expression_legality, typed_array_allocation, value_abi_type,
 };
 pub use semantic_contract::{

@@ -221,7 +221,7 @@ use typing::{
 
 pub use abi::{
     generic_call_specialization_in_environment, generic_call_specialization_instance, generic_specialization_instance,
-    specialized_corelib_value_service_result,
+    specialized_builtin_type_argument, specialized_corelib_value_service_result,
 };
 pub use calls::{
     ExternContractImport, extern_contract_declarations_in_unit, extern_contract_import_for_declaration,

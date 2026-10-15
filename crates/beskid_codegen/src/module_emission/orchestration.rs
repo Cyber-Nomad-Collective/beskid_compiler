@@ -19,8 +19,9 @@ use super::optional_externs::emit_optional_extern_support;
 use super::items::{ResolvedSyntaxModuleItem, SyntaxModuleItem};
 use super::specialization::resolve_module_items;
 use super::trampolines::{
-    SchedulerCompletionTransfer, conservative_fiber_stack_requirement, emit_scheduler_fiber_entry,
-    emit_scheduler_return_trampoline, emit_spawn_trampoline, expand_direct_spawn_items, resolve_lambda_trampolines,
+    ISOLATE_ENTRY_SYMBOL_PREFIX, SchedulerCompletionTransfer, conservative_fiber_stack_requirement,
+    emit_isolate_entry_trampoline, emit_scheduler_fiber_entry, emit_scheduler_return_trampoline, emit_spawn_trampoline,
+    expand_direct_spawn_items, resolve_isolate_entry_trampolines, resolve_lambda_trampolines,
     resolve_spawn_trampolines,
 };
 use crate::aggregate_static::{ABI_V5_MANAGED_OBJECT_ALLOCATE, emit_aggregate_static_data};
@@ -226,6 +227,12 @@ fn lower_resolved_syntax_program(
             .iter()
             .map(|trampoline| (DirectCallee::lambda_trampoline(trampoline.lambda), trampoline.symbol.clone())),
     );
+    let isolate_trampolines = resolve_isolate_entry_trampolines(input, isa, items)?;
+    symbols.extend(isolate_trampolines.iter().map(|trampoline| {
+        (DirectCallee::isolate_entry_trampoline(trampoline.result, trampoline.managed), trampoline.symbol.clone())
+    }));
+    // Spawn and isolate entry trampolines both ask the scheduler for fiber stack.
+    let enters_fibers = !trampolines.is_empty() || !isolate_trampolines.is_empty();
 
     // The scheduler entry symbols (context, set/current fiber, context switch, fiber record) are
     // required only when this emission slice includes scheduler implementation items. Canonical
@@ -262,7 +269,7 @@ fn lower_resolved_syntax_program(
             symbol("FiberRecord").ok_or_else(|| emission_verification("canonical FiberRecord item unavailable"))?,
             symbol("FiberDone").ok_or_else(|| emission_verification("canonical FiberDone item unavailable"))?,
         );
-        let stack = if trampolines.is_empty() {
+        let stack = if !enters_fibers {
             None
         } else {
             Some((
@@ -359,8 +366,8 @@ fn lower_resolved_syntax_program(
         functions.push(crate::LoweredFunction { name: trampoline.symbol.clone(), function });
     }
     functions.extend(super::parallel::emit_module_items(input, isa, items, &symbols, &mut context)?);
-    let imports_scheduler_stack = !trampolines.is_empty() && scheduler_symbols.and_then(|(_, stack)| stack).is_none();
-    if !trampolines.is_empty() {
+    let imports_scheduler_stack = enters_fibers && scheduler_symbols.and_then(|(_, stack)| stack).is_none();
+    if enters_fibers {
         let (stack_check, stack_overflow) = scheduler_symbols
             .and_then(|(_, stack)| stack)
             .unwrap_or((ABI_V5_SCHEDULER_STACK_CHECK, ABI_V5_SCHEDULER_STACK_OVERFLOW_OBSERVED));
@@ -376,6 +383,12 @@ fn lower_resolved_syntax_program(
             functions.push(crate::LoweredFunction {
                 name: trampoline.symbol.clone(),
                 function: emit_spawn_trampoline(trampoline, isa, required, stack_check, stack_overflow)?,
+            });
+        }
+        for trampoline in &isolate_trampolines {
+            functions.push(crate::LoweredFunction {
+                name: trampoline.symbol.clone(),
+                function: emit_isolate_entry_trampoline(trampoline, isa, stack_check, stack_overflow)?,
             });
         }
     }
@@ -576,6 +589,7 @@ fn lower_resolved_syntax_program(
         });
     }
     aggregate_static_plans.extend(trampolines.iter().map(|trampoline| trampoline.result_plan.clone()));
+    aggregate_static_plans.extend(isolate_trampolines.iter().map(|trampoline| trampoline.result_plan.clone()));
     aggregate_static_plans.extend(trampolines.iter().filter_map(|trampoline| trampoline.argument_plan.clone()));
     for trampoline in &trampolines {
         aggregate_static_plans.push(
@@ -588,6 +602,7 @@ fn lower_resolved_syntax_program(
     if trampolines
         .iter()
         .any(|trampoline| !trampoline.result_plan.pointer_map_offsets.is_empty() || trampoline.argument_plan.is_some())
+        || isolate_trampolines.iter().any(|trampoline| trampoline.managed)
     {
         for symbol in ["gc_register_root", "gc_unregister_root"] {
             if !extern_imports.iter().any(|existing| existing.symbol == symbol) {
@@ -688,6 +703,7 @@ pub fn emit_syntax_program<M: Module>(
     let mut by_symbol = HashMap::with_capacity(artifact.functions.len());
     for lowered in &artifact.functions {
         let item_linkage = if lowered.name.starts_with("__beskid_spawn_entry_syntax_")
+            || lowered.name.starts_with(ISOLATE_ENTRY_SYMBOL_PREFIX)
             || lowered.name.starts_with("__beskid_scheduler_")
         {
             Linkage::Local

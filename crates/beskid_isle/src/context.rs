@@ -16,7 +16,8 @@ use crate::dispatch;
 use crate::errors::{FunctionEmissionError, LoweringError, LoweringErrorKind, StringMaterializationError};
 use crate::facts::{
     AssignmentKind, AstNodeKey, CallImportError, CallKind, CollectionMutationOwner, CollectionOperation, DirectCallee,
-    EventHandlerLocalPlan, EventOperation, ForIterableKind, IndexTarget, InlineClosureEnvironment, LiteralKind,
+    EventHandlerLocalPlan, EventOperation, ForIterableKind, IndexTarget, InlineClosureEnvironment, IsolateSpawnCall,
+    LiteralKind,
     LocalSlotId, ManagedReferenceFact, MatchArmBindingFact, MatchArmFact, MatchPayloadPatternFact, NodeFacts, NodeKind,
     OperatorFact, RuntimeIntrinsicKind, Unit,
 };
