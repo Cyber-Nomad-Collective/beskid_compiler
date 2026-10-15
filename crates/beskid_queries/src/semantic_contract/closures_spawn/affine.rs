@@ -27,9 +27,76 @@ type BranchPath = Vec<(AstNodeId, AstNodeId)>;
 struct Owner {
     name: String,
     fiber: bool,
+    /// Owning at the declaration.
     owning: bool,
-    /// Prior consumptions: the branch path of the consuming use and its site.
-    consumed: Vec<(BranchPath, AstNodeId)>,
+    /// Assignments in source order: their branch path and whether the assigned value is owned.
+    /// The latest one on the path of a use decides whether the name is owning there.
+    assignments: Vec<(BranchPath, bool)>,
+    /// Prior consumptions, in source order.
+    consumed: Vec<Consumption>,
+}
+
+/// One consuming use: its branch path, its site, and the source ranges it does not reach.
+struct Consumption {
+    branches: BranchPath,
+    site: AstNodeId,
+    /// `[start, end)` byte ranges after a `return`, `break` or `continue` that follows the
+    /// consumption on its own path: a consumed state flows only along edges that do not diverge.
+    unreachable: Vec<(usize, usize)>,
+}
+
+/// How a statement leaves the straight-line flow of its block on every path.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Divergence {
+    /// Every path returns: control leaves the callable (or the enclosing lambda).
+    Return,
+    /// Every path leaves through `break`/`continue` of the innermost loop (or a `return`);
+    /// `continues` when some path starts the loop's next iteration.
+    Loop { continues: bool },
+}
+
+impl Divergence {
+    /// Both arms of an `if`/`else` diverge: the weaker exit of the two.
+    fn join(self, other: Self) -> Self {
+        match (self, other) {
+            (Self::Return, Self::Return) => Self::Return,
+            (Self::Return, Self::Loop { continues }) | (Self::Loop { continues }, Self::Return) => Self::Loop { continues },
+            (Self::Loop { continues: left }, Self::Loop { continues: right }) => Self::Loop { continues: left || right },
+        }
+    }
+}
+
+fn statement_divergence(statement: &beskid_analysis::syntax::Statement) -> Option<Divergence> {
+    use beskid_analysis::syntax::Statement;
+    match statement {
+        Statement::Return(_) => Some(Divergence::Return),
+        Statement::Break(_) => Some(Divergence::Loop { continues: false }),
+        Statement::Continue(_) => Some(Divergence::Loop { continues: true }),
+        Statement::If(statement) => if_divergence(&statement.node),
+        _ => None,
+    }
+}
+
+fn if_divergence(statement: &beskid_analysis::syntax::IfStatement) -> Option<Divergence> {
+    let then = block_divergence(&statement.then_block.node)?;
+    let other = match &statement.else_branch.as_ref()?.node {
+        beskid_analysis::syntax::ElseBranch::Block(block) => block_divergence(&block.node)?,
+        beskid_analysis::syntax::ElseBranch::If(nested) => if_divergence(&nested.node)?,
+    };
+    Some(then.join(other))
+}
+
+fn block_divergence(block: &beskid_analysis::syntax::Block) -> Option<Divergence> {
+    block.statements.iter().find_map(|statement| statement_divergence(&statement.node))
+}
+
+/// Where control goes after a consumption that a diverging statement follows.
+#[derive(Default)]
+struct Exits {
+    unreachable: Vec<(usize, usize)>,
+    /// Loops around the diverging statements whose next iteration the consumption does not
+    /// reach: every loop a `return` leaves, the loop a `break` leaves.
+    exited: Vec<AstNodeId>,
 }
 
 /// Where a use sits, after `Expression` and grouping wrappers.
@@ -278,7 +345,7 @@ impl<'a> Analysis<'a> {
     }
 
     fn insert(&mut self, declaration: AstNodeId, name: String, fiber: bool, owning: bool) {
-        if self.owners.insert(declaration, Owner { name, fiber, owning, consumed: Vec::new() }).is_none() {
+        if self.owners.insert(declaration, Owner { name, fiber, owning, assignments: Vec::new(), consumed: Vec::new() }).is_none() {
             self.order.push(declaration);
         }
     }
@@ -436,12 +503,35 @@ impl<'a> Analysis<'a> {
                         continue;
                     }
                     let (path, _) = self.path_to_callable(node, declaration);
+                    let owned = self.assigned_value_is_owned(node);
                     if let Some(owner) = self.owners.get_mut(&declaration) {
-                        owner.consumed.retain(|(consumed, _)| !path.iter().all(|step| consumed.contains(step)));
+                        owner.consumed.retain(|consumption| !path.iter().all(|step| consumption.branches.contains(step)));
+                        owner.assignments.push((path, owned));
                     }
                 }
             }
         }
+    }
+
+    /// The value of the assignment `assignment` is owned (see [`Self::initializer_is_owned`]):
+    /// `buf = Join(buf, data)` makes a borrowed `mut` local owning, `buf = s.f` borrowed.
+    fn assigned_value_is_owned(&self, assignment: AstNodeId) -> bool {
+        self.index
+            .node_at(self.program, assignment)
+            .and_then(|node| node.of::<beskid_analysis::syntax::AssignExpression>())
+            .is_none_or(|syntax| self.initializer_is_owned(assignment, &syntax.value))
+    }
+
+    /// Whether the name is owning at a use on `branches`: the latest assignment whose arms
+    /// all enclose the use decides; an assignment in an arm the use is not inside does not
+    /// reach it on every path, so the earlier state stays.
+    fn owning_at(&self, owner: &Owner, branches: &BranchPath) -> bool {
+        owner
+            .assignments
+            .iter()
+            .rev()
+            .find(|(path, _)| path.iter().all(|step| branches.contains(step)))
+            .map_or(owner.owning, |(_, owned)| *owned)
     }
 
     fn enclosing_assignment(&self, node: AstNodeId) -> Option<AstNodeId> {
@@ -584,13 +674,83 @@ impl<'a> Analysis<'a> {
             .is_some()
     }
 
-    fn prior_consumption(&self, declaration: AstNodeId, branches: &BranchPath) -> Option<AstNodeId> {
-        self.owners.get(&declaration)?.consumed.iter().rev().find_map(|(prior, site)| {
-            let alternative = prior
+    /// The latest consumption that reaches a use at `position` on `branches`: not in an
+    /// alternative arm, and not cut off by a diverging statement between the two.
+    fn prior_consumption(&self, declaration: AstNodeId, branches: &BranchPath, position: usize) -> Option<AstNodeId> {
+        self.owners.get(&declaration)?.consumed.iter().rev().find_map(|consumption| {
+            let alternative = consumption
+                .branches
                 .iter()
                 .any(|(condition, arm)| branches.iter().any(|(other, other_arm)| condition == other && arm != other_arm));
-            (!alternative).then_some(*site)
+            let cut_off = consumption.unreachable.iter().any(|(start, end)| (*start..*end).contains(&position));
+            (!alternative && !cut_off).then_some(consumption.site)
         })
+    }
+
+    /// The diverging statements that follow `site` on its own path, innermost first: a
+    /// `return` ends the search (it leaves the callable or the enclosing lambda); a `break` or
+    /// `continue` cuts off the rest of its loop body and the search resumes after the loop.
+    fn exits_after(&self, site: AstNodeId) -> Exits {
+        let mut exits = Exits::default();
+        let Some(site_start) = self.span(site).map(|span| span.start) else { return exits };
+        let mut child = site;
+        while let Some(parent) = parent_node(self.index, child) {
+            if parent == self.key.node || self.index.kind(parent) == Some(NodeKind::LambdaExpression) {
+                break;
+            }
+            let divergence = self
+                .index
+                .node_at(self.program, parent)
+                .and_then(|node| node.of::<beskid_analysis::syntax::Block>())
+                .and_then(|block| {
+                    block
+                        .statements
+                        .iter()
+                        .filter(|statement| statement.span.end > site_start)
+                        .find_map(|statement| statement_divergence(&statement.node).map(|kind| (kind, statement.span.end)))
+                });
+            match divergence {
+                Some((Divergence::Return, end)) => {
+                    let boundary = nearest_ancestor(self.index, parent, |kind| kind == NodeKind::LambdaExpression)
+                        .filter(|lambda| *lambda != self.key.node && is_ancestor(self.index, self.key.node, *lambda))
+                        .unwrap_or(self.key.node);
+                    let boundary_end =
+                        if boundary == self.key.node { usize::MAX } else { self.span(boundary).map_or(usize::MAX, |span| span.end) };
+                    exits.unreachable.push((end, boundary_end));
+                    let mut current = parent;
+                    while let Some(lp) = self.innermost_loop(current) {
+                        exits.exited.push(lp);
+                        current = lp;
+                    }
+                    return exits;
+                }
+                Some((Divergence::Loop { continues }, end)) => {
+                    let Some(loop_node) = self.innermost_loop(parent) else { return exits };
+                    let loop_end = self.span(loop_node).map_or(usize::MAX, |span| span.end);
+                    exits.unreachable.push((end, loop_end));
+                    if !continues {
+                        exits.exited.push(loop_node);
+                    }
+                    child = loop_node;
+                }
+                None => child = parent,
+            }
+        }
+        exits
+    }
+
+    /// The innermost `while`/`for` around `node` inside this callable, not across a lambda.
+    fn innermost_loop(&self, node: AstNodeId) -> Option<AstNodeId> {
+        let mut current = node;
+        while let Some(parent) = parent_node(self.index, current) {
+            match self.index.kind(parent) {
+                Some(NodeKind::WhileStatement | NodeKind::ForStatement) => return Some(parent),
+                Some(NodeKind::LambdaExpression) => return None,
+                _ if parent == self.key.node => return None,
+                _ => current = parent,
+            }
+        }
+        None
     }
 
     fn exchange_call(&self, call: AstNodeId) -> bool {
@@ -709,12 +869,13 @@ impl<'a> Analysis<'a> {
         let (branches, loops) = self.path_to_callable(node, declaration);
         let crossing = self.lambda_crossing(node, declaration);
         let Some(owner) = self.owners.get(&declaration) else { return };
-        let (name, fiber, owning) = (owner.name.clone(), owner.fiber, owner.owning);
+        let (name, fiber, owning) = (owner.name.clone(), owner.fiber, self.owning_at(owner, &branches));
         if fiber {
             self.visit_fiber_use(node, declaration, segments, destination, explicit.then_some(move_node).flatten(), branches, &loops, crossing, &name);
             return;
         }
-        let prior = self.prior_consumption(declaration, &branches);
+        let position = self.span(node).map_or(0, |span| span.start);
+        let prior = self.prior_consumption(declaration, &branches, position);
         if let Some(prior) = prior {
             self.push(AffineFindingKind::UseAfterMove, node, &name, None, Some(prior), false);
             return;
@@ -782,10 +943,6 @@ impl<'a> Analysis<'a> {
                 self.push(AffineFindingKind::MoveOfNonOwningName, site, &name, None, None, false);
                 return;
             }
-            if role == Role::Return && crossing == LambdaCrossing::None {
-                // `return move x` leaves the callable: no later use is reachable on this path.
-                return;
-            }
             self.consume(declaration, site, &name, branches, &loops);
             return;
         }
@@ -800,9 +957,6 @@ impl<'a> Analysis<'a> {
             Role::Return | Role::OwningReceiver => {
                 if borrowed_here {
                     self.push(AffineFindingKind::BorrowEscapes, site, &name, None, Some(declaration), false);
-                } else if role == Role::Return && crossing == LambdaCrossing::None {
-                    // `return x` leaves the callable (`if failed { return x; }` keeps `x` live
-                    // after the branch).
                 } else {
                     self.consume(declaration, site, &name, branches, &loops);
                 }
@@ -820,16 +974,21 @@ impl<'a> Analysis<'a> {
         }
     }
 
+    /// Records a consumption. A diverging statement after it on its path (`return F(move x)`,
+    /// an arm that consumes then returns, `break` out of a loop) keeps the consumed state from
+    /// the code it cuts off and from the next iteration of the loops it leaves.
     fn consume(&mut self, declaration: AstNodeId, site: AstNodeId, name: &str, branches: BranchPath, loops: &[AstNodeId]) {
         let position = self.span(site).map_or(0, |span| span.end);
+        let exits = self.exits_after(site);
         if loops.iter().any(|lp| {
-            !self.revived_in_loop_body(*lp, declaration, position)
+            !exits.exited.contains(lp)
+                && !self.revived_in_loop_body(*lp, declaration, position)
                 && !self.revived_by_enclosing_assignment(*lp, declaration, site)
         }) {
             self.push(AffineFindingKind::MoveInLoopWithoutReassignment, site, name, None, None, false);
         }
         if let Some(owner) = self.owners.get_mut(&declaration) {
-            owner.consumed.push((branches, site));
+            owner.consumed.push(Consumption { branches, site, unreachable: exits.unreachable });
         }
     }
 
@@ -909,7 +1068,8 @@ impl<'a> Analysis<'a> {
     ) {
         let method = segments.get(1).map(String::as_str);
         let repeated = !loops.is_empty() || matches!(crossing, LambdaCrossing::Ordinary | LambdaCrossing::Bounded);
-        let prior = self.prior_consumption(declaration, &branches);
+        let position = self.span(node).map_or(0, |span| span.start);
+        let prior = self.prior_consumption(declaration, &branches, position);
         if prior.is_some() || (repeated && method != Some("Cancel")) {
             self.push(AffineFindingKind::UseAfterMove, node, name, None, prior, true);
             return;
@@ -920,8 +1080,10 @@ impl<'a> Analysis<'a> {
         if let Some(move_node) = move_node {
             self.push(AffineFindingKind::MoveOfNonOwningName, move_node, name, Some("Never".to_owned()), None, true);
         }
+        let site = move_node.unwrap_or(node);
+        let unreachable = self.exits_after(site).unreachable;
         if let Some(owner) = self.owners.get_mut(&declaration) {
-            owner.consumed.push((branches, move_node.unwrap_or(node)));
+            owner.consumed.push(Consumption { branches, site, unreachable });
         }
         // A local initializer transfers the join capability to the new binding.
         if method.is_none()

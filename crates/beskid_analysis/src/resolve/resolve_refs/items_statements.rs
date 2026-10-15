@@ -63,6 +63,11 @@ impl Resolver {
                 for generic in &def.node.generics {
                     self.insert_generic(&generic.node.name);
                 }
+                // A `where` bound names its contract like any type position, so an import it
+                // reaches (`use M as A; ... where R: A.Reader`) is used.
+                for bound in &def.node.where_bounds {
+                    self.resolve_type_path(&bound.contract);
+                }
                 if include_bodies {
                     self.push_scope();
                 }

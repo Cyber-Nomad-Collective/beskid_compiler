@@ -331,7 +331,13 @@ pub fn semantic_diagnostics_for_roots(
             let span = crate::node_span(db, finding.site)
                 .ok()
                 .flatten()
-                .ok_or_else(|| anyhow::anyhow!("semantic finding requires its exact source span"))?;
+                .ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "semantic finding {} at {} requires its exact source span",
+                        finding.kind.code(),
+                        crate::format_ast_node_key(db, finding.site)
+                    )
+                })?;
             findings.push(SemanticFactFinding { kind: finding.kind, unit, span });
         }
     }

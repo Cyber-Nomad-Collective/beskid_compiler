@@ -753,4 +753,50 @@ mod tests {
         let unused = unused_private_items(source);
         assert!(unused.iter().any(|message| message.contains("Plain")), "only [Extern] members are link symbols: {unused:?}");
     }
+
+    fn unused_imports_with_contract_module(source: &str) -> Vec<String> {
+        let reader = parse_program("pub contract Reader { }").expect("parse Sdk.Reader");
+        let entry = parse_program(source).expect("parse entry");
+        let mut resolver = Resolver::new();
+        resolver.collect_program_in_module(&reader, &["Sdk".to_owned(), "Reader".to_owned()], None);
+        let resolution = resolver.resolve_program(&entry).expect("resolve entry");
+        let mut context = RuleContext::new("test.bd", source, AnalysisOptions::default());
+        SemanticPipelineRule.check_unused_imports(&mut context, &entry, &resolution);
+        context
+            .diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.code.as_deref() == Some("W1503"))
+            .map(|diagnostic| diagnostic.message.clone())
+            .collect()
+    }
+
+    /// An import reached only by a function's `where` bound is used (serialization
+    /// `PrimitiveDecoders.bd`: `use Core.Serialization.Reader as ReaderApi; ... where R: ReaderApi.Reader`).
+    #[test]
+    fn function_where_bound_marks_its_import_used() {
+        let aliased = "use Sdk.Reader as ReaderApi; unit Run<R>(R reader) where R: ReaderApi.Reader { return; }";
+        assert!(unused_imports_with_contract_module(aliased).is_empty(), "aliased module import in a where bound");
+        let scoped = "use Sdk.Reader; unit Run<R>(R reader) where R: Reader { return; }";
+        assert!(unused_imports_with_contract_module(scoped).is_empty(), "imported contract in a where bound");
+        let unused = "use Sdk.Reader; unit Run<R>(R reader) { return; }";
+        assert_eq!(unused_imports_with_contract_module(unused), vec!["unused import `Sdk.Reader`"]);
+    }
+
+    /// `exchange(place, move value)` is a builtin call, not an unknown value.
+    #[test]
+    fn exchange_builtin_call_resolves_without_a_declaration() {
+        let source = "type S { u8[] b } u8[] Swap(S s, move u8[] n) { return exchange(s.b, move n); }";
+        let entry = parse_program(source).expect("parse entry");
+        let mut resolver = Resolver::new();
+        if let Err(errors) = resolver.resolve_program(&entry) {
+            panic!("exchange must resolve as the builtin: {errors:?}");
+        }
+        let intrinsic = "i64 Class<T>() { return __transfer_class<T>(); }";
+        if let Err(errors) = Resolver::new().resolve_program(&parse_program(intrinsic).expect("parse intrinsic")) {
+            panic!("__transfer_class<T>() must resolve as the intrinsic: {errors:?}");
+        }
+        let unknown = "unit Run() { Swap(1); return; }";
+        let entry = parse_program(unknown).expect("parse entry");
+        assert!(Resolver::new().resolve_program(&entry).is_err(), "an undeclared callee is still unknown");
+    }
 }
