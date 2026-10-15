@@ -54,3 +54,5 @@ mod string_index_places;
 mod support;
 #[path = "isle_adapter/waitgroup_conditions.rs"]
 mod waitgroup_conditions;
+#[path = "isle_adapter/write_barrier_emission.rs"]
+mod write_barrier_emission;

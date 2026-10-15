@@ -117,15 +117,8 @@ macro_rules! generated_composition_methods {
                             let target = *installed.get(usize::try_from(*slot).ok()?)?;
                             let byte_offset = i64::try_from(index.checked_mul(pointer.bytes() as usize)?).ok()?;
                             let address = self.builder.ins().iadd_imm_s(data, byte_offset);
+                            // Initialization store into the array allocated above: no barrier.
                             self.builder.ins().store(MemFlagsData::new(), target, address, 0);
-                            let barrier = self.import_runtime_helper(
-                                "beskid_rt_v5_array_write_barrier",
-                                &[pointer, pointer],
-                                Some(types::I8),
-                            )?;
-                            let call = self.builder.ins().call(barrier, &[array, target]);
-                            let published = self.builder.inst_results(call).first().copied()?;
-                            self.composition_failure_guard(site, container, published, 8)?;
                         }
                         array
                     } else {

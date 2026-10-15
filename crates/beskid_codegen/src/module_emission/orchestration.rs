@@ -415,6 +415,7 @@ fn lower_resolved_syntax_program(
         "gc_root_handle",
         "beskid_rt_v5_gc_resolve_handle",
         "gc_unroot_handle",
+        beskid_isle::GC_WRITE_BARRIER_SYMBOL,
     ] {
         let referenced = functions.iter().any(|function| {
             function.function.dfg.ext_funcs.iter().any(|(_, external)| {
@@ -612,7 +613,6 @@ fn lower_resolved_syntax_program(
             ABI_V5_ARRAY_ALLOCATE_ROOTED,
             ABI_V5_ARRAY_GROW_ROOTED,
             ABI_V5_ARRAY_CONSTRUCTION_FINISH,
-            "beskid_rt_v5_array_write_barrier",
         ] {
             if !extern_imports.iter().any(|existing| existing.symbol == symbol) {
                 extern_imports.push(ExternImport {
@@ -668,6 +668,7 @@ pub fn emit_syntax_program<M: Module>(
 ) -> Result<HashMap<DirectCallee, FuncId>, SyntaxModuleEmissionError> {
     let items = expand_direct_spawn_items(input, resolve_module_items(input, items)?)?;
     let artifact = lower_resolved_syntax_program(input, isa, &items)?;
+    super::data::declare_runtime_data_imports(module, &artifact)?;
     for plan in &artifact.closure_static_plans {
         emit_closure_static_data(module, plan)?;
     }

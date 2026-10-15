@@ -15,7 +15,7 @@ impl SyntaxNodeFacts<'_> {
                 let element_semantic = self.array_index_element_type_in_context(key)?;
                 let element_type = map_signature_type(self.isa?, element_semantic)?;
                 let stride = element_type.bytes();
-                Some(scalar_aware_array_layout(element_semantic, element_type, stride, 0, stride.ilog2() as u8))
+                Some(beskid_isle::ArrayLayout::new(element_type, stride, 0, stride.ilog2() as u8))
             })
     }
 

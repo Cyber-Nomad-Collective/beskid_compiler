@@ -36,6 +36,7 @@ mod roots;
 mod checked_allocation;
 mod spawn_arguments;
 mod strings;
+mod write_barrier;
 
 use operators::CompareOp;
 
