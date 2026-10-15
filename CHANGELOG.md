@@ -217,9 +217,18 @@ feature area.
   reading after a consuming use, storing a borrowed parameter, consuming in a
   loop without rebinding, and destructive reads without a canonical empty are
   errors. `x = f(move x)` rebinds `x`, also inside a branch of a loop body.
-  Struct and array literals consume an owning name without `move`. A `return`
-  leaves the callable, so `if failed { return x; }` keeps `x` live after the
-  branch. A `move` parameter is a mutable owner: it can be grown and rebound.
+  Struct and array literals consume an owning name without `move`. A consumed
+  state flows only along edges that do not diverge: a `return` after a
+  consumption (`if failed { return F(move x); }`) keeps `x` live after the
+  branch, `break` and `continue` cut off the rest of the loop body, and a
+  `return` or `break` exempts the loops it leaves from E1240. An assignment
+  decides whether a local is owning: `buf = Join(buf, data)` makes a local read
+  from a field owning. A `move` parameter is a mutable owner: it can be grown
+  and rebound, also under the staged mutability check (E1214).
+- `beskid check` knows the `exchange(place, move value)` builtin and the
+  `__transfer_class<T>()` intrinsic, sees a method's own generic parameters in
+  its signature (E1005), and counts an import reached only by a function
+  `where` bound as used (W1503).
 - `[Captures(Bound: C)]` on a function-typed parameter or field judges the
   captures of every lambda passed or assigned to it (E1235-E1238, E1241). A
   value read from a bounded parameter or field satisfies the same bound.
