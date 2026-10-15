@@ -723,18 +723,31 @@ fn cargo_failure_report(stdout: &[u8], stderr: &[u8]) -> String {
 /// Cargo merges ancestor `.cargo/config*` and honors `rust-toolchain*`; neither can be disabled
 /// by flags, so any such file above (or in) the staging directory fails the build before Cargo runs.
 fn reject_ambient_cargo_inputs(stage: &Path) -> AotResult<()> {
-    for directory in stage.ancestors() {
-        for relative in [".cargo/config", ".cargo/config.toml", "rust-toolchain", "rust-toolchain.toml"] {
-            let candidate = directory.join(relative);
-            if fs::symlink_metadata(&candidate).is_ok() {
-                return Err(invalid(format!(
-                    "Rust owner build rejected: ambient Cargo input {} would affect the owner build",
-                    candidate.display()
-                )));
-            }
+    for candidate in ambient_cargo_candidates(stage) {
+        if fs::symlink_metadata(&candidate).is_ok() {
+            return Err(invalid(format!(
+                "Rust owner build rejected: ambient Cargo input {} would affect the owner build",
+                candidate.display()
+            )));
         }
     }
     Ok(())
+}
+
+/// Every path Cargo would read as ancestor configuration or toolchain selection for a build in
+/// `stage`, from `stage` up to and including its root (`/`, `C:\`, `\\?\C:\`, `\\server\share\`).
+/// Each name is joined one component at a time, so no `/` separator is ever embedded in a Windows
+/// verbatim (`\\?\`) path, where it would be taken literally.
+fn ambient_cargo_candidates(stage: &Path) -> Vec<PathBuf> {
+    let mut candidates = Vec::new();
+    for directory in stage.ancestors() {
+        let cargo = directory.join(".cargo");
+        candidates.push(cargo.join("config"));
+        candidates.push(cargo.join("config.toml"));
+        candidates.push(directory.join("rust-toolchain"));
+        candidates.push(directory.join("rust-toolchain.toml"));
+    }
+    candidates
 }
 
 /// Deadline of one tool probe, inside the enclosing build budget.
@@ -828,11 +841,30 @@ fn probe_rust_tools(
     Ok(())
 }
 
+/// Temporary area the owner build stages in: the caller's declared temporary directory on every
+/// platform. Unix `temp_dir` already honors `TMPDIR`. On Windows `temp_dir` is `GetTempPath2W`,
+/// which ignores `TMP`/`TEMP` for processes running as `SYSTEM` (it returns
+/// `C:\Windows\SystemTemp`), so the CLI would stage outside the directory its environment names
+/// and the ancestor checks would walk a different tree than the caller declared. `TMP`, then `TEMP`,
+/// is the documented Windows lookup order; an empty or relative value is not a declaration.
+fn staging_area(tmp: Option<OsString>, temp: Option<OsString>, platform_default: PathBuf) -> PathBuf {
+    if cfg!(windows) {
+        for declared in [tmp, temp].into_iter().flatten() {
+            let declared = PathBuf::from(declared);
+            if declared.is_absolute() {
+                return declared;
+            }
+        }
+    }
+    platform_default
+}
+
 /// Private staging directory in the system temporary area, never inside the output directory or project.
 fn private_stage(output_parent: &Path) -> AotResult<(tempfile::TempDir, PathBuf)> {
+    let area = staging_area(std::env::var_os("TMP"), std::env::var_os("TEMP"), std::env::temp_dir());
     let stage = tempfile::Builder::new()
         .prefix("beskid-rust-owner-")
-        .tempdir_in(std::env::temp_dir())
+        .tempdir_in(area)
         .map_err(|e| invalid(e.to_string()))?;
     let canonical = fs::canonicalize(stage.path()).map_err(|e| invalid(e.to_string()))?;
     let output_parent = fs::canonicalize(output_parent).map_err(|e| invalid(e.to_string()))?;
@@ -1446,23 +1478,92 @@ mod tests {
     }
     #[test]
     fn rust_owner_rejects_ancestor_cargo_configuration() {
-        for file in [".cargo/config.toml", ".cargo/config", "rust-toolchain.toml", "rust-toolchain"] {
+        for file in [&[".cargo", "config.toml"][..], &[".cargo", "config"], &["rust-toolchain.toml"], &["rust-toolchain"]] {
             let temp = tempfile::tempdir().unwrap();
-            let stage = temp.path().join("a/b/stage");
+            let stage = temp.path().join("a").join("b").join("stage");
             fs::create_dir_all(&stage).unwrap();
             assert!(reject_ambient_cargo_inputs(&stage).is_ok());
-            let marker = temp.path().join("a").join(file);
+            let marker = file.iter().fold(temp.path().join("a"), |path, part| path.join(part));
             fs::create_dir_all(marker.parent().unwrap()).unwrap();
             fs::write(&marker, b"").unwrap();
             let error = reject_ambient_cargo_inputs(&stage).unwrap_err().to_string();
             assert!(error.contains(&marker.display().to_string()), "{error}");
         }
     }
+    /// The canonical stage is what `private_stage` checks; on Windows it carries the `\\?\` verbatim
+    /// prefix, where a joined `.cargo/config.toml` would name a file with a literal `/`.
+    #[test]
+    fn rust_owner_rejects_ancestor_cargo_configuration_above_canonical_stage() {
+        for file in [[".cargo", "config.toml"], [".cargo", "config"]] {
+            let temp = tempfile::tempdir().unwrap();
+            let stage = temp.path().join("a").join("b").join("stage");
+            fs::create_dir_all(&stage).unwrap();
+            let canonical = fs::canonicalize(&stage).unwrap();
+            assert!(reject_ambient_cargo_inputs(&canonical).is_ok());
+            let marker = temp.path().join("a").join(file[0]).join(file[1]);
+            fs::create_dir_all(marker.parent().unwrap()).unwrap();
+            fs::write(&marker, b"").unwrap();
+            let error = reject_ambient_cargo_inputs(&canonical).unwrap_err().to_string();
+            assert!(error.contains("ambient Cargo input"), "{error}");
+            let canonical_marker = fs::canonicalize(&marker).unwrap();
+            assert!(error.contains(&canonical_marker.display().to_string()), "{error}");
+        }
+    }
+    #[test]
+    fn rust_owner_ambient_candidates_reach_the_root() {
+        let root = std::env::temp_dir().ancestors().last().unwrap().to_path_buf();
+        let stage = root.join("x").join("y");
+        let candidates = ambient_cargo_candidates(&stage);
+        assert_eq!(candidates.len(), 3 * 4);
+        assert!(candidates.contains(&root.join(".cargo").join("config.toml")));
+        assert!(candidates.contains(&root.join(".cargo").join("config")));
+        assert!(candidates.contains(&root.join("rust-toolchain.toml")));
+        assert!(candidates.contains(&stage.join(".cargo").join("config")));
+    }
+    /// Windows path forms: a verbatim disk prefix walks to `\\?\C:\`, a plain drive to `C:\`,
+    /// a UNC share to its share root, and no candidate embeds a `/`.
+    #[cfg(windows)]
+    #[test]
+    fn rust_owner_ambient_candidates_cover_windows_path_forms() {
+        for (stage, root) in [
+            (r"\\?\C:\Windows\SystemTemp\beskid-rust-owner-1", r"\\?\C:\"),
+            (r"C:\Windows\SystemTemp\beskid-rust-owner-1", r"C:\"),
+            (r"\\?\UNC\server\share\t\beskid-rust-owner-1", r"\\?\UNC\server\share\"),
+            (r"\\server\share\t\beskid-rust-owner-1", r"\\server\share\"),
+        ] {
+            let candidates = ambient_cargo_candidates(Path::new(stage));
+            for name in [r".cargo\config.toml", r".cargo\config", "rust-toolchain", "rust-toolchain.toml"] {
+                let expected = PathBuf::from(format!("{root}{name}"));
+                assert!(candidates.contains(&expected), "{stage}: missing {}", expected.display());
+            }
+            assert!(candidates.iter().all(|path| !path.as_os_str().to_string_lossy().contains('/')), "{stage}");
+        }
+        assert_eq!(ambient_cargo_candidates(Path::new(r"\\?\C:\")).len(), 4);
+    }
+    #[test]
+    fn rust_owner_staging_area_follows_declared_temporary_directory() {
+        let fallback = std::env::temp_dir();
+        let declared = fallback.join("declared");
+        let other = fallback.join("other");
+        let staged = staging_area(Some(declared.clone().into()), Some(other.clone().into()), fallback.clone());
+        let staged_temp = staging_area(None, Some(other.clone().into()), fallback.clone());
+        let relative = staging_area(Some("relative".into()), Some("".into()), fallback.clone());
+        if cfg!(windows) {
+            assert_eq!(staged, declared);
+            assert_eq!(staged_temp, other);
+        } else {
+            assert_eq!(staged, fallback);
+            assert_eq!(staged_temp, fallback);
+        }
+        assert_eq!(relative, fallback);
+        assert_eq!(staging_area(None, None, fallback.clone()), fallback);
+    }
     #[test]
     fn rust_owner_stage_is_private_and_outside_output_directory() {
         let output = tempfile::tempdir().unwrap();
         let (stage, canonical) = private_stage(output.path()).unwrap();
-        assert!(canonical.starts_with(fs::canonicalize(std::env::temp_dir()).unwrap()));
+        let area = staging_area(std::env::var_os("TMP"), std::env::var_os("TEMP"), std::env::temp_dir());
+        assert!(canonical.starts_with(fs::canonicalize(area).unwrap()));
         assert!(!canonical.starts_with(fs::canonicalize(output.path()).unwrap()));
         drop(stage);
     }
