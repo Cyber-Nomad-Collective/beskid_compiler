@@ -65,8 +65,14 @@ impl<'a> MutabilityVisitor<'a> {
     }
 
     fn seed_parameters(&mut self, parameters: &[Spanned<Parameter>]) {
-        self.pending_parameters =
-            Some(parameters.iter().map(|param| (param.node.name.node.name.clone(), param.node.mutable)).collect());
+        // A `move` parameter is an owner the callable may rebind (growth, `buffer = Append(buffer, v)`);
+        // the grammar admits only one modifier, so `move` alone makes the binding assignable.
+        self.pending_parameters = Some(
+            parameters
+                .iter()
+                .map(|param| (param.node.name.node.name.clone(), param.node.mutable || param.node.movable))
+                .collect(),
+        );
     }
 
     fn lookup_mutability(&self, name: &str) -> Option<bool> {
@@ -224,6 +230,13 @@ mod tests {
              test t {{ mut i64 n = 0; while n < 3 {{ n = n + 1; }} }}"
         );
         assert!(immutable_assignment_names(&src).is_empty());
+    }
+
+    /// A `move` parameter is a rebindable owner (v0.6.2 growth: `out = Append(out, v)`).
+    #[test]
+    fn move_parameters_may_be_reassigned() {
+        let src = "u8[] Grow(move u8[] out) { out = out; while true { out = out; } return out; }";
+        assert!(immutable_assignment_names(src).is_empty(), "{:?}", immutable_assignment_names(src));
     }
 
     #[test]
