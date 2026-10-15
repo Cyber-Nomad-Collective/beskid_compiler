@@ -94,12 +94,12 @@ fn type_findings(db: &dyn Db, key: AstNodeKey, definition: &TypeDefinition, find
         });
     }
     let Some(&(marker, marker_site)) = markers.first() else { return };
-    if has_recognized_attribute(db, key, &definition.attributes, "NeverTransferable") {
+    if let Some(cause) = never_transferable_cause(db, key, &definition.attributes) {
         findings.push(SemanticFinding {
             kind: SemanticIssueKind::MarkerOnNeverTransferable {
                 marker: marker.name().to_owned(),
                 type_name,
-                cause: "`[NeverTransferable]`".to_owned(),
+                cause: cause.to_owned(),
             },
             site: marker_site,
             related: Vec::new(),

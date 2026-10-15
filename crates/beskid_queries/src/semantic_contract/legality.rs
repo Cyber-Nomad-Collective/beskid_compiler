@@ -1361,6 +1361,16 @@ mod tests {
         assert!(assignments.iter().any(|(_, message, _)| message.contains("`id`")));
     }
 
+    #[test]
+    fn glue_owner_handles_are_never_transferable() {
+        let source = "[GlueHandle(Library: \"codec\")] [Immutable] pub type Codec { i64 id }";
+        let report = transfer_report(source, 6450);
+        assert!(
+            report.iter().any(|(code, message, _)| code == "E1246" && message.contains("GlueHandle")),
+            "{report:?}"
+        );
+    }
+
     /// `(code, message)` of every affine finding (E1234-E1243) of the unit's callables.
     fn affine_report(source: &str, generation: u64) -> Vec<(String, String)> {
         transfer_report(source, generation)

@@ -189,6 +189,22 @@ pub(in crate::semantic_contract) fn has_recognized_attribute(
     recognized_attribute_use(db, key, attributes, name).is_some()
 }
 
+/// Why a type declaration is never transferable by declaration: `[NeverTransferable]`, or
+/// `[GlueHandle]`, which brands a Glue owner handle and implies `[NeverTransferable]` (v0.6.1).
+pub(in crate::semantic_contract) fn never_transferable_cause(
+    db: &dyn Db,
+    key: AstNodeKey,
+    attributes: &[beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Attribute>],
+) -> Option<&'static str> {
+    if has_recognized_attribute(db, key, attributes, "NeverTransferable") {
+        Some("`[NeverTransferable]`")
+    } else if has_recognized_attribute(db, key, attributes, "GlueHandle") {
+        Some("`[GlueHandle]` (a Glue owner)")
+    } else {
+        None
+    }
+}
+
 /// The first use of the compiler-recognized attribute `name` in `attributes`.
 pub(in crate::semantic_contract) fn recognized_attribute_use<'a>(
     db: &dyn Db,
@@ -360,7 +376,7 @@ impl<'db> ClassWalker<'db> {
         let node = syntax.syntax_index(db).node_at(syntax.expanded_program(db), declaration.node).ok_or_else(unavailable)?;
         if let Some(definition) = node.of::<beskid_analysis::syntax::TypeDefinition>() {
             let type_name = definition.name.node.name.clone();
-            if has_recognized_attribute(db, declaration, &definition.attributes, "NeverTransferable") {
+            if never_transferable_cause(db, declaration, &definition.attributes).is_some() {
                 return Ok(TransferClass::Never(TransferNeverReason::NeverTransferable { type_name }));
             }
             let marker = marker_attributes(db, declaration, &definition.attributes).first().map(|(marker, _)| *marker);
