@@ -1,0 +1,31 @@
+use ExtensionTypes;
+
+// Logical source signatures; the generated producer supplies the checked C ABI transport.
+[Extern(Abi:"C", Library:"glue_manual")]
+pub contract Foreign {
+    Point glue_point(Point value);
+    Color glue_next_color(Color value);
+    i64 glue_sum_each(i64 count, (i64) => i64 visit);
+    i64 glue_count_keep(i64 count, (i64, Color) => bool keep);
+    i64 glue_reenter(i64 value);
+}
+
+[Export(Abi:"C", Symbol:"ext_point")]
+pub Point ImportPoint(Point value) { return Foreign.glue_point(value); }
+[Export(Abi:"C", Symbol:"ext_next_color")]
+pub Color ImportNextColor(Color value) { return Foreign.glue_next_color(value); }
+[Export(Abi:"C", Symbol:"ext_sum_each")]
+pub i64 ImportSumEach(i64 count, i64 scale) { return Foreign.glue_sum_each(count, (i64 index) => index * scale); }
+[Export(Abi:"C", Symbol:"ext_count_red")]
+pub i64 ImportCountRed(i64 count) {
+    return Foreign.glue_count_keep(count, (i64 index, Color color) => match color {
+        Color::Red => true,
+        Color::Green => false,
+        Color::Blue => false,
+    });
+}
+// Rust owner code calls this export through its generated `beskid` module.
+[Export(Abi:"C", Symbol:"ext_double")]
+pub i64 Double(i64 value) { return value * 2_i64; }
+[Export(Abi:"C", Symbol:"ext_reenter")]
+pub i64 ImportReenter(i64 value) { return Foreign.glue_reenter(value); }

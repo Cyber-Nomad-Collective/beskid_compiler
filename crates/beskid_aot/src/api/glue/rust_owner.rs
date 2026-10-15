@@ -40,6 +40,9 @@ pub struct RustOwnerBuildRequest<'a> {
     pub selected: &'a [SyntaxModuleItem],
     pub native_library: &'a str,
     pub expected: &'a GlueArtifact,
+    /// The consumer packet whose imports this owner implements. Its exports become the owner
+    /// crate's generated `beskid` module; every owner import row must be one of its rows.
+    pub consumer: &'a GlueArtifact,
     pub sources: &'a [RustOwnerSource],
     pub types: &'a [RustOwnerType],
     pub callables: &'a [RustOwnerCallable],
@@ -266,7 +269,7 @@ fn bridge_source(
     source.push_str("unsafe extern \"C\" {fn beskid_glue_v1_owner_opaque_borrow_begin(library:u64,brand:*const u8,token:u64,payload:*mut *mut c_void,lease:*mut u64)->i32;fn beskid_glue_v1_owner_opaque_borrow_end(library:u64,brand:*const u8,lease:u64)->i32;fn beskid_glue_v1_owner_opaque_release(library:u64,brand:*const u8,token:u64)->i32;} struct BorrowGuard<'a>{library:u64,brand:[u8;32],lease:u64,cleanup:&'a std::cell::Cell<i32>}impl Drop for BorrowGuard<'_>{fn drop(&mut self){let deadline=std::time::Instant::now()+std::time::Duration::from_secs(5);loop{let status=unsafe{beskid_glue_v1_owner_opaque_borrow_end(self.library,self.brand.as_ptr(),self.lease)};if status==0{break;}if status!=4||std::time::Instant::now()>=deadline{self.cleanup.set(status);break;}std::thread::yield_now();}}}\n");
     source.push_str("#[repr(C)]struct OwnedView{pointer:*const u8,length:usize,token:u64}unsafe extern \"C\" {fn beskid_glue_v1_owner_copy(library:u64,shape:u64,generation:u64,kind:u64,bytes:*const u8,length:usize,out:*mut OwnedView)->i32;fn beskid_glue_v1_owner_release_token(library:u64,token:u64)->i32;}\n");
     source.push_str(super::owner_values::OWNER_PRELUDE);
-    let values = super::owner_values::OwnerValueTypes::new(current)?;
+    let values = super::owner_values::OwnerValueTypes::new(&[current, req.consumer])?;
     source.push_str(&values.root);
     let mut types = BTreeMap::new();
     let mut destructors = Vec::new();
@@ -482,7 +485,7 @@ fn bridge_source(
     if used_types.len() != types.len() {
         return Err(invalid("Rust owner type has no exact owning factory"));
     }
-    source.push_str(&super::owner_values::beskid_module(&values, current)?);
+    source.push_str(&super::owner_values::beskid_module(&values, req.consumer)?);
     // The admission record module is generated after the source digest (Gate WEB-GLUE03).
     source.push_str("mod owner_admission;\n");
     exports.push(super::published::OWNER_RECORD_SYMBOL.to_owned());
@@ -921,9 +924,26 @@ pub fn build_rust_owner(req: &RustOwnerBuildRequest<'_>) -> AotResult<PreparedRu
     if current != *req.expected || req.runtime.linkage != RuntimeLinkage::GlueSharedProviderV1 {
         return Err(invalid("Rust owner requires current source packet and shared provider"));
     }
+    let consumer_imports = req
+        .consumer
+        .manifest
+        .bindings
+        .iter()
+        .filter(|binding| binding.direction == "import")
+        .map(|binding| &binding.identity_sha256)
+        .collect::<BTreeSet<_>>();
+    if req.consumer.validate().is_err()
+        || current
+            .manifest
+            .bindings
+            .iter()
+            .any(|binding| binding.direction != "import" || !consumer_imports.contains(&binding.identity_sha256))
+    {
+        return Err(invalid("Rust owner packet rows are not imports of its consumer packet"));
+    }
+    // A Rust owner without opaque handle types (records, enums, callbacks, scalars) has no types.
     if req.sources.is_empty()
         || req.sources.len() > 1024
-        || req.types.is_empty()
         || req.types.len() > 1024
         || req.callables.is_empty()
         || req.callables.len() > 1024

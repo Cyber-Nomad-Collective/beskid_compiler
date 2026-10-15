@@ -1,0 +1,19 @@
+glue_extensions {
+    name = "glue_extensions"
+    version = "0.1.0"
+    root = "."
+}
+
+dependency "corelib" {
+    source = "path"
+    path = "../../../../../../corelib/beskid_corelib"
+}
+
+glue "glue_manual" {
+    backend = rust
+    path = "rust"
+}
+
+target "GlueExtensions" {
+    kind = Lib
+}
