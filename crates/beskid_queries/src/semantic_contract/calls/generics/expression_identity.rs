@@ -142,6 +142,9 @@ pub(in crate::semantic_contract) fn generic_source_expression_identity(
         };
     }
     if node.of::<beskid_analysis::syntax::CallExpression>().is_some() {
+        if is_transfer_class_intrinsic(program, index, normalized_key).is_some() {
+            return Ok(GenericSourceTypeIdentity::Abi(SemanticTypeId::I64));
+        }
         if let Some(exchange) = exchange_call_for_node(program, index, normalized_key) {
             return generic_source_expression_identity(db, exchange.place);
         }

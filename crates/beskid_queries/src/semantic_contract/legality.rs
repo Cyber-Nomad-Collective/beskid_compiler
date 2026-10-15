@@ -536,6 +536,7 @@ pub fn check_items(db: &dyn Db, items: &[AstNodeKey]) -> Result<(), Vec<Semantic
         findings.extend(captures::lambda_capture_findings(db, item));
         findings.extend(ownership::affine_findings(db, item));
         findings.extend(captures::captures_argument_findings(db, item));
+        findings.extend(captures::isolate_spawn_findings(db, item));
         findings.extend(function_values::generic_function_value_semantic_findings(db, item));
         if let Ok(Some(finding)) = call_argument_type_mismatch(db, item) {
             findings.push(SemanticFinding {
@@ -1528,6 +1529,32 @@ mod tests {
         let codes = affine_report(&source, 6750);
         let found = codes.iter().map(|(code, _)| code.as_str()).collect::<Vec<_>>();
         assert_eq!(found, ["E1242", "E1239", "E1234", "E1239"], "{codes:?}");
+    }
+
+    #[test]
+    fn transfer_class_intrinsic_folds_and_isolate_bodies_are_bounded() {
+        let source = format!(
+            "{MARKERS}{AFFINE_PRELUDE}i64 A() {{ return __transfer_class<u8[]>(); }} \
+             i64 B() {{ return __transfer_class<string>(); }} \
+             i64 C<T>() where T: Transferable {{ return __transfer_class<T>(); }}"
+        );
+        let (db, root) = one_unit_assembly(&source, SyntaxGenerationId(6760));
+        let mut calls = Vec::new();
+        nodes_of_kind(&db, root, IndexedNodeKind::CallExpression, &mut calls);
+        let folded = calls
+            .into_iter()
+            .filter_map(|call| crate::transfer_class_intrinsic(&db, call).expect("intrinsic query"))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            folded,
+            [
+                crate::TransferClassIntrinsic::Constant(1),
+                crate::TransferClassIntrinsic::Constant(0),
+                crate::TransferClassIntrinsic::PerInstantiation { name: "T".to_owned() },
+            ]
+        );
+        let codes = captures_codes("unit Main(move u8[] data) { i64 id = __isolate_spawn<i64>(() => Len(data), 0); return; }", 6761);
+        assert!(codes.contains(&"E1237".to_owned()), "{codes:?}");
     }
 }
 

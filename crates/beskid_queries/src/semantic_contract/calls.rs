@@ -2,6 +2,7 @@
 
 mod casts;
 mod exchange;
+mod transfer_intrinsic;
 mod facts;
 mod generics;
 mod resolution;
@@ -18,6 +19,10 @@ pub(in crate::semantic_contract) use casts::{
 };
 
 pub use exchange::{ExchangeCall, exchange_call};
+pub use transfer_intrinsic::{
+    TransferClassIntrinsic, transfer_class_code, transfer_class_code_for_substitution, transfer_class_intrinsic,
+};
+pub(in crate::semantic_contract) use transfer_intrinsic::is_transfer_class_intrinsic;
 pub use facts::{for_iterator_protocol, for_iterator_specialization};
 pub(in crate::semantic_contract) use exchange::exchange_call_for_node;
 

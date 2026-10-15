@@ -28,6 +28,9 @@ pub(in crate::semantic_contract) fn node_type_tracked(
             return Some(clif_block_context_type(db, key));
         }
         if node.of::<beskid_analysis::syntax::CallExpression>().is_some() {
+            if is_transfer_class_intrinsic(program, index, key).is_some() {
+                return Some(Ok(SemanticTypeId::I64));
+            }
             if let Some(exchange) = exchange_call_for_node(program, index, key) {
                 return Some(node_type(db, exchange.place).and_then(|ty| ty.ok_or_else(|| SemanticError::unavailable("node_type"))));
             }

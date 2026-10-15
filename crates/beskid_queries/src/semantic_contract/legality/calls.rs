@@ -123,6 +123,7 @@ pub(super) fn claimed_by_another_call_authority(
     runtime_intrinsic_claims: bool,
 ) -> bool {
     matches!(exchange_call(db, call), Ok(Some(_)))
+        || matches!(transfer_class_intrinsic(db, call), Ok(Some(_)))
         || !matches!(primitive_numeric_conversion(db, call), Ok(None))
         || !matches!(typed_array_allocation(db, call), Ok(None))
         || !matches!(closure_call_target(db, call), Ok(None))

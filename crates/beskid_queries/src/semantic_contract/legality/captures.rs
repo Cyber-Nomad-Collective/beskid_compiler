@@ -80,6 +80,11 @@ fn bound_of_position(db: &dyn Db, value: AstNodeKey) -> Option<CapturesBound> {
                     .args
                     .iter()
                     .position(|argument| index.direct_child_id(program, parent, DynNodeRef::from(argument)) == Some(child))?;
+                // The task body of `__isolate_spawn[_local]<T>(() => T body, i64 scope)` runs in
+                // another runtime instance: it is judged like `[Captures(Bound: Transferable)]`.
+                if position == 0 && isolate_spawn_call(call) {
+                    return Some(CapturesBound::Marker(TransferMarker::Transferable));
+                }
                 return call_argument_captures_bound(db, AstNodeKey { node: parent, ..value }, position);
             }
             NodeKind::StructLiteralField => {
@@ -468,4 +473,79 @@ pub fn declared_captures_bound(db: &dyn Db, declaration: AstNodeKey) -> Option<S
             (CapturesBound::NotMarker(spelling), _) => spelling,
         }
     })
+}
+
+/// `__isolate_spawn<T>(body, scope)` or `__isolate_spawn_local<T>(body, scope)`.
+fn isolate_spawn_call(call: &beskid_analysis::syntax::CallExpression) -> bool {
+    let beskid_analysis::syntax::Expression::Path(path) = &call.callee.node else { return false };
+    matches!(path.node.path.node.segments.as_slice(),
+        [segment] if matches!(segment.node.name.node.name.as_str(), "__isolate_spawn" | "__isolate_spawn_local"))
+}
+
+/// `rt` R7: the body of an isolate spawn is a function value without parameters (`() => T`), and
+/// its result `T` crosses back to the parent, so it must be transferable. Captures are judged by
+/// [`captures_argument_findings`] through the implied `Transferable` bound.
+pub(super) fn isolate_spawn_findings(db: &dyn Db, key: AstNodeKey) -> Vec<SemanticFinding> {
+    let Some(syntax) = db.syntax_unit(key.unit) else { return Vec::new() };
+    let bodies = match with_node(db, syntax, key, |program, index, _node| {
+        let mut calls = Vec::new();
+        collect_nodes_of_kind(index, key.node, NodeKind::CallExpression, &mut calls);
+        Some(
+            calls
+                .into_iter()
+                .filter_map(|call| {
+                    let expression = index.node_at(program, call)?.of::<beskid_analysis::syntax::CallExpression>()?;
+                    if !isolate_spawn_call(expression) {
+                        return None;
+                    }
+                    let body = index.direct_child_id(program, call, DynNodeRef::from(expression.args.first()?))?;
+                    Some((call, normalized_expression_node(index, body)))
+                })
+                .collect::<Vec<_>>(),
+        )
+    }) {
+        Ok(Some(bodies)) => bodies,
+        Ok(None) | Err(_) => return Vec::new(),
+    };
+    let mut findings = Vec::new();
+    for (call, body) in bodies {
+        let (call, body) = (AstNodeKey { node: call, ..key }, AstNodeKey { node: body, ..key });
+        let Ok(identity) = generic_source_expression_identity(db, body) else { continue };
+        let GenericSourceTypeIdentity::Function { parameters, result } = &identity else {
+            findings.push(SemanticFinding {
+                kind: SemanticIssueKind::TypeCallArgumentMismatch {
+                    expected_name: "() => T".to_owned(),
+                    actual_name: identity_spelling(&identity),
+                },
+                site: body,
+                related: vec![(call, "in this call")],
+            });
+            continue;
+        };
+        if !parameters.is_empty() {
+            findings.push(SemanticFinding {
+                kind: SemanticIssueKind::TypeCallArgumentMismatch {
+                    expected_name: "() => T".to_owned(),
+                    actual_name: identity_spelling(&identity),
+                },
+                site: body,
+                related: vec![(call, "in this call")],
+            });
+            continue;
+        }
+        if let Ok(class) = transfer_class(db, body, result)
+            && !class.is_transferable()
+        {
+            findings.push(SemanticFinding {
+                kind: SemanticIssueKind::CaptureNotTransferable {
+                    name: "result".to_owned(),
+                    type_name: identity_spelling(result),
+                    class: class.to_string(),
+                },
+                site: body,
+                related: vec![(call, "in this call")],
+            });
+        }
+    }
+    findings
 }

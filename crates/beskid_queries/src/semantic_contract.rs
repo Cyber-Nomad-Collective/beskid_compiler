@@ -104,7 +104,7 @@ use abi::{
 };
 use bulk::{bulk_call_element_abi_type_for_call, bulk_parameter_tracked};
 use calls::{
-    exchange_call_for_node, PathCallResolution, call_arguments_tracked, call_lowering_for_node, call_lowering_tracked,
+    exchange_call_for_node, is_transfer_class_intrinsic, PathCallResolution, call_arguments_tracked, call_lowering_for_node, call_lowering_tracked,
     canonical_intrinsic_parameter_type, canonical_result_definition_for_type, canonical_result_variant,
     canonical_runtime_intrinsic_scope, cast_intents_for_node, cast_intents_tracked, corelib_service_for,
     expected_cast_type, call_explicit_member_type_arguments, expected_explicit_call_argument_type, explicit_generic_type_argument_syntax,
@@ -227,7 +227,9 @@ pub use completion::{
     completion_candidates, completion_dependency_surface, completion_dependency_surface_for_assembly,
     completion_dependency_surface_for_program,
 };
-pub use calls::{ExchangeCall, exchange_call, for_iterator_protocol, for_iterator_specialization};
+pub use calls::{
+    TransferClassIntrinsic, transfer_class_code, transfer_class_code_for_substitution, transfer_class_intrinsic,
+    ExchangeCall, exchange_call, for_iterator_protocol, for_iterator_specialization};
 pub use layouts::{
     aggregate_field_access_specialization, aggregate_literal_specialization, array_index_element_managed_reference_specialization,
     array_index_element_specialization,
