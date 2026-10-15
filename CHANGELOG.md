@@ -178,6 +178,13 @@ development log stays under [Unreleased] below.
 
 ### Fixed
 
+- A `match` scrutinee stays rooted while a `when` guard or a materialized string
+  pattern (longer than 64 bytes) can collect. Before, a scrutinee that only the
+  match referenced (`match Make() { ... }`) could be freed by a collection in a
+  guard, and the next arm tested whatever object reused its storage (a wrong
+  arm, a wrong payload, or a non-exhaustive-match trap). Matches whose tests
+  cannot collect add no root. Regression tests run a five-part interpolation and
+  a guarded match with a forced collection inside every part and guard.
 - String operations no longer cost microseconds (measured on the builder, debug
   runtime kit). Every string construction (`str_new`, `str_concat`,
   `str_from_i64`) sizes its payload once instead of growing it by one

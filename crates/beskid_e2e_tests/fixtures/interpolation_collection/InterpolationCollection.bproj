@@ -1,0 +1,9 @@
+InterpolationCollection {
+  name = "InterpolationCollection"
+  version = "0.1.0"
+}
+
+target "App" {
+  kind = "App"
+  entry = "Main.bd"
+}

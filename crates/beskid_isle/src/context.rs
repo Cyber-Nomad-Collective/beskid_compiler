@@ -17,8 +17,8 @@ use crate::errors::{FunctionEmissionError, LoweringError, LoweringErrorKind, Str
 use crate::facts::{
     AssignmentKind, AstNodeKey, CallImportError, CallKind, CollectionMutationOwner, CollectionOperation, DirectCallee,
     EventHandlerLocalPlan, EventOperation, ForIterableKind, IndexTarget, InlineClosureEnvironment, LiteralKind,
-    LocalSlotId, ManagedReferenceFact, MatchArmBindingFact, MatchPayloadPatternFact, NodeFacts, NodeKind, OperatorFact,
-    RuntimeIntrinsicKind, Unit,
+    LocalSlotId, ManagedReferenceFact, MatchArmBindingFact, MatchArmFact, MatchPayloadPatternFact, NodeFacts, NodeKind,
+    OperatorFact, RuntimeIntrinsicKind, Unit,
 };
 use crate::layout::{EnumLayout, FieldLayout};
 

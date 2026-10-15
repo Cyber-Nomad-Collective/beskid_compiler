@@ -90,6 +90,11 @@ impl NodeFacts for EnumFacts {
             .then(|| ManagedStructAllocation { allocation_request_symbol: "__test_enum_allocation_request".into() })
     }
 
+    // The scrutinee is a new enum object; a guarded match roots it while the guard runs.
+    fn managed_reference(&self, key: AstNodeKey) -> Option<beskid_isle::ManagedReferenceFact> {
+        (key == self.nodes[1]).then_some(beskid_isle::ManagedReferenceFact::GcManaged)
+    }
+
     fn enum_payloads(&self, key: AstNodeKey) -> Option<Vec<AstNodeKey>> {
         if key != self.nodes[1] {
             return None;
@@ -457,6 +462,10 @@ fn guarded_arm_falls_through_to_the_next_arm_in_source_order() {
     let fallback = clif.find("iconst.i32 200").expect("same-variant fallback arm body");
     assert!(guarded < fallback, "a guarded arm keeps its source position: {clif}");
     assert!(clif.matches("brif").count() >= 4, "the guard adds its own branch after the tag test: {clif}");
+    assert!(
+        clif.contains("%gc_register_root") && clif.contains("%gc_unregister_root"),
+        "the scrutinee stays rooted while the guard runs: {clif}"
+    );
 }
 
 #[test]

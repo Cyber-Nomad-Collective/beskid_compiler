@@ -204,6 +204,42 @@ fn string_concatenation_roots_the_left_operand_while_the_right_one_allocates() {
     assert!(calls_to("str_concat").iter().any(|concat| *concat > literal), "{clif}");
 }
 
+/// The resolver bench's five-part record: an interpolation is a left fold of `str_concat` calls,
+/// and every intermediate result is rooted before the next part allocates. A kit built without
+/// that rooting returned "" for one record per run: a collection inside a later part freed the
+/// text so far, and `str_concat` (which roots its operands and fails on a freed one) returned null.
+#[test]
+fn every_intermediate_of_a_five_part_interpolation_is_rooted_while_later_parts_allocate() {
+    let clif = lower_main_clif(r#"string Main(i64 owner, i64 start, string name) { return "item ${owner} ${start} ${name} ${owner}"; }"#);
+    let callee = |line: &str| line.split("call ").nth(1).and_then(|rest| rest.split('(').next()).map(str::to_owned);
+    let calls_to = |symbol: &str| {
+        clif.lines()
+            .enumerate()
+            .filter(|(_, line)| {
+                callee(line).is_some_and(|name| {
+                    clif.lines().any(|decl| decl.trim_start().starts_with(&format!("{name} = %{symbol} ")))
+                })
+            })
+            .map(|(index, _)| index)
+            .collect::<Vec<_>>()
+    };
+    let concats = calls_to("str_concat");
+    assert_eq!(concats.len(), 7, "seven concatenations join eight parts: {clif}");
+    let allocations = [calls_to("str_new"), calls_to("str_from_i64")].concat();
+    let registers = calls_to("gc_register_root");
+    for pair in concats.windows(2) {
+        let (previous, next) = (pair[0], pair[1]);
+        let Some(first_allocation) = allocations.iter().copied().filter(|at| (previous..next).contains(at)).min() else {
+            // `${name}` reads a parameter, which cannot allocate.
+            continue;
+        };
+        assert!(
+            registers.iter().any(|register| (previous..first_allocation).contains(register)),
+            "the result of the concatenation at line {previous} is rooted before the allocation at line {first_allocation}: {clif}"
+        );
+    }
+}
+
 #[test]
 fn parsed_string_ordering_lowers_through_str_cmp() {
     for (operator, condition) in [("<", "slt"), ("<=", "sle"), (">", "sgt"), (">=", "sge")] {

@@ -244,6 +244,17 @@ impl IsleContext<'_, '_, '_, '_> {
         Some(())
     }
 
+    /// Drops `root` from its scope without emitting a release, for code no path reaches: every
+    /// exit that leaves the root's scope has already released it.
+    pub(super) fn forget_expression_root(&mut self, root: Option<ScopedTemporaryRoot>) -> Option<()> {
+        if let Some(root) = root {
+            let scope = self.local_root_scopes.iter_mut().rev().find(|scope| scope.temporaries.contains(&root))?;
+            let index = scope.temporaries.iter().position(|candidate| *candidate == root)?;
+            scope.temporaries.remove(index);
+        }
+        Some(())
+    }
+
     pub(crate) fn release_managed_local_roots(&mut self) -> Option<()> {
         self.release_local_roots_from(0)
     }

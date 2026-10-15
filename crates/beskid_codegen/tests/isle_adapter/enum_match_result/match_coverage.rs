@@ -439,3 +439,79 @@ fn return_match_with_a_named_binding_on_a_generic_record_field_lowers() {
          return First<i64>(Ints(), 0_i64) + Ints().FirstOr(0_i64) + p.x + q.x;",
     );
 }
+
+/// Indexes of the `call` instructions in `clif` whose callee is declared as `%symbol`, or as a
+/// program function `%symbol#...`.
+fn calls_to(clif: &str, symbol: &str) -> Vec<usize> {
+    let callees = clif
+        .lines()
+        .filter_map(|line| {
+            let (name, declared) = line.trim_start().split_once(" = %")?;
+            let declared = declared.split(' ').next()?;
+            (declared.split('#').next() == Some(symbol)).then(|| name.to_owned())
+        })
+        .collect::<Vec<_>>();
+    clif.lines()
+        .enumerate()
+        .filter(|(_, line)| {
+            line.split("call ")
+                .nth(1)
+                .and_then(|rest| rest.split('(').next())
+                .is_some_and(|callee| callees.iter().any(|name| name == callee))
+        })
+        .map(|(index, _)| index)
+        .collect()
+}
+
+/// A guard runs code that can collect before later arms test the scrutinee, and a string
+/// pattern longer than the inline compare limit is materialized before its test: a scrutinee
+/// that only the match references is then rooted from before the first test to the end of the
+/// match. Before the fix a collection in `Busy` freed the `Make` result, and the next arm tested
+/// whatever reused its storage. A match whose tests cannot collect adds no root.
+#[test]
+fn match_scrutinee_is_rooted_while_its_tests_can_collect() {
+    let long = "x".repeat(65);
+    let functions = lower_program(
+        "scrutinee rooting",
+        &format!(
+            "enum Choice {{ Value(i64 value), Empty }} \
+             Choice Make(i64 n) {{ return Choice::Value(n); }} \
+             string Fresh(i64 n) {{ return \"k${{n}}\"; }} \
+             bool Busy(i64 n) {{ Choice other = Make(n); return n > 3_i64; }} \
+             i64 GuardedScrutinee(i64 n) {{ return match Make(n) {{ \
+             Choice::Value(_) when Busy(n) => 2_i64, Choice::Value(v) => v, Choice::Empty => 0_i64, }}; }} \
+             i64 PlainScrutinee(i64 n) {{ return match Make(n) {{ Choice::Value(v) => v, Choice::Empty => 0_i64, }}; }} \
+             i64 LongPatternScrutinee(i64 n) {{ return match Fresh(n) {{ \"{long}\" => 1_i64, _ => 0_i64, }}; }} \
+             i64 ShortPatternScrutinee(i64 n) {{ return match Fresh(n) {{ \"k1\" => 1_i64, _ => 0_i64, }}; }}"
+        ),
+    );
+
+    let guarded = clif_of(&functions, "GuardedScrutinee");
+    let guard_call = *calls_to(guarded, "Busy")
+        .first()
+        .unwrap_or_else(|| panic!("the guard calls Busy: {guarded}"));
+    let make_call = *calls_to(guarded, "Make").first().unwrap_or_else(|| panic!("the scrutinee calls Make: {guarded}"));
+    assert!(
+        calls_to(guarded, "gc_register_root").iter().any(|register| (make_call..guard_call).contains(register)),
+        "the scrutinee is rooted before the guard runs: {guarded}"
+    );
+    assert!(
+        calls_to(guarded, "gc_unregister_root").iter().any(|release| *release > guard_call),
+        "the scrutinee root is released after the guard: {guarded}"
+    );
+
+    let long_pattern = clif_of(&functions, "LongPatternScrutinee");
+    let literal = *calls_to(long_pattern, "str_new")
+        .first()
+        .unwrap_or_else(|| panic!("the long pattern is materialized: {long_pattern}"));
+    let fresh_call = *calls_to(long_pattern, "Fresh").first().unwrap_or_else(|| panic!("{long_pattern}"));
+    assert!(
+        calls_to(long_pattern, "gc_register_root").iter().any(|register| (fresh_call..literal).contains(register)),
+        "the scrutinee is rooted before the pattern allocates: {long_pattern}"
+    );
+
+    for name in ["PlainScrutinee", "ShortPatternScrutinee"] {
+        let clif = clif_of(&functions, name);
+        assert!(calls_to(clif, "gc_register_root").is_empty(), "{name}: no test can collect, no root: {clif}");
+    }
+}

@@ -526,6 +526,14 @@ impl IsleContext<'_, '_, '_, '_> {
             self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidEnumLayout });
             return None;
         }
+        // The arm tests read the scrutinee until an arm is entered. When a test or a guard can
+        // collect before that, a scrutinee that only this expression references would be freed
+        // and the next test would read whatever reused its storage: root it for the whole match.
+        let scrutinee_root = if self.match_tests_can_collect(&arms) {
+            self.root_expression_value_if_needed(scrutinee_key, scrutinee)?
+        } else {
+            None
+        };
 
         let merge = self.builder.create_block();
         if let Some(result_type) = result_type {
@@ -617,8 +625,36 @@ impl IsleContext<'_, '_, '_, '_> {
         self.builder.seal_block(merge);
         if result_type.is_none() && !merge_reachable {
             self.builder.ins().trap(TrapCode::unwrap_user(1));
+            // No path reaches the end of the match: every arm released the root on its own exit.
+            self.forget_expression_root(scrutinee_root)?;
+        } else {
+            self.release_expression_root(scrutinee_root)?;
         }
         Some(result_type.and_then(|_| self.builder.block_params(merge).first().copied()))
+    }
+
+    /// Whether a collection can run between lowering a match scrutinee and entering an arm: a
+    /// `when` guard runs arbitrary code before later arms are tested, and a string pattern longer
+    /// than [`super::strings::INLINE_LITERAL_COMPARE_BYTES`] bytes is materialized (`str_new`)
+    /// for its `str_eq` test. Every other test compares tags and values the scrutinee already
+    /// holds, and an arm's bindings are installed (and rooted) before its body runs.
+    fn match_tests_can_collect(&self, arms: &[MatchArmFact]) -> bool {
+        arms.iter().any(|arm| arm.guard.is_some() || self.pattern_test_can_collect(&arm.payload))
+    }
+
+    fn pattern_test_can_collect(&self, pattern: &MatchPayloadPatternFact) -> bool {
+        match pattern {
+            MatchPayloadPatternFact::StringLiteral { expression } => self
+                .facts
+                .string_literal(*expression)
+                .is_none_or(|text| text.len() > super::strings::INLINE_LITERAL_COMPARE_BYTES),
+            MatchPayloadPatternFact::Fields(fields) => fields.iter().any(|field| self.pattern_test_can_collect(field)),
+            MatchPayloadPatternFact::Enum { payload, .. } => self.pattern_test_can_collect(payload),
+            MatchPayloadPatternFact::Ignore
+            | MatchPayloadPatternFact::Unit
+            | MatchPayloadPatternFact::Binding(_)
+            | MatchPayloadPatternFact::ScalarLiteral { .. } => false,
+        }
     }
 
     pub(super) fn emit_enum_constructor_payloads(

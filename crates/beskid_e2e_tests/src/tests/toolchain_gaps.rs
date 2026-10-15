@@ -50,6 +50,20 @@ fn indexed_places_read_their_array_after_the_index_and_value() {
     assert_runs("index_evaluation_order", "IndexEvaluationOrder.bproj");
 }
 
+/// A collection inside any part of a five-part interpolation keeps the text built so far (the
+/// resolver bench read "" for one record per run when an intermediate result was unrooted).
+#[test]
+fn interpolation_survives_a_collection_inside_every_part() {
+    assert_runs("interpolation_collection", "InterpolationCollection.bproj");
+}
+
+/// A `match` scrutinee survives a guard that collects and refills the heap: later arms test the
+/// matched value, not an object that reused its storage.
+#[test]
+fn match_scrutinee_survives_a_collecting_guard() {
+    assert_runs("match_scrutinee_collection", "MatchScrutineeCollection.bproj");
+}
+
 /// `i64[][]` and `string[][]` parse and run as arrays of arrays.
 #[test]
 fn nested_array_types_compile_and_run() {
