@@ -6321,7 +6321,7 @@
           "type": "usize"
         },
         {
-          "name": "foreign_table",
+          "name": "counts",
           "offset": 512,
           "type": "pointer"
         },
