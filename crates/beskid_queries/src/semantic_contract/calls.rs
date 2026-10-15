@@ -1,6 +1,7 @@
 //! Canonical call-semantics implementation clusters.
 
 mod casts;
+mod exchange;
 mod facts;
 mod generics;
 mod resolution;
@@ -16,7 +17,9 @@ pub(in crate::semantic_contract) use casts::{
     primitive_numeric,
 };
 
+pub use exchange::{ExchangeCall, exchange_call};
 pub use facts::{for_iterator_protocol, for_iterator_specialization};
+pub(in crate::semantic_contract) use exchange::exchange_call_for_node;
 
 pub(in crate::semantic_contract) use facts::{
     call_arguments_tracked, call_lowering_tracked, canonical_result_definition_for_type, canonical_result_variant,

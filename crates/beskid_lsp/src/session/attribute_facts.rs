@@ -170,6 +170,88 @@ pub(crate) fn transfer_class_hovers(
     hovers
 }
 
+/// Ownership hovers (0.6.2, "Code actions and diagnostic publication for IntelliSense"): every
+/// binding of Moved class (and every `Fiber` handle) names `owning` or `borrowed` at its
+/// declaration; a `[Captures]` parameter or field names its bound; the arrow of a lambda passed
+/// to a `[Captures]` parameter lists each capture with its transfer class.
+pub(crate) fn ownership_hovers(
+    db: &beskid_queries::BeskidDatabase,
+    unit: SourceUnitId,
+    generation: beskid_queries::SyntaxGenerationId,
+    entry: &SourceUnit,
+) -> Vec<SyntaxHover> {
+    let index = SyntaxIndex::from_program(&entry.program, generation);
+    let mut hovers = Vec::new();
+    let mut push = |start: usize, end: usize, markdown: String| {
+        hovers.push(SyntaxHover {
+            reference_start: start,
+            reference_end: end,
+            markdown,
+            location_path: entry.path.clone(),
+            location_start: start,
+            location_end: end,
+        });
+    };
+    for kind in [NodeKind::FunctionDefinition, NodeKind::MethodDefinition, NodeKind::TestDefinition, NodeKind::LambdaExpression] {
+        for node in index.ids_of_kind(kind) {
+            let Ok(Some(ownership)) = beskid_queries::affine_ownership(db, AstNodeKey { unit, generation, node }) else {
+                continue;
+            };
+            for binding in ownership.bindings.iter() {
+                let Some(span) = index.node_at(&entry.program, binding.declaration.node).and_then(|node| node.span()) else {
+                    continue;
+                };
+                let state = if binding.owning { "owning" } else { "borrowed" };
+                let class = if binding.fiber { "Never (`Fiber` handle)" } else { "Moved" };
+                push(span.start, span.end, format!("`{}`: {state}\n\ntransfer class: {class}", binding.name));
+            }
+        }
+    }
+    for kind in [NodeKind::Parameter, NodeKind::Field] {
+        for node in index.ids_of_kind(kind) {
+            let Some(bound) = beskid_queries::declared_captures_bound(db, AstNodeKey { unit, generation, node }) else {
+                continue;
+            };
+            let Some(found) = index.node_at(&entry.program, node) else { continue };
+            let name = found
+                .of::<beskid_analysis::syntax::Parameter>()
+                .map(|parameter| &parameter.name)
+                .or_else(|| found.of::<beskid_analysis::syntax::Field>().map(|field| &field.name));
+            if let Some(name) = name {
+                push(name.span.start, name.span.end, format!("`{}`\n\ncapture bound: {bound}", name.node.name));
+            }
+        }
+    }
+    for node in index.ids_of_kind(NodeKind::LambdaExpression) {
+        let Some(captures) = beskid_queries::bounded_lambda_captures(db, AstNodeKey { unit, generation, node }) else {
+            continue;
+        };
+        let Some(lambda) =
+            index.node_at(&entry.program, node).and_then(|node| node.of::<beskid_analysis::syntax::LambdaExpression>())
+        else {
+            continue;
+        };
+        let Some(span) = index.node_at(&entry.program, node).and_then(|node| node.span()) else { continue };
+        let Some(arrow) = entry
+            .source
+            .get(span.start..lambda.body.span.start)
+            .and_then(|text| text.rfind("=>"))
+            .map(|offset| span.start + offset)
+        else {
+            continue;
+        };
+        let mut markdown = format!("lambda with capture bound `{}`\n\ncaptures:", captures.bound.name());
+        for (name, type_name, class) in &captures.captures {
+            markdown.push_str(&format!("\n- `{name}: {type_name} ({class})`"));
+        }
+        if captures.captures.is_empty() {
+            markdown.push_str(" none");
+        }
+        push(arrow, arrow + 2, markdown);
+    }
+    hovers
+}
+
 pub(crate) fn attribute_completion_catalogue(
     db: &beskid_queries::BeskidDatabase,
     unit: SourceUnitId,
@@ -237,7 +319,9 @@ pub attribute Pure(LambdaExpression) { }\n\
 i64 Add([Trace] i64 left, i64 right) {\n    let square = [Pure] (i64 x) => x * x;\n    return left + right;\n}\n\
 [Immutable] pub type Job { string id, i64 size }\n\
 pub type Cache { i64[] entries }\n\
-[Isolated] pub type Box<T> { T item }\n";
+[Isolated] pub type Box<T> { T item }\n\
+i64 Checksum(u8[] data) { return 0; }\n\
+unit Keep(move u8[] block) { return; }\n";
 
     fn typed_fixture() -> (BeskidDatabase, SourceUnitId, SyntaxGenerationId, Arc<ProgramAssembly>) {
         let root = PathBuf::from("/tmp/attribute-facts/src");
@@ -346,6 +430,16 @@ pub type Cache { i64[] entries }\n\
         assert!(cache.markdown.contains("transfer class: Never (no marker attribute)"), "{}", cache.markdown);
         let boxed = hovers.iter().find(|hover| hover.markdown.contains("`Box`")).expect("Box hover");
         assert!(boxed.markdown.contains("decided per instantiation"), "{}", boxed.markdown);
+    }
+
+    #[test]
+    fn hover_on_a_moved_binding_names_owning_or_borrowed() {
+        let (db, unit, generation, assembly) = typed_fixture();
+        let hovers = super::ownership_hovers(&db, unit, generation, &assembly.units[0]);
+        let data = hovers.iter().find(|hover| hover.markdown.starts_with("`data`")).expect("data hover");
+        assert!(data.markdown.contains("borrowed") && data.markdown.contains("transfer class: Moved"), "{}", data.markdown);
+        let block = hovers.iter().find(|hover| hover.markdown.starts_with("`block`")).expect("block hover");
+        assert!(block.markdown.contains("owning"), "{}", block.markdown);
     }
 
     #[test]

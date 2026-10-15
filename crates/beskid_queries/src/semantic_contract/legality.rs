@@ -40,6 +40,7 @@ mod gate;
 mod generics;
 mod imports;
 mod members;
+mod ownership;
 mod transfer;
 mod typing;
 mod units;
@@ -51,6 +52,7 @@ pub use attributes::{
     check_attribute_obligations, resolve_attribute_use, unit_attribute_surface,
 };
 pub use externs::extern_profile_findings;
+pub use captures::{BoundedLambdaCaptures, bounded_lambda_captures, declared_captures_bound};
 pub use transfer::{immutable_field_findings, transfer_declaration_findings};
 pub use gate::{GateObligation, GateObligationKind, check_gate_obligations, gate_obligations};
 pub use typing::{TypingObligation, TypingObligationKind, typing_obligations};
@@ -532,6 +534,8 @@ pub fn check_items(db: &dyn Db, items: &[AstNodeKey]) -> Result<(), Vec<Semantic
         findings.extend(cleanup::scoped_cleanup_findings(db, item));
         findings.extend(cleanup::dead_growth_findings(db, item));
         findings.extend(captures::lambda_capture_findings(db, item));
+        findings.extend(ownership::affine_findings(db, item));
+        findings.extend(captures::captures_argument_findings(db, item));
         findings.extend(function_values::generic_function_value_semantic_findings(db, item));
         if let Ok(Some(finding)) = call_argument_type_mismatch(db, item) {
             findings.push(SemanticFinding {
@@ -608,6 +612,7 @@ fn import_findings(db: &dyn Db, items: &[AstNodeKey]) -> Vec<SemanticFinding> {
         judged_units.push(unit_root);
         findings.extend(attributes::attribute_findings(db, unit_root));
         findings.extend(transfer::transfer_declaration_findings(db, unit_root));
+        findings.extend(captures::captures_declaration_findings(db, unit_root));
         if let Ok(Some(imports)) = unresolved_imports(db, unit_root) {
             findings.extend(imports.iter().map(|import| SemanticFinding {
                 kind: SemanticIssueKind::UnknownImportPath { path: import.path.to_string() },
@@ -1354,4 +1359,175 @@ mod tests {
         assert!(assignments.iter().any(|(_, message, _)| message.contains("`size`")));
         assert!(assignments.iter().any(|(_, message, _)| message.contains("`id`")));
     }
+
+    /// `(code, message)` of every affine finding (E1234-E1243) of the unit's callables.
+    fn affine_report(source: &str, generation: u64) -> Vec<(String, String)> {
+        transfer_report(source, generation)
+            .into_iter()
+            .filter(|(code, ..)| ("E1234"..="E1243").contains(&code.as_str()))
+            .map(|(code, message, _)| (code, message))
+            .collect()
+    }
+
+    const AFFINE_PRELUDE: &str = "u8[] Make() { return [1_u8]; } i64 Len(u8[] data) { return 0; } \
+        unit Store(move u8[] block) { return; } ";
+
+    fn assert_affine(body: &str, generation: u64, expected: &[&str]) {
+        let source = format!("{AFFINE_PRELUDE}{body}");
+        let codes = affine_report(&source, generation);
+        let found = codes.iter().map(|(code, _)| code.as_str()).collect::<Vec<_>>();
+        assert_eq!(found, expected, "{body}: {codes:?}");
+    }
+
+    #[test]
+    fn consuming_uses_and_use_after_move_follow_the_alias_discipline() {
+        let cases: &[(&str, &[&str])] = &[
+            ("unit Main(move u8[] buffer) { Store(move buffer); i64 n = Len(buffer); return; }", &["E1234"]),
+            ("unit Main(move u8[] buffer) { Store(move buffer); return; }", &[]),
+            ("unit Main() { u8[] a = Make(); u8[] b = a; i64 n = Len(a); return; }", &["E1234"]),
+            ("u8[] Build() { u8[] data = Make(); i64 n = Len(data); return data; }", &[]),
+            ("unit Main(move u8[] data) { Store(data); return; }", &["E1242"]),
+            ("unit Main(move u8[] data) { i64 a = Len(data); i64 b = Len(data); Store(move data); return; }", &[]),
+            ("unit Main(u8[] data) { Store(move data); return; }", &["E1239"]),
+            ("unit Main(u8[] data) { Store(data); return; }", &["E1241"]),
+            ("u8[] Main(u8[] data) { return data; }", &["E1241"]),
+            ("unit Main() { string name = \"a\"; string other = move name; return; }", &["E1239"]),
+            ("i64 Size(move string name) { return 0; }", &["E1239"]),
+            ("pub type Plain { i64 x, pub unit Take(move this) { return; } }", &["E1239"]),
+            (
+                "[Isolated] pub type Holder { u8[] cache, pub unit Put(mut this, move u8[] data) { this.cache = data; return; } }",
+                &["E1242"],
+            ),
+            (
+                "[Isolated] pub type Holder { u8[] cache, pub unit Put(mut this, move u8[] data) { this.cache = move data; return; } }",
+                &[],
+            ),
+            (
+                "[Isolated] pub type Holder { u8[] cache, pub unit Put(mut this, u8[] data) { this.cache = data; return; } }",
+                &["E1241"],
+            ),
+            ("[Isolated] pub type Stage { u8[] buffer, pub Stage Same() { return this; } }", &["E1241"]),
+            ("[Isolated] pub type Stage { u8[] buffer, pub Stage Same(move this) { return this; } }", &[]),
+            ("unit Keep(move u8[] data) { let take = () => Store(move data); return; }", &["E1239"]),
+            ("i64 Total(u8[] data) { let sum = () => Len(data); return sum() + sum(); }", &[]),
+        ];
+        for (offset, (body, expected)) in cases.iter().enumerate() {
+            assert_affine(body, 6600 + offset as u64, expected);
+        }
+    }
+
+    #[test]
+    fn consumption_follows_branches_and_loops() {
+        let cases: &[(&str, &[&str])] = &[
+            ("unit Main(move u8[] data, bool keep) { if keep { Store(move data); } else { i64 n = Len(data); } return; }", &[]),
+            ("unit Main(move u8[] data, bool keep) { if keep { Store(move data); } i64 n = Len(data); return; }", &["E1234"]),
+            (
+                "unit Main(move u8[] data, i64 rounds) { mut i64 i = 0; while i < rounds { Store(move data); i = i + 1; } return; }",
+                &["E1240"],
+            ),
+            (
+                "unit Main(i64 rounds) { mut u8[] data = Make(); mut i64 i = 0; while i < rounds { Store(move data); data = Make(); i = i + 1; } return; }",
+                &[],
+            ),
+            (
+                "unit Main(i64 rounds) { mut i64 i = 0; while i < rounds { u8[] data = Make(); Store(move data); i = i + 1; } return; }",
+                &[],
+            ),
+            ("unit Main() { mut u8[] data = Make(); Store(move data); data = Make(); i64 n = Len(data); return; }", &[]),
+        ];
+        for (offset, (body, expected)) in cases.iter().enumerate() {
+            assert_affine(body, 6650 + offset as u64, expected);
+        }
+    }
+
+    #[test]
+    fn destructive_reads_and_exchange_need_a_moved_place() {
+        let holder = "[Isolated] pub type Index { u8[] offsets } ";
+        let cases: &[(&str, &[&str])] = &[
+            ("[Isolated] pub type Pair { u8[] left, pub u8[] TakeLeft(move this) { return move this.left; } }", &[]),
+            ("[Isolated] pub type Pair { Index right, pub Index TakeRight(move this) { return move this.right; } }", &["E1243"]),
+            (
+                "[Isolated] pub type Stage { u8[] buffer, pub u8[] Swap(mut this, move u8[] next) { return exchange(this.buffer, move next); } }",
+                &[],
+            ),
+            (
+                "pub type Named { string name, pub string Rename(mut this, string next) { return exchange(this.name, next); } }",
+                &["E1239"],
+            ),
+        ];
+        for (offset, (body, expected)) in cases.iter().enumerate() {
+            assert_affine(&format!("{holder}{body}"), 6680 + offset as u64, expected);
+        }
+        let source = format!(
+            "{AFFINE_PRELUDE}[Isolated] pub type Pair {{ u8[] left, pub u8[] TakeLeft(move this) {{ return move this.left; }} }}"
+        );
+        let (db, root) = one_unit_assembly(&source, SyntaxGenerationId(6690));
+        let mut moves = Vec::new();
+        nodes_of_kind(&db, root, IndexedNodeKind::MoveExpression, &mut moves);
+        let form = crate::move_expression_form(&db, moves[0]).expect("query").expect("move form");
+        assert!(
+            matches!(form, crate::MoveExpressionForm::DestructiveRead { ref field, empty: crate::CanonicalEmpty::EmptyArray, .. } if field == "left"),
+            "{form:?}"
+        );
+    }
+
+    fn captures_codes(body: &str, generation: u64) -> Vec<String> {
+        let source = format!(
+            "{MARKERS}{AFFINE_PRELUDE}pub unit Run([Captures(Bound: Transferable)] () => i64 body) {{ return; }} \
+             pub unit Share([Captures(Bound: Shared)] () => i64 body) {{ return; }} {body}"
+        );
+        transfer_report(&source, generation)
+            .into_iter()
+            .map(|(code, ..)| code)
+            .filter(|code| ("E1233"..="E1248").contains(&code.as_str()) && code != "E1244" && code != "E1247")
+            .collect()
+    }
+
+    #[test]
+    fn captures_bounds_judge_bounded_lambda_arguments() {
+        let cases: &[(&str, &[&str])] = &[
+            (
+                "[Immutable] pub type Config { string name, i64 retries } [Copyable] pub type Pixel { u8 r, u8 g, u8 b } \
+                 unit Main(Config config, Pixel pixel) { Run(() => config.retries + i64(pixel.r)); return; }",
+                &[],
+            ),
+            ("i64 Count() { mut i64 count = 0; Run(() => { count = count + 1; return count; }); return count; }", &["E1235"]),
+            ("pub type Cache { i64[] entries } unit Main(Cache cache) { Run(() => Len([1_u8])); Run(() => cache.entries[0]); return; }", &["E1236"]),
+            ("unit Main(move u8[] data) { Run(() => Len(data)); return; }", &["E1237"]),
+            ("unit Main(move u8[] data) { Run(() => Len(move data)); i64 n = Len(data); return; }", &["E1234"]),
+            ("i64 Work() { return 1; } unit Main() { Run(Work); return; }", &[]),
+            ("unit Main(() => i64 body) { Run(body); return; }", &["E1238"]),
+            ("unit Main([Captures(Bound: Transferable)] () => i64 body) { Run(body); return; }", &[]),
+            ("unit Main([Captures(Bound: Transferable)] () => i64 body) { let again = body; Run(again); return; }", &[]),
+            ("unit Main(move u8[] data) { Share(() => Len(move data)); return; }", &["E1236"]),
+            ("pub contract Disposable { } pub unit Bad([Captures(Bound: Disposable)] () => i64 body) { return; }", &["E1248"]),
+            ("pub unit Bad([Captures(Bound: Transferable)] i64 count) { return; }", &["E1248"]),
+            (
+                "pub type Job { [Captures(Bound: Transferable)] () => i64 body } \
+                 unit Main(move u8[] data) { Job job = Job { body: () => Len(data) }; return; }",
+                &["E1237"],
+            ),
+        ];
+        for (offset, (body, expected)) in cases.iter().enumerate() {
+            let codes = captures_codes(body, 6700 + offset as u64);
+            assert_eq!(codes, *expected, "{body}");
+        }
+    }
+
+    #[test]
+    fn move_parameters_over_transferable_type_parameters_are_judged_per_instantiation() {
+        let source = format!(
+            "{MARKERS}{AFFINE_PRELUDE}unit Send<T>(move T value) where T: Transferable {{ return; }} \
+             unit Ok1(move u8[] block) {{ Send<u8[]>(move block); return; }} \
+             unit Bad1(move u8[] block) {{ Send<u8[]>(block); return; }} \
+             unit Ok2(string name) {{ Send<string>(name); i64 n = 0; return; }} \
+             unit Bad2(string name) {{ Send<string>(move name); return; }} \
+             unit Generic<T>(move T item) where T: Transferable {{ Send<T>(move item); Send<T>(item); return; }} \
+             unit Unbounded<T>(move T item) {{ return; }}"
+        );
+        let codes = affine_report(&source, 6750);
+        let found = codes.iter().map(|(code, _)| code.as_str()).collect::<Vec<_>>();
+        assert_eq!(found, ["E1242", "E1239", "E1234", "E1239"], "{codes:?}");
+    }
 }
+

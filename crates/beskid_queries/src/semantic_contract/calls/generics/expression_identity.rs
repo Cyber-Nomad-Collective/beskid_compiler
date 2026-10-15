@@ -142,6 +142,9 @@ pub(in crate::semantic_contract) fn generic_source_expression_identity(
         };
     }
     if node.of::<beskid_analysis::syntax::CallExpression>().is_some() {
+        if let Some(exchange) = exchange_call_for_node(program, index, normalized_key) {
+            return generic_source_expression_identity(db, exchange.place);
+        }
         // A primitive numeric conversion (`u8(value % 256_u64)`) is a call ISLE lowers through
         // its own authority, ahead of `call_lowering`, which knows no declaration for `u8`.
         if let Some(conversion) = primitive_numeric_conversion(db, normalized_key)? {

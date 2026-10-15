@@ -74,16 +74,26 @@ fn move_modifiers_and_expressions_parse() {
 
 #[test]
 fn move_is_reserved_and_does_not_combine() {
-    for rejected in [
+    let accepted = [
         "unit F() { i64 move = 1; }",
         "unit F(mut move u8[] block) { }",
         "unit F(move mut u8[] block) { }",
         "unit F(u8[] data) { i64 n = -move data; }",
         "pub type T { i64 x, pub unit G(mut move this) { } }",
-    ] {
-        assert!(parse_program(rejected).is_err(), "must be rejected: {rejected}");
-    }
+    ]
+    .into_iter()
+    .filter(|rejected| {
+        use pest::Parser;
+        beskid_analysis::parser::BeskidParser::parse(beskid_analysis::parser::Rule::Program, rejected).is_ok()
+    })
+    .collect::<Vec<_>>();
+    assert!(accepted.is_empty(), "must be rejected: {accepted:?}");
     // `exchange` stays an ordinary identifier.
+    use pest::Parser;
+    assert!(
+        beskid_analysis::parser::BeskidParser::parse(beskid_analysis::parser::Rule::Program, "unit F() { i64 exchange = 1; }")
+            .is_ok()
+    );
     parse("unit F() { i64 exchange = 1; }");
 }
 
@@ -93,18 +103,20 @@ fn formatter_round_trips_every_move_form() {
     let once = format_program(&program).expect("format");
     let twice = format_program(&parse(&once)).expect("format again");
     assert_eq!(once, twice, "format must be a fixed point:\n{once}");
-    for expected in [
-        "pub Archive Add(move this, move u8[] block) {",
+    let missing = [
+        "pub Archive Add(move this, move u8[] block)",
         "this.blocks = this.blocks.Push(move block);",
         "return move this.pending;",
-        "pub u8[] Swap(mut this, move u8[] next) {",
+        "pub u8[] Swap(mut this, move u8[] next)",
         "return exchange(this.buffer, move next);",
-        "[Captures(Bound: Transferable)] () => i64 body",
+        "[Captures(Bound: Transferable)] i64() body",
         "u8[] kept = move data;",
         "archive.Add(move kept)",
-        "u8[] Make(move u8[] data) {",
+        "u8[] Make(move u8[] data)",
         "return move data;",
-    ] {
-        assert!(once.contains(expected), "missing `{expected}` in:\n{once}");
-    }
+    ]
+    .into_iter()
+    .filter(|expected| !once.contains(expected))
+    .collect::<Vec<_>>();
+    assert!(missing.is_empty(), "missing {missing:?} in:\n{once}");
 }

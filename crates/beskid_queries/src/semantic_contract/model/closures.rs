@@ -190,6 +190,75 @@ pub struct FiberOwnership {
     pub diagnostics: Arc<[SpawnDiagnostic]>,
 }
 
+/// One finding of the affine ownership analysis (`affine_ownership`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub enum AffineFindingKind {
+    /// E1234: a read of a Moved place; `related` is the consuming use ("moved here").
+    UseAfterMove,
+    /// E1239: `move` on a name that is not an owning Moved-class name; `detail` is the class,
+    /// `None` when the name is borrowed.
+    MoveOfNonOwningName,
+    /// E1240: a consumption in a loop body of a binding declared before the loop.
+    MoveInLoopWithoutReassignment,
+    /// E1241: a borrowed Moved value escapes; `related` is the borrowed declaration.
+    BorrowEscapes,
+    /// E1242: an owning name stored or passed to a `move` parameter without `move`.
+    ImplicitAliasOfMovedValue,
+    /// E1243: `move x.f` on a field without a canonical empty value; `name` is the field and
+    /// `detail` the field type.
+    DestructiveReadWithoutEmpty,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub struct AffineFinding {
+    pub kind: AffineFindingKind,
+    pub site: AstNodeKey,
+    pub span: SourceSpan,
+    pub name: String,
+    pub detail: Option<String>,
+    pub related: Option<AstNodeKey>,
+    /// The binding is a `Fiber` handle (projected into spawn legality).
+    pub fiber: bool,
+}
+
+/// Ownership classification of one binding of Moved class (or a `Fiber` handle).
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub struct AffineBinding {
+    /// The declaring identifier, the explicit receiver, or the method for an implicit `this`.
+    pub declaration: AstNodeKey,
+    pub name: String,
+    pub owning: bool,
+    pub fiber: bool,
+}
+
+/// Generation-bound affine ownership of one callable, replacing the Fiber-only handle analysis.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub struct AffineOwnership {
+    pub callable: AstNodeKey,
+    pub bindings: Arc<[AffineBinding]>,
+    pub findings: Arc<[AffineFinding]>,
+}
+
+/// The canonical empty value a destructive read `move x.f` leaves in the field.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub enum CanonicalEmpty {
+    /// `Option::None`.
+    OptionNone,
+    /// The empty array of the field's element type.
+    EmptyArray,
+    /// The empty `List<T>`.
+    EmptyList,
+}
+
+/// How a `MoveExpression` evaluates. Lowering hook for the integration: `Consume` lowers as its
+/// operand; `DestructiveRead` loads the field and stores `empty` into it in the same step, and the
+/// store goes through the barriered field store.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub enum MoveExpressionForm {
+    Consume { operand: AstNodeKey },
+    DestructiveRead { place: AstNodeKey, field: String, empty: CanonicalEmpty },
+}
+
 /// Authoritative spawn lowering facts and any source-owned legality diagnostics.
 ///
 /// A legal fact contains a zero-argument callable signature result and no diagnostics. Illegal

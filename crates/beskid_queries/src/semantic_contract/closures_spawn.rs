@@ -1,7 +1,9 @@
 //! Focused semantic-contract implementation cluster.
 
+mod affine;
+mod affine_ownership;
+mod capture_bounds;
 mod closures;
-mod fiber_ownership;
 mod function_values;
 mod intrinsics;
 mod spawn;
@@ -25,7 +27,14 @@ pub(in crate::semantic_contract) use function_values::{
     untyped_lambda_parameter_identity, untyped_lambda_parameter_type,
 };
 pub use function_values::function_value_call_specialization;
-pub(in crate::semantic_contract) use fiber_ownership::{callable_fiber_ownership_tracked, spawn_legality_tracked};
+pub(in crate::semantic_contract) use affine::{identity_spelling, move_expression_form_for_node};
+pub(in crate::semantic_contract) use affine_ownership::{
+    callable_affine_ownership_tracked, callable_fiber_ownership_tracked, spawn_legality_tracked,
+};
+pub(in crate::semantic_contract) use capture_bounds::{
+    CapturesBound, call_argument_captures_bound, captures_bound, declared_parameters, direct_callee,
+    field_captures_bound, with_declaration,
+};
 pub(in crate::semantic_contract) use intrinsics::{runtime_intrinsic_name_tracked, runtime_intrinsic_tracked};
 pub(in crate::semantic_contract) use spawn::{
     inferred_spawn_handle, normalized_expression_node, spawn_entry_operand, spawn_entry_validation_tracked,

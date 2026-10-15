@@ -16,6 +16,7 @@ mod typed_program;
 mod types;
 
 pub use closures::{
+    AffineBinding, AffineFinding, AffineFindingKind, AffineOwnership, CanonicalEmpty, MoveExpressionForm,
     CaptureStorage, CaptureStorageClass, ClosureAllocationStatus, ClosureCallTarget, ClosureCapture,
     ClosureEnvironment, ClosureEnvironmentAbiShape, ClosureEnvironmentField, ClosureLoweringStatus,
     ClosurePointerMapRequirement, ClosureSignature, FiberOwnership, FunctionItemValue, FunctionValueCall,
