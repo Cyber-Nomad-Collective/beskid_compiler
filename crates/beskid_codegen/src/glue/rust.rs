@@ -88,30 +88,19 @@ fn scalar(value: PrimitiveType) -> Result<(&'static str, &'static str, &'static 
         }
     })
 }
-fn physical(ty: &GlueLogicalType) -> Result<GluePhysicalType, BackendError> {
+pub(super) fn physical(ty: &GlueLogicalType) -> Result<GluePhysicalType, BackendError> {
     match ty {
-        GlueLogicalType::Primitive(PrimitiveType::String) => Ok(GluePhysicalType {
-            logical: "utf8".into(),
-            slots: vec!["const uint8_t*".into(), "size_t".into()],
-            checked: true,
-            opaque:None,
-        }),
+        GlueLogicalType::Primitive(PrimitiveType::String) => Ok(GluePhysicalType::plain(
+            "utf8",
+            vec!["const uint8_t*".into(), "size_t".into()],
+            true,
+        )),
         GlueLogicalType::Primitive(p) => {
             let (logical, _, c, checked) = scalar(*p)?;
-            Ok(GluePhysicalType {
-                logical: logical.into(),
-                slots: if *p == PrimitiveType::Unit { vec![] } else { vec![c.into()] },
-                checked,
-                opaque:None,
-            })
+            Ok(GluePhysicalType::plain(logical, if *p == PrimitiveType::Unit { vec![] } else { vec![c.into()] }, checked))
         }
         GlueLogicalType::Array(element) if element.as_ref() == &GlueLogicalType::Primitive(PrimitiveType::U8) => {
-            Ok(GluePhysicalType {
-                logical: "bytes".into(),
-                slots: vec!["const uint8_t*".into(), "size_t".into()],
-                checked: true,
-            opaque:None,
-            })
+            Ok(GluePhysicalType::plain("bytes", vec!["const uint8_t*".into(), "size_t".into()], true))
         }
         GlueLogicalType::Array(_) => {
             Err(BackendError::UnsupportedRustGlueType("only canonically proven u8 arrays are supported".into()))
@@ -121,17 +110,114 @@ fn physical(ty: &GlueLogicalType) -> Result<GluePhysicalType, BackendError> {
         )),
         GlueLogicalType::Handle(brand) => {
             let arguments = brand.arguments.iter().map(physical).collect::<Result<Vec<_>, _>>()?;
-            Ok(GluePhysicalType {
-                logical: format!(
+            Ok(GluePhysicalType::plain(
+                format!(
                     "opaque:{}:{}:{}:{}",
                     brand.library,
                     brand.qualified_identity,
                     brand.nullable,
                     serde_json::to_string(&arguments).map_err(GlueArtifactError::from)?
                 ),
-                slots: vec!["uint64_t".into()],
+                vec!["uint64_t".into()],
+                true,
+            ))
+        }
+        GlueLogicalType::Record(record) => {
+            // The C ABI profile binding of the one lowered shape is the only layout authority.
+            let beskid_abi::interop::TypeShape::Record(shape) = beskid_queries::glue_type_shape(ty)
+                .map_err(|error| BackendError::UnsupportedRustGlueType(error.to_string()))?
+            else {
+                return Err(BackendError::UnsupportedRustGlueType("GlueRecord did not lower to a record shape".into()));
+            };
+            let fields = record
+                .fields
+                .iter()
+                .zip(&shape.fields)
+                .map(|(field, lowered)| {
+                    let (logical, _, c, _) = scalar(field.ty)?;
+                    if lowered.name != field.name {
+                        return Err(BackendError::UnsupportedRustGlueType("GlueRecord field order differs".into()));
+                    }
+                    Ok(GlueRecordField {
+                        name: field.name.clone(),
+                        logical: logical.into(),
+                        c_type: c.into(),
+                        offset: lowered.offset,
+                    })
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            if fields.len() != shape.fields.len() {
+                return Err(BackendError::UnsupportedRustGlueType("GlueRecord field count differs".into()));
+            }
+            let record_sha256 = digest(
+                &serde_json::to_vec(&(&*record.qualified_identity, &fields, shape.size, shape.alignment))
+                    .map_err(GlueArtifactError::from)?,
+            );
+            let c_name = format!("GlueRecord_{record_sha256}");
+            Ok(GluePhysicalType {
+                logical: format!("record:{}", record.qualified_identity),
+                slots: vec![c_name.clone()],
                 checked: true,
-            opaque:None,
+                opaque: None,
+                record: Some(GlueRecordType {
+                    constructor: record_constructor_symbol(&record_sha256),
+                    reader: record_reader_symbol(&record_sha256),
+                    record_sha256,
+                    identity: record.qualified_identity.to_string(),
+                    c_name,
+                    fields,
+                    size: shape.size,
+                    alignment: shape.alignment,
+                    rust_owner: record.rust_owner.as_deref().map(str::to_owned),
+                }),
+                enumeration: None,
+                callback: None,
+            })
+        }
+        GlueLogicalType::Enum(enumeration) => {
+            beskid_queries::glue_type_shape(ty).map_err(|error| BackendError::UnsupportedRustGlueType(error.to_string()))?;
+            let enum_sha256 = digest(
+                &serde_json::to_vec(&(&*enumeration.qualified_identity, &*enumeration.variants))
+                    .map_err(GlueArtifactError::from)?,
+            );
+            Ok(GluePhysicalType {
+                logical: format!("enum:{}", enumeration.qualified_identity),
+                slots: vec!["uint32_t".into()],
+                checked: true,
+                opaque: None,
+                record: None,
+                enumeration: Some(GlueEnumType {
+                    constructor: enum_constructor_symbol(&enum_sha256),
+                    reader: enum_reader_symbol(&enum_sha256),
+                    enum_sha256,
+                    identity: enumeration.qualified_identity.to_string(),
+                    variants: enumeration.variants.to_vec(),
+                    rust_owner: enumeration.rust_owner.as_deref().map(str::to_owned),
+                }),
+                callback: None,
+            })
+        }
+        GlueLogicalType::Callback(callback) => {
+            beskid_queries::glue_type_shape(ty).map_err(|error| BackendError::UnsupportedRustGlueType(error.to_string()))?;
+            let parameters = callback.parameters.iter().map(physical).collect::<Result<Vec<_>, _>>()?;
+            let result = physical(&callback.result)?;
+            let callback_sha256 =
+                digest(&serde_json::to_vec(&(&parameters, &result)).map_err(GlueArtifactError::from)?);
+            let c_name = format!("GlueCallback_{callback_sha256}");
+            Ok(GluePhysicalType {
+                logical: format!("callback:{callback_sha256}"),
+                slots: vec![c_name.clone(), "uint64_t".into()],
+                checked: true,
+                opaque: None,
+                record: None,
+                enumeration: None,
+                callback: Some(Box::new(GlueCallbackType {
+                    invoke: format!("beskid_glue_callback_{callback_sha256}_invoke"),
+                    callback_sha256,
+                    c_name,
+                    parameters,
+                    result,
+                })),
             })
         }
     }
@@ -145,7 +231,24 @@ fn identifier(value: &str) -> bool {
     matches!(chars.next(),Some(c) if c=='_'||c.is_ascii_alphabetic())
         && chars.all(|c| c == '_' || c.is_ascii_alphanumeric())
 }
-fn c_to_rust(c: &str) -> Result<&'static str, BackendError> {
+/// A Rust identifier for a Beskid field or variant name: a Rust keyword becomes a raw identifier;
+/// the four names that cannot be raw identifiers are rejected.
+pub fn rust_identifier(name: &str) -> Result<String, BackendError> {
+    const KEYWORDS: &[&str] = &[
+        "as", "async", "await", "break", "const", "continue", "dyn", "else", "enum", "extern", "false", "fn", "for",
+        "gen", "if", "impl", "in", "let", "loop", "match", "mod", "move", "mut", "pub", "ref", "return", "static",
+        "struct", "trait", "true", "try", "type", "unsafe", "use", "where", "while", "abstract", "become", "box", "do",
+        "final", "macro", "override", "priv", "typeof", "unsized", "virtual", "yield",
+    ];
+    if !identifier(name) || matches!(name, "self" | "Self" | "super" | "crate" | "_") {
+        return Err(BackendError::UnsupportedRustGlueType(format!("`{name}` is not a Rust identifier")));
+    }
+    Ok(if KEYWORDS.contains(&name) { format!("r#{name}") } else { name.to_owned() })
+}
+fn c_to_rust(c: &str) -> Result<String, BackendError> {
+    if (c.starts_with("GlueRecord_") || c.starts_with("GlueCallback_")) && identifier(c) {
+        return Ok(c.to_owned());
+    }
     Ok(match c {
         "int8_t" => "i8",
         "int16_t" => "i16",
@@ -160,7 +263,15 @@ fn c_to_rust(c: &str) -> Result<&'static str, BackendError> {
         "uintptr_t" | "size_t" => "usize",
         "const uint8_t*" => "*const u8",
         _ => return Err(BackendError::UnsupportedRustGlueType(c.into())),
-    })
+    }
+    .to_owned())
+}
+/// Rust client name of a record or enum physical type.
+fn nominal_rust_type(ty: &GluePhysicalType) -> Option<String> {
+    ty.record
+        .as_ref()
+        .map(|record| record.c_name.clone())
+        .or_else(|| ty.enumeration.as_ref().map(|enumeration| format!("GlueEnum_{}", enumeration.enum_sha256)))
 }
 fn checked_rust_type(logical: &str) -> Option<&'static str> {
     Some(match logical {
@@ -187,6 +298,8 @@ fn checked_rust_wrapper(index: usize, binding: &GlueBindingManifest) -> Result<S
     let result = if let Some(opaque)=&binding.result.opaque {
         let name=format!("OpaqueHandle{}",opaque.brand_sha256);
         if opaque.nullable{format!("Option<{name}>")}else{name}
+    }else if let Some(nominal) = nominal_rust_type(&binding.result) {
+        nominal
     }else{let Some(result)=checked_rust_type(&binding.result.logical)else{return Ok(String::new())};result.to_owned()};
     let mut parameters = Vec::new();
     let mut arguments = Vec::new();
@@ -195,6 +308,8 @@ fn checked_rust_wrapper(index: usize, binding: &GlueBindingManifest) -> Result<S
         let native = if let Some(opaque)=&ty.opaque {
             let name=format!("OpaqueHandle{}",opaque.brand_sha256);
             if opaque.nullable{format!("Option<&{name}>")}else{format!("&{name}")}
+        }else if let Some(nominal) = nominal_rust_type(ty) {
+            nominal
         }else{match ty.logical.as_str() {
             "utf8" => "&str",
             "bytes" => "&[u8]",
@@ -206,6 +321,10 @@ fn checked_rust_wrapper(index: usize, binding: &GlueBindingManifest) -> Result<S
         parameters.push(format!("{name}: {native}"));
         if let Some(opaque)=&ty.opaque {
             arguments.push(if opaque.nullable{format!("{name}.map_or(0,|value|value.token)")}else{format!("{name}.token")});
+            continue;
+        }
+        if ty.enumeration.is_some() {
+            arguments.push(format!("{name}.into_raw()"));
             continue;
         }
         match ty.logical.as_str() {
@@ -223,6 +342,11 @@ fn checked_rust_wrapper(index: usize, binding: &GlueBindingManifest) -> Result<S
     let mut body = String::new();
     if managed {
         body.push_str("let mut output=GlueOwnedView{pointer:core::ptr::null(),length:0,token:0};\n");
+    } else if let Some(record) = &binding.result.record {
+        // Every record field type has an all-zero value (Bool false, char NUL).
+        body.push_str(&format!("let mut output:{}=unsafe{{core::mem::zeroed()}};\n", record.c_name));
+    } else if binding.result.enumeration.is_some() {
+        body.push_str("let mut output:u32=0;\n");
     } else if binding.result.logical != "unit" {
         let physical = c_to_rust(
             binding
@@ -245,6 +369,12 @@ fn checked_rust_wrapper(index: usize, binding: &GlueBindingManifest) -> Result<S
         } else {
             body.push_str("Ok(copied)\n");
         }
+    } else if binding.result.record.is_some() {
+        body.push_str("if status!=0{return Err(GlueError::Status(status));}\nOk(output)\n");
+    } else if let Some(nominal) = binding.result.enumeration.as_ref().and(nominal_rust_type(&binding.result)) {
+        body.push_str(&format!(
+            "if status!=0{{return Err(GlueError::Status(status));}}\n{nominal}::from_raw(output).ok_or(GlueError::InvalidDiscriminant)\n"
+        ));
     } else if let Some(opaque)=&binding.result.opaque {
         body.push_str("if status!=0{return Err(GlueError::Status(status));}\n");
         let name=format!("OpaqueHandle{}",opaque.brand_sha256);
@@ -341,7 +471,21 @@ pub fn emit(
         if parameters.iter().any(|p| p.checked) || result.checked {
             adapters.insert(format!("{}:{}:checked_values_v1", library, fact.symbol));
         }
+        let values = parameters.iter().chain(std::iter::once(&result));
+        for (label, present) in [
+            ("record_value_v1", values.clone().any(|p| p.record.is_some())),
+            ("enum_discriminant_v1", values.clone().any(|p| p.enumeration.is_some())),
+            ("call_scoped_callback_v1", values.clone().any(|p| p.callback.is_some())),
+        ] {
+            if present {
+                adapters.insert(format!("{}:{}:{label}", library, fact.symbol));
+            }
+        }
         for plan in super::handles::source_handle_box_plans(input,item.key)? {
+            // Record and enum transports carry their metadata in the physical type already.
+            if plan.value.is_some() {
+                continue;
+            }
             let metadata=GlueOpaqueType{
                 brand_sha256:plan.brand_sha256.clone(),library:plan.library,nullable:plan.nullable,
                 constructor:format!("beskid_glue_handle_{}_construct",plan.brand_sha256),
@@ -406,7 +550,7 @@ pub fn emit(
     rust.push_str(
         r#"
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
-pub enum GlueError { Status(i32), Protocol, InvalidBool, InvalidChar, InvalidUtf8, Release(i32) }
+pub enum GlueError { Status(i32), Protocol, InvalidBool, InvalidChar, InvalidUtf8, Release(i32), InvalidDiscriminant, ForeignThread }
 unsafe fn copy_owned(view:GlueOwnedView,release:unsafe extern "C" fn(u64)->i32)->Result<Vec<u8>,GlueError> {
     if view.token==0 {return Err(GlueError::Protocol);}
     let valid=view.length<=16*1024*1024 && !view.pointer.is_null();
@@ -430,6 +574,7 @@ unsafe fn copy_owned(view:GlueOwnedView,release:unsafe extern "C" fn(u64)->i32)-
     let mut header = String::from(
         "/* Generated normalized local C ABI; not the stdio wire protocol. */\n#ifndef BESKID_GENERATED_GLUE_H\n#define BESKID_GENERATED_GLUE_H\n#include <stdint.h>\n#include <stddef.h>\ntypedef struct { const uint8_t *pointer; size_t length; uint64_t token; } GlueOwnedView;\ntypedef int32_t (*GlueAdmitV1)(void*,const uint8_t*,const uint64_t*,size_t,uint64_t*);\ntypedef struct { uint32_t version; uint32_t size; void *context; GlueAdmitV1 admit; } GlueAdmissionTableV1;\nint32_t beskid_glue_artifact_v1_initialize(const GlueAdmissionTableV1*);\n",
     );
+    emit_nominal_declarations(&bindings, &mut header, &mut rust)?;
     for (index, binding) in bindings.iter().enumerate() {
         let mut cargs = Vec::new();
         let mut rargs = Vec::new();
@@ -444,7 +589,7 @@ unsafe fn copy_owned(view:GlueOwnedView,release:unsafe extern "C" fn(u64)->i32)-
             let mut checked_cargs = cargs.clone();
             let mut checked_rargs = rargs.clone();
             let output_type = if matches!(binding.result.logical.as_str(), "utf8" | "bytes") {
-                Some(("GlueOwnedView", "GlueOwnedView"))
+                Some(("GlueOwnedView", "GlueOwnedView".to_owned()))
             } else if let Some(result) = binding.result.slots.first() {
                 Some((result.as_str(), c_to_rust(result)?))
             } else {
@@ -472,7 +617,7 @@ unsafe fn copy_owned(view:GlueOwnedView,release:unsafe extern "C" fn(u64)->i32)-
         } else {
             binding.result.slots.first().map(String::as_str).unwrap_or("void")
         };
-        rust.push_str(&format!("#[link(name = {:?})]\nunsafe extern \"C\" {{\n    #[link_name = {:?}]\n    pub fn binding_{index}({}) -> {};\n}}\n",binding.library,binding.symbol,rargs.join(", "),if result=="void"{"()"}else{c_to_rust(result)?}));
+        rust.push_str(&format!("#[link(name = {:?})]\nunsafe extern \"C\" {{\n    #[link_name = {:?}]\n    pub fn binding_{index}({}) -> {};\n}}\n",binding.library,binding.symbol,rargs.join(", "),if result=="void"{"()".to_owned()}else{c_to_rust(result)?}));
         header.push_str(&format!(
             "{result} {}({});\n",
             binding.symbol,
@@ -510,7 +655,7 @@ unsafe fn copy_owned(view:GlueOwnedView,release:unsafe extern "C" fn(u64)->i32)-
     let scope = super::native::CheckedScopeGeometry::from_manifest(input.abi_manifest())?;
     let (native, shapes) = super::native::emit(&manifest, &scope)?;
     let manifest_bytes = serde_json::to_vec_pretty(&manifest).map_err(GlueArtifactError::from)?;
-    let mut files = vec![GeneratedFile::new("Cargo.toml",b"[package]\nname = \"beskid_glue_client\"\nversion = \"0.0.0\"\nedition = \"2024\"\n[lib]\npath = \"src/lib.rs\"\ncrate-type = [\"rlib\"]\n[dependencies]\nbeskid_glue = { path = \"vendor/beskid_glue\" }\nbeskid_serialization = { path = \"vendor/beskid_serialization\" }\n".to_vec()),GeneratedFile::new("src/lib.rs",format!("pub mod peer;\n{rust}").into_bytes()),GeneratedFile::new("include/beskid_glue.h",header.into_bytes()),GeneratedFile::new("glue-manifest.json",manifest_bytes),GeneratedFile::new("native/adapters.c",native),GeneratedFile::new("native/compiled-shapes.json",shapes)];
+    let mut files = vec![GeneratedFile::new("Cargo.toml",b"[package]\nname = \"beskid_glue_client\"\nversion = \"0.0.0\"\nedition = \"2024\"\n[lib]\npath = \"src/lib.rs\"\ncrate-type = [\"rlib\"]\n[dependencies]\nbeskid_glue = { path = \"vendor/beskid_glue\" }\nbeskid_serialization = { path = \"vendor/beskid_serialization\" }\n".to_vec()),GeneratedFile::new("src/lib.rs",format!("#![allow(non_camel_case_types, improper_ctypes)]\npub mod peer;\n{rust}").into_bytes()),GeneratedFile::new("include/beskid_glue.h",header.into_bytes()),GeneratedFile::new("glue-manifest.json",manifest_bytes),GeneratedFile::new("native/adapters.c",native),GeneratedFile::new("native/compiled-shapes.json",shapes)];
     files.push(GeneratedFile::new("src/peer.rs", generated_peer(&manifest)?));
     files.extend(shared_transport_sources());
     GlueArtifact::new(manifest, files).map_err(BackendError::from)
@@ -659,4 +804,96 @@ fn hex_bytes(value: &str) -> Result<Vec<u8>, BackendError> {
                 .map_err(|_| BackendError::UnsupportedRustGlueType("invalid compiled digest".into()))
         })
         .collect()
+}
+
+/// C typedefs (with layout assertions) and Rust client declarations of every record, enum and
+/// callback the packet carries. Record layout is the C ABI profile binding recorded in the packet.
+fn emit_nominal_declarations(
+    bindings: &[GlueBindingManifest],
+    header: &mut String,
+    rust: &mut String,
+) -> Result<(), BackendError> {
+    let mut seen = BTreeSet::new();
+    for binding in bindings {
+        for ty in nominal_values(binding) {
+            if let Some(record) = &ty.record
+                && seen.insert(record.record_sha256.clone())
+            {
+                let name = &record.c_name;
+                let mut c_fields = String::new();
+                let mut rust_fields = Vec::new();
+                let mut asserts = format!(
+                    "_Static_assert(sizeof({name})=={}, \"Glue record size\");\n_Static_assert(_Alignof({name})=={}, \"Glue record alignment\");\n",
+                    record.size, record.alignment
+                );
+                let mut rust_asserts = format!(
+                    "assert!(core::mem::size_of::<{name}>()=={});assert!(core::mem::align_of::<{name}>()=={});",
+                    record.size, record.alignment
+                );
+                for field in &record.fields {
+                    c_fields.push_str(&format!(" {} field_{};", field.c_type, field.name));
+                    asserts.push_str(&format!(
+                        "_Static_assert(offsetof({name},field_{})=={}, \"Glue record offset\");\n",
+                        field.name, field.offset
+                    ));
+                    let rust_name = rust_identifier(&field.name)?;
+                    let rust_type = checked_rust_type(&field.logical)
+                        .ok_or_else(|| BackendError::UnsupportedRustGlueType("record field type".into()))?;
+                    rust_fields.push(format!("pub {rust_name}:{rust_type}"));
+                    rust_asserts.push_str(&format!("assert!(core::mem::offset_of!({name},{rust_name})=={});", field.offset));
+                }
+                header.push_str(&format!("typedef struct {{{c_fields} }} {name};\n{asserts}"));
+                rust.push_str(&format!(
+                    "/// `{}` by value.\n#[repr(C)]\n#[derive(Debug,Clone,Copy,PartialEq)]\npub struct {name}{{{}}}\nconst _:()={{{rust_asserts}}};\n",
+                    record.identity,
+                    rust_fields.join(",")
+                ));
+            }
+            if let Some(enumeration) = &ty.enumeration
+                && seen.insert(enumeration.enum_sha256.clone())
+            {
+                let name = format!("GlueEnum_{}", enumeration.enum_sha256);
+                let variants =
+                    enumeration.variants.iter().map(|variant| rust_identifier(variant)).collect::<Result<Vec<_>, _>>()?;
+                let from_raw = variants
+                    .iter()
+                    .enumerate()
+                    .map(|(index, variant)| format!("{index}=>Some(Self::{variant})"))
+                    .collect::<Vec<_>>()
+                    .join(",");
+                let into_raw = variants
+                    .iter()
+                    .enumerate()
+                    .map(|(index, variant)| format!("Self::{variant}=>{index}"))
+                    .collect::<Vec<_>>()
+                    .join(",");
+                rust.push_str(&format!(
+                    "/// `{}` as its source-order discriminant.\n#[derive(Debug,Clone,Copy,PartialEq,Eq)]\npub enum {name}{{{}}}\nimpl {name}{{pub fn from_raw(value:u32)->Option<Self>{{match value{{{from_raw},_=>None}}}}pub fn into_raw(self)->u32{{match self{{{into_raw}}}}}}}\n",
+                    enumeration.identity,
+                    variants.join(",")
+                ));
+            }
+            if let Some(callback) = &ty.callback
+                && seen.insert(callback.callback_sha256.clone())
+            {
+                let mut c_parameters = vec!["uint64_t".to_owned()];
+                let mut rust_parameters = vec!["u64".to_owned()];
+                for member in &callback.parameters {
+                    c_parameters.push(member.slots[0].clone());
+                    rust_parameters.push(c_to_rust(&member.slots[0])?);
+                }
+                if let Some(result) = callback.result.slots.first() {
+                    c_parameters.push(format!("{result}*"));
+                    rust_parameters.push(format!("*mut {}", c_to_rust(result)?));
+                }
+                header.push_str(&format!("typedef int32_t (*{})({});\n", callback.c_name, c_parameters.join(",")));
+                rust.push_str(&format!(
+                    "pub type {} = unsafe extern \"C\" fn({})->i32;\n",
+                    callback.c_name,
+                    rust_parameters.join(",")
+                ));
+            }
+        }
+    }
+    Ok(())
 }
