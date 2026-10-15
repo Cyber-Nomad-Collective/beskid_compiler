@@ -416,7 +416,15 @@ mod platform_object_tests {
 
     use beskid_abi::generated::abi_v5_contract::GeneratedCoreArgsEntryAdapter;
 
-    use super::{executable_bootstrap_command, executable_bootstrap_source, platform_object_plan};
+    use super::{executable_bootstrap_command, executable_bootstrap_source, generated_c_runtime_args, platform_object_plan};
+
+    /// R4 Windows regression: Glue consumer DLLs failed to link with `undefined symbol: _fltused`.
+    #[test]
+    fn v06_generated_c_declares_the_dynamic_crt_only_on_windows_msvc() {
+        assert_eq!(generated_c_runtime_args("x86_64-pc-windows-msvc"), ["-fms-runtime-lib=dll"]);
+        assert!(generated_c_runtime_args("x86_64-unknown-linux-gnu").is_empty());
+        assert!(generated_c_runtime_args("aarch64-apple-darwin").is_empty());
+    }
 
     #[test]
     fn windows_executable_bootstrap_selects_the_dynamic_crt_at_compilation() {
@@ -610,6 +618,15 @@ pub(super) fn compile_native_test_bootstrap(
     Ok(object)
 }
 
+/// CRT selection of compiler-issued C on Windows. Generated adapters run inside a process that
+/// shares the dynamic UCRT (executables link `msvcrt.lib`); `-fms-runtime-lib=dll` records that
+/// (`/DEFAULTLIB:msvcrt.lib`, the clang form of `/MD`) in the object. Without it, a Glue consumer or
+/// Mod DLL (`/DLL /NOENTRY`, no CRT library on the link line) whose adapter uses floating point
+/// fails with an undefined `_fltused`, which clang references for any float code.
+fn generated_c_runtime_args(target: &str) -> &'static [&'static str] {
+    if target.contains("windows-msvc") { &["-fms-runtime-lib=dll"] } else { &[] }
+}
+
 /// Compile compiler-issued adapter source with the existing target C tool policy and
 /// the same absolute execution budget/provenance authority as native links.
 pub(crate) fn compile_generated_c_object(
@@ -623,6 +640,7 @@ pub(crate) fn compile_generated_c_object(
     let plan = platform_object_plan(target)?;
     let mut command = Command::new(plan.tls_program);
     command.args(&plan.tls_args);
+    command.args(generated_c_runtime_args(target));
     for include in includes {
         command.arg("-I").arg(include);
     }

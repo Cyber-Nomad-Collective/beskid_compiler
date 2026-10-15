@@ -547,6 +547,30 @@ fn cargo_artifact(
     candidate.ok_or_else(|| invalid("Cargo produced no exact cdylib artifact"))
 }
 
+/// The prerequisite paths of one Cargo dep-info rule. Cargo escapes only a space in a path (`\ `);
+/// every other backslash is literal, which on Windows is the path separator (`C:\stage\a.rs`).
+fn dependency_names(deps: &str) -> Vec<String> {
+    let mut names = Vec::new();
+    let mut word = String::new();
+    let mut chars = deps.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\\' && chars.peek() == Some(&' ') {
+            word.push(' ');
+            chars.next();
+        } else if c.is_whitespace() {
+            if !word.is_empty() {
+                names.push(std::mem::take(&mut word));
+            }
+        } else {
+            word.push(c);
+        }
+    }
+    if !word.is_empty() {
+        names.push(word);
+    }
+    names
+}
+
 fn verify_dependency_inventory(payload: &Path, stage: &Path, inventory: &[(String, String)]) -> AotResult<()> {
     let depfile = payload.with_extension("d");
     let bytes = fs::read(&depfile).map_err(|_| invalid("Cargo compiler dependency evidence missing"))?;
@@ -562,29 +586,7 @@ fn verify_dependency_inventory(payload: &Path, stage: &Path, inventory: &[(Strin
         .iter()
         .map(|(path, _)| fs::canonicalize(stage.join(path)).map_err(|e| invalid(e.to_string())))
         .collect::<AotResult<BTreeSet<_>>>()?;
-    let mut names = Vec::new();
-    let mut word = String::new();
-    let mut escaped = false;
-    for c in deps.chars() {
-        if escaped {
-            word.push(c);
-            escaped = false;
-        } else if c == '\\' {
-            escaped = true;
-        } else if c.is_whitespace() {
-            if !word.is_empty() {
-                names.push(std::mem::take(&mut word));
-            }
-        } else {
-            word.push(c);
-        }
-    }
-    if escaped {
-        return Err(invalid("Rust dependency trailing escape"));
-    }
-    if !word.is_empty() {
-        names.push(word);
-    }
+    let names = dependency_names(deps);
     if names.is_empty() {
         return Err(invalid("Rust compiler source dependency evidence empty"));
     }
@@ -689,6 +691,33 @@ fn hermetic_environment(inherited_names: impl IntoIterator<Item = OsString>, car
         inherited_names.into_iter().filter(|name| !inherited_allowed(name)).map(|name| (name, None)).collect();
     environment.push(("CARGO_HOME".into(), Some(cargo_home.as_os_str().to_owned())));
     environment
+}
+
+/// The diagnostics of a failed `cargo build --message-format=json`: rustc's rendered error
+/// messages travel on stdout as `compiler-message` records, so Cargo's stderr alone names only the
+/// failing crate. Errors come first, bounded, then Cargo's own stderr.
+fn cargo_failure_report(stdout: &[u8], stderr: &[u8]) -> String {
+    const RENDERED_LIMIT: usize = 64 * 1024;
+    let mut report = String::new();
+    for line in String::from_utf8_lossy(stdout).lines() {
+        let Ok(record) = serde_json::from_str::<serde_json::Value>(line) else { continue };
+        if record.get("reason").and_then(|v| v.as_str()) != Some("compiler-message") {
+            continue;
+        }
+        let message = record.get("message");
+        if message.and_then(|m| m.get("level")).and_then(|v| v.as_str()) != Some("error") {
+            continue;
+        }
+        if let Some(rendered) = message.and_then(|m| m.get("rendered")).and_then(|v| v.as_str()) {
+            if report.len() + rendered.len() > RENDERED_LIMIT {
+                report.push_str("(further rustc errors omitted)\n");
+                break;
+            }
+            report.push_str(rendered);
+        }
+    }
+    report.push_str(&String::from_utf8_lossy(stderr));
+    report
 }
 
 /// Cargo merges ancestor `.cargo/config*` and honors `rust-toolchain*`; neither can be disabled
@@ -1034,6 +1063,15 @@ pub fn build_rust_owner(req: &RustOwnerBuildRequest<'_>) -> AotResult<PreparedRu
         invocation.args.push("--release".into());
     }
     let mut environment = hermetic_environment(std::env::vars_os().map(|(name, _)| name), &cargo_home);
+    // rustc runs `link.exe` (through the driver) with this environment; MSVC finds the Windows
+    // SDK import libraries only through the developer environment, which the hermetic
+    // allowlist drops. Re-add exactly the toolchain variables as explicit overrides.
+    #[cfg(windows)]
+    environment.extend(
+        crate::windows_toolchain::windows_native_environment(Some(req.control))?
+            .into_iter()
+            .map(|(name, value)| (name, Some(value))),
+    );
     environment.push(("RUSTC".into(), Some(rustc.as_os_str().to_owned())));
     environment.extend([
         ("RUSTC_WRAPPER".into(), Some(driver.path().as_os_str().to_owned())),
@@ -1119,7 +1157,10 @@ pub fn build_rust_owner(req: &RustOwnerBuildRequest<'_>) -> AotResult<PreparedRu
         return Err(invalid("Cargo executable changed between admission record, metadata and build"));
     }
     if !output.status.success() {
-        return Err(invalid(format!("Rust owner Cargo build failed: {}", String::from_utf8_lossy(&output.stderr))));
+        return Err(invalid(format!(
+            "Rust owner Cargo build failed: {}",
+            cargo_failure_report(&output.stdout, &output.stderr)
+        )));
     }
     if hash_file(&rustc)? != rustc_digest
         || hash_file(&provider)? != provider_digest
@@ -1245,6 +1286,27 @@ pub fn build_rust_owner(req: &RustOwnerBuildRequest<'_>) -> AotResult<PreparedRu
 #[cfg(test)]
 mod tests {
     use super::*;
+    /// R4 Windows regression: the owner build failed with only Cargo's "could not compile ... due
+    /// to 1 previous error" because rustc's message (LNK1181, `kernel32.lib`) was on stdout.
+    #[test]
+    fn v06_owner_cargo_failure_report_carries_rendered_rustc_errors() {
+        let stdout = [
+            serde_json::json!({"reason":"compiler-message","message":{"level":"warning","rendered":"warning: unused\n"}}),
+            serde_json::json!({"reason":"compiler-message","message":{"level":"error","rendered":"error: linking with `driver` failed\n  = note: LINK : fatal error LNK1181: cannot open input file 'kernel32.lib'\n"}}),
+            serde_json::json!({"reason":"build-finished","success":false}),
+        ]
+        .iter()
+        .map(|record| record.to_string())
+        .collect::<Vec<_>>()
+        .join("\n");
+        let report = cargo_failure_report(
+            stdout.as_bytes(),
+            b"error: could not compile `beskid_rust_owner` (lib) due to 1 previous error",
+        );
+        assert!(report.contains("LNK1181") && report.contains("kernel32.lib"), "{report}");
+        assert!(!report.contains("warning: unused"), "{report}");
+        assert!(report.ends_with("due to 1 previous error"), "{report}");
+    }
     fn setup() -> (tempfile::TempDir, PathBuf, PathBuf, PathBuf) {
         let temp = tempfile::tempdir().unwrap();
         let manifest = temp.path().join("Cargo.toml");
@@ -1296,6 +1358,16 @@ mod tests {
             )
             .is_err()
         );
+    }
+    /// R4 Windows regression: Cargo writes Windows dep-info paths with literal backslash
+    /// separators; treating each backslash as an escape collapsed `C:\stage\a.rs` to `C:stagea.rs`.
+    #[test]
+    fn v06_dependency_names_keep_windows_separators_and_unescape_spaces() {
+        assert_eq!(
+            dependency_names(r"C:\tmp\dep\ test\my\ lib.rs C:\tmp\dep\ test\sub.rs"),
+            [r"C:\tmp\dep test\my lib.rs", r"C:\tmp\dep test\sub.rs"]
+        );
+        assert_eq!(dependency_names("/stage/a\\ b.rs  /stage/c.rs\n"), ["/stage/a b.rs", "/stage/c.rs"]);
     }
     #[test]
     fn rust_owner_dependency_inventory_rejects_external_source() {
