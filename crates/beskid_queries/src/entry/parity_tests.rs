@@ -540,7 +540,8 @@ fn transfer_legality_findings_carry_their_attribute_and_member_spans() {
     ];
     let mut failures = Vec::new();
     for (offset, (body, code, spelling)) in cases.iter().enumerate() {
-        let source = format!("{markers}{body}");
+        // Declarations are judged per unit that owns a callable item.
+        let source = format!("{markers}{body} unit Touch() {{ return; }}");
         let findings = root_findings(&source, 6990 + offset as u64);
         let sited = findings
             .iter()
