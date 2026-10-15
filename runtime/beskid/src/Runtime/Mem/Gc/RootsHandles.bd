@@ -68,6 +68,107 @@ pub unit GcHeapForceRootStackFailure(word enabled) {
     return;
 }
 
+// ---- Managed operand liveness (fail fast) ----
+//
+// A runtime service that receives a managed reference which no longer resolves to a live object
+// (a freed or never-allocated address: use after collection) has observed a memory-safety
+// violation. It traps `invalid_or_stale_handle` (6) with a diagnostic naming the service and
+// never substitutes a null, empty, or failure value. A null reference is not a dead object and
+// keeps each service's own null contract.
+//
+// Services named in the diagnostic; from `LIVENESS_STRING_SERVICE_FIRST` on they take string
+// operands. Constants are file-local, so the consumers (`Strings.bd`, `Utf8ViewRecord.bd`,
+// `AbiValue.bd`) repeat the numbers they pass.
+const LIVENESS_GC_ROOT_HANDLE = 1;
+const LIVENESS_GC_TRY_ROOT_HANDLE = 2;
+const LIVENESS_ABI_VALUE_INITIALIZE = 3;
+const LIVENESS_STR_LEN = 4;
+const LIVENESS_STR_EQ = 5;
+const LIVENESS_STR_CMP = 6;
+const LIVENESS_STR_CONCAT = 7;
+const LIVENESS_STR_SLICE = 8;
+const LIVENESS_UTF8_RECORD_ADOPT = 9;
+const LIVENESS_STRING_SERVICE_FIRST = 4;
+const LIVENESS_DIAGNOSTIC_SIZE = 128;
+const LIVENESS_TRAP_CODE = 6;
+
+// Traps when `value` is a non-null managed reference that does not resolve to a live managed
+// object on the current heap. Allocation-free and collection-free: the check only reads span
+// metadata, so non-collecting services (`str_eq`, `str_cmp`, `str_len`) stay non-collecting.
+pub unit RequireLiveManagedReference(pointer value, word service) {
+    if value == NativePointer(0) { return; }
+    pointer heap = Heap();
+    if heap == NativePointer(0) || ManagedObjectForReference(heap, value) == NativePointer(0) {
+        TrapManagedOperandNotLive(service);
+    }
+    return;
+}
+
+// `beskid runtime trap v5: invalid_or_stale_handle (6): <service>: managed [string ]operand is
+// not live (use after collection)`. The text is written from packed little-endian ASCII words
+// into system memory: a managed string cannot be allocated while reporting a heap violation.
+pub never TrapManagedOperandNotLive(word service) {
+    pointer diagnostic = SystemAllocate(LIVENESS_DIAGNOSTIC_SIZE, 8);
+    if diagnostic == NativePointer(0) { Trap(LIVENESS_TRAP_CODE, NativePointer(0), 0); }
+    mut word offset = LivenessServiceName(diagnostic, 0, service);
+    offset = WritePackedAscii(diagnostic, offset, 0x6567616e616d203a, 8); // ": manage"
+    offset = WritePackedAscii(diagnostic, offset, 0x2064, 2); // "d "
+    if service >= LIVENESS_STRING_SERVICE_FIRST {
+        offset = WritePackedAscii(diagnostic, offset, 0x20676e69727473, 7); // "string "
+    }
+    offset = WritePackedAscii(diagnostic, offset, 0x20646e617265706f, 8); // "operand "
+    offset = WritePackedAscii(diagnostic, offset, 0x6c20746f6e207369, 8); // "is not l"
+    offset = WritePackedAscii(diagnostic, offset, 0x6573752820657669, 8); // "ive (use"
+    offset = WritePackedAscii(diagnostic, offset, 0x6320726574666120, 8); // " after c"
+    offset = WritePackedAscii(diagnostic, offset, 0x6f697463656c6c6f, 8); // "ollectio"
+    offset = WritePackedAscii(diagnostic, offset, 0x296e, 2); // "n)"
+    Trap(LIVENESS_TRAP_CODE, diagnostic, offset);
+}
+
+word LivenessServiceName(pointer buffer, word offset, word service) {
+    if service == LIVENESS_GC_ROOT_HANDLE {
+        word next = WritePackedAscii(buffer, offset, 0x5f746f6f725f6367, 8); // "gc_root_"
+        return WritePackedAscii(buffer, next, 0x656c646e6168, 6); // "handle"
+    }
+    if service == LIVENESS_GC_TRY_ROOT_HANDLE {
+        word next = WritePackedAscii(buffer, offset, 0x725f7972745f6367, 8); // "gc_try_r"
+        word rest = WritePackedAscii(buffer, next, 0x646e61685f746f6f, 8); // "oot_hand"
+        return WritePackedAscii(buffer, rest, 0x656c, 2); // "le"
+    }
+    if service == LIVENESS_ABI_VALUE_INITIALIZE {
+        word next = WritePackedAscii(buffer, offset, 0x756c61765f696261, 8); // "abi_valu"
+        word rest = WritePackedAscii(buffer, next, 0x616974696e695f65, 8); // "e_initia"
+        return WritePackedAscii(buffer, rest, 0x657a696c, 4); // "lize"
+    }
+    if service == LIVENESS_STR_LEN { return WritePackedAscii(buffer, offset, 0x6e656c5f727473, 7); } // "str_len"
+    if service == LIVENESS_STR_EQ { return WritePackedAscii(buffer, offset, 0x71655f727473, 6); } // "str_eq"
+    if service == LIVENESS_STR_CMP { return WritePackedAscii(buffer, offset, 0x706d635f727473, 7); } // "str_cmp"
+    if service == LIVENESS_STR_CONCAT {
+        word next = WritePackedAscii(buffer, offset, 0x636e6f635f727473, 8); // "str_conc"
+        return WritePackedAscii(buffer, next, 0x7461, 2); // "at"
+    }
+    if service == LIVENESS_STR_SLICE {
+        word next = WritePackedAscii(buffer, offset, 0x63696c735f727473, 8); // "str_slic"
+        return WritePackedAscii(buffer, next, 0x65, 1); // "e"
+    }
+    if service == LIVENESS_UTF8_RECORD_ADOPT {
+        word next = WritePackedAscii(buffer, offset, 0x6365725f38667475, 8); // "utf8_rec"
+        word rest = WritePackedAscii(buffer, next, 0x706f64615f64726f, 8); // "ord_adop"
+        return WritePackedAscii(buffer, rest, 0x74, 1); // "t"
+    }
+    return offset;
+}
+
+// Writes the low `count` (at most 8) bytes of `packed`, least significant first.
+word WritePackedAscii(pointer buffer, word offset, word packed, word count) {
+    mut word index = 0;
+    while index < count {
+        raw_byte_store(pointer_add(buffer, offset + index), u8((packed >> (index * 8)) & 0xFF));
+        index = index + 1;
+    }
+    return offset + count;
+}
+
 // Root identity is the stable storage address, not a copyable payload or owner-state bit.
 pub bool GcIsRegisteredRoot(pointer ptrAddr) {
     pointer heap = Heap();
@@ -226,6 +327,13 @@ pub word GcExternalRootCount() {
 
 [Export(Abi:"C", Symbol:"beskid_rt_v5_gc_try_root_handle")]
 pub word GcTryRootHandle(pointer valuePtr) {
+    return GcTryRootHandleFor(valuePtr, LIVENESS_GC_TRY_ROOT_HANDLE);
+}
+
+// Returns 0 only for a null reference, a missing heap, or a failed handle admission (a recorded
+// checked-scope failure or root-stack growth failure, reason 4). A non-null reference that is not
+// a live managed object traps (use after collection); it is never reported as a failed root.
+word GcTryRootHandleFor(pointer valuePtr, word service) {
     if CheckedScopeFailureReason() != 0 { return 0; }
     GcClearAllocationFailure();
     pointer heap = Heap();
@@ -237,7 +345,7 @@ pub word GcTryRootHandle(pointer valuePtr) {
     // through it before doing span/header work; calling `IsAllocatedObject` on the raw value here
     // rejected every array root outright.
     if ManagedObjectForReference(heap, valuePtr) == NativePointer(0) {
-        return 0;
+        TrapManagedOperandNotLive(service);
     }
     // Reuse a cleared slot anywhere in the chain before growing, exactly as the fixed-table
     // version did, so churn (root, unroot, root, ...) does not grow the chain unboundedly.
@@ -289,7 +397,7 @@ pub word GcTryRootHandle(pointer valuePtr) {
 [Export(Abi:"C", Symbol:"gc_root_handle")]
 pub word GcRootHandle(pointer valuePtr) {
     if CheckedScopeFailureReason() != 0 { return 0; }
-    word handle = GcTryRootHandle(valuePtr);
+    word handle = GcTryRootHandleFor(valuePtr, LIVENESS_GC_ROOT_HANDLE);
     if handle == 0 && GcAllocationFailureReason() == 4 {
         if CheckedScopeCurrent() != NativePointer(0) { CheckedScopeRecordFailure(4); }
         else { GcReportRootStackExhaustion(Heap()); }

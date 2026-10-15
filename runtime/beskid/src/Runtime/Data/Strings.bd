@@ -2,6 +2,18 @@
 //
 // Strings are represented as `BeskidStr` fat pointers stored in a managed object.
 // String data buffers are allocated via the heap and owned by the string object.
+//
+// Every non-null string operand must be a live managed string. A service that receives one that
+// is not (use after collection) traps `invalid_or_stale_handle` through
+// `RequireLiveManagedReference` (RootsHandles.bd) and never substitutes a null or empty string.
+// The check reads span metadata only, so `str_len`, `str_eq` and `str_cmp` stay non-collecting.
+
+// Service numbers for the not-live diagnostic; the same numbering as RootsHandles.bd.
+const LIVENESS_STR_LEN = 4;
+const LIVENESS_STR_EQ = 5;
+const LIVENESS_STR_CMP = 6;
+const LIVENESS_STR_CONCAT = 7;
+const LIVENESS_STR_SLICE = 8;
 
 // Allocates a new `BeskidStr` wrapping the given UTF-8 byte range.
 //
@@ -35,12 +47,15 @@ pub word StrLen(pointer value) {
     if value == NativePointer(0) {
         return 0;
     }
+    RequireLiveManagedReference(value, LIVENESS_STR_LEN);
     return raw_word_load(pointer_add(value, 8));
 }
 
 // Returns 1 when two strings have equal content, 0 otherwise.
 [Export(Abi:"C", Symbol:"str_eq")]
 pub word StrEq(pointer left, pointer right) {
+    RequireLiveManagedReference(left, LIVENESS_STR_EQ);
+    RequireLiveManagedReference(right, LIVENESS_STR_EQ);
     if left == right {
         return 1;
     }
@@ -71,6 +86,8 @@ pub word StrEq(pointer left, pointer right) {
 // proper prefix first. This is ordinal order, not locale collation.
 [Export(Abi:"C", Symbol:"str_cmp")]
 pub i64 StrCmp(pointer left, pointer right) {
+    RequireLiveManagedReference(left, LIVENESS_STR_CMP);
+    RequireLiveManagedReference(right, LIVENESS_STR_CMP);
     if left == right {
         return 0;
     }
@@ -114,6 +131,8 @@ pub pointer StrConcat(pointer left, pointer right) {
     if left == NativePointer(0) || right == NativePointer(0) {
         return NativePointer(0);
     }
+    RequireLiveManagedReference(left, LIVENESS_STR_CONCAT);
+    RequireLiveManagedReference(right, LIVENESS_STR_CONCAT);
     word leftLen = raw_word_load(pointer_add(left, 8));
     word rightLen = raw_word_load(pointer_add(right, 8));
     word totalLen = leftLen + rightLen;
@@ -121,8 +140,9 @@ pub pointer StrConcat(pointer left, pointer right) {
         return NativePointer(0);
     }
     // The result is allocated before the operands are copied, so both stay rooted across the
-    // allocation: the caller may pass temporaries that nothing else references. Every string is
-    // a managed heap string (`Core.Args` values included), so a failed root is a failure.
+    // allocation: the caller may pass temporaries that nothing else references. Both operands
+    // are live managed strings (checked above), so a zero handle is only a failed handle
+    // admission inside a checked scope, which records the failure for the caller to observe.
     word leftRoot = GcRootHandle(left);
     if leftRoot == 0 {
         return NativePointer(0);
@@ -200,6 +220,7 @@ pub pointer StrSlice(pointer value, word start, mut word count) {
     if value == NativePointer(0) {
         return NativePointer(0);
     }
+    RequireLiveManagedReference(value, LIVENESS_STR_SLICE);
     word len = raw_word_load(pointer_add(value, 8));
     if start >= len || count == 0 {
         mut word end = start + count;
@@ -222,6 +243,7 @@ pub pointer StrSlice(pointer value, word start, mut word count) {
     if data == NativePointer(0) {
         return NativePointer(0);
     }
+    // `value` is live (checked above): a zero handle is a recorded checked-scope failure.
     word retained = GcRootHandle(value);
     if retained == 0 { return NativePointer(0); }
     pointer result = StrNew(pointer_add(data, start), sliceLen);

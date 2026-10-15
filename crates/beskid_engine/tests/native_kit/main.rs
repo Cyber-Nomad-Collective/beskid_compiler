@@ -32,3 +32,4 @@ mod spawn_scheduler;
 mod struct_literal_enum_field_native;
 mod traced_abi_value_native;
 mod unary_field_write_native;
+mod use_after_collection_native;

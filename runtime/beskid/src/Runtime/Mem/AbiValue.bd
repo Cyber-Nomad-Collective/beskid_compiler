@@ -100,6 +100,9 @@ const BESKID_WORKER_REQUEST_RESULT_OFFSET = 48;
 const BESKID_WORKER_REQUEST_ERROR_OFFSET = 56;
 const BESKID_WORKER_REQUEST_ABANDONED_OFFSET = 60;
 const BESKID_WORKER_REQUEST_OWNER_SCHEDULER_ID_OFFSET = 64;
+
+// Service number for the not-live diagnostic; the same numbering as RootsHandles.bd.
+const LIVENESS_ABI_VALUE_INITIALIZE = 3;
 // Sole Foundation transport owner. Payloads use the ordinary managed-object descriptor,
 // including boxed scalars and opaque resource fixtures; arrays retain their public reference.
 // Callers provide aligned, stable, zeroed slot storage and an already rooted payload.
@@ -145,6 +148,8 @@ pub bool AbiValueInitialize(pointer slot, word tag, pointer payload, pointer des
     if AbiValueIsVacant(slot) == false || tag == 0 || descriptor == NativePointer(0) { return false; }
     pointer heap = Heap();
     if heap == NativePointer(0) { return false; }
+    // Boxing a dead payload is a use after collection, not a rejected request: trap.
+    RequireLiveManagedReference(payload, LIVENESS_ABI_VALUE_INITIALIZE);
     pointer object = ManagedObjectForReference(heap, payload);
     if object == NativePointer(0) || raw_word_load(object) != NativeWord(descriptor)
         || ValidateTypeDescriptor(descriptor) == false { return false; }

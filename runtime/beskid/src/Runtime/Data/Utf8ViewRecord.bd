@@ -2,6 +2,9 @@
 // declaration; the public data/length view starts at the data field.
 use Core.Collections.Array;
 
+// Service number for the not-live diagnostic; the same numbering as RootsHandles.bd.
+const LIVENESS_UTF8_RECORD_ADOPT = 9;
+
 pub type Utf8ViewRecord {
     pub u8[] payload,
     pub pointer data,
@@ -40,8 +43,11 @@ pub unit Utf8RecordSetData(mut Utf8ViewRecord record, pointer data) {
 // Both are ABI-visible string handles (the `data` word of a canonical view record). After the
 // adoption `target` reads exactly `source`'s bytes and its record owns their payload, so the
 // caller's own reference keeps them alive; `source` keeps its payload and stays independent.
-// Fails closed (no store) when either handle is not a canonical managed view.
+// Fails closed (no store) when either handle is null or not a canonical string view; a non-null
+// handle that is not a live managed object traps (use after collection, RootsHandles.bd).
 pub bool Utf8RecordAdopt(pointer target, pointer source) {
+    RequireLiveManagedReference(target, LIVENESS_UTF8_RECORD_ADOPT);
+    RequireLiveManagedReference(source, LIVENESS_UTF8_RECORD_ADOPT);
     pointer heap = Heap();
     pointer targetRecord = ManagedObjectForReference(heap, target);
     pointer sourceRecord = ManagedObjectForReference(heap, source);
