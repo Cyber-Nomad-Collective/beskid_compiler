@@ -1,5 +1,11 @@
+use Concurrency.Fiber;
 use Runtime.Bootstrap.Lifecycle;
 use Runtime.Bootstrap.Native;
+use Runtime.Bootstrap.Objects;
+use Runtime.Fiber.Scheduler.Core;
+use Runtime.Io.Syscalls;
+use Runtime.Mem.Gc.RegionMap;
+use Runtime.Mem.Gc.State;
 use Testing.Assert;
 use HostRuntimeSupport;
 
@@ -56,4 +62,137 @@ test failed_thread_attach_does_not_publish_partial_state {
     ResumeHostRuntime(hostRuntime);
     Assert.True(attachRejected, "uninitialized runtime rejects thread attach");
     Assert.True(threadStateUnchanged, "failed attach leaves TLS unchanged");
+}
+
+// ── Isolate prerequisites (0.6.1): one instance per process, split lifecycle ──
+
+test isolate_prerequisite_atomics_follow_the_word_contract {
+    pointer cell = Native.SystemAllocate(8, 8);
+    Native.AtomicWordStore(cell, 7, 4);
+    Assert.Equal(Native.AtomicWordCompareExchange(cell, 7, 9, 4), 7, "successful exchange returns the expected value");
+    Assert.Equal(Native.AtomicWordLoad(cell, 1), 9, "successful exchange stores the desired value");
+    Assert.Equal(Native.AtomicWordCompareExchange(cell, 7, 11, 4), 9, "failed exchange returns the observed value");
+    Assert.Equal(Native.AtomicWordLoad(cell, 1), 9, "failed exchange leaves the cell unchanged");
+    Assert.Equal(Native.AtomicWordFetchAdd(cell, 5, 3), 9, "fetch-add returns the previous value");
+    Assert.Equal(Native.AtomicWordLoad(cell, 0), 14, "fetch-add stores the sum");
+    Native.AtomicFence(4);
+    Native.AtomicWordStore(cell, 3, 9);
+    Assert.Equal(Native.AtomicWordLoad(cell, 9), 3, "an unknown order byte acts as sequentially consistent");
+    Native.SystemFree(cell, 8);
+    Assert.True(Native.HostProcessorCount() >= 1, "the host reports at least one logical processor");
+}
+
+test isolate_prerequisite_descriptor_immutable_flag_is_a_property_bit {
+    Assert.Equal(Objects.TypeDescriptorImmutableFlag(), 4, "TYPE_DESCRIPTOR_IMMUTABLE is bit value 4");
+    pointer descriptor = Native.SystemAllocate(40, 8);
+    memory_set(descriptor, 0, 40);
+    raw_word_store(descriptor, 24);
+    raw_word_store(pointer_add(descriptor, 8), 8);
+    raw_word_store(pointer_add(descriptor, 32), 4);
+    Assert.True(Objects.ValidateTypeDescriptor(descriptor), "an immutable record descriptor is valid");
+    Assert.True(Objects.TypeDescriptorIsImmutable(descriptor), "the immutable bit is readable");
+    Assert.Equal(Objects.TypeDescriptorKind(descriptor), 0, "the immutable bit is not a representation kind");
+    raw_word_store(pointer_add(descriptor, 32), 8);
+    Assert.False(Objects.ValidateTypeDescriptor(descriptor), "unknown descriptor flag bits fail closed");
+    raw_word_store(descriptor, 48);
+    raw_word_store(pointer_add(descriptor, 32), Objects.TypeDescriptorArrayFlag() | 4);
+    Assert.False(Objects.ValidateTypeDescriptor(descriptor), "array descriptors never carry the immutable bit");
+    Native.SystemFree(descriptor, 40);
+}
+
+test isolate_lifecycle_publishes_instance_record_region_owner_and_primary {
+    pointer hostRuntime = SuspendHostRuntime();
+    pointer runtime = Native.SystemAllocate(64, 8);
+    memory_set(runtime, 0, 64);
+    pointer outCell = Native.SystemAllocate(16, 8);
+    memory_set(outCell, 0, 16);
+
+    bool active = Lifecycle.ProcessInit(runtime) == runtime;
+    bool instancePublished = raw_word_load(pointer_add(runtime, 48)) != 0;
+    bool primary = Lifecycle.ProcessPrimaryRuntime() == runtime;
+    word liveDuring = Lifecycle.ProcessLiveInstances();
+    bool noPanic = Lifecycle.IsolatePanicMessage(runtime, outCell, pointer_add(outCell, 8)) == 0;
+    bool outUntouched = raw_word_load(outCell) == 0 && raw_word_load(pointer_add(outCell, 8)) == 0;
+    pointer heap = State.Heap();
+    pointer region = Native.NativePointer(raw_word_load(heap));
+    pointer objectsStart = Native.NativePointer(raw_word_load(pointer_add(region, 48)));
+    bool ownerIsPrimary = RegionMap.RegionOwner(objectsStart) == runtime;
+    bool nativeIsUnowned = RegionMap.RegionOwner(outCell) == Native.NativePointer(0);
+    bool nullIsUnowned = RegionMap.RegionOwner(Native.NativePointer(0)) == Native.NativePointer(0);
+    bool secondHolderShares = Native.WorkerPoolInit(4) == 0;
+    Native.WorkerPoolShutdown();
+    Lifecycle.ProcessShutdown(runtime);
+    bool instanceReleased = raw_word_load(pointer_add(runtime, 48)) == 0;
+    bool regionWithdrawn = RegionMap.RegionOwner(objectsStart) == Native.NativePointer(0);
+    word liveAfter = Lifecycle.ProcessLiveInstances();
+    bool primaryCleared = Lifecycle.ProcessPrimaryRuntime() == Native.NativePointer(0);
+
+    Native.SystemFree(outCell, 16);
+    Native.SystemFree(runtime, 64);
+    ResumeHostRuntime(hostRuntime);
+    Assert.True(active, "process initialization activates the primary instance");
+    Assert.True(instancePublished, "IsolateCreate publishes the native instance record");
+    Assert.True(primary, "ProcessInit names its instance the primary");
+    Assert.Equal(liveDuring, 1, "exactly one runtime instance exists");
+    Assert.True(noPanic, "an instance whose main fiber did not panic reports no message");
+    Assert.True(outUntouched, "no message writes nothing");
+    Assert.True(ownerIsPrimary, "the primary heap region is owned by the primary instance");
+    Assert.True(nativeIsUnowned, "a native allocation has no owner");
+    Assert.True(nullIsUnowned, "null has no owner");
+    Assert.True(secondHolderShares, "a second worker pool holder shares the process pool");
+    Assert.True(instanceReleased, "ProcessShutdown releases the primary instance record");
+    Assert.True(regionWithdrawn, "destroyed regions leave the region map");
+    Assert.Equal(liveAfter, 0, "no runtime instance remains");
+    Assert.True(primaryCleared, "the primary name is cleared");
+}
+
+pub unit PanickingMainEntry(pointer message) {
+    PanicStr(message);
+}
+
+// Spawns the entry and leaves the GC-rooted `Fiber<unit>` local behind before shutdown. The
+// first fiber spawned on a fresh scheduler is its owned main fiber (scheduler word 8).
+pub unit SpawnPanickingMain(pointer message) {
+    Fiber<unit> mainFiber = spawn PanickingMainEntry(message);
+    return;
+}
+
+test isolate_main_fiber_panic_message_is_copied_out_of_the_heap {
+    pointer hostRuntime = SuspendHostRuntime();
+    pointer runtime = Native.SystemAllocate(64, 8);
+    memory_set(runtime, 0, 64);
+    // A native `BeskidStr { data, length }` view of "disk full".
+    pointer message = Native.SystemAllocate(32, 8);
+    memory_set(message, 0, 32);
+    pointer bytes = pointer_add(message, 16);
+    raw_byte_store(bytes, 100); raw_byte_store(pointer_add(bytes, 1), 105); raw_byte_store(pointer_add(bytes, 2), 115);
+    raw_byte_store(pointer_add(bytes, 3), 107); raw_byte_store(pointer_add(bytes, 4), 32); raw_byte_store(pointer_add(bytes, 5), 102);
+    raw_byte_store(pointer_add(bytes, 6), 117); raw_byte_store(pointer_add(bytes, 7), 108); raw_byte_store(pointer_add(bytes, 8), 108);
+    raw_word_store(message, NativeWord(bytes));
+    raw_word_store(pointer_add(message, 8), 9);
+    pointer outCell = Native.SystemAllocate(16, 8);
+    memory_set(outCell, 0, 16);
+
+    bool active = Lifecycle.ProcessInit(runtime) == runtime;
+    SpawnPanickingMain(message);
+    word mainIndex = raw_word_load(pointer_add(Core.SchedTable(), 8));
+    bool named = Lifecycle.IsolateSetMainFiber(runtime, mainIndex);
+    bool drained = Core.SchedShutdown();
+    bool reported = Lifecycle.IsolatePanicMessage(runtime, outCell, pointer_add(outCell, 8)) == 1;
+    pointer copy = Native.NativePointer(raw_word_load(outCell));
+    word length = raw_word_load(pointer_add(outCell, 8));
+    bool sameBytes = length == 9 && memory_compare(copy, bytes, 9) == 0;
+    bool nativeCopy = copy != bytes && RegionMap.RegionOwner(copy) == Native.NativePointer(0);
+    Lifecycle.ProcessShutdown(runtime);
+
+    Native.SystemFree(outCell, 16);
+    Native.SystemFree(message, 32);
+    Native.SystemFree(runtime, 64);
+    ResumeHostRuntime(hostRuntime);
+    Assert.True(active, "runtime initialized");
+    Assert.True(named, "the instance names its main fiber");
+    Assert.True(drained, "the scheduler drains the panicked main fiber");
+    Assert.True(reported, "a main-fiber panic is reported");
+    Assert.True(sameBytes, "the copied message holds the panic bytes");
+    Assert.True(nativeCopy, "the copy lives in native storage, not in a heap region");
 }

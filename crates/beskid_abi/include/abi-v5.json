@@ -1637,20 +1637,6 @@
       "result": "pointer"
     },
     {
-      "symbol": "beskid_rt_v5_array_write_barrier",
-      "params": [
-        {
-          "name": "array",
-          "type": "pointer"
-        },
-        {
-          "name": "value",
-          "type": "pointer"
-        }
-      ],
-      "result": "u8"
-    },
-    {
       "symbol": "beskid_rt_v5_checked_scope_current",
       "params": [],
       "result": "pointer"
@@ -2971,11 +2957,63 @@
       "result": "usize"
     },
     {
+      "symbol": "beskid_rt_v5_gc_write_barrier",
+      "params": [
+        {
+          "name": "slot",
+          "type": "pointer"
+        },
+        {
+          "name": "value",
+          "type": "pointer"
+        }
+      ],
+      "result": "void"
+    },
+    {
       "symbol": "beskid_rt_v5_heap_set_cap",
       "params": [
         {
           "name": "bytes",
           "type": "usize"
+        }
+      ],
+      "result": "u8"
+    },
+    {
+      "symbol": "beskid_rt_v5_isolate_create",
+      "params": [
+        {
+          "name": "config",
+          "type": "pointer"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_rt_v5_isolate_destroy",
+      "params": [
+        {
+          "name": "runtime",
+          "type": "pointer"
+        }
+      ],
+      "result": "void"
+    },
+    {
+      "symbol": "beskid_rt_v5_isolate_panic_message",
+      "params": [
+        {
+          "name": "runtime",
+          "type": "pointer"
+        },
+        {
+          "name": "data_out",
+          "type": "pointer"
+        },
+        {
+          "name": "length_out",
+          "type": "pointer"
         }
       ],
       "result": "u8"
@@ -3164,6 +3202,16 @@
       "result": "void"
     },
     {
+      "symbol": "beskid_rt_v5_region_owner",
+      "params": [
+        {
+          "name": "address",
+          "type": "pointer"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
       "symbol": "beskid_rt_v5_scheduler_stack_check",
       "params": [
         {
@@ -3255,6 +3303,12 @@
       "result": "void"
     }
   ],
+  "dataExports": [
+    {
+      "symbol": "beskid_rt_v5_gc_barrier_active",
+      "type": "usize"
+    }
+  ],
   "intrinsics": [
     {
       "name": "arch_context_alignment",
@@ -3271,6 +3325,108 @@
       "capability": "runtime.bootstrap.arch_context_size",
       "params": [],
       "result": "usize",
+      "resultStatus": null,
+      "targetBindings": []
+    },
+    {
+      "name": "atomic_fence",
+      "symbol": "beskid_rt_v5_intrinsic_atomic_fence",
+      "capability": "runtime.bootstrap.atomic_fence",
+      "params": [
+        {
+          "name": "order",
+          "type": "u8"
+        }
+      ],
+      "result": "void",
+      "resultStatus": null,
+      "targetBindings": []
+    },
+    {
+      "name": "atomic_word_compare_exchange",
+      "symbol": "beskid_rt_v5_intrinsic_atomic_word_compare_exchange",
+      "capability": "runtime.bootstrap.atomic_word_compare_exchange",
+      "params": [
+        {
+          "name": "address",
+          "type": "pointer"
+        },
+        {
+          "name": "expected",
+          "type": "usize"
+        },
+        {
+          "name": "desired",
+          "type": "usize"
+        },
+        {
+          "name": "order",
+          "type": "u8"
+        }
+      ],
+      "result": "usize",
+      "resultStatus": null,
+      "targetBindings": []
+    },
+    {
+      "name": "atomic_word_fetch_add",
+      "symbol": "beskid_rt_v5_intrinsic_atomic_word_fetch_add",
+      "capability": "runtime.bootstrap.atomic_word_fetch_add",
+      "params": [
+        {
+          "name": "address",
+          "type": "pointer"
+        },
+        {
+          "name": "delta",
+          "type": "usize"
+        },
+        {
+          "name": "order",
+          "type": "u8"
+        }
+      ],
+      "result": "usize",
+      "resultStatus": null,
+      "targetBindings": []
+    },
+    {
+      "name": "atomic_word_load",
+      "symbol": "beskid_rt_v5_intrinsic_atomic_word_load",
+      "capability": "runtime.bootstrap.atomic_word_load",
+      "params": [
+        {
+          "name": "address",
+          "type": "pointer"
+        },
+        {
+          "name": "order",
+          "type": "u8"
+        }
+      ],
+      "result": "usize",
+      "resultStatus": null,
+      "targetBindings": []
+    },
+    {
+      "name": "atomic_word_store",
+      "symbol": "beskid_rt_v5_intrinsic_atomic_word_store",
+      "capability": "runtime.bootstrap.atomic_word_store",
+      "params": [
+        {
+          "name": "address",
+          "type": "pointer"
+        },
+        {
+          "name": "value",
+          "type": "usize"
+        },
+        {
+          "name": "order",
+          "type": "u8"
+        }
+      ],
+      "result": "void",
       "resultStatus": null,
       "targetBindings": []
     },
@@ -3956,6 +4112,15 @@
       ]
     },
     {
+      "name": "gc_barrier_active_word",
+      "symbol": "beskid_rt_v5_intrinsic_gc_barrier_active_word",
+      "capability": "runtime.bootstrap.gc_barrier_active_word",
+      "params": [],
+      "result": "pointer",
+      "resultStatus": null,
+      "targetBindings": []
+    },
+    {
       "name": "glue_owner_shutdown",
       "symbol": "beskid_rt_v5_intrinsic_glue_owner_shutdown",
       "capability": "runtime.bootstrap.glue_owner_shutdown",
@@ -4022,6 +4187,46 @@
           "type": "usize"
         }
       ],
+      "result": "u8",
+      "resultStatus": null,
+      "targetBindings": []
+    },
+    {
+      "name": "host_processor_count",
+      "symbol": "beskid_rt_v5_host_processor_count",
+      "capability": "runtime.adapter.host_processor_count",
+      "params": [],
+      "result": "usize",
+      "resultStatus": null,
+      "targetBindings": [
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "beskid_rt_v5_host_processor_count",
+          "osImports": [
+            "sysconf"
+          ]
+        },
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "beskid_rt_v5_host_processor_count",
+          "osImports": [
+            "sysconf"
+          ]
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "beskid_rt_v5_host_processor_count",
+          "osImports": [
+            "GetActiveProcessorCount"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "kit_debug_profile",
+      "symbol": "beskid_rt_v5_intrinsic_kit_debug_profile",
+      "capability": "runtime.bootstrap.kit_debug_profile",
+      "params": [],
       "result": "u8",
       "resultStatus": null,
       "targetBindings": []
@@ -4636,6 +4841,15 @@
       "targetBindings": []
     },
     {
+      "name": "process_state_root",
+      "symbol": "beskid_rt_v5_intrinsic_process_state_root",
+      "capability": "runtime.bootstrap.process_state_root",
+      "params": [],
+      "result": "pointer",
+      "resultStatus": null,
+      "targetBindings": []
+    },
+    {
       "name": "raw_byte_load",
       "symbol": "beskid_rt_v5_intrinsic_raw_byte_load",
       "capability": "runtime.bootstrap.raw_byte_load",
@@ -4734,6 +4948,87 @@
       "result": "void",
       "resultStatus": null,
       "targetBindings": []
+    },
+    {
+      "name": "thread_create",
+      "symbol": "beskid_rt_v5_intrinsic_thread_create",
+      "capability": "runtime.adapter.thread_create",
+      "params": [
+        {
+          "name": "entry",
+          "type": "pointer"
+        },
+        {
+          "name": "argument",
+          "type": "pointer"
+        },
+        {
+          "name": "handle_out",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32",
+      "resultStatus": null,
+      "targetBindings": [
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "beskid_rt_v5_intrinsic_thread_create",
+          "osImports": [
+            "pthread_create"
+          ]
+        },
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "beskid_rt_v5_intrinsic_thread_create",
+          "osImports": [
+            "pthread_create"
+          ]
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "beskid_rt_v5_intrinsic_thread_create",
+          "osImports": [
+            "CreateThread"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "thread_join",
+      "symbol": "beskid_rt_v5_intrinsic_thread_join",
+      "capability": "runtime.adapter.thread_join",
+      "params": [
+        {
+          "name": "handle",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32",
+      "resultStatus": null,
+      "targetBindings": [
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "beskid_rt_v5_intrinsic_thread_join",
+          "osImports": [
+            "pthread_join"
+          ]
+        },
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "beskid_rt_v5_intrinsic_thread_join",
+          "osImports": [
+            "pthread_join"
+          ]
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "beskid_rt_v5_intrinsic_thread_join",
+          "osImports": [
+            "WaitForSingleObject",
+            "CloseHandle"
+          ]
+        }
+      ]
     },
     {
       "name": "thread_yield",
@@ -5600,7 +5895,7 @@
     {
       "name": "BeskidHeapState",
       "target": null,
-      "size": 328,
+      "size": 512,
       "alignment": 8,
       "fields": [
         {
@@ -5707,6 +6002,121 @@
           "name": "mark_fifo_tail",
           "offset": 320,
           "type": "pointer"
+        },
+        {
+          "name": "stress_interval",
+          "offset": 328,
+          "type": "usize"
+        },
+        {
+          "name": "stress_counter",
+          "offset": 336,
+          "type": "usize"
+        },
+        {
+          "name": "stress_flags",
+          "offset": 344,
+          "type": "usize"
+        },
+        {
+          "name": "test_force_root_stack_failure",
+          "offset": 352,
+          "type": "usize"
+        },
+        {
+          "name": "quarantine_head",
+          "offset": 360,
+          "type": "pointer"
+        },
+        {
+          "name": "quarantine_tail",
+          "offset": 368,
+          "type": "pointer"
+        },
+        {
+          "name": "quarantine_bytes",
+          "offset": 376,
+          "type": "usize"
+        },
+        {
+          "name": "quarantine_budget",
+          "offset": 384,
+          "type": "usize"
+        },
+        {
+          "name": "debug_kit",
+          "offset": 392,
+          "type": "usize"
+        },
+        {
+          "name": "mark_trigger",
+          "offset": 400,
+          "type": "usize"
+        },
+        {
+          "name": "mark_start_live",
+          "offset": 408,
+          "type": "usize"
+        },
+        {
+          "name": "scan_estimate",
+          "offset": 416,
+          "type": "usize"
+        },
+        {
+          "name": "scan_work_done",
+          "offset": 424,
+          "type": "usize"
+        },
+        {
+          "name": "sweep_generation",
+          "offset": 432,
+          "type": "usize"
+        },
+        {
+          "name": "sweep_cursor_region",
+          "offset": 440,
+          "type": "pointer"
+        },
+        {
+          "name": "sweep_cursor_page",
+          "offset": 448,
+          "type": "usize"
+        },
+        {
+          "name": "last_cycle_max_step_bytes",
+          "offset": 456,
+          "type": "usize"
+        },
+        {
+          "name": "rescan_shaded_count",
+          "offset": 464,
+          "type": "usize"
+        },
+        {
+          "name": "incremental_stress_interval",
+          "offset": 472,
+          "type": "usize"
+        },
+        {
+          "name": "incremental_stress_counter",
+          "offset": 480,
+          "type": "usize"
+        },
+        {
+          "name": "force_barrier_skip",
+          "offset": 488,
+          "type": "usize"
+        },
+        {
+          "name": "cycle_max_step_bytes",
+          "offset": 496,
+          "type": "usize"
+        },
+        {
+          "name": "cycle_shade_count",
+          "offset": 504,
+          "type": "usize"
         }
       ]
     },
@@ -6097,9 +6507,9 @@
           "type": "pointer"
         },
         {
-          "name": "tls_key",
+          "name": "instance",
           "offset": 48,
-          "type": "usize"
+          "type": "pointer"
         },
         {
           "name": "lifecycle_state",
@@ -8053,6 +8463,19 @@
     },
     {
       "kind": "function",
+      "symbol": "sysconf",
+      "target": "aarch64-apple-darwin",
+      "library": "libSystem",
+      "params": [
+        {
+          "name": "name",
+          "type": "i32"
+        }
+      ],
+      "result": "i64"
+    },
+    {
+      "kind": "function",
       "symbol": "tan",
       "target": "aarch64-apple-darwin",
       "library": "libSystem",
@@ -8528,6 +8951,19 @@
         }
       ],
       "result": "i32"
+    },
+    {
+      "kind": "function",
+      "symbol": "GetActiveProcessorCount",
+      "target": "x86_64-pc-windows-msvc",
+      "library": "kernel32",
+      "params": [
+        {
+          "name": "group",
+          "type": "u16"
+        }
+      ],
+      "result": "u32"
     },
     {
       "kind": "function",
@@ -11567,6 +12003,19 @@
     },
     {
       "kind": "function",
+      "symbol": "sysconf",
+      "target": "x86_64-unknown-linux-gnu",
+      "library": "libc",
+      "params": [
+        {
+          "name": "name",
+          "type": "i32"
+        }
+      ],
+      "result": "i64"
+    },
+    {
+      "kind": "function",
       "symbol": "tan",
       "target": "x86_64-unknown-linux-gnu",
       "library": "libm",
@@ -13907,6 +14356,29 @@
       ]
     },
     {
+      "name": "__gc_cycle_start",
+      "adapter": "gc_cycle_start",
+      "params": [],
+      "result": "u8",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "gc_cycle_start",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "gc_cycle_start",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "gc_cycle_start",
+          "osImports": []
+        }
+      ]
+    },
+    {
       "name": "__gc_external_root_count",
       "adapter": "gc_external_root_count",
       "params": [],
@@ -13999,6 +14471,34 @@
       ]
     },
     {
+      "name": "__gc_heap_force_barrier_skip",
+      "adapter": "gc_heap_force_barrier_skip",
+      "params": [
+        {
+          "name": "enabled",
+          "type": "usize"
+        }
+      ],
+      "result": "void",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "gc_heap_force_barrier_skip",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "gc_heap_force_barrier_skip",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "gc_heap_force_barrier_skip",
+          "osImports": []
+        }
+      ]
+    },
+    {
       "name": "__gc_heap_force_root_stack_failure",
       "adapter": "gc_heap_force_root_stack_failure",
       "params": [
@@ -14045,6 +14545,34 @@
         {
           "target": "x86_64-unknown-linux-gnu",
           "implementation": "gc_heap_region_count",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__gc_heap_set_incremental_stress",
+      "adapter": "gc_heap_set_incremental_stress",
+      "params": [
+        {
+          "name": "n",
+          "type": "usize"
+        }
+      ],
+      "result": "void",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "gc_heap_set_incremental_stress",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "gc_heap_set_incremental_stress",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "gc_heap_set_incremental_stress",
           "osImports": []
         }
       ]
@@ -14101,6 +14629,57 @@
       ]
     },
     {
+      "name": "__gc_last_cycle_max_step_bytes",
+      "adapter": "gc_last_cycle_max_step_bytes",
+      "params": [],
+      "result": "usize",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "gc_last_cycle_max_step_bytes",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "gc_last_cycle_max_step_bytes",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "gc_last_cycle_max_step_bytes",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__gc_mark_step",
+      "adapter": "gc_mark_step",
+      "params": [
+        {
+          "name": "budget",
+          "type": "usize"
+        }
+      ],
+      "result": "usize",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "gc_mark_step",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "gc_mark_step",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "gc_mark_step",
+          "osImports": []
+        }
+      ]
+    },
+    {
       "name": "__gc_object_count",
       "adapter": "gc_object_count",
       "params": [],
@@ -14119,6 +14698,34 @@
         {
           "target": "x86_64-unknown-linux-gnu",
           "implementation": "gc_object_count",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__gc_object_mark_state",
+      "adapter": "gc_object_mark_state",
+      "params": [
+        {
+          "name": "object",
+          "type": "pointer"
+        }
+      ],
+      "result": "usize",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "gc_object_mark_state",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "gc_object_mark_state",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "gc_object_mark_state",
           "osImports": []
         }
       ]
@@ -14407,6 +15014,35 @@
           "target": "x86_64-unknown-linux-gnu",
           "implementation": "gc_write_barrier",
           "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__host_processor_count",
+      "adapter": "beskid_rt_v5_host_processor_count",
+      "params": [],
+      "result": "usize",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "beskid_rt_v5_host_processor_count",
+          "osImports": [
+            "sysconf"
+          ]
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "beskid_rt_v5_host_processor_count",
+          "osImports": [
+            "GetActiveProcessorCount"
+          ]
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "beskid_rt_v5_host_processor_count",
+          "osImports": [
+            "sysconf"
+          ]
         }
       ]
     },

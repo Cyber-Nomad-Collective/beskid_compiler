@@ -37,7 +37,32 @@ const HEAP_HANDLE_STACK_CURRENT = 192;
 const HEAP_CURRENT_SPAN_BY_CLASS = 200;
 const HEAP_MARK_FIFO_HEAD = 312;
 const HEAP_MARK_FIFO_TAIL = 320;
-const HEAP_STATE_SIZE = 328;
+// GC stress and debug-kit fields (v0.6.1; Verify.bd and Sweep.bd own them).
+const HEAP_STRESS_INTERVAL = 328;
+const HEAP_STRESS_COUNTER = 336;
+const HEAP_STRESS_FLAGS = 344;
+const HEAP_TEST_FORCE_ROOT_STACK_FAILURE = 352;
+const HEAP_QUARANTINE_HEAD = 360;
+const HEAP_QUARANTINE_TAIL = 368;
+const HEAP_QUARANTINE_BYTES = 376;
+const HEAP_QUARANTINE_BUDGET = 384;
+const HEAP_DEBUG_KIT = 392;
+// Incremental collection fields (v0.6.2; Collection.bd, Sweep.bd and Verify.bd own them).
+const HEAP_MARK_TRIGGER = 400;
+const HEAP_MARK_START_LIVE = 408;
+const HEAP_SCAN_ESTIMATE = 416;
+const HEAP_SCAN_WORK_DONE = 424;
+const HEAP_SWEEP_GENERATION = 432;
+const HEAP_SWEEP_CURSOR_REGION = 440;
+const HEAP_SWEEP_CURSOR_PAGE = 448;
+const HEAP_LAST_CYCLE_MAX_STEP_BYTES = 456;
+const HEAP_RESCAN_SHADED_COUNT = 464;
+const HEAP_INCREMENTAL_STRESS_INTERVAL = 472;
+const HEAP_INCREMENTAL_STRESS_COUNTER = 480;
+const HEAP_FORCE_BARRIER_SKIP = 488;
+const HEAP_CYCLE_MAX_STEP_BYTES = 496;
+const HEAP_CYCLE_SHADE_COUNT = 504;
+const HEAP_STATE_SIZE = 512;
 
 // BeskidHeapRegion (see runtime_manifest.bsol) — a 64-byte header at the base of every mapped
 // region. `bump` is the region's page cursor (always page-aligned): the first never-carved byte.

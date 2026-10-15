@@ -106,6 +106,7 @@ fn canonicalized(manifest: &RuntimeManifestV5) -> RuntimeManifestV5 {
     let mut value = manifest.clone();
     value.targets.sort_by(|a, b| a.triple.cmp(&b.triple));
     value.exports.sort_by(|a, b| a.symbol.cmp(&b.symbol));
+    value.data_exports.sort_by(|a, b| a.symbol.cmp(&b.symbol));
     value.intrinsics.sort_by(|a, b| a.name.cmp(&b.name));
     value.soft_builtins.sort_by(|a, b| a.name.cmp(&b.name));
     value.layouts.sort_by(|a, b| a.target.cmp(&b.target).then_with(|| a.name.cmp(&b.name)));

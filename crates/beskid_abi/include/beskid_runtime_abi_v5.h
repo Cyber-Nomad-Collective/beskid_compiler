@@ -157,7 +157,7 @@ static inline const char *BESKID_TRAP_NAME(unsigned char code) {
 #define BESKID_HEAP_REGION_LARGEST_FREE_OFFSET 40
 #define BESKID_HEAP_REGION_OBJECTS_START_OFFSET 48
 #define BESKID_HEAP_REGION_FREE_SPAN_LIST_OFFSET 56
-#define BESKID_HEAP_STATE_SIZE 328
+#define BESKID_HEAP_STATE_SIZE 512
 #define BESKID_HEAP_STATE_ALIGNMENT 8
 #define BESKID_HEAP_STATE_FIRST_REGION_OFFSET 0
 #define BESKID_HEAP_STATE_CURRENT_REGION_OFFSET 8
@@ -180,6 +180,29 @@ static inline const char *BESKID_TRAP_NAME(unsigned char code) {
 #define BESKID_HEAP_STATE_CURRENT_SPAN_BY_CLASS_OFFSET 200
 #define BESKID_HEAP_STATE_MARK_FIFO_HEAD_OFFSET 312
 #define BESKID_HEAP_STATE_MARK_FIFO_TAIL_OFFSET 320
+#define BESKID_HEAP_STATE_STRESS_INTERVAL_OFFSET 328
+#define BESKID_HEAP_STATE_STRESS_COUNTER_OFFSET 336
+#define BESKID_HEAP_STATE_STRESS_FLAGS_OFFSET 344
+#define BESKID_HEAP_STATE_TEST_FORCE_ROOT_STACK_FAILURE_OFFSET 352
+#define BESKID_HEAP_STATE_QUARANTINE_HEAD_OFFSET 360
+#define BESKID_HEAP_STATE_QUARANTINE_TAIL_OFFSET 368
+#define BESKID_HEAP_STATE_QUARANTINE_BYTES_OFFSET 376
+#define BESKID_HEAP_STATE_QUARANTINE_BUDGET_OFFSET 384
+#define BESKID_HEAP_STATE_DEBUG_KIT_OFFSET 392
+#define BESKID_HEAP_STATE_MARK_TRIGGER_OFFSET 400
+#define BESKID_HEAP_STATE_MARK_START_LIVE_OFFSET 408
+#define BESKID_HEAP_STATE_SCAN_ESTIMATE_OFFSET 416
+#define BESKID_HEAP_STATE_SCAN_WORK_DONE_OFFSET 424
+#define BESKID_HEAP_STATE_SWEEP_GENERATION_OFFSET 432
+#define BESKID_HEAP_STATE_SWEEP_CURSOR_REGION_OFFSET 440
+#define BESKID_HEAP_STATE_SWEEP_CURSOR_PAGE_OFFSET 448
+#define BESKID_HEAP_STATE_LAST_CYCLE_MAX_STEP_BYTES_OFFSET 456
+#define BESKID_HEAP_STATE_RESCAN_SHADED_COUNT_OFFSET 464
+#define BESKID_HEAP_STATE_INCREMENTAL_STRESS_INTERVAL_OFFSET 472
+#define BESKID_HEAP_STATE_INCREMENTAL_STRESS_COUNTER_OFFSET 480
+#define BESKID_HEAP_STATE_FORCE_BARRIER_SKIP_OFFSET 488
+#define BESKID_HEAP_STATE_CYCLE_MAX_STEP_BYTES_OFFSET 496
+#define BESKID_HEAP_STATE_CYCLE_SHADE_COUNT_OFFSET 504
 #define BESKID_NETWORK_HANDLE_SIZE 8
 #define BESKID_NETWORK_HANDLE_ALIGNMENT 8
 #define BESKID_NETWORK_HANDLE_SLOT_OFFSET 0
@@ -262,7 +285,7 @@ static inline const char *BESKID_TRAP_NAME(unsigned char code) {
 #define BESKID_RUNTIME_STATE_CALLBACK_REGISTRY_OFFSET 24
 #define BESKID_RUNTIME_STATE_SCHEDULER_OFFSET 32
 #define BESKID_RUNTIME_STATE_ROOT_FRAME_OFFSET 40
-#define BESKID_RUNTIME_STATE_TLS_KEY_OFFSET 48
+#define BESKID_RUNTIME_STATE_INSTANCE_OFFSET 48
 #define BESKID_RUNTIME_STATE_LIFECYCLE_STATE_OFFSET 56
 #define BESKID_RUNTIME_STATE_LIFECYCLE_GENERATION_OFFSET 60
 #define BESKID_SCHEDULER_STATE_SIZE 208
@@ -488,7 +511,6 @@ uint8_t beskid_rt_v5_array_construction_finish(void * root_handle);
 void * beskid_rt_v5_array_grow_rooted(void * array, size_t minimum_capacity, void * root_handle_out);
 void * beskid_rt_v5_array_try_allocate_rooted(void * request, void * root_handle_out);
 void * beskid_rt_v5_array_try_grow_rooted(void * array, size_t minimum_capacity, void * root_handle_out);
-uint8_t beskid_rt_v5_array_write_barrier(void * array, void * value);
 void * beskid_rt_v5_checked_scope_current(void);
 uint8_t beskid_rt_v5_checked_scope_enter(void * scope, size_t failure_handle);
 size_t beskid_rt_v5_checked_scope_failure_reason(void);
@@ -617,7 +639,11 @@ size_t beskid_rt_v5_gc_same_identity(void * left, void * right);
 void * beskid_rt_v5_gc_try_alloc(size_t size, size_t alignment);
 uint8_t beskid_rt_v5_gc_try_register_root(void * ptrAddr);
 size_t beskid_rt_v5_gc_try_root_handle(void * valuePtr);
+void beskid_rt_v5_gc_write_barrier(void * slot, void * value);
 uint8_t beskid_rt_v5_heap_set_cap(size_t bytes);
+void * beskid_rt_v5_isolate_create(void * config);
+void beskid_rt_v5_isolate_destroy(void * runtime);
+uint8_t beskid_rt_v5_isolate_panic_message(void * runtime, void * data_out, void * length_out);
 void * beskid_rt_v5_managed_object_allocate(void * request);
 void * beskid_rt_v5_managed_object_try_allocate(void * request);
 uint64_t beskid_rt_v5_managed_view_kind(void * value);
@@ -634,6 +660,7 @@ int64_t beskid_rt_v5_poll_monitor_new(int64_t task);
 int32_t beskid_rt_v5_poll_monitor_poll(int64_t monitor, void * result_slot);
 void * beskid_rt_v5_process_init(void * config);
 void beskid_rt_v5_process_shutdown(void * runtime);
+void * beskid_rt_v5_region_owner(void * address);
 uint8_t beskid_rt_v5_scheduler_stack_check(size_t required_usable_size);
 void beskid_rt_v5_scheduler_stack_overflow_observed(void);
 void * beskid_rt_v5_thread_attach(void * runtime);
@@ -642,6 +669,7 @@ _Noreturn void beskid_rt_v5_trap(uint8_t code, void * message, size_t message_le
 void * beskid_rt_v5_utf8_record_construct(void * source, size_t length);
 void * beskid_rt_v5_utf8_record_payload(void * record);
 void beskid_rt_v5_utf8_record_set_data(void * record, void * data);
+extern size_t beskid_rt_v5_gc_barrier_active;
 void beskid_arch_v5_context_init(void * context, void * stack_top, void * entry, void * argument, void * return_trampoline);
 void beskid_arch_v5_context_switch(void * from, void * to);
 void * alloc(size_t size, void * descriptorPtr);
@@ -719,15 +747,21 @@ size_t beskid_rt_v5_gc_allocation_failure_reason(void);
 size_t gc_bytes_allocated(void);
 size_t gc_collect(void);
 size_t gc_collect_if_needed(void);
+uint8_t gc_cycle_start(void);
 size_t gc_external_root_count(void);
 size_t gc_heap_cap(void);
 size_t gc_heap_committed(void);
 size_t gc_heap_failure_reason(void);
+void gc_heap_force_barrier_skip(size_t enabled);
 void gc_heap_force_root_stack_failure(size_t enabled);
 size_t gc_heap_region_count(void);
+void gc_heap_set_incremental_stress(size_t n);
 void gc_heap_set_stress_interval(size_t n);
 uint8_t gc_heap_verify(void);
+size_t gc_last_cycle_max_step_bytes(void);
+size_t gc_mark_step(size_t budget);
 size_t gc_object_count(void);
+size_t gc_object_mark_state(void * object);
 size_t gc_phase(void);
 uint8_t gc_register_root(void * ptrAddr);
 size_t gc_root_handle(void * valuePtr);
@@ -738,6 +772,7 @@ size_t beskid_rt_v5_gc_try_root_handle(void * valuePtr);
 void gc_unregister_root(void * ptrAddr);
 void gc_unroot_handle(size_t handle);
 void gc_write_barrier(void * parent, void * child);
+size_t beskid_rt_v5_host_processor_count(void);
 int64_t hub_create(void);
 int64_t hub_register(int64_t hubId, int64_t index, int64_t channelId);
 int64_t hub_unregister(int64_t hubId, int64_t index);

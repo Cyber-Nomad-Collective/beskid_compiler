@@ -3,7 +3,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use bsol::{BsolBlock, BsolItem, BsolListItem, BsolValue, parse_bsol_document};
 
 use super::model::{
-    AssemblyV5, AuditV5, CorelibServiceV5, EntryAdapterV5, FieldV5, FunctionV5, IntrinsicV5, LayoutV5,
+    AssemblyV5, AuditV5, CorelibServiceV5, DataExportV5, EntryAdapterV5, FieldV5, FunctionV5, IntrinsicV5, LayoutV5,
     ParameterLocationV5, ParameterV5, PlatformImportV5, RuntimeManifestV5, RuntimeMetaV5, SoftBuiltinV5, StatusV5,
     StatusValueV5, TargetAdapterBindingV5, TargetV5, TrapV5,
 };
@@ -20,6 +20,7 @@ pub fn load_v5_manifest_source(source: &str) -> Result<RuntimeManifestV5, String
         "layout",
         "platform_import",
         "platform_data_import",
+        "export_data",
         "corelib_service",
         "entry_adapter",
         "assembly",
@@ -86,6 +87,12 @@ pub fn load_v5_manifest_source(source: &str) -> Result<RuntimeManifestV5, String
             function(block)
         })
         .collect::<Result<Vec<_>, _>>()?;
+    let data_exports = blocks(&document.blocks, "export_data")
+        .map(|block| {
+            ensure_fields(block, &["type"])?;
+            Ok(DataExportV5 { symbol: label(block)?, ty: string_field(block, "type")? })
+        })
+        .collect::<Result<Vec<_>, String>>()?;
     let intrinsics = blocks(&document.blocks, "intrinsic")
         .map(|block| {
             ensure_fields(block, &["symbol", "capability", "params", "returns", "result_status", "target_bindings"])?;
@@ -228,6 +235,7 @@ pub fn load_v5_manifest_source(source: &str) -> Result<RuntimeManifestV5, String
         meta,
         targets,
         exports,
+        data_exports,
         intrinsics,
         soft_builtins,
         layouts,
