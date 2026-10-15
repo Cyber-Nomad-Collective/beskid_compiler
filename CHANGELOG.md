@@ -159,6 +159,31 @@ development log stays under [Unreleased] below.
 - Glue is selected by `glue` manifest blocks, `[GlueHandle]` and `[RustOwner]`;
   the 0.4 Glue attributes and Mod contracts are gone.
 
+### Added (0.6.1-0.6.4 runtime, `v061-gc-stress-and-poison`, `v062-captures-and-move`, `v063-isolates-and-scope`, `v064-ports-and-pipelines`)
+
+- GC stress mode (`BESKID_GC_STRESS=alloc|alloc:<n>|verify`), heap verification
+  and debug-kit poisoning with a byte-budgeted quarantine
+  (`BESKID_GC_QUARANTINE`). A malformed value traps with the variable name.
+- Incremental marking with a hybrid write barrier
+  (`beskid_rt_v5_gc_write_barrier`, data export `beskid_rt_v5_gc_barrier_active`)
+  and lazy sweeping. `beskid_rt_v5_array_write_barrier` is removed.
+- Isolates and structured scopes for `Core.Parallel`: the `__isolate_*`
+  services spawn a task on a new thread with its own runtime instance and heap,
+  or run it as a local fiber at the `BESKID_ISOLATES_MAX` bound (default: host
+  processor count; 1 to 65535). A panicked task cancels its siblings and the
+  ports of its scope. A joined completed task's heap is adopted by the joiner;
+  a failed or cancelled one is discarded. Composition reads inside an isolate
+  panic with `composition is not available inside an isolate`.
+- `Runtime/Mem/Transit.bd`: descriptor-driven copy of an object graph between
+  heaps through a native record. It keeps sharing and cycles, and refuses an
+  invalid descriptor with `transit refused 0x<descriptor>`.
+- `Runtime/Mem/Gc/Foreign.bd`: per-heap foreign reference table that marking
+  stamps and mark termination prunes. `BeskidHeapState` is 528 bytes.
+- Ports: the `__port_*` services over bounded native rings
+  (`assembly/common/port_ring.h`), with close, cancel and cooperative parking.
+  Values are copied through transit records.
+- The owner mailbox grows when full. Before, it trapped at 256 commands.
+
 ### Added (0.6.1 runtime groundwork, `v061-attributes-and-isolate-prerequisites`)
 
 - Thread and atomic runtime intrinsics for the canonical runtime corpus:
