@@ -150,5 +150,8 @@ fn format_callee_for_trace(db: &dyn beskid_queries::Db, callee: &DirectCallee) -
         DirectCallee::LambdaTrampoline(lambda) => {
             format!("LambdaTrampoline({})", trace_key(db, *lambda))
         }
+        DirectCallee::IsolateEntryTrampoline { result, managed } => {
+            format!("IsolateEntryTrampoline({}, managed={managed})", result.0)
+        }
     }
 }

@@ -119,6 +119,9 @@ pub use semantic_contract::{
     aggregate_literal_specialization, array_index_element_abi_type, array_index_element_managed_reference_specialization,
     array_index_element_specialization, for_iterator_protocol, for_iterator_specialization,
     block_statement_nodes, bulk_call_element_abi_type, bulk_parameter, call_abi_signature,
+    AffineBinding, AffineFinding, AffineFindingKind, AffineOwnership, CanonicalEmpty, ExchangeCall,
+    MoveExpressionForm, affine_ownership, exchange_call, move_expression_form, TransferClassIntrinsic,
+    transfer_class_code, transfer_class_code_for_substitution, transfer_class_intrinsic,
     call_arguments, call_lowering, callable_fiber_ownership, callable_signature, capture_storage, cast_intents,
     child_nodes, clif_block_body, clif_block_parameters, closure_call_target, closure_environment, closure_signature, collection_operation,
     completion_candidates, completion_dependency_surface, completion_dependency_surface_for_assembly,
@@ -139,7 +142,7 @@ pub use semantic_contract::{
     parameter_generic_reference, pattern_binding_specialization, primitive_numeric_conversion, range_for_fact,
     reachable_items, resolved_item, resolved_local, runtime_intrinsic, runtime_intrinsic_name, scoped_cleanup,
     spawn_entry_validation, spawn_handle_type, spawn_legality, spawn_target,
-    specialized_call_result_managed_reference_kind, specialized_corelib_value_service_result, test_item,
+    specialized_call_result_managed_reference_kind, specialized_builtin_type_argument, specialized_corelib_value_service_result, test_item,
     test_statement_nodes, specialized_try_expression_fact, try_expression_fact, try_expression_judgement, try_expression_legality, typed_array_allocation, value_abi_type,
 };
 pub use semantic_contract::{
@@ -154,6 +157,7 @@ pub use semantic_contract::{
     NonExhaustiveMatch, SemanticFinding, TypingObligation, TypingObligationKind, UnitObligation, UnitObligationKind,
     UnresolvedCallKind, UnresolvedCallTarget, UnresolvedImport, UnresolvedValueArgument, ValueObligation,
     call_argument_type_mismatch, call_arity_mismatch,
+    BoundedLambdaCaptures, bounded_lambda_captures, declared_captures_bound,
     check_gate_obligations, check_items, check_typing_obligations, check_unit_obligations, extern_profile_findings,
     AttributeResolution, UnitAttributeSurface, attribute_findings, check_attribute_obligations, resolve_attribute_use,
     unit_attribute_surface,

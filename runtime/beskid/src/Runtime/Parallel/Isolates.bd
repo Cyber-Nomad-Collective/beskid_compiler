@@ -1,0 +1,786 @@
+// Isolates, tasks and structured scopes (v0.6.3): the runtime side of `Core.Parallel`.
+//
+// A scope (`__isolate_scope_open`) belongs to the isolate that opened it. `__isolate_spawn` runs a
+// body on a new isolate: the parent captures the body's closure record into a native transit
+// record (Transit.bd; `[Immutable]` objects are shared by pointer and the closure record stays
+// rooted in the parent until the task is joined), starts a thread (`isolate_thread_start`), and the
+// thread creates a runtime instance (`IsolateCreate`), materializes the closure in its own heap and
+// runs the compiler's trampoline as the isolate main fiber. At the bound of live isolates
+// (`BESKID_ISOLATES_MAX`, the main isolate included) or the scope's `workers` cap the spawn returns
+// -1 and consumes no spawn index; the corelib then calls `__isolate_spawn_local`, which runs the
+// body as a fiber of the calling isolate registered as a task of the scope.
+//
+// A task ends `completed` (0), `cancelled` (1) or `panicked` (2). A panicked task fails its scope:
+// every other task of the scope is cancelled at once and every port of the scope is cancelled, so
+// parked port waits complete with status 2. Joining parks the calling fiber cooperatively (an owner
+// mailbox wait, D16); outside a fiber it drives the scheduler. The first join of a completed task
+// adopts the task's heap into the joiner's heap (Adoption.bd), so the result is read in place;
+// a failed or cancelled task's heap is discarded whole after its panic message was copied out.
+// Every task handle stays valid for status, index, isolate and message until the scope closes.
+//
+// Status words: TASK_RUNNING while the task runs, then 0/1/2. Join answers 3 for a second join, an
+// unknown or released handle, or a handle of a scope owned by another isolate.
+
+const TASK_SIZE = 304;
+const TASK_NEXT = 0;
+const TASK_PREV = 8;
+const TASK_HANDLE = 16;
+const TASK_SCOPE = 24;
+const TASK_KIND = 32;
+const TASK_INDEX = 40;
+const TASK_ISOLATE_ID = 48;
+const TASK_STATUS = 56;
+const TASK_CANCEL = 64;
+const TASK_WAITER_OWNER = 72;
+const TASK_WAITER_TOKEN = 80;
+const TASK_FINALIZED = 88;
+const TASK_JOINED = 96;
+const TASK_ENTRY = 104;
+const TASK_ARGUMENT_ROOT = 112;
+const TASK_RECORD = 120;
+const TASK_CONFIG = 128;
+const TASK_THREAD = 136;
+const TASK_CHILD_OWNER = 144;
+const TASK_MESSAGE_DATA = 152;
+const TASK_MESSAGE_LENGTH = 160;
+const TASK_RESULT_TAG = 168;
+const TASK_RESULT_PAYLOAD = 176;
+const TASK_RESULT_DESCRIPTOR = 184;
+const TASK_CHILD_HEAP = 192;
+const TASK_FIBER = 200;
+const TASK_RESULT_SLOT = 208;
+const TASK_CHILD_SLOT = 248;
+const TASK_HAS_MESSAGE = 288;
+
+const TASK_KIND_ISOLATE = 1;
+const TASK_KIND_LOCAL = 2;
+const TASK_RUNNING = 255;
+const TASK_COMPLETED = 0;
+const TASK_CANCELLED = 1;
+const TASK_PANICKED = 2;
+const TASK_UNKNOWN = 3;
+const TASK_NOT_DONE = 4;
+
+const SCOPE_SIZE = 112;
+const SCOPE_NEXT = 0;
+const SCOPE_PREV = 8;
+const SCOPE_ID = 16;
+const SCOPE_OWNER = 24;
+const SCOPE_WORKERS = 32;
+const SCOPE_LIVE_ISOLATES = 40;
+const SCOPE_NEXT_INDEX = 48;
+const SCOPE_FAILED = 56;
+const SCOPE_CANCELLED = 64;
+const SCOPE_PORTS = 72;
+const SCOPE_PORT_COUNT = 80;
+const SCOPE_PORT_CAPACITY = 88;
+const SCOPE_CLOSED = 96;
+const SCOPE_OWNER_MAILBOX = 104;
+
+const REGISTRY_TASKS = 0;
+const REGISTRY_SCOPES = 8;
+const INSTANCE_WATCH_COUNT = 64;
+const WATCH_TASK = 16;
+
+const RUNTIME_STATE_SIZE = 64;
+const FIBER_JOIN_OK = 0;
+const FIBER_JOIN_CANCELLED = 1;
+const FIBER_JOIN_PANICKED = 2;
+const FIBER_PANIC_MESSAGE_OFFSET = 56;
+const EXTERNAL_READY = 1;
+const EXTERNAL_CANCELLED = 3;
+// External wait operation code of a task join (any nonzero value; diagnostic only).
+const OPERATION_ISOLATE_JOIN = 9;
+
+pub pointer TaskCancelWord(pointer task) { return pointer_add(task, TASK_CANCEL); }
+
+pub word TaskStatus(pointer task) { return AtomicWordLoad(pointer_add(task, TASK_STATUS), 1); }
+
+pub bool TaskTerminal(pointer task) { return TaskStatus(task) != TASK_RUNNING; }
+
+// ── Registry lookups (caller holds the lock) ──────────────────────────
+
+pub pointer TaskFindLocked(i64 handle) {
+    if handle <= 0 { return NativePointer(0); }
+    mut pointer task = NativePointer(raw_word_load(pointer_add(ParallelRegistryLocked(), REGISTRY_TASKS)));
+    while task != NativePointer(0) {
+        if raw_word_load(pointer_add(task, TASK_HANDLE)) == word(handle) { return task; }
+        task = NativePointer(raw_word_load(pointer_add(task, TASK_NEXT)));
+    }
+    return NativePointer(0);
+}
+
+pub pointer ScopeFindLocked(i64 id) {
+    if id <= 0 { return NativePointer(0); }
+    mut pointer scopeRecord = NativePointer(raw_word_load(pointer_add(ParallelRegistryLocked(), REGISTRY_SCOPES)));
+    while scopeRecord != NativePointer(0) {
+        if raw_word_load(pointer_add(scopeRecord, SCOPE_ID)) == word(id) { return scopeRecord; }
+        scopeRecord = NativePointer(raw_word_load(pointer_add(scopeRecord, SCOPE_NEXT)));
+    }
+    return NativePointer(0);
+}
+
+// Links `record` (whose first two words are next/prev) at the head of the list at `head`.
+pub unit ListLinkLocked(pointer head, pointer record) {
+    pointer first = NativePointer(raw_word_load(head));
+    raw_word_store(record, NativeWord(first));
+    raw_word_store(pointer_add(record, 8), 0);
+    if first != NativePointer(0) { raw_word_store(pointer_add(first, 8), NativeWord(record)); }
+    raw_word_store(head, NativeWord(record));
+    return;
+}
+
+pub unit ListUnlinkLocked(pointer head, pointer record) {
+    pointer next = NativePointer(raw_word_load(record));
+    pointer prev = NativePointer(raw_word_load(pointer_add(record, 8)));
+    if prev == NativePointer(0) { raw_word_store(head, NativeWord(next)); }
+    else { raw_word_store(prev, NativeWord(next)); }
+    if next != NativePointer(0) { raw_word_store(pointer_add(next, 8), NativeWord(prev)); }
+    return;
+}
+
+// The scope `id` owned by the calling isolate and still open; traps otherwise (the corelib only
+// passes ids of its own open scopes).
+pub pointer ScopeOwnedLocked(i64 id) {
+    pointer scopeRecord = ScopeFindLocked(id);
+    if scopeRecord == NativePointer(0) || NativePointer(raw_word_load(pointer_add(scopeRecord, SCOPE_OWNER))) != RuntimeState() ||
+       raw_word_load(pointer_add(scopeRecord, SCOPE_CLOSED)) != 0 {
+        ParallelUnlock();
+        Trap(10, NativePointer(0), 0);
+    }
+    return scopeRecord;
+}
+
+// ── Scopes ────────────────────────────────────────────────────────────
+
+[Export(Abi:"C", Symbol:"isolate_scope_open")]
+pub i64 IsolateScopeOpen(i64 workers) {
+    pointer scopeRecord = SystemAllocate(SCOPE_SIZE, 8);
+    if scopeRecord == NativePointer(0) { Trap(5, NativePointer(0), 0); }
+    memory_set(scopeRecord, 0, SCOPE_SIZE);
+    word id = ParallelNextSerial();
+    raw_word_store(pointer_add(scopeRecord, SCOPE_ID), id);
+    raw_word_store(pointer_add(scopeRecord, SCOPE_OWNER), NativeWord(RuntimeState()));
+    raw_word_store(pointer_add(scopeRecord, SCOPE_OWNER_MAILBOX), ExternalOwnerId());
+    if workers > 0 { raw_word_store(pointer_add(scopeRecord, SCOPE_WORKERS), word(workers)); }
+    ParallelLock();
+    ListLinkLocked(pointer_add(ParallelRegistryLocked(), REGISTRY_SCOPES), scopeRecord);
+    ParallelUnlock();
+    return i64(id);
+}
+
+// Requests cancellation of `task`. Caller holds the lock. Idempotent; a terminal task is unchanged.
+pub unit TaskRequestCancelLocked(pointer task) {
+    if TaskTerminal(task) { return; }
+    AtomicWordStore(TaskCancelWord(task), 1, 2);
+    if raw_word_load(pointer_add(task, TASK_KIND)) == TASK_KIND_ISOLATE {
+        ParallelWake(AtomicWordLoad(pointer_add(task, TASK_CHILD_OWNER), 1), ParallelWakeToken());
+    } else {
+        pointer scopeRecord = NativePointer(raw_word_load(pointer_add(task, TASK_SCOPE)));
+        ParallelWake(raw_word_load(pointer_add(scopeRecord, SCOPE_OWNER_MAILBOX)), ParallelWakeToken());
+    }
+    return;
+}
+
+// Cancels every running task of `scope` and every port it owns. Caller holds the lock.
+pub unit ScopeCancelLocked(pointer scopeRecord) {
+    mut pointer task = NativePointer(raw_word_load(pointer_add(ParallelRegistryLocked(), REGISTRY_TASKS)));
+    while task != NativePointer(0) {
+        if NativePointer(raw_word_load(pointer_add(task, TASK_SCOPE))) == scopeRecord { TaskRequestCancelLocked(task); }
+        task = NativePointer(raw_word_load(pointer_add(task, TASK_NEXT)));
+    }
+    ScopePortsCloseLocked(scopeRecord, true);
+    return;
+}
+
+[Export(Abi:"C", Symbol:"isolate_scope_cancel")]
+pub unit IsolateScopeCancel(i64 id) {
+    ParallelLock();
+    pointer scopeRecord = ScopeFindLocked(id);
+    if scopeRecord != NativePointer(0) {
+        raw_word_store(pointer_add(scopeRecord, SCOPE_CANCELLED), 1);
+        ScopeCancelLocked(scopeRecord);
+    }
+    ParallelUnlock();
+    return;
+}
+
+[Export(Abi:"C", Symbol:"isolate_scope_close_ports")]
+pub unit IsolateScopeClosePorts(i64 id) {
+    ParallelLock();
+    pointer scopeRecord = ScopeFindLocked(id);
+    if scopeRecord != NativePointer(0) { ScopePortsCloseLocked(scopeRecord, false); }
+    ParallelUnlock();
+    return;
+}
+
+[Export(Abi:"C", Symbol:"isolate_cancel")]
+pub unit IsolateCancel(i64 isolateId) {
+    if isolateId <= 0 { return; }
+    ParallelLock();
+    mut pointer task = NativePointer(raw_word_load(pointer_add(ParallelRegistryLocked(), REGISTRY_TASKS)));
+    while task != NativePointer(0) {
+        if raw_word_load(pointer_add(task, TASK_ISOLATE_ID)) == word(isolateId) { TaskRequestCancelLocked(task); }
+        task = NativePointer(raw_word_load(pointer_add(task, TASK_NEXT)));
+    }
+    ParallelUnlock();
+    return;
+}
+
+// Joins every task of the scope (in any order; reporting order is the corelib's), closes and
+// releases its ports and releases every task record. After this every handle of the scope
+// answers 3.
+[Export(Abi:"C", Symbol:"isolate_scope_close")]
+pub unit IsolateScopeClose(i64 id) {
+    ParallelLock();
+    pointer scopeRecord = ScopeOwnedLocked(id);
+    raw_word_store(pointer_add(scopeRecord, SCOPE_CLOSED), 1);
+    ParallelUnlock();
+    mut bool pending = true;
+    while pending {
+        ParallelLock();
+        mut pointer open = NativePointer(0);
+        mut pointer task = NativePointer(raw_word_load(pointer_add(ParallelRegistryLocked(), REGISTRY_TASKS)));
+        while task != NativePointer(0) && open == NativePointer(0) {
+            if NativePointer(raw_word_load(pointer_add(task, TASK_SCOPE))) == scopeRecord && raw_word_load(pointer_add(task, TASK_FINALIZED)) == 0 {
+                open = task;
+            }
+            task = NativePointer(raw_word_load(pointer_add(task, TASK_NEXT)));
+        }
+        ParallelUnlock();
+        if open == NativePointer(0) {
+            pending = false;
+        } else {
+            TaskAwait(open);
+            TaskFinalize(open);
+        }
+    }
+    ParallelLock();
+    pointer registryRecord = ParallelRegistryLocked();
+    mut pointer cursor = NativePointer(raw_word_load(pointer_add(registryRecord, REGISTRY_TASKS)));
+    while cursor != NativePointer(0) {
+        pointer next = NativePointer(raw_word_load(pointer_add(cursor, TASK_NEXT)));
+        if NativePointer(raw_word_load(pointer_add(cursor, TASK_SCOPE))) == scopeRecord {
+            ListUnlinkLocked(pointer_add(registryRecord, REGISTRY_TASKS), cursor);
+            TaskRelease(cursor);
+        }
+        cursor = next;
+    }
+    ScopePortsReleaseLocked(scopeRecord);
+    ListUnlinkLocked(pointer_add(registryRecord, REGISTRY_SCOPES), scopeRecord);
+    ParallelUnlock();
+    SystemFree(scopeRecord, SCOPE_SIZE);
+    return;
+}
+
+// Frees one unlinked task record. Its result slot (a root in the joiner's heap) is cleared.
+pub unit TaskRelease(pointer task) {
+    if AbiValueIsVacant(pointer_add(task, TASK_RESULT_SLOT)) == false {
+        if AbiValueClear(pointer_add(task, TASK_RESULT_SLOT)) == false { Trap(10, NativePointer(0), 0); }
+    }
+    TaskMessageFree(task);
+    memory_set(task, 0, TASK_SIZE);
+    SystemFree(task, TASK_SIZE);
+    return;
+}
+
+// ── Task records ──────────────────────────────────────────────────────
+
+// Creates a running task of `scope` with the next spawn index. Caller holds the lock.
+pub pointer TaskCreateLocked(pointer scopeRecord, word kind) {
+    pointer task = SystemAllocate(TASK_SIZE, 8);
+    if task == NativePointer(0) { ParallelUnlock(); Trap(5, NativePointer(0), 0); }
+    memory_set(task, 0, TASK_SIZE);
+    raw_word_store(pointer_add(task, TASK_HANDLE), ParallelNextSerial());
+    raw_word_store(pointer_add(task, TASK_ISOLATE_ID), ParallelNextSerial());
+    raw_word_store(pointer_add(task, TASK_SCOPE), NativeWord(scopeRecord));
+    raw_word_store(pointer_add(task, TASK_KIND), kind);
+    word index = raw_word_load(pointer_add(scopeRecord, SCOPE_NEXT_INDEX));
+    raw_word_store(pointer_add(task, TASK_INDEX), index);
+    raw_word_store(pointer_add(scopeRecord, SCOPE_NEXT_INDEX), index + 1);
+    raw_word_store(pointer_add(task, TASK_STATUS), TASK_RUNNING);
+    if raw_word_load(pointer_add(scopeRecord, SCOPE_FAILED)) != 0 || raw_word_load(pointer_add(scopeRecord, SCOPE_CANCELLED)) != 0 {
+        raw_word_store(TaskCancelWord(task), 1);
+    }
+    ListLinkLocked(pointer_add(ParallelRegistryLocked(), REGISTRY_TASKS), task);
+    return task;
+}
+
+pub unit TaskMessageFree(pointer task) {
+    if raw_word_load(pointer_add(task, TASK_HAS_MESSAGE)) == 0 { return; }
+    mut word size = raw_word_load(pointer_add(task, TASK_MESSAGE_LENGTH));
+    if size == 0 { size = 1; }
+    SystemFree(NativePointer(raw_word_load(pointer_add(task, TASK_MESSAGE_DATA))), size);
+    raw_word_store(pointer_add(task, TASK_HAS_MESSAGE), 0);
+    raw_word_store(pointer_add(task, TASK_MESSAGE_DATA), 0);
+    raw_word_store(pointer_add(task, TASK_MESSAGE_LENGTH), 0);
+    return;
+}
+
+// Copies `length` bytes at `data` into native storage owned by the task.
+pub unit TaskSetMessage(pointer task, pointer data, word length) {
+    TaskMessageFree(task);
+    mut word size = length;
+    if size == 0 { size = 1; }
+    pointer copy = SystemAllocate(size, 8);
+    if copy == NativePointer(0) { Trap(5, NativePointer(0), 0); }
+    memory_set(copy, 0, size);
+    if length != 0 && data != NativePointer(0) { memory_copy(copy, data, length); }
+    raw_word_store(pointer_add(task, TASK_MESSAGE_DATA), NativeWord(copy));
+    raw_word_store(pointer_add(task, TASK_MESSAGE_LENGTH), length);
+    raw_word_store(pointer_add(task, TASK_HAS_MESSAGE), 1);
+    return;
+}
+
+pub unit TaskSetPackedMessage(pointer task, word first, word second, word third, word thirdLength) {
+    pointer buffer = SystemAllocate(24, 8);
+    if buffer == NativePointer(0) { Trap(5, NativePointer(0), 0); }
+    mut word offset = WritePackedAscii(buffer, 0, first, 8);
+    offset = WritePackedAscii(buffer, offset, second, 8);
+    offset = WritePackedAscii(buffer, offset, third, thirdLength);
+    TaskSetMessage(task, buffer, offset);
+    SystemFree(buffer, 24);
+    return;
+}
+
+// Publishes the terminal status of `task` from whichever thread ended it: releases its isolate
+// slot, fails the scope on a panic (cancelling every sibling and every scope port) and wakes the
+// joiner.
+pub unit TaskComplete(pointer task, word status) {
+    ParallelLock();
+    AtomicWordStore(pointer_add(task, TASK_STATUS), status, 2);
+    pointer scopeRecord = NativePointer(raw_word_load(pointer_add(task, TASK_SCOPE)));
+    if raw_word_load(pointer_add(task, TASK_KIND)) == TASK_KIND_ISOLATE {
+        ParallelReleaseIsolateLocked();
+        raw_word_store(pointer_add(scopeRecord, SCOPE_LIVE_ISOLATES), raw_word_load(pointer_add(scopeRecord, SCOPE_LIVE_ISOLATES)) - 1);
+    }
+    if status == TASK_PANICKED {
+        raw_word_store(pointer_add(scopeRecord, SCOPE_FAILED), 1);
+        ScopeCancelLocked(scopeRecord);
+    }
+    word owner = raw_word_load(pointer_add(task, TASK_WAITER_OWNER));
+    word token = raw_word_load(pointer_add(task, TASK_WAITER_TOKEN));
+    raw_word_store(pointer_add(task, TASK_WAITER_OWNER), 0);
+    raw_word_store(pointer_add(task, TASK_WAITER_TOKEN), 0);
+    ParallelUnlock();
+    ParallelWake(owner, token);
+    return;
+}
+
+// Parks the caller until `task` is terminal. In a fiber the wait is an external wait that the
+// completing thread posts; a cancelled joiner keeps joining (a scope joins on every exit path).
+// Outside a fiber the caller drives its scheduler and sleeps on its mailbox.
+pub unit TaskAwait(pointer task) {
+    while !TaskTerminal(task) {
+        word current = SchedulerCurrentFiber();
+        word owner = ExternalOwnerId();
+        if current != FiberNone() {
+            word token = ExternalWaitRegister(FiberHandle(current), OPERATION_ISOLATE_JOIN, -1);
+            if token == 0 { Trap(5, NativePointer(0), 0); }
+            ParallelLock();
+            if TaskTerminal(task) {
+                ParallelUnlock();
+                ExternalTryComplete(token & 0xFFFFFFFF, token >> 32, EXTERNAL_READY);
+                ExternalRelease(token);
+            } else {
+                word previous = raw_word_load(pointer_add(task, TASK_WAITER_OWNER));
+                word previousToken = raw_word_load(pointer_add(task, TASK_WAITER_TOKEN));
+                raw_word_store(pointer_add(task, TASK_WAITER_OWNER), owner);
+                raw_word_store(pointer_add(task, TASK_WAITER_TOKEN), token);
+                ParallelUnlock();
+                // A displaced waiter re-registers on its next loop.
+                ParallelWake(previous, previousToken);
+                word outcome = ExternalWaitPark(token);
+                ExternalRelease(token);
+                ParallelLock();
+                if raw_word_load(pointer_add(task, TASK_WAITER_TOKEN)) == token {
+                    raw_word_store(pointer_add(task, TASK_WAITER_OWNER), 0);
+                    raw_word_store(pointer_add(task, TASK_WAITER_TOKEN), 0);
+                }
+                ParallelUnlock();
+                if outcome == EXTERNAL_CANCELLED { FiberYield(); }
+            }
+        } else {
+            ParallelLock();
+            if !TaskTerminal(task) {
+                raw_word_store(pointer_add(task, TASK_WAITER_OWNER), owner);
+                raw_word_store(pointer_add(task, TASK_WAITER_TOKEN), ParallelWakeToken());
+            }
+            ParallelUnlock();
+            if SchedStep() == false && !TaskTerminal(task) {
+                // The completion stores the status before it posts, so a post consumed by the
+                // step above is matched by the terminal check, and a later one wakes this wait.
+                owner_wait(owner, ExternalNextDeadline());
+            }
+        }
+    }
+    return;
+}
+
+// After the task is terminal: joins its thread, then adopts (completed) or discards (failed,
+// cancelled) the task heap, and releases the parent's root on the closure record. Runs on the
+// scope owner's thread. Idempotent.
+pub unit TaskFinalize(pointer task) {
+    if raw_word_load(pointer_add(task, TASK_FINALIZED)) != 0 { return; }
+    if raw_word_load(pointer_add(task, TASK_KIND)) == TASK_KIND_ISOLATE {
+        pointer thread = NativePointer(raw_word_load(pointer_add(task, TASK_THREAD)));
+        if thread != NativePointer(0) {
+            if ThreadJoin(thread) != 0 { Trap(10, NativePointer(0), 0); }
+            raw_word_store(pointer_add(task, TASK_THREAD), 0);
+        }
+        pointer childRuntime = NativePointer(raw_word_load(pointer_add(task, TASK_CONFIG)));
+        pointer childHeap = NativePointer(raw_word_load(pointer_add(task, TASK_CHILD_HEAP)));
+        if childHeap != NativePointer(0) {
+            if TaskStatus(task) == TASK_COMPLETED {
+                AdoptHeap(Heap(), childHeap, childRuntime);
+                pointer payload = NativePointer(raw_word_load(pointer_add(task, TASK_RESULT_PAYLOAD)));
+                if payload != NativePointer(0) &&
+                   AbiValueInitialize(pointer_add(task, TASK_RESULT_SLOT), raw_word_load(pointer_add(task, TASK_RESULT_TAG)), payload,
+                       NativePointer(raw_word_load(pointer_add(task, TASK_RESULT_DESCRIPTOR)))) == false {
+                    Trap(10, NativePointer(0), 0);
+                }
+            } else if ChildHeapHeldByCounts(childHeap) {
+                // A failed task's objects that another isolate holds a stake in stay alive.
+                AdoptHeap(Heap(), childHeap, childRuntime);
+            } else {
+                DiscardHeap(childHeap, childRuntime);
+            }
+            raw_word_store(pointer_add(task, TASK_CHILD_HEAP), 0);
+        }
+        if childRuntime != NativePointer(0) {
+            memory_set(childRuntime, 0, RUNTIME_STATE_SIZE);
+            SystemFree(childRuntime, RUNTIME_STATE_SIZE);
+            raw_word_store(pointer_add(task, TASK_CONFIG), 0);
+        }
+        word root = raw_word_load(pointer_add(task, TASK_ARGUMENT_ROOT));
+        if root != 0 { GcUnrootHandle(root); raw_word_store(pointer_add(task, TASK_ARGUMENT_ROOT), 0); }
+        pointer record = NativePointer(raw_word_load(pointer_add(task, TASK_RECORD)));
+        if record != NativePointer(0) { TransitFree(record); raw_word_store(pointer_add(task, TASK_RECORD), 0); }
+    }
+    raw_word_store(pointer_add(task, TASK_FINALIZED), 1);
+    return;
+}
+
+// ── Spawn ─────────────────────────────────────────────────────────────
+
+[Export(Abi:"C", Symbol:"isolate_spawn")]
+pub i64 IsolateSpawn(pointer entry, pointer argument, i64 scopeId) {
+    if entry == NativePointer(0) { Trap(10, NativePointer(0), 0); }
+    ParallelLock();
+    pointer scopeRecord = ScopeOwnedLocked(scopeId);
+    mut word cap = raw_word_load(pointer_add(scopeRecord, SCOPE_WORKERS));
+    word bound = ParallelIsolatesBound();
+    if cap == 0 || cap > bound { cap = bound; }
+    // The scope's own isolates count against its cap; the calling isolate is not one of them.
+    if raw_word_load(pointer_add(scopeRecord, SCOPE_LIVE_ISOLATES)) + 1 >= cap {
+        ParallelUnlock();
+        return -1;
+    }
+    if ParallelReserveIsolateLocked() == false {
+        ParallelUnlock();
+        return -1;
+    }
+    raw_word_store(pointer_add(scopeRecord, SCOPE_LIVE_ISOLATES), raw_word_load(pointer_add(scopeRecord, SCOPE_LIVE_ISOLATES)) + 1);
+    pointer task = TaskCreateLocked(scopeRecord, TASK_KIND_ISOLATE);
+    ParallelUnlock();
+    word handle = raw_word_load(pointer_add(task, TASK_HANDLE));
+    raw_word_store(pointer_add(task, TASK_ENTRY), NativeWord(entry));
+    pointer refused = SystemAllocate(8, 8);
+    if refused == NativePointer(0) { Trap(5, NativePointer(0), 0); }
+    raw_word_store(refused, 0);
+    pointer record = TransitCapture(argument, true, refused);
+    word refusedDescriptor = raw_word_load(refused);
+    SystemFree(refused, 8);
+    if record == NativePointer(0) {
+        pointer buffer = SystemAllocate(40, 8);
+        if buffer == NativePointer(0) { Trap(5, NativePointer(0), 0); }
+        TaskSetMessage(task, buffer, WriteTransitRefused(buffer, refusedDescriptor));
+        SystemFree(buffer, 40);
+        raw_word_store(pointer_add(task, TASK_FINALIZED), 1);
+        TaskComplete(task, TASK_PANICKED);
+        return i64(handle);
+    }
+    raw_word_store(pointer_add(task, TASK_RECORD), NativeWord(record));
+    // The closure record stays rooted in this heap until the task is joined: Shared captures in the
+    // record are pointers into it.
+    if argument != NativePointer(0) {
+        raw_word_store(pointer_add(task, TASK_ARGUMENT_ROOT), GcRootHandle(argument));
+    }
+    pointer config = SystemAllocate(RUNTIME_STATE_SIZE, 8);
+    if config == NativePointer(0) { Trap(5, NativePointer(0), 0); }
+    memory_set(config, 0, RUNTIME_STATE_SIZE);
+    raw_word_store(pointer_add(task, TASK_CONFIG), NativeWord(config));
+    if isolate_thread_start(task, pointer_add(task, TASK_THREAD)) != 0 {
+        raw_word_store(pointer_add(task, TASK_THREAD), 0);
+        TaskSetPackedMessage(task, 0x206574616c6f7369, 0x7220646165726874, 0x646573756665, 6);
+        TaskComplete(task, TASK_PANICKED);
+    }
+    return i64(handle);
+}
+
+[Export(Abi:"C", Symbol:"isolate_spawn_local")]
+pub i64 IsolateSpawnLocal(pointer entry, pointer argument, i64 scopeId) {
+    if entry == NativePointer(0) { Trap(10, NativePointer(0), 0); }
+    pointer cancelSlot = SystemAllocate(8, 8);
+    if cancelSlot == NativePointer(0) { Trap(5, NativePointer(0), 0); }
+    raw_word_store(cancelSlot, 0);
+    i64 fiber = SchedulerSpawn(entry, argument, cancelSlot);
+    if fiber < 0 { Trap(5, NativePointer(0), 0); }
+    ParallelLock();
+    pointer scopeRecord = ScopeOwnedLocked(scopeId);
+    pointer task = TaskCreateLocked(scopeRecord, TASK_KIND_LOCAL);
+    raw_word_store(pointer_add(task, TASK_FIBER), word(fiber));
+    ParallelUnlock();
+    IsolateWatchAdd(CurrentInstanceRecord(), TaskCancelWord(task), word(fiber), task);
+    return i64(raw_word_load(pointer_add(task, TASK_HANDLE)));
+}
+
+// Scheduler hook (Loop.bd): `index` just finished. When it is a local task's fiber, its outcome
+// becomes the task's: the result moves into the task's result slot, a panic message is copied, the
+// fiber record is released and the task completes.
+pub unit IsolateObserveFiberFinished(word index) {
+    pointer instance = CurrentInstanceRecord();
+    if instance == NativePointer(0) { return; }
+    word handle = FiberHandle(index);
+    word watched = IsolateWatchFind(instance, handle);
+    if watched >= raw_word_load(pointer_add(instance, INSTANCE_WATCH_COUNT)) { return; }
+    pointer task = NativePointer(raw_word_load(pointer_add(WatchEntry(instance, watched), WATCH_TASK)));
+    if task == NativePointer(0) { return; }
+    IsolateWatchRemove(instance, watched);
+    pointer fiber = FiberRecord(index);
+    word outcome = FiberJoinStatusWord(index);
+    mut word status = TASK_PANICKED;
+    if outcome == FIBER_JOIN_OK {
+        status = TASK_COMPLETED;
+        if AbiValueMoveOut(pointer_add(fiber, BESKID_FIBER_RECORD_RESULT_OFFSET), pointer_add(task, TASK_RESULT_SLOT)) == false {
+            Trap(10, NativePointer(0), 0);
+        }
+    } else if outcome == FIBER_JOIN_CANCELLED {
+        status = TASK_CANCELLED;
+    } else {
+        pointer message = NativePointer(raw_word_load(pointer_add(fiber, FIBER_PANIC_MESSAGE_OFFSET)));
+        if message != NativePointer(0) {
+            TaskSetMessage(task, NativePointer(raw_word_load(message)), raw_word_load(pointer_add(message, 8)));
+        } else {
+            TaskSetPackedMessage(task, 0x206574616c6f7369, 0x766f206b63617473, 0x776f6c667265, 6);
+        }
+    }
+    raw_byte_store(pointer_add(fiber, 42), 1);
+    FiberCleanup(index);
+    raw_word_store(pointer_add(task, TASK_FINALIZED), 1);
+    TaskComplete(task, status);
+    return;
+}
+
+// ── The isolate thread ────────────────────────────────────────────────
+
+// Entered on a new OS thread (host_threads.h). Creates the isolate, runs the body as its main
+// fiber, tears the isolate down and leaves the heap for the joiner (adoption or discard).
+[Export(Abi:"C", Symbol:"beskid_rt_v5_isolate_task_run")]
+pub pointer IsolateTaskRun(pointer task) {
+    pointer config = NativePointer(raw_word_load(pointer_add(task, TASK_CONFIG)));
+    pointer runtime = IsolateCreate(config);
+    if runtime == NativePointer(0) {
+        TaskSetPackedMessage(task, 0x206574616c6f7369, 0x6e6f697461657263, 0x64656c69616620, 7);
+        TaskComplete(task, TASK_PANICKED);
+        return NativePointer(0);
+    }
+    pointer instance = IsolateRecord(runtime);
+    InstanceSetIsolateId(instance, raw_word_load(pointer_add(task, TASK_ISOLATE_ID)));
+    InstanceSetTask(instance, task);
+    AtomicWordStore(pointer_add(task, TASK_CHILD_OWNER), ExternalOwnerId(), 2);
+    // The body's closure record, materialized in this heap.
+    pointer rootCell = SystemAllocate(8, 8);
+    if rootCell == NativePointer(0) { Trap(5, NativePointer(0), 0); }
+    pointer record = NativePointer(raw_word_load(pointer_add(task, TASK_RECORD)));
+    if TransitMaterialize(record, rootCell) == false { Trap(5, NativePointer(0), 0); }
+    pointer cancelSlot = SystemAllocate(8, 8);
+    if cancelSlot == NativePointer(0) { Trap(5, NativePointer(0), 0); }
+    raw_word_store(cancelSlot, 0);
+    i64 mainFiber = SchedulerSpawn(NativePointer(raw_word_load(pointer_add(task, TASK_ENTRY))), NativePointer(raw_word_load(rootCell)), cancelSlot);
+    GcUnregisterRoot(rootCell);
+    SystemFree(rootCell, 8);
+    if mainFiber < 0 { Trap(5, NativePointer(0), 0); }
+    word mainIndex = FiberHandleIndex(word(mainFiber));
+    IsolateSetMainFiber(runtime, mainIndex);
+    IsolateWatchAdd(instance, TaskCancelWord(task), word(mainFiber), NativePointer(0));
+    while !FiberFinished(mainIndex) {
+        if SchedStep() == false && !FiberFinished(mainIndex) {
+            // Never a deadlock trap here: a parked body may be waiting for a cancellation post.
+            owner_wait(ExternalOwnerId(), ExternalNextDeadline());
+        }
+    }
+    word outcome = FiberJoinStatusWord(mainIndex);
+    mut word status = TASK_PANICKED;
+    if outcome == FIBER_JOIN_OK {
+        status = TASK_COMPLETED;
+        if AbiValueMoveOut(pointer_add(FiberRecord(mainIndex), BESKID_FIBER_RECORD_RESULT_OFFSET), pointer_add(task, TASK_CHILD_SLOT)) == false {
+            Trap(10, NativePointer(0), 0);
+        }
+    } else if outcome == FIBER_JOIN_CANCELLED {
+        status = TASK_CANCELLED;
+    } else if outcome != FIBER_JOIN_PANICKED {
+        TaskSetPackedMessage(task, 0x206574616c6f7369, 0x766f206b63617473, 0x776f6c667265, 6);
+    }
+    // The other fibers of the isolate finish (or are cancelled with the task) before the heap is
+    // handed back; a main-fiber panic message is copied out by the scheduler shutdown.
+    IsolateBeginShutdown(runtime);
+    if SchedShutdownForced(AtomicWordLoad(TaskCancelWord(task), 1) != 0 || status != TASK_COMPLETED) == false {
+        IsolateReleaseWorkers(runtime);
+        Trap(10, NativePointer(0), 0);
+    }
+    if outcome == FIBER_JOIN_PANICKED {
+        pointer dataOut = SystemAllocate(16, 8);
+        if dataOut == NativePointer(0) { Trap(5, NativePointer(0), 0); }
+        memory_set(dataOut, 0, 16);
+        if IsolatePanicMessage(runtime, dataOut, pointer_add(dataOut, 8)) != 0 {
+            TaskSetMessage(task, NativePointer(raw_word_load(dataOut)), raw_word_load(pointer_add(dataOut, 8)));
+        } else {
+            TaskSetMessage(task, NativePointer(0), 0);
+        }
+        SystemFree(dataOut, 16);
+    }
+    // Finish any collection in progress so the heap is idle with clean mark state, while the
+    // result is still rooted; then hand the result's words to the joiner.
+    GcCompleteCycle(Heap(), false);
+    if status == TASK_COMPLETED {
+        pointer slot = pointer_add(task, TASK_CHILD_SLOT);
+        raw_word_store(pointer_add(task, TASK_RESULT_TAG), raw_word_load(slot));
+        raw_word_store(pointer_add(task, TASK_RESULT_PAYLOAD), raw_word_load(pointer_add(slot, 8)));
+        raw_word_store(pointer_add(task, TASK_RESULT_DESCRIPTOR), raw_word_load(pointer_add(slot, 16)));
+        GcUnregisterRoot(pointer_add(slot, 8));
+        memory_set(slot, 0, 40);
+    }
+    IsolateReleaseWorkers(runtime);
+    pointer heap = IsolateReleaseKeepRegions(runtime);
+    IsolateRecordRelease(runtime);
+    raw_word_store(pointer_add(task, TASK_CHILD_HEAP), NativeWord(heap));
+    TransitFree(record);
+    raw_word_store(pointer_add(task, TASK_RECORD), 0);
+    TaskComplete(task, status);
+    return NativePointer(0);
+}
+
+// ── Join ──────────────────────────────────────────────────────────────
+
+// The task `handle` of a scope owned by the calling isolate, or null.
+pub pointer TaskOwned(i64 handle) {
+    ParallelLock();
+    pointer task = TaskFindLocked(handle);
+    mut pointer result = NativePointer(0);
+    if task != NativePointer(0) {
+        pointer scopeRecord = NativePointer(raw_word_load(pointer_add(task, TASK_SCOPE)));
+        if NativePointer(raw_word_load(pointer_add(scopeRecord, SCOPE_OWNER))) == RuntimeState() { result = task; }
+    }
+    ParallelUnlock();
+    return result;
+}
+
+[Export(Abi:"C", Symbol:"isolate_wait")]
+pub unit IsolateWait(i64 handle) {
+    pointer task = TaskOwned(handle);
+    if task == NativePointer(0) { return; }
+    TaskAwait(task);
+    return;
+}
+
+[Export(Abi:"C", Symbol:"isolate_join")]
+pub i64 IsolateJoin(i64 handle) {
+    pointer task = TaskOwned(handle);
+    if task == NativePointer(0) || raw_word_load(pointer_add(task, TASK_JOINED)) != 0 { return TASK_UNKNOWN; }
+    TaskAwait(task);
+    TaskFinalize(task);
+    if raw_word_load(pointer_add(task, TASK_JOINED)) != 0 { return TASK_UNKNOWN; }
+    raw_word_store(pointer_add(task, TASK_JOINED), 1);
+    return i64(TaskStatus(task));
+}
+
+// Moves a joined, completed task's result into the caller's traced slot (typed value service).
+[Export(Abi:"C", Symbol:"isolate_join_value")]
+pub bool IsolateJoinValue(i64 handle, pointer destination) {
+    pointer task = TaskOwned(handle);
+    if task == NativePointer(0) || raw_word_load(pointer_add(task, TASK_FINALIZED)) == 0 || TaskStatus(task) != TASK_COMPLETED {
+        return false;
+    }
+    return AbiValueMoveOut(pointer_add(task, TASK_RESULT_SLOT), destination);
+}
+
+[Export(Abi:"C", Symbol:"isolate_join_message")]
+pub pointer IsolateJoinMessage(i64 handle) {
+    pointer task = TaskOwned(handle);
+    if task == NativePointer(0) || raw_word_load(pointer_add(task, TASK_HAS_MESSAGE)) == 0 { return StrNew(NativePointer(0), 0); }
+    return StrNew(NativePointer(raw_word_load(pointer_add(task, TASK_MESSAGE_DATA))), raw_word_load(pointer_add(task, TASK_MESSAGE_LENGTH)));
+}
+
+// Releases the result value only; status, index, isolate and message stay until the scope closes.
+[Export(Abi:"C", Symbol:"isolate_join_finish")]
+pub unit IsolateJoinFinish(i64 handle) {
+    pointer task = TaskOwned(handle);
+    if task == NativePointer(0) { return; }
+    pointer slot = pointer_add(task, TASK_RESULT_SLOT);
+    if AbiValueIsVacant(slot) == false && AbiValueClear(slot) == false { Trap(10, NativePointer(0), 0); }
+    return;
+}
+
+[Export(Abi:"C", Symbol:"isolate_task_status")]
+pub i64 IsolateTaskStatus(i64 handle) {
+    ParallelLock();
+    pointer task = TaskFindLocked(handle);
+    mut word status = TASK_UNKNOWN;
+    if task != NativePointer(0) {
+        status = TaskStatus(task);
+        if status == TASK_RUNNING { status = TASK_NOT_DONE; }
+    }
+    ParallelUnlock();
+    return i64(status);
+}
+
+[Export(Abi:"C", Symbol:"isolate_task_index")]
+pub i64 IsolateTaskIndex(i64 handle) {
+    ParallelLock();
+    pointer task = TaskFindLocked(handle);
+    mut i64 index = -1;
+    if task != NativePointer(0) { index = i64(raw_word_load(pointer_add(task, TASK_INDEX))); }
+    ParallelUnlock();
+    return index;
+}
+
+[Export(Abi:"C", Symbol:"isolate_task_isolate")]
+pub i64 IsolateTaskIsolate(i64 handle) {
+    ParallelLock();
+    pointer task = TaskFindLocked(handle);
+    mut i64 id = -1;
+    if task != NativePointer(0) { id = i64(raw_word_load(pointer_add(task, TASK_ISOLATE_ID))); }
+    ParallelUnlock();
+    return id;
+}
+
+// ── Process shutdown ──────────────────────────────────────────────────
+
+// Called by `ProcessShutdown` before the primary scheduler stops: every task still alive (a scope
+// that was never closed) is cancelled, and every task of this instance's scopes is joined, so no
+// isolate thread outlives the process runtime. Scopes are closed in the same way as by the corelib.
+pub unit ParallelProcessShutdown() {
+    mut bool pending = true;
+    while pending {
+        ParallelLock();
+        pointer registryRecord = ParallelRegistryLocked();
+        mut pointer task = NativePointer(raw_word_load(pointer_add(registryRecord, REGISTRY_TASKS)));
+        while task != NativePointer(0) {
+            TaskRequestCancelLocked(task);
+            task = NativePointer(raw_word_load(pointer_add(task, TASK_NEXT)));
+        }
+        mut pointer scopeRecord = NativePointer(raw_word_load(pointer_add(registryRecord, REGISTRY_SCOPES)));
+        mut i64 owned = 0;
+        while scopeRecord != NativePointer(0) && owned == 0 {
+            if NativePointer(raw_word_load(pointer_add(scopeRecord, SCOPE_OWNER))) == RuntimeState() {
+                owned = i64(raw_word_load(pointer_add(scopeRecord, SCOPE_ID)));
+                raw_word_store(pointer_add(scopeRecord, SCOPE_CLOSED), 0);
+            }
+            scopeRecord = NativePointer(raw_word_load(pointer_add(scopeRecord, SCOPE_NEXT)));
+        }
+        ParallelUnlock();
+        if owned == 0 { pending = false; } else { IsolateScopeClose(owned); }
+    }
+    return;
+}

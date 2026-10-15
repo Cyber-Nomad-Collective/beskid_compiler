@@ -29,6 +29,9 @@ pub(in crate::semantic_contract) fn semantic_type_for_node(
             &binary.right.node,
         ));
     }
+    if let Some(moved) = node.of::<beskid_analysis::syntax::MoveExpression>() {
+        return Some(semantic_type_for_expression(program, index, reference, &moved.operand.node));
+    }
     if let Some(unary) = node.of::<beskid_analysis::syntax::UnaryExpression>() {
         return Some(semantic_type_for_unary_operand(program, index, reference, unary));
     }
@@ -73,6 +76,9 @@ pub(in crate::semantic_contract) fn semantic_type_for_expression(
         }
         beskid_analysis::syntax::Expression::Grouped(grouped) => {
             semantic_type_for_expression(program, index, reference, &grouped.node.expr.node)
+        }
+        beskid_analysis::syntax::Expression::Move(moved) => {
+            semantic_type_for_expression(program, index, reference, &moved.node.operand.node)
         }
         beskid_analysis::syntax::Expression::Binary(binary) => semantic_type_for_binary_operands(
             program,

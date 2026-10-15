@@ -120,6 +120,28 @@ pub unit RegionMapUnregisterOwner(pointer owner) {
     return;
 }
 
+// Moves every range owned by `from` to `to` (heap adoption at task join). Readers see either the
+// old or the new owner of a range, never a torn record.
+pub unit RegionMapReassignOwner(pointer from, pointer to) {
+    if from == NativePointer(0) || to == NativePointer(0) { return; }
+    RegionMapLock();
+    mut pointer chunk = NativePointer(raw_word_load(pointer_add(ProcessStateRoot(), PROCESS_REGION_HEAD)));
+    while chunk != NativePointer(0) {
+        mut word index = 0;
+        while index < REGION_CHUNK_SLOT_COUNT {
+            pointer slot = RegionMapSlot(chunk, index);
+            if raw_word_load(pointer_add(slot, REGION_SLOT_OWNER)) == NativeWord(from) {
+                RegionMapWriteSlot(slot, raw_word_load(pointer_add(slot, REGION_SLOT_START)),
+                    raw_word_load(pointer_add(slot, REGION_SLOT_END)), NativeWord(to));
+            }
+            index = index + 1;
+        }
+        chunk = NativePointer(raw_word_load(pointer_add(chunk, REGION_CHUNK_NEXT)));
+    }
+    RegionMapUnlock();
+    return;
+}
+
 // Registers one heap region of `owner` by its object range.
 pub bool RegionMapRegisterRegion(pointer region, pointer owner) {
     return RegionMapRegister(

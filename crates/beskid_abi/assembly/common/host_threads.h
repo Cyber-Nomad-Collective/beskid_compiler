@@ -77,6 +77,17 @@ int32_t beskid_rt_v5_intrinsic_thread_join(void *handle) {
   return 0;
 }
 
+/* Isolate threads (v0.6.3). The thread runs the canonical runtime export
+ * `beskid_rt_v5_isolate_task_run(task)`, which creates the isolate's runtime
+ * instance on the new thread, runs the task and tears the instance down. The
+ * runtime corpus has no function addresses of its own, so the entry lives
+ * here; the handle cell is released by `beskid_rt_v5_intrinsic_thread_join`. */
+extern void *beskid_rt_v5_isolate_task_run(void *task);
+int32_t beskid_rt_v5_intrinsic_isolate_thread_start(void *task, void **handle_out) {
+  if (!task) return -1;
+  return beskid_rt_v5_intrinsic_thread_create((void *)beskid_rt_v5_isolate_task_run, task, handle_out);
+}
+
 #ifdef _WIN32
 /* MSVC `/std:c11` has no <stdatomic.h> without an experimental switch. The
  * Interlocked family is a full barrier, which satisfies every order byte. */

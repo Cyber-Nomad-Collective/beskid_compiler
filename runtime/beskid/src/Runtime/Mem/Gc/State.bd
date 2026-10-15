@@ -62,7 +62,7 @@ const HEAP_INCREMENTAL_STRESS_COUNTER = 480;
 const HEAP_FORCE_BARRIER_SKIP = 488;
 const HEAP_CYCLE_MAX_STEP_BYTES = 496;
 const HEAP_CYCLE_SHADE_COUNT = 504;
-const HEAP_STATE_SIZE = 512;
+const HEAP_STATE_SIZE = 528;
 
 // BeskidHeapRegion (see runtime_manifest.bsol) — a 64-byte header at the base of every mapped
 // region. `bump` is the region's page cursor (always page-aligned): the first never-carved byte.
@@ -92,6 +92,8 @@ const SIZE_CLASS_LARGE = 14;
 
 // Growth and pacing policy (Decision 2 of the growable-heap design, unchanged by the span
 // redesign).
+const HEAP_COUNTS = 512;
+const HEAP_FOREIGN_EPOCH = 520;
 const HEAP_MIN_THRESHOLD = 524288;
 const HEAP_INITIAL_REGION_SIZE = 1048576;
 const HEAP_MAX_REGION_SIZE = 67108864;

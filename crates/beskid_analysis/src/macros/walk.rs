@@ -96,6 +96,11 @@ pub fn map_expression(
             n.node.callee = Box::new(map_expression(*s.node.callee, f));
             Expression::Spawn(n)
         }
+        Expression::Move(m) => {
+            let mut n = m.clone();
+            n.node.operand = Box::new(map_expression(*m.node.operand, f));
+            Expression::Move(n)
+        }
         Expression::Index(i) => {
             let mut n = i.clone();
             n.node.target = Box::new(map_expression(*i.node.target, f));

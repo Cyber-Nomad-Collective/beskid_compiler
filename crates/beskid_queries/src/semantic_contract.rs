@@ -108,7 +108,7 @@ use abi::{
 };
 use bulk::{bulk_call_element_abi_type_for_call, bulk_parameter_tracked};
 use calls::{
-    PathCallResolution, call_arguments_tracked, call_lowering_for_node, call_lowering_tracked,
+    exchange_call_for_node, is_transfer_class_intrinsic, PathCallResolution, call_arguments_tracked, call_lowering_for_node, call_lowering_tracked,
     canonical_intrinsic_parameter_type, canonical_result_definition_for_type, canonical_result_variant,
     canonical_runtime_intrinsic_scope, cast_intents_for_node, cast_intents_tracked, corelib_service_for,
     expected_cast_type, call_explicit_member_type_arguments, expected_explicit_call_argument_type, explicit_generic_type_argument_syntax,
@@ -133,6 +133,9 @@ pub use cleanup::{ScopedAcquisition, ScopedCleanup, ScopedCleanupDiagnostic, sco
 pub use closures_spawn::function_value_call_specialization;
 use closures_spawn::{names_generic_function_item, untyped_lambda_parameter_identity, untyped_lambda_parameter_type};
 use closures_spawn::{
+    CapturesBound, call_argument_captures_bound, callable_affine_ownership_tracked, captures_bound,
+    declared_parameters, direct_callee, field_captures_bound, identity_spelling, move_expression_form_for_node,
+    with_declaration,
     callable_fiber_ownership_tracked, callable_signature_for_node, callable_signature_for_path,
     callable_signature_tracked, capture_storage_class, capture_storage_for_node, capture_storage_tracked,
     closure_call_target_tracked, closure_captures, closure_environment_for_node, closure_environment_tracked,
@@ -170,7 +173,7 @@ use layouts::{
     integer_primitive_for_semantic, semantic_type_for_primitive, semantic_type_from_syntax, unique_exported_type_in_unit, unique_public_type_in_unit, unique_type_in_unit,
 };
 pub use legality::{
-    AttributeResolution, CallArgumentTypeMismatch, CallArityMismatch, GateObligation, UnitAttributeDeclaration,
+    BoundedLambdaCaptures, bounded_lambda_captures, declared_captures_bound, AttributeResolution, CallArgumentTypeMismatch, CallArityMismatch, GateObligation, UnitAttributeDeclaration,
     UnitAttributeSurface, UnitAttributeUse, attribute_findings, check_attribute_obligations, resolve_attribute_use,
     unit_attribute_surface, GateObligationKind, GenericParameterConflict,
     ImmutableLocalAssignment,
@@ -218,7 +221,7 @@ use typing::{
 
 pub use abi::{
     generic_call_specialization_in_environment, generic_call_specialization_instance, generic_specialization_instance,
-    specialized_corelib_value_service_result,
+    specialized_builtin_type_argument, specialized_corelib_value_service_result,
 };
 pub use calls::{
     ExternContractImport, extern_contract_declarations_in_unit, extern_contract_import_for_declaration,
@@ -228,7 +231,9 @@ pub use completion::{
     completion_candidates, completion_dependency_surface, completion_dependency_surface_for_assembly,
     completion_dependency_surface_for_program,
 };
-pub use calls::{for_iterator_protocol, for_iterator_specialization};
+pub use calls::{
+    TransferClassIntrinsic, transfer_class_code, transfer_class_code_for_substitution, transfer_class_intrinsic,
+    ExchangeCall, exchange_call, for_iterator_protocol, for_iterator_specialization};
 pub use layouts::{
     aggregate_field_access_specialization, aggregate_literal_specialization, array_index_element_managed_reference_specialization,
     array_index_element_specialization,
@@ -237,6 +242,7 @@ pub use layouts::{
 pub use model::{
     AggregateFieldAccess, AggregateFieldShape, AggregateLayoutFact, AggregateLiteralFieldValues,
     ArrayIndexElementTemplate, AstNodeKey, BulkParameterFact, CallLowering, CaptureStorage, CaptureStorageClass,
+    AffineBinding, AffineFinding, AffineFindingKind, AffineOwnership, CanonicalEmpty, MoveExpressionForm,
     CastIntent, ClosureAllocationStatus, ClosureCallTarget, ClosureCapture, ClosureEnvironment,
     ClosureEnvironmentAbiShape, ClosureEnvironmentField, ClosureLoweringStatus, ClosurePointerMapRequirement,
     ClosureSignature, ClifParameterShape, CollectionMutationOwner, CollectionOperation, CompletionCandidate, CompletionContext,
@@ -260,7 +266,8 @@ pub use queries::{
     abi_type, aggregate_field_access, aggregate_layout, aggregate_literal_declaration, aggregate_literal_field_values,
     aggregate_literal_layout, array_index_element_abi_type, block_statement_nodes,
     bulk_call_element_abi_type, bulk_parameter, call_abi_signature, call_arguments, call_lowering,
-    callable_fiber_ownership, callable_signature, capture_storage, cast_intents, child_nodes, clif_block_body,
+    affine_ownership, callable_fiber_ownership, callable_signature, capture_storage, cast_intents, child_nodes,
+    clif_block_body, move_expression_form,
     clif_block_parameters, closure_call_target, closure_environment, closure_signature, collection_operation, constant_integer,
     constant_integer_literal,
     contextual_integer_literal_abi_type, control_flow, direct_callees, empty_array_literal_element_abi_type,

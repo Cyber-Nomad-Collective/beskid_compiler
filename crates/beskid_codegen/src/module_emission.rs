@@ -36,5 +36,6 @@ pub use orchestration::{
 };
 
 pub(crate) use orchestration::emitted_item_keys;
+pub(crate) use trampolines::isolate_entry_shape;
 
 mod serialization;

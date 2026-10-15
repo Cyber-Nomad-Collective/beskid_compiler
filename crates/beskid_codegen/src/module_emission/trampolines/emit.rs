@@ -76,31 +76,14 @@ pub(in crate::module_emission) fn emit_spawn_trampoline(
         builder.switch_to_block(entry);
         builder.seal_block(entry);
         let environment = builder.block_params(entry)[0];
-        let stack_check = import_local(&mut builder, scheduler_stack_check_symbol, &[pointer], Some(types::I8));
-        let required = builder.ins().iconst(
+        emit_entry_stack_guard(
+            &mut builder,
             pointer,
-            i64::try_from(required_usable_size).map_err(|_| {
-                emission_verification(format!(
-                    "fiber target `{}` stack requirement is not representable",
-                    trampoline.target_symbol
-                ))
-            })?,
-        );
-        let check_call = builder.ins().call(stack_check, &[required]);
-        let allowed = builder.inst_results(check_call)[0];
-        let body = builder.create_block();
-        let overflow = builder.create_block();
-        builder.ins().brif(allowed, body, &[], overflow, &[]);
-        builder.seal_block(body);
-        builder.seal_block(overflow);
-
-        builder.switch_to_block(overflow);
-        let observed = import_local(&mut builder, scheduler_stack_overflow_symbol, &[], None);
-        builder.ins().call(observed, &[]);
-        let overflow_result = builder.ins().iconst(types::I64, 0);
-        builder.ins().return_(&[overflow_result]);
-
-        builder.switch_to_block(body);
+            required_usable_size,
+            &trampoline.target_symbol,
+            scheduler_stack_check_symbol,
+            scheduler_stack_overflow_symbol,
+        )?;
         let target_signature = builder.import_signature(trampoline.target_signature.clone());
         let target = builder.func.import_function(cranelift_codegen::ir::ExtFuncData {
             name: ExternalName::testcase(trampoline.target_symbol.as_bytes()),
@@ -156,43 +139,7 @@ pub(in crate::module_emission) fn emit_spawn_trampoline(
                 )));
             }
         };
-        let root = if !trampoline.result_plan.pointer_map_offsets.is_empty() {
-            let slot = builder.create_sized_stack_slot(cranelift_codegen::ir::StackSlotData::new(
-                cranelift_codegen::ir::StackSlotKind::ExplicitSlot,
-                pointer.bytes(),
-                3,
-            ));
-            builder.ins().stack_store(pointer, result, slot, 0);
-            let address = builder.ins().stack_addr(pointer, slot, 0);
-            let register = import_local(&mut builder, "gc_register_root", &[pointer], Some(types::I8));
-            let call = builder.ins().call(register, &[address]);
-            let ok = builder.inst_results(call)[0];
-            builder.ins().trapz(ok, cranelift_codegen::ir::TrapCode::unwrap_user(5));
-            Some(address)
-        } else {
-            None
-        };
-        let request = builder.func.create_global_value(cranelift_codegen::ir::GlobalValueData::Symbol {
-            name: ExternalName::testcase(&trampoline.result_plan.allocation_request_symbol),
-            offset: 0.into(),
-            colocated: false,
-            tls: false,
-        });
-        let request = builder.ins().symbol_value(pointer, request);
-        let allocate = import_local(&mut builder, "beskid_rt_v5_managed_object_allocate", &[pointer], Some(pointer));
-        let call = builder.ins().call(allocate, &[request]);
-        let boxed = builder.inst_results(call)[0];
-        builder.ins().trapz(boxed, cranelift_codegen::ir::TrapCode::unwrap_user(5));
-        builder.ins().store(
-            cranelift_codegen::ir::MemFlagsData::new(),
-            result,
-            boxed,
-            trampoline.result_plan.fields[0].field_offset as i32,
-        );
-        if let Some(root) = root {
-            let unregister = import_local(&mut builder, "gc_unregister_root", &[pointer], None);
-            builder.ins().call(unregister, &[root]);
-        }
+        let boxed = emit_boxed_result(&mut builder, pointer, result, &trampoline.result_plan);
         builder.ins().return_(&[boxed]);
         builder.finalize(isa.frontend_config());
     }
@@ -200,4 +147,87 @@ pub(in crate::module_emission) fn emit_spawn_trampoline(
         emission_verification(format!("spawn trampoline `{}` verification failed: {error}", trampoline.symbol))
     })?;
     Ok(function)
+}
+
+/// Box one entry result into a fresh `{header, value}` object described by `plan`. A managed
+/// result stays rooted across the allocation.
+pub(super) fn emit_boxed_result(
+    builder: &mut FunctionBuilder<'_>,
+    pointer: cranelift_codegen::ir::Type,
+    result: cranelift_codegen::ir::Value,
+    plan: &crate::aggregate_static::AggregateStaticPlan,
+) -> cranelift_codegen::ir::Value {
+    let root = if !plan.pointer_map_offsets.is_empty() {
+        let slot = builder.create_sized_stack_slot(cranelift_codegen::ir::StackSlotData::new(
+            cranelift_codegen::ir::StackSlotKind::ExplicitSlot,
+            pointer.bytes(),
+            3,
+        ));
+        builder.ins().stack_store(pointer, result, slot, 0);
+        let address = builder.ins().stack_addr(pointer, slot, 0);
+        let register = import_local(builder, "gc_register_root", &[pointer], Some(types::I8));
+        let call = builder.ins().call(register, &[address]);
+        let ok = builder.inst_results(call)[0];
+        builder.ins().trapz(ok, cranelift_codegen::ir::TrapCode::unwrap_user(5));
+        Some(address)
+    } else {
+        None
+    };
+    let request = builder.func.create_global_value(cranelift_codegen::ir::GlobalValueData::Symbol {
+        name: ExternalName::testcase(&plan.allocation_request_symbol),
+        offset: 0.into(),
+        colocated: false,
+        tls: false,
+    });
+    let request = builder.ins().symbol_value(pointer, request);
+    let allocate = import_local(builder, "beskid_rt_v5_managed_object_allocate", &[pointer], Some(pointer));
+    let call = builder.ins().call(allocate, &[request]);
+    let boxed = builder.inst_results(call)[0];
+    builder.ins().trapz(boxed, cranelift_codegen::ir::TrapCode::unwrap_user(5));
+    builder.ins().store(
+        cranelift_codegen::ir::MemFlagsData::new(),
+        result,
+        boxed,
+        plan.fields[0].field_offset as i32,
+    );
+    if let Some(root) = root {
+        let unregister = import_local(builder, "gc_unregister_root", &[pointer], None);
+        builder.ins().call(unregister, &[root]);
+    }
+    boxed
+}
+
+/// Ask the scheduler for `required_usable_size` bytes of fiber stack before entering the target;
+/// on refusal report the overflow and return a null result. Leaves the builder in the body block.
+pub(super) fn emit_entry_stack_guard(
+    builder: &mut FunctionBuilder<'_>,
+    pointer: cranelift_codegen::ir::Type,
+    required_usable_size: u64,
+    target_symbol: &str,
+    scheduler_stack_check_symbol: &str,
+    scheduler_stack_overflow_symbol: &str,
+) -> Result<(), SyntaxModuleEmissionError> {
+    let stack_check = import_local(builder, scheduler_stack_check_symbol, &[pointer], Some(types::I8));
+    let required = builder.ins().iconst(
+        pointer,
+        i64::try_from(required_usable_size).map_err(|_| {
+            emission_verification(format!("fiber target `{target_symbol}` stack requirement is not representable"))
+        })?,
+    );
+    let check_call = builder.ins().call(stack_check, &[required]);
+    let allowed = builder.inst_results(check_call)[0];
+    let body = builder.create_block();
+    let overflow = builder.create_block();
+    builder.ins().brif(allowed, body, &[], overflow, &[]);
+    builder.seal_block(body);
+    builder.seal_block(overflow);
+
+    builder.switch_to_block(overflow);
+    let observed = import_local(builder, scheduler_stack_overflow_symbol, &[], None);
+    builder.ins().call(observed, &[]);
+    let overflow_result = builder.ins().iconst(types::I64, 0);
+    builder.ins().return_(&[overflow_result]);
+
+    builder.switch_to_block(body);
+    Ok(())
 }

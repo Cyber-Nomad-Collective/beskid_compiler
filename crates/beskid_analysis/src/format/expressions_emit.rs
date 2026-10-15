@@ -530,6 +530,7 @@ impl Emit for Expression {
             Expression::Grouped(g) => g.emit(w, cx),
             Expression::Try(t) => t.emit(w, cx),
             Expression::Spawn(s) => s.emit(w, cx),
+            Expression::Move(m) => m.emit(w, cx),
             Expression::MacroInvocation(m) => m.emit(w, cx),
             Expression::MacroMetavariable(m) => m.emit(w, cx),
             Expression::Index(i) => i.emit(w, cx),
@@ -544,6 +545,13 @@ impl Emit for Spanned<crate::syntax::ClifBlockExpression> {
     fn emit<W: Write>(&self, w: &mut W, _cx: &mut EmitCtx) -> Result<(), EmitError> {
         write!(w, "clif {{ {} }}", self.node.body)?;
         Ok(())
+    }
+}
+
+impl Emit for Spanned<crate::syntax::MoveExpression> {
+    fn emit<W: Write>(&self, w: &mut W, cx: &mut EmitCtx) -> Result<(), EmitError> {
+        write!(w, "move ")?;
+        self.node.operand.emit(w, cx)
     }
 }
 

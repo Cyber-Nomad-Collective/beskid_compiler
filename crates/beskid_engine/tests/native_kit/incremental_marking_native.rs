@@ -178,6 +178,14 @@ fn yielding_fibers_finish_a_cycle_without_allocating() {
     assert_passes("RunYieldingFibersFinishCycle", &[]);
 }
 
+/// 9.4 pacing: the mark trigger starts a cycle while the heap keeps growing, and garbage-only
+/// allocation completes every cycle at the threshold without committing a second region.
+#[test]
+fn mark_trigger_does_not_block_growth_and_cycles_complete_before_growth() {
+    assert_passes("RunTriggerWithoutBlockingGrowth", &[]);
+    assert_passes("RunCompletionBeforeGrowth", &[]);
+}
+
 /// 9.4 cap pressure: a cap of 8 MiB, a 4 MiB graph dropped during a cycle and 4 MiB of new
 /// reachable objects complete without exhaustion (two completed cycles at the cap).
 #[test]

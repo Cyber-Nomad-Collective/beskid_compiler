@@ -33,6 +33,10 @@ pub enum DirectCallee {
     SpawnTrampoline(AstNodeKey),
     /// One generated ABI-v5 closure entry trampoline, keyed by its source `LambdaExpression`.
     LambdaTrampoline(AstNodeKey),
+    /// The artifact's isolate entry trampoline for one task result shape: it calls a `() => T`
+    /// closure record and boxes the result. `result` is the ABI type of `T`; `managed` says the
+    /// boxed slot holds a managed reference.
+    IsolateEntryTrampoline { result: beskid_queries::SemanticTypeId, managed: bool },
 }
 
 impl DirectCallee {
@@ -59,6 +63,19 @@ impl DirectCallee {
     pub const fn lambda_trampoline(lambda: AstNodeKey) -> Self {
         Self::LambdaTrampoline(lambda)
     }
+
+    pub const fn isolate_entry_trampoline(result: beskid_queries::SemanticTypeId, managed: bool) -> Self {
+        Self::IsolateEntryTrampoline { result, managed }
+    }
+}
+
+/// One `__isolate_spawn<T>(body, scope)` / `__isolate_spawn_local<T>(body, scope)` call: the
+/// runtime adapter takes `(entry, argument, scope)` where `entry` is the isolate entry trampoline
+/// for `T` and `argument` the body's closure record.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct IsolateSpawnCall {
+    pub symbol: &'static str,
+    pub trampoline: DirectCallee,
 }
 
 /// Exact source entry selected for the first executable spawn lowering leaf.

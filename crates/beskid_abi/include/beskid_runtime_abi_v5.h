@@ -157,7 +157,7 @@ static inline const char *BESKID_TRAP_NAME(unsigned char code) {
 #define BESKID_HEAP_REGION_LARGEST_FREE_OFFSET 40
 #define BESKID_HEAP_REGION_OBJECTS_START_OFFSET 48
 #define BESKID_HEAP_REGION_FREE_SPAN_LIST_OFFSET 56
-#define BESKID_HEAP_STATE_SIZE 512
+#define BESKID_HEAP_STATE_SIZE 528
 #define BESKID_HEAP_STATE_ALIGNMENT 8
 #define BESKID_HEAP_STATE_FIRST_REGION_OFFSET 0
 #define BESKID_HEAP_STATE_CURRENT_REGION_OFFSET 8
@@ -203,6 +203,8 @@ static inline const char *BESKID_TRAP_NAME(unsigned char code) {
 #define BESKID_HEAP_STATE_FORCE_BARRIER_SKIP_OFFSET 488
 #define BESKID_HEAP_STATE_CYCLE_MAX_STEP_BYTES_OFFSET 496
 #define BESKID_HEAP_STATE_CYCLE_SHADE_COUNT_OFFSET 504
+#define BESKID_HEAP_STATE_COUNTS_OFFSET 512
+#define BESKID_HEAP_STATE_FOREIGN_EPOCH_OFFSET 520
 #define BESKID_NETWORK_HANDLE_SIZE 8
 #define BESKID_NETWORK_HANDLE_ALIGNMENT 8
 #define BESKID_NETWORK_HANDLE_SLOT_OFFSET 0
@@ -644,6 +646,7 @@ uint8_t beskid_rt_v5_heap_set_cap(size_t bytes);
 void * beskid_rt_v5_isolate_create(void * config);
 void beskid_rt_v5_isolate_destroy(void * runtime);
 uint8_t beskid_rt_v5_isolate_panic_message(void * runtime, void * data_out, void * length_out);
+void * beskid_rt_v5_isolate_task_run(void * task);
 void * beskid_rt_v5_managed_object_allocate(void * request);
 void * beskid_rt_v5_managed_object_try_allocate(void * request);
 uint64_t beskid_rt_v5_managed_view_kind(void * value);
@@ -779,6 +782,27 @@ int64_t hub_unregister(int64_t hubId, int64_t index);
 int64_t hub_wait_receive_index(int64_t hubId);
 int64_t hub_wait_receive_status(int64_t hubId);
 uint8_t hub_wait_receive_value(int64_t hubId, void * destination);
+void isolate_cancel(int64_t isolate);
+uint8_t isolate_cancel_requested(void);
+int64_t isolate_current(void);
+int64_t isolate_idle_count(void);
+int64_t isolate_join(int64_t handle);
+void isolate_join_finish(int64_t handle);
+void * isolate_join_message(int64_t handle);
+uint8_t isolate_join_value(int64_t handle, void * destination);
+int64_t isolate_main(void);
+int64_t isolate_pool_size(void);
+void isolate_scope_cancel(int64_t scope);
+void isolate_scope_close(int64_t scope);
+void isolate_scope_close_ports(int64_t scope);
+int64_t isolate_scope_open(int64_t workers);
+void isolate_scope_port(int64_t scope, int64_t port);
+int64_t isolate_spawn(void * entry, void * argument, int64_t scope);
+int64_t isolate_spawn_local(void * entry, void * argument, int64_t scope);
+int64_t isolate_task_index(int64_t handle);
+int64_t isolate_task_isolate(int64_t handle);
+int64_t isolate_task_status(int64_t handle);
+void isolate_wait(int64_t handle);
 void * mutex_create(void);
 int32_t mutex_lock(void * id);
 int32_t mutex_try_lock(void * id);
@@ -802,6 +826,12 @@ int32_t beskid_rt_v5_network_udp_connect(size_t handle, void * address);
 int64_t beskid_rt_v5_network_write(size_t handle, void * buffer, int64_t offset, int64_t count);
 void beskid_trap_code(int64_t code);
 void beskid_trap_message(void * message);
+void port_close(int64_t port);
+int64_t port_create(int64_t capacity);
+int64_t port_receive(int64_t port);
+uint8_t port_receive_value(int64_t port, void * destination);
+int64_t port_send(int64_t port, void * sender, int64_t transfer_class);
+int64_t port_try_receive(int64_t port);
 void process_exit(int32_t code);
 int32_t process_getpid(void);
 void runtime_preempt_check(void);

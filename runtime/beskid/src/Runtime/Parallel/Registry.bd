@@ -1,0 +1,357 @@
+// Process-wide registry of Core.Parallel scopes, tasks and ports (v0.6.3-v0.6.5).
+//
+// One spin lock in the process state block (word 80) guards the registry record (word 104): the
+// live task list, the live scope list and the port table. Records are created and freed only under
+// the lock, so a thread that finds a record under the lock may use it until it releases the lock.
+// Lock order: this lock, then a port ring's mutex, then the owner-mailbox transport lock; nothing
+// that parks, waits on a mailbox, or allocates managed memory runs under it.
+//
+// Ids (task handles, scope ids, isolate ids) are process-wide serials from word 112 and are never
+// reused; port ids index the port table and are never reused either.
+//
+// Per runtime instance the registry also keeps (in the instance record of Lifecycle.bd):
+//   40 isolate id, 48 the task this instance runs (0 for the primary instance),
+//   56/64/72 the cancellation watch list (data, count, capacity), 80 the port receipts list.
+// A watch entry ties a cancellation word another thread may set to the fiber it cancels: the
+// isolate main fiber of a task isolate, or a local task's fiber. `SchedStep` applies set words
+// before `ApplyPendingCancels` (`IsolateApplyCancelRequests`).
+
+const PROCESS_PARALLEL_LOCK = 80;
+const PROCESS_ISOLATES_BOUND = 88;
+const PROCESS_LIVE_CHILD_ISOLATES = 96;
+const PROCESS_PARALLEL_REGISTRY = 104;
+const PROCESS_NEXT_SERIAL = 112;
+
+const REGISTRY_SIZE = 48;
+const REGISTRY_TASKS = 0;
+const REGISTRY_SCOPES = 8;
+const REGISTRY_PORTS = 16;
+const REGISTRY_PORT_CAPACITY = 24;
+const REGISTRY_NEXT_PORT = 32;
+
+const INSTANCE_ISOLATE_ID = 40;
+const INSTANCE_TASK = 48;
+const INSTANCE_WATCH_DATA = 56;
+const INSTANCE_WATCH_COUNT = 64;
+const INSTANCE_WATCH_CAPACITY = 72;
+const INSTANCE_RECEIPTS = 80;
+
+const WATCH_ENTRY_SIZE = 32;
+const WATCH_WORD = 0;
+const WATCH_FIBER = 8;
+const WATCH_TASK = 16;
+const WATCH_APPLIED = 24;
+
+const ISOLATES_BOUND_LIMIT = 65535;
+// The token posted to wake an owner that waits outside a fiber: wait id 0 never names a wait, so
+// `ExternalTryComplete` ignores it after it has ended `owner_wait`.
+const PARALLEL_WAKE_TOKEN = 4294967296;
+const EXTERNAL_READY = 1;
+
+pub unit ParallelLock() {
+    pointer lock = pointer_add(ProcessStateRoot(), PROCESS_PARALLEL_LOCK);
+    while AtomicWordCompareExchange(lock, 0, 1, 1) != 0 {
+        thread_yield();
+    }
+    return;
+}
+
+// Takes the lock only when it is free now. Collections use it: a collection can start inside an
+// allocation made while this thread holds the lock, and must not wait for itself.
+pub bool ParallelTryLock() {
+    return AtomicWordCompareExchange(pointer_add(ProcessStateRoot(), PROCESS_PARALLEL_LOCK), 0, 1, 1) == 0;
+}
+
+pub unit ParallelUnlock() {
+    AtomicWordStore(pointer_add(ProcessStateRoot(), PROCESS_PARALLEL_LOCK), 0, 2);
+    return;
+}
+
+pub word ParallelNextSerial() {
+    return AtomicWordFetchAdd(pointer_add(ProcessStateRoot(), PROCESS_NEXT_SERIAL), 1, 4) + 1;
+}
+
+pub word ParallelWakeToken() { return PARALLEL_WAKE_TOKEN; }
+
+// Posts a wake-up to `owner`'s mailbox; a stale owner id is ignored by the transport.
+pub unit ParallelWake(word owner, word token) {
+    if owner == 0 { return; }
+    owner_post(owner, token, EXTERNAL_READY);
+    return;
+}
+
+// The registry record; created on first use. Caller holds the lock.
+pub pointer ParallelRegistryLocked() {
+    pointer process = ProcessStateRoot();
+    mut pointer registryRecord = NativePointer(raw_word_load(pointer_add(process, PROCESS_PARALLEL_REGISTRY)));
+    if registryRecord != NativePointer(0) { return registryRecord; }
+    registryRecord = SystemAllocate(REGISTRY_SIZE, 8);
+    if registryRecord == NativePointer(0) { ParallelUnlock(); Trap(5, NativePointer(0), 0); }
+    memory_set(registryRecord, 0, REGISTRY_SIZE);
+    raw_word_store(pointer_add(registryRecord, REGISTRY_NEXT_PORT), 1);
+    raw_word_store(pointer_add(process, PROCESS_PARALLEL_REGISTRY), NativeWord(registryRecord));
+    return registryRecord;
+}
+
+// Frees the registry at the last `ProcessStateRelease`. Every scope has been closed by then; a
+// remaining record is a runtime fault.
+pub unit ParallelRegistryRelease() {
+    pointer process = ProcessStateRoot();
+    pointer registryRecord = NativePointer(raw_word_load(pointer_add(process, PROCESS_PARALLEL_REGISTRY)));
+    raw_word_store(pointer_add(process, PROCESS_ISOLATES_BOUND), 0);
+    raw_word_store(pointer_add(process, PROCESS_LIVE_CHILD_ISOLATES), 0);
+    if registryRecord == NativePointer(0) { return; }
+    if raw_word_load(pointer_add(registryRecord, REGISTRY_TASKS)) != 0 || raw_word_load(pointer_add(registryRecord, REGISTRY_SCOPES)) != 0 {
+        Trap(10, NativePointer(0), 0);
+    }
+    word portCapacity = raw_word_load(pointer_add(registryRecord, REGISTRY_PORT_CAPACITY));
+    if portCapacity != 0 {
+        SystemFree(NativePointer(raw_word_load(pointer_add(registryRecord, REGISTRY_PORTS))), portCapacity * 8);
+    }
+    SystemFree(registryRecord, REGISTRY_SIZE);
+    raw_word_store(pointer_add(process, PROCESS_PARALLEL_REGISTRY), 0);
+    return;
+}
+
+// ── The isolate bound ─────────────────────────────────────────────────
+
+// Records the process isolate bound (`BESKID_ISOLATES_MAX`, or the host processor count).
+pub unit ParallelSetIsolatesBound(word bound) {
+    mut word value = bound;
+    if value > ISOLATES_BOUND_LIMIT { value = ISOLATES_BOUND_LIMIT; }
+    if value == 0 { value = 1; }
+    AtomicWordStore(pointer_add(ProcessStateRoot(), PROCESS_ISOLATES_BOUND), value, 2);
+    return;
+}
+
+// Runtime instances the process may hold at one time, the main isolate included.
+pub word ParallelIsolatesBound() {
+    word bound = AtomicWordLoad(pointer_add(ProcessStateRoot(), PROCESS_ISOLATES_BOUND), 1);
+    if bound != 0 { return bound; }
+    mut word processors = HostProcessorCount();
+    if processors > ISOLATES_BOUND_LIMIT { processors = ISOLATES_BOUND_LIMIT; }
+    if processors == 0 { processors = 1; }
+    return processors;
+}
+
+pub word ParallelLiveChildIsolates() {
+    return AtomicWordLoad(pointer_add(ProcessStateRoot(), PROCESS_LIVE_CHILD_ISOLATES), 1);
+}
+
+// Reserves one isolate slot. Caller holds the lock. False at the bound.
+pub bool ParallelReserveIsolateLocked() {
+    word live = ParallelLiveChildIsolates();
+    if live + 1 >= ParallelIsolatesBound() { return false; }
+    AtomicWordFetchAdd(pointer_add(ProcessStateRoot(), PROCESS_LIVE_CHILD_ISOLATES), 1, 4);
+    return true;
+}
+
+pub unit ParallelReleaseIsolateLocked() {
+    AtomicWordFetchAdd(pointer_add(ProcessStateRoot(), PROCESS_LIVE_CHILD_ISOLATES), 0 - 1, 4);
+    return;
+}
+
+[Export(Abi:"C", Symbol:"isolate_pool_size")]
+pub i64 IsolatePoolSize() {
+    return i64(ParallelIsolatesBound());
+}
+
+[Export(Abi:"C", Symbol:"isolate_idle_count")]
+pub i64 IsolateIdleCount() {
+    word bound = ParallelIsolatesBound();
+    word used = ParallelLiveChildIsolates() + 1;
+    if used >= bound { return 0; }
+    return i64(bound - used);
+}
+
+// ── Isolate identity ──────────────────────────────────────────────────
+
+pub pointer CurrentInstanceRecord() {
+    return IsolateRecord(RuntimeState());
+}
+
+pub word InstanceIsolateId(pointer instance) {
+    if instance == NativePointer(0) { return 0; }
+    return raw_word_load(pointer_add(instance, INSTANCE_ISOLATE_ID));
+}
+
+pub unit InstanceSetIsolateId(pointer instance, word id) {
+    raw_word_store(pointer_add(instance, INSTANCE_ISOLATE_ID), id);
+    return;
+}
+
+pub pointer InstanceTask(pointer instance) {
+    if instance == NativePointer(0) { return NativePointer(0); }
+    return NativePointer(raw_word_load(pointer_add(instance, INSTANCE_TASK)));
+}
+
+pub unit InstanceSetTask(pointer instance, pointer task) {
+    raw_word_store(pointer_add(instance, INSTANCE_TASK), NativeWord(task));
+    return;
+}
+
+[Export(Abi:"C", Symbol:"isolate_current")]
+pub i64 IsolateCurrent() {
+    return i64(InstanceIsolateId(CurrentInstanceRecord()));
+}
+
+[Export(Abi:"C", Symbol:"isolate_main")]
+pub i64 IsolateMain() {
+    return i64(InstanceIsolateId(IsolateRecord(ProcessPrimaryRuntime())));
+}
+
+// True when the calling thread runs a task isolate (not the primary instance).
+pub bool IsolateIsTask() {
+    return InstanceTask(CurrentInstanceRecord()) != NativePointer(0);
+}
+
+// ── Cancellation watch list ───────────────────────────────────────────
+
+pub pointer WatchEntry(pointer instance, word index) {
+    return pointer_add(NativePointer(raw_word_load(pointer_add(instance, INSTANCE_WATCH_DATA))), index * WATCH_ENTRY_SIZE);
+}
+
+// Ties `word` (set by any thread) to `fiberHandle` of the calling instance. `task` is the local task
+// the fiber runs, or null for the isolate main fiber.
+pub unit IsolateWatchAdd(pointer instance, pointer cancelWord, word fiberHandle, pointer task) {
+    word count = raw_word_load(pointer_add(instance, INSTANCE_WATCH_COUNT));
+    word capacity = raw_word_load(pointer_add(instance, INSTANCE_WATCH_CAPACITY));
+    if count == capacity {
+        mut word grown = capacity * 2;
+        if grown == 0 { grown = 8; }
+        pointer data = SystemAllocate(grown * WATCH_ENTRY_SIZE, 8);
+        if data == NativePointer(0) { Trap(5, NativePointer(0), 0); }
+        if capacity != 0 {
+            pointer old = NativePointer(raw_word_load(pointer_add(instance, INSTANCE_WATCH_DATA)));
+            memory_copy(data, old, count * WATCH_ENTRY_SIZE);
+            SystemFree(old, capacity * WATCH_ENTRY_SIZE);
+        }
+        raw_word_store(pointer_add(instance, INSTANCE_WATCH_DATA), NativeWord(data));
+        raw_word_store(pointer_add(instance, INSTANCE_WATCH_CAPACITY), grown);
+    }
+    pointer entry = WatchEntry(instance, count);
+    raw_word_store(pointer_add(entry, WATCH_WORD), NativeWord(cancelWord));
+    raw_word_store(pointer_add(entry, WATCH_FIBER), fiberHandle);
+    raw_word_store(pointer_add(entry, WATCH_TASK), NativeWord(task));
+    raw_word_store(pointer_add(entry, WATCH_APPLIED), 0);
+    raw_word_store(pointer_add(instance, INSTANCE_WATCH_COUNT), count + 1);
+    return;
+}
+
+pub word IsolateWatchFind(pointer instance, word fiberHandle) {
+    word count = raw_word_load(pointer_add(instance, INSTANCE_WATCH_COUNT));
+    mut word index = 0;
+    while index < count {
+        if raw_word_load(pointer_add(WatchEntry(instance, index), WATCH_FIBER)) == fiberHandle { return index; }
+        index = index + 1;
+    }
+    return count;
+}
+
+pub unit IsolateWatchRemove(pointer instance, word index) {
+    word count = raw_word_load(pointer_add(instance, INSTANCE_WATCH_COUNT));
+    if index >= count { return; }
+    if index + 1 != count {
+        memory_copy(WatchEntry(instance, index), WatchEntry(instance, count - 1), WATCH_ENTRY_SIZE);
+    }
+    raw_word_store(pointer_add(instance, INSTANCE_WATCH_COUNT), count - 1);
+    return;
+}
+
+pub unit IsolateWatchFree(pointer instance) {
+    word capacity = raw_word_load(pointer_add(instance, INSTANCE_WATCH_CAPACITY));
+    if capacity != 0 {
+        SystemFree(NativePointer(raw_word_load(pointer_add(instance, INSTANCE_WATCH_DATA))), capacity * WATCH_ENTRY_SIZE);
+    }
+    raw_word_store(pointer_add(instance, INSTANCE_WATCH_DATA), 0);
+    raw_word_store(pointer_add(instance, INSTANCE_WATCH_COUNT), 0);
+    raw_word_store(pointer_add(instance, INSTANCE_WATCH_CAPACITY), 0);
+    return;
+}
+
+// Scheduler safepoint (Loop.bd): cancels, once, every watched fiber whose word another thread set.
+// The fiber cancellation path then completes its parked external wait with `EXTERNAL_CANCELLED`.
+pub unit IsolateApplyCancelRequests() {
+    pointer instance = CurrentInstanceRecord();
+    if instance == NativePointer(0) { return; }
+    word count = raw_word_load(pointer_add(instance, INSTANCE_WATCH_COUNT));
+    mut word index = 0;
+    while index < count {
+        pointer entry = WatchEntry(instance, index);
+        if raw_word_load(pointer_add(entry, WATCH_APPLIED)) == 0 &&
+           AtomicWordLoad(NativePointer(raw_word_load(pointer_add(entry, WATCH_WORD))), 1) != 0 {
+            raw_word_store(pointer_add(entry, WATCH_APPLIED), 1);
+            FiberCancel(i64(raw_word_load(pointer_add(entry, WATCH_FIBER))), 0);
+        }
+        index = index + 1;
+    }
+    return;
+}
+
+// `bool Parallel.IsCancelled()`: the calling fiber's own cancellation (a watched local task or the
+// isolate main fiber), else the cancellation of the task isolate it runs in.
+[Export(Abi:"C", Symbol:"isolate_cancel_requested")]
+pub u8 IsolateCancelRequested() {
+    pointer instance = CurrentInstanceRecord();
+    if instance == NativePointer(0) { return 0; }
+    word current = SchedulerCurrentFiber();
+    if current != FiberNone() {
+        word watched = IsolateWatchFind(instance, FiberHandle(current));
+        if watched < raw_word_load(pointer_add(instance, INSTANCE_WATCH_COUNT)) &&
+           AtomicWordLoad(NativePointer(raw_word_load(pointer_add(WatchEntry(instance, watched), WATCH_WORD))), 1) != 0 {
+            return 1;
+        }
+    }
+    pointer task = InstanceTask(instance);
+    if task != NativePointer(0) && AtomicWordLoad(TaskCancelWord(task), 1) != 0 { return 1; }
+    return 0;
+}
+
+// ── Messages ──────────────────────────────────────────────────────────
+// The canonical corpus has no string literals: messages are packed little-endian ASCII words.
+
+// Panics the calling fiber with the `length` bytes at `bytes` (a native buffer that the panic path
+// copies into the heap; it is not freed, the fiber never resumes).
+pub never ParallelPanicBytes(pointer bytes, word length) {
+    pointer view = SystemAllocate(16, 8);
+    if view == NativePointer(0) { Trap(5, NativePointer(0), 0); }
+    raw_word_store(view, NativeWord(bytes));
+    raw_word_store(pointer_add(view, 8), length);
+    PanicStr(view);
+}
+
+// Writes `transit refused 0x<descriptor in 16 hex digits>` (34 bytes) at `buffer`.
+pub word WriteTransitRefused(pointer buffer, word descriptor) {
+    mut word offset = WritePackedAscii(buffer, 0, 0x207469736e617274, 8);
+    offset = WritePackedAscii(buffer, offset, 0x2064657375666572, 8);
+    offset = WritePackedAscii(buffer, offset, 0x7830, 2);
+    mut word digit = 0;
+    while digit < 16 {
+        word nibble = (descriptor >> ((15 - digit) * 4)) & 15;
+        mut word code = 48 + nibble;
+        if nibble > 9 { code = 87 + nibble; }
+        raw_byte_store(pointer_add(buffer, offset), u8(code));
+        offset = offset + 1;
+        digit = digit + 1;
+    }
+    return offset;
+}
+
+pub never PanicTransitRefused(word descriptor) {
+    pointer buffer = SystemAllocate(40, 8);
+    if buffer == NativePointer(0) { Trap(5, NativePointer(0), 0); }
+    ParallelPanicBytes(buffer, WriteTransitRefused(buffer, descriptor));
+}
+
+// `composition is not available inside an isolate` (the fail-closed injected read, v0.6.3 2.4).
+pub never PanicCompositionUnavailable() {
+    pointer buffer = SystemAllocate(48, 8);
+    if buffer == NativePointer(0) { Trap(5, NativePointer(0), 0); }
+    mut word offset = WritePackedAscii(buffer, 0, 0x7469736f706d6f63, 8);
+    offset = WritePackedAscii(buffer, offset, 0x6e207369206e6f69, 8);
+    offset = WritePackedAscii(buffer, offset, 0x6c6961766120746f, 8);
+    offset = WritePackedAscii(buffer, offset, 0x736e6920656c6261, 8);
+    offset = WritePackedAscii(buffer, offset, 0x69206e6120656469, 8);
+    offset = WritePackedAscii(buffer, offset, 0x6574616c6f73, 6);
+    ParallelPanicBytes(buffer, offset);
+}

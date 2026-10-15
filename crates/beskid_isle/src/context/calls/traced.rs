@@ -44,11 +44,18 @@ impl IsleContext<'_, '_, '_, '_> {
     pub(super) fn traced_channel_send_call(&mut self, key: AstNodeKey) -> Option<Value> {
         let layout = self.facts.traced_channel_send_layout(key)?;
         let arguments = self.facts.call_arguments(key)?;
-        let [handle, boxed] = arguments.as_slice() else {
-            return None;
+        // `port_send` takes the value's transfer class after the box (`__transfer_class<T>()`).
+        let (handle, boxed, class) = match arguments.as_slice() {
+            [handle, boxed] => (*handle, *boxed, None),
+            [handle, boxed, class] => (*handle, *boxed, Some(*class)),
+            _ => return None,
         };
-        let handle = generated::constructor_lower_expression(self, *handle)?;
-        let boxed = generated::constructor_lower_expression(self, *boxed)?;
+        let handle = generated::constructor_lower_expression(self, handle)?;
+        let boxed = generated::constructor_lower_expression(self, boxed)?;
+        let class = match class {
+            Some(class) => Some(generated::constructor_lower_expression(self, class)?),
+            None => None,
+        };
         let pointer = dispatch::pointer_type(self.frontend_config);
         let slot = self.builder.create_sized_stack_slot(StackSlotData::new(
             StackSlotKind::ExplicitSlot,
@@ -70,8 +77,17 @@ impl IsleContext<'_, '_, '_, '_> {
         let call = self.builder.ins().call(init, &[owner, tag, boxed, descriptor]);
         let initialized = self.builder.inst_results(call)[0];
         self.builder.ins().trapz(initialized, TrapCode::unwrap_user(10));
-        let send = self.import_runtime_helper(layout.symbol, &[types::I64, pointer], Some(types::I64))?;
-        let call = self.builder.ins().call(send, &[handle, owner]);
+        let call = match class {
+            Some(class) => {
+                let send =
+                    self.import_runtime_helper(layout.symbol, &[types::I64, pointer, types::I64], Some(types::I64))?;
+                self.builder.ins().call(send, &[handle, owner, class])
+            }
+            None => {
+                let send = self.import_runtime_helper(layout.symbol, &[types::I64, pointer], Some(types::I64))?;
+                self.builder.ins().call(send, &[handle, owner])
+            }
+        };
         let status = self.builder.inst_results(call)[0];
         // A precommit failure releases this adapter's tracing root only. The
         // source sender still has its original value; no disposal is implicit.

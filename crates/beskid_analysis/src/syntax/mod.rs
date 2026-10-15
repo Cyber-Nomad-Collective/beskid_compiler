@@ -15,7 +15,7 @@ pub use expressions::{
     ArrayLiteralExpression, AssignExpression, AssignOp, BinaryExpression, BinaryOp, BlockExpression, CallExpression,
     ClifBlockExpression, CodeStringLiteral, CodeStringSegment, EnumConstructorExpression, EnumPattern, Expression,
     GroupedExpression, IndexExpression, LambdaExpression, LambdaParameter, Literal, LiteralExpression, MacroInvocation,
-    MacroMetavariable, MatchArm, MatchExpression, MemberExpression, PathExpression, Pattern, SpawnExpression,
+    MacroMetavariable, MatchArm, MatchExpression, MemberExpression, MoveExpression, PathExpression, Pattern, SpawnExpression,
     StringLiteralPart, StructLiteralExpression, StructLiteralField, TryExpression, UnaryExpression, UnaryOp,
     decode_string_literal_token, float_literal_magnitude, float_literal_primitive_type, integer_literal_fits_primitive,
     integer_literal_magnitude, integer_literal_primitive_type, materialize_code_segments, parse_plain_code_body,

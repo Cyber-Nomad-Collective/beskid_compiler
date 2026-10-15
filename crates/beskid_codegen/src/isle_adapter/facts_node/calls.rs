@@ -4,6 +4,10 @@ use super::super::*;
 
 impl SyntaxNodeFacts<'_> {
     pub(super) fn call_kind_impl(&self, key: AstNodeKey) -> Option<CallKind> {
+        // `__transfer_class<T>()` is a compile-time constant of the instance, never a runtime call.
+        if self.transfer_class_constant_impl(key).is_some() {
+            return Some(CallKind::Direct);
+        }
         if self.event_operation_impl(key).is_some_and(|plan| plan.operation == beskid_isle::EventOperation::Raise) {
             return Some(CallKind::EventRaise);
         }
@@ -230,7 +234,11 @@ impl SyntaxNodeFacts<'_> {
 
     pub(super) fn traced_fiber_join_layout_impl(&self, key: AstNodeKey) -> Option<beskid_isle::TracedFiberJoinLayout> {
         let DirectCallee::CorelibService(
-            symbol @ ("fiber_join_value" | "channel_receive_value" | "hub_wait_receive_value"),
+            symbol @ ("fiber_join_value"
+            | "channel_receive_value"
+            | "hub_wait_receive_value"
+            | "isolate_join_value"
+            | "port_receive_value"),
         ) = self.direct_callee(key)?
         else {
             return None;
@@ -246,19 +254,55 @@ impl SyntaxNodeFacts<'_> {
         })
     }
 
+    /// `__isolate_spawn<T>` / `__isolate_spawn_local<T>`: the entry trampoline is chosen by the ABI
+    /// shape of `T` in the item being lowered (see `module_emission::trampolines::isolate`).
+    pub(super) fn isolate_spawn_call_impl(&self, key: AstNodeKey) -> Option<beskid_isle::IsolateSpawnCall> {
+        let DirectCallee::CorelibService(symbol @ ("isolate_spawn" | "isolate_spawn_local")) =
+            self.direct_callee(key)?
+        else {
+            return None;
+        };
+        let (result, managed) = crate::module_emission::isolate_entry_shape(self.db, key, self.current_item_specialization())?;
+        Some(beskid_isle::IsolateSpawnCall {
+            symbol,
+            trampoline: DirectCallee::isolate_entry_trampoline(result, managed),
+        })
+    }
+
+    /// `__transfer_class<T>()` in the item being lowered: 0 Shared, 1 Moved, 2 Copied.
+    pub(super) fn transfer_class_constant_impl(&self, key: AstNodeKey) -> Option<i64> {
+        match self.query(beskid_queries::transfer_class_intrinsic(self.db, key))? {
+            beskid_queries::TransferClassIntrinsic::Constant(code) => Some(code),
+            beskid_queries::TransferClassIntrinsic::PerInstantiation { name } => {
+                let substitution = self
+                    .current_item_specialization()?
+                    .substitutions
+                    .iter()
+                    .find(|binding| binding.parameter.as_ref() == name.as_str())?;
+                self.query(
+                    beskid_queries::transfer_class_code_for_substitution(self.db, key, substitution).map(Some),
+                )
+            }
+        }
+    }
+
     pub(super) fn traced_channel_send_layout_impl(
         &self,
         key: AstNodeKey,
     ) -> Option<beskid_isle::TracedFiberJoinLayout> {
-        let DirectCallee::CorelibService(symbol @ ("channel_send" | "channel_try_send")) = self.direct_callee(key)?
+        let DirectCallee::CorelibService(symbol @ ("channel_send" | "channel_try_send" | "port_send")) =
+            self.direct_callee(key)?
         else {
             return None;
         };
         let arguments = self.call_arguments(key)?;
-        let [_, value] = arguments.as_slice() else {
-            return None;
+        // `port_send` carries the value's transfer class as a third, scalar argument.
+        let value = match (symbol, arguments.as_slice()) {
+            ("port_send", [_, value, _]) => *value,
+            ("channel_send" | "channel_try_send", [_, value]) => *value,
+            _ => return None,
         };
-        (self.managed_reference_in_context(*value)? == beskid_isle::ManagedReferenceFact::GcManaged).then_some(())?;
+        (self.managed_reference_in_context(value)? == beskid_isle::ManagedReferenceFact::GcManaged).then_some(())?;
         let slot = self.input.abi_manifest().layouts.iter().find(|layout| layout.name == "BeskidAbiValue")?;
         Some(beskid_isle::TracedFiberJoinLayout {
             symbol,

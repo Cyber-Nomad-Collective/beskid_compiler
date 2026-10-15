@@ -24,6 +24,7 @@ use super::macro_metavariable::MacroMetavariable;
 use super::match_expression::parse_match_expression;
 use super::member_expression::parse_member_expression;
 use super::path_expression::parse_path_expression;
+use super::move_expression::parse_move_expression;
 use super::spawn_expression::parse_spawn_unary;
 use super::struct_literal_expression::parse_struct_literal_expression;
 use super::try_expression::TryExpression;
@@ -64,6 +65,8 @@ pub enum Expression {
     Try(Spanned<TryExpression>),
     #[ast(child)]
     Spawn(Spanned<super::spawn_expression::SpawnExpression>),
+    #[ast(child)]
+    Move(Spanned<super::move_expression::MoveExpression>),
     #[ast(child)]
     MacroInvocation(Spanned<MacroInvocation>),
     #[ast(child)]
@@ -109,11 +112,13 @@ pub(crate) fn parse_expression(pair: Pair<Rule>) -> Result<Spanned<Expression>, 
             let inner = pair.into_inner().next().ok_or(ParseError::missing(Rule::UnaryExpression))?;
             match inner.as_rule() {
                 Rule::SpawnUnary => parse_spawn_unary(inner),
+                Rule::MoveExpression => parse_move_expression(inner),
                 Rule::PrefixUnary => parse_prefix_unary_expression(inner),
                 _ => Err(ParseError::unexpected_rule(inner, Some(Rule::UnaryExpression))),
             }
         }
         Rule::SpawnUnary => parse_spawn_unary(pair),
+        Rule::MoveExpression => parse_move_expression(pair),
         Rule::PrefixUnary => parse_prefix_unary_expression(pair),
         Rule::PostfixExpression => parse_postfix_expression(pair),
         Rule::PrimaryExpression => parse_primary_expression(pair),

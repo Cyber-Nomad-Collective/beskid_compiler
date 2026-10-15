@@ -29,7 +29,7 @@ const HEAP_HANDLE_STACK_CURRENT = 192;
 const HEAP_QUARANTINE_BUDGET = 384;
 const HEAP_DEBUG_KIT = 392;
 const HEAP_MARK_TRIGGER = 400;
-const HEAP_STATE_SIZE = 512;
+const HEAP_STATE_SIZE = 528;
 // Default quarantine budget of the debug kit (`BESKID_GC_QUARANTINE` overrides it).
 const GC_QUARANTINE_DEFAULT_BUDGET = 4194304;
 
@@ -526,6 +526,8 @@ pub bool MarkRoots() {
         }
         handleBlock = NativePointer(raw_word_load(pointer_add(handleBlock, HANDLE_BLOCK_NEXT)));
     }
+    // ORCA owner pass (Counts.bd): objects other isolates hold stakes in.
+    LocalCountMarkRoots(heap);
     return true;
 }
 
@@ -544,6 +546,7 @@ pub unit HeapInit(pointer heapStruct, pointer region, word regionSize, word capB
     word limit = NativeWord(region) + regionSize;
     if limit < NativeWord(region) { return; }
     memory_set(heapStruct, 0, HEAP_STATE_SIZE);
+    if CountRecordCreate(heapStruct) == false { return; }
     RegionInit(region, regionSize);
     raw_word_store(pointer_add(heapStruct, HEAP_FIRST_REGION), NativeWord(region));
     raw_word_store(pointer_add(heapStruct, HEAP_CURRENT_REGION), NativeWord(region));

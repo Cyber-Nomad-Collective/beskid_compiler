@@ -122,6 +122,9 @@ fn parameter_modifier(parameter: &Parameter) -> Option<String> {
     if parameter.mutable {
         modifiers.push("mut");
     }
+    if parameter.movable {
+        modifiers.push("move");
+    }
     let joined = modifiers.join(" ");
     (!joined.is_empty()).then_some(joined)
 }

@@ -175,6 +175,19 @@ pub fn transfer_declaration_findings(db: &dyn Db, root: AstNodeKey) -> Vec<Seman
         }
     }
     if !unit_in_core_module(db, root) {
+        for node in nodes_of_kind(index, root.node, NodeKind::TypeDefinition) {
+            let key = AstNodeKey { node, ..root };
+            let Some(definition) = index.node_at(program, node).and_then(|node| node.of::<TypeDefinition>()) else {
+                continue;
+            };
+            if let Some(attribute) = recognized_attribute_use(db, key, &definition.attributes, "ScopeBorrowed") {
+                findings.push(SemanticFinding {
+                    kind: SemanticIssueKind::CorelibOnlyAttribute { attribute: "ScopeBorrowed".to_owned() },
+                    site: AstNodeKey { node: attribute.id, ..key },
+                    related: Vec::new(),
+                });
+            }
+        }
         for node in nodes_of_kind(index, root.node, NodeKind::Field) {
             let key = AstNodeKey { node, ..root };
             let Some(field) = index.node_at(program, node).and_then(|node| node.of::<beskid_analysis::syntax::Field>())

@@ -209,6 +209,10 @@ fn remap_expression_spans(expression: &mut Spanned<Expression>, offset: usize, s
             spawn.span = remap_span(spawn.span, offset, source);
             remap_expression_spans(spawn.node.callee.as_mut(), offset, source);
         }
+        Expression::Move(moved) => {
+            moved.span = remap_span(moved.span, offset, source);
+            remap_expression_spans(moved.node.operand.as_mut(), offset, source);
+        }
         Expression::Index(index) => {
             index.span = remap_span(index.span, offset, source);
             remap_expression_spans(index.node.target.as_mut(), offset, source);

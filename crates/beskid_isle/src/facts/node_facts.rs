@@ -209,6 +209,14 @@ pub trait NodeFacts {
     fn traced_channel_send_layout(&self, _key: AstNodeKey) -> Option<TracedFiberJoinLayout> {
         None
     }
+    /// A `__isolate_spawn<T>` / `__isolate_spawn_local<T>` call and its per-`T` entry trampoline.
+    fn isolate_spawn_call(&self, _key: AstNodeKey) -> Option<IsolateSpawnCall> {
+        None
+    }
+    /// The compile-time value of a `__transfer_class<T>()` call (0 Shared, 1 Moved, 2 Copied).
+    fn transfer_class_constant(&self, _key: AstNodeKey) -> Option<i64> {
+        None
+    }
     fn lambda_entry(&self, _key: AstNodeKey) -> Option<LambdaEntry> {
         None
     }

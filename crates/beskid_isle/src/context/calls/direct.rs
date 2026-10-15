@@ -190,6 +190,12 @@ impl IsleContext<'_, '_, '_, '_> {
     }
 
     pub(in crate::context) fn direct_call(&mut self, key: AstNodeKey) -> Option<Value> {
+        if let Some(spawn) = self.facts.isolate_spawn_call(key) {
+            return self.isolate_spawn_call(key, spawn);
+        }
+        if let Some(class) = self.facts.transfer_class_constant(key) {
+            return Some(self.builder.ins().iconst(types::I64, class));
+        }
         let signature = self.facts.call_signature(key)?;
         let result_type = self.facts.scalar_type(key)?;
         if signature.returns.len() != 1 || signature.returns[0].value_type != result_type {
@@ -203,6 +209,45 @@ impl IsleContext<'_, '_, '_, '_> {
         }
         let (call, _) = self.import_direct_call(key)?;
         self.builder.inst_results(call).first().copied()
+    }
+
+    /// `__isolate_spawn<T>(body, scope)`: the runtime adapter receives the isolate entry
+    /// trampoline for `T`, the body's closure record and the scope. The record stays rooted until
+    /// the adapter returns; the runtime captures it (transit) before the call completes.
+    fn isolate_spawn_call(&mut self, key: AstNodeKey, spawn: IsolateSpawnCall) -> Option<Value> {
+        let arguments = self.facts.call_arguments(key)?;
+        let [body, scope] = arguments.as_slice() else {
+            return None;
+        };
+        let pointer = dispatch::pointer_type(self.frontend_config);
+        let record = generated::constructor_lower_expression(self, *body)?;
+        (self.builder.func.dfg.value_type(record) == pointer).then_some(())?;
+        let record_root = self.root_expression_value_if_needed(*body, record)?;
+        let scope = generated::constructor_lower_expression(self, *scope)?;
+        (self.builder.func.dfg.value_type(scope) == types::I64).then_some(())?;
+        let mut signature = Signature::new(self.builder.func.signature.call_conv);
+        signature.params.push(AbiParam::new(pointer));
+        signature.returns.push(AbiParam::new(types::I64));
+        let trampoline =
+            match self.call_importer.as_deref_mut()?.import(self.builder, spawn.trampoline.clone(), &signature) {
+                Ok(function) => function,
+                Err(CallImportError::UnknownCallee) => {
+                    self.pending_error =
+                        Some(LoweringError { key, kind: LoweringErrorKind::UnknownCallee(spawn.trampoline) });
+                    return None;
+                }
+            };
+        let entry = self.builder.ins().func_addr(pointer, trampoline);
+        self.builder.ins().trapz(record, TrapCode::unwrap_user(5));
+        let handle = self.emit_corelib_service_call(
+            key,
+            spawn.symbol,
+            &[entry, record, scope],
+            &[pointer, pointer, types::I64],
+            Some(types::I64),
+        )?;
+        self.release_expression_root(record_root)?;
+        Some(handle)
     }
 
     pub(in crate::context) fn direct_call_statement(&mut self, key: AstNodeKey) -> Option<()> {

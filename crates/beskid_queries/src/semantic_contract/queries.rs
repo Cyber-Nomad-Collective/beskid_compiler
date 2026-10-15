@@ -729,6 +729,21 @@ pub fn callable_fiber_ownership(db: &dyn Db, key: AstNodeKey) -> SemanticQueryRe
     with_registered_syntax(db, key, callable_fiber_ownership_tracked)
 }
 
+/// Affine ownership of one callable (function, method, test or lambda): owning and borrowed names
+/// of Moved class and `Fiber` handles, and every finding of the alias discipline (E1234,
+/// E1239-E1243). Non-callable and stale keys contain no fact.
+pub fn affine_ownership(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<AffineOwnership> {
+    with_registered_syntax(db, key, callable_affine_ownership_tracked)
+}
+
+/// The evaluation form of the `MoveExpression` at `key`: a consumption of its operand or a
+/// destructive field read with the canonical empty value. Integration hook for ISLE lowering.
+pub fn move_expression_form(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<MoveExpressionForm> {
+    let Some(syntax) = db.syntax_unit(key.unit) else { return Ok(None) };
+    with_node(db, syntax, key, |program, index, _node| move_expression_form_for_node(db, program, index, key))?
+        .transpose()
+}
+
 pub fn spawn_handle_type(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<SpawnHandleType> {
     with_registered_syntax(db, key, spawn_handle_type_tracked)
 }
