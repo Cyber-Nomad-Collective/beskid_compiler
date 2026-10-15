@@ -97,7 +97,9 @@ pub(super) fn generic_function_value_semantic_findings(db: &dyn Db, key: AstNode
         .into_iter()
         .map(|finding| {
             let kind = match finding.kind {
-                GenericFunctionValueKind::MissingTypeArguments => SemanticIssueKind::TypeMissingTypeArguments,
+                GenericFunctionValueKind::MissingTypeArguments => {
+                    SemanticIssueKind::TypeMissingTypeArguments { parameter: None }
+                }
                 GenericFunctionValueKind::GenericArgumentMismatch { expected, actual } => {
                     SemanticIssueKind::TypeGenericArgumentMismatch { expected, actual }
                 }

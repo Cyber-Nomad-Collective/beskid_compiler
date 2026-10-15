@@ -1662,7 +1662,7 @@ fn environment_substitutions(bindings: Vec<(String, GenericSourceTypeIdentity)>)
 /// (which may also declare `type X : Contract`) or an `enum` (which conforms only through `impl`).
 struct NominalHead {
     name: String,
-    generics: Vec<Spanned<beskid_analysis::syntax::Identifier>>,
+    generics: Vec<Spanned<beskid_analysis::syntax::TypeParameter>>,
     conformances: Vec<Spanned<Path>>,
 }
 
