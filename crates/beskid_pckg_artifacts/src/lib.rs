@@ -22,4 +22,4 @@ pub use model::{
 pub use project_manifest::canonicalize_project_dependencies;
 pub use store::{LocalFileArtifactStore, PackageArtifactStore};
 pub use validate::validate_package_artifact;
-pub use zip_support::MAX_BROWSE_READ_BYTES;
+pub use zip_support::{MAX_API_DOCS_BYTES, MAX_BROWSE_READ_BYTES};

@@ -7,7 +7,9 @@ use zip::ZipArchive;
 use crate::errors::ArtifactError;
 use crate::model::{ArtifactDocumentation, ArtifactFile, ArtifactFileContent, BrowseEntry, ValidatedArtifact};
 use crate::validate::validate_package_artifact;
-use crate::zip_support::{MAX_BROWSE_READ_BYTES, normalize_zip_path, read_entry_limited, sha256_hex};
+use crate::zip_support::{
+    MAX_API_DOCS_BYTES, MAX_BROWSE_READ_BYTES, normalize_zip_path, read_entry_limited, sha256_hex,
+};
 
 /// Read-only index over a fully validated `.bpk` archive.
 ///
@@ -66,7 +68,7 @@ impl ArtifactBrowser {
     }
 
     pub fn read_doc(&self, path: &str) -> Result<String, ArtifactError> {
-        self.read_text(path, is_documentation_path)
+        self.read_text(path, is_documentation_path, MAX_BROWSE_READ_BYTES)
     }
 
     pub fn list_source_tree(&self) -> Result<Vec<BrowseEntry>, ArtifactError> {
@@ -79,7 +81,7 @@ impl ArtifactBrowser {
     }
 
     pub fn read_source(&self, path: &str) -> Result<String, ArtifactError> {
-        self.read_text(path, is_source_path)
+        self.read_text(path, is_source_path, MAX_BROWSE_READ_BYTES)
     }
 
     /// Every file of the verified artifact that is safe to show in a package
@@ -107,7 +109,7 @@ impl ArtifactBrowser {
         let mut zip = ZipArchive::new(Cursor::new(self.bytes.as_slice()))
             .map_err(|error| ArtifactError::InvalidZip(error.to_string()))?;
         let index = *self.indices.get(&entry.path).ok_or(ArtifactError::EntryNotFound)?;
-        let bytes = read_entry_limited(&mut zip, index, &entry.path)?;
+        let bytes = read_entry_limited(&mut zip, index, &entry.path, MAX_BROWSE_READ_BYTES)?;
         let content = if looks_binary(&bytes) {
             ArtifactFileContent::Binary
         } else {
@@ -124,7 +126,7 @@ impl ArtifactBrowser {
     pub fn documentation(&self) -> Result<ArtifactDocumentation, ArtifactError> {
         let readme = if self.entries.contains_key("README.md") { Some(self.read_doc("README.md")?) } else { None };
         let api = if self.entries.contains_key(API_JSON_PATH) {
-            let contents = self.read_doc(API_JSON_PATH)?;
+            let contents = self.read_text(API_JSON_PATH, is_documentation_path, MAX_API_DOCS_BYTES)?;
             let value: Value = serde_json::from_str(&contents)
                 .map_err(|error| ArtifactError::InvalidDocumentation(format!("api.json is not JSON: {error}")))?;
             let Some(object) = value.as_object() else {
@@ -144,19 +146,24 @@ impl ArtifactBrowser {
         Ok(ArtifactDocumentation { readme, api })
     }
 
-    fn read_text(&self, requested_path: &str, allowed: fn(&str) -> bool) -> Result<String, ArtifactError> {
+    fn read_text(
+        &self,
+        requested_path: &str,
+        allowed: fn(&str) -> bool,
+        limit_bytes: u64,
+    ) -> Result<String, ArtifactError> {
         let path = normalize_browse_request(requested_path)?;
         if !allowed(&path) || !is_visible_path(&path) {
             return Err(ArtifactError::ForbiddenBrowsePath);
         }
         let entry = self.entries.get(&path).ok_or(ArtifactError::EntryNotFound)?;
-        if entry.size_bytes > MAX_BROWSE_READ_BYTES {
-            return Err(ArtifactError::EntryTooLarge { path, limit_bytes: MAX_BROWSE_READ_BYTES });
+        if entry.size_bytes > limit_bytes {
+            return Err(ArtifactError::EntryTooLarge { path, limit_bytes });
         }
         let mut zip = ZipArchive::new(Cursor::new(self.bytes.as_slice()))
             .map_err(|error| ArtifactError::InvalidZip(error.to_string()))?;
         let index = *self.indices.get(&entry.path).ok_or(ArtifactError::EntryNotFound)?;
-        let bytes = read_entry_limited(&mut zip, index, &entry.path)?;
+        let bytes = read_entry_limited(&mut zip, index, &entry.path, limit_bytes)?;
         String::from_utf8(bytes).map_err(|_| ArtifactError::InvalidZip("text entry is not UTF-8".into()))
     }
 }

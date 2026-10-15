@@ -11,6 +11,9 @@ pub(crate) const MAX_UNCOMPRESSED_BYTES: u64 = 256 * 1024 * 1024;
 /// Consumers render individual files, they never need a whole source tree in
 /// one response.
 pub const MAX_BROWSE_READ_BYTES: u64 = 1024 * 1024;
+/// The generated API model is read whole for the docs view; corelib's alone
+/// exceeds the per-file browse limit.
+pub const MAX_API_DOCS_BYTES: u64 = 32 * 1024 * 1024;
 pub(crate) const REQUIRED_ENTRIES: [&str; 2] = ["package.json", "checksums.sha256"];
 
 pub(crate) fn parse_checksums(contents: &str) -> Result<std::collections::BTreeMap<String, String>, ArtifactError> {
@@ -46,12 +49,13 @@ pub(crate) fn read_entry_limited(
     zip: &mut ZipArchive<Cursor<&[u8]>>,
     index: usize,
     path: &str,
+    limit_bytes: u64,
 ) -> Result<Vec<u8>, ArtifactError> {
     let entry = zip.by_index(index).map_err(|error| ArtifactError::InvalidZip(error.to_string()))?;
-    let mut bytes = Vec::with_capacity(entry.size().min(MAX_BROWSE_READ_BYTES) as usize);
-    entry.take(MAX_BROWSE_READ_BYTES + 1).read_to_end(&mut bytes).map_err(crate::errors::io_error)?;
-    if bytes.len() as u64 > MAX_BROWSE_READ_BYTES {
-        return Err(ArtifactError::EntryTooLarge { path: path.to_owned(), limit_bytes: MAX_BROWSE_READ_BYTES });
+    let mut bytes = Vec::with_capacity(entry.size().min(limit_bytes) as usize);
+    entry.take(limit_bytes + 1).read_to_end(&mut bytes).map_err(crate::errors::io_error)?;
+    if bytes.len() as u64 > limit_bytes {
+        return Err(ArtifactError::EntryTooLarge { path: path.to_owned(), limit_bytes });
     }
     Ok(bytes)
 }

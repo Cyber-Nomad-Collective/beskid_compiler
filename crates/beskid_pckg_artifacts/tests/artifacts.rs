@@ -339,6 +339,17 @@ fn browser_reads_binary_and_oversized_files_without_decoding_them() {
 }
 
 #[test]
+fn documentation_reads_api_json_larger_than_the_per_file_browse_limit() {
+    let padding = "x".repeat(MAX_BROWSE_READ_BYTES as usize);
+    let api = format!(r#"{{"schemaVersion":4,"items":[],"padding":"{padding}"}}"#);
+    let artifact = archive_with_files("acme.math", "1.2.3", &[(".beskid/docs/api.json", &api)]);
+    let validated = validate_package_artifact(&artifact, "acme.math", "1.2.3").unwrap();
+    let browser = ArtifactBrowser::from_validated_bytes(&artifact, &validated).unwrap();
+
+    assert_eq!(browser.documentation().unwrap().api.unwrap()["schemaVersion"], 4);
+}
+
+#[test]
 fn browser_indexes_docs_without_rejecting_safe_unrelated_artifact_entries() {
     let artifact = archive_with_files(
         "acme.math",
