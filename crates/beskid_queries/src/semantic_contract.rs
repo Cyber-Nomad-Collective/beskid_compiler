@@ -235,6 +235,7 @@ pub use calls::{
     TransferClassIntrinsic, transfer_class_code, transfer_class_code_for_substitution, transfer_class_intrinsic,
     ExchangeCall, exchange_call, for_iterator_protocol, for_iterator_specialization};
 pub use layouts::{
+    CanonicalEmptyValue, canonical_empty_value,
     aggregate_field_access_specialization, aggregate_literal_specialization, array_index_element_managed_reference_specialization,
     array_index_element_specialization,
     enum_constructor_specialization, enum_match_call_specialization, enum_match_specialization,

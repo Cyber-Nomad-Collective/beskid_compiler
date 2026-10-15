@@ -11,12 +11,12 @@ use beskid_isle::{
     ManagedStructAllocation, NodeKind, StructLayout,
 };
 
-const BARRIER: &str = "beskid_rt_v5_gc_write_barrier";
-const ACTIVE: &str = "beskid_rt_v5_gc_barrier_active";
+pub(super) const BARRIER: &str = "beskid_rt_v5_gc_write_barrier";
+pub(super) const ACTIVE: &str = "beskid_rt_v5_gc_barrier_active";
 
 /// The CLIF of each lowered function whose symbol starts with one of `prefixes`, lowered as one
 /// module (so module emission applies root elision), each checked by the stock verifier.
-fn lower_module(source: &str, symbols: &[&str]) -> Vec<String> {
+pub(super) fn lower_module(source: &str, symbols: &[&str]) -> Vec<String> {
     let (input, isa, root) = item_fixture_with_root(source);
     let functions = find_function_definitions(input.database(), root);
     assert_eq!(functions.len(), symbols.len(), "fixture function count");
@@ -43,7 +43,7 @@ fn lower_module(source: &str, symbols: &[&str]) -> Vec<String> {
 }
 
 /// The function reference that `clif` declares for `symbol` (`fnN = %symbol sigM`).
-fn function_ref(clif: &str, symbol: &str) -> Option<String> {
+pub(super) fn function_ref(clif: &str, symbol: &str) -> Option<String> {
     clif.lines()
         .find(|line| line.contains(&format!("= %{symbol} ")))
         .and_then(|line| line.split('=').next())
@@ -51,7 +51,7 @@ fn function_ref(clif: &str, symbol: &str) -> Option<String> {
 }
 
 /// The blocks of `clif` as (header line, body lines).
-fn blocks(clif: &str) -> Vec<(String, Vec<String>)> {
+pub(super) fn blocks(clif: &str) -> Vec<(String, Vec<String>)> {
     let mut blocks: Vec<(String, Vec<String>)> = Vec::new();
     for line in clif.lines() {
         if line.starts_with("block") {
@@ -67,7 +67,7 @@ fn blocks(clif: &str) -> Vec<(String, Vec<String>)> {
     blocks
 }
 
-fn calls_to(clif: &str, symbol: &str) -> usize {
+pub(super) fn calls_to(clif: &str, symbol: &str) -> usize {
     let Some(name) = function_ref(clif, symbol) else { return 0 };
     clif.lines().filter(|line| line.contains(&format!("call {name}("))).count()
 }
@@ -75,7 +75,7 @@ fn calls_to(clif: &str, symbol: &str) -> usize {
 /// Every barrier call sits alone in a cold block that jumps to a block whose first instruction
 /// stores the barrier's `value` operand to its `slot` operand; the block that branches to the
 /// cold block loads the barrier-active word. Returns the number of guarded stores.
-fn assert_guarded_stores(clif: &str) -> usize {
+pub(super) fn assert_guarded_stores(clif: &str) -> usize {
     let barrier = function_ref(clif, BARRIER).unwrap_or_else(|| panic!("barrier import: {clif}"));
     assert!(clif.contains(&format!("%{ACTIVE}")), "the barrier-active word is a symbol global: {clif}");
     let blocks = blocks(clif);

@@ -1,6 +1,7 @@
 //! Canonical aggregate, enum, and field-layout fact implementations.
 
 mod aggregate;
+mod canonical_empty;
 mod common;
 mod enum_layout;
 mod field_access;
@@ -31,6 +32,7 @@ pub(in crate::semantic_contract) use enum_layout::{
 };
 pub use enum_layout::{enum_constructor_specialization, enum_match_call_specialization, enum_match_specialization};
 
+pub use canonical_empty::{CanonicalEmptyValue, canonical_empty_value};
 pub use field_access::aggregate_field_access_specialization;
 pub(in crate::semantic_contract) use field_access::{
     FieldAccessReceiver, aggregate_field_access_tracked, field_access_receiver, field_read_identity_in_environment,

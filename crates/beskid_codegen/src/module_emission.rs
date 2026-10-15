@@ -1,3 +1,4 @@
+pub(crate) mod canonical_empty;
 mod contracts;
 pub(crate) mod data;
 pub(crate) mod dynamic;

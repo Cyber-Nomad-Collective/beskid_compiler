@@ -5,6 +5,7 @@ use super::*;
 mod calls;
 mod collections;
 mod composition;
+mod destructive_read;
 mod enums;
 mod events;
 mod literals;
@@ -30,6 +31,14 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
 
     fn scoped_cleanup(&self, key: AstNodeKey) -> Option<beskid_isle::ScopedCleanupPlan> {
         self.scoped_cleanup_impl(key)
+    }
+
+    fn move_expression(&self, key: AstNodeKey) -> Option<beskid_isle::MoveExpressionPlan> {
+        self.move_expression_impl(key)
+    }
+
+    fn exchange(&self, key: AstNodeKey) -> Option<beskid_isle::ExchangePlan> {
+        self.exchange_impl(key)
     }
 
     fn node_kind(&self, key: AstNodeKey) -> Option<NodeKind> {

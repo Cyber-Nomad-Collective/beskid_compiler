@@ -86,6 +86,15 @@ pub trait NodeFacts {
     fn collection_element_managed(&self, _key: AstNodeKey) -> Option<ManagedReferenceFact> {
         None
     }
+    /// How the `move` expression `key` evaluates: a transfer of its operand or a destructive
+    /// read of a field with the construction of its canonical empty value.
+    fn move_expression(&self, _key: AstNodeKey) -> Option<MoveExpressionPlan> {
+        None
+    }
+    /// The place and value operands of the `exchange(place, move value)` call `key`.
+    fn exchange(&self, _key: AstNodeKey) -> Option<ExchangePlan> {
+        None
+    }
     fn child(&self, _key: AstNodeKey, _index: u8) -> Option<AstNodeKey> {
         None
     }
