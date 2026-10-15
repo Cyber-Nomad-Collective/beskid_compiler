@@ -107,6 +107,9 @@ pub enum CallKind {
     EventRaise,
     /// An indirect call through the closure record held by a function-typed local value.
     FunctionValue,
+    /// The `exchange(place, move value)` builtin: read the place, store the value, yield the
+    /// old value.
+    Exchange,
     Dynamic,
 }
 

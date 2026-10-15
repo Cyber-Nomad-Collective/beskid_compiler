@@ -4,6 +4,11 @@ use super::super::*;
 
 impl SyntaxNodeFacts<'_> {
     pub(super) fn call_kind_impl(&self, key: AstNodeKey) -> Option<CallKind> {
+        // The `exchange` builtin is a place read and store, never a call: it outranks every call
+        // probe, which would otherwise look for a callee named `exchange`.
+        if self.query(beskid_queries::exchange_call(self.db, key)).is_some() {
+            return Some(CallKind::Exchange);
+        }
         if self.event_operation_impl(key).is_some_and(|plan| plan.operation == beskid_isle::EventOperation::Raise) {
             return Some(CallKind::EventRaise);
         }

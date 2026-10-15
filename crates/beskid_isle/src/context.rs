@@ -28,6 +28,7 @@ mod cleanup;
 mod clif_block;
 mod composition;
 mod control_flow;
+mod destructive_read;
 mod enums;
 mod events;
 mod intrinsics;
@@ -368,6 +369,7 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
     aggregate::generated_aggregate_methods!();
     enums::generated_enum_methods!();
     events::generated_event_methods!();
+    destructive_read::generated_destructive_read_methods!();
 }
 
 pub fn lower_expression(context: &mut IsleContext<'_, '_, '_, '_>, key: AstNodeKey) -> Result<Value, LoweringError> {

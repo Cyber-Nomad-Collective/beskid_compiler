@@ -51,3 +51,15 @@
       (emit_match key))
 (rule (lower_statement key @ (node_kind (NodeKind.MatchExpression)))
       (emit_match_statement key))
+
+(decl partial emit_move_expression (AstNodeKey) Value)
+(extern constructor emit_move_expression emit_move_expression)
+(decl partial emit_exchange (AstNodeKey) Value)
+(extern constructor emit_exchange emit_exchange)
+
+(rule (lower_expression key @ (node_kind (NodeKind.MoveExpression)))
+      (emit_move_expression key))
+(rule (lower_expression key @ (and
+        (node_kind (NodeKind.CallExpression))
+        (call_kind (CallKind.Exchange))))
+      (emit_exchange key))

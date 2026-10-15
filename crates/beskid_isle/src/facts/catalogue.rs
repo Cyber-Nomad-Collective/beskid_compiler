@@ -45,6 +45,7 @@ node_kinds!(
     BlockExpression,
     ForStatement,
     SpawnExpression,
+    MoveExpression,
     LambdaExpression,
     TryExpression,
     ClifBlock,
@@ -97,9 +98,8 @@ pub const fn classify_syntax_node_kind(kind: beskid_queries::IndexedNodeKind) ->
         Syntax::Block | Syntax::BlockExpression => IsleLowered(NodeKind::BlockExpression),
         Syntax::ForStatement => IsleLowered(NodeKind::ForStatement),
         Syntax::SpawnExpression => IsleLowered(NodeKind::SpawnExpression),
-        // `move x` lowers as its operand; `move x.f` needs the destructive-read lowering
-        // (`beskid_queries::move_expression_form`), wired by the barrier slice at integration.
-        Syntax::MoveExpression => IsleLowered(NodeKind::GroupedExpression),
+        // `move x` transfers its operand; `move x.f` is a destructive read of the field.
+        Syntax::MoveExpression => IsleLowered(NodeKind::MoveExpression),
         Syntax::LambdaExpression => IsleLowered(NodeKind::LambdaExpression),
         Syntax::TryExpression => IsleLowered(NodeKind::TryExpression),
         Syntax::ClifBlockExpression => IsleLowered(NodeKind::ClifBlock),

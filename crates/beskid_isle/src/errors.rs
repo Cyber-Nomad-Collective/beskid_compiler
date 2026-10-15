@@ -27,6 +27,12 @@ pub enum LoweringErrorKind {
     MissingManagedReferenceFact,
     InvalidStructLayout,
     InvalidStructField(u32),
+    /// A `move x.f` whose place is not a traced pointer field of an object, or whose canonical
+    /// empty value has no construction plan.
+    InvalidDestructiveRead,
+    /// An `exchange(place, move value)` whose place is not a field or element, or whose value
+    /// does not have the place's representation.
+    InvalidExchange,
     InvalidEnumLayout,
     InvalidEnumVariant(u32),
     InvalidMatchArms,
@@ -84,6 +90,8 @@ impl LoweringError {
             LoweringErrorKind::UnprovenCollectionOwner => "UnprovenCollectionOwner".to_owned(),
             LoweringErrorKind::MissingManagedReferenceFact => "MissingManagedReferenceFact".to_owned(),
             LoweringErrorKind::InvalidStructLayout => "InvalidStructLayout".to_owned(),
+            LoweringErrorKind::InvalidDestructiveRead => "InvalidDestructiveRead".to_owned(),
+            LoweringErrorKind::InvalidExchange => "InvalidExchange".to_owned(),
             LoweringErrorKind::InvalidStructField(index) => {
                 format!("InvalidStructField({index})")
             }

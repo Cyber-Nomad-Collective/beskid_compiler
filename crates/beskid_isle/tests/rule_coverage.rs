@@ -162,6 +162,7 @@ fn every_isle_lowered_kind_has_verified_clif_evidence() {
         (NodeKind::BlockExpression, isle_tests.join("block_sequence.rs")),
         (NodeKind::ForStatement, isle_tests.join("block_range_for.rs")),
         (NodeKind::SpawnExpression, codegen_tests.join("parsed_project_isle_harness.rs")),
+        (NodeKind::MoveExpression, codegen_tests.join("isle_adapter/move_exchange.rs")),
         (NodeKind::LambdaExpression, codegen_tests.join("parsed_project_isle_harness.rs")),
         (NodeKind::TryExpression, codegen_tests.join("isle_adapter.rs")),
         (NodeKind::ClifBlock, isle_tests.join("clif_block.rs")),

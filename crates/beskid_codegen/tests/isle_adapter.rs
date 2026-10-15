@@ -56,3 +56,5 @@ mod support;
 mod waitgroup_conditions;
 #[path = "isle_adapter/write_barrier_emission.rs"]
 mod write_barrier_emission;
+#[path = "isle_adapter/move_exchange.rs"]
+mod move_exchange;
