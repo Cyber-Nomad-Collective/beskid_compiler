@@ -128,6 +128,48 @@ fn declaration_name_span(
 /// Names come from every assembled unit's attribute declarations plus the compiler-recognized
 /// attributes; each is resolved from the entry unit so shadowing and target unions match the
 /// compiler.
+/// Hover facts on the name of every type and enum declared in `entry`, naming its transfer
+/// class (requirement "Transfer class query"). A generic declaration's class is decided per
+/// instantiation, so its hover says so instead of guessing.
+pub(crate) fn transfer_class_hovers(
+    db: &beskid_queries::BeskidDatabase,
+    unit: SourceUnitId,
+    generation: beskid_queries::SyntaxGenerationId,
+    entry: &SourceUnit,
+) -> Vec<SyntaxHover> {
+    let index = SyntaxIndex::from_program(&entry.program, generation);
+    let mut hovers = Vec::new();
+    for kind in [NodeKind::TypeDefinition, NodeKind::EnumDefinition] {
+        for node in index.ids_of_kind(kind) {
+            let Some(found) = index.node_at(&entry.program, node) else { continue };
+            let (keyword, name, generic) = if let Some(definition) = found.of::<beskid_analysis::syntax::TypeDefinition>() {
+                ("type", &definition.name, !definition.generics.is_empty())
+            } else if let Some(definition) = found.of::<beskid_analysis::syntax::EnumDefinition>() {
+                ("enum", &definition.name, !definition.generics.is_empty())
+            } else {
+                continue;
+            };
+            let class = if generic {
+                "decided per instantiation".to_string()
+            } else {
+                match beskid_queries::nominal_transfer_class(db, AstNodeKey { unit, generation, node }, &[]) {
+                    Ok(class) => class.to_string(),
+                    Err(_) => continue,
+                }
+            };
+            hovers.push(SyntaxHover {
+                reference_start: name.span.start,
+                reference_end: name.span.end,
+                markdown: format!("**{keyword}** `{}`\n\ntransfer class: {class}", name.node.name),
+                location_path: entry.path.clone(),
+                location_start: name.span.start,
+                location_end: name.span.end,
+            });
+        }
+    }
+    hovers
+}
+
 pub(crate) fn attribute_completion_catalogue(
     db: &beskid_queries::BeskidDatabase,
     unit: SourceUnitId,
@@ -192,7 +234,10 @@ mod tests {
 
     const SOURCE: &str = "pub attribute Trace(Parameter) { }\n\
 pub attribute Pure(LambdaExpression) { }\n\
-i64 Add([Trace] i64 left, i64 right) {\n    let square = [Pure] (i64 x) => x * x;\n    return left + right;\n}\n";
+i64 Add([Trace] i64 left, i64 right) {\n    let square = [Pure] (i64 x) => x * x;\n    return left + right;\n}\n\
+[Immutable] pub type Job { string id, i64 size }\n\
+pub type Cache { i64[] entries }\n\
+[Isolated] pub type Box<T> { T item }\n";
 
     fn typed_fixture() -> (BeskidDatabase, SourceUnitId, SyntaxGenerationId, Arc<ProgramAssembly>) {
         let root = PathBuf::from("/tmp/attribute-facts/src");
@@ -289,6 +334,18 @@ i64 Add([Trace] i64 left, i64 right) {\n    let square = [Pure] (i64 x) => x * x
             panic!("expected one definition location");
         };
         assert_eq!(location.range.start.line, 1, "Pure is declared on the second line: {location:?}");
+    }
+
+    #[test]
+    fn hover_on_a_type_name_shows_its_transfer_class() {
+        let (db, unit, generation, assembly) = typed_fixture();
+        let hovers = super::transfer_class_hovers(&db, unit, generation, &assembly.units[0]);
+        let job = hovers.iter().find(|hover| hover.markdown.contains("`Job`")).expect("Job hover");
+        assert!(job.markdown.contains("transfer class: Shared"), "{}", job.markdown);
+        let cache = hovers.iter().find(|hover| hover.markdown.contains("`Cache`")).expect("Cache hover");
+        assert!(cache.markdown.contains("transfer class: Never (no marker attribute)"), "{}", cache.markdown);
+        let boxed = hovers.iter().find(|hover| hover.markdown.contains("`Box`")).expect("Box hover");
+        assert!(boxed.markdown.contains("decided per instantiation"), "{}", boxed.markdown);
     }
 
     #[test]

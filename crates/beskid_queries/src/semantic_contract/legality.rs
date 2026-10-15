@@ -40,6 +40,7 @@ mod gate;
 mod generics;
 mod imports;
 mod members;
+mod transfer;
 mod typing;
 mod units;
 mod value_paths;
@@ -50,6 +51,7 @@ pub use attributes::{
     check_attribute_obligations, resolve_attribute_use, unit_attribute_surface,
 };
 pub use externs::extern_profile_findings;
+pub use transfer::{immutable_field_findings, transfer_declaration_findings};
 pub use gate::{GateObligation, GateObligationKind, check_gate_obligations, gate_obligations};
 pub use typing::{TypingObligation, TypingObligationKind, typing_obligations};
 pub use units::{UnitObligation, UnitObligationKind, check_unit_obligations, unit_obligations};
@@ -399,6 +401,7 @@ fn collect_nodes_of_kind(
 pub fn check_items(db: &dyn Db, items: &[AstNodeKey]) -> Result<(), Vec<SemanticFinding>> {
     let mut findings = import_findings(db, items);
     for &item in items {
+        findings.extend(transfer::immutable_field_findings(db, item));
         if let Ok(Some(finding)) = unresolved_value_argument(db, item) {
             findings.push(SemanticFinding {
                 kind: SemanticIssueKind::ResolveUnknownValue { name: finding.name.to_string() },
@@ -604,6 +607,7 @@ fn import_findings(db: &dyn Db, items: &[AstNodeKey]) -> Vec<SemanticFinding> {
         }
         judged_units.push(unit_root);
         findings.extend(attributes::attribute_findings(db, unit_root));
+        findings.extend(transfer::transfer_declaration_findings(db, unit_root));
         if let Ok(Some(imports)) = unresolved_imports(db, unit_root) {
             findings.extend(imports.iter().map(|import| SemanticFinding {
                 kind: SemanticIssueKind::UnknownImportPath { path: import.path.to_string() },
@@ -1210,5 +1214,144 @@ mod tests {
                 assert_eq!(super::generic_parameter_conflict(&db, item).expect("query"), None, "{source}");
             }
         }
+    }
+
+    const MARKERS: &str = "[CompilerDerived] pub contract Transferable { } [CompilerDerived] pub contract Shared { } \
+        [CompilerDerived] pub contract Moved { } [CompilerDerived] pub contract Copied { } ";
+
+    /// `(code, message, help)` of every declaration, legality-gate and gate-obligation finding.
+    fn transfer_report(source: &str, generation: u64) -> Vec<(String, String, String)> {
+        let (db, root) = one_unit_assembly(source, SyntaxGenerationId(generation));
+        let mut items = Vec::new();
+        nodes_of_kind(&db, root, IndexedNodeKind::FunctionDefinition, &mut items);
+        nodes_of_kind(&db, root, IndexedNodeKind::MethodDefinition, &mut items);
+        let mut findings = super::transfer_declaration_findings(&db, root);
+        findings.extend(super::check_items(&db, &items).err().unwrap_or_default());
+        findings.extend(super::check_gate_obligations(&db, &items));
+        findings
+            .into_iter()
+            .filter(|finding| finding.kind.code() != "E1510" || !finding.kind.message().contains("no declaration"))
+            .map(|finding| {
+                (finding.kind.code().to_string(), finding.kind.message(), finding.kind.help().unwrap_or_default())
+            })
+            .collect()
+    }
+
+    fn type_class(source: &str, generation: u64, name: &str) -> String {
+        let (db, root) = one_unit_assembly(source, SyntaxGenerationId(generation));
+        let mut types = Vec::new();
+        nodes_of_kind(&db, root, IndexedNodeKind::TypeDefinition, &mut types);
+        nodes_of_kind(&db, root, IndexedNodeKind::EnumDefinition, &mut types);
+        let declaration = types
+            .into_iter()
+            .find(|key| {
+                let syntax = db.syntax_unit(key.unit).expect("unit");
+                let node = syntax.syntax_index(&db).node_at(syntax.expanded_program(&db), key.node).expect("node");
+                node.of::<beskid_analysis::syntax::TypeDefinition>()
+                    .map(|definition| definition.name.node.name.as_str())
+                    .or_else(|| node.of::<beskid_analysis::syntax::EnumDefinition>().map(|definition| definition.name.node.name.as_str()))
+                    == Some(name)
+            })
+            .expect("declaration");
+        crate::nominal_transfer_class(&db, declaration, &[]).expect("transfer class").to_string()
+    }
+
+    #[test]
+    fn transfer_classes_follow_the_ten_rules() {
+        let source = "[Immutable] pub type Job { string id, i64 size } \
+            [Isolated] pub type Index { i64[] offsets, Job head } \
+            [Copyable] pub type Pixel { u8 r, u8 g, u8 b } \
+            [Copyable] pub type Frame { i64 width, u8[] pixels } \
+            [NeverTransferable] pub type Handle { i64 id } \
+            pub type Cache { i64[] entries } \
+            [Immutable] pub type WorkerId { u64 processId, u64 sequence } \
+            pub enum Maybe<T> { Some(T value), None } \
+            pub enum Mode { Fast, Slow } \
+            [Isolated] pub type Node { i64 value, Maybe<Node> next } \
+            [Isolated] pub type Raw { pointer data } \
+            [Isolated] pub type Holder { Handle handle } ";
+        let expected = [
+            ("Job", "Shared"),
+            ("Index", "Moved"),
+            ("Pixel", "Copied"),
+            ("Frame", "Never (field `pixels` has class Moved)"),
+            ("Handle", "Never (`[NeverTransferable]`)"),
+            ("Cache", "Never (no marker attribute)"),
+            ("WorkerId", "Shared"),
+            ("Mode", "Shared"),
+            ("Node", "Moved"),
+            ("Raw", "Never (field `data` is Never (`pointer` is a native address))"),
+            ("Holder", "Never (field `handle` is Never (`[NeverTransferable]`))"),
+        ];
+        for (offset, (name, class)) in expected.iter().enumerate() {
+            assert_eq!(type_class(source, 6400 + offset as u64, name), *class, "{name}");
+        }
+    }
+
+    #[test]
+    fn marker_bounds_are_proven_from_the_transfer_class() {
+        let source = format!(
+            "{MARKERS}pub type Cache {{ i64[] entries }} [Isolated] pub type Box<T> {{ T item }} \
+             [NeverTransferable] pub type Mutex {{ i64 id }} \
+             unit Own<T>(T value) where T: Moved {{ }} unit View<T>(T value) where T: Shared {{ }} \
+             unit Keep<T>(T value) where T: Transferable {{ }} \
+             unit Main(u8[] bytes, Cache cache, Box<string> named, Box<Mutex> locked) {{ \
+             Own<u8[]>(bytes); Keep<i64>(21_i64); Keep<Box<string>>(named); View<u8[]>(bytes); Keep<Cache>(cache); \
+             Keep<Box<Mutex>>(locked); }}"
+        );
+        let report = transfer_report(&source, 6420);
+        let bounds = report.iter().filter(|(code, _, _)| code == "E1610").collect::<Vec<_>>();
+        assert_eq!(bounds.len(), 3, "{report:?}");
+        assert!(bounds.iter().any(|(_, _, help)| help == "class Moved, bound requires Shared"), "{report:?}");
+        assert!(
+            bounds.iter().any(|(_, message, help)| message.contains("`Cache`") && help == "no marker attribute"),
+            "{report:?}"
+        );
+        assert!(bounds.iter().any(|(_, _, help)| help.contains("field `item`")), "{report:?}");
+    }
+
+    #[test]
+    fn marker_attributes_are_judged_at_the_declaration() {
+        let source = format!(
+            "{MARKERS}[Copyable] pub type Pixel {{ u8 r, u8 g, u8 b }} \
+             [Isolated] pub type Image {{ Pixel[] rows, Pixel background }} \
+             [Copyable] pub type Frame {{ i64 width, u8[] pixels }} \
+             [Isolated] pub type Snapshot {{ i64 taken }} \
+             [Immutable] pub type Names {{ i64 taken, i64[] values }} \
+             [Immutable] pub type Raw {{ pointer data, i64 length }} \
+             [NeverTransferable] [Copyable] pub type Channel {{ i64 id }} \
+             [Immutable] [Isolated] pub type Both {{ i64 id }} \
+             pub type Token : Shared {{ i64 id }} \
+             [CompilerDerived] pub contract Sized {{ i64 Size(); }} \
+             pub type Store {{ [ImmutableStorage] i64[] items }}"
+        );
+        let report = transfer_report(&source, 6430);
+        let codes = report.iter().map(|(code, _, _)| code.as_str()).collect::<Vec<_>>();
+        for code in ["E1247", "E1244", "E1246", "E1510", "E1607", "E1003"] {
+            assert!(codes.contains(&code), "{code} missing: {report:?}");
+        }
+        assert_eq!(codes.iter().filter(|code| **code == "E1247").count(), 2, "{report:?}");
+        assert!(report.iter().any(|(code, message, _)| code == "E1247" && message.contains("`background`")));
+        assert!(report.iter().any(|(code, message, _)| code == "E1247" && message.contains("`pixels`")));
+        assert!(report.iter().any(|(code, message, _)| code == "E1244" && message.contains("`values`")));
+        assert!(report.iter().any(|(code, message, _)| code == "E1246" && message.contains("field `data`")));
+        assert!(report.iter().any(|(code, message, _)| code == "E1246" && message.contains("`[NeverTransferable]`")));
+        assert!(report.iter().any(|(code, message, _)| code == "E1510" && message.contains("exclusive")));
+        assert!(report.iter().any(|(code, message, _)| code == "E1510" && message.contains("ImmutableStorage")));
+        assert!(report.iter().any(|(code, message, _)| code == "E1607" && message.contains("`Shared`")));
+        assert!(report.iter().any(|(code, message, _)| code == "E1607" && message.contains("`Sized`")));
+        assert!(report.iter().any(|(code, message, _)| code == "E1003" && message.contains("`Size`")));
+    }
+
+    #[test]
+    fn immutable_fields_are_set_only_by_construction() {
+        let source = "[Immutable] pub type Job { string id, i64 size, pub unit Grow() { this.size = this.size + 1; } } \
+            unit Rename(Job job) { job.id = \"renamed\"; } \
+            Job Make() { return Job { id: \"a\", size: 1 }; }";
+        let report = transfer_report(source, 6440);
+        let assignments = report.iter().filter(|(code, _, _)| code == "E1245").collect::<Vec<_>>();
+        assert_eq!(assignments.len(), 2, "{report:?}");
+        assert!(assignments.iter().any(|(_, message, _)| message.contains("`size`")));
+        assert!(assignments.iter().any(|(_, message, _)| message.contains("`id`")));
     }
 }

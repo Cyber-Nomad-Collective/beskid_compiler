@@ -97,7 +97,8 @@ impl SemanticIssueKind {
             Self::UnresolvedAssociatedType { .. } => {
                 Some("check the contract name and that the referenced type conforms to it".to_string())
             }
-            Self::GenericBoundNotSatisfied { type_name, contract_name } => {
+            Self::GenericBoundNotSatisfied { reason: Some(reason), .. } => Some(reason.clone()),
+            Self::GenericBoundNotSatisfied { type_name, contract_name, reason: None } => {
                 Some(format!("make `{type_name}` conform to `{contract_name}` or pass a conforming type"))
             }
             Self::ImmutableAssignment { .. } => {
@@ -323,6 +324,15 @@ impl SemanticIssueKind {
             Self::InjectInsideIsolateBody { field } => Some(format!(
                 "read `{field}` before the task starts and capture the value instead"
             )),
+            Self::CompilerDerivedConformance { contract } => {
+                Some(format!("remove `{contract}` from the conformance list and use a marker attribute on the type"))
+            }
+            Self::CompilerDerivedNotMarker { .. } => Some("remove `[CompilerDerived]`".to_string()),
+            Self::DerivedContractMember { .. } => Some("a compiler-derived contract has no members".to_string()),
+            Self::ExclusiveMarkerAttribute { .. } => {
+                Some("keep one of `[Immutable]`, `[Isolated]` and `[Copyable]`".to_string())
+            }
+            Self::CorelibOnlyAttribute { .. } => Some("remove the attribute".to_string()),
             Self::TypeInvalidEventInvocationScope => Some(
                 "events can only be raised from within methods on their declaring type".to_string()
             ),

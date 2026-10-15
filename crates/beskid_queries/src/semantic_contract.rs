@@ -79,8 +79,10 @@ pub use reserved_failure::{
 mod syntax_facts;
 mod transfer;
 pub use transfer::{
-    TransferClass, TransferMarker, TransferNeverReason, nominal_transfer_class, transfer_class_of_type,
+    TransferClass, TransferMarker, TransferMarkerAttribute, TransferNeverReason, nominal_transfer_class,
+    transfer_class_of_type, transfer_marker_contract,
 };
+use transfer::{has_recognized_attribute, marker_attributes, marker_bound_reason, recognized_attribute_use, transfer_class};
 mod typed_arrays;
 mod typing;
 

@@ -87,7 +87,7 @@ pub enum GateObligationKind {
     /// E1102: a second `let` of the same name in one block, or a repeated parameter name.
     DuplicateLocal { name: Arc<str>, previous: SourceSpan },
     /// E1610: a call whose concrete type does not satisfy a `where` bound of the callee.
-    GenericBoundNotSatisfied { type_name: Arc<str>, contract_name: Arc<str> },
+    GenericBoundNotSatisfied { type_name: Arc<str>, contract_name: Arc<str>, reason: Option<Arc<str>> },
     /// E1232: a `clif { ... }` block the legacy `type_clif_block`, `type_clif_block_statement`,
     /// `check_clif_block_body`, or `check_clif_parameters` rejects, with the legacy detail text.
     InvalidClifBlock { detail: Arc<str> },
@@ -203,10 +203,11 @@ pub fn check_gate_obligations(db: &dyn Db, items: &[AstNodeKey]) -> Vec<Semantic
                 GateObligationKind::DuplicateLocal { name, previous } => {
                     SemanticIssueKind::ResolveDuplicateLocal { name: name.to_string(), previous: *previous }
                 }
-                GateObligationKind::GenericBoundNotSatisfied { type_name, contract_name } => {
+                GateObligationKind::GenericBoundNotSatisfied { type_name, contract_name, reason } => {
                     SemanticIssueKind::GenericBoundNotSatisfied {
                         type_name: type_name.to_string(),
                         contract_name: contract_name.to_string(),
+                        reason: reason.as_deref().map(str::to_owned),
                     }
                 }
                 GateObligationKind::InvalidClifBlock { detail } => {

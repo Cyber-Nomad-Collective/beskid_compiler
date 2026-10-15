@@ -352,6 +352,7 @@ pub(super) fn collect_call_obligations(
                                 kind: GateObligationKind::GenericBoundNotSatisfied {
                                     type_name: Arc::clone(&violation.type_name),
                                     contract_name: Arc::clone(&violation.contract_name),
+                                    reason: violation.reason.clone(),
                                 },
                                 site: call_key,
                             });
@@ -433,6 +434,7 @@ pub(super) fn collect_call_obligations(
                                 kind: GateObligationKind::GenericBoundNotSatisfied {
                                     type_name: Arc::clone(&violation.type_name),
                                     contract_name: Arc::clone(&violation.contract_name),
+                                    reason: violation.reason.clone(),
                                 },
                                 site: call_key,
                             });
@@ -706,6 +708,36 @@ fn judge_unconstrained_forwarding(
             if !function.generics.iter().any(|candidate| candidate.node.name == generic) {
                 continue;
             }
+            if let Some(marker) = transfer_marker_contract(db, bound.contract) {
+                // A marker bound is covered when the caller's own marker bounds give the generic
+                // a class that satisfies it (`T: Moved` covers `Transferable`).
+                let markers = function
+                    .where_bounds
+                    .iter()
+                    .filter(|caller_bound| caller_bound.parameter.node.name == generic)
+                    .filter_map(|caller_bound| {
+                        let mut contract_path = caller_bound.contract.node.clone();
+                        if let Some(last) = contract_path.segments.last_mut() {
+                            last.node.type_args.clear();
+                        }
+                        resolve_contract(db, enclosing_key, &contract_path)
+                    })
+                    .filter_map(|contract| transfer_marker_contract(db, contract))
+                    .collect::<Vec<_>>();
+                let class = crate::semantic_contract::transfer::bound_class(generic, &markers);
+                if !class.satisfies(marker) {
+                    findings.push(GateObligation {
+                        kind: GateObligationKind::GenericBoundNotSatisfied {
+                            type_name: Arc::from(generic),
+                            contract_name: Arc::from(marker.name()),
+                            reason: Some(Arc::from(crate::semantic_contract::transfer::marker_bound_reason(&class, marker))),
+                        },
+                        site: call_key,
+                    });
+                    return;
+                }
+                continue;
+            }
             let covered = function.where_bounds.iter().any(|caller_bound| {
                 if caller_bound.parameter.node.name != generic {
                     return false;
@@ -727,6 +759,7 @@ fn judge_unconstrained_forwarding(
                     kind: GateObligationKind::GenericBoundNotSatisfied {
                         type_name: Arc::from(generic),
                         contract_name: Arc::from(contract_name.as_str()),
+                        reason: None,
                     },
                     site: call_key,
                 });

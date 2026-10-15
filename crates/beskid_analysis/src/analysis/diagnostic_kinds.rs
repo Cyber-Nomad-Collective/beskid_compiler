@@ -123,6 +123,8 @@ pub enum SemanticIssueKind {
     GenericBoundNotSatisfied {
         type_name: String,
         contract_name: String,
+        /// For a compiler-derived marker bound: the first offending field or the class reason.
+        reason: Option<String>,
     },
 
     ImmutableAssignment {
@@ -369,10 +371,12 @@ pub enum SemanticIssueKind {
         type_name: String,
         field: String,
     },
-    /// E1246: `[Copyable]`, `[Isolated]` or `[Immutable]` on a never-transferable type.
+    /// E1246: `[Copyable]`, `[Isolated]` or `[Immutable]` on a never-transferable type. `cause`
+    /// names the `[NeverTransferable]` attribute or the `pointer`, function-typed or Never field.
     MarkerOnNeverTransferable {
         marker: String,
         type_name: String,
+        cause: String,
     },
     /// E1247: a field class the `[Isolated]` or `[Copyable]` marker does not admit.
     MarkerFieldClassMismatch {
@@ -389,6 +393,29 @@ pub enum SemanticIssueKind {
     /// E1249: an `inject` field read inside a task body.
     InjectInsideIsolateBody {
         field: String,
+    },
+    /// E1607: a `[CompilerDerived]` contract listed in a conformance list (`type X : C`,
+    /// `impl X : C`); conformance to it is proven only by the transfer class query.
+    CompilerDerivedConformance {
+        contract: String,
+    },
+    /// E1607: `[CompilerDerived]` on a contract that is not one of the four marker contracts.
+    CompilerDerivedNotMarker {
+        contract: String,
+    },
+    /// E1003: a member declared in a `[CompilerDerived]` contract.
+    DerivedContractMember {
+        contract: String,
+        member: String,
+    },
+    /// E1510: a second marker among `[Immutable]`, `[Isolated]` and `[Copyable]` on one type.
+    ExclusiveMarkerAttribute {
+        marker: String,
+        previous: String,
+    },
+    /// E1510: an attribute that only corelib (`Core.*` modules) may use, such as `[ImmutableStorage]`.
+    CorelibOnlyAttribute {
+        attribute: String,
     },
     /// Internal compiler error (E2101-E2199 band): a semantic fact a lowering request needs is
     /// still unavailable after the legality gate passed for its items. A compiler gap, never a
@@ -663,7 +690,11 @@ mod query_gate_kind_tests {
             SemanticIssueKind::DestructiveReadWithoutEmpty { field: "f".into(), type_name: "i64".into() },
             SemanticIssueKind::ImmutableFieldNotShared { type_name: "T".into(), field: "f".into(), class: "Moved".into() },
             SemanticIssueKind::ImmutableFieldAssignment { type_name: "T".into(), field: "f".into() },
-            SemanticIssueKind::MarkerOnNeverTransferable { marker: "Isolated".into(), type_name: "T".into() },
+            SemanticIssueKind::MarkerOnNeverTransferable {
+                marker: "Isolated".into(),
+                type_name: "T".into(),
+                cause: "`[NeverTransferable]`".into(),
+            },
             SemanticIssueKind::MarkerFieldClassMismatch {
                 marker: "Isolated".into(),
                 type_name: "T".into(),

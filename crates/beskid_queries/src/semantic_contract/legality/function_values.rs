@@ -31,7 +31,7 @@ pub enum GenericFunctionValueKind {
     /// E1229: the expected function type binds one generic parameter to two different types.
     Conflict(GenericBindingConflict),
     /// E1610: the bound type does not satisfy a `where` bound of the declaration.
-    BoundNotSatisfied { type_name: Arc<str>, contract_name: Arc<str> },
+    BoundNotSatisfied { type_name: Arc<str>, contract_name: Arc<str>, reason: Option<Arc<str>> },
 }
 
 /// One generic function value without an instance, at its path expression.
@@ -82,6 +82,7 @@ pub(super) fn generic_function_value_findings(db: &dyn Db, key: AstNodeKey) -> V
             GenericFunctionValueKind::BoundNotSatisfied {
                 type_name: Arc::clone(&violation.type_name),
                 contract_name: Arc::clone(&violation.contract_name),
+                reason: violation.reason.clone(),
             }
         } else {
             GenericFunctionValueKind::MissingTypeArguments
@@ -108,10 +109,11 @@ pub(super) fn generic_function_value_semantic_findings(db: &dyn Db, key: AstNode
                     first_name: conflict.first.to_string(),
                     second_name: conflict.second.to_string(),
                 },
-                GenericFunctionValueKind::BoundNotSatisfied { type_name, contract_name } => {
+                GenericFunctionValueKind::BoundNotSatisfied { type_name, contract_name, reason } => {
                     SemanticIssueKind::GenericBoundNotSatisfied {
                         type_name: type_name.to_string(),
                         contract_name: contract_name.to_string(),
+                        reason: reason.as_deref().map(str::to_owned),
                     }
                 }
             };

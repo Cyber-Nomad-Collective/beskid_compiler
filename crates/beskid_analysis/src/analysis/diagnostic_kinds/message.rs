@@ -95,7 +95,7 @@ impl SemanticIssueKind {
             }
             Self::ThisUsedOutsideContractOrImpl => "`This` used outside a contract or impl-block scope".to_string(),
             Self::UnresolvedAssociatedType { name } => format!("unresolved associated type `{name}`"),
-            Self::GenericBoundNotSatisfied { type_name, contract_name } => {
+            Self::GenericBoundNotSatisfied { type_name, contract_name, .. } => {
                 format!("generic bound not satisfied: `{type_name}` does not conform to `{contract_name}`")
             }
             Self::ImmutableAssignment { name } => {
@@ -278,8 +278,8 @@ impl SemanticIssueKind {
             Self::ImmutableFieldAssignment { type_name, field } => format!(
                 "field `{field}` of `[Immutable]` type `{type_name}` cannot be assigned or escape outside construction"
             ),
-            Self::MarkerOnNeverTransferable { marker, type_name } => {
-                format!("`[{marker}]` cannot mark `{type_name}`: the type is never transferable")
+            Self::MarkerOnNeverTransferable { marker, type_name, cause } => {
+                format!("`[{marker}]` cannot mark `{type_name}`: {cause} is never transferable")
             }
             Self::MarkerFieldClassMismatch { marker, type_name, field, class } => format!(
                 "field `{field}` of `[{marker}]` type `{type_name}` has class {class}, which `[{marker}]` does not admit"
@@ -289,6 +289,23 @@ impl SemanticIssueKind {
                 None => "`[Captures]` applies only to a parameter of function type".to_string(),
             },
             Self::InjectInsideIsolateBody { .. } => "composition is not available inside an isolate".to_string(),
+            Self::CompilerDerivedConformance { contract } => format!(
+                "`{contract}` is compiler-derived and cannot be listed as a conformance; the compiler proves it from the \
+                 transfer class"
+            ),
+            Self::CompilerDerivedNotMarker { contract } => format!(
+                "`[CompilerDerived]` applies only to the marker contracts `Transferable`, `Shared`, `Moved` and \
+                 `Copied`, not to `{contract}`"
+            ),
+            Self::DerivedContractMember { contract, member } => {
+                format!("compiler-derived contract `{contract}` cannot declare the member `{member}`")
+            }
+            Self::ExclusiveMarkerAttribute { marker, previous } => {
+                format!("`[{marker}]` cannot be combined with `[{previous}]`: the markers are exclusive")
+            }
+            Self::CorelibOnlyAttribute { attribute } => {
+                format!("`[{attribute}]` is available only inside corelib (`Core.*` modules)")
+            }
             Self::TypeInvalidEventInvocationScope => {
                 "events can only be invoked from methods on their declaring type".to_string()
             }
