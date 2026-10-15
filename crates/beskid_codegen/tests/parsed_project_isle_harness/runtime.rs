@@ -9,13 +9,13 @@ fn parsed_project_declared_array_index_assignment_reaches_verified_syntax_isle()
     // literal-only allocation metadata.
     let project = tempfile::tempdir().expect("project directory");
     let source = "
-        string[] Store(string[] values, string value) {
+        string[] Store(move string[] values, string value) {
             values[0] = value;
             return values;
         }
         string[] Main() {
             string[] values = [\"before\"];
-            return Store(values, \"after\");
+            return Store(move values, \"after\");
         }
     ";
     let assembly = parse_production_units(project.path(), &[("ArrayWrite.bd", "Main", source)]);
