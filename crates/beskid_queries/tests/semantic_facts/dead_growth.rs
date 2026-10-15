@@ -217,7 +217,7 @@ fn fixed_corelib_shapes_and_published_handles_are_not_dead() {
         // The parameter is published before growth: a binding copy can outlive the call.
         "i64 Push(mut u8[] buffer, u8 value) { u8[] before = buffer; Array.Append<u8>(buffer, value); return Array.Len<u8>(before); }",
         // The parameter is captured by a nested lambda.
-        "unit Push(mut u8[] buffer, u8 value) { Array.Append<u8>(buffer, value); let capture = () => buffer; return; }",
+        "unit Push(mut u8[] buffer, u8 value) { Array.Append<u8>(buffer, value); let capture = () => Array.Len<u8>(buffer); return; }",
         // Length is read through a call argument.
         "unit Push(mut u8[] buffer, u8 value) { if Array.Len<u8>(buffer) > 4_i64 { return; } Array.Append<u8>(buffer, value); }",
         // A user-declared Append lookalike is not a canonical growth operation.
