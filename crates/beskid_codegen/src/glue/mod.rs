@@ -5,8 +5,8 @@ pub(crate) mod handles;
 mod rust;
 pub use artifact::{GeneratedFile, GlueArtifact, GlueArtifactError, GlueBindingManifest, GlueManifest};
 pub use checked::emit_checked_export;
-pub use rust::emit;
-pub use handles::{EmittedHandleTransport,emit_source_handle_transports};
+pub use rust::{emit, rust_identifier};
+pub use handles::{EmittedHandleTransport,GlueTransportKind,emit_source_handle_transports};
 
 /// The executable closure of a Glue packet: every selected item and every item it reaches
 /// through direct calls, plus the scheduler entry set when that closure needs it.

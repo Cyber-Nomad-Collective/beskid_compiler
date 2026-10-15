@@ -202,6 +202,10 @@ pub use semantic_contract::{
     RustOwnerTypeRow, glue_binding, glue_handle_shape, rust_owner_declarations, rust_owner_tables,
     validate_rust_owner_path,
 };
+pub use semantic_contract::{
+    GlueCallbackSignature, GlueEnumBrand, GlueLogicalForm, GlueRecordBrand, GlueRecordField, glue_interop_signature,
+    glue_logical_form, glue_type_shape,
+};
 
 mod corelib_source_authority;
 pub use corelib_source_authority::{canonical_corelib_source_path, registered_declaration_name};

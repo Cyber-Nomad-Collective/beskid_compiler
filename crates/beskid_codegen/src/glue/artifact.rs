@@ -33,6 +33,54 @@ pub struct GlueOpaqueType {
     pub reader:String,
     pub descriptor:String,
 }
+/// One field of a by-value record: its scalar logical name, C type and C ABI profile offset.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct GlueRecordField {
+    pub name: String,
+    pub logical: String,
+    pub c_type: String,
+    pub offset: u64,
+}
+/// A `[GlueRecord]` crossing by value as the C struct `c_name`. Size, alignment and offsets are
+/// the C ABI profile binding of the lowered record shape.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct GlueRecordType {
+    pub record_sha256: String,
+    pub identity: String,
+    pub c_name: String,
+    pub fields: Vec<GlueRecordField>,
+    pub size: u64,
+    pub alignment: u64,
+    pub constructor: String,
+    pub reader: String,
+    /// `[RustOwner(Path:..)]` Rust type of the record, when declared.
+    pub rust_owner: Option<String>,
+}
+/// A fieldless `[GlueEnum]` crossing as its `uint32_t` source-order variant index.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct GlueEnumType {
+    pub enum_sha256: String,
+    pub identity: String,
+    pub variants: Vec<String>,
+    pub constructor: String,
+    pub reader: String,
+    /// `[RustOwner(Path:..)]` Rust type of the enum, when declared.
+    pub rust_owner: Option<String>,
+}
+/// A call-scoped callback: `int32_t (*c_name)(uint64_t context, parameters..., result *out)`
+/// plus the context token. Parameters and result are scalar or enum physical types.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct GlueCallbackType {
+    pub callback_sha256: String,
+    pub c_name: String,
+    pub invoke: String,
+    pub parameters: Vec<GluePhysicalType>,
+    pub result: GluePhysicalType,
+}
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct GluePhysicalType {
@@ -40,6 +88,45 @@ pub struct GluePhysicalType {
     pub slots: Vec<String>,
     pub checked: bool,
     pub opaque:Option<GlueOpaqueType>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub record: Option<GlueRecordType>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub enumeration: Option<GlueEnumType>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub callback: Option<Box<GlueCallbackType>>,
+}
+impl GluePhysicalType {
+    /// A scalar, view or unit physical type with no nominal metadata.
+    pub fn plain(logical: impl Into<String>, slots: Vec<String>, checked: bool) -> Self {
+        Self { logical: logical.into(), slots, checked, opaque: None, record: None, enumeration: None, callback: None }
+    }
+}
+/// Symbol of the generated Cranelift record constructor `void *(const C *)`.
+pub fn record_constructor_symbol(record_sha256: &str) -> String {
+    format!("beskid_glue_record_{record_sha256}_construct")
+}
+/// Symbol of the generated Cranelift record reader `int32_t (void *, C *)`.
+pub fn record_reader_symbol(record_sha256: &str) -> String {
+    format!("beskid_glue_record_{record_sha256}_read")
+}
+/// Symbol of the generated Cranelift enum constructor `void *(uint32_t)`.
+pub fn enum_constructor_symbol(enum_sha256: &str) -> String {
+    format!("beskid_glue_enum_{enum_sha256}_construct")
+}
+/// Symbol of the generated Cranelift enum reader `int32_t (void *, uint32_t *)`.
+pub fn enum_reader_symbol(enum_sha256: &str) -> String {
+    format!("beskid_glue_enum_{enum_sha256}_read")
+}
+/// Every record, enum and callback physical type of `binding`, callback members included.
+pub fn nominal_values(binding: &GlueBindingManifest) -> Vec<&GluePhysicalType> {
+    let mut values = Vec::new();
+    for physical in binding.parameters.iter().chain(std::iter::once(&binding.result)) {
+        if let Some(callback) = &physical.callback {
+            values.extend(callback.parameters.iter().chain(std::iter::once(&callback.result)));
+        }
+        values.push(physical);
+    }
+    values
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -107,9 +194,15 @@ pub fn checked_body_symbol(binding: &GlueBindingManifest) -> String {
 pub fn checked_invocation_symbols(manifest: &GlueManifest) -> Vec<String> {
     manifest.bindings.iter().filter(|binding| binding.direction == "export").map(checked_invocation_symbol).collect()
 }
+/// Whether an export's primary C entry is its checked invocation: opaque handles, records and
+/// enums need managed construction or domain checks that only a status can report, and managed
+/// inputs with a scalar result need a status to report a failed input.
 pub fn requires_checked_primary(binding: &GlueBindingManifest) -> bool {
-    binding.result.opaque.is_some() || binding.parameters.iter().any(|ty|ty.opaque.is_some()) || binding.parameters.iter().any(|ty| matches!(ty.logical.as_str(), "utf8" | "bytes"))
-        && !matches!(binding.result.logical.as_str(), "utf8" | "bytes")
+    let value = |ty: &GluePhysicalType| ty.opaque.is_some() || ty.record.is_some() || ty.enumeration.is_some();
+    value(&binding.result)
+        || binding.parameters.iter().any(value)
+        || binding.parameters.iter().any(|ty| matches!(ty.logical.as_str(), "utf8" | "bytes"))
+            && !matches!(binding.result.logical.as_str(), "utf8" | "bytes")
 }
 pub fn export_transport_symbol(binding: &GlueBindingManifest) -> String {
     if requires_checked_primary(binding) { checked_invocation_symbol(binding) } else { binding.symbol.clone() }
@@ -240,6 +333,9 @@ impl GlueArtifact {
                     _=>return Err(invalid("opaque source transport metadata absent or attached to ordinary type")),
                 }
             }
+            for ty in nominal_values(binding) {
+                validate_nominal(ty).map_err(|message| invalid(message))?;
+            }
             let mut identity = binding.clone();
             identity.identity_sha256.clear();
             if binding.identity_sha256 != digest(&serde_json::to_vec(&identity)?) {
@@ -289,4 +385,71 @@ impl GlueArtifact {
         }
         Ok(())
     }
+}
+
+fn hex64(value: &str) -> bool {
+    value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
+}
+/// Record, enum and callback metadata is consistent with its logical name and slots; a nominal
+/// marker on an ordinary type, or a missing one, is rejected.
+fn validate_nominal(ty: &GluePhysicalType) -> Result<(), &'static str> {
+    let kinds = usize::from(ty.opaque.is_some())
+        + usize::from(ty.record.is_some())
+        + usize::from(ty.enumeration.is_some())
+        + usize::from(ty.callback.is_some());
+    if kinds > 1 {
+        return Err("physical type carries two nominal transports");
+    }
+    match (&ty.record, ty.logical.strip_prefix("record:")) {
+        (Some(record), Some(identity)) => {
+            if !hex64(&record.record_sha256)
+                || record.identity != identity
+                || record.c_name != format!("GlueRecord_{}", record.record_sha256)
+                || ty.slots != [record.c_name.clone()]
+                || record.constructor != record_constructor_symbol(&record.record_sha256)
+                || record.reader != record_reader_symbol(&record.record_sha256)
+                || record.fields.is_empty()
+                || record.fields.len() > 64
+            {
+                return Err("record transport metadata differs");
+            }
+        }
+        (None, None) => {}
+        _ => return Err("record transport metadata absent or attached to ordinary type"),
+    }
+    match (&ty.enumeration, ty.logical.strip_prefix("enum:")) {
+        (Some(enumeration), Some(identity)) => {
+            if !hex64(&enumeration.enum_sha256)
+                || enumeration.identity != identity
+                || ty.slots != ["uint32_t"]
+                || enumeration.constructor != enum_constructor_symbol(&enumeration.enum_sha256)
+                || enumeration.reader != enum_reader_symbol(&enumeration.enum_sha256)
+                || enumeration.variants.is_empty()
+                || enumeration.variants.len() > 4096
+            {
+                return Err("enum transport metadata differs");
+            }
+        }
+        (None, None) => {}
+        _ => return Err("enum transport metadata absent or attached to ordinary type"),
+    }
+    match (&ty.callback, ty.logical.strip_prefix("callback:")) {
+        (Some(callback), Some(digest)) => {
+            if !hex64(&callback.callback_sha256)
+                || callback.callback_sha256 != digest
+                || callback.c_name != format!("GlueCallback_{digest}")
+                || callback.invoke != format!("beskid_glue_callback_{digest}_invoke")
+                || ty.slots != [callback.c_name.clone(), "uint64_t".to_owned()]
+                || callback.parameters.len() > 16
+                || callback.parameters.iter().chain(std::iter::once(&callback.result)).any(|member| {
+                    member.callback.is_some() || member.record.is_some() || member.opaque.is_some()
+                })
+            {
+                return Err("callback transport metadata differs");
+            }
+        }
+        (None, None) => {}
+        _ => return Err("callback transport metadata absent or attached to ordinary type"),
+    }
+    Ok(())
 }

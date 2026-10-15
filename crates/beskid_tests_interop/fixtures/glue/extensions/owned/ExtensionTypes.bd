@@ -1,0 +1,8 @@
+// v0.6.1 Glue extension value types: a record by value and a fieldless enum.
+[GlueRecord(Library:"glue_manual")]
+[RustOwner(Path:"implementation::Point")]
+pub type Point { u8 tag, i64 x, f64 weight, bool visible, char mark, }
+
+[GlueEnum(Library:"glue_manual")]
+[RustOwner(Path:"implementation::Color")]
+pub enum Color { Red, Green, Blue, }
