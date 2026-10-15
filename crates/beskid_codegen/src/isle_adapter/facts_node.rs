@@ -140,6 +140,10 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
         self.collection_element_type_impl(key)
     }
 
+    fn collection_element_managed(&self, key: AstNodeKey) -> Option<ManagedReferenceFact> {
+        self.collection_element_managed_impl(key)
+    }
+
     fn direct_callee(&self, key: AstNodeKey) -> Option<DirectCallee> {
         self.direct_callee_impl(key)
     }

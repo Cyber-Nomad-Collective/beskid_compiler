@@ -191,8 +191,13 @@ fn semantic_scalar(name: &str) -> Option<SemanticTypeId> {
 
 /// Where a mapped value is stored: a rooted record or box (`target`, reloaded from its
 /// root after every allocation) or an element of a rooted array under construction.
-/// Collection is stop-the-world, so record stores need no barrier, as in generated
-/// code; array element stores use the canonical array construction barrier.
+/// Every target is allocated by the mapping itself and published only when it returns, so
+/// each store is an initialization store: the old value is null and an object allocated
+/// while its heap marks is black, so record stores need no barrier, as for aggregate
+/// literals in generated code. Array element stores take the insertion barrier
+/// `gc_write_barrier(array, value)`, which native adapters use for initialization stores
+/// only; no mapping store overwrites a slot of an existing object, so none needs the hybrid
+/// barrier `beskid_rt_v5_gc_write_barrier`.
 struct Slot {
     reload: String,
     address: String,
@@ -448,7 +453,7 @@ impl Emitter<'_, '_> {
                     let slot = Slot {
                         reload: "memcpy(&elements,array,8);".into(),
                         address: format!("elements+index*{stride}"),
-                        barrier: "beskid_rt_v5_array_write_barrier(array,",
+                        barrier: "gc_write_barrier(array,",
                     };
                     let body = self.transfer(*element, Some(&format!("data+index*{source_stride}")), &slot)?;
                     write!(
@@ -599,7 +604,7 @@ pub(crate) fn native_support() -> String {
          extern void *beskid_rt_v5_array_allocate_rooted(const void *,size_t *);\n\
          extern void *beskid_rt_v5_array_try_allocate_rooted(const void *,size_t *);\n\
          extern uint8_t beskid_rt_v5_array_construction_finish(size_t);\n\
-         extern uint8_t beskid_rt_v5_array_write_barrier(void *,void *);\n\
+         extern void gc_write_barrier(void *,void *);\n\
          extern size_t gc_root_handle(void *);\n\
          extern size_t beskid_rt_v5_gc_try_root_handle(void *);\n\
          extern void gc_unroot_handle(size_t);\n\

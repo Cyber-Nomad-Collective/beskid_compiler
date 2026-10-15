@@ -184,6 +184,7 @@ async fn set_document_rebuilds_same_text_after_cleared_facts() {
             syntax_hovers: Vec::new(),
             syntax_symbols: Vec::new(),
             bsol_semantic_token_candidates: Vec::new(),
+            syntax_attribute_names: Vec::new(),
             syntax_completion: None,
             syntax_inlay_hints: Vec::new(),
             syntax_documentation: Vec::new(),

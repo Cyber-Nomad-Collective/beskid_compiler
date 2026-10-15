@@ -2,10 +2,13 @@
 //!
 //! Lowering registers a root slot for every managed local and parameter at binding time
 //! (`gc_register_root`) and releases it on every exit edge (`gc_unregister_root`). A root only
-//! matters while a collection can run, and a collection runs only inside a runtime call made by
-//! the thread that owns the heap: the heap is per-thread state, collection is stop-the-world on
-//! that thread, and it is triggered only by allocation or an explicit collect, both of which are
-//! calls. Root registration itself never allocates through the GC or collects.
+//! matters while a collection step can run, and every collection step (mark start, a mark or
+//! sweep step, mark termination with its root rescan) runs only inside a runtime call made by the
+//! thread that owns the heap: the heap is per-thread state, the collector has no thread of its
+//! own, and a step is taken only at allocation, at a fiber yield or by an explicit collect, all of
+//! which are calls. Root registration itself never allocates through the GC or collects, and the
+//! hybrid write barrier (`beskid_rt_v5_gc_write_barrier`) only shades objects: it performs no
+//! mark or sweep work and is not a safepoint, so it counts as a non-collecting import.
 //!
 //! A function cannot reach a collection when every call it makes, other than root registration,
 //! goes to a function that cannot reach one either: another function of the same module with that
@@ -31,9 +34,17 @@ const UNREGISTER_ROOT: &[u8] = b"gc_unregister_root";
 
 /// Runtime services that never allocate through the GC, collect or switch fibers: they only read
 /// the string and array headers they are given and compare or copy plain bytes
-/// (`Runtime/Data/Strings.bd`, `Runtime/Data/Collections.bd`).
-pub const NON_COLLECTING_IMPORTS: &[&[u8]] =
-    &[b"str_eq", b"str_cmp", b"str_len", b"array_len", b"bytes_compare", b"bytes_copy"];
+/// (`Runtime/Data/Strings.bd`, `Runtime/Data/Collections.bd`), or, for the write barrier, shade
+/// the old and new value of a slot without doing mark work (`Runtime/Mem/Gc/Collection.bd`).
+pub const NON_COLLECTING_IMPORTS: &[&[u8]] = &[
+    b"str_eq",
+    b"str_cmp",
+    b"str_len",
+    b"array_len",
+    b"bytes_compare",
+    b"bytes_copy",
+    crate::write_barrier::GC_WRITE_BARRIER_SYMBOL.as_bytes(),
+];
 
 /// The call targets of `function` other than root registration: `Some(names)` for direct calls
 /// only, `None` when it makes an indirect call or uses another call form.
@@ -197,6 +208,28 @@ block0(v0: i64):
         assert!(!text.contains("call fn") && !text.contains("trapz"), "{text}");
         cranelift_codegen::verify_function(&function, &cranelift_codegen::settings::Flags::new(cranelift_codegen::settings::builder()))
             .expect("elided leaf verifies");
+    }
+
+    /// The guarded hybrid barrier is not a safepoint: a leaf whose only other calls are root
+    /// registrations stays eligible, and the barrier call itself remains.
+    #[test]
+    fn leaf_function_with_a_guarded_barrier_drops_root_registration() {
+        let text = LEAF
+            .replace(
+                "    fn1 = %gc_unregister_root sig1\n",
+                "    fn1 = %gc_unregister_root sig1\n    sig2 = (i64, i64) system_v\n    fn2 = %beskid_rt_v5_gc_write_barrier sig2\n    gv0 = symbol %beskid_rt_v5_gc_barrier_active\n",
+            )
+            .replace(
+                "    v3 = load.i64 v0\n    v4 = stack_addr.i64 ss0\n    call fn1(v4)\n    return v3\n}",
+                "    v3 = load.i64 v0\n    v5 = symbol_value.i64 gv0\n    v6 = load.i64 v5\n    brif v6, block1, block2\n\nblock1 cold:\n    call fn2(v0, v3)\n    jump block2\n\nblock2:\n    store v3, v0\n    v4 = stack_addr.i64 ss0\n    call fn1(v4)\n    return v3\n}",
+            );
+        let mut function = parse(&text);
+        assert_eq!(elide_leaf_function_roots(&mut function), 2, "{text}");
+        let elided = function.display().to_string();
+        assert!(!elided.contains("call fn0") && !elided.contains("call fn1"), "{elided}");
+        assert_eq!(elided.matches("call fn2(").count(), 1, "{elided}");
+        cranelift_codegen::verify_function(&function, &cranelift_codegen::settings::Flags::new(cranelift_codegen::settings::builder()))
+            .expect("elided leaf with a barrier verifies");
     }
 
     #[test]

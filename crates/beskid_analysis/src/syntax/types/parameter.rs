@@ -1,4 +1,4 @@
-use crate::syntax::{Identifier, Spanned, Type};
+use crate::syntax::{Attribute, Identifier, Spanned, Type};
 
 use beskid_ast_derive::AstNode;
 
@@ -7,6 +7,8 @@ use beskid_ast_derive::AstNode;
 /// may also be mutable); both flags are parser-derived and retained in the SDK constructor schema.
 #[derive(AstNode, Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Parameter {
+    #[ast(children)]
+    pub attributes: Vec<Spanned<Attribute>>,
     #[ast(skip)]
     pub bulk: bool,
     #[ast(skip)]
@@ -26,7 +28,8 @@ impl crate::parsing::parsable::Parsable for Parameter {
         }
 
         let span = crate::syntax::SpanInfo::from_span(&pair.as_span());
-        let mut inner = pair.into_inner();
+        let mut inner = pair.into_inner().peekable();
+        let attributes = crate::syntax::items::parse_helpers::parse_attributes(&mut inner)?;
         let first = inner.next().ok_or(crate::parsing::error::ParseError::missing(crate::parser::Rule::BeskidType))?;
 
         // Leading modifiers appear in fixed order: `bulk` (outermost calling-convention
@@ -54,6 +57,6 @@ impl crate::parsing::parsable::Parsable for Parameter {
             inner.next().ok_or(crate::parsing::error::ParseError::missing(crate::parser::Rule::Identifier))?;
         let name = crate::syntax::Identifier::parse(name_pair)?;
 
-        Ok(crate::syntax::Spanned::new(Self { bulk, mutable, name, ty }, span))
+        Ok(crate::syntax::Spanned::new(Self { attributes, bulk, mutable, name, ty }, span))
     }
 }

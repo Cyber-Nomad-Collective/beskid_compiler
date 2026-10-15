@@ -86,7 +86,7 @@ pub fn emit_host_platform_library_pair(
     std::fs::create_dir_all(&output_dir)
         .map_err(|err| AotError::Io { path: output_dir.clone(), message: err.to_string() })?;
     let context_object = compile_context_assembly(&target, &output_dir, name)?;
-    let platform_objects = compile_platform_objects(&target, &output_dir, name)?;
+    let platform_objects = compile_platform_objects(&target, &output_dir, name, profile)?;
     let target_triple = target.triple.as_str().to_owned();
     let manifest = AbiManifestV5::canonical_runtime(target.clone());
     let mut required_symbols = RuntimeAuditMetadata::for_manifest(&manifest, &canonical_runtime_source_hash())

@@ -630,15 +630,25 @@ fn with_owned_glue_input<T>(
     manifest: &Path,
     execute: impl FnOnce(&CodegenInput<'_>, &[SyntaxModuleItem]) -> anyhow::Result<T>,
 ) -> anyhow::Result<T> {
+    with_glue_input(manifest, "manual_owned", CONSUMER_LIBRARY, execute)
+}
+
+/// [`with_owned_glue_input`] for the fixture project `project` and its target `target`.
+fn with_glue_input<T>(
+    manifest: &Path,
+    project: &str,
+    target: &str,
+    execute: impl FnOnce(&CodegenInput<'_>, &[SyntaxModuleItem]) -> anyhow::Result<T>,
+) -> anyhow::Result<T> {
     let resolved = beskid_analysis::services::resolve_input(
         None,
         Some(&manifest.to_path_buf()),
-        Some("ManualOwned"),
+        Some(target),
         None,
         beskid_analysis::projects::WorkspacePrepareOptions { offline: true, ..Default::default() },
     )?;
-    let plan = resolved.compile_plan.as_ref().ok_or_else(|| anyhow::anyhow!("owned fixture has no CompilePlan"))?;
-    anyhow::ensure!(plan.project_name == "manual_owned" && plan.target.name == "ManualOwned");
+    let plan = resolved.compile_plan.as_ref().ok_or_else(|| anyhow::anyhow!("glue fixture has no CompilePlan"))?;
+    anyhow::ensure!(plan.project_name == project && plan.target.name == target);
     // Corelib depends on the native Serialization Mod: qualify it against this private prefix's kit.
     let native_mods = beskid_tests_mod_host::installed_runtime_mod_host(plan)?;
     let front = beskid_queries::prepare_compilation(
@@ -738,6 +748,7 @@ fn manifest_owner_sources(manifest: &Path) -> anyhow::Result<Vec<RustOwnerSource
 
 fn build_owner(
     input: &CodegenInput<'_>,
+    consumer: &GlueArtifact,
     imports: &[GlueDeclaration],
     sources: &[RustOwnerSource],
     prefix: &Path,
@@ -820,6 +831,7 @@ fn build_owner(
         selected: &selected,
         native_library: OWNER_LIBRARY,
         expected: &packet,
+        consumer,
         sources,
         types: &types,
         callables: &callables,
@@ -880,8 +892,17 @@ fn build_owned(prefix: &Path, work: &Path, variant: OwnerVariant) -> anyhow::Res
         let imports =
             declarations.iter().filter(|declaration| declaration.is_import_of(OWNER_LIBRARY)).cloned().collect::<Vec<_>>();
         let selected = declarations.iter().map(|declaration| declaration.item.clone()).collect::<Vec<_>>();
-        let owner =
-            build_owner(input, &imports, &sources, prefix, &tools, &work.join(native_name(OWNER_LIBRARY)), variant)?;
+        let consumer_packet = beskid_codegen::glue::emit(input, &selected, CONSUMER_LIBRARY)?;
+        let owner = build_owner(
+            input,
+            &consumer_packet,
+            &imports,
+            &sources,
+            prefix,
+            &tools,
+            &work.join(native_name(OWNER_LIBRARY)),
+            variant,
+        )?;
         let (consumer, packet) =
             build_consumer(input, items, &selected, prefix, &work.join(native_name(CONSUMER_LIBRARY)), &owner)?;
         Ok(OwnedBuild { owner, consumer, packet })
@@ -2566,3 +2587,6 @@ fn v06_native_test_object_compiles_shared_helper_once_and_links_distinct_entries
         },
     );
 }
+
+#[path = "glue_extensions.rs"]
+mod extensions;

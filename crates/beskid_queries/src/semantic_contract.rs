@@ -26,7 +26,7 @@ pub use contracts::{AppliedContractIdentity, applied_contract_argument_is_type};
 mod events;
 mod expected_type;
 pub use expected_type::expected_type_in_environment;
-use expected_type::expected_type_tracked;
+use expected_type::{expected_type_tracked, lambda_argument_parameter_identities};
 mod portable_nominal;
 pub(crate) use portable_nominal::serialization_impl_receiver;
 pub use portable_nominal::{PortableNominalIdentity, portable_nominal_identity};
@@ -49,6 +49,10 @@ pub use glue::{
     GlueRustOwnerCallable, RustOwnerCallableRow, RustOwnerDeclaration, RustOwnerPlacement, RustOwnerTables,
     RustOwnerTypeRow, glue_binding, glue_handle_shape, rust_owner_declarations, rust_owner_tables,
     validate_rust_owner_path,
+};
+pub use glue::{
+    GlueCallbackSignature, GlueEnumBrand, GlueLogicalForm, GlueRecordBrand, GlueRecordField, glue_interop_signature,
+    glue_logical_form, glue_type_shape,
 };
 mod layouts;
 mod legality;
@@ -77,6 +81,12 @@ pub use reserved_failure::{
     reserved_failure_constructor, serialization_publication_methods,
 };
 mod syntax_facts;
+mod transfer;
+pub use transfer::{
+    TransferClass, TransferMarker, TransferMarkerAttribute, TransferNeverReason, nominal_transfer_class,
+    transfer_class_of_type, transfer_marker_contract,
+};
+use transfer::{has_recognized_attribute, marker_attributes, marker_bound_reason, recognized_attribute_use, transfer_class};
 mod typed_arrays;
 mod typing;
 
@@ -90,7 +100,7 @@ use abi::{
     control_flow_for_node,
     control_flow_tracked, corelib_service_abi_signature, exact_assembled_nominal_envelope, function_value_specialization,
     generic_abi_type,
-    generic_parameter_reference_name, generic_specialization_instance_for_call, generic_type_name,
+    generic_parameter_reference_name, generic_specialization_instance_for_call, generic_type_name, infer_source_substitutions,
     integer_has_explicit_abi_suffix, integer_literal_fits_abi, integer_literal_text, integer_literal_u64,
     item_abi_signature_tracked, item_abi_type_from_syntax, item_signature_for_node, item_signature_tracked,
     manifest_builtin_abi_signature, signature_from_syntax,
@@ -101,12 +111,12 @@ use calls::{
     PathCallResolution, call_arguments_tracked, call_lowering_for_node, call_lowering_tracked,
     canonical_intrinsic_parameter_type, canonical_result_definition_for_type, canonical_result_variant,
     canonical_runtime_intrinsic_scope, cast_intents_for_node, cast_intents_tracked, corelib_service_for,
-    expected_cast_type, expected_explicit_call_argument_type, explicit_generic_type_argument_syntax,
+    expected_cast_type, call_explicit_member_type_arguments, expected_explicit_call_argument_type, explicit_generic_type_argument_syntax,
     exported_generic_type_named, expression_fact_target, expression_is_lambda, flatten_member_as_path_declaration,
     for_iterator_fact_tracked, for_statement_in_generic_context, function_declares_generics,
     generic_call_instantiation_for_node, specialized_for_element_identity,
     generic_call_instantiation_tracked, generic_call_specialization_tracked, generic_call_template_tracked,
-    generic_call_uses_parameter_type_arguments, generic_callable_parameters, generic_nominal_method_receiver_tracked,
+    generic_call_uses_parameter_type_arguments, generic_callable_owner_count, generic_callable_parameters, method_own_generic_names, generic_nominal_method_receiver_tracked,
     generic_source_expression_identity, generic_source_local_identity, generic_source_type_identity,
     generic_source_type_identity_with_substitutions, imported_call_receiver_exists,
     imported_generic_nominal_receiver_requires_instantiation,
@@ -160,7 +170,9 @@ use layouts::{
     integer_primitive_for_semantic, semantic_type_for_primitive, semantic_type_from_syntax, unique_exported_type_in_unit, unique_public_type_in_unit, unique_type_in_unit,
 };
 pub use legality::{
-    CallArgumentTypeMismatch, CallArityMismatch, GateObligation, GateObligationKind, GenericParameterConflict,
+    AttributeResolution, CallArgumentTypeMismatch, CallArityMismatch, GateObligation, UnitAttributeDeclaration,
+    UnitAttributeSurface, UnitAttributeUse, attribute_findings, check_attribute_obligations, resolve_attribute_use,
+    unit_attribute_surface, GateObligationKind, GenericParameterConflict,
     ImmutableLocalAssignment,
     MemberReferenceFinding, MemberReferenceKind, NonExhaustiveMatch, TypingObligation, TypingObligationKind,
     UnitObligation, UnitObligationKind, UnresolvedCallKind, UnresolvedCallTarget, UnresolvedImport,

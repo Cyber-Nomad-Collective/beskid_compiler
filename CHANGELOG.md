@@ -238,6 +238,53 @@ development log stays under [Unreleased] below.
 
 ## [Unreleased]
 
+### Changed
+
+- Generated code emits the 0.6.2 hybrid write barrier (OpenSpec
+  `v062-captures-and-move`, tasks 8.6, 8.7, 9.6). A store that overwrites a
+  GC-managed field or array element of an existing object loads
+  `beskid_rt_v5_gc_barrier_active` and, only when it is non-zero, calls
+  `beskid_rt_v5_gc_write_barrier(slot, value)` in a cold block before the
+  store. The managed-reference fact of the store target decides; a target
+  without the fact is a lowering error. The collection owner field store and
+  `Clear`/`RemoveLast` element clears are barriered. Initialization stores
+  (aggregate, array and injection literals, bulk arguments, spawn
+  environments) carry no barrier, and the per-element
+  `beskid_rt_v5_array_write_barrier` calls and `ArrayLayout::needs_write_barrier`
+  are removed. Leaf root elision treats the barrier as a non-safepoint call.
+  Native Mod adapters and dynamic mapping only initialize objects they
+  allocate and keep the 0.6.0 construction barriers.
+
+### Added
+
+- Rust Glue records by value (OpenSpec `v061-glue-extensions`). A `[GlueRecord]`
+  type with 1 to 64 scalar fields crosses the C ABI as a C struct whose layout
+  the C ABI profile computes; values are copied, and an out-of-domain Bool or
+  `char` field from the foreign side is a checked failure.
+- Rust Glue fieldless enums. A `[GlueEnum]` crosses as its `u32` source-order
+  variant index; a discriminant that names no variant is a checked failure.
+  Enums with payload variants are rejected.
+- Rust Glue callbacks. A function type is admitted as a Glue import parameter
+  with scalar or enum members. The foreign side receives an invoke pointer and a
+  context token that is valid only during the import call and only on the
+  calling thread; any other invocation returns status 2. The Rust owner sees a
+  `&mut dyn FnMut`.
+- `RustOwner(Path:..)` on a `GlueRecord` or `GlueEnum` type names the owner's
+  Rust type; the owner build checks its layout and variant names at compile
+  time.
+- The Rust owner crate has a generated `beskid` module with one function per
+  export of its consumer image, bound by the loader. Owner code calls Beskid
+  exports from inside an import call; any other thread gets
+  `GlueError::ForeignThread`.
+
+### Changed
+
+- Glue lowers to the Interop.Contracts vocabulary in one function
+  (`glue_type_shape`, `glue_interop_signature`). Scalar shapes carry a value
+  domain, so Bool maps to `u8` in the Bool domain in every C profile.
+- The Rust owner build takes the consumer packet, and owners without opaque
+  handle types are admitted.
+
 ### Fixed
 
 - A `match` scrutinee stays rooted while a `when` guard or a materialized string

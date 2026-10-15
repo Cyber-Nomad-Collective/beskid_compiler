@@ -148,6 +148,7 @@ impl Emit for Spanned<Type> {
 
 impl Emit for Parameter {
     fn emit<W: Write>(&self, w: &mut W, cx: &mut EmitCtx) -> Result<(), EmitError> {
+        crate::format::attribute_lists::emit_inline_attributes(&self.attributes, w, cx)?;
         if self.bulk {
             cx.token(w, "bulk")?;
             cx.space(w)?;
@@ -170,11 +171,7 @@ impl Emit for Spanned<Parameter> {
 
 impl Emit for Field {
     fn emit<W: Write>(&self, w: &mut W, cx: &mut EmitCtx) -> Result<(), EmitError> {
-        for attribute in &self.attributes {
-            attribute.emit(w, cx)?;
-            cx.nl(w)?;
-            cx.write_indent(w)?;
-        }
+        crate::format::attribute_lists::emit_attribute_block(&self.attributes, w, cx)?;
         self.visibility.emit(w, cx)?;
         match self.kind {
             FieldKind::Value => {

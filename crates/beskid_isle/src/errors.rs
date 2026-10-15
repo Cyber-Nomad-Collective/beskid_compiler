@@ -22,6 +22,9 @@ pub enum LoweringErrorKind {
     InvalidPrimitiveNumericConversion(&'static str),
     InvalidArrayLayout,
     UnprovenCollectionOwner,
+    /// A store into a field or array element whose target has no managed-reference fact, so
+    /// lowering cannot decide whether the store needs the write barrier.
+    MissingManagedReferenceFact,
     InvalidStructLayout,
     InvalidStructField(u32),
     InvalidEnumLayout,
@@ -79,6 +82,7 @@ impl LoweringError {
             }
             LoweringErrorKind::InvalidArrayLayout => "InvalidArrayLayout".to_owned(),
             LoweringErrorKind::UnprovenCollectionOwner => "UnprovenCollectionOwner".to_owned(),
+            LoweringErrorKind::MissingManagedReferenceFact => "MissingManagedReferenceFact".to_owned(),
             LoweringErrorKind::InvalidStructLayout => "InvalidStructLayout".to_owned(),
             LoweringErrorKind::InvalidStructField(index) => {
                 format!("InvalidStructField({index})")

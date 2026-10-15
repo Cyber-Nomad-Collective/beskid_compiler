@@ -611,10 +611,11 @@ pub(in crate::semantic_contract) fn nominal_local_member_receiver(
         let (_, identity) = super::super::layouts::nominal_field_projection(db, receiver)?.ok()?;
         let declaration = super::super::contracts::concrete_declaration(db, key, &identity)?;
         let member = path.segments.last()?;
-        if !member.node.type_args.is_empty() {
+        let method = unique_nominal_method_declaration(db, declaration, &member.node.name.node.name)?;
+        // Type arguments on the member name bind a generic method's own type parameters.
+        if !member.node.type_args.is_empty() && method_own_generic_names(db, method).is_empty() {
             return None;
         }
-        let method = unique_nominal_method_declaration(db, declaration, &member.node.name.node.name)?;
         let target = db.syntax_unit(method.unit).filter(|syntax| syntax.accepts_key(db, method))?;
         let definition = target
             .syntax_index(db)
@@ -628,12 +629,14 @@ pub(in crate::semantic_contract) fn nominal_local_member_receiver(
     let [receiver, member] = path.segments.as_slice() else {
         return None;
     };
-    if !receiver.node.type_args.is_empty() || !member.node.type_args.is_empty() {
+    if !receiver.node.type_args.is_empty() {
         return None;
     }
     let (declaration, receiver) =
         nominal_local_receiver_declaration(db, program, index, key, receiver.node.name.node.name.as_str())?;
-    unique_nominal_method_declaration(db, declaration, &member.node.name.node.name).map(|method| (method, receiver))
+    let method = unique_nominal_method_declaration(db, declaration, &member.node.name.node.name)?;
+    // Type arguments on the member name bind a generic method's own type parameters.
+    (member.node.type_args.is_empty() || !method_own_generic_names(db, method).is_empty()).then_some((method, receiver))
 }
 #[salsa::tracked(persist)]
 pub(in crate::semantic_contract) fn nominal_member_receiver_tracked(

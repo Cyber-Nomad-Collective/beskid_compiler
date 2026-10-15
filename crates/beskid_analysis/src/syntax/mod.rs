@@ -10,7 +10,7 @@ pub mod items;
 pub mod statements;
 pub mod types;
 
-pub use common::{HasSpan, Identifier, SpanInfo, Spanned, Visibility};
+pub use common::{HasSpan, Identifier, SpanInfo, Spanned, TypeParameter, Visibility};
 pub use expressions::{
     ArrayLiteralExpression, AssignExpression, AssignOp, BinaryExpression, BinaryOp, BlockExpression, CallExpression,
     ClifBlockExpression, CodeStringLiteral, CodeStringSegment, EnumConstructorExpression, EnumPattern, Expression,
@@ -35,4 +35,4 @@ pub use statements::{
     Block, BreakStatement, ContinueStatement, ElseBranch, ExpressionStatement, ForStatement, IfStatement, LetStatement,
     RangeExpression, ReturnStatement, ScopedUseStatement, Statement, WhileStatement, statements_may_fall_through,
 };
-pub use types::{EnumPath, Field, FieldKind, Parameter, Path, PathSegment, PrimitiveType, Type};
+pub use types::{EnumPath, Field, FieldKind, Parameter, Path, PathSegment, PrimitiveType, ReceiverParameter, Type};

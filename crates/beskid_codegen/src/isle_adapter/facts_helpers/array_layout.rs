@@ -27,7 +27,7 @@ impl SyntaxNodeFacts<'_> {
         let element = map_signature_type(self.isa?, plan.element_type)?;
         let stride = u32::try_from(plan.stride).ok()?;
         let length = u32::try_from(plan.length).ok()?;
-        Some(scalar_aware_array_layout(plan.element_type, element, stride, length, plan.alignment.ilog2() as u8))
+        Some(beskid_isle::ArrayLayout::new(element, stride, length, plan.alignment.ilog2() as u8))
     }
 
     /// Layout for a `bulk`-parameter call's packed array, keyed on the `CallExpression` node.
@@ -41,7 +41,7 @@ impl SyntaxNodeFacts<'_> {
         let element = map_signature_type(self.isa?, plan.element_type)?;
         let stride = u32::try_from(plan.stride).ok()?;
         let length = u32::try_from(plan.length).ok()?;
-        Some(scalar_aware_array_layout(plan.element_type, element, stride, length, plan.alignment.ilog2() as u8))
+        Some(beskid_isle::ArrayLayout::new(element, stride, length, plan.alignment.ilog2() as u8))
     }
 
     /// The iterator fact of a `ForStatement`, through the enclosing generic specialization when
@@ -68,7 +68,7 @@ impl SyntaxNodeFacts<'_> {
         let ForIterableSource::Array { element_managed } = fact.source else { return None };
         let element = map_signature_type(self.isa?, fact.element_type)?;
         let stride = element.bytes();
-        let layout = scalar_aware_array_layout(fact.element_type, element, stride, 0, stride.ilog2() as u8);
+        let layout = beskid_isle::ArrayLayout::new(element, stride, 0, stride.ilog2() as u8);
         let element_managed = match element_managed {
             ManagedReferenceKind::GcManaged => ManagedReferenceFact::GcManaged,
             ManagedReferenceKind::NativeOrScalar => ManagedReferenceFact::NativeOrScalar,
@@ -123,7 +123,7 @@ impl SyntaxNodeFacts<'_> {
         let element = map_signature_type(self.isa?, plan.element_type)?;
         let stride = u32::try_from(plan.stride).ok()?;
         let length = u32::try_from(plan.length).ok()?;
-        Some(scalar_aware_array_layout(plan.element_type, element, stride, length, plan.alignment.ilog2() as u8))
+        Some(beskid_isle::ArrayLayout::new(element, stride, length, plan.alignment.ilog2() as u8))
     }
 
     /// Whether one `CallExpression` uses the bulk calling convention.

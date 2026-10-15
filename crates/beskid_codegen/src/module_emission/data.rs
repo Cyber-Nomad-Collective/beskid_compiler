@@ -176,8 +176,43 @@ fn collect_ast_nodes(
     }
 }
 
-/// Emit artifact-owned closure descriptor/pointer-map/allocation-request data.
+/// Declare the runtime kit data symbols that lowered functions read through a symbol global as
+/// imports: today the write-barrier process word `beskid_rt_v5_gc_barrier_active`, which the
+/// guarded barrier of a managed field or element store loads. The kit defines it; a module that
+/// does not read it declares nothing.
+pub(crate) fn declare_runtime_data_imports<M: Module>(module: &mut M, artifact: &CodegenArtifact) -> ModuleResult<()> {
+    for function in &artifact.functions {
+        declare_function_runtime_data_imports(module, &function.function)?;
+    }
+    Ok(())
+}
+
+/// Declare the runtime kit data imports one lowered function reads ([`declare_runtime_data_imports`]),
+/// for bodies that are defined outside the artifact (checked-effect closures) before their symbol
+/// globals are remapped. Declaring the same import twice yields the same data id.
+pub(crate) fn declare_function_runtime_data_imports<M: Module>(
+    module: &mut M,
+    function: &cranelift_codegen::ir::Function,
+) -> ModuleResult<()> {
+    let referenced = function.global_values.values().any(|global| {
+        matches!(
+            global,
+            cranelift_codegen::ir::GlobalValueData::Symbol {
+                name: cranelift_codegen::ir::ExternalName::TestCase(name),
+                ..
+            } if name.raw() == beskid_isle::GC_BARRIER_ACTIVE_SYMBOL.as_bytes()
+        )
+    });
+    if referenced {
+        module.declare_data(beskid_isle::GC_BARRIER_ACTIVE_SYMBOL, Linkage::Import, false, false)?;
+    }
+    Ok(())
+}
+
+/// Emit artifact-owned closure descriptor/pointer-map/allocation-request data, after declaring the
+/// runtime data symbols the artifact's functions import ([`declare_runtime_data_imports`]).
 pub fn emit_closure_static_plans<M: Module>(module: &mut M, artifact: &CodegenArtifact) -> ModuleResult<()> {
+    declare_runtime_data_imports(module, artifact)?;
     if artifact.event_handler_wrapper_required {
         crate::emit_event_handler_static_data(module)?;
     }

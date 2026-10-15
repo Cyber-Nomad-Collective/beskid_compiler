@@ -246,7 +246,7 @@ fn malformed_method_attributes_are_rejected_with_spans() {
 fn misplaced_rust_owner_is_rejected() {
     let export = "[Export(Abi:\"C\", Symbol:\"exported\")]\n[RustOwner(Path:\"implementation::exported\")]\npub i32 Exported(i32 value) { return value; }\n";
     let fixture = Fixture::new(&format!("{}{export}", owned_source()));
-    assert_spanned(&fixture.declarations_error(), "allowed only on a GlueHandle type or an Extern contract method");
+    assert_spanned(&fixture.declarations_error(), "allowed only on a GlueHandle, GlueRecord or GlueEnum type or an Extern contract method");
     assert_spanned(&fixture.binding_error(fixture.function("Exported")), "not allowed on an Export function");
 
     for misplaced in [
@@ -257,7 +257,7 @@ fn misplaced_rust_owner_is_rejected() {
         "pub type Fielded {\n    [RustOwner(Path:\"implementation::field\")]\n    u64 token,\n}\n",
     ] {
         let fixture = Fixture::new(&format!("{}{misplaced}", owned_source()));
-        assert_spanned(&fixture.declarations_error(), "allowed only on a GlueHandle type or an Extern contract method");
+        assert_spanned(&fixture.declarations_error(), "allowed only on a GlueHandle, GlueRecord or GlueEnum type or an Extern contract method");
     }
 }
 

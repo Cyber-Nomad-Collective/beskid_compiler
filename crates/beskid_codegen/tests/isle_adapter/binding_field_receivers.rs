@@ -219,7 +219,9 @@ unit Main() { Build(); return; }
         .expect("lowered Build function");
     let clif = build.function.display().to_string();
     assert!(clif.contains("beskid_rt_v5_array_allocate_rooted"), "{clif}");
-    assert!(clif.contains("beskid_rt_v5_array_write_barrier"), "{clif}");
+    // Element stores initialize the array the literal allocated: no barrier of either kind.
+    assert!(!clif.contains("beskid_rt_v5_array_write_barrier"), "{clif}");
+    assert!(!clif.contains("beskid_rt_v5_gc_write_barrier"), "{clif}");
 }
 
 #[test]

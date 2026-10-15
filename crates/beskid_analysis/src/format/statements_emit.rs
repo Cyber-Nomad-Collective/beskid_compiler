@@ -50,6 +50,7 @@ impl LetStatement {
 
 impl Emit for LetStatement {
     fn emit<W: Write>(&self, w: &mut W, cx: &mut EmitCtx) -> Result<(), EmitError> {
+        crate::format::attribute_lists::emit_attribute_block(&self.attributes, w, cx)?;
         self.emit_binding(w, cx)?;
         w.write_char(';')?;
         Ok(())

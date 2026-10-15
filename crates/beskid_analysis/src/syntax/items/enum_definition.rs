@@ -5,7 +5,7 @@ use crate::parser::Rule;
 use crate::parsing::error::ParseError;
 use crate::parsing::parsable::Parsable;
 use crate::syntax::items::parse_helpers::{
-    parse_attributes, parse_doc_attached_list, parse_identifier_list, parse_visibility_or_default,
+    parse_attributes, parse_doc_attached_list, parse_type_parameter_list, parse_visibility_or_default,
 };
 use crate::syntax::{Attribute, EnumVariant, Identifier, SpanInfo, Spanned, Visibility};
 
@@ -21,7 +21,7 @@ pub struct EnumDefinition {
     #[ast(child)]
     pub name: Spanned<Identifier>,
     #[ast(children)]
-    pub generics: Vec<Spanned<Identifier>>,
+    pub generics: Vec<Spanned<crate::syntax::TypeParameter>>,
     #[ast(children)]
     pub variants: Vec<Spanned<EnumVariant>>,
     #[ast(skip)]
@@ -42,7 +42,7 @@ impl Parsable for EnumDefinition {
 
         for item in inner {
             match item.as_rule() {
-                Rule::GenericParameters => generics = parse_identifier_list(item)?,
+                Rule::GenericParameters => generics = parse_type_parameter_list(item)?,
                 Rule::EnumVariantList => {
                     let (parsed_variants, parsed_docs) =
                         parse_doc_attached_list(item, Rule::EnumVariantWithDocs, Rule::EnumVariant)?;
