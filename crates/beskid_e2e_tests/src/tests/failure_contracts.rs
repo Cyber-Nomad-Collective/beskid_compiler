@@ -76,3 +76,16 @@ fn build_reports_linker_unavailable_with_invalid_cc() {
     assert_failure(&result, "build invalid linker toolchain");
     assert_output_contains(&result, "Linker tool not available", "build invalid linker toolchain");
 }
+
+#[test]
+fn integer_constant_outside_its_destination_is_a_range_error_not_an_internal_error() {
+    let workspace = E2eWorkspace::from_fixture("integer_constant_range");
+    let manifest = workspace.join("IntegerConstantRange.bproj");
+    let cli = BeskidCliInvoker::new();
+
+    let run = cli.run(["run", "--project", manifest.to_str().expect("manifest path str"), "--target", "App"]);
+    assert_failure(&run, "run integer-constant-range fixture");
+    assert_output_contains(&run, "numeric literal outside i32 range", "run integer-constant-range fixture");
+    let text = format!("{}{}", String::from_utf8_lossy(&run.stdout), String::from_utf8_lossy(&run.stderr));
+    assert!(!text.contains("internal compiler error"), "the range error must not be an ICE:\n{text}");
+}

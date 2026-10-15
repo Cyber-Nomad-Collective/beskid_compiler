@@ -92,6 +92,12 @@ pub fn constant_integer(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<i64
     with_registered_syntax(db, key, constant_integer_tracked)
 }
 
+/// The integer literal a module constant path names. A constant use behaves as that literal:
+/// its natural type and its fit in a destination type come from this text.
+pub fn constant_integer_literal(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<Arc<str>> {
+    with_registered_syntax(db, key, constant_integer_literal_tracked)
+}
+
 /// Return the deterministic owner-qualified slot for an exact local declaration identifier.
 ///
 /// Function and method parameters precede body declarations in expanded-AST order. Lambda frames

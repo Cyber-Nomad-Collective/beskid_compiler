@@ -260,24 +260,19 @@ pub(in crate::semantic_contract) fn for_iterable_declared_array_element<'a>(
     }
 }
 
+/// The natural type of an integer literal, with no destination: its suffix, else `i32` when the
+/// value fits, else `i64`, else `word` for a hexadecimal bit pattern above `i64::MAX`. The
+/// syntax-layer [`integer_literal_primitive_type`](beskid_analysis::syntax::integer_literal_primitive_type)
+/// is the sole authority, so a literal's type never claims a width that cannot hold its value.
+pub(in crate::semantic_contract) fn integer_literal_semantic_type(text: &str) -> SemanticTypeId {
+    semantic_type_for_primitive(beskid_analysis::syntax::integer_literal_primitive_type(text))
+}
+
 pub(in crate::semantic_contract) fn semantic_type_for_literal(
     literal: &beskid_analysis::syntax::Literal,
 ) -> SemanticTypeId {
     match literal {
-        beskid_analysis::syntax::Literal::Integer(value) if value.ends_with("_i8") => SemanticTypeId::I8,
-        beskid_analysis::syntax::Literal::Integer(value) if value.ends_with("_i16") => SemanticTypeId::I16,
-        beskid_analysis::syntax::Literal::Integer(value) if value.ends_with("_u16") => SemanticTypeId::U16,
-        beskid_analysis::syntax::Literal::Integer(value) if value.ends_with("_u64") => SemanticTypeId::U64,
-        beskid_analysis::syntax::Literal::Integer(value) if value.ends_with("_i32") => SemanticTypeId::I32,
-        beskid_analysis::syntax::Literal::Integer(value) if value.ends_with("_i64") => SemanticTypeId::I64,
-        beskid_analysis::syntax::Literal::Integer(value) if value.ends_with("_u32") => SemanticTypeId::U32,
-        beskid_analysis::syntax::Literal::Integer(value) if value.ends_with("_u8") => SemanticTypeId::U8,
-        beskid_analysis::syntax::Literal::Integer(value)
-            if value.starts_with("0x") && integer_literal_u64(value).is_some_and(|number| number > i64::MAX as u64) =>
-        {
-            SemanticTypeId::WORD
-        }
-        beskid_analysis::syntax::Literal::Integer(_) => SemanticTypeId::I32,
+        beskid_analysis::syntax::Literal::Integer(value) => integer_literal_semantic_type(value),
         beskid_analysis::syntax::Literal::Float(value) if value.ends_with("_f32") => SemanticTypeId::F32,
         beskid_analysis::syntax::Literal::Float(_) => SemanticTypeId::F64,
         beskid_analysis::syntax::Literal::String(_) => SemanticTypeId::STRING,

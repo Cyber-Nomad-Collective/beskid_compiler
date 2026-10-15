@@ -101,62 +101,133 @@ pub(super) fn constant_integer_tracked(
     key: AstNodeKey,
 ) -> SemanticQueryResult<i64> {
     with_node(db, syntax, key, |program, index, node| {
-        let path = node.of::<beskid_analysis::syntax::PathExpression>()?;
-        let [segment] = path.path.node.segments.as_slice() else {
-            return None;
-        };
-        let name = segment.node.name.node.name.as_str();
-        if !segment.node.type_args.is_empty() || resolve_lexical_declaration(program, index, key.node, name).is_some() {
-            return None;
-        }
-        if let Some(value) = unit_constant_integer(program, name) {
+        let name = unshadowed_constant_name(program, index, key, node)?;
+        if let Some(value) = unit_constant_literal(program, name).and_then(constant_literal_value) {
             return Some(value);
         }
-        imported_constant_integer(db, key, name)
+        imported_constant(db, key, |program| unit_constant_literal(program, name).and_then(constant_literal_value))
     })
 }
 
-/// Search one unit's top-level items for an integer constant matching `name`.
-fn unit_constant_integer(
+/// The integer literal an unshadowed module constant path names, through the same current-unit
+/// and import-closure authority as [`constant_integer_tracked`]. A constant use behaves as its
+/// declared literal: its natural type, and its fit in a destination type, come from this text.
+/// An import closure that declares the name with literals of different values or different
+/// natural types resolves to nothing.
+#[salsa::tracked(persist)]
+pub(super) fn constant_integer_literal_tracked(
+    db: &dyn Db,
+    syntax: SyntaxUnitInput,
+    key: AstNodeKey,
+) -> SemanticQueryResult<Arc<str>> {
+    with_node(db, syntax, key, |program, index, node| {
+        let name = unshadowed_constant_name(program, index, key, node)?;
+        if let Some(text) = unit_constant_literal(program, name) {
+            return constant_literal_value(text).map(|_| Arc::from(text));
+        }
+        imported_constant(db, key, |program| {
+            let text = unit_constant_literal(program, name)?;
+            let value = constant_literal_value(text)?;
+            let primitive = beskid_analysis::syntax::integer_literal_primitive_type(text);
+            Some(ConstantLiteralCandidate { value, primitive: format!("{primitive:?}"), text: Arc::from(text) })
+        })
+        .map(|candidate| candidate.text)
+    })
+}
+
+/// One import-closure declaration of a constant literal. Candidates compare by value and natural
+/// type only, so the same machine value spelled twice (`255`, `0xFF`) is one candidate.
+#[derive(Debug, Clone)]
+struct ConstantLiteralCandidate {
+    value: i64,
+    primitive: String,
+    text: Arc<str>,
+}
+
+impl PartialEq for ConstantLiteralCandidate {
+    fn eq(&self, other: &Self) -> bool {
+        (self.value, &self.primitive) == (other.value, &other.primitive)
+    }
+}
+
+impl Eq for ConstantLiteralCandidate {}
+
+impl PartialOrd for ConstantLiteralCandidate {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for ConstantLiteralCandidate {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        (self.value, &self.primitive).cmp(&(other.value, &other.primitive))
+    }
+}
+
+/// The name a single-segment, non-generic path names when no lexical declaration shadows it.
+fn unshadowed_constant_name<'a>(
     program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    key: AstNodeKey,
+    node: beskid_analysis::syntax_query::DynNodeRef<'a>,
+) -> Option<&'a str> {
+    let path = node.of::<beskid_analysis::syntax::PathExpression>()?;
+    let [segment] = path.path.node.segments.as_slice() else {
+        return None;
+    };
+    let name = segment.node.name.node.name.as_str();
+    if !segment.node.type_args.is_empty() || resolve_lexical_declaration(program, index, key.node, name).is_some() {
+        return None;
+    }
+    Some(name)
+}
+
+/// Search one unit's top-level items for an integer constant matching `name`.
+fn unit_constant_literal<'a>(
+    program: &'a beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
     name: &str,
-) -> Option<i64> {
+) -> Option<&'a str> {
     program.node.items.iter().find_map(|item| {
         let beskid_analysis::syntax::Node::ConstantDefinition(constant) = &item.node else {
             return None;
         };
         (constant.node.name.node.name == name).then(|| match &constant.node.value.node {
-            beskid_analysis::syntax::Literal::Integer(value) => {
-                let primitive = beskid_analysis::syntax::integer_literal_primitive_type(value);
-                let magnitude = beskid_analysis::syntax::integer_literal_magnitude(value);
-                if matches!(
-                    primitive,
-                    beskid_analysis::syntax::PrimitiveType::U64 | beskid_analysis::syntax::PrimitiveType::Word
-                ) {
-                    integer_literal_u64(magnitude).map(|bits| bits as i64)
-                } else {
-                    magnitude
-                        .replace('_', "")
-                        .parse::<i64>()
-                        .ok()
-                        .or_else(|| integer_literal_u64(magnitude).and_then(|value| i64::try_from(value).ok()))
-                }
-            }
+            beskid_analysis::syntax::Literal::Integer(value) => Some(value.as_str()),
             _ => None,
         })?
     })
 }
 
+/// The 64-bit immediate of a constant's integer literal: the bit pattern of an unsigned
+/// word-sized literal, else the signed value.
+fn constant_literal_value(text: &str) -> Option<i64> {
+    let primitive = beskid_analysis::syntax::integer_literal_primitive_type(text);
+    let magnitude = beskid_analysis::syntax::integer_literal_magnitude(text);
+    if matches!(primitive, beskid_analysis::syntax::PrimitiveType::U64 | beskid_analysis::syntax::PrimitiveType::Word) {
+        integer_literal_u64(magnitude).map(|bits| bits as i64)
+    } else {
+        magnitude
+            .replace('_', "")
+            .parse::<i64>()
+            .ok()
+            .or_else(|| integer_literal_u64(magnitude).and_then(|value| i64::try_from(value).ok()))
+    }
+}
+
 /// Resolve an unqualified integer constant through the current unit's import closure.
 ///
 /// Mirrors [`unique_imported_function`] for constants: collects every import target,
-/// searches each target unit's top-level items, and requires exactly one distinct value so an
+/// searches each target unit's top-level items, and requires exactly one distinct candidate so an
 /// ambiguous name resolves to nothing. Repeated file-local declarations of the same immutable
 /// machine value are semantically identical; conflicting declarations still fail closed. The
 /// canonical runtime cross-unit scope installs one private import edge per corpus unit, so
 /// private constants shared across the embedded runtime corpus are visible here without a `pub`
 /// declaration.
-fn imported_constant_integer(db: &dyn Db, key: AstNodeKey, name: &str) -> Option<i64> {
+fn imported_constant<T: Ord>(
+    db: &dyn Db,
+    key: AstNodeKey,
+    candidate: impl Fn(&beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>) -> Option<T>,
+) -> Option<T> {
     let registry = db.syntax_dependency_registry().lock().expect("syntax dependency registry");
     let imports = registry.imports.get(&(key.unit, key.generation))?;
     let targets = imports.iter().map(|import| import.target).fold(Vec::new(), |mut targets, target| {
@@ -167,28 +238,20 @@ fn imported_constant_integer(db: &dyn Db, key: AstNodeKey, name: &str) -> Option
     });
     let mut candidates = targets
         .into_iter()
-        .filter_map(|target| constant_integer_in_unit(db, target, key.generation, name))
+        .filter_map(|target| {
+            let syntax = db.syntax_unit(target)?;
+            if syntax.generation(db) != key.generation {
+                return None;
+            }
+            candidate(syntax.expanded_program(db))
+        })
         .collect::<Vec<_>>();
     candidates.sort_unstable();
     candidates.dedup();
-    let [value] = candidates.as_slice() else {
-        return None;
-    };
-    Some(*value)
-}
-
-fn constant_integer_in_unit(
-    db: &dyn Db,
-    unit: SourceUnitId,
-    generation: SyntaxGenerationId,
-    name: &str,
-) -> Option<i64> {
-    let syntax = db.syntax_unit(unit)?;
-    if syntax.generation(db) != generation {
+    if candidates.len() != 1 {
         return None;
     }
-    let program = syntax.expanded_program(db);
-    unit_constant_integer(program, name)
+    candidates.pop()
 }
 
 #[salsa::tracked(persist)]

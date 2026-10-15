@@ -531,31 +531,40 @@ pub(in crate::semantic_contract) fn unique_public_type_in_unit(
     Some(AstNodeKey { unit, generation, node: *node })
 }
 
+/// The semantic primitive identity of a source primitive type.
+pub(in crate::semantic_contract) fn semantic_type_for_primitive(
+    primitive: beskid_analysis::syntax::PrimitiveType,
+) -> SemanticTypeId {
+    use beskid_analysis::syntax::PrimitiveType;
+
+    match primitive {
+        PrimitiveType::Bool => SemanticTypeId::BOOL,
+        PrimitiveType::I32 => SemanticTypeId::I32,
+        PrimitiveType::I8 => SemanticTypeId::I8,
+        PrimitiveType::I16 => SemanticTypeId::I16,
+        PrimitiveType::U16 => SemanticTypeId::U16,
+        PrimitiveType::U64 => SemanticTypeId::U64,
+        PrimitiveType::I64 => SemanticTypeId::I64,
+        PrimitiveType::U32 => SemanticTypeId::U32,
+        PrimitiveType::U8 => SemanticTypeId::U8,
+        PrimitiveType::Pointer => SemanticTypeId::POINTER,
+        PrimitiveType::Word => SemanticTypeId::WORD,
+        PrimitiveType::F64 => SemanticTypeId::F64,
+        PrimitiveType::F32 => SemanticTypeId::F32,
+        PrimitiveType::Char => SemanticTypeId::CHAR,
+        PrimitiveType::String => SemanticTypeId::STRING,
+        PrimitiveType::Unit => SemanticTypeId::UNIT,
+        PrimitiveType::Never => SemanticTypeId::NEVER,
+    }
+}
+
 pub(in crate::semantic_contract) fn semantic_type_from_syntax(
     syntax_type: &beskid_analysis::syntax::Type,
 ) -> Result<SemanticTypeId, SemanticError> {
-    use beskid_analysis::syntax::{PrimitiveType, Type};
+    use beskid_analysis::syntax::Type;
 
     match syntax_type {
-        Type::Primitive(primitive) => Ok(match primitive.node {
-            PrimitiveType::Bool => SemanticTypeId::BOOL,
-            PrimitiveType::I32 => SemanticTypeId::I32,
-            PrimitiveType::I8 => SemanticTypeId::I8,
-            PrimitiveType::I16 => SemanticTypeId::I16,
-            PrimitiveType::U16 => SemanticTypeId::U16,
-            PrimitiveType::U64 => SemanticTypeId::U64,
-            PrimitiveType::I64 => SemanticTypeId::I64,
-            PrimitiveType::U32 => SemanticTypeId::U32,
-            PrimitiveType::U8 => SemanticTypeId::U8,
-            PrimitiveType::Pointer => SemanticTypeId::POINTER,
-            PrimitiveType::Word => SemanticTypeId::WORD,
-            PrimitiveType::F64 => SemanticTypeId::F64,
-            PrimitiveType::F32 => SemanticTypeId::F32,
-            PrimitiveType::Char => SemanticTypeId::CHAR,
-            PrimitiveType::String => SemanticTypeId::STRING,
-            PrimitiveType::Unit => SemanticTypeId::UNIT,
-            PrimitiveType::Never => SemanticTypeId::NEVER,
-        }),
+        Type::Primitive(primitive) => Ok(semantic_type_for_primitive(primitive.node)),
         // SemanticTypeId cannot encode nominal identity. ABI-only callers must use
         // `abi_type_from_syntax`, which proves the managed-reference representation separately.
         Type::Complex(_) | Type::Associated { .. } | Type::Array(_) | Type::This => {

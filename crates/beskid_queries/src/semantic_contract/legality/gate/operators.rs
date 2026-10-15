@@ -114,11 +114,15 @@ pub(super) fn collect_literal_obligations(
                     // The value root is the negation when there is one: the legacy checker types
                     // the whole `-literal` under the destination's contextual type.
                     let root = negation.or_else(|| parent_node(index, node));
-                    let Some(primitive) = root.and_then(|root| contextual_literal_primitive(db, program, index, key, root))
-                    else {
-                        continue;
-                    };
-                    primitive
+                    match root.and_then(|root| contextual_literal_primitive(db, program, index, key, root)) {
+                        Some(primitive) => primitive,
+                        // An inferred `let` takes the literal's natural type, so the literal must
+                        // fit it (a decimal above `i64::MAX` has no natural integer type).
+                        None if root.is_some_and(|root| inferred_let_initializer(program, index, root)) => {
+                            integer_literal_primitive_type(text)
+                        }
+                        None => continue,
+                    }
                 } else {
                     integer_literal_primitive_type(text)
                 };
@@ -156,6 +160,56 @@ pub(super) fn collect_literal_obligations(
             _ => {}
         }
     }
+    collect_constant_obligations(db, program, index, key, findings);
+}
+
+/// Module constant uses at a surface-declared integer destination their declared literal does
+/// not fit (`i32 x = LIMIT;` with `const LIMIT = 3000000000;`). A constant use behaves as its
+/// literal, so it is judged exactly as an unsuffixed literal at that destination and reported
+/// at the use site, never left to fail as a missing lowering fact.
+fn collect_constant_obligations(
+    db: &dyn Db,
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &SyntaxIndex,
+    key: AstNodeKey,
+    findings: &mut Vec<GateObligation>,
+) {
+    for node in nodes_of_kind(index, key.node, NodeKind::PathExpression) {
+        let site = AstNodeKey { node, ..key };
+        let Ok(Some(text)) = constant_integer_literal(db, site) else { continue };
+        let Some(primitive) = contextual_literal_primitive(db, program, index, key, node) else { continue };
+        if !integer_literal_fits_primitive(&text, primitive) {
+            findings.push(GateObligation {
+                kind: GateObligationKind::NumericLiteralOutOfRange {
+                    primitive: Arc::from(format!("{primitive:?}").to_lowercase()),
+                },
+                site,
+            });
+        }
+    }
+}
+
+/// Whether `root` (a literal value root) is the initializer of a `let` without a type annotation.
+fn inferred_let_initializer(
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &SyntaxIndex,
+    root: beskid_analysis::syntax::AstNodeId,
+) -> bool {
+    let mut child = root;
+    let Some(mut parent) = parent_node(index, child) else { return false };
+    while matches!(index.kind(parent), Some(NodeKind::Expression | NodeKind::GroupedExpression)) {
+        child = parent;
+        let Some(next) = parent_node(index, child) else { return false };
+        parent = next;
+    }
+    if index.kind(parent) != Some(NodeKind::LetStatement) {
+        return false;
+    }
+    let Some(binding) = index.node_at(program, parent).and_then(|node| node.of::<LetStatement>()) else {
+        return false;
+    };
+    binding.type_annotation.is_none()
+        && index.direct_child_id(program, parent, DynNodeRef::from(&binding.value)) == Some(child)
 }
 
 /// The `-` unary expression whose direct operand is the literal expression owning `literal`

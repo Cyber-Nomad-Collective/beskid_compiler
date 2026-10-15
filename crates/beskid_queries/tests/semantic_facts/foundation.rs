@@ -55,6 +55,36 @@ fn declared_integer_constant_has_word_abi_type() {
     assert_eq!(abi_type(&db, constant).expect("constant ABI type"), Some(SemanticTypeId::WORD));
 }
 
+/// A module constant use has its declared literal's natural type: the type a literal names is
+/// never narrower than the value it holds (the `LIMIT_*` runtime constants are words, not `i32`).
+#[test]
+fn declared_integer_constant_node_type_is_its_literal_natural_type() {
+    let source = "const SMALL = 7; const BIG = 3000000000; const LIMIT_INVALID = 0xFFFFFFFFFFFFFFFE; \
+                  word Main(word scaled, i64 wide, i32 narrow) { if wide == BIG || narrow == SMALL { return 0; } return LIMIT_INVALID; }";
+    let (db, _project, unit, generation, index) = setup(source);
+    let path = |ordinal| key(unit, generation, &index, NodeKind::PathExpression, ordinal);
+    let typed = |ordinal| node_type(&db, path(ordinal)).expect("constant node type");
+
+    // Path expressions in source order: wide, BIG, narrow, SMALL, LIMIT_INVALID.
+    assert_eq!(typed(1), Some(SemanticTypeId::I64));
+    assert_eq!(typed(3), Some(SemanticTypeId::I32));
+    assert_eq!(typed(4), Some(SemanticTypeId::WORD));
+}
+
+/// An unsuffixed literal outside `i32` has the `i64` natural type its value needs, so an inferred
+/// `let` never stores it truncated to 32 bits.
+#[test]
+fn unsuffixed_literal_beyond_i32_has_the_i64_natural_type() {
+    let source = "i64 Main() { let x = 3000000000; let y = 7; let z = 0x1FFFFFFFF; return x; }";
+    let (db, _project, unit, generation, index) = setup(source);
+    let literal = |ordinal| key(unit, generation, &index, NodeKind::Literal, ordinal);
+
+    assert_eq!(node_type(&db, literal(0)).expect("wide literal type"), Some(SemanticTypeId::I64));
+    assert_eq!(node_type(&db, literal(1)).expect("narrow literal type"), Some(SemanticTypeId::I32));
+    assert_eq!(node_type(&db, literal(2)).expect("wide hex literal type"), Some(SemanticTypeId::I64));
+    assert_eq!(abi_type(&db, literal(0)).expect("wide literal ABI"), Some(SemanticTypeId::I64));
+}
+
 #[test]
 fn try_expression_fact_resolves_result_payload_and_enclosing_error_return() {
     let source = "enum Error { Failed() } enum Result<TValue, TError> { Ok(TValue value), Error(TError error) } Result<i32, Error> Main(Result<i32, Error> value) { return value?; }";

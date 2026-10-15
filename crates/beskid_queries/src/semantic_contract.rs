@@ -157,7 +157,7 @@ use layouts::{
     field_access_receiver, inaccessible_literal_fields, instantiated_aggregate_layout_for_path,
     instantiated_enum_layout_for_path, nominal_aggregate_abi_type, nominal_field_projection,
     nominal_local_receiver_declaration, resolve_nominal_layout_declaration, resolve_type_declaration,
-    semantic_type_from_syntax, unique_exported_type_in_unit, unique_public_type_in_unit, unique_type_in_unit,
+    semantic_type_for_primitive, semantic_type_from_syntax, unique_exported_type_in_unit, unique_public_type_in_unit, unique_type_in_unit,
 };
 pub use legality::{
     CallArgumentTypeMismatch, CallArityMismatch, GateObligation, GateObligationKind, GenericParameterConflict,
@@ -172,7 +172,7 @@ pub use legality::{
 };
 pub use local_type_resolution::{UnresolvedTypeReference, unresolved_type_reference};
 use locals::{
-    ancestor_distance, constant_integer_tracked, implicit_method_receiver_tracked, is_ancestor,
+    ancestor_distance, constant_integer_literal_tracked, constant_integer_tracked, implicit_method_receiver_tracked, is_ancestor,
     local_declaration_is_mutable, local_declaration_owner, local_declaration_scope, local_slot_for_declaration,
     local_slot_tracked, method_owner_node, method_this_type, mutable_local_assignment_tracked, nearest_ancestor,
     parent_node, resolve_lexical_declaration, resolved_local_tracked,
@@ -200,7 +200,7 @@ use typing::{
     element_type_for_for_iterable, for_iterable_declared_array_element, match_arms_result_semantic_type,
     local_declaration_type, range_iterable_bounds,
     managed_reference_kind_tracked, node_type_tracked, pattern_binding_fact, pattern_binding_semantic_type,
-    semantic_type_for_binary_operands, semantic_type_for_expression, semantic_type_for_literal,
+    integer_literal_semantic_type, semantic_type_for_binary_operands, semantic_type_for_expression, semantic_type_for_literal,
     semantic_type_for_local_path, semantic_type_for_node,
 };
 
@@ -250,6 +250,7 @@ pub use queries::{
     bulk_call_element_abi_type, bulk_parameter, call_abi_signature, call_arguments, call_lowering,
     callable_fiber_ownership, callable_signature, capture_storage, cast_intents, child_nodes, clif_block_body,
     clif_block_parameters, closure_call_target, closure_environment, closure_signature, collection_operation, constant_integer,
+    constant_integer_literal,
     contextual_integer_literal_abi_type, control_flow, direct_callees, empty_array_literal_element_abi_type,
     enum_constructor, enum_constructor_template, enum_layout, enum_match, event_field_layout, scalar_match,
     event_handler_lambda_for_local, event_operation, expected_type, for_iterator_fact, function_item_value,

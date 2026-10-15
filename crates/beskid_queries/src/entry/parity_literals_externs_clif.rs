@@ -73,6 +73,70 @@ fn in_range_and_destinationless_unsuffixed_literals_are_silent() {
     );
 }
 
+/// Module constants used at a declared integer destination their literal does not fit, and an
+/// inferred `let` initializer without a natural integer type. A constant use behaves as its
+/// declared literal, so each is T0905 at the use, never a silent truncation or a missing
+/// lowering fact.
+const CONSTANT_AND_INFERRED_OUT_OF_RANGE: &[(&str, &str, &str, &str)] = &[
+    (
+        "NumericLiteralOutOfRange (constant at a typed let)",
+        "NumericLiteralOutOfRange",
+        "T0905",
+        "const BIG = 3000000000; unit Main() { i32 x = BIG; return; }",
+    ),
+    (
+        "NumericLiteralOutOfRange (constant return value)",
+        "NumericLiteralOutOfRange",
+        "T0905",
+        "const BIG = 5000000000; u32 F() { return BIG; }",
+    ),
+    (
+        "NumericLiteralOutOfRange (constant call argument)",
+        "NumericLiteralOutOfRange",
+        "T0905",
+        "const ALL_ONES = 0xFFFFFFFFFFFFFFFF; unit Take(i64 v) { return; } unit Main() { Take(ALL_ONES); return; }",
+    ),
+    (
+        "NumericLiteralOutOfRange (inferred let without a natural type)",
+        "NumericLiteralOutOfRange",
+        "T0905",
+        "unit Main() { let x = 10000000000000000000; return; }",
+    ),
+];
+
+#[test]
+fn constant_or_inferred_literal_out_of_its_destination_range_is_reported() {
+    assert_covered_kinds(CONSTANT_AND_INFERRED_OUT_OF_RANGE, 1030);
+}
+
+#[test]
+fn constant_out_of_range_names_the_destination_primitive_at_the_use() {
+    let source = "const BIG = 3000000000; unit Main() { i32 x = BIG; return; }";
+    let findings = root_findings(source, 1040);
+    let finding = findings
+        .iter()
+        .find(|finding| matches!(&finding.kind, SemanticIssueKind::NumericLiteralOutOfRange { primitive } if primitive == "i32"))
+        .unwrap_or_else(|| panic!("expected an i32 T0905, got {findings:?}"));
+    assert_eq!(&source[finding.span.start..finding.span.end], "BIG");
+    assert_eq!(findings.len(), 1, "{findings:?}");
+}
+
+#[test]
+fn constants_that_fit_their_destination_are_silent() {
+    assert_silent(
+        &[
+            ("constant at a wide typed let", "const BIG = 3000000000; unit Main() { i64 x = BIG; u64 y = BIG; return; }"),
+            (
+                "word constant at a word destination",
+                "const LIMIT_UNSET = 0xFFFFFFFFFFFFFFFF; word F() { return LIMIT_UNSET; }",
+            ),
+            ("small constant at a narrow destination", "const SMALL = 7; i8 F() { return SMALL; }"),
+            ("inferred let of a wide literal", "unit Main() { let x = 3000000000; let y = 0xFFFFFFFFFFFFFFFF; return; }"),
+        ],
+        1050,
+    );
+}
+
 /// The `Optional` argument of an `[Extern]` contract and its availability query: the legacy
 /// `validate_extern_contract` and `validate_extern_availability_method`, now T0906.
 #[test]

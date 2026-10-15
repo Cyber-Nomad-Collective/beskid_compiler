@@ -134,6 +134,34 @@ fn parsed_mutable_assignment_materializes_a_declared_integer_constant_at_the_sto
 }
 
 #[test]
+fn inferred_let_of_a_literal_beyond_i32_materializes_the_full_i64_value() {
+    let (input, isa, item) = item_fixture("i64 Main() { let x = 3000000000; let y = 0x1FFFFFFFF; return x + y; }");
+
+    let function = emit_isle_item(&input, isa.as_ref(), item)
+        .expect("an inferred let of a wide literal lowers at the literal's natural i64 type");
+    let clif = function.display().to_string();
+    assert!(clif.contains("iconst.i64 0xb2d0_5e00"), "3000000000 must not be truncated:\n{clif}");
+    assert!(clif.contains("iconst.i64 0x0001_ffff_ffff"), "0x1FFFFFFFF must not be truncated:\n{clif}");
+    assert!(!clif.contains("iconst.i32"), "no wide literal may be materialized at 32 bits:\n{clif}");
+}
+
+#[test]
+fn wide_module_constants_materialize_their_full_value_in_every_context() {
+    let (input, isa, item) = item_fixture(
+        "const BIG = 3000000000; const LIMIT_UNSET = 0xFFFFFFFFFFFFFFFF; const LIMIT_INVALID = 0xFFFFFFFFFFFFFFFE; \
+         word Main(word scaled, i64 wide) { if wide == BIG { return LIMIT_INVALID; } \
+         if scaled == LIMIT_UNSET || scaled == LIMIT_INVALID { return LIMIT_INVALID; } return scaled; }",
+    );
+
+    let function = emit_isle_item(&input, isa.as_ref(), item).expect("wide module constants lower through syntax facts");
+    let clif = function.display().to_string();
+    assert!(clif.contains("iconst.i64 0xb2d0_5e00"), "{clif}");
+    assert!(clif.contains("iconst.i64 -1"), "{clif}");
+    assert!(clif.contains("iconst.i64 -2"), "{clif}");
+    assert!(!clif.contains("iconst.i32"), "no wide constant may be materialized at 32 bits:\n{clif}");
+}
+
+#[test]
 fn parsed_mixed_u8_i64_arithmetic_coerces_the_u8_operand_without_hir() {
     let (input, isa, item) = item_fixture("i64 Main(u8 b, i64 acc) { return acc + (b - 48); }");
 

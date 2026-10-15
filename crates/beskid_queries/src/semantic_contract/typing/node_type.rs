@@ -60,10 +60,12 @@ pub(in crate::semantic_contract) fn node_type_tracked(
         {
             return Some(Ok(SemanticTypeId::NEVER));
         }
+        // A module constant use behaves as its declared literal, so it has that literal's
+        // natural type (`const LIMIT = 0xFFFFFFFFFFFFFFFE;` is a `word`, never an `i32`).
         if node.of::<beskid_analysis::syntax::PathExpression>().is_some()
-            && matches!(constant_integer(db, key), Ok(Some(_)))
+            && let Ok(Some(text)) = constant_integer_literal(db, key)
         {
-            return Some(Ok(SemanticTypeId::I32));
+            return Some(Ok(integer_literal_semantic_type(&text)));
         }
         if node.of::<beskid_analysis::syntax::MatchExpression>().is_some() {
             if let Ok(Some(fact)) = enum_match(db, key) {
