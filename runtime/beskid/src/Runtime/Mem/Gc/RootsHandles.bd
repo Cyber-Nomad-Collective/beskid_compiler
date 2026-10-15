@@ -79,9 +79,10 @@ pub unit GcHeapForceRootStackFailure(word enabled) {
 // never substitutes a null, empty, or failure value. A null reference is not a dead object and
 // keeps each service's own null contract.
 //
-// Services named in the diagnostic; from `LIVENESS_STRING_SERVICE_FIRST` on they take string
-// operands. Constants are file-local, so the consumers (`Strings.bd`, `Utf8ViewRecord.bd`,
-// `AbiValue.bd`) repeat the numbers they pass.
+// Services named in the diagnostic; from `LIVENESS_STRING_SERVICE_FIRST` through
+// `LIVENESS_STRING_SERVICE_LAST` they take string operands. Constants are file-local, so the
+// consumers (`Strings.bd`, `Utf8ViewRecord.bd`, `AbiValue.bd`, `Identity.bd`, `Fiber.bd`) repeat
+// the numbers they pass.
 const LIVENESS_GC_ROOT_HANDLE = 1;
 const LIVENESS_GC_TRY_ROOT_HANDLE = 2;
 const LIVENESS_ABI_VALUE_INITIALIZE = 3;
@@ -91,7 +92,11 @@ const LIVENESS_STR_CMP = 6;
 const LIVENESS_STR_CONCAT = 7;
 const LIVENESS_STR_SLICE = 8;
 const LIVENESS_UTF8_RECORD_ADOPT = 9;
+const LIVENESS_FIBER_SPAWN = 10;
+const LIVENESS_GC_SAME_IDENTITY = 11;
+const LIVENESS_GC_RESOLVE_HANDLE = 12;
 const LIVENESS_STRING_SERVICE_FIRST = 4;
+const LIVENESS_STRING_SERVICE_LAST = 9;
 const LIVENESS_DIAGNOSTIC_SIZE = 128;
 const LIVENESS_TRAP_CODE = 6;
 
@@ -116,7 +121,7 @@ pub never TrapManagedOperandNotLive(word service) {
     mut word offset = LivenessServiceName(diagnostic, 0, service);
     offset = WritePackedAscii(diagnostic, offset, 0x6567616e616d203a, 8); // ": manage"
     offset = WritePackedAscii(diagnostic, offset, 0x2064, 2); // "d "
-    if service >= LIVENESS_STRING_SERVICE_FIRST {
+    if service >= LIVENESS_STRING_SERVICE_FIRST && service <= LIVENESS_STRING_SERVICE_LAST {
         offset = WritePackedAscii(diagnostic, offset, 0x20676e69727473, 7); // "string "
     }
     offset = WritePackedAscii(diagnostic, offset, 0x20646e617265706f, 8); // "operand "
@@ -158,6 +163,19 @@ word LivenessServiceName(pointer buffer, word offset, word service) {
         word next = WritePackedAscii(buffer, offset, 0x6365725f38667475, 8); // "utf8_rec"
         word rest = WritePackedAscii(buffer, next, 0x706f64615f64726f, 8); // "ord_adop"
         return WritePackedAscii(buffer, rest, 0x74, 1); // "t"
+    }
+    if service == LIVENESS_FIBER_SPAWN {
+        word next = WritePackedAscii(buffer, offset, 0x70735f7265626966, 8); // "fiber_sp"
+        return WritePackedAscii(buffer, next, 0x6e7761, 3); // "awn"
+    }
+    if service == LIVENESS_GC_SAME_IDENTITY {
+        word next = WritePackedAscii(buffer, offset, 0x5f656d61735f6367, 8); // "gc_same_"
+        return WritePackedAscii(buffer, next, 0x797469746e656469, 8); // "identity"
+    }
+    if service == LIVENESS_GC_RESOLVE_HANDLE {
+        word next = WritePackedAscii(buffer, offset, 0x6c6f7365725f6367, 8); // "gc_resol"
+        word rest = WritePackedAscii(buffer, next, 0x6c646e61685f6576, 8); // "ve_handl"
+        return WritePackedAscii(buffer, rest, 0x65, 1); // "e"
     }
     return offset;
 }
@@ -457,6 +475,10 @@ pub bool GcHandlesClear() {
     return true;
 }
 
+// Resolves a live handle to its managed reference. Handle 0 (no root) and a missing heap keep the
+// null contract. A released handle (stale generation), a never-issued index, or a slot whose
+// object is not live is a use of a dead operand: trap `invalid_or_stale_handle`, never resolve
+// to null.
 [Export(Abi:"C", Symbol:"beskid_rt_v5_gc_resolve_handle")]
 pub pointer GcResolveHandle(word handle) {
     pointer heap = Heap();
@@ -468,17 +490,20 @@ pub pointer GcResolveHandle(word handle) {
     while block != NativePointer(0) {
         if remaining < HANDLE_BLOCK_CAPACITY {
             pointer slot = pointer_add(block, HANDLE_BLOCK_SLOTS + remaining * GC_HANDLE_SLOT_SIZE);
-            if raw_word_load(pointer_add(slot, 8)) != generation { return NativePointer(0); }
+            if raw_word_load(pointer_add(slot, 8)) != generation { TrapManagedOperandNotLive(LIVENESS_GC_RESOLVE_HANDLE); }
             pointer value = NativePointer(raw_word_load(slot));
             // Same ABI-reference normalization as `GcRootHandle` above: `value` may be an array's
             // `{ data, len, cap }` triple, not its object header, so validate through the shared
             // resolver rather than `IsAllocatedObject` directly.
-            if ManagedObjectForReference(heap, value) == NativePointer(0) { return NativePointer(0); }
+            if value == NativePointer(0) || ManagedObjectForReference(heap, value) == NativePointer(0) {
+                TrapManagedOperandNotLive(LIVENESS_GC_RESOLVE_HANDLE);
+            }
             return value;
         }
         remaining = remaining - HANDLE_BLOCK_CAPACITY;
         block = NativePointer(raw_word_load(pointer_add(block, HANDLE_BLOCK_NEXT)));
     }
+    TrapManagedOperandNotLive(LIVENESS_GC_RESOLVE_HANDLE);
     return NativePointer(0);
 }
 

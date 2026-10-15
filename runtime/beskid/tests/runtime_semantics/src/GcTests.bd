@@ -90,10 +90,11 @@ test gc_reclaims_reuses_and_invalidates_stale_handles {
     Assert.Equal(phase, 0, "successful collection returns to idle");
     Assert.True(reused == reclaimable, "allocation reuses the reclaimed non-moving block");
     GcUnrootHandle(handle);
-    Assert.True(GcResolveHandle(handle) == NativePointer(0), "released handle is stale immediately");
+    // Resolving the released `handle` traps invalid_or_stale_handle; the native kit test
+    // `use_after_collection_native` asserts that trap out of process.
     word replacement = GcRootHandle(rooted);
     Assert.True(replacement != 0 && replacement != handle, "reused handle slot advances its generation");
-    Assert.True(GcResolveHandle(handle) == NativePointer(0), "old generation remains stale after slot reuse");
+    Assert.True(GcResolveHandle(replacement) == rooted, "the current generation resolves to its object");
 
     // Process shutdown requires every handle to be released.
     GcUnrootHandle(replacement);

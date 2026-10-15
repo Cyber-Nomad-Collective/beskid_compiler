@@ -4,7 +4,9 @@
 //! operand which a collection already freed traps `invalid_or_stale_handle` with a diagnostic
 //! naming the service. It never returns a substitute value; before this rule `str_concat` and
 //! `str_slice` returned null, `str_len` and the comparisons read freed memory, and the root-handle
-//! services reported an ordinary failed root.
+//! services reported an ordinary failed root. `fiber_spawn` (dead capture environment),
+//! `gc_same_identity` (dead operand reported as an invalid identity) and `gc_resolve_handle`
+//! (released handle resolved to null) follow the same rule.
 //!
 //! `tests/fixtures/use_after_collection.c` is linked against the static and the shared runtime
 //! library. Each child process frees one operand with `gc_collect` and passes it to one service.
@@ -26,6 +28,9 @@ const SERVICES: &[(&str, bool)] = &[
     ("gc_root_handle", false),
     ("gc_try_root_handle", false),
     ("abi_value_initialize", false),
+    ("fiber_spawn", false),
+    ("gc_same_identity", false),
+    ("gc_resolve_handle", false),
 ];
 
 #[test]
