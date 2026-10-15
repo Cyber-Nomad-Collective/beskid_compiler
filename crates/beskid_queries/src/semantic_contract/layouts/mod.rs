@@ -35,7 +35,8 @@ pub use enum_layout::{enum_constructor_specialization, enum_match_call_specializ
 pub use canonical_empty::{CanonicalEmptyValue, canonical_empty_value};
 pub use field_access::aggregate_field_access_specialization;
 pub(in crate::semantic_contract) use field_access::{
-    FieldAccessReceiver, aggregate_field_access_tracked, field_access_receiver, field_read_identity_in_environment,
+    FieldAccessReceiver, aggregate_field_access_tracked, explicit_local_complex_type_path, field_access_receiver,
+    field_read_identity_in_environment,
     is_implicit_receiver_name,
     nominal_field_projection, nominal_local_receiver_declaration, path_projection_segment,
 };

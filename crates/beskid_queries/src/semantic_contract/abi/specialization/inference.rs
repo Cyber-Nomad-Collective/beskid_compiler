@@ -222,9 +222,25 @@ pub(super) fn specialization_for_call_in_environment(
         let bare_integer = generic.is_some() && unsuffixed_integer_literal(db, argument)?;
         let parameter_mentions_generic =
             generic_names.iter().any(|name| type_syntax_mentions_generic_parameter(parameter_type, name));
-        let infer_from_actual = parameter_mentions_generic && !bare_integer && !explicit_substitutions_complete;
-        let proven_source_identity =
-            infer_from_actual.then(|| specialized_source_expression_identity(db, argument, enclosing)).transpose()?;
+        // A parameter whose every generic is already bound (by the receiver, as in
+        // `output.Send(Sequenced::Item(next, item))` on a `Port<Sequenced<T>>`) has a known expected
+        // type. A proven argument identity is still checked against it; an argument whose identity
+        // only that expected type proves (a contextual generic enum constructor) takes it instead.
+        let parameter_already_bound = generic_names
+            .iter()
+            .filter(|name| type_syntax_mentions_generic_parameter(parameter_type, name))
+            .all(|name| source_substitutions.contains_key(*name));
+        let proven_source_identity = if parameter_mentions_generic && !bare_integer && !explicit_substitutions_complete
+        {
+            match specialized_source_expression_identity(db, argument, enclosing) {
+                Ok(identity) => Some(identity),
+                Err(error) if parameter_already_bound && error.is_unavailable() => None,
+                Err(error) => return Err(error),
+            }
+        } else {
+            None
+        };
+        let infer_from_actual = proven_source_identity.is_some();
         let contextual_integer = if bare_integer {
             match generic.and_then(|name| substitutions.get(name)).copied() {
                 Some(expected) if integer_literal_fits_abi(db, argument, expected)? => Some(expected),
@@ -238,7 +254,9 @@ pub(super) fn specialization_for_call_in_environment(
         } else {
             None
         };
-        let explicit_expected = explicit_substitutions_complete
+        let known_expected =
+            explicit_substitutions_complete || (parameter_mentions_generic && parameter_already_bound);
+        let explicit_expected = known_expected
             .then(|| generic_abi_type(db, declaration, parameter_type, &substitutions))
             .transpose()?;
         let actual = if let Some(source) = proven_source_identity.as_ref() {

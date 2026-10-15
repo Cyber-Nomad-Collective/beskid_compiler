@@ -1132,7 +1132,7 @@ fn applied_pattern_binding_layout(
     instantiated_aggregate_layout_for_path(db, enum_declaration, &payload.node, Some(&enum_substitutions))
 }
 
-fn explicit_local_complex_type_path<'a>(
+pub(in crate::semantic_contract) fn explicit_local_complex_type_path<'a>(
     program: &'a beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
     index: &beskid_analysis::syntax_query::SyntaxIndex,
     declaration: beskid_analysis::syntax::AstNodeId,

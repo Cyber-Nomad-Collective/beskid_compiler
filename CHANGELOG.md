@@ -341,6 +341,11 @@ feature area.
   generic body, and a method with its own type parameters on a non-generic
   owner (`Scope.SpawnTry<T>`), which is now emitted only as call-derived
   specializations. Each stopped code generation with E2101.
+- A generic enum constructor without type arguments passed to a method of a
+  generic owner (`output.Send(Sequenced::Item(next, item))` on a
+  `Port<Sequenced<T>>`) takes its type from the receiver's written type
+  arguments, and the call specializes from the receiver's bindings. Before,
+  code generation stopped with E2101 or E2102.
 - `beskid check` reports transfer and capture-bound findings on attributes,
   fields, conformances and contract members (E1248, E1510, E1244, E1246,
   E1247, E1607, E1003) at the span of that syntax. Before, a `[Captures]`

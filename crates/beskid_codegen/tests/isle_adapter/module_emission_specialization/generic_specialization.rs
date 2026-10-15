@@ -383,3 +383,31 @@ fn nested_pattern_bindings_of_a_call_match_in_a_generic_body_are_specialized() {
     let names = artifact.functions.iter().map(|function| function.name.as_str()).collect::<Vec<_>>();
     assert!(names.iter().any(|name| name.starts_with("Drain#generic_")), "{names:?}");
 }
+
+#[test]
+fn contextual_generic_enum_constructor_argument_of_a_receiver_bound_parameter_is_specialized() {
+    // Core.Parallel `output.Send(Sequenced::Item(next, item))` shape: the receiver binds the
+    // parameter's generic, so the constructor is checked against that type instead of inferring.
+    let (input, isa, root) = item_fixture_with_root(
+        "type Port<T> { i64 id, unit Send(T value) { return; } } enum Item<T> { Entry(i64 sequence, T value), Done } unit Forward<T>(Port<Item<T>> output, T value) { output.Send(Item::Entry(1_i64, value)); return; } unit Main(Port<Item<i64>> output) { Forward<i64>(output, 7_i64); output.Send(Item::Entry(2_i64, 8_i64)); return; }",
+    );
+    let items = find_function_definitions(input.database(), root);
+    let named = |name: &str| {
+        items
+            .iter()
+            .copied()
+            .find(|item| item_name(input.database(), *item).ok().flatten().as_deref() == Some(name))
+            .expect("named item")
+    };
+    let artifact = lower_syntax_program(
+        &input,
+        isa.as_ref(),
+        &[
+            SyntaxModuleItem { key: named("Forward"), symbol: "Forward".into() },
+            SyntaxModuleItem { key: named("Main"), symbol: "Main".into() },
+        ],
+    )
+    .expect("a constructor argument of an already-bound generic parameter specializes the call");
+    let names = artifact.functions.iter().map(|function| function.name.as_str()).collect::<Vec<_>>();
+    assert!(names.iter().any(|name| name.starts_with("Forward#generic_")), "{names:?}");
+}

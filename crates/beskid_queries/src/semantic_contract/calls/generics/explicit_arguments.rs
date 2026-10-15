@@ -52,12 +52,22 @@ pub(in crate::semantic_contract) fn expected_explicit_call_argument_type(
         if callee.node.path.node.segments.iter().any(|segment| !segment.node.type_args.is_empty()) {
             return None;
         }
-        let (declaration, parameters) =
+        let (declaration, parameters, owner_arguments) =
             non_generic_callee_parameters(db, program, index, call_key, &callee.node.path.node)?;
         if parameters.len() != call.args.len() {
             return None;
         }
         let expected = &parameters.get(argument_index)?.node.ty.node;
+        // A method of a generic owner (`Send(T value)` on a `Port<Item<T>> output`) has its owner
+        // parameters applied from the receiver's written type. Every other name in the declared
+        // type must denote the same declaration at the call as at the method.
+        if !owner_arguments.is_empty() {
+            if !declared_names_denote_the_same_types(db, declaration, expected, call_key, &owner_arguments) {
+                return None;
+            }
+            let substitutions = owner_arguments.iter().map(|(name, argument)| (name.as_str(), argument)).collect();
+            return substitute_explicit_type(expected, &substitutions);
+        }
         // Syntax returned to the caller must still denote the exact declared concrete type.
         // Reject unresolved parameters and shadowed/import-dependent spellings, never infer
         // their identity from an ABI pointer or from the constructor being contextualized.
@@ -91,31 +101,105 @@ pub(in crate::semantic_contract) fn expected_explicit_call_argument_type(
     substitute_explicit_type(&function.parameters.get(argument_index)?.node.ty.node, &substitutions)
 }
 
+type OwnerArguments = Vec<(String, beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Type>)>;
+
 /// Declared parameters of a non-generic direct callee: a module function, or a method called on
 /// an explicitly typed nominal receiver (`holder.Pick(...)`). Both resolve from syntax alone, so
-/// contextual argument typing never consults call lowering.
+/// contextual argument typing never consults call lowering. A method of a generic owner also
+/// returns the owner's parameter names applied to the receiver's written type arguments; a
+/// receiver whose type is not written (a field chain, an inferred local) has none and is declined.
 fn non_generic_callee_parameters(
     db: &dyn Db,
     program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
     index: &beskid_analysis::syntax_query::SyntaxIndex,
     call_key: AstNodeKey,
     path: &beskid_analysis::syntax::Path,
-) -> Option<(AstNodeKey, Vec<beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Parameter>>)> {
+) -> Option<(AstNodeKey, Vec<beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Parameter>>, OwnerArguments)> {
     if let Some(declaration) = resolve_item_declaration(db, program, index, call_key, path) {
         let syntax = db.syntax_unit(declaration.unit).filter(|syntax| syntax.accepts_key(db, declaration))?;
         let function = syntax
             .syntax_index(db)
             .node_at(syntax.expanded_program(db), declaration.node)?
             .of::<beskid_analysis::syntax::FunctionDefinition>()?;
-        return function.generics.is_empty().then(|| (declaration, function.parameters.clone()));
+        return function.generics.is_empty().then(|| (declaration, function.parameters.clone(), Vec::new()));
     }
-    let (method, _) = super::super::resolution::nominal_local_member_receiver(db, program, index, call_key, path)?;
+    let (method, receiver) =
+        super::super::resolution::nominal_local_member_receiver(db, program, index, call_key, path)?;
     let syntax = db.syntax_unit(method.unit).filter(|syntax| syntax.accepts_key(db, method))?;
     let definition = syntax
         .syntax_index(db)
         .node_at(syntax.expanded_program(db), method.node)?
         .of::<beskid_analysis::syntax::MethodDefinition>()?;
-    definition.generics.is_empty().then(|| (method, definition.parameters.clone()))
+    if !definition.generics.is_empty() {
+        return None;
+    }
+    let owner = crate::semantic_contract::locals::method_owner_declaration(db, method);
+    let owner_syntax = owner.and_then(|owner| db.syntax_unit(owner.unit).filter(|syntax| syntax.accepts_key(db, owner)));
+    let owner_generics = owner
+        .zip(owner_syntax)
+        .and_then(|(owner, syntax)| {
+            syntax
+                .syntax_index(db)
+                .node_at(syntax.expanded_program(db), owner.node)?
+                .of::<beskid_analysis::syntax::TypeDefinition>()
+                .map(|definition| definition.generics.clone())
+        })
+        .unwrap_or_default();
+    if owner_generics.is_empty() {
+        return Some((method, definition.parameters.clone(), Vec::new()));
+    }
+    (receiver.unit == call_key.unit).then_some(())?;
+    let written = crate::semantic_contract::layouts::explicit_local_complex_type_path(program, index, receiver.node)?;
+    let arguments = &written.segments.last()?.node.type_args;
+    (arguments.len() == owner_generics.len()).then_some(())?;
+    let owner_arguments = owner_generics
+        .iter()
+        .zip(arguments.iter())
+        .map(|(generic, argument)| (generic.node.name.to_string(), argument.clone()))
+        .collect();
+    Some((method, definition.parameters.clone(), owner_arguments))
+}
+
+/// Whether every type name in `declared` (read at the method `declaration`) other than a bare
+/// owner parameter resolves to the same declaration at `call`, so substituting the owner's
+/// applied arguments yields syntax that denotes the declared type at the call site.
+fn declared_names_denote_the_same_types(
+    db: &dyn Db,
+    declaration: AstNodeKey,
+    declared: &beskid_analysis::syntax::Type,
+    call: AstNodeKey,
+    owner_arguments: &OwnerArguments,
+) -> bool {
+    use beskid_analysis::syntax::Type;
+
+    match declared {
+        Type::Primitive(_) => true,
+        Type::Complex(path) => {
+            if let [segment] = path.node.segments.as_slice()
+                && segment.node.type_args.is_empty()
+                && owner_arguments.iter().any(|(name, _)| *name == segment.node.name.node.name)
+            {
+                return true;
+            }
+            let (Some(at_declaration), Some(at_call)) =
+                (resolve_type_declaration(db, declaration, &path.node), resolve_type_declaration(db, call, &path.node))
+            else {
+                return false;
+            };
+            at_declaration == at_call
+                && path.node.segments.iter().flat_map(|segment| segment.node.type_args.iter()).all(|argument| {
+                    declared_names_denote_the_same_types(db, declaration, &argument.node, call, owner_arguments)
+                })
+        }
+        Type::Array(element) => declared_names_denote_the_same_types(db, declaration, &element.node, call, owner_arguments),
+        Type::Function { return_type, parameters } => {
+            declared_names_denote_the_same_types(db, declaration, &return_type.node, call, owner_arguments)
+                && parameters.iter().all(|parameter| {
+                    declared_names_denote_the_same_types(db, declaration, &parameter.node, call, owner_arguments)
+                })
+        }
+        Type::Associated { .. } | Type::This => false,
+    }
 }
 
 pub(in crate::semantic_contract) fn substitute_explicit_type(
