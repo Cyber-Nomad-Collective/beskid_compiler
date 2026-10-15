@@ -217,14 +217,18 @@ feature area.
   reading after a consuming use, storing a borrowed parameter, consuming in a
   loop without rebinding, and destructive reads without a canonical empty are
   errors. `x = f(move x)` rebinds `x`, also inside a branch of a loop body.
-  Struct and array literals consume an owning name without `move`.
+  Struct and array literals consume an owning name without `move`. A `return`
+  leaves the callable, so `if failed { return x; }` keeps `x` live after the
+  branch. A `move` parameter is a mutable owner: it can be grown and rebound.
 - `[Captures(Bound: C)]` on a function-typed parameter or field judges the
   captures of every lambda passed or assigned to it (E1235-E1238, E1241). A
   value read from a bounded parameter or field satisfies the same bound.
 - A `move T` parameter over `T: Transferable` is owning inside the generic
   definition; at a call a Moved argument needs `move` (E1242), and `move` on a
   Shared or Copied argument is E1239.
-- Corelib collection mutators take `move this` (`list = list.Push(v)`).
+- Corelib collection mutators take `move this` (`list = list.Push(v)`). The
+  Http, Http2, Http3 and Codec byte builders and Pest `AppendExpr` take their
+  buffer as a `move` parameter (`out = EncodeInteger(move out, ..)`).
 - `__transfer_class<T>()` folds to a per-instantiation constant (0 Shared,
   1 Moved, 2 Copied).
 - LSP quick fixes insert `move`, mark a parameter `move`, or rewrite a store as
