@@ -12,7 +12,7 @@ use cranelift_codegen::isa::TargetIsa;
 use super::types::LambdaTrampoline;
 use crate::CodegenInput;
 use crate::isle_adapter::mappings::{map_signature_type, signature_for_item};
-use crate::module_emission::contracts::{SyntaxModuleEmissionError, emission_verification};
+use crate::module_emission::contracts::{SyntaxModuleEmissionError, emission_verification, emission_verification_at};
 use crate::module_emission::items::ResolvedSyntaxModuleItem;
 
 /// Resolve trampoline entries for every freestanding [`LambdaExpression`] in the syntax tree.
@@ -55,13 +55,13 @@ pub(in crate::module_emission) fn resolve_lambda_trampolines(
     }
     for lambda in lambdas {
         let event_handler =
-            event_handler_lambda_for_local(db, lambda).map_err(|error| emission_verification(error.to_string()))?;
+            event_handler_lambda_for_local(db, lambda).map_err(|error| emission_verification_at(db, lambda, error))?;
         let is_event_handler = event_handler.is_some();
         let (lambda_body, callable) = if let Some(handler) = event_handler {
             (handler.body, handler.signature)
         } else {
             let Some(lambda_sig) =
-                closure_signature(db, lambda).map_err(|error| emission_verification(error.to_string()))?
+                closure_signature(db, lambda).map_err(|error| emission_verification_at(db, lambda, error))?
             else {
                 continue;
             };
@@ -71,7 +71,7 @@ pub(in crate::module_emission) fn resolve_lambda_trampolines(
             continue;
         };
         let Some(environment) =
-            closure_environment(db, lambda).map_err(|error| emission_verification(error.to_string()))?
+            closure_environment(db, lambda).map_err(|error| emission_verification_at(db, lambda, error))?
         else {
             continue;
         };
@@ -177,7 +177,7 @@ fn resolve_specialized_lambda_trampoline(
     let mut signature = signature_for_item(isa, fact.callable.clone())
         .ok_or_else(|| emission_verification(format!("lambda {} has no target signature", site())))?;
     let environment = closure_environment(db, lambda)
-        .map_err(|error| emission_verification(error.to_string()))?
+        .map_err(|error| emission_verification_at(db, lambda, error))?
         .ok_or_else(|| emission_verification(format!("lambda {} has no closure environment", site())))?;
     if environment.parameters.len() != fact.callable.parameters.len()
         || fact.parameter_managed.len() != fact.callable.parameters.len()

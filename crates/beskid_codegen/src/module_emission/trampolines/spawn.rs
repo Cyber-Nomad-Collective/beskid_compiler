@@ -10,7 +10,7 @@ use cranelift_codegen::isa::TargetIsa;
 use super::types::SpawnTrampoline;
 use crate::CodegenInput;
 use crate::isle_adapter::mappings::{map_signature_type, signature_for_item};
-use crate::module_emission::contracts::{SyntaxModuleEmissionError, emission_verification};
+use crate::module_emission::contracts::{SyntaxModuleEmissionError, emission_verification, emission_verification_at};
 use crate::module_emission::items::{ResolvedSyntaxModuleItem, syntax_item_symbol};
 
 /// Spawn has no ordinary CallExpression edge, so the generic direct-call reachability query does
@@ -28,18 +28,18 @@ pub(in crate::module_emission) fn expand_direct_spawn_items(
         collect_spawn_nodes(db, items[cursor].key, &mut HashSet::new(), &mut spawns);
         for spawn in spawns {
             let Some(validation) =
-                spawn_entry_validation(db, spawn).map_err(|error| emission_verification(error.to_string()))?
+                spawn_entry_validation(db, spawn).map_err(|error| emission_verification_at(db, spawn, error))?
             else {
                 continue;
             };
             if !validation.is_legal_entry
-                || node_kind(db, validation.target).map_err(|error| emission_verification(error.to_string()))?
+                || node_kind(db, validation.target).map_err(|error| emission_verification_at(db, spawn, error))?
                     != Some(beskid_queries::IndexedNodeKind::PathExpression)
             {
                 continue;
             }
             let Some(target) =
-                resolved_item(db, validation.target).map_err(|error| emission_verification(error.to_string()))?
+                resolved_item(db, validation.target).map_err(|error| emission_verification_at(db, spawn, error))?
             else {
                 continue;
             };
@@ -50,7 +50,7 @@ pub(in crate::module_emission) fn expand_direct_spawn_items(
                 continue;
             };
             if item_abi_signature(db, target.declaration)
-                .map_err(|error| emission_verification(error.to_string()))?
+                .map_err(|error| emission_verification_at(db, spawn, error))?
                 .is_none()
             {
                 continue;
@@ -83,7 +83,7 @@ pub(in crate::module_emission) fn resolve_spawn_trampolines(
     let mut visited = HashSet::new();
     for item in items {
         if let Some(ownership) = beskid_queries::callable_fiber_ownership(db, item.key)
-            .map_err(|error| emission_verification(error.to_string()))?
+            .map_err(|error| emission_verification_at(db, item.key, error))?
             && !ownership.diagnostics.is_empty()
         {
             return Err(emission_verification(format!(
@@ -97,7 +97,7 @@ pub(in crate::module_emission) fn resolve_spawn_trampolines(
     let mut trampolines = Vec::new();
     for spawn in spawns {
         let Some(validation) =
-            spawn_entry_validation(db, spawn).map_err(|error| emission_verification(error.to_string()))?
+            spawn_entry_validation(db, spawn).map_err(|error| emission_verification_at(db, spawn, error))?
         else {
             continue;
         };
@@ -108,15 +108,15 @@ pub(in crate::module_emission) fn resolve_spawn_trampolines(
                 validation.diagnostics,
             )));
         }
-        match node_kind(db, validation.target).map_err(|error| emission_verification(error.to_string()))? {
+        match node_kind(db, validation.target).map_err(|error| emission_verification_at(db, spawn, error))? {
             Some(beskid_queries::IndexedNodeKind::PathExpression) => {
                 let Some(target) =
-                    resolved_item(db, validation.target).map_err(|error| emission_verification(error.to_string()))?
+                    resolved_item(db, validation.target).map_err(|error| emission_verification_at(db, spawn, error))?
                 else {
                     continue;
                 };
                 let Some(signature) = item_abi_signature(db, target.declaration)
-                    .map_err(|error| emission_verification(error.to_string()))?
+                    .map_err(|error| emission_verification_at(db, spawn, error))?
                     .and_then(|signature| signature_for_item(isa, signature))
                 else {
                     continue;
@@ -157,7 +157,7 @@ pub(in crate::module_emission) fn resolve_spawn_trampolines(
                     continue;
                 }
                 let Some(environment) = closure_environment(db, validation.target)
-                    .map_err(|error| emission_verification(error.to_string()))?
+                    .map_err(|error| emission_verification_at(db, spawn, error))?
                 else {
                     continue;
                 };
@@ -189,7 +189,7 @@ pub(in crate::module_emission) fn resolve_spawn_trampolines(
                     Some(captures)
                 };
                 let Some(lambda) = closure_signature(db, validation.target)
-                    .map_err(|error| emission_verification(error.to_string()))?
+                    .map_err(|error| emission_verification_at(db, spawn, error))?
                 else {
                     continue;
                 };
@@ -235,7 +235,7 @@ pub(in crate::module_emission) fn spawn_result_plan(
         .find(|layout| layout.name == "BeskidObjectHeader")
         .ok_or_else(|| emission_verification("spawn result object header unavailable"))?;
     let handle = beskid_queries::spawn_handle_type(input.database(), spawn)
-        .map_err(|error| emission_verification(error.to_string()))?
+        .map_err(|error| emission_verification_at(input.database(), spawn, error))?
         .ok_or_else(|| emission_verification("spawn payload source identity unavailable"))?;
     let pointer_map_offsets =
         if handle.payload.managed_reference_kind() == beskid_queries::ManagedReferenceKind::GcManaged {
