@@ -1435,6 +1435,17 @@ mod tests {
                 &[],
             ),
             ("unit Main() { mut u8[] data = Make(); Store(move data); data = Make(); i64 n = Len(data); return; }", &[]),
+            // `x = f(move x)` nested in a branch of the loop body rebinds in the same expression.
+            (
+                "u8[] Grow(move u8[] block) { return block; } \
+                 unit Main(i64 rounds, bool keep) { mut u8[] data = Make(); mut i64 i = 0; while i < rounds { if keep { data = Grow(move data); } i = i + 1; } return; }",
+                &[],
+            ),
+            (
+                "u8[] Grow(move u8[] block) { return block; } \
+                 unit Main(i64 rounds, bool keep) { mut u8[] data = Make(); mut u8[] other = Make(); mut i64 i = 0; while i < rounds { if keep { other = Grow(move data); } i = i + 1; } return; }",
+                &["E1240"],
+            ),
         ];
         for (offset, (body, expected)) in cases.iter().enumerate() {
             assert_affine(body, 6650 + offset as u64, expected);

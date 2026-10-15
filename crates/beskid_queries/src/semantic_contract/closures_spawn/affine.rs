@@ -815,12 +815,50 @@ impl<'a> Analysis<'a> {
 
     fn consume(&mut self, declaration: AstNodeId, site: AstNodeId, name: &str, branches: BranchPath, loops: &[AstNodeId]) {
         let position = self.span(site).map_or(0, |span| span.end);
-        if loops.iter().any(|lp| !self.revived_in_loop_body(*lp, declaration, position)) {
+        if loops.iter().any(|lp| {
+            !self.revived_in_loop_body(*lp, declaration, position)
+                && !self.revived_by_enclosing_assignment(*lp, declaration, site)
+        }) {
             self.push(AffineFindingKind::MoveInLoopWithoutReassignment, site, name, None, None, false);
         }
         if let Some(owner) = self.owners.get_mut(&declaration) {
             owner.consumed.push((branches, site));
         }
+    }
+
+    /// The consumption is the value side of `x = ...` that rebinds the same name inside the loop
+    /// (`x = x.Push(v)` nested in an `if` or `match` arm): the store follows the consumption in the
+    /// same expression, so the next iteration sees a live binding.
+    fn revived_by_enclosing_assignment(&self, loop_node: AstNodeId, declaration: AstNodeId, site: AstNodeId) -> bool {
+        let mut child = site;
+        while let Some(parent) = parent_node(self.index, child) {
+            if parent == loop_node {
+                return false;
+            }
+            match self.index.kind(parent) {
+                Some(NodeKind::LambdaExpression) => return false,
+                Some(NodeKind::AssignExpression) => {
+                    let Some(assignment) = self
+                        .index
+                        .node_at(self.program, parent)
+                        .and_then(|node| node.of::<beskid_analysis::syntax::AssignExpression>())
+                    else {
+                        return false;
+                    };
+                    let beskid_analysis::syntax::Expression::Path(target) = &assignment.target.node else {
+                        return false;
+                    };
+                    if self.child(parent, DynNodeRef::from(assignment.target.as_ref())) == Some(child)
+                        || target.node.path.node.segments.len() != 1
+                    {
+                        return false;
+                    }
+                    return self.declaration_of(parent, &target.node.path.node) == Some(declaration);
+                }
+                _ => child = parent,
+            }
+        }
+        false
     }
 
     /// The loop body assigns the binding in a statement of its own block after `position`.
