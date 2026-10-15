@@ -77,6 +77,10 @@ pub use reserved_failure::{
     reserved_failure_constructor, serialization_publication_methods,
 };
 mod syntax_facts;
+mod transfer;
+pub use transfer::{
+    TransferClass, TransferMarker, TransferNeverReason, nominal_transfer_class, transfer_class_of_type,
+};
 mod typed_arrays;
 mod typing;
 

@@ -281,6 +281,48 @@ impl SemanticIssueKind {
                 "lambdas capture values, not storage: copy the value into an immutable local and capture that"
                     .to_string(),
             ),
+            Self::UseAfterMove { name } => {
+                Some(format!("`{name}` was consumed by the move; reassign it before using it again"))
+            }
+            Self::CapturedLocalAssignedInBoundLambda { .. } => Some("use a reduction".to_string()),
+            Self::CaptureNotTransferable { .. } => Some(
+                "capture a Shared or Copied value, or `move` a Moved one, as the `[Captures]` bound requires"
+                    .to_string(),
+            ),
+            Self::MovedCaptureWithoutMove { name } | Self::ImplicitAliasOfMovedValue { name } => {
+                Some(format!("write `move {name}`"))
+            }
+            Self::CapturesArgumentNotLiteral => Some("pass the lambda literal".to_string()),
+            Self::MoveOfNonOwningName { name, class: None } | Self::BorrowEscapes { name } => {
+                Some(format!("declare the parameter `move T {name}`"))
+            }
+            Self::MoveOfNonOwningName { class: Some(_), .. } => {
+                Some("remove `move`: Shared and Copied values pass without it".to_string())
+            }
+            Self::MoveInLoopWithoutReassignment { name } => {
+                Some(format!("assign `{name}` a new value before the end of the loop body"))
+            }
+            Self::DestructiveReadWithoutEmpty { .. } => Some("use `exchange(<place>, move <value>)`".to_string()),
+            Self::ImmutableFieldNotShared { .. } => {
+                Some("declare the field with a Shared type, such as a primitive, string or `[Immutable]` type".to_string())
+            }
+            Self::ImmutableFieldAssignment { .. } => {
+                Some("set the field in the constructing literal and build a new value to change it".to_string())
+            }
+            Self::MarkerOnNeverTransferable { .. } => Some(
+                "remove the marker: values of this type cannot leave their runtime instance".to_string(),
+            ),
+            Self::MarkerFieldClassMismatch { .. } => Some(
+                "`[Isolated]` admits Moved, Shared and Copied fields; `[Copyable]` admits Shared and Copied fields"
+                    .to_string(),
+            ),
+            Self::CapturesBoundNotMarker { .. } => Some(
+                "bound `[Captures]` with a marker contract such as `Transferable`, on a function-typed parameter"
+                    .to_string(),
+            ),
+            Self::InjectInsideIsolateBody { field } => Some(format!(
+                "read `{field}` before the task starts and capture the value instead"
+            )),
             Self::TypeInvalidEventInvocationScope => Some(
                 "events can only be raised from within methods on their declaring type".to_string()
             ),

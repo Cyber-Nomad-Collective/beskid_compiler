@@ -311,6 +311,85 @@ pub enum SemanticIssueKind {
     LambdaCapturesStackReference {
         name: String,
     },
+    // ── Transfer, capture and move band E1234–E1255 (E1250–E1255 reserved, unassigned) ──
+    /// E1234: a Moved-class or `Fiber` value used after it was consumed. Related label
+    /// "moved here" points at the consuming use.
+    UseAfterMove {
+        name: String,
+    },
+    /// E1235: a lambda passed to a `[Captures]` parameter assigns a captured local.
+    CapturedLocalAssignedInBoundLambda {
+        name: String,
+    },
+    /// E1236: a `[Captures]` lambda captures a value whose transfer class the bound rejects.
+    CaptureNotTransferable {
+        name: String,
+        type_name: String,
+        class: String,
+    },
+    /// E1237: a `[Captures]` lambda captures a Moved value without `move`.
+    MovedCaptureWithoutMove {
+        name: String,
+    },
+    /// E1238: the argument to a `[Captures]` parameter is not a lambda literal or function item.
+    CapturesArgumentNotLiteral,
+    /// E1239: `move` on a name that is not an owning Moved-class name. `class` names the
+    /// non-Moved transfer class; `None` means the name is a borrowed (non-`move`) parameter.
+    MoveOfNonOwningName {
+        name: String,
+        class: Option<String>,
+    },
+    /// E1240: a Moved value consumed in a loop body without reassignment before the next iteration.
+    MoveInLoopWithoutReassignment {
+        name: String,
+    },
+    /// E1241: a borrowed Moved value stored, returned, captured or passed to a `move` parameter.
+    /// Related label "borrowed here" points at the borrowed declaration.
+    BorrowEscapes {
+        name: String,
+    },
+    /// E1242: a Moved value stored, passed to a `move` parameter or returned while a live name
+    /// still owns it.
+    ImplicitAliasOfMovedValue {
+        name: String,
+    },
+    /// E1243: `move x.f` on a field whose type has no canonical empty value.
+    DestructiveReadWithoutEmpty {
+        field: String,
+        type_name: String,
+    },
+    /// E1244: a field of an `[Immutable]` type is not Shared.
+    ImmutableFieldNotShared {
+        type_name: String,
+        field: String,
+        class: String,
+    },
+    /// E1245: assignment to or escape of a field of an `[Immutable]` object outside construction.
+    ImmutableFieldAssignment {
+        type_name: String,
+        field: String,
+    },
+    /// E1246: `[Copyable]`, `[Isolated]` or `[Immutable]` on a never-transferable type.
+    MarkerOnNeverTransferable {
+        marker: String,
+        type_name: String,
+    },
+    /// E1247: a field class the `[Isolated]` or `[Copyable]` marker does not admit.
+    MarkerFieldClassMismatch {
+        marker: String,
+        type_name: String,
+        field: String,
+        class: String,
+    },
+    /// E1248: a `[Captures]` bound that is not a marker contract (`bound` names it), or a
+    /// `[Captures]` attribute on a parameter whose type is not a function type (`bound` is `None`).
+    CapturesBoundNotMarker {
+        bound: Option<String>,
+    },
+    /// E1249: an `inject` field read inside a task body.
+    InjectInsideIsolateBody {
+        field: String,
+    },
     /// Internal compiler error (E2101-E2199 band): a semantic fact a lowering request needs is
     /// still unavailable after the legality gate passed for its items. A compiler gap, never a
     /// user error.
@@ -566,5 +645,56 @@ mod query_gate_kind_tests {
         assert_eq!(issue.label(), "clif block");
         assert_eq!(issue.help().as_deref(), Some("clif blocks inside lambdas cannot name parameters with `%N`"));
         assert_eq!(issue.severity(), Severity::Error);
+    }
+
+    #[test]
+    fn transfer_capture_and_move_block_maps_e1234_through_e1249_in_registry_order() {
+        let name = || "value".to_string();
+        let kinds = [
+            SemanticIssueKind::UseAfterMove { name: name() },
+            SemanticIssueKind::CapturedLocalAssignedInBoundLambda { name: name() },
+            SemanticIssueKind::CaptureNotTransferable { name: name(), type_name: "Channel<i64>".into(), class: "Never".into() },
+            SemanticIssueKind::MovedCaptureWithoutMove { name: name() },
+            SemanticIssueKind::CapturesArgumentNotLiteral,
+            SemanticIssueKind::MoveOfNonOwningName { name: name(), class: Some("Shared".into()) },
+            SemanticIssueKind::MoveInLoopWithoutReassignment { name: name() },
+            SemanticIssueKind::BorrowEscapes { name: name() },
+            SemanticIssueKind::ImplicitAliasOfMovedValue { name: name() },
+            SemanticIssueKind::DestructiveReadWithoutEmpty { field: "f".into(), type_name: "i64".into() },
+            SemanticIssueKind::ImmutableFieldNotShared { type_name: "T".into(), field: "f".into(), class: "Moved".into() },
+            SemanticIssueKind::ImmutableFieldAssignment { type_name: "T".into(), field: "f".into() },
+            SemanticIssueKind::MarkerOnNeverTransferable { marker: "Isolated".into(), type_name: "T".into() },
+            SemanticIssueKind::MarkerFieldClassMismatch {
+                marker: "Isolated".into(),
+                type_name: "T".into(),
+                field: "f".into(),
+                class: "Copied".into(),
+            },
+            SemanticIssueKind::CapturesBoundNotMarker { bound: None },
+            SemanticIssueKind::InjectInsideIsolateBody { field: "clock".into() },
+        ];
+        for (offset, kind) in kinds.iter().enumerate() {
+            assert_eq!(kind.code(), format!("E{}", 1234 + offset), "{kind:?}");
+            assert_eq!(kind.severity(), Severity::Error);
+            assert!(!kind.message().is_empty() && !kind.label().is_empty());
+        }
+        assert_eq!(
+            SemanticIssueKind::MovedCaptureWithoutMove { name: "item".into() }.help().as_deref(),
+            Some("write `move item`")
+        );
+        assert_eq!(SemanticIssueKind::CapturedLocalAssignedInBoundLambda { name: name() }.help().as_deref(), Some("use a reduction"));
+        assert_eq!(SemanticIssueKind::CapturesArgumentNotLiteral.help().as_deref(), Some("pass the lambda literal"));
+        assert_eq!(
+            SemanticIssueKind::BorrowEscapes { name: "buffer".into() }.help().as_deref(),
+            Some("declare the parameter `move T buffer`")
+        );
+        assert_eq!(
+            SemanticIssueKind::DestructiveReadWithoutEmpty { field: "f".into(), type_name: "i64".into() }.help().as_deref(),
+            Some("use `exchange(<place>, move <value>)`")
+        );
+        assert_eq!(
+            SemanticIssueKind::InjectInsideIsolateBody { field: "clock".into() }.message(),
+            "composition is not available inside an isolate"
+        );
     }
 }
