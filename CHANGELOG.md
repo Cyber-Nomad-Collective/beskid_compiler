@@ -159,68 +159,6 @@ development log stays under [Unreleased] below.
 - Glue is selected by `glue` manifest blocks, `[GlueHandle]` and `[RustOwner]`;
   the 0.4 Glue attributes and Mod contracts are gone.
 
-### Added (0.6.1-0.6.4 runtime, `v061-gc-stress-and-poison`, `v062-captures-and-move`, `v063-isolates-and-scope`, `v064-ports-and-pipelines`)
-
-- GC stress mode (`BESKID_GC_STRESS=alloc|alloc:<n>|verify`), heap verification
-  and debug-kit poisoning with a byte-budgeted quarantine
-  (`BESKID_GC_QUARANTINE`). A malformed value traps with the variable name.
-- Incremental marking with a hybrid write barrier
-  (`beskid_rt_v5_gc_write_barrier`, data export `beskid_rt_v5_gc_barrier_active`)
-  and lazy sweeping. `beskid_rt_v5_array_write_barrier` is removed.
-- Isolates and structured scopes for `Core.Parallel`: the `__isolate_*`
-  services spawn a task on a new thread with its own runtime instance and heap,
-  or run it as a local fiber at the `BESKID_ISOLATES_MAX` bound (default: host
-  processor count; 1 to 65535). A panicked task cancels its siblings and the
-  ports of its scope. A joined completed task's heap is adopted by the joiner;
-  a failed or cancelled one is discarded. Composition reads inside an isolate
-  panic with `composition is not available inside an isolate`.
-- `Runtime/Mem/Transit.bd`: descriptor-driven copy of an object graph between
-  heaps through a native record. It keeps sharing and cycles, and refuses an
-  invalid descriptor with `transit refused 0x<descriptor>`.
-- `Runtime/Mem/Gc/Foreign.bd`: per-heap foreign reference table that marking
-  stamps and mark termination prunes. `BeskidHeapState` is 528 bytes.
-- Ports: the `__port_*` services over bounded native rings
-  (`assembly/common/port_ring.h`), with close, cancel and cooperative parking.
-  Values are copied through transit records.
-- The owner mailbox grows when full. Before, it trapped at 256 commands.
-
-### Added (0.6.1 runtime groundwork, `v061-attributes-and-isolate-prerequisites`)
-
-- Thread and atomic runtime intrinsics for the canonical runtime corpus:
-  `thread_create`, `thread_join`, `atomic_word_load`, `atomic_word_store`,
-  `atomic_word_compare_exchange`, `atomic_word_fetch_add` and `atomic_fence`
-  (order byte 0 relaxed to 4 sequentially consistent), implemented in
-  `assembly/common/host_threads.h` for Linux, macOS and Windows and wrapped in
-  `Runtime/Bootstrap/Native.bd`.
-- `host_processor_count` intrinsic and `__host_processor_count` Corelib service
-  (`sysconf(_SC_NPROCESSORS_ONLN)`, `GetActiveProcessorCount`; at least 1),
-  exposed as `Concurrency.HostProcessorCount()`. `ProcessorCount()` still
-  reports the scheduler mutator count.
-- Runtime instance lifecycle exports `beskid_rt_v5_isolate_create`,
-  `beskid_rt_v5_isolate_destroy` and `beskid_rt_v5_isolate_panic_message`.
-  `ProcessInit` now does the process-wide steps and creates the primary instance
-  through `IsolateCreate`; `ProcessShutdown` destroys it and releases the
-  process state. Exactly one instance exists per process.
-- A main-fiber panic message is copied into native storage before fiber records
-  and the heap are released, and stays readable through the instance record
-  (`BeskidRuntimeState.instance`, formerly the unused `tls_key` word).
-- Process-wide, lock-free region-to-owner map (`Runtime/Mem/Gc/RegionMap.bd`,
-  export `beskid_rt_v5_region_owner`), registered at instance creation and on
-  every heap growth.
-- `TYPE_DESCRIPTOR_IMMUTABLE = 4` descriptor property bit. The canonical string
-  record descriptor carries it; nominal descriptors carry it once the
-  transfer-class query exists. Representation checks use `TypeDescriptorKind`.
-
-### Changed
-
-- The syscall worker pool is process-wide and reference counted: the first
-  `worker_pool_init` creates the threads, later calls share them, and the last
-  `worker_pool_shutdown` stops and joins them.
-- The runtime provenance audit accepts a manifest-declared `beskid_rt_v5_*`
-  export whose name contains a forbidden family word; Rust-mangled symbols are
-  still rejected.
-
-
 ### Removed
 
 - `Core.Threading.Thread.Spawn`, `Thread.Join`, the `Thread` handle type,
@@ -238,68 +176,140 @@ development log stays under [Unreleased] below.
 
 ## [Unreleased]
 
-### Changed
+The work below ships as one release, 0.6.6 (OpenSpec changes
+`v061-attributes-and-isolate-prerequisites`, `v061-gc-stress-and-poison`,
+`v061-glue-extensions`, `v062-captures-and-move`, `v063-isolates-and-scope`,
+`v064-ports-and-pipelines`, `v065-parallel-sequences`). It is grouped by
+feature area.
 
-- Generated code emits the 0.6.2 hybrid write barrier (OpenSpec
-  `v062-captures-and-move`, tasks 8.6, 8.7, 9.6). A store that overwrites a
-  GC-managed field or array element of an existing object loads
-  `beskid_rt_v5_gc_barrier_active` and, only when it is non-zero, calls
-  `beskid_rt_v5_gc_write_barrier(slot, value)` in a cold block before the
-  store. The managed-reference fact of the store target decides; a target
-  without the fact is a lowering error. The collection owner field store and
-  `Clear`/`RemoveLast` element clears are barriered. Initialization stores
-  (aggregate, array and injection literals, bulk arguments, spawn
-  environments) carry no barrier, and the per-element
-  `beskid_rt_v5_array_write_barrier` calls and `ArrayLayout::needs_write_barrier`
-  are removed. Leaf root elision treats the barrier as a non-safepoint call.
-  Native Mod adapters and dynamic mapping only initialize objects they
-  allocate and keep the 0.6.0 construction barriers.
+### Language: transfer classes and markers
 
-### Added
+- Every type has a transfer class: Shared, Moved, Copied or Never. Primitives
+  and `string` are Shared, `T[]` is Moved when `T` is transferable, and a
+  nominal type takes its class from `[Immutable]`, `[Isolated]` or
+  `[Copyable]` and the classes of its fields. A type without a marker, a
+  function value and `pointer` are Never. A generic type is classified per
+  instantiation.
+- Marker attributes `Immutable`, `Isolated`, `Copyable`, `NeverTransferable`,
+  `ImmutableStorage`, `Captures`, `ScopeBorrowed` and `CompilerDerived`,
+  declared once in `Core.Attributes`. The compiler-derived marker contracts
+  `Transferable`, `Shared`, `Moved` and `Copied` live in `Core.Parallel`; a
+  bound `where T: Transferable` is proven from the class and issues no witness.
+  `ImmutableStorage` and `ScopeBorrowed` are allowed only inside corelib.
+- Diagnostics E1234-E1249 for transfer, capture and ownership errors; E1610
+  names the reason a marker bound fails; E1607 rejects a declared conformance
+  to a compiler-derived contract; E1003 rejects members on a marker contract.
+- Corelib collections are `[Isolated]`; `Fiber`, `Channel`, `Hub`, `Mutex`,
+  `MutexGuard`, `WaitGroup` and the socket types are `[NeverTransferable]`.
+  A `[GlueHandle]` owner type is never transferable, and a marker on it is
+  E1246.
+- Hover shows the transfer class of a type declaration ("decided per
+  instantiation" for a generic type).
 
-- Rust Glue records by value (OpenSpec `v061-glue-extensions`). A `[GlueRecord]`
-  type with 1 to 64 scalar fields crosses the C ABI as a C struct whose layout
-  the C ABI profile computes; values are copied, and an out-of-domain Bool or
-  `char` field from the foreign side is a checked failure.
-- Rust Glue fieldless enums. A `[GlueEnum]` crosses as its `u32` source-order
-  variant index; a discriminant that names no variant is a checked failure.
-  Enums with payload variants are rejected.
-- Rust Glue callbacks. A function type is admitted as a Glue import parameter
-  with scalar or enum members. The foreign side receives an invoke pointer and a
-  context token that is valid only during the import call and only on the
-  calling thread; any other invocation returns status 2. The Rust owner sees a
-  `&mut dyn FnMut`.
-- `RustOwner(Path:..)` on a `GlueRecord` or `GlueEnum` type names the owner's
-  Rust type; the owner build checks its layout and variant names at compile
-  time.
-- The Rust owner crate has a generated `beskid` module with one function per
-  export of its consumer image, bound by the loader. Owner code calls Beskid
-  exports from inside an import call; any other thread gets
-  `GlueError::ForeignThread`.
+### Language: captures and `move`
 
-### Changed
+- `move` is a keyword. `move x` consumes an owning name; `move x.f` is a
+  destructive read that leaves the canonical empty value (`None`, an empty
+  array or an empty `List`) in the field; `exchange(place, move value)` swaps a
+  field or element and returns the old value. `move` on a parameter or receiver
+  (`move this`) makes it owning.
+- Affine ownership of Moved values (E1234 use after move, E1239-E1243):
+  reading after a consuming use, storing a borrowed parameter, consuming in a
+  loop without rebinding, and destructive reads without a canonical empty are
+  errors. `x = f(move x)` rebinds `x`, also inside a branch of a loop body.
+  Struct and array literals consume an owning name without `move`.
+- `[Captures(Bound: C)]` on a function-typed parameter or field judges the
+  captures of every lambda passed or assigned to it (E1235-E1238, E1241). A
+  value read from a bounded parameter or field satisfies the same bound.
+- A `move T` parameter over `T: Transferable` is owning inside the generic
+  definition; at a call a Moved argument needs `move` (E1242), and `move` on a
+  Shared or Copied argument is E1239.
+- Corelib collection mutators take `move this` (`list = list.Push(v)`).
+- `__transfer_class<T>()` folds to a per-instantiation constant (0 Shared,
+  1 Moved, 2 Copied).
+- LSP quick fixes insert `move`, mark a parameter `move`, or rewrite a store as
+  `exchange`; hover shows owning and borrowed bindings and capture lists.
 
-- Glue lowers to the Interop.Contracts vocabulary in one function
-  (`glue_type_shape`, `glue_interop_signature`). Scalar shapes carry a value
-  domain, so Bool maps to `u8` in the Bool domain in every C profile.
-- The Rust owner build takes the consumer packet, and owners without opaque
-  handle types are admitted.
-### Added
+### Memory management
 
-- Corelib `Core.Parallel` (package `corelib_concurrency`, OpenSpec
-  `v063-isolates-and-scope`, `v064-ports-and-pipelines`,
-  `v065-parallel-sequences`): fork-join scopes (`Parallel.Scope`,
-  `Scope.Spawn`/`SpawnTry`/`Cancel`, `Task<T>.Join`, structured failure in
-  spawn order, serial elision), `Isolate` handles, `ReadOnlyArray.Freeze`,
-  bounded `Port<T>` with long-lived `Scope.Isolate` workers, pipelines
-  (`Source`/`Stage`/`Ordered`/`Sink`), and `ParallelSeq<T>`
+- Incremental marking with a hybrid write barrier and lazy sweeping. Generated
+  code loads `beskid_rt_v5_gc_barrier_active` before a store that overwrites a
+  GC-managed field or element of an existing object and, only when it is
+  non-zero, calls `beskid_rt_v5_gc_write_barrier(slot, value)` in a cold block.
+  Initialization stores carry no barrier. Destructive reads and `exchange` use
+  the barriered store. `beskid_rt_v5_array_write_barrier` and
+  `ArrayLayout::needs_write_barrier` are removed; native Mod adapters and
+  dynamic mapping use the construction barrier for objects they allocate.
+- GC stress mode (`BESKID_GC_STRESS=alloc|alloc:<n>|verify`), heap
+  verification, and debug-kit poisoning with a byte-budgeted quarantine
+  (`BESKID_GC_QUARANTINE`). A malformed value traps with the variable name.
+  The debug kit compiles its platform objects with
+  `BESKID_RUNTIME_KIT_DEBUG=1`.
+- `BeskidHeapState` is 528 bytes; word 512 is the count record of the heap.
+
+### Runtime: isolates, ports and transfer
+
+- Thread, atomic and processor-count intrinsics (`thread_create`,
+  `thread_join`, `atomic_word_*`, `atomic_fence`, `host_processor_count`) for
+  Linux, macOS and Windows; `Concurrency.HostProcessorCount()`.
+- Runtime instances: `beskid_rt_v5_isolate_create`/`_destroy`/
+  `_panic_message`, a process-wide region-to-owner map, and a process-wide,
+  reference-counted syscall worker pool. A main-fiber panic message stays
+  readable after the heap is released.
+- The `__isolate_*` services run a task on a new thread with its own runtime
+  instance and heap, or as a local fiber at the `BESKID_ISOLATES_MAX` bound
+  (default: host processor count). A failed task cancels its siblings and the
+  ports of its scope. A completed task's heap is adopted by the joiner. Reading
+  composition inside an isolate panics.
+- The `__port_*` services over bounded native rings
+  (`assembly/common/port_ring.h`), with close, cancel and cooperative parking.
+  Shared and Moved values cross by pointer, Copied values through a transit
+  copy (`Runtime/Mem/Transit.bd`).
+- Cross-heap reference counts (`Runtime/Mem/Gc/Counts.bd`,
+  `Runtime/Mem/Gc/Foreign.bd`): causal INC/DEC through a FIFO per owner,
+  foreign references stamped by marking, and stakes given back when a send
+  fails or a scope releases its ports.
+- `__isolate_spawn<T>` lowers to a per-result-shape entry trampoline; the
+  owner mailbox grows when full (before, it trapped at 256 commands).
+
+### Core.Parallel
+
+- Package `corelib_concurrency`, modules `Core.Parallel.*`: fork-join scopes
+  (`Parallel.Scope`, `Scope.Spawn`/`SpawnTry`/`Cancel`, `Task<T>.Join`,
+  failures in spawn order, serial elision), `Isolate` handles,
+  `ReadOnlyArray.Freeze`, bounded `Port<T>` with long-lived `Scope.Isolate`
+  workers, pipelines (`Source`/`Stage`/`Ordered`/`Sink`), and `ParallelSeq<T>`
   (`List<T>.Parallel()`, fused `Where`/`Map`, `Chunk`/`MinChunk`, adaptive
   heartbeat splitting, `Collect`/`ForEach`/`Count`/`Reduce`/`ReduceUnordered`
-  with the `Associative`/`Commutative` combiner contracts). The transfer marker
-  contracts and attributes are declared in `Core.Parallel`. Tests:
-  `ParallelSuite` and the `compile-fail/parallel` corpus. Guide and cost table:
-  `corelib/beskid_corelib/docs/Core/Parallel.md`. Not built yet: it needs the
-  runtime builtins and language rules listed in the slice handoff.
+  with the `Associative`/`Commutative` combiner contracts). A `Reduce` seed
+  must be Shared or Copied.
+- Tests: `ParallelSuite` and the `compile-fail/parallel` corpus. Guide and
+  cost table: `corelib/beskid_corelib/docs/Core/Parallel.md`.
+
+### Glue
+
+- Rust Glue records by value: a `[GlueRecord]` type with 1 to 64 scalar fields
+  crosses the C ABI as a C struct; an out-of-domain Bool or `char` field from
+  the foreign side is a checked failure.
+- Rust Glue fieldless enums: a `[GlueEnum]` crosses as its `u32` source-order
+  variant index; an unknown discriminant is a checked failure.
+- Rust Glue callbacks: a function type is a Glue import parameter with scalar
+  or enum members, valid only during the import call and on the calling
+  thread (otherwise status 2).
+- `RustOwner(Path:..)` on a `GlueRecord` or `GlueEnum` type names the owner's
+  Rust type, checked at compile time. `GlueRecord` and `GlueEnum` are declared
+  in `Core.Attributes`.
+- The Rust owner crate has a generated `beskid` module with one function per
+  consumer export; calls from another thread get `GlueError::ForeignThread`.
+- Glue lowers to the Interop.Contracts vocabulary (`glue_type_shape`,
+  `glue_interop_signature`); Bool maps to `u8` in the Bool domain in every C
+  profile. Owners without opaque handle types are admitted.
+
+### Changed
+
+- The runtime provenance audit accepts a manifest-declared `beskid_rt_v5_*`
+  export whose name contains a forbidden family word.
+- The Corelib service source corpus embeds the `Core.Parallel` units.
 
 ### Fixed
 
