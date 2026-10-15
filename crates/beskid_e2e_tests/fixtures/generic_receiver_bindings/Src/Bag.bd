@@ -1,0 +1,19 @@
+// `Bag.Empty<T>()` and `Bag.One<T>()` are type-qualified calls to functions of this unit, made
+// inside specialized generic bodies.
+pub type Bag<T> {
+    T[] values,
+    i64 count,
+    pub Bag<T> Put(T next) { return Bag<T> { values: values, count: count + 1 }; }
+    pub i64 Size() { return count; }
+}
+
+T[] NoValues<T>() { return []; }
+
+pub Bag<T> Empty<T>() { return Bag<T> { values: NoValues<T>(), count: 0 }; }
+
+pub Bag<T> One<T>(T value) {
+    Bag<T> bag = Bag.Empty<T>();
+    return bag.Put(value);
+}
+
+pub Bag<T> Wrap<T>(T value) { return Bag.One<T>(value); }

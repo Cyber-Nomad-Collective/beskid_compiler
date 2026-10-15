@@ -1,0 +1,22 @@
+// A generic `bulk T[]` call packs its trailing arguments as the specialized element type, with
+// explicit and inferred type arguments (0.5.4 regression e9664e4e).
+T First<T>(bulk T[] values) {
+    return values[0];
+}
+
+T Third<T>(bulk T[] values) {
+    return values[2];
+}
+
+i32 Main() {
+    if First<i64>(4, 5, 6) + First(7_i64) != 11 {
+        return 1;
+    }
+    if Third<i64>(4, 5, 6) != 6 {
+        return 2;
+    }
+    if First("a", "b") != "a" {
+        return 3;
+    }
+    return 42;
+}

@@ -945,3 +945,40 @@ fn import_of_the_declaring_module_is_used_even_when_another_import_passes_the_it
         "both imports are used; the declaring module's import owns `IoError`: {diagnostics:?}"
     );
 }
+
+fn bound_dispatch_diagnostics(name: &str, source: &str) -> Vec<SemanticDiagnostic> {
+    let test_id = TEST_ID.fetch_add(1, Ordering::Relaxed);
+    let root = std::env::temp_dir().join(format!("beskid_prepare_{name}_{test_id}"));
+    std::fs::create_dir_all(&root).expect("test source root");
+    let entry_path = root.join("Main.bd");
+    std::fs::write(&entry_path, source).expect("entry source");
+    let plan = synthetic_compile_plan_for_source(&entry_path);
+    let resolved = resolved_input_from_plan(entry_path.clone(), source.to_string(), plan, None, None);
+    let (_, diagnostics, _) = beskid_queries::prepare_compilation_diagnostics_with_db(
+        &mut BeskidDatabase::default(),
+        &resolved,
+        PrepareOptions {
+            front_end: FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
+            ..PrepareOptions::without_mods()
+        },
+        None,
+    )
+    .expect("prepare diagnostics");
+    let _ = std::fs::remove_dir_all(root);
+    diagnostics
+}
+
+#[test]
+fn bounded_generic_receiver_calls_the_bound_contract_methods() {
+    let contracts = "contract Sized { i64 Size(); } contract Scaled { i64 Scale(i64 factor); } \
+                     type Box : Sized, Scaled { i64 n, pub i64 Size() { return this.n; } pub i64 Scale(i64 factor) { return this.n * factor; } } ";
+    let accepted = format!(
+        "{contracts}i64 Both<T>(T value) where T: Sized, T: Scaled {{ return value.Size() + value.Scale(10); }} \
+         i64 Main() {{ return Both<Box>(Box {{ n: 3 }}); }}"
+    );
+    let diagnostics = bound_dispatch_diagnostics("bound_dispatch_ok", &accepted);
+    assert!(
+        diagnostics.iter().all(|diagnostic| diagnostic.severity != Severity::Error),
+        "contract methods of every bound are callable: {diagnostics:?}"
+    );
+}
