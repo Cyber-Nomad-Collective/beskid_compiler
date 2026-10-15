@@ -26,5 +26,5 @@ fn v06_child_transport_binary_pipes_argv_and_bounded_reap() {
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
-    assert!(String::from_utf8_lossy(&output.stdout).contains("binary=exact argv=exact stderr=drained reap=bounded"));
+    assert!(String::from_utf8_lossy(&output.stdout).contains("binary=exact argv=exact stderr=drained reap=bounded environment=isolated cwd=exact stale=denied shutdown=bounded os_error=carried"));
 }

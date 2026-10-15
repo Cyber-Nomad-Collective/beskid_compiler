@@ -27,6 +27,16 @@ extern void beskid_rt_v5_intrinsic_system_free(void *, size_t);
 #define CHILD_CAPACITY 128
 #define CHILD_ARGUMENTS 256
 #define CHILD_BYTES 1048576
+/* A spawn failure that has an OS error code reports
+ * -(CHILD_OS_ERROR_BASE + code): the Windows system error code from
+ * GetLastError or the POSIX errno. -1 stays the status of a failure without an
+ * OS code, and -7/-8 stay NotFound/PermissionDenied. */
+#define CHILD_OS_ERROR_BASE 65536
+static int ChildOsErrorStatus(uint64_t code) {
+  return code && code <= (uint64_t)(INT_MAX - CHILD_OS_ERROR_BASE)
+             ? -(int)(CHILD_OS_ERROR_BASE + code)
+             : -1;
+}
 struct ChildText {
   char *data;
   size_t length;
@@ -294,13 +304,14 @@ static wchar_t *ChildWide(const char *s, size_t n, size_t *allocated) {
   }
   return w;
 }
-static int ChildWindowsPipe(HANDLE *parent, HANDLE *child, int input,
-                            uint64_t token) {
+/* Returns 0, or the system error code of the failed call. */
+static DWORD ChildWindowsPipe(HANDLE *parent, HANDLE *child, int input,
+                              uint64_t token) {
   SECURITY_ATTRIBUTES security = {sizeof security, NULL, TRUE};
   if (!input) {
     HANDLE read, write;
     if (!CreatePipe(&read, &write, &security, 0))
-      return -1;
+      return GetLastError();
     SetHandleInformation(read, HANDLE_FLAG_INHERIT, 0);
     *parent = read;
     *child = write;
@@ -317,12 +328,13 @@ static int ChildWindowsPipe(HANDLE *parent, HANDLE *child, int input,
       CreateNamedPipeW(name, PIPE_ACCESS_OUTBOUND | FILE_FLAG_OVERLAPPED,
                        PIPE_TYPE_BYTE | PIPE_WAIT, 1, 65536, 65536, 0, NULL);
   if (server == INVALID_HANDLE_VALUE)
-    return -1;
+    return GetLastError();
   HANDLE client =
       CreateFileW(name, GENERIC_READ, 0, &security, OPEN_EXISTING, 0, NULL);
   if (client == INVALID_HANDLE_VALUE) {
+    DWORD error = GetLastError();
     CloseHandle(server);
-    return -1;
+    return error;
   }
   *parent = server;
   *child = client;
@@ -342,6 +354,7 @@ static int ChildSpawnPlatform(struct ChildTransport *c) {
   SIZE_T attribute_bytes = 0;
   int attributes_initialized = 0;
   int result = -1;
+  DWORD os_error = 0;
   if (!exe || !cwd || !command)
     goto done;
   size_t used = 0;
@@ -432,27 +445,37 @@ static int ChildSpawnPlatform(struct ChildTransport *c) {
   }
   environment[at] = 0;
   for (int i = 0; i < 3; i++)
-    if (ChildWindowsPipe(&c->pipes[i], &child[i], i == 0, c->token))
+    if ((os_error = ChildWindowsPipe(&c->pipes[i], &child[i], i == 0,
+                                     c->token)))
       goto done;
   job = CreateJobObjectW(NULL, NULL);
-  if (!job)
+  if (!job) {
+    os_error = GetLastError();
     goto done;
+  }
   JOBOBJECT_EXTENDED_LIMIT_INFORMATION limits;
   memset(&limits, 0, sizeof limits);
   limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
   if (!SetInformationJobObject(job, JobObjectExtendedLimitInformation, &limits,
-                               sizeof limits))
+                               sizeof limits)) {
+    os_error = GetLastError();
     goto done;
+  }
   InitializeProcThreadAttributeList(NULL, 1, 0, &attribute_bytes);
   attributes = ChildAllocate(attribute_bytes);
-  if (!attributes ||
-      !InitializeProcThreadAttributeList(attributes, 1, 0, &attribute_bytes))
+  if (!attributes)
     goto done;
+  if (!InitializeProcThreadAttributeList(attributes, 1, 0, &attribute_bytes)) {
+    os_error = GetLastError();
+    goto done;
+  }
   attributes_initialized = 1;
   if (!UpdateProcThreadAttribute(attributes, 0,
                                  PROC_THREAD_ATTRIBUTE_HANDLE_LIST, child,
-                                 sizeof child, NULL, NULL))
+                                 sizeof child, NULL, NULL)) {
+    os_error = GetLastError();
     goto done;
+  }
   STARTUPINFOEXW start;
   memset(&start, 0, sizeof start);
   start.StartupInfo.cb = sizeof start;
@@ -468,15 +491,16 @@ static int ChildSpawnPlatform(struct ChildTransport *c) {
                           EXTENDED_STARTUPINFO_PRESENT,
                       environment, c->cwd.length ? cwd : NULL,
                       &start.StartupInfo, &process)) {
-    DWORD error = GetLastError();
-    result = (error == ERROR_FILE_NOT_FOUND || error == ERROR_PATH_NOT_FOUND)
-                 ? -7
-             : error == ERROR_ACCESS_DENIED ? -8
-                                            : -1;
+    os_error = GetLastError();
+    if (os_error == ERROR_FILE_NOT_FOUND || os_error == ERROR_PATH_NOT_FOUND)
+      result = -7;
+    else if (os_error == ERROR_ACCESS_DENIED)
+      result = -8;
     goto done;
   }
   if (!AssignProcessToJobObject(job, process.hProcess) ||
       ResumeThread(process.hThread) == (DWORD)-1) {
+    os_error = GetLastError();
     TerminateProcess(process.hProcess, 127);
     WaitForSingleObject(process.hProcess, 5000);
     CloseHandle(process.hThread);
@@ -487,8 +511,15 @@ static int ChildSpawnPlatform(struct ChildTransport *c) {
   c->process = process.hProcess;
   c->job = job;
   job = NULL;
-  result = -2;
+  /* CreateProcessW reports success or failure of process creation
+   * synchronously, so a Windows spawn settles in this call: there is no POSIX
+   * exec-status pipe to probe. A pending (-2) result here would move the slot
+   * to the probe state, which only the POSIX transport serves, and the
+   * caller's retry would then fail with -1. */
+  result = 0;
 done:
+  if (result == -1)
+    result = ChildOsErrorStatus(os_error);
   for (int i = 0; i < 3; i++)
     if (child[i])
       CloseHandle(child[i]);
@@ -523,15 +554,17 @@ static int ChildPipe(int p[2]) {
     return -1;
   for (int i = 0; i < 2; i++)
     if (fcntl(p[i], F_SETFD, FD_CLOEXEC) < 0) {
+      int error = errno;
       close(p[0]);
       close(p[1]);
+      errno = error;
       return -1;
     }
   return 0;
 }
 static int ChildSpawnPlatform(struct ChildTransport *c) {
   int p[3][2] = {{-1, -1}, {-1, -1}, {-1, -1}}, error_pipe[2] = {-1, -1};
-  int result = -1;
+  int result = -1, os_error = 0;
   char *args[CHILD_ARGUMENTS + 2];
   args[0] = c->executable.data;
   for (size_t i = 0; i < c->argc; i++)
@@ -579,13 +612,19 @@ static int ChildSpawnPlatform(struct ChildTransport *c) {
     env[at++] = c->env[i].data;
   env[at] = NULL;
   for (int i = 0; i < 3; i++)
-    if (ChildPipe(p[i]))
+    if (ChildPipe(p[i])) {
+      os_error = errno;
       goto done;
-  if (ChildPipe(error_pipe))
+    }
+  if (ChildPipe(error_pipe)) {
+    os_error = errno;
     goto done;
+  }
   pid_t pid = fork();
-  if (pid < 0)
+  if (pid < 0) {
+    os_error = errno;
     goto done;
+  }
   if (!pid) {
     close(error_pipe[0]);
     int failure = 0;
@@ -645,6 +684,8 @@ static int ChildSpawnPlatform(struct ChildTransport *c) {
   }
   result = -2;
 done:
+  if (result == -1 && os_error > 0)
+    result = ChildOsErrorStatus((uint64_t)os_error);
   for (int i = 0; i < 3; i++)
     for (int j = 0; j < 2; j++)
       if (p[i][j] >= 0)
@@ -678,7 +719,10 @@ static int ChildExecProbe(struct ChildTransport *c) {
        descendants. */
     c->exec_failed = 1;
     c->state = 6;
-    return failure == ENOENT ? -7 : failure == EACCES ? -8 : -1;
+    return failure == ENOENT   ? -7
+           : failure == EACCES ? -8
+           : failure > 0       ? ChildOsErrorStatus((uint64_t)failure)
+                               : -1;
   }
   return -1;
 }

@@ -6,6 +6,9 @@
 #else
 #define _DARWIN_C_SOURCE
 #define _POSIX_C_SOURCE 200809L
+#include <errno.h>
+#include <fcntl.h>
+#include <sys/stat.h>
 #include <unistd.h>
 #include <time.h>
 #endif
@@ -74,6 +77,62 @@ static void absolute_executable(const char *input, char *path, size_t capacity) 
   else { current_directory(path, capacity); size_t length = strlen(path); assert(length + strlen(input) + 2 <= capacity); path[length] = '/'; strcpy(path + length + 1, input); }
 #endif
 }
+#ifdef _WIN32
+/* GetEnvironmentVariableW, not the CRT `_wgetenv`, which UCRT deprecates. */
+static int child_environment_is(const wchar_t *key, const wchar_t *expected) {
+  wchar_t value[4096]; DWORD length = GetEnvironmentVariableW(key, value, 4096);
+  if (!expected) return length == 0 && GetLastError() == ERROR_ENVVAR_NOT_FOUND;
+  return length > 0 && length < 4096 && !wcscmp(value, expected);
+}
+#endif
+/* Windows settles a spawn in its first call: CreateProcessW reports creation
+ * synchronously, so there is no exec-status probe as on POSIX. */
+static void spawn_settles_synchronously_on_windows(const char *executable) {
+#ifdef _WIN32
+  uint64_t token = beskid_rt_v5_intrinsic_child_begin((const uint8_t *)executable, strlen(executable), NULL, 0, 1);
+  assert(token && !beskid_rt_v5_intrinsic_child_argument(token, (const uint8_t *)"--sleep", 7));
+  assert(beskid_rt_v5_intrinsic_child_spawn(token) == 0);
+  assert(beskid_rt_v5_intrinsic_child_poll(token) == -2);
+  assert(!beskid_rt_v5_intrinsic_child_terminate(token));
+  assert(!close_ready(token));
+#else
+  (void)executable;
+#endif
+}
+/* A spawn failure that is neither NotFound (-7) nor PermissionDenied (-8)
+ * carries its OS error code as -(65536 + code), never the bare -1. */
+static void spawn_failure_carries_os_error(void) {
+  char path[4096];
+#ifdef _WIN32
+  wchar_t temporary[4096], wide[4096]; DWORD length = GetTempPathW(4096, temporary);
+  assert(length > 0 && length < 4096 && GetTempFileNameW(temporary, L"bsk", 0, wide));
+  HANDLE file = CreateFileW(wide, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+  DWORD written = 0;
+  assert(file != INVALID_HANDLE_VALUE && WriteFile(file, "not a program\n", 14, &written, NULL) && written == 14);
+  assert(CloseHandle(file));
+  assert(WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, wide, -1, path, sizeof path, NULL, NULL) > 0);
+#else
+  strcpy(path, "/tmp/beskid-not-a-program.XXXXXX");
+  int file = mkstemp(path);
+  assert(file >= 0 && write(file, "not a program\n", 14) == 14 && !fchmod(file, 0700) && !close(file));
+#endif
+  uint64_t token = beskid_rt_v5_intrinsic_child_begin((const uint8_t *)path, strlen(path), NULL, 0, 1);
+  assert(token);
+  int32_t status = spawn_ready(token);
+  if (status >= -65536) fprintf(stderr, "non-executable spawn status=%d\n", status);
+#ifdef _WIN32
+  /* ERROR_BAD_EXE_FORMAT or ERROR_EXE_MACHINE_TYPE_MISMATCH, by Windows build. */
+  assert(status < -65536);
+#else
+  assert(status == -(65536 + ENOEXEC));
+#endif
+  assert(!close_ready(token));
+#ifdef _WIN32
+  assert(DeleteFileW(wide));
+#else
+  assert(!unlink(path));
+#endif
+}
 static void environment_and_cwd(const char *executable) {
   char directory[4096];
 #ifdef _WIN32
@@ -112,12 +171,11 @@ int main(int argc, char **argv) {
     char directory[4096]; current_directory(directory, sizeof directory);
     assert(argc == 3);
 #ifdef _WIN32
-    char expected[4096]; const wchar_t *cwd = _wgetenv(L"BESKID_PROCESS_CWD");
-    assert(cwd && WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, cwd, -1, expected, sizeof expected, NULL, NULL) > 0);
+    char expected[4096]; wchar_t cwd[4096]; DWORD length = GetEnvironmentVariableW(L"BESKID_PROCESS_CWD", cwd, 4096);
+    assert(length > 0 && length < 4096 && WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, cwd, -1, expected, sizeof expected, NULL, NULL) > 0);
     assert(!strcmp(directory, expected));
-    assert(_wgetenv(L"BESKID_PROCESS_PARENT_ONLY") == NULL);
-    const wchar_t *value = _wgetenv(L"BESKID_PROCESS_VALUE");
-    assert(value && !wcscmp(value, L"spaces and unicode \x017c")); return 19;
+    assert(child_environment_is(L"BESKID_PROCESS_PARENT_ONLY", NULL));
+    assert(child_environment_is(L"BESKID_PROCESS_VALUE", L"spaces and unicode \x017c")); return 19;
 #else
     assert(!strcmp(directory, argv[2]));
     assert(getenv("BESKID_PROCESS_PARENT_ONLY") == NULL);
@@ -175,6 +233,8 @@ int main(int argc, char **argv) {
   assert(beskid_rt_v5_intrinsic_child_write(running, input, 1) == -11);
   char executable[4096]; absolute_executable(argv[0], executable, sizeof executable);
   environment_and_cwd(executable);
+  spawn_settles_synchronously_on_windows(executable);
+  spawn_failure_carries_os_error();
   uint64_t replacement = beskid_rt_v5_intrinsic_child_begin((const uint8_t *)executable, strlen(executable), NULL, 0, 1);
   assert(replacement && replacement != running);
   assert(beskid_rt_v5_intrinsic_child_argument(running, (const uint8_t *)"stale", 5) < 0);
@@ -193,5 +253,5 @@ int main(int argc, char **argv) {
   assert(setup_status == 0 || setup_status == -2);
   assert(!close_ready(setup));
   assert(beskid_rt_v5_intrinsic_child_poll(setup) == -11);
-  puts("binary=exact argv=exact stderr=drained reap=bounded environment=isolated cwd=exact stale=denied shutdown=bounded"); return 0;
+  puts("binary=exact argv=exact stderr=drained reap=bounded environment=isolated cwd=exact stale=denied shutdown=bounded os_error=carried"); return 0;
 }
