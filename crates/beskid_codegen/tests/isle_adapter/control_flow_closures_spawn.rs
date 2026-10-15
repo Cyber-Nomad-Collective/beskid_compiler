@@ -581,13 +581,24 @@ fn canonical_runtime_closure_descriptor_validation_and_rooting_execute_fail_clos
     heap_region[7] = 0; // reserved / free_span_list head
     // Span directory entries stay zeroed (base == 0, "never carved") except where carving writes
     // them; nothing further to initialize here.
-    let mut heap = [0usize; 41]; // BeskidHeapState is 328 bytes = 41 words.
-    heap[0] = region_start; // first_region
-    heap[1] = region_start; // current_region
-    heap[2] = 1; // region_count
-    heap[3] = region_size; // committed_bytes
-    heap[9] = usize::MAX; // cap_bytes: generous, this fixture never grows or collects
-    heap[10] = PAGE_SIZE; // next_region_size (irrelevant: no growth expected in this fixture)
+    // Sized and addressed from the canonical manifest layout: the runtime reads fields appended
+    // after the 0.6.0 block (stress, quarantine, incremental marking), so a short fixture would
+    // let it read unrelated stack bytes.
+    let heap_layout = input.abi_manifest().layouts.iter().find(|layout| layout.name == "BeskidHeapState")
+        .expect("canonical heap layout");
+    assert_eq!(heap_layout.size % std::mem::size_of::<usize>() as u64, 0);
+    let heap_word = |name: &str| {
+        let field = heap_layout.fields.iter().find(|field| field.name == name).expect("canonical heap field");
+        assert_eq!(field.offset % std::mem::size_of::<usize>() as u64, 0);
+        usize::try_from(field.offset).unwrap() / std::mem::size_of::<usize>()
+    };
+    let mut heap = vec![0usize; usize::try_from(heap_layout.size).unwrap() / std::mem::size_of::<usize>()];
+    heap[heap_word("first_region")] = region_start;
+    heap[heap_word("current_region")] = region_start;
+    heap[heap_word("region_count")] = 1;
+    heap[heap_word("committed_bytes")] = region_size;
+    heap[heap_word("cap_bytes")] = usize::MAX; // generous: this fixture never grows or collects
+    heap[heap_word("next_region_size")] = PAGE_SIZE; // irrelevant: no growth expected in this fixture
     let mut runtime_state = [0usize; 8];
     runtime_state[2] = heap.as_mut_ptr() as usize;
     let tls_layout = input.abi_manifest().layouts.iter().find(|layout| layout.name == "BeskidTlsState")
