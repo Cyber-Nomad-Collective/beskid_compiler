@@ -120,8 +120,8 @@ use calls::{
     generic_call_instantiation_for_node, specialized_for_element_identity,
     generic_call_instantiation_tracked, generic_call_specialization_tracked, generic_call_template_tracked,
     generic_call_uses_parameter_type_arguments, generic_callable_owner_count, generic_callable_parameters, method_own_generic_names, generic_nominal_method_receiver_tracked,
-    generic_source_expression_identity, generic_source_local_identity, generic_source_type_identity,
-    generic_source_type_identity_with_substitutions, imported_call_receiver_exists,
+    generic_source_expression_identity, generic_source_field_shape_identity, generic_source_local_identity,
+    generic_source_type_identity, generic_source_type_identity_with_substitutions, imported_call_receiver_exists,
     imported_generic_nominal_receiver_requires_instantiation,
     method_declaration_for_member_receiver, nominal_local_member_receiver, nominal_member_receiver_tracked,
     path_call_resolution, primitive_integer, primitive_numeric, primitive_numeric_conversion_target,
@@ -192,7 +192,7 @@ pub use local_type_resolution::{UnresolvedTypeReference, unresolved_type_referen
 use locals::{
     ancestor_distance, constant_integer_literal_tracked, constant_integer_tracked, implicit_method_receiver_tracked, is_ancestor,
     local_declaration_is_mutable, local_declaration_owner, local_declaration_scope, local_slot_for_declaration,
-    local_slot_tracked, method_owner_node, method_this_type, mutable_local_assignment_tracked, nearest_ancestor,
+    local_slot_tracked, method_owner_declaration, method_owner_node, method_this_type, mutable_local_assignment_tracked, nearest_ancestor,
     parent_node, resolve_lexical_declaration, resolved_local_tracked,
 };
 use model::ContractParameterWitness;
@@ -217,7 +217,9 @@ use typed_arrays::typed_array_allocation_tracked;
 use typing::{
     element_type_for_for_iterable, for_iterable_declared_array_element, match_arms_result_semantic_type,
     local_declaration_type, range_iterable_bounds,
-    managed_reference_kind_tracked, node_type_tracked, pattern_binding_fact, pattern_binding_semantic_type,
+    managed_reference_kind_tracked, node_type_tracked, enum_match_pattern_binding, pattern_binding_fact,
+    pattern_binding_fact_in_environment,
+    pattern_binding_semantic_type,
     integer_literal_semantic_type, semantic_type_for_binary_operands, semantic_type_for_expression, semantic_type_for_literal,
     semantic_type_for_local_path, semantic_type_for_node,
 };

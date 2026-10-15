@@ -519,6 +519,46 @@ pub(super) fn method_owner_node(
     spells_own_generics.then_some(*owner)
 }
 
+/// The nominal declaration that owns `method`, resolved across units: its parent
+/// `TypeDefinition`, or the type an `impl` block names (`impl<T> List<T> { Parallel() }` in
+/// Core.Parallel extends Foundation's `List<T>`). The block's receiver must spell exactly the
+/// owner's own generic parameter names in order, as [`method_owner_node`] requires, so the
+/// owner's applied arguments bind the method's owner parameters positionally.
+pub(in crate::semantic_contract) fn method_owner_declaration(db: &dyn Db, method: AstNodeKey) -> Option<AstNodeKey> {
+    let syntax = db.syntax_unit(method.unit).filter(|syntax| syntax.accepts_key(db, method))?;
+    let program = syntax.expanded_program(db);
+    let index = syntax.syntax_index(db);
+    let parent = parent_node(index, method.node)?;
+    let parent_ref = index.node_at(program, parent)?;
+    if parent_ref.of::<beskid_analysis::syntax::TypeDefinition>().is_some() {
+        return Some(AstNodeKey { node: parent, ..method });
+    }
+    if let Some(owner) = method_owner_node(program, index, method.node) {
+        return Some(AstNodeKey { node: owner, ..method });
+    }
+    let block = parent_ref.of::<beskid_analysis::syntax::ImplBlock>()?;
+    let beskid_analysis::syntax::Type::Complex(receiver) = &block.receiver_type.node else {
+        return None;
+    };
+    let owner = resolve_type_declaration(db, AstNodeKey { node: parent, ..method }, &receiver.node)?;
+    let owner_syntax = db.syntax_unit(owner.unit).filter(|syntax| syntax.accepts_key(db, owner))?;
+    let definition = owner_syntax
+        .syntax_index(db)
+        .node_at(owner_syntax.expanded_program(db), owner.node)?
+        .of::<beskid_analysis::syntax::TypeDefinition>()?;
+    let terminal = receiver.node.segments.last()?;
+    let spells_own_generics = terminal.node.type_args.len() == definition.generics.len()
+        && terminal.node.type_args.iter().zip(&definition.generics).all(|(argument, generic)| {
+            matches!(
+                &argument.node,
+                beskid_analysis::syntax::Type::Complex(path)
+                    if matches!(path.node.segments.as_slice(), [segment]
+                        if segment.node.type_args.is_empty() && segment.node.name.node.name == generic.node.name)
+            )
+        });
+    spells_own_generics.then_some(owner)
+}
+
 pub(super) fn nearest_ancestor(
     index: &beskid_analysis::syntax_query::SyntaxIndex,
     node: beskid_analysis::syntax::AstNodeId,

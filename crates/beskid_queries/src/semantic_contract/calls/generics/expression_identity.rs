@@ -83,13 +83,6 @@ pub(in crate::semantic_contract) fn generic_source_expression_identity(
             if let Ok(identity) = generic_source_local_identity(db, program, index, normalized_key, declaration) {
                 return Ok(identity);
             }
-            if let Some(binding) = pattern_binding_fact(db, index, normalized_key, declaration) {
-                let binding = binding?;
-                return binding
-                    .source_identity
-                    .map(Ok)
-                    .unwrap_or_else(|| generic_source_field_shape_identity(db, normalized_key, binding.payload));
-            }
         }
     }
     if let Some(array) = node.of::<beskid_analysis::syntax::ArrayLiteralExpression>() {
@@ -203,7 +196,7 @@ fn generic_source_aggregate_field_identity(
     generic_source_field_shape_identity(db, access.receiver, *shape)
 }
 
-fn generic_source_field_shape_identity(
+pub(in crate::semantic_contract) fn generic_source_field_shape_identity(
     db: &dyn Db,
     site: AstNodeKey,
     shape: AggregateFieldShape,

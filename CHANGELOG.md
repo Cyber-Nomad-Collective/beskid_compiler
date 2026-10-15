@@ -328,6 +328,14 @@ feature area.
 
 ### Fixed
 
+- Generic specialization covers the Core.Parallel shapes: a method call on a
+  value bound by a nested enum pattern (`Result::Error(ParallelError::Failed(failures))`
+  then `failures.Count()`), a typed lambda parameter used as a receiver
+  (`(Port<i64> out) => out.Send(..)`), an `impl<T> List<T>` method declared in
+  another package than `List<T>`, a binding of a `match` over a call inside a
+  generic body, and a method with its own type parameters on a non-generic
+  owner (`Scope.SpawnTry<T>`), which is now emitted only as call-derived
+  specializations. Each stopped code generation with E2101.
 - `beskid check` reports transfer and capture-bound findings on attributes,
   fields, conformances and contract members (E1248, E1510, E1244, E1246,
   E1247, E1607, E1003) at the span of that syntax. Before, a `[Captures]`

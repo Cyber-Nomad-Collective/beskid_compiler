@@ -90,7 +90,9 @@ pub(in crate::semantic_contract) fn item_abi_signature_tracked(
                 .and_then(|parent| index.node_at(program, parent))
                 .and_then(|node| node.of::<beskid_analysis::syntax::ImplBlock>())
                 .is_some_and(|block| !block.generics.is_empty());
-            if generic_owner || generic_implementation {
+            // `Task<T> Scope.Spawn<T>(..)`: a method's own type parameters make it generic
+            // exactly like a generic function, even on a non-generic owner.
+            if generic_owner || generic_implementation || !method.generics.is_empty() {
                 // A method inherits its owning type's or implementation's substitutions. It can
                 // only be emitted after a direct receiver call or a conformance witness proves
                 // that concrete environment.

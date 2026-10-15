@@ -1148,6 +1148,12 @@ fn explicit_local_complex_type_path<'a>(
             .of::<beskid_analysis::syntax::LetStatement>()
             .and_then(|statement| statement.type_annotation.as_ref())
             .map(|annotation| &annotation.node),
+        // A typed lambda parameter (`(Port<i64> out) => out.Send(..)`) is annotated like a parameter.
+        beskid_analysis::syntax_query::NodeKind::LambdaParameter => index
+            .node_at(program, parent)?
+            .of::<beskid_analysis::syntax::LambdaParameter>()
+            .and_then(|parameter| parameter.ty.as_ref())
+            .map(|ty| &ty.node),
         _ => None,
     }?;
     let beskid_analysis::syntax::Type::Complex(path) = annotation else {

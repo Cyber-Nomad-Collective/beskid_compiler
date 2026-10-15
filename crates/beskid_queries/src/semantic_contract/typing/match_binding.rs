@@ -161,7 +161,7 @@ pub fn pattern_binding_specialization(
     pattern_binding_fact_in_environment(db, index, key, declaration, Some(&enclosing)).transpose()
 }
 
-fn enum_match_pattern_binding(
+pub(in crate::semantic_contract) fn enum_match_pattern_binding(
     pattern: &EnumMatchPatternFact,
     declaration: beskid_analysis::syntax::AstNodeId,
 ) -> Option<EnumMatchBindingFact> {

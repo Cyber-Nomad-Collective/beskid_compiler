@@ -1,7 +1,7 @@
 //! Call-derived generic specializations, rejections, and specialized layouts.
 
 use super::super::support::{
-    SyntaxModuleItem, find_function_definitions, item_fixture_with_root, item_name, lower_syntax_program,
+    SyntaxModuleItem, find_function_definitions, find_node, item_fixture_with_root, item_name, lower_syntax_program,
 };
 use super::{StringComparison, assert_string_content_comparison};
 
@@ -297,4 +297,89 @@ fn parsed_program_packs_generic_bulk_arguments_with_the_call_specialization() {
     let main = artifact.functions.iter().find(|function| function.name == "Main").expect("Main lowers");
     let clif = main.function.display().to_string();
     assert_eq!(clif.matches("store").count(), 4, "four i64 elements are stored: {clif}");
+}
+
+#[test]
+fn generic_method_on_a_nested_enum_pattern_binding_is_specialized() {
+    // `failures.Count()` where `failures` is the `List<i64>` payload bound by the nested pattern
+    // `Outcome::Error(Problem::Failed(failures))` (Core.Parallel ParallelSuite shape): the receiver
+    // has no written type, so its applied owner comes from the binding's proven source identity.
+    let (input, isa, root) = item_fixture_with_root(
+        "type List<T> { T[] values, i64 count, i64 Count() { return count; } } enum Problem { Failed(List<i64> failures), Empty } enum Outcome<TValue, TError> { Ok(TValue value), Error(TError error) } i64 Main(Outcome<i64, Problem> result) { match result { Outcome::Error(Problem::Failed(failures)) => { return failures.Count(); }, _ => { return 0_i64; }, }; return 0_i64; }",
+    );
+    let method = find_node(input.database(), root, beskid_queries::IndexedNodeKind::MethodDefinition)
+        .expect("List.Count method");
+    let main = find_function_definitions(input.database(), root)[0];
+    let artifact = lower_syntax_program(
+        &input,
+        isa.as_ref(),
+        &[
+            SyntaxModuleItem { key: method, symbol: "List_Count".into() },
+            SyntaxModuleItem { key: main, symbol: "Main".into() },
+        ],
+    )
+    .expect("a generic method on a nested enum-pattern binding must have a call-derived specialization");
+
+    beskid_codegen::validate_artifact(&artifact).expect("nested pattern receiver artifact");
+    let names = artifact.functions.iter().map(|function| function.name.as_str()).collect::<Vec<_>>();
+    assert!(names.iter().any(|name| name.starts_with("List_Count#generic_")), "{names:?}");
+}
+
+#[test]
+fn method_with_its_own_type_parameters_on_a_plain_owner_is_only_emitted_specialized() {
+    // `Scope.SpawnTry<T>` shape: a method's own type parameters make it generic, so its body
+    // (here a nested explicit `Id<T>(..)` over a function-typed parameter) is walked only in the
+    // environment of a concrete call, never as a declaration-level item.
+    let (input, isa, root) = item_fixture_with_root(
+        "T Id<T>(T value) { return value; } type Runner { i64 id, T Apply<T>(() => T body) { return Id<T>(body()); } } i64 Main(Runner runner) { return runner.Apply<i64>(() => 7_i64); }",
+    );
+    let method = find_node(input.database(), root, beskid_queries::IndexedNodeKind::MethodDefinition)
+        .expect("Runner.Apply method");
+    let main = find_function_definitions(input.database(), root)
+        .into_iter()
+        .find(|item| item_name(input.database(), *item).ok().flatten().as_deref() == Some("Main"))
+        .expect("Main item");
+    let artifact = lower_syntax_program(
+        &input,
+        isa.as_ref(),
+        &[
+            SyntaxModuleItem { key: method, symbol: "Runner_Apply".into() },
+            SyntaxModuleItem { key: main, symbol: "Main".into() },
+        ],
+    )
+    .expect("a method-generic body is lowered only through its call-derived specialization");
+
+    beskid_codegen::validate_artifact(&artifact).expect("method-generic artifact");
+    let names = artifact.functions.iter().map(|function| function.name.as_str()).collect::<Vec<_>>();
+    assert!(names.iter().any(|name| name.starts_with("Runner_Apply#generic_")), "{names:?}");
+    assert!(!names.contains(&"Runner_Apply"), "no declaration-level instance of a generic method: {names:?}");
+}
+
+#[test]
+fn nested_pattern_bindings_of_a_call_match_in_a_generic_body_are_specialized() {
+    // Core.Parallel `Reorder<T>` shape: `match input.Receive()` inside a generic body binds
+    // `Result::Ok(Sequenced::Item(sequence, value))`, and both bindings feed a generic-owner method
+    // call. The callee's instance in the enclosing environment applies the scrutinee's result.
+    let (input, isa, root) = item_fixture_with_root(
+        "enum Result<TValue, TError> { Ok(TValue value), Error(TError error) } enum Item<T> { Entry(i64 sequence, T value), Done } type Bag<V> { V[] values, i64 count, Bag<V> Put(i64 key, V value) { return Bag<V> { values: values, count: count + key }; } } type Source<T> { T value, Result<Item<T>, string> Next() { return Result::Ok(Item::Entry(1_i64, value)); } } i64 Drain<T>(Source<T> source, Bag<T> bag) { match source.Next() { Result::Ok(Item::Entry(sequence, value)) => { Bag<T> next = bag.Put(sequence, value); return next.count; }, _ => { return 0_i64; }, }; return 0_i64; } i64 Main(Source<i64> source, Bag<i64> bag) { return Drain<i64>(source, bag); }",
+    );
+    let items = find_function_definitions(input.database(), root);
+    let named = |name: &str| {
+        items
+            .iter()
+            .copied()
+            .find(|item| item_name(input.database(), *item).ok().flatten().as_deref() == Some(name))
+            .expect("named item")
+    };
+    let artifact = lower_syntax_program(
+        &input,
+        isa.as_ref(),
+        &[
+            SyntaxModuleItem { key: named("Drain"), symbol: "Drain".into() },
+            SyntaxModuleItem { key: named("Main"), symbol: "Main".into() },
+        ],
+    )
+    .expect("call-match bindings in a generic body take the callee instance's applied result");
+    let names = artifact.functions.iter().map(|function| function.name.as_str()).collect::<Vec<_>>();
+    assert!(names.iter().any(|name| name.starts_with("Drain#generic_")), "{names:?}");
 }

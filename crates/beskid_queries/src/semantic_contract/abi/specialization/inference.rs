@@ -34,15 +34,15 @@ pub(super) fn specialization_for_call_in_environment(
         let generic_names = generic_callable_parameters(db, declaration).map(|(names, _)| names).unwrap_or_default();
         (method.parameters.iter().collect::<Vec<_>>(), method.return_type.as_ref(), generic_names, false, None)
     } else if let Some(method) = declaration_node.of::<beskid_analysis::syntax::MethodDefinition>() {
-        let owner_node = method_owner_node(
-            declaration_syntax.expanded_program(db),
-            declaration_syntax.syntax_index(db),
-            declaration.node,
-        )
-        .ok_or_else(|| SemanticError::unavailable_at("call_abi_signature", key))?;
-        let parent = declaration_syntax
+        // The owner may live in another unit (`impl<T> List<T>` extending a Foundation type).
+        let owner = method_owner_declaration(db, declaration)
+            .ok_or_else(|| SemanticError::unavailable_at("call_abi_signature", key))?;
+        let owner_syntax = db
+            .syntax_unit(owner.unit)
+            .ok_or_else(|| SemanticError::unavailable_at("call_abi_signature", key))?;
+        let parent = owner_syntax
             .syntax_index(db)
-            .node_at(declaration_syntax.expanded_program(db), owner_node)
+            .node_at(owner_syntax.expanded_program(db), owner.node)
             .and_then(|node| node.of::<beskid_analysis::syntax::TypeDefinition>())
             .ok_or_else(|| SemanticError::unavailable_at("call_abi_signature", key))?;
         (
@@ -52,7 +52,7 @@ pub(super) fn specialization_for_call_in_environment(
                 .map(|(names, _)| names)
                 .unwrap_or_else(|| parent.generics.iter().map(|generic| generic.node.name.as_str()).collect()),
             true,
-            Some(AstNodeKey { node: owner_node, ..declaration }),
+            Some(owner),
         )
     } else {
         let signature = item_abi_signature(db, declaration)?

@@ -846,6 +846,25 @@ pub(super) fn specialized_local_declaration_identity(
     if let Some(parameter) = index.node_at(program, parent).and_then(|node| node.of::<Parameter>()) {
         return Some(generic_source_type_identity_with_substitutions(db, declaration, &parameter.ty.node, &environment));
     }
+    // An enum-pattern binding has the payload identity its match proves in this environment. A
+    // match this environment does not specialize leaves the binding to the other authorities.
+    if index.kind(parent) == Some(NodeKind::Pattern) {
+        let binding = match call_match_pattern_binding(db, program, index, identifier, enclosing) {
+            Some(binding) => binding,
+            None => pattern_binding_fact_in_environment(
+                db,
+                index,
+                identifier,
+                identifier.node,
+                Some(&enclosing.substitutions),
+            )?
+            .ok()?,
+        };
+        return match binding.source_identity {
+            Some(identity) => Some(Ok(identity)),
+            None => generic_source_field_shape_identity(db, identifier, binding.payload).ok().map(Ok),
+        };
+    }
     // A `for` variable has the identity of the elements its iterable yields in this environment.
     if index.node_at(program, parent).and_then(|node| node.of::<beskid_analysis::syntax::ForStatement>()).is_some() {
         return Some(specialized_for_element_identity(db, declaration, enclosing));
@@ -858,6 +877,30 @@ pub(super) fn specialized_local_declaration_identity(
         return Some(Err(source_expression_unavailable(db, identifier, "let initializer node is absent")));
     };
     Some(specialized_source_expression_identity(db, AstNodeKey { node: initializer, ..identifier }, Some(enclosing)))
+}
+
+/// The binding `identifier` of a match whose scrutinee is a call (`match input.Receive()` in
+/// `Reorder<T>`): the callee's instance in `enclosing` applies the callee's declared result, which
+/// alone binds the patterns, exactly as codegen materializes that match. `None` when the binding
+/// is not in such a match or the call has no instance in this environment.
+fn call_match_pattern_binding(
+    db: &dyn Db,
+    program: &Spanned<beskid_analysis::syntax::Program>,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    identifier: AstNodeKey,
+    enclosing: &GenericSpecializationInstance,
+) -> Option<EnumMatchBindingFact> {
+    let arm = super::locals::nearest_ancestor(index, identifier.node, |kind| kind == NodeKind::MatchArm)?;
+    let outer = super::locals::nearest_ancestor(index, arm, |kind| kind == NodeKind::MatchExpression)?;
+    let expression = index.node_at(program, outer)?.of::<beskid_analysis::syntax::MatchExpression>()?;
+    let scrutinee = index.direct_child_id(program, outer, DynNodeRef::from(expression.scrutinee.as_ref()))?;
+    let scrutinee = AstNodeKey { node: normalized_expression_node(index, scrutinee), ..identifier };
+    if index.kind(scrutinee.node) != Some(NodeKind::CallExpression) {
+        return None;
+    }
+    let callee = generic_call_specialization_in_environment(db, scrutinee, enclosing).ok()??;
+    let fact = enum_match_call_specialization(db, AstNodeKey { node: outer, ..identifier }, &callee).ok()??;
+    fact.arms.iter().find_map(|arm| enum_match_pattern_binding(&arm.pattern, identifier.node))
 }
 
 /// The identity of the field read `key` in the specialization `enclosing`: the declared field
