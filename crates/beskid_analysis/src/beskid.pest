@@ -37,6 +37,7 @@ ContinueKeyword = @{ "continue" ~ !IdentTail }
 LetKeyword = @{ "let" ~ !IdentTail }
 ConstKeyword = @{ "const" ~ !IdentTail }
 MutKeyword = @{ "mut" ~ !IdentTail }
+MoveKeyword = @{ "move" ~ !IdentTail }
 BulkKeyword = @{ "bulk" ~ !IdentTail }
 ModKeyword = @{ "mod" ~ !IdentTail }
 UseKeyword = @{ "use" ~ !IdentTail }
@@ -88,6 +89,7 @@ Keyword = {
       | LetKeyword
       | ConstKeyword
       | MutKeyword
+      | MoveKeyword
       | BulkKeyword
       | ModKeyword
       | UseKeyword
@@ -350,12 +352,12 @@ ExpressionBody = { "=>" ~ Expression }
 // parameter list; without one the receiver stays implicit.
 ImplMethodDefinition = { AttributeList? ~ Visibility? ~ BeskidType ~ Identifier ~ GenericParameters? ~ "(" ~ MethodParameters? ~ ")" ~ WhereClause? ~ MethodBody ~ ";"? }
 MethodParameters = _{ ReceiverParameter ~ ("," ~ DocGap* ~ ParameterList)? | ParameterList }
-ReceiverParameter = { AttributeList? ~ MutKeyword? ~ ThisReceiverWord }
+ReceiverParameter = { AttributeList? ~ (MutKeyword | MoveKeyword)? ~ ThisReceiverWord }
 KwThisReceiverWord = @{ "this" ~ !IdentTail }
 ThisReceiverWord = _{ !(!KwThisReceiverWord) ~ "this" }
 ParameterList = { ParameterWithDocs ~ ("," ~ DocGap* ~ ParameterWithDocs)* }
 ParameterWithDocs = { (DocRun ~ Parameter) | Parameter }
-Parameter = { AttributeList? ~ BulkKeyword? ~ MutKeyword? ~ BeskidType ~ Identifier }
+Parameter = { AttributeList? ~ BulkKeyword? ~ (MutKeyword | MoveKeyword)? ~ BeskidType ~ Identifier }
 
 FieldList = { FieldWithDocs ~ ("," ~ DocGap* ~ FieldWithDocs)* ~ ","? }
 FieldWithDocs = { (DocRun ~ Field) | Field }
@@ -472,8 +474,10 @@ ShiftExpression = { AdditionExpression ~ (("<<" | ">>") ~ AdditionExpression)* }
 AdditionExpression = { MultiplicationExpression ~ (("+" | "-") ~ MultiplicationExpression)* }
 MultiplicationExpression = { UnaryExpression ~ (("*" | "/" | "%") ~ UnaryExpression)* }
 
-UnaryExpression = _{ SpawnUnary | PrefixUnary }
+UnaryExpression = _{ SpawnUnary | MoveExpression | PrefixUnary }
 SpawnUnary = { SpawnKeyword ~ PostfixExpression }
+// `move x` consumes an owning name; `move x.f` is a destructive field read.
+MoveExpression = { MoveKeyword ~ PostfixExpression }
 PrefixUnary = { ("-" | "!")* ~ PostfixExpression }
 PostfixExpression = { PrimaryExpression ~ PostfixOperator* }
 PostfixOperator = { CallOperator | MemberAccess | SubscriptOperator | TryOperator }

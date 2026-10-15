@@ -94,6 +94,7 @@ node_kinds!(
     GroupedExpression,
     TryExpression,
     SpawnExpression,
+    MoveExpression,
     LambdaExpression,
     LambdaParameter,
     ReceiverParameter,

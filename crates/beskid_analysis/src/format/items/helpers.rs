@@ -45,6 +45,10 @@ pub(super) fn emit_method_parameter_list<W: Write>(
             cx.token(w, "mut")?;
             cx.space(w)?;
         }
+        if receiver.node.movable {
+            cx.token(w, "move")?;
+            cx.space(w)?;
+        }
         cx.token(w, "this")?;
         if !params.is_empty() {
             cx.token(w, ", ")?;

@@ -152,6 +152,7 @@ pub(super) fn syntax_facts_for_assembly(
     definitions.extend(attribute_definitions);
     hovers.extend(attribute_hovers);
     hovers.extend(crate::session::attribute_facts::transfer_class_hovers(db, unit, generation, entry));
+    hovers.extend(crate::session::attribute_facts::ownership_hovers(db, unit, generation, entry));
     let attributes =
         crate::session::attribute_facts::attribute_completion_catalogue(db, unit, generation, &typed.assembly.units);
     definitions.sort_by_key(|definition| {

@@ -14,7 +14,7 @@ use tower_lsp_server::ls_types::{
     CodeAction, CodeActionKind, Diagnostic, NumberOrString, TextEdit, Uri, WorkspaceEdit,
 };
 
-use crate::position::offset_range_to_lsp;
+use crate::position::{offset_range_to_lsp, position_to_offset};
 use crate::session::store::{Document, SyntaxTextEdit};
 
 use super::handler::{doc_comment_quickfix, remove_lines_action, remove_range_action};
@@ -35,6 +35,7 @@ pub(super) fn code_action_providers() -> Vec<Box<dyn CodeActionProvider>> {
         Box::new(CompilerRemoveLinesProvider),
         Box::new(CompilerRemoveRangeProvider),
         Box::new(CompilerDocCommentProvider),
+        Box::new(CompilerMoveProvider),
         Box::new(ModQuickFixProvider),
     ]
 }
@@ -76,6 +77,96 @@ impl CodeActionProvider for CompilerDocCommentProvider {
     fn build(&self, uri: &Uri, doc: &Document, diag: &Diagnostic) -> Option<CodeAction> {
         doc_comment_quickfix(uri, doc, diag, "Update documentation comment")
     }
+}
+
+/// 0.6.2 ownership fixes: E1237 and E1242 insert `move ` before the named binding; E1239 on a
+/// borrowed name and E1241 insert `move ` before the type of the parameter that declares it;
+/// E1243 rewrites `move x.f` to `exchange(x.f, move replacement)`. Each edit is derived from the
+/// parsed buffer and leaves source the formatter keeps unchanged.
+struct CompilerMoveProvider;
+
+const MOVE_CODES: &[&str] = &["E1237", "E1239", "E1241", "E1242", "E1243"];
+
+impl CodeActionProvider for CompilerMoveProvider {
+    fn handles(&self, source: &str, code: &str) -> bool {
+        source == "beskid" && MOVE_CODES.contains(&code)
+    }
+    fn build(&self, uri: &Uri, doc: &Document, diag: &Diagnostic) -> Option<CodeAction> {
+        let NumberOrString::String(code) = diag.code.as_ref()? else { return None };
+        let start = position_to_offset(&doc.text, diag.range.start);
+        let end = position_to_offset(&doc.text, diag.range.end);
+        let site = doc.text.get(start..end)?;
+        let (title, edit) = match code.as_str() {
+            "E1237" | "E1242" => {
+                let name_start = start + site.find(|c: char| c.is_ascii_alphabetic() || c == '_')?;
+                ("Insert `move`".to_owned(), (name_start, name_start, "move ".to_owned()))
+            }
+            "E1239" | "E1241" => {
+                let name = site.strip_prefix("move").map(str::trim_start).unwrap_or(site);
+                let name = name.split(|c: char| !(c.is_ascii_alphanumeric() || c == '_')).next()?;
+                if name.is_empty() || name == "this" {
+                    return None;
+                }
+                let type_start = parameter_type_start(&doc.text, start, name)?;
+                ("Declare the parameter `move`".to_owned(), (type_start, type_start, "move ".to_owned()))
+            }
+            "E1243" => {
+                let place = site.strip_prefix("move")?.trim_start();
+                ("Rewrite to `exchange`".to_owned(), (start, end, format!("exchange({place}, move replacement)")))
+            }
+            _ => return None,
+        };
+        let mut changes = HashMap::new();
+        changes.insert(
+            uri.clone(),
+            vec![TextEdit { range: offset_range_to_lsp(&doc.text, edit.0, edit.1), new_text: edit.2 }],
+        );
+        Some(CodeAction {
+            title,
+            kind: Some(CodeActionKind::QUICKFIX),
+            diagnostics: Some(vec![diag.clone()]),
+            edit: Some(WorkspaceEdit { changes: Some(changes), ..WorkspaceEdit::default() }),
+            ..CodeAction::default()
+        })
+    }
+}
+
+/// The type offset of the parameter named `name` of the innermost function or method whose span
+/// contains `offset`, when it is declared without `mut` or `move`.
+fn parameter_type_start(text: &str, offset: usize, name: &str) -> Option<usize> {
+    use beskid_analysis::syntax::{FunctionDefinition, MethodDefinition, Parameter, SyntaxGenerationId};
+    use beskid_analysis::syntax_query::{NodeKind, SyntaxIndex};
+    let program = beskid_analysis::services::parse_program(text).ok()?;
+    let index = SyntaxIndex::from_program(&program, SyntaxGenerationId(0));
+    let mut best: Option<(usize, usize)> = None;
+    for kind in [NodeKind::FunctionDefinition, NodeKind::MethodDefinition] {
+        for node in index.ids_of_kind(kind) {
+            let Some(found) = index.node_at(&program, node) else { continue };
+            let Some(span) = found.span() else { continue };
+            if !(span.start <= offset && offset <= span.end) {
+                continue;
+            }
+            let parameters: &[beskid_analysis::syntax::Spanned<Parameter>] =
+                if let Some(function) = found.of::<FunctionDefinition>() {
+                    &function.parameters
+                } else if let Some(method) = found.of::<MethodDefinition>() {
+                    &method.parameters
+                } else {
+                    continue;
+                };
+            let Some(parameter) = parameters.iter().find(|parameter| parameter.node.name.node.name == name) else {
+                continue;
+            };
+            if parameter.node.mutable || parameter.node.movable {
+                continue;
+            }
+            let width = span.end - span.start;
+            if best.is_none_or(|(current, _)| width < current) {
+                best = Some((width, parameter.node.ty.span.start));
+            }
+        }
+    }
+    best.map(|(_, start)| start)
 }
 
 /// Mod-origin quick-fixes. Routes any diagnostic whose `source` starts with
@@ -245,4 +336,43 @@ mod tests {
         // and the mod provider never handles compiler-source diagnostics.
         assert!(!providers.iter().any(|p| p.handles("beskid", "MOD0001")));
     }
+
+    fn apply_move_fix(text: &str, code: &str, start: usize, end: usize) -> Option<String> {
+        let uri = Uri::from_str("file:///tmp/move-fix/Main.bd").expect("uri");
+        let doc = doc_with_fixes(text, Vec::new());
+        let range = crate::position::offset_range_to_lsp(text, start, end);
+        let diag = Diagnostic {
+            range,
+            severity: Some(DiagnosticSeverity::ERROR),
+            code: Some(NumberOrString::String(code.to_string())),
+            source: Some("beskid".to_string()),
+            message: "ownership".to_string(),
+            ..Diagnostic::default()
+        };
+        let provider = code_action_providers().into_iter().find(|provider| provider.handles("beskid", code))?;
+        let action = provider.build(&uri, &doc, &diag)?;
+        let edit = action.edit?.changes?.remove(&uri)?.pop()?;
+        let from = crate::position::position_to_offset(text, edit.range.start);
+        let to = crate::position::position_to_offset(text, edit.range.end);
+        Some(format!("{}{}{}", &text[..from], edit.new_text, &text[to..]))
+    }
+
+    #[test]
+    fn ownership_quick_fixes_insert_move_and_rewrite_to_exchange() {
+        let text = "[Isolated] pub type Archive { List<u8[]> blocks, pub Archive Add(move this, move u8[] block) { this.blocks = this.blocks.Push(block); return this; } }";
+        let at = text.find("Push(block)").unwrap() + 5;
+        let fixed = apply_move_fix(text, "E1242", at, at + 5).expect("E1242 fix");
+        assert!(fixed.contains("this.blocks.Push(move block)"), "{fixed}");
+
+        let text = "unit Keep(u8[] data, Archive a) { a.Add(move data); }";
+        let at = text.find("move data").unwrap();
+        let fixed = apply_move_fix(text, "E1239", at, at + 9).expect("E1239 fix");
+        assert!(fixed.starts_with("unit Keep(move u8[] data, Archive a)"), "{fixed}");
+
+        let text = "[Isolated] pub type Pair { Index left, pub Index TakeLeft(move this) { return move this.left; } }";
+        let at = text.find("move this.left").unwrap();
+        let fixed = apply_move_fix(text, "E1243", at, at + 14).expect("E1243 fix");
+        assert!(fixed.contains("return exchange(this.left, move replacement);"), "{fixed}");
+    }
 }
+

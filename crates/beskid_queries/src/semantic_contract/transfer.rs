@@ -421,6 +421,7 @@ impl<'db> ClassWalker<'db> {
         fields: &[beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Field>],
         environment: &ClassEnvironment,
     ) -> Result<Vec<(String, TransferClass, bool)>, SemanticError> {
+        let scope_borrowed = scope_borrowed_declaration(self.db, declaration);
         fields
             .iter()
             .map(|field| {
@@ -428,12 +429,29 @@ impl<'db> ClassWalker<'db> {
                 if field.node.kind == beskid_analysis::syntax::FieldKind::Event {
                     return Ok((name, TransferClass::Never(TransferNeverReason::FunctionType), false));
                 }
-                let class = self.syntax_class(declaration, &field.node.ty.node, environment)?;
+                // A function-typed field with `[Captures(Bound: C)]` holds only closures whose
+                // captures satisfy C, so it has the bound's class (`par` R-lang-3).
+                let bounded = match &field.node.ty.node {
+                    beskid_analysis::syntax::Type::Function { .. } => {
+                        match captures_bound(self.db, declaration, &field.node.attributes) {
+                            Some((CapturesBound::Marker(marker), _)) => Some(bound_class(&name, &[marker])),
+                            _ => None,
+                        }
+                    }
+                    _ => None,
+                };
+                let class = match bounded {
+                    Some(class) => class,
+                    None => self.syntax_class(declaration, &field.node.ty.node, environment)?,
+                };
                 let immutable_storage = match &field.node.ty.node {
                     beskid_analysis::syntax::Type::Array(element)
                         if has_recognized_attribute(self.db, declaration, &field.node.attributes, "ImmutableStorage") =>
                     {
-                        self.syntax_class(declaration, &element.node, environment)? == TransferClass::Shared
+                        let element = self.syntax_class(declaration, &element.node, environment)?;
+                        // A corelib `[ScopeBorrowed]` view borrows storage of any transferable
+                        // element for the lifetime of a scope (`par` R-lang-4, v065 sequences).
+                        element == TransferClass::Shared || (scope_borrowed && element.is_transferable())
                     }
                     _ => false,
                 };
@@ -441,6 +459,18 @@ impl<'db> ClassWalker<'db> {
             })
             .collect()
     }
+}
+
+/// Whether the type declaration carries the corelib-only `[ScopeBorrowed]`.
+fn scope_borrowed_declaration(db: &dyn Db, declaration: AstNodeKey) -> bool {
+    let Some(syntax) = db.syntax_unit(declaration.unit).filter(|syntax| syntax.accepts_key(db, declaration)) else {
+        return false;
+    };
+    syntax
+        .syntax_index(db)
+        .node_at(syntax.expanded_program(db), declaration.node)
+        .and_then(|node| node.of::<beskid_analysis::syntax::TypeDefinition>())
+        .is_some_and(|definition| has_recognized_attribute(db, declaration, &definition.attributes, "ScopeBorrowed"))
 }
 
 fn field_never(type_name: &str, field: &str, class: &TransferClass) -> TransferClass {

@@ -216,6 +216,9 @@ fn scan_expression_residuals(
         Expression::Spawn(s) => {
             scan_expression_residuals(source_name, source, s.node.callee.as_ref(), out);
         }
+        Expression::Move(m) => {
+            scan_expression_residuals(source_name, source, m.node.operand.as_ref(), out);
+        }
         Expression::Match(m) => {
             scan_expression_residuals(source_name, source, m.node.scrutinee.as_ref(), out);
             for arm in &m.node.arms {
