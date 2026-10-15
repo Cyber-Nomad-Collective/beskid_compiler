@@ -8,14 +8,17 @@ use crate::syntax::{Attribute, SpanInfo, Spanned};
 
 use beskid_ast_derive::AstNode;
 
-/// Explicit method receiver (`this`, `[A] this`, `mut this`) written as the first entry of a
-/// method parameter list. A method without one has an implicit receiver with the same meaning.
+/// Explicit method receiver (`this`, `[A] this`, `mut this`, `move this`) written as the first
+/// entry of a method parameter list. A method without one has an implicit borrowed receiver.
+/// `move this` declares an owning receiver: the call consumes the receiver value.
 #[derive(AstNode, Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ReceiverParameter {
     #[ast(children)]
     pub attributes: Vec<Spanned<Attribute>>,
     #[ast(skip)]
     pub mutable: bool,
+    #[ast(skip)]
+    pub movable: bool,
 }
 
 impl Parsable for ReceiverParameter {
@@ -27,12 +30,14 @@ impl Parsable for ReceiverParameter {
         let mut inner = pair.into_inner().peekable();
         let attributes = parse_attributes(&mut inner)?;
         let mut mutable = false;
+        let mut movable = false;
         for item in inner {
             match item.as_rule() {
                 Rule::MutKeyword => mutable = true,
+                Rule::MoveKeyword => movable = true,
                 _ => return Err(ParseError::unexpected_rule(item, Some(Rule::ReceiverParameter))),
             }
         }
-        Ok(Spanned::new(Self { attributes, mutable }, span))
+        Ok(Spanned::new(Self { attributes, mutable, movable }, span))
     }
 }

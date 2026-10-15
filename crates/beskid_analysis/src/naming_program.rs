@@ -466,6 +466,7 @@ fn walk_expression(expr: &Expression, visit: &mut impl FnMut(NamingRole, &Spanne
             }
         }
         Expression::Spawn(s) => walk_expression(&s.node.callee.node, visit),
+        Expression::Move(m) => walk_expression(&m.node.operand.node, visit),
         Expression::Try(t) => walk_expression(&t.node.expr.node, visit),
         Expression::ArrayLiteral(a) => {
             for elem in &a.node.elements {
@@ -530,6 +531,7 @@ fn walk_expression_mut(expr: &mut Expression, visit: &mut impl FnMut(NamingRole,
             }
         }
         Expression::Spawn(s) => walk_expression_mut(&mut s.node.callee.node, visit),
+        Expression::Move(m) => walk_expression_mut(&mut m.node.operand.node, visit),
         Expression::Try(t) => walk_expression_mut(&mut t.node.expr.node, visit),
         Expression::ArrayLiteral(a) => {
             for elem in &mut a.node.elements {

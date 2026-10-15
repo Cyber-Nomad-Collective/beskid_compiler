@@ -370,7 +370,7 @@ pub(in crate::semantic_contract) fn abi_type_for_expression(
             }
             abi_type(db, member_key)?.ok_or_else(|| SemanticError::unavailable("abi_type"))
         }
-        Expression::Grouped(_) => {
+        Expression::Grouped(_) | Expression::Move(_) => {
             let inner = normalized_expression_node(index, key.node);
             if inner == key.node {
                 return Err(SemanticError::unavailable("abi_type"));

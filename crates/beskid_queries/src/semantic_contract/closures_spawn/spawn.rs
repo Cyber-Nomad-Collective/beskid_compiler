@@ -75,6 +75,7 @@ pub(in crate::semantic_contract) fn normalized_expression_node(
         Some(
             beskid_analysis::syntax_query::NodeKind::Expression
                 | beskid_analysis::syntax_query::NodeKind::GroupedExpression
+                | beskid_analysis::syntax_query::NodeKind::MoveExpression
         )
     ) {
         let Some(child) = index.children(node).and_then(|children| children.first()).copied() else {

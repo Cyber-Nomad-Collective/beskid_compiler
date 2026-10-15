@@ -62,6 +62,7 @@ MatchExpression
 MemberExpression
 MethodDefinition
 ModuleDeclaration
+MoveExpression
 Parameter
 Path
 PathExpression

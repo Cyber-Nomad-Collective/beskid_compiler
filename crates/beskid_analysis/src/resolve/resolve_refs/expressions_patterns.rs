@@ -97,6 +97,9 @@ impl Resolver {
             Expression::Spawn(spawn_expr) => {
                 self.resolve_expression(&spawn_expr.node.callee);
             }
+            Expression::Move(move_expr) => {
+                self.resolve_expression(&move_expr.node.operand);
+            }
             Expression::Index(index_expr) => {
                 self.resolve_expression(&index_expr.node.target);
                 self.resolve_expression(&index_expr.node.index);

@@ -164,6 +164,7 @@ pub(in crate::semantic_contract) fn expression_fact_target(kind: beskid_analysis
             | NodeKind::EnumConstructorExpression
             | NodeKind::BlockExpression
             | NodeKind::GroupedExpression
+            | NodeKind::MoveExpression
             | NodeKind::TryExpression
             | NodeKind::SpawnExpression
             | NodeKind::LambdaExpression
