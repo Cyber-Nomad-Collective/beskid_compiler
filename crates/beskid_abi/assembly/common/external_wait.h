@@ -65,12 +65,15 @@ static void BeskidConditionWait(BeskidCondition *c, int64_t deadline) {
 #endif
 
 struct BeskidCommand { uint64_t wait, source; int64_t deadline; };
+/* The mailbox is a ring that doubles when full (cross-isolate cancellation and
+ * port wake-ups can post bursts); an allocator refusal is the only trap. */
+#define BESKID_OWNER_INITIAL_COMMANDS 256
 struct BeskidOwner {
   struct BeskidOwner *next;
   uint64_t id;
-  size_t head, count;
+  size_t head, count, capacity;
   BeskidCondition wake;
-  struct BeskidCommand commands[256];
+  struct BeskidCommand *commands;
 };
 static struct BeskidOwner *beskid_owners;
 static uint64_t beskid_next_owner;
@@ -83,7 +86,11 @@ uint64_t beskid_rt_v5_intrinsic_owner_create(void) {
   struct BeskidOwner *owner = beskid_rt_v5_intrinsic_system_allocate(sizeof(*owner), 8);
   if (!owner) return 0;
   __builtin_memset(owner, 0, sizeof(*owner));
+  owner->commands = beskid_rt_v5_intrinsic_system_allocate(BESKID_OWNER_INITIAL_COMMANDS * sizeof(struct BeskidCommand), 8);
+  if (!owner->commands) { beskid_rt_v5_intrinsic_system_free(owner, sizeof(*owner)); return 0; }
+  owner->capacity = BESKID_OWNER_INITIAL_COMMANDS;
   if (BeskidConditionInit(&owner->wake)) {
+    beskid_rt_v5_intrinsic_system_free(owner->commands, owner->capacity * sizeof(struct BeskidCommand));
     beskid_rt_v5_intrinsic_system_free(owner, sizeof(*owner)); return 0;
   }
   BeskidLock();
@@ -103,14 +110,25 @@ void beskid_rt_v5_intrinsic_owner_destroy(uint64_t id) {
   BeskidUnlock();
   if (owner) {
     BeskidConditionDestroy(&owner->wake);
+    beskid_rt_v5_intrinsic_system_free(owner->commands, owner->capacity * sizeof(struct BeskidCommand));
     beskid_rt_v5_intrinsic_system_free(owner, sizeof(*owner));
   }
 }
 static int32_t BeskidOwnerPostCommandLocked(uint64_t id, uint64_t wait, uint64_t source, int64_t deadline) {
   struct BeskidOwner *owner = BeskidOwnerFind(id);
   if (!owner || !wait || source < 1 || source > 5 || (source == 5 && deadline < -1)) return 0;
-  if (owner->count == 256) beskid_rt_v5_trap(10, NULL, 0);
-  owner->commands[(owner->head + owner->count++) % 256] = (struct BeskidCommand){wait, source, deadline};
+  if (owner->count == owner->capacity) {
+    size_t grown = owner->capacity * 2;
+    struct BeskidCommand *commands = beskid_rt_v5_intrinsic_system_allocate(grown * sizeof(struct BeskidCommand), 8);
+    if (!commands) beskid_rt_v5_trap(5, NULL, 0);
+    for (size_t index = 0; index < owner->count; ++index)
+      commands[index] = owner->commands[(owner->head + index) % owner->capacity];
+    beskid_rt_v5_intrinsic_system_free(owner->commands, owner->capacity * sizeof(struct BeskidCommand));
+    owner->commands = commands;
+    owner->capacity = grown;
+    owner->head = 0;
+  }
+  owner->commands[(owner->head + owner->count++) % owner->capacity] = (struct BeskidCommand){wait, source, deadline};
   BeskidConditionSignal(&owner->wake);
   return 1;
 }
@@ -136,7 +154,7 @@ int32_t beskid_rt_v5_intrinsic_owner_pop(uint64_t id, struct BeskidCommand *comm
   int32_t found = owner && owner->count && command;
   if (found) {
     *command = owner->commands[owner->head];
-    owner->head = (owner->head + 1) % 256;
+    owner->head = (owner->head + 1) % owner->capacity;
     --owner->count;
   }
   BeskidUnlock();

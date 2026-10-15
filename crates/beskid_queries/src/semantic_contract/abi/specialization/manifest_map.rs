@@ -76,6 +76,8 @@ pub(in crate::semantic_contract) fn builtin_type_to_semantic(
         BuiltinType::TypeParameter => return None,
         // Managed arrays cross the call boundary as their header pointer.
         BuiltinType::TypeParameterArray | BuiltinType::Bytes => SemanticTypeId::POINTER,
+        // A `() => T` body has no single ABI word: it lowers to a trampoline and a closure record.
+        BuiltinType::TypeParameterThunk => return None,
     })
 }
 /// ABI facts for compiler-embedded Corelib service facades. These are deliberately available

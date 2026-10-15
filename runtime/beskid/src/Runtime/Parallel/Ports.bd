@@ -1,0 +1,368 @@
+// Ports (v0.6.4): typed bounded FIFO channels between isolates, the runtime side of
+// `Core.Parallel.Port<T>`.
+//
+// A port is a native ring (assembly/common/port_ring.h) registered in the process port table under
+// an id that is never reused. A sent value travels as a native transit record (Transit.bd)
+// captured on the sender's thread from the sender's traced ABI slot (the `PortValue<T>` box) and
+// materialized in the receiver's heap, so no isolate ever reads or writes another isolate's heap
+// through a port. In this version every transfer class is copied: a Shared value is immutable, so
+// the copy is observationally the value; by-pointer delivery of Shared and hand-over of Moved
+// values need the ORCA count tables (v0.6.4 2.6, v0.6.5) and are not implemented here.
+//
+// Send parks while the ring is full and receive while it is empty and open, both cooperatively:
+// a parked fiber registers an external wait whose token the ring posts to the parker's owner
+// mailbox when the ring changes; outside a fiber the caller drives its scheduler and sleeps on its
+// mailbox. Status codes: 0 done, 1 closed (and, for a receive, drained), 2 cancelled (the port was
+// cancelled with its scope, or the calling fiber was cancelled while parked), 3 would block
+// (`__port_try_receive`). Operations on an unknown or released port answer 1; nothing traps on a
+// closed port.
+//
+// A successful receive leaves the value in a receipt of the calling fiber (the instance record's
+// receipt list); `__port_receive_value<T>` moves it into the caller's traced slot. Receipts of a
+// fiber are released when the fiber record is cleaned up, and the remaining ones when the
+// instance's heap is released.
+
+const REGISTRY_PORTS = 16;
+const REGISTRY_PORT_CAPACITY = 24;
+const REGISTRY_NEXT_PORT = 32;
+
+const SCOPE_PORTS = 72;
+const SCOPE_PORT_COUNT = 80;
+const SCOPE_PORT_CAPACITY = 88;
+
+const INSTANCE_RECEIPTS = 80;
+const RECEIPT_SIZE = 64;
+const RECEIPT_NEXT = 0;
+const RECEIPT_PORT = 8;
+const RECEIPT_FIBER = 16;
+const RECEIPT_SLOT = 24;
+const RECEIPT_NO_FIBER = 0xFFFFFFFFFFFFFFFF;
+
+const PORT_DONE = 0;
+const PORT_CLOSED = 1;
+const PORT_CANCELLED = 2;
+const PORT_WOULD_BLOCK = 3;
+const PORT_REFUSED = 4;
+const EXTERNAL_READY = 1;
+const EXTERNAL_CANCELLED = 3;
+const OPERATION_PORT = 10;
+
+// ── Port table ────────────────────────────────────────────────────────
+
+pub pointer PortTableSlotLocked(word id) {
+    pointer registryRecord = ParallelRegistryLocked();
+    if id == 0 || id >= raw_word_load(pointer_add(registryRecord, REGISTRY_PORT_CAPACITY)) { return NativePointer(0); }
+    return pointer_add(NativePointer(raw_word_load(pointer_add(registryRecord, REGISTRY_PORTS))), id * 8);
+}
+
+[Export(Abi:"C", Symbol:"port_create")]
+pub i64 PortCreate(i64 capacity) {
+    if capacity < 1 { return -1; }
+    pointer ring = port_ring_create(word(capacity));
+    if ring == NativePointer(0) { return -1; }
+    ParallelLock();
+    pointer registryRecord = ParallelRegistryLocked();
+    word id = raw_word_load(pointer_add(registryRecord, REGISTRY_NEXT_PORT));
+    word tableCapacity = raw_word_load(pointer_add(registryRecord, REGISTRY_PORT_CAPACITY));
+    if id >= tableCapacity {
+        mut word grown = tableCapacity * 2;
+        if grown == 0 { grown = 64; }
+        pointer table = SystemAllocate(grown * 8, 8);
+        if table == NativePointer(0) {
+            ParallelUnlock();
+            port_ring_release(ring);
+            return -1;
+        }
+        memory_set(table, 0, grown * 8);
+        if tableCapacity != 0 {
+            pointer old = NativePointer(raw_word_load(pointer_add(registryRecord, REGISTRY_PORTS)));
+            memory_copy(table, old, tableCapacity * 8);
+            SystemFree(old, tableCapacity * 8);
+        }
+        raw_word_store(pointer_add(registryRecord, REGISTRY_PORTS), NativeWord(table));
+        raw_word_store(pointer_add(registryRecord, REGISTRY_PORT_CAPACITY), grown);
+    }
+    raw_word_store(PortTableSlotLocked(id), NativeWord(ring));
+    raw_word_store(pointer_add(registryRecord, REGISTRY_NEXT_PORT), id + 1);
+    ParallelUnlock();
+    return i64(id);
+}
+
+// The ring of port `id` with one reference taken, or null for an unknown or released port.
+pub pointer PortAcquire(i64 id) {
+    if id <= 0 { return NativePointer(0); }
+    ParallelLock();
+    pointer slot = PortTableSlotLocked(word(id));
+    mut pointer ring = NativePointer(0);
+    if slot != NativePointer(0) { ring = NativePointer(raw_word_load(slot)); }
+    if ring != NativePointer(0) { port_ring_retain(ring); }
+    ParallelUnlock();
+    return ring;
+}
+
+// Registers port `id` with scope `scope`, which closes it and releases it when it closes.
+[Export(Abi:"C", Symbol:"isolate_scope_port")]
+pub unit IsolateScopePort(i64 scopeId, i64 id) {
+    ParallelLock();
+    pointer scopeRecord = ScopeOwnedLocked(scopeId);
+    word count = raw_word_load(pointer_add(scopeRecord, SCOPE_PORT_COUNT));
+    word capacity = raw_word_load(pointer_add(scopeRecord, SCOPE_PORT_CAPACITY));
+    if count == capacity {
+        mut word grown = capacity * 2;
+        if grown == 0 { grown = 4; }
+        pointer ports = SystemAllocate(grown * 8, 8);
+        if ports == NativePointer(0) { ParallelUnlock(); Trap(5, NativePointer(0), 0); }
+        if capacity != 0 {
+            pointer old = NativePointer(raw_word_load(pointer_add(scopeRecord, SCOPE_PORTS)));
+            memory_copy(ports, old, count * 8);
+            SystemFree(old, capacity * 8);
+        }
+        raw_word_store(pointer_add(scopeRecord, SCOPE_PORTS), NativeWord(ports));
+        raw_word_store(pointer_add(scopeRecord, SCOPE_PORT_CAPACITY), grown);
+    }
+    raw_word_store(pointer_add(NativePointer(raw_word_load(pointer_add(scopeRecord, SCOPE_PORTS))), count * 8), word(id));
+    raw_word_store(pointer_add(scopeRecord, SCOPE_PORT_COUNT), count + 1);
+    ParallelUnlock();
+    return;
+}
+
+// Closes (`cancel` false) or cancels every port of `scope`. Caller holds the lock.
+pub unit ScopePortsCloseLocked(pointer scopeRecord, bool cancel) {
+    word count = raw_word_load(pointer_add(scopeRecord, SCOPE_PORT_COUNT));
+    pointer ports = NativePointer(raw_word_load(pointer_add(scopeRecord, SCOPE_PORTS)));
+    mut u8 mode = 0;
+    if cancel { mode = 1; }
+    mut word index = 0;
+    while index < count {
+        pointer slot = PortTableSlotLocked(raw_word_load(pointer_add(ports, index * 8)));
+        if slot != NativePointer(0) && raw_word_load(slot) != 0 {
+            port_ring_close(NativePointer(raw_word_load(slot)), mode);
+        }
+        index = index + 1;
+    }
+    return;
+}
+
+// Scope close: closes every port of `scope`, withdraws it from the table and drops the table's
+// reference; a ring still held by an operation in flight is freed by that operation's release.
+// Caller holds the lock.
+pub unit ScopePortsReleaseLocked(pointer scopeRecord) {
+    word count = raw_word_load(pointer_add(scopeRecord, SCOPE_PORT_COUNT));
+    word capacity = raw_word_load(pointer_add(scopeRecord, SCOPE_PORT_CAPACITY));
+    pointer ports = NativePointer(raw_word_load(pointer_add(scopeRecord, SCOPE_PORTS)));
+    mut word index = 0;
+    while index < count {
+        pointer slot = PortTableSlotLocked(raw_word_load(pointer_add(ports, index * 8)));
+        if slot != NativePointer(0) && raw_word_load(slot) != 0 {
+            pointer ring = NativePointer(raw_word_load(slot));
+            raw_word_store(slot, 0);
+            port_ring_close(ring, 0);
+            port_ring_release(ring);
+        }
+        index = index + 1;
+    }
+    if capacity != 0 { SystemFree(ports, capacity * 8); }
+    raw_word_store(pointer_add(scopeRecord, SCOPE_PORTS), 0);
+    raw_word_store(pointer_add(scopeRecord, SCOPE_PORT_COUNT), 0);
+    raw_word_store(pointer_add(scopeRecord, SCOPE_PORT_CAPACITY), 0);
+    return;
+}
+
+[Export(Abi:"C", Symbol:"port_close")]
+pub unit PortClose(i64 id) {
+    pointer ring = PortAcquire(id);
+    if ring == NativePointer(0) { return; }
+    port_ring_close(ring, 0);
+    port_ring_release(ring);
+    return;
+}
+
+// ── Waiting ───────────────────────────────────────────────────────────
+
+// Runs one ring operation (`send` with `payload`/`tag`, or a receive into `out`) until it does not
+// block. Returns the ring status; a fiber cancelled while parked gets PORT_CANCELLED.
+pub word PortOperate(pointer ring, bool send, word payload, word tag, pointer out) {
+    word owner = ExternalOwnerId();
+    while true {
+        word current = SchedulerCurrentFiber();
+        if current != FiberNone() {
+            word token = ExternalWaitRegister(FiberHandle(current), OPERATION_PORT, -1);
+            if token == 0 { Trap(5, NativePointer(0), 0); }
+            word status = PortRingOperation(ring, send, payload, tag, out, owner, token);
+            if status != PORT_WOULD_BLOCK {
+                ExternalTryComplete(token & 0xFFFFFFFF, token >> 32, EXTERNAL_READY);
+                ExternalRelease(token);
+                if status == PORT_REFUSED { Trap(5, NativePointer(0), 0); }
+                return status;
+            }
+            word outcome = ExternalWaitPark(token);
+            ExternalRelease(token);
+            port_ring_unwait(ring, owner, token);
+            if outcome == EXTERNAL_CANCELLED { return PORT_CANCELLED; }
+        } else {
+            word wake = ParallelWakeToken();
+            port_ring_unwait(ring, owner, wake);
+            mut word status = PortRingOperation(ring, send, payload, tag, out, owner, wake);
+            if status == PORT_REFUSED { Trap(5, NativePointer(0), 0); }
+            if status != PORT_WOULD_BLOCK { port_ring_unwait(ring, owner, wake); return status; }
+            if SchedStep() == false {
+                // Re-register after the step's mailbox pump, so a ring change after this point
+                // posts into the mailbox that the wait below observes.
+                port_ring_unwait(ring, owner, wake);
+                status = PortRingOperation(ring, send, payload, tag, out, owner, wake);
+                if status == PORT_REFUSED { Trap(5, NativePointer(0), 0); }
+                if status != PORT_WOULD_BLOCK { port_ring_unwait(ring, owner, wake); return status; }
+                owner_wait(owner, ExternalNextDeadline());
+            }
+        }
+    }
+    return PORT_CLOSED;
+}
+
+pub word PortRingOperation(pointer ring, bool send, word payload, word tag, pointer out, word owner, word token) {
+    if send { return word(port_ring_send(ring, payload, tag, owner, token)); }
+    return word(port_ring_receive(ring, out, owner, token));
+}
+
+// ── Send and receive ──────────────────────────────────────────────────
+
+// Sends the value in the caller's traced slot `sender` (a `PortValue<T>` box). The slot is
+// consumed in every outcome. A value the transit walk refuses panics the sender.
+[Export(Abi:"C", Symbol:"port_send")]
+pub i64 PortSend(i64 id, pointer sender, i64 transferClass) {
+    if AbiValueIsLive(sender) == false { Trap(10, NativePointer(0), 0); }
+    pointer payload = NativePointer(raw_word_load(pointer_add(sender, 8)));
+    pointer refused = SystemAllocate(8, 8);
+    if refused == NativePointer(0) { Trap(5, NativePointer(0), 0); }
+    raw_word_store(refused, 0);
+    pointer record = TransitCapture(payload, false, refused);
+    word refusedDescriptor = raw_word_load(refused);
+    SystemFree(refused, 8);
+    if AbiValueClear(sender) == false { Trap(10, NativePointer(0), 0); }
+    if record == NativePointer(0) { PanicTransitRefused(refusedDescriptor); }
+    pointer ring = PortAcquire(id);
+    if ring == NativePointer(0) {
+        TransitFree(record);
+        return PORT_CLOSED;
+    }
+    word status = PortOperate(ring, true, NativeWord(record), word(transferClass), NativePointer(0));
+    if status != PORT_DONE { TransitFree(record); }
+    port_ring_release(ring);
+    return i64(status);
+}
+
+// Receives the next value into a receipt of the calling fiber. Parks while the port is empty.
+[Export(Abi:"C", Symbol:"port_receive")]
+pub i64 PortReceive(i64 id) {
+    return PortReceiveWith(id, true);
+}
+
+[Export(Abi:"C", Symbol:"port_try_receive")]
+pub i64 PortTryReceive(i64 id) {
+    return PortReceiveWith(id, false);
+}
+
+pub i64 PortReceiveWith(i64 id, bool park) {
+    pointer ring = PortAcquire(id);
+    if ring == NativePointer(0) { return PORT_CLOSED; }
+    pointer out = SystemAllocate(16, 8);
+    if out == NativePointer(0) { Trap(5, NativePointer(0), 0); }
+    memory_set(out, 0, 16);
+    mut word status = PORT_WOULD_BLOCK;
+    if park {
+        status = PortOperate(ring, false, 0, 0, out);
+    } else {
+        status = word(port_ring_receive(ring, out, 0, 0));
+    }
+    port_ring_release(ring);
+    if status == PORT_DONE {
+        pointer record = NativePointer(raw_word_load(out));
+        PortReceiptStore(id, record);
+        TransitFree(record);
+    }
+    SystemFree(out, 16);
+    return i64(status);
+}
+
+pub word ReceiptFiber() {
+    word current = SchedulerCurrentFiber();
+    if current == FiberNone() { return RECEIPT_NO_FIBER; }
+    return FiberHandle(current);
+}
+
+// Materializes `record` in this heap and keeps it, rooted, in a receipt of the calling fiber.
+pub unit PortReceiptStore(i64 id, pointer record) {
+    pointer instance = CurrentInstanceRecord();
+    pointer receipt = SystemAllocate(RECEIPT_SIZE, 8);
+    if receipt == NativePointer(0) || instance == NativePointer(0) { Trap(5, NativePointer(0), 0); }
+    memory_set(receipt, 0, RECEIPT_SIZE);
+    raw_word_store(pointer_add(receipt, RECEIPT_PORT), word(id));
+    raw_word_store(pointer_add(receipt, RECEIPT_FIBER), ReceiptFiber());
+    pointer cell = SystemAllocate(8, 8);
+    if cell == NativePointer(0) { Trap(5, NativePointer(0), 0); }
+    if TransitMaterialize(record, cell) == false { Trap(5, NativePointer(0), 0); }
+    pointer value = NativePointer(raw_word_load(cell));
+    pointer object = ManagedObjectForReference(Heap(), value);
+    if object == NativePointer(0) { Trap(10, NativePointer(0), 0); }
+    word descriptor = raw_word_load(object);
+    if AbiValueInitialize(pointer_add(receipt, RECEIPT_SLOT), descriptor, value, NativePointer(descriptor)) == false {
+        Trap(5, NativePointer(0), 0);
+    }
+    GcUnregisterRoot(cell);
+    SystemFree(cell, 8);
+    raw_word_store(pointer_add(receipt, RECEIPT_NEXT), raw_word_load(pointer_add(instance, INSTANCE_RECEIPTS)));
+    raw_word_store(pointer_add(instance, INSTANCE_RECEIPTS), NativeWord(receipt));
+    return;
+}
+
+// Moves the calling fiber's received value of port `id` into the caller's traced slot.
+[Export(Abi:"C", Symbol:"port_receive_value")]
+pub bool PortReceiveValue(i64 id, pointer destination) {
+    pointer instance = CurrentInstanceRecord();
+    if instance == NativePointer(0) { return false; }
+    word fiber = ReceiptFiber();
+    mut pointer link = pointer_add(instance, INSTANCE_RECEIPTS);
+    mut pointer receipt = NativePointer(raw_word_load(link));
+    while receipt != NativePointer(0) {
+        if raw_word_load(pointer_add(receipt, RECEIPT_PORT)) == word(id) && raw_word_load(pointer_add(receipt, RECEIPT_FIBER)) == fiber {
+            raw_word_store(link, raw_word_load(pointer_add(receipt, RECEIPT_NEXT)));
+            bool moved = AbiValueMoveOut(pointer_add(receipt, RECEIPT_SLOT), destination);
+            if moved == false { AbiValueClear(pointer_add(receipt, RECEIPT_SLOT)); }
+            SystemFree(receipt, RECEIPT_SIZE);
+            return moved;
+        }
+        link = pointer_add(receipt, RECEIPT_NEXT);
+        receipt = NativePointer(raw_word_load(link));
+    }
+    return false;
+}
+
+// Drops the receipts of fiber `handle` (fiber cleanup), or every receipt when `all`.
+pub unit PortReleaseReceiptsOf(word handle, bool all) {
+    pointer instance = CurrentInstanceRecord();
+    if instance == NativePointer(0) { return; }
+    mut pointer link = pointer_add(instance, INSTANCE_RECEIPTS);
+    mut pointer receipt = NativePointer(raw_word_load(link));
+    while receipt != NativePointer(0) {
+        pointer next = NativePointer(raw_word_load(pointer_add(receipt, RECEIPT_NEXT)));
+        if all || raw_word_load(pointer_add(receipt, RECEIPT_FIBER)) == handle {
+            raw_word_store(link, NativeWord(next));
+            if AbiValueClear(pointer_add(receipt, RECEIPT_SLOT)) == false { Trap(10, NativePointer(0), 0); }
+            SystemFree(receipt, RECEIPT_SIZE);
+        } else {
+            link = pointer_add(receipt, RECEIPT_NEXT);
+        }
+        receipt = next;
+    }
+    return;
+}
+
+pub unit PortReleaseReceipts(word handle) {
+    PortReleaseReceiptsOf(handle, false);
+    return;
+}
+
+pub unit PortReleaseInstanceReceipts() {
+    PortReleaseReceiptsOf(0, true);
+    return;
+}

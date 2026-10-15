@@ -125,6 +125,9 @@ pub unit GcMarkGray(pointer object) {
     pointer heap = Heap();
     pointer normalized = ManagedObjectForReference(heap, object);
     if normalized == NativePointer(0) {
+        // Not an object of this heap: a reference into another isolate's heap is recorded in the
+        // foreign table (Foreign.bd) and never entered.
+        ForeignObserve(heap, object);
         return;
     }
     pointer region = FindHeapRegionContaining(heap, NativeWord(normalized));

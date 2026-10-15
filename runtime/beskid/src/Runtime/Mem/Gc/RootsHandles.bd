@@ -29,7 +29,7 @@ const HEAP_HANDLE_STACK_CURRENT = 192;
 const HEAP_QUARANTINE_BUDGET = 384;
 const HEAP_DEBUG_KIT = 392;
 const HEAP_MARK_TRIGGER = 400;
-const HEAP_STATE_SIZE = 512;
+const HEAP_STATE_SIZE = 528;
 // Default quarantine budget of the debug kit (`BESKID_GC_QUARANTINE` overrides it).
 const GC_QUARANTINE_DEFAULT_BUDGET = 4194304;
 

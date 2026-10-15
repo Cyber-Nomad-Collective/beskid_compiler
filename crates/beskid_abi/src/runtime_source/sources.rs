@@ -57,6 +57,14 @@ pub const CANONICAL_CORELIB_ARGS_SOURCE_PATH: &str = "Core/Args/Args.bd";
 pub const CANONICAL_CORELIB_CONCURRENCY_SOURCE_PATH: &str = "Concurrency.bd";
 /// Canonical Foundation OS-thread facade eligible for its private yield service.
 pub const CANONICAL_FOUNDATION_THREAD_SOURCE_PATH: &str = "Core/Threading/Thread.bd";
+/// Canonical `Core.Parallel` units (corelib concurrency package) eligible for the isolate, scope
+/// and port services (v0.6.3-v0.6.5).
+pub const CANONICAL_CORELIB_PARALLEL_SOURCE_PATH: &str = "Core/Parallel/Parallel.bd";
+pub const CANONICAL_CORELIB_PARALLEL_SCOPES_SOURCE_PATH: &str = "Core/Parallel/Scopes.bd";
+pub const CANONICAL_CORELIB_PARALLEL_ISOLATE_SOURCE_PATH: &str = "Core/Parallel/Isolate.bd";
+pub const CANONICAL_CORELIB_PARALLEL_PORT_SOURCE_PATH: &str = "Core/Parallel/Port.bd";
+pub const CANONICAL_CORELIB_PARALLEL_SEQ_SOURCE_PATH: &str = "Core/Parallel/ParallelSeq.bd";
+pub const CANONICAL_CORELIB_PARALLEL_READ_ONLY_ARRAY_SOURCE_PATH: &str = "Core/Parallel/ReadOnlyArray.bd";
 /// Canonical concurrency Fiber facade eligible for lifecycle service authority.
 pub const CANONICAL_CORELIB_FIBER_SOURCE_PATH: &str = "Concurrency/Fiber.bd";
 /// Canonical Console Linux platform facade eligible for terminal service authority.
@@ -372,6 +380,30 @@ pub fn canonical_runtime_sources() -> Vec<SourceUnit> {
         SourceUnit {
             logical_path: "src/Runtime/Network/Dns.bd".into(),
             source: include_str!("../../../../runtime/beskid/src/Runtime/Network/Dns.bd").into(),
+        },
+        SourceUnit {
+            logical_path: "src/Runtime/Mem/Gc/Foreign.bd".into(),
+            source: include_str!("../../../../runtime/beskid/src/Runtime/Mem/Gc/Foreign.bd").into(),
+        },
+        SourceUnit {
+            logical_path: "src/Runtime/Mem/Transit.bd".into(),
+            source: include_str!("../../../../runtime/beskid/src/Runtime/Mem/Transit.bd").into(),
+        },
+        SourceUnit {
+            logical_path: "src/Runtime/Parallel/Registry.bd".into(),
+            source: include_str!("../../../../runtime/beskid/src/Runtime/Parallel/Registry.bd").into(),
+        },
+        SourceUnit {
+            logical_path: "src/Runtime/Parallel/Isolates.bd".into(),
+            source: include_str!("../../../../runtime/beskid/src/Runtime/Parallel/Isolates.bd").into(),
+        },
+        SourceUnit {
+            logical_path: "src/Runtime/Parallel/Adoption.bd".into(),
+            source: include_str!("../../../../runtime/beskid/src/Runtime/Parallel/Adoption.bd").into(),
+        },
+        SourceUnit {
+            logical_path: "src/Runtime/Parallel/Ports.bd".into(),
+            source: include_str!("../../../../runtime/beskid/src/Runtime/Parallel/Ports.bd").into(),
         },
         SourceUnit {
             // The generated ABI-v5 layout prelude (offsets/sizes/alignment consts) is checked in

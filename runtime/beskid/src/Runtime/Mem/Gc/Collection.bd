@@ -227,6 +227,7 @@ pub bool GcCycleStartOn(pointer heap) {
     if HeapIsCycling(heap) { return false; }
     GcStressVerify(heap, STRESS_VERIFY_BEFORE);
     raw_word_store(pointer_add(heap, HEAP_GC_PHASE), GC_PHASE_MARKING);
+    ForeignBeginEpoch(heap);
     AtomicWordFetchAdd(BarrierActiveWord(), 1, 4);
     word live = raw_word_load(pointer_add(heap, HEAP_LIVE_BYTES));
     raw_word_store(pointer_add(heap, HEAP_MARK_START_LIVE), live);
@@ -310,6 +311,7 @@ pub unit GcMarkTermination(pointer heap) {
         rescan = shaded != 0;
     }
     GcIncrementalStressTerminationChecks(heap);
+    ForeignDropUnstamped(heap);
     AtomicWordFetchAdd(BarrierActiveWord(), 0 - 1, 4);
     raw_word_store(pointer_add(heap, HEAP_SWEEP_GENERATION), raw_word_load(pointer_add(heap, HEAP_SWEEP_GENERATION)) + 1);
     GcSweepBegin(heap);

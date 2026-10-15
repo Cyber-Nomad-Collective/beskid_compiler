@@ -30,6 +30,10 @@ pub enum BuiltinType {
     TypeParameter,
     /// A managed array of the builtin's single source type parameter (`T[]`).
     TypeParameterArray,
+    /// A function value of no parameters returning the builtin's single source type parameter
+    /// (`() => T`). Its runtime transport is the compiler's per-`T` trampoline plus the function
+    /// value's closure record (`__isolate_spawn`, `__isolate_spawn_local`).
+    TypeParameterThunk,
     /// A managed byte array (`u8[]`). Its runtime transport is the array's `(pointer, usize)`
     /// data/length pair, which codegen derives from the managed header at the call boundary.
     Bytes,
@@ -177,7 +181,8 @@ mod tests {
     #[test]
     fn only_declared_generic_builtins_use_the_type_parameter() {
         for spec in builtin_specs() {
-            let uses_parameter = [BuiltinType::TypeParameter, BuiltinType::TypeParameterArray]
+            let uses_parameter =
+                [BuiltinType::TypeParameter, BuiltinType::TypeParameterArray, BuiltinType::TypeParameterThunk]
                 .into_iter()
                 .any(|parameter| spec.returns == parameter || spec.params.contains(&parameter));
             if uses_parameter {

@@ -22,7 +22,7 @@ const TLS_RESERVED_OFFSET = 16;
 const TLS_ATTACH_DEPTH_OFFSET = 24;
 const TLS_COMPOSITION_SCOPE_OFFSET = 32;
 const TLS_COMPOSITION_DEPTH_OFFSET = 40;
-const HEAP_STATE_SIZE = 512;
+const HEAP_STATE_SIZE = 528;
 const HEAP_INITIAL_REGION_SIZE = 1048576;
 // Every region must be page-aligned: `SpanEntryInRegion` derives a page index as
 // `(address - region) / PAGE_SIZE`, and `CarveSpan` writes a span's `base` using that same
@@ -47,11 +47,14 @@ const LIMIT_KEY_HEAP_MAX_LENGTH = 15;
 const LIMIT_KEY_FIBER_STACK_MAX_LENGTH = 22;
 const LIMIT_KEY_GC_STRESS_LENGTH = 16;
 const LIMIT_KEY_GC_QUARANTINE_LENGTH = 20;
+const LIMIT_KEY_ISOLATES_MAX_LENGTH = 19;
+const ISOLATES_MAX_LIMIT = 65535;
 // `BESKID_GC_STRESS` items as packed little-endian ASCII: "alloc", "alloc:", "verify".
 const GC_STRESS_ITEM_ALLOC = 0x636f6c6c61;
 const GC_STRESS_ITEM_ALLOC_COLON = 0x3a636f6c6c61;
 const GC_STRESS_ITEM_VERIFY = 0x796669726576;
 const HEAP_FIRST_REGION = 0;
+const HEAP_QUARANTINE_HEAD = 360;
 const REGION_SIZE_FIELD = 8;
 const CALLBACK_REGISTRY_SIZE = 1072;
 const CALLBACK_COMPOSITION_OFFSET = 24;
@@ -72,6 +75,8 @@ pub u32 AbiVersion() {
 //   56 live runtime instances
 //   64 recorded `BESKID_GC_STRESS` setting (`interval << 1 | verify`), or LIMIT_UNSET
 //   72 recorded `BESKID_GC_QUARANTINE` budget, or LIMIT_UNSET
+//   80..120 belong to Runtime/Parallel/Registry.bd (parallel lock, isolate bound, live child
+//   isolates, registry record, id serial)
 const PROCESS_HOLDERS = 0;
 const PROCESS_LIMITS_RECORDED = 24;
 const PROCESS_HEAP_CAP = 32;
@@ -85,7 +90,9 @@ const PROCESS_GC_QUARANTINE = 72;
 // `BeskidRuntimeState.instance` points at this native record. It is created by `IsolateCreate`
 // and outlives the instance's heap so that a main-fiber panic message stays readable after
 // `IsolateDestroy`; `IsolateRecordRelease` frees it.
-const INSTANCE_RECORD_SIZE = 40;
+// Words 40..88 belong to Runtime/Parallel/Registry.bd (isolate id, task, cancellation watch list,
+// port receipts).
+const INSTANCE_RECORD_SIZE = 88;
 const INSTANCE_MAIN_FIBER = 0;
 const INSTANCE_PANIC_DATA = 8;
 const INSTANCE_PANIC_LENGTH = 16;
@@ -223,6 +230,7 @@ pub pointer IsolateCreate(pointer config) {
         return NativePointer(0);
     }
     raw_word_store(pointer_add(instance, INSTANCE_WORKERS_HELD), 1);
+    InstanceSetIsolateId(instance, ParallelNextSerial());
     AtomicWordFetchAdd(pointer_add(ProcessStateRoot(), PROCESS_LIVE_INSTANCES), 1, 4);
     return config;
 }
@@ -354,6 +362,7 @@ pub unit IsolateRecordRelease(pointer runtime) {
     pointer instance = IsolateRecord(runtime);
     if instance == NativePointer(0) { return; }
     IsolateReleasePanicMessage(instance);
+    IsolateWatchFree(instance);
     memory_set(instance, 0, INSTANCE_RECORD_SIZE);
     SystemFree(instance, INSTANCE_RECORD_SIZE);
     raw_word_store(pointer_add(runtime, RUNTIME_INSTANCE_OFFSET), 0);
@@ -399,11 +408,13 @@ pub unit IsolateReleaseHeap(pointer runtime) {
     word generation = raw_word_load(pointer_add(runtime, RUNTIME_LIFECYCLE_STATE_OFFSET)) >> 32;
     pointer callbacks = NativePointer(raw_word_load(pointer_add(runtime, RUNTIME_CALLBACK_REGISTRY_OFFSET)));
     pointer heap = NativePointer(raw_word_load(pointer_add(runtime, RUNTIME_HEAP_OFFSET)));
+    PortReleaseInstanceReceipts();
     CallbackRegistryRootsDrop();
     if GcExternalRootCount() != 0 || GcHandlesClear() == false { Trap(10, NativePointer(0), 0); }
     // A cycle in progress is discarded without sweeping; a marking heap lowers the process
     // barrier word first.
     GcDiscardCycle(heap);
+    ForeignTableFree(heap);
     if heap != NativePointer(0) { FreeRootAndHandleStacks(heap); }
     mut pointer region = NativePointer(raw_word_load(pointer_add(heap, HEAP_FIRST_REGION)));
     pointer thread = CurrentThreadState();
@@ -441,6 +452,34 @@ pub unit IsolateReleaseHeap(pointer runtime) {
     return;
 }
 
+// The task-isolate variant of `IsolateReleaseHeap` (Runtime/Parallel/Isolates.bd): releases the
+// callback registry and the thread binding, but keeps the heap record, its regions, its foreign
+// table and its region-map ranges for the joiner, which adopts or discards them (Adoption.bd).
+// The heap is idle (the caller completed any cycle in progress) and its quarantine is drained so
+// that no slot stays held back. Ends in `RUNTIME_SHUT_DOWN`; returns the heap.
+pub pointer IsolateReleaseKeepRegions(pointer runtime) {
+    word generation = raw_word_load(pointer_add(runtime, RUNTIME_LIFECYCLE_STATE_OFFSET)) >> 32;
+    pointer callbacks = NativePointer(raw_word_load(pointer_add(runtime, RUNTIME_CALLBACK_REGISTRY_OFFSET)));
+    pointer heap = NativePointer(raw_word_load(pointer_add(runtime, RUNTIME_HEAP_OFFSET)));
+    PortReleaseInstanceReceipts();
+    CallbackRegistryRootsDrop();
+    if GcExternalRootCount() != 0 || GcHandlesClear() == false { Trap(10, NativePointer(0), 0); }
+    GcDiscardCycle(heap);
+    while raw_word_load(pointer_add(heap, HEAP_QUARANTINE_HEAD)) != 0 { QuarantineReleaseOldest(heap); }
+    FreeRootAndHandleStacks(heap);
+    pointer thread = CurrentThreadState();
+    if thread != NativePointer(0) { ThreadDetach(thread); }
+    raw_word_store(pointer_add(runtime, RUNTIME_CURRENT_THREAD_OFFSET), 0);
+    raw_word_store(pointer_add(runtime, RUNTIME_HEAP_OFFSET), 0);
+    raw_word_store(pointer_add(runtime, RUNTIME_CALLBACK_REGISTRY_OFFSET), 0);
+    raw_word_store(pointer_add(runtime, RUNTIME_SCHEDULER_OFFSET), 0);
+    if callbacks != NativePointer(0) { memory_set(callbacks, 0, CALLBACK_REGISTRY_SIZE); SystemFree(callbacks, CALLBACK_REGISTRY_SIZE); }
+    raw_word_store(pointer_add(runtime, RUNTIME_ABI_VERSION_OFFSET), 0);
+    raw_word_store(pointer_add(runtime, RUNTIME_LIFECYCLE_STATE_OFFSET), RUNTIME_SHUT_DOWN | (generation << 32));
+    AtomicWordFetchAdd(pointer_add(ProcessStateRoot(), PROCESS_LIVE_INSTANCES), 0 - 1, 4);
+    return heap;
+}
+
 [Export(Abi:"C", Symbol:"beskid_rt_v5_process_shutdown")]
 pub unit ProcessShutdown(pointer runtime) {
     IsolateBeginShutdown(runtime);
@@ -451,6 +490,8 @@ pub unit ProcessShutdown(pointer runtime) {
         CompositionContainerDrop(composition);
         raw_word_store(pointer_add(callbacks, CALLBACK_COMPOSITION_OFFSET), 0);
     }
+    // No isolate thread outlives the process runtime (v0.6.3 4.2).
+    ParallelProcessShutdown();
     if SchedShutdown() == false { IsolateReleaseWorkers(runtime); Trap(10, NativePointer(0), 0); }
     if ChildShutdown() != 0 { IsolateReleaseWorkers(runtime); Trap(10, NativePointer(0), 0); }
     IsolateReleaseWorkers(runtime);
@@ -472,6 +513,7 @@ pub unit ProcessStateRelease() {
     pointer process = ProcessStateRoot();
     if AtomicWordFetchAdd(pointer_add(process, PROCESS_HOLDERS), 0 - 1, 4) != 1 { return; }
     RegionMapRelease();
+    ParallelRegistryRelease();
     AtomicWordStore(pointer_add(process, PROCESS_LIMITS_RECORDED), 0, 2);
     raw_word_store(pointer_add(process, PROCESS_HEAP_CAP), 0);
     raw_word_store(pointer_add(process, PROCESS_FIBER_STACK_MAX), 0);
@@ -668,8 +710,14 @@ pub unit ApplyEnvironmentLimits() {
     if gcQuarantine == LIMIT_INVALID {
         Trap(5, pointer_add(scratch, LIMIT_KEY_BYTES_OFFSET), LIMIT_KEY_GC_QUARANTINE_LENGTH);
     }
+    word isolatesMax = EnvironmentIsolatesMax(LimitKeyIsolatesMax(scratch));
+    if isolatesMax == LIMIT_INVALID {
+        Trap(5, pointer_add(scratch, LIMIT_KEY_BYTES_OFFSET), LIMIT_KEY_ISOLATES_MAX_LENGTH);
+    }
     SystemFree(scratch, LIMIT_KEY_SCRATCH_SIZE);
     ApplyGcEnvironmentSettings(gcStress, gcQuarantine);
+    if isolatesMax == LIMIT_UNSET { ParallelSetIsolatesBound(HostProcessorCount()); }
+    else { ParallelSetIsolatesBound(isolatesMax); }
     // Record the accepted values; `IsolateCreate` applies them to every later instance.
     pointer process = ProcessStateRoot();
     raw_word_store(pointer_add(process, PROCESS_HEAP_CAP), heapMax);
@@ -678,6 +726,40 @@ pub unit ApplyEnvironmentLimits() {
     raw_word_store(pointer_add(process, PROCESS_GC_QUARANTINE), gcQuarantine);
     AtomicWordStore(pointer_add(process, PROCESS_LIMITS_RECORDED), 1, 2);
     return;
+}
+
+// ── The isolate bound from the environment ────────────────────────────
+// `BESKID_ISOLATES_MAX` bounds the runtime instances alive at one time, the main isolate included:
+// a decimal integer from 1 to 65535 with no suffix. Absent or empty, the bound is the host
+// logical processor count. Read once at process init; isolates inherit it.
+
+// Writes `BESKID_ISOLATES_MAX` into the scratch record and returns it as a `BeskidStr`.
+pub pointer LimitKeyIsolatesMax(pointer scratch) {
+    pointer bytes = pointer_add(scratch, LIMIT_KEY_BYTES_OFFSET);
+    raw_byte_store(bytes, 66); raw_byte_store(pointer_add(bytes, 1), 69); raw_byte_store(pointer_add(bytes, 2), 83);
+    raw_byte_store(pointer_add(bytes, 3), 75); raw_byte_store(pointer_add(bytes, 4), 73); raw_byte_store(pointer_add(bytes, 5), 68);
+    raw_byte_store(pointer_add(bytes, 6), 95); raw_byte_store(pointer_add(bytes, 7), 73); raw_byte_store(pointer_add(bytes, 8), 83);
+    raw_byte_store(pointer_add(bytes, 9), 79); raw_byte_store(pointer_add(bytes, 10), 76); raw_byte_store(pointer_add(bytes, 11), 65);
+    raw_byte_store(pointer_add(bytes, 12), 84); raw_byte_store(pointer_add(bytes, 13), 69); raw_byte_store(pointer_add(bytes, 14), 83);
+    raw_byte_store(pointer_add(bytes, 15), 95); raw_byte_store(pointer_add(bytes, 16), 77); raw_byte_store(pointer_add(bytes, 17), 65);
+    raw_byte_store(pointer_add(bytes, 18), 88);
+    raw_word_store(scratch, NativeWord(bytes));
+    raw_word_store(pointer_add(scratch, 8), LIMIT_KEY_ISOLATES_MAX_LENGTH);
+    return scratch;
+}
+
+// Parses `BESKID_ISOLATES_MAX`: LIMIT_UNSET when absent or empty, the bound for 1..65535, and
+// LIMIT_INVALID for 0, a larger value, or any other text.
+pub word EnvironmentIsolatesMax(pointer key) {
+    pointer value = EnvGet(key);
+    if value == NativePointer(0) { return LIMIT_INVALID; }
+    word length = raw_word_load(pointer_add(value, 8));
+    if length == 0 { return LIMIT_UNSET; }
+    pointer data = NativePointer(raw_word_load(value));
+    if data == NativePointer(0) { return LIMIT_INVALID; }
+    word bound = ParseDecimalRange(data, 0, length);
+    if bound == LIMIT_INVALID || bound == 0 || bound > ISOLATES_MAX_LIMIT { return LIMIT_INVALID; }
+    return bound;
 }
 
 // ── GC stress and quarantine from the environment ─────────────────────

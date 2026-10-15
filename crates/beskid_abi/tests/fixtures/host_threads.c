@@ -57,6 +57,9 @@ static long long processor_query_override;
 static long long fixture_processor_query(void);
 #define BESKID_HOST_PROCESSOR_QUERY() fixture_processor_query()
 
+/* The isolate entry is a runtime-corpus export; this fixture never starts an isolate. */
+void *beskid_rt_v5_isolate_task_run(void *task) { (void)task; abort(); }
+
 #include "../../assembly/common/external_wait.h"
 #include "../../assembly/common/host_threads.h"
 

@@ -554,8 +554,11 @@ fn lower_resolved_syntax_program(
             "fiber_join_value"
                 | "channel_receive_value"
                 | "hub_wait_receive_value"
+                | "isolate_join_value"
+                | "port_receive_value"
                 | "channel_send"
                 | "channel_try_send"
+                | "port_send"
         )
     }) {
         extern_imports.push(ExternImport {

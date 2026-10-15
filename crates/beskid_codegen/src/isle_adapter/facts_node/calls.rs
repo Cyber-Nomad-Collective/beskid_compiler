@@ -230,7 +230,11 @@ impl SyntaxNodeFacts<'_> {
 
     pub(super) fn traced_fiber_join_layout_impl(&self, key: AstNodeKey) -> Option<beskid_isle::TracedFiberJoinLayout> {
         let DirectCallee::CorelibService(
-            symbol @ ("fiber_join_value" | "channel_receive_value" | "hub_wait_receive_value"),
+            symbol @ ("fiber_join_value"
+            | "channel_receive_value"
+            | "hub_wait_receive_value"
+            | "isolate_join_value"
+            | "port_receive_value"),
         ) = self.direct_callee(key)?
         else {
             return None;
@@ -250,15 +254,19 @@ impl SyntaxNodeFacts<'_> {
         &self,
         key: AstNodeKey,
     ) -> Option<beskid_isle::TracedFiberJoinLayout> {
-        let DirectCallee::CorelibService(symbol @ ("channel_send" | "channel_try_send")) = self.direct_callee(key)?
+        let DirectCallee::CorelibService(symbol @ ("channel_send" | "channel_try_send" | "port_send")) =
+            self.direct_callee(key)?
         else {
             return None;
         };
         let arguments = self.call_arguments(key)?;
-        let [_, value] = arguments.as_slice() else {
-            return None;
+        // `port_send` carries the value's transfer class as a third, scalar argument.
+        let value = match (symbol, arguments.as_slice()) {
+            ("port_send", [_, value, _]) => *value,
+            ("channel_send" | "channel_try_send", [_, value]) => *value,
+            _ => return None,
         };
-        (self.managed_reference_in_context(*value)? == beskid_isle::ManagedReferenceFact::GcManaged).then_some(())?;
+        (self.managed_reference_in_context(value)? == beskid_isle::ManagedReferenceFact::GcManaged).then_some(())?;
         let slot = self.input.abi_manifest().layouts.iter().find(|layout| layout.name == "BeskidAbiValue")?;
         Some(beskid_isle::TracedFiberJoinLayout {
             symbol,

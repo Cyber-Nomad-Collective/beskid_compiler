@@ -212,6 +212,11 @@ pub bool CompositionScopeOwn(pointer value) {
 
 [Export(Abi:"C", Symbol:"composition_scope_enter")]
 pub unit CompositionScopeEnter(pointer container, word scopeId, word parentScopeId) {
+    // A task isolate has no composition container and never resolves its parent's (v0.6.3): an
+    // injected read inside an isolate ends the isolate main fiber as a panic, not a trap.
+    if container != NativePointer(0) && IsolateIsTask() && CompositionContainerValid(container) == 0 {
+        PanicCompositionUnavailable();
+    }
     if !CompositionScopeTryEnter(container, scopeId, parentScopeId) {
         Trap(10, NativePointer(0), 0);
     }

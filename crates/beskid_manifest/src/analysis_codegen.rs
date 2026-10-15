@@ -64,7 +64,13 @@ pub fn append_analysis_intrinsics(base: &str, runtime: &RuntimeManifestV5) -> Re
 /// Source-authorized typed value services (`beskid_abi::canonical_corelib_service_value_dispatch`).
 /// Their manifest row is the traced caller-slot transport `(handle: i64, destination: pointer) -> u8`;
 /// the compiler owns the destination slot, so the source callable is `T name<T>(i64 handle)`.
-const TYPED_VALUE_SERVICES: &[&str] = &["__fiber_join_value", "__channel_receive_value", "__hub_wait_receive_value"];
+const TYPED_VALUE_SERVICES: &[&str] = &[
+    "__fiber_join_value",
+    "__channel_receive_value",
+    "__hub_wait_receive_value",
+    "__isolate_join_value",
+    "__port_receive_value",
+];
 
 fn write_typed_value_entry(
     out: &mut String,
@@ -172,6 +178,41 @@ const MANAGED_SOURCE_SERVICES: &[ManagedSourceService] = &[
         type_parameters: &[],
         params: &["I64"],
         returns: "String",
+    },
+    ManagedSourceService {
+        name: "__isolate_join_message",
+        transport: &["i64"],
+        transport_result: "pointer",
+        type_parameters: &[],
+        params: &["I64"],
+        returns: "String",
+    },
+    // `bool __isolate_cancel_requested()`: the runtime answers the ABI byte 0 or 1.
+    ManagedSourceService {
+        name: "__isolate_cancel_requested",
+        transport: &[],
+        transport_result: "u8",
+        type_parameters: &[],
+        params: &[],
+        returns: "Bool",
+    },
+    // `i64 __isolate_spawn<T>(() => T body, i64 scope)`: codegen passes the compiler's
+    // per-`T` isolate trampoline as `entry` and the body's closure record as `argument`.
+    ManagedSourceService {
+        name: "__isolate_spawn",
+        transport: &["pointer", "pointer", "i64"],
+        transport_result: "i64",
+        type_parameters: &["T"],
+        params: &["TypeParameterThunk", "I64"],
+        returns: "I64",
+    },
+    ManagedSourceService {
+        name: "__isolate_spawn_local",
+        transport: &["pointer", "pointer", "i64"],
+        transport_result: "i64",
+        type_parameters: &["T"],
+        params: &["TypeParameterThunk", "I64"],
+        returns: "I64",
     },
 ];
 
