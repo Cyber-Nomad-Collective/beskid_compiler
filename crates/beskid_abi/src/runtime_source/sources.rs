@@ -386,6 +386,10 @@ pub fn canonical_runtime_sources() -> Vec<SourceUnit> {
             source: include_str!("../../../../runtime/beskid/src/Runtime/Mem/Gc/Foreign.bd").into(),
         },
         SourceUnit {
+            logical_path: "src/Runtime/Mem/Gc/Counts.bd".into(),
+            source: include_str!("../../../../runtime/beskid/src/Runtime/Mem/Gc/Counts.bd").into(),
+        },
+        SourceUnit {
             logical_path: "src/Runtime/Mem/Transit.bd".into(),
             source: include_str!("../../../../runtime/beskid/src/Runtime/Mem/Transit.bd").into(),
         },

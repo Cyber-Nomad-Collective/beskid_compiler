@@ -251,6 +251,7 @@ pub unit IsolateCreateUnwind(pointer config, pointer thread, bool scheduler, boo
     raw_word_store(pointer_add(config, RUNTIME_INSTANCE_OFFSET), 0);
     SystemFree(callbacks, CALLBACK_REGISTRY_SIZE);
     FreeRootAndHandleStacks(heap);
+    CountRecordFree(heap);
     SystemFree(region, HEAP_INITIAL_REGION_SIZE);
     SystemFree(heap, HEAP_STATE_SIZE);
     SystemFree(instance, INSTANCE_RECORD_SIZE);
@@ -414,7 +415,7 @@ pub unit IsolateReleaseHeap(pointer runtime) {
     // A cycle in progress is discarded without sweeping; a marking heap lowers the process
     // barrier word first.
     GcDiscardCycle(heap);
-    ForeignTableFree(heap);
+    CountRecordFree(heap);
     if heap != NativePointer(0) { FreeRootAndHandleStacks(heap); }
     mut pointer region = NativePointer(raw_word_load(pointer_add(heap, HEAP_FIRST_REGION)));
     pointer thread = CurrentThreadState();

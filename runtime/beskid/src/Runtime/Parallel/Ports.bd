@@ -2,12 +2,19 @@
 // `Core.Parallel.Port<T>`.
 //
 // A port is a native ring (assembly/common/port_ring.h) registered in the process port table under
-// an id that is never reused. A sent value travels as a native transit record (Transit.bd)
-// captured on the sender's thread from the sender's traced ABI slot (the `PortValue<T>` box) and
-// materialized in the receiver's heap, so no isolate ever reads or writes another isolate's heap
-// through a port. In this version every transfer class is copied: a Shared value is immutable, so
-// the copy is observationally the value; by-pointer delivery of Shared and hand-over of Moved
-// values need the ORCA count tables (v0.6.4 2.6, v0.6.5) and are not implemented here.
+// an id that is never reused. The sender's traced ABI slot holds a `PortValue<T>` box; the slot's
+// class tag is the transfer class of `T` (`__transfer_class<T>()`):
+// - Copied (2): the box graph travels as a native transit record (Transit.bd) captured on the
+//   sender's thread and materialized in the receiver's heap.
+// - Shared (0): the value crosses by pointer (v0.6.4). The message record carries the value and
+//   the box descriptor; the sender gives the value one ORCA stake before the slot is published and
+//   the receiver takes it (Counts.bd). The owner traces the immutable value from its local entry.
+// - Moved (1): the value's graph is handed over by pointer (v0.6.5). The send walk gives every
+//   object one stake and enters mutable objects; the receive walk takes them. The owner
+//   shallow-marks the mutable objects and never reads them again; the receiver traces them.
+// For Shared and Moved values the receiver allocates its own box around the value, so neither
+// side ever writes the other's heap. A message that is never delivered (the send fails, or the
+// port is released with values in it) gives its stakes back.
 //
 // Send parks while the ring is full and receive while it is empty and open, both cooperatively:
 // a parked fiber registers an external wait whose token the ring posts to the parker's owner
@@ -43,6 +50,15 @@ const PORT_CLOSED = 1;
 const PORT_CANCELLED = 2;
 const PORT_WOULD_BLOCK = 3;
 const PORT_REFUSED = 4;
+const CLASS_SHARED = 0;
+const CLASS_MOVED = 1;
+const CLASS_COPIED = 2;
+// Shared/Moved message record (native; the first word is the allocation size, as for a transit
+// record, so that the ring can free it): 0 size, 8 value, 16 box descriptor.
+const MESSAGE_SIZE = 24;
+const MESSAGE_VALUE = 8;
+const MESSAGE_DESCRIPTOR = 16;
+const BOX_VALUE = 16;
 const EXTERNAL_READY = 1;
 const EXTERNAL_CANCELLED = 3;
 const OPERATION_PORT = 10;
@@ -157,6 +173,7 @@ pub unit ScopePortsReleaseLocked(pointer scopeRecord) {
             pointer ring = NativePointer(raw_word_load(slot));
             raw_word_store(slot, 0);
             port_ring_close(ring, 0);
+            PortDrainUndeliveredLocked(ring);
             port_ring_release(ring);
         }
         index = index + 1;
@@ -231,24 +248,85 @@ pub word PortRingOperation(pointer ring, bool send, word payload, word tag, poin
 [Export(Abi:"C", Symbol:"port_send")]
 pub i64 PortSend(i64 id, pointer sender, i64 transferClass) {
     if AbiValueIsLive(sender) == false { Trap(10, NativePointer(0), 0); }
+    if transferClass < 0 || transferClass > CLASS_COPIED { Trap(10, NativePointer(0), 0); }
+    word tag = word(transferClass);
     pointer payload = NativePointer(raw_word_load(pointer_add(sender, 8)));
-    pointer refused = SystemAllocate(8, 8);
-    if refused == NativePointer(0) { Trap(5, NativePointer(0), 0); }
-    raw_word_store(refused, 0);
-    pointer record = TransitCapture(payload, false, refused);
-    word refusedDescriptor = raw_word_load(refused);
-    SystemFree(refused, 8);
+    mut pointer record = NativePointer(0);
+    if tag == CLASS_COPIED {
+        pointer refused = SystemAllocate(8, 8);
+        if refused == NativePointer(0) { Trap(5, NativePointer(0), 0); }
+        raw_word_store(refused, 0);
+        record = TransitCapture(payload, false, refused);
+        word refusedDescriptor = raw_word_load(refused);
+        SystemFree(refused, 8);
+        if record == NativePointer(0) {
+            if AbiValueClear(sender) == false { Trap(10, NativePointer(0), 0); }
+            PanicTransitRefused(refusedDescriptor);
+        }
+    } else {
+        record = PortMessageCapture(payload, tag);
+    }
     if AbiValueClear(sender) == false { Trap(10, NativePointer(0), 0); }
-    if record == NativePointer(0) { PanicTransitRefused(refusedDescriptor); }
     pointer ring = PortAcquire(id);
     if ring == NativePointer(0) {
-        TransitFree(record);
+        PortMessageAbandon(record, tag, false);
         return PORT_CLOSED;
     }
-    word status = PortOperate(ring, true, NativeWord(record), word(transferClass), NativePointer(0));
-    if status != PORT_DONE { TransitFree(record); }
+    word status = PortOperate(ring, true, NativeWord(record), tag, NativePointer(0));
+    if status != PORT_DONE { PortMessageAbandon(record, tag, false); }
     port_ring_release(ring);
     return i64(status);
+}
+
+// The message record of a Shared or Moved value, after its stakes are taken (before publication).
+pub pointer PortMessageCapture(pointer box, word tag) {
+    pointer descriptor = NativePointer(raw_word_load(box));
+    pointer value = NativePointer(raw_word_load(pointer_add(box, BOX_VALUE)));
+    if TypeDescriptorPointerCount(descriptor) != 0 {
+        if tag == CLASS_SHARED {
+            CountStakeSend(value);
+        } else if HandOverSend(value) == false {
+            PanicTransitRefused(NativeWord(descriptor));
+        }
+    }
+    pointer record = SystemAllocate(MESSAGE_SIZE, 8);
+    if record == NativePointer(0) { Trap(5, NativePointer(0), 0); }
+    raw_word_store(record, MESSAGE_SIZE);
+    raw_word_store(pointer_add(record, MESSAGE_VALUE), NativeWord(value));
+    raw_word_store(pointer_add(record, MESSAGE_DESCRIPTOR), NativeWord(descriptor));
+    return record;
+}
+
+// Frees a message that was never delivered and gives its stakes back.
+pub unit PortMessageAbandon(pointer record, word tag, bool locked) {
+    if record == NativePointer(0) { return; }
+    if tag == CLASS_COPIED {
+        TransitFree(record);
+        return;
+    }
+    pointer value = NativePointer(raw_word_load(pointer_add(record, MESSAGE_VALUE)));
+    pointer descriptor = NativePointer(raw_word_load(pointer_add(record, MESSAGE_DESCRIPTOR)));
+    if TypeDescriptorPointerCount(descriptor) != 0 {
+        if tag == CLASS_SHARED {
+            CountStakeRelease(value, locked);
+        } else {
+            HandOverAbandon(value, locked);
+        }
+    }
+    SystemFree(record, MESSAGE_SIZE);
+    return;
+}
+
+// A released port's undelivered messages give their stakes back. Caller holds the lock.
+pub unit PortDrainUndeliveredLocked(pointer ring) {
+    pointer out = SystemAllocate(16, 8);
+    if out == NativePointer(0) { ParallelUnlock(); Trap(5, NativePointer(0), 0); }
+    memory_set(out, 0, 16);
+    while word(port_ring_receive(ring, out, 0, 0)) == PORT_DONE {
+        PortMessageAbandon(NativePointer(raw_word_load(out)), raw_word_load(pointer_add(out, 8)), true);
+    }
+    SystemFree(out, 16);
+    return;
 }
 
 // Receives the next value into a receipt of the calling fiber. Parks while the port is empty.
@@ -277,8 +355,14 @@ pub i64 PortReceiveWith(i64 id, bool park) {
     port_ring_release(ring);
     if status == PORT_DONE {
         pointer record = NativePointer(raw_word_load(out));
-        PortReceiptStore(id, record);
-        TransitFree(record);
+        word tag = raw_word_load(pointer_add(out, 8));
+        if tag == CLASS_COPIED {
+            PortReceiptStore(id, record);
+            TransitFree(record);
+        } else {
+            PortReceiptStoreMessage(id, record, tag);
+            SystemFree(record, MESSAGE_SIZE);
+        }
     }
     SystemFree(out, 16);
     return i64(status);
@@ -292,24 +376,57 @@ pub word ReceiptFiber() {
 
 // Materializes `record` in this heap and keeps it, rooted, in a receipt of the calling fiber.
 pub unit PortReceiptStore(i64 id, pointer record) {
-    pointer instance = CurrentInstanceRecord();
-    pointer receipt = SystemAllocate(RECEIPT_SIZE, 8);
-    if receipt == NativePointer(0) || instance == NativePointer(0) { Trap(5, NativePointer(0), 0); }
-    memory_set(receipt, 0, RECEIPT_SIZE);
-    raw_word_store(pointer_add(receipt, RECEIPT_PORT), word(id));
-    raw_word_store(pointer_add(receipt, RECEIPT_FIBER), ReceiptFiber());
     pointer cell = SystemAllocate(8, 8);
     if cell == NativePointer(0) { Trap(5, NativePointer(0), 0); }
     if TransitMaterialize(record, cell) == false { Trap(5, NativePointer(0), 0); }
     pointer value = NativePointer(raw_word_load(cell));
     pointer object = ManagedObjectForReference(Heap(), value);
     if object == NativePointer(0) { Trap(10, NativePointer(0), 0); }
-    word descriptor = raw_word_load(object);
+    PortReceiptKeep(id, value, raw_word_load(object));
+    GcUnregisterRoot(cell);
+    SystemFree(cell, 8);
+    return;
+}
+
+// Takes the stakes of a Shared or Moved message and keeps a fresh box of this heap around its
+// value in a receipt of the calling fiber.
+pub unit PortReceiptStoreMessage(i64 id, pointer record, word tag) {
+    pointer value = NativePointer(raw_word_load(pointer_add(record, MESSAGE_VALUE)));
+    pointer descriptor = NativePointer(raw_word_load(pointer_add(record, MESSAGE_DESCRIPTOR)));
+    if TypeDescriptorPointerCount(descriptor) != 0 {
+        if tag == CLASS_SHARED {
+            CountStakeReceive(value);
+        } else if HandOverReceive(value) == false {
+            Trap(10, NativePointer(0), 0);
+        }
+    }
+    pointer request = SystemAllocate(24, 8);
+    if request == NativePointer(0) { Trap(5, NativePointer(0), 0); }
+    raw_word_store(request, TypeDescriptorSize(descriptor));
+    raw_word_store(pointer_add(request, 8), TypeDescriptorAlignment(descriptor));
+    raw_word_store(pointer_add(request, 16), NativeWord(descriptor));
+    pointer box = AllocateObject(request);
+    SystemFree(request, 24);
+    if box == NativePointer(0) { Trap(5, NativePointer(0), 0); }
+    // No safepoint until the receipt slot roots the box. The barrier stamps a foreign value in the
+    // foreign table while this heap is marking.
+    GcHybridWriteBarrier(pointer_add(box, BOX_VALUE), value);
+    raw_word_store(pointer_add(box, BOX_VALUE), NativeWord(value));
+    PortReceiptKeep(id, box, NativeWord(descriptor));
+    return;
+}
+
+// Keeps `value` (an object of this heap with descriptor `descriptor`) in a new receipt.
+pub unit PortReceiptKeep(i64 id, pointer value, word descriptor) {
+    pointer instance = CurrentInstanceRecord();
+    pointer receipt = SystemAllocate(RECEIPT_SIZE, 8);
+    if receipt == NativePointer(0) || instance == NativePointer(0) { Trap(5, NativePointer(0), 0); }
+    memory_set(receipt, 0, RECEIPT_SIZE);
+    raw_word_store(pointer_add(receipt, RECEIPT_PORT), word(id));
+    raw_word_store(pointer_add(receipt, RECEIPT_FIBER), ReceiptFiber());
     if AbiValueInitialize(pointer_add(receipt, RECEIPT_SLOT), descriptor, value, NativePointer(descriptor)) == false {
         Trap(5, NativePointer(0), 0);
     }
-    GcUnregisterRoot(cell);
-    SystemFree(cell, 8);
     raw_word_store(pointer_add(receipt, RECEIPT_NEXT), raw_word_load(pointer_add(instance, INSTANCE_RECEIPTS)));
     raw_word_store(pointer_add(instance, INSTANCE_RECEIPTS), NativeWord(receipt));
     return;

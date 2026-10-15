@@ -228,6 +228,7 @@ pub bool GcCycleStartOn(pointer heap) {
     GcStressVerify(heap, STRESS_VERIFY_BEFORE);
     raw_word_store(pointer_add(heap, HEAP_GC_PHASE), GC_PHASE_MARKING);
     ForeignBeginEpoch(heap);
+    CountsBeforeMark(heap);
     AtomicWordFetchAdd(BarrierActiveWord(), 1, 4);
     word live = raw_word_load(pointer_add(heap, HEAP_LIVE_BYTES));
     raw_word_store(pointer_add(heap, HEAP_MARK_START_LIVE), live);
@@ -293,6 +294,8 @@ pub word GcMarkStepOn(pointer heap, word budget, bool counted) {
 // black make the first rescan shade nothing; what it shades is counted. Then the barrier word is
 // lowered, the sweep generation advances and the sweep starts.
 pub unit GcMarkTermination(pointer heap) {
+    // INCs posted while marking ran become local entries before the final root rescans.
+    CountQueueDrainOwn(heap);
     mut bool rescan = true;
     while rescan {
         word before = raw_word_load(pointer_add(heap, HEAP_CYCLE_SHADE_COUNT));

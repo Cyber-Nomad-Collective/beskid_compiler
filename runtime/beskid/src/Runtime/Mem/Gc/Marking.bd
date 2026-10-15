@@ -314,10 +314,14 @@ pub word GcDrainMarkWork(pointer heap, word budget) {
     mut word traced = 0;
     while traced < budget {
         pointer entry = DequeueSpan(heap);
+        mut word bytes = 0;
         if entry == NativePointer(0) {
-            return traced;
+            // Mutable foreign objects queued by `ForeignObserve` (Foreign.bd).
+            if ForeignWorkPending(heap) == false { return traced; }
+            bytes = ForeignDrainOne(heap);
+        } else {
+            bytes = DrainSpan(heap, entry);
         }
-        word bytes = DrainSpan(heap, entry);
         if bytes == MARK_WORK_FAILED { return MARK_WORK_FAILED; }
         traced = traced + bytes;
         // A budget of one drains exactly one span or chunk (the smallest granularity).
@@ -327,5 +331,5 @@ pub word GcDrainMarkWork(pointer heap, word budget) {
 }
 
 pub bool MarkQueueEmpty(pointer heap) {
-    return raw_word_load(pointer_add(heap, HEAP_MARK_FIFO_HEAD)) == 0;
+    return raw_word_load(pointer_add(heap, HEAP_MARK_FIFO_HEAD)) == 0 && ForeignWorkPending(heap) == false;
 }

@@ -56,6 +56,12 @@ pub unit ParallelLock() {
     return;
 }
 
+// Takes the lock only when it is free now. Collections use it: a collection can start inside an
+// allocation made while this thread holds the lock, and must not wait for itself.
+pub bool ParallelTryLock() {
+    return AtomicWordCompareExchange(pointer_add(ProcessStateRoot(), PROCESS_PARALLEL_LOCK), 0, 1, 1) == 0;
+}
+
 pub unit ParallelUnlock() {
     AtomicWordStore(pointer_add(ProcessStateRoot(), PROCESS_PARALLEL_LOCK), 0, 2);
     return;

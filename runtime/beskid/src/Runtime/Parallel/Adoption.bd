@@ -12,6 +12,14 @@
 // its own cycle in progress, so it is idle too; adopted spans are then stamped with the joiner's
 // sweep generation and carry clean mark bitmaps. Adopted garbage is reclaimed by the joiner's next
 // cycle, and adopted regions count against its `BESKID_HEAP_MAX`.
+//
+// ORCA counts (v0.6.4, v0.6.5 "adoption in every case"; Counts.bd): under the parallel lock, after
+// the region map names the joiner as the owner, the child's local table is merged into the
+// joiner's, the child's count queue is drained into the joiner's local table (holders that posted
+// before the map update reached the child's queue, later ones reach the joiner's), and foreign
+// entries are merged or cancelled against the joiner's local counts. A failed or cancelled task
+// whose heap still has local counts is adopted too (TaskFinalize): another isolate holds a stake
+// in one of its objects, so the heap cannot be discarded.
 
 const HEAP_FIRST_REGION = 0;
 const HEAP_REGION_COUNT = 16;
@@ -65,8 +73,13 @@ pub unit AdoptHeap(pointer parent, pointer child, pointer childRuntime) {
         raw_word_load(pointer_add(parent, HEAP_LIVE_BYTES)) + raw_word_load(pointer_add(child, HEAP_LIVE_BYTES)));
     raw_word_store(pointer_add(parent, HEAP_LIVE_COUNT),
         raw_word_load(pointer_add(parent, HEAP_LIVE_COUNT)) + raw_word_load(pointer_add(child, HEAP_LIVE_COUNT)));
+    ParallelLock();
     RegionMapReassignOwner(childRuntime, parentRuntime);
+    LocalCountMergeInto(parent, child);
+    CountQueueDrainLocked(child, parent);
     ForeignMergeInto(parent, child, parentRuntime);
+    ParallelUnlock();
+    CountRecordFree(child);
     memory_set(child, 0, HEAP_STATE_SIZE);
     SystemFree(child, HEAP_STATE_SIZE);
     return;
@@ -81,8 +94,36 @@ pub unit DiscardHeap(pointer child, pointer childRuntime) {
         SystemFree(region, raw_word_load(pointer_add(region, REGION_SIZE)));
         region = next;
     }
-    ForeignTableFree(child);
+    CountRecordFree(child);
     memory_set(child, 0, HEAP_STATE_SIZE);
     SystemFree(child, HEAP_STATE_SIZE);
+    return;
+}
+
+// Whether a finished child heap still has local counts after its queue is applied: then some other
+// isolate holds a stake in one of its objects and the heap must be adopted, not discarded. Runs on
+// the joiner's thread; the child's thread has ended.
+pub bool ChildHeapHeldByCounts(pointer child) {
+    ParallelLock();
+    CountQueueDrainLocked(child, child);
+    ParallelUnlock();
+    return LocalCountsHeld(child);
+}
+
+// Adds every local entry of `child` to `parent`'s local table. Caller holds the parallel lock.
+pub unit LocalCountMergeInto(pointer parent, pointer child) {
+    pointer cell = CountTableCell(child, 8);
+    if cell == NativePointer(0) { return; }
+    pointer table = NativePointer(raw_word_load(cell));
+    if table == NativePointer(0) { return; }
+    word capacity = raw_word_load(pointer_add(table, 8));
+    mut word index = 0;
+    while index < capacity {
+        pointer entry = CountTableEntry(table, index);
+        word key = raw_word_load(entry);
+        word count = raw_word_load(pointer_add(entry, 16));
+        if key != 0 && count != 0 { LocalCountAdd(parent, key, count); }
+        index = index + 1;
+    }
     return;
 }

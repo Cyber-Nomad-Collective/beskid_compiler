@@ -439,6 +439,9 @@ pub unit TaskFinalize(pointer task) {
                        NativePointer(raw_word_load(pointer_add(task, TASK_RESULT_DESCRIPTOR)))) == false {
                     Trap(10, NativePointer(0), 0);
                 }
+            } else if ChildHeapHeldByCounts(childHeap) {
+                // A failed task's objects that another isolate holds a stake in stay alive.
+                AdoptHeap(Heap(), childHeap, childRuntime);
             } else {
                 DiscardHeap(childHeap, childRuntime);
             }
