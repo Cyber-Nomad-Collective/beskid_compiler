@@ -19,6 +19,64 @@ use beskid_abi::runtime_source::{CANONICAL_GC_ALLOCATION_SOURCE_PATH, canonical_
 #[cfg(any(all(target_os = "linux", target_arch = "x86_64"), all(target_os = "macos", target_arch = "aarch64"),))]
 unsafe extern "C" fn test_context_switch(_from: *mut u8, _to: *mut u8) {}
 
+// Host-thread and GC intrinsics the canonical allocation path reaches since v0.6.1/v0.6.2 (atomics,
+// the process barrier word, the kit profile, the process state block). Single-threaded fixture:
+// SeqCst atomics on the given word, a release kit, and zeroed process words.
+#[cfg(any(all(target_os = "linux", target_arch = "x86_64"), all(target_os = "macos", target_arch = "aarch64"),))]
+mod host_intrinsics {
+    use std::sync::atomic::{AtomicUsize, Ordering, fence};
+
+    pub(super) static GC_BARRIER_ACTIVE: AtomicUsize = AtomicUsize::new(0);
+    static PROCESS_STATE: [AtomicUsize; 16] = [const { AtomicUsize::new(0) }; 16];
+
+    unsafe fn word<'a>(address: *mut usize) -> &'a AtomicUsize {
+        unsafe { AtomicUsize::from_ptr(address) }
+    }
+    pub(super) unsafe extern "C" fn atomic_word_load(address: *mut usize, _order: u8) -> usize {
+        unsafe { word(address) }.load(Ordering::SeqCst)
+    }
+    pub(super) unsafe extern "C" fn atomic_word_store(address: *mut usize, value: usize, _order: u8) {
+        unsafe { word(address) }.store(value, Ordering::SeqCst)
+    }
+    pub(super) unsafe extern "C" fn atomic_word_compare_exchange(
+        address: *mut usize,
+        expected: usize,
+        desired: usize,
+        _order: u8,
+    ) -> usize {
+        match unsafe { word(address) }.compare_exchange(expected, desired, Ordering::SeqCst, Ordering::SeqCst) {
+            Ok(previous) | Err(previous) => previous,
+        }
+    }
+    pub(super) unsafe extern "C" fn atomic_word_fetch_add(address: *mut usize, delta: usize, _order: u8) -> usize {
+        unsafe { word(address) }.fetch_add(delta, Ordering::SeqCst)
+    }
+    pub(super) extern "C" fn atomic_fence(_order: u8) {
+        fence(Ordering::SeqCst)
+    }
+    pub(super) extern "C" fn gc_barrier_active_word() -> *const AtomicUsize {
+        &GC_BARRIER_ACTIVE
+    }
+    pub(super) extern "C" fn kit_debug_profile() -> u8 {
+        0
+    }
+    pub(super) extern "C" fn process_state_root() -> *const AtomicUsize {
+        PROCESS_STATE.as_ptr()
+    }
+    pub(super) extern "C" fn host_processor_count() -> usize {
+        1
+    }
+    pub(super) extern "C" fn thread_yield() {
+        std::thread::yield_now()
+    }
+    pub(super) extern "C" fn clock_monotonic_nanos() -> i64 {
+        static START: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
+        i64::try_from(START.get_or_init(std::time::Instant::now).elapsed().as_nanos()).unwrap_or(i64::MAX)
+    }
+    // The fixture heap lives in test-owned arrays; nothing it frees came from the system.
+    pub(super) extern "C" fn system_free(_address: *mut u8, _size: usize) {}
+}
+
 #[test]
 fn parsed_zero_capture_immediate_lambda_call_lowers_without_a_runtime_closure() {
     let (input, isa, root) = item_fixture_with_root("i32 Main() { return ((i32 value) => value + 1)(41); }");
@@ -480,6 +538,23 @@ fn canonical_runtime_closure_descriptor_validation_and_rooting_execute_fail_clos
     builder.symbol("beskid_rt_v5_intrinsic_system_allocate", test_system_allocate as *const u8);
     builder.symbol("beskid_rt_v5_intrinsic_tls_get", test_tls_get as *const u8);
     builder.symbol("beskid_rt_v5_intrinsic_trap", test_trap as *const u8);
+    for (symbol, address) in [
+        ("beskid_rt_v5_intrinsic_atomic_word_load", host_intrinsics::atomic_word_load as *const u8),
+        ("beskid_rt_v5_intrinsic_atomic_word_store", host_intrinsics::atomic_word_store as *const u8),
+        ("beskid_rt_v5_intrinsic_atomic_word_compare_exchange", host_intrinsics::atomic_word_compare_exchange as *const u8),
+        ("beskid_rt_v5_intrinsic_atomic_word_fetch_add", host_intrinsics::atomic_word_fetch_add as *const u8),
+        ("beskid_rt_v5_intrinsic_atomic_fence", host_intrinsics::atomic_fence as *const u8),
+        ("beskid_rt_v5_intrinsic_gc_barrier_active_word", host_intrinsics::gc_barrier_active_word as *const u8),
+        ("beskid_rt_v5_intrinsic_kit_debug_profile", host_intrinsics::kit_debug_profile as *const u8),
+        ("beskid_rt_v5_intrinsic_process_state_root", host_intrinsics::process_state_root as *const u8),
+        ("beskid_rt_v5_host_processor_count", host_intrinsics::host_processor_count as *const u8),
+        ("beskid_rt_v5_thread_yield", host_intrinsics::thread_yield as *const u8),
+        ("beskid_rt_v5_intrinsic_clock_monotonic_nanos", host_intrinsics::clock_monotonic_nanos as *const u8),
+        ("beskid_rt_v5_intrinsic_system_free", host_intrinsics::system_free as *const u8),
+        ("beskid_rt_v5_gc_barrier_active", &host_intrinsics::GC_BARRIER_ACTIVE as *const _ as *const u8),
+    ] {
+        builder.symbol(symbol, address);
+    }
     let mut module = JITModule::new(builder);
     let declared = emit_syntax_program(&mut module, &input, isa.as_ref(), &module_items, Linkage::Export)
         .expect("closure descriptor helpers lower through the production module emitter");
