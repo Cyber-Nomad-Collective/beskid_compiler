@@ -114,7 +114,6 @@ pub(crate) struct NativeRuntimeHooks {
     pub construction_finish: String,
     pub record_allocate: String,
     pub write_barrier: String,
-    pub array_write_barrier: String,
 }
 
 /// Version 2 transport uses opaque invocation-local value handles, never managed pointers.

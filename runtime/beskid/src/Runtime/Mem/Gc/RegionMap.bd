@@ -1,0 +1,215 @@
+// Process-wide region-to-owner map.
+//
+// Every heap region's object range `[objects_start, limit)` is registered with the runtime
+// instance (the `BeskidRuntimeState` record) whose heap owns it, before the first allocation
+// in it. `RegionOwner` answers "which runtime instance owns this address" from any thread,
+// attached or not, without taking a lock: the map is a chain of fixed native chunks of slots,
+// and each slot is a sequence-locked record. Writers (registration, unregistration, release)
+// serialize on one spin lock word in the process state block. Chunks are never unlinked while
+// the process runs, so a reader never follows a freed chunk; a slot whose owner is zero is free
+// and is reused by a later registration. Memory is bounded by the peak number of live regions.
+//
+// Slot protocol (seqlock): the writer makes the sequence odd, writes `start`, `end` and `owner`,
+// then makes the sequence even with release ordering. A reader loads the sequence with acquire
+// ordering, reads the fields, issues an acquire fence and accepts the fields only when the
+// sequence is unchanged and even.
+
+// Process state words owned by this file (see Lifecycle.bd for the whole block).
+const PROCESS_REGION_LOCK = 8;
+const PROCESS_REGION_HEAD = 16;
+
+const REGION_CHUNK_NEXT = 0;
+const REGION_CHUNK_SLOTS_OFFSET = 8;
+const REGION_CHUNK_SLOT_COUNT = 64;
+const REGION_CHUNK_SLOT_SIZE = 32;
+const REGION_CHUNK_SIZE = 2056;
+const REGION_SLOT_SEQUENCE = 0;
+const REGION_SLOT_START = 8;
+const REGION_SLOT_END = 16;
+const REGION_SLOT_OWNER = 24;
+
+// BeskidHeapRegion fields used to derive the object range.
+const REGION_LIMIT = 24;
+const REGION_OBJECTS_START = 48;
+
+const ORDER_RELAXED = 0;
+const ORDER_ACQUIRE = 1;
+const ORDER_RELEASE = 2;
+
+pub pointer RegionMapSlot(pointer chunk, word index) {
+    return pointer_add(chunk, REGION_CHUNK_SLOTS_OFFSET + index * REGION_CHUNK_SLOT_SIZE);
+}
+
+pub unit RegionMapLock() {
+    pointer lock = pointer_add(ProcessStateRoot(), PROCESS_REGION_LOCK);
+    while AtomicWordCompareExchange(lock, 0, 1, ORDER_ACQUIRE) != 0 {
+        thread_yield();
+    }
+    return;
+}
+
+pub unit RegionMapUnlock() {
+    AtomicWordStore(pointer_add(ProcessStateRoot(), PROCESS_REGION_LOCK), 0, ORDER_RELEASE);
+    return;
+}
+
+// Rewrites one slot under the writer lock. The sequence stays odd while the fields change.
+pub unit RegionMapWriteSlot(pointer slot, word start, word end, word owner) {
+    word sequence = AtomicWordLoad(pointer_add(slot, REGION_SLOT_SEQUENCE), ORDER_RELAXED);
+    AtomicWordStore(pointer_add(slot, REGION_SLOT_SEQUENCE), sequence + 1, ORDER_RELAXED);
+    AtomicFence(ORDER_RELEASE);
+    AtomicWordStore(pointer_add(slot, REGION_SLOT_START), start, ORDER_RELAXED);
+    AtomicWordStore(pointer_add(slot, REGION_SLOT_END), end, ORDER_RELAXED);
+    AtomicWordStore(pointer_add(slot, REGION_SLOT_OWNER), owner, ORDER_RELAXED);
+    AtomicWordStore(pointer_add(slot, REGION_SLOT_SEQUENCE), sequence + 2, ORDER_RELEASE);
+    return;
+}
+
+// Registers `[start, end)` for `owner`. Returns false when no slot is free and a new chunk
+// cannot be allocated; nothing is published in that case.
+pub bool RegionMapRegister(word start, word end, pointer owner) {
+    if owner == NativePointer(0) || end <= start { return false; }
+    RegionMapLock();
+    pointer root = ProcessStateRoot();
+    mut pointer link = pointer_add(root, PROCESS_REGION_HEAD);
+    mut pointer chunk = NativePointer(raw_word_load(link));
+    while chunk != NativePointer(0) {
+        mut word index = 0;
+        while index < REGION_CHUNK_SLOT_COUNT {
+            pointer slot = RegionMapSlot(chunk, index);
+            if raw_word_load(pointer_add(slot, REGION_SLOT_OWNER)) == 0 {
+                RegionMapWriteSlot(slot, start, end, NativeWord(owner));
+                RegionMapUnlock();
+                return true;
+            }
+            index = index + 1;
+        }
+        link = pointer_add(chunk, REGION_CHUNK_NEXT);
+        chunk = NativePointer(raw_word_load(link));
+    }
+    pointer fresh = SystemAllocate(REGION_CHUNK_SIZE, 8);
+    if fresh == NativePointer(0) {
+        RegionMapUnlock();
+        return false;
+    }
+    memory_set(fresh, 0, REGION_CHUNK_SIZE);
+    RegionMapWriteSlot(RegionMapSlot(fresh, 0), start, end, NativeWord(owner));
+    // Publication: the chunk's contents are complete before a reader can reach it.
+    AtomicWordStore(link, NativeWord(fresh), ORDER_RELEASE);
+    RegionMapUnlock();
+    return true;
+}
+
+// Unregisters every range owned by `owner`.
+pub unit RegionMapUnregisterOwner(pointer owner) {
+    if owner == NativePointer(0) { return; }
+    RegionMapLock();
+    mut pointer chunk = NativePointer(raw_word_load(pointer_add(ProcessStateRoot(), PROCESS_REGION_HEAD)));
+    while chunk != NativePointer(0) {
+        mut word index = 0;
+        while index < REGION_CHUNK_SLOT_COUNT {
+            pointer slot = RegionMapSlot(chunk, index);
+            if raw_word_load(pointer_add(slot, REGION_SLOT_OWNER)) == NativeWord(owner) {
+                RegionMapWriteSlot(slot, 0, 0, 0);
+            }
+            index = index + 1;
+        }
+        chunk = NativePointer(raw_word_load(pointer_add(chunk, REGION_CHUNK_NEXT)));
+    }
+    RegionMapUnlock();
+    return;
+}
+
+// Registers one heap region of `owner` by its object range.
+pub bool RegionMapRegisterRegion(pointer region, pointer owner) {
+    return RegionMapRegister(
+        raw_word_load(pointer_add(region, REGION_OBJECTS_START)),
+        raw_word_load(pointer_add(region, REGION_LIMIT)),
+        owner
+    );
+}
+
+// Registers every region of `heap` (first-region chain) for `owner`. On failure the ranges
+// already registered for `owner` are withdrawn.
+pub bool RegionMapRegisterHeap(pointer heap, pointer owner) {
+    mut pointer region = NativePointer(raw_word_load(heap));
+    while region != NativePointer(0) {
+        if RegionMapRegisterRegion(region, owner) == false {
+            RegionMapUnregisterOwner(owner);
+            return false;
+        }
+        region = NativePointer(raw_word_load(region));
+    }
+    return true;
+}
+
+// Reads one slot consistently. Returns the owner when `address` is inside its range.
+pub word RegionMapProbeSlot(pointer slot, word address) {
+    while true {
+        word before = AtomicWordLoad(pointer_add(slot, REGION_SLOT_SEQUENCE), ORDER_ACQUIRE);
+        if (before & 1) == 0 {
+            word start = AtomicWordLoad(pointer_add(slot, REGION_SLOT_START), ORDER_RELAXED);
+            word end = AtomicWordLoad(pointer_add(slot, REGION_SLOT_END), ORDER_RELAXED);
+            word owner = AtomicWordLoad(pointer_add(slot, REGION_SLOT_OWNER), ORDER_RELAXED);
+            AtomicFence(ORDER_ACQUIRE);
+            if AtomicWordLoad(pointer_add(slot, REGION_SLOT_SEQUENCE), ORDER_RELAXED) == before {
+                if owner != 0 && address >= start && address < end { return owner; }
+                return 0;
+            }
+        }
+        thread_yield();
+    }
+    return 0;
+}
+
+// Returns the runtime instance whose heap owns `address`, or null. Lock-free; callable from
+// any thread.
+[Export(Abi:"C", Symbol:"beskid_rt_v5_region_owner")]
+pub pointer RegionOwner(pointer address) {
+    word target = NativeWord(address);
+    if target == 0 { return NativePointer(0); }
+    mut pointer chunk = NativePointer(AtomicWordLoad(pointer_add(ProcessStateRoot(), PROCESS_REGION_HEAD), ORDER_ACQUIRE));
+    while chunk != NativePointer(0) {
+        mut word index = 0;
+        while index < REGION_CHUNK_SLOT_COUNT {
+            word owner = RegionMapProbeSlot(RegionMapSlot(chunk, index), target);
+            if owner != 0 { return NativePointer(owner); }
+            index = index + 1;
+        }
+        chunk = NativePointer(AtomicWordLoad(pointer_add(chunk, REGION_CHUNK_NEXT), ORDER_ACQUIRE));
+    }
+    return NativePointer(0);
+}
+
+// Frees every chunk. Called once by `ProcessShutdown` after the last runtime instance has
+// unregistered its regions; no reader may run concurrently.
+pub unit RegionMapRelease() {
+    RegionMapLock();
+    pointer head = pointer_add(ProcessStateRoot(), PROCESS_REGION_HEAD);
+    mut pointer chunk = NativePointer(raw_word_load(head));
+    AtomicWordStore(head, 0, ORDER_RELEASE);
+    while chunk != NativePointer(0) {
+        pointer next = NativePointer(raw_word_load(pointer_add(chunk, REGION_CHUNK_NEXT)));
+        SystemFree(chunk, REGION_CHUNK_SIZE);
+        chunk = next;
+    }
+    RegionMapUnlock();
+    return;
+}
+
+// Number of live (owned) slots. Diagnostic and test view.
+pub word RegionMapLiveCount() {
+    RegionMapLock();
+    mut word count = 0;
+    mut pointer chunk = NativePointer(raw_word_load(pointer_add(ProcessStateRoot(), PROCESS_REGION_HEAD)));
+    while chunk != NativePointer(0) {
+        mut word index = 0;
+        while index < REGION_CHUNK_SLOT_COUNT {
+            if raw_word_load(pointer_add(RegionMapSlot(chunk, index), REGION_SLOT_OWNER)) != 0 { count = count + 1; }
+            index = index + 1;
+        }
+        chunk = NativePointer(raw_word_load(pointer_add(chunk, REGION_CHUNK_NEXT)));
+    }
+    RegionMapUnlock();
+    return count;
+}

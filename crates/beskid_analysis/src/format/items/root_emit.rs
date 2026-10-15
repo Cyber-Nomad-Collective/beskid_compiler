@@ -1,6 +1,5 @@
 use crate::doc::LeadingDocComment;
 use crate::format::emit::{Emit, EmitCtx, EmitError};
-use crate::format::items::helpers::emit_attribute_lines;
 use crate::syntax::{
     ConstantDefinition, HostBodyItem, HostDefinition, InlineModule, Literal, Node, Program, RegistryBlock,
     RegistryEntry, ScopeDefinition, ScopeHook, ScopeHookKind, Spanned,
@@ -67,6 +66,7 @@ impl Emit for Node {
 
 impl Emit for ConstantDefinition {
     fn emit<W: Write>(&self, w: &mut W, cx: &mut EmitCtx) -> Result<(), EmitError> {
+        crate::format::attribute_lists::emit_attribute_block(&self.attributes, w, cx)?;
         cx.token(w, "const")?;
         cx.space(w)?;
         self.name.emit(w, cx)?;
@@ -257,11 +257,7 @@ impl Emit for Spanned<Node> {
 
 impl Emit for InlineModule {
     fn emit<W: Write>(&self, w: &mut W, cx: &mut EmitCtx) -> Result<(), EmitError> {
-        if !self.attributes.is_empty() {
-            emit_attribute_lines(&self.attributes, w, cx)?;
-            cx.nl(w)?;
-            cx.write_indent(w)?;
-        }
+        crate::format::attribute_lists::emit_attribute_block(&self.attributes, w, cx)?;
         self.visibility.emit(w, cx)?;
         cx.token(w, "mod")?;
         cx.space(w)?;

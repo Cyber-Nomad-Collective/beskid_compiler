@@ -31,6 +31,7 @@ use beskid_analysis::syntax::{FunctionDefinition, MethodDefinition};
 use beskid_analysis::syntax_query::{NodeKind, SyntaxIndex};
 
 pub(super) mod calls;
+mod attributes;
 mod captures;
 mod cleanup;
 mod externs;
@@ -39,12 +40,18 @@ mod gate;
 mod generics;
 mod imports;
 mod members;
+mod transfer;
 mod typing;
 mod units;
 mod value_paths;
 mod values;
 
+pub use attributes::{
+    AttributeResolution, UnitAttributeDeclaration, UnitAttributeSurface, UnitAttributeUse, attribute_findings,
+    check_attribute_obligations, resolve_attribute_use, unit_attribute_surface,
+};
 pub use externs::extern_profile_findings;
+pub use transfer::{immutable_field_findings, transfer_declaration_findings};
 pub use gate::{GateObligation, GateObligationKind, check_gate_obligations, gate_obligations};
 pub use typing::{TypingObligation, TypingObligationKind, typing_obligations};
 pub use units::{UnitObligation, UnitObligationKind, check_unit_obligations, unit_obligations};
@@ -394,6 +401,7 @@ fn collect_nodes_of_kind(
 pub fn check_items(db: &dyn Db, items: &[AstNodeKey]) -> Result<(), Vec<SemanticFinding>> {
     let mut findings = import_findings(db, items);
     for &item in items {
+        findings.extend(transfer::immutable_field_findings(db, item));
         if let Ok(Some(finding)) = unresolved_value_argument(db, item) {
             findings.push(SemanticFinding {
                 kind: SemanticIssueKind::ResolveUnknownValue { name: finding.name.to_string() },
@@ -447,7 +455,7 @@ pub fn check_items(db: &dyn Db, items: &[AstNodeKey]) -> Result<(), Vec<Semantic
                 UnresolvedCallKind::UnknownModulePath { path } => {
                     SemanticIssueKind::ResolveUnknownModulePath { path: path.to_string() }
                 }
-                UnresolvedCallKind::MissingTypeArguments => SemanticIssueKind::TypeMissingTypeArguments,
+                UnresolvedCallKind::MissingTypeArguments => SemanticIssueKind::TypeMissingTypeArguments { parameter: None },
                 UnresolvedCallKind::PrivateBuiltin { name } => {
                     SemanticIssueKind::ResolvePrivateRuntimeBuiltin { name: name.to_string() }
                 }
@@ -598,6 +606,8 @@ fn import_findings(db: &dyn Db, items: &[AstNodeKey]) -> Vec<SemanticFinding> {
             continue;
         }
         judged_units.push(unit_root);
+        findings.extend(attributes::attribute_findings(db, unit_root));
+        findings.extend(transfer::transfer_declaration_findings(db, unit_root));
         if let Ok(Some(imports)) = unresolved_imports(db, unit_root) {
             findings.extend(imports.iter().map(|import| SemanticFinding {
                 kind: SemanticIssueKind::UnknownImportPath { path: import.path.to_string() },
@@ -720,6 +730,256 @@ mod tests {
             .expect("Helper call is missing one argument");
         assert_eq!(mismatch.expected, 2);
         assert_eq!(mismatch.actual, 1);
+    }
+
+    fn attribute_codes(source: &str, generation: u64) -> Vec<(String, String)> {
+        let (db, root) = one_unit_assembly(source, SyntaxGenerationId(generation));
+        super::attribute_findings(&db, root)
+            .into_iter()
+            .map(|finding| (finding.kind.code().to_string(), finding.kind.message()))
+            .collect()
+    }
+
+    #[test]
+    fn attribute_declaration_targets_are_the_closed_catalogue() {
+        let findings = attribute_codes("pub attribute Tag(Widget) { } pub attribute Twice(Field, Field) { }", 6101);
+        assert_eq!(findings.len(), 2, "{findings:?}");
+        assert_eq!(findings[0].0, "E1509");
+        assert!(findings[0].1.contains("Widget"));
+        assert_eq!(findings[1].0, "E1508");
+        let (db, root) = one_unit_assembly("pub attribute Tag(method) { }", SyntaxGenerationId(6102));
+        let finding = super::attribute_findings(&db, root).pop().expect("E1509");
+        let SemanticIssueKind::UnknownAttributeDeclarationTarget { allowed, .. } = finding.kind else {
+            panic!("E1509 expected")
+        };
+        assert!(allowed.iter().any(|name| name == "MethodDefinition"));
+    }
+
+    #[test]
+    fn attribute_uses_are_checked_against_their_declaration() {
+        // Declaration without targets accepts nothing.
+        let findings = attribute_codes("pub attribute Sealed { } [Sealed] pub type Door { i64 width }", 6103);
+        assert_eq!(findings.iter().map(|f| f.0.as_str()).collect::<Vec<_>>(), ["E1510"]);
+        // Field attribute on a type, then on a field.
+        let findings =
+            attribute_codes("pub attribute FluentInner(Field) { } [FluentInner] pub type Wrapper { i64 inner }", 6104);
+        assert_eq!(findings.len(), 1);
+        assert!(findings[0].1.contains("TypeDefinition"), "{findings:?}");
+        assert!(attribute_codes("pub attribute FluentInner(Field) { } pub type Wrapper { [FluentInner] i64 inner }", 6105).is_empty());
+        // Undeclared.
+        let findings = attribute_codes("[Frozen] pub type Ice { i64 temperature }", 6106);
+        assert_eq!(findings.len(), 1);
+        assert!(findings[0].1.contains("no declaration"), "{findings:?}");
+    }
+
+    #[test]
+    fn attributes_at_new_sites_are_enforced() {
+        let source = "pub attribute Trace(Parameter) { } pub attribute Pure(LambdaExpression) { } \
+                      pub attribute Hot(LambdaParameter) { } pub attribute Any(TypeParameter) { } \
+                      pub attribute Pinned(LetStatement) { } pub attribute Legacy(EnumVariant) { } \
+                      pub attribute Receiver(ReceiverParameter) { } \
+                      pub enum Mode { Fast, [Legacy] Slow } \
+                      pub type Counter { i64 count, pub i64 Read([Receiver] this) { return this.count; } } \
+                      unit Keep<[Any] T>(T value) { } \
+                      i64 Add([Trace] i64 left, i64 right) { [Pinned] mut i64 total = 0; \
+                      let square = [Pure] ([Hot] i64 x) => x * x; return left + right; }";
+        assert!(attribute_codes(source, 6107).is_empty(), "{:?}", attribute_codes(source, 6107));
+        let wrong = "pub attribute Trace(Parameter) { } i64 Add([Trace] i64 left) { [Trace] let y = left; return y; }";
+        let findings = attribute_codes(wrong, 6108);
+        assert_eq!(findings.len(), 1, "{findings:?}");
+        assert!(findings[0].1.contains("LetStatement"));
+    }
+
+    #[test]
+    fn compiler_recognized_attributes_keep_their_targets_without_corelib() {
+        let findings = attribute_codes("[Extern(Abi:\"C\", Library:\"libc\")] pub i64 Getpid() { return 0; }", 6109);
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].0, "E1510");
+        let (db, root) = one_unit_assembly("pub type Point { [Immutable] i64 x, i64 y }", SyntaxGenerationId(6110));
+        let finding = super::attribute_findings(&db, root).pop().expect("E1510");
+        let SemanticIssueKind::AttributeTargetNotAllowed { allowed, declared, .. } = finding.kind else { panic!() };
+        assert!(declared);
+        assert_eq!(allowed, ["TypeDefinition"]);
+        assert!(attribute_codes("[Export(Abi:\"C\")] pub i64 Answer() { return 42; }", 6111).is_empty());
+    }
+
+    #[test]
+    fn a_user_declaration_shadows_a_recognized_attribute() {
+        let source = "pub attribute Immutable(Field) { } pub type Point { [Immutable] i64 x }";
+        let (db, root) = one_unit_assembly(source, SyntaxGenerationId(6112));
+        assert!(super::attribute_findings(&db, root).is_empty());
+        assert!(!super::resolve_attribute_use(&db, root, "Immutable").is_recognized());
+        let (db, root) = one_unit_assembly("pub type Point { i64 x }", SyntaxGenerationId(6113));
+        assert!(super::resolve_attribute_use(&db, root, "Immutable").is_recognized());
+    }
+
+    fn nodes_of_kind(db: &dyn Db, key: AstNodeKey, kind: IndexedNodeKind, found: &mut Vec<AstNodeKey>) {
+        if node_kind(db, key).expect("node kind") == Some(kind) {
+            found.push(key);
+        }
+        if let Some(children) = child_nodes(db, key).expect("child nodes") {
+            for child in children.iter().copied() {
+                nodes_of_kind(db, child, kind, found);
+            }
+        }
+    }
+
+    /// Every finding of `check_items` over every function and method plus the substitutions of
+    /// each call in the last function.
+    fn method_generic_report(source: &str, generation: u64) -> (Vec<(String, String)>, Vec<String>) {
+        let (db, root) = one_unit_assembly(source, SyntaxGenerationId(generation));
+        let mut items = Vec::new();
+        nodes_of_kind(&db, root, IndexedNodeKind::FunctionDefinition, &mut items);
+        nodes_of_kind(&db, root, IndexedNodeKind::MethodDefinition, &mut items);
+        let mut findings = super::check_items(&db, &items)
+            .err()
+            .unwrap_or_default()
+            .into_iter()
+            .map(|finding| (finding.kind.code().to_string(), finding.kind.message()))
+            .collect::<Vec<_>>();
+        findings.extend(
+            super::check_gate_obligations(&db, &items)
+                .into_iter()
+                .map(|finding| (finding.kind.code().to_string(), finding.kind.message())),
+        );
+        let last = *function_definitions(&db, root).last().expect("function");
+        let mut calls = Vec::new();
+        nodes_of_kind(&db, last, IndexedNodeKind::CallExpression, &mut calls);
+        let substitutions = calls
+            .into_iter()
+            .map(|call| format!("{:?} => {}", call_lowering(&db, call).map(|lowering| lowering.map(|l| format!("{l:?}").chars().take(40).collect::<String>())), match generic_call_specialization(&db, call) {
+                Ok(Some(specialization)) => specialization
+                    .substitutions
+                    .iter()
+                    .map(|binding| format!("{}={}", binding.parameter, binding.argument.display_name()))
+                    .collect::<Vec<_>>()
+                    .join(","),
+                Ok(None) => "none".to_string(),
+                Err(error) => format!("error: {error}"),
+            }))
+            .collect();
+        (findings, substitutions)
+    }
+
+    const BOX: &str = "pub type Box<T> { T item, \
+        pub U Apply<U>((T) => U f) { return f(this.item); } \
+        pub Box<U> Map<U>((T) => U f) { return Box<U> { item: f(this.item) }; } } ";
+
+    const SCOPE: &str = "pub type Task<T> { T value } pub enum Outcome<T> { Done(T value), Failed(string reason) } \
+        pub type Scope { i64 id, \
+        pub Task<T> Spawn<T>(() => T body) { return Task<T> { value: body() }; } \
+        pub i64 SpawnTry<T>(() => Outcome<T> body) { return 0_i64; } } ";
+    const SEQ: &str = "pub contract Folder<T> { T Add(T a, T b); } \
+        pub type AddAll : Folder<i64> { i64 unused, pub i64 Add(i64 a, i64 b) { return a + b; } } \
+        pub type Plain { i64 x } \
+        pub contract Shown { i64 Show(); } \
+        pub type Label : Shown { i64 x, pub i64 Show() { return this.x; } } \
+        pub type Cell<T> { T value, pub T Read() where T: Shown { return this.value; } } \
+        pub type Seq<T> { T[] items, pub T Fold<C>(T seed, C combiner) where C: Folder<T> { return seed; } } \
+        pub T Pick<T>(T a, T b) { return a; } ";
+    const CLASH: &str = "pub type Clash<T> { T value, pub T Same<T>(T other) { return other; } } ";
+
+    fn assert_method_call(source: &str, generation: u64, findings: &[&str], substitutions: &[&str]) {
+        let (actual_findings, actual_substitutions) = method_generic_report(source, generation);
+        let codes = actual_findings.iter().map(|(code, _)| code.as_str()).collect::<Vec<_>>();
+        assert_eq!(codes, findings, "{source}: {actual_findings:?}");
+        for (expected, actual) in substitutions.iter().zip(actual_substitutions.iter()) {
+            assert!(actual.ends_with(&format!("=> {expected}")), "{source}: expected {expected}, got {actual}");
+        }
+    }
+
+    #[test]
+    fn generic_methods_bind_explicit_type_arguments_on_paths_and_member_accesses() {
+        let main = "i64 Main() { Box<bool> b = Box<bool> { item: true }; return b.Apply<i64>((bool s) => 3_i64); }";
+        assert_method_call(&format!("{BOX}{main}"), 6200, &[], &["T=bool,U=i64"]);
+        let chain =
+            "Box<bool> Twice(Box<i64> b) { return b.Map<i64>((i64 x) => x * 2_i64).Map<bool>((i64 y) => y > 2_i64); }";
+        assert_method_call(&format!("{BOX}{chain}"), 6201, &[], &["T=i64,U=bool", "T=i64,U=i64"]);
+        let wrong = "i64 Main() { Box<bool> b = Box<bool> { item: true }; return b.Apply<i64, bool>((bool s) => 3_i64); }";
+        assert_method_call(&format!("{BOX}{wrong}"), 6202, &["E1204"], &[]);
+    }
+
+    #[test]
+    fn method_type_arguments_are_inferred_from_receiver_arguments_and_lambda_results() {
+        for (offset, main) in [
+            "i64 Main() { Box<bool> b = Box<bool> { item: true }; return b.Apply((bool s) => 3_i64); }",
+            "i64 Main() { Box<bool> b = Box<bool> { item: true }; return b.Apply((s) => 3_i64); }",
+            "i64 Main() { Box<bool> b = Box<bool> { item: true }; return b.Apply((s) => { return 7_i64; }); }",
+        ]
+        .iter()
+        .enumerate()
+        {
+            assert_method_call(&format!("{BOX}{main}"), 6203 + offset as u64, &[], &["T=bool,U=i64"]);
+        }
+        let spawn = format!("{SCOPE}i64 Main(Scope s) {{ Task<i64> t = s.Spawn(() => 20_i64); return t.value; }}");
+        assert_method_call(&spawn, 6300, &[], &["T=i64"]);
+        let block = format!(
+            "{SCOPE}i64 Main(Scope s) {{ Task<i64> t = s.Spawn(() => {{ i64 a = 3_i64; return 7_i64; }}); return t.value; }}"
+        );
+        assert_method_call(&block, 6301, &[], &["T=i64"]);
+        let bare = format!("{SCOPE}i32 Main(Scope s) {{ Task<i32> t = s.Spawn(() => 20); return t.value; }}");
+        assert_method_call(&bare, 6310, &[], &["T=i32"]);
+        let fold = format!("{SEQ}i64 Main(Seq<i64> numbers) {{ return numbers.Fold(0_i64, AddAll {{ unused: 0_i64 }}); }}");
+        assert_method_call(&fold, 6304, &[], &["T=i64,C=pointer"]);
+    }
+
+    #[test]
+    fn method_type_argument_inference_failures_are_reported() {
+        let unresolved = format!("{SCOPE}i64 Main(Scope s) {{ return s.SpawnTry(() => Outcome::Failed(\"no input\")); }}");
+        let (findings, _) = method_generic_report(&unresolved, 6302);
+        assert_eq!(findings.len(), 1, "{findings:?}");
+        assert_eq!(findings[0].0, "E1203");
+        assert!(findings[0].1.contains("`T`"), "{findings:?}");
+        let explicit = format!("{SCOPE}i64 Main(Scope s) {{ return s.SpawnTry<i64>(() => Outcome::Failed(\"no input\")); }}");
+        assert_method_call(&explicit, 6303, &[], &["T=i64"]);
+        let conflict = format!("{SEQ}i64 Main() {{ return Pick(1_i64, true); }}");
+        let (findings, _) = method_generic_report(&conflict, 6308);
+        assert_eq!(findings.iter().map(|(code, _)| code.as_str()).collect::<Vec<_>>(), ["E1229"]);
+        assert!(findings[0].1.contains("i64") && findings[0].1.contains("bool"));
+        let clash = format!("{CLASH}i64 Main(Clash<i64> c) {{ return c.Same(1_i64); }}");
+        assert_method_call(&clash, 6309, &["E1229"], &[]);
+    }
+
+    const FOLD: &str = "pub type Numbers<T> { T[] items, \
+        pub U Fold<U>(U seed, (U, T) => U step) { return seed; } \
+        pub B Pipe<A, B>(() => A first, (A) => B second) { return second(first()); } } ";
+
+    #[test]
+    fn untyped_lambda_parameters_take_types_inferred_from_sibling_arguments() {
+        // `acc` is `U`, bound only by the sibling `seed` argument; `x` is the receiver's `T`.
+        let fold = format!("{FOLD}i64 Main(Numbers<bool> numbers) {{ return numbers.Fold(0_i64, (acc, x) => acc + 1_i64); }}");
+        assert_method_call(&fold, 6330, &[], &["T=bool,U=i64"]);
+        // The sibling may follow the lambda: non-lambda arguments are unified first.
+        let pipe = format!("{FOLD}bool Main(Numbers<bool> numbers) {{ return numbers.Pipe(() => 3_i64, (a) => a > 2_i64); }}");
+        assert_method_call(&pipe, 6331, &[], &["T=bool,A=i64,B=bool"]);
+        // A receiver-supplied parameter used in the body types the result.
+        let apply = format!("{BOX}bool Main() {{ Box<bool> b = Box<bool> {{ item: true }}; return b.Apply((s) => s); }}");
+        assert_method_call(&apply, 6332, &[], &["T=bool,U=bool"]);
+    }
+
+    #[test]
+    fn an_explicit_receiver_resolves_like_the_implicit_one() {
+        let source = "pub attribute Receiver(ReceiverParameter) { } \
+            pub type Counter { i64 count, pub i64 Read([Receiver] this) { return this.count; } \
+            pub i64 Bump(this, i64 by) { return this.count + by; } } \
+            i64 Main(Counter c) { return c.Read() + c.Bump(2_i64); }";
+        let (findings, substitutions) = method_generic_report(source, 6320);
+        assert!(findings.is_empty(), "{findings:?}");
+        assert!(substitutions.iter().all(|call| call.starts_with("Ok(Some(\"Direct")), "{substitutions:?}");
+    }
+
+    #[test]
+    fn method_where_bounds_are_proven_at_the_call() {
+        let own = format!("{SEQ}i64 Main(Seq<i64> numbers) {{ return numbers.Fold<Plain>(0_i64, Plain {{ x: 1_i64 }}); }}");
+        let (findings, _) = method_generic_report(&own, 6305);
+        assert_eq!(findings.iter().map(|(code, _)| code.as_str()).collect::<Vec<_>>(), ["E1610"]);
+        assert!(findings[0].1.contains("Folder"));
+        let owner = format!("{SEQ}i64 Main(Cell<Plain> c) {{ Plain p = c.Read(); return p.x; }}");
+        let (findings, _) = method_generic_report(&owner, 6306);
+        assert_eq!(findings.iter().map(|(code, _)| code.as_str()).collect::<Vec<_>>(), ["E1610"]);
+        assert!(findings[0].1.contains("Shown"));
+        let satisfied = format!("{SEQ}i64 Main(Cell<Label> c) {{ Label l = c.Read(); return l.x; }}");
+        assert_method_call(&satisfied, 6307, &[], &[]);
     }
 
     fn assert_immutable_assignment(source: &str, generation: u64, item: usize, name: &str) {
@@ -954,5 +1214,144 @@ mod tests {
                 assert_eq!(super::generic_parameter_conflict(&db, item).expect("query"), None, "{source}");
             }
         }
+    }
+
+    const MARKERS: &str = "[CompilerDerived] pub contract Transferable { } [CompilerDerived] pub contract Shared { } \
+        [CompilerDerived] pub contract Moved { } [CompilerDerived] pub contract Copied { } ";
+
+    /// `(code, message, help)` of every declaration, legality-gate and gate-obligation finding.
+    fn transfer_report(source: &str, generation: u64) -> Vec<(String, String, String)> {
+        let (db, root) = one_unit_assembly(source, SyntaxGenerationId(generation));
+        let mut items = Vec::new();
+        nodes_of_kind(&db, root, IndexedNodeKind::FunctionDefinition, &mut items);
+        nodes_of_kind(&db, root, IndexedNodeKind::MethodDefinition, &mut items);
+        let mut findings = super::transfer_declaration_findings(&db, root);
+        findings.extend(super::check_items(&db, &items).err().unwrap_or_default());
+        findings.extend(super::check_gate_obligations(&db, &items));
+        findings
+            .into_iter()
+            .filter(|finding| finding.kind.code() != "E1510" || !finding.kind.message().contains("no declaration"))
+            .map(|finding| {
+                (finding.kind.code().to_string(), finding.kind.message(), finding.kind.help().unwrap_or_default())
+            })
+            .collect()
+    }
+
+    fn type_class(source: &str, generation: u64, name: &str) -> String {
+        let (db, root) = one_unit_assembly(source, SyntaxGenerationId(generation));
+        let mut types = Vec::new();
+        nodes_of_kind(&db, root, IndexedNodeKind::TypeDefinition, &mut types);
+        nodes_of_kind(&db, root, IndexedNodeKind::EnumDefinition, &mut types);
+        let declaration = types
+            .into_iter()
+            .find(|key| {
+                let syntax = db.syntax_unit(key.unit).expect("unit");
+                let node = syntax.syntax_index(&db).node_at(syntax.expanded_program(&db), key.node).expect("node");
+                node.of::<beskid_analysis::syntax::TypeDefinition>()
+                    .map(|definition| definition.name.node.name.as_str())
+                    .or_else(|| node.of::<beskid_analysis::syntax::EnumDefinition>().map(|definition| definition.name.node.name.as_str()))
+                    == Some(name)
+            })
+            .expect("declaration");
+        crate::nominal_transfer_class(&db, declaration, &[]).expect("transfer class").to_string()
+    }
+
+    #[test]
+    fn transfer_classes_follow_the_ten_rules() {
+        let source = "[Immutable] pub type Job { string id, i64 size } \
+            [Isolated] pub type Index { i64[] offsets, Job head } \
+            [Copyable] pub type Pixel { u8 r, u8 g, u8 b } \
+            [Copyable] pub type Frame { i64 width, u8[] pixels } \
+            [NeverTransferable] pub type Handle { i64 id } \
+            pub type Cache { i64[] entries } \
+            [Immutable] pub type WorkerId { u64 processId, u64 sequence } \
+            pub enum Maybe<T> { Some(T value), None } \
+            pub enum Mode { Fast, Slow } \
+            [Isolated] pub type Node { i64 value, Maybe<Node> next } \
+            [Isolated] pub type Raw { pointer data } \
+            [Isolated] pub type Holder { Handle handle } ";
+        let expected = [
+            ("Job", "Shared"),
+            ("Index", "Moved"),
+            ("Pixel", "Copied"),
+            ("Frame", "Never (field `pixels` has class Moved)"),
+            ("Handle", "Never (`[NeverTransferable]`)"),
+            ("Cache", "Never (no marker attribute)"),
+            ("WorkerId", "Shared"),
+            ("Mode", "Shared"),
+            ("Node", "Moved"),
+            ("Raw", "Never (field `data` is Never (`pointer` is a native address))"),
+            ("Holder", "Never (field `handle` is Never (`[NeverTransferable]`))"),
+        ];
+        for (offset, (name, class)) in expected.iter().enumerate() {
+            assert_eq!(type_class(source, 6400 + offset as u64, name), *class, "{name}");
+        }
+    }
+
+    #[test]
+    fn marker_bounds_are_proven_from_the_transfer_class() {
+        let source = format!(
+            "{MARKERS}pub type Cache {{ i64[] entries }} [Isolated] pub type Box<T> {{ T item }} \
+             [NeverTransferable] pub type Mutex {{ i64 id }} \
+             unit Own<T>(T value) where T: Moved {{ }} unit View<T>(T value) where T: Shared {{ }} \
+             unit Keep<T>(T value) where T: Transferable {{ }} \
+             unit Main(u8[] bytes, Cache cache, Box<string> named, Box<Mutex> locked) {{ \
+             Own<u8[]>(bytes); Keep<i64>(21_i64); Keep<Box<string>>(named); View<u8[]>(bytes); Keep<Cache>(cache); \
+             Keep<Box<Mutex>>(locked); }}"
+        );
+        let report = transfer_report(&source, 6420);
+        let bounds = report.iter().filter(|(code, _, _)| code == "E1610").collect::<Vec<_>>();
+        assert_eq!(bounds.len(), 3, "{report:?}");
+        assert!(bounds.iter().any(|(_, _, help)| help == "class Moved, bound requires Shared"), "{report:?}");
+        assert!(
+            bounds.iter().any(|(_, message, help)| message.contains("`Cache`") && help == "no marker attribute"),
+            "{report:?}"
+        );
+        assert!(bounds.iter().any(|(_, _, help)| help.contains("field `item`")), "{report:?}");
+    }
+
+    #[test]
+    fn marker_attributes_are_judged_at_the_declaration() {
+        let source = format!(
+            "{MARKERS}[Copyable] pub type Pixel {{ u8 r, u8 g, u8 b }} \
+             [Isolated] pub type Image {{ Pixel[] rows, Pixel background }} \
+             [Copyable] pub type Frame {{ i64 width, u8[] pixels }} \
+             [Isolated] pub type Snapshot {{ i64 taken }} \
+             [Immutable] pub type Names {{ i64 taken, i64[] values }} \
+             [Immutable] pub type Raw {{ pointer data, i64 length }} \
+             [NeverTransferable] [Copyable] pub type Channel {{ i64 id }} \
+             [Immutable] [Isolated] pub type Both {{ i64 id }} \
+             pub type Token : Shared {{ i64 id }} \
+             [CompilerDerived] pub contract Sized {{ i64 Size(); }} \
+             pub type Store {{ [ImmutableStorage] i64[] items }}"
+        );
+        let report = transfer_report(&source, 6430);
+        let codes = report.iter().map(|(code, _, _)| code.as_str()).collect::<Vec<_>>();
+        for code in ["E1247", "E1244", "E1246", "E1510", "E1607", "E1003"] {
+            assert!(codes.contains(&code), "{code} missing: {report:?}");
+        }
+        assert_eq!(codes.iter().filter(|code| **code == "E1247").count(), 2, "{report:?}");
+        assert!(report.iter().any(|(code, message, _)| code == "E1247" && message.contains("`background`")));
+        assert!(report.iter().any(|(code, message, _)| code == "E1247" && message.contains("`pixels`")));
+        assert!(report.iter().any(|(code, message, _)| code == "E1244" && message.contains("`values`")));
+        assert!(report.iter().any(|(code, message, _)| code == "E1246" && message.contains("field `data`")));
+        assert!(report.iter().any(|(code, message, _)| code == "E1246" && message.contains("`[NeverTransferable]`")));
+        assert!(report.iter().any(|(code, message, _)| code == "E1510" && message.contains("exclusive")));
+        assert!(report.iter().any(|(code, message, _)| code == "E1510" && message.contains("ImmutableStorage")));
+        assert!(report.iter().any(|(code, message, _)| code == "E1607" && message.contains("`Shared`")));
+        assert!(report.iter().any(|(code, message, _)| code == "E1607" && message.contains("`Sized`")));
+        assert!(report.iter().any(|(code, message, _)| code == "E1003" && message.contains("`Size`")));
+    }
+
+    #[test]
+    fn immutable_fields_are_set_only_by_construction() {
+        let source = "[Immutable] pub type Job { string id, i64 size, pub unit Grow() { this.size = this.size + 1; } } \
+            unit Rename(Job job) { job.id = \"renamed\"; } \
+            Job Make() { return Job { id: \"a\", size: 1 }; }";
+        let report = transfer_report(source, 6440);
+        let assignments = report.iter().filter(|(code, _, _)| code == "E1245").collect::<Vec<_>>();
+        assert_eq!(assignments.len(), 2, "{report:?}");
+        assert!(assignments.iter().any(|(_, message, _)| message.contains("`size`")));
+        assert!(assignments.iter().any(|(_, message, _)| message.contains("`id`")));
     }
 }

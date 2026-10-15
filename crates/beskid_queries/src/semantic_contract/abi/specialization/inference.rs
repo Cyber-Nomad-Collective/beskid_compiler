@@ -91,7 +91,9 @@ pub(super) fn specialization_for_call_in_environment(
         .map(|(_, position, _)| position)
         .collect::<Vec<_>>();
     let mut source_substitutions = HashMap::<String, GenericSubstitution>::new();
-    let mut substitutions = if let Some(owner) = method_owner.filter(|_| !generic_names.is_empty()) {
+    let mut substitutions = if let Some(owner) =
+        method_owner.filter(|_| generic_callable_owner_count(db, declaration) > 0)
+    {
         // An unqualified sibling call uses the same implicit receiver, not an independently
         // annotated local receiver. Reuse bindings only when that source fact proves the exact
         // enclosing method and owner; equal generic parameter names alone are not authority.
@@ -117,7 +119,31 @@ pub(super) fn specialization_for_call_in_environment(
         HashMap::new()
     };
     let mut explicit_substitutions_complete = false;
-    if let Some(enclosing) = enclosing {
+    // Explicit type arguments on a method call bind the method's own type parameters only, all
+    // of them and in declaration order; the owner's come from the receiver above.
+    if is_method && let Some(arguments) = call_explicit_member_type_arguments(db, key) {
+        let own = &generic_names[generic_callable_owner_count(db, declaration).min(generic_names.len())..];
+        if own.len() != arguments.len() {
+            return Err(SemanticError::unavailable_at("call_abi_signature", key));
+        }
+        let environment = enclosing
+            .map(|enclosing| {
+                enclosing
+                    .substitutions
+                    .iter()
+                    .map(|binding| (binding.parameter.as_ref(), binding.source_identity()))
+                    .collect::<HashMap<_, _>>()
+            })
+            .unwrap_or_default();
+        for (generic, argument) in own.iter().zip(arguments.iter()) {
+            let source = generic_source_type_identity_with_substitutions(db, key, &argument.node, &environment)?;
+            substitutions.insert((*generic).to_owned(), source.abi_type());
+            source_substitutions
+                .insert((*generic).to_owned(), GenericSubstitution::from_source(*generic, source.abi_type(), source));
+        }
+        explicit_substitutions_complete = true;
+    }
+    if !is_method && let Some(enclosing) = enclosing {
         let syntax =
             db.syntax_unit(key.unit).ok_or_else(|| SemanticError::unavailable_at("call_abi_signature", key))?;
         let call = syntax
@@ -148,6 +174,7 @@ pub(super) fn specialization_for_call_in_environment(
         }
     }
     if !explicit_substitutions_complete
+        && !is_method
         && let Some(instantiation) = generic_call_instantiation(db, key)?
         && !instantiation.arguments.is_empty()
     {
@@ -393,7 +420,7 @@ fn specialized_method_receiver_bindings(
     )
 }
 
-fn infer_source_substitutions(
+pub(in crate::semantic_contract) fn infer_source_substitutions(
     db: &dyn Db,
     declaration: AstNodeKey,
     parameter: &beskid_analysis::syntax::Type,

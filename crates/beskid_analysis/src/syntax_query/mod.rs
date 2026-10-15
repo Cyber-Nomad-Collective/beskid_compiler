@@ -96,6 +96,8 @@ node_kinds!(
     SpawnExpression,
     LambdaExpression,
     LambdaParameter,
+    ReceiverParameter,
+    TypeParameter,
     MatchExpression,
     MatchArm,
     Pattern,

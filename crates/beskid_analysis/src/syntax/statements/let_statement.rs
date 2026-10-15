@@ -3,13 +3,16 @@ use pest::iterators::Pair;
 use crate::parser::Rule;
 use crate::parsing::error::ParseError;
 use crate::parsing::parsable::Parsable;
-use crate::syntax::{Expression, Identifier, Literal, LiteralExpression, PrimitiveType, SpanInfo, Spanned, Type};
+use crate::syntax::items::parse_helpers::parse_attributes;
+use crate::syntax::{Attribute, Expression, Identifier, Literal, LiteralExpression, PrimitiveType, SpanInfo, Spanned, Type};
 
 use beskid_ast_derive::AstNode;
 
 /// Local binding with either an explicit initializer or a type-directed zero initializer.
 #[derive(AstNode, Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct LetStatement {
+    #[ast(children)]
+    pub attributes: Vec<Spanned<Attribute>>,
     #[ast(skip)]
     pub mutable: bool,
     #[ast(child)]
@@ -31,7 +34,8 @@ impl Parsable for LetStatement {
 
         let rule = pair.as_rule();
         let error_pair = pair.clone();
-        let mut inner = pair.into_inner();
+        let mut inner = pair.into_inner().peekable();
+        let attributes = parse_attributes(&mut inner)?;
         let (mut mutable, mut name_pair, mut value_pair, mut type_annotation) = (false, None, None, None);
 
         match rule {
@@ -77,7 +81,7 @@ impl Parsable for LetStatement {
             None => default_initializer(type_annotation.as_ref(), name.span)?,
         };
 
-        Ok(Spanned::new(Self { mutable, name, type_annotation, value }, span))
+        Ok(Spanned::new(Self { attributes, mutable, name, type_annotation, value }, span))
     }
 }
 

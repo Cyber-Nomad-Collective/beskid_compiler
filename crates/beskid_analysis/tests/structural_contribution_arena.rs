@@ -42,7 +42,7 @@ fn generic_record() -> Spanned<Node> {
         attributes: vec![],
         visibility: node(Visibility::Public),
         name: name("SerializedRecord"),
-        generics: vec![name("T")],
+        generics: vec![node(beskid_analysis::syntax::TypeParameter { attributes: vec![], name: "T".into() })],
         conformances: vec![],
         fields: vec![node(Field {
             attributes: vec![],

@@ -1,4 +1,20 @@
-// Canonical stop-the-world mark/sweep orchestration, statistics, and barrier.
+// Canonical incremental mark/sweep orchestration (v0.6.2), statistics, and barriers.
+//
+// A heap's collection cycle runs on its own mutator thread in bounded steps between that heap's
+// fiber executions; there is no marker thread. Phases (`HEAP_GC_PHASE`, read by `gc_phase`):
+// 0 idle, 1 marking, 2 sweeping, 3 failed.
+//
+//  1. Mark start (`GcCycleStartOn`): phase marking, the process barrier word incremented, then the
+//     whole root set shaded without tracing (the snapshot; Yuasa).
+//  2. Mark steps (`GcMarkStepOn`): drain the span FIFO under a byte budget.
+//  3. Mark termination (`GcMarkTermination`, entered when a step empties the queue): rescan the
+//     root set and drain until a rescan shades nothing; lower the barrier word, advance the sweep
+//     generation and switch to sweeping.
+//  4. Sweep steps (`GcSweepStepOn`, Sweep.bd); the last one ends the cycle.
+//
+// The hybrid barrier (`beskid_rt_v5_gc_write_barrier`) shades the overwritten and the stored value
+// while the calling thread's heap is marking; allocation is black while marking (Allocation.bd).
+// Pacing (`GcPace`) runs at span refills and large requests; `FiberYield` steps too.
 
 const HEAP_FIRST_REGION = 0;
 const HEAP_REGION_COUNT = 16;
@@ -12,6 +28,16 @@ const HEAP_CAP_BYTES = 72;
 const HEAP_FAILURE_REASON = 88;
 const HEAP_MARK_FIFO_HEAD = 312;
 const HEAP_MARK_FIFO_TAIL = 320;
+const HEAP_MARK_TRIGGER = 400;
+const HEAP_MARK_START_LIVE = 408;
+const HEAP_SCAN_ESTIMATE = 416;
+const HEAP_SCAN_WORK_DONE = 424;
+const HEAP_SWEEP_GENERATION = 432;
+const HEAP_LAST_CYCLE_MAX_STEP_BYTES = 456;
+const HEAP_RESCAN_SHADED_COUNT = 464;
+const HEAP_FORCE_BARRIER_SKIP = 488;
+const HEAP_CYCLE_MAX_STEP_BYTES = 496;
+const HEAP_CYCLE_SHADE_COUNT = 504;
 
 const REGION_NEXT = 0;
 const REGION_SIZE = 8;
@@ -29,10 +55,47 @@ const SPAN_HEADER_SIZE = 256;
 const SPAN_BITMAP_WORDS = 8;
 const SIZE_CLASS_LARGE = 14;
 
+const GC_PHASE_IDLE = 0;
 const GC_PHASE_MARKING = 1;
 const GC_PHASE_SWEEPING = 2;
 const GC_PHASE_FAILED = 3;
 
+// Mark step budgets: a paced step is the mark debt clamped to [32 KiB, 256 KiB]; a fiber yield
+// performs one 32 KiB step; a sweep step sweeps at most 32 spans.
+const MARK_STEP_MIN_BYTES = 32768;
+const MARK_STEP_MAX_BYTES = 262144;
+const SWEEP_STEP_SPANS = 32;
+const WORD_MAX = 0xFFFFFFFFFFFFFFFF;
+const MARK_WORK_FAILED = 0xFFFFFFFFFFFFFFFF;
+
+// `GcStressVerify` (Verify.bd) positions.
+const STRESS_VERIFY_BEFORE = 0;
+const STRESS_VERIFY_AFTER = 1;
+
+// ---- Barriers ----
+
+// The hybrid barrier of generated code and of runtime stores into existing objects (v0.6.2).
+// Called before the store: shades the value currently in `slot` (Yuasa deletion half), then
+// `value` (Dijkstra insertion half), each when non-null, and only while the calling thread's own
+// heap is marking. Generated code calls it only when `beskid_rt_v5_gc_barrier_active` is non-zero,
+// which another heap's marking can make true: the own-phase check makes that call return. Never
+// allocates, collects, performs mark or sweep work, yields or traps.
+[Export(Abi:"C", Symbol:"beskid_rt_v5_gc_write_barrier")]
+pub unit GcHybridWriteBarrier(pointer slot, pointer value) {
+    pointer heap = Heap();
+    if heap == NativePointer(0) { return; }
+    if raw_word_load(pointer_add(heap, HEAP_GC_PHASE)) != GC_PHASE_MARKING { return; }
+    if raw_word_load(pointer_add(heap, HEAP_FORCE_BARRIER_SKIP)) != 0 { return; }
+    if slot != NativePointer(0) {
+        pointer old = NativePointer(raw_word_load(slot));
+        if old != NativePointer(0) { GcMarkGray(old); }
+    }
+    if value != NativePointer(0) { GcMarkGray(value); }
+    return;
+}
+
+// 0.6.0 insertion barrier for native Mod adapters' initialization stores: shades `child` while
+// the calling thread's heap is marking. Generated code does not call it.
 [Export(Abi:"C", Symbol:"gc_write_barrier")]
 pub unit GcWriteBarrier(pointer parent, pointer child) {
     pointer heap = Heap();
@@ -113,11 +176,10 @@ pub u8 GcHeapSetCap(word bytes) {
     return 1;
 }
 
-// Rolls every span back to the pre-collection idle state after a failed mark pass: clears every
-// small span's mark/scanned bitmaps and `queued` flag (allocation bits, which describe what is
-// actually live, are untouched), resets every gray large object back to white, and empties the
-// mark FIFO. `alloc_bits`/allocated slots are never touched, since a failed mark pass must not
-// lose track of what is genuinely live.
+// Rolls every span back to the pre-collection idle state after a failed or discarded mark pass:
+// clears every small span's mark/scanned bitmaps and `queued` flag (allocation bits, which
+// describe what is actually live, are untouched), resets every gray or black large object to
+// white with its scan cursor cleared, and empties the mark FIFO.
 pub unit ResetMarkedObjects(pointer heap) {
     mut pointer region = NativePointer(raw_word_load(pointer_add(heap, HEAP_FIRST_REGION)));
     while region != NativePointer(0) {
@@ -133,9 +195,9 @@ pub unit ResetMarkedObjects(pointer heap) {
                 raw_word_store(pointer_add(entry, SPAN_QUEUED), 0);
             } else if base != 0 && sizeClass == SIZE_CLASS_LARGE {
                 pointer object = NativePointer(base);
-                if raw_word_load(pointer_add(object, 8)) == GcMarkGrayState() {
-                    raw_word_store(pointer_add(object, 8), GcMarkWhite());
-                }
+                raw_word_store(pointer_add(object, 8), GcMarkWhite());
+                raw_word_store(pointer_add(entry, SPAN_MARK_BITS), 0);
+                raw_word_store(pointer_add(entry, SPAN_QUEUED), 0);
             }
             pageIndex = pageIndex + 1;
         }
@@ -146,39 +208,245 @@ pub unit ResetMarkedObjects(pointer heap) {
     return;
 }
 
+// ---- Cycle state machine ----
+
+// The address of the process barrier word (`beskid_rt_v5_gc_barrier_active`).
+pub pointer BarrierActiveWord() {
+    return GcBarrierActiveWord();
+}
+
+pub bool HeapIsCycling(pointer heap) {
+    word phase = raw_word_load(pointer_add(heap, HEAP_GC_PHASE));
+    return phase == GC_PHASE_MARKING || phase == GC_PHASE_SWEEPING;
+}
+
+// Mark start. Returns false when a cycle is already in progress (a new cycle never starts before
+// the previous sweep ends). The barrier word is raised before the first root is shaded, so no
+// mutator store of this heap runs between the snapshot and an active barrier.
+pub bool GcCycleStartOn(pointer heap) {
+    if HeapIsCycling(heap) { return false; }
+    GcStressVerify(heap, STRESS_VERIFY_BEFORE);
+    raw_word_store(pointer_add(heap, HEAP_GC_PHASE), GC_PHASE_MARKING);
+    AtomicWordFetchAdd(BarrierActiveWord(), 1, 4);
+    word live = raw_word_load(pointer_add(heap, HEAP_LIVE_BYTES));
+    raw_word_store(pointer_add(heap, HEAP_MARK_START_LIVE), live);
+    if raw_word_load(pointer_add(heap, HEAP_SCAN_ESTIMATE)) == 0 {
+        raw_word_store(pointer_add(heap, HEAP_SCAN_ESTIMATE), live);
+    }
+    raw_word_store(pointer_add(heap, HEAP_SCAN_WORK_DONE), 0);
+    raw_word_store(pointer_add(heap, HEAP_RESCAN_SHADED_COUNT), 0);
+    raw_word_store(pointer_add(heap, HEAP_CYCLE_MAX_STEP_BYTES), 0);
+    raw_word_store(pointer_add(heap, HEAP_CYCLE_SHADE_COUNT), 0);
+    if MarkRoots() == false {
+        GcCycleFail(heap);
+    }
+    return true;
+}
+
+// A mark failure (descriptor or bounds validation in tracing): lowers the barrier word, resets
+// all mark state and records the failed phase. Nothing is swept.
+pub unit GcCycleFail(pointer heap) {
+    ResetMarkedObjects(heap);
+    if raw_word_load(pointer_add(heap, HEAP_GC_PHASE)) == GC_PHASE_MARKING {
+        AtomicWordFetchAdd(BarrierActiveWord(), 0 - 1, 4);
+    }
+    raw_word_store(pointer_add(heap, HEAP_GC_PHASE), GC_PHASE_FAILED);
+    return;
+}
+
+// Shutdown of a heap with a cycle in progress: lowers the barrier word when marking and discards
+// the cycle without sweeping. The heap's memory is released right after.
+pub unit GcDiscardCycle(pointer heap) {
+    if heap == NativePointer(0) { return; }
+    word phase = raw_word_load(pointer_add(heap, HEAP_GC_PHASE));
+    if phase == GC_PHASE_MARKING {
+        AtomicWordFetchAdd(BarrierActiveWord(), 0 - 1, 4);
+    }
+    if phase == GC_PHASE_MARKING || phase == GC_PHASE_SWEEPING {
+        raw_word_store(pointer_add(heap, HEAP_GC_PHASE), GC_PHASE_IDLE);
+    }
+    return;
+}
+
+// One mark step of at most `budget` bytes (plus one span or chunk). `counted` steps feed the
+// cycle's largest-step statistic; completions forced by `gc_collect`, the threshold or cap
+// pressure are not counted. Enters mark termination when the queue is empty afterwards.
+pub word GcMarkStepOn(pointer heap, word budget, bool counted) {
+    word traced = GcDrainMarkWork(heap, budget);
+    if traced == MARK_WORK_FAILED {
+        GcCycleFail(heap);
+        return 0;
+    }
+    raw_word_store(pointer_add(heap, HEAP_SCAN_WORK_DONE), raw_word_load(pointer_add(heap, HEAP_SCAN_WORK_DONE)) + traced);
+    if counted && traced > raw_word_load(pointer_add(heap, HEAP_CYCLE_MAX_STEP_BYTES)) {
+        raw_word_store(pointer_add(heap, HEAP_CYCLE_MAX_STEP_BYTES), traced);
+    }
+    if MarkQueueEmpty(heap) {
+        GcMarkTermination(heap);
+    }
+    return traced;
+}
+
+// Mark termination: rescans the root set (including the frames of every fiber suspended now) and
+// drains what it reaches, until a rescan shades no object. A correct barrier and allocation in
+// black make the first rescan shade nothing; what it shades is counted. Then the barrier word is
+// lowered, the sweep generation advances and the sweep starts.
+pub unit GcMarkTermination(pointer heap) {
+    mut bool rescan = true;
+    while rescan {
+        word before = raw_word_load(pointer_add(heap, HEAP_CYCLE_SHADE_COUNT));
+        if MarkRoots() == false {
+            GcCycleFail(heap);
+            return;
+        }
+        word shaded = raw_word_load(pointer_add(heap, HEAP_CYCLE_SHADE_COUNT)) - before;
+        raw_word_store(pointer_add(heap, HEAP_RESCAN_SHADED_COUNT), raw_word_load(pointer_add(heap, HEAP_RESCAN_SHADED_COUNT)) + shaded);
+        word traced = GcDrainMarkWork(heap, WORD_MAX);
+        if traced == MARK_WORK_FAILED {
+            GcCycleFail(heap);
+            return;
+        }
+        raw_word_store(pointer_add(heap, HEAP_SCAN_WORK_DONE), raw_word_load(pointer_add(heap, HEAP_SCAN_WORK_DONE)) + traced);
+        rescan = shaded != 0;
+    }
+    GcIncrementalStressTerminationChecks(heap);
+    AtomicWordFetchAdd(BarrierActiveWord(), 0 - 1, 4);
+    raw_word_store(pointer_add(heap, HEAP_SWEEP_GENERATION), raw_word_load(pointer_add(heap, HEAP_SWEEP_GENERATION)) + 1);
+    GcSweepBegin(heap);
+    raw_word_store(pointer_add(heap, HEAP_GC_PHASE), GC_PHASE_SWEEPING);
+    return;
+}
+
+// Completes the cycle in progress inside the calling allocation or call. With `startIfIdle`, an
+// idle (or failed) heap first starts one; a sweeping heap only finishes its sweep.
+pub unit GcCompleteCycle(pointer heap, bool startIfIdle) {
+    if HeapIsCycling(heap) == false {
+        if startIfIdle == false { return; }
+        GcCycleStartOn(heap);
+    }
+    while raw_word_load(pointer_add(heap, HEAP_GC_PHASE)) == GC_PHASE_MARKING {
+        GcMarkStepOn(heap, WORD_MAX, false);
+    }
+    while raw_word_load(pointer_add(heap, HEAP_GC_PHASE)) == GC_PHASE_SWEEPING {
+        GcSweepStepOn(heap, WORD_MAX);
+    }
+    return;
+}
+
+// The mark debt at a pacing point: `(live - mark_start_live) * scan_estimate / runway -
+// scan_work_done`, saturating, with `runway = collection_threshold - mark_trigger`.
+pub word GcMarkDebt(pointer heap) {
+    word live = raw_word_load(pointer_add(heap, HEAP_LIVE_BYTES));
+    word startLive = raw_word_load(pointer_add(heap, HEAP_MARK_START_LIVE));
+    mut word allocated = 0;
+    if live > startLive { allocated = live - startLive; }
+    word threshold = raw_word_load(pointer_add(heap, HEAP_COLLECTION_THRESHOLD));
+    word trigger = raw_word_load(pointer_add(heap, HEAP_MARK_TRIGGER));
+    mut word runway = 1;
+    if threshold > trigger { runway = threshold - trigger; }
+    word estimate = raw_word_load(pointer_add(heap, HEAP_SCAN_ESTIMATE));
+    mut word expected = WORD_MAX;
+    if estimate == 0 || allocated <= WORD_MAX / estimate {
+        expected = allocated * estimate / runway;
+    }
+    word done = raw_word_load(pointer_add(heap, HEAP_SCAN_WORK_DONE));
+    if expected > done { return expected - done; }
+    return 0;
+}
+
+// A pacing point (a span refill or a large request): a marking heap pays its mark debt with one
+// step of [32 KiB, 256 KiB]; a sweeping heap sweeps one step; an idle heap whose live bytes reached
+// `mark_trigger` starts a cycle. The free-slot fast path never calls this.
+pub unit GcPace(pointer heap) {
+    word phase = raw_word_load(pointer_add(heap, HEAP_GC_PHASE));
+    if phase == GC_PHASE_MARKING {
+        word debt = GcMarkDebt(heap);
+        if debt > 0 {
+            mut word budget = debt;
+            if budget < MARK_STEP_MIN_BYTES { budget = MARK_STEP_MIN_BYTES; }
+            if budget > MARK_STEP_MAX_BYTES { budget = MARK_STEP_MAX_BYTES; }
+            GcMarkStepOn(heap, budget, true);
+        }
+        return;
+    }
+    if phase == GC_PHASE_SWEEPING {
+        GcSweepStepOn(heap, SWEEP_STEP_SPANS);
+        return;
+    }
+    if raw_word_load(pointer_add(heap, HEAP_LIVE_BYTES)) >= raw_word_load(pointer_add(heap, HEAP_MARK_TRIGGER)) {
+        GcCycleStartOn(heap);
+    }
+    return;
+}
+
+// `FiberYield` performs one 32 KiB mark step or one sweep step before it changes scheduler state,
+// so fibers that yield without allocating still finish a cycle.
+pub unit GcYieldStep() {
+    pointer heap = Heap();
+    if heap == NativePointer(0) { return; }
+    word phase = raw_word_load(pointer_add(heap, HEAP_GC_PHASE));
+    if phase == GC_PHASE_MARKING {
+        GcMarkStepOn(heap, MARK_STEP_MIN_BYTES, true);
+    } else if phase == GC_PHASE_SWEEPING {
+        GcSweepStepOn(heap, SWEEP_STEP_SPANS);
+    }
+    return;
+}
+
+// ---- Exports ----
+
+// Completes any cycle in progress, then runs one complete cycle whose mark start follows the
+// call, so every object unreachable at the call is free when it returns.
 [Export(Abi:"C", Symbol:"gc_collect")]
 pub word GcCollect() {
     pointer heap = Heap();
     if heap == NativePointer(0) { return 0; }
-    raw_word_store(pointer_add(heap, HEAP_GC_PHASE), GC_PHASE_MARKING);
-    bool rootsOk = MarkRoots();
-    if rootsOk == false || ProcessMarkWork() == false {
-        ResetMarkedObjects(heap);
-        raw_word_store(pointer_add(heap, HEAP_GC_PHASE), GC_PHASE_FAILED);
-        return raw_word_load(pointer_add(heap, HEAP_LIVE_BYTES));
-    }
-    raw_word_store(pointer_add(heap, HEAP_GC_PHASE), GC_PHASE_SWEEPING);
-    if Sweep(heap) == false {
-        raw_word_store(pointer_add(heap, HEAP_GC_PHASE), GC_PHASE_FAILED);
-        return raw_word_load(pointer_add(heap, HEAP_LIVE_BYTES));
-    }
-    raw_word_store(pointer_add(heap, HEAP_COLLECTION_COUNT), raw_word_load(pointer_add(heap, HEAP_COLLECTION_COUNT)) + 1);
-    word liveBytes = raw_word_load(pointer_add(heap, HEAP_LIVE_BYTES));
-    word doubledLive = liveBytes * 2;
-    mut word threshold = HEAP_MIN_THRESHOLD;
-    if doubledLive > threshold { threshold = doubledLive; }
-    raw_word_store(pointer_add(heap, HEAP_COLLECTION_THRESHOLD), threshold);
-    raw_word_store(pointer_add(heap, HEAP_GC_PHASE), 0);
-    return liveBytes;
+    GcCompleteCycle(heap, false);
+    GcCompleteCycle(heap, true);
+    return raw_word_load(pointer_add(heap, HEAP_LIVE_BYTES));
 }
 
+// Completes a cycle in progress, or runs one when live bytes reached the threshold.
 [Export(Abi:"C", Symbol:"gc_collect_if_needed")]
 pub word GcCollectIfNeeded() {
     pointer heap = Heap();
     if heap == NativePointer(0) { return 0; }
-    word live = raw_word_load(pointer_add(heap, HEAP_LIVE_BYTES));
-    if live >= raw_word_load(pointer_add(heap, HEAP_COLLECTION_THRESHOLD)) {
-        return GcCollect();
+    if HeapIsCycling(heap) {
+        GcCompleteCycle(heap, false);
+    } else if raw_word_load(pointer_add(heap, HEAP_LIVE_BYTES)) >= raw_word_load(pointer_add(heap, HEAP_COLLECTION_THRESHOLD)) {
+        GcCompleteCycle(heap, true);
     }
-    return live;
+    return raw_word_load(pointer_add(heap, HEAP_LIVE_BYTES));
+}
+
+// Starts a cycle when the heap is idle (or failed) and returns 1; returns 0 otherwise.
+[Export(Abi:"C", Symbol:"gc_cycle_start")]
+pub u8 GcCycleStart() {
+    pointer heap = Heap();
+    if heap == NativePointer(0) { return 0; }
+    if GcCycleStartOn(heap) { return 1; }
+    return 0;
+}
+
+// One mark step with `budget` bytes while marking, or one sweep step while sweeping; returns the
+// phase after the step.
+[Export(Abi:"C", Symbol:"gc_mark_step")]
+pub word GcMarkStep(word budget) {
+    pointer heap = Heap();
+    if heap == NativePointer(0) { return 0; }
+    word phase = raw_word_load(pointer_add(heap, HEAP_GC_PHASE));
+    if phase == GC_PHASE_MARKING {
+        GcMarkStepOn(heap, budget, true);
+    } else if phase == GC_PHASE_SWEEPING {
+        GcSweepStepOn(heap, SWEEP_STEP_SPANS);
+    }
+    return raw_word_load(pointer_add(heap, HEAP_GC_PHASE));
+}
+
+// The largest number of bytes one paced or explicit mark step of the last completed cycle traced.
+[Export(Abi:"C", Symbol:"gc_last_cycle_max_step_bytes")]
+pub word GcLastCycleMaxStepBytes() {
+    pointer heap = Heap();
+    if heap == NativePointer(0) { return 0; }
+    return raw_word_load(pointer_add(heap, HEAP_LAST_CYCLE_MAX_STEP_BYTES));
 }

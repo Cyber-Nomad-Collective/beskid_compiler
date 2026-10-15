@@ -216,8 +216,8 @@ fn v06_native_syntax_factories_preserve_concrete_fields_variants_and_wrappers() 
     assert!(source.contains("return Beskid.Syntax.Nodes.PrimitiveType::U64;"));
     assert!(source.contains("SpannedIdentifierValue("));
     assert!(source.contains("NodeSpan span, u32 id"));
-    assert!(source.contains("SpannedIdentifierListValue(Beskid.Syntax.Nodes.SpannedIdentifier[] items)"));
-    assert!(!source.contains("SpannedIdentifierListConsValue("));
+    assert!(source.contains("SpannedTypeParameterListValue(Beskid.Syntax.Nodes.SpannedTypeParameter[] items)"));
+    assert!(!source.contains("SpannedTypeParameterListConsValue("));
     assert!(source.contains("OptionalSpannedTypeSomeValue("));
     assert!(!source.contains("ReflectStub"));
     assert!(!source.contains("void "));

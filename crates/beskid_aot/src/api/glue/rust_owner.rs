@@ -40,6 +40,9 @@ pub struct RustOwnerBuildRequest<'a> {
     pub selected: &'a [SyntaxModuleItem],
     pub native_library: &'a str,
     pub expected: &'a GlueArtifact,
+    /// The consumer packet whose imports this owner implements. Its exports become the owner
+    /// crate's generated `beskid` module; every owner import row must be one of its rows.
+    pub consumer: &'a GlueArtifact,
     pub sources: &'a [RustOwnerSource],
     pub types: &'a [RustOwnerType],
     pub callables: &'a [RustOwnerCallable],
@@ -265,9 +268,15 @@ fn bridge_source(
     );
     source.push_str("unsafe extern \"C\" {fn beskid_glue_v1_owner_opaque_borrow_begin(library:u64,brand:*const u8,token:u64,payload:*mut *mut c_void,lease:*mut u64)->i32;fn beskid_glue_v1_owner_opaque_borrow_end(library:u64,brand:*const u8,lease:u64)->i32;fn beskid_glue_v1_owner_opaque_release(library:u64,brand:*const u8,token:u64)->i32;} struct BorrowGuard<'a>{library:u64,brand:[u8;32],lease:u64,cleanup:&'a std::cell::Cell<i32>}impl Drop for BorrowGuard<'_>{fn drop(&mut self){let deadline=std::time::Instant::now()+std::time::Duration::from_secs(5);loop{let status=unsafe{beskid_glue_v1_owner_opaque_borrow_end(self.library,self.brand.as_ptr(),self.lease)};if status==0{break;}if status!=4||std::time::Instant::now()>=deadline{self.cleanup.set(status);break;}std::thread::yield_now();}}}\n");
     source.push_str("#[repr(C)]struct OwnedView{pointer:*const u8,length:usize,token:u64}unsafe extern \"C\" {fn beskid_glue_v1_owner_copy(library:u64,shape:u64,generation:u64,kind:u64,bytes:*const u8,length:usize,out:*mut OwnedView)->i32;fn beskid_glue_v1_owner_release_token(library:u64,token:u64)->i32;}\n");
+    source.push_str(super::owner_values::OWNER_PRELUDE);
+    let values = super::owner_values::OwnerValueTypes::new(&[&current.manifest, &req.consumer.manifest])?;
+    source.push_str(&values.root);
     let mut types = BTreeMap::new();
     let mut destructors = Vec::new();
-    let mut exports = vec!["beskid_glue_rust_owner_v1_initialize".into()];
+    let mut exports = vec![
+        "beskid_glue_rust_owner_v1_initialize".to_owned(),
+        super::owner_values::OWNER_BIND_EXPORTS_SYMBOL.to_owned(),
+    ];
     for ty in req.types {
         if !rust_path(&ty.rust_type_path)
             || !ty.rust_type_path.starts_with("implementation::")
@@ -317,7 +326,7 @@ fn bridge_source(
         let symbol = format!("beskid_glue_rust_owner_v1_{}", binding.identity_sha256);
         digest_bytes(&binding.identity_sha256)?;
         let mut args = Vec::new();
-        let mut values = Vec::new();
+        let mut values_list = Vec::new();
         let mut source_parameters = Vec::new();
         let mut checks = String::new();
         for (index, param) in binding.parameters.iter().enumerate() {
@@ -330,7 +339,27 @@ fn bridge_source(
                 args.push(format!("a{index}:u64"));
                 checks.push_str(&format!("let brand{index}:[u8;32]={brand:?};let mut payload{index}:*mut c_void=std::ptr::null_mut();let mut lease{index}=0;let status=unsafe{{beskid_glue_v1_owner_opaque_borrow_begin(LIB.load(Ordering::Acquire),brand{index}.as_ptr(),a{index},&mut payload{index},&mut lease{index})}};if status!=0{{return status;}}if lease{index}==0{{return 1;}}let _borrow{index}=BorrowGuard{{library:LIB.load(Ordering::Acquire),brand:brand{index},lease:lease{index},cleanup:&cleanup}};if payload{index}.is_null(){{return 1;}}"));
                 source_parameters.push(format!("&{}", ty.rust_type_path));
-                values.push(format!("unsafe{{&*payload{index}.cast::<{}>()}}", ty.rust_type_path));
+                values_list.push(format!("unsafe{{&*payload{index}.cast::<{}>()}}", ty.rust_type_path));
+                continue;
+            }
+            if let Some(callback) = super::owner_values::owner_callback(&values, index, param)? {
+                args.extend(callback.arguments);
+                checks.push_str(&callback.setup);
+                source_parameters.push(callback.parameter_type);
+                values_list.push(callback.value);
+                continue;
+            }
+            if let Some((sha, ty)) = values.type_of(param, true)? {
+                if param.enumeration.is_some() {
+                    args.push(format!("a{index}:u32"));
+                    checks.push_str(&format!("let Some(e{index})=glue_enum_{sha}_from_raw(a{index}) else{{return 1;}};"));
+                    values_list.push(format!("e{index}"));
+                } else {
+                    // The consumer adapter copied the record out of its managed object.
+                    args.push(format!("a{index}:{ty}"));
+                    values_list.push(format!("a{index}"));
+                }
+                source_parameters.push(ty);
                 continue;
             }
             if matches!(param.logical.as_str(), "utf8" | "bytes") {
@@ -340,30 +369,33 @@ fn bridge_source(
                 if param.logical == "utf8" {
                     checks
                         .push_str(&format!("let Ok(text{index})=std::str::from_utf8(slice{index})else{{return 1;}};"));
-                    values.push(format!("text{index}"));
+                    values_list.push(format!("text{index}"));
                 } else {
-                    values.push(format!("slice{index}"));
+                    values_list.push(format!("slice{index}"));
                 }
                 continue;
             }
             let (abi, logical) = scalar(param)?;
             source_parameters.push(logical.to_owned());
             if logical == "()" {
-                values.push("()".into());
+                values_list.push("()".into());
                 continue;
             }
             args.push(format!("a{index}:{abi}"));
             if logical == "bool" {
                 checks.push_str(&format!("if a{index}>1{{return 1;}}"));
-                values.push(format!("a{index}!=0"));
+                values_list.push(format!("a{index}!=0"));
             } else if logical == "char" {
                 checks.push_str(&format!("let Some(c{index})=char::from_u32(a{index}) else{{return 1;}};"));
-                values.push(format!("c{index}"));
+                values_list.push(format!("c{index}"));
             } else {
-                values.push(format!("a{index}"));
+                values_list.push(format!("a{index}"));
             }
         }
-        let source_result = if let Some(opaque) = &binding.result.opaque {
+        let value_result = values.type_of(&binding.result, true)?;
+        let source_result = if let Some((_, ty)) = &value_result {
+            ty.clone()
+        } else if let Some(opaque) = &binding.result.opaque {
             types.get(&opaque.brand_sha256).ok_or_else(|| invalid("factory type missing"))?.rust_type_path.clone()
         } else if binding.result.logical == "utf8" {
             "String".into()
@@ -378,13 +410,21 @@ fn bridge_source(
             source_parameters.join(","),
             callable.rust_callable_path
         ));
-        let raw_call = format!("implementation_call({})", values.join(","));
+        let raw_call = format!("implementation_call({})", values_list.join(","));
         let call = if callable.fallible {
             format!("match {raw_call} {{Ok(value)=>value,Err(status)=>{{if status==0{{return 1;}}return status;}}}}")
         } else {
             raw_call
         };
-        let body = if let Some(opaque) = &binding.result.opaque {
+        let body = if let Some((sha, ty)) = &value_result {
+            if binding.result.enumeration.is_some() {
+                args.push("out:*mut u32".into());
+                format!("if out.is_null(){{return 1;}}unsafe{{out.write(0);}}{checks}let value:{ty}={call};unsafe{{out.write(glue_enum_{sha}_into_raw(value));}}0")
+            } else {
+                args.push(format!("out:*mut {ty}"));
+                format!("if out.is_null(){{return 1;}}unsafe{{core::ptr::write_bytes(out,0,1);}}{checks}let value:{ty}={call};unsafe{{out.write(value);}}0")
+            }
+        } else if let Some(opaque) = &binding.result.opaque {
             if opaque.library != req.native_library || opaque.nullable {
                 return Err(invalid("owning factory requires nonnullable current full brand"));
             }
@@ -425,7 +465,9 @@ fn bridge_source(
                 )
             }
         };
-        let cleanup_failure = if let Some(opaque) = &binding.result.opaque {
+        let cleanup_failure = if value_result.is_some() {
+            "if !out.is_null(){unsafe{core::ptr::write_bytes(out,0,1);}}".to_owned()
+        } else if let Some(opaque) = &binding.result.opaque {
             let brand = digest_bytes(&opaque.brand_sha256)?;
             format!(
                 "if !out.is_null(){{let token=unsafe{{*out}};if token!=0{{let brand:[u8;32]={brand:?};unsafe{{beskid_glue_v1_owner_opaque_release(LIB.load(Ordering::Acquire),brand.as_ptr(),token);*out=0;}}}}}}"
@@ -437,12 +479,13 @@ fn bridge_source(
         } else {
             String::new()
         };
-        source.push_str(&format!("#[unsafe(no_mangle)] pub unsafe extern \"C\" fn {symbol}({})->i32{{if INIT.load(Ordering::Acquire)!=2{{return 2;}}let cleanup=std::cell::Cell::new(0);let result=catch_unwind(AssertUnwindSafe(||{{{body}}}));if cleanup.get()!=0{{{cleanup_failure}return cleanup.get();}}match result{{Ok(status)=>status,Err(_)=>7}}}}\n",args.join(",")));
+        source.push_str(&format!("#[unsafe(no_mangle)] pub unsafe extern \"C\" fn {symbol}({})->i32{{if INIT.load(Ordering::Acquire)!=2{{return 2;}}let cleanup=std::cell::Cell::new(0);let result=catch_unwind(AssertUnwindSafe(||{{let _depth=ImportDepth::enter();{body}}}));if cleanup.get()!=0{{{cleanup_failure}return cleanup.get();}}match result{{Ok(status)=>status,Err(payload)=>{{{cleanup_failure}glue_failure_status(payload)}}}}}}\n",args.join(",")));
         exports.push(symbol);
     }
     if used_types.len() != types.len() {
         return Err(invalid("Rust owner type has no exact owning factory"));
     }
+    source.push_str(&super::owner_values::beskid_module(&values, &req.consumer.manifest)?);
     // The admission record module is generated after the source digest (Gate WEB-GLUE03).
     source.push_str("mod owner_admission;\n");
     exports.push(super::published::OWNER_RECORD_SYMBOL.to_owned());
@@ -881,9 +924,26 @@ pub fn build_rust_owner(req: &RustOwnerBuildRequest<'_>) -> AotResult<PreparedRu
     if current != *req.expected || req.runtime.linkage != RuntimeLinkage::GlueSharedProviderV1 {
         return Err(invalid("Rust owner requires current source packet and shared provider"));
     }
+    let consumer_imports = req
+        .consumer
+        .manifest
+        .bindings
+        .iter()
+        .filter(|binding| binding.direction == "import")
+        .map(|binding| &binding.identity_sha256)
+        .collect::<BTreeSet<_>>();
+    if req.consumer.validate().is_err()
+        || current
+            .manifest
+            .bindings
+            .iter()
+            .any(|binding| binding.direction != "import" || !consumer_imports.contains(&binding.identity_sha256))
+    {
+        return Err(invalid("Rust owner packet rows are not imports of its consumer packet"));
+    }
+    // A Rust owner without opaque handle types (records, enums, callbacks, scalars) has no types.
     if req.sources.is_empty()
         || req.sources.len() > 1024
-        || req.types.is_empty()
         || req.types.len() > 1024
         || req.callables.is_empty()
         || req.callables.len() > 1024

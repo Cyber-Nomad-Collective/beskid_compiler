@@ -154,8 +154,9 @@ pub bool AbiValueInitialize(pointer slot, word tag, pointer payload, pointer des
     if object == NativePointer(0) || raw_word_load(object) != NativeWord(descriptor)
         || ValidateTypeDescriptor(descriptor) == false { return false; }
     pointer root = pointer_add(slot, BESKID_ABI_VALUE_PAYLOAD_OFFSET);
+    // `AbiValue` payload slots are registered roots: the root set is shaded at mark start and
+    // rescanned at termination, so these stores carry no barrier (v0.6.2).
     if GcRegisterRoot(root) == false { return false; }
-    GcWriteBarrier(slot, payload);
     raw_word_store(pointer_add(slot, BESKID_ABI_VALUE_TAG_OFFSET), tag);
     raw_word_store(root, NativeWord(payload));
     raw_word_store(pointer_add(slot, BESKID_ABI_VALUE_DESCRIPTOR_OFFSET), NativeWord(descriptor));
@@ -169,7 +170,6 @@ pub bool AbiValueClear(pointer slot) {
     if AbiValueIsVacant(slot) { return true; }
     if AbiValueIsLive(slot) == false { return false; }
     pointer root = pointer_add(slot, BESKID_ABI_VALUE_PAYLOAD_OFFSET);
-    GcWriteBarrier(slot, NativePointer(raw_word_load(root)));
     GcUnregisterRoot(root);
     memory_set(slot, 0, BESKID_ABI_VALUE_SIZE);
     return true;
@@ -193,10 +193,7 @@ pub bool AbiValueReplaceWithBarrier(pointer destination, pointer source) {
     if AbiValueSlotsOverlap(source, destination) || AbiValueIsLive(source) == false { return false; }
     if AbiValueIsVacant(destination) { return AbiValueMoveOut(source, destination); }
     if AbiValueIsLive(destination) == false { return false; }
-    pointer oldPayload = NativePointer(raw_word_load(pointer_add(destination, BESKID_ABI_VALUE_PAYLOAD_OFFSET)));
     pointer newPayload = NativePointer(raw_word_load(pointer_add(source, BESKID_ABI_VALUE_PAYLOAD_OFFSET)));
-    GcWriteBarrier(destination, oldPayload);
-    GcWriteBarrier(destination, newPayload);
     raw_word_store(pointer_add(destination, BESKID_ABI_VALUE_TAG_OFFSET), raw_word_load(pointer_add(source, BESKID_ABI_VALUE_TAG_OFFSET)));
     raw_word_store(pointer_add(destination, BESKID_ABI_VALUE_PAYLOAD_OFFSET), NativeWord(newPayload));
     raw_word_store(pointer_add(destination, BESKID_ABI_VALUE_DESCRIPTOR_OFFSET), raw_word_load(pointer_add(source, BESKID_ABI_VALUE_DESCRIPTOR_OFFSET)));

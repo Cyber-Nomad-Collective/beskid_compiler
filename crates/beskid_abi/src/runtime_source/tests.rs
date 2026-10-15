@@ -39,6 +39,7 @@ fn canonical_concurrency_facade_exposes_its_exact_scheduler_services() {
     assert!(source.source.contains("__fiber_yield()"));
     assert!(source.source.contains("__fiber_now_millis()"));
     assert!(source.source.contains("__fiber_processor_count()"));
+    assert!(source.source.contains("__host_processor_count()"));
 
     let target = crate::abi_v5::TargetMetadata::supported()
         .into_iter()
@@ -59,6 +60,7 @@ fn canonical_concurrency_facade_exposes_its_exact_scheduler_services() {
             ("__fiber_yield", "beskid_rt_v5_fiber_yield"),
             ("__fiber_now_millis", "fiber_now_millis"),
             ("__fiber_processor_count", "fiber_processor_count"),
+            ("__host_processor_count", "beskid_rt_v5_host_processor_count"),
         ]
     );
 }

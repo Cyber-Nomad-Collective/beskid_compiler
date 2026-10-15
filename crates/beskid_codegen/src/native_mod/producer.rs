@@ -594,10 +594,10 @@ pub(super) fn canonical_runtime_hooks() -> super::adapter_plan::NativeRuntimeHoo
         construction_finish: "beskid_rt_v5_array_construction_finish".into(),
         record_allocate: "beskid_rt_v5_managed_object_allocate".into(),
         // Adapters store only into objects they allocated (array decode elements; records are
-        // built by source constructors), so they keep the 0.6.0 construction barriers. An adapter
+        // built by source constructors), so each pointer element store is an initialization
+        // store and takes the insertion barrier `gc_write_barrier(parent, child)`. An adapter
         // store that overwrites a pointer slot of an existing object would need the hybrid
         // barrier `beskid_rt_v5_gc_write_barrier` instead (v0.6.2 design, open issue 10).
-        array_write_barrier: "beskid_rt_v5_array_write_barrier".into(),
         write_barrier: "gc_write_barrier".into(),
     }
 }
@@ -645,7 +645,6 @@ mod runtime_hook_catalog_tests {
             ("array_allocate_rooted", &hooks.array_allocate_rooted),
             ("construction_finish", &hooks.construction_finish),
             ("record_allocate", &hooks.record_allocate),
-            ("array_write_barrier", &hooks.array_write_barrier),
             ("write_barrier", &hooks.write_barrier),
         ] {
             assert!(exported.contains(symbol), "runtime hook `{role}` names `{symbol}`, which no runtime exports");

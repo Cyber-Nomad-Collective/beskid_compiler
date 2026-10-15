@@ -45,6 +45,9 @@ impl SemanticIssueKind {
                 "target already listed at line {}, column {}",
                 previous.line_col_start.0, previous.line_col_start.1
             )),
+            Self::AttributeTargetNotAllowed { attribute, declared: false, .. } => Some(format!(
+                "no attribute declaration named `{attribute}` exists; declare it with `attribute {attribute}(<targets>) {{ }}` or import its module"
+            )),
             Self::UnknownAttributeDeclarationTarget { allowed, .. }
             | Self::AttributeTargetNotAllowed { allowed, .. } => {
                 Some(format!("allowed targets: {}", allowed.join(", ")))
@@ -94,7 +97,8 @@ impl SemanticIssueKind {
             Self::UnresolvedAssociatedType { .. } => {
                 Some("check the contract name and that the referenced type conforms to it".to_string())
             }
-            Self::GenericBoundNotSatisfied { type_name, contract_name } => {
+            Self::GenericBoundNotSatisfied { reason: Some(reason), .. } => Some(reason.clone()),
+            Self::GenericBoundNotSatisfied { type_name, contract_name, reason: None } => {
                 Some(format!("make `{type_name}` conform to `{contract_name}` or pass a conforming type"))
             }
             Self::ImmutableAssignment { .. } => {
@@ -211,9 +215,12 @@ impl SemanticIssueKind {
             Self::TypeMissingTypeAnnotation { name } => Some(format!(
                 "add an explicit type annotation for `{name}`, e.g. `let {name}: i32 = ...`"
             )),
-            Self::TypeMissingTypeArguments => {
+            Self::TypeMissingTypeArguments { parameter: None } => {
                 Some("provide explicit type arguments, e.g. `Type<i32>`".to_string())
             }
+            Self::TypeMissingTypeArguments { parameter: Some(parameter) } => Some(format!(
+                "write the type arguments at the call, e.g. `.Name<i64>(...)`, to bind `{parameter}`"
+            )),
             Self::TypeGenericArgumentMismatch { expected, actual } => Some(format!(
                 "the generic type expects {expected} argument(s) but got {actual}"
             )),
@@ -275,6 +282,57 @@ impl SemanticIssueKind {
                 "lambdas capture values, not storage: copy the value into an immutable local and capture that"
                     .to_string(),
             ),
+            Self::UseAfterMove { name } => {
+                Some(format!("`{name}` was consumed by the move; reassign it before using it again"))
+            }
+            Self::CapturedLocalAssignedInBoundLambda { .. } => Some("use a reduction".to_string()),
+            Self::CaptureNotTransferable { .. } => Some(
+                "capture a Shared or Copied value, or `move` a Moved one, as the `[Captures]` bound requires"
+                    .to_string(),
+            ),
+            Self::MovedCaptureWithoutMove { name } | Self::ImplicitAliasOfMovedValue { name } => {
+                Some(format!("write `move {name}`"))
+            }
+            Self::CapturesArgumentNotLiteral => Some("pass the lambda literal".to_string()),
+            Self::MoveOfNonOwningName { name, class: None } | Self::BorrowEscapes { name } => {
+                Some(format!("declare the parameter `move T {name}`"))
+            }
+            Self::MoveOfNonOwningName { class: Some(_), .. } => {
+                Some("remove `move`: Shared and Copied values pass without it".to_string())
+            }
+            Self::MoveInLoopWithoutReassignment { name } => {
+                Some(format!("assign `{name}` a new value before the end of the loop body"))
+            }
+            Self::DestructiveReadWithoutEmpty { .. } => Some("use `exchange(<place>, move <value>)`".to_string()),
+            Self::ImmutableFieldNotShared { .. } => {
+                Some("declare the field with a Shared type, such as a primitive, string or `[Immutable]` type".to_string())
+            }
+            Self::ImmutableFieldAssignment { .. } => {
+                Some("set the field in the constructing literal and build a new value to change it".to_string())
+            }
+            Self::MarkerOnNeverTransferable { .. } => Some(
+                "remove the marker: values of this type cannot leave their runtime instance".to_string(),
+            ),
+            Self::MarkerFieldClassMismatch { .. } => Some(
+                "`[Isolated]` admits Moved, Shared and Copied fields; `[Copyable]` admits Shared and Copied fields"
+                    .to_string(),
+            ),
+            Self::CapturesBoundNotMarker { .. } => Some(
+                "bound `[Captures]` with a marker contract such as `Transferable`, on a function-typed parameter"
+                    .to_string(),
+            ),
+            Self::InjectInsideIsolateBody { field } => Some(format!(
+                "read `{field}` before the task starts and capture the value instead"
+            )),
+            Self::CompilerDerivedConformance { contract } => {
+                Some(format!("remove `{contract}` from the conformance list and use a marker attribute on the type"))
+            }
+            Self::CompilerDerivedNotMarker { .. } => Some("remove `[CompilerDerived]`".to_string()),
+            Self::DerivedContractMember { .. } => Some("a compiler-derived contract has no members".to_string()),
+            Self::ExclusiveMarkerAttribute { .. } => {
+                Some("keep one of `[Immutable]`, `[Isolated]` and `[Copyable]`".to_string())
+            }
+            Self::CorelibOnlyAttribute { .. } => Some("remove the attribute".to_string()),
             Self::TypeInvalidEventInvocationScope => Some(
                 "events can only be raised from within methods on their declaring type".to_string()
             ),

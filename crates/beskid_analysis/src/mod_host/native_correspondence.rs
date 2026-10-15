@@ -291,7 +291,7 @@ mod tests {
             (0..256)
                 .map(|index| {
                     json!({
-                        "node":{"name":format!("identifier{index}")},
+                        "node":{"attributes":[],"name":format!("identifier{index}")},
                         "span":{"start":index*3,"end":index*3+2,
                             "line_col_start":[index+1,1],"line_col_end":[index+1,3]},
                         "id":index+1
@@ -299,11 +299,11 @@ mod tests {
                 })
                 .collect(),
         );
-        let source = schema.to_source("SpannedIdentifierList", &original).unwrap();
+        let source = schema.to_source("SpannedTypeParameterList", &original).unwrap();
         assert_eq!(source["items"].as_array().unwrap().len(), 256);
         // The actual framed JSON parser's nesting limit must accept a flat list.
         let bytes = serde_json::to_vec(&source).unwrap();
         let transported: Value = serde_json::from_slice(&bytes).unwrap();
-        assert_eq!(schema.to_rust("SpannedIdentifierList", &transported).unwrap(), original);
+        assert_eq!(schema.to_rust("SpannedTypeParameterList", &transported).unwrap(), original);
     }
 }

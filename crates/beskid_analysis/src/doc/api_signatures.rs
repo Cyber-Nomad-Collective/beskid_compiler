@@ -202,15 +202,18 @@ fn build_from_decl(decl: SyntaxDeclAtSpan<'_>, item: &ItemInfo, resolution: Opti
             signature.signature = Some(text);
         }
         SyntaxDeclAtSpan::Method(def) => {
-            let (return_type, parameters, text) = callable_signature(
-                &def.node.name.node.name,
-                &def.node.parameters,
-                def.node.return_type.as_ref(),
-                resolution,
-                true,
-            );
+            // A generic method shows its own type parameters after its name (`U Apply<U>(...)`).
+            let generics = def.node.generics.iter().map(|generic| generic.node.name.clone()).collect::<Vec<_>>();
+            let name = if generics.is_empty() {
+                def.node.name.node.name.clone()
+            } else {
+                format!("{}<{}>", def.node.name.node.name, generics.join(", "))
+            };
+            let (return_type, parameters, text) =
+                callable_signature(&name, &def.node.parameters, def.node.return_type.as_ref(), resolution, true);
             signature.return_type = return_type;
             signature.parameters = parameters;
+            signature.generic_parameters = generic_parameters_from_names(generics.into_iter());
             signature.signature = Some(text);
         }
         SyntaxDeclAtSpan::Type(def) => {

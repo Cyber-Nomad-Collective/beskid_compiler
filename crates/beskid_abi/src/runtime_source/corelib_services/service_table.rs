@@ -315,6 +315,11 @@ pub(super) const CORELIB_SERVICES: &[CorelibService] = &[
         symbol: "fiber_processor_count",
         source_path: CANONICAL_CORELIB_CONCURRENCY_SOURCE_PATH,
     },
+    CorelibService {
+        name: "__host_processor_count",
+        symbol: "beskid_rt_v5_host_processor_count",
+        source_path: CANONICAL_CORELIB_CONCURRENCY_SOURCE_PATH,
+    },
     CorelibService { name: "__fiber_cancel", symbol: "fiber_cancel", source_path: CANONICAL_CORELIB_FIBER_SOURCE_PATH },
     CorelibService { name: "__fiber_detach", symbol: "fiber_detach", source_path: CANONICAL_CORELIB_FIBER_SOURCE_PATH },
     CorelibService {

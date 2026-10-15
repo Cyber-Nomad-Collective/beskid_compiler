@@ -3,13 +3,16 @@ use pest::iterators::Pair;
 use crate::parser::Rule;
 use crate::parsing::error::ParseError;
 use crate::parsing::parsable::Parsable;
-use crate::syntax::{Expression, Identifier, SpanInfo, Spanned, Type};
+use crate::syntax::items::parse_helpers::parse_attributes;
+use crate::syntax::{Attribute, Expression, Identifier, SpanInfo, Spanned, Type};
 
 use beskid_ast_derive::AstNode;
 
 /// Single lambda parameter, optionally with an explicit type.
 #[derive(AstNode, Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct LambdaParameter {
+    #[ast(children)]
+    pub attributes: Vec<Spanned<Attribute>>,
     #[ast(child)]
     pub name: Spanned<Identifier>,
     #[ast(child)]
@@ -19,6 +22,8 @@ pub struct LambdaParameter {
 /// Anonymous function expression (`params => body`).
 #[derive(AstNode, Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct LambdaExpression {
+    #[ast(children)]
+    pub attributes: Vec<Spanned<Attribute>>,
     #[ast(children)]
     pub parameters: Vec<Spanned<LambdaParameter>>,
     #[ast(child)]
@@ -31,14 +36,15 @@ pub(crate) fn parse_lambda_expression(pair: Pair<Rule>) -> Result<Spanned<Expres
     }
 
     let span = SpanInfo::from_span(&pair.as_span());
-    let mut inner = pair.into_inner();
+    let mut inner = pair.into_inner().peekable();
+    let attributes = parse_attributes(&mut inner)?;
     let parameters_pair = inner.next().ok_or(ParseError::missing(Rule::LambdaParameters))?;
     let body_pair = inner.next().ok_or(ParseError::missing(Rule::LambdaBody))?;
 
     let parameters = parse_lambda_parameters(parameters_pair)?;
     let body = parse_lambda_body(body_pair)?;
 
-    let lambda = Spanned::new(LambdaExpression { parameters, body: Box::new(body) }, span);
+    let lambda = Spanned::new(LambdaExpression { attributes, parameters, body: Box::new(body) }, span);
 
     Ok(Spanned::new(Expression::Lambda(lambda), span))
 }
@@ -57,7 +63,7 @@ fn parse_lambda_parameters(pair: Pair<Rule>) -> Result<Vec<Spanned<LambdaParamet
         Rule::Identifier => {
             let name = Identifier::parse(first)?;
             let span = name.span;
-            Ok(vec![Spanned::new(LambdaParameter { name, ty: None }, span)])
+            Ok(vec![Spanned::new(LambdaParameter { attributes: Vec::new(), name, ty: None }, span)])
         }
         Rule::LambdaParameterList => first.into_inner().map(parse_lambda_parameter).collect(),
         _ => Err(ParseError::unexpected_rule(first, Some(Rule::LambdaParameters))),
@@ -70,7 +76,8 @@ fn parse_lambda_parameter(pair: Pair<Rule>) -> Result<Spanned<LambdaParameter>, 
     }
 
     let span = SpanInfo::from_span(&pair.as_span());
-    let mut inner = pair.into_inner();
+    let mut inner = pair.into_inner().peekable();
+    let attributes = parse_attributes(&mut inner)?;
 
     let first = inner.next().ok_or(ParseError::missing(Rule::Identifier))?;
     let (name, ty) = match first.as_rule() {
@@ -85,7 +92,7 @@ fn parse_lambda_parameter(pair: Pair<Rule>) -> Result<Spanned<LambdaParameter>, 
         }
     };
 
-    Ok(Spanned::new(LambdaParameter { name, ty }, span))
+    Ok(Spanned::new(LambdaParameter { attributes, name, ty }, span))
 }
 
 fn parse_lambda_body(pair: Pair<Rule>) -> Result<Spanned<Expression>, ParseError> {
