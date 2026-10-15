@@ -6,6 +6,7 @@ use Runtime.Mem.Gc.Identity;
 use Runtime.Mem.Gc.CheckedScope;
 use Runtime.Mem.Gc.Collection;
 use Runtime.Mem.Gc.RootsHandles;
+use Runtime.Mem.Gc.Sweep;
 use Runtime.Data.Collections;
 use Testing.Assert;
 use HostRuntimeSupport;
@@ -58,6 +59,11 @@ test gc_reclaims_reuses_and_invalidates_stale_handles {
     pointer region = SystemAllocate(128, 8);
     pointer thread = InstallTestHeap(runtime, heap, region, 128);
     pointer descriptor = TestDescriptor(24, 8);
+    // The debug kit holds freed slots in quarantine (v0.6.1 `v061-gc-stress-and-poison`), which
+    // delays their reuse on purpose. A zero budget (the `BESKID_GC_QUARANTINE=0` setting) keeps the
+    // poisoning and returns each freed slot to its span at once, so the reuse below holds for both
+    // kit profiles; the release kit ignores the call.
+    GcHeapSetQuarantineBudget(0);
 
     GcCollect();
     word baseBytes = GcBytesAllocated();
