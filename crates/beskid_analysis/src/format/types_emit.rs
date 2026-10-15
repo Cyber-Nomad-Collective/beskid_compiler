@@ -157,6 +157,10 @@ impl Emit for Parameter {
             cx.token(w, "mut")?;
             cx.space(w)?;
         }
+        if self.movable {
+            cx.token(w, "move")?;
+            cx.space(w)?;
+        }
         self.ty.emit(w, cx)?;
         cx.space(w)?;
         self.name.emit(w, cx)

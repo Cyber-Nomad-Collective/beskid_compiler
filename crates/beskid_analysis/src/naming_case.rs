@@ -28,6 +28,7 @@ const RESERVED_IDENTIFIERS: &[&str] = &[
     "continue",
     "let",
     "mut",
+    "move",
     "mod",
     "use",
     "pub",

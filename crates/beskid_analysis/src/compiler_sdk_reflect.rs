@@ -50,6 +50,7 @@ pub enum ReflectSdkNodeKind {
     ExtendTypeDefinition,
     RangeExpression,
     SpawnExpression,
+    MoveExpression,
     Expression,
     AssignExpression,
     BinaryExpression,

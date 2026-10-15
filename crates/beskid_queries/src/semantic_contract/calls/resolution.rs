@@ -695,15 +695,42 @@ pub(in crate::semantic_contract) fn unique_nominal_method_declaration(
     unique_impl_block_method_declaration(db, declaration, method_name)
 }
 
-/// `impl` blocks in `unit` whose receiver names `type_name`, searched for a uniquely-named
-/// method. Same-unit only, matching `impl T : Contract`'s in-module form.
+/// `impl` blocks whose receiver names `declaration`, searched for a uniquely-named method: first
+/// the declaring unit (`impl T : Contract`'s in-module form), then every other unit of the same
+/// generation, so a package can add an inherent method to a type of a package below it
+/// (`impl<T> List<T> { Parallel() }` in the concurrency package, `par` R-lang-6). Two candidates
+/// at the same stage are ambiguous and resolve to nothing.
 fn unique_impl_block_method_declaration(db: &dyn Db, declaration: AstNodeKey, method_name: &str) -> Option<AstNodeKey> {
-    let unit = declaration.unit;
+    let local = impl_block_methods_in_unit(db, declaration.unit, declaration, method_name);
+    if !local.is_empty() {
+        return (local.len() == 1).then(|| local[0]);
+    }
+    let units = {
+        let registry = db.syntax_dependency_registry().lock().expect("syntax dependency registry");
+        registry.generation_units(declaration.generation).to_vec()
+    };
+    let methods = units
+        .into_iter()
+        .filter(|unit| *unit != declaration.unit)
+        .flat_map(|unit| impl_block_methods_in_unit(db, unit, declaration, method_name))
+        .collect::<Vec<_>>();
+    (methods.len() == 1).then(|| methods[0])
+}
+
+fn impl_block_methods_in_unit(
+    db: &dyn Db,
+    unit: SourceUnitId,
+    declaration: AstNodeKey,
+    method_name: &str,
+) -> Vec<AstNodeKey> {
     let generation = declaration.generation;
-    let syntax = db.syntax_unit(unit)?;
+    let Some(syntax) = db.syntax_unit(unit) else { return Vec::new() };
     let program = syntax.expanded_program(db);
     let index = syntax.syntax_index(db);
-    let methods = index
+    if index.generation() != generation {
+        return Vec::new();
+    }
+    index
         .ids_of_kind(beskid_analysis::syntax_query::NodeKind::ImplBlock)
         .filter(|node| {
             index
@@ -729,8 +756,7 @@ fn unique_impl_block_method_declaration(db: &dyn Db, declaration: AstNodeKey, me
                 .is_some_and(|method| method.name.node.name == method_name)
         })
         .map(|node| AstNodeKey { unit, generation, node })
-        .collect::<Vec<_>>();
-    (methods.len() == 1).then(|| methods[0])
+        .collect()
 }
 
 /// Resolve a legacy syscall spelling only when its current source unit was admitted by the
