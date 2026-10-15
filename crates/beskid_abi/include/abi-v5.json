@@ -2981,6 +2981,44 @@
       "result": "u8"
     },
     {
+      "symbol": "beskid_rt_v5_isolate_create",
+      "params": [
+        {
+          "name": "config",
+          "type": "pointer"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_rt_v5_isolate_destroy",
+      "params": [
+        {
+          "name": "runtime",
+          "type": "pointer"
+        }
+      ],
+      "result": "void"
+    },
+    {
+      "symbol": "beskid_rt_v5_isolate_panic_message",
+      "params": [
+        {
+          "name": "runtime",
+          "type": "pointer"
+        },
+        {
+          "name": "data_out",
+          "type": "pointer"
+        },
+        {
+          "name": "length_out",
+          "type": "pointer"
+        }
+      ],
+      "result": "u8"
+    },
+    {
       "symbol": "beskid_rt_v5_managed_object_allocate",
       "params": [
         {
@@ -3164,6 +3202,16 @@
       "result": "void"
     },
     {
+      "symbol": "beskid_rt_v5_region_owner",
+      "params": [
+        {
+          "name": "address",
+          "type": "pointer"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
       "symbol": "beskid_rt_v5_scheduler_stack_check",
       "params": [
         {
@@ -3271,6 +3319,108 @@
       "capability": "runtime.bootstrap.arch_context_size",
       "params": [],
       "result": "usize",
+      "resultStatus": null,
+      "targetBindings": []
+    },
+    {
+      "name": "atomic_fence",
+      "symbol": "beskid_rt_v5_intrinsic_atomic_fence",
+      "capability": "runtime.bootstrap.atomic_fence",
+      "params": [
+        {
+          "name": "order",
+          "type": "u8"
+        }
+      ],
+      "result": "void",
+      "resultStatus": null,
+      "targetBindings": []
+    },
+    {
+      "name": "atomic_word_compare_exchange",
+      "symbol": "beskid_rt_v5_intrinsic_atomic_word_compare_exchange",
+      "capability": "runtime.bootstrap.atomic_word_compare_exchange",
+      "params": [
+        {
+          "name": "address",
+          "type": "pointer"
+        },
+        {
+          "name": "expected",
+          "type": "usize"
+        },
+        {
+          "name": "desired",
+          "type": "usize"
+        },
+        {
+          "name": "order",
+          "type": "u8"
+        }
+      ],
+      "result": "usize",
+      "resultStatus": null,
+      "targetBindings": []
+    },
+    {
+      "name": "atomic_word_fetch_add",
+      "symbol": "beskid_rt_v5_intrinsic_atomic_word_fetch_add",
+      "capability": "runtime.bootstrap.atomic_word_fetch_add",
+      "params": [
+        {
+          "name": "address",
+          "type": "pointer"
+        },
+        {
+          "name": "delta",
+          "type": "usize"
+        },
+        {
+          "name": "order",
+          "type": "u8"
+        }
+      ],
+      "result": "usize",
+      "resultStatus": null,
+      "targetBindings": []
+    },
+    {
+      "name": "atomic_word_load",
+      "symbol": "beskid_rt_v5_intrinsic_atomic_word_load",
+      "capability": "runtime.bootstrap.atomic_word_load",
+      "params": [
+        {
+          "name": "address",
+          "type": "pointer"
+        },
+        {
+          "name": "order",
+          "type": "u8"
+        }
+      ],
+      "result": "usize",
+      "resultStatus": null,
+      "targetBindings": []
+    },
+    {
+      "name": "atomic_word_store",
+      "symbol": "beskid_rt_v5_intrinsic_atomic_word_store",
+      "capability": "runtime.bootstrap.atomic_word_store",
+      "params": [
+        {
+          "name": "address",
+          "type": "pointer"
+        },
+        {
+          "name": "value",
+          "type": "usize"
+        },
+        {
+          "name": "order",
+          "type": "u8"
+        }
+      ],
+      "result": "void",
       "resultStatus": null,
       "targetBindings": []
     },
@@ -4027,6 +4177,37 @@
       "targetBindings": []
     },
     {
+      "name": "host_processor_count",
+      "symbol": "beskid_rt_v5_host_processor_count",
+      "capability": "runtime.adapter.host_processor_count",
+      "params": [],
+      "result": "usize",
+      "resultStatus": null,
+      "targetBindings": [
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "beskid_rt_v5_host_processor_count",
+          "osImports": [
+            "sysconf"
+          ]
+        },
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "beskid_rt_v5_host_processor_count",
+          "osImports": [
+            "sysconf"
+          ]
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "beskid_rt_v5_host_processor_count",
+          "osImports": [
+            "GetActiveProcessorCount"
+          ]
+        }
+      ]
+    },
+    {
       "name": "memory_compare",
       "symbol": "beskid_rt_v5_intrinsic_memory_compare",
       "capability": "runtime.bootstrap.memory_compare",
@@ -4636,6 +4817,15 @@
       "targetBindings": []
     },
     {
+      "name": "process_state_root",
+      "symbol": "beskid_rt_v5_intrinsic_process_state_root",
+      "capability": "runtime.bootstrap.process_state_root",
+      "params": [],
+      "result": "pointer",
+      "resultStatus": null,
+      "targetBindings": []
+    },
+    {
       "name": "raw_byte_load",
       "symbol": "beskid_rt_v5_intrinsic_raw_byte_load",
       "capability": "runtime.bootstrap.raw_byte_load",
@@ -4734,6 +4924,87 @@
       "result": "void",
       "resultStatus": null,
       "targetBindings": []
+    },
+    {
+      "name": "thread_create",
+      "symbol": "beskid_rt_v5_intrinsic_thread_create",
+      "capability": "runtime.adapter.thread_create",
+      "params": [
+        {
+          "name": "entry",
+          "type": "pointer"
+        },
+        {
+          "name": "argument",
+          "type": "pointer"
+        },
+        {
+          "name": "handle_out",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32",
+      "resultStatus": null,
+      "targetBindings": [
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "beskid_rt_v5_intrinsic_thread_create",
+          "osImports": [
+            "pthread_create"
+          ]
+        },
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "beskid_rt_v5_intrinsic_thread_create",
+          "osImports": [
+            "pthread_create"
+          ]
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "beskid_rt_v5_intrinsic_thread_create",
+          "osImports": [
+            "CreateThread"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "thread_join",
+      "symbol": "beskid_rt_v5_intrinsic_thread_join",
+      "capability": "runtime.adapter.thread_join",
+      "params": [
+        {
+          "name": "handle",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32",
+      "resultStatus": null,
+      "targetBindings": [
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "beskid_rt_v5_intrinsic_thread_join",
+          "osImports": [
+            "pthread_join"
+          ]
+        },
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "beskid_rt_v5_intrinsic_thread_join",
+          "osImports": [
+            "pthread_join"
+          ]
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "beskid_rt_v5_intrinsic_thread_join",
+          "osImports": [
+            "WaitForSingleObject",
+            "CloseHandle"
+          ]
+        }
+      ]
     },
     {
       "name": "thread_yield",
@@ -6097,9 +6368,9 @@
           "type": "pointer"
         },
         {
-          "name": "tls_key",
+          "name": "instance",
           "offset": 48,
-          "type": "usize"
+          "type": "pointer"
         },
         {
           "name": "lifecycle_state",
@@ -8053,6 +8324,19 @@
     },
     {
       "kind": "function",
+      "symbol": "sysconf",
+      "target": "aarch64-apple-darwin",
+      "library": "libSystem",
+      "params": [
+        {
+          "name": "name",
+          "type": "i32"
+        }
+      ],
+      "result": "i64"
+    },
+    {
+      "kind": "function",
       "symbol": "tan",
       "target": "aarch64-apple-darwin",
       "library": "libSystem",
@@ -8528,6 +8812,19 @@
         }
       ],
       "result": "i32"
+    },
+    {
+      "kind": "function",
+      "symbol": "GetActiveProcessorCount",
+      "target": "x86_64-pc-windows-msvc",
+      "library": "kernel32",
+      "params": [
+        {
+          "name": "group",
+          "type": "u16"
+        }
+      ],
+      "result": "u32"
     },
     {
       "kind": "function",
@@ -11567,6 +11864,19 @@
     },
     {
       "kind": "function",
+      "symbol": "sysconf",
+      "target": "x86_64-unknown-linux-gnu",
+      "library": "libc",
+      "params": [
+        {
+          "name": "name",
+          "type": "i32"
+        }
+      ],
+      "result": "i64"
+    },
+    {
+      "kind": "function",
       "symbol": "tan",
       "target": "x86_64-unknown-linux-gnu",
       "library": "libm",
@@ -14407,6 +14717,35 @@
           "target": "x86_64-unknown-linux-gnu",
           "implementation": "gc_write_barrier",
           "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__host_processor_count",
+      "adapter": "beskid_rt_v5_host_processor_count",
+      "params": [],
+      "result": "usize",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "beskid_rt_v5_host_processor_count",
+          "osImports": [
+            "sysconf"
+          ]
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "beskid_rt_v5_host_processor_count",
+          "osImports": [
+            "GetActiveProcessorCount"
+          ]
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "beskid_rt_v5_host_processor_count",
+          "osImports": [
+            "sysconf"
+          ]
         }
       ]
     },
