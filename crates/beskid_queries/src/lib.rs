@@ -133,6 +133,7 @@ pub use semantic_contract::{
     optional_extern_contract_members, ExternContractImport,
     for_iterator_fact, format_ast_node_key, format_ast_node_site, format_ast_node_trace, format_source_span_range,
     function_item_value, function_value_call, function_value_call_specialization, lambda_value_required,
+    specialized_closure_signature, SpecializedClosureSignature,
     generic_call_instantiation, generic_call_specialization, generic_call_specialization_in_environment,
     generic_call_specialization_instance, generic_call_template, generic_nominal_method_receiver,
     generic_specialization_identity, generic_specialization_instance, implicit_method_receiver, item_abi_signature,

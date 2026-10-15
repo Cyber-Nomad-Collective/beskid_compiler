@@ -266,7 +266,21 @@ pub(in crate::semantic_contract) fn capture_storage_class(
         .node_at(program, parent)
         .and_then(|node| node.of::<beskid_analysis::syntax::LetStatement>())
         .is_some_and(|binding| binding.mutable);
-    let semantic_type = abi_type(db, declaration)?.ok_or_else(|| SemanticError::unavailable("capture_storage"))?;
+    let semantic_type = match abi_type(db, declaration) {
+        Ok(Some(semantic_type)) => semantic_type,
+        // An immutable value of a generic body whose type names the body's type parameters has
+        // no context-free ABI. It is captured by value; each specialization re-checks the
+        // instance type (`specialized_closure_signature` rejects a native pointer).
+        result @ (Ok(None) | Err(_)) => {
+            let generic_value = !mutable
+                && result.as_ref().err().is_none_or(SemanticError::is_unavailable)
+                && declared_in_generic_callable(db, program, index, declaration);
+            if generic_value {
+                return Ok(CaptureStorageClass::TransferableValue);
+            }
+            return Err(result.err().unwrap_or_else(|| SemanticError::unavailable("capture_storage")));
+        }
+    };
     // ABI pointers alone carry no ownership provenance. The existing source-type
     // query distinguishes native pointers from managed arrays and nominal values.
     let managed = managed_reference_kind(db, declaration).ok().flatten() == Some(ManagedReferenceKind::GcManaged);
@@ -275,6 +289,42 @@ pub(in crate::semantic_contract) fn capture_storage_class(
     } else {
         CaptureStorageClass::TransferableValue
     })
+}
+
+/// Whether `declaration` belongs to a callable with type parameters of its own or of its owner.
+fn declared_in_generic_callable(
+    db: &dyn Db,
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    declaration: AstNodeKey,
+) -> bool {
+    let Some(callable) = nearest_ancestor(index, declaration.node, |kind| {
+        matches!(
+            kind,
+            beskid_analysis::syntax_query::NodeKind::FunctionDefinition
+                | beskid_analysis::syntax_query::NodeKind::MethodDefinition
+        )
+    }) else {
+        return false;
+    };
+    let Some(node) = index.node_at(program, callable) else { return false };
+    if let Some(function) = node.of::<beskid_analysis::syntax::FunctionDefinition>() {
+        return !function.generics.is_empty();
+    }
+    let Some(method) = node.of::<beskid_analysis::syntax::MethodDefinition>() else { return false };
+    if !method.generics.is_empty() {
+        return true;
+    }
+    crate::semantic_contract::locals::method_owner_declaration(db, AstNodeKey { node: callable, ..declaration })
+        .and_then(|owner| {
+            let syntax = db.syntax_unit(owner.unit).filter(|syntax| syntax.accepts_key(db, owner))?;
+            syntax
+                .syntax_index(db)
+                .node_at(syntax.expanded_program(db), owner.node)?
+                .of::<beskid_analysis::syntax::TypeDefinition>()
+                .map(|definition| !definition.generics.is_empty())
+        })
+        .unwrap_or(false)
 }
 
 #[salsa::tracked(persist)]

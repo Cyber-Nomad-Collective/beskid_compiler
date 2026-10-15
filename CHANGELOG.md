@@ -346,6 +346,15 @@ feature area.
   `Port<Sequenced<T>>`) takes its type from the receiver's written type
   arguments, and the call specializes from the receiver's bindings. Before,
   code generation stopped with E2101 or E2102.
+- A lambda inside a generic body (`(List<T> leaf, T value) => leaf.Push(value)`
+  in `ParallelSeq<T>.Collect`) is emitted once per specialization of the
+  enclosing item, with its parameter types, result and captured values taken
+  from that instance; each instance has its own closure layout. A captured
+  value whose type names a type parameter is captured by value, and an
+  instance that makes it a native pointer is rejected. A typed lambda
+  parameter (`(Core.Parallel.Scopes.Scope s) => ...`) is classified by its
+  written type. Before, code generation stopped with "lambda parameter slot or
+  type is unavailable" or an E2101 internal error.
 - `beskid check` reports transfer and capture-bound findings on attributes,
   fields, conformances and contract members (E1248, E1510, E1244, E1246,
   E1247, E1607, E1003) at the span of that syntax. Before, a `[Captures]`

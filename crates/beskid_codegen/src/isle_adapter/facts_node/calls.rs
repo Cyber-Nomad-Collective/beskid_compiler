@@ -319,9 +319,58 @@ impl SyntaxNodeFacts<'_> {
     }
 
     pub(super) fn lambda_entry_impl(&self, key: AstNodeKey) -> Option<beskid_isle::LambdaEntry> {
+        // A lambda of a generic body takes its callable ABI and capture layout from the instance
+        // being lowered, and enters through that instance's own closure entry.
+        if let Some(instance) = self.current_item_specialization() {
+            return self.specialized_lambda_entry(key, instance);
+        }
         let environment = self.query(closure_environment(self.db, key))?;
         let lambda = self.query(closure_signature(self.db, key))?;
         self.lambda_entry_from_environment(key, environment, &lambda.callable, false)
+    }
+
+    fn specialized_lambda_entry(
+        &self,
+        key: AstNodeKey,
+        instance: &beskid_queries::GenericSpecializationInstance,
+    ) -> Option<beskid_isle::LambdaEntry> {
+        let fact = self.query(beskid_queries::specialized_closure_signature(self.db, key, instance))?;
+        let (parameters, result) = self.callable_abi(&fact.callable)?;
+        let closure_environment = if fact.fields.is_empty() {
+            None
+        } else {
+            let authority = self.input.specialized_closure_lowering_authority(key, key, instance)?;
+            let captures = authority
+                .plan
+                .captures
+                .iter()
+                .map(|field| {
+                    Some(beskid_isle::InlineCaptureField {
+                        local_slot: beskid_isle::LocalSlotId {
+                            owner_node: field.capture.slot.owner.node.0,
+                            index: field.capture.slot.index,
+                        },
+                        field_offset: u32::try_from(field.field_offset).ok()?,
+                        pointer_map_index: field.pointer_map_index,
+                        value_type: map_signature_type(self.isa?, field.abi_type)?,
+                    })
+                })
+                .collect::<Option<Vec<_>>>()?;
+            Some(beskid_isle::InlineClosureEnvironment {
+                allocation_request_symbol: authority.plan.allocation_request_symbol.clone().into(),
+                descriptor_symbol: authority.plan.descriptor_symbol.clone().into(),
+                captures,
+            })
+        };
+        Some(beskid_isle::LambdaEntry {
+            trampoline: DirectCallee::specialized_lambda_trampoline(
+                key,
+                beskid_queries::generic_specialization_identity(instance),
+            ),
+            closure_environment,
+            parameters,
+            result,
+        })
     }
 
     pub(super) fn event_lambda_entry_impl(&self, key: AstNodeKey) -> Option<beskid_isle::LambdaEntry> {

@@ -103,8 +103,9 @@ pub(super) fn collect_closure_static_plans(
     let db = input.database();
     let mut plans = Vec::new();
     let mut seen = HashSet::new();
+    // One lambda of a generic body has one plan per enclosing instance, told apart by symbol.
     let mut push_plan = |plan: ClosureStaticPlan| {
-        if seen.insert(plan.lambda) {
+        if seen.insert(plan.descriptor_symbol.clone()) {
             plans.push(plan);
         }
     };
@@ -117,6 +118,16 @@ pub(super) fn collect_closure_static_plans(
         }
     }
     for trampoline in lambda_trampolines {
+        if trampoline.closure_captures.is_some()
+            && let Some(instance) = trampoline.specialization.as_ref()
+        {
+            if let Some(authority) =
+                input.specialized_closure_lowering_authority(trampoline.lambda, trampoline.lambda, instance)
+            {
+                push_plan(authority.plan);
+            }
+            continue;
+        }
         if trampoline.closure_captures.is_some() {
             let event_handler = event_handler_lambda_for_local(db, trampoline.lambda).ok().flatten().is_some();
             let authority = if event_handler {

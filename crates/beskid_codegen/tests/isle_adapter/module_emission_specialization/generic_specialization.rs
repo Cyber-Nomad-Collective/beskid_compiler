@@ -411,3 +411,62 @@ fn contextual_generic_enum_constructor_argument_of_a_receiver_bound_parameter_is
     let names = artifact.functions.iter().map(|function| function.name.as_str()).collect::<Vec<_>>();
     assert!(names.iter().any(|name| name.starts_with("Forward#generic_")), "{names:?}");
 }
+
+#[test]
+fn typed_lambda_parameter_receiver_in_a_generic_body_is_specialized() {
+    // Core.Parallel `Collect` shape: `(List<T> leaf, T value) => leaf.Push(value)` inside a generic
+    // body; the lambda parameter's written type is applied through the enclosing environment.
+    let (input, isa, root) = item_fixture_with_root(
+        "type Bag<V> { V[] values, i64 count, Bag<V> Put(V value) { return Bag<V> { values: values, count: count + 1_i64 }; } } L Fold<T, L>(L seed, T value, (L, T) => L step) { return step(seed, value); } Bag<T> Gather<T>(Bag<T> seed, T value) { return Fold<T, Bag<T>>(seed, value, (Bag<T> bag, T item) => bag.Put(item)); } i64 Main(Bag<i64> bag) { Bag<i64> next = Gather<i64>(bag, 7_i64); return next.count; }",
+    );
+    let items = find_function_definitions(input.database(), root);
+    let named = |name: &str| {
+        items
+            .iter()
+            .copied()
+            .find(|item| item_name(input.database(), *item).ok().flatten().as_deref() == Some(name))
+            .expect("named item")
+    };
+    let artifact = lower_syntax_program(
+        &input,
+        isa.as_ref(),
+        &[
+            SyntaxModuleItem { key: named("Gather"), symbol: "Gather".into() },
+            SyntaxModuleItem { key: named("Main"), symbol: "Main".into() },
+        ],
+    )
+    .expect("a typed lambda parameter receiver in a generic body specializes the method call");
+    let names = artifact.functions.iter().map(|function| function.name.as_str()).collect::<Vec<_>>();
+    assert!(names.iter().any(|name| name.starts_with("Gather#generic_") && !name.contains("#lambda_")), "{names:?}");
+    // The lambda is emitted once for the `Gather<i64>` instance, in that environment.
+    assert!(names.iter().any(|name| name.starts_with("Gather#generic_") && name.contains("#lambda_")), "{names:?}");
+}
+
+#[test]
+fn capturing_lambda_in_a_generic_body_has_an_instance_closure_layout() {
+    // `Drive<T, L, R>` shape: a lambda captures a value of the enclosing generic type, so its
+    // closure layout (scalar `i64` here, a managed reference for `Bag<i64>`) depends on the instance.
+    let (input, isa, root) = item_fixture_with_root(
+        "type Bag<V> { V[] values, i64 count, Bag<V> Put(V value) { return Bag<V> { values: values, count: count + 1_i64 }; } } L Fold<T, L>(L seed, T value, (L, T) => L step) { return step(seed, value); } Bag<T> Keep<T>(Bag<T> seed, T value, T extra) { return Fold<T, Bag<T>>(seed, value, (Bag<T> bag, T item) => bag.Put(extra)); } i64 Main(Bag<i64> bag, Bag<Bag<i64>> nested) { Bag<i64> next = Keep<i64>(bag, 7_i64, 8_i64); Bag<Bag<i64>> outer = Keep<Bag<i64>>(nested, bag, next); return next.count + outer.count; }",
+    );
+    let items = find_function_definitions(input.database(), root);
+    let named = |name: &str| {
+        items
+            .iter()
+            .copied()
+            .find(|item| item_name(input.database(), *item).ok().flatten().as_deref() == Some(name))
+            .expect("named item")
+    };
+    let artifact = lower_syntax_program(
+        &input,
+        isa.as_ref(),
+        &[
+            SyntaxModuleItem { key: named("Keep"), symbol: "Keep".into() },
+            SyntaxModuleItem { key: named("Main"), symbol: "Main".into() },
+        ],
+    )
+    .expect("a capturing lambda in a generic body is emitted per instance");
+    let names = artifact.functions.iter().map(|function| function.name.as_str()).collect::<Vec<_>>();
+    let entries = names.iter().filter(|name| name.starts_with("Keep#generic_") && name.contains("#lambda_")).count();
+    assert_eq!(entries, 2, "one closure entry per instance: {names:?}");
+}

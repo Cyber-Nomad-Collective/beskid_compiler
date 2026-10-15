@@ -846,6 +846,15 @@ pub(super) fn specialized_local_declaration_identity(
     if let Some(parameter) = index.node_at(program, parent).and_then(|node| node.of::<Parameter>()) {
         return Some(generic_source_type_identity_with_substitutions(db, declaration, &parameter.ty.node, &environment));
     }
+    // A typed lambda parameter (`(List<T> leaf, T value) => leaf.Push(value)` in a generic body)
+    // has its written type through the enclosing substitutions. An untyped one is left to the
+    // other authorities (its type comes from the expected callable).
+    if let Some(parameter) =
+        index.node_at(program, parent).and_then(|node| node.of::<beskid_analysis::syntax::LambdaParameter>())
+    {
+        let written = parameter.ty.as_ref()?;
+        return Some(generic_source_type_identity_with_substitutions(db, declaration, &written.node, &environment));
+    }
     // An enum-pattern binding has the payload identity its match proves in this environment. A
     // match this environment does not specialize leaves the binding to the other authorities.
     if index.kind(parent) == Some(NodeKind::Pattern) {

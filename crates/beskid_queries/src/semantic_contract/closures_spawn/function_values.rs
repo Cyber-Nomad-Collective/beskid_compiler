@@ -143,6 +143,120 @@ fn function_value_call_in_environment(
     .transpose()
 }
 
+/// A lambda's closure facts inside one concrete specialization of its enclosing generic item.
+///
+/// A lambda in a generic body (`(List<T> leaf, T value) => leaf.Push(value)` in `Collect`) has no
+/// context-free callable ABI: written parameter types, the position's expected function type and
+/// the captured locals all name the item's generic parameters, which `enclosing` binds. One
+/// closure entry is emitted per enclosing instance from these facts.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SpecializedClosureSignature {
+    pub lambda: AstNodeKey,
+    pub body: AstNodeKey,
+    pub callable: ItemSignature,
+    /// Managed-reference class of each lambda parameter, in parameter order.
+    pub parameter_managed: Arc<[ManagedReferenceKind]>,
+    /// Capture fields with their ABI type in this instance, in the canonical capture order.
+    pub fields: Arc<[ClosureEnvironmentField]>,
+}
+
+pub fn specialized_closure_signature(
+    db: &dyn Db,
+    lambda: AstNodeKey,
+    enclosing: &GenericSpecializationInstance,
+) -> SemanticQueryResult<SpecializedClosureSignature> {
+    let Some(syntax) = db.syntax_unit(lambda.unit).filter(|syntax| syntax.accepts_key(db, lambda)) else {
+        return Ok(None);
+    };
+    let program = syntax.expanded_program(db);
+    let index = syntax.syntax_index(db);
+    let Some(expression) =
+        index.node_at(program, lambda.node).and_then(|node| node.of::<beskid_analysis::syntax::LambdaExpression>())
+    else {
+        return Ok(None);
+    };
+    let body = index
+        .direct_child_id(program, lambda.node, beskid_analysis::syntax_query::DynNodeRef::from(expression.body.as_ref()))
+        .map(|node| AstNodeKey { node: normalized_expression_node(index, node), ..lambda })
+        .ok_or_else(|| source_expression_unavailable(db, lambda, "lambda body node is absent"))?;
+    let environment: HashMap<&str, &GenericSourceTypeIdentity> =
+        enclosing.substitutions.iter().map(|binding| (binding.parameter.as_ref(), binding.source_identity())).collect();
+    let expected = match expected_type_in_environment(db, lambda, enclosing) {
+        Ok(expected) => expected
+            .as_ref()
+            .and_then(|expected| expected.function_identity())
+            .filter(|(parameters, _)| parameters.len() == expression.parameters.len())
+            .map(|(parameters, result)| (parameters.to_vec(), result.clone())),
+        Err(error) if error.is_unavailable() => None,
+        Err(error) => return Err(error),
+    };
+    let parameters = expression
+        .parameters
+        .iter()
+        .enumerate()
+        .map(|(position, parameter)| match (&parameter.node.ty, &expected) {
+            (Some(written), _) => generic_source_type_identity_with_substitutions(db, lambda, &written.node, &environment),
+            (None, Some((parameters, _))) => Ok(parameters[position].clone()),
+            (None, None) => Err(source_expression_unavailable(
+                db,
+                lambda,
+                "untyped lambda parameter has no expected function type in this specialization",
+            )),
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let statement_body = index.kind(body.node) == Some(beskid_analysis::syntax_query::NodeKind::BlockExpression);
+    let result = match (&expected, statement_body) {
+        (Some((_, result)), _) => result.clone(),
+        (None, true) => block_lambda_result_identity(db, index, body, Some(enclosing))?,
+        (None, false) => match specialized_source_expression_identity(db, body, Some(enclosing)) {
+            Ok(identity) => identity,
+            Err(_) => GenericSourceTypeIdentity::Abi(
+                value_abi_type(db, body)?
+                    .ok_or_else(|| source_expression_unavailable(db, body, "lambda body has no value type"))?,
+            ),
+        },
+    };
+    let Some(closure) = closure_environment(db, lambda)? else {
+        return Ok(None);
+    };
+    let mut fields = closure
+        .captures
+        .iter()
+        .map(|capture| {
+            let abi_type = match crate::semantic_contract::contracts::specialized_local_declaration_identity(db, capture.declaration, enclosing) {
+                // A value capture of a native pointer has no owner to keep it alive.
+                Some(Ok(identity))
+                    if capture.class == CaptureStorageClass::TransferableValue
+                        && identity.abi_type() == SemanticTypeId::POINTER
+                        && identity.managed_reference_kind() == ManagedReferenceKind::NativeOrScalar =>
+                {
+                    return Err(source_expression_unavailable(
+                        db,
+                        capture.declaration,
+                        "a native pointer is captured by value in this specialization",
+                    ));
+                }
+                Some(Ok(identity)) => identity.abi_type(),
+                Some(Err(error)) if !error.is_unavailable() => return Err(error),
+                Some(Err(_)) | None => abi_type(db, capture.declaration)?
+                    .ok_or_else(|| source_expression_unavailable(db, capture.declaration, "capture has no ABI type"))?,
+            };
+            Ok(ClosureEnvironmentField { capture: *capture, abi_type })
+        })
+        .collect::<Result<Vec<_>, SemanticError>>()?;
+    fields.sort_by_key(|field| (field.capture.slot.owner.node.0, field.capture.slot.index, field.capture.declaration.node.0));
+    Ok(Some(SpecializedClosureSignature {
+        lambda,
+        body,
+        callable: ItemSignature {
+            parameters: parameters.iter().map(GenericSourceTypeIdentity::abi_type).collect(),
+            result: result.abi_type(),
+        },
+        parameter_managed: parameters.iter().map(GenericSourceTypeIdentity::managed_reference_kind).collect(),
+        fields: fields.into(),
+    }))
+}
+
 /// Decide whether a lambda expression must materialize its closure record.
 ///
 /// Immediate calls, spawn operands, and event-handler locals have their own lowering. A local
@@ -375,7 +489,7 @@ pub(in crate::semantic_contract) fn lambda_source_identity(
     let result = if statement_body {
         match expected {
             Some((_, result)) => result,
-            None => block_lambda_result_identity(db, index, body)?,
+            None => block_lambda_result_identity(db, index, body, None)?,
         }
     } else {
         // A pointer-shaped body keeps its source identity; a scalar body takes its value ABI,
@@ -400,6 +514,7 @@ fn block_lambda_result_identity(
     db: &dyn Db,
     index: &beskid_analysis::syntax_query::SyntaxIndex,
     body: AstNodeKey,
+    enclosing: Option<&GenericSpecializationInstance>,
 ) -> Result<GenericSourceTypeIdentity, SemanticError> {
     use beskid_analysis::syntax_query::NodeKind;
     let mut pending = vec![body.node];
@@ -419,10 +534,11 @@ fn block_lambda_result_identity(
     }
     let mut result: Option<GenericSourceTypeIdentity> = None;
     for value in values {
-        let identity = match generic_source_expression_identity(db, value) {
+        let identity = match specialized_source_expression_identity(db, value, enclosing) {
             Ok(identity @ (GenericSourceTypeIdentity::Nominal { .. }
             | GenericSourceTypeIdentity::Array(_)
             | GenericSourceTypeIdentity::Function { .. })) => identity,
+            Ok(GenericSourceTypeIdentity::Abi(abi)) if enclosing.is_some() => GenericSourceTypeIdentity::Abi(abi),
             Ok(GenericSourceTypeIdentity::Abi(_)) | Err(_) => GenericSourceTypeIdentity::Abi(
                 value_abi_type(db, value)?
                     .ok_or_else(|| source_expression_unavailable(db, value, "lambda return has no value type"))?,

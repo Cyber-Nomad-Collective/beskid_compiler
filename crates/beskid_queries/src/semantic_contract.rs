@@ -133,7 +133,7 @@ use calls::{
     for_iterator_element_identity,
 };
 pub use cleanup::{ScopedAcquisition, ScopedCleanup, ScopedCleanupDiagnostic, scoped_cleanup};
-pub use closures_spawn::function_value_call_specialization;
+pub use closures_spawn::{SpecializedClosureSignature, function_value_call_specialization, specialized_closure_signature};
 use closures_spawn::{names_generic_function_item, untyped_lambda_parameter_identity, untyped_lambda_parameter_type};
 use closures_spawn::{
     CapturesBound, call_argument_captures_bound, callable_affine_ownership_tracked, captures_bound,

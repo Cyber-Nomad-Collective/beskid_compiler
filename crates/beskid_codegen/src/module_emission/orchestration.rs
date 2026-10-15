@@ -225,7 +225,7 @@ fn lower_resolved_syntax_program(
     symbols.extend(
         lambda_trampolines
             .iter()
-            .map(|trampoline| (DirectCallee::lambda_trampoline(trampoline.lambda), trampoline.symbol.clone())),
+            .map(|trampoline| (trampoline.callee.clone(), trampoline.symbol.clone())),
     );
     let isolate_trampolines = resolve_isolate_entry_trampolines(input, isa, items)?;
     symbols.extend(isolate_trampolines.iter().map(|trampoline| {
@@ -354,6 +354,7 @@ fn lower_resolved_syntax_program(
             emit_isle_lambda_entry(
                 input,
                 isa,
+                trampoline.specialization.as_ref(),
                 trampoline.lambda_body,
                 result,
                 &trampoline.parameters,

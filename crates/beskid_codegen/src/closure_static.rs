@@ -7,8 +7,9 @@
 use std::sync::Arc;
 
 use beskid_queries::{
-    AstNodeKey, CaptureStorageClass, ClosureCapture, ClosureEnvironmentField, SemanticTypeId, abi_type,
-    closure_environment, closure_signature, event_handler_lambda_for_local, node_kind,
+    AstNodeKey, CaptureStorageClass, ClosureCapture, ClosureEnvironmentField, GenericSpecializationInstance,
+    SemanticTypeId, abi_type, closure_environment, closure_signature, event_handler_lambda_for_local,
+    generic_specialization_identity, node_kind, specialized_closure_signature,
 };
 use cranelift_module::{DataDescription, DataId, Linkage, Module, ModuleError, ModuleResult};
 
@@ -141,6 +142,33 @@ impl CodegenInput<'_> {
     pub fn closure_lowering_authority(&self, site: AstNodeKey, lambda: AstNodeKey) -> Option<ClosureLoweringAuthority> {
         let plan = self.closure_static_plan(lambda)?;
         self.closure_authority_for_plan(site, plan)
+    }
+
+    /// [`Self::closure_lowering_authority`] for a lambda inside one generic specialization of its
+    /// enclosing item: capture ABI types come from that instance, and the static symbols carry its
+    /// identity so each instance owns its descriptor, pointer map and allocation request.
+    pub fn specialized_closure_lowering_authority(
+        &self,
+        site: AstNodeKey,
+        lambda: AstNodeKey,
+        instance: &GenericSpecializationInstance,
+    ) -> Option<ClosureLoweringAuthority> {
+        let plan = self.specialized_closure_static_plan(lambda, instance)?;
+        self.closure_authority_for_plan(site, plan)
+    }
+
+    pub fn specialized_closure_static_plan(
+        &self,
+        lambda: AstNodeKey,
+        instance: &GenericSpecializationInstance,
+    ) -> Option<ClosureStaticPlan> {
+        let fact = specialized_closure_signature(self.database(), lambda, instance).ok().flatten()?;
+        let mut plan = self.closure_static_plan_from_fields(lambda, &fact.fields)?;
+        let suffix = generic_specialization_identity(instance).iter().map(u32::to_string).collect::<Vec<_>>().join("_");
+        plan.descriptor_symbol = format!("{}_s{suffix}", plan.descriptor_symbol);
+        plan.pointer_map_symbol = format!("{}_s{suffix}", plan.pointer_map_symbol);
+        plan.allocation_request_symbol = format!("{}_s{suffix}", plan.allocation_request_symbol);
+        Some(plan)
     }
 
     /// Event-only authority takes the already-checked event handler identity and signature path,

@@ -74,6 +74,18 @@ pub(in crate::semantic_contract) fn managed_reference_kind_tracked(
                 }
                 return Some(managed_reference_kind_for_syntax_type(&parameter.ty.node));
             }
+            // A typed lambda parameter is classified by its written type like a parameter
+            // (`(Core.Parallel.Scopes.Scope s) => ...`); an untyped one by the other authorities.
+            if let Some(written) = index
+                .node_at(program, parent)
+                .and_then(|parent| parent.of::<beskid_analysis::syntax::LambdaParameter>())
+                .and_then(|parameter| parameter.ty.as_ref())
+            {
+                if type_syntax_is_enclosing_generic_parameter_reference(db, key, &written.node) {
+                    return Some(Err(SemanticError::unavailable("managed_reference_kind")));
+                }
+                return Some(managed_reference_kind_for_syntax_type(&written.node));
+            }
             if index
                 .node_at(program, parent)
                 .and_then(|parent| parent.of::<beskid_analysis::syntax::LetStatement>())
