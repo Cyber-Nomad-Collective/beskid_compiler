@@ -58,6 +58,9 @@ impl Resolver {
                     if let Some(this_local) = self.resolve_local("this") {
                         self.tables.insert_value(path.span, ResolvedValue::Local(this_local));
                     }
+                } else if self.is_exchange_builtin_call(&call_expr.node) {
+                    // `exchange(place, move value)` is a builtin, not a declared item (mirrors
+                    // `exchange_call_for_node` in `beskid_queries`): its callee names nothing.
                 } else if !super::super::resolver::is_primitive_numeric_conversion_call(&call_expr.node) {
                     self.resolve_expression(&call_expr.node.callee);
                 }
@@ -143,6 +146,21 @@ impl Resolver {
 
     pub(super) fn resolve_struct_literal_field(&mut self, field: &Spanned<StructLiteralField>) {
         self.resolve_expression(&field.node.value);
+    }
+
+    /// `exchange(place, value)`: an unqualified, non-generic two-argument call named `exchange`
+    /// with no lexical binding of that name in scope is the builtin.
+    fn is_exchange_builtin_call(&self, call: &crate::syntax::CallExpression) -> bool {
+        let Expression::Path(path_expr) = &call.callee.node else {
+            return false;
+        };
+        let [segment] = path_expr.node.path.node.segments.as_slice() else {
+            return false;
+        };
+        segment.node.name.node.name == "exchange"
+            && segment.node.type_args.is_empty()
+            && call.args.len() == 2
+            && self.resolve_local("exchange").is_none()
     }
 
     /// The callee path of `Name(...)` when it names the enclosing type-body method's unique
